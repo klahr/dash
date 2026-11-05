@@ -1,0 +1,266 @@
+// Package store keeps Dash state in memory and snapshots it to a JSON file.
+// It is deliberately simple; swap for SQLite behind the same methods later.
+package store
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/klahr/dash/internal/model"
+)
+
+var ErrNotFound = errors.New("not found")
+
+// Publisher receives an event after every successful mutation.
+type Publisher interface{ Publish(model.Event) }
+
+type snapshot struct {
+	Projects map[string]*model.Project `json:"projects"`
+	Todos    map[string]*model.Todo    `json:"todos"`
+}
+
+type Store struct {
+	mu   sync.RWMutex
+	path string
+	pub  Publisher
+	data snapshot
+}
+
+func NewID() string {
+	b := make([]byte, 6)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// Open loads state from path (if present). Todos that were in progress when
+// Dash stopped are put back in the queue; their worktrees are reused.
+func Open(path string, pub Publisher) (*Store, error) {
+	s := &Store{path: path, pub: pub, data: snapshot{
+		Projects: map[string]*model.Project{},
+		Todos:    map[string]*model.Todo{},
+	}}
+	b, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if len(b) > 0 {
+		if err := json.Unmarshal(b, &s.data); err != nil {
+			return nil, err
+		}
+	}
+	for _, t := range s.data.Todos {
+		if t.Status == model.StatusInProgress {
+			t.Status = model.StatusQueued
+		}
+		// Merge jobs live in a channel and are lost on restart; send back to review.
+		if t.Status == model.StatusMerging {
+			t.Status = model.StatusReview
+		}
+	}
+	return s, s.saveLocked()
+}
+
+func (s *Store) saveLocked() error {
+	b, err := json.MarshalIndent(s.data, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+		return err
+	}
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.path)
+}
+
+func (s *Store) emit(t model.EventType, projectID, todoID string, data any) {
+	if s.pub != nil {
+		s.pub.Publish(model.Event{Type: t, ProjectID: projectID, TodoID: todoID, Data: data, Time: time.Now()})
+	}
+}
+
+// ---- Projects ----
+
+func (s *Store) CreateProject(p model.Project) (model.Project, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p.ID == "" {
+		p.ID = NewID()
+	}
+	p.CreatedAt = time.Now()
+	s.data.Projects[p.ID] = &p
+	if err := s.saveLocked(); err != nil {
+		return p, err
+	}
+	s.emit(model.EvProjectUpdated, p.ID, "", p)
+	return p, nil
+}
+
+func (s *Store) GetProject(id string) (model.Project, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	p, ok := s.data.Projects[id]
+	if !ok {
+		return model.Project{}, ErrNotFound
+	}
+	return *p, nil
+}
+
+func (s *Store) ListProjects() []model.Project {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]model.Project, 0, len(s.data.Projects))
+	for _, p := range s.data.Projects {
+		out = append(out, *p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out
+}
+
+func (s *Store) UpdateProject(id string, fn func(*model.Project) error) (model.Project, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.data.Projects[id]
+	if !ok {
+		return model.Project{}, ErrNotFound
+	}
+	cp := *p
+	if err := fn(&cp); err != nil {
+		return *p, err
+	}
+	cp.ID = id
+	s.data.Projects[id] = &cp
+	if err := s.saveLocked(); err != nil {
+		return cp, err
+	}
+	s.emit(model.EvProjectUpdated, id, "", cp)
+	return cp, nil
+}
+
+// ---- Todos ----
+
+func (s *Store) CreateTodo(t model.Todo) (model.Todo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.data.Projects[t.ProjectID]; !ok {
+		return t, ErrNotFound
+	}
+	t.ID = NewID()
+	t.Status = model.StatusDraft
+	t.CreatedAt = time.Now()
+	t.UpdatedAt = t.CreatedAt
+	s.data.Todos[t.ID] = &t
+	if err := s.saveLocked(); err != nil {
+		return t, err
+	}
+	s.emit(model.EvTodoUpdated, t.ProjectID, t.ID, t)
+	return t, nil
+}
+
+func (s *Store) GetTodo(id string) (model.Todo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.data.Todos[id]
+	if !ok {
+		return model.Todo{}, ErrNotFound
+	}
+	return *t, nil
+}
+
+// ListTodos returns a project's todos in queue order (priority, then age).
+// An empty status list means all statuses.
+func (s *Store) ListTodos(projectID string, statuses ...model.TodoStatus) []model.Todo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []model.Todo
+	for _, t := range s.data.Todos {
+		if projectID != "" && t.ProjectID != projectID {
+			continue
+		}
+		if len(statuses) > 0 && !contains(statuses, t.Status) {
+			continue
+		}
+		out = append(out, *t)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Priority != out[j].Priority {
+			return out[i].Priority < out[j].Priority
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out
+}
+
+// UpdateTodo applies fn to a copy of the todo. If fn changes Status the
+// transition is validated. The todo is persisted and broadcast.
+func (s *Store) UpdateTodo(id string, fn func(*model.Todo) error) (model.Todo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.data.Todos[id]
+	if !ok {
+		return model.Todo{}, ErrNotFound
+	}
+	cp := *t
+	if err := fn(&cp); err != nil {
+		return *t, err
+	}
+	if cp.Status != t.Status && !model.CanTransition(t.Status, cp.Status) {
+		return *t, model.ErrInvalidTransition{From: t.Status, To: cp.Status}
+	}
+	cp.ID, cp.ProjectID, cp.UpdatedAt = t.ID, t.ProjectID, time.Now()
+	s.data.Todos[id] = &cp
+	if err := s.saveLocked(); err != nil {
+		return cp, err
+	}
+	s.emit(model.EvTodoUpdated, cp.ProjectID, cp.ID, cp)
+	return cp, nil
+}
+
+// SetStatus is a convenience wrapper around UpdateTodo.
+func (s *Store) SetStatus(id string, to model.TodoStatus, errMsg string) (model.Todo, error) {
+	return s.UpdateTodo(id, func(t *model.Todo) error {
+		t.Status = to
+		t.Error = errMsg
+		now := time.Now()
+		switch to {
+		case model.StatusInProgress:
+			t.StartedAt, t.FinishedAt = &now, nil
+		case model.StatusReview, model.StatusFailed, model.StatusMerged:
+			t.FinishedAt = &now
+		}
+		return nil
+	})
+}
+
+func (s *Store) DeleteTodo(id string) (model.Todo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.data.Todos[id]
+	if !ok {
+		return model.Todo{}, ErrNotFound
+	}
+	delete(s.data.Todos, id)
+	if err := s.saveLocked(); err != nil {
+		return *t, err
+	}
+	s.emit(model.EvTodoDeleted, t.ProjectID, id, nil)
+	return *t, nil
+}
+
+func contains[T comparable](xs []T, x T) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
+}

@@ -1,0 +1,238 @@
+// Package tui is a terminal frontend for Dash with vim-style keybindings. It
+// is a pure client of the Dash server's REST and WebSocket API.
+package tui
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/cookiejar"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/gorilla/websocket"
+
+	"github.com/klahr/dash/internal/agent"
+	"github.com/klahr/dash/internal/model"
+)
+
+// Client talks to a Dash server with a session cookie.
+type Client struct {
+	base *url.URL
+	http *http.Client
+}
+
+var ErrUnauthorized = errors.New("not logged in")
+
+func NewClient(server string) (*Client, error) {
+	u, err := url.Parse(strings.TrimRight(server, "/"))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return nil, fmt.Errorf("invalid server URL %q", server)
+	}
+	jar, _ := cookiejar.New(nil)
+	return &Client{base: u, http: &http.Client{Jar: jar, Timeout: 60 * time.Second}}, nil
+}
+
+func (c *Client) Login(username, password string) error {
+	return c.do("POST", "/api/login", map[string]string{"username": username, "password": password}, nil)
+}
+
+func (c *Client) do(method, path string, body, out any) error {
+	var rd io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		rd = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, c.base.String()+path, rd)
+	if err != nil {
+		return err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	data, _ := io.ReadAll(res.Body)
+	if res.StatusCode == http.StatusUnauthorized && path != "/api/login" {
+		return ErrUnauthorized
+	}
+	if res.StatusCode >= 400 {
+		var e struct{ Error string }
+		if json.Unmarshal(data, &e) == nil && e.Error != "" {
+			return errors.New(e.Error)
+		}
+		return fmt.Errorf("%s %s: %s", method, path, res.Status)
+	}
+	switch o := out.(type) {
+	case nil:
+	case *string:
+		*o = string(data)
+	default:
+		return json.Unmarshal(data, out)
+	}
+	return nil
+}
+
+// ---- REST ----
+
+func (c *Client) Projects() (ps []model.Project, err error) {
+	return ps, c.do("GET", "/api/projects", nil, &ps)
+}
+
+func (c *Client) CreateProject(name, path string) (p model.Project, err error) {
+	return p, c.do("POST", "/api/projects", map[string]string{"name": name, "path": path}, &p)
+}
+
+func (c *Client) PushProject(pid string) error {
+	return c.do("POST", "/api/projects/"+pid+"/push", nil, nil)
+}
+
+func (c *Client) Todos(pid string) (ts []model.Todo, err error) {
+	return ts, c.do("GET", "/api/projects/"+pid+"/todos", nil, &ts)
+}
+
+type NewTodo struct {
+	Title    string `json:"title"`
+	Prompt   string `json:"prompt"`
+	Goal     bool   `json:"goal"`
+	Priority int    `json:"priority"`
+	Enqueue  bool   `json:"enqueue"`
+}
+
+func (c *Client) CreateTodo(pid string, t NewTodo) (out model.Todo, err error) {
+	return out, c.do("POST", "/api/projects/"+pid+"/todos", t, &out)
+}
+
+func (c *Client) UpdateTodo(id string, fields map[string]any) error {
+	return c.do("PATCH", "/api/todos/"+id, fields, nil)
+}
+
+func (c *Client) DeleteTodo(id string) error { return c.do("DELETE", "/api/todos/"+id, nil, nil) }
+
+// TodoAction posts to /api/todos/{id}/{verb}: enqueue, cancel, approve, rework.
+func (c *Client) TodoAction(id, verb string, body any) error {
+	return c.do("POST", "/api/todos/"+id+"/"+verb, body, nil)
+}
+
+func (c *Client) TodoText(id, kind string) (s string, err error) { // kind: log | diff
+	return s, c.do("GET", "/api/todos/"+id+"/"+kind, nil, &s)
+}
+
+func (c *Client) Processes(pid string) (ps []model.Process, err error) {
+	return ps, c.do("GET", "/api/projects/"+pid+"/processes", nil, &ps)
+}
+
+type StartProc struct {
+	Kind    model.ProcessKind `json:"kind"`
+	Preset  string            `json:"preset,omitempty"`
+	Command string            `json:"command,omitempty"`
+	TodoID  string            `json:"todo_id,omitempty"`
+	Cols    int               `json:"cols,omitempty"`
+	Rows    int               `json:"rows,omitempty"`
+}
+
+func (c *Client) StartProcess(pid string, req StartProc) (p model.Process, err error) {
+	return p, c.do("POST", "/api/projects/"+pid+"/processes", req, &p)
+}
+
+func (c *Client) StopProcess(id string) error { return c.do("DELETE", "/api/processes/"+id, nil, nil) }
+
+// ---- WebSockets ----
+
+func (c *Client) dial(ctx context.Context, path string) (*websocket.Conn, error) {
+	u := *c.base
+	u.Scheme = map[string]string{"https": "wss"}[c.base.Scheme]
+	if u.Scheme == "" {
+		u.Scheme = "ws"
+	}
+	full, err := url.Parse(u.String() + path)
+	if err != nil {
+		return nil, err
+	}
+	d := websocket.Dialer{Jar: c.http.Jar, HandshakeTimeout: 10 * time.Second}
+	conn, res, err := d.DialContext(ctx, full.String(), nil)
+	if res != nil && res.StatusCode == http.StatusUnauthorized {
+		return nil, ErrUnauthorized
+	}
+	return conn, err
+}
+
+// wireEvent mirrors model.Event but keeps Data raw so it can be decoded per type.
+type wireEvent struct {
+	Type      model.EventType `json:"type"`
+	ProjectID string          `json:"project_id"`
+	TodoID    string          `json:"todo_id"`
+	Data      json.RawMessage `json:"data"`
+	Time      time.Time       `json:"time"`
+}
+
+// StreamEvents connects to /ws/events and delivers events until ctx ends,
+// reconnecting with backoff. connected reports link state changes.
+func (c *Client) StreamEvents(ctx context.Context, deliver func(wireEvent), connected func(bool, error)) {
+	backoff := time.Second
+	for ctx.Err() == nil {
+		conn, err := c.dial(ctx, "/ws/events")
+		if err != nil {
+			connected(false, err)
+			if errors.Is(err, ErrUnauthorized) {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
+			backoff = min(backoff*2, 15*time.Second)
+			continue
+		}
+		backoff = time.Second
+		connected(true, nil)
+		go func() { <-ctx.Done(); conn.Close() }()
+		for {
+			var ev wireEvent
+			if err := conn.ReadJSON(&ev); err != nil {
+				break
+			}
+			deliver(ev)
+		}
+		conn.Close()
+		connected(false, nil)
+	}
+}
+
+// ChatTurn streams one assistant reply for history.
+func (c *Client) ChatTurn(ctx context.Context, history []agent.ChatMessage, deliver func(agent.ChatDelta)) error {
+	conn, err := c.dial(ctx, "/ws/chat")
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	go func() { <-ctx.Done(); conn.Close() }()
+	if err := conn.WriteJSON(map[string]any{"type": "send", "messages": history}); err != nil {
+		return err
+	}
+	for {
+		var d agent.ChatDelta
+		if err := conn.ReadJSON(&d); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return err
+		}
+		deliver(d)
+		if d.Kind == "done" || d.Kind == "error" {
+			return nil
+		}
+	}
+}

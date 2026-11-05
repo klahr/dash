@@ -1,0 +1,477 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/klahr/dash/internal/model"
+)
+
+// ANSI palette indices, so the terminal's own theme decides the exact colours.
+var (
+	cAccent = lipgloss.Color("4")
+	cGoal   = lipgloss.Color("5")
+	cOK     = lipgloss.Color("2")
+	cWarn   = lipgloss.Color("3")
+	cErr    = lipgloss.Color("1")
+	cDim    = lipgloss.Color("8")
+
+	styleDim     = lipgloss.NewStyle().Foreground(cDim)
+	styleOK      = lipgloss.NewStyle().Foreground(cOK)
+	styleErr     = lipgloss.NewStyle().Foreground(cErr)
+	styleWarn    = lipgloss.NewStyle().Foreground(cWarn)
+	styleAccent  = lipgloss.NewStyle().Foreground(cAccent)
+	styleBold    = lipgloss.NewStyle().Bold(true)
+	styleTabOn   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(cAccent).Padding(0, 1)
+	styleTabOff  = lipgloss.NewStyle().Foreground(cDim).Padding(0, 1)
+	styleSel     = lipgloss.NewStyle().Reverse(true)
+	styleBox     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cAccent).Padding(0, 1)
+	styleModeN   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(cAccent).Padding(0, 1)
+	styleModeI   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(cOK).Padding(0, 1)
+	styleModeC   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(cWarn).Padding(0, 1)
+	statusColors = map[model.TodoStatus]lipgloss.Style{
+		model.StatusInProgress: styleWarn,
+		model.StatusReview:     styleAccent,
+		model.StatusMerged:     styleOK,
+		model.StatusFailed:     styleErr,
+	}
+)
+
+func (a *App) bodyHeight() int { return max(1, a.h-2) }
+
+func (a *App) View() tea.View {
+	if a.w == 0 {
+		return tea.NewView("")
+	}
+	body := a.renderBody()
+	body = fit(body, a.w, a.bodyHeight())
+	v := tea.NewView(a.renderHeader() + "\n" + body + "\n" + a.renderStatus())
+	v.AltScreen = true
+	return v
+}
+
+// fit pads or crops s to exactly w×h cells.
+func fit(s string, w, h int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) > h {
+		lines = lines[:h]
+	}
+	for len(lines) < h {
+		lines = append(lines, "")
+	}
+	for i, l := range lines {
+		if lipgloss.Width(l) > w {
+			l = ansi.Truncate(l, w, "")
+		}
+		lines[i] = l
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (a *App) renderHeader() string {
+	var b strings.Builder
+	b.WriteString(styleBold.Render(" Dash "))
+	for i := tab(0); i < numTabs; i++ {
+		if i == a.tab && a.overlay != ovDetail {
+			b.WriteString(styleTabOn.Render(tabNames[i]))
+		} else {
+			b.WriteString(styleTabOff.Render(tabNames[i]))
+		}
+	}
+	right := ""
+	if a.proj != nil {
+		right = styleAccent.Render(a.proj.Name) + styleDim.Render(" ("+a.proj.DefaultBranch+")")
+	}
+	right += styleDim.Render(fmt.Sprintf("  merge:%d ", a.mergeQueue))
+	if a.connected {
+		right += styleOK.Render("●")
+	} else {
+		right += styleErr.Render("●")
+	}
+	right += " "
+	gap := a.w - lipgloss.Width(b.String()) - lipgloss.Width(right)
+	return b.String() + strings.Repeat(" ", max(1, gap)) + right
+}
+
+func (a *App) renderStatus() string {
+	var left string
+	switch a.mode {
+	case modeCommand:
+		return a.cmdline.View()
+	case modePrompt:
+		return a.promptIn.View()
+	case modeConfirm:
+		return styleWarn.Render(a.question)
+	case modeInsert:
+		left = styleModeI.Render("INSERT")
+	default:
+		left = styleModeN.Render("NORMAL")
+	}
+	msg := ""
+	if a.flash != "" && time.Since(a.flashAt) < 6*time.Second {
+		if a.flashErr {
+			msg = styleErr.Render(a.flash)
+		} else {
+			msg = a.flash
+		}
+	} else {
+		msg = styleDim.Render(a.hints())
+	}
+	pend := ""
+	if a.count > 0 {
+		pend = fmt.Sprint(a.count)
+	}
+	pend += a.pending
+	right := styleDim.Render(pend + "  ? help ")
+	gap := a.w - lipgloss.Width(left) - lipgloss.Width(msg) - lipgloss.Width(right) - 1
+	if gap < 1 {
+		msg = ansi.Truncate(msg, max(0, a.w-lipgloss.Width(left)-lipgloss.Width(right)-2), "…")
+		gap = 1
+	}
+	return left + " " + msg + strings.Repeat(" ", gap) + right
+}
+
+func (a *App) hints() string {
+	if a.mode == modeInsert {
+		if a.overlay == ovForm {
+			return "Tab switch field · Esc normal mode, then :w draft / :wq queue / :q! discard"
+		}
+		return "Enter send · Alt+Enter newline · Esc normal"
+	}
+	switch a.overlay {
+	case ovDetail:
+		return "Tab log/diff · j/k ^d/^u gg/G · s queue a approve r rework x cancel t try ! shell · q back"
+	case ovForm:
+		return "i insert · j/k field · * goal · +/- priority · :w draft · :wq queue · :q! discard"
+	case ovPicker:
+		return "j/k · Enter select · q close"
+	}
+	switch a.tab {
+	case tabBoard:
+		return "hjkl move · Enter open · o new · s queue · a approve · r rework · dd delete · gt next tab"
+	case tabChat:
+		return "i type · j/k scroll · x stop · :clear"
+	case tabProcs:
+		return "Enter attach · R run · T test · D deploy · ! shell · x stop · o open URL"
+	}
+	return "j/k scroll · G bottom"
+}
+
+func (a *App) renderBody() string {
+	switch a.overlay {
+	case ovDetail:
+		return a.renderDetail()
+	case ovForm:
+		return a.center(a.renderForm())
+	case ovPicker:
+		return a.center(a.renderPicker())
+	case ovHelp:
+		return a.center(helpText)
+	}
+	if a.proj == nil && a.tab != tabChat {
+		return a.center(styleBox.Render("No project yet.\n\n" + styleDim.Render(":newproject <name> [path]")))
+	}
+	switch a.tab {
+	case tabBoard:
+		return a.renderBoard()
+	case tabChat:
+		return a.renderChat()
+	case tabProcs:
+		return a.renderProcs()
+	case tabActivity:
+		return a.renderPane(a.activity, &a.actOff)
+	}
+	return ""
+}
+
+func (a *App) center(s string) string {
+	return lipgloss.Place(a.w, a.bodyHeight(), lipgloss.Center, lipgloss.Center, s)
+}
+
+// ---- board
+
+func (a *App) renderBoard() string {
+	if len(a.cols) == 0 {
+		return a.center(styleDim.Render("No todos. Press o to create one."))
+	}
+	n := len(columns)
+	cw := max(12, a.w/n)
+	h := a.bodyHeight()
+	cardsFit := max(1, (h-2)/3)
+
+	var rendered []string
+	for ci, c := range columns {
+		items := a.cols[ci]
+		head := fmt.Sprintf("%s %d", strings.ToUpper(c.title), len(items))
+		if ci == a.col {
+			head = styleAccent.Bold(true).Render(head)
+		} else {
+			head = styleDim.Render(head)
+		}
+		lines := []string{" " + head, " " + styleDim.Render(strings.Repeat("─", cw-3))}
+
+		start := 0
+		if ci == a.col && a.row >= cardsFit {
+			start = a.row - cardsFit + 1
+		}
+		for ri := start; ri < len(items) && ri < start+cardsFit; ri++ {
+			lines = append(lines, a.renderCard(items[ri], cw-2, ci == a.col && ri == a.row)...)
+		}
+		if rest := len(items) - start - cardsFit; rest > 0 {
+			lines = append(lines, styleDim.Render(fmt.Sprintf("  +%d more", rest)))
+		}
+		col := lipgloss.NewStyle().Width(cw).Render(strings.Join(lines, "\n"))
+		rendered = append(rendered, col)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+}
+
+func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
+	mark := " "
+	if t.Goal {
+		mark = lipgloss.NewStyle().Foreground(cGoal).Render("★")
+	}
+	name := ansi.Truncate(title(t), w-3, "…")
+	sub := ""
+	switch {
+	case t.Status == model.StatusInProgress:
+		sub = a.lastLine[t.ID]
+	case t.Error != "":
+		sub = t.Error
+	case t.Status == model.StatusFailed:
+		sub = "failed"
+	default:
+		sub = strings.ReplaceAll(t.Prompt, "\n", " ")
+	}
+	sub = ansi.Truncate(sub, w-2, "…")
+	st, ok := statusColors[t.Status]
+	if !ok {
+		st = styleDim
+	}
+	l1 := " " + mark + " " + name
+	l2 := "   " + st.Render(ansi.Strip(sub))
+	if sel {
+		l1 = styleSel.Render(" " + ansi.Strip(mark) + " " + name + strings.Repeat(" ", max(0, w-3-lipgloss.Width(name))))
+	}
+	return []string{l1, ansi.Truncate(l2, w+1, ""), ""}
+}
+
+// ---- detail
+
+func (a *App) renderDetail() string {
+	t, ok := a.todos[a.dID]
+	if !ok {
+		return a.center("todo not found")
+	}
+	st, okc := statusColors[t.Status]
+	if !okc {
+		st = styleDim
+	}
+	head := styleBold.Render(title(t)) + "  " + st.Render(string(t.Status))
+	if t.Goal {
+		head += lipgloss.NewStyle().Foreground(cGoal).Render("  ★ goal")
+	}
+	meta := []string{fmt.Sprintf("priority %d", t.Priority)}
+	if t.Worktree != nil {
+		meta = append(meta, t.Worktree.Branch)
+	}
+	if t.Error != "" {
+		meta = append(meta, styleErr.Render(t.Error))
+	}
+	tabs := ""
+	for _, k := range []string{"log", "diff"} {
+		if k == a.dKind {
+			tabs += styleTabOn.Render(k)
+		} else {
+			tabs += styleTabOff.Render(k)
+		}
+	}
+	prompt := ansi.Truncate(strings.ReplaceAll(t.Prompt, "\n", " ⏎ "), a.w-2, "…")
+	top := []string{" " + head, " " + styleDim.Render(strings.Join(meta, " · ")), " " + styleDim.Render(prompt), " " + tabs}
+
+	text := a.dText[a.dID+a.dKind]
+	var lines []string
+	if text == "" {
+		lines = []string{styleDim.Render("  (empty)")}
+	} else if a.dKind == "diff" {
+		for _, l := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+			lines = append(lines, colorDiff(l))
+		}
+	} else {
+		wrap := lipgloss.NewStyle().Width(a.w - 1)
+		for _, l := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+			lines = append(lines, strings.Split(wrap.Render(l), "\n")...)
+		}
+	}
+	pane := a.renderPane(lines, &a.dOff)
+	return strings.Join(top, "\n") + "\n" + fit(pane, a.w, a.bodyHeight()-len(top))
+}
+
+func colorDiff(l string) string {
+	switch {
+	case strings.HasPrefix(l, "diff --git"):
+		return styleWarn.Bold(true).Render(l)
+	case strings.HasPrefix(l, "@@"):
+		return styleAccent.Render(l)
+	case strings.HasPrefix(l, "+++"), strings.HasPrefix(l, "---"):
+		return styleBold.Render(l)
+	case strings.HasPrefix(l, "+"):
+		return styleOK.Render(l)
+	case strings.HasPrefix(l, "-"):
+		return styleErr.Render(l)
+	}
+	return l
+}
+
+// renderPane shows the window of lines starting at *off, clamping *off.
+func (a *App) renderPane(lines []string, off *int) string {
+	h := a.bodyHeight()
+	if a.overlay == ovDetail {
+		h -= 4
+	}
+	*off = clamp(*off, 0, max(0, len(lines)-h))
+	return strings.Join(lines[*off:min(len(lines), *off+h)], "\n")
+}
+
+// ---- chat
+
+func (a *App) renderChat() string {
+	inputH := 5
+	h := a.bodyHeight() - inputH
+	wrapW := min(a.w-4, 110)
+	var lines []string
+	if len(a.chat) == 0 {
+		lines = append(lines, "", styleDim.Render("  Ask Claude anything. Press i to start typing."))
+	}
+	for _, e := range a.chat {
+		switch e.role {
+		case "user":
+			lines = append(lines, "", styleAccent.Bold(true).Render("  you"))
+			lines = append(lines, indent(lipgloss.NewStyle().Width(wrapW).Render(e.text), "  ")...)
+		case "assistant":
+			lines = append(lines, "", lipgloss.NewStyle().Foreground(cGoal).Bold(true).Render("  claude"))
+			if e.thinking != "" {
+				th := lipgloss.NewStyle().Width(wrapW - 2).Foreground(cDim).Italic(true).Render(e.thinking)
+				lines = append(lines, indent(th, "  │ ")...)
+			}
+			txt := e.text
+			if txt == "" && a.chatCancel != nil {
+				txt = styleDim.Render("…")
+			}
+			lines = append(lines, indent(lipgloss.NewStyle().Width(wrapW).Render(txt), "  ")...)
+		case "error":
+			lines = append(lines, indent(styleErr.Width(wrapW).Render("⚠ "+e.text), "  ")...)
+		}
+	}
+	// chatOff counts lines up from the bottom.
+	maxOff := max(0, len(lines)-h)
+	a.chatOff = clamp(a.chatOff, 0, maxOff)
+	end := len(lines) - a.chatOff
+	start := max(0, end-h)
+	hist := fit(strings.Join(lines[start:end], "\n"), a.w, h)
+	border := styleDim
+	if a.mode == modeInsert {
+		border = styleOK
+	}
+	input := border.Render(strings.Repeat("─", a.w)) + "\n" + a.chatInput.View()
+	return hist + "\n" + input
+}
+
+func indent(s, prefix string) []string {
+	ls := strings.Split(s, "\n")
+	for i := range ls {
+		ls[i] = prefix + ls[i]
+	}
+	return ls
+}
+
+// ---- processes
+
+func (a *App) renderProcs() string {
+	if len(a.procs) == 0 {
+		return a.center(styleDim.Render("No processes. R run server · T test · D deploy · ! shell"))
+	}
+	var lines []string
+	lines = append(lines, styleDim.Render("    KIND  STATUS     COMMAND"), "")
+	for i, p := range a.procs {
+		state := styleOK.Render("running ")
+		if !p.Running {
+			code := "?"
+			if p.ExitCode != nil {
+				code = fmt.Sprint(*p.ExitCode)
+			}
+			state = styleDim.Render(fmt.Sprintf("exit %-3s", code))
+		}
+		line := fmt.Sprintf("  %-5s %s  %s", p.Kind, state, p.Command)
+		if p.URL != "" {
+			line += "  " + styleAccent.Underline(true).Render(p.URL)
+		}
+		if i == a.procRow {
+			line = styleAccent.Render("▌") + line[1:]
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// ---- overlays
+
+func (a *App) renderForm() string {
+	head := "New todo"
+	if a.fEditID != "" {
+		head = "Edit todo"
+	}
+	goal := styleDim.Render("☆ goal (*)")
+	if a.fGoal {
+		goal = lipgloss.NewStyle().Foreground(cGoal).Render("★ goal (*)")
+	}
+	label := func(s string, f int) string {
+		if a.fField == f {
+			return styleAccent.Bold(true).Render("▸ " + s)
+		}
+		return styleDim.Render("  " + s)
+	}
+	body := strings.Join([]string{
+		styleBold.Render(head), "",
+		label("Title", 0), a.fTitle.View(), "",
+		label("Prompt", 1), a.fPrompt.View(), "",
+		goal + styleDim.Render(fmt.Sprintf("   priority %d (+/-)", a.fPrio)), "",
+		styleDim.Render(":w save draft · :wq save & queue · :q! discard"),
+	}, "\n")
+	return styleBox.Width(min(a.w-4, 104)).Render(body)
+}
+
+func (a *App) renderPicker() string {
+	if len(a.projects) == 0 {
+		return styleBox.Render("No projects.\n" + styleDim.Render(":newproject <name> [path]"))
+	}
+	lines := []string{styleBold.Render("Projects"), ""}
+	for i, p := range a.projects {
+		l := fmt.Sprintf(" %s  %s", p.Name, styleDim.Render(p.Path))
+		if i == a.pickRow {
+			l = styleSel.Render(fmt.Sprintf(" %s ", p.Name)) + "  " + styleDim.Render(p.Path)
+		}
+		lines = append(lines, l)
+	}
+	return styleBox.Render(strings.Join(lines, "\n"))
+}
+
+var helpText = styleBox.Render(strings.Join([]string{
+	styleBold.Render("Dash — keys"),
+	"",
+	styleAccent.Render("Global") + "        gt/gT next/prev tab · p projects · : command · ? help · ctrl+l reload · q/ZZ/:q quit",
+	styleAccent.Render("Motion") + "        h j k l · w/b next/prev column · gg G · {count}j · ctrl+d/u/f/b",
+	styleAccent.Render("Todo") + "          Enter open · o new · e edit · s queue · x cancel · a approve · r rework",
+	"              dd delete · +/- (K/J) priority · * goal · t try in worktree · ! shell in worktree",
+	styleAccent.Render("Detail") + "        Tab/h/l switch log↔diff · R reload · q back",
+	styleAccent.Render("Chat") + "          i insert · Enter send · Alt+Enter newline · Esc normal · x stop · dd/:clear",
+	styleAccent.Render("Procs") + "         Enter attach (Ctrl-] detaches) · R run · T test · D deploy · ! shell · x stop · o open",
+	styleAccent.Render("Form") + "          Tab field · Esc normal · * goal · :w draft · :wq/ZZ queue · :q! discard",
+	styleAccent.Render("Commands") + "      :project <name> · :newproject <name> [path] · :todo <prompt> · :new [prompt]",
+	"              :run <cmd> · :push · :board :chat :procs :activity · :clear · :e! reload",
+}, "\n"))

@@ -1,0 +1,144 @@
+// Package api exposes Dash over REST (state/CRUD) and WebSockets (live events,
+// chat streaming, terminals). Routing uses the Go 1.22+ standard mux.
+package api
+
+import (
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/klahr/dash/internal/agent"
+	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/gitops"
+	"github.com/klahr/dash/internal/hub"
+	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/queue"
+	"github.com/klahr/dash/internal/runner"
+	"github.com/klahr/dash/internal/store"
+)
+
+type Server struct {
+	Store       *store.Store
+	Git         *gitops.Git
+	Hub         *hub.Hub
+	Todos       *queue.TodoEngine
+	Merges      *queue.MergeQueue
+	Procs       *runner.Manager
+	Chat        agent.Chatter
+	Auth        *auth.Auth
+	ProjectRoot string // where new projects without an explicit path are created
+	Static      fs.FS  // frontend assets
+}
+
+func (s *Server) Routes() http.Handler {
+	mux := http.NewServeMux()
+
+	// Auth (the middleware below lets /api/login through without a session)
+	mux.HandleFunc("POST /api/login", s.Auth.Login)
+	mux.HandleFunc("POST /api/logout", s.Auth.Logout)
+	mux.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
+
+	// Projects & git
+	mux.HandleFunc("GET /api/projects", s.listProjects)
+	mux.HandleFunc("POST /api/projects", s.createProject)
+	mux.HandleFunc("GET /api/projects/{pid}", s.getProject)
+	mux.HandleFunc("PATCH /api/projects/{pid}", s.updateProject)
+	mux.HandleFunc("POST /api/projects/{pid}/github", s.createGitHubRepo)
+	mux.HandleFunc("POST /api/projects/{pid}/push", s.pushProject)
+
+	// Todos & queues
+	mux.HandleFunc("GET /api/projects/{pid}/todos", s.listTodos)
+	mux.HandleFunc("POST /api/projects/{pid}/todos", s.createTodo)
+	mux.HandleFunc("GET /api/projects/{pid}/queues", s.getQueues)
+	mux.HandleFunc("GET /api/todos/{tid}", s.getTodo)
+	mux.HandleFunc("PATCH /api/todos/{tid}", s.updateTodo)
+	mux.HandleFunc("DELETE /api/todos/{tid}", s.deleteTodo)
+	mux.HandleFunc("POST /api/todos/{tid}/enqueue", s.enqueueTodo)
+	mux.HandleFunc("POST /api/todos/{tid}/cancel", s.cancelTodo)
+	mux.HandleFunc("GET /api/todos/{tid}/diff", s.todoDiff)
+	mux.HandleFunc("GET /api/todos/{tid}/log", s.todoLog)
+	mux.HandleFunc("POST /api/todos/{tid}/approve", s.approveTodo)
+	mux.HandleFunc("POST /api/todos/{tid}/rework", s.reworkTodo)
+
+	// Execution, testing, deployment
+	mux.HandleFunc("GET /api/projects/{pid}/processes", s.listProcesses)
+	mux.HandleFunc("POST /api/projects/{pid}/processes", s.startProcess)
+	mux.HandleFunc("DELETE /api/processes/{procid}", s.stopProcess)
+
+	// WebSockets
+	mux.HandleFunc("GET /ws/events", s.Hub.ServeWS)
+	mux.HandleFunc("GET /ws/chat", s.chatWS)
+	mux.HandleFunc("GET /ws/proc/{procid}", s.procWS)
+
+	// Frontend
+	mux.Handle("GET /", http.FileServerFS(s.Static))
+
+	return logRequests(s.Auth.Middleware(mux))
+}
+
+// ---- helpers ----
+
+func writeJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeErr(w http.ResponseWriter, err error) {
+	code := http.StatusInternalServerError
+	var inv model.ErrInvalidTransition
+	var gitErr *gitops.CmdError
+	switch {
+	case errors.Is(err, store.ErrNotFound), errors.Is(err, runner.ErrNotFound):
+		code = http.StatusNotFound
+	case errors.As(err, &inv):
+		code = http.StatusConflict
+	case errors.Is(err, queue.ErrMergeQueueFull):
+		code = http.StatusServiceUnavailable
+	case errors.As(err, &gitErr):
+		code = http.StatusBadGateway
+	case errors.Is(err, errBadRequest):
+		code = http.StatusBadRequest
+	}
+	writeJSON(w, code, map[string]string{"error": err.Error()})
+}
+
+var errBadRequest = errors.New("bad request")
+
+func decode(r *http.Request, v any) error {
+	r.Body = http.MaxBytesReader(nil, r.Body, 1<<20)
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		return errors.Join(errBadRequest, err)
+	}
+	return nil
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	code int
+}
+
+func (r *statusRecorder) WriteHeader(c int) { r.code = c; r.ResponseWriter.WriteHeader(c) }
+
+// Unwrap lets http.ResponseController (and the WebSocket upgrader's hijack) reach the real writer.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
+func logRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if len(r.URL.Path) >= 3 && r.URL.Path[:3] == "/ws" {
+			next.ServeHTTP(w, r) // hijacked connections must get the raw writer
+			return
+		}
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, code: 200}
+		next.ServeHTTP(rec, r)
+		if len(r.URL.Path) >= 4 && r.URL.Path[:4] == "/api" {
+			slog.Info("http", "method", r.Method, "path", r.URL.Path, "status", rec.code, "dur", time.Since(start))
+		}
+	})
+}
