@@ -181,7 +181,7 @@
   <!-- New / edit todo -->
   <dialog class="sheet" id="todo-sheet" aria-labelledby="todo-sheet-title">
     <form method="dialog" id="todo-form">
-      <header class="sheet-head"><h2 id="todo-sheet-title">New todo</h2><button class="link" value="cancel" formnovalidate>Cancel</button></header>
+      <header class="sheet-head"><h2 id="todo-sheet-title">New todo</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
       <label class="field"><span>Title <em>optional, Claude names it if empty</em></span><input name="title" placeholder="Short name for the task" autocomplete="off"></label>
       <label class="field"><span>Instructions for Claude <em>Markdown</em></span><textarea name="prompt" rows="8" required placeholder="Describe the change you want. Claude works in its own worktree; you review the diff before it merges."></textarea></label>
       <div class="draft-status" id="todo-draft" aria-live="polite"></div>
@@ -201,7 +201,7 @@
   <!-- Projects -->
   <dialog class="sheet" id="project-sheet" aria-labelledby="project-sheet-title">
     <form method="dialog">
-      <header class="sheet-head"><h2 id="project-sheet-title" tabindex="-1" autofocus>Projects</h2><button class="link" value="cancel">Done</button></header>
+      <header class="sheet-head"><h2 id="project-sheet-title" tabindex="-1" autofocus>Projects</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
       <ul class="project-list" id="project-list"></ul>
       <div class="project-tools" id="project-tools"></div>
     </form>
@@ -222,7 +222,7 @@
   <!-- Usage & queue -->
   <dialog class="sheet small" id="usage-sheet" aria-labelledby="usage-title">
     <form method="dialog">
-      <header class="sheet-head"><h2 id="usage-title" tabindex="-1" autofocus>Claude usage</h2><button class="link" value="cancel">Done</button></header>
+      <header class="sheet-head"><h2 id="usage-title" tabindex="-1" autofocus>Claude usage</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
       <p class="hint" id="usage-reason"></p>
       <div class="meters" id="usage-meters"></div>
       <p class="hint" id="usage-note"></p>
@@ -233,7 +233,7 @@
   <!-- GitHub Actions -->
   <dialog class="sheet" id="ci-sheet" aria-labelledby="ci-title">
     <form method="dialog">
-      <header class="sheet-head"><h2 id="ci-title" tabindex="-1" autofocus>Builds</h2><button class="link" value="cancel">Done</button></header>
+      <header class="sheet-head"><h2 id="ci-title" tabindex="-1" autofocus>Builds</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
       <p class="hint" id="ci-summary"></p>
       <ul class="runs" id="ci-runs"></ul>
       <footer class="sheet-actions">
@@ -246,7 +246,7 @@
   <!-- Project settings -->
   <dialog class="sheet" id="settings-sheet" aria-labelledby="settings-title">
     <form method="dialog" id="settings-form">
-      <header class="sheet-head"><h2 id="settings-title">Project settings</h2><button class="link" value="cancel" formnovalidate>Cancel</button></header>
+      <header class="sheet-head"><h2 id="settings-title">Project settings</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
       <label class="field"><span>Test command <em>runs before review; failures go back to Claude</em></span><input name="test_command" placeholder="go test ./..." spellcheck="false" autofocus></label>
       <label class="field inline"><span>Automatic fix attempts</span><input type="number" name="max_auto_fixes" min="0" max="10" inputmode="numeric"></label>
       <p class="hint">How often failing tests or merge conflicts go back to Claude before Dash asks you.</p>
@@ -289,7 +289,7 @@
   <!-- Keyboard help (?) -->
   <dialog class="sheet" id="keys-sheet" aria-labelledby="keys-title">
     <form method="dialog">
-      <header class="sheet-head"><h2 id="keys-title" tabindex="-1" autofocus>Keyboard</h2><button class="link" value="cancel">Done</button></header>
+      <header class="sheet-head"><h2 id="keys-title" tabindex="-1" autofocus>Keyboard</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
       <p class="hint">Vim-style. Typing in a field or the terminal is insert mode; Esc (Ctrl-] in the terminal) returns to normal mode.</p>
       <dl class="keys">
         <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with todos · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
