@@ -481,8 +481,7 @@ function renderProjectHeader() {
   $("#project-name").textContent = p ? p.name : "No project";
   // With several computers the header names the computer (the branch fits on wide screens too).
   $("#project-branch").textContent = !p ? "" : !multi() ? p.default_branch : desktop.matches ? `${p.default_branch} · ${p.machine}` : p.machine;
-  $("#quick-test").hidden = !p?.test_command;
-  $("#quick-deploy").hidden = !p?.deploy_command;
+  renderQuick();
   const warn = $("#sync-warn");
   warn.hidden = !p?.sync_error;
   if (p?.sync_error) {
@@ -1577,7 +1576,46 @@ const runPreset = attempt(async (e) => {
   await startProc({ kind, preset });
 });
 $(".run-actions").addEventListener("click", runPreset);
-$("#quick-actions").addEventListener("click", runPreset);
+// While a quick action runs, clicking it shows its output instead of starting it again.
+$("#quick-actions").addEventListener("click", (e) => {
+  const proc = quickProc(e.target.closest("[data-run]")?.dataset.run);
+  if (!proc?.running) return runPreset(e);
+  closeDetail();
+  showView("run");
+  attach(proc);
+});
+
+// The latest test/deploy process started from the project's own checkout (not a worktree).
+const quickCmd = (spec) => ({ "task:test": state.project?.test_command, "task:deploy": state.project?.deploy_command })[spec];
+function quickProc(spec) {
+  const p = state.project;
+  const cmd = quickCmd(spec);
+  if (!cmd) return null;
+  return state.procs.filter((x) => x.kind === "task" && x.command === cmd && x.dir === p.path)
+    .reduce((a, b) => (!a || b.started_at > a.started_at ? b : a), null);
+}
+
+function renderQuick() {
+  for (const [sel, verb, done] of [["#quick-test", "Testing", "Test"], ["#quick-deploy", "Deploying", "Deploy"]]) {
+    const btn = $(sel);
+    const spec = btn.dataset.run;
+    btn.hidden = !quickCmd(spec);
+    const proc = quickProc(spec);
+    const ok = proc && !proc.running && proc.exit_code === 0;
+    const bad = proc && !proc.running && proc.exit_code !== 0;
+    btn.classList.toggle("running", !!proc?.running);
+    btn.classList.toggle("ok", !!ok);
+    btn.classList.toggle("bad", !!bad);
+    const secs = proc ? Math.max(0, Math.floor((Date.now() - new Date(proc.started_at)) / 1000)) : 0;
+    const elapsed = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+    btn.querySelector("span").textContent = proc?.running ? `${verb} ${elapsed}` : done;
+    btn.title = proc?.running ? `${verb}… ${elapsed} — click to view output`
+      : ok ? `Last ${done.toLowerCase()} passed — click to run again`
+      : bad ? `Last ${done.toLowerCase()} failed (exit ${proc.exit_code ?? "?"}) — click to run again`
+      : `${done} (${done[0]} on the Run view)`;
+  }
+}
+setInterval(() => { if ($(".quick-btn.running")) renderQuick(); }, 1000);
 $("#run-custom").addEventListener("submit", attempt(async (e) => {
   e.preventDefault();
   const command = e.target.cmd.value.trim();
@@ -1593,6 +1631,7 @@ async function loadProcs() {
 }
 
 function renderProcs() {
+  renderQuick();
   const running = state.procs.filter((p) => p.running).length;
   $("#proc-badge").hidden = !running;
   $("#proc-badge").textContent = running;

@@ -106,6 +106,17 @@ textarea { resize: vertical; line-height: 1.45; }
 }
 .quick-btn:hover { border-color: var(--accent); }
 .quick-btn svg { width: 16px; height: 16px; color: var(--accent); flex: none; }
+.quick-btn span { font-variant-numeric: tabular-nums; }
+.quick-btn.running { border-color: var(--running); background: color-mix(in srgb, var(--running) 10%, var(--surface)); }
+.quick-btn.running svg { display: none; }
+.quick-btn.running::before {
+  content: ""; width: 12px; height: 12px; flex: none; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--running) 30%, transparent); border-top-color: var(--running); animation: spin .8s linear infinite;
+}
+.quick-btn.ok svg { color: var(--merged); }
+.quick-btn.ok { border-color: color-mix(in srgb, var(--merged) 50%, var(--line)); }
+.quick-btn.bad svg { color: var(--failed); }
+.quick-btn.bad { border-color: var(--failed); background: color-mix(in srgb, var(--failed) 10%, var(--surface)); }
 @media (max-width: 639px) { .quick-btn { padding: 0; width: 36px; } .quick-btn span { display: none; } }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--failed); box-shadow: 0 0 0 3px color-mix(in srgb, var(--failed) 25%, transparent); }
 .live.on .live-dot { background: var(--merged); box-shadow: 0 0 0 3px color-mix(in srgb, var(--merged) 22%, transparent); }
