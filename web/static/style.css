@@ -763,6 +763,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 }
 .foot-menu-list button { min-height: 36px; padding: 0 10px; border-radius: 6px; text-align: left; font-size: 14px; color: var(--text); white-space: nowrap; }
 .foot-menu-list button:hover { background: var(--raised); }
+.foot-menu-list button.danger { color: var(--failed); }
 .top-menu { margin-left: 0; }
 .top-menu .foot-menu-list { top: calc(100% + 4px); bottom: auto; }
 .project-picker-list { top: calc(100% + 4px); bottom: auto; left: 0; right: auto; min-width: 260px; max-width: 420px; max-height: min(70vh, 520px); overflow-y: auto; }

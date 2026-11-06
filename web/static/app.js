@@ -500,6 +500,7 @@ function onEvent(ev, m = { name: "" }) {
   if (ev.type === "todo.updated" || ev.type === "todo.deleted") trackActive(ev, m);
   switch (ev.type) {
     case "project.updated":
+    case "project.deleted":
       loadProjects().catch(fail);
       break;
     case "todo.updated":
@@ -759,6 +760,47 @@ async function createGitHubRepo() {
   toast("GitHub repository created");
 }
 
+// Delete project: from Dash only, with its folder, and/or its GitHub
+// repository, after the password is typed again.
+function openDeleteProject() {
+  const p = state.project;
+  if (!p) throw new Error("Select a project first (p).");
+  const f = $("#delete-project");
+  f.reset();
+  $("#delete-project-title").textContent = `Delete ${p.name}`;
+  $("#delete-project-path").textContent = p.path;
+  $("#delete-github-row").hidden = $("#delete-github-hint").hidden = !p.remote_url;
+  $("#delete-github-hint").textContent = `Deletes ${p.remote_url} for good, with its issues and pull requests. gh needs the delete_repo scope.`;
+  syncDeleteProject();
+  $("#delete-project-sheet").showModal();
+  f.password.focus();
+}
+function syncDeleteProject() {
+  const f = $("#delete-project");
+  const what = [f.files.value === "delete" && "folder", f.github.checked && "GitHub repo"].filter(Boolean);
+  setLabel($("#delete-project-ok"), "trash", what.length ? `Delete project and ${what.join(" and ")}` : "Remove from Dash");
+}
+$("#delete-project").addEventListener("change", syncDeleteProject);
+$("#delete-project").addEventListener("submit", attempt(async (e) => {
+  if (e.submitter?.value !== "ok") return;
+  e.preventDefault();
+  const f = e.target;
+  const p = state.project;
+  const btn = $("#delete-project-ok");
+  btn.disabled = true;
+  try {
+    await api("DELETE", `/api/projects/${p.id}`, { password: f.password.value, delete_files: f.files.value === "delete", delete_github: !$("#delete-github-row").hidden && f.github.checked }, p.prefix);
+  } catch (err) {
+    f.password.select();
+    throw err;
+  } finally {
+    btn.disabled = false;
+  }
+  $("#delete-project-sheet").close();
+  await loadProjects(); // moves on to another project
+  toast(`${p.name} deleted`, { tone: "ok" });
+}));
+
 // Phones open the sidebar's projects, actions and status as a drawer from the
 // top bar; on desktop the same button collapses the sidebar to its icons.
 const menuOpen = () => $(".app").classList.contains("menu-open");
@@ -845,6 +887,7 @@ $("#pm-settings").addEventListener("click", openSettings);
 $("#pm-github").addEventListener("click", attempt(createGitHubRepo));
 $("#push-main").addEventListener("click", attempt(pushDone));
 $("#pm-cleanup").addEventListener("click", attempt(cleanup));
+$("#pm-delete").addEventListener("click", attempt(openDeleteProject));
 for (const menu of $$(".foot-menu")) {
   menu.querySelector(".foot-menu-list").addEventListener("click", () => { menu.open = false; });
   document.addEventListener("click", (e) => { if (!menu.contains(e.target)) menu.open = false; });
@@ -3394,6 +3437,7 @@ function paletteCommands() {
     p && ["Open a shell", "terminal", () => startProc({ kind: "pty" }), "!", "terminal pty"],
     p && state.unpushed > 0 && ["Push merged work", "push", pushDone, ":push", "git"],
     p && ["Clean up", "trash", cleanup, ":cleanup", "worktrees branches"],
+    p && ["Delete project…", "trash", openDeleteProject, "", "remove repo clone github"],
     p && !p.remote_url && ["Create GitHub repo", "repo", createGitHubRepo, "", "github remote"],
     ["Builds", "checks", openCI, ":ci", "ci github actions"],
     ["Claude usage", "clock", () => { renderUsage(); $("#usage-sheet").showModal(); }, ":usage", "limits"],

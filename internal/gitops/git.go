@@ -483,6 +483,33 @@ func (g *Git) CreateGitHubRepo(ctx context.Context, projectID, repo, name string
 	return g.git(ctx, projectID, repo, "remote", "get-url", "origin")
 }
 
+var remoteRe = regexp.MustCompile(`^(?:[a-z+]+://(?:[^@/]+@)?([^/:]+)(?::\d+)?/|[^@/]+@([^:/]+):)([^/]+)/([^/]+?)(?:\.git)?/?$`)
+
+// RepoName turns an origin URL into gh's "HOST/OWNER/REPO", or "" when it
+// doesn't look like one (e.g. a local path).
+func RepoName(remote string) string {
+	m := remoteRe.FindStringSubmatch(strings.TrimSpace(remote))
+	if m == nil {
+		return ""
+	}
+	host := m[1] + m[2]
+	if host == "ssh.github.com" {
+		host = "github.com"
+	}
+	return host + "/" + m[3] + "/" + m[4]
+}
+
+// DeleteGitHubRepo deletes origin's repository on GitHub with gh. gh needs
+// the delete_repo scope (gh auth refresh -s delete_repo).
+func (g *Git) DeleteGitHubRepo(ctx context.Context, projectID, repo, remote string) error {
+	name := RepoName(remote)
+	if name == "" {
+		return fmt.Errorf("%q is not a GitHub repository URL", remote)
+	}
+	_, err := g.gh(ctx, projectID, repo, "repo", "delete", name, "--yes")
+	return err
+}
+
 // DiffStat sums the change between base and HEAD in dir (files, lines added, removed).
 func (g *Git) DiffStat(ctx context.Context, projectID, dir, base string) (files, add, del int, err error) {
 	out, err := g.git(ctx, projectID, dir, "diff", "--numstat", base+"...HEAD")

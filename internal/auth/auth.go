@@ -223,6 +223,37 @@ func (a *Auth) attempt(ip, username, password string) error {
 	return nil
 }
 
+// ErrBadPassword and ErrLockedOut are what ConfirmPassword reports.
+var (
+	ErrBadPassword = errors.New("wrong password")
+	ErrLockedOut   = errLockedOut
+)
+
+// ConfirmPassword re-checks the account password before something
+// destructive. Wrong guesses count towards the same lockout as logins.
+// A request from a hub with the peer token passes: the hub asked its user.
+func (a *Auth) ConfirmPassword(r *http.Request, password string) error {
+	if a.viaPeer(r) {
+		return nil
+	}
+	ip := a.clientIP(r)
+	if a.lockedOut(ip) {
+		return errLockedOut
+	}
+	p := sha256.Sum256([]byte(password))
+	if subtle.ConstantTimeCompare(p[:], a.pass[:]) != 1 {
+		a.recordFailure(ip)
+		time.Sleep(300 * time.Millisecond)
+		return ErrBadPassword
+	}
+	return nil
+}
+
+func (a *Auth) viaPeer(r *http.Request) bool {
+	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return ok && a.PeerToken != "" && subtle.ConstantTimeCompare([]byte(tok), []byte(a.PeerToken)) == 1
+}
+
 // Secure reports whether the browser reached Dash over HTTPS.
 func (a *Auth) Secure(r *http.Request) bool {
 	return r.TLS != nil || (a.TrustProxy && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"))

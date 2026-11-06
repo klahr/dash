@@ -172,6 +172,31 @@ func (s *Store) UpdateProject(id string, fn func(*model.Project) error) (model.P
 	return cp, nil
 }
 
+// DeleteProject forgets a project with its todos and chats, and returns the
+// todos it removed. Files on disk are the caller's business.
+func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.data.Projects[id]; !ok {
+		return nil, ErrNotFound
+	}
+	var todos []model.Todo
+	for tid, t := range s.data.Todos {
+		if t.ProjectID == id {
+			todos = append(todos, *t)
+			delete(s.data.Todos, tid)
+			delete(s.data.TodoChats, tid)
+		}
+	}
+	delete(s.data.Projects, id)
+	delete(s.data.ProjectChats, id)
+	if err := s.saveLocked(); err != nil {
+		return todos, err
+	}
+	s.emit(model.EvProjectDeleted, id, "", nil)
+	return todos, nil
+}
+
 // ToolAllowed reports whether tool is on the project's always-allowed list.
 func (s *Store) ToolAllowed(projectID, tool string) bool {
 	s.mu.RLock()

@@ -54,6 +54,7 @@
           <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
           <button id="pm-github" type="button" data-icon="repo" hidden>Create GitHub repo</button>
           <button id="pm-cleanup" type="button" data-icon="trash" title="Remove leftover worktrees, branches, logs and uploads">Clean up</button>
+          <button id="pm-delete" type="button" data-icon="trash" class="danger">Delete project…</button>
         </div>
       </details>
     </header>
@@ -330,6 +331,26 @@
       <label class="field"><span>Test command</span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>
       <label class="field"><span>Deploy command</span><input name="deploy_command" placeholder="./deploy.sh" spellcheck="false"></label>
       <button class="btn primary" data-icon="plus">Create project</button>
+    </form>
+  </dialog>
+
+  <!-- Delete project: what to remove, confirmed with the password -->
+  <dialog class="sheet small" id="delete-project-sheet" aria-labelledby="delete-project-title">
+    <form method="dialog" id="delete-project">
+      <header class="sheet-head"><h2 id="delete-project-title">Delete project</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <p class="hint">Its tasks, chats and worktrees are removed from Dash. Tasks running or merging must finish first.</p>
+      <fieldset class="field choice">
+        <legend>Local clone</legend>
+        <label class="radio"><input type="radio" name="files" value="keep" checked><span>Keep the folder <em id="delete-project-path"></em></span></label>
+        <label class="radio"><input type="radio" name="files" value="delete"><span>Delete the folder <em>everything in it, including uncommitted and unpushed work</em></span></label>
+      </fieldset>
+      <label class="toggle" id="delete-github-row"><input type="checkbox" name="github"><span>Also delete the GitHub repository</span></label>
+      <p class="hint" id="delete-github-hint"></p>
+      <label class="field"><span>Password <em>to confirm</em></span><input type="password" name="password" required autocomplete="current-password"></label>
+      <footer class="sheet-actions">
+        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
+        <button class="btn danger" value="ok" data-icon="trash" id="delete-project-ok">Delete project</button>
+      </footer>
     </form>
   </dialog>
 

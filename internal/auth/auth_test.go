@@ -187,3 +187,19 @@ func TestSessionsSurviveRestart(t *testing.T) {
 		t.Fatal("sessions must not survive a password change")
 	}
 }
+
+func TestConfirmPassword(t *testing.T) {
+	a, _ := New("u", "p")
+	a.PeerToken = "peer-secret"
+	r := httptest.NewRequest("DELETE", "/api/projects/x", nil)
+	if err := a.ConfirmPassword(r, "p"); err != nil {
+		t.Fatalf("right password: %v", err)
+	}
+	if err := a.ConfirmPassword(r, "nope"); err != ErrBadPassword {
+		t.Fatalf("wrong password: %v", err)
+	}
+	r.Header.Set("Authorization", "Bearer peer-secret")
+	if err := a.ConfirmPassword(r, ""); err != nil {
+		t.Fatalf("hub with the peer token: %v", err)
+	}
+}

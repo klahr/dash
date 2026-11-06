@@ -13,8 +13,10 @@ import (
 	"syscall"
 
 	"github.com/klahr/dash/internal/agent"
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
+	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/store"
 )
 
@@ -269,6 +271,68 @@ func (s *Server) createGitHubRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, p)
+}
+
+// deleteProject removes a project from Dash after the user re-enters the
+// password. Optionally its folder goes too, and its GitHub repository; the
+// GitHub one first, so a gh failure leaves everything else as it was.
+func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Password     string `json:"password"`
+		DeleteFiles  bool   `json:"delete_files"`
+		DeleteGitHub bool   `json:"delete_github"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := s.Auth.ConfirmPassword(r, req.Password); err != nil {
+		writeErr(w, err)
+		return
+	}
+	p, err := s.Store.GetProject(r.PathValue("pid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if queue.Busy(s.Store.ListTodos(p.ID)) {
+		writeErr(w, queue.ErrProjectBusy)
+		return
+	}
+	if req.DeleteGitHub {
+		remote := s.Git.RemoteURL(r.Context(), p.ID, p.Path)
+		if remote == "" {
+			remote = p.RemoteURL
+		}
+		if remote == "" {
+			writeErr(w, fmt.Errorf("%w: the project has no GitHub repository", errBadRequest))
+			return
+		}
+		if err := s.Git.DeleteGitHubRepo(r.Context(), p.ID, p.Path, remote); err != nil {
+			if ce := (*gitops.CmdError)(nil); errors.As(err, &ce) && strings.Contains(ce.Output, "delete_repo") {
+				err = fmt.Errorf("%w (run: gh auth refresh -h github.com -s delete_repo)", err)
+			}
+			writeErr(w, err)
+			return
+		}
+	}
+	if s.Procs != nil {
+		for _, proc := range s.Procs.List(p.ID) {
+			_ = s.Procs.Stop(proc.ID)
+		}
+	}
+	todos, err := s.Merges.DeleteProject(r.Context(), p.ID, req.DeleteFiles)
+	for _, t := range todos {
+		if s.Perms != nil {
+			s.Perms.Forget(t.ID)
+		}
+		s.Todos.Log.Remove(t.ID)
+	}
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) pushProject(w http.ResponseWriter, r *http.Request) {

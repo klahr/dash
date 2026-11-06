@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -224,4 +225,81 @@ func humanDuration(d time.Duration) string {
 		return fmt.Sprintf("%d days", days)
 	}
 	return d.String()
+}
+
+// ErrProjectBusy is returned when a project to delete has Claude working or a merge underway.
+var ErrProjectBusy = errors.New("a task is running or merging in this project; cancel it or wait until it finishes")
+
+// Busy reports whether a todo of the project is running or merging.
+func Busy(todos []model.Todo) bool {
+	for _, t := range todos {
+		if t.Status == model.StatusInProgress || t.Status == model.StatusMerging || t.Reviewing {
+			return true
+		}
+	}
+	return false
+}
+
+// DeleteProject forgets a project on the merge worker (so no merge is
+// halfway through it) and removes its worktrees and dash/ branches. With
+// files, the project's own folder goes too. It returns the deleted todos.
+func (m *MergeQueue) DeleteProject(ctx context.Context, projectID string, files bool) ([]model.Todo, error) {
+	var todos []model.Todo
+	var err error
+	if derr := m.Do(ctx, func(c context.Context) {
+		var p model.Project
+		if p, err = m.Store.GetProject(projectID); err != nil {
+			return
+		}
+		if Busy(m.Store.ListTodos(p.ID)) {
+			err = ErrProjectBusy
+			return
+		}
+		if files {
+			if err = checkDeletable(p.Path); err != nil {
+				return
+			}
+		}
+		if todos, err = m.Store.DeleteProject(p.ID); err != nil {
+			return
+		}
+		root := filepath.Join(m.WorktreeRoot, p.ID)
+		if files {
+			_ = os.RemoveAll(root)
+			if rerr := os.RemoveAll(p.Path); rerr != nil {
+				err = fmt.Errorf("project removed from Dash, but its folder wasn't: %w", rerr)
+			}
+			return
+		}
+		// Keep the user's checkout, minus what Dash added to it.
+		if os.RemoveAll(root) == nil {
+			m.Git.PruneWorktrees(c, p.ID, p.Path)
+		}
+		branches, _ := m.Git.Branches(c, p.ID, p.Path, "dash/")
+		for _, b := range branches {
+			_ = m.Git.DeleteBranch(c, p.ID, p.Path, b)
+		}
+	}); derr != nil {
+		return nil, derr
+	}
+	return todos, err
+}
+
+// checkDeletable refuses to remove a folder that isn't plainly a project
+// checkout: the filesystem root, the home directory or one without .git.
+func checkDeletable(path string) error {
+	clean := filepath.Clean(path)
+	home, _ := os.UserHomeDir()
+	if !filepath.IsAbs(clean) || clean == string(filepath.Separator) || (home != "" && clean == filepath.Clean(home)) {
+		return fmt.Errorf("refusing to delete %s", clean)
+	}
+	if _, err := os.Stat(filepath.Join(clean, ".git")); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			if _, serr := os.Stat(clean); errors.Is(serr, fs.ErrNotExist) {
+				return nil // already gone
+			}
+		}
+		return fmt.Errorf("refusing to delete %s: it is not a git repository", clean)
+	}
+	return nil
 }

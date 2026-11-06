@@ -322,6 +322,7 @@ type EventType string
 
 const (
 	EvProjectUpdated EventType = "project.updated"
+	EvProjectDeleted EventType = "project.deleted"
 	EvTodoUpdated    EventType = "todo.updated"
 	EvTodoDeleted    EventType = "todo.deleted"
 	EvTodoOutput     EventType = "todo.output" // agent progress line

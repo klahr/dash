@@ -3,9 +3,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -86,6 +88,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/projects", s.createProject)
 	mux.HandleFunc("GET /api/projects/{pid}", s.getProject)
 	mux.HandleFunc("PATCH /api/projects/{pid}", s.updateProject)
+	mux.HandleFunc("DELETE /api/projects/{pid}", s.deleteProject)
+	// A peer can't check this dashboard's password, so the hub does it first.
+	mux.HandleFunc("DELETE /peer/{name}/api/projects/{pid}", s.confirmThenForward)
 	mux.HandleFunc("POST /api/projects/{pid}/github", s.createGitHubRepo)
 	mux.HandleFunc("POST /api/projects/{pid}/push", s.pushProject)
 	mux.HandleFunc("GET /api/projects/{pid}/unpushed", s.unpushed)
@@ -221,6 +226,12 @@ func writeErr(w http.ResponseWriter, err error) {
 		code = http.StatusServiceUnavailable
 	case errors.As(err, &gitErr):
 		code = http.StatusBadGateway
+	case errors.Is(err, auth.ErrBadPassword):
+		code = http.StatusForbidden // not 401: that would sign the browser out
+	case errors.Is(err, auth.ErrLockedOut):
+		code = http.StatusTooManyRequests
+	case errors.Is(err, queue.ErrProjectBusy):
+		code = http.StatusConflict
 	case errors.Is(err, errBadRequest):
 		code = http.StatusBadRequest
 	}
@@ -228,6 +239,30 @@ func writeErr(w http.ResponseWriter, err error) {
 }
 
 var errBadRequest = errors.New("bad request")
+
+// confirmThenForward checks the password in a delete-project request for a
+// peer here, then passes it on unchanged (the peer trusts the hub's token).
+func (s *Server) confirmThenForward(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
+		writeErr(w, errors.Join(errBadRequest, err))
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeErr(w, errors.Join(errBadRequest, err))
+		return
+	}
+	if err := s.Auth.ConfirmPassword(r, req.Password); err != nil {
+		writeErr(w, err)
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	r.ContentLength = int64(len(body))
+	s.Peers.ServeHTTP(w, r)
+}
 
 func decode(r *http.Request, v any) error {
 	r.Body = http.MaxBytesReader(nil, r.Body, 1<<20)
