@@ -18,6 +18,27 @@ Open http://127.0.0.1:7777, or use the terminal client:
 go build -o bin/dash-tui ./cmd/dash-tui && ./bin/dash-tui
 ```
 
+## Use it from Claude (MCP)
+
+`dash-mcp` is an MCP server for any Claude client (Claude Code, Claude Desktop). It logs in to a
+running Dash and lets Claude list projects, create todos, read diffs and logs, approve or send
+work back, and answer permission requests, on every computer in the dashboard.
+
+```sh
+go build -o bin/dash-mcp ./cmd/dash-mcp
+claude mcp add dash -e DASH_USERNAME=me -e DASH_PASSWORD=secret -- "$PWD/bin/dash-mcp"
+```
+
+For Claude Desktop, add it to `claude_desktop_config.json`:
+
+```json
+{"mcpServers": {"dash": {"command": "/path/to/bin/dash-mcp",
+  "env": {"DASH_USERNAME": "me", "DASH_PASSWORD": "secret"}}}}
+```
+
+Use `-server` (or `DASH_SERVER`) when Dash isn't on `http://127.0.0.1:7777`, and `-env` to read
+the credentials from a `.env` file instead.
+
 ## Use it from your phone
 
 Dash runs commands on your machine, so only expose it over HTTPS. Two easy ways:

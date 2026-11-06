@@ -181,6 +181,10 @@ func (c *Client) CreateTodo(pid string, t NewTodo) (out model.Todo, err error) {
 	return out, c.do("POST", "/api/projects/"+pid+"/todos", t, &out)
 }
 
+func (c *Client) Todo(id string) (t model.Todo, err error) {
+	return t, c.do("GET", "/api/todos/"+id, nil, &t)
+}
+
 func (c *Client) UpdateTodo(id string, fields map[string]any) error {
 	return c.do("PATCH", "/api/todos/"+id, fields, nil)
 }
