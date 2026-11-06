@@ -1490,7 +1490,7 @@ async function loadChat() {
   $("#chat-empty").hidden = true;
   $("#chat-log").append(...saved.map((m) => m.role === "user"
     ? h("div", { class: "msg user" }, m.content)
-    : h("div", { class: "msg assistant" }, h("div", { class: "reply" }, m.content), chatActions(m.content))));
+    : h("div", { class: "msg assistant" }, h("div", { class: "reply", innerHTML: renderMarkdown(m.content) }), chatActions(m.content))));
   $("#chat-log").scrollTop = $("#chat-log").scrollHeight;
 }
 loadChat().catch((e) => toast(`Couldn't load chat history: ${e.message}`, true));
