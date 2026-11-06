@@ -51,6 +51,8 @@ const ICONS = {
   terminal: "m5 8 4 4-4 4M12 17h7",
   code: "m8 8-4 4 4 4M16 8l4 4-4 4",
   comment: "M5 5h14v10H10l-5 4z",
+  search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM16 16l4.5 4.5",
+  palette: "M4 5h16v14H4zM8 10l2 2-2 2M13 14h3",
   diff: "M12 4v8M8 8h8M8 18h8",
   log: "M4 6h16M4 12h16M4 18h10",
   flag: "M5 21V4h12l-2 4 2 4H5",
@@ -2470,6 +2472,180 @@ $("#cmd-form").addEventListener("submit", (e) => {
   $("#cmd-input").blur();
   attempt(runCommand)(line);
 });
+
+// ------------------------------------------------------------------ palette
+// Ctrl-k: one search over commands, projects and the current project's todos.
+// A leading > limits it to commands, @ to projects, # to todos.
+const palette = { items: [], sel: 0 };
+
+// Every word must appear in the text, as a substring (best) or in order.
+function fuzzyScore(text, q) {
+  text = text.toLowerCase();
+  let total = 0;
+  for (const w of q.toLowerCase().split(/\s+/).filter(Boolean)) {
+    const i = text.indexOf(w);
+    if (i >= 0) { total += 100 - Math.min(i, 50) + (i === 0 || /\W/.test(text[i - 1]) ? 40 : 0); continue; }
+    let from = 0, prev = -2, s = 0;
+    for (const c of w) {
+      const j = text.indexOf(c, from);
+      if (j < 0) return -1;
+      s += j === prev + 1 ? 3 : 1;
+      prev = j; from = j + 1;
+    }
+    total += s;
+  }
+  return total;
+}
+
+function paletteCommands() {
+  const p = state.project;
+  const go = (view) => () => { closeDetail(); showView(view); };
+  return [
+    p && ["New todo", "plus", () => openTodoForm(), "a", "add create"],
+    ["Board", "flag", go("board"), "gb", "view lanes"],
+    ["Chat", "comment", () => { closeDetail(); showView("chat"); chatInput.focus(); }, "gc", "global claude ask view"],
+    p && [state.view === "board" && boardChatOpen() ? "Close project chat" : "Open project chat", "comment", () => { closeDetail(); $("#pc-open").click(); }, "", "claude ask"],
+    ["Shell", "terminal", go("run"), "gs", "run terminal processes view"],
+    ["Activity", "log", go("activity"), "ga", "events view"],
+    ["History", "log", go("history"), "gh", "git graph tree commits view"],
+    p && ["Filter the board", "search", openSearch, "/", "search todos"],
+    ["Switch project", "repo", openProjects, "p", "projects"],
+    ["New project", "plus", openNewProject, "", "create add"],
+    p && ["Project settings", "settings", openSettings, ":settings", "configure commands"],
+    p?.run_command && ["Start server", "play", () => startProc({ kind: "web", preset: "run" }), "R", "run web"],
+    p?.test_command && ["Run tests", "check", () => startProc({ kind: "task", preset: "test" }), "T", "test"],
+    p?.deploy_command && ["Deploy", "up", () => startProc({ kind: "task", preset: "deploy" }), "D", "release ship"],
+    p && ["Open a shell", "terminal", () => startProc({ kind: "pty" }), "!", "terminal pty"],
+    p && state.unpushed > 0 && ["Push merged work", "push", pushDone, ":push", "git"],
+    p && ["Clean up", "trash", cleanup, ":cleanup", "worktrees branches"],
+    p && !p.remote_url && ["Create GitHub repo", "repo", createGitHubRepo, "", "github remote"],
+    ["Builds", "checks", openCI, ":ci", "ci github actions"],
+    ["Claude usage", "clock", () => { renderUsage(); $("#usage-sheet").showModal(); }, ":usage", "limits"],
+    state.usage && [state.usage.paused ? "Resume the queue" : "Pause the queue", state.usage.paused ? "play" : "pause", () => runCommand(state.usage.paused ? "resume" : "pause"), "", "queue"],
+    ["Permission requests", "eye", () => runCommand("perms"), ":perms", "approvals allow deny"],
+    [notifyLabel(), notifyOn() ? "bell-off" : "bell", toggleNotifications, ":notify", "notifications"],
+    desktop.matches && [sideCollapsed() ? "Expand sidebar" : "Collapse sidebar", "minimize", () => setSideCollapsed(!sideCollapsed()), "[", "sidebar"],
+    ["Refresh projects", "redo", loadProjects, ":refresh", "reload"],
+    ["Keyboard shortcuts", "code", () => $("#keys-sheet").showModal(), "?", "help keys"],
+    ["Log out", "logout", logout, "", "sign out"],
+  ].filter(Boolean).map(([label, icon, run, keys, words]) => ({ kind: "Command", label, icon, run, keys, text: `${label} ${words}` }));
+}
+
+function paletteProjects() {
+  return state.projects.filter((p) => projectKey(p) !== projectKey(state.project)).map((p) => ({
+    kind: "Project", label: p.name, icon: "repo", hint: multi() ? p.machine : p.default_branch,
+    text: `${p.name} ${p.machine} ${p.path}`, run: () => selectProject(p),
+  }));
+}
+
+// Every todo, lane by lane, regardless of the board's filter or hidden old ones.
+function paletteTodos() {
+  const all = [...state.todos.values()];
+  return LANES.flatMap((l) => all.filter((t) => l.statuses.includes(t.status)).sort(byPriority).map((t) => ({
+    kind: "Todo", label: title(t), icon: "draft", hint: t.paused ? "Paused" : STATUS_LABEL[t.status] || t.status,
+    text: `${title(t)} ${t.prompt} ${t.id} ${STATUS_LABEL[t.status] || ""}`, run: () => { showView("board"); return openDetail(t.id); },
+  })));
+}
+
+function paletteResults(raw) {
+  const mode = { ">": "Command", "@": "Project", "#": "Todo" }[raw[0]];
+  const q = (mode ? raw.slice(1) : raw).trim();
+  const sources = { Command: paletteCommands, Project: paletteProjects, Todo: () => (state.project ? paletteTodos() : []) };
+  const pools = (mode ? [mode] : ["Command", "Project", "Todo"]).map((k) => sources[k]());
+  let out;
+  if (!q) out = pools.flatMap((p) => p.slice(0, mode ? 200 : 8));
+  else {
+    out = pools.flat().map((it) => {
+      const s = fuzzyScore(it.label, q);
+      return { it, s: s >= 0 ? s * 2 : fuzzyScore(it.text, q) };
+    }).filter((x) => x.s >= 0).sort((a, b) => b.s - a.s).slice(0, 60).map((x) => x.it);
+  }
+  if (q && !mode && state.project) {
+    out.push(
+      { kind: "Action", label: `New todo: ${q}`, icon: "plus", run: () => { openTodoForm(); $("#todo-form").prompt.value = q; promptEditor.render(); draft.changed(); } },
+      { kind: "Action", label: `Ask the project chat: ${q}`, icon: "comment", run: () => askChat(projectChat.input, $("#pc-form"), q, () => { closeDetail(); showView("board"); toggleBoardChat(true); }) },
+    );
+  }
+  if (q && !mode) out.push({ kind: "Action", label: `Ask Claude: ${q}`, icon: "spark", run: () => askChat(chatInput, $("#chat-form"), q, () => { closeDetail(); showView("chat"); }) });
+  return out;
+}
+
+function askChat(input, form, q, show) {
+  show();
+  input.value = q;
+  input.dispatchEvent(new Event("input"));
+  form.requestSubmit();
+}
+
+function renderPalette() {
+  const list = $("#palette-list");
+  const input = $("#palette-input");
+  palette.sel = Math.max(0, Math.min(palette.items.length - 1, palette.sel));
+  let group = null;
+  const rows = [];
+  palette.items.forEach((it, i) => {
+    if (!input.value.trim() && it.kind !== group) rows.push(h("li", { class: "palette-group", role: "presentation" }, `${it.kind}s`));
+    group = it.kind;
+    rows.push(h("li", {
+      id: `palette-${i}`, role: "option", class: "palette-item", "aria-selected": String(i === palette.sel),
+      onmousemove: () => { if (palette.sel !== i) { palette.sel = i; renderPalette(); } },
+      onclick: () => runPalette(i),
+    }, ico(it.icon), h("span", { class: "palette-label" }, it.label),
+    it.hint ? h("span", { class: "palette-hint" }, it.hint) : null,
+    it.keys ? h("kbd", {}, it.keys) : input.value.trim() ? h("span", { class: "palette-kind" }, it.kind) : null));
+  });
+  list.replaceChildren(...(rows.length ? rows : [h("li", { class: "palette-empty", role: "presentation" }, "No matches")]));
+  if (palette.items.length) input.setAttribute("aria-activedescendant", `palette-${palette.sel}`);
+  else input.removeAttribute("aria-activedescendant");
+  $(`#palette-${palette.sel}`)?.scrollIntoView({ block: "nearest" });
+}
+
+function updatePalette() {
+  palette.items = paletteResults($("#palette-input").value);
+  palette.sel = 0;
+  renderPalette();
+}
+
+function openPalette(prefill = "") {
+  setPicker(false);
+  setMenu(false);
+  const input = $("#palette-input");
+  input.value = prefill;
+  updatePalette();
+  $("#palette").showModal();
+  input.focus();
+}
+
+function runPalette(i) {
+  const it = palette.items[i];
+  if (!it) return;
+  $("#palette").close();
+  attempt(it.run)();
+}
+
+$("#palette-input").addEventListener("input", updatePalette);
+$("#palette-input").addEventListener("keydown", (e) => {
+  const step = { ArrowDown: 1, ArrowUp: -1 }[e.key] ?? (e.ctrlKey && { n: 1, p: -1 }[e.key]);
+  const page = { PageDown: 8, PageUp: -8 }[e.key];
+  if (step || page) {
+    const n = palette.items.length;
+    if (n) palette.sel = page ? palette.sel + page : (palette.sel + step + n) % n;
+    renderPalette();
+  } else if (e.key === "Enter" && !e.isComposing) runPalette(palette.sel);
+  else return;
+  e.preventDefault();
+});
+$("#palette").addEventListener("click", (e) => { if (e.target.id === "palette") e.target.close(); }); // backdrop
+$("#palette-open").addEventListener("click", () => openPalette());
+// Ctrl-k (⌘K on a Mac) works everywhere but the terminal, even while typing.
+document.addEventListener("keydown", (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "k" || e.target.closest?.(".xterm")) return;
+  const d = openDialog();
+  if (d && d.id !== "palette") return;
+  e.preventDefault();
+  e.stopPropagation();
+  d ? d.close() : openPalette();
+}, true);
 
 document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.altKey || e.isComposing) return;
