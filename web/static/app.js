@@ -2073,14 +2073,21 @@ const runPreset = attempt(async (e) => {
   const [kind, preset] = spec.split(":");
   await startProc({ kind, preset }, preset !== "deploy");
 });
-// While a quick action runs, clicking it shows its output instead of starting it again.
-$("#quick-actions").addEventListener("click", (e) => {
-  const proc = quickProc(e.target.closest("[data-run]")?.dataset.run);
+// While a quick action runs, clicking it shows its output instead of starting it again;
+// a running server is stopped instead.
+$("#quick-actions").addEventListener("click", attempt(async (e) => {
+  const spec = e.target.closest("[data-run]")?.dataset.run;
+  const proc = quickProc(spec);
   if (!proc?.running) return runPreset(e);
+  if (spec === "web:run") {
+    await api("DELETE", `/api/processes/${proc.id}`);
+    toast("Stopping server");
+    return loadProcs();
+  }
   closeDetail();
   attach(proc);
   showView("run");
-});
+}));
 
 // The latest server/test/deploy process started from the project's own checkout (not a worktree).
 const quickCmd = (spec) => ({ "web:run": state.project?.run_command, "task:test": state.project?.test_command, "task:deploy": state.project?.deploy_command })[spec];
@@ -2102,13 +2109,21 @@ function renderQuick() {
     const proc = quickProc(spec);
     const ok = proc && !proc.running && proc.exit_code === 0 && sel !== "#quick-server";
     const bad = proc && !proc.running && proc.exit_code !== 0;
-    btn.classList.toggle("running", !!proc?.running);
+    const stop = !!proc?.running && sel === "#quick-server";
+    btn.classList.toggle("running", !!proc?.running && !stop);
+    btn.classList.toggle("stop", stop);
     btn.classList.toggle("ok", !!ok);
     btn.classList.toggle("bad", !!bad);
+    if (sel === "#quick-server") {
+      const path = btn.querySelector("path");
+      path.setAttribute("d", stop ? "M7 7h10v10H7z" : "M8 5.5v13l10.5-6.5z");
+      path.setAttribute("fill", stop ? "currentColor" : "none");
+    }
     const secs = proc ? Math.max(0, Math.floor((Date.now() - new Date(proc.started_at)) / 1000)) : 0;
     const elapsed = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
-    btn.querySelector("span").textContent = proc?.running ? `${verb} ${elapsed}` : done;
+    btn.querySelector("span").textContent = stop ? "Stop server" : proc?.running ? `${verb} ${elapsed}` : done;
     btn.title = btn.disabled ? `No ${noun.split(" ")[0]} command — set one in project settings`
+      : stop ? "Server running — click to stop it"
       : proc?.running ? `${verb}… ${elapsed} — click to view output`
       : ok ? `Last ${noun} passed — click to run again`
       : bad ? `Last ${noun} failed (exit ${proc.exit_code ?? "?"}) — click to run again`

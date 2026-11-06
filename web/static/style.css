@@ -124,6 +124,8 @@ textarea { resize: vertical; line-height: 1.45; }
   content: ""; width: 12px; height: 12px; flex: none; border-radius: 50%;
   border: 2px solid color-mix(in srgb, var(--running) 30%, transparent); border-top-color: var(--running); animation: spin .8s linear infinite;
 }
+.quick-btn.stop { border-color: var(--running); background: color-mix(in srgb, var(--running) 10%, var(--surface)); }
+.quick-btn.stop svg { color: var(--failed); }
 .quick-btn.ok svg { color: var(--merged); }
 .quick-btn.ok { border-color: color-mix(in srgb, var(--merged) 50%, var(--line)); }
 .quick-btn.bad svg { color: var(--failed); }
