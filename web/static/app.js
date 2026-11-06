@@ -2470,6 +2470,7 @@ async function handleNormal(k, n, hadCount) {
       return renderPane();
     }
     if (state.pane === "chat" && k === "i") return todoChat.input.focus();
+    if (t?.status === "review" && k === "Enter") return todoKey(t, "a");
     if (t) await todoKey(t, k);
     return;
   }
