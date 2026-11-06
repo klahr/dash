@@ -2390,9 +2390,9 @@ async function handleNormal(k, n, hadCount) {
   }
 }
 
-// Forms: Ctrl-Enter adds to the queue, Ctrl-S saves a draft.
+// Forms: Ctrl-Enter adds to the queue, Ctrl-Shift-Enter or Ctrl-S saves a draft.
 $("#todo-form").addEventListener("keydown", (e) => {
-  if (e.ctrlKey && e.key === "Enter") { e.preventDefault(); $("#todo-sheet").close("queue"); }
+  if (e.ctrlKey && e.key === "Enter") { e.preventDefault(); $("#todo-sheet").close(e.shiftKey ? "draft" : "queue"); }
   if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); $("#todo-sheet").close("draft"); }
 });
 
