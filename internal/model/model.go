@@ -71,6 +71,9 @@ type Project struct {
 	// in shell mode: "" (ask for everything not allowed), ChatModeAuto or
 	// ChatModeAcceptEdits. What the mode doesn't approve still asks the user.
 	ChatPermissionMode string `json:"chat_permission_mode,omitempty"`
+	// ReviewPrompt is what the task chat's Review button asks Claude; empty
+	// means the web UI's default.
+	ReviewPrompt string `json:"review_prompt,omitempty"`
 	// MaxAutoFixes is how many times Dash sends failing tests or merge
 	// conflicts back to Claude on its own before asking a human.
 	MaxAutoFixes int `json:"max_auto_fixes"`

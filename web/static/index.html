@@ -349,6 +349,7 @@
         <label class="radio"><input type="radio" name="chat_permission_mode" value="auto"><span>Auto <em>routine actions run on their own; risky ones still ask</em></span></label>
         <label class="radio"><input type="radio" name="chat_permission_mode" value="acceptEdits"><span>Accept edits <em>file edits run on their own; commands still ask</em></span></label>
       </fieldset>
+      <label class="field"><span>Review prompt <em>what the Review button asks Claude; empty uses the default</em></span><textarea name="review_prompt" rows="4"></textarea></label>
       <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" spellcheck="false"></label>
       <label class="field"><span>Deploy command</span><input name="deploy_command" spellcheck="false"></label>
       <fieldset class="field choice">

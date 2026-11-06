@@ -1199,6 +1199,7 @@ function renderActions(t) {
       } else {
         btns.push(b("redo", "Rework", rework));
       }
+      btns.push(b("eye", "Review", reviewTodo));
       btns.push(b("merge", "Approve and merge", post("approve", null, "Approved — merging"), "review grow"));
       break;
     case "merging":
@@ -1248,6 +1249,23 @@ $("#d-more").addEventListener("click", attempt(async () => {
   if (!choices.length) return;
   await menu(choices);
 }));
+
+// The task chat already gives Claude the task's instructions and diff, and runs
+// in its worktree; a project can replace this prompt in its settings.
+const DEFAULT_REVIEW_PROMPT = `Review this task's changes as a strict senior reviewer, before they are merged. Don't modify any files.
+
+Check, in this order:
+1. Correctness: does it fully do what the instructions ask? Bugs, unhandled edge cases, regressions, callers that break.
+2. Security and data loss risks.
+3. Tests: are the changes covered where the project has tests? Run the relevant ones if you can.
+4. Scope: unrelated changes, leftover debug code, dead code, code that doesn't match the surrounding style.
+
+Read the surrounding code where you need to. Start with a one-line verdict, "Ready to merge" or "Needs changes", then list each must-fix issue with file:line and a concrete fix, then optional nice-to-haves. Leave out praise and anything you haven't verified.`;
+
+function reviewTodo() {
+  const prompt = state.project?.review_prompt || DEFAULT_REVIEW_PROMPT;
+  askChat(todoChat.input, $("#d-chat-form"), prompt, () => { state.pane = "chat"; renderPane(); });
+}
 
 async function reworkTodo(t) {
   const res = await ask({ title: "Send back for rework", body: "Claude continues in the same worktree with your notes. Paste or attach a screenshot to show what's wrong.", input: true, placeholder: "What should change?", ok: "Send back", attach: true });
@@ -1689,6 +1707,8 @@ function openSettings() {
   f.copy_files.value = (p.copy_files || []).join("\n");
   f.allowed_tools.value = (p.allowed_tools || []).join("\n");
   f.chat_permission_mode.value = p.chat_permission_mode || "";
+  f.review_prompt.value = p.review_prompt || "";
+  f.review_prompt.placeholder = DEFAULT_REVIEW_PROMPT;
   f.run_command.value = p.run_command || "";
   f.deploy_command.value = p.deploy_command || "";
   f.auto_push.checked = !!p.auto_push;
@@ -1727,6 +1747,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     copy_files: f.copy_files.value.split("\n").map((x) => x.trim()).filter(Boolean),
     allowed_tools: f.allowed_tools.value.split("\n").map((x) => x.trim()).filter(Boolean),
     chat_permission_mode: f.chat_permission_mode.value,
+    review_prompt: f.review_prompt.value.trim(),
     run_command: f.run_command.value.trim(),
     deploy_command: f.deploy_command.value.trim(),
     auto_push: f.auto_push.checked,
@@ -1962,6 +1983,11 @@ const todoChat = makeChat({
         await api("PATCH", `/api/todos/${t.id}`, { prompt: answer });
         toast("Instructions updated");
       }) }, "draft", "Use as instructions") : null,
+      t?.worktree && ["review", "failed"].includes(t.status) ? ib({ class: "link", onclick: attempt(async () => {
+        if (!await ask({ title: "Send back for rework?", body: "Claude continues in the same worktree with this answer as feedback.", ok: "Send back" })) return;
+        await api("POST", `/api/todos/${t.id}/rework`, { feedback: answer });
+        toast("Sent back for rework");
+      }) }, "redo", "Send back as rework") : null,
       ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
   },
 });

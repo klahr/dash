@@ -117,6 +117,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		CopyFiles     *[]string `json:"copy_files"`
 		AllowedTools  *[]string `json:"allowed_tools"`
 		ChatMode      *string   `json:"chat_permission_mode"`
+		ReviewPrompt  *string   `json:"review_prompt"`
 		MaxAutoFixes  *int      `json:"max_auto_fixes"`
 		AutoPush      *bool     `json:"auto_push"`
 		MergeMode     *string   `json:"merge_mode"`
@@ -158,6 +159,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		set(&p.AutoPush, req.AutoPush)
 		set(&p.Color, req.Color)
 		set(&p.ChatPermissionMode, req.ChatMode)
+		set(&p.ReviewPrompt, req.ReviewPrompt)
 		if req.CopyFiles != nil {
 			p.CopyFiles = cleanList(*req.CopyFiles)
 		}
