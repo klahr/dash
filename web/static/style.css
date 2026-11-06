@@ -255,6 +255,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .prompt summary { padding: 12px 14px; font-weight: 600; cursor: pointer; color: var(--muted); list-style: none; display: flex; justify-content: space-between; }
 .prompt summary::after { content: "Show"; color: var(--accent); font-size: 14px; }
 .prompt[open] summary::after { content: "Hide"; }
+.prompt[open] summary { position: sticky; top: calc(-1 * var(--pad-t)); z-index: 6; background: var(--surface); border-radius: var(--r-m) var(--r-m) 0 0; }
 .prompt-text { padding: 0 14px 14px; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 72ch; }
 .feedback-list { margin: 10px 0 0; padding-left: 18px; color: var(--muted); }
 .error-note { border-left: 3px solid var(--failed); background: color-mix(in srgb, var(--failed) 10%, transparent); padding: 10px 12px; border-radius: 0 var(--r-s) var(--r-s) 0; margin-bottom: 12px; overflow-wrap: anywhere; }
