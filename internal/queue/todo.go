@@ -52,6 +52,11 @@ type TodoEngine struct {
 	MaxParallel  int
 	TestTimeout  time.Duration
 	SetupTimeout time.Duration
+	// Summarizer condenses Claude's final message into the todo's one-line
+	// Summary (optional; without it the message's first sentence is used).
+	Summarizer interface {
+		Summary(ctx context.Context, report string) (string, error)
+	}
 
 	minute  time.Duration // length of a "minute" for run limits; shortened in tests
 	wake    chan struct{}
@@ -435,7 +440,48 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	if uerr == nil {
 		*t = nt
 	}
+	if err == nil {
+		e.summarize(t.ID, res.Result)
+	}
 	return err
+}
+
+// summarize sets the todo's Summary from Claude's final message, in the
+// background when a Summarizer has to be asked.
+func (e *TodoEngine) summarize(todoID, report string) {
+	report = strings.TrimSpace(report)
+	if report == "" {
+		return
+	}
+	set := func(s string) {
+		_, _ = e.Store.UpdateTodo(todoID, func(x *model.Todo) error { x.Summary = s; return nil })
+	}
+	if e.Summarizer == nil {
+		set(firstSentence(report))
+		return
+	}
+	go func() {
+		s, err := e.Summarizer.Summary(context.Background(), report)
+		if err != nil {
+			slog.Debug("summary", "todo", todoID, "err", err)
+			s = firstSentence(report)
+		}
+		set(s)
+	}()
+}
+
+func firstSentence(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	for i := 0; i+1 < len(s); i++ {
+		if (s[i] == '.' || s[i] == '!' || s[i] == '?') && s[i+1] == ' ' {
+			s = s[:i+1]
+			break
+		}
+	}
+	if r := []rune(s); len(r) > 160 {
+		s = string(r[:159]) + "…"
+	}
+	return s
 }
 
 // watchdog calls over once the run has used limit, not counting time it

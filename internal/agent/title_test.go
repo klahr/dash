@@ -32,3 +32,12 @@ func TestTitlerReal(t *testing.T) {
 	}
 	t.Logf("title: %q", title)
 }
+
+func TestCleanSummary(t *testing.T) {
+	if got, err := cleanSummary("\"Added a summary\nline to Done todos.\"\n"); err != nil || got != "Added a summary line to Done todos." {
+		t.Errorf("cleanSummary = %q, %v", got, err)
+	}
+	if _, err := cleanSummary(" "); err == nil {
+		t.Error("empty output should be an error")
+	}
+}

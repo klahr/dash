@@ -36,6 +36,8 @@ type ExecResult struct {
 	ResumeFailed bool
 	// Stop is the result subtype, e.g. "success" or "error_max_turns".
 	Stop string
+	// Result is Claude's final message.
+	Result string
 }
 
 // Executor carries out a Todo inside its worktree. emit receives
@@ -114,7 +116,7 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(string))
 			}
 			return
 		case "result":
-			res.CostUSD, res.Turns, res.Stop = ev.Cost, ev.NumTurns, ev.Subtype
+			res.CostUSD, res.Turns, res.Stop, res.Result = ev.Cost, ev.NumTurns, ev.Subtype, ev.Result
 			if ev.IsError || ev.Subtype != "success" {
 				resultErr = fmt.Errorf("claude reported %s: %s", ev.Subtype, strings.TrimSpace(ev.Result))
 			}

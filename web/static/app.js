@@ -755,6 +755,7 @@ function todoRow(t, li = -1, ri = -1) {
   const atCursor = keys.active && keys.cur.lane === li && keys.cur.row === ri;
   let sub = t.prompt.replace(/\s+/g, " ");
   let subClass = "todo-sub";
+  if (t.summary && t.status === "merged") sub = t.summary;
   if (t.status === "in_progress") { sub = state.lastLine.get(t.id) || "Working…"; subClass += " progress"; }
   if (t.paused) sub = t.status === "in_progress" ? "Pausing…" : "Paused";
   if (t.error) { sub = t.error; subClass += " err"; }

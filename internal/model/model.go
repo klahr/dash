@@ -171,6 +171,8 @@ type Todo struct {
 	DiffDel   int     `json:"diff_del,omitempty"`
 	CostUSD   float64 `json:"cost_usd,omitempty"` // API-equivalent cost reported by Claude Code
 	Runs      int     `json:"runs,omitempty"`
+	// Summary is one sentence on what Claude did, from its latest run.
+	Summary string `json:"summary,omitempty"`
 	// Attachments are files (usually screenshots) given to Claude with the task.
 	Attachments []Attachment `json:"attachments,omitempty"`
 	// MergedCommit is the commit that landed the todo on the default branch.

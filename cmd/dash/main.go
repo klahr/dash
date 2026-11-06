@@ -49,8 +49,8 @@ func main() {
 	pauseAt := flag.Float64("pause-at", 0.9, "pause the todo queue when a subscription usage window reaches this fraction (0 = only when limited)")
 	askPerms := flag.Bool("permission-prompts", true, "send Claude's permission requests to the UI instead of denying them")
 	editor := flag.String("editor", os.Getenv("DASH_EDITOR"), "command that opens a worktree on this machine, e.g. \"code\" (or $DASH_EDITOR)")
-	autoTitles := flag.Bool("auto-titles", true, "name todos created without a title (a short claude call with -title-model)")
-	titleModel := flag.String("title-model", "haiku", "model for automatic titles")
+	autoTitles := flag.Bool("auto-titles", true, "name todos created without a title and summarise finished ones (a short claude call with -title-model)")
+	titleModel := flag.String("title-model", "haiku", "model for automatic titles and summaries")
 	hostname, _ := os.Hostname()
 	machine := flag.String("name", strings.ToLower(strings.Split(hostname, ".")[0]), "this computer's name in the dashboard")
 	var peers []peer.Peer
@@ -134,6 +134,9 @@ func main() {
 		WorktreeRoot: merges.WorktreeRoot,
 		MaxParallel:  *parallel,
 	})
+	if *autoTitles {
+		todos.Summarizer = agent.Titler{Bin: *claudeBin, Model: *titleModel}
+	}
 	if *askPerms {
 		// Claude Code reaches the permission prompt server on a loopback-only
 		// plain-HTTP listener, whatever -addr and TLS are set to.
