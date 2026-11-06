@@ -1,6 +1,6 @@
 // Dash web client. REST for state, /ws/events for live updates,
 // /ws/chat for streaming answers, /ws/proc/:id for terminals.
-import { mdEditor, drafts, renderMarkdown, vimOn, setVim } from "./editor.js";
+import { mdEditor, codeEditor, drafts, renderMarkdown, vimOn, setVim } from "./editor.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 // The server's LC_TIME, since browsers format times by their UI language instead.
@@ -1496,7 +1496,7 @@ function diffLines(f) {
 function toggleVim() {
   setVim(!vimOn());
   syncPrefs();
-  toast(vimOn() ? "Vim keys on in the task editor" : "Vim keys off");
+  toast(vimOn() ? "Vim keys on in the editors" : "Vim keys off");
 }
 
 // ------------------------------------------------------------------ preferences (this browser only)
@@ -2607,13 +2607,15 @@ function renderGraph(res) {
 }
 
 // ------------------------------------------------------------------ files
-// The default branch's files as a tree, and a plain text editor. Saving
+// The default branch's files as a tree, and a code editor. Saving
 // doesn't write to the branch: it queues a task that commits the edit in its
 // own worktree and goes to review. Files git doesn't track (untracked or
 // ignored, like .env) are listed too and saved straight to the checkout.
 // Each project keeps its open file, so switching projects loses nothing.
 const fileSessions = new Map(); // project key → { list, local, tree, open, path, isLocal, blob, original, text, note, size, saved }
 const fileText = $("#file-text");
+const fileEditor = codeEditor(fileText);
+let fileShown = {}; // the session and path the editor holds; another one starts a fresh undo history
 function fileSession() {
   if (!state.project) return null;
   const k = projectKey(state.project);
@@ -2686,10 +2688,13 @@ function renderFileTree() {
 function renderFile() {
   const s = fileSession(), editable = !!s?.path && !s.note, dirty = fileDirty(s);
   $("#file-head").hidden = !s?.path;
-  fileText.hidden = !editable;
+  fileEditor.el.hidden = !editable;
   $("#file-empty").hidden = editable;
   if (s?.path) $("#file-path").textContent = s.path;
-  if (editable && fileText.value !== s.text) { fileText.value = s.text; fileText.scrollTop = 0; }
+  if (editable && (fileShown.s !== s || fileShown.path !== s.path || fileText.value !== s.text)) {
+    fileEditor.load(s.text, s.path);
+    fileShown = { s, path: s.path };
+  }
   $("#file-save").disabled = $("#file-revert").disabled = !dirty;
   $("#file-state").textContent = dirty ? "Modified" : editable && s.saved ? (s.isLocal ? "Saved" : "Saved as a task") : s?.isLocal ? "Local file, not in git" : "";
   const save = $("#file-save");
@@ -2745,21 +2750,15 @@ fileText.addEventListener("input", () => {
   s.text = fileText.value;
   if (was !== fileDirty(s)) renderFile();
 });
-fileText.addEventListener("keydown", (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveFile().catch(fail); return; }
-  if (e.key === "Escape") { fileText.blur(); return; }
-  // Tab indents; Escape first to move focus on with Tab.
-  if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
-    e.preventDefault();
-    if (!document.execCommand("insertText", false, "\t")) fileText.setRangeText("\t", fileText.selectionStart, fileText.selectionEnd, "end");
-  }
-});
+// Before CodeMirror and vim see it. Tab indents; Escape first to move focus on with Tab.
+fileEditor.el.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "s") { e.preventDefault(); e.stopPropagation(); saveFile().catch(fail); }
+}, true);
 $("#file-save").addEventListener("click", () => saveFile().catch(fail));
 $("#file-revert").addEventListener("click", () => {
   const s = fileSession();
   if (!s) return;
-  s.text = s.original;
-  renderFile();
+  fileEditor.replace(s.original); // undoable; its input event updates s.text
 });
 $("#file-filter").addEventListener("input", renderFileTree);
 addEventListener("beforeunload", (e) => { if ([...fileSessions.values()].some(fileDirty)) e.preventDefault(); });

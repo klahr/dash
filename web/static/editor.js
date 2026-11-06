@@ -1,10 +1,12 @@
-// Markdown prompt editor (CodeMirror 6, optional vim keys) on top of a hidden
-// textarea that stays the source of truth, plus autosaved drafts in
-// localStorage so a closed sheet, a reload or a crash loses nothing.
+// Markdown prompt editor and repo file editor (CodeMirror 6, optional vim
+// keys) on top of hidden textareas that stay the source of truth, plus
+// autosaved drafts in localStorage so a closed sheet, a reload or a crash
+// loses nothing.
 
 import {
   EditorView, EditorState, Compartment, Prec, Transaction, keymap, placeholder, drawSelection,
-  history, historyKeymap, defaultKeymap, insertNewline, syntaxHighlighting, HighlightStyle, LanguageDescription, tags as t,
+  lineNumbers, highlightActiveLine, highlightActiveLineGutter,
+  history, historyKeymap, defaultKeymap, insertNewline, syntaxHighlighting, HighlightStyle, LanguageDescription, bracketMatching, tags as t,
   markdown, languages, vim, getCM,
 } from "./vendor/codemirror.js";
 
@@ -226,52 +228,24 @@ const fenceLanguage = (info) => {
 
 const hasFiles = (data) => !!data?.files?.length;
 
-// mdEditor replaces a textarea with CodeMirror. The textarea stays (hidden)
-// as the source of truth: reading .value works as before, and writing it
-// (or a form reset) updates the editor. el is the editor's element.
-export function mdEditor(textarea) {
+// mirror hides a textarea behind a CodeMirror view, in a new element after
+// it. The textarea stays the source of truth: reading .value works as
+// before, and writing it (or a form reset) updates the editor without firing
+// input; edits by the user fire input on the textarea. Put sync in the
+// view's extensions, then attach the view.
+function mirror(textarea, className) {
   const native = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
   const wrap = document.createElement("div");
-  wrap.className = "md-editor";
+  wrap.className = className;
   textarea.after(wrap);
   textarea.hidden = true;
-  const labelledBy = textarea.getAttribute("aria-labelledby");
-  const vimMode = new Compartment(), readOnly = new Compartment();
   let quiet = false; // a programmatic write: not an edit by the user
-  const view = new EditorView({
-    parent: wrap,
-    state: EditorState.create({
-      doc: textarea.value,
-      extensions: [
-        vimMode.of(vimOn() ? vimKeys() : []),
-        history(),
-        Prec.high(keymap.of([
-          { key: "Enter", run: (v) => continueList(v) || insertNewline(v), shift: insertNewline },
-          { key: "Tab", run: (v) => indent(v, false), shift: (v) => indent(v, true) },
-        ])),
-        // Esc closes the dialog and Ctrl-Enter submits the form, as before.
-        keymap.of([...defaultKeymap.filter((b) => b.key !== "Escape" && b.key !== "Mod-Enter"), ...historyKeymap]),
-        markdown({ codeLanguages: fenceLanguage, addKeymap: false }),
-        syntaxHighlighting(highlightStyle),
-        EditorView.lineWrapping,
-        placeholder(textarea.placeholder),
-        readOnly.of(EditorState.readOnly.of(textarea.readOnly)),
-        EditorView.contentAttributes.of({
-          spellcheck: "true", autocorrect: "on", autocapitalize: "sentences", writingsuggestions: "true",
-          ...(labelledBy ? { "aria-labelledby": labelledBy } : {}),
-        }),
-        // Files are attachments: leave pasted or dropped files to the form.
-        EditorView.domEventHandlers({ paste: (e) => hasFiles(e.clipboardData), drop: (e) => hasFiles(e.dataTransfer) }),
-        EditorView.updateListener.of((u) => {
-          if (!u.docChanged) return;
-          native.set.call(textarea, u.state.doc.toString());
-          if (!quiet) textarea.dispatchEvent(new Event("input", { bubbles: true }));
-        }),
-        theme,
-      ],
-    }),
+  let view = null;
+  const sync = EditorView.updateListener.of((u) => {
+    if (!u.docChanged) return;
+    native.set.call(textarea, u.state.doc.toString());
+    if (!quiet) textarea.dispatchEvent(new Event("input", { bubbles: true }));
   });
-
   const render = () => {
     const v = native.get.call(textarea);
     if (v === view.state.doc.toString()) return;
@@ -284,14 +258,61 @@ export function mdEditor(textarea) {
       });
     } finally { quiet = false; }
   };
-  Object.defineProperty(textarea, "value", {
-    configurable: true,
-    get() { return native.get.call(this); },
-    set(v) { native.set.call(this, v); render(); },
+  return {
+    wrap,
+    sync,
+    render,
+    setNative: (v) => native.set.call(textarea, v), // for a view replaced by setState, which sync doesn't see
+    attach(v) {
+      view = v;
+      Object.defineProperty(textarea, "value", {
+        configurable: true,
+        get() { return native.get.call(this); },
+        set(v) { native.set.call(this, v); render(); },
+      });
+      textarea.focus = (opts) => view.focus(opts);
+      // reset() restores the default value without the setter; it runs right after the event.
+      textarea.form?.addEventListener("reset", () => queueMicrotask(render));
+    },
+  };
+}
+
+// mdEditor replaces a textarea with a markdown CodeMirror (see mirror).
+// el is the editor's element.
+export function mdEditor(textarea) {
+  const m = mirror(textarea, "md-editor");
+  const labelledBy = textarea.getAttribute("aria-labelledby");
+  const vimMode = new Compartment(), readOnly = new Compartment();
+  const view = new EditorView({
+    parent: m.wrap,
+    state: EditorState.create({
+      doc: textarea.value,
+      extensions: [
+        vimMode.of(vimOn() ? vimKeys() : []),
+        history(),
+        Prec.high(keymap.of([
+          { key: "Enter", run: (v) => continueList(v) || insertNewline(v), shift: insertNewline },
+          { key: "Tab", run: (v) => indent(v, false), shift: (v) => indent(v, true) },
+        ])),
+        // Esc closes the dialog and Ctrl-Enter submits the form, as before.
+        keymap.of([...defaultKeymap.filter((b) => b.key !== "Escape" && b.key !== "Mod-Enter"), ...historyKeymap]),
+        markdownLang(),
+        syntaxHighlighting(highlightStyle),
+        EditorView.lineWrapping,
+        placeholder(textarea.placeholder),
+        readOnly.of(EditorState.readOnly.of(textarea.readOnly)),
+        EditorView.contentAttributes.of({
+          spellcheck: "true", autocorrect: "on", autocapitalize: "sentences", writingsuggestions: "true",
+          ...(labelledBy ? { "aria-labelledby": labelledBy } : {}),
+        }),
+        // Files are attachments: leave pasted or dropped files to the form.
+        EditorView.domEventHandlers({ paste: (e) => hasFiles(e.clipboardData), drop: (e) => hasFiles(e.dataTransfer) }),
+        m.sync,
+        theme,
+      ],
+    }),
   });
-  textarea.focus = (opts) => view.focus(opts);
-  // reset() restores the default value without the setter; it runs right after the event.
-  textarea.form?.addEventListener("reset", () => queueMicrotask(render));
+  m.attach(view);
   new MutationObserver(() => view.dispatch({ effects: readOnly.reconfigure(EditorState.readOnly.of(textarea.readOnly)) }))
     .observe(textarea, { attributes: true, attributeFilter: ["readonly"] });
 
@@ -300,10 +321,138 @@ export function mdEditor(textarea) {
   }, true);
 
   const ed = {
-    el: wrap,
+    el: m.wrap,
     view,
-    render,
+    render: m.render,
     setVim(on) { view.dispatch({ effects: vimMode.reconfigure(on ? vimKeys() : []) }); },
+  };
+  editors.add(ed);
+  return ed;
+}
+
+// ---- file editor
+
+// Tab inserts a tab character, or indents every line of a multi-line
+// selection; Shift-Tab removes a tab or up to a tab's width of spaces.
+function codeIndent(view, out) {
+  const { state } = view;
+  const lines = (r) => {
+    const to = r.to > r.from && state.doc.lineAt(r.to).from === r.to ? r.to - 1 : r.to; // not the line a selection ends at the start of
+    return [state.doc.lineAt(r.from).number, state.doc.lineAt(to).number];
+  };
+  if (!out && state.selection.ranges.every((r) => { const [a, b] = lines(r); return a === b; })) {
+    view.dispatch(state.update(state.replaceSelection("\t"), { scrollIntoView: true, userEvent: "input" }));
+    return true;
+  }
+  const changes = [], seen = new Set();
+  for (const r of state.selection.ranges) {
+    const [a, b] = lines(r);
+    for (let n = a; n <= b; n++) {
+      if (seen.has(n)) continue;
+      seen.add(n);
+      const line = state.doc.line(n);
+      if (!out) changes.push({ from: line.from, insert: "\t" });
+      else {
+        const k = line.text.match(new RegExp(`^(\\t| {1,${state.tabSize}})`))?.[0].length || 0;
+        if (k) changes.push({ from: line.from, to: line.from + k });
+      }
+    }
+  }
+  if (changes.length) view.dispatch({ changes, userEvent: out ? "delete.dedent" : "input.indent" });
+  return true;
+}
+
+const markdownLang = () => markdown({ codeLanguages: fenceLanguage, addKeymap: false });
+
+// Themes listed first take precedence: this goes before theme.
+const codeTheme = EditorView.theme({
+  "&": { height: "100%", borderColor: "transparent", borderRadius: "0" },
+  ".cm-scroller": { minHeight: "0" },
+  ".cm-gutters": { backgroundColor: "var(--bg)", color: "var(--faint)", borderRight: "1px solid var(--line)" },
+  ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px 0 12px" },
+  ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "color-mix(in srgb, var(--text) 5%, transparent)" },
+  ".cm-activeLineGutter": { color: "var(--muted)" },
+  "&.cm-focused .cm-matchingBracket": { backgroundColor: "color-mix(in srgb, var(--accent) 30%, transparent)", outline: "1px solid color-mix(in srgb, var(--accent) 60%, transparent)" },
+  "&.cm-focused .cm-nonmatchingBracket": { color: "var(--failed)" },
+}, { dark: true });
+
+// codeEditor replaces a textarea with a code CodeMirror (see mirror). load
+// opens a file: highlighting by its name, scrolled to the top, with no undo
+// history. Esc leaves the editor (in vim, only from normal mode).
+export function codeEditor(textarea) {
+  const m = mirror(textarea, "code-editor");
+  const label = textarea.getAttribute("aria-label");
+  const vimMode = new Compartment(), language = new Compartment();
+  let vimEnabled = vimOn(), path = null;
+  const extensions = () => [
+    vimMode.of(vimEnabled ? vimKeys() : []),
+    history(),
+    lineNumbers(),
+    highlightActiveLineGutter(),
+    highlightActiveLine(),
+    bracketMatching(),
+    Prec.high(keymap.of([{ key: "Tab", run: (v) => codeIndent(v, false), shift: (v) => codeIndent(v, true) }])),
+    keymap.of([...defaultKeymap, ...historyKeymap]),
+    language.of([]),
+    syntaxHighlighting(highlightStyle),
+    EditorView.contentAttributes.of({
+      spellcheck: "false", autocorrect: "off", autocapitalize: "off", writingsuggestions: "false",
+      ...(label ? { "aria-label": label } : {}),
+    }),
+    m.sync,
+    codeTheme,
+    theme,
+  ];
+  const view = new EditorView({ parent: m.wrap, state: EditorState.create({ doc: textarea.value, extensions: extensions() }) });
+  m.attach(view);
+
+  let leaving = false; // vim takes this Esc to leave insert or visual mode
+  view.dom.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || e.target !== view.contentDOM) return;
+    leaving = vimEnabled && !vimNormal(view);
+    if (leaving) return;
+    e.preventDefault();
+    e.stopPropagation();
+    view.contentDOM.blur();
+  }, true);
+  view.dom.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && leaving) { leaving = false; e.stopPropagation(); } // vim had it: keep focus
+  });
+
+  const ed = {
+    el: m.wrap,
+    view,
+    render: m.render,
+    setVim(on) {
+      vimEnabled = on;
+      view.dispatch({ effects: vimMode.reconfigure(on ? vimKeys() : []) });
+    },
+    // setPath highlights the text as the file at path; unknown types are plain text.
+    setPath(p) {
+      path = p;
+      const set = (ext) => view.dispatch({ effects: language.reconfigure(ext) });
+      const lang = LanguageDescription.matchFilename(languages, (p || "").split("/").pop());
+      if (!lang) return set([]);
+      if (lang.name === "Markdown") return set(markdownLang());
+      if (lang.support) return set(lang.support);
+      set([]);
+      lang.load().then((support) => { if (path === p) set(support); }, () => {});
+    },
+    // load replaces the text without firing input, and starts a new history.
+    load(text, p) {
+      m.setNative(text);
+      view.setState(EditorState.create({ doc: text, extensions: extensions() }));
+      view.scrollDOM.scrollTop = view.scrollDOM.scrollLeft = 0;
+      ed.setPath(p);
+    },
+    // replace swaps in text as an edit by the user: undoable, and fires input.
+    replace(text) {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: text },
+        selection: { anchor: Math.min(view.state.selection.main.head, text.length) },
+        userEvent: "input.replace",
+      });
+    },
   };
   editors.add(ed);
   return ed;
