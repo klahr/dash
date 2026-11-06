@@ -34,7 +34,7 @@ import (
 
 func main() {
 	home, _ := os.UserHomeDir()
-	addr := flag.String("addr", "127.0.0.1:7777", "listen address; to reach Dash from other devices use HTTPS (-tls-cert, or a proxy with -trust-proxy)")
+	addr := flag.String("addr", "127.0.0.1:7788", "listen address; to reach Dash from other devices use HTTPS (-tls-cert, or a proxy with -trust-proxy)")
 	tlsCert := flag.String("tls-cert", "", "serve HTTPS with this certificate (PEM), e.g. from `tailscale cert`")
 	tlsKey := flag.String("tls-key", "", "private key for -tls-cert")
 	trustProxy := flag.Bool("trust-proxy", false, "trust X-Forwarded-Proto/-For/-Host from a reverse proxy that terminates TLS (Caddy, nginx, Tailscale Serve)")

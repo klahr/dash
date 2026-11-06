@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	server := flag.String("server", envOr("DASH_SERVER", "http://127.0.0.1:7777"), "Dash server URL (or $DASH_SERVER)")
+	server := flag.String("server", envOr("DASH_SERVER", "http://127.0.0.1:7788"), "Dash server URL (or $DASH_SERVER)")
 	envFile := flag.String("env", ".env", "file with DASH_USERNAME / DASH_PASSWORD")
 	flag.Parse()
 

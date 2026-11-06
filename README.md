@@ -14,7 +14,7 @@ go build -o bin/dash ./cmd/dash && ./bin/dash
 
 New projects are created in `~/dash-projects`; change it with `-projects` or `DASH_PROJECTS`.
 
-Open http://127.0.0.1:7777, or use the terminal client:
+Open http://127.0.0.1:7788, or use the terminal client:
 
 ```sh
 go build -o bin/dash-tui ./cmd/dash-tui && ./bin/dash-tui
@@ -38,7 +38,7 @@ For Claude Desktop, add it to `claude_desktop_config.json`:
   "env": {"DASH_USERNAME": "me", "DASH_PASSWORD": "secret"}}}}
 ```
 
-Use `-server` (or `DASH_SERVER`) when Dash isn't on `http://127.0.0.1:7777`, and `-env` to read
+Use `-server` (or `DASH_SERVER`) when Dash isn't on `http://127.0.0.1:7788`, and `-env` to read
 the credentials from a `.env` file instead.
 
 ### claude.ai and the Claude app (custom connector)
@@ -56,7 +56,7 @@ With Tailscale Funnel (it serves only ports 443, 8443 and 10000; 8443 leaves 443
 
 ```sh
 for p in /mcp /authorize /token /register /.well-known; do
-  tailscale funnel --bg --https=8443 --set-path=$p http://127.0.0.1:7777$p
+  tailscale funnel --bg --https=8443 --set-path=$p http://127.0.0.1:7788$p
 done
 ./bin/dash -trust-proxy -public-url https://<machine>.<tailnet>.ts.net:8443
 ```
@@ -79,9 +79,9 @@ don't exist. Then in claude.ai go to Settings → Connectors → Add custom conn
 
 Dash runs commands on your machine, so only expose it over HTTPS. Two easy ways:
 
-- **Tailscale:** keep Dash on `127.0.0.1`, run `tailscale serve --bg 7777`, and start Dash with
+- **Tailscale:** keep Dash on `127.0.0.1`, run `tailscale serve --bg 7788`, and start Dash with
   `-trust-proxy`. Open `https://<machine>.<tailnet>.ts.net` on your phone.
-- **Your own certificate:** `./bin/dash -addr :7777 -tls-cert cert.pem -tls-key key.pem`.
+- **Your own certificate:** `./bin/dash -addr :7788 -tls-cert cert.pem -tls-key key.pem`.
 
 Any other HTTPS reverse proxy (Caddy, nginx) works the same way as Tailscale: keep Dash on
 `127.0.0.1` and pass `-trust-proxy`.

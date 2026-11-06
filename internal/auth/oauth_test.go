@@ -145,7 +145,7 @@ func TestNewOAuthNeedsHTTPSOrigin(t *testing.T) {
 			t.Errorf("%q accepted", u)
 		}
 	}
-	if _, err := NewOAuth(a, "http://127.0.0.1:7777"); err != nil {
+	if _, err := NewOAuth(a, "http://127.0.0.1:7788"); err != nil {
 		t.Errorf("loopback: %v", err)
 	}
 }
