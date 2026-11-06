@@ -2122,7 +2122,8 @@ function renderQuick() {
     btn.disabled = !quickCmd(spec);
     const proc = quickProc(spec);
     const ok = proc && !proc.running && proc.exit_code === 0 && sel !== "#quick-server";
-    const bad = proc && !proc.running && proc.exit_code !== 0;
+    const bad = proc && !proc.running && proc.exit_code != null && proc.exit_code !== 0;
+    const cut = proc && !proc.running && proc.exit_code == null;
     const stop = !!proc?.running && sel === "#quick-server";
     btn.classList.toggle("running", !!proc?.running && !stop);
     btn.classList.toggle("stop", stop);
@@ -2140,7 +2141,8 @@ function renderQuick() {
       : stop ? "Server running — click to stop it"
       : proc?.running ? `${verb}… ${elapsed} — click to view output`
       : ok ? `Last ${noun} passed — click to run again`
-      : bad ? `Last ${noun} failed (exit ${proc.exit_code ?? "?"}) — click to run again`
+      : bad ? `Last ${noun} failed (exit ${proc.exit_code}) — click to run again`
+      : cut ? `Last ${noun} was interrupted by a Dash restart — click to run again`
       : `${done} (${key} on the Shell view)`;
   }
 }

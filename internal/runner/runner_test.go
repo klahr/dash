@@ -88,3 +88,50 @@ func TestTaskExitCode(t *testing.T) {
 		t.Fatalf("want exited with 3, got %+v", got)
 	}
 }
+
+func TestKeepRestoresLastRuns(t *testing.T) {
+	path := t.TempDir() + "/processes.json"
+	dir := t.TempDir()
+	m := NewManager(nopPub{})
+	if err := m.Keep(path); err != nil {
+		t.Fatal(err)
+	}
+	pass, _ := m.StartTask("proj", dir, "echo ok")
+	fail, _ := m.StartTask("proj", dir, "exit 3")
+	srv, _ := m.StartWeb("proj", dir, "sleep 30")
+	for _, id := range []string{pass.ID, fail.ID} {
+		s, err := m.Attach(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range s.Output {
+		}
+	}
+	time.Sleep(50 * time.Millisecond) // wait() saves after closing subscribers
+	m.StopAll()
+
+	r := NewManager(nopPub{})
+	if err := r.Keep(path); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]model.Process{}
+	for _, p := range r.List("proj") {
+		got[p.ID] = p
+	}
+	if p := got[pass.ID]; p.Running || p.ExitCode == nil || *p.ExitCode != 0 {
+		t.Fatalf("passed task restored as %+v", p)
+	}
+	if p := got[fail.ID]; p.ExitCode == nil || *p.ExitCode != 3 {
+		t.Fatalf("failed task restored as %+v", p)
+	}
+	if p, ok := got[srv.ID]; !ok || p.Running || p.ExitCode != nil {
+		t.Fatalf("interrupted server restored as %+v", p)
+	}
+	s, err := r.Attach(pass.ID)
+	if err != nil || !strings.Contains(string(s.Scrollback), "ok") {
+		t.Fatalf("scrollback not restored: %v %q", err, s.Scrollback)
+	}
+	if err := r.Stop(srv.ID); err != nil {
+		t.Fatal(err)
+	}
+}

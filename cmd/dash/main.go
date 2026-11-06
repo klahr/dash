@@ -118,6 +118,9 @@ func main() {
 	git := gitops.New(events)
 	git.SignCommits = *signCommits
 	procs := runner.NewManager(events)
+	if err := procs.Keep(filepath.Join(*dataDir, "processes.json")); err != nil {
+		slog.Warn("read processes", "err", err)
+	}
 	defer procs.StopAll()
 
 	tracker := usage.New(events, *pauseAt)

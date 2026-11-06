@@ -4,6 +4,7 @@
 package runner
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -40,6 +41,70 @@ type Manager struct {
 	pub   Publisher
 	mu    sync.RWMutex
 	procs map[string]*proc
+	store string // file keeping the last server/test/deploy runs, if any
+}
+
+type savedProc struct {
+	Info       model.Process `json:"info"`
+	Scrollback []byte        `json:"scrollback"`
+}
+
+// Keep saves the latest run of each server, test and deploy command in path,
+// so their outcome and output survive restarting or updating Dash. Runs that
+// a restart cut short come back without an exit code (interrupted).
+func (m *Manager) Keep(path string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.store = path
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var saved []savedProc
+	if err := json.Unmarshal(b, &saved); err != nil {
+		return err
+	}
+	for _, s := range saved {
+		if s.Info.Running || (s.Info.ExitCode != nil && *s.Info.ExitCode == -1) {
+			s.Info.Running, s.Info.ExitCode = false, nil
+		}
+		m.procs[s.Info.ID] = &proc{info: s.Info, buf: s.Scrollback, subs: map[chan []byte]struct{}{}}
+	}
+	return nil
+}
+
+// save writes the latest non-interactive run per project, kind, command and directory.
+func (m *Manager) save() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.store == "" {
+		return
+	}
+	latest := map[[4]string]savedProc{}
+	for _, p := range m.procs {
+		p.mu.Lock()
+		s := savedProc{Info: p.info, Scrollback: append([]byte(nil), p.buf...)}
+		p.mu.Unlock()
+		if s.Info.Kind == model.ProcPTY {
+			continue
+		}
+		k := [4]string{s.Info.ProjectID, string(s.Info.Kind), s.Info.Command, s.Info.Dir}
+		if cur, ok := latest[k]; !ok || s.Info.StartedAt.After(cur.Info.StartedAt) {
+			latest[k] = s
+		}
+	}
+	out := make([]savedProc, 0, len(latest))
+	for _, s := range latest {
+		out = append(out, s)
+	}
+	b, _ := json.Marshal(out)
+	tmp := m.store + ".tmp"
+	if os.WriteFile(tmp, b, 0o600) == nil {
+		_ = os.Rename(tmp, m.store)
+	}
 }
 
 func NewManager(pub Publisher) *Manager {
@@ -174,6 +239,9 @@ func (m *Manager) wait(p *proc, r io.Closer) {
 	}
 	p.subs = map[chan []byte]struct{}{}
 	p.mu.Unlock()
+	if p.tty == nil {
+		m.save()
+	}
 	m.publish(p)
 }
 
@@ -183,7 +251,11 @@ func (m *Manager) Stop(id string) error {
 	if err != nil {
 		return err
 	}
-	pgid := p.info.PID
+	info := p.snapshot()
+	if !info.Running {
+		return nil // finished, or restored from a previous run: its PID may belong to something else now
+	}
+	pgid := info.PID
 	if err := syscall.Kill(-pgid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return err
 	}
@@ -196,6 +268,7 @@ func (m *Manager) Stop(id string) error {
 
 // StopAll is called on shutdown.
 func (m *Manager) StopAll() {
+	m.save()
 	for _, p := range m.List("") {
 		if p.Running {
 			_ = syscall.Kill(-p.PID, syscall.SIGKILL)
