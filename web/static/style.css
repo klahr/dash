@@ -450,7 +450,8 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 /* ---------- sheets ---------- */
 .sheet {
   border: 0; padding: 0; color: var(--text); background: var(--surface);
-  width: 100%; max-width: 100%; margin: auto 0 0; max-height: 92dvh;
+  /* --kb-h: the on-screen keyboard laid over the page (fullscreen only; app.js). */
+  width: 100%; max-width: 100%; margin: auto 0 var(--kb-h, 0px); max-height: calc(92dvh - var(--kb-h, 0px));
   border-radius: var(--r-l) var(--r-l) 0 0; border-top: 1px solid var(--line);
 }
 @keyframes sheet-up { from { transform: translateY(32px); opacity: 0; } }

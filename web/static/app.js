@@ -122,11 +122,18 @@ if (vv) {
   const scrollerOf = (el) => el.closest(".chat-panel")?.querySelector(".chat-log") || el.closest(".detail-body");
   let stick = null; // scroller that was at its end when the keyboard opened
   let pageY = null; // page scroll when a sheet's composer took focus
+  // In fullscreen Chrome lays the keyboard over the page without resizing
+  // either viewport, so the composer would sit behind it. There we ask the
+  // VirtualKeyboard API to report the keyboard (overlaysContent) and take its
+  // height off ourselves.
+  const vk = navigator.virtualKeyboard;
+  let kbH = 0;
   const fit = () => {
     // Pinch-zoomed, the visual viewport is a zoomed-in window: keep the sheets full-size.
     const zoomed = vv.scale > 1.01;
-    root.style.setProperty("--vv-h", zoomed ? "100dvh" : `${Math.round(vv.height)}px`);
+    root.style.setProperty("--vv-h", zoomed ? "100dvh" : `${Math.round(Math.max(0, vv.height - kbH))}px`);
     root.style.setProperty("--vv-top", zoomed ? "0px" : `${Math.round(vv.offsetTop)}px`);
+    root.style.setProperty("--kb-h", `${Math.round(kbH)}px`);
     // iOS can also scroll the page behind the sheet to reveal the input; undo that.
     if (pageY !== null && scrollY !== pageY) scrollTo(scrollX, pageY);
   };
@@ -136,6 +143,20 @@ if (vv) {
     if (stick?.isConnected && document.activeElement?.closest(".composer")) stick.scrollTop = stick.scrollHeight;
   });
   vv.addEventListener("scroll", fit);
+  if (vk) {
+    vk.addEventListener("geometrychange", () => {
+      kbH = vk.overlaysContent ? vk.boundingRect.height : 0;
+      fit();
+      if (stick?.isConnected && document.activeElement?.closest(".composer")) stick.scrollTop = stick.scrollHeight;
+    });
+    const fsMode = () => {
+      const full = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      vk.overlaysContent = full;
+      if (!full) { kbH = 0; fit(); }
+    };
+    document.addEventListener("fullscreenchange", fsMode);
+    document.addEventListener("webkitfullscreenchange", fsMode);
+  }
   // iOS may scroll only the page (not the visual viewport) to reveal a focused input.
   addEventListener("scroll", () => { if (pageY !== null && scrollY !== pageY) scrollTo(scrollX, pageY); }, { passive: true });
   fit();
