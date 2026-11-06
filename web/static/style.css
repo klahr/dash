@@ -892,6 +892,8 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .md-task { color: var(--merged); }
 .draft-status { min-height: 20px; margin: -6px 0 8px; font-size: 13px; color: var(--faint); transition: color .2s; }
 .draft-status[data-state="restored"] { color: var(--running); }
+.prompt-tools { display: flex; align-items: flex-start; gap: 8px; margin: -6px 0 8px; }
+.prompt-tools .draft-status { flex: 1; margin: 0; align-self: center; }
 
 /* ---- update bar ---- */
 .update-bar {

@@ -335,6 +335,32 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, t)
 }
 
+// refinePrompt rewrites instructions (often pasted from a chat answer) into a
+// cleaner prompt; the form shows the result and nothing is stored.
+func (s *Server) refinePrompt(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if strings.TrimSpace(req.Prompt) == "" {
+		writeErr(w, fmt.Errorf("%w: prompt is required", errBadRequest))
+		return
+	}
+	if s.Refiner == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "cleaning up instructions is not available"})
+		return
+	}
+	out, err := s.Refiner.Refine(r.Context(), req.Prompt)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"prompt": out})
+}
+
 // autoTitle names a todo in the background; a title typed meanwhile wins.
 func (s *Server) autoTitle(id, prompt string) {
 	if s.Titler == nil {

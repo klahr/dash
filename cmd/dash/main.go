@@ -208,6 +208,7 @@ func main() {
 			CI:          builds,
 			Peers:       &peer.Hub{Self: *machine, Token: peerToken, Peers: peers},
 			Titler:      titler,
+			Refiner:     agent.Titler{Bin: *claudeBin, Model: *titleModel},
 			ProjectRoot: *projectRoot,
 			Static:      web.Static,
 		}).Routes(),

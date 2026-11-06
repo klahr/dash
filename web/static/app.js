@@ -58,6 +58,7 @@ const ICONS = {
   flag: "M5 21V4h12l-2 4 2 4H5",
   down: "m7 10 5 5 5-5",
   up: "m7 14 5-5 5 5",
+  wand: "M4 20 15 9M13 7l4 4M17 3v4M15 5h4M7 4v2M6 5h2M19 15v2M18 16h2",
   right: "M5 12h14m-5-5 5 5-5 5",
   minimize: "M15 6l-6 6 6 6",
   clock: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
@@ -317,6 +318,28 @@ $("#todo-clear").addEventListener("click", () => {
   f.title.focus();
   toast("Cleared");
 });
+// Clean up rewrites the instructions without the chatter around them (a pasted
+// chat answer, say); Undo in the toast brings the original back.
+$("#todo-refine").addEventListener("click", attempt(async () => {
+  const f = $("#todo-form");
+  const btn = $("#todo-refine");
+  const before = f.prompt.value;
+  if (!before.trim()) throw new Error("Write or paste instructions to clean up first.");
+  const set = (v) => { f.prompt.value = v; promptEditor.render(); draft.changed(); };
+  btn.disabled = true;
+  f.prompt.readOnly = true;
+  btn.lastChild.textContent = "Cleaning up…";
+  try {
+    const { prompt } = await api("POST", "/api/refine", { prompt: before });
+    if (f.prompt.value !== before) return; // the form changed meanwhile
+    set(prompt);
+    toast("Instructions cleaned up", { tone: "ok", action: { label: "Undo", run: () => set(before) } });
+  } finally {
+    btn.disabled = false;
+    f.prompt.readOnly = false;
+    btn.lastChild.textContent = "Clean up";
+  }
+}));
 $("#todo-form").addEventListener("input", () => draft.changed());
 $("#todo-form").addEventListener("change", () => draft.changed());
 const askAttach = attachBox($("#ask-attach"), $("#ask-input"));

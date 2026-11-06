@@ -275,7 +275,10 @@
       <label class="field" id="todo-project-field" hidden><span>Project</span><select name="project"></select></label>
       <label class="field"><span>Title <em>Claude names it if empty</em></span><input name="title" placeholder="Short name for the task" autocomplete="off"></label>
       <label class="field"><span>Instructions for Claude <em>optional, Markdown</em></span><textarea name="prompt" rows="8" placeholder="Describe the change you want. Claude works in its own worktree; you review the diff before it merges."></textarea></label>
-      <div class="draft-status" id="todo-draft" aria-live="polite"></div>
+      <div class="prompt-tools">
+        <div class="draft-status" id="todo-draft" aria-live="polite"></div>
+        <button class="btn small attach-btn" type="button" id="todo-refine" data-icon="wand" title="Rewrite the instructions without the chatter, e.g. after pasting a chat answer">Clean up</button>
+      </div>
       <div class="attach" id="todo-attach" data-attach></div>
       <div class="field-row">
         <label class="toggle"><input type="checkbox" name="goal"><span>Milestone</span></label>

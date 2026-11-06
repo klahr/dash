@@ -41,6 +41,10 @@ type Server struct {
 	Titler interface {
 		Title(ctx context.Context, prompt string) (string, error)
 	}
+	// Refiner cleans up pasted instructions in the todo form (optional).
+	Refiner interface {
+		Refine(ctx context.Context, prompt string) (string, error)
+	}
 	Editor     string // command that opens a directory, e.g. "code" (optional)
 	UploadRoot string // where attached files are stored
 	CI         *ci.Watcher
@@ -95,6 +99,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/todos/{tid}/duplicate", s.duplicateTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/open", s.openTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/revert", s.revertTodo)
+	mux.HandleFunc("POST /api/refine", s.refinePrompt)
 	mux.HandleFunc("GET /api/todos/{tid}/chat", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.Store.TodoChat(r.PathValue("tid")))
 	})

@@ -41,3 +41,18 @@ func TestCleanSummary(t *testing.T) {
 		t.Error("empty output should be an error")
 	}
 }
+
+func TestCleanRefined(t *testing.T) {
+	for in, want := range map[string]string{
+		"  Add a button.\n":                    "Add a button.",
+		"```markdown\n- Add a button\n```\n":   "- Add a button",
+		"Run:\n```sh\ngo test\n```\nThen fix.": "Run:\n```sh\ngo test\n```\nThen fix.",
+	} {
+		if got, err := cleanRefined(in); err != nil || got != want {
+			t.Errorf("cleanRefined(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	if _, err := cleanRefined(" \n"); err == nil {
+		t.Error("empty output should be an error")
+	}
+}
