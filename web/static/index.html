@@ -32,11 +32,14 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v10.5a4.5 4.5 0 0 0 4.5 4.5H18M6 7h6M18 18l-3-3m3 3-3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="3" r="1.6" fill="currentColor"/></svg>
         <span>Dash</span>
       </a>
-      <button class="project-switch" id="project-switch" aria-controls="menu">
-        <span class="project-name" id="project-name">No project</span>
-        <span class="project-branch" id="project-branch"></span>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      </button>
+      <div class="project-picker">
+        <button class="project-switch" id="project-switch" type="button" aria-controls="menu" aria-haspopup="true" title="Switch project">
+          <span class="project-name" id="project-name">No project</span>
+          <span class="project-branch" id="project-branch"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <div class="foot-menu-list project-picker-list" id="project-picker" role="menu" aria-label="Projects" hidden></div>
+      </div>
       <span class="live" id="live" title="Live updates disconnected"><span class="live-dot"></span><span class="sr-only" id="live-label">Offline</span></span>
       <details class="foot-menu top-menu" id="project-menu" hidden>
         <summary class="icon-btn" aria-label="Project menu" title="Project menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5h.01M12 12h.01M12 19h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>

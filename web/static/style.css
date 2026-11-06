@@ -92,6 +92,7 @@ textarea { resize: vertical; line-height: 1.45; }
 }
 .brand { display: flex; align-items: center; gap: 8px; color: var(--text); text-decoration: none; font-weight: 700; font-size: 17px; letter-spacing: -.01em; }
 .brand svg { color: var(--accent); width: 22px; height: 22px; }
+.project-picker { position: relative; flex: 1; min-width: 0; display: flex; }
 .project-switch {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; justify-content: flex-end;
   min-height: 44px; padding: 0 6px; border-radius: var(--r-m); color: var(--text);
@@ -621,6 +622,12 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .foot-menu-list button:hover { background: var(--raised); }
 .top-menu { margin-left: 0; }
 .top-menu .foot-menu-list { top: calc(100% + 4px); bottom: auto; }
+.project-picker-list { top: calc(100% + 4px); bottom: auto; left: 0; right: auto; min-width: 260px; max-width: 420px; max-height: min(70vh, 520px); overflow-y: auto; }
+.project-picker-list button { display: flex; justify-content: space-between; gap: 16px; flex: none; }
+.project-picker-list button[aria-current="true"] { background: var(--raised); box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
+.project-picker-list .project-branch { overflow: hidden; text-overflow: ellipsis; }
+.project-picker-list .picker-new { margin-top: 4px; border-top: 1px solid var(--line); border-radius: 0 0 6px 6px; color: var(--muted); justify-content: flex-start; }
+.project-picker-list .side-machine { padding: 8px 10px 2px; }
 .merge-status:empty { display: none; }
 .merge-status { flex-basis: 100%; }
 .side-projects {
@@ -684,8 +691,9 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
      header's project button just focuses it. */
   .topbar { grid-area: top; position: static; padding: 0 12px 0 22px; gap: 12px; background: var(--surface); backdrop-filter: none; }
   .brand { width: calc(var(--side-w) - 34px); flex: none; }
-  .project-switch { flex: 0 1 auto; justify-content: flex-start; min-height: 36px; margin-right: auto; }
-  .project-switch svg { display: none; }
+  .project-picker { flex: 0 1 auto; margin-right: auto; }
+  .project-switch { justify-content: flex-start; min-height: 36px; }
+  .project-switch[aria-expanded="true"] { background: var(--raised); }
   .sidebar {
     grid-area: side; position: relative; display: flex; flex-direction: column; min-height: 0; overflow-y: auto;
     padding: 12px 12px 12px; gap: 2px; background: var(--surface); border-right: 1px solid var(--line);

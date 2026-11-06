@@ -622,11 +622,48 @@ function openProjects() {
   setMenu(true);
   ($(".side-project[aria-current=true]") || $(".side-project"))?.focus();
 }
+// Desktop: the top bar's project name opens a dropdown of every project.
+// Phones use the drawer instead.
+function setPicker(open) {
+  const list = $("#project-picker");
+  list.hidden = !open;
+  $("#project-switch").setAttribute("aria-expanded", String(open));
+  if (!open) return;
+  const item = (p) => {
+    const cur = projectKey(state.project) === projectKey(p);
+    return h("button", {
+      type: "button", role: "menuitem", title: p.path, "aria-current": cur ? "true" : "false",
+      onclick: attempt(async () => { setPicker(false); if (!cur) await selectProject(p); }),
+    }, h("span", { class: "project-name" }, p.name), h("span", { class: "project-branch" }, p.default_branch));
+  };
+  const items = !multi() ? state.projects.map(item) : state.machines.flatMap((m) => {
+    const ps = state.projects.filter((p) => p.machine === m.name);
+    return [h("div", { class: "side-machine", title: m.ok ? "" : m.error || "unreachable" },
+      h("span", { class: `machine-dot ${m.ok ? "ok" : "down"}`, "aria-hidden": "true" }), m.name), ...ps.map(item)];
+  });
+  list.replaceChildren(...(state.projects.length ? items : [h("div", { class: "machine-empty" }, "No projects yet")]),
+    h("button", { type: "button", role: "menuitem", class: "picker-new", onclick: () => { setPicker(false); openNewProject(); } }, "+ New project"));
+  ($("button[aria-current=true]", list) || $("button", list))?.focus();
+}
+$("#project-switch").addEventListener("click", (e) => {
+  if (!desktop.matches) return openProjects();
+  e.stopPropagation();
+  setPicker($("#project-picker").hidden);
+});
+document.addEventListener("click", (e) => { if (!$("#project-picker").hidden && !e.target.closest(".project-picker")) setPicker(false); });
+$("#project-picker").addEventListener("keydown", (e) => {
+  const btns = $$("#project-picker button");
+  const i = btns.indexOf(document.activeElement);
+  const step = { ArrowDown: 1, j: 1, ArrowUp: -1, k: -1 }[e.key];
+  if (step) btns[(i + step + btns.length) % btns.length].focus();
+  else if (e.key === "Escape" || e.key === "q") { setPicker(false); $("#project-switch").focus(); }
+  else return;
+  e.preventDefault(); e.stopPropagation();
+});
 $("#menu-open").addEventListener("click", openProjects);
 $("#menu-close").addEventListener("click", () => { setMenu(false); $("#menu-open").focus(); });
 $("#menu-scrim").addEventListener("click", () => setMenu(false));
-desktop.addEventListener("change", () => setMenu(false));
-$("#project-switch").addEventListener("click", openProjects);
+desktop.addEventListener("change", () => { setMenu(false); $("#project-picker").hidden = true; });
 $("#side-new-project").addEventListener("click", openNewProject);
 $("#notify-toggle").addEventListener("click", attempt(toggleNotifications));
 $("#pm-settings").addEventListener("click", openSettings);
