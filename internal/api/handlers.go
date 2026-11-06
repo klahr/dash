@@ -527,6 +527,9 @@ func (s *Server) todoLog(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) approveTodo(w http.ResponseWriter, r *http.Request) {
 	t, err := s.Store.UpdateTodo(r.PathValue("tid"), func(t *model.Todo) error {
+		if t.Status != model.StatusReview && t.Status != model.StatusFailed {
+			return fmt.Errorf("%w: only todos in review (or a failed merge) can be approved", errBadRequest)
+		}
 		if t.Worktree == nil {
 			return fmt.Errorf("%w: this todo has no work left to merge; retry it instead", errBadRequest)
 		}
