@@ -131,6 +131,13 @@
         <ol class="activity" id="activity"></ol>
         <div class="empty" id="activity-empty"><p class="empty-title">No git activity yet</p><p>Commands Dash runs (worktrees, commits, merges, pushes) appear here live.</p></div>
       </section>
+
+      <!-- Status line with command line (:) -->
+      <form class="statusline" id="cmd-form" aria-label="Command line">
+        <span class="kbd-status" id="kbd-status" aria-hidden="true">NORMAL</span>
+        <span class="cmd-prompt" aria-hidden="true">:</span>
+        <input id="cmd-input" autocomplete="off" spellcheck="false" aria-label="Command">
+      </form>
     </main>
 
     <!-- Todo detail: full screen on mobile, side panel on desktop -->
@@ -279,11 +286,6 @@
     </form>
   </dialog>
 
-  <!-- Command line (:) -->
-  <dialog class="cmdline" id="cmd-sheet" aria-label="Command line">
-    <form id="cmd-form"><span aria-hidden="true">:</span><input id="cmd-input" autocomplete="off" spellcheck="false" aria-label="Command"></form>
-  </dialog>
-
   <!-- Keyboard help (?) -->
   <dialog class="sheet" id="keys-sheet" aria-labelledby="keys-title">
     <form method="dialog">
@@ -305,7 +307,6 @@
     </form>
   </dialog>
 
-  <div class="kbd-status" id="kbd-status" aria-hidden="true">NORMAL</div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>

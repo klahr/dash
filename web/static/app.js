@@ -1729,8 +1729,9 @@ const openDialog = () => document.querySelector("dialog[open]");
 function setMode() {
   const el = $("#kbd-status");
   const typing = isTyping(document.activeElement);
-  el.dataset.mode = typing ? "insert" : "normal";
-  el.textContent = (typing ? "INSERT" : "NORMAL") + (keys.count || keys.pending ? `  ${keys.count || ""}${keys.pending}` : "");
+  const mode = document.activeElement?.id === "cmd-input" ? "command" : typing ? "insert" : "normal";
+  el.dataset.mode = mode;
+  el.textContent = mode.toUpperCase() +(keys.count || keys.pending ? `  ${keys.count || ""}${keys.pending}` : "");
 }
 document.addEventListener("focusin", setMode);
 document.addEventListener("focusout", () => setTimeout(setMode));
@@ -1871,16 +1872,15 @@ async function runCommand(line) {
 }
 
 function openCommandLine() {
-  const d = $("#cmd-sheet");
   const input = $("#cmd-input");
   input.value = "";
-  d.showModal();
   input.focus();
 }
+$("#cmd-input").addEventListener("blur", (e) => { e.target.value = ""; });
 $("#cmd-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const line = $("#cmd-input").value;
-  $("#cmd-sheet").close();
+  $("#cmd-input").blur();
   attempt(runCommand)(line);
 });
 

@@ -23,6 +23,7 @@
   --r-m: 10px;
   --r-l: 16px;
   --nav-h: 64px;
+  --status-h: 28px;
   --top-h: 56px;
   --safe-b: env(safe-area-inset-bottom, 0px);
   --ease: cubic-bezier(.2, .8, .2, 1);
@@ -309,19 +310,18 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 @keyframes sheet-up { from { transform: translateY(32px); opacity: 0; } }
 /* Sheets slide up in and back down out; @starting-style gives the entry,
    allow-discrete keeps them rendered while they leave. */
-.sheet, .cmdline {
+.sheet {
   opacity: 0; transform: translateY(28px);
   transition: opacity .2s var(--ease), transform .26s var(--ease), overlay .26s allow-discrete, display .26s allow-discrete;
 }
-.sheet[open], .cmdline[open] { opacity: 1; transform: none; }
-@starting-style { .sheet[open], .cmdline[open] { opacity: 0; transform: translateY(28px); } }
-.sheet::backdrop, .cmdline::backdrop {
+.sheet[open] { opacity: 1; transform: none; }
+@starting-style { .sheet[open] { opacity: 0; transform: translateY(28px); } }
+.sheet::backdrop {
   background: rgba(4, 8, 15, 0); backdrop-filter: blur(0);
   transition: background .26s, backdrop-filter .26s, overlay .26s allow-discrete, display .26s allow-discrete;
 }
 .sheet[open]::backdrop { background: rgba(4, 8, 15, .6); backdrop-filter: blur(2px); }
-.cmdline[open]::backdrop { background: rgba(4, 8, 15, .35); }
-@starting-style { .sheet[open]::backdrop, .cmdline[open]::backdrop { background: rgba(4, 8, 15, 0); backdrop-filter: blur(0); } }
+@starting-style { .sheet[open]::backdrop { background: rgba(4, 8, 15, 0); backdrop-filter: blur(0); } }
 .sheet > form, .sheet > details { padding: 0 16px; }
 .sheet > form:last-child, .sheet > details:last-child { padding-bottom: calc(16px + var(--safe-b)); }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
@@ -402,19 +402,24 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 /* ---------- keyboard ---------- */
 .todo.cursor, .proc.cursor { box-shadow: inset 3px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 .proc.cursor { padding-left: 10px; }
+/* Status line: mode and command line. Always shown at the bottom of the right pane on desktop;
+   on smaller screens only while the command line is focused. */
+.statusline {
+  position: fixed; z-index: 45; left: 0; right: 0; bottom: calc(var(--nav-h) + var(--safe-b));
+  display: flex; align-items: center; gap: 8px; height: var(--status-h); padding: 0 8px;
+  border-top: 1px solid var(--line); background: var(--surface); font: 13px var(--mono);
+}
+.statusline:not(:focus-within) { opacity: 0; pointer-events: none; }
 .kbd-status {
-  position: fixed; left: 12px; bottom: 12px; z-index: 50; padding: 3px 9px; border-radius: var(--r-s);
-  font: 600 11px/1.6 var(--mono); letter-spacing: .04em; color: #0d1424; background: var(--accent); pointer-events: none;
+  flex: none; padding: 0 9px; border-radius: var(--r-s);
+  font: 600 11px/1.8 var(--mono); letter-spacing: .04em; color: #0d1424; background: var(--accent);
 }
 .kbd-status[data-mode="insert"] { background: var(--merged); }
-@media (hover: none), (max-width: 1023px) { .kbd-status { display: none; } }
-.cmdline {
-  border: 1px solid var(--line); border-radius: var(--r-m); padding: 0; margin: auto auto 12vh; width: min(560px, calc(100% - 32px));
-  background: var(--surface); color: var(--text);
-}
-
-.cmdline form { display: flex; align-items: center; gap: 6px; padding: 4px 12px; font: 15px var(--mono); }
-.cmdline input { border: 0; background: none; padding: 10px 0; font: 15px var(--mono); }
+.kbd-status[data-mode="command"] { background: var(--review); }
+.cmd-prompt { color: var(--faint); }
+.statusline:focus-within .cmd-prompt { color: var(--text); }
+.statusline input { flex: 1; min-width: 0; border: 0; background: none; padding: 0; height: 100%; font: inherit; color: var(--text); }
+.statusline input:focus { outline: none; }
 .keys { display: grid; grid-template-columns: max-content 1fr; gap: 10px 16px; margin: 8px 0 16px; font-size: 14px; }
 .keys dt { font-weight: 600; color: var(--muted); }
 .keys dd { margin: 0; line-height: 1.9; }
@@ -549,9 +554,10 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .nav-foot { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: auto; padding: 0 10px; color: var(--muted); font-size: 13px; }
   .nav-foot .link { padding: 0; min-height: 32px; }
 
-  main { grid-area: main; padding: 0; overflow: hidden; min-width: 0; }
-  .view.active { height: 100dvh; overflow-y: auto; }
-  #view-chat.active { height: 100dvh; }
+  main { grid-area: main; padding: 0; overflow: hidden; min-width: 0; display: flex; flex-direction: column; height: 100dvh; }
+  .view.active { flex: 1; min-height: 0; overflow-y: auto; }
+  #view-chat.active { height: auto; }
+  .statusline, .statusline:not(:focus-within) { position: static; flex: none; opacity: 1; pointer-events: auto; }
   #view-run, .activity { max-width: 1100px; }
   #view-run { padding: 24px 32px; }
   .activity { padding: 16px 32px; }
@@ -575,9 +581,10 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .todo-side { grid-column: 2; flex-direction: row; gap: 10px; padding: 0; }
   .todo-side:empty { display: none; }
   .rail::before { left: 25px; }
-  .fab { right: 28px; bottom: 28px; }
+  .fab { right: 28px; bottom: calc(var(--status-h) + 28px); }
+  .toasts { bottom: calc(var(--status-h) + 24px); }
 
-  .detail { left: auto; width: min(760px, 58vw); border-left: 1px solid var(--line); box-shadow: -24px 0 48px rgba(3, 6, 12, .45); }
+  .detail { left: auto; bottom: var(--status-h); width: min(760px, 58vw); border-left: 1px solid var(--line); box-shadow: -24px 0 48px rgba(3, 6, 12, .45); }
   .scrim { position: fixed; inset: 0; z-index: 35; background: rgba(4, 8, 15, .35); }
   .detail-body { padding: 16px 24px 32px; }
   .actionbar { padding: 12px 24px; }
@@ -631,7 +638,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 }
 .update-bar .link.inline { padding: 0 8px; color: var(--muted); }
 .update-bar.leaving { opacity: 0; transition: opacity .18s; }
-@media (min-width: 1024px) { .update-bar { bottom: 24px; } }
+@media (min-width: 1024px) { .update-bar { bottom: calc(var(--status-h) + 24px); } }
 
 /* ---- attachments ---- */
 .attach { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 8px; }
