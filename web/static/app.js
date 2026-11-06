@@ -1499,7 +1499,7 @@ function renderUsage() {
     const elapsed = windowElapsed(w);
     const pace = elapsed === null ? null : Math.round(elapsed * 100);
     return h("span", { class: "pie-wrap", title: `${windowLabel(w.name)}: ${pct}%${pace !== null ? ` (${pace}% of window elapsed)` : ""} · resets ${fmtTime(w.resets_at)}` },
-      h("span", { class: `pie${cls}${pace !== null ? " paced" : ""}${pace !== null && pct > pace ? " over" : ""}`, style: `--p:${Math.min(100, pct)};--e:${pace ?? 0}`, role: "img", "aria-label": `${windowLabel(w.name)} ${pct}%` },
+      h("span", { class: `pie${cls}${pace !== null ? " paced" : ""}`, style: `--p:${Math.min(100, pct)};--e:${pace ?? 0}`, role: "img", "aria-label": `${windowLabel(w.name)} ${pct}%` },
         h("b", {}, pct)),
       h("small", {}, shortLabel(w.name)));
   };
