@@ -3035,7 +3035,7 @@ async function reorder(t, laneKey, index) {
 const VIEWS = ["board", "run", "activity", "history", "files"];
 const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
-const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gc|gs|ga|gh|gf|G|u|p|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gc|gs|ga|gh|gf|G|u|p|c|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 const openDialog = () => document.querySelector("dialog[open]");
 
@@ -3511,6 +3511,7 @@ async function handleNormal(k, n, hadCount) {
     case "gT": return showView(VIEWS[(VIEWS.indexOf(state.view) - n + VIEWS.length * n) % VIEWS.length]);
     case "gb": return showView("board");
     case "gc": return toggleChatPane();
+    case "c": return toggleChatPane(true, "project");
     case "gs": return showView("run");
     case "ga": return showView("activity");
     case "gh": return showView("history");
