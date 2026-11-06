@@ -77,6 +77,20 @@ func (m *MergeQueue) Enqueue(job model.MergeJob) error {
 	return m.push(mergeItem{job: job})
 }
 
+// Resume queues again the merges a previous process was running or had
+// queued when it stopped, so an approval survives a restart. A todo whose
+// pull request is open is followed by the PR poller instead.
+func (m *MergeQueue) Resume() {
+	for _, t := range m.Store.ListTodos("", model.StatusMerging) {
+		if t.PR != nil && t.PR.State == "OPEN" {
+			continue
+		}
+		if err := m.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID}); err != nil {
+			_, _ = m.Store.SetStatus(t.ID, model.StatusReview, "merge queue full")
+		}
+	}
+}
+
 func (m *MergeQueue) push(it mergeItem) error {
 	select {
 	case m.jobs <- it:

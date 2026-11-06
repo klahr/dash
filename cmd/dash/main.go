@@ -231,6 +231,7 @@ func main() {
 
 	go builds.Run(ctx)
 	go todos.Run(ctx)
+	merges.Resume()
 	go merges.Run(ctx) // the one and only merge worker
 
 	switch *chatBackend {

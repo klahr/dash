@@ -87,11 +87,8 @@ func Open(path string, pub Publisher) (*Store, error) {
 			t.Status = model.StatusQueued
 		}
 		t.Reviewing = false // the chat turn died with the old process
-		// Merge jobs live in a channel and are lost on restart; send back to
-		// review. An open pull request is still followed, so it stays.
-		if t.Status == model.StatusMerging && (t.PR == nil || t.PR.State != "OPEN") {
-			t.Status, t.Error = model.StatusReview, ""
-		}
+		// Merging todos stay merging: their jobs are lost with the old
+		// process, but MergeQueue.Resume queues them again.
 	}
 	return s, s.saveLocked()
 }

@@ -148,6 +148,21 @@ func TestAutoApproveSkipsReviewOnlyWhenTestsPass(t *testing.T) {
 	h.waitFor(bad.ID, model.StatusReview)
 }
 
+func TestResumeQueuesMergesLostInARestart(t *testing.T) {
+	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
+		write(t, req.Dir, "a.txt", "a\n")
+		return nil
+	}}
+	h := newHarness(t, exe, model.Project{Name: "p"})
+	td := h.waitFor(h.add("a").ID, model.StatusReview)
+	// Approved, but the merge job died with the old process.
+	if _, err := h.st.SetStatus(td.ID, model.StatusMerging, ""); err != nil {
+		t.Fatal(err)
+	}
+	h.merges.Resume()
+	h.waitFor(td.ID, model.StatusMerged)
+}
+
 func TestFailingTestsGoBackToClaudeWithResume(t *testing.T) {
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		if n == 1 {
