@@ -198,7 +198,8 @@ const theme = EditorView.theme({
   "&.cm-focused .cm-fat-cursor": { background: "color-mix(in srgb, var(--accent) 70%, transparent)", color: "var(--bg)" },
   "&.cm-editor:not(.cm-focused) .cm-fat-cursor": { outline: "solid 1px var(--accent)" },
   ".cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--running) 30%, transparent)" },
-  ".cm-highlightSpace": { backgroundImage: "radial-gradient(circle at 50% 55%, var(--faint) 20%, transparent 0)" },
+  ".cm-highlightSpace": { backgroundImage: "radial-gradient(circle at 50% 55%, color-mix(in srgb, var(--faint) 60%, transparent) 12%, transparent 0)" },
+  ".cm-highlightTab": { opacity: "0.5" },
   ".cm-trailingSpace": { backgroundColor: "color-mix(in srgb, var(--failed) 30%, transparent)" },
   ".cm-specialChar": { color: "var(--failed) !important" }, // base theme picks by its own light/dark
 }, { dark: true });
