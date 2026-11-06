@@ -1641,10 +1641,11 @@ function quickProc(spec) {
 }
 
 function renderQuick() {
-  for (const [sel, verb, done] of [["#quick-test", "Testing", "Test"], ["#quick-deploy", "Deploying", "Deploy"]]) {
+  for (const [sel, verb, done, noun, key] of [["#quick-test", "Testing", "Run Tests", "test run", "T"], ["#quick-deploy", "Deploying", "Deploy", "deploy", "D"]]) {
     const btn = $(sel);
     const spec = btn.dataset.run;
-    btn.hidden = !quickCmd(spec);
+    btn.hidden = !state.project;
+    btn.disabled = !quickCmd(spec);
     const proc = quickProc(spec);
     const ok = proc && !proc.running && proc.exit_code === 0;
     const bad = proc && !proc.running && proc.exit_code !== 0;
@@ -1654,10 +1655,11 @@ function renderQuick() {
     const secs = proc ? Math.max(0, Math.floor((Date.now() - new Date(proc.started_at)) / 1000)) : 0;
     const elapsed = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
     btn.querySelector("span").textContent = proc?.running ? `${verb} ${elapsed}` : done;
-    btn.title = proc?.running ? `${verb}… ${elapsed} — click to view output`
-      : ok ? `Last ${done.toLowerCase()} passed — click to run again`
-      : bad ? `Last ${done.toLowerCase()} failed (exit ${proc.exit_code ?? "?"}) — click to run again`
-      : `${done} (${done[0]} on the Run view)`;
+    btn.title = btn.disabled ? `No ${noun.split(" ")[0]} command — set one in project settings`
+      : proc?.running ? `${verb}… ${elapsed} — click to view output`
+      : ok ? `Last ${noun} passed — click to run again`
+      : bad ? `Last ${noun} failed (exit ${proc.exit_code ?? "?"}) — click to run again`
+      : `${done} (${key} on the Run view)`;
   }
 }
 setInterval(() => { if ($(".quick-btn.running")) renderQuick(); }, 1000);

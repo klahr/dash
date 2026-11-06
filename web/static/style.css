@@ -102,9 +102,11 @@ textarea { resize: vertical; line-height: 1.45; }
 .quick-actions:not(:has(.quick-btn:not([hidden]))) { display: none; }
 .quick-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; min-width: 36px; padding: 0 10px;
-  border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 13px; font-weight: 600; white-space: nowrap;
+  border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 13px; font-weight: 600; white-space: nowrap; flex: none;
 }
-.quick-btn:hover { border-color: var(--accent); }
+.quick-btn:hover:not(:disabled) { border-color: var(--accent); }
+.quick-btn:disabled { opacity: .5; cursor: default; }
+.quick-btn:disabled svg { color: var(--muted); }
 .quick-btn svg { width: 16px; height: 16px; color: var(--accent); flex: none; }
 .quick-btn span { font-variant-numeric: tabular-nums; }
 .quick-btn.running { border-color: var(--running); background: color-mix(in srgb, var(--running) 10%, var(--surface)); }
@@ -599,7 +601,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .project-switch { display: none; }
   .nav > button { order: 2; }
   .side-projects { order: 3; }
-  .quick-actions { order: 4; margin-top: 8px; }
+  .quick-actions { order: 4; margin-top: 8px; flex-wrap: wrap; }
   .ci-pill { order: 5; margin-top: 8px; }
   #usage-pill { order: 6; margin-top: 8px; }
   .nav-foot { order: 7; }
@@ -615,7 +617,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   #usage-pill .meter-head { font-size: 13px; margin-bottom: 4px; }
   #usage-pill .meter { height: 6px; }
   #usage-pill .meter-pace { margin-top: 3px; font-size: 11px; }
-  .quick-btn { flex: 1; }
+  .quick-btn { flex: 1 1 auto; }
   .nav > button { flex-direction: row; justify-content: flex-start; gap: 12px; min-height: 42px; padding: 0 10px; border-radius: var(--r-m); font-size: 15px; }
   .nav > button:hover { background: var(--raised); }
   .nav > button.active { background: var(--raised); }
