@@ -996,12 +996,13 @@ function todoRow(t, li = -1, ri = -1) {
   if (t.status === "in_progress") { sub = state.lastLine.get(t.id) || "Working…"; subClass += " progress"; }
   if (t.paused) sub = t.status === "in_progress" ? "Pausing…" : "Paused";
   if (t.error) { sub = t.error; subClass += " err"; }
+  if (t.reviewing) { sub = "Claude is reviewing…"; subClass = "todo-sub progress"; }
   if (state.perms.some((p) => p.todo_id === t.id)) { sub = "Waiting for your approval"; subClass = "todo-sub waiting"; }
   const checkTag = t.checks && ["review", "merging", "failed"].includes(t.status)
     ? h("span", { class: `check-tag ${t.checks.passed ? "pass" : "fail"}` }, t.checks.passed ? "Tests pass" : "Tests fail")
     : null;
   return h("button", {
-    class: `todo s-${t.status}${t.goal ? " goal" : ""}${state.detail === t.id ? " selected" : ""}${atCursor ? " cursor" : ""}`,
+    class: `todo s-${t.status}${t.goal ? " goal" : ""}${t.reviewing ? " reviewing" : ""}${state.detail === t.id ? " selected" : ""}${atCursor ? " cursor" : ""}`,
     "data-id": t.id, onclick: () => openDetail(t.id),
   },
     h("span", { class: "node", "aria-hidden": "true" }),
@@ -1009,6 +1010,7 @@ function todoRow(t, li = -1, ri = -1) {
     h("span", { class: "todo-side" },
       checkTag,
       t.paused ? h("span", { class: "paused-tag" }, "Paused") : null,
+      t.reviewing ? h("span", { class: "reviewing-tag" }, "Reviewing") : null,
       t.goal ? h("span", { class: "goal-tag" }, "Milestone") : null,
       t.pr && t.status !== "merged" ? h("span", { class: "pr-tag" }, `PR #${t.pr.number}`) : null,
       t.revert ? h("span", { class: "revert-tag" }, "Reverted") : null,
@@ -1021,10 +1023,22 @@ function todoRow(t, li = -1, ri = -1) {
       t.status === "in_progress" && t.started_at ? h("span", { title: "Running for" }, ago(t.started_at)) : null,
       t.status === "review" && t.finished_at ? h("span", { title: "Waiting for review" }, ago(t.finished_at)) : null,
       t.priority ? h("span", {}, `P${t.priority}`) : null,
-      t.status === "review" ? approveChip(t) : null));
+      t.status === "review" && !t.reviewing ? reviewChip(t) : null,
+      t.status === "review" && !t.reviewing ? approveChip(t) : null));
 }
 
-// A span, not a button: the card itself is a <button>, which can't nest one.
+// Spans, not buttons: the card itself is a <button>, which can't nest one.
+function reviewChip(t) {
+  return h("span", {
+    class: "review-chip", role: "button", title: "Have Claude review the changes",
+    onpointerdown: (e) => e.stopPropagation(),
+    onclick: (e) => {
+      e.stopPropagation();
+      attempt(async () => { await openDetail(t.id); reviewTodo(); })();
+    },
+  }, "Review");
+}
+
 function approveChip(t) {
   return h("span", {
     class: "approve-chip", role: "button", title: "Approve and merge without opening the diff",
@@ -1199,6 +1213,10 @@ function renderActions(t) {
       btns.push(b("stop", "Stop", post("cancel", null, "Stopping"), "danger grow"));
       break;
     case "review":
+      if (t.reviewing) {
+        btns.push(h("span", { class: "btn grow reviewing" }, ico("eye"), "Claude is reviewing…"));
+        break;
+      }
       if (commentsFor(t.id).length) {
         btns.push(b("send", `Send ${commentsFor(t.id).length} ${commentsFor(t.id).length === 1 ? "comment" : "comments"}`, attempt(() => sendComments(t)), "primary"));
       } else {
@@ -1267,7 +1285,10 @@ Check, in this order:
 
 Read the surrounding code where you need to. Start with a one-line verdict, "Ready to merge" or "Needs changes", then list each must-fix issue with file:line and a concrete fix, then optional nice-to-haves. Leave out praise and anything you haven't verified.`;
 
+let reviewNext = false;
 function reviewTodo() {
+  if (todoChat.busy) return toast("Wait for Claude to finish answering");
+  reviewNext = true;
   const prompt = state.project?.review_prompt || DEFAULT_REVIEW_PROMPT;
   askChat(todoChat.input, $("#d-chat-form"), prompt, () => { state.pane = "chat"; renderPane(); });
 }
@@ -1993,7 +2014,8 @@ loadChat().catch((e) => toast(`Couldn't load chat history: ${e.message}`, true))
 const EDITABLE = ["draft", "queued", "failed"];
 const todoChat = makeChat({
   log: $("#d-chat-log"), empty: $("#d-chat-empty"), form: $("#d-chat-form"),
-  target: () => ({ prefix: here(), todo: state.detail }),
+  // reviewNext marks the turn the Review button sends, which locks the task until it ends.
+  target: () => { const review = reviewNext; reviewNext = false; return { prefix: here(), todo: state.detail, ...(review && { review }) }; },
   clear: () => api("DELETE", `/api/todos/${state.detail}/chat`),
   scroller: () => $(".detail-body"),
   cwd: $("#d-chat-cwd"),
@@ -2426,6 +2448,7 @@ function dropAction(t, lane) {
   const to = LANES.find((l) => l.key === lane);
   if (!to) return null;
   if (to.statuses.includes(from)) return ["draft", "queued", "review"].includes(lane) ? { kind: "reorder" } : null;
+  if (t.reviewing) return null; // locked until the review finishes
   const go = (verb, label) => ({ kind: "action", verb, label });
   if (lane === "queued" && ["draft", "failed"].includes(from)) return go("enqueue", "Added to queue");
   if (lane === "queued" && from === "review") return { kind: "rework" };

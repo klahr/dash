@@ -72,3 +72,42 @@ func TestTodoChatSurvivesReopenAndGoesWithTodo(t *testing.T) {
 		t.Fatalf("deleted todo's chat came back: %v", s.TodoChat(td.ID))
 	}
 }
+
+func TestReviewingLocksStatusUntilReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	s, err := Open(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.CreateProject(model.Project{Name: "p", Path: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	td, err := s.CreateTodo(model.Todo{ProjectID: p.ID, Prompt: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range []model.TodoStatus{model.StatusQueued, model.StatusInProgress, model.StatusReview} {
+		if _, err := s.SetStatus(td.ID, st, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.UpdateTodo(td.ID, func(t *model.Todo) error { t.Reviewing = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetStatus(td.ID, model.StatusQueued, ""); err != ErrReviewing {
+		t.Fatalf("status change while reviewing: %v, want ErrReviewing", err)
+	}
+	if _, err := s.UpdateTodo(td.ID, func(t *model.Todo) error { t.Title = "renamed"; return nil }); err != nil {
+		t.Fatalf("non-status edit while reviewing: %v", err)
+	}
+	if s, err = Open(path, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetTodo(td.ID); got.Reviewing {
+		t.Fatal("reviewing survived a restart")
+	}
+	if _, err := s.SetStatus(td.ID, model.StatusQueued, ""); err != nil {
+		t.Fatalf("status change after the review: %v", err)
+	}
+}

@@ -225,6 +225,8 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 /* the one ambient motion: running nodes breathe */
 @keyframes breathe { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--running) 55%, transparent); } 50% { box-shadow: 0 0 0 6px transparent; } }
 .s-in_progress .node { animation: breathe 1.8s ease-in-out infinite; }
+.todo.reviewing .node { animation: breathe 1.8s ease-in-out infinite; }
+.reviewing-tag { font-size: 12px; font-weight: 600; color: var(--running); }
 .lane-tab.s-in_progress[data-count]:not([data-count="0"])::before { animation: breathe 1.8s ease-in-out infinite; }
 
 .fab {
@@ -994,6 +996,10 @@ dialog.file-over, .file-over { outline: 2px dashed color-mix(in srgb, var(--acce
 .revert-tag { font-size: 12px; font-weight: 600; color: var(--muted); }
 .approve-chip { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--review); color: #08202a; cursor: pointer; }
 .approve-chip:hover { filter: brightness(1.1); }
+.review-chip { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--review); color: var(--review); cursor: pointer; }
+.review-chip:hover { background: color-mix(in srgb, var(--review) 15%, transparent); }
+.btn.reviewing { color: var(--running); cursor: default; }
+.btn.reviewing svg { animation: pulse-dot 1.4s ease-in-out infinite; }
 a.revert-tag { text-decoration: underline; }
 .pr-link { color: var(--review); font-weight: 600; text-decoration: none; }
 .pr-link:hover { text-decoration: underline; }

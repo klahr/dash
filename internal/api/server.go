@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/klahr/dash/internal/agent"
@@ -52,6 +53,10 @@ type Server struct {
 	CI         *ci.Watcher
 	Peers      *peer.Hub // other computers shown in this dashboard
 	Static     fs.FS     // frontend assets
+
+	reviewMu  sync.Mutex
+	reviewGen uint64
+	reviews   map[string]uint64 // todo id → the review turn that owns its Reviewing flag
 }
 
 func (s *Server) Routes() http.Handler {
@@ -189,7 +194,7 @@ func writeErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, runner.ErrNotFound):
 		code = http.StatusNotFound
-	case errors.As(err, &inv):
+	case errors.As(err, &inv), errors.Is(err, store.ErrReviewing):
 		code = http.StatusConflict
 	case errors.Is(err, queue.ErrMergeQueueFull):
 		code = http.StatusServiceUnavailable

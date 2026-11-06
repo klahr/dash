@@ -521,6 +521,10 @@ func (s *Server) deleteTodo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, model.ErrInvalidTransition{From: t.Status, To: "deleted"})
 		return
 	}
+	if t.Reviewing {
+		writeErr(w, store.ErrReviewing)
+		return
+	}
 	if t.Worktree != nil && t.Status != model.StatusMerged {
 		if p, err := s.Store.GetProject(t.ProjectID); err == nil {
 			_ = s.Git.RemoveWorktree(r.Context(), p.ID, p.Path, *t.Worktree)

@@ -19,6 +19,9 @@ import (
 
 var ErrNotFound = errors.New("not found")
 
+// ErrReviewing is returned when a todo Claude is reviewing would change status.
+var ErrReviewing = errors.New("task is being reviewed; wait until the review finishes")
+
 // CleanPath expands a leading ~ and makes path absolute, so a project path
 // typed as "~/src/app" doesn't resolve against the server's working directory.
 func CleanPath(path string) string {
@@ -83,6 +86,7 @@ func Open(path string, pub Publisher) (*Store, error) {
 		if t.Status == model.StatusInProgress {
 			t.Status = model.StatusQueued
 		}
+		t.Reviewing = false // the chat turn died with the old process
 		// Merge jobs live in a channel and are lost on restart; send back to
 		// review. An open pull request is still followed, so it stays.
 		if t.Status == model.StatusMerging && (t.PR == nil || t.PR.State != "OPEN") {
@@ -256,6 +260,9 @@ func (s *Store) UpdateTodo(id string, fn func(*model.Todo) error) (model.Todo, e
 	cp := clone(*t)
 	if err := fn(&cp); err != nil {
 		return *t, err
+	}
+	if cp.Status != t.Status && t.Reviewing {
+		return *t, ErrReviewing
 	}
 	if cp.Status != t.Status && !model.CanTransition(t.Status, cp.Status) {
 		return *t, model.ErrInvalidTransition{From: t.Status, To: cp.Status}

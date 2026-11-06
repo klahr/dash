@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
+	"github.com/klahr/dash/internal/store"
 )
 
 // chatWS streams Claude responses. Protocol (JSON text frames):
@@ -41,7 +43,9 @@ import (
 // saved to GET /api/projects/{id}/chat.
 // With "todo", the conversation is about that todo: Claude sees its title,
 // status, instructions and changes, runs in its worktree while it has one,
-// and the turn is saved to GET /api/todos/{id}/chat.
+// and the turn is saved to GET /api/todos/{id}/chat. With "review": true as
+// well, the todo (which must be in review) is marked reviewing until the turn
+// ends, and its status can't change meanwhile.
 func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := hub.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -70,6 +74,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			Messages []agent.ChatMessage `json:"messages"`
 			ID       string              `json:"id"`
 			Decision string              `json:"decision"`
+			Review   bool                `json:"review"` // with "todo": the turn reviews it, locking its status
 		}
 		if err := conn.ReadJSON(&msg); err != nil {
 			cancelTurn() // denies whatever is waiting for approval
@@ -84,6 +89,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		var dir, mode, pid string
+		endReview := func() {}
 		save := s.Store.SetChat
 		msg.Messages = s.chatAttachments(msg.Messages)
 		prompt := withAttachments(msg.Messages)
@@ -119,6 +125,12 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			}
 			save = func(msgs []agent.ChatMessage) error { return s.Store.SetTodoChat(t.ID, msgs) }
 			prompt = withTodoContext(t, diff, prompt)
+			if msg.Review {
+				if endReview, err = s.beginReview(t.ID); err != nil {
+					send(agent.ChatDelta{Kind: "error", Text: err.Error()})
+					continue
+				}
+			}
 		}
 		var turnCtx context.Context
 		turnCtx, cancelTurn = context.WithCancel(ctx)
@@ -126,6 +138,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		turnCtx = agent.WithPermissionMode(turnCtx, mode)
 		turnCtx = agent.WithProject(turnCtx, pid)
 		go func(ctx context.Context, history []agent.ChatMessage) {
+			defer endReview()
 			var reply strings.Builder
 			err := s.Chat.Stream(ctx, dir, prompt, func(d agent.ChatDelta) {
 				if d.Kind == "text" {
@@ -146,6 +159,40 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			}
 		}(turnCtx, msg.Messages)
 	}
+}
+
+// beginReview marks a todo in review as being reviewed by a chat turn, which
+// locks its status. The returned func clears the mark unless a later review
+// turn has taken it over.
+func (s *Server) beginReview(id string) (func(), error) {
+	s.reviewMu.Lock()
+	defer s.reviewMu.Unlock()
+	if _, err := s.Store.UpdateTodo(id, func(t *model.Todo) error {
+		if t.Status != model.StatusReview {
+			return fmt.Errorf("only tasks in review can be reviewed")
+		}
+		t.Reviewing = true
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	s.reviewGen++
+	gen := s.reviewGen
+	if s.reviews == nil {
+		s.reviews = map[string]uint64{}
+	}
+	s.reviews[id] = gen
+	return func() {
+		s.reviewMu.Lock()
+		defer s.reviewMu.Unlock()
+		if s.reviews[id] != gen {
+			return
+		}
+		delete(s.reviews, id)
+		if _, err := s.Store.UpdateTodo(id, func(t *model.Todo) error { t.Reviewing = false; return nil }); err != nil && !errors.Is(err, store.ErrNotFound) {
+			slog.Warn("end review", "todo", id, "err", err)
+		}
+	}, nil
 }
 
 // chatApprovalTimeout denies a chat tool call nobody answered.
