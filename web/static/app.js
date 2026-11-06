@@ -570,7 +570,7 @@ function setMenu(open) {
 function openProjects() {
   renderProjectList();
   setMenu(true);
-  $(".side-project[aria-current=true]")?.focus();
+  ($(".side-project[aria-current=true]") || $(".side-project"))?.focus();
 }
 $("#menu-open").addEventListener("click", openProjects);
 $("#menu-close").addEventListener("click", () => { setMenu(false); $("#menu-open").focus(); });
@@ -2102,7 +2102,24 @@ document.addEventListener("keydown", (e) => {
   attempt(handleNormal)(k, n, hadCount);
 });
 
+// Sidebar / phone menu (o or p focuses it): j/k move between projects, Enter
+// activates the focused one, Esc or l returns to the board.
+function sidebarKey(k, n, hadCount) {
+  const btns = [...document.querySelectorAll("#side-project-list .side-project")];
+  const i = btns.indexOf(document.activeElement);
+  const go = (j) => btns[Math.max(0, Math.min(btns.length - 1, j))]?.focus();
+  switch (k) {
+    case "j": case "ArrowDown": return go(i + n);
+    case "k": case "ArrowUp": return go(i - n);
+    case "gg": return go(hadCount ? n - 1 : 0);
+    case "G": return go(hadCount ? n - 1 : Infinity);
+    case "Escape": case "q": case "l": document.activeElement.blur(); setMenu(false); setMode(); return;
+  }
+  return false;
+}
+
 async function handleNormal(k, n, hadCount) {
+  if (document.activeElement?.closest?.("#side-project-list") && sidebarKey(k, n, hadCount) !== false) return;
   // Global keys.
   switch (k) {
     case ":": return openCommandLine();
@@ -2110,6 +2127,7 @@ async function handleNormal(k, n, hadCount) {
     case "gt": return showView(VIEWS[(VIEWS.indexOf(state.view) + n) % VIEWS.length]);
     case "gT": return showView(VIEWS[(VIEWS.indexOf(state.view) - n + VIEWS.length * n) % VIEWS.length]);
     case "p": return openProjects();
+    case "o": return openProjects();
     case "Escape": case "q":
       if (menuOpen()) return setMenu(false);
       if (state.detail) return closeDetail();
