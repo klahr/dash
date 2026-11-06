@@ -20,6 +20,14 @@ Open http://127.0.0.1:7788, or use the terminal client:
 go build -o bin/dash-tui ./cmd/dash-tui && ./bin/dash-tui
 ```
 
+### As a service
+
+To keep Dash running in the background and start it at boot, run it as a systemd user service.
+The steps are at the top of [`deploy/dash.service`](deploy/dash.service). In short: put your
+credentials in `~/.config/dash/env`, copy the unit to `~/.config/systemd/user/`, run
+`loginctl enable-linger "$USER"`, then `systemctl --user enable --now dash`. Read the logs with
+`journalctl --user -u dash -f`.
+
 ## Use it from Claude (MCP)
 
 `dash-mcp` is an MCP server for any Claude client (Claude Code, Claude Desktop). It logs in to a

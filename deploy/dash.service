@@ -1,0 +1,38 @@
+# Dash as a systemd *user* service. It runs claude, git and gh as you, so it
+# needs your home, ~/.claude login and PATH: a user service, not a system one.
+#
+#   go build -o bin/dash ./cmd/dash
+#   mkdir -p ~/.config/dash && cp .env.example ~/.config/dash/env
+#   chmod 600 ~/.config/dash/env && $EDITOR ~/.config/dash/env
+#   cp deploy/dash.service ~/.config/systemd/user/
+#   loginctl enable-linger "$USER"    # keep running after logout
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now dash
+#   journalctl --user -u dash -f
+#
+# After pulling changes: rebuild, then `systemctl --user restart dash`.
+
+[Unit]
+Description=Dash (parallel Claude tasks on :7788)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/dev/github/klahr/dash
+# Extra flags go here (-trust-proxy, -public-url, -name, -peer ...).
+# Secrets stay in the env file, not in this unit.
+ExecStart=%h/dev/github/klahr/dash/bin/dash -env %h/.config/dash/env
+
+# claude is installed in ~/.local/bin, which is not on systemd's default PATH.
+Environment=PATH=%h/.local/bin:%h/go/bin:/usr/local/bin:/usr/bin:/bin
+# A service doesn't inherit your shell's SSH agent. If pushes to SSH remotes
+# fail, point this at your agent's socket (or use HTTPS + `gh auth setup-git`).
+#Environment=SSH_AUTH_SOCK=%t/ssh-agent.socket
+
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target
