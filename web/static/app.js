@@ -724,7 +724,7 @@ function renderBoardNow() {
 
   $("#board").replaceChildren(...LANES.map((l, li) => h("section", {
     "data-lane": l.key,
-    class: `col s-${l.key === "done" ? "merged" : l.key}${state.lane === l.key ? " active" : ""}`, "aria-label": l.label,
+    class: `col s-${l.key === "done" ? "merged" : l.key}${state.lane === l.key ? " active" : ""}${keys.active && keys.cur.lane === li ? " cursor" : ""}`, "aria-label": l.label,
   },
     h("header", { class: "col-head" }, l.label, h("span", { class: "n" }, items[l.key].length)),
     h("div", { class: "col-body" },
@@ -1933,7 +1933,7 @@ function moveCursor(lane, row) {
   keys.active = true;
   if (!desktop.matches) state.lane = LANES[lane].key; // mobile shows one lane
   renderBoard();
-  $(".todo.cursor")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  ($(".todo.cursor") || $(".col.cursor"))?.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
 // The element j/k and Ctrl-d/u scroll in the current context.
