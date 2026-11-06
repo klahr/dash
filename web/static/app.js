@@ -351,11 +351,12 @@ function saveComments() {
 
 // ------------------------------------------------------------------ navigation
 function showView(name) {
+  const apply = () => { applyView(name); if (name === "chat") chatInput.focus(); };
   if (name !== state.view && document.startViewTransition && !reduceMotion.matches) {
-    document.startViewTransition(() => applyView(name));
+    document.startViewTransition(apply);
     return;
   }
-  applyView(name);
+  apply();
 }
 
 function applyView(name) {
@@ -2556,7 +2557,7 @@ function paletteCommands() {
   return [
     p && ["New todo", "plus", () => openTodoForm(), "a", "add create"],
     ["Board", "flag", go("board"), "gb", "view lanes"],
-    ["Chat", "comment", () => { closeDetail(); showView("chat"); chatInput.focus(); }, "gc", "global claude ask view"],
+    ["Chat", "comment", go("chat"), "gc", "global claude ask view"],
     p && [state.view === "board" && boardChatOpen() ? "Close project chat" : "Open project chat", "comment", () => { closeDetail(); $("#pc-open").click(); }, "", "claude ask"],
     ["Shell", "terminal", go("run"), "gs", "run terminal processes view"],
     ["Activity", "log", go("activity"), "ga", "events view"],
