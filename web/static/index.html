@@ -25,6 +25,7 @@
         <span class="project-branch" id="project-branch"></span>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
+      <button class="usage-pill" id="usage-pill" hidden aria-haspopup="dialog" title="Claude usage"></button>
       <span class="live" id="live" title="Live updates disconnected"><span class="live-dot"></span><span class="sr-only" id="live-label">Offline</span></span>
     </header>
 
@@ -56,6 +57,7 @@
       <!-- Board -->
       <section class="view active" id="view-board" aria-label="Board">
         <div class="lanes" role="tablist" id="lane-tabs"></div>
+        <div class="perm-list" id="perm-banner" hidden></div>
         <div class="board" id="board"></div>
         <div class="empty" id="board-empty" hidden></div>
         <button class="fab" id="new-todo" aria-label="New todo">
@@ -126,6 +128,11 @@
           <div class="prompt-text" id="d-prompt"></div>
         </details>
         <div class="error-note" id="d-error" hidden></div>
+        <div class="perm-list" id="d-perms" hidden></div>
+        <details class="checks" id="d-checks" hidden>
+          <summary><span class="checks-state" id="d-checks-state"></span><span class="checks-meta" id="d-checks-meta"></span></summary>
+          <pre class="log" id="d-checks-output"></pre>
+        </details>
         <div class="segmented" role="tablist">
           <button role="tab" data-pane="diff" aria-selected="true">Changes <span id="d-diffstat"></span></button>
           <button role="tab" data-pane="log" aria-selected="false">Log</button>
@@ -159,7 +166,7 @@
   <!-- Projects -->
   <dialog class="sheet" id="project-sheet" aria-labelledby="project-sheet-title">
     <form method="dialog">
-      <header class="sheet-head"><h2 id="project-sheet-title">Projects</h2><button class="link" value="cancel">Done</button></header>
+      <header class="sheet-head"><h2 id="project-sheet-title" tabindex="-1" autofocus>Projects</h2><button class="link" value="cancel">Done</button></header>
       <ul class="project-list" id="project-list"></ul>
       <div class="project-tools" id="project-tools"></div>
     </form>
@@ -169,17 +176,44 @@
         <label class="field"><span>Name</span><input name="name" required autocomplete="off"></label>
         <label class="field"><span>Existing repository path <em>optional</em></span><input name="path" placeholder="Leave empty to create a new repo" autocomplete="off" spellcheck="false"></label>
         <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" placeholder="npm run dev -- --port $PORT" spellcheck="false"></label>
-        <label class="field"><span>Test command</span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>
+        <label class="field"><span>Test command</span><input name="test_command" placeholder="go test ./..." spellcheck="false" autofocus></label>
         <label class="field"><span>Deploy command</span><input name="deploy_command" placeholder="./deploy.sh" spellcheck="false"></label>
         <button class="btn primary">Create project</button>
       </form>
     </details>
   </dialog>
 
+  <!-- Usage & queue -->
+  <dialog class="sheet small" id="usage-sheet" aria-labelledby="usage-title">
+    <form method="dialog">
+      <header class="sheet-head"><h2 id="usage-title" tabindex="-1" autofocus>Claude usage</h2><button class="link" value="cancel">Done</button></header>
+      <p class="hint" id="usage-reason"></p>
+      <div class="meters" id="usage-meters"></div>
+      <p class="hint" id="usage-note"></p>
+      <footer class="sheet-actions"><button class="btn" type="button" id="queue-toggle"></button></footer>
+    </form>
+  </dialog>
+
+  <!-- Project settings -->
+  <dialog class="sheet" id="settings-sheet" aria-labelledby="settings-title">
+    <form method="dialog" id="settings-form">
+      <header class="sheet-head"><h2 id="settings-title">Project settings</h2><button class="link" value="cancel" formnovalidate>Cancel</button></header>
+      <label class="field"><span>Test command <em>runs before review; failures go back to Claude</em></span><input name="test_command" placeholder="go test ./..." spellcheck="false" autofocus></label>
+      <label class="field inline"><span>Automatic fix attempts</span><input type="number" name="max_auto_fixes" min="0" max="10" inputmode="numeric"></label>
+      <p class="hint">How often failing tests or merge conflicts go back to Claude before Dash asks you.</p>
+      <label class="field"><span>Setup command <em>runs once in each new worktree</em></span><input name="setup_command" placeholder="npm ci" spellcheck="false"></label>
+      <label class="field"><span>Files to copy into worktrees <em>one per line</em></span><textarea name="copy_files" rows="2" placeholder=".env" spellcheck="false"></textarea></label>
+      <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" spellcheck="false"></label>
+      <label class="field"><span>Deploy command</span><input name="deploy_command" spellcheck="false"></label>
+      <label class="toggle"><input type="checkbox" name="auto_push"><span>Push after every merge</span></label>
+      <footer class="sheet-actions"><button class="btn primary" value="save">Save settings</button></footer>
+    </form>
+  </dialog>
+
   <!-- Generic question / confirmation -->
   <dialog class="sheet small" id="ask-sheet" aria-labelledby="ask-title">
     <form method="dialog" id="ask-form">
-      <h2 id="ask-title"></h2>
+      <h2 id="ask-title" tabindex="-1" autofocus></h2>
       <p id="ask-body" class="hint"></p>
       <textarea id="ask-input" rows="4" hidden></textarea>
       <footer class="sheet-actions">
@@ -189,6 +223,31 @@
     </form>
   </dialog>
 
+  <!-- Command line (:) -->
+  <dialog class="cmdline" id="cmd-sheet" aria-label="Command line">
+    <form id="cmd-form"><span aria-hidden="true">:</span><input id="cmd-input" autocomplete="off" spellcheck="false" aria-label="Command"></form>
+  </dialog>
+
+  <!-- Keyboard help (?) -->
+  <dialog class="sheet" id="keys-sheet" aria-labelledby="keys-title">
+    <form method="dialog">
+      <header class="sheet-head"><h2 id="keys-title" tabindex="-1" autofocus>Keyboard</h2><button class="link" value="cancel">Done</button></header>
+      <p class="hint">Vim-style. Typing in a field or the terminal is insert mode; Esc (Ctrl-] in the terminal) returns to normal mode.</p>
+      <dl class="keys">
+        <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with todos · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
+        <dt>Sections</dt><dd><kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>p</kbd> projects · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
+        <dt>Todos</dt><dd><kbd>Enter</kbd> open · <kbd>o</kbd> new · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>a</kbd> approve · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>*</kbd> milestone · <kbd>t</kbd> try it · <kbd>!</kbd> shell in worktree</dd>
+        <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> changes ↔ log · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
+        <dt>Approvals</dt><dd><kbd>y</kbd> allow · <kbd>A</kbd> always allow that tool for the todo · <kbd>n</kbd> deny</dd>
+        <dt>Chat</dt><dd><kbd>i</kbd> type · <kbd>Enter</kbd> send · <kbd>Esc</kbd> stop typing · <kbd>j</kbd>/<kbd>k</kbd> scroll</dd>
+        <dt>Run</dt><dd><kbd>j</kbd>/<kbd>k</kbd> select · <kbd>Enter</kbd> view · <kbd>i</kbd> type into terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> shell · <kbd>/</kbd> command</dd>
+        <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> add to queue · <kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>
+        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:todo …</code> <code>:new</code> <code>:run cmd</code> <code>:push</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:activity</code> <code>:clear</code> <code>:q</code></dd>
+      </dl>
+    </form>
+  </dialog>
+
+  <div class="kbd-status" id="kbd-status" aria-hidden="true">NORMAL</div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>

@@ -236,3 +236,49 @@ func (c *Client) ChatTurn(ctx context.Context, history []agent.ChatMessage, deli
 		}
 	}
 }
+
+// ---- permissions & usage ----
+
+// PermRequest mirrors perm.Request.
+type PermRequest struct {
+	ID        string          `json:"id"`
+	TodoID    string          `json:"todo_id"`
+	ProjectID string          `json:"project_id"`
+	Tool      string          `json:"tool"`
+	Input     json.RawMessage `json:"input"`
+	Created   time.Time       `json:"created"`
+	Decision  string          `json:"decision"`
+}
+
+func (c *Client) Permissions(pid string) (ps []PermRequest, err error) {
+	return ps, c.do("GET", "/api/permissions?project="+url.QueryEscape(pid), nil, &ps)
+}
+
+// Decide answers a permission request: allow, always or deny.
+func (c *Client) Decide(id, decision string) error {
+	return c.do("POST", "/api/permissions/"+id, map[string]string{"decision": decision}, nil)
+}
+
+// Usage mirrors usage.Snapshot.
+type Usage struct {
+	Known       bool    `json:"known"`
+	PauseAt     float64 `json:"pause_at"`
+	ManualPause bool    `json:"manual_pause"`
+	Paused      bool    `json:"paused"`
+	Reason      string  `json:"reason"`
+	Windows     []struct {
+		Name        string    `json:"name"`
+		Utilization float64   `json:"utilization"`
+		ResetsAt    time.Time `json:"resets_at"`
+	} `json:"windows"`
+}
+
+func (c *Client) Usage() (u Usage, err error) { return u, c.do("GET", "/api/usage", nil, &u) }
+
+func (c *Client) SetQueuePaused(paused bool) (u Usage, err error) {
+	path := "/api/queue/resume"
+	if paused {
+		path = "/api/queue/pause"
+	}
+	return u, c.do("POST", path, nil, &u)
+}

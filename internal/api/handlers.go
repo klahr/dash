@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/store"
 )
 
@@ -30,17 +32,24 @@ var slugRe = regexp.MustCompile(`[^a-z0-9-]+`)
 
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name          string `json:"name"`
-		Path          string `json:"path"` // optional: adopt an existing directory/repo
-		DefaultBranch string `json:"default_branch"`
-		RunCommand    string `json:"run_command"`
-		TestCommand   string `json:"test_command"`
-		DeployCommand string `json:"deploy_command"`
-		AutoPush      bool   `json:"auto_push"`
+		Name          string   `json:"name"`
+		Path          string   `json:"path"` // optional: adopt an existing directory/repo
+		DefaultBranch string   `json:"default_branch"`
+		RunCommand    string   `json:"run_command"`
+		TestCommand   string   `json:"test_command"`
+		DeployCommand string   `json:"deploy_command"`
+		SetupCommand  string   `json:"setup_command"`
+		CopyFiles     []string `json:"copy_files"`
+		MaxAutoFixes  *int     `json:"max_auto_fixes"`
+		AutoPush      bool     `json:"auto_push"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
+	}
+	maxFixes := model.DefaultMaxAutoFixes
+	if req.MaxAutoFixes != nil {
+		maxFixes = max(0, *req.MaxAutoFixes)
 	}
 	if strings.TrimSpace(req.Name) == "" {
 		writeErr(w, fmt.Errorf("%w: name is required", errBadRequest))
@@ -66,6 +75,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		ID: id, Name: req.Name, Path: req.Path, DefaultBranch: req.DefaultBranch,
 		RemoteURL: s.Git.RemoteURL(ctx, id, req.Path), AutoPush: req.AutoPush,
 		RunCommand: req.RunCommand, TestCommand: req.TestCommand, DeployCommand: req.DeployCommand,
+		SetupCommand: req.SetupCommand, CopyFiles: cleanList(req.CopyFiles), MaxAutoFixes: maxFixes,
 	})
 	if err != nil {
 		writeErr(w, err)
@@ -76,11 +86,14 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name          *string `json:"name"`
-		RunCommand    *string `json:"run_command"`
-		TestCommand   *string `json:"test_command"`
-		DeployCommand *string `json:"deploy_command"`
-		AutoPush      *bool   `json:"auto_push"`
+		Name          *string   `json:"name"`
+		RunCommand    *string   `json:"run_command"`
+		TestCommand   *string   `json:"test_command"`
+		DeployCommand *string   `json:"deploy_command"`
+		SetupCommand  *string   `json:"setup_command"`
+		CopyFiles     *[]string `json:"copy_files"`
+		MaxAutoFixes  *int      `json:"max_auto_fixes"`
+		AutoPush      *bool     `json:"auto_push"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
@@ -91,7 +104,14 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		set(&p.RunCommand, req.RunCommand)
 		set(&p.TestCommand, req.TestCommand)
 		set(&p.DeployCommand, req.DeployCommand)
+		set(&p.SetupCommand, req.SetupCommand)
 		set(&p.AutoPush, req.AutoPush)
+		if req.CopyFiles != nil {
+			p.CopyFiles = cleanList(*req.CopyFiles)
+		}
+		if req.MaxAutoFixes != nil {
+			p.MaxAutoFixes = max(0, *req.MaxAutoFixes)
+		}
 		return nil
 	})
 	if err != nil {
@@ -248,6 +268,9 @@ func (s *Server) deleteTodo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	if s.Perms != nil {
+		s.Perms.Forget(t.ID)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -300,7 +323,7 @@ func (s *Server) todoDiff(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) todoLog(w http.ResponseWriter, r *http.Request) {
-	log, err := s.Todos.Log(r.PathValue("tid"))
+	log, err := s.Todos.Log.Read(r.PathValue("tid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -310,7 +333,10 @@ func (s *Server) todoLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) approveTodo(w http.ResponseWriter, r *http.Request) {
-	t, err := s.Store.SetStatus(r.PathValue("tid"), model.StatusMerging, "")
+	t, err := s.Store.UpdateTodo(r.PathValue("tid"), func(t *model.Todo) error {
+		t.Status, t.Error, t.AutoFixes = model.StatusMerging, "", 0
+		return nil
+	})
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -338,6 +364,7 @@ func (s *Server) reworkTodo(w http.ResponseWriter, r *http.Request) {
 			t.Feedback = append(t.Feedback, fb)
 		}
 		t.Status, t.Error = model.StatusQueued, ""
+		t.AutoFixes, t.AutoMerge = 0, false // a human is involved again: fresh budget, review afterwards
 		return nil
 	})
 	if err != nil {
@@ -432,7 +459,57 @@ func (s *Server) stopProcess(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// ---------------------------------------------------------------- permissions & usage
+
+func (s *Server) listPermissions(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.Perms.Pending(r.URL.Query().Get("project")))
+}
+
+func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Decision string `json:"decision"` // allow | always | deny
+		Message  string `json:"message"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := s.Perms.Decide(r.PathValue("id"), req.Decision, req.Message); err != nil {
+		if errors.Is(err, perm.ErrNotFound) {
+			writeErr(w, store.ErrNotFound)
+			return
+		}
+		writeErr(w, fmt.Errorf("%w: %v", errBadRequest, err))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) getUsage(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.Usage.Snapshot())
+}
+
+func (s *Server) pauseQueue(paused bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s.Usage.SetManualPause(paused)
+		if !paused {
+			s.Todos.Kick()
+		}
+		writeJSON(w, http.StatusOK, s.Usage.Snapshot())
+	}
+}
+
 // ---------------------------------------------------------------- utils
+
+func cleanList(xs []string) []string {
+	var out []string
+	for _, x := range xs {
+		if x = strings.TrimSpace(x); x != "" {
+			out = append(out, x)
+		}
+	}
+	return out
+}
 
 func set[T any](dst *T, src *T) {
 	if src != nil {

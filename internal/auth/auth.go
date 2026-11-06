@@ -197,6 +197,8 @@ var public = map[string]bool{
 	"/login.js":   true,
 	"/style.css":  true,
 	"/api/login":  true,
+	// Claude Code's permission prompts; authenticated by a per-run bearer token instead.
+	"/mcp/permissions": true,
 }
 
 // Middleware requires a valid session for everything except public paths.

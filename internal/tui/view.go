@@ -87,6 +87,29 @@ func (a *App) renderHeader() string {
 	if a.proj != nil {
 		right = styleAccent.Render(a.proj.Name) + styleDim.Render(" ("+a.proj.DefaultBranch+")")
 	}
+	if n := len(a.perms); n > 0 {
+		right += styleWarn.Bold(true).Render(fmt.Sprintf("  ⚠ %d waiting (P)", n))
+	}
+	if u := a.usage; u != nil && (u.Known || u.ManualPause) {
+		switch {
+		case u.Paused:
+			right += styleErr.Render("  ⏸ " + u.Reason)
+		default:
+			top, name := 0.0, ""
+			for _, w := range u.Windows {
+				if w.ResetsAt.After(time.Now()) && w.Utilization >= top {
+					top, name = w.Utilization, map[string]string{"five_hour": "5h", "seven_day": "7d"}[w.Name]
+				}
+			}
+			if name != "" {
+				st := styleDim
+				if top >= 0.7 {
+					st = styleWarn
+				}
+				right += st.Render(fmt.Sprintf("  %s %.0f%%", name, top*100))
+			}
+		}
+	}
 	right += styleDim.Render(fmt.Sprintf("  merge:%d ", a.mergeQueue))
 	if a.connected {
 		right += styleOK.Render("●")
@@ -145,11 +168,13 @@ func (a *App) hints() string {
 	}
 	switch a.overlay {
 	case ovDetail:
-		return "Tab log/diff · j/k ^d/^u gg/G · s queue a approve r rework x cancel t try ! shell · q back"
+		return "Tab log/diff/tests · j/k ^d/^u gg/G · s queue a approve r rework x cancel t try ! shell · q back"
 	case ovForm:
 		return "i insert · j/k field · * goal · +/- priority · :w draft · :wq queue · :q! discard"
 	case ovPicker:
 		return "j/k · Enter select · q close"
+	case ovPerms:
+		return "y allow · A always allow this tool · n deny · o open todo · j/k · q close"
 	}
 	switch a.tab {
 	case tabBoard:
@@ -172,6 +197,8 @@ func (a *App) renderBody() string {
 		return a.center(a.renderPicker())
 	case ovHelp:
 		return a.center(helpText)
+	case ovPerms:
+		return a.center(a.renderPerms())
 	}
 	if a.proj == nil && a.tab != tabChat {
 		return a.center(styleBox.Render("No project yet.\n\n" + styleDim.Render(":newproject <name> [path]")))
@@ -239,6 +266,10 @@ func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
 	name := ansi.Truncate(title(t), w-3, "…")
 	sub := ""
 	switch {
+	case a.waiting(t.ID):
+		sub = "⚠ waiting for your approval (P)"
+	case t.Checks != nil && !t.Checks.Passed && t.Status == model.StatusReview:
+		sub = "✗ tests fail"
 	case t.Status == model.StatusInProgress:
 		sub = a.lastLine[t.ID]
 	case t.Error != "":
@@ -254,6 +285,11 @@ func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
 		st = styleDim
 	}
 	l1 := " " + mark + " " + name
+	if a.waiting(t.ID) {
+		st = styleWarn
+	} else if t.Checks != nil && !t.Checks.Passed && t.Status == model.StatusReview {
+		st = styleErr
+	}
 	l2 := "   " + st.Render(ansi.Strip(sub))
 	if sel {
 		l1 = styleSel.Render(" " + ansi.Strip(mark) + " " + name + strings.Repeat(" ", max(0, w-3-lipgloss.Width(name))))
@@ -280,11 +316,27 @@ func (a *App) renderDetail() string {
 	if t.Worktree != nil {
 		meta = append(meta, t.Worktree.Branch)
 	}
+	if t.Runs > 0 {
+		meta = append(meta, fmt.Sprintf("%d runs ≈$%.2f", t.Runs, t.CostUSD))
+	}
+	if t.AutoFixes > 0 {
+		meta = append(meta, fmt.Sprintf("auto-fixed %d×", t.AutoFixes))
+	}
+	if t.Checks != nil {
+		if t.Checks.Passed {
+			meta = append(meta, styleOK.Render("✓ tests pass"))
+		} else {
+			meta = append(meta, styleErr.Render("✗ tests fail"))
+		}
+	}
+	if a.waiting(t.ID) {
+		meta = append(meta, styleWarn.Render("⚠ waiting for approval (P)"))
+	}
 	if t.Error != "" {
 		meta = append(meta, styleErr.Render(t.Error))
 	}
 	tabs := ""
-	for _, k := range []string{"log", "diff"} {
+	for _, k := range []string{"log", "diff", "tests"} {
 		if k == a.dKind {
 			tabs += styleTabOn.Render(k)
 		} else {
@@ -295,6 +347,18 @@ func (a *App) renderDetail() string {
 	top := []string{" " + head, " " + styleDim.Render(strings.Join(meta, " · ")), " " + styleDim.Render(prompt), " " + tabs}
 
 	text := a.dText[a.dID+a.dKind]
+	if a.dKind == "tests" {
+		text = ""
+		if c := t.Checks; c != nil {
+			state := styleOK.Render("passed")
+			if !c.Passed {
+				state = styleErr.Render(fmt.Sprintf("failed (exit %d)", c.ExitCode))
+			}
+			text = fmt.Sprintf("%s  %s · %.0fs\n$ %s\n\n%s", state, map[string]string{"merge": "after merging the default branch", "review": "before review"}[c.Stage], c.Duration, c.Command, c.Output)
+		} else {
+			text = styleDim.Render("No test run yet. Set a test command with the web UI's project settings.")
+		}
+	}
 	var lines []string
 	if text == "" {
 		lines = []string{styleDim.Render("  (empty)")}
@@ -446,6 +510,29 @@ func (a *App) renderForm() string {
 	return styleBox.Width(min(a.w-4, 104)).Render(body)
 }
 
+func (a *App) renderPerms() string {
+	lines := []string{styleBold.Render("Claude is waiting for you"), ""}
+	w := min(a.w-10, 96)
+	for i, p := range a.perms {
+		name := p.TodoID
+		if t, ok := a.todos[p.TodoID]; ok {
+			name = title(t)
+		}
+		head := fmt.Sprintf("%s  %s", styleWarn.Render(p.Tool), styleDim.Render(name))
+		body := ansi.Truncate(permSummary(p), w, "…")
+		if i == a.permRow {
+			head = styleAccent.Render("▸ ") + head
+			body = "  " + styleSel.Render(" "+body+" ")
+		} else {
+			head = "  " + head
+			body = "  " + body
+		}
+		lines = append(lines, head, body, "")
+	}
+	lines = append(lines, styleDim.Render("y allow · A always allow this tool for the todo · n deny · o open todo"))
+	return styleBox.Render(strings.Join(lines, "\n"))
+}
+
 func (a *App) renderPicker() string {
 	if len(a.projects) == 0 {
 		return styleBox.Render("No projects.\n" + styleDim.Render(":newproject <name> [path]"))
@@ -468,10 +555,11 @@ var helpText = styleBox.Render(strings.Join([]string{
 	styleAccent.Render("Motion") + "        h j k l · w/b next/prev column · gg G · {count}j · ctrl+d/u/f/b",
 	styleAccent.Render("Todo") + "          Enter open · o new · e edit · s queue · x cancel · a approve · r rework",
 	"              dd delete · +/- (K/J) priority · * goal · t try in worktree · ! shell in worktree",
-	styleAccent.Render("Detail") + "        Tab/h/l switch log↔diff · R reload · q back",
+	styleAccent.Render("Detail") + "        Tab/h/l cycle log → diff → tests · R reload · q back",
+	styleAccent.Render("Approvals") + "     P list Claude's permission requests · y allow · A always allow · n deny",
 	styleAccent.Render("Chat") + "          i insert · Enter send · Alt+Enter newline · Esc normal · x stop · dd/:clear",
 	styleAccent.Render("Procs") + "         Enter attach (Ctrl-] detaches) · R run · T test · D deploy · ! shell · x stop · o open",
 	styleAccent.Render("Form") + "          Tab field · Esc normal · * goal · :w draft · :wq/ZZ queue · :q! discard",
 	styleAccent.Render("Commands") + "      :project <name> · :newproject <name> [path] · :todo <prompt> · :new [prompt]",
-	"              :run <cmd> · :push · :board :chat :procs :activity · :clear · :e! reload",
+	"              :run <cmd> · :push · :pause / :resume the queue · :perms · :board :chat :procs :activity · :clear",
 }, "\n"))

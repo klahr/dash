@@ -29,9 +29,9 @@ const (
 var transitions = map[TodoStatus][]TodoStatus{
 	StatusDraft:      {StatusQueued},
 	StatusQueued:     {StatusDraft, StatusInProgress},
-	StatusInProgress: {StatusReview, StatusFailed, StatusQueued},
+	StatusInProgress: {StatusReview, StatusFailed, StatusQueued, StatusMerging}, // → merging: auto-merge after a conflict fix
 	StatusReview:     {StatusMerging, StatusQueued, StatusDraft},
-	StatusMerging:    {StatusMerged, StatusFailed, StatusReview},
+	StatusMerging:    {StatusMerged, StatusFailed, StatusReview, StatusQueued}, // → queued: conflict sent back to Claude
 	StatusFailed:     {StatusQueued, StatusDraft, StatusReview},
 	StatusMerged:     {},
 }
@@ -50,17 +50,27 @@ func CanTransition(from, to TodoStatus) bool {
 // Path always has DefaultBranch checked out and is only written to by the
 // merge worker; all AI work happens in worktrees.
 type Project struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	Path          string    `json:"path"`
-	DefaultBranch string    `json:"default_branch"`
-	RemoteURL     string    `json:"remote_url,omitempty"`
-	AutoPush      bool      `json:"auto_push"`                // push DefaultBranch after every merge
-	RunCommand    string    `json:"run_command,omitempty"`    // e.g. "npm run dev" — gets $PORT
-	TestCommand   string    `json:"test_command,omitempty"`   // e.g. "go test ./..."
-	DeployCommand string    `json:"deploy_command,omitempty"` // e.g. "./deploy.sh" or "adb install …"
-	CreatedAt     time.Time `json:"created_at"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Path          string `json:"path"`
+	DefaultBranch string `json:"default_branch"`
+	RemoteURL     string `json:"remote_url,omitempty"`
+	AutoPush      bool   `json:"auto_push"`                // push DefaultBranch after every merge
+	RunCommand    string `json:"run_command,omitempty"`    // e.g. "npm run dev" — gets $PORT
+	TestCommand   string `json:"test_command,omitempty"`   // e.g. "go test ./..."
+	DeployCommand string `json:"deploy_command,omitempty"` // e.g. "./deploy.sh" or "adb install …"
+	// SetupCommand runs once in every new worktree before Claude starts,
+	// e.g. "npm ci". CopyFiles are copied from the main checkout first
+	// (untracked files such as ".env" that worktrees don't get from git).
+	SetupCommand string   `json:"setup_command,omitempty"`
+	CopyFiles    []string `json:"copy_files,omitempty"`
+	// MaxAutoFixes is how many times Dash sends failing tests or merge
+	// conflicts back to Claude on its own before asking a human.
+	MaxAutoFixes int       `json:"max_auto_fixes"`
+	CreatedAt    time.Time `json:"created_at"`
 }
+
+const DefaultMaxAutoFixes = 2
 
 // Worktree is the isolated checkout a Todo is executed in.
 type Worktree struct {
@@ -72,20 +82,47 @@ type Worktree struct {
 
 // Todo is a unit of AI work.
 type Todo struct {
-	ID         string     `json:"id"`
-	ProjectID  string     `json:"project_id"`
-	Title      string     `json:"title"`
-	Prompt     string     `json:"prompt"`
-	Goal       bool       `json:"goal"`     // major milestone
-	Priority   int        `json:"priority"` // lower runs first; ties broken by CreatedAt
-	Status     TodoStatus `json:"status"`
-	Worktree   *Worktree  `json:"worktree,omitempty"`
-	Feedback   []string   `json:"feedback,omitempty"` // reviewer notes from "rework" rounds
+	ID        string     `json:"id"`
+	ProjectID string     `json:"project_id"`
+	Title     string     `json:"title"`
+	Prompt    string     `json:"prompt"`
+	Goal      bool       `json:"goal"`     // major milestone
+	Priority  int        `json:"priority"` // lower runs first; ties broken by CreatedAt
+	Status    TodoStatus `json:"status"`
+	Worktree  *Worktree  `json:"worktree,omitempty"`
+	// Feedback holds notes for Claude: reviewer rework notes and automatic
+	// ones (failing tests, merge conflicts). FeedbackSent counts how many
+	// Claude has already seen, so a resumed session only gets the new ones.
+	Feedback     []string `json:"feedback,omitempty"`
+	FeedbackSent int      `json:"feedback_sent,omitempty"`
+	// SessionID is Claude Code's session for this todo; later runs resume it.
+	SessionID string  `json:"session_id,omitempty"`
+	Checks    *Checks `json:"checks,omitempty"` // latest test run
+	AutoFixes int     `json:"auto_fixes,omitempty"`
+	// MergeMain asks the next run to merge the default branch into the
+	// worktree first (set when a merge conflicted). AutoMerge sends the todo
+	// straight back to the merge queue once it is fixed and tests pass,
+	// since a human already approved it.
+	MergeMain  bool       `json:"merge_main,omitempty"`
+	AutoMerge  bool       `json:"auto_merge,omitempty"`
+	CostUSD    float64    `json:"cost_usd,omitempty"` // API-equivalent cost reported by Claude Code
+	Runs       int        `json:"runs,omitempty"`
 	Error      string     `json:"error,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// Checks is the outcome of running the project's test command in a worktree.
+type Checks struct {
+	Command  string    `json:"command"`
+	Passed   bool      `json:"passed"`
+	ExitCode int       `json:"exit_code"`
+	Output   string    `json:"output"` // tail of combined stdout/stderr
+	Stage    string    `json:"stage"`  // "review" (before review) | "merge" (after merging the default branch)
+	At       time.Time `json:"at"`
+	Duration float64   `json:"duration_s"`
 }
 
 // MergeJob is a request to land a reviewed Todo's branch on the default branch.
@@ -128,6 +165,8 @@ const (
 	EvGitOp          EventType = "git.op"      // a git/gh command ran
 	EvMergeQueue     EventType = "merge.queue" // merge queue depth / current job
 	EvProcUpdated    EventType = "process.updated"
+	EvPermission     EventType = "permission.updated" // Claude asked to use a tool, or a request was answered
+	EvUsage          EventType = "usage.updated"      // subscription rate-limit usage / queue pause state
 )
 
 // Event is the envelope for everything pushed over /ws/events.

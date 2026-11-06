@@ -124,8 +124,13 @@ func (g *Git) CommitAll(ctx context.Context, projectID, dir, msg string) (bool, 
 		return false, err
 	}
 	status, err := g.git(ctx, projectID, dir, "status", "--porcelain")
-	if err != nil || status == "" {
+	if err != nil {
 		return false, err
+	}
+	// A merge in progress must be concluded even when the resolution matches HEAD.
+	_, mergeErr := g.git(ctx, projectID, dir, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+	if status == "" && mergeErr != nil {
+		return false, nil
 	}
 	_, err = g.git(ctx, projectID, dir, g.committing(ctx, dir, "commit", "-m", msg)...)
 	return err == nil, err
@@ -136,20 +141,86 @@ func (g *Git) Diff(ctx context.Context, projectID, repo, base, branch string) (s
 	return g.git(ctx, projectID, repo, "diff", "--stat", "--patch", base+"..."+branch)
 }
 
-// Rebase replays the worktree's branch onto onto. On conflict the rebase is
-// aborted and the error returned, leaving the worktree as it was.
-func (g *Git) Rebase(ctx context.Context, projectID, worktree, onto string) error {
-	if _, err := g.git(ctx, projectID, worktree, g.committing(ctx, worktree, "rebase", onto)...); err != nil {
-		_, _ = g.git(ctx, projectID, worktree, "rebase", "--abort")
-		return err
-	}
-	return nil
+// ErrConflict is returned when merging hits conflicts.
+type ErrConflict struct{ Files []string }
+
+func (e *ErrConflict) Error() string {
+	return "merge conflict in " + strings.Join(e.Files, ", ")
 }
 
-// FastForward advances the checked-out branch in repo to branch.
-func (g *Git) FastForward(ctx context.Context, projectID, repo, branch string) error {
-	_, err := g.git(ctx, projectID, repo, "merge", "--ff-only", branch)
-	return err
+// MergeIn merges branch into the branch checked out in dir and commits.
+// On conflict the merge is aborted (dir is left as it was) and an
+// *ErrConflict lists the conflicting files. changed reports whether HEAD moved.
+func (g *Git) MergeIn(ctx context.Context, projectID, dir, branch string) (changed bool, err error) {
+	before, _ := g.Head(ctx, projectID, dir, "HEAD")
+	if _, err := g.git(ctx, projectID, dir, g.committing(ctx, dir, "merge", "--no-edit", branch)...); err != nil {
+		files := g.conflictedFiles(ctx, projectID, dir)
+		_, _ = g.git(ctx, projectID, dir, "merge", "--abort")
+		if len(files) > 0 {
+			return false, &ErrConflict{Files: files}
+		}
+		return false, err
+	}
+	after, _ := g.Head(ctx, projectID, dir, "HEAD")
+	return before != after, nil
+}
+
+// StartMerge begins merging branch into dir without committing. Conflicts
+// are left in the working tree (with markers) for someone to resolve; the
+// next CommitAll completes the merge. Returns the conflicting files.
+func (g *Git) StartMerge(ctx context.Context, projectID, dir, branch string) ([]string, error) {
+	_, err := g.git(ctx, projectID, dir, g.committing(ctx, dir, "merge", "--no-commit", "--no-ff", branch)...)
+	files := g.conflictedFiles(ctx, projectID, dir)
+	if err != nil && len(files) == 0 {
+		// "Already up to date" exits 0; anything else without conflicts is a real error.
+		_, _ = g.git(ctx, projectID, dir, "merge", "--abort")
+		return nil, err
+	}
+	return files, nil
+}
+
+func (g *Git) conflictedFiles(ctx context.Context, projectID, dir string) []string {
+	out, err := g.git(ctx, projectID, dir, "diff", "--name-only", "--diff-filter=U")
+	if err != nil || out == "" {
+		return nil
+	}
+	return strings.Split(out, "\n")
+}
+
+// LeftoverMarkers stages everything and reports files that still contain
+// conflict markers (empty when the merge is fully resolved).
+func (g *Git) LeftoverMarkers(ctx context.Context, projectID, dir string) (string, error) {
+	if _, err := g.git(ctx, projectID, dir, "add", "-A"); err != nil {
+		return "", err
+	}
+	out, err := g.git(ctx, projectID, dir, "diff", "--cached", "--check")
+	if err == nil {
+		return "", nil
+	}
+	var lines []string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, "conflict marker") {
+			lines = append(lines, l)
+		}
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+// SquashInto lands branch on the branch checked out in repo as one commit.
+// Returns false if branch had nothing new. On failure repo is reset.
+func (g *Git) SquashInto(ctx context.Context, projectID, repo, branch, msg string) (bool, error) {
+	if _, err := g.git(ctx, projectID, repo, "merge", "--squash", branch); err != nil {
+		_, _ = g.git(ctx, projectID, repo, "reset", "--merge")
+		return false, err
+	}
+	if _, err := g.git(ctx, projectID, repo, "diff", "--cached", "--quiet"); err == nil {
+		return false, nil // nothing staged
+	}
+	if _, err := g.git(ctx, projectID, repo, g.committing(ctx, repo, "commit", "-m", msg)...); err != nil {
+		_, _ = g.git(ctx, projectID, repo, "reset", "--merge")
+		return false, err
+	}
+	return true, nil
 }
 
 func (g *Git) Push(ctx context.Context, projectID, repo, branch string) error {

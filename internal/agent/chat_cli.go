@@ -24,6 +24,8 @@ type ClaudeCodeChat struct {
 	Bin    string // default "claude"
 	Model  string // optional --model
 	System string
+	// OnRateLimit receives the rate_limit_info of every rate_limit_event.
+	OnRateLimit func(json.RawMessage)
 }
 
 func (c ClaudeCodeChat) Stream(ctx context.Context, history []ChatMessage, emit func(ChatDelta)) error {
@@ -68,10 +70,11 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, history []ChatMessage, emit 
 	var resultErr error
 	pumpLines(stdout, func(line string) {
 		var ev struct {
-			Type    string `json:"type"`
-			IsError bool   `json:"is_error"`
-			Result  string `json:"result"`
-			Event   struct {
+			Type          string          `json:"type"`
+			IsError       bool            `json:"is_error"`
+			Result        string          `json:"result"`
+			RateLimitInfo json.RawMessage `json:"rate_limit_info"`
+			Event         struct {
 				Type  string `json:"type"`
 				Delta struct {
 					Type     string `json:"type"`
@@ -84,6 +87,10 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, history []ChatMessage, emit 
 			return
 		}
 		switch ev.Type {
+		case "rate_limit_event":
+			if c.OnRateLimit != nil && len(ev.RateLimitInfo) > 0 {
+				c.OnRateLimit(ev.RateLimitInfo)
+			}
 		case "stream_event":
 			if ev.Event.Type != "content_block_delta" {
 				return

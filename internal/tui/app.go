@@ -51,6 +51,7 @@ const (
 	ovForm
 	ovPicker
 	ovHelp
+	ovPerms
 )
 
 // Board columns; failed todos are shown with merged under "Done".
@@ -121,6 +122,10 @@ type App struct {
 	fEditID string // "" = new todo
 
 	pickRow int
+
+	perms   []PermRequest // pending permission requests for this project
+	permRow int
+	usage   *Usage
 
 	cmdline   textinput.Model
 	promptIn  textinput.Model
@@ -206,10 +211,18 @@ type (
 		err error
 	}
 	attachEndMsg struct{ err error }
+	permsMsg     struct {
+		pid string
+		ps  []PermRequest
+	}
+	usageMsg struct {
+		u   Usage
+		err error
+	}
 )
 
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.loadProjects(), a.streamEvents())
+	return tea.Batch(a.loadProjects(), a.streamEvents(), a.loadUsage())
 }
 
 func (a *App) streamEvents() tea.Cmd {
@@ -239,6 +252,27 @@ func (a *App) loadProcs() tea.Cmd {
 	}
 	pid := a.proj.ID
 	return func() tea.Msg { ps, err := a.c.Processes(pid); return procsMsg{pid, ps, err} }
+}
+
+func (a *App) loadPerms() tea.Cmd {
+	if a.proj == nil {
+		return nil
+	}
+	pid := a.proj.ID
+	return func() tea.Msg { ps, _ := a.c.Permissions(pid); return permsMsg{pid, ps} }
+}
+
+func (a *App) loadUsage() tea.Cmd {
+	return func() tea.Msg { u, err := a.c.Usage(); return usageMsg{u, err} }
+}
+
+func (a *App) waiting(todoID string) bool {
+	for _, p := range a.perms {
+		if p.TodoID == todoID {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) loadText(id, kind string) tea.Cmd {
@@ -316,7 +350,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		was := a.connected
 		a.connected = msg.ok
 		if msg.ok && !was {
-			return a, tea.Batch(a.loadProjects(), a.loadTodos(), a.loadProcs())
+			return a, tea.Batch(a.loadProjects(), a.loadTodos(), a.loadProcs(), a.loadPerms(), a.loadUsage())
 		}
 		if msg.err != nil && errors.Is(msg.err, ErrUnauthorized) {
 			a.setFlash("login rejected by server — check DASH_USERNAME / DASH_PASSWORD", true)
@@ -364,6 +398,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case permsMsg:
+		if a.proj != nil && msg.pid == a.proj.ID {
+			a.perms = msg.ps
+			a.permRow = clamp(a.permRow, 0, len(a.perms)-1)
+		}
+		return a, nil
+
+	case usageMsg:
+		if msg.err == nil {
+			a.usage = &msg.u
+		}
+		return a, nil
+
 	case procStartedMsg:
 		if msg.err != nil {
 			a.setFlash(msg.err.Error(), true)
@@ -397,7 +444,7 @@ func (a *App) reselectProject() tea.Cmd {
 			changed := a.proj == nil || a.proj.ID != p.ID
 			a.proj = p
 			if changed {
-				return tea.Batch(a.loadTodos(), a.loadProcs())
+				return tea.Batch(a.loadTodos(), a.loadProcs(), a.loadPerms())
 			}
 			return nil
 		}
@@ -410,7 +457,8 @@ func (a *App) selectProject(i int) tea.Cmd {
 	a.todos, a.procs, a.cols = map[string]model.Todo{}, nil, nil
 	a.col, a.row, a.procRow = 0, 0, 0
 	a.overlay = ovNone
-	return tea.Batch(a.loadTodos(), a.loadProcs())
+	a.perms = nil
+	return tea.Batch(a.loadTodos(), a.loadProcs(), a.loadPerms())
 }
 
 func (a *App) rebuildCols() {
@@ -509,8 +557,58 @@ func (a *App) handleEvent(ev wireEvent) tea.Cmd {
 		if mine {
 			return a.loadProcs()
 		}
+	case model.EvPermission:
+		if !mine {
+			return nil
+		}
+		var p PermRequest
+		if json.Unmarshal(ev.Data, &p) != nil {
+			return nil
+		}
+		kept := a.perms[:0]
+		for _, x := range a.perms {
+			if x.ID != p.ID {
+				kept = append(kept, x)
+			}
+		}
+		a.perms = kept
+		if p.Decision == "" {
+			a.perms = append(a.perms, p)
+			a.setFlash(fmt.Sprintf("Claude wants to %s — press P to answer", permSummary(p)), false)
+		}
+		a.permRow = clamp(a.permRow, 0, len(a.perms)-1)
+		if len(a.perms) == 0 && a.overlay == ovPerms {
+			a.overlay = ovNone
+		}
+	case model.EvUsage:
+		var u Usage
+		if json.Unmarshal(ev.Data, &u) == nil {
+			a.usage = &u
+		}
 	}
 	return nil
+}
+
+// permSummary is a one-line description of what Claude asks to do.
+func permSummary(p PermRequest) string {
+	var in struct {
+		Command  string `json:"command"`
+		FilePath string `json:"file_path"`
+		URL      string `json:"url"`
+		Query    string `json:"query"`
+	}
+	_ = json.Unmarshal(p.Input, &in)
+	switch {
+	case in.Command != "":
+		return "run `" + in.Command + "`"
+	case in.FilePath != "":
+		return "edit " + in.FilePath
+	case in.URL != "":
+		return "fetch " + in.URL
+	case in.Query != "":
+		return "search for " + in.Query
+	}
+	return "use " + p.Tool
 }
 
 // ---------------------------------------------------------------- keys
@@ -693,7 +791,16 @@ func (a *App) normalKey(s string) tea.Cmd {
 		}
 		return nil
 	case "ctrl+l":
-		return tea.Batch(a.loadProjects(), a.loadTodos(), a.loadProcs())
+		return tea.Batch(a.loadProjects(), a.loadTodos(), a.loadProcs(), a.loadPerms(), a.loadUsage())
+	case "P":
+		if a.overlay != ovForm {
+			if len(a.perms) == 0 {
+				a.setFlash("no permission requests waiting", false)
+				return nil
+			}
+			a.overlay = ovPerms
+			return nil
+		}
 	case "p":
 		if a.overlay != ovForm {
 			a.overlay = ovPicker
@@ -712,6 +819,8 @@ func (a *App) normalKey(s string) tea.Cmd {
 		return nil
 	case ovPicker:
 		return a.pickerKey(s, n)
+	case ovPerms:
+		return a.permsKey(s, n)
 	case ovForm:
 		return a.formKey(s)
 	case ovDetail:
@@ -903,10 +1012,21 @@ func (a *App) openDetail(t model.Todo) tea.Cmd {
 func (a *App) detailKey(s string, n int) tea.Cmd {
 	switch s {
 	case "tab", "l", "h":
-		if a.dKind == "log" {
-			a.dKind, a.dOff, a.dFollow = "diff", 0, false
+		kinds := []string{"log", "diff", "tests"}
+		i := 0
+		for j, k := range kinds {
+			if k == a.dKind {
+				i = j
+			}
+		}
+		if s == "h" {
+			i = (i + len(kinds) - 1) % len(kinds)
 		} else {
-			a.dKind, a.dOff, a.dFollow = "log", 1<<30, true
+			i = (i + 1) % len(kinds)
+		}
+		a.dKind, a.dOff, a.dFollow = kinds[i], 0, kinds[i] == "log"
+		if a.dFollow {
+			a.dOff = 1 << 30
 		}
 		return nil
 	case "R":
@@ -917,6 +1037,34 @@ func (a *App) detailKey(s string, n int) tea.Cmd {
 		return nil
 	}
 	return a.todoAction(s)
+}
+
+func (a *App) permsKey(s string, n int) tea.Cmd {
+	if len(a.perms) == 0 {
+		a.overlay = ovNone
+		return nil
+	}
+	p := a.perms[clamp(a.permRow, 0, len(a.perms)-1)]
+	decide := func(d, ok string) tea.Cmd {
+		return a.action(ok, func() error { return a.c.Decide(p.ID, d) })
+	}
+	switch s {
+	case "j", "down":
+		a.permRow = clamp(a.permRow+n, 0, len(a.perms)-1)
+	case "k", "up":
+		a.permRow = clamp(a.permRow-n, 0, len(a.perms)-1)
+	case "y", "enter":
+		return decide("allow", "allowed")
+	case "A":
+		return decide("always", p.Tool+" allowed for this todo")
+	case "n", "x":
+		return decide("deny", "denied")
+	case "o":
+		if t, ok := a.todos[p.TodoID]; ok {
+			return a.openDetail(t)
+		}
+	}
+	return nil
 }
 
 func (a *App) pickerKey(s string, n int) tea.Cmd {
@@ -1220,6 +1368,25 @@ func (a *App) runCommand(line string) tea.Cmd {
 		return a.action("pushed", func() error { return a.c.PushProject(pid) })
 	case "run", "!":
 		return a.startProc(StartProc{Kind: model.ProcPTY, Command: arg})
+	case "pause", "resume":
+		paused := name == "pause"
+		return func() tea.Msg {
+			u, err := a.c.SetQueuePaused(paused)
+			if err != nil {
+				return resultMsg{err: err}
+			}
+			a.prog.Send(usageMsg{u, nil})
+			if paused {
+				return resultMsg{ok: "queue paused: no new todos start"}
+			}
+			return resultMsg{ok: "queue resumed"}
+		}
+	case "perms", "permissions":
+		if len(a.perms) > 0 {
+			a.overlay = ovPerms
+		} else {
+			a.setFlash("no permission requests waiting", false)
+		}
 	case "clear":
 		if a.chatCancel != nil {
 			a.chatCancel()

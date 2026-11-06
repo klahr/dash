@@ -15,9 +15,11 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/runner"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/usage"
 )
 
 type Server struct {
@@ -29,6 +31,8 @@ type Server struct {
 	Procs       *runner.Manager
 	Chat        agent.Chatter
 	Auth        *auth.Auth
+	Perms       *perm.Broker
+	Usage       *usage.Tracker
 	ProjectRoot string // where new projects without an explicit path are created
 	Static      fs.FS  // frontend assets
 }
@@ -69,6 +73,16 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/projects/{pid}/processes", s.listProcesses)
 	mux.HandleFunc("POST /api/projects/{pid}/processes", s.startProcess)
 	mux.HandleFunc("DELETE /api/processes/{procid}", s.stopProcess)
+
+	// Permission prompts from Claude, subscription usage, queue pause
+	mux.HandleFunc("GET /api/permissions", s.listPermissions)
+	mux.HandleFunc("POST /api/permissions/{id}", s.decidePermission)
+	mux.HandleFunc("GET /api/usage", s.getUsage)
+	mux.HandleFunc("POST /api/queue/pause", s.pauseQueue(true))
+	mux.HandleFunc("POST /api/queue/resume", s.pauseQueue(false))
+	// Claude Code connects here (bearer token per run, not the session cookie)
+	mux.HandleFunc("POST /mcp/permissions", s.Perms.ServeMCP)
+	mux.HandleFunc("GET /mcp/permissions", s.Perms.ServeMCP) // answers 405, as MCP clients expect
 
 	// WebSockets
 	mux.HandleFunc("GET /ws/events", s.Hub.ServeWS)
