@@ -1027,9 +1027,11 @@ async function clearDone() {
   const list = doneTodos();
   if (!list.length) return;
   const failed = list.filter((t) => t.status === "failed").length;
+  const unpushed = list.filter((t) => t.status === "merged" && state.unpushedTodos?.has(t.id)).length;
   const n = list.length;
-  if (!await ask({ title: `Clear ${n} done ${n === 1 ? "task" : "tasks"}?`,
-    body: `Deletes every merged and failed task in this project${failed ? `, including the worktrees and branches of ${failed} failed` : ""}. This can't be undone.`,
+  if (!await ask({ title: unpushed ? `Not all done tasks are pushed — clear ${n} anyway?` : `Clear ${n} done ${n === 1 ? "task" : "tasks"}?`,
+    body: `Deletes every merged and failed task in this project${failed ? `, including the worktrees and branches of ${failed} failed` : ""}. This can't be undone.` +
+      (unpushed ? ` ${unpushed} merged ${unpushed === 1 ? "task hasn't" : "tasks haven't"} been pushed yet. Their changes are not discarded: the commits stay on the local default branch and can still be pushed.` : ""),
     ok: "Clear", danger: true })) return;
   const res = await Promise.allSettled(list.map((t) => api("DELETE", `/api/todos/${t.id}`)));
   if (list.some((t) => t.id === state.detail)) closeDetail();
