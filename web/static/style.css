@@ -134,7 +134,7 @@ textarea { resize: vertical; line-height: 1.45; }
 .nav {
   position: fixed; inset: auto 0 0 0; z-index: 30;
   height: calc(var(--nav-h) + var(--safe-b)); padding-bottom: var(--safe-b);
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: var(--surface); border-top: 1px solid var(--line);
 }
 .nav > button {
@@ -362,6 +362,18 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .activity .ok { color: var(--merged); } .activity .bad { color: var(--failed); }
 .activity code { font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
 .activity time { grid-column: 2; color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* ---------- history ---------- */
+.graph { list-style: none; margin: 0; padding: 8px 16px; font-size: 13px; }
+.graph li { display: flex; align-items: baseline; gap: 8px; min-height: 22px; }
+.graph-edge { min-height: 0 !important; line-height: 1; }
+.graph-lines { flex: none; white-space: pre; font-family: var(--mono); color: var(--accent); }
+.graph-commit { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; padding: 3px 0; }
+.graph-sha { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.graph-ref { padding: 0 6px; border-radius: var(--r-s); border: 1px solid var(--merged); color: var(--merged); font-size: 11.5px; }
+.graph-ref.tag { border-color: var(--accent); color: var(--accent); }
+.graph-subject { overflow-wrap: anywhere; }
+.graph-meta { color: var(--faint); font-size: 12px; }
 
 /* ---------- sheets ---------- */
 .sheet {
@@ -730,7 +742,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .view.active { flex: 1; min-height: 0; overflow-y: auto; }
   #view-chat.active, #view-run.active { height: auto; }
   .statusline { left: var(--side-w); bottom: 0; }
-  .activity { max-width: 1100px; padding: 16px 32px; }
+  .activity, .graph { max-width: 1100px; padding: 16px 32px; }
   .chat-log { padding: 24px 32px; }
   .composer { padding: 14px 32px 20px; }
   .msg { max-width: 72ch; }

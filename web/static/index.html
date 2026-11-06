@@ -74,6 +74,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Activity</span>
       </button>
+      <button data-view="history" title="History (gh)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M7 9c0 4 10 2 10 7M7 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="16" r="2"/></svg>
+        <span>History</span>
+      </button>
       <!-- Projects, project actions and status: part of the sidebar on desktop,
            a drawer behind the menu button on mobile. -->
       <div class="menu-scrim" id="menu-scrim" hidden></div>
@@ -194,6 +198,12 @@
       <section class="view" id="view-activity" aria-label="Activity">
         <ol class="activity" id="activity"></ol>
         <div class="empty" id="activity-empty"><p class="empty-title">No git activity yet</p><p>Commands Dash runs (worktrees, commits, merges, pushes) appear here live.</p></div>
+      </section>
+
+      <!-- History: git graph of the default branch -->
+      <section class="view" id="view-history" aria-label="History">
+        <ol class="graph" id="graph"></ol>
+        <div class="empty" id="graph-empty"><p class="empty-title">No history</p><p id="graph-empty-text">Select a project to see its main branch.</p></div>
       </section>
 
       <!-- Status line with command line (:) -->
@@ -372,7 +382,7 @@
       <p class="hint">Vim-style. Typing in a field or the terminal is insert mode; Esc (Ctrl-] in the terminal) returns to normal mode.</p>
       <dl class="keys">
         <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with todos · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
-        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gc</kbd>/<kbd>gs</kbd>/<kbd>ga</kbd> Board/Chat/Shell/Activity · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> sections, <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>[</kbd> collapse sidebar · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
+        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gc</kbd>/<kbd>gs</kbd>/<kbd>ga</kbd>/<kbd>gh</kbd> Board/Chat/Shell/Activity/History · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> sections, <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>[</kbd> collapse sidebar · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
         <dt>Todos</dt><dd><kbd>Enter</kbd> open · <kbd>a</kbd> new · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (open todo in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>*</kbd> milestone · <kbd>t</kbd> try it · <kbd>!</kbd> shell in worktree</dd>
         <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> changes ↔ log · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
         <dt>Search</dt><dd><kbd>/</kbd> filter the board · <kbd>Enter</kbd> jump to first match · <kbd>n</kbd>/<kbd>N</kbd> next/previous · <kbd>Esc</kbd> or <code>:noh</code> clear</dd>
@@ -382,7 +392,7 @@
         <dt>Chat</dt><dd><kbd>i</kbd> type · <kbd>Enter</kbd> send · <kbd>Esc</kbd> stop typing · <kbd>j</kbd>/<kbd>k</kbd> scroll</dd>
         <dt>Shell</dt><dd><kbd>i</kbd> type into terminal · <kbd>Ctrl-]</kbd> leave terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> new shell</dd>
         <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> add to queue · <kbd>Ctrl-Shift-Enter</kbd>/<kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>
-        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:todo …</code> <code>:new</code> <code>:run cmd</code> <code>:shell</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:activity</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:q</code></dd>
+        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:todo …</code> <code>:new</code> <code>:run cmd</code> <code>:shell</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:activity</code> <code>:history</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:q</code></dd>
       </dl>
       <p class="hint">Dash version <code>{{DASH_VERSION}}</code></p>
     </form>

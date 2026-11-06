@@ -500,6 +500,13 @@ func (g *Git) RemoteURL(ctx context.Context, projectID, dir string) string {
 	return out
 }
 
+// Graph returns `git log --graph` of branch, newest first. Commit lines carry
+// hash, refs, subject, author and relative date after the graph, separated by \x1f.
+func (g *Git) Graph(ctx context.Context, projectID, repo, branch string, limit int) (string, error) {
+	return g.run(ctx, false, projectID, repo, "git", "log", "--graph", "--color=never",
+		"--max-count="+strconv.Itoa(limit), "--format=\x1f%h\x1f%D\x1f%s\x1f%an\x1f%ar", branch, "--")
+}
+
 // Unpushed counts the commits on branch that origin doesn't have, as of the
 // last fetch or push (every commit if branch was never pushed).
 func (g *Git) Unpushed(ctx context.Context, projectID, repo, branch string) (int, error) {

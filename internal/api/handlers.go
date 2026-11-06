@@ -259,6 +259,20 @@ func (s *Server) unpushed(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"count": n})
 }
 
+func (s *Server) gitGraph(w http.ResponseWriter, r *http.Request) {
+	p, err := s.Store.GetProject(r.PathValue("pid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	graph, err := s.Git.Graph(r.Context(), p.ID, p.Path, p.DefaultBranch, 500)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"branch": p.DefaultBranch, "graph": graph})
+}
+
 // ---------------------------------------------------------------- todos
 
 func (s *Server) listTodos(w http.ResponseWriter, r *http.Request) {

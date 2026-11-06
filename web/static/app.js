@@ -345,6 +345,7 @@ function applyView(name) {
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
   if (name === "run") requestAnimationFrame(() => { fitTerm(); ensureShell(); });
   if (name === "chat") $("#chat-log").scrollTop = $("#chat-log").scrollHeight;
+  if (name === "history") loadGraph().catch(fail);
 }
 $$(".nav > button[data-view]").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 {
@@ -436,6 +437,7 @@ function onEvent(ev, m = { name: "" }) {
       break;
     case "git.op":
       if (mine || (!ev.project_id && sameMachine)) addActivity(ev);
+      if (mine) refreshGraph();
       break;
     case "merge.queue":
       if (sameMachine) $("#merge-status").textContent = ev.data.pending ? `${ev.data.pending} in merge queue` : "";
@@ -531,8 +533,8 @@ async function selectProject(p) {
   renderCI();
   renderBoardChat();
   loadProjectChat().catch((e) => toast(`Couldn't load the project chat: ${e.message}`, true));
-  if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); return; }
-  await Promise.all([loadTodos(), loadProcs(), loadPerms(), loadCI()]);
+  if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); return; }
+  await Promise.all([loadTodos(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph()]);
 }
 
 async function loadPerms() {
@@ -2065,6 +2067,36 @@ function addActivity(ev) {
   while ($("#activity").children.length > 300) $("#activity").lastChild.remove();
 }
 
+// ------------------------------------------------------------------ history
+// The default branch's commit graph, as `git log --graph` draws it.
+async function loadGraph() {
+  const p = state.project;
+  if (!p) return renderGraph(null);
+  const res = await api("GET", `/api/projects/${p.id}/graph`);
+  if (state.project === p) renderGraph(res);
+}
+
+let graphTimer = 0;
+const refreshGraph = () => { clearTimeout(graphTimer); graphTimer = setTimeout(() => state.view === "history" && loadGraph().catch(() => {}), 800); };
+
+function renderGraph(res) {
+  const lines = res?.graph ? res.graph.split("\n") : [];
+  $("#graph-empty").hidden = lines.length > 0;
+  $("#graph-empty-text").textContent = state.project ? `${state.project.default_branch || "main"} has no commits yet.` : "Select a project to see its main branch.";
+  $("#graph").replaceChildren(...lines.map((line) => {
+    const i = line.indexOf("\x1f");
+    if (i < 0) return h("li", { class: "graph-edge" }, h("span", { class: "graph-lines" }, line));
+    const [sha, refs, subject, author, when] = line.slice(i + 1).split("\x1f");
+    return h("li", {},
+      h("span", { class: "graph-lines" }, line.slice(0, i)),
+      h("span", { class: "graph-commit" },
+        h("code", { class: "graph-sha" }, sha),
+        ...(refs ? refs.split(", ").map((r) => h("span", { class: `graph-ref${r.startsWith("tag: ") ? " tag" : ""}` }, r.replace(/^HEAD -> /, ""))) : []),
+        h("span", { class: "graph-subject" }, subject),
+        h("span", { class: "graph-meta" }, `${author} · ${when}`)));
+  }));
+}
+
 // ------------------------------------------------------------------ drag & drop
 // Drag a card to another lane to act on it, or within a lane to reorder.
 // Mouse: drag after a few pixels. Touch: long-press, then drag (a quick
@@ -2262,10 +2294,10 @@ async function reorder(t, laneKey, index) {
 // ------------------------------------------------------------------ vim keys
 // Normal mode is the default; typing in a field or the terminal is insert
 // mode. Esc (Ctrl-] in the terminal) returns to normal mode.
-const VIEWS = ["board", "chat", "run", "activity"];
+const VIEWS = ["board", "chat", "run", "activity", "history"];
 const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
-const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gc|gs|ga|G|u|p|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gc|gs|ga|gh|G|u|p|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 const openDialog = () => document.querySelector("dialog[open]");
 
@@ -2368,6 +2400,7 @@ async function runCommand(line) {
       need(); return startProc({ kind: "pty", command: arg });
     case "ps": case "procs": return showView("run");
     case "activity": case "log": return showView("activity");
+    case "history": case "graph": case "tree": return showView("history");
     case "p": case "project": {
       if (!arg) return openProjects();
       const [pn, mn = ""] = arg.toLowerCase().split("@");
@@ -2531,6 +2564,7 @@ async function handleNormal(k, n, hadCount) {
     case "gc": return showView("chat");
     case "gs": return showView("run");
     case "ga": return showView("activity");
+    case "gh": return showView("history");
     case "p": return openProjects();
     case "[": return desktop.matches && setSideCollapsed(!sideCollapsed());
     case "o": return openSections();
@@ -2612,7 +2646,7 @@ async function handleNormal(k, n, hadCount) {
       }
       return;
     }
-    case "activity":
+    case "activity": case "history":
       if (["j", "k", "ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b", "gg", "G"].includes(k)) return scrollBy(scroller(), k, n);
   }
 }
