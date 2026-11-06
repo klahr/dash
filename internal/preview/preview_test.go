@@ -100,7 +100,7 @@ func TestProxyAuthAndLifecycle(t *testing.T) {
 	m, _, td := setup(t, "preview.dash.test")
 	r0 := httptest.NewRequest("GET", "http://dash.test/api/previews", nil)
 	m.SetOrigin(r0)
-	p, err := m.Start(td, model.Project{ID: "p1", RunCommand: "echo hello > index.html; exec python3 -m http.server --bind 127.0.0.1 $PORT"})
+	p, err := m.Start(td, model.Project{ID: "p1", RunCommand: "echo hello > index.html; echo '<html><head><title>p</title></head><body>page</body></html>' > page.html; exec python3 -m http.server --bind 127.0.0.1 $PORT"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,6 +146,17 @@ func TestProxyAuthAndLifecycle(t *testing.T) {
 	w = do("GET", "http://abc123.preview.dash.test/index.html", map[string]string{"Cookie": cookie.String() + "; dash_session=secret"})
 	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != "hello" {
 		t.Fatalf("proxied: %d %q", w.Code, w.Body)
+	}
+	// Pages get the capture script for draw mode, served by the proxy itself.
+	w = do("GET", "http://abc123.preview.dash.test/page.html", map[string]string{"Cookie": cookie.String(), "Sec-Fetch-Dest": "iframe", "Accept-Encoding": "br, gzip"})
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `<head><script src="/__dash/capture.js"`) {
+		t.Fatalf("page: %d %q", w.Code, w.Body)
+	}
+	if w := do("GET", "http://abc123.preview.dash.test/__dash/capture.js", map[string]string{"Cookie": cookie.String()}); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "modernScreenshot") {
+		t.Fatalf("capture.js: %d", w.Code)
+	}
+	if w := do("GET", "http://abc123.preview.dash.test/__dash/capture.js", nil); w.Code != http.StatusFound {
+		t.Fatalf("capture.js without a cookie: %d", w.Code)
 	}
 	// The cookie is only good for its own preview host.
 	if w := do("GET", "http://zzz999.preview.dash.test/", map[string]string{"Cookie": cookie.String()}); w.Code != http.StatusFound {

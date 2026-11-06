@@ -201,6 +201,10 @@ func (m *Manager) serve(w http.ResponseWriter, r *http.Request, label string) {
 		page(w, http.StatusUnauthorized, "Sign in to Dash", "Open this preview from Dash to sign in to it.", origin, false)
 		return
 	}
+	if r.URL.Path == capturePath {
+		m.serveCapture(w)
+		return
+	}
 	e := m.entry(label)
 	if e == nil {
 		page(w, http.StatusNotFound, "Preview not running", "No preview is running for this task. Start one with Preview on the task in Dash.", m.dashOrigin(), false)
@@ -260,6 +264,9 @@ func (m *Manager) proxy(addr string, port int, origin string) *httputil.ReverseP
 			if ref := pr.In.Header.Get("Referer"); strings.HasPrefix(ref, origin) {
 				pr.Out.Header.Set("Referer", "http://"+local+strings.TrimPrefix(ref, origin))
 			}
+			if wantsDocument(pr.In) {
+				pr.Out.Header.Set("Accept-Encoding", "gzip") // pages get the capture script added (capture.go)
+			}
 		},
 		ModifyResponse: func(res *http.Response) error {
 			// It's shown in Dash's iframe.
@@ -275,7 +282,7 @@ func (m *Manager) proxy(addr string, port int, origin string) *httputil.ReverseP
 					}
 				}
 			}
-			return nil
+			return injectCapture(res)
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			page(w, http.StatusBadGateway, "Preview not answering", "The preview server didn't answer: "+err.Error(), "", true)

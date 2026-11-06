@@ -296,6 +296,8 @@
           </form>
         </div>
       </div>
+      <!-- Rework notes with pictures from the preview's draw mode, sent together -->
+      <section class="rework-box" id="d-rework" hidden aria-label="Rework notes"></section>
       <footer class="actionbar" id="d-actions"></footer>
       <!-- Live preview: beside the task on desktop, full screen on a phone -->
       <section class="preview" id="d-preview" hidden aria-label="Live preview">
@@ -306,6 +308,7 @@
             <button type="button" data-width="768" data-icon="tablet" title="Tablet (768px)" aria-label="Tablet width"></button>
             <button type="button" data-width="full" data-icon="monitor" title="Full width" aria-label="Full width"></button>
           </div>
+          <button class="btn small pv-draw-btn" type="button" id="pv-draw-btn" data-icon="edit" title="Draw on a snapshot of the page, crop it and add it to the review (D)" aria-keyshortcuts="Shift+D">Draw</button>
           <span class="pv-spacer"></span>
           <button class="icon-btn" type="button" id="pv-reload" data-icon="reload" title="Reload" aria-label="Reload"></button>
           <button class="icon-btn" type="button" id="pv-open" data-icon="external" title="Open in a new tab" aria-label="Open in a new tab"></button>
@@ -317,6 +320,30 @@
         <div class="pv-stage" id="pv-stage">
           <div class="pv-frame" id="pv-frame"><iframe id="pv-iframe" title="Live preview" hidden></iframe></div>
           <div class="pv-status" id="pv-status" hidden></div>
+          <!-- Draw mode: a still picture of the page, with marks on top -->
+          <div class="draw-stage" id="draw-stage" hidden aria-label="Snapshot of the preview: draw on it"></div>
+          <div class="draw-wait" id="draw-wait" hidden><span class="spinner big" aria-hidden="true"></span>Taking a snapshot…</div>
+        </div>
+        <div class="draw-bar" id="draw-bar" role="toolbar" aria-label="Draw" hidden>
+          <div class="segmented draw-tools" role="group" aria-label="Tool">
+            <button type="button" data-tool="pen" data-icon="edit" title="Pen (P) · Shift for a straight line" aria-label="Pen"></button>
+            <button type="button" data-tool="arrow" data-icon="arrow" title="Arrow (A) · Shift for 45° steps" aria-label="Arrow"></button>
+            <button type="button" data-tool="circle" data-icon="circle" title="Circle (O) · Shift for a perfect circle" aria-label="Circle"></button>
+            <button type="button" data-tool="box" data-icon="box" title="Box (B) · Shift for a square" aria-label="Box"></button>
+            <button type="button" data-tool="crop" data-icon="crop" title="Crop (C) · drag a rectangle, then its handles" aria-label="Crop"></button>
+          </div>
+          <div class="draw-colors" role="group" aria-label="Colour">
+            <button type="button" data-color="red" title="Red (1)" aria-label="Red"></button>
+            <button type="button" data-color="yellow" title="Yellow (2)" aria-label="Yellow"></button>
+            <button type="button" data-color="blue" title="Blue (3)" aria-label="Blue"></button>
+          </div>
+          <button class="icon-btn" type="button" id="draw-undo" data-icon="undo" title="Undo (Ctrl+Z)" aria-label="Undo"></button>
+          <button class="icon-btn" type="button" id="draw-clear" data-icon="trash" title="Clear marks and crop" aria-label="Clear"></button>
+          <span class="draw-size" id="draw-size"></span>
+          <span class="pv-spacer"></span>
+          <button class="icon-btn" type="button" id="draw-copy" data-icon="copy" title="Copy the picture" aria-label="Copy"></button>
+          <button class="btn small" type="button" id="draw-done" data-icon="x" title="Back to the live page (Esc)">Done</button>
+          <button class="btn small primary" type="button" id="draw-add" data-icon="plus" title="Add the picture to the rework notes (Enter)">Add to review</button>
         </div>
         <details class="pv-log" id="pv-log">
           <summary>Server log</summary>
@@ -516,7 +543,7 @@
       <dl class="keys">
         <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with tasks · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
         <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gs</kbd>/<kbd>ga</kbd>/<kbd>gh</kbd>/<kbd>gf</kbd> Board/Shell/Activity/History/Files · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> sections, <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>J</kbd>/<kbd>K</kbd> next/previous project · <kbd>c</kbd> project chat · <kbd>[</kbd> collapse sidebar · <kbd>F</kbd> fullscreen on/off · <kbd>Ctrl-k</kbd> search projects, tasks and commands · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
-        <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review, enqueue a draft; <kbd>Space</kbd> opens) · <kbd>a</kbd> new · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>t</kbd> live preview · <kbd>!</kbd> shell in worktree</dd>
+        <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review, enqueue a draft; <kbd>Space</kbd> opens) · <kbd>a</kbd> new · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>t</kbd> live preview (<kbd>D</kbd> draws on it: <kbd>p</kbd>/<kbd>a</kbd>/<kbd>o</kbd>/<kbd>b</kbd>/<kbd>c</kbd> pen/arrow/circle/box/crop, <kbd>1</kbd>–<kbd>3</kbd> colour, <kbd>Ctrl-z</kbd> undo, <kbd>Enter</kbd> add to review, <kbd>Esc</kbd> done) · <kbd>!</kbd> shell in worktree</dd>
         <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> changes ↔ timeline · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
         <dt>Search</dt><dd><kbd>/</kbd> filter the board · <kbd>Enter</kbd> jump to first match · <kbd>n</kbd>/<kbd>N</kbd> next/previous · <kbd>Esc</kbd> or <code>:noh</code> clear</dd>
         <dt>More</dt><dd><kbd>T</kbd> run tests again · <kbd>Y</kbd> duplicate · <kbd>E</kbd> open worktree in editor · <kbd>u</kbd> revert a merged task · <kbd>O</kbd> open its pull request · click a diff line to comment · paste or drop images into a task</dd>

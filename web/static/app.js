@@ -1,6 +1,7 @@
 // Dash web client. REST for state, /ws/events for live updates,
 // /ws/chat for streaming answers, /ws/proc/:id for terminals.
 import { mdEditor, codeEditor, drafts, renderMarkdown, vimOn, setVim, invisiblesOn, setInvisibles } from "./editor.js";
+import { drawSurface, COLORS } from "./draw.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 // The server's LC_TIME, since browsers format times by their UI language instead.
@@ -76,6 +77,10 @@ const ICONS = {
   monitor: "M3 5h18v11H3zM8 20h8M12 16v4",
   window: "M3 5h18v14H3zM3 9h18M6 7h.01M8.5 7h.01",
   more: "M5 12h.01M12 12h.01M19 12h.01",
+  arrow: "M5 19 19 5M10 5h9v9",
+  circle: "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z",
+  box: "M5 6h14v12H5z",
+  crop: "M7 3v14h14M3 7h14v14",
   link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
 };
 // Technology logos from devicon (MIT, see img/README.md) on a 128px grid: [brand colour, or null when too dark for the dark UI, paths].
@@ -337,10 +342,10 @@ async function copy(text, msg) {
 
 // ask() shows a confirmation or a text question as a sheet. Resolves to the
 // entered text (or true), or null when cancelled.
-function ask({ title, body = "", input = false, value = "", placeholder = "", ok = "OK", danger = false, attach = false }) {
+function ask({ title, body = "", input = false, value = "", placeholder = "", ok = "OK", danger = false, attach = false, attachments = [] }) {
   const d = $("#ask-sheet");
   $("#ask-attach").hidden = !attach;
-  askAttach.reset();
+  askAttach.reset(attachments);
   $("#ask-title").textContent = title;
   $("#ask-body").textContent = body;
   $("#ask-body").hidden = !body;
@@ -1615,6 +1620,7 @@ function renderDetail() {
   $("#d-to-agent").hidden = !canRework(t);
   renderPane();
   renderPreview();
+  renderReworkBox();
 }
 
 function renderActions(t) {
@@ -1782,6 +1788,7 @@ async function previewTodo(t) {
 
 function hidePreview() {
   if (!pv.todo) return;
+  endDraw();
   pv.todo = null;
   disconnectLog();
   pv.shown = null;
@@ -1859,6 +1866,9 @@ function renderPreview() {
   $("#pv-open").disabled = $("#pv-copy").disabled = !p;
   $("#pv-qr").hidden = !p?.url;
   $("#pv-reload").disabled = !(st === "live" && target?.src);
+  const drawable = st === "live" && !!target?.src && !!p.url;
+  $("#pv-draw-btn").disabled = !drawable && !draw.on;
+  $("#pv-draw-btn").title = drawable || !p || st !== "live" ? "Draw on a snapshot of the page, crop it and add it to the review (D)" : "Drawing needs a preview domain (-preview-domain): the snapshot is taken through Dash's preview proxy";
   $("#pv-stop").disabled = !p;
 
   const frame = $("#pv-iframe");
@@ -1949,6 +1959,7 @@ $("#pv-fab").addEventListener("click", attempt(async () => {
   if (!t) return hidePreview();
   const p = previewOf(t.id);
   const choices = [["minimize", "Back to task", hidePreview]];
+  if (p?.state === "live" && p.url) choices.push(["edit", "Draw", startDraw]);
   if (p?.state === "live") choices.push(["reload", "Reload", reloadPreview]);
   if (canRework(t)) choices.push(["redo", "Send back", () => (p?.state === "crashed" ? sendBackWithLog(t) : reworkTodo(t).then((sent) => sent && hidePreview()))]);
   if (p) {
@@ -1958,6 +1969,222 @@ $("#pv-fab").addEventListener("click", attempt(async () => {
   }
   await menu(choices);
 }));
+
+// ------------------------------------------------------------------ preview draw mode
+// Draw (D) freezes the preview: the page in the iframe renders itself to a
+// PNG (the proxy adds a small capture script to every page it serves, see
+// internal/preview/capture.go), which replaces the live page. Marks and the
+// crop are drawn on a canvas in Dash's page, so they can't drift. Add to
+// review uploads the result as a picture for the rework notes.
+const draw = { on: false, busy: false, todo: null, meta: null, surface: null };
+// Pictures and notes waiting to be sent back, per task: { items: [upload], text, prefix }.
+const shots = new Map();
+
+function captureFrame(frame, origin) {
+  return new Promise((resolve, reject) => {
+    const id = Math.random().toString(36).slice(2);
+    let acked = false;
+    const finish = (fn, v) => { clearTimeout(noAck); clearTimeout(tooLong); removeEventListener("message", onMsg); fn(v); };
+    const onMsg = (e) => {
+      if (e.source !== frame.contentWindow || e.origin !== origin || e.data?.id !== id) return;
+      if (e.data.type === "dash:capture-ack") acked = true;
+      else if (e.data.type === "dash:captured") e.data.error ? finish(reject, new Error(`The page couldn't draw itself: ${e.data.error}`)) : finish(resolve, e.data);
+    };
+    addEventListener("message", onMsg);
+    const noAck = setTimeout(() => acked || finish(reject, new Error("The page didn't answer. It may still be loading, or it isn't a page from the preview: reload it and try again.")), 2500);
+    const tooLong = setTimeout(() => finish(reject, new Error("Taking the snapshot took too long.")), 30000);
+    try { frame.contentWindow.postMessage({ type: "dash:capture", id }, origin); } catch (e) { finish(reject, e); }
+  });
+}
+
+function drawSurfaceOnce() {
+  draw.surface ||= drawSurface($("#draw-stage"), { onChange: renderDrawBar });
+  return draw.surface;
+}
+
+async function startDraw() {
+  if (draw.on || draw.busy) return;
+  const t = state.todos.get(pv.todo);
+  const p = t && previewOf(t.id);
+  if (!p || p.state !== "live" || !pv.shown) throw new Error("Start the preview first: draw mode works on the live page.");
+  if (!p.url) throw new Error("Drawing needs a preview domain (-preview-domain): the snapshot is taken through Dash's preview proxy.");
+  const frame = $("#pv-iframe");
+  draw.busy = true;
+  $("#draw-wait").hidden = false;
+  try {
+    const shot = await captureFrame(frame, new URL(p.url).origin);
+    const bitmap = await createImageBitmap(shot.blob);
+    if (pv.todo !== t.id) return bitmap.close(); // closed meanwhile
+    draw.on = true;
+    draw.todo = t.id;
+    draw.meta = shot;
+    $("#d-preview").classList.add("drawing");
+    $("#draw-stage").hidden = false;
+    $("#draw-bar").hidden = false;
+    drawSurfaceOnce().open(bitmap, shot.width, shot.height);
+    renderPreview();
+  } finally {
+    draw.busy = false;
+    $("#draw-wait").hidden = true;
+  }
+}
+
+function endDraw() {
+  if (!draw.on) return;
+  draw.on = false;
+  draw.todo = null;
+  draw.surface?.close();
+  $("#d-preview").classList.remove("drawing");
+  $("#draw-stage").hidden = true;
+  $("#draw-bar").hidden = true;
+  if (pv.todo) renderPreview();
+}
+
+function renderDrawBar() {
+  const s = draw.surface;
+  if (!s) return;
+  for (const b of $$("#draw-bar [data-tool]")) b.setAttribute("aria-pressed", String(b.dataset.tool === s.tool));
+  for (const b of $$("#draw-bar [data-color]")) b.setAttribute("aria-pressed", String(COLORS[b.dataset.color] === s.color));
+  $("#draw-undo").disabled = !s.canUndo;
+  $("#draw-clear").disabled = s.empty;
+  const { w, h } = s.size;
+  $("#draw-size").textContent = s.crop ? `${Math.round(w)}×${Math.round(h)}` : "";
+}
+
+// "/settings · 390×844 · dash/todo-3f9a" for the notes: where the picture is from.
+function shotContext(t) {
+  const m = draw.meta;
+  return [m.path || "/", `${m.width}×${m.height}`, t.worktree?.branch].filter(Boolean).join(" · ");
+}
+
+const shotName = (path) => `preview${(path || "/").split(/[?#]/)[0].replace(/[^a-z0-9]+/gi, "-").replace(/-+$/, "") || ""}.png`;
+
+async function addShot() {
+  const t = state.todos.get(draw.todo);
+  const p = t && previewOf(t.id);
+  if (!t || draw.busy) return;
+  draw.busy = true;
+  $("#draw-add").disabled = true;
+  try {
+    const blob = await draw.surface.flatten();
+    const prefix = p?.prefix ?? here();
+    const a = await uploadFile(new File([blob], shotName(draw.meta.path), { type: "image/png" }), prefix);
+    const entry = shots.get(t.id) || { items: [], text: "", prefix };
+    entry.items.push(a);
+    entry.text = `${entry.text.trimEnd()}${entry.text.trim() ? "\n" : ""}${shotContext(t)}: `;
+    shots.set(t.id, entry);
+    endDraw();
+    renderReworkBox();
+    if (desktop.matches) {
+      const ta = $("#d-rework textarea");
+      ta?.focus();
+      ta?.setSelectionRange(ta.value.length, ta.value.length);
+    } else if (await reworkTodo(t)) {
+      hidePreview();
+    }
+  } finally {
+    draw.busy = false;
+    $("#draw-add").disabled = false;
+  }
+}
+
+async function copyShot() {
+  const s = draw.surface;
+  if (!s || !draw.on) return;
+  const png = s.flatten();
+  try {
+    if (!window.ClipboardItem || !navigator.clipboard?.write) throw new Error("no image clipboard");
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]); // a promise keeps Safari's user gesture
+    toast("Picture copied");
+  } catch {
+    copyThis(await png); // clipboard needs https or localhost
+  }
+}
+
+// The "Copy this" fallback for a picture: shown big, to copy or save by hand.
+function copyThis(blob) {
+  const url = URL.createObjectURL(blob);
+  const d = h("dialog", { class: "sheet small copy-sheet", "aria-label": "Copy this" },
+    h("form", { method: "dialog" },
+      h("h2", {}, "Copy this"),
+      h("img", { class: "copy-img", src: url, alt: "The picture from the preview" }),
+      h("p", { class: "hint" }, "This browser can't put pictures on the clipboard here. Right-click or long-press the picture to copy or save it."),
+      h("footer", { class: "sheet-actions" },
+        h("a", { class: "btn", href: url, download: shotName(draw.meta?.path) }, ico("down"), "Download"),
+        ib({ class: "btn primary", value: "ok" }, "check", "Done"))));
+  d.addEventListener("close", () => { d.remove(); URL.revokeObjectURL(url); });
+  document.body.append(d);
+  d.showModal();
+}
+
+// The rework box sits beside the preview (above the task's action bar): the
+// pictures added so far and the notes that go with them.
+function renderReworkBox() {
+  const box = $("#d-rework");
+  const t = state.todos.get(state.detail);
+  const entry = t && shots.get(t.id);
+  if (!entry?.items.length || !canRework(t)) { box.hidden = true; box.replaceChildren(); return; }
+  if (box.dataset.todo === t.id && !box.hidden && box.querySelectorAll(".chip").length === entry.items.length) return; // keep focus and caret
+  box.dataset.todo = t.id;
+  const n = entry.items.length;
+  const ta = h("textarea", { rows: 3, placeholder: "What should change?", "aria-label": "Rework notes", value: entry.text,
+    oninput: () => { entry.text = ta.value; },
+    onkeydown: (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendShots(t); } } });
+  ta.value = entry.text;
+  const discard = () => { shots.delete(t.id); renderReworkBox(); };
+  box.replaceChildren(
+    h("div", { class: "rework-head" },
+      h("strong", {}, "Rework notes"),
+      h("span", { class: "hint" }, `${n} ${n === 1 ? "picture" : "pictures"} from the preview`),
+      h("span", { class: "pv-spacer" }),
+      ib({ class: "link", type: "button", onclick: discard, title: "Throw these pictures and notes away" }, "x", "Discard")),
+    h("div", { class: "attach" }, entry.items.map((a) => attachThumb(a, () => {
+      entry.items = entry.items.filter((x) => x !== a);
+      renderReworkBox();
+    }, entry.prefix))),
+    ta,
+    h("div", { class: "rework-actions" },
+      h("span", { class: "hint" }, pv.todo === t.id ? "Draw (D) to add more" : ""),
+      ib({ class: "btn small primary", type: "button", title: "Send back for rework with these notes (Ctrl+Enter)", onclick: attempt(() => sendShots(t)) }, "redo", "Send back")));
+  box.hidden = false;
+}
+
+async function sendShots(t) {
+  const entry = shots.get(t.id);
+  if (!entry) return;
+  await api("POST", `/api/todos/${t.id}/rework`, { feedback: entry.text.trim(), attachments: entry.items.map((a) => a.id) }, entry.prefix);
+  shots.delete(t.id);
+  renderReworkBox();
+  toast("Sent back for rework");
+  hidePreview();
+}
+
+$("#pv-draw-btn").addEventListener("click", attempt(() => (draw.on ? endDraw() : startDraw())));
+$("#draw-done").addEventListener("click", endDraw);
+$("#draw-add").addEventListener("click", attempt(addShot));
+$("#draw-copy").addEventListener("click", attempt(copyShot));
+$("#draw-undo").addEventListener("click", () => draw.surface?.undo());
+$("#draw-clear").addEventListener("click", () => draw.surface?.clear());
+$$("#draw-bar [data-tool]").forEach((b) => b.addEventListener("click", () => { drawSurfaceOnce().tool = b.dataset.tool; }));
+$$("#draw-bar [data-color]").forEach((b) => {
+  b.style.setProperty("--swatch", COLORS[b.dataset.color]);
+  b.addEventListener("click", () => { drawSurfaceOnce().color = COLORS[b.dataset.color]; });
+});
+// Draw mode's keys come before the app's (Esc would close the task).
+const DRAW_KEYS = { p: "pen", a: "arrow", o: "circle", b: "box", c: "crop" };
+addEventListener("keydown", (e) => {
+  if (!draw.on || e.altKey || e.isComposing || openDialog() || isTyping(e.target)) return;
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  const s = draw.surface;
+  if (k === "Shift" || k === "Control" || k === "Meta") return;
+  e.stopImmediatePropagation();
+  if ((e.ctrlKey || e.metaKey) && k === "z") { e.preventDefault(); return s.undo(); }
+  if (e.ctrlKey || e.metaKey) return; // the browser's own (copy, zoom, …)
+  if (k === "Escape") { e.preventDefault(); return endDraw(); }
+  if (k === "Enter") { e.preventDefault(); return attempt(addShot)(); }
+  if (DRAW_KEYS[k]) { s.tool = DRAW_KEYS[k]; return; }
+  if (["1", "2", "3"].includes(k)) { s.color = Object.values(COLORS)[k - 1]; return; }
+}, true);
 
 // "Previews (n)" in the top bar: every running preview, on every computer.
 let previewsSheet = null;
@@ -2037,11 +2264,16 @@ function reviewTodo() {
 }
 
 const canRework = (t) => !!t?.worktree && ["review", "failed"].includes(t.status);
-// text prefills the notes, e.g. from the task chat. Resolves true once sent.
+// text prefills the notes, e.g. from the task chat. Pictures added from the
+// preview's draw mode (and their notes) come along. Resolves true once sent.
 async function reworkTodo(t, text = "") {
-  const res = await ask({ title: "Send back for rework", body: "Claude continues in the same worktree with your notes. Paste or attach a screenshot to show what's wrong.", input: true, value: text, placeholder: "What should change?", ok: "Send back", attach: true });
+  const shot = shots.get(t.id);
+  const value = [shot?.text.trim(), text].filter(Boolean).join("\n\n");
+  const res = await ask({ title: "Send back for rework", body: "Claude continues in the same worktree with your notes. Paste or attach a screenshot to show what's wrong.", input: true, value, placeholder: "What should change?", ok: "Send back", attach: true, attachments: shot?.items || [] });
   if (res === null) return false;
   await api("POST", `/api/todos/${t.id}/rework`, { feedback: res.text, attachments: res.attachments });
+  shots.delete(t.id);
+  renderReworkBox();
   toast("Sent back for rework");
   return true;
 }
@@ -4420,6 +4652,7 @@ async function handleNormal(k, n, hadCount) {
       return renderPane();
     }
     if (state.pane === "timeline" && k === "i") return todoChat.input.focus();
+    if (t && k === "D" && pv.todo === t.id) return startDraw();
     if (t && k === "Enter" && enterKey(t)) return todoKey(t, enterKey(t));
     if (t) await todoKey(t, k);
     return;

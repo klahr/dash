@@ -147,6 +147,17 @@ Without a preview domain, Preview still starts the server, and the pane shows it
 on the computer it runs on (as `http://localhost:<port>`). On other devices the pane says that
 previews need a domain.
 
+**Draw** (<kbd>D</kbd>, or Draw in the floating button's menu on a phone) freezes the preview: the
+page renders what it currently shows (scroll position, open menus and signed-in state included)
+to a picture, which replaces the live page until **Done** (<kbd>Esc</kbd>). Mark it up with pen,
+arrow, circle and box (<kbd>Shift</kbd> for straight lines, perfect circles and squares) in red,
+yellow or blue, undo with <kbd>Ctrl-z</kbd>, and crop (<kbd>C</kbd>) to the part that matters.
+**Add to review** (<kbd>Enter</kbd>) uploads the picture into the rework notes beside the preview
+with a line saying where it's from (`/settings · 390×844 · dash/todo-3f9a1c`); add several, then
+send them back together. On a phone one finger draws, two pan and zoom, and Add to review opens
+the rework sheet. **Copy** puts the picture on the clipboard. Drawing needs a preview domain, since
+the picture is taken through the proxy.
+
 What the proxy does:
 
 - Previews need a Dash login. A browser without one is sent to Dash to log in (an open Dash tab
@@ -156,6 +167,13 @@ What the proxy does:
   that host), with `X-Forwarded-Host` and `X-Forwarded-Proto` set to the preview's address.
   Redirects to `localhost:<port>` are rewritten, and `X-Frame-Options` and CSP `frame-ancestors`
   are removed so the app can be shown in Dash's pane.
+- For Draw, it adds one script to the app's HTML pages, `/__dash/capture.js` (served by the proxy
+  itself; [modern-screenshot](https://github.com/qq15725/modern-screenshot), MIT). It only answers
+  Dash's page (Dash's own origin, or the host the preview domain is under, e.g. `dash.example.com`
+  for `preview.dash.example.com`), with a picture of the page. To let it run, a page's CSP gets
+  the script's nonce (or `'self'`), `data:`/`blob:` images and same-origin fetches, and loses
+  Trusted Types. Compressed pages are passed on uncompressed. A CSP set in a `<meta>` tag isn't
+  changed, so such a page may refuse to be drawn.
 - With several computers, a preview runs on the computer that has the project and is served by
   that computer's Dash, so set `-preview-domain` on each one.
 

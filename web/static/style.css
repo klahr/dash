@@ -1251,11 +1251,63 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 @media (min-width: 1024px) {
   .detail.previewing {
     left: max(72px, 100vw - 1680px); width: auto;
-    display: grid; grid-template-columns: minmax(360px, 38%) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
+    display: grid; grid-template-columns: minmax(360px, 38%) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto;
   }
   .detail.previewing > .detail-head { grid-column: 1; grid-row: 1; }
   .detail.previewing > .detail-body { grid-column: 1; grid-row: 2; --pad-x: 16px; }
-  .detail.previewing > .actionbar { grid-column: 1; grid-row: 3; }
+  .detail.previewing > .rework-box { grid-column: 1; grid-row: 3; }
+  .detail.previewing > .actionbar { grid-column: 1; grid-row: 4; }
   .detail.previewing > .preview { grid-column: 2; grid-row: 1 / -1; border-left: 1px solid var(--line); }
   .pv-fab { display: none; }
+}
+
+/* ---------- preview draw mode ---------- */
+.pv-draw-btn { margin-left: 6px; }
+.pv-draw-btn:disabled { opacity: .4; }
+/* The picture must sit exactly where the page was: the draw bar covers the
+   preview's toolbar instead of taking room of its own. */
+.preview.drawing .pv-bar { visibility: hidden; }
+.preview.drawing .pv-fab { display: none; }
+.preview.drawing .pv-frame iframe { visibility: hidden; }
+.draw-stage {
+  position: absolute; inset: 0; z-index: 3; overflow: hidden; background: #0a0f17;
+  touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair;
+}
+.draw-view { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.draw-canvas { display: block; box-shadow: 0 0 0 1px var(--line), 0 12px 32px rgba(3, 6, 12, .5); }
+.draw-wait {
+  position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  background: rgba(10, 15, 23, .55); color: var(--text); font-weight: 600; backdrop-filter: blur(2px);
+}
+.draw-bar {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 5;
+  display: flex; align-items: center; gap: 4px; padding: 6px 8px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.draw-bar .segmented { margin: 0; }
+.draw-bar .segmented button { min-height: 34px; padding: 0 9px; }
+.draw-bar .segmented button[aria-pressed="true"] { background: var(--accent); color: #0d1424; }
+.draw-bar .icon-btn { width: 40px; height: 44px; }
+.draw-bar .icon-btn:disabled { opacity: .35; cursor: default; }
+.draw-colors { display: inline-flex; gap: 4px; padding: 0 6px; }
+.draw-colors button { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; }
+.draw-colors button::before { content: ""; width: 18px; height: 18px; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .3); transition: transform .12s var(--ease); }
+.draw-colors button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--text); }
+.draw-colors button[aria-pressed="true"]::before { transform: scale(1.12); }
+.draw-size { color: var(--muted); font: 12px var(--mono); padding: 0 4px; }
+.copy-img { display: block; max-width: 100%; max-height: 60vh; margin: 8px auto; border-radius: var(--r-s); box-shadow: 0 0 0 1px var(--line); }
+
+.rework-box { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--running) 6%, var(--surface)); }
+.rework-head { display: flex; align-items: center; gap: 10px; }
+.rework-head .link { min-height: 32px; color: var(--muted); }
+.rework-box .attach { margin: 0; }
+.rework-box textarea { resize: vertical; min-height: 64px; max-height: 30vh; font-size: 15px; }
+.rework-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+@media (max-width: 1023px) {
+  /* Phone: the toolbar sits at the bottom, within thumb reach. */
+  .draw-bar { position: static; order: 2; border-bottom: 0; border-top: 1px solid var(--line); padding-bottom: calc(6px + var(--safe-b)); justify-content: center; }
+  .draw-bar .pv-spacer, .draw-size { display: none; }
+  .draw-bar #draw-done { padding: 0 10px; }
+  .draw-canvas { box-shadow: none; }
 }
