@@ -714,7 +714,20 @@ function todoRow(t, li = -1, ri = -1) {
         : null,
       t.status === "in_progress" && t.started_at ? h("span", { title: "Running for" }, ago(t.started_at)) : null,
       t.status === "review" && t.finished_at ? h("span", { title: "Waiting for review" }, ago(t.finished_at)) : null,
-      t.priority ? h("span", {}, `P${t.priority}`) : null));
+      t.priority ? h("span", {}, `P${t.priority}`) : null,
+      t.status === "review" ? approveChip(t) : null));
+}
+
+// A span, not a button: the card itself is a <button>, which can't nest one.
+function approveChip(t) {
+  return h("span", {
+    class: "approve-chip", role: "button", title: "Approve and merge without opening the diff",
+    onpointerdown: (e) => e.stopPropagation(),
+    onclick: (e) => {
+      e.stopPropagation();
+      attempt(async () => { await api("POST", `/api/todos/${t.id}/approve`); toast("Approved — merging"); })();
+    },
+  }, "Approve");
 }
 
 function updateLiveLine(id) {

@@ -694,6 +694,8 @@ dialog.file-over { outline: 2px dashed color-mix(in srgb, var(--accent) 70%, tra
 /* ---- pull requests, reverts, sync ---- */
 .pr-tag { font-size: 12px; font-weight: 600; color: var(--review); }
 .revert-tag { font-size: 12px; font-weight: 600; color: var(--muted); }
+.approve-chip { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--review); color: #08202a; cursor: pointer; }
+.approve-chip:hover { filter: brightness(1.1); }
 a.revert-tag { text-decoration: underline; }
 .pr-link { color: var(--review); font-weight: 600; text-decoration: none; }
 .pr-link:hover { text-decoration: underline; }
