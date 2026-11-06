@@ -734,6 +734,7 @@ for (const menu of $$(".foot-menu")) {
   });
 }
 $("#new-project").addEventListener("submit", attempt(async (e) => {
+  if (e.submitter?.value === "cancel") return;
   e.preventDefault();
   const { machine, ...body } = Object.fromEntries(new FormData(e.target));
   const m = state.machines?.find((x) => x.name === machine) || state.machines?.[0] || { name: "", prefix: "" };
