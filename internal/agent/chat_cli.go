@@ -40,11 +40,13 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	}
 	system := c.System
 	if system == "" {
-		system = (&Chat{}).defaultSystem()
+		system = (&Chat{}).defaultSystem() +
+			" You run in the project's checkout and can read its files with Read, Grep and Glob; " +
+			"look at the code before answering questions about it. You cannot edit files or run commands."
 	}
 	args := []string{
 		"-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-		"--tools", "", // plain Q&A: no file or shell access
+		"--tools", "Read,Grep,Glob", // read-only: no edits, no shell
 		"--no-session-persistence",
 		"--strict-mcp-config",   // don't load the user's MCP servers
 		"--setting-sources", "", // nor their settings/hooks
@@ -78,6 +80,7 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	}
 
 	var resultErr error
+	var wroteText, newMessage bool
 	pumpLines(stdout, func(line string) {
 		var ev struct {
 			Type          string          `json:"type"`
@@ -102,12 +105,21 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 				c.OnRateLimit(ev.RateLimitInfo)
 			}
 		case "stream_event":
+			if ev.Event.Type == "message_start" {
+				newMessage = true
+			}
 			if ev.Event.Type != "content_block_delta" {
 				return
 			}
 			switch ev.Event.Delta.Type {
 			case "text_delta":
-				emit(ChatDelta{Kind: "text", Text: ev.Event.Delta.Text})
+				text := ev.Event.Delta.Text
+				// Tool use splits a reply across messages; keep their text apart.
+				if newMessage && wroteText {
+					text = "\n\n" + text
+				}
+				newMessage, wroteText = false, true
+				emit(ChatDelta{Kind: "text", Text: text})
 			case "thinking_delta":
 				emit(ChatDelta{Kind: "thinking", Text: ev.Event.Delta.Thinking})
 			}
