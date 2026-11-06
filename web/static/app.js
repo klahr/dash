@@ -328,6 +328,7 @@ function showView(name) {
 
 function applyView(name) {
   state.view = name;
+  try { localStorage.setItem("dash.view", name); } catch {}
   $$(".nav > button").forEach((b) => {
     const on = b.dataset.view === name;
     b.classList.toggle("active", on);
@@ -339,6 +340,10 @@ function applyView(name) {
   if (name === "chat") $("#chat-log").scrollTop = $("#chat-log").scrollHeight;
 }
 $$(".nav > button[data-view]").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
+{
+  const saved = (() => { try { return localStorage.getItem("dash.view"); } catch { return null; } })();
+  if (saved && $(`.nav > button[data-view="${saved}"]`)) applyView(saved);
+}
 
 // ------------------------------------------------------------------ live events
 // One live connection per computer, so notifications arrive from all of them.
