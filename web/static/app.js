@@ -192,11 +192,11 @@ function ask({ title, body = "", input = false, placeholder = "", ok = "OK", dan
 // text field, or drop onto the sheet.
 const CLIP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5 12.6 19.9a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const clip = () =>h("span", { class: "clip", innerHTML: CLIP });
-const uploadURL = (a) => on(here(), `/api/uploads/${a.id}/${encodeURIComponent(a.name)}`);
+const uploadURL = (a, prefix = here()) => on(prefix, `/api/uploads/${a.id}/${encodeURIComponent(a.name)}`);
 const ACCEPT = "image/png,image/jpeg,image/gif,image/webp,.pdf,.txt,.md,.log,.json,.csv";
 
-async function uploadFile(file) {
-  const res = await fetch(on(here(), `/api/uploads?name=${encodeURIComponent(file.name || "pasted")}`), {
+async function uploadFile(file, prefix = here()) {
+  const res = await fetch(on(prefix, `/api/uploads?name=${encodeURIComponent(file.name || "pasted")}`), {
     method: "POST", body: file, headers: { "Content-Type": file.type || "application/octet-stream" },
   });
   if (res.status === 401) { location.replace("/login.html"); throw new Error("Sign in again to continue."); }
@@ -205,33 +205,41 @@ async function uploadFile(file) {
   return data;
 }
 
-function attachThumb(a, onRemove) {
+function attachThumb(a, onRemove, prefix = here()) {
   const isImg = a.type.startsWith("image/");
   return h("span", { class: "chip" },
-    h("a", { class: "chip-link", href: uploadURL(a), target: "_blank", rel: "noopener", title: a.name },
-      isImg ? h("img", { src: uploadURL(a), alt: "", loading: "lazy" }) : h("span", { class: "chip-icon" }, (a.name.split(".").pop() || "file").toUpperCase()),
+    h("a", { class: "chip-link", href: uploadURL(a, prefix), target: "_blank", rel: "noopener", title: a.name },
+      isImg ? h("img", { src: uploadURL(a, prefix), alt: "", loading: "lazy" }) : h("span", { class: "chip-icon" }, (a.name.split(".").pop() || "file").toUpperCase()),
       h("span", { class: "chip-name" }, a.name)),
     onRemove ? h("button", { type: "button", class: "chip-x", "aria-label": `Remove ${a.name}`, onclick: onRemove }, "×") : null);
 }
 
-function attachBox(el, textarea, onChange = () => {}) {
+// compact (the chat composers) drops the button and hides the row while it's
+// empty; files arrive by paste or drop onto zone. prefix names the computer
+// that stores the uploads.
+function attachBox(el, textarea, onChange = () => {}, { zone = el.closest("dialog") || el, compact = false, prefix = here } = {}) {
   let items = [], pending = 0, busy = Promise.resolve();
   const input = h("input", { type: "file", accept: ACCEPT, multiple: true, hidden: true, onchange: () => { add(input.files); input.value = ""; } });
-  const render = () => el.replaceChildren(
-    ...items.map((a) => attachThumb(a, () => { items = items.filter((x) => x !== a); render(); onChange(); })),
-    ...(pending ? [h("span", { class: "chip uploading" }, h("span", { class: "spinner", "aria-hidden": "true" }), `Uploading ${pending}…`)] : []),
-    h("button", { type: "button", class: "btn small attach-btn", onclick: () => input.click() },
-      clip(),
-      "Attach file"),
-    input);
+  const render = () => {
+    if (compact) el.hidden = !items.length && !pending;
+    el.replaceChildren(
+      ...items.map((a) => attachThumb(a, () => { items = items.filter((x) => x !== a); render(); onChange(); }, prefix())),
+      ...(pending ? [h("span", { class: "chip uploading" }, h("span", { class: "spinner", "aria-hidden": "true" }), `Uploading ${pending}…`)] : []),
+      ...(compact ? [] : [h("button", { type: "button", class: "btn small attach-btn", onclick: () => input.click() },
+        clip(),
+        "Attach file"),
+      input]));
+  };
+  const off = () => !compact && el.hidden;
   const add = (files) => {
     files = [...files];
     if (!files.length) return;
     pending += files.length;
     render();
+    const at = prefix();
     busy = busy.then(async () => {
       for (const f of files) {
-        try { items.push(await uploadFile(f)); onChange(); } catch (e) { fail(e); }
+        try { items.push(await uploadFile(f, at)); onChange(); } catch (e) { fail(e); }
         pending--;
         render();
       }
@@ -241,16 +249,15 @@ function attachBox(el, textarea, onChange = () => {}) {
     const files = [...(e.clipboardData?.files || [])];
     if (files.length) { e.preventDefault(); add(files); }
   });
-  const zone = el.closest("dialog") || el;
   zone.addEventListener("dragover", (e) => {
-    if (el.hidden || !e.dataTransfer?.types.includes("Files")) return;
+    if (off() || !e.dataTransfer?.types.includes("Files")) return;
     e.preventDefault();
     zone.classList.add("file-over");
   });
   zone.addEventListener("dragleave", (e) => { if (!zone.contains(e.relatedTarget)) zone.classList.remove("file-over"); });
   zone.addEventListener("drop", (e) => {
     zone.classList.remove("file-over");
-    if (el.hidden || !e.dataTransfer?.files.length) return;
+    if (off() || !e.dataTransfer?.files.length) return;
     e.preventDefault();
     add(e.dataTransfer.files);
   });
@@ -1749,6 +1756,13 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   const finish = () => { c.current = null; sendBtn.disabled = false; };
   const toEnd = () => { if (log.offsetParent) scroller().scrollTop = scroller().scrollHeight; };
   const assistant = (content) => h("div", { class: "msg assistant" }, h("div", { class: "reply", innerHTML: renderMarkdown(content) }), actions(content));
+  const prefixOf = () => target().prefix || "";
+  const user = (m) => h("div", { class: "msg user" }, m.content,
+    m.attachments?.length ? h("div", { class: "msg-attach" }, ...m.attachments.map((a) => attachThumb(a, null, prefixOf()))) : null);
+  // Images and files dropped onto the chat or pasted into its text field.
+  const attachRow = h("div", { class: "attach", hidden: true });
+  form.prepend(attachRow);
+  const att = attachBox(attachRow, input, () => {}, { zone: form.parentElement, compact: true, prefix: prefixOf });
 
   function socket(prefix) {
     if (c.ws && c.ws.readyState <= 1 && c.prefix === prefix) return c.ws;
@@ -1816,17 +1830,18 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
     if (c.current) { c.ws = null; finish(); }
     c.history = [...saved];
     empty.hidden = saved.length > 0;
-    log.replaceChildren(empty, ...saved.map((m) => m.role === "user" ? h("div", { class: "msg user" }, m.content) : assistant(m.content)));
+    log.replaceChildren(empty, ...saved.map((m) => m.role === "user" ? user(m) : assistant(m.content)));
     toEnd();
   }
 
-  function send(q) {
+  function send(q, attachments = []) {
     empty.hidden = true;
-    c.history.push({ role: "user", content: q });
+    const m = { role: "user", content: q, ...(attachments.length ? { attachments } : {}) };
+    c.history.push(m);
     const thinking = h("div", { class: "thinking" });
     const reply = h("div", { class: "reply" });
     const el = h("div", { class: "msg assistant pending" }, thinking, reply);
-    log.append(h("div", { class: "msg user" }, q), el);
+    log.append(user(m), el);
     toEnd();
     c.current = { el, thinking, reply, content: "", seg: "", tools: new Map() };
     sendBtn.disabled = true;
@@ -1849,13 +1864,16 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   input.addEventListener("input", autoGrow);
   form.addEventListener("submit", attempt(async (e) => {
     e.preventDefault();
-    const q = input.value.trim();
-    if (!q || c.current) return;
+    if (c.current) return;
+    await att.settled();
+    const q = input.value.trim(), files = att.items();
+    if ((!q && !files.length) || c.current) return;
     const cmd = /^\/(\w+)$/.exec(q)?.[1].toLowerCase();
     input.value = "";
     autoGrow();
-    if (Object.hasOwn(commands, cmd)) return commands[cmd]();
-    send(q);
+    if (!files.length && Object.hasOwn(commands, cmd)) return commands[cmd]();
+    att.reset();
+    send(q, files);
   }));
   input.addEventListener("keydown", (e) => {
     // Enter sends on devices with a hardware keyboard; on touch keyboards Enter adds a line.

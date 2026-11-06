@@ -268,6 +268,8 @@ type Process struct {
 type ChatMessage struct {
 	Role    string `json:"role"` // "user" | "assistant"
 	Content string `json:"content"`
+	// Attachments are files dropped or pasted into a user message.
+	Attachments []Attachment `json:"attachments,omitempty"`
 }
 
 // EventType names a WebSocket event broadcast to dashboards.

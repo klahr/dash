@@ -85,7 +85,8 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		}
 		var dir, mode string
 		save := s.Store.SetChat
-		prompt := msg.Messages
+		msg.Messages = s.chatAttachments(msg.Messages)
+		prompt := withAttachments(msg.Messages)
 		if msg.Project != "" && msg.Todo == "" && s.Store != nil {
 			p, err := s.Store.GetProject(msg.Project)
 			if err != nil {
@@ -117,7 +118,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			save = func(msgs []agent.ChatMessage) error { return s.Store.SetTodoChat(t.ID, msgs) }
-			prompt = withTodoContext(t, diff, msg.Messages)
+			prompt = withTodoContext(t, diff, prompt)
 		}
 		var turnCtx context.Context
 		turnCtx, cancelTurn = context.WithCancel(ctx)
@@ -219,6 +220,37 @@ func (a *chatApprovals) answer(id string, allow bool) bool {
 		ch <- allow
 	}
 	return ok
+}
+
+// chatAttachments replaces the attachments the client sent with this
+// server's own records, so paths always come from the upload directory.
+// Uploads that no longer exist are dropped.
+func (s *Server) chatAttachments(history []agent.ChatMessage) []agent.ChatMessage {
+	out := append([]agent.ChatMessage(nil), history...)
+	for i, m := range out {
+		if len(m.Attachments) == 0 {
+			continue
+		}
+		var atts []model.Attachment
+		for _, a := range m.Attachments {
+			if found, err := s.findUpload(a.ID); err == nil {
+				atts = append(atts, found)
+			}
+		}
+		out[i].Attachments = atts
+	}
+	return out
+}
+
+// withAttachments tells Claude where each message's attached files are.
+func withAttachments(history []agent.ChatMessage) []agent.ChatMessage {
+	out := append([]agent.ChatMessage(nil), history...)
+	for i, m := range out {
+		if len(m.Attachments) > 0 {
+			out[i].Content = strings.TrimSpace(m.Content + "\n\n" + agent.AttachmentList(m.Attachments))
+		}
+	}
+	return out
 }
 
 // maxChatDiff caps the patch given to the todo chat each turn.

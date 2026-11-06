@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -27,8 +29,34 @@ func TestWithTodoContext(t *testing.T) {
 	if history[0].Content != "make it better" {
 		t.Errorf("history was modified: %q", history[0].Content)
 	}
-	if got[1] != history[1] {
+	if got[1].Content != history[1].Content {
 		t.Errorf("later turns changed: %v", got[1])
+	}
+}
+
+func TestChatAttachments(t *testing.T) {
+	s := &Server{UploadRoot: t.TempDir()}
+	dir := filepath.Join(s.UploadRoot, "0123456789ab")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "shot.png"), []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	history := []agent.ChatMessage{{Role: "user", Content: "what's wrong here?", Attachments: []model.Attachment{
+		{ID: "0123456789ab", Name: "shot.png", Path: "/etc/passwd"}, // the client's path is ignored
+		{ID: "ffffffffffff", Name: "gone.png"},
+	}}}
+	got := s.chatAttachments(history)
+	if len(got[0].Attachments) != 1 || got[0].Attachments[0].Path != filepath.Join(dir, "shot.png") {
+		t.Fatalf("attachments = %+v", got[0].Attachments)
+	}
+	prompt := withAttachments(got)[0].Content
+	if !strings.HasPrefix(prompt, "what's wrong here?") || !strings.Contains(prompt, filepath.Join(dir, "shot.png")) {
+		t.Errorf("prompt = %q", prompt)
+	}
+	if got[0].Content != "what's wrong here?" {
+		t.Errorf("saved message was modified: %q", got[0].Content)
 	}
 }
 
