@@ -56,6 +56,10 @@ the Claude mobile apps). Anthropic's servers call it over the public internet, s
 OAuth: when you add the connector you get Dash's login page, enter your Dash username and
 password, and allow access.
 
+In the web UI, the account menu (or `:connector`) has **Connect Claude**: a step-by-step guide
+with the URL to copy, a link to claude.ai's connector settings, and how many connectors are signed
+in. Without `-public-url` it shows the commands below for your setup instead.
+
 **That login is the only thing between the internet and a server that runs commands on your
 computers.** Use a strong password, and expose nothing but the paths below.
 

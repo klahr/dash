@@ -192,6 +192,7 @@ func main() {
 		Refiner:     agent.Titler{Bin: *claudeBin, Model: *titleModel},
 		ProjectRoot: *projectRoot,
 		Static:      web.Static,
+		Addr:        *addr,
 	}
 
 	var mcpURL, permURL string

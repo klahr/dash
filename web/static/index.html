@@ -125,6 +125,7 @@
             <summary class="icon-btn" aria-label="Account menu" title="Account menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
             <div class="foot-menu-list">
               <button id="prefs-open" type="button" data-icon="prefs">Preferences</button>
+              <button id="connector-open" type="button" data-icon="plug">Connect Claude</button>
               <button id="logout" type="button" data-icon="logout">Log out</button>
             </div>
           </details>
@@ -444,6 +445,15 @@
     </form>
   </dialog>
 
+  <!-- Connect Claude: guide to adding Dash as a claude.ai custom connector -->
+  <dialog class="sheet" id="connector-sheet" aria-labelledby="connector-title">
+    <form method="dialog">
+      <header class="sheet-head"><h2 id="connector-title" tabindex="-1" autofocus>Connect Claude</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <p class="hint">Add Dash as a connector in claude.ai to use it from the Claude apps on any device. Claude can then list projects, create tasks, read diffs and approve work.</p>
+      <div id="connector-body"></div>
+    </form>
+  </dialog>
+
   <!-- Generic question / confirmation -->
   <dialog class="sheet small" id="ask-sheet" aria-labelledby="ask-title">
     <form method="dialog" id="ask-form">
@@ -485,7 +495,7 @@
         <dt>Chat</dt><dd><kbd>gc</kbd> open/close the chat pane · <kbd>Enter</kbd> send · <kbd>Esc</kbd> stop typing, again to close the overlay · <kbd>Ctrl-k</kbd> "Pin chat" keeps it beside the content</dd>
         <dt>Shell</dt><dd><kbd>i</kbd> type into terminal · <kbd>Ctrl-]</kbd> leave terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> new shell</dd>
         <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> add to queue · <kbd>Ctrl-Shift-Enter</kbd>/<kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>
-        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:task …</code> <code>:new</code> <code>:run cmd</code> <code>:shell</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:prefs</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:pin</code> <code>:fullscreen</code> <code>:activity</code> <code>:history</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:vim</code> <code>:list</code> <code>:q</code></dd>
+        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:task …</code> <code>:new</code> <code>:run cmd</code> <code>:shell</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:prefs</code> <code>:connector</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:pin</code> <code>:fullscreen</code> <code>:activity</code> <code>:history</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:vim</code> <code>:list</code> <code>:q</code></dd>
       </dl>
       <p class="hint">Dash version <code>{{DASH_VERSION}}</code></p>
     </form>

@@ -493,6 +493,20 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .sheet-actions .btn { flex: 1; }
 .sheet-actions .btn.shrink { flex: 0 0 auto; }
 
+/* ---------- Connect Claude guide ---------- */
+.connector-status { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; padding: 10px 12px; border-radius: var(--r-m); background: var(--raised); font-size: 14px; }
+.connector-status::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.connector-status.on::before { background: var(--merged); }
+.connector-status.off::before { background: var(--running); }
+.steps { margin: 16px 0 0; padding-left: 1.5em; }
+.steps > li { margin-bottom: 16px; }
+.steps > li::marker { color: var(--muted); font-weight: 600; }
+.steps p { margin: 6px 0 0; }
+.copy-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; }
+.copy-text { flex: 1; min-width: 0; margin: 0; padding: 8px 10px; border-radius: var(--r-s); border: 1px solid var(--line); background: var(--bg); font: 13px/1.5 var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; }
+.copy-row .btn { flex: none; }
+.hint.warn { color: var(--running); }
+
 /* ---------- palette (Ctrl-k) ---------- */
 .palette { display: none; flex-direction: column; padding-bottom: var(--safe-b); }
 .palette[open] { display: flex; }

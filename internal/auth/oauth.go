@@ -104,6 +104,21 @@ func loopback(host string) bool {
 // Resource is the URL of the MCP endpoint the tokens are for.
 func (o *OAuth) Resource() string { return o.base + MCPPath }
 
+// Connected counts the clients signed in now: those holding a refresh token
+// that hasn't expired.
+func (o *OAuth) Connected() int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	now := o.a.now()
+	seen := map[string]bool{}
+	for _, t := range o.tokens {
+		if t.Refresh && now.Before(t.Expires) && o.clients[t.Client] != nil {
+			seen[t.Client] = true
+		}
+	}
+	return len(seen)
+}
+
 func (o *OAuth) public(path string) bool {
 	if o == nil {
 		return false

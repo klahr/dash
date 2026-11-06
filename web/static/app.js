@@ -58,6 +58,7 @@ const ICONS = {
   diff: "M12 4v8M8 8h8M8 18h8",
   log: "M4 6h16M4 12h16M4 18h10",
   flag: "M5 21V4h12l-2 4 2 4H5",
+  plug: "M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4",
   down: "m7 10 5 5 5-5",
   up: "m7 14 5-5 5 5",
   wand: "M4 20 15 9M13 7l4 4M17 3v4M15 5h4M7 4v2M6 5h2M19 15v2M18 16h2",
@@ -177,7 +178,7 @@ if (vv) {
 // one serving this page forwards /peer/<name>/… to the others. A project's
 // API calls go to the computer it lives on (its prefix); login, logout and
 // the computer list always go to this one.
-const HUB_ONLY = /^\/api\/(login|logout|me|machines|version|chat)\b/;
+const HUB_ONLY = /^\/api\/(login|logout|me|machines|version|chat|connector)\b/;
 const here = () => state.project?.prefix || "";
 const on = (prefix, path) => (HUB_ONLY.test(path) ? path : `${prefix}${path}`);
 
@@ -989,6 +990,7 @@ $("#menu-scrim").addEventListener("click", () => setMenu(false));
 desktop.addEventListener("change", () => { setMenu(false); $("#project-picker").hidden = true; });
 $("#side-new-project").addEventListener("click", openNewProject);
 $("#prefs-open").addEventListener("click", openPrefs);
+$("#connector-open").addEventListener("click", attempt(openConnector));
 $("#pm-settings").addEventListener("click", openSettings);
 $("#pm-github").addEventListener("click", attempt(createGitHubRepo));
 $("#push-main").addEventListener("click", attempt(pushDone));
@@ -1770,6 +1772,57 @@ $("#prefs-form").invisibles.addEventListener("change", (e) => { if (e.target.che
 $("#prefs-form").notify.addEventListener("change", attempt(async (e) => {
   try { if (e.target.checked !== notifyOn()) await toggleNotifications(); } finally { syncPrefs(); }
 }));
+
+// ------------------------------------------------------------------ Connect Claude (claude.ai custom connector)
+// A guide to adding Dash as a custom connector in claude.ai. When /mcp is off
+// (no -public-url) it shows how to turn it on first.
+const CLAUDE_CONNECTORS = "https://claude.ai/settings/connectors";
+
+function copyBlock(text, msg, { pre = false } = {}) {
+  return h("div", { class: "copy-row" },
+    h(pre ? "pre" : "code", { class: "copy-text" }, text),
+    h("button", { class: "btn small shrink", type: "button", onclick: () => copy(text, msg) }, ico("copy"), "Copy"));
+}
+
+function connectorSteps(c) {
+  const step = (head, ...body) => h("li", {}, h("strong", {}, head), ...body);
+  if (!c.enabled) {
+    const host = location.hostname.endsWith(".ts.net") ? location.hostname : "<machine>.<tailnet>.ts.net";
+    const origin = `https://${host}:8443`;
+    const funnel = `for p in ${c.paths.join(" ")}; do\n  tailscale funnel --bg --https=8443 --set-path=$p ${c.local}$p\ndone`;
+    return [
+      h("p", { class: "connector-status off" }, "The connector is off. Anthropic's servers call Dash over the internet, so it needs a public HTTPS address first."),
+      h("ol", { class: "steps" },
+        step("Expose only the connector's paths.", h("p", { class: "hint" }, "With Tailscale Funnel, on this computer:"), copyBlock(funnel, "Commands copied", { pre: true })),
+        step("Restart Dash with that address.", copyBlock(`./bin/dash -trust-proxy -public-url ${origin}`, "Command copied", { pre: true }),
+          h("p", { class: "hint" }, "Or set ", h("code", {}, `DASH_PUBLIC_URL=${origin}`), " in Dash's env file (", h("code", {}, "~/.config/dash/env"), " for the service). Use the address exactly as Funnel serves it, port included.")),
+        step("Open this guide again.", h("p", { class: "hint" }, "It then gives you the URL to add in claude.ai."))),
+      h("p", { class: "hint warn" }, "Your Dash login is all that stands between the internet and a server that runs commands on your computers. Use a strong password."),
+    ];
+  }
+  const n = c.connected;
+  return [
+    h("p", { class: `connector-status ${n ? "on" : ""}` },
+      n ? `Connected: ${n} connector${n === 1 ? " is" : "s are"} signed in.` : "Ready. No connector has signed in yet."),
+    h("ol", { class: "steps" },
+      step("Copy the connector URL.", copyBlock(c.url, "Connector URL copied")),
+      step("Open Connectors in claude.ai settings.", h("p", {},
+        h("a", { class: "btn small", href: CLAUDE_CONNECTORS, target: "_blank", rel: "noopener" }, ico("external"), "Open claude.ai"))),
+      step("Add a custom connector.", h("p", { class: "hint" }, "Name it Dash, paste the URL and add it.")),
+      step("Connect and sign in.", h("p", { class: "hint" }, "Dash's sign-in page opens. Enter your Dash username and password, then choose Allow.")),
+      step("Use it in a chat.", h("p", { class: "hint" }, "Turn Dash on in the chat's tools menu. The connector also works in the Claude desktop and mobile apps."))),
+    h("p", { class: "hint" }, "A connector stays signed in while it's used at least every 30 days. Changing your Dash username or password signs every connector out."),
+    h("footer", { class: "sheet-actions" },
+      h("button", { class: "btn", type: "button", onclick: attempt(openConnector) }, ico("redo"), "Check again")),
+  ];
+}
+
+async function openConnector() {
+  const c = await api("GET", "/api/connector");
+  $("#connector-body").replaceChildren(...connectorSteps(c));
+  const d = $("#connector-sheet");
+  if (!d.open) d.showModal();
+}
 
 // ------------------------------------------------------------------ notifications & tab title
 const notifyOn = () => { try { return localStorage.getItem("dash.notify") === "1"; } catch { return false; } };
@@ -3580,6 +3633,7 @@ async function runCommand(line) {
     case "usage": renderUsage(); return $("#usage-sheet").showModal();
     case "settings": need(); return openSettings();
     case "prefs": case "preferences": return openPrefs();
+    case "connector": case "connect": return openConnector();
     case "perms": case "permissions":
       if (!state.perms.length) return toast("No permission requests waiting");
       showView("board"); closeDetail();
@@ -3668,6 +3722,7 @@ function paletteCommands() {
     state.usage && [state.usage.paused ? "Resume the queue" : "Pause the queue", state.usage.paused ? "play" : "pause", () => runCommand(state.usage.paused ? "resume" : "pause"), "", "queue"],
     ["Permission requests", "eye", () => runCommand("perms"), ":perms", "approvals allow deny"],
     ["Preferences", "prefs", openPrefs, ":prefs", "preferences vim invisibles whitespace notifications browser"],
+    ["Connect Claude", "plug", openConnector, ":connector", "claude.ai connector mcp mobile app remote oauth"],
     [notifyLabel(), notifyOn() ? "bell-off" : "bell", toggleNotifications, ":notify", "notifications"],
     [vimOn() ? "Turn off vim keys in the editor" : "Turn on vim keys in the editor", "code", toggleVim, ":vim", "vim keybindings prompt editor"],
     [invisiblesOn() ? "Hide invisible characters in the editor" : "Show invisible characters in the editor", "code", toggleInvisibles, ":list", "invisibles whitespace tabs spaces trailing"],

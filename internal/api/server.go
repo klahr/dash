@@ -57,6 +57,7 @@ type Server struct {
 	CI         *ci.Watcher
 	Peers      *peer.Hub // other computers shown in this dashboard
 	Static     fs.FS     // frontend assets
+	Addr       string    // the listen address (-addr), for the connector setup guide
 
 	reviewMu  sync.Mutex
 	reviewGen uint64
@@ -170,6 +171,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /mcp/permissions", s.Perms.ServeMCP) // answers 405, as MCP clients expect
 	mux.Handle("POST /mcp/dash", s.BoardMCP())
 	mux.Handle("GET /mcp/dash", s.BoardMCP())
+	// What the "Connect Claude" guide needs: is /mcp on, where, and who signed in.
+	mux.HandleFunc("GET /api/connector", s.connectorStatus)
 	if s.OAuth != nil {
 		// Remote MCP clients: the whole dashboard, with OAuth access tokens.
 		s.OAuth.Routes(mux)
