@@ -508,6 +508,10 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .palette-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .palette-hint, .palette-kind { flex: none; font-size: 12.5px; color: var(--faint); white-space: nowrap; }
 .palette-empty { padding: 16px 10px; color: var(--muted); }
+/* Small screens: no room (or keyboard) for the search buttons in the header. */
+@media (max-width: 639px) {
+  #search-open, #palette-open { display: none; }
+}
 @media (min-width: 640px) {
   .palette.sheet { max-width: 620px; margin: 12dvh auto auto; }
 }
