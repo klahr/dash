@@ -296,7 +296,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .chat-empty { margin: auto; padding: 24px; }
 .msg { max-width: 72ch; overflow-wrap: anywhere; }
 .msg.user { align-self: flex-end; background: var(--raised); padding: 10px 14px; border-radius: var(--r-l) var(--r-l) 4px var(--r-l); white-space: pre-wrap; }
-.msg.assistant { align-self: flex-start; }
+.msg.assistant { align-self: stretch; }
 .msg .reply { line-height: 1.55; }
 .msg .reply > :first-child { margin-top: 0; }
 .msg .reply > :last-child { margin-bottom: 0; }
