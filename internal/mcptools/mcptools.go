@@ -217,7 +217,11 @@ func (t Tool) schema() map[string]any {
 	props := map[string]any{}
 	required := []string{}
 	for _, p := range t.Params {
-		props[p.Name] = map[string]string{"type": p.Type, "description": p.Desc}
+		prop := map[string]any{"type": p.Type, "description": p.Desc}
+		if p.Type == "array" {
+			prop["items"] = map[string]string{"type": "string"}
+		}
+		props[p.Name] = prop
 		if p.Required {
 			required = append(required, p.Name)
 		}

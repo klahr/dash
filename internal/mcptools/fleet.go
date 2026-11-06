@@ -97,6 +97,20 @@ func (f Fleet) Project(ref string) (model.Project, error) {
 	return p, err
 }
 
+// UpdateProject sends changes to the project's PATCH /api/projects/{id}.
+func (f Fleet) UpdateProject(ref string, changes map[string]any) (model.Project, error) {
+	p, at, err := f.project(ref)
+	if err != nil {
+		return model.Project{}, err
+	}
+	var out model.Project
+	if err := f.API.Call("PATCH", at+"/api/projects/"+url.PathEscape(p.ID), changes, &out); err != nil {
+		return model.Project{}, err
+	}
+	out.Machine = p.Machine
+	return out, nil
+}
+
 func (f Fleet) Todos(projectID string) ([]model.Todo, error) {
 	_, at, err := f.project(projectID)
 	if err != nil {
@@ -186,9 +200,54 @@ func (f Fleet) Text(id, kind string, max int, tail bool) (string, error) {
 	return out[:max] + fmt.Sprintf("\n[…truncated, %d more characters]", len(out)-max), nil
 }
 
-// FleetTools are the board tools plus the review tools, across every computer.
+// FleetTools are the board, review and project settings tools, across every computer.
 func FleetTools(f Fleet) []Tool {
-	return append(Tools(f, Options{}), ReviewTools(f)...)
+	return append(append(Tools(f, Options{}), ReviewTools(f)...), ProjectTools(f)...)
+}
+
+// ProjectSettings are update_project's optional parameters, sent as given to
+// PATCH /api/projects/{id}.
+var ProjectSettings = []Param{
+	{"name", "string", "Display name.", false},
+	{"run_command", "string", "Starts the app, e.g. \"npm run dev\"; gets $PORT.", false},
+	{"test_command", "string", "Runs the tests after each task, e.g. \"go test ./...\".", false},
+	{"deploy_command", "string", "Deploys, e.g. \"./deploy.sh\".", false},
+	{"setup_command", "string", "Runs once in every new worktree before Claude starts, e.g. \"npm ci\".", false},
+	{"copy_files", "array", "Untracked files copied from the main checkout into new worktrees, e.g. [\".env\"]; replaces the list.", false},
+	{"allowed_tools", "array", "Tools that run without a permission prompt in tasks, e.g. [\"Bash\", \"WebFetch\"]; replaces the list.", false},
+	{"chat_permission_mode", "string", "Permission mode of the project's chats: \"\" (ask), \"auto\" or \"acceptEdits\".", false},
+	{"review_prompt", "string", "What the task chat's Review button asks Claude (\"\" for the default).", false},
+	{"max_auto_fixes", "integer", "How often failing tests or conflicts go back to Claude before asking a human.", false},
+	{"auto_push", "boolean", "Push the default branch after every merge.", false},
+	{"auto_approve", "boolean", "Finished tasks whose tests pass skip review.", false},
+	{"merge_mode", "string", "How approved work lands: \"local\" (squash onto the default branch) or \"pr\" (GitHub pull request).", false},
+	{"investigate_ci", "boolean", "Queue a task when a GitHub Actions build on the default branch fails.", false},
+	{"max_run_minutes", "integer", "Time limit for one Claude run (0 for the default).", false},
+	{"max_turns", "integer", "Turn limit for one Claude run (0 for the default).", false},
+	{"color", "string", "Color marking the project, like \"#3a7bd5\" (\"\" for none).", false},
+}
+
+// ProjectTools read and change a project's settings: get_project and update_project.
+func ProjectTools(f Fleet) []Tool {
+	pProject := Param{"project", "string", "Project name or id (see list_projects).", true}
+	return []Tool{
+		{"get_project", "Show a project's settings.", []Param{pProject},
+			func(a Args) (any, error) { return f.Project(a.Str("project")) }},
+		{"update_project", "Change a project's settings; only the given ones change. Returns the project afterwards.",
+			append([]Param{pProject}, ProjectSettings...),
+			func(a Args) (any, error) {
+				changes := map[string]any{}
+				for _, p := range ProjectSettings {
+					if v, ok := a[p.Name]; ok {
+						changes[p.Name] = v
+					}
+				}
+				if len(changes) == 0 {
+					return nil, errors.New("no settings to change")
+				}
+				return f.UpdateProject(a.Str("project"), changes)
+			}},
+	}
 }
 
 // ReviewTools inspect and move tasks: get_diff, get_log, approve_todo,

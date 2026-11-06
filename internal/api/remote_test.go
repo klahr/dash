@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
@@ -29,6 +30,7 @@ func remoteServer(t *testing.T) (h http.Handler, s *Server, home, work model.Pro
 	ps, _, work := boardServer(t)
 	ps.Auth.PeerToken = peerSecret
 	ps.Peers = &peer.Hub{Self: "work"}
+	ps.Git = gitops.New(nil) // for update_project
 	srv := httptest.NewServer(ps.Routes())
 	t.Cleanup(srv.Close)
 	p, err := peer.Parse("work=" + srv.URL)
@@ -185,8 +187,28 @@ func TestRemoteMCPToolsAcrossComputers(t *testing.T) {
 		}
 	}
 
+	// Settings on the peer, by project id.
+	text, isErr := call("update_project", `{"project":"`+work.ID+`","test_command":"go test ./...","auto_approve":true,"max_turns":7,"allowed_tools":["Bash"," "]}`)
+	if isErr {
+		t.Fatal(text)
+	}
+	var proj model.Project
+	_ = json.Unmarshal([]byte(text), &proj)
+	if proj.ID != work.ID || proj.Machine != "work" || proj.TestCommand != "go test ./..." || !proj.AutoApprove || proj.MaxTurns != 7 || strings.Join(proj.AllowedTools, ",") != "Bash" {
+		t.Errorf("update_project: %s", text)
+	}
+	if text, _ := call("get_project", `{"project":"`+work.ID+`"}`); !strings.Contains(text, `"test_command": "go test ./..."`) {
+		t.Errorf("get_project: %s", text)
+	}
+	if text, isErr := call("update_project", `{"project":"`+work.ID+`","color":"blue"}`); !isErr || !strings.Contains(text, "color") {
+		t.Errorf("bad color accepted: %s", text)
+	}
+	if text, isErr := call("update_project", `{"project":"`+work.ID+`"}`); !isErr {
+		t.Errorf("update without settings: %s", text)
+	}
+
 	// On the peer, by project id.
-	text, isErr := call("create_todo", `{"project":"`+work.ID+`","title":"Remote task","draft":true}`)
+	text, isErr = call("create_todo", `{"project":"`+work.ID+`","title":"Remote task","draft":true}`)
 	if isErr {
 		t.Fatal(text)
 	}
