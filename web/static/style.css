@@ -1118,9 +1118,10 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .dep-picker { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r-m); padding: 4px; background: var(--bg); }
 .dep-option { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-s); cursor: pointer; }
 .dep-option:hover { background: var(--raised); }
-.dep-option input { accent-color: var(--accent); margin: 0; flex: none; }
-.dep-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dep-status { flex: none; font-size: 12px; color: var(--c, var(--faint)); }
+/* The global `input` rule sets width: 100% and padding; undo both so the checkbox doesn't fill the row. */
+.dep-option input { accent-color: var(--accent); margin: 0; flex: none; width: 18px; height: 18px; padding: 0; }
+.dep-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.dep-status { flex: none; font-size: 13px; color: var(--c, var(--faint)); }
 .todo-sub.deps, .deps { color: var(--muted); }
 .todo-sub.deps.stuck, .deps.stuck { color: var(--running); font-weight: 600; }
 .dep-link { color: var(--text); text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 2px; cursor: pointer; border-radius: 3px; }
