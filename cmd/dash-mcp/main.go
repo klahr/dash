@@ -4,16 +4,14 @@
 package main
 
 import (
-	"bufio"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/tui"
 )
@@ -34,11 +32,20 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	s := &mcpServer{c: c, login: func() error { return c.Login(user, pass) }}
-	if err := s.login(); err != nil {
+	login := func() error { return c.Login(user, pass) }
+	if err := login(); err != nil {
 		fail(fmt.Errorf("login to %s: %w", *server, err))
 	}
-	if err := s.serve(os.Stdin, os.Stdout); err != nil {
+	s := &mcptools.Server{
+		Name: "dash",
+		Instructions: "Dash runs Claude Code on tasks in parallel, each in its own git worktree. " +
+			"A task goes draft → queued → in_progress → review → merging → merged (or failed). " +
+			"Review a task with get_todo and get_diff, then approve_todo or rework_todo with feedback.",
+		Tools: tools(client{c}),
+		// Log in again once if the session expired.
+		Retry: func(err error) bool { return errors.Is(err, tui.ErrUnauthorized) && login() == nil },
+	}
+	if err := s.ServeStdio(os.Stdin, os.Stdout); err != nil {
 		fail(err)
 	}
 }
@@ -55,326 +62,125 @@ func fail(err error) {
 	os.Exit(1)
 }
 
-// ---- JSON-RPC over stdio (one message per line) ----
+// client is the Board of a Dash server reached through its HTTP API.
+type client struct{ c *tui.Client }
 
-type rpcRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
-}
-
-type rpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-type mcpServer struct {
-	c     *tui.Client
-	login func() error
-}
-
-func (s *mcpServer) serve(in io.Reader, out io.Writer) error {
-	sc := bufio.NewScanner(in)
-	sc.Buffer(make([]byte, 1<<20), 16<<20)
-	enc := json.NewEncoder(out)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
-			continue
-		}
-		var req rpcRequest
-		if err := json.Unmarshal([]byte(line), &req); err != nil {
-			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": nil, "error": rpcError{-32700, "parse error"}})
-			continue
-		}
-		if len(req.ID) == 0 { // notification (e.g. notifications/initialized)
-			continue
-		}
-		result, rerr := s.handle(req)
-		resp := map[string]any{"jsonrpc": "2.0", "id": req.ID}
-		if rerr != nil {
-			resp["error"] = rerr
-		} else {
-			resp["result"] = result
-		}
-		if err := enc.Encode(resp); err != nil {
-			return err
-		}
-	}
-	return sc.Err()
-}
-
-func (s *mcpServer) handle(req rpcRequest) (any, *rpcError) {
-	switch req.Method {
-	case "initialize":
-		var p struct {
-			ProtocolVersion string `json:"protocolVersion"`
-		}
-		_ = json.Unmarshal(req.Params, &p)
-		if p.ProtocolVersion == "" {
-			p.ProtocolVersion = "2025-06-18"
-		}
-		return map[string]any{
-			"protocolVersion": p.ProtocolVersion,
-			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]string{"name": "dash", "version": "1"},
-			"instructions": "Dash runs Claude Code on tasks in parallel, each in its own git worktree. " +
-				"A task goes draft → queued → in_progress → review → merging → merged (or failed). " +
-				"Review a task with get_todo and get_diff, then approve_todo or rework_todo with feedback.",
-		}, nil
-	case "ping":
-		return map[string]any{}, nil
-	case "tools/list":
-		list := make([]map[string]any, 0, len(tools))
-		for _, t := range tools {
-			list = append(list, map[string]any{"name": t.name, "description": t.desc, "inputSchema": t.schema()})
-		}
-		return map[string]any{"tools": list}, nil
-	case "tools/call":
-		var p struct {
-			Name      string         `json:"name"`
-			Arguments map[string]any `json:"arguments"`
-		}
-		if err := json.Unmarshal(req.Params, &p); err != nil {
-			return nil, &rpcError{-32602, "invalid params"}
-		}
-		for _, t := range tools {
-			if t.name == p.Name {
-				return s.call(t, args(p.Arguments)), nil
-			}
-		}
-		return nil, &rpcError{-32602, "unknown tool " + p.Name}
-	default:
-		return nil, &rpcError{-32601, "method not found"}
-	}
-}
-
-// call runs a tool, logging in again once if the session expired.
-func (s *mcpServer) call(t tool, a args) map[string]any {
-	res, err := t.run(s, a)
-	if errors.Is(err, tui.ErrUnauthorized) && s.login() == nil {
-		res, err = t.run(s, a)
-	}
+func (cl client) Projects() ([]model.Project, []string, error) {
+	ps, ms, err := cl.c.AllProjects()
 	if err != nil {
-		return map[string]any{"isError": true, "content": []any{map[string]string{"type": "text", "text": err.Error()}}}
+		return nil, nil, err
 	}
-	text, ok := res.(string)
-	if !ok {
-		b, _ := json.MarshalIndent(res, "", "  ")
-		text = string(b)
-	}
-	return map[string]any{"content": []any{map[string]string{"type": "text", "text": text}}}
-}
-
-// ---- tools ----
-
-type args map[string]any
-
-func (a args) str(k string) string {
-	s, _ := a[k].(string)
-	return strings.TrimSpace(s)
-}
-
-func (a args) num(k string, def int) int {
-	if f, ok := a[k].(float64); ok {
-		return int(f)
-	}
-	return def
-}
-
-func (a args) flag(k string) bool {
-	b, _ := a[k].(bool)
-	return b
-}
-
-type param struct {
-	name, typ, desc string
-	required        bool
-}
-
-type tool struct {
-	name, desc string
-	params     []param
-	run        func(s *mcpServer, a args) (any, error)
-}
-
-func (t tool) schema() map[string]any {
-	props := map[string]any{}
-	required := []string{}
-	for _, p := range t.params {
-		props[p.name] = map[string]string{"type": p.typ, "description": p.desc}
-		if p.required {
-			required = append(required, p.name)
+	var unreachable []string
+	for _, m := range ms {
+		if !m.OK {
+			unreachable = append(unreachable, m.Name+": "+m.Error)
 		}
 	}
-	return map[string]any{"type": "object", "properties": props, "required": required}
+	return ps, unreachable, nil
 }
 
-var (
-	pProject = param{"project", "string", "Project name or id (see list_projects).", true}
-	pTodo    = param{"todo", "string", "Task id.", true}
-)
+func (cl client) Todos(projectID string) ([]model.Todo, error) { return cl.c.Todos(projectID) }
 
-var tools = []tool{
-	{"list_projects", "List the projects on every computer in this Dash.", nil,
-		func(s *mcpServer, a args) (any, error) {
-			ps, ms, err := s.c.AllProjects()
-			if err != nil {
-				return nil, err
-			}
-			type row struct {
-				ID            string `json:"id"`
-				Name          string `json:"name"`
-				Machine       string `json:"machine"`
-				Path          string `json:"path"`
-				DefaultBranch string `json:"default_branch"`
-				MergeMode     string `json:"merge_mode,omitempty"`
-			}
-			out := struct {
-				Projects    []row    `json:"projects"`
-				Unreachable []string `json:"unreachable,omitempty"`
-			}{Projects: []row{}}
-			for _, p := range ps {
-				out.Projects = append(out.Projects, row{p.ID, p.Name, p.Machine, p.Path, p.DefaultBranch, p.MergeMode})
-			}
-			for _, m := range ms {
-				if !m.OK {
-					out.Unreachable = append(out.Unreachable, m.Name+": "+m.Error)
+func (cl client) CreateTodo(projectID string, t mcptools.NewTodo) (model.Todo, error) {
+	return cl.c.CreateTodo(projectID, tui.NewTodo{
+		Title: t.Title, Prompt: t.Prompt, Goal: t.Goal, Priority: t.Priority, Enqueue: t.Enqueue,
+	})
+}
+
+func tools(s client) []mcptools.Tool {
+	pTodo := mcptools.PTodo
+	return append(mcptools.Tools(s, mcptools.Options{}), []mcptools.Tool{
+		tool("get_diff", "The task's changes against the default branch (or the merged commit).", []mcptools.Param{pTodo,
+			param("max_chars", "integer", "Truncate after this many characters (default 100000).", false)},
+			func(a mcptools.Args) (any, error) {
+				return s.text(a.Str("todo"), "diff", a.Num("max_chars", 100000), false)
+			}),
+		tool("get_log", "The end of Claude's run log for a task.", []mcptools.Param{pTodo,
+			param("max_chars", "integer", "Return at most this many characters from the end (default 20000).", false)},
+			func(a mcptools.Args) (any, error) {
+				return s.text(a.Str("todo"), "log", a.Num("max_chars", 20000), true)
+			}),
+		tool("approve_todo", "Approve a task in review: it goes to the merge queue (or a pull request).", []mcptools.Param{pTodo},
+			func(a mcptools.Args) (any, error) { return s.action(a.Str("todo"), "approve", nil) }),
+		tool("rework_todo", "Send a task back to Claude with feedback.", []mcptools.Param{pTodo,
+			param("feedback", "string", "What to change.", true)},
+			func(a mcptools.Args) (any, error) {
+				if a.Str("feedback") == "" {
+					return nil, errors.New("feedback is required")
 				}
-			}
-			return out, nil
-		}},
-	{"list_todos", "List a project's tasks (id, title, status), optionally filtered by status.", []param{pProject,
-		{"status", "string", "Only this status: draft, queued, in_progress, review, merging, merged or failed.", false}},
-		func(s *mcpServer, a args) (any, error) {
-			p, err := s.project(a.str("project"))
-			if err != nil {
-				return nil, err
-			}
-			ts, err := s.c.Todos(p.ID)
-			if err != nil {
-				return nil, err
-			}
-			type row struct {
-				ID       string           `json:"id"`
-				Title    string           `json:"title"`
-				Status   model.TodoStatus `json:"status"`
-				Priority int              `json:"priority"`
-				Error    string           `json:"error,omitempty"`
-			}
-			out := []row{}
-			for _, t := range ts {
-				if st := a.str("status"); st != "" && string(t.Status) != st {
-					continue
+				return s.action(a.Str("todo"), "rework", map[string]any{"feedback": a.Str("feedback")})
+			}),
+		tool("enqueue_todo", "Queue a draft or failed task to run.", []mcptools.Param{pTodo},
+			func(a mcptools.Args) (any, error) { return s.action(a.Str("todo"), "enqueue", nil) }),
+		tool("cancel_todo", "Stop a running or queued task.", []mcptools.Param{pTodo},
+			func(a mcptools.Args) (any, error) { return s.action(a.Str("todo"), "cancel", nil) }),
+		tool("delete_todo", "Delete a task and its worktree.", []mcptools.Param{pTodo},
+			func(a mcptools.Args) (any, error) {
+				if _, err := s.Todo(a.Str("todo")); err != nil {
+					return nil, err
 				}
-				out = append(out, row{t.ID, t.Title, t.Status, t.Priority, t.Error})
-			}
-			return out, nil
-		}},
-	{"get_todo", "Show a task: prompt, status, feedback, test results, diff size, pull request.", []param{pTodo},
-		func(s *mcpServer, a args) (any, error) { return s.todo(a.str("todo")) }},
-	{"create_todo", "Create a task for Claude to work on. It is queued to run unless draft is true.", []param{pProject,
-		{"prompt", "string", "The task for Claude (the title alone is enough for small tasks).", false},
-		{"title", "string", "Short title (generated from the prompt if empty).", false},
-		{"priority", "integer", "Lower runs first (default 0).", false},
-		{"goal", "boolean", "Mark as a major milestone.", false},
-		{"draft", "boolean", "Keep it as a draft instead of queueing it.", false}},
-		func(s *mcpServer, a args) (any, error) {
-			p, err := s.project(a.str("project"))
-			if err != nil {
-				return nil, err
-			}
-			if a.str("title") == "" && a.str("prompt") == "" {
-				return nil, errors.New("title or prompt is required")
-			}
-			return s.c.CreateTodo(p.ID, tui.NewTodo{
-				Title: a.str("title"), Prompt: a.str("prompt"), Goal: a.flag("goal"),
-				Priority: a.num("priority", 0), Enqueue: !a.flag("draft"),
-			})
-		}},
-	{"get_diff", "The task's changes against the default branch (or the merged commit).", []param{pTodo,
-		{"max_chars", "integer", "Truncate after this many characters (default 100000).", false}},
-		func(s *mcpServer, a args) (any, error) {
-			return s.text(a.str("todo"), "diff", a.num("max_chars", 100000), false)
-		}},
-	{"get_log", "The end of Claude's run log for a task.", []param{pTodo,
-		{"max_chars", "integer", "Return at most this many characters from the end (default 20000).", false}},
-		func(s *mcpServer, a args) (any, error) {
-			return s.text(a.str("todo"), "log", a.num("max_chars", 20000), true)
-		}},
-	{"approve_todo", "Approve a task in review: it goes to the merge queue (or a pull request).", []param{pTodo},
-		func(s *mcpServer, a args) (any, error) { return s.action(a.str("todo"), "approve", nil) }},
-	{"rework_todo", "Send a task back to Claude with feedback.", []param{pTodo,
-		{"feedback", "string", "What to change.", true}},
-		func(s *mcpServer, a args) (any, error) {
-			if a.str("feedback") == "" {
-				return nil, errors.New("feedback is required")
-			}
-			return s.action(a.str("todo"), "rework", map[string]any{"feedback": a.str("feedback")})
-		}},
-	{"enqueue_todo", "Queue a draft or failed task to run.", []param{pTodo},
-		func(s *mcpServer, a args) (any, error) { return s.action(a.str("todo"), "enqueue", nil) }},
-	{"cancel_todo", "Stop a running or queued task.", []param{pTodo},
-		func(s *mcpServer, a args) (any, error) { return s.action(a.str("todo"), "cancel", nil) }},
-	{"delete_todo", "Delete a task and its worktree.", []param{pTodo},
-		func(s *mcpServer, a args) (any, error) {
-			if _, err := s.todo(a.str("todo")); err != nil {
-				return nil, err
-			}
-			return "deleted", s.c.DeleteTodo(a.str("todo"))
-		}},
-	{"list_permissions", "Tool calls Claude is waiting for permission to run, on every computer.", nil,
-		func(s *mcpServer, a args) (any, error) {
-			type row struct {
-				Machine string `json:"machine"`
-				tui.PermRequest
-			}
-			out := []row{}
-			err := s.eachMachine(func(m tui.Machine) error {
-				ps, err := s.c.Permissions("")
-				for _, p := range ps {
-					out = append(out, row{m.Name, p})
+				return "deleted", s.c.DeleteTodo(a.Str("todo"))
+			}),
+		tool("list_permissions", "Tool calls Claude is waiting for permission to run, on every computer.", nil,
+			func(a mcptools.Args) (any, error) {
+				type row struct {
+					Machine string `json:"machine"`
+					tui.PermRequest
 				}
-				return err
-			})
-			return out, err
-		}},
-	{"decide_permission", "Answer a permission request from list_permissions.", []param{
-		{"id", "string", "Permission request id.", true},
-		{"decision", "string", "allow, always or deny.", true}},
-		func(s *mcpServer, a args) (any, error) {
-			id, d := a.str("id"), a.str("decision")
-			if d != "allow" && d != "always" && d != "deny" {
-				return nil, errors.New("decision must be allow, always or deny")
-			}
-			found := false
-			err := s.eachMachine(func(m tui.Machine) error {
-				ps, err := s.c.Permissions("")
-				for _, p := range ps {
-					if p.ID == id && !found {
-						found = true
-						return s.c.Decide(id, d)
+				out := []row{}
+				err := s.eachMachine(func(m tui.Machine) error {
+					ps, err := s.c.Permissions("")
+					for _, p := range ps {
+						out = append(out, row{m.Name, p})
 					}
+					return err
+				})
+				return out, err
+			}),
+		tool("decide_permission", "Answer a permission request from list_permissions.", []mcptools.Param{
+			param("id", "string", "Permission request id.", true),
+			param("decision", "string", "allow, always or deny.", true)},
+			func(a mcptools.Args) (any, error) {
+				id, d := a.Str("id"), a.Str("decision")
+				if d != "allow" && d != "always" && d != "deny" {
+					return nil, errors.New("decision must be allow, always or deny")
 				}
-				return err
-			})
-			if err == nil && !found {
-				err = fmt.Errorf("no pending permission request %q", id)
-			}
-			return d, err
-		}},
-	{"get_usage", "Claude subscription usage and whether the queue is paused.", nil,
-		func(s *mcpServer, a args) (any, error) { return s.c.Usage() }},
-	{"set_queue_paused", "Pause or resume starting new tasks.", []param{
-		{"paused", "boolean", "true to pause, false to resume.", true}},
-		func(s *mcpServer, a args) (any, error) { return s.c.SetQueuePaused(a.flag("paused")) }},
+				found := false
+				err := s.eachMachine(func(m tui.Machine) error {
+					ps, err := s.c.Permissions("")
+					for _, p := range ps {
+						if p.ID == id && !found {
+							found = true
+							return s.c.Decide(id, d)
+						}
+					}
+					return err
+				})
+				if err == nil && !found {
+					err = fmt.Errorf("no pending permission request %q", id)
+				}
+				return d, err
+			}),
+		tool("get_usage", "Claude subscription usage and whether the queue is paused.", nil,
+			func(a mcptools.Args) (any, error) { return s.c.Usage() }),
+		tool("set_queue_paused", "Pause or resume starting new tasks.", []mcptools.Param{
+			param("paused", "boolean", "true to pause, false to resume.", true)},
+			func(a mcptools.Args) (any, error) { return s.c.SetQueuePaused(a.Flag("paused")) }),
+	}...)
+}
+
+func tool(name, desc string, params []mcptools.Param, run func(mcptools.Args) (any, error)) mcptools.Tool {
+	return mcptools.Tool{Name: name, Desc: desc, Params: params, Run: run}
+}
+
+func param(name, typ, desc string, required bool) mcptools.Param {
+	return mcptools.Param{Name: name, Type: typ, Desc: desc, Required: required}
 }
 
 // ---- helpers ----
 
-// project finds a project by id or name on any computer and points the client at it.
-func (s *mcpServer) project(ref string) (model.Project, error) {
+// Project finds a project by id or name on any computer and points the client at it.
+func (s client) Project(ref string) (model.Project, error) {
 	ps, ms, err := s.c.AllProjects()
 	if err != nil {
 		return model.Project{}, err
@@ -393,7 +199,7 @@ func (s *mcpServer) project(ref string) (model.Project, error) {
 }
 
 // eachMachine points the client at every reachable computer in turn.
-func (s *mcpServer) eachMachine(fn func(tui.Machine) error) error {
+func (s client) eachMachine(fn func(tui.Machine) error) error {
 	ms, err := s.c.Machines()
 	if err != nil {
 		return err
@@ -411,8 +217,8 @@ func (s *mcpServer) eachMachine(fn func(tui.Machine) error) error {
 	return nil
 }
 
-// todo finds a todo on whichever computer has it and points the client there.
-func (s *mcpServer) todo(id string) (model.Todo, error) {
+// Todo finds a todo on whichever computer has it and points the client there.
+func (s client) Todo(id string) (model.Todo, error) {
 	if id == "" {
 		return model.Todo{}, errors.New("todo is required")
 	}
@@ -434,18 +240,18 @@ func (s *mcpServer) todo(id string) (model.Todo, error) {
 	return model.Todo{}, fmt.Errorf("no task %q", id)
 }
 
-func (s *mcpServer) action(id, verb string, body any) (any, error) {
-	if _, err := s.todo(id); err != nil {
+func (s client) action(id, verb string, body any) (any, error) {
+	if _, err := s.Todo(id); err != nil {
 		return nil, err
 	}
 	if err := s.c.TodoAction(id, verb, body); err != nil {
 		return nil, err
 	}
-	return s.todo(id)
+	return s.Todo(id)
 }
 
-func (s *mcpServer) text(id, kind string, max int, tail bool) (string, error) {
-	if _, err := s.todo(id); err != nil {
+func (s client) text(id, kind string, max int, tail bool) (string, error) {
+	if _, err := s.Todo(id); err != nil {
 		return "", err
 	}
 	out, err := s.c.TodoText(id, kind)

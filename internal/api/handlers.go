@@ -328,22 +328,31 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	t, err := s.Store.CreateTodo(model.Todo{
+	t, err := s.addTodo(model.Todo{
 		ProjectID: r.PathValue("pid"), Title: req.Title, Prompt: req.Prompt, Goal: req.Goal, Priority: req.Priority,
 		Attachments: atts,
-	})
-	if err == nil && req.Enqueue {
-		t, err = s.Store.SetStatus(t.ID, model.StatusQueued, "")
-		s.Todos.Kick()
-	}
+	}, req.Enqueue)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
+	writeJSON(w, http.StatusCreated, t)
+}
+
+// addTodo creates a draft, or queues it when enqueue is set, and names it if untitled.
+func (s *Server) addTodo(t model.Todo, enqueue bool) (model.Todo, error) {
+	t, err := s.Store.CreateTodo(t)
+	if err == nil && enqueue {
+		t, err = s.Store.SetStatus(t.ID, model.StatusQueued, "")
+		s.Todos.Kick()
+	}
+	if err != nil {
+		return t, err
+	}
 	if strings.TrimSpace(t.Title) == "" {
 		s.autoTitle(t.ID, t.Prompt)
 	}
-	writeJSON(w, http.StatusCreated, t)
+	return t, nil
 }
 
 // refinePrompt rewrites instructions (often pasted from a chat answer) into a

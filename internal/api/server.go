@@ -16,6 +16,7 @@ import (
 	"github.com/klahr/dash/internal/ci"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
+	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/perm"
@@ -35,6 +36,7 @@ type Server struct {
 	Chat        agent.Chatter
 	Auth        *auth.Auth
 	Perms       *perm.Broker
+	Board       *mcptools.Tokens // chat runs' tokens for /mcp/dash
 	Usage       *usage.Tracker
 	ProjectRoot string // where new projects without an explicit path are created
 	// Titler names todos created without a title (optional).
@@ -145,6 +147,8 @@ func (s *Server) Routes() http.Handler {
 	// Claude Code connects here (bearer token per run, not the session cookie)
 	mux.HandleFunc("POST /mcp/permissions", s.Perms.ServeMCP)
 	mux.HandleFunc("GET /mcp/permissions", s.Perms.ServeMCP) // answers 405, as MCP clients expect
+	mux.Handle("POST /mcp/dash", s.BoardMCP())
+	mux.Handle("GET /mcp/dash", s.BoardMCP())
 
 	// WebSockets
 	mux.HandleFunc("GET /ws/events", s.Hub.ServeWS)

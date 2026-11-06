@@ -21,6 +21,7 @@ import (
 	"github.com/klahr/dash/internal/ci"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
+	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/queue"
@@ -147,27 +148,55 @@ func main() {
 	if *autoTitles {
 		todos.Summarizer = agent.Titler{Bin: *claudeBin, Model: *titleModel}
 	}
-	var mcpURL string
-	if *askPerms {
-		// Claude Code reaches the permission prompt server on a loopback-only
-		// plain-HTTP listener, whatever -addr and TLS are set to.
+	var titler interface {
+		Title(ctx context.Context, prompt string) (string, error)
+	}
+	if *autoTitles {
+		titler = agent.Titler{Bin: *claudeBin, Model: *titleModel}
+	}
+	builds := &ci.Watcher{Store: st, Git: git, Pub: events, Kick: todos.Kick, Every: time.Minute}
+	apiSrv := &api.Server{
+		Store: st, Git: git, Hub: events, Todos: todos, Merges: merges, Procs: procs,
+		Auth:        authn,
+		Perms:       perms,
+		Board:       &mcptools.Tokens{},
+		Usage:       tracker,
+		Editor:      *editor,
+		UploadRoot:  uploads,
+		CI:          builds,
+		Peers:       &peer.Hub{Self: *machine, Token: peerToken, Peers: peers},
+		Titler:      titler,
+		Refiner:     agent.Titler{Bin: *claudeBin, Model: *titleModel},
+		ProjectRoot: *projectRoot,
+		Static:      web.Static,
+	}
+
+	var mcpURL, permURL string
+	if *askPerms || *chatBackend == "claude-code" {
+		// Claude Code reaches Dash's MCP servers (permission prompts, the chat's
+		// task tools) on a loopback-only plain-HTTP listener, whatever -addr and
+		// TLS are set to.
 		mcp := http.NewServeMux()
-		mcp.HandleFunc("/mcp/permissions", perms.ServeMCP)
+		if *askPerms {
+			mcp.HandleFunc("/mcp/permissions", perms.ServeMCP)
+		}
+		mcp.Handle("/mcp/dash", apiSrv.BoardMCP())
 		mcpURL, err = serveLoopback(ctx, mcp)
 		if err != nil {
-			slog.Error("permission prompt listener", "err", err)
+			slog.Error("MCP listener", "err", err)
 			os.Exit(1)
 		}
-		todos.Perms, todos.BaseURL = perms, mcpURL
+		if *askPerms {
+			permURL = mcpURL
+			todos.Perms, todos.BaseURL = perms, mcpURL
+		}
 	}
 	merges.Perms, merges.Kick = perms, todos.Kick
 
-	builds := &ci.Watcher{Store: st, Git: git, Pub: events, Kick: todos.Kick, Every: time.Minute}
 	go builds.Run(ctx)
 	go todos.Run(ctx)
 	go merges.Run(ctx) // the one and only merge worker
 
-	var chat agent.Chatter
 	switch *chatBackend {
 	case "claude-code":
 		if *chatTools != agent.ChatReadOnly && *chatTools != agent.ChatShell {
@@ -177,41 +206,20 @@ func main() {
 		if *chatTools == agent.ChatShell && !*askPerms {
 			slog.Warn("-chat-tools shell without -permission-prompts: the chat can only use tools allowed with -chat-allow")
 		}
-		chat = agent.ClaudeCodeChat{
+		apiSrv.Chat = agent.ClaudeCodeChat{
 			Bin: *claudeBin, Dir: home, Tools: *chatTools, AllowedTools: chatAllow,
-			Perms: perms, PermURL: mcpURL, OnRateLimit: tracker.Observe,
+			Perms: perms, PermURL: permURL, Board: apiSrv.Board, BoardURL: mcpURL, OnRateLimit: tracker.Observe,
 		}
 	case "api":
-		chat = agent.NewChat()
+		apiSrv.Chat = agent.NewChat()
 	default:
 		slog.Error("unknown -chat backend", "value", *chatBackend)
 		os.Exit(1)
 	}
 
-	var titler interface {
-		Title(ctx context.Context, prompt string) (string, error)
-	}
-	if *autoTitles {
-		titler = agent.Titler{Bin: *claudeBin, Model: *titleModel}
-	}
-
 	srv := &http.Server{
-		Addr: *addr,
-		Handler: (&api.Server{
-			Store: st, Git: git, Hub: events, Todos: todos, Merges: merges, Procs: procs,
-			Chat:        chat,
-			Auth:        authn,
-			Perms:       perms,
-			Usage:       tracker,
-			Editor:      *editor,
-			UploadRoot:  uploads,
-			CI:          builds,
-			Peers:       &peer.Hub{Self: *machine, Token: peerToken, Peers: peers},
-			Titler:      titler,
-			Refiner:     agent.Titler{Bin: *claudeBin, Model: *titleModel},
-			ProjectRoot: *projectRoot,
-			Static:      web.Static,
-		}).Routes(),
+		Addr:              *addr,
+		Handler:           apiSrv.Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

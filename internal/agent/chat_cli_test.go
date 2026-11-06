@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/perm"
 )
 
@@ -20,7 +21,7 @@ func flag(args []string, name string) (string, bool) {
 
 func TestChatArgsReadOnly(t *testing.T) {
 	for _, c := range []ClaudeCodeChat{{}, {Tools: ChatReadOnly, AllowedTools: []string{"Bash(ls *)"}}} {
-		args := c.args("", "{}")
+		args := c.args("", nil)
 		if tools, _ := flag(args, "--tools"); tools != "Read,Grep,Glob" {
 			t.Errorf("%q: --tools %q", c.Tools, tools)
 		}
@@ -40,8 +41,9 @@ func TestChatArgsReadOnly(t *testing.T) {
 
 func TestChatArgsShell(t *testing.T) {
 	c := ClaudeCodeChat{Tools: ChatShell, Model: "opus", AllowedTools: []string{"Bash(ssh defaultuser@phone *)", "Read"}}
+	servers := map[string]any{perm.ServerName: perm.ServerConfig("http://127.0.0.1:1", "tok")}
 	cfg := perm.MCPConfig("http://127.0.0.1:1", "tok")
-	args := c.args("/repo", cfg)
+	args := c.args("/repo", servers)
 	// Same access as `claude` in a terminal: all tools, the user's settings and MCP servers.
 	for _, f := range []string{"--tools", "--strict-mcp-config", "--setting-sources"} {
 		if _, ok := flag(args, f); ok {
@@ -72,7 +74,7 @@ func TestChatArgsShell(t *testing.T) {
 	}
 
 	// Without a prompt server, nothing is wired up to ask.
-	if _, ok := flag(c.args("", ""), "--permission-prompt-tool"); ok {
+	if _, ok := flag(c.args("", nil), "--permission-prompt-tool"); ok {
 		t.Error("--permission-prompt-tool without --mcp-config")
 	}
 	if _, ok := flag(args, "--permission-mode"); ok {
@@ -81,15 +83,59 @@ func TestChatArgsShell(t *testing.T) {
 
 	// A permission mode keeps the prompt tool for what it doesn't approve.
 	c.PermissionMode = "auto"
-	args = c.args("/repo", cfg)
+	args = c.args("/repo", servers)
 	if m, _ := flag(args, "--permission-mode"); m != "auto" {
 		t.Errorf("--permission-mode %q", m)
 	}
 	if got, _ := flag(args, "--permission-prompt-tool"); got != perm.PromptTool {
 		t.Errorf("--permission-prompt-tool %q", got)
 	}
-	if _, ok := flag((ClaudeCodeChat{PermissionMode: "auto"}).args("", ""), "--permission-mode"); ok {
+	if _, ok := flag((ClaudeCodeChat{PermissionMode: "auto"}).args("", nil), "--permission-mode"); ok {
 		t.Error("read-only chat should not pass --permission-mode")
+	}
+}
+
+// The Dash task tools are wired up in both modes: readonly may create tasks
+// without asking, shell mode asks for create_todo like for any other tool.
+func TestChatArgsBoard(t *testing.T) {
+	board := mcptools.ServerConfig("http://127.0.0.1:1", "b")
+	allowed := func(args []string) []string {
+		var out []string
+		for i, a := range args {
+			if a == "--allowedTools" {
+				out = append(out, args[i+1])
+			}
+		}
+		return out
+	}
+	ro := ClaudeCodeChat{Tools: ChatReadOnly, AllowedTools: []string{"Bash(ls *)"}}.args("", map[string]any{mcptools.ServerName: board})
+	if cfg, _ := flag(ro, "--mcp-config"); !strings.Contains(cfg, `"`+mcptools.ServerName+`"`) || !strings.Contains(cfg, "/mcp/dash") {
+		t.Errorf("readonly --mcp-config %q", cfg)
+	}
+	if _, ok := flag(ro, "--strict-mcp-config"); !ok {
+		t.Error("--strict-mcp-config missing")
+	}
+	if got := allowed(ro); !slices.Equal(got, []string{"mcp__dash_board__list_projects", "mcp__dash_board__list_todos",
+		"mcp__dash_board__get_todo", "mcp__dash_board__create_todo"}) {
+		t.Errorf("readonly --allowedTools %q", got)
+	}
+	if _, ok := flag(ro, "--permission-prompt-tool"); ok {
+		t.Error("readonly chat should not pass --permission-prompt-tool")
+	}
+
+	sh := ClaudeCodeChat{Tools: ChatShell, AllowedTools: []string{"Read"}}.args("", map[string]any{
+		mcptools.ServerName: board, perm.ServerName: perm.ServerConfig("http://127.0.0.1:1", "p")})
+	var cfg struct{ MCPServers map[string]any }
+	raw, _ := flag(sh, "--mcp-config")
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil || len(cfg.MCPServers) != 2 {
+		t.Errorf("shell --mcp-config %q", raw)
+	}
+	if got := allowed(sh); !slices.Equal(got, []string{"mcp__dash_board__list_projects", "mcp__dash_board__list_todos",
+		"mcp__dash_board__get_todo", "Read"}) {
+		t.Errorf("shell --allowedTools %q", got)
+	}
+	if got, _ := flag(sh, "--permission-prompt-tool"); got != perm.PromptTool {
+		t.Errorf("--permission-prompt-tool %q", got)
 	}
 }
 

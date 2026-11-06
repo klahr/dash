@@ -294,8 +294,10 @@ var public = map[string]bool{
 	"/manifest.webmanifest": true,
 	"/sw.js":                true, // service worker updates must not hit the login redirect
 	"/api/login":            true,
-	// Claude Code's permission prompts; authenticated by a per-run bearer token instead.
+	// Claude Code's permission prompts and the chat's Dash tools; authenticated
+	// by a per-run bearer token instead.
 	"/mcp/permissions": true,
+	"/mcp/dash":        true,
 }
 
 // Middleware requires a valid session for everything except public paths.

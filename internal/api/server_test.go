@@ -31,6 +31,8 @@ func TestRoutesRegister(t *testing.T) {
 		{"GET", "/api/projects", http.StatusUnauthorized},     // needs a session
 		{"POST", "/mcp/permissions", http.StatusUnauthorized}, // needs a run token, not a session
 		{"GET", "/mcp/permissions", http.StatusMethodNotAllowed},
+		{"POST", "/mcp/dash", http.StatusUnauthorized},
+		{"GET", "/mcp/dash", http.StatusMethodNotAllowed},
 		{"GET", "/login.html", http.StatusNotFound}, // public, just missing from this test FS
 	} {
 		w := httptest.NewRecorder()

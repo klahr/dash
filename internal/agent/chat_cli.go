@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/perm"
 )
 
@@ -45,6 +46,10 @@ type ClaudeCodeChat struct {
 	// tool call that isn't allowed already; without one, those calls are denied.
 	Perms   *perm.Broker
 	PermURL string
+	// Board and BoardURL serve the Dash task tools (mcptools.ServerName) to
+	// every turn; a turn whose ctx carries a project (WithProject) defaults to it.
+	Board    *mcptools.Tokens
+	BoardURL string
 	// OnRateLimit receives the rate_limit_info of every rate_limit_event.
 	OnRateLimit func(json.RawMessage)
 }
@@ -69,6 +74,14 @@ func WithPermissionMode(ctx context.Context, mode string) context.Context {
 	return context.WithValue(ctx, permissionModeKey{}, mode)
 }
 
+type projectKey struct{}
+
+// WithProject makes chat turns run with ctx use projectID when a Dash tool
+// call names no project.
+func WithProject(ctx context.Context, projectID string) context.Context {
+	return context.WithValue(ctx, projectKey{}, projectID)
+}
+
 func (c ClaudeCodeChat) shell() bool { return c.Tools == ChatShell }
 
 func (c ClaudeCodeChat) system(dir string) string {
@@ -89,13 +102,18 @@ func (c ClaudeCodeChat) system(dir string) string {
 	if dir != "" {
 		s += " Look at the code before answering questions about it."
 	}
+	if c.Board != nil && c.BoardURL != "" {
+		s += " You can list and create Dash tasks with the " + mcptools.ServerName + " tools; create them as drafts unless the user asks for them to run."
+	}
 	return s
 }
 
-// args builds the `claude -p` flags. mcpConfig is Dash's permission prompt
-// server, or "" for none. Shell mode gets what `claude` has in a terminal:
-// every tool, the user's settings, hooks and MCP servers.
-func (c ClaudeCodeChat) args(dir, mcpConfig string) []string {
+// args builds the `claude -p` flags. servers are Dash's MCP servers for
+// --mcp-config, by name: the task tools (mcptools.ServerName) and, in shell
+// mode, the permission prompt (perm.ServerName). Shell mode gets what
+// `claude` has in a terminal: every tool, the user's settings, hooks and MCP
+// servers.
+func (c ClaudeCodeChat) args(dir string, servers map[string]any) []string {
 	args := []string{
 		"-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
 		"--no-session-persistence",
@@ -108,9 +126,24 @@ func (c ClaudeCodeChat) args(dir, mcpConfig string) []string {
 			"--setting-sources", "", // nor their settings/hooks
 		)
 	}
+	if len(servers) > 0 {
+		cfg, _ := json.Marshal(map[string]any{"mcpServers": servers})
+		args = append(args, "--mcp-config", string(cfg))
+	}
+	if servers[mcptools.ServerName] != nil {
+		// Readonly has no one to ask, so creating tasks is allowed outright there;
+		// shell mode asks for create_todo like for any other tool.
+		allow := mcptools.ReadTools
+		if !c.shell() {
+			allow = mcptools.BoardTools
+		}
+		for _, t := range allow {
+			args = append(args, "--allowedTools", "mcp__"+mcptools.ServerName+"__"+t)
+		}
+	}
 	if c.shell() {
-		if mcpConfig != "" {
-			args = append(args, "--mcp-config", mcpConfig, "--permission-prompt-tool", perm.PromptTool)
+		if servers[perm.ServerName] != nil {
+			args = append(args, "--permission-prompt-tool", perm.PromptTool)
 		}
 		for _, t := range c.AllowedTools {
 			args = append(args, "--allowedTools", t)
@@ -136,14 +169,20 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	if mode, ok := ctx.Value(permissionModeKey{}).(string); ok {
 		c.PermissionMode = mode
 	}
-	var mcpConfig string
+	servers := map[string]any{}
+	if c.Board != nil && c.BoardURL != "" {
+		pid, _ := ctx.Value(projectKey{}).(string)
+		token, release := c.Board.Register(pid)
+		defer release()
+		servers[mcptools.ServerName] = mcptools.ServerConfig(c.BoardURL, token)
+	}
 	if ask := approverFrom(ctx); c.shell() && ask != nil && c.Perms != nil && c.PermURL != "" {
 		token, release := c.Perms.RegisterFunc(ask)
 		defer release()
-		mcpConfig = perm.MCPConfig(c.PermURL, token)
+		servers[perm.ServerName] = perm.ServerConfig(c.PermURL, token)
 	}
-	cmd := exec.CommandContext(ctx, bin, c.args(dir, mcpConfig)...)
-	if mcpConfig != "" {
+	cmd := exec.CommandContext(ctx, bin, c.args(dir, servers)...)
+	if servers[perm.ServerName] != nil {
 		// Claude waits on the MCP tool while the user decides; don't let it time out first.
 		cmd.Env = append(os.Environ(), "MCP_TOOL_TIMEOUT=3600000")
 	}

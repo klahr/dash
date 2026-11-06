@@ -83,7 +83,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		if msg.Type != "send" {
 			continue
 		}
-		var dir, mode string
+		var dir, mode, pid string
 		save := s.Store.SetChat
 		msg.Messages = s.chatAttachments(msg.Messages)
 		prompt := withAttachments(msg.Messages)
@@ -93,7 +93,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 				continue
 			}
-			dir, mode = p.Path, p.ChatPermissionMode
+			dir, mode, pid = p.Path, p.ChatPermissionMode, p.ID
 			save = func(msgs []agent.ChatMessage) error { return s.Store.SetProjectChat(p.ID, msgs) }
 		}
 		if msg.Todo != "" && s.Store != nil {
@@ -124,6 +124,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		turnCtx, cancelTurn = context.WithCancel(ctx)
 		turnCtx = agent.WithApprover(turnCtx, approvals.forTurn(turnCtx))
 		turnCtx = agent.WithPermissionMode(turnCtx, mode)
+		turnCtx = agent.WithProject(turnCtx, pid)
 		go func(ctx context.Context, history []agent.ChatMessage) {
 			var reply strings.Builder
 			err := s.Chat.Stream(ctx, dir, prompt, func(d agent.ChatDelta) {
