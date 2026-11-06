@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/klahr/dash/internal/model"
@@ -82,7 +84,21 @@ func (g *Git) ghBin() string {
 	return g.GhBin
 }
 
+// worktreeLocks serializes `git worktree` commands per repository: git reads
+// every .git/worktrees entry while adding one and fails ("failed to read
+// .../commondir") on an entry another add or remove has half written.
+var worktreeLocks sync.Map // repo dir -> *sync.Mutex
+
 func (g *Git) git(ctx context.Context, projectID, dir string, args ...string) (string, error) {
+	if len(args) > 0 && args[0] == "worktree" {
+		key := dir
+		if abs, err := filepath.Abs(dir); err == nil {
+			key = abs
+		}
+		mu, _ := worktreeLocks.LoadOrStore(key, &sync.Mutex{})
+		mu.(*sync.Mutex).Lock()
+		defer mu.(*sync.Mutex).Unlock()
+	}
 	return g.exec(ctx, projectID, dir, "git", args...)
 }
 
