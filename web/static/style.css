@@ -396,9 +396,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .project-tools { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 0; }
 .project-tools .logout { margin-left: auto; }
 .project-tools .remote { width: 100%; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
-.new-project { border-top: 1px solid var(--line); }
-.new-project summary { padding: 14px 0; font-weight: 600; color: var(--accent); cursor: pointer; list-style: none; }
-.new-project form .btn { width: 100%; margin-top: 4px; }
+#new-project > .btn { width: 100%; margin-top: 4px; }
 
 /* ---------- usage ---------- */
 .usage-pill {
@@ -622,18 +620,18 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .nav > button:hover { background: var(--raised); }
   .nav > button.active { background: var(--raised); }
   .nav .badge { position: static; margin-left: auto; }
-  .nav-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; padding: 0 4px 0 10px; color: var(--muted); font-size: 13px; }
-  .nav-foot .link { padding: 0 6px; min-height: 32px; margin-left: auto; }
+  .nav-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 8px; margin-top: 6px; padding: 0 4px 0 10px; color: var(--muted); font-size: 13px; }
+  .nav-foot .link { padding: 0 6px; min-height: 32px; }
+  .nav-foot #notify-toggle { margin-left: -6px; }
+  .merge-status:empty { display: none; }
+  .merge-status { flex-basis: 100%; }
   .side-projects {
     display: flex; flex-direction: column; flex: 1 1 auto; min-height: 120px; margin: 14px 0 4px; padding: 12px 0;
     border-block: 1px solid var(--line);
   }
-  .side-projects-head { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 4px 10px; }
-  .side-projects-head h2 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-  .side-projects-head .icon-btn { width: 30px; height: 30px; min-height: 30px; }
-  .side-projects-head .icon-btn svg { width: 18px; height: 18px; }
+  .side-projects-head { margin: 0; padding: 0 10px 6px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
   .side-project-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; }
-  .side-project-list li:not(.side-machine, .machine-empty) { display: flex; align-items: center; border-radius: var(--r-m); }
+  .side-project-list li:not(.side-machine, .machine-empty) { display: flex; flex-direction: column; border-radius: var(--r-m); }
   .side-project { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; min-height: 34px; padding: 0 10px; border-radius: var(--r-m); text-align: left; font-size: 14px; color: var(--muted); }
   .side-project:hover { background: var(--raised); color: var(--text); }
   .side-project-name, .side-project-branch { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -641,9 +639,12 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .side-project-list li.current { background: var(--raised); box-shadow: inset 3px 0 0 var(--accent); }
   .side-project[aria-current="true"] { min-height: 44px; color: var(--text); font-weight: 600; cursor: default; }
   .side-project[aria-current="true"]:hover { background: none; }
-  .side-project-manage { flex: none; width: 32px; height: 32px; margin-right: 6px; }
-  .side-project-manage:hover { background: var(--surface); }
-  .side-project-manage svg { width: 17px; height: 17px; }
+  .side-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px 10px; }
+  .side-action { min-height: 26px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .side-action:hover { border-color: var(--accent); color: var(--text); }
+  .side-new-project { display: flex; align-items: center; gap: 8px; flex: none; min-height: 34px; margin-top: 6px; padding: 0 10px; border: 1px dashed var(--line); border-radius: var(--r-m); color: var(--muted); font-size: 14px; text-align: left; }
+  .side-new-project:hover { border-color: var(--accent); color: var(--text); }
+  .side-new-project svg { width: 16px; height: 16px; color: var(--accent); }
   .side-machine { display: flex; align-items: center; gap: 8px; padding: 10px 10px 4px; font-size: 12px; color: var(--faint); }
   .side-machine:first-child { padding-top: 2px; }
 

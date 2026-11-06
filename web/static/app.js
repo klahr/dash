@@ -109,7 +109,6 @@ function ask({ title, body = "", input = false, placeholder = "", ok = "OK", dan
 // Screenshots and files for Claude: an "Attach file" button, paste into the
 // text field, or drop onto the sheet.
 const CLIP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5 12.6 19.9a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const GEAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 const clip = () =>h("span", { class: "clip", innerHTML: CLIP });
 const uploadURL = (a) => on(here(), `/api/uploads/${a.id}/${encodeURIComponent(a.name)}`);
 const ACCEPT = "image/png,image/jpeg,image/gif,image/webp,.pdf,.txt,.md,.log,.json,.csv";
@@ -510,25 +509,41 @@ function renderProjectList() {
     ]));
   }
   renderSideProjects();
-  const sel = $("#new-project").machine;
-  sel.closest(".field").hidden = !multi();
-  sel.replaceChildren(...(state.machines || []).filter((m) => m.ok).map((m) => h("option", { value: m.name, selected: m.name === state.project?.machine }, m.local ? `${m.name} (this computer)` : m.name)));
-
-  const p = state.project;
-  $("#project-tools").replaceChildren(...(p ? [
-    h("span", { class: "remote" }, p.remote_url ? `Remote: ${p.remote_url}` : "No GitHub remote yet."),
-    p.remote_url
-      ? h("button", { type: "button", class: "btn", onclick: attempt(pushDone) }, `Push ${p.default_branch}`)
-      : h("button", { type: "button", class: "btn", onclick: attempt(createGitHubRepo) }, "Create GitHub repository"),
-    h("button", { type: "button", class: "btn", onclick: openSettings }, "Settings"),
-    h("button", { type: "button", class: "btn", onclick: attempt(cleanup) }, "Clean up"),
-  ] : []),
-  h("button", { type: "button", class: "btn", onclick: attempt(toggleNotifications) }, notifyOn() ? "Turn off notifications" : "Turn on notifications"),
+  $("#project-tools").replaceChildren(...projectActions(state.project, true),
+  h("button", { type: "button", class: "btn", onclick: openNewProject }, "New project"),
+  h("button", { type: "button", class: "btn", onclick: attempt(toggleNotifications) }, notifyLabel()),
   h("button", { type: "button", class: "link logout", onclick: logout }, "Log out"));
+  $("#notify-toggle").textContent = notifyLabel();
+}
+
+const notifyLabel = () => notifyOn() ? "Turn off notifications" : "Turn on notifications";
+
+// Push or create the GitHub repo, settings and clean up for the current
+// project: in the phone's project sheet, and under the current project in the
+// desktop sidebar.
+function projectActions(p, sheet) {
+  if (!p) return [];
+  const cls = sheet ? "btn" : "side-action";
+  return [
+    sheet ? h("span", { class: "remote" }, p.remote_url ? `Remote: ${p.remote_url}` : "No GitHub remote yet.") : null,
+    p.remote_url
+      ? h("button", { type: "button", class: cls, title: p.remote_url, onclick: attempt(pushDone) }, `Push ${p.default_branch}`)
+      : h("button", { type: "button", class: cls, title: "No GitHub remote yet", onclick: attempt(createGitHubRepo) }, sheet ? "Create GitHub repository" : "Create GitHub repo"),
+    h("button", { type: "button", class: cls, onclick: openSettings }, "Settings"),
+    h("button", { type: "button", class: cls, onclick: attempt(cleanup) }, "Clean up"),
+  ].filter(Boolean);
+}
+
+function openNewProject() {
+  const f = $("#new-project");
+  f.machine.closest(".field").hidden = !multi();
+  f.machine.replaceChildren(...(state.machines || []).filter((m) => m.ok).map((m) => h("option", { value: m.name, selected: m.name === state.project?.machine }, m.local ? `${m.name} (this computer)` : m.name)));
+  $("#project-sheet").close();
+  $("#new-project-sheet").showModal();
 }
 
 // Desktop sidebar: every project, one click away. The current one shows its
-// branch and a button for the project sheet (push, settings, clean up).
+// branch and its actions (push, settings, clean up).
 function renderSideProjects() {
   const item = (p) => {
     const cur = projectKey(state.project) === projectKey(p);
@@ -537,11 +552,7 @@ function renderSideProjects() {
         type: "button", class: "side-project", title: p.path, "aria-current": cur ? "true" : "false",
         onclick: attempt(() => selectProject(p)),
       }, h("span", { class: "side-project-name" }, p.name), cur ? h("span", { class: "side-project-branch" }, p.default_branch) : null),
-      cur ? h("button", {
-        type: "button", class: "icon-btn side-project-manage", title: "Manage project (p)", "aria-label": `Manage ${p.name}`,
-        onclick: () => { renderProjectList(); $("#project-sheet").showModal(); },
-        innerHTML: GEAR,
-      }) : null);
+      cur ? h("div", { class: "side-actions", role: "group", "aria-label": `${p.name} actions` }, ...projectActions(p, false)) : null);
   };
   const items = !multi() ? state.projects.map(item) : state.machines.flatMap((m) => [
     h("li", { class: "side-machine", title: m.ok ? "" : m.error || "unreachable" },
@@ -564,21 +575,29 @@ async function createGitHubRepo() {
   const name = await ask({ title: "Create GitHub repository", body: "Creates a private repository with gh and pushes the default branch.", input: true, placeholder: p.name, ok: "Create" });
   if (name === null) return;
   await api("POST", `/api/projects/${p.id}/github`, { name: name || p.name, private: true });
+  await loadProjects();
   toast("GitHub repository created");
 }
 
-$("#project-switch").addEventListener("click", () => { renderProjectList(); $("#project-sheet").showModal(); });
-$("#side-new-project").addEventListener("click", () => { renderProjectList(); $("#project-sheet").showModal(); $(".new-project").open = true; });
+// Phones switch projects in a sheet; the desktop sidebar lists them, so there
+// "p" just moves focus to the current project.
+function openProjects() {
+  renderProjectList();
+  if (desktop.matches) return $(".side-project[aria-current=true]")?.focus();
+  $("#project-sheet").showModal();
+}
+$("#project-switch").addEventListener("click", openProjects);
+$("#side-new-project").addEventListener("click", openNewProject);
+$("#notify-toggle").addEventListener("click", attempt(toggleNotifications));
 $("#new-project").addEventListener("submit", attempt(async (e) => {
   e.preventDefault();
   const { machine, ...body } = Object.fromEntries(new FormData(e.target));
   const m = state.machines?.find((x) => x.name === machine) || state.machines?.[0] || { name: "", prefix: "" };
   const p = await api("POST", "/api/projects", body, m.prefix);
   e.target.reset();
-  e.target.closest("details").open = false;
   await loadProjects();
   await selectProject(state.projects.find((x) => x.id === p.id && x.machine === m.name));
-  $("#project-sheet").close();
+  $("#new-project-sheet").close();
   toast(`Created ${p.name}`);
 }));
 
@@ -682,7 +701,7 @@ function renderBoardNow() {
       art("img/empty-board.webp", 480, 360),
       h("p", { class: "empty-title" }, "Create your first project"),
       h("p", {}, "A project is a git repository. Every todo runs in its own worktree, so several can run at once."),
-      h("button", { class: "btn primary", onclick: () => { $("#project-sheet").showModal(); $(".new-project").open = true; } }, "New project"));
+      h("button", { class: "btn primary", onclick: openNewProject }, "New project"));
     $("#new-todo").hidden = true;
     return;
   }
@@ -1985,7 +2004,7 @@ async function runCommand(line) {
     case "ps": case "procs": return showView("run");
     case "activity": case "log": return showView("activity");
     case "p": case "project": {
-      if (!arg) { renderProjectList(); return $("#project-sheet").showModal(); }
+      if (!arg) return openProjects();
       const [pn, mn = ""] = arg.toLowerCase().split("@");
       const p = state.projects.find((x) => x.name.toLowerCase().startsWith(pn) && x.machine.toLowerCase().startsWith(mn));
       if (!p) throw new Error(`No project matching "${arg}".`);
@@ -2092,7 +2111,7 @@ async function handleNormal(k, n, hadCount) {
     case "?": return $("#keys-sheet").showModal();
     case "gt": return showView(VIEWS[(VIEWS.indexOf(state.view) + n) % VIEWS.length]);
     case "gT": return showView(VIEWS[(VIEWS.indexOf(state.view) - n + VIEWS.length * n) % VIEWS.length]);
-    case "p": renderProjectList(); return $("#project-sheet").showModal();
+    case "p": return openProjects();
     case "Escape": case "q":
       if (state.detail) return closeDetail();
       if (k === "Escape" && state.query) return clearSearch();
