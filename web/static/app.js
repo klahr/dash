@@ -134,6 +134,8 @@ if (vv) {
     if (stick?.isConnected && document.activeElement?.closest(".composer")) stick.scrollTop = stick.scrollHeight;
   });
   vv.addEventListener("scroll", fit);
+  // iOS may scroll only the page (not the visual viewport) to reveal a focused input.
+  addEventListener("scroll", () => { if (pageY !== null && scrollY !== pageY) scrollTo(scrollX, pageY); }, { passive: true });
   fit();
   document.addEventListener("focusin", (e) => {
     if (desktop.matches || !e.target.matches?.(".composer textarea")) return;
