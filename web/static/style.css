@@ -352,6 +352,28 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .board-chat-title { flex: 1; font-weight: 600; }
 .board-chat-resize { display: none; }
 #pc-open[aria-pressed="true"] { color: var(--accent); }
+/* open project chats, docked as tabs along the bottom */
+.chat-dock {
+  --dock-h: 48px;
+  position: fixed; left: 0; right: 0; bottom: calc(var(--nav-h) + var(--safe-b)); z-index: 31; height: var(--dock-h);
+  display: flex; justify-content: flex-end; align-items: flex-end; gap: 6px; padding: 0 12px;
+  overflow-x: auto; scrollbar-width: none; background: var(--bg); border-top: 1px solid var(--line);
+}
+.chat-dock[hidden] { display: none; }
+#view-board:has(.chat-dock:not([hidden])) .board-chat { bottom: calc(var(--nav-h) + var(--safe-b) + 48px); }
+#view-board:has(.chat-dock:not([hidden])) .fab { bottom: calc(var(--nav-h) + var(--safe-b) + 64px); }
+.chat-tab {
+  --project: var(--accent);
+  flex: 0 1 200px; min-width: 120px; display: flex; align-items: center; height: 40px;
+  border: 1px solid var(--line); border-bottom: 0; border-radius: var(--r-m) var(--r-m) 0 0; background: var(--raised);
+  color: var(--muted);
+}
+.chat-tab.current { color: var(--text); box-shadow: inset 0 2px 0 var(--accent); }
+.chat-tab-open { flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 8px; padding: 0 4px 0 10px; text-align: left; font-size: 14px; color: inherit; }
+.chat-tab-open[aria-pressed="true"] { font-weight: 600; }
+.chat-tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-tab-close { width: 32px; height: 32px; flex: none; }
+.chat-tab-close .ico { width: 16px; height: 16px; }
 .todo-chat .chat-log { overflow: visible; padding: 0 0 12px; }
 .todo-chat .composer { position: sticky; bottom: 0; padding: 10px 0; }
 
@@ -865,6 +887,9 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .board-chat .chat-log { padding: 16px; }
   .board-chat .composer { padding: 12px 16px 16px; }
   #view-board:has(.board-chat:not([hidden])) .fab { right: calc(var(--board-chat-w) + 28px); }
+  .chat-dock { position: static; flex: none; padding: 0 16px; }
+  #view-board:has(.chat-dock:not([hidden])) .board-chat { bottom: auto; }
+  #view-board:has(.chat-dock:not([hidden])) .fab { bottom: 76px; }
   .toasts { right: 28px; bottom: 96px; }
 
   .detail { left: auto; bottom: 0; width: min(760px, 58vw); border-left: 1px solid var(--line); box-shadow: -24px 0 48px rgba(3, 6, 12, .45); }

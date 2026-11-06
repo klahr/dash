@@ -639,6 +639,7 @@ function renderProjectHeader() {
 
 function renderProjectList() {
   renderSideProjects();
+  renderChatDock();
   setLabel($("#notify-toggle"), notifyOn() ? "bell-off" : "bell", notifyLabel());
 }
 
@@ -1995,6 +1996,8 @@ function renderBoardChat() {
   $("#board-chat").hidden = !open;
   $("#pc-open").hidden = !state.project;
   $("#pc-open").setAttribute("aria-pressed", String(open));
+  if (open && !chatTabs().includes(projectKey(state.project))) setChatTabs([...chatTabs(), projectKey(state.project)]);
+  else renderChatDock();
 }
 function toggleBoardChat(open = !boardChatOpen()) {
   try { localStorage.setItem("dash.boardChat", open ? "1" : "0"); } catch {}
@@ -2005,7 +2008,43 @@ $("#pc-open").addEventListener("click", () => {
   if (state.view !== "board") { showView("board"); toggleBoardChat(true); }
   else toggleBoardChat();
 });
-$("#pc-close").addEventListener("click", () => toggleBoardChat(false));
+$("#pc-close").addEventListener("click", () => {
+  setChatTabs(chatTabs().filter((k) => k !== projectKey(state.project)));
+  toggleBoardChat(false);
+});
+
+// Every project chat opened stays as a tab docked under the board, so another
+// project's conversation is one click away. Clicking the current one minimizes it.
+const chatTabs = () => { try { return JSON.parse(localStorage.getItem("dash.chatTabs") || "[]"); } catch { return []; } };
+function setChatTabs(keys) {
+  try { localStorage.setItem("dash.chatTabs", JSON.stringify(keys)); } catch {}
+  renderChatDock();
+}
+function renderChatDock() {
+  const tabs = chatTabs().map((k) => state.projects?.find((p) => projectKey(p) === k)).filter(Boolean);
+  const dock = $("#chat-dock");
+  dock.hidden = !tabs.length;
+  dock.replaceChildren(...tabs.map((p) => {
+    const cur = projectKey(p) === projectKey(state.project);
+    const open = cur && boardChatOpen();
+    return h("div", { class: `chat-tab${cur ? " current" : ""}` },
+      h("button", {
+        type: "button", class: "chat-tab-open", "aria-pressed": String(open),
+        title: open ? `Minimize the ${p.name} chat` : `Open the ${p.name} chat`,
+        onclick: attempt(async () => {
+          if (!cur) await selectProject(p);
+          if (state.view !== "board") showView("board");
+          toggleBoardChat(cur ? !open : true);
+        }),
+      },
+      h("span", { class: "side-project-icon", style: p.color ? `--project: ${p.color}` : null, "aria-hidden": "true" }, [...p.name][0]?.toUpperCase() || "?"),
+      h("span", { class: "chat-tab-name" }, p.name)),
+      ib({ type: "button", class: "icon-btn chat-tab-close", "aria-label": `Close the ${p.name} chat`, title: "Close", onclick: () => {
+        setChatTabs(chatTabs().filter((k) => k !== projectKey(p)));
+        if (open) toggleBoardChat(false);
+      } }, "x"));
+  }));
+}
 
 // Desktop: drag the chat's left edge to resize it. The width is kept per browser.
 const CHAT_MIN_W = 280;
