@@ -1423,8 +1423,10 @@ function renderPane() {
   $$(".segmented button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.pane === state.pane)));
   $("#d-diff").hidden = state.pane !== "diff";
   $("#d-log").hidden = state.pane !== "log";
+  const chatShown = $("#d-chat").hidden && state.pane === "chat";
   $("#d-chat").hidden = state.pane !== "chat";
   renderDiff(state.diff);
+  if (chatShown) todoChat.toEnd();
 }
 
 function renderDiff(text) {
@@ -2047,7 +2049,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
     }
   });
 
-  return { reset, input, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; } };
+  return { reset, input, toEnd, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; } };
 }
 
 // Tool calls in the chat: a one-line summary, and the full input when expanded.
@@ -2342,7 +2344,7 @@ let todoChatId = null;
 async function loadTodoChat() {
   const id = state.detail;
   // Reopening the todo whose reply is still streaming keeps it on screen.
-  if (todoChatId === id && todoChat.busy) return;
+  if (todoChatId === id && todoChat.busy) return todoChat.toEnd();
   todoChatId = id;
   todoChat.reset();
   const saved = await api("GET", `/api/todos/${id}/chat`);
