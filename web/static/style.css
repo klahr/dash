@@ -98,6 +98,15 @@ textarea { resize: vertical; line-height: 1.45; }
 .project-branch { color: var(--muted); font-family: var(--mono); font-size: 12px; white-space: nowrap; }
 .project-switch svg { color: var(--muted); }
 .live { display: grid; place-items: center; width: 28px; height: 28px; }
+.quick-actions { display: flex; gap: 6px; }
+.quick-actions:not(:has(.quick-btn:not([hidden]))) { display: none; }
+.quick-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; min-width: 36px; padding: 0 10px;
+  border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.quick-btn:hover { border-color: var(--accent); }
+.quick-btn svg { width: 16px; height: 16px; color: var(--accent); flex: none; }
+@media (max-width: 639px) { .quick-btn { padding: 0; width: 36px; } .quick-btn span { display: none; } }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--failed); box-shadow: 0 0 0 3px color-mix(in srgb, var(--failed) 25%, transparent); }
 .live.on .live-dot { background: var(--merged); box-shadow: 0 0 0 3px color-mix(in srgb, var(--merged) 22%, transparent); }
 
@@ -571,6 +580,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .project-switch svg { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
   .live { position: absolute; top: 18px; left: calc(var(--side-w) - 40px); }
   .usage-pill { justify-content: flex-start; }
+  .quick-btn { flex: 1; }
   .nav {
     grid-area: nav; position: static; height: auto; padding: 8px 12px 16px;
     display: flex; flex-direction: column; gap: 2px; border: 0; border-right: 1px solid var(--line);

@@ -478,6 +478,8 @@ function renderProjectHeader() {
   $("#project-name").textContent = p ? p.name : "No project";
   // With several computers the header names the computer (the branch fits on wide screens too).
   $("#project-branch").textContent = !p ? "" : !multi() ? p.default_branch : desktop.matches ? `${p.default_branch} · ${p.machine}` : p.machine;
+  $("#quick-test").hidden = !p?.test_command;
+  $("#quick-deploy").hidden = !p?.deploy_command;
   const warn = $("#sync-warn");
   warn.hidden = !p?.sync_error;
   if (p?.sync_error) {
@@ -1540,12 +1542,14 @@ async function startProc(req) {
   if (p.url) toast(`Server starting at ${p.url}`);
 }
 
-$(".run-actions").addEventListener("click", attempt(async (e) => {
+const runPreset = attempt(async (e) => {
   const spec = e.target.closest("[data-run]")?.dataset.run;
   if (!spec || !state.project) return;
   const [kind, preset] = spec.split(":");
   await startProc({ kind, preset });
-}));
+});
+$(".run-actions").addEventListener("click", runPreset);
+$("#quick-actions").addEventListener("click", runPreset);
 $("#run-custom").addEventListener("submit", attempt(async (e) => {
   e.preventDefault();
   const command = e.target.cmd.value.trim();
