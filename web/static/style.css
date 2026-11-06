@@ -383,7 +383,8 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 #chat-noproject { justify-content: center; }
 .chat-pane .composer { padding-bottom: max(10px, var(--safe-b)); }
 .todo-chat .chat-log { overflow: visible; padding: 0 0 12px; }
-.todo-chat .composer { position: sticky; bottom: 0; padding: 10px 0; }
+.todo-chat .composer { position: sticky; bottom: 0; padding: 10px 0 16px; }
+.detail-body:has(> .todo-chat:not([hidden])) { padding-bottom: 0; }
 
 /* ---------- run ---------- */
 #view-run.active { display: flex; height: calc(100dvh - var(--top-h) - var(--nav-h) - var(--safe-b)); background: #0a0f17; }
