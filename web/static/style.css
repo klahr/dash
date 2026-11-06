@@ -797,13 +797,19 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .side-collapsed .sidebar { overflow: visible; }
   .side-collapsed .nav > button { justify-content: center; padding: 0; }
   .side-collapsed .nav > button > span:not(.badge),
-  .side-collapsed .side-projects-head, .side-collapsed .side-project-list,
+  .side-collapsed .side-projects-head, .side-collapsed .side-project-name, .side-collapsed .side-project-branch,
+  .side-collapsed .side-machine, .side-collapsed .machine-empty,
   .side-collapsed .side-new-project span, .side-collapsed .quick-btn span,
   .side-collapsed .usage-pill:not(#usage-pill), .side-collapsed .merge-status { display: none; }
   .side-collapsed #usage-pill { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; }
   .side-collapsed #usage-pill .usage-detail { display: none; }
   .side-collapsed #usage-pill .usage-pies { display: flex; flex-direction: column; align-items: center; gap: 6px; }
   .side-collapsed .nav .badge { position: absolute; top: 3px; right: 1px; margin: 0; }
+  .side-collapsed .side-project-list { display: flex; flex-direction: column; gap: 4px; }
+  .side-collapsed .side-project-list li.current { box-shadow: none; background: none; }
+  .side-collapsed .side-project { justify-content: center; padding: 0; min-height: 40px; }
+  .side-collapsed .side-project-icon { width: 32px; height: 32px; font-size: 13px; }
+  .side-collapsed .side-project[aria-current="true"] .side-project-icon { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent); }
   .side-collapsed .side-new-project { justify-content: center; padding: 0; }
   .side-collapsed .side-new-project svg { width: 26px; height: 26px; padding: 5px; }
   .side-collapsed .quick-actions { flex-direction: column; }

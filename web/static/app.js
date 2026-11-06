@@ -653,7 +653,7 @@ function renderSideProjects() {
     const cur = projectKey(state.project) === projectKey(p);
     return h("li", { class: cur ? "current" : "" },
       h("button", {
-        type: "button", class: "side-project", title: p.path, "aria-current": cur ? "true" : "false",
+        type: "button", class: "side-project", title: `${p.name}\n${p.path}`, "aria-current": cur ? "true" : "false",
         onclick: attempt(async () => { await selectProject(p); setMenu(false); }),
       },
       h("span", { class: "side-project-icon", style: p.color ? `--project: ${p.color}` : null, "aria-hidden": "true" }, [...p.name][0]?.toUpperCase() || "?"),
