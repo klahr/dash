@@ -121,6 +121,9 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 				newMessage, wroteText = false, true
 				emit(ChatDelta{Kind: "text", Text: text})
 			case "thinking_delta":
+				if ev.Event.Delta.Thinking == "" {
+					return
+				}
 				emit(ChatDelta{Kind: "thinking", Text: ev.Event.Delta.Thinking})
 			}
 		case "result":

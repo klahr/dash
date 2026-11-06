@@ -1499,6 +1499,7 @@ function makeChat({ log, empty, form, target, actions, scroller = () => log }) {
     c.prefix = prefix;
     ws.onmessage = (m) => {
       const d = JSON.parse(m.data);
+      d.text ??= ""; // omitted when empty
       // An abandoned socket (see reset) finishes its reply so the server saves it.
       if (ws !== c.ws) { if (d.kind === "done" || d.kind === "error") ws.close(); return; }
       const cur = c.current;
