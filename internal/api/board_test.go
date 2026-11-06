@@ -220,3 +220,34 @@ func TestBoardMCPGeneralChatNeedsProject(t *testing.T) {
 		t.Errorf("list_projects %s", text)
 	}
 }
+
+func TestListProjectsActive(t *testing.T) {
+	s, _, p := boardServer(t)
+	run, _ := s.Store.CreateTodo(model.Todo{ProjectID: p.ID, Prompt: "a"})
+	draft, _ := s.Store.CreateTodo(model.Todo{ProjectID: p.ID, Prompt: "b"})
+	for _, st := range []model.TodoStatus{model.StatusQueued, model.StatusInProgress} {
+		if _, err := s.Store.SetStatus(run.ID, st, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w := httptest.NewRecorder()
+	s.listProjects(w, httptest.NewRequest("GET", "/api/projects", nil))
+	var got []struct {
+		ID     string                      `json:"id"`
+		Active map[string]model.TodoStatus `json:"active"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range got {
+		if g.ID != p.ID {
+			if len(g.Active) != 0 {
+				t.Errorf("other project active: %v", g.Active)
+			}
+			continue
+		}
+		if len(g.Active) != 1 || g.Active[run.ID] != model.StatusInProgress || g.Active[draft.ID] != "" {
+			t.Errorf("active = %v", g.Active)
+		}
+	}
+}

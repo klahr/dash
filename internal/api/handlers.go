@@ -21,7 +21,24 @@ import (
 // ---------------------------------------------------------------- projects
 
 func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.Store.ListProjects())
+	// Active lets the sidebar show which projects have Claude running or work
+	// waiting for review; events keep it current from there.
+	type item struct {
+		model.Project
+		Active map[string]model.TodoStatus `json:"active,omitempty"`
+	}
+	ps := s.Store.ListProjects()
+	out := make([]item, len(ps))
+	for i, p := range ps {
+		out[i].Project = p
+		for _, t := range s.Store.ListTodos(p.ID, model.StatusInProgress, model.StatusReview) {
+			if out[i].Active == nil {
+				out[i].Active = map[string]model.TodoStatus{}
+			}
+			out[i].Active[t.ID] = t.Status
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {

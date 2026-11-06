@@ -494,6 +494,7 @@ function onEvent(ev, m = { name: "" }) {
   const sameMachine = !state.project || m.name === state.project.machine;
   const mine = state.project && ev.project_id === state.project.id && sameMachine;
   if (!mine) elsewhere(ev, m);
+  if (ev.type === "todo.updated" || ev.type === "todo.deleted") trackActive(ev, m);
   switch (ev.type) {
     case "project.updated":
       loadProjects().catch(fail);
@@ -577,6 +578,25 @@ function onEvent(ev, m = { name: "" }) {
       break;
   }
 }
+
+// Keeps each project's running / ready-for-review todos current for the sidebar dots.
+function trackActive(ev, m) {
+  const p = (state.projects || []).find((x) => x.id === ev.project_id && x.machine === m.name);
+  if (!p) return;
+  const active = { ...p.active };
+  const st = ev.type === "todo.updated" ? ev.data.status : null;
+  if (st === "in_progress" || st === "review") active[ev.todo_id] = st;
+  else delete active[ev.todo_id];
+  if (projectStatus({ active }) === projectStatus(p)) { p.active = active; return; }
+  p.active = active;
+  renderSideProjects();
+}
+
+// Yellow while Claude works on something, green when work waits for review.
+const projectStatus = (p) => {
+  const s = Object.values(p.active || {});
+  return s.includes("in_progress") ? "running" : s.includes("review") ? "review" : "";
+};
 
 // Things that happen in projects you're not looking at, possibly on another
 // computer: tell the user about the ones that need them.
@@ -700,12 +720,17 @@ const projectDot = (p) => (p.color ? h("span", { class: "project-dot", style: `-
 function renderSideProjects() {
   const item = (p) => {
     const cur = projectKey(state.project) === projectKey(p);
+    const st = projectStatus(p);
+    const stLabel = st === "running" ? "Claude is working" : st === "review" ? "Ready for review" : "";
+    const icon = projectIcon(p);
+    if (st) icon.append(h("span", { class: `side-project-status ${st}` }));
     return h("li", { class: cur ? "current" : "" },
       h("button", {
-        type: "button", class: "side-project", title: `${p.name}\n${p.path}`, "aria-current": cur ? "true" : "false",
+        type: "button", class: "side-project", title: [p.name, p.path, stLabel].filter(Boolean).join("\n"), "aria-current": cur ? "true" : "false",
+        "aria-label": stLabel ? `${p.name}, ${stLabel.toLowerCase()}` : null,
         onclick: attempt(async () => { await selectProject(p); setMenu(false); }),
       },
-      projectIcon(p),
+      icon,
       h("span", { class: "side-project-name" }, p.name),
       cur && p.default_branch ? h("span", { class: "side-project-branch" }, p.default_branch) : null));
   };
