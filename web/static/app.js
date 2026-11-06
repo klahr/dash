@@ -1368,7 +1368,7 @@ $("#d-more").addEventListener("click", attempt(async () => {
   if (!t) return;
   const choices = [];
   if (t.worktree && ["review", "failed"].includes(t.status)) {
-    const serve = techFor("web:run"), label = serve.label || "Start server";
+    const serve = techFor("web:run"), label = serve.label || "Run";
     choices.push([serve.icon || "play", `Try it: ${label[0].toLowerCase()}${label.slice(1)} in this worktree`, () => startProc({ kind: "web", preset: "run", todo_id: t.id })]);
     choices.push(["terminal", "Open shell in this worktree", () => startProc({ kind: "pty", todo_id: t.id })]);
   }
@@ -2518,7 +2518,7 @@ $("#quick-actions").addEventListener("click", attempt(async (e) => {
   if (!proc?.running) return runPreset(e);
   if (spec === "web:run") {
     await api("DELETE", `/api/processes/${proc.id}`);
-    toast("Stopping server");
+    toast("Stopping");
     return loadProcs();
   }
   closeDetail();
@@ -2573,7 +2573,7 @@ function quickProc(spec) {
 }
 
 function renderQuick() {
-  for (const [sel, verb, generic, noun, key] of [["#quick-server", "Serving", "Start", "server run", "R"], ["#quick-test", "Testing", "Run Tests", "test run", "T"], ["#quick-deploy", "Deploying", "Deploy", "deploy", "D"]]) {
+  for (const [sel, verb, generic, noun, key] of [["#quick-server", "Serving", "Run", "server run", "R"], ["#quick-test", "Testing", "Run Tests", "test run", "T"], ["#quick-deploy", "Deploying", "Deploy", "deploy", "D"]]) {
     const btn = $(sel);
     const spec = btn.dataset.run;
     btn.hidden = !state.project;
@@ -3262,7 +3262,7 @@ function paletteCommands() {
     ["Switch project", "repo", openProjects, "p", "projects"],
     ["New project", "plus", openNewProject, "", "create add"],
     p && ["Project settings", "settings", openSettings, ":settings", "configure commands"],
-    p?.run_command && [serve.label || "Start server", serve.icon || "play", () => startProc({ kind: "web", preset: "run" }), "R", `run web ${serve.icon || ""}`],
+    p?.run_command && [serve.label || "Run", serve.icon || "play", () => startProc({ kind: "web", preset: "run" }), "R", `run web ${serve.icon || ""}`],
     p?.test_command && ["Run tests", "check", () => startProc({ kind: "task", preset: "test" }), "T", "test"],
     p?.deploy_command && [deploy.label || "Deploy", deploy.icon || "rocket", () => startProc({ kind: "task", preset: "deploy" }), "D", `release ship ${deploy.icon || ""}`],
     p && ["Open a shell", "terminal", () => startProc({ kind: "pty" }), "!", "terminal pty"],
