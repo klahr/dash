@@ -1776,7 +1776,10 @@ function toggleBoardChat(open = !boardChatOpen()) {
   renderBoardChat();
   if (open) { const log = $("#pc-log"); log.scrollTop = log.scrollHeight; projectChat.input.focus(); }
 }
-$("#pc-open").addEventListener("click", () => toggleBoardChat());
+$("#pc-open").addEventListener("click", () => {
+  if (state.view !== "board") { showView("board"); toggleBoardChat(true); }
+  else toggleBoardChat();
+});
 $("#pc-close").addEventListener("click", () => toggleBoardChat(false));
 $("#pc-clear").addEventListener("click", attempt(async () => {
   const p = state.project;
