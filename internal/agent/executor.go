@@ -34,6 +34,8 @@ type ExecResult struct {
 	// ResumeFailed is set when Resume named a session Claude Code no longer
 	// has; the caller should retry with a full prompt.
 	ResumeFailed bool
+	// Stop is the result subtype, e.g. "success" or "error_max_turns".
+	Stop string
 }
 
 // Executor carries out a Todo inside its worktree. emit receives
@@ -112,7 +114,7 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(string))
 			}
 			return
 		case "result":
-			res.CostUSD, res.Turns = ev.Cost, ev.NumTurns
+			res.CostUSD, res.Turns, res.Stop = ev.Cost, ev.NumTurns, ev.Subtype
 			if ev.IsError || ev.Subtype != "success" {
 				resultErr = fmt.Errorf("claude reported %s: %s", ev.Subtype, strings.TrimSpace(ev.Result))
 			}
@@ -142,6 +144,10 @@ func BuildPrompt(t model.Todo) string {
 		fmt.Fprintf(&b, "# Task: %s\n\n", t.Title)
 	}
 	b.WriteString(t.Prompt)
+	if len(t.Attachments) > 0 {
+		b.WriteString("\n\n## Attached files\n")
+		b.WriteString(AttachmentList(t.Attachments))
+	}
 	if len(t.Feedback) > 0 {
 		b.WriteString("\n\n## Follow-up notes\n")
 		b.WriteString("Earlier work on this task may already be in this working tree. Address the following:\n")
@@ -150,6 +156,16 @@ func BuildPrompt(t model.Todo) string {
 		}
 	}
 	b.WriteString(rules)
+	return b.String()
+}
+
+// AttachmentList tells Claude where attached files are.
+func AttachmentList(as []model.Attachment) string {
+	var b strings.Builder
+	b.WriteString("Look at these files; the Read tool shows images:\n")
+	for _, a := range as {
+		fmt.Fprintf(&b, "- %s (%s)\n", a.Path, a.Name)
+	}
 	return b.String()
 }
 

@@ -50,6 +50,13 @@ func (a *App) View() tea.View {
 	}
 	body := a.renderBody()
 	body = fit(body, a.w, a.bodyHeight())
+	if a.mode == modeCommand {
+		if wm := a.wildmenu(a.w); wm != "" {
+			lines := strings.Split(body, "\n")
+			lines[len(lines)-1] = wm // like vim, the completions cover the line above the command
+			body = strings.Join(lines, "\n")
+		}
+	}
 	v := tea.NewView(a.renderHeader() + "\n" + body + "\n" + a.renderStatus())
 	v.AltScreen = true
 	return v
@@ -88,10 +95,20 @@ func (a *App) renderHeader() string {
 		right += styleWarn.Render("/"+a.query) + styleDim.Render(" (:noh)  ")
 	}
 	if a.proj != nil {
-		right = styleAccent.Render(a.proj.Name) + styleDim.Render(" ("+a.proj.DefaultBranch+")")
+		right += styleAccent.Render(a.proj.Name) + styleDim.Render(" ("+a.proj.DefaultBranch+")")
 	}
 	if n := len(a.perms); n > 0 {
 		right += styleWarn.Bold(true).Render(fmt.Sprintf("  ⚠ %d waiting (P)", n))
+	}
+	if c := a.ci; c != nil {
+		switch c.State {
+		case "passing":
+			right += styleOK.Render("  CI ✓")
+		case "failing":
+			right += styleErr.Bold(true).Render("  CI ✗")
+		case "running":
+			right += styleWarn.Render("  CI …")
+		}
 	}
 	if u := a.usage; u != nil && (u.Known || u.ManualPause) {
 		switch {
@@ -294,6 +311,15 @@ func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
 	if t.Status == model.StatusInProgress && t.StartedAt != nil {
 		meta = append(meta, ago(*t.StartedAt))
 	}
+	if t.PR != nil && t.Status != model.StatusMerged {
+		meta = append(meta, fmt.Sprintf("PR #%d", t.PR.Number))
+	}
+	if t.Revert != nil {
+		meta = append(meta, "reverted")
+	}
+	if len(t.Attachments) > 0 {
+		meta = append(meta, fmt.Sprintf("%d attached", len(t.Attachments)))
+	}
 	if t.Status == model.StatusReview && t.FinishedAt != nil {
 		meta = append(meta, "waiting "+ago(*t.FinishedAt))
 	}
@@ -342,6 +368,18 @@ func (a *App) renderDetail() string {
 	}
 	if t.AutoFixes > 0 {
 		meta = append(meta, fmt.Sprintf("auto-fixed %d×", t.AutoFixes))
+	}
+	if t.PR != nil {
+		meta = append(meta, fmt.Sprintf("PR #%d %s (gx copies the link)", t.PR.Number, strings.ToLower(t.PR.State)))
+	}
+	if t.MergedCommit != "" {
+		meta = append(meta, "commit "+t.MergedCommit[:min(8, len(t.MergedCommit))])
+	}
+	if t.Revert != nil {
+		meta = append(meta, "reverted")
+	}
+	for _, at := range t.Attachments {
+		meta = append(meta, "📎 "+at.Path)
 	}
 	if t.Checks != nil {
 		if t.Checks.Passed {
@@ -590,7 +628,9 @@ var helpText = styleBox.Render(strings.Join([]string{
 	styleAccent.Render("Motion") + "        h j k l · w/b next/prev column · gg G · {count}j · ctrl+d/u/f/b",
 	styleAccent.Render("Todo") + "          Enter open · o new · e edit · s queue · x cancel · a approve · r rework",
 	"              dd delete · +/- (K/J) priority · * goal · t try in worktree · ! shell in worktree",
-	styleAccent.Render("More") + "          / search · n/N next/prev match · :noh clear · T rerun tests · Y duplicate · E open in editor · :copy [path]",
+	styleAccent.Render("More") + "          / search · n/N next/prev match · :noh clear · T rerun tests · Y duplicate · E open in editor · :copy [path|prompt]",
+	"              u revert a merged todo · gx copy its pull request link · :cleanup remove stale worktrees",
+	"              :ci build status · :fix ask Claude to fix the failing build · Tab completes : commands",
 	styleAccent.Render("Detail") + "        Tab/h/l cycle log → diff → tests · R reload · q back",
 	styleAccent.Render("Approvals") + "     P list Claude's permission requests · y allow · A always allow · n deny",
 	styleAccent.Render("Chat") + "          t make the last answer a todo · i insert · Enter send · Alt+Enter newline · Esc normal · x stop · dd/:clear",

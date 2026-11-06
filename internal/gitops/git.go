@@ -23,6 +23,7 @@ type Git struct {
 	// makes. Off by default: a headless server cannot answer a pinentry
 	// prompt, so signing would hang until it times out.
 	SignCommits bool
+	GhBin       string // GitHub CLI; default "gh"
 }
 
 func New(pub Publisher) *Git { return &Git{pub: pub} }
@@ -40,6 +41,11 @@ func (e *CmdError) Error() string {
 func (e *CmdError) Unwrap() error { return e.Err }
 
 func (g *Git) exec(ctx context.Context, projectID, dir, bin string, args ...string) (string, error) {
+	return g.run(ctx, true, projectID, dir, bin, args...)
+}
+
+// run executes a command; publish=false keeps routine polling out of the activity feed.
+func (g *Git) run(ctx context.Context, publish bool, projectID, dir, bin string, args ...string) (string, error) {
 	start := time.Now()
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
@@ -47,7 +53,7 @@ func (g *Git) exec(ctx context.Context, projectID, dir, bin string, args ...stri
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err := cmd.Run()
-	if g.pub != nil {
+	if g.pub != nil && publish {
 		g.pub.Publish(model.Event{Type: model.EvGitOp, ProjectID: projectID, Time: time.Now(), Data: map[string]any{
 			"cmd": bin + " " + strings.Join(args, " "), "dir": dir, "ok": err == nil,
 			"ms": time.Since(start).Milliseconds(),
@@ -57,6 +63,22 @@ func (g *Git) exec(ctx context.Context, projectID, dir, bin string, args ...stri
 		return out.String(), &CmdError{Args: append([]string{bin}, args...), Output: out.String(), Err: err}
 	}
 	return strings.TrimSpace(out.String()), nil
+}
+
+func (g *Git) gh(ctx context.Context, projectID, dir string, args ...string) (string, error) {
+	return g.run(ctx, true, projectID, dir, g.ghBin(), args...)
+}
+
+// ghQuiet runs gh without an activity event (status polling).
+func (g *Git) ghQuiet(ctx context.Context, projectID, dir string, args ...string) (string, error) {
+	return g.run(ctx, false, projectID, dir, g.ghBin(), args...)
+}
+
+func (g *Git) ghBin() string {
+	if g.GhBin == "" {
+		return "gh"
+	}
+	return g.GhBin
 }
 
 func (g *Git) git(ctx context.Context, projectID, dir string, args ...string) (string, error) {
@@ -142,6 +164,11 @@ func (g *Git) Diff(ctx context.Context, projectID, repo, base, branch string) (s
 	return g.git(ctx, projectID, repo, "diff", "--stat", "--patch", base+"..."+branch)
 }
 
+// Show returns the patch a single commit introduced.
+func (g *Git) Show(ctx context.Context, projectID, repo, sha string) (string, error) {
+	return g.git(ctx, projectID, repo, "show", "--stat", "--patch", "--format=", sha)
+}
+
 // ErrConflict is returned when merging hits conflicts.
 type ErrConflict struct{ Files []string }
 
@@ -207,26 +234,147 @@ func (g *Git) LeftoverMarkers(ctx context.Context, projectID, dir string) (strin
 	return strings.Join(lines, "\n"), nil
 }
 
-// SquashInto lands branch on the branch checked out in repo as one commit.
-// Returns false if branch had nothing new. On failure repo is reset.
-func (g *Git) SquashInto(ctx context.Context, projectID, repo, branch, msg string) (bool, error) {
+// SquashInto lands branch on the branch checked out in repo as one commit
+// and returns its hash ("" if branch had nothing new). On failure repo is reset.
+func (g *Git) SquashInto(ctx context.Context, projectID, repo, branch, msg string) (string, error) {
 	if _, err := g.git(ctx, projectID, repo, "merge", "--squash", branch); err != nil {
 		_, _ = g.git(ctx, projectID, repo, "reset", "--merge")
-		return false, err
+		return "", err
 	}
 	if _, err := g.git(ctx, projectID, repo, "diff", "--cached", "--quiet"); err == nil {
-		return false, nil // nothing staged
+		return "", nil // nothing staged
 	}
 	if _, err := g.git(ctx, projectID, repo, g.committing(ctx, repo, "commit", "-m", msg)...); err != nil {
 		_, _ = g.git(ctx, projectID, repo, "reset", "--merge")
-		return false, err
+		return "", err
 	}
-	return true, nil
+	return g.Head(ctx, projectID, repo, "HEAD")
 }
 
 func (g *Git) Push(ctx context.Context, projectID, repo, branch string) error {
 	_, err := g.git(ctx, projectID, repo, "push", "origin", branch)
 	return err
+}
+
+// PushBranch publishes a work branch, overwriting the remote copy only if
+// it is the one Dash pushed last (--force-with-lease).
+func (g *Git) PushBranch(ctx context.Context, projectID, dir, branch string) error {
+	_, err := g.git(ctx, projectID, dir, "push", "--force-with-lease", "origin", branch+":"+branch)
+	return err
+}
+
+// DeleteRemoteBranch removes branch from origin; a branch that is already
+// gone (e.g. GitHub deleted it after merging) is not an error.
+func (g *Git) DeleteRemoteBranch(ctx context.Context, projectID, repo, branch string) {
+	_, _ = g.git(ctx, projectID, repo, "push", "origin", "--delete", branch)
+}
+
+// ErrDiverged means the local default branch has commits origin doesn't
+// have and they can't be replayed on top of origin's without conflicts.
+type ErrDiverged struct{ Branch, Output string }
+
+func (e *ErrDiverged) Error() string {
+	return fmt.Sprintf("%s has diverged from origin/%s and can't be rebased automatically: %s", e.Branch, e.Branch, e.Output)
+}
+
+// SyncWithRemote brings branch (checked out in repo) up to date with
+// origin: a fast-forward when possible, otherwise local commits that were
+// never pushed are rebased onto origin's. On conflict nothing changes and
+// an *ErrDiverged is returned.
+func (g *Git) SyncWithRemote(ctx context.Context, projectID, repo, branch string) error {
+	if _, err := g.git(ctx, projectID, repo, "fetch", "origin", branch); err != nil {
+		return err
+	}
+	if _, err := g.git(ctx, projectID, repo, "merge", "--ff-only", "origin/"+branch); err == nil {
+		return nil
+	}
+	if out, err := g.git(ctx, projectID, repo, g.committing(ctx, repo, "rebase", "origin/"+branch)...); err != nil {
+		_, _ = g.git(ctx, projectID, repo, "rebase", "--abort")
+		return &ErrDiverged{Branch: branch, Output: lastLine(out)}
+	}
+	return nil
+}
+
+// PushSynced pushes branch, and if origin moved on meanwhile syncs with
+// it and tries once more.
+func (g *Git) PushSynced(ctx context.Context, projectID, repo, branch string) error {
+	if err := g.Push(ctx, projectID, repo, branch); err == nil {
+		return nil
+	}
+	if err := g.SyncWithRemote(ctx, projectID, repo, branch); err != nil {
+		return err
+	}
+	return g.Push(ctx, projectID, repo, branch)
+}
+
+// FindTodoCommit finds the squash commit that landed a todo on branch, by
+// its "Dash-Todo: <id>" trailer.
+func (g *Git) FindTodoCommit(ctx context.Context, projectID, repo, branch, todoID string) (string, error) {
+	out, err := g.git(ctx, projectID, repo, "log", "-n1", "--format=%H", "--fixed-strings", "--grep=Dash-Todo: "+todoID, branch)
+	if err != nil {
+		return "", err
+	}
+	if out == "" {
+		return "", fmt.Errorf("no commit for todo %s on %s", todoID, branch)
+	}
+	return out, nil
+}
+
+// RevertCommit reverts sha on the branch checked out in dir and returns the
+// new commit. On conflict the revert is aborted and *ErrConflict returned.
+func (g *Git) RevertCommit(ctx context.Context, projectID, dir, sha, msg string) (string, error) {
+	args := []string{"revert", "--no-edit"}
+	if parents, _ := g.git(ctx, projectID, dir, "rev-list", "--parents", "-n1", sha); len(strings.Fields(parents)) > 2 {
+		args = append(args, "-m", "1") // a merge commit (e.g. a PR merged without squashing)
+	}
+	if _, err := g.git(ctx, projectID, dir, g.committing(ctx, dir, append(args, sha)...)...); err != nil {
+		files := g.conflictedFiles(ctx, projectID, dir)
+		_, _ = g.git(ctx, projectID, dir, "revert", "--abort")
+		if len(files) > 0 {
+			return "", &ErrConflict{Files: files}
+		}
+		return "", err
+	}
+	if msg != "" {
+		if _, err := g.git(ctx, projectID, dir, g.committing(ctx, dir, "commit", "--amend", "-m", msg)...); err != nil {
+			return "", err
+		}
+	}
+	return g.Head(ctx, projectID, dir, "HEAD")
+}
+
+// AddWorktreeAt checks out a new branch from start in a fresh worktree at path.
+func (g *Git) AddWorktreeAt(ctx context.Context, projectID, repo, path, branch, start string) error {
+	_, err := g.git(ctx, projectID, repo, "worktree", "add", "-B", branch, path, start)
+	return err
+}
+
+// PruneWorktrees forgets worktrees whose directories are gone.
+func (g *Git) PruneWorktrees(ctx context.Context, projectID, repo string) {
+	_, _ = g.git(ctx, projectID, repo, "worktree", "prune")
+}
+
+// Branches lists local branches under prefix, e.g. "dash/".
+func (g *Git) Branches(ctx context.Context, projectID, repo, prefix string) ([]string, error) {
+	out, err := g.git(ctx, projectID, repo, "for-each-ref", "--format=%(refname:short)", "refs/heads/"+prefix)
+	if err != nil || out == "" {
+		return nil, err
+	}
+	return strings.Split(out, "\n"), nil
+}
+
+// DeleteBranch force-deletes a local branch.
+func (g *Git) DeleteBranch(ctx context.Context, projectID, repo, branch string) error {
+	_, err := g.git(ctx, projectID, repo, "branch", "-D", branch)
+	return err
+}
+
+func lastLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.LastIndexByte(s, '\n'); i >= 0 {
+		return s[i+1:]
+	}
+	return s
 }
 
 // CreateGitHubRepo uses gh to create a remote, set it as origin and push.
@@ -235,7 +383,7 @@ func (g *Git) CreateGitHubRepo(ctx context.Context, projectID, repo, name string
 	if private {
 		vis = "--private"
 	}
-	if _, err := g.exec(ctx, projectID, repo, "gh", "repo", "create", name, vis, "--source=.", "--remote=origin", "--push"); err != nil {
+	if _, err := g.gh(ctx, projectID, repo, "repo", "create", name, vis, "--source=.", "--remote=origin", "--push"); err != nil {
 		return "", err
 	}
 	return g.git(ctx, projectID, repo, "remote", "get-url", "origin")

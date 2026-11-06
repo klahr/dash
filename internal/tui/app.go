@@ -127,6 +127,7 @@ type App struct {
 	query   string // board search (/)
 	showOld bool   // show merged todos older than a day
 	Bell    bool   // ring the terminal bell for reviews, failures and approvals
+	ci      *CIStatus
 
 	perms   []PermRequest // pending permission requests for this project
 	permRow int
@@ -158,6 +159,7 @@ func NewApp(c *Client, project string) *App {
 
 	a.cmdline = textinput.New()
 	a.cmdline.Prompt = ":"
+	a.cmdline.ShowSuggestions = true // Tab completes, Ctrl-n/Ctrl-p (↑/↓) pick another
 	a.promptIn = textinput.New()
 
 	a.chatInput = textarea.New()
@@ -279,6 +281,56 @@ func (a *App) loadPerms() tea.Cmd {
 	pid := a.proj.ID
 	return func() tea.Msg { ps, _ := a.c.Permissions(pid); return permsMsg{pid, ps} }
 }
+
+type ciMsg struct {
+	pid    string
+	st     CIStatus
+	err    error
+	report bool // show a summary (the :ci command)
+}
+
+func (a *App) loadCI(refresh, report bool) tea.Cmd {
+	if a.proj == nil || a.proj.RemoteURL == "" {
+		return nil
+	}
+	pid := a.proj.ID
+	return func() tea.Msg { st, err := a.c.CI(pid, refresh); return ciMsg{pid, st, err, report} }
+}
+
+// ciSummary is a one-line build report, e.g. "build failing at 1a2b3c4d: CI ✗ · Lint ✓".
+func ciSummary(st CIStatus) string {
+	if st.Error != "" {
+		return "builds: " + st.Error
+	}
+	if st.State == "none" {
+		return "no GitHub Actions runs on " + st.Branch + " yet"
+	}
+	var parts []string
+	seen := map[string]bool{}
+	for _, r := range st.Runs {
+		if r.SHA != st.SHA || seen[r.Workflow] {
+			continue
+		}
+		seen[r.Workflow] = true
+		mark := "✓"
+		switch {
+		case r.Status != "completed":
+			mark = "…"
+		case r.Conclusion == "failure" || r.Conclusion == "timed_out" || r.Conclusion == "startup_failure":
+			mark = "✗"
+		case r.Conclusion != "success":
+			mark = "–"
+		}
+		parts = append(parts, r.Workflow+" "+mark)
+	}
+	s := fmt.Sprintf("build %s at %s: %s", st.State, short(st.SHA), strings.Join(parts, " · "))
+	if st.State == "failing" && st.TodoID == "" {
+		s += "  (:fix asks Claude to fix it)"
+	}
+	return s
+}
+
+func short(sha string) string { return sha[:min(8, len(sha))] }
 
 func (a *App) loadUsage() tea.Cmd {
 	return func() tea.Msg { u, err := a.c.Usage(); return usageMsg{u, err} }
@@ -432,6 +484,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case ciMsg:
+		if msg.err != nil {
+			if msg.report {
+				a.setFlash(msg.err.Error(), true)
+			}
+			return a, nil
+		}
+		if a.proj != nil && msg.pid == a.proj.ID {
+			a.ci = &msg.st
+			if msg.report {
+				a.setFlash(ciSummary(msg.st), msg.st.State == "failing" || msg.st.Error != "")
+			}
+		}
+		return a, nil
+
 	case procStartedMsg:
 		if msg.err != nil {
 			a.setFlash(msg.err.Error(), true)
@@ -479,7 +546,8 @@ func (a *App) selectProject(i int) tea.Cmd {
 	a.col, a.row, a.procRow = 0, 0, 0
 	a.overlay = ovNone
 	a.perms = nil
-	return tea.Batch(a.loadTodos(), a.loadProcs(), a.loadPerms())
+	a.ci = nil
+	return tea.Batch(a.loadTodos(), a.loadProcs(), a.loadPerms(), a.loadCI(false, false))
 }
 
 func (a *App) matches(t model.Todo) bool {
@@ -636,6 +704,22 @@ func (a *App) handleEvent(ev wireEvent) tea.Cmd {
 		if json.Unmarshal(ev.Data, &u) == nil {
 			a.usage = &u
 		}
+	case model.EvCI:
+		var st CIStatus
+		if a.proj == nil || ev.ProjectID != a.proj.ID || json.Unmarshal(ev.Data, &st) != nil {
+			break
+		}
+		if a.ci != nil && a.ci.State != "failing" && st.State == "failing" {
+			msg := "build failing on " + st.Branch
+			if st.TodoID != "" {
+				msg += "; Claude is on it"
+			}
+			a.setFlash(msg, true)
+			a.bell()
+		} else if a.ci != nil && a.ci.State == "failing" && st.State == "passing" {
+			a.setFlash("build passing again on "+st.Branch, false)
+		}
+		a.ci = &st
 	}
 	return nil
 }
@@ -796,6 +880,14 @@ func (a *App) normalKey(s string) tea.Cmd {
 			a.overlay = ovNone
 		case "dd":
 			return a.deleteSelected()
+		case "gx":
+			t, ok := a.selected()
+			if !ok || t.PR == nil {
+				a.setFlash("this todo has no pull request", true)
+				return nil
+			}
+			a.setFlash("copied "+t.PR.URL, false)
+			return tea.SetClipboard(t.PR.URL)
 		case "ZZ":
 			if a.overlay == ovForm {
 				return a.saveForm(true)
@@ -820,6 +912,7 @@ func (a *App) normalKey(s string) tea.Cmd {
 	case ":":
 		a.mode = modeCommand
 		a.cmdline.Reset()
+		a.cmdline.SetSuggestions(a.commandSuggestions())
 		return a.cmdline.Focus()
 	case "?":
 		a.overlay = ovHelp
@@ -1030,6 +1123,14 @@ func (a *App) todoAction(s string) tea.Cmd {
 		return a.action("duplicated as a draft", func() error { return a.c.Duplicate(t.ID) })
 	case "E":
 		return a.action("opening in your editor", func() error { return a.c.OpenEditor(t.ID) })
+	case "u":
+		if t.Status != model.StatusMerged || t.Revert != nil {
+			a.setFlash("only merged todos can be reverted", true)
+			return nil
+		}
+		a.confirm(fmt.Sprintf("revert %q? (y/n)", title(t)), func() tea.Cmd {
+			return a.action("reverting…", func() error { return a.c.Revert(t.ID) })
+		})
 	}
 	return nil
 }
@@ -1479,6 +1580,32 @@ func (a *App) runCommand(line string) tea.Cmd {
 		return a.action("pushed", func() error { return a.c.PushProject(pid) })
 	case "run", "!":
 		return a.startProc(StartProc{Kind: model.ProcPTY, Command: arg})
+	case "ci", "builds":
+		if a.proj == nil || a.proj.RemoteURL == "" {
+			a.setFlash("connect a GitHub repository first", true)
+			return nil
+		}
+		a.setFlash("checking builds…", false)
+		return a.loadCI(true, true)
+	case "fix", "investigate":
+		if a.proj == nil {
+			return nil
+		}
+		pid := a.proj.ID
+		return func() tea.Msg {
+			t, err := a.c.InvestigateCI(pid)
+			return resultMsg{ok: "queued: " + t.Title, err: err}
+		}
+	case "cleanup", "clean":
+		if a.proj == nil {
+			return nil
+		}
+		pid := a.proj.ID
+		a.setFlash("cleaning up…", false)
+		return func() tea.Msg {
+			summary, err := a.c.Cleanup(pid)
+			return resultMsg{ok: summary, err: err}
+		}
 	case "noh", "nohlsearch":
 		a.query = ""
 		a.rebuildCols()
@@ -1490,6 +1617,10 @@ func (a *App) runCommand(line string) tea.Cmd {
 		}
 	case "copy":
 		t, ok := a.selected()
+		if ok && arg == "prompt" {
+			a.setFlash("copied the prompt", false)
+			return tea.SetClipboard(t.Prompt)
+		}
 		if !ok || t.Worktree == nil {
 			a.setFlash("select a todo with a worktree first", true)
 			return nil

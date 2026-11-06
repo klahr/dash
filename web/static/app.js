@@ -71,8 +71,10 @@ async function copy(text, msg) {
 
 // ask() shows a confirmation or a text question as a sheet. Resolves to the
 // entered text (or true), or null when cancelled.
-function ask({ title, body = "", input = false, placeholder = "", ok = "OK", danger = false }) {
+function ask({ title, body = "", input = false, placeholder = "", ok = "OK", danger = false, attach = false }) {
   const d = $("#ask-sheet");
+  $("#ask-attach").hidden = !attach;
+  askAttach.reset();
   $("#ask-title").textContent = title;
   $("#ask-body").textContent = body;
   $("#ask-body").hidden = !body;
@@ -88,10 +90,88 @@ function ask({ title, body = "", input = false, placeholder = "", ok = "OK", dan
   return new Promise((resolve) => {
     d.addEventListener("close", () => {
       if (d.returnValue !== "ok") return resolve(null);
+      if (attach) return askAttach.settled().then(() => resolve({ text: field.value.trim(), attachments: askAttach.ids() }));
       resolve(input ? field.value.trim() : true);
     }, { once: true });
   });
 }
+
+// ------------------------------------------------------------------ attachments
+// Screenshots and files for Claude: an "Attach file" button, paste into the
+// text field, or drop onto the sheet.
+const CLIP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5 12.6 19.9a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const clip = () => h("span", { class: "clip", innerHTML: CLIP });
+const uploadURL = (a) => `/api/uploads/${a.id}/${encodeURIComponent(a.name)}`;
+const ACCEPT = "image/png,image/jpeg,image/gif,image/webp,.pdf,.txt,.md,.log,.json,.csv";
+
+async function uploadFile(file) {
+  const res = await fetch(`/api/uploads?name=${encodeURIComponent(file.name || "pasted")}`, {
+    method: "POST", body: file, headers: { "Content-Type": file.type || "application/octet-stream" },
+  });
+  if (res.status === 401) { location.replace("/login.html"); throw new Error("Sign in again to continue."); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+function attachThumb(a, onRemove) {
+  const isImg = a.type.startsWith("image/");
+  return h("span", { class: "chip" },
+    h("a", { class: "chip-link", href: uploadURL(a), target: "_blank", rel: "noopener", title: a.name },
+      isImg ? h("img", { src: uploadURL(a), alt: "", loading: "lazy" }) : h("span", { class: "chip-icon" }, (a.name.split(".").pop() || "file").toUpperCase()),
+      h("span", { class: "chip-name" }, a.name)),
+    onRemove ? h("button", { type: "button", class: "chip-x", "aria-label": `Remove ${a.name}`, onclick: onRemove }, "×") : null);
+}
+
+function attachBox(el, textarea) {
+  let items = [], pending = 0, busy = Promise.resolve();
+  const input = h("input", { type: "file", accept: ACCEPT, multiple: true, hidden: true, onchange: () => { add(input.files); input.value = ""; } });
+  const render = () => el.replaceChildren(
+    ...items.map((a) => attachThumb(a, () => { items = items.filter((x) => x !== a); render(); })),
+    ...(pending ? [h("span", { class: "chip uploading" }, h("span", { class: "spinner", "aria-hidden": "true" }), `Uploading ${pending}…`)] : []),
+    h("button", { type: "button", class: "btn small attach-btn", onclick: () => input.click() },
+      clip(),
+      "Attach file"),
+    input);
+  const add = (files) => {
+    files = [...files];
+    if (!files.length) return;
+    pending += files.length;
+    render();
+    busy = busy.then(async () => {
+      for (const f of files) {
+        try { items.push(await uploadFile(f)); } catch (e) { fail(e); }
+        pending--;
+        render();
+      }
+    });
+  };
+  textarea?.addEventListener("paste", (e) => {
+    const files = [...(e.clipboardData?.files || [])];
+    if (files.length) { e.preventDefault(); add(files); }
+  });
+  const zone = el.closest("dialog") || el;
+  zone.addEventListener("dragover", (e) => {
+    if (el.hidden || !e.dataTransfer?.types.includes("Files")) return;
+    e.preventDefault();
+    zone.classList.add("file-over");
+  });
+  zone.addEventListener("dragleave", (e) => { if (!zone.contains(e.relatedTarget)) zone.classList.remove("file-over"); });
+  zone.addEventListener("drop", (e) => {
+    zone.classList.remove("file-over");
+    if (el.hidden || !e.dataTransfer?.files.length) return;
+    e.preventDefault();
+    add(e.dataTransfer.files);
+  });
+  render();
+  return {
+    reset(list = []) { items = [...list]; pending = 0; render(); },
+    ids: () => items.map((a) => a.id),
+    settled: () => busy,
+  };
+}
+const todoAttach = attachBox($("#todo-attach"), $("#todo-form").prompt);
+const askAttach = attachBox($("#ask-attach"), $("#ask-input"));
 
 // ------------------------------------------------------------------ state
 const LANES = [
@@ -194,6 +274,8 @@ function onEvent(ev) {
           if (ev.data.status === "failed") notify("Failed", ev.data, ev.data.error);
           if (ev.data.status === "merged") notify("Merged", ev.data);
         }
+        if (prev && !prev.revert && ev.data.revert) toast(ev.data.revert.pr_url ? `Revert pull request opened: ${title(ev.data)}` : `Reverted: ${title(ev.data)}`);
+        if (prev && !prev.pr && ev.data.pr) toast(`Pull request #${ev.data.pr.number} opened: ${title(ev.data)}`);
       }
       break;
     case "todo.deleted":
@@ -236,6 +318,16 @@ function onEvent(ev) {
       state.usage = ev.data;
       renderUsage();
       break;
+    case "ci.updated":
+      if (!mine) break;
+      if (state.ci?.state && state.ci.state !== "failing" && ev.data.state === "failing") {
+        toast(`Build failing on ${ev.data.branch}${ev.data.todo_id ? " — Claude is on it" : ""}`, true);
+        notify(`Build failing on ${ev.data.branch}`, { title: state.project.name, prompt: "" });
+      }
+      if (state.ci?.state === "failing" && ev.data.state === "passing") toast(`Build passing again on ${ev.data.branch}`);
+      state.ci = ev.data;
+      renderCI();
+      break;
   }
 }
 
@@ -258,8 +350,10 @@ async function selectProject(p) {
   try { if (p) localStorage.setItem("dash.project", p.id); } catch {}
   renderProjectHeader();
   renderProjectList();
+  state.ci = null;
+  renderCI();
   if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); return; }
-  await Promise.all([loadTodos(), loadProcs(), loadPerms()]);
+  await Promise.all([loadTodos(), loadProcs(), loadPerms(), loadCI()]);
 }
 
 async function loadPerms() {
@@ -272,6 +366,12 @@ function renderProjectHeader() {
   const p = state.project;
   $("#project-name").textContent = p ? p.name : "No project";
   $("#project-branch").textContent = p ? p.default_branch : "";
+  const warn = $("#sync-warn");
+  warn.hidden = !p?.sync_error;
+  if (p?.sync_error) {
+    warn.replaceChildren(h("strong", {}, `Can't sync ${p.default_branch} with GitHub`), h("span", {}, p.sync_error),
+      h("span", { class: "hint" }, `Fix it in ${p.path}; Dash retries on the next merge.`));
+  }
 }
 
 function renderProjectList() {
@@ -288,9 +388,18 @@ function renderProjectList() {
       ? h("button", { type: "button", class: "btn", onclick: attempt(async () => { await api("POST", `/api/projects/${p.id}/push`); toast(`Pushed ${p.default_branch}`); }) }, `Push ${p.default_branch}`)
       : h("button", { type: "button", class: "btn", onclick: attempt(createGitHubRepo) }, "Create GitHub repository"),
     h("button", { type: "button", class: "btn", onclick: openSettings }, "Settings"),
+    h("button", { type: "button", class: "btn", onclick: attempt(cleanup) }, "Clean up"),
   ] : []),
   h("button", { type: "button", class: "btn", onclick: attempt(toggleNotifications) }, notifyOn() ? "Turn off notifications" : "Turn on notifications"),
   h("button", { type: "button", class: "link logout", onclick: logout }, "Log out"));
+}
+
+async function cleanup() {
+  const p = state.project;
+  if (!p) throw new Error("Select a project first (p).");
+  toast("Cleaning up…");
+  const res = await api("POST", `/api/projects/${p.id}/cleanup`);
+  toast(res.summary.charAt(0).toUpperCase() + res.summary.slice(1));
 }
 
 async function createGitHubRepo() {
@@ -467,6 +576,10 @@ function todoRow(t, li = -1, ri = -1) {
     h("span", { class: "todo-side" },
       checkTag,
       t.goal ? h("span", { class: "goal-tag" }, "Milestone") : null,
+      t.pr && t.status !== "merged" ? h("span", { class: "pr-tag" }, `PR #${t.pr.number}`) : null,
+      t.revert ? h("span", { class: "revert-tag" }, "Reverted") : null,
+      t.ci_run ? h("span", { class: "ci-tag" }, "Build fix") : null,
+      t.attachments?.length ? h("span", { class: "attach-tag", title: `${t.attachments.length} attached` }, clip(), String(t.attachments.length)) : null,
       t.diff_files && ["review", "merging", "merged", "failed"].includes(t.status)
         ? h("span", { class: "diffsize", title: `${t.diff_files} ${t.diff_files === 1 ? "file" : "files"} changed` },
           h("span", { class: "plus" }, `+${t.diff_add || 0}`), " ", h("span", { class: "minus" }, `−${t.diff_del || 0}`))
@@ -494,6 +607,7 @@ function openTodoForm(t = null) {
     f.goal.checked = t.goal;
     f.priority.value = t.priority;
   }
+  todoAttach.reset(t?.attachments || []);
   $("#todo-sheet").showModal();
   (t ? f.prompt : f.title).focus();
 }
@@ -502,7 +616,8 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
   const action = $("#todo-sheet").returnValue;
   if (action !== "draft" && action !== "queue") return;
   const f = $("#todo-form");
-  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), goal: f.goal.checked, priority: Number(f.priority.value) || 0 };
+  await todoAttach.settled();
+  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), goal: f.goal.checked, priority: Number(f.priority.value) || 0, attachments: todoAttach.ids() };
   if (!body.prompt) throw new Error("Add instructions for Claude before saving.");
   if (editing) {
     await api("PATCH", `/api/todos/${editing.id}`, body);
@@ -571,10 +686,20 @@ function renderDetail() {
     t.priority ? h("span", {}, `Priority ${t.priority}`) : null,
     t.runs ? h("span", {}, `${t.runs} ${t.runs === 1 ? "run" : "runs"}${t.cost_usd ? ` · ≈$${t.cost_usd.toFixed(2)}` : ""}`) : null,
     t.auto_fixes ? h("span", {}, `Fixed automatically ${t.auto_fixes}×`) : null,
+    t.pr ? h("a", { class: "pr-link", href: t.pr.url, target: "_blank", rel: "noopener" }, `Pull request #${t.pr.number}${t.pr.state === "OPEN" ? "" : ` · ${t.pr.state.toLowerCase()}`}`) : null,
+    t.merged_commit ? h("span", { class: "branch", title: t.merged_commit }, t.merged_commit.slice(0, 8)) : null,
+    t.revert ? (t.revert.pr_url
+      ? h("a", { class: "revert-tag", href: t.revert.pr_url, target: "_blank", rel: "noopener" }, "Revert pull request")
+      : h("span", { class: "revert-tag", title: t.revert.commit }, "Reverted")) : null,
   ].filter(Boolean));
+  const gallery = $("#d-attach");
+  gallery.hidden = !t.attachments?.length;
+  gallery.replaceChildren(...(t.attachments || []).map((a) => attachThumb(a)));
   renderChecks(t);
   renderPerms();
-  $("#d-prompt").replaceChildren(t.prompt,
+  $("#d-prompt").replaceChildren(
+    h("button", { type: "button", class: "btn small copy-prompt", onclick: attempt(() => copy(t.prompt, "Prompt copied")) }, "Copy"),
+    t.prompt,
     ...(t.feedback?.length ? [h("ol", { class: "feedback-list" }, t.feedback.map((f) => h("li", {}, f)))] : []));
   $("#d-prompt-wrap").open = !t.worktree;
   $("#d-error").hidden = !t.error;
@@ -586,12 +711,7 @@ function renderDetail() {
 function renderActions(t) {
   const post = (verb, body, msg) => attempt(async () => { await api("POST", `/api/todos/${t.id}/${verb}`, body); toast(msg); });
   const b = (label, onclick, cls = "") => h("button", { class: `btn ${cls}`, onclick }, label);
-  const rework = attempt(async () => {
-    const feedback = await ask({ title: "Send back for rework", body: "Claude continues in the same worktree with your notes.", input: true, placeholder: "What should change?", ok: "Send back" });
-    if (feedback === null) return;
-    await api("POST", `/api/todos/${t.id}/rework`, { feedback });
-    toast("Sent back for rework");
-  });
+  const rework = attempt(() => reworkTodo(t));
   const btns = [];
   switch (t.status) {
     case "draft":
@@ -611,8 +731,14 @@ function renderActions(t) {
       }
       btns.push(b("Approve and merge", post("approve", null, "Approved — merging"), "review grow"));
       break;
+    case "merging":
+      if (t.pr) btns.push(h("a", { class: "btn primary grow", href: t.pr.url, target: "_blank", rel: "noopener" }, `Open pull request #${t.pr.number}`));
+      break;
     case "failed":
       btns.push(t.worktree ? b("Rework", rework) : b("Edit", () => openTodoForm(t)), b("Retry", post("enqueue", null, "Queued again"), "primary grow"));
+      break;
+    case "merged":
+      if (!t.revert) btns.push(b("Revert", attempt(() => revertTodo(t)), "grow"));
       break;
   }
   $("#d-actions").replaceChildren(...btns);
@@ -626,6 +752,8 @@ $("#d-more").addEventListener("click", attempt(async () => {
     choices.push(["Try it: start server in this worktree", () => startProc({ kind: "web", preset: "run", todo_id: t.id })]);
     choices.push(["Open shell in this worktree", () => startProc({ kind: "pty", todo_id: t.id })]);
   }
+  if (t.pr) choices.push([`Open pull request #${t.pr.number}`, () => window.open(t.pr.url, "_blank", "noopener")]);
+  if (t.status === "merged" && !t.revert) choices.push(["Revert this change", () => revertTodo(t)]);
   if (!["in_progress", "merging"].includes(t.status)) {
     choices.push([t.goal ? "Unmark milestone" : "Mark as milestone", () => api("PATCH", `/api/todos/${t.id}`, { goal: !t.goal })]);
     if (t.worktree && state.project?.test_command) choices.push(["Run the tests again", () => api("POST", `/api/todos/${t.id}/test`).then(() => toast("Running tests…"))]);
@@ -646,6 +774,27 @@ $("#d-more").addEventListener("click", attempt(async () => {
   if (!choices.length) return;
   await menu(choices);
 }));
+
+async function reworkTodo(t) {
+  const res = await ask({ title: "Send back for rework", body: "Claude continues in the same worktree with your notes. Paste or attach a screenshot to show what's wrong.", input: true, placeholder: "What should change?", ok: "Send back", attach: true });
+  if (res === null) return;
+  await api("POST", `/api/todos/${t.id}/rework`, { feedback: res.text, attachments: res.attachments });
+  toast("Sent back for rework");
+}
+
+async function revertTodo(t) {
+  if (t.status !== "merged" || t.revert) throw new Error("Only merged todos can be reverted.");
+  const pr = state.project?.merge_mode === "pr";
+  const ok = await ask({
+    title: `Revert "${title(t)}"?`,
+    body: pr ? `Opens a pull request that undoes this change on ${state.project.default_branch}.`
+      : `Adds a commit that undoes this change on ${state.project?.default_branch || "the default branch"}${state.project?.auto_push ? " and pushes it" : ""}. If later work conflicts, Claude gets a todo to undo it by hand.`,
+    ok: pr ? "Open revert PR" : "Revert", danger: true,
+  });
+  if (!ok) return;
+  await api("POST", `/api/todos/${t.id}/revert`);
+  toast("Reverting…");
+}
 
 // A small action sheet built on the ask dialog.
 function menu(choices) {
@@ -950,6 +1099,67 @@ $("#queue-toggle").addEventListener("click", attempt(async () => {
   toast(state.usage.manual_pause ? "Queue paused" : "Queue resumed");
 }));
 
+// ------------------------------------------------------------------ GitHub Actions
+const CI_LABEL = { passing: "Build passing", failing: "Build failing", running: "Build running", none: "No builds yet", unknown: "Builds unavailable" };
+async function loadCI() {
+  const id = state.project?.id;
+  if (!id || !state.project.remote_url) return;
+  const st = await api("GET", `/api/projects/${id}/ci`);
+  if (state.project?.id === id) { state.ci = st; renderCI(); }
+}
+
+function runState(r) {
+  if (r.status !== "completed") return ["running", "Running"];
+  return { success: ["passing", "Passed"], failure: ["failing", "Failed"], timed_out: ["failing", "Timed out"],
+    startup_failure: ["failing", "Couldn't start"], cancelled: ["muted", "Cancelled"], skipped: ["muted", "Skipped"] }[r.conclusion] || ["muted", r.conclusion];
+}
+
+function renderCI() {
+  const st = state.ci;
+  const pill = $("#ci-pill");
+  const show = !!(state.project?.remote_url && st && st.state !== "unknown" && st.state !== "none") || st?.state === "failing";
+  pill.hidden = !show;
+  if (st) {
+    pill.className = `usage-pill ci-pill ci-${st.state}`;
+    pill.textContent = desktop.matches ? CI_LABEL[st.state] : { passing: "CI", failing: "CI failing", running: "CI" }[st.state] || "CI";
+    pill.title = CI_LABEL[st.state];
+  }
+  if (!st) return;
+  const fix = st.todo_id && state.todos.get(st.todo_id);
+  $("#ci-summary").replaceChildren(
+    `${CI_LABEL[st.state]} on ${st.branch || "the default branch"}`,
+    st.sha ? ` at ${st.sha.slice(0, 8)}` : "", ". ",
+    st.error ? h("span", { class: "err-text" }, st.error) : `Checked ${ago(st.checked) === "now" ? "just now" : `${ago(st.checked)} ago`}.`,
+    fix ? h("span", { class: "ci-fix" }, " Claude is fixing it: ", h("button", { type: "button", class: "link inline", onclick: () => { $("#ci-sheet").close(); openDetail(fix.id); } }, title(fix))) : "");
+  $("#ci-runs").replaceChildren(...(st.runs || []).slice(0, 12).map((r) => {
+    const [cls, label] = runState(r);
+    return h("li", {}, h("a", { class: `run run-${cls}`, href: r.url, target: "_blank", rel: "noopener" },
+      h("span", { class: "run-dot", "aria-hidden": "true" }),
+      h("span", { class: "run-main" }, h("strong", {}, r.workflow), h("span", { class: "run-title" }, r.title)),
+      h("span", { class: "run-side" }, label, h("span", { class: "run-sha" }, `${r.sha.slice(0, 7)} · ${ago(r.created_at)}`))));
+  }));
+  $("#ci-investigate").hidden = !(st.state === "failing" && !fix);
+}
+
+async function openCI() {
+  if (!state.project) throw new Error("Select a project first (p).");
+  if (!state.project.remote_url) throw new Error("Connect a GitHub repository first (Projects → Create GitHub repository).");
+  if (!state.ci) await loadCI();
+  renderCI();
+  $("#ci-sheet").showModal();
+}
+$("#ci-pill").addEventListener("click", attempt(openCI));
+$("#ci-refresh").addEventListener("click", attempt(async () => {
+  state.ci = await api("POST", `/api/projects/${state.project.id}/ci/refresh`);
+  renderCI();
+  toast("Builds checked");
+}));
+$("#ci-investigate").addEventListener("click", attempt(async () => {
+  const t = await api("POST", `/api/projects/${state.project.id}/ci/investigate`);
+  $("#ci-sheet").close();
+  toast(`Queued: ${title(t)}`);
+}));
+
 // ------------------------------------------------------------------ project settings
 function openSettings() {
   const p = state.project;
@@ -961,9 +1171,25 @@ function openSettings() {
   f.run_command.value = p.run_command || "";
   f.deploy_command.value = p.deploy_command || "";
   f.auto_push.checked = !!p.auto_push;
+  f.merge_mode.value = p.merge_mode || "local";
+  f.investigate_ci.checked = p.investigate_ci !== false;
+  f.max_run_minutes.value = p.max_run_minutes || "";
+  f.max_turns.value = p.max_turns || "";
+  syncMergeHint();
   $("#project-sheet").close();
   $("#settings-sheet").showModal();
 }
+function syncMergeHint() {
+  const f = $("#settings-form");
+  const p = state.project;
+  const pr = f.merge_mode.value === "pr";
+  $("#auto-push-row").hidden = pr;
+  $("#merge-hint").textContent = !p.remote_url
+    ? "Connect a GitHub repository (Projects → Create GitHub repository) to push or open pull requests."
+    : pr ? `Dash pushes the todo's branch and opens a pull request against ${p.default_branch}. Merge it on GitHub.`
+      : f.auto_push.checked ? `Before each merge Dash pulls ${p.default_branch} from GitHub, so pushes don't get rejected.` : "";
+}
+$("#settings-form").addEventListener("change", syncMergeHint);
 $("#settings-sheet").addEventListener("close", attempt(async () => {
   if ($("#settings-sheet").returnValue !== "save") return;
   const f = $("#settings-form");
@@ -975,7 +1201,12 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     run_command: f.run_command.value.trim(),
     deploy_command: f.deploy_command.value.trim(),
     auto_push: f.auto_push.checked,
+    merge_mode: f.merge_mode.value,
+    investigate_ci: f.investigate_ci.checked,
+    max_run_minutes: Number(f.max_run_minutes.value) || 0,
+    max_turns: Number(f.max_turns.value) || 0,
   });
+  renderProjectHeader();
   toast("Settings saved");
 }));
 
@@ -1354,7 +1585,7 @@ async function reorder(t, laneKey, index) {
 const VIEWS = ["board", "chat", "run", "activity"];
 const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 }, proc: 0 };
 
-const BOUND = /^(:|\?|gt|gT|gg|G|p|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+const BOUND = /^(:|\?|gt|gT|gg|gx|G|u|p|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 const openDialog = () => document.querySelector("dialog[open]");
 
@@ -1405,10 +1636,11 @@ async function todoKey(t, k) {
     case "s": return post("enqueue", null, "Added to queue");
     case "x": return post("cancel", null, t.status === "in_progress" ? "Stopping" : "Moved to drafts");
     case "a": return post("approve", null, "Approved — merging");
-    case "r": {
-      const feedback = await ask({ title: "Send back for rework", body: "Claude continues in the same worktree with your notes.", input: true, placeholder: "What should change?", ok: "Send back" });
-      return feedback === null ? null : post("rework", { feedback }, "Sent back for rework");
-    }
+    case "r": return reworkTodo(t);
+    case "u": return revertTodo(t);
+    case "gx":
+      if (!t.pr) throw new Error("This todo has no pull request.");
+      return window.open(t.pr.url, "_blank", "noopener");
     case "e": return openTodoForm(t);
     case "+": case "K": return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority - 1 });
     case "-": case "J": return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority + 1 });
@@ -1474,6 +1706,8 @@ async function runCommand(line) {
       if (!arg) throw new Error("Usage: :todo <instructions>");
       await api("POST", `/api/projects/${need().id}/todos`, { prompt: arg, enqueue: true });
       return toast("Added to queue");
+    case "cleanup": case "clean": need(); return cleanup();
+    case "ci": case "builds": return openCI();
     case "push":
       await api("POST", `/api/projects/${need().id}/push`);
       return toast(`Pushed ${state.project.default_branch}`);

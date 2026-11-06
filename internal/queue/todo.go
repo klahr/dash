@@ -10,8 +10,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/klahr/dash/internal/agent"
@@ -51,6 +53,7 @@ type TodoEngine struct {
 	TestTimeout  time.Duration
 	SetupTimeout time.Duration
 
+	minute  time.Duration // length of a "minute" for run limits; shortened in tests
 	wake    chan struct{}
 	runCtx  context.Context // the dispatcher's context; done on shutdown
 	mu      sync.Mutex
@@ -69,6 +72,9 @@ func NewTodoEngine(e *TodoEngine) *TodoEngine {
 	}
 	if e.SetupTimeout <= 0 {
 		e.SetupTimeout = 30 * time.Minute
+	}
+	if e.minute <= 0 {
+		e.minute = time.Minute
 	}
 	return e
 }
@@ -342,22 +348,40 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	if req.Resume != "" {
 		log("▶ resuming Claude session " + req.Resume)
 	}
+	req.ExtraArgs = append(req.ExtraArgs, "--max-turns", strconv.Itoa(p.TurnLimit()))
+	for _, dir := range attachmentDirs(t.Attachments) {
+		req.ExtraArgs = append(req.ExtraArgs, "--add-dir", dir)
+	}
 	if e.Perms != nil && e.BaseURL != "" {
 		token, release := e.Perms.Register(t.ID, t.ProjectID)
 		defer release()
-		req.ExtraArgs = []string{
+		req.ExtraArgs = append(req.ExtraArgs,
 			"--mcp-config", perm.MCPConfig(e.BaseURL, token),
 			"--permission-prompt-tool", perm.PromptTool,
-		}
+		)
 		// Claude waits on the MCP tool while a human decides; don't let it time out first.
 		req.Env = []string{"MCP_TOOL_TIMEOUT=3600000"}
 	}
 
-	res, err := e.Exec.Run(ctx, req, log)
-	if res.ResumeFailed && req.Resume != "" && ctx.Err() == nil {
+	// Stop runaway runs: a time limit that doesn't count time spent waiting
+	// for a human to answer a permission prompt, and a turn limit.
+	limit := time.Duration(p.RunMinutes()) * e.minute
+	runCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	var overTime atomic.Bool
+	go e.watchdog(runCtx, t.ID, limit, func() { overTime.Store(true); stop() })
+
+	res, err := e.Exec.Run(runCtx, req, log)
+	if res.ResumeFailed && req.Resume != "" && runCtx.Err() == nil {
 		log("↻ the previous Claude session is gone; starting a fresh one with the full task")
 		req.Resume, req.Prompt = "", agent.BuildPrompt(*t)
-		res, err = e.Exec.Run(ctx, req, log)
+		res, err = e.Exec.Run(runCtx, req, log)
+	}
+	switch {
+	case overTime.Load() && ctx.Err() == nil:
+		err = fmt.Errorf("stopped: Claude worked longer than the %d-minute limit; rework it to let Claude continue, or raise the limit in the project settings", p.RunMinutes())
+	case res.Stop == "error_max_turns":
+		err = fmt.Errorf("stopped: Claude used its %d-turn limit; rework it to let Claude continue, or raise the limit in the project settings", p.TurnLimit())
 	}
 	nt, uerr := e.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
 		if res.SessionID != "" {
@@ -372,6 +396,41 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 		*t = nt
 	}
 	return err
+}
+
+// watchdog calls over once the run has used limit, not counting time it
+// spends waiting on a permission prompt.
+func (e *TodoEngine) watchdog(ctx context.Context, todoID string, limit time.Duration, over func()) {
+	step := min(5*time.Second, max(limit/20, time.Millisecond))
+	tick := time.NewTicker(step)
+	defer tick.Stop()
+	var used time.Duration
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			if e.Perms != nil && e.Perms.Waiting(todoID) {
+				continue
+			}
+			if used += step; used >= limit {
+				over()
+				return
+			}
+		}
+	}
+}
+
+func attachmentDirs(as []model.Attachment) []string {
+	var dirs []string
+	seen := map[string]bool{}
+	for _, a := range as {
+		if d := filepath.Dir(a.Path); a.Path != "" && !seen[d] {
+			seen[d] = true
+			dirs = append(dirs, d)
+		}
+	}
+	return dirs
 }
 
 // RunTests re-runs the project's tests in a todo's worktree without involving

@@ -98,6 +98,18 @@ func (b *Broker) Forget(todoID string) {
 	b.mu.Unlock()
 }
 
+// Waiting reports whether a todo's run is blocked on a human's answer.
+func (b *Broker) Waiting(todoID string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, p := range b.pending {
+		if p.req.TodoID == todoID {
+			return true
+		}
+	}
+	return false
+}
+
 // Pending lists unanswered requests, optionally for one project.
 func (b *Broker) Pending(projectID string) []Request {
 	b.mu.Lock()

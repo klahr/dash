@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/store"
@@ -46,8 +47,15 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		CopyFiles     []string `json:"copy_files"`
 		MaxAutoFixes  *int     `json:"max_auto_fixes"`
 		AutoPush      bool     `json:"auto_push"`
+		MergeMode     string   `json:"merge_mode"`
+		MaxRunMinutes int      `json:"max_run_minutes"`
+		MaxTurns      int      `json:"max_turns"`
 	}
 	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := checkMergeMode(req.MergeMode, ""); err != nil && req.MergeMode != model.MergePR {
 		writeErr(w, err)
 		return
 	}
@@ -80,7 +88,14 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		RemoteURL: s.Git.RemoteURL(ctx, id, req.Path), AutoPush: req.AutoPush,
 		RunCommand: req.RunCommand, TestCommand: req.TestCommand, DeployCommand: req.DeployCommand,
 		SetupCommand: req.SetupCommand, CopyFiles: cleanList(req.CopyFiles), MaxAutoFixes: maxFixes,
+		MaxRunMinutes: max(0, req.MaxRunMinutes), MaxTurns: max(0, req.MaxTurns),
 	})
+	if err == nil && req.MergeMode == model.MergePR {
+		// Only possible when the adopted repo already has a GitHub remote.
+		if err = checkMergeMode(req.MergeMode, p.RemoteURL); err == nil {
+			p, err = s.Store.UpdateProject(p.ID, func(p *model.Project) error { p.MergeMode = model.MergePR; return nil })
+		}
+	}
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -98,12 +113,21 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		CopyFiles     *[]string `json:"copy_files"`
 		MaxAutoFixes  *int      `json:"max_auto_fixes"`
 		AutoPush      *bool     `json:"auto_push"`
+		MergeMode     *string   `json:"merge_mode"`
+		InvestigateCI *bool     `json:"investigate_ci"`
+		MaxRunMinutes *int      `json:"max_run_minutes"`
+		MaxTurns      *int      `json:"max_turns"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
+	remote := ""
+	if cur, err := s.Store.GetProject(r.PathValue("pid")); err == nil {
+		remote = s.Git.RemoteURL(r.Context(), cur.ID, cur.Path) // pick up an origin added since
+	}
 	p, err := s.Store.UpdateProject(r.PathValue("pid"), func(p *model.Project) error {
+		p.RemoteURL = remote
 		set(&p.Name, req.Name)
 		set(&p.RunCommand, req.RunCommand)
 		set(&p.TestCommand, req.TestCommand)
@@ -116,6 +140,22 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		if req.MaxAutoFixes != nil {
 			p.MaxAutoFixes = max(0, *req.MaxAutoFixes)
 		}
+		if req.MaxRunMinutes != nil {
+			p.MaxRunMinutes = max(0, *req.MaxRunMinutes)
+		}
+		if req.MaxTurns != nil {
+			p.MaxTurns = max(0, *req.MaxTurns)
+		}
+		if req.InvestigateCI != nil {
+			v := *req.InvestigateCI
+			p.InvestigateCI = &v
+		}
+		if req.MergeMode != nil {
+			if err := checkMergeMode(*req.MergeMode, p.RemoteURL); err != nil {
+				return err
+			}
+			p.MergeMode = *req.MergeMode
+		}
 		return nil
 	})
 	if err != nil {
@@ -123,6 +163,19 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, p)
+}
+
+func checkMergeMode(mode, remote string) error {
+	switch mode {
+	case "", model.MergeLocal:
+		return nil
+	case model.MergePR:
+		if remote == "" {
+			return fmt.Errorf("%w: pull requests need a GitHub repository; create or connect one first", errBadRequest)
+		}
+		return nil
+	}
+	return fmt.Errorf("%w: merge_mode must be \"local\" or \"pr\"", errBadRequest)
 }
 
 func (s *Server) createGitHubRepo(w http.ResponseWriter, r *http.Request) {
@@ -161,6 +214,9 @@ func (s *Server) pushProject(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	if url := s.Git.RemoteURL(r.Context(), p.ID, p.Path); url != p.RemoteURL {
+		p, _ = s.Store.UpdateProject(p.ID, func(x *model.Project) error { x.RemoteURL = url; return nil })
+	}
 	if p.RemoteURL == "" {
 		writeErr(w, fmt.Errorf("%w: project has no remote; create one via /github first", errBadRequest))
 		return
@@ -186,11 +242,12 @@ func (s *Server) listTodos(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Title    string `json:"title"`
-		Prompt   string `json:"prompt"`
-		Goal     bool   `json:"goal"`
-		Priority int    `json:"priority"`
-		Enqueue  bool   `json:"enqueue"` // skip Draft
+		Title       string   `json:"title"`
+		Prompt      string   `json:"prompt"`
+		Goal        bool     `json:"goal"`
+		Priority    int      `json:"priority"`
+		Enqueue     bool     `json:"enqueue"`     // skip Draft
+		Attachments []string `json:"attachments"` // upload ids
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
@@ -200,8 +257,14 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: prompt is required", errBadRequest))
 		return
 	}
+	atts, err := s.attachments(req.Attachments)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
 	t, err := s.Store.CreateTodo(model.Todo{
 		ProjectID: r.PathValue("pid"), Title: req.Title, Prompt: req.Prompt, Goal: req.Goal, Priority: req.Priority,
+		Attachments: atts,
 	})
 	if err == nil && req.Enqueue {
 		t, err = s.Store.SetStatus(t.ID, model.StatusQueued, "")
@@ -260,7 +323,8 @@ func (s *Server) duplicateTodo(w http.ResponseWriter, r *http.Request) {
 	if title != "" {
 		title += " (copy)"
 	}
-	t, err := s.Store.CreateTodo(model.Todo{ProjectID: src.ProjectID, Title: title, Prompt: src.Prompt, Goal: src.Goal, Priority: src.Priority})
+	t, err := s.Store.CreateTodo(model.Todo{ProjectID: src.ProjectID, Title: title, Prompt: src.Prompt, Goal: src.Goal,
+		Priority: src.Priority, Attachments: src.Attachments})
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -305,18 +369,31 @@ func (s *Server) getTodo(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateTodo(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Title    *string `json:"title"`
-		Prompt   *string `json:"prompt"`
-		Goal     *bool   `json:"goal"`
-		Priority *int    `json:"priority"`
+		Title       *string   `json:"title"`
+		Prompt      *string   `json:"prompt"`
+		Goal        *bool     `json:"goal"`
+		Priority    *int      `json:"priority"`
+		Attachments *[]string `json:"attachments"` // upload ids; replaces the list
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
+	var atts []model.Attachment
+	if req.Attachments != nil {
+		var err error
+		if atts, err = s.attachments(*req.Attachments); err != nil {
+			writeErr(w, err)
+			return
+		}
+	}
 	t, err := s.Store.UpdateTodo(r.PathValue("tid"), func(t *model.Todo) error {
-		if req.Prompt != nil && t.Status != model.StatusDraft && t.Status != model.StatusQueued && t.Status != model.StatusFailed {
-			return fmt.Errorf("%w: prompt can only be edited while draft, queued or failed", errBadRequest)
+		editable := t.Status == model.StatusDraft || t.Status == model.StatusQueued || t.Status == model.StatusFailed
+		if (req.Prompt != nil || req.Attachments != nil) && !editable {
+			return fmt.Errorf("%w: instructions can only be edited while draft, queued or failed", errBadRequest)
+		}
+		if req.Attachments != nil {
+			t.Attachments = atts
 		}
 		set(&t.Title, req.Title)
 		set(&t.Prompt, req.Prompt)
@@ -355,6 +432,7 @@ func (s *Server) deleteTodo(w http.ResponseWriter, r *http.Request) {
 	if s.Perms != nil {
 		s.Perms.Forget(t.ID)
 	}
+	s.Todos.Log.Remove(t.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -397,7 +475,18 @@ func (s *Server) todoDiff(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	diff, err := s.Git.Diff(r.Context(), p.ID, p.Path, p.DefaultBranch, t.Worktree.Branch)
+	var diff string
+	if t.Status == model.StatusMerged {
+		// The branch is gone after merging; show the commit that landed it.
+		if t.MergedCommit != "" {
+			diff, err = s.Git.Show(r.Context(), p.ID, p.Path, t.MergedCommit)
+		}
+		if t.MergedCommit == "" || err != nil {
+			diff, err = "", nil // e.g. a PR merged on GitHub that this checkout hasn't fetched
+		}
+	} else {
+		diff, err = s.Git.Diff(r.Context(), p.ID, p.Path, p.DefaultBranch, t.Worktree.Branch)
+	}
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -437,14 +526,28 @@ func (s *Server) approveTodo(w http.ResponseWriter, r *http.Request) {
 // feedback; the next run reuses its worktree so Claude builds on its changes.
 func (s *Server) reworkTodo(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Feedback string `json:"feedback"`
+		Feedback    string   `json:"feedback"`
+		Attachments []string `json:"attachments"` // upload ids, e.g. a screenshot of what's wrong
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
+	atts, err := s.attachments(req.Attachments)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
 	t, err := s.Store.UpdateTodo(r.PathValue("tid"), func(t *model.Todo) error {
-		if fb := strings.TrimSpace(req.Feedback); fb != "" {
+		fb := strings.TrimSpace(req.Feedback)
+		if len(atts) > 0 {
+			if fb == "" {
+				fb = "See the attached files."
+			}
+			fb += "\n\n" + agent.AttachmentList(atts)
+			t.Attachments = append(t.Attachments, atts...)
+		}
+		if fb != "" {
 			t.Feedback = append(t.Feedback, fb)
 		}
 		t.Status, t.Error = model.StatusQueued, ""
@@ -457,6 +560,65 @@ func (s *Server) reworkTodo(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Todos.Kick()
 	writeJSON(w, http.StatusOK, t)
+}
+
+// revertTodo undoes a merged todo on the merge worker; the todo updates
+// when it's done (or an "Undo:" todo appears if Claude has to do it by hand).
+func (s *Server) revertTodo(w http.ResponseWriter, r *http.Request) {
+	t, err := s.Store.GetTodo(r.PathValue("tid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	switch {
+	case t.Status != model.StatusMerged:
+		writeErr(w, fmt.Errorf("%w: only merged todos can be reverted", errBadRequest))
+		return
+	case t.Revert != nil:
+		writeErr(w, fmt.Errorf("%w: this todo was already reverted", errBadRequest))
+		return
+	}
+	if err := s.Merges.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID, Revert: true}); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *Server) cleanupProject(w http.ResponseWriter, r *http.Request) {
+	rep, err := s.Merges.Cleanup(r.Context(), r.PathValue("pid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"report": rep, "summary": rep.String()})
+}
+
+func (s *Server) getCI(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.CI.Status(r.PathValue("pid")))
+}
+
+func (s *Server) refreshCI(w http.ResponseWriter, r *http.Request) {
+	st, err := s.CI.Refresh(r.Context(), r.PathValue("pid"))
+	if err != nil && st.ProjectID == "" {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, st) // a gh failure is reported in st.Error
+}
+
+// investigateCI asks Claude to look into the failing build now.
+func (s *Server) investigateCI(w http.ResponseWriter, r *http.Request) {
+	t, err := s.CI.Investigate(r.Context(), r.PathValue("pid"))
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeErr(w, err)
+			return
+		}
+		writeErr(w, fmt.Errorf("%w: %v", errBadRequest, err))
+		return
+	}
+	writeJSON(w, http.StatusCreated, t)
 }
 
 func (s *Server) getQueues(w http.ResponseWriter, r *http.Request) {

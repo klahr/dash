@@ -136,3 +136,29 @@ func TestLoadDotEnv(t *testing.T) {
 		t.Fatalf("missing file should be fine: %v", err)
 	}
 }
+
+func TestTrustProxy(t *testing.T) {
+	a, h := newServer(t)
+	login := func(proto, xff string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "/api/login", strings.NewReader(`{"username":"admin","password":"s3cret"}`))
+		r.RemoteAddr = "127.0.0.1:5555"
+		r.Header.Set("X-Forwarded-Proto", proto)
+		r.Header.Set("X-Forwarded-For", xff)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	if c := sessionCookie(t, login("https", "")); c.Secure {
+		t.Fatal("forwarded headers must be ignored unless TrustProxy is set")
+	}
+	a.TrustProxy = true
+	if c := sessionCookie(t, login("https", "")); !c.Secure {
+		t.Fatal("want a Secure cookie behind an HTTPS proxy")
+	}
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "127.0.0.1:5555"
+	r.Header.Set("X-Forwarded-For", "6.6.6.6, 203.0.113.9")
+	if ip := a.clientIP(r); ip != "203.0.113.9" {
+		t.Fatalf("want the address the proxy saw, not a client-supplied one; got %s", ip)
+	}
+}

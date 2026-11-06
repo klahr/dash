@@ -42,4 +42,11 @@ func (l *TodoLog) Read(id string) (string, error) {
 	return string(b), err
 }
 
+// Remove deletes a todo's log.
+func (l *TodoLog) Remove(id string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_ = os.Remove(l.path(id))
+}
+
 func (l *TodoLog) path(id string) string { return filepath.Join(l.Root, id+".log") }

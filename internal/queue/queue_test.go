@@ -25,6 +25,7 @@ type fakeExec struct {
 	mu    sync.Mutex
 	calls []agent.ExecRequest
 	fn    func(n int, req agent.ExecRequest) error
+	block bool // run until canceled, like a Claude that never finishes
 }
 
 func (f *fakeExec) Run(ctx context.Context, req agent.ExecRequest, emit func(string)) (agent.ExecResult, error) {
@@ -32,7 +33,12 @@ func (f *fakeExec) Run(ctx context.Context, req agent.ExecRequest, emit func(str
 	f.calls = append(f.calls, req)
 	n := len(f.calls)
 	f.mu.Unlock()
-	return agent.ExecResult{SessionID: "sess-" + filepath.Base(req.Dir), CostUSD: 0.01, Turns: 1}, f.fn(n, req)
+	res := agent.ExecResult{SessionID: "sess-" + filepath.Base(req.Dir), CostUSD: 0.01, Turns: 1, Stop: "success"}
+	if f.block {
+		<-ctx.Done()
+		return res, ctx.Err()
+	}
+	return res, f.fn(n, req)
 }
 
 func (f *fakeExec) Calls() []agent.ExecRequest {
@@ -152,6 +158,17 @@ func TestFailingTestsGoBackToClaudeWithResume(t *testing.T) {
 		t.Fatalf("want diff stat 1 file +1 -0, got %d +%d -%d", td.DiffFiles, td.DiffAdd, td.DiffDel)
 	}
 
+	calls := exe.Calls()
+	if calls[0].Resume != "" {
+		t.Fatalf("first run should not resume")
+	}
+	if calls[1].Resume != td.SessionID || td.SessionID == "" {
+		t.Fatalf("second run should resume %q, got %q", td.SessionID, calls[1].Resume)
+	}
+	if !strings.Contains(calls[1].Prompt, "grep -qx pass a.txt") || strings.Contains(calls[1].Prompt, "do make a") {
+		t.Fatalf("resumed prompt should carry only the test failure, got:\n%s", calls[1].Prompt)
+	}
+
 	// Re-running the tests by hand records a "manual" result without Claude.
 	write(t, td.Worktree.Path, "a.txt", "broken\n")
 	if err := h.engine.RunTests(td.ID); err != nil {
@@ -168,16 +185,6 @@ func TestFailingTestsGoBackToClaudeWithResume(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatal("manual test run never finished")
-	calls := exe.Calls()
-	if calls[0].Resume != "" {
-		t.Fatalf("first run should not resume")
-	}
-	if calls[1].Resume != td.SessionID || td.SessionID == "" {
-		t.Fatalf("second run should resume %q, got %q", td.SessionID, calls[1].Resume)
-	}
-	if !strings.Contains(calls[1].Prompt, "grep -qx pass a.txt") || strings.Contains(calls[1].Prompt, "do make a") {
-		t.Fatalf("resumed prompt should carry only the test failure, got:\n%s", calls[1].Prompt)
-	}
 }
 
 func TestTestsStillFailingAfterFixesReachesReview(t *testing.T) {

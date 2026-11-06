@@ -18,6 +18,7 @@ import (
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/api"
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/ci"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/perm"
@@ -30,7 +31,11 @@ import (
 
 func main() {
 	home, _ := os.UserHomeDir()
-	addr := flag.String("addr", "127.0.0.1:7777", "listen address (keep on localhost: Dash runs commands)")
+	addr := flag.String("addr", "127.0.0.1:7777", "listen address; to reach Dash from other devices use HTTPS (-tls-cert, or a proxy with -trust-proxy)")
+	tlsCert := flag.String("tls-cert", "", "serve HTTPS with this certificate (PEM), e.g. from `tailscale cert`")
+	tlsKey := flag.String("tls-key", "", "private key for -tls-cert")
+	trustProxy := flag.Bool("trust-proxy", false, "trust X-Forwarded-Proto/-For/-Host from a reverse proxy that terminates TLS (Caddy, nginx, Tailscale Serve)")
+	cleanupDays := flag.Int("cleanup-days", 14, "daily cleanup: remove worktrees of todos that failed this many days ago, plus orphaned worktrees, branches, logs and uploads (0 = off)")
 	dataDir := flag.String("data", filepath.Join(home, ".local", "share", "dash"), "state, logs and worktrees")
 	projectRoot := flag.String("projects", filepath.Join(home, "dash-projects"), "where new projects are created")
 	parallel := flag.Int("parallel", 3, "max todos executed concurrently")
@@ -59,6 +64,16 @@ func main() {
 		slog.Error("auth", "err", err) // refuse to run open: Dash executes commands
 		os.Exit(1)
 	}
+	authn.TrustProxy, hub.TrustProxy = *trustProxy, *trustProxy
+	useTLS := *tlsCert != "" || *tlsKey != ""
+	if useTLS && (*tlsCert == "" || *tlsKey == "") {
+		slog.Error("-tls-cert and -tls-key go together")
+		os.Exit(1)
+	}
+	if !useTLS && !*trustProxy && !isLoopback(*addr) {
+		slog.Warn("Dash is reachable from the network over plain HTTP: passwords and session cookies travel unencrypted. " +
+			"Use -tls-cert/-tls-key, or keep -addr on 127.0.0.1 behind an HTTPS proxy with -trust-proxy.")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -79,6 +94,11 @@ func main() {
 	perms := perm.NewBroker(events)
 	todoLog := &queue.TodoLog{Pub: events, Root: filepath.Join(*dataDir, "logs")}
 	merges := queue.NewMergeQueue(st, git, events, todoLog, 1024)
+	uploads := filepath.Join(*dataDir, "uploads")
+	merges.WorktreeRoot, merges.UploadRoot = filepath.Join(*dataDir, "worktrees"), uploads
+	if *cleanupDays > 0 {
+		merges.CleanupAfter, merges.CleanupEvery = time.Duration(*cleanupDays)*24*time.Hour, 24*time.Hour
+	}
 	todos := queue.NewTodoEngine(&queue.TodoEngine{
 		Store:        st,
 		Git:          git,
@@ -87,14 +107,25 @@ func main() {
 		Log:          todoLog,
 		Merges:       merges,
 		Usage:        tracker,
-		WorktreeRoot: filepath.Join(*dataDir, "worktrees"),
+		WorktreeRoot: merges.WorktreeRoot,
 		MaxParallel:  *parallel,
 	})
 	if *askPerms {
-		todos.Perms, todos.BaseURL = perms, selfURL(*addr)
+		// Claude Code reaches the permission prompt server on a loopback-only
+		// plain-HTTP listener, whatever -addr and TLS are set to.
+		mcp := http.NewServeMux()
+		mcp.HandleFunc("/mcp/permissions", perms.ServeMCP)
+		mcpURL, err := serveLoopback(ctx, mcp)
+		if err != nil {
+			slog.Error("permission prompt listener", "err", err)
+			os.Exit(1)
+		}
+		todos.Perms, todos.BaseURL = perms, mcpURL
 	}
 	merges.Perms, merges.Kick = perms, todos.Kick
 
+	builds := &ci.Watcher{Store: st, Git: git, Pub: events, Kick: todos.Kick, Every: time.Minute}
+	go builds.Run(ctx)
 	go todos.Run(ctx)
 	go merges.Run(ctx) // the one and only merge worker
 
@@ -125,6 +156,8 @@ func main() {
 			Perms:       perms,
 			Usage:       tracker,
 			Editor:      *editor,
+			UploadRoot:  uploads,
+			CI:          builds,
 			Titler:      titler,
 			ProjectRoot: *projectRoot,
 			Static:      web.Static,
@@ -139,21 +172,43 @@ func main() {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
-	slog.Info("dash listening", "url", "http://"+*addr, "data", *dataDir)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	scheme := "http"
+	if useTLS {
+		scheme = "https"
+	}
+	slog.Info("dash listening", "url", scheme+"://"+*addr, "data", *dataDir)
+	if useTLS {
+		err = srv.ListenAndServeTLS(*tlsCert, *tlsKey)
+	} else {
+		err = srv.ListenAndServe()
+	}
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("server", "err", err)
 		os.Exit(1)
 	}
 }
 
-// selfURL is how child processes on this machine reach Dash.
-func selfURL(addr string) string {
-	host, port, err := net.SplitHostPort(addr)
+// serveLoopback serves h on a random 127.0.0.1 port for child processes on
+// this machine and returns its base URL.
+func serveLoopback(ctx context.Context, h http.Handler) (string, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return "http://" + addr
+		return "", err
 	}
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		host = "127.0.0.1"
+	srv := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
+	go func() { _ = srv.Serve(ln) }()
+	go func() { <-ctx.Done(); _ = srv.Close() }()
+	return "http://" + ln.Addr().String(), nil
+}
+
+func isLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
 	}
-	return "http://" + net.JoinHostPort(host, port)
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

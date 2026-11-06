@@ -13,6 +13,7 @@ import (
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/ci"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
@@ -39,8 +40,10 @@ type Server struct {
 	Titler interface {
 		Title(ctx context.Context, prompt string) (string, error)
 	}
-	Editor string // command that opens a directory, e.g. "code" (optional)
-	Static fs.FS  // frontend assets
+	Editor     string // command that opens a directory, e.g. "code" (optional)
+	UploadRoot string // where attached files are stored
+	CI         *ci.Watcher
+	Static     fs.FS // frontend assets
 }
 
 func (s *Server) Routes() http.Handler {
@@ -77,6 +80,17 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/todos/{tid}/test", s.retestTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/duplicate", s.duplicateTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/open", s.openTodo)
+	mux.HandleFunc("POST /api/todos/{tid}/revert", s.revertTodo)
+	mux.HandleFunc("POST /api/projects/{pid}/cleanup", s.cleanupProject)
+
+	// GitHub Actions builds of the default branch
+	mux.HandleFunc("GET /api/projects/{pid}/ci", s.getCI)
+	mux.HandleFunc("POST /api/projects/{pid}/ci/refresh", s.refreshCI)
+	mux.HandleFunc("POST /api/projects/{pid}/ci/investigate", s.investigateCI)
+
+	// Attachments (screenshots for Claude)
+	mux.HandleFunc("POST /api/uploads", s.upload)
+	mux.HandleFunc("GET /api/uploads/{id}/{name}", s.getUpload)
 
 	// Execution, testing, deployment
 	mux.HandleFunc("GET /api/projects/{pid}/processes", s.listProcesses)

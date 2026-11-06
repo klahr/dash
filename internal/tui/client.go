@@ -290,3 +290,51 @@ func (c *Client) Duplicate(id string) error {
 	return c.do("POST", "/api/todos/"+id+"/duplicate", nil, nil)
 }
 func (c *Client) OpenEditor(id string) error { return c.do("POST", "/api/todos/"+id+"/open", nil, nil) }
+
+// Revert undoes a merged todo (a revert commit, or a revert pull request).
+func (c *Client) Revert(id string) error { return c.do("POST", "/api/todos/"+id+"/revert", nil, nil) }
+
+// Cleanup removes stale worktrees, branches, logs and uploads; it returns a summary.
+func (c *Client) Cleanup(pid string) (string, error) {
+	var res struct {
+		Summary string `json:"summary"`
+	}
+	err := c.do("POST", "/api/projects/"+pid+"/cleanup", nil, &res)
+	return res.Summary, err
+}
+
+// CIRun mirrors gitops.Run; CIStatus mirrors ci.Status.
+type CIRun struct {
+	ID         int64     `json:"id"`
+	Workflow   string    `json:"workflow"`
+	Title      string    `json:"title"`
+	Status     string    `json:"status"`
+	Conclusion string    `json:"conclusion"`
+	SHA        string    `json:"sha"`
+	URL        string    `json:"url"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type CIStatus struct {
+	ProjectID string    `json:"project_id"`
+	Branch    string    `json:"branch"`
+	State     string    `json:"state"` // passing | failing | running | none | unknown
+	SHA       string    `json:"sha"`
+	Runs      []CIRun   `json:"runs"`
+	Error     string    `json:"error"`
+	TodoID    string    `json:"todo_id"`
+	Checked   time.Time `json:"checked"`
+}
+
+// CI returns the build status of a project's default branch; refresh checks GitHub first.
+func (c *Client) CI(pid string, refresh bool) (st CIStatus, err error) {
+	if refresh {
+		return st, c.do("POST", "/api/projects/"+pid+"/ci/refresh", nil, &st)
+	}
+	return st, c.do("GET", "/api/projects/"+pid+"/ci", nil, &st)
+}
+
+// InvestigateCI queues a todo for Claude to fix the failing build.
+func (c *Client) InvestigateCI(pid string) (t model.Todo, err error) {
+	return t, c.do("POST", "/api/projects/"+pid+"/ci/investigate", nil, &t)
+}

@@ -30,9 +30,9 @@ var transitions = map[TodoStatus][]TodoStatus{
 	StatusDraft:      {StatusQueued},
 	StatusQueued:     {StatusDraft, StatusInProgress},
 	StatusInProgress: {StatusReview, StatusFailed, StatusQueued, StatusMerging}, // → merging: auto-merge after a conflict fix
-	StatusReview:     {StatusMerging, StatusQueued, StatusDraft},
-	StatusMerging:    {StatusMerged, StatusFailed, StatusReview, StatusQueued}, // → queued: conflict sent back to Claude
-	StatusFailed:     {StatusQueued, StatusDraft, StatusReview},
+	StatusReview:     {StatusMerging, StatusQueued, StatusDraft, StatusMerged},  // → merged: its PR was merged on GitHub
+	StatusMerging:    {StatusMerged, StatusFailed, StatusReview, StatusQueued},  // → queued: conflict sent back to Claude
+	StatusFailed:     {StatusQueued, StatusDraft, StatusReview, StatusMerged},
 	StatusMerged:     {},
 }
 
@@ -66,11 +66,60 @@ type Project struct {
 	CopyFiles    []string `json:"copy_files,omitempty"`
 	// MaxAutoFixes is how many times Dash sends failing tests or merge
 	// conflicts back to Claude on its own before asking a human.
-	MaxAutoFixes int       `json:"max_auto_fixes"`
-	CreatedAt    time.Time `json:"created_at"`
+	MaxAutoFixes int `json:"max_auto_fixes"`
+	// MergeMode is how approved work lands: "local" (squash onto the default
+	// branch here, then push if AutoPush) or "pr" (push the branch and open a
+	// GitHub pull request; Dash marks the todo merged when the PR is merged).
+	MergeMode string `json:"merge_mode,omitempty"`
+	// Limits for one Claude run; 0 means the default. Time spent waiting
+	// for a human to answer a permission prompt doesn't count.
+	MaxRunMinutes int `json:"max_run_minutes,omitempty"`
+	MaxTurns      int `json:"max_turns,omitempty"`
+	// SyncError is set while the default branch can't be synced with or
+	// pushed to origin (e.g. it diverged); cleared on the next success.
+	SyncError string `json:"sync_error,omitempty"`
+	// InvestigateCI queues a todo for Claude when a GitHub Actions build on
+	// the default branch fails (nil means on). CIHandledRun is the newest
+	// run already looked at, so a failure is only investigated once.
+	InvestigateCI *bool     `json:"investigate_ci,omitempty"`
+	CIHandledRun  int64     `json:"ci_handled_run,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
-const DefaultMaxAutoFixes = 2
+// InvestigatesCI reports whether failed builds get a todo automatically.
+func (p Project) InvestigatesCI() bool { return p.InvestigateCI == nil || *p.InvestigateCI }
+
+const (
+	DefaultMaxAutoFixes  = 2
+	DefaultMaxRunMinutes = 60
+	DefaultMaxTurns      = 200
+
+	MergeLocal = "local"
+	MergePR    = "pr"
+)
+
+// UsesPR reports whether approved todos are landed through GitHub pull requests.
+func (p Project) UsesPR() bool { return p.MergeMode == MergePR }
+
+// SyncsRemote reports whether the default branch is kept in step with origin
+// before merging: whenever Dash pushes it or opens pull requests against it.
+func (p Project) SyncsRemote() bool { return p.RemoteURL != "" && (p.AutoPush || p.UsesPR()) }
+
+// RunMinutes is the time limit for one Claude run.
+func (p Project) RunMinutes() int {
+	if p.MaxRunMinutes > 0 {
+		return p.MaxRunMinutes
+	}
+	return DefaultMaxRunMinutes
+}
+
+// TurnLimit is the --max-turns for one Claude run.
+func (p Project) TurnLimit() int {
+	if p.MaxTurns > 0 {
+		return p.MaxTurns
+	}
+	return DefaultMaxTurns
+}
 
 // Worktree is the isolated checkout a Todo is executed in.
 type Worktree struct {
@@ -106,16 +155,23 @@ type Todo struct {
 	MergeMain bool `json:"merge_main,omitempty"`
 	AutoMerge bool `json:"auto_merge,omitempty"`
 	// Size of the change against the default branch, after the latest run.
-	DiffFiles  int        `json:"diff_files,omitempty"`
-	DiffAdd    int        `json:"diff_add,omitempty"`
-	DiffDel    int        `json:"diff_del,omitempty"`
-	CostUSD    float64    `json:"cost_usd,omitempty"` // API-equivalent cost reported by Claude Code
-	Runs       int        `json:"runs,omitempty"`
-	Error      string     `json:"error,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
-	StartedAt  *time.Time `json:"started_at,omitempty"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	DiffFiles int     `json:"diff_files,omitempty"`
+	DiffAdd   int     `json:"diff_add,omitempty"`
+	DiffDel   int     `json:"diff_del,omitempty"`
+	CostUSD   float64 `json:"cost_usd,omitempty"` // API-equivalent cost reported by Claude Code
+	Runs      int     `json:"runs,omitempty"`
+	// Attachments are files (usually screenshots) given to Claude with the task.
+	Attachments []Attachment `json:"attachments,omitempty"`
+	// MergedCommit is the commit that landed the todo on the default branch.
+	MergedCommit string       `json:"merged_commit,omitempty"`
+	PR           *PullRequest `json:"pr,omitempty"`     // in "pr" merge mode
+	Revert       *Revert      `json:"revert,omitempty"` // set once a merged todo is reverted
+	CIRun        int64        `json:"ci_run,omitempty"` // the failed GitHub Actions run this todo investigates
+	Error        string       `json:"error,omitempty"`
+	CreatedAt    time.Time    `json:"created_at"`
+	UpdatedAt    time.Time    `json:"updated_at"`
+	StartedAt    *time.Time   `json:"started_at,omitempty"`
+	FinishedAt   *time.Time   `json:"finished_at,omitempty"`
 }
 
 // Checks is the outcome of running the project's test command in a worktree.
@@ -129,10 +185,37 @@ type Checks struct {
 	Duration float64   `json:"duration_s"`
 }
 
+// Attachment is an uploaded file attached to a todo or a rework note.
+type Attachment struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+	Size int64  `json:"size"`
+	Path string `json:"path"` // absolute path Claude reads it from
+}
+
+// PullRequest is the GitHub PR a todo was landed through.
+type PullRequest struct {
+	Number int    `json:"number"`
+	URL    string `json:"url"`
+	State  string `json:"state"` // OPEN | MERGED | CLOSED
+	// HandledSHA is the head commit whose conflicts or failing checks were
+	// already sent back to Claude, so the same failure isn't sent twice.
+	HandledSHA string `json:"handled_sha,omitempty"`
+}
+
+// Revert records how a merged todo was undone.
+type Revert struct {
+	Commit string    `json:"commit,omitempty"` // revert commit on the default branch
+	PRURL  string    `json:"pr_url,omitempty"` // revert pull request, in "pr" merge mode
+	At     time.Time `json:"at"`
+}
+
 // MergeJob is a request to land a reviewed Todo's branch on the default branch.
 type MergeJob struct {
 	TodoID    string
 	ProjectID string
+	Revert    bool // undo the merged todo instead
 }
 
 // ProcessKind distinguishes how a child process is attached.
@@ -171,6 +254,7 @@ const (
 	EvProcUpdated    EventType = "process.updated"
 	EvPermission     EventType = "permission.updated" // Claude asked to use a tool, or a request was answered
 	EvUsage          EventType = "usage.updated"      // subscription rate-limit usage / queue pause state
+	EvCI             EventType = "ci.updated"         // GitHub Actions status of a project's default branch
 )
 
 // Event is the envelope for everything pushed over /ws/events.

@@ -59,8 +59,9 @@ func Open(path string, pub Publisher) (*Store, error) {
 		if t.Status == model.StatusInProgress {
 			t.Status = model.StatusQueued
 		}
-		// Merge jobs live in a channel and are lost on restart; send back to review.
-		if t.Status == model.StatusMerging {
+		// Merge jobs live in a channel and are lost on restart; send back to
+		// review. An open pull request is still followed, so it stays.
+		if t.Status == model.StatusMerging && (t.PR == nil || t.PR.State != "OPEN") {
 			t.Status = model.StatusReview
 		}
 	}
@@ -209,7 +210,7 @@ func (s *Store) UpdateTodo(id string, fn func(*model.Todo) error) (model.Todo, e
 	if !ok {
 		return model.Todo{}, ErrNotFound
 	}
-	cp := *t
+	cp := clone(*t)
 	if err := fn(&cp); err != nil {
 		return *t, err
 	}
@@ -254,6 +255,31 @@ func (s *Store) DeleteTodo(id string) (model.Todo, error) {
 	}
 	s.emit(model.EvTodoDeleted, t.ProjectID, id, nil)
 	return *t, nil
+}
+
+// clone copies a todo deeply enough that changing the copy (including the
+// structs and slices it points to) never touches the stored original.
+func clone(t model.Todo) model.Todo {
+	cp := t
+	cp.Feedback = append([]string(nil), t.Feedback...)
+	cp.Attachments = append([]model.Attachment(nil), t.Attachments...)
+	if t.Worktree != nil {
+		w := *t.Worktree
+		cp.Worktree = &w
+	}
+	if t.Checks != nil {
+		c := *t.Checks
+		cp.Checks = &c
+	}
+	if t.PR != nil {
+		pr := *t.PR
+		cp.PR = &pr
+	}
+	if t.Revert != nil {
+		r := *t.Revert
+		cp.Revert = &r
+	}
+	return cp
 }
 
 func contains[T comparable](xs []T, x T) bool {

@@ -40,6 +40,11 @@ type Auth struct {
 	failed   map[string]*failures
 
 	now func() time.Time // for tests
+
+	// TrustProxy honours X-Forwarded-For and X-Forwarded-Proto from a
+	// reverse proxy (Caddy, nginx, Tailscale Serve) that terminates TLS.
+	// Only enable it when Dash is reachable solely through that proxy.
+	TrustProxy bool
 }
 
 // New returns an authenticator for the single account. Both values are required.
@@ -125,6 +130,24 @@ func (a *Auth) recordFailure(ip string) {
 	f.count++
 }
 
+// Secure reports whether the browser reached Dash over HTTPS.
+func (a *Auth) Secure(r *http.Request) bool {
+	return r.TLS != nil || (a.TrustProxy && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"))
+}
+
+func (a *Auth) clientIP(r *http.Request) string {
+	if a.TrustProxy {
+		// The proxy appends the address it saw; earlier entries are client-supplied.
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
+				return ip
+			}
+		}
+	}
+	return clientIP(r)
+}
+
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -141,7 +164,7 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 // Login handles POST /api/login {"username","password"}.
 func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
-	ip := clientIP(r)
+	ip := a.clientIP(r)
 	if a.lockedOut(ip) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many failed attempts, try again later"})
 		return
@@ -171,7 +194,7 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   int(sessionTTL.Seconds()),
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   a.Secure(r),
 		// Strict: the cookie is never sent on cross-site requests, which also
 		// stops other sites from driving the API or opening WebSockets (CSRF).
 		SameSite: http.SameSiteStrictMode,
@@ -187,7 +210,7 @@ func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
 		a.mu.Unlock()
 	}
 	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
-		Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode})
+		Secure: a.Secure(r), SameSite: http.SameSiteStrictMode})
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -28,6 +28,7 @@
         <span class="project-branch" id="project-branch"></span>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
+      <button class="usage-pill ci-pill" id="ci-pill" hidden aria-haspopup="dialog" title="GitHub Actions on the default branch"></button>
       <button class="usage-pill" id="usage-pill" hidden aria-haspopup="dialog" title="Claude usage"></button>
       <span class="live" id="live" title="Live updates disconnected"><span class="live-dot"></span><span class="sr-only" id="live-label">Offline</span></span>
     </header>
@@ -71,6 +72,7 @@
           <span class="search-count" id="search-count"></span>
           <button class="link" id="search-clear" type="button">Clear</button>
         </div>
+        <div class="sync-warn" id="sync-warn" role="alert" hidden></div>
         <div class="perm-list" id="perm-banner" hidden></div>
         <div class="board" id="board"></div>
         <div class="empty" id="board-empty" hidden></div>
@@ -145,6 +147,7 @@
           <summary>Prompt</summary>
           <div class="prompt-text" id="d-prompt"></div>
         </details>
+        <div class="attach-gallery" id="d-attach" hidden></div>
         <div class="error-note" id="d-error" hidden></div>
         <div class="perm-list" id="d-perms" hidden></div>
         <details class="checks" id="d-checks" hidden>
@@ -169,6 +172,7 @@
       <header class="sheet-head"><h2 id="todo-sheet-title">New todo</h2><button class="link" value="cancel" formnovalidate>Cancel</button></header>
       <label class="field"><span>Title <em>optional, Claude names it if empty</em></span><input name="title" placeholder="Short name for the task" autocomplete="off"></label>
       <label class="field"><span>Instructions for Claude</span><textarea name="prompt" rows="6" required placeholder="Describe the change you want. Claude works in its own worktree; you review the diff before it merges."></textarea></label>
+      <div class="attach" id="todo-attach" data-attach></div>
       <div class="field-row">
         <label class="toggle"><input type="checkbox" name="goal"><span>Milestone</span></label>
         <label class="field inline"><span>Priority</span><input type="number" name="priority" value="0" inputmode="numeric"></label>
@@ -212,6 +216,19 @@
     </form>
   </dialog>
 
+  <!-- GitHub Actions -->
+  <dialog class="sheet" id="ci-sheet" aria-labelledby="ci-title">
+    <form method="dialog">
+      <header class="sheet-head"><h2 id="ci-title" tabindex="-1" autofocus>Builds</h2><button class="link" value="cancel">Done</button></header>
+      <p class="hint" id="ci-summary"></p>
+      <ul class="runs" id="ci-runs"></ul>
+      <footer class="sheet-actions">
+        <button class="btn" type="button" id="ci-refresh">Check now</button>
+        <button class="btn primary" type="button" id="ci-investigate" hidden>Ask Claude to fix it</button>
+      </footer>
+    </form>
+  </dialog>
+
   <!-- Project settings -->
   <dialog class="sheet" id="settings-sheet" aria-labelledby="settings-title">
     <form method="dialog" id="settings-form">
@@ -223,7 +240,20 @@
       <label class="field"><span>Files to copy into worktrees <em>one per line</em></span><textarea name="copy_files" rows="2" placeholder=".env" spellcheck="false"></textarea></label>
       <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" spellcheck="false"></label>
       <label class="field"><span>Deploy command</span><input name="deploy_command" spellcheck="false"></label>
-      <label class="toggle"><input type="checkbox" name="auto_push"><span>Push after every merge</span></label>
+      <fieldset class="field choice">
+        <legend>When you approve a todo</legend>
+        <label class="radio"><input type="radio" name="merge_mode" value="local"><span>Merge it here <em>one squashed commit on the default branch</em></span></label>
+        <label class="radio"><input type="radio" name="merge_mode" value="pr"><span>Open a pull request <em>Dash marks it merged when GitHub merges it; failing checks go back to Claude</em></span></label>
+      </fieldset>
+      <label class="toggle" id="auto-push-row"><input type="checkbox" name="auto_push"><span>Push after every merge</span></label>
+      <p class="hint" id="merge-hint"></p>
+      <label class="toggle"><input type="checkbox" name="investigate_ci"><span>Fix failed builds automatically</span></label>
+      <p class="hint">When GitHub Actions fails on the default branch, Claude gets a todo with the failed log to investigate and fix it.</p>
+      <div class="field-row">
+        <label class="field inline"><span>Time limit per run <em>minutes</em></span><input type="number" name="max_run_minutes" min="1" inputmode="numeric" placeholder="60"></label>
+        <label class="field inline"><span>Turn limit per run</span><input type="number" name="max_turns" min="1" inputmode="numeric" placeholder="200"></label>
+      </div>
+      <p class="hint">Stops a run that goes on too long. Time spent waiting for your approval doesn't count.</p>
       <footer class="sheet-actions"><button class="btn primary" value="save">Save settings</button></footer>
     </form>
   </dialog>
@@ -234,6 +264,7 @@
       <h2 id="ask-title" tabindex="-1" autofocus></h2>
       <p id="ask-body" class="hint"></p>
       <textarea id="ask-input" rows="4" hidden></textarea>
+      <div class="attach" id="ask-attach" data-attach hidden></div>
       <footer class="sheet-actions">
         <button class="btn" value="cancel" formnovalidate>Cancel</button>
         <button class="btn primary" value="ok" id="ask-ok">OK</button>
@@ -257,12 +288,12 @@
         <dt>Todos</dt><dd><kbd>Enter</kbd> open · <kbd>o</kbd> new · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>a</kbd> approve · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>*</kbd> milestone · <kbd>t</kbd> try it · <kbd>!</kbd> shell in worktree</dd>
         <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> changes ↔ log · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
         <dt>Search</dt><dd><kbd>/</kbd> filter the board · <kbd>Enter</kbd> jump to first match · <kbd>n</kbd>/<kbd>N</kbd> next/previous · <kbd>Esc</kbd> or <code>:noh</code> clear</dd>
-        <dt>More</dt><dd><kbd>T</kbd> run tests again · <kbd>Y</kbd> duplicate · <kbd>E</kbd> open worktree in editor · click a diff line to comment</dd>
+        <dt>More</dt><dd><kbd>T</kbd> run tests again · <kbd>Y</kbd> duplicate · <kbd>E</kbd> open worktree in editor · <kbd>u</kbd> revert a merged todo · <kbd>O</kbd> open its pull request · click a diff line to comment · paste or drop images into a todo</dd>
         <dt>Approvals</dt><dd><kbd>y</kbd> allow · <kbd>A</kbd> always allow that tool for the todo · <kbd>n</kbd> deny</dd>
         <dt>Chat</dt><dd><kbd>i</kbd> type · <kbd>Enter</kbd> send · <kbd>Esc</kbd> stop typing · <kbd>j</kbd>/<kbd>k</kbd> scroll</dd>
         <dt>Run</dt><dd><kbd>j</kbd>/<kbd>k</kbd> select · <kbd>Enter</kbd> view · <kbd>i</kbd> type into terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> shell · <kbd>/</kbd> command</dd>
         <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> add to queue · <kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>
-        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:todo …</code> <code>:new</code> <code>:run cmd</code> <code>:push</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:activity</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:q</code></dd>
+        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:todo …</code> <code>:new</code> <code>:run cmd</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:activity</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:q</code></dd>
       </dl>
     </form>
   </dialog>

@@ -25,9 +25,21 @@ var Upgrader = websocket.Upgrader{
 			return true
 		}
 		u, err := url.Parse(origin)
-		return err == nil && u.Host == r.Host
+		if err != nil {
+			return false
+		}
+		if TrustProxy {
+			if fh := r.Header.Get("X-Forwarded-Host"); fh != "" && u.Host == fh {
+				return true
+			}
+		}
+		return u.Host == r.Host
 	},
 }
+
+// TrustProxy accepts X-Forwarded-Host from a reverse proxy in front of Dash
+// when checking WebSocket origins. Set it before serving.
+var TrustProxy bool
 
 const (
 	writeWait  = 10 * time.Second

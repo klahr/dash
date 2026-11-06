@@ -22,12 +22,19 @@ var ErrMergeQueueFull = errors.New("merge queue is full")
 // flight and the main checkout is never touched concurrently.
 //
 // Per job:
+//  0. when the project pushes to or opens PRs on GitHub, sync the default
+//     branch with origin first
 //  1. merge the default branch into the todo's worktree. A conflict sends
 //     the todo back to Claude to resolve (auto-fix), then it returns here
 //     without another review.
 //  2. if that brought in new commits, run the tests again; failures go back
 //     to Claude the same way
-//  3. squash the branch onto the default branch: one commit per todo
+//  3. land it: squash the branch onto the default branch (one commit per
+//     todo) and push, or in "pr" mode push the branch and open a pull
+//     request, which PollPRs follows until GitHub merges it
+//
+// The same worker also reverts merged todos and runs cleanups, since those
+// touch the main checkout too.
 type MergeQueue struct {
 	Store       *store.Store
 	Git         *gitops.Git
@@ -36,19 +43,36 @@ type MergeQueue struct {
 	Perms       *perm.Broker
 	Kick        func() // wake the todo engine after sending a todo back
 	TestTimeout time.Duration
+	// PRPoll is how often open pull requests are checked (0 = never).
+	PRPoll time.Duration
+	// Cleanup settings; see cleanup.go.
+	WorktreeRoot string
+	UploadRoot   string
+	CleanupAfter time.Duration // remove failed todos' worktrees untouched this long (0 = never)
+	CleanupEvery time.Duration // run a cleanup of every project this often (0 = only on request)
 
-	jobs    chan model.MergeJob
+	jobs    chan mergeItem
 	pending atomic.Int64
 }
 
+type mergeItem struct {
+	job model.MergeJob
+	fn  func(context.Context) // other work that needs the main checkout
+}
+
 func NewMergeQueue(s *store.Store, g *gitops.Git, pub Publisher, log *TodoLog, capacity int) *MergeQueue {
-	return &MergeQueue{Store: s, Git: g, Pub: pub, Log: log, TestTimeout: 20 * time.Minute, jobs: make(chan model.MergeJob, capacity)}
+	return &MergeQueue{Store: s, Git: g, Pub: pub, Log: log, TestTimeout: 20 * time.Minute, PRPoll: time.Minute,
+		jobs: make(chan mergeItem, capacity)}
 }
 
 // Enqueue adds a job without blocking the caller (an HTTP handler).
 func (m *MergeQueue) Enqueue(job model.MergeJob) error {
+	return m.push(mergeItem{job: job})
+}
+
+func (m *MergeQueue) push(it mergeItem) error {
 	select {
-	case m.jobs <- job:
+	case m.jobs <- it:
 		m.pending.Add(1)
 		m.publish("")
 		return nil
@@ -57,22 +81,63 @@ func (m *MergeQueue) Enqueue(job model.MergeJob) error {
 	}
 }
 
+// Do runs fn on the merge worker, after the jobs already queued, and waits.
+func (m *MergeQueue) Do(ctx context.Context, fn func(context.Context)) error {
+	done := make(chan struct{})
+	if err := m.push(mergeItem{fn: func(c context.Context) { defer close(done); fn(c) }}); err != nil {
+		return err
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (m *MergeQueue) Pending() int { return int(m.pending.Load()) }
 
 // Run is the single merge worker. Start exactly one.
 func (m *MergeQueue) Run(ctx context.Context) {
+	poll := tickerOrNil(m.PRPoll)
+	clean := tickerOrNil(m.CleanupEvery)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case job := <-m.jobs:
+		case <-poll:
+			m.PollPRs(ctx)
+		case <-clean:
+			for _, p := range m.Store.ListProjects() {
+				if r, err := m.cleanup(ctx, p); err != nil {
+					slog.Warn("cleanup", "project", p.Name, "err", err)
+				} else if !r.Empty() {
+					slog.Info("cleanup", "project", p.Name, "report", r.String())
+				}
+			}
+		case it := <-m.jobs:
+			if it.fn != nil {
+				it.fn(ctx)
+				m.pending.Add(-1)
+				m.publish("")
+				continue
+			}
+			job := it.job
 			m.publish(job.TodoID)
-			if err := m.process(ctx, job); err != nil {
+			if job.Revert {
+				m.revert(ctx, job)
+			} else if err := m.process(ctx, job); err != nil {
 				slog.Warn("merge failed", "todo", job.TodoID, "err", err)
 				if t, gerr := m.Store.GetTodo(job.TodoID); gerr == nil {
 					m.Log.Line(t, "✖ merge: "+err.Error())
 				}
-				_, _ = m.Store.SetStatus(job.TodoID, model.StatusFailed, "merge: "+err.Error())
+				var se *syncError
+				if errors.As(err, &se) {
+					// The work is fine; GitHub isn't reachable or main diverged. Approve again once fixed.
+					_, _ = m.Store.SetStatus(job.TodoID, model.StatusReview, "Not merged, can't sync with GitHub: "+brief(err))
+				} else {
+					_, _ = m.Store.SetStatus(job.TodoID, model.StatusFailed, "merge: "+err.Error())
+				}
 			}
 			m.pending.Add(-1)
 			m.publish("")
@@ -95,6 +160,14 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 	wt := *t.Worktree
 	log := func(s string) { m.Log.Line(t, s) }
 	log("▶ merging into " + p.DefaultBranch)
+
+	// 0. Start from what's on GitHub, so the push (or the PR) can't be rejected.
+	p = m.refreshRemote(ctx, p)
+	if p.SyncsRemote() {
+		if err := m.syncRemote(ctx, p); err != nil {
+			return err
+		}
+	}
 
 	// 1. Bring the default branch into the todo's branch.
 	changed, err := m.Git.MergeIn(ctx, p.ID, wt.Path, p.DefaultBranch)
@@ -120,25 +193,103 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 	}
 
 	// 3. Land it.
-	if _, err := m.Git.SquashInto(ctx, p.ID, p.Path, wt.Branch, commitMessage(t)); err != nil {
+	if p.UsesPR() {
+		return m.openPR(ctx, t, p)
+	}
+	sha, err := m.Git.SquashInto(ctx, p.ID, p.Path, wt.Branch, commitMessage(t))
+	if err != nil {
 		return fmt.Errorf("squash onto %s (is the main checkout clean and on %s?): %w", p.DefaultBranch, p.DefaultBranch, err)
 	}
-	if _, err := m.Store.SetStatus(t.ID, model.StatusMerged, ""); err != nil {
-		return err
+	m.landed(ctx, t, p, sha, "✔ merged into "+p.DefaultBranch)
+	if p.AutoPush && p.RemoteURL != "" {
+		m.pushDefault(ctx, p, t)
 	}
-	log("✔ merged into " + p.DefaultBranch)
-	if err := m.Git.RemoveWorktree(ctx, p.ID, p.Path, wt); err != nil {
-		slog.Warn("remove worktree", "todo", t.ID, "err", err)
+	return nil
+}
+
+// landed marks a todo merged and removes its worktree.
+func (m *MergeQueue) landed(ctx context.Context, t model.Todo, p model.Project, sha, msg string) {
+	if _, err := m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+		now := time.Now()
+		x.Status, x.Error, x.MergedCommit, x.FinishedAt = model.StatusMerged, "", sha, &now
+		if x.PR != nil {
+			x.PR.State = "MERGED"
+		}
+		return nil
+	}); err != nil {
+		slog.Error("mark merged", "todo", t.ID, "err", err)
+		return
+	}
+	m.Log.Line(t, msg)
+	if t.Worktree != nil {
+		if err := m.Git.RemoveWorktree(ctx, p.ID, p.Path, *t.Worktree); err != nil {
+			slog.Warn("remove worktree", "todo", t.ID, "err", err)
+		}
 	}
 	if m.Perms != nil {
 		m.Perms.Forget(t.ID)
 	}
-	if p.AutoPush && p.RemoteURL != "" {
-		if err := m.Git.Push(ctx, p.ID, p.Path, p.DefaultBranch); err != nil {
-			slog.Warn("auto-push", "project", p.ID, "err", err) // merged locally; push can be retried
+}
+
+// refreshRemote picks up an origin added (or changed) after the project was created.
+func (m *MergeQueue) refreshRemote(ctx context.Context, p model.Project) model.Project {
+	if url := m.Git.RemoteURL(ctx, p.ID, p.Path); url != p.RemoteURL {
+		if np, err := m.Store.UpdateProject(p.ID, func(x *model.Project) error { x.RemoteURL = url; return nil }); err == nil {
+			return np
 		}
 	}
+	return p
+}
+
+// syncRemote fast-forwards (or rebases) the default branch onto origin's and
+// records failures on the project, where the UI shows them.
+func (m *MergeQueue) syncRemote(ctx context.Context, p model.Project) error {
+	err := m.Git.SyncWithRemote(ctx, p.ID, p.Path, p.DefaultBranch)
+	m.setSyncError(p.ID, err)
+	if err != nil {
+		return &syncError{fmt.Errorf("can't sync %s with GitHub: %w", p.DefaultBranch, err)}
+	}
 	return nil
+}
+
+type syncError struct{ error }
+
+// brief is the most telling line of a git error, for the UI.
+func brief(err error) string {
+	lines := strings.Split(strings.TrimSpace(err.Error()), "\n")
+	for _, l := range lines {
+		for _, p := range []string{"fatal: ", "error: ", "! ["} {
+			if i := strings.Index(l, p); i >= 0 {
+				return strings.TrimSpace(l[i:])
+			}
+		}
+	}
+	return lines[0]
+}
+
+func (e *syncError) Unwrap() error { return e.error }
+
+// pushDefault pushes the default branch after a merge, syncing and retrying
+// once if origin moved meanwhile. A failure doesn't undo the local merge.
+func (m *MergeQueue) pushDefault(ctx context.Context, p model.Project, t model.Todo) {
+	err := m.Git.PushSynced(ctx, p.ID, p.Path, p.DefaultBranch)
+	m.setSyncError(p.ID, err)
+	if err != nil {
+		m.Log.Line(t, "⚠ push failed (merged locally; Dash pushes again after the next merge): "+err.Error())
+		return
+	}
+	m.Log.Line(t, "⇡ pushed "+p.DefaultBranch)
+}
+
+func (m *MergeQueue) setSyncError(projectID string, err error) {
+	msg := ""
+	if err != nil {
+		msg = brief(err)
+	}
+	if p, gerr := m.Store.GetProject(projectID); gerr == nil && p.SyncError == msg {
+		return
+	}
+	_, _ = m.Store.UpdateProject(projectID, func(p *model.Project) error { p.SyncError = msg; return nil })
 }
 
 // sendBack returns an approved todo to Claude to fix a conflict or failing
@@ -185,6 +336,13 @@ func commitMessage(t model.Todo) string {
 		body = body[:2000] + "…"
 	}
 	return fmt.Sprintf("%s\n\n%s\n\nDash-Todo: %s", subject, body, t.ID)
+}
+
+func tickerOrNil(d time.Duration) <-chan time.Time {
+	if d <= 0 {
+		return nil
+	}
+	return time.NewTicker(d).C
 }
 
 func (m *MergeQueue) publish(current string) {
