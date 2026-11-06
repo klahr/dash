@@ -47,7 +47,7 @@ func main() {
 	chatBackend := flag.String("chat", "claude-code",
 		"chat backend: claude-code (uses the claude CLI login, e.g. a subscription) or api (Anthropic API key)")
 	chatTools := flag.String("chat-tools", agent.ChatShell,
-		"claude-code chat tools: shell (Read, Grep, Glob, Bash, Edit, Write; you approve each call in the chat) or readonly (Read, Grep, Glob)")
+		"claude-code chat tools: shell (every tool, your Claude Code settings and MCP servers, as in a terminal; you approve calls they don't allow in the chat) or readonly (Read, Grep, Glob)")
 	var chatAllow []string
 	flag.Func("chat-allow", "a tool the shell chat may use without asking, as for --allowedTools, e.g. \"Bash(ssh user@host *)\" (repeatable)", func(s string) error {
 		chatAllow = append(chatAllow, s)

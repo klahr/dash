@@ -22,7 +22,7 @@ type Chatter interface {
 // Chat tool modes for ClaudeCodeChat.Tools.
 const (
 	ChatReadOnly = "readonly" // Read, Grep, Glob
-	ChatShell    = "shell"    // also Bash, Edit and Write, each approved by the user
+	ChatShell    = "shell"    // every tool, settings and MCP servers, as `claude` in a terminal
 )
 
 // ClaudeCodeChat answers chat through the Claude Code CLI, so it bills the
@@ -70,8 +70,8 @@ func (c ClaudeCodeChat) system(dir string) string {
 	}
 	s := (&Chat{}).defaultSystem() + where
 	if c.shell() {
-		s += " and can read files with Read, Grep and Glob, run shell commands with Bash, and edit files with Edit and Write. " +
-			"The user approves each command and edit in the chat before it runs; if they deny one, don't retry it, ask what to do instead."
+		s += " and have all of Claude Code's tools, e.g. Read, Grep, Glob, Bash, Edit, Write, web access and the user's MCP servers. " +
+			"The user approves each tool call their settings don't already allow in the chat before it runs; if they deny one, don't retry it, ask what to do instead."
 	} else {
 		s += " and can read files with Read, Grep and Glob. You cannot edit files or run commands."
 	}
@@ -82,19 +82,20 @@ func (c ClaudeCodeChat) system(dir string) string {
 }
 
 // args builds the `claude -p` flags. mcpConfig is Dash's permission prompt
-// server, or "" for none.
+// server, or "" for none. Shell mode gets what `claude` has in a terminal:
+// every tool, the user's settings, hooks and MCP servers.
 func (c ClaudeCodeChat) args(dir, mcpConfig string) []string {
-	tools := "Read,Grep,Glob"
-	if c.shell() {
-		tools += ",Bash,Edit,Write"
-	}
 	args := []string{
 		"-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-		"--tools", tools,
 		"--no-session-persistence",
-		"--strict-mcp-config",   // don't load the user's MCP servers
-		"--setting-sources", "", // nor their settings/hooks
 		"--system-prompt", c.system(dir),
+	}
+	if !c.shell() {
+		args = append(args,
+			"--tools", "Read,Grep,Glob",
+			"--strict-mcp-config",   // don't load the user's MCP servers
+			"--setting-sources", "", // nor their settings/hooks
+		)
 	}
 	if c.shell() {
 		if mcpConfig != "" {

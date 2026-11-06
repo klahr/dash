@@ -42,17 +42,17 @@ func TestChatArgsShell(t *testing.T) {
 	c := ClaudeCodeChat{Tools: ChatShell, Model: "opus", AllowedTools: []string{"Bash(ssh defaultuser@phone *)", "Read"}}
 	cfg := perm.MCPConfig("http://127.0.0.1:1", "tok")
 	args := c.args("/repo", cfg)
-	if tools, _ := flag(args, "--tools"); tools != "Read,Grep,Glob,Bash,Edit,Write" {
-		t.Errorf("--tools %q", tools)
+	// Same access as `claude` in a terminal: all tools, the user's settings and MCP servers.
+	for _, f := range []string{"--tools", "--strict-mcp-config", "--setting-sources"} {
+		if _, ok := flag(args, f); ok {
+			t.Errorf("shell chat should not pass %s", f)
+		}
 	}
 	if got, _ := flag(args, "--mcp-config"); got != cfg {
 		t.Errorf("--mcp-config %q", got)
 	}
 	if got, _ := flag(args, "--permission-prompt-tool"); got != perm.PromptTool {
 		t.Errorf("--permission-prompt-tool %q", got)
-	}
-	if _, ok := flag(args, "--strict-mcp-config"); !ok {
-		t.Error("--strict-mcp-config missing")
 	}
 	var allowed []string
 	for i, a := range args {
