@@ -246,6 +246,13 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 
 	// 1. Worktree.
 	if t.Worktree == nil {
+		// Start from what's on origin when local is merely behind it (a push
+		// from another machine); never blocks the start, never rebases.
+		if e.Merges != nil && e.Merges.Remote != nil {
+			if note := e.Merges.Remote.FastForward(ctx, p); note != "" {
+				log(note)
+			}
+		}
 		base, err := e.Git.Head(ctx, p.ID, p.Path, p.DefaultBranch)
 		if err != nil {
 			fail(err)

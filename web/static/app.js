@@ -618,6 +618,12 @@ function onEvent(ev, m = { name: "" }) {
       state.ci = ev.data;
       renderCI();
       break;
+    case "remote.updated":
+      if (!mine) break;
+      if (state.remote?.ahead !== ev.data.ahead || state.remote?.behind !== ev.data.behind) loadUnpushed().catch(() => {});
+      state.remote = ev.data;
+      renderRemote();
+      break;
   }
 }
 
@@ -699,6 +705,9 @@ async function selectProject(p) {
   renderProjectList();
   state.ci = null;
   renderCI();
+  state.remote = null;
+  renderRemote();
+  loadRemote(true).catch(() => {});
   renderChatPane();
   if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); renderFileTree(); renderFile(); return; }
   await Promise.all([loadTodos(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles()]);
@@ -1973,6 +1982,40 @@ $("#ci-investigate").addEventListener("click", attempt(async () => {
   $("#ci-sheet").close();
   toast(`Queued: ${title(t)}`);
 }));
+
+// ------------------------------------------------------------------ origin (background fetch)
+// Dash fetches origin's default branch when a project is selected and every
+// minute after, so commits pushed from another computer show up early.
+// fetch=false only keeps the project marked as selected on the server.
+async function loadRemote(fetch, force) {
+  const p = state.project;
+  if (!p?.remote_url) return;
+  const st = await api(fetch ? "POST" : "GET", `/api/projects/${p.id}/remote${fetch ? `/fetch${force ? "?force=1" : ""}` : ""}`);
+  if (state.project === p) { state.remote = st; renderRemote(); }
+}
+
+function renderRemote() {
+  const st = state.remote, pill = $("#remote-pill");
+  const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  pill.hidden = !(st?.enabled && (st.behind || st.ahead || st.error));
+  if (pill.hidden) return;
+  const b = st.branch;
+  const parts = [st.behind && `origin is ${n(st.behind, "commit", "commits")} ahead`, st.ahead && `local is ${n(st.ahead, "commit", "commits")} ahead`].filter(Boolean);
+  pill.classList.toggle("remote-error", !!st.error);
+  pill.textContent = st.error ? "Can't reach origin" : st.behind && st.ahead ? `${b}: ↓${st.behind} ↑${st.ahead}` : st.behind ? `origin/${b} +${st.behind}` : `${b} +${st.ahead} unpushed`;
+  pill.title = [
+    parts.length ? `${b}: ${parts.join(", ")}.` : "",
+    st.behind && !st.ahead ? "New tasks start from origin's version." : "",
+    st.behind && st.ahead ? "The next merge reconciles them." : "",
+    st.error ? `Last fetch failed: ${st.error}. Retrying ${st.retry_at ? `at ${new Date(st.retry_at).toLocaleTimeString()}` : "soon"}.` : "",
+    st.fetched ? `Fetched ${ago(st.fetched) === "now" ? "just now" : `${ago(st.fetched)} ago`}. Click to fetch now.` : "Click to fetch now.",
+  ].filter(Boolean).join(" ");
+  pill.setAttribute("aria-label", pill.title);
+}
+$("#remote-pill").addEventListener("click", attempt(async () => { await loadRemote(true, true); toast("Fetching origin"); }));
+// Keep the open project marked as selected so the server keeps fetching it.
+setInterval(() => { if (!document.hidden) loadRemote(false).catch(() => {}); }, 4 * 60000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) loadRemote(true).catch(() => {}); });
 
 // ------------------------------------------------------------------ project settings
 function openSettings() {

@@ -724,7 +724,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 /* ---------- menu: sidebar on desktop, drawer on mobile ---------- */
 .side-projects { order: 3; }
 .quick-actions { order: 4; margin-top: 8px; flex-wrap: wrap; }
-.ci-pill { order: 5; margin-top: 8px; }
+.ci-pill, .remote-pill { order: 5; margin-top: 8px; }
 #usage-pill { order: 6; margin-top: 8px; }
 .nav-foot { order: 7; }
 .quick-btn { flex: 1 1 auto; }
@@ -1073,6 +1073,9 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .ci-pill.ci-running { --c: var(--running); }
 .ci-pill.ci-running::before { animation: pulse-dot 1.4s ease-in-out infinite; }
 @keyframes pulse-dot { 50% { opacity: .35; } }
+/* ---- origin ahead/behind (background fetch) ---- */
+.remote-pill { --c: var(--running); }
+.remote-pill.remote-error { --c: var(--muted); color: var(--muted); font-weight: 400; }
 .ci-tag, .sentback-tag { font-size: 12px; font-weight: 600; color: var(--failed); }
 .err-text { color: var(--failed); }
 .link.inline { min-height: 0; padding: 0; font: inherit; font-weight: 600; gap: 4px; vertical-align: bottom; }

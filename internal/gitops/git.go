@@ -53,6 +53,9 @@ func (g *Git) run(ctx context.Context, publish bool, projectID, dir, bin string,
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1")
+	// When ctx ends, git is killed but a child it started (ssh) may keep the
+	// output pipe open; don't wait for it forever.
+	cmd.WaitDelay = 5 * time.Second
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err := cmd.Run()
@@ -315,6 +318,65 @@ func (g *Git) SyncWithRemote(ctx context.Context, projectID, repo, branch string
 		return &ErrDiverged{Branch: branch, Output: lastLine(out)}
 	}
 	return nil
+}
+
+// FetchBranch updates origin/<branch> from origin and nothing else: no local
+// branch or checkout moves. publish=false keeps background fetches out of the
+// activity feed. Callers bound it with a context timeout.
+func (g *Git) FetchBranch(ctx context.Context, projectID, repo, branch string, publish bool) error {
+	_, err := g.run(ctx, publish, projectID, repo, "git", "fetch", "--quiet", "--no-tags", "origin",
+		"+refs/heads/"+branch+":refs/remotes/origin/"+branch)
+	return err
+}
+
+// AheadBehind compares branch with origin/<branch> as of the last fetch:
+// ahead counts local commits origin lacks, behind origin's commits local lacks.
+func (g *Git) AheadBehind(ctx context.Context, projectID, repo, branch string) (ahead, behind int, err error) {
+	out, err := g.run(ctx, false, projectID, repo, "git", "rev-list", "--left-right", "--count",
+		"refs/heads/"+branch+"...refs/remotes/origin/"+branch, "--")
+	if err != nil {
+		return 0, 0, err
+	}
+	return ParseAheadBehind(out)
+}
+
+// ParseAheadBehind reads `git rev-list --left-right --count A...B` output.
+func ParseAheadBehind(out string) (ahead, behind int, err error) {
+	f := strings.Fields(out)
+	if len(f) != 2 {
+		return 0, 0, fmt.Errorf("unexpected rev-list output %q", out)
+	}
+	if ahead, err = strconv.Atoi(f[0]); err != nil {
+		return 0, 0, err
+	}
+	if behind, err = strconv.Atoi(f[1]); err != nil {
+		return 0, 0, err
+	}
+	return ahead, behind, nil
+}
+
+// FastForwardToOrigin moves branch to origin/<branch> (as of the last fetch)
+// when it is strictly behind it. A branch with commits origin doesn't have
+// is left alone: reconciling that is the merge step's job. moved is how many
+// commits branch gained. When repo has branch checked out its files follow
+// (see Advance), and uncommitted changes in the way stop it.
+func (g *Git) FastForwardToOrigin(ctx context.Context, projectID, repo, branch string) (moved, ahead int, err error) {
+	ahead, behind, err := g.AheadBehind(ctx, projectID, repo, branch)
+	if err != nil || ahead > 0 || behind == 0 {
+		return 0, ahead, err
+	}
+	old, err := g.run(ctx, false, projectID, repo, "git", "rev-parse", "--verify", "refs/heads/"+branch)
+	if err != nil {
+		return 0, 0, err
+	}
+	target, err := g.run(ctx, false, projectID, repo, "git", "rev-parse", "--verify", "refs/remotes/origin/"+branch)
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := g.Advance(ctx, projectID, repo, branch, old, target); err != nil {
+		return 0, 0, err
+	}
+	return behind, 0, nil
 }
 
 // FindTodoCommit finds the squash commit that landed a todo on branch, by

@@ -348,11 +348,28 @@ func (s *Server) pushProject(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: project has no remote; create one via /github first", errBadRequest))
 		return
 	}
-	if err := s.Git.Push(r.Context(), p.ID, p.Path, p.DefaultBranch); err != nil {
+	if err := s.Merges.Remote.With(r.Context(), p.ID, func() error {
+		return s.Git.Push(r.Context(), p.ID, p.Path, p.DefaultBranch)
+	}); err != nil {
 		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"pushed": p.DefaultBranch})
+}
+
+// remoteStatus reports how the default branch compares with origin's and
+// marks the project as selected, so it's fetched every minute. With fetch it
+// also fetches now, in the background: the result arrives as a
+// remote.updated event; ?force=1 fetches even while backing off after failures.
+func (s *Server) remoteStatus(fetch bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, err := s.Store.GetProject(r.PathValue("pid"))
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, s.Merges.Remote.Select(r.Context(), p, fetch, r.URL.Query().Get("force") == "1"))
+	}
 }
 
 // unpushed counts the default branch's commits (merged todos) origin doesn't have yet.

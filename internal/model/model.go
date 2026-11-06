@@ -333,6 +333,7 @@ const (
 	EvPermission     EventType = "permission.updated" // Claude asked to use a tool, or a request was answered
 	EvUsage          EventType = "usage.updated"      // subscription rate-limit usage / queue pause state
 	EvCI             EventType = "ci.updated"         // GitHub Actions status of a project's default branch
+	EvRemote         EventType = "remote.updated"     // how the default branch compares with origin's, after a fetch
 )
 
 // Event is the envelope for everything pushed over /ws/events.

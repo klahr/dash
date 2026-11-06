@@ -233,6 +233,7 @@ func main() {
 	go todos.Run(ctx)
 	merges.Resume()
 	go merges.Run(ctx) // the one and only merge worker
+	go merges.Remote.Run(ctx)
 
 	switch *chatBackend {
 	case "claude-code":

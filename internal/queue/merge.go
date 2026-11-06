@@ -56,6 +56,9 @@ type MergeQueue struct {
 	UploadRoot   string
 	CleanupAfter time.Duration // remove failed todos' worktrees untouched this long (0 = never)
 	CleanupEvery time.Duration // run a cleanup of every project this often (0 = only on request)
+	// Remote fetches origin in the background and owns the per-project lock
+	// every fetch, push and move of the default branch here takes.
+	Remote *RemoteSync
 
 	jobs    chan mergeItem
 	pending atomic.Int64
@@ -69,7 +72,8 @@ type mergeItem struct {
 
 func NewMergeQueue(s *store.Store, g *gitops.Git, pub Publisher, log *TodoLog, capacity int) *MergeQueue {
 	return &MergeQueue{Store: s, Git: g, Pub: pub, Log: log, TestTimeout: 20 * time.Minute, PRPoll: time.Minute,
-		jobs: make(chan mergeItem, capacity)}
+		Remote: &RemoteSync{Store: s, Git: g, Pub: pub},
+		jobs:   make(chan mergeItem, capacity)}
 }
 
 // Enqueue adds a job without blocking the caller (an HTTP handler).
@@ -298,7 +302,14 @@ func (m *MergeQueue) refreshRemote(ctx context.Context, p model.Project) model.P
 // branch to whatever fn committed there. The project's folder follows along
 // when it has the branch checked out, unless that would overwrite
 // uncommitted changes there (*gitops.ErrDirtyCheckout; nothing moves).
+// It holds the project's remote lock, so a background fetch or a new todo's
+// fast-forward never runs at the same time.
 func (m *MergeQueue) land(ctx context.Context, p model.Project, fn func(dir string) error) (string, error) {
+	unlock, err := m.Remote.Lock(ctx, p.ID)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 	old, err := m.Git.Head(ctx, p.ID, p.Path, p.DefaultBranch)
 	if err != nil {
 		return "", err
@@ -380,6 +391,7 @@ func (m *MergeQueue) syncRemote(ctx context.Context, p model.Project) error {
 		return err
 	}
 	m.setSyncError(p.ID, err)
+	m.Remote.recount(ctx, p)
 	if err != nil {
 		return &syncError{fmt.Errorf("can't sync %s with GitHub: %w", p.DefaultBranch, err)}
 	}
@@ -406,13 +418,17 @@ func (e *syncError) Unwrap() error { return e.error }
 // pushDefault pushes the default branch after a merge, syncing and retrying
 // once if origin moved meanwhile. A failure doesn't undo the local merge.
 func (m *MergeQueue) pushDefault(ctx context.Context, p model.Project, t model.Todo) {
-	err := m.Git.Push(ctx, p.ID, p.Path, p.DefaultBranch)
+	push := func() error {
+		return m.Remote.With(ctx, p.ID, func() error { return m.Git.Push(ctx, p.ID, p.Path, p.DefaultBranch) })
+	}
+	err := push()
 	if err != nil {
 		if err = m.syncRemote(ctx, p); err == nil {
-			err = m.Git.Push(ctx, p.ID, p.Path, p.DefaultBranch)
+			err = push()
 		}
 	}
 	m.setSyncError(p.ID, err)
+	m.Remote.recount(ctx, p)
 	if err != nil {
 		m.Log.Line(t, "⚠ push failed (merged locally; Dash pushes again after the next merge): "+err.Error())
 		return
