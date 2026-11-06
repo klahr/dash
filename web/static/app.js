@@ -63,6 +63,7 @@ const ICONS = {
   minimize: "M15 6l-6 6 6 6",
   clock: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
   spark: "M12 3v5M12 16v5M3 12h5M16 12h5M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6",
+  pin: "M9 4h6l-1 6 3 3H7l3-3zM12 13v7",
   link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
 };
 const ico = (name) => {
@@ -393,7 +394,7 @@ function saveComments() {
 
 // ------------------------------------------------------------------ navigation
 function showView(name) {
-  const apply = () => { applyView(name); if (name === "chat") chatInput.focus(); };
+  const apply = () => applyView(name);
   if (name !== state.view && document.startViewTransition && !reduceMotion.matches) {
     document.startViewTransition(apply);
     return;
@@ -412,7 +413,6 @@ function applyView(name) {
   });
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
   if (name === "run") requestAnimationFrame(() => { fitTerm(); ensureShell(); });
-  if (name === "chat") $("#chat-log").scrollTop = $("#chat-log").scrollHeight;
   if (name === "history") loadGraph().catch(fail);
 }
 $$(".nav > button[data-view]").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
@@ -603,8 +603,7 @@ async function selectProject(p) {
   renderProjectList();
   state.ci = null;
   renderCI();
-  renderBoardChat();
-  loadProjectChat().catch((e) => toast(`Couldn't load the project chat: ${e.message}`, true));
+  renderChatPane();
   if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); return; }
   await Promise.all([loadTodos(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph()]);
 }
@@ -639,7 +638,7 @@ function renderProjectHeader() {
 
 function renderProjectList() {
   renderSideProjects();
-  renderChatDock();
+  renderChatPane();
   setLabel($("#notify-toggle"), notifyOn() ? "bell-off" : "bell", notifyLabel());
 }
 
@@ -1928,7 +1927,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
     }
   });
 
-  return { reset, input, get history() { return c.history; }, get busy() { return !!c.current; } };
+  return { reset, input, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; } };
 }
 
 // Tool calls in the chat: a one-line summary, and the full input when expanded.
@@ -1962,10 +1961,13 @@ function chatPermCard(p, decide) {
       ib({ class: "btn danger", onclick: answer("deny") }, "x", "Deny")));
 }
 
-const chatActions = (pick) => (answer) => h("div", { class: "msg-actions" },
+// key: the project a project chat is about; its tasks go there even when another project is selected.
+const chatActions = (pick, key) => (answer) => h("div", { class: "msg-actions" },
   ib({ class: "link", onclick: () => {
+    pick ||= !!key && key !== projectKey(state.project);
     if (!(pick ? state.projects?.length : state.project)) return toast(pick ? "Create a project first" : "Select a project first", true);
     openTodoForm(null, { pick });
+    if (key && pick) $("#todo-form").project.value = key;
     $("#todo-form").prompt.value = answer;
   } }, "plus", "Make this a task"),
   ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
@@ -1978,7 +1980,6 @@ const chat = makeChat({
   actions: chatActions(true),
   cwd: $("#chat-cwd"),
 });
-const chatInput = chat.input;
 
 // The server saves every finished turn, so the conversation survives restarts.
 async function loadChat() {
@@ -2015,130 +2016,206 @@ const todoChat = makeChat({
   },
 });
 
-// A conversation about the current project, beside its board. It runs on the
-// project's computer, in its main checkout.
-const projectChat = makeChat({
-  log: $("#pc-log"), empty: $("#pc-empty"), form: $("#pc-form"),
-  target: () => ({ prefix: here(), project: state.project?.id }),
-  clear: () => api("DELETE", `/api/projects/${state.project.id}/chat`),
-  cwd: $("#pc-cwd"),
-  // A turn left streaming when the project was switched is saved when it finishes.
-  saved: ({ project }) => { if (project === state.project?.id && !projectChat.busy) loadProjectChat().catch(fail); },
-  actions: chatActions(false),
-});
-
-let projectChatId = null;
-async function loadProjectChat() {
-  const p = state.project;
-  if (!p) { projectChatId = null; projectChat.reset(); return; }
-  // Coming back to the project whose reply is still streaming keeps it on screen.
-  if (projectChatId === p.id && projectChat.busy) return;
-  projectChatId = p.id;
-  projectChat.reset();
-  const saved = await api("GET", `/api/projects/${p.id}/chat`);
-  if (state.project?.id === p.id && !projectChat.history.length && !projectChat.busy) projectChat.reset(saved);
-}
-
-const boardChatOpen = () => { try { return localStorage.getItem("dash.boardChat") === "1"; } catch { return false; } };
-function renderBoardChat() {
-  const open = !!state.project && boardChatOpen();
-  $("#board-chat").hidden = !open;
-  $("#pc-open").hidden = !state.project;
-  $("#pc-open").setAttribute("aria-pressed", String(open));
-  if (open && !chatTabs().includes(projectKey(state.project))) setChatTabs([...chatTabs(), projectKey(state.project)]);
-  else renderChatDock();
-}
-function toggleBoardChat(open = !boardChatOpen()) {
-  try { localStorage.setItem("dash.boardChat", open ? "1" : "0"); } catch {}
-  renderBoardChat();
-  if (open) { const log = $("#pc-log"); log.scrollTop = log.scrollHeight; projectChat.input.focus(); }
-}
-$("#pc-open").addEventListener("click", () => {
-  if (state.view !== "board") { showView("board"); toggleBoardChat(true); }
-  else toggleBoardChat();
-});
-$("#pc-close").addEventListener("click", () => {
-  setChatTabs(chatTabs().filter((k) => k !== projectKey(state.project)));
-  toggleBoardChat(false);
-});
-
-// Every project chat opened stays as a tab docked under the board, so another
-// project's conversation is one click away. Clicking the current one minimizes it.
-const chatTabs = () => { try { return JSON.parse(localStorage.getItem("dash.chatTabs") || "[]"); } catch { return []; } };
-function setChatTabs(keys) {
-  try { localStorage.setItem("dash.chatTabs", JSON.stringify(keys)); } catch {}
-  renderChatDock();
-}
-function renderChatDock() {
-  const tabs = chatTabs().map((k) => state.projects?.find((p) => projectKey(p) === k)).filter(Boolean);
-  const dock = $("#chat-dock");
-  dock.hidden = !tabs.length;
-  dock.replaceChildren(...tabs.map((p) => {
-    const cur = projectKey(p) === projectKey(state.project);
-    const open = cur && boardChatOpen();
-    return h("div", { class: `chat-tab${cur ? " current" : ""}` },
-      h("button", {
-        type: "button", class: "chat-tab-open", "aria-pressed": String(open),
-        title: open ? `Minimize the ${p.name} chat` : `Open the ${p.name} chat`,
-        onclick: attempt(async () => {
-          if (!cur) await selectProject(p);
-          if (state.view !== "board") showView("board");
-          toggleBoardChat(cur ? !open : true);
-        }),
-      },
-      projectIcon(p),
-      h("span", { class: "chat-tab-name" }, p.name)),
-      ib({ type: "button", class: "icon-btn chat-tab-close", "aria-label": `Close the ${p.name} chat`, title: "Close", onclick: () => {
-        setChatTabs(chatTabs().filter((k) => k !== projectKey(p)));
-        if (open) toggleBoardChat(false);
-      } }, "x"));
-  }));
-}
-
-// Desktop: drag the chat's left edge to resize it. The width is kept per browser.
+// ------------------------------------------------------------------ chat pane
+// One pane on the right holds every chat but the task chats: General, the
+// selected project's ("This project") and project chats kept as tabs. Each chat
+// has its own controller, so a reply keeps streaming while another tab is shown
+// or the pane is closed; the pane only switches which one is visible.
+// Overlay (default) floats over the content; pinned takes a grid column, but
+// only on wide screens. On mobile it is a full-screen sheet.
+const wide = matchMedia("(min-width: 1280px)");
 const CHAT_MIN_W = 280;
-function setBoardChatWidth(w, save = true) {
-  const view = $("#view-board");
-  if (w == null) view.style.removeProperty("--chat-w");
-  else view.style.setProperty("--chat-w", `${Math.max(CHAT_MIN_W, Math.round(w))}px`);
-  if (save) try { w == null ? localStorage.removeItem("dash.boardChatW") : localStorage.setItem("dash.boardChatW", String(Math.round(w))); } catch {}
+const pane = (() => {
+  const get = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+  const base = { open: false, pinned: false, width: null, tab: null, tabs: [] };
+  try { const s = JSON.parse(get("dash.chatPane")); if (s) return { ...base, ...s }; } catch {}
+  // Carry over the board chat's settings: it pushed the board aside, like pinned.
+  const old = get("dash.boardChat");
+  let tabs = [];
+  try { tabs = JSON.parse(get("dash.chatTabs") || "[]"); } catch {}
+  return { ...base, open: old === "1", pinned: old != null, width: Number(get("dash.boardChatW")) || null, tab: old === "1" ? "project" : null, tabs };
+})();
+function savePane() {
+  try {
+    localStorage.setItem("dash.chatPane", JSON.stringify(pane));
+    ["dash.boardChat", "dash.chatTabs", "dash.boardChatW"].forEach((k) => localStorage.removeItem(k));
+  } catch {}
+}
+savePane();
+const paneOverlays = () => !pane.pinned || !wide.matches;
+
+// Project chats, created on first use. key: projectKey.
+const projectChats = new Map();
+const projectByKey = (key) => state.projects?.find((p) => projectKey(p) === key) || null;
+function projectChatFor(p) {
+  const key = projectKey(p);
+  if (projectChats.has(key)) return projectChats.get(key);
+  const proj = () => projectByKey(key) || p;
+  const panel = $("#project-chat-tpl").content.firstElementChild.cloneNode(true);
+  panel.dataset.chat = key;
+  $("#chat-pane").append(panel);
+  const pc = { panel, loaded: false };
+  pc.chat = makeChat({
+    log: panel.querySelector(".chat-log"), empty: panel.querySelector(".chat-empty"), form: panel.querySelector("form"),
+    target: () => ({ prefix: proj().prefix || "", project: proj().id }),
+    clear: () => api("DELETE", `/api/projects/${proj().id}/chat`, null, proj().prefix || ""),
+    cwd: panel.querySelector(".chat-cwd"),
+    // A turn left streaming when the chat was cleared is saved when it finishes.
+    saved: () => { if (!pc.chat.busy) { pc.loaded = false; loadProjectChat(proj()).catch(fail); } },
+    actions: chatActions(false, key),
+  });
+  // A project chat you talk in stays as a tab after you switch projects.
+  pc.chat.input.form.addEventListener("submit", () => keepChatTab(key));
+  projectChats.set(key, pc);
+  return pc;
+}
+// The server saves every finished turn; load it once, when the chat is first shown.
+async function loadProjectChat(p) {
+  const pc = projectChatFor(p);
+  if (pc.loaded || pc.chat.busy) return;
+  pc.loaded = true;
+  const saved = await api("GET", `/api/projects/${p.id}/chat`, null, p.prefix || "");
+  if (!pc.chat.history.length && !pc.chat.busy) pc.chat.reset(saved);
+}
+
+// Kept project chats other than the selected project's, which is "This project".
+const keptTabs = () => pane.tabs.map(projectByKey).filter((p) => p && projectKey(p) !== projectKey(state.project));
+function keepChatTab(key) {
+  if (pane.tabs.includes(key)) return;
+  pane.tabs.push(key);
+  savePane();
+  renderChatPane();
+}
+// The tab shown: "general", "project", or a kept project chat's key.
+function paneTab() {
+  const t = pane.tab;
+  if (t === "general") return t;
+  if (t === "project" || (t && t === projectKey(state.project))) return "project";
+  if (t && keptTabs().some((p) => projectKey(p) === t)) return t;
+  // Unset, or a kept chat whose project is gone (or isn't loaded yet).
+  return state.project ? "project" : "general";
+}
+const tabProject = (tab) => (tab === "general" ? null : tab === "project" ? state.project : projectByKey(tab));
+// The controller of the visible tab, if it has one.
+function activeChat() {
+  const tab = paneTab();
+  if (tab === "general") return chat;
+  const p = tabProject(tab);
+  return p ? projectChatFor(p).chat : null;
+}
+
+function renderChatPane() {
+  const app = $(".app");
+  app.classList.toggle("chat-open", pane.open);
+  app.classList.toggle("chat-pinned", pane.pinned);
+  app.classList.toggle("chat-overlay", !pane.pinned);
+  if (pane.width) app.style.setProperty("--chat-w", `${Math.max(CHAT_MIN_W, Math.round(pane.width))}px`);
+  else app.style.removeProperty("--chat-w");
+  $("#chat-pane").hidden = !pane.open;
+  $("#pc-open").setAttribute("aria-pressed", String(pane.open));
+  const pin = $("#pc-pin");
+  pin.setAttribute("aria-pressed", String(pane.pinned));
+  pin.title = pane.pinned ? "Unpin the chat (overlay)" : "Pin the chat beside the content";
+  pin.setAttribute("aria-label", pin.title);
+
+  const tab = paneTab();
+  const cur = tabProject(tab);
+  const tabBtn = (id, label, kids, title = label) => h("button", {
+    type: "button", role: "tab", class: "chat-pane-tab-btn", "aria-selected": String(tab === id), title,
+    onclick: () => showChatTab(id),
+  }, ...kids, h("span", { class: "chat-tab-name" }, label));
+  $("#chat-tabs").replaceChildren(
+    h("div", { class: "chat-pane-tab" }, tabBtn("general", "General", [ico("spark")], "General chat, in your home directory")),
+    h("div", { class: "chat-pane-tab" }, tabBtn("project", "This project", [state.project ? projectIcon(state.project) : ico("repo")],
+      state.project ? `${state.project.name} (follows the project picker)` : "Follows the project picker")),
+    ...keptTabs().map((p) => h("div", { class: "chat-pane-tab" },
+      tabBtn(projectKey(p), p.name, [projectIcon(p)], multi() ? `${p.name} · ${p.machine}` : p.name),
+      ib({ type: "button", class: "icon-btn chat-tab-close", "aria-label": `Close the ${p.name} chat`, title: "Close this tab", onclick: () => {
+        pane.tabs = pane.tabs.filter((k) => k !== projectKey(p));
+        savePane();
+        renderChatPane();
+      } }, "x"))),
+  );
+
+  // Show the tab's panel; the others (and their streams) stay as they are.
+  const show = (el, on) => {
+    if (on && el.hidden && pane.open) requestAnimationFrame(() => { const log = el.querySelector(".chat-log"); if (log) log.scrollTop = log.scrollHeight; });
+    el.hidden = !on;
+  };
+  show($("#chat-general"), tab === "general");
+  show($("#chat-noproject"), tab === "project" && !state.project);
+  if (cur && pane.open) projectChatFor(cur);
+  for (const [key, pc] of projectChats) show(pc.panel, !!cur && key === projectKey(cur));
+  $("#pc-clear").disabled = !activeChat();
+  if (cur && pane.open) loadProjectChat(cur).catch((e) => toast(`Couldn't load the project chat: ${e.message}`, true));
+}
+
+function showChatTab(tab) {
+  pane.tab = tab;
+  savePane();
+  renderChatPane();
+  if (desktop.matches) activeChat()?.input.focus();
+}
+// open: true/false, or toggle. tab: the tab to show, or the last one.
+function toggleChatPane(open = !pane.open, tab = null) {
+  pane.open = open;
+  if (tab) pane.tab = tab;
+  savePane();
+  renderChatPane();
+  if (open) activeChat()?.input.focus();
+  else if ($("#chat-pane").contains(document.activeElement)) document.activeElement.blur();
+}
+function togglePin() {
+  pane.pinned = !pane.pinned;
+  savePane();
+  renderChatPane();
+  if (pane.pinned && !wide.matches) toast("Pinned. The chat sits beside the content on wider windows.");
+}
+wide.addEventListener("change", renderChatPane);
+$("#pc-open").addEventListener("click", () => toggleChatPane());
+$("#pc-close").addEventListener("click", () => toggleChatPane(false));
+$("#pc-pin").addEventListener("click", togglePin);
+$("#pc-clear").addEventListener("click", attempt(async () => {
+  const c = activeChat();
+  if (c?.history.length) await c.clear();
+}));
+
+// Desktop: drag the pane's left edge to resize it, overlaid or pinned.
+function setChatWidth(w, save = true) {
+  pane.width = w == null ? null : Math.max(CHAT_MIN_W, Math.round(w));
+  if (pane.width) $(".app").style.setProperty("--chat-w", `${pane.width}px`);
+  else $(".app").style.removeProperty("--chat-w");
+  if (save) savePane();
 }
 {
-  const saved = (() => { try { return Number(localStorage.getItem("dash.boardChatW")) || null; } catch { return null; } })();
-  if (saved) setBoardChatWidth(saved, false);
-  const handle = $("#pc-resize"), panel = $("#board-chat");
+  const handle = $("#pc-resize"), panel = $("#chat-pane");
   handle.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
     handle.setPointerCapture(e.pointerId);
     handle.classList.add("dragging");
     const right = panel.getBoundingClientRect().right;
-    const move = (ev) => setBoardChatWidth(right - ev.clientX, false);
+    const move = (ev) => setChatWidth(right - ev.clientX, false);
     const up = () => {
       handle.removeEventListener("pointermove", move);
       handle.classList.remove("dragging");
-      setBoardChatWidth(panel.getBoundingClientRect().width);
+      setChatWidth(panel.getBoundingClientRect().width);
     };
     handle.addEventListener("pointermove", move);
     handle.addEventListener("pointerup", up, { once: true });
     handle.addEventListener("pointercancel", up, { once: true });
   });
-  handle.addEventListener("dblclick", () => setBoardChatWidth(null));
+  handle.addEventListener("dblclick", () => setChatWidth(null));
   handle.addEventListener("keydown", (e) => {
     const step = e.shiftKey ? 64 : 16;
     const d = e.key === "ArrowLeft" ? step : e.key === "ArrowRight" ? -step : 0;
     if (!d) return;
     e.preventDefault();
     e.stopPropagation();
-    setBoardChatWidth(panel.getBoundingClientRect().width + d);
+    setChatWidth(panel.getBoundingClientRect().width + d);
   });
 }
-$("#pc-clear").addEventListener("click", attempt(async () => {
-  const p = state.project;
-  if (!p || !projectChat.history.length) return;
-  await api("DELETE", `/api/projects/${p.id}/chat`);
-  if (state.project?.id === p.id) projectChat.reset();
-}));
+renderChatPane();
 
 let todoChatId = null;
 async function loadTodoChat() {
@@ -2534,7 +2611,7 @@ async function reorder(t, laneKey, index) {
 // ------------------------------------------------------------------ vim keys
 // Normal mode is the default; typing in a field or the terminal is insert
 // mode. Esc (Ctrl-] in the terminal) returns to normal mode.
-const VIEWS = ["board", "chat", "run", "activity", "history"];
+const VIEWS = ["board", "run", "activity", "history"];
 const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
 const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gc|gs|ga|gh|G|u|p|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
@@ -2579,7 +2656,6 @@ function moveCursor(lane, row) {
 // The element j/k and Ctrl-d/u scroll in the current context.
 function scroller() {
   if (state.detail) return $(".detail-body");
-  if (state.view === "chat") return $("#chat-log");
   return desktop.matches ? $(".view.active") : document.scrollingElement;
 }
 
@@ -2643,7 +2719,8 @@ async function runCommand(line) {
   switch (name) {
     case "q": case "q!": case "close": closeDetail(); openDialog()?.close(); return;
     case "b": case "board": return showView("board");
-    case "c": case "chat": return showView("chat");
+    case "c": case "chat": return toggleChatPane();
+    case "pin": case "unpin": return togglePin();
     case "run": case "!": case "sh": case "shell":
       if (!arg) return showView("run");
       need(); return startProc({ kind: "pty", command: arg });
@@ -2687,7 +2764,11 @@ async function runCommand(line) {
       return $("#perm-banner").scrollIntoView({ block: "nearest" });
     case "noh": case "nohlsearch": return clearSearch();
     case "notify": case "notifications": return toggleNotifications();
-    case "clear": api("DELETE", "/api/chat").catch(fail); chat.reset(); return;
+    case "clear": {
+      const c = activeChat();
+      if (!c) throw new Error("Pick a project first.");
+      return c.clear();
+    }
     case "help": case "h": return $("#keys-sheet").showModal();
     case "logout": return logout();
     case "e": case "e!": case "refresh": return loadProjects();
@@ -2738,8 +2819,8 @@ function paletteCommands() {
   return [
     p && ["New task", "plus", () => openTodoForm(), "a", "add create todo"],
     ["Board", "flag", go("board"), "gb", "view lanes"],
-    ["Chat", "comment", go("chat"), "gc", "global claude ask view"],
-    p && [state.view === "board" && boardChatOpen() ? "Close project chat" : "Open project chat", "comment", () => { closeDetail(); $("#pc-open").click(); }, "", "claude ask"],
+    ["Toggle chat", "comment", () => toggleChatPane(), "gc", "chat open close claude ask project general"],
+    [pane.pinned ? "Unpin chat" : "Pin chat", "pin", togglePin, ":pin", "pin unpin chat overlay dock"],
     ["Shell", "terminal", go("run"), "gs", "run terminal processes view"],
     ["Activity", "log", go("activity"), "ga", "events view"],
     ["History", "log", go("history"), "gh", "git graph tree commits view"],
@@ -2798,10 +2879,10 @@ function paletteResults(raw) {
   if (q && !mode && state.project) {
     out.push(
       { kind: "Action", label: `New task: ${q}`, icon: "plus", run: () => { openTodoForm(); $("#todo-form").prompt.value = q; promptEditor.render(); draft.changed(); } },
-      { kind: "Action", label: `Ask the project chat: ${q}`, icon: "comment", run: () => askChat(projectChat.input, $("#pc-form"), q, () => { closeDetail(); showView("board"); toggleBoardChat(true); }) },
+      { kind: "Action", label: `Ask the project chat: ${q}`, icon: "comment", run: () => { const c = projectChatFor(state.project).chat; askChat(c.input, c.input.form, q, () => toggleChatPane(true, "project")); } },
     );
   }
-  if (q && !mode) out.push({ kind: "Action", label: `Ask Claude: ${q}`, icon: "spark", run: () => askChat(chatInput, $("#chat-form"), q, () => { closeDetail(); showView("chat"); }) });
+  if (q && !mode) out.push({ kind: "Action", label: `Ask Claude: ${q}`, icon: "spark", run: () => askChat(chat.input, $("#chat-form"), q, () => toggleChatPane(true, "general")) });
   return out;
 }
 
@@ -2991,7 +3072,7 @@ async function handleNormal(k, n, hadCount) {
     case "gt": return showView(VIEWS[(VIEWS.indexOf(state.view) + n) % VIEWS.length]);
     case "gT": return showView(VIEWS[(VIEWS.indexOf(state.view) - n + VIEWS.length * n) % VIEWS.length]);
     case "gb": return showView("board");
-    case "gc": return showView("chat");
+    case "gc": return toggleChatPane();
     case "gs": return showView("run");
     case "ga": return showView("activity");
     case "gh": return showView("history");
@@ -3000,6 +3081,7 @@ async function handleNormal(k, n, hadCount) {
     case "o": return openSections();
     case "Escape": case "q":
       if (menuOpen()) return setMenu(false);
+      if (k === "Escape" && pane.open && paneOverlays()) return toggleChatPane(false);
       if (state.detail) return closeDetail();
       if (k === "Escape" && state.query) return clearSearch();
       return;
@@ -3061,10 +3143,6 @@ async function handleNormal(k, n, hadCount) {
       if (t) await todoKey(t, k);
       return;
     }
-    case "chat":
-      if (["i", "a", "I", "A"].includes(k)) return chatInput.focus();
-      if (["j", "k", "ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b", "gg", "G"].includes(k)) return scrollBy($("#chat-log"), k, n);
-      return;
     case "run": {
       const cur = state.procs.find((p) => p.id === attached);
       switch (k) {
