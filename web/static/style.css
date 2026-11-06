@@ -71,6 +71,10 @@ svg { width: 20px; height: 20px; fill: currentColor; flex: none; }
   border: 1px solid var(--line); background: var(--surface); font-weight: 500; white-space: nowrap;
 }
 .chip-btn:hover { border-color: var(--accent); }
+.ico { width: 18px; height: 18px; }
+.link, .chip-btn, .segmented button, .foot-menu-list button, .side-action { display: inline-flex; align-items: center; gap: 6px; }
+.btn.small .ico, .link .ico, .chip-btn .ico, .segmented .ico, .foot-menu-list .ico { width: 16px; height: 16px; }
+.side-action .ico { width: 13px; height: 13px; }
 input, textarea {
   width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-m);
   padding: 11px 12px; font-size: 16px; /* no iOS zoom */ outline: none;
@@ -481,7 +485,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .search-count { font-size: 13px; white-space: nowrap; font-family: var(--ui); }
 .diffsize { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .push-done { display: block; width: calc(100% - 32px); margin: 8px 16px; }
-.older { display: block; margin: 4px 16px 16px 52px; min-height: 36px; font-size: 14px; }
+.older { display: flex; margin: 4px 16px 16px 52px; min-height: 36px; font-size: 14px; }
 .msg-actions { display: flex; gap: 14px; margin-top: 6px; }
 .msg-actions .link { min-height: 32px; padding: 0; font-size: 14px; }
 .diff-lines div[data-ln] { cursor: pointer; }
@@ -827,7 +831,8 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 @keyframes pulse-dot { 50% { opacity: .35; } }
 .ci-tag { font-size: 12px; font-weight: 600; color: var(--failed); }
 .err-text { color: var(--failed); }
-.link.inline { min-height: 0; padding: 0; font: inherit; font-weight: 600; }
+.link.inline { min-height: 0; padding: 0; font: inherit; font-weight: 600; gap: 4px; vertical-align: bottom; }
+.link.inline .ico { width: 1em; height: 1em; }
 .runs { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .run { --c: var(--muted); display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--r-m); color: var(--text); text-decoration: none; transition: border-color .15s, background-color .15s; }
 .run:hover { border-color: var(--c); background: color-mix(in srgb, var(--c) 6%, transparent); }

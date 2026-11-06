@@ -98,7 +98,7 @@
             <summary class="icon-btn" aria-label="Account menu" title="Account menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
             <div class="foot-menu-list">
               <button id="notify-toggle" type="button"></button>
-              <button id="logout" type="button">Log out</button>
+              <button id="logout" type="button" data-icon="logout">Log out</button>
             </div>
           </details>
         </div>
@@ -119,7 +119,7 @@
           <span aria-hidden="true">/</span>
           <input id="search-input" placeholder="Search todos" aria-label="Search todos" autocomplete="off" spellcheck="false">
           <span class="search-count" id="search-count"></span>
-          <button class="link" id="search-clear" type="button">Clear</button>
+          <button class="link" id="search-clear" type="button" data-icon="x">Clear</button>
         </div>
         <div class="sync-warn" id="sync-warn" role="alert" hidden></div>
         <div class="perm-list" id="perm-banner" hidden></div>
@@ -154,15 +154,15 @@
       <!-- Shell -->
       <section class="view" id="view-run" aria-label="Shell">
         <div class="run-actions">
-          <button class="chip-btn" data-run="pty:">Open shell</button>
+          <button class="chip-btn" data-run="pty:" data-icon="terminal">Open shell</button>
         </div>
         <form class="run-custom" id="run-custom">
           <input name="cmd" placeholder="Run a command…" aria-label="Command" autocomplete="off" spellcheck="false">
-          <button class="btn">Run</button>
+          <button class="btn" data-icon="play">Run</button>
         </form>
         <ul class="procs" id="procs"></ul>
         <div class="term-wrap" id="term-wrap" hidden>
-          <div class="term-head"><span id="term-title"></span><button class="link" id="term-close">Close</button></div>
+          <div class="term-head"><span id="term-title"></span><button class="link" id="term-close" data-icon="x">Close</button></div>
           <div id="term"></div>
         </div>
       </section>
@@ -208,9 +208,9 @@
           <pre class="log" id="d-checks-output"></pre>
         </details>
         <div class="segmented" role="tablist">
-          <button role="tab" data-pane="diff" aria-selected="true">Changes <span id="d-diffstat"></span></button>
-          <button role="tab" data-pane="log" aria-selected="false">Log</button>
-          <button role="tab" data-pane="chat" aria-selected="false">Chat</button>
+          <button role="tab" data-pane="diff" aria-selected="true" data-icon="diff">Changes <span id="d-diffstat"></span></button>
+          <button role="tab" data-pane="log" aria-selected="false" data-icon="log">Log</button>
+          <button role="tab" data-pane="chat" aria-selected="false" data-icon="comment">Chat</button>
         </div>
         <div class="pane" id="d-diff"></div>
         <pre class="pane log" id="d-log" hidden></pre>
@@ -245,8 +245,8 @@
       </div>
       <p class="hint">Lower priority numbers run first.</p>
       <footer class="sheet-actions">
-        <button class="btn" value="draft" id="todo-save-draft">Save as draft</button>
-        <button class="btn primary" value="queue">Add to queue</button>
+        <button class="btn" value="draft" id="todo-save-draft" data-icon="draft">Save as draft</button>
+        <button class="btn primary" value="queue" data-icon="queue">Add to queue</button>
       </footer>
     </form>
   </dialog>
@@ -261,7 +261,7 @@
       <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" placeholder="npm run dev -- --port $PORT" spellcheck="false"></label>
       <label class="field"><span>Test command</span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>
       <label class="field"><span>Deploy command</span><input name="deploy_command" placeholder="./deploy.sh" spellcheck="false"></label>
-      <button class="btn primary">Create project</button>
+      <button class="btn primary" data-icon="plus">Create project</button>
     </form>
   </dialog>
 
@@ -283,8 +283,8 @@
       <p class="hint" id="ci-summary"></p>
       <ul class="runs" id="ci-runs"></ul>
       <footer class="sheet-actions">
-        <button class="btn" type="button" id="ci-refresh">Check now</button>
-        <button class="btn primary" type="button" id="ci-investigate" hidden>Ask Claude to fix it</button>
+        <button class="btn" type="button" id="ci-refresh" data-icon="redo">Check now</button>
+        <button class="btn primary" type="button" id="ci-investigate" hidden data-icon="spark">Ask Claude to fix it</button>
       </footer>
     </form>
   </dialog>
@@ -316,7 +316,7 @@
         <label class="field inline"><span>Turn limit per run</span><input type="number" name="max_turns" min="1" inputmode="numeric" placeholder="200"></label>
       </div>
       <p class="hint">Stops a run that goes on too long. Time spent waiting for your approval doesn't count.</p>
-      <footer class="sheet-actions"><button class="btn primary" value="save">Save settings</button></footer>
+      <footer class="sheet-actions"><button class="btn primary" value="save" data-icon="check">Save settings</button></footer>
     </form>
   </dialog>
 
@@ -328,8 +328,8 @@
       <textarea id="ask-input" rows="4" hidden></textarea>
       <div class="attach" id="ask-attach" data-attach hidden></div>
       <footer class="sheet-actions">
-        <button class="btn" value="cancel" formnovalidate>Cancel</button>
-        <button class="btn primary" value="ok" id="ask-ok">OK</button>
+        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
+        <button class="btn primary" value="ok" id="ask-ok" data-icon="check">OK</button>
       </footer>
     </form>
   </dialog>

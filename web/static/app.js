@@ -16,6 +16,54 @@ const h = (tag, props = {}, ...kids) => {
   el.append(...kids.flat().filter((k) => k != null && k !== false));
   return el;
 };
+// Line icons for buttons on a 24px grid. Static buttons name theirs with data-icon.
+const ICONS = {
+  plus: "M12 5v14M5 12h14",
+  check: "m5 12.5 4.5 4.5L19 7.5",
+  checks: "m2 12.5 4.5 4.5L16 7.5M11 16l1 1 9-9.5",
+  x: "M6 6l12 12M18 6 6 18",
+  edit: "M4 20h4L18.5 9.5a2.8 2.8 0 0 0-4-4L4 16v4zM13.5 6.5l4 4",
+  copy: "M9 9h11v11H9zM5 15H4V4h11v1",
+  trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
+  play: "M8 5.5v13l10.5-6.5z",
+  pause: "M8 5v14M16 5v14",
+  stop: "M6 6h12v12H6z",
+  send: "M4 12 20 4l-6 16-3-7zM11 13l9-9",
+  queue: "M4 6h12M4 12h12M4 18h7M18 14v7M14.5 17.5h7",
+  draft: "M6 3h8l4 4v14H6zM14 3v4h4M9 13h6M9 17h4",
+  inbox: "M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z",
+  redo: "M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4",
+  undo: "M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3",
+  merge: "M7 4v16M7 8c0 4 4 6 10 6M17 11l3 3-3 3",
+  external: "M14 4h6v6M20 4l-9 9M18 14v5H5V6h5",
+  push: "M12 20V8m0 0-5 5m5-5 5 5M5 4h14",
+  repo: "M7 18a4 4 0 0 1-.5-8A6 6 0 0 1 18 9a4 4 0 0 1-1 9M12 12v7M9 15l3-3 3 3",
+  eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
+  bell: "M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 21h4",
+  "bell-off": "M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 21h4M3 3l18 18",
+  logout: "M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10",
+  terminal: "m5 8 4 4-4 4M12 17h7",
+  code: "m8 8-4 4 4 4M16 8l4 4-4 4",
+  comment: "M5 5h14v10H10l-5 4z",
+  diff: "M12 4v8M8 8h8M8 18h8",
+  log: "M4 6h16M4 12h16M4 18h10",
+  flag: "M5 21V4h12l-2 4 2 4H5",
+  down: "m7 10 5 5 5-5",
+  up: "m7 14 5-5 5 5",
+  right: "M5 12h14m-5-5 5 5-5 5",
+  clock: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+  spark: "M12 3v5M12 16v5M3 12h5M16 12h5M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6",
+  link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
+};
+const ico = (name) => {
+  const t = document.createElement("template");
+  t.innerHTML = `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[name]}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  return t.content.firstChild;
+};
+const setLabel = (el, name, text) => el.replaceChildren(ico(name), text);
+const ib = (props, name, ...kids) => h("button", props, ico(name), ...kids);
+for (const el of $$("[data-icon]")) el.prepend(ico(el.dataset.icon));
+
 const wsURL = (path) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
 const desktop = matchMedia("(min-width: 1024px)");
 
@@ -92,7 +140,7 @@ function ask({ title, body = "", input = false, placeholder = "", ok = "OK", dan
   field.value = "";
   field.placeholder = placeholder;
   const okBtn = $("#ask-ok");
-  okBtn.textContent = ok;
+  setLabel(okBtn, danger ? "trash" : "check", ok);
   okBtn.className = `btn ${danger ? "danger" : "primary"}`;
   d.returnValue = "";
   d.showModal();
@@ -209,7 +257,7 @@ const draft = drafts({
     if (st === "saved") { el.replaceChildren("Draft saved on this device"); return; }
     if (st === "restored") {
       el.replaceChildren(`Restored your unsaved draft from ${ago(new Date(at).toISOString()) === "now" ? "just now" : `${ago(new Date(at).toISOString())} ago`}. `,
-        h("button", { type: "button", class: "link inline", onclick: discardDraft }, "Discard it"));
+        ib({ type: "button", class: "link inline", onclick: discardDraft }, "trash", "Discard it"));
       return;
     }
     el.replaceChildren();
@@ -495,7 +543,7 @@ function renderProjectHeader() {
 
 function renderProjectList() {
   renderSideProjects();
-  $("#notify-toggle").textContent = notifyLabel();
+  setLabel($("#notify-toggle"), notifyOn() ? "bell-off" : "bell", notifyLabel());
 }
 
 const notifyLabel = () => notifyOn() ? "Turn off notifications" : "Turn on notifications";
@@ -505,7 +553,7 @@ const notifyLabel = () => notifyOn() ? "Turn off notifications" : "Turn on notif
 function projectActions(p) {
   if (!p) return [];
   return [
-    p.remote_url ? null : h("button", { type: "button", class: "side-action", title: "No GitHub remote yet", onclick: attempt(createGitHubRepo) }, "Create GitHub repo"),
+    p.remote_url ? null : ib({ type: "button", class: "side-action", title: "No GitHub remote yet", onclick: attempt(createGitHubRepo) }, "repo", "Create GitHub repo"),
   ].filter(Boolean);
 }
 
@@ -627,7 +675,7 @@ async function pushDone() {
 function pushBar() {
   const n = state.unpushed;
   if (!n) return null;
-  return h("button", { type: "button", class: "btn primary push-done", onclick: attempt(pushDone) },
+  return ib({ type: "button", class: "btn primary push-done", onclick: attempt(pushDone) }, "push",
     `Push ${n} ${n === 1 ? "commit" : "commits"} to ${state.project.default_branch}`);
 }
 
@@ -698,7 +746,7 @@ function renderBoardNow() {
       art("img/empty-board.webp", 480, 360),
       h("p", { class: "empty-title" }, "Create your first project"),
       h("p", {}, "A project is a git repository. Every todo runs in its own worktree, so several can run at once."),
-      h("button", { class: "btn primary", onclick: openNewProject }, "New project"));
+      ib({ class: "btn primary", onclick: openNewProject }, "plus", "New project"));
     $("#new-todo").hidden = true;
     return;
   }
@@ -744,7 +792,7 @@ function renderBoardNow() {
 function oldToggle() {
   const hidden = [...state.todos.values()].filter((t) => isOld(t) && matches(t, state.query)).length;
   if (!hidden && !state.showOld) return null;
-  return h("button", { class: "link older", onclick: () => { state.showOld = !state.showOld; renderBoard(); } },
+  return ib({ class: "link older", onclick: () => { state.showOld = !state.showOld; renderBoard(); } }, state.showOld ? "up" : "down",
     state.showOld ? "Hide merged todos older than a day" : `Show ${hidden} older merged ${hidden === 1 ? "todo" : "todos"}`);
 }
 
@@ -925,7 +973,7 @@ function renderDetail() {
   renderChecks(t);
   renderPerms();
   $("#d-prompt").replaceChildren(
-    h("button", { type: "button", class: "btn small copy-prompt", onclick: attempt(() => copy(t.prompt, "Prompt copied")) }, "Copy"),
+    ib({ type: "button", class: "btn small copy-prompt", onclick: attempt(() => copy(t.prompt, "Prompt copied")) }, "copy", "Copy"),
     t.prompt,
     ...(t.feedback?.length ? [h("ol", { class: "feedback-list" }, t.feedback.map((f) => h("li", {}, f)))] : []));
   $("#d-prompt-wrap").open = !t.worktree;
@@ -937,40 +985,40 @@ function renderDetail() {
 
 function renderActions(t) {
   const post = (verb, body, msg) => attempt(async () => { await api("POST", `/api/todos/${t.id}/${verb}`, body); toast(msg); });
-  const b = (label, onclick, cls = "") => h("button", { class: `btn ${cls}`, onclick }, label);
+  const b = (icon, label, onclick, cls = "") => ib({ class: `btn ${cls}`, onclick }, icon, label);
   const rework = attempt(() => reworkTodo(t));
   const btns = [];
   switch (t.status) {
     case "draft":
-      btns.push(b("Edit", () => openTodoForm(t)), b("Add to queue", post("enqueue", null, "Added to queue"), "primary grow"));
+      btns.push(b("edit", "Edit", () => openTodoForm(t)), b("queue", "Add to queue", post("enqueue", null, "Added to queue"), "primary grow"));
       break;
     case "queued":
-      btns.push(b("Edit", () => openTodoForm(t)), b("Move to drafts", post("cancel", null, "Moved to drafts"), "grow"));
-      if (t.paused) btns.push(b("Resume", post("resume", null, "Resumed"), "primary grow"));
+      btns.push(b("edit", "Edit", () => openTodoForm(t)), b("inbox", "Move to drafts", post("cancel", null, "Moved to drafts"), "grow"));
+      if (t.paused) btns.push(b("play", "Resume", post("resume", null, "Resumed"), "primary grow"));
       break;
     case "in_progress":
-      if (!t.paused) btns.push(b("Pause", post("pause", null, "Pausing")));
-      btns.push(b("Stop", post("cancel", null, "Stopping"), "danger grow"));
+      if (!t.paused) btns.push(b("pause", "Pause", post("pause", null, "Pausing")));
+      btns.push(b("stop", "Stop", post("cancel", null, "Stopping"), "danger grow"));
       break;
     case "review":
       if (commentsFor(t.id).length) {
-        btns.push(b(`Send ${commentsFor(t.id).length} ${commentsFor(t.id).length === 1 ? "comment" : "comments"}`, attempt(() => sendComments(t)), "primary"));
+        btns.push(b("send", `Send ${commentsFor(t.id).length} ${commentsFor(t.id).length === 1 ? "comment" : "comments"}`, attempt(() => sendComments(t)), "primary"));
       } else {
-        btns.push(b("Rework", rework));
+        btns.push(b("redo", "Rework", rework));
       }
-      btns.push(b("Approve and merge", post("approve", null, "Approved — merging"), "review grow"));
+      btns.push(b("merge", "Approve and merge", post("approve", null, "Approved — merging"), "review grow"));
       break;
     case "merging":
-      if (t.pr) btns.push(h("a", { class: "btn primary grow", href: t.pr.url, target: "_blank", rel: "noopener" }, `Open pull request #${t.pr.number}`));
+      if (t.pr) btns.push(h("a", { class: "btn primary grow", href: t.pr.url, target: "_blank", rel: "noopener" }, ico("external"), `Open pull request #${t.pr.number}`));
       break;
     case "failed":
-      btns.push(t.worktree ? b("Rework", rework) : b("Edit", () => openTodoForm(t)));
+      btns.push(t.worktree ? b("redo", "Rework", rework) : b("edit", "Edit", () => openTodoForm(t)));
       btns.push(t.worktree && t.error?.startsWith("merge:")
-        ? b("Retry merge", post("approve", null, "Merging again"), "review grow")
-        : b("Retry", post("enqueue", null, "Queued again"), "primary grow"));
+        ? b("merge", "Retry merge", post("approve", null, "Merging again"), "review grow")
+        : b("redo", "Retry", post("enqueue", null, "Queued again"), "primary grow"));
       break;
     case "merged":
-      if (!t.revert) btns.push(b("Revert", attempt(() => revertTodo(t)), "grow"));
+      if (!t.revert) btns.push(b("undo", "Revert", attempt(() => revertTodo(t)), "grow"));
       break;
   }
   $("#d-actions").replaceChildren(...btns);
@@ -981,21 +1029,21 @@ $("#d-more").addEventListener("click", attempt(async () => {
   if (!t) return;
   const choices = [];
   if (t.worktree && ["review", "failed"].includes(t.status)) {
-    choices.push(["Try it: start server in this worktree", () => startProc({ kind: "web", preset: "run", todo_id: t.id })]);
-    choices.push(["Open shell in this worktree", () => startProc({ kind: "pty", todo_id: t.id })]);
+    choices.push(["play", "Try it: start server in this worktree", () => startProc({ kind: "web", preset: "run", todo_id: t.id })]);
+    choices.push(["terminal", "Open shell in this worktree", () => startProc({ kind: "pty", todo_id: t.id })]);
   }
-  if (t.pr) choices.push([`Open pull request #${t.pr.number}`, () => window.open(t.pr.url, "_blank", "noopener")]);
-  if (t.status === "merged" && !t.revert) choices.push(["Revert this change", () => revertTodo(t)]);
+  if (t.pr) choices.push(["external", `Open pull request #${t.pr.number}`, () => window.open(t.pr.url, "_blank", "noopener")]);
+  if (t.status === "merged" && !t.revert) choices.push(["undo", "Revert this change", () => revertTodo(t)]);
   if (!["in_progress", "merging"].includes(t.status)) {
-    choices.push([t.goal ? "Unmark milestone" : "Mark as milestone", () => api("PATCH", `/api/todos/${t.id}`, { goal: !t.goal })]);
-    if (t.worktree && state.project?.test_command) choices.push(["Run the tests again", () => api("POST", `/api/todos/${t.id}/test`).then(() => toast("Running tests…"))]);
-    choices.push(["Duplicate as a new draft", () => api("POST", `/api/todos/${t.id}/duplicate`).then(() => toast("Duplicated as a draft"))]);
+    choices.push(["flag", t.goal ? "Unmark milestone" : "Mark as milestone", () => api("PATCH", `/api/todos/${t.id}`, { goal: !t.goal })]);
+    if (t.worktree && state.project?.test_command) choices.push(["check", "Run the tests again", () => api("POST", `/api/todos/${t.id}/test`).then(() => toast("Running tests…"))]);
+    choices.push(["copy", "Duplicate as a new draft", () => api("POST", `/api/todos/${t.id}/duplicate`).then(() => toast("Duplicated as a draft"))]);
     if (t.worktree) {
-      choices.push(["Open worktree in editor", () => api("POST", `/api/todos/${t.id}/open`).then(() => toast("Opening in your editor"))]);
-      choices.push([`Copy branch name (${t.worktree.branch})`, () => copy(t.worktree.branch, "Branch name copied")]);
-      choices.push(["Copy worktree path", () => copy(t.worktree.path, "Path copied")]);
+      choices.push(["code", "Open worktree in editor", () => api("POST", `/api/todos/${t.id}/open`).then(() => toast("Opening in your editor"))]);
+      choices.push(["copy", `Copy branch name (${t.worktree.branch})`, () => copy(t.worktree.branch, "Branch name copied")]);
+      choices.push(["copy", "Copy worktree path", () => copy(t.worktree.path, "Path copied")]);
     }
-    choices.push(["Delete todo", async () => {
+    choices.push(["trash", "Delete todo", async () => {
       if (await ask({ title: "Delete this todo?", body: "Its worktree and branch are removed too. This can't be undone.", ok: "Delete", danger: true })) {
         await api("DELETE", `/api/todos/${t.id}`);
         closeDetail();
@@ -1003,7 +1051,7 @@ $("#d-more").addEventListener("click", attempt(async () => {
       }
     }]);
   }
-  if (todoChat.history.length) choices.push(["Clear this todo's chat", () => api("DELETE", `/api/todos/${t.id}/chat`).then(() => { if (state.detail === t.id) todoChat.reset(); })]);
+  if (todoChat.history.length) choices.push(["x", "Clear this todo's chat", () => api("DELETE", `/api/todos/${t.id}/chat`).then(() => { if (state.detail === t.id) todoChat.reset(); })]);
   if (!choices.length) return;
   await menu(choices);
 }));
@@ -1036,10 +1084,10 @@ function menu(choices) {
   $("#ask-body").hidden = true;
   $("#ask-input").hidden = true;
   $("#ask-ok").hidden = true;
-  const list = h("div", { class: "project-list" }, choices.map(([label, fn]) => h("button", {
+  const list = h("div", { class: "project-list" }, choices.map(([icon, label, fn]) => ib({
     type: "button", class: "btn", style: "width:100%;margin-bottom:8px",
     onclick: attempt(async () => { d.close(); await fn(); }),
-  }, label)));
+  }, icon, label)));
   $("#ask-body").after(list);
   d.showModal();
   return new Promise((r) => d.addEventListener("close", () => { list.remove(); $("#ask-ok").hidden = false; r(); }, { once: true }));
@@ -1109,10 +1157,10 @@ function diffLines(f) {
     for (const c of comments.filter((c) => c.line === ln && c.side === side)) {
       rows.push(h("div", { class: "comment" },
         h("span", {}, c.text),
-        h("button", { class: "link", type: "button", "aria-label": "Delete comment", onclick: () => {
+        ib({ class: "link", type: "button", "aria-label": "Delete comment", onclick: () => {
           state.comments[state.detail] = commentsFor(state.detail).filter((x) => x !== c);
           saveComments(); renderPane(); renderActions(state.todos.get(state.detail));
-        } }, "Delete")));
+        } }, "trash", "Delete")));
     }
   }
   return rows;
@@ -1195,8 +1243,8 @@ $("#d-diff").addEventListener("click", (e) => {
   const box = h("form", { class: "comment-box" },
     h("textarea", { rows: 3, placeholder: "What should Claude change here?", "aria-label": "Comment on this line" }),
     h("div", { class: "comment-actions" },
-      h("button", { type: "button", class: "btn", onclick: () => box.remove() }, "Cancel"),
-      h("button", { class: "btn primary" }, "Add comment")));
+      ib({ type: "button", class: "btn", onclick: () => box.remove() }, "x", "Cancel"),
+      ib({ class: "btn primary" }, "comment", "Add comment")));
   box.addEventListener("submit", (ev) => {
     ev.preventDefault();
     const text = box.querySelector("textarea").value.trim();
@@ -1270,10 +1318,10 @@ function permCard(p, withTodo) {
     d.note ? h("p", { class: "hint", style: "margin:0" }, d.note) : null,
     d.detail ? h("code", { class: "perm-cmd" }, d.detail) : null,
     h("div", { class: "perm-actions" },
-      h("button", { class: "btn allow", onclick: decide("allow") }, "Allow"),
-      h("button", { class: "btn", onclick: decide("always") }, `Always allow ${p.tool}`),
-      h("button", { class: "btn danger", onclick: decide("deny") }, "Deny"),
-      withTodo && t ? h("button", { class: "link", onclick: () => openDetail(t.id) }, "Open todo") : null));
+      ib({ class: "btn allow", onclick: decide("allow") }, "check", "Allow"),
+      ib({ class: "btn", onclick: decide("always") }, "checks", `Always allow ${p.tool}`),
+      ib({ class: "btn danger", onclick: decide("deny") }, "x", "Deny"),
+      withTodo && t ? ib({ class: "link", onclick: () => openDetail(t.id) }, "right", "Open todo") : null));
 }
 
 function renderPerms() {
@@ -1355,7 +1403,7 @@ function renderUsage() {
   $("#usage-note").textContent = u.pause_at > 0 && u.pause_at < 1
     ? `The queue pauses automatically at ${Math.round(u.pause_at * 100)}% of any window.`
     : "The queue pauses automatically when a window's limit is reached.";
-  $("#queue-toggle").textContent = u.manual_pause ? "Resume queue" : "Pause queue";
+  setLabel($("#queue-toggle"), u.manual_pause ? "play" : "pause", u.manual_pause ? "Resume queue" : "Pause queue");
   $("#queue-toggle").className = `btn ${u.manual_pause ? "primary" : ""}`;
 }
 
@@ -1397,7 +1445,7 @@ function renderCI() {
     `${CI_LABEL[st.state]} on ${st.branch || "the default branch"}`,
     st.sha ? ` at ${st.sha.slice(0, 8)}` : "", ". ",
     st.error ? h("span", { class: "err-text" }, st.error) : `Checked ${ago(st.checked) === "now" ? "just now" : `${ago(st.checked)} ago`}.`,
-    fix ? h("span", { class: "ci-fix" }, " Claude is fixing it: ", h("button", { type: "button", class: "link inline", onclick: () => { $("#ci-sheet").close(); openDetail(fix.id); } }, title(fix))) : "");
+    fix ? h("span", { class: "ci-fix" }, " Claude is fixing it: ", ib({ type: "button", class: "link inline", onclick: () => { $("#ci-sheet").close(); openDetail(fix.id); } }, "right", title(fix))) : "");
   $("#ci-runs").replaceChildren(...(st.runs || []).slice(0, 12).map((r) => {
     const [cls, label] = runState(r);
     return h("li", {}, h("a", { class: `run run-${cls}`, href: r.url, target: "_blank", rel: "noopener" },
@@ -1578,8 +1626,8 @@ const chat = makeChat({
   log: $("#chat-log"), empty: $("#chat-empty"), form: $("#chat-form"),
   target: () => ({ project: here() ? undefined : state.project?.id }), // chat runs on this machine
   actions: (answer) => h("div", { class: "msg-actions" },
-    h("button", { class: "link", onclick: () => { if (!state.project) return toast("Select a project first", true); openTodoForm(); $("#todo-form").prompt.value = answer; } }, "Make this a todo"),
-    h("button", { class: "link", onclick: () => copy(answer, "Copied") }, "Copy")),
+    ib({ class: "link", onclick: () => { if (!state.project) return toast("Select a project first", true); openTodoForm(); $("#todo-form").prompt.value = answer; } }, "plus", "Make this a todo"),
+    ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy")),
 });
 const chatInput = chat.input;
 
@@ -1600,12 +1648,12 @@ const todoChat = makeChat({
   actions: (answer) => {
     const t = state.todos.get(state.detail);
     return h("div", { class: "msg-actions" },
-      t && EDITABLE.includes(t.status) ? h("button", { class: "link", onclick: attempt(async () => {
+      t && EDITABLE.includes(t.status) ? ib({ class: "link", onclick: attempt(async () => {
         if (!await ask({ title: "Replace the instructions?", body: "This answer becomes the todo's instructions for Claude.", ok: "Replace" })) return;
         await api("PATCH", `/api/todos/${t.id}`, { prompt: answer });
         toast("Instructions updated");
-      }) }, "Use as instructions") : null,
-      h("button", { class: "link", onclick: () => copy(answer, "Copied") }, "Copy"));
+      }) }, "draft", "Use as instructions") : null,
+      ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
   },
 });
 
@@ -1742,8 +1790,8 @@ function renderProcs() {
   $("#procs").replaceChildren(...state.procs.map((p, i) => h("li", { class: `proc${p.id === attached ? " attached" : ""}${keys.active && state.view === "run" && i === keys.proc ? " cursor" : ""}` },
     h("span", { class: "proc-cmd" }, p.command),
     h("span", { class: "proc-actions" },
-      h("button", { class: "btn", onclick: () => attach(p) }, p.id === attached ? "Viewing" : "View"),
-      p.running ? h("button", { class: "btn danger", onclick: attempt(async () => { await api("DELETE", `/api/processes/${p.id}`); toast("Stopping"); }) }, "Stop") : null),
+      ib({ class: "btn", onclick: () => attach(p) }, "eye", p.id === attached ? "Viewing" : "View"),
+      p.running ? ib({ class: "btn danger", onclick: attempt(async () => { await api("DELETE", `/api/processes/${p.id}`); toast("Stopping"); }) }, "stop", "Stop") : null),
     h("span", { class: "proc-meta" },
       h("span", { class: `status proc-state${p.running ? " running" : ""}` }, p.running ? "Running" : `Exited ${p.exit_code ?? ""}`),
       h("span", {}, kindLabel[p.kind] || p.kind),
@@ -2311,8 +2359,8 @@ async function checkForUpdate() {
   updateShown = true;
   const bar = h("div", { class: "update-bar", role: "status" },
     h("span", {}, "Dash was updated."),
-    h("button", { type: "button", class: "btn small primary", onclick: () => { draft.flush(); location.reload(); } }, "Reload"),
-    h("button", { type: "button", class: "link inline", onclick: () => leave(bar, "leaving", () => bar.remove()) }, "Later"));
+    ib({ type: "button", class: "btn small primary", onclick: () => { draft.flush(); location.reload(); } }, "redo", "Reload"),
+    ib({ type: "button", class: "link inline", onclick: () => leave(bar, "leaving", () => bar.remove()) }, "clock", "Later"));
   document.body.append(bar);
 }
 setInterval(() => { if (!document.hidden) checkForUpdate(); }, 5 * 60000);
