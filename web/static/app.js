@@ -94,6 +94,7 @@ function ask({ title, body = "", input = false, placeholder = "", ok = "OK", dan
   const okBtn = $("#ask-ok");
   okBtn.textContent = ok;
   okBtn.className = `btn ${danger ? "danger" : "primary"}`;
+  d.returnValue = "";
   d.showModal();
   if (input) field.focus();
   return new Promise((resolve) => {
@@ -817,6 +818,7 @@ function openTodoForm(t = null) {
   todoAttach.reset(t?.attachments || []);
   promptEditor.render();
   draft.open(draftKey(t));
+  $("#todo-sheet").returnValue = ""; // Esc keeps the previous close's value
   $("#todo-sheet").showModal();
   (t ? f.prompt : f.title).focus();
 }
@@ -1427,6 +1429,7 @@ function openSettings() {
   f.max_run_minutes.value = p.max_run_minutes || "";
   f.max_turns.value = p.max_turns || "";
   syncMergeHint();
+  $("#settings-sheet").returnValue = "";
   $("#settings-sheet").showModal();
 }
 function syncMergeHint() {
