@@ -453,8 +453,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 /* ---------- keyboard ---------- */
 .todo.cursor, .proc.cursor { box-shadow: inset 3px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 .proc.cursor { padding-left: 10px; }
-/* Status line: mode and command line. Always shown at the bottom of the right pane on desktop;
-   on smaller screens only while the command line is focused. */
+/* Status line: mode and command line, shown only while the command line is focused. */
 .statusline {
   position: fixed; z-index: 45; left: 0; right: 0; bottom: calc(var(--nav-h) + var(--safe-b));
   display: flex; align-items: center; gap: 8px; height: var(--status-h); padding: 0 8px;
@@ -697,7 +696,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   main { grid-area: main; padding: 0; overflow: hidden; min-width: 0; display: flex; flex-direction: column; height: 100dvh; }
   .view.active { flex: 1; min-height: 0; overflow-y: auto; }
   #view-chat.active { height: auto; }
-  .statusline, .statusline:not(:focus-within) { position: static; flex: none; opacity: 1; pointer-events: auto; }
+  .statusline { left: var(--side-w); bottom: 0; }
   #view-run, .activity { max-width: 1100px; }
   #view-run { padding: 24px 32px; }
   .activity { padding: 16px 32px; }
@@ -722,10 +721,10 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .todo-side { grid-column: 2; flex-direction: row; gap: 10px; padding: 0; }
   .todo-side:empty { display: none; }
   .rail::before { left: 25px; }
-  .fab { right: 28px; bottom: calc(var(--status-h) + 28px); }
-  .toasts { right: 28px; bottom: calc(var(--status-h) + 96px); }
+  .fab { right: 28px; bottom: 28px; }
+  .toasts { right: 28px; bottom: 96px; }
 
-  .detail { left: auto; bottom: var(--status-h); width: min(760px, 58vw); border-left: 1px solid var(--line); box-shadow: -24px 0 48px rgba(3, 6, 12, .45); }
+  .detail { left: auto; bottom: 0; width: min(760px, 58vw); border-left: 1px solid var(--line); box-shadow: -24px 0 48px rgba(3, 6, 12, .45); }
   .scrim { position: fixed; inset: 0; z-index: 35; background: rgba(4, 8, 15, .35); }
   .detail-body { padding: 16px 24px 32px; }
   .actionbar { padding: 12px 24px; }
@@ -779,7 +778,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 }
 .update-bar .link.inline { padding: 0 8px; color: var(--muted); }
 .update-bar.leaving { opacity: 0; transition: opacity .18s; }
-@media (min-width: 1024px) { .update-bar { bottom: calc(var(--status-h) + 24px); } }
+@media (min-width: 1024px) { .update-bar { bottom: 24px; } }
 
 /* ---- attachments ---- */
 .attach { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 8px; }
