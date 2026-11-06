@@ -1051,7 +1051,8 @@ function todoRow(t, li = -1, ri = -1) {
       t.status === "review" && t.finished_at ? h("span", { title: "Waiting for review" }, ago(t.finished_at)) : null,
       t.priority ? h("span", {}, `P${t.priority}`) : null,
       t.status === "review" && !t.reviewing ? reviewChip(t) : null,
-      t.status === "review" && !t.reviewing ? approveChip(t) : null));
+      t.status === "review" && !t.reviewing ? approveChip(t) : null,
+      t.status === "draft" ? enqueueChip(t) : null));
 }
 
 // Spans, not buttons: the card itself is a <button>, which can't nest one.
@@ -1075,6 +1076,17 @@ function approveChip(t) {
       attempt(async () => { await api("POST", `/api/todos/${t.id}/approve`); toast("Approved — merging"); })();
     },
   }, "Approve");
+}
+
+function enqueueChip(t) {
+  return h("span", {
+    class: "enqueue-chip", role: "button", title: "Move to the queue",
+    onpointerdown: (e) => e.stopPropagation(),
+    onclick: (e) => {
+      e.stopPropagation();
+      attempt(todoKey)(t, "s");
+    },
+  }, "Enqueue");
 }
 
 function updateLiveLine(id) {
@@ -2759,6 +2771,9 @@ function scrollBy(el, how, n) {
   else el.scrollBy({ top: delta * n });
 }
 
+// What Enter does to a task: approve one in review, enqueue a draft.
+function enterKey(t) { return { review: "a", draft: "s" }[t.status]; }
+
 // Actions on a todo; shared by the board cursor and the open detail view.
 async function todoKey(t, k) {
   const post = (verb, body, msg) => api("POST", `/api/todos/${t.id}/${verb}`, body).then(() => toast(msg));
@@ -3083,11 +3098,12 @@ document.addEventListener("keydown", (e) => {
   }
   // Keyboard users activating a focused control keep the browser's behaviour
   // (except sections, which also close the open todo and leave the list).
-  // Enter on a focused Review card approves it, like its Approve chip.
-  const reviewCard = k === "Enter" && state.todos.get(target.closest?.("button.todo.s-review")?.dataset.id);
-  if (reviewCard?.status === "review") {
+  // Enter on a focused Review card approves it, like its Approve chip;
+  // on a Draft card it enqueues, like its Enqueue chip.
+  const card = k === "Enter" && state.todos.get(target.closest?.("button.todo.s-review, button.todo.s-draft")?.dataset.id);
+  if (card && enterKey(card)) {
     e.preventDefault();
-    attempt(todoKey)(reviewCard, "a");
+    attempt(todoKey)(card, enterKey(card));
     return;
   }
   if ((k === "Enter" || k === " ") && target.closest?.("button, a, summary, input, [role=tab]") && sidebarList(target) !== SECTIONS) return;
@@ -3201,7 +3217,7 @@ async function handleNormal(k, n, hadCount) {
       return renderPane();
     }
     if (state.pane === "chat" && k === "i") return todoChat.input.focus();
-    if (t?.status === "review" && k === "Enter") return todoKey(t, "a");
+    if (t && k === "Enter" && enterKey(t)) return todoKey(t, enterKey(t));
     if (t) await todoKey(t, k);
     return;
   }
@@ -3226,7 +3242,7 @@ async function handleNormal(k, n, hadCount) {
         }
         case "Enter": case "Space": case " ": {
           const t = cursorTodo();
-          if (t?.status === "review" && k === "Enter") return todoKey(t, "a");
+          if (t && k === "Enter" && enterKey(t)) return todoKey(t, enterKey(t));
           if (t) return openDetail(t.id);
           return;
         }

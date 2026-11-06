@@ -997,6 +997,8 @@ dialog.file-over, .file-over { outline: 2px dashed color-mix(in srgb, var(--acce
 .revert-tag { font-size: 12px; font-weight: 600; color: var(--muted); }
 .approve-chip { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--review); color: #08202a; cursor: pointer; }
 .approve-chip:hover { filter: brightness(1.1); }
+.enqueue-chip { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); cursor: pointer; }
+.enqueue-chip:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); }
 .review-chip { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--review); color: var(--review); cursor: pointer; }
 .review-chip:hover { background: color-mix(in srgb, var(--review) 15%, transparent); }
 .btn.reviewing { color: var(--running); cursor: default; }
