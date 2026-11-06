@@ -2526,15 +2526,25 @@ function renderGraph(res) {
   const lines = res?.graph ? res.graph.split("\n") : [];
   $("#graph-empty").hidden = lines.length > 0;
   $("#graph-empty-text").textContent = state.project ? `${state.project.default_branch || "main"} has no commits yet.` : "Select a project to see its main branch.";
+  // Commits above origin's tip haven't been pushed yet; dim them so the last push stands out.
+  const remote = `origin/${res?.branch || state.project?.default_branch || "main"}`;
+  const isRemote = (line) => line.split("\x1f")[2]?.split(", ").includes(remote);
+  let unpushed = lines.some(isRemote);
   $("#graph").replaceChildren(...lines.map((line) => {
     const i = line.indexOf("\x1f");
-    if (i < 0) return h("li", { class: "graph-edge" }, h("span", { class: "graph-lines" }, line));
+    const cls = unpushed ? " graph-unpushed" : "";
+    if (i < 0) return h("li", { class: "graph-edge" + cls }, h("span", { class: "graph-lines" }, line));
     const [sha, refs, subject, author, when] = line.slice(i + 1).split("\x1f");
-    return h("li", {},
+    const pushed = unpushed && isRemote(line);
+    if (pushed) unpushed = false;
+    const ref = (r) => r === remote
+      ? h("span", { class: "graph-ref remote", title: "Last pushed commit" }, `pushed · ${r}`)
+      : h("span", { class: `graph-ref${r.startsWith("tag: ") ? " tag" : ""}` }, r.replace(/^HEAD -> /, ""));
+    return h("li", { class: pushed ? "graph-pushed" : cls.trim(), title: cls ? "Not pushed yet" : null },
       h("span", { class: "graph-lines" }, line.slice(0, i)),
       h("span", { class: "graph-commit" },
         h("code", { class: "graph-sha" }, sha),
-        ...(refs ? refs.split(", ").map((r) => h("span", { class: `graph-ref${r.startsWith("tag: ") ? " tag" : ""}` }, r.replace(/^HEAD -> /, ""))) : []),
+        ...(refs ? refs.split(", ").map(ref) : []),
         h("span", { class: "graph-subject" }, subject),
         h("span", { class: "graph-meta" }, `${author} · ${when}`)));
   }));
