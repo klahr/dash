@@ -1624,7 +1624,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
 // target() names where it runs ({prefix, ...fields sent with each turn}).
 // The client owns the history and sends it in full each turn; the server saves
 // every finished turn.
-function makeChat({ log, empty, form, target, actions, scroller = () => log, saved = () => {} }) {
+function makeChat({ log, empty, form, target, actions, cwd, scroller = () => log, saved = () => {} }) {
   const c = { history: [], current: null, ws: null, prefix: "" };
   const input = form.q;
   const sendBtn = form.querySelector("button");
@@ -1642,13 +1642,35 @@ function makeChat({ log, empty, form, target, actions, scroller = () => log, sav
       d.text ??= ""; // omitted when empty
       // An abandoned socket (see reset) finishes its reply so the server saves it.
       if (ws !== c.ws) {
+        // Nobody sees its approval requests any more.
+        if (d.kind === "permission") ws.send(JSON.stringify({ type: "permission", id: d.id, decision: "deny" }));
         if (d.kind === "done" || d.kind === "error") { ws.close(); if (d.kind === "done") saved(ws.fields); }
         return;
       }
+      if (d.kind === "cwd" && cwd) { cwd.hidden = false; cwd.textContent = cwd.title = `Runs in ${d.text}`; }
       const cur = c.current;
       if (!cur) return;
       if (d.kind === "thinking") cur.thinking.textContent += d.text;
-      else if (d.kind === "text") { cur.content += d.text; cur.reply.innerHTML = renderMarkdown(cur.content); }
+      else if (d.kind === "text") { cur.content += d.text; cur.seg += d.text; cur.reply.innerHTML = renderMarkdown(cur.seg); }
+      else if (d.kind === "tool_use") {
+        // Later text goes below the tool call, in a reply of its own.
+        const out = h("pre", { class: "tool-out", hidden: true });
+        const el = h("details", { class: "tool" }, h("summary", {}, h("b", {}, d.tool), ` ${toolSummary(d.tool, d.input)}`),
+          h("pre", { class: "tool-in" }, toolDetail(d.tool, d.input)), out);
+        cur.tools.set(d.id, { el, out });
+        cur.reply.after(el);
+        cur.reply = h("div", { class: "reply" });
+        el.after(cur.reply);
+        cur.seg = "";
+      } else if (d.kind === "tool_result") {
+        const t = cur.tools.get(d.id);
+        if (t) { t.out.hidden = false; t.out.textContent = d.text || "(no output)"; t.el.classList.toggle("error", !!d.is_error); }
+      } else if (d.kind === "permission") {
+        cur.reply.before(chatPermCard(d, (decision) => ws.send(JSON.stringify({ type: "permission", id: d.id, decision }))));
+      } else if (d.kind === "permission_decided") {
+        const st = log.querySelector(`.perm[data-id="${d.id}"] .perm-actions`);
+        st?.replaceChildren(h("span", { class: "perm-status" }, { allow: "Approved", deny: "Denied", timeout: "Not answered in time: denied" }[d.text] || d.text));
+      }
       else if (d.kind === "error") { cur.el.classList.add("error"); cur.reply.append(h("p", {}, d.text)); }
       if (d.kind === "done" || d.kind === "error") {
         cur.el.classList.remove("pending");
@@ -1688,7 +1710,7 @@ function makeChat({ log, empty, form, target, actions, scroller = () => log, sav
     const el = h("div", { class: "msg assistant pending" }, thinking, reply);
     log.append(h("div", { class: "msg user" }, q), el);
     toEnd();
-    c.current = { el, thinking, reply, content: "" };
+    c.current = { el, thinking, reply, content: "", seg: "", tools: new Map() };
     sendBtn.disabled = true;
     const { prefix = "", ...fields } = target();
     const ws = socket(prefix);
@@ -1718,6 +1740,37 @@ function makeChat({ log, empty, form, target, actions, scroller = () => log, sav
   return { reset, input, get history() { return c.history; }, get busy() { return !!c.current; } };
 }
 
+// Tool calls in the chat: a one-line summary, and the full input when expanded.
+function toolSummary(tool, i = {}) {
+  const s = i.command ?? i.file_path ?? i.pattern ?? i.path ?? "";
+  return String(s).split("\n")[0];
+}
+function toolDetail(tool, i = {}) {
+  const lines = (s, p) => String(s ?? "").split("\n").map((l) => p + l).join("\n");
+  switch (tool) {
+    case "Bash": return i.command;
+    case "Edit": return `${i.file_path}\n${lines(i.old_string, "- ")}\n${lines(i.new_string, "+ ")}`;
+    case "Write": return `${i.file_path}\n${i.content}`;
+    default: return JSON.stringify(i, null, 2);
+  }
+}
+
+// An approval request from the chat, answered over its own socket.
+function chatPermCard(p, decide) {
+  const d = describePerm(p);
+  const answer = (decision) => (e) => {
+    e.currentTarget.parentElement.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+    decide(decision);
+  };
+  return h("div", { class: "perm", role: "group", "aria-label": `Permission request: ${d.title}`, "data-id": p.id },
+    h("p", { class: "perm-q" }, `Claude wants to ${d.title}`),
+    d.note ? h("p", { class: "hint", style: "margin:0" }, d.note) : null,
+    h("code", { class: "perm-cmd" }, toolDetail(p.tool, p.input || {})),
+    h("div", { class: "perm-actions" },
+      ib({ class: "btn allow", onclick: answer("allow") }, "check", "Approve"),
+      ib({ class: "btn danger", onclick: answer("deny") }, "x", "Deny")));
+}
+
 const chatActions = (answer) => h("div", { class: "msg-actions" },
   ib({ class: "link", onclick: () => { if (!state.project) return toast("Select a project first", true); openTodoForm(); $("#todo-form").prompt.value = answer; } }, "plus", "Make this a todo"),
   ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
@@ -1727,6 +1780,7 @@ const chat = makeChat({
   log: $("#chat-log"), empty: $("#chat-empty"), form: $("#chat-form"),
   target: () => ({}),
   actions: chatActions,
+  cwd: $("#chat-cwd"),
 });
 const chatInput = chat.input;
 
@@ -1744,6 +1798,7 @@ const todoChat = makeChat({
   log: $("#d-chat-log"), empty: $("#d-chat-empty"), form: $("#d-chat-form"),
   target: () => ({ prefix: here(), todo: state.detail }),
   scroller: () => $(".detail-body"),
+  cwd: $("#d-chat-cwd"),
   // A turn left streaming when its todo was closed is saved when it finishes.
   saved: ({ todo }) => { if (todo === state.detail && !todoChat.busy) loadTodoChat().catch(fail); },
   actions: (answer) => {
@@ -1763,6 +1818,7 @@ const todoChat = makeChat({
 const projectChat = makeChat({
   log: $("#pc-log"), empty: $("#pc-empty"), form: $("#pc-form"),
   target: () => ({ prefix: here(), project: state.project?.id }),
+  cwd: $("#pc-cwd"),
   // A turn left streaming when the project was switched is saved when it finishes.
   saved: ({ project }) => { if (project === state.project?.id && !projectChat.busy) loadProjectChat().catch(fail); },
   actions: chatActions,

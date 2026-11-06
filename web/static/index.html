@@ -142,7 +142,7 @@
           <aside class="board-chat" id="board-chat" hidden aria-label="Project chat">
             <div class="board-chat-resize" id="pc-resize" role="separator" aria-orientation="vertical" aria-label="Resize the project chat" tabindex="0" title="Drag to resize · double-click to reset"></div>
             <header class="board-chat-head">
-              <span class="board-chat-title">Project chat</span>
+              <span class="board-chat-title">Project chat<span class="chat-cwd" id="pc-cwd" hidden></span></span>
               <button class="icon-btn" id="pc-clear" aria-label="Clear the project chat" data-icon="trash"></button>
               <button class="icon-btn" id="pc-close" aria-label="Close the project chat" data-icon="x"></button>
             </header>
@@ -166,6 +166,7 @@
 
       <!-- Chat -->
       <section class="view" id="view-chat" aria-label="Chat">
+        <p class="chat-cwd chat-cwd-bar" id="chat-cwd" hidden></p>
         <div class="chat-log" id="chat-log">
           <div class="empty chat-empty" id="chat-empty">
             <!-- Optional illustration: save as web/static/img/empty-chat.webp, 960x720 (4:3). Hidden if missing.
@@ -239,6 +240,7 @@
         <div class="pane" id="d-diff"></div>
         <pre class="pane log" id="d-log" hidden></pre>
         <div class="pane todo-chat" id="d-chat" hidden>
+          <p class="chat-cwd" id="d-chat-cwd" hidden></p>
           <div class="chat-log" id="d-chat-log">
             <p class="pane-empty" id="d-chat-empty">Talk this todo through with Claude. It sees the instructions, so it can help you sharpen a draft into a better prompt.</p>
           </div>

@@ -316,6 +316,17 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .msg .reply th { background: var(--surface); font-weight: 600; }
 .msg .thinking { color: var(--muted); font-size: 14px; border-left: 2px solid var(--line); padding-left: 10px; margin-bottom: 8px; white-space: pre-wrap; }
 .msg .thinking:empty { display: none; }
+.msg .tool { margin: 0 0 10px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--surface); font-size: 13px; }
+.msg .tool summary { cursor: pointer; padding: 5px 10px; color: var(--muted); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msg .tool summary b { color: var(--text); font-weight: 600; }
+.msg .tool.error summary { color: var(--failed); }
+.msg .tool pre { margin: 0; padding: 8px 10px; border-top: 1px solid var(--line); font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
+.msg .tool .tool-out { color: #c9d3e3; background: var(--bg); }
+.msg .perm { margin: 0 0 10px; }
+.perm-status { color: var(--muted); font-weight: 600; }
+.chat-cwd { color: var(--muted); font: 12px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
+.board-chat-title .chat-cwd { display: block; font-weight: 400; }
+.chat-cwd-bar { padding: 6px 16px; border-bottom: 1px solid var(--line); }
 .msg.pending .reply:empty::after { content: "Thinking…"; color: var(--muted); }
 .msg.error { color: var(--failed); }
 .composer {

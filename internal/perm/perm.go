@@ -42,7 +42,14 @@ type Request struct {
 	Message   string          `json:"message,omitempty"`  // reason given to Claude on deny
 }
 
-type run struct{ todoID, projectID string }
+type run struct {
+	todoID, projectID string
+	ask               AskFunc // set for runs registered with RegisterFunc
+}
+
+// AskFunc decides a tool call itself instead of queueing it for the board,
+// e.g. by asking in the chat that started the run.
+type AskFunc func(ctx context.Context, tool string, input json.RawMessage) (allow bool, message string)
 
 type pending struct {
 	req  Request
@@ -80,7 +87,7 @@ func (b *Broker) Register(todoID, projectID string) (token string, release func(
 	_, _ = rand.Read(buf)
 	token = hex.EncodeToString(buf)
 	b.mu.Lock()
-	b.tokens[token] = run{todoID, projectID}
+	b.tokens[token] = run{todoID: todoID, projectID: projectID}
 	b.mu.Unlock()
 	return token, func() {
 		b.mu.Lock()
@@ -95,6 +102,23 @@ func (b *Broker) Register(todoID, projectID string) (token string, release func(
 		for _, id := range stale {
 			_ = b.Decide(id, "deny", "The task ended before anyone answered.")
 		}
+	}
+}
+
+// RegisterFunc issues a bearer token for one Claude run whose permission
+// requests are answered by ask. They don't show up in Pending. Call release
+// when the run ends.
+func (b *Broker) RegisterFunc(ask AskFunc) (token string, release func()) {
+	buf := make([]byte, 24)
+	_, _ = rand.Read(buf)
+	token = hex.EncodeToString(buf)
+	b.mu.Lock()
+	b.tokens[token] = run{ask: ask}
+	b.mu.Unlock()
+	return token, func() {
+		b.mu.Lock()
+		delete(b.tokens, token)
+		b.mu.Unlock()
 	}
 }
 
@@ -292,7 +316,16 @@ func (b *Broker) ServeMCP(w http.ResponseWriter, r *http.Request) {
 		if len(input) == 0 {
 			input = json.RawMessage("{}")
 		}
-		res := b.ask(r.Context(), rn, p.Arguments.ToolName, input)
+		var res Request
+		if rn.ask != nil {
+			allow, msg := rn.ask(r.Context(), p.Arguments.ToolName, input)
+			res.Decision, res.Message = "deny", msg
+			if allow {
+				res.Decision = "allow"
+			}
+		} else {
+			res = b.ask(r.Context(), rn, p.Arguments.ToolName, input)
+		}
 		answer := map[string]any{"behavior": "deny", "message": res.Message}
 		if res.Decision == "allow" {
 			answer = map[string]any{"behavior": "allow", "updatedInput": input}

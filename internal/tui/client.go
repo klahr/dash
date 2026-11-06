@@ -307,6 +307,11 @@ func (c *Client) ChatTurn(ctx context.Context, history []agent.ChatMessage, deli
 			}
 			return err
 		}
+		if d.Kind == "permission" { // approving tool calls needs the web UI
+			_ = conn.WriteJSON(map[string]any{"type": "permission", "id": d.ID, "decision": "deny"})
+			deliver(agent.ChatDelta{Kind: "text", Text: "\n\n[" + d.Tool + " denied: approve tool calls in the web UI]\n\n"})
+			continue
+		}
 		deliver(d)
 		if d.Kind == "done" || d.Kind == "error" {
 			return nil

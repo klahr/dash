@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -18,8 +19,15 @@ type ChatMessage = model.ChatMessage
 
 // ChatDelta is one streamed fragment sent back to the frontend.
 type ChatDelta struct {
-	Kind string `json:"kind"` // "thinking" | "text" | "done" | "error"
-	Text string `json:"text,omitempty"`
+	// "thinking" | "text" | "tool_use" | "tool_result" | "permission" |
+	// "permission_decided" | "cwd" | "done" | "error"
+	Kind string `json:"kind"`
+	Text string `json:"text,omitempty"` // tool_result: the output; permission_decided: allow|deny|timeout; cwd: the directory
+	// ID is the tool_use id (tool_use, tool_result) or the permission request id.
+	ID      string          `json:"id,omitempty"`
+	Tool    string          `json:"tool,omitempty"`
+	Input   json.RawMessage `json:"input,omitempty"`
+	IsError bool            `json:"is_error,omitempty"`
 }
 
 // Chat answers through the Anthropic Messages API (billed to an API key).

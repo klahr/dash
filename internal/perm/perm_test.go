@@ -2,6 +2,7 @@ package perm
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -173,5 +174,42 @@ func TestTimeoutAndReleaseDeny(t *testing.T) {
 	release() // run ended
 	if a := answer(t, <-done); a["behavior"] != "deny" {
 		t.Fatalf("release should deny pending: %v", a)
+	}
+}
+
+func TestRegisterFuncAnswersItself(t *testing.T) {
+	b := NewBroker(nopPub{})
+	srv := httptest.NewServer(http.HandlerFunc(b.ServeMCP))
+	defer srv.Close()
+	var gotTool, gotCmd string
+	allow := false
+	token, release := b.RegisterFunc(func(_ context.Context, tool string, input json.RawMessage) (bool, string) {
+		var in struct{ Command string }
+		_ = json.Unmarshal(input, &in)
+		gotTool, gotCmd = tool, in.Command
+		if allow {
+			return true, ""
+		}
+		return false, "no thanks"
+	})
+
+	_, out := rpc(t, srv, token, "tools/call", call("Bash"))
+	if a := answer(t, out); a["behavior"] != "deny" || a["message"] != "no thanks" {
+		t.Fatalf("deny: %v", a)
+	}
+	if gotTool != "Bash" || gotCmd != "npm install" {
+		t.Fatalf("ask got %q %q", gotTool, gotCmd)
+	}
+	allow = true
+	_, out = rpc(t, srv, token, "tools/call", call("Bash"))
+	if a := answer(t, out); a["behavior"] != "allow" || a["updatedInput"].(map[string]any)["command"] != "npm install" {
+		t.Fatalf("allow: %v", a)
+	}
+	if len(b.Pending("")) != 0 {
+		t.Fatal("func-answered requests should not be pending on the board")
+	}
+	release()
+	if res, _ := rpc(t, srv, token, "tools/list", nil); res.StatusCode != http.StatusUnauthorized {
+		t.Fatal("token should stop working after release")
 	}
 }

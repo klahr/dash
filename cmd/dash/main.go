@@ -46,6 +46,13 @@ func main() {
 	signCommits := flag.Bool("sign-commits", false, "GPG/SSH-sign commits Dash makes (needs a non-interactive signing agent)")
 	chatBackend := flag.String("chat", "claude-code",
 		"chat backend: claude-code (uses the claude CLI login, e.g. a subscription) or api (Anthropic API key)")
+	chatTools := flag.String("chat-tools", agent.ChatReadOnly,
+		"claude-code chat tools: readonly (Read, Grep, Glob) or shell (also Bash, Edit, Write; you approve each call in the chat)")
+	var chatAllow []string
+	flag.Func("chat-allow", "a tool the shell chat may use without asking, as for --allowedTools, e.g. \"Bash(ssh user@host *)\" (repeatable)", func(s string) error {
+		chatAllow = append(chatAllow, s)
+		return nil
+	})
 	pauseAt := flag.Float64("pause-at", 0.9, "pause the todo queue when a subscription usage window reaches this fraction (0 = only when limited)")
 	askPerms := flag.Bool("permission-prompts", true, "send Claude's permission requests to the UI instead of denying them")
 	editor := flag.String("editor", os.Getenv("DASH_EDITOR"), "command that opens a worktree on this machine, e.g. \"code\" (or $DASH_EDITOR)")
@@ -137,12 +144,13 @@ func main() {
 	if *autoTitles {
 		todos.Summarizer = agent.Titler{Bin: *claudeBin, Model: *titleModel}
 	}
+	var mcpURL string
 	if *askPerms {
 		// Claude Code reaches the permission prompt server on a loopback-only
 		// plain-HTTP listener, whatever -addr and TLS are set to.
 		mcp := http.NewServeMux()
 		mcp.HandleFunc("/mcp/permissions", perms.ServeMCP)
-		mcpURL, err := serveLoopback(ctx, mcp)
+		mcpURL, err = serveLoopback(ctx, mcp)
 		if err != nil {
 			slog.Error("permission prompt listener", "err", err)
 			os.Exit(1)
@@ -159,7 +167,17 @@ func main() {
 	var chat agent.Chatter
 	switch *chatBackend {
 	case "claude-code":
-		chat = agent.ClaudeCodeChat{Bin: *claudeBin, Dir: home, OnRateLimit: tracker.Observe}
+		if *chatTools != agent.ChatReadOnly && *chatTools != agent.ChatShell {
+			slog.Error("unknown -chat-tools", "value", *chatTools)
+			os.Exit(1)
+		}
+		if *chatTools == agent.ChatShell && !*askPerms {
+			slog.Warn("-chat-tools shell without -permission-prompts: the chat can only use tools allowed with -chat-allow")
+		}
+		chat = agent.ClaudeCodeChat{
+			Bin: *claudeBin, Dir: home, Tools: *chatTools, AllowedTools: chatAllow,
+			Perms: perms, PermURL: mcpURL, OnRateLimit: tracker.Observe,
+		}
 	case "api":
 		chat = agent.NewChat()
 	default:

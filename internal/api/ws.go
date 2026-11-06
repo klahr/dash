@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -16,13 +18,20 @@ import (
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/perm"
 )
 
 // chatWS streams Claude responses. Protocol (JSON text frames):
 //
 //	client → {"type":"send","project":"<id>","todo":"<id>","messages":[{"role":"user","content":"…"}, …]}
 //	client → {"type":"cancel"}
+//	client → {"type":"permission","id":"<id>","decision":"allow"|"deny"}
 //	server → {"kind":"thinking"|"text"|"done"|"error","text":"…"}
+//	server → {"kind":"cwd","text":"<dir>"} where the turn runs
+//	server → {"kind":"tool_use","id":"…","tool":"Bash","input":{…}}
+//	server → {"kind":"tool_result","id":"…","text":"<output>","is_error":bool}
+//	server → {"kind":"permission","id":"<id>","tool":"Bash","input":{…}} asks to approve a tool call
+//	server → {"kind":"permission_decided","id":"<id>","text":"allow"|"deny"|"timeout"}
 //
 // The client owns the conversation history and sends it in full each turn.
 // Each completed turn is saved, and GET /api/chat returns it after a restart.
@@ -51,6 +60,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelAll := context.WithCancel(r.Context())
 	defer cancelAll()
 	var cancelTurn context.CancelFunc = func() {}
+	approvals := &chatApprovals{send: send, timeout: chatApprovalTimeout}
 
 	for {
 		var msg struct {
@@ -58,10 +68,16 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			Project  string              `json:"project"`
 			Todo     string              `json:"todo"`
 			Messages []agent.ChatMessage `json:"messages"`
+			ID       string              `json:"id"`
+			Decision string              `json:"decision"`
 		}
 		if err := conn.ReadJSON(&msg); err != nil {
-			cancelTurn()
+			cancelTurn() // denies whatever is waiting for approval
 			return
+		}
+		if msg.Type == "permission" {
+			approvals.answer(msg.ID, msg.Decision == "allow")
+			continue
 		}
 		cancelTurn()
 		if msg.Type != "send" {
@@ -105,6 +121,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		}
 		var turnCtx context.Context
 		turnCtx, cancelTurn = context.WithCancel(ctx)
+		turnCtx = agent.WithApprover(turnCtx, approvals.forTurn(turnCtx))
 		go func(ctx context.Context, history []agent.ChatMessage) {
 			var reply strings.Builder
 			err := s.Chat.Stream(ctx, dir, prompt, func(d agent.ChatDelta) {
@@ -126,6 +143,81 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			}
 		}(turnCtx, msg.Messages)
 	}
+}
+
+// chatApprovalTimeout denies a chat tool call nobody answered.
+const chatApprovalTimeout = 5 * time.Minute
+
+// chatApprovals asks the chat client to approve tool calls and waits for
+// the answer, one connection's worth.
+type chatApprovals struct {
+	send    func(agent.ChatDelta)
+	timeout time.Duration
+
+	mu      sync.Mutex
+	pending map[string]chan bool
+}
+
+// forTurn returns the approver for one turn: requests are denied when the
+// turn ends (a new message, or the client disconnects) as well as when
+// Claude's own request is cancelled.
+func (a *chatApprovals) forTurn(turn context.Context) perm.AskFunc {
+	return func(ctx context.Context, tool string, input json.RawMessage) (bool, string) {
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		defer context.AfterFunc(turn, cancel)()
+		return a.ask(ctx, tool, input)
+	}
+}
+
+func (a *chatApprovals) ask(ctx context.Context, tool string, input json.RawMessage) (bool, string) {
+	buf := make([]byte, 6)
+	_, _ = rand.Read(buf)
+	id := hex.EncodeToString(buf)
+	ch := make(chan bool, 1)
+	a.mu.Lock()
+	if a.pending == nil {
+		a.pending = map[string]chan bool{}
+	}
+	a.pending[id] = ch
+	a.mu.Unlock()
+	defer func() {
+		a.mu.Lock()
+		delete(a.pending, id)
+		a.mu.Unlock()
+	}()
+
+	a.send(agent.ChatDelta{Kind: "permission", ID: id, Tool: tool, Input: input})
+	timer := time.NewTimer(a.timeout)
+	defer timer.Stop()
+	decided := func(d string) { a.send(agent.ChatDelta{Kind: "permission_decided", ID: id, Text: d}) }
+	select {
+	case ok := <-ch:
+		if ok {
+			decided("allow")
+			return true, ""
+		}
+		decided("deny")
+		return false, "The user denied this action."
+	case <-timer.C:
+		decided("timeout")
+		return false, "Nobody answered the permission request in time."
+	case <-ctx.Done():
+		decided("deny")
+		return false, "The request was cancelled."
+	}
+}
+
+// answer reports whether id was waiting.
+func (a *chatApprovals) answer(id string, allow bool) bool {
+	a.mu.Lock()
+	ch, ok := a.pending[id]
+	delete(a.pending, id)
+	a.mu.Unlock()
+	if ok {
+		ch <- allow
+	}
+	return ok
 }
 
 // maxChatDiff caps the patch given to the todo chat each turn.
