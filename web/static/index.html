@@ -44,19 +44,19 @@
 
     <!-- Main navigation: bottom bar on mobile, side rail on desktop -->
     <nav class="nav" aria-label="Sections">
-      <button data-view="board" class="active" aria-current="page">
+      <button data-view="board" title="Board (gb)" class="active" aria-current="page">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M12 4v9M18 4v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="6" cy="9" r="2"/><circle cx="12" cy="15" r="2"/><circle cx="18" cy="18" r="2"/></svg>
         <span>Board</span><span class="badge" id="review-badge" hidden></span>
       </button>
-      <button data-view="chat">
+      <button data-view="chat" title="Chat (gc)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v10H10l-5 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         <span>Chat</span>
       </button>
-      <button data-view="run">
+      <button data-view="run" title="Shell (gs)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 4 4-4 4M12 17h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Shell</span><span class="badge quiet" id="proc-badge" hidden></span>
       </button>
-      <button data-view="activity">
+      <button data-view="activity" title="Activity (ga)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Activity</span>
       </button>
@@ -360,7 +360,7 @@
       <p class="hint">Vim-style. Typing in a field or the terminal is insert mode; Esc (Ctrl-] in the terminal) returns to normal mode.</p>
       <dl class="keys">
         <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with todos · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
-        <dt>Sections</dt><dd><kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd>/<kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Esc</kbd> back) · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
+        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gc</kbd>/<kbd>gs</kbd>/<kbd>ga</kbd> Board/Chat/Shell/Activity · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> sections, <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
         <dt>Todos</dt><dd><kbd>Enter</kbd> open · <kbd>a</kbd> new · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd> approve (open todo) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>*</kbd> milestone · <kbd>t</kbd> try it · <kbd>!</kbd> shell in worktree</dd>
         <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> changes ↔ log · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
         <dt>Search</dt><dd><kbd>/</kbd> filter the board · <kbd>Enter</kbd> jump to first match · <kbd>n</kbd>/<kbd>N</kbd> next/previous · <kbd>Esc</kbd> or <code>:noh</code> clear</dd>

@@ -2085,7 +2085,7 @@ async function reorder(t, laneKey, index) {
 const VIEWS = ["board", "chat", "run", "activity"];
 const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 }, proc: 0 };
 
-const BOUND = /^(:|\?|gt|gT|gg|gx|G|u|p|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gc|gs|ga|G|u|p|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 const openDialog = () => document.querySelector("dialog[open]");
 
@@ -2263,8 +2263,17 @@ document.addEventListener("keydown", (e) => {
     k = `ctrl+${k}`;
   }
   if (k === "Shift" || k === "Control") return;
-  // Keyboard users activating a focused control keep the browser's behaviour.
-  if ((k === "Enter" || k === " ") && target.closest?.("button, a, summary, input, [role=tab]")) return;
+  // Tab moves between the sections and projects lists; elsewhere it stays native.
+  if (k === "Tab" && sidebarList(target)) {
+    e.preventDefault();
+    keys.count = 0; keys.pending = "";
+    sidebarList(target) === SECTIONS ? openProjects() : openSections();
+    setMode();
+    return;
+  }
+  // Keyboard users activating a focused control keep the browser's behaviour
+  // (except sections, which also close the open todo and leave the list).
+  if ((k === "Enter" || k === " ") && target.closest?.("button, a, summary, input, [role=tab]") && sidebarList(target) !== SECTIONS) return;
 
   // Counts: 5j, 10G …
   if (/^[0-9]$/.test(k) && !(k === "0" && !keys.count) && !keys.pending) {
@@ -2289,10 +2298,32 @@ document.addEventListener("keydown", (e) => {
   attempt(handleNormal)(k, n, hadCount);
 });
 
-// Sidebar / phone menu (o or p focuses it): j/k move between projects, Enter
-// activates the focused one, Esc or l returns to the board.
+// Sidebar lists: o focuses the sections, p the projects (in the phone menu),
+// Tab switches between them. j/k move, Enter opens the focused item, Esc, q
+// or l leave the list.
+const SECTIONS = ".nav > button[data-view]";
+const PROJECTS = "#side-project-list .side-project";
+function sidebarList(el) {
+  if (el?.matches?.(SECTIONS)) return SECTIONS;
+  if (el?.closest?.("#side-project-list")) return PROJECTS;
+  return null;
+}
+
+function openSections() {
+  setMenu(false);
+  $(`.nav > button[data-view="${state.view}"]`)?.focus();
+}
+
+function openSection(name) {
+  closeDetail();
+  document.activeElement?.blur();
+  showView(name);
+  setMode();
+}
+
 function sidebarKey(k, n, hadCount) {
-  const btns = [...document.querySelectorAll("#side-project-list .side-project")];
+  const list = sidebarList(document.activeElement);
+  const btns = [...document.querySelectorAll(list)];
   const i = btns.indexOf(document.activeElement);
   const go = (j) => btns[Math.max(0, Math.min(btns.length - 1, j))]?.focus();
   switch (k) {
@@ -2300,21 +2331,28 @@ function sidebarKey(k, n, hadCount) {
     case "k": case "ArrowUp": return go(i - n);
     case "gg": return go(hadCount ? n - 1 : 0);
     case "G": return go(hadCount ? n - 1 : Infinity);
+    case "Enter": case " ":
+      if (list === SECTIONS) return openSection(document.activeElement.dataset.view);
+      break;
     case "Escape": case "q": case "l": document.activeElement.blur(); setMenu(false); setMode(); return;
   }
   return false;
 }
 
 async function handleNormal(k, n, hadCount) {
-  if (document.activeElement?.closest?.("#side-project-list") && sidebarKey(k, n, hadCount) !== false) return;
+  if (sidebarList(document.activeElement) && sidebarKey(k, n, hadCount) !== false) return;
   // Global keys.
   switch (k) {
     case ":": return openCommandLine();
     case "?": return $("#keys-sheet").showModal();
     case "gt": return showView(VIEWS[(VIEWS.indexOf(state.view) + n) % VIEWS.length]);
     case "gT": return showView(VIEWS[(VIEWS.indexOf(state.view) - n + VIEWS.length * n) % VIEWS.length]);
+    case "gb": return showView("board");
+    case "gc": return showView("chat");
+    case "gs": return showView("run");
+    case "ga": return showView("activity");
     case "p": return openProjects();
-    case "o": return openProjects();
+    case "o": return openSections();
     case "Escape": case "q":
       if (menuOpen()) return setMenu(false);
       if (state.detail) return closeDetail();
@@ -2342,7 +2380,7 @@ async function handleNormal(k, n, hadCount) {
       state.pane = panes[(panes.indexOf(state.pane) + (k === "l" ? 1 : panes.length - 1)) % panes.length];
       return renderPane();
     }
-    if (state.pane === "chat" && ["i", "o"].includes(k)) return todoChat.input.focus();
+    if (state.pane === "chat" && k === "i") return todoChat.input.focus();
     if (t) await todoKey(t, k);
     return;
   }
@@ -2370,14 +2408,14 @@ async function handleNormal(k, n, hadCount) {
           if (t) return openDetail(t.id);
           return;
         }
-        case "o": case "a": return openTodoForm();
+        case "a": return openTodoForm();
       }
       const t = cursorTodo();
       if (t) await todoKey(t, k);
       return;
     }
     case "chat":
-      if (["i", "a", "o", "I", "A"].includes(k)) return chatInput.focus();
+      if (["i", "a", "I", "A"].includes(k)) return chatInput.focus();
       if (["j", "k", "ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b", "gg", "G"].includes(k)) return scrollBy($("#chat-log"), k, n);
       return;
     case "run": {
