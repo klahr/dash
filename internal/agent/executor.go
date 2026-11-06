@@ -40,10 +40,11 @@ type ExecResult struct {
 	Result string
 }
 
-// Executor carries out a Todo inside its worktree. emit receives
-// human-readable progress lines as they happen.
+// Executor carries out a Todo inside its worktree. emit receives the run's
+// events (text, tool calls and results, the result) as they happen; Summary
+// turns one into a human-readable progress line.
 type Executor interface {
-	Run(ctx context.Context, req ExecRequest, emit func(string)) (ExecResult, error)
+	Run(ctx context.Context, req ExecRequest, emit func(model.RunEvent)) (ExecResult, error)
 }
 
 // ClaudeCode runs `claude -p` with stream-json output in the worktree. Claude
@@ -56,7 +57,7 @@ type ClaudeCode struct {
 	OnRateLimit func(json.RawMessage)
 }
 
-func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(string)) (ExecResult, error) {
+func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.RunEvent)) (ExecResult, error) {
 	bin := c.Bin
 	if bin == "" {
 		bin = "claude"
@@ -95,7 +96,7 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(string))
 			if strings.Contains(l, "No conversation found with session ID") {
 				res.ResumeFailed = true
 			}
-			emit("stderr: " + l)
+			emit(model.RunEvent{Kind: "status", Text: "stderr: " + l})
 		})
 	}()
 
@@ -103,7 +104,7 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(string))
 	pumpLines(stdout, func(l string) {
 		ev, ok := parseStreamLine(l)
 		if !ok {
-			emit(l)
+			emit(model.RunEvent{Kind: "status", Text: l})
 			return
 		}
 		if ev.SessionID != "" && res.SessionID == "" {
@@ -121,8 +122,8 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(string))
 				resultErr = fmt.Errorf("claude reported %s: %s", ev.Subtype, strings.TrimSpace(ev.Result))
 			}
 		}
-		if line := summarize(ev); line != "" {
-			emit(line)
+		for _, e := range events(ev) {
+			emit(e)
 		}
 	})
 	<-stderrDone
@@ -207,12 +208,7 @@ type streamEvent struct {
 	NumTurns      int             `json:"num_turns"`
 	RateLimitInfo json.RawMessage `json:"rate_limit_info"`
 	Message       struct {
-		Content []struct {
-			Type  string          `json:"type"`
-			Text  string          `json:"text"`
-			Name  string          `json:"name"`
-			Input json.RawMessage `json:"input"`
-		} `json:"content"`
+		Content []contentBlock `json:"content"`
 	} `json:"message"`
 }
 
@@ -224,31 +220,53 @@ func parseStreamLine(raw string) (streamEvent, bool) {
 	return ev, true
 }
 
-// summarize converts one stream-json event into a short progress line.
-func summarize(ev streamEvent) string {
+// events converts one stream-json event into the run's events: Claude's text,
+// its tool calls with their full input, the tools' results and the result.
+func events(ev streamEvent) []model.RunEvent {
 	switch ev.Type {
 	case "system":
 		if ev.Subtype == "init" {
-			return "▶ Claude Code session started"
+			return []model.RunEvent{{Kind: "status", Text: "▶ Claude Code session started"}}
 		}
-	case "assistant":
-		var parts []string
-		for _, c := range ev.Message.Content {
-			switch c.Type {
-			case "text":
-				parts = append(parts, c.Text)
-			case "tool_use":
-				parts = append(parts, fmt.Sprintf("🔧 %s %s", c.Name, truncate(string(c.Input), 200)))
+	case "assistant", "user":
+		var out []model.RunEvent
+		for _, b := range ev.Message.Content {
+			if b.Type == "text" {
+				if ev.Type == "assistant" && strings.TrimSpace(b.Text) != "" {
+					out = append(out, model.RunEvent{Kind: "text", Text: b.Text})
+				}
+				continue
+			}
+			if d, ok := b.delta(); ok {
+				out = append(out, model.RunEvent{Kind: d.Kind, Text: d.Text, ID: d.ID, Tool: d.Tool, Input: d.Input, IsError: d.IsError})
 			}
 		}
-		return strings.Join(parts, "\n")
+		return out
 	case "result":
+		e := model.RunEvent{Kind: "result", Text: ev.Result, Turns: ev.NumTurns, CostUSD: ev.Cost}
 		if ev.IsError || ev.Subtype != "success" {
-			return fmt.Sprintf("✖ %s: %s", ev.Subtype, ev.Result)
+			e.IsError, e.Text = true, fmt.Sprintf("%s: %s", ev.Subtype, ev.Result)
 		}
-		return fmt.Sprintf("✔ Claude finished (%d turns, ≈$%.2f)\n%s", ev.NumTurns, ev.Cost, ev.Result)
+		return []model.RunEvent{e}
 	}
-	return "" // tool results etc. are noise for the dashboard
+	return nil
+}
+
+// Summary converts one run event into a short progress line for the text
+// log; "" leaves it out.
+func Summary(e model.RunEvent) string {
+	switch e.Kind {
+	case "status", "text":
+		return e.Text
+	case "tool_use":
+		return fmt.Sprintf("🔧 %s %s", e.Tool, truncate(string(e.Input), 200))
+	case "result":
+		if e.IsError {
+			return "✖ " + e.Text
+		}
+		return fmt.Sprintf("✔ Claude finished (%d turns, ≈$%.2f)\n%s", e.Turns, e.CostUSD, e.Text)
+	}
+	return "" // tool results and run boundaries are noise for the text log
 }
 
 func truncate(s string, n int) string {

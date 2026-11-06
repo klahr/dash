@@ -191,7 +191,7 @@ async function copy(text, msg) {
 
 // ask() shows a confirmation or a text question as a sheet. Resolves to the
 // entered text (or true), or null when cancelled.
-function ask({ title, body = "", input = false, placeholder = "", ok = "OK", danger = false, attach = false }) {
+function ask({ title, body = "", input = false, value = "", placeholder = "", ok = "OK", danger = false, attach = false }) {
   const d = $("#ask-sheet");
   $("#ask-attach").hidden = !attach;
   askAttach.reset();
@@ -200,7 +200,7 @@ function ask({ title, body = "", input = false, placeholder = "", ok = "OK", dan
   $("#ask-body").hidden = !body;
   const field = $("#ask-input");
   field.hidden = !input;
-  field.value = "";
+  field.value = value;
   field.placeholder = placeholder;
   const okBtn = $("#ask-ok");
   setLabel(okBtn, danger ? "trash" : "check", ok);
@@ -536,12 +536,9 @@ function onEvent(ev, m = { name: "" }) {
     case "todo.output":
       state.lastLine.set(ev.todo_id, String(ev.data).split("\n").pop());
       if (mine) updateLiveLine(ev.todo_id);
-      if (state.detail === ev.todo_id) {
-        const log = $("#d-log");
-        const stick = log.parentElement.scrollTop + log.parentElement.clientHeight >= log.parentElement.scrollHeight - 40;
-        log.textContent += `${new Date(ev.time).toLocaleTimeString(timeLocale)} ${ev.data}\n`;
-        if (stick && state.pane === "log") log.parentElement.scrollTop = log.parentElement.scrollHeight;
-      }
+      break;
+    case "todo.event":
+      if (state.detail === ev.todo_id) addWorkerEvent(ev.todo_id, ev.data);
       break;
     case "git.op":
       if (mine || (!ev.project_id && sameMachine)) addActivity(ev);
@@ -1243,17 +1240,16 @@ $("#todo-form").noValidate = true;
 async function openDetail(id) {
   state.detail = id;
   const t = state.todos.get(id);
-  state.pane = t?.worktree ? "diff" : t?.status === "draft" ? "chat" : "log";
+  state.pane = t?.worktree ? "diff" : "timeline";
   state.diff = "";
   state.diffOpen = new Set();
   $("#detail").hidden = false;
   $("#scrim").hidden = !desktop.matches;
   renderDetail();
-  if (state.pane === "chat") todoChat.input.focus();
+  if (state.pane === "timeline") todoChat.input.focus();
   $$(".todo.selected").forEach((e) => e.classList.remove("selected"));
   $(`.todo[data-id="${id}"]`)?.classList.add("selected");
-  $("#d-log").textContent = "";
-  await Promise.all([loadLog(), loadDiff(), loadTodoChat()]).catch(fail);
+  await Promise.all([loadDiff(), loadTodoChat()]).catch(fail);
 }
 
 function closeDetail() {
@@ -1269,11 +1265,6 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && state.detail && !document.querySelector("dialog[open]")) closeDetail();
 });
 
-async function loadLog() {
-  const id = state.detail;
-  const text = await api("GET", `/api/todos/${id}/log`);
-  if (state.detail === id) $("#d-log").textContent = text || "No output yet.";
-}
 async function loadDiff() {
   const id = state.detail;
   const t = state.todos.get(id);
@@ -1314,6 +1305,7 @@ function renderDetail() {
   $("#d-error").hidden = !t.error;
   $("#d-error").textContent = t.error || "";
   renderActions(t);
+  $("#d-to-agent").hidden = !canRework(t);
   renderPane();
 }
 
@@ -1413,15 +1405,29 @@ function reviewTodo() {
   if (todoChat.busy) return toast("Wait for Claude to finish answering");
   reviewNext = true;
   const prompt = state.project?.review_prompt || DEFAULT_REVIEW_PROMPT;
-  askChat(todoChat.input, $("#d-chat-form"), prompt, () => { state.pane = "chat"; renderPane(); });
+  askChat(todoChat.input, $("#d-chat-form"), prompt, () => { state.pane = "timeline"; renderPane(); });
 }
 
-async function reworkTodo(t) {
-  const res = await ask({ title: "Send back for rework", body: "Claude continues in the same worktree with your notes. Paste or attach a screenshot to show what's wrong.", input: true, placeholder: "What should change?", ok: "Send back", attach: true });
-  if (res === null) return;
+const canRework = (t) => !!t?.worktree && ["review", "failed"].includes(t.status);
+// text prefills the notes, e.g. from the task chat. Resolves true once sent.
+async function reworkTodo(t, text = "") {
+  const res = await ask({ title: "Send back for rework", body: "Claude continues in the same worktree with your notes. Paste or attach a screenshot to show what's wrong.", input: true, value: text, placeholder: "What should change?", ok: "Send back", attach: true });
+  if (res === null) return false;
   await api("POST", `/api/todos/${t.id}/rework`, { feedback: res.text, attachments: res.attachments });
   toast("Sent back for rework");
+  return true;
 }
+
+// "Send to agent" turns what's in the task chat's composer into rework notes.
+$("#d-to-agent").addEventListener("click", attempt(async () => {
+  const t = state.todos.get(state.detail);
+  if (!canRework(t)) return;
+  const input = todoChat.input;
+  if (await reworkTodo(t, input.value.trim())) {
+    input.value = "";
+    input.dispatchEvent(new Event("input"));
+  }
+}));
 
 async function revertTodo(t) {
   if (t.status !== "merged" || t.revert) throw new Error("Only merged tasks can be reverted.");
@@ -1461,9 +1467,8 @@ $$(".segmented button").forEach((b) => b.addEventListener("click", () => { state
 function renderPane() {
   $$(".segmented button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.pane === state.pane)));
   $("#d-diff").hidden = state.pane !== "diff";
-  $("#d-log").hidden = state.pane !== "log";
-  const chatShown = $("#d-chat").hidden && state.pane === "chat";
-  $("#d-chat").hidden = state.pane !== "chat";
+  const chatShown = $("#d-chat").hidden && state.pane === "timeline";
+  $("#d-chat").hidden = state.pane !== "timeline";
   renderDiff(state.diff);
   if (chatShown) todoChat.toEnd();
 }
@@ -1979,16 +1984,19 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
 // clear() deletes its saved conversation.
 // The client owns the history and sends it in full each turn; the server saves
 // every finished turn. With resume, a turn cut off by a lost connection (Dash
-// restarting, say) is sent again once Dash is back.
-function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, resume = false }) {
+// restarting, say) is sent again once Dash is back. labels ({user, assistant})
+// head each message with who it's from; merge(nodes, saved) places a saved
+// conversation's messages among other nodes.
+function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, resume = false, labels = null, merge = (nodes) => nodes }) {
   const c = { history: [], current: null, ws: null, prefix: "" };
   const input = form.q;
-  const sendBtn = form.querySelector("button");
+  const sendBtn = form.querySelector("button:not([type=button])");
   const finish = () => { c.current = null; sendBtn.disabled = false; };
   const toEnd = () => { if (log.offsetParent) scroller().scrollTop = scroller().scrollHeight; };
-  const assistant = (content) => h("div", { class: "msg assistant" }, h("div", { class: "reply", innerHTML: renderMarkdown(content) }), actions(content));
+  const from = (who) => labels ? h("div", { class: "msg-from" }, labels[who]) : null;
+  const assistant = (content) => h("div", { class: "msg assistant" }, from("assistant"), h("div", { class: "reply", innerHTML: renderMarkdown(content) }), actions(content));
   const prefixOf = () => target().prefix || "";
-  const user = (m) => h("div", { class: "msg user" }, m.content,
+  const user = (m) => h("div", { class: "msg user" }, from("user"), m.content,
     m.attachments?.length ? h("div", { class: "msg-attach" }, ...m.attachments.map((a) => attachThumb(a, null, prefixOf()))) : null);
   // Images and files dropped onto the chat or pasted into its text field.
   const attachRow = h("div", { class: "attach", hidden: true });
@@ -2017,9 +2025,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
       else if (d.kind === "text") { cur.content += d.text; cur.seg += d.text; cur.reply.innerHTML = renderMarkdown(cur.seg); }
       else if (d.kind === "tool_use") {
         // Later text goes below the tool call, in a reply of its own.
-        const out = h("pre", { class: "tool-out", hidden: true });
-        const el = h("details", { class: "tool" }, h("summary", {}, h("b", {}, d.tool), ` ${toolSummary(d.tool, d.input)}`),
-          h("pre", { class: "tool-in" }, toolDetail(d.tool, d.input)), out);
+        const { el, out } = toolCall(d.tool, d.input);
         cur.tools.set(d.id, { el, out });
         cur.reply.after(el);
         cur.reply = h("div", { class: "reply" });
@@ -2027,7 +2033,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
         cur.seg = "";
       } else if (d.kind === "tool_result") {
         const t = cur.tools.get(d.id);
-        if (t) { t.out.hidden = false; t.out.textContent = d.text || "(no output)"; t.el.classList.toggle("error", !!d.is_error); }
+        if (t) toolResult(t, d);
       } else if (d.kind === "permission") {
         cur.reply.before(chatPermCard(d, (decision) => ws.send(JSON.stringify({ type: "permission", id: d.id, decision }))));
       } else if (d.kind === "permission_decided") {
@@ -2038,7 +2044,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
       if (d.kind === "done" || d.kind === "error") {
         cur.el.classList.remove("pending");
         if (cur.content) cur.el.append(actions(cur.content));
-        if (cur.content) c.history.push({ role: "assistant", content: cur.content });
+        if (cur.content) c.history.push({ role: "assistant", content: cur.content, at: cur.at });
         else c.history.pop(); // keep history alternating
         finish();
       }
@@ -2066,14 +2072,15 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   function reset(saved = []) {
     if (c.current) { c.ws = null; finish(); }
     c.history = [...saved];
-    empty.hidden = saved.length > 0;
-    log.replaceChildren(empty, ...saved.map((m) => m.role === "user" ? user(m) : assistant(m.content)));
+    const nodes = merge(saved.map((m) => m.role === "user" ? user(m) : assistant(m.content)), saved);
+    empty.hidden = nodes.length > 0;
+    log.replaceChildren(empty, ...nodes);
     toEnd();
   }
 
   function send(q, attachments = []) {
     empty.hidden = true;
-    const m = { role: "user", content: q, ...(attachments.length ? { attachments } : {}) };
+    const m = { role: "user", content: q, at: new Date().toISOString(), ...(attachments.length ? { attachments } : {}) };
     c.history.push(m);
     log.append(user(m));
     sendBtn.disabled = true;
@@ -2085,10 +2092,10 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   function turn({ prefix = "", ...fields }) {
     const thinking = h("div", { class: "thinking" });
     const reply = h("div", { class: "reply" });
-    const el = h("div", { class: "msg assistant pending" }, thinking, reply);
+    const el = h("div", { class: "msg assistant pending" }, from("assistant"), thinking, reply);
     c.current ? c.current.el.replaceWith(el) : log.append(el);
     toEnd();
-    c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), target: { prefix, ...fields } };
+    c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), target: { prefix, ...fields }, at: new Date().toISOString() };
     const ws = socket(prefix);
     ws.fields = fields;
     const go = () => ws.send(JSON.stringify({ type: "send", ...fields, messages: c.history }));
@@ -2135,6 +2142,19 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   }
 
   return { reset, resumeLast, input, toEnd, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; } };
+}
+
+// A collapsible tool call: its input, and its output once filled in.
+function toolCall(tool, input) {
+  const out = h("pre", { class: "tool-out", hidden: true });
+  const el = h("details", { class: "tool" }, h("summary", {}, h("b", {}, tool), ` ${toolSummary(tool, input)}`),
+    h("pre", { class: "tool-in" }, toolDetail(tool, input)), out);
+  return { el, out };
+}
+function toolResult(t, d) {
+  t.out.hidden = false;
+  t.out.textContent = d.text || "(no output)";
+  t.el.classList.toggle("error", !!d.is_error);
 }
 
 // Tool calls in the chat: a one-line summary, and the full input when expanded.
@@ -2207,6 +2227,8 @@ loadChat().catch((e) => toast(`Couldn't load chat history: ${e.message}`, true))
 const EDITABLE = ["draft", "queued", "failed"];
 const todoChat = makeChat({
   log: $("#d-chat-log"), empty: $("#d-chat-empty"), form: $("#d-chat-form"),
+  labels: { user: "You · chat only", assistant: "Chat" },
+  merge: (nodes, saved) => timeline(nodes, saved),
   // reviewNext marks the turn the Review button sends, which locks the task until it ends.
   target: () => { const review = reviewNext; reviewNext = false; return { prefix: here(), todo: state.detail, ...(review && { review }) }; },
   clear: () => api("DELETE", `/api/todos/${state.detail}/chat`),
@@ -2222,11 +2244,7 @@ const todoChat = makeChat({
         await api("PATCH", `/api/todos/${t.id}`, { prompt: answer });
         toast("Instructions updated");
       }) }, "draft", "Use as instructions") : null,
-      t?.worktree && ["review", "failed"].includes(t.status) ? ib({ class: "link", onclick: attempt(async () => {
-        if (!await ask({ title: "Send back for rework?", body: "Claude continues in the same worktree with this answer as feedback.", ok: "Send back" })) return;
-        await api("POST", `/api/todos/${t.id}/rework`, { feedback: answer });
-        toast("Sent back for rework");
-      }) }, "redo", "Send back as rework") : null,
+      canRework(t) ? ib({ class: "link", onclick: attempt(() => reworkTodo(t, answer)) }, "redo", "Send to agent") : null,
       ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
   },
 });
@@ -2436,11 +2454,116 @@ let todoChatId = null;
 async function loadTodoChat() {
   const id = state.detail;
   // Reopening the todo whose reply is still streaming keeps it on screen.
-  if (todoChatId === id && todoChat.busy) return todoChat.toEnd();
+  // The events file only grows, so the worker's events from while it was closed are those past ours.
+  if (todoChatId === id && todoChat.busy) {
+    const events = await api("GET", `/api/todos/${id}/events`);
+    if (state.detail === id && worker.id === id) events.slice(worker.events.length).forEach((e) => addWorkerEvent(id, e));
+    return todoChat.toEnd();
+  }
   todoChatId = id;
+  worker.id = null;
+  worker.events = worker.live = [];
   todoChat.reset();
-  const saved = await api("GET", `/api/todos/${id}/chat`);
-  if (state.detail === id && !todoChat.history.length && !todoChat.busy) todoChat.reset(saved);
+  const [saved, events] = await Promise.all([api("GET", `/api/todos/${id}/chat`), api("GET", `/api/todos/${id}/events`)]);
+  if (state.detail !== id) return;
+  // Events that streamed in while loading, unless the load has them already.
+  const key = (e) => `${e.at}|${e.kind}|${e.id || ""}`;
+  const seen = new Set(events.map(key));
+  worker.id = id;
+  worker.events = [...events, ...worker.live.filter((e) => !seen.has(key(e)))];
+  worker.live = [];
+  if (!todoChat.history.length && !todoChat.busy) todoChat.reset(saved);
+}
+
+// ------------------------------------------------------------------ task timeline
+// The task chat's log is the task's timeline: the worker's runs (labelled
+// Agent) among the side chat's turns (labelled Chat), in time order. Only the
+// worker's events are kept here; the chat keeps its own history.
+const worker = { id: null, events: [], live: [], cur: null, tools: new Map() };
+
+const clock = (iso) => new Date(iso).toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit" });
+
+// timeline merges a saved chat's message nodes with the worker's events.
+function timeline(nodes, saved) {
+  const at = (iso) => (iso ? Date.parse(iso) : Infinity); // chats from before timestamps go last
+  const items = [
+    ...saved.map((m, i) => ({ at: at(m.at), i, node: nodes[i] })),
+    ...worker.events.map((e, i) => ({ at: at(e.at), i: saved.length + i, ev: e })),
+  ].sort((a, b) => a.at - b.at || a.i - b.i);
+  const frag = document.createDocumentFragment();
+  worker.cur = null;
+  worker.tools = new Map();
+  for (const it of items) it.ev ? workerNode(frag, it.ev) : frag.append(it.node);
+  return [...frag.childNodes];
+}
+
+// A worker event streamed in while its todo is open.
+function addWorkerEvent(id, e) {
+  if (worker.id !== id) { worker.live.push(e); return; } // still loading
+  worker.events.push(e);
+  const log = $("#d-chat-log"), sc = $(".detail-body");
+  const stick = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 120;
+  $("#d-chat-empty").hidden = true;
+  workerNode(log, e);
+  if (stick && state.pane === "timeline") sc.scrollTop = sc.scrollHeight;
+}
+
+// workerNode adds one worker event to parent: text and tool calls go into the
+// Agent turn at its end (or a new one), Dash's notes into a log block, and run
+// boundaries become dividers.
+function workerNode(parent, e) {
+  const last = (kind) => (worker.cur?.kind === kind && worker.cur.el === parent.lastElementChild ? worker.cur : null);
+  const divider = (text, cls = "") => { worker.cur = null; parent.append(h("div", { class: `tl-divider ${cls}`, role: "separator" }, h("span", {}, text))); };
+  switch (e.kind) {
+    case "run_start":
+      return divider(`Agent · ${e.text || "Started"} · ${clock(e.at)}`, "agent");
+    case "run_end":
+      divider(`Agent ${e.is_error ? "stopped" : "finished"} · ${clock(e.at)}`, e.is_error ? "agent error" : "agent");
+      if (e.is_error && e.text) parent.append(h("p", { class: "tl-error" }, e.text));
+      return;
+    case "prompt":
+      worker.cur = null;
+      return parent.append(h("div", { class: "msg user to-agent" }, h("div", { class: "msg-from" }, "To agent"), e.text));
+    case "status": {
+      let cur = last("notes");
+      if (!cur) { cur = worker.cur = { kind: "notes", el: h("pre", { class: "log tl-log" }) }; parent.append(cur.el); }
+      cur.el.append(`${new Date(e.at).toLocaleTimeString(timeLocale)} ${e.text}\n`);
+      return;
+    }
+    case "tool_result": {
+      const t = worker.tools.get(e.id);
+      if (t) toolResult(t, e);
+      return;
+    }
+  }
+  let cur = last("agent");
+  if (!cur) {
+    const reply = h("div", { class: "reply" });
+    cur = worker.cur = { kind: "agent", el: h("div", { class: "msg assistant agent" }, h("div", { class: "msg-from" }, "Agent"), reply), reply, seg: "" };
+    parent.append(cur.el);
+  }
+  switch (e.kind) {
+    case "text":
+      cur.seg += (cur.seg ? "\n\n" : "") + e.text;
+      cur.reply.innerHTML = renderMarkdown(cur.seg);
+      break;
+    case "tool_use": {
+      // Later text goes below the tool call, in a reply of its own.
+      const t = toolCall(e.tool, e.input || {});
+      worker.tools.set(e.id, t);
+      cur.el.append(t.el);
+      cur.reply = h("div", { class: "reply" });
+      cur.el.append(cur.reply);
+      cur.seg = "";
+      break;
+    }
+    case "result":
+      cur.el.append(e.is_error
+        ? h("p", { class: "tl-error" }, e.text)
+        : h("p", { class: "agent-meta" }, `${e.turns} ${e.turns === 1 ? "turn" : "turns"}${e.cost_usd ? ` · ≈$${e.cost_usd.toFixed(2)}` : ""}`));
+      worker.cur = null;
+      break;
+  }
 }
 
 // ------------------------------------------------------------------ run: processes & terminal
@@ -3547,11 +3670,11 @@ async function handleNormal(k, n, hadCount) {
     const t = state.todos.get(state.detail);
     if (["j", "k", "ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b", "gg", "G"].includes(k)) return scrollBy(scroller(), k, n);
     if (["h", "l"].includes(k)) {
-      const panes = ["diff", "log", "chat"];
+      const panes = ["diff", "timeline"];
       state.pane = panes[(panes.indexOf(state.pane) + (k === "l" ? 1 : panes.length - 1)) % panes.length];
       return renderPane();
     }
-    if (state.pane === "chat" && k === "i") return todoChat.input.focus();
+    if (state.pane === "timeline" && k === "i") return todoChat.input.focus();
     if (t && k === "Enter" && enterKey(t)) return todoKey(t, enterKey(t));
     if (t) await todoKey(t, k);
     return;

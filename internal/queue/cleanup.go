@@ -168,8 +168,8 @@ func (m *MergeQueue) cleanupFiles() CleanupReport {
 		useChat(m.Store.TodoChat(t.ID))
 	}
 	for _, f := range logs {
-		id, ok := strings.CutSuffix(f.Name(), ".log")
-		if !ok || todos[id] {
+		id, ext, _ := strings.Cut(f.Name(), ".")
+		if (ext != "log" && ext != "events.jsonl") || todos[id] {
 			continue
 		}
 		path := filepath.Join(m.Log.Root, f.Name())

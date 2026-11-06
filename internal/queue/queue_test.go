@@ -29,7 +29,7 @@ type fakeExec struct {
 	result string // Claude's final message
 }
 
-func (f *fakeExec) Run(ctx context.Context, req agent.ExecRequest, emit func(string)) (agent.ExecResult, error) {
+func (f *fakeExec) Run(ctx context.Context, req agent.ExecRequest, emit func(model.RunEvent)) (agent.ExecResult, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, req)
 	n := len(f.calls)
@@ -196,6 +196,24 @@ func TestFailingTestsGoBackToClaudeWithResume(t *testing.T) {
 	}
 	if !strings.Contains(calls[1].Prompt, "grep -qx pass a.txt") || strings.Contains(calls[1].Prompt, "do make a") {
 		t.Fatalf("resumed prompt should carry only the test failure, got:\n%s", calls[1].Prompt)
+	}
+
+	// The timeline marks each run's boundaries and shows the notes sent to Claude.
+	evs, _ := h.engine.Log.Events(td.ID)
+	var runs []string
+	for _, e := range evs {
+		switch e.Kind {
+		case "run_start", "run_end":
+			runs = append(runs, e.Kind+":"+e.Text)
+		case "prompt":
+			runs = append(runs, "prompt")
+			if !strings.Contains(e.Text, "grep -qx pass a.txt") {
+				t.Errorf("prompt event should carry the test failure, got %q", e.Text)
+			}
+		}
+	}
+	if got := strings.Join(runs, ","); got != "run_start:Started,run_end:,run_start:Rework,prompt,run_end:" {
+		t.Fatalf("run events: %s", got)
 	}
 
 	// Re-running the tests by hand records a "manual" result without Claude.
@@ -383,7 +401,7 @@ type pauseExec struct {
 	started chan struct{}
 }
 
-func (p *pauseExec) Run(ctx context.Context, req agent.ExecRequest, emit func(string)) (agent.ExecResult, error) {
+func (p *pauseExec) Run(ctx context.Context, req agent.ExecRequest, emit func(model.RunEvent)) (agent.ExecResult, error) {
 	if len(p.Calls()) == 0 {
 		p.mu.Lock()
 		p.calls = append(p.calls, req)

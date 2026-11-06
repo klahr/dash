@@ -3,6 +3,7 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -296,6 +297,24 @@ type ChatMessage struct {
 	Content string `json:"content"`
 	// Attachments are files dropped or pasted into a user message.
 	Attachments []Attachment `json:"attachments,omitempty"`
+	// At is when the message was sent, to place it in a task's timeline.
+	At *time.Time `json:"at,omitempty"`
+}
+
+// RunEvent is one step of a todo's worker: a Claude run's text, tool calls
+// and results, its boundaries, and Dash's own progress notes.
+type RunEvent struct {
+	// "run_start" | "run_end" | "prompt" (notes sent to Claude) | "text" |
+	// "tool_use" | "tool_result" | "result" | "status" (a Dash note)
+	Kind    string          `json:"kind"`
+	Text    string          `json:"text,omitempty"`
+	ID      string          `json:"id,omitempty"` // tool_use id (tool_use, tool_result)
+	Tool    string          `json:"tool,omitempty"`
+	Input   json.RawMessage `json:"input,omitempty"`
+	IsError bool            `json:"is_error,omitempty"`
+	Turns   int             `json:"turns,omitempty"`    // result
+	CostUSD float64         `json:"cost_usd,omitempty"` // result
+	At      time.Time       `json:"at"`
 }
 
 // EventType names a WebSocket event broadcast to dashboards.
@@ -306,6 +325,7 @@ const (
 	EvTodoUpdated    EventType = "todo.updated"
 	EvTodoDeleted    EventType = "todo.deleted"
 	EvTodoOutput     EventType = "todo.output" // agent progress line
+	EvTodoEvent      EventType = "todo.event"  // a structured RunEvent of the worker
 	EvGitOp          EventType = "git.op"      // a git/gh command ran
 	EvMergeQueue     EventType = "merge.queue" // merge queue depth / current job
 	EvProcUpdated    EventType = "process.updated"

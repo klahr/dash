@@ -271,20 +271,19 @@
         <div class="pane-tabs">
           <div class="segmented" role="tablist">
             <button role="tab" data-pane="diff" aria-selected="true" data-icon="diff">Changes <span id="d-diffstat"></span></button>
-            <button role="tab" data-pane="log" aria-selected="false" data-icon="log">Log</button>
-            <button role="tab" data-pane="chat" aria-selected="false" data-icon="comment">Chat</button>
+            <button role="tab" data-pane="timeline" aria-selected="false" data-icon="comment">Timeline</button>
           </div>
         </div>
         <div class="pane" id="d-diff"></div>
-        <pre class="pane log" id="d-log" hidden></pre>
         <div class="pane todo-chat" id="d-chat" hidden>
           <p class="chat-cwd" id="d-chat-cwd" hidden></p>
           <div class="chat-log" id="d-chat-log">
-            <p class="pane-empty" id="d-chat-empty">Talk this task through with Claude. It sees the instructions, so it can help you sharpen a draft into a better prompt.</p>
+            <p class="pane-empty" id="d-chat-empty">The agent's work on this task shows here as it runs. Talk the task through with Claude below: it sees the instructions, so it can help you sharpen a draft into a better prompt. The agent doesn't see this chat; use Send to agent for that.</p>
           </div>
           <form class="composer" id="d-chat-form">
-            <textarea name="q" rows="1" placeholder="Ask about this task" aria-label="Ask Claude about this task"></textarea>
-            <button class="icon-btn primary" aria-label="Send">
+            <textarea name="q" rows="1" placeholder="Ask about this task (the agent won't see this)" aria-label="Ask Claude about this task in a side chat; the agent won't see this"></textarea>
+            <button type="button" class="btn small to-agent" id="d-to-agent" data-icon="redo" title="Send back for rework with this text: the agent continues in its worktree" hidden>Send to agent</button>
+            <button class="icon-btn primary" aria-label="Send to the chat">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m0 0-6 6m6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
           </form>
@@ -455,11 +454,11 @@
         <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with tasks · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
         <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gs</kbd>/<kbd>ga</kbd>/<kbd>gh</kbd>/<kbd>gf</kbd> Board/Shell/Activity/History/Files · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> sections, <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>J</kbd>/<kbd>K</kbd> next/previous project · <kbd>c</kbd> project chat · <kbd>[</kbd> collapse sidebar · <kbd>Ctrl-k</kbd> search projects, tasks and commands · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
         <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review, enqueue a draft; <kbd>Space</kbd> opens) · <kbd>a</kbd> new · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>*</kbd> milestone · <kbd>t</kbd> try it · <kbd>!</kbd> shell in worktree</dd>
-        <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> changes ↔ log · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
+        <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> changes ↔ timeline · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
         <dt>Search</dt><dd><kbd>/</kbd> filter the board · <kbd>Enter</kbd> jump to first match · <kbd>n</kbd>/<kbd>N</kbd> next/previous · <kbd>Esc</kbd> or <code>:noh</code> clear</dd>
         <dt>More</dt><dd><kbd>T</kbd> run tests again · <kbd>Y</kbd> duplicate · <kbd>E</kbd> open worktree in editor · <kbd>u</kbd> revert a merged task · <kbd>O</kbd> open its pull request · click a diff line to comment · paste or drop images into a task</dd>
         <dt>Approvals</dt><dd><kbd>y</kbd> allow · <kbd>A</kbd> always allow that tool for the task · <kbd>n</kbd> deny</dd>
-        <dt>Task chat</dt><dd><kbd>h</kbd>/<kbd>l</kbd> to the Chat tab · <kbd>i</kbd> type</dd>
+        <dt>Task chat</dt><dd><kbd>h</kbd>/<kbd>l</kbd> to the Timeline tab · <kbd>i</kbd> type (side chat only; the agent won't see it)</dd>
         <dt>Chat</dt><dd><kbd>gc</kbd> open/close the chat pane · <kbd>Enter</kbd> send · <kbd>Esc</kbd> stop typing, again to close the overlay · <kbd>Ctrl-k</kbd> "Pin chat" keeps it beside the content</dd>
         <dt>Shell</dt><dd><kbd>i</kbd> type into terminal · <kbd>Ctrl-]</kbd> leave terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> new shell</dd>
         <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> add to queue · <kbd>Ctrl-Shift-Enter</kbd>/<kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>

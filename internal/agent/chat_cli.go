@@ -292,10 +292,11 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 // maxToolOutput caps the tool output sent to the chat per call.
 const maxToolOutput = 20_000
 
-// contentBlock is a tool_use (assistant) or tool_result (user) block of a
-// complete stream-json message; text arrives as deltas instead.
+// contentBlock is a text or tool_use (assistant) or tool_result (user) block
+// of a complete stream-json message. The chat takes text from deltas instead.
 type contentBlock struct {
 	Type      string          `json:"type"`
+	Text      string          `json:"text"`
 	ID        string          `json:"id"`
 	Name      string          `json:"name"`
 	Input     json.RawMessage `json:"input"`

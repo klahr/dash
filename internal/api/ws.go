@@ -154,13 +154,14 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			}
 			var reply strings.Builder
 			saved := false
+			started := time.Now() // places the reply right after its question in a task's timeline
 			err := s.Chat.Stream(ctx, dir, prompt, func(d agent.ChatDelta) {
 				if d.Kind == "text" {
 					reply.WriteString(d.Text)
 				}
 				if d.Kind == "done" && reply.Len() > 0 && s.Store != nil {
 					// Save before telling the client, so a reload right after sees it.
-					turn := append(history[:len(history):len(history)], agent.ChatMessage{Role: "assistant", Content: reply.String()})
+					turn := append(history[:len(history):len(history)], agent.ChatMessage{Role: "assistant", Content: reply.String(), At: &started})
 					if err := save(turn); err != nil {
 						slog.Error("save chat", "err", err)
 					}

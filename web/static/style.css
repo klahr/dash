@@ -385,6 +385,21 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .todo-chat .chat-log { overflow: visible; padding: 0 0 12px; }
 .todo-chat .composer { position: sticky; bottom: 0; padding: 10px 0 16px; }
 .detail-body:has(> .todo-chat:not([hidden])) { padding-bottom: 0; }
+.todo-chat .composer .to-agent { flex: none; align-self: center; }
+/* Task timeline: who said what. The agent (the worker) is amber like a running
+   task; the side chat keeps the plain chat look. */
+.msg-from { font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--muted); margin-bottom: 4px; white-space: normal; }
+.msg.agent { border-left: 2px solid var(--running); padding-left: 12px; }
+.msg.agent > .msg-from, .msg.to-agent > .msg-from { color: var(--running); }
+.msg.user.to-agent { background: color-mix(in srgb, var(--running) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--running) 35%, transparent); }
+.msg .agent-meta { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.tl-divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.tl-divider::before, .tl-divider::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+.tl-divider.agent { color: var(--running); }
+.tl-divider.agent::before, .tl-divider.agent::after { border-color: color-mix(in srgb, var(--running) 40%, transparent); }
+.tl-divider.error { color: var(--failed); }
+.tl-error { margin: 0; color: var(--failed); font-size: 14px; }
+.tl-log { min-height: 0; max-height: 240px; overflow: auto; padding: 8px 12px; font-size: 12px; }
 
 /* ---------- run ---------- */
 #view-run.active { display: flex; height: calc(100dvh - var(--top-h) - var(--nav-h) - var(--safe-b)); background: #0a0f17; }

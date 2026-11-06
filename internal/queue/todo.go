@@ -419,6 +419,18 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	if req.Resume != "" {
 		log("▶ resuming Claude session " + req.Resume)
 	}
+	emit := func(ev model.RunEvent) { e.Log.Event(*t, ev) }
+	switch {
+	case len(unsent) > 0 && req.Resume != "":
+		emit(model.RunEvent{Kind: "run_start", Text: "Rework"})
+	case req.Resume != "":
+		emit(model.RunEvent{Kind: "run_start", Text: "Resumed"})
+	default:
+		emit(model.RunEvent{Kind: "run_start", Text: "Started"})
+	}
+	for _, n := range unsent {
+		emit(model.RunEvent{Kind: "prompt", Text: n})
+	}
 	req.ExtraArgs = append(req.ExtraArgs, "--max-turns", strconv.Itoa(p.TurnLimit()))
 	for _, dir := range attachmentDirs(t.Attachments) {
 		req.ExtraArgs = append(req.ExtraArgs, "--add-dir", dir)
@@ -442,17 +454,23 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	var overTime atomic.Bool
 	go e.watchdog(runCtx, t.ID, limit, func() { overTime.Store(true); stop() })
 
-	res, err := e.Exec.Run(runCtx, req, log)
+	res, err := e.Exec.Run(runCtx, req, emit)
 	if res.ResumeFailed && req.Resume != "" && runCtx.Err() == nil {
 		log("↻ the previous Claude session is gone; starting a fresh one with the full task")
+		emit(model.RunEvent{Kind: "run_start", Text: "Started over with the full task"})
 		req.Resume, req.Prompt = "", agent.BuildPrompt(*t)
-		res, err = e.Exec.Run(runCtx, req, log)
+		res, err = e.Exec.Run(runCtx, req, emit)
 	}
 	switch {
 	case overTime.Load() && ctx.Err() == nil:
 		err = fmt.Errorf("stopped: Claude worked longer than the %d-minute limit; rework it to let Claude continue, or raise the limit in the project settings", p.RunMinutes())
 	case res.Stop == "error_max_turns":
 		err = fmt.Errorf("stopped: Claude used its %d-turn limit; rework it to let Claude continue, or raise the limit in the project settings", p.TurnLimit())
+	}
+	if err != nil {
+		emit(model.RunEvent{Kind: "run_end", Text: err.Error(), IsError: true})
+	} else {
+		emit(model.RunEvent{Kind: "run_end"})
 	}
 	nt, uerr := e.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
 		if res.SessionID != "" {
@@ -475,11 +493,12 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 // noteFailure explains in the todo's chat why it failed, quoting Claude's
 // final message when there is one: it usually says why nothing changed.
 func noteFailure(s *store.Store, todoID, why, report string) {
+	now := time.Now()
 	msg := "**This task failed:** " + why
 	if report != "" {
 		msg += "\n\nClaude's last message:\n\n" + report
 	}
-	if err := s.AppendTodoChat(todoID, model.ChatMessage{Role: "assistant", Content: msg}); err != nil {
+	if err := s.AppendTodoChat(todoID, model.ChatMessage{Role: "assistant", Content: msg, At: &now}); err != nil {
 		slog.Error("note failure", "todo", todoID, "err", err)
 	}
 }

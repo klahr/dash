@@ -668,6 +668,16 @@ func (s *Server) todoLog(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(log))
 }
 
+// todoEvents is the todo's worker events, oldest first, for its timeline.
+func (s *Server) todoEvents(w http.ResponseWriter, r *http.Request) {
+	evs, err := s.Todos.Log.Events(r.PathValue("tid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, evs)
+}
+
 func (s *Server) approveTodo(w http.ResponseWriter, r *http.Request) {
 	t, err := s.Store.UpdateTodo(r.PathValue("tid"), func(t *model.Todo) error {
 		if t.Status != model.StatusReview && t.Status != model.StatusFailed {
