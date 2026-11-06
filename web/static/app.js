@@ -109,6 +109,7 @@ function ask({ title, body = "", input = false, placeholder = "", ok = "OK", dan
 // Screenshots and files for Claude: an "Attach file" button, paste into the
 // text field, or drop onto the sheet.
 const CLIP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5 12.6 19.9a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const PENCIL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L18.5 9.5a2.8 2.8 0 0 0-4-4L4 16v4zM13.5 6.5l4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const clip = () =>h("span", { class: "clip", innerHTML: CLIP });
 const uploadURL = (a) => on(here(), `/api/uploads/${a.id}/${encodeURIComponent(a.name)}`);
 const ACCEPT = "image/png,image/jpeg,image/gif,image/webp,.pdf,.txt,.md,.log,.json,.csv";
@@ -518,19 +519,16 @@ function renderProjectList() {
 
 const notifyLabel = () => notifyOn() ? "Turn off notifications" : "Turn on notifications";
 
-// Push or create the GitHub repo, settings and clean up for the current
-// project: in the phone's project sheet, and under the current project in the
-// desktop sidebar.
+// Create the GitHub repo and settings for the current project: in the phone's
+// project sheet, and under the current project in the desktop sidebar (where
+// settings is an edit icon next to the name). Pushing lives on the Done column.
 function projectActions(p, sheet) {
   if (!p) return [];
   const cls = sheet ? "btn" : "side-action";
   return [
     sheet ? h("span", { class: "remote" }, p.remote_url ? `Remote: ${p.remote_url}` : "No GitHub remote yet.") : null,
-    p.remote_url
-      ? h("button", { type: "button", class: cls, title: p.remote_url, onclick: attempt(pushDone) }, `Push ${p.default_branch}`)
-      : h("button", { type: "button", class: cls, title: "No GitHub remote yet", onclick: attempt(createGitHubRepo) }, sheet ? "Create GitHub repository" : "Create GitHub repo"),
-    h("button", { type: "button", class: cls, onclick: openSettings }, "Settings"),
-    h("button", { type: "button", class: cls, onclick: attempt(cleanup) }, "Clean up"),
+    p.remote_url ? null : h("button", { type: "button", class: cls, title: "No GitHub remote yet", onclick: attempt(createGitHubRepo) }, sheet ? "Create GitHub repository" : "Create GitHub repo"),
+    sheet ? h("button", { type: "button", class: cls, onclick: openSettings }, "Settings") : null,
   ].filter(Boolean);
 }
 
@@ -543,16 +541,21 @@ function openNewProject() {
 }
 
 // Desktop sidebar: every project, one click away. The current one shows its
-// branch and its actions (push, settings, clean up).
+// branch, an edit button for its settings, and "Create GitHub repo" if needed.
 function renderSideProjects() {
   const item = (p) => {
     const cur = projectKey(state.project) === projectKey(p);
+    const actions = cur ? projectActions(p, false) : [];
     return h("li", { class: cur ? "current" : "" },
       h("button", {
         type: "button", class: "side-project", title: p.path, "aria-current": cur ? "true" : "false",
         onclick: attempt(() => selectProject(p)),
       }, h("span", { class: "side-project-name" }, p.name), cur ? h("span", { class: "side-project-branch" }, p.default_branch) : null),
-      cur ? h("div", { class: "side-actions", role: "group", "aria-label": `${p.name} actions` }, ...projectActions(p, false)) : null);
+      cur ? h("button", {
+        type: "button", class: "icon-btn side-project-edit", title: "Project settings", "aria-label": `Edit ${p.name} settings`,
+        onclick: openSettings, innerHTML: PENCIL,
+      }) : null,
+      actions.length ? h("div", { class: "side-actions", role: "group", "aria-label": `${p.name} actions` }, ...actions) : null);
   };
   const items = !multi() ? state.projects.map(item) : state.machines.flatMap((m) => [
     h("li", { class: "side-machine", title: m.ok ? "" : m.error || "unreachable" },
