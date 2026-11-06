@@ -2358,7 +2358,7 @@ async function handleNormal(k, n, hadCount) {
           if (t) return openDetail(t.id);
           return;
         }
-        case "o": case "O": case "a": return openTodoForm();
+        case "o": case "a": return openTodoForm();
       }
       const t = cursorTodo();
       if (t) await todoKey(t, k);
