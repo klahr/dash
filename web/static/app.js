@@ -990,10 +990,19 @@ function updateLiveLine(id) {
 
 // ------------------------------------------------------------------ new / edit todo
 let editing = null;
-function openTodoForm(t = null) {
+let pickProject = false;
+// pick lets you choose the project, for todos made outside a project (the global chat).
+function openTodoForm(t = null, { pick = false } = {}) {
   editing = t;
+  pickProject = pick && !t;
   const f = $("#todo-form");
   f.reset();
+  $("#todo-project-field").hidden = !pickProject;
+  if (pickProject) {
+    f.project.replaceChildren(...state.projects.map((p) =>
+      h("option", { value: projectKey(p) }, multi() ? `${p.name} · ${p.machine}` : p.name)));
+    f.project.value = projectKey(state.project);
+  }
   $("#todo-sheet-title").textContent = t ? "Edit todo" : "New todo";
   if (t) {
     f.title.value = t.title;
@@ -1027,9 +1036,13 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
     if (action === "queue" && editing.status !== "queued") await api("POST", `/api/todos/${editing.id}/enqueue`);
     toast(action === "queue" ? "Saved and queued" : "Saved");
   } else {
-    await api("POST", `/api/projects/${state.project.id}/todos`, { ...body, enqueue: action === "queue" });
-    toast(action === "queue" ? "Added to queue" : "Saved as draft");
-    state.lane = action === "queue" ? "queued" : "draft";
+    const p = (pickProject && state.projects.find((x) => projectKey(x) === f.project.value)) || state.project;
+    // Attachments are uploaded to the current project's computer.
+    if (body.attachments.length && p.prefix !== here()) throw new Error(`Attachments can't be sent to ${p.name} on ${p.machine}; remove them or pick a project on this computer.`);
+    await api("POST", `/api/projects/${p.id}/todos`, { ...body, enqueue: action === "queue" }, p.prefix || "");
+    const other = projectKey(p) !== projectKey(state.project);
+    toast(`${action === "queue" ? "Added to queue" : "Saved as draft"}${other ? ` in ${p.name}` : ""}`);
+    if (!other) state.lane = action === "queue" ? "queued" : "draft";
   }
   draft.done();
 }));
@@ -1832,15 +1845,19 @@ function chatPermCard(p, decide) {
       ib({ class: "btn danger", onclick: answer("deny") }, "x", "Deny")));
 }
 
-const chatActions = (answer) => h("div", { class: "msg-actions" },
-  ib({ class: "link", onclick: () => { if (!state.project) return toast("Select a project first", true); openTodoForm(); $("#todo-form").prompt.value = answer; } }, "plus", "Make this a todo"),
+const chatActions = (pick) => (answer) => h("div", { class: "msg-actions" },
+  ib({ class: "link", onclick: () => {
+    if (!(pick ? state.projects?.length : state.project)) return toast(pick ? "Create a project first" : "Select a project first", true);
+    openTodoForm(null, { pick });
+    $("#todo-form").prompt.value = answer;
+  } }, "plus", "Make this a todo"),
   ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
 
 // The global chat isn't about any project: it runs in the home directory of this machine.
 const chat = makeChat({
   log: $("#chat-log"), empty: $("#chat-empty"), form: $("#chat-form"),
   target: () => ({}),
-  actions: chatActions,
+  actions: chatActions(true),
   cwd: $("#chat-cwd"),
 });
 const chatInput = chat.input;
@@ -1882,7 +1899,7 @@ const projectChat = makeChat({
   cwd: $("#pc-cwd"),
   // A turn left streaming when the project was switched is saved when it finishes.
   saved: ({ project }) => { if (project === state.project?.id && !projectChat.busy) loadProjectChat().catch(fail); },
-  actions: chatActions,
+  actions: chatActions(false),
 });
 
 let projectChatId = null;
