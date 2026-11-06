@@ -675,7 +675,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
      quick actions and account status. The sidebar list is the switcher, so the
      header's project button just focuses it. */
   .topbar { grid-area: top; position: static; padding: 0 12px 0 22px; gap: 12px; background: var(--surface); backdrop-filter: none; }
-  .brand { width: calc(var(--side-w) - 34px); flex: none; }
+  .brand { width: calc(var(--side-w) - 80px); flex: none; }
   .project-picker { flex: 0 1 auto; margin-right: auto; }
   .project-switch { justify-content: flex-start; min-height: 36px; }
   .project-switch[aria-expanded="true"] { background: var(--raised); }
@@ -684,13 +684,31 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
     padding: 12px 12px 12px; gap: 2px; background: var(--surface); border-right: 1px solid var(--line);
   }
   .nav { display: contents; }
-  .menu-btn, .menu-head, .menu-scrim { display: none; }
+  .menu-head, .menu-scrim { display: none; }
   .menu { display: contents; }
   .nav > button { order: 2; }
   .nav > button { flex-direction: row; justify-content: flex-start; gap: 12px; min-height: 42px; padding: 0 10px; border-radius: var(--r-m); font-size: 15px; }
   .nav > button:hover { background: var(--raised); }
   .nav > button.active { background: var(--raised); }
   .nav .badge { position: static; margin-left: auto; }
+  /* The top bar's menu button collapses the sidebar to its icons. */
+  .app:not(.side-collapsed) .menu-btn::after { display: none; }
+  .app.side-collapsed { --side-w: 68px; }
+  .side-collapsed .brand { width: auto; }
+  .side-collapsed .sidebar { overflow: visible; }
+  .side-collapsed .nav > button { justify-content: center; padding: 0; }
+  .side-collapsed .nav > button > span:not(.badge),
+  .side-collapsed .side-projects-head, .side-collapsed .side-project-list,
+  .side-collapsed .side-new-project span, .side-collapsed .quick-btn span,
+  .side-collapsed .usage-pill, .side-collapsed .merge-status { display: none; }
+  .side-collapsed .nav .badge { position: absolute; top: 3px; right: 1px; margin: 0; }
+  .side-collapsed .side-new-project { justify-content: center; padding: 0; }
+  .side-collapsed .side-new-project svg { width: 18px; height: 18px; }
+  .side-collapsed .quick-actions { flex-direction: column; }
+  .side-collapsed .quick-btn { padding: 0; min-height: 40px; }
+  .side-collapsed .nav-foot { justify-content: center; padding: 0; }
+  .side-collapsed .foot-menu { margin: 0; }
+  .side-collapsed .nav-foot .foot-menu-list { right: auto; left: 0; }
 
   main { grid-area: main; padding: 0; overflow: hidden; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
   .view.active { flex: 1; min-height: 0; overflow-y: auto; }

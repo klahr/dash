@@ -608,16 +608,32 @@ async function createGitHubRepo() {
 }
 
 // Phones open the sidebar's projects, actions and status as a drawer from the
-// top bar; on desktop it is always visible.
+// top bar; on desktop the same button collapses the sidebar to its icons.
 const menuOpen = () => $(".app").classList.contains("menu-open");
+const sideCollapsed = () => $(".app").classList.contains("side-collapsed");
+function syncMenuBtn() {
+  const btn = $("#menu-open");
+  const label = !desktop.matches ? "Menu" : sideCollapsed() ? "Expand sidebar" : "Collapse sidebar";
+  btn.setAttribute("aria-expanded", String(desktop.matches ? !sideCollapsed() : menuOpen()));
+  btn.setAttribute("aria-label", label);
+  btn.title = desktop.matches ? `${label} ([)` : "";
+}
+function setSideCollapsed(on) {
+  $(".app").classList.toggle("side-collapsed", on);
+  try { localStorage.setItem("dash.sideCollapsed", on ? "1" : "0"); } catch {}
+  syncMenuBtn();
+}
 function setMenu(open) {
   open = open && !desktop.matches;
   $(".app").classList.toggle("menu-open", open);
   $("#menu-scrim").hidden = !open;
-  $("#menu-open").setAttribute("aria-expanded", String(open));
   $("#project-switch").setAttribute("aria-expanded", String(open));
+  syncMenuBtn();
 }
+try { $(".app").classList.toggle("side-collapsed", localStorage.getItem("dash.sideCollapsed") === "1"); } catch {}
+syncMenuBtn();
 function openProjects() {
+  if (desktop.matches && sideCollapsed()) return setPicker(true);
   renderProjectList();
   setMenu(true);
   ($(".side-project[aria-current=true]") || $(".side-project"))?.focus();
@@ -660,7 +676,7 @@ $("#project-picker").addEventListener("keydown", (e) => {
   else return;
   e.preventDefault(); e.stopPropagation();
 });
-$("#menu-open").addEventListener("click", openProjects);
+$("#menu-open").addEventListener("click", () => desktop.matches ? setSideCollapsed(!sideCollapsed()) : openProjects());
 $("#menu-close").addEventListener("click", () => { setMenu(false); $("#menu-open").focus(); });
 $("#menu-scrim").addEventListener("click", () => setMenu(false));
 desktop.addEventListener("change", () => { setMenu(false); $("#project-picker").hidden = true; });
@@ -2174,7 +2190,7 @@ async function reorder(t, laneKey, index) {
 const VIEWS = ["board", "chat", "run", "activity"];
 const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
-const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gc|gs|ga|G|u|p|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gc|gs|ga|G|u|p|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 const openDialog = () => document.querySelector("dialog[open]");
 
@@ -2441,6 +2457,7 @@ async function handleNormal(k, n, hadCount) {
     case "gs": return showView("run");
     case "ga": return showView("activity");
     case "p": return openProjects();
+    case "[": return desktop.matches && setSideCollapsed(!sideCollapsed());
     case "o": return openSections();
     case "Escape": case "q":
       if (menuOpen()) return setMenu(false);
