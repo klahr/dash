@@ -790,6 +790,13 @@ function openProjects() {
   setMenu(true);
   ($(".side-project[aria-current=true]") || $(".side-project"))?.focus();
 }
+// J/K: the next/previous project in sidebar order, wrapping around.
+function stepProject(d) {
+  const list = !multi() ? state.projects : state.machines.flatMap((m) => state.projects.filter((p) => p.machine === m.name));
+  if (!list.length) return;
+  const i = list.findIndex((p) => projectKey(p) === projectKey(state.project));
+  return selectProject(list[(((i + d) % list.length) + list.length) % list.length]);
+}
 // Desktop: the top bar's project name opens a dropdown of every project.
 // Phones use the drawer instead.
 function setPicker(open) {
@@ -3072,8 +3079,8 @@ async function todoKey(t, k) {
       if (!t.pr) throw new Error("This task has no pull request.");
       return window.open(t.pr.url, "_blank", "noopener");
     case "e": return openTodoForm(t);
-    case "+": case "K": return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority - 1 });
-    case "-": case "J": return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority + 1 });
+    case "+": return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority - 1 });
+    case "-": return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority + 1 });
     case "*": return api("PATCH", `/api/todos/${t.id}`, { goal: !t.goal });
     case "t": return startProc({ kind: "web", preset: "run", todo_id: t.id });
     case "!": return startProc({ kind: "pty", todo_id: t.id });
@@ -3478,6 +3485,7 @@ async function handleNormal(k, n, hadCount) {
     case "gh": return showView("history");
     case "gf": return showView("files");
     case "p": return openProjects();
+    case "J": case "K": return stepProject(k === "J" ? n : -n);
     case "[": return desktop.matches && setSideCollapsed(!sideCollapsed());
     case "o": return openSections();
     case "Escape": case "q":
