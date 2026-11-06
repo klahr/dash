@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -34,7 +35,12 @@ type Server struct {
 	Perms       *perm.Broker
 	Usage       *usage.Tracker
 	ProjectRoot string // where new projects without an explicit path are created
-	Static      fs.FS  // frontend assets
+	// Titler names todos created without a title (optional).
+	Titler interface {
+		Title(ctx context.Context, prompt string) (string, error)
+	}
+	Editor string // command that opens a directory, e.g. "code" (optional)
+	Static fs.FS  // frontend assets
 }
 
 func (s *Server) Routes() http.Handler {
@@ -68,6 +74,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/todos/{tid}/log", s.todoLog)
 	mux.HandleFunc("POST /api/todos/{tid}/approve", s.approveTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/rework", s.reworkTodo)
+	mux.HandleFunc("POST /api/todos/{tid}/test", s.retestTodo)
+	mux.HandleFunc("POST /api/todos/{tid}/duplicate", s.duplicateTodo)
+	mux.HandleFunc("POST /api/todos/{tid}/open", s.openTodo)
 
 	// Execution, testing, deployment
 	mux.HandleFunc("GET /api/projects/{pid}/processes", s.listProcesses)

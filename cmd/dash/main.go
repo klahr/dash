@@ -42,6 +42,9 @@ func main() {
 		"chat backend: claude-code (uses the claude CLI login, e.g. a subscription) or api (Anthropic API key)")
 	pauseAt := flag.Float64("pause-at", 0.9, "pause the todo queue when a subscription usage window reaches this fraction (0 = only when limited)")
 	askPerms := flag.Bool("permission-prompts", true, "send Claude's permission requests to the UI instead of denying them")
+	editor := flag.String("editor", os.Getenv("DASH_EDITOR"), "command that opens a worktree on this machine, e.g. \"code\" (or $DASH_EDITOR)")
+	autoTitles := flag.Bool("auto-titles", true, "name todos created without a title (a short claude call with -title-model)")
+	titleModel := flag.String("title-model", "haiku", "model for automatic titles")
 	envFile := flag.String("env", ".env", "file with DASH_USERNAME / DASH_PASSWORD (real env vars take precedence)")
 	flag.Parse()
 
@@ -106,6 +109,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	var titler interface {
+		Title(ctx context.Context, prompt string) (string, error)
+	}
+	if *autoTitles {
+		titler = agent.Titler{Bin: *claudeBin, Model: *titleModel}
+	}
+
 	srv := &http.Server{
 		Addr: *addr,
 		Handler: (&api.Server{
@@ -114,6 +124,8 @@ func main() {
 			Auth:        authn,
 			Perms:       perms,
 			Usage:       tracker,
+			Editor:      *editor,
+			Titler:      titler,
 			ProjectRoot: *projectRoot,
 			Static:      web.Static,
 		}).Routes(),

@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101722">
   <meta name="color-scheme" content="dark">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
   <title>Dash</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -56,7 +59,18 @@
     <main>
       <!-- Board -->
       <section class="view active" id="view-board" aria-label="Board">
-        <div class="lanes" role="tablist" id="lane-tabs"></div>
+        <div class="board-tools">
+          <div class="lanes" role="tablist" id="lane-tabs"></div>
+          <button class="icon-btn" id="search-open" aria-label="Search todos (/)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4.5-4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div class="search-bar" id="search-bar" hidden>
+          <span aria-hidden="true">/</span>
+          <input id="search-input" placeholder="Search todos" aria-label="Search todos" autocomplete="off" spellcheck="false">
+          <span class="search-count" id="search-count"></span>
+          <button class="link" id="search-clear" type="button">Clear</button>
+        </div>
         <div class="perm-list" id="perm-banner" hidden></div>
         <div class="board" id="board"></div>
         <div class="empty" id="board-empty" hidden></div>
@@ -70,6 +84,7 @@
       <section class="view" id="view-chat" aria-label="Chat">
         <div class="chat-log" id="chat-log">
           <div class="empty chat-empty" id="chat-empty">
+            <img class="empty-art" src="img/empty-chat.webp" alt="" width="480" height="360" loading="lazy" onerror="this.remove()">
             <p class="empty-title">Ask Claude anything</p>
             <p>Questions about code, design or your projects. Answers use the Claude account Dash runs with.</p>
           </div>
@@ -149,7 +164,7 @@
   <dialog class="sheet" id="todo-sheet" aria-labelledby="todo-sheet-title">
     <form method="dialog" id="todo-form">
       <header class="sheet-head"><h2 id="todo-sheet-title">New todo</h2><button class="link" value="cancel" formnovalidate>Cancel</button></header>
-      <label class="field"><span>Title</span><input name="title" placeholder="Short name for the task" autocomplete="off"></label>
+      <label class="field"><span>Title <em>optional, Claude names it if empty</em></span><input name="title" placeholder="Short name for the task" autocomplete="off"></label>
       <label class="field"><span>Instructions for Claude</span><textarea name="prompt" rows="6" required placeholder="Describe the change you want. Claude works in its own worktree; you review the diff before it merges."></textarea></label>
       <div class="field-row">
         <label class="toggle"><input type="checkbox" name="goal"><span>Milestone</span></label>
@@ -238,11 +253,13 @@
         <dt>Sections</dt><dd><kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>p</kbd> projects · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
         <dt>Todos</dt><dd><kbd>Enter</kbd> open · <kbd>o</kbd> new · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>a</kbd> approve · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>*</kbd> milestone · <kbd>t</kbd> try it · <kbd>!</kbd> shell in worktree</dd>
         <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> changes ↔ log · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
+        <dt>Search</dt><dd><kbd>/</kbd> filter the board · <kbd>Enter</kbd> jump to first match · <kbd>n</kbd>/<kbd>N</kbd> next/previous · <kbd>Esc</kbd> or <code>:noh</code> clear</dd>
+        <dt>More</dt><dd><kbd>T</kbd> run tests again · <kbd>Y</kbd> duplicate · <kbd>E</kbd> open worktree in editor · click a diff line to comment</dd>
         <dt>Approvals</dt><dd><kbd>y</kbd> allow · <kbd>A</kbd> always allow that tool for the todo · <kbd>n</kbd> deny</dd>
         <dt>Chat</dt><dd><kbd>i</kbd> type · <kbd>Enter</kbd> send · <kbd>Esc</kbd> stop typing · <kbd>j</kbd>/<kbd>k</kbd> scroll</dd>
         <dt>Run</dt><dd><kbd>j</kbd>/<kbd>k</kbd> select · <kbd>Enter</kbd> view · <kbd>i</kbd> type into terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> shell · <kbd>/</kbd> command</dd>
         <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> add to queue · <kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>
-        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:todo …</code> <code>:new</code> <code>:run cmd</code> <code>:push</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:activity</code> <code>:clear</code> <code>:q</code></dd>
+        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:todo …</code> <code>:new</code> <code>:run cmd</code> <code>:push</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:activity</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:q</code></dd>
       </dl>
     </form>
   </dialog>

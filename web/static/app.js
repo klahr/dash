@@ -35,13 +35,39 @@ async function api(method, path, body) {
 }
 
 // ------------------------------------------------------------------ toasts & dialogs
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const EASE = "cubic-bezier(.2, .8, .2, 1)";
+
+// leave() plays an exit animation (CSS class) before running done.
+function leave(el, cls, done, ms = 180) {
+  if (reduceMotion.matches) return done();
+  el.classList.add(cls);
+  setTimeout(() => { el.classList.remove(cls); done(); }, ms);
+}
+
 function toast(msg, isError = false) {
   const t = h("div", { class: `toast${isError ? " error" : ""}`, role: isError ? "alert" : "status" }, msg);
   $("#toasts").append(t);
-  setTimeout(() => t.remove(), isError ? 6000 : 3000);
+  setTimeout(() => leave(t, "leaving", () => t.remove()), isError ? 6000 : 3000);
 }
 const fail = (e) => toast(e.message || String(e), true);
 const attempt = (fn) => async (...a) => { try { await fn(...a); } catch (e) { fail(e); } };
+
+// Optional illustration; disappears if the image file isn't there.
+function art(src, w, hgt) {
+  const img = h("img", { class: "empty-art", src, alt: "", width: w, height: hgt, loading: "lazy", decoding: "async" });
+  img.addEventListener("error", () => img.remove());
+  return img;
+}
+
+async function copy(text, msg) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(msg);
+  } catch {
+    await ask({ title: "Copy this", body: text, ok: "Done" }); // clipboard needs https or localhost
+  }
+}
 
 // ask() shows a confirmation or a text question as a sheet. Resolves to the
 // entered text (or true), or null when cancelled.
@@ -91,10 +117,29 @@ const state = {
   perms: [],           // pending permission requests for this project
   usage: null,
   view: "board",
+  query: "",           // board search (/)
+  showOld: false,      // show merged todos older than a day
+  comments: loadComments(), // todo id → [{file, line, side, code, text}] (diff review notes)
 };
+const DAY = 24 * 3600 * 1000;
+
+function loadComments() {
+  try { return JSON.parse(localStorage.getItem("dash.comments") || "{}"); } catch { return {}; }
+}
+function saveComments() {
+  try { localStorage.setItem("dash.comments", JSON.stringify(state.comments)); } catch {}
+}
 
 // ------------------------------------------------------------------ navigation
 function showView(name) {
+  if (name !== state.view && document.startViewTransition && !reduceMotion.matches) {
+    document.startViewTransition(() => applyView(name));
+    return;
+  }
+  applyView(name);
+}
+
+function applyView(name) {
   state.view = name;
   $$(".nav > button").forEach((b) => {
     const on = b.dataset.view === name;
@@ -144,7 +189,11 @@ function onEvent(ev) {
           renderDetail();
           if (prev?.status !== ev.data.status && ev.data.worktree) loadDiff();
         }
-        if (prev && prev.status !== ev.data.status && ev.data.status === "review") toast(`Ready for review: ${title(ev.data)}`);
+        if (prev && prev.status !== ev.data.status) {
+          if (ev.data.status === "review") { toast(`Ready for review: ${title(ev.data)}`); notify("Ready for review", ev.data); }
+          if (ev.data.status === "failed") notify("Failed", ev.data, ev.data.error);
+          if (ev.data.status === "merged") notify("Merged", ev.data);
+        }
       }
       break;
     case "todo.deleted":
@@ -179,6 +228,7 @@ function onEvent(ev) {
         state.perms.push(ev.data);
         const t = state.todos.get(ev.data.todo_id);
         toast(`Claude needs your approval: ${describePerm(ev.data).title}${t ? ` (${title(t)})` : ""}`);
+        if (t) notify(`Claude wants to ${describePerm(ev.data).title}`, t, describePerm(ev.data).detail);
       }
       renderPerms();
       break;
@@ -238,7 +288,9 @@ function renderProjectList() {
       ? h("button", { type: "button", class: "btn", onclick: attempt(async () => { await api("POST", `/api/projects/${p.id}/push`); toast(`Pushed ${p.default_branch}`); }) }, `Push ${p.default_branch}`)
       : h("button", { type: "button", class: "btn", onclick: attempt(createGitHubRepo) }, "Create GitHub repository"),
     h("button", { type: "button", class: "btn", onclick: openSettings }, "Settings"),
-  ] : []), h("button", { type: "button", class: "link logout", onclick: logout }, "Log out"));
+  ] : []),
+  h("button", { type: "button", class: "btn", onclick: attempt(toggleNotifications) }, notifyOn() ? "Turn off notifications" : "Turn on notifications"),
+  h("button", { type: "button", class: "link logout", onclick: logout }, "Log out"));
 }
 
 async function createGitHubRepo() {
@@ -274,9 +326,14 @@ async function loadTodos() {
 const title = (t) => t.title || t.prompt.split("\n")[0];
 const byPriority = (a, b) => a.priority - b.priority || a.created_at.localeCompare(b.created_at);
 
+const matches = (t, q) => !q || `${t.title} ${t.prompt}`.toLowerCase().includes(q.toLowerCase());
+const isOld = (t) => t.status === "merged" && Date.now() - new Date(t.finished_at || t.updated_at) > DAY;
+
 function laneItems() {
   const out = Object.fromEntries(LANES.map((l) => [l.key, []]));
   for (const t of state.todos.values()) {
+    if (!matches(t, state.query)) continue;
+    if (!state.showOld && isOld(t)) continue;
     const lane = LANES.find((l) => l.statuses.includes(t.status));
     if (lane) out[lane.key].push(t);
   }
@@ -287,6 +344,39 @@ function laneItems() {
 }
 
 function renderBoard() {
+  if (drag.active) return; // don't rebuild under the user's finger; we re-render on drop
+  const before = flipFirst();
+  renderBoardNow();
+  flipPlay(before);
+}
+
+// FLIP: cards glide from where they were to where they are now, so a live
+// status change reads as movement instead of a jump. New cards fade in.
+function flipFirst() {
+  const m = new Map();
+  for (const el of $$(".todo[data-id]")) m.set(el.dataset.id, el.getBoundingClientRect());
+  return m;
+}
+let boardRendered = false;
+function flipPlay(before) {
+  const first = !boardRendered;
+  boardRendered = true;
+  if (reduceMotion.matches || first) return;
+  for (const el of $$(".todo[data-id]")) {
+    const was = before.get(el.dataset.id);
+    const now = el.getBoundingClientRect();
+    if (!now.width) continue; // in a hidden lane (mobile)
+    if (!was || !was.width) {
+      el.animate([{ opacity: 0, transform: "scale(.97)" }, { opacity: 1, transform: "none" }], { duration: 240, easing: EASE });
+      continue;
+    }
+    const dx = was.left - now.left, dy = was.top - now.top;
+    if (Math.abs(dx) + Math.abs(dy) < 1) continue;
+    el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 320, easing: EASE });
+  }
+}
+
+function renderBoardNow() {
   const items = laneItems();
   const empty = $("#board-empty");
   if (!state.project) {
@@ -294,6 +384,7 @@ function renderBoard() {
     $("#lane-tabs").replaceChildren();
     empty.hidden = false;
     empty.replaceChildren(
+      art("img/empty-board.webp", 480, 360),
       h("p", { class: "empty-title" }, "Create your first project"),
       h("p", {}, "A project is a git repository. Every todo runs in its own worktree, so several can run at once."),
       h("button", { class: "btn primary", onclick: () => { $("#project-sheet").showModal(); $(".new-project").open = true; } }, "New project"));
@@ -309,25 +400,49 @@ function renderBoard() {
   }
 
   $("#lane-tabs").replaceChildren(...LANES.map((l) => h("button", {
-    role: "tab", class: `lane-tab s-${l.key === "done" ? "merged" : l.key}`,
+    role: "tab", class: `lane-tab s-${l.key === "done" ? "merged" : l.key}`, "data-lane": l.key,
     "aria-selected": String(state.lane === l.key), "data-count": items[l.key].length,
     onclick: () => { state.lane = l.key; renderBoard(); },
   }, l.label, h("span", { class: "n" }, items[l.key].length))));
 
   $("#board").replaceChildren(...LANES.map((l, li) => h("section", {
+    "data-lane": l.key,
     class: `col s-${l.key === "done" ? "merged" : l.key}${state.lane === l.key ? " active" : ""}`, "aria-label": l.label,
   },
     h("header", { class: "col-head" }, l.label, h("span", { class: "n" }, items[l.key].length)),
     h("div", { class: "col-body" },
       items[l.key].length
         ? h("ol", { class: "rail" }, items[l.key].map((t, ri) => h("li", {}, todoRow(t, li, ri))))
-        : h("p", { class: "col-empty" }, l.empty)))));
+        : h("p", { class: "col-empty" }, state.query ? "No matches." : l.empty),
+      l.key === "done" ? oldToggle() : null))));
+  syncSearchBar();
+  updateNeedsYou(items);
 
   $(".lane-tab[aria-selected=true]")?.scrollIntoView({ block: "nearest", inline: "nearest" });
 
   const review = items.review.length + state.perms.length;
-  $("#review-badge").hidden = !review;
-  $("#review-badge").textContent = review;
+  const badge = $("#review-badge");
+  if (String(review) !== badge.textContent && review && !reduceMotion.matches) {
+    badge.animate([{ transform: "scale(1.35)" }, { transform: "scale(1)" }], { duration: 260, easing: EASE });
+  }
+  badge.hidden = !review;
+  badge.textContent = review;
+}
+
+function oldToggle() {
+  const hidden = [...state.todos.values()].filter((t) => isOld(t) && matches(t, state.query)).length;
+  if (!hidden && !state.showOld) return null;
+  return h("button", { class: "link older", onclick: () => { state.showOld = !state.showOld; renderBoard(); } },
+    state.showOld ? "Hide merged todos older than a day" : `Show ${hidden} older merged ${hidden === 1 ? "todo" : "todos"}`);
+}
+
+// "2m", "3h", "4d"
+function ago(iso) {
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return "now";
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < DAY / 1000) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
 }
 
 function todoRow(t, li = -1, ri = -1) {
@@ -349,6 +464,12 @@ function todoRow(t, li = -1, ri = -1) {
     h("span", { class: "todo-side" },
       checkTag,
       t.goal ? h("span", { class: "goal-tag" }, "Milestone") : null,
+      t.diff_files && ["review", "merging", "merged", "failed"].includes(t.status)
+        ? h("span", { class: "diffsize", title: `${t.diff_files} ${t.diff_files === 1 ? "file" : "files"} changed` },
+          h("span", { class: "plus" }, `+${t.diff_add || 0}`), " ", h("span", { class: "minus" }, `−${t.diff_del || 0}`))
+        : null,
+      t.status === "in_progress" && t.started_at ? h("span", { title: "Running for" }, ago(t.started_at)) : null,
+      t.status === "review" && t.finished_at ? h("span", { title: "Waiting for review" }, ago(t.finished_at)) : null,
       t.priority ? h("span", {}, `P${t.priority}`) : null));
 }
 
@@ -409,9 +530,10 @@ async function openDetail(id) {
 }
 
 function closeDetail() {
+  const wasOpen = state.detail && !$("#detail").hidden;
   state.detail = null;
-  $("#detail").hidden = true;
-  $("#scrim").hidden = true;
+  const hide = () => { if (!state.detail) { $("#detail").hidden = true; $("#scrim").hidden = true; } };
+  if (wasOpen) leave($("#detail"), "closing", hide); else hide();
   $$(".todo.selected").forEach((e) => e.classList.remove("selected"));
 }
 $("#d-close").addEventListener("click", closeDetail);
@@ -479,7 +601,12 @@ function renderActions(t) {
       btns.push(b("Stop", post("cancel", null, "Stopping"), "danger grow"));
       break;
     case "review":
-      btns.push(b("Rework", rework), b("Approve and merge", post("approve", null, "Approved — merging"), "review grow"));
+      if (commentsFor(t.id).length) {
+        btns.push(b(`Send ${commentsFor(t.id).length} ${commentsFor(t.id).length === 1 ? "comment" : "comments"}`, attempt(() => sendComments(t)), "primary"));
+      } else {
+        btns.push(b("Rework", rework));
+      }
+      btns.push(b("Approve and merge", post("approve", null, "Approved — merging"), "review grow"));
       break;
     case "failed":
       btns.push(t.worktree ? b("Rework", rework) : b("Edit", () => openTodoForm(t)), b("Retry", post("enqueue", null, "Queued again"), "primary grow"));
@@ -498,6 +625,13 @@ $("#d-more").addEventListener("click", attempt(async () => {
   }
   if (!["in_progress", "merging"].includes(t.status)) {
     choices.push([t.goal ? "Unmark milestone" : "Mark as milestone", () => api("PATCH", `/api/todos/${t.id}`, { goal: !t.goal })]);
+    if (t.worktree && state.project?.test_command) choices.push(["Run the tests again", () => api("POST", `/api/todos/${t.id}/test`).then(() => toast("Running tests…"))]);
+    choices.push(["Duplicate as a new draft", () => api("POST", `/api/todos/${t.id}/duplicate`).then(() => toast("Duplicated as a draft"))]);
+    if (t.worktree) {
+      choices.push(["Open worktree in editor", () => api("POST", `/api/todos/${t.id}/open`).then(() => toast("Opening in your editor"))]);
+      choices.push([`Copy branch name (${t.worktree.branch})`, () => copy(t.worktree.branch, "Branch name copied")]);
+      choices.push(["Copy worktree path", () => copy(t.worktree.path, "Path copied")]);
+    }
     choices.push(["Delete todo", async () => {
       if (await ask({ title: "Delete this todo?", body: "Its worktree and branch are removed too. This can't be undone.", ok: "Delete", danger: true })) {
         await api("DELETE", `/api/todos/${t.id}`);
@@ -561,9 +695,148 @@ function renderDiff(text) {
   }
   $("#d-diff").replaceChildren(...files.map((f) => h("details", { class: "diff-file", open: files.length <= 8 },
     h("summary", {}, h("span", { class: "path" }, f.path), h("span", { class: "counts" }, h("span", { class: "plus" }, `+${f.add}`), " ", h("span", { class: "minus" }, `−${f.del}`))),
-    h("div", { class: "diff-lines" }, f.lines.map((l) => h("div", {
-      class: l.startsWith("@@") ? "hunk" : l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "",
-    }, l || " "))))));
+    h("div", { class: "diff-lines" }, diffLines(f)))));
+}
+
+// Rows for one file, numbered like the new file (removed lines use old numbers),
+// with saved review comments under their lines.
+function diffLines(f) {
+  const comments = commentsFor(state.detail).filter((c) => c.file === f.path);
+  const rows = [];
+  let oldLn = 0, newLn = 0;
+  for (const l of f.lines) {
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(l);
+    if (hunk) {
+      oldLn = Number(hunk[1]); newLn = Number(hunk[2]);
+      rows.push(h("div", { class: "hunk" }, l));
+      continue;
+    }
+    if (l.startsWith("\\")) { rows.push(h("div", { class: "meta" }, l)); continue; }
+    const side = l.startsWith("-") ? "old" : "new";
+    const ln = side === "old" ? oldLn++ : newLn++;
+    if (l.startsWith(" ") || l === "") oldLn++;
+    rows.push(h("div", { class: l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "", "data-ln": ln, "data-side": side, "data-file": f.path, title: "Click to comment" }, l || " "));
+    for (const c of comments.filter((c) => c.line === ln && c.side === side)) {
+      rows.push(h("div", { class: "comment" },
+        h("span", {}, c.text),
+        h("button", { class: "link", type: "button", "aria-label": "Delete comment", onclick: () => {
+          state.comments[state.detail] = commentsFor(state.detail).filter((x) => x !== c);
+          saveComments(); renderPane(); renderActions(state.todos.get(state.detail));
+        } }, "Delete")));
+    }
+  }
+  return rows;
+}
+
+// ------------------------------------------------------------------ notifications & tab title
+const notifyOn = () => { try { return localStorage.getItem("dash.notify") === "1"; } catch { return false; } };
+function notify(what, t, detail = "") {
+  if (!notifyOn() || !("Notification" in window) || Notification.permission !== "granted") return;
+  if (document.visibilityState === "visible" && document.hasFocus()) return; // the page already shows it
+  const n = new Notification(`${what}: ${title(t)}`, { body: detail || "", tag: `dash-${t.id}`, silent: false });
+  n.onclick = () => { window.focus(); showView("board"); openDetail(t.id); n.close(); };
+}
+async function toggleNotifications() {
+  if (!("Notification" in window)) throw new Error("This browser doesn't support notifications.");
+  if (notifyOn()) {
+    try { localStorage.setItem("dash.notify", "0"); } catch {}
+    toast("Notifications off");
+  } else {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") throw new Error("Notifications are blocked for this site in your browser settings.");
+    try { localStorage.setItem("dash.notify", "1"); } catch {}
+    toast("Notifications on: you'll hear about reviews, failures and approvals while Dash is in the background");
+  }
+  renderProjectList();
+}
+// Tab title shows how many things wait for you: reviews + permission requests.
+function updateNeedsYou(items) {
+  const n = (items?.review?.length || 0) + state.perms.length;
+  document.title = n ? `(${n}) Dash` : "Dash";
+}
+
+// ------------------------------------------------------------------ search (/)
+function openSearch() {
+  showView("board");
+  $("#search-bar").hidden = false;
+  const input = $("#search-input");
+  input.focus();
+  input.select();
+}
+function syncSearchBar() {
+  const bar = $("#search-bar");
+  if (state.query && bar.hidden) bar.hidden = false;
+  if (document.activeElement !== $("#search-input")) $("#search-input").value = state.query;
+  const n = Object.values(laneItems()).reduce((a, l) => a + l.length, 0);
+  $("#search-count").textContent = state.query ? `${n} ${n === 1 ? "match" : "matches"}` : "";
+}
+function clearSearch() {
+  state.query = "";
+  $("#search-input").value = "";
+  $("#search-bar").hidden = true;
+  renderBoard();
+}
+$("#search-input").addEventListener("input", (e) => { state.query = e.target.value; keys.cur.row = 0; renderBoard(); });
+$("#search-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); e.target.blur(); jumpMatch(1, true); }
+  if (e.key === "Escape") { e.preventDefault(); clearSearch(); e.target.blur(); }
+});
+$("#search-clear").addEventListener("click", clearSearch);
+$("#search-open").addEventListener("click", openSearch);
+
+// n / N: next/previous match in lane order
+function jumpMatch(dir, fromStart = false) {
+  const flat = [];
+  LANES.forEach((l, li) => laneTodos(li).forEach((t, ri) => flat.push([li, ri])));
+  if (!flat.length) return toast("No matches");
+  let i = fromStart ? 0 : flat.findIndex(([li, ri]) => li === keys.cur.lane && ri === keys.cur.row);
+  if (!fromStart) i = (i + dir + flat.length) % flat.length;
+  moveCursor(...flat[Math.max(0, i)]);
+}
+
+// ------------------------------------------------------------------ diff comments
+function commentsFor(id) { return state.comments[id] || []; }
+
+$("#d-diff").addEventListener("click", (e) => {
+  const line = e.target.closest(".diff-lines > div[data-ln]");
+  const t = state.todos.get(state.detail);
+  if (!line || !t || !["review", "failed"].includes(t.status)) return;
+  if (line.nextElementSibling?.classList.contains("comment-box")) return;
+  const box = h("form", { class: "comment-box" },
+    h("textarea", { rows: 3, placeholder: "What should Claude change here?", "aria-label": "Comment on this line" }),
+    h("div", { class: "comment-actions" },
+      h("button", { type: "button", class: "btn", onclick: () => box.remove() }, "Cancel"),
+      h("button", { class: "btn primary" }, "Add comment")));
+  box.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const text = box.querySelector("textarea").value.trim();
+    if (!text) return box.remove();
+    state.comments[t.id] = [...commentsFor(t.id), { file: line.dataset.file, line: Number(line.dataset.ln), side: line.dataset.side, code: line.textContent, text }];
+    saveComments();
+    renderPane();
+    renderActions(t);
+  });
+  box.querySelector("textarea").addEventListener("keydown", (ev) => {
+    if (ev.ctrlKey && ev.key === "Enter") box.requestSubmit();
+    if (ev.key === "Escape") { ev.stopPropagation(); box.remove(); }
+  });
+  line.after(box);
+  box.querySelector("textarea").focus();
+});
+
+function commentFeedback(list, extra) {
+  const parts = list.map((c) => `### ${c.file}, ${c.side === "old" ? "removed line" : "line"} ${c.line}\n> ${c.code}\n\n${c.text}`);
+  return `Review comments on your diff:\n\n${parts.join("\n\n")}${extra ? `\n\nAlso: ${extra}` : ""}`;
+}
+
+async function sendComments(t) {
+  const list = commentsFor(t.id);
+  const extra = await ask({ title: `Send ${list.length} ${list.length === 1 ? "comment" : "comments"} to Claude`, body: "Claude continues in the same worktree and addresses each comment.", input: true, placeholder: "Anything else? (optional)", ok: "Send for rework" });
+  if (extra === null) return;
+  await api("POST", `/api/todos/${t.id}/rework`, { feedback: commentFeedback(list, extra) });
+  delete state.comments[t.id];
+  saveComments();
+  toast("Comments sent for rework");
 }
 
 // ------------------------------------------------------------------ tests (checks)
@@ -718,6 +991,12 @@ function chatSocket() {
     else if (d.kind === "error") { c.el.classList.add("error"); c.reply.textContent += (c.content ? "\n\n" : "") + d.text; }
     if (d.kind === "done" || d.kind === "error") {
       c.el.classList.remove("pending");
+      if (c.content) {
+        const answer = c.content;
+        c.el.append(h("div", { class: "msg-actions" },
+          h("button", { class: "link", onclick: () => { if (!state.project) return toast("Select a project first", true); openTodoForm(); $("#todo-form").prompt.value = answer; } }, "Make this a todo"),
+          h("button", { class: "link", onclick: () => copy(answer, "Copied") }, "Copy")));
+      }
       if (c.content) chat.history.push({ role: "assistant", content: c.content });
       else chat.history.pop(); // keep history alternating
       chat.current = null;
@@ -872,13 +1151,207 @@ function addActivity(ev) {
   while ($("#activity").children.length > 300) $("#activity").lastChild.remove();
 }
 
+// ------------------------------------------------------------------ drag & drop
+// Drag a card to another lane to act on it, or within a lane to reorder.
+// Mouse: drag after a few pixels. Touch: long-press, then drag (a quick
+// swipe still scrolls). Lane tabs are drop targets on phones.
+const drag = { active: false, pending: null, t: null, card: null, ghost: null, slot: null, target: null, dx: 0, dy: 0, suppressClick: false };
+
+// What dropping a todo of a status into a lane does (null = not allowed).
+function dropAction(t, lane) {
+  const from = t.status;
+  const to = LANES.find((l) => l.key === lane);
+  if (!to) return null;
+  if (to.statuses.includes(from)) return ["draft", "queued", "review"].includes(lane) ? { kind: "reorder" } : null;
+  const go = (verb, label) => ({ kind: "action", verb, label });
+  if (lane === "queued" && ["draft", "failed"].includes(from)) return go("enqueue", "Added to queue");
+  if (lane === "queued" && from === "review") return { kind: "rework" };
+  if (lane === "draft" && ["queued", "review", "failed"].includes(from)) return go("cancel", "Moved to drafts");
+  if (lane === "merging" && from === "review") return go("approve", "Approved — merging");
+  return null;
+}
+
+$("#board").addEventListener("pointerdown", (e) => {
+  const card = e.target.closest(".todo[data-id]");
+  if (!card || e.button > 0) return;
+  const t = state.todos.get(card.dataset.id);
+  if (!t) return;
+  drag.pending = { card, t, x: e.clientX, y: e.clientY, touch: e.pointerType !== "mouse" };
+  if (drag.pending.touch) {
+    drag.pending.timer = setTimeout(() => drag.pending && startDrag(drag.pending.x, drag.pending.y), 320);
+  }
+});
+
+document.addEventListener("pointermove", (e) => {
+  if (drag.active) { moveDrag(e.clientX, e.clientY); return; }
+  const p = drag.pending;
+  if (!p) return;
+  const dist = Math.hypot(e.clientX - p.x, e.clientY - p.y);
+  if (p.touch) { if (dist > 10) cancelPending(); return; } // it's a scroll
+  if (dist > 6) startDrag(e.clientX, e.clientY);
+});
+// While dragging on touch, stop the page from scrolling under the finger.
+document.addEventListener("touchmove", (e) => { if (drag.active) e.preventDefault(); }, { passive: false });
+document.addEventListener("pointerup", (e) => { if (drag.active) endDrag(e.clientX, e.clientY); cancelPending(); });
+document.addEventListener("pointercancel", () => { if (drag.active) abortDrag(); cancelPending(); });
+document.addEventListener("keydown", (e) => { if (drag.active && e.key === "Escape") { e.stopPropagation(); abortDrag(); } }, true);
+// A drag ends with a click on the card; swallow it so the detail doesn't open.
+document.addEventListener("click", (e) => { if (drag.suppressClick) { e.stopPropagation(); e.preventDefault(); drag.suppressClick = false; } }, true);
+$("#board").addEventListener("contextmenu", (e) => { if (e.target.closest(".todo")) e.preventDefault(); });
+
+function cancelPending() {
+  if (drag.pending?.timer) clearTimeout(drag.pending.timer);
+  drag.pending = null;
+}
+
+function startDrag(x, y) {
+  const { card, t } = drag.pending;
+  cancelPending();
+  const r = card.getBoundingClientRect();
+  drag.active = true;
+  drag.t = t;
+  drag.card = card;
+  drag.dx = x - r.left;
+  drag.dy = y - r.top;
+  drag.ghost = card.cloneNode(true);
+  drag.ghost.classList.add("drag-ghost");
+  drag.ghost.style.width = `${r.width}px`;
+  document.body.append(drag.ghost);
+  drag.slot = h("li", { class: "drop-slot", "aria-hidden": "true" });
+  drag.slot.style.height = `${r.height}px`;
+  card.classList.add("dragging");
+  document.body.classList.add("is-dragging");
+  navigator.vibrate?.(12);
+  markTargets();
+  showDropBar();
+  moveDrag(x, y);
+}
+
+// On phones the other lanes are off-screen, so a drag shows a bar of large
+// drop targets for exactly the moves this card allows.
+const DROP_LABEL = { enqueue: "Add to queue", cancel: "Back to drafts", approve: "Approve and merge" };
+function showDropBar() {
+  if (desktop.matches) return;
+  const zones = LANES.map((l) => [l, dropAction(drag.t, l.key)])
+    .filter(([l, a]) => a && a.kind !== "reorder")
+    .map(([l, a]) => h("div", { class: `drop-zone s-${l.key === "done" ? "merged" : l.key}`, "data-lane": l.key },
+      a.kind === "rework" ? "Send back for rework" : DROP_LABEL[a.verb] || l.label));
+  const bar = h("div", { class: "drop-bar", id: "drop-bar" },
+    zones.length ? zones : h("div", { class: "drop-zone none" }, "Drag up or down to reorder"));
+  document.body.append(bar);
+}
+
+// Highlight lanes (columns and mobile tabs) where this card may be dropped.
+function markTargets() {
+  for (const el of $$(".col[data-lane], .lane-tab[data-lane]")) {
+    const ok = !!dropAction(drag.t, el.dataset.lane);
+    el.classList.toggle("drop-ok", ok);
+    el.classList.toggle("drop-no", !ok);
+  }
+}
+
+function moveDrag(x, y) {
+  drag.ghost.style.transform = `translate(${x - drag.dx}px, ${y - drag.dy}px) rotate(1.2deg) scale(1.02)`;
+  const under = document.elementFromPoint(x, y);
+  const laneEl = under?.closest(".drop-zone[data-lane], .col[data-lane], .lane-tab[data-lane]");
+  const lane = laneEl?.dataset.lane || null;
+  const action = lane ? dropAction(drag.t, lane) : null;
+  $$(".drop-over").forEach((el) => el !== laneEl && el.classList.remove("drop-over"));
+  drag.target = action ? { lane, action, index: Infinity } : null;
+  if (!action) { drag.slot.remove(); return; }
+  laneEl.classList.add("drop-over");
+
+  // Inside a visible column, show where the card would land.
+  const col = laneEl.classList.contains("col") ? laneEl : null;
+  const rail = col?.querySelector(".rail") || null;
+  if (!col || laneEl.matches(".col:not(.active)") && !desktop.matches) { drag.slot.remove(); return; }
+  const cards = [...col.querySelectorAll(".todo[data-id]")].filter((c) => c !== drag.card);
+  let index = cards.findIndex((c) => { const r = c.getBoundingClientRect(); return y < r.top + r.height / 2; });
+  if (index < 0) index = cards.length;
+  drag.target.index = index;
+  if (rail) {
+    const ref = cards[index]?.closest("li") || null;
+    if (drag.slot.nextSibling !== ref || drag.slot.parentNode !== rail) rail.insertBefore(drag.slot, ref);
+  } else {
+    col.querySelector(".col-body")?.prepend(drag.slot);
+  }
+  autoScroll(col.querySelector(".col-body") || document.scrollingElement, y);
+}
+
+function autoScroll(el, y) {
+  const r = el === document.scrollingElement ? { top: 0, bottom: innerHeight } : el.getBoundingClientRect();
+  if (y < r.top + 60) el.scrollBy({ top: -14 });
+  else if (y > r.bottom - 60) el.scrollBy({ top: 14 });
+}
+
+function cleanupDrag() {
+  drag.ghost?.remove();
+  drag.slot?.remove();
+  const bar = $("#drop-bar");
+  if (bar) leave(bar, "leaving", () => bar.remove(), 160);
+  drag.card?.classList.remove("dragging");
+  document.body.classList.remove("is-dragging");
+  $$(".drop-ok, .drop-no, .drop-over").forEach((el) => el.classList.remove("drop-ok", "drop-no", "drop-over"));
+  drag.active = false;
+  drag.suppressClick = true;
+  setTimeout(() => { drag.suppressClick = false; }, 0);
+}
+
+function abortDrag() {
+  // Fly the ghost back to where the card was.
+  const g = drag.ghost, home = drag.card.getBoundingClientRect();
+  if (g && !reduceMotion.matches) {
+    g.animate([{ transform: g.style.transform }, { transform: `translate(${home.left}px, ${home.top}px)` }], { duration: 200, easing: EASE });
+    setTimeout(() => { cleanupDrag(); renderBoard(); }, 190);
+  } else { cleanupDrag(); renderBoard(); }
+}
+
+async function endDrag() {
+  const target = drag.target, t = drag.t;
+  if (!target) return abortDrag();
+  cleanupDrag();
+  try {
+    if (target.action.kind === "reorder") {
+      await reorder(t, target.lane, target.index);
+    } else if (target.action.kind === "rework") {
+      renderBoard();
+      const feedback = await ask({ title: "Send back for rework", body: "Claude continues in the same worktree with your notes.", input: true, placeholder: "What should change?", ok: "Send back" });
+      if (feedback === null) return;
+      await api("POST", `/api/todos/${t.id}/rework`, { feedback });
+      toast("Sent back for rework");
+    } else {
+      // Optimistic: show it in the new lane right away; the server event confirms.
+      const lane = LANES.find((l) => l.key === target.lane);
+      state.todos.set(t.id, { ...t, status: lane.statuses[0] });
+      renderBoard();
+      await api("POST", `/api/todos/${t.id}/${target.action.verb}`);
+      toast(target.action.label);
+      if (target.lane === "queued" && Number.isFinite(target.index)) await reorder(state.todos.get(t.id), "queued", target.index);
+    }
+  } catch (err) {
+    state.todos.set(t.id, t); // undo the optimistic move
+    renderBoard();
+    fail(err);
+  }
+}
+
+// Reorder a lane by rewriting priorities 0..n-1 (lower runs first).
+async function reorder(t, laneKey, index) {
+  const lane = laneItems()[laneKey].filter((x) => x.id !== t.id);
+  lane.splice(Math.min(index, lane.length), 0, t);
+  const changes = lane.map((x, i) => [x, i]).filter(([x, i]) => x.priority !== i);
+  for (const [x, i] of changes) state.todos.set(x.id, { ...state.todos.get(x.id), priority: i });
+  renderBoard();
+  await Promise.all(changes.map(([x, i]) => api("PATCH", `/api/todos/${x.id}`, { priority: i })));
+}
+
 // ------------------------------------------------------------------ vim keys
 // Normal mode is the default; typing in a field or the terminal is insert
 // mode. Esc (Ctrl-] in the terminal) returns to normal mode.
 const VIEWS = ["board", "chat", "run", "activity"];
 const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 }, proc: 0 };
 
-const BOUND = /^(:|\?|gt|gT|gg|G|p|q|Escape|y|A|n|j|k|h|l|w|b|o|O|s|x|a|r|e|\+|-|K|J|\*|t|!|dd|i|I|R|T|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+const BOUND = /^(:|\?|gt|gT|gg|G|p|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 const openDialog = () => document.querySelector("dialog[open]");
 
@@ -947,6 +1420,9 @@ async function todoKey(t, k) {
       }
       return;
   }
+  if (k === "T") return api("POST", `/api/todos/${t.id}/test`).then(() => toast("Running tests…"));
+  if (k === "Y") return api("POST", `/api/todos/${t.id}/duplicate`).then(() => toast("Duplicated as a draft"));
+  if (k === "E") return api("POST", `/api/todos/${t.id}/open`).then(() => toast("Opening in your editor"));
   return false; // not a todo key
 }
 
@@ -1008,6 +1484,8 @@ async function runCommand(line) {
       if (!state.perms.length) return toast("No permission requests waiting");
       showView("board"); closeDetail();
       return $("#perm-banner").scrollIntoView({ block: "nearest" });
+    case "noh": case "nohlsearch": return clearSearch();
+    case "notify": case "notifications": return toggleNotifications();
     case "clear": $("#chat-clear")?.click(); chat.history = []; $("#chat-log").replaceChildren($("#chat-empty")); $("#chat-empty").hidden = false; return;
     case "help": case "h": return $("#keys-sheet").showModal();
     case "logout": return logout();
@@ -1083,10 +1561,19 @@ async function handleNormal(k, n, hadCount) {
     case "p": renderProjectList(); return $("#project-sheet").showModal();
     case "Escape": case "q":
       if (state.detail) return closeDetail();
+      if (k === "Escape" && state.query) return clearSearch();
       return;
-    case "y": case "A": case "n":
+    case "y": case "A":
       if (await permKey(k) === false) toast("No permission request waiting");
       return;
+    case "n": case "N":
+      // n answers "deny" only when a permission request is in view; otherwise next/previous search match.
+      if (k === "n" && state.perms.length && (state.detail ? state.perms.some((p) => p.todo_id === state.detail) : !state.query)) return permKey("n");
+      if (state.view === "board" && !state.detail) return jumpMatch(k === "n" ? 1 : -1);
+      return;
+    case "/":
+      if (state.view === "board" && !state.detail) return openSearch();
+      break;
   }
 
   // Detail view.
@@ -1169,5 +1656,6 @@ desktop.addEventListener("change", () => { if (state.detail) $("#scrim").hidden 
 
 renderBoard();
 setMode();
+setInterval(() => { if (!document.hidden) renderBoard(); }, 30000); // keep "4m"/"2h" current
 connectEvents();
 loadUsage().catch(() => {});

@@ -103,8 +103,12 @@ type Todo struct {
 	// worktree first (set when a merge conflicted). AutoMerge sends the todo
 	// straight back to the merge queue once it is fixed and tests pass,
 	// since a human already approved it.
-	MergeMain  bool       `json:"merge_main,omitempty"`
-	AutoMerge  bool       `json:"auto_merge,omitempty"`
+	MergeMain bool `json:"merge_main,omitempty"`
+	AutoMerge bool `json:"auto_merge,omitempty"`
+	// Size of the change against the default branch, after the latest run.
+	DiffFiles  int        `json:"diff_files,omitempty"`
+	DiffAdd    int        `json:"diff_add,omitempty"`
+	DiffDel    int        `json:"diff_del,omitempty"`
 	CostUSD    float64    `json:"cost_usd,omitempty"` // API-equivalent cost reported by Claude Code
 	Runs       int        `json:"runs,omitempty"`
 	Error      string     `json:"error,omitempty"`

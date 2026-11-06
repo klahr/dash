@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -238,6 +239,25 @@ func (g *Git) CreateGitHubRepo(ctx context.Context, projectID, repo, name string
 		return "", err
 	}
 	return g.git(ctx, projectID, repo, "remote", "get-url", "origin")
+}
+
+// DiffStat sums the change between base and HEAD in dir (files, lines added, removed).
+func (g *Git) DiffStat(ctx context.Context, projectID, dir, base string) (files, add, del int, err error) {
+	out, err := g.git(ctx, projectID, dir, "diff", "--numstat", base+"...HEAD")
+	if err != nil || out == "" {
+		return 0, 0, 0, err
+	}
+	for _, l := range strings.Split(out, "\n") {
+		f := strings.SplitN(l, "\t", 3)
+		if len(f) < 3 {
+			continue
+		}
+		files++
+		a, _ := strconv.Atoi(f[0]) // "-" for binary files counts as 0
+		d, _ := strconv.Atoi(f[1])
+		add, del = add+a, del+d
+	}
+	return files, add, del, nil
 }
 
 // CurrentBranch returns the branch checked out in dir.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"sort"
@@ -123,6 +124,10 @@ type App struct {
 
 	pickRow int
 
+	query   string // board search (/)
+	showOld bool   // show merged todos older than a day
+	Bell    bool   // ring the terminal bell for reviews, failures and approvals
+
 	perms   []PermRequest // pending permission requests for this project
 	permRow int
 	usage   *Usage
@@ -222,7 +227,7 @@ type (
 )
 
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.loadProjects(), a.streamEvents(), a.loadUsage())
+	return tea.Batch(a.loadProjects(), a.streamEvents(), a.loadUsage(), tick())
 }
 
 func (a *App) streamEvents() tea.Cmd {
@@ -252,6 +257,19 @@ func (a *App) loadProcs() tea.Cmd {
 	}
 	pid := a.proj.ID
 	return func() tea.Msg { ps, err := a.c.Processes(pid); return procsMsg{pid, ps, err} }
+}
+
+type tickMsg struct{}
+
+// tick re-renders every 30s so elapsed times ("4m") stay current.
+func tick() tea.Cmd { return tea.Tick(30*time.Second, func(time.Time) tea.Msg { return tickMsg{} }) }
+
+// bell rings the terminal bell on stderr (the same terminal) without
+// disturbing the rendered screen.
+func (a *App) bell() {
+	if a.Bell {
+		_, _ = os.Stderr.WriteString("\a")
+	}
 }
 
 func (a *App) loadPerms() tea.Cmd {
@@ -398,6 +416,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case tickMsg:
+		return a, tick()
+
 	case permsMsg:
 		if a.proj != nil && msg.pid == a.proj.ID {
 			a.perms = msg.ps
@@ -461,9 +482,35 @@ func (a *App) selectProject(i int) tea.Cmd {
 	return tea.Batch(a.loadTodos(), a.loadProcs(), a.loadPerms())
 }
 
+func (a *App) matches(t model.Todo) bool {
+	return a.query == "" || strings.Contains(strings.ToLower(t.Title+" "+t.Prompt), strings.ToLower(a.query))
+}
+
+func isOld(t model.Todo) bool {
+	at := t.UpdatedAt
+	if t.FinishedAt != nil {
+		at = *t.FinishedAt
+	}
+	return t.Status == model.StatusMerged && time.Since(at) > 24*time.Hour
+}
+
+// hiddenOld counts merged todos older than a day that the Done column hides.
+func (a *App) hiddenOld() int {
+	n := 0
+	for _, t := range a.todos {
+		if isOld(t) && a.matches(t) {
+			n++
+		}
+	}
+	return n
+}
+
 func (a *App) rebuildCols() {
 	a.cols = make([][]model.Todo, len(columns))
 	for _, t := range a.todos {
+		if !a.matches(t) || (!a.showOld && isOld(t)) {
+			continue
+		}
 		for ci, c := range columns {
 			for _, s := range c.statuses {
 				if t.Status == s {
@@ -510,6 +557,9 @@ func (a *App) handleEvent(ev wireEvent) tea.Cmd {
 		prev := a.todos[t.ID]
 		a.todos[t.ID] = t
 		a.rebuildCols()
+		if prev.ID != "" && prev.Status != t.Status && (t.Status == model.StatusReview || t.Status == model.StatusFailed) {
+			a.bell()
+		}
 		if a.overlay == ovDetail && a.dID == t.ID && prev.Status != t.Status && t.Status == model.StatusReview {
 			return a.loadText(t.ID, "diff")
 		}
@@ -575,6 +625,7 @@ func (a *App) handleEvent(ev wireEvent) tea.Cmd {
 		if p.Decision == "" {
 			a.perms = append(a.perms, p)
 			a.setFlash(fmt.Sprintf("Claude wants to %s — press P to answer", permSummary(p)), false)
+			a.bell()
 		}
 		a.permRow = clamp(a.permRow, 0, len(a.perms)-1)
 		if len(a.perms) == 0 && a.overlay == ovPerms {
@@ -898,6 +949,22 @@ func (a *App) boardKey(s string, n int) tea.Cmd {
 	case "l", "right":
 		a.col = clamp(a.col+n, 0, len(a.cols)-1)
 		a.row = clamp(a.row, 0, len(a.cols[a.col])-1)
+	case "/":
+		a.ask("/", func(q string) tea.Cmd {
+			a.query = strings.TrimSpace(q)
+			a.col, a.row = 0, 0
+			a.rebuildCols()
+			a.jumpMatch(1, true)
+			return nil
+		})
+		a.promptIn.SetValue(a.query)
+		return nil
+	case "n":
+		a.jumpMatch(n, false)
+		return nil
+	case "N":
+		a.jumpMatch(-n, false)
+		return nil
 	case "w": // next non-empty column
 		for c := a.col + 1; c < len(a.cols); c++ {
 			if len(a.cols[c]) > 0 {
@@ -957,8 +1024,39 @@ func (a *App) todoAction(s string) tea.Cmd {
 		return a.startProc(StartProc{Kind: model.ProcWeb, Preset: "run", TodoID: t.ID})
 	case "!":
 		return a.startProc(StartProc{Kind: model.ProcPTY, TodoID: t.ID})
+	case "T":
+		return a.action("running tests…", func() error { return a.c.RunTests(t.ID) })
+	case "Y":
+		return a.action("duplicated as a draft", func() error { return a.c.Duplicate(t.ID) })
+	case "E":
+		return a.action("opening in your editor", func() error { return a.c.OpenEditor(t.ID) })
 	}
 	return nil
+}
+
+// jumpMatch moves the cursor dir cards forward/back across columns (n / N).
+func (a *App) jumpMatch(dir int, fromStart bool) {
+	type pos struct{ c, r int }
+	var all []pos
+	for ci, col := range a.cols {
+		for ri := range col {
+			all = append(all, pos{ci, ri})
+		}
+	}
+	if len(all) == 0 {
+		a.setFlash("no matches", true)
+		return
+	}
+	i := 0
+	if !fromStart {
+		for j, p := range all {
+			if p.c == a.col && p.r == a.row {
+				i = j
+			}
+		}
+		i = ((i+dir)%len(all) + len(all)) % len(all)
+	}
+	a.col, a.row = all[i].c, all[i].r
 }
 
 func (a *App) deleteSelected() tea.Cmd {
@@ -1163,6 +1261,19 @@ func (a *App) saveForm(enqueue bool) tea.Cmd {
 
 func (a *App) chatKey(s string, n int) tea.Cmd {
 	switch s {
+	case "t": // make the last answer a todo
+		for i := len(a.chat) - 1; i >= 0; i-- {
+			if a.chat[i].role == "assistant" && a.chat[i].text != "" {
+				cmd := a.openForm(nil)
+				if a.overlay == ovForm {
+					a.fPrompt.SetValue(a.chat[i].text)
+					a.focusField(0)
+				}
+				return cmd
+			}
+		}
+		a.setFlash("no answer to turn into a todo yet", true)
+		return nil
 	case "i", "a", "o", "A", "I":
 		a.enterInsert()
 		return textarea.Blink
@@ -1368,6 +1479,27 @@ func (a *App) runCommand(line string) tea.Cmd {
 		return a.action("pushed", func() error { return a.c.PushProject(pid) })
 	case "run", "!":
 		return a.startProc(StartProc{Kind: model.ProcPTY, Command: arg})
+	case "noh", "nohlsearch":
+		a.query = ""
+		a.rebuildCols()
+	case "old", "all":
+		a.showOld = !a.showOld
+		a.rebuildCols()
+		if a.showOld {
+			a.setFlash("showing merged todos older than a day", false)
+		}
+	case "copy":
+		t, ok := a.selected()
+		if !ok || t.Worktree == nil {
+			a.setFlash("select a todo with a worktree first", true)
+			return nil
+		}
+		text := t.Worktree.Branch
+		if arg == "path" {
+			text = t.Worktree.Path
+		}
+		a.setFlash("copied "+text, false)
+		return tea.SetClipboard(text)
 	case "pause", "resume":
 		paused := name == "pause"
 		return func() tea.Msg {

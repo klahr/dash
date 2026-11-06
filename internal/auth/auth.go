@@ -193,10 +193,12 @@ func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
 
 // Public paths reachable without a session: the login page and its assets.
 var public = map[string]bool{
-	"/login.html": true,
-	"/login.js":   true,
-	"/style.css":  true,
-	"/api/login":  true,
+	"/login.html":           true,
+	"/login.js":             true,
+	"/style.css":            true,
+	"/favicon.svg":          true,
+	"/manifest.webmanifest": true,
+	"/api/login":            true,
 	// Claude Code's permission prompts; authenticated by a per-run bearer token instead.
 	"/mcp/permissions": true,
 }
@@ -206,7 +208,8 @@ var public = map[string]bool{
 // to the login page.
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if public[r.URL.Path] || a.valid(r) {
+		// Static artwork (login page images, icons) is public too.
+		if public[r.URL.Path] || strings.HasPrefix(r.URL.Path, "/img/") || a.valid(r) {
 			next.ServeHTTP(w, r)
 			return
 		}

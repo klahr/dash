@@ -283,6 +283,9 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 			fail(errors.New("Claude finished without changing any files"))
 			return
 		}
+		if files, add, del, err := e.Git.DiffStat(ctx, p.ID, wt.Path, p.DefaultBranch); err == nil {
+			_ = update(func(x *model.Todo) { x.DiffFiles, x.DiffAdd, x.DiffDel = files, add, del })
+		}
 
 		if p.TestCommand == "" {
 			break
@@ -369,6 +372,48 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 		*t = nt
 	}
 	return err
+}
+
+// RunTests re-runs the project's tests in a todo's worktree without involving
+// Claude (e.g. for a flaky test). It returns at once; results arrive as an
+// updated todo.
+func (e *TodoEngine) RunTests(todoID string) error {
+	t, err := e.Store.GetTodo(todoID)
+	if err != nil {
+		return err
+	}
+	p, err := e.Store.GetProject(t.ProjectID)
+	if err != nil {
+		return err
+	}
+	switch {
+	case p.TestCommand == "":
+		return errors.New("this project has no test command; set one in its settings")
+	case t.Worktree == nil:
+		return errors.New("this todo has no worktree yet")
+	case t.Status == model.StatusInProgress || t.Status == model.StatusMerging:
+		return errors.New("wait until Claude or the merge queue is done with this todo")
+	}
+	e.mu.Lock()
+	if _, busy := e.running["test:"+t.ID]; busy {
+		e.mu.Unlock()
+		return errors.New("tests are already running for this todo")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	e.running["test:"+t.ID] = cancel // counted like a run, so it shares the parallelism limit
+	e.mu.Unlock()
+	go func() {
+		defer func() {
+			cancel()
+			e.mu.Lock()
+			delete(e.running, "test:"+t.ID)
+			e.mu.Unlock()
+			e.Kick()
+		}()
+		checks := e.runChecks(ctx, t, p, t.Worktree.Path, "manual")
+		_, _ = e.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Checks = &checks; return nil })
+	}()
+	return nil
 }
 
 // prepareWorktree copies untracked files and runs the setup command in a new worktree.

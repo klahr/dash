@@ -19,6 +19,7 @@ func main() {
 	server := flag.String("server", envOr("DASH_SERVER", "http://127.0.0.1:7777"), "Dash server URL (or $DASH_SERVER)")
 	envFile := flag.String("env", ".env", "file with DASH_USERNAME / DASH_PASSWORD")
 	project := flag.String("project", "", "project name or id to open")
+	bell := flag.Bool("bell", true, "ring the terminal bell for reviews, failures and permission requests")
 	flag.Parse()
 
 	if err := auth.LoadDotEnv(*envFile); err != nil {
@@ -41,6 +42,7 @@ func main() {
 	}
 
 	app := tui.NewApp(c, *project)
+	app.Bell = *bell
 	p := tea.NewProgram(app)
 	app.SetProgram(p)
 	if _, err := p.Run(); err != nil {

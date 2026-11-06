@@ -148,6 +148,26 @@ func TestFailingTestsGoBackToClaudeWithResume(t *testing.T) {
 	if td.AutoFixes != 1 || td.Runs != 2 {
 		t.Fatalf("want 1 auto-fix over 2 runs, got %d / %d", td.AutoFixes, td.Runs)
 	}
+	if td.DiffFiles != 1 || td.DiffAdd != 1 || td.DiffDel != 0 {
+		t.Fatalf("want diff stat 1 file +1 -0, got %d +%d -%d", td.DiffFiles, td.DiffAdd, td.DiffDel)
+	}
+
+	// Re-running the tests by hand records a "manual" result without Claude.
+	write(t, td.Worktree.Path, "a.txt", "broken\n")
+	if err := h.engine.RunTests(td.ID); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if x, _ := h.st.GetTodo(td.ID); x.Checks != nil && x.Checks.Stage == "manual" {
+			if x.Checks.Passed || x.Runs != 2 {
+				t.Fatalf("manual run: want failing checks and no extra Claude run, got passed=%v runs=%d", x.Checks.Passed, x.Runs)
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("manual test run never finished")
 	calls := exe.Calls()
 	if calls[0].Resume != "" {
 		t.Fatalf("first run should not resume")

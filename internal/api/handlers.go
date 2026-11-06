@@ -1,12 +1,16 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
@@ -207,7 +211,87 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	if strings.TrimSpace(t.Title) == "" {
+		s.autoTitle(t.ID, t.Prompt)
+	}
 	writeJSON(w, http.StatusCreated, t)
+}
+
+// autoTitle names a todo in the background; a title typed meanwhile wins.
+func (s *Server) autoTitle(id, prompt string) {
+	if s.Titler == nil {
+		return
+	}
+	go func() {
+		title, err := s.Titler.Title(context.Background(), prompt)
+		if err != nil {
+			slog.Debug("auto title", "todo", id, "err", err)
+			return
+		}
+		_, _ = s.Store.UpdateTodo(id, func(t *model.Todo) error {
+			if strings.TrimSpace(t.Title) == "" {
+				t.Title = title
+			}
+			return nil
+		})
+	}()
+}
+
+func (s *Server) retestTodo(w http.ResponseWriter, r *http.Request) {
+	if err := s.Todos.RunTests(r.PathValue("tid")); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeErr(w, err)
+			return
+		}
+		writeErr(w, fmt.Errorf("%w: %v", errBadRequest, err))
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// duplicateTodo copies a todo's instructions into a new draft.
+func (s *Server) duplicateTodo(w http.ResponseWriter, r *http.Request) {
+	src, err := s.Store.GetTodo(r.PathValue("tid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	title := src.Title
+	if title != "" {
+		title += " (copy)"
+	}
+	t, err := s.Store.CreateTodo(model.Todo{ProjectID: src.ProjectID, Title: title, Prompt: src.Prompt, Goal: src.Goal, Priority: src.Priority})
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, t)
+}
+
+// openTodo opens the todo's worktree in the configured editor on the Dash machine.
+func (s *Server) openTodo(w http.ResponseWriter, r *http.Request) {
+	t, err := s.Store.GetTodo(r.PathValue("tid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if s.Editor == "" {
+		writeErr(w, fmt.Errorf("%w: no editor configured; start dash with -editor (e.g. -editor code)", errBadRequest))
+		return
+	}
+	if t.Worktree == nil {
+		writeErr(w, fmt.Errorf("%w: this todo has no worktree", errBadRequest))
+		return
+	}
+	args := append(strings.Fields(s.Editor), t.Worktree.Path)
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // outlives the request
+	if err := cmd.Start(); err != nil {
+		writeErr(w, err)
+		return
+	}
+	go func() { _ = cmd.Wait() }()
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (s *Server) getTodo(w http.ResponseWriter, r *http.Request) {

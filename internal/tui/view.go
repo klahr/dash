@@ -84,6 +84,9 @@ func (a *App) renderHeader() string {
 		}
 	}
 	right := ""
+	if a.query != "" {
+		right += styleWarn.Render("/"+a.query) + styleDim.Render(" (:noh)  ")
+	}
 	if a.proj != nil {
 		right = styleAccent.Render(a.proj.Name) + styleDim.Render(" ("+a.proj.DefaultBranch+")")
 	}
@@ -178,9 +181,9 @@ func (a *App) hints() string {
 	}
 	switch a.tab {
 	case tabBoard:
-		return "hjkl move · Enter open · o new · s queue · a approve · r rework · dd delete · gt next tab"
+		return "hjkl move · Enter open · o new · s queue · a approve · r rework · / search · T retest · Y duplicate · gt next tab"
 	case tabChat:
-		return "i type · j/k scroll · x stop · :clear"
+		return "i type · j/k scroll · t make last answer a todo · x stop · :clear"
 	case tabProcs:
 		return "Enter attach · R run · T test · D deploy · ! shell · x stop · o open URL"
 	}
@@ -252,6 +255,11 @@ func (a *App) renderBoard() string {
 		if rest := len(items) - start - cardsFit; rest > 0 {
 			lines = append(lines, styleDim.Render(fmt.Sprintf("  +%d more", rest)))
 		}
+		if c.title == "Done" && !a.showOld {
+			if old := a.hiddenOld(); old > 0 {
+				lines = append(lines, styleDim.Render(fmt.Sprintf("  %d older (:old)", old)))
+			}
+		}
 		col := lipgloss.NewStyle().Width(cw).Render(strings.Join(lines, "\n"))
 		rendered = append(rendered, col)
 	}
@@ -278,6 +286,19 @@ func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
 		sub = "failed"
 	default:
 		sub = strings.ReplaceAll(t.Prompt, "\n", " ")
+	}
+	var meta []string
+	if t.DiffFiles > 0 && (t.Status == model.StatusReview || t.Status == model.StatusMerged || t.Status == model.StatusFailed || t.Status == model.StatusMerging) {
+		meta = append(meta, fmt.Sprintf("+%d −%d", t.DiffAdd, t.DiffDel))
+	}
+	if t.Status == model.StatusInProgress && t.StartedAt != nil {
+		meta = append(meta, ago(*t.StartedAt))
+	}
+	if t.Status == model.StatusReview && t.FinishedAt != nil {
+		meta = append(meta, "waiting "+ago(*t.FinishedAt))
+	}
+	if len(meta) > 0 && !a.waiting(t.ID) {
+		sub = strings.Join(meta, " · ") + " · " + sub
 	}
 	sub = ansi.Truncate(sub, w-2, "…")
 	st, ok := statusColors[t.Status]
@@ -446,6 +467,20 @@ func (a *App) renderChat() string {
 	return hist + "\n" + input
 }
 
+// ago formats elapsed time compactly: "now", "4m", "3h", "2d".
+func ago(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
+}
+
 func indent(s, prefix string) []string {
 	ls := strings.Split(s, "\n")
 	for i := range ls {
@@ -555,9 +590,10 @@ var helpText = styleBox.Render(strings.Join([]string{
 	styleAccent.Render("Motion") + "        h j k l · w/b next/prev column · gg G · {count}j · ctrl+d/u/f/b",
 	styleAccent.Render("Todo") + "          Enter open · o new · e edit · s queue · x cancel · a approve · r rework",
 	"              dd delete · +/- (K/J) priority · * goal · t try in worktree · ! shell in worktree",
+	styleAccent.Render("More") + "          / search · n/N next/prev match · :noh clear · T rerun tests · Y duplicate · E open in editor · :copy [path]",
 	styleAccent.Render("Detail") + "        Tab/h/l cycle log → diff → tests · R reload · q back",
 	styleAccent.Render("Approvals") + "     P list Claude's permission requests · y allow · A always allow · n deny",
-	styleAccent.Render("Chat") + "          i insert · Enter send · Alt+Enter newline · Esc normal · x stop · dd/:clear",
+	styleAccent.Render("Chat") + "          t make the last answer a todo · i insert · Enter send · Alt+Enter newline · Esc normal · x stop · dd/:clear",
 	styleAccent.Render("Procs") + "         Enter attach (Ctrl-] detaches) · R run · T test · D deploy · ! shell · x stop · o open",
 	styleAccent.Render("Form") + "          Tab field · Esc normal · * goal · :w draft · :wq/ZZ queue · :q! discard",
 	styleAccent.Render("Commands") + "      :project <name> · :newproject <name> [path] · :todo <prompt> · :new [prompt]",

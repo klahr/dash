@@ -282,3 +282,11 @@ func (c *Client) SetQueuePaused(paused bool) (u Usage, err error) {
 	}
 	return u, c.do("POST", path, nil, &u)
 }
+
+// RunTests re-runs a todo's tests; Duplicate copies it as a draft;
+// OpenEditor opens its worktree in the editor configured on the server.
+func (c *Client) RunTests(id string) error { return c.do("POST", "/api/todos/"+id+"/test", nil, nil) }
+func (c *Client) Duplicate(id string) error {
+	return c.do("POST", "/api/todos/"+id+"/duplicate", nil, nil)
+}
+func (c *Client) OpenEditor(id string) error { return c.do("POST", "/api/todos/"+id+"/open", nil, nil) }

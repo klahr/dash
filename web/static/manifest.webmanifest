@@ -1,0 +1,14 @@
+{
+  "name": "Dash",
+  "short_name": "Dash",
+  "description": "Run Claude on many tasks in parallel, review the diffs, merge one at a time.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#101722",
+  "theme_color": "#101722",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "img/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "img/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
