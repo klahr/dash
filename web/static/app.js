@@ -250,6 +250,7 @@ const state = {
   detail: null,        // open todo id
   pane: "diff",
   diff: "",
+  diffOpen: new Set(), // diff files the user expanded in the open todo
   procs: [],
   perms: [],           // pending permission requests for this project
   usage: null,
@@ -856,6 +857,7 @@ async function openDetail(id) {
   const t = state.todos.get(id);
   state.pane = t?.worktree ? "diff" : "log";
   state.diff = "";
+  state.diffOpen = new Set();
   $("#detail").hidden = false;
   $("#scrim").hidden = !desktop.matches;
   renderDetail();
@@ -1068,7 +1070,11 @@ function renderDiff(text) {
     $("#d-diff").replaceChildren(h("p", { class: "pane-empty" }, msg));
     return;
   }
-  $("#d-diff").replaceChildren(...files.map((f) => h("details", { class: "diff-file", open: files.length <= 8 },
+  const commented = new Set(commentsFor(state.detail).map((c) => c.file));
+  $("#d-diff").replaceChildren(...files.map((f) => h("details", {
+    class: "diff-file", open: state.diffOpen.has(f.path) || commented.has(f.path),
+    ontoggle: (e) => state.diffOpen[e.target.open ? "add" : "delete"](f.path),
+  },
     h("summary", {}, h("span", { class: "path" }, f.path), h("span", { class: "counts" }, h("span", { class: "plus" }, `+${f.add}`), " ", h("span", { class: "minus" }, `−${f.del}`))),
     h("div", { class: "diff-lines" }, diffLines(f)))));
 }
