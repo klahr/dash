@@ -779,7 +779,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .side-project-icon:has(img) { background: none; box-shadow: none; }
 .side-project-status { position: absolute; top: -3px; right: -3px; width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); }
 .side-project-status.running { background: var(--running); }
-.side-project-status.review { background: var(--merged); }
+.side-project-status.review { background: var(--review); }
 .side-project-icon img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
 .side-project-name { flex: 1; min-width: 0; }
 .side-project-name, .side-project-branch { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
