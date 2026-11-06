@@ -2374,6 +2374,15 @@ document.addEventListener("pointerdown", () => { if (keys.active) { keys.active 
 function laneCount() { return LANES.length; }
 function laneTodos(li) { return laneItems()[LANES[li].key] || []; }
 function cursorTodo() { return laneTodos(keys.cur.lane)[keys.cur.row] || null; }
+// Minimized lanes (desktop only) are skipped by lane navigation.
+function laneSkipped(li) { return desktop.matches && state.collapsed.has(LANES[li].key); }
+function stepLane(lane, d) {
+  const step = Math.sign(d);
+  for (let li = lane + step, left = Math.abs(d); li >= 0 && li < laneCount(); li += step) {
+    if (!laneSkipped(li)) { lane = li; if (!--left) break; }
+  }
+  return lane;
+}
 
 function moveCursor(lane, row) {
   lane = Math.max(0, Math.min(laneCount() - 1, lane));
@@ -2847,14 +2856,14 @@ async function handleNormal(k, n, hadCount) {
       switch (k) {
         case "j": case "ArrowDown": return moveCursor(lane, keys.active ? row + n : row);
         case "k": case "ArrowUp": return moveCursor(lane, row - n);
-        case "h": case "ArrowLeft": return moveCursor(lane - n, row);
-        case "l": case "ArrowRight": return moveCursor(lane + n, row);
+        case "h": case "ArrowLeft": return moveCursor(stepLane(lane, -n), row);
+        case "l": case "ArrowRight": return moveCursor(stepLane(lane, n), row);
         case "gg": return moveCursor(lane, hadCount ? n - 1 : 0);
         case "G": return moveCursor(lane, hadCount ? n - 1 : Infinity);
         case "w": case "b": {
           const step = k === "w" ? 1 : -1;
           for (let li = lane + step; li >= 0 && li < laneCount(); li += step) {
-            if (laneTodos(li).length) return moveCursor(li, 0);
+            if (laneTodos(li).length && !laneSkipped(li)) return moveCursor(li, 0);
           }
           return;
         }
