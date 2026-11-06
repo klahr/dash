@@ -655,7 +655,10 @@ function renderSideProjects() {
       h("button", {
         type: "button", class: "side-project", title: p.path, "aria-current": cur ? "true" : "false",
         onclick: attempt(async () => { await selectProject(p); setMenu(false); }),
-      }, h("span", { class: "side-project-name" }, projectDot(p), p.name), cur ? h("span", { class: "side-project-branch" }, p.default_branch) : null));
+      },
+      h("span", { class: "side-project-icon", style: p.color ? `--project: ${p.color}` : null, "aria-hidden": "true" }, [...p.name][0]?.toUpperCase() || "?"),
+      h("span", { class: "side-project-name" }, p.name),
+      cur && p.default_branch ? h("span", { class: "side-project-branch" }, p.default_branch) : null));
   };
   const items = !multi() ? state.projects.map(item) : state.machines.flatMap((m) => [
     h("li", { class: "side-machine", title: m.ok ? "" : m.error || "unreachable" },
