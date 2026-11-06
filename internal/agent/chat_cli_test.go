@@ -75,6 +75,22 @@ func TestChatArgsShell(t *testing.T) {
 	if _, ok := flag(c.args("", ""), "--permission-prompt-tool"); ok {
 		t.Error("--permission-prompt-tool without --mcp-config")
 	}
+	if _, ok := flag(args, "--permission-mode"); ok {
+		t.Error("--permission-mode without one set")
+	}
+
+	// A permission mode keeps the prompt tool for what it doesn't approve.
+	c.PermissionMode = "auto"
+	args = c.args("/repo", cfg)
+	if m, _ := flag(args, "--permission-mode"); m != "auto" {
+		t.Errorf("--permission-mode %q", m)
+	}
+	if got, _ := flag(args, "--permission-prompt-tool"); got != perm.PromptTool {
+		t.Errorf("--permission-prompt-tool %q", got)
+	}
+	if _, ok := flag((ClaudeCodeChat{PermissionMode: "auto"}).args("", ""), "--permission-mode"); ok {
+		t.Error("read-only chat should not pass --permission-mode")
+	}
 }
 
 func TestToolBlockDeltas(t *testing.T) {

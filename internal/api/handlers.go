@@ -116,6 +116,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		SetupCommand  *string   `json:"setup_command"`
 		CopyFiles     *[]string `json:"copy_files"`
 		AllowedTools  *[]string `json:"allowed_tools"`
+		ChatMode      *string   `json:"chat_permission_mode"`
 		MaxAutoFixes  *int      `json:"max_auto_fixes"`
 		AutoPush      *bool     `json:"auto_push"`
 		MergeMode     *string   `json:"merge_mode"`
@@ -127,6 +128,14 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
+	}
+	if req.ChatMode != nil {
+		switch *req.ChatMode {
+		case "", model.ChatModeAuto, model.ChatModeAcceptEdits:
+		default:
+			writeErr(w, fmt.Errorf("%w: chat_permission_mode must be \"\", %q or %q", errBadRequest, model.ChatModeAuto, model.ChatModeAcceptEdits))
+			return
+		}
 	}
 	if req.Color != nil {
 		*req.Color = strings.ToLower(strings.TrimSpace(*req.Color))
@@ -148,6 +157,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		set(&p.SetupCommand, req.SetupCommand)
 		set(&p.AutoPush, req.AutoPush)
 		set(&p.Color, req.Color)
+		set(&p.ChatPermissionMode, req.ChatMode)
 		if req.CopyFiles != nil {
 			p.CopyFiles = cleanList(*req.CopyFiles)
 		}

@@ -83,7 +83,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		if msg.Type != "send" {
 			continue
 		}
-		var dir string
+		var dir, mode string
 		save := s.Store.SetChat
 		prompt := msg.Messages
 		if msg.Project != "" && msg.Todo == "" && s.Store != nil {
@@ -92,7 +92,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 				continue
 			}
-			dir = p.Path
+			dir, mode = p.Path, p.ChatPermissionMode
 			save = func(msgs []agent.ChatMessage) error { return s.Store.SetProjectChat(p.ID, msgs) }
 		}
 		if msg.Todo != "" && s.Store != nil {
@@ -103,7 +103,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			}
 			var diff string
 			if p, err := s.Store.GetProject(t.ProjectID); err == nil {
-				dir = p.Path
+				dir, mode = p.Path, p.ChatPermissionMode
 				if t.Worktree != nil {
 					// Let Claude read the files as the todo left them.
 					if _, err := os.Stat(t.Worktree.Path); err == nil && t.Status != model.StatusMerged {
@@ -122,6 +122,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		var turnCtx context.Context
 		turnCtx, cancelTurn = context.WithCancel(ctx)
 		turnCtx = agent.WithApprover(turnCtx, approvals.forTurn(turnCtx))
+		turnCtx = agent.WithPermissionMode(turnCtx, mode)
 		go func(ctx context.Context, history []agent.ChatMessage) {
 			var reply strings.Builder
 			err := s.Chat.Stream(ctx, dir, prompt, func(d agent.ChatDelta) {

@@ -67,6 +67,10 @@ type Project struct {
 	// AllowedTools run without a permission prompt in every todo, e.g. "Bash"
 	// or "WebFetch". "Always allow" on a prompt adds to it.
 	AllowedTools []string `json:"allowed_tools,omitempty"`
+	// ChatPermissionMode is passed as --permission-mode to the project's chats
+	// in shell mode: "" (ask for everything not allowed), ChatModeAuto or
+	// ChatModeAcceptEdits. What the mode doesn't approve still asks the user.
+	ChatPermissionMode string `json:"chat_permission_mode,omitempty"`
 	// MaxAutoFixes is how many times Dash sends failing tests or merge
 	// conflicts back to Claude on its own before asking a human.
 	MaxAutoFixes int `json:"max_auto_fixes"`
@@ -106,6 +110,9 @@ const (
 
 	MergeLocal = "local"
 	MergePR    = "pr"
+
+	ChatModeAuto        = "auto"
+	ChatModeAcceptEdits = "acceptEdits"
 )
 
 // UsesPR reports whether approved todos are landed through GitHub pull requests.

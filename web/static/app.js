@@ -1641,6 +1641,7 @@ function openSettings() {
   f.setup_command.value = p.setup_command || "";
   f.copy_files.value = (p.copy_files || []).join("\n");
   f.allowed_tools.value = (p.allowed_tools || []).join("\n");
+  f.chat_permission_mode.value = p.chat_permission_mode || "";
   f.run_command.value = p.run_command || "";
   f.deploy_command.value = p.deploy_command || "";
   f.auto_push.checked = !!p.auto_push;
@@ -1678,6 +1679,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     setup_command: f.setup_command.value.trim(),
     copy_files: f.copy_files.value.split("\n").map((x) => x.trim()).filter(Boolean),
     allowed_tools: f.allowed_tools.value.split("\n").map((x) => x.trim()).filter(Boolean),
+    chat_permission_mode: f.chat_permission_mode.value,
     run_command: f.run_command.value.trim(),
     deploy_command: f.deploy_command.value.trim(),
     auto_push: f.auto_push.checked,

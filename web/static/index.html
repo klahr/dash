@@ -338,6 +338,12 @@
       <label class="field"><span>Files to copy into worktrees <em>one per line</em></span><textarea name="copy_files" rows="2" placeholder=".env" spellcheck="false"></textarea></label>
       <label class="field"><span>Always-allowed tools <em>one per line</em></span><textarea name="allowed_tools" rows="2" placeholder="Bash" spellcheck="false"></textarea></label>
       <p class="hint">Claude uses these without asking. "Always allow" on a request adds to this list.</p>
+      <fieldset class="field choice">
+        <legend>Chat permissions</legend>
+        <label class="radio"><input type="radio" name="chat_permission_mode" value=""><span>Ask every time <em>each tool call not already allowed waits for you</em></span></label>
+        <label class="radio"><input type="radio" name="chat_permission_mode" value="auto"><span>Auto <em>routine actions run on their own; risky ones still ask</em></span></label>
+        <label class="radio"><input type="radio" name="chat_permission_mode" value="acceptEdits"><span>Accept edits <em>file edits run on their own; commands still ask</em></span></label>
+      </fieldset>
       <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" spellcheck="false"></label>
       <label class="field"><span>Deploy command</span><input name="deploy_command" spellcheck="false"></label>
       <fieldset class="field choice">

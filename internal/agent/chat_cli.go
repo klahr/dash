@@ -37,6 +37,9 @@ type ClaudeCodeChat struct {
 	Tools  string // ChatReadOnly (default) or ChatShell
 	// AllowedTools run without asking in shell mode (--allowedTools), e.g. "Bash(git status *)".
 	AllowedTools []string
+	// PermissionMode is passed as --permission-mode in shell mode, e.g. "auto".
+	// Stream takes it from ctx (WithPermissionMode).
+	PermissionMode string
 	// Perms and PermURL serve the --permission-prompt-tool in shell mode. A
 	// turn whose ctx carries an approver (WithApprover) asks it before every
 	// tool call that isn't allowed already; without one, those calls are denied.
@@ -56,6 +59,14 @@ func WithApprover(ctx context.Context, ask perm.AskFunc) context.Context {
 func approverFrom(ctx context.Context) perm.AskFunc {
 	ask, _ := ctx.Value(approverKey{}).(perm.AskFunc)
 	return ask
+}
+
+type permissionModeKey struct{}
+
+// WithPermissionMode makes chat turns run with ctx use --permission-mode mode
+// in shell mode; "" keeps the default.
+func WithPermissionMode(ctx context.Context, mode string) context.Context {
+	return context.WithValue(ctx, permissionModeKey{}, mode)
 }
 
 func (c ClaudeCodeChat) shell() bool { return c.Tools == ChatShell }
@@ -104,6 +115,9 @@ func (c ClaudeCodeChat) args(dir, mcpConfig string) []string {
 		for _, t := range c.AllowedTools {
 			args = append(args, "--allowedTools", t)
 		}
+		if c.PermissionMode != "" {
+			args = append(args, "--permission-mode", c.PermissionMode)
+		}
 	}
 	if c.Model != "" {
 		args = append(args, "--model", c.Model)
@@ -118,6 +132,9 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	bin := c.Bin
 	if bin == "" {
 		bin = "claude"
+	}
+	if mode, ok := ctx.Value(permissionModeKey{}).(string); ok {
+		c.PermissionMode = mode
 	}
 	var mcpConfig string
 	if ask := approverFrom(ctx); c.shell() && ask != nil && c.Perms != nil && c.PermURL != "" {
