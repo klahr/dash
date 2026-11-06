@@ -2070,6 +2070,8 @@ function attach(p) {
   termWS?.close();
   attached = p.id;
   term.reset();
+  // Piped (non-PTY) output has bare \n with no tty driver to add the \r.
+  term.options.convertEol = p.kind !== "pty";
   requestAnimationFrame(fitTerm);
   termWS = new WebSocket(wsURL(on(here(), `/ws/proc/${p.id}`)));
   termWS.binaryType = "arraybuffer";
