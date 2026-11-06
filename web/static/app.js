@@ -145,7 +145,11 @@ if (vv) {
   vv.addEventListener("scroll", fit);
   if (vk) {
     vk.addEventListener("geometrychange", () => {
-      kbH = vk.overlaysContent ? vk.boundingRect.height : 0;
+      // The rect is the keys alone: below them Android still shows its
+      // navigation bar (back / hide keyboard), which covers the page too.
+      // So take everything from the keyboard's top edge down.
+      const r = vk.boundingRect;
+      kbH = vk.overlaysContent && r.height > 0 ? Math.max(r.height, r.y > 0 ? innerHeight - r.y : 0) : 0;
       fit();
       if (stick?.isConnected && document.activeElement?.closest(".composer")) stick.scrollTop = stick.scrollHeight;
     });
