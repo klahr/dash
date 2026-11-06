@@ -872,7 +872,10 @@ function renderActions(t) {
       if (t.pr) btns.push(h("a", { class: "btn primary grow", href: t.pr.url, target: "_blank", rel: "noopener" }, `Open pull request #${t.pr.number}`));
       break;
     case "failed":
-      btns.push(t.worktree ? b("Rework", rework) : b("Edit", () => openTodoForm(t)), b("Retry", post("enqueue", null, "Queued again"), "primary grow"));
+      btns.push(t.worktree ? b("Rework", rework) : b("Edit", () => openTodoForm(t)));
+      btns.push(t.worktree && t.error?.startsWith("merge:")
+        ? b("Retry merge", post("approve", null, "Merging again"), "review grow")
+        : b("Retry", post("enqueue", null, "Queued again"), "primary grow"));
       break;
     case "merged":
       if (!t.revert) btns.push(b("Revert", attempt(() => revertTodo(t)), "grow"));

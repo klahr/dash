@@ -67,7 +67,9 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: name is required", errBadRequest))
 		return
 	}
-	if req.Path == "" {
+	if req.Path != "" {
+		req.Path = store.CleanPath(req.Path)
+	} else {
 		req.Path = filepath.Join(s.ProjectRoot, strings.Trim(slugRe.ReplaceAllString(strings.ToLower(req.Name), "-"), "-"))
 	}
 	if req.DefaultBranch == "" {
@@ -507,6 +509,9 @@ func (s *Server) todoLog(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) approveTodo(w http.ResponseWriter, r *http.Request) {
 	t, err := s.Store.UpdateTodo(r.PathValue("tid"), func(t *model.Todo) error {
+		if t.Worktree == nil {
+			return fmt.Errorf("%w: this todo has no work left to merge; retry it instead", errBadRequest)
+		}
 		t.Status, t.Error, t.AutoFixes = model.StatusMerging, "", 0
 		return nil
 	})

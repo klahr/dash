@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,20 @@ import (
 )
 
 var ErrNotFound = errors.New("not found")
+
+// CleanPath expands a leading ~ and makes path absolute, so a project path
+// typed as "~/src/app" doesn't resolve against the server's working directory.
+func CleanPath(path string) string {
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			path = filepath.Join(home, path[1:])
+		}
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
+}
 
 // Publisher receives an event after every successful mutation.
 type Publisher interface{ Publish(model.Event) }
@@ -55,6 +70,9 @@ func Open(path string, pub Publisher) (*Store, error) {
 			return nil, err
 		}
 	}
+	for _, p := range s.data.Projects {
+		p.Path = CleanPath(p.Path)
+	}
 	for _, t := range s.data.Todos {
 		if t.Status == model.StatusInProgress {
 			t.Status = model.StatusQueued
@@ -62,7 +80,7 @@ func Open(path string, pub Publisher) (*Store, error) {
 		// Merge jobs live in a channel and are lost on restart; send back to
 		// review. An open pull request is still followed, so it stays.
 		if t.Status == model.StatusMerging && (t.PR == nil || t.PR.State != "OPEN") {
-			t.Status = model.StatusReview
+			t.Status, t.Error = model.StatusReview, ""
 		}
 	}
 	return s, s.saveLocked()

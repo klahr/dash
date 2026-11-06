@@ -79,6 +79,7 @@ func newHarness(t *testing.T, exe agent.Executor, p model.Project) *harness {
 	}
 	log := &TodoLog{Pub: nopPub{}, Root: filepath.Join(dir, "logs")}
 	mq := NewMergeQueue(st, g, nopPub{}, log, 16)
+	mq.WorktreeRoot = filepath.Join(dir, "worktrees")
 	e := NewTodoEngine(&TodoEngine{
 		Store: st, Git: g, Exec: exe, Pub: nopPub{}, Log: log, Merges: mq,
 		WorktreeRoot: filepath.Join(dir, "worktrees"), MaxParallel: 2,

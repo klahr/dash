@@ -30,7 +30,10 @@ func (m *MergeQueue) revert(ctx context.Context, job model.MergeJob) {
 	}
 	m.Log.Line(t, "↶ reverting")
 	if p.SyncsRemote() {
-		if err := m.syncRemote(ctx, p); err != nil {
+		if err := m.syncRemote(ctx, p); errors.As(err, new(*gitops.ErrDirtyCheckout)) {
+			m.wait(ctx, job, err)
+			return
+		} else if err != nil {
 			fail(err)
 			return
 		}
@@ -48,10 +51,18 @@ func (m *MergeQueue) revert(ctx context.Context, job model.MergeJob) {
 		m.revertPR(ctx, t, p, sha, msg, fail)
 		return
 	}
-	rsha, err := m.Git.RevertCommit(ctx, p.ID, p.Path, sha, msg)
+	var rsha string
+	_, err = m.land(ctx, p, func(dir string) (err error) {
+		rsha, err = m.Git.RevertCommit(ctx, p.ID, dir, sha, msg)
+		return err
+	})
 	var conflict *gitops.ErrConflict
 	if errors.As(err, &conflict) {
 		m.revertByClaude(t, p, sha, conflict.Files)
+		return
+	}
+	if errors.As(err, new(*gitops.ErrDirtyCheckout)) {
+		m.wait(ctx, job, err)
 		return
 	}
 	if err != nil {

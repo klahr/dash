@@ -32,7 +32,7 @@ var transitions = map[TodoStatus][]TodoStatus{
 	StatusInProgress: {StatusReview, StatusFailed, StatusQueued, StatusMerging}, // → merging: auto-merge after a conflict fix
 	StatusReview:     {StatusMerging, StatusQueued, StatusDraft, StatusMerged},  // → merged: its PR was merged on GitHub
 	StatusMerging:    {StatusMerged, StatusFailed, StatusReview, StatusQueued},  // → queued: conflict sent back to Claude
-	StatusFailed:     {StatusQueued, StatusDraft, StatusReview, StatusMerged},
+	StatusFailed:     {StatusQueued, StatusDraft, StatusReview, StatusMerged, StatusMerging},
 	StatusMerged:     {},
 }
 
@@ -46,9 +46,9 @@ func CanTransition(from, to TodoStatus) bool {
 	return false
 }
 
-// Project is a local Git repository managed by Dash. Its main checkout at
-// Path always has DefaultBranch checked out and is only written to by the
-// merge worker; all AI work happens in worktrees.
+// Project is a local Git repository managed by Dash. Path is the user's own
+// checkout: Dash merges in a checkout of its own and only moves Path's files
+// along when it has DefaultBranch checked out. All AI work happens in worktrees.
 type Project struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`

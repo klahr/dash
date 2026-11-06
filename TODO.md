@@ -9,8 +9,6 @@ Most important first within each section.
       run limits.
 - [ ] Push notifications (Web Push) for ready for review, failed, approval needed and failed
       build, so the installed app notifies you when it's closed.
-- [ ] Merge in a checkout Dash owns instead of the project's main folder, so working there
-      yourself can't break merges.
 - [ ] One merge worker per project, so a long test run in one project doesn't hold up merges
       in the others.
 - [ ] Detect Claude Code CLI changes: check the version and warn when the stream-json output,

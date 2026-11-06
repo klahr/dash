@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -300,18 +301,6 @@ func (g *Git) SyncWithRemote(ctx context.Context, projectID, repo, branch string
 	return nil
 }
 
-// PushSynced pushes branch, and if origin moved on meanwhile syncs with
-// it and tries once more.
-func (g *Git) PushSynced(ctx context.Context, projectID, repo, branch string) error {
-	if err := g.Push(ctx, projectID, repo, branch); err == nil {
-		return nil
-	}
-	if err := g.SyncWithRemote(ctx, projectID, repo, branch); err != nil {
-		return err
-	}
-	return g.Push(ctx, projectID, repo, branch)
-}
-
 // FindTodoCommit finds the squash commit that landed a todo on branch, by
 // its "Dash-Todo: <id>" trailer.
 func (g *Git) FindTodoCommit(ctx context.Context, projectID, repo, branch, todoID string) (string, error) {
@@ -349,6 +338,90 @@ func (g *Git) RevertCommit(ctx context.Context, projectID, dir, sha, msg string)
 }
 
 // AddWorktreeAt checks out a new branch from start in a fresh worktree at path.
+// LandingCheckout points dir, a detached worktree that only Dash uses, at
+// ref: it creates it, or discards whatever an earlier job left there.
+func (g *Git) LandingCheckout(ctx context.Context, projectID, repo, dir, ref string) error {
+	if _, err := os.Stat(dir); err == nil {
+		_, _ = g.run(ctx, false, projectID, dir, "git", "rebase", "--abort")
+		_, _ = g.run(ctx, false, projectID, dir, "git", "reset", "--hard", "-q")
+		if _, err := g.git(ctx, projectID, dir, "checkout", "-q", "--force", "--detach", ref); err == nil {
+			_, err = g.git(ctx, projectID, dir, "clean", "-ffdq")
+			return err
+		}
+		_, _ = g.git(ctx, projectID, repo, "worktree", "remove", "--force", dir)
+		_ = os.RemoveAll(dir)
+	}
+	_, _ = g.git(ctx, projectID, repo, "worktree", "prune")
+	_, err := g.git(ctx, projectID, repo, "worktree", "add", "-q", "--detach", dir, ref)
+	return err
+}
+
+// ErrDirtyCheckout is returned when moving a branch would overwrite
+// uncommitted changes in the folder that has it checked out.
+type ErrDirtyCheckout struct {
+	Dir    string
+	Files  []string
+	Output string
+}
+
+func (e *ErrDirtyCheckout) Error() string {
+	if len(e.Files) == 0 {
+		return "can't update " + e.Dir + ": " + lastLine(e.Output)
+	}
+	return "uncommitted changes to " + strings.Join(e.Files, ", ") + " in " + e.Dir
+}
+
+var quotedPath = regexp.MustCompile(`'([^']+)'`)
+
+// Advance moves branch from old to new (failing if it no longer points at
+// old). When repo has branch checked out, its files move along the way
+// `git checkout` would: unrelated uncommitted changes stay, and changes the
+// move would overwrite stop it with an *ErrDirtyCheckout.
+func (g *Git) Advance(ctx context.Context, projectID, repo, branch, old, new string) error {
+	ref := "refs/heads/" + branch
+	if head, _ := g.run(ctx, false, projectID, repo, "git", "symbolic-ref", "-q", "HEAD"); head != ref {
+		_, err := g.git(ctx, projectID, repo, "update-ref", ref, new, old)
+		return err
+	}
+	dirty := func(out string) error {
+		e := &ErrDirtyCheckout{Dir: repo, Output: out}
+		for _, m := range quotedPath.FindAllStringSubmatch(out, -1) {
+			e.Files = append(e.Files, m[1])
+		}
+		return e
+	}
+	if out, err := g.git(ctx, projectID, repo, "read-tree", "-m", "-u", "-n", old, new); err != nil {
+		return dirty(out)
+	}
+	if _, err := g.git(ctx, projectID, repo, "update-ref", ref, new, old); err != nil {
+		return err
+	}
+	if out, err := g.git(ctx, projectID, repo, "read-tree", "-m", "-u", old, new); err != nil {
+		_, _ = g.git(ctx, projectID, repo, "update-ref", ref, old, new)
+		return dirty(out)
+	}
+	return nil
+}
+
+// Dirty lists which of files have uncommitted changes (or exist untracked) in dir.
+func (g *Git) Dirty(ctx context.Context, projectID, dir string, files []string) ([]string, error) {
+	args := []string{"status", "--porcelain", "-z", "--untracked-files=all", "--"}
+	for _, f := range files {
+		args = append(args, ":(top,literal)"+f) // read-tree names files from the repo root
+	}
+	out, err := g.run(ctx, false, projectID, dir, "git", args...)
+	if err != nil {
+		return nil, err
+	}
+	var dirty []string
+	for _, e := range strings.Split(out, "\x00") {
+		if len(e) > 3 {
+			dirty = append(dirty, e[3:])
+		}
+	}
+	return dirty, nil
+}
+
 func (g *Git) AddWorktreeAt(ctx context.Context, projectID, repo, path, branch, start string) error {
 	_, err := g.git(ctx, projectID, repo, "worktree", "add", "-B", branch, path, start)
 	return err

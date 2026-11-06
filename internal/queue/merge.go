@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -19,7 +21,8 @@ var ErrMergeQueueFull = errors.New("merge queue is full")
 
 // MergeQueue lands approved todos on the default branch one at a time. A
 // single goroutine drains the channel, so there are never two merges in
-// flight and the main checkout is never touched concurrently.
+// flight. Merges happen in a checkout only Dash uses (see land), so work in
+// the project's own folder can't break them.
 //
 // Per job:
 //  0. when the project pushes to or opens PRs on GitHub, sync the default
@@ -33,8 +36,11 @@ var ErrMergeQueueFull = errors.New("merge queue is full")
 //     todo) and push, or in "pr" mode push the branch and open a pull
 //     request, which PollPRs follows until GitHub merges it
 //
+// When landing would overwrite uncommitted changes in the project's folder,
+// the job waits until those files are committed or stashed (see wait).
+//
 // The same worker also reverts merged todos and runs cleanups, since those
-// touch the main checkout too.
+// move the default branch too.
 type MergeQueue struct {
 	Store       *store.Store
 	Git         *gitops.Git
@@ -53,11 +59,12 @@ type MergeQueue struct {
 
 	jobs    chan mergeItem
 	pending atomic.Int64
+	waiting sync.Map // todo ID → a goroutine watching for its files to be committed
 }
 
 type mergeItem struct {
 	job model.MergeJob
-	fn  func(context.Context) // other work that needs the main checkout
+	fn  func(context.Context) // other work that moves the default branch or removes worktrees
 }
 
 func NewMergeQueue(s *store.Store, g *gitops.Git, pub Publisher, log *TodoLog, capacity int) *MergeQueue {
@@ -126,7 +133,9 @@ func (m *MergeQueue) Run(ctx context.Context) {
 			m.publish(job.TodoID)
 			if job.Revert {
 				m.revert(ctx, job)
-			} else if err := m.process(ctx, job); err != nil {
+			} else if err := m.process(ctx, job); errors.As(err, new(*gitops.ErrDirtyCheckout)) {
+				m.wait(ctx, job, err)
+			} else if err != nil {
 				slog.Warn("merge failed", "todo", job.TodoID, "err", err)
 				if t, gerr := m.Store.GetTodo(job.TodoID); gerr == nil {
 					m.Log.Line(t, "✖ merge: "+err.Error())
@@ -171,7 +180,7 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 
 	var conflict *gitops.ErrConflict
 	// 1–2. Repeated (a few times) when the default branch moves meanwhile,
-	// e.g. a commit in the main checkout while the tests ran.
+	// e.g. a commit in the project's folder while the tests ran.
 	for range 3 {
 		base, err := m.Git.Head(ctx, p.ID, p.Path, p.DefaultBranch)
 		if err != nil {
@@ -210,18 +219,25 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 	if p.UsesPR() {
 		return m.openPR(ctx, t, p)
 	}
-	sha, err := m.Git.SquashInto(ctx, p.ID, p.Path, wt.Branch, commitMessage(t))
+	var sha string
+	_, err = m.land(ctx, p, func(dir string) (err error) {
+		sha, err = m.Git.SquashInto(ctx, p.ID, dir, wt.Branch, commitMessage(t))
+		return err
+	})
 	if errors.As(err, &conflict) {
 		log("⚠ " + conflict.Error())
 		return m.sendBack(t, p, "", true, "conflicts with "+p.DefaultBranch+" in "+strings.Join(conflict.Files, ", "))
 	}
+	if errors.As(err, new(*gitops.ErrDirtyCheckout)) {
+		return err
+	}
 	if err != nil {
-		return fmt.Errorf("squash onto %s (is the main checkout clean and on %s?): %w", p.DefaultBranch, p.DefaultBranch, err)
+		return fmt.Errorf("squash onto %s: %w", p.DefaultBranch, err)
 	}
 	// Push before marking it merged; a sync during the push may rebase the commit.
 	if p.AutoPush && p.RemoteURL != "" {
 		m.pushDefault(ctx, p, t)
-		if head, err := m.Git.Head(ctx, p.ID, p.Path, "HEAD"); err == nil && sha != "" {
+		if head, err := m.Git.Head(ctx, p.ID, p.Path, p.DefaultBranch); err == nil && sha != "" {
 			sha = head
 		}
 	}
@@ -263,10 +279,91 @@ func (m *MergeQueue) refreshRemote(ctx context.Context, p model.Project) model.P
 	return p
 }
 
+// land runs fn in Dash's own checkout of the default branch, then moves the
+// branch to whatever fn committed there. The project's folder follows along
+// when it has the branch checked out, unless that would overwrite
+// uncommitted changes there (*gitops.ErrDirtyCheckout; nothing moves).
+func (m *MergeQueue) land(ctx context.Context, p model.Project, fn func(dir string) error) (string, error) {
+	old, err := m.Git.Head(ctx, p.ID, p.Path, p.DefaultBranch)
+	if err != nil {
+		return "", err
+	}
+	dir := m.landingDir(p)
+	if err := m.Git.LandingCheckout(ctx, p.ID, p.Path, dir, old); err != nil {
+		return "", err
+	}
+	if err := fn(dir); err != nil {
+		return "", err
+	}
+	head, err := m.Git.Head(ctx, p.ID, dir, "HEAD")
+	if err != nil || head == old {
+		return head, err
+	}
+	return head, m.Git.Advance(ctx, p.ID, p.Path, p.DefaultBranch, old, head)
+}
+
+func (m *MergeQueue) landingDir(p model.Project) string {
+	return filepath.Join(m.WorktreeRoot, p.ID, "_land")
+}
+
+// wait parks a job whose landing would overwrite uncommitted changes in the
+// project's folder, and queues it again once those files are clean.
+func (m *MergeQueue) wait(ctx context.Context, job model.MergeJob, err error) {
+	var dirty *gitops.ErrDirtyCheckout
+	errors.As(err, &dirty)
+	what := "your uncommitted changes"
+	if len(dirty.Files) > 0 {
+		what = "your changes to " + strings.Join(dirty.Files, ", ")
+	}
+	t, uerr := m.Store.UpdateTodo(job.TodoID, func(x *model.Todo) error {
+		x.Error = "Waiting for you to commit or stash " + what + " in " + dirty.Dir
+		return nil
+	})
+	if uerr != nil {
+		return
+	}
+	m.Log.Line(t, "⏸ "+dirty.Error()+"; continuing once they're committed or stashed")
+	if _, busy := m.waiting.LoadOrStore(job.TodoID, true); busy {
+		return
+	}
+	go func() {
+		defer m.waiting.Delete(job.TodoID)
+		tick := time.NewTicker(5 * time.Second)
+		defer tick.Stop()
+		since := time.Now()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+			}
+			t, err := m.Store.GetTodo(job.TodoID)
+			if err != nil || (job.Revert && (t.Status != model.StatusMerged || t.Revert != nil)) ||
+				(!job.Revert && t.Status != model.StatusMerging) {
+				return // cancelled, or handled some other way
+			}
+			if len(dirty.Files) > 0 {
+				if left, err := m.Git.Dirty(ctx, t.ProjectID, dirty.Dir, dirty.Files); err != nil || len(left) > 0 {
+					continue
+				}
+			} else if time.Since(since) < time.Minute {
+				continue
+			}
+			_, _ = m.Store.UpdateTodo(job.TodoID, func(x *model.Todo) error { x.Error = ""; return nil })
+			if m.Enqueue(job) == nil {
+				return
+			}
+		}
+	}()
+}
+
 // syncRemote fast-forwards (or rebases) the default branch onto origin's and
 // records failures on the project, where the UI shows them.
 func (m *MergeQueue) syncRemote(ctx context.Context, p model.Project) error {
-	err := m.Git.SyncWithRemote(ctx, p.ID, p.Path, p.DefaultBranch)
+	_, err := m.land(ctx, p, func(dir string) error { return m.Git.SyncWithRemote(ctx, p.ID, dir, p.DefaultBranch) })
+	if errors.As(err, new(*gitops.ErrDirtyCheckout)) {
+		return err
+	}
 	m.setSyncError(p.ID, err)
 	if err != nil {
 		return &syncError{fmt.Errorf("can't sync %s with GitHub: %w", p.DefaultBranch, err)}
@@ -294,7 +391,12 @@ func (e *syncError) Unwrap() error { return e.error }
 // pushDefault pushes the default branch after a merge, syncing and retrying
 // once if origin moved meanwhile. A failure doesn't undo the local merge.
 func (m *MergeQueue) pushDefault(ctx context.Context, p model.Project, t model.Todo) {
-	err := m.Git.PushSynced(ctx, p.ID, p.Path, p.DefaultBranch)
+	err := m.Git.Push(ctx, p.ID, p.Path, p.DefaultBranch)
+	if err != nil {
+		if err = m.syncRemote(ctx, p); err == nil {
+			err = m.Git.Push(ctx, p.ID, p.Path, p.DefaultBranch)
+		}
+	}
 	m.setSyncError(p.ID, err)
 	if err != nil {
 		m.Log.Line(t, "⚠ push failed (merged locally; Dash pushes again after the next merge): "+err.Error())
