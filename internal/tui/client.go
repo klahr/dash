@@ -105,6 +105,11 @@ func (c *Client) Login(username, password string) error {
 	return c.do("POST", "/api/login", map[string]string{"username": username, "password": password}, nil)
 }
 
+// Call sends a request to path as given, ignoring SetPrefix.
+func (c *Client) Call(method, path string, body, out any) error {
+	return c.doRaw(method, path, body, out)
+}
+
 func (c *Client) do(method, path string, body, out any) error {
 	return c.doRaw(method, c.at(path), body, out)
 }

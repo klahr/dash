@@ -38,6 +38,7 @@ type Server struct {
 	Auth        *auth.Auth
 	Perms       *perm.Broker
 	Board       *mcptools.Tokens // chat runs' tokens for /mcp/dash
+	OAuth       *auth.OAuth      // remote MCP clients (claude.ai) on /mcp; nil = off
 	Usage       *usage.Tracker
 	ProjectRoot string // where new projects without an explicit path are created
 	// Titler names todos created without a title (optional).
@@ -154,6 +155,15 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /mcp/permissions", s.Perms.ServeMCP) // answers 405, as MCP clients expect
 	mux.Handle("POST /mcp/dash", s.BoardMCP())
 	mux.Handle("GET /mcp/dash", s.BoardMCP())
+	if s.OAuth != nil {
+		// Remote MCP clients: the whole dashboard, with OAuth access tokens.
+		s.OAuth.Routes(mux)
+		mux.Handle("POST /mcp", s.OAuth.Bearer(s.remoteMCP(mux)))
+		mux.Handle("GET /mcp", s.OAuth.Bearer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Allow", "POST")
+			http.Error(w, "this MCP server only accepts POST", http.StatusMethodNotAllowed)
+		})))
+	}
 
 	// WebSockets
 	mux.HandleFunc("GET /ws/events", s.Hub.ServeWS)

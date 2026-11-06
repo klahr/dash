@@ -67,6 +67,7 @@ func main() {
 		peers = append(peers, p)
 		return err
 	})
+	publicURL := flag.String("public-url", "", "public HTTPS origin (e.g. https://host.tailnet.ts.net:8443) that serves /mcp with OAuth for claude.ai custom connectors; empty = off (or $DASH_PUBLIC_URL)")
 	envFile := flag.String("env", ".env", "file with DASH_USERNAME / DASH_PASSWORD (real env vars take precedence)")
 	flag.Parse()
 
@@ -95,6 +96,20 @@ func main() {
 	authn.PeerToken = peerToken
 	if err := authn.KeepSessions(filepath.Join(*dataDir, "sessions.json")); err != nil {
 		slog.Warn("read sessions", "err", err)
+	}
+	if *publicURL == "" {
+		*publicURL = os.Getenv("DASH_PUBLIC_URL")
+	}
+	var oauth *auth.OAuth
+	if *publicURL != "" {
+		if oauth, err = auth.NewOAuth(authn, *publicURL); err != nil {
+			slog.Error("oauth", "err", err)
+			os.Exit(1)
+		}
+		if err := oauth.Keep(filepath.Join(*dataDir, "oauth.json")); err != nil {
+			slog.Warn("read OAuth tokens", "err", err)
+		}
+		slog.Info("remote MCP enabled", "url", oauth.Resource())
 	}
 	useTLS := *tlsCert != "" || *tlsKey != ""
 	if useTLS && (*tlsCert == "" || *tlsKey == "") {
@@ -160,6 +175,7 @@ func main() {
 		Auth:        authn,
 		Perms:       perms,
 		Board:       &mcptools.Tokens{},
+		OAuth:       oauth,
 		Usage:       tracker,
 		Editor:      *editor,
 		UploadRoot:  uploads,

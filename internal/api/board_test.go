@@ -46,7 +46,7 @@ func boardServer(t *testing.T) (*Server, *events, model.Project) {
 		t.Fatal(err)
 	}
 	s := &Server{Store: st, Hub: hub.New(), Auth: a, Perms: perm.NewBroker(nil), Board: &mcptools.Tokens{},
-		Todos: queue.NewTodoEngine(&queue.TodoEngine{}), Static: fstest.MapFS{"index.html": {Data: []byte("ok")}}}
+		Todos: queue.NewTodoEngine(&queue.TodoEngine{Log: &queue.TodoLog{Root: t.TempDir()}}), Static: fstest.MapFS{"index.html": {Data: []byte("ok")}}}
 	return s, evs, p
 }
 

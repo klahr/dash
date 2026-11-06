@@ -108,6 +108,8 @@ type Auth struct {
 	// PeerToken lets another Dash (a "hub" showing this machine in its
 	// dashboard) call the API with "Authorization: Bearer <token>".
 	PeerToken string
+
+	oauth *OAuth // set by NewOAuth
 }
 
 // New returns an authenticator for the single account. Both values are required.
@@ -200,6 +202,27 @@ func (a *Auth) recordFailure(ip string) {
 	f.count++
 }
 
+var (
+	errLockedOut = errors.New("too many failed attempts, try again later")
+	errBadLogin  = errors.New("invalid username or password")
+)
+
+// attempt checks a login from ip, counting failures towards its lockout.
+func (a *Auth) attempt(ip, username, password string) error {
+	if a.lockedOut(ip) {
+		return errLockedOut
+	}
+	if !a.check(username, password) {
+		a.recordFailure(ip)
+		time.Sleep(300 * time.Millisecond) // blunt online guessing a little more
+		return errBadLogin
+	}
+	a.mu.Lock()
+	delete(a.failed, ip)
+	a.mu.Unlock()
+	return nil
+}
+
 // Secure reports whether the browser reached Dash over HTTPS.
 func (a *Auth) Secure(r *http.Request) bool {
 	return r.TLS != nil || (a.TrustProxy && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"))
@@ -248,15 +271,14 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
 		return
 	}
-	if !a.check(req.Username, req.Password) {
-		a.recordFailure(ip)
-		time.Sleep(300 * time.Millisecond) // blunt online guessing a little more
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid username or password"})
+	switch err := a.attempt(ip, req.Username, req.Password); err {
+	case errLockedOut:
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+		return
+	case errBadLogin:
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return
 	}
-	a.mu.Lock()
-	delete(a.failed, ip)
-	a.mu.Unlock()
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
@@ -306,7 +328,7 @@ var public = map[string]bool{
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Static artwork (login page images, icons) is public too.
-		if public[r.URL.Path] || strings.HasPrefix(r.URL.Path, "/img/") || a.valid(r) {
+		if public[r.URL.Path] || strings.HasPrefix(r.URL.Path, "/img/") || a.oauth.public(r.URL.Path) || a.valid(r) {
 			next.ServeHTTP(w, r)
 			return
 		}

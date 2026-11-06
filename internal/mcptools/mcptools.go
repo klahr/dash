@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 
@@ -45,6 +46,18 @@ type Server struct {
 	Retry func(error) bool
 }
 
+// ProtocolVersions are the MCP versions Server speaks, newest first.
+var ProtocolVersions = []string{"2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"}
+
+// negotiate answers a client's protocol version: the same one if supported,
+// else the newest this server has (the client may then disconnect).
+func negotiate(v string) string {
+	if slices.Contains(ProtocolVersions, v) {
+		return v
+	}
+	return ProtocolVersions[0]
+}
+
 func (s *Server) Handle(req Request) (any, *Error) {
 	switch req.Method {
 	case "initialize":
@@ -52,11 +65,8 @@ func (s *Server) Handle(req Request) (any, *Error) {
 			ProtocolVersion string `json:"protocolVersion"`
 		}
 		_ = json.Unmarshal(req.Params, &p)
-		if p.ProtocolVersion == "" {
-			p.ProtocolVersion = "2025-06-18"
-		}
 		res := map[string]any{
-			"protocolVersion": p.ProtocolVersion,
+			"protocolVersion": negotiate(p.ProtocolVersion),
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]string{"name": s.Name, "version": "1"},
 		}
@@ -145,6 +155,10 @@ func (s *Server) ServeStdio(in io.Reader, out io.Writer) error {
 
 // ServeHTTP answers one JSON-RPC message posted in r.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if v := r.Header.Get("MCP-Protocol-Version"); v != "" && !slices.Contains(ProtocolVersions, v) {
+		http.Error(w, "unsupported MCP-Protocol-Version "+v, http.StatusBadRequest)
+		return
+	}
 	var req Request
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&req); err != nil {
