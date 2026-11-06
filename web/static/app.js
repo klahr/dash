@@ -648,6 +648,7 @@ async function loadPerms() {
 function renderProjectHeader() {
   const p = state.project;
   $("#project-name").replaceChildren(...(p ? [projectDot(p), p.name].filter(Boolean) : ["No project"]));
+  renderTitle();
   // The project's own color marks the top bar (and the phone's browser chrome).
   const app = $(".app");
   if (p?.color) app.style.setProperty("--project", p.color);
@@ -1510,8 +1511,12 @@ async function toggleNotifications() {
 }
 // Tab title shows how many things wait for you: reviews + permission requests.
 function updateNeedsYou(items) {
-  const n = (items?.review?.length || 0) + state.perms.length;
-  document.title = n ? `(${n}) Dash` : "Dash";
+  state.needsYou = (items?.review?.length || 0) + state.perms.length;
+  renderTitle();
+}
+function renderTitle() {
+  const base = state.project ? `${state.project.name} | Dash` : "Dash";
+  document.title = state.needsYou ? `(${state.needsYou}) ${base}` : base;
 }
 
 // ------------------------------------------------------------------ search (/)
