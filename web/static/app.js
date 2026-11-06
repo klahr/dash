@@ -2587,9 +2587,10 @@ function renderGraph(res) {
 // ------------------------------------------------------------------ files
 // The default branch's files as a tree, and a plain text editor. Saving
 // doesn't write to the branch: it queues a task that commits the edit in its
-// own worktree and goes to review. Each project keeps its open file, so
-// switching projects loses nothing.
-const fileSessions = new Map(); // project key → { list, tree, open, path, blob, original, text, note, size, saved }
+// own worktree and goes to review. Files git doesn't track (untracked or
+// ignored, like .env) are listed too and saved straight to the checkout.
+// Each project keeps its open file, so switching projects loses nothing.
+const fileSessions = new Map(); // project key → { list, local, tree, open, path, isLocal, blob, original, text, note, size, saved }
 const fileText = $("#file-text");
 function fileSession() {
   if (!state.project) return null;
@@ -2605,7 +2606,8 @@ async function loadFiles() {
   renderFile();
   if (!s) return;
   const res = await api("GET", `/api/projects/${p.id}/files`);
-  s.list = res.files;
+  s.local = new Set(res.local || []);
+  s.list = [...res.files, ...s.local].sort();
   s.tree = null;
   if (fileSession() === s) renderFileTree();
 }
@@ -2627,7 +2629,8 @@ function fileTreeOf(s) {
 }
 
 const fileItem = (s, path, label) => h("button", {
-  type: "button", class: "file-item", title: path, "aria-current": s.path === path ? "true" : null,
+  type: "button", class: `file-item${s.local?.has(path) ? " local" : ""}`,
+  title: s.local?.has(path) ? `${path}\nNot in git: saving writes it straight to disk` : path, "aria-current": s.path === path ? "true" : null,
   onclick: () => openFile(path).catch(fail),
 }, label);
 
@@ -2666,11 +2669,14 @@ function renderFile() {
   if (s?.path) $("#file-path").textContent = s.path;
   if (editable && fileText.value !== s.text) { fileText.value = s.text; fileText.scrollTop = 0; }
   $("#file-save").disabled = $("#file-revert").disabled = !dirty;
-  $("#file-state").textContent = dirty ? "Modified" : editable && s.saved ? "Saved as a task" : "";
+  $("#file-state").textContent = dirty ? "Modified" : editable && s.saved ? (s.isLocal ? "Saved" : "Saved as a task") : s?.isLocal ? "Local file, not in git" : "";
+  const save = $("#file-save");
+  save.lastChild.textContent = s?.isLocal ? "Save" : "Save as task";
+  save.title = s?.isLocal ? "Save to disk (Ctrl+S)" : "Save as a task (Ctrl+S)";
   $("#file-empty-title").textContent = s?.note === "binary" ? "Binary file" : s?.note === "large" ? "File too large" : "No file open";
   $("#file-empty-text").textContent = s?.note === "binary" ? `${s.path} isn't text, so it can't be edited here.`
     : s?.note === "large" ? `${s.path} is ${Math.round(s.size / 1024)} KiB; the editor opens files up to 512 KiB.`
-    : s ? "Pick a file on the left to view and edit it. Saving creates a task that goes to review like any other."
+    : s ? "Pick a file on the left to view and edit it. Saving creates a task that goes to review like any other; local files git doesn't track, like .env, are saved straight to disk."
     : "Select a project to browse its files.";
 }
 
@@ -2678,9 +2684,10 @@ async function openFile(path) {
   const s = fileSession(), p = state.project;
   if (!s || s.path === path) return;
   if (fileDirty(s) && !(await ask({ title: `Discard your changes to ${s.path}?`, ok: "Discard", danger: true }))) return;
-  const res = await api("GET", `/api/projects/${p.id}/file?path=${encodeURIComponent(path)}`, null, p.prefix || "");
+  const isLocal = !!s.local?.has(path);
+  const res = await api("GET", `/api/projects/${p.id}/file?path=${encodeURIComponent(path)}${isLocal ? "&local=1" : ""}`, null, p.prefix || "");
   const text = res.content ?? "";
-  Object.assign(s, { path, blob: res.blob, original: text, text, size: res.size, saved: false,
+  Object.assign(s, { path, isLocal, blob: res.blob, original: text, text, size: res.size, saved: false,
     note: res.binary ? "binary" : res.too_large ? "large" : "" });
   if (fileSession() !== s) return;
   renderFile();
@@ -2691,6 +2698,13 @@ async function saveFile() {
   const s = fileSession(), p = state.project;
   if (!fileDirty(s)) return;
   const { path, blob, text } = s;
+  if (s.isLocal) {
+    const res = await api("PUT", `/api/projects/${p.id}/file`, { path, blob, content: text }, p.prefix || "");
+    if (s.path === path) { s.original = text; s.blob = res.blob; s.saved = true; }
+    if (fileSession() === s) renderFile();
+    toast(`Saved ${path}`);
+    return;
+  }
   const title = await ask({
     title: "Save as a task", input: true, placeholder: `Edit ${path}`, ok: "Save as task",
     body: `The edit to ${path} is committed in its own worktree and goes to review like any other task. Name it, or leave it blank.`,

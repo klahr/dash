@@ -539,6 +539,28 @@ func (g *Git) Files(ctx context.Context, projectID, repo, ref string) ([]string,
 	return strings.Split(strings.TrimRight(out, "\x00"), "\x00"), nil
 }
 
+// LocalFiles lists the files in repo's checkout that git doesn't track:
+// untracked ones and ignored ones such as .env. Ignored directories
+// (node_modules, build output) are skipped rather than listed file by file.
+func (g *Git) LocalFiles(ctx context.Context, projectID, repo string) ([]string, error) {
+	var files []string
+	for _, args := range [][]string{
+		{"ls-files", "-z", "--others", "--exclude-standard"},
+		{"ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"},
+	} {
+		out, err := g.run(ctx, false, projectID, repo, "git", args...)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range strings.Split(out, "\x00") {
+			if f != "" && !strings.HasSuffix(f, "/") {
+				files = append(files, f)
+			}
+		}
+	}
+	return files, nil
+}
+
 // Blob returns the object id of path at ref ("" and an error if it isn't there).
 func (g *Git) Blob(ctx context.Context, projectID, repo, ref, path string) (string, error) {
 	return g.run(ctx, false, projectID, repo, "git", "rev-parse", "--verify", "--quiet", ref+":"+path)
