@@ -1444,13 +1444,16 @@ function menu(choices) {
   $("#ask-body").hidden = true;
   $("#ask-input").hidden = true;
   $("#ask-ok").hidden = true;
+  let picked = null;
   const list = h("div", { class: "project-list" }, choices.map(([icon, label, fn]) => ib({
     type: "button", class: "btn", style: "width:100%;margin-bottom:8px",
-    onclick: attempt(async () => { d.close(); await fn(); }),
+    onclick: () => { picked = fn; d.close(); },
   }, icon, label)));
   $("#ask-body").after(list);
   d.showModal();
-  return new Promise((r) => d.addEventListener("close", () => { list.remove(); $("#ask-ok").hidden = false; r(); }, { once: true }));
+  // Run the choice only after "close" fired: it may reopen this dialog via ask().
+  return new Promise((r) => d.addEventListener("close", () => { list.remove(); $("#ask-ok").hidden = false; r(); }, { once: true }))
+    .then(() => picked && attempt(picked)());
 }
 
 $$(".segmented button").forEach((b) => b.addEventListener("click", () => { state.pane = b.dataset.pane; renderPane(); }));
