@@ -22,7 +22,7 @@ Type=simple
 WorkingDirectory=%h/dev/github/klahr/dash
 # Extra flags go here (-trust-proxy, -public-url, -name, -peer ...).
 # Secrets stay in the env file, not in this unit.
-ExecStart=%h/dev/github/klahr/dash/bin/dash -env %h/.config/dash/env
+ExecStart=%h/dev/github/klahr/dash/bin/dash -env %h/.config/dash/env -trust-proxy
 
 # claude is installed in ~/.local/bin, which is not on systemd's default PATH.
 Environment=PATH=%h/.local/bin:%h/go/bin:/usr/local/bin:/usr/bin:/bin
