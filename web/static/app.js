@@ -1712,10 +1712,11 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
 
 // ------------------------------------------------------------------ chat
 // makeChat drives one conversation UI: a log, its empty state and a composer.
-// target() names where it runs ({prefix, ...fields sent with each turn}).
+// target() names where it runs ({prefix, ...fields sent with each turn});
+// clear() deletes its saved conversation.
 // The client owns the history and sends it in full each turn; the server saves
 // every finished turn.
-function makeChat({ log, empty, form, target, actions, cwd, scroller = () => log, saved = () => {} }) {
+function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {} }) {
   const c = { history: [], current: null, ws: null, prefix: "" };
   const input = form.q;
   const sendBtn = form.querySelector("button");
@@ -1810,16 +1811,26 @@ function makeChat({ log, empty, form, target, actions, cwd, scroller = () => log
     ws.readyState === 1 ? go() : ws.addEventListener("open", go, { once: true });
   }
 
+  // Slash commands run here instead of going to Claude. Anything else starting
+  // with "/" (a path, say) is sent as a message.
+  const commands = {
+    clear: async () => { await clear(); reset(); },
+    help: () => toast("/clear starts a new conversation. /help shows this.", { head: "Chat commands" }),
+  };
+  commands.new = commands.reset = commands.clear;
+
   const autoGrow = () => { input.style.height = "auto"; input.style.height = `${input.scrollHeight}px`; };
   input.addEventListener("input", autoGrow);
-  form.addEventListener("submit", (e) => {
+  form.addEventListener("submit", attempt(async (e) => {
     e.preventDefault();
     const q = input.value.trim();
     if (!q || c.current) return;
+    const cmd = /^\/(\w+)$/.exec(q)?.[1].toLowerCase();
     input.value = "";
     autoGrow();
+    if (Object.hasOwn(commands, cmd)) return commands[cmd]();
     send(q);
-  });
+  }));
   input.addEventListener("keydown", (e) => {
     // Enter sends on devices with a hardware keyboard; on touch keyboards Enter adds a line.
     if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) {
@@ -1874,6 +1885,7 @@ const chatActions = (pick) => (answer) => h("div", { class: "msg-actions" },
 const chat = makeChat({
   log: $("#chat-log"), empty: $("#chat-empty"), form: $("#chat-form"),
   target: () => ({}),
+  clear: () => api("DELETE", "/api/chat"),
   actions: chatActions(true),
   cwd: $("#chat-cwd"),
 });
@@ -1892,6 +1904,7 @@ const EDITABLE = ["draft", "queued", "failed"];
 const todoChat = makeChat({
   log: $("#d-chat-log"), empty: $("#d-chat-empty"), form: $("#d-chat-form"),
   target: () => ({ prefix: here(), todo: state.detail }),
+  clear: () => api("DELETE", `/api/todos/${state.detail}/chat`),
   scroller: () => $(".detail-body"),
   cwd: $("#d-chat-cwd"),
   // A turn left streaming when its todo was closed is saved when it finishes.
@@ -1913,6 +1926,7 @@ const todoChat = makeChat({
 const projectChat = makeChat({
   log: $("#pc-log"), empty: $("#pc-empty"), form: $("#pc-form"),
   target: () => ({ prefix: here(), project: state.project?.id }),
+  clear: () => api("DELETE", `/api/projects/${state.project.id}/chat`),
   cwd: $("#pc-cwd"),
   // A turn left streaming when the project was switched is saved when it finishes.
   saved: ({ project }) => { if (project === state.project?.id && !projectChat.busy) loadProjectChat().catch(fail); },

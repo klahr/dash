@@ -1510,6 +1510,10 @@ func (a *App) sendChat() tea.Cmd {
 		return nil
 	}
 	a.chatInput.Reset()
+	switch q {
+	case "/clear", "/new", "/reset":
+		return a.runCommand("clear")
+	}
 	a.chatOff = 0
 	a.chat = append(a.chat, chatEntry{role: "user", text: q}, chatEntry{role: "assistant"})
 	a.chatHist = append(a.chatHist, agent.ChatMessage{Role: "user", Content: q})
