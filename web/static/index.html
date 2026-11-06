@@ -354,7 +354,7 @@
       <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" spellcheck="false"></label>
       <label class="field"><span>Deploy command</span><input name="deploy_command" spellcheck="false"></label>
       <label class="toggle"><input type="checkbox" name="auto_approve"><span>Approve tasks automatically</span></label>
-      <p class="hint">Finished tasks whose tests pass go straight to the merge queue instead of waiting for review.</p>
+      <p class="hint">Finished tasks whose tests pass go straight to the merge queue instead of waiting for review, and the Review column is hidden while it's empty.</p>
       <fieldset class="field choice">
         <legend>When you approve a task</legend>
         <label class="radio"><input type="radio" name="merge_mode" value="local"><span>Merge it here <em>one squashed commit on the default branch</em></span></label>

@@ -954,18 +954,18 @@ function renderBoardNow() {
   $("#new-todo").hidden = false;
 
   // Mobile opens on whatever needs attention first.
-  if (!state.lane) {
+  if (!state.lane || laneHidden(state.lane)) {
     state.lane = ["review", "in_progress", "queued", "draft"].find((k) => items[k].length) || "queued";
   }
 
   $("#lane-tabs").replaceChildren(...LANES.map((l) => h("button", {
-    role: "tab", class: `lane-tab s-${l.key === "done" ? "merged" : l.key}`, "data-lane": l.key,
+    role: "tab", class: `lane-tab s-${l.key === "done" ? "merged" : l.key}`, "data-lane": l.key, hidden: laneHidden(l.key),
     "aria-selected": String(state.lane === l.key), "data-count": items[l.key].length,
     onclick: () => { state.lane = l.key; renderBoard(); },
   }, l.label, h("span", { class: "n" }, items[l.key].length))));
 
   $("#board").replaceChildren(...LANES.map((l, li) => h("section", {
-    "data-lane": l.key,
+    "data-lane": l.key, hidden: laneHidden(l.key),
     class: `col s-${l.key === "done" ? "merged" : l.key}${state.lane === l.key ? " active" : ""}${keys.active && keys.cur.lane === li ? " cursor" : ""}${state.collapsed.has(l.key) ? " collapsed" : ""}`, "aria-label": l.label,
   },
     h("header", { class: "col-head", title: state.collapsed.has(l.key) ? `Expand ${l.label}` : null, onclick: () => state.collapsed.has(l.key) && toggleCollapsed(l.key) },
@@ -1871,6 +1871,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
   state.projects = state.projects.map((x) => (x === old ? state.project : x));
   renderProjectHeader();
   renderProjectList();
+  renderBoard(); // auto approve shows or hides Review
   toast("Settings saved");
 }));
 
@@ -2773,8 +2774,13 @@ document.addEventListener("pointerdown", () => { if (keys.active) { keys.active 
 function laneCount() { return LANES.length; }
 function laneTodos(li) { return laneItems()[LANES[li].key] || []; }
 function cursorTodo() { return laneTodos(keys.cur.lane)[keys.cur.row] || null; }
-// Minimized lanes (desktop only) are skipped by lane navigation.
-function laneSkipped(li) { return desktop.matches && state.collapsed.has(LANES[li].key); }
+// Minimized lanes (desktop only) and hidden ones are skipped by lane navigation.
+function laneSkipped(li) { return (desktop.matches && state.collapsed.has(LANES[li].key)) || laneHidden(LANES[li].key); }
+// With auto approve, finished work skips Review; the lane only shows while
+// something still waits there (failing tests, a merge that came back).
+function laneHidden(key) {
+  return key === "review" && !!state.project?.auto_approve && ![...state.todos.values()].some((t) => t.status === "review");
+}
 function stepLane(lane, d) {
   const step = Math.sign(d);
   for (let li = lane + step, left = Math.abs(d); li >= 0 && li < laneCount(); li += step) {

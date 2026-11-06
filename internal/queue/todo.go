@@ -362,6 +362,7 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 			log("✔ fixed; back to the merge queue (already approved)")
 		} else {
 			log("✔ approved automatically; to the merge queue")
+			_ = update(func(x *model.Todo) { x.AutoFixes = 0 }) // like approving: a fresh budget for merge conflicts
 		}
 		if _, err := e.Store.SetStatus(t.ID, model.StatusMerging, ""); err == nil {
 			if err := e.Merges.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID}); err == nil {
