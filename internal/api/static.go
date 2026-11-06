@@ -6,7 +6,10 @@ import (
 	"encoding/hex"
 	"io/fs"
 	"net/http"
+	"os"
+	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -40,6 +43,28 @@ func (s *Server) version() string {
 	return versionStr
 }
 
+var localeTag = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
+
+// timeLocale is this machine's time format locale (LC_TIME) as a BCP 47 tag,
+// e.g. "sv_SE.UTF-8" -> "sv-SE". Browsers format with their UI language and
+// ignore it, so an English browser would show 12-hour times. "" when unset.
+func timeLocale() string {
+	v := os.Getenv("LC_ALL")
+	if v == "" {
+		v = os.Getenv("LC_TIME")
+	}
+	if v == "" {
+		v = os.Getenv("LANG")
+	}
+	v, _, _ = strings.Cut(v, ".")
+	v, _, _ = strings.Cut(v, "@")
+	v = strings.ReplaceAll(v, "_", "-")
+	if !localeTag.MatchString(v) {
+		return ""
+	}
+	return v
+}
+
 // static serves the frontend. Everything is revalidated on every load
 // (no-cache), and index.html gets the build version stamped in.
 func (s *Server) static() http.Handler {
@@ -53,6 +78,7 @@ func (s *Server) static() http.Handler {
 				return
 			}
 			b = bytes.ReplaceAll(b, []byte("{{DASH_VERSION}}"), []byte(s.version()))
+			b = bytes.ReplaceAll(b, []byte("{{DASH_TIME_LOCALE}}"), []byte(timeLocale()))
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(b))
 			return

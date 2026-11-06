@@ -3,6 +3,11 @@
 import { mdEditor, drafts, renderMarkdown } from "./editor.js";
 
 const $ = (s, el = document) => el.querySelector(s);
+// The server's LC_TIME, since browsers format times by their UI language instead.
+const timeLocale = (() => {
+  const l = document.querySelector('meta[name="dash-time-locale"]')?.content;
+  try { return l && Intl.DateTimeFormat.supportedLocalesOf(l).length ? [l] : []; } catch { return []; }
+})();
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const h = (tag, props = {}, ...kids) => {
   const el = document.createElement(tag);
@@ -425,7 +430,7 @@ function onEvent(ev, m = { name: "" }) {
       if (state.detail === ev.todo_id) {
         const log = $("#d-log");
         const stick = log.parentElement.scrollTop + log.parentElement.clientHeight >= log.parentElement.scrollHeight - 40;
-        log.textContent += `${new Date(ev.time).toLocaleTimeString()} ${ev.data}\n`;
+        log.textContent += `${new Date(ev.time).toLocaleTimeString(timeLocale)} ${ev.data}\n`;
         if (stick && state.pane === "log") log.parentElement.scrollTop = log.parentElement.scrollHeight;
       }
       break;
@@ -1365,7 +1370,7 @@ const shortLabel = (n) => ({ five_hour: "5h", seven_day: "7d", seven_day_opus: "
 const fmtTime = (iso) => {
   const d = new Date(iso);
   const sameDay = d.toDateString() === new Date().toDateString();
-  return sameDay ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : d.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  return sameDay ? d.toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit" }) : d.toLocaleString(timeLocale, { weekday: "short", hour: "2-digit", minute: "2-digit" });
 };
 const windowHours = { five_hour: 5, seven_day: 168, seven_day_opus: 168 };
 // Share of the window elapsed since its last reset (0..1), or null for an unknown window length.
@@ -1881,7 +1886,7 @@ function addActivity(ev) {
   $("#activity").prepend(h("li", {},
     h("span", { class: d.ok ? "ok" : "bad", "aria-label": d.ok ? "succeeded" : "failed" }, d.ok ? "✓" : "✗"),
     h("code", {}, d.cmd),
-    h("time", {}, `${new Date(ev.time).toLocaleTimeString()} · ${d.ms} ms`)));
+    h("time", {}, `${new Date(ev.time).toLocaleTimeString(timeLocale)} · ${d.ms} ms`)));
   while ($("#activity").children.length > 300) $("#activity").lastChild.remove();
 }
 
