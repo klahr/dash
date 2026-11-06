@@ -1,48 +1,14 @@
-// Markdown prompt editor: a textarea with a syntax-highlighted layer behind
-// it (same font and metrics, so the caret lines up), plus autosaved drafts
-// in localStorage so a closed sheet, a reload or a crash loses nothing.
+// Markdown prompt editor (CodeMirror 6, optional vim keys) on top of a hidden
+// textarea that stays the source of truth, plus autosaved drafts in
+// localStorage so a closed sheet, a reload or a crash loses nothing.
+
+import {
+  EditorView, EditorState, Compartment, Prec, Transaction, keymap, placeholder, drawSelection,
+  history, historyKeymap, defaultKeymap, insertNewline, syntaxHighlighting, HighlightStyle, LanguageDescription, tags as t,
+  markdown, languages, vim, getCM,
+} from "./vendor/codemirror.js";
 
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-
-// Inline markdown on one escaped line. Code spans go first and are kept out
-// of the other rules.
-function inline(line) {
-  const codes = [];
-  line = line.replace(/(`+)([^`]|[^`].*?[^`])\1(?!`)/g, (m) => {
-    codes.push(m);
-    return `\u0000${codes.length - 1}\u0000`;
-  });
-  line = line
-    .replace(/(\*\*|__)(?=\S)(.+?\S)\1/g, '<span class="md-strong">$1$2$1</span>')
-    .replace(/(^|[^*\w])([*_])(?=\S)([^*_]*?\S)\2(?![*\w])/g, '$1<span class="md-em">$2$3$2</span>')
-    .replace(/(!?\[)([^\]]*)(\]\()([^)\s]*)(\))/g,
-      '<span class="md-punct">$1</span><span class="md-link">$2</span><span class="md-punct">$3</span><span class="md-url">$4</span><span class="md-punct">$5</span>')
-    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<span class="md-url">$2</span>');
-  return line.replace(/\u0000(\d+)\u0000/g, (_, i) => `<span class="md-code">${codes[i]}</span>`);
-}
-
-export function highlight(text) {
-  let fence = null;
-  const out = text.split("\n").map((raw) => {
-    const line = esc(raw);
-    const f = raw.match(/^\s*(```+|~~~+)/);
-    if (fence) {
-      if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
-      return `<span class="md-fence">${line}</span>`;
-    }
-    if (f) { fence = f[1]; return `<span class="md-fence">${line}</span>`; }
-    let m;
-    if ((m = line.match(/^(#{1,6})(\s.*)?$/))) return `<span class="md-h"><span class="md-punct">${m[1]}</span>${inline(m[2] || "")}</span>`;
-    if (/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(raw)) return `<span class="md-punct">${line}</span>`;
-    if ((m = line.match(/^(\s*&gt;\s?)(.*)$/))) return `<span class="md-quote"><span class="md-punct">${m[1]}</span>${inline(m[2])}</span>`;
-    if ((m = line.match(/^(\s*)([-*+]|\d+[.)])(\s+)(\[[ xX]\]\s)?(.*)$/))) {
-      return `${m[1]}<span class="md-list">${m[2]}</span>${m[3]}${m[4] ? `<span class="md-task">${m[4]}</span>` : ""}${inline(m[5])}`;
-    }
-    return inline(line);
-  });
-  // A trailing newline needs a line box of its own, or the layers drift apart.
-  return out.join("\n") + (text.endsWith("\n") ? " " : "");
-}
 
 // ---- rendering (chat answers). Everything is escaped first; links only keep
 // http(s) and mailto URLs, so model output can't inject markup or scripts.
@@ -142,65 +108,205 @@ export function renderMarkdown(text) {
   return blocks(text.replace(/\r\n?/g, "\n").split("\n"));
 }
 
-// mdEditor wraps a textarea in place.
-export function mdEditor(textarea) {
-  const wrap = document.createElement("div");
-  wrap.className = "md-editor";
-  const layer = document.createElement("pre");
-  layer.className = "md-layer";
-  layer.setAttribute("aria-hidden", "true");
-  textarea.classList.add("md-input");
-  textarea.spellcheck = true;
-  textarea.replaceWith(wrap);
-  wrap.append(layer, textarea);
-  const render = () => {
-    layer.innerHTML = highlight(textarea.value);
-    layer.scrollTop = textarea.scrollTop;
-  };
-  textarea.addEventListener("input", render);
-  textarea.addEventListener("scroll", () => { layer.scrollTop = textarea.scrollTop; });
-  new ResizeObserver(() => { layer.style.height = `${textarea.offsetHeight}px`; render(); }).observe(textarea);
-  // Tab indents list items and code instead of leaving the field; Shift-Tab outdents.
-  textarea.addEventListener("keydown", (e) => {
-    if (e.key !== "Tab" || e.ctrlKey || e.metaKey || e.altKey) return;
-    const { selectionStart: a, selectionEnd: b, value: v } = textarea;
-    const start = v.lastIndexOf("\n", a - 1) + 1;
-    const line = v.slice(start, v.indexOf("\n", a) === -1 ? v.length : v.indexOf("\n", a));
-    if (a === b && !/^\s*([-*+]|\d+[.)])\s/.test(line) && !insideFence(v, a)) return; // plain text: Tab moves focus
-    e.preventDefault();
-    if (e.shiftKey) {
-      const n = line.match(/^ {1,2}/)?.[0].length || 0;
-      if (!n) return;
-      textarea.setRangeText("", start, start + n, "preserve");
-    } else {
-      textarea.setRangeText("  ", start, start, "preserve");
-    }
-    render();
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  // Enter continues a list ("- ", "1. ", "- [ ] "); Enter on an empty item ends it.
-  textarea.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter" || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
-    const { selectionStart: a, selectionEnd: b, value: v } = textarea;
-    if (a !== b) return;
-    const start = v.lastIndexOf("\n", a - 1) + 1;
-    const m = v.slice(start, a).match(/^(\s*)([-*+]|\d+)([.)]?)(\s+)(\[[ xX]\]\s)?(.*)$/);
-    if (!m || (!m[3] && !/[-*+]/.test(m[2])) || (m[3] && !/^\d+$/.test(m[2]))) return;
-    e.preventDefault();
-    if (!m[6].trim()) { // empty item: end the list
-      textarea.setRangeText("", start, a, "end");
-    } else {
-      const marker = m[3] ? `${Number(m[2]) + 1}${m[3]}` : m[2];
-      textarea.setRangeText(`\n${m[1]}${marker}${m[4]}${m[5] ? "[ ] " : ""}`, a, a, "end");
-    }
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  render();
-  return { render };
+// ---- prompt editor
+
+const LIST_ITEM = /^\s*([-*+]|\d+[.)])\s/;
+
+function insideFence(doc, pos) {
+  return ((doc.sliceString(0, pos).match(/^\s*(```|~~~)/gm) || []).length % 2) === 1;
 }
 
-function insideFence(v, pos) {
-  return ((v.slice(0, pos).match(/^\s*(```|~~~)/gm) || []).length % 2) === 1;
+// Enter continues a list ("- ", "1. ", "- [ ] "); Enter on an empty item ends it.
+function continueList(view) {
+  const { state } = view;
+  const r = state.selection.main;
+  if (!r.empty || state.selection.ranges.length > 1) return false;
+  const line = state.doc.lineAt(r.head);
+  const m = state.sliceDoc(line.from, r.head).match(/^(\s*)([-*+]|\d+)([.)]?)(\s+)(\[[ xX]\]\s)?(.*)$/);
+  if (!m || (!m[3] && !/[-*+]/.test(m[2])) || (m[3] && !/^\d+$/.test(m[2]))) return false;
+  if (!m[6].trim()) { // empty item: end the list
+    view.dispatch({ changes: { from: line.from, to: r.head }, scrollIntoView: true, userEvent: "delete" });
+    return true;
+  }
+  const marker = m[3] ? `${Number(m[2]) + 1}${m[3]}` : m[2];
+  const insert = `\n${m[1]}${marker}${m[4]}${m[5] ? "[ ] " : ""}`;
+  view.dispatch({ changes: { from: r.head, insert }, selection: { anchor: r.head + insert.length }, scrollIntoView: true, userEvent: "input" });
+  return true;
+}
+
+// Tab indents list items and code instead of leaving the field; Shift-Tab
+// outdents. Plain text returns false, so Tab moves focus on.
+function indent(view, out) {
+  const { state } = view;
+  const r = state.selection.main;
+  const first = state.doc.lineAt(r.from), last = state.doc.lineAt(r.to);
+  if (r.empty && !LIST_ITEM.test(first.text) && !insideFence(state.doc, r.head)) return false;
+  const changes = [];
+  for (let n = first.number; n <= last.number; n++) {
+    const line = state.doc.line(n);
+    if (!out) changes.push({ from: line.from, insert: "  " });
+    else {
+      const k = line.text.match(/^ {1,2}/)?.[0].length || 0;
+      if (k) changes.push({ from: line.from, to: line.from + k });
+    }
+  }
+  if (changes.length) view.dispatch({ changes, userEvent: out ? "delete.dedent" : "input.indent" });
+  return true;
+}
+
+// Colours come from the page's CSS variables, so they follow its theme.
+const highlightStyle = HighlightStyle.define([
+  { tag: t.heading, color: "var(--text)", fontWeight: "600" },
+  { tag: t.processingInstruction, color: "var(--accent)" },
+  { tag: t.contentSeparator, color: "var(--faint)" },
+  { tag: t.emphasis, color: "var(--goal)", fontStyle: "italic" },
+  { tag: t.strong, color: "var(--text)", fontWeight: "600" },
+  { tag: t.strikethrough, textDecoration: "line-through" },
+  { tag: t.link, color: "var(--accent)" },
+  { tag: t.url, color: "var(--muted)", textDecoration: "underline", textDecorationColor: "var(--faint)" },
+  { tag: t.monospace, color: "var(--review)" },
+  { tag: t.quote, color: "var(--muted)" },
+  { tag: [t.labelName, t.meta], color: "var(--muted)" },
+  // code in fences
+  { tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword, t.definitionKeyword, t.modifier], color: "var(--goal)" },
+  { tag: [t.string, t.special(t.string), t.regexp, t.character], color: "var(--merged)" },
+  { tag: t.comment, color: "var(--faint)", fontStyle: "italic" },
+  { tag: [t.number, t.bool, t.null, t.atom, t.escape], color: "var(--running)" },
+  { tag: [t.typeName, t.className, t.namespace, t.standard(t.typeName)], color: "var(--review)" },
+  { tag: [t.function(t.variableName), t.function(t.propertyName), t.definition(t.function(t.variableName)), t.macroName], color: "var(--accent)" },
+  { tag: [t.tagName, t.attributeName], color: "var(--accent)" },
+  { tag: t.invalid, color: "var(--failed)" },
+]);
+
+const theme = EditorView.theme({
+  "&": { color: "var(--text)", backgroundColor: "var(--bg)", border: "1px solid var(--line)", borderRadius: "var(--r-m)" },
+  "&.cm-focused": { outline: "none", borderColor: "var(--accent)" },
+  ".cm-scroller": { fontFamily: "var(--mono)", lineHeight: "1.55", minHeight: "178px" },
+  ".cm-content": { padding: "11px 0", caretColor: "var(--text)" },
+  ".cm-line": { padding: "0 12px" },
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--text)" },
+  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
+    { backgroundColor: "color-mix(in srgb, var(--accent) 35%, transparent)" },
+  ".cm-placeholder": { color: "var(--faint)" },
+  ".cm-panels": { backgroundColor: "var(--surface)", color: "var(--muted)", borderRadius: "0 0 var(--r-m) var(--r-m)" },
+  ".cm-panels.cm-panels-bottom": { borderTop: "1px solid var(--line)" },
+  ".cm-vim-panel": { fontFamily: "var(--mono)", fontSize: "12px", minHeight: "0", padding: "3px 12px" },
+  ".cm-vim-panel input": { color: "var(--text)", fontFamily: "inherit" },
+  ".cm-vim-message": { color: "var(--running) !important" }, // vim sets red inline
+  "&.cm-focused .cm-fat-cursor": { background: "color-mix(in srgb, var(--accent) 70%, transparent)", color: "var(--bg)" },
+  "&.cm-editor:not(.cm-focused) .cm-fat-cursor": { outline: "solid 1px var(--accent)" },
+  ".cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--running) 30%, transparent)" },
+}, { dark: true });
+
+// Vim keys are a setting of this browser, off by default.
+const VIM_KEY = "dash.vim";
+const editors = new Set();
+const vimKeys = () => [vim({ status: true }), drawSelection()];
+export const vimOn = () => { try { return localStorage.getItem(VIM_KEY) === "1"; } catch { return false; } };
+export function setVim(on) {
+  try { localStorage.setItem(VIM_KEY, on ? "1" : "0"); } catch {}
+  for (const e of editors) e.setVim(on);
+}
+
+// In vim mode Esc leaves insert (or visual) mode; Esc in normal mode, with
+// nothing pending, still closes the dialog the way it always has.
+const vimNormal = (view) => {
+  const v = getCM(view)?.state.vim;
+  if (!v || v.insertMode || v.visualMode) return false;
+  const s = v.inputState;
+  return !(s.operator || s.motion || s.keyBuffer.length || s.prefixRepeat.length || s.motionRepeat.length);
+};
+
+// A fence's info string names the language ("go", "python") or, often, its
+// file extension ("py", "rs").
+const fenceLanguage = (info) => {
+  const name = info.trim().split(/\s/)[0].toLowerCase();
+  return LanguageDescription.matchLanguageName(languages, name, false) || languages.find((l) => l.extensions.includes(name)) || null;
+};
+
+const hasFiles = (data) => !!data?.files?.length;
+
+// mdEditor replaces a textarea with CodeMirror. The textarea stays (hidden)
+// as the source of truth: reading .value works as before, and writing it
+// (or a form reset) updates the editor. el is the editor's element.
+export function mdEditor(textarea) {
+  const native = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
+  const wrap = document.createElement("div");
+  wrap.className = "md-editor";
+  textarea.after(wrap);
+  textarea.hidden = true;
+  const labelledBy = textarea.getAttribute("aria-labelledby");
+  const vimMode = new Compartment(), readOnly = new Compartment();
+  let quiet = false; // a programmatic write: not an edit by the user
+  const view = new EditorView({
+    parent: wrap,
+    state: EditorState.create({
+      doc: textarea.value,
+      extensions: [
+        vimMode.of(vimOn() ? vimKeys() : []),
+        history(),
+        Prec.high(keymap.of([
+          { key: "Enter", run: (v) => continueList(v) || insertNewline(v), shift: insertNewline },
+          { key: "Tab", run: (v) => indent(v, false), shift: (v) => indent(v, true) },
+        ])),
+        // Esc closes the dialog and Ctrl-Enter submits the form, as before.
+        keymap.of([...defaultKeymap.filter((b) => b.key !== "Escape" && b.key !== "Mod-Enter"), ...historyKeymap]),
+        markdown({ codeLanguages: fenceLanguage, addKeymap: false }),
+        syntaxHighlighting(highlightStyle),
+        EditorView.lineWrapping,
+        placeholder(textarea.placeholder),
+        readOnly.of(EditorState.readOnly.of(textarea.readOnly)),
+        EditorView.contentAttributes.of({
+          spellcheck: "true", autocorrect: "on", autocapitalize: "sentences", writingsuggestions: "true",
+          ...(labelledBy ? { "aria-labelledby": labelledBy } : {}),
+        }),
+        // Files are attachments: leave pasted or dropped files to the form.
+        EditorView.domEventHandlers({ paste: (e) => hasFiles(e.clipboardData), drop: (e) => hasFiles(e.dataTransfer) }),
+        EditorView.updateListener.of((u) => {
+          if (!u.docChanged) return;
+          native.set.call(textarea, u.state.doc.toString());
+          if (!quiet) textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        }),
+        theme,
+      ],
+    }),
+  });
+
+  const render = () => {
+    const v = native.get.call(textarea);
+    if (v === view.state.doc.toString()) return;
+    quiet = true;
+    try {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: v },
+        selection: { anchor: Math.min(view.state.selection.main.head, v.length) },
+        annotations: Transaction.addToHistory.of(false),
+      });
+    } finally { quiet = false; }
+  };
+  Object.defineProperty(textarea, "value", {
+    configurable: true,
+    get() { return native.get.call(this); },
+    set(v) { native.set.call(this, v); render(); },
+  });
+  textarea.focus = (opts) => view.focus(opts);
+  // reset() restores the default value without the setter; it runs right after the event.
+  textarea.form?.addEventListener("reset", () => queueMicrotask(render));
+  new MutationObserver(() => view.dispatch({ effects: readOnly.reconfigure(EditorState.readOnly.of(textarea.readOnly)) }))
+    .observe(textarea, { attributes: true, attributeFilter: ["readonly"] });
+
+  view.dom.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && e.target === view.contentDOM && vimNormal(view)) e.stopPropagation(); // past vim, to the dialog
+  }, true);
+
+  const ed = {
+    el: wrap,
+    view,
+    render,
+    setVim(on) { view.dispatch({ effects: vimMode.reconfigure(on ? vimKeys() : []) }); },
+  };
+  editors.add(ed);
+  return ed;
 }
 
 // ---- drafts

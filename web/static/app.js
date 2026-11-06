@@ -1,6 +1,6 @@
 // Dash web client. REST for state, /ws/events for live updates,
 // /ws/chat for streaming answers, /ws/proc/:id for terminals.
-import { mdEditor, drafts, renderMarkdown } from "./editor.js";
+import { mdEditor, drafts, renderMarkdown, vimOn, setVim } from "./editor.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 // The server's LC_TIME, since browsers format times by their UI language instead.
@@ -298,8 +298,8 @@ function attachBox(el, textarea, onChange = () => {}, { zone = el.closest("dialo
     settled: () => busy,
   };
 }
-const todoAttach = attachBox($("#todo-attach"), $("#todo-form").prompt, () => draft.changed());
 const promptEditor = mdEditor($("#todo-form").prompt);
+const todoAttach = attachBox($("#todo-attach"), promptEditor.el, () => draft.changed());
 
 // The todo form autosaves to this browser while you type; reopening the
 // form (even after a reload or a crash) brings the draft back.
@@ -1486,6 +1486,11 @@ function diffLines(f) {
     }
   }
   return rows;
+}
+
+function toggleVim() {
+  setVim(!vimOn());
+  toast(vimOn() ? "Vim keys on in the task editor" : "Vim keys off");
 }
 
 // ------------------------------------------------------------------ notifications & tab title
@@ -3082,6 +3087,7 @@ async function runCommand(line) {
       return $("#perm-banner").scrollIntoView({ block: "nearest" });
     case "noh": case "nohlsearch": return clearSearch();
     case "notify": case "notifications": return toggleNotifications();
+    case "vim": return toggleVim();
     case "clear": {
       const c = activeChat();
       if (!c) throw new Error("Pick a project first.");
@@ -3160,6 +3166,7 @@ function paletteCommands() {
     state.usage && [state.usage.paused ? "Resume the queue" : "Pause the queue", state.usage.paused ? "play" : "pause", () => runCommand(state.usage.paused ? "resume" : "pause"), "", "queue"],
     ["Permission requests", "eye", () => runCommand("perms"), ":perms", "approvals allow deny"],
     [notifyLabel(), notifyOn() ? "bell-off" : "bell", toggleNotifications, ":notify", "notifications"],
+    [vimOn() ? "Turn off vim keys in the editor" : "Turn on vim keys in the editor", "code", toggleVim, ":vim", "vim keybindings prompt editor"],
     desktop.matches && [sideCollapsed() ? "Expand sidebar" : "Collapse sidebar", "minimize", () => setSideCollapsed(!sideCollapsed()), "[", "sidebar"],
     ["Refresh projects", "redo", loadProjects, ":refresh", "reload"],
     ["Keyboard shortcuts", "code", () => $("#keys-sheet").showModal(), "?", "help keys"],

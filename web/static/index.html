@@ -301,7 +301,7 @@
       <header class="sheet-head"><h2 id="todo-sheet-title">New task</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
       <label class="field" id="todo-project-field" hidden><span>Project</span><select name="project"></select></label>
       <label class="field"><span>Title <em>Claude names it if empty</em></span><input name="title" placeholder="Short name for the task" autocomplete="off"></label>
-      <label class="field"><span>Instructions for Claude <em>optional, Markdown</em></span><textarea name="prompt" rows="8" placeholder="Describe the change you want. Claude works in its own worktree; you review the diff before it merges."></textarea></label>
+      <div class="field"><span id="todo-prompt-label">Instructions for Claude <em>optional, Markdown</em></span><textarea name="prompt" rows="8" aria-labelledby="todo-prompt-label" placeholder="Describe the change you want. Claude works in its own worktree; you review the diff before it merges."></textarea></div>
       <div class="prompt-tools">
         <div class="draft-status" id="todo-draft" aria-live="polite"></div>
         <button class="btn small attach-btn" type="button" id="todo-refine" data-icon="wand" title="Rewrite the instructions without the chatter, e.g. after pasting a chat answer">Clean up</button>
@@ -452,7 +452,7 @@
         <dt>Chat</dt><dd><kbd>gc</kbd> open/close the chat pane · <kbd>Enter</kbd> send · <kbd>Esc</kbd> stop typing, again to close the overlay · <kbd>Ctrl-k</kbd> "Pin chat" keeps it beside the content</dd>
         <dt>Shell</dt><dd><kbd>i</kbd> type into terminal · <kbd>Ctrl-]</kbd> leave terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> new shell</dd>
         <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> add to queue · <kbd>Ctrl-Shift-Enter</kbd>/<kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>
-        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:task …</code> <code>:new</code> <code>:run cmd</code> <code>:shell</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:pin</code> <code>:activity</code> <code>:history</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:q</code></dd>
+        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:task …</code> <code>:new</code> <code>:run cmd</code> <code>:shell</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:pin</code> <code>:activity</code> <code>:history</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:vim</code> <code>:q</code></dd>
       </dl>
       <p class="hint">Dash version <code>{{DASH_VERSION}}</code></p>
     </form>

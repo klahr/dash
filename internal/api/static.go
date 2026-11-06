@@ -86,6 +86,9 @@ func (s *Server) static() http.Handler {
 		if r.URL.Path == "/sw.js" {
 			w.Header().Set("Service-Worker-Allowed", "/")
 		}
+		// Any change to the frontend changes the version, so it validates
+		// every file: a revalidation is a 304, not the whole (large) bundle.
+		w.Header().Set("ETag", `"`+s.version()+`"`)
 		files.ServeHTTP(w, r)
 	})
 }

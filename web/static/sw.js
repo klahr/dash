@@ -2,7 +2,7 @@
 // always prefers the network, so an online app is never an old cached copy.
 // The page itself compares versions and offers a reload after an update.
 const CACHE = "dash-shell";
-const SHELL = ["/", "/style.css", "/app.js", "/editor.js", "/favicon.svg", "/manifest.webmanifest", "/img/icon-192.png"];
+const SHELL = ["/", "/style.css", "/app.js", "/editor.js", "/vendor/codemirror.js", "/favicon.svg", "/manifest.webmanifest", "/img/icon-192.png"];
 const LIVE = /^\/(api|ws|peer|mcp)\//; // never cache data, sockets or other computers
 
 self.addEventListener("install", (e) => {

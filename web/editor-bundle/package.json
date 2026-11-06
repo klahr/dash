@@ -1,0 +1,16 @@
+{
+  "name": "dash-editor-bundle",
+  "private": true,
+  "description": "Builds web/static/vendor/codemirror.js. Run `npm ci && npm run build` and commit the output.",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild entry.js --bundle --format=esm --minify --legal-comments=eof --target=es2020 --outfile=../static/vendor/codemirror.js"
+  },
+  "devDependencies": {
+    "@codemirror/lang-markdown": "^6",
+    "@codemirror/language-data": "^6",
+    "@replit/codemirror-vim": "^6",
+    "codemirror": "^6",
+    "esbuild": "^0.25"
+  }
+}
