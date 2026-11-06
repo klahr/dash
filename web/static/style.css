@@ -346,7 +346,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
   border-top: 1px solid var(--line); background: var(--bg);
 }
 .composer textarea { resize: none; max-height: 40vh; border-radius: 22px; padding: 11px 16px; }
-#pc-open[aria-pressed="true"], #pc-pin[aria-pressed="true"] { color: var(--accent); }
+#pc-open[aria-pressed="true"], #pc-pin[aria-pressed="true"], #fs-toggle[aria-pressed="true"] { color: var(--accent); }
 #push-main { position: relative; }
 #push-main:not(:disabled) { color: var(--accent); }
 #push-main:disabled { opacity: .5; cursor: default; background: none; }
