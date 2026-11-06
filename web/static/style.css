@@ -525,8 +525,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .comment-actions .btn { min-height: 38px; }
 @media (min-width: 1024px) {
   #view-board.active { position: relative; }
-  .board-tools { position: absolute; top: 8px; right: 12px; z-index: 5; border: 0; padding: 0; background: none; }
-  .board-tools .lanes { display: none; }
+  .board-tools { display: none; }
 }
 
 /* ---------- motion ---------- */
@@ -783,7 +782,6 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .board-chat-head { min-height: 56px; }
   .board-chat .chat-log { padding: 16px; }
   .board-chat .composer { padding: 12px 16px 16px; }
-  #view-board:has(.board-chat:not([hidden])) .board-tools { right: calc(var(--board-chat-w) + 12px); }
   #view-board:has(.board-chat:not([hidden])) .fab { right: calc(var(--board-chat-w) + 28px); }
   .toasts { right: 28px; bottom: 96px; }
 
