@@ -35,6 +35,8 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 
 var slugRe = regexp.MustCompile(`[^a-z0-9-]+`)
 
+var colorRe = regexp.MustCompile(`^#[0-9a-f]{6}$`)
+
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name          string   `json:"name"`
@@ -120,10 +122,18 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		InvestigateCI *bool     `json:"investigate_ci"`
 		MaxRunMinutes *int      `json:"max_run_minutes"`
 		MaxTurns      *int      `json:"max_turns"`
+		Color         *string   `json:"color"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
+	}
+	if req.Color != nil {
+		*req.Color = strings.ToLower(strings.TrimSpace(*req.Color))
+		if *req.Color != "" && !colorRe.MatchString(*req.Color) {
+			writeErr(w, fmt.Errorf("%w: color must look like #3a7bd5", errBadRequest))
+			return
+		}
 	}
 	remote := ""
 	if cur, err := s.Store.GetProject(r.PathValue("pid")); err == nil {
@@ -137,6 +147,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		set(&p.DeployCommand, req.DeployCommand)
 		set(&p.SetupCommand, req.SetupCommand)
 		set(&p.AutoPush, req.AutoPush)
+		set(&p.Color, req.Color)
 		if req.CopyFiles != nil {
 			p.CopyFiles = cleanList(*req.CopyFiles)
 		}

@@ -342,6 +342,11 @@
         <label class="field inline"><span>Turn limit per run</span><input type="number" name="max_turns" min="1" inputmode="numeric" placeholder="200"></label>
       </div>
       <p class="hint">Stops a run that goes on too long. Time spent waiting for your approval doesn't count.</p>
+      <div class="color-row">
+        <label class="toggle"><input type="checkbox" name="use_color"><span>Project color</span></label>
+        <input type="color" name="color" aria-label="Project color" value="#8aa4ff">
+      </div>
+      <p class="hint">Marks the top bar and the project lists, so you can tell projects apart at a glance.</p>
       <footer class="sheet-actions"><button class="btn primary" value="save" data-icon="check">Save settings</button></footer>
     </form>
   </dialog>

@@ -81,6 +81,9 @@ type Project struct {
 	// SyncError is set while the default branch can't be synced with or
 	// pushed to origin (e.g. it diverged); cleared on the next success.
 	SyncError string `json:"sync_error,omitempty"`
+	// Color is an optional "#rrggbb" the UI marks the project with, so it's
+	// clear at a glance which one is open.
+	Color string `json:"color,omitempty"`
 	// InvestigateCI queues a todo for Claude when a GitHub Actions build on
 	// the default branch fails (nil means on). CIHandledRun is the newest
 	// run already looked at, so a failure is only investigated once.

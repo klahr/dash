@@ -543,7 +543,13 @@ async function loadPerms() {
 
 function renderProjectHeader() {
   const p = state.project;
-  $("#project-name").textContent = p ? p.name : "No project";
+  $("#project-name").replaceChildren(...(p ? [projectDot(p), p.name].filter(Boolean) : ["No project"]));
+  // The project's own color marks the top bar (and the phone's browser chrome).
+  const app = $(".app");
+  if (p?.color) app.style.setProperty("--project", p.color);
+  else app.style.removeProperty("--project");
+  app.classList.toggle("has-project-color", !!p?.color);
+  $('meta[name="theme-color"]').content = p?.color || "#101722";
   // With several computers the header names the computer (the branch fits on wide screens too).
   $("#project-branch").textContent = !p ? "" : !multi() ? p.default_branch : desktop.matches ? `${p.default_branch} · ${p.machine}` : p.machine;
   $("#project-menu").hidden = !p;
@@ -571,6 +577,8 @@ function openNewProject() {
   $("#new-project-sheet").showModal();
 }
 
+const projectDot = (p) => (p.color ? h("span", { class: "project-dot", style: `--project: ${p.color}`, "aria-hidden": "true" }) : null);
+
 // Desktop sidebar / phone menu: every project, one click away. The current one
 // shows its branch; its settings and actions live in the top bar's project menu.
 function renderSideProjects() {
@@ -580,7 +588,7 @@ function renderSideProjects() {
       h("button", {
         type: "button", class: "side-project", title: p.path, "aria-current": cur ? "true" : "false",
         onclick: attempt(async () => { await selectProject(p); setMenu(false); }),
-      }, h("span", { class: "side-project-name" }, p.name), cur ? h("span", { class: "side-project-branch" }, p.default_branch) : null));
+      }, h("span", { class: "side-project-name" }, projectDot(p), p.name), cur ? h("span", { class: "side-project-branch" }, p.default_branch) : null));
   };
   const items = !multi() ? state.projects.map(item) : state.machines.flatMap((m) => [
     h("li", { class: "side-machine", title: m.ok ? "" : m.error || "unreachable" },
@@ -650,7 +658,7 @@ function setPicker(open) {
     return h("button", {
       type: "button", role: "menuitem", title: p.path, "aria-current": cur ? "true" : "false",
       onclick: attempt(async () => { setPicker(false); if (!cur) await selectProject(p); }),
-    }, h("span", { class: "project-name" }, p.name), h("span", { class: "project-branch" }, p.default_branch));
+    }, h("span", { class: "project-name" }, projectDot(p), p.name), h("span", { class: "project-branch" }, p.default_branch));
   };
   const items = !multi() ? state.projects.map(item) : state.machines.flatMap((m) => {
     const ps = state.projects.filter((p) => p.machine === m.name);
@@ -1583,6 +1591,9 @@ function openSettings() {
   f.investigate_ci.checked = p.investigate_ci !== false;
   f.max_run_minutes.value = p.max_run_minutes || "";
   f.max_turns.value = p.max_turns || "";
+  f.use_color.checked = !!p.color;
+  f.color.value = p.color || "#8aa4ff";
+  f.color.disabled = !p.color;
   syncMergeHint();
   $("#settings-sheet").returnValue = "";
   $("#settings-sheet").showModal();
@@ -1598,10 +1609,13 @@ function syncMergeHint() {
       : f.auto_push.checked ? `Before each merge Dash pulls ${p.default_branch} from GitHub, so pushes don't get rejected.` : "";
 }
 $("#settings-form").addEventListener("change", syncMergeHint);
+$("#settings-form").use_color.addEventListener("change", (e) => { e.target.form.color.disabled = !e.target.checked; });
+$("#settings-form").color.addEventListener("input", (e) => { e.target.form.use_color.checked = true; });
 $("#settings-sheet").addEventListener("close", attempt(async () => {
   if ($("#settings-sheet").returnValue !== "save") return;
   const f = $("#settings-form");
-  state.project = await api("PATCH", `/api/projects/${state.project.id}`, {
+  const old = state.project;
+  const saved = await api("PATCH", `/api/projects/${old.id}`, {
     test_command: f.test_command.value.trim(),
     max_auto_fixes: Math.max(0, Number(f.max_auto_fixes.value) || 0),
     setup_command: f.setup_command.value.trim(),
@@ -1614,8 +1628,13 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     investigate_ci: f.investigate_ci.checked,
     max_run_minutes: Number(f.max_run_minutes.value) || 0,
     max_turns: Number(f.max_turns.value) || 0,
+    color: f.use_color.checked ? f.color.value : "",
   });
+  // Keep the client-only fields, and the list entry in step for its color.
+  state.project = { ...saved, machine: old.machine, prefix: old.prefix };
+  state.projects = state.projects.map((x) => (x === old ? state.project : x));
   renderProjectHeader();
+  renderProjectList();
   toast("Settings saved");
 }));
 
