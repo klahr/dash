@@ -499,3 +499,17 @@ func (g *Git) RemoteURL(ctx context.Context, projectID, dir string) string {
 	}
 	return out
 }
+
+// Unpushed counts the commits on branch that origin doesn't have, as of the
+// last fetch or push (every commit if branch was never pushed).
+func (g *Git) Unpushed(ctx context.Context, projectID, repo, branch string) (int, error) {
+	rng := branch
+	if _, err := g.run(ctx, false, projectID, repo, "git", "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch); err == nil {
+		rng = "origin/" + branch + ".." + branch
+	}
+	out, err := g.run(ctx, false, projectID, repo, "git", "rev-list", "--count", rng)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(out)
+}

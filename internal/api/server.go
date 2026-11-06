@@ -73,6 +73,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("PATCH /api/projects/{pid}", s.updateProject)
 	mux.HandleFunc("POST /api/projects/{pid}/github", s.createGitHubRepo)
 	mux.HandleFunc("POST /api/projects/{pid}/push", s.pushProject)
+	mux.HandleFunc("GET /api/projects/{pid}/unpushed", s.unpushed)
 
 	// Todos & queues
 	mux.HandleFunc("GET /api/projects/{pid}/todos", s.listTodos)

@@ -254,6 +254,7 @@ const state = {
   view: "board",
   query: "",           // board search (/)
   showOld: false,      // show merged todos older than a day
+  unpushed: 0,         // commits on the default branch origin doesn't have
   comments: loadComments(), // todo id → [{file, line, side, code, text}] (diff review notes)
 };
 const DAY = 24 * 3600 * 1000;
@@ -347,8 +348,9 @@ function onEvent(ev, m = { name: "" }) {
         if (prev && prev.status !== ev.data.status) {
           if (ev.data.status === "review") { toast(`Ready for review: ${title(ev.data)}`); notify("Ready for review", ev.data); }
           if (ev.data.status === "failed") notify("Failed", ev.data, ev.data.error);
-          if (ev.data.status === "merged") notify("Merged", ev.data);
+          if (ev.data.status === "merged") { notify("Merged", ev.data); loadUnpushed().catch(fail); }
         }
+        if (prev && prev.revert?.commit !== ev.data.revert?.commit) loadUnpushed().catch(fail);
         if (prev && !prev.revert && ev.data.revert) toast(ev.data.revert.pr_url ? `Revert pull request opened: ${title(ev.data)}` : `Reverted: ${title(ev.data)}`);
         if (prev && !prev.pr && ev.data.pr) toast(`Pull request #${ev.data.pr.number} opened: ${title(ev.data)}`);
       }
@@ -454,6 +456,7 @@ async function loadProjects() {
 async function selectProject(p) {
   state.project = p;
   state.todos = new Map();
+  state.unpushed = 0;
   state.lane = null;
   closeDetail();
   try { if (p) localStorage.setItem("dash.project", projectKey(p)); } catch {}
@@ -515,7 +518,7 @@ function renderProjectList() {
   $("#project-tools").replaceChildren(...(p ? [
     h("span", { class: "remote" }, p.remote_url ? `Remote: ${p.remote_url}` : "No GitHub remote yet."),
     p.remote_url
-      ? h("button", { type: "button", class: "btn", onclick: attempt(async () => { await api("POST", `/api/projects/${p.id}/push`); toast(`Pushed ${p.default_branch}`); }) }, `Push ${p.default_branch}`)
+      ? h("button", { type: "button", class: "btn", onclick: attempt(pushDone) }, `Push ${p.default_branch}`)
       : h("button", { type: "button", class: "btn", onclick: attempt(createGitHubRepo) }, "Create GitHub repository"),
     h("button", { type: "button", class: "btn", onclick: openSettings }, "Settings"),
     h("button", { type: "button", class: "btn", onclick: attempt(cleanup) }, "Clean up"),
@@ -577,6 +580,30 @@ async function loadTodos() {
   state.todos = new Map(list.map((t) => [t.id, t]));
   renderBoard();
   if (state.detail) renderDetail();
+  loadUnpushed().catch(fail);
+}
+
+async function loadUnpushed() {
+  const p = state.project;
+  if (!p?.remote_url || p.merge_mode === "pr") { state.unpushed = 0; return; }
+  const { count } = await api("GET", `/api/projects/${p.id}/unpushed`);
+  if (state.project !== p || count === state.unpushed) return;
+  state.unpushed = count;
+  renderBoard();
+}
+
+async function pushDone() {
+  const p = state.project;
+  await api("POST", `/api/projects/${p.id}/push`);
+  toast(`Pushed ${p.default_branch}`);
+  await loadUnpushed();
+}
+
+function pushBar() {
+  const n = state.unpushed;
+  if (!n) return null;
+  return h("button", { type: "button", class: "btn primary push-done", onclick: attempt(pushDone) },
+    `Push ${n} ${n === 1 ? "commit" : "commits"} to ${state.project.default_branch}`);
 }
 
 const title = (t) => t.title || t.prompt.split("\n")[0];
@@ -670,6 +697,7 @@ function renderBoardNow() {
   },
     h("header", { class: "col-head" }, l.label, h("span", { class: "n" }, items[l.key].length)),
     h("div", { class: "col-body" },
+      l.key === "done" ? pushBar() : null,
       items[l.key].length
         ? h("ol", { class: "rail" }, items[l.key].map((t, ri) => h("li", {}, todoRow(t, li, ri))))
         : h("p", { class: "col-empty" }, state.query ? "No matches." : l.empty),
@@ -1918,9 +1946,7 @@ async function runCommand(line) {
       return toast("Added to queue");
     case "cleanup": case "clean": need(); return cleanup();
     case "ci": case "builds": return openCI();
-    case "push":
-      await api("POST", `/api/projects/${need().id}/push`);
-      return toast(`Pushed ${state.project.default_branch}`);
+    case "push": need(); return pushDone();
     case "pause": case "resume":
       state.usage = await api("POST", `/api/queue/${name}`);
       renderUsage();

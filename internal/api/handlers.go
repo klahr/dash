@@ -234,6 +234,20 @@ func (s *Server) pushProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"pushed": p.DefaultBranch})
 }
 
+// unpushed counts the default branch's commits (merged todos) origin doesn't have yet.
+func (s *Server) unpushed(w http.ResponseWriter, r *http.Request) {
+	p, err := s.Store.GetProject(r.PathValue("pid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	n := 0
+	if p.RemoteURL != "" {
+		n, _ = s.Git.Unpushed(r.Context(), p.ID, p.Path, p.DefaultBranch)
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"count": n})
+}
+
 // ---------------------------------------------------------------- todos
 
 func (s *Server) listTodos(w http.ResponseWriter, r *http.Request) {
