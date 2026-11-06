@@ -72,4 +72,7 @@ func TestUploadRoundTrip(t *testing.T) {
 	if n := cleanUploadName("", "image/png"); n != "pasted.png" {
 		t.Fatalf("pasted image name: %q", n)
 	}
+	if n := cleanUploadName("", "image/svg+xml"); n != "pasted.svg" {
+		t.Fatalf("pasted svg name: %q", n)
+	}
 }

@@ -193,7 +193,7 @@ function ask({ title, body = "", input = false, placeholder = "", ok = "OK", dan
 const CLIP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5 12.6 19.9a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const clip = () =>h("span", { class: "clip", innerHTML: CLIP });
 const uploadURL = (a, prefix = here()) => on(prefix, `/api/uploads/${a.id}/${encodeURIComponent(a.name)}`);
-const ACCEPT = "image/png,image/jpeg,image/gif,image/webp,.pdf,.txt,.md,.log,.json,.csv";
+const ACCEPT = "image/png,image/jpeg,image/gif,image/webp,image/svg+xml,.pdf,.txt,.md,.log,.json,.csv";
 
 async function uploadFile(file, prefix = here()) {
   const res = await fetch(on(prefix, `/api/uploads?name=${encodeURIComponent(file.name || "pasted")}`), {
@@ -1755,7 +1755,7 @@ $("#settings-icon-file").addEventListener("change", attempt(async (e) => {
   e.target.value = "";
   if (!file) return;
   const a = await uploadFile(file, state.project.prefix || "");
-  if (!a.type.startsWith("image/")) throw new Error("Choose a PNG, JPEG, GIF or WebP image.");
+  if (!a.type.startsWith("image/")) throw new Error("Choose a PNG, JPEG, GIF, WebP or SVG image.");
   settingsIcon(`${a.id}/${a.name}`);
 }));
 $("#settings-sheet").addEventListener("close", attempt(async () => {

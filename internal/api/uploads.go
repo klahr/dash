@@ -19,7 +19,7 @@ const maxUpload = 20 << 20
 
 // Kinds of files Claude can make use of; images are shown to it by the Read tool.
 var uploadTypes = map[string]string{
-	".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
+	".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
 	".pdf": "application/pdf", ".txt": "text/plain", ".md": "text/markdown", ".log": "text/plain",
 	".json": "application/json", ".csv": "text/csv",
 }
@@ -35,7 +35,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	name := cleanUploadName(r.URL.Query().Get("name"), r.Header.Get("Content-Type"))
 	typ, ok := uploadTypes[strings.ToLower(filepath.Ext(name))]
 	if !ok {
-		writeErr(w, fmt.Errorf("%w: attach images (PNG, JPEG, GIF, WebP), PDFs or text files", errBadRequest))
+		writeErr(w, fmt.Errorf("%w: attach images (PNG, JPEG, GIF, WebP, SVG), PDFs or text files", errBadRequest))
 		return
 	}
 	id := store.NewID()
