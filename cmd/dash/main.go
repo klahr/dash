@@ -22,6 +22,7 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/mcptools"
+	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/queue"
@@ -214,6 +215,19 @@ func main() {
 		}
 	}
 	merges.Perms, merges.Kick = perms, todos.Kick
+
+	// Projects adopted with a default branch the repo doesn't have (e.g. "main"
+	// in a master repo) get the repo's real main line.
+	for _, p := range st.ListProjects() {
+		if _, err := os.Stat(p.Path); err != nil || git.HasBranch(ctx, p.ID, p.Path, p.DefaultBranch) {
+			continue
+		}
+		if b := git.MainBranch(ctx, p.ID, p.Path); b != "" {
+			if _, err := st.UpdateProject(p.ID, func(p *model.Project) error { p.DefaultBranch = b; return nil }); err == nil {
+				slog.Info("default branch fixed", "project", p.Name, "branch", b)
+			}
+		}
+	}
 
 	go builds.Run(ctx)
 	go todos.Run(ctx)

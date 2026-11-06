@@ -491,6 +491,29 @@ func (g *Git) CurrentBranch(ctx context.Context, projectID, dir string) (string,
 	return g.git(ctx, projectID, dir, "rev-parse", "--abbrev-ref", "HEAD")
 }
 
+// HasBranch reports whether the local branch exists.
+func (g *Git) HasBranch(ctx context.Context, projectID, dir, branch string) bool {
+	_, err := g.run(ctx, false, projectID, dir, "git", "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
+	return branch != "" && err == nil
+}
+
+// MainBranch guesses an existing repo's main line: the local branch a
+// remote's HEAD points at, else main or master, else the one checked out.
+// It returns "" when none of them exists.
+func (g *Git) MainBranch(ctx context.Context, projectID, dir string) string {
+	out, _ := g.run(ctx, false, projectID, dir, "git", "for-each-ref", "--format=%(symref:lstrip=3)", "refs/remotes/*/HEAD")
+	candidates := append(strings.Fields(out), "main", "master")
+	if b, err := g.run(ctx, false, projectID, dir, "git", "rev-parse", "--abbrev-ref", "HEAD"); err == nil {
+		candidates = append(candidates, b)
+	}
+	for _, b := range candidates {
+		if g.HasBranch(ctx, projectID, dir, b) {
+			return b
+		}
+	}
+	return ""
+}
+
 // RemoteURL returns origin's URL, or "" if there is no origin.
 func (g *Git) RemoteURL(ctx context.Context, projectID, dir string) string {
 	out, err := g.git(ctx, projectID, dir, "remote", "get-url", "origin")

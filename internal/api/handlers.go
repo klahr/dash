@@ -87,6 +87,12 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	if b, err := s.Git.CurrentBranch(ctx, id, req.Path); err == nil && b != "HEAD" {
 		req.DefaultBranch = b
 	}
+	// A detached HEAD leaves the requested name, which may not exist (master repos).
+	if !s.Git.HasBranch(ctx, id, req.Path, req.DefaultBranch) {
+		if b := s.Git.MainBranch(ctx, id, req.Path); b != "" {
+			req.DefaultBranch = b
+		}
+	}
 	p, err := s.Store.CreateProject(model.Project{
 		ID: id, Name: req.Name, Path: req.Path, DefaultBranch: req.DefaultBranch,
 		RemoteURL: s.Git.RemoteURL(ctx, id, req.Path), AutoPush: req.AutoPush,
