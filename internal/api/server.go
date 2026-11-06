@@ -104,6 +104,16 @@ func (s *Server) Routes() http.Handler {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	mux.HandleFunc("GET /api/projects/{pid}/chat", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, s.Store.ProjectChat(r.PathValue("pid")))
+	})
+	mux.HandleFunc("DELETE /api/projects/{pid}/chat", func(w http.ResponseWriter, r *http.Request) {
+		if err := s.Store.SetProjectChat(r.PathValue("pid"), nil); err != nil {
+			writeErr(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /api/projects/{pid}/cleanup", s.cleanupProject)
 
 	// GitHub Actions builds of the default branch

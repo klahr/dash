@@ -43,6 +43,8 @@ type snapshot struct {
 	// TodoChats are conversations about one todo, keyed by todo id. Kept
 	// apart from Todo so they aren't broadcast with every todo update.
 	TodoChats map[string][]model.ChatMessage `json:"todo_chats,omitempty"`
+	// ProjectChats are conversations about one project, keyed by project id.
+	ProjectChats map[string][]model.ChatMessage `json:"project_chats,omitempty"`
 }
 
 type Store struct {
@@ -338,6 +340,30 @@ func (s *Store) SetTodoChat(todoID string, msgs []model.ChatMessage) error {
 			s.data.TodoChats = map[string][]model.ChatMessage{}
 		}
 		s.data.TodoChats[todoID] = append([]model.ChatMessage(nil), msgs...)
+	}
+	return s.saveLocked()
+}
+
+func (s *Store) ProjectChat(projectID string) []model.ChatMessage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]model.ChatMessage{}, s.data.ProjectChats[projectID]...)
+}
+
+// SetProjectChat replaces the conversation about a project (nil clears it).
+func (s *Store) SetProjectChat(projectID string, msgs []model.ChatMessage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.data.Projects[projectID]; !ok {
+		return ErrNotFound
+	}
+	if len(msgs) == 0 {
+		delete(s.data.ProjectChats, projectID)
+	} else {
+		if s.data.ProjectChats == nil {
+			s.data.ProjectChats = map[string][]model.ChatMessage{}
+		}
+		s.data.ProjectChats[projectID] = append([]model.ChatMessage(nil), msgs...)
 	}
 	return s.saveLocked()
 }

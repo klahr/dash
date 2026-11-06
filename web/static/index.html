@@ -111,6 +111,7 @@
       <section class="view active" id="view-board" aria-label="Board">
         <div class="board-tools">
           <div class="lanes" role="tablist" id="lane-tabs"></div>
+          <button class="icon-btn" id="pc-open" aria-label="Project chat" aria-pressed="false" data-icon="comment"></button>
           <button class="icon-btn" id="search-open" aria-label="Search todos (/)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4.5-4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           </button>
@@ -123,7 +124,25 @@
         </div>
         <div class="sync-warn" id="sync-warn" role="alert" hidden></div>
         <div class="perm-list" id="perm-banner" hidden></div>
-        <div class="board" id="board"></div>
+        <div class="board-row">
+          <div class="board" id="board"></div>
+          <aside class="board-chat" id="board-chat" hidden aria-label="Project chat">
+            <header class="board-chat-head">
+              <span class="board-chat-title">Project chat</span>
+              <button class="icon-btn" id="pc-clear" aria-label="Clear the project chat" data-icon="trash"></button>
+              <button class="icon-btn" id="pc-close" aria-label="Close the project chat" data-icon="x"></button>
+            </header>
+            <div class="chat-log" id="pc-log">
+              <p class="pane-empty chat-empty" id="pc-empty">Ask about this project. Claude runs in its main checkout and can read the code.</p>
+            </div>
+            <form class="composer" id="pc-form">
+              <textarea name="q" rows="1" placeholder="Ask about this project" aria-label="Ask Claude about this project"></textarea>
+              <button class="icon-btn primary" aria-label="Send">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m0 0-6 6m6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </form>
+          </aside>
+        </div>
         <div class="empty" id="board-empty" hidden></div>
         <button class="fab" id="new-todo" aria-label="New todo">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
@@ -140,7 +159,7 @@
                  Files are embedded in the binary: rebuild and restart dash afterwards. -->
             <img class="empty-art" src="img/empty-chat.webp" alt="" width="480" height="360" loading="lazy" onerror="this.remove()">
             <p class="empty-title">Ask Claude anything</p>
-            <p>Questions about code, design or your projects. Answers use the Claude account Dash runs with.</p>
+            <p>A general chat, run in your home directory. For questions about one project, use the chat on its board. Answers use the Claude account Dash runs with.</p>
           </div>
         </div>
         <form class="composer" id="chat-form">

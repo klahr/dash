@@ -522,6 +522,8 @@ async function selectProject(p) {
   renderProjectList();
   state.ci = null;
   renderCI();
+  renderBoardChat();
+  loadProjectChat().catch((e) => toast(`Couldn't load the project chat: ${e.message}`, true));
   if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); return; }
   await Promise.all([loadTodos(), loadProcs(), loadPerms(), loadCI()]);
 }
@@ -1632,12 +1634,15 @@ function makeChat({ log, empty, form, target, actions, scroller = () => log, sav
   return { reset, input, get history() { return c.history; }, get busy() { return !!c.current; } };
 }
 
+const chatActions = (answer) => h("div", { class: "msg-actions" },
+  ib({ class: "link", onclick: () => { if (!state.project) return toast("Select a project first", true); openTodoForm(); $("#todo-form").prompt.value = answer; } }, "plus", "Make this a todo"),
+  ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
+
+// The global chat isn't about any project: it runs in the home directory of this machine.
 const chat = makeChat({
   log: $("#chat-log"), empty: $("#chat-empty"), form: $("#chat-form"),
-  target: () => ({ project: here() ? undefined : state.project?.id }), // chat runs on this machine
-  actions: (answer) => h("div", { class: "msg-actions" },
-    ib({ class: "link", onclick: () => { if (!state.project) return toast("Select a project first", true); openTodoForm(); $("#todo-form").prompt.value = answer; } }, "plus", "Make this a todo"),
-    ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy")),
+  target: () => ({}),
+  actions: chatActions,
 });
 const chatInput = chat.input;
 
@@ -1668,6 +1673,49 @@ const todoChat = makeChat({
       ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
   },
 });
+
+// A conversation about the current project, beside its board. It runs on the
+// project's computer, in its main checkout.
+const projectChat = makeChat({
+  log: $("#pc-log"), empty: $("#pc-empty"), form: $("#pc-form"),
+  target: () => ({ prefix: here(), project: state.project?.id }),
+  // A turn left streaming when the project was switched is saved when it finishes.
+  saved: ({ project }) => { if (project === state.project?.id && !projectChat.busy) loadProjectChat().catch(fail); },
+  actions: chatActions,
+});
+
+let projectChatId = null;
+async function loadProjectChat() {
+  const p = state.project;
+  if (!p) { projectChatId = null; projectChat.reset(); return; }
+  // Coming back to the project whose reply is still streaming keeps it on screen.
+  if (projectChatId === p.id && projectChat.busy) return;
+  projectChatId = p.id;
+  projectChat.reset();
+  const saved = await api("GET", `/api/projects/${p.id}/chat`);
+  if (state.project?.id === p.id && !projectChat.history.length && !projectChat.busy) projectChat.reset(saved);
+}
+
+const boardChatOpen = () => { try { return localStorage.getItem("dash.boardChat") === "1"; } catch { return false; } };
+function renderBoardChat() {
+  const open = !!state.project && boardChatOpen();
+  $("#board-chat").hidden = !open;
+  $("#pc-open").hidden = !state.project;
+  $("#pc-open").setAttribute("aria-pressed", String(open));
+}
+function toggleBoardChat(open = !boardChatOpen()) {
+  try { localStorage.setItem("dash.boardChat", open ? "1" : "0"); } catch {}
+  renderBoardChat();
+  if (open) { const log = $("#pc-log"); log.scrollTop = log.scrollHeight; projectChat.input.focus(); }
+}
+$("#pc-open").addEventListener("click", () => toggleBoardChat());
+$("#pc-close").addEventListener("click", () => toggleBoardChat(false));
+$("#pc-clear").addEventListener("click", attempt(async () => {
+  const p = state.project;
+  if (!p || !projectChat.history.length) return;
+  await api("DELETE", `/api/projects/${p.id}/chat`);
+  if (state.project?.id === p.id) projectChat.reset();
+}));
 
 let todoChatId = null;
 async function loadTodoChat() {

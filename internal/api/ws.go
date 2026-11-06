@@ -26,8 +26,10 @@ import (
 //
 // The client owns the conversation history and sends it in full each turn.
 // Each completed turn is saved, and GET /api/chat returns it after a restart.
-// A new "send" cancels any response still streaming. Claude runs in the
-// project's main checkout when "project" names a project on this machine.
+// A new "send" cancels any response still streaming. Without "project" or
+// "todo" it is the global chat, run in the chatter's default directory.
+// With "project", Claude runs in that project's main checkout and the turn is
+// saved to GET /api/projects/{id}/chat.
 // With "todo", the conversation is about that todo: Claude sees its title,
 // status, instructions and changes, runs in its worktree while it has one,
 // and the turn is saved to GET /api/todos/{id}/chat.
@@ -66,13 +68,17 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		var dir string
-		if msg.Project != "" && s.Store != nil {
-			if p, err := s.Store.GetProject(msg.Project); err == nil {
-				dir = p.Path
-			}
-		}
 		save := s.Store.SetChat
 		prompt := msg.Messages
+		if msg.Project != "" && msg.Todo == "" && s.Store != nil {
+			p, err := s.Store.GetProject(msg.Project)
+			if err != nil {
+				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
+				continue
+			}
+			dir = p.Path
+			save = func(msgs []agent.ChatMessage) error { return s.Store.SetProjectChat(p.ID, msgs) }
+		}
 		if msg.Todo != "" && s.Store != nil {
 			t, err := s.Store.GetTodo(msg.Todo)
 			if err != nil {

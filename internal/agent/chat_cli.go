@@ -25,7 +25,7 @@ type ClaudeCodeChat struct {
 	Bin    string // default "claude"
 	Model  string // optional --model
 	System string
-	Dir    string // working directory when Stream gets none; default os.TempDir()
+	Dir    string // working directory of the global chat (Stream gets no dir); default os.TempDir()
 	// OnRateLimit receives the rate_limit_info of every rate_limit_event.
 	OnRateLimit func(json.RawMessage)
 }
@@ -39,10 +39,14 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 		bin = "claude"
 	}
 	system := c.System
-	if system == "" {
+	if system == "" && dir != "" {
 		system = (&Chat{}).defaultSystem() +
 			" You run in the project's checkout and can read its files with Read, Grep and Glob; " +
 			"look at the code before answering questions about it. You cannot edit files or run commands."
+	} else if system == "" {
+		system = (&Chat{}).defaultSystem() +
+			" You run in the user's home directory and can read files with Read, Grep and Glob. " +
+			"You cannot edit files or run commands."
 	}
 	args := []string{
 		"-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
