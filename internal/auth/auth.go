@@ -7,10 +7,12 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -24,7 +26,63 @@ const (
 	failureWindow = 15 * time.Minute // … within this window, then locked out until it passes
 )
 
-type session struct{ expires time.Time }
+type session struct {
+	Expires time.Time `json:"expires"`
+}
+
+// sessionKey is what's kept (and saved) for a session: a hash, so the
+// sessions file can't be used to log in.
+func sessionKey(tok string) string {
+	h := sha256.Sum256([]byte(tok))
+	return hex.EncodeToString(h[:])
+}
+
+// KeepSessions saves sessions in path, so restarting or updating Dash
+// doesn't log everyone out. Sessions from other credentials are dropped.
+func (a *Auth) KeepSessions(path string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.store = path
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var f sessionFile
+	if json.Unmarshal(b, &f) != nil || f.Account != a.account() {
+		return nil
+	}
+	now := a.now()
+	for k, s := range f.Sessions {
+		if now.Before(s.Expires) {
+			a.sessions[k] = s
+		}
+	}
+	return nil
+}
+
+type sessionFile struct {
+	Account  string             `json:"account"` // hash of the credentials the sessions belong to
+	Sessions map[string]session `json:"sessions"`
+}
+
+func (a *Auth) account() string {
+	h := sha256.Sum256(append(a.user[:], a.pass[:]...))
+	return hex.EncodeToString(h[:])
+}
+
+func (a *Auth) saveLocked() {
+	if a.store == "" {
+		return
+	}
+	b, _ := json.Marshal(sessionFile{Account: a.account(), Sessions: a.sessions})
+	tmp := a.store + ".tmp"
+	if os.WriteFile(tmp, b, 0o600) == nil {
+		_ = os.Rename(tmp, a.store)
+	}
+}
 
 type failures struct {
 	count int
@@ -39,12 +97,17 @@ type Auth struct {
 	sessions map[string]session
 	failed   map[string]*failures
 
-	now func() time.Time // for tests
+	now   func() time.Time // for tests
+	store string           // sessions file, if any
 
 	// TrustProxy honours X-Forwarded-For and X-Forwarded-Proto from a
 	// reverse proxy (Caddy, nginx, Tailscale Serve) that terminates TLS.
 	// Only enable it when Dash is reachable solely through that proxy.
 	TrustProxy bool
+
+	// PeerToken lets another Dash (a "hub" showing this machine in its
+	// dashboard) call the API with "Authorization: Bearer <token>".
+	PeerToken string
 }
 
 // New returns an authenticator for the single account. Both values are required.
@@ -71,18 +134,24 @@ func (a *Auth) check(username, password string) bool {
 }
 
 func (a *Auth) valid(r *http.Request) bool {
+	if a.PeerToken != "" {
+		if tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+			return subtle.ConstantTimeCompare([]byte(tok), []byte(a.PeerToken)) == 1
+		}
+	}
 	c, err := r.Cookie(CookieName)
 	if err != nil || c.Value == "" {
 		return false
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	s, ok := a.sessions[c.Value]
+	key := sessionKey(c.Value)
+	s, ok := a.sessions[key]
 	if !ok {
 		return false
 	}
-	if a.now().After(s.expires) {
-		delete(a.sessions, c.Value)
+	if a.now().After(s.Expires) {
+		delete(a.sessions, key)
 		return false
 	}
 	return true
@@ -96,11 +165,12 @@ func (a *Auth) newSession() string {
 	defer a.mu.Unlock()
 	now := a.now()
 	for k, s := range a.sessions { // prune
-		if now.After(s.expires) {
+		if now.After(s.Expires) {
 			delete(a.sessions, k)
 		}
 	}
-	a.sessions[tok] = session{expires: now.Add(sessionTTL)}
+	a.sessions[sessionKey(tok)] = session{Expires: now.Add(sessionTTL)}
+	a.saveLocked()
 	return tok
 }
 
@@ -206,7 +276,8 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(CookieName); err == nil {
 		a.mu.Lock()
-		delete(a.sessions, c.Value)
+		delete(a.sessions, sessionKey(c.Value))
+		a.saveLocked()
 		a.mu.Unlock()
 	}
 	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
@@ -221,6 +292,7 @@ var public = map[string]bool{
 	"/style.css":            true,
 	"/favicon.svg":          true,
 	"/manifest.webmanifest": true,
+	"/sw.js":                true, // service worker updates must not hit the login redirect
 	"/api/login":            true,
 	// Claude Code's permission prompts; authenticated by a per-run bearer token instead.
 	"/mcp/permissions": true,
@@ -236,7 +308,7 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/") {
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/") || strings.HasPrefix(r.URL.Path, "/peer/") {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "login required"})
 			return
 		}

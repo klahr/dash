@@ -17,6 +17,7 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/runner"
@@ -43,7 +44,8 @@ type Server struct {
 	Editor     string // command that opens a directory, e.g. "code" (optional)
 	UploadRoot string // where attached files are stored
 	CI         *ci.Watcher
-	Static     fs.FS // frontend assets
+	Peers      *peer.Hub // other computers shown in this dashboard
+	Static     fs.FS     // frontend assets
 }
 
 func (s *Server) Routes() http.Handler {
@@ -55,6 +57,14 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
+
+	// Computers: this one plus peers, whose API is forwarded under /peer/{name}/
+	mux.HandleFunc("GET /api/machines", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, s.Peers.Machines(r.Context()))
+	})
+	for _, m := range []string{"GET", "POST", "PATCH", "PUT", "DELETE"} {
+		mux.Handle(m+" /peer/{name}/", s.Peers)
+	}
 
 	// Projects & git
 	mux.HandleFunc("GET /api/projects", s.listProjects)
@@ -113,7 +123,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /ws/proc/{procid}", s.procWS)
 
 	// Frontend
-	mux.Handle("GET /", http.FileServerFS(s.Static))
+	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"version": s.version()})
+	})
+	mux.Handle("GET /", s.static())
 
 	return logRequests(s.Auth.Middleware(mux))
 }

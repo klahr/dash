@@ -84,6 +84,10 @@ type Project struct {
 	InvestigateCI *bool     `json:"investigate_ci,omitempty"`
 	CIHandledRun  int64     `json:"ci_handled_run,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
+
+	// Machine is the computer the project lives on; filled in by clients
+	// that show several computers in one dashboard, never stored.
+	Machine string `json:"machine,omitempty"`
 }
 
 // InvestigatesCI reports whether failed builds get a todo automatically.

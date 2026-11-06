@@ -95,7 +95,11 @@ func (a *App) renderHeader() string {
 		right += styleWarn.Render("/"+a.query) + styleDim.Render(" (:noh)  ")
 	}
 	if a.proj != nil {
-		right += styleAccent.Render(a.proj.Name) + styleDim.Render(" ("+a.proj.DefaultBranch+")")
+		where := a.proj.DefaultBranch
+		if a.multi() {
+			where += " @" + a.proj.Machine
+		}
+		right += styleAccent.Render(a.proj.Name) + styleDim.Render(" ("+where+")")
 	}
 	if n := len(a.perms); n > 0 {
 		right += styleWarn.Bold(true).Render(fmt.Sprintf("  ⚠ %d waiting (P)", n))
@@ -612,11 +616,20 @@ func (a *App) renderPicker() string {
 	}
 	lines := []string{styleBold.Render("Projects"), ""}
 	for i, p := range a.projects {
-		l := fmt.Sprintf(" %s  %s", p.Name, styleDim.Render(p.Path))
+		where := p.Path
+		if a.multi() {
+			where = p.Machine + "  " + p.Path
+		}
+		l := fmt.Sprintf(" %s  %s", p.Name, styleDim.Render(where))
 		if i == a.pickRow {
-			l = styleSel.Render(fmt.Sprintf(" %s ", p.Name)) + "  " + styleDim.Render(p.Path)
+			l = styleSel.Render(fmt.Sprintf(" %s ", p.Name)) + "  " + styleDim.Render(where)
 		}
 		lines = append(lines, l)
+	}
+	for _, m := range a.machines {
+		if !m.OK {
+			lines = append(lines, "", styleErr.Render(" "+m.Name+": "+m.Error))
+		}
 	}
 	return styleBox.Render(strings.Join(lines, "\n"))
 }

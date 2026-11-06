@@ -12,7 +12,9 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -25,6 +27,67 @@ import (
 type Client struct {
 	base *url.URL
 	http *http.Client
+
+	mu     sync.Mutex
+	prefix string // "" or "/peer/<name>": the computer the selected project lives on
+}
+
+// Machine mirrors peer.Machine: a computer in this dashboard.
+type Machine struct {
+	Name   string `json:"name"`
+	Local  bool   `json:"local"`
+	Prefix string `json:"prefix"`
+	OK     bool   `json:"ok"`
+	Error  string `json:"error"`
+}
+
+// hubOnly paths always go to the Dash we logged in to.
+var hubOnly = regexp.MustCompile(`^/api/(login|logout|me|machines|version)\b`)
+
+// SetPrefix sends later project calls to another computer ("" = this one).
+func (c *Client) SetPrefix(p string) {
+	c.mu.Lock()
+	c.prefix = p
+	c.mu.Unlock()
+}
+
+func (c *Client) at(path string) string {
+	if hubOnly.MatchString(path) {
+		return path
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.prefix + path
+}
+
+// Machines lists the computers in this dashboard.
+func (c *Client) Machines() (ms []Machine, err error) {
+	return ms, c.do("GET", "/api/machines", nil, &ms)
+}
+
+// AllProjects lists the projects of every reachable computer, each tagged
+// with its computer's name.
+func (c *Client) AllProjects() ([]model.Project, []Machine, error) {
+	ms, err := c.Machines()
+	if err != nil {
+		return nil, nil, err
+	}
+	var all []model.Project
+	for i, m := range ms {
+		if !m.OK {
+			continue
+		}
+		var ps []model.Project
+		if err := c.doRaw("GET", m.Prefix+"/api/projects", nil, &ps); err != nil {
+			ms[i].OK, ms[i].Error = false, err.Error()
+			continue
+		}
+		for _, p := range ps {
+			p.Machine = m.Name
+			all = append(all, p)
+		}
+	}
+	return all, ms, nil
 }
 
 var ErrUnauthorized = errors.New("not logged in")
@@ -43,6 +106,10 @@ func (c *Client) Login(username, password string) error {
 }
 
 func (c *Client) do(method, path string, body, out any) error {
+	return c.doRaw(method, c.at(path), body, out)
+}
+
+func (c *Client) doRaw(method, path string, body, out any) error {
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -151,6 +218,10 @@ func (c *Client) StopProcess(id string) error { return c.do("DELETE", "/api/proc
 // ---- WebSockets ----
 
 func (c *Client) dial(ctx context.Context, path string) (*websocket.Conn, error) {
+	return c.dialRaw(ctx, c.at(path))
+}
+
+func (c *Client) dialRaw(ctx context.Context, path string) (*websocket.Conn, error) {
 	u := *c.base
 	u.Scheme = map[string]string{"https": "wss"}[c.base.Scheme]
 	if u.Scheme == "" {
@@ -170,6 +241,7 @@ func (c *Client) dial(ctx context.Context, path string) (*websocket.Conn, error)
 
 // wireEvent mirrors model.Event but keeps Data raw so it can be decoded per type.
 type wireEvent struct {
+	Machine   string          `json:"-"` // which computer sent it
 	Type      model.EventType `json:"type"`
 	ProjectID string          `json:"project_id"`
 	TodoID    string          `json:"todo_id"`
@@ -179,10 +251,10 @@ type wireEvent struct {
 
 // StreamEvents connects to /ws/events and delivers events until ctx ends,
 // reconnecting with backoff. connected reports link state changes.
-func (c *Client) StreamEvents(ctx context.Context, deliver func(wireEvent), connected func(bool, error)) {
+func (c *Client) StreamEvents(ctx context.Context, m Machine, deliver func(wireEvent), connected func(bool, error)) {
 	backoff := time.Second
 	for ctx.Err() == nil {
-		conn, err := c.dial(ctx, "/ws/events")
+		conn, err := c.dialRaw(ctx, m.Prefix+"/ws/events")
 		if err != nil {
 			connected(false, err)
 			if errors.Is(err, ErrUnauthorized) {
@@ -204,6 +276,7 @@ func (c *Client) StreamEvents(ctx context.Context, deliver func(wireEvent), conn
 			if err := conn.ReadJSON(&ev); err != nil {
 				break
 			}
+			ev.Machine = m.Name
 			deliver(ev)
 		}
 		conn.Close()
@@ -213,7 +286,7 @@ func (c *Client) StreamEvents(ctx context.Context, deliver func(wireEvent), conn
 
 // ChatTurn streams one assistant reply for history.
 func (c *Client) ChatTurn(ctx context.Context, history []agent.ChatMessage, deliver func(agent.ChatDelta)) error {
-	conn, err := c.dial(ctx, "/ws/chat")
+	conn, err := c.dialRaw(ctx, "/ws/chat") // chat always runs on this computer
 	if err != nil {
 		return err
 	}

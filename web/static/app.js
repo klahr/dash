@@ -1,5 +1,6 @@
 // Dash web client. REST for state, /ws/events for live updates,
 // /ws/chat for streaming answers, /ws/proc/:id for terminals.
+import { mdEditor, drafts } from "./editor.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -18,8 +19,16 @@ const h = (tag, props = {}, ...kids) => {
 const wsURL = (path) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
 const desktop = matchMedia("(min-width: 1024px)");
 
-async function api(method, path, body) {
-  const res = await fetch(path, {
+// Several computers can share this dashboard. Each runs its own Dash; the
+// one serving this page forwards /peer/<name>/… to the others. A project's
+// API calls go to the computer it lives on (its prefix); login, logout and
+// the computer list always go to this one.
+const HUB_ONLY = /^\/api\/(login|logout|me|machines|version)\b/;
+const here = () => state.project?.prefix || "";
+const on = (prefix, path) => (HUB_ONLY.test(path) ? path : `${prefix}${path}`);
+
+async function api(method, path, body, prefix = here()) {
+  const res = await fetch(on(prefix, path), {
     method,
     headers: body ? { "Content-Type": "application/json" } : {},
     body: body ? JSON.stringify(body) : undefined,
@@ -101,11 +110,11 @@ function ask({ title, body = "", input = false, placeholder = "", ok = "OK", dan
 // text field, or drop onto the sheet.
 const CLIP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5 12.6 19.9a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const clip = () => h("span", { class: "clip", innerHTML: CLIP });
-const uploadURL = (a) => `/api/uploads/${a.id}/${encodeURIComponent(a.name)}`;
+const uploadURL = (a) => on(here(), `/api/uploads/${a.id}/${encodeURIComponent(a.name)}`);
 const ACCEPT = "image/png,image/jpeg,image/gif,image/webp,.pdf,.txt,.md,.log,.json,.csv";
 
 async function uploadFile(file) {
-  const res = await fetch(`/api/uploads?name=${encodeURIComponent(file.name || "pasted")}`, {
+  const res = await fetch(on(here(), `/api/uploads?name=${encodeURIComponent(file.name || "pasted")}`), {
     method: "POST", body: file, headers: { "Content-Type": file.type || "application/octet-stream" },
   });
   if (res.status === 401) { location.replace("/login.html"); throw new Error("Sign in again to continue."); }
@@ -123,11 +132,11 @@ function attachThumb(a, onRemove) {
     onRemove ? h("button", { type: "button", class: "chip-x", "aria-label": `Remove ${a.name}`, onclick: onRemove }, "×") : null);
 }
 
-function attachBox(el, textarea) {
+function attachBox(el, textarea, onChange = () => {}) {
   let items = [], pending = 0, busy = Promise.resolve();
   const input = h("input", { type: "file", accept: ACCEPT, multiple: true, hidden: true, onchange: () => { add(input.files); input.value = ""; } });
   const render = () => el.replaceChildren(
-    ...items.map((a) => attachThumb(a, () => { items = items.filter((x) => x !== a); render(); })),
+    ...items.map((a) => attachThumb(a, () => { items = items.filter((x) => x !== a); render(); onChange(); })),
     ...(pending ? [h("span", { class: "chip uploading" }, h("span", { class: "spinner", "aria-hidden": "true" }), `Uploading ${pending}…`)] : []),
     h("button", { type: "button", class: "btn small attach-btn", onclick: () => input.click() },
       clip(),
@@ -140,7 +149,7 @@ function attachBox(el, textarea) {
     render();
     busy = busy.then(async () => {
       for (const f of files) {
-        try { items.push(await uploadFile(f)); } catch (e) { fail(e); }
+        try { items.push(await uploadFile(f)); onChange(); } catch (e) { fail(e); }
         pending--;
         render();
       }
@@ -167,10 +176,56 @@ function attachBox(el, textarea) {
   return {
     reset(list = []) { items = [...list]; pending = 0; render(); },
     ids: () => items.map((a) => a.id),
+    items: () => [...items],
     settled: () => busy,
   };
 }
-const todoAttach = attachBox($("#todo-attach"), $("#todo-form").prompt);
+const todoAttach = attachBox($("#todo-attach"), $("#todo-form").prompt, () => draft.changed());
+const promptEditor = mdEditor($("#todo-form").prompt);
+
+// The todo form autosaves to this browser while you type; reopening the
+// form (even after a reload or a crash) brings the draft back.
+const draftKey = (t) => `${projectKey(state.project)}/${t?.id || "new"}`;
+const draft = drafts({
+  read() {
+    const f = $("#todo-form");
+    return { title: f.title.value, prompt: f.prompt.value, goal: f.goal.checked, priority: f.priority.value, attachments: todoAttach.items() };
+  },
+  write(d) {
+    const f = $("#todo-form");
+    f.title.value = d.title ?? "";
+    f.prompt.value = d.prompt ?? "";
+    f.goal.checked = !!d.goal;
+    f.priority.value = d.priority ?? 0;
+    todoAttach.reset(d.attachments || []);
+    promptEditor.render();
+  },
+  onStatus(st, at) {
+    const el = $("#todo-draft");
+    if (st === "typing") return;
+    el.dataset.state = st;
+    if (st === "saved") { el.replaceChildren("Draft saved on this device"); return; }
+    if (st === "restored") {
+      el.replaceChildren(`Restored your unsaved draft from ${ago(new Date(at).toISOString()) === "now" ? "just now" : `${ago(new Date(at).toISOString())} ago`}. `,
+        h("button", { type: "button", class: "link inline", onclick: discardDraft }, "Discard it"));
+      return;
+    }
+    el.replaceChildren();
+  },
+});
+function discardDraft() {
+  draft.discard();
+  const t = editing;
+  const f = $("#todo-form");
+  f.reset();
+  if (t) { f.title.value = t.title; f.prompt.value = t.prompt; f.goal.checked = t.goal; f.priority.value = t.priority; }
+  todoAttach.reset(t?.attachments || []);
+  promptEditor.render();
+  draft.open(draftKey(t));
+  toast("Draft discarded");
+}
+$("#todo-form").addEventListener("input", () => draft.changed());
+$("#todo-form").addEventListener("change", () => draft.changed());
 const askAttach = attachBox($("#ask-attach"), $("#ask-input"));
 
 // ------------------------------------------------------------------ state
@@ -234,27 +289,47 @@ function applyView(name) {
 $$(".nav > button[data-view]").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 
 // ------------------------------------------------------------------ live events
-function connectEvents() {
-  const ws = new WebSocket(wsURL("/ws/events"));
+// One live connection per computer, so notifications arrive from all of them.
+const sockets = new Map(); // machine name → { ws, live }
+async function connectAll() {
+  state.machines = await api("GET", "/api/machines");
+  for (const m of state.machines) if (m.ok && !sockets.has(m.name)) connectEvents(m);
+  await loadProjects();
+}
+
+function connectEvents(m) {
+  const ws = new WebSocket(wsURL(on(m.prefix, "/ws/events")));
+  const sock = { ws, live: false };
+  sockets.set(m.name, sock);
   ws.onopen = () => {
-    setLive(true);
+    sock.live = true;
+    refreshLive();
+    if (m.local) checkForUpdate(); // a reconnect often means Dash restarted, maybe updated
     loadProjects().catch(fail);
   };
   ws.onclose = async () => {
-    setLive(false);
-    try { await api("GET", "/api/me"); } catch { return; }
-    setTimeout(connectEvents, 1500);
+    sock.live = false;
+    refreshLive();
+    // Logged out: go to the login page. Server down or restarting: keep trying.
+    const me = await fetch("/api/me").catch(() => null);
+    if (me?.status === 401) { location.replace("/login.html"); return; }
+    setTimeout(() => connectEvents(m), m.local ? 1500 : 5000);
   };
-  ws.onmessage = (m) => onEvent(JSON.parse(m.data));
+  ws.onmessage = (msg) => onEvent(JSON.parse(msg.data), m);
 }
+
+const multi = () => (state.machines || []).length > 1;
+function refreshLive() { setLive(!!sockets.get(state.project?.machine || state.machines?.[0]?.name)?.live); }
 function setLive(on) {
   $("#live").classList.toggle("on", on);
   $("#live").title = on ? "Live updates connected" : "Live updates disconnected — reconnecting";
   $("#live-label").textContent = on ? "Live" : "Offline";
 }
 
-function onEvent(ev) {
-  const mine = state.project && ev.project_id === state.project.id;
+function onEvent(ev, m = { name: "" }) {
+  const sameMachine = !state.project || m.name === state.project.machine;
+  const mine = state.project && ev.project_id === state.project.id && sameMachine;
+  if (!mine) elsewhere(ev, m);
   switch (ev.type) {
     case "project.updated":
       loadProjects().catch(fail);
@@ -295,10 +370,10 @@ function onEvent(ev) {
       }
       break;
     case "git.op":
-      if (mine || !ev.project_id) addActivity(ev);
+      if (mine || (!ev.project_id && sameMachine)) addActivity(ev);
       break;
     case "merge.queue":
-      $("#merge-status").textContent = ev.data.pending ? `${ev.data.pending} in merge queue` : "";
+      if (sameMachine) $("#merge-status").textContent = ev.data.pending ? `${ev.data.pending} in merge queue` : "";
       break;
     case "process.updated":
       if (mine) loadProcs().catch(fail);
@@ -315,6 +390,7 @@ function onEvent(ev) {
       renderPerms();
       break;
     case "usage.updated":
+      if (!sameMachine) break;
       state.usage = ev.data;
       renderUsage();
       break;
@@ -331,13 +407,46 @@ function onEvent(ev) {
   }
 }
 
+// Things that happen in projects you're not looking at, possibly on another
+// computer: tell the user about the ones that need them.
+const seen = new Map(); // "machine/todo" → last status
+function elsewhere(ev, m) {
+  const p = (state.projects || []).find((x) => x.id === ev.project_id && x.machine === m.name);
+  const where = p ? (multi() ? `${p.name} on ${m.name}` : p.name) : m.name;
+  if (ev.type === "todo.updated") {
+    const key = `${m.name}/${ev.todo_id}`;
+    const prev = seen.get(key);
+    seen.set(key, ev.data.status);
+    if (!prev || prev === ev.data.status) return;
+    if (ev.data.status === "review") { toast(`Ready for review in ${where}: ${title(ev.data)}`); notify("Ready for review", ev.data, where); }
+    if (ev.data.status === "failed") notify("Failed", ev.data, `${where}: ${ev.data.error || ""}`);
+  }
+  if (ev.type === "permission.updated" && !ev.data.decision) {
+    toast(`Claude needs your approval in ${where}`);
+    notify(`Claude wants to ${describePerm(ev.data).title}`, { title: where, prompt: "" }, describePerm(ev.data).detail);
+  }
+}
+
+const projectKey = (p) => (p ? `${p.machine}/${p.id}` : "");
+
 // ------------------------------------------------------------------ projects
 async function loadProjects() {
-  state.projects = await api("GET", "/api/projects");
+  if (!state.machines) state.machines = await api("GET", "/api/machines");
+  const lists = await Promise.all(state.machines.map(async (m) => {
+    if (!m.ok) return [];
+    try {
+      return (await api("GET", "/api/projects", null, m.prefix)).map((p) => ({ ...p, machine: m.name, prefix: m.prefix }));
+    } catch (e) {
+      m.ok = false;
+      m.error = e.message;
+      return [];
+    }
+  }));
+  state.projects = lists.flat();
   const saved = (() => { try { return localStorage.getItem("dash.project"); } catch { return null; } })();
-  const want = state.project?.id || saved;
-  const next = state.projects.find((p) => p.id === want) || state.projects[0] || null;
-  if (next?.id !== state.project?.id) await selectProject(next);
+  const want = projectKey(state.project) || saved;
+  const next = state.projects.find((p) => projectKey(p) === want || p.id === want) || state.projects[0] || null;
+  if (projectKey(next) !== projectKey(state.project)) await selectProject(next);
   else { state.project = next; renderProjectHeader(); }
   renderProjectList();
 }
@@ -347,8 +456,10 @@ async function selectProject(p) {
   state.todos = new Map();
   state.lane = null;
   closeDetail();
-  try { if (p) localStorage.setItem("dash.project", p.id); } catch {}
+  try { if (p) localStorage.setItem("dash.project", projectKey(p)); } catch {}
   renderProjectHeader();
+  refreshLive();
+  loadUsage().catch(() => {});
   renderProjectList();
   state.ci = null;
   renderCI();
@@ -365,7 +476,8 @@ async function loadPerms() {
 function renderProjectHeader() {
   const p = state.project;
   $("#project-name").textContent = p ? p.name : "No project";
-  $("#project-branch").textContent = p ? p.default_branch : "";
+  // With several computers the header names the computer (the branch fits on wide screens too).
+  $("#project-branch").textContent = !p ? "" : !multi() ? p.default_branch : desktop.matches ? `${p.default_branch} · ${p.machine}` : p.machine;
   const warn = $("#sync-warn");
   warn.hidden = !p?.sync_error;
   if (p?.sync_error) {
@@ -375,11 +487,26 @@ function renderProjectHeader() {
 }
 
 function renderProjectList() {
-  $("#project-list").replaceChildren(...state.projects.map((p) => h("li", {},
+  const item = (p) => h("li", {},
     h("button", {
-      type: "button", "aria-current": state.project?.id === p.id ? "true" : "false",
+      type: "button", "aria-current": projectKey(state.project) === projectKey(p) ? "true" : "false",
       onclick: attempt(async () => { await selectProject(p); $("#project-sheet").close(); }),
-    }, h("strong", {}, p.name), h("span", { class: "path" }, p.path)))));
+    }, h("strong", {}, p.name), h("span", { class: "path" }, p.path)));
+  if (!multi()) {
+    $("#project-list").replaceChildren(...state.projects.map(item));
+  } else {
+    $("#project-list").replaceChildren(...state.machines.flatMap((m) => [
+      h("li", { class: "machine-head" },
+        h("span", { class: `machine-dot ${m.ok ? "ok" : "down"}`, "aria-hidden": "true" }),
+        h("strong", {}, m.name), m.local ? h("span", { class: "machine-note" }, "this computer") : null,
+        m.ok ? null : h("span", { class: "machine-err" }, m.error || "unreachable")),
+      ...state.projects.filter((p) => p.machine === m.name).map(item),
+      ...(m.ok && !state.projects.some((p) => p.machine === m.name) ? [h("li", { class: "machine-empty" }, "No projects yet")] : []),
+    ]));
+  }
+  const sel = $("#new-project").machine;
+  sel.closest(".field").hidden = !multi();
+  sel.replaceChildren(...(state.machines || []).filter((m) => m.ok).map((m) => h("option", { value: m.name, selected: m.name === state.project?.machine }, m.local ? `${m.name} (this computer)` : m.name)));
 
   const p = state.project;
   $("#project-tools").replaceChildren(...(p ? [
@@ -413,12 +540,13 @@ async function createGitHubRepo() {
 $("#project-switch").addEventListener("click", () => { renderProjectList(); $("#project-sheet").showModal(); });
 $("#new-project").addEventListener("submit", attempt(async (e) => {
   e.preventDefault();
-  const body = Object.fromEntries(new FormData(e.target));
-  const p = await api("POST", "/api/projects", body);
+  const { machine, ...body } = Object.fromEntries(new FormData(e.target));
+  const m = state.machines?.find((x) => x.name === machine) || state.machines?.[0] || { name: "", prefix: "" };
+  const p = await api("POST", "/api/projects", body, m.prefix);
   e.target.reset();
   e.target.closest("details").open = false;
-  state.projects = await api("GET", "/api/projects");
-  await selectProject(state.projects.find((x) => x.id === p.id));
+  await loadProjects();
+  await selectProject(state.projects.find((x) => x.id === p.id && x.machine === m.name));
   $("#project-sheet").close();
   toast(`Created ${p.name}`);
 }));
@@ -608,13 +736,21 @@ function openTodoForm(t = null) {
     f.priority.value = t.priority;
   }
   todoAttach.reset(t?.attachments || []);
+  promptEditor.render();
+  draft.open(draftKey(t));
   $("#todo-sheet").showModal();
   (t ? f.prompt : f.title).focus();
 }
 $("#new-todo").addEventListener("click", () => openTodoForm());
 $("#todo-sheet").addEventListener("close", attempt(async () => {
   const action = $("#todo-sheet").returnValue;
-  if (action !== "draft" && action !== "queue") return;
+  if (action !== "draft" && action !== "queue") {
+    const kept = draft.has(draftKey(editing));
+    draft.close();
+    if (draft.has(draftKey(editing)) && !kept) toast("Your draft is kept; open the form again to continue");
+    return;
+  }
+  draft.flush(); // if saving fails below, the draft is still there
   const f = $("#todo-form");
   await todoAttach.settled();
   const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), goal: f.goal.checked, priority: Number(f.priority.value) || 0, attachments: todoAttach.ids() };
@@ -628,6 +764,7 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
     toast(action === "queue" ? "Added to queue" : "Saved as draft");
     state.lane = action === "queue" ? "queued" : "draft";
   }
+  draft.done();
 }));
 // Native form validation would block "Save as draft" too; we validate on close instead.
 $("#todo-form").noValidate = true;
@@ -1313,7 +1450,7 @@ function attach(p) {
   $("#term-title").textContent = p.command;
   term.reset();
   requestAnimationFrame(fitTerm);
-  termWS = new WebSocket(wsURL(`/ws/proc/${p.id}`));
+  termWS = new WebSocket(wsURL(on(here(), `/ws/proc/${p.id}`)));
   termWS.binaryType = "arraybuffer";
   termWS.onopen = sendSize;
   termWS.onmessage = (m) => {
@@ -1688,7 +1825,8 @@ async function runCommand(line) {
     case "activity": case "log": return showView("activity");
     case "p": case "project": {
       if (!arg) { renderProjectList(); return $("#project-sheet").showModal(); }
-      const p = state.projects.find((x) => x.name.toLowerCase().startsWith(arg.toLowerCase()));
+      const [pn, mn = ""] = arg.toLowerCase().split("@");
+      const p = state.projects.find((x) => x.name.toLowerCase().startsWith(pn) && x.machine.toLowerCase().startsWith(mn));
       if (!p) throw new Error(`No project matching "${arg}".`);
       return selectProject(p);
     }
@@ -1696,8 +1834,9 @@ async function runCommand(line) {
       const [pname, path = ""] = arg.split(/\s+/, 2);
       if (!pname) throw new Error("Usage: :newproject <name> [path]");
       const p = await api("POST", "/api/projects", { name: pname, path });
-      state.projects = await api("GET", "/api/projects");
-      await selectProject(state.projects.find((x) => x.id === p.id));
+      const machine = state.project?.machine || state.machines?.[0]?.name;
+      await loadProjects();
+      await selectProject(state.projects.find((x) => x.id === p.id && x.machine === machine));
       return toast(`Created ${p.name}`);
     }
     case "new": case "o":
@@ -1894,5 +2033,31 @@ desktop.addEventListener("change", () => { if (state.detail) $("#scrim").hidden 
 renderBoard();
 setMode();
 setInterval(() => { if (!document.hidden) renderBoard(); }, 30000); // keep "4m"/"2h" current
-connectEvents();
-loadUsage().catch(() => {});
+connectAll().catch(fail);
+
+// ------------------------------------------------------------------ app updates
+// Installable (PWA), but never stuck on an old copy: the service worker
+// prefers the network, and the page compares the version it was loaded with
+// against the server's, offering a reload when Dash was updated.
+const loadedVersion = document.querySelector('meta[name="dash-version"]')?.content;
+let updateShown = false;
+async function checkForUpdate() {
+  if (updateShown || !loadedVersion || loadedVersion.startsWith("{{")) return;
+  const { version } = await api("GET", "/api/version").catch(() => ({}));
+  if (!version || version === loadedVersion) return;
+  updateShown = true;
+  const bar = h("div", { class: "update-bar", role: "status" },
+    h("span", {}, "Dash was updated."),
+    h("button", { type: "button", class: "btn small primary", onclick: () => { draft.flush(); location.reload(); } }, "Reload"),
+    h("button", { type: "button", class: "link inline", onclick: () => leave(bar, "leaving", () => bar.remove()) }, "Later"));
+  document.body.append(bar);
+}
+setInterval(() => { if (!document.hidden) checkForUpdate(); }, 5 * 60000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkForUpdate(); });
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").then((reg) => {
+    setInterval(() => reg.update().catch(() => {}), 30 * 60000);
+  }).catch(() => {});
+}
+// Pick up computers that were offline at start (or came back) every minute.
+setInterval(() => { if (!document.hidden) connectAll().catch(() => {}); }, 60000);

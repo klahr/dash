@@ -29,6 +29,28 @@ Dash runs commands on your machine, so only expose it over HTTPS. Two easy ways:
 Any other HTTPS reverse proxy (Caddy, nginx) works the same way as Tailscale: keep Dash on
 `127.0.0.1` and pass `-trust-proxy`.
 
+Dash can be installed as an app from the browser menu ("Install" or "Add to Home Screen"). It
+checks for updates and offers a reload, so an installed copy never goes stale.
+
+## Several computers
+
+Run Dash on each computer (say home and work), each with its own projects and Claude login, and
+watch them all from one dashboard. Set the same secret on every computer:
+
+```sh
+echo "DASH_PEER_TOKEN=$(openssl rand -hex 24)" >> .env   # same value everywhere
+```
+
+Make the other computers reachable over HTTPS (Tailscale is easiest, see above), then start the
+one you open with a `-peer` for each of the others:
+
+```sh
+./bin/dash -name home -peer work=https://work.<tailnet>.ts.net
+```
+
+Projects are grouped by computer, and todos run on the computer that has the project.
+Notifications come from all of them.
+
 ## GitHub
 
 Connect a repository from Projects → Create GitHub repository (uses `gh`). In the project's

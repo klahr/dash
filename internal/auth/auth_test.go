@@ -162,3 +162,28 @@ func TestTrustProxy(t *testing.T) {
 		t.Fatalf("want the address the proxy saw, not a client-supplied one; got %s", ip)
 	}
 }
+
+func TestSessionsSurviveRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions.json")
+	a1, h1 := newServer(t)
+	if err := a1.KeepSessions(path); err != nil {
+		t.Fatal(err)
+	}
+	c := sessionCookie(t, do(h1, "POST", "/api/login", `{"username":"admin","password":"s3cret"}`))
+	if b, _ := os.ReadFile(path); strings.Contains(string(b), c.Value) {
+		t.Fatal("the sessions file must not contain usable tokens")
+	}
+
+	a2, h2 := newServer(t) // "restarted"
+	if err := a2.KeepSessions(path); err != nil {
+		t.Fatal(err)
+	}
+	if w := do(h2, "GET", "/api/projects", "", c); w.Code != http.StatusOK {
+		t.Fatalf("session should survive a restart, got %d", w.Code)
+	}
+	a3, _ := New("admin", "new-password") // credentials changed: old sessions are dropped
+	_ = a3.KeepSessions(path)
+	if len(a3.sessions) != 0 {
+		t.Fatal("sessions must not survive a password change")
+	}
+}

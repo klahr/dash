@@ -4,6 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101722">
+  <meta name="dash-version" content="{{DASH_VERSION}}">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Dash">
   <meta name="color-scheme" content="dark">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
@@ -171,7 +176,8 @@
     <form method="dialog" id="todo-form">
       <header class="sheet-head"><h2 id="todo-sheet-title">New todo</h2><button class="link" value="cancel" formnovalidate>Cancel</button></header>
       <label class="field"><span>Title <em>optional, Claude names it if empty</em></span><input name="title" placeholder="Short name for the task" autocomplete="off"></label>
-      <label class="field"><span>Instructions for Claude</span><textarea name="prompt" rows="6" required placeholder="Describe the change you want. Claude works in its own worktree; you review the diff before it merges."></textarea></label>
+      <label class="field"><span>Instructions for Claude <em>Markdown</em></span><textarea name="prompt" rows="8" required placeholder="Describe the change you want. Claude works in its own worktree; you review the diff before it merges."></textarea></label>
+      <div class="draft-status" id="todo-draft" aria-live="polite"></div>
       <div class="attach" id="todo-attach" data-attach></div>
       <div class="field-row">
         <label class="toggle"><input type="checkbox" name="goal"><span>Milestone</span></label>
@@ -195,6 +201,7 @@
     <details class="new-project">
       <summary>New project</summary>
       <form id="new-project">
+        <label class="field" hidden><span>Computer</span><select name="machine"></select></label>
         <label class="field"><span>Name</span><input name="name" required autocomplete="off"></label>
         <label class="field"><span>Existing repository path <em>optional</em></span><input name="path" placeholder="Leave empty to create a new repo" autocomplete="off" spellcheck="false"></label>
         <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" placeholder="npm run dev -- --port $PORT" spellcheck="false"></label>

@@ -20,7 +20,11 @@ var commands = []string{
 func (a *App) commandSuggestions() []string {
 	out := append([]string(nil), commands...)
 	for _, p := range a.projects {
-		out = append(out, "project "+p.Name)
+		if a.multi() {
+			out = append(out, "project "+p.Name+"@"+p.Machine)
+		} else {
+			out = append(out, "project "+p.Name)
+		}
 	}
 	return out
 }

@@ -142,17 +142,22 @@ type App struct {
 	pending string // multi-key sequences: g, d, Z
 	count   int
 
-	flash      string
-	flashErr   bool
-	flashAt    time.Time
-	connected  bool
-	mergeQueue int
+	flash         string
+	flashErr      bool
+	flashAt       time.Time
+	connected     bool            // live link to the selected project's computer
+	links         map[string]bool // computer name → live link
+	streaming     map[string]bool // computers we follow events from
+	machines      []Machine
+	seenElsewhere map[string]model.TodoStatus
+	mergeQueue    int
 }
 
 func NewApp(c *Client, project string) *App {
 	ctx, cancel := context.WithCancel(context.Background())
 	a := &App{
-		c: c, ctx: ctx, stop: cancel, startPj: project,
+		c: c, ctx: ctx, stop: cancel, startPj: project, seenElsewhere: map[string]model.TodoStatus{},
+		links: map[string]bool{}, streaming: map[string]bool{},
 		todos: map[string]model.Todo{}, lastLine: map[string]string{}, dText: map[string]string{},
 		dKind: "log",
 	}
@@ -185,6 +190,7 @@ func (a *App) SetProgram(p *tea.Program) { a.prog = p }
 type (
 	projectsMsg struct {
 		ps  []model.Project
+		ms  []Machine
 		err error
 	}
 	todosMsg struct {
@@ -203,8 +209,9 @@ type (
 	}
 	eventMsg wireEvent
 	connMsg  struct {
-		ok  bool
-		err error
+		machine string
+		ok      bool
+		err     error
 	}
 	chatDeltaMsg agent.ChatDelta
 	chatEndMsg   struct{ err error }
@@ -229,20 +236,50 @@ type (
 )
 
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.loadProjects(), a.streamEvents(), a.loadUsage(), tick())
+	return tea.Batch(a.loadProjects(), a.loadUsage(), tick())
 }
 
-func (a *App) streamEvents() tea.Cmd {
-	return func() tea.Msg {
-		go a.c.StreamEvents(a.ctx,
+// streamEvents follows every reachable computer's events (once each), so
+// reviews and approvals elsewhere still ring the bell.
+func (a *App) streamEvents() {
+	if a.streaming == nil {
+		a.streaming, a.links = map[string]bool{}, map[string]bool{}
+	}
+	for _, m := range a.machines {
+		if !m.OK || a.streaming[m.Name] {
+			continue
+		}
+		a.streaming[m.Name] = true
+		go a.c.StreamEvents(a.ctx, m,
 			func(ev wireEvent) { a.prog.Send(eventMsg(ev)) },
-			func(ok bool, err error) { a.prog.Send(connMsg{ok, err}) })
-		return nil
+			func(ok bool, err error) { a.prog.Send(connMsg{m.Name, ok, err}) })
 	}
 }
 
 func (a *App) loadProjects() tea.Cmd {
-	return func() tea.Msg { ps, err := a.c.Projects(); return projectsMsg{ps, err} }
+	return func() tea.Msg { ps, ms, err := a.c.AllProjects(); return projectsMsg{ps, ms, err} }
+}
+
+// machine is the selected project's computer.
+func (a *App) machine() string {
+	if a.proj != nil {
+		return a.proj.Machine
+	}
+	if len(a.machines) > 0 {
+		return a.machines[0].Name
+	}
+	return ""
+}
+
+func (a *App) multi() bool { return len(a.machines) > 1 }
+
+func (a *App) prefixOf(machine string) string {
+	for _, m := range a.machines {
+		if m.Name == machine {
+			return m.Prefix
+		}
+	}
+	return ""
 }
 
 func (a *App) loadTodos() tea.Cmd {
@@ -380,7 +417,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.setFlash(msg.err.Error(), true)
 			return a, nil
 		}
-		a.projects = msg.ps
+		a.projects, a.machines = msg.ps, msg.ms
+		if a.prog != nil {
+			a.streamEvents()
+		}
 		return a, a.reselectProject()
 
 	case todosMsg:
@@ -417,9 +457,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handleEvent(wireEvent(msg))
 
 	case connMsg:
-		was := a.connected
-		a.connected = msg.ok
-		if msg.ok && !was {
+		was := a.links[msg.machine]
+		a.links[msg.machine] = msg.ok
+		a.connected = a.links[a.machine()]
+		if msg.ok && !was && msg.machine == a.machine() {
 			return a, tea.Batch(a.loadProjects(), a.loadTodos(), a.loadProcs(), a.loadPerms(), a.loadUsage())
 		}
 		if msg.err != nil && errors.Is(msg.err, ErrUnauthorized) {
@@ -522,18 +563,19 @@ func (a *App) reselectProject() tea.Cmd {
 		a.proj = nil
 		return nil
 	}
-	want := a.startPj
+	want, wantMachine := a.startPj, ""
 	if a.proj != nil {
-		want = a.proj.ID
+		want, wantMachine = a.proj.ID, a.proj.Machine
+	} else if n, m, ok := strings.Cut(want, "@"); ok {
+		want, wantMachine = n, m
 	}
 	for i := range a.projects {
 		p := &a.projects[i]
-		if p.ID == want || strings.EqualFold(p.Name, want) {
-			changed := a.proj == nil || a.proj.ID != p.ID
-			a.proj = p
-			if changed {
-				return tea.Batch(a.loadTodos(), a.loadProcs(), a.loadPerms())
+		if (p.ID == want || strings.EqualFold(p.Name, want)) && (wantMachine == "" || p.Machine == wantMachine) {
+			if a.proj == nil || a.proj.ID != p.ID || a.proj.Machine != p.Machine {
+				return a.selectProject(i)
 			}
+			a.proj = p
 			return nil
 		}
 	}
@@ -542,12 +584,14 @@ func (a *App) reselectProject() tea.Cmd {
 
 func (a *App) selectProject(i int) tea.Cmd {
 	a.proj = &a.projects[i]
+	a.c.SetPrefix(a.prefixOf(a.proj.Machine))
+	a.connected = a.links[a.proj.Machine]
 	a.todos, a.procs, a.cols = map[string]model.Todo{}, nil, nil
 	a.col, a.row, a.procRow = 0, 0, 0
 	a.overlay = ovNone
 	a.perms = nil
 	a.ci = nil
-	return tea.Batch(a.loadTodos(), a.loadProcs(), a.loadPerms(), a.loadCI(false, false))
+	return tea.Batch(a.loadTodos(), a.loadProcs(), a.loadPerms(), a.loadCI(false, false), a.loadUsage())
 }
 
 func (a *App) matches(t model.Todo) bool {
@@ -610,6 +654,9 @@ func (a *App) selected() (model.Todo, bool) {
 }
 
 func (a *App) handleEvent(ev wireEvent) tea.Cmd {
+	if ev.Machine != a.machine() {
+		return a.elsewhere(ev)
+	}
 	mine := a.proj != nil && ev.ProjectID == a.proj.ID
 	switch ev.Type {
 	case model.EvProjectUpdated:
@@ -720,6 +767,40 @@ func (a *App) handleEvent(ev wireEvent) tea.Cmd {
 			a.setFlash("build passing again on "+st.Branch, false)
 		}
 		a.ci = &st
+	}
+	return nil
+}
+
+// elsewhere handles events from computers other than the selected
+// project's: a flash and the bell when something there needs you.
+func (a *App) elsewhere(ev wireEvent) tea.Cmd {
+	name := ev.Machine
+	for _, p := range a.projects {
+		if p.ID == ev.ProjectID && p.Machine == ev.Machine {
+			name = p.Name + "@" + p.Machine
+		}
+	}
+	switch ev.Type {
+	case model.EvProjectUpdated:
+		return a.loadProjects()
+	case model.EvTodoUpdated:
+		var t model.Todo
+		if json.Unmarshal(ev.Data, &t) != nil {
+			return nil
+		}
+		key := ev.Machine + "/" + t.ID
+		prev := a.seenElsewhere[key]
+		a.seenElsewhere[key] = t.Status
+		if prev != "" && prev != t.Status && (t.Status == model.StatusReview || t.Status == model.StatusFailed) {
+			a.setFlash(fmt.Sprintf("%s: %s is %s", name, title(t), map[model.TodoStatus]string{model.StatusReview: "ready for review", model.StatusFailed: "failed"}[t.Status]), t.Status == model.StatusFailed)
+			a.bell()
+		}
+	case model.EvPermission:
+		var p PermRequest
+		if json.Unmarshal(ev.Data, &p) == nil && p.Decision == "" {
+			a.setFlash(name+": Claude is waiting for your approval (:project "+name+")", true)
+			a.bell()
+		}
 	}
 	return nil
 }
@@ -949,7 +1030,7 @@ func (a *App) normalKey(s string) tea.Cmd {
 		if a.overlay != ovForm {
 			a.overlay = ovPicker
 			for i, p := range a.projects {
-				if a.proj != nil && p.ID == a.proj.ID {
+				if a.proj != nil && p.ID == a.proj.ID && p.Machine == a.proj.Machine {
 					a.pickRow = i
 				}
 			}
@@ -1538,8 +1619,9 @@ func (a *App) runCommand(line string) tea.Cmd {
 			a.overlay = ovPicker
 			return nil
 		}
+		pn, mn, _ := strings.Cut(strings.ToLower(arg), "@") // name@computer
 		for i, p := range a.projects {
-			if strings.HasPrefix(strings.ToLower(p.Name), strings.ToLower(arg)) {
+			if strings.HasPrefix(strings.ToLower(p.Name), pn) && strings.HasPrefix(strings.ToLower(p.Machine), mn) {
 				return a.selectProject(i)
 			}
 		}

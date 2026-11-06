@@ -21,6 +21,7 @@ import (
 	"github.com/klahr/dash/internal/ci"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
+	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/runner"
@@ -50,6 +51,14 @@ func main() {
 	editor := flag.String("editor", os.Getenv("DASH_EDITOR"), "command that opens a worktree on this machine, e.g. \"code\" (or $DASH_EDITOR)")
 	autoTitles := flag.Bool("auto-titles", true, "name todos created without a title (a short claude call with -title-model)")
 	titleModel := flag.String("title-model", "haiku", "model for automatic titles")
+	hostname, _ := os.Hostname()
+	machine := flag.String("name", strings.ToLower(strings.Split(hostname, ".")[0]), "this computer's name in the dashboard")
+	var peers []peer.Peer
+	flag.Func("peer", "another computer running Dash to show in this dashboard, as name=https://host (repeatable; needs DASH_PEER_TOKEN on both)", func(s string) error {
+		p, err := peer.Parse(s)
+		peers = append(peers, p)
+		return err
+	})
 	envFile := flag.String("env", ".env", "file with DASH_USERNAME / DASH_PASSWORD (real env vars take precedence)")
 	flag.Parse()
 
@@ -65,6 +74,20 @@ func main() {
 		os.Exit(1)
 	}
 	authn.TrustProxy, hub.TrustProxy = *trustProxy, *trustProxy
+	// A shared secret lets the computers in one dashboard call each other.
+	peerToken := os.Getenv("DASH_PEER_TOKEN")
+	if peerToken != "" && len(peerToken) < 24 {
+		slog.Error("DASH_PEER_TOKEN must be at least 24 characters (try: openssl rand -hex 24)")
+		os.Exit(1)
+	}
+	if len(peers) > 0 && peerToken == "" {
+		slog.Error("-peer needs DASH_PEER_TOKEN, set to the same value on every computer")
+		os.Exit(1)
+	}
+	authn.PeerToken = peerToken
+	if err := authn.KeepSessions(filepath.Join(*dataDir, "sessions.json")); err != nil {
+		slog.Warn("read sessions", "err", err)
+	}
 	useTLS := *tlsCert != "" || *tlsKey != ""
 	if useTLS && (*tlsCert == "" || *tlsKey == "") {
 		slog.Error("-tls-cert and -tls-key go together")
@@ -158,6 +181,7 @@ func main() {
 			Editor:      *editor,
 			UploadRoot:  uploads,
 			CI:          builds,
+			Peers:       &peer.Hub{Self: *machine, Token: peerToken, Peers: peers},
 			Titler:      titler,
 			ProjectRoot: *projectRoot,
 			Static:      web.Static,
