@@ -185,18 +185,7 @@
 
       <!-- Shell -->
       <section class="view" id="view-run" aria-label="Shell">
-        <div class="run-actions">
-          <button class="chip-btn" data-run="pty:" data-icon="terminal">Open shell</button>
-        </div>
-        <form class="run-custom" id="run-custom">
-          <input name="cmd" placeholder="Run a command…" aria-label="Command" autocomplete="off" spellcheck="false">
-          <button class="btn" data-icon="play">Run</button>
-        </form>
-        <ul class="procs" id="procs"></ul>
-        <div class="term-wrap" id="term-wrap" hidden>
-          <div class="term-head"><span id="term-title"></span><button class="link" id="term-close" data-icon="x">Close</button></div>
-          <div id="term"></div>
-        </div>
+        <div class="term-wrap" id="term-wrap"><div id="term"></div></div>
       </section>
 
       <!-- Activity -->
@@ -383,7 +372,7 @@
         <dt>Approvals</dt><dd><kbd>y</kbd> allow · <kbd>A</kbd> always allow that tool for the todo · <kbd>n</kbd> deny</dd>
         <dt>Todo chat</dt><dd><kbd>h</kbd>/<kbd>l</kbd> to the Chat tab · <kbd>i</kbd> type</dd>
         <dt>Chat</dt><dd><kbd>i</kbd> type · <kbd>Enter</kbd> send · <kbd>Esc</kbd> stop typing · <kbd>j</kbd>/<kbd>k</kbd> scroll</dd>
-        <dt>Shell</dt><dd><kbd>j</kbd>/<kbd>k</kbd> select · <kbd>Enter</kbd> view · <kbd>i</kbd> type into terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> shell · <kbd>/</kbd> command</dd>
+        <dt>Shell</dt><dd><kbd>i</kbd> type into terminal · <kbd>Ctrl-]</kbd> leave terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> new shell</dd>
         <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> add to queue · <kbd>Ctrl-Shift-Enter</kbd>/<kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>
         <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:todo …</code> <code>:new</code> <code>:run cmd</code> <code>:shell</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:activity</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:q</code></dd>
       </dl>

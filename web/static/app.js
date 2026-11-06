@@ -343,7 +343,7 @@ function applyView(name) {
     if (on) b.setAttribute("aria-current", "page");
   });
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
-  if (name === "run") requestAnimationFrame(fitTerm);
+  if (name === "run") requestAnimationFrame(() => { fitTerm(); ensureShell(); });
   if (name === "chat") $("#chat-log").scrollTop = $("#chat-log").scrollHeight;
 }
 $$(".nav > button[data-view]").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
@@ -1808,7 +1808,7 @@ let termWS = null;
 let attached = null;
 
 const sendSize = () => termWS?.readyState === 1 && termWS.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
-function fitTerm() { if (!$("#term-wrap").hidden) { try { fit.fit(); sendSize(); } catch {} } }
+function fitTerm() { if (state.view === "run") { try { fit.fit(); sendSize(); } catch {} } }
 new ResizeObserver(fitTerm).observe($("#term"));
 term.onData((data) => termWS?.readyState === 1 && termWS.send(JSON.stringify({ type: "input", data })));
 // Ctrl-] leaves the terminal and returns to normal mode, like detaching in the TUI.
@@ -1820,8 +1820,6 @@ term.attachCustomKeyEventHandler((e) => {
 function attach(p) {
   termWS?.close();
   attached = p.id;
-  $("#term-wrap").hidden = false;
-  $("#term-title").textContent = p.command;
   term.reset();
   requestAnimationFrame(fitTerm);
   termWS = new WebSocket(wsURL(on(here(), `/ws/proc/${p.id}`)));
@@ -1838,14 +1836,25 @@ function attach(p) {
   renderProcs();
   if (p.kind === "pty") term.focus();
 }
-$("#term-close").addEventListener("click", () => { termWS?.close(); attached = null; $("#term-wrap").hidden = true; renderProcs(); });
 
 async function startProc(req) {
   const p = await api("POST", `/api/projects/${state.project.id}/processes`, { ...req, cols: term.cols, rows: term.rows });
   closeDetail();
-  showView("run");
   attach(p);
+  showView("run");
   if (p.url) toast(`Server starting at ${p.url}`);
+}
+
+// The Shell view is only a terminal: show the project's running shell, or open one.
+let opening = false;
+function ensureShell() {
+  if (state.view !== "run" || !state.project || opening) return;
+  if (attached && state.procs.some((p) => p.id === attached)) return;
+  const pty = state.procs.filter((p) => p.kind === "pty" && p.running && p.dir === state.project.path)
+    .reduce((a, b) => (!a || b.started_at > a.started_at ? b : a), null);
+  if (pty) return attach(pty);
+  opening = true;
+  startProc({ kind: "pty" }).catch(fail).finally(() => { opening = false; });
 }
 
 const runPreset = attempt(async (e) => {
@@ -1854,14 +1863,13 @@ const runPreset = attempt(async (e) => {
   const [kind, preset] = spec.split(":");
   await startProc({ kind, preset });
 });
-$(".run-actions").addEventListener("click", runPreset);
 // While a quick action runs, clicking it shows its output instead of starting it again.
 $("#quick-actions").addEventListener("click", (e) => {
   const proc = quickProc(e.target.closest("[data-run]")?.dataset.run);
   if (!proc?.running) return runPreset(e);
   closeDetail();
-  showView("run");
   attach(proc);
+  showView("run");
 });
 
 // The latest server/test/deploy process started from the project's own checkout (not a worktree).
@@ -1898,13 +1906,6 @@ function renderQuick() {
   }
 }
 setInterval(() => { if ($(".quick-btn.running")) renderQuick(); }, 1000);
-$("#run-custom").addEventListener("submit", attempt(async (e) => {
-  e.preventDefault();
-  const command = e.target.cmd.value.trim();
-  if (!command || !state.project) return;
-  await startProc({ kind: "pty", command });
-  e.target.reset();
-}));
 
 async function loadProcs() {
   if (!state.project) return;
@@ -1917,17 +1918,7 @@ function renderProcs() {
   const running = state.procs.filter((p) => p.running).length;
   $("#proc-badge").hidden = !running;
   $("#proc-badge").textContent = running;
-  const kindLabel = { web: "Server", task: "Task", pty: "Terminal" };
-  keys.proc = Math.min(keys.proc, Math.max(0, state.procs.length - 1));
-  $("#procs").replaceChildren(...state.procs.map((p, i) => h("li", { class: `proc${p.id === attached ? " attached" : ""}${keys.active && state.view === "run" && i === keys.proc ? " cursor" : ""}` },
-    h("span", { class: "proc-cmd" }, p.command),
-    h("span", { class: "proc-actions" },
-      ib({ class: "btn", onclick: () => attach(p) }, "eye", p.id === attached ? "Viewing" : "View"),
-      p.running ? ib({ class: "btn danger", onclick: attempt(async () => { await api("DELETE", `/api/processes/${p.id}`); toast("Stopping"); }) }, "stop", "Stop") : null),
-    h("span", { class: "proc-meta" },
-      h("span", { class: `status proc-state${p.running ? " running" : ""}` }, p.running ? "Running" : `Exited ${p.exit_code ?? ""}`),
-      h("span", {}, kindLabel[p.kind] || p.kind),
-      p.url ? h("a", { href: p.url, target: "_blank", rel: "noopener" }, p.url) : null))));
+  ensureShell();
 }
 
 // ------------------------------------------------------------------ activity
@@ -2139,7 +2130,7 @@ async function reorder(t, laneKey, index) {
 // Normal mode is the default; typing in a field or the terminal is insert
 // mode. Esc (Ctrl-] in the terminal) returns to normal mode.
 const VIEWS = ["board", "chat", "run", "activity"];
-const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 }, proc: 0 };
+const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
 const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gc|gs|ga|G|u|p|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
@@ -2475,19 +2466,14 @@ async function handleNormal(k, n, hadCount) {
       if (["j", "k", "ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b", "gg", "G"].includes(k)) return scrollBy($("#chat-log"), k, n);
       return;
     case "run": {
-      const procs = state.procs;
-      const cur = procs[keys.proc];
+      const cur = state.procs.find((p) => p.id === attached);
       switch (k) {
-        case "j": keys.active = true; keys.proc = Math.min(procs.length - 1, keys.proc + n); return renderProcs();
-        case "k": keys.active = true; keys.proc = Math.max(0, keys.proc - n); return renderProcs();
-        case "Enter": if (cur) attach(cur); return;
-        case "i": case "a": if (!$("#term-wrap").hidden) term.focus(); return;
+        case "i": case "a": case "Enter": return term.focus();
         case "x": if (cur?.running) { await api("DELETE", `/api/processes/${cur.id}`); toast("Stopping"); } return;
         case "R": return startProc({ kind: "web", preset: "run" });
         case "T": return startProc({ kind: "task", preset: "test" });
         case "D": return startProc({ kind: "task", preset: "deploy" });
         case "!": return startProc({ kind: "pty" });
-        case "/": return $("#run-custom").cmd.focus();
       }
       return;
     }
