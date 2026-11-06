@@ -2718,6 +2718,13 @@ document.addEventListener("keydown", (e) => {
   }
   // Keyboard users activating a focused control keep the browser's behaviour
   // (except sections, which also close the open todo and leave the list).
+  // Enter on a focused Review card approves it, like its Approve chip.
+  const reviewCard = k === "Enter" && state.todos.get(target.closest?.("button.todo.s-review")?.dataset.id);
+  if (reviewCard?.status === "review") {
+    e.preventDefault();
+    attempt(todoKey)(reviewCard, "a");
+    return;
+  }
   if ((k === "Enter" || k === " ") && target.closest?.("button, a, summary, input, [role=tab]") && sidebarList(target) !== SECTIONS) return;
 
   // Counts: 5j, 10G …
@@ -2853,6 +2860,7 @@ async function handleNormal(k, n, hadCount) {
         }
         case "Enter": case "Space": case " ": {
           const t = cursorTodo();
+          if (t?.status === "review" && k === "Enter") return todoKey(t, "a");
           if (t) return openDetail(t.id);
           return;
         }
