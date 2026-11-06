@@ -580,6 +580,12 @@ desktop.addEventListener("change", () => setMenu(false));
 $("#project-switch").addEventListener("click", openProjects);
 $("#side-new-project").addEventListener("click", openNewProject);
 $("#notify-toggle").addEventListener("click", attempt(toggleNotifications));
+$(".foot-menu-list").addEventListener("click", () => { $("#foot-menu").open = false; });
+document.addEventListener("click", (e) => { if (!e.target.closest("#foot-menu")) $("#foot-menu").open = false; });
+$("#foot-menu").addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !$("#foot-menu").open) return;
+  e.stopPropagation(); $("#foot-menu").open = false; $("#foot-menu > summary").focus();
+});
 $("#new-project").addEventListener("submit", attempt(async (e) => {
   e.preventDefault();
   const { machine, ...body } = Object.fromEntries(new FormData(e.target));

@@ -94,8 +94,13 @@
         <button class="usage-pill" id="usage-pill" hidden aria-haspopup="dialog" title="Claude usage"></button>
         <div class="nav-foot">
           <span class="merge-status" id="merge-status"></span>
-          <button class="link" id="notify-toggle" type="button"></button>
-          <button class="link" id="logout">Log out</button>
+          <details class="foot-menu" id="foot-menu">
+            <summary class="icon-btn" aria-label="Account menu" title="Account menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
+            <div class="foot-menu-list">
+              <button id="notify-toggle" type="button"></button>
+              <button id="logout" type="button">Log out</button>
+            </div>
+          </details>
         </div>
       </div>
     </nav>

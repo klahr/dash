@@ -594,8 +594,19 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 #usage-pill .meter { height: 6px; }
 #usage-pill .meter-pace { margin-top: 3px; font-size: 11px; }
 .nav-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 8px; margin-top: 6px; padding: 0 4px 0 10px; color: var(--muted); font-size: 13px; }
-.nav-foot .link { padding: 0 6px; min-height: 32px; }
-.nav-foot #notify-toggle { margin-left: -6px; }
+.foot-menu { position: relative; margin-left: auto; }
+.foot-menu > summary { list-style: none; width: 36px; height: 36px; cursor: pointer; }
+.foot-menu > summary::-webkit-details-marker { display: none; }
+.foot-menu > summary svg { width: 20px; height: 20px; }
+.foot-menu[open] > summary { color: var(--text); background: var(--raised); }
+.foot-menu-list {
+  position: absolute; right: 0; bottom: calc(100% + 4px); z-index: 60; min-width: 200px;
+  display: flex; flex-direction: column; padding: 4px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m);
+  box-shadow: 0 8px 24px rgba(4, 8, 15, .4);
+}
+.foot-menu-list button { min-height: 36px; padding: 0 10px; border-radius: 6px; text-align: left; font-size: 14px; color: var(--text); white-space: nowrap; }
+.foot-menu-list button:hover { background: var(--raised); }
 .merge-status:empty { display: none; }
 .merge-status { flex-basis: 100%; }
 .side-projects {
@@ -645,7 +656,8 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .side-action { min-height: 34px; padding: 0 12px; font-size: 13px; }
   .side-new-project { min-height: 44px; }
   .quick-btn { min-height: 44px; }
-  .nav-foot .link { min-height: 44px; }
+  .foot-menu > summary { width: 44px; height: 44px; }
+  .foot-menu-list button { min-height: 44px; }
   .menu-scrim { position: fixed; inset: 0; z-index: 49; background: rgba(4, 8, 15, .5); animation: fade-in .2s var(--ease); }
 }
 
