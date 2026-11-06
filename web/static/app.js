@@ -654,6 +654,7 @@ function renderProjectHeader() {
   $("#project-branch").textContent = !p ? "" : !multi() ? p.default_branch : desktop.matches ? `${p.default_branch} · ${p.machine}` : p.machine;
   $("#project-menu").hidden = !p;
   $("#pm-github").hidden = !p || !!p.remote_url;
+  renderPushMain();
   renderQuick();
   const warn = $("#sync-warn");
   warn.hidden = !p?.sync_error;
@@ -802,6 +803,7 @@ $("#side-new-project").addEventListener("click", openNewProject);
 $("#notify-toggle").addEventListener("click", attempt(toggleNotifications));
 $("#pm-settings").addEventListener("click", openSettings);
 $("#pm-github").addEventListener("click", attempt(createGitHubRepo));
+$("#push-main").addEventListener("click", attempt(pushDone));
 $("#pm-cleanup").addEventListener("click", attempt(cleanup));
 for (const menu of $$(".foot-menu")) {
   menu.querySelector(".foot-menu-list").addEventListener("click", () => { menu.open = false; });
@@ -836,18 +838,37 @@ async function loadTodos() {
 
 async function loadUnpushed() {
   const p = state.project;
-  if (!p?.remote_url || p.merge_mode === "pr") { state.unpushed = 0; return; }
+  if (!p?.remote_url || p.merge_mode === "pr") { state.unpushed = 0; renderPushMain(); return; }
   const { count } = await api("GET", `/api/projects/${p.id}/unpushed`);
   if (state.project !== p || count === state.unpushed) return;
   state.unpushed = count;
   renderBoard();
+  renderPushMain();
 }
 
 async function pushDone() {
   const p = state.project;
-  await api("POST", `/api/projects/${p.id}/push`);
-  toast(`Pushed ${p.default_branch}`);
-  await loadUnpushed();
+  const btn = $("#push-main");
+  btn.disabled = true;
+  try {
+    await api("POST", `/api/projects/${p.id}/push`);
+    toast(`Pushed ${p.default_branch}`);
+    await loadUnpushed();
+  } finally { renderPushMain(); }
+}
+
+// The top bar's push button: shown for projects that push to GitHub directly.
+function renderPushMain() {
+  const p = state.project, n = state.unpushed;
+  const btn = $("#push-main");
+  btn.hidden = !p?.remote_url || p.merge_mode === "pr";
+  if (btn.hidden) return;
+  const label = n ? `Push ${n} ${n === 1 ? "commit" : "commits"} to ${p.default_branch}` : `${p.default_branch} is up to date with GitHub`;
+  btn.disabled = !n;
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  $("#push-count").hidden = !n;
+  $("#push-count").textContent = n > 99 ? "99+" : String(n);
 }
 
 function pushBar() {
