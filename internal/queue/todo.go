@@ -125,11 +125,21 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 			return
 		}
 		var next *model.Todo
+		var all []model.Todo // loaded only when a queued todo has dependencies
 		for _, q := range e.Store.ListTodos("", model.StatusQueued) {
-			if !q.Paused {
-				next = &q
-				break
+			if q.Paused {
+				continue
 			}
+			if len(q.DependsOn) > 0 {
+				if all == nil {
+					all = e.Store.ListTodos("")
+				}
+				if len(q.Blockers(all)) > 0 {
+					continue // waits until its dependencies are merged
+				}
+			}
+			next = &q
+			break
 		}
 		if next == nil {
 			return

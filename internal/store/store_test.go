@@ -1,6 +1,8 @@
 package store
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -109,5 +111,66 @@ func TestReviewingLocksStatusUntilReopen(t *testing.T) {
 	}
 	if _, err := s.SetStatus(td.ID, model.StatusQueued, ""); err != nil {
 		t.Fatalf("status change after the review: %v", err)
+	}
+}
+
+func TestDependsOnValidationAndDelete(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	s, err := Open(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _ := s.CreateProject(model.Project{Name: "p"})
+	q, _ := s.CreateProject(model.Project{Name: "q"})
+	a, _ := s.CreateTodo(model.Todo{ProjectID: p.ID, Title: "a"})
+	elsewhere, _ := s.CreateTodo(model.Todo{ProjectID: q.ID, Title: "x"})
+
+	for name, deps := range map[string][]string{
+		"unknown":       {"nope"},
+		"other project": {elsewhere.ID},
+	} {
+		if _, err := s.CreateTodo(model.Todo{ProjectID: p.ID, Title: name, DependsOn: deps}); !errors.Is(err, ErrBadDependency) {
+			t.Errorf("%s: got %v, want ErrBadDependency", name, err)
+		}
+	}
+	if _, err := s.UpdateTodo(a.ID, func(x *model.Todo) error { x.DependsOn = []string{a.ID}; return nil }); !errors.Is(err, ErrBadDependency) {
+		t.Errorf("self: got %v, want ErrBadDependency", err)
+	}
+
+	b, err := s.CreateTodo(model.Todo{ProjectID: p.ID, Title: "b", DependsOn: []string{a.ID, " " + a.ID, ""}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(b.DependsOn, []string{a.ID}) {
+		t.Fatalf("depends_on not cleaned: %q", b.DependsOn)
+	}
+	// Survives a reopen.
+	if s, err = Open(path, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetTodo(b.ID); !reflect.DeepEqual(got.DependsOn, []string{a.ID}) {
+		t.Fatalf("after reopen: %q", got.DependsOn)
+	}
+	// Deleting a forgets it in others' dependencies.
+	if _, err := s.DeleteTodo(a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetTodo(b.ID); len(got.DependsOn) != 0 {
+		t.Fatalf("deleted dependency kept: %q", got.DependsOn)
+	}
+}
+
+func TestOldStateWithoutDependsOnLoads(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	old := `{"projects":{"p":{"id":"p","name":"p"}},"todos":{"t":{"id":"t","project_id":"p","title":"t","status":"queued"}}}`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.GetTodo("t"); err != nil || len(got.DependsOn) != 0 {
+		t.Fatalf("got %+v, %v", got, err)
 	}
 }

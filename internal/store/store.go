@@ -7,8 +7,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -21,6 +23,10 @@ var ErrNotFound = errors.New("not found")
 
 // ErrReviewing is returned when a todo Claude is reviewing would change status.
 var ErrReviewing = errors.New("task is being reviewed; wait until the review finishes")
+
+// ErrBadDependency is returned when a todo's DependsOn names itself, a todo
+// that doesn't exist or is in another project, or would make a cycle.
+var ErrBadDependency = errors.New("invalid dependency")
 
 // CleanPath expands a leading ~ and makes path absolute, so a project path
 // typed as "~/src/app" doesn't resolve against the server's working directory.
@@ -228,6 +234,10 @@ func (s *Store) CreateTodo(t model.Todo) (model.Todo, error) {
 	t.Status = model.StatusDraft
 	t.CreatedAt = time.Now()
 	t.UpdatedAt = t.CreatedAt
+	t.DependsOn = cleanIDs(t.DependsOn)
+	if err := s.checkDepsLocked(t); err != nil {
+		return t, err
+	}
 	s.data.Todos[t.ID] = &t
 	if err := s.saveLocked(); err != nil {
 		return t, err
@@ -289,6 +299,13 @@ func (s *Store) UpdateTodo(id string, fn func(*model.Todo) error) (model.Todo, e
 	if cp.Status != t.Status && !model.CanTransition(t.Status, cp.Status) {
 		return *t, model.ErrInvalidTransition{From: t.Status, To: cp.Status}
 	}
+	if !slices.Equal(cp.DependsOn, t.DependsOn) {
+		cp.DependsOn = cleanIDs(cp.DependsOn)
+		cp.ID, cp.ProjectID = t.ID, t.ProjectID
+		if err := s.checkDepsLocked(cp); err != nil {
+			return *t, err
+		}
+	}
 	cp.ID, cp.ProjectID, cp.UpdatedAt = t.ID, t.ProjectID, time.Now()
 	s.data.Todos[id] = &cp
 	if err := s.saveLocked(); err != nil {
@@ -326,11 +343,83 @@ func (s *Store) DeleteTodo(id string) (model.Todo, error) {
 	}
 	delete(s.data.Todos, id)
 	delete(s.data.TodoChats, id)
+	// Forget the deleted todo in the dependencies of others.
+	var changed []*model.Todo
+	for oid, o := range s.data.Todos {
+		if i := slices.Index(o.DependsOn, id); i >= 0 {
+			cp := clone(*o)
+			cp.DependsOn = slices.Delete(cp.DependsOn, i, i+1)
+			cp.UpdatedAt = time.Now()
+			s.data.Todos[oid] = &cp
+			changed = append(changed, &cp)
+		}
+	}
 	if err := s.saveLocked(); err != nil {
 		return *t, err
 	}
 	s.emit(model.EvTodoDeleted, t.ProjectID, id, nil)
+	for _, o := range changed {
+		s.emit(model.EvTodoUpdated, o.ProjectID, o.ID, *o)
+	}
 	return *t, nil
+}
+
+// checkDepsLocked validates t.DependsOn against the stored todos: each must
+// exist in t's project, not be t, and not (transitively) depend on t.
+func (s *Store) checkDepsLocked(t model.Todo) error {
+	for _, id := range t.DependsOn {
+		if id == t.ID {
+			return fmt.Errorf("%w: a task can't depend on itself", ErrBadDependency)
+		}
+		d, ok := s.data.Todos[id]
+		if !ok {
+			return fmt.Errorf("%w: no task %q", ErrBadDependency, id)
+		}
+		if d.ProjectID != t.ProjectID {
+			return fmt.Errorf("%w: task %q is in another project", ErrBadDependency, id)
+		}
+	}
+	// A cycle needs a path from one of t's dependencies back to t.
+	seen := map[string]bool{}
+	var reaches func(id string) bool
+	reaches = func(id string) bool {
+		if id == t.ID {
+			return true
+		}
+		if seen[id] {
+			return false
+		}
+		seen[id] = true
+		if d, ok := s.data.Todos[id]; ok {
+			for _, n := range d.DependsOn {
+				if reaches(n) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	for _, id := range t.DependsOn {
+		if reaches(id) {
+			title := s.data.Todos[id].Title
+			if title == "" {
+				title = id
+			}
+			return fmt.Errorf("%w: %q already depends on this task, which would make a cycle", ErrBadDependency, title)
+		}
+	}
+	return nil
+}
+
+// cleanIDs trims ids and drops empty ones and duplicates.
+func cleanIDs(ids []string) []string {
+	var out []string
+	for _, id := range ids {
+		if id = strings.TrimSpace(id); id != "" && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // ---- Chat ----
@@ -416,6 +505,7 @@ func (s *Store) SetProjectChat(projectID string, msgs []model.ChatMessage) error
 func clone(t model.Todo) model.Todo {
 	cp := t
 	cp.Feedback = append([]string(nil), t.Feedback...)
+	cp.DependsOn = append([]string(nil), t.DependsOn...)
 	cp.Attachments = append([]model.Attachment(nil), t.Attachments...)
 	if t.Worktree != nil {
 		w := *t.Worktree

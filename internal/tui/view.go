@@ -290,9 +290,12 @@ func (a *App) renderBoard() string {
 func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
 	name := ansi.Truncate(title(t), w-3, "…")
 	sub := ""
+	depText, depBad := a.depWait(t)
 	switch {
 	case a.waiting(t.ID):
 		sub = "⚠ waiting for your approval (P)"
+	case depText != "":
+		sub = depText
 	case t.Paused:
 		sub = "⏸ paused (z resumes)"
 	case t.Checks != nil && !t.Checks.Passed && t.Status == model.StatusReview:
@@ -336,8 +339,10 @@ func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
 		st = styleDim
 	}
 	l1 := "   " + name
-	if a.waiting(t.ID) {
+	if a.waiting(t.ID) || depBad {
 		st = styleWarn
+	} else if depText != "" {
+		st = styleDim
 	} else if t.Checks != nil && !t.Checks.Passed && t.Status == model.StatusReview {
 		st = styleErr
 	}
@@ -346,6 +351,37 @@ func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
 		l1 = styleSel.Render("   " + name + strings.Repeat(" ", max(0, w-3-lipgloss.Width(name))))
 	}
 	return []string{l1, ansi.Truncate(l2, w+1, ""), ""}
+}
+
+// depWait describes why a queued todo waits for its dependencies: "⏳
+// waiting for <titles>", or "blocked: <title> failed" when a dependency
+// failed or went back to draft (bad). Empty when nothing holds it back.
+func (a *App) depWait(t model.Todo) (text string, bad bool) {
+	if t.Status != model.StatusQueued || len(t.DependsOn) == 0 {
+		return "", false
+	}
+	all := make([]model.Todo, 0, len(t.DependsOn))
+	for _, id := range t.DependsOn {
+		if d, ok := a.todos[id]; ok {
+			all = append(all, d)
+		}
+	}
+	bl := t.Blockers(all)
+	if len(bl) == 0 {
+		return "", false
+	}
+	for _, d := range bl {
+		if d.Status == model.StatusFailed || d.Status == model.StatusDraft {
+			return fmt.Sprintf("⚠ blocked: %s %s", title(d), d.Status), true
+		}
+	}
+	names := title(bl[0])
+	if len(bl) == 2 {
+		names += ", " + title(bl[1])
+	} else if len(bl) > 2 {
+		names += fmt.Sprintf(" +%d", len(bl)-1)
+	}
+	return "⏳ waiting for " + names, false
 }
 
 // ---- detail
@@ -391,6 +427,23 @@ func (a *App) renderDetail() string {
 	}
 	if a.waiting(t.ID) {
 		meta = append(meta, styleWarn.Render("⚠ waiting for approval (P)"))
+	}
+	if txt, bad := a.depWait(t); txt != "" {
+		if bad {
+			meta = append(meta, styleWarn.Render(txt))
+		} else {
+			meta = append(meta, styleDim.Render(txt))
+		}
+	} else if len(t.DependsOn) > 0 {
+		var names []string
+		for _, id := range t.DependsOn {
+			if d, ok := a.todos[id]; ok {
+				names = append(names, title(d))
+			}
+		}
+		if len(names) > 0 {
+			meta = append(meta, "depends on "+strings.Join(names, ", "))
+		}
 	}
 	if t.Error != "" {
 		meta = append(meta, styleErr.Render(t.Error))

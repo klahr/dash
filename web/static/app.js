@@ -343,13 +343,40 @@ function attachBox(el, textarea, onChange = () => {}, { zone = el.closest("dialo
 const promptEditor = mdEditor($("#todo-form").prompt);
 const todoAttach = attachBox($("#todo-attach"), promptEditor.el, () => draft.changed());
 
+// The task form's "Depends on" picker: the project's unmerged tasks other
+// than the one being edited. Ticked tasks must be merged before it starts.
+const depPicker = (() => {
+  const field = $("#todo-deps-field"), list = $("#todo-deps");
+  let self = null;
+  const reset = (t, ids = []) => {
+    self = t;
+    const sel = new Set(ids);
+    // Tasks already chosen stay listed (and kept) even once merged.
+    const cands = [...state.todos.values()]
+      .filter((x) => x.id !== t?.id && (x.status !== "merged" || sel.has(x.id)))
+      .sort(byPriority);
+    // The list is of the open project; a form picking another one can't use it.
+    const usable = !pickProject || projectKey(state.project) === $("#todo-form").project.value;
+    field.hidden = !usable || !cands.length;
+    list.replaceChildren(...cands.map((x) => h("label", { class: `dep-option s-${x.status}` },
+      h("input", { type: "checkbox", name: "dep", value: x.id, checked: sel.has(x.id) }),
+      h("span", { class: "dep-title" }, title(x)),
+      h("span", { class: "dep-status" }, STATUS_LABEL[x.status] || x.status))));
+  };
+  $("#todo-form").project.addEventListener("change", () => reset(self, []));
+  return {
+    reset,
+    ids: () => field.hidden ? [] : $$("input[name=dep]:checked", list).map((i) => i.value),
+  };
+})();
+
 // The todo form autosaves to this browser while you type; reopening the
 // form (even after a reload or a crash) brings the draft back.
 const draftKey = (t) => `${projectKey(state.project)}/${t?.id || "new"}`;
 const draft = drafts({
   read() {
     const f = $("#todo-form");
-    return { title: f.title.value, prompt: f.prompt.value, priority: f.priority.value, attachments: todoAttach.items() };
+    return { title: f.title.value, prompt: f.prompt.value, priority: f.priority.value, attachments: todoAttach.items(), depends_on: depPicker.ids() };
   },
   write(d) {
     const f = $("#todo-form");
@@ -357,6 +384,7 @@ const draft = drafts({
     f.prompt.value = d.prompt ?? "";
     f.priority.value = d.priority ?? 0;
     todoAttach.reset(d.attachments || []);
+    depPicker.reset(editing, d.depends_on ?? editing?.depends_on ?? []); // drafts from before dependencies have none
     promptEditor.render();
   },
   onStatus(st, at) {
@@ -379,6 +407,7 @@ function discardDraft() {
   f.reset();
   if (t) { f.title.value = t.title; f.prompt.value = t.prompt; f.priority.value = t.priority; }
   todoAttach.reset(t?.attachments || []);
+  depPicker.reset(t, t?.depends_on || []);
   promptEditor.render();
   draft.open(draftKey(t));
   toast("Draft discarded");
@@ -390,6 +419,7 @@ $("#todo-clear").addEventListener("click", () => {
   f.reset();
   f.project.value = project;
   todoAttach.reset([]);
+  depPicker.reset(null, []);
   promptEditor.render();
   draft.open(draftKey(null));
   f.title.focus();
@@ -554,6 +584,8 @@ function onEvent(ev, m = { name: "" }) {
           if (prev?.status !== ev.data.status && ev.data.worktree) loadDiff();
           // Dash explains the failure in the chat.
           if (prev && prev.status !== ev.data.status && ev.data.status === "failed" && !todoChat.busy) loadTodoChat().catch(fail);
+        } else if (prev?.status !== ev.data.status && state.todos.get(state.detail)?.depends_on?.includes(ev.todo_id)) {
+          renderDetail(); // the open task's "waiting for" line
         }
         if (prev && prev.status !== ev.data.status) {
           if (ev.data.status === "review") { toast(title(ev.data), { tone: "review", head: "Ready for review", action: openTodo(ev.todo_id) }); notify("Ready for review", ev.data); }
@@ -1202,6 +1234,45 @@ function isPushed(t) {
   return !!state.unpushedTodos && !state.unpushedTodos.has(t.id);
 }
 
+// depWait tells what a queued todo is waiting for: its dependencies that
+// aren't merged yet, and those of them that failed or are drafts, which
+// hold it back until someone acts. Null when nothing holds it back.
+function depWait(t) {
+  if (t.status !== "queued" || !t.depends_on?.length) return null;
+  const deps = t.depends_on.map((id) => state.todos.get(id)).filter((d) => d && d.status !== "merged");
+  if (!deps.length) return null;
+  return { deps, stuck: deps.filter((d) => d.status === "failed" || d.status === "draft") };
+}
+
+// A dependency's title that opens it; a span since cards are buttons.
+function depLink(d) {
+  return h("span", {
+    class: "dep-link", role: "link", tabindex: "0", title: `Open “${title(d)}”`,
+    onpointerdown: (e) => e.stopPropagation(),
+    onclick: (e) => { e.stopPropagation(); openDetail(d.id); },
+    onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); openDetail(d.id); } },
+  }, title(d));
+}
+
+// "⏳ waiting for A, B +2", or "blocked: A failed" when a dependency is stuck.
+function depLine({ deps, stuck }, max = 2) {
+  const list = (xs, what) => [
+    ...xs.slice(0, max).flatMap((d, i) => [i ? ", " : "", depLink(d), what ? ` ${what(d)}` : ""]),
+    xs.length > max ? ` +${xs.length - max}` : "",
+  ];
+  if (stuck.length) return ["blocked: ", ...list(stuck, (d) => d.status === "draft" ? "is a draft" : "failed")];
+  return ["⏳ waiting for ", ...list(deps)];
+}
+
+// The detail view's line about dependencies.
+function depMeta(t) {
+  const wait = depWait(t);
+  if (wait) return h("span", { class: `deps${wait.stuck.length ? " stuck" : ""}` }, depLine(wait, 5));
+  const deps = (t.depends_on || []).map((id) => state.todos.get(id)).filter(Boolean);
+  if (!deps.length) return null;
+  return h("span", { class: "deps" }, "Depends on ", deps.flatMap((d, i) => [i ? ", " : "", depLink(d)]));
+}
+
 function todoRow(t, li = -1, ri = -1) {
   const atCursor = keys.active && keys.cur.lane === li && keys.cur.row === ri;
   let sub = t.prompt.replace(/\s+/g, " ");
@@ -1214,6 +1285,8 @@ function todoRow(t, li = -1, ri = -1) {
   if (t.error) { sub = t.error; subClass += " err"; }
   if (t.reviewing) { sub = "Claude is reviewing…"; subClass = "todo-sub progress"; }
   if (state.perms.some((p) => p.todo_id === t.id)) { sub = "Waiting for your approval"; subClass = "todo-sub waiting"; }
+  const wait = !t.paused && !t.error && depWait(t);
+  if (wait) { sub = depLine(wait); subClass = `todo-sub deps${wait.stuck.length ? " stuck" : ""}`; }
   const checkTag = t.checks && ["review", "merging", "failed"].includes(t.status)
     ? h("span", { class: `check-tag ${t.checks.passed ? "pass" : "fail"}` }, t.checks.passed ? "Tests pass" : "Tests fail")
     : null;
@@ -1305,6 +1378,7 @@ function openTodoForm(t = null, { pick = false } = {}) {
     f.priority.value = t.priority;
   }
   todoAttach.reset(t?.attachments || []);
+  depPicker.reset(t, t?.depends_on || []);
   promptEditor.render();
   draft.open(draftKey(t));
   $("#todo-sheet").returnValue = ""; // Esc keeps the previous close's value
@@ -1323,7 +1397,7 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
   draft.flush(); // if saving fails below, the draft is still there
   const f = $("#todo-form");
   await todoAttach.settled();
-  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), priority: Number(f.priority.value) || 0, attachments: todoAttach.ids() };
+  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), priority: Number(f.priority.value) || 0, attachments: todoAttach.ids(), depends_on: depPicker.ids() };
   if (!body.title && !body.prompt) throw new Error("Add a title or instructions before saving.");
   if (editing) {
     await api("PATCH", `/api/todos/${editing.id}`, body);
@@ -1390,6 +1464,7 @@ function renderDetail() {
     h("span", { class: `status s-${t.status}` }, STATUS_LABEL[t.status] || t.status),
     t.worktree ? h("span", { class: "branch" }, t.worktree.branch) : null,
     t.priority ? h("span", {}, `Priority ${t.priority}`) : null,
+    depMeta(t),
     t.runs ? h("span", {}, `${t.runs} ${t.runs === 1 ? "run" : "runs"}${t.cost_usd ? ` · ≈$${t.cost_usd.toFixed(2)}` : ""}`) : null,
     t.auto_fixes ? h("span", {}, `Fixed automatically ${t.auto_fixes}×`) : null,
     t.pr ? h("a", { class: "pr-link", href: t.pr.url, target: "_blank", rel: "noopener" }, `Pull request #${t.pr.number}${t.pr.state === "OPEN" ? "" : ` · ${t.pr.state.toLowerCase()}`}`) : null,

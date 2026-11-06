@@ -156,11 +156,15 @@ type Worktree struct {
 
 // Todo is a unit of AI work.
 type Todo struct {
-	ID        string     `json:"id"`
-	ProjectID string     `json:"project_id"`
-	Title     string     `json:"title"`
-	Prompt    string     `json:"prompt"`
-	Priority  int        `json:"priority"` // lower runs first; ties broken by CreatedAt
+	ID        string `json:"id"`
+	ProjectID string `json:"project_id"`
+	Title     string `json:"title"`
+	Prompt    string `json:"prompt"`
+	Priority  int    `json:"priority"` // lower runs first; ties broken by CreatedAt
+	// DependsOn are ids of other todos in the same project that must be
+	// merged before this one starts: its worktree branches from the default
+	// branch then, so it builds on their code. Until then it waits queued.
+	DependsOn []string   `json:"depends_on"`
 	Status    TodoStatus `json:"status"`
 	Worktree  *Worktree  `json:"worktree,omitempty"`
 	// Feedback holds notes for Claude: reviewer rework notes and automatic
@@ -213,6 +217,25 @@ type Todo struct {
 	UpdatedAt    time.Time    `json:"updated_at"`
 	StartedAt    *time.Time   `json:"started_at,omitempty"`
 	FinishedAt   *time.Time   `json:"finished_at,omitempty"`
+}
+
+// Blockers returns the todos among all that t depends on and that aren't
+// merged yet, in t.DependsOn order. Ids not in all (deleted) don't block.
+func (t Todo) Blockers(all []Todo) []Todo {
+	if len(t.DependsOn) == 0 {
+		return nil
+	}
+	byID := make(map[string]Todo, len(all))
+	for _, x := range all {
+		byID[x.ID] = x
+	}
+	var out []Todo
+	for _, id := range t.DependsOn {
+		if d, ok := byID[id]; ok && d.Status != StatusMerged {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // Checks is the outcome of running the project's test command in a worktree.

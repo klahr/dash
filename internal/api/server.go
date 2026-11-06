@@ -234,7 +234,7 @@ func writeErr(w http.ResponseWriter, err error) {
 		code = http.StatusTooManyRequests
 	case errors.Is(err, queue.ErrProjectBusy):
 		code = http.StatusConflict
-	case errors.Is(err, errBadRequest):
+	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency):
 		code = http.StatusBadRequest
 	}
 	writeJSON(w, code, map[string]string{"error": err.Error()})

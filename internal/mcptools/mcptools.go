@@ -189,6 +189,26 @@ func (a Args) Num(k string, def int) int {
 	return def
 }
 
+// List returns the strings of an array argument (a lone string counts as one).
+func (a Args) List(k string) []string {
+	var out []string
+	switch v := a[k].(type) {
+	case []any:
+		for _, x := range v {
+			if s, ok := x.(string); ok && strings.TrimSpace(s) != "" {
+				out = append(out, strings.TrimSpace(s))
+			}
+		}
+	case []string:
+		out = v
+	case string:
+		if v = strings.TrimSpace(v); v != "" {
+			out = []string{v}
+		}
+	}
+	return out
+}
+
 func (a Args) Flag(k string) bool {
 	b, _ := a[k].(bool)
 	return b
@@ -235,7 +255,8 @@ func (t Tool) schema() map[string]any {
 type NewTodo struct {
 	Title, Prompt string
 	Priority      int
-	Enqueue       bool // queue it to run instead of keeping a draft
+	Enqueue       bool     // queue it to run instead of keeping a draft
+	DependsOn     []string // ids of tasks that must be merged before it starts
 }
 
 // Board is what the board tools need from Dash.
@@ -320,22 +341,28 @@ func Tools(b Board, o Options) []Tool {
 					return nil, err
 				}
 				type row struct {
-					ID       string           `json:"id"`
-					Title    string           `json:"title"`
-					Status   model.TodoStatus `json:"status"`
-					Priority int              `json:"priority"`
-					Error    string           `json:"error,omitempty"`
+					ID        string           `json:"id"`
+					Title     string           `json:"title"`
+					Status    model.TodoStatus `json:"status"`
+					Priority  int              `json:"priority"`
+					DependsOn []string         `json:"depends_on,omitempty"`
+					WaitingOn []string         `json:"waiting_on,omitempty"` // dependencies not merged yet
+					Error     string           `json:"error,omitempty"`
 				}
 				out := []row{}
 				for _, t := range ts {
 					if st := a.Str("status"); st != "" && string(t.Status) != st {
 						continue
 					}
-					out = append(out, row{t.ID, t.Title, t.Status, t.Priority, t.Error})
+					var waiting []string
+					for _, d := range t.Blockers(ts) {
+						waiting = append(waiting, d.ID)
+					}
+					out = append(out, row{t.ID, t.Title, t.Status, t.Priority, t.DependsOn, waiting, t.Error})
 				}
 				return out, nil
 			}},
-		{"get_todo", "Show a task: prompt, status, feedback, test results, diff size, pull request.", []Param{PTodo},
+		{"get_todo", "Show a task: prompt, status, dependencies (depends_on), feedback, test results, diff size, pull request.", []Param{PTodo},
 			func(a Args) (any, error) {
 				if a.Str("todo") == "" {
 					return nil, errors.New("todo is required")
@@ -346,6 +373,7 @@ func Tools(b Board, o Options) []Tool {
 			{"prompt", "string", "The task for Claude (the title alone is enough for small tasks).", false},
 			{"title", "string", "Short title (generated from the prompt if empty).", false},
 			{"priority", "integer", "Lower runs first (default 0).", false},
+			{"depends_on", "array", "Ids of tasks in the same project that must be merged before this one starts; it waits queued until then.", false},
 			{"draft", "boolean", draftDesc, false}},
 			func(a Args) (any, error) {
 				p, err := project(a)
@@ -358,6 +386,7 @@ func Tools(b Board, o Options) []Tool {
 				return b.CreateTodo(p.ID, NewTodo{
 					Title: a.Str("title"), Prompt: a.Str("prompt"),
 					Priority: a.Num("priority", 0), Enqueue: !a.FlagOr("draft", o.Draft),
+					DependsOn: a.List("depends_on"),
 				})
 			}},
 		{"queue_todo", "Queue a draft task to run; only when the user asks to start or run it.", []Param{PTodo},

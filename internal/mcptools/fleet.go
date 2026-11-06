@@ -128,6 +128,7 @@ func (f Fleet) CreateTodo(projectID string, t NewTodo) (model.Todo, error) {
 	var out model.Todo
 	return out, f.API.Call("POST", at+"/api/projects/"+url.PathEscape(projectID)+"/todos", map[string]any{
 		"title": t.Title, "prompt": t.Prompt, "priority": t.Priority, "enqueue": t.Enqueue,
+		"depends_on": t.DependsOn,
 	}, &out)
 }
 

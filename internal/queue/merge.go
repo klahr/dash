@@ -47,7 +47,7 @@ type MergeQueue struct {
 	Pub         Publisher
 	Log         *TodoLog
 	Perms       *perm.Broker
-	Kick        func() // wake the todo engine after sending a todo back
+	Kick        func() // wake the todo engine after sending a todo back or merging one
 	TestTimeout time.Duration
 	// PRPoll is how often open pull requests are checked (0 = never).
 	PRPoll time.Duration
@@ -278,6 +278,9 @@ func (m *MergeQueue) landed(ctx context.Context, t model.Todo, p model.Project, 
 		return
 	}
 	m.Log.Line(t, msg)
+	if m.Kick != nil {
+		m.Kick() // todos waiting on this one may start now
+	}
 	if t.Worktree != nil {
 		if err := m.Git.RemoveWorktree(ctx, p.ID, p.Path, *t.Worktree); err != nil {
 			slog.Warn("remove worktree", "todo", t.ID, "err", err)

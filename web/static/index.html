@@ -313,6 +313,7 @@
         <label class="field inline"><span>Priority</span><input type="number" name="priority" value="0" inputmode="numeric"></label>
       </div>
       <p class="hint">Lower priority numbers run first.</p>
+      <div class="field" id="todo-deps-field" hidden><span id="todo-deps-label">Depends on <em>starts once these are merged</em></span><div class="dep-picker" id="todo-deps" role="group" aria-labelledby="todo-deps-label"></div></div>
       <footer class="sheet-actions">
         <button class="btn shrink" type="button" id="todo-clear" data-icon="trash">Clear</button>
         <button class="btn" value="draft" id="todo-save-draft" data-icon="draft">Save as draft</button>

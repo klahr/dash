@@ -422,6 +422,7 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 		Priority    int      `json:"priority"`
 		Enqueue     bool     `json:"enqueue"`     // skip Draft
 		Attachments []string `json:"attachments"` // upload ids
+		DependsOn   []string `json:"depends_on"`  // todo ids that must be merged first
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
@@ -438,7 +439,7 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 	}
 	t, err := s.addTodo(model.Todo{
 		ProjectID: r.PathValue("pid"), Title: req.Title, Prompt: req.Prompt, Priority: req.Priority,
-		Attachments: atts,
+		Attachments: atts, DependsOn: req.DependsOn,
 	}, req.Enqueue)
 	if err != nil {
 		writeErr(w, err)
@@ -533,7 +534,7 @@ func (s *Server) duplicateTodo(w http.ResponseWriter, r *http.Request) {
 		title += " (copy)"
 	}
 	t, err := s.Store.CreateTodo(model.Todo{ProjectID: src.ProjectID, Title: title, Prompt: src.Prompt,
-		Priority: src.Priority, Attachments: src.Attachments, Edits: src.Edits})
+		Priority: src.Priority, Attachments: src.Attachments, Edits: src.Edits, DependsOn: src.DependsOn})
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -582,6 +583,7 @@ func (s *Server) updateTodo(w http.ResponseWriter, r *http.Request) {
 		Prompt      *string   `json:"prompt"`
 		Priority    *int      `json:"priority"`
 		Attachments *[]string `json:"attachments"` // upload ids; replaces the list
+		DependsOn   *[]string `json:"depends_on"`  // todo ids; replaces the list
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
@@ -606,13 +608,14 @@ func (s *Server) updateTodo(w http.ResponseWriter, r *http.Request) {
 		set(&t.Title, req.Title)
 		set(&t.Prompt, req.Prompt)
 		set(&t.Priority, req.Priority)
+		set(&t.DependsOn, req.DependsOn) // validated by the store
 		return nil
 	})
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	s.Todos.Kick() // priority may have changed
+	s.Todos.Kick() // priority or dependencies may have changed
 	writeJSON(w, http.StatusOK, t)
 }
 
