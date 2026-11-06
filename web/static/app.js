@@ -1050,9 +1050,8 @@ function todoRow(t, li = -1, ri = -1) {
       t.status === "in_progress" && t.started_at ? h("span", { title: "Running for" }, ago(t.started_at)) : null,
       t.status === "review" && t.finished_at ? h("span", { title: "Waiting for review" }, ago(t.finished_at)) : null,
       t.priority ? h("span", {}, `P${t.priority}`) : null,
-      t.status === "review" && !t.reviewing ? reviewChip(t) : null,
-      t.status === "review" && !t.reviewing ? approveChip(t) : null,
-      t.status === "draft" ? enqueueChip(t) : null));
+      t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, reviewChip(t), approveChip(t)) : null,
+      t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null));
 }
 
 // Spans, not buttons: the card itself is a <button>, which can't nest one.
@@ -1064,7 +1063,7 @@ function reviewChip(t) {
       e.stopPropagation();
       attempt(async () => { await openDetail(t.id); reviewTodo(); })();
     },
-  }, "Review");
+  }, ico("eye"), "Review");
 }
 
 function approveChip(t) {
@@ -1075,7 +1074,7 @@ function approveChip(t) {
       e.stopPropagation();
       attempt(async () => { await api("POST", `/api/todos/${t.id}/approve`); toast("Approved — merging"); })();
     },
-  }, "Approve");
+  }, ico("check"), "Approve");
 }
 
 function enqueueChip(t) {
@@ -1086,7 +1085,7 @@ function enqueueChip(t) {
       e.stopPropagation();
       attempt(todoKey)(t, "s");
     },
-  }, "Enqueue");
+  }, ico("queue"), "Enqueue");
 }
 
 function updateLiveLine(id) {
