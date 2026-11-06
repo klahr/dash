@@ -308,9 +308,43 @@ type Process struct {
 	Dir       string      `json:"dir"`
 	PID       int         `json:"pid"`
 	URL       string      `json:"url,omitempty"`
+	Port      int         `json:"port,omitempty"`    // web servers: their $PORT
+	TodoID    string      `json:"todo_id,omitempty"` // set for a todo's live preview
 	Running   bool        `json:"running"`
 	ExitCode  *int        `json:"exit_code,omitempty"`
 	StartedAt time.Time   `json:"started_at"`
+}
+
+// PreviewState is where a todo's live preview is in its life.
+type PreviewState string
+
+const (
+	PreviewStarting PreviewState = "starting" // server started, its port doesn't answer yet
+	PreviewLive     PreviewState = "live"     // the port answers; the proxy serves it
+	PreviewCrashed  PreviewState = "crashed"  // the server exited on its own
+	PreviewStopped  PreviewState = "stopped"  // stopped (by hand, idle, or the todo left review); only in events
+)
+
+// Preview is a todo's project run_command running in its worktree, served
+// at URL through Dash's reverse proxy (a subdomain per todo).
+type Preview struct {
+	TodoID    string       `json:"todo_id"`
+	ProjectID string       `json:"project_id"`
+	ProcessID string       `json:"process_id"`
+	Title     string       `json:"title"` // the todo's, for lists of previews
+	Port      int          `json:"port"`
+	State     PreviewState `json:"state"`
+	// URL is the proxied address, e.g. https://<todo>.preview.example.com/;
+	// empty when no preview domain is configured. LocalURL is the server
+	// itself, reachable from this computer only. OpenURL is a path on Dash
+	// that signs the browser in to the preview and redirects there.
+	URL       string    `json:"url,omitempty"`
+	LocalURL  string    `json:"local_url"`
+	OpenURL   string    `json:"open_url,omitempty"`
+	ExitCode  *int      `json:"exit_code,omitempty"`
+	Reason    string    `json:"reason,omitempty"` // why it stopped (events only)
+	StartedAt time.Time `json:"started_at"`
+	LastSeen  time.Time `json:"last_seen"` // last proxied request or WebSocket traffic
 }
 
 // ChatMessage is one turn of the general chat.
@@ -356,6 +390,7 @@ const (
 	EvUsage          EventType = "usage.updated"      // subscription rate-limit usage / queue pause state
 	EvCI             EventType = "ci.updated"         // GitHub Actions status of a project's default branch
 	EvRemote         EventType = "remote.updated"     // how the default branch compares with origin's, after a fetch
+	EvPreview        EventType = "preview.updated"    // a todo's live preview started, came up, crashed or stopped
 )
 
 // Event is the envelope for everything pushed over /ws/events.

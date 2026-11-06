@@ -12,7 +12,9 @@ document.getElementById("login").addEventListener("submit", async (e) => {
       body: JSON.stringify({ username: form.username.value, password: form.password.value }),
     });
     if (res.ok) {
-      location.replace("/");
+      // Only back to a live preview: anything else could be an open redirect.
+      const next = new URLSearchParams(location.search).get("next") || "";
+      location.replace(/^\/preview\/[a-z0-9-]+(\?|$)/.test(next) ? next : "/");
       return;
     }
     const data = await res.json().catch(() => ({}));

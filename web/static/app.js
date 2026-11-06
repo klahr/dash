@@ -69,6 +69,13 @@ const ICONS = {
   pin: "M9 4h6l-1 6 3 3H7l3-3zM12 13v7",
   fs: "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5",
   "fs-exit": "M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5",
+  reload: "M4 12a8 8 0 0 1 14-5.3M20 4v4h-4M20 12a8 8 0 0 1-14 5.3M4 20v-4h4",
+  qr: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 18h2v2h-2zM14 20h2M20 14v2",
+  phone: "M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM11 18h2",
+  tablet: "M6 3h12a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM11 18h2",
+  monitor: "M3 5h18v11H3zM8 20h8M12 16v4",
+  window: "M3 5h18v14H3zM3 9h18M6 7h.01M8.5 7h.01",
+  more: "M5 12h.01M12 12h.01M19 12h.01",
   link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
 };
 // Technology logos from devicon (MIT, see img/README.md) on a 128px grid: [brand colour, or null when too dark for the dark UI, paths].
@@ -571,6 +578,7 @@ const state = {
   diff: "",
   diffOpen: new Set(), // diff files the user expanded in the open todo
   procs: [],
+  previews: new Map(), // "machine/todo id" → live preview, on every computer
   perms: [],           // pending permission requests for this project
   usage: null,
   view: "board",
@@ -641,6 +649,7 @@ function connectEvents(m) {
       loadChat().catch(() => {});
     }
     loadProjects().catch(fail);
+    loadPreviews(m).catch(() => {});
   };
   ws.onclose = async () => {
     sock.live = false;
@@ -720,6 +729,9 @@ function onEvent(ev, m = { name: "" }) {
       break;
     case "process.updated":
       if (mine) loadProcs().catch(fail);
+      break;
+    case "preview.updated":
+      previewEvent(ev.data, m);
       break;
     case "permission.updated":
       if (!mine) break;
@@ -1417,6 +1429,7 @@ function todoRow(t, li = -1, ri = -1) {
           h("span", { class: "plus" }, `+${t.diff_add || 0}`), " ", h("span", { class: "minus" }, `−${t.diff_del || 0}`))
         : null,
       t.status === "in_progress" && t.started_at ? h("span", { title: "Running for" }, ago(t.started_at)) : null,
+      previewTag(t),
       t.status === "review" && t.finished_at ? h("span", { title: "Waiting for review" }, ago(t.finished_at)) : null,
       t.priority ? h("span", {}, `P${t.priority}`) : null,
       t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, reviewChip(t), approveChip(t)) : null,
@@ -1526,7 +1539,10 @@ $("#todo-form").noValidate = true;
 
 // ------------------------------------------------------------------ detail
 async function openDetail(id) {
+  if (state.detail !== id) hidePreview();
   state.detail = id;
+  // On a desktop the task's running preview opens beside it.
+  if (desktop.matches && previewOf(id)) pv.todo = id;
   const t = state.todos.get(id);
   state.pane = t?.worktree ? "diff" : "timeline";
   state.diff = "";
@@ -1541,6 +1557,7 @@ async function openDetail(id) {
 }
 
 function closeDetail() {
+  hidePreview();
   const wasOpen = state.detail && !$("#detail").hidden;
   state.detail = null;
   const hide = () => { if (!state.detail) { $("#detail").hidden = true; $("#scrim").hidden = true; } };
@@ -1550,7 +1567,9 @@ function closeDetail() {
 $("#d-close").addEventListener("click", closeDetail);
 $("#scrim").addEventListener("click", closeDetail);
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && state.detail && !document.querySelector("dialog[open]")) closeDetail();
+  if (e.key !== "Escape" || !state.detail || document.querySelector("dialog[open]")) return;
+  if (pv.todo && !desktop.matches) hidePreview(); // a phone's full-screen preview first
+  else closeDetail();
 });
 
 async function loadDiff() {
@@ -1595,6 +1614,7 @@ function renderDetail() {
   renderActions(t);
   $("#d-to-agent").hidden = !canRework(t);
   renderPane();
+  renderPreview();
 }
 
 function renderActions(t) {
@@ -1619,13 +1639,14 @@ function renderActions(t) {
         btns.push(h("span", { class: "btn grow reviewing" }, ico("eye"), "Claude is reviewing…"));
         break;
       }
+      // Preview · Rework · Approve (Claude's review is on the card and in ⋯)
+      if (canPreview(t)) btns.push(previewButton(t));
       if (commentsFor(t.id).length) {
         btns.push(b("send", `Send ${commentsFor(t.id).length} ${commentsFor(t.id).length === 1 ? "comment" : "comments"}`, attempt(() => sendComments(t)), "primary"));
       } else {
         btns.push(b("redo", "Rework", rework));
       }
-      btns.push(b("eye", "Review", reviewTodo));
-      btns.push(b("merge", "Approve and merge", post("approve", null, "Approved — merging"), "review grow"));
+      btns.push(b("merge", "Approve", post("approve", null, "Approved — merging"), "review grow"));
       break;
     case "merging":
       if (t.pr) btns.push(h("a", { class: "btn primary grow", href: t.pr.url, target: "_blank", rel: "noopener" }, ico("external"), `Open pull request #${t.pr.number}`));
@@ -1647,9 +1668,9 @@ $("#d-more").addEventListener("click", attempt(async () => {
   const t = state.todos.get(state.detail);
   if (!t) return;
   const choices = [];
+  if (t.status === "review" && !t.reviewing) choices.push(["eye", "Review with Claude", reviewTodo]);
+  if (previewOf(t.id)) choices.push(["stop", "Stop the live preview", () => stopPreview(t.id)]);
   if (t.worktree && ["review", "failed"].includes(t.status)) {
-    const serve = techFor("web:run"), label = serve.label || "Run";
-    choices.push([serve.icon || "play", `Try it: ${label[0].toLowerCase()}${label.slice(1)} in this worktree`, () => startProc({ kind: "web", preset: "run", todo_id: t.id })]);
     choices.push(["terminal", "Open shell in this worktree", () => startProc({ kind: "pty", todo_id: t.id })]);
   }
   if (t.pr) choices.push(["external", `Open pull request #${t.pr.number}`, () => window.open(t.pr.url, "_blank", "noopener")]);
@@ -1674,6 +1695,326 @@ $("#d-more").addEventListener("click", attempt(async () => {
   if (!choices.length) return;
   await menu(choices);
 }));
+
+// ------------------------------------------------------------------ live preview
+// A task in review can run the project's server (run_command) in its worktree.
+// Dash proxies it at https://<task>.<preview domain>, so it opens on a phone
+// too; the pane shows it beside the task (desktop) or full screen (phone).
+const pv = {
+  todo: null,   // task whose preview pane is open
+  proc: null,   // process whose log is streamed
+  ws: null,
+  log: "",
+  shown: null,  // process the iframe was loaded for
+  crashed: null, // process whose crash already opened the log
+  width: (() => { try { return localStorage.getItem("dash.pvWidth") || "full"; } catch { return "full"; } })(),
+};
+const pvKey = (machine, id) => `${machine || ""}/${id}`;
+const previewOf = (id) => state.previews.get(pvKey(state.project?.machine, id)) || null;
+const canPreview = (t) => t?.status === "review" && !!t.worktree && !!state.project?.run_command;
+const PV_LABEL = { starting: "Starting…", live: "Live", crashed: "Crashed" };
+// eslint-disable-next-line no-control-regex
+const stripAnsi = (s) => s.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[@-_]|\r(?!\n)/g, "");
+const lastLines = (n) => pv.log.trimEnd().split("\n").slice(-n).join("\n");
+
+async function loadPreviews(m) {
+  const list = await api("GET", "/api/previews", null, m.prefix || "");
+  for (const [k, p] of state.previews) if (p.machine === m.name) state.previews.delete(k);
+  for (const p of list) state.previews.set(pvKey(m.name, p.todo_id), { ...p, machine: m.name, prefix: m.prefix || "" });
+  previewsChanged();
+}
+
+function previewEvent(p, m) {
+  const key = pvKey(m.name, p.todo_id);
+  const prev = state.previews.get(key);
+  const ours = state.project && m.name === state.project.machine;
+  if (p.state === "stopped") {
+    state.previews.delete(key);
+    if (ours && prev && p.reason && p.reason !== "stopped") toast(p.title || "", { head: `Preview stopped: ${p.reason}`, icon: "stop" });
+  } else {
+    state.previews.set(key, { ...p, machine: m.name, prefix: m.prefix || "" });
+  }
+  if (p.state === "crashed" && prev?.state !== "crashed") {
+    if (!(ours && pv.todo === p.todo_id)) toast(p.title || "", { tone: "error", head: "Preview crashed", action: ours ? { label: "Open", run: () => previewTodo(state.todos.get(p.todo_id)) } : null });
+  }
+  previewsChanged();
+}
+
+function previewsChanged() {
+  renderPreviewsBtn();
+  renderBoard();
+  const t = state.todos.get(state.detail);
+  if (t) { renderActions(t); renderPreview(); }
+  previewsSheet?.render();
+}
+
+// The board card's dot: green while the preview is live.
+function previewTag(t) {
+  const p = t.status === "review" && previewOf(t.id);
+  if (!p) return null;
+  return h("span", { class: `pv-tag ${p.state}`, title: `Preview: ${PV_LABEL[p.state] || p.state}` }, PV_LABEL[p.state] || p.state);
+}
+
+function previewButton(t) {
+  const p = previewOf(t.id);
+  const open = pv.todo === t.id;
+  return h("button", { class: `btn pv-btn${open ? " active" : ""}`, "aria-pressed": String(open), onclick: attempt(() => (open ? hidePreview() : previewTodo(t))) },
+    p ? h("span", { class: `pv-dot ${p.state}`, "aria-hidden": "true" }) : ico("window"),
+    open ? "Hide preview" : "Preview");
+}
+
+// previewTodo opens t's preview pane, starting its server if it isn't running.
+async function previewTodo(t) {
+  if (!t) return;
+  if (!state.project?.run_command) throw new Error("Set a start server command in the project's settings to preview tasks.");
+  if (!canPreview(t)) throw new Error("Only tasks ready for review can be previewed.");
+  if (state.detail !== t.id) await openDetail(t.id);
+  pv.todo = t.id;
+  renderActions(t);
+  renderPreview();
+  const cur = previewOf(t.id);
+  if (cur && cur.state !== "crashed") return;
+  const p = await api("POST", `/api/todos/${t.id}/preview`);
+  const m = state.project;
+  state.previews.set(pvKey(m.machine, t.id), { ...p, machine: m.machine, prefix: m.prefix || "" });
+  previewsChanged();
+}
+
+function hidePreview() {
+  if (!pv.todo) return;
+  pv.todo = null;
+  disconnectLog();
+  pv.shown = null;
+  $("#pv-iframe").src = "about:blank"; // stops the app (and counts as no traffic)
+  $("#pv-iframe").hidden = true;
+  $("#d-preview").hidden = true;
+  $("#detail").classList.remove("previewing");
+  const t = state.todos.get(state.detail);
+  if (t) renderActions(t);
+}
+
+async function stopPreview(id = pv.todo) {
+  const p = previewOf(id);
+  if (!p) return hidePreview();
+  await api("DELETE", `/api/todos/${id}/preview`, null, p.prefix);
+  if (pv.todo === id) hidePreview();
+  toast("Preview stopped");
+}
+
+// Where the iframe can load the preview from, if anywhere: through the proxy
+// (open_url signs the browser in to the preview's host first), or without a
+// preview domain straight from localhost when Dash is open on its own computer.
+function previewTarget(p) {
+  if (p.url) return { src: on(p.prefix, p.open_url), url: p.url };
+  const local = !p.prefix && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  return { src: local ? p.local_url : null, url: p.local_url };
+}
+
+function disconnectLog() {
+  pv.ws?.close();
+  pv.ws = null;
+  pv.proc = null;
+}
+
+function connectLog(p) {
+  disconnectLog();
+  pv.proc = p.process_id;
+  pv.log = "";
+  const dec = new TextDecoder();
+  const ws = new WebSocket(wsURL(on(p.prefix, `/ws/proc/${p.process_id}`)));
+  ws.binaryType = "arraybuffer";
+  ws.onmessage = (m) => {
+    if (typeof m.data === "string") return; // exit notice: the event says so too
+    pv.log = (pv.log + stripAnsi(dec.decode(m.data, { stream: true }))).slice(-64000);
+    renderLog();
+  };
+  pv.ws = ws;
+}
+
+function renderLog() {
+  const pre = $("#pv-log-text");
+  const end = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
+  pre.textContent = pv.log || "No output yet.";
+  if (end) pre.scrollTop = pre.scrollHeight;
+  const tail = $("#pv-tail");
+  if (tail) tail.textContent = lastLines(8) || "No output yet.";
+}
+
+function renderPreview() {
+  const t = state.todos.get(state.detail);
+  const open = !!t && pv.todo === t.id;
+  $("#d-preview").hidden = !open;
+  $("#detail").classList.toggle("previewing", open);
+  if (!open) return;
+  const p = previewOf(t.id);
+  if (p && p.process_id !== pv.proc) connectLog(p);
+  const st = p?.state || "stopped";
+  $("#d-preview").dataset.state = st;
+  $("#pv-state").replaceChildren(h("span", { class: `pv-dot ${st}`, "aria-hidden": "true" }),
+    p ? `${PV_LABEL[st]}${st === "live" ? ` · :${p.port}` : ""}` : "Not running");
+  for (const b of $$(".pv-widths button")) b.setAttribute("aria-pressed", String(b.dataset.width === pv.width));
+  $("#pv-frame").style.setProperty("--pv-w", pv.width === "full" ? "100%" : `${pv.width}px`);
+  $("#pv-frame").classList.toggle("full", pv.width === "full");
+  const target = p ? previewTarget(p) : null;
+  $("#pv-open").disabled = $("#pv-copy").disabled = !p;
+  $("#pv-qr").hidden = !p?.url;
+  $("#pv-reload").disabled = !(st === "live" && target?.src);
+  $("#pv-stop").disabled = !p;
+
+  const frame = $("#pv-iframe");
+  const status = $("#pv-status");
+  if (st === "live" && target.src) {
+    if (pv.shown !== p.process_id) { pv.shown = p.process_id; frame.src = target.src; }
+    frame.hidden = false;
+    status.hidden = true;
+    return;
+  }
+  if (pv.shown) { pv.shown = null; frame.src = "about:blank"; }
+  frame.hidden = true;
+  status.hidden = false;
+  const tail = () => h("pre", { class: "log pv-tail", id: "pv-tail" }, lastLines(8) || "No output yet.");
+  const restart = () => ib({ class: "btn", type: "button", onclick: attempt(() => previewTodo(t)) }, "play", "Start again");
+  switch (st) {
+    case "starting":
+      status.replaceChildren(h("div", { class: "spinner big", "aria-hidden": "true" }),
+        h("strong", {}, "Starting the server"),
+        h("p", { class: "hint" }, h("code", {}, state.project?.run_command || ""), ` · waiting for port ${p.port}…`), tail());
+      break;
+    case "crashed":
+      if (pv.crashed !== p.process_id) { pv.crashed = p.process_id; $("#pv-log").open = true; } // opens on its own, once
+      status.replaceChildren(h("strong", { class: "pv-err" }, `The server exited${p.exit_code != null ? ` with code ${p.exit_code}` : ""}`),
+        tail(),
+        h("div", { class: "pv-status-actions" },
+          canRework(t) ? ib({ class: "btn primary", type: "button", onclick: attempt(() => sendBackWithLog(t)) }, "redo", "Send back with this log") : null,
+          restart()));
+      break;
+    case "live": // no preview domain, and not on Dash's own computer
+      status.replaceChildren(h("strong", {}, "This device can't open the preview"),
+        h("p", { class: "hint" }, "Dash has no preview domain set up (-preview-domain, see the README's Live previews section), so the server is only reachable on the computer running Dash: ",
+          h("a", { href: p.local_url, target: "_blank", rel: "noopener" }, p.local_url)));
+      break;
+    default:
+      status.replaceChildren(h("strong", {}, "The preview isn't running"),
+        h("p", { class: "hint" }, "It stops after 30 minutes without traffic, and when the task is approved or sent back."),
+        canPreview(t) ? restart() : null);
+  }
+}
+
+// Crashed: send the task back to Claude with the end of the server's log.
+async function sendBackWithLog(t) {
+  const p = previewOf(t.id);
+  const raw = await api("GET", `/api/todos/${t.id}/preview/log`, null, p?.prefix).catch(() => pv.log);
+  const log = stripAnsi(String(raw)).trimEnd().slice(-6000);
+  const how = p?.exit_code != null ? `exited with code ${p.exit_code}` : "crashed";
+  const note = `The preview server (\`${state.project?.run_command || "run_command"}\`, with $PORT set) ${how}. Make it start and serve the app. The end of its log:\n\n\`\`\`\n${log}\n\`\`\``;
+  if (await reworkTodo(t, note)) hidePreview();
+}
+
+function reloadPreview() {
+  const p = previewOf(pv.todo);
+  if (!p || p.state !== "live") return;
+  const target = previewTarget(p);
+  if (!target.src) return;
+  $("#pv-iframe").src = "about:blank";
+  requestAnimationFrame(() => { $("#pv-iframe").src = p.url || target.src; });
+}
+
+function openQR(url, prefix = "") {
+  const d = h("dialog", { class: "sheet small qr-sheet", "aria-label": "QR code" },
+    h("form", { method: "dialog" },
+      h("h2", {}, "Open on another device"),
+      h("img", { class: "qr", src: on(prefix, `/api/qr?text=${encodeURIComponent(url)}`), width: 240, height: 240, alt: `QR code for ${url}` }),
+      h("p", { class: "hint qr-url" }, url),
+      h("p", { class: "hint" }, "That device signs in to Dash first if it isn't already."),
+      h("footer", { class: "sheet-actions" }, ib({ class: "btn primary", value: "ok" }, "check", "Done"))));
+  d.addEventListener("close", () => d.remove());
+  document.body.append(d);
+  d.showModal();
+}
+
+$$(".pv-widths button").forEach((b) => b.addEventListener("click", () => {
+  pv.width = b.dataset.width;
+  try { localStorage.setItem("dash.pvWidth", pv.width); } catch {}
+  renderPreview();
+}));
+$("#pv-reload").addEventListener("click", reloadPreview);
+$("#pv-open").addEventListener("click", () => { const p = previewOf(pv.todo); if (p) window.open(p.url || p.local_url, "_blank", "noopener"); });
+$("#pv-copy").addEventListener("click", attempt(async () => { const p = previewOf(pv.todo); if (p) await copy(p.url || p.local_url, "Preview link copied"); }));
+$("#pv-qr").addEventListener("click", () => { const p = previewOf(pv.todo); if (p?.url) openQR(p.url, p.prefix); });
+$("#pv-stop").addEventListener("click", attempt(() => stopPreview()));
+$("#pv-close").addEventListener("click", hidePreview);
+// Phone: the preview is full screen; this sheet leads back out.
+$("#pv-fab").addEventListener("click", attempt(async () => {
+  const t = state.todos.get(pv.todo);
+  if (!t) return hidePreview();
+  const p = previewOf(t.id);
+  const choices = [["minimize", "Back to task", hidePreview]];
+  if (p?.state === "live") choices.push(["reload", "Reload", reloadPreview]);
+  if (canRework(t)) choices.push(["redo", "Send back", () => (p?.state === "crashed" ? sendBackWithLog(t) : reworkTodo(t).then((sent) => sent && hidePreview()))]);
+  if (p) {
+    choices.push(["external", "Open in a new tab", () => window.open(p.url || p.local_url, "_blank", "noopener")]);
+    if (p.url) choices.push(["link", "Copy link", () => copy(p.url, "Preview link copied")]);
+    choices.push(["stop", "Stop the preview", () => stopPreview(t.id)]);
+  }
+  await menu(choices);
+}));
+
+// "Previews (n)" in the top bar: every running preview, on every computer.
+let previewsSheet = null;
+function renderPreviewsBtn() {
+  const list = [...state.previews.values()];
+  const btn = $("#previews-btn");
+  btn.hidden = !list.length;
+  btn.dataset.state = list.some((p) => p.state === "crashed") ? "crashed" : list.some((p) => p.state === "live") ? "live" : "starting";
+  $("#previews-label").replaceChildren(h("span", { class: "pv-word" }, "Previews "), `(${list.length})`);
+  btn.title = `${list.length} running ${list.length === 1 ? "preview" : "previews"}`;
+}
+
+$("#previews-btn").addEventListener("click", () => {
+  const body = h("div", { class: "pv-list" });
+  const d = h("dialog", { class: "sheet small previews-sheet", "aria-labelledby": "pv-list-title" },
+    h("form", { method: "dialog" },
+      h("h2", { id: "pv-list-title" }, "Running previews"),
+      body,
+      h("footer", { class: "sheet-actions" },
+        ib({ class: "btn", value: "cancel" }, "x", "Close"),
+        ib({ class: "btn danger", type: "button", onclick: attempt(stopAllPreviews) }, "stop", "Stop all"))));
+  const projectFor = (p) => (state.projects || []).find((x) => x.id === p.project_id && x.machine === p.machine);
+  const render = () => {
+    const list = [...state.previews.values()].sort((a, b) => b.started_at.localeCompare(a.started_at));
+    if (!list.length) return d.close();
+    body.replaceChildren(...list.map((p) => {
+      const proj = projectFor(p);
+      return h("div", { class: "pv-row" },
+        h("span", { class: `pv-dot ${p.state}`, "aria-hidden": "true" }),
+        h("button", { class: "pv-row-main", type: "button", onclick: attempt(async () => {
+          d.close();
+          if (proj && projectKey(proj) !== projectKey(state.project)) await selectProject(proj);
+          const t = state.todos.get(p.todo_id) || await api("GET", `/api/todos/${p.todo_id}`, null, p.prefix);
+          state.todos.set(t.id, t);
+          await previewTodo(t);
+        }) },
+          h("span", { class: "pv-row-title" }, p.title || p.todo_id),
+          h("span", { class: "pv-row-sub" }, [proj?.name, multi() ? p.machine : null, PV_LABEL[p.state] || p.state, `:${p.port}`].filter(Boolean).join(" · "))),
+        ib({ class: "icon-btn", type: "button", title: "Stop", "aria-label": `Stop the preview of ${p.title}`, onclick: attempt(async () => {
+          await api("DELETE", `/api/todos/${p.todo_id}/preview`, null, p.prefix);
+        }) }, "stop"));
+    }));
+  };
+  previewsSheet = { render };
+  d.addEventListener("close", () => { previewsSheet = null; d.remove(); });
+  render();
+  document.body.append(d);
+  d.showModal();
+});
+
+async function stopAllPreviews() {
+  const prefixes = new Set([...state.previews.values()].map((p) => p.prefix));
+  let n = 0;
+  for (const prefix of prefixes) n += (await api("DELETE", "/api/previews", null, prefix)).stopped || 0;
+  hidePreview();
+  toast(`Stopped ${n} ${n === 1 ? "preview" : "previews"}`);
+}
 
 // The task chat already gives Claude the task's instructions and diff, and runs
 // in its worktree; a project can replace this prompt in its settings.
@@ -1749,10 +2090,10 @@ function menu(choices) {
     .then(() => picked && attempt(picked)());
 }
 
-$$(".segmented button").forEach((b) => b.addEventListener("click", () => { state.pane = b.dataset.pane; renderPane(); }));
+$$(".pane-tabs .segmented button").forEach((b) => b.addEventListener("click", () => { state.pane = b.dataset.pane; renderPane(); }));
 
 function renderPane() {
-  $$(".segmented button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.pane === state.pane)));
+  $$(".pane-tabs .segmented button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.pane === state.pane)));
   $("#d-diff").hidden = state.pane !== "diff";
   const chatShown = $("#d-chat").hidden && state.pane === "timeline";
   $("#d-chat").hidden = state.pane !== "timeline";
@@ -3637,7 +3978,7 @@ async function todoKey(t, k) {
     case "e": return openTodoForm(t);
     case "+": return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority - 1 });
     case "-": return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority + 1 });
-    case "t": return startProc({ kind: "web", preset: "run", todo_id: t.id });
+    case "t": return previewTodo(t);
     case "!": return startProc({ kind: "pty", todo_id: t.id });
     case "dd":
       if (await ask({ title: `Delete "${title(t)}"?`, body: "Its worktree and branch are removed too. This can't be undone.", ok: "Delete", danger: true })) {

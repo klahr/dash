@@ -101,6 +101,64 @@ Any other HTTPS reverse proxy (Caddy, nginx) works the same way as Tailscale: ke
 Dash can be installed as an app from the browser menu ("Install" or "Add to Home Screen"). It
 checks for updates and offers a reload, so an installed copy never goes stale.
 
+## Live previews
+
+When a project has a start server command (`run_command`, which gets `$PORT`), tasks in review
+get a **Preview** button: it starts that command in the task's worktree and shows the app next to
+the task (full screen on a phone). The board marks running previews **Live**, and **Previews (n)**
+in the top bar lists them all, with Stop all. One preview runs per task. It stops when the task is
+approved, sent back or merged, and after 30 minutes without traffic (`-preview-idle`). If the
+server crashes, its log opens, and **Send back with this log** hands it to Claude as rework notes.
+
+Dash serves each preview through its own listener at `https://<task>.<preview domain>/`, as a
+reverse proxy to the task's `$PORT`, WebSockets included (dev servers' hot reload). Each preview
+gets a subdomain of its own instead of a path under Dash, because most apps assume they're served
+from `/`. To set that up you need:
+
+1. **A domain.** Pick a subdomain of the host you open Dash on and start Dash with
+   `-preview-domain preview.dash.example.com` (or `DASH_PREVIEW_DOMAIN`). Keep previews under
+   Dash's host: that makes them the same site, which lets the preview's sign-in cookie work inside
+   Dash's pane.
+2. **A wildcard DNS record**, `*.preview.dash.example.com`, pointing where `dash.example.com`
+   points. Over Tailscale that's the machine's Tailscale address (`tailscale ip -4`), set at your
+   own DNS provider. `ts.net` names can't have wildcard subdomains, so `tailscale serve` alone
+   can't serve previews. The records only resolve to a tailnet address, so previews stay private.
+3. **A wildcard certificate** for `*.preview.dash.example.com`. Let's Encrypt only issues those
+   through a DNS challenge. With Caddy (built with your DNS provider's plugin):
+
+   ```
+   dash.example.com, *.preview.dash.example.com {
+   	tls {
+   		dns cloudflare {env.CF_API_TOKEN}
+   	}
+   	reverse_proxy 127.0.0.1:7788
+   }
+   ```
+
+   Then run `./bin/dash -trust-proxy -preview-domain preview.dash.example.com`. Without a proxy,
+   pass a certificate covering both names to `-tls-cert`/`-tls-key`, e.g. from
+   `certbot certonly --dns-cloudflare -d dash.example.com -d '*.preview.dash.example.com'`.
+
+To try it on one computer without DNS or certificates, open Dash at `http://dash.localhost:7788`
+and start it with `-preview-domain preview.dash.localhost`. Browsers resolve every `*.localhost`
+name to the computer itself.
+
+Without a preview domain, Preview still starts the server, and the pane shows it when Dash is open
+on the computer it runs on (as `http://localhost:<port>`). On other devices the pane says that
+previews need a domain.
+
+What the proxy does:
+
+- Previews need a Dash login. A browser without one is sent to Dash to log in (an open Dash tab
+  is enough), then gets a cookie for that one preview host. Dash's own session cookie is never
+  forwarded to the app, and pages served from a preview can't make changes through Dash's API.
+- The app sees requests as if they came to `http://localhost:<port>` (dev servers often only allow
+  that host), with `X-Forwarded-Host` and `X-Forwarded-Proto` set to the preview's address.
+  Redirects to `localhost:<port>` are rewritten, and `X-Frame-Options` and CSP `frame-ancestors`
+  are removed so the app can be shown in Dash's pane.
+- With several computers, a preview runs on the computer that has the project and is served by
+  that computer's Dash, so set `-preview-domain` on each one.
+
 ## Several computers
 
 Run Dash on each computer (say home and work), each with its own projects and Claude login, and

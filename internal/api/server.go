@@ -24,6 +24,7 @@ import (
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/perm"
+	"github.com/klahr/dash/internal/preview"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/runner"
 	"github.com/klahr/dash/internal/store"
@@ -37,6 +38,7 @@ type Server struct {
 	Todos       *queue.TodoEngine
 	Merges      *queue.MergeQueue
 	Procs       *runner.Manager
+	Previews    *preview.Manager // live previews of todos in review (optional)
 	Chat        agent.Chatter
 	Auth        *auth.Auth
 	Perms       *perm.Broker
@@ -160,6 +162,15 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/projects/{pid}/processes", s.startProcess)
 	mux.HandleFunc("DELETE /api/processes/{procid}", s.stopProcess)
 
+	// Live previews: a todo's server, proxied at <todo>.<preview domain>
+	mux.HandleFunc("POST /api/todos/{tid}/preview", s.startPreview)
+	mux.HandleFunc("DELETE /api/todos/{tid}/preview", s.stopPreview)
+	mux.HandleFunc("GET /api/todos/{tid}/preview/log", s.previewLog)
+	mux.HandleFunc("GET /api/previews", s.listPreviews)
+	mux.HandleFunc("DELETE /api/previews", s.stopPreviews)
+	mux.HandleFunc("GET /api/qr", s.qrCode)
+	mux.HandleFunc("GET /preview/{tid}", s.openPreview)
+
 	// Permission prompts from Claude, subscription usage, queue pause
 	mux.HandleFunc("GET /api/permissions", s.listPermissions)
 	mux.HandleFunc("POST /api/permissions/{id}", s.decidePermission)
@@ -207,7 +218,8 @@ func (s *Server) Routes() http.Handler {
 	})
 	mux.Handle("GET /", s.static())
 
-	return logRequests(s.Auth.Middleware(mux))
+	// Preview hosts never reach Dash's own routes.
+	return s.Previews.Wrap(logRequests(s.Auth.Middleware(mux)))
 }
 
 // ---- helpers ----
@@ -223,7 +235,7 @@ func writeErr(w http.ResponseWriter, err error) {
 	var inv model.ErrInvalidTransition
 	var gitErr *gitops.CmdError
 	switch {
-	case errors.Is(err, store.ErrNotFound), errors.Is(err, runner.ErrNotFound):
+	case errors.Is(err, store.ErrNotFound), errors.Is(err, runner.ErrNotFound), errors.Is(err, preview.ErrNotFound):
 		code = http.StatusNotFound
 	case errors.As(err, &inv), errors.Is(err, store.ErrReviewing):
 		code = http.StatusConflict
@@ -237,7 +249,8 @@ func writeErr(w http.ResponseWriter, err error) {
 		code = http.StatusTooManyRequests
 	case errors.Is(err, queue.ErrProjectBusy):
 		code = http.StatusConflict
-	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency):
+	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency),
+		errors.Is(err, preview.ErrNoRunCommand), errors.Is(err, preview.ErrNotInReview):
 		code = http.StatusBadRequest
 	}
 	writeJSON(w, code, map[string]string{"error": err.Error()})

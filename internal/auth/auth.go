@@ -12,6 +12,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -372,6 +373,11 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "login required"})
 			return
 		}
-		http.Redirect(w, r, "/login.html", http.StatusSeeOther)
+		login := "/login.html"
+		if strings.HasPrefix(r.URL.Path, "/preview/") {
+			// Opening a preview (say from its QR code) continues there after signing in.
+			login += "?next=" + url.QueryEscape(r.URL.RequestURI())
+		}
+		http.Redirect(w, r, login, http.StatusSeeOther)
 	})
 }

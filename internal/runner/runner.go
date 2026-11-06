@@ -114,18 +114,26 @@ func NewManager(pub Publisher) *Manager {
 // StartWeb runs a server command with $PORT set to a free port and exposes
 // http://localhost:$PORT.
 func (m *Manager) StartWeb(projectID, dir, command string) (model.Process, error) {
+	return m.StartWebFor(projectID, "", dir, command)
+}
+
+// StartWebFor is StartWeb for a server running a todo's worktree (a live
+// preview); the process carries the todo's id.
+func (m *Manager) StartWebFor(projectID, todoID, dir, command string) (model.Process, error) {
 	port, err := freePort()
 	if err != nil {
 		return model.Process{}, err
 	}
 	cmd := shell(dir, command)
 	cmd.Env = append(cmd.Env, fmt.Sprintf("PORT=%d", port))
-	return m.startPiped(projectID, model.ProcWeb, command, fmt.Sprintf("http://localhost:%d", port), cmd)
+	return m.startPiped(projectID, model.ProcWeb, command, fmt.Sprintf("http://localhost:%d", port), cmd, func(i *model.Process) {
+		i.Port, i.TodoID = port, todoID
+	})
 }
 
 // StartTask runs a one-shot command (tests, build, deploy).
 func (m *Manager) StartTask(projectID, dir, command string) (model.Process, error) {
-	return m.startPiped(projectID, model.ProcTask, command, "", shell(dir, command))
+	return m.startPiped(projectID, model.ProcTask, command, "", shell(dir, command), nil)
 }
 
 func shell(dir, command string) *exec.Cmd {
@@ -136,7 +144,7 @@ func shell(dir, command string) *exec.Cmd {
 	return cmd
 }
 
-func (m *Manager) startPiped(projectID string, kind model.ProcessKind, command, url string, cmd *exec.Cmd) (model.Process, error) {
+func (m *Manager) startPiped(projectID string, kind model.ProcessKind, command, url string, cmd *exec.Cmd, init func(*model.Process)) (model.Process, error) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		return model.Process{}, err
@@ -148,7 +156,7 @@ func (m *Manager) startPiped(projectID string, kind model.ProcessKind, command, 
 		return model.Process{}, err
 	}
 	w.Close() // child holds its own copy
-	p := m.register(projectID, kind, command, url, cmd, nil)
+	p := m.register(projectID, kind, command, url, cmd, nil, init)
 	go m.pump(p, r)
 	go m.wait(p, r)
 	return p.snapshot(), nil
@@ -174,19 +182,22 @@ func (m *Manager) StartPTY(projectID, dir, command string, cols, rows uint16) (m
 	if err != nil {
 		return model.Process{}, err
 	}
-	p := m.register(projectID, model.ProcPTY, command, "", cmd, tty)
+	p := m.register(projectID, model.ProcPTY, command, "", cmd, tty, nil)
 	go m.pump(p, tty)
 	go m.wait(p, tty)
 	return p.snapshot(), nil
 }
 
-func (m *Manager) register(projectID string, kind model.ProcessKind, command, url string, cmd *exec.Cmd, tty *os.File) *proc {
+func (m *Manager) register(projectID string, kind model.ProcessKind, command, url string, cmd *exec.Cmd, tty *os.File, init func(*model.Process)) *proc {
 	p := &proc{
 		info: model.Process{
 			ID: store.NewID(), ProjectID: projectID, Kind: kind, Command: command, Dir: cmd.Dir,
 			PID: cmd.Process.Pid, URL: url, Running: true, StartedAt: time.Now(),
 		},
 		cmd: cmd, tty: tty, subs: map[chan []byte]struct{}{},
+	}
+	if init != nil {
+		init(&p.info)
 	}
 	m.mu.Lock()
 	m.procs[p.info.ID] = p
@@ -338,6 +349,30 @@ func (s *Session) Resize(cols, rows uint16) error {
 		return nil
 	}
 	return pty.Setsize(s.p.tty, &pty.Winsize{Cols: cols, Rows: rows})
+}
+
+// Tail returns up to the last n bytes of a process's output.
+func (m *Manager) Tail(id string, n int) ([]byte, error) {
+	p, err := m.get(id)
+	if err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	b := p.buf
+	if len(b) > n {
+		b = b[len(b)-n:]
+	}
+	return append([]byte(nil), b...), nil
+}
+
+// Get returns a process's current state.
+func (m *Manager) Get(id string) (model.Process, error) {
+	p, err := m.get(id)
+	if err != nil {
+		return model.Process{}, err
+	}
+	return p.snapshot(), nil
 }
 
 func (m *Manager) get(id string) (*proc, error) {

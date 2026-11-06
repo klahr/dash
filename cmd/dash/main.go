@@ -25,6 +25,7 @@ import (
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/perm"
+	"github.com/klahr/dash/internal/preview"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/runner"
 	"github.com/klahr/dash/internal/store"
@@ -69,6 +70,8 @@ func main() {
 		return err
 	})
 	publicURL := flag.String("public-url", "", "public HTTPS origin (e.g. https://host.tailnet.ts.net:8443) that serves /mcp with OAuth for claude.ai custom connectors; empty = off (or $DASH_PUBLIC_URL)")
+	previewDomain := flag.String("preview-domain", "", "serve each task's live preview at https://<task>.<this domain>, e.g. preview.dash.example.com; needs a wildcard DNS record and certificate (see README; or $DASH_PREVIEW_DOMAIN)")
+	previewIdle := flag.Duration("preview-idle", preview.DefaultIdle, "stop a live preview after this long without traffic")
 	envFile := flag.String("env", ".env", "file with DASH_USERNAME / DASH_PASSWORD (real env vars take precedence)")
 	flag.Parse()
 
@@ -100,6 +103,9 @@ func main() {
 	}
 	if *publicURL == "" {
 		*publicURL = os.Getenv("DASH_PUBLIC_URL")
+	}
+	if *previewDomain == "" {
+		*previewDomain = os.Getenv("DASH_PREVIEW_DOMAIN")
 	}
 	if *projectRoot == "" {
 		*projectRoot = filepath.Join(home, "dash-projects")
@@ -133,7 +139,8 @@ func main() {
 
 	// ---- services ----
 	events := hub.New()
-	st, err := store.Open(filepath.Join(*dataDir, "state.json"), events)
+	storeEvents := &teePublisher{Publisher: events}
+	st, err := store.Open(filepath.Join(*dataDir, "state.json"), storeEvents)
 	if err != nil {
 		slog.Error("open store", "err", err)
 		os.Exit(1)
@@ -145,6 +152,12 @@ func main() {
 		slog.Warn("read processes", "err", err)
 	}
 	defer procs.StopAll()
+	previews := preview.New(procs, events, st, *previewDomain)
+	previews.TrustProxy, previews.Secure, previews.IdleAfter = *trustProxy, authn.Secure, *previewIdle
+	storeEvents.also = previews.Observe // a task leaving review stops its preview
+	if previews.Domain != "" {
+		slog.Info("live previews", "hosts", "<task>."+previews.Domain)
+	}
 
 	tracker := usage.New(events, *pauseAt)
 	perms := perm.NewBroker(events)
@@ -178,7 +191,7 @@ func main() {
 	}
 	builds := &ci.Watcher{Store: st, Git: git, Pub: events, Kick: todos.Kick, Every: time.Minute}
 	apiSrv := &api.Server{
-		Store: st, Git: git, Hub: events, Todos: todos, Merges: merges, Procs: procs,
+		Store: st, Git: git, Hub: events, Todos: todos, Merges: merges, Procs: procs, Previews: previews,
 		Auth:        authn,
 		Perms:       perms,
 		Board:       &mcptools.Tokens{},
@@ -231,6 +244,7 @@ func main() {
 	}
 
 	go builds.Run(ctx)
+	go previews.Run(ctx)
 	go todos.Run(ctx)
 	merges.Resume()
 	go merges.Run(ctx) // the one and only merge worker
@@ -282,6 +296,19 @@ func main() {
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("server", "err", err)
 		os.Exit(1)
+	}
+}
+
+// teePublisher passes the store's events on to the dashboards, and to also.
+type teePublisher struct {
+	store.Publisher
+	also func(model.Event)
+}
+
+func (t *teePublisher) Publish(ev model.Event) {
+	t.Publisher.Publish(ev)
+	if t.also != nil {
+		t.also(ev)
 	}
 }
 

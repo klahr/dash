@@ -41,6 +41,9 @@
         <div class="foot-menu-list project-picker-list" id="project-picker" role="menu" aria-label="Projects" hidden></div>
       </div>
       <div class="lane-chips" id="lane-chips" aria-label="Minimized columns"></div>
+      <button class="previews-btn" id="previews-btn" type="button" hidden aria-haspopup="dialog" title="Running previews">
+        <span class="pv-dot" aria-hidden="true"></span><span id="previews-label">Previews</span>
+      </button>
       <span class="live" id="live" title="Live updates disconnected"><span class="live-dot"></span><span class="sr-only" id="live-label">Offline</span></span>
       <button class="icon-btn" id="search-open" type="button" aria-label="Search tasks (/)" title="Search tasks (/)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4.5-4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -294,6 +297,33 @@
         </div>
       </div>
       <footer class="actionbar" id="d-actions"></footer>
+      <!-- Live preview: beside the task on desktop, full screen on a phone -->
+      <section class="preview" id="d-preview" hidden aria-label="Live preview">
+        <div class="pv-bar">
+          <span class="pv-state" id="pv-state"></span>
+          <div class="segmented pv-widths" role="group" aria-label="Device width">
+            <button type="button" data-width="390" data-icon="phone" title="Phone (390px)" aria-label="Phone width"></button>
+            <button type="button" data-width="768" data-icon="tablet" title="Tablet (768px)" aria-label="Tablet width"></button>
+            <button type="button" data-width="full" data-icon="monitor" title="Full width" aria-label="Full width"></button>
+          </div>
+          <span class="pv-spacer"></span>
+          <button class="icon-btn" type="button" id="pv-reload" data-icon="reload" title="Reload" aria-label="Reload"></button>
+          <button class="icon-btn" type="button" id="pv-open" data-icon="external" title="Open in a new tab" aria-label="Open in a new tab"></button>
+          <button class="icon-btn" type="button" id="pv-copy" data-icon="link" title="Copy link" aria-label="Copy link"></button>
+          <button class="icon-btn" type="button" id="pv-qr" data-icon="qr" title="QR code, to open it on a phone" aria-label="QR code"></button>
+          <button class="icon-btn" type="button" id="pv-stop" data-icon="stop" title="Stop the preview server" aria-label="Stop"></button>
+          <button class="icon-btn" type="button" id="pv-close" data-icon="x" title="Hide the preview (it keeps running)" aria-label="Hide preview"></button>
+        </div>
+        <div class="pv-stage" id="pv-stage">
+          <div class="pv-frame" id="pv-frame"><iframe id="pv-iframe" title="Live preview" hidden></iframe></div>
+          <div class="pv-status" id="pv-status" hidden></div>
+        </div>
+        <details class="pv-log" id="pv-log">
+          <summary>Server log</summary>
+          <pre class="log" id="pv-log-text"></pre>
+        </details>
+        <button class="pv-fab" type="button" id="pv-fab" aria-label="Preview actions" data-icon="more"></button>
+      </section>
     </aside>
     <div class="scrim" id="scrim" hidden></div>
   </div>
@@ -486,7 +516,7 @@
       <dl class="keys">
         <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with tasks · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
         <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gs</kbd>/<kbd>ga</kbd>/<kbd>gh</kbd>/<kbd>gf</kbd> Board/Shell/Activity/History/Files · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> sections, <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>J</kbd>/<kbd>K</kbd> next/previous project · <kbd>c</kbd> project chat · <kbd>[</kbd> collapse sidebar · <kbd>F</kbd> fullscreen on/off · <kbd>Ctrl-k</kbd> search projects, tasks and commands · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
-        <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review, enqueue a draft; <kbd>Space</kbd> opens) · <kbd>a</kbd> new · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>t</kbd> try it · <kbd>!</kbd> shell in worktree</dd>
+        <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review, enqueue a draft; <kbd>Space</kbd> opens) · <kbd>a</kbd> new · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>t</kbd> live preview · <kbd>!</kbd> shell in worktree</dd>
         <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> changes ↔ timeline · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
         <dt>Search</dt><dd><kbd>/</kbd> filter the board · <kbd>Enter</kbd> jump to first match · <kbd>n</kbd>/<kbd>N</kbd> next/previous · <kbd>Esc</kbd> or <code>:noh</code> clear</dd>
         <dt>More</dt><dd><kbd>T</kbd> run tests again · <kbd>Y</kbd> duplicate · <kbd>E</kbd> open worktree in editor · <kbd>u</kbd> revert a merged task · <kbd>O</kbd> open its pull request · click a diff line to comment · paste or drop images into a task</dd>
