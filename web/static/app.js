@@ -1983,8 +1983,9 @@ function attach(p) {
   if (p.kind === "pty") term.focus();
 }
 
-async function startProc(req) {
+async function startProc(req, show = true) {
   const p = await api("POST", `/api/projects/${state.project.id}/processes`, { ...req, cols: term.cols, rows: term.rows });
+  if (!show) return loadProcs();
   closeDetail();
   attach(p);
   showView("run");
@@ -2007,7 +2008,7 @@ const runPreset = attempt(async (e) => {
   const spec = e.target.closest("[data-run]")?.dataset.run;
   if (!spec || !state.project) return;
   const [kind, preset] = spec.split(":");
-  await startProc({ kind, preset });
+  await startProc({ kind, preset }, preset !== "deploy");
 });
 // While a quick action runs, clicking it shows its output instead of starting it again.
 $("#quick-actions").addEventListener("click", (e) => {
