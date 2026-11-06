@@ -530,7 +530,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 @media (min-width: 640px) {
   .sheet { max-width: 560px; margin: auto; border-radius: var(--r-l); border: 1px solid var(--line); }
   .sheet.small { max-width: 420px; }
-  .toasts { left: auto; right: 24px; bottom: 24px; align-items: flex-end; }
+  .toasts { left: auto; right: 16px; align-items: flex-end; }
 }
 
 /* ---------- desktop ---------- */
@@ -582,7 +582,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .todo-side:empty { display: none; }
   .rail::before { left: 25px; }
   .fab { right: 28px; bottom: calc(var(--status-h) + 28px); }
-  .toasts { bottom: calc(var(--status-h) + 24px); }
+  .toasts { right: 28px; bottom: calc(var(--status-h) + 96px); }
 
   .detail { left: auto; bottom: var(--status-h); width: min(760px, 58vw); border-left: 1px solid var(--line); box-shadow: -24px 0 48px rgba(3, 6, 12, .45); }
   .scrim { position: fixed; inset: 0; z-index: 35; background: rgba(4, 8, 15, .35); }
