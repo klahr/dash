@@ -51,6 +51,7 @@ const ICONS = {
   down: "m7 10 5 5 5-5",
   up: "m7 14 5-5 5 5",
   right: "M5 12h14m-5-5 5 5-5 5",
+  minimize: "M15 6l-6 6 6 6",
   clock: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
   spark: "M12 3v5M12 16v5M3 12h5M16 12h5M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6",
   link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
@@ -307,6 +308,7 @@ const state = {
   showOld: false,      // show merged todos older than a day
   unpushed: 0,         // commits on the default branch origin doesn't have
   comments: loadComments(), // todo id → [{file, line, side, code, text}] (diff review notes)
+  collapsed: new Set((() => { try { return JSON.parse(localStorage.getItem("dash.collapsed") || "[]"); } catch { return []; } })()), // desktop: minimized lane keys
 };
 const DAY = 24 * 3600 * 1000;
 
@@ -773,9 +775,13 @@ function renderBoardNow() {
 
   $("#board").replaceChildren(...LANES.map((l, li) => h("section", {
     "data-lane": l.key,
-    class: `col s-${l.key === "done" ? "merged" : l.key}${state.lane === l.key ? " active" : ""}${keys.active && keys.cur.lane === li ? " cursor" : ""}`, "aria-label": l.label,
+    class: `col s-${l.key === "done" ? "merged" : l.key}${state.lane === l.key ? " active" : ""}${keys.active && keys.cur.lane === li ? " cursor" : ""}${state.collapsed.has(l.key) ? " collapsed" : ""}`, "aria-label": l.label,
   },
-    h("header", { class: "col-head" }, l.label, h("span", { class: "n" }, items[l.key].length)),
+    h("header", { class: "col-head", title: state.collapsed.has(l.key) ? `Expand ${l.label}` : null, onclick: () => state.collapsed.has(l.key) && toggleCollapsed(l.key) },
+      h("span", { class: "col-label" }, l.label), h("span", { class: "n" }, items[l.key].length),
+      ib({ class: "icon-btn col-toggle", title: state.collapsed.has(l.key) ? `Expand ${l.label}` : `Minimize ${l.label}`,
+        "aria-expanded": String(!state.collapsed.has(l.key)),
+        onclick: (e) => { e.stopPropagation(); toggleCollapsed(l.key); } }, "minimize")),
     h("div", { class: "col-body" },
       l.key === "done" ? pushBar() : null,
       items[l.key].length
@@ -794,6 +800,12 @@ function renderBoardNow() {
   }
   badge.hidden = !review;
   badge.textContent = review;
+}
+
+function toggleCollapsed(key) {
+  if (!state.collapsed.delete(key)) state.collapsed.add(key);
+  try { localStorage.setItem("dash.collapsed", JSON.stringify([...state.collapsed])); } catch {}
+  renderBoard();
 }
 
 function oldToggle() {
