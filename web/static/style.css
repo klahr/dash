@@ -72,6 +72,7 @@ svg { width: 20px; height: 20px; fill: currentColor; flex: none; }
 }
 .chip-btn:hover { border-color: var(--accent); }
 .ico { width: 18px; height: 18px; }
+.ico.tech-color { color: var(--brand); }
 .link, .chip-btn, .segmented button, .foot-menu-list button { display: inline-flex; align-items: center; gap: 6px; }
 .btn.small .ico, .link .ico, .chip-btn .ico, .segmented .ico, .foot-menu-list .ico { width: 16px; height: 16px; }
 input, textarea {
