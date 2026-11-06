@@ -111,11 +111,34 @@ function leave(el, cls, done, ms = 180) {
   setTimeout(() => { el.classList.remove(cls); done(); }, ms);
 }
 
-function toast(msg, isError = false) {
-  const t = h("div", { class: `toast${isError ? " error" : ""}`, role: isError ? "alert" : "status" }, msg);
-  $("#toasts").append(t);
-  setTimeout(() => leave(t, "leaving", () => t.remove()), isError ? 6000 : 3000);
+// toast(msg) for info, toast(msg, true) for errors, or toast(msg, { tone, head, action: { label, run } }).
+// Hovering or focusing a toast pauses its countdown.
+const TOAST_ICONS = { info: "bell", ok: "check", error: "x", review: "eye", approval: "flag", pr: "merge" };
+function toast(msg, opts = {}) {
+  if (typeof opts === "boolean") opts = { tone: opts ? "error" : "info" };
+  const { tone = "info", head, action, icon = TOAST_ICONS[tone] || "bell" } = opts;
+  const ms = opts.ms ?? (tone === "error" || action ? 7000 : 3500);
+  let timer, start, left = ms, held = 0, gone = false;
+  const close = () => { if (gone) return; gone = true; clearTimeout(timer); leave(t, "leaving", () => t.remove()); };
+  const t = h("div", { class: `toast ${tone}`, role: tone === "error" ? "alert" : "status", style: `--ms: ${ms}ms` },
+    h("span", { class: "toast-icon" }, ico(icon)),
+    h("div", { class: "toast-body" }, head ? h("strong", {}, head) : null, msg ? h("span", {}, msg) : null),
+    action ? h("button", { class: "toast-action", type: "button", onclick: () => { close(); attempt(action.run)(); } }, action.label) : null,
+    ib({ class: "toast-close", type: "button", "aria-label": "Dismiss", title: "Dismiss", onclick: close }, "x"),
+    h("span", { class: "toast-bar" }));
+  const run = () => { start = Date.now(); timer = setTimeout(close, left); };
+  const hold = () => { if (held++) return; clearTimeout(timer); left -= Date.now() - start; t.classList.add("held"); };
+  const release = () => { if (--held) return; t.classList.remove("held"); run(); };
+  t.addEventListener("pointerenter", hold);
+  t.addEventListener("pointerleave", release);
+  t.addEventListener("focusin", hold);
+  t.addEventListener("focusout", release);
+  const box = $("#toasts");
+  box.append(t);
+  while (box.children.length > 4) box.firstChild.remove();
+  run();
 }
+const openTodo = (id) => ({ label: "Open", run: () => openDetail(id) });
 const fail = (e) => toast(e.message || String(e), true);
 const attempt = (fn) => async (...a) => { try { await fn(...a); } catch (e) { fail(e); } };
 
@@ -412,13 +435,16 @@ function onEvent(ev, m = { name: "" }) {
           if (prev?.status !== ev.data.status && ev.data.worktree) loadDiff();
         }
         if (prev && prev.status !== ev.data.status) {
-          if (ev.data.status === "review") { toast(`Ready for review: ${title(ev.data)}`); notify("Ready for review", ev.data); }
-          if (ev.data.status === "failed") notify("Failed", ev.data, ev.data.error);
-          if (ev.data.status === "merged") { notify("Merged", ev.data); loadUnpushed().catch(fail); }
+          if (ev.data.status === "review") { toast(title(ev.data), { tone: "review", head: "Ready for review", action: openTodo(ev.todo_id) }); notify("Ready for review", ev.data); }
+          if (ev.data.status === "failed") { toast(title(ev.data), { tone: "error", head: "Failed", action: openTodo(ev.todo_id) }); notify("Failed", ev.data, ev.data.error); }
+          if (ev.data.status === "merged") { toast(title(ev.data), { tone: "ok", head: "Merged", icon: "merge" }); notify("Merged", ev.data); loadUnpushed().catch(fail); }
         }
         if (prev && prev.revert?.commit !== ev.data.revert?.commit) loadUnpushed().catch(fail);
-        if (prev && !prev.revert && ev.data.revert) toast(ev.data.revert.pr_url ? `Revert pull request opened: ${title(ev.data)}` : `Reverted: ${title(ev.data)}`);
-        if (prev && !prev.pr && ev.data.pr) toast(`Pull request #${ev.data.pr.number} opened: ${title(ev.data)}`);
+        if (prev && !prev.revert && ev.data.revert) {
+          const url = ev.data.revert.pr_url;
+          toast(title(ev.data), { tone: "pr", icon: "undo", head: url ? "Revert pull request opened" : "Reverted", action: url ? { label: "View", run: () => window.open(url, "_blank", "noopener") } : openTodo(ev.todo_id) });
+        }
+        if (prev && !prev.pr && ev.data.pr) toast(title(ev.data), { tone: "pr", head: `Pull request #${ev.data.pr.number} opened`, action: { label: "View", run: () => window.open(ev.data.pr.url, "_blank", "noopener") } });
       }
       break;
     case "todo.deleted":
@@ -453,7 +479,7 @@ function onEvent(ev, m = { name: "" }) {
       if (!ev.data.decision) {
         state.perms.push(ev.data);
         const t = state.todos.get(ev.data.todo_id);
-        toast(`Claude needs your approval: ${describePerm(ev.data).title}${t ? ` (${title(t)})` : ""}`);
+        toast(t ? `${describePerm(ev.data).title} · ${title(t)}` : describePerm(ev.data).title, { tone: "approval", head: "Claude needs your approval", action: t ? { label: "Review", run: () => openDetail(t.id) } : null });
         if (t) notify(`Claude wants to ${describePerm(ev.data).title}`, t, describePerm(ev.data).detail);
       }
       renderPerms();
@@ -466,10 +492,10 @@ function onEvent(ev, m = { name: "" }) {
     case "ci.updated":
       if (!mine) break;
       if (state.ci?.state && state.ci.state !== "failing" && ev.data.state === "failing") {
-        toast(`Build failing on ${ev.data.branch}${ev.data.todo_id ? " — Claude is on it" : ""}`, true);
+        toast(ev.data.todo_id ? "Claude is on it" : "", { tone: "error", head: `Build failing on ${ev.data.branch}`, action: ev.data.todo_id ? openTodo(ev.data.todo_id) : null });
         notify(`Build failing on ${ev.data.branch}`, { title: state.project.name, prompt: "" });
       }
-      if (state.ci?.state === "failing" && ev.data.state === "passing") toast(`Build passing again on ${ev.data.branch}`);
+      if (state.ci?.state === "failing" && ev.data.state === "passing") toast("", { tone: "ok", head: `Build passing again on ${ev.data.branch}` });
       state.ci = ev.data;
       renderCI();
       break;
@@ -487,11 +513,12 @@ function elsewhere(ev, m) {
     const prev = seen.get(key);
     seen.set(key, ev.data.status);
     if (!prev || prev === ev.data.status) return;
-    if (ev.data.status === "review") { toast(`Ready for review in ${where}: ${title(ev.data)}`); notify("Ready for review", ev.data, where); }
+    const go = p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.todo_id); } } : null;
+    if (ev.data.status === "review") { toast(`${title(ev.data)} · ${where}`, { tone: "review", head: "Ready for review", action: go }); notify("Ready for review", ev.data, where); }
     if (ev.data.status === "failed") notify("Failed", ev.data, `${where}: ${ev.data.error || ""}`);
   }
   if (ev.type === "permission.updated" && !ev.data.decision) {
-    toast(`Claude needs your approval in ${where}`);
+    toast(`${describePerm(ev.data).title} · ${where}`, { tone: "approval", head: "Claude needs your approval", action: p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.data.todo_id); } } : null });
     notify(`Claude wants to ${describePerm(ev.data).title}`, { title: where, prompt: "" }, describePerm(ev.data).detail);
   }
 }
