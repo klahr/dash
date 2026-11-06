@@ -12,6 +12,8 @@ cp .env.example .env    # set DASH_USERNAME and DASH_PASSWORD
 go build -o bin/dash ./cmd/dash && ./bin/dash
 ```
 
+New projects are created in `~/dash-projects`; change it with `-projects` or `DASH_PROJECTS`.
+
 Open http://127.0.0.1:7777, or use the terminal client:
 
 ```sh

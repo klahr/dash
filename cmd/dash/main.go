@@ -39,7 +39,7 @@ func main() {
 	trustProxy := flag.Bool("trust-proxy", false, "trust X-Forwarded-Proto/-For/-Host from a reverse proxy that terminates TLS (Caddy, nginx, Tailscale Serve)")
 	cleanupDays := flag.Int("cleanup-days", 14, "daily cleanup: remove worktrees of tasks that failed this many days ago, plus orphaned worktrees, branches, logs and uploads (0 = off)")
 	dataDir := flag.String("data", filepath.Join(home, ".local", "share", "dash"), "state, logs and worktrees")
-	projectRoot := flag.String("projects", filepath.Join(home, "dash-projects"), "where new projects are created")
+	projectRoot := flag.String("projects", "", "where new projects are created (default $DASH_PROJECTS, else ~/dash-projects)")
 	parallel := flag.Int("parallel", 3, "max tasks executed concurrently")
 	claudeBin := flag.String("claude", "claude", "Claude Code binary used to execute tasks")
 	claudeArgs := flag.String("claude-args", "--permission-mode acceptEdits --allowedTools Bash",
@@ -99,6 +99,12 @@ func main() {
 	}
 	if *publicURL == "" {
 		*publicURL = os.Getenv("DASH_PUBLIC_URL")
+	}
+	if *projectRoot == "" {
+		*projectRoot = filepath.Join(home, "dash-projects")
+		if v := os.Getenv("DASH_PROJECTS"); v != "" {
+			*projectRoot = store.CleanPath(v)
+		}
 	}
 	var oauth *auth.OAuth
 	if *publicURL != "" {
