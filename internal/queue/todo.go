@@ -200,6 +200,7 @@ func (e *TodoEngine) shuttingDown() bool {
 
 func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 	log := func(s string) { e.Log.Line(t, s) }
+	var report string // Claude's final message from its latest run
 	fail := func(err error) {
 		if e.shuttingDown() {
 			// Dash is stopping, not the user: leave the todo in progress so
@@ -221,6 +222,7 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 			msg = "canceled"
 		}
 		log("✖ " + msg)
+		noteFailure(e.Store, t.ID, msg, report)
 		if _, err := e.Store.SetStatus(t.ID, model.StatusFailed, msg); err != nil {
 			slog.Error("set failed", "todo", t.ID, "err", err)
 		}
@@ -309,7 +311,7 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 	for {
 		if editing {
 			editing = false
-		} else if err := e.runClaude(ctx, &t, p, wt, log); err != nil {
+		} else if report, err = e.runClaude(ctx, &t, p, wt, log); err != nil {
 			fail(err)
 			return
 		}
@@ -401,8 +403,9 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 }
 
 // runClaude runs Claude once, resuming the todo's session when it has one,
-// and records the session, cost and which notes Claude has now seen.
-func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Project, wt model.Worktree, log func(string)) error {
+// and records the session, cost and which notes Claude has now seen. It
+// returns Claude's final message.
+func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Project, wt model.Worktree, log func(string)) (string, error) {
 	req := agent.ExecRequest{Dir: wt.Path}
 	unsent := t.Feedback[min(t.FeedbackSent, len(t.Feedback)):]
 	switch {
@@ -466,7 +469,19 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	if err == nil {
 		e.summarize(t.ID, res.Result)
 	}
-	return err
+	return strings.TrimSpace(res.Result), err
+}
+
+// noteFailure explains in the todo's chat why it failed, quoting Claude's
+// final message when there is one: it usually says why nothing changed.
+func noteFailure(s *store.Store, todoID, why, report string) {
+	msg := "**This task failed:** " + why
+	if report != "" {
+		msg += "\n\nClaude's last message:\n\n" + report
+	}
+	if err := s.AppendTodoChat(todoID, model.ChatMessage{Role: "assistant", Content: msg}); err != nil {
+		slog.Error("note failure", "todo", todoID, "err", err)
+	}
 }
 
 // summarize sets the todo's Summary from Claude's final message, in the

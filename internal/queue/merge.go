@@ -159,6 +159,7 @@ func (m *MergeQueue) Run(ctx context.Context) {
 					// The work is fine; GitHub isn't reachable or main diverged. Approve again once fixed.
 					_, _ = m.Store.SetStatus(job.TodoID, model.StatusReview, "Not merged, can't sync with GitHub: "+brief(err))
 				} else {
+					noteFailure(m.Store, job.TodoID, "merge: "+err.Error(), "")
 					_, _ = m.Store.SetStatus(job.TodoID, model.StatusFailed, "merge: "+err.Error())
 				}
 			}
@@ -435,6 +436,7 @@ func (m *MergeQueue) setSyncError(projectID string, err error) {
 // Without fixes left it fails and waits for a human.
 func (m *MergeQueue) sendBack(t model.Todo, p model.Project, note string, mergeMain bool, why string) error {
 	if t.AutoFixes >= p.MaxAutoFixes {
+		noteFailure(m.Store, t.ID, fmt.Sprintf("%s, and Claude has used its %d automatic fixes — send it back for rework to let Claude fix it", why, p.MaxAutoFixes), "")
 		_, err := m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
 			if note != "" {
 				x.Feedback = append(x.Feedback, note)

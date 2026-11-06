@@ -348,6 +348,20 @@ func (s *Store) SetTodoChat(todoID string, msgs []model.ChatMessage) error {
 	return s.saveLocked()
 }
 
+// AppendTodoChat adds a message to the conversation about a todo.
+func (s *Store) AppendTodoChat(todoID string, msg model.ChatMessage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.data.Todos[todoID]; !ok {
+		return ErrNotFound
+	}
+	if s.data.TodoChats == nil {
+		s.data.TodoChats = map[string][]model.ChatMessage{}
+	}
+	s.data.TodoChats[todoID] = append(s.data.TodoChats[todoID], msg)
+	return s.saveLocked()
+}
+
 func (s *Store) ProjectChat(projectID string) []model.ChatMessage {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -22,10 +22,11 @@ func (nopPub) Publish(model.Event) {}
 
 // fakeExec stands in for Claude Code: each call runs fn in the worktree.
 type fakeExec struct {
-	mu    sync.Mutex
-	calls []agent.ExecRequest
-	fn    func(n int, req agent.ExecRequest) error
-	block bool // run until canceled, like a Claude that never finishes
+	mu     sync.Mutex
+	calls  []agent.ExecRequest
+	fn     func(n int, req agent.ExecRequest) error
+	block  bool   // run until canceled, like a Claude that never finishes
+	result string // Claude's final message
 }
 
 func (f *fakeExec) Run(ctx context.Context, req agent.ExecRequest, emit func(string)) (agent.ExecResult, error) {
@@ -33,7 +34,7 @@ func (f *fakeExec) Run(ctx context.Context, req agent.ExecRequest, emit func(str
 	f.calls = append(f.calls, req)
 	n := len(f.calls)
 	f.mu.Unlock()
-	res := agent.ExecResult{SessionID: "sess-" + filepath.Base(req.Dir), CostUSD: 0.01, Turns: 1, Stop: "success"}
+	res := agent.ExecResult{SessionID: "sess-" + filepath.Base(req.Dir), CostUSD: 0.01, Turns: 1, Stop: "success", Result: f.result}
 	if f.block {
 		<-ctx.Done()
 		return res, ctx.Err()
@@ -309,6 +310,18 @@ func TestConflictWithoutFixesLeftFails(t *testing.T) {
 	tb := h.waitFor(b.ID, model.StatusFailed)
 	if !tb.MergeMain || !strings.Contains(tb.Error, "conflicts") {
 		t.Fatalf("want failed with MergeMain set for the rework, got merge_main=%v error=%q", tb.MergeMain, tb.Error)
+	}
+}
+
+func TestNoChangesExplainedInChat(t *testing.T) {
+	exe := &fakeExec{fn: func(int, agent.ExecRequest) error { return nil }, result: "It already works; nothing to change."}
+	h := newHarness(t, exe, model.Project{Name: "p"})
+	a := h.add("noop")
+	h.waitFor(a.ID, model.StatusFailed)
+	chat := h.st.TodoChat(a.ID)
+	if len(chat) != 1 || chat[0].Role != "assistant" ||
+		!strings.Contains(chat[0].Content, "without changing any files") || !strings.Contains(chat[0].Content, "It already works") {
+		t.Fatalf("want the failure explained in the chat, got %+v", chat)
 	}
 }
 

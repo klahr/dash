@@ -506,6 +506,8 @@ function onEvent(ev, m = { name: "" }) {
         if (state.detail === ev.todo_id) {
           renderDetail();
           if (prev?.status !== ev.data.status && ev.data.worktree) loadDiff();
+          // Dash explains the failure in the chat.
+          if (prev && prev.status !== ev.data.status && ev.data.status === "failed" && !todoChat.busy) loadTodoChat().catch(fail);
         }
         if (prev && prev.status !== ev.data.status) {
           if (ev.data.status === "review") { toast(title(ev.data), { tone: "review", head: "Ready for review", action: openTodo(ev.todo_id) }); notify("Ready for review", ev.data); }
