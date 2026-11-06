@@ -41,7 +41,7 @@ func main() {
 	projectRoot := flag.String("projects", filepath.Join(home, "dash-projects"), "where new projects are created")
 	parallel := flag.Int("parallel", 3, "max todos executed concurrently")
 	claudeBin := flag.String("claude", "claude", "Claude Code binary used to execute todos")
-	claudeArgs := flag.String("claude-args", "--permission-mode acceptEdits",
+	claudeArgs := flag.String("claude-args", "--permission-mode acceptEdits --allowedTools Bash",
 		"extra flags for `claude -p` (space separated), e.g. --allowedTools / --model")
 	signCommits := flag.Bool("sign-commits", false, "GPG/SSH-sign commits Dash makes (needs a non-interactive signing agent)")
 	chatBackend := flag.String("chat", "claude-code",
