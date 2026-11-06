@@ -200,10 +200,14 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 	if err != nil {
 		return fmt.Errorf("squash onto %s (is the main checkout clean and on %s?): %w", p.DefaultBranch, p.DefaultBranch, err)
 	}
-	m.landed(ctx, t, p, sha, "✔ merged into "+p.DefaultBranch)
+	// Push before marking it merged; a sync during the push may rebase the commit.
 	if p.AutoPush && p.RemoteURL != "" {
 		m.pushDefault(ctx, p, t)
+		if head, err := m.Git.Head(ctx, p.ID, p.Path, "HEAD"); err == nil && sha != "" {
+			sha = head
+		}
 	}
+	m.landed(ctx, t, p, sha, "✔ merged into "+p.DefaultBranch)
 	return nil
 }
 
