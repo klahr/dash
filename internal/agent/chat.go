@@ -46,7 +46,7 @@ func (*Chat) defaultSystem() string {
 }
 
 // Stream sends the conversation to Claude and calls emit for every delta.
-func (c *Chat) Stream(ctx context.Context, history []ChatMessage, emit func(ChatDelta)) error {
+func (c *Chat) Stream(ctx context.Context, _ string, history []ChatMessage, emit func(ChatDelta)) error {
 	msgs := make([]anthropic.BetaMessageParam, 0, len(history))
 	for _, m := range history {
 		block := anthropic.NewBetaTextBlock(m.Content)

@@ -17,13 +17,14 @@ import (
 
 // chatWS streams Claude responses. Protocol (JSON text frames):
 //
-//	client → {"type":"send","messages":[{"role":"user","content":"…"}, …]}
+//	client → {"type":"send","project":"<id>","messages":[{"role":"user","content":"…"}, …]}
 //	client → {"type":"cancel"}
 //	server → {"kind":"thinking"|"text"|"done"|"error","text":"…"}
 //
 // The client owns the conversation history and sends it in full each turn.
 // Each completed turn is saved, and GET /api/chat returns it after a restart.
-// A new "send" cancels any response still streaming.
+// A new "send" cancels any response still streaming. Claude runs in the
+// project's main checkout when "project" names a project on this machine.
 func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := hub.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -46,6 +47,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 	for {
 		var msg struct {
 			Type     string              `json:"type"`
+			Project  string              `json:"project"`
 			Messages []agent.ChatMessage `json:"messages"`
 		}
 		if err := conn.ReadJSON(&msg); err != nil {
@@ -56,11 +58,17 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		if msg.Type != "send" {
 			continue
 		}
+		var dir string
+		if msg.Project != "" && s.Store != nil {
+			if p, err := s.Store.GetProject(msg.Project); err == nil {
+				dir = p.Path
+			}
+		}
 		var turnCtx context.Context
 		turnCtx, cancelTurn = context.WithCancel(ctx)
 		go func(ctx context.Context, history []agent.ChatMessage) {
 			var reply strings.Builder
-			err := s.Chat.Stream(ctx, history, func(d agent.ChatDelta) {
+			err := s.Chat.Stream(ctx, dir, history, func(d agent.ChatDelta) {
 				if d.Kind == "text" {
 					reply.WriteString(d.Text)
 				}

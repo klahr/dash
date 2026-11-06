@@ -11,9 +11,10 @@ import (
 	"time"
 )
 
-// Chatter streams one assistant reply to a conversation.
+// Chatter streams one assistant reply to a conversation. dir is the working
+// directory to answer from (a project's main checkout), or "" for the default.
 type Chatter interface {
-	Stream(ctx context.Context, history []ChatMessage, emit func(ChatDelta)) error
+	Stream(ctx context.Context, dir string, history []ChatMessage, emit func(ChatDelta)) error
 }
 
 // ClaudeCodeChat answers chat through the Claude Code CLI, so it bills the
@@ -24,12 +25,12 @@ type ClaudeCodeChat struct {
 	Bin    string // default "claude"
 	Model  string // optional --model
 	System string
-	Dir    string // working directory; default os.TempDir()
+	Dir    string // working directory when Stream gets none; default os.TempDir()
 	// OnRateLimit receives the rate_limit_info of every rate_limit_event.
 	OnRateLimit func(json.RawMessage)
 }
 
-func (c ClaudeCodeChat) Stream(ctx context.Context, history []ChatMessage, emit func(ChatDelta)) error {
+func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMessage, emit func(ChatDelta)) error {
 	if len(history) == 0 {
 		return fmt.Errorf("empty conversation")
 	}
@@ -53,7 +54,10 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, history []ChatMessage, emit 
 		args = append(args, "--model", c.Model)
 	}
 	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Dir = c.Dir
+	cmd.Dir = dir
+	if cmd.Dir == "" {
+		cmd.Dir = c.Dir
+	}
 	if cmd.Dir == "" {
 		cmd.Dir = os.TempDir()
 	} else if err := os.MkdirAll(cmd.Dir, 0o755); err != nil {

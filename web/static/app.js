@@ -1506,7 +1506,8 @@ function sendChat(q) {
   chat.current = { el, thinking, reply, content: "" };
   $("#chat-send").disabled = true;
   const ws = chatSocket();
-  const go = () => ws.send(JSON.stringify({ type: "send", messages: chat.history }));
+  const project = here() ? undefined : state.project?.id; // chat runs on this machine
+  const go = () => ws.send(JSON.stringify({ type: "send", project, messages: chat.history }));
   ws.readyState === 1 ? go() : ws.addEventListener("open", go, { once: true });
 }
 
