@@ -73,7 +73,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/login", s.Auth.Login)
 	mux.HandleFunc("POST /api/logout", s.Auth.Logout)
 	mux.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": s.Auth.Username()})
 	})
 
 	// Computers: this one plus peers, whose API is forwarded under /peer/{name}/

@@ -781,6 +781,21 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .foot-menu-list button { min-height: 36px; padding: 0 10px; border-radius: 6px; text-align: left; font-size: 14px; color: var(--text); white-space: nowrap; }
 .foot-menu-list button:hover { background: var(--raised); }
 .foot-menu-list button.danger { color: var(--failed); }
+/* The account menu at the bottom of the sidebar: a full-width row with the username. */
+.account-menu { flex: 1 1 100%; margin-left: 0; }
+.foot-menu.account-menu > summary {
+  display: flex; align-items: center; gap: 10px; width: 100%; height: auto; min-height: 40px; padding: 0 8px 0 6px;
+  border-radius: var(--r-m); color: var(--muted); font-size: 14px;
+}
+.account-menu > summary:hover, .account-menu[open] > summary { color: var(--text); background: var(--raised); }
+.account-menu > summary svg { flex: none; margin-left: auto; }
+.foot-avatar {
+  flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+  font-size: 12px; font-weight: 700; line-height: 1; color: var(--text); background: color-mix(in srgb, var(--accent) 30%, var(--raised));
+}
+.foot-avatar:empty, .foot-user:empty { display: none; }
+.foot-user { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; }
+.account-menu .foot-menu-list { left: 0; right: 0; min-width: 0; }
 .top-menu { margin-left: 0; }
 .top-menu .foot-menu-list { top: calc(100% + 4px); bottom: auto; }
 .project-picker-list { top: calc(100% + 4px); bottom: auto; left: 0; right: auto; min-width: 260px; max-width: 420px; max-height: min(70vh, 520px); overflow-y: auto; }
@@ -848,6 +863,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .side-new-project { min-height: 44px; }
   .quick-btn { min-height: 44px; }
   .foot-menu > summary { width: 44px; height: 44px; }
+  .foot-menu.account-menu > summary { width: 100%; height: auto; min-height: 44px; }
   .foot-menu-list button { min-height: 44px; }
   .menu-scrim { position: fixed; inset: 0; z-index: 49; background: rgba(4, 8, 15, .5); animation: fade-in .2s var(--ease); }
   /* The full-screen sheets must not scroll the page behind them, or the browser toolbar shifts them. */
@@ -924,7 +940,10 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .side-collapsed .quick-btn { padding: 0; min-height: 40px; }
   .side-collapsed .nav-foot { justify-content: center; padding: 0; }
   .side-collapsed .foot-menu { margin: 0; }
-  .side-collapsed .nav-foot .foot-menu-list { right: auto; left: 0; }
+  .side-collapsed .nav-foot .foot-menu-list { right: auto; left: 0; min-width: 200px; }
+  .side-collapsed .account-menu { flex: none; }
+  .side-collapsed .foot-menu.account-menu > summary { justify-content: center; width: 44px; padding: 0; }
+  .side-collapsed .account-menu > summary svg, .side-collapsed .foot-user { display: none; }
 
   main { grid-area: main; padding: 0; overflow: hidden; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
   .view.active { flex: 1; min-height: 0; overflow-y: auto; }

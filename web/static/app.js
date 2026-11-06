@@ -996,6 +996,14 @@ $("#pm-github").addEventListener("click", attempt(createGitHubRepo));
 $("#push-main").addEventListener("click", attempt(pushDone));
 $("#pm-cleanup").addEventListener("click", attempt(cleanup));
 $("#pm-delete").addEventListener("click", attempt(openDeleteProject));
+// The account menu shows who is logged in.
+fetch("/api/me").then((r) => r.ok ? r.json() : null).then((me) => {
+  const name = me?.username;
+  if (!name) return;
+  $("#foot-user").textContent = name;
+  $("#foot-avatar").textContent = [...name][0].toUpperCase();
+  $("#foot-menu summary").title = `Account menu · ${name}`;
+}).catch(() => {});
 for (const menu of $$(".foot-menu")) {
   menu.querySelector(".foot-menu-list").addEventListener("click", () => { menu.open = false; });
   document.addEventListener("click", (e) => { if (!menu.contains(e.target)) menu.open = false; });

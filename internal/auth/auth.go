@@ -92,6 +92,7 @@ type failures struct {
 type Auth struct {
 	user [32]byte // sha256 digests, so comparisons are constant-time and length-independent
 	pass [32]byte
+	name string // shown in the dashboard's account menu
 
 	mu       sync.Mutex
 	sessions map[string]session
@@ -112,6 +113,9 @@ type Auth struct {
 	oauth *OAuth // set by NewOAuth
 }
 
+// Username is the account's name, for display.
+func (a *Auth) Username() string { return a.name }
+
 // New returns an authenticator for the single account. Both values are required.
 func New(username, password string) (*Auth, error) {
 	if username == "" || password == "" {
@@ -119,6 +123,7 @@ func New(username, password string) (*Auth, error) {
 	}
 	return &Auth{
 		user:     sha256.Sum256([]byte(username)),
+		name:     username,
 		pass:     sha256.Sum256([]byte(password)),
 		sessions: map[string]session{},
 		failed:   map[string]*failures{},
