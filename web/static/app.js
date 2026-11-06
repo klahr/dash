@@ -109,7 +109,8 @@ function ask({ title, body = "", input = false, placeholder = "", ok = "OK", dan
 // Screenshots and files for Claude: an "Attach file" button, paste into the
 // text field, or drop onto the sheet.
 const CLIP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5 12.6 19.9a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const clip = () => h("span", { class: "clip", innerHTML: CLIP });
+const GEAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+const clip = () =>h("span", { class: "clip", innerHTML: CLIP });
 const uploadURL = (a) => on(here(), `/api/uploads/${a.id}/${encodeURIComponent(a.name)}`);
 const ACCEPT = "image/png,image/jpeg,image/gif,image/webp,.pdf,.txt,.md,.log,.json,.csv";
 
@@ -526,13 +527,22 @@ function renderProjectList() {
   h("button", { type: "button", class: "link logout", onclick: logout }, "Log out"));
 }
 
-// Desktop sidebar: every project, one click away.
+// Desktop sidebar: every project, one click away. The current one shows its
+// branch and a button for the project sheet (push, settings, clean up).
 function renderSideProjects() {
-  const item = (p) => h("li", {},
-    h("button", {
-      type: "button", title: p.path, "aria-current": projectKey(state.project) === projectKey(p) ? "true" : "false",
-      onclick: attempt(() => selectProject(p)),
-    }, p.name));
+  const item = (p) => {
+    const cur = projectKey(state.project) === projectKey(p);
+    return h("li", { class: cur ? "current" : "" },
+      h("button", {
+        type: "button", class: "side-project", title: p.path, "aria-current": cur ? "true" : "false",
+        onclick: attempt(() => selectProject(p)),
+      }, h("span", { class: "side-project-name" }, p.name), cur ? h("span", { class: "side-project-branch" }, p.default_branch) : null),
+      cur ? h("button", {
+        type: "button", class: "icon-btn side-project-manage", title: "Manage project (p)", "aria-label": `Manage ${p.name}`,
+        onclick: () => { renderProjectList(); $("#project-sheet").showModal(); },
+        innerHTML: GEAR,
+      }) : null);
+  };
   const items = !multi() ? state.projects.map(item) : state.machines.flatMap((m) => [
     h("li", { class: "side-machine", title: m.ok ? "" : m.error || "unreachable" },
       h("span", { class: `machine-dot ${m.ok ? "ok" : "down"}`, "aria-hidden": "true" }), m.name),
