@@ -1538,7 +1538,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
 // target() names where it runs ({prefix, ...fields sent with each turn}).
 // The client owns the history and sends it in full each turn; the server saves
 // every finished turn.
-function makeChat({ log, empty, form, target, actions, scroller = () => log }) {
+function makeChat({ log, empty, form, target, actions, scroller = () => log, saved = () => {} }) {
   const c = { history: [], current: null, ws: null, prefix: "" };
   const input = form.q;
   const sendBtn = form.querySelector("button");
@@ -1555,7 +1555,10 @@ function makeChat({ log, empty, form, target, actions, scroller = () => log }) {
       const d = JSON.parse(m.data);
       d.text ??= ""; // omitted when empty
       // An abandoned socket (see reset) finishes its reply so the server saves it.
-      if (ws !== c.ws) { if (d.kind === "done" || d.kind === "error") ws.close(); return; }
+      if (ws !== c.ws) {
+        if (d.kind === "done" || d.kind === "error") { ws.close(); if (d.kind === "done") saved(ws.fields); }
+        return;
+      }
       const cur = c.current;
       if (!cur) return;
       if (d.kind === "thinking") cur.thinking.textContent += d.text;
@@ -1603,6 +1606,7 @@ function makeChat({ log, empty, form, target, actions, scroller = () => log }) {
     sendBtn.disabled = true;
     const { prefix = "", ...fields } = target();
     const ws = socket(prefix);
+    ws.fields = fields;
     const go = () => ws.send(JSON.stringify({ type: "send", ...fields, messages: c.history }));
     ws.readyState === 1 ? go() : ws.addEventListener("open", go, { once: true });
   }
@@ -1651,6 +1655,8 @@ const todoChat = makeChat({
   log: $("#d-chat-log"), empty: $("#d-chat-empty"), form: $("#d-chat-form"),
   target: () => ({ prefix: here(), todo: state.detail }),
   scroller: () => $(".detail-body"),
+  // A turn left streaming when its todo was closed is saved when it finishes.
+  saved: ({ todo }) => { if (todo === state.detail && !todoChat.busy) loadTodoChat().catch(fail); },
   actions: (answer) => {
     const t = state.todos.get(state.detail);
     return h("div", { class: "msg-actions" },
@@ -1663,8 +1669,12 @@ const todoChat = makeChat({
   },
 });
 
+let todoChatId = null;
 async function loadTodoChat() {
   const id = state.detail;
+  // Reopening the todo whose reply is still streaming keeps it on screen.
+  if (todoChatId === id && todoChat.busy) return;
+  todoChatId = id;
   todoChat.reset();
   const saved = await api("GET", `/api/todos/${id}/chat`);
   if (state.detail === id && !todoChat.history.length && !todoChat.busy) todoChat.reset(saved);
