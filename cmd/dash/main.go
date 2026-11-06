@@ -156,7 +156,7 @@ func main() {
 	var chat agent.Chatter
 	switch *chatBackend {
 	case "claude-code":
-		chat = agent.ClaudeCodeChat{Bin: *claudeBin, OnRateLimit: tracker.Observe}
+		chat = agent.ClaudeCodeChat{Bin: *claudeBin, Dir: *projectRoot, OnRateLimit: tracker.Observe}
 	case "api":
 		chat = agent.NewChat()
 	default:

@@ -24,6 +24,7 @@ type ClaudeCodeChat struct {
 	Bin    string // default "claude"
 	Model  string // optional --model
 	System string
+	Dir    string // working directory; default os.TempDir()
 	// OnRateLimit receives the rate_limit_info of every rate_limit_event.
 	OnRateLimit func(json.RawMessage)
 }
@@ -52,7 +53,12 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, history []ChatMessage, emit 
 		args = append(args, "--model", c.Model)
 	}
 	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Dir = os.TempDir() // keep project CLAUDE.md files out of general chat
+	cmd.Dir = c.Dir
+	if cmd.Dir == "" {
+		cmd.Dir = os.TempDir()
+	} else if err := os.MkdirAll(cmd.Dir, 0o755); err != nil {
+		return err
+	}
 	cmd.Stdin = strings.NewReader(transcript(history))
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
