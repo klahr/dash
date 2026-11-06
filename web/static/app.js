@@ -942,6 +942,7 @@ function renderBoardNow() {
   if (!state.project) {
     $("#board").replaceChildren();
     $("#lane-tabs").replaceChildren();
+    $("#lane-chips").replaceChildren();
     empty.hidden = false;
     empty.replaceChildren(
       // Optional illustration: save as web/static/img/empty-board.webp, 960x720 (4:3). Hidden if missing.
@@ -968,15 +969,19 @@ function renderBoardNow() {
     onclick: () => { state.lane = l.key; renderBoard(); },
   }, l.label, h("span", { class: "n" }, items[l.key].length))));
 
+  // Desktop: minimized columns leave the board and show as chips in the top bar.
+  $("#lane-chips").replaceChildren(...LANES.filter((l) => state.collapsed.has(l.key) && !laneHidden(l.key)).map((l) => h("button", {
+    type: "button", class: `lane-tab lane-chip s-${l.key === "done" ? "merged" : l.key}`, "data-lane": l.key,
+    "data-count": items[l.key].length, title: `Expand ${l.label}`, onclick: () => toggleCollapsed(l.key),
+  }, l.label, h("span", { class: "n" }, items[l.key].length))));
+
   $("#board").replaceChildren(...LANES.map((l, li) => h("section", {
     "data-lane": l.key, hidden: laneHidden(l.key),
     class: `col s-${l.key === "done" ? "merged" : l.key}${state.lane === l.key ? " active" : ""}${keys.active && keys.cur.lane === li ? " cursor" : ""}${state.collapsed.has(l.key) ? " collapsed" : ""}`, "aria-label": l.label,
   },
-    h("header", { class: "col-head", title: state.collapsed.has(l.key) ? `Expand ${l.label}` : null, onclick: () => state.collapsed.has(l.key) && toggleCollapsed(l.key) },
+    h("header", { class: "col-head" },
       h("span", { class: "col-label" }, l.label), h("span", { class: "n" }, items[l.key].length),
-      ib({ class: "icon-btn col-toggle", title: state.collapsed.has(l.key) ? `Expand ${l.label}` : `Minimize ${l.label}`,
-        "aria-expanded": String(!state.collapsed.has(l.key)),
-        onclick: (e) => { e.stopPropagation(); toggleCollapsed(l.key); } }, "minimize")),
+      ib({ class: "icon-btn col-toggle", title: `Minimize ${l.label}`, onclick: () => toggleCollapsed(l.key) }, "minimize")),
     h("div", { class: "col-body" },
       l.key === "done" ? pushBar() : null,
       items[l.key].length

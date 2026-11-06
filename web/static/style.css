@@ -179,6 +179,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .lane-tab::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); opacity: .9; }
 .lane-tab[aria-selected="true"] { background: var(--surface); border-color: var(--line); color: var(--text); }
 .lane-tab[aria-selected="true"] .n { color: var(--muted); }
+.lane-chips { display: none; }
 
 .board { padding: 8px 0 96px; }
 .col { display: none; }
@@ -811,7 +812,12 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
      header's project button just focuses it. */
   .topbar { grid-area: top; position: static; padding: 0 12px 0 22px; gap: 12px; background: var(--surface); backdrop-filter: none; }
   .brand { width: calc(var(--side-w) - 80px); flex: none; }
-  .project-picker { flex: 0 1 auto; margin-right: auto; }
+  .project-picker { flex: 0 1 auto; }
+  .lane-chips { display: flex; gap: 6px; min-width: 0; margin-right: auto; overflow-x: auto; scrollbar-width: none; }
+  .lane-chips::-webkit-scrollbar { display: none; }
+  .app:has(#view-board:not(.active)) .lane-chips { visibility: hidden; }
+  .lane-chip { min-height: 32px; background: var(--bg); border-color: var(--line); }
+  .lane-chip:hover { color: var(--text); background: var(--raised); }
   .project-switch { justify-content: flex-start; min-height: 36px; }
   .project-switch[aria-expanded="true"] { background: var(--raised); }
   .sidebar {
@@ -875,11 +881,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .col-toggle { width: 28px; height: 28px; margin: -6px -8px -6px auto; opacity: 0; }
   .col-head:hover .col-toggle, .col-toggle:focus-visible { opacity: 1; }
   .col-toggle .ico { width: 16px; height: 16px; }
-  .col.collapsed { flex: none; min-width: 0; width: 44px; }
-  .col.collapsed .col-head { flex: 1; flex-direction: column; padding: 22px 0 10px; cursor: pointer; }
-  .col.collapsed .col-head:hover { background: var(--raised); }
-  .col.collapsed .col-toggle { margin: 0; transform: rotate(180deg); }
-  .col.collapsed .col-label, .col.collapsed .col-body { display: none; }
+  .col.collapsed { display: none; }
   .col.cursor .col-head { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
   .col-body { flex: 1; overflow-y: auto; padding-bottom: 96px; }
   .col-empty { padding: 20px 16px; text-align: left; font-size: 14px; color: var(--faint); }
