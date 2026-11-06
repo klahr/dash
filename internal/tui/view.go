@@ -486,11 +486,11 @@ func (a *App) renderChat() string {
 				th := lipgloss.NewStyle().Width(wrapW - 2).Foreground(cDim).Italic(true).Render(e.thinking)
 				lines = append(lines, indent(th, "  │ ")...)
 			}
-			txt := e.text
-			if txt == "" && a.chatCancel != nil {
-				txt = styleDim.Render("…")
+			if e.text == "" && a.chatCancel != nil {
+				lines = append(lines, "  "+styleDim.Render("…"))
+			} else {
+				lines = append(lines, indent(strings.Join(renderMarkdown(e.text, wrapW), "\n"), "  ")...)
 			}
-			lines = append(lines, indent(lipgloss.NewStyle().Width(wrapW).Render(txt), "  ")...)
 		case "error":
 			lines = append(lines, indent(styleErr.Width(wrapW).Render("⚠ "+e.text), "  ")...)
 		}

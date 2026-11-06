@@ -1,6 +1,6 @@
 // Dash web client. REST for state, /ws/events for live updates,
 // /ws/chat for streaming answers, /ws/proc/:id for terminals.
-import { mdEditor, drafts } from "./editor.js";
+import { mdEditor, drafts, renderMarkdown } from "./editor.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -1361,8 +1361,8 @@ function chatSocket() {
     const c = chat.current;
     if (!c) return;
     if (d.kind === "thinking") c.thinking.textContent += d.text;
-    else if (d.kind === "text") { c.reply.textContent += d.text; c.content += d.text; }
-    else if (d.kind === "error") { c.el.classList.add("error"); c.reply.textContent += (c.content ? "\n\n" : "") + d.text; }
+    else if (d.kind === "text") { c.content += d.text; c.reply.innerHTML = renderMarkdown(c.content); }
+    else if (d.kind === "error") { c.el.classList.add("error"); c.reply.append(h("p", {}, d.text)); }
     if (d.kind === "done" || d.kind === "error") {
       c.el.classList.remove("pending");
       if (c.content) {
