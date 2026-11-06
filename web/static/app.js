@@ -1493,7 +1493,18 @@ function renderUsage() {
           `resets ${fmtTime(w.resets_at)}`, paceText ? ` · ${pct > pace ? `+${pct - pace}` : `−${pace - pct}`} vs pace` : null)
         : pace !== null ? h("div", { class: `meter-pace${pct > pace ? " over" : ""}` }, paceText, ` · ${pace}% of window elapsed`) : null);
   };
+  const pie = (w) => {
+    const pct = Math.round(w.utilization * 100);
+    const cls = w.utilization >= (u.pause_at || 1) ? " full" : w.utilization >= 0.7 ? " warn" : "";
+    const elapsed = windowElapsed(w);
+    const pace = elapsed === null ? null : Math.round(elapsed * 100);
+    return h("span", { class: "pie-wrap", title: `${windowLabel(w.name)}: ${pct}%${pace !== null ? ` (${pace}% of window elapsed)` : ""} · resets ${fmtTime(w.resets_at)}` },
+      h("span", { class: `pie${cls}${pace !== null ? " paced" : ""}${pace !== null && pct > pace ? " over" : ""}`, style: `--p:${Math.min(100, pct)};--e:${pace ?? 0}`, role: "img", "aria-label": `${windowLabel(w.name)} ${pct}%` },
+        h("b", {}, pct)),
+      h("small", {}, shortLabel(w.name)));
+  };
   pill.replaceChildren(
+    h("span", { class: "usage-pies" }, live.map(pie)),
     h("span", { class: "usage-sum" }, u.paused ? "Queue paused" : top ? `${shortLabel(top.name)} ${Math.round(top.utilization * 100)}%${overPace(top) ? " ▲" : ""}` : "Usage"),
     h("span", { class: "usage-detail" },
       h("span", { class: "usage-head" }, h("span", {}, "Claude usage"), h("span", {}, u.paused ? "Paused" : "Queue running")),

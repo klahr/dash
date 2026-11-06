@@ -618,6 +618,19 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 #usage-pill .meter-head { font-size: 13px; margin-bottom: 4px; }
 #usage-pill .meter { height: 6px; }
 #usage-pill .meter-pace { margin-top: 3px; font-size: 11px; }
+.usage-pies { display: none; }
+.pie-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.pie-wrap small { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.pie {
+  --pc: var(--accent);
+  position: relative; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+  background: conic-gradient(var(--pc) calc(var(--p) * 1%), var(--raised) 0);
+}
+.pie.warn { --pc: var(--running); }
+.pie.full, .pie.over { --pc: var(--failed); }
+.pie.paced { background: conic-gradient(from calc(var(--e) * 3.6deg - 2deg), var(--text) 0 4deg, transparent 0), conic-gradient(var(--pc) calc(var(--p) * 1%), var(--raised) 0); }
+.pie::before { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--surface); }
+.pie > b { position: relative; font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .nav-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 8px; margin-top: 6px; padding: 0 4px 0 10px; color: var(--muted); font-size: 13px; }
 .foot-menu { position: relative; margin-left: auto; }
 .foot-menu > summary { list-style: none; width: 36px; height: 36px; cursor: pointer; }
@@ -727,7 +740,10 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .side-collapsed .nav > button > span:not(.badge),
   .side-collapsed .side-projects-head, .side-collapsed .side-project-list,
   .side-collapsed .side-new-project span, .side-collapsed .quick-btn span,
-  .side-collapsed .usage-pill, .side-collapsed .merge-status { display: none; }
+  .side-collapsed .usage-pill:not(#usage-pill), .side-collapsed .merge-status { display: none; }
+  .side-collapsed #usage-pill { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; }
+  .side-collapsed #usage-pill .usage-detail { display: none; }
+  .side-collapsed #usage-pill .usage-pies { display: flex; flex-direction: column; align-items: center; gap: 6px; }
   .side-collapsed .nav .badge { position: absolute; top: 3px; right: 1px; margin: 0; }
   .side-collapsed .side-new-project { justify-content: center; padding: 0; }
   .side-collapsed .side-new-project svg { width: 18px; height: 18px; }
