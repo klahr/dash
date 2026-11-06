@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +29,8 @@ import (
 // A new "send" cancels any response still streaming. Claude runs in the
 // project's main checkout when "project" names a project on this machine.
 // With "todo", the conversation is about that todo: Claude sees its title,
-// status and instructions, and the turn is saved to GET /api/todos/{id}/chat.
+// status, instructions and changes, runs in its worktree while it has one,
+// and the turn is saved to GET /api/todos/{id}/chat.
 func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := hub.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -77,11 +79,23 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 				continue
 			}
+			var diff string
 			if p, err := s.Store.GetProject(t.ProjectID); err == nil {
 				dir = p.Path
+				if t.Worktree != nil {
+					// Let Claude read the files as the todo left them.
+					if _, err := os.Stat(t.Worktree.Path); err == nil && t.Status != model.StatusMerged {
+						dir = t.Worktree.Path
+					}
+					if s.Git != nil {
+						if diff, err = s.todoChanges(ctx, p, t); err != nil {
+							slog.Warn("todo chat diff", "todo", t.ID, "err", err)
+						}
+					}
+				}
 			}
 			save = func(msgs []agent.ChatMessage) error { return s.Store.SetTodoChat(t.ID, msgs) }
-			prompt = withTodoContext(t, msg.Messages)
+			prompt = withTodoContext(t, diff, msg.Messages)
 		}
 		var turnCtx context.Context
 		turnCtx, cancelTurn = context.WithCancel(ctx)
@@ -108,10 +122,14 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// maxChatDiff caps the patch given to the todo chat each turn.
+const maxChatDiff = 200_000
+
 // withTodoContext tells Claude which todo the conversation is about by
 // prefixing the first message. The todo is read fresh every turn, so edits
 // to its instructions are seen; the saved history stays as the user typed it.
-func withTodoContext(t model.Todo, history []agent.ChatMessage) []agent.ChatMessage {
+// diff is the patch the todo has made so far, if any.
+func withTodoContext(t model.Todo, diff string, history []agent.ChatMessage) []agent.ChatMessage {
 	if len(history) == 0 {
 		return history
 	}
@@ -126,6 +144,18 @@ func withTodoContext(t model.Todo, history []agent.ChatMessage) []agent.ChatMess
 	}
 	if t.Error != "" {
 		fmt.Fprintf(&b, "<error>%s</error>\n", t.Error)
+	}
+	if t.Summary != "" {
+		fmt.Fprintf(&b, "<summary>%s</summary>\n", t.Summary)
+	}
+	if diff != "" {
+		if len(diff) > maxChatDiff {
+			diff = diff[:maxChatDiff] + "\n[diff truncated]"
+		}
+		if t.Worktree != nil && t.Status != model.StatusMerged {
+			fmt.Fprintf(&b, "<worktree branch=%q>The files you can read are this worktree's, with the changes below applied.</worktree>\n", t.Worktree.Branch)
+		}
+		fmt.Fprintf(&b, "<changes>\n%s\n</changes>\n", diff)
 	}
 	b.WriteString("</todo>\n\n")
 	out := append([]agent.ChatMessage(nil), history...)

@@ -513,24 +513,29 @@ func (s *Server) todoDiff(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	var diff string
-	if t.Status == model.StatusMerged {
-		// The branch is gone after merging; show the commit that landed it.
-		if t.MergedCommit != "" {
-			diff, err = s.Git.Show(r.Context(), p.ID, p.Path, t.MergedCommit)
-		}
-		if t.MergedCommit == "" || err != nil {
-			diff, err = "", nil // e.g. a PR merged on GitHub that this checkout hasn't fetched
-		}
-	} else {
-		diff, err = s.Git.Diff(r.Context(), p.ID, p.Path, p.DefaultBranch, t.Worktree.Branch)
-	}
+	diff, err := s.todoChanges(r.Context(), p, t)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(diff))
+}
+
+// todoChanges returns the patch a todo's worktree has made (t.Worktree must be set).
+func (s *Server) todoChanges(ctx context.Context, p model.Project, t model.Todo) (string, error) {
+	if t.Status == model.StatusMerged {
+		// The branch is gone after merging; show the commit that landed it.
+		if t.MergedCommit == "" {
+			return "", nil
+		}
+		diff, err := s.Git.Show(ctx, p.ID, p.Path, t.MergedCommit)
+		if err != nil {
+			return "", nil // e.g. a PR merged on GitHub that this checkout hasn't fetched
+		}
+		return diff, nil
+	}
+	return s.Git.Diff(ctx, p.ID, p.Path, p.DefaultBranch, t.Worktree.Branch)
 }
 
 func (s *Server) todoLog(w http.ResponseWriter, r *http.Request) {
