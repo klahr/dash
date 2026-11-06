@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/klahr/dash/internal/agent"
@@ -58,6 +59,8 @@ type Server struct {
 	reviewMu  sync.Mutex
 	reviewGen uint64
 	reviews   map[string]uint64 // todo id → the review turn that owns its Reviewing flag
+
+	generalTurns atomic.Int32 // global chat turns running
 }
 
 func (s *Server) Routes() http.Handler {
@@ -173,6 +176,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /ws/events", s.Hub.ServeWS)
 	mux.HandleFunc("GET /ws/chat", s.chatWS)
 	mux.HandleFunc("GET /api/chat", func(w http.ResponseWriter, r *http.Request) {
+		if s.generalTurns.Load() > 0 {
+			w.Header().Set("X-Chat-Busy", "1")
+		}
 		writeJSON(w, http.StatusOK, s.Store.Chat())
 	})
 	mux.HandleFunc("DELETE /api/chat", func(w http.ResponseWriter, r *http.Request) {

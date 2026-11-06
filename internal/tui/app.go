@@ -499,6 +499,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(a.chatHist) > 0 || a.chatCancel != nil {
 			return a, nil
 		}
+		if n := len(msg.ms); n > 0 && msg.ms[n-1].Role == "user" {
+			msg.ms = msg.ms[:n-1] // a question cut off by a restart; the web chat resumes it
+		}
 		a.chatHist = msg.ms
 		for _, m := range msg.ms {
 			a.chat = append(a.chat, chatEntry{role: m.Role, text: m.Content})

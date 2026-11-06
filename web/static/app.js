@@ -468,7 +468,10 @@ function connectEvents(m) {
   ws.onopen = () => {
     sock.live = true;
     refreshLive();
-    if (m.local) checkForUpdate(); // a reconnect often means Dash restarted, maybe updated
+    if (m.local) {
+      checkForUpdate(); // a reconnect often means Dash restarted, maybe updated
+      loadChat().catch(() => {});
+    }
     loadProjects().catch(fail);
   };
   ws.onclose = async () => {
@@ -1972,8 +1975,9 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
 // target() names where it runs ({prefix, ...fields sent with each turn});
 // clear() deletes its saved conversation.
 // The client owns the history and sends it in full each turn; the server saves
-// every finished turn.
-function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {} }) {
+// every finished turn. With resume, a turn cut off by a lost connection (Dash
+// restarting, say) is sent again once Dash is back.
+function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, resume = false }) {
   const c = { history: [], current: null, ws: null, prefix: "" };
   const input = form.q;
   const sendBtn = form.querySelector("button");
@@ -2040,6 +2044,12 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
     };
     ws.onclose = () => {
       if (ws !== c.ws || !c.current) return;
+      if (resume) {
+        c.ws = null;
+        c.current.reply.textContent = "Connection lost. Picking up when Dash is back…";
+        setTimeout(() => { if (c.current && !c.ws) turn(c.current.target); }, 1500);
+        return;
+      }
       c.current.el.classList.remove("pending");
       c.current.reply.textContent ||= "Connection lost. Send your message again.";
       c.history.pop();
@@ -2062,14 +2072,20 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
     empty.hidden = true;
     const m = { role: "user", content: q, ...(attachments.length ? { attachments } : {}) };
     c.history.push(m);
+    log.append(user(m));
+    sendBtn.disabled = true;
+    turn(target());
+  }
+
+  // turn asks for an answer to the last question in history, replacing
+  // whatever is left of an earlier try.
+  function turn({ prefix = "", ...fields }) {
     const thinking = h("div", { class: "thinking" });
     const reply = h("div", { class: "reply" });
     const el = h("div", { class: "msg assistant pending" }, thinking, reply);
-    log.append(user(m), el);
+    c.current ? c.current.el.replaceWith(el) : log.append(el);
     toEnd();
-    c.current = { el, thinking, reply, content: "", seg: "", tools: new Map() };
-    sendBtn.disabled = true;
-    const { prefix = "", ...fields } = target();
+    c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), target: { prefix, ...fields } };
     const ws = socket(prefix);
     ws.fields = fields;
     const go = () => ws.send(JSON.stringify({ type: "send", ...fields, messages: c.history }));
@@ -2107,7 +2123,15 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
     }
   });
 
-  return { reset, input, toEnd, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; } };
+  // resumeLast answers a question left unanswered in a saved conversation.
+  function resumeLast() {
+    if (c.current || c.history.at(-1)?.role !== "user") return;
+    empty.hidden = true;
+    sendBtn.disabled = true;
+    turn(target());
+  }
+
+  return { reset, resumeLast, input, toEnd, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; } };
 }
 
 // Tool calls in the chat: a one-line summary, and the full input when expanded.
@@ -2159,12 +2183,19 @@ const chat = makeChat({
   clear: () => api("DELETE", "/api/chat"),
   actions: chatActions(true),
   cwd: $("#chat-cwd"),
+  resume: true,
 });
 
-// The server saves every finished turn, so the conversation survives restarts.
+// The server saves every turn, so the conversation survives restarts. A
+// question it never got to answer is asked again, unless another window's
+// turn is still running.
 async function loadChat() {
-  const saved = await api("GET", "/api/chat");
-  if (saved.length && !chat.history.length && !chat.busy) chat.reset(saved);
+  const res = await fetch("/api/chat");
+  if (!res.ok) throw new Error(res.statusText);
+  const saved = await res.json();
+  if (!saved.length || chat.history.length || chat.busy) return;
+  chat.reset(saved);
+  if (!res.headers.get("X-Chat-Busy")) chat.resumeLast();
 }
 loadChat().catch((e) => toast(`Couldn't load chat history: ${e.message}`, true));
 

@@ -3,11 +3,16 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/model"
@@ -123,4 +128,80 @@ func TestChatApprovalTurnEnds(t *testing.T) {
 	if a.answer(req.ID, true) {
 		t.Fatal("request should no longer be pending")
 	}
+}
+
+// stubChat answers with err, or (when err is nil) waits for its turn to end.
+type stubChat struct{ err error }
+
+func (c stubChat) Stream(ctx context.Context, _ string, _ []agent.ChatMessage, _ func(agent.ChatDelta)) error {
+	if c.err != nil {
+		return c.err
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func chatSocket(t *testing.T, s *Server) *websocket.Conn {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(s.chatWS))
+	t.Cleanup(srv.Close)
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	return conn
+}
+
+func waitFor(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(2 * time.Second); !ok(); time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for " + what)
+		}
+	}
+}
+
+// A question is saved as it arrives, so a turn cut off by a restart (here the
+// connection dropping) can be asked again.
+func TestGeneralChatSavesQuestion(t *testing.T) {
+	s, _, _ := boardServer(t)
+	s.Chat = stubChat{}
+	prev := []agent.ChatMessage{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}
+	if err := s.Store.SetChat(prev); err != nil {
+		t.Fatal(err)
+	}
+	conn := chatSocket(t, s)
+	msgs := append(prev, agent.ChatMessage{Role: "user", Content: "and then?"})
+	if err := conn.WriteJSON(map[string]any{"type": "send", "messages": msgs}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the busy turn", func() bool { return s.generalTurns.Load() == 1 })
+	if got := s.Store.Chat(); len(got) != 3 || got[2].Content != "and then?" {
+		t.Fatalf("saved %+v", got)
+	}
+	conn.Close()
+	waitFor(t, "the turn to end", func() bool { return s.generalTurns.Load() == 0 })
+	if got := s.Store.Chat(); len(got) != 3 {
+		t.Fatalf("question lost when the turn was cut off: %+v", got)
+	}
+}
+
+// A turn that fails takes its question back out, as the client does.
+func TestGeneralChatFailedTurn(t *testing.T) {
+	s, _, _ := boardServer(t)
+	s.Chat = stubChat{err: errors.New("boom")}
+	prev := []agent.ChatMessage{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}
+	if err := s.Store.SetChat(prev); err != nil {
+		t.Fatal(err)
+	}
+	conn := chatSocket(t, s)
+	if err := conn.WriteJSON(map[string]any{"type": "send", "messages": append(prev, agent.ChatMessage{Role: "user", Content: "x"})}); err != nil {
+		t.Fatal(err)
+	}
+	var d agent.ChatDelta
+	if err := conn.ReadJSON(&d); err != nil || d.Kind != "error" {
+		t.Fatalf("got %+v, %v", d, err)
+	}
+	waitFor(t, "the question to be dropped", func() bool { return len(s.Store.Chat()) == 2 })
 }

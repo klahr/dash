@@ -37,6 +37,9 @@ import (
 //
 // The client owns the conversation history and sends it in full each turn.
 // Each completed turn is saved, and GET /api/chat returns it after a restart.
+// The global chat also saves the question as soon as it arrives, so a turn cut
+// short by a restart can be sent again; GET /api/chat sets X-Chat-Busy while
+// one of its turns is running.
 // A new "send" cancels any response still streaming. Without "project" or
 // "todo" it is the global chat, run in the chatter's default directory.
 // With "project", Claude runs in that project's main checkout and the turn is
@@ -90,6 +93,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		}
 		var dir, mode, pid string
 		endReview := func() {}
+		general := msg.Project == "" && msg.Todo == ""
 		save := s.Store.SetChat
 		msg.Messages = s.chatAttachments(msg.Messages)
 		prompt := withAttachments(msg.Messages)
@@ -137,9 +141,19 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		turnCtx = agent.WithApprover(turnCtx, approvals.forTurn(turnCtx))
 		turnCtx = agent.WithPermissionMode(turnCtx, mode)
 		turnCtx = agent.WithProject(turnCtx, pid)
+		if general && s.Store != nil {
+			if err := save(msg.Messages); err != nil {
+				slog.Error("save chat", "err", err)
+			}
+		}
 		go func(ctx context.Context, history []agent.ChatMessage) {
 			defer endReview()
+			if general {
+				s.generalTurns.Add(1)
+				defer s.generalTurns.Add(-1)
+			}
 			var reply strings.Builder
+			saved := false
 			err := s.Chat.Stream(ctx, dir, prompt, func(d agent.ChatDelta) {
 				if d.Kind == "text" {
 					reply.WriteString(d.Text)
@@ -150,12 +164,20 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 					if err := save(turn); err != nil {
 						slog.Error("save chat", "err", err)
 					}
+					saved = true
 				}
 				send(d)
 			})
 			if err != nil && ctx.Err() == nil {
 				slog.Warn("chat", "err", err)
 				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
+			}
+			// A turn that ended without an answer (rather than being cut short)
+			// isn't resumed: take its question back out, as the client does.
+			if general && !saved && ctx.Err() == nil && s.Store != nil && len(history) > 0 {
+				if err := save(history[:len(history)-1]); err != nil {
+					slog.Error("save chat", "err", err)
+				}
 			}
 		}(turnCtx, msg.Messages)
 	}
