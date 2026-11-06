@@ -120,6 +120,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		ReviewPrompt  *string   `json:"review_prompt"`
 		MaxAutoFixes  *int      `json:"max_auto_fixes"`
 		AutoPush      *bool     `json:"auto_push"`
+		AutoApprove   *bool     `json:"auto_approve"`
 		MergeMode     *string   `json:"merge_mode"`
 		InvestigateCI *bool     `json:"investigate_ci"`
 		MaxRunMinutes *int      `json:"max_run_minutes"`
@@ -165,6 +166,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		set(&p.DeployCommand, req.DeployCommand)
 		set(&p.SetupCommand, req.SetupCommand)
 		set(&p.AutoPush, req.AutoPush)
+		set(&p.AutoApprove, req.AutoApprove)
 		set(&p.Color, req.Color)
 		set(&p.Icon, req.Icon)
 		set(&p.ChatPermissionMode, req.ChatMode)

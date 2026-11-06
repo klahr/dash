@@ -56,6 +56,7 @@ type Project struct {
 	DefaultBranch string `json:"default_branch"`
 	RemoteURL     string `json:"remote_url,omitempty"`
 	AutoPush      bool   `json:"auto_push"`                // push DefaultBranch after every merge
+	AutoApprove   bool   `json:"auto_approve"`             // finished todos whose tests pass skip review
 	RunCommand    string `json:"run_command,omitempty"`    // e.g. "npm run dev" — gets $PORT
 	TestCommand   string `json:"test_command,omitempty"`   // e.g. "go test ./..."
 	DeployCommand string `json:"deploy_command,omitempty"` // e.g. "./deploy.sh" or "adb install …"

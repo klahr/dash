@@ -37,7 +37,7 @@ type Publisher interface{ Publish(model.Event) }
 //  4. run the tests; on failure send the output back to Claude, up to
 //     the project's MaxAutoFixes
 //  5. hand off to review, or straight to the merge queue if a human had
-//     already approved it (AutoMerge)
+//     already approved it (AutoMerge) or the project approves automatically
 type TodoEngine struct {
 	Store        *store.Store
 	Git          *gitops.Git
@@ -357,8 +357,12 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 
 	// 5. Hand off.
 	passed := t.Checks == nil || t.Checks.Passed
-	if t.AutoMerge && passed && e.Merges != nil {
-		log("✔ fixed; back to the merge queue (already approved)")
+	if (t.AutoMerge || p.AutoApprove) && passed && e.Merges != nil {
+		if t.AutoMerge {
+			log("✔ fixed; back to the merge queue (already approved)")
+		} else {
+			log("✔ approved automatically; to the merge queue")
+		}
 		if _, err := e.Store.SetStatus(t.ID, model.StatusMerging, ""); err == nil {
 			if err := e.Merges.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID}); err == nil {
 				return

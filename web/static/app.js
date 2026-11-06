@@ -1802,6 +1802,7 @@ function openSettings() {
   f.run_command.value = p.run_command || "";
   f.deploy_command.value = p.deploy_command || "";
   f.auto_push.checked = !!p.auto_push;
+  f.auto_approve.checked = !!p.auto_approve;
   f.merge_mode.value = p.merge_mode || "local";
   f.investigate_ci.checked = p.investigate_ci !== false;
   f.max_run_minutes.value = p.max_run_minutes || "";
@@ -1857,6 +1858,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     run_command: f.run_command.value.trim(),
     deploy_command: f.deploy_command.value.trim(),
     auto_push: f.auto_push.checked,
+    auto_approve: f.auto_approve.checked,
     merge_mode: f.merge_mode.value,
     investigate_ci: f.investigate_ci.checked,
     max_run_minutes: Number(f.max_run_minutes.value) || 0,

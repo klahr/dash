@@ -136,6 +136,18 @@ func write(t *testing.T, dir, name, content string) {
 	}
 }
 
+func TestAutoApproveSkipsReviewOnlyWhenTestsPass(t *testing.T) {
+	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
+		write(t, req.Dir, "a.txt", map[bool]string{true: "pass\n", false: "broken\n"}[n == 1])
+		return nil
+	}}
+	h := newHarness(t, exe, model.Project{Name: "p", AutoApprove: true, TestCommand: "grep -qx pass a.txt"})
+	ok := h.add("good")
+	h.waitFor(ok.ID, model.StatusMerged)
+	bad := h.add("bad")
+	h.waitFor(bad.ID, model.StatusReview)
+}
+
 func TestFailingTestsGoBackToClaudeWithResume(t *testing.T) {
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		if n == 1 {
