@@ -169,27 +169,41 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 		}
 	}
 
-	// 1. Bring the default branch into the todo's branch.
-	changed, err := m.Git.MergeIn(ctx, p.ID, wt.Path, p.DefaultBranch)
 	var conflict *gitops.ErrConflict
-	if errors.As(err, &conflict) {
-		log("⚠ " + conflict.Error())
-		return m.sendBack(t, p, "", true, "conflicts with "+p.DefaultBranch+" in "+strings.Join(conflict.Files, ", "))
-	}
-	if err != nil {
-		return err
-	}
-
-	// 2. Re-test if the default branch moved since the todo's tests ran.
-	if changed && p.TestCommand != "" {
-		checks := runChecks(ctx, m.Log, t, p, wt.Path, "merge", m.TestTimeout)
-		if t, err = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Checks = &checks; return nil }); err != nil {
+	// 1–2. Repeated (a few times) when the default branch moves meanwhile,
+	// e.g. a commit in the main checkout while the tests ran.
+	for range 3 {
+		base, err := m.Git.Head(ctx, p.ID, p.Path, p.DefaultBranch)
+		if err != nil {
 			return err
 		}
-		if !checks.Passed {
-			note := fmt.Sprintf("Your change was merged with the latest `%s`, and now the tests fail. %s", p.DefaultBranch, testNote(checks))
-			return m.sendBack(t, p, note, false, "tests fail after merging "+p.DefaultBranch)
+
+		// 1. Bring the default branch into the todo's branch.
+		changed, err := m.Git.MergeIn(ctx, p.ID, wt.Path, p.DefaultBranch)
+		if errors.As(err, &conflict) {
+			log("⚠ " + conflict.Error())
+			return m.sendBack(t, p, "", true, "conflicts with "+p.DefaultBranch+" in "+strings.Join(conflict.Files, ", "))
 		}
+		if err != nil {
+			return err
+		}
+
+		// 2. Re-test if the default branch moved since the todo's tests ran.
+		if changed && p.TestCommand != "" {
+			checks := runChecks(ctx, m.Log, t, p, wt.Path, "merge", m.TestTimeout)
+			if t, err = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Checks = &checks; return nil }); err != nil {
+				return err
+			}
+			if !checks.Passed {
+				note := fmt.Sprintf("Your change was merged with the latest `%s`, and now the tests fail. %s", p.DefaultBranch, testNote(checks))
+				return m.sendBack(t, p, note, false, "tests fail after merging "+p.DefaultBranch)
+			}
+		}
+
+		if head, err := m.Git.Head(ctx, p.ID, p.Path, p.DefaultBranch); err != nil || head == base {
+			break
+		}
+		log("↻ " + p.DefaultBranch + " moved during the merge; merging it in again")
 	}
 
 	// 3. Land it.
@@ -197,6 +211,10 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 		return m.openPR(ctx, t, p)
 	}
 	sha, err := m.Git.SquashInto(ctx, p.ID, p.Path, wt.Branch, commitMessage(t))
+	if errors.As(err, &conflict) {
+		log("⚠ " + conflict.Error())
+		return m.sendBack(t, p, "", true, "conflicts with "+p.DefaultBranch+" in "+strings.Join(conflict.Files, ", "))
+	}
 	if err != nil {
 		return fmt.Errorf("squash onto %s (is the main checkout clean and on %s?): %w", p.DefaultBranch, p.DefaultBranch, err)
 	}

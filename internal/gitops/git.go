@@ -235,10 +235,15 @@ func (g *Git) LeftoverMarkers(ctx context.Context, projectID, dir string) (strin
 }
 
 // SquashInto lands branch on the branch checked out in repo as one commit
-// and returns its hash ("" if branch had nothing new). On failure repo is reset.
+// and returns its hash ("" if branch had nothing new). On failure repo is
+// reset; a conflict returns an *ErrConflict.
 func (g *Git) SquashInto(ctx context.Context, projectID, repo, branch, msg string) (string, error) {
 	if _, err := g.git(ctx, projectID, repo, "merge", "--squash", branch); err != nil {
+		files := g.conflictedFiles(ctx, projectID, repo)
 		_, _ = g.git(ctx, projectID, repo, "reset", "--merge")
+		if len(files) > 0 {
+			return "", &ErrConflict{Files: files}
+		}
 		return "", err
 	}
 	if _, err := g.git(ctx, projectID, repo, "diff", "--cached", "--quiet"); err == nil {

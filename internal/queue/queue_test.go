@@ -299,3 +299,39 @@ func TestConflictResolvedAsOursStillMerges(t *testing.T) {
 	h.approve(b.ID)
 	h.waitFor(b.ID, model.StatusMerged)
 }
+
+// A commit on main while the merge re-tests is merged in and tested before landing.
+func TestMainMovingDuringMergeIsMergedAgain(t *testing.T) {
+	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
+		write(t, req.Dir, "a.txt", "a\n")
+		return nil
+	}}
+	runs := filepath.Join(t.TempDir(), "runs")
+	h := newHarness(t, exe, model.Project{Name: "p", MaxAutoFixes: 1})
+	commit := func(name string) string {
+		return "echo x > " + name + " && git add " + name + " && git -c user.name=t -c user.email=t@t commit -qm " + name
+	}
+	// Run 1 is the review, run 2 the merge: it commits on main, so run 3 must follow.
+	h.proj, _ = h.st.UpdateProject(h.proj.ID, func(p *model.Project) error {
+		p.TestCommand = "echo >> " + runs + "; if [ $(wc -l < " + runs + ") -eq 2 ]; then (cd " + p.Path + " && " + commit("c.txt") + "); fi"
+		return nil
+	})
+	td := h.waitFor(h.add("a").ID, model.StatusReview)
+	if out, err := exec.Command("sh", "-c", "cd "+h.proj.Path+" && "+commit("b.txt")).CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	h.approve(td.ID)
+	h.waitFor(td.ID, model.StatusMerged)
+
+	for _, f := range []string{"a.txt", "b.txt", "c.txt"} {
+		if _, err := os.Stat(filepath.Join(h.proj.Path, f)); err != nil {
+			t.Fatalf("main should have %s: %v", f, err)
+		}
+	}
+	if b, _ := os.ReadFile(runs); strings.Count(string(b), "\n") != 3 {
+		t.Fatalf("want 3 test runs (review, merge, re-merge), got %d", strings.Count(string(b), "\n"))
+	}
+	if log, _ := h.engine.Log.Read(td.ID); !strings.Contains(log, "moved during the merge") {
+		t.Fatalf("log should mention the re-merge:\n%s", log)
+	}
+}
