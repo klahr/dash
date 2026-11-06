@@ -792,7 +792,8 @@ function renderBoardNow() {
       items[l.key].length
         ? h("ol", { class: "rail" }, items[l.key].map((t, ri) => h("li", {}, todoRow(t, li, ri))))
         : h("p", { class: "col-empty" }, state.query ? "No matches." : l.empty),
-      l.key === "done" ? oldToggle() : null))));
+      l.key === "done" ? oldToggle() : null,
+      l.key === "done" ? clearDoneBtn() : null))));
   syncSearchBar();
   updateNeedsYou(items);
 
@@ -818,6 +819,27 @@ function oldToggle() {
   if (!hidden && !state.showOld) return null;
   return ib({ class: "link older", onclick: () => { state.showOld = !state.showOld; renderBoard(); } }, state.showOld ? "up" : "down",
     state.showOld ? "Hide merged todos older than a day" : `Show ${hidden} older merged ${hidden === 1 ? "todo" : "todos"}`);
+}
+
+const doneTodos = () => [...state.todos.values()].filter((t) => t.status === "merged" || t.status === "failed");
+
+function clearDoneBtn() {
+  if (!doneTodos().length) return null;
+  return ib({ class: "link older", onclick: attempt(clearDone) }, "trash", "Clear Done");
+}
+
+async function clearDone() {
+  const list = doneTodos();
+  if (!list.length) return;
+  const failed = list.filter((t) => t.status === "failed").length;
+  const n = list.length;
+  if (!await ask({ title: `Clear ${n} done ${n === 1 ? "todo" : "todos"}?`,
+    body: `Deletes every merged and failed todo in this project${failed ? `, including the worktrees and branches of ${failed} failed` : ""}. This can't be undone.`,
+    ok: "Clear", danger: true })) return;
+  const res = await Promise.allSettled(list.map((t) => api("DELETE", `/api/todos/${t.id}`)));
+  if (list.some((t) => t.id === state.detail)) closeDetail();
+  const bad = res.filter((r) => r.status === "rejected").length;
+  toast(bad ? `Cleared ${n - bad}, ${bad} failed` : `Cleared ${n} ${n === 1 ? "todo" : "todos"}`);
 }
 
 // "2m", "3h", "4d"
