@@ -41,7 +41,7 @@
         <div class="foot-menu-list project-picker-list" id="project-picker" role="menu" aria-label="Projects" hidden></div>
       </div>
       <span class="live" id="live" title="Live updates disconnected"><span class="live-dot"></span><span class="sr-only" id="live-label">Offline</span></span>
-      <button class="icon-btn" id="search-open" type="button" aria-label="Search todos (/)" title="Search todos (/)">
+      <button class="icon-btn" id="search-open" type="button" aria-label="Search tasks (/)" title="Search tasks (/)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4.5-4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
       <button class="icon-btn" id="palette-open" type="button" aria-label="Search everything" title="Search everything (Ctrl-k)" aria-haspopup="dialog" data-icon="palette"></button>
@@ -136,7 +136,7 @@
         </div>
         <div class="search-bar" id="search-bar" hidden>
           <span aria-hidden="true">/</span>
-          <input id="search-input" placeholder="Search todos" aria-label="Search todos" autocomplete="off" spellcheck="false">
+          <input id="search-input" placeholder="Search tasks" aria-label="Search tasks" autocomplete="off" spellcheck="false">
           <span class="search-count" id="search-count"></span>
           <button class="link" id="search-clear" type="button" data-icon="x">Clear</button>
         </div>
@@ -163,9 +163,9 @@
           </aside>
         </div>
         <div class="empty" id="board-empty" hidden></div>
-        <button class="fab" id="new-todo" aria-label="New todo">
+        <button class="fab" id="new-todo" aria-label="New task">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
-          <span>New todo</span>
+          <span>New task</span>
         </button>
       </section>
 
@@ -253,10 +253,10 @@
         <div class="pane todo-chat" id="d-chat" hidden>
           <p class="chat-cwd" id="d-chat-cwd" hidden></p>
           <div class="chat-log" id="d-chat-log">
-            <p class="pane-empty" id="d-chat-empty">Talk this todo through with Claude. It sees the instructions, so it can help you sharpen a draft into a better prompt.</p>
+            <p class="pane-empty" id="d-chat-empty">Talk this task through with Claude. It sees the instructions, so it can help you sharpen a draft into a better prompt.</p>
           </div>
           <form class="composer" id="d-chat-form">
-            <textarea name="q" rows="1" placeholder="Ask about this todo" aria-label="Ask Claude about this todo"></textarea>
+            <textarea name="q" rows="1" placeholder="Ask about this task" aria-label="Ask Claude about this task"></textarea>
             <button class="icon-btn primary" aria-label="Send">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m0 0-6 6m6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
@@ -271,7 +271,7 @@
   <!-- New / edit todo -->
   <dialog class="sheet" id="todo-sheet" aria-labelledby="todo-sheet-title">
     <form method="dialog" id="todo-form">
-      <header class="sheet-head"><h2 id="todo-sheet-title">New todo</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <header class="sheet-head"><h2 id="todo-sheet-title">New task</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
       <label class="field" id="todo-project-field" hidden><span>Project</span><select name="project"></select></label>
       <label class="field"><span>Title <em>Claude names it if empty</em></span><input name="title" placeholder="Short name for the task" autocomplete="off"></label>
       <label class="field"><span>Instructions for Claude <em>optional, Markdown</em></span><textarea name="prompt" rows="8" placeholder="Describe the change you want. Claude works in its own worktree; you review the diff before it merges."></textarea></label>
@@ -341,14 +341,14 @@
       <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" spellcheck="false"></label>
       <label class="field"><span>Deploy command</span><input name="deploy_command" spellcheck="false"></label>
       <fieldset class="field choice">
-        <legend>When you approve a todo</legend>
+        <legend>When you approve a task</legend>
         <label class="radio"><input type="radio" name="merge_mode" value="local"><span>Merge it here <em>one squashed commit on the default branch</em></span></label>
         <label class="radio"><input type="radio" name="merge_mode" value="pr"><span>Open a pull request <em>Dash marks it merged when GitHub merges it; failing checks go back to Claude</em></span></label>
       </fieldset>
       <label class="toggle" id="auto-push-row"><input type="checkbox" name="auto_push"><span>Push after every merge</span></label>
       <p class="hint" id="merge-hint"></p>
       <label class="toggle"><input type="checkbox" name="investigate_ci"><span>Fix failed builds automatically</span></label>
-      <p class="hint">When GitHub Actions fails on the default branch, Claude gets a todo with the failed log to investigate and fix it.</p>
+      <p class="hint">When GitHub Actions fails on the default branch, Claude gets a task with the failed log to investigate and fix it.</p>
       <div class="field-row">
         <label class="field inline"><span>Time limit per run <em>minutes</em></span><input type="number" name="max_run_minutes" min="1" inputmode="numeric" placeholder="60"></label>
         <label class="field inline"><span>Turn limit per run</span><input type="number" name="max_turns" min="1" inputmode="numeric" placeholder="200"></label>
@@ -381,7 +381,7 @@
   <dialog class="sheet palette" id="palette" aria-label="Search everything">
     <div class="palette-field">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM16 16l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      <input id="palette-input" placeholder="Projects, todos, commands… (> commands · @ projects · # todos)" aria-label="Search everything" aria-controls="palette-list" role="combobox" aria-expanded="true" aria-autocomplete="list" autocomplete="off" spellcheck="false">
+      <input id="palette-input" placeholder="Projects, tasks, commands… (> commands · @ projects · # tasks)" aria-label="Search everything" aria-controls="palette-list" role="combobox" aria-expanded="true" aria-autocomplete="list" autocomplete="off" spellcheck="false">
       <kbd>Esc</kbd>
     </div>
     <ul class="palette-list" id="palette-list" role="listbox" aria-label="Results"></ul>
@@ -393,18 +393,18 @@
       <header class="sheet-head"><h2 id="keys-title" tabindex="-1" autofocus>Keyboard</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
       <p class="hint">Vim-style. Typing in a field or the terminal is insert mode; Esc (Ctrl-] in the terminal) returns to normal mode.</p>
       <dl class="keys">
-        <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with todos · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
-        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gc</kbd>/<kbd>gs</kbd>/<kbd>ga</kbd>/<kbd>gh</kbd> Board/Chat/Shell/Activity/History · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> sections, <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>[</kbd> collapse sidebar · <kbd>Ctrl-k</kbd> search projects, todos and commands · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
-        <dt>Todos</dt><dd><kbd>Enter</kbd> open (approve in review; <kbd>Space</kbd> opens) · <kbd>a</kbd> new · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (todo in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>*</kbd> milestone · <kbd>t</kbd> try it · <kbd>!</kbd> shell in worktree</dd>
+        <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with tasks · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
+        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gc</kbd>/<kbd>gs</kbd>/<kbd>ga</kbd>/<kbd>gh</kbd> Board/Chat/Shell/Activity/History · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> sections, <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>[</kbd> collapse sidebar · <kbd>Ctrl-k</kbd> search projects, tasks and commands · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
+        <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review; <kbd>Space</kbd> opens) · <kbd>a</kbd> new · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>*</kbd> milestone · <kbd>t</kbd> try it · <kbd>!</kbd> shell in worktree</dd>
         <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> changes ↔ log · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
         <dt>Search</dt><dd><kbd>/</kbd> filter the board · <kbd>Enter</kbd> jump to first match · <kbd>n</kbd>/<kbd>N</kbd> next/previous · <kbd>Esc</kbd> or <code>:noh</code> clear</dd>
-        <dt>More</dt><dd><kbd>T</kbd> run tests again · <kbd>Y</kbd> duplicate · <kbd>E</kbd> open worktree in editor · <kbd>u</kbd> revert a merged todo · <kbd>O</kbd> open its pull request · click a diff line to comment · paste or drop images into a todo</dd>
-        <dt>Approvals</dt><dd><kbd>y</kbd> allow · <kbd>A</kbd> always allow that tool for the todo · <kbd>n</kbd> deny</dd>
-        <dt>Todo chat</dt><dd><kbd>h</kbd>/<kbd>l</kbd> to the Chat tab · <kbd>i</kbd> type</dd>
+        <dt>More</dt><dd><kbd>T</kbd> run tests again · <kbd>Y</kbd> duplicate · <kbd>E</kbd> open worktree in editor · <kbd>u</kbd> revert a merged task · <kbd>O</kbd> open its pull request · click a diff line to comment · paste or drop images into a task</dd>
+        <dt>Approvals</dt><dd><kbd>y</kbd> allow · <kbd>A</kbd> always allow that tool for the task · <kbd>n</kbd> deny</dd>
+        <dt>Task chat</dt><dd><kbd>h</kbd>/<kbd>l</kbd> to the Chat tab · <kbd>i</kbd> type</dd>
         <dt>Chat</dt><dd><kbd>i</kbd> type · <kbd>Enter</kbd> send · <kbd>Esc</kbd> stop typing · <kbd>j</kbd>/<kbd>k</kbd> scroll</dd>
         <dt>Shell</dt><dd><kbd>i</kbd> type into terminal · <kbd>Ctrl-]</kbd> leave terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> new shell</dd>
         <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> add to queue · <kbd>Ctrl-Shift-Enter</kbd>/<kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>
-        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:todo …</code> <code>:new</code> <code>:run cmd</code> <code>:shell</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:activity</code> <code>:history</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:q</code></dd>
+        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:task …</code> <code>:new</code> <code>:run cmd</code> <code>:shell</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:activity</code> <code>:history</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:q</code></dd>
       </dl>
       <p class="hint">Dash version <code>{{DASH_VERSION}}</code></p>
     </form>

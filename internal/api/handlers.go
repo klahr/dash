@@ -389,7 +389,7 @@ func (s *Server) openTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if t.Worktree == nil {
-		writeErr(w, fmt.Errorf("%w: this todo has no worktree", errBadRequest))
+		writeErr(w, fmt.Errorf("%w: this task has no worktree", errBadRequest))
 		return
 	}
 	args := append(strings.Fields(s.Editor), t.Worktree.Path)
@@ -530,7 +530,7 @@ func (s *Server) todoDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if t.Worktree == nil {
-		writeErr(w, fmt.Errorf("%w: todo has no worktree yet", errBadRequest))
+		writeErr(w, fmt.Errorf("%w: task has no worktree yet", errBadRequest))
 		return
 	}
 	p, err := s.Store.GetProject(t.ProjectID)
@@ -576,10 +576,10 @@ func (s *Server) todoLog(w http.ResponseWriter, r *http.Request) {
 func (s *Server) approveTodo(w http.ResponseWriter, r *http.Request) {
 	t, err := s.Store.UpdateTodo(r.PathValue("tid"), func(t *model.Todo) error {
 		if t.Status != model.StatusReview && t.Status != model.StatusFailed {
-			return fmt.Errorf("%w: only todos in review (or a failed merge) can be approved", errBadRequest)
+			return fmt.Errorf("%w: only tasks in review (or a failed merge) can be approved", errBadRequest)
 		}
 		if t.Worktree == nil {
-			return fmt.Errorf("%w: this todo has no work left to merge; retry it instead", errBadRequest)
+			return fmt.Errorf("%w: this task has no work left to merge; retry it instead", errBadRequest)
 		}
 		t.Status, t.Error, t.AutoFixes = model.StatusMerging, "", 0
 		return nil
@@ -646,10 +646,10 @@ func (s *Server) revertTodo(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case t.Status != model.StatusMerged:
-		writeErr(w, fmt.Errorf("%w: only merged todos can be reverted", errBadRequest))
+		writeErr(w, fmt.Errorf("%w: only merged tasks can be reverted", errBadRequest))
 		return
 	case t.Revert != nil:
-		writeErr(w, fmt.Errorf("%w: this todo was already reverted", errBadRequest))
+		writeErr(w, fmt.Errorf("%w: this task was already reverted", errBadRequest))
 		return
 	}
 	if err := s.Merges.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID, Revert: true}); err != nil {
@@ -740,7 +740,7 @@ func (s *Server) startProcess(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if t.Worktree == nil || t.ProjectID != p.ID {
-			writeErr(w, fmt.Errorf("%w: todo has no worktree in this project", errBadRequest))
+			writeErr(w, fmt.Errorf("%w: task has no worktree in this project", errBadRequest))
 			return
 		}
 		dir = t.Worktree.Path

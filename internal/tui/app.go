@@ -986,7 +986,7 @@ func (a *App) normalKey(s string) tea.Cmd {
 		case "gx":
 			t, ok := a.selected()
 			if !ok || t.PR == nil {
-				a.setFlash("this todo has no pull request", true)
+				a.setFlash("this task has no pull request", true)
 				return nil
 			}
 			a.setFlash("copied "+t.PR.URL, false)
@@ -1233,7 +1233,7 @@ func (a *App) todoAction(s string) tea.Cmd {
 		return a.action("opening in your editor", func() error { return a.c.OpenEditor(t.ID) })
 	case "u":
 		if t.Status != model.StatusMerged || t.Revert != nil {
-			a.setFlash("only merged todos can be reverted", true)
+			a.setFlash("only merged tasks can be reverted", true)
 			return nil
 		}
 		a.confirm(fmt.Sprintf("revert %q? (y/n)", title(t)), func() tea.Cmd {
@@ -1481,7 +1481,7 @@ func (a *App) chatKey(s string, n int) tea.Cmd {
 				return cmd
 			}
 		}
-		a.setFlash("no answer to turn into a todo yet", true)
+		a.setFlash("no answer to turn into a task yet", true)
 		return nil
 	case "i", "a", "o", "A", "I":
 		a.enterInsert()
@@ -1671,9 +1671,9 @@ func (a *App) runCommand(line string) tea.Cmd {
 			a.fPrompt.SetValue(arg)
 		}
 		return cmd
-	case "todo":
+	case "todo", "task":
 		if a.proj == nil || arg == "" {
-			a.setFlash("usage: :todo <prompt>  (creates and queues)", true)
+			a.setFlash("usage: :task <prompt>  (creates and queues)", true)
 			return nil
 		}
 		pid := a.proj.ID
@@ -1722,7 +1722,7 @@ func (a *App) runCommand(line string) tea.Cmd {
 		a.showOld = !a.showOld
 		a.rebuildCols()
 		if a.showOld {
-			a.setFlash("showing merged todos older than a day", false)
+			a.setFlash("showing merged tasks older than a day", false)
 		}
 	case "copy":
 		t, ok := a.selected()
@@ -1731,7 +1731,7 @@ func (a *App) runCommand(line string) tea.Cmd {
 			return tea.SetClipboard(t.Prompt)
 		}
 		if !ok || t.Worktree == nil {
-			a.setFlash("select a todo with a worktree first", true)
+			a.setFlash("select a task with a worktree first", true)
 			return nil
 		}
 		text := t.Worktree.Branch
@@ -1749,7 +1749,7 @@ func (a *App) runCommand(line string) tea.Cmd {
 			}
 			a.prog.Send(usageMsg{u, nil})
 			if paused {
-				return resultMsg{ok: "queue paused: no new todos start"}
+				return resultMsg{ok: "queue paused: no new tasks start"}
 			}
 			return resultMsg{ok: "queue resumed"}
 		}

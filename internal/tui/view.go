@@ -198,13 +198,13 @@ func (a *App) hints() string {
 	case ovPicker:
 		return "j/k · Enter select · q close"
 	case ovPerms:
-		return "y allow · A always allow this tool · n deny · o open todo · j/k · q close"
+		return "y allow · A always allow this tool · n deny · o open task · j/k · q close"
 	}
 	switch a.tab {
 	case tabBoard:
 		return "hjkl move · Enter open · o new · s queue · a approve · r rework · / search · T retest · Y duplicate · gt next tab"
 	case tabChat:
-		return "i type · j/k scroll · t make last answer a todo · x stop · :clear"
+		return "i type · j/k scroll · t make last answer a task · x stop · :clear"
 	case tabProcs:
 		return "Enter attach · R run · T test · D deploy · ! shell · x stop · o open URL"
 	}
@@ -248,7 +248,7 @@ func (a *App) center(s string) string {
 
 func (a *App) renderBoard() string {
 	if len(a.cols) == 0 {
-		return a.center(styleDim.Render("No todos. Press o to create one."))
+		return a.center(styleDim.Render("No tasks. Press o to create one."))
 	}
 	n := len(columns)
 	cw := max(12, a.w/n)
@@ -357,7 +357,7 @@ func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
 func (a *App) renderDetail() string {
 	t, ok := a.todos[a.dID]
 	if !ok {
-		return a.center("todo not found")
+		return a.center("task not found")
 	}
 	st, okc := statusColors[t.Status]
 	if !okc {
@@ -567,9 +567,9 @@ func (a *App) renderProcs() string {
 // ---- overlays
 
 func (a *App) renderForm() string {
-	head := "New todo"
+	head := "New task"
 	if a.fEditID != "" {
-		head = "Edit todo"
+		head = "Edit task"
 	}
 	goal := styleDim.Render("☆ goal (*)")
 	if a.fGoal {
@@ -610,7 +610,7 @@ func (a *App) renderPerms() string {
 		}
 		lines = append(lines, head, body, "")
 	}
-	lines = append(lines, styleDim.Render("y allow · A always allow this tool in the project · n deny · o open todo"))
+	lines = append(lines, styleDim.Render("y allow · A always allow this tool in the project · n deny · o open task"))
 	return styleBox.Render(strings.Join(lines, "\n"))
 }
 
@@ -643,16 +643,16 @@ var helpText = styleBox.Render(strings.Join([]string{
 	"",
 	styleAccent.Render("Global") + "        gt/gT next/prev tab · p projects · : command · ? help · ctrl+l reload · q/ZZ/:q quit",
 	styleAccent.Render("Motion") + "        h j k l · w/b next/prev column · gg G · {count}j · ctrl+d/u/f/b",
-	styleAccent.Render("Todo") + "          Enter open · o new · e edit · s queue · x cancel · z pause · a approve · r rework",
+	styleAccent.Render("Task") + "          Enter open · o new · e edit · s queue · x cancel · z pause · a approve · r rework",
 	"              dd delete · +/- (K/J) priority · * goal · t try in worktree · ! shell in worktree",
 	styleAccent.Render("More") + "          / search · n/N next/prev match · :noh clear · T rerun tests · Y duplicate · E open in editor · :copy [path|prompt]",
-	"              u revert a merged todo · gx copy its pull request link · :cleanup remove stale worktrees",
+	"              u revert a merged task · gx copy its pull request link · :cleanup remove stale worktrees",
 	"              :ci build status · :fix ask Claude to fix the failing build · Tab completes : commands",
 	styleAccent.Render("Detail") + "        Tab/h/l cycle log → diff → tests · R reload · q back",
 	styleAccent.Render("Approvals") + "     P list Claude's permission requests · y allow · A always allow · n deny",
-	styleAccent.Render("Chat") + "          t make the last answer a todo · i insert · Enter send · Alt+Enter newline · Esc normal · x stop · dd/:clear",
+	styleAccent.Render("Chat") + "          t make the last answer a task · i insert · Enter send · Alt+Enter newline · Esc normal · x stop · dd/:clear",
 	styleAccent.Render("Procs") + "         Enter attach (Ctrl-] detaches) · R run · T test · D deploy · ! shell · x stop · o open",
 	styleAccent.Render("Form") + "          Tab field · Esc normal · * goal · :w draft · :wq/ZZ queue · :q! discard",
-	styleAccent.Render("Commands") + "      :project <name> · :newproject <name> [path] · :todo <prompt> · :new [prompt]",
+	styleAccent.Render("Commands") + "      :project <name> · :newproject <name> [path] · :task <prompt> · :new [prompt]",
 	"              :run <cmd> · :push · :pause / :resume the queue · :perms · :board :chat :procs :activity · :clear",
 }, "\n"))

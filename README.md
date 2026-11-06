@@ -21,7 +21,7 @@ go build -o bin/dash-tui ./cmd/dash-tui && ./bin/dash-tui
 ## Use it from Claude (MCP)
 
 `dash-mcp` is an MCP server for any Claude client (Claude Code, Claude Desktop). It logs in to a
-running Dash and lets Claude list projects, create todos, read diffs and logs, approve or send
+running Dash and lets Claude list projects, create tasks, read diffs and logs, approve or send
 work back, and answer permission requests, on every computer in the dashboard.
 
 ```sh
@@ -69,20 +69,20 @@ one you open with a `-peer` for each of the others:
 ./bin/dash -name home -peer work=https://work.<tailnet>.ts.net
 ```
 
-Projects are grouped by computer, and todos run on the computer that has the project.
+Projects are grouped by computer, and tasks run on the computer that has the project.
 Notifications come from all of them.
 
 ## GitHub
 
 Connect a repository from Projects → Create GitHub repository (uses `gh`). In the project's
-settings, choose what approving a todo does:
+settings, choose what approving a task does:
 
 - **Merge it here:** one squashed commit on the default branch. With "Push after every merge",
   Dash pulls from GitHub first, so the push isn't rejected.
 - **Open a pull request:** Dash pushes the branch and opens a PR. Failing checks and conflicts
-  go back to Claude, and the todo is marked merged when the PR is merged on GitHub.
+  go back to Claude, and the task is marked merged when the PR is merged on GitHub.
 
-Merged todos can be reverted with one click (`u`).
+Merged tasks can be reverted with one click (`u`).
 
 ## License
 

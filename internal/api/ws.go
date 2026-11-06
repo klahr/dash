@@ -232,11 +232,11 @@ func withTodoContext(t model.Todo, diff string, history []agent.ChatMessage) []a
 		return history
 	}
 	var b strings.Builder
-	b.WriteString("This conversation is about a todo: a task that Claude Code carries out on its own in a git worktree of the project. ")
+	b.WriteString("This conversation is about a task that Claude Code carries out on its own in a git worktree of the project. ")
 	if t.Status == model.StatusDraft {
 		b.WriteString("It is still a draft, so help me refine its instructions into a clear, complete prompt for Claude Code. ")
 	}
-	fmt.Fprintf(&b, "\n\n<todo status=%q>\n<title>%s</title>\n<instructions>\n%s\n</instructions>\n", t.Status, t.Title, t.Prompt)
+	fmt.Fprintf(&b, "\n\n<task status=%q>\n<title>%s</title>\n<instructions>\n%s\n</instructions>\n", t.Status, t.Title, t.Prompt)
 	for _, f := range t.Feedback {
 		fmt.Fprintf(&b, "<review_note>\n%s\n</review_note>\n", f)
 	}
@@ -255,7 +255,7 @@ func withTodoContext(t model.Todo, diff string, history []agent.ChatMessage) []a
 		}
 		fmt.Fprintf(&b, "<changes>\n%s\n</changes>\n", diff)
 	}
-	b.WriteString("</todo>\n\n")
+	b.WriteString("</task>\n\n")
 	out := append([]agent.ChatMessage(nil), history...)
 	out[0].Content = b.String() + out[0].Content
 	return out

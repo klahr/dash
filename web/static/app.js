@@ -312,11 +312,11 @@ const askAttach = attachBox($("#ask-attach"), $("#ask-input"));
 // ------------------------------------------------------------------ state
 const LANES = [
   { key: "draft", label: "Drafts", statuses: ["draft"], empty: "Drafts wait here until you queue them." },
-  { key: "queued", label: "Queued", statuses: ["queued"], empty: "Nothing waiting. New todos start here." },
+  { key: "queued", label: "Queued", statuses: ["queued"], empty: "Nothing waiting. New tasks start here." },
   { key: "in_progress", label: "Running", statuses: ["in_progress"], empty: "No agents working right now." },
   { key: "review", label: "Review", statuses: ["review"], empty: "Nothing to review. Finished work lands here." },
   { key: "merging", label: "Merging", statuses: ["merging"], empty: "The merge queue is clear." },
-  { key: "done", label: "Done", statuses: ["merged", "failed"], empty: "Merged and failed todos show up here." },
+  { key: "done", label: "Done", statuses: ["merged", "failed"], empty: "Merged and failed tasks show up here." },
 ];
 const STATUS_LABEL = { draft: "Draft", queued: "Queued", in_progress: "Running", review: "Ready for review", merging: "Merging", merged: "Merged", failed: "Failed" };
 
@@ -845,7 +845,7 @@ function renderBoardNow() {
       // Files are embedded in the binary: rebuild and restart dash afterwards.
       art("img/empty-board.webp", 480, 360),
       h("p", { class: "empty-title" }, "Create your first project"),
-      h("p", {}, "A project is a git repository. Every todo runs in its own worktree, so several can run at once."),
+      h("p", {}, "A project is a git repository. Every task runs in its own worktree, so several can run at once."),
       ib({ class: "btn primary", onclick: openNewProject }, "plus", "New project"));
     $("#new-todo").hidden = true;
     return;
@@ -904,7 +904,7 @@ function oldToggle() {
   const hidden = [...state.todos.values()].filter((t) => isOld(t) && matches(t, state.query)).length;
   if (!hidden && !state.showOld) return null;
   return ib({ class: "link older", onclick: () => { state.showOld = !state.showOld; renderBoard(); } }, state.showOld ? "up" : "down",
-    state.showOld ? "Hide merged todos older than a day" : `Show ${hidden} older merged ${hidden === 1 ? "todo" : "todos"}`);
+    state.showOld ? "Hide merged tasks older than a day" : `Show ${hidden} older merged ${hidden === 1 ? "task" : "tasks"}`);
 }
 
 const doneTodos = () => [...state.todos.values()].filter((t) => t.status === "merged" || t.status === "failed");
@@ -919,13 +919,13 @@ async function clearDone() {
   if (!list.length) return;
   const failed = list.filter((t) => t.status === "failed").length;
   const n = list.length;
-  if (!await ask({ title: `Clear ${n} done ${n === 1 ? "todo" : "todos"}?`,
-    body: `Deletes every merged and failed todo in this project${failed ? `, including the worktrees and branches of ${failed} failed` : ""}. This can't be undone.`,
+  if (!await ask({ title: `Clear ${n} done ${n === 1 ? "task" : "tasks"}?`,
+    body: `Deletes every merged and failed task in this project${failed ? `, including the worktrees and branches of ${failed} failed` : ""}. This can't be undone.`,
     ok: "Clear", danger: true })) return;
   const res = await Promise.allSettled(list.map((t) => api("DELETE", `/api/todos/${t.id}`)));
   if (list.some((t) => t.id === state.detail)) closeDetail();
   const bad = res.filter((r) => r.status === "rejected").length;
-  toast(bad ? `Cleared ${n - bad}, ${bad} failed` : `Cleared ${n} ${n === 1 ? "todo" : "todos"}`);
+  toast(bad ? `Cleared ${n - bad}, ${bad} failed` : `Cleared ${n} ${n === 1 ? "task" : "tasks"}`);
 }
 
 // "2m", "3h", "4d"
@@ -1005,7 +1005,7 @@ function openTodoForm(t = null, { pick = false } = {}) {
       h("option", { value: projectKey(p) }, multi() ? `${p.name} · ${p.machine}` : p.name)));
     f.project.value = projectKey(state.project);
   }
-  $("#todo-sheet-title").textContent = t ? "Edit todo" : "New todo";
+  $("#todo-sheet-title").textContent = t ? "Edit task" : "New task";
   if (t) {
     f.title.value = t.title;
     f.prompt.value = t.prompt;
@@ -1189,15 +1189,15 @@ $("#d-more").addEventListener("click", attempt(async () => {
       choices.push(["copy", `Copy branch name (${t.worktree.branch})`, () => copy(t.worktree.branch, "Branch name copied")]);
       choices.push(["copy", "Copy worktree path", () => copy(t.worktree.path, "Path copied")]);
     }
-    choices.push(["trash", "Delete todo", async () => {
-      if (await ask({ title: "Delete this todo?", body: "Its worktree and branch are removed too. This can't be undone.", ok: "Delete", danger: true })) {
+    choices.push(["trash", "Delete task", async () => {
+      if (await ask({ title: "Delete this task?", body: "Its worktree and branch are removed too. This can't be undone.", ok: "Delete", danger: true })) {
         await api("DELETE", `/api/todos/${t.id}`);
         closeDetail();
-        toast("Todo deleted");
+        toast("Task deleted");
       }
     }]);
   }
-  if (todoChat.history.length) choices.push(["x", "Clear this todo's chat", () => api("DELETE", `/api/todos/${t.id}/chat`).then(() => { if (state.detail === t.id) todoChat.reset(); })]);
+  if (todoChat.history.length) choices.push(["x", "Clear this task's chat", () => api("DELETE", `/api/todos/${t.id}/chat`).then(() => { if (state.detail === t.id) todoChat.reset(); })]);
   if (!choices.length) return;
   await menu(choices);
 }));
@@ -1210,12 +1210,12 @@ async function reworkTodo(t) {
 }
 
 async function revertTodo(t) {
-  if (t.status !== "merged" || t.revert) throw new Error("Only merged todos can be reverted.");
+  if (t.status !== "merged" || t.revert) throw new Error("Only merged tasks can be reverted.");
   const pr = state.project?.merge_mode === "pr";
   const ok = await ask({
     title: `Revert "${title(t)}"?`,
     body: pr ? `Opens a pull request that undoes this change on ${state.project.default_branch}.`
-      : `Adds a commit that undoes this change on ${state.project?.default_branch || "the default branch"}${state.project?.auto_push ? " and pushes it" : ""}. If later work conflicts, Claude gets a todo to undo it by hand.`,
+      : `Adds a commit that undoes this change on ${state.project?.default_branch || "the default branch"}${state.project?.auto_push ? " and pushes it" : ""}. If later work conflicts, Claude gets a task to undo it by hand.`,
     ok: pr ? "Open revert PR" : "Revert", danger: true,
   });
   if (!ok) return;
@@ -1269,7 +1269,7 @@ function renderDiff(text) {
 
   if (!files.length) {
     const t = state.todos.get(state.detail);
-    const msg = text.startsWith("error:") ? text : t?.worktree ? "No changes compared to the default branch." : "Changes appear here once Claude has worked on this todo.";
+    const msg = text.startsWith("error:") ? text : t?.worktree ? "No changes compared to the default branch." : "Changes appear here once Claude has worked on this task.";
     $("#d-diff").replaceChildren(h("p", { class: "pane-empty" }, msg));
     return;
   }
@@ -1467,7 +1467,7 @@ function permCard(p, withTodo) {
       ib({ class: "btn allow", onclick: decide("allow") }, "check", "Allow"),
       ib({ class: "btn", onclick: decide("always") }, "checks", `Always allow ${p.tool}`),
       ib({ class: "btn danger", onclick: decide("deny") }, "x", "Deny"),
-      withTodo && t ? ib({ class: "link", onclick: () => openDetail(t.id) }, "right", "Open todo") : null));
+      withTodo && t ? ib({ class: "link", onclick: () => openDetail(t.id) }, "right", "Open task") : null));
 }
 
 function renderPerms() {
@@ -1514,8 +1514,8 @@ function renderUsage() {
   pill.title = u.paused ? u.reason : top && overPace(top) ? "Claude subscription usage, ahead of pace" : "Claude subscription usage";
 
   const reason = u.paused
-    ? `${u.reason}. No new todos start${u.until && !u.manual_pause ? ` until ${fmtTime(u.until)}` : ""}; running ones finish.`
-    : "Todos start normally.";
+    ? `${u.reason}. No new tasks start${u.until && !u.manual_pause ? ` until ${fmtTime(u.until)}` : ""}; running ones finish.`
+    : "Tasks start normally.";
   const meter = (w, compact) => {
     const pct = Math.round(w.utilization * 100);
     const cls = w.utilization >= (u.pause_at || 1) ? "full" : w.utilization >= 0.7 ? "warn" : "";
@@ -1662,7 +1662,7 @@ function syncMergeHint() {
   $("#auto-push-row").hidden = pr;
   $("#merge-hint").textContent = !p.remote_url
     ? "Connect a GitHub repository (Projects → Create GitHub repository) to push or open pull requests."
-    : pr ? `Dash pushes the todo's branch and opens a pull request against ${p.default_branch}. Merge it on GitHub.`
+    : pr ? `Dash pushes the task's branch and opens a pull request against ${p.default_branch}. Merge it on GitHub.`
       : f.auto_push.checked ? `Before each merge Dash pulls ${p.default_branch} from GitHub, so pushes don't get rejected.` : "";
 }
 $("#settings-form").addEventListener("change", syncMergeHint);
@@ -1852,7 +1852,7 @@ const chatActions = (pick) => (answer) => h("div", { class: "msg-actions" },
     if (!(pick ? state.projects?.length : state.project)) return toast(pick ? "Create a project first" : "Select a project first", true);
     openTodoForm(null, { pick });
     $("#todo-form").prompt.value = answer;
-  } }, "plus", "Make this a todo"),
+  } }, "plus", "Make this a task"),
   ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
 
 // The global chat isn't about any project: it runs in the home directory of this machine.
@@ -1885,7 +1885,7 @@ const todoChat = makeChat({
     const t = state.todos.get(state.detail);
     return h("div", { class: "msg-actions" },
       t && EDITABLE.includes(t.status) ? ib({ class: "link", onclick: attempt(async () => {
-        if (!await ask({ title: "Replace the instructions?", body: "This answer becomes the todo's instructions for Claude.", ok: "Replace" })) return;
+        if (!await ask({ title: "Replace the instructions?", body: "This answer becomes the task's instructions for Claude.", ok: "Replace" })) return;
         await api("PATCH", `/api/todos/${t.id}`, { prompt: answer });
         toast("Instructions updated");
       }) }, "draft", "Use as instructions") : null,
@@ -2422,7 +2422,7 @@ async function todoKey(t, k) {
     case "r": return reworkTodo(t);
     case "u": return revertTodo(t);
     case "gx":
-      if (!t.pr) throw new Error("This todo has no pull request.");
+      if (!t.pr) throw new Error("This task has no pull request.");
       return window.open(t.pr.url, "_blank", "noopener");
     case "e": return openTodoForm(t);
     case "+": case "K": return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority - 1 });
@@ -2434,7 +2434,7 @@ async function todoKey(t, k) {
       if (await ask({ title: `Delete "${title(t)}"?`, body: "Its worktree and branch are removed too. This can't be undone.", ok: "Delete", danger: true })) {
         await api("DELETE", `/api/todos/${t.id}`);
         if (state.detail === t.id) closeDetail();
-        toast("Todo deleted");
+        toast("Task deleted");
       }
       return;
   }
@@ -2488,8 +2488,8 @@ async function runCommand(line) {
     }
     case "new": case "o":
       need(); openTodoForm(); if (arg) $("#todo-form").prompt.value = arg; return;
-    case "todo":
-      if (!arg) throw new Error("Usage: :todo <instructions>");
+    case "todo": case "task":
+      if (!arg) throw new Error("Usage: :task <instructions>");
       await api("POST", `/api/projects/${need().id}/todos`, { prompt: arg, enqueue: true });
       return toast("Added to queue");
     case "cleanup": case "clean": need(); return cleanup();
@@ -2556,14 +2556,14 @@ function paletteCommands() {
   const p = state.project;
   const go = (view) => () => { closeDetail(); showView(view); };
   return [
-    p && ["New todo", "plus", () => openTodoForm(), "a", "add create"],
+    p && ["New task", "plus", () => openTodoForm(), "a", "add create todo"],
     ["Board", "flag", go("board"), "gb", "view lanes"],
     ["Chat", "comment", go("chat"), "gc", "global claude ask view"],
     p && [state.view === "board" && boardChatOpen() ? "Close project chat" : "Open project chat", "comment", () => { closeDetail(); $("#pc-open").click(); }, "", "claude ask"],
     ["Shell", "terminal", go("run"), "gs", "run terminal processes view"],
     ["Activity", "log", go("activity"), "ga", "events view"],
     ["History", "log", go("history"), "gh", "git graph tree commits view"],
-    p && ["Filter the board", "search", openSearch, "/", "search todos"],
+    p && ["Filter the board", "search", openSearch, "/", "search todos tasks"],
     ["Switch project", "repo", openProjects, "p", "projects"],
     ["New project", "plus", openNewProject, "", "create add"],
     p && ["Project settings", "settings", openSettings, ":settings", "configure commands"],
@@ -2597,16 +2597,16 @@ function paletteProjects() {
 function paletteTodos() {
   const all = [...state.todos.values()];
   return LANES.flatMap((l) => all.filter((t) => l.statuses.includes(t.status)).sort(byPriority).map((t) => ({
-    kind: "Todo", label: title(t), icon: "draft", hint: t.paused ? "Paused" : STATUS_LABEL[t.status] || t.status,
+    kind: "Task", label: title(t), icon: "draft", hint: t.paused ? "Paused" : STATUS_LABEL[t.status] || t.status,
     text: `${title(t)} ${t.prompt} ${t.id} ${STATUS_LABEL[t.status] || ""}`, run: () => { showView("board"); return openDetail(t.id); },
   })));
 }
 
 function paletteResults(raw) {
-  const mode = { ">": "Command", "@": "Project", "#": "Todo" }[raw[0]];
+  const mode = { ">": "Command", "@": "Project", "#": "Task" }[raw[0]];
   const q = (mode ? raw.slice(1) : raw).trim();
-  const sources = { Command: paletteCommands, Project: paletteProjects, Todo: () => (state.project ? paletteTodos() : []) };
-  const pools = (mode ? [mode] : ["Command", "Project", "Todo"]).map((k) => sources[k]());
+  const sources = { Command: paletteCommands, Project: paletteProjects, Task: () => (state.project ? paletteTodos() : []) };
+  const pools = (mode ? [mode] : ["Command", "Project", "Task"]).map((k) => sources[k]());
   let out;
   if (!q) out = pools.flatMap((p) => p.slice(0, mode ? 200 : 8));
   else {
@@ -2617,7 +2617,7 @@ function paletteResults(raw) {
   }
   if (q && !mode && state.project) {
     out.push(
-      { kind: "Action", label: `New todo: ${q}`, icon: "plus", run: () => { openTodoForm(); $("#todo-form").prompt.value = q; promptEditor.render(); draft.changed(); } },
+      { kind: "Action", label: `New task: ${q}`, icon: "plus", run: () => { openTodoForm(); $("#todo-form").prompt.value = q; promptEditor.render(); draft.changed(); } },
       { kind: "Action", label: `Ask the project chat: ${q}`, icon: "comment", run: () => askChat(projectChat.input, $("#pc-form"), q, () => { closeDetail(); showView("board"); toggleBoardChat(true); }) },
     );
   }

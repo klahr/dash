@@ -535,14 +535,14 @@ func (e *TodoEngine) RunTests(todoID string) error {
 	case p.TestCommand == "":
 		return errors.New("this project has no test command; set one in its settings")
 	case t.Worktree == nil:
-		return errors.New("this todo has no worktree yet")
+		return errors.New("this task has no worktree yet")
 	case t.Status == model.StatusInProgress || t.Status == model.StatusMerging:
-		return errors.New("wait until Claude or the merge queue is done with this todo")
+		return errors.New("wait until Claude or the merge queue is done with this task")
 	}
 	e.mu.Lock()
 	if _, busy := e.running["test:"+t.ID]; busy {
 		e.mu.Unlock()
-		return errors.New("tests are already running for this todo")
+		return errors.New("tests are already running for this task")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	e.running["test:"+t.ID] = cancel // counted like a run, so it shares the parallelism limit

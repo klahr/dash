@@ -128,7 +128,7 @@ func (m *MergeQueue) revertByClaude(t model.Todo, p model.Project, sha string, f
 	}
 	m.Log.Line(t, "⚠ git revert conflicts with later work in "+strings.Join(files, ", ")+"; queued \""+nt.Title+"\" for Claude")
 	_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
-		x.Error = "Reverting conflicts with later work, so Claude got a todo to undo it by hand: " + nt.Title
+		x.Error = "Reverting conflicts with later work, so Claude got a task to undo it by hand: " + nt.Title
 		return nil
 	})
 	if m.Kick != nil {

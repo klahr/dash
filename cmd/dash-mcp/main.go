@@ -119,9 +119,9 @@ func (s *mcpServer) handle(req rpcRequest) (any, *rpcError) {
 			"protocolVersion": p.ProtocolVersion,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]string{"name": "dash", "version": "1"},
-			"instructions": "Dash runs Claude Code on todos in parallel, each in its own git worktree. " +
-				"A todo goes draft → queued → in_progress → review → merging → merged (or failed). " +
-				"Review a todo with get_todo and get_diff, then approve_todo or rework_todo with feedback.",
+			"instructions": "Dash runs Claude Code on tasks in parallel, each in its own git worktree. " +
+				"A task goes draft → queued → in_progress → review → merging → merged (or failed). " +
+				"Review a task with get_todo and get_diff, then approve_todo or rework_todo with feedback.",
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
@@ -213,7 +213,7 @@ func (t tool) schema() map[string]any {
 
 var (
 	pProject = param{"project", "string", "Project name or id (see list_projects).", true}
-	pTodo    = param{"todo", "string", "Todo id.", true}
+	pTodo    = param{"todo", "string", "Task id.", true}
 )
 
 var tools = []tool{
@@ -245,7 +245,7 @@ var tools = []tool{
 			}
 			return out, nil
 		}},
-	{"list_todos", "List a project's todos (id, title, status), optionally filtered by status.", []param{pProject,
+	{"list_todos", "List a project's tasks (id, title, status), optionally filtered by status.", []param{pProject,
 		{"status", "string", "Only this status: draft, queued, in_progress, review, merging, merged or failed.", false}},
 		func(s *mcpServer, a args) (any, error) {
 			p, err := s.project(a.str("project"))
@@ -272,9 +272,9 @@ var tools = []tool{
 			}
 			return out, nil
 		}},
-	{"get_todo", "Show a todo: prompt, status, feedback, test results, diff size, pull request.", []param{pTodo},
+	{"get_todo", "Show a task: prompt, status, feedback, test results, diff size, pull request.", []param{pTodo},
 		func(s *mcpServer, a args) (any, error) { return s.todo(a.str("todo")) }},
-	{"create_todo", "Create a todo for Claude to work on. It is queued to run unless draft is true.", []param{pProject,
+	{"create_todo", "Create a task for Claude to work on. It is queued to run unless draft is true.", []param{pProject,
 		{"prompt", "string", "The task for Claude (the title alone is enough for small tasks).", false},
 		{"title", "string", "Short title (generated from the prompt if empty).", false},
 		{"priority", "integer", "Lower runs first (default 0).", false},
@@ -293,19 +293,19 @@ var tools = []tool{
 				Priority: a.num("priority", 0), Enqueue: !a.flag("draft"),
 			})
 		}},
-	{"get_diff", "The todo's changes against the default branch (or the merged commit).", []param{pTodo,
+	{"get_diff", "The task's changes against the default branch (or the merged commit).", []param{pTodo,
 		{"max_chars", "integer", "Truncate after this many characters (default 100000).", false}},
 		func(s *mcpServer, a args) (any, error) {
 			return s.text(a.str("todo"), "diff", a.num("max_chars", 100000), false)
 		}},
-	{"get_log", "The end of Claude's run log for a todo.", []param{pTodo,
+	{"get_log", "The end of Claude's run log for a task.", []param{pTodo,
 		{"max_chars", "integer", "Return at most this many characters from the end (default 20000).", false}},
 		func(s *mcpServer, a args) (any, error) {
 			return s.text(a.str("todo"), "log", a.num("max_chars", 20000), true)
 		}},
-	{"approve_todo", "Approve a todo in review: it goes to the merge queue (or a pull request).", []param{pTodo},
+	{"approve_todo", "Approve a task in review: it goes to the merge queue (or a pull request).", []param{pTodo},
 		func(s *mcpServer, a args) (any, error) { return s.action(a.str("todo"), "approve", nil) }},
-	{"rework_todo", "Send a todo back to Claude with feedback.", []param{pTodo,
+	{"rework_todo", "Send a task back to Claude with feedback.", []param{pTodo,
 		{"feedback", "string", "What to change.", true}},
 		func(s *mcpServer, a args) (any, error) {
 			if a.str("feedback") == "" {
@@ -313,11 +313,11 @@ var tools = []tool{
 			}
 			return s.action(a.str("todo"), "rework", map[string]any{"feedback": a.str("feedback")})
 		}},
-	{"enqueue_todo", "Queue a draft or failed todo to run.", []param{pTodo},
+	{"enqueue_todo", "Queue a draft or failed task to run.", []param{pTodo},
 		func(s *mcpServer, a args) (any, error) { return s.action(a.str("todo"), "enqueue", nil) }},
-	{"cancel_todo", "Stop a running or queued todo.", []param{pTodo},
+	{"cancel_todo", "Stop a running or queued task.", []param{pTodo},
 		func(s *mcpServer, a args) (any, error) { return s.action(a.str("todo"), "cancel", nil) }},
-	{"delete_todo", "Delete a todo and its worktree.", []param{pTodo},
+	{"delete_todo", "Delete a task and its worktree.", []param{pTodo},
 		func(s *mcpServer, a args) (any, error) {
 			if _, err := s.todo(a.str("todo")); err != nil {
 				return nil, err
@@ -366,7 +366,7 @@ var tools = []tool{
 		}},
 	{"get_usage", "Claude subscription usage and whether the queue is paused.", nil,
 		func(s *mcpServer, a args) (any, error) { return s.c.Usage() }},
-	{"set_queue_paused", "Pause or resume starting new todos.", []param{
+	{"set_queue_paused", "Pause or resume starting new tasks.", []param{
 		{"paused", "boolean", "true to pause, false to resume.", true}},
 		func(s *mcpServer, a args) (any, error) { return s.c.SetQueuePaused(a.flag("paused")) }},
 }
@@ -431,7 +431,7 @@ func (s *mcpServer) todo(id string) (model.Todo, error) {
 			return model.Todo{}, err
 		}
 	}
-	return model.Todo{}, fmt.Errorf("no todo %q", id)
+	return model.Todo{}, fmt.Errorf("no task %q", id)
 }
 
 func (s *mcpServer) action(id, verb string, body any) (any, error) {
