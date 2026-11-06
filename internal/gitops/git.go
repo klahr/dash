@@ -507,6 +507,36 @@ func (g *Git) Graph(ctx context.Context, projectID, repo, branch string, limit i
 		"--max-count="+strconv.Itoa(limit), "--format=\x1f%h\x1f%D\x1f%s\x1f%an\x1f%ar", branch, "--")
 }
 
+// Files lists the paths of the files tracked at ref.
+func (g *Git) Files(ctx context.Context, projectID, repo, ref string) ([]string, error) {
+	out, err := g.run(ctx, false, projectID, repo, "git", "ls-tree", "-r", "--name-only", "-z", ref)
+	if err != nil || out == "" {
+		return nil, err
+	}
+	return strings.Split(strings.TrimRight(out, "\x00"), "\x00"), nil
+}
+
+// Blob returns the object id of path at ref ("" and an error if it isn't there).
+func (g *Git) Blob(ctx context.Context, projectID, repo, ref, path string) (string, error) {
+	return g.run(ctx, false, projectID, repo, "git", "rev-parse", "--verify", "--quiet", ref+":"+path)
+}
+
+// ReadBlob returns a blob's content as stored, without trimming, up to max
+// bytes; size is the full size.
+func (g *Git) ReadBlob(ctx context.Context, projectID, repo, blob string, max int64) (content []byte, size int64, err error) {
+	s, err := g.run(ctx, false, projectID, repo, "git", "cat-file", "-s", blob)
+	if err != nil {
+		return nil, 0, err
+	}
+	if size, err = strconv.ParseInt(s, 10, 64); err != nil || size > max {
+		return nil, size, err
+	}
+	cmd := exec.CommandContext(ctx, "git", "cat-file", "blob", blob)
+	cmd.Dir = repo
+	content, err = cmd.Output()
+	return content, size, err
+}
+
 // Unpushed counts the commits on branch that origin doesn't have, as of the
 // last fetch or push (every commit if branch was never pushed).
 func (g *Git) Unpushed(ctx context.Context, projectID, repo, branch string) (int, error) {

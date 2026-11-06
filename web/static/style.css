@@ -137,7 +137,7 @@ textarea { resize: vertical; line-height: 1.45; }
 .nav {
   position: fixed; inset: auto 0 0 0; z-index: 30;
   height: calc(var(--nav-h) + var(--safe-b)); padding-bottom: var(--safe-b);
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: var(--surface); border-top: 1px solid var(--line);
 }
 .nav > button {
@@ -388,6 +388,28 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 /* ---------- run ---------- */
 #view-run.active { display: flex; height: calc(100dvh - var(--top-h) - var(--nav-h) - var(--safe-b)); background: #0a0f17; }
 .term-wrap { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+
+/* Files: tree beside (desktop) or above (mobile) a plain editor */
+#view-files.active { display: flex; height: calc(100dvh - var(--top-h) - var(--nav-h) - var(--safe-b)); }
+.files { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.file-side { display: flex; flex-direction: column; gap: 8px; max-height: 38%; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.file-tree { overflow: auto; min-height: 0; font-size: 13px; }
+.file-dir > summary { padding: 3px 6px; border-radius: var(--r-s); cursor: pointer; color: var(--muted); white-space: nowrap; }
+.file-dir > summary:hover { background: var(--raised); color: var(--text); }
+.file-kids { padding-left: 14px; }
+.file-item { display: block; width: 100%; padding: 3px 6px 3px 20px; border-radius: var(--r-s); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.file-item:hover { background: var(--raised); }
+.file-item[aria-current="true"] { background: var(--raised); color: var(--accent); font-weight: 600; }
+.file-note { margin: 6px; color: var(--faint); }
+.file-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.file-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.file-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 13px; }
+.file-state { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.file-text {
+  flex: 1; min-height: 0; width: 100%; margin: 0; padding: 12px 16px; resize: none; border: 0; border-radius: 0;
+  background: #0a0f17; color: var(--text); font-family: var(--mono); font-size: 13px; line-height: 1.55; tab-size: 4; white-space: pre; overflow: auto;
+}
+.file-text:focus { outline: none; box-shadow: inset 0 0 0 1px var(--accent); }
 #term { height: 100%; padding: 6px; }
 
 /* ---------- activity ---------- */
@@ -863,6 +885,9 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   main { grid-area: main; padding: 0; overflow: hidden; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
   .view.active { flex: 1; min-height: 0; overflow-y: auto; }
   #view-run.active { height: auto; }
+  #view-files.active { height: auto; overflow: hidden; }
+  .files { flex-direction: row; }
+  .file-side { width: 280px; flex: none; max-height: none; border-bottom: 0; border-right: 1px solid var(--line); }
   .statusline { left: var(--side-w); bottom: 0; }
   .activity, .graph { max-width: 1100px; padding: 16px 32px; }
   .chat-log { padding: 24px 32px; }

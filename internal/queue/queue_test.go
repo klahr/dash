@@ -402,3 +402,43 @@ func TestPauseRequeuesAndResumeContinuesTheSession(t *testing.T) {
 		t.Fatal("pausing a todo in review should fail")
 	}
 }
+
+func TestEditorEditIsCommittedWithoutClaude(t *testing.T) {
+	exe := &fakeExec{fn: func(int, agent.ExecRequest) error { return nil }}
+	h := newHarness(t, exe, model.Project{Name: "p"})
+	ctx := context.Background()
+	write(t, h.proj.Path, "a.txt", "old\n")
+	if _, err := h.git.CommitAll(ctx, "p", h.proj.Path, "add a.txt"); err != nil {
+		t.Fatal(err)
+	}
+	blob, err := h.git.Blob(ctx, "p", h.proj.Path, "main", "a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue := func(blob string) model.Todo {
+		td, err := h.st.CreateTodo(model.Todo{ProjectID: h.proj.ID, Title: "Edit a.txt",
+			Edits: []model.FileEdit{{Path: "a.txt", Blob: blob, Content: "new\n"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if td, err = h.st.SetStatus(td.ID, model.StatusQueued, ""); err != nil {
+			t.Fatal(err)
+		}
+		h.engine.Kick()
+		return td
+	}
+
+	td := h.waitFor(queue(blob).ID, model.StatusReview)
+	if !td.EditsApplied || len(exe.Calls()) != 0 {
+		t.Fatalf("applied %v, Claude calls %d", td.EditsApplied, len(exe.Calls()))
+	}
+	if got, _ := os.ReadFile(filepath.Join(td.Worktree.Path, "a.txt")); string(got) != "new\n" {
+		t.Fatalf("worktree a.txt = %q", got)
+	}
+
+	// An edit of a version main no longer has is refused.
+	stale := h.waitFor(queue("0000000000000000000000000000000000000000").ID, model.StatusFailed)
+	if !strings.Contains(stale.Error, "changed on main") {
+		t.Fatalf("error = %q", stale.Error)
+	}
+}

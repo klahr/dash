@@ -443,6 +443,7 @@ function applyView(name) {
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
   if (name === "run") requestAnimationFrame(() => { fitTerm(); ensureShell(); });
   if (name === "history") loadGraph().catch(fail);
+  if (name === "files" && state.project) loadFiles().catch(fail); // at startup the project (and the files code below) isn't ready yet
 }
 $$(".nav > button[data-view]").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 {
@@ -634,8 +635,8 @@ async function selectProject(p) {
   state.ci = null;
   renderCI();
   renderChatPane();
-  if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); return; }
-  await Promise.all([loadTodos(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph()]);
+  if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); renderFileTree(); renderFile(); return; }
+  await Promise.all([loadTodos(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles()]);
 }
 
 async function loadPerms() {
@@ -2573,6 +2574,150 @@ function renderGraph(res) {
   }));
 }
 
+// ------------------------------------------------------------------ files
+// The default branch's files as a tree, and a plain text editor. Saving
+// doesn't write to the branch: it queues a task that commits the edit in its
+// own worktree and goes to review. Each project keeps its open file, so
+// switching projects loses nothing.
+const fileSessions = new Map(); // project key → { list, tree, open, path, blob, original, text, note, size, saved }
+const fileText = $("#file-text");
+function fileSession() {
+  if (!state.project) return null;
+  const k = projectKey(state.project);
+  if (!fileSessions.has(k)) fileSessions.set(k, { list: null, tree: null, open: new Set(), path: null });
+  return fileSessions.get(k);
+}
+const fileDirty = (s) => !!s?.path && !s.note && s.text !== s.original;
+
+async function loadFiles() {
+  const s = fileSession(), p = state.project;
+  renderFileTree();
+  renderFile();
+  if (!s) return;
+  const res = await api("GET", `/api/projects/${p.id}/files`);
+  s.list = res.files;
+  s.tree = null;
+  if (fileSession() === s) renderFileTree();
+}
+
+function fileTreeOf(s) {
+  if (s.tree) return s.tree;
+  const node = () => ({ dirs: new Map(), files: [] });
+  s.tree = node();
+  for (const f of s.list) {
+    const parts = f.split("/");
+    let n = s.tree;
+    for (const d of parts.slice(0, -1)) {
+      if (!n.dirs.has(d)) n.dirs.set(d, node());
+      n = n.dirs.get(d);
+    }
+    n.files.push(parts.at(-1));
+  }
+  return s.tree;
+}
+
+const fileItem = (s, path, label) => h("button", {
+  type: "button", class: "file-item", title: path, "aria-current": s.path === path ? "true" : null,
+  onclick: () => openFile(path).catch(fail),
+}, label);
+
+// Folders render their contents when first opened, so big repositories stay quick.
+function dirNodes(s, node, prefix) {
+  const dirs = [...node.dirs.keys()].sort().map((name) => {
+    const path = prefix + name, sub = node.dirs.get(name);
+    const d = h("details", { class: "file-dir", open: s.open.has(path) }, h("summary", { title: path }, name));
+    const fill = () => { if (d.childElementCount === 1) d.append(h("div", { class: "file-kids" }, ...dirNodes(s, sub, path + "/"))); };
+    if (d.open) fill();
+    d.addEventListener("toggle", () => { if (d.open) { s.open.add(path); fill(); } else s.open.delete(path); });
+    return d;
+  });
+  return [...dirs, ...[...node.files].sort().map((name) => fileItem(s, prefix + name, name))];
+}
+
+function renderFileTree() {
+  const s = fileSession(), tree = $("#file-tree");
+  const note = (text) => h("p", { class: "file-note" }, text);
+  if (!s) return tree.replaceChildren(note("Select a project to browse its files."));
+  if (!s.list) return tree.replaceChildren(note("Loading…"));
+  if (!s.list.length) return tree.replaceChildren(note("No files on the default branch yet."));
+  const q = $("#file-filter").value.trim().toLowerCase();
+  if (!q) return tree.replaceChildren(...dirNodes(s, fileTreeOf(s), ""));
+  const hits = s.list.filter((f) => f.toLowerCase().includes(q)), max = 300;
+  tree.replaceChildren(...hits.slice(0, max).map((f) => fileItem(s, f, f)),
+    hits.length > max ? note(`${hits.length - max} more; type more to narrow it down`) : null,
+    hits.length ? null : note("No matching files"));
+}
+
+function renderFile() {
+  const s = fileSession(), editable = !!s?.path && !s.note, dirty = fileDirty(s);
+  $("#file-head").hidden = !s?.path;
+  fileText.hidden = !editable;
+  $("#file-empty").hidden = editable;
+  if (s?.path) $("#file-path").textContent = s.path;
+  if (editable && fileText.value !== s.text) { fileText.value = s.text; fileText.scrollTop = 0; }
+  $("#file-save").disabled = $("#file-revert").disabled = !dirty;
+  $("#file-state").textContent = dirty ? "Modified" : editable && s.saved ? "Saved as a task" : "";
+  $("#file-empty-title").textContent = s?.note === "binary" ? "Binary file" : s?.note === "large" ? "File too large" : "No file open";
+  $("#file-empty-text").textContent = s?.note === "binary" ? `${s.path} isn't text, so it can't be edited here.`
+    : s?.note === "large" ? `${s.path} is ${Math.round(s.size / 1024)} KiB; the editor opens files up to 512 KiB.`
+    : s ? "Pick a file on the left to view and edit it. Saving creates a task that goes to review like any other."
+    : "Select a project to browse its files.";
+}
+
+async function openFile(path) {
+  const s = fileSession(), p = state.project;
+  if (!s || s.path === path) return;
+  if (fileDirty(s) && !(await ask({ title: `Discard your changes to ${s.path}?`, ok: "Discard", danger: true }))) return;
+  const res = await api("GET", `/api/projects/${p.id}/file?path=${encodeURIComponent(path)}`, null, p.prefix || "");
+  const text = res.content ?? "";
+  Object.assign(s, { path, blob: res.blob, original: text, text, size: res.size, saved: false,
+    note: res.binary ? "binary" : res.too_large ? "large" : "" });
+  if (fileSession() !== s) return;
+  renderFile();
+  renderFileTree();
+}
+
+async function saveFile() {
+  const s = fileSession(), p = state.project;
+  if (!fileDirty(s)) return;
+  const { path, blob, text } = s;
+  const title = await ask({
+    title: "Save as a task", input: true, placeholder: `Edit ${path}`, ok: "Save as task",
+    body: `The edit to ${path} is committed in its own worktree and goes to review like any other task. Name it, or leave it blank.`,
+  });
+  if (title == null) return;
+  const t = await api("POST", `/api/projects/${p.id}/edits`, { path, blob, content: text, title }, p.prefix || "");
+  if (s.path === path) { s.original = text; s.saved = true; }
+  if (fileSession() === s) renderFile();
+  toast(`Saved as task “${t.title}”`);
+}
+
+fileText.addEventListener("input", () => {
+  const s = fileSession();
+  if (!s) return;
+  const was = fileDirty(s);
+  s.text = fileText.value;
+  if (was !== fileDirty(s)) renderFile();
+});
+fileText.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveFile().catch(fail); return; }
+  if (e.key === "Escape") { fileText.blur(); return; }
+  // Tab indents; Escape first to move focus on with Tab.
+  if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    e.preventDefault();
+    if (!document.execCommand("insertText", false, "\t")) fileText.setRangeText("\t", fileText.selectionStart, fileText.selectionEnd, "end");
+  }
+});
+$("#file-save").addEventListener("click", () => saveFile().catch(fail));
+$("#file-revert").addEventListener("click", () => {
+  const s = fileSession();
+  if (!s) return;
+  s.text = s.original;
+  renderFile();
+});
+$("#file-filter").addEventListener("input", renderFileTree);
+addEventListener("beforeunload", (e) => { if ([...fileSessions.values()].some(fileDirty)) e.preventDefault(); });
+
 // ------------------------------------------------------------------ drag & drop
 // Drag a card to another lane to act on it, or within a lane to reorder.
 // Mouse: drag after a few pixels. Touch: long-press, then drag (a quick
@@ -2771,10 +2916,10 @@ async function reorder(t, laneKey, index) {
 // ------------------------------------------------------------------ vim keys
 // Normal mode is the default; typing in a field or the terminal is insert
 // mode. Esc (Ctrl-] in the terminal) returns to normal mode.
-const VIEWS = ["board", "run", "activity", "history"];
+const VIEWS = ["board", "run", "activity", "history", "files"];
 const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
-const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gc|gs|ga|gh|G|u|p|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gc|gs|ga|gh|gf|G|u|p|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 const openDialog = () => document.querySelector("dialog[open]");
 
@@ -2993,6 +3138,7 @@ function paletteCommands() {
     ["Shell", "terminal", go("run"), "gs", "run terminal processes view"],
     ["Activity", "log", go("activity"), "ga", "events view"],
     ["History", "log", go("history"), "gh", "git graph tree commits view"],
+    ["Files", "code", go("files"), "gf", "browse edit source code tree editor"],
     p && ["Filter the board", "search", openSearch, "/", "search todos tasks"],
     ["Switch project", "repo", openProjects, "p", "projects"],
     ["New project", "plus", openNewProject, "", "create add"],
@@ -3246,6 +3392,7 @@ async function handleNormal(k, n, hadCount) {
     case "gs": return showView("run");
     case "ga": return showView("activity");
     case "gh": return showView("history");
+    case "gf": return showView("files");
     case "p": return openProjects();
     case "[": return desktop.matches && setSideCollapsed(!sideCollapsed());
     case "o": return openSections();

@@ -430,7 +430,7 @@ func (s *Server) duplicateTodo(w http.ResponseWriter, r *http.Request) {
 		title += " (copy)"
 	}
 	t, err := s.Store.CreateTodo(model.Todo{ProjectID: src.ProjectID, Title: title, Prompt: src.Prompt, Goal: src.Goal,
-		Priority: src.Priority, Attachments: src.Attachments})
+		Priority: src.Priority, Attachments: src.Attachments, Edits: src.Edits})
 	if err != nil {
 		writeErr(w, err)
 		return

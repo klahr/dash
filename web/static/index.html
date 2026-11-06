@@ -80,6 +80,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M7 9c0 4 10 2 10 7M7 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="16" r="2"/></svg>
         <span>History</span>
       </button>
+      <button data-view="files" title="Files (gf)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        <span>Files</span>
+      </button>
       <!-- Projects, project actions and status: part of the sidebar on desktop,
            a drawer behind the menu button on mobile. -->
       <div class="menu-scrim" id="menu-scrim" hidden></div>
@@ -163,6 +167,26 @@
       <section class="view" id="view-history" aria-label="History">
         <ol class="graph" id="graph"></ol>
         <div class="empty" id="graph-empty"><p class="empty-title">No history</p><p id="graph-empty-text">Select a project to see its main branch.</p></div>
+      </section>
+
+      <!-- Files: browse the default branch; saving an edit queues it as a task -->
+      <section class="view" id="view-files" aria-label="Files">
+        <div class="files">
+          <div class="file-side">
+            <input type="search" id="file-filter" placeholder="Filter files" autocomplete="off" spellcheck="false" aria-label="Filter files">
+            <div class="file-tree" id="file-tree" aria-label="Repository files"></div>
+          </div>
+          <div class="file-main">
+            <header class="file-head" id="file-head" hidden>
+              <span class="file-path" id="file-path"></span>
+              <span class="file-state" id="file-state" aria-live="polite"></span>
+              <button class="btn" type="button" id="file-revert" data-icon="undo">Revert</button>
+              <button class="btn primary" type="button" id="file-save" data-icon="check" title="Save as a task (Ctrl+S)">Save as task</button>
+            </header>
+            <textarea class="file-text" id="file-text" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="File content" hidden></textarea>
+            <div class="empty" id="file-empty"><p class="empty-title" id="file-empty-title">No file open</p><p id="file-empty-text">Pick a file on the left to view and edit it. Saving creates a task that goes to review like any other.</p></div>
+          </div>
+        </div>
       </section>
 
       <!-- Status line with command line (:) -->
@@ -418,7 +442,7 @@
       <p class="hint">Vim-style. Typing in a field or the terminal is insert mode; Esc (Ctrl-] in the terminal) returns to normal mode.</p>
       <dl class="keys">
         <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with tasks · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
-        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gs</kbd>/<kbd>ga</kbd>/<kbd>gh</kbd> Board/Shell/Activity/History · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> sections, <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>[</kbd> collapse sidebar · <kbd>Ctrl-k</kbd> search projects, tasks and commands · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
+        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gs</kbd>/<kbd>ga</kbd>/<kbd>gh</kbd>/<kbd>gf</kbd> Board/Shell/Activity/History/Files · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> sections, <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>[</kbd> collapse sidebar · <kbd>Ctrl-k</kbd> search projects, tasks and commands · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
         <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review, enqueue a draft; <kbd>Space</kbd> opens) · <kbd>a</kbd> new · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>*</kbd> milestone · <kbd>t</kbd> try it · <kbd>!</kbd> shell in worktree</dd>
         <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> changes ↔ log · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
         <dt>Search</dt><dd><kbd>/</kbd> filter the board · <kbd>Enter</kbd> jump to first match · <kbd>n</kbd>/<kbd>N</kbd> next/previous · <kbd>Esc</kbd> or <code>:noh</code> clear</dd>

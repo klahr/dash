@@ -296,9 +296,20 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 		}
 	}
 
+	// Edits saved in the web editor take the place of Claude's first run.
+	editing := len(t.Edits) > 0 && !t.EditsApplied
+	if editing {
+		if err := e.applyEdits(ctx, t, p, wt, log); err != nil {
+			fail(err)
+			return
+		}
+	}
+
 	// 3–4. Claude, commit, tests; loop while tests fail and fixes remain.
 	for {
-		if err := e.runClaude(ctx, &t, p, wt, log); err != nil {
+		if editing {
+			editing = false
+		} else if err := e.runClaude(ctx, &t, p, wt, log); err != nil {
 			fail(err)
 			return
 		}
@@ -331,8 +342,15 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 			fail(err)
 			return
 		} else if head == wt.BaseCommit {
-			fail(errors.New("Claude finished without changing any files"))
+			if len(t.Edits) > 0 && !t.EditsApplied {
+				fail(errors.New("the saved edit doesn't change the file"))
+			} else {
+				fail(errors.New("Claude finished without changing any files"))
+			}
 			return
+		}
+		if len(t.Edits) > 0 && !t.EditsApplied {
+			_ = update(func(x *model.Todo) { x.EditsApplied = true })
 		}
 		if files, add, del, err := e.Git.DiffStat(ctx, p.ID, wt.Path, p.DefaultBranch); err == nil {
 			_ = update(func(x *model.Todo) { x.DiffFiles, x.DiffAdd, x.DiffDel = files, add, del })
@@ -563,6 +581,29 @@ func (e *TodoEngine) RunTests(todoID string) error {
 		checks := e.runChecks(ctx, t, p, t.Worktree.Path, "manual")
 		_, _ = e.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Checks = &checks; return nil })
 	}()
+	return nil
+}
+
+// applyEdits writes a todo's editor edits into its worktree. A file that
+// changed on the default branch since it was opened is not overwritten.
+func (e *TodoEngine) applyEdits(ctx context.Context, t model.Todo, p model.Project, wt model.Worktree, log func(string)) error {
+	for _, ed := range t.Edits {
+		if !filepath.IsLocal(filepath.FromSlash(ed.Path)) {
+			return fmt.Errorf("invalid path %q", ed.Path)
+		}
+		if cur, _ := e.Git.Blob(ctx, p.ID, wt.Path, wt.BaseCommit, ed.Path); cur != ed.Blob {
+			return fmt.Errorf("%s changed on %s since it was opened in the editor; open it again and redo the edit", ed.Path, p.DefaultBranch)
+		}
+		dst := filepath.Join(wt.Path, filepath.FromSlash(ed.Path))
+		fi, err := os.Lstat(dst)
+		if err != nil || !fi.Mode().IsRegular() {
+			return fmt.Errorf("%s is not a regular file", ed.Path)
+		}
+		if err := os.WriteFile(dst, []byte(ed.Content), fi.Mode().Perm()); err != nil {
+			return err
+		}
+		log("✎ applied the edit to " + ed.Path)
+	}
 	return nil
 }
 
