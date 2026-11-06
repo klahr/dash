@@ -166,6 +166,25 @@ func (s *Store) UpdateProject(id string, fn func(*model.Project) error) (model.P
 	return cp, nil
 }
 
+// ToolAllowed reports whether tool is on the project's always-allowed list.
+func (s *Store) ToolAllowed(projectID, tool string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	p, ok := s.data.Projects[projectID]
+	return ok && contains(p.AllowedTools, tool)
+}
+
+// AllowTool adds tool to the project's always-allowed list.
+func (s *Store) AllowTool(projectID, tool string) error {
+	_, err := s.UpdateProject(projectID, func(p *model.Project) error {
+		if !contains(p.AllowedTools, tool) {
+			p.AllowedTools = append(append([]string(nil), p.AllowedTools...), tool)
+		}
+		return nil
+	})
+	return err
+}
+
 // ---- Todos ----
 
 func (s *Store) CreateTodo(t model.Todo) (model.Todo, error) {

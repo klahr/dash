@@ -117,6 +117,43 @@ func TestAllowDenyAlways(t *testing.T) {
 	}
 }
 
+type memAllow map[string]bool
+
+func (m memAllow) ToolAllowed(projectID, tool string) bool { return m[projectID+"/"+tool] }
+func (m memAllow) AllowTool(projectID, tool string) error {
+	m[projectID+"/"+tool] = true
+	return nil
+}
+
+func TestAlwaysSavedForProject(t *testing.T) {
+	b := NewBroker(nopPub{})
+	saved := memAllow{}
+	b.Saved = saved
+	srv := httptest.NewServer(http.HandlerFunc(b.ServeMCP))
+	defer srv.Close()
+
+	token1, release1 := b.Register("todo1", "proj1")
+	done := make(chan map[string]any)
+	go func() { _, out := rpc(t, srv, token1, "tools/call", call("Bash")); done <- out }()
+	if err := b.Decide(waitPending(t, b).ID, "always", ""); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	release1()
+	b.Forget("todo1")
+	if !saved["proj1/Bash"] {
+		t.Fatalf("always grant not saved: %v", saved)
+	}
+
+	// Another todo in the same project doesn't ask.
+	token2, release2 := b.Register("todo2", "proj1")
+	defer release2()
+	_, out := rpc(t, srv, token2, "tools/call", call("Bash"))
+	if a := answer(t, out); a["behavior"] != "allow" || len(b.Pending("")) != 0 {
+		t.Fatalf("saved tool should not prompt: %v", a)
+	}
+}
+
 func TestTimeoutAndReleaseDeny(t *testing.T) {
 	b := NewBroker(nopPub{})
 	b.Timeout = 50 * time.Millisecond

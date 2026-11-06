@@ -1358,7 +1358,7 @@ func (a *App) permsKey(s string, n int) tea.Cmd {
 	case "y", "enter":
 		return decide("allow", "allowed")
 	case "A":
-		return decide("always", p.Tool+" allowed for this todo")
+		return decide("always", p.Tool+" always allowed in this project")
 	case "n", "x":
 		return decide("deny", "denied")
 	case "o":

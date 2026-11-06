@@ -64,6 +64,9 @@ type Project struct {
 	// (untracked files such as ".env" that worktrees don't get from git).
 	SetupCommand string   `json:"setup_command,omitempty"`
 	CopyFiles    []string `json:"copy_files,omitempty"`
+	// AllowedTools run without a permission prompt in every todo, e.g. "Bash"
+	// or "WebFetch". "Always allow" on a prompt adds to it.
+	AllowedTools []string `json:"allowed_tools,omitempty"`
 	// MaxAutoFixes is how many times Dash sends failing tests or merge
 	// conflicts back to Claude on its own before asking a human.
 	MaxAutoFixes int `json:"max_auto_fixes"`

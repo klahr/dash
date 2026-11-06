@@ -113,6 +113,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		DeployCommand *string   `json:"deploy_command"`
 		SetupCommand  *string   `json:"setup_command"`
 		CopyFiles     *[]string `json:"copy_files"`
+		AllowedTools  *[]string `json:"allowed_tools"`
 		MaxAutoFixes  *int      `json:"max_auto_fixes"`
 		AutoPush      *bool     `json:"auto_push"`
 		MergeMode     *string   `json:"merge_mode"`
@@ -138,6 +139,9 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		set(&p.AutoPush, req.AutoPush)
 		if req.CopyFiles != nil {
 			p.CopyFiles = cleanList(*req.CopyFiles)
+		}
+		if req.AllowedTools != nil {
+			p.AllowedTools = cleanList(*req.AllowedTools)
 		}
 		if req.MaxAutoFixes != nil {
 			p.MaxAutoFixes = max(0, *req.MaxAutoFixes)

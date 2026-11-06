@@ -1194,7 +1194,7 @@ function permCard(p, withTodo) {
   const t = state.todos.get(p.todo_id);
   const decide = (decision) => attempt(async () => {
     await api("POST", `/api/permissions/${p.id}`, { decision });
-    toast(decision === "deny" ? "Denied" : decision === "always" ? `${p.tool} allowed for this todo` : "Allowed");
+    toast(decision === "deny" ? "Denied" : decision === "always" ? `${p.tool} always allowed in this project` : "Allowed");
   });
   return h("div", { class: "perm", role: "group", "aria-label": `Permission request: ${d.title}` },
     h("p", { class: "perm-q" }, `Claude wants to ${d.title}`,
@@ -1355,6 +1355,7 @@ function openSettings() {
   f.max_auto_fixes.value = p.max_auto_fixes ?? 2;
   f.setup_command.value = p.setup_command || "";
   f.copy_files.value = (p.copy_files || []).join("\n");
+  f.allowed_tools.value = (p.allowed_tools || []).join("\n");
   f.run_command.value = p.run_command || "";
   f.deploy_command.value = p.deploy_command || "";
   f.auto_push.checked = !!p.auto_push;
@@ -1385,6 +1386,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     max_auto_fixes: Math.max(0, Number(f.max_auto_fixes.value) || 0),
     setup_command: f.setup_command.value.trim(),
     copy_files: f.copy_files.value.split("\n").map((x) => x.trim()).filter(Boolean),
+    allowed_tools: f.allowed_tools.value.split("\n").map((x) => x.trim()).filter(Boolean),
     run_command: f.run_command.value.trim(),
     deploy_command: f.deploy_command.value.trim(),
     auto_push: f.auto_push.checked,
@@ -1869,7 +1871,7 @@ async function permKey(k) {
   if (!p) return false;
   const decision = { y: "allow", A: "always", n: "deny" }[k];
   await api("POST", `/api/permissions/${p.id}`, { decision });
-  toast(decision === "deny" ? "Denied" : decision === "always" ? `${p.tool} allowed for this todo` : "Allowed");
+  toast(decision === "deny" ? "Denied" : decision === "always" ? `${p.tool} always allowed in this project` : "Allowed");
 }
 
 async function runCommand(line) {

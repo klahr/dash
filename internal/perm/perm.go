@@ -49,9 +49,16 @@ type pending struct {
 	done chan struct{}
 }
 
+// AllowList persists tools a project always allows (the store implements it).
+type AllowList interface {
+	ToolAllowed(projectID, tool string) bool
+	AllowTool(projectID, tool string) error
+}
+
 type Broker struct {
 	pub     Publisher
 	Timeout time.Duration // unanswered requests are denied after this
+	Saved   AllowList     // optional; "always" grants are saved per project here
 
 	mu      sync.Mutex
 	tokens  map[string]run
@@ -124,8 +131,9 @@ func (b *Broker) Pending(projectID string) []Request {
 	return out
 }
 
-// Decide answers a request: "allow", "always" (allow this tool for the rest
-// of the todo) or "deny".
+// Decide answers a request: "allow", "always" (allow this tool from now on:
+// for the whole project when Saved is set, otherwise for the rest of the todo)
+// or "deny".
 func (b *Broker) Decide(id, decision, message string) error {
 	b.mu.Lock()
 	p, ok := b.pending[id]
@@ -133,6 +141,7 @@ func (b *Broker) Decide(id, decision, message string) error {
 		b.mu.Unlock()
 		return ErrNotFound
 	}
+	always := decision == "always"
 	switch decision {
 	case "always":
 		if b.always[p.req.TodoID] == nil {
@@ -150,6 +159,9 @@ func (b *Broker) Decide(id, decision, message string) error {
 	close(p.done)
 	req := p.req
 	b.mu.Unlock()
+	if always && b.Saved != nil {
+		_ = b.Saved.AllowTool(req.ProjectID, req.Tool) // the todo grant above still holds if saving fails
+	}
 	b.publish(req)
 	return nil
 }
@@ -162,6 +174,9 @@ func (b *Broker) publish(r Request) {
 
 // ask blocks until the request is answered, times out, or ctx ends.
 func (b *Broker) ask(ctx context.Context, rn run, tool string, input json.RawMessage) Request {
+	if b.Saved != nil && b.Saved.ToolAllowed(rn.projectID, tool) {
+		return Request{Tool: tool, Input: input, Decision: "allow"}
+	}
 	b.mu.Lock()
 	if b.always[rn.todoID][tool] {
 		b.mu.Unlock()

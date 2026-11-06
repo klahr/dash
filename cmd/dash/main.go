@@ -115,6 +115,7 @@ func main() {
 
 	tracker := usage.New(events, *pauseAt)
 	perms := perm.NewBroker(events)
+	perms.Saved = st
 	todoLog := &queue.TodoLog{Pub: events, Root: filepath.Join(*dataDir, "logs")}
 	merges := queue.NewMergeQueue(st, git, events, todoLog, 1024)
 	uploads := filepath.Join(*dataDir, "uploads")

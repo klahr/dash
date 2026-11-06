@@ -606,7 +606,7 @@ func (a *App) renderPerms() string {
 		}
 		lines = append(lines, head, body, "")
 	}
-	lines = append(lines, styleDim.Render("y allow · A always allow this tool for the todo · n deny · o open todo"))
+	lines = append(lines, styleDim.Render("y allow · A always allow this tool in the project · n deny · o open todo"))
 	return styleBox.Render(strings.Join(lines, "\n"))
 }
 
