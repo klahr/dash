@@ -227,10 +227,12 @@
           <summary><span class="checks-state" id="d-checks-state"></span><span class="checks-meta" id="d-checks-meta"></span></summary>
           <pre class="log" id="d-checks-output"></pre>
         </details>
-        <div class="segmented" role="tablist">
-          <button role="tab" data-pane="diff" aria-selected="true" data-icon="diff">Changes <span id="d-diffstat"></span></button>
-          <button role="tab" data-pane="log" aria-selected="false" data-icon="log">Log</button>
-          <button role="tab" data-pane="chat" aria-selected="false" data-icon="comment">Chat</button>
+        <div class="pane-tabs">
+          <div class="segmented" role="tablist">
+            <button role="tab" data-pane="diff" aria-selected="true" data-icon="diff">Changes <span id="d-diffstat"></span></button>
+            <button role="tab" data-pane="log" aria-selected="false" data-icon="log">Log</button>
+            <button role="tab" data-pane="chat" aria-selected="false" data-icon="comment">Chat</button>
+          </div>
         </div>
         <div class="pane" id="d-diff"></div>
         <pre class="pane log" id="d-log" hidden></pre>
