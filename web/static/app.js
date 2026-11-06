@@ -1041,6 +1041,8 @@ function todoRow(t, li = -1, ri = -1) {
   let sub = t.prompt.replace(/\s+/g, " ");
   let subClass = "todo-sub";
   if (t.summary && t.status === "merged") sub = t.summary;
+  const fixing = t.sent_back && ["queued", "in_progress"].includes(t.status) ? t.sent_back : "";
+  if (fixing && t.status === "queued") sub = `Sent back from merge: ${fixing}`;
   if (t.status === "in_progress") { sub = state.lastLine.get(t.id) || "Working…"; subClass += " progress"; }
   if (t.paused) sub = t.status === "in_progress" ? "Pausing…" : "Paused";
   if (t.error) { sub = t.error; subClass += " err"; }
@@ -1063,6 +1065,7 @@ function todoRow(t, li = -1, ri = -1) {
       t.pr && t.status !== "merged" ? h("span", { class: "pr-tag" }, `PR #${t.pr.number}`) : null,
       t.revert ? h("span", { class: "revert-tag" }, "Reverted") : null,
       t.ci_run ? h("span", { class: "ci-tag" }, "Build fix") : null,
+      fixing ? h("span", { class: "sentback-tag", title: `Sent back from merge: ${fixing}` }, /conflict/.test(fixing) ? "Merge conflict" : "Failing checks") : null,
       t.attachments?.length ? h("span", { class: "attach-tag", title: `${t.attachments.length} attached` }, clip(), String(t.attachments.length)) : null,
       t.diff_files && ["review", "merging", "merged", "failed"].includes(t.status)
         ? h("span", { class: "diffsize", title: `${t.diff_files} ${t.diff_files === 1 ? "file" : "files"} changed` },

@@ -177,6 +177,9 @@ type Todo struct {
 	// since a human already approved it.
 	MergeMain bool `json:"merge_main,omitempty"`
 	AutoMerge bool `json:"auto_merge,omitempty"`
+	// SentBack is why the merge queue last returned the todo to Claude
+	// (a conflict or failing tests), shown on the card while it is fixed.
+	SentBack string `json:"sent_back,omitempty"`
 	// Paused holds a queued todo back from the dispatcher. Pausing a running
 	// todo stops Claude and requeues it paused, keeping its worktree and
 	// session so resuming continues where it stopped.

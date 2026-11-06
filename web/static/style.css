@@ -1037,7 +1037,7 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .ci-pill.ci-running { --c: var(--running); }
 .ci-pill.ci-running::before { animation: pulse-dot 1.4s ease-in-out infinite; }
 @keyframes pulse-dot { 50% { opacity: .35; } }
-.ci-tag { font-size: 12px; font-weight: 600; color: var(--failed); }
+.ci-tag, .sentback-tag { font-size: 12px; font-weight: 600; color: var(--failed); }
 .err-text { color: var(--failed); }
 .link.inline { min-height: 0; padding: 0; font: inherit; font-weight: 600; gap: 4px; vertical-align: bottom; }
 .link.inline .ico { width: 1em; height: 1em; }

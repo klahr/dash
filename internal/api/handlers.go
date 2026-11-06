@@ -692,7 +692,7 @@ func (s *Server) reworkTodo(w http.ResponseWriter, r *http.Request) {
 			t.Feedback = append(t.Feedback, fb)
 		}
 		t.Status, t.Error = model.StatusQueued, ""
-		t.AutoFixes, t.AutoMerge = 0, false // a human is involved again: fresh budget, review afterwards
+		t.AutoFixes, t.AutoMerge, t.SentBack = 0, false, "" // a human is involved again: fresh budget, review afterwards
 		return nil
 	})
 	if err != nil {

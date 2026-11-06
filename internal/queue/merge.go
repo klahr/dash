@@ -439,6 +439,7 @@ func (m *MergeQueue) sendBack(t model.Todo, p model.Project, note string, mergeM
 		}
 		x.MergeMain = x.MergeMain || mergeMain
 		x.AutoMerge = true
+		x.SentBack = why
 		x.AutoFixes++
 		x.Status = model.StatusQueued
 		x.Error = ""
