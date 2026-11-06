@@ -8,4 +8,4 @@ The illustrations are optional; the UI hides them until these files exist:
 - empty-chat.webp   960×720   empty chat
 - login-art.webp    1280×800  above the sign-in form
 
-The technology logos on the Start server and Deploy buttons (TECH_ICONS in ../app.js) are inlined from devicon (https://github.com/devicons/devicon), MIT License, Copyright (c) 2015 konpa.
+The technology logos on the Start and Deploy buttons (TECH_ICONS in ../app.js) are inlined from devicon (https://github.com/devicons/devicon), MIT License, Copyright (c) 2015 konpa.

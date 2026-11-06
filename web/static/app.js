@@ -2573,7 +2573,7 @@ function quickProc(spec) {
 }
 
 function renderQuick() {
-  for (const [sel, verb, generic, noun, key] of [["#quick-server", "Serving", "Start server", "server run", "R"], ["#quick-test", "Testing", "Run Tests", "test run", "T"], ["#quick-deploy", "Deploying", "Deploy", "deploy", "D"]]) {
+  for (const [sel, verb, generic, noun, key] of [["#quick-server", "Serving", "Start", "server run", "R"], ["#quick-test", "Testing", "Run Tests", "test run", "T"], ["#quick-deploy", "Deploying", "Deploy", "deploy", "D"]]) {
     const btn = $(sel);
     const spec = btn.dataset.run;
     btn.hidden = !state.project;
@@ -2600,9 +2600,9 @@ function renderQuick() {
     const done = tech.label || generic;
     const secs = proc ? Math.max(0, Math.floor((Date.now() - new Date(proc.started_at)) / 1000)) : 0;
     const elapsed = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
-    btn.querySelector("span").textContent = stop ? "Stop server" : proc?.running ? `${verb} ${elapsed}` : done;
+    btn.querySelector("span").textContent = stop ? "Stop" : proc?.running ? `${verb} ${elapsed}` : done;
     btn.title = btn.disabled ? `No ${noun.split(" ")[0]} command — set one in project settings`
-      : stop ? "Server running — click to stop it"
+      : stop ? "Running — click to stop it"
       : proc?.running ? `${verb}… ${elapsed} — click to view output`
       : ok ? `Last ${noun} passed — click to run again`
       : bad ? `Last ${noun} failed (exit ${proc.exit_code}) — click to run again`
