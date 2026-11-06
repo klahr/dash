@@ -480,6 +480,24 @@ func (s *Server) cancelTodo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
+func (s *Server) pauseTodo(w http.ResponseWriter, r *http.Request) {
+	t, err := s.Todos.Pause(r.PathValue("tid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
+}
+
+func (s *Server) resumeTodo(w http.ResponseWriter, r *http.Request) {
+	t, err := s.Todos.Resume(r.PathValue("tid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
+}
+
 func (s *Server) todoDiff(w http.ResponseWriter, r *http.Request) {
 	t, err := s.Store.GetTodo(r.PathValue("tid"))
 	if err != nil {

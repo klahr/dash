@@ -204,6 +204,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .todo-sub.err { color: var(--failed); }
 .todo-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; padding-top: 2px; }
 .goal-tag { color: var(--goal); font-weight: 600; }
+.paused-tag { font-size: 12px; font-weight: 600; color: var(--muted); }
 
 .s-draft { --c: var(--faint); }
 .s-queued { --c: var(--accent); }

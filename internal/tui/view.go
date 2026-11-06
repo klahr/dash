@@ -192,7 +192,7 @@ func (a *App) hints() string {
 	}
 	switch a.overlay {
 	case ovDetail:
-		return "Tab log/diff/tests · j/k ^d/^u gg/G · s queue a approve r rework x cancel t try ! shell · q back"
+		return "Tab log/diff/tests · j/k ^d/^u gg/G · s queue a approve r rework x cancel z pause t try ! shell · q back"
 	case ovForm:
 		return "i insert · j/k field · * goal · +/- priority · :w draft · :wq queue · :q! discard"
 	case ovPicker:
@@ -297,6 +297,8 @@ func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
 	switch {
 	case a.waiting(t.ID):
 		sub = "⚠ waiting for your approval (P)"
+	case t.Paused:
+		sub = "⏸ paused (z resumes)"
 	case t.Checks != nil && !t.Checks.Passed && t.Status == model.StatusReview:
 		sub = "✗ tests fail"
 	case t.Status == model.StatusInProgress:
@@ -639,7 +641,7 @@ var helpText = styleBox.Render(strings.Join([]string{
 	"",
 	styleAccent.Render("Global") + "        gt/gT next/prev tab · p projects · : command · ? help · ctrl+l reload · q/ZZ/:q quit",
 	styleAccent.Render("Motion") + "        h j k l · w/b next/prev column · gg G · {count}j · ctrl+d/u/f/b",
-	styleAccent.Render("Todo") + "          Enter open · o new · e edit · s queue · x cancel · a approve · r rework",
+	styleAccent.Render("Todo") + "          Enter open · o new · e edit · s queue · x cancel · z pause · a approve · r rework",
 	"              dd delete · +/- (K/J) priority · * goal · t try in worktree · ! shell in worktree",
 	styleAccent.Render("More") + "          / search · n/N next/prev match · :noh clear · T rerun tests · Y duplicate · E open in editor · :copy [path|prompt]",
 	"              u revert a merged todo · gx copy its pull request link · :cleanup remove stale worktrees",

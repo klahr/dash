@@ -84,6 +84,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/todos/{tid}", s.deleteTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/enqueue", s.enqueueTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/cancel", s.cancelTodo)
+	mux.HandleFunc("POST /api/todos/{tid}/pause", s.pauseTodo)
+	mux.HandleFunc("POST /api/todos/{tid}/resume", s.resumeTodo)
 	mux.HandleFunc("GET /api/todos/{tid}/diff", s.todoDiff)
 	mux.HandleFunc("GET /api/todos/{tid}/log", s.todoLog)
 	mux.HandleFunc("POST /api/todos/{tid}/approve", s.approveTodo)

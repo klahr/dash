@@ -336,3 +336,57 @@ func TestMainMovingDuringMergeIsMergedAgain(t *testing.T) {
 		t.Fatalf("log should mention the re-merge:\n%s", log)
 	}
 }
+
+// pauseExec blocks on its first run until canceled, then finishes normally.
+type pauseExec struct {
+	fakeExec
+	started chan struct{}
+}
+
+func (p *pauseExec) Run(ctx context.Context, req agent.ExecRequest, emit func(string)) (agent.ExecResult, error) {
+	if len(p.Calls()) == 0 {
+		p.mu.Lock()
+		p.calls = append(p.calls, req)
+		p.mu.Unlock()
+		close(p.started)
+		<-ctx.Done()
+		return agent.ExecResult{SessionID: "sess-paused"}, ctx.Err()
+	}
+	return p.fakeExec.Run(ctx, req, emit)
+}
+
+func TestPauseRequeuesAndResumeContinuesTheSession(t *testing.T) {
+	exe := &pauseExec{started: make(chan struct{}), fakeExec: fakeExec{fn: func(n int, req agent.ExecRequest) error {
+		write(t, req.Dir, "a.txt", "done\n")
+		return nil
+	}}}
+	h := newHarness(t, exe, model.Project{Name: "p"})
+	td := h.add("make a")
+	<-exe.started
+	if _, err := h.engine.Pause(td.ID); err != nil {
+		t.Fatal(err)
+	}
+	td = h.waitFor(td.ID, model.StatusQueued)
+	if !td.Paused || td.SessionID != "sess-paused" || td.Worktree == nil {
+		t.Fatalf("want a paused todo keeping its session and worktree, got paused=%v session=%q", td.Paused, td.SessionID)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if n := len(exe.Calls()); n != 1 {
+		t.Fatalf("a paused todo must not be dispatched; got %d runs", n)
+	}
+
+	if _, err := h.engine.Resume(td.ID); err != nil {
+		t.Fatal(err)
+	}
+	td = h.waitFor(td.ID, model.StatusReview)
+	if calls := exe.Calls(); len(calls) != 2 || calls[1].Resume != "sess-paused" {
+		t.Fatalf("resume should continue the paused session, got %+v", calls)
+	}
+	if td.Paused {
+		t.Fatal("paused flag should be cleared")
+	}
+
+	if _, err := h.engine.Pause(td.ID); err == nil {
+		t.Fatal("pausing a todo in review should fail")
+	}
+}

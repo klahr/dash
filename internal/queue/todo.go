@@ -119,13 +119,19 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 		if free <= 0 {
 			return
 		}
-		queued := e.Store.ListTodos("", model.StatusQueued)
-		if len(queued) == 0 {
+		var next *model.Todo
+		for _, q := range e.Store.ListTodos("", model.StatusQueued) {
+			if !q.Paused {
+				next = &q
+				break
+			}
+		}
+		if next == nil {
 			return
 		}
-		t, err := e.Store.SetStatus(queued[0].ID, model.StatusInProgress, "")
+		t, err := e.Store.SetStatus(next.ID, model.StatusInProgress, "")
 		if err != nil {
-			slog.Error("dispatch", "todo", queued[0].ID, "err", err)
+			slog.Error("dispatch", "todo", next.ID, "err", err)
 			return
 		}
 		wctx, cancel := context.WithCancel(ctx)
@@ -156,6 +162,31 @@ func (e *TodoEngine) Cancel(todoID string) bool {
 	return false
 }
 
+// Pause holds a queued todo back, or stops a running one and requeues it
+// paused; its worktree and Claude session are kept for Resume.
+func (e *TodoEngine) Pause(todoID string) (model.Todo, error) {
+	t, err := e.Store.UpdateTodo(todoID, func(x *model.Todo) error {
+		if x.Status != model.StatusInProgress && x.Status != model.StatusQueued {
+			return model.ErrInvalidTransition{From: x.Status, To: "paused"}
+		}
+		x.Paused = true
+		return nil
+	})
+	if err == nil {
+		e.Cancel(todoID) // the worker sees Paused and requeues instead of failing
+	}
+	return t, err
+}
+
+// Resume lets a paused todo run again.
+func (e *TodoEngine) Resume(todoID string) (model.Todo, error) {
+	t, err := e.Store.UpdateTodo(todoID, func(x *model.Todo) error { x.Paused = false; return nil })
+	if err == nil {
+		e.Kick()
+	}
+	return t, err
+}
+
 func (e *TodoEngine) shuttingDown() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -170,6 +201,15 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 			// it is requeued (and its worktree reused) on the next start.
 			log("■ interrupted by shutdown; will resume on restart")
 			return
+		}
+		if ctx.Err() != nil {
+			if cur, err := e.Store.GetTodo(t.ID); err == nil && cur.Paused {
+				log("⏸ paused")
+				if _, err := e.Store.SetStatus(t.ID, model.StatusQueued, ""); err != nil {
+					slog.Error("set paused", "todo", t.ID, "err", err)
+				}
+				return
+			}
 		}
 		msg := err.Error()
 		if errors.Is(err, context.Canceled) {

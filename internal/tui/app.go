@@ -1200,6 +1200,11 @@ func (a *App) todoAction(s string) tea.Cmd {
 		return a.action("queued", func() error { return a.c.TodoAction(t.ID, "enqueue", nil) })
 	case "x":
 		return a.action("cancelled", func() error { return a.c.TodoAction(t.ID, "cancel", nil) })
+	case "z":
+		if t.Paused {
+			return a.action("resumed", func() error { return a.c.TodoAction(t.ID, "resume", nil) })
+		}
+		return a.action("paused", func() error { return a.c.TodoAction(t.ID, "pause", nil) })
 	case "a":
 		return a.action("approved → merge queue", func() error { return a.c.TodoAction(t.ID, "approve", nil) })
 	case "r":

@@ -768,6 +768,7 @@ function todoRow(t, li = -1, ri = -1) {
   let sub = t.prompt.replace(/\s+/g, " ");
   let subClass = "todo-sub";
   if (t.status === "in_progress") { sub = state.lastLine.get(t.id) || "Working…"; subClass += " progress"; }
+  if (t.paused) sub = t.status === "in_progress" ? "Pausing…" : "Paused";
   if (t.error) { sub = t.error; subClass += " err"; }
   if (state.perms.some((p) => p.todo_id === t.id)) { sub = "Waiting for your approval"; subClass = "todo-sub waiting"; }
   const checkTag = t.checks && ["review", "merging", "failed"].includes(t.status)
@@ -781,6 +782,7 @@ function todoRow(t, li = -1, ri = -1) {
     h("span", { class: "todo-main" }, h("span", { class: "todo-title" }, title(t)), h("span", { class: subClass }, sub)),
     h("span", { class: "todo-side" },
       checkTag,
+      t.paused ? h("span", { class: "paused-tag" }, "Paused") : null,
       t.goal ? h("span", { class: "goal-tag" }, "Milestone") : null,
       t.pr && t.status !== "merged" ? h("span", { class: "pr-tag" }, `PR #${t.pr.number}`) : null,
       t.revert ? h("span", { class: "revert-tag" }, "Reverted") : null,
@@ -947,8 +949,10 @@ function renderActions(t) {
       break;
     case "queued":
       btns.push(b("Edit", () => openTodoForm(t)), b("Move to drafts", post("cancel", null, "Moved to drafts"), "grow"));
+      if (t.paused) btns.push(b("Resume", post("resume", null, "Resumed"), "primary grow"));
       break;
     case "in_progress":
+      if (!t.paused) btns.push(b("Pause", post("pause", null, "Pausing")));
       btns.push(b("Stop", post("cancel", null, "Stopping"), "danger grow"));
       break;
     case "review":
@@ -1957,6 +1961,7 @@ async function todoKey(t, k) {
   switch (k) {
     case "s": return post("enqueue", null, "Added to queue");
     case "x": return post("cancel", null, t.status === "in_progress" ? "Stopping" : "Moved to drafts");
+    case "z": return t.paused ? post("resume", null, "Resumed") : post("pause", null, t.status === "in_progress" ? "Pausing" : "Paused");
     case "a": return post("approve", null, "Approved — merging");
     case "r": return reworkTodo(t);
     case "u": return revertTodo(t);

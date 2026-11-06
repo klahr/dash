@@ -161,6 +161,10 @@ type Todo struct {
 	// since a human already approved it.
 	MergeMain bool `json:"merge_main,omitempty"`
 	AutoMerge bool `json:"auto_merge,omitempty"`
+	// Paused holds a queued todo back from the dispatcher. Pausing a running
+	// todo stops Claude and requeues it paused, keeping its worktree and
+	// session so resuming continues where it stopped.
+	Paused bool `json:"paused,omitempty"`
 	// Size of the change against the default branch, after the latest run.
 	DiffFiles int     `json:"diff_files,omitempty"`
 	DiffAdd   int     `json:"diff_add,omitempty"`
