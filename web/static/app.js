@@ -349,13 +349,12 @@ const draftKey = (t) => `${projectKey(state.project)}/${t?.id || "new"}`;
 const draft = drafts({
   read() {
     const f = $("#todo-form");
-    return { title: f.title.value, prompt: f.prompt.value, goal: f.goal.checked, priority: f.priority.value, attachments: todoAttach.items() };
+    return { title: f.title.value, prompt: f.prompt.value, priority: f.priority.value, attachments: todoAttach.items() };
   },
   write(d) {
     const f = $("#todo-form");
     f.title.value = d.title ?? "";
     f.prompt.value = d.prompt ?? "";
-    f.goal.checked = !!d.goal;
     f.priority.value = d.priority ?? 0;
     todoAttach.reset(d.attachments || []);
     promptEditor.render();
@@ -378,7 +377,7 @@ function discardDraft() {
   const t = editing;
   const f = $("#todo-form");
   f.reset();
-  if (t) { f.title.value = t.title; f.prompt.value = t.prompt; f.goal.checked = t.goal; f.priority.value = t.priority; }
+  if (t) { f.title.value = t.title; f.prompt.value = t.prompt; f.priority.value = t.priority; }
   todoAttach.reset(t?.attachments || []);
   promptEditor.render();
   draft.open(draftKey(t));
@@ -1202,7 +1201,7 @@ function todoRow(t, li = -1, ri = -1) {
     ? h("span", { class: `check-tag ${t.checks.passed ? "pass" : "fail"}` }, t.checks.passed ? "Tests pass" : "Tests fail")
     : null;
   return h("button", {
-    class: `todo s-${t.status}${isPushed(t) ? " pushed" : ""}${t.goal ? " goal" : ""}${t.reviewing ? " reviewing" : ""}${state.detail === t.id ? " selected" : ""}${atCursor ? " cursor" : ""}`,
+    class: `todo s-${t.status}${isPushed(t) ? " pushed" : ""}${t.reviewing ? " reviewing" : ""}${state.detail === t.id ? " selected" : ""}${atCursor ? " cursor" : ""}`,
     "data-id": t.id, onclick: () => openDetail(t.id),
   },
     h("span", { class: "node", "aria-hidden": "true" }),
@@ -1211,7 +1210,6 @@ function todoRow(t, li = -1, ri = -1) {
       checkTag,
       t.paused ? h("span", { class: "paused-tag" }, "Paused") : null,
       t.reviewing ? h("span", { class: "reviewing-tag" }, "Reviewing") : null,
-      t.goal ? h("span", { class: "goal-tag" }, "Milestone") : null,
       t.pr && t.status !== "merged" ? h("span", { class: "pr-tag" }, `PR #${t.pr.number}`) : null,
       t.revert ? h("span", { class: "revert-tag" }, "Reverted") : null,
       t.ci_run ? h("span", { class: "ci-tag" }, "Build fix") : null,
@@ -1287,7 +1285,6 @@ function openTodoForm(t = null, { pick = false } = {}) {
   if (t) {
     f.title.value = t.title;
     f.prompt.value = t.prompt;
-    f.goal.checked = t.goal;
     f.priority.value = t.priority;
   }
   todoAttach.reset(t?.attachments || []);
@@ -1309,7 +1306,7 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
   draft.flush(); // if saving fails below, the draft is still there
   const f = $("#todo-form");
   await todoAttach.settled();
-  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), goal: f.goal.checked, priority: Number(f.priority.value) || 0, attachments: todoAttach.ids() };
+  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), priority: Number(f.priority.value) || 0, attachments: todoAttach.ids() };
   if (!body.title && !body.prompt) throw new Error("Add a title or instructions before saving.");
   if (editing) {
     await api("PATCH", `/api/todos/${editing.id}`, body);
@@ -1374,7 +1371,6 @@ function renderDetail() {
   $("#d-title").textContent = title(t);
   $("#d-meta").replaceChildren(...[
     h("span", { class: `status s-${t.status}` }, STATUS_LABEL[t.status] || t.status),
-    t.goal ? h("span", { class: "goal-tag" }, "Milestone") : null,
     t.worktree ? h("span", { class: "branch" }, t.worktree.branch) : null,
     t.priority ? h("span", {}, `Priority ${t.priority}`) : null,
     t.runs ? h("span", {}, `${t.runs} ${t.runs === 1 ? "run" : "runs"}${t.cost_usd ? ` · ≈$${t.cost_usd.toFixed(2)}` : ""}`) : null,
@@ -1460,7 +1456,6 @@ $("#d-more").addEventListener("click", attempt(async () => {
   if (t.pr) choices.push(["external", `Open pull request #${t.pr.number}`, () => window.open(t.pr.url, "_blank", "noopener")]);
   if (t.status === "merged" && !t.revert) choices.push(["undo", "Revert this change", () => revertTodo(t)]);
   if (!["in_progress", "merging"].includes(t.status)) {
-    choices.push(["flag", t.goal ? "Unmark milestone" : "Mark as milestone", () => api("PATCH", `/api/todos/${t.id}`, { goal: !t.goal })]);
     if (t.worktree && state.project?.test_command) choices.push(["check", "Run the tests again", () => api("POST", `/api/todos/${t.id}/test`).then(() => toast("Running tests…"))]);
     choices.push(["copy", "Duplicate as a new draft", () => api("POST", `/api/todos/${t.id}/duplicate`).then(() => toast("Duplicated as a draft"))]);
     if (t.worktree) {
@@ -3392,7 +3387,6 @@ async function todoKey(t, k) {
     case "e": return openTodoForm(t);
     case "+": return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority - 1 });
     case "-": return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority + 1 });
-    case "*": return api("PATCH", `/api/todos/${t.id}`, { goal: !t.goal });
     case "t": return startProc({ kind: "web", preset: "run", todo_id: t.id });
     case "!": return startProc({ kind: "pty", todo_id: t.id });
     case "dd":

@@ -234,7 +234,6 @@ func (t Tool) schema() map[string]any {
 // NewTodo is a task to create.
 type NewTodo struct {
 	Title, Prompt string
-	Goal          bool
 	Priority      int
 	Enqueue       bool // queue it to run instead of keeping a draft
 }
@@ -347,7 +346,6 @@ func Tools(b Board, o Options) []Tool {
 			{"prompt", "string", "The task for Claude (the title alone is enough for small tasks).", false},
 			{"title", "string", "Short title (generated from the prompt if empty).", false},
 			{"priority", "integer", "Lower runs first (default 0).", false},
-			{"goal", "boolean", "Mark as a major milestone.", false},
 			{"draft", "boolean", draftDesc, false}},
 			func(a Args) (any, error) {
 				p, err := project(a)
@@ -358,7 +356,7 @@ func Tools(b Board, o Options) []Tool {
 					return nil, errors.New("title or prompt is required")
 				}
 				return b.CreateTodo(p.ID, NewTodo{
-					Title: a.Str("title"), Prompt: a.Str("prompt"), Goal: a.Flag("goal"),
+					Title: a.Str("title"), Prompt: a.Str("prompt"),
 					Priority: a.Num("priority", 0), Enqueue: !a.FlagOr("draft", o.Draft),
 				})
 			}},

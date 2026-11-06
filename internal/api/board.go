@@ -104,7 +104,7 @@ func (b board) Todo(id string) (model.Todo, error) {
 
 func (b board) CreateTodo(projectID string, t mcptools.NewTodo) (model.Todo, error) {
 	return b.s.addTodo(model.Todo{
-		ProjectID: projectID, Title: t.Title, Prompt: t.Prompt, Goal: t.Goal, Priority: t.Priority,
+		ProjectID: projectID, Title: t.Title, Prompt: t.Prompt, Priority: t.Priority,
 	}, t.Enqueue)
 }
 

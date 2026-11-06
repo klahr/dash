@@ -419,7 +419,6 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Title       string   `json:"title"`
 		Prompt      string   `json:"prompt"`
-		Goal        bool     `json:"goal"`
 		Priority    int      `json:"priority"`
 		Enqueue     bool     `json:"enqueue"`     // skip Draft
 		Attachments []string `json:"attachments"` // upload ids
@@ -438,7 +437,7 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, err := s.addTodo(model.Todo{
-		ProjectID: r.PathValue("pid"), Title: req.Title, Prompt: req.Prompt, Goal: req.Goal, Priority: req.Priority,
+		ProjectID: r.PathValue("pid"), Title: req.Title, Prompt: req.Prompt, Priority: req.Priority,
 		Attachments: atts,
 	}, req.Enqueue)
 	if err != nil {
@@ -533,7 +532,7 @@ func (s *Server) duplicateTodo(w http.ResponseWriter, r *http.Request) {
 	if title != "" {
 		title += " (copy)"
 	}
-	t, err := s.Store.CreateTodo(model.Todo{ProjectID: src.ProjectID, Title: title, Prompt: src.Prompt, Goal: src.Goal,
+	t, err := s.Store.CreateTodo(model.Todo{ProjectID: src.ProjectID, Title: title, Prompt: src.Prompt,
 		Priority: src.Priority, Attachments: src.Attachments, Edits: src.Edits})
 	if err != nil {
 		writeErr(w, err)
@@ -581,7 +580,6 @@ func (s *Server) updateTodo(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Title       *string   `json:"title"`
 		Prompt      *string   `json:"prompt"`
-		Goal        *bool     `json:"goal"`
 		Priority    *int      `json:"priority"`
 		Attachments *[]string `json:"attachments"` // upload ids; replaces the list
 	}
@@ -607,7 +605,6 @@ func (s *Server) updateTodo(w http.ResponseWriter, r *http.Request) {
 		}
 		set(&t.Title, req.Title)
 		set(&t.Prompt, req.Prompt)
-		set(&t.Goal, req.Goal)
 		set(&t.Priority, req.Priority)
 		return nil
 	})

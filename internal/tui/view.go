@@ -14,12 +14,12 @@ import (
 
 // ANSI palette indices, so the terminal's own theme decides the exact colours.
 var (
-	cAccent = lipgloss.Color("4")
-	cGoal   = lipgloss.Color("5")
-	cOK     = lipgloss.Color("2")
-	cWarn   = lipgloss.Color("3")
-	cErr    = lipgloss.Color("1")
-	cDim    = lipgloss.Color("8")
+	cAccent  = lipgloss.Color("4")
+	cAccent2 = lipgloss.Color("5")
+	cOK      = lipgloss.Color("2")
+	cWarn    = lipgloss.Color("3")
+	cErr     = lipgloss.Color("1")
+	cDim     = lipgloss.Color("8")
 
 	styleDim     = lipgloss.NewStyle().Foreground(cDim)
 	styleOK      = lipgloss.NewStyle().Foreground(cOK)
@@ -194,7 +194,7 @@ func (a *App) hints() string {
 	case ovDetail:
 		return "Tab log/diff/tests · j/k ^d/^u gg/G · s queue a approve r rework x cancel z pause t try ! shell · q back"
 	case ovForm:
-		return "i insert · j/k field · * goal · +/- priority · :w draft · :wq queue · :q! discard"
+		return "i insert · j/k field · +/- priority · :w draft · :wq queue · :q! discard"
 	case ovPicker:
 		return "j/k · Enter select · q close"
 	case ovPerms:
@@ -288,10 +288,6 @@ func (a *App) renderBoard() string {
 }
 
 func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
-	mark := " "
-	if t.Goal {
-		mark = lipgloss.NewStyle().Foreground(cGoal).Render("★")
-	}
 	name := ansi.Truncate(title(t), w-3, "…")
 	sub := ""
 	switch {
@@ -339,7 +335,7 @@ func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
 	if !ok {
 		st = styleDim
 	}
-	l1 := " " + mark + " " + name
+	l1 := "   " + name
 	if a.waiting(t.ID) {
 		st = styleWarn
 	} else if t.Checks != nil && !t.Checks.Passed && t.Status == model.StatusReview {
@@ -347,7 +343,7 @@ func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
 	}
 	l2 := "   " + st.Render(ansi.Strip(sub))
 	if sel {
-		l1 = styleSel.Render(" " + ansi.Strip(mark) + " " + name + strings.Repeat(" ", max(0, w-3-lipgloss.Width(name))))
+		l1 = styleSel.Render("   " + name + strings.Repeat(" ", max(0, w-3-lipgloss.Width(name))))
 	}
 	return []string{l1, ansi.Truncate(l2, w+1, ""), ""}
 }
@@ -364,9 +360,6 @@ func (a *App) renderDetail() string {
 		st = styleDim
 	}
 	head := styleBold.Render(title(t)) + "  " + st.Render(string(t.Status))
-	if t.Goal {
-		head += lipgloss.NewStyle().Foreground(cGoal).Render("  ★ goal")
-	}
 	meta := []string{fmt.Sprintf("priority %d", t.Priority)}
 	if t.Worktree != nil {
 		meta = append(meta, t.Worktree.Branch)
@@ -485,7 +478,7 @@ func (a *App) renderChat() string {
 			lines = append(lines, "", styleAccent.Bold(true).Render("  you"))
 			lines = append(lines, indent(lipgloss.NewStyle().Width(wrapW).Render(e.text), "  ")...)
 		case "assistant":
-			lines = append(lines, "", lipgloss.NewStyle().Foreground(cGoal).Bold(true).Render("  claude"))
+			lines = append(lines, "", lipgloss.NewStyle().Foreground(cAccent2).Bold(true).Render("  claude"))
 			if e.thinking != "" {
 				th := lipgloss.NewStyle().Width(wrapW - 2).Foreground(cDim).Italic(true).Render(e.thinking)
 				lines = append(lines, indent(th, "  │ ")...)
@@ -571,10 +564,6 @@ func (a *App) renderForm() string {
 	if a.fEditID != "" {
 		head = "Edit task"
 	}
-	goal := styleDim.Render("☆ goal (*)")
-	if a.fGoal {
-		goal = lipgloss.NewStyle().Foreground(cGoal).Render("★ goal (*)")
-	}
 	label := func(s string, f int) string {
 		if a.fField == f {
 			return styleAccent.Bold(true).Render("▸ " + s)
@@ -585,7 +574,7 @@ func (a *App) renderForm() string {
 		styleBold.Render(head), "",
 		label("Title", 0), a.fTitle.View(), "",
 		label("Prompt", 1), a.fPrompt.View(), "",
-		goal + styleDim.Render(fmt.Sprintf("   priority %d (+/-)", a.fPrio)), "",
+		styleDim.Render(fmt.Sprintf("priority %d (+/-)", a.fPrio)), "",
 		styleDim.Render(":w save draft · :wq save & queue · :q! discard"),
 	}, "\n")
 	return styleBox.Width(min(a.w-4, 104)).Render(body)
@@ -644,7 +633,7 @@ var helpText = styleBox.Render(strings.Join([]string{
 	styleAccent.Render("Global") + "        gt/gT next/prev tab · p projects · : command · ? help · ctrl+l reload · q/ZZ/:q quit",
 	styleAccent.Render("Motion") + "        h j k l · w/b next/prev column · gg G · {count}j · ctrl+d/u/f/b",
 	styleAccent.Render("Task") + "          Enter open · o new · e edit · s queue · x cancel · z pause · a approve · r rework",
-	"              dd delete · +/- (K/J) priority · * goal · t try in worktree · ! shell in worktree",
+	"              dd delete · +/- (K/J) priority · t try in worktree · ! shell in worktree",
 	styleAccent.Render("More") + "          / search · n/N next/prev match · :noh clear · T rerun tests · Y duplicate · E open in editor · :copy [path|prompt]",
 	"              u revert a merged task · gx copy its pull request link · :cleanup remove stale worktrees",
 	"              :ci build status · :fix ask Claude to fix the failing build · Tab completes : commands",
@@ -652,7 +641,7 @@ var helpText = styleBox.Render(strings.Join([]string{
 	styleAccent.Render("Approvals") + "     P list Claude's permission requests · y allow · A always allow · n deny",
 	styleAccent.Render("Chat") + "          t make the last answer a task · i insert · Enter send · Alt+Enter newline · Esc normal · x stop · dd/:clear",
 	styleAccent.Render("Procs") + "         Enter attach (Ctrl-] detaches) · R run · T test · D deploy · ! shell · x stop · o open",
-	styleAccent.Render("Form") + "          Tab field · Esc normal · * goal · :w draft · :wq/ZZ queue · :q! discard",
+	styleAccent.Render("Form") + "          Tab field · Esc normal · :w draft · :wq/ZZ queue · :q! discard",
 	styleAccent.Render("Commands") + "      :project <name> · :newproject <name> [path] · :task <prompt> · :new [prompt]",
 	"              :run <cmd> · :push · :pause / :resume the queue · :perms · :board :chat :procs :activity · :clear",
 }, "\n"))

@@ -161,7 +161,7 @@ const highlightStyle = HighlightStyle.define([
   { tag: t.heading, color: "var(--text)", fontWeight: "600" },
   { tag: t.processingInstruction, color: "var(--accent)" },
   { tag: t.contentSeparator, color: "var(--faint)" },
-  { tag: t.emphasis, color: "var(--goal)", fontStyle: "italic" },
+  { tag: t.emphasis, color: "var(--accent2)", fontStyle: "italic" },
   { tag: t.strong, color: "var(--text)", fontWeight: "600" },
   { tag: t.strikethrough, textDecoration: "line-through" },
   { tag: t.link, color: "var(--accent)" },
@@ -170,7 +170,7 @@ const highlightStyle = HighlightStyle.define([
   { tag: t.quote, color: "var(--muted)" },
   { tag: [t.labelName, t.meta], color: "var(--muted)" },
   // code in fences
-  { tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword, t.definitionKeyword, t.modifier], color: "var(--goal)" },
+  { tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword, t.definitionKeyword, t.modifier], color: "var(--accent2)" },
   { tag: [t.string, t.special(t.string), t.regexp, t.character], color: "var(--merged)" },
   { tag: t.comment, color: "var(--faint)", fontStyle: "italic" },
   { tag: [t.number, t.bool, t.null, t.atom, t.escape], color: "var(--running)" },

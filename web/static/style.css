@@ -14,7 +14,7 @@
   --review: #5ec8e5;
   --merged: #6fd39a;
   --failed: #ff7a7a;
-  --goal: #c79bff;
+  --accent2: #c79bff;
 
   --ui: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -203,7 +203,6 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
   justify-self: center; margin-top: 4px; width: 14px; height: 14px; border-radius: 50%;
   background: var(--bg); border: 3px solid var(--c); position: relative; z-index: 1;
 }
-.todo.goal .node { border-radius: 3px; transform: rotate(45deg); width: 13px; height: 13px; }
 .todo.pushed .node { background: var(--c); }
 .todo-main { min-width: 0; }
 .todo-title { display: block; font-weight: 600; line-height: 1.35; overflow-wrap: break-word; hyphens: auto; }
@@ -214,7 +213,6 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .todo-sub.progress { font-family: var(--mono); font-size: 12px; -webkit-line-clamp: 1; color: var(--running); }
 .todo-sub.err { color: var(--failed); }
 .todo-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; padding-top: 2px; }
-.goal-tag { color: var(--goal); font-weight: 600; }
 .paused-tag { font-size: 12px; font-weight: 600; color: var(--muted); }
 
 .s-draft { --c: var(--faint); }
@@ -487,8 +485,8 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 #prefs-form .toggle { display: flex; }
 .toggle input { appearance: none; flex: none; width: 42px; height: 24px; border-radius: 12px; background: var(--raised); border: 1px solid var(--line); position: relative; padding: 0; transition: background .15s; }
 .toggle input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform .15s var(--ease), background .15s; }
-.toggle input:checked { background: color-mix(in srgb, var(--goal) 35%, var(--raised)); border-color: var(--goal); }
-.toggle input:checked::after { transform: translateX(18px); background: var(--goal); }
+.toggle input:checked { background: color-mix(in srgb, var(--accent2) 35%, var(--raised)); border-color: var(--accent2); }
+.toggle input:checked::after { transform: translateX(18px); background: var(--accent2); }
 .hint { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
 .sheet-actions { display: flex; gap: 8px; padding: 16px 0 0; }
 .sheet-actions .btn { flex: 1; }

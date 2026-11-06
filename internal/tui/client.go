@@ -177,7 +177,6 @@ func (c *Client) Todos(pid string) (ts []model.Todo, err error) {
 type NewTodo struct {
 	Title    string `json:"title"`
 	Prompt   string `json:"prompt"`
-	Goal     bool   `json:"goal"`
 	Priority int    `json:"priority"`
 	Enqueue  bool   `json:"enqueue"`
 }

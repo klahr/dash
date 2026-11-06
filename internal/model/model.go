@@ -160,7 +160,6 @@ type Todo struct {
 	ProjectID string     `json:"project_id"`
 	Title     string     `json:"title"`
 	Prompt    string     `json:"prompt"`
-	Goal      bool       `json:"goal"`     // major milestone
 	Priority  int        `json:"priority"` // lower runs first; ties broken by CreatedAt
 	Status    TodoStatus `json:"status"`
 	Worktree  *Worktree  `json:"worktree,omitempty"`

@@ -117,7 +117,6 @@ type App struct {
 	// new/edit todo form
 	fTitle  textinput.Model
 	fPrompt textarea.Model
-	fGoal   bool
 	fPrio   int
 	fField  int    // 0 title, 1 prompt
 	fEditID string // "" = new todo
@@ -1222,8 +1221,6 @@ func (a *App) todoAction(s string) tea.Cmd {
 		return a.action("", func() error { return a.c.UpdateTodo(t.ID, map[string]any{"priority": t.Priority - 1}) })
 	case "-", "J":
 		return a.action("", func() error { return a.c.UpdateTodo(t.ID, map[string]any{"priority": t.Priority + 1}) })
-	case "*":
-		return a.action("", func() error { return a.c.UpdateTodo(t.ID, map[string]any{"goal": !t.Goal}) })
 	case "t":
 		return a.startProc(StartProc{Kind: model.ProcWeb, Preset: "run", TodoID: t.ID})
 	case "!":
@@ -1403,11 +1400,11 @@ func (a *App) openForm(t *model.Todo) tea.Cmd {
 	a.overlay = ovForm
 	a.fTitle.Reset()
 	a.fPrompt.Reset()
-	a.fGoal, a.fPrio, a.fEditID = false, 0, ""
+	a.fPrio, a.fEditID = 0, ""
 	if t != nil {
 		a.fTitle.SetValue(t.Title)
 		a.fPrompt.SetValue(t.Prompt)
-		a.fGoal, a.fPrio, a.fEditID = t.Goal, t.Priority, t.ID
+		a.fPrio, a.fEditID = t.Priority, t.ID
 	}
 	a.fField = 1
 	if t == nil {
@@ -1425,8 +1422,6 @@ func (a *App) formKey(s string) tea.Cmd {
 		a.fField = 1
 	case "k", "up", "shift+tab":
 		a.fField = 0
-	case "*":
-		a.fGoal = !a.fGoal
 	case "+":
 		a.fPrio--
 	case "-":
@@ -1445,12 +1440,12 @@ func (a *App) saveForm(enqueue bool) tea.Cmd {
 		a.setFlash("E: title and prompt are empty", true)
 		return nil
 	}
-	pid, id, goal, prio := a.proj.ID, a.fEditID, a.fGoal, a.fPrio
+	pid, id, prio := a.proj.ID, a.fEditID, a.fPrio
 	a.overlay = ovNone
 	a.mode = modeNormal
 	if id != "" {
 		return a.action("saved", func() error {
-			if err := a.c.UpdateTodo(id, map[string]any{"title": title, "prompt": prompt, "goal": goal, "priority": prio}); err != nil {
+			if err := a.c.UpdateTodo(id, map[string]any{"title": title, "prompt": prompt, "priority": prio}); err != nil {
 				return err
 			}
 			if enqueue {
@@ -1464,7 +1459,7 @@ func (a *App) saveForm(enqueue bool) tea.Cmd {
 		ok = "queued"
 	}
 	return a.action(ok, func() error {
-		_, err := a.c.CreateTodo(pid, NewTodo{Title: title, Prompt: prompt, Goal: goal, Priority: prio, Enqueue: enqueue})
+		_, err := a.c.CreateTodo(pid, NewTodo{Title: title, Prompt: prompt, Priority: prio, Enqueue: enqueue})
 		return err
 	})
 }
