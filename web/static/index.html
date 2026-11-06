@@ -371,6 +371,14 @@
         <input type="color" name="color" aria-label="Project color" value="#8aa4ff">
       </div>
       <p class="hint">Marks the top bar and the project lists, so you can tell projects apart at a glance.</p>
+      <div class="color-row">
+        <span class="side-project-icon" id="settings-icon" aria-hidden="true"></span>
+        <input type="file" id="settings-icon-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+        <button class="btn small" type="button" id="settings-icon-pick">Choose icon…</button>
+        <button class="btn small" type="button" id="settings-icon-clear">Remove</button>
+        <input type="hidden" name="icon">
+      </div>
+      <p class="hint">An image shown in the project lists instead of the first letter.</p>
       <footer class="sheet-actions"><button class="btn primary" value="save" data-icon="check">Save settings</button></footer>
     </form>
   </dialog>

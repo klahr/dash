@@ -91,6 +91,9 @@ type Project struct {
 	// Color is an optional "#rrggbb" the UI marks the project with, so it's
 	// clear at a glance which one is open.
 	Color string `json:"color,omitempty"`
+	// Icon is an optional image upload ("<upload id>/<name>") shown in place
+	// of the project's initial; served at /api/uploads/<Icon>.
+	Icon string `json:"icon,omitempty"`
 	// InvestigateCI queues a todo for Claude when a GitHub Actions build on
 	// the default branch fails (nil means on). CIHandledRun is the newest
 	// run already looked at, so a failure is only investigated once.

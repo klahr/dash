@@ -652,6 +652,12 @@ function openNewProject() {
   $("#new-project-sheet").showModal();
 }
 
+// A project's image icon, or its initial on its color.
+const projectIcon = (p, el = h("span", { class: "side-project-icon", "aria-hidden": "true" })) => {
+  el.style.setProperty("--project", p.color || "");
+  el.replaceChildren(p.icon ? h("img", { src: on(p.prefix || "", `/api/uploads/${p.icon}`), alt: "" }) : [...p.name][0]?.toUpperCase() || "?");
+  return el;
+};
 const projectDot = (p) => (p.color ? h("span", { class: "project-dot", style: `--project: ${p.color}`, "aria-hidden": "true" }) : null);
 
 // Desktop sidebar / phone menu: every project, one click away. The current one
@@ -664,7 +670,7 @@ function renderSideProjects() {
         type: "button", class: "side-project", title: `${p.name}\n${p.path}`, "aria-current": cur ? "true" : "false",
         onclick: attempt(async () => { await selectProject(p); setMenu(false); }),
       },
-      h("span", { class: "side-project-icon", style: p.color ? `--project: ${p.color}` : null, "aria-hidden": "true" }, [...p.name][0]?.toUpperCase() || "?"),
+      projectIcon(p),
       h("span", { class: "side-project-name" }, p.name),
       cur && p.default_branch ? h("span", { class: "side-project-branch" }, p.default_branch) : null));
   };
@@ -1719,6 +1725,8 @@ function openSettings() {
   f.use_color.checked = !!p.color;
   f.color.value = p.color || "#8aa4ff";
   f.color.disabled = !p.color;
+  f.icon.value = p.icon || "";
+  projectIcon(p, $("#settings-icon"));
   syncMergeHint();
   $("#settings-sheet").returnValue = "";
   $("#settings-sheet").showModal();
@@ -1736,6 +1744,20 @@ function syncMergeHint() {
 $("#settings-form").addEventListener("change", syncMergeHint);
 $("#settings-form").use_color.addEventListener("change", (e) => { e.target.form.color.disabled = !e.target.checked; });
 $("#settings-form").color.addEventListener("input", (e) => { e.target.form.use_color.checked = true; });
+const settingsIcon = (icon) => {
+  $("#settings-form").icon.value = icon;
+  projectIcon({ ...state.project, icon }, $("#settings-icon"));
+};
+$("#settings-icon-pick").addEventListener("click", () => $("#settings-icon-file").click());
+$("#settings-icon-clear").addEventListener("click", () => settingsIcon(""));
+$("#settings-icon-file").addEventListener("change", attempt(async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  const a = await uploadFile(file, state.project.prefix || "");
+  if (!a.type.startsWith("image/")) throw new Error("Choose a PNG, JPEG, GIF or WebP image.");
+  settingsIcon(`${a.id}/${a.name}`);
+}));
 $("#settings-sheet").addEventListener("close", attempt(async () => {
   if ($("#settings-sheet").returnValue !== "save") return;
   const f = $("#settings-form");
@@ -1756,8 +1778,9 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     max_run_minutes: Number(f.max_run_minutes.value) || 0,
     max_turns: Number(f.max_turns.value) || 0,
     color: f.use_color.checked ? f.color.value : "",
+    icon: f.icon.value,
   });
-  // Keep the client-only fields, and the list entry in step for its color.
+  // Keep the client-only fields, and the list entry in step for its color and icon.
   state.project = { ...saved, machine: old.machine, prefix: old.prefix };
   state.projects = state.projects.map((x) => (x === old ? state.project : x));
   renderProjectHeader();
@@ -2063,7 +2086,7 @@ function renderChatDock() {
           toggleBoardChat(cur ? !open : true);
         }),
       },
-      h("span", { class: "side-project-icon", style: p.color ? `--project: ${p.color}` : null, "aria-hidden": "true" }, [...p.name][0]?.toUpperCase() || "?"),
+      projectIcon(p),
       h("span", { class: "chat-tab-name" }, p.name)),
       ib({ type: "button", class: "icon-btn chat-tab-close", "aria-label": `Close the ${p.name} chat`, title: "Close", onclick: () => {
         setChatTabs(chatTabs().filter((k) => k !== projectKey(p)));

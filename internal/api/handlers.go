@@ -125,6 +125,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		MaxRunMinutes *int      `json:"max_run_minutes"`
 		MaxTurns      *int      `json:"max_turns"`
 		Color         *string   `json:"color"`
+		Icon          *string   `json:"icon"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
@@ -145,6 +146,13 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.Icon != nil && *req.Icon != "" {
+		id, name, _ := strings.Cut(*req.Icon, "/")
+		if a, err := s.findUpload(id); err != nil || a.Name != name || !strings.HasPrefix(a.Type, "image/") {
+			writeErr(w, fmt.Errorf("%w: icon must be an uploaded image", errBadRequest))
+			return
+		}
+	}
 	remote := ""
 	if cur, err := s.Store.GetProject(r.PathValue("pid")); err == nil {
 		remote = s.Git.RemoteURL(r.Context(), cur.ID, cur.Path) // pick up an origin added since
@@ -158,6 +166,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		set(&p.SetupCommand, req.SetupCommand)
 		set(&p.AutoPush, req.AutoPush)
 		set(&p.Color, req.Color)
+		set(&p.Icon, req.Icon)
 		set(&p.ChatPermissionMode, req.ChatMode)
 		set(&p.ReviewPrompt, req.ReviewPrompt)
 		if req.CopyFiles != nil {
