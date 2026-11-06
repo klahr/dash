@@ -273,8 +273,8 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if strings.TrimSpace(req.Prompt) == "" {
-		writeErr(w, fmt.Errorf("%w: prompt is required", errBadRequest))
+	if strings.TrimSpace(req.Title) == "" && strings.TrimSpace(req.Prompt) == "" {
+		writeErr(w, fmt.Errorf("%w: title or prompt is required", errBadRequest))
 		return
 	}
 	atts, err := s.attachments(req.Attachments)

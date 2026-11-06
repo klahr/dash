@@ -275,7 +275,7 @@ var tools = []tool{
 	{"get_todo", "Show a todo: prompt, status, feedback, test results, diff size, pull request.", []param{pTodo},
 		func(s *mcpServer, a args) (any, error) { return s.todo(a.str("todo")) }},
 	{"create_todo", "Create a todo for Claude to work on. It is queued to run unless draft is true.", []param{pProject,
-		{"prompt", "string", "The task for Claude.", true},
+		{"prompt", "string", "The task for Claude (the title alone is enough for small tasks).", false},
 		{"title", "string", "Short title (generated from the prompt if empty).", false},
 		{"priority", "integer", "Lower runs first (default 0).", false},
 		{"goal", "boolean", "Mark as a major milestone.", false},
@@ -285,8 +285,8 @@ var tools = []tool{
 			if err != nil {
 				return nil, err
 			}
-			if a.str("prompt") == "" {
-				return nil, errors.New("prompt is required")
+			if a.str("title") == "" && a.str("prompt") == "" {
+				return nil, errors.New("title or prompt is required")
 			}
 			return s.c.CreateTodo(p.ID, tui.NewTodo{
 				Title: a.str("title"), Prompt: a.str("prompt"), Goal: a.flag("goal"),

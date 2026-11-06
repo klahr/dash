@@ -1438,8 +1438,8 @@ func (a *App) formDirty() bool {
 
 func (a *App) saveForm(enqueue bool) tea.Cmd {
 	title, prompt := strings.TrimSpace(a.fTitle.Value()), strings.TrimSpace(a.fPrompt.Value())
-	if prompt == "" {
-		a.setFlash("E: prompt is empty", true)
+	if title == "" && prompt == "" {
+		a.setFlash("E: title and prompt are empty", true)
 		return nil
 	}
 	pid, id, goal, prio := a.proj.ID, a.fEditID, a.fGoal, a.fPrio

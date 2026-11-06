@@ -843,7 +843,7 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
   const f = $("#todo-form");
   await todoAttach.settled();
   const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), goal: f.goal.checked, priority: Number(f.priority.value) || 0, attachments: todoAttach.ids() };
-  if (!body.prompt) throw new Error("Add instructions for Claude before saving.");
+  if (!body.title && !body.prompt) throw new Error("Add a title or instructions before saving.");
   if (editing) {
     await api("PATCH", `/api/todos/${editing.id}`, body);
     if (action === "queue" && editing.status !== "queued") await api("POST", `/api/todos/${editing.id}/enqueue`);
