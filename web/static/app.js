@@ -855,7 +855,7 @@ $("#todo-form").noValidate = true;
 async function openDetail(id) {
   state.detail = id;
   const t = state.todos.get(id);
-  state.pane = t?.worktree ? "diff" : "log";
+  state.pane = t?.worktree ? "diff" : t?.status === "draft" ? "chat" : "log";
   state.diff = "";
   state.diffOpen = new Set();
   $("#detail").hidden = false;
@@ -864,7 +864,7 @@ async function openDetail(id) {
   $$(".todo.selected").forEach((e) => e.classList.remove("selected"));
   $(`.todo[data-id="${id}"]`)?.classList.add("selected");
   $("#d-log").textContent = "";
-  await Promise.all([loadLog(), loadDiff()]).catch(fail);
+  await Promise.all([loadLog(), loadDiff(), loadTodoChat()]).catch(fail);
 }
 
 function closeDetail() {
@@ -996,6 +996,7 @@ $("#d-more").addEventListener("click", attempt(async () => {
       }
     }]);
   }
+  if (todoChat.history.length) choices.push(["Clear this todo's chat", () => api("DELETE", `/api/todos/${t.id}/chat`).then(() => { if (state.detail === t.id) todoChat.reset(); })]);
   if (!choices.length) return;
   await menu(choices);
 }));
@@ -1043,6 +1044,7 @@ function renderPane() {
   $$(".segmented button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.pane === state.pane)));
   $("#d-diff").hidden = state.pane !== "diff";
   $("#d-log").hidden = state.pane !== "log";
+  $("#d-chat").hidden = state.pane !== "chat";
   renderDiff(state.diff);
 }
 
@@ -1471,94 +1473,140 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
 }));
 
 // ------------------------------------------------------------------ chat
-const chat = { history: [], current: null, ws: null };
+// makeChat drives one conversation UI: a log, its empty state and a composer.
+// target() names where it runs ({prefix, ...fields sent with each turn}).
+// The client owns the history and sends it in full each turn; the server saves
+// every finished turn.
+function makeChat({ log, empty, form, target, actions, scroller = () => log }) {
+  const c = { history: [], current: null, ws: null, prefix: "" };
+  const input = form.q;
+  const sendBtn = form.querySelector("button");
+  const finish = () => { c.current = null; sendBtn.disabled = false; };
+  const toEnd = () => { if (log.offsetParent) scroller().scrollTop = scroller().scrollHeight; };
+  const assistant = (content) => h("div", { class: "msg assistant" }, h("div", { class: "reply", innerHTML: renderMarkdown(content) }), actions(content));
 
-function chatSocket() {
-  if (chat.ws && chat.ws.readyState <= 1) return chat.ws;
-  chat.ws = new WebSocket(wsURL("/ws/chat"));
-  chat.ws.onmessage = (m) => {
-    const d = JSON.parse(m.data);
-    const c = chat.current;
-    if (!c) return;
-    if (d.kind === "thinking") c.thinking.textContent += d.text;
-    else if (d.kind === "text") { c.content += d.text; c.reply.innerHTML = renderMarkdown(c.content); }
-    else if (d.kind === "error") { c.el.classList.add("error"); c.reply.append(h("p", {}, d.text)); }
-    if (d.kind === "done" || d.kind === "error") {
-      c.el.classList.remove("pending");
-      if (c.content) c.el.append(chatActions(c.content));
-      if (c.content) chat.history.push({ role: "assistant", content: c.content });
-      else chat.history.pop(); // keep history alternating
-      chat.current = null;
-      $("#chat-send").disabled = false;
+  function socket(prefix) {
+    if (c.ws && c.ws.readyState <= 1 && c.prefix === prefix) return c.ws;
+    c.ws?.close();
+    const ws = c.ws = new WebSocket(wsURL(on(prefix, "/ws/chat")));
+    c.prefix = prefix;
+    ws.onmessage = (m) => {
+      const d = JSON.parse(m.data);
+      // An abandoned socket (see reset) finishes its reply so the server saves it.
+      if (ws !== c.ws) { if (d.kind === "done" || d.kind === "error") ws.close(); return; }
+      const cur = c.current;
+      if (!cur) return;
+      if (d.kind === "thinking") cur.thinking.textContent += d.text;
+      else if (d.kind === "text") { cur.content += d.text; cur.reply.innerHTML = renderMarkdown(cur.content); }
+      else if (d.kind === "error") { cur.el.classList.add("error"); cur.reply.append(h("p", {}, d.text)); }
+      if (d.kind === "done" || d.kind === "error") {
+        cur.el.classList.remove("pending");
+        if (cur.content) cur.el.append(actions(cur.content));
+        if (cur.content) c.history.push({ role: "assistant", content: cur.content });
+        else c.history.pop(); // keep history alternating
+        finish();
+      }
+      const sc = scroller();
+      if (sc.scrollHeight - sc.scrollTop - sc.clientHeight < 120) toEnd();
+    };
+    ws.onclose = () => {
+      if (ws !== c.ws || !c.current) return;
+      c.current.el.classList.remove("pending");
+      c.current.reply.textContent ||= "Connection lost. Send your message again.";
+      c.history.pop();
+      finish();
+    };
+    return ws;
+  }
+
+  // reset shows another (or a cleared) conversation. A reply still streaming
+  // is left to finish on its own socket.
+  function reset(saved = []) {
+    if (c.current) { c.ws = null; finish(); }
+    c.history = [...saved];
+    empty.hidden = saved.length > 0;
+    log.replaceChildren(empty, ...saved.map((m) => m.role === "user" ? h("div", { class: "msg user" }, m.content) : assistant(m.content)));
+    toEnd();
+  }
+
+  function send(q) {
+    empty.hidden = true;
+    c.history.push({ role: "user", content: q });
+    const thinking = h("div", { class: "thinking" });
+    const reply = h("div", { class: "reply" });
+    const el = h("div", { class: "msg assistant pending" }, thinking, reply);
+    log.append(h("div", { class: "msg user" }, q), el);
+    toEnd();
+    c.current = { el, thinking, reply, content: "" };
+    sendBtn.disabled = true;
+    const { prefix = "", ...fields } = target();
+    const ws = socket(prefix);
+    const go = () => ws.send(JSON.stringify({ type: "send", ...fields, messages: c.history }));
+    ws.readyState === 1 ? go() : ws.addEventListener("open", go, { once: true });
+  }
+
+  const autoGrow = () => { input.style.height = "auto"; input.style.height = `${input.scrollHeight}px`; };
+  input.addEventListener("input", autoGrow);
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if (!q || c.current) return;
+    input.value = "";
+    autoGrow();
+    send(q);
+  });
+  input.addEventListener("keydown", (e) => {
+    // Enter sends on devices with a hardware keyboard; on touch keyboards Enter adds a line.
+    if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) {
+      e.preventDefault();
+      form.requestSubmit();
     }
-    const log = $("#chat-log");
-    if (log.scrollHeight - log.scrollTop - log.clientHeight < 120) log.scrollTop = log.scrollHeight;
-  };
-  chat.ws.onclose = () => {
-    if (chat.current) {
-      chat.current.el.classList.remove("pending");
-      chat.current.reply.textContent ||= "Connection lost. Send your message again.";
-      chat.current = null;
-      chat.history.pop();
-      $("#chat-send").disabled = false;
-    }
-  };
-  return chat.ws;
+  });
+
+  return { reset, input, get history() { return c.history; }, get busy() { return !!c.current; } };
 }
 
-function chatActions(answer) {
-  return h("div", { class: "msg-actions" },
+const chat = makeChat({
+  log: $("#chat-log"), empty: $("#chat-empty"), form: $("#chat-form"),
+  target: () => ({ project: here() ? undefined : state.project?.id }), // chat runs on this machine
+  actions: (answer) => h("div", { class: "msg-actions" },
     h("button", { class: "link", onclick: () => { if (!state.project) return toast("Select a project first", true); openTodoForm(); $("#todo-form").prompt.value = answer; } }, "Make this a todo"),
-    h("button", { class: "link", onclick: () => copy(answer, "Copied") }, "Copy"));
-}
+    h("button", { class: "link", onclick: () => copy(answer, "Copied") }, "Copy")),
+});
+const chatInput = chat.input;
 
 // The server saves every finished turn, so the conversation survives restarts.
 async function loadChat() {
   const saved = await api("GET", "/api/chat");
-  if (!saved.length || chat.history.length || chat.current) return;
-  chat.history = saved;
-  $("#chat-empty").hidden = true;
-  $("#chat-log").append(...saved.map((m) => m.role === "user"
-    ? h("div", { class: "msg user" }, m.content)
-    : h("div", { class: "msg assistant" }, h("div", { class: "reply", innerHTML: renderMarkdown(m.content) }), chatActions(m.content))));
-  $("#chat-log").scrollTop = $("#chat-log").scrollHeight;
+  if (saved.length && !chat.history.length && !chat.busy) chat.reset(saved);
 }
 loadChat().catch((e) => toast(`Couldn't load chat history: ${e.message}`, true));
 
-function sendChat(q) {
-  $("#chat-empty").hidden = true;
-  chat.history.push({ role: "user", content: q });
-  const thinking = h("div", { class: "thinking" });
-  const reply = h("div", { class: "reply" });
-  const el = h("div", { class: "msg assistant pending" }, thinking, reply);
-  $("#chat-log").append(h("div", { class: "msg user" }, q), el);
-  $("#chat-log").scrollTop = $("#chat-log").scrollHeight;
-  chat.current = { el, thinking, reply, content: "" };
-  $("#chat-send").disabled = true;
-  const ws = chatSocket();
-  const project = here() ? undefined : state.project?.id; // chat runs on this machine
-  const go = () => ws.send(JSON.stringify({ type: "send", project, messages: chat.history }));
-  ws.readyState === 1 ? go() : ws.addEventListener("open", go, { once: true });
-}
+// A conversation about the open todo, run on the todo's computer. Claude sees
+// the todo's instructions, so a draft can be talked into a better prompt.
+const EDITABLE = ["draft", "queued", "failed"];
+const todoChat = makeChat({
+  log: $("#d-chat-log"), empty: $("#d-chat-empty"), form: $("#d-chat-form"),
+  target: () => ({ prefix: here(), todo: state.detail }),
+  scroller: () => $(".detail-body"),
+  actions: (answer) => {
+    const t = state.todos.get(state.detail);
+    return h("div", { class: "msg-actions" },
+      t && EDITABLE.includes(t.status) ? h("button", { class: "link", onclick: attempt(async () => {
+        if (!await ask({ title: "Replace the instructions?", body: "This answer becomes the todo's instructions for Claude.", ok: "Replace" })) return;
+        await api("PATCH", `/api/todos/${t.id}`, { prompt: answer });
+        toast("Instructions updated");
+      }) }, "Use as instructions") : null,
+      h("button", { class: "link", onclick: () => copy(answer, "Copied") }, "Copy"));
+  },
+});
 
-const chatInput = $("#chat-form").q;
-const autoGrow = () => { chatInput.style.height = "auto"; chatInput.style.height = `${chatInput.scrollHeight}px`; };
-chatInput.addEventListener("input", autoGrow);
-$("#chat-form").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const q = chatInput.value.trim();
-  if (!q || chat.current) return;
-  chatInput.value = "";
-  autoGrow();
-  sendChat(q);
-});
-chatInput.addEventListener("keydown", (e) => {
-  // Enter sends on devices with a hardware keyboard; on touch keyboards Enter adds a line.
-  if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) {
-    e.preventDefault();
-    $("#chat-form").requestSubmit();
-  }
-});
+async function loadTodoChat() {
+  const id = state.detail;
+  todoChat.reset();
+  const saved = await api("GET", `/api/todos/${id}/chat`);
+  if (state.detail === id && !todoChat.history.length && !todoChat.busy) todoChat.reset(saved);
+}
 
 // ------------------------------------------------------------------ run: processes & terminal
 const term = new window.Terminal({
@@ -2044,7 +2092,7 @@ async function runCommand(line) {
       return $("#perm-banner").scrollIntoView({ block: "nearest" });
     case "noh": case "nohlsearch": return clearSearch();
     case "notify": case "notifications": return toggleNotifications();
-    case "clear": api("DELETE", "/api/chat").catch(fail); chat.history = []; $("#chat-log").replaceChildren($("#chat-empty")); $("#chat-empty").hidden = false; return;
+    case "clear": api("DELETE", "/api/chat").catch(fail); chat.reset(); return;
     case "help": case "h": return $("#keys-sheet").showModal();
     case "logout": return logout();
     case "e": case "e!": case "refresh": return loadProjects();
@@ -2156,7 +2204,12 @@ async function handleNormal(k, n, hadCount) {
   if (state.detail) {
     const t = state.todos.get(state.detail);
     if (["j", "k", "ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b", "gg", "G"].includes(k)) return scrollBy(scroller(), k, n);
-    if (["h", "l"].includes(k)) { state.pane = state.pane === "diff" ? "log" : "diff"; return renderPane(); }
+    if (["h", "l"].includes(k)) {
+      const panes = ["diff", "log", "chat"];
+      state.pane = panes[(panes.indexOf(state.pane) + (k === "l" ? 1 : panes.length - 1)) % panes.length];
+      return renderPane();
+    }
+    if (state.pane === "chat" && ["i", "o"].includes(k)) return todoChat.input.focus();
     if (t) await todoKey(t, k);
     return;
   }

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -13,11 +14,12 @@ import (
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/hub"
+	"github.com/klahr/dash/internal/model"
 )
 
 // chatWS streams Claude responses. Protocol (JSON text frames):
 //
-//	client → {"type":"send","project":"<id>","messages":[{"role":"user","content":"…"}, …]}
+//	client → {"type":"send","project":"<id>","todo":"<id>","messages":[{"role":"user","content":"…"}, …]}
 //	client → {"type":"cancel"}
 //	server → {"kind":"thinking"|"text"|"done"|"error","text":"…"}
 //
@@ -25,6 +27,8 @@ import (
 // Each completed turn is saved, and GET /api/chat returns it after a restart.
 // A new "send" cancels any response still streaming. Claude runs in the
 // project's main checkout when "project" names a project on this machine.
+// With "todo", the conversation is about that todo: Claude sees its title,
+// status and instructions, and the turn is saved to GET /api/todos/{id}/chat.
 func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := hub.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -48,6 +52,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		var msg struct {
 			Type     string              `json:"type"`
 			Project  string              `json:"project"`
+			Todo     string              `json:"todo"`
 			Messages []agent.ChatMessage `json:"messages"`
 		}
 		if err := conn.ReadJSON(&msg); err != nil {
@@ -64,18 +69,32 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				dir = p.Path
 			}
 		}
+		save := s.Store.SetChat
+		prompt := msg.Messages
+		if msg.Todo != "" && s.Store != nil {
+			t, err := s.Store.GetTodo(msg.Todo)
+			if err != nil {
+				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
+				continue
+			}
+			if p, err := s.Store.GetProject(t.ProjectID); err == nil {
+				dir = p.Path
+			}
+			save = func(msgs []agent.ChatMessage) error { return s.Store.SetTodoChat(t.ID, msgs) }
+			prompt = withTodoContext(t, msg.Messages)
+		}
 		var turnCtx context.Context
 		turnCtx, cancelTurn = context.WithCancel(ctx)
 		go func(ctx context.Context, history []agent.ChatMessage) {
 			var reply strings.Builder
-			err := s.Chat.Stream(ctx, dir, history, func(d agent.ChatDelta) {
+			err := s.Chat.Stream(ctx, dir, prompt, func(d agent.ChatDelta) {
 				if d.Kind == "text" {
 					reply.WriteString(d.Text)
 				}
 				if d.Kind == "done" && reply.Len() > 0 && s.Store != nil {
 					// Save before telling the client, so a reload right after sees it.
 					turn := append(history[:len(history):len(history)], agent.ChatMessage{Role: "assistant", Content: reply.String()})
-					if err := s.Store.SetChat(turn); err != nil {
+					if err := save(turn); err != nil {
 						slog.Error("save chat", "err", err)
 					}
 				}
@@ -87,6 +106,31 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			}
 		}(turnCtx, msg.Messages)
 	}
+}
+
+// withTodoContext tells Claude which todo the conversation is about by
+// prefixing the first message. The todo is read fresh every turn, so edits
+// to its instructions are seen; the saved history stays as the user typed it.
+func withTodoContext(t model.Todo, history []agent.ChatMessage) []agent.ChatMessage {
+	if len(history) == 0 {
+		return history
+	}
+	var b strings.Builder
+	b.WriteString("This conversation is about a todo: a task that Claude Code carries out on its own in a git worktree of the project. ")
+	if t.Status == model.StatusDraft {
+		b.WriteString("It is still a draft, so help me refine its instructions into a clear, complete prompt for Claude Code. ")
+	}
+	fmt.Fprintf(&b, "\n\n<todo status=%q>\n<title>%s</title>\n<instructions>\n%s\n</instructions>\n", t.Status, t.Title, t.Prompt)
+	for _, f := range t.Feedback {
+		fmt.Fprintf(&b, "<review_note>\n%s\n</review_note>\n", f)
+	}
+	if t.Error != "" {
+		fmt.Fprintf(&b, "<error>%s</error>\n", t.Error)
+	}
+	b.WriteString("</todo>\n\n")
+	out := append([]agent.ChatMessage(nil), history...)
+	out[0].Content = b.String() + out[0].Content
+	return out
 }
 
 // procWS attaches xterm.js to a process.

@@ -40,6 +40,9 @@ type snapshot struct {
 	Projects map[string]*model.Project `json:"projects"`
 	Todos    map[string]*model.Todo    `json:"todos"`
 	Chat     []model.ChatMessage       `json:"chat,omitempty"`
+	// TodoChats are conversations about one todo, keyed by todo id. Kept
+	// apart from Todo so they aren't broadcast with every todo update.
+	TodoChats map[string][]model.ChatMessage `json:"todo_chats,omitempty"`
 }
 
 type Store struct {
@@ -291,6 +294,7 @@ func (s *Store) DeleteTodo(id string) (model.Todo, error) {
 		return model.Todo{}, ErrNotFound
 	}
 	delete(s.data.Todos, id)
+	delete(s.data.TodoChats, id)
 	if err := s.saveLocked(); err != nil {
 		return *t, err
 	}
@@ -311,6 +315,30 @@ func (s *Store) SetChat(msgs []model.ChatMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data.Chat = append([]model.ChatMessage(nil), msgs...)
+	return s.saveLocked()
+}
+
+func (s *Store) TodoChat(todoID string) []model.ChatMessage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]model.ChatMessage{}, s.data.TodoChats[todoID]...)
+}
+
+// SetTodoChat replaces the conversation about a todo (nil clears it).
+func (s *Store) SetTodoChat(todoID string, msgs []model.ChatMessage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.data.Todos[todoID]; !ok {
+		return ErrNotFound
+	}
+	if len(msgs) == 0 {
+		delete(s.data.TodoChats, todoID)
+	} else {
+		if s.data.TodoChats == nil {
+			s.data.TodoChats = map[string][]model.ChatMessage{}
+		}
+		s.data.TodoChats[todoID] = append([]model.ChatMessage(nil), msgs...)
+	}
 	return s.saveLocked()
 }
 

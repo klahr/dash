@@ -318,6 +318,8 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
   border-top: 1px solid var(--line); background: var(--bg);
 }
 .composer textarea { resize: none; max-height: 40vh; border-radius: 22px; padding: 11px 16px; }
+.todo-chat .chat-log { overflow: visible; padding: 0 0 12px; }
+.todo-chat .composer { position: sticky; bottom: 0; padding: 10px 0; }
 
 /* ---------- run ---------- */
 #view-run { padding: 16px; }

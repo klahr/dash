@@ -204,9 +204,21 @@
         <div class="segmented" role="tablist">
           <button role="tab" data-pane="diff" aria-selected="true">Changes <span id="d-diffstat"></span></button>
           <button role="tab" data-pane="log" aria-selected="false">Log</button>
+          <button role="tab" data-pane="chat" aria-selected="false">Chat</button>
         </div>
         <div class="pane" id="d-diff"></div>
         <pre class="pane log" id="d-log" hidden></pre>
+        <div class="pane todo-chat" id="d-chat" hidden>
+          <div class="chat-log" id="d-chat-log">
+            <p class="pane-empty" id="d-chat-empty">Talk this todo through with Claude. It sees the instructions, so it can help you sharpen a draft into a better prompt.</p>
+          </div>
+          <form class="composer" id="d-chat-form">
+            <textarea name="q" rows="1" placeholder="Ask about this todo" aria-label="Ask Claude about this todo"></textarea>
+            <button class="icon-btn primary" aria-label="Send">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m0 0-6 6m6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </form>
+        </div>
       </div>
       <footer class="actionbar" id="d-actions"></footer>
     </aside>
@@ -329,6 +341,7 @@
         <dt>Search</dt><dd><kbd>/</kbd> filter the board · <kbd>Enter</kbd> jump to first match · <kbd>n</kbd>/<kbd>N</kbd> next/previous · <kbd>Esc</kbd> or <code>:noh</code> clear</dd>
         <dt>More</dt><dd><kbd>T</kbd> run tests again · <kbd>Y</kbd> duplicate · <kbd>E</kbd> open worktree in editor · <kbd>u</kbd> revert a merged todo · <kbd>O</kbd> open its pull request · click a diff line to comment · paste or drop images into a todo</dd>
         <dt>Approvals</dt><dd><kbd>y</kbd> allow · <kbd>A</kbd> always allow that tool for the todo · <kbd>n</kbd> deny</dd>
+        <dt>Todo chat</dt><dd><kbd>h</kbd>/<kbd>l</kbd> to the Chat tab · <kbd>i</kbd> type</dd>
         <dt>Chat</dt><dd><kbd>i</kbd> type · <kbd>Enter</kbd> send · <kbd>Esc</kbd> stop typing · <kbd>j</kbd>/<kbd>k</kbd> scroll</dd>
         <dt>Run</dt><dd><kbd>j</kbd>/<kbd>k</kbd> select · <kbd>Enter</kbd> view · <kbd>i</kbd> type into terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> shell · <kbd>/</kbd> command</dd>
         <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> add to queue · <kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>

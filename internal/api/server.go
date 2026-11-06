@@ -94,6 +94,16 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/todos/{tid}/duplicate", s.duplicateTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/open", s.openTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/revert", s.revertTodo)
+	mux.HandleFunc("GET /api/todos/{tid}/chat", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, s.Store.TodoChat(r.PathValue("tid")))
+	})
+	mux.HandleFunc("DELETE /api/todos/{tid}/chat", func(w http.ResponseWriter, r *http.Request) {
+		if err := s.Store.SetTodoChat(r.PathValue("tid"), nil); err != nil {
+			writeErr(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /api/projects/{pid}/cleanup", s.cleanupProject)
 
 	// GitHub Actions builds of the default branch
