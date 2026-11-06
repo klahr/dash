@@ -314,6 +314,13 @@ func (c *Client) ChatTurn(ctx context.Context, history []agent.ChatMessage, deli
 	}
 }
 
+// Chat returns the conversation saved on this computer.
+func (c *Client) Chat() (ms []agent.ChatMessage, err error) {
+	return ms, c.doRaw("GET", "/api/chat", nil, &ms)
+}
+
+func (c *Client) ClearChat() error { return c.doRaw("DELETE", "/api/chat", nil, nil) }
+
 // ---- permissions & usage ----
 
 // PermRequest mirrors perm.Request.

@@ -39,6 +39,7 @@ type Publisher interface{ Publish(model.Event) }
 type snapshot struct {
 	Projects map[string]*model.Project `json:"projects"`
 	Todos    map[string]*model.Todo    `json:"todos"`
+	Chat     []model.ChatMessage       `json:"chat,omitempty"`
 }
 
 type Store struct {
@@ -273,6 +274,22 @@ func (s *Store) DeleteTodo(id string) (model.Todo, error) {
 	}
 	s.emit(model.EvTodoDeleted, t.ProjectID, id, nil)
 	return *t, nil
+}
+
+// ---- Chat ----
+
+func (s *Store) Chat() []model.ChatMessage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]model.ChatMessage{}, s.data.Chat...)
+}
+
+// SetChat replaces the saved conversation (nil clears it).
+func (s *Store) SetChat(msgs []model.ChatMessage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data.Chat = append([]model.ChatMessage(nil), msgs...)
+	return s.saveLocked()
 }
 
 // clone copies a todo deeply enough that changing the copy (including the

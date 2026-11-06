@@ -7,15 +7,14 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/anthropics/anthropic-sdk-go/v2/option"
+
+	"github.com/klahr/dash/internal/model"
 )
 
 const DefaultModel = "claude-opus-5-5"
 
 // ChatMessage is the wire format the frontend sends: the full conversation so far.
-type ChatMessage struct {
-	Role    string `json:"role"` // "user" | "assistant"
-	Content string `json:"content"`
-}
+type ChatMessage = model.ChatMessage
 
 // ChatDelta is one streamed fragment sent back to the frontend.
 type ChatDelta struct {

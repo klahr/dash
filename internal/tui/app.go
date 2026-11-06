@@ -215,7 +215,11 @@ type (
 	}
 	chatDeltaMsg agent.ChatDelta
 	chatEndMsg   struct{ err error }
-	resultMsg    struct { // outcome of a one-shot action
+	chatLoadMsg  struct {
+		ms  []agent.ChatMessage
+		err error
+	}
+	resultMsg struct { // outcome of a one-shot action
 		ok     string
 		err    error
 		reload bool
@@ -236,7 +240,11 @@ type (
 )
 
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.loadProjects(), a.loadUsage(), tick())
+	return tea.Batch(a.loadProjects(), a.loadUsage(), a.loadChat(), tick())
+}
+
+func (a *App) loadChat() tea.Cmd {
+	return func() tea.Msg { ms, err := a.c.Chat(); return chatLoadMsg{ms, err} }
 }
 
 // streamEvents follows every reachable computer's events (once each), so
@@ -480,6 +488,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			last.thinking += msg.Text
 		case "error":
 			a.chat = append(a.chat, chatEntry{role: "error", text: msg.Text})
+		}
+		return a, nil
+
+	case chatLoadMsg:
+		if msg.err != nil {
+			a.setFlash("couldn't load chat history: "+msg.err.Error(), true)
+			return a, nil
+		}
+		if len(a.chatHist) > 0 || a.chatCancel != nil {
+			return a, nil
+		}
+		a.chatHist = msg.ms
+		for _, m := range msg.ms {
+			a.chat = append(a.chat, chatEntry{role: m.Role, text: m.Content})
 		}
 		return a, nil
 
@@ -1737,6 +1759,7 @@ func (a *App) runCommand(line string) tea.Cmd {
 			a.chatCancel()
 		}
 		a.chat, a.chatHist, a.chatOff = nil, nil, 0
+		return a.action("chat cleared", a.c.ClearChat)
 	case "e", "e!", "refresh":
 		return tea.Batch(a.loadProjects(), a.loadTodos(), a.loadProcs())
 	default:

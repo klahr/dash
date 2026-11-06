@@ -23,7 +23,7 @@ const desktop = matchMedia("(min-width: 1024px)");
 // one serving this page forwards /peer/<name>/… to the others. A project's
 // API calls go to the computer it lives on (its prefix); login, logout and
 // the computer list always go to this one.
-const HUB_ONLY = /^\/api\/(login|logout|me|machines|version)\b/;
+const HUB_ONLY = /^\/api\/(login|logout|me|machines|version|chat)\b/;
 const here = () => state.project?.prefix || "";
 const on = (prefix, path) => (HUB_ONLY.test(path) ? path : `${prefix}${path}`);
 
@@ -1378,12 +1378,7 @@ function chatSocket() {
     else if (d.kind === "error") { c.el.classList.add("error"); c.reply.append(h("p", {}, d.text)); }
     if (d.kind === "done" || d.kind === "error") {
       c.el.classList.remove("pending");
-      if (c.content) {
-        const answer = c.content;
-        c.el.append(h("div", { class: "msg-actions" },
-          h("button", { class: "link", onclick: () => { if (!state.project) return toast("Select a project first", true); openTodoForm(); $("#todo-form").prompt.value = answer; } }, "Make this a todo"),
-          h("button", { class: "link", onclick: () => copy(answer, "Copied") }, "Copy")));
-      }
+      if (c.content) c.el.append(chatActions(c.content));
       if (c.content) chat.history.push({ role: "assistant", content: c.content });
       else chat.history.pop(); // keep history alternating
       chat.current = null;
@@ -1403,6 +1398,25 @@ function chatSocket() {
   };
   return chat.ws;
 }
+
+function chatActions(answer) {
+  return h("div", { class: "msg-actions" },
+    h("button", { class: "link", onclick: () => { if (!state.project) return toast("Select a project first", true); openTodoForm(); $("#todo-form").prompt.value = answer; } }, "Make this a todo"),
+    h("button", { class: "link", onclick: () => copy(answer, "Copied") }, "Copy"));
+}
+
+// The server saves every finished turn, so the conversation survives restarts.
+async function loadChat() {
+  const saved = await api("GET", "/api/chat");
+  if (!saved.length || chat.history.length || chat.current) return;
+  chat.history = saved;
+  $("#chat-empty").hidden = true;
+  $("#chat-log").append(...saved.map((m) => m.role === "user"
+    ? h("div", { class: "msg user" }, m.content)
+    : h("div", { class: "msg assistant" }, h("div", { class: "reply" }, m.content), chatActions(m.content))));
+  $("#chat-log").scrollTop = $("#chat-log").scrollHeight;
+}
+loadChat().catch((e) => toast(`Couldn't load chat history: ${e.message}`, true));
 
 function sendChat(q) {
   $("#chat-empty").hidden = true;
@@ -1879,7 +1893,7 @@ async function runCommand(line) {
       return $("#perm-banner").scrollIntoView({ block: "nearest" });
     case "noh": case "nohlsearch": return clearSearch();
     case "notify": case "notifications": return toggleNotifications();
-    case "clear": $("#chat-clear")?.click(); chat.history = []; $("#chat-log").replaceChildren($("#chat-empty")); $("#chat-empty").hidden = false; return;
+    case "clear": api("DELETE", "/api/chat").catch(fail); chat.history = []; $("#chat-log").replaceChildren($("#chat-empty")); $("#chat-empty").hidden = false; return;
     case "help": case "h": return $("#keys-sheet").showModal();
     case "logout": return logout();
     case "e": case "e!": case "refresh": return loadProjects();

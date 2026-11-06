@@ -120,6 +120,16 @@ func (s *Server) Routes() http.Handler {
 	// WebSockets
 	mux.HandleFunc("GET /ws/events", s.Hub.ServeWS)
 	mux.HandleFunc("GET /ws/chat", s.chatWS)
+	mux.HandleFunc("GET /api/chat", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, s.Store.Chat())
+	})
+	mux.HandleFunc("DELETE /api/chat", func(w http.ResponseWriter, r *http.Request) {
+		if err := s.Store.SetChat(nil); err != nil {
+			writeErr(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("GET /ws/proc/{procid}", s.procWS)
 
 	// Frontend

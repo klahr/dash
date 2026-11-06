@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 //	server → {"kind":"thinking"|"text"|"done"|"error","text":"…"}
 //
 // The client owns the conversation history and sends it in full each turn.
+// Each completed turn is saved, and GET /api/chat returns it after a restart.
 // A new "send" cancels any response still streaming.
 func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := hub.Upgrader.Upgrade(w, r, nil)
@@ -57,7 +59,21 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		var turnCtx context.Context
 		turnCtx, cancelTurn = context.WithCancel(ctx)
 		go func(ctx context.Context, history []agent.ChatMessage) {
-			if err := s.Chat.Stream(ctx, history, send); err != nil && ctx.Err() == nil {
+			var reply strings.Builder
+			err := s.Chat.Stream(ctx, history, func(d agent.ChatDelta) {
+				if d.Kind == "text" {
+					reply.WriteString(d.Text)
+				}
+				if d.Kind == "done" && reply.Len() > 0 && s.Store != nil {
+					// Save before telling the client, so a reload right after sees it.
+					turn := append(history[:len(history):len(history)], agent.ChatMessage{Role: "assistant", Content: reply.String()})
+					if err := s.Store.SetChat(turn); err != nil {
+						slog.Error("save chat", "err", err)
+					}
+				}
+				send(d)
+			})
+			if err != nil && ctx.Err() == nil {
 				slog.Warn("chat", "err", err)
 				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 			}

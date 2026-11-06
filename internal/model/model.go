@@ -245,6 +245,12 @@ type Process struct {
 	StartedAt time.Time   `json:"started_at"`
 }
 
+// ChatMessage is one turn of the general chat.
+type ChatMessage struct {
+	Role    string `json:"role"` // "user" | "assistant"
+	Content string `json:"content"`
+}
+
 // EventType names a WebSocket event broadcast to dashboards.
 type EventType string
 
