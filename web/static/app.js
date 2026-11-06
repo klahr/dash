@@ -49,6 +49,7 @@ const ICONS = {
   bell: "M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 21h4",
   "bell-off": "M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 21h4M3 3l18 18",
   logout: "M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10",
+  prefs: "M7 7h10a5 5 0 0 1 0 10H7A5 5 0 0 1 7 7zM16 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z",
   terminal: "m5 8 4 4-4 4M12 17h7",
   code: "m8 8-4 4 4 4M16 8l4 4-4 4",
   comment: "M5 5h14v10H10l-5 4z",
@@ -674,7 +675,7 @@ function renderProjectHeader() {
 function renderProjectList() {
   renderSideProjects();
   renderChatPane();
-  setLabel($("#notify-toggle"), notifyOn() ? "bell-off" : "bell", notifyLabel());
+  syncPrefs();
 }
 
 const notifyLabel = () => notifyOn() ? "Turn off notifications" : "Turn on notifications";
@@ -807,7 +808,7 @@ $("#menu-close").addEventListener("click", () => { setMenu(false); $("#menu-open
 $("#menu-scrim").addEventListener("click", () => setMenu(false));
 desktop.addEventListener("change", () => { setMenu(false); $("#project-picker").hidden = true; });
 $("#side-new-project").addEventListener("click", openNewProject);
-$("#notify-toggle").addEventListener("click", attempt(toggleNotifications));
+$("#prefs-open").addEventListener("click", openPrefs);
 $("#pm-settings").addEventListener("click", openSettings);
 $("#pm-github").addEventListener("click", attempt(createGitHubRepo));
 $("#push-main").addEventListener("click", attempt(pushDone));
@@ -1494,8 +1495,25 @@ function diffLines(f) {
 
 function toggleVim() {
   setVim(!vimOn());
+  syncPrefs();
   toast(vimOn() ? "Vim keys on in the task editor" : "Vim keys off");
 }
+
+// ------------------------------------------------------------------ preferences (this browser only)
+function syncPrefs() {
+  const f = $("#prefs-form");
+  f.vim.checked = vimOn();
+  f.notify.checked = notifyOn();
+}
+function openPrefs() {
+  syncPrefs();
+  $("#prefs-sheet").showModal();
+}
+$("#prefs-form").vim.addEventListener("change", (e) => { if (e.target.checked !== vimOn()) toggleVim(); });
+// Asking for permission needs this change event's user gesture.
+$("#prefs-form").notify.addEventListener("change", attempt(async (e) => {
+  try { if (e.target.checked !== notifyOn()) await toggleNotifications(); } finally { syncPrefs(); }
+}));
 
 // ------------------------------------------------------------------ notifications & tab title
 const notifyOn = () => { try { return localStorage.getItem("dash.notify") === "1"; } catch { return false; } };
@@ -3099,6 +3117,7 @@ async function runCommand(line) {
       return toast(name === "pause" ? "Queue paused" : "Queue resumed");
     case "usage": renderUsage(); return $("#usage-sheet").showModal();
     case "settings": need(); return openSettings();
+    case "prefs": case "preferences": return openPrefs();
     case "perms": case "permissions":
       if (!state.perms.length) return toast("No permission requests waiting");
       showView("board"); closeDetail();
@@ -3183,6 +3202,7 @@ function paletteCommands() {
     ["Claude usage", "clock", () => { renderUsage(); $("#usage-sheet").showModal(); }, ":usage", "limits"],
     state.usage && [state.usage.paused ? "Resume the queue" : "Pause the queue", state.usage.paused ? "play" : "pause", () => runCommand(state.usage.paused ? "resume" : "pause"), "", "queue"],
     ["Permission requests", "eye", () => runCommand("perms"), ":perms", "approvals allow deny"],
+    ["Preferences", "prefs", openPrefs, ":prefs", "preferences vim notifications browser"],
     [notifyLabel(), notifyOn() ? "bell-off" : "bell", toggleNotifications, ":notify", "notifications"],
     [vimOn() ? "Turn off vim keys in the editor" : "Turn on vim keys in the editor", "code", toggleVim, ":vim", "vim keybindings prompt editor"],
     desktop.matches && [sideCollapsed() ? "Expand sidebar" : "Collapse sidebar", "minimize", () => setSideCollapsed(!sideCollapsed()), "[", "sidebar"],
