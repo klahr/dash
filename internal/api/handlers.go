@@ -275,11 +275,14 @@ func (s *Server) unpushed(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	n := 0
+	n, todos := 0, []string{}
 	if p.RemoteURL != "" {
 		n, _ = s.Git.Unpushed(r.Context(), p.ID, p.Path, p.DefaultBranch)
+		if ids, err := s.Git.UnpushedTodos(r.Context(), p.ID, p.Path, p.DefaultBranch); err == nil && ids != nil {
+			todos = ids
+		}
 	}
-	writeJSON(w, http.StatusOK, map[string]int{"count": n})
+	writeJSON(w, http.StatusOK, map[string]any{"count": n, "todos": todos})
 }
 
 func (s *Server) gitGraph(w http.ResponseWriter, r *http.Request) {

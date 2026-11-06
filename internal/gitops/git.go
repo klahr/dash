@@ -510,13 +510,32 @@ func (g *Git) Graph(ctx context.Context, projectID, repo, branch string, limit i
 // Unpushed counts the commits on branch that origin doesn't have, as of the
 // last fetch or push (every commit if branch was never pushed).
 func (g *Git) Unpushed(ctx context.Context, projectID, repo, branch string) (int, error) {
-	rng := branch
-	if _, err := g.run(ctx, false, projectID, repo, "git", "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch); err == nil {
-		rng = "origin/" + branch + ".." + branch
-	}
-	out, err := g.run(ctx, false, projectID, repo, "git", "rev-list", "--count", rng)
+	out, err := g.run(ctx, false, projectID, repo, "git", "rev-list", "--count", g.unpushedRange(ctx, projectID, repo, branch))
 	if err != nil {
 		return 0, err
 	}
 	return strconv.Atoi(out)
+}
+
+// UnpushedTodos lists the todos (by their "Dash-Todo: <id>" trailer) whose
+// commits on branch origin doesn't have yet.
+func (g *Git) UnpushedTodos(ctx context.Context, projectID, repo, branch string) ([]string, error) {
+	out, err := g.run(ctx, false, projectID, repo, "git", "log", "--format=%B", g.unpushedRange(ctx, projectID, repo, branch), "--")
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, l := range strings.Split(out, "\n") {
+		if id, ok := strings.CutPrefix(strings.TrimSpace(l), "Dash-Todo: "); ok {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
+func (g *Git) unpushedRange(ctx context.Context, projectID, repo, branch string) string {
+	if _, err := g.run(ctx, false, projectID, repo, "git", "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch); err == nil {
+		return "origin/" + branch + ".." + branch
+	}
+	return branch
 }

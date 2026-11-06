@@ -408,6 +408,7 @@ const state = {
   query: "",           // board search (/)
   showOld: false,      // show merged todos older than a day
   unpushed: 0,         // commits on the default branch origin doesn't have
+  unpushedTodos: null, // ids of merged todos origin doesn't have yet (null until known)
   comments: loadComments(), // todo id → [{file, line, side, code, text}] (diff review notes)
   collapsed: new Set((() => { try { return JSON.parse(localStorage.getItem("dash.collapsed") || "[]"); } catch { return []; } })()), // desktop: minimized lane keys
 };
@@ -622,6 +623,7 @@ async function selectProject(p) {
   state.project = p;
   state.todos = new Map();
   state.unpushed = 0;
+  state.unpushedTodos = null;
   state.lane = null;
   closeDetail();
   try { if (p) localStorage.setItem("dash.project", projectKey(p)); } catch {}
@@ -840,9 +842,11 @@ async function loadTodos() {
 async function loadUnpushed() {
   const p = state.project;
   if (!p?.remote_url || p.merge_mode === "pr") { state.unpushed = 0; renderPushMain(); return; }
-  const { count } = await api("GET", `/api/projects/${p.id}/unpushed`);
-  if (state.project !== p || count === state.unpushed) return;
+  const { count, todos = [] } = await api("GET", `/api/projects/${p.id}/unpushed`);
+  const same = (a, b) => a && a.size === b.length && b.every((id) => a.has(id));
+  if (state.project !== p || (count === state.unpushed && same(state.unpushedTodos, todos))) return;
   state.unpushed = count;
+  state.unpushedTodos = new Set(todos);
   renderBoard();
   renderPushMain();
 }
@@ -1037,6 +1041,14 @@ function ago(iso) {
   return `${Math.floor(s / 86400)}d`;
 }
 
+// A merged todo is pushed once origin has its commit (in "pr" mode, merging is pushing).
+function isPushed(t) {
+  const p = state.project;
+  if (t.status !== "merged" || !p?.remote_url) return false;
+  if (p.merge_mode === "pr") return true;
+  return !!state.unpushedTodos && !state.unpushedTodos.has(t.id);
+}
+
 function todoRow(t, li = -1, ri = -1) {
   const atCursor = keys.active && keys.cur.lane === li && keys.cur.row === ri;
   let sub = t.prompt.replace(/\s+/g, " ");
@@ -1053,7 +1065,7 @@ function todoRow(t, li = -1, ri = -1) {
     ? h("span", { class: `check-tag ${t.checks.passed ? "pass" : "fail"}` }, t.checks.passed ? "Tests pass" : "Tests fail")
     : null;
   return h("button", {
-    class: `todo s-${t.status}${t.goal ? " goal" : ""}${t.reviewing ? " reviewing" : ""}${state.detail === t.id ? " selected" : ""}${atCursor ? " cursor" : ""}`,
+    class: `todo s-${t.status}${isPushed(t) ? " pushed" : ""}${t.goal ? " goal" : ""}${t.reviewing ? " reviewing" : ""}${state.detail === t.id ? " selected" : ""}${atCursor ? " cursor" : ""}`,
     "data-id": t.id, onclick: () => openDetail(t.id),
   },
     h("span", { class: "node", "aria-hidden": "true" }),
