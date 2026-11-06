@@ -294,7 +294,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .actionbar .btn.grow { flex: 2; }
 
 /* ---------- chat ---------- */
-.chat-log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 18px; }
+.chat-log { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 16px; display: flex; flex-direction: column; gap: 18px; }
 .chat-empty { margin: auto; padding: 24px; }
 .msg { max-width: 72ch; overflow-wrap: anywhere; }
 .msg.user { align-self: flex-end; background: var(--raised); padding: 10px 14px; border-radius: var(--r-l) var(--r-l) 4px var(--r-l); white-space: pre-wrap; }
@@ -775,6 +775,8 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .foot-menu > summary { width: 44px; height: 44px; }
   .foot-menu-list button { min-height: 44px; }
   .menu-scrim { position: fixed; inset: 0; z-index: 49; background: rgba(4, 8, 15, .5); animation: fade-in .2s var(--ease); }
+  /* The full-screen chat sheet must not scroll the page behind it, or the browser toolbar shifts it. */
+  html:has(.app.chat-open) { overflow: hidden; }
 }
 
 /* ---------- tablet ---------- */
