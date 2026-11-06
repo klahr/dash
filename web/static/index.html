@@ -84,6 +84,9 @@
       <section class="view" id="view-chat" aria-label="Chat">
         <div class="chat-log" id="chat-log">
           <div class="empty chat-empty" id="chat-empty">
+            <!-- Optional illustration: save as web/static/img/empty-chat.webp, 960x720 (4:3). Hidden if missing.
+                 Convert: magick in.png -resize 960x720^ -gravity center -extent 960x720 -quality 85 web/static/img/empty-chat.webp
+                 Files are embedded in the binary: rebuild and restart dash afterwards. -->
             <img class="empty-art" src="img/empty-chat.webp" alt="" width="480" height="360" loading="lazy" onerror="this.remove()">
             <p class="empty-title">Ask Claude anything</p>
             <p>Questions about code, design or your projects. Answers use the Claude account Dash runs with.</p>

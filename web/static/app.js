@@ -384,6 +384,9 @@ function renderBoardNow() {
     $("#lane-tabs").replaceChildren();
     empty.hidden = false;
     empty.replaceChildren(
+      // Optional illustration: save as web/static/img/empty-board.webp, 960x720 (4:3). Hidden if missing.
+      // Convert: magick in.png -resize 960x720^ -gravity center -extent 960x720 -quality 85 web/static/img/empty-board.webp
+      // Files are embedded in the binary: rebuild and restart dash afterwards.
       art("img/empty-board.webp", 480, 360),
       h("p", { class: "empty-title" }, "Create your first project"),
       h("p", {}, "A project is a git repository. Every todo runs in its own worktree, so several can run at once."),
