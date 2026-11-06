@@ -110,68 +110,140 @@ for (const el of $$("[data-icon]")) el.prepend(ico(el.dataset.icon));
 const wsURL = (path) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
 const desktop = matchMedia("(min-width: 1024px)");
 
-// On-screen keyboard (mobile). The full-screen sheets (chat, task detail) are
-// sized to the visual viewport, so when the keyboard opens their head stays
-// at the top, the scroller gets shorter and the composer sits just above the
-// keyboard. Android resizes the layout viewport itself (interactive-widget in
-// the viewport meta); iOS keeps it and pans the visual viewport instead when
-// an input is focused, so --vv-top follows that pan.
+// On-screen keyboard (mobile). The full-screen sheets (chat pane, task detail)
+// are fitted to the part of the screen the keyboard leaves free: their head
+// stays at the top, only the scroller (chat log / detail body) gets shorter
+// and the composer sits right on the keyboard. How a browser tells us about
+// the keyboard depends on the display mode:
+//  - Chrome in a tab or as an installed app shrinks both viewports
+//    (interactive-widget=resizes-content in the viewport meta).
+//  - iOS keeps the layout viewport and shrinks and pans the visual viewport
+//    instead (--vv-top follows the pan).
+//  - Chrome in fullscreen shrinks neither and draws the keyboard over the
+//    page. Only the VirtualKeyboard API sees it then, and only once
+//    overlaysContent is on.
+// So whenever a composer has focus (and always in fullscreen) we turn on
+// overlaysContent and the API reports the keyboard in every mode. The free
+// part ends at whichever is higher: the visual viewport's bottom or the
+// keyboard's top edge. We never take one off the other, so a keyboard that
+// both report is not counted twice. If neither reports it, CSS falls back to
+// env(keyboard-inset-height) (.kb-env).
+// ?debug=kb shows these numbers on the page, for checking on a phone (?debug=off hides them).
 const vv = window.visualViewport;
 if (vv) {
   const root = document.documentElement;
+  const vk = navigator.virtualKeyboard;
+  const fullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const displayMode = () => ["fullscreen", "standalone", "minimal-ui", "browser"].find((m) => matchMedia(`(display-mode: ${m})`).matches) || "?";
+  const isComposer = (el) => !desktop.matches && !!el?.matches?.(".composer textarea");
+  const editing = () => !!document.activeElement?.matches?.("input, textarea, select, [contenteditable]");
   // The scroller a composer belongs to: the chat log, or the task's detail body.
   const scrollerOf = (el) => el.closest(".chat-panel")?.querySelector(".chat-log") || el.closest(".detail-body");
   let stick = null; // scroller that was at its end when the keyboard opened
   let pageY = null; // page scroll when a sheet's composer took focus
-  // In fullscreen Chrome lays the keyboard over the page without resizing
-  // either viewport, so the composer would sit behind it. There we ask the
-  // VirtualKeyboard API to report the keyboard (overlaysContent) and take its
-  // height off ourselves.
-  const vk = navigator.virtualKeyboard;
-  let kbH = 0;
+  let kbY = 0, kbH = 0; // the keyboard's top edge and height (layout px) per the VirtualKeyboard API; 0: none
+  let fullH = innerHeight, fullW = innerWidth; // layout viewport with no keyboard up
+  let debug = null;
   const fit = () => {
+    if (!editing() || innerWidth !== fullW) { fullH = innerHeight; fullW = innerWidth; }
     // Pinch-zoomed, the visual viewport is a zoomed-in window: keep the sheets full-size.
     const zoomed = vv.scale > 1.01;
-    root.style.setProperty("--vv-h", zoomed ? "100dvh" : `${Math.round(Math.max(0, vv.height - kbH))}px`);
-    root.style.setProperty("--vv-top", zoomed ? "0px" : `${Math.round(vv.offsetTop)}px`);
-    root.style.setProperty("--kb-h", `${Math.round(kbH)}px`);
+    const top = zoomed ? 0 : vv.offsetTop;
+    const vvBottom = zoomed ? innerHeight : vv.offsetTop + vv.height;
+    // Everything from the keyboard's top edge down is covered (the rect is the keys alone: below them
+    // Android still shows its navigation bar, back / hide keyboard). No top edge reported: count up from the bottom.
+    const kbTop = kbH > 0 ? (kbY > 0 ? kbY : innerHeight - kbH) : Infinity;
+    const bottom = Math.min(vvBottom, kbTop);
+    root.style.setProperty("--vv-top", `${Math.round(top)}px`);
+    root.style.setProperty("--vv-h", `${Math.round(Math.max(0, bottom - top))}px`);
+    // The part of the keyboard the visual viewport doesn't already leave out (bottom sheets use it).
+    root.style.setProperty("--kb-h", `${Math.round(vvBottom - bottom)}px`);
+    // A composer has focus but nothing reports a keyboard: neither viewport shrank and the API is silent.
+    const shrunk = innerHeight < fullH - 80 || innerHeight - vv.height > 80;
+    root.classList.toggle("kb-env", isComposer(document.activeElement) && !kbH && !shrunk && !zoomed);
     // iOS can also scroll the page behind the sheet to reveal the input; undo that.
     if (pageY !== null && scrollY !== pageY) scrollTo(scrollX, pageY);
+    debug?.();
   };
-  vv.addEventListener("resize", () => {
-    fit();
-    // Keep the latest messages in view as the scroller shrinks.
-    if (stick?.isConnected && document.activeElement?.closest(".composer")) stick.scrollTop = stick.scrollHeight;
-  });
+  // Keep the latest messages in view as the scroller shrinks.
+  const keepEnd = () => { if (stick?.isConnected && isComposer(document.activeElement)) stick.scrollTop = stick.scrollHeight; };
+  // Ask the VirtualKeyboard API to report the keyboard (and lay it over the
+  // page) in fullscreen, where nothing else sees it, and while a composer has
+  // focus, so that it is measured the same way in a tab, an installed app and fullscreen.
+  const overlay = (on = fullscreen() || displayMode() === "fullscreen" || isComposer(document.activeElement)) => {
+    if (!vk) return;
+    if (vk.overlaysContent !== on) vk.overlaysContent = on;
+    if (!on) kbY = kbH = 0;
+  };
+  vv.addEventListener("resize", () => { fit(); keepEnd(); });
   vv.addEventListener("scroll", fit);
   if (vk) {
     vk.addEventListener("geometrychange", () => {
-      // The rect is the keys alone: below them Android still shows its
-      // navigation bar (back / hide keyboard), which covers the page too.
-      // So take everything from the keyboard's top edge down.
       const r = vk.boundingRect;
-      kbH = vk.overlaysContent && r.height > 0 ? Math.max(r.height, r.y > 0 ? innerHeight - r.y : 0) : 0;
+      [kbY, kbH] = vk.overlaysContent && r.height > 0 ? [r.y, r.height] : [0, 0];
       fit();
-      if (stick?.isConnected && document.activeElement?.closest(".composer")) stick.scrollTop = stick.scrollHeight;
+      keepEnd();
     });
-    const fsMode = () => {
-      const full = !!(document.fullscreenElement || document.webkitFullscreenElement);
-      vk.overlaysContent = full;
-      if (!full) { kbH = 0; fit(); }
-    };
-    document.addEventListener("fullscreenchange", fsMode);
-    document.addEventListener("webkitfullscreenchange", fsMode);
+    // Before the keyboard comes up, so it already overlays instead of resizing.
+    // If the touch didn't focus it after all (a scroll), go back.
+    document.addEventListener("pointerdown", (e) => {
+      if (!isComposer(e.target)) return;
+      overlay(true);
+      setTimeout(modeChange, 1000);
+    }, true);
   }
+  const modeChange = () => { overlay(); fit(); };
+  document.addEventListener("fullscreenchange", modeChange);
+  document.addEventListener("webkitfullscreenchange", modeChange);
+  matchMedia("(display-mode: fullscreen)").addEventListener?.("change", modeChange);
   // iOS may scroll only the page (not the visual viewport) to reveal a focused input.
   addEventListener("scroll", () => { if (pageY !== null && scrollY !== pageY) scrollTo(scrollX, pageY); }, { passive: true });
-  fit();
   document.addEventListener("focusin", (e) => {
-    if (desktop.matches || !e.target.matches?.(".composer textarea")) return;
+    if (!isComposer(e.target)) return;
     const sc = scrollerOf(e.target);
     stick = sc && sc.scrollHeight - sc.scrollTop - sc.clientHeight < 120 ? sc : null;
     pageY = e.target.closest(".chat-pane, .detail") ? scrollY : null;
+    overlay(true);
+    fit();
   });
-  document.addEventListener("focusout", () => { stick = null; pageY = null; });
+  document.addEventListener("focusout", () => {
+    stick = null;
+    pageY = null;
+    // activeElement is only settled once the focus move is done.
+    setTimeout(modeChange);
+  });
+
+  const flag = new URLSearchParams(location.search).get("debug");
+  if (flag === "kb") localStorage.setItem("dash.debugKb", "1");
+  else if (flag === "off") localStorage.removeItem("dash.debugKb");
+  if (localStorage.getItem("dash.debugKb")) {
+    const box = document.createElement("pre");
+    box.className = "kb-debug";
+    const probe = document.createElement("div");
+    probe.className = "kb-probe";
+    document.body.append(box, probe);
+    const n = (x) => Math.round(x * 10) / 10;
+    const rect = (el) => { const r = el?.getBoundingClientRect(); return r ? `${n(r.top)}–${n(r.bottom)}` : "–"; };
+    debug = () => {
+      const r = vk?.boundingRect;
+      const css = getComputedStyle(root);
+      const comp = document.activeElement?.closest(".composer")
+        || [...document.querySelectorAll(".chat-pane .composer, .detail .composer")].find((c) => c.offsetParent);
+      box.textContent = [
+        `innerHeight ${innerHeight} (no kb ${fullH})  screen ${screen.height} ×${n(devicePixelRatio)}`,
+        `vv.height ${n(vv.height)}  vv.offsetTop ${n(vv.offsetTop)}  scale ${n(vv.scale)}`,
+        vk ? `vk overlaysContent ${vk.overlaysContent}  rect y ${n(r.y)} h ${n(r.height)}` : "vk: no VirtualKeyboard API",
+        `kbH ${n(kbH)} (top ${n(kbY)})  env(kb-inset-h) ${probe.offsetHeight}  kb-env ${root.classList.contains("kb-env")}`,
+        `--vv-top ${css.getPropertyValue("--vv-top")}  --vv-h ${css.getPropertyValue("--vv-h")}  --kb-h ${css.getPropertyValue("--kb-h")}`,
+        `fullscreen ${fullscreen()}  display-mode ${displayMode()}`,
+        `composer ${rect(comp)}  focused ${isComposer(document.activeElement)}`,
+        `pane ${rect(document.querySelector(".app.chat-open .chat-pane, .detail:not([hidden])"))}`,
+      ].join("\n");
+    };
+    setInterval(debug, 500);
+  }
+  overlay(); // the page may already be fullscreen (reloaded in it, or installed with display: fullscreen)
+  fit();
 }
 
 // Several computers can share this dashboard. Each runs its own Dash; the

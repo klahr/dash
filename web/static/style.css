@@ -585,6 +585,14 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .check-tag { font-size: 12px; font-weight: 600; }
 .check-tag.pass { color: var(--merged); } .check-tag.fail { color: var(--failed); }
 
+/* On-screen keyboard readout, ?debug=kb (app.js). */
+.kb-debug {
+  position: fixed; top: calc(env(safe-area-inset-top, 0px) + 60px); left: 4px; right: 4px; z-index: 2147483647;
+  margin: 0; padding: 6px 8px; border-radius: var(--r-s); background: rgba(0, 0, 0, .8); color: #fff;
+  font: 10.5px/1.4 var(--mono); white-space: pre-wrap; pointer-events: none;
+}
+.kb-probe { position: fixed; top: 0; left: 0; width: 1px; height: env(keyboard-inset-height, 0px); visibility: hidden; pointer-events: none; }
+
 /* ---------- keyboard ---------- */
 .todo.cursor { box-shadow: inset 3px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 /* Status line: mode and command line, shown only while the command line is focused. */
@@ -871,6 +879,8 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   /* Fit the sheets to the visible area (app.js sets --vv-*), which shrinks when the
      keyboard opens: the head stays on top, only the log scrolls, the composer sits on the keyboard. */
   .chat-pane, .detail { inset: var(--vv-top, 0px) 0 auto 0; height: var(--vv-h, 100dvh); }
+  /* A composer has focus but no API reported the keyboard (app.js sets .kb-env): take it from CSS where the browser has it. */
+  .kb-env :is(.chat-pane, .detail) { height: calc(var(--vv-h, 100dvh) - env(keyboard-inset-height, 0px)); }
   /* With the keyboard up, the home-indicator inset and the action bar only take room from the log. */
   .chat-pane:has(.composer textarea:focus) { padding-bottom: 0; }
   .chat-pane:has(.composer textarea:focus) .composer { padding-bottom: 10px; }
