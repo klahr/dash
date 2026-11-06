@@ -916,6 +916,7 @@ async function openDetail(id) {
   $("#detail").hidden = false;
   $("#scrim").hidden = !desktop.matches;
   renderDetail();
+  if (state.pane === "chat") todoChat.input.focus();
   $$(".todo.selected").forEach((e) => e.classList.remove("selected"));
   $(`.todo[data-id="${id}"]`)?.classList.add("selected");
   $("#d-log").textContent = "";
