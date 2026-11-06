@@ -98,7 +98,7 @@ textarea { resize: vertical; line-height: 1.45; }
 .project-branch { color: var(--muted); font-family: var(--mono); font-size: 12px; white-space: nowrap; }
 .project-switch svg { color: var(--muted); }
 .live { display: grid; place-items: center; width: 28px; height: 28px; }
-.quick-actions { display: flex; gap: 6px; }
+.quick-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .quick-actions:not(:has(.quick-btn:not([hidden]))) { display: none; }
 .quick-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; min-width: 36px; padding: 0 10px;

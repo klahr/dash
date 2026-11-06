@@ -1676,24 +1676,25 @@ $("#quick-actions").addEventListener("click", (e) => {
   attach(proc);
 });
 
-// The latest test/deploy process started from the project's own checkout (not a worktree).
-const quickCmd = (spec) => ({ "task:test": state.project?.test_command, "task:deploy": state.project?.deploy_command })[spec];
+// The latest server/test/deploy process started from the project's own checkout (not a worktree).
+const quickCmd = (spec) => ({ "web:run": state.project?.run_command, "task:test": state.project?.test_command, "task:deploy": state.project?.deploy_command })[spec];
 function quickProc(spec) {
   const p = state.project;
   const cmd = quickCmd(spec);
   if (!cmd) return null;
-  return state.procs.filter((x) => x.kind === "task" && x.command === cmd && x.dir === p.path)
+  const kind = spec.split(":")[0];
+  return state.procs.filter((x) => x.kind === kind && x.command === cmd && x.dir === p.path)
     .reduce((a, b) => (!a || b.started_at > a.started_at ? b : a), null);
 }
 
 function renderQuick() {
-  for (const [sel, verb, done, noun, key] of [["#quick-test", "Testing", "Run Tests", "test run", "T"], ["#quick-deploy", "Deploying", "Deploy", "deploy", "D"]]) {
+  for (const [sel, verb, done, noun, key] of [["#quick-server", "Serving", "Start server", "server run", "R"], ["#quick-test", "Testing", "Run Tests", "test run", "T"], ["#quick-deploy", "Deploying", "Deploy", "deploy", "D"]]) {
     const btn = $(sel);
     const spec = btn.dataset.run;
     btn.hidden = !state.project;
     btn.disabled = !quickCmd(spec);
     const proc = quickProc(spec);
-    const ok = proc && !proc.running && proc.exit_code === 0;
+    const ok = proc && !proc.running && proc.exit_code === 0 && sel !== "#quick-server";
     const bad = proc && !proc.running && proc.exit_code !== 0;
     btn.classList.toggle("running", !!proc?.running);
     btn.classList.toggle("ok", !!ok);
@@ -1705,7 +1706,7 @@ function renderQuick() {
       : proc?.running ? `${verb}… ${elapsed} — click to view output`
       : ok ? `Last ${noun} passed — click to run again`
       : bad ? `Last ${noun} failed (exit ${proc.exit_code ?? "?"}) — click to run again`
-      : `${done} (${key} on the Run view)`;
+      : `${done} (${key} on the Shell view)`;
   }
 }
 setInterval(() => { if ($(".quick-btn.running")) renderQuick(); }, 1000);
@@ -2050,7 +2051,7 @@ async function runCommand(line) {
     case "q": case "q!": case "close": closeDetail(); openDialog()?.close(); return;
     case "b": case "board": return showView("board");
     case "c": case "chat": return showView("chat");
-    case "run": case "!":
+    case "run": case "!": case "sh": case "shell":
       if (!arg) return showView("run");
       need(); return startProc({ kind: "pty", command: arg });
     case "ps": case "procs": return showView("run");
