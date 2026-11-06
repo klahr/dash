@@ -305,6 +305,18 @@ function discardDraft() {
   draft.open(draftKey(t));
   toast("Draft discarded");
 }
+$("#todo-clear").addEventListener("click", () => {
+  const f = $("#todo-form");
+  const project = f.project.value;
+  draft.discard();
+  f.reset();
+  f.project.value = project;
+  todoAttach.reset([]);
+  promptEditor.render();
+  draft.open(draftKey(null));
+  f.title.focus();
+  toast("Cleared");
+});
 $("#todo-form").addEventListener("input", () => draft.changed());
 $("#todo-form").addEventListener("change", () => draft.changed());
 const askAttach = attachBox($("#ask-attach"), $("#ask-input"));
@@ -1006,6 +1018,7 @@ function openTodoForm(t = null, { pick = false } = {}) {
     f.project.value = projectKey(state.project);
   }
   $("#todo-sheet-title").textContent = t ? "Edit task" : "New task";
+  $("#todo-clear").hidden = !!t;
   if (t) {
     f.title.value = t.title;
     f.prompt.value = t.prompt;

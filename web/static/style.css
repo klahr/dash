@@ -419,6 +419,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .hint { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
 .sheet-actions { display: flex; gap: 8px; padding: 16px 0 0; }
 .sheet-actions .btn { flex: 1; }
+.sheet-actions .btn.shrink { flex: 0 0 auto; }
 
 /* ---------- palette (Ctrl-k) ---------- */
 .palette { display: none; flex-direction: column; padding-bottom: var(--safe-b); }
