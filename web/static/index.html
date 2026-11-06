@@ -23,10 +23,7 @@
 </head>
 <body>
   <div class="app">
-    <!-- Desktop sidebar: brand, sections, projects, then status pinned at the bottom.
-         On mobile it has no box: the top bar, bottom nav and menu drawer lay out on their own. -->
-    <div class="sidebar">
-    <!-- Top bar (mobile) / sidebar brand (desktop) -->
+    <!-- Top bar: full width on desktop, above the sidebar and main -->
     <header class="topbar">
       <button class="icon-btn menu-btn" id="menu-open" type="button" aria-label="Menu" aria-controls="menu" aria-expanded="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -41,7 +38,19 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
       <span class="live" id="live" title="Live updates disconnected"><span class="live-dot"></span><span class="sr-only" id="live-label">Offline</span></span>
+      <details class="foot-menu top-menu" id="project-menu" hidden>
+        <summary class="icon-btn" aria-label="Project menu" title="Project menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5h.01M12 12h.01M12 19h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
+        <div class="foot-menu-list">
+          <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
+          <button id="pm-github" type="button" data-icon="repo" hidden>Create GitHub repo</button>
+          <button id="pm-cleanup" type="button" data-icon="trash" title="Remove leftover worktrees, branches, logs and uploads">Clean up</button>
+        </div>
+      </details>
     </header>
+
+    <!-- Desktop sidebar: sections, projects, then status pinned at the bottom.
+         On mobile it has no box: the bottom nav and menu drawer lay out on their own. -->
+    <div class="sidebar">
 
     <!-- Main navigation: bottom bar on mobile, side rail on desktop -->
     <nav class="nav" aria-label="Sections">

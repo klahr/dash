@@ -43,6 +43,7 @@ const ICONS = {
   external: "M14 4h6v6M20 4l-9 9M18 14v5H5V6h5",
   push: "M12 20V8m0 0-5 5m5-5 5 5M5 4h14",
   repo: "M7 18a4 4 0 0 1-.5-8A6 6 0 0 1 18 9a4 4 0 0 1-1 9M12 12v7M9 15l3-3 3 3",
+  settings: "M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1M15 4v4M9 10v4M17 16v4",
   eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
   bell: "M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 21h4",
   "bell-off": "M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 21h4M3 3l18 18",
@@ -164,7 +165,6 @@ function ask({ title, body = "", input = false, placeholder = "", ok = "OK", dan
 // Screenshots and files for Claude: an "Attach file" button, paste into the
 // text field, or drop onto the sheet.
 const CLIP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5 12.6 19.9a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const PENCIL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L18.5 9.5a2.8 2.8 0 0 0-4-4L4 16v4zM13.5 6.5l4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const clip = () =>h("span", { class: "clip", innerHTML: CLIP });
 const uploadURL = (a) => on(here(), `/api/uploads/${a.id}/${encodeURIComponent(a.name)}`);
 const ACCEPT = "image/png,image/jpeg,image/gif,image/webp,.pdf,.txt,.md,.log,.json,.csv";
@@ -546,6 +546,8 @@ function renderProjectHeader() {
   $("#project-name").textContent = p ? p.name : "No project";
   // With several computers the header names the computer (the branch fits on wide screens too).
   $("#project-branch").textContent = !p ? "" : !multi() ? p.default_branch : desktop.matches ? `${p.default_branch} · ${p.machine}` : p.machine;
+  $("#project-menu").hidden = !p;
+  $("#pm-github").hidden = !p || !!p.remote_url;
   renderQuick();
   const warn = $("#sync-warn");
   warn.hidden = !p?.sync_error;
@@ -562,15 +564,6 @@ function renderProjectList() {
 
 const notifyLabel = () => notifyOn() ? "Turn off notifications" : "Turn on notifications";
 
-// Create the GitHub repo for the current project, under it in the project
-// list (settings is an edit icon next to the name). Pushing lives on the Done column.
-function projectActions(p) {
-  if (!p) return [];
-  return [
-    p.remote_url ? null : ib({ type: "button", class: "side-action", title: "No GitHub remote yet", onclick: attempt(createGitHubRepo) }, "repo", "Create GitHub repo"),
-  ].filter(Boolean);
-}
-
 function openNewProject() {
   const f = $("#new-project");
   f.machine.closest(".field").hidden = !multi();
@@ -579,21 +572,15 @@ function openNewProject() {
 }
 
 // Desktop sidebar / phone menu: every project, one click away. The current one
-// shows its branch, an edit button for its settings, and "Create GitHub repo" if needed.
+// shows its branch; its settings and actions live in the top bar's project menu.
 function renderSideProjects() {
   const item = (p) => {
     const cur = projectKey(state.project) === projectKey(p);
-    const actions = cur ? projectActions(p) : [];
     return h("li", { class: cur ? "current" : "" },
       h("button", {
         type: "button", class: "side-project", title: p.path, "aria-current": cur ? "true" : "false",
         onclick: attempt(async () => { await selectProject(p); setMenu(false); }),
-      }, h("span", { class: "side-project-name" }, p.name), cur ? h("span", { class: "side-project-branch" }, p.default_branch) : null),
-      cur ? h("button", {
-        type: "button", class: "icon-btn side-project-edit", title: "Project settings", "aria-label": `Edit ${p.name} settings`,
-        onclick: openSettings, innerHTML: PENCIL,
-      }) : null,
-      actions.length ? h("div", { class: "side-actions", role: "group", "aria-label": `${p.name} actions` }, ...actions) : null);
+      }, h("span", { class: "side-project-name" }, p.name), cur ? h("span", { class: "side-project-branch" }, p.default_branch) : null));
   };
   const items = !multi() ? state.projects.map(item) : state.machines.flatMap((m) => [
     h("li", { class: "side-machine", title: m.ok ? "" : m.error || "unreachable" },
@@ -642,12 +629,17 @@ desktop.addEventListener("change", () => setMenu(false));
 $("#project-switch").addEventListener("click", openProjects);
 $("#side-new-project").addEventListener("click", openNewProject);
 $("#notify-toggle").addEventListener("click", attempt(toggleNotifications));
-$(".foot-menu-list").addEventListener("click", () => { $("#foot-menu").open = false; });
-document.addEventListener("click", (e) => { if (!e.target.closest("#foot-menu")) $("#foot-menu").open = false; });
-$("#foot-menu").addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || !$("#foot-menu").open) return;
-  e.stopPropagation(); $("#foot-menu").open = false; $("#foot-menu > summary").focus();
-});
+$("#pm-settings").addEventListener("click", openSettings);
+$("#pm-github").addEventListener("click", attempt(createGitHubRepo));
+$("#pm-cleanup").addEventListener("click", attempt(cleanup));
+for (const menu of $$(".foot-menu")) {
+  menu.querySelector(".foot-menu-list").addEventListener("click", () => { menu.open = false; });
+  document.addEventListener("click", (e) => { if (!menu.contains(e.target)) menu.open = false; });
+  menu.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !menu.open) return;
+    e.stopPropagation(); menu.open = false; menu.querySelector("summary").focus();
+  });
+}
 $("#new-project").addEventListener("submit", attempt(async (e) => {
   e.preventDefault();
   const { machine, ...body } = Object.fromEntries(new FormData(e.target));

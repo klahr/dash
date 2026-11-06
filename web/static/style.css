@@ -72,9 +72,8 @@ svg { width: 20px; height: 20px; fill: currentColor; flex: none; }
 }
 .chip-btn:hover { border-color: var(--accent); }
 .ico { width: 18px; height: 18px; }
-.link, .chip-btn, .segmented button, .foot-menu-list button, .side-action { display: inline-flex; align-items: center; gap: 6px; }
+.link, .chip-btn, .segmented button, .foot-menu-list button { display: inline-flex; align-items: center; gap: 6px; }
 .btn.small .ico, .link .ico, .chip-btn .ico, .segmented .ico, .foot-menu-list .ico { width: 16px; height: 16px; }
-.side-action .ico { width: 13px; height: 13px; }
 input, textarea {
   width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-m);
   padding: 11px 12px; font-size: 16px; /* no iOS zoom */ outline: none;
@@ -620,6 +619,8 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 }
 .foot-menu-list button { min-height: 36px; padding: 0 10px; border-radius: 6px; text-align: left; font-size: 14px; color: var(--text); white-space: nowrap; }
 .foot-menu-list button:hover { background: var(--raised); }
+.top-menu { margin-left: 0; }
+.top-menu .foot-menu-list { top: calc(100% + 4px); bottom: auto; }
 .merge-status:empty { display: none; }
 .merge-status { flex-basis: 100%; }
 .side-projects {
@@ -629,9 +630,6 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .side-projects-head { margin: 0; padding: 0 10px 6px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .side-project-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; }
 .side-project-list li:not(.side-machine, .machine-empty) { display: flex; flex-wrap: wrap; align-items: center; border-radius: var(--r-m); }
-.side-project-edit { flex: none; width: 32px; height: 32px; min-height: 32px; margin-right: 6px; }
-.side-project-edit:hover { background: var(--surface); }
-.side-project-edit svg { width: 17px; height: 17px; }
 .side-project { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; min-height: 34px; padding: 0 10px; border-radius: var(--r-m); text-align: left; font-size: 14px; color: var(--muted); }
 .side-project:hover { background: var(--raised); color: var(--text); }
 .side-project-name, .side-project-branch { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -639,9 +637,6 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .side-project-list li.current { background: var(--raised); box-shadow: inset 3px 0 0 var(--accent); }
 .side-project[aria-current="true"] { min-height: 44px; color: var(--text); font-weight: 600; cursor: default; }
 .side-project[aria-current="true"]:hover { background: none; }
-.side-actions { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px 10px; }
-.side-action { min-height: 26px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 12px; white-space: nowrap; }
-.side-action:hover { border-color: var(--accent); color: var(--text); }
 .side-new-project { display: flex; align-items: center; gap: 8px; flex: none; min-height: 34px; margin-top: 6px; padding: 0 10px; border: 1px dashed var(--line); border-radius: var(--r-m); color: var(--muted); font-size: 14px; text-align: left; }
 .side-new-project:hover { border-color: var(--accent); color: var(--text); }
 .side-new-project svg { width: 16px; height: 16px; color: var(--accent); }
@@ -665,8 +660,6 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .side-projects { flex: none; min-height: 0; margin-top: 4px; }
   .side-project-list { overflow: visible; }
   .side-project { min-height: 44px; font-size: 15px; }
-  .side-project-edit { width: 44px; height: 44px; min-height: 44px; margin-right: 0; }
-  .side-action { min-height: 34px; padding: 0 12px; font-size: 13px; }
   .side-new-project { min-height: 44px; }
   .quick-btn { min-height: 44px; }
   .foot-menu > summary { width: 44px; height: 44px; }
@@ -684,18 +677,21 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 /* ---------- desktop ---------- */
 @media (min-width: 1024px) {
   :root { --side-w: 240px; }
-  .app { display: grid; grid-template: "side main" 1fr / var(--side-w) 1fr; height: 100dvh; }
-  /* One column, top to bottom: brand, sections, projects (fills and scrolls),
-     then the current project's actions and account status. The project list
-     is the switcher, so the header's project button is mobile only. */
+  .app { display: grid; grid-template: "top top" var(--top-h) "side main" 1fr / var(--side-w) 1fr; height: 100dvh; }
+  /* Top bar across the full width: brand, current project, live dot, project menu.
+     Below it one sidebar column: sections, projects (fills and scrolls), then
+     quick actions and account status. The sidebar list is the switcher, so the
+     header's project button just focuses it. */
+  .topbar { grid-area: top; position: static; padding: 0 12px 0 22px; gap: 12px; background: var(--surface); backdrop-filter: none; }
+  .brand { width: calc(var(--side-w) - 34px); flex: none; }
+  .project-switch { flex: 0 1 auto; justify-content: flex-start; min-height: 36px; margin-right: auto; }
+  .project-switch svg { display: none; }
   .sidebar {
     grid-area: side; position: relative; display: flex; flex-direction: column; min-height: 0; overflow-y: auto;
-    padding: 16px 12px 12px; gap: 2px; background: var(--surface); border-right: 1px solid var(--line);
+    padding: 12px 12px 12px; gap: 2px; background: var(--surface); border-right: 1px solid var(--line);
   }
-  .topbar, .nav { display: contents; }
-  .brand { order: 1; padding: 0 10px 14px; }
-  .live { order: 1; position: absolute; top: 14px; right: 14px; }
-  .project-switch, .menu-btn, .menu-head, .menu-scrim { display: none; }
+  .nav { display: contents; }
+  .menu-btn, .menu-head, .menu-scrim { display: none; }
   .menu { display: contents; }
   .nav > button { order: 2; }
   .nav > button { flex-direction: row; justify-content: flex-start; gap: 12px; min-height: 42px; padding: 0 10px; border-radius: var(--r-m); font-size: 15px; }
@@ -703,7 +699,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .nav > button.active { background: var(--raised); }
   .nav .badge { position: static; margin-left: auto; }
 
-  main { grid-area: main; padding: 0; overflow: hidden; min-width: 0; display: flex; flex-direction: column; height: 100dvh; }
+  main { grid-area: main; padding: 0; overflow: hidden; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
   .view.active { flex: 1; min-height: 0; overflow-y: auto; }
   #view-chat.active { height: auto; }
   .statusline { left: var(--side-w); bottom: 0; }
