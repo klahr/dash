@@ -107,6 +107,43 @@ for (const el of $$("[data-icon]")) el.prepend(ico(el.dataset.icon));
 const wsURL = (path) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
 const desktop = matchMedia("(min-width: 1024px)");
 
+// On-screen keyboard (mobile). The full-screen sheets (chat, task detail) are
+// sized to the visual viewport, so when the keyboard opens their head stays
+// at the top, the scroller gets shorter and the composer sits just above the
+// keyboard. Android resizes the layout viewport itself (interactive-widget in
+// the viewport meta); iOS keeps it and pans the visual viewport instead when
+// an input is focused, so --vv-top follows that pan.
+const vv = window.visualViewport;
+if (vv) {
+  const root = document.documentElement;
+  // The scroller a composer belongs to: the chat log, or the task's detail body.
+  const scrollerOf = (el) => el.closest(".chat-panel")?.querySelector(".chat-log") || el.closest(".detail-body");
+  let stick = null; // scroller that was at its end when the keyboard opened
+  let pageY = null; // page scroll when a sheet's composer took focus
+  const fit = () => {
+    // Pinch-zoomed, the visual viewport is a zoomed-in window: keep the sheets full-size.
+    const zoomed = vv.scale > 1.01;
+    root.style.setProperty("--vv-h", zoomed ? "100dvh" : `${Math.round(vv.height)}px`);
+    root.style.setProperty("--vv-top", zoomed ? "0px" : `${Math.round(vv.offsetTop)}px`);
+    // iOS can also scroll the page behind the sheet to reveal the input; undo that.
+    if (pageY !== null && scrollY !== pageY) scrollTo(scrollX, pageY);
+  };
+  vv.addEventListener("resize", () => {
+    fit();
+    // Keep the latest messages in view as the scroller shrinks.
+    if (stick?.isConnected && document.activeElement?.closest(".composer")) stick.scrollTop = stick.scrollHeight;
+  });
+  vv.addEventListener("scroll", fit);
+  fit();
+  document.addEventListener("focusin", (e) => {
+    if (desktop.matches || !e.target.matches?.(".composer textarea")) return;
+    const sc = scrollerOf(e.target);
+    stick = sc && sc.scrollHeight - sc.scrollTop - sc.clientHeight < 120 ? sc : null;
+    pageY = e.target.closest(".chat-pane, .detail") ? scrollY : null;
+  });
+  document.addEventListener("focusout", () => { stick = null; pageY = null; });
+}
+
 // Several computers can share this dashboard. Each runs its own Dash; the
 // one serving this page forwards /peer/<name>/… to the others. A project's
 // API calls go to the computer it lives on (its prefix); login, logout and

@@ -368,7 +368,7 @@ func TestMainMovingDuringMergeIsMergedAgain(t *testing.T) {
 	runs := filepath.Join(t.TempDir(), "runs")
 	h := newHarness(t, exe, model.Project{Name: "p", MaxAutoFixes: 1})
 	commit := func(name string) string {
-		return "echo x > " + name + " && git add " + name + " && git -c user.name=t -c user.email=t@t commit -qm " + name
+		return "echo x > " + name + " && git add " + name + " && git -c commit.gpgsign=false -c user.name=t -c user.email=t@t commit -qm " + name
 	}
 	// Run 1 is the review, run 2 the merge: it commits on main, so run 3 must follow.
 	h.proj, _ = h.st.UpdateProject(h.proj.ID, func(p *model.Project) error {

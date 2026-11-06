@@ -833,8 +833,15 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .foot-menu > summary { width: 44px; height: 44px; }
   .foot-menu-list button { min-height: 44px; }
   .menu-scrim { position: fixed; inset: 0; z-index: 49; background: rgba(4, 8, 15, .5); animation: fade-in .2s var(--ease); }
-  /* The full-screen chat sheet must not scroll the page behind it, or the browser toolbar shifts it. */
-  html:has(.app.chat-open) { overflow: hidden; }
+  /* The full-screen sheets must not scroll the page behind them, or the browser toolbar shifts them. */
+  html:has(.app.chat-open), html:has(.detail:not([hidden])) { overflow: hidden; }
+  /* Fit the sheets to the visible area (app.js sets --vv-*), which shrinks when the
+     keyboard opens: the head stays on top, only the log scrolls, the composer sits on the keyboard. */
+  .chat-pane, .detail { inset: var(--vv-top, 0px) 0 auto 0; height: var(--vv-h, 100dvh); }
+  /* With the keyboard up, the home-indicator inset and the action bar only take room from the log. */
+  .chat-pane:has(.composer textarea:focus) { padding-bottom: 0; }
+  .chat-pane:has(.composer textarea:focus) .composer { padding-bottom: 10px; }
+  .detail:has(.composer textarea:focus) .actionbar { display: none; }
 }
 
 /* ---------- tablet ---------- */
