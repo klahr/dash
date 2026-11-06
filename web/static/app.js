@@ -504,6 +504,7 @@ function renderProjectList() {
       ...(m.ok && !state.projects.some((p) => p.machine === m.name) ? [h("li", { class: "machine-empty" }, "No projects yet")] : []),
     ]));
   }
+  renderSideProjects();
   const sel = $("#new-project").machine;
   sel.closest(".field").hidden = !multi();
   sel.replaceChildren(...(state.machines || []).filter((m) => m.ok).map((m) => h("option", { value: m.name, selected: m.name === state.project?.machine }, m.local ? `${m.name} (this computer)` : m.name)));
@@ -519,6 +520,21 @@ function renderProjectList() {
   ] : []),
   h("button", { type: "button", class: "btn", onclick: attempt(toggleNotifications) }, notifyOn() ? "Turn off notifications" : "Turn on notifications"),
   h("button", { type: "button", class: "link logout", onclick: logout }, "Log out"));
+}
+
+// Desktop sidebar: every project, one click away.
+function renderSideProjects() {
+  const item = (p) => h("li", {},
+    h("button", {
+      type: "button", title: p.path, "aria-current": projectKey(state.project) === projectKey(p) ? "true" : "false",
+      onclick: attempt(() => selectProject(p)),
+    }, p.name));
+  const items = !multi() ? state.projects.map(item) : state.machines.flatMap((m) => [
+    h("li", { class: "side-machine", title: m.ok ? "" : m.error || "unreachable" },
+      h("span", { class: `machine-dot ${m.ok ? "ok" : "down"}`, "aria-hidden": "true" }), m.name),
+    ...state.projects.filter((p) => p.machine === m.name).map(item),
+  ]);
+  $("#side-project-list").replaceChildren(...(items.length ? items : [h("li", { class: "machine-empty" }, "No projects yet")]));
 }
 
 async function cleanup() {
@@ -538,6 +554,7 @@ async function createGitHubRepo() {
 }
 
 $("#project-switch").addEventListener("click", () => { renderProjectList(); $("#project-sheet").showModal(); });
+$("#side-new-project").addEventListener("click", () => { renderProjectList(); $("#project-sheet").showModal(); $(".new-project").open = true; });
 $("#new-project").addEventListener("submit", attempt(async (e) => {
   e.preventDefault();
   const { machine, ...body } = Object.fromEntries(new FormData(e.target));

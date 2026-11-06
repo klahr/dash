@@ -120,6 +120,7 @@ textarea { resize: vertical; line-height: 1.45; }
 }
 .nav .badge.quiet { background: var(--raised); color: var(--text); }
 .nav-foot { display: none; }
+.side-projects { display: none; }
 
 main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .view { display: none; }
@@ -576,6 +577,18 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .nav .badge { position: static; margin-left: auto; }
   .nav-foot { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: auto; padding: 0 10px; color: var(--muted); font-size: 13px; }
   .nav-foot .link { padding: 0; min-height: 32px; }
+  .nav { min-height: 0; }
+  .side-projects { display: flex; flex-direction: column; min-height: 0; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .side-projects-head { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 4px 10px; }
+  .side-projects-head h2 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .side-projects-head .icon-btn { width: 30px; height: 30px; min-height: 30px; }
+  .side-projects-head .icon-btn svg { width: 18px; height: 18px; }
+  .side-project-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; }
+  .side-project-list button { display: block; width: 100%; min-height: 34px; padding: 0 10px; border-radius: var(--r-m); text-align: left; font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side-project-list button:hover { background: var(--raised); color: var(--text); }
+  .side-project-list button[aria-current="true"] { background: var(--raised); color: var(--text); box-shadow: inset 3px 0 0 var(--accent); }
+  .side-machine { display: flex; align-items: center; gap: 8px; padding: 10px 10px 4px; font-size: 12px; color: var(--faint); }
+  .side-machine:first-child { padding-top: 2px; }
 
   main { grid-area: main; padding: 0; overflow: hidden; min-width: 0; display: flex; flex-direction: column; height: 100dvh; }
   .view.active { flex: 1; min-height: 0; overflow-y: auto; }
