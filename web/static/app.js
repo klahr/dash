@@ -1116,6 +1116,7 @@ function renderBoardNow() {
       items[l.key].length
         ? h("ol", { class: "rail" }, items[l.key].map((t, ri) => h("li", {}, todoRow(t, li, ri))))
         : h("p", { class: "col-empty" }, state.query ? "No matches." : l.empty),
+      l.key === "draft" ? enqueueAllBtn(items.draft) : null,
       l.key === "done" ? oldToggle() : null,
       l.key === "done" ? clearDoneBtn() : null))));
   syncSearchBar();
@@ -1143,6 +1144,22 @@ function oldToggle() {
   if (!hidden && !state.showOld) return null;
   return ib({ class: "link older", onclick: () => { state.showOld = !state.showOld; renderBoard(); } }, state.showOld ? "up" : "down",
     state.showOld ? "Hide merged tasks older than a day" : `Show ${hidden} older merged ${hidden === 1 ? "task" : "tasks"}`);
+}
+
+// Queues every visible draft, in board order, so they keep their relative priority.
+function enqueueAllBtn(drafts) {
+  if (drafts.length < 2) return null;
+  return ib({ class: "link older", title: "Move every draft in this column to the queue", onclick: attempt(() => enqueueAll(drafts)) },
+    "queue", `Enqueue all ${drafts.length}`);
+}
+
+async function enqueueAll(drafts) {
+  let bad = 0;
+  for (const t of drafts) {
+    try { await api("POST", `/api/todos/${t.id}/enqueue`); } catch { bad++; }
+  }
+  const n = drafts.length - bad;
+  toast(bad ? `Queued ${n}, ${bad} failed` : `Queued ${n} ${n === 1 ? "task" : "tasks"}`);
 }
 
 const doneTodos = () => [...state.todos.values()].filter((t) => t.status === "merged" || t.status === "failed");
