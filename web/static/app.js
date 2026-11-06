@@ -492,43 +492,18 @@ function renderProjectHeader() {
 }
 
 function renderProjectList() {
-  const item = (p) => h("li", {},
-    h("button", {
-      type: "button", "aria-current": projectKey(state.project) === projectKey(p) ? "true" : "false",
-      onclick: attempt(async () => { await selectProject(p); $("#project-sheet").close(); }),
-    }, h("strong", {}, p.name), h("span", { class: "path" }, p.path)));
-  if (!multi()) {
-    $("#project-list").replaceChildren(...state.projects.map(item));
-  } else {
-    $("#project-list").replaceChildren(...state.machines.flatMap((m) => [
-      h("li", { class: "machine-head" },
-        h("span", { class: `machine-dot ${m.ok ? "ok" : "down"}`, "aria-hidden": "true" }),
-        h("strong", {}, m.name), m.local ? h("span", { class: "machine-note" }, "this computer") : null,
-        m.ok ? null : h("span", { class: "machine-err" }, m.error || "unreachable")),
-      ...state.projects.filter((p) => p.machine === m.name).map(item),
-      ...(m.ok && !state.projects.some((p) => p.machine === m.name) ? [h("li", { class: "machine-empty" }, "No projects yet")] : []),
-    ]));
-  }
   renderSideProjects();
-  $("#project-tools").replaceChildren(...projectActions(state.project, true),
-  h("button", { type: "button", class: "btn", onclick: openNewProject }, "New project"),
-  h("button", { type: "button", class: "btn", onclick: attempt(toggleNotifications) }, notifyLabel()),
-  h("button", { type: "button", class: "link logout", onclick: logout }, "Log out"));
   $("#notify-toggle").textContent = notifyLabel();
 }
 
 const notifyLabel = () => notifyOn() ? "Turn off notifications" : "Turn on notifications";
 
-// Create the GitHub repo and settings for the current project: in the phone's
-// project sheet, and under the current project in the desktop sidebar (where
-// settings is an edit icon next to the name). Pushing lives on the Done column.
-function projectActions(p, sheet) {
+// Create the GitHub repo for the current project, under it in the project
+// list (settings is an edit icon next to the name). Pushing lives on the Done column.
+function projectActions(p) {
   if (!p) return [];
-  const cls = sheet ? "btn" : "side-action";
   return [
-    sheet ? h("span", { class: "remote" }, p.remote_url ? `Remote: ${p.remote_url}` : "No GitHub remote yet.") : null,
-    p.remote_url ? null : h("button", { type: "button", class: cls, title: "No GitHub remote yet", onclick: attempt(createGitHubRepo) }, sheet ? "Create GitHub repository" : "Create GitHub repo"),
-    sheet ? h("button", { type: "button", class: cls, onclick: openSettings }, "Settings") : null,
+    p.remote_url ? null : h("button", { type: "button", class: "side-action", title: "No GitHub remote yet", onclick: attempt(createGitHubRepo) }, "Create GitHub repo"),
   ].filter(Boolean);
 }
 
@@ -536,20 +511,19 @@ function openNewProject() {
   const f = $("#new-project");
   f.machine.closest(".field").hidden = !multi();
   f.machine.replaceChildren(...(state.machines || []).filter((m) => m.ok).map((m) => h("option", { value: m.name, selected: m.name === state.project?.machine }, m.local ? `${m.name} (this computer)` : m.name)));
-  $("#project-sheet").close();
   $("#new-project-sheet").showModal();
 }
 
-// Desktop sidebar: every project, one click away. The current one shows its
-// branch, an edit button for its settings, and "Create GitHub repo" if needed.
+// Desktop sidebar / phone menu: every project, one click away. The current one
+// shows its branch, an edit button for its settings, and "Create GitHub repo" if needed.
 function renderSideProjects() {
   const item = (p) => {
     const cur = projectKey(state.project) === projectKey(p);
-    const actions = cur ? projectActions(p, false) : [];
+    const actions = cur ? projectActions(p) : [];
     return h("li", { class: cur ? "current" : "" },
       h("button", {
         type: "button", class: "side-project", title: p.path, "aria-current": cur ? "true" : "false",
-        onclick: attempt(() => selectProject(p)),
+        onclick: attempt(async () => { await selectProject(p); setMenu(false); }),
       }, h("span", { class: "side-project-name" }, p.name), cur ? h("span", { class: "side-project-branch" }, p.default_branch) : null),
       cur ? h("button", {
         type: "button", class: "icon-btn side-project-edit", title: "Project settings", "aria-label": `Edit ${p.name} settings`,
@@ -582,13 +556,25 @@ async function createGitHubRepo() {
   toast("GitHub repository created");
 }
 
-// Phones switch projects in a sheet; the desktop sidebar lists them, so there
-// "p" just moves focus to the current project.
+// Phones open the sidebar's projects, actions and status as a drawer from the
+// top bar; on desktop it is always visible.
+const menuOpen = () => $(".app").classList.contains("menu-open");
+function setMenu(open) {
+  open = open && !desktop.matches;
+  $(".app").classList.toggle("menu-open", open);
+  $("#menu-scrim").hidden = !open;
+  $("#menu-open").setAttribute("aria-expanded", String(open));
+  $("#project-switch").setAttribute("aria-expanded", String(open));
+}
 function openProjects() {
   renderProjectList();
-  if (desktop.matches) return $(".side-project[aria-current=true]")?.focus();
-  $("#project-sheet").showModal();
+  setMenu(true);
+  $(".side-project[aria-current=true]")?.focus();
 }
+$("#menu-open").addEventListener("click", openProjects);
+$("#menu-close").addEventListener("click", () => { setMenu(false); $("#menu-open").focus(); });
+$("#menu-scrim").addEventListener("click", () => setMenu(false));
+desktop.addEventListener("change", () => setMenu(false));
 $("#project-switch").addEventListener("click", openProjects);
 $("#side-new-project").addEventListener("click", openNewProject);
 $("#notify-toggle").addEventListener("click", attempt(toggleNotifications));
@@ -1385,7 +1371,7 @@ function renderCI() {
   pill.hidden = !show;
   if (st) {
     pill.className = `usage-pill ci-pill ci-${st.state}`;
-    pill.textContent = desktop.matches ? CI_LABEL[st.state] : { passing: "CI", failing: "CI failing", running: "CI" }[st.state] || "CI";
+    pill.textContent = CI_LABEL[st.state];
     pill.title = CI_LABEL[st.state];
   }
   if (!st) return;
@@ -1441,7 +1427,6 @@ function openSettings() {
   f.max_run_minutes.value = p.max_run_minutes || "";
   f.max_turns.value = p.max_turns || "";
   syncMergeHint();
-  $("#project-sheet").close();
   $("#settings-sheet").showModal();
 }
 function syncMergeHint() {
@@ -2123,6 +2108,7 @@ async function handleNormal(k, n, hadCount) {
     case "gT": return showView(VIEWS[(VIEWS.indexOf(state.view) - n + VIEWS.length * n) % VIEWS.length]);
     case "p": return openProjects();
     case "Escape": case "q":
+      if (menuOpen()) return setMenu(false);
       if (state.detail) return closeDetail();
       if (k === "Escape" && state.query) return clearSearch();
       return;
