@@ -48,3 +48,5 @@ func (b board) CreateTodo(projectID string, t mcptools.NewTodo) (model.Todo, err
 		ProjectID: projectID, Title: t.Title, Prompt: t.Prompt, Goal: t.Goal, Priority: t.Priority,
 	}, t.Enqueue)
 }
+
+func (b board) QueueTodo(id string) (model.Todo, error) { return b.s.enqueue(id) }

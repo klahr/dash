@@ -87,6 +87,14 @@ func (cl client) CreateTodo(projectID string, t mcptools.NewTodo) (model.Todo, e
 	})
 }
 
+func (cl client) QueueTodo(id string) (model.Todo, error) {
+	t, err := cl.action(id, "enqueue", nil)
+	if err != nil {
+		return model.Todo{}, err
+	}
+	return t.(model.Todo), nil
+}
+
 func tools(s client) []mcptools.Tool {
 	pTodo := mcptools.PTodo
 	return append(mcptools.Tools(s, mcptools.Options{}), []mcptools.Tool{
@@ -110,7 +118,7 @@ func tools(s client) []mcptools.Tool {
 				}
 				return s.action(a.Str("todo"), "rework", map[string]any{"feedback": a.Str("feedback")})
 			}),
-		tool("enqueue_todo", "Queue a draft or failed task to run.", []mcptools.Param{pTodo},
+		tool("enqueue_todo", "Queue a draft or failed task to run (also retries failed ones, unlike queue_todo).", []mcptools.Param{pTodo},
 			func(a mcptools.Args) (any, error) { return s.action(a.Str("todo"), "enqueue", nil) }),
 		tool("cancel_todo", "Stop a running or queued task.", []mcptools.Param{pTodo},
 			func(a mcptools.Args) (any, error) { return s.action(a.Str("todo"), "cancel", nil) }),

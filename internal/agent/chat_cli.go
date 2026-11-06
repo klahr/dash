@@ -103,7 +103,7 @@ func (c ClaudeCodeChat) system(dir string) string {
 		s += " Look at the code before answering questions about it."
 	}
 	if c.Board != nil && c.BoardURL != "" {
-		s += " You can list and create Dash tasks with the " + mcptools.ServerName + " tools; create them as drafts unless the user asks for them to run. " +
+		s += " You can list, create and queue Dash tasks with the " + mcptools.ServerName + " tools; create them as drafts and queue a draft (queue_todo) only when the user asks for it to run. " +
 			"When the user decides to build or change something, create a Dash task for it instead of editing code yourself."
 	}
 	return s
@@ -133,7 +133,7 @@ func (c ClaudeCodeChat) args(dir string, servers map[string]any) []string {
 	}
 	if servers[mcptools.ServerName] != nil {
 		// Readonly has no one to ask, so creating tasks is allowed outright there;
-		// shell mode asks for create_todo like for any other tool.
+		// shell mode asks for create_todo and queue_todo like for any other tool.
 		allow := mcptools.ReadTools
 		if !c.shell() {
 			allow = mcptools.BoardTools

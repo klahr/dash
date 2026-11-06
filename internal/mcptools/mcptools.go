@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -229,6 +230,8 @@ type Board interface {
 	Todos(projectID string) ([]model.Todo, error)
 	Todo(id string) (model.Todo, error)
 	CreateTodo(projectID string, t NewTodo) (model.Todo, error)
+	// QueueTodo queues a task to run.
+	QueueTodo(id string) (model.Todo, error)
 }
 
 // Options adapt the board tools to where they run.
@@ -242,10 +245,10 @@ type Options struct {
 // Tool names the chat may call; ReadTools never change anything.
 var (
 	ReadTools  = []string{"list_projects", "list_todos", "get_todo"}
-	BoardTools = append(append([]string{}, ReadTools...), "create_todo")
+	BoardTools = append(append([]string{}, ReadTools...), "create_todo", "queue_todo")
 )
 
-// Tools returns list_projects, list_todos, get_todo and create_todo.
+// Tools returns list_projects, list_todos, get_todo, create_todo and queue_todo.
 func Tools(b Board, o Options) []Tool {
 	pProject := Param{"project", "string", "Project name or id (see list_projects).", true}
 	if o.Project != "" {
@@ -340,6 +343,27 @@ func Tools(b Board, o Options) []Tool {
 					Title: a.Str("title"), Prompt: a.Str("prompt"), Goal: a.Flag("goal"),
 					Priority: a.Num("priority", 0), Enqueue: !a.FlagOr("draft", o.Draft),
 				})
+			}},
+		{"queue_todo", "Queue a draft task to run; only when the user asks to start or run it.", []Param{PTodo},
+			func(a Args) (any, error) {
+				if a.Str("todo") == "" {
+					return nil, errors.New("todo is required")
+				}
+				t, err := b.Todo(a.Str("todo"))
+				if err != nil {
+					return nil, err
+				}
+				if t.Status != model.StatusDraft {
+					return nil, fmt.Errorf("task %q is %s, not a draft; only drafts can be queued", t.ID, t.Status)
+				}
+				if t, err = b.QueueTodo(t.ID); err != nil {
+					return nil, err
+				}
+				return struct {
+					ID     string           `json:"id"`
+					Title  string           `json:"title"`
+					Status model.TodoStatus `json:"status"`
+				}{t.ID, t.Title, t.Status}, nil
 			}},
 	}
 }

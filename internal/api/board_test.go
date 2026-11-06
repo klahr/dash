@@ -100,7 +100,7 @@ func TestBoardMCPAuth(t *testing.T) {
 	if w := rpc(h, token, "ping", "{}"); w.Code != http.StatusOK {
 		t.Errorf("valid token: %d %s", w.Code, w.Body)
 	}
-	// Only the board tools: nothing that changes existing tasks.
+	// Only the board tools: nothing that changes existing tasks beyond queueing a draft.
 	var list struct {
 		Result struct{ Tools []struct{ Name string } }
 	}
@@ -158,6 +158,53 @@ func TestBoardMCPCreateTodoDefaultsToChatProject(t *testing.T) {
 	text, _ = callResult(t, rpc(h, token, "tools/call", `{"name":"list_todos","arguments":{}}`))
 	if !strings.Contains(text, "Fix login") || strings.Contains(text, "Run it") {
 		t.Errorf("list_todos %s", text)
+	}
+}
+
+func TestBoardMCPQueueTodoOnlyDrafts(t *testing.T) {
+	s, _, p := boardServer(t)
+	h := s.Routes()
+	token, release := s.Board.Register(p.ID)
+	defer release()
+	draft, err := s.Store.CreateTodo(model.Todo{ProjectID: p.ID, Title: "Fix login"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	text, isErr := callResult(t, rpc(h, token, "tools/call", `{"name":"queue_todo","arguments":{"todo":"`+draft.ID+`"}}`))
+	if isErr {
+		t.Fatal(text)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(text), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["id"] != draft.ID || got["title"] != "Fix login" || got["status"] != string(model.StatusQueued) {
+		t.Errorf("queue_todo %s", text)
+	}
+	if td, _ := s.Store.GetTodo(draft.ID); td.Status != model.StatusQueued {
+		t.Errorf("status %s", td.Status)
+	}
+
+	// Already queued: refused, not re-queued.
+	text, isErr = callResult(t, rpc(h, token, "tools/call", `{"name":"queue_todo","arguments":{"todo":"`+draft.ID+`"}}`))
+	if !isErr || !strings.Contains(text, "not a draft") {
+		t.Errorf("queued again: %s", text)
+	}
+	failed, err := s.Store.CreateTodo(model.Todo{ProjectID: p.ID, Title: "Broke"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range []model.TodoStatus{model.StatusQueued, model.StatusInProgress, model.StatusFailed} {
+		if _, err := s.Store.SetStatus(failed.ID, st, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if text, isErr := callResult(t, rpc(h, token, "tools/call", `{"name":"queue_todo","arguments":{"todo":"`+failed.ID+`"}}`)); !isErr || !strings.Contains(text, "failed") {
+		t.Errorf("queued a failed task: %s", text)
+	}
+	if text, isErr := callResult(t, rpc(h, token, "tools/call", `{"name":"queue_todo","arguments":{"todo":"nope"}}`)); !isErr {
+		t.Errorf("queued a missing task: %s", text)
 	}
 }
 

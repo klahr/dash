@@ -542,13 +542,20 @@ func (s *Server) deleteTodo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) enqueueTodo(w http.ResponseWriter, r *http.Request) {
-	t, err := s.Store.SetStatus(r.PathValue("tid"), model.StatusQueued, "")
+	t, err := s.enqueue(r.PathValue("tid"))
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	s.Todos.Kick()
 	writeJSON(w, http.StatusOK, t)
+}
+
+func (s *Server) enqueue(id string) (model.Todo, error) {
+	t, err := s.Store.SetStatus(id, model.StatusQueued, "")
+	if err == nil {
+		s.Todos.Kick()
+	}
+	return t, err
 }
 
 func (s *Server) cancelTodo(w http.ResponseWriter, r *http.Request) {

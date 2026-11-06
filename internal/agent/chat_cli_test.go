@@ -96,7 +96,8 @@ func TestChatArgsShell(t *testing.T) {
 }
 
 // The Dash task tools are wired up in both modes: readonly may create tasks
-// without asking, shell mode asks for create_todo like for any other tool.
+// and queue them without asking, shell mode asks for create_todo and
+// queue_todo like for any other tool.
 func TestChatArgsBoard(t *testing.T) {
 	board := mcptools.ServerConfig("http://127.0.0.1:1", "b")
 	allowed := func(args []string) []string {
@@ -116,7 +117,7 @@ func TestChatArgsBoard(t *testing.T) {
 		t.Error("--strict-mcp-config missing")
 	}
 	if got := allowed(ro); !slices.Equal(got, []string{"mcp__dash_board__list_projects", "mcp__dash_board__list_todos",
-		"mcp__dash_board__get_todo", "mcp__dash_board__create_todo"}) {
+		"mcp__dash_board__get_todo", "mcp__dash_board__create_todo", "mcp__dash_board__queue_todo"}) {
 		t.Errorf("readonly --allowedTools %q", got)
 	}
 	if _, ok := flag(ro, "--permission-prompt-tool"); ok {
