@@ -1781,6 +1781,45 @@ $("#pc-open").addEventListener("click", () => {
   else toggleBoardChat();
 });
 $("#pc-close").addEventListener("click", () => toggleBoardChat(false));
+
+// Desktop: drag the chat's left edge to resize it. The width is kept per browser.
+const CHAT_MIN_W = 280;
+function setBoardChatWidth(w, save = true) {
+  const view = $("#view-board");
+  if (w == null) view.style.removeProperty("--chat-w");
+  else view.style.setProperty("--chat-w", `${Math.max(CHAT_MIN_W, Math.round(w))}px`);
+  if (save) try { w == null ? localStorage.removeItem("dash.boardChatW") : localStorage.setItem("dash.boardChatW", String(Math.round(w))); } catch {}
+}
+{
+  const saved = (() => { try { return Number(localStorage.getItem("dash.boardChatW")) || null; } catch { return null; } })();
+  if (saved) setBoardChatWidth(saved, false);
+  const handle = $("#pc-resize"), panel = $("#board-chat");
+  handle.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add("dragging");
+    const right = panel.getBoundingClientRect().right;
+    const move = (ev) => setBoardChatWidth(right - ev.clientX, false);
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.classList.remove("dragging");
+      setBoardChatWidth(panel.getBoundingClientRect().width);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up, { once: true });
+    handle.addEventListener("pointercancel", up, { once: true });
+  });
+  handle.addEventListener("dblclick", () => setBoardChatWidth(null));
+  handle.addEventListener("keydown", (e) => {
+    const step = e.shiftKey ? 64 : 16;
+    const d = e.key === "ArrowLeft" ? step : e.key === "ArrowRight" ? -step : 0;
+    if (!d) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setBoardChatWidth(panel.getBoundingClientRect().width + d);
+  });
+}
 $("#pc-clear").addEventListener("click", attempt(async () => {
   const p = state.project;
   if (!p || !projectChat.history.length) return;
