@@ -5,7 +5,7 @@
 
 import {
   EditorView, EditorState, Compartment, Prec, Transaction, keymap, placeholder, drawSelection,
-  lineNumbers, highlightActiveLine, highlightActiveLineGutter,
+  lineNumbers, highlightActiveLine, highlightActiveLineGutter, highlightWhitespace, highlightTrailingWhitespace, highlightSpecialChars,
   history, historyKeymap, defaultKeymap, insertNewline, syntaxHighlighting, HighlightStyle, LanguageDescription, bracketMatching, tags as t,
   markdown, languages, vim, getCM,
 } from "./vendor/codemirror.js";
@@ -198,6 +198,9 @@ const theme = EditorView.theme({
   "&.cm-focused .cm-fat-cursor": { background: "color-mix(in srgb, var(--accent) 70%, transparent)", color: "var(--bg)" },
   "&.cm-editor:not(.cm-focused) .cm-fat-cursor": { outline: "solid 1px var(--accent)" },
   ".cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--running) 30%, transparent)" },
+  ".cm-highlightSpace": { backgroundImage: "radial-gradient(circle at 50% 55%, var(--faint) 20%, transparent 0)" },
+  ".cm-trailingSpace": { backgroundColor: "color-mix(in srgb, var(--failed) 30%, transparent)" },
+  ".cm-specialChar": { color: "var(--failed) !important" }, // base theme picks by its own light/dark
 }, { dark: true });
 
 // Vim keys are a setting of this browser, off by default.
@@ -208,6 +211,15 @@ export const vimOn = () => { try { return localStorage.getItem(VIM_KEY) === "1";
 export function setVim(on) {
   try { localStorage.setItem(VIM_KEY, on ? "1" : "0"); } catch {}
   for (const e of editors) e.setVim(on);
+}
+
+// Showing invisible characters is a setting of this browser too, off by default.
+const INVISIBLES_KEY = "dash.invisibles";
+const invisibleChars = () => [highlightWhitespace(), highlightTrailingWhitespace(), highlightSpecialChars()];
+export const invisiblesOn = () => { try { return localStorage.getItem(INVISIBLES_KEY) === "1"; } catch { return false; } };
+export function setInvisibles(on) {
+  try { localStorage.setItem(INVISIBLES_KEY, on ? "1" : "0"); } catch {}
+  for (const e of editors) e.setInvisibles(on);
 }
 
 // In vim mode Esc leaves insert (or visual) mode; Esc in normal mode, with
@@ -282,13 +294,14 @@ function mirror(textarea, className) {
 export function mdEditor(textarea) {
   const m = mirror(textarea, "md-editor");
   const labelledBy = textarea.getAttribute("aria-labelledby");
-  const vimMode = new Compartment(), readOnly = new Compartment();
+  const vimMode = new Compartment(), invisibles = new Compartment(), readOnly = new Compartment();
   const view = new EditorView({
     parent: m.wrap,
     state: EditorState.create({
       doc: textarea.value,
       extensions: [
         vimMode.of(vimOn() ? vimKeys() : []),
+        invisibles.of(invisiblesOn() ? invisibleChars() : []),
         history(),
         Prec.high(keymap.of([
           { key: "Enter", run: (v) => continueList(v) || insertNewline(v), shift: insertNewline },
@@ -325,6 +338,7 @@ export function mdEditor(textarea) {
     view,
     render: m.render,
     setVim(on) { view.dispatch({ effects: vimMode.reconfigure(on ? vimKeys() : []) }); },
+    setInvisibles(on) { view.dispatch({ effects: invisibles.reconfigure(on ? invisibleChars() : []) }); },
   };
   editors.add(ed);
   return ed;
@@ -382,10 +396,11 @@ const codeTheme = EditorView.theme({
 export function codeEditor(textarea) {
   const m = mirror(textarea, "code-editor");
   const label = textarea.getAttribute("aria-label");
-  const vimMode = new Compartment(), language = new Compartment();
-  let vimEnabled = vimOn(), path = null;
+  const vimMode = new Compartment(), invisibles = new Compartment(), language = new Compartment();
+  let vimEnabled = vimOn(), invisiblesEnabled = invisiblesOn(), path = null;
   const extensions = () => [
     vimMode.of(vimEnabled ? vimKeys() : []),
+    invisibles.of(invisiblesEnabled ? invisibleChars() : []),
     history(),
     lineNumbers(),
     highlightActiveLineGutter(),
@@ -426,6 +441,10 @@ export function codeEditor(textarea) {
     setVim(on) {
       vimEnabled = on;
       view.dispatch({ effects: vimMode.reconfigure(on ? vimKeys() : []) });
+    },
+    setInvisibles(on) {
+      invisiblesEnabled = on;
+      view.dispatch({ effects: invisibles.reconfigure(on ? invisibleChars() : []) });
     },
     // setPath highlights the text as the file at path; unknown types are plain text.
     setPath(p) {

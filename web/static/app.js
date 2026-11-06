@@ -1,6 +1,6 @@
 // Dash web client. REST for state, /ws/events for live updates,
 // /ws/chat for streaming answers, /ws/proc/:id for terminals.
-import { mdEditor, codeEditor, drafts, renderMarkdown, vimOn, setVim } from "./editor.js";
+import { mdEditor, codeEditor, drafts, renderMarkdown, vimOn, setVim, invisiblesOn, setInvisibles } from "./editor.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 // The server's LC_TIME, since browsers format times by their UI language instead.
@@ -1499,10 +1499,17 @@ function toggleVim() {
   toast(vimOn() ? "Vim keys on in the editors" : "Vim keys off");
 }
 
+function toggleInvisibles() {
+  setInvisibles(!invisiblesOn());
+  syncPrefs();
+  toast(invisiblesOn() ? "Invisible characters shown in the editors" : "Invisible characters hidden");
+}
+
 // ------------------------------------------------------------------ preferences (this browser only)
 function syncPrefs() {
   const f = $("#prefs-form");
   f.vim.checked = vimOn();
+  f.invisibles.checked = invisiblesOn();
   f.notify.checked = notifyOn();
 }
 function openPrefs() {
@@ -1510,6 +1517,7 @@ function openPrefs() {
   $("#prefs-sheet").showModal();
 }
 $("#prefs-form").vim.addEventListener("change", (e) => { if (e.target.checked !== vimOn()) toggleVim(); });
+$("#prefs-form").invisibles.addEventListener("change", (e) => { if (e.target.checked !== invisiblesOn()) toggleInvisibles(); });
 // Asking for permission needs this change event's user gesture.
 $("#prefs-form").notify.addEventListener("change", attempt(async (e) => {
   try { if (e.target.checked !== notifyOn()) await toggleNotifications(); } finally { syncPrefs(); }
@@ -3124,6 +3132,7 @@ async function runCommand(line) {
     case "noh": case "nohlsearch": return clearSearch();
     case "notify": case "notifications": return toggleNotifications();
     case "vim": return toggleVim();
+    case "list": case "invisibles": return toggleInvisibles();
     case "clear": {
       const c = activeChat();
       if (!c) throw new Error("Pick a project first.");
@@ -3201,9 +3210,10 @@ function paletteCommands() {
     ["Claude usage", "clock", () => { renderUsage(); $("#usage-sheet").showModal(); }, ":usage", "limits"],
     state.usage && [state.usage.paused ? "Resume the queue" : "Pause the queue", state.usage.paused ? "play" : "pause", () => runCommand(state.usage.paused ? "resume" : "pause"), "", "queue"],
     ["Permission requests", "eye", () => runCommand("perms"), ":perms", "approvals allow deny"],
-    ["Preferences", "prefs", openPrefs, ":prefs", "preferences vim notifications browser"],
+    ["Preferences", "prefs", openPrefs, ":prefs", "preferences vim invisibles whitespace notifications browser"],
     [notifyLabel(), notifyOn() ? "bell-off" : "bell", toggleNotifications, ":notify", "notifications"],
     [vimOn() ? "Turn off vim keys in the editor" : "Turn on vim keys in the editor", "code", toggleVim, ":vim", "vim keybindings prompt editor"],
+    [invisiblesOn() ? "Hide invisible characters in the editor" : "Show invisible characters in the editor", "code", toggleInvisibles, ":list", "invisibles whitespace tabs spaces trailing"],
     desktop.matches && [sideCollapsed() ? "Expand sidebar" : "Collapse sidebar", "minimize", () => setSideCollapsed(!sideCollapsed()), "[", "sidebar"],
     ["Refresh projects", "redo", loadProjects, ":refresh", "reload"],
     ["Keyboard shortcuts", "code", () => $("#keys-sheet").showModal(), "?", "help keys"],
