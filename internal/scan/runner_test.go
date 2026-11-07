@@ -254,11 +254,11 @@ func TestRunSinceLastScan(t *testing.T) {
 	// A failed run is not a baseline.
 	commitFile(t, fx.repo, "pkg/other.go", "package pkg\n")
 	fx.exec.setAnswer("I could not finish.")
-	if r2 := fx.run(t, "daily"); r2.Status != model.ScanFailed || !strings.Contains(r2.Error, "findings JSON") {
+	if r2 := fx.run(t, "daily"); r2.Status != model.ScanFailed || !strings.Contains(r2.Error, "findings JSON") || r2.Answer != "I could not finish." {
 		t.Fatalf("bad answer: %+v", r2)
 	}
 	fx.exec.setAnswer(`{"findings": []}`)
-	if r3 := fx.run(t, "daily"); r3.Since != r.Commit {
+	if r3 := fx.run(t, "daily"); r3.Since != r.Commit || r3.Answer != "" {
 		t.Fatalf("baseline after failure: since %s, want %s", r3.Since, r.Commit)
 	}
 }

@@ -1441,6 +1441,9 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .scan-msg { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
 .scan-msg.error { color: var(--failed); white-space: pre-wrap; }
 .scan-note, .scan-never { margin: 6px 0 0; font-size: 13px; color: var(--faint); }
+.scan-answer { margin: 6px 0 0; font-size: 13px; }
+.scan-answer summary { cursor: pointer; color: var(--faint); }
+.scan-answer pre { max-height: 320px; overflow: auto; margin: 6px 0 0; padding: 8px; white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: 12px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-s); }
 .scan-foot { margin-top: 4px; }
 .scan-history { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; }
 .issue-run-filter {

@@ -2,6 +2,7 @@ package scan
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -30,6 +31,47 @@ func TestParseFindings(t *testing.T) {
 	for _, bad := range []string{"", "No issues found.", `{"results": []}`, "```json\n{\"findings\": [\n```"} {
 		if _, err := ParseFindings(bad); !errors.Is(err, ErrNoFindings) {
 			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}
+
+// The answer of scan run 478b2012b849: a ```markdown block before the
+// findings block, whose closing fence used to be taken for an opening one,
+// and an example {"findings": []} in the prose.
+func TestParseFindingsRunAnswer(t *testing.T) {
+	b, err := os.ReadFile("testdata/answer-478b2012b849.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs, err := ParseFindings(string(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fs) != 1 || fs[0].Fingerprint != "repo-scan-template-unrestricted-tools-autoschedule" || !strings.Contains(fs[0].Details, "```\n---\ntools: Bash") {
+		t.Fatalf("%+v", fs)
+	}
+}
+
+func TestParseFindingsFences(t *testing.T) {
+	one := `{"title":"x"}`
+	obj := "{\"findings\": [" + one + "]}"
+	for name, answer := range map[string]string{
+		"other fences first":          "See:\n```go\nfunc f() {}\n```\nand\n```\n$ make\n```\n```json\n" + obj + "\n```\n",
+		"markdown block with example": "```markdown\nanswer {\"findings\": []}.\n```\nDone.\n\n```json\n" + obj + "\n```",
+		"longer fence nests":          "````markdown\n```json\n{\"findings\": []}\n```\n````\n```json\n" + obj + "\n```",
+		"tilde fence":                 "~~~json\n" + obj + "\n~~~",
+		"fence in string":             "```json\n{\"findings\": [{\"title\": \"x\", \"details\": \"Add:\\n```\\nrm -rf /\\n```\\nand ``` here\"}]}\n```",
+		"pretty with fence in string": "```json\n{\"findings\": [\n  {\n    \"title\": \"x\",\n    \"fix\": \"```go\\nx()\\n```\"\n  }\n]}\n```\n",
+		"inline fences in prose":      "Use ```x``` or ``` y ``` inline.\n```json\n" + obj + "\n```",
+		"unclosed earlier fence":      "```go\nfunc f() {\n\nResult:\n```json\n" + obj + "\n```",
+		"after the block":             "```json\n" + obj + "\n```\nAlso see `{\"findings\": []}` above.",
+		"no fence, example before":    `Format: {"findings": []}. Mine: {"findings": [` + one + `]}`,
+		"indented fence":              "  ```json\n  " + obj + "\n  ```",
+		"crlf":                        "Hi\r\n```json\r\n" + obj + "\r\n```\r\n",
+	} {
+		fs, err := ParseFindings(answer)
+		if err != nil || len(fs) != 1 || fs[0].Title != "x" {
+			t.Errorf("%s: %+v %v", name, fs, err)
 		}
 	}
 }

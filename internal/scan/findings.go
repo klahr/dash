@@ -33,50 +33,150 @@ type Finding struct {
 // ErrNoFindings is returned when the agent's answer holds no findings JSON.
 var ErrNoFindings = errors.New(`the scan's answer has no findings JSON ({"findings": [...]})`)
 
-var fenceRE = regexp.MustCompile("(?s)```(?:json|JSON)?[ \t]*\n(.*?)\n[ \t]*```")
-
-// ParseFindings finds the findings JSON in the agent's final message: the
-// last fenced JSON block, or the whole message, holding {"findings": [...]}
-// or a bare array.
+// ParseFindings finds the findings JSON in the agent's final message. It
+// tries, in order: the fenced code blocks (json or untagged, last first),
+// the whole message, and every balanced JSON object in the message holding
+// a "findings" key (last first). A candidate is {"findings": [...]} or a
+// bare array.
 func ParseFindings(answer string) ([]Finding, error) {
-	var candidates []string
-	blocks := fenceRE.FindAllStringSubmatch(answer, -1)
-	for i := len(blocks) - 1; i >= 0; i-- {
-		candidates = append(candidates, blocks[i][1])
-	}
-	candidates = append(candidates, answer)
-	if i, j := strings.Index(answer, "{"), strings.LastIndex(answer, "}"); i >= 0 && j > i {
-		candidates = append(candidates, answer[i:j+1])
-	}
-	var lastErr error
-	for _, c := range candidates {
+	var firstErr error
+	try := func(c string) ([]Finding, bool) {
 		c = strings.TrimSpace(c)
 		if c == "" {
-			continue
+			return nil, false
+		}
+		if strings.HasPrefix(c, "[") {
+			var arr []Finding
+			if err := json.Unmarshal([]byte(c), &arr); err == nil {
+				return arr, true
+			} else if firstErr == nil {
+				firstErr = err
+			}
+			return nil, false
 		}
 		var obj struct {
 			Findings *[]Finding `json:"findings"`
 		}
-		if err := json.Unmarshal([]byte(c), &obj); err == nil && obj.Findings != nil {
-			return *obj.Findings, nil
-		} else if err != nil {
-			lastErr = err
+		if err := json.Unmarshal([]byte(c), &obj); err != nil {
+			if firstErr == nil && strings.HasPrefix(c, "{") {
+				firstErr = err
+			}
+			return nil, false
 		}
-		var arr []Finding
-		if strings.HasPrefix(c, "[") && json.Unmarshal([]byte(c), &arr) == nil {
-			return arr, nil
+		if obj.Findings == nil {
+			return nil, false
+		}
+		return *obj.Findings, true
+	}
+	blocks := fencedBlocks(answer)
+	for i := len(blocks) - 1; i >= 0; i-- {
+		switch strings.ToLower(blocks[i].lang) {
+		case "", "json", "jsonc", "json5":
+			if fs, ok := try(blocks[i].body); ok {
+				return fs, nil
+			}
 		}
 	}
-	if lastErr != nil {
-		return nil, fmt.Errorf("%w: %v", ErrNoFindings, lastErr)
+	if fs, ok := try(answer); ok {
+		return fs, nil
+	}
+	if fs, ok := lastFindingsObject(answer); ok {
+		return fs, nil
+	}
+	if firstErr != nil {
+		return nil, fmt.Errorf("%w: %v", ErrNoFindings, firstErr)
 	}
 	return nil, ErrNoFindings
+}
+
+type fencedBlock struct{ lang, body string }
+
+// fencedBlocks returns the message's fenced code blocks the way Markdown
+// pairs them: a fence opens on its own line with three or more backticks
+// (or tildes) and an optional info string, and only a line of at least as
+// many of the same character, and nothing else, closes it. So the closing
+// fence of a ```markdown block never opens a new one, and a block may hold
+// shorter fences. An unclosed block is left out.
+func fencedBlocks(s string) []fencedBlock {
+	var (
+		out   []fencedBlock
+		open  bool
+		ch    byte
+		n     int
+		lang  string
+		lines []string
+	)
+	for _, line := range strings.Split(s, "\n") {
+		t := strings.TrimRight(strings.TrimLeft(line, " \t"), " \t\r")
+		if !open {
+			c, k := fenceRun(t)
+			if k < 3 {
+				continue
+			}
+			info := strings.TrimSpace(t[k:])
+			if c == '`' && strings.ContainsRune(info, '`') {
+				continue // inline code like ```x``` on one line
+			}
+			open, ch, n, lines = true, c, k, nil
+			lang, _, _ = strings.Cut(info, " ")
+			continue
+		}
+		if c, k := fenceRun(t); c == ch && k >= n && k == len(t) {
+			out = append(out, fencedBlock{lang: lang, body: strings.Join(lines, "\n")})
+			open = false
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return out
+}
+
+// fenceRun is the fence character starting t and how many times it repeats.
+func fenceRun(t string) (byte, int) {
+	if t == "" || (t[0] != '`' && t[0] != '~') {
+		return 0, 0
+	}
+	k := 0
+	for k < len(t) && t[k] == t[0] {
+		k++
+	}
+	return t[0], k
+}
+
+// lastFindingsObject finds the last balanced JSON object in s that has a
+// "findings" array, whatever surrounds it. Objects nested in one that
+// matched are not looked at on their own.
+func lastFindingsObject(s string) ([]Finding, bool) {
+	var (
+		found []Finding
+		ok    bool
+	)
+	for i := 0; i < len(s); {
+		j := strings.IndexByte(s[i:], '{')
+		if j < 0 {
+			break
+		}
+		i += j
+		dec := json.NewDecoder(strings.NewReader(s[i:]))
+		var obj struct {
+			Findings *[]Finding `json:"findings"`
+		}
+		if dec.Decode(&obj) == nil && obj.Findings != nil {
+			found, ok = *obj.Findings, true
+			i += int(dec.InputOffset())
+			continue
+		}
+		i++
+	}
+	return found, ok
 }
 
 const (
 	maxTitle = 200
 	maxText  = 20000
 	maxRule  = 200
+	// maxAnswer bounds the unparsable answer kept on a failed run.
+	maxAnswer = 256 << 10
 )
 
 // Validate checks a finding and makes it an issue. defType is the type when

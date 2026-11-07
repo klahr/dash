@@ -326,6 +326,7 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 	}
 	found, err := ParseFindings(res.Result)
 	if err != nil {
+		run, _ = r.Store.UpdateScanRun(run.ID, false, func(x *model.ScanRun) { x.Answer = clip(res.Result, maxAnswer) })
 		fail(err)
 		return
 	}

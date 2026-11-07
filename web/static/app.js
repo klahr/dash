@@ -4818,6 +4818,7 @@ function scanReport(r, compact = false) {
       h("span", { class: "scan-when", title: r.invalid ? "Dropped: findings the scan returned that were not valid; see the log" : null }, bits.join(" · ")),
       h("a", { class: "link scan-log", href: on(here(), `/api/scan-runs/${r.id}/log`), target: "_blank", rel: "noopener" }, "Log")),
     body,
+    r.answer ? h("details", { class: "scan-answer" }, h("summary", {}, "The agent's answer"), h("pre", {}, r.answer)) : null,
     r.note && r.status === "succeeded" ? h("p", { class: "scan-note" }, r.note) : null);
 }
 

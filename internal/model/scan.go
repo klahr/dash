@@ -32,15 +32,18 @@ type ScanRun struct {
 	Since     string `json:"since,omitempty"` // for incremental scopes: the commit diffed against
 	// Incremental says the run looked only at Since..Commit; false for a
 	// since_last_scan run without a previous run, which scans everything.
-	Incremental bool       `json:"incremental,omitempty"`
-	Status      string     `json:"status"`
-	Error       string     `json:"error,omitempty"`
-	Note        string     `json:"note,omitempty"` // e.g. why it was skipped
-	Activity    string     `json:"activity,omitempty"`
-	StartedAt   time.Time  `json:"started_at"`
-	FinishedAt  *time.Time `json:"finished_at,omitempty"`
-	CostUSD     float64    `json:"cost_usd,omitempty"`
-	Turns       int        `json:"turns,omitempty"`
+	Incremental bool   `json:"incremental,omitempty"`
+	Status      string `json:"status"`
+	Error       string `json:"error,omitempty"`
+	// Answer is the agent's final message, kept when no findings could be
+	// read from it so they aren't lost and the failure can be looked into.
+	Answer     string     `json:"answer,omitempty"`
+	Note       string     `json:"note,omitempty"` // e.g. why it was skipped
+	Activity   string     `json:"activity,omitempty"`
+	StartedAt  time.Time  `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	CostUSD    float64    `json:"cost_usd,omitempty"`
+	Turns      int        `json:"turns,omitempty"`
 	// Findings is how many valid findings the agent returned; Invalid how
 	// many it returned that were dropped (no title, unknown severity, …).
 	Findings int          `json:"findings"`
