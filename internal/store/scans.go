@@ -1,8 +1,11 @@
 package store
 
 import (
+	"errors"
+	"fmt"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/klahr/dash/internal/model"
@@ -166,4 +169,98 @@ func cloneSetting(st model.ScanSetting) model.ScanSetting {
 	}
 	st.ApprovedTools = slices.Clone(st.ApprovedTools)
 	return st
+}
+
+// ErrScanExists is returned when a project already has a Dash scan of that name.
+var ErrScanExists = errors.New("a Dash scan with that name already exists")
+
+// ScanTemplates are a project's Dash scans, by name.
+func (s *Store) ScanTemplates(projectID string) []model.ScanTemplate {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []model.ScanTemplate{}
+	for _, t := range s.data.ScanTemplates {
+		if t.ProjectID == projectID {
+			out = append(out, cloneTemplate(*t))
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// ScanTemplate is the project's Dash scan called name.
+func (s *Store) ScanTemplate(projectID, name string) (model.ScanTemplate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.data.ScanTemplates[scanKey(projectID, name)]
+	if !ok {
+		return model.ScanTemplate{}, ErrNotFound
+	}
+	return cloneTemplate(*t), nil
+}
+
+// SaveScanTemplate adds a Dash scan (create=true; ErrScanExists if the name
+// is taken) or replaces one (ErrNotFound if there is none). The caller
+// validates it first (scan.Custom); the store only keeps it.
+func (s *Store) SaveScanTemplate(t model.ScanTemplate, create bool) (model.ScanTemplate, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.data.Projects[t.ProjectID]; !ok {
+		return t, ErrNotFound
+	}
+	if t.Name == "" || strings.ContainsAny(t.Name, "/\\") {
+		return t, fmt.Errorf("invalid scan name %q", t.Name)
+	}
+	k := scanKey(t.ProjectID, t.Name)
+	old, exists := s.data.ScanTemplates[k]
+	switch {
+	case create && exists:
+		return t, fmt.Errorf("%w: %q", ErrScanExists, t.Name)
+	case !create && !exists:
+		return t, ErrNotFound
+	}
+	now := time.Now()
+	if s.Now != nil {
+		now = s.Now()
+	}
+	t.CreatedAt, t.UpdatedAt = now, now
+	if exists {
+		t.CreatedAt = old.CreatedAt
+	}
+	if s.data.ScanTemplates == nil {
+		s.data.ScanTemplates = map[string]*model.ScanTemplate{}
+	}
+	cp := cloneTemplate(t)
+	s.data.ScanTemplates[k] = &cp
+	if err := s.saveLocked(); err != nil {
+		return t, err
+	}
+	s.emit(model.EvScanTemplate, t.ProjectID, "", map[string]any{"name": t.Name})
+	return cloneTemplate(t), nil
+}
+
+// DeleteScanTemplate forgets a Dash scan. Its runs and the issues it filed
+// (source "scan:<name>") are kept; so are its settings when keepSettings is
+// set, e.g. because a repository scan of the same name uses them.
+func (s *Store) DeleteScanTemplate(projectID, name string, keepSettings bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	k := scanKey(projectID, name)
+	if _, ok := s.data.ScanTemplates[k]; !ok {
+		return ErrNotFound
+	}
+	delete(s.data.ScanTemplates, k)
+	if !keepSettings {
+		delete(s.data.ScanSettings, k)
+	}
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	s.emit(model.EvScanTemplate, projectID, "", map[string]any{"name": name, "deleted": true})
+	return nil
+}
+
+func cloneTemplate(t model.ScanTemplate) model.ScanTemplate {
+	t.Tools = slices.Clone(t.Tools)
+	return t
 }

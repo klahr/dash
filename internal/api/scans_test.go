@@ -137,3 +137,121 @@ func TestScanApprovals(t *testing.T) {
 		t.Fatalf("after reset: %+v", in)
 	}
 }
+
+func TestDashScanEndpoints(t *testing.T) {
+	s, _, p := boardServer(t)
+	repo := t.TempDir()
+	p, _ = s.Store.UpdateProject(p.ID, func(x *model.Project) error { x.Path = repo; return nil })
+	h := loggedIn(t, s.Routes())
+	base := "/api/projects/" + p.ID + "/scans"
+
+	type info struct {
+		Name       string `json:"name"`
+		Source     string `json:"source"`
+		Prompt     string `json:"prompt"`
+		ShadowedBy string `json:"shadowed_by"`
+		Markdown   string `json:"markdown"`
+		Schedule   struct {
+			Cron    string `json:"cron"`
+			Enabled bool   `json:"enabled"`
+		} `json:"schedule"`
+		ToolsApproved bool `json:"tools_approved"`
+	}
+	list := func() map[string]info {
+		t.Helper()
+		w := do(t, h, "GET", base, "")
+		var l struct{ Scans []info }
+		if err := json.Unmarshal(w.Body.Bytes(), &l); err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]info{}
+		for _, i := range l.Scans {
+			out[i.Name+"/"+i.Source] = i
+		}
+		return out
+	}
+
+	// Validation, and names of the built-ins are taken.
+	for _, bad := range []string{`{"name":"a b","prompt":"x"}`, `{"name":"x","prompt":""}`, `{"name":"x","schedule":"nope","prompt":"x"}`, `{"name":"x","kind":"what","prompt":"x"}`} {
+		if w := do(t, h, "POST", base, bad); w.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d %s", bad, w.Code, w.Body)
+		}
+	}
+	if w := do(t, h, "POST", base, `{"name":"security","prompt":"x"}`); w.Code != http.StatusConflict {
+		t.Fatalf("built-in name: %d %s", w.Code, w.Body)
+	}
+
+	w := do(t, h, "POST", base, `{"name":"mine","title":"Mine","kind":"security","schedule":"0 6 * * *","tools":["Bash(npm audit:*)"],"prompt":"Check {{path}}."}`)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, h, "POST", base, `{"name":"mine","prompt":"x"}`); w.Code != http.StatusConflict {
+		t.Fatalf("duplicate: %d %s", w.Code, w.Body)
+	}
+	l := list()
+	mine, ok := l["mine/dash"]
+	if !ok || len(l) != 4 || !mine.Schedule.Enabled || !mine.ToolsApproved || mine.Markdown == "" {
+		t.Fatalf("list: %+v", l)
+	}
+
+	// Edit: the prompt and settings change; a schedule set in the list is
+	// replaced by the editor's.
+	if w := do(t, h, "PATCH", base+"/mine", `{"schedule":"0 7 * * *"}`); w.Code != http.StatusOK {
+		t.Fatalf("patch: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, h, "PUT", base+"/mine", `{"name":"other","prompt":"x"}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("rename: %d", w.Code)
+	}
+	if w := do(t, h, "PUT", base+"/mine", `{"kind":"nope","prompt":"x"}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("bad edit: %d", w.Code)
+	}
+	w = do(t, h, "PUT", base+"/mine", `{"title":"Mine","kind":"code_review","schedule":"0 8 * * *","prompt":"Review {{since}}."}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("edit: %d %s", w.Code, w.Body)
+	}
+	if mine = list()["mine/dash"]; mine.Prompt != "Review {{since}}." || mine.Schedule.Cron != "0 8 * * *" {
+		t.Fatalf("after edit: %+v", mine)
+	}
+
+	// Built-in and repository scans can't be edited or deleted here.
+	if w := do(t, h, "PUT", base+"/security", `{"prompt":"x"}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("edit built-in: %d", w.Code)
+	}
+	if w := do(t, h, "DELETE", base+"/security", ""); w.Code != http.StatusBadRequest {
+		t.Fatalf("delete built-in: %d", w.Code)
+	}
+	if w := do(t, h, "DELETE", base+"/nope", ""); w.Code != http.StatusNotFound {
+		t.Fatalf("delete unknown: %d", w.Code)
+	}
+
+	// A repository template of the same name shadows it.
+	dir := filepath.Join(repo, ".dash", "scans")
+	_ = os.MkdirAll(dir, 0o755)
+	if err := os.WriteFile(filepath.Join(dir, "mine.md"), []byte("Repo."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l = list()
+	if l["mine/repo"].Prompt != "Repo." || l["mine/dash"].ShadowedBy != ".dash/scans/mine.md" || len(l) != 2 {
+		t.Fatalf("shadowed: %+v", l)
+	}
+	// The shadowed one can still be edited; it stays shadowed.
+	w = do(t, h, "PUT", base+"/mine", `{"prompt":"Still mine."}`)
+	if w.Code != http.StatusOK || !json.Valid(w.Body.Bytes()) {
+		t.Fatalf("edit shadowed: %d %s", w.Code, w.Body)
+	}
+	var edited info
+	_ = json.Unmarshal(w.Body.Bytes(), &edited)
+	if edited.ShadowedBy == "" || edited.Prompt != "Still mine." {
+		t.Fatalf("edited shadowed: %+v", edited)
+	}
+	// Deleting it keeps the repository scan's settings.
+	if w := do(t, h, "DELETE", base+"/mine", ""); w.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d %s", w.Code, w.Body)
+	}
+	if _, has := s.Store.ScanSetting(p.ID, "mine"); !has {
+		t.Fatal("repository scan's settings deleted")
+	}
+	if l = list(); len(l) != 1 || l["mine/repo"].Name == "" {
+		t.Fatalf("after delete: %+v", l)
+	}
+}

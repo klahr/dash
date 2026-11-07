@@ -1403,7 +1403,17 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 
 /* ---------- scans ---------- */
 .scans { max-width: 1100px; padding: 12px 16px 24px; }
-.scan-intro { margin: 0 0 12px; color: var(--muted); font-size: 14px; max-width: 70ch; }
+.scan-bar { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 12px; }
+.scan-bar #scan-new { margin-left: auto; flex: none; }
+.scan-intro { margin: 0; color: var(--muted); font-size: 14px; max-width: 70ch; }
+.scan-actions { display: flex; flex-wrap: wrap; gap: 0 14px; font-size: 13px; }
+.scan-actions .link { min-height: 32px; }
+.scan-actions .link.danger { color: var(--failed); }
+.scan-card.shadowed { opacity: .75; border-style: dashed; }
+.scan-shadow-tag { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--failed); }
+.scan-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 14px; }
+.scan-form-grid .field { margin: 8px 0; }
+.scan-prompt { font-family: var(--mono); min-height: 12em; }
 .scan-intro code, .scan-meta code, .scan-problems code { font: 12px var(--mono); }
 .scan-problems { margin: 0 0 12px; padding: 8px 12px 8px 28px; border-radius: var(--r-m); font-size: 14px; color: var(--failed); border: 1px solid color-mix(in srgb, var(--failed) 40%, var(--line)); }
 .scan-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }

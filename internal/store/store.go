@@ -62,6 +62,9 @@ type snapshot struct {
 	// ScanSettings are the schedule changes and approvals users made, keyed by
 	// "<project id>/<scan name>".
 	ScanSettings map[string]*model.ScanSetting `json:"scan_settings,omitempty"`
+	// ScanTemplates are the custom scans users wrote in Dash, keyed by
+	// "<project id>/<scan name>".
+	ScanTemplates map[string]*model.ScanTemplate `json:"scan_templates,omitempty"`
 }
 
 type Store struct {
@@ -225,6 +228,11 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 	for k, st := range s.data.ScanSettings {
 		if st.ProjectID == id {
 			delete(s.data.ScanSettings, k)
+		}
+	}
+	for k, t := range s.data.ScanTemplates {
+		if t.ProjectID == id {
+			delete(s.data.ScanTemplates, k)
 		}
 	}
 	delete(s.data.Projects, id)

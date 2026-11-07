@@ -87,3 +87,23 @@ type ScanSetting struct {
 	ApprovedTools []string  `json:"approved_tools,omitempty"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
+
+// ScanTemplate is a custom scan a user wrote in Dash, kept per project next
+// to the repository's .dash/scans templates. Unlike those, it is trusted like
+// a built-in: its tools and schedule need no separate approval, since only a
+// Dash user can change it. The scan package validates it (scan.Custom).
+type ScanTemplate struct {
+	ProjectID string    `json:"project_id"`
+	Name      string    `json:"name"`
+	Title     string    `json:"title,omitempty"`
+	Kind      string    `json:"kind"`
+	Scope     string    `json:"scope"`
+	Path      string    `json:"path,omitempty"`
+	Model     string    `json:"model,omitempty"`
+	Effort    string    `json:"effort,omitempty"`
+	Schedule  string    `json:"schedule,omitempty"`
+	Tools     []string  `json:"tools,omitempty"`
+	Prompt    string    `json:"prompt"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}

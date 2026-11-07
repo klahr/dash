@@ -47,22 +47,25 @@ type Schedule struct {
 // repository template's must be approved, because anyone who can merge to
 // the repository can change it. Turning a repository schedule on approves
 // the template's expression as it is then; if the template's changes later,
-// the approved one keeps running until the new one is approved.
+// the approved one keeps running until the new one is approved. A scan
+// written in Dash is the user's own: its schedule runs until turned off.
 func Effective(t Template, set model.ScanSetting, hasSetting bool) Schedule {
 	s := Schedule{Cron: t.Schedule, Default: t.Schedule}
 	if !hasSetting {
 		set = model.ScanSetting{}
 	}
-	approved := t.Builtin // a built-in's own expression needs no approval
+	trusted := t.Trusted()
+	approved := trusted // a built-in's or Dash scan's own expression needs no approval
 	switch {
 	case set.Schedule != "":
 		s.Cron, s.Custom, approved = set.Schedule, true, true // the user's own
-	case !t.Builtin && set.ApprovedSchedule != "":
+	case !trusted && set.ApprovedSchedule != "":
 		s.Cron, approved = set.ApprovedSchedule, true
 	}
-	if !t.Builtin && set.Schedule == "" && t.Schedule != "" && t.Schedule != set.ApprovedSchedule {
+	if !trusted && set.Schedule == "" && t.Schedule != "" && t.Schedule != set.ApprovedSchedule {
 		s.Requested = t.Schedule
 	}
+	s.Enabled = t.Origin == SourceDash
 	if set.Enabled != nil {
 		s.Enabled, s.Custom = *set.Enabled, true
 	}
@@ -176,7 +179,7 @@ func (s *Scheduler) Tick() []model.ScanRun {
 	now := s.now()
 	var started []model.ScanRun
 	for _, p := range s.Store.ListProjects() {
-		templates, _ := Load(p.Path)
+		templates, _, _ := Templates(s.Store, p)
 		for _, t := range templates {
 			if !s.due(p.ID, t, now) {
 				continue

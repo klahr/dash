@@ -126,7 +126,7 @@ func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun) (mo
 	if err != nil {
 		return model.ScanRun{}, err
 	}
-	t, ok := Find(p.Path, name)
+	t, ok := FindIn(r.Store, p, name)
 	if !ok {
 		return model.ScanRun{}, fmt.Errorf("%w %q in %s", ErrNoScan, name, p.Name)
 	}
@@ -515,7 +515,7 @@ func (r *Runner) PruneLogs() {
 }
 
 // Tools are the tools a scan runs with, and whether they are the ones its
-// template asks for. A built-in's are trusted. A repository template's
+// template asks for. A built-in's and a Dash scan's are trusted. A repository template's
 // tools are code anyone who can merge may change (Bash is a shell on this
 // computer), so they apply only while the user's approval covers exactly
 // that list; otherwise the scan runs with the read-only DefaultTools.
@@ -523,7 +523,7 @@ func Tools(t Template, set model.ScanSetting, hasSetting bool) (tools []string, 
 	if len(t.Tools) == 0 {
 		return DefaultTools, true
 	}
-	if t.Builtin || hasSetting && slices.Equal(set.ApprovedTools, t.Tools) {
+	if t.Trusted() || hasSetting && slices.Equal(set.ApprovedTools, t.Tools) {
 		return t.Tools, true
 	}
 	return DefaultTools, false

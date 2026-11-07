@@ -144,6 +144,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/projects/{pid}/scans", s.listScans)
 	mux.HandleFunc("POST /api/projects/{pid}/scans/{name}/run", s.runScan)
 	mux.HandleFunc("PATCH /api/projects/{pid}/scans/{name}", s.updateScan)
+	mux.HandleFunc("POST /api/projects/{pid}/scans", s.createScan)
+	mux.HandleFunc("PUT /api/projects/{pid}/scans/{name}", s.editScan)
+	mux.HandleFunc("DELETE /api/projects/{pid}/scans/{name}", s.deleteScan)
 	mux.HandleFunc("GET /api/projects/{pid}/scan-runs", s.listScanRuns)
 	mux.HandleFunc("GET /api/scan-runs/{rid}", s.getScanRun)
 	mux.HandleFunc("GET /api/scan-runs/{rid}/log", s.scanRunLog)
@@ -271,7 +274,7 @@ func writeErr(w http.ResponseWriter, err error) {
 		code = http.StatusForbidden // not 401: that would sign the browser out
 	case errors.Is(err, auth.ErrLockedOut):
 		code = http.StatusTooManyRequests
-	case errors.Is(err, queue.ErrProjectBusy), errors.Is(err, scan.ErrRunning):
+	case errors.Is(err, queue.ErrProjectBusy), errors.Is(err, scan.ErrRunning), errors.Is(err, store.ErrScanExists):
 		code = http.StatusConflict
 	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency), errors.Is(err, store.ErrBadIssue),
 		errors.Is(err, preview.ErrNoRunCommand), errors.Is(err, preview.ErrNotInReview):

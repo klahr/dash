@@ -725,6 +725,7 @@ function onEvent(ev, m = { name: "" }) {
       if (mine) onScanRun(ev);
       break;
     case "scan.settings":
+    case "scan.template":
       if (mine && scans.loaded) loadScans().catch(() => {});
       break;
     case "todo.deleted":
@@ -4739,8 +4740,9 @@ function renderScans() {
   const intro = $("#scan-intro");
   intro.hidden = !p || !scans.loaded;
   intro.replaceChildren(scans.builtin
-    ? h("span", {}, "This repository has no scan templates, so these are Dash's built-in scans. Add your own as markdown files in ", h("code", {}, `${scans.dir}/`), " to share them with your team: frontmatter for the settings, the prompt below it.")
-    : h("span", {}, "Scans from ", h("code", {}, `${scans.dir}/`), " in this repository. They read the code and add what they find to Issues; extra tools and schedules a template asks for apply once you approve them here."));
+    ? h("span", {}, "This repository has no scan templates, so Dash's built-in scans run, next to any you write here with New scan. To share scans with your team, add them as markdown files in ", h("code", {}, `${scans.dir}/`), " (Export to repo gives you the file).")
+    : h("span", {}, "Scans from ", h("code", {}, `${scans.dir}/`), " in this repository and the ones you write here. They read the code and add what they find to Issues; extra tools and schedules a repository template asks for apply once you approve them here."));
+  $("#scan-new").hidden = !p || !scans.loaded;
   const probs = $("#scan-problems");
   probs.hidden = !scans.problems.length;
   probs.replaceChildren(...scans.problems.map((x) => h("li", {}, h("code", {}, x.file), `: ${x.error}`)));
@@ -4748,7 +4750,11 @@ function renderScans() {
   $("#scan-empty").hidden = !!p;
 }
 
+// scanSource says where a scan comes from, for its card.
+const scanSource = (s) => s.source === "dash" ? "written in Dash" : s.builtin ? "built-in" : h("code", {}, s.file);
+
 function scanCard(s) {
+  if (s.shadowed_by) return shadowedScanCard(s);
   const sch = s.schedule;
   const running = s.last_run?.status === "running" && s.running ? s.last_run : null;
   const patch = (body) => api("PATCH", `/api/projects/${state.project.id}/scans/${encodeURIComponent(s.name)}`, body).then(() => loadScans());
@@ -4766,7 +4772,8 @@ function scanCard(s) {
     h("div", { class: "scan-head" },
       h("div", { class: "scan-id" },
         h("div", { class: "scan-name" }, h("strong", {}, s.title), h("span", { class: `scan-kind kind-${s.kind}` }, SCAN_KINDS[s.kind] || s.kind)),
-        h("div", { class: "scan-meta" }, meta, " · ", s.builtin ? "built-in" : h("code", {}, s.file))),
+        h("div", { class: "scan-meta" }, meta, " · ", scanSource(s)),
+        scanActions(s)),
       running
         ? ib({ type: "button", class: "btn small", onclick: attempt(() => api("POST", `/api/scan-runs/${running.id}/cancel`)) }, "stop", "Stop")
         : ib({ type: "button", class: "btn small primary", onclick: attempt(async () => {
@@ -4796,6 +4803,104 @@ function scanCard(s) {
     hist ? h("ol", { class: "scan-history" }, ...hist.filter((r) => r.id !== s.last_run?.id && r.id !== s.last_report?.id).map((r) => h("li", {}, scanReport(r, true))),
       hist.filter((r) => r.id !== s.last_run?.id && r.id !== s.last_report?.id).length ? null : h("li", { class: "scan-never" }, "No earlier runs.")) : null);
 }
+
+// shadowedScanCard is a Dash scan that doesn't run because a repository (or
+// built-in) scan has its name.
+function shadowedScanCard(s) {
+  const by = s.shadowed_by === "built-in" ? "the built-in scan" : h("code", {}, s.shadowed_by);
+  return h("li", { class: "scan-card shadowed", "data-scan": s.name },
+    h("div", { class: "scan-head" },
+      h("div", { class: "scan-id" },
+        h("div", { class: "scan-name" }, h("strong", {}, s.title), h("span", { class: `scan-kind kind-${s.kind}` }, SCAN_KINDS[s.kind] || s.kind), h("span", { class: "scan-shadow-tag" }, "Shadowed")),
+        h("div", { class: "scan-meta" }, "written in Dash"),
+        scanActions(s))),
+    h("p", { class: "scan-note" }, "Not used: ", by, ` is also called “${s.name}” and runs instead. Duplicate this scan under another name, or delete it.`));
+}
+
+// scanActions edit, duplicate, export or delete a scan. Only scans written
+// in Dash can be edited or deleted; any can be duplicated into one.
+function scanActions(s) {
+  const dash = s.source === "dash";
+  const url = `/api/projects/${state.project.id}/scans/${encodeURIComponent(s.name)}`;
+  const del = attempt(async () => {
+    if (!await ask({
+      title: `Delete ${s.title}?`, danger: true, ok: "Delete scan",
+      body: `The scan is removed from Dash. Its earlier runs and the issues it found (source scan:${s.name}) stay.`,
+    })) return;
+    await api("DELETE", url);
+    scans.history.delete(s.name);
+    await loadScans();
+    toast(`Deleted ${s.title}`);
+  });
+  const exp = attempt(async () => {
+    const file = `${scans.dir}/${s.name}.md`;
+    const v = await ask({
+      title: "Export to repo", input: true, value: s.markdown, ok: "Copy",
+      body: `Save this as ${file} and commit it to share the scan with your team. Once it's merged, the repository's file is used and this one is shadowed; delete it here then.`,
+    });
+    if (v !== null) await copy(s.markdown, `Copied ${file}`);
+  });
+  return h("div", { class: "scan-actions" },
+    dash ? h("button", { type: "button", class: "link", onclick: () => openScanEditor(s, true) }, "Edit") : null,
+    h("button", { type: "button", class: "link", onclick: () => openScanEditor(s, false) }, "Duplicate"),
+    dash && s.markdown ? h("button", { type: "button", class: "link", onclick: exp }, "Export to repo") : null,
+    dash ? h("button", { type: "button", class: "link danger", onclick: del }, "Delete") : null);
+}
+
+// scanEditing is the scan the editor changes; null: it makes a new one.
+let scanEditing = null;
+
+// openScanEditor opens the scan editor: empty for a new scan, on a Dash
+// scan to edit it (edit=true), or on any scan to start a copy of it.
+function openScanEditor(s = null, edit = false) {
+  const f = $("#scan-form");
+  f.reset();
+  scanEditing = edit ? s : null;
+  const taken = new Set(scans.list.map((x) => x.name));
+  let name = "";
+  if (s && !edit) {
+    for (let i = 1; !name || taken.has(name); i++) name = `${s.name}-${i === 1 ? "copy" : `copy${i}`}`;
+  }
+  const sch = s?.schedule;
+  f.name.value = edit ? s.name : name;
+  f.name.readOnly = edit;
+  f.title.value = s ? (edit ? s.title : `${s.title} (copy)`) : "";
+  f.kind.value = s?.kind || "custom";
+  f.scope.value = s?.scope || "repo";
+  f.path.value = s?.path || "";
+  f.model.value = s?.model || "";
+  f.effort.value = s?.effort || "";
+  // Editing: the schedule that runs now (a change in the list included);
+  // a copy starts from the template's.
+  f.schedule.value = (edit ? sch?.cron : sch?.default) || "";
+  f.tools.value = (s?.tools || []).join("\n");
+  f.prompt.value = s?.prompt || "";
+  $("#scan-sheet-title").textContent = edit ? `Edit ${s.title}` : s ? `Duplicate ${s.title}` : "New scan";
+  const from = $("#scan-form-from");
+  from.hidden = !(s && !edit);
+  if (s && !edit) from.textContent = `A new scan, kept in Dash, starting from ${s.source === "dash" ? "the Dash scan" : s.builtin ? "the built-in scan" : s.file} “${s.name}”.`;
+  $("#scan-sheet").showModal();
+  (edit ? f.prompt : f.name).focus();
+}
+
+$("#scan-new").addEventListener("click", () => openScanEditor());
+$("#scan-form").addEventListener("submit", attempt(async (e) => {
+  if (e.submitter?.value !== "save") return;
+  e.preventDefault(); // stays open if saving fails
+  const f = e.target;
+  const body = {
+    name: f.name.value.trim(), title: f.title.value.trim(), kind: f.kind.value, scope: f.scope.value,
+    path: f.path.value.trim(), model: f.model.value.trim(), effort: f.effort.value, schedule: f.schedule.value.trim(),
+    tools: f.tools.value.split("\n").map((x) => x.trim()).filter(Boolean), prompt: f.prompt.value,
+  };
+  const pid = state.project.id;
+  if (scanEditing) await api("PUT", `/api/projects/${pid}/scans/${encodeURIComponent(scanEditing.name)}`, body);
+  else await api("POST", `/api/projects/${pid}/scans`, body);
+  const what = scanEditing ? "Saved" : "Created";
+  $("#scan-sheet").close();
+  await loadScans();
+  toast(`${what} ${body.title || body.name}`, { tone: "ok" });
+}));
 
 // scanApprovals shows what a repository template asks for that the user
 // hasn't approved: tools beyond read-only (it runs read-only until then) and

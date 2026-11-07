@@ -222,7 +222,10 @@
       <!-- Scans: preconfigured read-only reviews that feed the Issues list -->
       <section class="view" id="view-scans" aria-label="Scans">
         <div class="scans">
-          <p class="scan-intro" id="scan-intro" hidden></p>
+          <div class="scan-bar">
+            <p class="scan-intro" id="scan-intro" hidden></p>
+            <button class="btn small" type="button" id="scan-new" data-icon="plus" hidden>New scan</button>
+          </div>
           <ul class="scan-problems" id="scan-problems" hidden></ul>
           <ul class="scan-list" id="scan-list"></ul>
           <div class="empty" id="scan-empty"><p class="empty-title">No project</p><p>Select a project to see its scans.</p></div>
@@ -465,6 +468,37 @@
       <label class="field"><span>Test command</span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>
       <label class="field"><span>Deploy command</span><input name="deploy_command" placeholder="./deploy.sh" spellcheck="false"></label>
       <button class="btn primary" data-icon="plus">Create project</button>
+    </form>
+  </dialog>
+
+  <!-- Scan editor: a custom scan kept in Dash -->
+  <dialog class="sheet" id="scan-sheet" aria-labelledby="scan-sheet-title">
+    <form method="dialog" id="scan-form">
+      <header class="sheet-head"><h2 id="scan-sheet-title">New scan</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <p class="hint" id="scan-form-from" hidden></p>
+      <div class="scan-form-grid">
+        <label class="field"><span>Name <em>its issues get source scan:&lt;name&gt;</em></span><input name="name" required pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="api-review"></label>
+        <label class="field"><span>Title <em>optional</em></span><input name="title" autocomplete="off" placeholder="API review"></label>
+        <label class="field"><span>Kind <em>the default issue type</em></span><select name="kind">
+          <option value="custom">Custom</option><option value="security">Security</option><option value="code_review">Code review</option><option value="dependencies">Dependencies</option>
+        </select></label>
+        <label class="field"><span>Scope</span><select name="scope">
+          <option value="repo">Whole repository</option><option value="since_last_scan">Changes since the last scan</option><option value="since_main">Branch vs. main</option><option value="path">One path</option>
+        </select></label>
+        <label class="field"><span>Path <em>optional; needed for "One path"</em></span><input name="path" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="internal/api"></label>
+        <label class="field"><span>Schedule <em>cron, optional</em></span><input name="schedule" autocomplete="off" spellcheck="false" placeholder="0 6 * * *"></label>
+        <label class="field"><span>Model <em>optional</em></span><input name="model" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="opus"></label>
+        <label class="field"><span>Effort <em>optional</em></span><select name="effort">
+          <option value="">Default</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option><option value="max">Max</option>
+        </select></label>
+      </div>
+      <label class="field"><span>Tools <em>one per line; empty: read-only tools and Dash's git tools</em></span><textarea name="tools" rows="2" spellcheck="false" placeholder="Bash(npm audit:*)"></textarea></label>
+      <label class="field"><span>Prompt</span><textarea name="prompt" rows="12" required spellcheck="false" class="scan-prompt"></textarea></label>
+      <p class="hint"><code>{{path}}</code> becomes the path scanned (<code>.</code> for the whole repository) and <code>{{since}}</code> the commit an incremental scope compares with. Dash adds how to report findings, so the prompt only says what to look for. A schedule runs once saved; you can turn it off in the list.</p>
+      <footer class="sheet-actions">
+        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
+        <button class="btn primary" value="save" data-icon="check" id="scan-save">Save scan</button>
+      </footer>
     </form>
   </dialog>
 

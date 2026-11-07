@@ -30,6 +30,7 @@ import (
 	"strings"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/store"
 )
 
 // Dir is where a repository keeps its scan templates.
@@ -61,7 +62,26 @@ type Template struct {
 	// File is the template's path in the repository; "" for a built-in.
 	File    string `json:"file,omitempty"`
 	Builtin bool   `json:"builtin,omitempty"`
+	// Origin is where the template comes from: SourceBuiltin, SourceRepo
+	// or SourceDash. "" (a template parsed on its own) counts as a
+	// repository one.
+	Origin string `json:"source,omitempty"`
+	// ShadowedBy, on a Dash template, is the template of the same name
+	// that is used instead (a repository file, or "built-in").
+	ShadowedBy string `json:"shadowed_by,omitempty"`
 }
+
+// Where a template comes from.
+const (
+	SourceBuiltin = "builtin" // shipped with Dash
+	SourceRepo    = "repo"    // .dash/scans/<name>.md in the repository
+	SourceDash    = "dash"    // written in Dash (model.ScanTemplate)
+)
+
+// Trusted says the template's tools and schedule apply without approval: a
+// built-in, or one a user wrote in Dash. A repository template is code
+// anyone who can merge may change, so it needs approval.
+func (t Template) Trusted() bool { return t.Builtin || t.Origin == SourceDash }
 
 // DefaultTools only read: files, and git's view of what changed through the
 // scan's git tools (see GitTools). Not Bash git rules: "Bash(git log:*)"
@@ -243,7 +263,7 @@ func Builtins() []Template {
 		if err != nil {
 			panic(fmt.Sprintf("built-in scan %s: %v", e.Name(), err))
 		}
-		t.Builtin = true
+		t.Builtin, t.Origin = true, SourceBuiltin
 		out = append(out, t)
 	}
 	return out
@@ -289,7 +309,7 @@ func Load(repo string) ([]Template, []Problem) {
 			continue
 		}
 		seen[t.Name] = rel
-		t.File = rel
+		t.File, t.Origin = rel, SourceRepo
 		out = append(out, t)
 	}
 	if len(out) == 0 && len(problems) == 0 {
@@ -302,12 +322,110 @@ func Load(repo string) ([]Template, []Problem) {
 // Find is the template called name in repo.
 func Find(repo, name string) (Template, bool) {
 	ts, _ := Load(repo)
+	return Pick(ts, name)
+}
+
+// Pick is the template called name in ts.
+func Pick(ts []Template, name string) (Template, bool) {
 	for _, t := range ts {
 		if t.Name == name {
 			return t, true
 		}
 	}
 	return Template{}, false
+}
+
+// Custom checks a Dash scan with the rules of a template file and fills in
+// its defaults; the result is its template.
+func Custom(m model.ScanTemplate) (Template, error) {
+	t := Template{
+		Name: m.Name, Title: strings.TrimSpace(m.Title), Kind: strings.ToLower(strings.TrimSpace(m.Kind)),
+		Scope: strings.ToLower(strings.TrimSpace(m.Scope)), Path: strings.TrimSpace(m.Path),
+		Model: strings.TrimSpace(m.Model), Effort: strings.ToLower(strings.TrimSpace(m.Effort)),
+		Schedule: strings.TrimSpace(m.Schedule), Prompt: strings.TrimSpace(m.Prompt),
+		Origin: SourceDash,
+	}
+	for _, tool := range m.Tools {
+		if tool = strings.TrimSpace(tool); tool != "" {
+			t.Tools = append(t.Tools, tool)
+		}
+	}
+	if len(t.Prompt) > 256<<10 {
+		return t, fmt.Errorf("the prompt is larger than 256 KB")
+	}
+	if strings.ContainsAny(t.Model+t.Title, "\n\r") {
+		return t, fmt.Errorf("title and model must be one line")
+	}
+	return t, t.normalize()
+}
+
+// Record is a Dash scan's stored record.
+func (t Template) Record(projectID string) model.ScanTemplate {
+	return model.ScanTemplate{
+		ProjectID: projectID, Name: t.Name, Title: t.Title, Kind: t.Kind, Scope: t.Scope,
+		Path: t.Path, Model: t.Model, Effort: t.Effort, Schedule: t.Schedule,
+		Tools: append([]string(nil), t.Tools...), Prompt: t.Prompt,
+	}
+}
+
+// Markdown is the template as a repository file, .dash/scans/<name>.md.
+func (t Template) Markdown() string {
+	var b strings.Builder
+	b.WriteString("---\n")
+	line := func(k, v string) {
+		if v != "" {
+			fmt.Fprintf(&b, "%s: %s\n", k, v)
+		}
+	}
+	line("name", t.Name)
+	if t.Title != t.Name {
+		line("title", t.Title)
+	}
+	line("kind", t.Kind)
+	line("scope", t.Scope)
+	line("path", t.Path)
+	line("model", t.Model)
+	line("effort", t.Effort)
+	line("schedule", t.Schedule)
+	line("tools", strings.Join(t.Tools, ", "))
+	b.WriteString("---\n")
+	b.WriteString(t.Prompt)
+	b.WriteString("\n")
+	return b.String()
+}
+
+// Templates are a project's scans: the repository's templates (or the
+// built-ins, when it has none) and the ones written in Dash. A Dash
+// template whose name another one uses is shadowed: it is returned in
+// shadowed, with ShadowedBy set, and does not run.
+func Templates(st *store.Store, p model.Project) (active, shadowed []Template, problems []Problem) {
+	active, problems = Load(p.Path)
+	n := len(active)
+	for _, m := range st.ScanTemplates(p.ID) {
+		t, err := Custom(m)
+		if err != nil {
+			// Saved before a rule changed: show it, so it can be fixed.
+			problems = append(problems, Problem{File: "Dash scan " + m.Name, Error: err.Error()})
+			continue
+		}
+		if other, clash := Pick(active[:n], t.Name); clash {
+			t.ShadowedBy = other.File
+			if other.Builtin {
+				t.ShadowedBy = "built-in"
+			}
+			shadowed = append(shadowed, t)
+			continue
+		}
+		active = append(active, t)
+	}
+	sort.SliceStable(active, func(i, j int) bool { return active[i].Name < active[j].Name })
+	return active, shadowed, problems
+}
+
+// FindIn is the project's scan called name (not a shadowed one).
+func FindIn(st *store.Store, p model.Project, name string) (Template, bool) {
+	ts, _, _ := Templates(st, p)
+	return Pick(ts, name)
 }
 
 func unquote(s string) string {
