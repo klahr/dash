@@ -865,6 +865,14 @@ async function loadPerms() {
   renderPerms();
 }
 
+// The branch only fits the header on wide screens; on phones it would crowd the project name.
+// With several computers the header names the computer too.
+function renderProjectBranch() {
+  const p = state.project, el = $("#project-branch");
+  el.textContent = !p ? "" : desktop.matches ? (multi() ? `${p.default_branch} · ${p.machine}` : p.default_branch) : multi() ? p.machine : "";
+  el.hidden = !el.textContent;
+}
+
 function renderProjectHeader() {
   const p = state.project;
   $("#project-name").replaceChildren(...(p ? [projectDot(p), p.name].filter(Boolean) : ["No project"]));
@@ -875,8 +883,7 @@ function renderProjectHeader() {
   else app.style.removeProperty("--project");
   app.classList.toggle("has-project-color", !!p?.color);
   $('meta[name="theme-color"]').content = p?.color || "#101722";
-  // With several computers the header names the computer (the branch fits on wide screens too).
-  $("#project-branch").textContent = !p ? "" : !multi() ? p.default_branch : desktop.matches ? `${p.default_branch} · ${p.machine}` : p.machine;
+  renderProjectBranch();
   $("#project-menu").hidden = !p;
   $("#pm-github").hidden = !p || !!p.remote_url;
   renderPushMain();
@@ -1076,7 +1083,7 @@ $("#project-picker").addEventListener("keydown", (e) => {
 $("#menu-open").addEventListener("click", () => desktop.matches ? setSideCollapsed(!sideCollapsed()) : openProjects());
 $("#menu-close").addEventListener("click", () => { setMenu(false); $("#menu-open").focus(); });
 $("#menu-scrim").addEventListener("click", () => setMenu(false));
-desktop.addEventListener("change", () => { setMenu(false); $("#project-picker").hidden = true; });
+desktop.addEventListener("change", () => { setMenu(false); $("#project-picker").hidden = true; renderProjectBranch(); });
 $("#side-new-project").addEventListener("click", openNewProject);
 $("#prefs-open").addEventListener("click", openPrefs);
 $("#connector-open").addEventListener("click", attempt(openConnector));
