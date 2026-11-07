@@ -11,6 +11,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"path"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -86,7 +88,7 @@ func (s *Server) Routes() http.Handler {
 		writeJSON(w, http.StatusOK, s.Peers.Machines(r.Context()))
 	})
 	for _, m := range []string{"GET", "POST", "PATCH", "PUT", "DELETE"} {
-		mux.Handle(m+" /peer/{name}/", s.Peers)
+		mux.HandleFunc(m+" /peer/{name}/", s.forwardToPeer)
 	}
 
 	// Projects & git
@@ -95,8 +97,6 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/projects/{pid}", s.getProject)
 	mux.HandleFunc("PATCH /api/projects/{pid}", s.updateProject)
 	mux.HandleFunc("DELETE /api/projects/{pid}", s.deleteProject)
-	// A peer can't check this dashboard's password, so the hub does it first.
-	mux.HandleFunc("DELETE /peer/{name}/api/projects/{pid}", s.confirmThenForward)
 	mux.HandleFunc("POST /api/projects/{pid}/github", s.createGitHubRepo)
 	mux.HandleFunc("GET /api/github/repo", s.lookupGitHubRepo)
 	mux.HandleFunc("POST /api/projects/{pid}/push", s.pushProject)
@@ -281,6 +281,26 @@ func writeErr(w http.ResponseWriter, err error) {
 }
 
 var errBadRequest = errors.New("bad request")
+
+// forwardToPeer handles /peer/{name}/…. A peer can't check this dashboard's
+// password and skips its own check for the hub's token, so a project delete
+// is confirmed here first. The decision uses the path as the peer will see
+// it: a route pattern like "DELETE /peer/{name}/api/projects/{pid}" matches
+// escaped segments and would miss "/api/projects%2F<pid>", which the proxy
+// forwards decoded as "/api/projects/<pid>".
+func (s *Server) forwardToPeer(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodDelete && isProjectPath(peer.ForwardedPath(r)) {
+		s.confirmThenForward(w, r)
+		return
+	}
+	s.Peers.ServeHTTP(w, r)
+}
+
+// isProjectPath reports whether p, once cleaned, is /api/projects/{pid}.
+func isProjectPath(p string) bool {
+	rest, ok := strings.CutPrefix(path.Clean("/"+p), "/api/projects/")
+	return ok && rest != "" && !strings.Contains(rest, "/")
+}
 
 // confirmThenForward checks the password in a delete-project request for a
 // peer here, then passes it on unchanged (the peer trusts the hub's token).

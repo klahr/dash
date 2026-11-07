@@ -31,3 +31,28 @@ func TestDeleteProjectNeedsPassword(t *testing.T) {
 		t.Fatalf("hub: want 403, got %d %s", w.Code, w.Body)
 	}
 }
+
+// The hub's password check must not depend on how the path is spelled: the
+// proxy forwards the decoded path, so "projects%2F<pid>" still deletes.
+func TestPeerDeleteProjectNeedsPasswordHowEverSpelled(t *testing.T) {
+	h, _, _, work := remoteServer(t)
+	h = loggedIn(t, h)
+	for _, p := range []string{
+		"/peer/work/api/projects/" + work.ID,
+		"/peer/work/api/projects%2F" + work.ID,
+		"/peer/work/api%2Fprojects%2F" + work.ID,
+		"/peer/work/api/projects/" + work.ID + "/",
+	} {
+		w := do(t, h, "DELETE", p, `{"password":"wrong","delete_files":true}`)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("%s: want 403, got %d %s", p, w.Code, w.Body)
+		}
+		if w := do(t, h, "GET", "/peer/work/api/projects/"+work.ID, ""); w.Code != http.StatusOK {
+			t.Fatalf("%s: project gone after a wrong password: %d %s", p, w.Code, w.Body)
+		}
+	}
+	// Other deletes on a peer don't ask for the password.
+	if w := do(t, h, "DELETE", "/peer/work/api/projects/"+work.ID+"/chat", ""); w.Code == http.StatusForbidden {
+		t.Errorf("chat clear asked for a password: %d %s", w.Code, w.Body)
+	}
+}

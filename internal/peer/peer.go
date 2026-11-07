@@ -75,11 +75,20 @@ func (h *Hub) init() {
 	})
 }
 
+// ForwardedPath is the path a /peer/{name}/… request reaches on the peer,
+// decoded as it is sent (so "projects%2Fx" becomes "projects/x"). Decide
+// what a forwarded request does from this, not from the hub's route pattern,
+// which matches on escaped segments.
+func ForwardedPath(r *http.Request) string {
+	return strings.TrimPrefix(r.URL.Path, "/peer/"+r.PathValue("name"))
+}
+
 func (h *Hub) proxy(p Peer) *httputil.ReverseProxy {
 	prefix := "/peer/" + p.Name
 	return &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(p.URL)
+			// Same as ForwardedPath(r.In), which the hub's checks look at.
 			r.Out.URL.Path = strings.TrimRight(p.URL.Path, "/") + strings.TrimPrefix(r.In.URL.Path, prefix)
 			r.Out.URL.RawPath = ""
 			// The browser's session belongs to the hub; the peer gets the shared token.
