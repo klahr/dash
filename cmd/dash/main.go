@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -32,6 +33,7 @@ import (
 	"github.com/klahr/dash/internal/preview"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/runner"
+	"github.com/klahr/dash/internal/runnerctl"
 	"github.com/klahr/dash/internal/scan"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
@@ -53,6 +55,13 @@ func main() {
 	runnerMode := len(args) > 0 && args[0] == "runner"
 	if runnerMode {
 		args = args[1:]
+		// dash runner setup|install|uninstall|status
+		if len(args) > 0 && slices.Contains(runnerctl.Commands, args[0]) {
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			code := (&runnerctl.CLI{Version: buildinfo.Version}).Main(ctx, args[0], args[1:])
+			stop()
+			os.Exit(code)
+		}
 	}
 	home, _ := os.UserHomeDir()
 	showVersion := flag.Bool("version", false, "print the version and exit (also: dash version)")
@@ -101,6 +110,11 @@ func main() {
 	var hubCommands *bool
 	if runnerMode {
 		flag.CommandLine.Init("dash runner", flag.ExitOnError)
+		flag.CommandLine.Usage = func() {
+			fmt.Fprintf(flag.CommandLine.Output(), "usage: dash runner [flags]          run this computer as a runner of a hub\n"+
+				"       dash runner %s [-h]\n\nflags:\n", strings.Join(runnerctl.Commands, "|"))
+			flag.PrintDefaults()
+		}
 		hubServer = flag.String("server", "", "the hub's URL, e.g. https://dash.example.com (saved after registering)")
 		regCode = flag.String("code", "", "registration code from the hub's Runners page (only the first time, or to register again)")
 		offlineGrace = flag.Duration("offline-grace", 10*time.Minute, "when the hub has been unreachable this long, stop running tasks and mark them interrupted (0 = never)")
@@ -176,6 +190,8 @@ func main() {
 		*projectRoot = filepath.Join(home, "dash-projects")
 		if v := os.Getenv("DASH_PROJECTS"); v != "" {
 			*projectRoot = store.CleanPath(v)
+		} else if c, err := tunnel.LoadCredentials(filepath.Join(*dataDir, "runner.json")); runnerMode && err == nil && c.Projects != "" {
+			*projectRoot = c.Projects // from `dash runner setup --projects`
 		}
 	}
 	var oauth *auth.OAuth
@@ -278,6 +294,7 @@ func main() {
 		ProjectRoot: *projectRoot,
 		Static:      web.Static,
 		Addr:        *addr,
+		PublicURL:   strings.TrimRight(*publicURL, "/"),
 	}
 	var runnerCreds tunnel.Credentials
 	if runnerMode {
@@ -378,13 +395,27 @@ func main() {
 	}
 
 	if runnerMode {
-		watch := offlineWatch(*offlineGrace, todos)
+		offline := offlineWatch(*offlineGrace, todos)
+		statePath := runnerctl.StatePath(*dataDir)
+		watch := func(connected bool) {
+			offline(connected)
+			// For `dash runner status`.
+			st := runnerctl.State{PID: os.Getpid(), Version: buildinfo.Version, Connected: connected, Since: time.Now()}
+			if err := runnerctl.WriteState(statePath, st); err != nil {
+				slog.Warn("write runner state", "err", err)
+			}
+		}
 		watch(false) // tasks resumed at startup count as offline until the hub answers
-		client := &tunnel.Client{Creds: runnerCreds, Handler: apiSrv.RunnerRoutes(), OnState: watch,
+		defer os.Remove(statePath)
+		client := &tunnel.Client{Creds: runnerCreds, Handler: apiSrv.RunnerRoutes(), OnState: watch, Version: buildinfo.Version,
 			Previews: previews, OnPreviewURL: func(t string) { previews.SetHub(t, runnerCreds.Name) }}
 		if !addrSet {
 			if err := client.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("runner", "err", err)
+				os.Remove(statePath)
+				if errors.Is(err, tunnel.ErrRevoked) {
+					os.Exit(runnerctl.ExitRevoked) // the service doesn't restart it
+				}
 				os.Exit(1)
 			}
 			return
@@ -437,6 +468,9 @@ func runnerCredentials(ctx context.Context, path, server, code, name string) (tu
 		if err != nil {
 			return c, err
 		}
+		if old, err := tunnel.LoadCredentials(path); err == nil {
+			c.Projects = old.Projects
+		}
 		if err := tunnel.SaveCredentials(path, c); err != nil {
 			return c, err
 		}
@@ -445,7 +479,7 @@ func runnerCredentials(ctx context.Context, path, server, code, name string) (tu
 	}
 	c, err := tunnel.LoadCredentials(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return c, errors.New("not registered yet: get a code from the hub's Runners page and run dash runner --server <hub URL> --code <code>")
+		return c, errors.New("not registered yet: on the hub's Runners page, choose Add a runner and run the command it shows (or dash runner --server <hub URL> --code <code>)")
 	}
 	if err != nil {
 		return c, err

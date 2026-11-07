@@ -30,6 +30,7 @@ import (
 	"github.com/klahr/dash/internal/preview"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/runner"
+	"github.com/klahr/dash/internal/runnerctl"
 	"github.com/klahr/dash/internal/scan"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/usage"
@@ -71,6 +72,7 @@ type Server struct {
 	HubCommands bool
 	Static      fs.FS  // frontend assets
 	Addr        string // the listen address (-addr), for the connector setup guide
+	PublicURL   string // -public-url: the hub's address runners are told (optional; else the request's)
 
 	reviewMu  sync.Mutex
 	reviewGen uint64
@@ -130,7 +132,9 @@ func (s *Server) buildMux() *http.ServeMux {
 			if !s.adminOnly(w, r) {
 				return
 			}
-			writeJSON(w, http.StatusOK, rh.List())
+			// hub and version: for the command that updates an outdated runner.
+			hubURL, _ := runnerctl.HubURL(r, s.PublicURL, s.Auth.Secure(r), s.Auth.TrustProxy)
+			writeJSON(w, http.StatusOK, map[string]any{"runners": rh.List(), "hub": hubURL, "version": buildinfo.Version})
 		})
 		// A runner is a credential of the whole Dash: only a platform admin, in a
 		// signed-in browser, makes or revokes one.
@@ -144,7 +148,8 @@ func (s *Server) buildMux() *http.ServeMux {
 				writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"code": code, "expires": expires})
+			hubURL, _ := runnerctl.HubURL(r, s.PublicURL, s.Auth.Secure(r), s.Auth.TrustProxy)
+			writeJSON(w, http.StatusOK, map[string]any{"code": code, "expires": expires, "hub": hubURL})
 		})))
 		mux.Handle("DELETE /api/runners/{id}", auth.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !s.adminOnly(w, r) {
@@ -158,6 +163,12 @@ func (s *Server) buildMux() *http.ServeMux {
 		})))
 		mux.HandleFunc("POST /runner/register", rh.ServeRegister)
 		mux.HandleFunc("GET /runner/connect", rh.ServeConnect)
+		// The one-line installer, and the version it installs (no sign-in:
+		// neither holds a secret).
+		mux.HandleFunc("GET /runner/install.sh", runnerctl.ScriptHandler(s.PublicURL, buildinfo.Version, s.Auth.Secure, s.Auth.TrustProxy))
+		mux.HandleFunc("GET /runner/version", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]string{"version": buildinfo.Version})
+		})
 	}
 
 	// Projects & git

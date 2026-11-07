@@ -520,6 +520,9 @@ var public = map[string]bool{
 	// Runners: a registration code, or the runner's own token.
 	"/runner/register": true,
 	"/runner/connect":  true,
+	// The runner installer and the hub's version: nothing secret.
+	"/runner/install.sh": true,
+	"/runner/version":    true,
 }
 
 // orgFree are the API paths a signed-in user with no org may use: who am I,

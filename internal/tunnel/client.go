@@ -24,6 +24,9 @@ type Credentials struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Token  string `json:"token"`
+	// Projects is the runner's -projects directory, as set up by
+	// `dash runner setup --projects` ("" = the default).
+	Projects string `json:"projects,omitempty"`
 }
 
 // ErrRevoked means the hub no longer knows the runner's token.
@@ -115,6 +118,8 @@ type Client struct {
 	// Previews are the previews this runner started; the hub reaches them
 	// over a second connection (preview.go). Nil: no preview connection.
 	Previews PreviewDialer
+	// Version is this runner's Dash version, told to the hub on connect.
+	Version string
 	// OnPreviewURL is told, on every connect, where the hub serves this
 	// runner's previews (see PreviewHeader; "" if it doesn't). Optional.
 	OnPreviewURL func(template string)
@@ -174,7 +179,11 @@ func (c *Client) serveOnce(ctx context.Context) error {
 		u.Scheme = "ws"
 	}
 	u.Path += "/runner/connect"
-	ws, res, err := c.dialer().DialContext(ctx, u.String(), http.Header{"Authorization": {"Bearer " + c.Creds.Token}})
+	hdr := http.Header{"Authorization": {"Bearer " + c.Creds.Token}}
+	if c.Version != "" {
+		hdr.Set(VersionHeader, c.Version)
+	}
+	ws, res, err := c.dialer().DialContext(ctx, u.String(), hdr)
 	if err != nil {
 		if res != nil && res.StatusCode == http.StatusUnauthorized {
 			return ErrRevoked

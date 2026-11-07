@@ -1,0 +1,172 @@
+#!/bin/sh
+# Installs a Dash runner for the hub at {{.Hub}}, from its GitHub release.
+#
+#   curl -fsSL {{.Hub}}/runner/install.sh | sh -s -- --code ABCD-EFGH
+#
+# Options:
+#   --code CODE      registration code from the hub's Runners page (not needed
+#                    to update a computer that is registered already)
+#   --name NAME      this computer's name in the dashboard (default: its host name)
+#   --projects DIR   where the runner's projects live (default: ~/dash-projects)
+#   --prefix DIR     where dash is installed (default: ~/.local/bin)
+#   --no-service     don't install a background service; run the runner in
+#                    this terminal instead
+#   --skip-checks    register even if git, claude or the hub look wrong
+#
+# Run it again without --code to update Dash to the hub's version; the
+# registration is kept. It never uses sudo.
+#
+# Everything is in main, called on the last line, so a cut-off download runs
+# nothing.
+
+set -eu
+
+HUB={{sq .Hub}}
+VERSION={{sq .Version}}
+RELEASES={{sq .Releases}}
+LATEST_API={{sq .LatestAPI}}
+
+say() { printf '%s\n' "$*"; }
+die() { printf 'dash install: %s\n' "$*" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+usage() {
+	cat <<'USAGE'
+Installs a Dash runner: curl -fsSL <hub>/runner/install.sh | sh -s -- [options]
+  --code CODE      registration code from the hub's Runners page (not needed to update)
+  --name NAME      this computer's name in the dashboard (default: its host name)
+  --projects DIR   where the runner's projects live (default: ~/dash-projects)
+  --prefix DIR     where dash is installed (default: ~/.local/bin)
+  --no-service     run the runner in this terminal instead of as a background service
+  --skip-checks    register even if git, claude or the hub look wrong
+USAGE
+}
+
+# fetch URL FILE downloads URL to FILE ("-" = stdout).
+fetch() {
+	if have curl; then
+		curl -fsSL --retry 2 -o "$2" "$1"
+	elif have wget; then
+		wget -q -O "$2" "$1"
+	else
+		die "need curl or wget to download Dash"
+	fi
+}
+
+sha256() {
+	if have sha256sum; then
+		sha256sum "$1" | awk '{print $1}'
+	elif have shasum; then
+		shasum -a 256 "$1" | awk '{print $1}'
+	elif have openssl; then
+		openssl dgst -sha256 -r "$1" | awk '{print $1}'
+	else
+		die "need sha256sum, shasum or openssl to verify the download"
+	fi
+}
+
+detect_platform() {
+	case "$(uname -s)" in
+	Linux) os=linux ;;
+	Darwin) os=darwin ;;
+	*) die "unsupported system $(uname -s): Dash runners run on Linux and macOS" ;;
+	esac
+	case "$(uname -m)" in
+	x86_64 | amd64) arch=amd64 ;;
+	aarch64 | arm64) arch=arm64 ;;
+	*) die "unsupported processor $(uname -m): Dash is built for amd64 and arm64" ;;
+	esac
+	# A shell under Rosetta reports x86_64 on an Apple Silicon Mac.
+	if [ "$os" = darwin ] && [ "$arch" = amd64 ] && [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = 1 ]; then
+		arch=arm64
+	fi
+}
+
+main() {
+	code="" name="" projects="" prefix="" service=1 checks=1
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--code | --name | --projects | --prefix)
+			[ $# -ge 2 ] || die "$1 needs a value"
+			case "$1" in
+			--code) code=$2 ;;
+			--name) name=$2 ;;
+			--projects) projects=$2 ;;
+			--prefix) prefix=$2 ;;
+			esac
+			shift 2
+			;;
+		--code=*) code=${1#*=}; shift ;;
+		--name=*) name=${1#*=}; shift ;;
+		--projects=*) projects=${1#*=}; shift ;;
+		--prefix=*) prefix=${1#*=}; shift ;;
+		--no-service) service=0; shift ;;
+		--skip-checks) checks=0; shift ;;
+		-h | --help) usage; exit 0 ;;
+		*) die "unknown option $1 (see --help)" ;;
+		esac
+	done
+	[ -n "${HOME:-}" ] || die "HOME is not set"
+	[ -n "$prefix" ] || prefix="$HOME/.local/bin"
+	if [ "$(id -u)" = 0 ]; then
+		say "warning: installing as root. Run this as the user whose git and claude logins the runner should use."
+	fi
+
+	detect_platform
+	have tar || die "need tar to unpack Dash"
+
+	tag=$VERSION
+	if [ -z "$tag" ]; then
+		tag=$(fetch "$LATEST_API" - | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+		[ -n "$tag" ] || die "couldn't find the latest Dash release at $LATEST_API"
+	fi
+	case "$tag" in
+	*[!A-Za-z0-9._+-]*) die "odd release name $tag" ;;
+	esac
+
+	bin="$prefix/dash"
+	if [ -x "$bin" ] && [ "$("$bin" version 2>/dev/null || true)" = "dash $tag" ]; then
+		say "Dash $tag is already installed in $bin."
+	else
+		asset="dash_${tag#v}_${os}_${arch}.tar.gz"
+		tmp=$(mktemp -d 2>/dev/null || mktemp -d -t dash)
+		trap 'rm -rf "$tmp"' EXIT
+		say "Downloading Dash $tag for $os/$arch..."
+		fetch "$RELEASES/download/$tag/$asset" "$tmp/$asset" ||
+			die "couldn't download $RELEASES/download/$tag/$asset (is there a $tag release for $os/$arch?)"
+		fetch "$RELEASES/download/$tag/checksums.txt" "$tmp/checksums.txt" ||
+			die "couldn't download the checksums of Dash $tag"
+		want=$(awk -v f="$asset" '$2 == f || $2 == "*" f {print $1}' "$tmp/checksums.txt")
+		[ -n "$want" ] || die "checksums.txt of Dash $tag lists no $asset"
+		got=$(sha256 "$tmp/$asset")
+		[ "$got" = "$want" ] || die "checksum mismatch for $asset (got $got, want $want): not installing it"
+		mkdir -p "$tmp/x"
+		tar -xzf "$tmp/$asset" -C "$tmp/x" || die "couldn't unpack $asset"
+		[ -f "$tmp/x/dash" ] || die "$asset holds no dash binary"
+		mkdir -p "$prefix" || die "can't create $prefix (pick another place with --prefix)"
+		# Copy next to the target and rename, so a running dash is replaced whole.
+		cp "$tmp/x/dash" "$prefix/.dash.new" && chmod 755 "$prefix/.dash.new" && mv -f "$prefix/.dash.new" "$bin" ||
+			die "can't write $bin (pick another place with --prefix)"
+		rm -rf "$tmp"
+		trap - EXIT
+		say "Installed Dash $tag in $bin."
+	fi
+	case ":${PATH:-}:" in
+	*":$prefix:"*) ;;
+	*) say "note: $prefix is not on your PATH; add it to run dash by name (e.g. export PATH=\"$prefix:\$PATH\" in your shell profile)." ;;
+	esac
+
+	set -- runner setup --server "$HUB"
+	[ -z "$code" ] || set -- "$@" --code "$code"
+	[ -z "$name" ] || set -- "$@" --name "$name"
+	[ -z "$projects" ] || set -- "$@" --projects "$projects"
+	[ "$checks" = 1 ] || set -- "$@" --skip-checks
+	[ "$service" = 1 ] || set -- "$@" --service=false
+	"$bin" "$@" || exit $?
+	if [ "$service" = 0 ]; then
+		say "Starting the runner in this terminal (Ctrl-C stops it; start it again with: $bin runner)."
+		exec "$bin" runner
+	fi
+}
+
+main "$@"

@@ -2725,36 +2725,105 @@ function connectorSteps(c) {
 // ------------------------------------------------------------------ runners
 // Computers that connect to this dashboard themselves (`dash runner`): no
 // inbound access, VPN or shared secret needed on their side.
+// The one-line installer and the version runners should run (from /api/runners).
+const runnerInfo = { hub: location.origin, version: "" };
+// The "Add a runner" in progress: the runners there were before its code,
+// so the one that registers with it can be told apart.
+let runnerAdd = null;
+
+// shq quotes s for a POSIX shell, leaving a leading ~/ for it to expand.
+const shq = (s) => {
+  if (s.startsWith("~/")) return `~/${s.length > 2 ? shq(s.slice(2)) : ""}`;
+  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replaceAll("'", `'\\''`)}'`;
+};
+const installCmd = (args = "") => `curl -fsSL ${runnerInfo.hub}/runner/install.sh | sh${args ? ` -s -- ${args}` : ""}`;
+const isRelease = (v) => /^v\d+\.\d+\.\d+/.test(v || "");
+
 async function renderRunners() {
-  const list = await api("GET", "/api/runners");
-  const rows = list.map((r) => h("li", { class: "runner-row" },
-    h("span", { class: `runner-dot ${r.online ? "on" : ""}`, "aria-hidden": "true" }),
-    h("span", { class: "runner-name" }, r.name),
-    h("span", { class: "runner-seen hint" }, (r.online ? "online" : r.last_seen ? `offline, last seen ${ago(r.last_seen)} ago` : "never connected") +
-      (r.owner ? ` · ${r.owner.username}, ${r.owner.org.name}` : "")),
-    h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
-      const ok = await ask({ title: `Revoke ${r.name}?`, body: "It's disconnected now and its token stops working. Its projects stay on that computer; register it again with a new code to bring it back.", ok: "Revoke", danger: true });
-      if (!ok) return;
-      await api("DELETE", `/api/runners/${encodeURIComponent(r.id)}`);
-      toast(`${r.name} revoked`);
-      await refreshMachines();
-    }) }, "Revoke")));
+  const { runners: list, hub, version } = await api("GET", "/api/runners");
+  Object.assign(runnerInfo, { hub: hub || location.origin, version: version || "" });
+  const rows = list.map((r) => {
+    const outdated = isRelease(runnerInfo.version) && r.version && r.version !== runnerInfo.version;
+    return h("li", { class: "runner-row" + (outdated ? " outdated" : "") },
+      h("span", { class: `runner-dot ${r.online ? "on" : ""}`, "aria-hidden": "true" }),
+      h("span", { class: "runner-name" }, r.name),
+      r.version ? h("span", { class: `runner-version${outdated ? " warn" : ""}`, title: outdated ? `The hub runs ${runnerInfo.version}` : "Dash version" }, r.version) : null,
+      h("span", { class: "runner-seen hint" }, (r.online ? "online" : r.last_seen ? `offline, last seen ${ago(r.last_seen)} ago` : "never connected") +
+        (r.owner ? ` · ${r.owner.username}, ${r.owner.org.name}` : "")),
+      h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
+        const ok = await ask({ title: `Revoke ${r.name}?`, body: "It's disconnected now and its token stops working. Its projects stay on that computer; register it again with a new code to bring it back.", ok: "Revoke", danger: true });
+        if (!ok) return;
+        await api("DELETE", `/api/runners/${encodeURIComponent(r.id)}`);
+        toast(`${r.name} revoked`);
+        await refreshMachines();
+      }) }, "Revoke"),
+      outdated ? h("div", { class: "runner-update" },
+        h("p", { class: "hint" }, `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run this on ${r.name} (it keeps its registration):`),
+        copyBlock(installCmd(), "Command copied", { pre: true })) : null);
+  });
   $("#runners-list").replaceChildren(...(rows.length ? rows : [h("li", { class: "hint" }, "No runners yet.")]));
+  if (runnerAdd) {
+    const added = list.find((r) => !runnerAdd.known.has(r.id));
+    const st = $("#runner-add-status");
+    if (st && added) {
+      st.classList.toggle("on", added.online);
+      st.replaceChildren(added.online ? `Connected ✓ ${added.name} is online.` : `${added.name} registered, connecting…`);
+      if (added.online) runnerAdd = null;
+    }
+  }
 }
 
 async function addRunner() {
-  const { code, expires } = await api("POST", "/api/runners/codes");
-  const cmd = `./bin/dash runner --server ${location.origin} --code ${code}`;
+  const before = await api("GET", "/api/runners");
+  const { code, expires, hub } = await api("POST", "/api/runners/codes");
+  if (hub) runnerInfo.hub = hub;
+  runnerAdd = { known: new Set(before.runners.map((r) => r.id)) };
   const mins = Math.round((new Date(expires) - Date.now()) / 60000);
+  const name = h("input", { type: "text", placeholder: "its host name", autocomplete: "off", spellcheck: false, pattern: "[a-z0-9][a-z0-9-]{0,31}" });
+  const dir = h("input", { type: "text", placeholder: "~/dash-projects", autocomplete: "off", spellcheck: false });
+  const oneLine = h("div", {});
+  const manual = h("div", { hidden: true });
+  const render = () => {
+    const n = name.value.trim().toLowerCase(), d = dir.value.trim();
+    let args = `--code ${code}`;
+    if (n) args += ` --name ${shq(n)}`;
+    if (d) args += ` --projects ${shq(d)}`;
+    oneLine.replaceChildren(
+      h("p", {}, "On the other computer (Linux or macOS), paste this in a terminal:"),
+      copyBlock(installCmd(args), "Command copied", { pre: true }),
+      h("p", { class: "hint" }, "It downloads Dash", isRelease(runnerInfo.version) ? ` ${runnerInfo.version}` : "", " to ", h("code", {}, "~/.local/bin"), ", checks git, claude and the connection to this hub, registers, and starts it as a background service. No sudo, no Go."));
+    let flags = "";
+    if (n) flags += ` --name ${shq(n)}`;
+    if (d) flags += ` --projects ${shq(d)}`;
+    const rel = isRelease(runnerInfo.version) ? `https://github.com/klahr/dash/releases/tag/${runnerInfo.version}` : "https://github.com/klahr/dash/releases/latest";
+    manual.replaceChildren(h("ol", { class: "steps" },
+      h("li", {}, h("strong", {}, "Get Dash. "), "Download the archive for the computer from ", h("a", { href: rel, target: "_blank", rel: "noopener" }, "the release"), " and unpack it, or build it from a checkout (", h("code", {}, "go build -o bin/dash ./cmd/dash"), "). It needs git, and claude logged in."),
+      h("li", {}, h("strong", {}, "Register and run it:"), copyBlock(`dash runner --server ${runnerInfo.hub} --code ${code}${flags}`, "Command copied", { pre: true }),
+        h("p", { class: "hint" }, "It keeps its token and reconnects by itself; later just run ", h("code", {}, "dash runner"), ".")),
+      h("li", {}, h("strong", {}, "Optionally, keep it running in the background:"), copyBlock("dash runner install", "Command copied", { pre: true }),
+        h("p", { class: "hint" }, "A systemd user service on Linux, a LaunchAgent on macOS. ", h("code", {}, "dash runner status"), " shows how it's doing."))));
+  };
+  name.addEventListener("input", render);
+  dir.addEventListener("input", render);
+  const tab = (label, pane, other) => h("button", { type: "button", role: "tab", "aria-selected": String(pane === oneLine), onclick: (e) => {
+    pane.hidden = false; other.hidden = true;
+    for (const b of e.currentTarget.parentElement.children) b.setAttribute("aria-selected", String(b === e.currentTarget));
+  } }, label);
+  render();
   $("#runners-code").replaceChildren(
-    h("p", {}, "On the other computer, from the Dash checkout:"),
-    copyBlock(cmd, "Command copied", { pre: true }),
-    h("p", { class: "hint" }, `The code works once, for ${mins} minutes. The runner is named after its host; add `, h("code", {}, "-name work"), " to pick another name. It keeps its token and reconnects by itself, so later just run ", h("code", {}, "./bin/dash runner"), "."));
+    h("div", { class: "runner-add-fields" },
+      h("label", { class: "field" }, h("span", {}, "Name ", h("em", {}, "optional")), name),
+      h("label", { class: "field" }, h("span", {}, "Projects directory ", h("em", {}, "optional")), dir)),
+    h("div", { class: "segmented", role: "tablist" }, tab("One line", oneLine, manual), tab("Manual", manual, oneLine)),
+    oneLine, manual,
+    h("p", { class: "hint" }, `The code works once, for ${mins} minutes.`),
+    h("p", { class: "runner-add-status", id: "runner-add-status", role: "status" }, "Waiting for the runner to connect…"));
   $("#runners-code").hidden = false;
 }
 
 async function openRunners() {
   $("#runners-code").hidden = true;
+  runnerAdd = null;
   await renderRunners();
   const d = $("#runners-sheet");
   if (!d.open) d.showModal();

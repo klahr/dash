@@ -444,3 +444,29 @@ func TestCheckServer(t *testing.T) {
 		}
 	}
 }
+
+func TestHubRecordsTheRunnersVersion(t *testing.T) {
+	th := newTestHub(t)
+	creds := th.register(t, "work")
+	states := &stateLog{ch: make(chan bool, 16)}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	cl := &Client{Creds: creds, Handler: runnerAPI(), OnState: states.on, Version: "v1.2.3"}
+	go func() { _ = cl.Run(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+	states.want(t, true)
+	th.waitOnline(t, "work")
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		l := th.List()
+		if len(l) == 1 && l[0].Version == "v1.2.3" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("runners %+v, want version v1.2.3", l)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := cleanVersion("v1 <script>"); got != "" {
+		t.Fatalf("junk version kept: %q", got)
+	}
+}

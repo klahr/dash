@@ -62,7 +62,8 @@ type Runner struct {
 	Created  time.Time `json:"created"`
 	LastSeen time.Time `json:"last_seen,omitzero"` // when it last connected or disconnected
 	// Owner registered the runner: its token acts as them, in their org.
-	Owner *store.RunnerOwner `json:"owner,omitempty"`
+	Owner   *store.RunnerOwner `json:"owner,omitempty"`
+	Version string             `json:"version,omitempty"` // the Dash it last connected with, e.g. v1.2.0
 }
 
 // record is a runner in runners.json. Its token is in the token table
@@ -74,6 +75,7 @@ type record struct {
 	TokenHash string    `json:"token_hash,omitempty"`
 	Created   time.Time `json:"created"`
 	LastSeen  time.Time `json:"last_seen,omitzero"`
+	Version   string    `json:"version,omitempty"`
 }
 
 // regCode is a registration code, made by Owner: the runner registered with
@@ -349,7 +351,7 @@ func (h *Hub) List() []Runner {
 		if o, ok := owners[r.ID]; ok {
 			owner = &o
 		}
-		out = append(out, Runner{ID: r.ID, Name: r.Name, Online: online, Created: r.Created, LastSeen: r.LastSeen, Owner: owner})
+		out = append(out, Runner{ID: r.ID, Name: r.Name, Online: online, Created: r.Created, LastSeen: r.LastSeen, Owner: owner, Version: r.Version})
 	}
 	slices.SortFunc(out, func(a, b Runner) int { return strings.Compare(a.Name, b.Name) })
 	return out
@@ -377,15 +379,33 @@ func (h *Hub) registeredLocked(id string) bool {
 	return slices.ContainsFunc(h.runners, func(x *record) bool { return x.ID == id })
 }
 
-func (h *Hub) touch(id string) {
+// touch records that runner id (dis)connected, running version when
+// that's not "".
+func (h *Hub) touch(id, version string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for _, r := range h.runners {
 		if r.ID == id {
 			r.LastSeen = h.clock()
+			if version != "" {
+				r.Version = version
+			}
 		}
 	}
 	h.saveLocked()
+}
+
+// VersionHeader carries the runner's Dash version when it connects.
+const VersionHeader = "X-Dash-Version"
+
+var versionRe = regexp.MustCompile(`^[0-9A-Za-z.+_-]{1,64}$`)
+
+// cleanVersion is the version a runner sent, or "" if it sent none or junk.
+func cleanVersion(v string) string {
+	if versionRe.MatchString(v) {
+		return v
+	}
+	return ""
 }
 
 // ---- HTTP: registration and the runners' tunnels ----
@@ -472,8 +492,9 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 	if old != nil {
 		old.Close() // the runner reconnected before we noticed the old link die
 	}
-	h.touch(rec.ID)
-	slog.Info("runner connected", "name", rec.Name)
+	version := cleanVersion(r.Header.Get(VersionHeader))
+	h.touch(rec.ID, version)
+	slog.Info("runner connected", "name", rec.Name, "version", version)
 	h.changed()
 
 	<-sess.Done()
@@ -486,7 +507,7 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 	h.idle().CloseIdleConnections() // pooled streams of the dead tunnel
 	if current {
-		h.touch(rec.ID)
+		h.touch(rec.ID, "")
 		slog.Info("runner disconnected", "name", rec.Name)
 		h.changed()
 	}

@@ -85,7 +85,7 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
   [docs/deploy.md](docs/deploy.md).
 - **Use it from Claude** with the `dash-mcp` MCP server, or as a custom connector in claude.ai
   and the Claude app: [docs/mcp.md](docs/mcp.md).
-- **Several computers** in one dashboard: run `dash runner` on the others, no VPN needed: [docs/several-computers.md](docs/several-computers.md).
+- **Several computers** in one dashboard: add each with one pasted command (`curl … /runner/install.sh | sh`), no VPN needed: [docs/several-computers.md](docs/several-computers.md).
 - **Live previews** of each task's app, served on their own subdomains:
   [docs/previews.md](docs/previews.md).
 
