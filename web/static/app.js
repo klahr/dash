@@ -1315,6 +1315,9 @@ function renderBoardNow() {
     $("#lane-tabs").replaceChildren();
     $("#lane-chips").replaceChildren();
     empty.hidden = false;
+    $("#new-todo").hidden = true;
+    // A hub with no runners yet: welcome, and explain how to add one first.
+    if (state.runners?.length === 0) { empty.replaceChildren(...welcomeScreen()); return; }
     empty.replaceChildren(
       // Optional illustration: save as web/static/img/empty-board.webp, 960x720 (4:3). Hidden if missing.
       // Convert: magick in.png -resize 960x720^ -gravity center -extent 960x720 -quality 85 web/static/img/empty-board.webp
@@ -1323,7 +1326,6 @@ function renderBoardNow() {
       h("p", { class: "empty-title" }, "Create your first project"),
       h("p", {}, "A project is a git repository. Every task runs in its own worktree, so several can run at once."),
       ib({ class: "btn primary", onclick: openNewProject }, "plus", "New project"));
-    $("#new-todo").hidden = true;
     return;
   }
   empty.hidden = true;
@@ -2762,6 +2764,8 @@ async function loadRunners() {
   } catch {
     state.runners = null; // this Dash has no runners (it is one, say)
   }
+  // The empty board shows the welcome screen until there's a runner.
+  if (!state.project && !$("#board-empty").hidden) renderBoard();
   return state.runners;
 }
 const runnerName = (id) => state.runners?.find((r) => r.id === id)?.name || "its runner";
@@ -2871,6 +2875,32 @@ async function addRunner() {
   $("#runners-code").hidden = false;
 }
 $("#runners-add").addEventListener("click", attempt(addRunner));
+
+// openAddRunner opens the organization sheet straight on a new runner code.
+async function openAddRunner() {
+  await openOrg();
+  await addRunner();
+  $("#org-runners").scrollIntoView({ block: "start", behavior: reduceMotion.matches ? "auto" : "smooth" });
+}
+
+// The board of a hub that has no runners and no projects yet: what a runner
+// is, how to add one, and what comes after.
+function welcomeScreen() {
+  const needed = !state.localTasks;
+  return [
+    art("img/empty-board.webp", 480, 360),
+    h("p", { class: "empty-title" }, "Welcome to Dash"),
+    h("p", {}, "Claude does your tasks on ", h("strong", {}, "runners"), ": computers of yours with git and Claude Code logged in, each using its owner's Claude subscription. ",
+      needed ? "This dashboard doesn't run tasks itself, so start by adding one." : "This dashboard can run tasks itself too, but a runner adds a computer of your own."),
+    h("ol", { class: "steps welcome-steps" },
+      h("li", {}, h("strong", {}, "Add a runner. "), "Get a one-time code here, then paste the install command in a terminal on the other computer (Linux or macOS). It connects out to this dashboard: no open ports, VPN or sudo needed."),
+      h("li", {}, h("strong", {}, "Create a project. "), "A project is a git repository. Link it to the runner in its settings."),
+      h("li", {}, h("strong", {}, "Add tasks. "), "Each runs in its own worktree and comes back for review.")),
+    h("div", { class: "welcome-actions" },
+      ib({ class: "btn primary", onclick: attempt(openAddRunner) }, "plus", "Add a runner"),
+      ib({ class: "btn", onclick: openNewProject }, "plus", "New project")),
+  ];
+}
 
 // ------------------------------------------------------------------ account & organizations
 async function loadMe() {
