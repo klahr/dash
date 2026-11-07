@@ -34,8 +34,8 @@ type scanInfo struct {
 	Markdown string `json:"markdown,omitempty"`
 }
 
-func (s *Server) scanInfo(projectID string, t scan.Template) scanInfo {
-	set, has := s.Store.ScanSetting(projectID, t.Name)
+func (sv *service) scanInfo(projectID string, t scan.Template) scanInfo {
+	set, has := sv.data.ScanSetting(projectID, t.Name)
 	info := scanInfo{Template: t, Schedule: scan.Effective(t, set, has)}
 	if t.Origin == scan.SourceDash {
 		info.Markdown = t.Markdown()
@@ -50,8 +50,8 @@ func (s *Server) scanInfo(projectID string, t scan.Template) scanInfo {
 	if !info.ToolsApproved {
 		info.ApprovedTools = set.ApprovedTools
 	}
-	if s.Scheduler != nil {
-		if next := s.Scheduler.NextRun(projectID, t); !next.IsZero() {
+	if sv.s.Scheduler != nil {
+		if next := sv.s.Scheduler.NextRun(projectID, t); !next.IsZero() {
 			info.NextRun = &next
 		}
 	}
@@ -61,21 +61,25 @@ func (s *Server) scanInfo(projectID string, t scan.Template) scanInfo {
 var errScansOff = errors.New("scans are not available on this server")
 
 func (s *Server) listScans(w http.ResponseWriter, r *http.Request) {
-	p, err := s.Store.GetProject(r.PathValue("pid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	templates, shadowed, problems := scan.Templates(s.Store, p)
+	templates, shadowed, problems := scan.Templates(sv.data, p)
 	out := []scanInfo{}
 	builtin := false
 	for _, t := range templates {
 		builtin = builtin || t.Builtin
-		info := s.scanInfo(p.ID, t)
-		if last, ok := s.Store.LastScanRun(p.ID, t.Name, nil); ok {
+		info := sv.scanInfo(p.ID, t)
+		if last, ok := sv.data.LastScanRun(p.ID, t.Name, nil); ok {
 			info.LastRun = &last
 			if last.Status != model.ScanSucceeded {
-				if rep, ok := s.Store.LastScanRun(p.ID, t.Name, func(r model.ScanRun) bool { return r.Status == model.ScanSucceeded }); ok {
+				if rep, ok := sv.data.LastScanRun(p.ID, t.Name, func(r model.ScanRun) bool { return r.Status == model.ScanSucceeded }); ok {
 					info.LastReport = &rep
 				}
 			}
@@ -86,7 +90,7 @@ func (s *Server) listScans(w http.ResponseWriter, r *http.Request) {
 		out = append(out, info)
 	}
 	for _, t := range shadowed {
-		out = append(out, s.scanInfo(p.ID, t))
+		out = append(out, sv.scanInfo(p.ID, t))
 	}
 	if problems == nil {
 		problems = []scan.Problem{}
@@ -98,6 +102,14 @@ func (s *Server) listScans(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runScan(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if _, err := sv.data.GetProject(r.PathValue("pid")); err != nil {
+		writeErr(w, err)
+		return
+	}
 	if s.Scans == nil {
 		writeErr(w, errScansOff)
 		return
@@ -117,6 +129,10 @@ func (s *Server) runScan(w http.ResponseWriter, r *http.Request) {
 // template asks for something else by now. approve_tools [] withdraws the
 // approval.
 func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		Enabled         *bool     `json:"enabled"`
 		Schedule        *string   `json:"schedule"`
@@ -128,12 +144,12 @@ func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	p, err := s.Store.GetProject(r.PathValue("pid"))
+	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	t, ok := scan.FindIn(s.Store, p, r.PathValue("name"))
+	t, ok := scan.FindIn(sv.data, p, r.PathValue("name"))
 	if !ok {
 		writeErr(w, fmt.Errorf("%w %q", scan.ErrNoScan, r.PathValue("name")))
 		return
@@ -189,17 +205,17 @@ func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Check the outcome before saving it.
-	next, _ := s.Store.ScanSetting(p.ID, t.Name)
+	next, _ := sv.data.ScanSetting(p.ID, t.Name)
 	apply(&next)
 	if req.Enabled != nil && *req.Enabled && !scan.Effective(t, next, true).Enabled {
 		writeErr(w, fmt.Errorf("%w: scan %q has no schedule; set one first", errBadRequest, t.Name))
 		return
 	}
-	if _, err := s.Store.SetScanSetting(p.ID, t.Name, apply); err != nil {
+	if _, err := sv.data.SetScanSetting(p.ID, t.Name, apply); err != nil {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.scanInfo(p.ID, t))
+	writeJSON(w, http.StatusOK, sv.scanInfo(p.ID, t))
 }
 
 // scanRequest is a Dash scan as the editor sends it.
@@ -232,12 +248,16 @@ func customScan(projectID string, req scanRequest) (scan.Template, error) {
 // createScan adds a scan written in Dash. Its name may not be one the
 // project's scans use already.
 func (s *Server) createScan(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	var req scanRequest
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
-	p, err := s.Store.GetProject(r.PathValue("pid"))
+	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -247,28 +267,28 @@ func (s *Server) createScan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if other, ok := scan.FindIn(s.Store, p, t.Name); ok && other.Origin != scan.SourceDash {
+	if other, ok := scan.FindIn(sv.data, p, t.Name); ok && other.Origin != scan.SourceDash {
 		writeErr(w, fmt.Errorf("%w: the %s scan %q has that name; pick another", store.ErrScanExists, other.Origin, t.Name))
 		return
 	}
-	if _, err := s.Store.SaveScanTemplate(t.Record(p.ID), true); err != nil {
+	if _, err := sv.data.SaveScanTemplate(t.Record(p.ID), true); err != nil {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, s.scanInfo(p.ID, t))
+	writeJSON(w, http.StatusCreated, sv.scanInfo(p.ID, t))
 }
 
 // dashScan is the project's Dash scan of the request's name, or an error
 // that says why it can't be changed.
-func (s *Server) dashScan(r *http.Request) (model.Project, model.ScanTemplate, error) {
-	p, err := s.Store.GetProject(r.PathValue("pid"))
+func (sv *service) dashScan(r *http.Request) (model.Project, model.ScanTemplate, error) {
+	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		return p, model.ScanTemplate{}, err
 	}
 	name := r.PathValue("name")
-	rec, err := s.Store.ScanTemplate(p.ID, name)
+	rec, err := sv.data.ScanTemplate(p.ID, name)
 	if errors.Is(err, store.ErrNotFound) {
-		if other, ok := scan.FindIn(s.Store, p, name); ok {
+		if other, ok := scan.FindIn(sv.data, p, name); ok {
 			return p, rec, fmt.Errorf("%w: scan %q is a %s scan; only scans written in Dash can be changed here (duplicate it instead)", errBadRequest, name, other.Origin)
 		}
 		return p, rec, fmt.Errorf("%w %q", scan.ErrNoScan, name)
@@ -278,12 +298,16 @@ func (s *Server) dashScan(r *http.Request) (model.Project, model.ScanTemplate, e
 
 // editScan replaces a Dash scan's prompt and settings; its name stays.
 func (s *Server) editScan(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	var req scanRequest
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
-	p, old, err := s.dashScan(r)
+	p, old, err := sv.dashScan(r)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -298,17 +322,17 @@ func (s *Server) editScan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if _, err := s.Store.SaveScanTemplate(t.Record(p.ID), false); err != nil {
+	if _, err := sv.data.SaveScanTemplate(t.Record(p.ID), false); err != nil {
 		writeErr(w, err)
 		return
 	}
-	ts, shadowed, _ := scan.Templates(s.Store, p)
+	ts, shadowed, _ := scan.Templates(sv.data, p)
 	if cur, ok := scan.Pick(ts, t.Name); ok && cur.Origin == scan.SourceDash {
 		t = cur
 		if t.Schedule != old.Schedule {
 			// A new schedule in the editor replaces one changed in the list.
-			if set, has := s.Store.ScanSetting(p.ID, t.Name); has && set.Schedule != "" {
-				if _, err := s.Store.SetScanSetting(p.ID, t.Name, func(st *model.ScanSetting) { st.Schedule = "" }); err != nil {
+			if set, has := sv.data.ScanSetting(p.ID, t.Name); has && set.Schedule != "" {
+				if _, err := sv.data.SetScanSetting(p.ID, t.Name, func(st *model.ScanSetting) { st.Schedule = "" }); err != nil {
 					writeErr(w, err)
 					return
 				}
@@ -317,20 +341,24 @@ func (s *Server) editScan(w http.ResponseWriter, r *http.Request) {
 	} else if sh, ok := scan.Pick(shadowed, t.Name); ok {
 		t = sh
 	}
-	writeJSON(w, http.StatusOK, s.scanInfo(p.ID, t))
+	writeJSON(w, http.StatusOK, sv.scanInfo(p.ID, t))
 }
 
 // deleteScan forgets a Dash scan. Its runs and the issues it filed stay.
 func (s *Server) deleteScan(w http.ResponseWriter, r *http.Request) {
-	p, rec, err := s.dashScan(r)
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	p, rec, err := sv.dashScan(r)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	// A shadowed scan's settings belong to the scan that shadows it.
-	cur, ok := scan.FindIn(s.Store, p, rec.Name)
+	cur, ok := scan.FindIn(sv.data, p, rec.Name)
 	keep := ok && cur.Origin != scan.SourceDash
-	if err := s.Store.DeleteScanTemplate(p.ID, rec.Name, keep); err != nil {
+	if err := sv.data.DeleteScanTemplate(p.ID, rec.Name, keep); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -338,16 +366,24 @@ func (s *Server) deleteScan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listScanRuns(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	pid := r.PathValue("pid")
-	if _, err := s.Store.GetProject(pid); err != nil {
+	if _, err := sv.data.GetProject(pid); err != nil {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.Store.ListScanRuns(pid, r.URL.Query().Get("scan")))
+	writeJSON(w, http.StatusOK, sv.data.ListScanRuns(pid, r.URL.Query().Get("scan")))
 }
 
 func (s *Server) getScanRun(w http.ResponseWriter, r *http.Request) {
-	run, err := s.Store.GetScanRun(r.PathValue("rid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	run, err := sv.data.GetScanRun(r.PathValue("rid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -356,7 +392,11 @@ func (s *Server) getScanRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) scanRunLog(w http.ResponseWriter, r *http.Request) {
-	run, err := s.Store.GetScanRun(r.PathValue("rid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	run, err := sv.data.GetScanRun(r.PathValue("rid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -375,7 +415,11 @@ func (s *Server) scanRunLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) cancelScanRun(w http.ResponseWriter, r *http.Request) {
-	run, err := s.Store.GetScanRun(r.PathValue("rid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	run, err := sv.data.GetScanRun(r.PathValue("rid"))
 	if err != nil {
 		writeErr(w, err)
 		return

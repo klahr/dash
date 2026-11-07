@@ -12,7 +12,7 @@ import (
 
 func TestScanEndpoints(t *testing.T) {
 	s, _, p := boardServer(t)
-	p, _ = s.Store.UpdateProject(p.ID, func(x *model.Project) error { x.Path = t.TempDir(); return nil })
+	p, _ = raw(s).UpdateProject(p.ID, func(x *model.Project) error { x.Path = t.TempDir(); return nil })
 	h := loggedIn(t, s.Routes())
 
 	// A repository without templates gets the built-ins, schedules off.
@@ -43,7 +43,7 @@ func TestScanEndpoints(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("enable: %d %s", w.Code, w.Body)
 	}
-	set, ok := s.Store.ScanSetting(p.ID, "security")
+	set, ok := raw(s).ScanSetting(p.ID, "security")
 	if !ok || set.Enabled == nil || !*set.Enabled || set.Schedule != "15 3 * * *" {
 		t.Fatalf("setting: %+v", set)
 	}
@@ -55,7 +55,7 @@ func TestScanEndpoints(t *testing.T) {
 	if w := do(t, h, "PATCH", "/api/projects/"+p.ID+"/scans/security", `{"reset":true}`); w.Code != http.StatusOK {
 		t.Fatalf("reset: %d %s", w.Code, w.Body)
 	}
-	if set, _ := s.Store.ScanSetting(p.ID, "security"); set.Enabled != nil || set.Schedule != "" {
+	if set, _ := raw(s).ScanSetting(p.ID, "security"); set.Enabled != nil || set.Schedule != "" {
 		t.Fatalf("after reset: %+v", set)
 	}
 
@@ -71,7 +71,7 @@ func TestScanEndpoints(t *testing.T) {
 func TestScanApprovals(t *testing.T) {
 	s, _, p := boardServer(t)
 	repo := t.TempDir()
-	p, _ = s.Store.UpdateProject(p.ID, func(x *model.Project) error { x.Path = repo; return nil })
+	p, _ = raw(s).UpdateProject(p.ID, func(x *model.Project) error { x.Path = repo; return nil })
 	h := loggedIn(t, s.Routes())
 	write := func(src string) {
 		t.Helper()
@@ -141,7 +141,7 @@ func TestScanApprovals(t *testing.T) {
 func TestDashScanEndpoints(t *testing.T) {
 	s, _, p := boardServer(t)
 	repo := t.TempDir()
-	p, _ = s.Store.UpdateProject(p.ID, func(x *model.Project) error { x.Path = repo; return nil })
+	p, _ = raw(s).UpdateProject(p.ID, func(x *model.Project) error { x.Path = repo; return nil })
 	h := loggedIn(t, s.Routes())
 	base := "/api/projects/" + p.ID + "/scans"
 
@@ -248,7 +248,7 @@ func TestDashScanEndpoints(t *testing.T) {
 	if w := do(t, h, "DELETE", base+"/mine", ""); w.Code != http.StatusNoContent {
 		t.Fatalf("delete: %d %s", w.Code, w.Body)
 	}
-	if _, has := s.Store.ScanSetting(p.ID, "mine"); !has {
+	if _, has := raw(s).ScanSetting(p.ID, "mine"); !has {
 		t.Fatal("repository scan's settings deleted")
 	}
 	if l = list(); len(l) != 1 || l["mine/repo"].Name == "" {

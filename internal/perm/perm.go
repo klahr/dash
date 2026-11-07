@@ -158,6 +158,17 @@ func (b *Broker) Pending(projectID string) []Request {
 // Decide answers a request: "allow", "always" (allow this tool from now on:
 // for the whole project when Saved is set, otherwise for the rest of the todo)
 // or "deny".
+// Get returns the pending request id.
+func (b *Broker) Get(id string) (Request, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	p, ok := b.pending[id]
+	if !ok {
+		return Request{}, false
+	}
+	return p.req, true
+}
+
 func (b *Broker) Decide(id, decision, message string) error {
 	b.mu.Lock()
 	p, ok := b.pending[id]

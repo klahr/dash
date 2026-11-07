@@ -17,7 +17,7 @@ func TestChatSurvivesReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []model.ChatMessage{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}
-	if err := s.SetChat(want); err != nil {
+	if err := s.SetChat(1, 1, want); err != nil {
 		t.Fatal(err)
 	}
 
@@ -25,15 +25,15 @@ func TestChatSurvivesReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := s.Chat(); !reflect.DeepEqual(got, want) {
+	if got := s.Chat(1, 1); !reflect.DeepEqual(got, want) {
 		t.Fatalf("after reopen: %v, want %v", got, want)
 	}
 
-	if err := s.SetChat(nil); err != nil {
+	if err := s.SetChat(1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
-	if s, _ = Open(path, nil); len(s.Chat()) != 0 {
-		t.Fatalf("cleared chat came back: %v", s.Chat())
+	if s, _ = Open(path, nil); len(s.Chat(1, 1)) != 0 {
+		t.Fatalf("cleared chat came back: %v", s.Chat(1, 1))
 	}
 }
 
@@ -64,8 +64,8 @@ func TestTodoChatSurvivesReopenAndGoesWithTodo(t *testing.T) {
 	if got := s.TodoChat(td.ID); !reflect.DeepEqual(got, want) {
 		t.Fatalf("after reopen: %v, want %v", got, want)
 	}
-	if len(s.Chat()) != 0 {
-		t.Fatalf("todo chat leaked into the general chat: %v", s.Chat())
+	if len(s.Chat(1, 1)) != 0 {
+		t.Fatalf("todo chat leaked into the general chat: %v", s.Chat(1, 1))
 	}
 	if _, err := s.DeleteTodo(td.ID); err != nil {
 		t.Fatal(err)

@@ -30,7 +30,6 @@ import (
 	"strings"
 
 	"github.com/klahr/dash/internal/model"
-	"github.com/klahr/dash/internal/store"
 )
 
 // Dir is where a repository keeps its scan templates.
@@ -398,7 +397,12 @@ func (t Template) Markdown() string {
 // built-ins, when it has none) and the ones written in Dash. A Dash
 // template whose name another one uses is shadowed: it is returned in
 // shadowed, with ShadowedBy set, and does not run.
-func Templates(st *store.Store, p model.Project) (active, shadowed []Template, problems []Problem) {
+// TemplateSource has the Dash scans users wrote (a store, or one org's view of it).
+type TemplateSource interface {
+	ScanTemplates(projectID string) []model.ScanTemplate
+}
+
+func Templates(st TemplateSource, p model.Project) (active, shadowed []Template, problems []Problem) {
 	active, problems = Load(p.Path)
 	n := len(active)
 	for _, m := range st.ScanTemplates(p.ID) {
@@ -423,7 +427,7 @@ func Templates(st *store.Store, p model.Project) (active, shadowed []Template, p
 }
 
 // FindIn is the project's scan called name (not a shadowed one).
-func FindIn(st *store.Store, p model.Project, name string) (Template, bool) {
+func FindIn(st TemplateSource, p model.Project, name string) (Template, bool) {
 	ts, _, _ := Templates(st, p)
 	return Pick(ts, name)
 }

@@ -31,7 +31,11 @@ const maxEditBytes = 512 << 10
 // commit, so they are read from and saved straight to the project's checkout.
 
 func (s *Server) listFiles(w http.ResponseWriter, r *http.Request) {
-	p, err := s.Store.GetProject(r.PathValue("pid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -130,6 +134,10 @@ func (s *Server) readLocalFile(w http.ResponseWriter, r *http.Request, p model.P
 // saveLocalFile writes a local file in the checkout, unless it changed on
 // disk since it was read (blob is the hash of what was read).
 func (s *Server) saveLocalFile(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		Path    string `json:"path"`
 		Blob    string `json:"blob"`
@@ -139,7 +147,7 @@ func (s *Server) saveLocalFile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	p, err := s.Store.GetProject(r.PathValue("pid"))
+	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -179,7 +187,11 @@ func cleanRepoPath(p string) (string, error) {
 }
 
 func (s *Server) readFile(w http.ResponseWriter, r *http.Request) {
-	p, err := s.Store.GetProject(r.PathValue("pid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -217,6 +229,10 @@ func (s *Server) readFile(w http.ResponseWriter, r *http.Request) {
 
 // saveEdit queues a todo that commits the new content of a file.
 func (s *Server) saveEdit(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		Path    string `json:"path"`
 		Blob    string `json:"blob"`
@@ -227,7 +243,7 @@ func (s *Server) saveEdit(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	p, err := s.Store.GetProject(r.PathValue("pid"))
+	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -249,7 +265,7 @@ func (s *Server) saveEdit(w http.ResponseWriter, r *http.Request) {
 	if title == "" {
 		title = "Edit " + name
 	}
-	t, err := s.addTodo(model.Todo{
+	t, err := sv.addTodo(model.Todo{
 		ProjectID: p.ID, Title: title,
 		Prompt: fmt.Sprintf("`%s` was edited by hand in Dash's file editor; the change is already committed in this working tree. "+
 			"Keep it, and only change what the notes below ask for.", name),

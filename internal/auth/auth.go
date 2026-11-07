@@ -94,6 +94,12 @@ func withIdentity(ctx context.Context, id *Identity) context.Context {
 	return context.WithValue(ctx, identityKey{}, id)
 }
 
+// WithSession marks ctx as a request of sess (in-process callers and tests;
+// the Middleware does this for browser sessions).
+func WithSession(ctx context.Context, sess store.Session) context.Context {
+	return withIdentity(ctx, &Identity{Session: sess})
+}
+
 // From returns the signed-in user of a request that came through the
 // Middleware with a session. Requests with the peer token, over a runner's
 // tunnel and to public paths have none.
@@ -286,6 +292,16 @@ func WithHub(ctx context.Context) context.Context { return context.WithValue(ctx
 // FromHub reports whether ctx is a request from the hub over a runner tunnel.
 func FromHub(ctx context.Context) bool { v, _ := ctx.Value(hubKey{}).(bool); return v }
 
+type peerKey struct{}
+
+// FromMachine reports whether ctx is a request from another Dash rather than
+// a person: the hub over a runner's tunnel, or a hub with the peer token.
+// Those act for the whole of this Dash; the other Dash checked its own user.
+func FromMachine(ctx context.Context) bool {
+	v, _ := ctx.Value(peerKey{}).(bool)
+	return v || FromHub(ctx)
+}
+
 func (a *Auth) viaPeer(r *http.Request) bool {
 	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	return ok && a.PeerToken != "" && subtle.ConstantTimeCompare([]byte(tok), []byte(a.PeerToken)) == 1
@@ -433,7 +449,11 @@ func orgFree(path string) bool {
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Static artwork (login page images, icons) is public too.
-		if public[r.URL.Path] || strings.HasPrefix(r.URL.Path, "/img/") || a.oauth.public(r.URL.Path) || a.viaPeer(r) {
+		if a.viaPeer(r) {
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), peerKey{}, true)))
+			return
+		}
+		if public[r.URL.Path] || strings.HasPrefix(r.URL.Path, "/img/") || a.oauth.public(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}

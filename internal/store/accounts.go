@@ -20,10 +20,13 @@ import (
 // invitations and browser sessions. Unlike the records, nothing here is
 // cached: every call reads the database, so a removed member loses access on
 // their next request.
-type Accounts struct{ db *sql.DB }
+type Accounts struct {
+	db *sql.DB
+	s  *Store // reloaded when Bootstrap moves records between orgs
+}
 
 // Accounts returns the store's accounts.
-func (s *Store) Accounts() *Accounts { return &Accounts{db: s.db} }
+func (s *Store) Accounts() *Accounts { return &Accounts{db: s.db, s: s} }
 
 // Role is what a member may do in an org: owners and admins manage members
 // and invitations; only owners grant or change the owner role.
@@ -230,7 +233,13 @@ func (a *Accounts) Bootstrap(username, password string) error {
 			return err
 		}
 	}
-	return a.assignRecords()
+	if err := a.assignRecords(); err != nil {
+		return err
+	}
+	if a.s != nil {
+		return a.s.reload() // the records' orgs (and the general chat's owner) may have changed
+	}
+	return nil
 }
 
 func (a *Accounts) syncEnvUser(username, password string, now time.Time) error {
@@ -280,12 +289,27 @@ func (a *Accounts) assignRecords() error {
 			WHERE id = 1 AND default_org_id IS NULL`); err != nil {
 			return err
 		}
-		for _, t := range orgTables {
-			if _, err := tx.Exec("UPDATE " + t + " SET org_id = " + defaultOrg + " WHERE org_id IS NULL"); err != nil {
+		// Records go with their project's org; projects (and records of
+		// projects that are gone) without one go in the default org.
+		if _, err := tx.Exec("UPDATE projects SET org_id = " + defaultOrg + " WHERE org_id IS NULL"); err != nil {
+			return err
+		}
+		for _, t := range orgTables[1:] {
+			q := "UPDATE " + t + " SET org_id = COALESCE((SELECT p.org_id FROM projects p WHERE p.id = " + t + ".project_id), " + defaultOrg + ") WHERE org_id IS NULL"
+			if t == "chat_messages" {
+				q = "UPDATE chat_messages SET org_id = " + defaultOrg + " WHERE org_id IS NULL"
+			}
+			if _, err := tx.Exec(q); err != nil {
 				return err
 			}
 		}
-		return nil
+		// The general chat from before users becomes the first account's
+		// (the env account's, or else the oldest), in the default org.
+		_, err := tx.Exec(`UPDATE chat_messages SET owner_id = ` + defaultOrg + ` || ':' || COALESCE(
+				(SELECT id FROM users WHERE env_managed = 1), (SELECT MIN(id) FROM users)),
+				org_id = ` + defaultOrg + `
+			WHERE kind = 'main' AND owner_id = '' AND EXISTS (SELECT 1 FROM users) AND ` + defaultOrg + ` IS NOT NULL`)
+		return err
 	})
 }
 

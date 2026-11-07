@@ -505,8 +505,12 @@ func tickerOrNil(d time.Duration) <-chan time.Time {
 	return time.NewTicker(d).C
 }
 
+// publish tells every dashboard how deep the merge queue is. The queue is
+// shared by all orgs; which task is being merged is not said, as it may be
+// another org's (its todo.updated events tell its own org).
 func (m *MergeQueue) publish(current string) {
+	_ = current
 	m.Pub.Publish(model.Event{Type: model.EvMergeQueue, Time: time.Now(), Data: map[string]any{
-		"pending": m.pending.Load(), "current": current,
+		"pending": m.pending.Load(),
 	}})
 }

@@ -10,16 +10,39 @@ role in each:
 | Member | use Dash in the org, see who else is in it, and leave it                     |
 
 An org always keeps at least one owner. Separately from org roles, an account can be a
-**platform admin** of the Dash instance; for now that means it can create new orgs.
+**platform admin** of the Dash instance: it can create new orgs, and use what belongs to
+the whole instance rather than to one org (see below).
 
-Projects, tasks and the rest aren't separated by org yet: every org sees the same
-records. Today, orgs decide who can sign in and with which role.
+## What belongs to an org
+
+Everything you work with belongs to the org you're working in, and only its members see
+it:
+
+- **Projects**, and with them their tasks, issues, scans and scan runs, task and project
+  chats, attachments, live previews, running commands and terminals, and Claude's
+  permission prompts. Another org's project, or anything in it, answers "not found".
+- **Live updates**: the dashboard only receives events of its org's projects.
+- **The general chat** is your own: each user has one per org, which nobody else sees.
+- **New projects** are created in the org's own folder, `<projects root>/<org slug>/`
+  (e.g. `~/dash-projects/default/my-app`). Adopting an existing folder only works inside
+  it; platform admins may adopt a folder anywhere.
+- Tasks and chat messages record who created them (`created_by`).
+
+What belongs to the whole Dash, and only platform admins can use: other computers
+(runners and peers, `/peer/…`, the Runners page; everyone else sees just this computer)
+and pausing or resuming the task queue, which every org shares. The subscription usage
+meter and the merge queue's length are shown to everyone.
+
+The MCP endpoints act as a person in an org too. The chat's task tools act as the user
+chatting, in their org. A claude.ai connector (`/mcp`) acts as the account that connected
+it, in its first org, and calls Dash directly rather than through the REST API.
 
 ## The first account
 
 On first start Dash creates an account from `DASH_USERNAME` and `DASH_PASSWORD`, makes it a
 platform admin and the owner of an org named **Default**, and puts everything already in
-Dash (projects, tasks, issues, scans, chats) in that org. An install that had a single
+Dash (projects, tasks, issues, scans, chats) in that org. The general chat from before
+becomes that account's own. An install that had a single
 account keeps working with the same `.env`, and nobody is signed out by the upgrade.
 
 That account stays tied to the environment: change `DASH_USERNAME` or `DASH_PASSWORD` and

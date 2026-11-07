@@ -19,6 +19,7 @@ import (
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/hub"
+	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/store"
@@ -51,6 +52,10 @@ import (
 // well, the todo (which must be in review) is marked reviewing until the turn
 // ends, and its status can't change meanwhile.
 func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	conn, err := hub.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -95,32 +100,39 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		var dir, mode, pid string
 		endReview := func() {}
 		general := msg.Project == "" && msg.Todo == ""
-		if general && auth.FromHub(r.Context()) {
+		if general && (auth.FromHub(r.Context()) || sv.c.User == 0) {
 			// A runner's chats belong to its projects; the general chat would
-			// run in this computer's home directory.
+			// run in this computer's home directory. And it is a person's.
 			send(agent.ChatDelta{Kind: "error", Text: "the general chat runs on the hub; open a project to chat on this runner"})
 			continue
 		}
-		save := s.Store.SetChat
-		msg.Messages = s.chatAttachments(msg.Messages)
+		// Each conversation is saved with who wrote its new questions.
+		user := sv.c.User
+		save := func(msgs []agent.ChatMessage) error {
+			return sv.data.SetChat(user, authored(sv.data.Chat(user), msgs, user))
+		}
+		msg.Messages = sv.chatAttachments(msg.Messages)
 		prompt := withAttachments(msg.Messages)
-		if msg.Project != "" && msg.Todo == "" && s.Store != nil {
-			p, err := s.Store.GetProject(msg.Project)
+		if msg.Project != "" && msg.Todo == "" {
+			p, err := sv.data.GetProject(msg.Project)
 			if err != nil {
 				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 				continue
 			}
 			dir, mode, pid = p.Path, p.ChatPermissionMode, p.ID
-			save = func(msgs []agent.ChatMessage) error { return s.Store.SetProjectChat(p.ID, msgs) }
+			save = func(msgs []agent.ChatMessage) error {
+				prev, _ := sv.data.ProjectChat(p.ID)
+				return sv.data.SetProjectChat(p.ID, authored(prev, msgs, user))
+			}
 		}
-		if msg.Todo != "" && s.Store != nil {
-			t, err := s.Store.GetTodo(msg.Todo)
+		if msg.Todo != "" {
+			t, err := sv.data.GetTodo(msg.Todo)
 			if err != nil {
 				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 				continue
 			}
 			var diff string
-			if p, err := s.Store.GetProject(t.ProjectID); err == nil {
+			if p, err := sv.data.GetProject(t.ProjectID); err == nil {
 				dir, mode = p.Path, p.ChatPermissionMode
 				if t.Worktree != nil {
 					// Let Claude read the files as the todo left them.
@@ -134,10 +146,13 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
-			save = func(msgs []agent.ChatMessage) error { return s.Store.SetTodoChat(t.ID, msgs) }
+			save = func(msgs []agent.ChatMessage) error {
+				prev, _ := sv.data.TodoChat(t.ID)
+				return sv.data.SetTodoChat(t.ID, authored(prev, msgs, user))
+			}
 			prompt = withTodoContext(t, diff, prompt)
 			if msg.Review {
-				if endReview, err = s.beginReview(t.ID); err != nil {
+				if endReview, err = s.beginReview(sv, t.ID); err != nil {
 					send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 					continue
 				}
@@ -148,7 +163,10 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		turnCtx = agent.WithApprover(turnCtx, approvals.forTurn(turnCtx))
 		turnCtx = agent.WithPermissionMode(turnCtx, mode)
 		turnCtx = agent.WithProject(turnCtx, pid)
-		if general && s.Store != nil {
+		if user != 0 {
+			turnCtx = mcptools.WithCaller(turnCtx, mcptools.Caller{Org: sv.c.Org, User: user})
+		}
+		if general {
 			if err := save(msg.Messages); err != nil {
 				slog.Error("save chat", "err", err)
 			}
@@ -156,8 +174,8 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		go func(ctx context.Context, history []agent.ChatMessage) {
 			defer endReview()
 			if general {
-				s.generalTurns.Add(1)
-				defer s.generalTurns.Add(-1)
+				s.generalTurn(sv.c, 1)
+				defer s.generalTurn(sv.c, -1)
 			}
 			var reply strings.Builder
 			saved := false
@@ -166,7 +184,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				if d.Kind == "text" {
 					reply.WriteString(d.Text)
 				}
-				if d.Kind == "done" && reply.Len() > 0 && s.Store != nil {
+				if d.Kind == "done" && reply.Len() > 0 {
 					// Save before telling the client, so a reload right after sees it.
 					turn := append(history[:len(history):len(history)], agent.ChatMessage{Role: "assistant", Content: reply.String(), At: &started})
 					if err := save(turn); err != nil {
@@ -182,7 +200,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			}
 			// A turn that ended without an answer (rather than being cut short)
 			// isn't resumed: take its question back out, as the client does.
-			if general && !saved && ctx.Err() == nil && s.Store != nil && len(history) > 0 {
+			if general && !saved && ctx.Err() == nil && len(history) > 0 {
 				if err := save(history[:len(history)-1]); err != nil {
 					slog.Error("save chat", "err", err)
 				}
@@ -194,10 +212,10 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 // beginReview marks a todo in review as being reviewed by a chat turn, which
 // locks its status. The returned func clears the mark unless a later review
 // turn has taken it over.
-func (s *Server) beginReview(id string) (func(), error) {
+func (s *Server) beginReview(sv *service, id string) (func(), error) {
 	s.reviewMu.Lock()
 	defer s.reviewMu.Unlock()
-	if _, err := s.Store.UpdateTodo(id, func(t *model.Todo) error {
+	if _, err := sv.data.UpdateTodo(id, func(t *model.Todo) error {
 		if t.Status != model.StatusReview {
 			return fmt.Errorf("only tasks in review can be reviewed")
 		}
@@ -219,7 +237,7 @@ func (s *Server) beginReview(id string) (func(), error) {
 			return
 		}
 		delete(s.reviews, id)
-		if _, err := s.Store.UpdateTodo(id, func(t *model.Todo) error { t.Reviewing = false; return nil }); err != nil && !errors.Is(err, store.ErrNotFound) {
+		if _, err := sv.data.UpdateTodo(id, func(t *model.Todo) error { t.Reviewing = false; return nil }); err != nil && !errors.Is(err, store.ErrNotFound) {
 			slog.Warn("end review", "todo", id, "err", err)
 		}
 	}, nil
@@ -303,7 +321,7 @@ func (a *chatApprovals) answer(id string, allow bool) bool {
 // chatAttachments replaces the attachments the client sent with this
 // server's own records, so paths always come from the upload directory.
 // Uploads that no longer exist are dropped.
-func (s *Server) chatAttachments(history []agent.ChatMessage) []agent.ChatMessage {
+func (sv *service) chatAttachments(history []agent.ChatMessage) []agent.ChatMessage {
 	out := append([]agent.ChatMessage(nil), history...)
 	for i, m := range out {
 		if len(m.Attachments) == 0 {
@@ -311,11 +329,29 @@ func (s *Server) chatAttachments(history []agent.ChatMessage) []agent.ChatMessag
 		}
 		var atts []model.Attachment
 		for _, a := range m.Attachments {
-			if found, err := s.findUpload(a.ID); err == nil {
+			if found, err := sv.findUpload(a.ID); err == nil {
 				atts = append(atts, found)
 			}
 		}
 		out[i].Attachments = atts
+	}
+	return out
+}
+
+// authored sets who wrote each user message of msgs, a conversation the
+// client sent in full: messages it already had (prev, as saved) keep their
+// author, and new questions are user's. Claude's answers have none.
+func authored(prev, msgs []agent.ChatMessage, user int64) []agent.ChatMessage {
+	out := append([]agent.ChatMessage(nil), msgs...)
+	for i := range out {
+		switch {
+		case out[i].Role != "user":
+			out[i].CreatedBy = 0
+		case i < len(prev) && prev[i].Role == out[i].Role && prev[i].Content == out[i].Content:
+			out[i].CreatedBy = prev[i].CreatedBy
+		default:
+			out[i].CreatedBy = user
+		}
 	}
 	return out
 }
@@ -378,6 +414,14 @@ func withTodoContext(t model.Todo, diff string, history []agent.ChatMessage) []a
 //	server → text frame {"type":"exit","code":N} when the process ends
 //	client → {"type":"input","data":"…"} | {"type":"resize","cols":N,"rows":N}
 func (s *Server) procWS(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if _, err := sv.process(r.PathValue("procid")); err != nil {
+		writeErr(w, err)
+		return
+	}
 	sess, err := s.Procs.Attach(r.PathValue("procid"))
 	if err != nil {
 		writeErr(w, err)

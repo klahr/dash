@@ -40,7 +40,7 @@ func do(t *testing.T, h http.Handler, method, path, body string) *httptest.Respo
 func TestTaskRunGetsOnlyIssueTools(t *testing.T) {
 	s, _, p := boardServer(t)
 	h := s.Routes()
-	td, err := s.Store.CreateTodo(model.Todo{ProjectID: p.ID, Prompt: "build it"})
+	td, err := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Prompt: "build it"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestTaskRunGetsOnlyIssueTools(t *testing.T) {
 	if text, isErr := callResult(t, rpc(h, token, "tools/call", call)); isErr || !strings.Contains(text, "already known") {
 		t.Fatalf("report again: %s", text)
 	}
-	is := s.Store.ListIssues(p.ID)
+	is := raw(s).ListIssues(p.ID)
 	if len(is) != 1 || is[0].Source != "agent:"+td.ID || is[0].Severity != model.SevHigh || is[0].Location() != "web/footer.js:12" {
 		t.Fatalf("issues %+v", is)
 	}
@@ -99,12 +99,12 @@ func TestIssueTriageIntoTasks(t *testing.T) {
 	if w := do(t, h, "POST", base, `{"title":"Typo in README"}`); w.Code != http.StatusCreated {
 		t.Fatalf("quick add: %d %s", w.Code, w.Body)
 	}
-	all := s.Store.ListIssues(p.ID)
+	all := raw(s).ListIssues(p.ID)
 	if all[0].Severity != model.SevCritical {
 		t.Fatalf("not sorted by severity: %+v", all[0])
 	}
 	byTitle := func(title, file string) model.Issue {
-		for _, is := range s.Store.ListIssues(p.ID) {
+		for _, is := range raw(s).ListIssues(p.ID) {
 			if is.Title == title && is.File == file {
 				return is
 			}
@@ -130,7 +130,7 @@ func TestIssueTriageIntoTasks(t *testing.T) {
 		}
 	}
 	for _, id := range []string{a.ID, b.ID} {
-		if is, _ := s.Store.GetIssue(id); is.Status != model.IssueTaskCreated || len(is.TodoIDs) != 1 || is.TodoIDs[0] != td.ID {
+		if is, _ := raw(s).GetIssue(id); is.Status != model.IssueTaskCreated || len(is.TodoIDs) != 1 || is.TodoIDs[0] != td.ID {
 			t.Fatalf("issue after task: %+v", is)
 		}
 	}
@@ -140,7 +140,7 @@ func TestIssueTriageIntoTasks(t *testing.T) {
 	if w := do(t, h, "POST", base+"/dismiss", `{"ids":["`+c.ID+`"],"reason":"dev only"}`); w.Code != http.StatusOK {
 		t.Fatalf("dismiss: %d %s", w.Code, w.Body)
 	}
-	if is, _ := s.Store.GetIssue(c.ID); is.Status != model.IssueDismissed || is.DismissReason != "dev only" {
+	if is, _ := raw(s).GetIssue(c.ID); is.Status != model.IssueDismissed || is.DismissReason != "dev only" {
 		t.Fatalf("dismissed: %+v", is)
 	}
 	if w := do(t, h, "POST", base+"/tasks", `{"ids":["`+c.ID+`"]}`); w.Code != http.StatusBadRequest {

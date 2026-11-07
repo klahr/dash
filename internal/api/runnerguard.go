@@ -126,7 +126,11 @@ func (s *Server) hubCheck(r *http.Request) error {
 		if err := peekJSON(r, &req); err != nil {
 			return nil
 		}
-		p, err := s.Store.GetProject(segment(r, 2))
+		c, err := s.caller(r)
+		if err != nil {
+			return nil // the handler refuses it
+		}
+		p, err := s.as(c).data.GetProject(segment(r, 2))
 		if err != nil {
 			return nil // the handler answers 404 and changes nothing
 		}

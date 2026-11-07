@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/klahr/dash/internal/store"
 )
 
 // OAuth is an OAuth 2.1 authorization server for remote MCP clients such as
@@ -198,8 +200,23 @@ func (o *OAuth) Routes(mux *http.ServeMux) {
 func (o *OAuth) Bearer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tok, sent := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if sent && o.valid(tok) {
-			next.ServeHTTP(w, r)
+		if uid, ok := o.valid(tok); sent && ok {
+			// The token acts as its user, in their first org; membership is
+			// checked now, as for a browser session.
+			u, err := o.a.acc.User(uid)
+			if err != nil {
+				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "login required"})
+				return
+			}
+			sess := store.Session{User: u}
+			if ms, err := o.a.acc.Memberships(uid); err == nil && len(ms) > 0 {
+				sess.Org = &ms[0]
+			}
+			if sess.Org == nil {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "you aren't a member of any organization", "code": "no_org"})
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(WithSession(r.Context(), sess)))
 			return
 		}
 		v := fmt.Sprintf("Bearer resource_metadata=%q", o.base+"/.well-known/oauth-protected-resource")
@@ -211,14 +228,15 @@ func (o *OAuth) Bearer(next http.Handler) http.Handler {
 	})
 }
 
-func (o *OAuth) valid(tok string) bool {
+// valid reports whether tok is a live access token, and whose.
+func (o *OAuth) valid(tok string) (int64, bool) {
 	if tok == "" {
-		return false
+		return 0, false
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	t, ok := o.tokens[sessionKey(tok)]
-	return ok && !t.Refresh && o.a.now().Before(t.Expires) && o.a.acc.Active(t.User, t.Issued)
+	return t.User, ok && !t.Refresh && o.a.now().Before(t.Expires) && o.a.acc.Active(t.User, t.Issued)
 }
 
 // ---- metadata ----

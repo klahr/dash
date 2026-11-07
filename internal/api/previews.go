@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/preview"
 	"github.com/klahr/dash/internal/qr"
 )
@@ -16,16 +17,20 @@ var errNoPreviews = errors.New("previews are not available")
 // startPreview runs the todo's project run_command in its worktree, or
 // returns the preview already running.
 func (s *Server) startPreview(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	if s.Previews == nil {
 		writeErr(w, errNoPreviews)
 		return
 	}
-	t, err := s.Store.GetTodo(r.PathValue("tid"))
+	t, err := sv.data.GetTodo(r.PathValue("tid"))
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	p, err := s.Store.GetProject(t.ProjectID)
+	p, err := sv.data.GetProject(t.ProjectID)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -40,7 +45,15 @@ func (s *Server) startPreview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) stopPreview(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	if s.Previews == nil {
+		writeErr(w, preview.ErrNotFound)
+		return
+	}
+	if _, err := sv.data.GetTodo(r.PathValue("tid")); err != nil {
 		writeErr(w, preview.ErrNotFound)
 		return
 	}
@@ -54,12 +67,16 @@ func (s *Server) stopPreview(w http.ResponseWriter, r *http.Request) {
 // previewLog returns the end of the preview server's output, e.g. to send
 // it back to Claude when it crashed.
 func (s *Server) previewLog(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	if s.Previews == nil {
 		writeErr(w, preview.ErrNotFound)
 		return
 	}
 	pv, ok := s.Previews.Get(r.PathValue("tid"))
-	if !ok {
+	if !ok || !sv.data.OwnsProject(pv.ProjectID) {
 		writeErr(w, preview.ErrNotFound)
 		return
 	}
@@ -72,19 +89,44 @@ func (s *Server) previewLog(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(b)
 }
 
+// listPreviews is the previews of the caller's org's tasks.
 func (s *Server) listPreviews(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	if s.Previews == nil {
 		writeJSON(w, http.StatusOK, []any{})
 		return
 	}
 	s.Previews.SetOrigin(r)
-	writeJSON(w, http.StatusOK, s.Previews.List())
+	writeJSON(w, http.StatusOK, sv.previews())
 }
 
+// previews are the running previews of the caller's org's tasks.
+func (sv *service) previews() []model.Preview {
+	out := []model.Preview{}
+	for _, pv := range sv.s.Previews.List() {
+		if sv.data.OwnsProject(pv.ProjectID) {
+			out = append(out, pv)
+		}
+	}
+	return out
+}
+
+// stopPreviews stops the previews of the caller's org's tasks.
 func (s *Server) stopPreviews(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	n := 0
 	if s.Previews != nil {
-		n = s.Previews.StopAll("stopped")
+		for _, pv := range sv.previews() {
+			if s.Previews.Stop(pv.TodoID, "stopped") == nil {
+				n++
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"stopped": n})
 }
@@ -97,12 +139,22 @@ func (s *Server) openPreview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No preview domain is configured (-preview-domain).", http.StatusNotFound)
 		return
 	}
+	c, err := s.caller(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	s.Previews.SetOrigin(r)
-	if _, ok := s.Previews.Get(tid); !ok && !s.Previews.IsRemote(tid) {
-		if _, err := s.Store.GetTodo(tid); err != nil {
+	// Only the task's own org gets signed in to its preview; a runner's
+	// previews (<task>-<runner>) belong to the whole Dash, like the runner.
+	if s.Previews.IsRemote(tid) {
+		if !c.PlatformAdmin {
 			http.NotFound(w, r)
 			return
 		}
+	} else if _, err := s.as(c).data.GetTodo(tid); err != nil {
+		http.NotFound(w, r)
+		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, s.Previews.AuthURL(tid, r.URL.Query().Get("next")), http.StatusFound)

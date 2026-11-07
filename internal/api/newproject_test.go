@@ -47,9 +47,9 @@ func newProjectServer(t *testing.T) *Server {
 	return s
 }
 
-func createProjectReq(s *Server, body string) *httptest.ResponseRecorder {
+func createProjectReq(t *testing.T, s *Server, body string) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
-	s.createProject(w, httptest.NewRequest("POST", "/api/projects", strings.NewReader(body)))
+	s.createProject(w, asOwner(t, s, httptest.NewRequest("POST", "/api/projects", strings.NewReader(body))))
 	return w
 }
 
@@ -73,25 +73,25 @@ func TestLookupGitHubRepo(t *testing.T) {
 
 func TestCreateProjectClonesExistingGitHubRepo(t *testing.T) {
 	s := newProjectServer(t)
-	if w := createProjectReq(s, `{"name":"There","github":"there"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "clone it") {
+	if w := createProjectReq(t, s, `{"name":"There","github":"there"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "clone it") {
 		t.Fatalf("existing repo without clone: want 400, got %d %s", w.Code, w.Body)
 	}
-	w := createProjectReq(s, `{"name":"There","github":"me/there","clone":true}`)
+	w := createProjectReq(t, s, `{"name":"There","github":"me/there","clone":true}`)
 	var p model.Project
 	if w.Code != http.StatusCreated || json.Unmarshal(w.Body.Bytes(), &p) != nil {
 		t.Fatalf("clone: %d %s", w.Code, w.Body)
 	}
-	if p.RemoteURL != "https://github.com/me/there.git" || p.DefaultBranch != "trunk" || p.Path != filepath.Join(s.ProjectRoot, "there") {
+	if p.RemoteURL != "https://github.com/me/there.git" || p.DefaultBranch != "trunk" || p.Path != filepath.Join(s.ProjectRoot, "default", "there") {
 		t.Fatalf("cloned project: %+v", p)
 	}
-	if w := createProjectReq(s, `{"name":"Gone","github":"gone","clone":true}`); w.Code != http.StatusBadRequest {
+	if w := createProjectReq(t, s, `{"name":"Gone","github":"gone","clone":true}`); w.Code != http.StatusBadRequest {
 		t.Fatalf("clone of a missing repo: want 400, got %d %s", w.Code, w.Body)
 	}
 }
 
 func TestCreateProjectCreatesGitHubRepo(t *testing.T) {
 	s := newProjectServer(t)
-	w := createProjectReq(s, `{"name":"Fresh","github":"fresh"}`)
+	w := createProjectReq(t, s, `{"name":"Fresh","github":"fresh"}`)
 	var p model.Project
 	if w.Code != http.StatusCreated || json.Unmarshal(w.Body.Bytes(), &p) != nil {
 		t.Fatalf("create: %d %s", w.Code, w.Body)

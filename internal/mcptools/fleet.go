@@ -20,9 +20,42 @@ type API interface {
 // ErrUnauthorized, from API.Call, stops a search across computers.
 var ErrUnauthorized = errors.New("not logged in")
 
+// Computer is one computer's task board, as the fleet tools use it.
+type Computer interface {
+	Projects() ([]model.Project, error)
+	// UpdateProject changes a project's settings (ProjectSettings).
+	UpdateProject(id string, changes map[string]any) (model.Project, error)
+	Todos(projectID string) ([]model.Todo, error)
+	CreateTodo(projectID string, t NewTodo) (model.Todo, error)
+	Todo(id string) (model.Todo, error)
+	// Act moves a task: verb is enqueue, cancel, approve or rework (with
+	// feedback).
+	Act(id, verb, feedback string) error
+	UpdateTodo(id string, u TodoUpdate) (model.Todo, error)
+	DeleteTodo(id string) error
+	Issues(projectID string) ([]model.Issue, error)
+	ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error)
+	// Text is a task's "diff" or "log".
+	Text(id, kind string) (string, error)
+}
+
+// Machine is one computer of a fleet. Board is unset while it is
+// unreachable (OK false, Error says why).
+type Machine struct {
+	Name  string
+	OK    bool
+	Error string
+	Board Computer
+}
+
 // Fleet is the task board of every computer in a dashboard. It serves both
-// cmd/dash-mcp (over HTTP) and the hub's own /mcp endpoint (in-process).
-type Fleet struct{ API API }
+// cmd/dash-mcp (over the hub's REST API) and the hub's own /mcp endpoint
+// (Computers: called in-process, as the signed-in user).
+type Fleet struct {
+	API API
+	// Computers, if set, lists the computers instead of asking API.
+	Computers func() ([]Machine, error)
+}
 
 // FleetInstructions describe the FleetTools to the model.
 const FleetInstructions = "Dash runs Claude Code on tasks in parallel, each in its own git worktree. " +
@@ -36,29 +69,44 @@ type machine struct {
 	Error  string `json:"error"`
 }
 
-func (f Fleet) machines() ([]machine, error) {
+func (f Fleet) machines() ([]Machine, error) {
+	if f.Computers != nil {
+		return f.Computers()
+	}
 	var ms []machine
-	return ms, f.API.Call("GET", "/api/machines", nil, &ms)
+	if err := f.API.Call("GET", "/api/machines", nil, &ms); err != nil {
+		return nil, err
+	}
+	out := make([]Machine, len(ms))
+	for i, m := range ms {
+		out[i] = Machine{Name: m.Name, OK: m.OK, Error: m.Error}
+		if m.OK {
+			out[i].Board = RESTComputer{API: f.API, Prefix: m.Prefix}
+		}
+	}
+	return out, nil
 }
 
 // projects lists every reachable computer's projects, tagged with the
-// computer's name, and the prefix each lives under.
-func (f Fleet) projects() (ps []model.Project, prefix map[string]string, unreachable []string, err error) {
+// computer's name, and the computer each lives on.
+func (f Fleet) projects() (ps []model.Project, on map[string]Computer, unreachable []string, err error) {
 	ms, err := f.machines()
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	prefix = map[string]string{}
+	on = map[string]Computer{}
 	for _, m := range ms {
 		var mps []model.Project
-		if m.OK {
-			err = f.API.Call("GET", m.Prefix+"/api/projects", nil, &mps)
+		if m.OK && m.Board != nil {
+			mps, err = m.Board.Projects()
 			if errors.Is(err, ErrUnauthorized) {
 				return nil, nil, nil, err
 			}
 			if err != nil {
 				m.OK, m.Error = false, err.Error()
 			}
+		} else {
+			m.OK = false
 		}
 		if !m.OK {
 			unreachable = append(unreachable, m.Name+": "+m.Error)
@@ -66,11 +114,11 @@ func (f Fleet) projects() (ps []model.Project, prefix map[string]string, unreach
 		}
 		for _, p := range mps {
 			p.Machine = m.Name
-			prefix[p.ID] = m.Prefix
+			on[p.ID] = m.Board
 			ps = append(ps, p)
 		}
 	}
-	return ps, prefix, unreachable, nil
+	return ps, on, unreachable, nil
 }
 
 func (f Fleet) Projects() ([]model.Project, []string, error) {
@@ -79,17 +127,17 @@ func (f Fleet) Projects() ([]model.Project, []string, error) {
 }
 
 // project finds a project by id or name on any computer.
-func (f Fleet) project(ref string) (model.Project, string, error) {
-	ps, prefix, _, err := f.projects()
+func (f Fleet) project(ref string) (model.Project, Computer, error) {
+	ps, on, _, err := f.projects()
 	if err != nil {
-		return model.Project{}, "", err
+		return model.Project{}, nil, err
 	}
 	for _, p := range ps {
 		if p.ID == ref || strings.EqualFold(p.Name, ref) {
-			return p, prefix[p.ID], nil
+			return p, on[p.ID], nil
 		}
 	}
-	return model.Project{}, "", fmt.Errorf("no project %q (see list_projects)", ref)
+	return model.Project{}, nil, fmt.Errorf("no project %q (see list_projects)", ref)
 }
 
 func (f Fleet) Project(ref string) (model.Project, error) {
@@ -97,14 +145,14 @@ func (f Fleet) Project(ref string) (model.Project, error) {
 	return p, err
 }
 
-// UpdateProject sends changes to the project's PATCH /api/projects/{id}.
+// UpdateProject changes a project's settings on its computer.
 func (f Fleet) UpdateProject(ref string, changes map[string]any) (model.Project, error) {
-	p, at, err := f.project(ref)
+	p, c, err := f.project(ref)
 	if err != nil {
 		return model.Project{}, err
 	}
-	var out model.Project
-	if err := f.API.Call("PATCH", at+"/api/projects/"+url.PathEscape(p.ID), changes, &out); err != nil {
+	out, err := c.UpdateProject(p.ID, changes)
+	if err != nil {
 		return model.Project{}, err
 	}
 	out.Machine = p.Machine
@@ -112,49 +160,43 @@ func (f Fleet) UpdateProject(ref string, changes map[string]any) (model.Project,
 }
 
 func (f Fleet) Todos(projectID string) ([]model.Todo, error) {
-	_, at, err := f.project(projectID)
+	p, c, err := f.project(projectID)
 	if err != nil {
 		return nil, err
 	}
-	var ts []model.Todo
-	return ts, f.API.Call("GET", at+"/api/projects/"+url.PathEscape(projectID)+"/todos", nil, &ts)
+	return c.Todos(p.ID)
 }
 
 func (f Fleet) CreateTodo(projectID string, t NewTodo) (model.Todo, error) {
-	_, at, err := f.project(projectID)
+	p, c, err := f.project(projectID)
 	if err != nil {
 		return model.Todo{}, err
 	}
-	var out model.Todo
-	return out, f.API.Call("POST", at+"/api/projects/"+url.PathEscape(projectID)+"/todos", map[string]any{
-		"title": t.Title, "prompt": t.Prompt, "priority": t.Priority, "enqueue": t.Enqueue,
-		"depends_on": t.DependsOn,
-	}, &out)
+	return c.CreateTodo(p.ID, t)
 }
 
-// todo finds a task on whichever computer has it, and that computer's prefix.
-func (f Fleet) todo(id string) (model.Todo, string, error) {
+// todo finds a task on whichever computer has it, and that computer.
+func (f Fleet) todo(id string) (model.Todo, Computer, error) {
 	if id == "" {
-		return model.Todo{}, "", errors.New("todo is required")
+		return model.Todo{}, nil, errors.New("todo is required")
 	}
 	ms, err := f.machines()
 	if err != nil {
-		return model.Todo{}, "", err
+		return model.Todo{}, nil, err
 	}
 	for _, m := range ms {
-		if !m.OK {
+		if !m.OK || m.Board == nil {
 			continue
 		}
-		var t model.Todo
-		err := f.API.Call("GET", m.Prefix+"/api/todos/"+url.PathEscape(id), nil, &t)
+		t, err := m.Board.Todo(id)
 		if err == nil {
-			return t, m.Prefix, nil
+			return t, m.Board, nil
 		}
 		if errors.Is(err, ErrUnauthorized) {
-			return model.Todo{}, "", err
+			return model.Todo{}, nil, err
 		}
 	}
-	return model.Todo{}, "", fmt.Errorf("no task %q", id)
+	return model.Todo{}, nil, fmt.Errorf("no task %q", id)
 }
 
 func (f Fleet) Todo(id string) (model.Todo, error) {
@@ -162,27 +204,114 @@ func (f Fleet) Todo(id string) (model.Todo, error) {
 	return t, err
 }
 
-// Action posts to a task's /{verb} (enqueue, cancel, approve, rework) and
-// returns the task afterwards.
-func (f Fleet) Action(id, verb string, body any) (model.Todo, error) {
-	_, at, err := f.todo(id)
+// Action moves a task (enqueue, cancel, approve, rework) and returns it
+// afterwards.
+func (f Fleet) Action(id, verb, feedback string) (model.Todo, error) {
+	_, c, err := f.todo(id)
 	if err != nil {
 		return model.Todo{}, err
 	}
-	if err := f.API.Call("POST", at+"/api/todos/"+url.PathEscape(id)+"/"+verb, body, nil); err != nil {
+	if err := c.Act(id, verb, feedback); err != nil {
 		return model.Todo{}, err
 	}
-	return f.Todo(id)
+	return c.Todo(id)
 }
 
-func (f Fleet) QueueTodo(id string) (model.Todo, error) { return f.Action(id, "enqueue", nil) }
+func (f Fleet) QueueTodo(id string) (model.Todo, error) { return f.Action(id, "enqueue", "") }
 
-// UpdateTodo sends the given fields to the task's PATCH /api/todos/{id}.
 func (f Fleet) UpdateTodo(id string, u TodoUpdate) (model.Todo, error) {
-	_, at, err := f.todo(id)
+	_, c, err := f.todo(id)
 	if err != nil {
 		return model.Todo{}, err
 	}
+	return c.UpdateTodo(id, u)
+}
+
+func (f Fleet) DeleteTodo(id string) error {
+	_, c, err := f.todo(id)
+	if err != nil {
+		return err
+	}
+	return c.DeleteTodo(id)
+}
+
+func (f Fleet) Issues(projectID string) ([]model.Issue, error) {
+	p, c, err := f.project(projectID)
+	if err != nil {
+		return nil, err
+	}
+	return c.Issues(p.ID)
+}
+
+func (f Fleet) ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error) {
+	p, c, err := f.project(projectID)
+	if err != nil {
+		return model.Issue{}, "", err
+	}
+	return c.ReportIssue(p.ID, is)
+}
+
+// Text returns a task's diff or log, cut to max characters (from the end if tail).
+func (f Fleet) Text(id, kind string, max int, tail bool) (string, error) {
+	_, c, err := f.todo(id)
+	if err != nil {
+		return "", err
+	}
+	out, err := c.Text(id, kind)
+	if err != nil || max <= 0 || len(out) <= max {
+		return out, err
+	}
+	if tail {
+		return fmt.Sprintf("[…%d earlier characters omitted]\n", len(out)-max) + out[len(out)-max:], nil
+	}
+	return out[:max] + fmt.Sprintf("\n[…truncated, %d more characters]", len(out)-max), nil
+}
+
+// RESTComputer is a computer reached through the hub's REST API: Prefix is
+// "" for the hub, "/peer/<name>" for another computer in its dashboard.
+type RESTComputer struct {
+	API    API
+	Prefix string
+}
+
+func (c RESTComputer) Projects() ([]model.Project, error) {
+	var ps []model.Project
+	return ps, c.API.Call("GET", c.Prefix+"/api/projects", nil, &ps)
+}
+
+func (c RESTComputer) UpdateProject(id string, changes map[string]any) (model.Project, error) {
+	var out model.Project
+	return out, c.API.Call("PATCH", c.Prefix+"/api/projects/"+url.PathEscape(id), changes, &out)
+}
+
+func (c RESTComputer) Todos(projectID string) ([]model.Todo, error) {
+	var ts []model.Todo
+	return ts, c.API.Call("GET", c.Prefix+"/api/projects/"+url.PathEscape(projectID)+"/todos", nil, &ts)
+}
+
+func (c RESTComputer) CreateTodo(projectID string, t NewTodo) (model.Todo, error) {
+	var out model.Todo
+	return out, c.API.Call("POST", c.Prefix+"/api/projects/"+url.PathEscape(projectID)+"/todos", map[string]any{
+		"title": t.Title, "prompt": t.Prompt, "priority": t.Priority, "enqueue": t.Enqueue,
+		"depends_on": t.DependsOn,
+	}, &out)
+}
+
+func (c RESTComputer) Todo(id string) (model.Todo, error) {
+	var t model.Todo
+	return t, c.API.Call("GET", c.Prefix+"/api/todos/"+url.PathEscape(id), nil, &t)
+}
+
+func (c RESTComputer) Act(id, verb, feedback string) error {
+	var body any
+	if verb == "rework" {
+		body = map[string]any{"feedback": feedback}
+	}
+	return c.API.Call("POST", c.Prefix+"/api/todos/"+url.PathEscape(id)+"/"+verb, body, nil)
+}
+
+// UpdateTodo sends the given fields to the task's PATCH /api/todos/{id}.
+func (c RESTComputer) UpdateTodo(id string, u TodoUpdate) (model.Todo, error) {
 	changes := map[string]any{}
 	if u.Title != nil {
 		changes["title"] = *u.Title
@@ -201,58 +330,33 @@ func (f Fleet) UpdateTodo(id string, u TodoUpdate) (model.Todo, error) {
 		changes["depends_on"] = deps
 	}
 	var out model.Todo
-	return out, f.API.Call("PATCH", at+"/api/todos/"+url.PathEscape(id), changes, &out)
+	return out, c.API.Call("PATCH", c.Prefix+"/api/todos/"+url.PathEscape(id), changes, &out)
 }
 
-func (f Fleet) DeleteTodo(id string) error { return f.Delete(id) }
+func (c RESTComputer) DeleteTodo(id string) error {
+	return c.API.Call("DELETE", c.Prefix+"/api/todos/"+url.PathEscape(id), nil, nil)
+}
 
-func (f Fleet) Issues(projectID string) ([]model.Issue, error) {
-	_, at, err := f.project(projectID)
-	if err != nil {
-		return nil, err
-	}
+func (c RESTComputer) Issues(projectID string) ([]model.Issue, error) {
 	var is []model.Issue
-	return is, f.API.Call("GET", at+"/api/projects/"+url.PathEscape(projectID)+"/issues", nil, &is)
+	return is, c.API.Call("GET", c.Prefix+"/api/projects/"+url.PathEscape(projectID)+"/issues", nil, &is)
 }
 
-func (f Fleet) ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error) {
-	_, at, err := f.project(projectID)
-	if err != nil {
-		return model.Issue{}, "", err
-	}
+func (c RESTComputer) ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error) {
 	var out struct {
 		Issue  model.Issue        `json:"issue"`
 		Result model.UpsertResult `json:"result"`
 	}
-	err = f.API.Call("POST", at+"/api/projects/"+url.PathEscape(projectID)+"/issues", map[string]any{
+	err := c.API.Call("POST", c.Prefix+"/api/projects/"+url.PathEscape(projectID)+"/issues", map[string]any{
 		"title": is.Title, "type": is.Type, "severity": is.Severity, "file": is.File, "line": is.Line,
 		"details": is.Details, "fix": is.Fix, "source": is.Source,
 	}, &out)
 	return out.Issue, out.Result, err
 }
 
-func (f Fleet) Delete(id string) error {
-	_, at, err := f.todo(id)
-	if err != nil {
-		return err
-	}
-	return f.API.Call("DELETE", at+"/api/todos/"+url.PathEscape(id), nil, nil)
-}
-
-// Text returns a task's diff or log, cut to max characters (from the end if tail).
-func (f Fleet) Text(id, kind string, max int, tail bool) (string, error) {
-	_, at, err := f.todo(id)
-	if err != nil {
-		return "", err
-	}
+func (c RESTComputer) Text(id, kind string) (string, error) {
 	var out string
-	if err := f.API.Call("GET", at+"/api/todos/"+url.PathEscape(id)+"/"+kind, nil, &out); err != nil || max <= 0 || len(out) <= max {
-		return out, err
-	}
-	if tail {
-		return fmt.Sprintf("[…%d earlier characters omitted]\n", len(out)-max) + out[len(out)-max:], nil
-	}
-	return out[:max] + fmt.Sprintf("\n[…truncated, %d more characters]", len(out)-max), nil
+	return out, c.API.Call("GET", c.Prefix+"/api/todos/"+url.PathEscape(id)+"/"+kind, nil, &out)
 }
 
 // FleetTools are the board, review and project settings tools, across every
@@ -330,20 +434,20 @@ func ReviewTools(f Fleet) []Tool {
 			{"max_chars", "integer", "Return at most this many characters from the end (default 20000).", false}},
 			func(a Args) (any, error) { return f.Text(a.Str("todo"), "log", a.Num("max_chars", 20000), true) }},
 		{"approve_todo", "Approve a task in review: it goes to the merge queue (or a pull request).", []Param{PTodo},
-			func(a Args) (any, error) { return f.Action(a.Str("todo"), "approve", nil) }},
+			func(a Args) (any, error) { return f.Action(a.Str("todo"), "approve", "") }},
 		{"rework_todo", "Send a task back to Claude with feedback.", []Param{PTodo,
 			{"feedback", "string", "What to change.", true}},
 			func(a Args) (any, error) {
 				if a.Str("feedback") == "" {
 					return nil, errors.New("feedback is required")
 				}
-				return f.Action(a.Str("todo"), "rework", map[string]any{"feedback": a.Str("feedback")})
+				return f.Action(a.Str("todo"), "rework", a.Str("feedback"))
 			}},
 		{"enqueue_todo", "Queue a draft or failed task to run (also retries failed ones, unlike queue_todo).", []Param{PTodo},
-			func(a Args) (any, error) { return f.Action(a.Str("todo"), "enqueue", nil) }},
+			func(a Args) (any, error) { return f.Action(a.Str("todo"), "enqueue", "") }},
 		{"cancel_todo", "Stop a running or queued task.", []Param{PTodo},
-			func(a Args) (any, error) { return f.Action(a.Str("todo"), "cancel", nil) }},
+			func(a Args) (any, error) { return f.Action(a.Str("todo"), "cancel", "") }},
 		{"delete_todo", "Delete a task and its worktree.", []Param{PTodo},
-			func(a Args) (any, error) { return "deleted", f.Delete(a.Str("todo")) }},
+			func(a Args) (any, error) { return "deleted", f.DeleteTodo(a.Str("todo")) }},
 	}
 }

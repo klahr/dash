@@ -12,11 +12,11 @@ func TestDeleteProjectNeedsPassword(t *testing.T) {
 	r := httptest.NewRequest("DELETE", "/api/projects/"+p.ID, strings.NewReader(`{"password":"wrong"}`))
 	r.SetPathValue("pid", p.ID)
 	w := httptest.NewRecorder()
-	s.deleteProject(w, r)
+	s.deleteProject(w, asOwner(t, s, r))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("want 403, got %d %s", w.Code, w.Body)
 	}
-	if _, err := s.Store.GetProject(p.ID); err != nil {
+	if _, err := raw(s).GetProject(p.ID); err != nil {
 		t.Fatalf("project gone after a wrong password: %v", err)
 	}
 

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/klahr/dash/internal/model"
@@ -29,9 +30,18 @@ var (
 	unsafeNameRe = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 )
 
+// uploadOrgFile, in an upload's directory, names the org it was uploaded
+// in; only that org can see or attach it. Uploads from before orgs have
+// none and belong to the default org.
+const uploadOrgFile = ".org"
+
 // upload stores the request body (POST /api/uploads?name=shot.png) and
 // returns its attachment record; todos refer to it by id.
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	name := cleanUploadName(r.URL.Query().Get("name"), r.Header.Get("Content-Type"))
 	typ, ok := uploadTypes[strings.ToLower(filepath.Ext(name))]
 	if !ok {
@@ -41,6 +51,11 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	id := store.NewID()
 	dir := filepath.Join(s.UploadRoot, id)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := os.WriteFile(filepath.Join(dir, uploadOrgFile), []byte(strconv.FormatInt(sv.c.Org, 10)), 0o600); err != nil {
+		_ = os.RemoveAll(dir)
 		writeErr(w, err)
 		return
 	}
@@ -68,7 +83,11 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 
 // getUpload serves an attachment back to the UI (thumbnails, downloads).
 func (s *Server) getUpload(w http.ResponseWriter, r *http.Request) {
-	a, err := s.findUpload(r.PathValue("id"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	a, err := sv.findUpload(r.PathValue("id"))
 	if err != nil || a.Name != r.PathValue("name") {
 		writeErr(w, store.ErrNotFound)
 		return
@@ -84,10 +103,10 @@ func (s *Server) getUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 // attachments resolves upload ids from a request.
-func (s *Server) attachments(ids []string) ([]model.Attachment, error) {
+func (sv *service) attachments(ids []string) ([]model.Attachment, error) {
 	var out []model.Attachment
 	for _, id := range ids {
-		a, err := s.findUpload(id)
+		a, err := sv.findUpload(id)
 		if err != nil {
 			return nil, fmt.Errorf("%w: unknown attachment %q", errBadRequest, id)
 		}
@@ -96,25 +115,52 @@ func (s *Server) attachments(ids []string) ([]model.Attachment, error) {
 	return out, nil
 }
 
-func (s *Server) findUpload(id string) (model.Attachment, error) {
+// findUpload is the caller's org's upload id.
+func (sv *service) findUpload(id string) (model.Attachment, error) {
+	s := sv.s
 	if !uploadIDRe.MatchString(id) || s.UploadRoot == "" {
 		return model.Attachment{}, store.ErrNotFound
 	}
 	dir := filepath.Join(s.UploadRoot, id)
 	entries, err := os.ReadDir(dir)
-	if err != nil || len(entries) != 1 || entries[0].IsDir() {
+	if err != nil {
 		return model.Attachment{}, store.ErrNotFound
 	}
-	info, err := entries[0].Info()
+	var files []os.DirEntry
+	org := int64(0) // none recorded: from before orgs
+	for _, e := range entries {
+		if e.Name() == uploadOrgFile {
+			b, err := os.ReadFile(filepath.Join(dir, uploadOrgFile))
+			if org, err = strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64); err != nil || org == 0 {
+				return model.Attachment{}, store.ErrNotFound
+			}
+			continue
+		}
+		files = append(files, e)
+	}
+	if len(files) != 1 || files[0].IsDir() || !sv.uploadOrg(org) {
+		return model.Attachment{}, store.ErrNotFound
+	}
+	info, err := files[0].Info()
 	if err != nil {
 		return model.Attachment{}, err
 	}
-	name := entries[0].Name()
+	name := files[0].Name()
 	typ, ok := uploadTypes[strings.ToLower(filepath.Ext(name))]
 	if !ok {
 		return model.Attachment{}, store.ErrNotFound
 	}
 	return model.Attachment{ID: id, Name: name, Type: typ, Size: info.Size(), Path: filepath.Join(dir, name)}, nil
+}
+
+// uploadOrg reports whether an upload of org (0: from before orgs, which
+// are the default org's) is the caller's.
+func (sv *service) uploadOrg(org int64) bool {
+	if org != 0 {
+		return org == sv.c.Org
+	}
+	def, err := sv.s.Store.Accounts().DefaultOrg()
+	return err == nil && def.ID == sv.c.Org
 }
 
 // cleanUploadName makes a safe file name, adding an extension from the

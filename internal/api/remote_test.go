@@ -120,7 +120,7 @@ func TestRemoteMCPTokensAreSeparate(t *testing.T) {
 		`resource_metadata="`+publicURL+`/.well-known/oauth-protected-resource"`) {
 		t.Errorf("no token: %d %q", w.Code, w.Header().Get("WWW-Authenticate"))
 	}
-	chat, release := s.Board.Register(home.ID)
+	chat, release := s.Board.Register(chatCaller(t, s), home.ID)
 	defer release()
 	if w := rpcAt(h, "/mcp", chat, "ping", "{}"); w.Code != http.StatusUnauthorized {
 		t.Errorf("/mcp took a chat-run token: %d", w.Code)
@@ -213,7 +213,7 @@ func TestRemoteMCPToolsAcrossComputers(t *testing.T) {
 		t.Fatal(text)
 	}
 	created := todo(text)
-	if _, err := s.Store.GetTodo(created.ID); err == nil {
+	if _, err := raw(s).GetTodo(created.ID); err == nil {
 		t.Fatalf("created on the hub, not the peer")
 	}
 	if text, _ := call("list_todos", `{"project":"`+work.ID+`"}`); !strings.Contains(text, "Remote task") {

@@ -173,10 +173,14 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	}
 	servers := map[string]any{}
 	if c.Board != nil && c.BoardURL != "" {
-		pid, _ := ctx.Value(projectKey{}).(string)
-		token, release := c.Board.Register(pid)
-		defer release()
-		servers[mcptools.ServerName] = mcptools.ServerConfig(c.BoardURL, token)
+		// The tools act as the user the turn runs for, in their org; a turn
+		// without one (no signed-in user) gets none.
+		if caller, ok := mcptools.CallerFrom(ctx); ok {
+			pid, _ := ctx.Value(projectKey{}).(string)
+			token, release := c.Board.Register(caller, pid)
+			defer release()
+			servers[mcptools.ServerName] = mcptools.ServerConfig(c.BoardURL, token)
+		}
 	}
 	if ask := approverFrom(ctx); c.shell() && ask != nil && c.Perms != nil && c.PermURL != "" {
 		token, release := c.Perms.RegisterFunc(ask)

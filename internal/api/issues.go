@@ -32,23 +32,31 @@ func (in issueInput) issue(projectID string) model.Issue {
 }
 
 func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	pid := r.PathValue("pid")
-	if _, err := s.Store.GetProject(pid); err != nil {
+	if _, err := sv.data.GetProject(pid); err != nil {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.Store.ListIssues(pid))
+	writeJSON(w, http.StatusOK, sv.data.ListIssues(pid))
 }
 
 // addIssue adds one issue (the web UI's quick add needs only a title), or
 // updates the one with the same fingerprint.
 func (s *Server) addIssue(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	var in issueInput
 	if err := decode(r, &in); err != nil {
 		writeErr(w, err)
 		return
 	}
-	is, res, err := s.Store.UpsertIssue(in.issue(r.PathValue("pid")))
+	is, res, err := sv.data.UpsertIssue(in.issue(r.PathValue("pid")))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -64,6 +72,10 @@ func (s *Server) addIssue(w http.ResponseWriter, r *http.Request) {
 // findings, and answers how many were new, updated, already known or
 // dismissed.
 func (s *Server) addIssues(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		Source string       `json:"source"` // e.g. "scan:gosec", for issues without their own
 		Issues []issueInput `json:"issues"`
@@ -77,7 +89,7 @@ func (s *Server) addIssues(w http.ResponseWriter, r *http.Request) {
 	for i, x := range req.Issues {
 		in[i] = x.issue(pid)
 	}
-	counts, err := s.Store.UpsertIssues(pid, req.Source, in)
+	counts, err := sv.data.UpsertIssues(pid, req.Source, in)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -86,6 +98,10 @@ func (s *Server) addIssues(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateIssue(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		Title         *string            `json:"title"`
 		Type          *model.IssueType   `json:"type"`
@@ -101,7 +117,7 @@ func (s *Server) updateIssue(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	is, err := s.Store.UpdateIssue(r.PathValue("iid"), func(is *model.Issue) error {
+	is, err := sv.data.UpdateIssue(r.PathValue("iid"), func(is *model.Issue) error {
 		set(&is.Title, req.Title)
 		set(&is.Type, req.Type)
 		set(&is.Severity, req.Severity)
@@ -121,7 +137,11 @@ func (s *Server) updateIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteIssue(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.Store.DeleteIssue(r.PathValue("iid")); err != nil {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if _, err := sv.data.DeleteIssue(r.PathValue("iid")); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -129,6 +149,10 @@ func (s *Server) deleteIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) dismissIssues(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		IDs    []string `json:"ids"`
 		Reason string   `json:"reason"`
@@ -140,11 +164,11 @@ func (s *Server) dismissIssues(w http.ResponseWriter, r *http.Request) {
 	pid := r.PathValue("pid")
 	out := []model.Issue{}
 	for _, id := range req.IDs {
-		if is, err := s.Store.GetIssue(id); err != nil || is.ProjectID != pid {
+		if is, err := sv.data.GetIssue(id); err != nil || is.ProjectID != pid {
 			writeErr(w, fmt.Errorf("issue %q: %w", id, store.ErrNotFound))
 			return
 		}
-		is, err := s.Store.SetIssueStatus(id, model.IssueDismissed, req.Reason)
+		is, err := sv.data.SetIssueStatus(id, model.IssueDismissed, req.Reason)
 		if err != nil {
 			writeErr(w, err)
 			return
@@ -157,6 +181,10 @@ func (s *Server) dismissIssues(w http.ResponseWriter, r *http.Request) {
 // issueTasks creates tasks for issues: one each, or one for them all
 // (combine). They are drafts unless enqueue is set.
 func (s *Server) issueTasks(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		IDs     []string `json:"ids"`
 		Combine bool     `json:"combine"`
@@ -166,7 +194,7 @@ func (s *Server) issueTasks(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	todos, err := s.tasksForIssues(r.PathValue("pid"), req.IDs, req.Combine, req.Enqueue)
+	todos, err := sv.tasksForIssues(r.PathValue("pid"), req.IDs, req.Combine, req.Enqueue)
 	if err != nil && len(todos) == 0 {
 		writeErr(w, err)
 		return
@@ -176,13 +204,13 @@ func (s *Server) issueTasks(w http.ResponseWriter, r *http.Request) {
 
 // tasksForIssues creates the tasks issueTasks describes and links each issue
 // to its task. It returns the tasks created, with an error if one failed.
-func (s *Server) tasksForIssues(pid string, ids []string, combine, enqueue bool) ([]model.Todo, error) {
+func (sv *service) tasksForIssues(pid string, ids []string, combine, enqueue bool) ([]model.Todo, error) {
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("%w: no issues given", errBadRequest)
 	}
 	var issues []model.Issue
 	for _, id := range ids {
-		is, err := s.Store.GetIssue(strings.TrimSpace(id))
+		is, err := sv.data.GetIssue(strings.TrimSpace(id))
 		if err != nil || is.ProjectID != pid {
 			return nil, fmt.Errorf("issue %q: %w", id, store.ErrNotFound)
 		}
@@ -201,7 +229,7 @@ func (s *Server) tasksForIssues(pid string, ids []string, combine, enqueue bool)
 	var out []model.Todo
 	for _, g := range groups {
 		title, prompt := model.TaskFromIssues(g)
-		t, err := s.Store.CreateTodo(model.Todo{ProjectID: pid, Title: title, Prompt: prompt})
+		t, err := sv.data.CreateTodo(model.Todo{ProjectID: pid, CreatedBy: sv.c.User, Title: title, Prompt: prompt})
 		if err != nil {
 			return out, err
 		}
@@ -209,12 +237,12 @@ func (s *Server) tasksForIssues(pid string, ids []string, combine, enqueue bool)
 		for i, is := range g {
 			gids[i] = is.ID
 		}
-		if _, err := s.Store.LinkIssues(gids, t.ID); err != nil {
-			_, _ = s.Store.DeleteTodo(t.ID)
+		if _, err := sv.data.LinkIssues(gids, t.ID); err != nil {
+			_, _ = sv.data.DeleteTodo(t.ID)
 			return out, err
 		}
 		if enqueue {
-			if t, err = s.enqueue(t.ID); err != nil {
+			if t, err = sv.enqueue(t.ID); err != nil {
 				return append(out, t), err
 			}
 		}

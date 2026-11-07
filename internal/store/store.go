@@ -52,7 +52,12 @@ type Publisher interface{ Publish(model.Event) }
 type snapshot struct {
 	Projects map[string]*model.Project `json:"projects"`
 	Todos    map[string]*model.Todo    `json:"todos"`
-	Chat     []model.ChatMessage       `json:"chat,omitempty"`
+	// Chat is the general chat of a state.json from before users; it is
+	// imported as the first user's (see Accounts.Bootstrap).
+	Chat []model.ChatMessage `json:"chat,omitempty"`
+	// MainChats are the general chats, one per user and org, keyed by
+	// mainChatOwner.
+	MainChats map[string][]model.ChatMessage `json:"-"`
 	// TodoChats are conversations about one todo, keyed by todo id. Kept
 	// apart from Todo so they aren't broadcast with every todo update.
 	TodoChats map[string][]model.ChatMessage `json:"todo_chats,omitempty"`
@@ -76,6 +81,9 @@ type Store struct {
 	db   *sql.DB
 	pub  Publisher
 	data snapshot
+	// orgs mirrors each project's org (project id → int64) outside mu, so
+	// the event hub can look it up while a mutation holding mu publishes.
+	orgs sync.Map
 	// Now, if set, is the clock of scan settings' UpdatedAt, which scan
 	// schedules count from (tests); default time.Now.
 	Now func() time.Time
@@ -118,6 +126,7 @@ func open(db *sql.DB, path string, pub Publisher) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{db: db, pub: pub, data: data}
+	s.indexOrgsLocked()
 	var projects []*model.Project
 	for _, p := range s.data.Projects {
 		if clean := CleanPath(p.Path); clean != p.Path {
@@ -187,14 +196,83 @@ func (s *Store) writeLocked(fn func(*sql.Tx) error) error {
 	}
 	if data, lerr := load(s.db); lerr == nil {
 		s.data = data
+		s.indexOrgsLocked()
 	}
 	return err
 }
 
+// emit announces a change to projectID's records, as an event of the
+// project's org. The caller holds the lock.
 func (s *Store) emit(t model.EventType, projectID, todoID string, data any) {
-	if s.pub != nil {
-		s.pub.Publish(model.Event{Type: t, ProjectID: projectID, TodoID: todoID, Data: data, Time: time.Now()})
+	var org int64
+	if p, ok := s.data.Projects[projectID]; ok {
+		org = p.OrgID
 	}
+	s.emitTo(org, t, projectID, todoID, data)
+}
+
+func (s *Store) emitTo(org int64, t model.EventType, projectID, todoID string, data any) {
+	if org == 0 {
+		org = -1 // a project without an org (no accounts yet): only for subscribers of every org
+	}
+	if s.pub != nil {
+		s.pub.Publish(model.Event{Type: t, ProjectID: projectID, TodoID: todoID, Data: data, Time: time.Now(), OrgID: org})
+	}
+}
+
+// reload replaces memory with what the database holds, after the account
+// code has changed rows beneath the store (Accounts.Bootstrap).
+func (s *Store) reload() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, err := load(s.db)
+	if err != nil {
+		return err
+	}
+	s.data = data
+	s.indexOrgsLocked()
+	return nil
+}
+
+// indexOrgsLocked rebuilds s.orgs from memory.
+func (s *Store) indexOrgsLocked() {
+	s.orgs.Clear()
+	for id, p := range s.data.Projects {
+		s.orgs.Store(id, p.OrgID)
+	}
+}
+
+// defaultOrgLocked is the org a project created without one goes in, or 0
+// before there are any orgs.
+func (s *Store) defaultOrgLocked() int64 {
+	var org sql.NullInt64
+	_ = s.db.QueryRow("SELECT default_org_id FROM instance WHERE id = 1").Scan(&org)
+	return org.Int64
+}
+
+// ProjectOrg is the org a project belongs to. It doesn't take the store's
+// lock, so it may be called while publishing an event.
+func (s *Store) ProjectOrg(projectID string) (int64, bool) {
+	v, ok := s.orgs.Load(projectID)
+	if !ok {
+		return 0, false
+	}
+	return v.(int64), true
+}
+
+// TodoOrg is the org a todo belongs to: its project's.
+func (s *Store) TodoOrg(todoID string) (int64, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.data.Todos[todoID]
+	if !ok {
+		return 0, false
+	}
+	p, ok := s.data.Projects[t.ProjectID]
+	if !ok {
+		return 0, false
+	}
+	return p.OrgID, true
 }
 
 // ---- Projects ----
@@ -206,10 +284,14 @@ func (s *Store) CreateProject(p model.Project) (model.Project, error) {
 		p.ID = NewID()
 	}
 	p.CreatedAt = time.Now()
+	if p.OrgID == 0 {
+		p.OrgID = s.defaultOrgLocked()
+	}
 	s.data.Projects[p.ID] = &p
 	if err := s.writeLocked(func(tx *sql.Tx) error { return putProject(tx, &p) }); err != nil {
 		return p, err
 	}
+	s.orgs.Store(p.ID, p.OrgID)
 	s.emit(model.EvProjectUpdated, p.ID, "", p)
 	return p, nil
 }
@@ -246,7 +328,7 @@ func (s *Store) UpdateProject(id string, fn func(*model.Project) error) (model.P
 	if err := fn(&cp); err != nil {
 		return *p, err
 	}
-	cp.ID = id
+	cp.ID, cp.OrgID = id, p.OrgID // a project never changes org
 	s.data.Projects[id] = &cp
 	if err := s.writeLocked(func(tx *sql.Tx) error { return putProject(tx, &cp) }); err != nil {
 		return cp, err
@@ -260,9 +342,11 @@ func (s *Store) UpdateProject(id string, fn func(*model.Project) error) (model.P
 func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.data.Projects[id]; !ok {
+	proj, ok := s.data.Projects[id]
+	if !ok {
 		return nil, ErrNotFound
 	}
+	org := proj.OrgID
 	var todos []model.Todo
 	for tid, t := range s.data.Todos {
 		if t.ProjectID == id {
@@ -295,7 +379,7 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 	delete(s.data.ProjectChats, id)
 	err := s.writeLocked(func(tx *sql.Tx) error {
 		for _, t := range todos {
-			if err := setChat(tx, chatTodo, t.ID, nil); err != nil {
+			if err := setChat(tx, chatTodo, t.ID, org, nil); err != nil {
 				return err
 			}
 		}
@@ -304,7 +388,7 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 				return err
 			}
 		}
-		if err := setChat(tx, chatProject, id, nil); err != nil {
+		if err := setChat(tx, chatProject, id, org, nil); err != nil {
 			return err
 		}
 		return deleteRow(tx, "projects", id)
@@ -312,7 +396,8 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 	if err != nil {
 		return todos, err
 	}
-	s.emit(model.EvProjectDeleted, id, "", nil)
+	s.orgs.Delete(id)
+	s.emitTo(org, model.EvProjectDeleted, id, "", nil)
 	return todos, nil
 }
 
@@ -483,7 +568,7 @@ func (s *Store) DeleteTodo(id string) (model.Todo, error) {
 		if err := deleteRow(tx, "todos", id); err != nil {
 			return err
 		}
-		if err := setChat(tx, chatTodo, id, nil); err != nil {
+		if err := setChat(tx, chatTodo, id, 0, nil); err != nil {
 			return err
 		}
 		for _, o := range changed {
@@ -564,18 +649,49 @@ func cleanIDs(ids []string) []string {
 
 // ---- Chat ----
 
-func (s *Store) Chat() []model.ChatMessage {
+// mainChatOwner is the owner_id of a user's general chat in an org.
+func mainChatOwner(org, user int64) string { return fmt.Sprintf("%d:%d", org, user) }
+
+// Chat is user's general chat in org.
+func (s *Store) Chat(org, user int64) []model.ChatMessage {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return append([]model.ChatMessage{}, s.data.Chat...)
+	return append([]model.ChatMessage{}, s.data.MainChats[mainChatOwner(org, user)]...)
 }
 
-// SetChat replaces the saved conversation (nil clears it).
-func (s *Store) SetChat(msgs []model.ChatMessage) error {
+// SetChat replaces user's general chat in org (nil clears it).
+func (s *Store) SetChat(org, user int64, msgs []model.ChatMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.data.Chat = append([]model.ChatMessage(nil), msgs...)
-	return s.writeLocked(func(tx *sql.Tx) error { return setChat(tx, chatMain, "", msgs) })
+	owner := mainChatOwner(org, user)
+	if s.data.MainChats == nil {
+		s.data.MainChats = map[string][]model.ChatMessage{}
+	}
+	if len(msgs) == 0 {
+		delete(s.data.MainChats, owner)
+	} else {
+		s.data.MainChats[owner] = append([]model.ChatMessage(nil), msgs...)
+	}
+	return s.writeLocked(func(tx *sql.Tx) error { return setChat(tx, chatMain, owner, org, msgs) })
+}
+
+// MainChats are every user's general chats, in no order (for cleanup).
+func (s *Store) MainChats() [][]model.ChatMessage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([][]model.ChatMessage, 0, len(s.data.MainChats))
+	for _, msgs := range s.data.MainChats {
+		out = append(out, append([]model.ChatMessage(nil), msgs...))
+	}
+	return out
+}
+
+// projectOrgLocked is the org of a project (0 if there is none).
+func (s *Store) projectOrgLocked(projectID string) int64 {
+	if p, ok := s.data.Projects[projectID]; ok {
+		return p.OrgID
+	}
+	return 0
 }
 
 func (s *Store) TodoChat(todoID string) []model.ChatMessage {
@@ -588,9 +704,11 @@ func (s *Store) TodoChat(todoID string) []model.ChatMessage {
 func (s *Store) SetTodoChat(todoID string, msgs []model.ChatMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.data.Todos[todoID]; !ok {
+	t, ok := s.data.Todos[todoID]
+	if !ok {
 		return ErrNotFound
 	}
+	org := s.projectOrgLocked(t.ProjectID)
 	if len(msgs) == 0 {
 		delete(s.data.TodoChats, todoID)
 	} else {
@@ -599,22 +717,24 @@ func (s *Store) SetTodoChat(todoID string, msgs []model.ChatMessage) error {
 		}
 		s.data.TodoChats[todoID] = append([]model.ChatMessage(nil), msgs...)
 	}
-	return s.writeLocked(func(tx *sql.Tx) error { return setChat(tx, chatTodo, todoID, msgs) })
+	return s.writeLocked(func(tx *sql.Tx) error { return setChat(tx, chatTodo, todoID, org, msgs) })
 }
 
 // AppendTodoChat adds a message to the conversation about a todo.
 func (s *Store) AppendTodoChat(todoID string, msg model.ChatMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.data.Todos[todoID]; !ok {
+	t, ok := s.data.Todos[todoID]
+	if !ok {
 		return ErrNotFound
 	}
+	org := s.projectOrgLocked(t.ProjectID)
 	if s.data.TodoChats == nil {
 		s.data.TodoChats = map[string][]model.ChatMessage{}
 	}
 	s.data.TodoChats[todoID] = append(s.data.TodoChats[todoID], msg)
 	seq := len(s.data.TodoChats[todoID]) - 1
-	return s.writeLocked(func(tx *sql.Tx) error { return putChatMessage(tx, chatTodo, todoID, seq, msg) })
+	return s.writeLocked(func(tx *sql.Tx) error { return putChatMessage(tx, chatTodo, todoID, org, seq, msg) })
 }
 
 func (s *Store) ProjectChat(projectID string) []model.ChatMessage {
@@ -627,9 +747,11 @@ func (s *Store) ProjectChat(projectID string) []model.ChatMessage {
 func (s *Store) SetProjectChat(projectID string, msgs []model.ChatMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.data.Projects[projectID]; !ok {
+	p, ok := s.data.Projects[projectID]
+	if !ok {
 		return ErrNotFound
 	}
+	org := p.OrgID
 	if len(msgs) == 0 {
 		delete(s.data.ProjectChats, projectID)
 	} else {
@@ -638,7 +760,7 @@ func (s *Store) SetProjectChat(projectID string, msgs []model.ChatMessage) error
 		}
 		s.data.ProjectChats[projectID] = append([]model.ChatMessage(nil), msgs...)
 	}
-	return s.writeLocked(func(tx *sql.Tx) error { return setChat(tx, chatProject, projectID, msgs) })
+	return s.writeLocked(func(tx *sql.Tx) error { return setChat(tx, chatProject, projectID, org, msgs) })
 }
 
 // clone copies a todo deeply enough that changing the copy (including the

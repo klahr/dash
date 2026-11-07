@@ -24,7 +24,7 @@ func runnerServer(t *testing.T) (*Server, http.Handler, model.Project) {
 	s.Git = gitops.New(nil)
 	s.Procs = runner.NewManager(hub.New())
 	t.Cleanup(s.Procs.StopAll)
-	p, err := s.Store.UpdateProject(p.ID, func(p *model.Project) error {
+	p, err := raw(s).UpdateProject(p.ID, func(p *model.Project) error {
 		p.Path, p.TestCommand = t.TempDir(), "go test ./..."
 		return nil
 	})
@@ -124,7 +124,7 @@ func TestRunnerSkipsThePasswordTheHubAlreadyAsked(t *testing.T) {
 	}
 	s, _, _ := boardServer(t)
 	w := httptest.NewRecorder()
-	s.deleteProject(w, httptest.NewRequest("DELETE", "/api/projects/nope", strings.NewReader(`{}`)))
+	s.deleteProject(w, asOwner(t, s, httptest.NewRequest("DELETE", "/api/projects/nope", strings.NewReader(`{}`))))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("local delete without password: %d %s", w.Code, w.Body)
 	}

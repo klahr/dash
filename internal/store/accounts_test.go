@@ -105,6 +105,17 @@ func TestMigrateToAccounts(t *testing.T) {
 	if p, err := s.GetProject("p1"); err != nil || p.Name != "app" {
 		t.Fatalf("project after migrating: %+v (%v)", p, err)
 	}
+	// The store sees the orgs without a restart, and the general chat from
+	// before users is the first account's own.
+	if p, _ := s.GetProject("p1"); p.OrgID != org.ID {
+		t.Fatalf("project's org in memory: %d, want %d", p.OrgID, org.ID)
+	}
+	if got := s.ForOrg(org.ID).Chat(u.ID); len(got) != 1 || got[0].Content != "hi" {
+		t.Fatalf("the old general chat isn't the first account's: %+v", got)
+	}
+	if got := s.ForOrg(org.ID).ListTodos(""); len(got) != 1 {
+		t.Fatalf("org's todos: %+v", got)
+	}
 
 	// Starting again changes nothing.
 	s = reopen(t, s, path)

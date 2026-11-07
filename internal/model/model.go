@@ -51,7 +51,11 @@ func CanTransition(from, to TodoStatus) bool {
 // checkout: Dash merges in a checkout of its own and only moves Path's files
 // along when it has DefaultBranch checked out. All AI work happens in worktrees.
 type Project struct {
-	ID            string `json:"id"`
+	ID string `json:"id"`
+	// OrgID is the organization the project belongs to; its todos, issues,
+	// scans and chats belong there with it. Set when it is created, never
+	// changed.
+	OrgID         int64  `json:"org_id,omitempty"`
 	Name          string `json:"name"`
 	Path          string `json:"path"`
 	DefaultBranch string `json:"default_branch"`
@@ -158,6 +162,9 @@ type Worktree struct {
 type Todo struct {
 	ID        string `json:"id"`
 	ProjectID string `json:"project_id"`
+	// CreatedBy is the user who created the task (0: Dash itself, or from
+	// before users).
+	CreatedBy int64  `json:"created_by,omitempty"`
 	Title     string `json:"title"`
 	Prompt    string `json:"prompt"`
 	Priority  int    `json:"priority"` // lower runs first; ties broken by CreatedAt
@@ -355,6 +362,9 @@ type ChatMessage struct {
 	Attachments []Attachment `json:"attachments,omitempty"`
 	// At is when the message was sent, to place it in a task's timeline.
 	At *time.Time `json:"at,omitempty"`
+	// CreatedBy is the user who wrote a user message (0 for Claude's
+	// answers and messages from before users).
+	CreatedBy int64 `json:"created_by,omitempty"`
 }
 
 // RunEvent is one step of a todo's worker: a Claude run's text, tool calls
@@ -405,6 +415,11 @@ type Event struct {
 	TodoID    string    `json:"todo_id,omitempty"`
 	Data      any       `json:"data,omitempty"`
 	Time      time.Time `json:"time"`
+	// OrgID is the organization the event belongs to, when the publisher
+	// knows it; otherwise the event hub finds it from ProjectID. Events with
+	// neither are about Dash as a whole (usage, the merge queue's depth,
+	// runners). Never sent to clients.
+	OrgID int64 `json:"-"`
 }
 
 // ErrInvalidTransition is returned when a status change is not allowed.

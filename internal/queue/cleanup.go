@@ -154,7 +154,9 @@ func (m *MergeQueue) cleanupFiles() CleanupReport {
 			}
 		}
 	}
-	useChat(m.Store.Chat())
+	for _, msgs := range m.Store.MainChats() {
+		useChat(msgs)
+	}
 	for _, p := range m.Store.ListProjects() {
 		useChat(m.Store.ProjectChat(p.ID))
 		if id, _, ok := strings.Cut(p.Icon, "/"); ok {

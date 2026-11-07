@@ -73,7 +73,9 @@ and enter `https://<machine>.<tailnet>.ts.net:8443/mcp` in claude.ai.
 - Access tokens last an hour, refresh tokens 30 days and rotate on every use. They are stored
   hashed in `oauth.json` in the data directory; delete it (and restart) to sign every connector
   out. Changing the username or password also signs them out.
-- The connector sees every computer in the dashboard, like `dash-mcp`.
+- The connector acts as the account that connected it, in that account's first organization:
+  it sees that org's projects and tasks only. Platform admins' connectors also see the other
+  computers in the dashboard, like `dash-mcp`.
 
 ## The chat's task tools
 
@@ -83,6 +85,7 @@ Dash's own chats (the general chat and each project's chat) get a smaller set of
 dependencies; the prompt only while the task is a draft, queued or failed), `delete_todo` (only
 draft, queued or failed tasks, when you ask to remove one), `list_issues` and `report_issue`.
 A read-only chat calls them without asking; a shell chat asks for the ones that change something.
+They act as the user chatting, in the org they're working in.
 
 `dash-mcp` and the connector have `update_todo` too. Their `delete_todo` deletes a task in any
 status except running or merging.

@@ -142,7 +142,7 @@ func TestImportStateJSON(t *testing.T) {
 			t.Fatal(err)
 		}
 		sameJSON(t, "scan template", tpl, want.ScanTemplates["p1/deps"])
-		sameJSON(t, "chat", s.Chat(), want.Chat)
+		sameJSON(t, "chat", s.data.MainChats[""], want.Chat)
 		sameJSON(t, "todo chat", s.TodoChat("t1"), want.TodoChats["t1"])
 		sameJSON(t, "project chat", s.ProjectChat("p2"), want.ProjectChats["p2"])
 	}
@@ -209,7 +209,7 @@ func TestRoundTripEveryRecord(t *testing.T) {
 	}
 	at := time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC)
 	chat := []model.ChatMessage{{Role: "user", Content: "hi", At: &at}, {Role: "assistant", Content: "hello"}}
-	if err := s.SetChat(chat); err != nil {
+	if err := s.SetChat(1, 1, chat); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetTodoChat(a.ID, chat[:1]); err != nil {
@@ -277,7 +277,7 @@ func TestRoundTripEveryRecord(t *testing.T) {
 		Issues                                    []model.Issue
 		Runs                                      []model.ScanRun
 		Chat, TodoChat, ProjectChat, GoneTodoChat []model.ChatMessage
-	}{s.ListProjects(), s.ListTodos(""), s.ListIssues(""), s.ListScanRuns(p.ID, ""), s.Chat(), s.TodoChat(a.ID), s.ProjectChat(p.ID), s.TodoChat(gt.ID)}
+	}{s.ListProjects(), s.ListTodos(""), s.ListIssues(""), s.ListScanRuns(p.ID, ""), s.Chat(1, 1), s.TodoChat(a.ID), s.ProjectChat(p.ID), s.TodoChat(gt.ID)}
 	if len(before.Projects) != 1 || len(before.Todos) != 2 || len(before.Issues) != 2 || len(before.Runs) != 1 {
 		t.Fatalf("unexpected state before reopen: %+v", before)
 	}
@@ -287,7 +287,7 @@ func TestRoundTripEveryRecord(t *testing.T) {
 	sameJSON(t, "todos", s.ListTodos(""), before.Todos)
 	sameJSON(t, "issues", s.ListIssues(""), before.Issues)
 	sameJSON(t, "scan runs", s.ListScanRuns(p.ID, ""), before.Runs)
-	sameJSON(t, "chat", s.Chat(), chat)
+	sameJSON(t, "chat", s.Chat(1, 1), chat)
 	sameJSON(t, "todo chat", s.TodoChat(a.ID), chat)
 	sameJSON(t, "project chat", s.ProjectChat(p.ID), chat)
 	got, ok := s.ScanSetting(p.ID, "x")
@@ -386,7 +386,7 @@ func TestMigrateFromEmpty(t *testing.T) {
 		}
 	}
 	checkDB(s.db)
-	if len(s.ListProjects()) != 0 || len(s.Chat()) != 0 {
+	if len(s.ListProjects()) != 0 || len(s.data.MainChats) != 0 {
 		t.Fatal("a new database isn't empty")
 	}
 	// Migrating again is a no-op.

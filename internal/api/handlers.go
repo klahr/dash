@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os/exec"
 	"path/filepath"
@@ -12,7 +11,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
@@ -30,11 +28,15 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 		model.Project
 		Active map[string]model.TodoStatus `json:"active,omitempty"`
 	}
-	ps := s.Store.ListProjects()
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	ps := sv.data.ListProjects()
 	out := make([]item, len(ps))
 	for i, p := range ps {
 		out[i].Project = p
-		for _, t := range s.Store.ListTodos(p.ID, model.StatusInProgress, model.StatusReview) {
+		for _, t := range sv.data.ListTodos(p.ID, model.StatusInProgress, model.StatusReview) {
 			if out[i].Active == nil {
 				out[i].Active = map[string]model.TodoStatus{}
 			}
@@ -45,7 +47,11 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
-	p, err := s.Store.GetProject(r.PathValue("pid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -78,6 +84,10 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		Clone        bool   `json:"clone"`
 		GitHubPublic bool   `json:"github_public"`
 	}
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
@@ -94,11 +104,12 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: name is required", errBadRequest))
 		return
 	}
-	if req.Path != "" {
-		req.Path = store.CleanPath(req.Path)
-	} else {
-		req.Path = filepath.Join(s.ProjectRoot, strings.Trim(slugRe.ReplaceAllString(strings.ToLower(req.Name), "-"), "-"))
+	path, err := sv.projectPath(req.Name, req.Path)
+	if err != nil {
+		writeErr(w, err)
+		return
 	}
+	req.Path = path
 	if req.DefaultBranch == "" {
 		req.DefaultBranch = "main"
 	}
@@ -151,7 +162,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 			req.DefaultBranch = b
 		}
 	}
-	p, err := s.Store.CreateProject(model.Project{
+	p, err := sv.data.CreateProject(model.Project{
 		ID: id, Name: req.Name, Path: req.Path, DefaultBranch: req.DefaultBranch,
 		RemoteURL: s.Git.RemoteURL(ctx, id, req.Path), AutoPush: req.AutoPush,
 		RunCommand: req.RunCommand, TestCommand: req.TestCommand, DeployCommand: req.DeployCommand,
@@ -161,7 +172,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	if err == nil && req.MergeMode == model.MergePR {
 		// Only possible when the adopted repo already has a GitHub remote.
 		if err = checkMergeMode(req.MergeMode, p.RemoteURL); err == nil {
-			p, err = s.Store.UpdateProject(p.ID, func(p *model.Project) error { p.MergeMode = model.MergePR; return nil })
+			p, err = sv.data.UpdateProject(p.ID, func(p *model.Project) error { p.MergeMode = model.MergePR; return nil })
 		}
 	}
 	if err != nil {
@@ -171,58 +182,74 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, p)
 }
 
+// projectUpdate is a change to a project's settings; nil fields stay.
+type projectUpdate struct {
+	Name          *string   `json:"name"`
+	RunCommand    *string   `json:"run_command"`
+	TestCommand   *string   `json:"test_command"`
+	DeployCommand *string   `json:"deploy_command"`
+	SetupCommand  *string   `json:"setup_command"`
+	CopyFiles     *[]string `json:"copy_files"`
+	AllowedTools  *[]string `json:"allowed_tools"`
+	ChatMode      *string   `json:"chat_permission_mode"`
+	ReviewPrompt  *string   `json:"review_prompt"`
+	MaxAutoFixes  *int      `json:"max_auto_fixes"`
+	AutoPush      *bool     `json:"auto_push"`
+	AutoApprove   *bool     `json:"auto_approve"`
+	MergeMode     *string   `json:"merge_mode"`
+	InvestigateCI *bool     `json:"investigate_ci"`
+	MaxRunMinutes *int      `json:"max_run_minutes"`
+	MaxTurns      *int      `json:"max_turns"`
+	Color         *string   `json:"color"`
+	Icon          *string   `json:"icon"`
+}
+
 func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name          *string   `json:"name"`
-		RunCommand    *string   `json:"run_command"`
-		TestCommand   *string   `json:"test_command"`
-		DeployCommand *string   `json:"deploy_command"`
-		SetupCommand  *string   `json:"setup_command"`
-		CopyFiles     *[]string `json:"copy_files"`
-		AllowedTools  *[]string `json:"allowed_tools"`
-		ChatMode      *string   `json:"chat_permission_mode"`
-		ReviewPrompt  *string   `json:"review_prompt"`
-		MaxAutoFixes  *int      `json:"max_auto_fixes"`
-		AutoPush      *bool     `json:"auto_push"`
-		AutoApprove   *bool     `json:"auto_approve"`
-		MergeMode     *string   `json:"merge_mode"`
-		InvestigateCI *bool     `json:"investigate_ci"`
-		MaxRunMinutes *int      `json:"max_run_minutes"`
-		MaxTurns      *int      `json:"max_turns"`
-		Color         *string   `json:"color"`
-		Icon          *string   `json:"icon"`
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
 	}
+	var req projectUpdate
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
+	p, err := sv.updateProject(r.Context(), r.PathValue("pid"), req)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+// updateProject changes a project's settings, for PATCH /api/projects/{pid}
+// and the update_project tool.
+func (sv *service) updateProject(ctx context.Context, id string, req projectUpdate) (model.Project, error) {
 	if req.ChatMode != nil {
 		switch *req.ChatMode {
 		case "", model.ChatModeAuto, model.ChatModeAcceptEdits:
 		default:
-			writeErr(w, fmt.Errorf("%w: chat_permission_mode must be \"\", %q or %q", errBadRequest, model.ChatModeAuto, model.ChatModeAcceptEdits))
-			return
+			return model.Project{}, fmt.Errorf("%w: chat_permission_mode must be \"\", %q or %q", errBadRequest, model.ChatModeAuto, model.ChatModeAcceptEdits)
 		}
 	}
 	if req.Color != nil {
 		*req.Color = strings.ToLower(strings.TrimSpace(*req.Color))
 		if *req.Color != "" && !colorRe.MatchString(*req.Color) {
-			writeErr(w, fmt.Errorf("%w: color must look like #3a7bd5", errBadRequest))
-			return
+			return model.Project{}, fmt.Errorf("%w: color must look like #3a7bd5", errBadRequest)
 		}
 	}
 	if req.Icon != nil && *req.Icon != "" {
-		id, name, _ := strings.Cut(*req.Icon, "/")
-		if a, err := s.findUpload(id); err != nil || a.Name != name || !strings.HasPrefix(a.Type, "image/") {
-			writeErr(w, fmt.Errorf("%w: icon must be an uploaded image", errBadRequest))
-			return
+		uid, name, _ := strings.Cut(*req.Icon, "/")
+		if a, err := sv.findUpload(uid); err != nil || a.Name != name || !strings.HasPrefix(a.Type, "image/") {
+			return model.Project{}, fmt.Errorf("%w: icon must be an uploaded image", errBadRequest)
 		}
 	}
-	remote := ""
-	if cur, err := s.Store.GetProject(r.PathValue("pid")); err == nil {
-		remote = s.Git.RemoteURL(r.Context(), cur.ID, cur.Path) // pick up an origin added since
+	cur, err := sv.data.GetProject(id)
+	if err != nil {
+		return cur, err
 	}
-	p, err := s.Store.UpdateProject(r.PathValue("pid"), func(p *model.Project) error {
+	remote := sv.s.Git.RemoteURL(ctx, cur.ID, cur.Path) // pick up an origin added since
+	return sv.data.UpdateProject(id, func(p *model.Project) error {
 		p.RemoteURL = remote
 		set(&p.Name, req.Name)
 		set(&p.RunCommand, req.RunCommand)
@@ -262,11 +289,6 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	})
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, p)
 }
 
 func checkMergeMode(mode, remote string) error {
@@ -303,11 +325,15 @@ func (s *Server) createGitHubRepo(w http.ResponseWriter, r *http.Request) {
 		Name    string `json:"name"`
 		Private bool   `json:"private"`
 	}
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
-	p, err := s.Store.GetProject(r.PathValue("pid"))
+	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -320,7 +346,7 @@ func (s *Server) createGitHubRepo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	p, err = s.Store.UpdateProject(p.ID, func(p *model.Project) error { p.RemoteURL = url; return nil })
+	p, err = sv.data.UpdateProject(p.ID, func(p *model.Project) error { p.RemoteURL = url; return nil })
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -341,16 +367,20 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	if err := s.Auth.ConfirmPassword(r, req.Password); err != nil {
 		writeErr(w, err)
 		return
 	}
-	p, err := s.Store.GetProject(r.PathValue("pid"))
+	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	if queue.Busy(s.Store.ListTodos(p.ID)) {
+	if queue.Busy(sv.data.ListTodos(p.ID)) {
 		writeErr(w, queue.ErrProjectBusy)
 		return
 	}
@@ -391,13 +421,17 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) pushProject(w http.ResponseWriter, r *http.Request) {
-	p, err := s.Store.GetProject(r.PathValue("pid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	if url := s.Git.RemoteURL(r.Context(), p.ID, p.Path); url != p.RemoteURL {
-		p, _ = s.Store.UpdateProject(p.ID, func(x *model.Project) error { x.RemoteURL = url; return nil })
+		p, _ = sv.data.UpdateProject(p.ID, func(x *model.Project) error { x.RemoteURL = url; return nil })
 	}
 	if p.RemoteURL == "" {
 		writeErr(w, fmt.Errorf("%w: project has no remote; create one via /github first", errBadRequest))
@@ -418,7 +452,11 @@ func (s *Server) pushProject(w http.ResponseWriter, r *http.Request) {
 // remote.updated event; ?force=1 fetches even while backing off after failures.
 func (s *Server) remoteStatus(fetch bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		p, err := s.Store.GetProject(r.PathValue("pid"))
+		sv, ok := s.service(w, r)
+		if !ok {
+			return
+		}
+		p, err := sv.data.GetProject(r.PathValue("pid"))
 		if err != nil {
 			writeErr(w, err)
 			return
@@ -429,7 +467,11 @@ func (s *Server) remoteStatus(fetch bool) http.HandlerFunc {
 
 // unpushed counts the default branch's commits (merged todos) origin doesn't have yet.
 func (s *Server) unpushed(w http.ResponseWriter, r *http.Request) {
-	p, err := s.Store.GetProject(r.PathValue("pid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -445,7 +487,11 @@ func (s *Server) unpushed(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) gitGraph(w http.ResponseWriter, r *http.Request) {
-	p, err := s.Store.GetProject(r.PathValue("pid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -461,13 +507,21 @@ func (s *Server) gitGraph(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------- todos
 
 func (s *Server) listTodos(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	var statuses []model.TodoStatus
 	if st := r.URL.Query().Get("status"); st != "" {
 		for _, x := range strings.Split(st, ",") {
 			statuses = append(statuses, model.TodoStatus(x))
 		}
 	}
-	writeJSON(w, http.StatusOK, nonNil(s.Store.ListTodos(r.PathValue("pid"), statuses...)))
+	if _, err := sv.data.GetProject(r.PathValue("pid")); err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, nonNil(sv.data.ListTodos(r.PathValue("pid"), statuses...)))
 }
 
 func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
@@ -479,6 +533,10 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 		Attachments []string `json:"attachments"` // upload ids
 		DependsOn   []string `json:"depends_on"`  // todo ids that must be merged first
 	}
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
@@ -487,12 +545,12 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: title or prompt is required", errBadRequest))
 		return
 	}
-	atts, err := s.attachments(req.Attachments)
+	atts, err := sv.attachments(req.Attachments)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	t, err := s.addTodo(model.Todo{
+	t, err := sv.addTodo(model.Todo{
 		ProjectID: r.PathValue("pid"), Title: req.Title, Prompt: req.Prompt, Priority: req.Priority,
 		Attachments: atts, DependsOn: req.DependsOn,
 	}, req.Enqueue)
@@ -501,22 +559,6 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, t)
-}
-
-// addTodo creates a draft, or queues it when enqueue is set, and names it if untitled.
-func (s *Server) addTodo(t model.Todo, enqueue bool) (model.Todo, error) {
-	t, err := s.Store.CreateTodo(t)
-	if err == nil && enqueue {
-		t, err = s.Store.SetStatus(t.ID, model.StatusQueued, "")
-		s.Todos.Kick()
-	}
-	if err != nil {
-		return t, err
-	}
-	if strings.TrimSpace(t.Title) == "" {
-		s.autoTitle(t.ID, t.Prompt)
-	}
-	return t, nil
 }
 
 // refinePrompt rewrites instructions (often pasted from a chat answer) into a
@@ -545,27 +587,15 @@ func (s *Server) refinePrompt(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"prompt": out})
 }
 
-// autoTitle names a todo in the background; a title typed meanwhile wins.
-func (s *Server) autoTitle(id, prompt string) {
-	if s.Titler == nil {
+func (s *Server) retestTodo(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
 		return
 	}
-	go func() {
-		title, err := s.Titler.Title(context.Background(), prompt)
-		if err != nil {
-			slog.Debug("auto title", "todo", id, "err", err)
-			return
-		}
-		_, _ = s.Store.UpdateTodo(id, func(t *model.Todo) error {
-			if strings.TrimSpace(t.Title) == "" {
-				t.Title = title
-			}
-			return nil
-		})
-	}()
-}
-
-func (s *Server) retestTodo(w http.ResponseWriter, r *http.Request) {
+	if _, err := sv.data.GetTodo(r.PathValue("tid")); err != nil {
+		writeErr(w, err)
+		return
+	}
 	if err := s.Todos.RunTests(r.PathValue("tid")); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeErr(w, err)
@@ -579,7 +609,11 @@ func (s *Server) retestTodo(w http.ResponseWriter, r *http.Request) {
 
 // duplicateTodo copies a todo's instructions into a new draft.
 func (s *Server) duplicateTodo(w http.ResponseWriter, r *http.Request) {
-	src, err := s.Store.GetTodo(r.PathValue("tid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	src, err := sv.data.GetTodo(r.PathValue("tid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -588,7 +622,7 @@ func (s *Server) duplicateTodo(w http.ResponseWriter, r *http.Request) {
 	if title != "" {
 		title += " (copy)"
 	}
-	t, err := s.Store.CreateTodo(model.Todo{ProjectID: src.ProjectID, Title: title, Prompt: src.Prompt,
+	t, err := sv.data.CreateTodo(model.Todo{ProjectID: src.ProjectID, CreatedBy: sv.c.User, Title: title, Prompt: src.Prompt,
 		Priority: src.Priority, Attachments: src.Attachments, Edits: src.Edits, DependsOn: src.DependsOn})
 	if err != nil {
 		writeErr(w, err)
@@ -599,7 +633,11 @@ func (s *Server) duplicateTodo(w http.ResponseWriter, r *http.Request) {
 
 // openTodo opens the todo's worktree in the configured editor on the Dash machine.
 func (s *Server) openTodo(w http.ResponseWriter, r *http.Request) {
-	t, err := s.Store.GetTodo(r.PathValue("tid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	t, err := sv.data.GetTodo(r.PathValue("tid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -624,7 +662,11 @@ func (s *Server) openTodo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getTodo(w http.ResponseWriter, r *http.Request) {
-	t, err := s.Store.GetTodo(r.PathValue("tid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	t, err := sv.data.GetTodo(r.PathValue("tid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -640,20 +682,24 @@ func (s *Server) updateTodo(w http.ResponseWriter, r *http.Request) {
 		Attachments *[]string `json:"attachments"` // upload ids; replaces the list
 		DependsOn   *[]string `json:"depends_on"`  // todo ids; replaces the list
 	}
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
 	var atts *[]model.Attachment
 	if req.Attachments != nil {
-		a, err := s.attachments(*req.Attachments)
+		a, err := sv.attachments(*req.Attachments)
 		if err != nil {
 			writeErr(w, err)
 			return
 		}
 		atts = &a
 	}
-	t, err := s.editTodo(r.PathValue("tid"), mcptools.TodoUpdate{
+	t, err := sv.editTodo(r.PathValue("tid"), mcptools.TodoUpdate{
 		Title: req.Title, Prompt: req.Prompt, Priority: req.Priority, DependsOn: req.DependsOn,
 	}, atts)
 	if err != nil {
@@ -663,69 +709,24 @@ func (s *Server) updateTodo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
-// editTodo applies u (and atts, when not nil) to a task, for PATCH
-// /api/todos/{tid} and the board chat's update_todo. The prompt and
-// attachments can only change while it is a draft, queued or failed.
-func (s *Server) editTodo(id string, u mcptools.TodoUpdate, atts *[]model.Attachment) (model.Todo, error) {
-	t, err := s.Store.UpdateTodo(id, func(t *model.Todo) error {
-		editable := t.Status == model.StatusDraft || t.Status == model.StatusQueued || t.Status == model.StatusFailed
-		if (u.Prompt != nil || atts != nil) && !editable {
-			return fmt.Errorf("%w: instructions can only be edited while draft, queued or failed", errBadRequest)
-		}
-		set(&t.Attachments, atts)
-		set(&t.Title, u.Title)
-		set(&t.Prompt, u.Prompt)
-		set(&t.Priority, u.Priority)
-		set(&t.DependsOn, u.DependsOn) // validated by the store
-		return nil
-	})
-	if err != nil {
-		return t, err
-	}
-	s.Todos.Kick() // priority or dependencies may have changed
-	return t, nil
-}
-
 func (s *Server) deleteTodo(w http.ResponseWriter, r *http.Request) {
-	if err := s.removeTodo(r.Context(), r.PathValue("tid")); err != nil {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if err := sv.removeTodo(r.Context(), r.PathValue("tid")); err != nil {
 		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// removeTodo deletes a task and its worktree, unless it is running, merging
-// or being reviewed. For DELETE /api/todos/{tid} and the board chat's
-// delete_todo.
-func (s *Server) removeTodo(ctx context.Context, id string) error {
-	t, err := s.Store.GetTodo(id)
-	if err != nil {
-		return err
-	}
-	switch t.Status {
-	case model.StatusInProgress, model.StatusMerging:
-		return model.ErrInvalidTransition{From: t.Status, To: "deleted"}
-	}
-	if t.Reviewing {
-		return store.ErrReviewing
-	}
-	if t.Worktree != nil && t.Status != model.StatusMerged {
-		if p, err := s.Store.GetProject(t.ProjectID); err == nil {
-			_ = s.Git.RemoveWorktree(ctx, p.ID, p.Path, *t.Worktree)
-		}
-	}
-	if _, err := s.Store.DeleteTodo(t.ID); err != nil {
-		return err
-	}
-	if s.Perms != nil {
-		s.Perms.Forget(t.ID)
-	}
-	s.Todos.Log.Remove(t.ID)
-	return nil
-}
-
 func (s *Server) enqueueTodo(w http.ResponseWriter, r *http.Request) {
-	t, err := s.enqueue(r.PathValue("tid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	t, err := sv.enqueue(r.PathValue("tid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -733,29 +734,32 @@ func (s *Server) enqueueTodo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
-func (s *Server) enqueue(id string) (model.Todo, error) {
-	t, err := s.Store.SetStatus(id, model.StatusQueued, "")
-	if err == nil {
-		s.Todos.Kick()
-	}
-	return t, err
-}
-
 func (s *Server) cancelTodo(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("tid")
-	if s.Todos.Cancel(id) { // worker will mark it failed("canceled")
-		w.WriteHeader(http.StatusAccepted)
+	sv, ok := s.service(w, r)
+	if !ok {
 		return
 	}
-	t, err := s.Store.SetStatus(id, model.StatusDraft, "")
+	t, accepted, err := sv.cancel(r.PathValue("tid"))
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if accepted { // worker will mark it failed("canceled")
+		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 	writeJSON(w, http.StatusOK, t)
 }
 
 func (s *Server) pauseTodo(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if _, err := sv.data.GetTodo(r.PathValue("tid")); err != nil {
+		writeErr(w, err)
+		return
+	}
 	t, err := s.Todos.Pause(r.PathValue("tid"))
 	if err != nil {
 		writeErr(w, err)
@@ -765,6 +769,14 @@ func (s *Server) pauseTodo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resumeTodo(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if _, err := sv.data.GetTodo(r.PathValue("tid")); err != nil {
+		writeErr(w, err)
+		return
+	}
 	t, err := s.Todos.Resume(r.PathValue("tid"))
 	if err != nil {
 		writeErr(w, err)
@@ -774,21 +786,11 @@ func (s *Server) resumeTodo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) todoDiff(w http.ResponseWriter, r *http.Request) {
-	t, err := s.Store.GetTodo(r.PathValue("tid"))
-	if err != nil {
-		writeErr(w, err)
+	sv, ok := s.service(w, r)
+	if !ok {
 		return
 	}
-	if t.Worktree == nil {
-		writeErr(w, fmt.Errorf("%w: task has no worktree yet", errBadRequest))
-		return
-	}
-	p, err := s.Store.GetProject(t.ProjectID)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	diff, err := s.todoChanges(r.Context(), p, t)
+	diff, err := sv.diff(r.Context(), r.PathValue("tid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -814,7 +816,11 @@ func (s *Server) todoChanges(ctx context.Context, p model.Project, t model.Todo)
 }
 
 func (s *Server) todoLog(w http.ResponseWriter, r *http.Request) {
-	log, err := s.Todos.Log.Read(r.PathValue("tid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	log, err := sv.log(r.PathValue("tid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -825,6 +831,14 @@ func (s *Server) todoLog(w http.ResponseWriter, r *http.Request) {
 
 // todoEvents is the todo's worker events, oldest first, for its timeline.
 func (s *Server) todoEvents(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if _, err := sv.data.GetTodo(r.PathValue("tid")); err != nil {
+		writeErr(w, err)
+		return
+	}
 	evs, err := s.Todos.Log.Events(r.PathValue("tid"))
 	if err != nil {
 		writeErr(w, err)
@@ -834,22 +848,12 @@ func (s *Server) todoEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) approveTodo(w http.ResponseWriter, r *http.Request) {
-	t, err := s.Store.UpdateTodo(r.PathValue("tid"), func(t *model.Todo) error {
-		if t.Status != model.StatusReview && t.Status != model.StatusFailed {
-			return fmt.Errorf("%w: only tasks in review (or a failed merge) can be approved", errBadRequest)
-		}
-		if t.Worktree == nil {
-			return fmt.Errorf("%w: this task has no work left to merge; retry it instead", errBadRequest)
-		}
-		t.Status, t.Error, t.AutoFixes = model.StatusMerging, "", 0
-		return nil
-	})
-	if err != nil {
-		writeErr(w, err)
+	sv, ok := s.service(w, r)
+	if !ok {
 		return
 	}
-	if err := s.Merges.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID}); err != nil {
-		_, _ = s.Store.SetStatus(t.ID, model.StatusReview, "")
+	t, err := sv.approve(r.PathValue("tid"))
+	if err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -863,43 +867,35 @@ func (s *Server) reworkTodo(w http.ResponseWriter, r *http.Request) {
 		Feedback    string   `json:"feedback"`
 		Attachments []string `json:"attachments"` // upload ids, e.g. a screenshot of what's wrong
 	}
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
-	atts, err := s.attachments(req.Attachments)
+	atts, err := sv.attachments(req.Attachments)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	t, err := s.Store.UpdateTodo(r.PathValue("tid"), func(t *model.Todo) error {
-		fb := strings.TrimSpace(req.Feedback)
-		if len(atts) > 0 {
-			if fb == "" {
-				fb = "See the attached files."
-			}
-			fb += "\n\n" + agent.AttachmentList(atts)
-			t.Attachments = append(t.Attachments, atts...)
-		}
-		if fb != "" {
-			t.Feedback = append(t.Feedback, fb)
-		}
-		t.Status, t.Error = model.StatusQueued, ""
-		t.AutoFixes, t.AutoMerge, t.SentBack = 0, false, "" // a human is involved again: fresh budget, review afterwards
-		return nil
-	})
+	t, err := sv.rework(r.PathValue("tid"), req.Feedback, atts)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	s.Todos.Kick()
 	writeJSON(w, http.StatusOK, t)
 }
 
 // revertTodo undoes a merged todo on the merge worker; the todo updates
 // when it's done (or an "Undo:" todo appears if Claude has to do it by hand).
 func (s *Server) revertTodo(w http.ResponseWriter, r *http.Request) {
-	t, err := s.Store.GetTodo(r.PathValue("tid"))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	t, err := sv.data.GetTodo(r.PathValue("tid"))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -920,6 +916,14 @@ func (s *Server) revertTodo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) cleanupProject(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if _, err := sv.data.GetProject(r.PathValue("pid")); err != nil {
+		writeErr(w, err)
+		return
+	}
 	rep, err := s.Merges.Cleanup(r.Context(), r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
@@ -929,10 +933,26 @@ func (s *Server) cleanupProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getCI(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if _, err := sv.data.GetProject(r.PathValue("pid")); err != nil {
+		writeErr(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, s.CI.Status(r.PathValue("pid")))
 }
 
 func (s *Server) refreshCI(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if _, err := sv.data.GetProject(r.PathValue("pid")); err != nil {
+		writeErr(w, err)
+		return
+	}
 	st, err := s.CI.Refresh(r.Context(), r.PathValue("pid"))
 	if err != nil && st.ProjectID == "" {
 		writeErr(w, err)
@@ -943,6 +963,14 @@ func (s *Server) refreshCI(w http.ResponseWriter, r *http.Request) {
 
 // investigateCI asks Claude to look into the failing build now.
 func (s *Server) investigateCI(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if _, err := sv.data.GetProject(r.PathValue("pid")); err != nil {
+		writeErr(w, err)
+		return
+	}
 	t, err := s.CI.Investigate(r.Context(), r.PathValue("pid"))
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -955,20 +983,38 @@ func (s *Server) investigateCI(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, t)
 }
 
+// getQueues is a project's tasks by queue. The merge queue is shared by
+// every org, so merge_pending counts only this org's tasks waiting in it.
 func (s *Server) getQueues(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	pid := r.PathValue("pid")
+	if _, err := sv.data.GetProject(pid); err != nil {
+		writeErr(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"todo":          nonNil(s.Store.ListTodos(pid, model.StatusQueued)),
-		"in_progress":   nonNil(s.Store.ListTodos(pid, model.StatusInProgress)),
-		"review":        nonNil(s.Store.ListTodos(pid, model.StatusReview)),
-		"merge":         nonNil(s.Store.ListTodos(pid, model.StatusMerging)),
-		"merge_pending": s.Merges.Pending(),
+		"todo":          nonNil(sv.data.ListTodos(pid, model.StatusQueued)),
+		"in_progress":   nonNil(sv.data.ListTodos(pid, model.StatusInProgress)),
+		"review":        nonNil(sv.data.ListTodos(pid, model.StatusReview)),
+		"merge":         nonNil(sv.data.ListTodos(pid, model.StatusMerging)),
+		"merge_pending": len(sv.data.ListTodos("", model.StatusMerging)),
 	})
 }
 
 // ---------------------------------------------------------------- processes
 
 func (s *Server) listProcesses(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if _, err := sv.data.GetProject(r.PathValue("pid")); err != nil {
+		writeErr(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, nonNil(s.Procs.List(r.PathValue("pid"))))
 }
 
@@ -983,18 +1029,22 @@ func (s *Server) startProcess(w http.ResponseWriter, r *http.Request) {
 		Cols    uint16            `json:"cols"`
 		Rows    uint16            `json:"rows"`
 	}
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
-	p, err := s.Store.GetProject(r.PathValue("pid"))
+	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	dir := p.Path
 	if req.TodoID != "" {
-		t, err := s.Store.GetTodo(req.TodoID)
+		t, err := sv.data.GetTodo(req.TodoID)
 		if err != nil {
 			writeErr(w, err)
 			return
@@ -1032,6 +1082,14 @@ func (s *Server) startProcess(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) stopProcess(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if _, err := sv.process(r.PathValue("procid")); err != nil {
+		writeErr(w, err)
+		return
+	}
 	if err := s.Procs.Stop(r.PathValue("procid")); err != nil {
 		writeErr(w, err)
 		return
@@ -1041,8 +1099,19 @@ func (s *Server) stopProcess(w http.ResponseWriter, r *http.Request) {
 
 // ---------------------------------------------------------------- permissions & usage
 
+// listPermissions is the permission prompts waiting in the caller's org.
 func (s *Server) listPermissions(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.Perms.Pending(r.URL.Query().Get("project")))
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	out := []perm.Request{}
+	for _, req := range s.Perms.Pending(r.URL.Query().Get("project")) {
+		if sv.data.OwnsProject(req.ProjectID) {
+			out = append(out, req)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
@@ -1050,8 +1119,16 @@ func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
 		Decision string `json:"decision"` // allow | always | deny
 		Message  string `json:"message"`
 	}
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
+		return
+	}
+	if pr, ok := s.Perms.Get(r.PathValue("id")); !ok || !sv.data.OwnsProject(pr.ProjectID) {
+		writeErr(w, store.ErrNotFound)
 		return
 	}
 	if err := s.Perms.Decide(r.PathValue("id"), req.Decision, req.Message); err != nil {
@@ -1069,8 +1146,13 @@ func (s *Server) getUsage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.Usage.Snapshot())
 }
 
+// pauseQueue pauses or resumes the task queue, which every org shares:
+// only platform admins may.
 func (s *Server) pauseQueue(paused bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.adminOnly(w, r) {
+			return
+		}
 		s.Usage.SetManualPause(paused)
 		if !paused {
 			s.Todos.Kick()

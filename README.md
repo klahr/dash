@@ -41,7 +41,8 @@ Either way you end up with `./bin/dash`, which the rest of this README and the d
 Edit `.env` and set `DASH_USERNAME` and `DASH_PASSWORD` (the example's `admin` / `change-me`
 are placeholders: change the password). On first start they become the first account, and
 Dash refuses to start without them, because it runs commands on your computer. Optionally set `DASH_PROJECTS` to where new projects should be created
-(the default is `~/dash-projects`; the `-projects` flag does the same).
+(the default is `~/dash-projects`; the `-projects` flag does the same). Each organization's new projects
+go in a folder of its own there, named after the org (`~/dash-projects/default/` at first).
 
 Run it:
 

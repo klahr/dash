@@ -40,7 +40,8 @@ func TestWithTodoContext(t *testing.T) {
 }
 
 func TestChatAttachments(t *testing.T) {
-	s := &Server{UploadRoot: t.TempDir()}
+	s, _, _ := boardServer(t)
+	s.UploadRoot = t.TempDir()
 	dir := filepath.Join(s.UploadRoot, "0123456789ab")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
@@ -52,7 +53,7 @@ func TestChatAttachments(t *testing.T) {
 		{ID: "0123456789ab", Name: "shot.png", Path: "/etc/passwd"}, // the client's path is ignored
 		{ID: "ffffffffffff", Name: "gone.png"},
 	}}}
-	got := s.chatAttachments(history)
+	got := s.as(ownerCaller(t, s)).chatAttachments(history)
 	if len(got[0].Attachments) != 1 || got[0].Attachments[0].Path != filepath.Join(dir, "shot.png") {
 		t.Fatalf("attachments = %+v", got[0].Attachments)
 	}
@@ -143,7 +144,7 @@ func (c stubChat) Stream(ctx context.Context, _ string, _ []agent.ChatMessage, _
 
 func chatSocket(t *testing.T, s *Server) *websocket.Conn {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(s.chatWS))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.chatWS(w, asOwner(t, s, r)) }))
 	t.Cleanup(srv.Close)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
 	if err != nil {
@@ -168,7 +169,7 @@ func TestGeneralChatSavesQuestion(t *testing.T) {
 	s, _, _ := boardServer(t)
 	s.Chat = stubChat{}
 	prev := []agent.ChatMessage{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}
-	if err := s.Store.SetChat(prev); err != nil {
+	if err := raw(s).SetChat(ownerCaller(t, s).Org, ownerCaller(t, s).User, prev); err != nil {
 		t.Fatal(err)
 	}
 	conn := chatSocket(t, s)
@@ -176,13 +177,13 @@ func TestGeneralChatSavesQuestion(t *testing.T) {
 	if err := conn.WriteJSON(map[string]any{"type": "send", "messages": msgs}); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "the busy turn", func() bool { return s.generalTurns.Load() == 1 })
-	if got := s.Store.Chat(); len(got) != 3 || got[2].Content != "and then?" {
+	waitFor(t, "the busy turn", func() bool { return s.generalBusy(ownerCaller(t, s)) })
+	if got := raw(s).Chat(ownerCaller(t, s).Org, ownerCaller(t, s).User); len(got) != 3 || got[2].Content != "and then?" {
 		t.Fatalf("saved %+v", got)
 	}
 	conn.Close()
-	waitFor(t, "the turn to end", func() bool { return s.generalTurns.Load() == 0 })
-	if got := s.Store.Chat(); len(got) != 3 {
+	waitFor(t, "the turn to end", func() bool { return !s.generalBusy(ownerCaller(t, s)) })
+	if got := raw(s).Chat(ownerCaller(t, s).Org, ownerCaller(t, s).User); len(got) != 3 {
 		t.Fatalf("question lost when the turn was cut off: %+v", got)
 	}
 }
@@ -192,7 +193,7 @@ func TestGeneralChatFailedTurn(t *testing.T) {
 	s, _, _ := boardServer(t)
 	s.Chat = stubChat{err: errors.New("boom")}
 	prev := []agent.ChatMessage{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}
-	if err := s.Store.SetChat(prev); err != nil {
+	if err := raw(s).SetChat(ownerCaller(t, s).Org, ownerCaller(t, s).User, prev); err != nil {
 		t.Fatal(err)
 	}
 	conn := chatSocket(t, s)
@@ -203,5 +204,5 @@ func TestGeneralChatFailedTurn(t *testing.T) {
 	if err := conn.ReadJSON(&d); err != nil || d.Kind != "error" {
 		t.Fatalf("got %+v, %v", d, err)
 	}
-	waitFor(t, "the question to be dropped", func() bool { return len(s.Store.Chat()) == 2 })
+	waitFor(t, "the question to be dropped", func() bool { return len(raw(s).Chat(ownerCaller(t, s).Org, ownerCaller(t, s).User)) == 2 })
 }

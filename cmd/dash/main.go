@@ -135,6 +135,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer st.Close()
+	events.ProjectOrg = st.ProjectOrg // dashboards get only their org's events
 	// The first start makes DASH_USERNAME / DASH_PASSWORD the first user;
 	// later starts keep that user's name and password in step with them.
 	if err := st.Accounts().Bootstrap(user, pass); err != nil {

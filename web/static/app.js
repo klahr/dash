@@ -2781,6 +2781,10 @@ async function loadMe() {
     }, ico(o.id === me.org?.id ? "check" : "users"), o.name)),
   ]));
   $("#org-open").hidden = !me.org;
+  // Runners and the queue pause are the whole Dash's, for platform admins.
+  const admin = !!me.user?.is_platform_admin;
+  $("#runners-open").hidden = !admin;
+  $("#queue-toggle").hidden = !admin;
   if (!me.org) {
     await ask({
       title: "No organization",

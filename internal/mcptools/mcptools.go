@@ -5,6 +5,7 @@ package mcptools
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -630,34 +631,53 @@ var PTodo = Param{"todo", "string", "Task id.", true}
 // Tokens holds the bearer tokens of running chat turns.
 type Tokens struct {
 	mu sync.Mutex
-	m  map[string]tokenScope
+	m  map[string]Scope
 }
 
-// tokenScope is what a token's tools serve.
-type tokenScope struct {
-	project string // default project ("" for the general chat)
-	todo    string // set for a running task, which only gets the IssueTools
+// Scope is what a token's tools serve and for whom.
+type Scope struct {
+	// Org and User are who the chat runs for. A task's run has neither: it
+	// acts in its project's org, as Dash.
+	Org, User int64
+	Project   string // default project ("" for the general chat)
+	Todo      string // set for a running task, which only gets the IssueTools
 }
 
-// Register issues a token for one chat run; projectID is the default project
-// for the tools ("" for none). Call release when the run ends.
-func (t *Tokens) Register(projectID string) (token string, release func()) {
-	return t.register(tokenScope{project: projectID})
+type callerKey struct{}
+
+// Caller is who a chat turn runs for.
+type Caller struct{ Org, User int64 }
+
+// WithCaller makes chat turns run with ctx serve the Dash tools as c.
+func WithCaller(ctx context.Context, c Caller) context.Context {
+	return context.WithValue(ctx, callerKey{}, c)
+}
+
+// CallerFrom is the caller WithCaller put in ctx.
+func CallerFrom(ctx context.Context) (Caller, bool) {
+	c, ok := ctx.Value(callerKey{}).(Caller)
+	return c, ok && c.Org != 0
+}
+
+// Register issues a token for one chat run of c; projectID is the default
+// project for the tools ("" for none). Call release when the run ends.
+func (t *Tokens) Register(c Caller, projectID string) (token string, release func()) {
+	return t.register(Scope{Org: c.Org, User: c.User, Project: projectID})
 }
 
 // RegisterTask issues a token for one run of a task: its tools are the
 // IssueTools for the task's project. Call release when the run ends.
 func (t *Tokens) RegisterTask(projectID, todoID string) (token string, release func()) {
-	return t.register(tokenScope{project: projectID, todo: todoID})
+	return t.register(Scope{Project: projectID, Todo: todoID})
 }
 
-func (t *Tokens) register(sc tokenScope) (token string, release func()) {
+func (t *Tokens) register(sc Scope) (token string, release func()) {
 	buf := make([]byte, 24)
 	_, _ = rand.Read(buf)
 	token = hex.EncodeToString(buf)
 	t.mu.Lock()
 	if t.m == nil {
-		t.m = map[string]tokenScope{}
+		t.m = map[string]Scope{}
 	}
 	t.m[token] = sc
 	t.mu.Unlock()
@@ -668,7 +688,7 @@ func (t *Tokens) register(sc tokenScope) (token string, release func()) {
 	}
 }
 
-func (t *Tokens) lookup(token string) (sc tokenScope, ok bool) {
+func (t *Tokens) lookup(token string) (sc Scope, ok bool) {
 	if t == nil {
 		return sc, false
 	}
@@ -681,7 +701,8 @@ func (t *Tokens) lookup(token string) (sc tokenScope, ok bool) {
 // Handler serves POST /mcp/dash for the chat's Claude Code runs.
 type Handler struct {
 	Tokens *Tokens
-	Board  Board
+	// Board is the board a token's scope may use: its org's, as its user.
+	Board func(Scope) (Board, error)
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -691,7 +712,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	var sc tokenScope
+	var sc Scope
 	if ok && token != "" {
 		sc, ok = h.Tokens.lookup(token)
 	}
@@ -699,14 +720,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown or expired token", http.StatusUnauthorized)
 		return
 	}
+	board, err := h.Board(sc)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	srv := &Server{
 		Name:         ServerName,
 		Instructions: "The tasks on the Dash board. Each runs Claude Code in its own git worktree once queued.",
-		Tools:        Tools(h.Board, Options{Project: sc.project, Draft: true}),
+		Tools:        Tools(board, Options{Project: sc.Project, Draft: true}),
 	}
-	if sc.todo != "" {
+	if sc.Todo != "" {
 		srv.Instructions = "The project's Issues list: known bugs, vulnerabilities and other problems the user triages into tasks."
-		srv.Tools = IssueTools(h.Board, Options{Project: sc.project, Todo: sc.todo})
+		srv.Tools = IssueTools(board, Options{Project: sc.Project, Todo: sc.Todo})
 	}
 	srv.ServeHTTP(w, r)
 }

@@ -199,16 +199,16 @@ func importLegacy(db *sql.DB, legacy string) error {
 				return err
 			}
 		}
-		if err := setChat(tx, chatMain, "", data.Chat); err != nil {
+		if err := setChat(tx, chatMain, "", 0, data.Chat); err != nil {
 			return err
 		}
 		for id, msgs := range data.TodoChats {
-			if err := setChat(tx, chatTodo, id, msgs); err != nil {
+			if err := setChat(tx, chatTodo, id, 0, msgs); err != nil {
 				return err
 			}
 		}
 		for id, msgs := range data.ProjectChats {
-			if err := setChat(tx, chatProject, id, msgs); err != nil {
+			if err := setChat(tx, chatProject, id, 0, msgs); err != nil {
 				return err
 			}
 		}
@@ -237,25 +237,30 @@ func load(db *sql.DB) (snapshot, error) {
 		ScanRuns:      map[string]*model.ScanRun{},
 		ScanSettings:  map[string]*model.ScanSetting{},
 		ScanTemplates: map[string]*model.ScanTemplate{},
+		MainChats:     map[string][]model.ChatMessage{},
 	}
-	if err := loadRows(db, "SELECT data FROM projects", func(p *model.Project) { data.Projects[p.ID] = p }); err != nil {
+	// The column, not the JSON, says which org a project is in.
+	if err := loadRows(db, "SELECT data, COALESCE(org_id, 0) FROM projects", func(p *model.Project, org int64) {
+		p.OrgID = org
+		data.Projects[p.ID] = p
+	}); err != nil {
 		return data, err
 	}
-	if err := loadRows(db, "SELECT data FROM todos", func(t *model.Todo) { data.Todos[t.ID] = t }); err != nil {
+	if err := loadRows(db, "SELECT data FROM todos", func(t *model.Todo, _ int64) { data.Todos[t.ID] = t }); err != nil {
 		return data, err
 	}
-	if err := loadRows(db, "SELECT data FROM issues", func(is *model.Issue) { data.Issues[is.ID] = is }); err != nil {
+	if err := loadRows(db, "SELECT data FROM issues", func(is *model.Issue, _ int64) { data.Issues[is.ID] = is }); err != nil {
 		return data, err
 	}
-	if err := loadRows(db, "SELECT data FROM scan_runs", func(r *model.ScanRun) { data.ScanRuns[r.ID] = r }); err != nil {
+	if err := loadRows(db, "SELECT data FROM scan_runs", func(r *model.ScanRun, _ int64) { data.ScanRuns[r.ID] = r }); err != nil {
 		return data, err
 	}
-	if err := loadRows(db, "SELECT data FROM scan_settings", func(st *model.ScanSetting) {
+	if err := loadRows(db, "SELECT data FROM scan_settings", func(st *model.ScanSetting, _ int64) {
 		data.ScanSettings[scanKey(st.ProjectID, st.Scan)] = st
 	}); err != nil {
 		return data, err
 	}
-	if err := loadRows(db, "SELECT data FROM scan_templates", func(t *model.ScanTemplate) {
+	if err := loadRows(db, "SELECT data FROM scan_templates", func(t *model.ScanTemplate, _ int64) {
 		data.ScanTemplates[scanKey(t.ProjectID, t.Name)] = t
 	}); err != nil {
 		return data, err
@@ -277,7 +282,7 @@ func load(db *sql.DB) (snapshot, error) {
 		}
 		switch kind {
 		case chatMain:
-			data.Chat = append(data.Chat, m)
+			data.MainChats[owner] = append(data.MainChats[owner], m)
 		case chatTodo:
 			data.TodoChats[owner] = append(data.TodoChats[owner], m)
 		case chatProject:
@@ -287,22 +292,32 @@ func load(db *sql.DB) (snapshot, error) {
 	return data, rows.Err()
 }
 
-func loadRows[T any](db *sql.DB, query string, add func(*T)) error {
+// loadRows reads the records query selects as (data[, org_id]).
+func loadRows[T any](db *sql.DB, query string, add func(*T, int64)) error {
 	rows, err := db.Query(query)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
+	cols, err := rows.Columns()
+	if err != nil {
+		return err
+	}
 	for rows.Next() {
 		var raw []byte
-		if err := rows.Scan(&raw); err != nil {
+		var org int64
+		dest := []any{&raw}
+		if len(cols) > 1 {
+			dest = append(dest, &org)
+		}
+		if err := rows.Scan(dest...); err != nil {
 			return err
 		}
 		v := new(T)
 		if err := json.Unmarshal(raw, v); err != nil {
 			return fmt.Errorf("%s: %w", query, err)
 		}
-		add(v)
+		add(v, org)
 	}
 	return rows.Err()
 }
@@ -330,57 +345,77 @@ func put(tx *sql.Tx, query string, v any, args ...any) error {
 	return err
 }
 
-// defaultOrg is the org a new row belongs to (see the instance table). An
-// update keeps the row's org: the writers below upsert rather than replace.
+// defaultOrg is the org rows are put in when nothing says otherwise (see
+// the instance table): projects created without an org, and rows of
+// projects that don't exist (old dangling references).
 const defaultOrg = "(SELECT default_org_id FROM instance WHERE id = 1)"
 
+// projectOrg is the org of the project whose id is the query's next
+// argument: a project's todos, issues, scans and chats belong to its org.
+const projectOrg = "COALESCE((SELECT org_id FROM projects WHERE id = ?), " + defaultOrg + ")"
+
+// nullOrg is org as a column value: NULL (then the default org) for 0.
+func nullOrg(org int64) any {
+	if org == 0 {
+		return nil
+	}
+	return org
+}
+
+// putProject writes a project. Its org is set when the row is created and
+// kept on update: a project never moves to another org.
 func putProject(tx *sql.Tx, p *model.Project) error {
-	return put(tx, "INSERT INTO projects (id, org_id, data) VALUES (?, "+defaultOrg+", ?)"+
-		" ON CONFLICT (id) DO UPDATE SET data = excluded.data", p, p.ID)
+	return put(tx, "INSERT INTO projects (id, org_id, data) VALUES (?, COALESCE(?, "+defaultOrg+"), ?)"+
+		" ON CONFLICT (id) DO UPDATE SET data = excluded.data", p, p.ID, nullOrg(p.OrgID))
 }
 
 func putTodo(tx *sql.Tx, t *model.Todo) error {
-	return put(tx, "INSERT INTO todos (id, project_id, org_id, data) VALUES (?, ?, "+defaultOrg+", ?)"+
-		" ON CONFLICT (id) DO UPDATE SET project_id = excluded.project_id, data = excluded.data", t, t.ID, t.ProjectID)
+	return put(tx, "INSERT INTO todos (id, project_id, org_id, data) VALUES (?, ?, "+projectOrg+", ?)"+
+		" ON CONFLICT (id) DO UPDATE SET project_id = excluded.project_id, org_id = excluded.org_id, data = excluded.data",
+		t, t.ID, t.ProjectID, t.ProjectID)
 }
 
 func putIssue(tx *sql.Tx, is *model.Issue) error {
-	return put(tx, "INSERT INTO issues (id, project_id, org_id, data) VALUES (?, ?, "+defaultOrg+", ?)"+
-		" ON CONFLICT (id) DO UPDATE SET project_id = excluded.project_id, data = excluded.data", is, is.ID, is.ProjectID)
+	return put(tx, "INSERT INTO issues (id, project_id, org_id, data) VALUES (?, ?, "+projectOrg+", ?)"+
+		" ON CONFLICT (id) DO UPDATE SET project_id = excluded.project_id, org_id = excluded.org_id, data = excluded.data",
+		is, is.ID, is.ProjectID, is.ProjectID)
 }
 
 func putScanRun(tx *sql.Tx, r *model.ScanRun) error {
-	return put(tx, "INSERT INTO scan_runs (id, project_id, scan, org_id, data) VALUES (?, ?, ?, "+defaultOrg+", ?)"+
-		" ON CONFLICT (id) DO UPDATE SET project_id = excluded.project_id, scan = excluded.scan, data = excluded.data",
-		r, r.ID, r.ProjectID, r.Scan)
+	return put(tx, "INSERT INTO scan_runs (id, project_id, scan, org_id, data) VALUES (?, ?, ?, "+projectOrg+", ?)"+
+		" ON CONFLICT (id) DO UPDATE SET project_id = excluded.project_id, scan = excluded.scan, org_id = excluded.org_id, data = excluded.data",
+		r, r.ID, r.ProjectID, r.Scan, r.ProjectID)
 }
 
 func putScanSetting(tx *sql.Tx, st *model.ScanSetting) error {
-	return put(tx, "INSERT INTO scan_settings (project_id, scan, org_id, data) VALUES (?, ?, "+defaultOrg+", ?)"+
-		" ON CONFLICT (project_id, scan) DO UPDATE SET data = excluded.data", st, st.ProjectID, st.Scan)
+	return put(tx, "INSERT INTO scan_settings (project_id, scan, org_id, data) VALUES (?, ?, "+projectOrg+", ?)"+
+		" ON CONFLICT (project_id, scan) DO UPDATE SET org_id = excluded.org_id, data = excluded.data",
+		st, st.ProjectID, st.Scan, st.ProjectID)
 }
 
 func putScanTemplate(tx *sql.Tx, t *model.ScanTemplate) error {
-	return put(tx, "INSERT INTO scan_templates (project_id, name, org_id, data) VALUES (?, ?, "+defaultOrg+", ?)"+
-		" ON CONFLICT (project_id, name) DO UPDATE SET data = excluded.data", t, t.ProjectID, t.Name)
+	return put(tx, "INSERT INTO scan_templates (project_id, name, org_id, data) VALUES (?, ?, "+projectOrg+", ?)"+
+		" ON CONFLICT (project_id, name) DO UPDATE SET org_id = excluded.org_id, data = excluded.data",
+		t, t.ProjectID, t.Name, t.ProjectID)
 }
 
-// setChat replaces a conversation (nil or empty clears it).
-func setChat(tx *sql.Tx, kind, owner string, msgs []model.ChatMessage) error {
+// setChat replaces a conversation (nil or empty clears it). org is the org
+// it belongs to (0: the default org).
+func setChat(tx *sql.Tx, kind, owner string, org int64, msgs []model.ChatMessage) error {
 	if _, err := tx.Exec("DELETE FROM chat_messages WHERE kind = ? AND owner_id = ?", kind, owner); err != nil {
 		return err
 	}
 	for i, m := range msgs {
-		if err := putChatMessage(tx, kind, owner, i, m); err != nil {
+		if err := putChatMessage(tx, kind, owner, org, i, m); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func putChatMessage(tx *sql.Tx, kind, owner string, seq int, m model.ChatMessage) error {
-	return put(tx, "INSERT INTO chat_messages (kind, owner_id, seq, org_id, data) VALUES (?, ?, ?, "+defaultOrg+", ?)"+
-		" ON CONFLICT (kind, owner_id, seq) DO UPDATE SET data = excluded.data", m, kind, owner, seq)
+func putChatMessage(tx *sql.Tx, kind, owner string, org int64, seq int, m model.ChatMessage) error {
+	return put(tx, "INSERT INTO chat_messages (kind, owner_id, seq, org_id, data) VALUES (?, ?, ?, COALESCE(?, "+defaultOrg+"), ?)"+
+		" ON CONFLICT (kind, owner_id, seq) DO UPDATE SET org_id = excluded.org_id, data = excluded.data", m, kind, owner, seq, nullOrg(org))
 }
 
 func deleteRow(tx *sql.Tx, table, id string) error {

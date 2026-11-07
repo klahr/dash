@@ -97,7 +97,7 @@ func TestBoardMCPAuth(t *testing.T) {
 		t.Errorf("GET: %d", w.Code)
 	}
 
-	token, release := s.Board.Register(p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID)
 	if w := rpc(h, token, "ping", "{}"); w.Code != http.StatusOK {
 		t.Errorf("valid token: %d %s", w.Code, w.Body)
 	}
@@ -122,7 +122,7 @@ func TestBoardMCPAuth(t *testing.T) {
 func TestBoardMCPCreateTodoDefaultsToChatProject(t *testing.T) {
 	s, evs, p := boardServer(t)
 	h := s.Routes()
-	token, release := s.Board.Register(p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID)
 	defer release()
 
 	text, isErr := callResult(t, rpc(h, token, "tools/call", `{"name":"create_todo","arguments":{"title":"Fix login"}}`))
@@ -165,9 +165,9 @@ func TestBoardMCPCreateTodoDefaultsToChatProject(t *testing.T) {
 func TestBoardMCPQueueTodoOnlyDrafts(t *testing.T) {
 	s, _, p := boardServer(t)
 	h := s.Routes()
-	token, release := s.Board.Register(p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID)
 	defer release()
-	draft, err := s.Store.CreateTodo(model.Todo{ProjectID: p.ID, Title: "Fix login"})
+	draft, err := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "Fix login"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestBoardMCPQueueTodoOnlyDrafts(t *testing.T) {
 	if got["id"] != draft.ID || got["title"] != "Fix login" || got["status"] != string(model.StatusQueued) {
 		t.Errorf("queue_todo %s", text)
 	}
-	if td, _ := s.Store.GetTodo(draft.ID); td.Status != model.StatusQueued {
+	if td, _ := raw(s).GetTodo(draft.ID); td.Status != model.StatusQueued {
 		t.Errorf("status %s", td.Status)
 	}
 
@@ -192,12 +192,12 @@ func TestBoardMCPQueueTodoOnlyDrafts(t *testing.T) {
 	if !isErr || !strings.Contains(text, "not a draft") {
 		t.Errorf("queued again: %s", text)
 	}
-	failed, err := s.Store.CreateTodo(model.Todo{ProjectID: p.ID, Title: "Broke"})
+	failed, err := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "Broke"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, st := range []model.TodoStatus{model.StatusQueued, model.StatusInProgress, model.StatusFailed} {
-		if _, err := s.Store.SetStatus(failed.ID, st, ""); err != nil {
+		if _, err := raw(s).SetStatus(failed.ID, st, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -212,7 +212,7 @@ func TestBoardMCPQueueTodoOnlyDrafts(t *testing.T) {
 func TestBoardMCPGeneralChatNeedsProject(t *testing.T) {
 	s, _, _ := boardServer(t)
 	h := s.Routes()
-	token, release := s.Board.Register("")
+	token, release := s.Board.Register(chatCaller(t, s), "")
 	defer release()
 	if text, isErr := callResult(t, rpc(h, token, "tools/call", `{"name":"create_todo","arguments":{"title":"x"}}`)); !isErr {
 		t.Errorf("created without a project: %s", text)
@@ -224,15 +224,15 @@ func TestBoardMCPGeneralChatNeedsProject(t *testing.T) {
 
 func TestListProjectsActive(t *testing.T) {
 	s, _, p := boardServer(t)
-	run, _ := s.Store.CreateTodo(model.Todo{ProjectID: p.ID, Prompt: "a"})
-	draft, _ := s.Store.CreateTodo(model.Todo{ProjectID: p.ID, Prompt: "b"})
+	run, _ := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Prompt: "a"})
+	draft, _ := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Prompt: "b"})
 	for _, st := range []model.TodoStatus{model.StatusQueued, model.StatusInProgress} {
-		if _, err := s.Store.SetStatus(run.ID, st, ""); err != nil {
+		if _, err := raw(s).SetStatus(run.ID, st, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
 	w := httptest.NewRecorder()
-	s.listProjects(w, httptest.NewRequest("GET", "/api/projects", nil))
+	s.listProjects(w, asOwner(t, s, httptest.NewRequest("GET", "/api/projects", nil)))
 	var got []struct {
 		ID     string                      `json:"id"`
 		Active map[string]model.TodoStatus `json:"active"`
@@ -262,18 +262,18 @@ func call(t *testing.T, h http.Handler, token, name, args string) (string, bool)
 func TestBoardMCPUpdateTodo(t *testing.T) {
 	s, _, p := boardServer(t)
 	h := s.Routes()
-	token, release := s.Board.Register(p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID)
 	defer release()
 	mk := func(projectID, title string) model.Todo {
 		t.Helper()
-		td, err := s.Store.CreateTodo(model.Todo{ProjectID: projectID, Title: title, Prompt: title})
+		td, err := raw(s).CreateTodo(model.Todo{ProjectID: projectID, Title: title, Prompt: title})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return td
 	}
 	a, b, c := mk(p.ID, "A"), mk(p.ID, "B"), mk(p.ID, "C")
-	other, _ := board{s}.Project("other")
+	other, _ := board{s.as(ownerCaller(t, s))}.Project("other")
 	elsewhere := mk(other.ID, "Elsewhere")
 
 	// Set dependencies and priority; title and prompt stay.
@@ -294,7 +294,7 @@ func TestBoardMCPUpdateTodo(t *testing.T) {
 	if got.ID != c.ID || got.Title != "C" || got.Status != model.StatusDraft || got.Priority != 3 || strings.Join(got.DependsOn, ",") != a.ID+","+b.ID {
 		t.Errorf("update_todo %s", text)
 	}
-	if td, _ := s.Store.GetTodo(c.ID); td.Prompt != "C" || td.Priority != 3 || len(td.DependsOn) != 2 {
+	if td, _ := raw(s).GetTodo(c.ID); td.Prompt != "C" || td.Priority != 3 || len(td.DependsOn) != 2 {
 		t.Errorf("stored %+v", td)
 	}
 
@@ -302,13 +302,13 @@ func TestBoardMCPUpdateTodo(t *testing.T) {
 	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+c.ID+`","title":"C2","prompt":"do C"}`); isErr {
 		t.Fatal(text)
 	}
-	if td, _ := s.Store.GetTodo(c.ID); td.Title != "C2" || td.Prompt != "do C" || len(td.DependsOn) != 2 {
+	if td, _ := raw(s).GetTodo(c.ID); td.Title != "C2" || td.Prompt != "do C" || len(td.DependsOn) != 2 {
 		t.Errorf("after title/prompt %+v", td)
 	}
 	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+c.ID+`","depends_on":[]}`); isErr || !strings.Contains(strings.Join(strings.Fields(text), ""), `"depends_on":[]`) {
 		t.Fatalf("clear deps: %s", text)
 	}
-	if td, _ := s.Store.GetTodo(c.ID); len(td.DependsOn) != 0 {
+	if td, _ := raw(s).GetTodo(c.ID); len(td.DependsOn) != 0 {
 		t.Errorf("deps not cleared: %v", td.DependsOn)
 	}
 
@@ -328,14 +328,14 @@ func TestBoardMCPUpdateTodo(t *testing.T) {
 
 	// A running task's prompt is fixed; its priority isn't.
 	for _, st := range []model.TodoStatus{model.StatusQueued, model.StatusInProgress} {
-		if _, err := s.Store.SetStatus(b.ID, st, ""); err != nil {
+		if _, err := raw(s).SetStatus(b.ID, st, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+b.ID+`","prompt":"other"}`); !isErr || !strings.Contains(text, "draft, queued or failed") {
 		t.Errorf("prompt of a running task changed: %s", text)
 	}
-	if td, _ := s.Store.GetTodo(b.ID); td.Prompt != "B" {
+	if td, _ := raw(s).GetTodo(b.ID); td.Prompt != "B" {
 		t.Errorf("prompt %q", td.Prompt)
 	}
 	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+b.ID+`","priority":-1}`); isErr {
@@ -346,12 +346,12 @@ func TestBoardMCPUpdateTodo(t *testing.T) {
 func TestBoardMCPDeleteTodo(t *testing.T) {
 	s, _, p := boardServer(t)
 	h := s.Routes()
-	token, release := s.Board.Register(p.ID)
+	token, release := s.Board.Register(chatCaller(t, s), p.ID)
 	defer release()
-	draft, _ := s.Store.CreateTodo(model.Todo{ProjectID: p.ID, Title: "Oops"})
-	running, _ := s.Store.CreateTodo(model.Todo{ProjectID: p.ID, Title: "Busy"})
+	draft, _ := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "Oops"})
+	running, _ := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "Busy"})
 	for _, st := range []model.TodoStatus{model.StatusQueued, model.StatusInProgress} {
-		if _, err := s.Store.SetStatus(running.ID, st, ""); err != nil {
+		if _, err := raw(s).SetStatus(running.ID, st, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -359,13 +359,13 @@ func TestBoardMCPDeleteTodo(t *testing.T) {
 	if text, isErr := call(t, h, token, "delete_todo", `{"todo":"`+draft.ID+`"}`); isErr {
 		t.Fatal(text)
 	}
-	if _, err := s.Store.GetTodo(draft.ID); err == nil {
+	if _, err := raw(s).GetTodo(draft.ID); err == nil {
 		t.Error("draft still there")
 	}
 	if text, isErr := call(t, h, token, "delete_todo", `{"todo":"`+running.ID+`"}`); !isErr || !strings.Contains(text, "in_progress") {
 		t.Errorf("deleted a running task: %s", text)
 	}
-	if _, err := s.Store.GetTodo(running.ID); err != nil {
+	if _, err := raw(s).GetTodo(running.ID); err != nil {
 		t.Error("running task deleted")
 	}
 	if text, isErr := call(t, h, token, "delete_todo", `{"todo":"nope"}`); !isErr {

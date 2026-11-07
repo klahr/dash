@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -14,7 +15,6 @@ import (
 	"path"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/klahr/dash/internal/agent"
@@ -36,7 +36,9 @@ import (
 )
 
 type Server struct {
-	Store       *store.Store
+	// Store is reached one org at a time (see Data); the engines below keep
+	// the whole store.
+	Store       Data
 	Git         *gitops.Git
 	Hub         *hub.Hub
 	Todos       *queue.TodoEngine
@@ -74,7 +76,8 @@ type Server struct {
 	reviewGen uint64
 	reviews   map[string]uint64 // todo id → the review turn that owns its Reviewing flag
 
-	generalTurns atomic.Int32 // global chat turns running
+	turnsMu      sync.Mutex
+	generalTurns map[string]int // general chat turns running, by "<org>:<user>"
 
 	muxOnce sync.Once
 	muxv    *http.ServeMux
@@ -93,14 +96,28 @@ func (s *Server) mux() *http.ServeMux {
 
 func (s *Server) buildMux() *http.ServeMux {
 	mux := http.NewServeMux()
+	if s.Hub != nil && s.Hub.ProjectOrg == nil && s.Store != nil {
+		s.Hub.ProjectOrg = s.Store.ProjectOrg // events go to their project's org
+	}
 
 	// Sign-in, users, orgs and invitations (the middleware lets /api/login
 	// and the invitation-link calls through without a session)
 	s.Auth.Routes(mux)
 
 	// Computers: this one plus peers, whose API is forwarded under /peer/{name}/
+	// The other computers belong to the whole Dash: only platform admins
+	// see and use them; everyone else sees this computer.
 	mux.HandleFunc("GET /api/machines", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, s.Peers.Machines(r.Context()))
+		c, err := s.caller(r)
+		if err != nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+			return
+		}
+		ms := s.Peers.Machines(r.Context())
+		if !c.PlatformAdmin {
+			ms = ms[:1]
+		}
+		writeJSON(w, http.StatusOK, ms)
 	})
 	for _, m := range []string{"GET", "POST", "PATCH", "PUT", "DELETE"} {
 		mux.HandleFunc(m+" /peer/{name}/", s.forwardToPeer)
@@ -110,13 +127,22 @@ func (s *Server) buildMux() *http.ServeMux {
 	if s.Peers != nil && s.Peers.Runners != nil {
 		rh := s.Peers.Runners
 		mux.HandleFunc("GET /api/runners", func(w http.ResponseWriter, r *http.Request) {
+			if !s.adminOnly(w, r) {
+				return
+			}
 			writeJSON(w, http.StatusOK, rh.List())
 		})
 		mux.HandleFunc("POST /api/runners/codes", func(w http.ResponseWriter, r *http.Request) {
+			if !s.adminOnly(w, r) {
+				return
+			}
 			code, expires := rh.NewCode()
 			writeJSON(w, http.StatusOK, map[string]any{"code": code, "expires": expires})
 		})
 		mux.HandleFunc("DELETE /api/runners/{id}", func(w http.ResponseWriter, r *http.Request) {
+			if !s.adminOnly(w, r) {
+				return
+			}
 			if err := rh.Revoke(r.PathValue("id")); err != nil {
 				writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 				return
@@ -188,20 +214,46 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/scan-runs/{rid}/log", s.scanRunLog)
 	mux.HandleFunc("POST /api/scan-runs/{rid}/cancel", s.cancelScanRun)
 	mux.HandleFunc("GET /api/todos/{tid}/chat", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, s.Store.TodoChat(r.PathValue("tid")))
+		sv, ok := s.service(w, r)
+		if !ok {
+			return
+		}
+		msgs, err := sv.data.TodoChat(r.PathValue("tid"))
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, msgs)
 	})
 	mux.HandleFunc("DELETE /api/todos/{tid}/chat", func(w http.ResponseWriter, r *http.Request) {
-		if err := s.Store.SetTodoChat(r.PathValue("tid"), nil); err != nil {
+		sv, ok := s.service(w, r)
+		if !ok {
+			return
+		}
+		if err := sv.data.SetTodoChat(r.PathValue("tid"), nil); err != nil {
 			writeErr(w, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /api/projects/{pid}/chat", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, s.Store.ProjectChat(r.PathValue("pid")))
+		sv, ok := s.service(w, r)
+		if !ok {
+			return
+		}
+		msgs, err := sv.data.ProjectChat(r.PathValue("pid"))
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, msgs)
 	})
 	mux.HandleFunc("DELETE /api/projects/{pid}/chat", func(w http.ResponseWriter, r *http.Request) {
-		if err := s.Store.SetProjectChat(r.PathValue("pid"), nil); err != nil {
+		sv, ok := s.service(w, r)
+		if !ok {
+			return
+		}
+		if err := sv.data.SetProjectChat(r.PathValue("pid"), nil); err != nil {
 			writeErr(w, err)
 			return
 		}
@@ -248,7 +300,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	if s.OAuth != nil {
 		// Remote MCP clients: the whole dashboard, with OAuth access tokens.
 		s.OAuth.Routes(mux)
-		mux.Handle("POST /mcp", s.OAuth.Bearer(s.remoteMCP(mux)))
+		mux.Handle("POST /mcp", s.OAuth.Bearer(s.remoteMCP()))
 		mux.Handle("GET /mcp", s.OAuth.Bearer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Allow", "POST")
 			http.Error(w, "this MCP server only accepts POST", http.StatusMethodNotAllowed)
@@ -256,16 +308,25 @@ func (s *Server) buildMux() *http.ServeMux {
 	}
 
 	// WebSockets
-	mux.HandleFunc("GET /ws/events", s.Hub.ServeWS)
+	mux.HandleFunc("GET /ws/events", s.eventsWS)
 	mux.HandleFunc("GET /ws/chat", s.chatWS)
+	// The general chat is each user's own, in each org.
 	mux.HandleFunc("GET /api/chat", func(w http.ResponseWriter, r *http.Request) {
-		if s.generalTurns.Load() > 0 {
+		sv, ok := s.service(w, r)
+		if !ok {
+			return
+		}
+		if s.generalBusy(sv.c) {
 			w.Header().Set("X-Chat-Busy", "1")
 		}
-		writeJSON(w, http.StatusOK, s.Store.Chat())
+		writeJSON(w, http.StatusOK, sv.data.Chat(sv.c.User))
 	})
 	mux.HandleFunc("DELETE /api/chat", func(w http.ResponseWriter, r *http.Request) {
-		if err := s.Store.SetChat(nil); err != nil {
+		sv, ok := s.service(w, r)
+		if !ok {
+			return
+		}
+		if err := sv.data.SetChat(sv.c.User, nil); err != nil {
 			writeErr(w, err)
 			return
 		}
@@ -279,6 +340,41 @@ func (s *Server) buildMux() *http.ServeMux {
 	})
 	mux.Handle("GET /", s.static())
 	return mux
+}
+
+// eventsWS handles GET /ws/events: the caller receives their org's events
+// (and those about Dash as a whole); another Dash receives all of them.
+func (s *Server) eventsWS(w http.ResponseWriter, r *http.Request) {
+	c, err := s.caller(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+		return
+	}
+	s.Hub.ServeWS(w, r, hub.Subscriber{Org: c.Org, All: c.Machine})
+}
+
+// chatKey names a user's general chat in their org.
+func chatKey(c Caller) string { return fmt.Sprintf("%d:%d", c.Org, c.User) }
+
+// generalTurn counts a general chat turn of c's as running (delta 1) or
+// finished (-1).
+func (s *Server) generalTurn(c Caller, delta int) {
+	s.turnsMu.Lock()
+	defer s.turnsMu.Unlock()
+	if s.generalTurns == nil {
+		s.generalTurns = map[string]int{}
+	}
+	k := chatKey(c)
+	if s.generalTurns[k] += delta; s.generalTurns[k] <= 0 {
+		delete(s.generalTurns, k)
+	}
+}
+
+// generalBusy reports whether one of c's general chat turns is running.
+func (s *Server) generalBusy(c Caller) bool {
+	s.turnsMu.Lock()
+	defer s.turnsMu.Unlock()
+	return s.generalTurns[chatKey(c)] > 0
 }
 
 // ---- helpers ----
@@ -326,6 +422,9 @@ var errBadRequest = errors.New("bad request")
 // escaped segments and would miss "/api/projects%2F<pid>", which the proxy
 // forwards decoded as "/api/projects/<pid>".
 func (s *Server) forwardToPeer(w http.ResponseWriter, r *http.Request) {
+	if !s.adminOnly(w, r) { // other computers belong to the whole Dash
+		return
+	}
 	if r.Method == http.MethodDelete && isProjectPath(peer.ForwardedPath(r)) {
 		s.confirmThenForward(w, r)
 		return
