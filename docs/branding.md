@@ -49,8 +49,9 @@ instead of being sent to the sign-in page. Signed-in people go straight to the b
 before; every other page still asks for a session. Self-hosters who leave it off go
 straight to the sign-in page.
 
-It says what Dash is, how runners work (your machine, your Claude subscription, no open
-ports), the pricing, and that the software is free to host yourself under the AGPL, with a
+It says what Dash is and how a task goes from queued to merged, with screenshots of the
+board, a task in review and the phone layout; how runners work (your machine, your Claude
+subscription, no open ports), what else is included, the pricing, and that the software is free to host yourself under the AGPL, with a
 link to `DASH_SOURCE_URL`. Its buttons are **Log in**, and **Sign up** when
 [open signup](signup.md) is on (it opens the sign-in page's signup form).
 
@@ -59,7 +60,8 @@ string, otherwise "see pricing", linked to `DASH_PRICING_URL` (or to the contact
 or plain text if neither is set). Dash doesn't bill anyone; these are words on a page.
 
 The page is one HTML file built into the binary, with its styles inline: no JavaScript,
-web fonts or anything else from other sites, and it fits a phone's screen. Its text lives
+web fonts or anything else from other sites, and it fits a phone's screen. Its screenshots
+are in `web/static/img/landing/` (public, like the rest of `/img/`). Its text lives
 in `web/landing.html`; change it there and rebuild if yours should say something else.
 
 ## Example

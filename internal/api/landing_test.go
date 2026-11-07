@@ -65,6 +65,15 @@ func TestLandingOn(t *testing.T) {
 	if !strings.Contains(w.Header().Get("Cache-Control"), "no-cache") {
 		t.Errorf("landing page may be cached: %q", w.Header().Get("Cache-Control"))
 	}
+	// Its screenshots are public, like the page.
+	for _, img := range []string{"board.webp", "board-crop.webp", "review.webp", "phone.webp"} {
+		if !strings.Contains(body, `/img/landing/`+img) {
+			t.Errorf("landing page doesn't show %s", img)
+		}
+		if w := get(t, h, "/img/landing/"+img); w.Code != http.StatusOK {
+			t.Errorf("/img/landing/%s without a session: %d", img, w.Code)
+		}
+	}
 	// Other pages still need a session.
 	if w := get(t, h, "/index.html"); w.Code != http.StatusSeeOther {
 		t.Errorf("/index.html without a session: %d", w.Code)
