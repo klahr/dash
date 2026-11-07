@@ -65,6 +65,7 @@ svg { width: 20px; height: 20px; fill: currentColor; flex: none; }
 }
 .icon-btn:hover { color: var(--text); background: var(--raised); }
 .icon-btn.primary { background: var(--accent); color: #0d1424; }
+.composer .icon-btn.primary svg { width: 24px; height: 24px; }
 .link { color: var(--accent); font-weight: 600; min-height: 44px; padding: 0 4px; }
 .chip-btn {
   min-height: 40px; padding: 0 14px; border-radius: 999px;
