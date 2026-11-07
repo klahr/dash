@@ -125,10 +125,14 @@ func (s *Scheduler) due(projectID string, t Template, now time.Time) bool {
 
 // anchor is when the schedule last fired: the last scheduled run, or the
 // user's last change to it, whichever is later. A schedule that never ran
-// counts from when it was first seen.
+// counts from when it was first seen. A restart of an interrupted run
+// counts as a scheduled run: it already catches up on a slot missed while
+// Dash was down, so the slot doesn't run the scan a second time.
 func (s *Scheduler) anchor(projectID, name string, set model.ScanSetting, has bool, now time.Time) time.Time {
 	var a time.Time
-	if last, ok := s.Store.LastScanRun(projectID, name, func(r model.ScanRun) bool { return r.Trigger == "schedule" }); ok {
+	if last, ok := s.Store.LastScanRun(projectID, name, func(r model.ScanRun) bool {
+		return r.Trigger == "schedule" || r.Trigger == model.TriggerResume
+	}); ok {
 		a = last.StartedAt
 	}
 	if has && set.UpdatedAt.After(a) {

@@ -24,6 +24,13 @@ var ErrRunning = errors.New("this scan is already running")
 // ErrNoScan is returned for a scan name the project has no template for.
 var ErrNoScan = errors.New("no such scan")
 
+// errUserCanceled is the cancel cause of a run the user stopped (Cancel),
+// as opposed to Dash shutting down (Runner.Context canceled).
+var errUserCanceled = errors.New("canceled by the user")
+
+// ResumeMaxAge is how old an interrupted run may be and still be restarted.
+const ResumeMaxAge = 24 * time.Hour
+
 // Runner runs scans: Claude Code in a throwaway, detached worktree of the
 // project, never on a branch and never through review or the merge queue.
 // It runs at most one copy of each scan of a project at a time.
@@ -46,7 +53,7 @@ type Runner struct {
 
 type active struct {
 	runID  string
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 }
 
 func (r *Runner) now() time.Time {
@@ -91,6 +98,12 @@ func (r *Runner) LogPath(runID string) string {
 
 // Start begins a run of the project's scan and returns it while it runs.
 func (r *Runner) Start(projectID, name, trigger string) (model.ScanRun, error) {
+	return r.start(projectID, name, trigger, nil)
+}
+
+// start begins a run; from, if set, is the interrupted run it starts over,
+// whose scope, path and base commit it keeps.
+func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun) (model.ScanRun, error) {
 	p, err := r.Store.GetProject(projectID)
 	if err != nil {
 		return model.ScanRun{}, err
@@ -98,6 +111,12 @@ func (r *Runner) Start(projectID, name, trigger string) (model.ScanRun, error) {
 	t, ok := Find(p.Path, name)
 	if !ok {
 		return model.ScanRun{}, fmt.Errorf("%w %q in %s", ErrNoScan, name, p.Name)
+	}
+	resumedFrom := ""
+	if from != nil {
+		// Cover what the original would have, even if the template's scope
+		// or path changed since.
+		t.Scope, t.Path, resumedFrom = from.Scope, from.Path, from.ID
 	}
 	key := scanKey(projectID, t.Name)
 	r.mu.Lock()
@@ -109,7 +128,7 @@ func (r *Runner) Start(projectID, name, trigger string) (model.ScanRun, error) {
 	if parent == nil {
 		parent = context.Background()
 	}
-	ctx, cancel := context.WithCancel(parent)
+	ctx, cancel := context.WithCancelCause(parent)
 	a := &active{cancel: cancel}
 	if r.running == nil {
 		r.running = map[string]*active{}
@@ -119,10 +138,10 @@ func (r *Runner) Start(projectID, name, trigger string) (model.ScanRun, error) {
 
 	run, err := r.Store.CreateScanRun(model.ScanRun{
 		ProjectID: projectID, Scan: t.Name, Trigger: trigger, Scope: t.Scope, Path: t.Path,
-		Status: model.ScanRunning, StartedAt: r.now(), Activity: "Starting",
+		Status: model.ScanRunning, StartedAt: r.now(), Activity: "Starting", ResumedFrom: resumedFrom,
 	})
 	if err != nil {
-		cancel()
+		cancel(nil)
 		r.release(key)
 		return run, err
 	}
@@ -133,8 +152,8 @@ func (r *Runner) Start(projectID, name, trigger string) (model.ScanRun, error) {
 	go func() {
 		defer r.wg.Done()
 		defer r.release(key)
-		defer cancel()
-		r.execute(ctx, p, t, run)
+		defer cancel(nil)
+		r.execute(ctx, p, t, run, from)
 		r.PruneLogs() // of runs the store just let go
 	}()
 	return run, nil
@@ -152,7 +171,7 @@ func (r *Runner) Cancel(runID string) bool {
 	defer r.mu.Unlock()
 	for _, a := range r.running {
 		if a.runID == runID {
-			a.cancel()
+			a.cancel(errUserCanceled)
 			return true
 		}
 	}
@@ -168,11 +187,35 @@ type target struct {
 	note          string
 }
 
-// resolve works out the commits a run scans for its template's scope.
-func (r *Runner) resolve(ctx context.Context, p model.Project, t Template) (target, error) {
+// resolve works out the commits a run scans for its template's scope. A
+// resumed run (from set) scans the current commit but keeps the original
+// run's base, so it covers at least what the original would have.
+func (r *Runner) resolve(ctx context.Context, p model.Project, t Template, from *model.ScanRun) (target, error) {
 	var tg target
 	head := func(ref string) (string, error) { return r.Git.Commit(ctx, p.ID, p.Path, ref) }
 	var err error
+	if from != nil && from.Commit != "" {
+		// The original had worked out its target before it was cut off.
+		if t.Scope == model.ScopeSinceMain {
+			tg.commit, err = head("HEAD")
+		} else if tg.commit, err = head("refs/heads/" + p.DefaultBranch); err != nil {
+			tg.commit, err = head("HEAD")
+		}
+		if err != nil {
+			return tg, fmt.Errorf("the repository has no commit: %w", err)
+		}
+		tg.note = from.Note
+		if from.Incremental && from.Since != "" {
+			// The merge base, in case history was rewritten since.
+			base, err := r.Git.MergeBase(ctx, p.ID, p.Path, from.Since, tg.commit)
+			if err != nil || base == "" {
+				tg.note = "The interrupted run's base commit is gone: scanned everything"
+			} else {
+				tg.since, tg.incremental, tg.note = base, true, ""
+			}
+		}
+		return r.changedFiles(ctx, p, t, tg)
+	}
 	if t.Scope == model.ScopeSinceMain {
 		// The checkout's current branch against the default branch.
 		if tg.commit, err = head("HEAD"); err != nil {
@@ -217,6 +260,12 @@ func (r *Runner) resolve(ctx context.Context, p model.Project, t Template) (targ
 			tg.since, tg.incremental = base, true
 		}
 	}
+	return r.changedFiles(ctx, p, t, tg)
+}
+
+// changedFiles lists an incremental target's changed files in the scope,
+// and skips it if there are none.
+func (r *Runner) changedFiles(ctx context.Context, p model.Project, t Template, tg target) (target, error) {
 	if tg.incremental {
 		files, err := r.Git.ChangedFiles(ctx, p.ID, p.Path, tg.since, tg.commit)
 		if err != nil {
@@ -246,7 +295,7 @@ func underPath(files []string, dir string) []string {
 	return out
 }
 
-func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run model.ScanRun) {
+func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run model.ScanRun, from *model.ScanRun) {
 	logf, _ := r.openLog(run.ID)
 	if logf != nil {
 		defer logf.Close()
@@ -270,13 +319,17 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 		finish(func(x *model.ScanRun) {
 			x.Status, x.Error = model.ScanFailed, err.Error()
 			if ctx.Err() != nil {
-				x.Status, x.Error = model.ScanCanceled, ""
+				x.Status, x.Error = model.ScanInterrupted, ""
+				x.Note = "Dash shut down during the scan"
+				if errors.Is(context.Cause(ctx), errUserCanceled) {
+					x.Status, x.Note = model.ScanCanceled, ""
+				}
 			}
 		})
 	}
 	logLine(fmt.Sprintf("▶ scan %s (%s) of %s", t.Name, t.Scope, p.Name))
 
-	tg, err := r.resolve(ctx, p, t)
+	tg, err := r.resolve(ctx, p, t, from)
 	if err != nil {
 		fail(err)
 		return

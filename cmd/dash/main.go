@@ -200,6 +200,9 @@ func main() {
 	}
 	scans.Cleanup(ctx)
 	scans.PruneLogs()
+	// Before the scheduler's first check: a scan Dash's last stop cut off
+	// starts over, and the scheduler's catch-up then finds it running.
+	scans.ResumeInterrupted()
 	scheduler := &scan.Scheduler{Store: st, Runner: scans, Usage: tracker}
 	builds := &ci.Watcher{Store: st, Git: git, Pub: events, Kick: todos.Kick, Every: time.Minute}
 	apiSrv := &api.Server{

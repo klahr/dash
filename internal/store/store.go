@@ -108,9 +108,10 @@ func Open(path string, pub Publisher) (*Store, error) {
 		// process, but MergeQueue.Resume queues them again.
 	}
 	for _, r := range s.data.ScanRuns {
-		if r.Status == model.ScanRunning { // the agent died with the old process
+		if r.Status == model.ScanRunning { // the agent died with the old process (a crash or kill -9)
 			now := time.Now()
-			r.Status, r.Error, r.FinishedAt, r.Activity = model.ScanFailed, "Dash stopped during the scan", &now, ""
+			r.Status, r.FinishedAt, r.Activity = model.ScanInterrupted, &now, ""
+			r.Note = "Dash stopped during the scan"
 		}
 	}
 	return s, s.saveLocked()

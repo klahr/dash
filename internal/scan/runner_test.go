@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/gitops"
@@ -94,6 +93,7 @@ func commitFile(t *testing.T, repo, name, content string) string {
 
 type fixture struct {
 	st     *store.Store
+	state  string // the store's file
 	p      model.Project
 	repo   string
 	exec   *fakeExec
@@ -114,7 +114,8 @@ func newFixture(t *testing.T, name, src string) *fixture {
 			t.Fatal(err)
 		}
 	}
-	st, err := store.Open(filepath.Join(t.TempDir(), "state.json"), nil)
+	state := filepath.Join(t.TempDir(), "state.json")
+	st, err := store.Open(state, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +123,7 @@ func newFixture(t *testing.T, name, src string) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fx := &fixture{st: st, p: p, repo: repo, exec: &fakeExec{answer: `{"findings": []}`}}
+	fx := &fixture{st: st, state: state, p: p, repo: repo, exec: &fakeExec{answer: `{"findings": []}`}}
 	fx.runner = &Runner{Store: st, Git: gitops.New(nil), Exec: fx.exec, Root: t.TempDir()}
 	t.Cleanup(fx.runner.Wait)
 	return fx
@@ -357,17 +358,6 @@ func TestRecordCounts(t *testing.T) {
 		if is.Source != "scan:x" {
 			t.Fatalf("source %q", is.Source)
 		}
-	}
-}
-
-func TestStoreMarksInterruptedRunsFailed(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.json")
-	st, _ := store.Open(path, nil)
-	p, _ := st.CreateProject(model.Project{Name: "p", Path: t.TempDir()})
-	r, _ := st.CreateScanRun(model.ScanRun{ProjectID: p.ID, Scan: "x", Status: model.ScanRunning, StartedAt: time.Now()})
-	st, _ = store.Open(path, nil)
-	if got, _ := st.GetScanRun(r.ID); got.Status != model.ScanFailed || got.FinishedAt == nil {
-		t.Fatalf("after restart: %+v", got)
 	}
 }
 

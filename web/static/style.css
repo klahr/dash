@@ -1438,6 +1438,8 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .scan-status { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: var(--text); }
 .scan-status .ico { width: 14px; height: 14px; }
 .scan-report.st-failed .scan-status { color: var(--failed); }
+.scan-report.st-interrupted { border-left-color: var(--running); border-left-style: dashed; }
+.scan-report.st-interrupted .scan-status { color: var(--running); }
 .scan-log { margin-left: auto; }
 .scan-counts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 6px 0 0; font-size: 15px; }
 .scan-count.new { font-weight: 600; }

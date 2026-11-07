@@ -15,9 +15,15 @@ const (
 	ScanRunning   = "running"
 	ScanSucceeded = "succeeded"
 	ScanFailed    = "failed"
-	ScanSkipped   = "skipped" // nothing changed since the last run
-	ScanCanceled  = "canceled"
+	ScanSkipped   = "skipped"  // nothing changed since the last run
+	ScanCanceled  = "canceled" // stopped by the user; never restarted
+	// ScanInterrupted: Dash stopped (shut down or crashed) during the run.
+	// It is started over once at the next startup; see ResumedAs.
+	ScanInterrupted = "interrupted"
 )
+
+// TriggerResume is the trigger of a run that starts over an interrupted one.
+const TriggerResume = "resume"
 
 // ScanRun is one run of a scan template on a project. A scan only reads the
 // code; what it finds goes into the project's Issues, never onto a branch.
@@ -25,11 +31,15 @@ type ScanRun struct {
 	ID        string `json:"id"`
 	ProjectID string `json:"project_id"`
 	Scan      string `json:"scan"`    // template name; its issues have source "scan:<name>"
-	Trigger   string `json:"trigger"` // "manual" or "schedule"
-	Scope     string `json:"scope"`
-	Path      string `json:"path,omitempty"`  // for ScopePath
-	Commit    string `json:"commit"`          // what was scanned
-	Since     string `json:"since,omitempty"` // for incremental scopes: the commit diffed against
+	Trigger   string `json:"trigger"` // "manual", "schedule" or "resume"
+	// ResumedFrom is the interrupted run this one starts over (trigger
+	// "resume"); ResumedAs, on the interrupted run, the run that did.
+	ResumedFrom string `json:"resumed_from,omitempty"`
+	ResumedAs   string `json:"resumed_as,omitempty"`
+	Scope       string `json:"scope"`
+	Path        string `json:"path,omitempty"`  // for ScopePath
+	Commit      string `json:"commit"`          // what was scanned
+	Since       string `json:"since,omitempty"` // for incremental scopes: the commit diffed against
 	// Incremental says the run looked only at Since..Commit; false for a
 	// since_last_scan run without a previous run, which scans everything.
 	Incremental bool   `json:"incremental,omitempty"`

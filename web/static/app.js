@@ -822,7 +822,7 @@ function elsewhere(ev, m) {
     if (ev.data.status === "review") { toast(`${title(ev.data)} · ${where}`, { tone: "review", head: "Ready for review", action: go }); notify("Ready for review", ev.data, where); }
     if (ev.data.status === "failed") notify("Failed", ev.data, `${where}: ${ev.data.error || ""}`);
   }
-  if (ev.type === "scan.run" && ev.data.trigger === "schedule") scanFinished(ev.data, p, where);
+  if (ev.type === "scan.run" && ev.data.trigger !== "manual") scanFinished(ev.data, p, where);
   if (ev.type === "permission.updated" && !ev.data.decision) {
     toast(`${describePerm(ev.data).title} · ${where}`, { tone: "approval", head: "Claude needs your approval", action: p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.data.todo_id); } } : null });
     notify(`Claude wants to ${describePerm(ev.data).title}`, { title: where, prompt: "" }, describePerm(ev.data).detail);
@@ -4645,12 +4645,13 @@ function onScanRun(ev) {
 }
 
 // scanFinished tells about a run that just ended: always for one started by
-// hand, and for a scheduled one when it found new critical or high issues.
+// hand, and for a scheduled or resumed one when it found new critical or
+// high issues.
 function scanFinished(run, p, where = "") {
   if (run.status === "running" || !run.finished_at) return;
   const go = p ? { label: "Show", run: async () => { if (state.project !== p) await selectProject(p); showRunIssues(run, "new"); } } : null;
   const head = `${scanLabel(run.scan)}${where ? ` · ${where}` : ""}`;
-  if (run.trigger === "schedule") {
+  if (run.trigger !== "manual") {
     if (run.status !== "succeeded" || !run.urgent) return;
     const msg = `${plural(run.urgent, "new critical or high issue")} · ${scanSummary(run)}`;
     toast(msg, { tone: "error", icon: "bug", head, action: go, ms: 12000 });
@@ -4672,6 +4673,7 @@ function scanSummary(r) {
     case "skipped": return r.note || "Nothing to scan";
     case "failed": return r.error || "Failed";
     case "canceled": return "Canceled";
+    case "interrupted": return r.note || "Dash stopped during the scan";
   }
   const c = r.counts || {};
   const known = (c.known || 0) + (c.updated || 0);
@@ -4848,12 +4850,12 @@ function runIssueStatus(r, which) {
 function scanReport(r, compact = false) {
   const c = r.counts || {};
   const known = (c.known || 0) + (c.updated || 0);
-  const icon = { running: null, succeeded: "check", failed: "x", skipped: "redo", canceled: "stop" }[r.status];
-  const label = { running: "Running", succeeded: "Done", failed: "Failed", skipped: "Skipped", canceled: "Canceled" }[r.status] || r.status;
+  const icon = { running: null, succeeded: "check", failed: "x", skipped: "redo", canceled: "stop", interrupted: "reload" }[r.status];
+  const label = { running: "Running", succeeded: "Done", failed: "Failed", skipped: "Skipped", canceled: "Canceled", interrupted: "Interrupted" }[r.status] || r.status;
   const link = (n, text, which) => n ? h("button", { type: "button", class: `scan-count link${which === "new" ? " new" : ""}`, title: "Show them in Issues", onclick: () => showRunIssues(r, which) }, `${n} ${text}`) : null;
   const bits = [
     agoText(r.started_at),
-    r.trigger === "schedule" ? "scheduled" : "by hand",
+    r.trigger === "schedule" ? "scheduled" : r.trigger === "resume" ? "↻ resumed after restart" : "by hand",
     r.commit ? (r.incremental && r.since ? `${r.since.slice(0, 7)}…${r.commit.slice(0, 7)}` : r.commit.slice(0, 7)) : null,
     r.finished_at ? `${Math.max(1, Math.round((new Date(r.finished_at) - new Date(r.started_at)) / 1000))}s` : null,
     r.cost_usd ? `≈$${r.cost_usd.toFixed(2)}` : null,
@@ -4889,7 +4891,9 @@ function scanReport(r, compact = false) {
       h("a", { class: "link scan-log", href: on(here(), `/api/scan-runs/${r.id}/log`), target: "_blank", rel: "noopener" }, "Log")),
     body,
     r.answer ? h("details", { class: "scan-answer" }, h("summary", {}, "The agent's answer"), h("pre", {}, r.answer)) : null,
-    r.note && r.status === "succeeded" ? h("p", { class: "scan-note" }, r.note) : null);
+    r.note && r.status === "succeeded" ? h("p", { class: "scan-note" }, r.note) : null,
+    r.resumed_as ? h("p", { class: "scan-note" }, `↻ Resumed as ${r.resumed_as}`) : null,
+    r.resumed_from ? h("p", { class: "scan-note" }, `Restarts run ${r.resumed_from}, which Dash's restart interrupted`) : null);
 }
 
 $("#issue-f-run").addEventListener("click", () => { iss.filter.run = null; iss.filter.status = "active"; $("#issue-f-status").value = "active"; renderIssues(); });
