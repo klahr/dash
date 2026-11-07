@@ -587,6 +587,7 @@ const STATUS_LABEL = { draft: "Draft", queued: "Queued", in_progress: "Running",
 
 const state = {
   projects: [],
+  projectsLoaded: false, // the board's empty states wait for the first project list
   project: null,
   todos: new Map(),
   lastLine: new Map(),
@@ -876,11 +877,13 @@ async function loadProjects() {
     }
   }));
   state.projects = lists.flat();
+  const first = !state.projectsLoaded;
+  state.projectsLoaded = true;
   const saved = (() => { try { return localStorage.getItem("dash.project"); } catch { return null; } })();
   const want = projectKey(state.project) || saved;
   const next = state.projects.find((p) => projectKey(p) === want || p.id === want) || state.projects[0] || null;
   if (projectKey(next) !== projectKey(state.project)) await selectProject(next);
-  else { state.project = next; renderProjectHeader(); }
+  else { state.project = next; renderProjectHeader(); if (first && !next) renderBoard(); }
   renderProjectList();
 }
 
@@ -1314,8 +1317,11 @@ function renderBoardNow() {
     $("#board").replaceChildren();
     $("#lane-tabs").replaceChildren();
     $("#lane-chips").replaceChildren();
-    empty.hidden = false;
     $("#new-todo").hidden = true;
+    // Until the projects and runners are in, don't flash a welcome or
+    // "create your first project" that a board (or the other) then replaces.
+    empty.hidden = !state.projectsLoaded || state.runners === undefined;
+    if (empty.hidden) return;
     // A hub with no runners yet: welcome, and explain how to add one first.
     if (state.runners?.length === 0) { empty.replaceChildren(...welcomeScreen()); return; }
     empty.replaceChildren(
@@ -2765,7 +2771,7 @@ async function loadRunners() {
     state.runners = null; // this Dash has no runners (it is one, say)
   }
   // The empty board shows the welcome screen until there's a runner.
-  if (!state.project && !$("#board-empty").hidden) renderBoard();
+  if (!state.project && state.projectsLoaded) renderBoard();
   return state.runners;
 }
 const runnerName = (id) => state.runners?.find((r) => r.id === id)?.name || "its runner";
