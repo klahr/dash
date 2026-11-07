@@ -209,10 +209,10 @@ func main() {
 	}
 
 	var mcpURL, permURL string
-	if *askPerms || *chatBackend == "claude-code" {
+	{
 		// Claude Code reaches Dash's MCP servers (permission prompts, the chat's
-		// task tools) on a loopback-only plain-HTTP listener, whatever -addr and
-		// TLS are set to.
+		// task tools, the tasks' issue tools) on a loopback-only plain-HTTP
+		// listener, whatever -addr and TLS are set to.
 		mcp := http.NewServeMux()
 		if *askPerms {
 			mcp.HandleFunc("/mcp/permissions", perms.ServeMCP)
@@ -227,6 +227,7 @@ func main() {
 			permURL = mcpURL
 			todos.Perms, todos.BaseURL = perms, mcpURL
 		}
+		todos.Board, todos.BoardURL = apiSrv.Board, mcpURL
 	}
 	merges.Perms, merges.Kick = perms, todos.Kick
 

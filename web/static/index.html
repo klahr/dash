@@ -73,6 +73,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M12 4v9M18 4v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="6" cy="9" r="2"/><circle cx="12" cy="15" r="2"/><circle cx="18" cy="18" r="2"/></svg>
         <span>Board</span><span class="badge" id="review-badge" hidden></span>
       </button>
+      <button data-view="issues" title="Issues (gi)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 10a4 4 0 0 1 8 0v4a4 4 0 0 1-8 0zM12 10v8M4 13h4M16 13h4M5 8l3 2M19 8l-3 2M5 19l3-2M19 19l-3-2M9.5 6.5 8 4M14.5 6.5 16 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Issues</span><span class="badge quiet" id="issue-badge" hidden></span>
+      </button>
       <button data-view="run" title="Shell (gs)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 4 4-4 4M12 17h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Shell</span><span class="badge quiet" id="proc-badge" hidden></span>
@@ -157,6 +161,57 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
           <span>New task</span>
         </button>
+      </section>
+
+      <!-- Issues: what is wrong with the project, triaged into tasks -->
+      <section class="view" id="view-issues" aria-label="Issues">
+        <div class="issues">
+          <form class="issue-add" id="issue-add" hidden>
+            <select id="issue-add-type" aria-label="Type">
+              <option value="bug">Bug</option>
+              <option value="vuln">Vulnerability</option>
+              <option value="issue" selected>Issue</option>
+            </select>
+            <input id="issue-add-title" placeholder="Add an issue: what's wrong?" aria-label="New issue title" autocomplete="off" required>
+            <button class="btn primary" type="submit" data-icon="plus">Add</button>
+          </form>
+          <div class="issue-tools" id="issue-tools" hidden>
+            <label class="issue-all" title="Select all shown issues that can be triaged"><input type="checkbox" id="issue-all"><span class="sr-only">Select all</span></label>
+            <select id="issue-f-type" aria-label="Type">
+              <option value="">Any type</option>
+              <option value="bug">Bugs</option>
+              <option value="vuln">Vulnerabilities</option>
+              <option value="issue">Other issues</option>
+            </select>
+            <select id="issue-f-severity" aria-label="Severity">
+              <option value="">Any severity</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+              <option value="info">Info</option>
+            </select>
+            <select id="issue-f-status" aria-label="Status">
+              <option value="active">Open &amp; task created</option>
+              <option value="open">Open</option>
+              <option value="task_created">Task created</option>
+              <option value="resolved">Resolved</option>
+              <option value="dismissed">Dismissed</option>
+              <option value="all">All</option>
+            </select>
+            <select id="issue-f-source" aria-label="Source"><option value="">Any source</option></select>
+          </div>
+          <div class="issue-bulk" id="issue-bulk" role="toolbar" aria-label="Selected issues" hidden>
+            <span class="issue-count" id="issue-count"></span>
+            <button class="btn small primary" type="button" id="issue-tasks" data-icon="plus" title="One task for each selected issue">Create tasks</button>
+            <button class="btn small" type="button" id="issue-combine" data-icon="checks" title="One task that fixes all selected issues, e.g. instances of one pattern">Create one task</button>
+            <label class="issue-queue" title="Queue the new tasks to run instead of keeping drafts"><input type="checkbox" id="issue-queue"> Create &amp; queue</label>
+            <button class="btn small danger" type="button" id="issue-dismiss" data-icon="x">Dismiss</button>
+            <button class="link" type="button" id="issue-clear">Clear</button>
+          </div>
+          <ul class="issue-list" id="issue-list"></ul>
+          <div class="empty" id="issue-empty"><p class="empty-title" id="issue-empty-title">No project</p><p id="issue-empty-text">Select a project to see its issues.</p></div>
+        </div>
       </section>
 
       <!-- Shell -->
@@ -546,7 +601,7 @@
       <p class="hint">Vim-style. Typing in a field or the terminal is insert mode; Esc (Ctrl-] in the terminal) returns to normal mode.</p>
       <dl class="keys">
         <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with tasks · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
-        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gs</kbd>/<kbd>ga</kbd>/<kbd>gh</kbd>/<kbd>gf</kbd> Board/Shell/Activity/History/Files · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> sections, <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>J</kbd>/<kbd>K</kbd> next/previous project · <kbd>c</kbd> project chat · <kbd>[</kbd> collapse sidebar · <kbd>F</kbd> fullscreen on/off · <kbd>Ctrl-k</kbd> search projects, tasks and commands · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
+        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gi</kbd>/<kbd>gs</kbd>/<kbd>ga</kbd>/<kbd>gh</kbd>/<kbd>gf</kbd> Board/Issues/Shell/Activity/History/Files · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> sections, <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>J</kbd>/<kbd>K</kbd> next/previous project · <kbd>c</kbd> project chat · <kbd>[</kbd> collapse sidebar · <kbd>F</kbd> fullscreen on/off · <kbd>Ctrl-k</kbd> search projects, tasks and commands · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
         <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review, enqueue a draft; <kbd>Space</kbd> opens) · <kbd>a</kbd> new · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>t</kbd> live preview (<kbd>D</kbd> draws on it: <kbd>p</kbd>/<kbd>a</kbd>/<kbd>o</kbd>/<kbd>b</kbd>/<kbd>c</kbd> pen/arrow/circle/box/crop, <kbd>1</kbd>–<kbd>3</kbd> colour, <kbd>x</kbd> exact capture (desktop Chrome), <kbd>Ctrl-z</kbd> undo, <kbd>Enter</kbd> add to review, <kbd>Esc</kbd> done) · <kbd>!</kbd> shell in worktree</dd>
         <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> changes ↔ timeline · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
         <dt>Search</dt><dd><kbd>/</kbd> filter the board · <kbd>Enter</kbd> jump to first match · <kbd>n</kbd>/<kbd>N</kbd> next/previous · <kbd>Esc</kbd> or <code>:noh</code> clear</dd>

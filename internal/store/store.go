@@ -54,6 +54,9 @@ type snapshot struct {
 	TodoChats map[string][]model.ChatMessage `json:"todo_chats,omitempty"`
 	// ProjectChats are conversations about one project, keyed by project id.
 	ProjectChats map[string][]model.ChatMessage `json:"project_chats,omitempty"`
+	// Issues are each project's known bugs, vulnerabilities and other
+	// problems, keyed by issue id.
+	Issues map[string]*model.Issue `json:"issues,omitempty"`
 }
 
 type Store struct {
@@ -194,6 +197,11 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 			delete(s.data.TodoChats, tid)
 		}
 	}
+	for iid, is := range s.data.Issues {
+		if is.ProjectID == id {
+			delete(s.data.Issues, iid)
+		}
+	}
 	delete(s.data.Projects, id)
 	delete(s.data.ProjectChats, id)
 	if err := s.saveLocked(); err != nil {
@@ -308,10 +316,15 @@ func (s *Store) UpdateTodo(id string, fn func(*model.Todo) error) (model.Todo, e
 	}
 	cp.ID, cp.ProjectID, cp.UpdatedAt = t.ID, t.ProjectID, time.Now()
 	s.data.Todos[id] = &cp
+	var resolved []model.Issue
+	if cp.Status == model.StatusMerged && t.Status != model.StatusMerged {
+		resolved = s.resolveIssuesLocked(id)
+	}
 	if err := s.saveLocked(); err != nil {
 		return cp, err
 	}
 	s.emit(model.EvTodoUpdated, cp.ProjectID, cp.ID, cp)
+	s.emitIssues(resolved)
 	return cp, nil
 }
 
@@ -343,6 +356,7 @@ func (s *Store) DeleteTodo(id string) (model.Todo, error) {
 	}
 	delete(s.data.Todos, id)
 	delete(s.data.TodoChats, id)
+	unlinked := s.unlinkIssuesLocked(id)
 	// Forget the deleted todo in the dependencies of others.
 	var changed []*model.Todo
 	for oid, o := range s.data.Todos {
@@ -361,6 +375,7 @@ func (s *Store) DeleteTodo(id string) (model.Todo, error) {
 	for _, o := range changed {
 		s.emit(model.EvTodoUpdated, o.ProjectID, o.ID, *o)
 	}
+	s.emitIssues(unlinked)
 	return *t, nil
 }
 

@@ -59,6 +59,7 @@ const ICONS = {
   diff: "M12 4v8M8 8h8M8 18h8",
   log: "M4 6h16M4 12h16M4 18h10",
   flag: "M5 21V4h12l-2 4 2 4H5",
+  bug: "M8 10a4 4 0 0 1 8 0v4a4 4 0 0 1-8 0zM12 10v8M4 13h4M16 13h4M5 8l3 2M19 8l-3 2M5 19l3-2M19 19l-3-2M9.5 6.5 8 4M14.5 6.5 16 4",
   plug: "M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4",
   down: "m7 10 5 5 5-5",
   up: "m7 14 5-5 5 5",
@@ -626,6 +627,7 @@ function applyView(name) {
   if (name === "run") requestAnimationFrame(() => { fitTerm(); ensureShell(); });
   if (name === "history") loadGraph().catch(fail);
   if (name === "files" && state.project) loadFiles().catch(fail); // at startup the project (and the files code below) isn't ready yet
+  if (name === "issues" && state.project) loadIssues().catch(fail);
 }
 $$(".nav > button[data-view]").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 {
@@ -691,6 +693,7 @@ function onEvent(ev, m = { name: "" }) {
         const prev = state.todos.get(ev.todo_id);
         state.todos.set(ev.todo_id, ev.data);
         renderBoard();
+        if (state.view === "issues" && prev?.status !== ev.data.status && iss.list.some((i) => i.todo_ids?.includes(ev.todo_id))) renderIssues();
         if (state.detail === ev.todo_id) {
           renderDetail();
           if (prev?.status !== ev.data.status && ev.data.worktree) loadDiff();
@@ -711,6 +714,10 @@ function onEvent(ev, m = { name: "" }) {
         }
         if (prev && !prev.pr && ev.data.pr) toast(title(ev.data), { tone: "pr", head: `Pull request #${ev.data.pr.number} opened`, action: { label: "View", run: () => window.open(ev.data.pr.url, "_blank", "noopener") } });
       }
+      break;
+    case "issue.updated":
+    case "issue.deleted":
+      if (mine) onIssueEvent(ev);
       break;
     case "todo.deleted":
       if (!mine) break;
@@ -855,8 +862,9 @@ async function selectProject(p) {
   renderRemote();
   loadRemote(true).catch(() => {});
   renderChatPane();
+  resetIssues();
   if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); renderFileTree(); renderFile(); return; }
-  await Promise.all([loadTodos(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles()]);
+  await Promise.all([loadIssues(), loadTodos(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles()]);
 }
 
 async function loadPerms() {
@@ -4316,13 +4324,255 @@ async function reorder(t, laneKey, index) {
   await Promise.all(changes.map(([x, i]) => api("PATCH", `/api/todos/${x.id}`, { priority: i })));
 }
 
+// ------------------------------------------------------------------ issues
+// A standing list of what is wrong with the project (bugs, vulnerabilities,
+// other problems), added by hand, by scans and by running tasks. Checking
+// issues and creating tasks for them is the triage step; a merged task
+// resolves its issues.
+const SEVERITIES = ["critical", "high", "medium", "low", "info"];
+const ISSUE_TYPES = { bug: "Bug", vuln: "Vulnerability", issue: "Issue" };
+const ISSUE_STATUSES = { open: "Open", task_created: "Task created", resolved: "Resolved", dismissed: "Dismissed" };
+const triageable = (i) => i.status === "open" || i.status === "task_created";
+const iss = {
+  list: [],
+  checked: new Set(), // ids picked for a bulk action
+  expanded: new Set(),
+  editing: null,      // id of the issue whose fields are being edited
+  filter: { type: "", severity: "", status: "active", source: "" },
+};
+
+function sortIssues() {
+  iss.list.sort((a, b) => (SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity)) || (new Date(b.created_at) - new Date(a.created_at)));
+}
+
+async function loadIssues() {
+  const p = state.project;
+  if (!p) return;
+  const list = await api("GET", `/api/projects/${p.id}/issues`);
+  if (state.project !== p) return;
+  iss.list = list;
+  sortIssues();
+  renderIssues();
+}
+
+function resetIssues() {
+  iss.list = [];
+  iss.checked.clear();
+  iss.expanded.clear();
+  iss.editing = null;
+  renderIssues();
+}
+
+function onIssueEvent(ev) {
+  const id = ev.data?.id;
+  if (!id) return;
+  iss.list = iss.list.filter((i) => i.id !== id);
+  if (ev.type === "issue.updated") { iss.list.push(ev.data); sortIssues(); }
+  else { iss.checked.delete(id); iss.expanded.delete(id); }
+  renderIssues();
+}
+
+function issueVisible(i) {
+  const f = iss.filter;
+  if (f.type && i.type !== f.type) return false;
+  if (f.severity && i.severity !== f.severity) return false;
+  if (f.status === "active" ? !triageable(i) : f.status && f.status !== "all" && i.status !== f.status) return false;
+  if (f.source && i.source !== f.source && !i.source.startsWith(f.source + ":")) return false;
+  return true;
+}
+
+const issueLoc = (i) => i.file ? (i.line ? `${i.file}:${i.line}` : i.file) : "";
+const sourceLabel = (s) => s === "manual" ? "Added by hand" : s.startsWith("scan:") ? `Scan: ${s.slice(5)}` : s === "agent:chat" ? "Reported from the chat" : s.startsWith("agent:") ? "Reported by a task" : s;
+
+function renderIssueBadge() {
+  const n = iss.list.filter((i) => i.status === "open").length;
+  const b = $("#issue-badge");
+  b.hidden = !n;
+  b.textContent = n;
+  b.title = `${n} open issue${n === 1 ? "" : "s"}`;
+}
+
+function renderIssues() {
+  renderIssueBadge();
+  const list = $("#issue-list");
+  const shown = iss.list.filter(issueVisible);
+  for (const id of iss.checked) if (!iss.list.some((i) => i.id === id && triageable(i))) iss.checked.delete(id);
+  list.replaceChildren(...shown.map(issueRow));
+  const empty = $("#issue-empty");
+  empty.hidden = shown.length > 0;
+  $("#issue-empty-title").textContent = !state.project ? "No project" : iss.list.length ? "No issues match" : "No issues";
+  $("#issue-empty-text").textContent = !state.project ? "Select a project to see its issues."
+    : iss.list.length ? "Change the filters to see the others."
+    : "Bugs, vulnerabilities and other problems go here: add one above, or let scans and running tasks report what they find. Check issues to turn them into tasks.";
+  $("#issue-add").hidden = !state.project;
+  $("#issue-tools").hidden = !state.project || !iss.list.length;
+  // Sources seen so far, for the source filter.
+  const sel = $("#issue-f-source");
+  const kinds = [...new Set(iss.list.map((i) => i.source.split(":")[0]))];
+  const want = ["", ...["manual", "scan", "agent"].filter((k) => kinds.includes(k))];
+  if ([...sel.options].map((o) => o.value).join() !== want.join()) {
+    sel.replaceChildren(...want.map((k) => h("option", { value: k }, { "": "Any source", manual: "Added by hand", scan: "Scans", agent: "Agents" }[k])));
+    if (!want.includes(iss.filter.source)) iss.filter.source = "";
+    sel.value = iss.filter.source;
+  }
+  renderIssueBulk();
+}
+
+// renderIssueBulk updates what depends on the checked issues only, so
+// ticking a box doesn't rebuild the list (and lose focus).
+function renderIssueBulk() {
+  const shown = iss.list.filter(issueVisible);
+  const picked = shown.filter((i) => iss.checked.has(i.id));
+  const all = $("#issue-all");
+  const pickable = shown.filter(triageable);
+  all.checked = pickable.length > 0 && picked.length === pickable.length;
+  all.indeterminate = picked.length > 0 && picked.length < pickable.length;
+  all.disabled = !pickable.length;
+  $("#issue-bulk").hidden = !iss.checked.size;
+  $("#issue-count").textContent = `${iss.checked.size} selected`;
+  $("#issue-combine").disabled = iss.checked.size < 2;
+}
+
+function issueRow(i) {
+  const open = iss.expanded.has(i.id);
+  const toggle = () => {
+    open ? iss.expanded.delete(i.id) : iss.expanded.add(i.id);
+    renderIssues();
+    $(`#issue-list .issue[data-id="${i.id}"] .issue-main`)?.focus();
+  };
+  const tasks = (i.todo_ids || []).map((id) => {
+    const t = state.todos.get(id);
+    return h("button", { type: "button", class: "issue-task", title: t ? `${title(t)} (${t.status.replace("_", " ")})` : "Open the task", onclick: () => openDetail(id) },
+      ico("draft"), t ? (t.status === "merged" ? "Merged" : "Task") : "Task");
+  });
+  return h("li", { class: `issue status-${i.status}${open ? " open" : ""}`, "data-id": i.id },
+    h("div", { class: "issue-row" },
+      h("input", { type: "checkbox", class: "issue-check", checked: iss.checked.has(i.id), disabled: !triageable(i),
+        "aria-label": `Select ${i.title}`, title: triageable(i) ? "Select for a bulk action" : `${ISSUE_STATUSES[i.status]}; reopen it to triage`,
+        onchange: (e) => { e.target.checked ? iss.checked.add(i.id) : iss.checked.delete(i.id); renderIssueBulk(); } }),
+      h("span", { class: `sev sev-${i.severity}`, title: `Severity: ${i.severity}` }, i.severity),
+      h("button", { type: "button", class: "issue-main", "aria-expanded": String(open), onclick: toggle },
+        h("span", { class: `issue-type type-${i.type}` }, i.type === "vuln" ? "vuln" : i.type),
+        h("span", { class: "issue-title" }, i.title),
+        issueLoc(i) ? h("span", { class: "issue-loc" }, issueLoc(i)) : null),
+      ...tasks,
+      i.status === "resolved" || i.status === "dismissed" ? h("span", { class: "issue-status" }, ISSUE_STATUSES[i.status]) : null),
+    open ? (iss.editing === i.id ? issueEditor(i) : issueBody(i)) : null);
+}
+
+function issueBody(i) {
+  const act = (label, icon, run, cls = "btn small") => ib({ type: "button", class: cls, onclick: attempt(run) }, icon, label);
+  const patch = (body) => api("PATCH", `/api/issues/${i.id}`, body);
+  return h("div", { class: "issue-body" },
+    h("p", { class: "issue-meta" },
+      `${ISSUE_TYPES[i.type] || i.type} · ${sourceLabel(i.source)} · ${ago(i.created_at)} ago`,
+      i.updated_at !== i.created_at ? ` · updated ${ago(i.updated_at)} ago` : "",
+      i.rule ? ` · rule ${i.rule}` : ""),
+    i.status === "dismissed" ? h("p", { class: "issue-reason" }, `Dismissed${i.dismiss_reason ? `: ${i.dismiss_reason}` : ""}`) : null,
+    i.details ? h("div", { class: "issue-md", innerHTML: renderMarkdown(i.details) }) : h("p", { class: "issue-none" }, "No details yet."),
+    i.fix ? h("div", { class: "issue-fix" }, h("h4", {}, "Suggested fix"), h("div", { class: "issue-md", innerHTML: renderMarkdown(i.fix) })) : null,
+    h("div", { class: "issue-actions" },
+      act("Edit", "edit", () => { iss.editing = i.id; renderIssues(); }),
+      triageable(i) ? act("Create task", "plus", () => issueTasks([i.id], false, false)) : null,
+      triageable(i) ? act("Dismiss", "x", () => dismissIssues([i.id])) : null,
+      i.status === "open" ? act("Mark resolved", "check", () => patch({ status: "resolved" })) : null,
+      !triageable(i) ? act("Reopen", "undo", () => patch({ status: "open" })) : null,
+      act("Delete", "trash", async () => {
+        if (await ask({ title: "Delete this issue?", body: `“${i.title}” is forgotten. If it is reported again it comes back as new; dismiss it instead to keep it out.`, ok: "Delete", danger: true }))
+          await api("DELETE", `/api/issues/${i.id}`);
+      }, "btn small danger")));
+}
+
+function issueEditor(i) {
+  const f = (name, el) => h("label", { class: `issue-field f-${name}` }, h("span", {}, name[0].toUpperCase() + name.slice(1)), el);
+  const titleIn = h("input", { value: i.title, required: true, autocomplete: "off" });
+  const typeIn = h("select", {}, ...Object.entries(ISSUE_TYPES).map(([v, l]) => h("option", { value: v, selected: v === i.type }, l)));
+  const sevIn = h("select", {}, ...SEVERITIES.map((v) => h("option", { value: v, selected: v === i.severity }, v[0].toUpperCase() + v.slice(1))));
+  const fileIn = h("input", { value: i.file || "", placeholder: "path/to/file", autocomplete: "off", spellcheck: false });
+  const lineIn = h("input", { type: "number", min: 0, value: i.line || "", placeholder: "Line" });
+  const detailsIn = h("textarea", { rows: 5, placeholder: "What happens, why it is wrong, how to reproduce (markdown)" });
+  detailsIn.value = i.details || "";
+  const fixIn = h("textarea", { rows: 3, placeholder: "How it could be fixed (markdown)" });
+  fixIn.value = i.fix || "";
+  const cancel = () => { iss.editing = null; renderIssues(); };
+  const form = h("form", { class: "issue-body issue-edit", onsubmit: attempt(async (e) => {
+    e.preventDefault();
+    await api("PATCH", `/api/issues/${i.id}`, {
+      title: titleIn.value, type: typeIn.value, severity: sevIn.value, file: fileIn.value,
+      line: parseInt(lineIn.value, 10) || 0, details: detailsIn.value, fix: fixIn.value,
+    });
+    iss.editing = null;
+    renderIssues();
+  }), onkeydown: (e) => { if (e.key === "Escape") { e.stopPropagation(); cancel(); } } },
+    f("title", titleIn),
+    h("div", { class: "issue-edit-row" }, f("type", typeIn), f("severity", sevIn), f("file", fileIn), f("line", lineIn)),
+    f("details", detailsIn),
+    f("fix", fixIn),
+    h("div", { class: "issue-actions" },
+      ib({ type: "submit", class: "btn small primary" }, "check", "Save"),
+      h("button", { type: "button", class: "btn small", onclick: cancel }, "Cancel")));
+  requestAnimationFrame(() => titleIn.focus());
+  return form;
+}
+
+async function issueTasks(ids, combine, enqueue) {
+  const todos = await api("POST", `/api/projects/${state.project.id}/issues/tasks`, { ids, combine, enqueue });
+  for (const id of ids) iss.checked.delete(id);
+  for (const t of todos) state.todos.set(t.id, t);
+  renderIssues();
+  const n = todos.length;
+  const what = `${n} ${enqueue ? "queued" : "draft"} task${n === 1 ? "" : "s"}`;
+  toast(n === 1 ? title(todos[0]) : `For ${ids.length} issues`, { tone: "ok", head: `Created ${what}`, action: n === 1 ? openTodo(todos[0].id) : { label: "Board", run: () => showView("board") } });
+}
+
+async function dismissIssues(ids) {
+  const reason = await ask({
+    title: ids.length === 1 ? "Dismiss this issue?" : `Dismiss ${ids.length} issues?`,
+    body: "Dismissed issues stay dismissed when they are reported again. You can reopen them later.",
+    input: true, placeholder: "Why? e.g. false positive, won't fix, by design", ok: "Dismiss",
+  });
+  if (reason === null) return;
+  await api("POST", `/api/projects/${state.project.id}/issues/dismiss`, { ids, reason });
+  for (const id of ids) iss.checked.delete(id);
+  renderIssues();
+}
+
+$("#issue-add").addEventListener("submit", attempt(async (e) => {
+  e.preventDefault();
+  const input = $("#issue-add-title");
+  const t = input.value.trim();
+  if (!t || !state.project) return;
+  const { issue, result } = await api("POST", `/api/projects/${state.project.id}/issues`, { title: t, type: $("#issue-add-type").value });
+  input.value = "";
+  if (result === "known" || result === "updated") toast(issue.title, { head: "Already on the list" });
+  if (result === "dismissed") toast(issue.title, { head: "Already dismissed", action: { label: "Show", run: () => { iss.filter.status = "dismissed"; $("#issue-f-status").value = "dismissed"; iss.expanded.add(issue.id); renderIssues(); } } });
+  if (result === "new") {
+    // The live event may have added it already; show it either way, opened.
+    if (!iss.list.some((i) => i.id === issue.id)) { iss.list.push(issue); sortIssues(); }
+    iss.expanded.add(issue.id);
+    renderIssues();
+  }
+}));
+for (const [key, id] of [["type", "#issue-f-type"], ["severity", "#issue-f-severity"], ["status", "#issue-f-status"], ["source", "#issue-f-source"]]) {
+  $(id).addEventListener("change", (e) => { iss.filter[key] = e.target.value; renderIssues(); });
+}
+$("#issue-all").addEventListener("change", (e) => {
+  for (const i of iss.list.filter(issueVisible).filter(triageable)) e.target.checked ? iss.checked.add(i.id) : iss.checked.delete(i.id);
+  for (const box of $$("#issue-list .issue-check")) if (!box.disabled) box.checked = e.target.checked;
+  renderIssueBulk();
+});
+$("#issue-tasks").addEventListener("click", attempt(() => issueTasks([...iss.checked], false, $("#issue-queue").checked)));
+$("#issue-combine").addEventListener("click", attempt(() => issueTasks([...iss.checked], true, $("#issue-queue").checked)));
+$("#issue-dismiss").addEventListener("click", attempt(() => dismissIssues([...iss.checked])));
+$("#issue-clear").addEventListener("click", () => { iss.checked.clear(); renderIssues(); });
+
 // ------------------------------------------------------------------ vim keys
 // Normal mode is the default; typing in a field or the terminal is insert
 // mode. Esc (Ctrl-] in the terminal) returns to normal mode.
-const VIEWS = ["board", "run", "activity", "history", "files"];
+const VIEWS = ["board", "issues", "run", "activity", "history", "files"];
 const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
-const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gc|gs|ga|gh|gf|G|F|u|p|c|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gi|gc|gs|ga|gh|gf|G|F|u|p|c|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 const openDialog = () => document.querySelector("dialog[open]");
 
@@ -4540,6 +4790,7 @@ function paletteCommands() {
   return [
     p && ["New task", "plus", () => openTodoForm(), "a", "add create todo"],
     ["Board", "flag", go("board"), "gb", "view lanes"],
+    ["Issues", "bug", go("issues"), "gi", "bugs vulnerabilities problems triage scan"],
     ["Toggle chat", "comment", () => toggleChatPane(), "gc", "chat open close claude ask project general"],
     [pane.pinned ? "Unpin chat" : "Pin chat", "pin", togglePin, ":pin", "pin unpin chat overlay dock"],
     fsSupported && [isFullscreen() ? "Exit fullscreen" : "Fullscreen", isFullscreen() ? "fs-exit" : "fs", () => toggleFullscreen(), "F", "fullscreen full screen maximize kiosk"],
@@ -4807,6 +5058,7 @@ async function handleNormal(k, n, hadCount) {
     case "ga": return showView("activity");
     case "gh": return showView("history");
     case "gf": return showView("files");
+    case "gi": return showView("issues");
     case "p": return openProjects();
     case "J": case "K": return stepProject(k === "J" ? n : -n);
     case "[": return desktop.matches && setSideCollapsed(!sideCollapsed());

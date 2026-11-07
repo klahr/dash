@@ -127,6 +127,15 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/todos/{tid}/open", s.openTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/revert", s.revertTodo)
 	mux.HandleFunc("POST /api/refine", s.refinePrompt)
+
+	// Issues: known bugs, vulnerabilities and other problems, triaged into tasks
+	mux.HandleFunc("GET /api/projects/{pid}/issues", s.listIssues)
+	mux.HandleFunc("POST /api/projects/{pid}/issues", s.addIssue)
+	mux.HandleFunc("POST /api/projects/{pid}/issues/batch", s.addIssues)
+	mux.HandleFunc("POST /api/projects/{pid}/issues/tasks", s.issueTasks)
+	mux.HandleFunc("POST /api/projects/{pid}/issues/dismiss", s.dismissIssues)
+	mux.HandleFunc("PATCH /api/issues/{iid}", s.updateIssue)
+	mux.HandleFunc("DELETE /api/issues/{iid}", s.deleteIssue)
 	mux.HandleFunc("GET /api/todos/{tid}/chat", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.Store.TodoChat(r.PathValue("tid")))
 	})
@@ -234,11 +243,12 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 func writeErr(w http.ResponseWriter, err error) {
 	code := http.StatusInternalServerError
 	var inv model.ErrInvalidTransition
+	var invIssue model.ErrInvalidIssueTransition
 	var gitErr *gitops.CmdError
 	switch {
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, runner.ErrNotFound), errors.Is(err, preview.ErrNotFound):
 		code = http.StatusNotFound
-	case errors.As(err, &inv), errors.Is(err, store.ErrReviewing):
+	case errors.As(err, &inv), errors.As(err, &invIssue), errors.Is(err, store.ErrReviewing):
 		code = http.StatusConflict
 	case errors.Is(err, queue.ErrMergeQueueFull):
 		code = http.StatusServiceUnavailable
@@ -250,7 +260,7 @@ func writeErr(w http.ResponseWriter, err error) {
 		code = http.StatusTooManyRequests
 	case errors.Is(err, queue.ErrProjectBusy):
 		code = http.StatusConflict
-	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency),
+	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency), errors.Is(err, store.ErrBadIssue),
 		errors.Is(err, preview.ErrNoRunCommand), errors.Is(err, preview.ErrNotInReview):
 		code = http.StatusBadRequest
 	}

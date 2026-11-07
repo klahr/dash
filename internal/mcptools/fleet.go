@@ -177,6 +177,31 @@ func (f Fleet) Action(id, verb string, body any) (model.Todo, error) {
 
 func (f Fleet) QueueTodo(id string) (model.Todo, error) { return f.Action(id, "enqueue", nil) }
 
+func (f Fleet) Issues(projectID string) ([]model.Issue, error) {
+	_, at, err := f.project(projectID)
+	if err != nil {
+		return nil, err
+	}
+	var is []model.Issue
+	return is, f.API.Call("GET", at+"/api/projects/"+url.PathEscape(projectID)+"/issues", nil, &is)
+}
+
+func (f Fleet) ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error) {
+	_, at, err := f.project(projectID)
+	if err != nil {
+		return model.Issue{}, "", err
+	}
+	var out struct {
+		Issue  model.Issue        `json:"issue"`
+		Result model.UpsertResult `json:"result"`
+	}
+	err = f.API.Call("POST", at+"/api/projects/"+url.PathEscape(projectID)+"/issues", map[string]any{
+		"title": is.Title, "type": is.Type, "severity": is.Severity, "file": is.File, "line": is.Line,
+		"details": is.Details, "fix": is.Fix, "source": is.Source,
+	}, &out)
+	return out.Issue, out.Result, err
+}
+
 func (f Fleet) Delete(id string) error {
 	_, at, err := f.todo(id)
 	if err != nil {

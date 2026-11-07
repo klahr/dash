@@ -110,3 +110,12 @@ func (b board) CreateTodo(projectID string, t mcptools.NewTodo) (model.Todo, err
 }
 
 func (b board) QueueTodo(id string) (model.Todo, error) { return b.s.enqueue(id) }
+
+func (b board) Issues(projectID string) ([]model.Issue, error) {
+	return b.s.Store.ListIssues(projectID), nil
+}
+
+func (b board) ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error) {
+	is.ProjectID = projectID
+	return b.s.Store.UpsertIssue(is)
+}

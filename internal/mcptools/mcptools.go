@@ -270,6 +270,10 @@ type Board interface {
 	CreateTodo(projectID string, t NewTodo) (model.Todo, error)
 	// QueueTodo queues a task to run.
 	QueueTodo(id string) (model.Todo, error)
+	// Issues lists a project's issues, most severe first.
+	Issues(projectID string) ([]model.Issue, error)
+	// ReportIssue adds an issue, or updates the one with its fingerprint.
+	ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error)
 }
 
 // Options adapt the board tools to where they run.
@@ -278,16 +282,122 @@ type Options struct {
 	Project string
 	// Draft makes create_todo keep drafts unless called with draft: false.
 	Draft bool
+	// Todo is the running task the tools serve, if any: report_issue
+	// credits issues to it ("agent:<todo>").
+	Todo string
 }
 
 // Tool names the chat may call; ReadTools never change anything.
 var (
-	ReadTools  = []string{"list_projects", "list_todos", "get_todo"}
-	BoardTools = append(append([]string{}, ReadTools...), "create_todo", "queue_todo")
+	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues"}
+	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "list_issues", "report_issue"}
+	// IssueToolNames are what a running task gets (IssueTools).
+	IssueToolNames = []string{"list_issues", "report_issue"}
 )
 
-// Tools returns list_projects, list_todos, get_todo, create_todo and queue_todo.
+// Tools returns list_projects, list_todos, get_todo, create_todo and
+// queue_todo, and the IssueTools.
 func Tools(b Board, o Options) []Tool {
+	return append(boardTools(b, o), IssueTools(b, o)...)
+}
+
+func projectParam(o Options) (Param, func(b Board, a Args) (model.Project, error)) {
+	p := Param{"project", "string", "Project name or id (see list_projects).", true}
+	if o.Project != "" {
+		p = Param{"project", "string", "Project name or id; defaults to this one.", false}
+	}
+	return p, func(b Board, a Args) (model.Project, error) {
+		ref := a.Str("project")
+		if ref == "" {
+			ref = o.Project
+		}
+		return b.Project(ref)
+	}
+}
+
+// IssueTools returns list_issues and report_issue: the project's known bugs,
+// vulnerabilities and other problems, which the user triages into tasks.
+func IssueTools(b Board, o Options) []Tool {
+	pProject, project := projectParam(o)
+	reportDesc := "Report a bug, vulnerability or other problem in the project to its Issues list, for the user to triage. " +
+		"Use it for problems you notice that are outside what you were asked to do, instead of ignoring them or fixing them here. " +
+		"Reporting the same problem again updates it rather than duplicating it."
+	return []Tool{
+		{"list_issues", "List the project's known issues (bugs, vulnerabilities, other problems), most severe first. Check it before reporting one.", []Param{pProject,
+			{"status", "string", "Only this status: open, task_created, resolved or dismissed (default: open and task_created).", false},
+			{"type", "string", "Only this type: bug, vuln or issue.", false}},
+			func(a Args) (any, error) {
+				p, err := project(b, a)
+				if err != nil {
+					return nil, err
+				}
+				is, err := b.Issues(p.ID)
+				if err != nil {
+					return nil, err
+				}
+				type row struct {
+					ID       string            `json:"id"`
+					Title    string            `json:"title"`
+					Type     model.IssueType   `json:"type"`
+					Severity model.Severity    `json:"severity"`
+					Location string            `json:"location,omitempty"`
+					Status   model.IssueStatus `json:"status"`
+					Source   string            `json:"source"`
+					Tasks    []string          `json:"tasks,omitempty"`
+				}
+				out := []row{}
+				for _, i := range is {
+					if st := a.Str("status"); st != "" {
+						if string(i.Status) != st {
+							continue
+						}
+					} else if i.Status != model.IssueOpen && i.Status != model.IssueTaskCreated {
+						continue
+					}
+					if ty := a.Str("type"); ty != "" && string(i.Type) != ty {
+						continue
+					}
+					out = append(out, row{i.ID, i.Title, i.Type, i.Severity, i.Location(), i.Status, i.Source, i.TodoIDs})
+				}
+				return out, nil
+			}},
+		{"report_issue", reportDesc, []Param{pProject,
+			{"title", "string", "One line saying what is wrong.", true},
+			{"type", "string", "bug, vuln (security vulnerability) or issue (anything else). Default issue.", false},
+			{"severity", "string", "critical, high, medium, low or info. Default medium.", false},
+			{"file", "string", "Path of the file, relative to the repository root.", false},
+			{"line", "integer", "Line number in file.", false},
+			{"details", "string", "Markdown: what happens, why it is wrong, how to reproduce.", false},
+			{"fix", "string", "Markdown: how it could be fixed, if you know.", false}},
+			func(a Args) (any, error) {
+				p, err := project(b, a)
+				if err != nil {
+					return nil, err
+				}
+				source := "agent:chat"
+				if o.Todo != "" {
+					source = "agent:" + o.Todo
+				}
+				is, res, err := b.ReportIssue(p.ID, model.Issue{
+					Title: a.Str("title"), Type: model.IssueType(a.Str("type")), Severity: model.Severity(a.Str("severity")),
+					File: a.Str("file"), Line: a.Num("line", 0), Details: a.Str("details"), Fix: a.Str("fix"),
+					Source: source,
+				})
+				if err != nil {
+					return nil, err
+				}
+				msg := map[model.UpsertResult]string{
+					model.UpsertNew:       "Reported as a new issue.",
+					model.UpsertUpdated:   "This issue was already known; updated it.",
+					model.UpsertKnown:     "This issue is already known; nothing changed.",
+					model.UpsertDismissed: "The user already dismissed this issue (" + is.DismissReason + "); leave it.",
+				}[res]
+				return fmt.Sprintf("%s id %s, status %s.", msg, is.ID, is.Status), nil
+			}},
+	}
+}
+
+func boardTools(b Board, o Options) []Tool {
 	pProject := Param{"project", "string", "Project name or id (see list_projects).", true}
 	if o.Project != "" {
 		pProject = Param{"project", "string", "Project name or id (see list_projects); defaults to this chat's project.", false}
@@ -421,20 +531,36 @@ var PTodo = Param{"todo", "string", "Task id.", true}
 // Tokens holds the bearer tokens of running chat turns.
 type Tokens struct {
 	mu sync.Mutex
-	m  map[string]string // token → project id ("" for the general chat)
+	m  map[string]tokenScope
+}
+
+// tokenScope is what a token's tools serve.
+type tokenScope struct {
+	project string // default project ("" for the general chat)
+	todo    string // set for a running task, which only gets the IssueTools
 }
 
 // Register issues a token for one chat run; projectID is the default project
 // for the tools ("" for none). Call release when the run ends.
 func (t *Tokens) Register(projectID string) (token string, release func()) {
+	return t.register(tokenScope{project: projectID})
+}
+
+// RegisterTask issues a token for one run of a task: its tools are the
+// IssueTools for the task's project. Call release when the run ends.
+func (t *Tokens) RegisterTask(projectID, todoID string) (token string, release func()) {
+	return t.register(tokenScope{project: projectID, todo: todoID})
+}
+
+func (t *Tokens) register(sc tokenScope) (token string, release func()) {
 	buf := make([]byte, 24)
 	_, _ = rand.Read(buf)
 	token = hex.EncodeToString(buf)
 	t.mu.Lock()
 	if t.m == nil {
-		t.m = map[string]string{}
+		t.m = map[string]tokenScope{}
 	}
-	t.m[token] = projectID
+	t.m[token] = sc
 	t.mu.Unlock()
 	return token, func() {
 		t.mu.Lock()
@@ -443,13 +569,13 @@ func (t *Tokens) Register(projectID string) (token string, release func()) {
 	}
 }
 
-func (t *Tokens) lookup(token string) (projectID string, ok bool) {
+func (t *Tokens) lookup(token string) (sc tokenScope, ok bool) {
 	if t == nil {
-		return "", false
+		return sc, false
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	projectID, ok = t.m[token]
+	sc, ok = t.m[token]
 	return
 }
 
@@ -466,19 +592,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	var projectID string
+	var sc tokenScope
 	if ok && token != "" {
-		projectID, ok = h.Tokens.lookup(token)
+		sc, ok = h.Tokens.lookup(token)
 	}
 	if !ok {
 		http.Error(w, "unknown or expired token", http.StatusUnauthorized)
 		return
 	}
-	(&Server{
+	srv := &Server{
 		Name:         ServerName,
 		Instructions: "The tasks on the Dash board. Each runs Claude Code in its own git worktree once queued.",
-		Tools:        Tools(h.Board, Options{Project: projectID, Draft: true}),
-	}).ServeHTTP(w, r)
+		Tools:        Tools(h.Board, Options{Project: sc.project, Draft: true}),
+	}
+	if sc.todo != "" {
+		srv.Instructions = "The project's Issues list: known bugs, vulnerabilities and other problems the user triages into tasks."
+		srv.Tools = IssueTools(h.Board, Options{Project: sc.project, Todo: sc.todo})
+	}
+	srv.ServeHTTP(w, r)
 }
 
 // ServerConfig is the --mcp-config entry for the endpoint at baseURL.

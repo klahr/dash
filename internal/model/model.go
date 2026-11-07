@@ -391,6 +391,8 @@ const (
 	EvCI             EventType = "ci.updated"         // GitHub Actions status of a project's default branch
 	EvRemote         EventType = "remote.updated"     // how the default branch compares with origin's, after a fetch
 	EvPreview        EventType = "preview.updated"    // a todo's live preview started, came up, crashed or stopped
+	EvIssueUpdated   EventType = "issue.updated"      // an issue was added or changed; Data is the Issue
+	EvIssueDeleted   EventType = "issue.deleted"      // Data is {"id": …}
 )
 
 // Event is the envelope for everything pushed over /ws/events.

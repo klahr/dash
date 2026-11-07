@@ -4,6 +4,7 @@ package queue
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/gitops"
+	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/store"
@@ -39,14 +41,19 @@ type Publisher interface{ Publish(model.Event) }
 //  5. hand off to review, or straight to the merge queue if a human had
 //     already approved it (AutoMerge) or the project approves automatically
 type TodoEngine struct {
-	Store        *store.Store
-	Git          *gitops.Git
-	Exec         agent.Executor
-	Pub          Publisher
-	Log          *TodoLog
-	Merges       *MergeQueue
-	Perms        *perm.Broker   // optional: route Claude's permission prompts to the UI
-	BaseURL      string         // Dash's own URL, for the permission MCP server
+	Store   *store.Store
+	Git     *gitops.Git
+	Exec    agent.Executor
+	Pub     Publisher
+	Log     *TodoLog
+	Merges  *MergeQueue
+	Perms   *perm.Broker // optional: route Claude's permission prompts to the UI
+	BaseURL string       // Dash's own URL, for the permission MCP server
+	// Board and BoardURL give every run the issue tools (report_issue,
+	// list_issues) of Dash's MCP server, so Claude can log problems it
+	// notices outside its task instead of fixing them on the wrong branch.
+	Board        *mcptools.Tokens
+	BoardURL     string
 	Usage        *usage.Tracker // optional: pause when the subscription is near its limit
 	WorktreeRoot string         // <data>/worktrees
 	MaxParallel  int
@@ -419,6 +426,11 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 	}
 }
 
+// issuesHint tells a task's Claude about the issue tools.
+const issuesHint = "If you notice a bug, vulnerability or other problem in this project that is unrelated to your task, " +
+	"don't fix it here and don't ignore it: report it with the " + mcptools.ServerName + " report_issue tool " +
+	"(title, type, severity, file and line, details, suggested fix) so the user can triage it, then carry on with your task."
+
 // runClaude runs Claude once, resuming the todo's session when it has one,
 // and records the session, cost and which notes Claude has now seen. It
 // returns Claude's final message.
@@ -452,15 +464,27 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	for _, dir := range attachmentDirs(t.Attachments) {
 		req.ExtraArgs = append(req.ExtraArgs, "--add-dir", dir)
 	}
+	servers := map[string]any{}
 	if e.Perms != nil && e.BaseURL != "" {
 		token, release := e.Perms.Register(t.ID, t.ProjectID)
 		defer release()
-		req.ExtraArgs = append(req.ExtraArgs,
-			"--mcp-config", perm.MCPConfig(e.BaseURL, token),
-			"--permission-prompt-tool", perm.PromptTool,
-		)
+		servers[perm.ServerName] = perm.ServerConfig(e.BaseURL, token)
+		req.ExtraArgs = append(req.ExtraArgs, "--permission-prompt-tool", perm.PromptTool)
 		// Claude waits on the MCP tool while a human decides; don't let it time out first.
 		req.Env = []string{"MCP_TOOL_TIMEOUT=3600000"}
+	}
+	if e.Board != nil && e.BoardURL != "" {
+		token, release := e.Board.RegisterTask(t.ProjectID, t.ID)
+		defer release()
+		servers[mcptools.ServerName] = mcptools.ServerConfig(e.BoardURL, token)
+		for _, name := range mcptools.IssueToolNames {
+			req.ExtraArgs = append(req.ExtraArgs, "--allowedTools", "mcp__"+mcptools.ServerName+"__"+name)
+		}
+		req.ExtraArgs = append(req.ExtraArgs, "--append-system-prompt", issuesHint)
+	}
+	if len(servers) > 0 {
+		cfg, _ := json.Marshal(map[string]any{"mcpServers": servers})
+		req.ExtraArgs = append(req.ExtraArgs, "--mcp-config", string(cfg))
 	}
 
 	// Stop runaway runs: a time limit that doesn't count time spent waiting
