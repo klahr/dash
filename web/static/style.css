@@ -1082,22 +1082,25 @@ dialog.file-over, .file-over { outline: 2px dashed color-mix(in srgb, var(--acce
 .pr-tag { font-size: 12px; font-weight: 600; color: var(--review); }
 .revert-tag { font-size: 12px; font-weight: 600; color: var(--muted); }
 .card-actions { display: flex; gap: 6px; margin-top: 4px; }
-.review-chip, .approve-chip, .enqueue-chip {
+.review-chip, .preview-chip, .approve-chip, .enqueue-chip {
   display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px;
   border-radius: var(--r-s); border: 1px solid var(--line); font-size: 12px; font-weight: 600; line-height: 1;
   white-space: nowrap; cursor: pointer; user-select: none;
   transition: background-color .15s var(--ease), border-color .15s var(--ease), color .15s var(--ease);
 }
-.review-chip .ico, .approve-chip .ico, .enqueue-chip .ico { width: 14px; height: 14px; flex: none; }
+.review-chip .ico, .preview-chip .ico, .approve-chip .ico, .enqueue-chip .ico { width: 14px; height: 14px; flex: none; }
 .review-chip { background: var(--raised); color: var(--text); }
 .review-chip .ico { color: var(--review); }
 .review-chip:hover { border-color: var(--review); background: color-mix(in srgb, var(--review) 10%, var(--raised)); }
+.preview-chip { background: var(--raised); color: var(--text); }
+.preview-chip .ico { color: var(--accent); }
+.preview-chip:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--raised)); }
 .approve-chip { background: var(--review); border-color: var(--review); color: #08202a; }
 .approve-chip:hover { background: color-mix(in srgb, var(--review) 85%, white); border-color: color-mix(in srgb, var(--review) 85%, white); }
 .enqueue-chip { background: var(--raised); color: var(--text); }
 .enqueue-chip .ico { color: var(--accent); }
 .enqueue-chip:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--raised)); }
-.review-chip:active, .approve-chip:active, .enqueue-chip:active { transform: translateY(1px); }
+.review-chip:active, .preview-chip:active, .approve-chip:active, .enqueue-chip:active { transform: translateY(1px); }
 .btn.reviewing { color: var(--running); cursor: default; }
 .btn.reviewing svg { animation: pulse-dot 1.4s ease-in-out infinite; }
 a.revert-tag { text-decoration: underline; }

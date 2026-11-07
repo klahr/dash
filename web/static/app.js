@@ -1469,7 +1469,7 @@ function todoRow(t, li = -1, ri = -1) {
       previewTag(t),
       t.status === "review" && t.finished_at ? h("span", { title: "Waiting for review" }, ago(t.finished_at)) : null,
       t.priority ? h("span", {}, `P${t.priority}`) : null,
-      t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, reviewChip(t), approveChip(t)) : null,
+      t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, reviewChip(t), approveChip(t)) : null,
       t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null));
 }
 
@@ -1483,6 +1483,19 @@ function reviewChip(t) {
       attempt(async () => { await openDetail(t.id); reviewTodo(); })();
     },
   }, ico("eye"), "Review");
+}
+
+// Opens the task with its live preview, starting the server if needed.
+function previewChip(t) {
+  const p = previewOf(t.id);
+  return h("span", {
+    class: "preview-chip", role: "button", title: "Open the live preview",
+    onpointerdown: (e) => e.stopPropagation(),
+    onclick: (e) => {
+      e.stopPropagation();
+      attempt(() => previewTodo(t))();
+    },
+  }, p ? h("span", { class: `pv-dot ${p.state}`, "aria-hidden": "true" }) : ico("window"), "Preview");
 }
 
 function approveChip(t) {
