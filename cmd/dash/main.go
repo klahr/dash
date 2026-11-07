@@ -73,6 +73,7 @@ func main() {
 	publicURL := flag.String("public-url", "", "public HTTPS origin (e.g. https://host.tailnet.ts.net:8443) that serves /mcp with OAuth for claude.ai custom connectors; empty = off (or $DASH_PUBLIC_URL)")
 	previewDomain := flag.String("preview-domain", "", "serve each task's live preview at https://<task>.<this domain>, e.g. preview.dash.example.com; needs a wildcard DNS record and certificate (see README; or $DASH_PREVIEW_DOMAIN)")
 	previewIdle := flag.Duration("preview-idle", preview.DefaultIdle, "stop a live preview after this long without traffic")
+	scanTimeout := flag.Duration("scan-timeout", scan.DefaultRunTimeout, "stop a scan's Claude run after this long and mark it failed")
 	scanSchedules := flag.Bool("scan-schedules", true, "run scans (.dash/scans) on their schedules; off = only when started by hand")
 	envFile := flag.String("env", ".env", "file with DASH_USERNAME / DASH_PASSWORD (real env vars take precedence)")
 	flag.Parse()
@@ -195,8 +196,9 @@ func main() {
 	// claude flags (read-only tools), not -claude-args.
 	scans := &scan.Runner{
 		Store: st, Git: git, Context: ctx,
-		Exec: agent.ClaudeCode{Bin: *claudeBin, OnRateLimit: tracker.Observe},
-		Root: filepath.Join(*dataDir, "scans"),
+		Exec:       agent.ClaudeCode{Bin: *claudeBin, OnRateLimit: tracker.Observe},
+		Root:       filepath.Join(*dataDir, "scans"),
+		RunTimeout: *scanTimeout,
 	}
 	scans.Cleanup(ctx)
 	scans.PruneLogs()

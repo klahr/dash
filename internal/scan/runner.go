@@ -45,6 +45,9 @@ type Runner struct {
 	// Context is the parent of every run; cancel it to stop them all.
 	Context context.Context
 	Now     func() time.Time
+	// RunTimeout bounds one run of Claude (default DefaultRunTimeout); a run
+	// that takes longer is stopped and fails, keeping its log.
+	RunTimeout time.Duration
 
 	mu      sync.Mutex
 	running map[string]*active // project/scan → the run
@@ -54,6 +57,16 @@ type Runner struct {
 type active struct {
 	runID  string
 	cancel context.CancelCauseFunc
+}
+
+// DefaultRunTimeout is how long a scan's Claude run may take by default.
+const DefaultRunTimeout = 40 * time.Minute
+
+func (r *Runner) runTimeout() time.Duration {
+	if r.RunTimeout > 0 {
+		return r.RunTimeout
+	}
+	return DefaultRunTimeout
 }
 
 func (r *Runner) now() time.Time {
@@ -363,7 +376,10 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 	logLine("prompt:\n" + prompt)
 	var mu sync.Mutex // stdout and stderr report from their own goroutines
 	var lastActivity time.Time
-	res, err := r.Exec.Run(ctx, agent.ExecRequest{Dir: dir, Prompt: prompt, ExtraArgs: Args(t, tools)}, func(e model.RunEvent) {
+	timeout := r.runTimeout()
+	runCtx, cancelRun := context.WithTimeout(ctx, timeout)
+	defer cancelRun()
+	res, err := r.Exec.Run(runCtx, agent.ExecRequest{Dir: dir, Prompt: prompt, ExtraArgs: Args(t, tools)}, func(e model.RunEvent) {
 		mu.Lock()
 		defer mu.Unlock()
 		line := agent.Summary(e)
@@ -379,6 +395,10 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 		_, _ = r.Store.UpdateScanRun(run.ID, false, func(x *model.ScanRun) { x.Activity = clip(oneLine(act), 120) })
 	})
 	run, _ = r.Store.UpdateScanRun(run.ID, false, func(x *model.ScanRun) { x.CostUSD, x.Turns = res.CostUSD, res.Turns })
+	if ctx.Err() == nil && errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+		fail(fmt.Errorf("stopped: the scan ran longer than its %s limit", timeout))
+		return
+	}
 	if err != nil {
 		fail(err)
 		return
@@ -500,12 +520,19 @@ func Tools(t Template, set model.ScanSetting, hasSetting bool) (tools []string, 
 // Args are the claude flags of a scan: its model and effort, and the tools
 // it may use (see Tools). Edits are refused (the checkout is thrown away
 // anyway).
+//
+// Scans run unattended, so nothing may wait for a permission answer: any
+// tool call outside the allowed tools is denied at once (dontAsk, and no
+// prompt handler), and the user's and project's settings are not loaded, so
+// their hooks (e.g. a PermissionRequest hook that asks a phone) don't run.
 func Args(t Template, tools []string) []string {
 	if len(tools) == 0 {
 		tools = DefaultTools
 	}
 	args := []string{
-		"--permission-mode", "default",
+		"--setting-sources", "",
+		"--permission-mode", "dontAsk",
+		"--permission-prompts", "none",
 		"--allowedTools", strings.Join(tools, ","),
 		"--disallowedTools", "Edit,Write,NotebookEdit",
 	}
@@ -564,6 +591,7 @@ const answerFormat = `
 ## Answer
 
 This is a read-only scan of a throwaway checkout: do not change, create or delete files, and do not commit.
+You can only use the tools you were given; anything else (other commands, builds, tests, network) is refused, and nobody is there to approve it. Verify findings by reading the code instead.
 
 End your final message with your findings as one JSON code block, and nothing after it:
 

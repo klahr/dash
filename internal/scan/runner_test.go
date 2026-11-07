@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/gitops"
@@ -404,5 +406,67 @@ func TestRunToolsNeedApproval(t *testing.T) {
 	// A built-in's tools need no approval.
 	if tools, ok := Tools(Template{Builtin: true, Tools: []string{"Bash(npm audit:*)"}}, model.ScanSetting{}, false); !ok || tools[0] != "Bash(npm audit:*)" {
 		t.Fatalf("built-in tools: %v %v", tools, ok)
+	}
+}
+
+func flagValue(args []string, name string) (string, bool) {
+	i := slices.Index(args, name)
+	if i < 0 || i+1 >= len(args) {
+		return "", i >= 0
+	}
+	return args[i+1], true
+}
+
+// Scans run unattended: no user/project settings or hooks, and anything
+// outside the allowed tools is denied at once instead of asking.
+func TestArgsNeverAsk(t *testing.T) {
+	args := Args(Template{Model: "sonnet"}, []string{"Read", "Bash(npm audit:*)"})
+	if v, ok := flagValue(args, "--setting-sources"); !ok || v != "" {
+		t.Errorf("--setting-sources %q %v, want empty", v, ok)
+	}
+	if v, _ := flagValue(args, "--permission-mode"); v != "dontAsk" {
+		t.Errorf("--permission-mode %q, want dontAsk", v)
+	}
+	if v, _ := flagValue(args, "--permission-prompts"); v != "none" {
+		t.Errorf("--permission-prompts %q, want none", v)
+	}
+	if _, ok := flagValue(args, "--permission-prompt-tool"); ok {
+		t.Error("scan should not pass --permission-prompt-tool")
+	}
+	for _, a := range args {
+		if a == "default" || a == "manual" || a == "--dangerously-skip-permissions" || a == "bypassPermissions" {
+			t.Errorf("interactive or bypassing permission flag %q in %q", a, args)
+		}
+	}
+	if v, _ := flagValue(args, "--allowedTools"); v != "Read,Bash(npm audit:*)" {
+		t.Errorf("--allowedTools %q", v)
+	}
+	if v, _ := flagValue(args, "--disallowedTools"); v != "Edit,Write,NotebookEdit" {
+		t.Errorf("--disallowedTools %q", v)
+	}
+	if v, _ := flagValue(args, "--model"); v != "sonnet" {
+		t.Errorf("--model %q", v)
+	}
+}
+
+func TestPromptSaysToolsAreFixed(t *testing.T) {
+	p := BuildPrompt(Template{Prompt: "Go."}, target{}, nil)
+	if !strings.Contains(p, "Verify findings by reading the code") {
+		t.Errorf("prompt does not say to verify by reading code:\n%s", p)
+	}
+}
+
+// A run that takes longer than the limit is stopped and fails, keeping its log.
+func TestRunTimeout(t *testing.T) {
+	fx := newFixture(t, "slow", "Go.")
+	fx.exec.release = make(chan struct{}) // never released
+	fx.runner.RunTimeout = 50 * time.Millisecond
+	r := fx.run(t, "slow")
+	if r.Status != model.ScanFailed || !strings.Contains(r.Error, "limit") {
+		t.Fatalf("timed-out run: %+v", r)
+	}
+	b, err := os.ReadFile(fx.runner.LogPath(r.ID))
+	if err != nil || !strings.Contains(string(b), "limit") {
+		t.Fatalf("log: %v %q", err, b)
 	}
 }
