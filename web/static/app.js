@@ -1997,9 +1997,103 @@ function captureFrame(frame, origin) {
   });
 }
 
+// askFrame sends the preview's capture script a quick question (where the
+// page is, which elements are under some points) and resolves to its answer,
+// or null when it doesn't answer in time (an old page, or one still loading).
+function askFrame(frame, origin, msg, answer, ms = 1500) {
+  return new Promise((resolve) => {
+    const id = Math.random().toString(36).slice(2);
+    const finish = (v) => { clearTimeout(timer); removeEventListener("message", onMsg); resolve(v); };
+    const onMsg = (e) => {
+      if (e.source === frame.contentWindow && e.origin === origin && e.data?.id === id && e.data.type === answer) finish(e.data);
+    };
+    addEventListener("message", onMsg);
+    const timer = setTimeout(() => finish(null), ms);
+    try { frame.contentWindow.postMessage({ ...msg, id }, origin); } catch { finish(null); }
+  });
+}
+
+// Exact capture (desktop Chrome and Edge): the browser's own tab capture,
+// cropped to the preview, for pages a DOM rendering gets wrong (WebGL, video,
+// some CSS). It asks for permission each time, so it's an option, not the default.
+const exactCapture = {
+  // preferCurrentTab and Region Capture (cropTo) are Chromium's, on desktop:
+  // not on phones (iOS has no screen capture at all), Firefox or Safari.
+  supported: () => !!navigator.mediaDevices?.getDisplayMedia && "CropTarget" in window && !!window.BrowserCaptureMediaStreamTrack?.prototype.cropTo && desktop.matches,
+  get on() { try { return localStorage.getItem("dash.drawExact") === "1"; } catch { return false; } },
+  set on(v) { try { localStorage.setItem("dash.drawExact", v ? "1" : ""); } catch {} },
+};
+
+// grabTab captures one frame of this tab, cropped to frame, as a picture of
+// frame's CSS size. Resolves to null when the user says no.
+async function grabTab(frame) {
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { displaySurface: "browser", frameRate: 30 }, audio: false,
+      preferCurrentTab: true, selfBrowserSurface: "include", surfaceSwitching: "exclude", monitorTypeSurfaces: "exclude",
+    });
+  } catch (e) {
+    if (e.name === "NotAllowedError" || e.name === "AbortError") return null;
+    throw e;
+  }
+  const [track] = stream.getVideoTracks();
+  const video = document.createElement("video");
+  try {
+    try {
+      await track.cropTo(await CropTarget.fromElement(frame)); // fails unless this tab is the one shared
+    } catch {
+      throw new Error("Share this tab (not another tab or window) to capture the preview exactly.");
+    }
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+    await video.play();
+    // Wait for frames of the cropped area: sharing may also show a bar that
+    // makes the page (and the preview) a little shorter.
+    const nextFrame = () => new Promise((ok) => { video.requestVideoFrameCallback?.(() => ok()); setTimeout(ok, 100); });
+    const until = performance.now() + 3000;
+    let fresh = 0;
+    for (;;) {
+      await nextFrame();
+      const w = frame.clientWidth, h = frame.clientHeight;
+      const fits = video.readyState >= 2 && video.videoWidth && Math.abs(video.videoWidth / video.videoHeight - w / h) < 0.02;
+      if ((fits && ++fresh >= 3) || performance.now() > until) break;
+    }
+    const w = frame.clientWidth, h = frame.clientHeight;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = Math.round(h * (video.videoWidth / w));
+    canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+    return { bitmap: await createImageBitmap(canvas), width: w, height: h };
+  } finally {
+    track.stop();
+    video.srcObject = null;
+  }
+}
+
 function drawSurfaceOnce() {
   draw.surface ||= drawSurface($("#draw-stage"), { onChange: renderDrawBar });
   return draw.surface;
+}
+
+// snapshot takes the picture to draw on: the page's own rendering, or with
+// exact, the tab's real pixels. Resolves to { bitmap, width, height, path,
+// scroll, … }, or null when the user turned down the screen capture.
+async function snapshot(frame, origin, exact) {
+  if (!exact) {
+    $("#draw-wait").hidden = false;
+    try {
+      const shot = await captureFrame(frame, origin);
+      return { ...shot, bitmap: await createImageBitmap(shot.blob), exact: false };
+    } finally {
+      $("#draw-wait").hidden = true;
+    }
+  }
+  // Nothing of Dash's may cover the preview while the tab is captured.
+  const where = await askFrame(frame, origin, { type: "dash:where" }, "dash:here");
+  const shot = await grabTab(frame);
+  return shot && { ...where, ...shot, exact: true };
 }
 
 async function startDraw() {
@@ -2008,24 +2102,46 @@ async function startDraw() {
   const p = t && previewOf(t.id);
   if (!p || p.state !== "live" || !pv.shown) throw new Error("Start the preview first: draw mode works on the live page.");
   if (!p.url) throw new Error("Drawing needs a preview domain (-preview-domain): the snapshot is taken through Dash's preview proxy.");
-  const frame = $("#pv-iframe");
   draw.busy = true;
-  $("#draw-wait").hidden = false;
   try {
-    const shot = await captureFrame(frame, new URL(p.url).origin);
-    const bitmap = await createImageBitmap(shot.blob);
-    if (pv.todo !== t.id) return bitmap.close(); // closed meanwhile
+    const shot = await snapshot($("#pv-iframe"), new URL(p.url).origin, exactCapture.supported() && exactCapture.on);
+    if (!shot) return;
+    if (pv.todo !== t.id) return shot.bitmap.close(); // closed meanwhile
     draw.on = true;
     draw.todo = t.id;
     draw.meta = shot;
     $("#d-preview").classList.add("drawing");
     $("#draw-stage").hidden = false;
     $("#draw-bar").hidden = false;
-    drawSurfaceOnce().open(bitmap, shot.width, shot.height);
+    drawSurfaceOnce().open(shot.bitmap, shot.width, shot.height);
     renderPreview();
   } finally {
     draw.busy = false;
-    $("#draw-wait").hidden = true;
+  }
+}
+
+// retakeDraw swaps the picture for one taken the other way (exact or not),
+// keeping the marks; the choice is remembered for the next time.
+async function retakeDraw(exact) {
+  const t = state.todos.get(draw.todo);
+  const p = t && previewOf(t.id);
+  if (!draw.on || draw.busy || !p?.url) return;
+  draw.busy = true;
+  const preview = $("#d-preview");
+  // Show the live page for a moment: that's what a screen capture sees.
+  if (exact) { preview.classList.remove("drawing"); $("#draw-stage").hidden = true; }
+  try {
+    const shot = await snapshot($("#pv-iframe"), new URL(p.url).origin, exact);
+    if (!shot) return;
+    exactCapture.on = exact;
+    if (!draw.on) return shot.bitmap.close();
+    draw.meta = shot;
+    draw.surface.replace(shot.bitmap, shot.width, shot.height);
+    if (exact) toast("Exact capture: real pixels from the screen");
+  } finally {
+    draw.busy = false;
+    if (draw.on) { preview.classList.add("drawing"); $("#draw-stage").hidden = false; }
+    renderDrawBar();
   }
 }
 
@@ -2049,6 +2165,27 @@ function renderDrawBar() {
   $("#draw-clear").disabled = s.empty;
   const { w, h } = s.size;
   $("#draw-size").textContent = s.crop ? `${Math.round(w)}×${Math.round(h)}` : "";
+  const ex = $("#draw-exact");
+  ex.hidden = !exactCapture.supported();
+  ex.setAttribute("aria-pressed", String(!!draw.meta?.exact));
+}
+
+// markHints asks the page which element is under each mark (an arrow's tip,
+// the middle of a circle, box or pen stroke), for the notes: "circle → button.save ("Save settings")". The page is
+// still there behind the picture, at the same scroll. Empty when it can't tell.
+async function markHints(origin) {
+  const marks = draw.surface.marks();
+  if (!marks.length) return [];
+  const res = await askFrame($("#pv-iframe"), origin, { type: "dash:inspect", points: marks.map(({ x, y }) => ({ x, y })), scroll: draw.meta.scroll }, "dash:inspected");
+  if (!res || !Array.isArray(res.hints)) return [];
+  if (draw.meta.path && res.path !== draw.meta.path) return []; // another page by now
+  const colours = new Set(marks.map((m) => m.color)).size > 1;
+  return marks.map((m, i) => {
+    const h = res.hints[i];
+    if (!h?.selector) return null;
+    const what = colours && m.color ? `${m.color} ${m.t}` : m.t;
+    return `${what} → ${h.selector}${h.text ? ` (${JSON.stringify(h.text)})` : ""}`;
+  }).filter(Boolean);
 }
 
 // "/settings · 390×844 · dash/todo-3f9a" for the notes: where the picture is from.
@@ -2066,12 +2203,17 @@ async function addShot() {
   draw.busy = true;
   $("#draw-add").disabled = true;
   try {
-    const blob = await draw.surface.flatten();
+    const [blob, hints] = await Promise.all([
+      draw.surface.flatten(),
+      p?.url ? markHints(new URL(p.url).origin).catch(() => []) : [],
+    ]);
     const prefix = p?.prefix ?? here();
     const a = await uploadFile(new File([blob], shotName(draw.meta.path), { type: "image/png" }), prefix);
     const entry = shots.get(t.id) || { items: [], text: "", prefix };
     entry.items.push(a);
-    entry.text = `${entry.text.trimEnd()}${entry.text.trim() ? "\n" : ""}${shotContext(t)}: `;
+    // The marks' elements go with the picture, one per line, and the note after them.
+    const about = hints.length ? `${shotContext(t)}\n${hints.map((x) => `- ${x}`).join("\n")}\n` : `${shotContext(t)}: `;
+    entry.text = `${entry.text.trimEnd()}${entry.text.trim() ? "\n\n" : ""}${about}`;
     shots.set(t.id, entry);
     endDraw();
     renderReworkBox();
@@ -2161,6 +2303,7 @@ async function sendShots(t) {
 
 $("#pv-draw-btn").addEventListener("click", attempt(() => (draw.on ? endDraw() : startDraw())));
 $("#draw-done").addEventListener("click", endDraw);
+$("#draw-exact").addEventListener("click", attempt(() => retakeDraw(!draw.meta?.exact)));
 $("#draw-add").addEventListener("click", attempt(addShot));
 $("#draw-copy").addEventListener("click", attempt(copyShot));
 $("#draw-undo").addEventListener("click", () => draw.surface?.undo());
@@ -2183,6 +2326,7 @@ addEventListener("keydown", (e) => {
   if (k === "Escape") { e.preventDefault(); return endDraw(); }
   if (k === "Enter") { e.preventDefault(); return attempt(addShot)(); }
   if (DRAW_KEYS[k]) { s.tool = DRAW_KEYS[k]; return; }
+  if (k === "x" && exactCapture.supported()) { attempt(() => retakeDraw(!draw.meta?.exact))(); return; }
   if (["1", "2", "3"].includes(k)) { s.color = Object.values(COLORS)[k - 1]; return; }
 }, true);
 

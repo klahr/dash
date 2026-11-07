@@ -153,10 +153,16 @@ to a picture, which replaces the live page until **Done** (<kbd>Esc</kbd>). Mark
 arrow, circle and box (<kbd>Shift</kbd> for straight lines, perfect circles and squares) in red,
 yellow or blue, undo with <kbd>Ctrl-z</kbd>, and crop (<kbd>C</kbd>) to the part that matters.
 **Add to review** (<kbd>Enter</kbd>) uploads the picture into the rework notes beside the preview
-with a line saying where it's from (`/settings · 390×844 · dash/todo-3f9a1c`); add several, then
-send them back together. On a phone one finger draws, two pan and zoom, and Add to review opens
-the rework sheet. **Copy** puts the picture on the clipboard. Drawing needs a preview domain, since
-the picture is taken through the proxy.
+with a line saying where it's from (`/settings · 390×844 · dash/todo-3f9a1c`) and, for each mark (an
+arrow's tip, the middle of a circle, box or pen stroke), the element it points at (`circle → form#settings button.save ("Save settings")`),
+so Claude knows what you mean without guessing from the picture; add several, then send them back
+together. On a phone one finger draws, two pan and zoom (with a pen, fingers only pan and zoom, and
+a resting palm is ignored), and Add to review opens the rework sheet. **Copy** puts the picture on
+the clipboard. Drawing needs a preview domain, since the picture is taken through the proxy.
+
+The picture is the page's own rendering of itself, which can be wrong for WebGL, video or unusual
+CSS. On desktop Chrome and Edge, **Exact** (<kbd>X</kbd>) in draw mode takes it from the screen
+instead (the browser asks to share the tab; the marks are kept), and stays on for next time.
 
 What the proxy does:
 
@@ -170,7 +176,8 @@ What the proxy does:
 - For Draw, it adds one script to the app's HTML pages, `/__dash/capture.js` (served by the proxy
   itself; [modern-screenshot](https://github.com/qq15725/modern-screenshot), MIT). It only answers
   Dash's page (Dash's own origin, or the host the preview domain is under, e.g. `dash.example.com`
-  for `preview.dash.example.com`), with a picture of the page. To let it run, a page's CSP gets
+  for `preview.dash.example.com`), with a picture of the page, its address, and which element is
+  under the points Dash asks about. To let it run, a page's CSP gets
   the script's nonce (or `'self'`), `data:`/`blob:` images and same-origin fetches, and loses
   Trusted Types. Compressed pages are passed on uncompressed. A CSP set in a `<meta>` tag isn't
   changed, so such a page may refuse to be drawn.

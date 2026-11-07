@@ -1,6 +1,8 @@
 // Draw mode's surface: a frozen picture of the live preview with marks (pen,
 // arrow, circle, box) and a crop on top, drawn on a canvas in Dash's page.
-// One finger or the mouse draws; two fingers pan and zoom (ctrl + wheel too).
+// One finger, a pen or the mouse draws; two fingers pan and zoom (ctrl + wheel
+// too). Once a pen has been used, fingers only pan and zoom, and a resting palm
+// (a big contact) is ignored.
 // Coordinates are the preview's CSS pixels; the picture has `scale` image
 // pixels per CSS pixel, and flatten() renders at that resolution.
 
@@ -11,6 +13,8 @@ const LINE = 4;            // stroke width, CSS px of the picture
 const HANDLE = 10;         // crop handle hit radius, screen px
 const MIN_CROP = 6;
 const DIM = "rgba(5, 8, 14, .62)";
+const PALM = 80;           // a touch wider than this (CSS px) is a palm, not a finger
+const MIN_SHAPE = 4;       // arrows, circles and boxes smaller than this (screen px) were taps
 
 export function drawSurface(host, { onChange = () => {} } = {}) {
   const canvas = document.createElement("canvas");
@@ -26,12 +30,16 @@ export function drawSurface(host, { onChange = () => {} } = {}) {
   let tool = "pen", color = COLORS.red;
   let cur = null;                         // shape or crop drag in progress
   let fit = 1, z = { s: 1, x: 0, y: 0 };  // view: screen = picture * s + (x, y)
-  const pointers = new Map();            // pointerId → {x, y} in host px
-  let pinch = null, shift = false, last = null, raf = 0;
+  const pointers = new Map();            // pointerId → {x, y} in host px, of fingers that pan/zoom or draw
+  let pinch = null, shift = false, last = null, raf = 0, viewRaf = 0;
+  let penSeen = false, penDown = null;    // after a pen, fingers only move the view
 
   // ---- view
   const hostRect = () => host.getBoundingClientRect();
   const apply = () => { view.style.transform = `translate(${z.x}px, ${z.y}px) scale(${z.s})`; };
+  // During a pinch the view moves once a frame, and only its transform: the
+  // canvas is repainted (crisp, with handles sized for the zoom) when it ends.
+  const applySoon = () => { if (!viewRaf) viewRaf = requestAnimationFrame(() => { viewRaf = 0; apply(); }); };
   function layout(reset = false) {
     if (!img) return;
     const r = hostRect();
@@ -222,6 +230,8 @@ export function drawSurface(host, { onChange = () => {} } = {}) {
       }
     } else {
       delete c.raw;
+      const tiny = c.t !== "pen" && Math.hypot(c.b[0] - c.a[0], c.b[1] - c.a[1]) * z.s < MIN_SHAPE;
+      if (tiny) return redraw(); // a tap, not a shape
       save();
       shapes.push(c);
     }
@@ -230,46 +240,81 @@ export function drawSurface(host, { onChange = () => {} } = {}) {
   }
 
   // ---- pointers
+  // A pinch (or, after a pen, any touch) moves the view: zoom by the change in
+  // the fingers' spread, pan by the move of their midpoint. The gesture is
+  // re-based whenever a finger lands or lifts, so nothing jumps.
+  const spread = () => {
+    const ps = [...pointers.values()];
+    const m = { x: ps.reduce((a, p) => a + p.x, 0) / ps.length, y: ps.reduce((a, p) => a + p.y, 0) / ps.length };
+    return { m, d: ps.length > 1 ? Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y) || 1 : 0 };
+  };
+  const rebase = () => { pinch = pointers.size ? { ...spread(), z: { ...z } } : null; };
+  function gesture() {
+    const { m, d } = spread();
+    const s = d && pinch.d ? Math.min(Math.max(pinch.z.s * d / pinch.d, fit), 8) : pinch.z.s;
+    const cx = (pinch.m.x - pinch.z.x) / pinch.z.s, cy = (pinch.m.y - pinch.z.y) / pinch.z.s;
+    z = { s, x: m.x - cx * s, y: m.y - cy * s };
+    clampView();
+    applySoon();
+  }
+  const palm = (e) => e.pointerType === "touch" && Math.max(e.width || 0, e.height || 0) > PALM;
+  const endGesture = () => {
+    pinch = null;
+    view.classList.remove("moving");
+    redraw(); // handle and dash sizes follow the zoom
+  };
+
   host.addEventListener("pointerdown", (e) => {
     if (!img || (e.pointerType === "mouse" && e.button !== 0)) return;
     e.preventDefault();
+    if (e.pointerType === "pen") penSeen = true;
+    // A palm, or a finger while the pen draws, does nothing.
+    if (palm(e) || (e.pointerType === "touch" && penDown !== null)) return;
     host.setPointerCapture(e.pointerId);
-    pointers.set(e.pointerId, local(e));
     shift = e.shiftKey;
-    if (pointers.size === 2) {
-      cur = null; // the first finger's stroke was the start of a pinch
-      redraw();
-      const [a, b] = [...pointers.values()];
-      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, m: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, z: { ...z } };
-    } else if (pointers.size === 1) {
-      begin(local(e));
+    const p = local(e);
+    if (e.pointerType === "pen") {
+      if (pinch) { pointers.clear(); endGesture(); }
+      cur = null;
+      penDown = e.pointerId;
+      return begin(p);
+    }
+    pointers.set(e.pointerId, p);
+    const pans = e.pointerType === "touch" && penSeen;
+    if (pointers.size >= 2 || pans || pinch) {
+      if (cur) { cur = null; redraw(); } // the first finger's stroke was the start of a pinch
+      view.classList.add("moving");
+      rebase();
+    } else {
+      begin(p);
     }
   });
   host.addEventListener("pointermove", (e) => {
+    shift = e.shiftKey;
+    if (e.pointerId === penDown) {
+      for (const ev of e.getCoalescedEvents?.() || [e]) move(local(ev));
+      return;
+    }
     if (!pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, local(e));
-    shift = e.shiftKey;
-    if (pinch && pointers.size >= 2) {
-      const [a, b] = [...pointers.values()];
-      const d = Math.hypot(a.x - b.x, a.y - b.y), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      const s = Math.min(Math.max(pinch.z.s * d / pinch.d, fit), 8);
-      const cx = (pinch.m.x - pinch.z.x) / pinch.z.s, cy = (pinch.m.y - pinch.z.y) / pinch.z.s;
-      z = { s, x: m.x - cx * s, y: m.y - cy * s };
-      clampView();
-      apply();
-      redraw(); // handle and dash sizes follow the zoom
-    } else if (!pinch) {
-      for (const ev of e.getCoalescedEvents?.() || [e]) move(local(ev));
-    }
+    if (pinch) gesture();
+    else for (const ev of e.getCoalescedEvents?.() || [e]) move(local(ev));
   });
   const up = (e) => {
+    if (e.pointerId === penDown) {
+      penDown = null;
+      if (e.type === "pointercancel") { cur = null; redraw(); } else end();
+      return;
+    }
     if (!pointers.delete(e.pointerId)) return;
-    if (pinch) { if (!pointers.size) pinch = null; return; }
+    if (pinch) { pointers.size ? rebase() : endGesture(); return; }
     if (e.type === "pointercancel") { cur = null; redraw(); return; }
     end();
   };
   host.addEventListener("pointerup", up);
   host.addEventListener("pointercancel", up);
+  // Safari's own pinch zoom (touch-action doesn't always stop it).
+  host.addEventListener("gesturestart", (e) => e.preventDefault());
   host.addEventListener("wheel", (e) => {
     if (!img) return;
     e.preventDefault();
@@ -299,9 +344,22 @@ export function drawSurface(host, { onChange = () => {} } = {}) {
       canvas.height = Math.round(H * R);
       canvas.style.width = `${W}px`;
       canvas.style.height = `${H}px`;
-      shapes = []; crop = null; history = []; cur = null; pinch = null; pointers.clear();
+      shapes = []; crop = null; history = []; cur = null; pinch = null; penDown = null; pointers.clear();
+      view.classList.remove("moving");
       layout(true);
       render();
+      onChange();
+    },
+    // replace swaps the picture for another of the same page (say, a screen
+    // capture instead of the page's own rendering), keeping marks and crop.
+    replace(picture, width, height) {
+      const keep = { shapes, crop, history };
+      img?.close?.();
+      this.open(picture, width, height);
+      ({ shapes, history } = keep);
+      const k = keep.crop;
+      if (k && k.x < W && k.y < H) crop = { x: k.x, y: k.y, w: Math.min(k.w, W - k.x), h: Math.min(k.h, H - k.y) };
+      redraw();
       onChange();
     },
     close() {
@@ -325,6 +383,29 @@ export function drawSurface(host, { onChange = () => {} } = {}) {
     get empty() { return !shapes.length && !crop; },
     get canUndo() { return history.length > 0; },
     get zoomed() { return z.s > fit + 1e-3; },
+    // marks lists where each mark points, in the page's CSS px: the tip of an
+    // arrow, the centre of a circle or box, and for a pen stroke the centre of
+    // what it covers: a loop drawn by hand (it ends near where it started) is
+    // a circle, anything else a line. Marks outside the crop aren't in the
+    // picture and are left out.
+    marks() {
+      const name = (c) => Object.keys(COLORS).find((k) => COLORS[k] === c) || "";
+      return shapes.map((s) => {
+        let t = s.t, x, y;
+        if (t === "pen") {
+          const xs = s.pts.map((p) => p[0]), ys = s.pts.map((p) => p[1]);
+          const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+          const size = Math.hypot(x1 - x0, y1 - y0);
+          if (size < 8) return null; // a dot
+          const [a, b] = [s.pts[0], s.pts[s.pts.length - 1]];
+          t = Math.hypot(b[0] - a[0], b[1] - a[1]) < size * 0.35 ? "circle" : "line";
+          [x, y] = [(x0 + x1) / 2, (y0 + y1) / 2];
+        } else {
+          [x, y] = t === "arrow" ? s.b : [(s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2];
+        }
+        return { t, color: name(s.c), x: Math.round(x), y: Math.round(y) };
+      }).filter((m) => m && (!crop || (m.x >= crop.x && m.x <= crop.x + crop.w && m.y >= crop.y && m.y <= crop.y + crop.h)));
+    },
     undo() {
       const s = history.pop();
       if (!s) return;
