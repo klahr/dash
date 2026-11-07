@@ -204,7 +204,7 @@ path: internal            # optional: limit the scan to a directory
 model: opus               # optional: claude --model
 effort: high              # optional: claude --effort
 schedule: 0 6 * * *       # optional cron expression (this computer's time zone)
-tools: Read, Grep, Glob   # optional, needs approval in Dash; default: read-only tools and git diff/log/show
+tools: Read, Grep, Glob   # optional, needs approval in Dash; default: read-only tools and Dash's git diff/log/show/blame tools
 ---
 Look for vulnerabilities in {{path}} …
 ```

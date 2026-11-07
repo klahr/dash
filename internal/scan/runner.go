@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -48,6 +49,10 @@ type Runner struct {
 	// RunTimeout bounds one run of Claude (default DefaultRunTimeout); a run
 	// that takes longer is stopped and fails, keeping its log.
 	RunTimeout time.Duration
+	// GitTools, served at GitURL, give scans read-only git (DefaultTools);
+	// without them a scan reads only files.
+	GitTools *GitMCP
+	GitURL   string
 
 	mu      sync.Mutex
 	running map[string]*active // project/scan → the run
@@ -379,7 +384,14 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 	timeout := r.runTimeout()
 	runCtx, cancelRun := context.WithTimeout(ctx, timeout)
 	defer cancelRun()
-	res, err := r.Exec.Run(runCtx, agent.ExecRequest{Dir: dir, Prompt: prompt, ExtraArgs: Args(t, tools)}, func(e model.RunEvent) {
+	extra := Args(t, tools)
+	if r.GitTools != nil && r.GitURL != "" {
+		token, release := r.GitTools.Register(dir)
+		defer release()
+		cfg, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{GitServerName: GitServerConfig(r.GitURL, token)}})
+		extra = append(extra, "--mcp-config", string(cfg))
+	}
+	res, err := r.Exec.Run(runCtx, agent.ExecRequest{Dir: dir, Prompt: prompt, ExtraArgs: extra}, func(e model.RunEvent) {
 		mu.Lock()
 		defer mu.Unlock()
 		line := agent.Summary(e)
@@ -556,7 +568,7 @@ func BuildPrompt(t Template, tg target, known []model.Issue) string {
 		where = "`" + t.Path + "`"
 	}
 	if tg.incremental {
-		fmt.Fprintf(&b, "Only look at what changed in %s between commit %s and HEAD (`git diff %s HEAD`). "+
+		fmt.Fprintf(&b, "Only look at what changed in %s between commit %s and HEAD (the git_diff tool with from %s). "+
 			"Report problems in the changed code, or that the change causes elsewhere; read other code only for context.\n",
 			where, short(tg.since), tg.since)
 		if len(tg.files) > 0 {
@@ -591,7 +603,7 @@ const answerFormat = `
 ## Answer
 
 This is a read-only scan of a throwaway checkout: do not change, create or delete files, and do not commit.
-You can only use the tools you were given; anything else (other commands, builds, tests, network) is refused, and nobody is there to approve it. Verify findings by reading the code instead.
+You can only use the tools you were given; anything else (other commands, builds, tests, network) is refused, and nobody is there to approve it. Verify findings by reading the code instead. For git history use the git_diff, git_log, git_show and git_blame tools, if you have them.
 
 End your final message with your findings as one JSON code block, and nothing after it:
 

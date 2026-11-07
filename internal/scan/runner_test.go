@@ -33,13 +33,17 @@ type fakeExec struct {
 	release chan struct{}
 	started chan struct{}
 	reqs    []agent.ExecRequest
+	onRun   func(agent.ExecRequest) // called during the run, if set
 }
 
 func (f *fakeExec) Run(ctx context.Context, req agent.ExecRequest, emit func(model.RunEvent)) (agent.ExecResult, error) {
 	f.mu.Lock()
 	f.reqs = append(f.reqs, req)
-	answer, release, started := f.answer, f.release, f.started
+	answer, release, started, onRun := f.answer, f.release, f.started, f.onRun
 	f.mu.Unlock()
+	if onRun != nil {
+		onRun(req)
+	}
 	if started != nil {
 		started <- struct{}{}
 	}

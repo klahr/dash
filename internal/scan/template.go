@@ -63,8 +63,10 @@ type Template struct {
 	Builtin bool   `json:"builtin,omitempty"`
 }
 
-// DefaultTools only read: files, and git's view of what changed.
-var DefaultTools = []string{"Read", "Grep", "Glob", "Task", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git blame:*)"}
+// DefaultTools only read: files, and git's view of what changed through the
+// scan's git tools (see GitTools). Not Bash git rules: "Bash(git log:*)"
+// allows any arguments, and git log/diff/show --output=<file> writes a file.
+var DefaultTools = append([]string{"Read", "Grep", "Glob", "Task"}, gitAllowed()...)
 
 var (
 	nameRE  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)

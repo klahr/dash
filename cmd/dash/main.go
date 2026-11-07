@@ -199,12 +199,10 @@ func main() {
 		Exec:       agent.ClaudeCode{Bin: *claudeBin, OnRateLimit: tracker.Observe},
 		Root:       filepath.Join(*dataDir, "scans"),
 		RunTimeout: *scanTimeout,
+		GitTools:   &scan.GitMCP{},
 	}
 	scans.Cleanup(ctx)
 	scans.PruneLogs()
-	// Before the scheduler's first check: a scan Dash's last stop cut off
-	// starts over, and the scheduler's catch-up then finds it running.
-	scans.ResumeInterrupted()
 	scheduler := &scan.Scheduler{Store: st, Runner: scans, Usage: tracker}
 	builds := &ci.Watcher{Store: st, Git: git, Pub: events, Kick: todos.Kick, Every: time.Minute}
 	apiSrv := &api.Server{
@@ -237,6 +235,7 @@ func main() {
 			mcp.HandleFunc("/mcp/permissions", perms.ServeMCP)
 		}
 		mcp.Handle("/mcp/dash", apiSrv.BoardMCP())
+		mcp.Handle("/mcp/scan-git", scans.GitTools)
 		mcpURL, err = serveLoopback(ctx, mcp)
 		if err != nil {
 			slog.Error("MCP listener", "err", err)
@@ -247,7 +246,12 @@ func main() {
 			todos.Perms, todos.BaseURL = perms, mcpURL
 		}
 		todos.Board, todos.BoardURL = apiSrv.Board, mcpURL
+		scans.GitURL = strings.TrimRight(mcpURL, "/") + "/mcp/scan-git"
 	}
+	// Once scans have their git tools, and before the scheduler's first
+	// check: a scan Dash's last stop cut off starts over, and the
+	// scheduler's catch-up then finds it running.
+	scans.ResumeInterrupted()
 	merges.Perms, merges.Kick = perms, todos.Kick
 
 	// Projects adopted with a default branch the repo doesn't have (e.g. "main"
