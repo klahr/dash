@@ -5,6 +5,8 @@ another computer or claude.ai, put something in front that terminates HTTPS and 
 and start Dash with `-trust-proxy` so it reads the proxy's `X-Forwarded-*` headers. Three ways:
 
 - [**A VPS behind Caddy**](#a-vps-behind-caddy): public, with certificates that renew themselves.
+  The same with [**Docker**](#run-the-hub-with-docker): the hub and Caddy in two containers,
+  configured in one `.env` file.
 - [**At home through a Cloudflare Tunnel**](#at-home-through-a-cloudflare-tunnel): public, with
   no open ports and no public IP needed.
 - [**Tailscale**](#tailscale-private-only): private to your own devices.
@@ -138,6 +140,135 @@ Pages may only be framed by their own host (`frame-ancestors 'self'`).
 
 **Not yet:** custom domains (`dash.acme.com` for an org) would need per-domain certificates
 (on-demand TLS with an approval endpoint) and a domain-ownership check; a possible follow-up.
+
+## Run the hub with Docker
+
+The hub only coordinates, so it fits in a small container: [`deploy/docker-compose.yml`](../deploy/docker-compose.yml)
+runs it with Caddy in front, which gets and renews the certificates. Everything that differs from
+one hub to the next (names, accounts, email, billing, branding) is in `deploy/.env`; the image,
+the compose file and the [Caddyfile](../deploy/caddy/Caddyfile) name no domain.
+
+**The image is the hub only.** It has no `claude`, no git and no project toolchains, and runs with
+`-hub-tasks off -hub-claude off`: projects hosted on the hub itself aren't supported in Docker.
+Work, chat and titles run on **runners**, installed natively on each computer with the one-line
+install from the hub's *Runners* page ([Several computers](several-computers.md)). Runners connect
+out to the hub over HTTPS, so they need no open ports, public address or Docker of their own.
+
+### Set up
+
+1. **A server** with Docker and the compose plugin, ports **80** and **443** open (and SSH).
+   Nothing else needs to be reachable: the hub's port 7788 isn't published, only Caddy reaches it,
+   which is what makes `-trust-proxy` safe.
+2. **DNS records** pointing at the server (A and/or AAAA):
+
+   | Record                         | For                                        |
+   | ------------------------------ | ------------------------------------------ |
+   | `dash.example.com`             | the hub (always)                           |
+   | `*.preview.dash.example.com`   | [live previews](previews.md) (optional)    |
+   | `*.dash.example.com`           | [org subdomains](#org-subdomains) (optional) |
+
+3. **Configure:** get `deploy/` from the repository (or a release), then
+
+   ```sh
+   cd deploy
+   cp docker.env.example .env
+   ```
+
+   and set at least `DASH_DOMAIN`, `ACME_EMAIL`, `DASH_USERNAME` and `DASH_PASSWORD`.
+   `DASH_PUBLIC_URL` defaults to `https://$DASH_DOMAIN`. Every other setting from
+   [`.env.example`](../.env.example) (SMTP, signup, Stripe, branding) goes in the same file. Pin
+   `DASH_VERSION` to a release (e.g. `1.2.0`) rather than running `latest`.
+4. **Start:**
+
+   ```sh
+   docker compose up -d
+   docker compose logs -f      # Caddy getting its certificate, Dash starting
+   ```
+
+   Open `https://dash.example.com`, sign in, and add runners from the *Runners* page.
+
+`docker compose ps` shows the hub's health: the image checks `dash healthcheck`, which asks the
+hub's own `/runner/version`, and Caddy only starts once the hub is healthy.
+
+### Previews and org subdomains (wildcard certificates)
+
+Without them, plain Caddy (the `caddy:2` image) is all you need: the hub's certificate comes
+through the HTTP challenge. `*.preview…` and `*.dash.example.com` need **wildcard certificates**,
+which Let's Encrypt only issues through a DNS challenge, so Caddy must be built with your DNS
+provider's module from [caddy-dns](https://github.com/caddy-dns).
+[`deploy/caddy/Dockerfile`](../deploy/caddy/Dockerfile) does that with `xcaddy`, and
+[`deploy/docker-compose.dns.yml`](../deploy/docker-compose.dns.yml) uses it. In `.env`:
+
+```sh
+COMPOSE_FILE=docker-compose.yml:docker-compose.dns.yml
+CADDY_DNS_PROVIDER=cloudflare          # the module's name: cloudflare, digitalocean, hetzner, ...
+CADDY_DNS_API_TOKEN=...                # a token that can edit the zone
+DASH_PREVIEW_DOMAIN=preview.dash.example.com
+DASH_ORG_DOMAIN=dash.example.com
+```
+
+then `docker compose up -d --build`. Caddy serves a wildcard site for each domain that is set,
+and only when `CADDY_DNS_PROVIDER` is set too; the hub reads the same two variables. Providers
+whose module takes more than one token (e.g. `route53`) need their own `tls { dns … }` lines:
+edit `wildcard` in `deploy/caddy/Caddyfile`. The token is passed to Caddy only, not to the hub.
+
+### Upgrade
+
+Set `DASH_VERSION` in `.env` to the new release (see [Releases](releases.md)), then
+
+```sh
+docker compose pull && docker compose up -d
+```
+
+The database migrates itself at start. To go back, set the previous version; take a backup
+first, since a newer version's migrations may not be undone by an older one.
+
+### Back up and restore
+
+All of the hub's state (the SQLite database, sessions, logs, uploads) is in one volume,
+`dash_dash-data`, mounted at `/data`. Caddy's certificates are in `dash_caddy-data`; it gets new
+ones if they are lost.
+
+The simplest backup stops the hub for a moment, so the database is consistent:
+
+```sh
+docker compose stop dash
+docker compose cp dash:/data ./dash-backup-$(date +%F)
+docker compose start dash
+```
+
+Without stopping it, take an online copy with SQLite's `.backup` from a throwaway container (the
+hub's image has no shell or `sqlite3`):
+
+```sh
+docker run --rm --volumes-from dash-dash-1 -v "$PWD:/backup" alpine \
+  sh -c 'apk add -q sqlite && sqlite3 /data/dash.db ".backup /backup/dash.db"'
+```
+
+To restore, stop the hub, copy the backup into the volume and start it again:
+
+```sh
+docker compose stop dash
+docker compose cp ./dash-backup-2026-01-31/. dash:/data/
+docker compose start dash
+```
+
+Files copied in this way may be owned by root; Dash runs as user 65532. If it can't write its
+database after a restore, fix the owner:
+`docker run --rm --volumes-from dash-dash-1 alpine chown -R 65532:65532 /data`.
+
+### Build the image yourself
+
+Release images are published to `ghcr.io/<owner>/dash` for amd64 and arm64 on every `v*` tag,
+tagged with the version and `latest`. For a fork or local changes, build from the repository's
+root and point `DASH_IMAGE`/`DASH_VERSION` at it:
+
+```sh
+docker build --build-arg VERSION=$(git describe --tags --always) -t dash:local .
+```
+
+with `DASH_IMAGE=dash` and `DASH_VERSION=local` in `deploy/.env`. Under the AGPL, a hub you
+changed should point `DASH_SOURCE_URL` at your source.
 
 ## At home through a Cloudflare Tunnel
 

@@ -1,0 +1,22 @@
+# Release image of the Dash hub, built by GoReleaser (dockers_v2 in
+# .goreleaser.yaml) from the release binary of each platform, so it reports
+# the same `dash version`. Keep in step with the Dockerfile at the root,
+# which builds the same image from source.
+
+# An empty /data for the final stage (distroless has no shell to make one).
+FROM --platform=$BUILDPLATFORM busybox:stable AS dirs
+RUN mkdir -p /out/data
+
+FROM gcr.io/distroless/static-debian12:nonroot
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/dash /usr/local/bin/dash
+# A new volume on /data takes this directory's owner, so Dash can write it.
+COPY --from=dirs --chown=65532:65532 /out/data /data
+ENV DASH_PROJECTS=/data/projects
+WORKDIR /data
+VOLUME /data
+EXPOSE 7788
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+  CMD ["/usr/local/bin/dash", "healthcheck"]
+ENTRYPOINT ["/usr/local/bin/dash"]
+CMD ["-addr", "0.0.0.0:7788", "-data", "/data", "-hub-claude", "off", "-hub-tasks", "off"]

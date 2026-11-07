@@ -1,0 +1,73 @@
+# The Dash hub with Caddy in front, on one server (see
+# docs/deploy.md#run-the-hub-with-docker):
+#
+#   cd deploy && cp docker.env.example .env   # then set your own values
+#   docker compose up -d
+#
+# All configuration is in deploy/.env; nothing in this file names a domain.
+# Wildcard certificates (live previews, org subdomains) need Caddy built with
+# a DNS provider module: set CADDY_DNS_PROVIDER and add
+# COMPOSE_FILE=docker-compose.yml:docker-compose.dns.yml to .env.
+#
+# The hub only coordinates: the image has no `claude`, git or project
+# toolchains, and runs no tasks. Work runs on runners (`dash runner`,
+# installed natively), which connect out to the hub over HTTPS.
+
+name: dash
+
+services:
+  dash:
+    image: ${DASH_IMAGE:-ghcr.io/klahr/dash}:${DASH_VERSION:-latest}
+    restart: unless-stopped
+    # Every DASH_*, SMTP and STRIPE_* setting in .env reaches the hub.
+    env_file: .env
+    environment:
+      DASH_PUBLIC_URL: ${DASH_PUBLIC_URL:-https://${DASH_DOMAIN:?set DASH_DOMAIN in deploy/.env}}
+      CADDY_DNS_API_TOKEN: "" # Caddy's, not the hub's
+    command:
+      - -addr=0.0.0.0:7788
+      - -data=/data
+      - -trust-proxy # only Caddy can reach it: the port isn't published
+      - -hub-claude=off
+      - -hub-tasks=off
+    volumes:
+      - dash-data:/data
+    # The image's HEALTHCHECK (`dash healthcheck`), spelled out for compose.
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/dash", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2}
+    restart: unless-stopped
+    depends_on:
+      dash:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    # Only the names Caddy needs, not the hub's secrets.
+    environment:
+      DASH_DOMAIN: ${DASH_DOMAIN:?set DASH_DOMAIN in deploy/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in deploy/.env}
+      DASH_PREVIEW_DOMAIN: ${DASH_PREVIEW_DOMAIN:-}
+      DASH_ORG_DOMAIN: ${DASH_ORG_DOMAIN:-}
+      CADDY_DNS_PROVIDER: ${CADDY_DNS_PROVIDER:-}
+      CADDY_DNS_API_TOKEN: ${CADDY_DNS_API_TOKEN:-}
+      # "-on" when the domain and a DNS provider are set: picks
+      # caddy/previews-on.caddy and caddy/orgs-on.caddy.
+      CADDY_PREVIEWS: ${CADDY_DNS_PROVIDER:+${DASH_PREVIEW_DOMAIN:+-on}}
+      CADDY_ORGS: ${CADDY_DNS_PROVIDER:+${DASH_ORG_DOMAIN:+-on}}
+    volumes:
+      - ./caddy:/etc/caddy:ro
+      - caddy-data:/data # certificates and the ACME account
+      - caddy-config:/config
+
+volumes:
+  dash-data:
+  caddy-data:
+  caddy-config:

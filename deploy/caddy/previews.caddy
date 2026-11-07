@@ -1,0 +1,2 @@
+# Live previews are off: DASH_PREVIEW_DOMAIN or CADDY_DNS_PROVIDER isn't
+# set. See previews-on.caddy.

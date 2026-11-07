@@ -1,4 +1,5 @@
-# Caddy in front of Dash, for a hub on a VPS (see docs/deploy.md).
+# Caddy in front of Dash, for a hub on a VPS (see docs/deploy.md). For the
+# Docker setup, see deploy/docker-compose.yml and deploy/caddy/ instead.
 #
 # Replace dash.example.com with your own name, point its DNS records at this
 # server (A/AAAA for dash.example.com, *.preview.dash.example.com and, with

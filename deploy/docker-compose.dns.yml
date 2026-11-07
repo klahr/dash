@@ -1,0 +1,18 @@
+# Caddy built with a DNS provider module, for wildcard certificates (live
+# previews and org subdomains). Use it on top of docker-compose.yml by adding
+# to deploy/.env:
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.dns.yml
+#   CADDY_DNS_PROVIDER=cloudflare      # a module name from github.com/caddy-dns
+#   CADDY_DNS_API_TOKEN=...            # a token that can edit the zone
+#
+# then `docker compose up -d --build`. Rebuild after changing the provider.
+
+services:
+  caddy:
+    image: dash-caddy-${CADDY_DNS_PROVIDER:?set CADDY_DNS_PROVIDER in deploy/.env}:local
+    pull_policy: build
+    build:
+      context: ./caddy
+      args:
+        CADDY_DNS_PROVIDER: ${CADDY_DNS_PROVIDER}

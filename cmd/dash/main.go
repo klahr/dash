@@ -56,6 +56,9 @@ func main() {
 		fmt.Println("dash", buildinfo.Version)
 		return
 	}
+	if len(args) > 0 && args[0] == "healthcheck" {
+		os.Exit(healthcheck(args[1:]))
+	}
 	if len(args) > 0 && args[0] == "reset-2fa" {
 		os.Exit(resetTwoFactor(args[1:]))
 	}

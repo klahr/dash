@@ -1,0 +1,6 @@
+# Org subdomains, one per organization: <slug>.<DASH_ORG_DOMAIN>. A wildcard
+# certificate covers one level only, so this one and the previews' are
+# separate even when the preview domain sits under the org domain.
+*.{$DASH_ORG_DOMAIN} {
+	import wildcard
+}

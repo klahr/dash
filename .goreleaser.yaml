@@ -36,6 +36,11 @@ archives:
       - README.md
       - .env.example
       - deploy/dash.service
+      # Run the hub with Docker (docs/deploy.md#run-the-hub-with-docker).
+      - deploy/docker-compose.yml
+      - deploy/docker-compose.dns.yml
+      - deploy/docker.env.example
+      - deploy/caddy/*
 
 checksum:
   name_template: checksums.txt
@@ -50,3 +55,26 @@ release:
     owner: klahr
     name: dash
   prerelease: auto
+
+# The hub's container image (docs/deploy.md#run-the-hub-with-docker), for
+# linux/amd64 and linux/arm64, from the same release binaries, so it reports
+# the same `dash version`. Pushed to ghcr.io/<owner>/dash, <owner> being the
+# GitHub account the release runs under (set by Actions; "local" elsewhere).
+# A snapshot build (`goreleaser release --snapshot`) only builds it.
+dockers_v2:
+  - id: dash
+    ids: [dash]
+    dockerfile: deploy/Dockerfile.release
+    images:
+      - 'ghcr.io/{{ tolower (envOrDefault "GITHUB_REPOSITORY_OWNER" "local") }}/dash'
+    tags:
+      - "{{ .Version }}" # 1.2.0 for tag v1.2.0
+      - "{{ if not .Prerelease }}latest{{ end }}" # not for v1.2.0-rc.1
+    platforms: [linux/amd64, linux/arm64]
+    labels:
+      org.opencontainers.image.title: dash
+      org.opencontainers.image.description: "The Dash hub (runners install natively)"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.created: "{{ .Date }}"
+      org.opencontainers.image.source: "{{ .GitURL }}"

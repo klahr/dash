@@ -6,6 +6,14 @@ the archives to a [GitHub release](https://github.com/klahr/dash/releases), toge
 README, `.env.example` and `deploy/dash.service`. The builds are static (CGO off), so they run on
 a machine without Go.
 
+The same tag publishes the hub's container image to `ghcr.io/<owner>/dash` (`<owner>` being the
+GitHub account or organization the repository belongs to), for linux/amd64 and linux/arm64,
+tagged with the version without its `v` (`1.2.0`) and `latest` (not for pre-releases). It is built
+from the release binary with [`deploy/Dockerfile.release`](../deploy/Dockerfile.release), so it
+reports the same `dash version`; see [Run the hub with Docker](deploy.md#run-the-hub-with-docker).
+The archives also carry the compose setup (`deploy/docker-compose*.yml`,
+`deploy/docker.env.example`, `deploy/caddy/`).
+
 ## Cut a release
 
 From an up-to-date `main` whose CI is green:
@@ -20,7 +28,8 @@ The [Release workflow](../.github/workflows/release.yml) runs the tests, then Go
 from the commits since the previous tag. A tag with a suffix, such as `v1.2.0-rc.1`, is marked
 as a pre-release.
 
-To try the build locally without publishing anything (output in `dist/`):
+To try the build locally without publishing anything (output in `dist/`; the images need
+`docker buildx`):
 
 ```sh
 goreleaser check

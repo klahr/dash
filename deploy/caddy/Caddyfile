@@ -1,0 +1,38 @@
+# Caddy in front of the Dash hub, for deploy/docker-compose.yml (see
+# docs/deploy.md#run-the-hub-with-docker). Every name comes from the
+# environment, which docker-compose.yml fills in from deploy/.env; nothing
+# here needs editing.
+#
+#   DASH_DOMAIN          the hub's name, e.g. dash.example.com (required)
+#   ACME_EMAIL           Let's Encrypt account e-mail, for expiry warnings
+#   DASH_PREVIEW_DOMAIN  live previews at *.<this>, e.g. preview.dash.example.com
+#   DASH_ORG_DOMAIN      org subdomains at *.<this>, e.g. dash.example.com
+#   CADDY_DNS_PROVIDER   caddy-dns module for wildcard certificates, e.g. cloudflare
+#   CADDY_DNS_API_TOKEN  that provider's API token
+#
+# The hub's own certificate comes through the HTTP challenge and needs no DNS
+# module. The wildcard sites (previews, org subdomains) are only served when
+# their domain and a DNS provider are both set: docker-compose.yml then sets
+# CADDY_PREVIEWS / CADDY_ORGS to "-on", which picks the -on files below.
+{
+	email {$ACME_EMAIL}
+}
+
+# Shared by the wildcard sites: a certificate through the DNS challenge (the
+# only way Let's Encrypt issues wildcards), and the hub behind it. Caddy
+# passes the browser's Host on, by which Dash tells previews and orgs apart.
+(wildcard) {
+	tls {
+		dns {$CADDY_DNS_PROVIDER} {$CADDY_DNS_API_TOKEN}
+	}
+	reverse_proxy dash:7788
+}
+
+# The hub. Caddy sends X-Forwarded-For/-Proto/-Host, which Dash reads
+# because it runs with -trust-proxy.
+{$DASH_DOMAIN} {
+	reverse_proxy dash:7788
+}
+
+import previews{$CADDY_PREVIEWS}.caddy
+import orgs{$CADDY_ORGS}.caddy

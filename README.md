@@ -84,7 +84,8 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
   [docs/service.md](docs/service.md).
 - **Put it online** over HTTPS, on a VPS behind Caddy or at home through a Cloudflare Tunnel
   (or privately with Tailscale), to use it from your phone and other computers:
-  [docs/deploy.md](docs/deploy.md).
+  [docs/deploy.md](docs/deploy.md). A hub whose work runs on runners also comes as a Docker image
+  with a compose file: [Run the hub with Docker](docs/deploy.md#run-the-hub-with-docker).
 - **Use it from Claude** with the `dash-mcp` MCP server, or as a custom connector in claude.ai
   and the Claude app: [docs/mcp.md](docs/mcp.md).
 - **Several computers** in one dashboard: add each with one pasted command (`curl … /runner/install.sh | sh`), no VPN needed. Link a project to people's runners and the hub sends its tasks there, each on its owner's Claude subscription; everyone's chat, titles and clean-ups run on their own runner too, so a shared hub runs no Claude itself: [docs/several-computers.md](docs/several-computers.md).
@@ -97,7 +98,7 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 - [Open signup and email](docs/signup.md): self-service accounts, personal workspaces, password reset (off by default)
 - [Billing](docs/billing.md): per-seat Stripe subscriptions for organizations of two or more (off by default)
 - [Branding and the landing page](docs/branding.md): product name, terms and privacy links, logo, the AGPL source link, an optional landing page
-- [Deploy the hub](docs/deploy.md): Caddy, Cloudflare Tunnel or Tailscale, org subdomains (`acme.dash.example.com`), and the login on the internet
+- [Deploy the hub](docs/deploy.md): Caddy, Docker, Cloudflare Tunnel or Tailscale, org subdomains (`acme.dash.example.com`), and the login on the internet
 - [Live previews](docs/previews.md): preview domain, DNS and certificates, what the proxy does
 - [Draw](docs/draw.md): mark up a preview and send the picture back to Claude
 - [Scans](docs/scans.md): scheduled read-only reviews that fill a project's Issues

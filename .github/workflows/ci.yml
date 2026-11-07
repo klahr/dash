@@ -70,3 +70,63 @@ jobs:
           distribution: goreleaser
           version: "~> v2"
           args: check
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Dockerfile's Go version matches go.mod
+        run: |
+          want=$(awk '$1 == "go" { print $2 }' go.mod)
+          got=$(sed -n 's/^ARG GO_VERSION=//p' Dockerfile)
+          if [ "$want" != "$got" ]; then
+            echo "Dockerfile has GO_VERSION=$got, go.mod has go $want"
+            exit 1
+          fi
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Built, never pushed.
+      - name: Build the hub image
+        run: docker buildx build --load --build-arg VERSION=ci -t dash:ci .
+
+      - name: Smoke test
+        run: |
+          docker run --rm dash:ci version | grep -qx 'dash ci'
+          docker run -d --name dash -e DASH_USERNAME=admin -e DASH_PASSWORD=ci-password-1234 dash:ci
+          for i in $(seq 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' dash)" = healthy ] && break
+            docker exec dash /usr/local/bin/dash healthcheck && break
+            sleep 2
+          done
+          docker exec dash /usr/local/bin/dash healthcheck
+          docker logs dash
+          docker rm -f dash
+
+      - name: Compose file is valid
+        working-directory: deploy
+        run: |
+          cp docker.env.example .env
+          docker compose config --quiet
+          printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.dns.yml\nCADDY_DNS_PROVIDER=cloudflare\nDASH_PREVIEW_DOMAIN=preview.dash.example.com\nDASH_ORG_DOMAIN=dash.example.com\n' >> .env
+          docker compose config --quiet
+
+      - name: Caddyfile is valid
+        working-directory: deploy/caddy
+        run: |
+          docker run --rm -v "$PWD:/etc/caddy:ro" -e DASH_DOMAIN=dash.example.com -e ACME_EMAIL=you@example.com \
+            caddy:2 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+      # The release image (deploy/Dockerfile.release), as GoReleaser builds it
+      # on a tag, without pushing.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean

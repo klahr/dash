@@ -1,0 +1,4 @@
+# Live previews, one subdomain per task: <task>.<DASH_PREVIEW_DOMAIN>.
+*.{$DASH_PREVIEW_DOMAIN} {
+	import wildcard
+}
