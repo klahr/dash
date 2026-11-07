@@ -513,6 +513,21 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-dot.on { background: var(--merged); }
 .runner-name { font-weight: 600; }
 .runner-seen { flex: 1; margin: 0; font-size: 13px; }
+/* Organization: members, invitations, and the switcher in the account menu. */
+.org-section { margin: 18px 0 0; font-size: 14px; font-weight: 600; color: var(--muted); }
+.org-members .runner-seen { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.org-role-select { width: auto; flex: none; min-height: 36px; }
+.org-role-tag { font-size: 13px; color: var(--muted); }
+.org-invite { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.org-invite input { flex: 1 1 220px; width: auto; }
+.org-invite select { width: auto; flex: none; }
+#org-invite-link { margin-top: 12px; }
+.org-switch { display: flex; flex-direction: column; padding-bottom: 4px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+.org-switch-label { padding: 4px 10px; font-size: 12px; color: var(--muted); }
+.org-switch button.active { color: var(--accent); }
+.invite-card .invite-what { text-align: center; }
+.invite-card .login-alt { text-align: center; font-size: 14px; color: var(--muted); }
+.invite-card .btn.secondary-action { background: none; }
 #runners-code { margin-top: 12px; }
 .copy-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; }
 .copy-text { flex: 1; min-width: 0; margin: 0; padding: 8px 10px; border-radius: var(--r-s); border: 1px solid var(--line); background: var(--bg); font: 13px/1.5 var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; }

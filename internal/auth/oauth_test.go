@@ -7,10 +7,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/klahr/dash/internal/store"
 )
 
 const (
@@ -26,10 +29,12 @@ func challenge(v string) string {
 
 func newOAuthServer(t *testing.T) (*Auth, *OAuth, http.Handler) {
 	t.Helper()
-	a, err := New("admin", "s3cret")
-	if err != nil {
-		t.Fatal(err)
-	}
+	return oauthServerAt(t, filepath.Join(t.TempDir(), "dash.db"), "s3cret")
+}
+
+func oauthServerAt(t *testing.T, path, password string) (*Auth, *OAuth, http.Handler) {
+	t.Helper()
+	a := openAuth(t, path, "admin", password)
 	o, err := NewOAuth(a, base+"/")
 	if err != nil {
 		t.Fatal(err)
@@ -139,7 +144,7 @@ func TestOAuthMetadata(t *testing.T) {
 }
 
 func TestNewOAuthNeedsHTTPSOrigin(t *testing.T) {
-	a, _ := New("admin", "s3cret")
+	a := newAuth(t, "admin", "s3cret")
 	for _, u := range []string{"", "http://dash.example.net", "https://dash.example.net/dash", "ftp://x"} {
 		if _, err := NewOAuth(a, u); err == nil {
 			t.Errorf("%q accepted", u)
@@ -208,8 +213,11 @@ func TestOAuthFlow(t *testing.T) {
 	// Access tokens are not sessions or peer tokens.
 	r := httptest.NewRequest("GET", "/api/projects", nil)
 	r.Header.Set("Authorization", "Bearer "+access)
-	if a.valid(r) {
+	if _, ok := a.session(r); ok || a.viaPeer(r) {
 		t.Errorf("access token opens the API")
+	}
+	if w := httptest.NewRecorder(); func() int { h.ServeHTTP(w, r); return w.Code }() != http.StatusUnauthorized {
+		t.Errorf("access token opens the API: %d", w.Code)
 	}
 	// Codes work once.
 	if status, m := tokens(t, h, exchange); status != http.StatusBadRequest || m["error"] != "invalid_grant" {
@@ -381,27 +389,24 @@ func TestOAuthConfidentialClient(t *testing.T) {
 }
 
 func TestOAuthSurvivesRestart(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "oauth.json")
-	_, o, h := newOAuthServer(t)
+	dir := t.TempDir()
+	db, path := filepath.Join(dir, "dash.db"), filepath.Join(dir, "oauth.json")
+	_, o, h := oauthServerAt(t, db, "s3cret")
 	if err := o.Keep(path); err != nil {
 		t.Fatal(err)
 	}
 	id, tok := fullFlow(t, h, `{"redirect_uris":["`+callback+`"]}`)
 
 	// Same credentials: clients and tokens are back.
-	a2, _ := New("admin", "s3cret")
-	o2, _ := NewOAuth(a2, base)
+	_, o2, h2 := oauthServerAt(t, db, "s3cret")
 	if err := o2.Keep(path); err != nil {
 		t.Fatal(err)
 	}
-	mux := http.NewServeMux()
-	o2.Routes(mux)
-	mux.Handle("POST /mcp", o2.Bearer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})))
-	h2 := a2.Middleware(mux)
 	if w := callMCP(h2, tok["access_token"].(string)); w.Code != http.StatusOK {
 		t.Errorf("access token after restart: %d", w.Code)
 	}
-	if status, _ := tokens(t, h2, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tok["refresh_token"].(string)}, "client_id": {id}}); status != http.StatusOK {
+	status, tok2 := tokens(t, h2, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tok["refresh_token"].(string)}, "client_id": {id}})
+	if status != http.StatusOK {
 		t.Errorf("refresh after restart: %d", status)
 	}
 	o2.mu.Lock()
@@ -412,13 +417,48 @@ func TestOAuthSurvivesRestart(t *testing.T) {
 	}
 	o2.mu.Unlock()
 
-	// New credentials: everything is dropped.
-	a3, _ := New("admin", "changed")
-	o3, _ := NewOAuth(a3, base)
+	// A new DASH_PASSWORD: the account's tokens stop working.
+	_, o3, h3 := oauthServerAt(t, db, "changed")
 	if err := o3.Keep(path); err != nil {
 		t.Fatal(err)
 	}
-	if o3.valid(tok["access_token"].(string)) || o3.client(id) != nil {
-		t.Errorf("tokens kept across a password change")
+	if w := callMCP(h3, tok2["access_token"].(string)); w.Code != http.StatusUnauthorized {
+		t.Errorf("access token after a password change: %d", w.Code)
+	}
+	if status, _ := tokens(t, h3, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tok2["refresh_token"].(string)}, "client_id": {id}}); status != http.StatusBadRequest {
+		t.Errorf("refresh after a password change: %d", status)
+	}
+}
+
+// Tokens in an oauth.json from before users belong to the env account.
+func TestOAuthImportsLegacyTokens(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "oauth.json")
+	a, o, h := newOAuthServer(t)
+	b, _ := json.Marshal(map[string]any{
+		"account": a.legacy,
+		"clients": map[string]any{"c1": map[string]any{"redirect_uris": []string{callback}, "auth_method": "none", "created": time.Now()}},
+		"tokens":  map[string]any{sessionKey("old-access"): map[string]any{"client": "c1", "expires": time.Now().Add(time.Hour)}},
+	})
+	os.WriteFile(path, b, 0o600)
+	if err := o.Keep(path); err != nil {
+		t.Fatal(err)
+	}
+	if w := callMCP(h, "old-access"); w.Code != http.StatusOK {
+		t.Fatalf("legacy token: %d", w.Code)
+	}
+}
+
+// A token stops working once its user belongs to no org.
+func TestOAuthTokenNeedsMembership(t *testing.T) {
+	a, _, h := newOAuthServer(t)
+	_, tok := fullFlow(t, h, `{"redirect_uris":["`+callback+`"]}`)
+	u, _ := a.acc.EnvUser()
+	org, _ := a.acc.DefaultOrg()
+	other := addUser(t, a, org.ID, "other", store.RoleOwner)
+	if err := a.acc.RemoveMember(other, org.ID, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if w := callMCP(h, tok["access_token"].(string)); w.Code != http.StatusUnauthorized {
+		t.Fatalf("token of a removed member: %d", w.Code)
 	}
 }

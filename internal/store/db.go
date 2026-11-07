@@ -43,7 +43,8 @@ func openDB(path string) (*sql.DB, error) {
 	dsn := "file:" + path + "?_txlock=immediate" +
 		"&_pragma=busy_timeout(5000)" +
 		"&_pragma=journal_mode(WAL)" +
-		"&_pragma=synchronous(NORMAL)"
+		"&_pragma=synchronous(NORMAL)" +
+		"&_pragma=foreign_keys(1)" // the account tables use them; the record tables have none
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
@@ -329,28 +330,39 @@ func put(tx *sql.Tx, query string, v any, args ...any) error {
 	return err
 }
 
+// defaultOrg is the org a new row belongs to (see the instance table). An
+// update keeps the row's org: the writers below upsert rather than replace.
+const defaultOrg = "(SELECT default_org_id FROM instance WHERE id = 1)"
+
 func putProject(tx *sql.Tx, p *model.Project) error {
-	return put(tx, "INSERT OR REPLACE INTO projects (id, data) VALUES (?, ?)", p, p.ID)
+	return put(tx, "INSERT INTO projects (id, org_id, data) VALUES (?, "+defaultOrg+", ?)"+
+		" ON CONFLICT (id) DO UPDATE SET data = excluded.data", p, p.ID)
 }
 
 func putTodo(tx *sql.Tx, t *model.Todo) error {
-	return put(tx, "INSERT OR REPLACE INTO todos (id, project_id, data) VALUES (?, ?, ?)", t, t.ID, t.ProjectID)
+	return put(tx, "INSERT INTO todos (id, project_id, org_id, data) VALUES (?, ?, "+defaultOrg+", ?)"+
+		" ON CONFLICT (id) DO UPDATE SET project_id = excluded.project_id, data = excluded.data", t, t.ID, t.ProjectID)
 }
 
 func putIssue(tx *sql.Tx, is *model.Issue) error {
-	return put(tx, "INSERT OR REPLACE INTO issues (id, project_id, data) VALUES (?, ?, ?)", is, is.ID, is.ProjectID)
+	return put(tx, "INSERT INTO issues (id, project_id, org_id, data) VALUES (?, ?, "+defaultOrg+", ?)"+
+		" ON CONFLICT (id) DO UPDATE SET project_id = excluded.project_id, data = excluded.data", is, is.ID, is.ProjectID)
 }
 
 func putScanRun(tx *sql.Tx, r *model.ScanRun) error {
-	return put(tx, "INSERT OR REPLACE INTO scan_runs (id, project_id, scan, data) VALUES (?, ?, ?, ?)", r, r.ID, r.ProjectID, r.Scan)
+	return put(tx, "INSERT INTO scan_runs (id, project_id, scan, org_id, data) VALUES (?, ?, ?, "+defaultOrg+", ?)"+
+		" ON CONFLICT (id) DO UPDATE SET project_id = excluded.project_id, scan = excluded.scan, data = excluded.data",
+		r, r.ID, r.ProjectID, r.Scan)
 }
 
 func putScanSetting(tx *sql.Tx, st *model.ScanSetting) error {
-	return put(tx, "INSERT OR REPLACE INTO scan_settings (project_id, scan, data) VALUES (?, ?, ?)", st, st.ProjectID, st.Scan)
+	return put(tx, "INSERT INTO scan_settings (project_id, scan, org_id, data) VALUES (?, ?, "+defaultOrg+", ?)"+
+		" ON CONFLICT (project_id, scan) DO UPDATE SET data = excluded.data", st, st.ProjectID, st.Scan)
 }
 
 func putScanTemplate(tx *sql.Tx, t *model.ScanTemplate) error {
-	return put(tx, "INSERT OR REPLACE INTO scan_templates (project_id, name, data) VALUES (?, ?, ?)", t, t.ProjectID, t.Name)
+	return put(tx, "INSERT INTO scan_templates (project_id, name, org_id, data) VALUES (?, ?, "+defaultOrg+", ?)"+
+		" ON CONFLICT (project_id, name) DO UPDATE SET data = excluded.data", t, t.ProjectID, t.Name)
 }
 
 // setChat replaces a conversation (nil or empty clears it).
@@ -367,7 +379,8 @@ func setChat(tx *sql.Tx, kind, owner string, msgs []model.ChatMessage) error {
 }
 
 func putChatMessage(tx *sql.Tx, kind, owner string, seq int, m model.ChatMessage) error {
-	return put(tx, "INSERT OR REPLACE INTO chat_messages (kind, owner_id, seq, data) VALUES (?, ?, ?, ?)", m, kind, owner, seq)
+	return put(tx, "INSERT INTO chat_messages (kind, owner_id, seq, org_id, data) VALUES (?, ?, ?, "+defaultOrg+", ?)"+
+		" ON CONFLICT (kind, owner_id, seq) DO UPDATE SET data = excluded.data", m, kind, owner, seq)
 }
 
 func deleteRow(tx *sql.Tx, table, id string) error {

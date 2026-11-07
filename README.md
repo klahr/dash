@@ -21,8 +21,8 @@ cp .env.example .env
 ```
 
 Edit `.env` and set `DASH_USERNAME` and `DASH_PASSWORD` (the example's `admin` / `change-me`
-are placeholders: change the password). Dash refuses to start without them, because it runs
-commands on your computer. Optionally set `DASH_PROJECTS` to where new projects should be created
+are placeholders: change the password). On first start they become the first account, and
+Dash refuses to start without them, because it runs commands on your computer. Optionally set `DASH_PROJECTS` to where new projects should be created
 (the default is `~/dash-projects`; the `-projects` flag does the same).
 
 Build and run:
@@ -33,7 +33,8 @@ go build -o bin/dash ./cmd/dash
 ```
 
 Open <http://127.0.0.1:7788> and sign in with the `DASH_USERNAME` and `DASH_PASSWORD` from your
-`.env`. Dash listens only on `127.0.0.1:7788` by default; to change that, see `-addr` in
+`.env`. That's the first account; you can invite others to it from the account menu (see
+[Users and organizations](docs/users.md)). Dash listens only on `127.0.0.1:7788` by default; to change that, see `-addr` in
 `./bin/dash -h` (and [Deploy the hub](docs/deploy.md) before exposing it).
 
 Prefer the terminal? There's a terminal client too:
@@ -75,6 +76,7 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
 ## Reference
 
+- [Users and organizations](docs/users.md): accounts, roles, invitations
 - [Deploy the hub](docs/deploy.md): Caddy, Cloudflare Tunnel or Tailscale, and the login on the internet
 - [Live previews](docs/previews.md): preview domain, DNS and certificates, what the proxy does
 - [Draw](docs/draw.md): mark up a preview and send the picture back to Claude

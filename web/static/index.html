@@ -135,6 +135,8 @@
           <details class="foot-menu account-menu" id="foot-menu">
             <summary aria-label="Account menu" title="Account menu"><span class="foot-avatar" id="foot-avatar" aria-hidden="true"></span><span class="foot-user" id="foot-user"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
             <div class="foot-menu-list">
+              <div class="org-switch" id="org-switch" hidden></div>
+              <button id="org-open" type="button" data-icon="users">Organization</button>
               <button id="prefs-open" type="button" data-icon="prefs">Preferences</button>
               <button id="connector-open" type="button" data-icon="plug">Connect Claude</button>
               <button id="runners-open" type="button" data-icon="computer">Runners</button>
@@ -629,6 +631,47 @@
       <div id="runners-code" hidden></div>
       <footer class="sheet-actions">
         <button class="btn primary" id="runners-add" type="button">Add a runner</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- The active organization: members, roles and invitations -->
+  <dialog class="sheet" id="org-sheet" aria-labelledby="org-title">
+    <form method="dialog">
+      <header class="sheet-head"><h2 id="org-title" tabindex="-1" autofocus>Organization</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <p class="hint" id="org-role"></p>
+      <h3 class="org-section">Members</h3>
+      <ul class="runner-list org-members" id="org-members"></ul>
+      <div id="org-invite-area" hidden>
+        <h3 class="org-section">Invite someone</h3>
+        <div class="org-invite">
+          <input type="email" id="org-invite-email" placeholder="name@example.com" autocomplete="off" aria-label="Email to invite">
+          <select id="org-invite-role" aria-label="Role">
+            <option value="member">Member</option>
+            <option value="admin">Admin</option>
+            <option value="owner">Owner</option>
+          </select>
+          <button class="btn primary" id="org-invite-send" type="button" data-icon="send">Invite</button>
+        </div>
+        <div id="org-invite-link" hidden></div>
+        <h3 class="org-section" id="org-pending-head">Pending invitations</h3>
+        <ul class="runner-list" id="org-pending"></ul>
+      </div>
+      <footer class="sheet-actions">
+        <button class="btn" id="org-new" type="button" data-icon="plus" hidden>New organization</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Re-enter the password before a sensitive change -->
+  <dialog class="sheet small" id="password-sheet" aria-labelledby="password-title">
+    <form method="dialog" id="password-form">
+      <h2 id="password-title" tabindex="-1"></h2>
+      <p id="password-body" class="hint"></p>
+      <label class="field"><span>Your password <em>to confirm</em></span><input type="password" name="password" required autocomplete="current-password"></label>
+      <footer class="sheet-actions">
+        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
+        <button class="btn primary" value="ok" id="password-ok" data-icon="check">Confirm</button>
       </footer>
     </form>
   </dialog>

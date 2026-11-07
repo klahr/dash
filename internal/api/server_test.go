@@ -13,15 +13,17 @@ import (
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
+	"github.com/klahr/dash/internal/store"
 )
 
 // Routes panics at startup if two patterns conflict; build it here.
 func TestRoutesRegister(t *testing.T) {
-	a, err := auth.New("u", "p")
+	st, err := store.Open(filepath.Join(t.TempDir(), "dash.db"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{Hub: hub.New(), Auth: a, Perms: perm.NewBroker(nil), Static: fstest.MapFS{"index.html": {Data: []byte("ok")}}}
+	defer st.Close()
+	s := &Server{Hub: hub.New(), Auth: auth.New(st.Accounts()), Perms: perm.NewBroker(nil), Static: fstest.MapFS{"index.html": {Data: []byte("ok")}}}
 	h := s.Routes()
 
 	for _, tc := range []struct {

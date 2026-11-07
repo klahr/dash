@@ -63,6 +63,7 @@ const ICONS = {
   bug: "M8 10a4 4 0 0 1 8 0v4a4 4 0 0 1-8 0zM12 10v8M4 13h4M16 13h4M5 8l3 2M19 8l-3 2M5 19l3-2M19 19l-3-2M9.5 6.5 8 4M14.5 6.5 16 4",
   plug: "M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4",
   computer: "M4 5h16v10H4zM9 19h6M12 15v4",
+  users: "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1M16 3.5a4 4 0 0 1 0 7.5M19 14a5 5 0 0 1 3 5v2",
   down: "m7 10 5 5 5-5",
   up: "m7 14 5-5 5 5",
   wand: "M4 20 15 9M13 7l4 4M17 3v4M15 5h4M7 4v2M6 5h2M19 15v2M18 16h2",
@@ -266,7 +267,7 @@ if (vv) {
 // runners (`dash runner`) through the connection they keep open to it. A project's
 // API calls go to the computer it lives on (its prefix); login, logout and
 // the computer list always go to this one.
-const HUB_ONLY = /^\/api\/(login|logout|me|machines|version|chat|connector|runners)\b/;
+const HUB_ONLY = /^\/api\/(login|logout|me|machines|version|chat|connector|runners|auth|orgs|invitations)\b/;
 const here = () => state.project?.prefix || "";
 const on = (prefix, path) => (HUB_ONLY.test(path) ? path : `${prefix}${path}`);
 
@@ -1139,14 +1140,12 @@ $("#pm-github").addEventListener("click", attempt(createGitHubRepo));
 $("#push-main").addEventListener("click", attempt(pushDone));
 $("#pm-cleanup").addEventListener("click", attempt(cleanup));
 $("#pm-delete").addEventListener("click", attempt(openDeleteProject));
-// The account menu shows who is logged in.
-fetch("/api/me").then((r) => r.ok ? r.json() : null).then((me) => {
-  const name = me?.username;
-  if (!name) return;
-  $("#foot-user").textContent = name;
-  $("#foot-avatar").textContent = [...name][0].toUpperCase();
-  $("#foot-menu summary").title = `Account menu · ${name}`;
-}).catch(() => {});
+// The account menu shows who is logged in, the org they work in and the
+// others they can switch to.
+loadMe().catch(() => {});
+$("#org-open").addEventListener("click", attempt(openOrg));
+$("#org-invite-send").addEventListener("click", attempt(sendInvite));
+$("#org-new").addEventListener("click", attempt(newOrg));
 for (const menu of $$(".foot-menu")) {
   menu.querySelector(".foot-menu-list").addEventListener("click", () => { menu.open = false; });
   document.addEventListener("click", (e) => { if (!menu.contains(e.target)) menu.open = false; });
@@ -2750,6 +2749,155 @@ async function openRunners() {
 }
 $("#runners-open").addEventListener("click", attempt(openRunners));
 $("#runners-add").addEventListener("click", attempt(addRunner));
+
+// ------------------------------------------------------------------ account & organizations
+async function loadMe() {
+  const res = await fetch("/api/me");
+  if (!res.ok) return;
+  const me = await res.json();
+  state.me = me;
+  const name = me.username;
+  if (!name) return;
+  $("#foot-user").textContent = me.org ? `${name} · ${me.org.name}` : name;
+  $("#foot-avatar").textContent = [...name][0].toUpperCase();
+  $("#foot-menu summary").title = `Account menu · ${name}${me.org ? ` in ${me.org.name}` : ""}`;
+  const orgs = me.orgs || [];
+  const sw = $("#org-switch");
+  sw.hidden = orgs.length < 2;
+  sw.replaceChildren(...(orgs.length < 2 ? [] : [
+    h("span", { class: "org-switch-label" }, "Switch organization"),
+    ...orgs.map((o) => h("button", {
+      type: "button", class: o.id === me.org?.id ? "active" : "",
+      "aria-current": o.id === me.org?.id ? "true" : null,
+      onclick: attempt(() => switchOrg(o)),
+    }, ico(o.id === me.org?.id ? "check" : "users"), o.name)),
+  ]));
+  $("#org-open").hidden = !me.org;
+  if (!me.org) {
+    await ask({
+      title: "No organization",
+      body: orgs.length ? "Pick an organization from the account menu." :
+        "Your account isn't a member of any organization any more. Ask an owner or admin for an invitation link, or sign out.",
+      ok: "Sign out",
+    }) && logout();
+  }
+}
+
+async function switchOrg(o) {
+  if (o.id === state.me?.org?.id) return;
+  await api("POST", "/api/auth/switch-org", { org_id: o.id }, "");
+  location.reload(); // everything on the page belongs to the org it was loaded in
+}
+
+const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member" };
+const RANK = { member: 1, admin: 2, owner: 3 };
+
+// askPassword asks for the user's password again before a sensitive change.
+function askPassword(title, body = "") {
+  const d = $("#password-sheet");
+  const f = $("#password-form");
+  f.reset();
+  $("#password-title").textContent = title;
+  $("#password-body").textContent = body;
+  $("#password-body").hidden = !body;
+  d.returnValue = "";
+  d.showModal();
+  f.password.focus();
+  return new Promise((resolve) => {
+    d.addEventListener("close", () => resolve(d.returnValue === "ok" ? f.password.value : null), { once: true });
+  });
+}
+
+async function openOrg() {
+  await renderOrg();
+  $("#org-invite-link").hidden = true;
+  const d = $("#org-sheet");
+  if (!d.open) d.showModal();
+}
+
+async function renderOrg() {
+  const me = state.me;
+  if (!me?.org) throw new Error("You aren't in an organization.");
+  const org = await api("GET", `/api/orgs/${me.org.id}/members`, null, "");
+  const mine = org.role;
+  const manage = RANK[mine] >= RANK.admin;
+  $("#org-title").textContent = org.org.name;
+  $("#org-role").textContent = `You are ${mine === "admin" ? "an admin" : `${mine === "owner" ? "an owner" : "a member"}`} of ${org.org.name}.` +
+    (manage ? " Owners and admins invite people and change roles; only owners make owners." : "");
+  const roleSelect = (m) => {
+    const sel = h("select", { "aria-label": `Role of ${m.username}`, class: "org-role-select" },
+      ...Object.keys(ROLE_LABEL).filter((r) => RANK[r] <= RANK[mine]).map((r) => h("option", { value: r, selected: r === m.role }, ROLE_LABEL[r])));
+    sel.addEventListener("change", attempt(async () => {
+      const pw = await askPassword(`Make ${m.username} ${ROLE_LABEL[sel.value].toLowerCase()}?`);
+      if (pw == null) { sel.value = m.role; return; }
+      try {
+        await api("PATCH", `/api/orgs/${org.org.id}/members/${m.id}`, { role: sel.value, password: pw }, "");
+      } catch (err) { sel.value = m.role; throw err; }
+      toast(`${m.username} is now ${ROLE_LABEL[sel.value].toLowerCase()}`, { tone: "ok" });
+      if (m.id === me.user.id) await loadMe();
+      await renderOrg();
+    }));
+    return sel;
+  };
+  const rows = org.members.map((m) => {
+    const self = m.id === me.user.id;
+    const canEdit = manage && RANK[m.role] <= RANK[mine];
+    return h("li", { class: "runner-row" },
+      h("span", { class: "runner-name" }, m.username, self ? h("span", { class: "hint" }, " (you)") : null),
+      h("span", { class: "runner-seen hint" }, m.email || ""),
+      canEdit ? roleSelect(m) : h("span", { class: "org-role-tag" }, ROLE_LABEL[m.role]),
+      (canEdit || self) ? h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
+        const pw = await askPassword(self ? `Leave ${org.org.name}?` : `Remove ${m.username}?`,
+          self ? "You lose access at once. Someone has to invite you again to come back." : `${m.username} loses access to ${org.org.name} at once.`);
+        if (pw == null) return;
+        await api("DELETE", `/api/orgs/${org.org.id}/members/${m.id}`, { password: pw }, "");
+        if (self) { location.reload(); return; }
+        toast(`${m.username} removed`);
+        await renderOrg();
+      }) }, self ? "Leave" : "Remove") : null);
+  });
+  $("#org-members").replaceChildren(...rows);
+  $("#org-invite-area").hidden = !manage;
+  if (manage) {
+    for (const opt of $("#org-invite-role").options) opt.hidden = opt.disabled = RANK[opt.value] > RANK[mine];
+    const pending = (org.invitations || []).map((i) => h("li", { class: "runner-row" },
+      h("span", { class: "runner-name" }, i.email),
+      h("span", { class: "runner-seen hint" }, `${ROLE_LABEL[i.role]} · expires ${new Date(i.expires).toLocaleDateString()}${i.invited_by ? ` · by ${i.invited_by}` : ""}`),
+      h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
+        await api("DELETE", `/api/orgs/${org.org.id}/invitations/${i.id}`, null, "");
+        toast(`Invitation for ${i.email} revoked`);
+        await renderOrg();
+      }) }, "Revoke")));
+    $("#org-pending-head").hidden = !pending.length;
+    $("#org-pending").replaceChildren(...pending);
+  }
+  $("#org-new").hidden = !me.user?.is_platform_admin;
+}
+
+async function sendInvite() {
+  const email = $("#org-invite-email").value.trim();
+  const role = $("#org-invite-role").value;
+  if (!email) { $("#org-invite-email").focus(); throw new Error("Enter the email address to invite."); }
+  const pw = await askPassword(`Invite ${email} as ${ROLE_LABEL[role].toLowerCase()}?`);
+  if (pw == null) return;
+  const res = await api("POST", `/api/orgs/${state.me.org.id}/invitations`, { email, role, password: pw }, "");
+  const link = location.origin + res.path;
+  $("#org-invite-link").replaceChildren(
+    h("p", {}, `Send ${email} this link. Dash doesn't email it.`),
+    copyBlock(link, "Invitation link copied", { pre: true }),
+    h("p", { class: "hint" }, `Whoever opens it can join as ${ROLE_LABEL[role].toLowerCase()}, with an account they have or a new one, so share it only with them. It works once, for 7 days; inviting the same address again replaces it.`));
+  $("#org-invite-link").hidden = false;
+  $("#org-invite-email").value = "";
+  await renderOrg();
+}
+
+async function newOrg() {
+  const name = await ask({ title: "New organization", body: "You become its owner and can invite people to it.", input: true, placeholder: "Name", ok: "Create" });
+  if (!name) return;
+  const o = await api("POST", "/api/orgs", { name }, "");
+  toast(`${o.name} created`, { tone: "ok" });
+  await switchOrg(o);
+}
 
 async function openConnector() {
   const c = await api("GET", "/api/connector");

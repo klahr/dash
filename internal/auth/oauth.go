@@ -62,17 +62,24 @@ type oauthClient struct {
 
 type authCode struct {
 	client, redirectURI, challenge string
+	user                           int64
 	expires                        time.Time
 }
 
+// oauthToken is good while its user still belongs to an org and hasn't
+// changed password since Issued.
 type oauthToken struct {
 	Client  string    `json:"client"`
+	User    int64     `json:"user"`
+	Issued  time.Time `json:"issued"`
 	Refresh bool      `json:"refresh,omitempty"`
 	Expires time.Time `json:"expires"`
 }
 
 type oauthFile struct {
-	Account string                  `json:"account"` // hash of the credentials, as in sessionFile
+	// Account is set in files from before users: a hash of the single
+	// account's credentials, whose tokens then had no User.
+	Account string                  `json:"account,omitempty"`
 	Clients map[string]*oauthClient `json:"clients"`
 	Tokens  map[string]oauthToken   `json:"tokens"`
 }
@@ -145,15 +152,19 @@ func (o *OAuth) Keep(path string) error {
 		return err
 	}
 	var f oauthFile
-	if json.Unmarshal(b, &f) != nil || f.Account != o.a.account() {
+	if json.Unmarshal(b, &f) != nil {
 		return nil
 	}
 	for id, c := range f.Clients {
 		o.clients[id] = c
 	}
 	now := o.a.now()
+	legacy, isLegacy := o.a.legacyUser(f.Account) // tokens from before users belong to the env account
 	for k, t := range f.Tokens {
-		if now.Before(t.Expires) && o.clients[t.Client] != nil {
+		if t.User == 0 && isLegacy {
+			t.User, t.Issued = legacy, now
+		}
+		if t.User != 0 && now.Before(t.Expires) && o.clients[t.Client] != nil {
 			o.tokens[k] = t
 		}
 	}
@@ -164,7 +175,7 @@ func (o *OAuth) saveLocked() {
 	if o.store == "" {
 		return
 	}
-	b, _ := json.Marshal(oauthFile{Account: o.a.account(), Clients: o.clients, Tokens: o.tokens})
+	b, _ := json.Marshal(oauthFile{Clients: o.clients, Tokens: o.tokens})
 	tmp := o.store + ".tmp"
 	if os.WriteFile(tmp, b, 0o600) == nil {
 		_ = os.Rename(tmp, o.store)
@@ -207,7 +218,7 @@ func (o *OAuth) valid(tok string) bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	t, ok := o.tokens[sessionKey(tok)]
-	return ok && !t.Refresh && o.a.now().Before(t.Expires)
+	return ok && !t.Refresh && o.a.now().Before(t.Expires) && o.a.acc.Active(t.User, t.Issued)
 }
 
 // ---- metadata ----
@@ -428,14 +439,24 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 		fail("access_denied", "the user declined")
 		return
 	}
-	switch err := o.a.attempt(o.a.clientIP(r), r.PostForm.Get("username"), r.PostForm.Get("password")); err {
-	case errLockedOut:
+	u, err := o.a.attempt(o.a.clientIP(r), strings.TrimSpace(r.PostForm.Get("username")), r.PostForm.Get("password"))
+	switch {
+	case errors.Is(err, errLockedOut):
 		q.Error = err.Error()
 		o.consent(w, http.StatusTooManyRequests, q)
 		return
-	case errBadLogin:
+	case errors.Is(err, errBadLogin):
 		q.Error = err.Error()
 		o.consent(w, http.StatusUnauthorized, q)
+		return
+	case err != nil:
+		q.Error = "sign-in failed"
+		o.consent(w, http.StatusInternalServerError, q)
+		return
+	}
+	if !o.a.acc.Active(u.ID, o.a.now()) {
+		q.Error = "your account isn't a member of any organization"
+		o.consent(w, http.StatusForbidden, q)
 		return
 	}
 	code := randomToken()
@@ -446,7 +467,7 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 			delete(o.codes, k)
 		}
 	}
-	o.codes[sessionKey(code)] = authCode{client: q.ClientID, redirectURI: q.RedirectURI, challenge: q.Challenge, expires: now.Add(codeTTL)}
+	o.codes[sessionKey(code)] = authCode{client: q.ClientID, redirectURI: q.RedirectURI, challenge: q.Challenge, user: u.ID, expires: now.Add(codeTTL)}
 	o.mu.Unlock()
 	reply(url.Values{"code": {code}})
 }
@@ -516,6 +537,7 @@ func (o *OAuth) token(w http.ResponseWriter, r *http.Request) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	now := o.a.now()
+	var user int64
 	switch f.Get("grant_type") {
 	case "authorization_code":
 		k := sessionKey(f.Get("code"))
@@ -529,6 +551,7 @@ func (o *OAuth) token(w http.ResponseWriter, r *http.Request) {
 			oauthErr(w, http.StatusBadRequest, "invalid_grant", "code_verifier does not match")
 			return
 		}
+		user = code.user
 	case "refresh_token":
 		k := sessionKey(f.Get("refresh_token"))
 		t, ok := o.tokens[k]
@@ -537,6 +560,12 @@ func (o *OAuth) token(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		delete(o.tokens, k) // rotation: each refresh token works once
+		if !o.a.acc.Active(t.User, t.Issued) {
+			o.saveLocked()
+			oauthErr(w, http.StatusBadRequest, "invalid_grant", "the account was signed out")
+			return
+		}
+		user = t.User
 	default:
 		oauthErr(w, http.StatusBadRequest, "unsupported_grant_type", "use authorization_code or refresh_token")
 		return
@@ -548,8 +577,8 @@ func (o *OAuth) token(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	access, refresh := randomToken(), randomToken()
-	o.tokens[sessionKey(access)] = oauthToken{Client: id, Expires: now.Add(accessTTL)}
-	o.tokens[sessionKey(refresh)] = oauthToken{Client: id, Refresh: true, Expires: now.Add(refreshTTL)}
+	o.tokens[sessionKey(access)] = oauthToken{Client: id, User: user, Issued: now, Expires: now.Add(accessTTL)}
+	o.tokens[sessionKey(refresh)] = oauthToken{Client: id, User: user, Issued: now, Refresh: true, Expires: now.Add(refreshTTL)}
 	o.saveLocked()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"access_token":  access,

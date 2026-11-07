@@ -12,9 +12,11 @@ document.getElementById("login").addEventListener("submit", async (e) => {
       body: JSON.stringify({ username: form.username.value, password: form.password.value }),
     });
     if (res.ok) {
-      // Only back to a live preview: anything else could be an open redirect.
+      // Only back to a live preview or an invitation link: anything else
+      // could be an open redirect.
       const next = new URLSearchParams(location.search).get("next") || "";
-      location.replace(/^\/preview\/[a-z0-9-]+(\?|$)/.test(next) ? next : "/");
+      const ok = /^\/preview\/[a-z0-9-]+(\?|$)/.test(next) || /^\/invite\.html#[A-Za-z0-9_-]+$/.test(next);
+      location.replace(ok ? next : "/");
       return;
     }
     const data = await res.json().catch(() => ({}));

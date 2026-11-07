@@ -93,12 +93,9 @@ func (s *Server) mux() *http.ServeMux {
 func (s *Server) buildMux() *http.ServeMux {
 	mux := http.NewServeMux()
 
-	// Auth (the middleware below lets /api/login through without a session)
-	mux.HandleFunc("POST /api/login", s.Auth.Login)
-	mux.HandleFunc("POST /api/logout", s.Auth.Logout)
-	mux.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": s.Auth.Username()})
-	})
+	// Sign-in, users, orgs and invitations (the middleware lets /api/login
+	// and the invitation-link calls through without a session)
+	s.Auth.Routes(mux)
 
 	// Computers: this one plus peers, whose API is forwarded under /peer/{name}/
 	mux.HandleFunc("GET /api/machines", func(w http.ResponseWriter, r *http.Request) {

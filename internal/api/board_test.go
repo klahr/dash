@@ -29,15 +29,16 @@ func (e *events) Publish(ev model.Event) { e.mu.Lock(); e.evs = append(e.evs, ev
 
 func boardServer(t *testing.T) (*Server, *events, model.Project) {
 	t.Helper()
-	a, err := auth.New("u", "p")
-	if err != nil {
-		t.Fatal(err)
-	}
 	evs := &events{}
 	st, err := store.Open(filepath.Join(t.TempDir(), "dash.db"), evs)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { st.Close() })
+	if err := st.Accounts().Bootstrap("u", "p"); err != nil {
+		t.Fatal(err)
+	}
+	a := auth.New(st.Accounts())
 	if _, err := st.CreateProject(model.Project{Name: "other"}); err != nil {
 		t.Fatal(err)
 	}

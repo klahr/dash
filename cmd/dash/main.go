@@ -113,11 +113,22 @@ func main() {
 		// reaches it through the tunnel.
 		user, pass = "runner", rand.Text()
 	}
-	authn, err := auth.New(user, pass)
+	events := hub.New()
+	storeEvents := &teePublisher{Publisher: events}
+	st, err := store.Open(filepath.Join(*dataDir, "dash.db"), storeEvents)
 	if err != nil {
-		slog.Error("auth", "err", err) // refuse to run open: Dash executes commands
+		slog.Error("open store", "err", err)
 		os.Exit(1)
 	}
+	defer st.Close()
+	// The first start makes DASH_USERNAME / DASH_PASSWORD the first user;
+	// later starts keep that user's name and password in step with them.
+	if err := st.Accounts().Bootstrap(user, pass); err != nil {
+		slog.Error("accounts", "err", err) // refuse to run open: Dash executes commands
+		os.Exit(1)
+	}
+	authn := auth.New(st.Accounts())
+	authn.Legacy(user, pass)
 	authn.TrustProxy, hub.TrustProxy = *trustProxy, *trustProxy
 	// A shared secret lets the computers in one dashboard call each other.
 	peerToken := os.Getenv("DASH_PEER_TOKEN")
@@ -137,8 +148,8 @@ func main() {
 		os.Exit(1)
 	}
 	authn.PeerToken = peerToken
-	if err := authn.KeepSessions(filepath.Join(*dataDir, "sessions.json")); err != nil {
-		slog.Warn("read sessions", "err", err)
+	if err := authn.ImportSessions(filepath.Join(*dataDir, "sessions.json")); err != nil {
+		slog.Warn("import sessions.json", "err", err)
 	}
 	if *publicURL == "" {
 		*publicURL = os.Getenv("DASH_PUBLIC_URL")
@@ -177,14 +188,6 @@ func main() {
 	defer stop()
 
 	// ---- services ----
-	events := hub.New()
-	storeEvents := &teePublisher{Publisher: events}
-	st, err := store.Open(filepath.Join(*dataDir, "dash.db"), storeEvents)
-	if err != nil {
-		slog.Error("open store", "err", err)
-		os.Exit(1)
-	}
-	defer st.Close()
 	git := gitops.New(events)
 	git.SignCommits = *signCommits
 	procs := runner.NewManager(events)

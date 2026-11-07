@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,19 +10,67 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/klahr/dash/internal/store"
 )
 
-func newServer(t *testing.T) (*Auth, http.Handler) {
+// openAuth opens (or reopens, "restarting") the database at path with
+// username/password as the env account, the way main does.
+func openAuth(t *testing.T, path, username, password string) *Auth {
 	t.Helper()
-	a, err := New("admin", "s3cret")
+	st, err := store.Open(path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { st.Close() })
+	if err := st.Accounts().Bootstrap(username, password); err != nil {
+		t.Fatal(err)
+	}
+	a := New(st.Accounts())
+	a.Legacy(username, password)
+	return a
+}
+
+// newAuth is an Auth over a new database whose first user is username.
+func newAuth(t *testing.T, username, password string) *Auth {
+	t.Helper()
+	return openAuth(t, filepath.Join(t.TempDir(), "dash.db"), username, password)
+}
+
+func serve(a *Auth) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/login", a.Login)
-	mux.HandleFunc("POST /api/logout", a.Logout)
+	a.Routes(mux)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("private")) })
-	return a, a.Middleware(mux)
+	return a.Middleware(mux)
+}
+
+func newServer(t *testing.T) (*Auth, http.Handler) {
+	t.Helper()
+	a := newAuth(t, "admin", "s3cret")
+	return a, serve(a)
+}
+
+// signedIn is a request from the env user's session, for calling methods
+// that need an identity directly.
+func signedIn(t *testing.T, a *Auth, r *http.Request) *http.Request {
+	t.Helper()
+	u, err := a.acc.EnvUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms, _ := a.acc.Memberships(u.ID)
+	id := &Identity{Session: store.Session{User: u}}
+	if len(ms) > 0 {
+		id.Org = &ms[0]
+	}
+	return r.WithContext(withIdentity(r.Context(), id))
+}
+
+func decode(t *testing.T, w *httptest.ResponseRecorder, v any) {
+	t.Helper()
+	if err := json.Unmarshal(w.Body.Bytes(), v); err != nil {
+		t.Fatalf("decode %d %s: %v", w.Code, w.Body, err)
+	}
 }
 
 func do(h http.Handler, method, path, body string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
@@ -46,12 +95,16 @@ func sessionCookie(t *testing.T, w *httptest.ResponseRecorder) *http.Cookie {
 	return nil
 }
 
-func TestNewRequiresCredentials(t *testing.T) {
-	if _, err := New("", "x"); err == nil {
-		t.Fatal("empty username accepted")
+func TestFirstStartNeedsCredentials(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "dash.db"), nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := New("x", ""); err == nil {
-		t.Fatal("empty password accepted")
+	defer st.Close()
+	for _, c := range [][2]string{{"", "x"}, {"x", ""}} {
+		if err := st.Accounts().Bootstrap(c[0], c[1]); err != store.ErrNoAccount {
+			t.Fatalf("Bootstrap(%q, %q) = %v, want ErrNoAccount", c[0], c[1], err)
+		}
 	}
 }
 
@@ -117,7 +170,7 @@ func TestLockout(t *testing.T) {
 }
 
 func TestLockoutParallel(t *testing.T) {
-	a, _ := New("admin", "s3cret")
+	a := newAuth(t, "admin", "s3cret")
 	const n = 4 * maxFailures
 	errs := make(chan error, n)
 	var wg sync.WaitGroup
@@ -125,7 +178,8 @@ func TestLockoutParallel(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs <- a.attempt("10.0.0.1", "admin", "nope")
+			_, err := a.attempt("10.0.0.1", "admin", "nope")
+			errs <- err
 		}()
 	}
 	wg.Wait()
@@ -142,8 +196,8 @@ func TestLockoutParallel(t *testing.T) {
 }
 
 func TestConfirmPasswordSuccessDoesNotCount(t *testing.T) {
-	a, _ := New("u", "p")
-	r := httptest.NewRequest("DELETE", "/api/projects/x", nil)
+	a := newAuth(t, "u", "p")
+	r := signedIn(t, a, httptest.NewRequest("DELETE", "/api/projects/x", nil))
 	for range 2 * maxFailures {
 		if err := a.ConfirmPassword(r, "p"); err != nil {
 			t.Fatalf("right password: %v", err)
@@ -200,34 +254,71 @@ func TestTrustProxy(t *testing.T) {
 }
 
 func TestSessionsSurviveRestart(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sessions.json")
-	a1, h1 := newServer(t)
-	if err := a1.KeepSessions(path); err != nil {
-		t.Fatal(err)
-	}
+	path := filepath.Join(t.TempDir(), "dash.db")
+	h1 := serve(openAuth(t, path, "admin", "s3cret"))
 	c := sessionCookie(t, do(h1, "POST", "/api/login", `{"username":"admin","password":"s3cret"}`))
 	if b, _ := os.ReadFile(path); strings.Contains(string(b), c.Value) {
-		t.Fatal("the sessions file must not contain usable tokens")
+		t.Fatal("the database must not contain usable session tokens")
 	}
 
-	a2, h2 := newServer(t) // "restarted"
-	if err := a2.KeepSessions(path); err != nil {
-		t.Fatal(err)
-	}
+	h2 := serve(openAuth(t, path, "admin", "s3cret")) // "restarted"
 	if w := do(h2, "GET", "/api/projects", "", c); w.Code != http.StatusOK {
 		t.Fatalf("session should survive a restart, got %d", w.Code)
 	}
-	a3, _ := New("admin", "new-password") // credentials changed: old sessions are dropped
-	_ = a3.KeepSessions(path)
-	if len(a3.sessions) != 0 {
-		t.Fatal("sessions must not survive a password change")
+	// DASH_PASSWORD changed: the env account's sessions are signed out, and
+	// the new password is the one that works.
+	h3 := serve(openAuth(t, path, "admin", "new-password"))
+	if w := do(h3, "GET", "/api/projects", "", c); w.Code != http.StatusUnauthorized {
+		t.Fatalf("session after a password change: want 401, got %d", w.Code)
+	}
+	if w := do(h3, "POST", "/api/login", `{"username":"admin","password":"s3cret"}`); w.Code != http.StatusUnauthorized {
+		t.Fatalf("old password: want 401, got %d", w.Code)
+	}
+	if w := do(h3, "POST", "/api/login", `{"username":"admin","password":"new-password"}`); w.Code != http.StatusOK {
+		t.Fatalf("new password: want 200, got %d", w.Code)
+	}
+}
+
+// Sessions from sessions.json (Dash before users) carry over to the env
+// account, if they were made for the same credentials.
+func TestImportLegacySessions(t *testing.T) {
+	dir := t.TempDir()
+	key := sessionKey("old-cookie")
+	write := func(account string) string {
+		p := filepath.Join(dir, "sessions.json")
+		b, _ := json.Marshal(map[string]any{"account": account, "sessions": map[string]any{
+			key: map[string]any{"expires": time.Now().Add(time.Hour)}}})
+		os.WriteFile(p, b, 0o600)
+		return p
+	}
+	a := newAuth(t, "admin", "s3cret")
+	stale := newAuth(t, "admin", "other") // its legacy hash is of other credentials
+	if err := a.ImportSessions(write(stale.legacy)); err != nil {
+		t.Fatal(err)
+	}
+	c := &http.Cookie{Name: CookieName, Value: "old-cookie"}
+	if w := do(serve(a), "GET", "/api/projects", "", c); w.Code != http.StatusUnauthorized {
+		t.Fatalf("session of other credentials: want 401, got %d", w.Code)
+	}
+	p := write(a.legacy)
+	if err := a.ImportSessions(p); err != nil {
+		t.Fatal(err)
+	}
+	if w := do(serve(a), "GET", "/api/projects", "", c); w.Code != http.StatusOK {
+		t.Fatalf("imported session: want 200, got %d", w.Code)
+	}
+	if _, err := os.Stat(p + ".imported"); err != nil {
+		t.Fatalf("sessions.json not renamed: %v", err)
 	}
 }
 
 func TestConfirmPassword(t *testing.T) {
-	a, _ := New("u", "p")
+	a := newAuth(t, "u", "p")
 	a.PeerToken = "peer-secret"
-	r := httptest.NewRequest("DELETE", "/api/projects/x", nil)
+	r := signedIn(t, a, httptest.NewRequest("DELETE", "/api/projects/x", nil))
+	if err := a.ConfirmPassword(httptest.NewRequest("DELETE", "/api/projects/x", nil), "p"); err != ErrBadPassword {
+		t.Fatalf("no signed-in user: %v", err)
+	}
 	if err := a.ConfirmPassword(r, "p"); err != nil {
 		t.Fatalf("right password: %v", err)
 	}
