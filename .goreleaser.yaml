@@ -1,0 +1,52 @@
+# Release builds of Dash: run by .github/workflows/release.yml on a v* tag.
+# Check locally with `goreleaser check`; try a build with
+# `goreleaser release --snapshot --clean` (output in dist/).
+version: 2
+
+project_name: dash
+
+builds:
+  - &build
+    id: dash
+    main: ./cmd/dash
+    binary: dash
+    env:
+      - CGO_ENABLED=0 # the SQLite driver is pure Go
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X github.com/klahr/dash/internal/buildinfo.Version={{ .Tag }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+  - <<: *build
+    id: dash-tui
+    main: ./cmd/dash-tui
+    binary: dash-tui
+  - <<: *build
+    id: dash-mcp
+    main: ./cmd/dash-mcp
+    binary: dash-mcp
+
+archives:
+  - formats: [tar.gz]
+    # dash_1.2.0_linux_amd64.tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - .env.example
+      - deploy/dash.service
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  use: github
+  sort: asc
+
+release:
+  github:
+    owner: klahr
+    name: dash
+  prerelease: auto

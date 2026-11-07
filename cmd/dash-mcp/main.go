@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/tui"
 )
@@ -17,7 +18,12 @@ import (
 func main() {
 	server := flag.String("server", envOr("DASH_SERVER", "http://127.0.0.1:7788"), "Dash server URL (or $DASH_SERVER)")
 	envFile := flag.String("env", ".env", "file with DASH_USERNAME / DASH_PASSWORD")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("dash-mcp", buildinfo.Version)
+		return
+	}
 
 	if err := auth.LoadDotEnv(*envFile); err != nil {
 		fail(err)

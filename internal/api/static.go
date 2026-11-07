@@ -22,6 +22,9 @@ var (
 // version identifies the frontend build: a hash of every static file. The
 // page carries the version it was loaded with and asks /api/version now and
 // then, so an installed app notices an update instead of running an old copy.
+// It is not the release (buildinfo.Version, also in /api/version): a build
+// from source is always "dev", and the version doubles as every static
+// file's ETag, so it must change whenever a file does.
 func (s *Server) version() string {
 	versionOnce.Do(func() {
 		h := sha256.New()

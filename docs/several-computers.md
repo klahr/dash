@@ -10,7 +10,8 @@ see [Deploy the hub](deploy.md).
 
 1. In the hub's dashboard, open the account menu → **Runners** → **Add a runner**. It shows a
    one-time code (valid for 10 minutes) and the command to run.
-2. On the other computer, from its Dash checkout (it needs `claude` logged in, like any Dash):
+2. On the other computer, from its Dash directory (a [release download](releases.md) needs no
+   Go or checkout; it needs `claude` logged in, like any Dash):
 
    ```sh
    ./bin/dash runner --server https://dash.example.com --code ABCD-EFGH

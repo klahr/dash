@@ -19,6 +19,7 @@ import (
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/ci"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
@@ -274,7 +275,7 @@ func (s *Server) buildMux() *http.ServeMux {
 
 	// Frontend
 	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"version": s.version()})
+		writeJSON(w, http.StatusOK, map[string]string{"version": s.version(), "release": buildinfo.Version})
 	})
 	mux.Handle("GET /", s.static())
 	return mux

@@ -5,8 +5,8 @@ merge them one at a time.
 
 ## Requirements
 
-- **Go 1.27.3 or newer** (see [`go.mod`](go.mod))
 - **git**
+- **Go 1.27.3 or newer** (see [`go.mod`](go.mod)), only to build from source
 - **[Claude Code](https://claude.com/claude-code)** (`claude`), installed and logged in. Dash runs
   it as you, so run `claude` once in a terminal first and sign in.
 - Optional: **[`gh`](https://cli.github.com)**, logged in, to create GitHub repositories and open
@@ -14,21 +14,38 @@ merge them one at a time.
 
 ## Quick start
 
+Download a prebuilt release (Linux and macOS, amd64 and arm64; no Go needed). Pick the
+version and platform from the [releases page](https://github.com/klahr/dash/releases):
+
+```sh
+VERSION=1.2.0 OS=linux ARCH=amd64   # OS: linux or darwin, ARCH: amd64 or arm64
+curl -fLO "https://github.com/klahr/dash/releases/download/v$VERSION/dash_${VERSION}_${OS}_${ARCH}.tar.gz"
+curl -fLO "https://github.com/klahr/dash/releases/download/v$VERSION/checksums.txt"
+sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 --ignore-missing -c checksums.txt
+mkdir dash && tar -xzf "dash_${VERSION}_${OS}_${ARCH}.tar.gz" -C dash
+cd dash && mkdir bin && mv dash dash-tui dash-mcp bin/
+cp .env.example .env
+```
+
+Or build from source:
+
 ```sh
 git clone https://github.com/klahr/dash.git
 cd dash
 cp .env.example .env
+go build -o bin/dash ./cmd/dash
 ```
+
+Either way you end up with `./bin/dash`, which the rest of this README and the docs use.
 
 Edit `.env` and set `DASH_USERNAME` and `DASH_PASSWORD` (the example's `admin` / `change-me`
 are placeholders: change the password). On first start they become the first account, and
 Dash refuses to start without them, because it runs commands on your computer. Optionally set `DASH_PROJECTS` to where new projects should be created
 (the default is `~/dash-projects`; the `-projects` flag does the same).
 
-Build and run:
+Run it:
 
 ```sh
-go build -o bin/dash ./cmd/dash
 ./bin/dash
 ```
 
@@ -37,11 +54,8 @@ Open <http://127.0.0.1:7788> and sign in with the `DASH_USERNAME` and `DASH_PASS
 [Users and organizations](docs/users.md)). Dash listens only on `127.0.0.1:7788` by default; to change that, see `-addr` in
 `./bin/dash -h` (and [Deploy the hub](docs/deploy.md) before exposing it).
 
-Prefer the terminal? There's a terminal client too:
-
-```sh
-go build -o bin/dash-tui ./cmd/dash-tui && ./bin/dash-tui
-```
+Prefer the terminal? There's a terminal client too: `./bin/dash-tui` (it's in the release
+archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 
 ## Your first task
 
@@ -86,6 +100,7 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 - [Several computers](docs/several-computers.md)
 - [Use Dash from your phone](docs/phone.md)
 - [Run as a service](docs/service.md)
+- [Releases](docs/releases.md): prebuilt binaries, `dash version`, cutting a release
 
 All flags: `./bin/dash -h`.
 

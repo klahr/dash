@@ -12,6 +12,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/tui"
 )
 
@@ -20,7 +21,12 @@ func main() {
 	envFile := flag.String("env", ".env", "file with DASH_USERNAME / DASH_PASSWORD")
 	project := flag.String("project", "", "project name or id to open")
 	bell := flag.Bool("bell", true, "ring the terminal bell for reviews, failures and permission requests")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("dash-tui", buildinfo.Version)
+		return
+	}
 
 	if err := auth.LoadDotEnv(*envFile); err != nil {
 		fail(err)

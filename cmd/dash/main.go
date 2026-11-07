@@ -21,6 +21,7 @@ import (
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/api"
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/ci"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
@@ -42,6 +43,10 @@ func main() {
 	// `dash runner --server https://hub --code XXXX-XXXX`: this computer's
 	// projects show in the hub's dashboard, over a connection it opens itself.
 	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "version" {
+		fmt.Println("dash", buildinfo.Version)
+		return
+	}
 	if len(args) > 0 && args[0] == "reset-2fa" {
 		os.Exit(resetTwoFactor(args[1:]))
 	}
@@ -50,6 +55,7 @@ func main() {
 		args = args[1:]
 	}
 	home, _ := os.UserHomeDir()
+	showVersion := flag.Bool("version", false, "print the version and exit (also: dash version)")
 	addr := flag.String("addr", "127.0.0.1:7788", "listen address; to reach Dash from other devices use HTTPS (-tls-cert, or a proxy with -trust-proxy)")
 	tlsCert := flag.String("tls-cert", "", "serve HTTPS with this certificate (PEM), e.g. from certbot or `tailscale cert`")
 	tlsKey := flag.String("tls-key", "", "private key for -tls-cert")
@@ -101,10 +107,15 @@ func main() {
 		hubCommands = flag.Bool("hub-commands", false, "let the hub set the projects' run/test/deploy/setup commands and run ad-hoc commands; off = only commands set on this computer run")
 	}
 	_ = flag.CommandLine.Parse(args)
+	if *showVersion {
+		fmt.Println("dash", buildinfo.Version)
+		return
+	}
 	addrSet := false
 	flag.Visit(func(f *flag.Flag) { addrSet = addrSet || f.Name == "addr" })
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	slog.Info("dash", "version", buildinfo.Version)
 
 	if err := auth.LoadDotEnv(*envFile); err != nil {
 		slog.Error("read env file", "path", *envFile, "err", err)
