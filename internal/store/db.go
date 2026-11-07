@@ -1,0 +1,376 @@
+package store
+
+import (
+	"database/sql"
+	"embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/klahr/dash/internal/model"
+
+	_ "modernc.org/sqlite" // pure Go: no cgo, one binary
+)
+
+// LegacyFile is the JSON file Dash kept its state in before SQLite. Open
+// imports it once from the database's directory.
+const LegacyFile = "state.json"
+
+//go:embed migrations/*.sql
+var migrationFS embed.FS
+
+// Chat kinds in chat_messages.
+const (
+	chatMain    = "main"
+	chatTodo    = "todo"
+	chatProject = "project"
+)
+
+func openDB(path string) (*sql.DB, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	// Pragmas in the DSN apply to every connection the pool opens. Immediate
+	// transactions take the write lock up front, so a busy database waits
+	// (busy_timeout) instead of failing halfway through a transaction.
+	dsn := "file:" + path + "?_txlock=immediate" +
+		"&_pragma=busy_timeout(5000)" +
+		"&_pragma=journal_mode(WAL)" +
+		"&_pragma=synchronous(NORMAL)"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	// The store serializes its writes and reads from memory; one connection
+	// is all it needs and keeps SQLite from contending with itself.
+	db.SetMaxOpenConns(1)
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+type migration struct {
+	version int
+	name    string
+	sql     string
+}
+
+func migrations() ([]migration, error) {
+	entries, err := fs.ReadDir(migrationFS, "migrations")
+	if err != nil {
+		return nil, err
+	}
+	var out []migration
+	for _, e := range entries {
+		num, _, ok := strings.Cut(e.Name(), "_")
+		v, err := strconv.Atoi(num)
+		if !ok || err != nil || v <= 0 {
+			return nil, fmt.Errorf("migration %q: name must start with a version, like 0001_", e.Name())
+		}
+		b, err := migrationFS.ReadFile("migrations/" + e.Name())
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, migration{version: v, name: e.Name(), sql: string(b)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].version < out[j].version })
+	for i := range out {
+		if out[i].version != i+1 {
+			return nil, fmt.Errorf("migration %q: versions must count up from 1 without gaps", out[i].name)
+		}
+	}
+	return out, nil
+}
+
+// migrate brings the schema up to date, one transaction per migration. The
+// schema version is SQLite's user_version.
+func migrate(db *sql.DB) error {
+	ms, err := migrations()
+	if err != nil {
+		return err
+	}
+	var cur int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&cur); err != nil {
+		return err
+	}
+	if cur > len(ms) {
+		return fmt.Errorf("database schema is version %d, newer than this Dash knows (%d)", cur, len(ms))
+	}
+	for _, m := range ms[cur:] {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(m.sql); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("migration %s: %w", m.name, err)
+		}
+		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", m.version)); err != nil {
+			tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("migration %s: %w", m.name, err)
+		}
+	}
+	return nil
+}
+
+var dataTables = []string{"projects", "todos", "issues", "scan_runs", "scan_settings", "scan_templates", "chat_messages"}
+
+func dbEmpty(db *sql.DB) (bool, error) {
+	for _, t := range dataTables {
+		var n int
+		if err := db.QueryRow("SELECT EXISTS (SELECT 1 FROM " + t + ")").Scan(&n); err != nil {
+			return false, err
+		}
+		if n != 0 {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// importLegacy copies a state.json into an empty database in one transaction
+// and renames the file to state.json.imported. No file, or a database that
+// already has data, is left alone.
+func importLegacy(db *sql.DB, legacy string) error {
+	b, err := os.ReadFile(legacy)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	empty, err := dbEmpty(db)
+	if err != nil || !empty {
+		return err
+	}
+	var data snapshot
+	if len(b) > 0 {
+		if err := json.Unmarshal(b, &data); err != nil {
+			return fmt.Errorf("import %s: %w", legacy, err)
+		}
+	}
+	err = inTx(db, func(tx *sql.Tx) error {
+		for _, p := range data.Projects {
+			if err := putProject(tx, p); err != nil {
+				return err
+			}
+		}
+		for _, t := range data.Todos {
+			if err := putTodo(tx, t); err != nil {
+				return err
+			}
+		}
+		for _, is := range data.Issues {
+			if err := putIssue(tx, is); err != nil {
+				return err
+			}
+		}
+		for _, r := range data.ScanRuns {
+			if err := putScanRun(tx, r); err != nil {
+				return err
+			}
+		}
+		for k, st := range data.ScanSettings {
+			if st.ProjectID == "" || st.Scan == "" { // the key says, if an old file didn't
+				st.ProjectID, st.Scan, _ = strings.Cut(k, "/")
+			}
+			if err := putScanSetting(tx, st); err != nil {
+				return err
+			}
+		}
+		for k, t := range data.ScanTemplates {
+			if t.ProjectID == "" || t.Name == "" {
+				t.ProjectID, t.Name, _ = strings.Cut(k, "/")
+			}
+			if err := putScanTemplate(tx, t); err != nil {
+				return err
+			}
+		}
+		if err := setChat(tx, chatMain, "", data.Chat); err != nil {
+			return err
+		}
+		for id, msgs := range data.TodoChats {
+			if err := setChat(tx, chatTodo, id, msgs); err != nil {
+				return err
+			}
+		}
+		for id, msgs := range data.ProjectChats {
+			if err := setChat(tx, chatProject, id, msgs); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("import %s: %w", legacy, err)
+	}
+	if err := os.Rename(legacy, legacy+".imported"); err != nil {
+		// The data is in; the database isn't empty any more, so it won't be
+		// imported twice.
+		slog.Warn("imported state.json but could not rename it", "err", err)
+	}
+	slog.Info("imported state.json into the database", "projects", len(data.Projects), "todos", len(data.Todos))
+	return nil
+}
+
+// load reads every record into a snapshot.
+func load(db *sql.DB) (snapshot, error) {
+	data := snapshot{
+		Projects:      map[string]*model.Project{},
+		Todos:         map[string]*model.Todo{},
+		TodoChats:     map[string][]model.ChatMessage{},
+		ProjectChats:  map[string][]model.ChatMessage{},
+		Issues:        map[string]*model.Issue{},
+		ScanRuns:      map[string]*model.ScanRun{},
+		ScanSettings:  map[string]*model.ScanSetting{},
+		ScanTemplates: map[string]*model.ScanTemplate{},
+	}
+	if err := loadRows(db, "SELECT data FROM projects", func(p *model.Project) { data.Projects[p.ID] = p }); err != nil {
+		return data, err
+	}
+	if err := loadRows(db, "SELECT data FROM todos", func(t *model.Todo) { data.Todos[t.ID] = t }); err != nil {
+		return data, err
+	}
+	if err := loadRows(db, "SELECT data FROM issues", func(is *model.Issue) { data.Issues[is.ID] = is }); err != nil {
+		return data, err
+	}
+	if err := loadRows(db, "SELECT data FROM scan_runs", func(r *model.ScanRun) { data.ScanRuns[r.ID] = r }); err != nil {
+		return data, err
+	}
+	if err := loadRows(db, "SELECT data FROM scan_settings", func(st *model.ScanSetting) {
+		data.ScanSettings[scanKey(st.ProjectID, st.Scan)] = st
+	}); err != nil {
+		return data, err
+	}
+	if err := loadRows(db, "SELECT data FROM scan_templates", func(t *model.ScanTemplate) {
+		data.ScanTemplates[scanKey(t.ProjectID, t.Name)] = t
+	}); err != nil {
+		return data, err
+	}
+	rows, err := db.Query("SELECT kind, owner_id, data FROM chat_messages ORDER BY kind, owner_id, seq")
+	if err != nil {
+		return data, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var kind, owner string
+		var raw []byte
+		if err := rows.Scan(&kind, &owner, &raw); err != nil {
+			return data, err
+		}
+		var m model.ChatMessage
+		if err := json.Unmarshal(raw, &m); err != nil {
+			return data, fmt.Errorf("chat message: %w", err)
+		}
+		switch kind {
+		case chatMain:
+			data.Chat = append(data.Chat, m)
+		case chatTodo:
+			data.TodoChats[owner] = append(data.TodoChats[owner], m)
+		case chatProject:
+			data.ProjectChats[owner] = append(data.ProjectChats[owner], m)
+		}
+	}
+	return data, rows.Err()
+}
+
+func loadRows[T any](db *sql.DB, query string, add func(*T)) error {
+	rows, err := db.Query(query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return err
+		}
+		v := new(T)
+		if err := json.Unmarshal(raw, v); err != nil {
+			return fmt.Errorf("%s: %w", query, err)
+		}
+		add(v)
+	}
+	return rows.Err()
+}
+
+func inTx(db *sql.DB, fn func(*sql.Tx) error) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+// ---- row writers ----
+
+func put(tx *sql.Tx, query string, v any, args ...any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(query, append(args, string(b))...)
+	return err
+}
+
+func putProject(tx *sql.Tx, p *model.Project) error {
+	return put(tx, "INSERT OR REPLACE INTO projects (id, data) VALUES (?, ?)", p, p.ID)
+}
+
+func putTodo(tx *sql.Tx, t *model.Todo) error {
+	return put(tx, "INSERT OR REPLACE INTO todos (id, project_id, data) VALUES (?, ?, ?)", t, t.ID, t.ProjectID)
+}
+
+func putIssue(tx *sql.Tx, is *model.Issue) error {
+	return put(tx, "INSERT OR REPLACE INTO issues (id, project_id, data) VALUES (?, ?, ?)", is, is.ID, is.ProjectID)
+}
+
+func putScanRun(tx *sql.Tx, r *model.ScanRun) error {
+	return put(tx, "INSERT OR REPLACE INTO scan_runs (id, project_id, scan, data) VALUES (?, ?, ?, ?)", r, r.ID, r.ProjectID, r.Scan)
+}
+
+func putScanSetting(tx *sql.Tx, st *model.ScanSetting) error {
+	return put(tx, "INSERT OR REPLACE INTO scan_settings (project_id, scan, data) VALUES (?, ?, ?)", st, st.ProjectID, st.Scan)
+}
+
+func putScanTemplate(tx *sql.Tx, t *model.ScanTemplate) error {
+	return put(tx, "INSERT OR REPLACE INTO scan_templates (project_id, name, data) VALUES (?, ?, ?)", t, t.ProjectID, t.Name)
+}
+
+// setChat replaces a conversation (nil or empty clears it).
+func setChat(tx *sql.Tx, kind, owner string, msgs []model.ChatMessage) error {
+	if _, err := tx.Exec("DELETE FROM chat_messages WHERE kind = ? AND owner_id = ?", kind, owner); err != nil {
+		return err
+	}
+	for i, m := range msgs {
+		if err := putChatMessage(tx, kind, owner, i, m); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func putChatMessage(tx *sql.Tx, kind, owner string, seq int, m model.ChatMessage) error {
+	return put(tx, "INSERT OR REPLACE INTO chat_messages (kind, owner_id, seq, data) VALUES (?, ?, ?, ?)", m, kind, owner, seq)
+}
+
+func deleteRow(tx *sql.Tx, table, id string) error {
+	_, err := tx.Exec("DELETE FROM "+table+" WHERE id = ?", id)
+	return err
+}

@@ -34,7 +34,7 @@ func boardServer(t *testing.T) (*Server, *events, model.Project) {
 		t.Fatal(err)
 	}
 	evs := &events{}
-	st, err := store.Open(filepath.Join(t.TempDir(), "state.json"), evs)
+	st, err := store.Open(filepath.Join(t.TempDir(), "dash.db"), evs)
 	if err != nil {
 		t.Fatal(err)
 	}

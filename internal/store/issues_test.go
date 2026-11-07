@@ -10,7 +10,7 @@ import (
 
 func issueStore(t *testing.T) (*Store, model.Project, string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "state.json")
+	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {
 		t.Fatal(err)

@@ -63,7 +63,7 @@ func newHarness(t *testing.T, exe agent.Executor, p model.Project) *harness {
 		t.Skip("git not installed")
 	}
 	dir := t.TempDir()
-	st, err := store.Open(filepath.Join(dir, "state.json"), nopPub{})
+	st, err := store.Open(filepath.Join(dir, "dash.db"), nopPub{})
 	if err != nil {
 		t.Fatal(err)
 	}

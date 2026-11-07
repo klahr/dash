@@ -1,11 +1,15 @@
-// Package store keeps Dash state in memory and snapshots it to a JSON file.
-// It is deliberately simple; swap for SQLite behind the same methods later.
+// Package store keeps Dash state in memory and persists it to SQLite.
+//
+// Reads are served from the in-memory copy under an RWMutex; every mutation
+// changes memory and writes the rows it touched in one transaction while
+// holding the write lock. If the write fails, memory is reloaded from the
+// database so the two never disagree.
 package store
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -69,7 +73,7 @@ type snapshot struct {
 
 type Store struct {
 	mu   sync.RWMutex
-	path string
+	db   *sql.DB
 	pub  Publisher
 	data snapshot
 	// Now, if set, is the clock of scan settings' UpdatedAt, which scan
@@ -83,56 +87,108 @@ func NewID() string {
 	return hex.EncodeToString(b)
 }
 
-// Open loads state from path (if present). Todos that were in progress when
-// Dash stopped are put back in the queue; their worktrees are reused.
+// Open opens (or creates) the SQLite database at path and loads it. On
+// first start, a state.json beside it is imported once. Todos that were in
+// progress when Dash stopped are put back in the queue; their worktrees are
+// reused.
 func Open(path string, pub Publisher) (*Store, error) {
-	s := &Store{path: path, pub: pub, data: snapshot{
-		Projects: map[string]*model.Project{},
-		Todos:    map[string]*model.Todo{},
-	}}
-	b, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	db, err := openDB(path)
+	if err != nil {
 		return nil, err
 	}
-	if len(b) > 0 {
-		if err := json.Unmarshal(b, &s.data); err != nil {
+	s, err := open(db, path, pub)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+func open(db *sql.DB, path string, pub Publisher) (*Store, error) {
+	if err := migrate(db); err != nil {
+		return nil, err
+	}
+	if legacy := filepath.Join(filepath.Dir(path), LegacyFile); legacy != filepath.Clean(path) {
+		if err := importLegacy(db, legacy); err != nil {
 			return nil, err
 		}
 	}
-	for _, p := range s.data.Projects {
-		p.Path = CleanPath(p.Path)
+	data, err := load(db)
+	if err != nil {
+		return nil, err
 	}
-	for _, t := range s.data.Todos {
-		if t.Status == model.StatusInProgress {
-			t.Status = model.StatusQueued
+	s := &Store{db: db, pub: pub, data: data}
+	var projects []*model.Project
+	for _, p := range s.data.Projects {
+		if clean := CleanPath(p.Path); clean != p.Path {
+			p.Path = clean
+			projects = append(projects, p)
 		}
-		t.Reviewing = false // the chat turn died with the old process
+	}
+	var todos []*model.Todo
+	for _, t := range s.data.Todos {
+		if t.Status == model.StatusInProgress || t.Reviewing {
+			if t.Status == model.StatusInProgress {
+				t.Status = model.StatusQueued
+			}
+			t.Reviewing = false // the chat turn died with the old process
+			todos = append(todos, t)
+		}
 		// Merging todos stay merging: their jobs are lost with the old
 		// process, but MergeQueue.Resume queues them again.
 	}
+	var runs []*model.ScanRun
 	for _, r := range s.data.ScanRuns {
 		if r.Status == model.ScanRunning { // the agent died with the old process (a crash or kill -9)
 			now := time.Now()
 			r.Status, r.FinishedAt, r.Activity = model.ScanInterrupted, &now, ""
 			r.Note = "Dash stopped during the scan"
+			runs = append(runs, r)
 		}
 	}
-	return s, s.saveLocked()
+	err = inTx(db, func(tx *sql.Tx) error {
+		for _, p := range projects {
+			if err := putProject(tx, p); err != nil {
+				return err
+			}
+		}
+		for _, t := range todos {
+			if err := putTodo(tx, t); err != nil {
+				return err
+			}
+		}
+		for _, r := range runs {
+			if err := putScanRun(tx, r); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
-func (s *Store) saveLocked() error {
-	b, err := json.MarshalIndent(s.data, "", "  ")
-	if err != nil {
-		return err
+// Close closes the database. The store must not be used afterwards.
+func (s *Store) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.db.Close()
+}
+
+// writeLocked persists a mutation the caller has made in memory: fn writes
+// the rows it changed in one transaction. If that fails, memory is reloaded
+// from the database, undoing the mutation, and the error is returned.
+func (s *Store) writeLocked(fn func(*sql.Tx) error) error {
+	err := inTx(s.db, fn)
+	if err == nil {
+		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
-		return err
+	if data, lerr := load(s.db); lerr == nil {
+		s.data = data
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.path)
+	return err
 }
 
 func (s *Store) emit(t model.EventType, projectID, todoID string, data any) {
@@ -151,7 +207,7 @@ func (s *Store) CreateProject(p model.Project) (model.Project, error) {
 	}
 	p.CreatedAt = time.Now()
 	s.data.Projects[p.ID] = &p
-	if err := s.saveLocked(); err != nil {
+	if err := s.writeLocked(func(tx *sql.Tx) error { return putProject(tx, &p) }); err != nil {
 		return p, err
 	}
 	s.emit(model.EvProjectUpdated, p.ID, "", p)
@@ -192,7 +248,7 @@ func (s *Store) UpdateProject(id string, fn func(*model.Project) error) (model.P
 	}
 	cp.ID = id
 	s.data.Projects[id] = &cp
-	if err := s.saveLocked(); err != nil {
+	if err := s.writeLocked(func(tx *sql.Tx) error { return putProject(tx, &cp) }); err != nil {
 		return cp, err
 	}
 	s.emit(model.EvProjectUpdated, id, "", cp)
@@ -237,7 +293,23 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 	}
 	delete(s.data.Projects, id)
 	delete(s.data.ProjectChats, id)
-	if err := s.saveLocked(); err != nil {
+	err := s.writeLocked(func(tx *sql.Tx) error {
+		for _, t := range todos {
+			if err := setChat(tx, chatTodo, t.ID, nil); err != nil {
+				return err
+			}
+		}
+		for _, table := range []string{"todos", "issues", "scan_runs", "scan_settings", "scan_templates"} {
+			if _, err := tx.Exec("DELETE FROM "+table+" WHERE project_id = ?", id); err != nil {
+				return err
+			}
+		}
+		if err := setChat(tx, chatProject, id, nil); err != nil {
+			return err
+		}
+		return deleteRow(tx, "projects", id)
+	})
+	if err != nil {
 		return todos, err
 	}
 	s.emit(model.EvProjectDeleted, id, "", nil)
@@ -280,7 +352,7 @@ func (s *Store) CreateTodo(t model.Todo) (model.Todo, error) {
 		return t, err
 	}
 	s.data.Todos[t.ID] = &t
-	if err := s.saveLocked(); err != nil {
+	if err := s.writeLocked(func(tx *sql.Tx) error { return putTodo(tx, &t) }); err != nil {
 		return t, err
 	}
 	s.emit(model.EvTodoUpdated, t.ProjectID, t.ID, t)
@@ -353,7 +425,13 @@ func (s *Store) UpdateTodo(id string, fn func(*model.Todo) error) (model.Todo, e
 	if cp.Status == model.StatusMerged && t.Status != model.StatusMerged {
 		resolved = s.resolveIssuesLocked(id)
 	}
-	if err := s.saveLocked(); err != nil {
+	err := s.writeLocked(func(tx *sql.Tx) error {
+		if err := putTodo(tx, &cp); err != nil {
+			return err
+		}
+		return putIssues(tx, resolved)
+	})
+	if err != nil {
 		return cp, err
 	}
 	s.emit(model.EvTodoUpdated, cp.ProjectID, cp.ID, cp)
@@ -401,7 +479,21 @@ func (s *Store) DeleteTodo(id string) (model.Todo, error) {
 			changed = append(changed, &cp)
 		}
 	}
-	if err := s.saveLocked(); err != nil {
+	err := s.writeLocked(func(tx *sql.Tx) error {
+		if err := deleteRow(tx, "todos", id); err != nil {
+			return err
+		}
+		if err := setChat(tx, chatTodo, id, nil); err != nil {
+			return err
+		}
+		for _, o := range changed {
+			if err := putTodo(tx, o); err != nil {
+				return err
+			}
+		}
+		return putIssues(tx, unlinked)
+	})
+	if err != nil {
 		return *t, err
 	}
 	s.emit(model.EvTodoDeleted, t.ProjectID, id, nil)
@@ -483,7 +575,7 @@ func (s *Store) SetChat(msgs []model.ChatMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data.Chat = append([]model.ChatMessage(nil), msgs...)
-	return s.saveLocked()
+	return s.writeLocked(func(tx *sql.Tx) error { return setChat(tx, chatMain, "", msgs) })
 }
 
 func (s *Store) TodoChat(todoID string) []model.ChatMessage {
@@ -507,7 +599,7 @@ func (s *Store) SetTodoChat(todoID string, msgs []model.ChatMessage) error {
 		}
 		s.data.TodoChats[todoID] = append([]model.ChatMessage(nil), msgs...)
 	}
-	return s.saveLocked()
+	return s.writeLocked(func(tx *sql.Tx) error { return setChat(tx, chatTodo, todoID, msgs) })
 }
 
 // AppendTodoChat adds a message to the conversation about a todo.
@@ -521,7 +613,8 @@ func (s *Store) AppendTodoChat(todoID string, msg model.ChatMessage) error {
 		s.data.TodoChats = map[string][]model.ChatMessage{}
 	}
 	s.data.TodoChats[todoID] = append(s.data.TodoChats[todoID], msg)
-	return s.saveLocked()
+	seq := len(s.data.TodoChats[todoID]) - 1
+	return s.writeLocked(func(tx *sql.Tx) error { return putChatMessage(tx, chatTodo, todoID, seq, msg) })
 }
 
 func (s *Store) ProjectChat(projectID string) []model.ChatMessage {
@@ -545,7 +638,7 @@ func (s *Store) SetProjectChat(projectID string, msgs []model.ChatMessage) error
 		}
 		s.data.ProjectChats[projectID] = append([]model.ChatMessage(nil), msgs...)
 	}
-	return s.saveLocked()
+	return s.writeLocked(func(tx *sql.Tx) error { return setChat(tx, chatProject, projectID, msgs) })
 }
 
 // clone copies a todo deeply enough that changing the copy (including the

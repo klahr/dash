@@ -11,7 +11,7 @@ import (
 )
 
 func TestChatSurvivesReopen(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.json")
+	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +38,7 @@ func TestChatSurvivesReopen(t *testing.T) {
 }
 
 func TestTodoChatSurvivesReopenAndGoesWithTodo(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.json")
+	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestTodoChatSurvivesReopenAndGoesWithTodo(t *testing.T) {
 }
 
 func TestReviewingLocksStatusUntilReopen(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.json")
+	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +115,7 @@ func TestReviewingLocksStatusUntilReopen(t *testing.T) {
 }
 
 func TestDependsOnValidationAndDelete(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.json")
+	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -161,9 +161,10 @@ func TestDependsOnValidationAndDelete(t *testing.T) {
 }
 
 func TestOldStateWithoutDependsOnLoads(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.json")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dash.db")
 	old := `{"projects":{"p":{"id":"p","name":"p"}},"todos":{"t":{"id":"t","project_id":"p","title":"t","status":"queued"}}}`
-	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, LegacyFile), []byte(old), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	s, err := Open(path, nil)

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"slices"
@@ -31,7 +32,7 @@ func (s *Store) UpsertIssue(in model.Issue) (model.Issue, model.UpsertResult, er
 	if r == model.UpsertKnown || r == model.UpsertDismissed {
 		return is, r, nil
 	}
-	if err := s.saveLocked(); err != nil {
+	if err := s.writeLocked(func(tx *sql.Tx) error { return putIssue(tx, &is) }); err != nil {
 		return is, r, err
 	}
 	s.emit(model.EvIssueUpdated, is.ProjectID, "", is)
@@ -88,7 +89,7 @@ func (s *Store) UpsertIssueBatch(projectID, source string, in []model.Issue) (mo
 	if len(changed) == 0 {
 		return counts, out, nil
 	}
-	if err := s.saveLocked(); err != nil {
+	if err := s.writeLocked(func(tx *sql.Tx) error { return putIssues(tx, changed) }); err != nil {
 		return counts, out, err
 	}
 	for _, is := range changed {
@@ -221,7 +222,7 @@ func (s *Store) UpdateIssue(id string, fn func(*model.Issue) error) (model.Issue
 	}
 	cp.UpdatedAt = time.Now()
 	s.data.Issues[id] = &cp
-	if err := s.saveLocked(); err != nil {
+	if err := s.writeLocked(func(tx *sql.Tx) error { return putIssue(tx, &cp) }); err != nil {
 		return cp, err
 	}
 	s.emit(model.EvIssueUpdated, cp.ProjectID, "", cp)
@@ -269,7 +270,7 @@ func (s *Store) LinkIssues(ids []string, todoID string) ([]model.Issue, error) {
 		s.data.Issues[id] = &cp
 		out = append(out, cp)
 	}
-	if err := s.saveLocked(); err != nil {
+	if err := s.writeLocked(func(tx *sql.Tx) error { return putIssues(tx, out) }); err != nil {
 		return out, err
 	}
 	for _, is := range out {
@@ -286,7 +287,7 @@ func (s *Store) DeleteIssue(id string) (model.Issue, error) {
 		return model.Issue{}, ErrNotFound
 	}
 	delete(s.data.Issues, id)
-	if err := s.saveLocked(); err != nil {
+	if err := s.writeLocked(func(tx *sql.Tx) error { return deleteRow(tx, "issues", id) }); err != nil {
 		return *is, err
 	}
 	s.emit(model.EvIssueDeleted, is.ProjectID, "", map[string]string{"id": id})
@@ -338,6 +339,15 @@ func (s *Store) emitIssues(issues []model.Issue) {
 	for _, is := range issues {
 		s.emit(model.EvIssueUpdated, is.ProjectID, "", is)
 	}
+}
+
+func putIssues(tx *sql.Tx, issues []model.Issue) error {
+	for i := range issues {
+		if err := putIssue(tx, &issues[i]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func cloneIssue(is model.Issue) model.Issue {

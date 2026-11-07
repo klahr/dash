@@ -22,7 +22,7 @@ func (nopPub) Publish(model.Event) {}
 func newWatcher(t *testing.T, investigate bool) (*Watcher, model.Project, func(string)) {
 	t.Helper()
 	dir := t.TempDir()
-	st, err := store.Open(filepath.Join(dir, "state.json"), nopPub{})
+	st, err := store.Open(filepath.Join(dir, "dash.db"), nopPub{})
 	if err != nil {
 		t.Fatal(err)
 	}

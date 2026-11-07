@@ -120,7 +120,7 @@ func newFixture(t *testing.T, name, src string) *fixture {
 			t.Fatal(err)
 		}
 	}
-	state := filepath.Join(t.TempDir(), "state.json")
+	state := filepath.Join(t.TempDir(), "dash.db")
 	st, err := store.Open(state, nil)
 	if err != nil {
 		t.Fatal(err)

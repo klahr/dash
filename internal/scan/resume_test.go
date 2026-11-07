@@ -85,7 +85,7 @@ func TestShutdownInterruptsUserCancelCancels(t *testing.T) {
 }
 
 func TestStoreMarksStaleRunningInterrupted(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.json")
+	path := filepath.Join(t.TempDir(), "dash.db")
 	st, _ := store.Open(path, nil)
 	p, _ := st.CreateProject(model.Project{Name: "p", Path: t.TempDir()})
 	r, _ := st.CreateScanRun(model.ScanRun{ProjectID: p.ID, Scan: "x", Status: model.ScanRunning, StartedAt: time.Now()})

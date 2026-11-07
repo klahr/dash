@@ -84,7 +84,7 @@ func TestDependentWaitsUntilDependencyIsMerged(t *testing.T) {
 }
 
 func TestDependencyCyclesAreRejected(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "state.json"), nil)
+	st, err := store.Open(filepath.Join(t.TempDir(), "dash.db"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

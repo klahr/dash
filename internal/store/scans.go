@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"slices"
@@ -34,8 +35,19 @@ func (s *Store) CreateScanRun(r model.ScanRun) (model.ScanRun, error) {
 	}
 	cp := cloneRun(r)
 	s.data.ScanRuns[r.ID] = &cp
-	s.pruneScanRunsLocked(r.ProjectID, r.Scan)
-	if err := s.saveLocked(); err != nil {
+	pruned := s.pruneScanRunsLocked(r.ProjectID, r.Scan)
+	err := s.writeLocked(func(tx *sql.Tx) error {
+		if err := putScanRun(tx, &cp); err != nil {
+			return err
+		}
+		for _, id := range pruned {
+			if err := deleteRow(tx, "scan_runs", id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return r, err
 	}
 	s.emit(model.EvScanRun, r.ProjectID, "", r)
@@ -56,7 +68,7 @@ func (s *Store) UpdateScanRun(id string, save bool, fn func(*model.ScanRun)) (mo
 	cp.ID, cp.ProjectID, cp.Scan = old.ID, old.ProjectID, old.Scan
 	s.data.ScanRuns[id] = &cp
 	if save {
-		if err := s.saveLocked(); err != nil {
+		if err := s.writeLocked(func(tx *sql.Tx) error { return putScanRun(tx, &cp) }); err != nil {
 			return cp, err
 		}
 	}
@@ -102,14 +114,18 @@ func (s *Store) LastScanRun(projectID, scan string, keep func(model.ScanRun) boo
 	return model.ScanRun{}, false
 }
 
-// pruneScanRunsLocked forgets all but the newest KeepScanRuns runs of a scan.
-func (s *Store) pruneScanRunsLocked(projectID, scan string) {
+// pruneScanRunsLocked forgets all but the newest KeepScanRuns runs of a scan
+// and returns the ids it forgot.
+func (s *Store) pruneScanRunsLocked(projectID, scan string) []string {
+	var pruned []string
 	runs := s.scanRunsLocked(projectID, scan)
 	for _, r := range runs[min(len(runs), KeepScanRuns):] {
 		if r.Status != model.ScanRunning {
 			delete(s.data.ScanRuns, r.ID)
+			pruned = append(pruned, r.ID)
 		}
 	}
+	return pruned
 }
 
 // ScanSetting is what the user changed about a scan: its schedule and what
@@ -145,7 +161,7 @@ func (s *Store) SetScanSetting(projectID, scan string, fn func(*model.ScanSettin
 		s.data.ScanSettings = map[string]*model.ScanSetting{}
 	}
 	s.data.ScanSettings[k] = &cp
-	if err := s.saveLocked(); err != nil {
+	if err := s.writeLocked(func(tx *sql.Tx) error { return putScanSetting(tx, &cp) }); err != nil {
 		return cp, err
 	}
 	s.emit(model.EvScanSettings, projectID, "", cp)
@@ -232,7 +248,7 @@ func (s *Store) SaveScanTemplate(t model.ScanTemplate, create bool) (model.ScanT
 	}
 	cp := cloneTemplate(t)
 	s.data.ScanTemplates[k] = &cp
-	if err := s.saveLocked(); err != nil {
+	if err := s.writeLocked(func(tx *sql.Tx) error { return putScanTemplate(tx, &cp) }); err != nil {
 		return t, err
 	}
 	s.emit(model.EvScanTemplate, t.ProjectID, "", map[string]any{"name": t.Name})
@@ -253,7 +269,17 @@ func (s *Store) DeleteScanTemplate(projectID, name string, keepSettings bool) er
 	if !keepSettings {
 		delete(s.data.ScanSettings, k)
 	}
-	if err := s.saveLocked(); err != nil {
+	err := s.writeLocked(func(tx *sql.Tx) error {
+		if _, err := tx.Exec("DELETE FROM scan_templates WHERE project_id = ? AND name = ?", projectID, name); err != nil {
+			return err
+		}
+		if keepSettings {
+			return nil
+		}
+		_, err := tx.Exec("DELETE FROM scan_settings WHERE project_id = ? AND scan = ?", projectID, name)
+		return err
+	})
+	if err != nil {
 		return err
 	}
 	s.emit(model.EvScanTemplate, projectID, "", map[string]any{"name": name, "deleted": true})

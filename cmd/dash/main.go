@@ -179,11 +179,12 @@ func main() {
 	// ---- services ----
 	events := hub.New()
 	storeEvents := &teePublisher{Publisher: events}
-	st, err := store.Open(filepath.Join(*dataDir, "state.json"), storeEvents)
+	st, err := store.Open(filepath.Join(*dataDir, "dash.db"), storeEvents)
 	if err != nil {
 		slog.Error("open store", "err", err)
 		os.Exit(1)
 	}
+	defer st.Close()
 	git := gitops.New(events)
 	git.SignCommits = *signCommits
 	procs := runner.NewManager(events)
