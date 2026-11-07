@@ -122,8 +122,14 @@ func (s *Server) findUpload(id string) (model.Attachment, error) {
 func cleanUploadName(name, contentType string) string {
 	name = strings.Trim(unsafeNameRe.ReplaceAllString(filepath.Base(strings.ReplaceAll(name, "\\", "/")), "-"), ".-")
 	if len(name) > 80 {
-		ext := filepath.Ext(name)
-		name = name[:80-len(ext)] + ext
+		// Keep a real extension when cutting the base name. An "extension"
+		// this long is not one we accept, so cut the whole name instead and
+		// let the type check reject it.
+		if ext := filepath.Ext(name); len(ext) <= 16 {
+			name = name[:80-len(ext)] + ext
+		} else {
+			name = name[:80]
+		}
 	}
 	if filepath.Ext(name) == "" {
 		ct, _, _ := mime.ParseMediaType(contentType)

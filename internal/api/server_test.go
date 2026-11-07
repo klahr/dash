@@ -77,4 +77,12 @@ func TestUploadRoundTrip(t *testing.T) {
 	if n := cleanUploadName("", "image/svg+xml"); n != "pasted.svg" {
 		t.Fatalf("pasted svg name: %q", n)
 	}
+	if n := cleanUploadName(strings.Repeat("a", 100)+".png", ""); len(n) != 80 || !strings.HasSuffix(n, ".png") {
+		t.Fatalf("long name keeps extension: %q", n)
+	}
+	w = httptest.NewRecorder()
+	s.upload(w, httptest.NewRequest("POST", "/api/uploads?name=a."+strings.Repeat("b", 90), strings.NewReader("x")))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want long extension rejected, got %d", w.Code)
+	}
 }
