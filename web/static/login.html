@@ -31,7 +31,30 @@
       <button class="btn primary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5v16h4M14 8l4 4-4 4M18 12H8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Sign in</button>
       <div id="login-error" class="login-error" role="alert"></div>
     </form>
+    <!-- Second step, for accounts with two-factor sign-in -->
+    <form id="totp" class="login-card" hidden>
+      <div class="brand">
+        <img src="favicon.svg" alt="" aria-hidden="true">
+        <span>Dash</span>
+      </div>
+      <p id="totp-prompt">Enter the code from your authenticator app.</p>
+      <label class="field"><span id="totp-label">6-digit code</span><input name="code" inputmode="numeric" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" required></label>
+      <button class="btn primary">Verify</button>
+      <button class="link" type="button" id="totp-recovery">Use a recovery code instead</button>
+      <div id="totp-error" class="login-error" role="alert"></div>
+    </form>
+    <!-- Setting up two-factor sign-in, when an org requires it -->
+    <section id="enrol" class="login-card enrol-card" hidden aria-labelledby="enrol-title">
+      <div class="brand">
+        <img src="favicon.svg" alt="" aria-hidden="true">
+        <span>Dash</span>
+      </div>
+      <h2 id="enrol-title">Set up two-factor sign-in</h2>
+      <div id="enrol-body"></div>
+      <button class="link" type="button" id="enrol-logout">Sign out</button>
+    </section>
   </main>
+  <script src="twofactor.js"></script>
   <script src="login.js"></script>
 </body>
 </html>

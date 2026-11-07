@@ -77,12 +77,15 @@ type User struct {
 	Username      string `json:"username"`
 	Email         string `json:"email,omitempty"`
 	PlatformAdmin bool   `json:"is_platform_admin"`
+	TOTP          bool   `json:"totp_enabled"` // signs in with a code from an authenticator app too
 }
 
 type Org struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
 	Slug string `json:"slug"`
+	// Require2FA: members must sign in with two factors.
+	Require2FA bool `json:"require_2fa"`
 }
 
 // Membership is one org a user belongs to and their role there.
@@ -109,10 +112,12 @@ type Invitation struct {
 }
 
 // Session is who a browser session belongs to and the org they are working
-// in. Org is nil when the user belongs to no org.
+// in. Org is nil when the user belongs to no org. Needs2FA is set when an org
+// of theirs requires two-factor sign-in and they haven't set it up.
 type Session struct {
-	User User
-	Org  *Membership
+	User     User
+	Org      *Membership
+	Needs2FA bool
 }
 
 // ---- validation ----
@@ -302,11 +307,11 @@ func (a *Accounts) EnvUser() (User, error) {
 
 // ---- users and passwords ----
 
-const userCols = "SELECT id, username, COALESCE(email, ''), is_platform_admin FROM users"
+const userCols = "SELECT id, username, COALESCE(email, ''), is_platform_admin, totp_secret IS NOT NULL FROM users"
 
 func (a *Accounts) scanUser(row *sql.Row) (User, error) {
 	var u User
-	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.PlatformAdmin)
+	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.PlatformAdmin, &u.TOTP)
 	if errors.Is(err, sql.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -323,9 +328,9 @@ func (a *Accounts) User(id int64) (User, error) {
 func (a *Accounts) Credentials(login string) (User, string, error) {
 	var u User
 	var hash string
-	err := a.db.QueryRow(`SELECT id, username, COALESCE(email, ''), is_platform_admin, password_hash FROM users
+	err := a.db.QueryRow(`SELECT id, username, COALESCE(email, ''), is_platform_admin, totp_secret IS NOT NULL, password_hash FROM users
 		WHERE username = ?1 OR email = ?1 ORDER BY username = ?1 DESC LIMIT 1`, login).
-		Scan(&u.ID, &u.Username, &u.Email, &u.PlatformAdmin, &hash)
+		Scan(&u.ID, &u.Username, &u.Email, &u.PlatformAdmin, &u.TOTP, &hash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return u, "", ErrNotFound
 	}
@@ -348,15 +353,16 @@ func (a *Accounts) Rehash(uid int64, hash string) error {
 	return err
 }
 
-// Active reports whether uid still belongs to an org and hasn't changed
-// password (or been renamed from the environment) since t. Long-lived
-// credentials such as OAuth tokens check it.
+// Active reports whether uid still belongs to an org, hasn't changed
+// password (or been renamed from the environment) since t, and isn't held
+// back by an org requiring two-factor sign-in they haven't set up.
+// Long-lived credentials such as OAuth tokens check it.
 func (a *Accounts) Active(uid int64, t time.Time) bool {
 	var changed int64
-	var member bool
-	err := a.db.QueryRow(`SELECT password_changed_at, EXISTS (SELECT 1 FROM org_memberships WHERE user_id = ?1)
-		FROM users WHERE id = ?1`, uid).Scan(&changed, &member)
-	return err == nil && member && changed <= t.UnixNano()
+	var member, totp, required bool
+	err := a.db.QueryRow(`SELECT u.password_changed_at, EXISTS (SELECT 1 FROM org_memberships WHERE user_id = u.id),
+		u.totp_secret IS NOT NULL, `+requires2FA+` FROM users u WHERE u.id = ?`, uid).Scan(&changed, &member, &totp, &required)
+	return err == nil && member && changed <= t.UnixNano() && (totp || !required)
 }
 
 // ---- sessions ----
@@ -380,13 +386,14 @@ func (a *Accounts) Session(key string, now time.Time) (Session, error) {
 	var active sql.NullInt64
 	var orgID sql.NullInt64
 	var name, slug, role sql.NullString
-	err := a.db.QueryRow(`SELECT u.id, u.username, COALESCE(u.email, ''), u.is_platform_admin, s.expires_at, s.active_org_id,
-			o.id, o.name, o.slug, m.role
+	var require2FA, required sql.NullBool
+	err := a.db.QueryRow(`SELECT u.id, u.username, COALESCE(u.email, ''), u.is_platform_admin, u.totp_secret IS NOT NULL,
+			s.expires_at, s.active_org_id, o.id, o.name, o.slug, o.require_2fa, m.role, `+requires2FA+`
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		LEFT JOIN org_memberships m ON m.user_id = s.user_id AND m.org_id = s.active_org_id
 		LEFT JOIN organizations o ON o.id = m.org_id
-		WHERE s.key = ?`, key).Scan(&s.User.ID, &s.User.Username, &s.User.Email, &s.User.PlatformAdmin, &expires, &active,
-		&orgID, &name, &slug, &role)
+		WHERE s.key = ?`, key).Scan(&s.User.ID, &s.User.Username, &s.User.Email, &s.User.PlatformAdmin, &s.User.TOTP,
+		&expires, &active, &orgID, &name, &slug, &require2FA, &role, &required)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s, ErrNotFound
 	}
@@ -397,8 +404,9 @@ func (a *Accounts) Session(key string, now time.Time) (Session, error) {
 		_, _ = a.db.Exec("DELETE FROM sessions WHERE key = ?", key)
 		return s, ErrNotFound
 	}
+	s.Needs2FA = !s.User.TOTP && required.Bool
 	if role.Valid {
-		s.Org = &Membership{Org: Org{ID: orgID.Int64, Name: name.String, Slug: slug.String}, Role: Role(role.String)}
+		s.Org = &Membership{Org: Org{ID: orgID.Int64, Name: name.String, Slug: slug.String, Require2FA: require2FA.Bool}, Role: Role(role.String)}
 		return s, nil
 	}
 	// No membership of the active org (removed, or never had one): fall
@@ -446,7 +454,7 @@ func (a *Accounts) SwitchOrg(key string, uid, orgID int64) (Membership, error) {
 
 // Memberships lists the orgs uid belongs to, oldest membership first.
 func (a *Accounts) Memberships(uid int64) ([]Membership, error) {
-	rows, err := a.db.Query(`SELECT o.id, o.name, o.slug, m.role FROM org_memberships m
+	rows, err := a.db.Query(`SELECT o.id, o.name, o.slug, o.require_2fa, m.role FROM org_memberships m
 		JOIN organizations o ON o.id = m.org_id WHERE m.user_id = ? ORDER BY m.created_at, o.id`, uid)
 	if err != nil {
 		return nil, err
@@ -455,7 +463,7 @@ func (a *Accounts) Memberships(uid int64) ([]Membership, error) {
 	out := []Membership{}
 	for rows.Next() {
 		var m Membership
-		if err := rows.Scan(&m.ID, &m.Name, &m.Slug, &m.Role); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.Slug, &m.Require2FA, &m.Role); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -474,8 +482,8 @@ type querier interface {
 
 func membership(q querier, uid, orgID int64) (Membership, error) {
 	var m Membership
-	err := q.QueryRow(`SELECT o.id, o.name, o.slug, m.role FROM org_memberships m JOIN organizations o ON o.id = m.org_id
-		WHERE m.user_id = ? AND m.org_id = ?`, uid, orgID).Scan(&m.ID, &m.Name, &m.Slug, &m.Role)
+	err := q.QueryRow(`SELECT o.id, o.name, o.slug, o.require_2fa, m.role FROM org_memberships m JOIN organizations o ON o.id = m.org_id
+		WHERE m.user_id = ? AND m.org_id = ?`, uid, orgID).Scan(&m.ID, &m.Name, &m.Slug, &m.Require2FA, &m.Role)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m, ErrNotMember
 	}
@@ -517,7 +525,7 @@ func createOrg(tx *sql.Tx, uid int64, name string, now int64) (Org, error) {
 
 // Members lists an org's members, owners first.
 func (a *Accounts) Members(orgID int64) ([]Member, error) {
-	rows, err := a.db.Query(`SELECT u.id, u.username, COALESCE(u.email, ''), u.is_platform_admin, m.role, m.created_at
+	rows, err := a.db.Query(`SELECT u.id, u.username, COALESCE(u.email, ''), u.is_platform_admin, u.totp_secret IS NOT NULL, m.role, m.created_at
 		FROM org_memberships m JOIN users u ON u.id = m.user_id WHERE m.org_id = ?
 		ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.username`, orgID)
 	if err != nil {
@@ -528,7 +536,7 @@ func (a *Accounts) Members(orgID int64) ([]Member, error) {
 	for rows.Next() {
 		var m Member
 		var joined int64
-		if err := rows.Scan(&m.ID, &m.Username, &m.Email, &m.PlatformAdmin, &m.Role, &joined); err != nil {
+		if err := rows.Scan(&m.ID, &m.Username, &m.Email, &m.PlatformAdmin, &m.TOTP, &m.Role, &joined); err != nil {
 			return nil, err
 		}
 		m.Joined = time.Unix(joined, 0).UTC()

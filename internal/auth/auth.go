@@ -49,8 +49,9 @@ type failures struct {
 type Auth struct {
 	acc *store.Accounts
 
-	mu     sync.Mutex
-	failed map[string]*failures
+	mu      sync.Mutex
+	failed  map[string]*failures    // by client IP, and by "2fa:<user id>" for second-factor guesses
+	tickets map[string]*loginTicket // by key: passwords checked, waiting for a second factor
 
 	now     func() time.Time // for tests
 	recheck time.Duration    // how often an open WebSocket re-checks its session
@@ -73,7 +74,7 @@ type Auth struct {
 // the first one).
 func New(acc *store.Accounts) *Auth {
 	passhash.Prime() // so the first unknown-name login isn't slower than the rest
-	return &Auth{acc: acc, failed: map[string]*failures{}, now: time.Now, recheck: 15 * time.Second}
+	return &Auth{acc: acc, failed: map[string]*failures{}, tickets: map[string]*loginTicket{}, now: time.Now, recheck: 15 * time.Second}
 }
 
 // Accounts are the users and orgs a signs in.
@@ -216,9 +217,12 @@ func (a *Auth) verify(u store.User, hash string, found bool, password string) bo
 }
 
 // attempt checks a login (a username or email) from ip, counting failures
-// towards its lockout.
+// towards its lockout. A right password doesn't yet wipe ip's earlier
+// failures: for an account with two-factor sign-in that waits for the code
+// (signedInFrom).
 func (a *Auth) attempt(ip, login, password string) (store.User, error) {
-	if _, ok := a.reserve(ip); !ok {
+	f, ok := a.reserve(ip)
+	if !ok {
 		return store.User{}, errLockedOut
 	}
 	u, hash, err := a.acc.Credentials(login)
@@ -229,10 +233,16 @@ func (a *Auth) attempt(ip, login, password string) (store.User, error) {
 		time.Sleep(300 * time.Millisecond) // blunt online guessing a little more
 		return store.User{}, errBadLogin
 	}
+	a.release(ip, f)
+	return u, nil
+}
+
+// signedInFrom forgets ip's failed attempts once someone has signed in from
+// it with every factor their account has.
+func (a *Auth) signedInFrom(ip string) {
 	a.mu.Lock()
 	delete(a.failed, ip)
 	a.mu.Unlock()
-	return u, nil
 }
 
 // ErrBadPassword and ErrLockedOut are what ConfirmPassword reports.
@@ -318,7 +328,10 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 }
 
 // Login handles POST /api/login {"username","password"}; username may also
-// be the account's email.
+// be the account's email. Without two-factor sign-in it starts a session and
+// answers {"ok":true}, with "enrol_2fa":true when an org of theirs requires
+// two-factor sign-in they haven't set up. With it, it answers
+// {"totp_required":true,"ticket":…} and the code goes to /api/login/totp.
 func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 	ip := a.clientIP(r)
 	if a.lockedOut(ip) {
@@ -347,12 +360,21 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "sign-in failed")
 		return
 	}
+	if u.TOTP {
+		writeJSON(w, http.StatusOK, map[string]any{"totp_required": true, "ticket": a.newTicket(u.ID)})
+		return
+	}
+	a.signedInFrom(ip)
 	if err := a.startSession(w, r, u.ID); err != nil {
 		slog.Error("create session", "err", err)
 		writeError(w, http.StatusInternalServerError, "sign-in failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	enrol, err := a.acc.Requires2FA(u.ID)
+	if err != nil {
+		slog.Error("login", "err", err)
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true, "enrol_2fa": enrol})
 }
 
 // Logout handles POST /api/logout.
@@ -370,6 +392,7 @@ func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
 var public = map[string]bool{
 	"/login.html":           true,
 	"/login.js":             true,
+	"/twofactor.js":         true,
 	"/invite.html":          true,
 	"/invite.js":            true,
 	"/style.css":            true,
@@ -377,6 +400,7 @@ var public = map[string]bool{
 	"/manifest.webmanifest": true,
 	"/sw.js":                true, // service worker updates must not hit the login redirect
 	"/api/login":            true,
+	"/api/login/totp":       true, // the login's ticket is its credential
 	// An invitation link's token is its own credential.
 	"/api/invitations/lookup":   true,
 	"/api/invitations/register": true,
@@ -428,6 +452,15 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			http.Redirect(w, r, login, http.StatusSeeOther)
 			return
 		}
+		if id.Needs2FA && !twoFactorFree(r.URL.Path) {
+			// An org of theirs requires two-factor sign-in: set it up first.
+			if api {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "set up two-factor sign-in to continue", "code": "2fa_required"})
+				return
+			}
+			http.Redirect(w, r, "/login.html?enrol=1", http.StatusSeeOther)
+			return
+		}
 		if id.Org == nil && api && !orgFree(r.URL.Path) {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "you aren't a member of any organization", "code": "no_org"})
 			return
@@ -440,11 +473,12 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// stillValid reports whether the session behind id still exists and its
-// user still belongs to the org they connected in.
+// stillValid reports whether the session behind id still exists, its user
+// still belongs to the org they connected in, and no org requires a second
+// factor they lack.
 func (a *Auth) stillValid(id *Identity) bool {
 	s, err := a.acc.Session(id.key, a.now())
-	if err != nil {
+	if err != nil || s.Needs2FA {
 		return false
 	}
 	if id.Org == nil {

@@ -1495,3 +1495,25 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
   .scans { padding: 10px 10px 24px; }
   .scan-card { padding: 12px; }
 }
+
+/* Two-factor sign-in (twofactor.js, login page and account menu) */
+.enrol-card { width: min(400px, 100%); }
+.enrol-card h2 { font-size: 18px; text-align: center; margin: 0; }
+.login-card .totp-enrol .hint, .login-card .recovery-codes ~ .hint { text-align: left; margin: 0; }
+.login-card .recovery-actions .btn { width: auto; flex: 1; margin: 0; }
+.totp-enrol { display: flex; flex-direction: column; gap: 10px; }
+.totp-steps { margin: 0; padding-left: 20px; color: var(--muted); font-size: 14px; display: grid; gap: 4px; }
+.totp-qr { align-self: center; width: 220px; height: 220px; border-radius: 8px; background: #fff; image-rendering: pixelated; }
+.totp-secret summary { cursor: pointer; color: var(--accent); font-size: 14px; }
+.totp-secret code { display: block; margin-top: 6px; font-size: 15px; letter-spacing: .04em; word-break: break-all; user-select: all; }
+.recovery-codes { list-style: none; margin: 8px 0; padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 16px;
+  background: var(--bg, #0b1018); border: 1px solid var(--line); border-radius: 8px; }
+.recovery-codes code { font-size: 15px; letter-spacing: .03em; user-select: all; }
+.recovery-actions { display: flex; gap: 8px; margin-bottom: 8px; }
+.twofactor-body { padding: 0 16px calc(16px + var(--safe-b)); display: flex; flex-direction: column; gap: 8px; }
+.twofactor-body > .btn { align-self: flex-start; }
+.twofactor-body p .ico { width: 16px; height: 16px; vertical-align: -3px; color: var(--done, var(--accent)); }
+.org-require-2fa { display: flex; align-items: center; justify-content: flex-start; gap: 8px; margin: 8px 0; font-size: 14px; cursor: pointer; }
+.org-require-2fa input { width: auto; min-height: 0; flex: none; margin: 0; }
+.tfa-tag { margin-left: 6px; font-size: 12px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.tfa-tag.on { color: var(--accent); border-color: currentColor; }

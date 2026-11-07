@@ -439,19 +439,34 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 		fail("access_denied", "the user declined")
 		return
 	}
-	u, err := o.a.attempt(o.a.clientIP(r), strings.TrimSpace(r.PostForm.Get("username")), r.PostForm.Get("password"))
+	ip := o.a.clientIP(r)
+	u, err := o.a.attempt(ip, strings.TrimSpace(r.PostForm.Get("username")), r.PostForm.Get("password"))
+	if err == nil && u.TOTP {
+		if strings.TrimSpace(r.PostForm.Get("code")) == "" {
+			q.Error = "Enter the code from your authenticator app, or a recovery code."
+			o.consent(w, http.StatusUnauthorized, q)
+			return
+		}
+		_, err = o.a.secondFactor(ip, u.ID, r.PostForm.Get("code"))
+	}
 	switch {
 	case errors.Is(err, errLockedOut):
 		q.Error = err.Error()
 		o.consent(w, http.StatusTooManyRequests, q)
 		return
-	case errors.Is(err, errBadLogin):
+	case errors.Is(err, errBadLogin), errors.Is(err, errBadCode):
 		q.Error = err.Error()
 		o.consent(w, http.StatusUnauthorized, q)
 		return
 	case err != nil:
 		q.Error = "sign-in failed"
 		o.consent(w, http.StatusInternalServerError, q)
+		return
+	}
+	o.a.signedInFrom(ip)
+	if required, _ := o.a.acc.Requires2FA(u.ID); required && !u.TOTP {
+		q.Error = "Your organization requires two-factor sign-in. Sign in to Dash and set it up first."
+		o.consent(w, http.StatusForbidden, q)
 		return
 	}
 	if !o.a.acc.Active(u.ID, o.a.now()) {
@@ -496,6 +511,7 @@ label{display:block;margin:.8rem 0 .3rem}input{width:100%;box-sizing:border-box;
 <input type="hidden" name="resource" value="{{.Resource}}">
 <label for="u">Dash username</label><input id="u" name="username" autocomplete="username">
 <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password">
+<label for="c">Two-factor code <small>(if you've turned it on)</small></label><input id="c" name="code" inputmode="numeric" autocomplete="one-time-code">
 <div class="row"><button class="deny" name="action" value="deny" formnovalidate>Deny</button>
 <button class="allow" name="action" value="allow">Allow</button></div>
 </form></main></body></html>

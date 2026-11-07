@@ -25,6 +25,8 @@ import (
 //	DELETE /api/orgs/{oid}/invitations/{iid}
 //	POST   /api/invitations/lookup|accept|register|decline {token, …}
 //
+// and two-factor sign-in (see twoFactorRoutes).
+//
 // Changing roles, removing members and inviting ask for the password again.
 func (a *Auth) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/login", a.Login)
@@ -42,6 +44,7 @@ func (a *Auth) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/invitations/accept", a.signedIn(a.acceptInvitation))
 	mux.HandleFunc("POST /api/invitations/register", a.register)
 	mux.HandleFunc("POST /api/invitations/decline", a.declineInvitation)
+	a.twoFactorRoutes(mux)
 }
 
 // signedIn passes the request's identity to h, and answers 401 without one
@@ -65,10 +68,12 @@ func accountError(w http.ResponseWriter, err error) {
 		code = http.StatusForbidden
 	case errors.Is(err, store.ErrNotMember), errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrInvitation):
 		code = http.StatusNotFound
-	case errors.Is(err, store.ErrLastOwner), errors.Is(err, store.ErrUsernameTaken):
+	case errors.Is(err, store.ErrLastOwner), errors.Is(err, store.ErrUsernameTaken),
+		errors.Is(err, store.ErrTOTPEnabled), errors.Is(err, store.ErrTOTPRequired), errors.Is(err, store.ErrTOTPSelf):
 		code = http.StatusConflict
 	case errors.Is(err, store.ErrBadRole), errors.Is(err, store.ErrBadEmail), errors.Is(err, store.ErrBadUsername),
-		errors.Is(err, store.ErrWeakPassword), errors.Is(err, store.ErrBadOrgName), errors.Is(err, errBadBody):
+		errors.Is(err, store.ErrWeakPassword), errors.Is(err, store.ErrBadOrgName), errors.Is(err, errBadBody),
+		errors.Is(err, store.ErrTOTPNotSetUp), errors.Is(err, store.ErrNoPendingTOTP):
 		code = http.StatusBadRequest
 	case errors.Is(err, ErrBadPassword):
 		code = http.StatusForbidden // not 401: that would sign the browser out
@@ -119,6 +124,9 @@ func (a *Auth) me(w http.ResponseWriter, r *http.Request) {
 		"user":     id.User,
 		"org":      id.Org,
 		"orgs":     orgs,
+		// An org requires two-factor sign-in and they haven't set it up:
+		// nothing else works until they do.
+		"needs_2fa": id.Needs2FA,
 	})
 }
 

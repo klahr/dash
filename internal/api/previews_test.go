@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/klahr/dash/internal/qr"
 )
 
 func TestQRCode(t *testing.T) {
@@ -32,7 +34,7 @@ func TestQRCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if b := img.Bounds(); b.Dx() != b.Dy() || b.Dx() < 200 || b.Dx() > qrSize {
+	if b := img.Bounds(); b.Dx() != b.Dy() || b.Dx() < 200 || b.Dx() > qr.Size {
 		t.Fatalf("unexpected image size %v", b)
 	}
 	// The quiet zone leaves the corner white.

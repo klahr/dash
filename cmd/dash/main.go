@@ -42,6 +42,9 @@ func main() {
 	// `dash runner --server https://hub --code XXXX-XXXX`: this computer's
 	// projects show in the hub's dashboard, over a connection it opens itself.
 	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "reset-2fa" {
+		os.Exit(resetTwoFactor(args[1:]))
+	}
 	runnerMode := len(args) > 0 && args[0] == "runner"
 	if runnerMode {
 		args = args[1:]
@@ -496,4 +499,41 @@ func isLoopback(addr string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// resetTwoFactor is `dash reset-2fa [-data dir] <username or email>`: it
+// turns off two-factor sign-in for someone who lost their authenticator and
+// their recovery codes. It needs access to the server's data directory, which
+// is the proof of being its operator. It works while Dash runs.
+func resetTwoFactor(args []string) int {
+	home, _ := os.UserHomeDir()
+	fs := flag.NewFlagSet("dash reset-2fa", flag.ExitOnError)
+	dataDir := fs.String("data", filepath.Join(home, ".local", "share", "dash"), "the server's -data directory")
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "usage: dash reset-2fa [-data dir] <username or email>")
+		fs.PrintDefaults()
+	}
+	_ = fs.Parse(args)
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return 2
+	}
+	path := filepath.Join(*dataDir, "dash.db")
+	if _, err := os.Stat(path); err != nil {
+		fmt.Fprintln(os.Stderr, "no Dash database at", path, "(use -data)")
+		return 1
+	}
+	st, err := store.Open(path, nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "open store:", err)
+		return 1
+	}
+	defer st.Close()
+	u, err := st.Accounts().ResetTOTP(fs.Arg(0))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "reset two-factor sign-in:", err)
+		return 1
+	}
+	fmt.Printf("Two-factor sign-in is off for %s. If an organization of theirs requires it, they set it up again when they next sign in.\n", u.Username)
+	return 0
 }

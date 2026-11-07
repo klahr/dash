@@ -129,11 +129,13 @@ internet entirely: keep Dash on `127.0.0.1`, run `tailscale serve --bg 7788`, st
 Behind Caddy or a tunnel, anyone can reach Dash's login page, and Dash runs commands on your
 computers. So:
 
-- **Use a long random password** for `DASH_PASSWORD` (`openssl rand -base64 24`). Dash has one
-  account and no second factor.
+- **Use a long random password** for `DASH_PASSWORD` (`openssl rand -base64 24`), and **turn on
+  two-factor sign-in** (account menu → Two-factor sign-in). Org owners can require it of every
+  member; see [Users and organizations](users.md#two-factor-sign-in).
 - **Lockout:** after 5 failed logins from one IP address within 15 minutes, that address is locked
   out until the 15 minutes pass. Failed sign-ins through the claude.ai connector and wrong
-  passwords on destructive actions count too. The limits are fixed (`maxFailures` and
+  passwords on destructive actions count too, and so do wrong two-factor codes (which are also
+  limited per account, from any address). The limits are fixed (`maxFailures` and
   `failureWindow` in [`internal/auth/auth.go`](../internal/auth/auth.go)), and they are per
   address, so they slow down one guesser, not many.
 - **`-trust-proxy` is what makes the lockout per client.** Without it every request seems to come

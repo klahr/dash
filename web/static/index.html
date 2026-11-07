@@ -137,6 +137,7 @@
             <div class="foot-menu-list">
               <div class="org-switch" id="org-switch" hidden></div>
               <button id="org-open" type="button" data-icon="users">Organization</button>
+              <button id="twofactor-open" type="button" data-icon="lock">Two-factor sign-in</button>
               <button id="prefs-open" type="button" data-icon="prefs">Preferences</button>
               <button id="connector-open" type="button" data-icon="plug">Connect Claude</button>
               <button id="runners-open" type="button" data-icon="computer">Runners</button>
@@ -640,6 +641,7 @@
     <form method="dialog">
       <header class="sheet-head"><h2 id="org-title" tabindex="-1" autofocus>Organization</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
       <p class="hint" id="org-role"></p>
+      <label class="org-require-2fa" id="org-require-2fa-row" hidden><input type="checkbox" id="org-require-2fa"> Require two-factor sign-in of every member</label>
       <h3 class="org-section">Members</h3>
       <ul class="runner-list org-members" id="org-members"></ul>
       <div id="org-invite-area" hidden>
@@ -661,6 +663,14 @@
         <button class="btn" id="org-new" type="button" data-icon="plus" hidden>New organization</button>
       </footer>
     </form>
+  </dialog>
+
+  <!-- Two-factor sign-in: set up, new recovery codes, turn off -->
+  <dialog class="sheet" id="twofactor-sheet" aria-labelledby="twofactor-title">
+    <form method="dialog">
+      <header class="sheet-head"><h2 id="twofactor-title" tabindex="-1" autofocus>Two-factor sign-in</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+    </form>
+    <div class="twofactor-body" id="twofactor-body"></div>
   </dialog>
 
   <!-- Re-enter the password before a sensitive change -->
@@ -727,6 +737,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+  <script src="twofactor.js"></script>
   <script src="app.js" type="module"></script>
 </body>
 </html>

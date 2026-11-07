@@ -50,6 +50,7 @@ const ICONS = {
   bell: "M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 21h4",
   "bell-off": "M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 21h4M3 3l18 18",
   logout: "M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10",
+  lock: "M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4M12 15v2",
   prefs: "M7 7h10a5 5 0 0 1 0 10H7A5 5 0 0 1 7 7zM16 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z",
   terminal: "m5 8 4 4-4 4M12 17h7",
   code: "m8 8-4 4 4 4M16 8l4 4-4 4",
@@ -283,6 +284,11 @@ async function api(method, path, body, prefix = here()) {
   }
   const ct = res.headers.get("content-type") || "";
   const data = ct.includes("json") ? await res.json() : await res.text();
+  if (res.status === 403 && data.code === "2fa_required") {
+    // An org now requires two-factor sign-in: set it up on the login page.
+    location.replace("/login.html?enrol=1");
+    throw new Error(data.error);
+  }
   if (!res.ok) throw new Error(data.error || data || res.statusText);
   return data;
 }
@@ -1146,6 +1152,8 @@ loadMe().catch(() => {});
 $("#org-open").addEventListener("click", attempt(openOrg));
 $("#org-invite-send").addEventListener("click", attempt(sendInvite));
 $("#org-new").addEventListener("click", attempt(newOrg));
+$("#twofactor-open").addEventListener("click", attempt(openTwoFactor));
+$("#org-require-2fa").addEventListener("change", attempt(setRequire2FA));
 for (const menu of $$(".foot-menu")) {
   menu.querySelector(".foot-menu-list").addEventListener("click", () => { menu.open = false; });
   document.addEventListener("click", (e) => { if (!menu.contains(e.target)) menu.open = false; });
@@ -2822,6 +2830,8 @@ async function renderOrg() {
   const mine = org.role;
   const manage = RANK[mine] >= RANK.admin;
   $("#org-title").textContent = org.org.name;
+  $("#org-require-2fa-row").hidden = mine !== "owner";
+  $("#org-require-2fa").checked = !!org.org.require_2fa;
   $("#org-role").textContent = `You are ${mine === "admin" ? "an admin" : `${mine === "owner" ? "an owner" : "a member"}`} of ${org.org.name}.` +
     (manage ? " Owners and admins invite people and change roles; only owners make owners." : "");
   const roleSelect = (m) => {
@@ -2844,7 +2854,7 @@ async function renderOrg() {
     const canEdit = manage && RANK[m.role] <= RANK[mine];
     return h("li", { class: "runner-row" },
       h("span", { class: "runner-name" }, m.username, self ? h("span", { class: "hint" }, " (you)") : null),
-      h("span", { class: "runner-seen hint" }, m.email || ""),
+      h("span", { class: "runner-seen hint" }, m.email || "", manage || org.org.require_2fa ? h("span", { class: `tfa-tag${m.totp_enabled ? " on" : ""}`, title: m.totp_enabled ? "Signs in with two factors" : "No two-factor sign-in yet" }, m.totp_enabled ? "2FA" : "no 2FA") : null),
       canEdit ? roleSelect(m) : h("span", { class: "org-role-tag" }, ROLE_LABEL[m.role]),
       (canEdit || self) ? h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
         const pw = await askPassword(self ? `Leave ${org.org.name}?` : `Remove ${m.username}?`,
@@ -2872,6 +2882,65 @@ async function renderOrg() {
     $("#org-pending").replaceChildren(...pending);
   }
   $("#org-new").hidden = !me.user?.is_platform_admin;
+}
+
+async function setRequire2FA() {
+  const box = $("#org-require-2fa");
+  const on = box.checked;
+  const name = state.me.org.name;
+  const pw = await askPassword(on ? `Require two-factor sign-in in ${name}?` : `Stop requiring two-factor sign-in in ${name}?`,
+    on ? "Members without it are asked to set it up before they can do anything else, from their next click." : "Members keep two-factor sign-in if they have it, and can turn it off.");
+  if (pw == null) { box.checked = !on; return; }
+  try {
+    await api("PATCH", `/api/orgs/${state.me.org.id}`, { require_2fa: on, password: pw }, "");
+  } catch (err) { box.checked = !on; throw err; }
+  toast(on ? "Two-factor sign-in is now required" : "Two-factor sign-in is optional", { tone: "ok" });
+  await loadMe();
+  await renderOrg();
+}
+
+// ---- two-factor sign-in (the shared steps are in twofactor.js)
+async function openTwoFactor() {
+  await renderTwoFactor();
+  const d = $("#twofactor-sheet");
+  if (!d.open) d.showModal();
+}
+
+async function renderTwoFactor() {
+  const body = $("#twofactor-body");
+  const st = await api("GET", "/api/account/2fa", null, "");
+  if (!st.enabled) {
+    body.replaceChildren(
+      h("p", { class: "hint" }, "Sign in with a code from an app on your phone as well as your password, so a stolen password isn't enough."),
+      h("button", { class: "btn primary", type: "button", onclick: attempt(async () => {
+        await DashTwoFactor.enrol(body, { done: async () => {
+          toast("Two-factor sign-in is on", { tone: "ok" });
+          await loadMe();
+          await renderTwoFactor();
+        } });
+      }) }, ico("lock"), "Set up"));
+    return;
+  }
+  const left = st.recovery_codes_left;
+  body.replaceChildren(
+    h("p", {}, ico("check"), " On. Signing in asks for a code from your authenticator app."),
+    h("p", { class: `hint${left < 3 ? " warn" : ""}` }, `${left} recovery code${left === 1 ? "" : "s"} left.`),
+    h("div", { class: "sheet-actions" },
+      h("button", { class: "btn", type: "button", onclick: attempt(async () => {
+        const pw = await askPassword("Make new recovery codes?", "The codes you have now stop working.");
+        if (pw == null) return;
+        const r = await api("POST", "/api/account/2fa/recovery-codes", { password: pw }, "");
+        DashTwoFactor.recoveryCodes(body, r.recovery_codes, () => renderTwoFactor().catch(() => {}), "Done");
+      }) }, ico("redo"), "New recovery codes"),
+      st.required ? null : h("button", { class: "btn danger", type: "button", onclick: attempt(async () => {
+        const pw = await askPassword("Turn off two-factor sign-in?", "Your password alone will sign you in again. Your recovery codes stop working.");
+        if (pw == null) return;
+        await api("POST", "/api/account/2fa/disable", { password: pw }, "");
+        toast("Two-factor sign-in is off");
+        await loadMe();
+        await renderTwoFactor();
+      }) }, ico("x"), "Turn off")),
+    st.required ? h("p", { class: "hint" }, "An organization you belong to requires it, so it can't be turned off.") : null);
 }
 
 async function sendInvite() {

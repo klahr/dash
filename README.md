@@ -76,7 +76,7 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
 ## Reference
 
-- [Users and organizations](docs/users.md): accounts, roles, invitations
+- [Users and organizations](docs/users.md): accounts, roles, invitations, two-factor sign-in
 - [Deploy the hub](docs/deploy.md): Caddy, Cloudflare Tunnel or Tailscale, and the login on the internet
 - [Live previews](docs/previews.md): preview domain, DNS and certificates, what the proxy does
 - [Draw](docs/draw.md): mark up a preview and send the picture back to Claude
