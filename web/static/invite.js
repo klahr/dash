@@ -32,7 +32,7 @@ async function load() {
     inv.invited_by ? `${inv.invited_by} invited you` : "You're invited",
     " to join ", Object.assign(document.createElement("strong"), { textContent: inv.org.name }),
     ` as ${article(inv.role)} ${inv.role}.`);
-  document.title = `Join ${inv.org.name} · Dash`;
+  document.title = `Join ${inv.org.name} · ${document.querySelector("meta[name=dash-name]")?.content || "Dash"}`;
   if (inv.signed_in_as) {
     $("#invite-accept").textContent = `Accept as ${inv.signed_in_as}`;
     $("#invite-signed-in").hidden = false;

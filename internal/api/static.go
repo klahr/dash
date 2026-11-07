@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"os"
@@ -68,22 +69,60 @@ func timeLocale() string {
 	return v
 }
 
+// pages are the HTML files stamped with the version and branding, by path.
+var pages = map[string]string{
+	"/":            "index.html",
+	"/index.html":  "index.html",
+	"/login.html":  "login.html",
+	"/invite.html": "invite.html",
+}
+
+// manifest serves the web app manifest with the product's name, so an
+// installed app is called what the deployment is called.
+func (s *Server) manifest(w http.ResponseWriter, r *http.Request) {
+	b, err := fs.ReadFile(s.Static, "manifest.webmanifest")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err == nil {
+		name := s.Brand.WithDefaults().Name
+		m["name"], m["short_name"] = name, name
+		var out bytes.Buffer
+		enc := json.NewEncoder(&out)
+		enc.SetEscapeHTML(false)
+		enc.SetIndent("", "  ")
+		if enc.Encode(m) == nil {
+			b = out.Bytes()
+		}
+	}
+	w.Header().Set("Content-Type", "application/manifest+json")
+	http.ServeContent(w, r, "manifest.webmanifest", time.Time{}, bytes.NewReader(b))
+}
+
 // static serves the frontend. Everything is revalidated on every load
 // (no-cache), and index.html gets the build version stamped in.
 func (s *Server) static() http.Handler {
 	files := http.FileServerFS(s.Static)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
-		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
-			b, err := fs.ReadFile(s.Static, "index.html")
+		if name, ok := pages[r.URL.Path]; ok {
+			b, err := fs.ReadFile(s.Static, name)
 			if err != nil {
 				http.NotFound(w, r)
 				return
 			}
 			b = bytes.ReplaceAll(b, []byte("{{DASH_VERSION}}"), []byte(s.version()))
 			b = bytes.ReplaceAll(b, []byte("{{DASH_TIME_LOCALE}}"), []byte(timeLocale()))
+			b = s.Brand.WithDefaults().Page(b)
+			// No ETag: the branding can change without the files changing.
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(b))
+			http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(b))
+			return
+		}
+		if r.URL.Path == "/manifest.webmanifest" {
+			s.manifest(w, r)
 			return
 		}
 		if r.URL.Path == "/sw.js" {

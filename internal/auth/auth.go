@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/branding"
 	"github.com/klahr/dash/internal/mail"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/passhash"
@@ -77,6 +78,14 @@ type Auth struct {
 
 	oauth *OAuth // set by NewOAuth
 
+	// Brand names Dash in emails, the authenticator app and the connector
+	// consent page (empty fields: the defaults).
+	Brand branding.Config
+
+	// Landing, when set, answers visitors to / who aren't signed in,
+	// instead of sending them to the sign-in page.
+	Landing http.Handler
+
 	mail       mail.Sender // SetMail: password reset by email, and what signup needs
 	baseURL    string      // the public origin links in emails point to
 	signupOpen bool        // EnableSignup
@@ -88,6 +97,9 @@ func New(acc *store.Accounts) *Auth {
 	passhash.Prime() // so the first unknown-name login isn't slower than the rest
 	return &Auth{acc: acc, failed: map[string]*failures{}, limits: map[string]*failures{}, tickets: map[string]*loginTicket{}, now: time.Now, recheck: 15 * time.Second}
 }
+
+// brand is a.Brand with its defaults.
+func (a *Auth) brand() branding.Config { return a.Brand.WithDefaults() }
 
 // Accounts are the users and orgs a signs in.
 func (a *Auth) Accounts() *store.Accounts { return a.acc }
@@ -572,7 +584,7 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), peerKey{}, true)))
 			return
 		}
-		if public[r.URL.Path] || strings.HasPrefix(r.URL.Path, "/img/") || a.oauth.public(r.URL.Path) {
+		if public[r.URL.Path] || strings.HasPrefix(r.URL.Path, "/img/") || a.oauth.public(r.URL.Path) || r.URL.Path == branding.LogoPath {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -585,6 +597,10 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 		if !ok {
 			if api {
 				writeError(w, http.StatusUnauthorized, "login required")
+				return
+			}
+			if r.URL.Path == "/" && a.Landing != nil {
+				a.Landing.ServeHTTP(w, r)
 				return
 			}
 			login := "/login.html"

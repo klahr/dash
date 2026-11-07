@@ -23,6 +23,7 @@ import (
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/api"
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/branding"
 	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/ci"
 	"github.com/klahr/dash/internal/dispatch"
@@ -113,6 +114,15 @@ func main() {
 	smtpPort := flag.Int("smtp-port", 0, "SMTP port: 587 (STARTTLS) or 465 (TLS) (default $DASH_SMTP_PORT, else 587)")
 	smtpUser := flag.String("smtp-user", "", "SMTP username, with $DASH_SMTP_PASSWORD (or $DASH_SMTP_USERNAME)")
 	smtpFrom := flag.String("smtp-from", "", "From address of Dash's emails, e.g. \"Dash <dash@example.com>\" (or $DASH_SMTP_FROM)")
+	brandName := flag.String("brand-name", "", "product name in page titles, the sign-in pages and emails (default \"Dash\"; or $DASH_BRAND_NAME; see docs/branding.md)")
+	sourceURL := flag.String("source-url", "", "the \"Source code\" link in every page's footer, for the AGPL (default the upstream repository; or $DASH_SOURCE_URL)")
+	termsURL := flag.String("terms-url", "", "terms of service, linked in the footer (or $DASH_TERMS_URL)")
+	privacyURL := flag.String("privacy-url", "", "privacy policy, linked in the footer (or $DASH_PRIVACY_URL)")
+	contactEmail := flag.String("contact-email", "", "address people can write to, in the footer and emails (or $DASH_CONTACT_EMAIL)")
+	logo := flag.String("logo", "", "image file shown instead of Dash's mark on the pages (or $DASH_LOGO)")
+	landing := flag.Bool("landing", false, "show a landing page at / to visitors who aren't signed in, instead of the sign-in page (or DASH_LANDING=1)")
+	teamPrice := flag.String("team-price", "", "the team plan's price on the landing page, as shown, e.g. \"€8 per seat / month\" (or $DASH_TEAM_PRICE)")
+	pricingURL := flag.String("pricing-url", "", "where the landing page's \"see pricing\" links to when -team-price isn't set (or $DASH_PRICING_URL)")
 	hubTasks := flag.String("hub-tasks", "auto", "whether the hub runs tasks of projects not linked to a runner itself: on, off, or auto (on until a runner is registered); see docs/several-computers.md")
 	runnerGrace := flag.Duration("runner-grace", dispatch.DefaultGrace, "fail the tasks of a runner that has been offline this long, ready to be queued again (hub)")
 	var hubServer, regCode *string
@@ -305,6 +315,20 @@ func main() {
 		Static:      web.Static,
 		Addr:        *addr,
 		PublicURL:   strings.TrimRight(*publicURL, "/"),
+		Brand: branding.Config{
+			Name: envOr(*brandName, "DASH_BRAND_NAME"), SourceURL: envOr(*sourceURL, "DASH_SOURCE_URL"),
+			TermsURL: envOr(*termsURL, "DASH_TERMS_URL"), PrivacyURL: envOr(*privacyURL, "DASH_PRIVACY_URL"),
+			Contact: envOr(*contactEmail, "DASH_CONTACT_EMAIL"), Logo: envOr(*logo, "DASH_LOGO"),
+			Landing: *landing || envBool("DASH_LANDING"), TeamPrice: envOr(*teamPrice, "DASH_TEAM_PRICE"),
+			PricingURL: envOr(*pricingURL, "DASH_PRICING_URL"),
+		}.WithDefaults(),
+	}
+	if err := apiSrv.Brand.Check(); err != nil {
+		slog.Error("branding", "err", err) // a broken link in every page's footer
+		os.Exit(1)
+	}
+	if apiSrv.Brand.Landing && !runnerMode {
+		slog.Info("landing page on", "name", apiSrv.Brand.Name)
 	}
 	if !runnerMode {
 		configureMail(authn, *signup, mail.Config{
@@ -513,6 +537,15 @@ func main() {
 	}
 }
 
+// envBool reports whether the variable name is set to 1, true, yes or on.
+func envBool(name string) bool {
+	switch strings.ToLower(os.Getenv(name)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
 func envOr(v, name string) string {
 	if v != "" {
 		return v
@@ -524,12 +557,7 @@ func envOr(v, name string) string {
 // opens signup if asked to and email works. When it can't, it says why and
 // Dash carries on invite-only.
 func configureMail(authn *auth.Auth, signup bool, cfg mail.Config, publicURL string) {
-	if !signup {
-		switch strings.ToLower(os.Getenv("DASH_SIGNUP")) {
-		case "1", "true", "yes", "on":
-			signup = true
-		}
-	}
+	signup = signup || envBool("DASH_SIGNUP")
 	if cfg.Port == 0 {
 		cfg.Port = 587
 		if v := os.Getenv("DASH_SMTP_PORT"); v != "" {

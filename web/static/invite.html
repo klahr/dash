@@ -7,7 +7,8 @@
   <meta name="color-scheme" content="dark">
   <meta name="referrer" content="no-referrer">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <title>Invitation · Dash</title>
+  <title>Invitation · {{DASH_NAME}}</title>
+  <meta name="dash-name" content="{{DASH_NAME}}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap">
@@ -17,8 +18,8 @@
   <main class="login-page">
     <div class="login-card invite-card">
       <div class="brand">
-        <img src="favicon.svg" alt="" aria-hidden="true">
-        <span>Dash</span>
+        <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
+        <span>{{DASH_NAME}}</span>
       </div>
       <p class="invite-what" id="invite-what">Checking the invitation…</p>
 
@@ -33,12 +34,13 @@
         <label class="field"><span>Choose a username</span><input name="username" autocomplete="username" autocapitalize="none" required maxlength="64"></label>
         <label class="field"><span>Choose a password <em>at least 8 characters</em></span><input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
         <button class="btn primary">Create account and join</button>
-        <p class="login-alt">Already have a Dash account? <a href="/login.html" id="invite-login">Sign in</a> and come back to this link.</p>
+        <p class="login-alt">Already have a {{DASH_NAME}} account? <a href="/login.html" id="invite-login">Sign in</a> and come back to this link.</p>
       </form>
 
       <button class="btn secondary-action" id="invite-decline" type="button" hidden>Decline</button>
       <div id="invite-error" class="login-error" role="alert"></div>
     </div>
+    <!--DASH_FOOTER-->
   </main>
   <script src="invite.js"></script>
 </body>

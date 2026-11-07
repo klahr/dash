@@ -782,7 +782,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 @keyframes toast-time { to { transform: scaleX(0); } }
 
 /* ---------- login ---------- */
-.login-page { min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; }
+.login-page { min-height: 100dvh; display: grid; grid-template-rows: 1fr auto; place-items: center; padding: 24px 16px calc(12px + var(--safe-b)); }
 .login-card { width: min(360px, 100%); display: flex; flex-direction: column; gap: 12px; }
 .login-card .brand { justify-content: center; font-size: 26px; margin-bottom: 4px; }
 .login-card .brand img { width: 30px; height: 30px; border-radius: 7px; }
@@ -791,6 +791,14 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .login-error { color: var(--failed); min-height: 1.5em; font-size: 14px; text-align: center; }
 .login-links { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px; }
 .login-links [hidden] { display: none; }
+
+/* Source code (AGPL), terms, privacy, contact: the end of every page. */
+.site-footer { font-size: 13px; color: var(--faint); text-align: center; }
+.site-footer a { color: var(--muted); text-decoration: none; }
+.site-footer a:hover { color: var(--text); text-decoration: underline; }
+.login-page > .site-footer { padding-top: 24px; }
+.foot-menu-list > .site-footer { margin-top: 4px; padding: 8px 10px 4px; border-top: 1px solid var(--line); text-align: left; white-space: normal; }
+.sheet .site-footer { text-align: left; }
 
 /* ---------- menu: sidebar on desktop, drawer on mobile ---------- */
 .side-projects { order: 3; }

@@ -19,6 +19,7 @@ import (
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/branding"
 	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/ci"
 	"github.com/klahr/dash/internal/dispatch"
@@ -80,6 +81,9 @@ type Server struct {
 	Static      fs.FS  // frontend assets
 	Addr        string // the listen address (-addr), for the connector setup guide
 	PublicURL   string // -public-url: the hub's address runners are told (optional; else the request's)
+	// Brand is how this Dash presents itself: name, legal links, logo, the
+	// landing page (empty fields: the defaults).
+	Brand branding.Config
 
 	reviewMu  sync.Mutex
 	reviewGen uint64
@@ -108,6 +112,14 @@ func (s *Server) buildMux() *http.ServeMux {
 	if s.Hub != nil && s.Hub.ProjectOrg == nil && s.Store != nil {
 		s.Hub.ProjectOrg = s.Store.ProjectOrg // events go to their project's org
 	}
+
+	// Emails and the connector's page name the same Dash; signed-out
+	// visitors to / see the landing page when it's on.
+	s.Auth.Brand = s.Brand
+	if s.Brand.Landing {
+		s.Auth.Landing = s.landing()
+	}
+	mux.HandleFunc("GET "+branding.LogoPath, s.logo)
 
 	// Sign-in, users, orgs and invitations (the middleware lets /api/login
 	// and the invitation-link calls through without a session)

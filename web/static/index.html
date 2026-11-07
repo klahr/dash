@@ -9,12 +9,12 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Dash">
+  <meta name="apple-mobile-web-app-title" content="{{DASH_NAME}}">
   <meta name="color-scheme" content="dark">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
-  <title>Dash</title>
+  <title>{{DASH_NAME}}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -28,9 +28,9 @@
       <button class="icon-btn menu-btn" id="menu-open" type="button" aria-label="Menu" aria-controls="menu" aria-expanded="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h12M4 17h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
-      <a class="brand" href="/" aria-label="Dash home" title="Dash {{DASH_VERSION}}">
-        <img src="favicon.svg" alt="" aria-hidden="true">
-        <span>Dash</span>
+      <a class="brand" href="/" aria-label="{{DASH_NAME}} home" title="{{DASH_NAME}} {{DASH_VERSION}}">
+        <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
+        <span>{{DASH_NAME}}</span>
       </a>
       <div class="project-picker">
         <button class="project-switch" id="project-switch" type="button" aria-controls="menu" aria-haspopup="true" title="Switch project">
@@ -142,6 +142,7 @@
               <button id="connector-open" type="button" data-icon="plug">Connect Claude</button>
               <button id="tokens-open" type="button" data-icon="key">Tokens &amp; apps</button>
               <button id="logout" type="button" data-icon="logout">Log out</button>
+              <!--DASH_FOOTER-->
             </div>
           </details>
         </div>
@@ -754,6 +755,7 @@
         <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:task …</code> <code>:new</code> <code>:run cmd</code> <code>:shell</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:prefs</code> <code>:connector</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:pin</code> <code>:fullscreen</code> <code>:activity</code> <code>:history</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:vim</code> <code>:list</code> <code>:q</code></dd>
       </dl>
       <p class="hint">Dash version <code>{{DASH_VERSION}}</code></p>
+      <!--DASH_FOOTER-->
     </form>
   </dialog>
 

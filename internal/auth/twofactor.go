@@ -34,7 +34,6 @@ import (
 const (
 	ticketTTL     = 5 * time.Minute
 	recoveryCount = 10
-	issuer        = "Dash"
 )
 
 // A loginTicket stands for a password that was right, until the second
@@ -261,7 +260,7 @@ func (a *Auth) setupTOTP(w http.ResponseWriter, r *http.Request, id *Identity) {
 	if id.User.Email != "" {
 		account = id.User.Email
 	}
-	uri := totp.URI(issuer, account, secret)
+	uri := totp.URI(a.brand().Name, account, secret) // the issuer authenticator apps show
 	png, err := qr.PNG(uri)
 	if err != nil {
 		accountError(w, err)

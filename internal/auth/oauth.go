@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/branding"
 	"github.com/klahr/dash/internal/store"
 )
 
@@ -222,7 +223,7 @@ func (o *OAuth) resourceMetadata(w http.ResponseWriter, r *http.Request) {
 		"resource":                 o.Resource(),
 		"authorization_servers":    []string{o.base},
 		"bearer_methods_supported": []string{"header"},
-		"resource_name":            "Dash",
+		"resource_name":            o.a.brand().Name,
 		"scopes_supported":         store.UserScopes,
 	})
 }
@@ -370,6 +371,8 @@ type authRequest struct {
 	Ticket string
 	Orgs   []store.Membership
 	OrgID  int64
+	// Brand names Dash on the page (set by consent).
+	Brand branding.Config
 }
 
 // ReadOnly reports whether the client asked for read access only.
@@ -606,15 +609,16 @@ func (o *OAuth) takeTicket(t string, q authRequest) (consentTicket, bool) {
 
 var consentPage = template.Must(template.New("consent").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Connect to Dash</title>
+<title>Connect to {{.Brand.Name}}</title>
 <style>
 body{font:16px system-ui,sans-serif;background:#111;color:#eee;display:flex;justify-content:center;padding:2rem 1rem;margin:0}
 main{max-width:24rem;width:100%}h1{font-size:1.4rem}p{color:#bbb;line-height:1.4}
 label{display:block;margin:.8rem 0 .3rem}input,select{width:100%;box-sizing:border-box;padding:.6rem;border-radius:6px;border:1px solid #444;background:#1c1c1c;color:#eee;font-size:1rem}
 .err{color:#f77}.row{display:flex;gap:.6rem;margin-top:1.2rem}button{flex:1;padding:.7rem;border-radius:6px;border:0;font-size:1rem;cursor:pointer}
 .allow{background:#d97757;color:#fff}.deny{background:#333;color:#eee}
+.site-footer{margin-top:2rem;font-size:.85rem;color:#888;text-align:center}.site-footer a{color:#aaa}
 </style></head><body><main>
-<h1>Connect {{if .ClientName}}“{{.ClientName}}”{{else}}an app{{end}} to Dash?</h1>
+<h1>Connect {{if .ClientName}}“{{.ClientName}}”{{else}}an app{{end}} to {{.Brand.Name}}?</h1>
 {{if .ReadOnly}}<p>It will be able to see the projects, tasks and issues of the organization you connect it to, on every computer in its dashboard. It can't change anything.</p>
 {{else}}<p>It will be able to see the projects and tasks of the organization you connect it to and create, run, approve, rework, cancel and delete tasks on every computer in its dashboard. Tasks run Claude Code on those computers.</p>{{end}}
 <p>After you allow it, you go back to <b>{{.RedirectHost}}</b>.</p>
@@ -633,17 +637,18 @@ label{display:block;margin:.8rem 0 .3rem}input,select{width:100%;box-sizing:bord
 <option value="">Choose…</option>
 {{range .Orgs}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
 </select>
-{{else}}<label for="u">Dash username</label><input id="u" name="username" autocomplete="username">
+{{else}}<label for="u">{{.Brand.Name}} username</label><input id="u" name="username" autocomplete="username">
 <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password">
 <label for="c">Two-factor code <small>(if you've turned it on)</small></label><input id="c" name="code" inputmode="numeric" autocomplete="one-time-code">{{end}}
 <div class="row"><button class="deny" name="action" value="deny" formnovalidate>Deny</button>
 <button class="allow" name="action" value="allow">Allow</button></div>
-</form></main></body></html>
+</form>{{.Brand.Footer}}</main></body></html>
 `))
 
 func (o *OAuth) consent(w http.ResponseWriter, code int, q authRequest) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(code)
+	q.Brand = o.a.brand()
 	_ = consentPage.Execute(w, q)
 }
 

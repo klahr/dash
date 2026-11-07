@@ -8,7 +8,7 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
-  <title>Sign in · Dash</title>
+  <title>Sign in · {{DASH_NAME}}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap">
@@ -22,8 +22,8 @@
          Files are embedded in the binary: rebuild and restart dash afterwards. -->
       <img class="login-art" src="img/login-art.webp" alt="" width="640" height="400" onerror="this.remove()">
       <div class="brand">
-        <img src="favicon.svg" alt="" aria-hidden="true">
-        <span>Dash</span>
+        <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
+        <span>{{DASH_NAME}}</span>
       </div>
       <p>Sign in to manage your agents.</p>
       <label class="field"><span>Username or email</span><input name="username" autocomplete="username" autocapitalize="none" required autofocus></label>
@@ -38,8 +38,8 @@
     <!-- Open signup (when the server allows it) -->
     <form id="signup" class="login-card" hidden>
       <div class="brand">
-        <img src="favicon.svg" alt="" aria-hidden="true">
-        <span>Dash</span>
+        <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
+        <span>{{DASH_NAME}}</span>
       </div>
       <p>Create an account. We'll email you a link to confirm your address.</p>
       <label class="field"><span>Email</span><input name="email" type="email" autocomplete="email" autocapitalize="none" required></label>
@@ -51,8 +51,8 @@
     <!-- Forgot password: a link by email -->
     <form id="forgot" class="login-card" hidden>
       <div class="brand">
-        <img src="favicon.svg" alt="" aria-hidden="true">
-        <span>Dash</span>
+        <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
+        <span>{{DASH_NAME}}</span>
       </div>
       <p>Enter your account's email address and we'll send you a link to choose a new password.</p>
       <label class="field"><span>Email</span><input name="email" type="email" autocomplete="email" autocapitalize="none" required></label>
@@ -63,8 +63,8 @@
     <!-- From a reset link -->
     <form id="reset" class="login-card" hidden>
       <div class="brand">
-        <img src="favicon.svg" alt="" aria-hidden="true">
-        <span>Dash</span>
+        <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
+        <span>{{DASH_NAME}}</span>
       </div>
       <p>Choose a new password. You'll be signed out everywhere else.</p>
       <label class="field"><span>New password (at least 8 characters)</span><input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
@@ -74,8 +74,8 @@
     <!-- What happened: check your inbox, link expired, … -->
     <section id="notice" class="login-card" hidden>
       <div class="brand">
-        <img src="favicon.svg" alt="" aria-hidden="true">
-        <span>Dash</span>
+        <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
+        <span>{{DASH_NAME}}</span>
       </div>
       <p id="notice-text" role="status"></p>
       <button class="link to-login" type="button">Back to sign in</button>
@@ -83,8 +83,8 @@
     <!-- Second step, for accounts with two-factor sign-in -->
     <form id="totp" class="login-card" hidden>
       <div class="brand">
-        <img src="favicon.svg" alt="" aria-hidden="true">
-        <span>Dash</span>
+        <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
+        <span>{{DASH_NAME}}</span>
       </div>
       <p id="totp-prompt">Enter the code from your authenticator app.</p>
       <label class="field"><span id="totp-label">6-digit code</span><input name="code" inputmode="numeric" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" required></label>
@@ -95,13 +95,14 @@
     <!-- Setting up two-factor sign-in, when an org requires it -->
     <section id="enrol" class="login-card enrol-card" hidden aria-labelledby="enrol-title">
       <div class="brand">
-        <img src="favicon.svg" alt="" aria-hidden="true">
-        <span>Dash</span>
+        <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
+        <span>{{DASH_NAME}}</span>
       </div>
       <h2 id="enrol-title">Set up two-factor sign-in</h2>
       <div id="enrol-body"></div>
       <button class="link" type="button" id="enrol-logout">Sign out</button>
     </section>
+    <!--DASH_FOOTER-->
   </main>
   <script src="twofactor.js"></script>
   <script src="login.js"></script>
