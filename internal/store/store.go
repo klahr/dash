@@ -57,6 +57,11 @@ type snapshot struct {
 	// Issues are each project's known bugs, vulnerabilities and other
 	// problems, keyed by issue id.
 	Issues map[string]*model.Issue `json:"issues,omitempty"`
+	// ScanRuns are the recent runs of each project's scans, keyed by run id.
+	ScanRuns map[string]*model.ScanRun `json:"scan_runs,omitempty"`
+	// ScanSettings are the schedule changes users made, keyed by
+	// "<project id>/<scan name>".
+	ScanSettings map[string]*model.ScanSetting `json:"scan_settings,omitempty"`
 }
 
 type Store struct {
@@ -98,6 +103,12 @@ func Open(path string, pub Publisher) (*Store, error) {
 		t.Reviewing = false // the chat turn died with the old process
 		// Merging todos stay merging: their jobs are lost with the old
 		// process, but MergeQueue.Resume queues them again.
+	}
+	for _, r := range s.data.ScanRuns {
+		if r.Status == model.ScanRunning { // the agent died with the old process
+			now := time.Now()
+			r.Status, r.Error, r.FinishedAt, r.Activity = model.ScanFailed, "Dash stopped during the scan", &now, ""
+		}
 	}
 	return s, s.saveLocked()
 }
@@ -200,6 +211,16 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 	for iid, is := range s.data.Issues {
 		if is.ProjectID == id {
 			delete(s.data.Issues, iid)
+		}
+	}
+	for rid, r := range s.data.ScanRuns {
+		if r.ProjectID == id {
+			delete(s.data.ScanRuns, rid)
+		}
+	}
+	for k, st := range s.data.ScanSettings {
+		if st.ProjectID == id {
+			delete(s.data.ScanSettings, k)
 		}
 	}
 	delete(s.data.Projects, id)

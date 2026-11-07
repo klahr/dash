@@ -759,3 +759,44 @@ func (g *Git) unpushedRange(ctx context.Context, projectID, repo, branch string)
 	}
 	return branch
 }
+
+// Commit resolves ref to a commit id.
+func (g *Git) Commit(ctx context.Context, projectID, repo, ref string) (string, error) {
+	return g.run(ctx, false, projectID, repo, "git", "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+}
+
+// MergeBase is the best common ancestor of two commits.
+func (g *Git) MergeBase(ctx context.Context, projectID, repo, a, b string) (string, error) {
+	return g.run(ctx, false, projectID, repo, "git", "merge-base", a, b)
+}
+
+// ChangedFiles lists the files that differ between two commits, deleted
+// ones left out.
+func (g *Git) ChangedFiles(ctx context.Context, projectID, repo, from, to string) ([]string, error) {
+	out, err := g.run(ctx, false, projectID, repo, "git", "diff", "--name-only", "--diff-filter=d", "-z", from, to)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, f := range strings.Split(out, "\x00") {
+		if f = strings.TrimSpace(f); f != "" {
+			files = append(files, f)
+		}
+	}
+	return files, nil
+}
+
+// AddDetachedWorktree checks commit out at path without a branch: a
+// throwaway copy for work that only reads, such as a scan.
+func (g *Git) AddDetachedWorktree(ctx context.Context, projectID, repo, path, commit string) error {
+	_, err := g.git(ctx, projectID, repo, "worktree", "add", "--detach", path, commit)
+	return err
+}
+
+// RemoveDetachedWorktree deletes a worktree made by AddDetachedWorktree.
+func (g *Git) RemoveDetachedWorktree(ctx context.Context, projectID, repo, path string) {
+	if _, err := g.git(ctx, projectID, repo, "worktree", "remove", "--force", path); err != nil {
+		_ = os.RemoveAll(path)
+		_, _ = g.git(ctx, projectID, repo, "worktree", "prune")
+	}
+}

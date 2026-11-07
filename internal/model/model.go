@@ -393,6 +393,8 @@ const (
 	EvPreview        EventType = "preview.updated"    // a todo's live preview started, came up, crashed or stopped
 	EvIssueUpdated   EventType = "issue.updated"      // an issue was added or changed; Data is the Issue
 	EvIssueDeleted   EventType = "issue.deleted"      // Data is {"id": …}
+	EvScanRun        EventType = "scan.run"           // a scan started, progressed or finished; Data is the ScanRun
+	EvScanSettings   EventType = "scan.settings"      // a scan's schedule was turned on/off or edited; Data is the ScanSetting
 )
 
 // Event is the envelope for everything pushed over /ws/events.

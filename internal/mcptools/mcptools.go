@@ -390,6 +390,7 @@ func IssueTools(b Board, o Options) []Tool {
 					model.UpsertNew:       "Reported as a new issue.",
 					model.UpsertUpdated:   "This issue was already known; updated it.",
 					model.UpsertKnown:     "This issue is already known; nothing changed.",
+					model.UpsertReopened:  "This issue had been resolved; reopened it.",
 					model.UpsertDismissed: "The user already dismissed this issue (" + is.DismissReason + "); leave it.",
 				}[res]
 				return fmt.Sprintf("%s id %s, status %s.", msg, is.ID, is.Status), nil

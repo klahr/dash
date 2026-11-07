@@ -42,37 +42,59 @@ func (s *Store) UpsertIssue(in model.Issue) (model.Issue, model.UpsertResult, er
 // with UpsertIssue's rules, saving once, and counts the outcomes. Issues
 // without a Source get source.
 func (s *Store) UpsertIssues(projectID, source string, in []model.Issue) (model.UpsertCounts, error) {
+	counts, _, err := s.UpsertIssueBatch(projectID, source, in)
+	return counts, err
+}
+
+// UpsertOutcome is what UpsertIssueBatch did with one issue.
+type UpsertOutcome struct {
+	Issue  model.Issue
+	Result model.UpsertResult
+}
+
+// UpsertIssueBatch is UpsertIssues that also reports each issue's outcome,
+// in order. The batch is all or nothing: if one issue is invalid, none is
+// added.
+func (s *Store) UpsertIssueBatch(projectID, source string, in []model.Issue) (model.UpsertCounts, []UpsertOutcome, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var counts model.UpsertCounts
 	if _, ok := s.data.Projects[projectID]; !ok {
-		return counts, ErrNotFound
+		return counts, nil, ErrNotFound
+	}
+	// Check them all first so a bad one doesn't leave half a batch behind.
+	for _, is := range in {
+		if err := is.Normalize(); err != nil {
+			return counts, nil, fmt.Errorf("%w: %w", ErrBadIssue, err)
+		}
 	}
 	var changed []model.Issue
+	out := make([]UpsertOutcome, 0, len(in))
 	for _, is := range in {
 		is.ProjectID = projectID
 		if is.Source == "" {
 			is.Source = source
 		}
-		out, r, err := s.upsertIssueLocked(is)
+		res, r, err := s.upsertIssueLocked(is)
 		if err != nil {
-			return counts, err
+			return counts, nil, err
 		}
 		counts.Add(r)
-		if r == model.UpsertNew || r == model.UpsertUpdated {
-			changed = append(changed, out)
+		out = append(out, UpsertOutcome{Issue: res, Result: r})
+		if r == model.UpsertNew || r == model.UpsertUpdated || r == model.UpsertReopened {
+			changed = append(changed, res)
 		}
 	}
 	if len(changed) == 0 {
-		return counts, nil
+		return counts, out, nil
 	}
 	if err := s.saveLocked(); err != nil {
-		return counts, err
+		return counts, out, err
 	}
 	for _, is := range changed {
 		s.emit(model.EvIssueUpdated, is.ProjectID, "", is)
 	}
-	return counts, nil
+	return counts, out, nil
 }
 
 func (s *Store) upsertIssueLocked(in model.Issue) (model.Issue, model.UpsertResult, error) {
@@ -118,15 +140,16 @@ func (s *Store) upsertIssueLocked(in model.Issue) (model.Issue, model.UpsertResu
 	if in.Rule != "" {
 		cp.Rule = in.Rule
 	}
+	res := model.UpsertUpdated
 	if cp.Status == model.IssueResolved {
-		cp.Status = model.IssueOpen // it came back
+		cp.Status, res = model.IssueOpen, model.UpsertReopened // it came back
 	}
 	if issueEqual(cp, *old) {
 		return cp, model.UpsertKnown, nil
 	}
 	cp.UpdatedAt = now
 	s.data.Issues[cp.ID] = &cp
-	return cp, model.UpsertUpdated, nil
+	return cp, res, nil
 }
 
 func (s *Store) findIssueLocked(projectID, fingerprint string) *model.Issue {

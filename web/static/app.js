@@ -59,6 +59,7 @@ const ICONS = {
   diff: "M12 4v8M8 8h8M8 18h8",
   log: "M4 6h16M4 12h16M4 18h10",
   flag: "M5 21V4h12l-2 4 2 4H5",
+  scan: "M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16",
   bug: "M8 10a4 4 0 0 1 8 0v4a4 4 0 0 1-8 0zM12 10v8M4 13h4M16 13h4M5 8l3 2M19 8l-3 2M5 19l3-2M19 19l-3-2M9.5 6.5 8 4M14.5 6.5 16 4",
   plug: "M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4",
   down: "m7 10 5 5 5-5",
@@ -628,6 +629,7 @@ function applyView(name) {
   if (name === "history") loadGraph().catch(fail);
   if (name === "files" && state.project) loadFiles().catch(fail); // at startup the project (and the files code below) isn't ready yet
   if (name === "issues" && state.project) loadIssues().catch(fail);
+  if (name === "scans" && state.project) loadScans().catch(fail);
 }
 $$(".nav > button[data-view]").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 {
@@ -718,6 +720,12 @@ function onEvent(ev, m = { name: "" }) {
     case "issue.updated":
     case "issue.deleted":
       if (mine) onIssueEvent(ev);
+      break;
+    case "scan.run":
+      if (mine) onScanRun(ev);
+      break;
+    case "scan.settings":
+      if (mine && scans.loaded) loadScans().catch(() => {});
       break;
     case "todo.deleted":
       if (!mine) break;
@@ -814,6 +822,7 @@ function elsewhere(ev, m) {
     if (ev.data.status === "review") { toast(`${title(ev.data)} · ${where}`, { tone: "review", head: "Ready for review", action: go }); notify("Ready for review", ev.data, where); }
     if (ev.data.status === "failed") notify("Failed", ev.data, `${where}: ${ev.data.error || ""}`);
   }
+  if (ev.type === "scan.run" && ev.data.trigger === "schedule") scanFinished(ev.data, p, where);
   if (ev.type === "permission.updated" && !ev.data.decision) {
     toast(`${describePerm(ev.data).title} · ${where}`, { tone: "approval", head: "Claude needs your approval", action: p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.data.todo_id); } } : null });
     notify(`Claude wants to ${describePerm(ev.data).title}`, { title: where, prompt: "" }, describePerm(ev.data).detail);
@@ -863,8 +872,9 @@ async function selectProject(p) {
   loadRemote(true).catch(() => {});
   renderChatPane();
   resetIssues();
+  resetScans();
   if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); renderFileTree(); renderFile(); return; }
-  await Promise.all([loadIssues(), loadTodos(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles()]);
+  await Promise.all([loadIssues(), loadTodos(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles(), state.view === "scans" && loadScans()]);
 }
 
 async function loadPerms() {
@@ -4340,7 +4350,7 @@ const iss = {
   checked: new Set(), // ids picked for a bulk action
   expanded: new Set(),
   editing: null,      // id of the issue whose fields are being edited
-  filter: { type: "", severity: "", status: "active", source: "" },
+  filter: { type: "", severity: "", status: "active", source: "", run: null }, // run: { id, ids, label } from a scan report
 };
 
 function sortIssues() {
@@ -4358,6 +4368,7 @@ async function loadIssues() {
 }
 
 function resetIssues() {
+  iss.filter.run = null;
   iss.list = [];
   iss.checked.clear();
   iss.expanded.clear();
@@ -4376,6 +4387,7 @@ function onIssueEvent(ev) {
 
 function issueVisible(i) {
   const f = iss.filter;
+  if (f.run && !f.run.ids.has(i.id)) return false;
   if (f.type && i.type !== f.type) return false;
   if (f.severity && i.severity !== f.severity) return false;
   if (f.status === "active" ? !triageable(i) : f.status && f.status !== "all" && i.status !== f.status) return false;
@@ -4408,6 +4420,9 @@ function renderIssues() {
     : "Bugs, vulnerabilities and other problems go here: add one above, or let scans and running tasks report what they find. Check issues to turn them into tasks.";
   $("#issue-add").hidden = !state.project;
   $("#issue-tools").hidden = !state.project || !iss.list.length;
+  const runChip = $("#issue-f-run");
+  runChip.hidden = !iss.filter.run;
+  runChip.replaceChildren(...(iss.filter.run ? [h("span", {}, iss.filter.run.label), ico("x")] : []));
   // Sources seen so far, for the source filter.
   const sel = $("#issue-f-source");
   const kinds = [...new Set(iss.list.map((i) => i.source.split(":")[0]))];
@@ -4547,6 +4562,7 @@ $("#issue-add").addEventListener("submit", attempt(async (e) => {
   const { issue, result } = await api("POST", `/api/projects/${state.project.id}/issues`, { title: t, type: $("#issue-add-type").value });
   input.value = "";
   if (result === "known" || result === "updated") toast(issue.title, { head: "Already on the list" });
+  if (result === "reopened") toast(issue.title, { head: "Reopened: it had been resolved" });
   if (result === "dismissed") toast(issue.title, { head: "Already dismissed", action: { label: "Show", run: () => { iss.filter.status = "dismissed"; $("#issue-f-status").value = "dismissed"; iss.expanded.add(issue.id); renderIssues(); } } });
   if (result === "new") {
     // The live event may have added it already; show it either way, opened.
@@ -4568,13 +4584,252 @@ $("#issue-combine").addEventListener("click", attempt(() => issueTasks([...iss.c
 $("#issue-dismiss").addEventListener("click", attempt(() => dismissIssues([...iss.checked])));
 $("#issue-clear").addEventListener("click", () => { iss.checked.clear(); renderIssues(); });
 
+// ------------------------------------------------------------------ scans
+// Preconfigured, read-only reviews of the project (security, code review,
+// dependency audit, or the team's own templates in .dash/scans/) that run on
+// demand or on a schedule and file what they find in Issues.
+const SCAN_KINDS = { security: "Security", code_review: "Code review", dependencies: "Dependencies", custom: "Custom" };
+const SCAN_SCOPES = { repo: "Whole repository", since_last_scan: "Changes since the last scan", since_main: "Branch vs. main", path: "One path" };
+const scans = { list: [], problems: [], builtin: false, dir: ".dash/scans", loaded: false, history: new Map() };
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+async function loadScans() {
+  const p = state.project;
+  if (!p) return;
+  const r = await api("GET", `/api/projects/${p.id}/scans`);
+  if (state.project !== p) return;
+  Object.assign(scans, { list: r.scans, problems: r.problems, builtin: r.builtin, dir: r.dir, loaded: true });
+  for (const name of scans.history.keys()) loadScanHistory(name).catch(() => {});
+  renderScans();
+}
+
+function resetScans() {
+  Object.assign(scans, { list: [], problems: [], builtin: false, loaded: false });
+  scans.history.clear();
+  renderScans();
+}
+
+async function loadScanHistory(name) {
+  const p = state.project;
+  const runs = await api("GET", `/api/projects/${p.id}/scan-runs?scan=${encodeURIComponent(name)}`);
+  if (state.project !== p) return;
+  scans.history.set(name, runs);
+  renderScans();
+}
+
+function onScanRun(ev) {
+  const run = ev.data;
+  const s = scans.list.find((x) => x.name === run.scan);
+  if (s) {
+    if (!s.last_run || s.last_run.id === run.id || new Date(run.started_at) >= new Date(s.last_run.started_at)) {
+      if (s.last_run?.status === "succeeded" && s.last_run.id !== run.id) s.last_report = s.last_run;
+      s.last_run = run;
+      if (run.status === "succeeded") s.last_report = null;
+    }
+    if (run.status === "running") s.running = run.id;
+    else if (s.running === run.id) s.running = "";
+  }
+  const hist = scans.history.get(run.scan);
+  if (hist) {
+    const i = hist.findIndex((x) => x.id === run.id);
+    if (i >= 0) hist[i] = run; else hist.unshift(run);
+  }
+  if (run.status !== "running" && s && !s.running) loadScans().catch(() => {}); // the next run time moved
+  renderScans();
+  scanFinished(run, state.project);
+}
+
+// scanFinished tells about a run that just ended: always for one started by
+// hand, and for a scheduled one when it found new critical or high issues.
+function scanFinished(run, p, where = "") {
+  if (run.status === "running" || !run.finished_at) return;
+  const go = p ? { label: "Show", run: async () => { if (state.project !== p) await selectProject(p); showRunIssues(run, "new"); } } : null;
+  const head = `${scanLabel(run.scan)}${where ? ` · ${where}` : ""}`;
+  if (run.trigger === "schedule") {
+    if (run.status !== "succeeded" || !run.urgent) return;
+    const msg = `${plural(run.urgent, "new critical or high issue")} · ${scanSummary(run)}`;
+    toast(msg, { tone: "error", icon: "bug", head, action: go, ms: 12000 });
+    if (notifyOn() && "Notification" in window && Notification.permission === "granted" && !(document.visibilityState === "visible" && document.hasFocus())) {
+      const n = new Notification(head, { body: msg, tag: `dash-scan-${run.id}` });
+      n.onclick = () => { window.focus(); go?.run(); n.close(); };
+    }
+    return;
+  }
+  if (run.status === "failed") toast(run.error, { tone: "error", head: `${head} failed` });
+  else if (run.status === "succeeded" || run.status === "skipped") toast(scanSummary(run), { tone: "ok", head, action: run.status === "succeeded" && run.new_issues?.length ? go : null });
+}
+
+const scanLabel = (name) => scans.list.find((s) => s.name === name)?.title || name;
+
+function scanSummary(r) {
+  switch (r.status) {
+    case "running": return r.activity || "Running…";
+    case "skipped": return r.note || "Nothing to scan";
+    case "failed": return r.error || "Failed";
+    case "canceled": return "Canceled";
+  }
+  const c = r.counts || {};
+  const known = (c.known || 0) + (c.updated || 0);
+  const parts = [`${c.new || 0} new`];
+  if (known) parts.push(`${known} already known`);
+  if (c.reopened) parts.push(`${c.reopened} reopened`);
+  if (c.dismissed) parts.push(`${c.dismissed} dismissed`);
+  return r.findings ? parts.join(", ") : "No issues found";
+}
+
+// showRunIssues opens Issues filtered to what a run added ("new") or brought back ("reopened").
+function showRunIssues(run, which) {
+  const ids = which === "reopened" ? run.reopened_issues || [] : run.new_issues || [];
+  iss.filter.run = { id: run.id, ids: new Set(ids), label: `${which === "reopened" ? "Reopened" : "New"} · ${scanLabel(run.scan)}, ${agoText(run.started_at)}` };
+  iss.filter.status = "all";
+  $("#issue-f-status").value = "all";
+  showView("issues");
+  renderIssues();
+}
+
+const agoText = (iso) => (ago(iso) === "now" ? "just now" : `${ago(iso)} ago`);
+
+// "in 5m", "in 3h", "in 2d"
+function until(iso) {
+  const s = (new Date(iso) - Date.now()) / 1000;
+  if (s < 60) return "soon";
+  if (s < 3600) return `in ${Math.round(s / 60)}m`;
+  if (s < 86400) return `in ${Math.round(s / 3600)}h`;
+  return `in ${Math.round(s / 86400)}d`;
+}
+
+// describeCron reads common cron expressions out; others stay as they are.
+function describeCron(expr) {
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const f = (expr || "").trim().split(/\s+/);
+  const macro = { "@hourly": "Every hour", "@daily": "Daily at 00:00", "@midnight": "Daily at 00:00", "@weekly": "Sundays at 00:00", "@monthly": "Monthly on the 1st" }[f[0]];
+  if (macro) return macro;
+  if (f.length !== 5) return expr;
+  const [mi, hr, dom, mon, dow] = f;
+  const num = (x) => /^\d+$/.test(x);
+  if (/^\*\/\d+$/.test(mi) && hr === "*" && dom === "*" && mon === "*" && dow === "*") return `Every ${mi.slice(2)} minutes`;
+  if (num(mi) && hr === "*" && dom === "*" && mon === "*" && dow === "*") return `Hourly at :${mi.padStart(2, "0")}`;
+  if (!num(mi) || !num(hr) || mon !== "*") return expr;
+  const time = `${hr.padStart(2, "0")}:${mi.padStart(2, "0")}`;
+  if (dom === "*" && dow === "*") return `Daily at ${time}`;
+  if (dom === "*" && (dow === "1-5" || dow === "mon-fri")) return `Weekdays at ${time}`;
+  if (dom === "*" && num(dow) && +dow <= 7) return `${days[+dow]}s at ${time}`;
+  if (num(dom) && dow === "*") return `Monthly on day ${dom} at ${time}`;
+  return expr;
+}
+
+function renderScanBadge() {
+  const n = scans.list.filter((s) => s.running).length;
+  const b = $("#scan-badge");
+  b.hidden = !n;
+  b.textContent = n;
+  b.title = `${plural(n, "scan")} running`;
+}
+
+function renderScans() {
+  renderScanBadge();
+  const p = state.project;
+  const intro = $("#scan-intro");
+  intro.hidden = !p || !scans.loaded;
+  intro.replaceChildren(scans.builtin
+    ? h("span", {}, "This repository has no scan templates, so these are Dash's built-in scans. Add your own as markdown files in ", h("code", {}, `${scans.dir}/`), " to share them with your team: frontmatter for the settings, the prompt below it.")
+    : h("span", {}, "Scans from ", h("code", {}, `${scans.dir}/`), " in this repository. They only read the code and add what they find to Issues."));
+  const probs = $("#scan-problems");
+  probs.hidden = !scans.problems.length;
+  probs.replaceChildren(...scans.problems.map((x) => h("li", {}, h("code", {}, x.file), `: ${x.error}`)));
+  $("#scan-list").replaceChildren(...(p ? scans.list.map(scanCard) : []));
+  $("#scan-empty").hidden = !!p;
+}
+
+function scanCard(s) {
+  const sch = s.schedule;
+  const running = s.last_run?.status === "running" && s.running ? s.last_run : null;
+  const patch = (body) => api("PATCH", `/api/projects/${state.project.id}/scans/${encodeURIComponent(s.name)}`, body).then(() => loadScans());
+  const editCron = attempt(async () => {
+    const v = await ask({
+      title: `Schedule of ${s.title}`, input: true, value: sch.cron, placeholder: "0 6 * * *", ok: "Save",
+      body: `A cron expression: minute hour day month weekday, in this computer's time. E.g. "0 6 * * *" daily at 06:00, "0 7 * * 1-5" weekdays at 07:00, "@hourly".${sch.default ? ` Empty: the template's (${sch.default}).` : ""}`,
+    });
+    if (v === null) return;
+    await patch({ schedule: v.trim(), ...(v.trim() && !sch.enabled ? { enabled: true } : {}) });
+  });
+  const meta = [SCAN_SCOPES[s.scope] || s.scope, s.path && s.scope !== "path" ? `in ${s.path}` : s.path, s.model, s.effort && `${s.effort} effort`].filter(Boolean).join(" · ");
+  const hist = scans.history.get(s.name);
+  return h("li", { class: `scan-card${running ? " running" : ""}`, "data-scan": s.name },
+    h("div", { class: "scan-head" },
+      h("div", { class: "scan-id" },
+        h("div", { class: "scan-name" }, h("strong", {}, s.title), h("span", { class: `scan-kind kind-${s.kind}` }, SCAN_KINDS[s.kind] || s.kind)),
+        h("div", { class: "scan-meta" }, meta, " · ", s.builtin ? "built-in" : h("code", {}, s.file))),
+      running
+        ? ib({ type: "button", class: "btn small", onclick: attempt(() => api("POST", `/api/scan-runs/${running.id}/cancel`)) }, "stop", "Stop")
+        : ib({ type: "button", class: "btn small primary", onclick: attempt(async () => {
+            const run = await api("POST", `/api/projects/${state.project.id}/scans/${encodeURIComponent(s.name)}/run`);
+            s.running = run.id;
+            s.last_run = run;
+            renderScans();
+          }) }, "play", "Run now")),
+    h("div", { class: "scan-sched" },
+      h("label", { class: "scan-switch", title: sch.cron ? (sch.enabled ? "Turn the schedule off" : "Turn the schedule on") : "Set a schedule first" },
+        h("input", { type: "checkbox", role: "switch", checked: sch.enabled, disabled: !sch.cron, onchange: attempt((e) => patch({ enabled: e.target.checked })) }),
+        h("span", {}, "Scheduled")),
+      h("button", { type: "button", class: "link scan-cron", title: sch.cron ? `${sch.cron} — change` : "Set a schedule", onclick: editCron },
+        sch.cron ? describeCron(sch.cron) : "No schedule"),
+      sch.enabled && s.next_run ? h("span", { class: "scan-next", title: new Date(s.next_run).toLocaleString(timeLocale) }, `next ${until(s.next_run)}`) : null,
+      sch.custom ? h("button", { type: "button", class: "link scan-reset", title: `Back to the template's schedule${sch.default ? ` (${sch.default})` : ""}${s.builtin ? ", off" : ""}`, onclick: attempt(() => patch({ reset: true })) }, "Reset") : null,
+      !sch.enabled && sch.cron && s.builtin && !sch.custom ? h("span", { class: "scan-hint" }, "suggested; off until turned on") : null),
+    s.last_run ? scanReport(s.last_run) : h("p", { class: "scan-never" }, "Never run."),
+    s.last_report && s.last_report.id !== s.last_run?.id ? scanReport(s.last_report, true) : null,
+    !s.last_run ? null : h("div", { class: "scan-foot" },
+      h("button", { type: "button", class: "link", "aria-expanded": String(!!hist), onclick: attempt(() => {
+        if (hist) { scans.history.delete(s.name); renderScans(); } else return loadScanHistory(s.name);
+      }) }, hist ? "Hide earlier runs" : "Earlier runs")),
+    hist ? h("ol", { class: "scan-history" }, ...hist.filter((r) => r.id !== s.last_run?.id && r.id !== s.last_report?.id).map((r) => h("li", {}, scanReport(r, true))),
+      hist.filter((r) => r.id !== s.last_run?.id && r.id !== s.last_report?.id).length ? null : h("li", { class: "scan-never" }, "No earlier runs.")) : null);
+}
+
+function scanReport(r, compact = false) {
+  const c = r.counts || {};
+  const known = (c.known || 0) + (c.updated || 0);
+  const icon = { running: null, succeeded: "check", failed: "x", skipped: "redo", canceled: "stop" }[r.status];
+  const label = { running: "Running", succeeded: "Done", failed: "Failed", skipped: "Skipped", canceled: "Canceled" }[r.status] || r.status;
+  const link = (n, text, which) => n ? h("button", { type: "button", class: `scan-count link${which === "new" ? " new" : ""}`, title: "Show them in Issues", onclick: () => showRunIssues(r, which) }, `${n} ${text}`) : null;
+  const bits = [
+    agoText(r.started_at),
+    r.trigger === "schedule" ? "scheduled" : "by hand",
+    r.commit ? (r.incremental && r.since ? `${r.since.slice(0, 7)}…${r.commit.slice(0, 7)}` : r.commit.slice(0, 7)) : null,
+    r.finished_at ? `${Math.max(1, Math.round((new Date(r.finished_at) - new Date(r.started_at)) / 1000))}s` : null,
+    r.cost_usd ? `≈$${r.cost_usd.toFixed(2)}` : null,
+    r.invalid ? `${r.invalid} dropped` : null,
+  ].filter(Boolean);
+  let body;
+  if (r.status === "succeeded" && r.findings) {
+    body = h("p", { class: "scan-counts" },
+      link(c.new, "new", "new") || h("span", { class: "scan-count" }, "0 new"),
+      known ? h("span", { class: "scan-count" }, `${known} already known`) : null,
+      link(c.reopened, "reopened", "reopened"),
+      c.dismissed ? h("span", { class: "scan-count muted", title: "Found again, but you dismissed them; they stay dismissed" }, `${c.dismissed} dismissed`) : null,
+      r.urgent ? h("span", { class: "sev sev-high scan-urgent", title: "New or reopened issues of critical or high severity" }, `${r.urgent} urgent`) : null);
+  } else {
+    body = h("p", { class: `scan-msg${r.status === "failed" ? " error" : ""}` }, r.status === "running" ? h("span", { class: "spinner", "aria-hidden": "true" }) : null, scanSummary(r));
+  }
+  return h("div", { class: `scan-report st-${r.status}${compact ? " compact" : ""}` },
+    h("div", { class: "scan-report-head" },
+      h("span", { class: "scan-status" }, icon ? ico(icon) : null, label),
+      h("span", { class: "scan-when", title: r.invalid ? "Dropped: findings the scan returned that were not valid; see the log" : null }, bits.join(" · ")),
+      h("a", { class: "link scan-log", href: on(here(), `/api/scan-runs/${r.id}/log`), target: "_blank", rel: "noopener" }, "Log")),
+    body,
+    r.note && r.status === "succeeded" ? h("p", { class: "scan-note" }, r.note) : null);
+}
+
+$("#issue-f-run").addEventListener("click", () => { iss.filter.run = null; iss.filter.status = "active"; $("#issue-f-status").value = "active"; renderIssues(); });
+
 // ------------------------------------------------------------------ vim keys
 // Normal mode is the default; typing in a field or the terminal is insert
 // mode. Esc (Ctrl-] in the terminal) returns to normal mode.
-const VIEWS = ["board", "issues", "run", "activity", "history", "files"];
+const VIEWS = ["board", "issues", "scans", "run", "activity", "history", "files"];
 const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
-const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gi|gc|gs|ga|gh|gf|G|F|u|p|c|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gi|gS|gc|gs|ga|gh|gf|G|F|u|p|c|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 const openDialog = () => document.querySelector("dialog[open]");
 
@@ -4793,6 +5048,7 @@ function paletteCommands() {
     p && ["New task", "plus", () => openTodoForm(), "a", "add create todo"],
     ["Board", "flag", go("board"), "gb", "view lanes"],
     ["Issues", "bug", go("issues"), "gi", "bugs vulnerabilities problems triage scan"],
+    ["Scans", "scan", go("scans"), "gS", "scan security review dependency audit schedule cron"],
     ["Toggle chat", "comment", () => toggleChatPane(), "gc", "chat open close claude ask project general"],
     [pane.pinned ? "Unpin chat" : "Pin chat", "pin", togglePin, ":pin", "pin unpin chat overlay dock"],
     fsSupported && [isFullscreen() ? "Exit fullscreen" : "Fullscreen", isFullscreen() ? "fs-exit" : "fs", () => toggleFullscreen(), "F", "fullscreen full screen maximize kiosk"],
@@ -5061,6 +5317,7 @@ async function handleNormal(k, n, hadCount) {
     case "gh": return showView("history");
     case "gf": return showView("files");
     case "gi": return showView("issues");
+    case "gS": return showView("scans");
     case "p": return openProjects();
     case "J": case "K": return stepProject(k === "J" ? n : -n);
     case "[": return desktop.matches && setSideCollapsed(!sideCollapsed());

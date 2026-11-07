@@ -182,9 +182,10 @@ func (i Issue) Location() string {
 // UpsertCounts is what adding a batch of issues did, by outcome.
 type UpsertCounts struct {
 	New       int `json:"new"`
-	Updated   int `json:"updated"` // changed, or reopened after being resolved
+	Updated   int `json:"updated"` // already there, changed
 	Known     int `json:"known"`   // already there, unchanged
 	Dismissed int `json:"dismissed"`
+	Reopened  int `json:"reopened"` // had been resolved, and came back
 }
 
 // UpsertResult is the outcome of adding one issue.
@@ -195,6 +196,7 @@ const (
 	UpsertUpdated   UpsertResult = "updated"
 	UpsertKnown     UpsertResult = "known"
 	UpsertDismissed UpsertResult = "dismissed" // matched a dismissed issue, which stays dismissed
+	UpsertReopened  UpsertResult = "reopened"  // matched a resolved issue, which is open again
 )
 
 // Add counts one result.
@@ -208,6 +210,8 @@ func (c *UpsertCounts) Add(r UpsertResult) {
 		c.Known++
 	case UpsertDismissed:
 		c.Dismissed++
+	case UpsertReopened:
+		c.Reopened++
 	}
 }
 

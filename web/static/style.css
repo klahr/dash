@@ -137,7 +137,7 @@ textarea { resize: vertical; line-height: 1.45; }
 .nav {
   position: fixed; inset: auto 0 0 0; z-index: 30;
   height: calc(var(--nav-h) + var(--safe-b)); padding-bottom: var(--safe-b);
-  display: grid; grid-template-columns: repeat(6, 1fr);
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); /* one column per section */
   background: var(--surface); border-top: 1px solid var(--line);
 }
 .nav > button {
@@ -152,6 +152,7 @@ textarea { resize: vertical; line-height: 1.45; }
   background: var(--review); color: #08202a; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
 }
 .nav .badge.quiet { background: var(--raised); color: var(--text); }
+@media (max-width: 400px) { .nav > button { font-size: 11px; letter-spacing: -.01em; } }
 .sidebar { display: contents; }
 
 main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
@@ -1398,4 +1399,57 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
   .issue-main { flex-wrap: wrap; row-gap: 2px; }
   .issue-title { white-space: normal; flex-basis: 100%; order: -1; }
   .issue-loc { flex-basis: auto; }
+}
+
+/* ---------- scans ---------- */
+.scans { max-width: 1100px; padding: 12px 16px 24px; }
+.scan-intro { margin: 0 0 12px; color: var(--muted); font-size: 14px; max-width: 70ch; }
+.scan-intro code, .scan-meta code, .scan-problems code { font: 12px var(--mono); }
+.scan-problems { margin: 0 0 12px; padding: 8px 12px 8px 28px; border-radius: var(--r-m); font-size: 14px; color: var(--failed); border: 1px solid color-mix(in srgb, var(--failed) 40%, var(--line)); }
+.scan-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.scan-list:empty { display: none; }
+.scan-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); padding: 14px 16px; }
+.scan-card.running { border-color: color-mix(in srgb, var(--running) 50%, var(--line)); }
+.scan-head { display: flex; align-items: flex-start; gap: 12px; }
+.scan-id { flex: 1; min-width: 0; }
+.scan-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.scan-name strong { font-size: 16px; }
+.scan-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
+.scan-kind.kind-security, .scan-kind.kind-dependencies { color: var(--accent2); }
+.scan-meta { margin-top: 2px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.scan-sched { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 10px 0 0; font-size: 14px; }
+.scan-switch { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; }
+.scan-switch input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.scan-switch:has(input:disabled) { color: var(--faint); }
+.scan-next, .scan-hint { color: var(--muted); font-size: 13px; }
+.scan-hint { font-style: italic; }
+.scan-cron, .scan-reset, .scan-foot .link { min-height: 36px; }
+.scan-report { margin-top: 10px; padding: 10px 12px; border-radius: var(--r-s); background: var(--raised); border-left: 3px solid var(--line); }
+.scan-report.st-succeeded { border-left-color: var(--merged); }
+.scan-report.st-failed { border-left-color: var(--failed); }
+.scan-report.st-running { border-left-color: var(--running); }
+.scan-report.compact { margin-top: 0; padding: 6px 10px; }
+.scan-report-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; color: var(--muted); }
+.scan-status { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: var(--text); }
+.scan-status .ico { width: 14px; height: 14px; }
+.scan-report.st-failed .scan-status { color: var(--failed); }
+.scan-log { margin-left: auto; }
+.scan-counts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 6px 0 0; font-size: 15px; }
+.scan-count.new { font-weight: 600; }
+.scan-count.muted { color: var(--muted); }
+.scan-urgent { width: auto; padding: 2px 8px; }
+.scan-msg { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.scan-msg.error { color: var(--failed); white-space: pre-wrap; }
+.scan-note, .scan-never { margin: 6px 0 0; font-size: 13px; color: var(--faint); }
+.scan-foot { margin-top: 4px; }
+.scan-history { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; }
+.issue-run-filter {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border-radius: 999px; font-size: 13px;
+  color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+.issue-run-filter .ico { width: 14px; height: 14px; }
+@media (min-width: 1024px) { .scans { padding: 16px 32px; } }
+@media (max-width: 639px) {
+  .scans { padding: 10px 10px 24px; }
+  .scan-card { padding: 12px; }
 }

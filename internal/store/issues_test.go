@@ -121,7 +121,7 @@ func TestResolvedIssueReopensWhenReportedAgain(t *testing.T) {
 	if _, err := s.SetIssueStatus(a.ID, model.IssueResolved, ""); err != nil {
 		t.Fatal(err)
 	}
-	b := mustUpsert(t, s, in, model.UpsertUpdated)
+	b := mustUpsert(t, s, in, model.UpsertReopened)
 	if b.ID != a.ID || b.Status != model.IssueOpen {
 		t.Fatalf("not reopened: %+v", b)
 	}

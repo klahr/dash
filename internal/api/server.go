@@ -27,6 +27,7 @@ import (
 	"github.com/klahr/dash/internal/preview"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/runner"
+	"github.com/klahr/dash/internal/scan"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/usage"
 )
@@ -45,7 +46,9 @@ type Server struct {
 	Board       *mcptools.Tokens // chat runs' tokens for /mcp/dash
 	OAuth       *auth.OAuth      // remote MCP clients (claude.ai) on /mcp; nil = off
 	Usage       *usage.Tracker
-	ProjectRoot string // where new projects without an explicit path are created
+	Scans       *scan.Runner    // read-only scans that file issues (optional)
+	Scheduler   *scan.Scheduler // runs scans on their schedules (optional)
+	ProjectRoot string          // where new projects without an explicit path are created
 	// Titler names todos created without a title (optional).
 	Titler interface {
 		Title(ctx context.Context, prompt string) (string, error)
@@ -136,6 +139,15 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/projects/{pid}/issues/dismiss", s.dismissIssues)
 	mux.HandleFunc("PATCH /api/issues/{iid}", s.updateIssue)
 	mux.HandleFunc("DELETE /api/issues/{iid}", s.deleteIssue)
+
+	// Scans: preconfigured read-only reviews that file their findings as issues
+	mux.HandleFunc("GET /api/projects/{pid}/scans", s.listScans)
+	mux.HandleFunc("POST /api/projects/{pid}/scans/{name}/run", s.runScan)
+	mux.HandleFunc("PATCH /api/projects/{pid}/scans/{name}", s.updateScan)
+	mux.HandleFunc("GET /api/projects/{pid}/scan-runs", s.listScanRuns)
+	mux.HandleFunc("GET /api/scan-runs/{rid}", s.getScanRun)
+	mux.HandleFunc("GET /api/scan-runs/{rid}/log", s.scanRunLog)
+	mux.HandleFunc("POST /api/scan-runs/{rid}/cancel", s.cancelScanRun)
 	mux.HandleFunc("GET /api/todos/{tid}/chat", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.Store.TodoChat(r.PathValue("tid")))
 	})
@@ -246,11 +258,12 @@ func writeErr(w http.ResponseWriter, err error) {
 	var invIssue model.ErrInvalidIssueTransition
 	var gitErr *gitops.CmdError
 	switch {
-	case errors.Is(err, store.ErrNotFound), errors.Is(err, runner.ErrNotFound), errors.Is(err, preview.ErrNotFound):
+	case errors.Is(err, store.ErrNotFound), errors.Is(err, runner.ErrNotFound), errors.Is(err, preview.ErrNotFound),
+		errors.Is(err, scan.ErrNoScan):
 		code = http.StatusNotFound
 	case errors.As(err, &inv), errors.As(err, &invIssue), errors.Is(err, store.ErrReviewing):
 		code = http.StatusConflict
-	case errors.Is(err, queue.ErrMergeQueueFull):
+	case errors.Is(err, queue.ErrMergeQueueFull), errors.Is(err, errScansOff):
 		code = http.StatusServiceUnavailable
 	case errors.As(err, &gitErr):
 		code = http.StatusBadGateway
@@ -258,7 +271,7 @@ func writeErr(w http.ResponseWriter, err error) {
 		code = http.StatusForbidden // not 401: that would sign the browser out
 	case errors.Is(err, auth.ErrLockedOut):
 		code = http.StatusTooManyRequests
-	case errors.Is(err, queue.ErrProjectBusy):
+	case errors.Is(err, queue.ErrProjectBusy), errors.Is(err, scan.ErrRunning):
 		code = http.StatusConflict
 	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency), errors.Is(err, store.ErrBadIssue),
 		errors.Is(err, preview.ErrNoRunCommand), errors.Is(err, preview.ErrNotInReview):
