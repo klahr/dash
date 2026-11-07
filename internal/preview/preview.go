@@ -74,6 +74,14 @@ type Manager struct {
 	// Secure reports whether a request reached Dash over HTTPS.
 	Secure    func(*http.Request) bool
 	IdleAfter time.Duration
+	// Remote reaches previews running on runners (the hub's side, remote.go).
+	// Their hosts are <todo>-<runner>.<domain>. Optional.
+	Remote Remote
+
+	hub         atomic.Pointer[hubURL] // on a runner: where its hub serves its previews
+	remotePorts sync.Map               // label → int, the port a runner's preview listens on
+	remoteOnce  sync.Once
+	remoteTr    *http.Transport
 
 	key    []byte       // signs preview tokens and cookies; new on every start
 	origin atomic.Value // string: Dash's own origin, as last seen by the UI
@@ -104,7 +112,7 @@ func (m *Manager) Start(t model.Todo, p model.Project) (model.Preview, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if e := m.entries[t.ID]; e != nil {
-		if s := e.snapshot(); s.State != model.PreviewCrashed {
+		if s := m.info(e); s.State != model.PreviewCrashed {
 			e.touch()
 			return s, nil
 		}
@@ -119,21 +127,32 @@ func (m *Manager) Start(t model.Todo, p model.Project) (model.Preview, error) {
 	}
 	e := &entry{done: make(chan struct{}), info: model.Preview{
 		TodoID: t.ID, ProjectID: p.ID, ProcessID: proc.ID, Title: todoTitle(t), Port: proc.Port, State: model.PreviewStarting,
-		URL: m.URL(t.ID), LocalURL: fmt.Sprintf("http://localhost:%d/", proc.Port), StartedAt: proc.StartedAt,
+		LocalURL: fmt.Sprintf("http://localhost:%d/", proc.Port), StartedAt: proc.StartedAt,
 	}}
-	if m.Domain != "" {
-		e.info.OpenURL = "/preview/" + t.ID
-	}
 	e.touch()
 	m.entries[t.ID] = e
 	go m.watch(e)
-	m.publish(e.snapshot())
-	return e.snapshot(), nil
+	m.publish(m.info(e))
+	return m.info(e), nil
+}
+
+// info is e as the UI sees it, with the addresses it is served at now.
+func (m *Manager) info(e *entry) model.Preview {
+	p := e.snapshot()
+	p.URL, p.OpenURL = m.URL(p.TodoID), ""
+	if p.URL != "" {
+		p.OpenURL = "/preview/" + p.TodoID
+	}
+	return p
 }
 
 // URL is where t's preview is served, or "" without a preview domain. The
-// proxy is Dash's own listener, so it has Dash's scheme and port.
+// proxy is Dash's own listener, so it has Dash's scheme and port; on a
+// runner connected to a hub with a preview domain, it's the hub's.
 func (m *Manager) URL(todoID string) string {
+	if h := m.hub.Load(); h != nil && h.template != "" {
+		return strings.Replace(h.template, "*", todoID+"-"+h.runner, 1)
+	}
 	if m.Domain == "" {
 		return ""
 	}
@@ -185,7 +204,7 @@ func (m *Manager) watch(e *entry) {
 				}
 				e.mu.Unlock()
 				if live {
-					m.publish(e.snapshot())
+					m.publish(m.info(e))
 				}
 			}
 		}
@@ -216,7 +235,7 @@ func (m *Manager) exited(e *entry) {
 		e.info.ExitCode = p.ExitCode
 	}
 	e.mu.Unlock()
-	m.publish(e.snapshot())
+	m.publish(m.info(e))
 }
 
 // Get returns todoID's preview.
@@ -225,7 +244,7 @@ func (m *Manager) Get(todoID string) (model.Preview, bool) {
 	if e == nil {
 		return model.Preview{}, false
 	}
-	return e.snapshot(), true
+	return m.info(e), true
 }
 
 func (m *Manager) entry(todoID string) *entry {
@@ -239,7 +258,7 @@ func (m *Manager) List() []model.Preview {
 	m.mu.Lock()
 	out := make([]model.Preview, 0, len(m.entries))
 	for _, e := range m.entries {
-		out = append(out, e.snapshot())
+		out = append(out, m.info(e))
 	}
 	m.mu.Unlock()
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt.After(out[j].StartedAt) })
@@ -262,7 +281,7 @@ func (m *Manager) Stop(todoID, reason string) error {
 	if err := m.Procs.Stop(e.info.ProcessID); err != nil && !errors.Is(err, runner.ErrNotFound) {
 		slog.Warn("stop preview", "todo", todoID, "err", err)
 	}
-	info := e.snapshot()
+	info := m.info(e)
 	info.State, info.Reason = model.PreviewStopped, reason
 	m.publish(info)
 	return nil

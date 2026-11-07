@@ -226,7 +226,7 @@ func TestProxyWebSocket(t *testing.T) {
 	e := &entry{}
 	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, _ := strconv.Atoi(port)
-		m.proxy(addr, p, "http://"+r.Host).ServeHTTP(touchWriter{w, e}, r)
+		m.proxy(addr, p, "http://"+r.Host, nil).ServeHTTP(touchWriter{w, e}, r)
 	}))
 	defer front.Close()
 	// The backend only accepts its own origin (localhost:port), as dev servers do.

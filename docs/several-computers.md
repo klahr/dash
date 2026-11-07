@@ -57,9 +57,13 @@ and they continue. A runner that is restarted resumes its tasks, as Dash always 
 
 ## Previews
 
-[Live previews](previews.md) run on the computer that has the project and are served by that
-computer's Dash, so a runner can serve them only if it has a listener (`-addr`) reachable over
-HTTPS and its own `-preview-domain`.
+[Live previews](previews.md) run on the computer that has the project, and the hub serves them,
+at `https://<task>-<runner>.<preview domain>/` (so only the hub needs `-preview-domain`, DNS and
+a certificate). The runner keeps a second connection to the hub just for preview traffic, so a
+heavy page load or a busy hot-reload socket doesn't slow its tasks down, and the hub opens at most
+32 connections to a runner's previews at a time. The runner forwards only to the servers of
+previews it started itself; the hub can't ask it for any other port. Previews on a `-peer` are
+still served by that computer's own Dash.
 
 ## -peer (deprecated)
 

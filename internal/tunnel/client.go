@@ -112,6 +112,20 @@ type Client struct {
 	// (defaults 1s and 1m).
 	MinBackoff, MaxBackoff time.Duration
 	Dialer                 *websocket.Dialer
+	// Previews are the previews this runner started; the hub reaches them
+	// over a second connection (preview.go). Nil: no preview connection.
+	Previews PreviewDialer
+	// OnPreviewURL is told, on every connect, where the hub serves this
+	// runner's previews (see PreviewHeader; "" if it doesn't). Optional.
+	OnPreviewURL func(template string)
+}
+
+func (c *Client) dialer() *websocket.Dialer {
+	if c.Dialer != nil {
+		return c.Dialer
+	}
+	return &websocket.Dialer{HandshakeTimeout: 20 * time.Second, Proxy: http.ProxyFromEnvironment,
+		ReadBufferSize: 32 << 10, WriteBufferSize: 32 << 10}
 }
 
 // Run connects, serves until the tunnel drops, and reconnects with
@@ -160,12 +174,7 @@ func (c *Client) serveOnce(ctx context.Context) error {
 		u.Scheme = "ws"
 	}
 	u.Path += "/runner/connect"
-	d := c.Dialer
-	if d == nil {
-		d = &websocket.Dialer{HandshakeTimeout: 20 * time.Second, Proxy: http.ProxyFromEnvironment,
-			ReadBufferSize: 32 << 10, WriteBufferSize: 32 << 10}
-	}
-	ws, res, err := d.DialContext(ctx, u.String(), http.Header{"Authorization": {"Bearer " + c.Creds.Token}})
+	ws, res, err := c.dialer().DialContext(ctx, u.String(), http.Header{"Authorization": {"Bearer " + c.Creds.Token}})
 	if err != nil {
 		if res != nil && res.StatusCode == http.StatusUnauthorized {
 			return ErrRevoked
@@ -178,6 +187,15 @@ func (c *Client) serveOnce(ctx context.Context) error {
 	sess := NewSession(ws, false)
 	defer sess.Close()
 	slog.Info("runner: connected to hub", "server", c.Creds.Server, "as", c.Creds.Name)
+	if c.OnPreviewURL != nil {
+		c.OnPreviewURL(res.Header.Get(PreviewHeader))
+	}
+	if c.Previews != nil {
+		pctx, cancel := context.WithCancel(ctx)
+		go c.keepPreviews(pctx, u.String())
+		defer cancel()
+		go func() { <-sess.Done(); cancel() }()
+	}
 	if c.OnState != nil {
 		c.OnState(true)
 		defer c.OnState(false)

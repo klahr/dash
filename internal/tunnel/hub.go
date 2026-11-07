@@ -82,15 +82,20 @@ type Hub struct {
 	Pub interface{ Publish(model.Event) }
 	// Taken reports names already used by this computer or a -peer (optional).
 	Taken func(name string) bool
+	// PreviewURL is where the hub serves runners' previews, with "*" for the
+	// host's first label, as the runner connecting with r should be told
+	// (optional; "" without a preview domain). See PreviewHeader.
+	PreviewURL func(r *http.Request) string
 
 	now func() time.Time
 
-	mu      sync.Mutex
-	path    string
-	runners []*record
-	codes   []regCode
-	live    map[string]*Session // runner id → its tunnel
-	badAt   []time.Time         // recent wrong registration codes
+	mu       sync.Mutex
+	path     string
+	runners  []*record
+	codes    []regCode
+	live     map[string]*Session     // runner id → its tunnel
+	previews map[string]*previewLink // runner id → its preview connection (preview.go)
+	badAt    []time.Time             // recent wrong registration codes
 
 	transportOnce sync.Once
 	transport     *http.Transport
@@ -258,12 +263,16 @@ func (h *Hub) Revoke(id string) error {
 		return ErrUnknownName
 	}
 	h.runners = slices.Delete(h.runners, i, i+1)
-	sess := h.live[id]
+	sess, pv := h.live[id], h.previews[id]
 	delete(h.live, id)
+	delete(h.previews, id)
 	h.saveLocked()
 	h.mu.Unlock()
 	if sess != nil {
 		sess.Close()
+	}
+	if pv != nil {
+		pv.s.Close()
 	}
 	h.changed()
 	return nil
@@ -298,6 +307,10 @@ func (h *Hub) session(name string) *Session {
 		}
 	}
 	return nil
+}
+
+func (h *Hub) registeredLocked(id string) bool {
+	return slices.ContainsFunc(h.runners, func(x *record) bool { return x.ID == id })
 }
 
 func (h *Hub) touch(id string) {
@@ -351,8 +364,8 @@ var upgrader = websocket.Upgrader{
 }
 
 // ServeConnect handles GET /runner/connect: a runner's tunnel, authenticated
-// with "Authorization: Bearer <runner token>". It returns when the tunnel
-// closes.
+// with "Authorization: Bearer <runner token>", or with ?channel=preview its
+// preview connection (preview.go). It returns when the connection closes.
 func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 	tok, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	rec, ok := h.authenticate(tok)
@@ -360,13 +373,28 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unknown or revoked runner token"})
 		return
 	}
-	ws, err := upgrader.Upgrade(w, r, nil)
+	switch r.URL.Query().Get("channel") {
+	case "":
+	case previewChannel:
+		h.servePreviewConnect(w, r, rec)
+		return
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown channel"})
+		return
+	}
+	var hdr http.Header
+	if h.PreviewURL != nil {
+		if u := h.PreviewURL(r); u != "" {
+			hdr = http.Header{PreviewHeader: {u}}
+		}
+	}
+	ws, err := upgrader.Upgrade(w, r, hdr)
 	if err != nil {
 		return
 	}
 	sess := NewSession(ws, true) // the hub opens the streams
 	h.mu.Lock()
-	if !slices.ContainsFunc(h.runners, func(x *record) bool { return x.ID == rec.ID }) {
+	if !h.registeredLocked(rec.ID) {
 		h.mu.Unlock() // revoked while upgrading
 		sess.Close()
 		return

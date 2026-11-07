@@ -69,6 +69,6 @@ previews need a domain.
   nonce (or `'self'`), `data:`/`blob:` images and same-origin fetches, and loses Trusted Types.
   Compressed pages are passed on uncompressed. A CSP set in a `<meta>` tag isn't changed, so such
   a page may refuse to be drawn.
-- With [several computers](several-computers.md), a preview runs on the computer that has the
-  project and is served by that computer's Dash, so set `-preview-domain` on each one (a runner
-  also needs its own listener, see there).
+- With [several computers](several-computers.md), a preview runs on the runner that has the
+  project and the hub serves it, through the runner's connection, at
+  `<task>-<runner>.<preview domain>`; set `-preview-domain` on the hub only.

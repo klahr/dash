@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/yeqown/go-qrcode/v2"
@@ -101,7 +102,7 @@ func (s *Server) openPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Previews.SetOrigin(r)
-	if _, ok := s.Previews.Get(tid); !ok {
+	if _, ok := s.Previews.Get(tid); !ok && !s.Previews.IsRemote(tid) {
 		if _, err := s.Store.GetTodo(tid); err != nil {
 			http.NotFound(w, r)
 			return
@@ -109,6 +110,24 @@ func (s *Server) openPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, s.Previews.AuthURL(tid, r.URL.Query().Get("next")), http.StatusFound)
+}
+
+// openRunnerPreview handles GET /peer/{name}/preview/{tid}, the open_url of
+// a preview on a runner as the UI asks for it: the hub serves those previews
+// (as <tid>-<name>), so it signs the browser in itself. Other computers
+// (-peer) serve their own previews.
+func (s *Server) openRunnerPreview(w http.ResponseWriter, r *http.Request) {
+	name, tid := r.PathValue("name"), r.PathValue("tid")
+	if s.Previews == nil || s.Previews.Domain == "" || !s.Previews.IsRemote(tid+"-"+name) {
+		s.forwardToPeer(w, r)
+		return
+	}
+	u := "/preview/" + url.PathEscape(tid+"-"+name)
+	if r.URL.RawQuery != "" {
+		u += "?" + r.URL.RawQuery
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, u, http.StatusFound)
 }
 
 // qrSize is the target width of a QR code image in pixels, and qrQuietZone

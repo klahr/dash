@@ -206,8 +206,16 @@ func (m *Manager) serve(w http.ResponseWriter, r *http.Request, label string) {
 		m.serveCapture(w)
 		return
 	}
+	origin := "http://" + m.reqHost(r)
+	if secure {
+		origin = "https://" + m.reqHost(r)
+	}
 	e := m.entry(label)
 	if e == nil {
+		if runner, todoID, ok := m.remoteLabel(label); ok {
+			m.serveRemote(w, r, label, runner, todoID, origin)
+			return
+		}
 		page(w, http.StatusNotFound, "Preview not running", "No preview is running for this task. Start one with Preview on the task in Dash.", m.dashOrigin(), false)
 		return
 	}
@@ -223,11 +231,7 @@ func (m *Manager) serve(w http.ResponseWriter, r *http.Request, label string) {
 		return
 	}
 	e.touch()
-	origin := "http://" + m.reqHost(r)
-	if secure {
-		origin = "https://" + m.reqHost(r)
-	}
-	m.proxy(addr, port, origin).ServeHTTP(touchWriter{w, e}, r)
+	m.proxy(addr, port, origin, nil).ServeHTTP(touchWriter{w, e}, r)
 }
 
 func isUpgrade(r *http.Request) bool {
@@ -236,11 +240,13 @@ func isUpgrade(r *http.Request) bool {
 
 // proxy forwards to the server at addr as if the browser had opened
 // http://localhost:<port> (dev servers often only allow that host), and
-// rewrites what points back at localhost to the preview's origin.
-func (m *Manager) proxy(addr string, port int, origin string) *httputil.ReverseProxy {
+// rewrites what points back at localhost to the preview's origin. transport
+// connects to addr (nil: over TCP).
+func (m *Manager) proxy(addr string, port int, origin string, transport http.RoundTripper) *httputil.ReverseProxy {
 	local := fmt.Sprintf("localhost:%d", port)
 	locals := []string{"http://" + local, "http://127.0.0.1:" + strconv.Itoa(port), "http://[::1]:" + strconv.Itoa(port)}
 	return &httputil.ReverseProxy{
+		Transport: transport,
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(&url.URL{Scheme: "http", Host: addr})
 			pr.SetXForwarded()
@@ -286,7 +292,7 @@ func (m *Manager) proxy(addr string, port int, origin string) *httputil.ReverseP
 			return injectCapture(res)
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			page(w, http.StatusBadGateway, "Preview not answering", "The preview server didn't answer: "+err.Error(), "", true)
+			m.remoteError(w, err) // "not answering", unless a runner said why
 		},
 		FlushInterval: -1, // server-sent events (some dev servers' reload channel)
 	}

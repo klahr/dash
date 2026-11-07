@@ -270,7 +270,8 @@ func main() {
 			os.Exit(1)
 		}
 	} else {
-		apiSrv.Peers.Runners = &tunnel.Hub{Pub: events, Taken: apiSrv.Peers.Taken}
+		apiSrv.Peers.Runners = &tunnel.Hub{Pub: events, Taken: apiSrv.Peers.Taken, PreviewURL: previews.URLTemplate}
+		previews.Remote = apiSrv.Peers.Runners // runners' previews, served here
 		if err := apiSrv.Peers.Runners.Keep(filepath.Join(*dataDir, "runners.json")); err != nil {
 			slog.Warn("read runners", "err", err)
 		}
@@ -351,7 +352,8 @@ func main() {
 	if runnerMode {
 		watch := offlineWatch(*offlineGrace, todos)
 		watch(false) // tasks resumed at startup count as offline until the hub answers
-		client := &tunnel.Client{Creds: runnerCreds, Handler: apiSrv.RunnerRoutes(), OnState: watch}
+		client := &tunnel.Client{Creds: runnerCreds, Handler: apiSrv.RunnerRoutes(), OnState: watch,
+			Previews: previews, OnPreviewURL: func(t string) { previews.SetHub(t, runnerCreds.Name) }}
 		if !addrSet {
 			if err := client.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("runner", "err", err)

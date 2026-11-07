@@ -107,6 +107,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	for _, m := range []string{"GET", "POST", "PATCH", "PUT", "DELETE"} {
 		mux.HandleFunc(m+" /peer/{name}/", s.forwardToPeer)
 	}
+	mux.HandleFunc("GET /peer/{name}/preview/{tid}", s.openRunnerPreview)
 	// Runners: computers that connect out to this one (`dash runner`)
 	if s.Peers != nil && s.Peers.Runners != nil {
 		rh := s.Peers.Runners
