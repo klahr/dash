@@ -319,6 +319,58 @@ func TestConflictIsResolvedByClaudeAndMerged(t *testing.T) {
 	}
 }
 
+// Two approved todos that both conflict are fixed one after the other: the
+// second waits for the first to land, so one fix each covers everything.
+func TestConflictsAreFixedOneAtATime(t *testing.T) {
+	var mu sync.Mutex
+	fixing, overlap := 0, false
+	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
+		path := filepath.Join(req.Dir, "shared.txt")
+		b, _ := os.ReadFile(path)
+		if !strings.Contains(string(b), "<<<<<<<") {
+			return os.WriteFile(path, []byte("line from "+filepath.Base(req.Dir)+"\n"), 0o644)
+		}
+		mu.Lock()
+		fixing++
+		overlap = overlap || fixing > 1
+		mu.Unlock()
+		time.Sleep(300 * time.Millisecond) // long enough for a second fix to start alongside
+		mu.Lock()
+		fixing--
+		mu.Unlock()
+		var keep []string
+		for _, l := range strings.Split(string(b), "\n") {
+			if l != "" && !strings.HasPrefix(l, "<<<<<<<") && !strings.HasPrefix(l, "|||||||") &&
+				!strings.HasPrefix(l, "=======") && !strings.HasPrefix(l, ">>>>>>>") {
+				keep = append(keep, l)
+			}
+		}
+		return os.WriteFile(path, []byte(strings.Join(keep, "\n")+"\n"), 0o644)
+	}}
+	h := newHarness(t, exe, model.Project{Name: "p", MaxAutoFixes: 1})
+	a, b, c := h.add("first"), h.add("second"), h.add("third")
+	for _, td := range []model.Todo{a, b, c} {
+		h.waitFor(td.ID, model.StatusReview)
+	}
+	h.approve(a.ID)
+	h.waitFor(a.ID, model.StatusMerged)
+	h.approve(b.ID)
+	h.approve(c.ID) // both conflict with a, and with each other
+	h.waitFor(b.ID, model.StatusMerged)
+	h.waitFor(c.ID, model.StatusMerged)
+	mu.Lock()
+	defer mu.Unlock()
+	if overlap {
+		t.Fatal("two conflict fixes ran at the same time")
+	}
+	got, _ := os.ReadFile(filepath.Join(h.proj.Path, "shared.txt"))
+	for _, td := range []model.Todo{a, b, c} {
+		if !strings.Contains(string(got), "todo-"+td.ID) {
+			t.Fatalf("main should contain all three changes, got:\n%s", got)
+		}
+	}
+}
+
 func TestConflictWithoutFixesLeftFails(t *testing.T) {
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		return os.WriteFile(filepath.Join(req.Dir, "shared.txt"), []byte(filepath.Base(req.Dir)+"\n"), 0o644)

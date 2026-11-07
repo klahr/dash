@@ -29,7 +29,8 @@ import (
 type Publisher interface{ Publish(model.Event) }
 
 // TodoEngine pulls Queued todos in priority order and runs up to MaxParallel
-// of them at once, each in its own git worktree.
+// of them at once, each in its own git worktree. Merge conflicts are fixed
+// one at a time per project (see conflictBusy).
 //
 // One run of a todo:
 //  1. create the worktree (copy files, run the setup command) or reuse it
@@ -71,12 +72,16 @@ type TodoEngine struct {
 	mu          sync.Mutex
 	running     map[string]context.CancelFunc
 	interrupted map[string]string // running todo id → why Interrupt stopped it
+	// resolving holds the todos (id → project id) dispatched to fix a merge
+	// conflict, until they have landed or left the fix-and-merge path.
+	resolving map[string]string
 }
 
 // NewTodoEngine finishes initialising e; call Run in a goroutine afterwards.
 func NewTodoEngine(e *TodoEngine) *TodoEngine {
 	e.wake = make(chan struct{}, 1)
 	e.running = map[string]context.CancelFunc{}
+	e.resolving = map[string]string{}
 	if e.MaxParallel <= 0 {
 		e.MaxParallel = 1
 	}
@@ -138,6 +143,9 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 			if q.Paused {
 				continue
 			}
+			if q.MergeMain && e.conflictBusy(q.ProjectID) {
+				continue // waits until the conflict being fixed has landed
+			}
 			if len(q.DependsOn) > 0 {
 				if all == nil {
 					all = e.Store.ListTodos("")
@@ -160,6 +168,9 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 		wctx, cancel := context.WithCancel(ctx)
 		e.mu.Lock()
 		e.running[t.ID] = cancel
+		if t.MergeMain {
+			e.resolving[t.ID] = t.ProjectID
+		}
 		e.mu.Unlock()
 		go func() {
 			defer func() {
@@ -173,6 +184,30 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 			e.work(wctx, t)
 		}()
 	}
+}
+
+// conflictBusy reports whether another todo in the project is fixing a merge
+// conflict, or has fixed one and is on its way through the merge queue.
+// Conflicts are fixed one at a time: todos approved around the same time
+// often conflict with each other too, and each fix is made against the
+// default branch as it is when the run starts, so fixing them side by side
+// mostly earns another conflict. Waiting for the first to land lets the
+// next one merge it in and resolve everything once.
+func (e *TodoEngine) conflictBusy(projectID string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	busy := false
+	for id, pid := range e.resolving {
+		t, err := e.Store.GetTodo(id)
+		if err != nil || (t.Status != model.StatusInProgress && t.Status != model.StatusMerging) {
+			delete(e.resolving, id) // landed, failed, deleted or back in review or the queue
+			continue
+		}
+		if pid == projectID {
+			busy = true
+		}
+	}
+	return busy
 }
 
 // Cancel stops a running todo. Returns false if it was not running.
