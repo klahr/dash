@@ -360,9 +360,11 @@ func (a *Auth) newRecoveryCodes(w http.ResponseWriter, r *http.Request, id *Iden
 	writeJSON(w, http.StatusOK, map[string]any{"recovery_codes": shown})
 }
 
-// updateOrg handles PATCH /api/orgs/{oid} {require_2fa, password}: owners
-// require two-factor sign-in of every member. Members without it are asked to
-// set it up at their next request.
+// updateOrg handles PATCH /api/orgs/{oid} {require_2fa, slug, password}:
+// owners require two-factor sign-in of every member (members without it are
+// asked to set it up at their next request), and rename the org's slug, its
+// subdomain with org subdomains on (the old one redirects for a while; see
+// store.SetOrgSlug).
 func (a *Auth) updateOrg(w http.ResponseWriter, r *http.Request, id *Identity) {
 	oid, err := pathID(r, "oid")
 	if err != nil {
@@ -370,14 +372,15 @@ func (a *Auth) updateOrg(w http.ResponseWriter, r *http.Request, id *Identity) {
 		return
 	}
 	var req struct {
-		Require2FA *bool  `json:"require_2fa"`
-		Password   string `json:"password"`
+		Require2FA *bool   `json:"require_2fa"`
+		Slug       *string `json:"slug"`
+		Password   string  `json:"password"`
 	}
 	if err := decodeBody(w, r, &req); err != nil {
 		accountError(w, err)
 		return
 	}
-	if req.Require2FA == nil {
+	if req.Require2FA == nil && req.Slug == nil {
 		accountError(w, errBadBody)
 		return
 	}
@@ -392,18 +395,32 @@ func (a *Auth) updateOrg(w http.ResponseWriter, r *http.Request, id *Identity) {
 		accountError(w, store.ErrForbidden)
 		return
 	}
-	if *req.Require2FA && !id.User.TOTP {
+	if req.Require2FA != nil && *req.Require2FA && !id.User.TOTP {
 		accountError(w, store.ErrTOTPSelf)
 		return
+	}
+	if req.Slug != nil {
+		if err := a.acc.CheckSlug(*req.Slug); err != nil {
+			accountError(w, err)
+			return
+		}
 	}
 	if err := a.ConfirmPassword(r, req.Password); err != nil {
 		accountError(w, err)
 		return
 	}
-	o, err := a.acc.SetRequire2FA(id.User.ID, oid, *req.Require2FA)
-	if err != nil {
-		accountError(w, err)
-		return
+	o := mine.Org
+	if req.Slug != nil {
+		if o, err = a.acc.SetOrgSlug(id.User.ID, oid, *req.Slug, a.now()); err != nil {
+			accountError(w, err)
+			return
+		}
+	}
+	if req.Require2FA != nil {
+		if o, err = a.acc.SetRequire2FA(id.User.ID, oid, *req.Require2FA); err != nil {
+			accountError(w, err)
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, o)
 }

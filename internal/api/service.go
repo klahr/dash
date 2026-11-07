@@ -31,9 +31,12 @@ type Data interface {
 
 // Caller is who a request or tool call is made for.
 type Caller struct {
-	User    int64  // 0: another Dash (Machine), or Dash itself (a task's tools)
-	Org     int64  // the org whose records they work with
-	OrgSlug string // its slug: new projects go in <projects root>/<slug>/
+	User int64 // 0: another Dash (Machine), or Dash itself (a task's tools)
+	Org  int64 // the org whose records they work with
+	// OrgFolder is its folder: new projects go in <projects root>/<folder>/.
+	// It was the org's slug when the org was made, and stays when the slug
+	// is renamed.
+	OrgFolder string
 	// PlatformAdmin runs the Dash instance: other computers, the queue
 	// pause, projects anywhere on disk.
 	PlatformAdmin bool
@@ -56,16 +59,24 @@ func (s *Server) caller(r *http.Request) (Caller, error) {
 		if id.Org == nil {
 			return Caller{}, errNoOrg
 		}
-		return Caller{User: id.User.ID, Org: id.Org.ID, OrgSlug: id.Org.Slug, PlatformAdmin: id.User.PlatformAdmin}, nil
+		return Caller{User: id.User.ID, Org: id.Org.ID, OrgFolder: folderOf(id.Org.Org), PlatformAdmin: id.User.PlatformAdmin}, nil
 	}
 	if auth.FromMachine(r.Context()) && s.Store != nil {
 		org, err := s.Store.Accounts().DefaultOrg()
 		if err != nil {
 			return Caller{}, fmt.Errorf("this Dash has no default organization: %w", err)
 		}
-		return Caller{Org: org.ID, OrgSlug: org.Slug, PlatformAdmin: true, Machine: true}, nil
+		return Caller{Org: org.ID, OrgFolder: folderOf(org), PlatformAdmin: true, Machine: true}, nil
 	}
 	return Caller{}, errLogin
+}
+
+// folderOf is o's project folder (its slug, for an org loaded without one).
+func folderOf(o store.Org) string {
+	if o.Folder != "" {
+		return o.Folder
+	}
+	return o.Slug
 }
 
 // service is the API as one caller may use it: their org's records, and
@@ -348,7 +359,7 @@ func (sv *service) log(id string) (string, error) {
 
 // projectPath is where a new project named name goes. Platform admins may
 // give any path; everyone else gets, or must give, a folder inside their
-// org's own folder, <projects root>/<org slug>/, so one org can't adopt
+// org's own folder, <projects root>/<org folder>/, so one org can't adopt
 // another's checkout (or any other directory on the server). Another Dash
 // (a hub adding a project on its runner) keeps to the projects root, which
 // the runner guard checks.
@@ -356,7 +367,7 @@ func (sv *service) projectPath(name, path string) (string, error) {
 	slug := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(name), "-"), "-")
 	root := sv.s.ProjectRoot
 	if !sv.c.Machine {
-		org := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(sv.c.OrgSlug), "-"), "-")
+		org := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(sv.c.OrgFolder), "-"), "-")
 		if org == "" {
 			return "", fmt.Errorf("%w: your organization has no folder for projects", errBadRequest)
 		}

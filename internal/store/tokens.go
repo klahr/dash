@@ -172,7 +172,7 @@ func (a *Accounts) CreateToken(n NewToken, now time.Time) (string, Token, error)
 	return secret, t, err
 }
 
-const tokenCols = `SELECT t.id, t.kind, t.name, t.token_prefix, t.user_id, o.id, o.name, o.slug, t.scopes, t.created_at,
+const tokenCols = `SELECT t.id, t.kind, t.name, t.token_prefix, t.user_id, o.id, o.name, o.slug, COALESCE(o.folder, o.slug), t.scopes, t.created_at,
 	t.last_used_at, COALESCE(t.refresh_expires_at, t.expires_at), COALESCE(t.oauth_client_id, ''), COALESCE(t.runner_id, '')
 	FROM tokens t JOIN organizations o ON o.id = t.org_id`
 
@@ -181,7 +181,7 @@ func scanToken(sc interface{ Scan(...any) error }) (Token, error) {
 	var scopes string
 	var created int64
 	var used, expires sql.NullInt64
-	err := sc.Scan(&t.ID, &t.Kind, &t.Name, &t.Prefix, &t.UserID, &t.Org.ID, &t.Org.Name, &t.Org.Slug, &scopes, &created,
+	err := sc.Scan(&t.ID, &t.Kind, &t.Name, &t.Prefix, &t.UserID, &t.Org.ID, &t.Org.Name, &t.Org.Slug, &t.Org.Folder, &scopes, &created,
 		&used, &expires, &t.ClientID, &t.RunnerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return t, ErrNotFound

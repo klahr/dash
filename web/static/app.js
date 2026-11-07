@@ -1160,6 +1160,8 @@ $("#org-invite-send").addEventListener("click", attempt(sendInvite));
 $("#org-new").addEventListener("click", attempt(newOrg));
 $("#twofactor-open").addEventListener("click", attempt(openTwoFactor));
 $("#org-require-2fa").addEventListener("change", attempt(setRequire2FA));
+$("#org-slug-save").addEventListener("click", attempt(renameOrg));
+$("#org-slug").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); attempt(renameOrg)(); } });
 for (const menu of $$(".foot-menu")) {
   menu.querySelector(".foot-menu-list").addEventListener("click", () => { menu.open = false; });
   document.addEventListener("click", (e) => { if (!menu.contains(e.target)) menu.open = false; });
@@ -2908,6 +2910,10 @@ async function loadMe() {
 
 async function switchOrg(o) {
   if (o.id === state.me?.org?.id) return;
+  // With org subdomains each org is its own address: go there (the base
+  // domain hands this browser's sign-in over).
+  const hosts = state.me?.org_domains;
+  if (hosts) { location.assign(`${hosts.base_url}/go/${encodeURIComponent(o.slug)}`); return; }
   await api("POST", "/api/auth/switch-org", { org_id: o.id }, "");
   location.reload(); // everything on the page belongs to the org it was loaded in
 }
@@ -2950,6 +2956,15 @@ async function renderOrg() {
   $("#org-title").textContent = org.org.name;
   $("#org-require-2fa-row").hidden = mine !== "owner";
   $("#org-require-2fa").checked = !!org.org.require_2fa;
+  // With org subdomains: the org's address, which owners may rename.
+  $("#org-address").hidden = !org.url;
+  if (org.url) {
+    const old = Object.entries(org.slug_redirects || {});
+    $("#org-address-url").replaceChildren(h("a", { href: org.url + "/" }, org.url.replace(/^https?:\/\//, "")),
+      ...old.map(([s, until]) => h("span", {}, ` · ${s} leads here until ${new Date(until).toLocaleDateString()}`)));
+    $("#org-slug-row").hidden = $("#org-slug-hint").hidden = mine !== "owner";
+    $("#org-slug").value = org.org.slug;
+  }
   $("#org-role").textContent = `You are ${mine === "admin" ? "an admin" : `${mine === "owner" ? "an owner" : "a member"}`} of ${org.org.name}.` +
     (org.org.personal ? " This is your personal workspace: create an organization to work with others." :
       manage ? " Owners and admins invite people and change roles; only owners make owners." : "");
@@ -3003,6 +3018,20 @@ async function renderOrg() {
   }
   $("#org-new").hidden = !me.can_create_orgs;
   renderOrgBilling(await loadBilling().catch(() => null));
+}
+
+async function renameOrg() {
+  const input = $("#org-slug");
+  const slug = input.value.trim().toLowerCase();
+  const org = state.me.org;
+  if (slug === org.slug) return;
+  if (!input.checkValidity()) { input.reportValidity(); return; }
+  const pw = await askPassword(`Move ${org.name} to ${slug}.${state.me.org_domains.domain}?`,
+    "Bookmarks, runners and connected apps using the old address keep working for 30 days. Update them before then.");
+  if (pw == null) return;
+  const o = await api("PATCH", `/api/orgs/${org.id}`, { slug, password: pw }, "");
+  toast(`${o.name} moved to ${o.slug}.${state.me.org_domains.domain}`, { tone: "ok" });
+  location.assign(`${state.me.org_domains.base_url}/go/${encodeURIComponent(o.slug)}`);
 }
 
 async function setRequire2FA() {
@@ -3072,7 +3101,7 @@ async function sendInvite() {
   if (pw == null) return;
   const res = await api("POST", `/api/orgs/${state.me.org.id}/invitations`, { email, role, password: pw }, "");
   if (res.billing) offerSubscription(res.billing).catch((err) => toast(err.message, true));
-  const link = location.origin + res.path;
+  const link = (state.me?.org_domains?.base_url || location.origin) + res.path; // invitations open on the base domain
   $("#org-invite-link").replaceChildren(
     h("p", {}, `Send ${email} this link. Dash doesn't email it.`),
     copyBlock(link, "Invitation link copied", { pre: true }),

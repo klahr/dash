@@ -29,7 +29,7 @@ var Upgrader = websocket.Upgrader{
 			return false
 		}
 		if TrustProxy {
-			if fh := r.Header.Get("X-Forwarded-Host"); fh != "" && u.Host == fh {
+			if fh := r.Header.Get("X-Forwarded-Host"); fh != "" && u.Host == fh && (ForwardedHostOK == nil || ForwardedHostOK(fh)) {
 				return true
 			}
 		}
@@ -40,6 +40,10 @@ var Upgrader = websocket.Upgrader{
 // TrustProxy accepts X-Forwarded-Host from a reverse proxy in front of Dash
 // when checking WebSocket origins. Set it before serving.
 var TrustProxy bool
+
+// ForwardedHostOK, if set, limits the X-Forwarded-Host values TrustProxy
+// accepts (with org subdomains: the base domain and the names under it).
+var ForwardedHostOK func(host string) bool
 
 const (
 	writeWait  = 10 * time.Second

@@ -27,6 +27,7 @@ import (
 //	GET    /api/tokens                           the user's tokens and OAuth grants
 //	POST   /api/tokens {name, org_id, scopes, password}
 //	DELETE /api/tokens/{id}
+//	GET    /go/{slug}                            with org subdomains: hand the browser to the org's (see orghosts.go)
 //
 // two-factor sign-in (see twoFactorRoutes), and signup and password reset
 // by email (see signupRoutes).
@@ -55,6 +56,9 @@ func (a *Auth) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/tokens/{id}", a.sessionOnly(a.revokeToken))
 	a.twoFactorRoutes(mux)
 	a.signupRoutes(mux)
+	if a.Domains != nil {
+		mux.HandleFunc("GET /go/{slug}", a.goOrg)
+	}
 }
 
 // signedIn passes the request's identity to h, and answers 401 without one
@@ -92,12 +96,13 @@ func accountError(w http.ResponseWriter, err error) {
 		code = http.StatusNotFound
 	case errors.Is(err, store.ErrLastOwner), errors.Is(err, store.ErrUsernameTaken),
 		errors.Is(err, store.ErrTOTPEnabled), errors.Is(err, store.ErrTOTPRequired), errors.Is(err, store.ErrTOTPSelf),
-		errors.Is(err, store.ErrPersonalOrg):
+		errors.Is(err, store.ErrPersonalOrg), errors.Is(err, store.ErrSlugTaken):
 		code = http.StatusConflict
 	case errors.Is(err, store.ErrBadRole), errors.Is(err, store.ErrBadEmail), errors.Is(err, store.ErrBadUsername),
 		errors.Is(err, store.ErrWeakPassword), errors.Is(err, store.ErrBadOrgName), errors.Is(err, errBadBody),
 		errors.Is(err, store.ErrNoOrg), errors.Is(err, store.ErrBadScopes), errors.Is(err, store.ErrBadTokenName),
-		errors.Is(err, store.ErrTOTPNotSetUp), errors.Is(err, store.ErrNoPendingTOTP), errors.Is(err, store.ErrEmailLink):
+		errors.Is(err, store.ErrTOTPNotSetUp), errors.Is(err, store.ErrNoPendingTOTP), errors.Is(err, store.ErrEmailLink),
+		errors.Is(err, store.ErrBadSlug), errors.Is(err, store.ErrSlugReserved):
 		code = http.StatusBadRequest
 	case errors.Is(err, ErrBadPassword), errors.Is(err, ErrSessionRequired):
 		code = http.StatusForbidden // not 401: that would sign the browser out
@@ -158,10 +163,18 @@ func (a *Auth) me(w http.ResponseWriter, r *http.Request) {
 		resp["token"] = id.Token // a token works in its own org only
 		resp["orgs"] = []*store.Membership{id.Org}
 	}
+	if a.Domains != nil {
+		resp["org_domains"] = a.orgHosts(r, id)
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
 func (a *Auth) switchOrg(w http.ResponseWriter, r *http.Request, id *Identity) {
+	if _, onOrg := HostSlug(r.Context()); onOrg {
+		// The host is the org: another org is another host (/go/{slug}).
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "open the other organization at its own address", "code": "org_host"})
+		return
+	}
 	var req struct {
 		OrgID int64 `json:"org_id"`
 	}
@@ -234,6 +247,14 @@ func (a *Auth) members(w http.ResponseWriter, r *http.Request, id *Identity) {
 		return
 	}
 	resp := map[string]any{"org": mine.Org, "role": mine.Role, "members": members, "member_count": count}
+	if a.Domains != nil {
+		// Where the org is served, and the old names that still lead there.
+		resp["url"] = a.origin(r, mine.Slug)
+		if resp["slug_redirects"], err = a.acc.SlugRedirects(oid, a.now()); err != nil {
+			accountError(w, err)
+			return
+		}
+	}
 	if mine.Role.AtLeast(store.RoleAdmin) {
 		if resp["invitations"], err = a.acc.Invitations(oid); err != nil {
 			accountError(w, err)

@@ -209,7 +209,7 @@ func (a *Accounts) VerifyEmail(tok string, now time.Time) (User, error) {
 		if u, err = scanUserRow(tx.QueryRow(userCols+" WHERE id = ?", uid)); err != nil {
 			return err
 		}
-		_, err = ensurePersonalOrg(tx, u, now)
+		_, err = a.ensurePersonalOrg(tx, u, now)
 		return err
 	})
 	return u, err
@@ -320,22 +320,22 @@ func (a *Accounts) EnsurePersonalOrg(uid int64) (Org, error) {
 		if err != nil {
 			return err
 		}
-		o, err = ensurePersonalOrg(tx, u, time.Now())
+		o, err = a.ensurePersonalOrg(tx, u, time.Now())
 		return err
 	})
 	return o, err
 }
 
-func ensurePersonalOrg(tx *sql.Tx, u User, now time.Time) (Org, error) {
+func (a *Accounts) ensurePersonalOrg(tx *sql.Tx, u User, now time.Time) (Org, error) {
 	o := Org{Personal: true}
-	err := tx.QueryRow("SELECT id, name, slug FROM organizations WHERE personal_user_id = ?", u.ID).Scan(&o.ID, &o.Name, &o.Slug)
+	err := tx.QueryRow("SELECT id, name, slug, COALESCE(folder, slug) FROM organizations WHERE personal_user_id = ?", u.ID).Scan(&o.ID, &o.Name, &o.Slug, &o.Folder)
 	if err == nil {
 		return o, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return o, err
 	}
-	created, err := createOrg(tx, u.ID, u.Username+"'s workspace", now.Unix())
+	created, err := a.createOrg(tx, u.ID, u.Username+"'s workspace", now)
 	if err != nil {
 		return o, err
 	}

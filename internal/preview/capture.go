@@ -30,11 +30,14 @@ var captureJS string
 // parentOrigins says who may ask for a capture: Dash's own origin as last
 // seen, and any origin on the host the preview domain hangs off (dash.example.com
 // for preview.dash.example.com), which is where docs/previews.md puts Dash.
-func (m *Manager) parentOrigins() (origins, hosts []string) {
+func (m *Manager) parentOrigins(label string) (origins, hosts []string) {
 	origins = []string{}
 	hosts = []string{}
 	if o := m.dashOrigin(); o != "" {
 		origins = append(origins, o)
+	}
+	if o := m.originFor(label); o != "" && o != m.dashOrigin() {
+		origins = append(origins, o) // the todo's org's subdomain
 	}
 	if _, rest, ok := strings.Cut(m.Domain, "."); ok && strings.Contains(rest, ".") {
 		hosts = append(hosts, rest)
@@ -42,8 +45,8 @@ func (m *Manager) parentOrigins() (origins, hosts []string) {
 	return origins, hosts
 }
 
-func (m *Manager) serveCapture(w http.ResponseWriter) {
-	origins, hosts := m.parentOrigins()
+func (m *Manager) serveCapture(w http.ResponseWriter, label string) {
+	origins, hosts := m.parentOrigins(label)
 	cfg, _ := json.Marshal(map[string][]string{"origins": origins, "hosts": hosts})
 	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

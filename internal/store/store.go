@@ -87,6 +87,9 @@ type Store struct {
 	// Now, if set, is the clock of scan settings' UpdatedAt, which scan
 	// schedules count from (tests); default time.Now.
 	Now func() time.Time
+	// SlugReserved, if set, reports whether a slug is reserved for org
+	// subdomains (default: DefaultReservedSlugs). Set it before serving.
+	SlugReserved func(slug string) bool
 }
 
 func NewID() string {

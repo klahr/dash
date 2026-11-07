@@ -26,7 +26,8 @@ A hub that runs tasks itself, for a single user without runners, also needs Clau
 Then:
 
 1. **DNS.** Point `dash.example.com` at the VPS (A and/or AAAA record). For
-   [live previews](previews.md), also point `*.preview.dash.example.com` at it.
+   [live previews](previews.md), also point `*.preview.dash.example.com` at it, and for
+   [org subdomains](#org-subdomains) `*.dash.example.com`.
 2. **Caddy.** Install [Caddy](https://caddyserver.com/docs/install) and use
    [`deploy/Caddyfile`](../deploy/Caddyfile) with your own names. Caddy gets the certificate for
    `dash.example.com` from Let's Encrypt on its own and renews it.
@@ -55,6 +56,88 @@ Caddy's **on-demand TLS** (one certificate per host, issued at the first request
 plugin, but Caddy requires an `ask` endpoint to approve each name, which Dash doesn't have, and
 every new task would cost a certificate against Let's Encrypt's rate limits. Use the DNS
 challenge.
+
+## Org subdomains
+
+Off by default: everything is served on one host, and the org a browser works in is picked in its
+account menu. With **`-org-domain dash.example.com`** (or `DASH_ORG_DOMAIN`), each organization
+gets an address of its own, `acme.dash.example.com`:
+
+- **`dash.example.com`** keeps the landing page, sign-in, signup and invitation links. Signed in,
+  its front page lists your organizations and sends you to the one you pick (straight there if
+  you're in only one).
+- **`<slug>.dash.example.com`** is that organization's dashboard. The address decides the org; your
+  membership is checked on every request. If you aren't a member, or there's no such org, you get
+  the same "No such organization" page either way, with a link back to `dash.example.com`.
+  Signed out, you're sent to sign in on `dash.example.com` and brought back.
+- **Runners** added from an org's address are given that address: the install command and
+  "Add a runner" use `https://acme.dash.example.com`.
+- **The claude.ai connector** at `https://acme.dash.example.com/mcp` connects to that org without
+  asking which one, and its tokens only work there (and on `dash.example.com/mcp`, as before).
+- **Previews** stay on `-preview-domain`. Use `preview.dash.example.com`: the label `preview` is
+  reserved, so no org can take it, and the two wildcards never meet.
+
+### Setting it up
+
+1. **DNS:** a wildcard record `*.dash.example.com` (A/AAAA, or a CNAME to `dash.example.com`)
+   besides `dash.example.com` and `*.preview.dash.example.com`. The more specific
+   `*.preview…` record keeps answering for previews.
+2. **Certificates:** a wildcard certificate for `*.dash.example.com`. A wildcard covers one level
+   only, so it doesn't cover `<task>.preview.dash.example.com`: previews keep their own
+   `*.preview.dash.example.com` certificate. Both need the DNS challenge
+   ([above](#certificates-for-previews)); [`deploy/Caddyfile`](../deploy/Caddyfile) has a block for
+   each.
+3. **The proxy must pass the browser's `Host`** (Caddy does by default; with nginx, set
+   `proxy_set_header Host $host;`), and Dash needs `-trust-proxy` and `-public-url`:
+
+   ```sh
+   ./bin/dash -trust-proxy -public-url https://dash.example.com \
+              -preview-domain preview.dash.example.com \
+              -org-domain dash.example.com
+   ```
+
+   With `-trust-proxy`, Dash takes `X-Forwarded-Host` only when it is `dash.example.com` or a name
+   under it.
+
+   Behind a [Cloudflare Tunnel](#at-home-through-a-cloudflare-tunnel), add a `*.dash.example.com`
+   hostname to the tunnel and a proxied `CNAME` `*.dash` record, and order an edge certificate for
+   `*.dash.example.com` as for [previews](#previews-through-the-tunnel): the free one only covers
+   `*.example.com`.
+
+### Slugs
+
+An org's subdomain is its **slug**. New orgs get one from their name (`Acme Corp` →
+`acme-corp`); owners rename it under *Organization → Address*. A slug is 3 to 40 lower-case
+letters, digits and hyphens, not starting or ending with a hyphen, unique, and not reserved.
+
+- **Reserved** by default: `www`, `api`, `app`, `admin`, `preview`, `runner`, `mcp`, `oauth`,
+  `auth`, `login`, `mail`, `status`, `docs`, `static`, `assets`, `help`, `support`, `billing`.
+  `-org-reserved` (or `DASH_ORG_RESERVED`) replaces the list, comma-separated; the preview domain's
+  first label is always reserved. `www.dash.example.com` redirects to `dash.example.com`; other
+  reserved names answer "No such organization".
+- **Renaming** keeps the old slug leading to the org for **30 days** (bookmarks, runners and
+  connectors keep working; update them meanwhile), and no other org can take it until then.
+- When you turn org subdomains on, orgs whose slug can't be a subdomain (too short, reserved) get
+  a new one from their name; Dash logs each.
+- An org's folder for new projects (`<projects root>/<folder>/`) is fixed when the org is made and
+  doesn't follow renames, so a slug given up and taken later never brings another org's checkouts
+  with it.
+
+### Sign-in across subdomains
+
+Session cookies stay **host-only**: each host has its own, with no `Domain` attribute. A cookie
+on `dash.example.com`'s parent would also be sent to `*.preview.dash.example.com`, where anyone's
+preview app runs. Instead, `dash.example.com/go/<slug>` hands a signed-in browser to the org's
+subdomain with a token that is signed, good for one minute and for that user, org and host only,
+and works once; the subdomain turns it into a session of its own. Signing out on any host signs
+out the base domain and every org subdomain that browser was handed to.
+
+On every host, requests that change something (and WebSockets) must come from a page on the same
+host (`Origin`): an org's pages can't drive another org's API, and previews can't drive any.
+Pages may only be framed by their own host (`frame-ancestors 'self'`).
+
+**Not yet:** custom domains (`dash.acme.com` for an org) would need per-domain certificates
+(on-demand TLS with an approval endpoint) and a domain-ownership check; a possible follow-up.
 
 ## At home through a Cloudflare Tunnel
 

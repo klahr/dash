@@ -26,6 +26,7 @@ import (
 	"github.com/klahr/dash/internal/branding"
 	"github.com/klahr/dash/internal/mail"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/orgdomain"
 	"github.com/klahr/dash/internal/passhash"
 	"github.com/klahr/dash/internal/store"
 )
@@ -96,13 +97,22 @@ type Auth struct {
 	mail       mail.Sender // SetMail: password reset by email, and what signup needs
 	baseURL    string      // the public origin links in emails point to
 	signupOpen bool        // EnableSignup
+
+	// Domains, when set, serves each org at <slug>.<Domains.Base> (see
+	// orghosts.go). Nil: one host for everything, as without it.
+	Domains      *orgdomain.Domain
+	handoffKey   []byte               // signs handoff tokens; new on every start
+	handoffsUsed map[string]time.Time // spent handoff tokens' nonces, until they'd expire anyway
 }
 
 // New signs people in with the accounts in acc (see Accounts.Bootstrap for
 // the first one).
 func New(acc *store.Accounts) *Auth {
 	passhash.Prime() // so the first unknown-name login isn't slower than the rest
-	return &Auth{acc: acc, failed: map[string]*failures{}, limits: map[string]*failures{}, tickets: map[string]*loginTicket{}, now: time.Now, recheck: 15 * time.Second}
+	key := make([]byte, 32)
+	_, _ = rand.Read(key)
+	return &Auth{acc: acc, failed: map[string]*failures{}, limits: map[string]*failures{}, tickets: map[string]*loginTicket{}, now: time.Now, recheck: 15 * time.Second,
+		handoffKey: key, handoffsUsed: map[string]time.Time{}}
 }
 
 // brand is a.Brand with its defaults.
@@ -241,15 +251,24 @@ func (a *Auth) session(r *http.Request) (*Identity, bool) {
 
 // startSession signs uid in on this browser.
 func (a *Auth) startSession(w http.ResponseWriter, r *http.Request, uid int64) error {
+	return a.startSessionIn(w, r, uid, 0, newFamily())
+}
+
+// startSessionIn signs uid in on this browser and host, working in org (0:
+// their first), as one of family's sessions (see store.Session.Family).
+func (a *Auth) startSessionIn(w http.ResponseWriter, r *http.Request, uid, org int64, family string) error {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
 	tok := base64.RawURLEncoding.EncodeToString(b)
 	now := a.now()
 	_ = a.acc.PruneSessions(now)
 	a.ensurePersonal(uid) // before the session picks the org to start in
-	if err := a.acc.CreateSession(sessionKey(tok), uid, now, now.Add(sessionTTL)); err != nil {
+	if err := a.acc.CreateSessionIn(sessionKey(tok), uid, org, family, now, now.Add(sessionTTL)); err != nil {
 		return err
 	}
+	// No Domain: the cookie is the host's alone. On the parent domain it
+	// would also go to every org's subdomain and to *.preview hosts, where
+	// anyone's code runs.
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    tok,
@@ -521,13 +540,20 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true, "enrol_2fa": enrol})
 }
 
-// Logout handles POST /api/logout.
+// Logout handles POST /api/logout. It signs out the session's whole
+// family: with org subdomains, the base domain's and every org's this
+// browser was handed to. A form post (the org picker's) goes on to the
+// sign-in page.
 func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(CookieName); err == nil {
-		_ = a.acc.DeleteSession(sessionKey(c.Value))
+		_ = a.acc.DeleteSessionFamily(sessionKey(c.Value))
 	}
 	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
 		Secure: a.Secure(r), SameSite: http.SameSiteStrictMode})
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+		http.Redirect(w, r, "/login.html", http.StatusSeeOther)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -593,11 +619,17 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), peerKey{}, true)))
 			return
 		}
+		if a.Domains != nil {
+			var done bool
+			if r, done = a.serveDomains(w, r, next); done {
+				return
+			}
+		}
 		if public[r.URL.Path] || strings.HasPrefix(r.URL.Path, "/img/") || a.oauth.public(r.URL.Path) || r.URL.Path == branding.LogoPath {
 			next.ServeHTTP(w, r)
 			return
 		}
-		api := strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/") || strings.HasPrefix(r.URL.Path, "/peer/")
+		api := isAPI(r.URL.Path)
 		if tok, ok := bearer(r); ok {
 			a.serveToken(w, r, tok, api, next)
 			return
@@ -613,32 +645,46 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 				return
 			}
 			login := "/login.html"
-			if strings.HasPrefix(r.URL.Path, "/preview/") {
-				// Opening a preview (say from its QR code) continues there after signing in.
+			if strings.HasPrefix(r.URL.Path, "/preview/") || a.Domains != nil && strings.HasPrefix(r.URL.Path, "/go/") {
+				// Opening a preview (say from its QR code), or an org's
+				// subdomain, continues there after signing in.
 				login += "?next=" + url.QueryEscape(r.URL.RequestURI())
 			}
 			http.Redirect(w, r, login, http.StatusSeeOther)
 			return
 		}
-		if id.Needs2FA && !twoFactorFree(r.URL.Path) {
-			// An org of theirs requires two-factor sign-in: set it up first.
-			if api {
-				writeJSON(w, http.StatusForbidden, map[string]string{"error": "set up two-factor sign-in to continue", "code": "2fa_required"})
-				return
-			}
-			http.Redirect(w, r, "/login.html?enrol=1", http.StatusSeeOther)
-			return
-		}
-		if id.Org == nil && api && !orgFree(r.URL.Path) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "you aren't a member of any organization", "code": "no_org"})
-			return
-		}
-		r = r.WithContext(withIdentity(r.Context(), id))
-		if strings.HasPrefix(r.URL.Path, "/ws/") {
-			w = &watchedConn{ResponseWriter: w, a: a, r: r, id: id}
-		}
-		next.ServeHTTP(w, r)
+		a.serveSession(w, r, id, api, next)
 	})
+}
+
+// serveSession passes a request with a valid session on to next as id, once
+// id has set up the second factor an org requires and has an org to work in.
+func (a *Auth) serveSession(w http.ResponseWriter, r *http.Request, id *Identity, api bool, next http.Handler) {
+	if id.Needs2FA && !twoFactorFree(r.URL.Path) {
+		// An org of theirs requires two-factor sign-in: set it up first.
+		if api {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "set up two-factor sign-in to continue", "code": "2fa_required"})
+			return
+		}
+		http.Redirect(w, r, "/login.html?enrol=1", http.StatusSeeOther)
+		return
+	}
+	if id.Org == nil && api && !orgFree(r.URL.Path) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "you aren't a member of any organization", "code": "no_org"})
+		return
+	}
+	r = r.WithContext(withIdentity(r.Context(), id))
+	if base, _ := r.Context().Value(baseHostKey{}).(bool); base && (r.URL.Path == "/" || r.URL.Path == "/index.html") &&
+		(r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		// The base domain's front page is the org picker: the board is on
+		// each org's subdomain.
+		a.picker(w, r, id)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/ws/") {
+		w = &watchedConn{ResponseWriter: w, a: a, r: r, id: id}
+	}
+	next.ServeHTTP(w, r)
 }
 
 // serveToken passes an API request with an API token on to next, as the
@@ -654,7 +700,7 @@ func (a *Auth) serveToken(w http.ResponseWriter, r *http.Request, tok string, ap
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "2fa_required"})
 		return
 	}
-	if err != nil {
+	if err != nil || !a.pinned(r, id) { // on an org's subdomain, only that org's tokens
 		w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
 		writeError(w, http.StatusUnauthorized, store.ErrTokenInvalid.Error())
 		return

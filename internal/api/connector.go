@@ -25,7 +25,7 @@ func (s *Server) connectorStatus(w http.ResponseWriter, r *http.Request) {
 		Paths: []string{auth.MCPPath, "/authorize", "/token", "/register", "/.well-known"},
 	}
 	if s.OAuth != nil {
-		st.Enabled, st.URL, st.Connected = true, s.OAuth.Resource(), s.OAuth.Connected()
+		st.Enabled, st.URL, st.Connected = true, s.OAuth.ResourceFor(r), s.OAuth.Connected()
 	}
 	writeJSON(w, http.StatusOK, st)
 }

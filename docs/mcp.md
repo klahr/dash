@@ -51,6 +51,10 @@ the OAuth endpoints; without it they don't exist. If you put a second login (suc
 Access) in front of Dash, leave `/mcp`, `/authorize`, `/token`, `/register` and `/.well-known/`
 open to Anthropic's servers.
 
+With [org subdomains](deploy.md#org-subdomains), connect `https://acme.dash.example.com/mcp`
+instead: that address is its own issuer, sign-in there doesn't ask which organization, and the
+tokens it gets only work for that org (on that address and on `https://dash.example.com/mcp`).
+
 ### Tailscale Funnel
 
 If Dash is otherwise private on your tailnet, Funnel can expose just the connector's paths. It

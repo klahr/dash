@@ -666,6 +666,15 @@
       <header class="sheet-head"><h2 id="org-title" tabindex="-1" autofocus>Organization</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
       <p class="hint" id="org-role"></p>
       <label class="org-require-2fa" id="org-require-2fa-row" hidden><input type="checkbox" id="org-require-2fa"> Require two-factor sign-in of every member</label>
+      <div id="org-address" hidden>
+        <h3 class="org-section">Address</h3>
+        <p class="hint" id="org-address-url"></p>
+        <div class="org-invite" id="org-slug-row" hidden>
+          <input type="text" id="org-slug" autocomplete="off" spellcheck="false" autocapitalize="off" pattern="[a-z0-9](?:[a-z0-9-]{1,38})[a-z0-9]" minlength="3" maxlength="40" aria-label="Subdomain name" aria-describedby="org-slug-hint">
+          <button class="btn" id="org-slug-save" type="button">Rename</button>
+        </div>
+        <p class="hint" id="org-slug-hint" hidden>3 to 40 lower-case letters, digits or hyphens. The old address keeps leading here for 30 days, and no other organization can take it meanwhile.</p>
+      </div>
       <h3 class="org-section">Members</h3>
       <ul class="runner-list org-members" id="org-members"></ul>
       <div id="org-invite-area" hidden>

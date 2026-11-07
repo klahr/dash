@@ -138,6 +138,10 @@ func (s *Server) buildMux() *http.ServeMux {
 		s.Auth.Landing = s.landing()
 	}
 	mux.HandleFunc("GET "+branding.LogoPath, s.logo)
+	// With org subdomains, a preview signs in at its todo's org's subdomain.
+	if s.Previews != nil && s.Auth.Domains != nil && s.Previews.OriginFor == nil {
+		s.Previews.OriginFor = s.previewOrigin
+	}
 
 	// Sign-in, users, orgs and invitations (the middleware lets /api/login
 	// and the invitation-link calls through without a session)

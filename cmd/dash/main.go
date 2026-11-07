@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -33,6 +34,7 @@ import (
 	"github.com/klahr/dash/internal/mail"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/orgdomain"
 	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/preview"
@@ -106,6 +108,8 @@ func main() {
 	})
 	publicURL := flag.String("public-url", "", "public HTTPS origin (e.g. https://dash.example.com) that serves /mcp with OAuth for claude.ai custom connectors; empty = off (or $DASH_PUBLIC_URL)")
 	previewDomain := flag.String("preview-domain", "", "serve each task's live preview at https://<task>.<this domain>, e.g. preview.dash.example.com; needs a wildcard DNS record and certificate (see docs/previews.md; or $DASH_PREVIEW_DOMAIN)")
+	orgDomain := flag.String("org-domain", "", "serve each organization at https://<slug>.<this domain>, e.g. dash.example.com; needs a wildcard DNS record and certificate (see docs/deploy.md; or $DASH_ORG_DOMAIN). Empty = off")
+	orgReserved := flag.String("org-reserved", "", "comma-separated subdomains no organization may take, replacing the defaults ("+strings.Join(store.DefaultReservedSlugs, ",")+"); the preview domain's label is always reserved (or $DASH_ORG_RESERVED)")
 	previewIdle := flag.Duration("preview-idle", preview.DefaultIdle, "stop a live preview after this long without traffic")
 	scanTimeout := flag.Duration("scan-timeout", scan.DefaultRunTimeout, "stop a scan's Claude run after this long and mark it failed")
 	scanSchedules := flag.Bool("scan-schedules", true, "run scans (.dash/scans) on their schedules; off = only when started by hand")
@@ -213,6 +217,30 @@ func main() {
 	}
 	if *previewDomain == "" {
 		*previewDomain = os.Getenv("DASH_PREVIEW_DOMAIN")
+	}
+	*orgDomain = envOr(*orgDomain, "DASH_ORG_DOMAIN")
+	if *orgDomain != "" && !runnerMode {
+		d, err := orgdomain.New(*orgDomain, orgdomain.ParseList(envOr(*orgReserved, "DASH_ORG_RESERVED")), *previewDomain)
+		if err != nil {
+			slog.Error("org subdomains", "err", err)
+			os.Exit(1)
+		}
+		d.UseDefaults(*publicURL)
+		if u, err := url.Parse(*publicURL); *publicURL != "" && (err != nil || !strings.EqualFold(u.Hostname(), d.Base)) {
+			slog.Warn("-public-url isn't on the org domain: it should be https://" + d.Base)
+		}
+		authn.Domains = d
+		st.SlugReserved = d.Reserved
+		hub.ForwardedHostOK = d.Under
+		fixed, err := st.Accounts().FixSlugs(time.Now())
+		if err != nil {
+			slog.Error("org subdomains", "err", err)
+			os.Exit(1)
+		}
+		for _, o := range fixed {
+			slog.Warn("organization's slug couldn't be a subdomain; renamed", "org", o.Name, "slug", o.Slug)
+		}
+		slog.Info("org subdomains", "hosts", "<org>."+d.Base, "reserved", strings.Join(d.ReservedList(), ","))
 	}
 	if *projectRoot == "" {
 		*projectRoot = filepath.Join(home, "dash-projects")

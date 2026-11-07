@@ -101,6 +101,19 @@ func loopback(host string) bool {
 // Resource is the URL of the MCP endpoint the tokens are for.
 func (o *OAuth) Resource() string { return o.base + MCPPath }
 
+// issuer is the authorization server r reached: the public URL's origin, or
+// on an org's subdomain (Auth.Domains) that subdomain's, whose tokens are
+// pinned to that org with no org to pick.
+func (o *OAuth) issuer(r *http.Request) string {
+	if origin, ok := o.a.OrgOrigin(r); ok {
+		return origin
+	}
+	return o.base
+}
+
+// ResourceFor is the MCP endpoint r reached (see issuer).
+func (o *OAuth) ResourceFor(r *http.Request) string { return o.issuer(r) + MCPPath }
+
 // Connected counts the clients signed in now: those holding a grant that
 // can still be refreshed.
 func (o *OAuth) Connected() int { return o.a.acc.ConnectedClients(o.a.now()) }
@@ -202,12 +215,13 @@ func (o *OAuth) Bearer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tok, sent := bearer(r)
 		if sent {
-			if id, err := o.a.tokenIdentity(tok, store.TokenOAuth, store.TokenAPI); err == nil {
+			// On an org's subdomain, only tokens of that org.
+			if id, err := o.a.tokenIdentity(tok, store.TokenOAuth, store.TokenAPI); err == nil && o.a.pinned(r, id) {
 				next.ServeHTTP(w, r.WithContext(withIdentity(r.Context(), id)))
 				return
 			}
 		}
-		v := fmt.Sprintf("Bearer resource_metadata=%q", o.base+"/.well-known/oauth-protected-resource")
+		v := fmt.Sprintf("Bearer resource_metadata=%q", o.issuer(r)+"/.well-known/oauth-protected-resource")
 		if sent {
 			v += `, error="invalid_token"`
 		}
@@ -220,8 +234,8 @@ func (o *OAuth) Bearer(next http.Handler) http.Handler {
 
 func (o *OAuth) resourceMetadata(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{ // RFC 9728
-		"resource":                 o.Resource(),
-		"authorization_servers":    []string{o.base},
+		"resource":                 o.ResourceFor(r),
+		"authorization_servers":    []string{o.issuer(r)},
 		"bearer_methods_supported": []string{"header"},
 		"resource_name":            o.a.brand().Name,
 		"scopes_supported":         store.UserScopes,
@@ -229,11 +243,12 @@ func (o *OAuth) resourceMetadata(w http.ResponseWriter, r *http.Request) {
 }
 
 func (o *OAuth) serverMetadata(w http.ResponseWriter, r *http.Request) {
+	iss := o.issuer(r)
 	writeJSON(w, http.StatusOK, map[string]any{ // RFC 8414
-		"issuer":                                         o.base,
-		"authorization_endpoint":                         o.base + "/authorize",
-		"token_endpoint":                                 o.base + "/token",
-		"registration_endpoint":                          o.base + "/register",
+		"issuer":                                         iss,
+		"authorization_endpoint":                         iss + "/authorize",
+		"token_endpoint":                                 iss + "/token",
+		"registration_endpoint":                          iss + "/register",
 		"response_types_supported":                       []string{"code"},
 		"grant_types_supported":                          []string{"authorization_code", "refresh_token"},
 		"code_challenge_methods_supported":               []string{"S256"},
@@ -455,7 +470,7 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 		if q.State != "" {
 			v.Set("state", q.State)
 		}
-		v.Set("iss", o.base) // RFC 9207
+		v.Set("iss", o.issuer(r)) // RFC 9207
 		u.RawQuery = v.Encode()
 		http.Redirect(w, r, u.String(), http.StatusFound)
 	}
@@ -468,7 +483,7 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 	case f.Get("code_challenge_method") != "S256" || len(q.Challenge) != 43:
 		fail("invalid_request", "PKCE with code_challenge_method=S256 is required")
 		return
-	case q.Resource != "" && strings.TrimRight(q.Resource, "/") != o.Resource():
+	case q.Resource != "" && strings.TrimRight(q.Resource, "/") != o.ResourceFor(r):
 		fail("invalid_target", "unknown resource "+q.Resource)
 		return
 	case !scopeOK:
@@ -545,6 +560,23 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 		q.Error = "sign-in failed"
 		o.consent(w, http.StatusInternalServerError, q)
 		return
+	}
+	if _, onOrg := HostSlug(r.Context()); onOrg {
+		// An org's subdomain: that org, and no other to pick. Whether it
+		// exists is only told to its members.
+		host, ok := o.a.hostOrg(r)
+		var only []store.Membership
+		for _, m := range orgs {
+			if ok && m.ID == host.ID {
+				only = append(only, m)
+			}
+		}
+		if len(only) == 0 {
+			q.Error = "There is no organization here, or your account isn't a member of it."
+			o.consent(w, http.StatusForbidden, q)
+			return
+		}
+		orgs = only
 	}
 	orgID, _ := strconv.ParseInt(r.PostForm.Get("org_id"), 10, 64)
 	org, err := pickOrg(orgs, orgID)
@@ -674,7 +706,7 @@ func (o *OAuth) token(w http.ResponseWriter, r *http.Request) {
 		oauthErr(w, http.StatusUnauthorized, "invalid_client", "unknown client or wrong secret")
 		return
 	}
-	if res := f.Get("resource"); res != "" && strings.TrimRight(res, "/") != o.Resource() {
+	if res := f.Get("resource"); res != "" && strings.TrimRight(res, "/") != o.ResourceFor(r) {
 		oauthErr(w, http.StatusBadRequest, "invalid_target", "unknown resource "+res)
 		return
 	}
@@ -696,6 +728,12 @@ func (o *OAuth) token(w http.ResponseWriter, r *http.Request) {
 		if !verifierMatches(f.Get("code_verifier"), code.challenge) {
 			oauthErr(w, http.StatusBadRequest, "invalid_grant", "code_verifier does not match")
 			return
+		}
+		if _, onOrg := HostSlug(r.Context()); onOrg {
+			if host, ok := o.a.hostOrg(r); !ok || host.ID != code.org {
+				oauthErr(w, http.StatusBadRequest, "invalid_grant", "the code is for another organization")
+				return
+			}
 		}
 		_ = o.a.acc.PruneTokens(now)
 		pair, err = o.a.acc.CreateGrant(store.Grant{ClientID: id, UserID: code.user, OrgID: code.org, Scopes: code.scopes},

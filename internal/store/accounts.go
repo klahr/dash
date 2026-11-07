@@ -94,6 +94,9 @@ type Org struct {
 	// Personal: the org is its only member's personal workspace (see
 	// Accounts.EnsurePersonalOrg); it can't invite anyone.
 	Personal bool `json:"personal,omitempty"`
+	// Folder is the org's folder under the projects root. Unlike the slug
+	// it never changes.
+	Folder string `json:"-"`
 }
 
 // Membership is one org a user belongs to and their role there.
@@ -126,6 +129,9 @@ type Session struct {
 	User     User
 	Org      *Membership
 	Needs2FA bool
+	// Family is shared by the sessions one sign-in made on the base domain
+	// and the org subdomains it was handed to ("" for older sessions).
+	Family string
 }
 
 // ---- validation ----
@@ -222,7 +228,7 @@ func (a *Accounts) Bootstrap(username, password string) error {
 				return err
 			}
 			uid, _ := res.LastInsertId()
-			org, err := createOrg(tx, uid, "Default", now.Unix())
+			org, err := a.createOrg(tx, uid, "Default", now)
 			if err != nil {
 				return err
 			}
@@ -321,8 +327,8 @@ func (a *Accounts) assignRecords() error {
 // DefaultOrg is the org records are assigned to for now.
 func (a *Accounts) DefaultOrg() (Org, error) {
 	var o Org
-	err := a.db.QueryRow(`SELECT o.id, o.name, o.slug FROM instance i JOIN organizations o ON o.id = i.default_org_id
-		WHERE i.id = 1`).Scan(&o.ID, &o.Name, &o.Slug)
+	err := a.db.QueryRow(`SELECT o.id, o.name, o.slug, COALESCE(o.folder, o.slug) FROM instance i JOIN organizations o ON o.id = i.default_org_id
+		WHERE i.id = 1`).Scan(&o.ID, &o.Name, &o.Slug, &o.Folder)
 	if errors.Is(err, sql.ErrNoRows) {
 		return o, ErrNotFound
 	}
@@ -406,9 +412,20 @@ func (a *Accounts) Active(uid int64, t time.Time) bool {
 // CreateSession stores a session for uid under key (a hash of the cookie),
 // working in the user's first org.
 func (a *Accounts) CreateSession(key string, uid int64, now, expires time.Time) error {
-	_, err := a.db.Exec(`INSERT INTO sessions (key, user_id, active_org_id, created_at, expires_at)
-		VALUES (?, ?, (SELECT org_id FROM org_memberships WHERE user_id = ?2 ORDER BY created_at, org_id LIMIT 1), ?, ?)`,
-		key, uid, now.Unix(), expires.Unix())
+	return a.CreateSessionIn(key, uid, 0, "", now, expires)
+}
+
+// CreateSessionIn stores a session for uid under key working in org (0:
+// the user's first org), in family (see Session.Family; "" for none).
+func (a *Accounts) CreateSessionIn(key string, uid, org int64, family string, now, expires time.Time) error {
+	var fam any
+	if family != "" {
+		fam = family
+	}
+	_, err := a.db.Exec(`INSERT INTO sessions (key, user_id, active_org_id, family, created_at, expires_at)
+		VALUES (?1, ?2, COALESCE((SELECT org_id FROM org_memberships WHERE user_id = ?2 AND org_id = ?3),
+			(SELECT org_id FROM org_memberships WHERE user_id = ?2 ORDER BY created_at, org_id LIMIT 1)), ?4, ?5, ?6)`,
+		key, uid, org, fam, now.Unix(), expires.Unix())
 	return err
 }
 
@@ -421,15 +438,15 @@ func (a *Accounts) Session(key string, now time.Time) (Session, error) {
 	var expires int64
 	var active sql.NullInt64
 	var orgID sql.NullInt64
-	var name, slug, role sql.NullString
+	var name, slug, folder, role, family sql.NullString
 	var require2FA, personal, required sql.NullBool
 	err := a.db.QueryRow(`SELECT u.id, u.username, COALESCE(u.email, ''), u.is_platform_admin, u.totp_secret IS NOT NULL,
-			s.expires_at, s.active_org_id, o.id, o.name, o.slug, o.require_2fa, o.personal_user_id IS NOT NULL, m.role, `+requires2FA+`
+			s.expires_at, s.active_org_id, o.id, o.name, o.slug, COALESCE(o.folder, o.slug), o.require_2fa, o.personal_user_id IS NOT NULL, m.role, s.family, `+requires2FA+`
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		LEFT JOIN org_memberships m ON m.user_id = s.user_id AND m.org_id = s.active_org_id
 		LEFT JOIN organizations o ON o.id = m.org_id
 		WHERE s.key = ?`, key).Scan(&s.User.ID, &s.User.Username, &s.User.Email, &s.User.PlatformAdmin, &s.User.TOTP,
-		&expires, &active, &orgID, &name, &slug, &require2FA, &personal, &role, &required)
+		&expires, &active, &orgID, &name, &slug, &folder, &require2FA, &personal, &role, &family, &required)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s, ErrNotFound
 	}
@@ -441,8 +458,9 @@ func (a *Accounts) Session(key string, now time.Time) (Session, error) {
 		return s, ErrNotFound
 	}
 	s.Needs2FA = !s.User.TOTP && required.Bool
+	s.Family = family.String
 	if role.Valid {
-		s.Org = &Membership{Org: Org{ID: orgID.Int64, Name: name.String, Slug: slug.String, Require2FA: require2FA.Bool, Personal: personal.Bool}, Role: Role(role.String)}
+		s.Org = &Membership{Org: Org{ID: orgID.Int64, Name: name.String, Slug: slug.String, Require2FA: require2FA.Bool, Personal: personal.Bool, Folder: folder.String}, Role: Role(role.String)}
 		return s, nil
 	}
 	// No membership of the active org (removed, or never had one): fall
@@ -470,6 +488,25 @@ func (a *Accounts) DeleteSession(key string) error {
 	return err
 }
 
+// EnsureSessionFamily gives the session under key family unless it has
+// one, and returns the one it has.
+func (a *Accounts) EnsureSessionFamily(key, family string) (string, error) {
+	var f string
+	err := a.db.QueryRow("UPDATE sessions SET family = COALESCE(family, ?) WHERE key = ? RETURNING family", family, key).Scan(&f)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return f, err
+}
+
+// DeleteSessionFamily signs a session out together with the rest of its
+// family: the same sign-in on the base domain and the org subdomains.
+func (a *Accounts) DeleteSessionFamily(key string) error {
+	_, err := a.db.Exec(`DELETE FROM sessions WHERE key = ?1
+		OR family = (SELECT family FROM sessions WHERE key = ?1 AND family IS NOT NULL)`, key)
+	return err
+}
+
 // PruneSessions deletes expired sessions.
 func (a *Accounts) PruneSessions(now time.Time) error {
 	_, err := a.db.Exec("DELETE FROM sessions WHERE expires_at <= ?", now.Unix())
@@ -490,7 +527,7 @@ func (a *Accounts) SwitchOrg(key string, uid, orgID int64) (Membership, error) {
 
 // Memberships lists the orgs uid belongs to, oldest membership first.
 func (a *Accounts) Memberships(uid int64) ([]Membership, error) {
-	rows, err := a.db.Query(`SELECT o.id, o.name, o.slug, o.require_2fa, o.personal_user_id IS NOT NULL, m.role FROM org_memberships m
+	rows, err := a.db.Query(`SELECT o.id, o.name, o.slug, o.require_2fa, o.personal_user_id IS NOT NULL, COALESCE(o.folder, o.slug), m.role FROM org_memberships m
 		JOIN organizations o ON o.id = m.org_id WHERE m.user_id = ? ORDER BY m.created_at, o.id`, uid)
 	if err != nil {
 		return nil, err
@@ -499,7 +536,7 @@ func (a *Accounts) Memberships(uid int64) ([]Membership, error) {
 	out := []Membership{}
 	for rows.Next() {
 		var m Membership
-		if err := rows.Scan(&m.ID, &m.Name, &m.Slug, &m.Require2FA, &m.Personal, &m.Role); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.Slug, &m.Require2FA, &m.Personal, &m.Folder, &m.Role); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -518,9 +555,9 @@ type querier interface {
 
 func membership(q querier, uid, orgID int64) (Membership, error) {
 	var m Membership
-	err := q.QueryRow(`SELECT o.id, o.name, o.slug, o.require_2fa, o.personal_user_id IS NOT NULL, m.role FROM org_memberships m
+	err := q.QueryRow(`SELECT o.id, o.name, o.slug, o.require_2fa, o.personal_user_id IS NOT NULL, COALESCE(o.folder, o.slug), m.role FROM org_memberships m
 		JOIN organizations o ON o.id = m.org_id
-		WHERE m.user_id = ? AND m.org_id = ?`, uid, orgID).Scan(&m.ID, &m.Name, &m.Slug, &m.Require2FA, &m.Personal, &m.Role)
+		WHERE m.user_id = ? AND m.org_id = ?`, uid, orgID).Scan(&m.ID, &m.Name, &m.Slug, &m.Require2FA, &m.Personal, &m.Folder, &m.Role)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m, ErrNotMember
 	}
@@ -535,28 +572,27 @@ func (a *Accounts) CreateOrg(uid int64, name string) (Org, error) {
 	}
 	var o Org
 	err := inTx(a.db, func(tx *sql.Tx) (err error) {
-		o, err = createOrg(tx, uid, name, time.Now().Unix())
+		o, err = a.createOrg(tx, uid, name, time.Now())
 		return err
 	})
 	return o, err
 }
 
-func createOrg(tx *sql.Tx, uid int64, name string, now int64) (Org, error) {
-	base := slugify(name)
-	o := Org{Name: name, Slug: base}
-	for i := 2; ; i++ {
-		res, err := tx.Exec("INSERT INTO organizations (name, slug, created_at) VALUES (?, ?, ?)", name, o.Slug, now)
-		if isUnique(err) && i < 1000 {
-			o.Slug = fmt.Sprintf("%s-%d", base, i)
-			continue
-		}
-		if err != nil {
-			return o, err
-		}
-		o.ID, _ = res.LastInsertId()
-		break
+// createOrg makes an org named name owned by uid. Its slug comes from the
+// name (see slugBase) and is one no org holds; its folder is the same and
+// stays when the slug is renamed.
+func (a *Accounts) createOrg(tx *sql.Tx, uid int64, name string, now time.Time) (Org, error) {
+	slug, err := a.freeSlug(tx, a.slugBase(name), 0, now)
+	if err != nil {
+		return Org{}, err
 	}
-	_, err := tx.Exec("INSERT INTO org_memberships (user_id, org_id, role, created_at) VALUES (?, ?, 'owner', ?)", uid, o.ID, now)
+	o := Org{Name: name, Slug: slug, Folder: slug}
+	res, err := tx.Exec("INSERT INTO organizations (name, slug, folder, created_at) VALUES (?, ?, ?, ?)", name, slug, slug, now.Unix())
+	if err != nil {
+		return o, err
+	}
+	o.ID, _ = res.LastInsertId()
+	_, err = tx.Exec("INSERT INTO org_memberships (user_id, org_id, role, created_at) VALUES (?, ?, 'owner', ?)", uid, o.ID, now.Unix())
 	return o, err
 }
 

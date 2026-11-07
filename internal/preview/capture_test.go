@@ -103,17 +103,17 @@ func TestAllowCapture(t *testing.T) {
 func TestParentOrigins(t *testing.T) {
 	m, _, _ := setup(t, "preview.dash.example.com")
 	m.SetOrigin(httptest.NewRequest("GET", "http://dash.example.com:7788/api/previews", nil))
-	o, h := m.parentOrigins()
+	o, h := m.parentOrigins("")
 	if len(o) != 1 || o[0] != "http://dash.example.com:7788" || len(h) != 1 || h[0] != "dash.example.com" {
 		t.Fatalf("origins %v hosts %v", o, h)
 	}
 	// Never a bare TLD.
 	m2, _, _ := setup(t, "preview.com")
-	if _, h := m2.parentOrigins(); len(h) != 0 {
+	if _, h := m2.parentOrigins(""); len(h) != 0 {
 		t.Fatalf("hosts for preview.com: %v", h)
 	}
 	w := httptest.NewRecorder()
-	m.serveCapture(w)
+	m.serveCapture(w, "")
 	js := w.Body.String()
 	if !strings.Contains(js, `var CFG = {"hosts":["dash.example.com"],"origins":["http://dash.example.com:7788"]}`) || !strings.Contains(js, "dash:capture") || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/javascript") {
 		t.Fatalf("capture.js: %s…", js[:200])

@@ -35,7 +35,7 @@ func ownerSession(t *testing.T, s *Server) store.Session {
 // ownerCaller is ownerSession as a Caller.
 func ownerCaller(t *testing.T, s *Server) Caller {
 	sess := ownerSession(t, s)
-	return Caller{User: sess.User.ID, Org: sess.Org.ID, OrgSlug: sess.Org.Slug, PlatformAdmin: sess.User.PlatformAdmin}
+	return Caller{User: sess.User.ID, Org: sess.Org.ID, OrgFolder: folderOf(sess.Org.Org), PlatformAdmin: sess.User.PlatformAdmin}
 }
 
 // chatCaller is the owner, for chat-run tokens.

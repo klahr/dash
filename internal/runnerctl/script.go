@@ -115,11 +115,18 @@ func HubURL(r *http.Request, publicURL string, secure, trustProxy bool) (string,
 // ScriptHandler serves GET /runner/install.sh. It holds no secrets (the
 // registration code is passed to the script), so it needs no sign-in.
 func ScriptHandler(publicURL, version string, secure func(*http.Request) bool, trustProxy bool) http.HandlerFunc {
+	return ScriptHandlerFor(func(r *http.Request) (string, error) { return HubURL(r, publicURL, secure(r), trustProxy) }, version)
+}
+
+// ScriptHandlerFor is ScriptHandler with the hub URL baked into the script
+// from hubURL (with org subdomains: the subdomain the script was fetched
+// from).
+func ScriptHandlerFor(hubURL func(*http.Request) (string, error), version string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		hub, err := HubURL(r, publicURL, secure(r), trustProxy)
+		hub, err := hubURL(r)
 		var b []byte
 		if err == nil {
 			b, err = Script(ScriptParams{Hub: hub, Version: ReleaseVersion(version)})

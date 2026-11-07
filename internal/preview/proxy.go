@@ -141,6 +141,21 @@ func (m *Manager) dashOrigin() string {
 	return ""
 }
 
+// originFor is the Dash origin label's preview belongs with: OriginFor's
+// for its todo when set, else dashOrigin.
+func (m *Manager) originFor(label string) string {
+	if m.OriginFor != nil {
+		id := label
+		if _, todoID, ok := m.remoteLabel(label); ok {
+			id = todoID
+		}
+		if o := m.OriginFor(id); o != "" {
+			return o
+		}
+	}
+	return m.dashOrigin()
+}
+
 // Wrap serves preview hosts with the proxy and passes everything else to
 // next (Dash itself). Without a preview domain it returns next unchanged.
 func (m *Manager) Wrap(next http.Handler) http.Handler {
@@ -170,10 +185,11 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 
 func (m *Manager) serve(w http.ResponseWriter, r *http.Request, label string) {
 	secure := m.secure(r)
+	dashOrigin := m.originFor(label)
 	if r.URL.Path == authPath {
 		q := r.URL.Query()
 		if !m.verify("t", label, q.Get("t")) {
-			page(w, http.StatusForbidden, "Link expired", "This preview link has expired. Open the preview again from Dash.", m.dashOrigin(), false)
+			page(w, http.StatusForbidden, "Link expired", "This preview link has expired. Open the preview again from Dash.", dashOrigin, false)
 			return
 		}
 		ss := http.SameSiteLaxMode
@@ -193,7 +209,7 @@ func (m *Manager) serve(w http.ResponseWriter, r *http.Request, label string) {
 		return
 	}
 	if c, err := r.Cookie(cookieName); err != nil || !m.verify("c", label, c.Value) {
-		origin := m.dashOrigin()
+		origin := dashOrigin
 		if origin != "" && (r.Method == http.MethodGet || r.Method == http.MethodHead) && !isUpgrade(r) {
 			w.Header().Set("Cache-Control", "no-store")
 			http.Redirect(w, r, origin+"/preview/"+label+"?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
@@ -203,7 +219,7 @@ func (m *Manager) serve(w http.ResponseWriter, r *http.Request, label string) {
 		return
 	}
 	if r.URL.Path == capturePath {
-		m.serveCapture(w)
+		m.serveCapture(w, label)
 		return
 	}
 	origin := "http://" + m.reqHost(r)
@@ -216,7 +232,7 @@ func (m *Manager) serve(w http.ResponseWriter, r *http.Request, label string) {
 			m.serveRemote(w, r, label, runner, todoID, origin)
 			return
 		}
-		page(w, http.StatusNotFound, "Preview not running", "No preview is running for this task. Start one with Preview on the task in Dash.", m.dashOrigin(), false)
+		page(w, http.StatusNotFound, "Preview not running", "No preview is running for this task. Start one with Preview on the task in Dash.", dashOrigin, false)
 		return
 	}
 	e.mu.Lock()
@@ -227,7 +243,7 @@ func (m *Manager) serve(w http.ResponseWriter, r *http.Request, label string) {
 		page(w, http.StatusServiceUnavailable, "Starting…", "The preview server is starting, waiting for its port to answer. This page reloads by itself.", "", true)
 		return
 	case state != "live" || addr == "":
-		page(w, http.StatusBadGateway, "Preview crashed", "The preview server stopped. Its log is in Dash, on the task.", m.dashOrigin(), false)
+		page(w, http.StatusBadGateway, "Preview crashed", "The preview server stopped. Its log is in Dash, on the task.", dashOrigin, false)
 		return
 	}
 	e.touch()

@@ -1,11 +1,13 @@
 # Caddy in front of Dash, for a hub on a VPS (see docs/deploy.md).
 #
 # Replace dash.example.com with your own name, point its DNS records at this
-# server (A/AAAA for dash.example.com and *.preview.dash.example.com), then:
+# server (A/AAAA for dash.example.com, *.preview.dash.example.com and, with
+# org subdomains, *.dash.example.com), then:
 #
 #   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
 #   ./bin/dash -trust-proxy -public-url https://dash.example.com \
-#              -preview-domain preview.dash.example.com
+#              -preview-domain preview.dash.example.com \
+#              -org-domain dash.example.com
 #
 # Dash stays on 127.0.0.1:7788 (its default); only Caddy listens on 80 and 443.
 
@@ -30,6 +32,19 @@ dash.example.com {
 # environment). Without previews, delete this block and leave out
 # -preview-domain.
 *.preview.dash.example.com {
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+	}
+	reverse_proxy 127.0.0.1:7788
+}
+
+# Org subdomains (-org-domain), one per organization: acme.dash.example.com.
+# A wildcard certificate covers one level only, so this one doesn't cover the
+# previews above (and theirs doesn't cover this); each block gets its own,
+# through the same DNS challenge. Caddy sends the browser's Host on to Dash,
+# which tells the orgs apart by it. Without org subdomains, delete this block
+# and leave out -org-domain.
+*.dash.example.com {
 	tls {
 		dns cloudflare {env.CF_API_TOKEN}
 	}

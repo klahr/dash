@@ -92,7 +92,7 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 			}
 		}
 		// hub and version: for the command that updates an outdated runner.
-		hubURL, _ := runnerctl.HubURL(r, s.PublicURL, s.Auth.Secure(r), s.Auth.TrustProxy)
+		hubURL, _ := s.hubURL(r)
 		writeJSON(w, http.StatusOK, map[string]any{"runners": out, "local_tasks": s.localTasks(), "hub": hubURL, "version": buildinfo.Version})
 	})
 	// A code registers a runner as the caller's, in their active org; only
@@ -107,7 +107,7 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 			return
 		}
-		hubURL, _ := runnerctl.HubURL(r, s.PublicURL, s.Auth.Secure(r), s.Auth.TrustProxy)
+		hubURL, _ := s.hubURL(r)
 		writeJSON(w, http.StatusOK, map[string]any{"code": code, "expires": expires, "hub": hubURL})
 	})))
 	mux.Handle("DELETE /api/runners/{id}", auth.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +151,7 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 	mux.HandleFunc("POST /runner/report", rh.ServeReport)
 	// The one-line installer, and the version it installs (no sign-in:
 	// neither holds a secret).
-	mux.HandleFunc("GET /runner/install.sh", runnerctl.ScriptHandler(s.PublicURL, buildinfo.Version, s.Auth.Secure, s.Auth.TrustProxy))
+	mux.HandleFunc("GET /runner/install.sh", runnerctl.ScriptHandlerFor(s.hubURL, buildinfo.Version))
 	mux.HandleFunc("GET /runner/version", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"version": buildinfo.Version})
 	})

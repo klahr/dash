@@ -74,6 +74,10 @@ type Manager struct {
 	// Secure reports whether a request reached Dash over HTTPS.
 	Secure    func(*http.Request) bool
 	IdleAfter time.Duration
+	// OriginFor, if set, is the Dash origin a todo's preview signs in at
+	// and may be captured from (with org subdomains, the todo's org's);
+	// "" falls back to Dash's origin as last seen.
+	OriginFor func(todoID string) string
 	// Remote reaches previews running on runners (the hub's side, remote.go).
 	// Their hosts are <todo>-<runner>.<domain>. Optional.
 	Remote Remote

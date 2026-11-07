@@ -549,7 +549,7 @@ func TestNewProjectsStayInTheOrgsFolder(t *testing.T) {
 		filepath.Join(root, "default"), o.web.Path)
 	refuse(o.b, "another org", outside, root, filepath.Join(root, "default", "x"), filepath.Join(root, "beta", "..", "default", "x"),
 		filepath.Join(root, "beta"), o.web.Path)
-	c := Caller{User: o.cUser.ID, Org: ownerSession(t, o.s).Org.ID, OrgSlug: "default"}
+	c := Caller{User: o.cUser.ID, Org: ownerSession(t, o.s).Org.ID, OrgFolder: "default"}
 	if p, err := o.s.as(c).projectPath("My App", ""); err != nil || p != filepath.Join(o.s.ProjectRoot, "default", "my-app") {
 		t.Errorf("default path: %s %v", p, err)
 	}
