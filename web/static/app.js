@@ -4347,6 +4347,7 @@ const ISSUE_STATUSES = { open: "Open", task_created: "Task created", resolved: "
 const triageable = (i) => i.status === "open" || i.status === "task_created";
 const iss = {
   list: [],
+  loaded: false,      // list holds the project's issues (scan reports read their status from it)
   checked: new Set(), // ids picked for a bulk action
   expanded: new Set(),
   editing: null,      // id of the issue whose fields are being edited
@@ -4363,13 +4364,16 @@ async function loadIssues() {
   const list = await api("GET", `/api/projects/${p.id}/issues`);
   if (state.project !== p) return;
   iss.list = list;
+  iss.loaded = true;
   sortIssues();
   renderIssues();
+  if (state.view === "scans") renderScans();
 }
 
 function resetIssues() {
   iss.filter.run = null;
   iss.list = [];
+  iss.loaded = false;
   iss.checked.clear();
   iss.expanded.clear();
   iss.editing = null;
@@ -4383,6 +4387,7 @@ function onIssueEvent(ev) {
   if (ev.type === "issue.updated") { iss.list.push(ev.data); sortIssues(); }
   else { iss.checked.delete(id); iss.expanded.delete(id); }
   renderIssues();
+  if (state.view === "scans") renderScans();
 }
 
 function issueVisible(i) {
@@ -4821,6 +4826,25 @@ function scanApprovals(s, patch) {
       h("button", { type: "button", class: "btn small", onclick: attempt(() => patch({ approve_schedule: sch.requested })) }, changed ? "Approve new schedule" : "Approve and turn on")) : null);
 }
 
+// runIssueStatus sorts the issues a run added or reopened by what became of
+// them since: still open, fixed (resolved), taken up in a task, dismissed or
+// deleted. Without the project's issues loaded, everything counts as open.
+function runIssueStatus(r, which) {
+  const ids = (which === "reopened" ? r.reopened_issues : r.new_issues) || [];
+  const out = { open: 0, task: 0, fixed: 0, dismissed: 0, gone: 0, urgent: 0 };
+  for (const id of ids) {
+    if (!iss.loaded) { out.open++; continue; }
+    const i = iss.list.find((x) => x.id === id);
+    if (!i) { out.gone++; continue; }
+    const k = { open: "open", task_created: "task", resolved: "fixed", dismissed: "dismissed" }[i.status] || "open";
+    out[k]++;
+    if (triageable(i) && (i.severity === "critical" || i.severity === "high")) out.urgent++;
+  }
+  // Runs from before the ids were kept: trust the counts.
+  if (!ids.length) out.open = which === "reopened" ? r.counts?.reopened || 0 : r.counts?.new || 0;
+  return out;
+}
+
 function scanReport(r, compact = false) {
   const c = r.counts || {};
   const known = (c.known || 0) + (c.updated || 0);
@@ -4837,12 +4861,24 @@ function scanReport(r, compact = false) {
   ].filter(Boolean);
   let body;
   if (r.status === "succeeded" && r.findings) {
+    // The counts are what the run found; what has been done about its new
+    // and reopened issues since is read from the issues as they are now.
+    const nw = runIssueStatus(r, "new"), ro = runIssueStatus(r, "reopened");
+    const since = (k, text, title) => {
+      const n = nw[k] + ro[k];
+      return n ? h("button", { type: "button", class: "scan-count link muted", title, onclick: () => showRunIssues(r, nw[k] ? "new" : "reopened") }, `${n} ${text}`) : null;
+    };
+    const urgent = iss.loaded && (r.new_issues?.length || r.reopened_issues?.length) ? nw.urgent + ro.urgent : r.urgent;
     body = h("p", { class: "scan-counts" },
-      link(c.new, "new", "new") || h("span", { class: "scan-count" }, "0 new"),
+      link(nw.open, "new", "new") || h("span", { class: "scan-count" }, "0 new"),
       known ? h("span", { class: "scan-count" }, `${known} already known`) : null,
-      link(c.reopened, "reopened", "reopened"),
+      link(ro.open, "reopened", "reopened"),
       c.dismissed ? h("span", { class: "scan-count muted", title: "Found again, but you dismissed them; they stay dismissed" }, `${c.dismissed} dismissed`) : null,
-      r.urgent ? h("span", { class: "sev sev-high scan-urgent", title: "New or reopened issues of critical or high severity" }, `${r.urgent} urgent`) : null);
+      since("task", "in a task", "New or reopened issues from this run that a task is working on"),
+      since("fixed", "fixed", "New or reopened issues from this run that have been fixed since"),
+      since("dismissed", "dismissed since", "New or reopened issues from this run that were dismissed since"),
+      nw.gone + ro.gone ? h("span", { class: "scan-count muted", title: "New or reopened issues from this run that were deleted since" }, `${nw.gone + ro.gone} deleted`) : null,
+      urgent ? h("span", { class: "sev sev-high scan-urgent", title: "New or reopened issues of critical or high severity that are still open" }, `${urgent} urgent`) : null);
   } else {
     body = h("p", { class: `scan-msg${r.status === "failed" ? " error" : ""}` }, r.status === "running" ? h("span", { class: "spinner", "aria-hidden": "true" }) : null, scanSummary(r));
   }
