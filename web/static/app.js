@@ -712,7 +712,7 @@ function onEvent(ev, m = { name: "" }) {
   if (ev.type === "todo.updated" || ev.type === "todo.deleted") trackActive(ev, m);
   switch (ev.type) {
     case "runners":
-      if (m.local) refreshMachines().catch(fail);
+      if (m.local) { refreshMachines().catch(fail); chatRunner.load().catch(() => {}); }
       break;
     case "project.updated":
     case "project.deleted":
@@ -3651,7 +3651,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
 // restarting, say) is sent again once Dash is back. labels ({user, assistant})
 // head each message with who it's from; merge(nodes, saved) places a saved
 // conversation's messages among other nodes.
-function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, resume = false, labels = null, merge = (nodes) => nodes }) {
+function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {} }) {
   const c = { history: [], current: null, ws: null, prefix: "" };
   const input = form.q;
   const sendBtn = form.querySelector("button:not([type=button])");
@@ -3683,6 +3683,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
         return;
       }
       if (d.kind === "cwd" && cwd) { cwd.hidden = false; cwd.textContent = cwd.title = `Runs in ${d.text}`; }
+      if (d.kind === "runner") onRunner(d.text);
       const cur = c.current;
       if (!cur) return;
       if (d.kind === "thinking") { cur.think = (cur.think || "") + d.text; cur.thinking.innerHTML = renderMarkdown(cur.think); }
@@ -3863,10 +3864,56 @@ const chatActions = (pick, key) => (answer) => h("div", { class: "msg-actions" }
   } }, "plus", "Make this a task"),
   ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
 
-// The global chat isn't about any project: it runs in the home directory of this machine.
+// Where the general chat runs. A hub that runs Claude itself answers in its
+// home directory; one that doesn't runs it on one of your own runners (your
+// Claude login, your subscription): the bar says which, lets you pick when
+// you have several, and says so when none is online.
+const chatRunner = {
+  info: null, // GET /api/claude: {local, runners: [{id, name, online}]}
+  get picked() { try { return localStorage.getItem("dash.chatRunner") || ""; } catch { return ""; } },
+  set picked(id) { try { localStorage.setItem("dash.chatRunner", id); } catch {} },
+  // The runner the next turn asks for ("" = the hub picks the first online).
+  choice() {
+    const rs = this.info?.runners || [];
+    const pick = rs.find((r) => r.id === this.picked && r.online);
+    return pick ? pick.id : "";
+  },
+  async load() {
+    this.info = await api("GET", "/api/claude");
+    this.render();
+  },
+  render(running = "") {
+    const bar = $("#chat-runner"), text = $("#chat-runner-text"), sel = $("#chat-runner-pick");
+    const info = this.info;
+    if (!info || info.local) { bar.hidden = true; return; }
+    bar.hidden = false;
+    const online = info.runners.filter((r) => r.online);
+    const current = running || online.find((r) => r.id === this.choice())?.name || online[0]?.name;
+    bar.classList.toggle("online", !!current);
+    bar.classList.toggle("offline", !current);
+    if (current) text.textContent = `Runs on ${current}, with its Claude login`;
+    else if (info.runners.length) text.textContent = `Your runner${info.runners.length > 1 ? "s are" : ` ${info.runners[0].name} is`} offline: start it to chat`;
+    else text.textContent = "No runner of yours yet: add one in Settings → Runners, and the chat runs on your own computer with your Claude login";
+    text.title = text.textContent;
+    sel.hidden = online.length < 2;
+    if (!sel.hidden) {
+      sel.replaceChildren(...online.map((r) => h("option", { value: r.id }, r.name)));
+      sel.value = this.choice() || online[0].id;
+    }
+    $("#chat-empty-where").textContent = current
+      ? `A general chat, run on your runner ${current} in a scratch folder, with that computer's Claude login. For questions about one project, use This project.`
+      : "A general chat, run on one of your own runners with its Claude login. This hub doesn't run Claude itself.";
+  },
+};
+$("#chat-runner-pick").addEventListener("change", (e) => { chatRunner.picked = e.target.value; chatRunner.render(); });
+chatRunner.load().catch(() => {}); // an older Dash without /api/claude: the bar stays hidden
+
+// The global chat isn't about any project: it runs in the home directory of
+// this machine, or on one of your runners (chatRunner).
 const chat = makeChat({
   log: $("#chat-log"), empty: $("#chat-empty"), form: $("#chat-form"),
-  target: () => ({}),
+  target: () => { const runner = chatRunner.choice(); return runner ? { runner } : {}; },
+  onRunner: (name) => chatRunner.render(name),
   clear: () => api("DELETE", "/api/chat"),
   actions: chatActions(true),
   cwd: $("#chat-cwd"),

@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -140,6 +142,29 @@ func (c stubChat) Stream(ctx context.Context, _ string, _ []agent.ChatMessage, _
 	}
 	<-ctx.Done()
 	return ctx.Err()
+}
+
+// echoChat answers "hi" and records where it ran.
+type echoChat struct {
+	calls atomic.Int32
+	mu    sync.Mutex
+	ran   string
+}
+
+func (c *echoChat) Stream(ctx context.Context, dir string, _ []agent.ChatMessage, emit func(agent.ChatDelta)) error {
+	c.calls.Add(1)
+	c.mu.Lock()
+	c.ran = dir
+	c.mu.Unlock()
+	emit(agent.ChatDelta{Kind: "text", Text: "hi"})
+	emit(agent.ChatDelta{Kind: "done"})
+	return nil
+}
+
+func (c *echoChat) dir() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.ran
 }
 
 func chatSocket(t *testing.T, s *Server) *websocket.Conn {

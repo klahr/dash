@@ -8,7 +8,9 @@ merge them one at a time.
 - **git**
 - **Go 1.27.3 or newer** (see [`go.mod`](go.mod)), only to build from source
 - **[Claude Code](https://claude.com/claude-code)** (`claude`), installed and logged in. Dash runs
-  it as you, so run `claude` once in a terminal first and sign in.
+  it as you, so run `claude` once in a terminal first and sign in. A hub shared by several people
+  (or with runners) needs neither `claude` nor an API key: each person's Claude runs on their own
+  runner, with their own login ([several computers](docs/several-computers.md#claude-runs-on-each-users-own-runner)).
 - Optional: **[`gh`](https://cli.github.com)**, logged in, to create GitHub repositories and open
   pull requests.
 
@@ -85,7 +87,7 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
   [docs/deploy.md](docs/deploy.md).
 - **Use it from Claude** with the `dash-mcp` MCP server, or as a custom connector in claude.ai
   and the Claude app: [docs/mcp.md](docs/mcp.md).
-- **Several computers** in one dashboard: add each with one pasted command (`curl … /runner/install.sh | sh`), no VPN needed. Link a project to people's runners and the hub sends its tasks there, each on its owner's Claude subscription: [docs/several-computers.md](docs/several-computers.md).
+- **Several computers** in one dashboard: add each with one pasted command (`curl … /runner/install.sh | sh`), no VPN needed. Link a project to people's runners and the hub sends its tasks there, each on its owner's Claude subscription; everyone's chat, titles and clean-ups run on their own runner too, so a shared hub runs no Claude itself: [docs/several-computers.md](docs/several-computers.md).
 - **Live previews** of each task's app, served on their own subdomains:
   [docs/previews.md](docs/previews.md).
 

@@ -41,7 +41,7 @@ func init() {
 		"POST /api/todos/{tid}/resume", "GET /api/todos/{tid}/diff", "GET /api/todos/{tid}/log",
 		"GET /api/todos/{tid}/events", "POST /api/todos/{tid}/approve", "POST /api/todos/{tid}/rework",
 		"POST /api/todos/{tid}/test", "POST /api/todos/{tid}/duplicate", "POST /api/todos/{tid}/open",
-		"POST /api/todos/{tid}/revert", "POST /api/refine",
+		"POST /api/todos/{tid}/revert",
 
 		"GET /api/projects/{pid}/issues", "POST /api/projects/{pid}/issues", "POST /api/projects/{pid}/issues/batch",
 		"POST /api/projects/{pid}/issues/tasks", "POST /api/projects/{pid}/issues/dismiss",
@@ -53,7 +53,7 @@ func init() {
 
 		"GET /api/todos/{tid}/chat", "DELETE /api/todos/{tid}/chat", "GET /api/projects/{pid}/chat",
 		"DELETE /api/projects/{pid}/chat", "POST /api/projects/{pid}/cleanup",
-		"GET /ws/chat", // project and task chats only: chatWS refuses the general chat from the hub
+		"GET /ws/chat", // the general chat only for the runner's owner (see forOwner)
 
 		"GET /api/projects/{pid}/ci", "POST /api/projects/{pid}/ci/refresh", "POST /api/projects/{pid}/ci/investigate",
 
@@ -76,6 +76,10 @@ func init() {
 		"PUT /api/hub/projects/{hpid}", "DELETE /api/hub/projects/{hpid}", "POST /api/hub/tasks",
 		"DELETE /api/hub/tasks/{htid}", "POST /api/hub/tasks/{htid}/approve", "POST /api/hub/tasks/{htid}/cancel",
 		"GET /api/hub/tasks/{htid}/diff", "GET /api/hub/tasks/{htid}/log", "GET /api/hub/tasks/{htid}/events",
+
+		// Claude's short calls (titles, summaries, clean-up) for the
+		// runner's owner; checked in claude.go.
+		"POST /api/hub/claude/{kind}",
 	} {
 		hubRoutes[p] = true
 	}

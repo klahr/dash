@@ -164,6 +164,9 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	if len(history) == 0 {
 		return fmt.Errorf("empty conversation")
 	}
+	if err := checkLocal(); err != nil {
+		return err
+	}
 	bin := c.Bin
 	if bin == "" {
 		bin = "claude"

@@ -17,8 +17,13 @@ before you start.
 
 ## A VPS behind Caddy
 
-On the VPS, install Dash as usual (git, Claude Code logged in, see the [README](../README.md)) and
-run it as a [service](service.md). Then:
+On the VPS, install Dash as usual (see the [README](../README.md)) and run it as a
+[service](service.md). A hub for several people, or one whose work runs on
+[runners](several-computers.md), needs only `git`: no Claude Code and no API key, since it never
+runs Claude itself (`-hub-claude`, see
+[Claude runs on each user's own runner](several-computers.md#claude-runs-on-each-users-own-runner)).
+A hub that runs tasks itself, for a single user without runners, also needs Claude Code logged in.
+Then:
 
 1. **DNS.** Point `dash.example.com` at the VPS (A and/or AAAA record). For
    [live previews](previews.md), also point `*.preview.dash.example.com` at it.

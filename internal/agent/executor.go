@@ -58,6 +58,9 @@ type ClaudeCode struct {
 }
 
 func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.RunEvent)) (ExecResult, error) {
+	if err := checkLocal(); err != nil {
+		return ExecResult{}, err
+	}
 	bin := c.Bin
 	if bin == "" {
 		bin = "claude"

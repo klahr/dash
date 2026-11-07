@@ -23,7 +23,9 @@ it:
   chats, attachments, live previews, running commands and terminals, and Claude's
   permission prompts. Another org's project, or anything in it, answers "not found".
 - **Live updates**: the dashboard only receives events of its org's projects.
-- **The general chat** is your own: each user has one per org, which nobody else sees.
+- **The general chat** is your own: each user has one per org, which nobody else sees. On a
+  hub with several users it runs on your own runner, with your Claude login (see
+  [several computers](several-computers.md#claude-runs-on-each-users-own-runner)).
 - **New projects** are created in the org's own folder, `<projects root>/<org slug>/`
   (e.g. `~/dash-projects/default/my-app`). Adopting an existing folder only works inside
   it; platform admins may adopt a folder anywhere.

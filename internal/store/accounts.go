@@ -334,6 +334,13 @@ func (a *Accounts) EnvUser() (User, error) {
 	return a.scanUser(a.db.QueryRow(userCols + " WHERE env_managed = 1"))
 }
 
+// UserCount is how many accounts there are.
+func (a *Accounts) UserCount() (int, error) {
+	var n int
+	err := a.db.QueryRow("SELECT COUNT(*) FROM users").Scan(&n)
+	return n, err
+}
+
 // ---- users and passwords ----
 
 const userCols = "SELECT id, username, COALESCE(email, ''), is_platform_admin, totp_secret IS NOT NULL FROM users"

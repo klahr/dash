@@ -14,6 +14,7 @@ import (
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/runner"
+	"github.com/klahr/dash/internal/tunnel"
 )
 
 // runnerServer is a Dash running as a runner, as its hub reaches it.
@@ -130,21 +131,58 @@ func TestRunnerSkipsThePasswordTheHubAlreadyAsked(t *testing.T) {
 	}
 }
 
-func TestRunnerRefusesTheGeneralChatFromTheHub(t *testing.T) {
-	_, h, _ := runnerServer(t)
+// A runner runs the general chat only for its owner, asked through the
+// hub: never for anyone else, nor when the hub doesn't say whom it is for.
+// It runs in the runner's scratch directory, and the hub keeps the
+// conversation.
+func TestRunnerRunsTheGeneralChatOnlyForItsOwner(t *testing.T) {
+	s, h, _ := runnerServer(t)
+	s.HubUser = 42
+	s.ChatDir = filepath.Join(t.TempDir(), "chat")
+	chat := &echoChat{}
+	s.Chat = chat
 	srv := httptest.NewServer(h)
 	defer srv.Close()
-	ws, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http")+"/ws/chat", nil)
-	if err != nil {
-		t.Fatal(err)
+	ask := func(user string) (kinds []string, text string) {
+		hdr := http.Header{}
+		if user != "" {
+			hdr.Set(tunnel.UserHeader, user)
+		}
+		ws, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http")+"/ws/chat", hdr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ws.Close()
+		if err := ws.WriteJSON(map[string]any{"type": "send", "messages": []map[string]string{{"role": "user", "content": "run ls ~"}}}); err != nil {
+			t.Fatal(err)
+		}
+		_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+		for {
+			var d struct{ Kind, Text string }
+			if err := ws.ReadJSON(&d); err != nil {
+				t.Fatal(err)
+			}
+			kinds, text = append(kinds, d.Kind), text+d.Text
+			if d.Kind == "done" || d.Kind == "error" {
+				return kinds, text
+			}
+		}
 	}
-	defer ws.Close()
-	if err := ws.WriteJSON(map[string]any{"type": "send", "messages": []map[string]string{{"role": "user", "content": "run ls ~"}}}); err != nil {
-		t.Fatal(err)
+	for _, user := range []string{"", "7"} {
+		if kinds, text := ask(user); kinds[len(kinds)-1] != "error" || !strings.Contains(text, "owner") && !strings.Contains(text, "registered it") {
+			t.Fatalf("general chat for user %q: %v %q", user, kinds, text)
+		}
 	}
-	_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
-	var d struct{ Kind, Text string }
-	if err := ws.ReadJSON(&d); err != nil || d.Kind != "error" || !strings.Contains(d.Text, "general chat") {
-		t.Fatalf("general chat over the tunnel: %+v %v", d, err)
+	if chat.calls.Load() != 0 {
+		t.Fatal("Claude ran for someone other than the runner's owner")
+	}
+	if kinds, text := ask("42"); kinds[len(kinds)-1] != "done" || text != "hi" {
+		t.Fatalf("owner's general chat: %v %q", kinds, text)
+	}
+	if got := chat.dir(); got != s.ChatDir {
+		t.Errorf("ran in %q, want the scratch dir %q", got, s.ChatDir)
+	}
+	if got := raw(s).Chat(ownerCaller(t, s).Org, ownerCaller(t, s).User); len(got) != 0 {
+		t.Errorf("the runner saved the hub's conversation: %+v", got)
 	}
 }

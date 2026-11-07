@@ -122,6 +122,9 @@ func (r *Runner) Start(projectID, name, trigger string) (model.ScanRun, error) {
 // start begins a run; from, if set, is the interrupted run it starts over,
 // whose scope, path and base commit it keeps.
 func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun) (model.ScanRun, error) {
+	if !agent.LocalAllowed() {
+		return model.ScanRun{}, agent.ErrNoLocalClaude
+	}
 	p, err := r.Store.GetProject(projectID)
 	if err != nil {
 		return model.ScanRun{}, err

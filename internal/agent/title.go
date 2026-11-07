@@ -58,6 +58,9 @@ func (t Titler) Refine(ctx context.Context, prompt string) (string, error) {
 
 // ask runs the model on input, cut to limit bytes when limit > 0.
 func (t Titler) ask(ctx context.Context, system, input string, limit int) (string, error) {
+	if err := checkLocal(); err != nil {
+		return "", err
+	}
 	bin, model := t.Bin, t.Model
 	if bin == "" {
 		bin = "claude"

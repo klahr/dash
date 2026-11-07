@@ -43,7 +43,11 @@ import (
 // short by a restart can be sent again; GET /api/chat sets X-Chat-Busy while
 // one of its turns is running.
 // A new "send" cancels any response still streaming. Without "project" or
-// "todo" it is the global chat, run in the chatter's default directory.
+// "todo" it is the global chat, run in the chatter's default directory; on
+// a hub that doesn't run Claude itself, on one of the caller's runners
+// ("runner": its id, else the first online), announced with
+// {"kind":"runner","text":"<name>"}. A runner runs the global chat only for
+// its owner, asked through the hub, and doesn't save it (the hub does).
 // With "project", Claude runs in that project's main checkout and the turn is
 // saved to GET /api/projects/{id}/chat.
 // With "todo", the conversation is about that todo: Claude sees its title,
@@ -74,6 +78,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 	defer cancelAll()
 	var cancelTurn context.CancelFunc = func() {}
 	approvals := &chatApprovals{send: send, timeout: chatApprovalTimeout}
+	relay := &chatRelay{} // the turn running on the caller's runner, if any
 
 	for {
 		var msg struct {
@@ -84,13 +89,17 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			ID       string              `json:"id"`
 			Decision string              `json:"decision"`
 			Review   bool                `json:"review"` // with "todo": the turn reviews it, locking its status
+			Runner   string              `json:"runner"` // general chat on a hub that doesn't run Claude: which of the caller's runners
 		}
 		if err := conn.ReadJSON(&msg); err != nil {
 			cancelTurn() // denies whatever is waiting for approval
 			return
 		}
 		if msg.Type == "permission" {
-			approvals.answer(msg.ID, msg.Decision == "allow")
+			if !approvals.answer(msg.ID, msg.Decision == "allow") {
+				// Asked by the turn on the caller's runner.
+				relay.send(map[string]string{"type": "permission", "id": msg.ID, "decision": msg.Decision})
+			}
 			continue
 		}
 		cancelTurn()
@@ -100,16 +109,45 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		var dir, mode, pid string
 		endReview := func() {}
 		general := msg.Project == "" && msg.Todo == ""
-		if general && (auth.FromHub(r.Context()) || sv.c.User == 0) {
-			// A runner's chats belong to its projects; the general chat would
-			// run in this computer's home directory. And it is a person's.
-			send(agent.ChatDelta{Kind: "error", Text: "the general chat runs on the hub; open a project to chat on this runner"})
-			continue
-		}
 		// Each conversation is saved with who wrote its new questions.
 		user := sv.c.User
 		save := func(msgs []agent.ChatMessage) error {
 			return sv.data.SetChat(user, authored(sv.data.Chat(user), msgs, user))
+		}
+		chatter := s.Chat
+		forHub := general && auth.FromHub(r.Context())
+		switch {
+		case forHub:
+			// This runner's owner, through the hub: Claude runs here, in a
+			// scratch directory, and the hub keeps the conversation.
+			if err := s.forOwner(r); err != nil {
+				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
+				continue
+			}
+			var err error
+			if dir, err = s.chatScratch(); err != nil {
+				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
+				continue
+			}
+			save = func([]agent.ChatMessage) error { return nil }
+		case general && sv.c.User == 0:
+			send(agent.ChatDelta{Kind: "error", Text: "the general chat is a person's: sign in to use it"})
+			continue
+		case general && !s.localClaude():
+			// This hub doesn't run Claude: the caller's own runner does.
+			x, err := s.claudeRunner(sv.c, msg.Runner)
+			if err == nil && len(msg.Messages) > 0 && len(msg.Messages[len(msg.Messages)-1].Attachments) > 0 {
+				err = errors.New("files can't be sent to the chat on your runner; paste or describe them instead")
+			}
+			if err != nil {
+				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
+				continue
+			}
+			chatter = runnerChat{fleet: s.fleet(), runner: x, user: sv.c.User, relay: relay}
+		}
+		if chatter == nil {
+			send(agent.ChatDelta{Kind: "error", Text: "chat is not available on this Dash"})
+			continue
 		}
 		msg.Messages = sv.chatAttachments(msg.Messages)
 		prompt := withAttachments(msg.Messages)
@@ -175,14 +213,14 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		}
 		go func(ctx context.Context, history []agent.ChatMessage) {
 			defer endReview()
-			if general {
+			if general && !forHub {
 				s.generalTurn(sv.c, 1)
 				defer s.generalTurn(sv.c, -1)
 			}
 			var reply strings.Builder
 			saved := false
 			started := time.Now() // places the reply right after its question in a task's timeline
-			err := s.Chat.Stream(ctx, dir, prompt, func(d agent.ChatDelta) {
+			err := chatter.Stream(ctx, dir, prompt, func(d agent.ChatDelta) {
 				if d.Kind == "text" {
 					reply.WriteString(d.Text)
 				}

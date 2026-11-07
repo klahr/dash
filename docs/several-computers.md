@@ -119,8 +119,41 @@ tasks should run on (your own runners, or any of the org's if you're an admin). 
 
 The hub doesn't run tasks itself once runners are configured. `-hub-tasks` sets this: `auto` (the
 default) runs the tasks of unlinked projects on the hub only while no runner is registered, `on`
-always does (a single-user install with a runner or two for some projects), and `off` never does
-(those tasks wait, saying a runner must be linked).
+always does (a single-user install with a runner or two for some projects; add `-hub-claude on`
+too, since the hub otherwise stops running Claude once a runner registers), and `off` never does
+(those tasks wait, saying a runner must be linked). With `-hub-claude off` (below) the hub runs no
+tasks whatever `-hub-tasks` says.
+
+## Claude runs on each user's own runner
+
+A hub with several users, or with runners, doesn't run Claude at all: every use of Claude is
+billed to the user who asked for it, through their own runner and their own `claude` login (their
+own subscription). The hub needs **no `claude` install and no API key**; it never starts `claude`
+and never reads `ANTHROPIC_API_KEY`.
+
+- **General chat**: runs on one of your runners, in a scratch folder (`<-data>/chat` on that
+  computer), not in any project. The chat's header says which runner it runs on; with several
+  online you pick one there, and with none online it says so. The hub keeps the conversation, as
+  before. Files can't be attached to it yet.
+- **Titles and summaries**: a task created without a title is named by Claude on one of your
+  runners; with none online it is named after the first line of its instructions. A task's
+  summary is written by the runner that ran it.
+- **Clean up** (in the task form): runs on one of your runners; with none online it says so.
+
+A runner does these only for its owner, the user whose code registered it: the hub sends a
+user's calls only to that user's own runners in the org they're working in (never another
+member's, admins included), and the runner checks the user the hub names against the one it was
+registered by. Runners registered with a hub older than this can't check, and trust the hub; run
+the install command with a new code to register them again.
+
+Their Claude usage is the runner's: it shows with the runner's usage on the Organization page,
+never as the hub's.
+
+`-hub-claude` sets this: `auto` (the default) lets the hub run Claude itself only while it has a
+single user and no runner, so a single-user Dash on one computer works as it always did; `off`
+never does; `on` always does, billing everything to the hub's own `claude` login (or, with `-chat
+api`, its `ANTHROPIC_API_KEY`). Project and task chats of projects on the hub, and scans of them,
+need Claude on the hub: with it off they say so.
 
 ### Laptops that sleep
 
@@ -153,7 +186,8 @@ issues, scans, chats about a project or task, CI, previews and permission prompt
 - setting a project's run, test, deploy or setup command (set those on the runner, or start it
   with `-hub-commands` if you trust the hub to run commands on it);
 - adding a project outside its `-projects` directory;
-- the general chat, which would run in its home directory (it runs on the hub instead).
+- the general chat and Claude's short calls (titles, summaries, clean-up) for anyone but its owner
+  (see [above](#claude-runs-on-each-users-own-runner)).
 
 Claude still runs tasks with the runner's `-claude-args` and asks for permission as usual; the
 prompts appear in the hub's dashboard.

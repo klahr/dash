@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
 )
@@ -176,6 +177,9 @@ func (s *Scheduler) NextRun(projectID string, t Template) time.Time {
 
 // Tick starts the scans that are due and returns their runs.
 func (s *Scheduler) Tick() []model.ScanRun {
+	if !agent.LocalAllowed() {
+		return nil // a hub that doesn't run Claude itself
+	}
 	now := s.now()
 	var started []model.ScanRun
 	for _, p := range s.Store.ListProjects() {

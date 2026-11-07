@@ -124,6 +124,8 @@ func main() {
 	teamPrice := flag.String("team-price", "", "the team plan's price on the landing page, as shown, e.g. \"€8 per seat / month\" (or $DASH_TEAM_PRICE)")
 	pricingURL := flag.String("pricing-url", "", "where the landing page's \"see pricing\" links to when -team-price isn't set (or $DASH_PRICING_URL)")
 	hubTasks := flag.String("hub-tasks", "auto", "whether the hub runs tasks of projects not linked to a runner itself: on, off, or auto (on until a runner is registered); see docs/several-computers.md")
+	hubClaude := flag.String("hub-claude", "auto", "whether the hub runs Claude itself (general chat, titles, summaries, clean-up, its own tasks and scans): on, off, or auto (on while it has one user and no runner). "+
+		"Off: it never runs `claude` nor reads ANTHROPIC_API_KEY, and each user's Claude runs on their own runner; see docs/several-computers.md")
 	runnerGrace := flag.Duration("runner-grace", dispatch.DefaultGrace, "fail the tasks of a runner that has been offline this long, ready to be queued again (hub)")
 	var hubServer, regCode *string
 	var offlineGrace *time.Duration
@@ -274,14 +276,15 @@ func main() {
 		WorktreeRoot: merges.WorktreeRoot,
 		MaxParallel:  *parallel,
 	})
+	small := agent.Titler{Bin: *claudeBin, Model: *titleModel}
 	if *autoTitles {
-		todos.Summarizer = agent.Titler{Bin: *claudeBin, Model: *titleModel}
+		todos.Summarizer = small
 	}
 	var titler interface {
 		Title(ctx context.Context, prompt string) (string, error)
 	}
 	if *autoTitles {
-		titler = agent.Titler{Bin: *claudeBin, Model: *titleModel}
+		titler = small
 	}
 	// Scans read a throwaway checkout and file issues; they get their own
 	// claude flags (read-only tools), not -claude-args.
@@ -310,7 +313,7 @@ func main() {
 		CI:          builds,
 		Peers:       &peer.Hub{Self: *machine, Token: peerToken, Peers: peers},
 		Titler:      titler,
-		Refiner:     agent.Titler{Bin: *claudeBin, Model: *titleModel},
+		Refiner:     small,
 		ProjectRoot: *projectRoot,
 		Static:      web.Static,
 		Addr:        *addr,
@@ -346,6 +349,10 @@ func main() {
 			os.Exit(1)
 		}
 		apiSrv.HubOrg = runnerCreds.OrgID // projects of other orgs are refused
+		// The hub may run the general chat and Claude's short calls here for
+		// this runner's owner only, with this computer's `claude` login.
+		apiSrv.HubUser, apiSrv.Small = runnerCreds.UserID, small
+		apiSrv.ChatDir = filepath.Join(*dataDir, "chat")
 		// The hub hears where its tasks are, and this computer's usage.
 		reporter = &dispatch.Reporter{Store: st, Usage: tracker, Parallel: *parallel,
 			Send: func(ctx context.Context, r dispatch.Report) error {
@@ -373,15 +380,28 @@ func main() {
 		d := &dispatch.Dispatcher{Store: st, Fleet: runners, Grace: *runnerGrace, Kick: todos.Kick, Note: todoLog.Line}
 		runners.OnState, runners.OnRevoke, runners.OnReport = d.State, d.Revoked, d.Report
 		todos.Remote, apiSrv.Dispatch = d, d
+		local, err := hubClaudePolicy(*hubClaude, runners, st.Accounts())
+		if err != nil {
+			slog.Error("-hub-claude", "err", err)
+			os.Exit(1)
+		}
+		// Off: every way to Claude in this process refuses (agent.SetLocal),
+		// and the chat and short calls go to the caller's runner.
+		agent.SetLocal(local)
+		apiSrv.LocalClaude = local
 		switch *hubTasks {
 		case "on":
+			todos.LocalTasks = local
 		case "off":
 			todos.LocalTasks = func() bool { return false }
 		case "auto":
-			todos.LocalTasks = func() bool { return len(runners.List()) == 0 }
+			todos.LocalTasks = func() bool { return len(runners.List()) == 0 && local() }
 		default:
 			slog.Error("-hub-tasks: want on, off or auto", "value", *hubTasks)
 			os.Exit(1)
+		}
+		if !local() {
+			slog.Info("this hub doesn't run Claude: chat, titles and the clean-up run on each user's own runner")
 		}
 		d.Start()
 	}
@@ -535,6 +555,27 @@ func main() {
 		slog.Error("server", "err", err)
 		os.Exit(1)
 	}
+}
+
+// hubClaudePolicy is -hub-claude: whether the hub runs Claude itself. auto
+// keeps a single-user Dash without runners working as before, and turns
+// off once a runner registers or a second user joins.
+func hubClaudePolicy(mode string, runners interface{ List() []tunnel.Runner }, acc interface{ UserCount() (int, error) }) (func() bool, error) {
+	switch strings.ToLower(mode) {
+	case "on", "true", "1":
+		return func() bool { return true }, nil
+	case "off", "false", "0":
+		return func() bool { return false }, nil
+	case "auto", "":
+		return func() bool {
+			if len(runners.List()) > 0 {
+				return false
+			}
+			n, err := acc.UserCount()
+			return err == nil && n <= 1
+		}, nil
+	}
+	return nil, fmt.Errorf("want on, off or auto, not %q", mode)
 }
 
 // envBool reports whether the variable name is set to 1, true, yes or on.

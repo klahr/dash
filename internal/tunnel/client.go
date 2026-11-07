@@ -27,6 +27,10 @@ type Credentials struct {
 	// OrgID is the hub's org the runner works for (0: registered with an
 	// older hub). The runner refuses projects of any other org.
 	OrgID int64 `json:"org_id,omitempty"`
+	// UserID is the hub's user who registered the runner, its owner (0:
+	// registered with an older hub). The runner runs the general chat and
+	// Claude's short calls only for them.
+	UserID int64 `json:"user_id,omitempty"`
 	// Projects is the runner's -projects directory, as set up by
 	// `dash runner setup --projects` ("" = the default).
 	Projects string `json:"projects,omitempty"`
@@ -72,6 +76,7 @@ func Register(ctx context.Context, server, code, name string) (Credentials, erro
 	var out struct {
 		ID, Name, Token, Error string
 		OrgID                  int64 `json:"org_id"`
+		UserID                 int64 `json:"user_id"`
 	}
 	_ = json.NewDecoder(res.Body).Decode(&out)
 	if res.StatusCode != http.StatusOK || out.Token == "" {
@@ -80,7 +85,7 @@ func Register(ctx context.Context, server, code, name string) (Credentials, erro
 		}
 		return Credentials{}, fmt.Errorf("register with %s: %s", u, out.Error)
 	}
-	return Credentials{Server: u.String(), ID: out.ID, Name: out.Name, Token: out.Token, OrgID: out.OrgID}, nil
+	return Credentials{Server: u.String(), ID: out.ID, Name: out.Name, Token: out.Token, OrgID: out.OrgID, UserID: out.UserID}, nil
 }
 
 // LoadCredentials reads credentials saved by SaveCredentials.

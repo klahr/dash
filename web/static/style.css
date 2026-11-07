@@ -342,6 +342,14 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .perm-status { color: var(--muted); font-weight: 600; }
 .chat-cwd { color: var(--muted); font: 12px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
 .chat-cwd-bar { padding: 6px 16px; border-bottom: 1px solid var(--line); }
+/* The general chat's runner, on a hub that doesn't run Claude itself */
+.chat-runner { display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+.chat-runner-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.chat-runner.online .chat-runner-dot { background: var(--merged); }
+.chat-runner.offline { color: var(--text); }
+.chat-runner.offline .chat-runner-dot { background: var(--failed); }
+.chat-runner-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.chat-runner select { width: auto; flex: none; min-height: 30px; padding: 0 8px; font-size: 13px; }
 .msg.pending .reply:empty::after { content: "Thinking…"; color: var(--muted); }
 .msg.error { color: var(--failed); }
 .composer {

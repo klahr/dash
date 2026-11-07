@@ -20,6 +20,7 @@ import (
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/tunnel"
 )
 
 // ---------------------------------------------------------------- projects
@@ -625,11 +626,15 @@ func (s *Server) refinePrompt(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: prompt is required", errBadRequest))
 		return
 	}
-	if s.Refiner == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "cleaning up instructions is not available"})
+	sv, ok := s.service(w, r)
+	if !ok {
 		return
 	}
-	out, err := s.Refiner.Refine(r.Context(), req.Prompt)
+	out, err := sv.refine(r.Context(), req.Prompt)
+	if errors.Is(err, errNoRefiner) || errors.Is(err, errNoClaudeRunner) || errors.Is(err, tunnel.ErrOffline) {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		writeErr(w, err)
 		return

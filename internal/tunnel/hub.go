@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -287,14 +288,14 @@ func (h *Hub) Register(code, name string) (id, token string, err error) {
 	return id, token, err
 }
 
-func (h *Hub) register(code, name string) (id, token string, org int64, err error) {
+func (h *Hub) register(code, name string) (id, token string, owner model.Owner, err error) {
 	name = strings.ToLower(strings.TrimSpace(name))
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	now := h.clock()
 	h.badAt = slices.DeleteFunc(h.badAt, func(t time.Time) bool { return now.Sub(t) > badCodeWindow })
 	if len(h.badAt) >= maxBadCodes {
-		return "", "", 0, ErrTooManyBad
+		return "", "", model.Owner{}, ErrTooManyBad
 	}
 	h.pruneCodesLocked(now)
 	want := hash(normCode(code))
@@ -303,15 +304,15 @@ func (h *Hub) register(code, name string) (id, token string, org int64, err erro
 	})
 	if i < 0 {
 		h.badAt = append(h.badAt, now)
-		return "", "", 0, ErrBadCode
+		return "", "", model.Owner{}, ErrBadCode
 	}
 	if !nameRe.MatchString(name) {
-		return "", "", 0, ErrBadName // the code stays usable with a better name
+		return "", "", model.Owner{}, ErrBadName // the code stays usable with a better name
 	}
 	if h.nameTakenLocked(name) {
-		return "", "", 0, ErrNameTaken
+		return "", "", model.Owner{}, ErrNameTaken
 	}
-	owner := h.codes[i].Owner
+	owner = h.codes[i].Owner
 	h.codes = slices.Delete(h.codes, i, i+1) // single use
 	id = randomString(9)
 	token, _, err = h.Accounts.CreateToken(store.NewToken{
@@ -320,14 +321,14 @@ func (h *Hub) register(code, name string) (id, token string, org int64, err erro
 	if err != nil {
 		h.saveLocked()
 		if errors.Is(err, store.ErrNotMember) {
-			return "", "", 0, fmt.Errorf("%w: whoever made the code has left that organization", ErrBadCode)
+			return "", "", model.Owner{}, fmt.Errorf("%w: whoever made the code has left that organization", ErrBadCode)
 		}
-		return "", "", 0, err
+		return "", "", model.Owner{}, err
 	}
 	h.runners = append(h.runners, &record{ID: id, Name: name, Created: now})
 	h.saveLocked()
 	go h.changed()
-	return id, token, owner.Org, nil
+	return id, token, owner, nil
 }
 
 func (h *Hub) nameTakenLocked(name string) bool {
@@ -533,7 +534,7 @@ func (h *Hub) ServeRegister(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
 		return
 	}
-	id, token, org, err := h.register(req.Code, req.Name)
+	id, token, owner, err := h.register(req.Code, req.Name)
 	switch {
 	case errors.Is(err, ErrTooManyBad):
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
@@ -546,7 +547,7 @@ func (h *Hub) ServeRegister(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 	default:
 		slog.Info("runner registered", "name", strings.ToLower(strings.TrimSpace(req.Name)), "id", id)
-		writeJSON(w, http.StatusOK, map[string]any{"id": id, "name": strings.ToLower(strings.TrimSpace(req.Name)), "token": token, "org_id": org})
+		writeJSON(w, http.StatusOK, map[string]any{"id": id, "name": strings.ToLower(strings.TrimSpace(req.Name)), "token": token, "org_id": owner.Org, "user_id": owner.User})
 	}
 }
 
@@ -720,6 +721,9 @@ func (h *Hub) Call(ctx context.Context, id, method, path string, in, out any) er
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	if uid, ok := userFrom(ctx); ok {
+		req.Header.Set(UserHeader, strconv.FormatInt(uid, 10))
+	}
 	res, err := (&http.Client{Transport: h.idle()}).Do(req)
 	if err != nil {
 		if h.session(name) == nil {
@@ -750,6 +754,71 @@ func (h *Hub) Call(ctx context.Context, id, method, path string, in, out any) er
 		}
 	}
 	return nil
+}
+
+// UserHeader names the hub's user a request to a runner is made for (see
+// WithUser). The runner runs Claude only for its owner: it compares this
+// with the user it was registered by. Proxy strips it from browsers'
+// requests; only the hub's own calls set it.
+const UserHeader = "X-Dash-User"
+
+type userKey struct{}
+
+// WithUser makes Call and DialWS with ctx tell the runner they are made for
+// the hub's user uid.
+func WithUser(ctx context.Context, uid int64) context.Context {
+	return context.WithValue(ctx, userKey{}, uid)
+}
+
+func userFrom(ctx context.Context) (int64, bool) {
+	uid, ok := ctx.Value(userKey{}).(int64)
+	return uid, ok && uid != 0
+}
+
+// DialWS opens a websocket to path on runner id over its tunnel, e.g. the
+// general chat a user runs on their own runner.
+func (h *Hub) DialWS(ctx context.Context, id, path string) (*websocket.Conn, error) {
+	h.mu.Lock()
+	var name string
+	for _, r := range h.runners {
+		if r.ID == id {
+			name = r.Name
+		}
+	}
+	_, online := h.live[id]
+	h.mu.Unlock()
+	if name == "" {
+		return nil, ErrUnknownName
+	}
+	if !online {
+		return nil, fmt.Errorf("%s: %w", name, ErrOffline)
+	}
+	hdr := http.Header{}
+	if uid, ok := userFrom(ctx); ok {
+		hdr.Set(UserHeader, strconv.FormatInt(uid, 10))
+	}
+	d := websocket.Dialer{
+		NetDialContext:   h.idle().DialContext,
+		HandshakeTimeout: 30 * time.Second,
+		ReadBufferSize:   32 << 10,
+		WriteBufferSize:  32 << 10,
+	}
+	conn, res, err := d.DialContext(ctx, "ws://"+name+runnerHostLabel+path, hdr)
+	if err != nil {
+		if res != nil {
+			defer res.Body.Close()
+			var e struct{ Error string }
+			_ = json.NewDecoder(io.LimitReader(res.Body, 1<<16)).Decode(&e)
+			if e.Error != "" {
+				return nil, &CallError{Status: res.StatusCode, Msg: name + ": " + e.Error}
+			}
+		}
+		if h.session(name) == nil {
+			return nil, fmt.Errorf("%s: %w", name, ErrOffline)
+		}
+		return nil, fmt.Errorf("%s is unreachable: %w", name, err)
+	}
+	return conn, nil
 }
 
 // ---- proxying the dashboard's requests to a runner ----
@@ -794,6 +863,7 @@ func (h *Hub) Proxy(name string) (http.Handler, bool) {
 			r.Out.Header.Del("Origin")
 			r.Out.Header.Del("Authorization")
 			r.Out.Header.Del("Proxy-Authorization")
+			r.Out.Header.Del(UserHeader) // a person doesn't say whom they are
 		},
 		ModifyResponse: func(res *http.Response) error {
 			res.Header.Del("Set-Cookie")

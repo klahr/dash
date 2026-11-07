@@ -7,7 +7,9 @@ credentials in `~/.config/dash/env`, copy the unit to `~/.config/systemd/user/`,
 `journalctl --user -u dash -f`.
 
 It's a *user* service, not a system one: Dash runs `claude`, `git` and `gh` as you, so it needs
-your home directory, your `~/.claude` login and your `PATH`.
+your home directory, your `~/.claude` login and your `PATH`. (A hub with `-hub-claude off`, or
+with several users or runners, never runs `claude`; see
+[several computers](several-computers.md#claude-runs-on-each-users-own-runner).)
 
 The unit assumes the repository is checked out at `~/dev/github/klahr/dash`. If yours is
 elsewhere, edit `WorkingDirectory` and `ExecStart` in your copy of the unit. Extra flags

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -138,9 +137,8 @@ func (sv *service) autoTitle(id, prompt string) {
 		return
 	}
 	go func() {
-		title, err := sv.s.Titler.Title(context.Background(), prompt)
-		if err != nil {
-			slog.Debug("auto title", "todo", id, "err", err)
+		title := sv.title(context.Background(), prompt)
+		if title == "" {
 			return
 		}
 		_, _ = sv.data.UpdateTodo(id, func(t *model.Todo) error {

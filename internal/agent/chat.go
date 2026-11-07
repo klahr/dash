@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/anthropics/anthropic-sdk-go/v2/option"
@@ -33,16 +34,21 @@ type ChatDelta struct {
 // Chat answers through the Anthropic Messages API (billed to an API key).
 // See ClaudeCodeChat for subscription billing.
 type Chat struct {
-	client anthropic.Client
 	Model  string
 	System string
+
+	opts   []option.RequestOption
+	once   sync.Once
+	client anthropic.Client
 }
 
 // NewChat uses the SDK's default credential chain (ANTHROPIC_API_KEY,
-// ANTHROPIC_AUTH_TOKEN, or an `ant auth login` profile).
+// ANTHROPIC_AUTH_TOKEN, or an `ant auth login` profile). The credentials
+// are read on the first turn this Dash may run itself (see SetLocal), not
+// before.
 func NewChat(opts ...option.RequestOption) *Chat {
 	return &Chat{
-		client: anthropic.NewClient(opts...),
+		opts:   opts,
 		Model:  DefaultModel,
 		System: (&Chat{}).defaultSystem(),
 	}
@@ -55,6 +61,10 @@ func (*Chat) defaultSystem() string {
 
 // Stream sends the conversation to Claude and calls emit for every delta.
 func (c *Chat) Stream(ctx context.Context, _ string, history []ChatMessage, emit func(ChatDelta)) error {
+	if err := checkLocal(); err != nil {
+		return err
+	}
+	c.once.Do(func() { c.client = anthropic.NewClient(c.opts...) })
 	msgs := make([]anthropic.BetaMessageParam, 0, len(history))
 	for _, m := range history {
 		block := anthropic.NewBetaTextBlock(m.Content)

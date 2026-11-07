@@ -249,6 +249,18 @@ func runnerAPI() http.Handler {
 		}
 		_, _ = io.WriteString(w, "runner:"+r.URL.Path)
 	})
+	// who answers whom the hub said a request is for.
+	mux.HandleFunc("GET /api/who", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `"`+r.Header.Get(UserHeader)+`"`)
+	})
+	mux.HandleFunc("GET /ws/who", func(w http.ResponseWriter, r *http.Request) {
+		ws, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer ws.Close()
+		_ = ws.WriteMessage(websocket.TextMessage, []byte(r.Header.Get(UserHeader)))
+	})
 	mux.HandleFunc("GET /ws/echo", func(w http.ResponseWriter, r *http.Request) {
 		ws, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
 		if err != nil {
@@ -468,5 +480,51 @@ func TestHubRecordsTheRunnersVersion(t *testing.T) {
 	}
 	if got := cleanVersion("v1 <script>"); got != "" {
 		t.Fatalf("junk version kept: %q", got)
+	}
+}
+
+// The hub tells a runner whom a call is for (its owner registered it, and
+// learns their id), and nobody else can: a browser's request through the
+// proxy loses the header.
+func TestHubTellsTheRunnerWhomACallIsFor(t *testing.T) {
+	th := newTestHub(t)
+	c := th.register(t, "work")
+	if c.UserID != th.owner.User || c.UserID == 0 {
+		t.Fatalf("registration gave user %d, want the owner %d", c.UserID, th.owner.User)
+	}
+	states, _ := startRunner(t, c)
+	states.want(t, true)
+	th.waitOnline(t, "work")
+
+	ctx := WithUser(context.Background(), 42)
+	var who string
+	if err := th.Call(ctx, c.ID, "GET", "/api/who", nil, &who); err != nil || who != "42" {
+		t.Fatalf("Call for user 42: %q %v", who, err)
+	}
+	if err := th.Call(context.Background(), c.ID, "GET", "/api/who", nil, &who); err != nil || who != "" {
+		t.Fatalf("Call for nobody: %q %v", who, err)
+	}
+	ws, err := th.DialWS(ctx, c.ID, "/ws/who")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, msg, err := ws.ReadMessage(); err != nil || string(msg) != "42" {
+		t.Fatalf("DialWS for user 42: %q %v", msg, err)
+	}
+	ws.Close()
+
+	req, _ := http.NewRequest("GET", th.srv.URL+"/peer/work/api/who", nil)
+	req.Header.Set(UserHeader, "42")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if string(b) != `""` {
+		t.Fatalf("a browser's claimed user reached the runner: %s", b)
+	}
+	if _, err := th.DialWS(ctx, "nope", "/ws/who"); !errors.Is(err, ErrUnknownName) {
+		t.Errorf("DialWS to an unknown runner: %v", err)
 	}
 }

@@ -65,6 +65,20 @@ type Server struct {
 	Refiner interface {
 		Refine(ctx context.Context, prompt string) (string, error)
 	}
+	// LocalClaude reports whether this Dash runs Claude itself for the
+	// general chat, titles and the clean-up (nil: it does). A hub with it
+	// off runs them on the caller's own runner (see claude.go).
+	LocalClaude func() bool
+	// Small runs Claude's short calls for this runner's owner when the hub
+	// asks (a runner's; optional).
+	Small SmallClaude
+	// HubUser is, on a runner, the hub's user who registered it: the only
+	// one the hub may run the general chat and short calls for (0: not
+	// known, an older registration).
+	HubUser int64
+	// ChatDir is where a runner runs the general chat its hub asks for
+	// (default: the temp dir).
+	ChatDir    string
 	Editor     string // command that opens a directory, e.g. "code" (optional)
 	UploadRoot string // where attached files are stored
 	CI         *ci.Watcher
@@ -190,6 +204,8 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/todos/{tid}/open", s.openTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/revert", s.revertTodo)
 	mux.HandleFunc("POST /api/refine", s.refinePrompt)
+	mux.HandleFunc("GET /api/claude", s.claudeInfo)
+	mux.HandleFunc("POST /api/hub/claude/{kind}", s.hubClaude)
 
 	// Issues: known bugs, vulnerabilities and other problems, triaged into tasks
 	mux.HandleFunc("GET /api/projects/{pid}/issues", s.listIssues)
