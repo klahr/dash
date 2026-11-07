@@ -1,13 +1,17 @@
 # Use Dash from your phone
 
-Dash runs commands on your machine, so only expose it over HTTPS. Two easy ways:
+Dash runs commands on your machine, so only expose it over HTTPS. Keep Dash on `127.0.0.1`,
+put an HTTPS proxy in front and start Dash with `-trust-proxy`; [Deploy the hub](deploy.md) has
+the setups:
 
-- **Tailscale:** keep Dash on `127.0.0.1`, run `tailscale serve --bg 7788`, and start Dash with
-  `-trust-proxy`. Open `https://<machine>.<tailnet>.ts.net` on your phone.
-- **Your own certificate:** `./bin/dash -addr :7788 -tls-cert cert.pem -tls-key key.pem`.
+- **A VPS behind Caddy**, or **at home through a Cloudflare Tunnel**: open
+  `https://dash.example.com` on your phone. The login is then on the internet, see
+  [the login](deploy.md#the-login-is-internet-facing).
+- **Tailscale**, private to your devices: `tailscale serve --bg 7788`, then open
+  `https://<machine>.<tailnet>.ts.net`.
 
-Any other HTTPS reverse proxy (Caddy, nginx) works the same way as Tailscale: keep Dash on
-`127.0.0.1` and pass `-trust-proxy`.
+Or without a proxy, with a certificate of your own:
+`./bin/dash -addr :7788 -tls-cert cert.pem -tls-key key.pem`.
 
 Dash can be installed as an app from the browser menu ("Install" or "Add to Home Screen"). It
 checks for updates and offers a reload, so an installed copy never goes stale.

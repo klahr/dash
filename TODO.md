@@ -32,11 +32,10 @@ Most important first within each section.
 - [ ] Edit a diff in the UI before approving.
 - [ ] Autosave the TUI todo form like the web editor.
 - [ ] Find other Dash computers on the tailnet automatically instead of `-peer` flags.
-- [ ] `-peer-proxy`, to reach peers through a second (userspace) Tailscale instance.
 
 ## Running it
 
-- [ ] Docker image (Dash, git, gh, Claude Code, common toolchains) and docker-compose with a
-      Tailscale sidecar and volumes for repos, data, Claude login and gh config.
+- [ ] Docker image (Dash, git, gh, Claude Code, common toolchains) and docker-compose with
+      volumes for repos, data, Claude login and gh config.
 - [ ] Optional sandbox for Claude's runs (container or user with limited rights).
 - [ ] Optional 2FA (TOTP) for the login.

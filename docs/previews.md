@@ -21,11 +21,15 @@ from `/`. To set that up you need:
    Dash's host: that makes them the same site, which lets the preview's sign-in cookie work inside
    Dash's pane.
 2. **A wildcard DNS record**, `*.preview.dash.example.com`, pointing where `dash.example.com`
-   points. Over Tailscale that's the machine's Tailscale address (`tailscale ip -4`), set at your
-   own DNS provider. `ts.net` names can't have wildcard subdomains, so `tailscale serve` alone
-   can't serve previews. The records only resolve to a tailnet address, so previews stay private.
+   points: your server's address behind Caddy, or a proxied `CNAME` to the tunnel with a
+   Cloudflare Tunnel (see [Deploy the hub](deploy.md#previews-through-the-tunnel)). With
+   Tailscale, point it at the machine's Tailscale address (`tailscale ip -4`) at your own DNS
+   provider; `ts.net` names can't have wildcard subdomains, so `tailscale serve` alone can't serve
+   previews, and records that resolve to a tailnet address keep previews private.
 3. **A wildcard certificate** for `*.preview.dash.example.com`. Let's Encrypt only issues those
-   through a DNS challenge. With Caddy (built with your DNS provider's plugin):
+   through a DNS challenge (a Cloudflare Tunnel uses Cloudflare's edge certificate instead, see
+   [Deploy the hub](deploy.md#previews-through-the-tunnel)). With Caddy (built with your DNS
+   provider's plugin, see also [`deploy/Caddyfile`](../deploy/Caddyfile)):
 
    ```
    dash.example.com, *.preview.dash.example.com {

@@ -2648,16 +2648,30 @@ function copyBlock(text, msg, { pre = false } = {}) {
 function connectorSteps(c) {
   const step = (head, ...body) => h("li", {}, h("strong", {}, head), ...body);
   if (!c.enabled) {
-    const host = location.hostname.endsWith(".ts.net") ? location.hostname : "<machine>.<tailnet>.ts.net";
-    const origin = `https://${host}:8443`;
-    const funnel = `for p in ${c.paths.join(" ")}; do\n  tailscale funnel --bg --https=8443 --set-path=$p ${c.local}$p\ndone`;
+    const restart = (origin, how) => step("Restart Dash with that address.", copyBlock(`./bin/dash -trust-proxy -public-url ${origin}`, "Command copied", { pre: true }),
+      h("p", { class: "hint" }, "Or set ", h("code", {}, `DASH_PUBLIC_URL=${origin}`), " in Dash's env file (", h("code", {}, "~/.config/dash/env"), ` for the service). ${how}`));
+    const again = step("Open this guide again.", h("p", { class: "hint" }, "It then gives you the URL to add in claude.ai."));
+    let steps;
+    if (location.protocol === "https:" && !location.hostname.endsWith(".ts.net")) {
+      // Behind Caddy or a Cloudflare Tunnel the address Dash is open on is
+      // usually public already, and is then the public URL itself.
+      steps = h("ol", { class: "steps" },
+        step("Make sure this address is reachable from the internet.", h("p", { class: "hint" },
+          "Behind Caddy or a Cloudflare Tunnel it is. If it's private, expose at least ", h("code", {}, c.paths.join(" ")), ` (forwarded to ${c.local}) on a public HTTPS address and use that below. See docs/deploy.md.`)),
+        restart(location.origin, "Use the address exactly as the internet reaches it, with a port only if it isn't 443."),
+        again);
+    } else {
+      const host = location.hostname.endsWith(".ts.net") ? location.hostname : "<machine>.<tailnet>.ts.net";
+      const origin = `https://${host}:8443`;
+      const funnel = `for p in ${c.paths.join(" ")}; do\n  tailscale funnel --bg --https=8443 --set-path=$p ${c.local}$p\ndone`;
+      steps = h("ol", { class: "steps" },
+        step("Expose only the connector's paths.", h("p", { class: "hint" }, "With Tailscale Funnel, on this computer (or put Dash behind Caddy or a Cloudflare Tunnel, see docs/deploy.md):"), copyBlock(funnel, "Commands copied", { pre: true })),
+        restart(origin, "Use the address exactly as Funnel serves it, port included."),
+        again);
+    }
     return [
       h("p", { class: "connector-status off" }, "The connector is off. Anthropic's servers call Dash over the internet, so it needs a public HTTPS address first."),
-      h("ol", { class: "steps" },
-        step("Expose only the connector's paths.", h("p", { class: "hint" }, "With Tailscale Funnel, on this computer:"), copyBlock(funnel, "Commands copied", { pre: true })),
-        step("Restart Dash with that address.", copyBlock(`./bin/dash -trust-proxy -public-url ${origin}`, "Command copied", { pre: true }),
-          h("p", { class: "hint" }, "Or set ", h("code", {}, `DASH_PUBLIC_URL=${origin}`), " in Dash's env file (", h("code", {}, "~/.config/dash/env"), " for the service). Use the address exactly as Funnel serves it, port included.")),
-        step("Open this guide again.", h("p", { class: "hint" }, "It then gives you the URL to add in claude.ai."))),
+      steps,
       h("p", { class: "hint warn" }, "Your Dash login is all that stands between the internet and a server that runs commands on your computers. Use a strong password."),
     ];
   }

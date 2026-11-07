@@ -34,7 +34,7 @@ go build -o bin/dash ./cmd/dash
 
 Open <http://127.0.0.1:7788> and sign in with the `DASH_USERNAME` and `DASH_PASSWORD` from your
 `.env`. Dash listens only on `127.0.0.1:7788` by default; to change that, see `-addr` in
-`./bin/dash -h` (and [phone access](docs/phone.md) before exposing it).
+`./bin/dash -h` (and [Deploy the hub](docs/deploy.md) before exposing it).
 
 Prefer the terminal? There's a terminal client too:
 
@@ -64,16 +64,18 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
 - **Run it as a service** so it starts at boot: [`deploy/dash.service`](deploy/dash.service), explained in
   [docs/service.md](docs/service.md).
-- **Use it from your phone** over HTTPS (Tailscale Serve or your own certificate):
-  [docs/phone.md](docs/phone.md).
+- **Put it online** over HTTPS, on a VPS behind Caddy or at home through a Cloudflare Tunnel
+  (or privately with Tailscale), to use it from your phone and other computers:
+  [docs/deploy.md](docs/deploy.md).
 - **Use it from Claude** with the `dash-mcp` MCP server, or as a custom connector in claude.ai
-  and the Claude app (via Tailscale Funnel): [docs/mcp.md](docs/mcp.md).
+  and the Claude app: [docs/mcp.md](docs/mcp.md).
 - **Several computers** in one dashboard: [docs/several-computers.md](docs/several-computers.md).
 - **Live previews** of each task's app, served on their own subdomains:
   [docs/previews.md](docs/previews.md).
 
 ## Reference
 
+- [Deploy the hub](docs/deploy.md): Caddy, Cloudflare Tunnel or Tailscale, and the login on the internet
 - [Live previews](docs/previews.md): preview domain, DNS and certificates, what the proxy does
 - [Draw](docs/draw.md): mark up a preview and send the picture back to Claude
 - [Scans](docs/scans.md): scheduled read-only reviews that fill a project's Issues

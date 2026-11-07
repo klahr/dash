@@ -1,7 +1,8 @@
 // Package peer lets one Dash show other computers' Dash servers in the same
 // dashboard. Each computer keeps its own repositories, worktrees and Claude
 // login; the Dash you open (the hub) forwards /peer/<name>/… to the other
-// one with a shared token. Run the peers behind HTTPS, e.g. Tailscale.
+// one with a shared token. Run the peers behind HTTPS: a reverse proxy such as
+// Caddy, a Cloudflare Tunnel, or Tailscale (see docs/deploy.md).
 package peer
 
 import (

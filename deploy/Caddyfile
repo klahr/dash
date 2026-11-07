@@ -1,0 +1,37 @@
+# Caddy in front of Dash, for a hub on a VPS (see docs/deploy.md).
+#
+# Replace dash.example.com with your own name, point its DNS records at this
+# server (A/AAAA for dash.example.com and *.preview.dash.example.com), then:
+#
+#   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+#   ./bin/dash -trust-proxy -public-url https://dash.example.com \
+#              -preview-domain preview.dash.example.com
+#
+# Dash stays on 127.0.0.1:7788 (its default); only Caddy listens on 80 and 443.
+
+{
+	# Let's Encrypt account e-mail, for expiry warnings.
+	email you@example.com
+}
+
+# Dash itself. Caddy gets and renews the certificate on its own (HTTP
+# challenge), and passes X-Forwarded-For/-Proto/-Host, which -trust-proxy reads.
+dash.example.com {
+	reverse_proxy 127.0.0.1:7788
+}
+
+# Live previews, one subdomain per task. Let's Encrypt only issues wildcard
+# certificates through a DNS challenge, so this block needs a Caddy built with
+# your DNS provider's plugin, e.g.
+#
+#   xcaddy build --with github.com/caddy-dns/cloudflare
+#
+# and an API token that can edit the zone (CF_API_TOKEN in Caddy's
+# environment). Without previews, delete this block and leave out
+# -preview-domain.
+*.preview.dash.example.com {
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+	}
+	reverse_proxy 127.0.0.1:7788
+}

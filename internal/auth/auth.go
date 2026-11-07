@@ -103,7 +103,8 @@ type Auth struct {
 	store string           // sessions file, if any
 
 	// TrustProxy honours X-Forwarded-For and X-Forwarded-Proto from a
-	// reverse proxy (Caddy, nginx, Tailscale Serve) that terminates TLS.
+	// reverse proxy (Caddy, nginx, a Cloudflare Tunnel, Tailscale Serve) that
+	// terminates TLS.
 	// Only enable it when Dash is reachable solely through that proxy.
 	TrustProxy bool
 

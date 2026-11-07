@@ -31,10 +31,29 @@ with the URL to copy, a link to claude.ai's connector settings, and how many con
 in. Without `-public-url` it shows the commands below for your setup instead.
 
 **That login is the only thing between the internet and a server that runs commands on your
-computers.** Use a strong password, and expose nothing but the paths below.
+computers.** Use a strong password, see [the login](deploy.md#the-login-is-internet-facing).
 
-With Tailscale Funnel (it serves only ports 443, 8443 and 10000; 8443 leaves 443 free for
-`tailscale serve`):
+Behind Caddy or a Cloudflare Tunnel (see [Deploy the hub](deploy.md)), Dash is already on the
+internet at its own address, so that is the public URL:
+
+```sh
+./bin/dash -trust-proxy -public-url https://dash.example.com
+```
+
+Then in claude.ai go to Settings → Connectors → Add custom connector and enter
+`https://dash.example.com/mcp`.
+
+`-public-url` (or `DASH_PUBLIC_URL`) is the origin the internet reaches Dash on, exactly as your
+proxy serves it: `https://host`, with a port only if it isn't 443, and no path. It is the OAuth
+issuer and the connector's resource, so it must match what claude.ai sees. It turns on `/mcp` and
+the OAuth endpoints; without it they don't exist. If you put a second login (such as Cloudflare
+Access) in front of Dash, leave `/mcp`, `/authorize`, `/token`, `/register` and `/.well-known/`
+open to Anthropic's servers.
+
+### Tailscale Funnel
+
+If Dash is otherwise private on your tailnet, Funnel can expose just the connector's paths. It
+serves only ports 443, 8443 and 10000; 8443 leaves 443 free for `tailscale serve`:
 
 ```sh
 for p in /mcp /authorize /token /register /.well-known; do
@@ -43,14 +62,13 @@ done
 ./bin/dash -trust-proxy -public-url https://<machine>.<tailnet>.ts.net:8443
 ```
 
-`-public-url` (or `DASH_PUBLIC_URL`) is the origin the internet reaches Dash on, exactly as
-Funnel serves it, port included. It turns on `/mcp` and the OAuth endpoints; without it they
-don't exist. Then in claude.ai go to Settings → Connectors → Add custom connector and enter
-`https://<machine>.<tailnet>.ts.net:8443/mcp`.
+and enter `https://<machine>.<tailnet>.ts.net:8443/mcp` in claude.ai.
 
-- Funnel matches paths by prefix, so `/mcp/dash` and `/mcp/permissions` are reachable too. They
-  only accept the short-lived tokens Dash hands its own Claude runs.
-- Failed logins count towards the same lockout as the web login. Behind Funnel, `-trust-proxy`
+### Notes
+
+- `/mcp/dash` and `/mcp/permissions` are reachable too (Funnel matches paths by prefix; behind a
+  proxy every path is). They only accept the short-lived tokens Dash hands its own Claude runs.
+- Failed logins count towards the same lockout as the web login. Behind a proxy, `-trust-proxy`
   makes the lockout per client instead of shared by every request through the proxy.
 - Access tokens last an hour, refresh tokens 30 days and rotate on every use. They are stored
   hashed in `oauth.json` in the data directory; delete it (and restart) to sign every connector

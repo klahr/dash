@@ -10,7 +10,8 @@ import (
 // connectorStatus tells the web UI's "Connect Claude" guide whether Dash
 // serves /mcp for a claude.ai custom connector (-public-url), the URL to
 // paste into claude.ai, and how many connectors are signed in. When it's
-// off, Local is where a proxy such as Tailscale Funnel should forward to.
+// off, Local is where a proxy (Caddy, a Cloudflare Tunnel, Tailscale Funnel)
+// should forward to.
 func (s *Server) connectorStatus(w http.ResponseWriter, r *http.Request) {
 	type status struct {
 		Enabled   bool     `json:"enabled"`
