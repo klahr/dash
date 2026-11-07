@@ -11,6 +11,6 @@
     "@codemirror/language-data": "^6",
     "@replit/codemirror-vim": "^6",
     "codemirror": "^6",
-    "esbuild": "^0.25"
+    "esbuild": "^0.28"
   }
 }
