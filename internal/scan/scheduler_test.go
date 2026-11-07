@@ -15,12 +15,27 @@ func schedFixture(t *testing.T, src string) (*fixture, *Scheduler, *clock) {
 	fx := newFixture(t, "nightly", src)
 	c := &clock{t: at("2026-11-07 12:00")}
 	fx.runner.Now = c.now
+	fx.st.Now = c.now
 	return fx, &Scheduler{Store: fx.st, Runner: fx.runner, Now: c.now}, c
+}
+
+// enable turns a repository template's schedule on as the user does in
+// Dash, approving the template's expression.
+func enable(t *testing.T, fx *fixture, name string) {
+	t.Helper()
+	tm := mustFind(t, fx, name)
+	on := true
+	if _, err := fx.st.SetScanSetting(fx.p.ID, name, func(st *model.ScanSetting) {
+		st.Enabled, st.ApprovedSchedule = &on, tm.Schedule
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestSchedulerRunsWhenDue(t *testing.T) {
 	fx, s, c := schedFixture(t, "---\nschedule: 0 6 * * *\n---\nGo.")
-	// First seen at 12:00: nothing ran before, so wait for the next slot.
+	enable(t, fx, "nightly")
+	// Turned on at 12:00: nothing ran before, so wait for the next slot.
 	if got := s.Tick(); len(got) != 0 {
 		t.Fatalf("started at first sight: %+v", got)
 	}
@@ -45,6 +60,9 @@ func TestSchedulerRunsWhenDue(t *testing.T) {
 
 func TestSchedulerCatchesUpOnce(t *testing.T) {
 	fx, s, c := schedFixture(t, "---\nschedule: 0 6 * * *\n---\nGo.")
+	c.t = at("2026-11-01 12:00")
+	enable(t, fx, "nightly")
+	c.t = at("2026-11-07 12:00")
 	// The last scheduled run was three days ago: Dash was down since.
 	if _, err := fx.st.CreateScanRun(model.ScanRun{ProjectID: fx.p.ID, Scan: "nightly", Trigger: "schedule",
 		Status: model.ScanSucceeded, StartedAt: at("2026-11-04 06:00")}); err != nil {
@@ -74,7 +92,8 @@ func TestSchedulerNoOverlap(t *testing.T) {
 	fx, s, c := schedFixture(t, "---\nschedule: '*/5 * * * *'\n---\nGo.")
 	fx.exec.release, fx.exec.started = make(chan struct{}), make(chan struct{}, 4)
 	c.t = at("2026-11-07 12:05")
-	s.Tick() // first sight
+	enable(t, fx, "nightly")
+	s.Tick() // just turned on
 	c.t = at("2026-11-07 12:10")
 	if got := s.Tick(); len(got) != 1 {
 		t.Fatal("not started")
@@ -140,11 +159,62 @@ func TestSchedulerSettings(t *testing.T) {
 	if got := s.Tick(); len(got) != 0 {
 		t.Fatal("ran while off")
 	}
-	// A repository template's schedule is on by default.
+	// A repository template's schedule is off until approved.
 	repo := Template{Name: "r", Schedule: "0 6 * * *"}
-	if sch := Effective(repo, model.ScanSetting{}, false); !sch.Enabled {
-		t.Fatal("repository schedule off by default")
+	if sch := Effective(repo, model.ScanSetting{}, false); sch.Enabled || sch.Requested != "0 6 * * *" {
+		t.Fatalf("repository schedule by default: %+v", sch)
 	}
+	// Turned on without an approved expression (a setting from before
+	// approvals): still off.
+	if sch := Effective(repo, model.ScanSetting{Enabled: &on}, true); sch.Enabled {
+		t.Fatal("repository schedule on without approval")
+	}
+	// The user's own expression needs no approval.
+	if sch := Effective(repo, model.ScanSetting{Enabled: &on, Schedule: "0 9 * * *"}, true); !sch.Enabled || sch.Cron != "0 9 * * *" || sch.Requested != "" {
+		t.Fatalf("own expression: %+v", sch)
+	}
+}
+
+func TestSchedulerRepoScheduleNeedsApproval(t *testing.T) {
+	fx, s, c := schedFixture(t, "---\nschedule: 0 6 * * *\n---\nGo.")
+	tm := mustFind(t, fx, "nightly")
+	set, has := fx.st.ScanSetting(fx.p.ID, "nightly")
+	if sch := Effective(tm, set, has); sch.Enabled || sch.Requested != "0 6 * * *" {
+		t.Fatalf("before approval: %+v", sch)
+	}
+	for _, d := range []string{"2026-11-08 06:00", "2026-11-09 06:00", "2026-11-10 07:00"} {
+		c.t = at(d)
+		if got := s.Tick(); len(got) != 0 {
+			t.Fatalf("ran at %s without being turned on", d)
+		}
+		if next := s.NextRun(fx.p.ID, tm); !next.IsZero() {
+			t.Fatalf("next run %s without being turned on", next)
+		}
+	}
+	// Turned on in Dash: runs from its next slot.
+	enable(t, fx, "nightly")
+	c.t = at("2026-11-11 06:00")
+	if got := s.Tick(); len(got) != 1 {
+		t.Fatal("not run once turned on")
+	}
+	fx.runner.Wait()
+	// The template's schedule changes: the approved one keeps running, the
+	// new one waits for approval.
+	writeTemplate(t, fx, "nightly", "---\nschedule: '*/5 * * * *'\n---\nGo.")
+	tm = mustFind(t, fx, "nightly")
+	set, has = fx.st.ScanSetting(fx.p.ID, "nightly")
+	if sch := Effective(tm, set, has); !sch.Enabled || sch.Cron != "0 6 * * *" || sch.Requested != "*/5 * * * *" {
+		t.Fatalf("after the template changed: %+v", sch)
+	}
+	c.t = at("2026-11-11 12:00")
+	if got := s.Tick(); len(got) != 0 {
+		t.Fatal("ran on the template's new, unapproved schedule")
+	}
+	c.t = at("2026-11-12 06:00")
+	if got := s.Tick(); len(got) != 1 {
+		t.Fatal("approved schedule stopped running")
+	}
+	fx.runner.Wait()
 }
 
 type pausedUsage struct{ paused bool }
@@ -153,6 +223,7 @@ func (u *pausedUsage) CanStart() (bool, string) { return !u.paused, "usage" }
 
 func TestSchedulerWaitsForUsage(t *testing.T) {
 	fx, s, c := schedFixture(t, "---\nschedule: 0 6 * * *\n---\nGo.")
+	enable(t, fx, "nightly")
 	u := &pausedUsage{paused: true}
 	s.Usage = u
 	s.Tick()

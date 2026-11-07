@@ -36,23 +36,37 @@ type Schedule struct {
 	Enabled bool   `json:"enabled"`
 	// Custom says the user changed the expression or turned it on or off.
 	Custom bool `json:"custom,omitempty"`
+	// Requested is a repository template's schedule the user has not
+	// approved: the template's until it is turned on, or the new one when
+	// the template's changed since (Cron keeps the approved one).
+	Requested string `json:"requested,omitempty"`
 }
 
-// Effective combines a template and the user's setting. A schedule in a
-// repository's template runs by default (the team chose it); a built-in's
-// is a suggestion that runs only once turned on.
+// Effective combines a template and the user's setting. Every schedule is
+// off until a user turns it on in Dash: a built-in's is a suggestion, and a
+// repository template's must be approved, because anyone who can merge to
+// the repository can change it. Turning a repository schedule on approves
+// the template's expression as it is then; if the template's changes later,
+// the approved one keeps running until the new one is approved.
 func Effective(t Template, set model.ScanSetting, hasSetting bool) Schedule {
-	s := Schedule{Cron: t.Schedule, Default: t.Schedule, Enabled: t.Schedule != "" && !t.Builtin}
+	s := Schedule{Cron: t.Schedule, Default: t.Schedule}
 	if !hasSetting {
-		return s
+		set = model.ScanSetting{}
 	}
-	if set.Schedule != "" {
-		s.Cron, s.Custom = set.Schedule, true
+	approved := t.Builtin // a built-in's own expression needs no approval
+	switch {
+	case set.Schedule != "":
+		s.Cron, s.Custom, approved = set.Schedule, true, true // the user's own
+	case !t.Builtin && set.ApprovedSchedule != "":
+		s.Cron, approved = set.ApprovedSchedule, true
+	}
+	if !t.Builtin && set.Schedule == "" && t.Schedule != "" && t.Schedule != set.ApprovedSchedule {
+		s.Requested = t.Schedule
 	}
 	if set.Enabled != nil {
 		s.Enabled, s.Custom = *set.Enabled, true
 	}
-	if s.Cron == "" {
+	if s.Cron == "" || !approved {
 		s.Enabled = false
 	}
 	return s

@@ -128,6 +128,14 @@ func newFixture(t *testing.T, name, src string) *fixture {
 	return fx
 }
 
+// writeTemplate changes a template in the checkout, as a merge would.
+func writeTemplate(t *testing.T, fx *fixture, name, src string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(fx.repo, ".dash", "scans", name+".md"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (fx *fixture) run(t *testing.T, name string) model.ScanRun {
 	t.Helper()
 	r, err := fx.runner.Start(fx.p.ID, name, "manual")
@@ -360,5 +368,51 @@ func TestStoreMarksInterruptedRunsFailed(t *testing.T) {
 	st, _ = store.Open(path, nil)
 	if got, _ := st.GetScanRun(r.ID); got.Status != model.ScanFailed || got.FinishedAt == nil {
 		t.Fatalf("after restart: %+v", got)
+	}
+}
+
+func TestRunToolsNeedApproval(t *testing.T) {
+	fx := newFixture(t, "deps", "---\ntools: Read, Bash\n---\nAudit.")
+	allowed := func() string {
+		t.Helper()
+		args := fx.exec.reqs[len(fx.exec.reqs)-1].ExtraArgs
+		for i, a := range args {
+			if a == "--allowedTools" {
+				return args[i+1]
+			}
+		}
+		t.Fatalf("no --allowedTools in %q", args)
+		return ""
+	}
+	readOnly := strings.Join(DefaultTools, ",")
+	// Not approved: read-only tools.
+	if r := fx.run(t, "deps"); r.Status != model.ScanSucceeded {
+		t.Fatalf("run: %+v", r)
+	}
+	if got := allowed(); got != readOnly {
+		t.Fatalf("unapproved tools used: %s", got)
+	}
+	// Approved: the template's.
+	if _, err := fx.st.SetScanSetting(fx.p.ID, "deps", func(st *model.ScanSetting) { st.ApprovedTools = []string{"Read", "Bash"} }); err != nil {
+		t.Fatal(err)
+	}
+	fx.run(t, "deps")
+	if got := allowed(); got != "Read,Bash" {
+		t.Fatalf("approved tools: %s", got)
+	}
+	// The template asks for more: the approval no longer applies.
+	writeTemplate(t, fx, "deps", "---\ntools: Read, Bash, WebFetch\n---\nAudit.")
+	fx.run(t, "deps")
+	if got := allowed(); got != readOnly {
+		t.Fatalf("approval applied to changed tools: %s", got)
+	}
+	tm := mustFind(t, fx, "deps")
+	set, has := fx.st.ScanSetting(fx.p.ID, "deps")
+	if _, ok := Tools(tm, set, has); ok {
+		t.Fatal("changed tools reported approved")
+	}
+	// A built-in's tools need no approval.
+	if tools, ok := Tools(Template{Builtin: true, Tools: []string{"Bash(npm audit:*)"}}, model.ScanSetting{}, false); !ok || tools[0] != "Bash(npm audit:*)" {
+		t.Fatalf("built-in tools: %v %v", tools, ok)
 	}
 }

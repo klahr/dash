@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -300,11 +301,16 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 	}
 	defer r.Git.RemoveDetachedWorktree(context.WithoutCancel(ctx), p.ID, p.Path, dir)
 
+	set, has := r.Store.ScanSetting(p.ID, t.Name)
+	tools, approved := Tools(t, set, has)
+	if !approved {
+		logLine(fmt.Sprintf("⚠ the template asks for tools that are not approved in Dash (%s): running with read-only tools", strings.Join(t.Tools, ", ")))
+	}
 	prompt := BuildPrompt(t, tg, r.knownIssues(p.ID, t, tg))
 	logLine("prompt:\n" + prompt)
 	var mu sync.Mutex // stdout and stderr report from their own goroutines
 	var lastActivity time.Time
-	res, err := r.Exec.Run(ctx, agent.ExecRequest{Dir: dir, Prompt: prompt, ExtraArgs: Args(t)}, func(e model.RunEvent) {
+	res, err := r.Exec.Run(ctx, agent.ExecRequest{Dir: dir, Prompt: prompt, ExtraArgs: Args(t, tools)}, func(e model.RunEvent) {
 		mu.Lock()
 		defer mu.Unlock()
 		line := agent.Summary(e)
@@ -423,10 +429,25 @@ func (r *Runner) PruneLogs() {
 	}
 }
 
+// Tools are the tools a scan runs with, and whether they are the ones its
+// template asks for. A built-in's are trusted. A repository template's
+// tools are code anyone who can merge may change (Bash is a shell on this
+// computer), so they apply only while the user's approval covers exactly
+// that list; otherwise the scan runs with the read-only DefaultTools.
+func Tools(t Template, set model.ScanSetting, hasSetting bool) (tools []string, approved bool) {
+	if len(t.Tools) == 0 {
+		return DefaultTools, true
+	}
+	if t.Builtin || hasSetting && slices.Equal(set.ApprovedTools, t.Tools) {
+		return t.Tools, true
+	}
+	return DefaultTools, false
+}
+
 // Args are the claude flags of a scan: its model and effort, and the tools
-// it may use. Edits are refused (the checkout is thrown away anyway).
-func Args(t Template) []string {
-	tools := t.Tools
+// it may use (see Tools). Edits are refused (the checkout is thrown away
+// anyway).
+func Args(t Template, tools []string) []string {
 	if len(tools) == 0 {
 		tools = DefaultTools
 	}

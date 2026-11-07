@@ -57,14 +57,23 @@ type ScanRun struct {
 	Urgent int `json:"urgent,omitempty"`
 }
 
-// ScanSetting is what a user changed about a scan's schedule in the UI. The
-// template's schedule is the default.
+// ScanSetting is what a user changed about a scan in the UI: its schedule,
+// and what they approved of a repository template. A repository template is
+// code anyone with merge rights can change, so its extra tools and its
+// schedule only take effect once a user approves them in Dash.
 type ScanSetting struct {
 	ProjectID string `json:"project_id"`
 	Scan      string `json:"scan"`
 	// Enabled overrides whether the schedule runs; nil = the default.
 	Enabled *bool `json:"enabled,omitempty"`
 	// Schedule overrides the template's cron expression; "" = the template's.
-	Schedule  string    `json:"schedule,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Schedule string `json:"schedule,omitempty"`
+	// ApprovedSchedule is the repository template's cron expression the
+	// user approved; it keeps running even if the template's changes.
+	ApprovedSchedule string `json:"approved_schedule,omitempty"`
+	// ApprovedTools is the exact tool list of the repository template the
+	// user approved; once the template asks for other tools, it no longer
+	// applies and the scan runs with read-only tools.
+	ApprovedTools []string  `json:"approved_tools,omitempty"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }

@@ -4733,7 +4733,7 @@ function renderScans() {
   intro.hidden = !p || !scans.loaded;
   intro.replaceChildren(scans.builtin
     ? h("span", {}, "This repository has no scan templates, so these are Dash's built-in scans. Add your own as markdown files in ", h("code", {}, `${scans.dir}/`), " to share them with your team: frontmatter for the settings, the prompt below it.")
-    : h("span", {}, "Scans from ", h("code", {}, `${scans.dir}/`), " in this repository. They only read the code and add what they find to Issues."));
+    : h("span", {}, "Scans from ", h("code", {}, `${scans.dir}/`), " in this repository. They read the code and add what they find to Issues; extra tools and schedules a template asks for apply once you approve them here."));
   const probs = $("#scan-problems");
   probs.hidden = !scans.problems.length;
   probs.replaceChildren(...scans.problems.map((x) => h("li", {}, h("code", {}, x.file), `: ${x.error}`)));
@@ -4770,13 +4770,16 @@ function scanCard(s) {
           }) }, "play", "Run now")),
     h("div", { class: "scan-sched" },
       h("label", { class: "scan-switch", title: sch.cron ? (sch.enabled ? "Turn the schedule off" : "Turn the schedule on") : "Set a schedule first" },
-        h("input", { type: "checkbox", role: "switch", checked: sch.enabled, disabled: !sch.cron, onchange: attempt((e) => patch({ enabled: e.target.checked })) }),
+        h("input", { type: "checkbox", role: "switch", checked: sch.enabled, disabled: !sch.cron, onchange: attempt((e) => patch(
+          // Turning on a repository schedule never approved approves the one shown.
+          e.target.checked && sch.requested && sch.cron === sch.requested ? { approve_schedule: sch.requested } : { enabled: e.target.checked })) }),
         h("span", {}, "Scheduled")),
       h("button", { type: "button", class: "link scan-cron", title: sch.cron ? `${sch.cron} — change` : "Set a schedule", onclick: editCron },
         sch.cron ? describeCron(sch.cron) : "No schedule"),
       sch.enabled && s.next_run ? h("span", { class: "scan-next", title: new Date(s.next_run).toLocaleString(timeLocale) }, `next ${until(s.next_run)}`) : null,
-      sch.custom ? h("button", { type: "button", class: "link scan-reset", title: `Back to the template's schedule${sch.default ? ` (${sch.default})` : ""}${s.builtin ? ", off" : ""}`, onclick: attempt(() => patch({ reset: true })) }, "Reset") : null,
+      sch.custom ? h("button", { type: "button", class: "link scan-reset", title: `Back to the template's schedule${sch.default ? ` (${sch.default})` : ""}, off` , onclick: attempt(() => patch({ reset: true })) }, "Reset") : null,
       !sch.enabled && sch.cron && s.builtin && !sch.custom ? h("span", { class: "scan-hint" }, "suggested; off until turned on") : null),
+    scanApprovals(s, patch),
     s.last_run ? scanReport(s.last_run) : h("p", { class: "scan-never" }, "Never run."),
     s.last_report && s.last_report.id !== s.last_run?.id ? scanReport(s.last_report, true) : null,
     !s.last_run ? null : h("div", { class: "scan-foot" },
@@ -4785,6 +4788,37 @@ function scanCard(s) {
       }) }, hist ? "Hide earlier runs" : "Earlier runs")),
     hist ? h("ol", { class: "scan-history" }, ...hist.filter((r) => r.id !== s.last_run?.id && r.id !== s.last_report?.id).map((r) => h("li", {}, scanReport(r, true))),
       hist.filter((r) => r.id !== s.last_run?.id && r.id !== s.last_report?.id).length ? null : h("li", { class: "scan-never" }, "No earlier runs.")) : null);
+}
+
+// scanApprovals shows what a repository template asks for that the user
+// hasn't approved: tools beyond read-only (it runs read-only until then) and
+// its schedule (off, or the approved one, until then). Anyone who can merge
+// to the repository can change a template, so Dash asks before it runs a
+// shell or runs on a timer.
+function scanApprovals(s, patch) {
+  const sch = s.schedule;
+  const askTools = s.tools?.length && !s.tools_approved;
+  const askSched = !!sch.requested;
+  if (!askTools && !askSched) return null;
+  const approveTools = attempt(async () => {
+    if (!await ask({
+      title: `Let ${s.title} use these tools?`,
+      body: `${s.file} asks for: ${s.tools.join(", ")}. Scans run on this computer; tools such as Bash run commands here. Approve only if you trust this template. If it asks for other tools later, it goes back to read-only until you approve again.`,
+      ok: "Approve tools",
+    })) return;
+    await patch({ approve_tools: s.tools });
+  });
+  const changed = sch.enabled && sch.cron !== sch.requested;
+  return h("div", { class: "scan-approve", role: "note" },
+    askTools ? h("p", {},
+      h("span", {}, s.approved_tools?.length ? "The template now asks for other tools: " : "The template asks for tools beyond read-only: ",
+        h("code", {}, s.tools.join(", ")), ". It runs read-only until you approve them."),
+      h("button", { type: "button", class: "btn small", onclick: approveTools }, "Approve tools")) : null,
+    askSched ? h("p", {},
+      h("span", {}, changed
+        ? `The template's schedule changed to ${describeCron(sch.requested)} (${sch.requested}); it keeps running ${describeCron(sch.cron)} until you approve the new one.`
+        : `The template asks to run ${describeCron(sch.requested)} (${sch.requested}); it stays off until you turn it on.`),
+      h("button", { type: "button", class: "btn small", onclick: attempt(() => patch({ approve_schedule: sch.requested })) }, changed ? "Approve new schedule" : "Approve and turn on")) : null);
 }
 
 function scanReport(r, compact = false) {

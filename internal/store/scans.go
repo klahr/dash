@@ -109,7 +109,8 @@ func (s *Store) pruneScanRunsLocked(projectID, scan string) {
 	}
 }
 
-// ScanSetting is what the user changed about a scan's schedule (ok=false: nothing).
+// ScanSetting is what the user changed about a scan: its schedule and what
+// they approved (ok=false: nothing).
 func (s *Store) ScanSetting(projectID, scan string) (model.ScanSetting, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -120,7 +121,7 @@ func (s *Store) ScanSetting(projectID, scan string) (model.ScanSetting, bool) {
 	return cloneSetting(*st), true
 }
 
-// SetScanSetting changes a scan's schedule settings with fn.
+// SetScanSetting changes a scan's settings with fn.
 func (s *Store) SetScanSetting(projectID, scan string, fn func(*model.ScanSetting)) (model.ScanSetting, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -134,6 +135,9 @@ func (s *Store) SetScanSetting(projectID, scan string, fn func(*model.ScanSettin
 	}
 	fn(&cp)
 	cp.ProjectID, cp.Scan, cp.UpdatedAt = projectID, scan, time.Now()
+	if s.Now != nil {
+		cp.UpdatedAt = s.Now()
+	}
 	if s.data.ScanSettings == nil {
 		s.data.ScanSettings = map[string]*model.ScanSetting{}
 	}
@@ -160,5 +164,6 @@ func cloneSetting(st model.ScanSetting) model.ScanSetting {
 		b := *st.Enabled
 		st.Enabled = &b
 	}
+	st.ApprovedTools = slices.Clone(st.ApprovedTools)
 	return st
 }

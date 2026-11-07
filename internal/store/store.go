@@ -59,7 +59,7 @@ type snapshot struct {
 	Issues map[string]*model.Issue `json:"issues,omitempty"`
 	// ScanRuns are the recent runs of each project's scans, keyed by run id.
 	ScanRuns map[string]*model.ScanRun `json:"scan_runs,omitempty"`
-	// ScanSettings are the schedule changes users made, keyed by
+	// ScanSettings are the schedule changes and approvals users made, keyed by
 	// "<project id>/<scan name>".
 	ScanSettings map[string]*model.ScanSetting `json:"scan_settings,omitempty"`
 }
@@ -69,6 +69,9 @@ type Store struct {
 	path string
 	pub  Publisher
 	data snapshot
+	// Now, if set, is the clock of scan settings' UpdatedAt, which scan
+	// schedules count from (tests); default time.Now.
+	Now func() time.Time
 }
 
 func NewID() string {

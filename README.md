@@ -204,7 +204,7 @@ path: internal            # optional: limit the scan to a directory
 model: opus               # optional: claude --model
 effort: high              # optional: claude --effort
 schedule: 0 6 * * *       # optional cron expression (this computer's time zone)
-tools: Read, Grep, Glob   # optional; default: read-only tools and git diff/log/show
+tools: Read, Grep, Glob   # optional, needs approval in Dash; default: read-only tools and git diff/log/show
 ---
 Look for vulnerabilities in {{path}} …
 ```
@@ -218,9 +218,15 @@ Look for vulnerabilities in {{path}} …
   valid one is added to Issues with source `scan:<name>`, matched by fingerprint: a known issue
   is updated, a dismissed one stays dismissed, and a resolved one that comes back is reopened.
   The scan is shown the issues it reported before so it reuses their fingerprints.
-- **Schedules.** A schedule in a repository's template runs by default. The schedules of the
-  built-in scans are suggestions and only run once you turn them on. You can turn any schedule
-  on or off, or change it, in the Scans section. A run missed while Dash was down runs once at
+- **Approvals.** Anyone who can merge to the repository can change its templates, so a
+  repository template's `tools:` and `schedule:` only apply once you approve them in the Scans
+  section. Until then the scan runs with read-only tools and its schedule is off. The approval
+  covers the exact tool list and expression: if the template's tools change, it goes back to
+  read-only until you approve again; if its schedule changes, the approved one keeps running
+  until you approve the new one. Built-in scans need no approval.
+- **Schedules.** Schedules only run once you turn them on: the built-in scans' are suggestions,
+  and turning on a repository template's approves it. You can turn any schedule on or off, or
+  change it, in the Scans section. A run missed while Dash was down runs once at
   startup, and a scan never runs twice at the same time. Scheduled scans wait while the
   subscription usage pauses the task queue. `-scan-schedules=false` turns schedules off.
 - **Reports.** Each run shows what it found, e.g. "2 new, 3 already known, 1 reopened". The

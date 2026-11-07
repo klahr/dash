@@ -54,7 +54,8 @@ type Template struct {
 	Effort   string `json:"effort,omitempty"`   // claude --effort
 	Schedule string `json:"schedule,omitempty"` // cron expression; the default schedule
 	// Tools are the Claude Code tools the scan may use (--allowedTools);
-	// empty means read-only ones (DefaultTools).
+	// empty means read-only ones (DefaultTools). A repository template's
+	// apply only once a user approves them in Dash (see Tools).
 	Tools  []string `json:"tools,omitempty"`
 	Prompt string   `json:"prompt"`
 	// File is the template's path in the repository; "" for a built-in.

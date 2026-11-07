@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/klahr/dash/internal/model"
@@ -63,5 +65,75 @@ func TestScanEndpoints(t *testing.T) {
 	}
 	if w := do(t, h, "GET", "/api/projects/"+p.ID+"/scan-runs", ""); w.Code != http.StatusOK || w.Body.String() != "[]\n" {
 		t.Fatalf("runs: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestScanApprovals(t *testing.T) {
+	s, _, p := boardServer(t)
+	repo := t.TempDir()
+	p, _ = s.Store.UpdateProject(p.ID, func(x *model.Project) error { x.Path = repo; return nil })
+	h := loggedIn(t, s.Routes())
+	write := func(src string) {
+		t.Helper()
+		dir := filepath.Join(repo, ".dash", "scans")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "deps.md"), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	type info struct {
+		Tools         []string `json:"tools"`
+		ToolsApproved bool     `json:"tools_approved"`
+		Schedule      struct {
+			Cron      string `json:"cron"`
+			Enabled   bool   `json:"enabled"`
+			Requested string `json:"requested"`
+		} `json:"schedule"`
+	}
+	get := func() info {
+		t.Helper()
+		var list struct{ Scans []info }
+		w := do(t, h, "GET", "/api/projects/"+p.ID+"/scans", "")
+		if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil || len(list.Scans) != 1 {
+			t.Fatalf("list: %d %s", w.Code, w.Body)
+		}
+		return list.Scans[0]
+	}
+	patch := func(body string, code int) {
+		t.Helper()
+		if w := do(t, h, "PATCH", "/api/projects/"+p.ID+"/scans/deps", body); w.Code != code {
+			t.Fatalf("PATCH %s: %d %s", body, w.Code, w.Body)
+		}
+	}
+	write("---\ntools: Read, Bash\nschedule: 0 6 * * *\n---\nAudit.")
+	if in := get(); in.ToolsApproved || in.Schedule.Enabled || in.Schedule.Requested != "0 6 * * *" {
+		t.Fatalf("before approval: %+v", in)
+	}
+	// Approving what the user didn't see is refused.
+	patch(`{"approve_tools":["Read","Bash","WebFetch"]}`, http.StatusBadRequest)
+	patch(`{"approve_schedule":"* * * * *"}`, http.StatusBadRequest)
+	patch(`{"approve_tools":["Read","Bash"]}`, http.StatusOK)
+	patch(`{"approve_schedule":"0 6 * * *"}`, http.StatusOK)
+	if in := get(); !in.ToolsApproved || !in.Schedule.Enabled || in.Schedule.Requested != "" {
+		t.Fatalf("after approval: %+v", in)
+	}
+	// The template changes: tools fall back, the approved schedule stays.
+	write("---\ntools: Read, Bash, WebFetch\nschedule: '* * * * *'\n---\nAudit.")
+	in := get()
+	if in.ToolsApproved || !in.Schedule.Enabled || in.Schedule.Cron != "0 6 * * *" || in.Schedule.Requested != "* * * * *" {
+		t.Fatalf("after the template changed: %+v", in)
+	}
+	// Turning it off and on again doesn't adopt the new schedule.
+	patch(`{"enabled":false}`, http.StatusOK)
+	patch(`{"enabled":true}`, http.StatusOK)
+	if in := get(); in.Schedule.Cron != "0 6 * * *" {
+		t.Fatalf("re-enabled: %+v", in)
+	}
+	// Reset turns it off and forgets the approval.
+	patch(`{"reset":true}`, http.StatusOK)
+	if in := get(); in.Schedule.Enabled || in.Schedule.Requested != "* * * * *" {
+		t.Fatalf("after reset: %+v", in)
 	}
 }

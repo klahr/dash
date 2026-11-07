@@ -1423,6 +1423,11 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .scan-switch:has(input:disabled) { color: var(--faint); }
 .scan-next, .scan-hint { color: var(--muted); font-size: 13px; }
 .scan-hint { font-style: italic; }
+.scan-approve { margin-top: 10px; padding: 8px 12px; border-radius: var(--r-s); background: var(--raised); border-left: 3px solid var(--failed); font-size: 14px; }
+.scan-approve p { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0; }
+.scan-approve p + p { margin-top: 8px; }
+.scan-approve span { flex: 1 1 260px; }
+.scan-approve code { overflow-wrap: anywhere; }
 .scan-cron, .scan-reset, .scan-foot .link { min-height: 36px; }
 .scan-report { margin-top: 10px; padding: 10px 12px; border-radius: var(--r-s); background: var(--raised); border-left: 3px solid var(--line); }
 .scan-report.st-succeeded { border-left-color: var(--merged); }
