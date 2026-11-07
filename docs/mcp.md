@@ -56,3 +56,15 @@ don't exist. Then in claude.ai go to Settings → Connectors → Add custom conn
   hashed in `oauth.json` in the data directory; delete it (and restart) to sign every connector
   out. Changing the username or password also signs them out.
 - The connector sees every computer in the dashboard, like `dash-mcp`.
+
+## The chat's task tools
+
+Dash's own chats (the general chat and each project's chat) get a smaller set of task tools,
+`dash_board`: `list_projects`, `list_todos`, `get_todo`, `create_todo` (as a draft),
+`queue_todo` (a draft, when you ask for it to run), `update_todo` (title, prompt, priority or
+dependencies; the prompt only while the task is a draft, queued or failed), `delete_todo` (only
+draft, queued or failed tasks, when you ask to remove one), `list_issues` and `report_issue`.
+A read-only chat calls them without asking; a shell chat asks for the ones that change something.
+
+`dash-mcp` and the connector have `update_todo` too. Their `delete_todo` deletes a task in any
+status except running or merging.

@@ -111,6 +111,12 @@ func (b board) CreateTodo(projectID string, t mcptools.NewTodo) (model.Todo, err
 
 func (b board) QueueTodo(id string) (model.Todo, error) { return b.s.enqueue(id) }
 
+func (b board) UpdateTodo(id string, u mcptools.TodoUpdate) (model.Todo, error) {
+	return b.s.editTodo(id, u, nil)
+}
+
+func (b board) DeleteTodo(id string) error { return b.s.removeTodo(context.Background(), id) }
+
 func (b board) Issues(projectID string) ([]model.Issue, error) {
 	return b.s.Store.ListIssues(projectID), nil
 }

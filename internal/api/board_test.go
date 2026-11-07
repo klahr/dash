@@ -100,7 +100,7 @@ func TestBoardMCPAuth(t *testing.T) {
 	if w := rpc(h, token, "ping", "{}"); w.Code != http.StatusOK {
 		t.Errorf("valid token: %d %s", w.Code, w.Body)
 	}
-	// Only the board tools: nothing that changes existing tasks beyond queueing a draft.
+	// Only the board tools: no reviewing, approving or project settings.
 	var list struct {
 		Result struct{ Tools []struct{ Name string } }
 	}
@@ -249,5 +249,125 @@ func TestListProjectsActive(t *testing.T) {
 		if len(g.Active) != 1 || g.Active[run.ID] != model.StatusInProgress || g.Active[draft.ID] != "" {
 			t.Errorf("active = %v", g.Active)
 		}
+	}
+}
+
+// call runs one board tool and returns its text and whether it failed.
+func call(t *testing.T, h http.Handler, token, name, args string) (string, bool) {
+	t.Helper()
+	return callResult(t, rpc(h, token, "tools/call", `{"name":"`+name+`","arguments":`+args+`}`))
+}
+
+func TestBoardMCPUpdateTodo(t *testing.T) {
+	s, _, p := boardServer(t)
+	h := s.Routes()
+	token, release := s.Board.Register(p.ID)
+	defer release()
+	mk := func(projectID, title string) model.Todo {
+		t.Helper()
+		td, err := s.Store.CreateTodo(model.Todo{ProjectID: projectID, Title: title, Prompt: title})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return td
+	}
+	a, b, c := mk(p.ID, "A"), mk(p.ID, "B"), mk(p.ID, "C")
+	other, _ := board{s}.Project("other")
+	elsewhere := mk(other.ID, "Elsewhere")
+
+	// Set dependencies and priority; title and prompt stay.
+	text, isErr := call(t, h, token, "update_todo", `{"todo":"`+c.ID+`","depends_on":["`+a.ID+`","`+b.ID+`"],"priority":3}`)
+	if isErr {
+		t.Fatal(text)
+	}
+	var got struct {
+		ID        string           `json:"id"`
+		Title     string           `json:"title"`
+		Status    model.TodoStatus `json:"status"`
+		Priority  int              `json:"priority"`
+		DependsOn []string         `json:"depends_on"`
+	}
+	if err := json.Unmarshal([]byte(text), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != c.ID || got.Title != "C" || got.Status != model.StatusDraft || got.Priority != 3 || strings.Join(got.DependsOn, ",") != a.ID+","+b.ID {
+		t.Errorf("update_todo %s", text)
+	}
+	if td, _ := s.Store.GetTodo(c.ID); td.Prompt != "C" || td.Priority != 3 || len(td.DependsOn) != 2 {
+		t.Errorf("stored %+v", td)
+	}
+
+	// Leaving depends_on out keeps it; an empty array clears it.
+	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+c.ID+`","title":"C2","prompt":"do C"}`); isErr {
+		t.Fatal(text)
+	}
+	if td, _ := s.Store.GetTodo(c.ID); td.Title != "C2" || td.Prompt != "do C" || len(td.DependsOn) != 2 {
+		t.Errorf("after title/prompt %+v", td)
+	}
+	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+c.ID+`","depends_on":[]}`); isErr || !strings.Contains(strings.Join(strings.Fields(text), ""), `"depends_on":[]`) {
+		t.Fatalf("clear deps: %s", text)
+	}
+	if td, _ := s.Store.GetTodo(c.ID); len(td.DependsOn) != 0 {
+		t.Errorf("deps not cleared: %v", td.DependsOn)
+	}
+
+	// The store's rules: no cycles, no tasks in other projects.
+	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+a.ID+`","depends_on":["`+b.ID+`"]}`); isErr {
+		t.Fatal(text)
+	}
+	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+b.ID+`","depends_on":["`+a.ID+`"]}`); !isErr || !strings.Contains(text, "cycle") {
+		t.Errorf("cycle accepted: %s", text)
+	}
+	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+a.ID+`","depends_on":["`+elsewhere.ID+`"]}`); !isErr {
+		t.Errorf("other project's task accepted: %s", text)
+	}
+	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+a.ID+`"}`); !isErr {
+		t.Errorf("empty update accepted: %s", text)
+	}
+
+	// A running task's prompt is fixed; its priority isn't.
+	for _, st := range []model.TodoStatus{model.StatusQueued, model.StatusInProgress} {
+		if _, err := s.Store.SetStatus(b.ID, st, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+b.ID+`","prompt":"other"}`); !isErr || !strings.Contains(text, "draft, queued or failed") {
+		t.Errorf("prompt of a running task changed: %s", text)
+	}
+	if td, _ := s.Store.GetTodo(b.ID); td.Prompt != "B" {
+		t.Errorf("prompt %q", td.Prompt)
+	}
+	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+b.ID+`","priority":-1}`); isErr {
+		t.Errorf("priority of a running task: %s", text)
+	}
+}
+
+func TestBoardMCPDeleteTodo(t *testing.T) {
+	s, _, p := boardServer(t)
+	h := s.Routes()
+	token, release := s.Board.Register(p.ID)
+	defer release()
+	draft, _ := s.Store.CreateTodo(model.Todo{ProjectID: p.ID, Title: "Oops"})
+	running, _ := s.Store.CreateTodo(model.Todo{ProjectID: p.ID, Title: "Busy"})
+	for _, st := range []model.TodoStatus{model.StatusQueued, model.StatusInProgress} {
+		if _, err := s.Store.SetStatus(running.ID, st, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if text, isErr := call(t, h, token, "delete_todo", `{"todo":"`+draft.ID+`"}`); isErr {
+		t.Fatal(text)
+	}
+	if _, err := s.Store.GetTodo(draft.ID); err == nil {
+		t.Error("draft still there")
+	}
+	if text, isErr := call(t, h, token, "delete_todo", `{"todo":"`+running.ID+`"}`); !isErr || !strings.Contains(text, "in_progress") {
+		t.Errorf("deleted a running task: %s", text)
+	}
+	if _, err := s.Store.GetTodo(running.ID); err != nil {
+		t.Error("running task deleted")
+	}
+	if text, isErr := call(t, h, token, "delete_todo", `{"todo":"nope"}`); !isErr {
+		t.Errorf("deleted a missing task: %s", text)
 	}
 }

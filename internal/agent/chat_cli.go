@@ -103,7 +103,8 @@ func (c ClaudeCodeChat) system(dir string) string {
 		s += " Look at the code before answering questions about it."
 	}
 	if c.Board != nil && c.BoardURL != "" {
-		s += " You can list, create and queue Dash tasks with the " + mcptools.ServerName + " tools; create them as drafts and queue a draft (queue_todo) only when the user asks for it to run. " +
+		s += " You can list, create, queue, change and delete Dash tasks with the " + mcptools.ServerName + " tools; create them as drafts and queue a draft (queue_todo) only when the user asks for it to run. " +
+			"Fix a task's title, prompt, priority or dependencies with update_todo; delete a task (delete_todo) only when the user asks to remove it. " +
 			"When the user decides to build or change something, create a Dash task for it instead of editing code yourself."
 	}
 	return s

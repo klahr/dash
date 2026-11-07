@@ -209,6 +209,44 @@ func (a Args) List(k string) []string {
 	return out
 }
 
+// Has reports whether k was passed (and isn't null), to tell "not passed"
+// from an empty value.
+func (a Args) Has(k string) bool {
+	v, ok := a[k]
+	return ok && v != nil
+}
+
+// OptStr is Str, or nil when k wasn't passed.
+func (a Args) OptStr(k string) *string {
+	if !a.Has(k) {
+		return nil
+	}
+	s := a.Str(k)
+	return &s
+}
+
+// OptNum is Num, or nil when k wasn't passed.
+func (a Args) OptNum(k string) *int {
+	if !a.Has(k) {
+		return nil
+	}
+	n := a.Num(k, 0)
+	return &n
+}
+
+// OptList is List, or nil when k wasn't passed; an empty array gives an
+// empty (non-nil) list.
+func (a Args) OptList(k string) *[]string {
+	if !a.Has(k) {
+		return nil
+	}
+	l := a.List(k)
+	if l == nil {
+		l = []string{}
+	}
+	return &l
+}
+
 func (a Args) Flag(k string) bool {
 	b, _ := a[k].(bool)
 	return b
@@ -259,6 +297,13 @@ type NewTodo struct {
 	DependsOn     []string // ids of tasks that must be merged before it starts
 }
 
+// TodoUpdate changes a task; nil fields stay as they are.
+type TodoUpdate struct {
+	Title, Prompt *string
+	Priority      *int
+	DependsOn     *[]string // replaces the list; empty clears it
+}
+
 // Board is what the board tools need from Dash.
 type Board interface {
 	// Projects lists projects, and computers that couldn't be reached.
@@ -270,6 +315,10 @@ type Board interface {
 	CreateTodo(projectID string, t NewTodo) (model.Todo, error)
 	// QueueTodo queues a task to run.
 	QueueTodo(id string) (model.Todo, error)
+	// UpdateTodo changes a task's title, prompt, priority or dependencies.
+	UpdateTodo(id string, u TodoUpdate) (model.Todo, error)
+	// DeleteTodo deletes a task and its worktree.
+	DeleteTodo(id string) error
 	// Issues lists a project's issues, most severe first.
 	Issues(projectID string) ([]model.Issue, error)
 	// ReportIssue adds an issue, or updates the one with its fingerprint.
@@ -290,13 +339,13 @@ type Options struct {
 // Tool names the chat may call; ReadTools never change anything.
 var (
 	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues"}
-	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "list_issues", "report_issue"}
+	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "update_todo", "delete_todo", "list_issues", "report_issue"}
 	// IssueToolNames are what a running task gets (IssueTools).
 	IssueToolNames = []string{"list_issues", "report_issue"}
 )
 
-// Tools returns list_projects, list_todos, get_todo, create_todo and
-// queue_todo, and the IssueTools.
+// Tools returns list_projects, list_todos, get_todo, create_todo,
+// queue_todo, update_todo and delete_todo, and the IssueTools.
 func Tools(b Board, o Options) []Tool {
 	return append(boardTools(b, o), IssueTools(b, o)...)
 }
@@ -520,6 +569,55 @@ func boardTools(b Board, o Options) []Tool {
 					Title  string           `json:"title"`
 					Status model.TodoStatus `json:"status"`
 				}{t.ID, t.Title, t.Status}, nil
+			}},
+		{"update_todo", "Change a task's title, prompt, priority or dependencies; only the given fields change. " +
+			"The prompt can only be changed while the task is a draft, queued or failed.", []Param{PTodo,
+			{"title", "string", "New short title.", false},
+			{"prompt", "string", "New task for Claude.", false},
+			{"priority", "integer", "Lower runs first.", false},
+			{"depends_on", "array", "Ids of tasks in the same project that must be merged before this one starts; replaces the list, an empty array clears it.", false}},
+			func(a Args) (any, error) {
+				if a.Str("todo") == "" {
+					return nil, errors.New("todo is required")
+				}
+				u := TodoUpdate{Title: a.OptStr("title"), Prompt: a.OptStr("prompt"), Priority: a.OptNum("priority"), DependsOn: a.OptList("depends_on")}
+				if u.Title == nil && u.Prompt == nil && u.Priority == nil && u.DependsOn == nil {
+					return nil, errors.New("nothing to change: pass title, prompt, priority or depends_on")
+				}
+				t, err := b.UpdateTodo(a.Str("todo"), u)
+				if err != nil {
+					return nil, err
+				}
+				deps := t.DependsOn
+				if deps == nil {
+					deps = []string{}
+				}
+				return struct {
+					ID        string           `json:"id"`
+					Title     string           `json:"title"`
+					Status    model.TodoStatus `json:"status"`
+					Priority  int              `json:"priority"`
+					DependsOn []string         `json:"depends_on"`
+				}{t.ID, t.Title, t.Status, t.Priority, deps}, nil
+			}},
+		{"delete_todo", "Delete a draft, queued or failed task; only when the user asks to remove it (e.g. a draft made by mistake).", []Param{PTodo},
+			func(a Args) (any, error) {
+				if a.Str("todo") == "" {
+					return nil, errors.New("todo is required")
+				}
+				t, err := b.Todo(a.Str("todo"))
+				if err != nil {
+					return nil, err
+				}
+				switch t.Status {
+				case model.StatusDraft, model.StatusQueued, model.StatusFailed:
+				default:
+					return nil, fmt.Errorf("task %q is %s; only draft, queued or failed tasks can be deleted here", t.ID, t.Status)
+				}
+				if err := b.DeleteTodo(t.ID); err != nil {
+					return nil, err
+				}
+				return fmt.Sprintf("Deleted task %s (%s).", t.ID, t.Title), nil
 			}},
 	}
 }

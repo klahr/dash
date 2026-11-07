@@ -14,6 +14,7 @@ import (
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/gitops"
+	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/queue"
@@ -643,65 +644,84 @@ func (s *Server) updateTodo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	var atts []model.Attachment
+	var atts *[]model.Attachment
 	if req.Attachments != nil {
-		var err error
-		if atts, err = s.attachments(*req.Attachments); err != nil {
+		a, err := s.attachments(*req.Attachments)
+		if err != nil {
 			writeErr(w, err)
 			return
 		}
+		atts = &a
 	}
-	t, err := s.Store.UpdateTodo(r.PathValue("tid"), func(t *model.Todo) error {
-		editable := t.Status == model.StatusDraft || t.Status == model.StatusQueued || t.Status == model.StatusFailed
-		if (req.Prompt != nil || req.Attachments != nil) && !editable {
-			return fmt.Errorf("%w: instructions can only be edited while draft, queued or failed", errBadRequest)
-		}
-		if req.Attachments != nil {
-			t.Attachments = atts
-		}
-		set(&t.Title, req.Title)
-		set(&t.Prompt, req.Prompt)
-		set(&t.Priority, req.Priority)
-		set(&t.DependsOn, req.DependsOn) // validated by the store
-		return nil
-	})
+	t, err := s.editTodo(r.PathValue("tid"), mcptools.TodoUpdate{
+		Title: req.Title, Prompt: req.Prompt, Priority: req.Priority, DependsOn: req.DependsOn,
+	}, atts)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	s.Todos.Kick() // priority or dependencies may have changed
 	writeJSON(w, http.StatusOK, t)
 }
 
-func (s *Server) deleteTodo(w http.ResponseWriter, r *http.Request) {
-	t, err := s.Store.GetTodo(r.PathValue("tid"))
+// editTodo applies u (and atts, when not nil) to a task, for PATCH
+// /api/todos/{tid} and the board chat's update_todo. The prompt and
+// attachments can only change while it is a draft, queued or failed.
+func (s *Server) editTodo(id string, u mcptools.TodoUpdate, atts *[]model.Attachment) (model.Todo, error) {
+	t, err := s.Store.UpdateTodo(id, func(t *model.Todo) error {
+		editable := t.Status == model.StatusDraft || t.Status == model.StatusQueued || t.Status == model.StatusFailed
+		if (u.Prompt != nil || atts != nil) && !editable {
+			return fmt.Errorf("%w: instructions can only be edited while draft, queued or failed", errBadRequest)
+		}
+		set(&t.Attachments, atts)
+		set(&t.Title, u.Title)
+		set(&t.Prompt, u.Prompt)
+		set(&t.Priority, u.Priority)
+		set(&t.DependsOn, u.DependsOn) // validated by the store
+		return nil
+	})
 	if err != nil {
+		return t, err
+	}
+	s.Todos.Kick() // priority or dependencies may have changed
+	return t, nil
+}
+
+func (s *Server) deleteTodo(w http.ResponseWriter, r *http.Request) {
+	if err := s.removeTodo(r.Context(), r.PathValue("tid")); err != nil {
 		writeErr(w, err)
 		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// removeTodo deletes a task and its worktree, unless it is running, merging
+// or being reviewed. For DELETE /api/todos/{tid} and the board chat's
+// delete_todo.
+func (s *Server) removeTodo(ctx context.Context, id string) error {
+	t, err := s.Store.GetTodo(id)
+	if err != nil {
+		return err
 	}
 	switch t.Status {
 	case model.StatusInProgress, model.StatusMerging:
-		writeErr(w, model.ErrInvalidTransition{From: t.Status, To: "deleted"})
-		return
+		return model.ErrInvalidTransition{From: t.Status, To: "deleted"}
 	}
 	if t.Reviewing {
-		writeErr(w, store.ErrReviewing)
-		return
+		return store.ErrReviewing
 	}
 	if t.Worktree != nil && t.Status != model.StatusMerged {
 		if p, err := s.Store.GetProject(t.ProjectID); err == nil {
-			_ = s.Git.RemoveWorktree(r.Context(), p.ID, p.Path, *t.Worktree)
+			_ = s.Git.RemoveWorktree(ctx, p.ID, p.Path, *t.Worktree)
 		}
 	}
 	if _, err := s.Store.DeleteTodo(t.ID); err != nil {
-		writeErr(w, err)
-		return
+		return err
 	}
 	if s.Perms != nil {
 		s.Perms.Forget(t.ID)
 	}
 	s.Todos.Log.Remove(t.ID)
-	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
 func (s *Server) enqueueTodo(w http.ResponseWriter, r *http.Request) {

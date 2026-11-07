@@ -177,6 +177,35 @@ func (f Fleet) Action(id, verb string, body any) (model.Todo, error) {
 
 func (f Fleet) QueueTodo(id string) (model.Todo, error) { return f.Action(id, "enqueue", nil) }
 
+// UpdateTodo sends the given fields to the task's PATCH /api/todos/{id}.
+func (f Fleet) UpdateTodo(id string, u TodoUpdate) (model.Todo, error) {
+	_, at, err := f.todo(id)
+	if err != nil {
+		return model.Todo{}, err
+	}
+	changes := map[string]any{}
+	if u.Title != nil {
+		changes["title"] = *u.Title
+	}
+	if u.Prompt != nil {
+		changes["prompt"] = *u.Prompt
+	}
+	if u.Priority != nil {
+		changes["priority"] = *u.Priority
+	}
+	if u.DependsOn != nil {
+		deps := *u.DependsOn
+		if deps == nil {
+			deps = []string{} // [] clears the list; null would leave it
+		}
+		changes["depends_on"] = deps
+	}
+	var out model.Todo
+	return out, f.API.Call("PATCH", at+"/api/todos/"+url.PathEscape(id), changes, &out)
+}
+
+func (f Fleet) DeleteTodo(id string) error { return f.Delete(id) }
+
 func (f Fleet) Issues(projectID string) ([]model.Issue, error) {
 	_, at, err := f.project(projectID)
 	if err != nil {
@@ -226,9 +255,23 @@ func (f Fleet) Text(id, kind string, max int, tail bool) (string, error) {
 	return out[:max] + fmt.Sprintf("\n[…truncated, %d more characters]", len(out)-max), nil
 }
 
-// FleetTools are the board, review and project settings tools, across every computer.
+// FleetTools are the board, review and project settings tools, across every
+// computer. ReviewTools' delete_todo, which deletes a task in any status but
+// running or merging, replaces the board's draft/queued/failed-only one: here
+// the user is driving, not the board chat.
 func FleetTools(f Fleet) []Tool {
-	return append(append(Tools(f, Options{}), ReviewTools(f)...), ProjectTools(f)...)
+	review := ReviewTools(f)
+	names := map[string]bool{}
+	for _, t := range review {
+		names[t.Name] = true
+	}
+	var out []Tool
+	for _, t := range Tools(f, Options{}) {
+		if !names[t.Name] {
+			out = append(out, t)
+		}
+	}
+	return append(append(out, review...), ProjectTools(f)...)
 }
 
 // ProjectSettings are update_project's optional parameters, sent as given to
