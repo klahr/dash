@@ -1,11 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
-	"github.com/skip2/go-qrcode"
+	"github.com/yeqown/go-qrcode/v2"
+	"github.com/yeqown/go-qrcode/writer/standard"
 
 	"github.com/klahr/dash/internal/preview"
 )
@@ -108,6 +111,13 @@ func (s *Server) openPreview(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, s.Previews.AuthURL(tid, r.URL.Query().Get("next")), http.StatusFound)
 }
 
+// qrSize is the target width of a QR code image in pixels, and qrQuietZone
+// the white margin around it in modules (the minimum the spec asks for).
+const (
+	qrSize      = 320
+	qrQuietZone = 4
+)
+
 // qrCode renders text as a QR code (PNG), e.g. a preview's link for a phone.
 func (s *Server) qrCode(w http.ResponseWriter, r *http.Request) {
 	text := r.URL.Query().Get("text")
@@ -115,7 +125,7 @@ func (s *Server) qrCode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, errBadRequest)
 		return
 	}
-	png, err := qrcode.Encode(text, qrcode.Medium, 320)
+	png, err := encodeQR(text)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -124,3 +134,29 @@ func (s *Server) qrCode(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	_, _ = w.Write(png)
 }
+
+// encodeQR returns text as a PNG QR code at Medium error correction, about
+// qrSize pixels wide including a qrQuietZone-module margin.
+func encodeQR(text string) ([]byte, error) {
+	qrc, err := qrcode.NewWith(text, qrcode.WithErrorCorrectionLevel(qrcode.ErrorCorrectionMedium))
+	if err != nil {
+		return nil, err
+	}
+	// Whole pixels per module, so the image is at most qrSize wide.
+	block := max(1, min(255, qrSize/(qrc.Dimension()+2*qrQuietZone)))
+	var buf bytes.Buffer
+	wr := standard.NewWithWriter(nopCloser{&buf},
+		standard.WithBuiltinImageEncoder(standard.PNG_FORMAT),
+		standard.WithQRWidth(uint8(block)),
+		standard.WithBorderWidth(qrQuietZone*block),
+	)
+	if err := qrc.Save(wr); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// nopCloser lets the QR writer, which closes its output, write to a buffer.
+type nopCloser struct{ io.Writer }
+
+func (nopCloser) Close() error { return nil }
