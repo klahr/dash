@@ -75,6 +75,13 @@ func (a *Auth) sessionOnly(h func(http.ResponseWriter, *http.Request, *Identity)
 	return RequireSession(a.signedIn(h)).ServeHTTP
 }
 
+// membersChanged tells OnMembersChanged that orgID's members changed.
+func (a *Auth) membersChanged(orgID int64) {
+	if a.OnMembersChanged != nil {
+		a.OnMembersChanged(orgID)
+	}
+}
+
 // accountError answers with err's status and message.
 func accountError(w http.ResponseWriter, err error) {
 	code := http.StatusInternalServerError
@@ -292,6 +299,7 @@ func (a *Auth) removeMember(w http.ResponseWriter, r *http.Request, id *Identity
 		accountError(w, err)
 		return
 	}
+	a.membersChanged(oid)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -334,7 +342,13 @@ func (a *Auth) invite(w http.ResponseWriter, r *http.Request, id *Identity) {
 		accountError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"invitation": inv, "token": tok, "path": "/invite.html#" + tok})
+	resp := map[string]any{"invitation": inv, "token": tok, "path": "/invite.html#" + tok}
+	if a.InviteNotice != nil {
+		if n := a.InviteNotice(oid); n != nil {
+			resp["billing"] = n
+		}
+	}
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (a *Auth) revokeInvitation(w http.ResponseWriter, r *http.Request, id *Identity) {
@@ -404,6 +418,7 @@ func (a *Auth) acceptInvitation(w http.ResponseWriter, r *http.Request, id *Iden
 		accountError(w, err)
 		return
 	}
+	a.membersChanged(m.ID)
 	if _, err := a.acc.SwitchOrg(id.key, id.User.ID, m.ID); err != nil {
 		accountError(w, err)
 		return
@@ -432,6 +447,7 @@ func (a *Auth) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.release(ip, f)
+	a.membersChanged(m.ID)
 	if err := a.startSession(w, r, u.ID); err != nil {
 		accountError(w, err)
 		return

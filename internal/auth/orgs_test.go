@@ -373,3 +373,43 @@ func TestWebSocketClosedOnRemoval(t *testing.T) {
 		t.Fatalf("want the connection closed, got %v", err)
 	}
 }
+
+// Billing hears of every member who joins or leaves (to update the seats),
+// and an invitation's answer carries its notice.
+func TestMembershipChangesReachBilling(t *testing.T) {
+	a, h := newServer(t)
+	var changed []int64
+	a.OnMembersChanged = func(org int64) { changed = append(changed, org) }
+	a.InviteNotice = func(org int64) any { return map[string]bool{"subscription_needed": true} }
+	owner := signIn(t, h, "admin", "s3cret")
+	org := owner.me().Org.ID
+
+	w := owner.do("POST", fmt.Sprintf("/api/orgs/%d/invitations", org), `{"email":"n@example.com","role":"member","password":"s3cret"}`)
+	var inv struct {
+		Token   string         `json:"token"`
+		Billing map[string]any `json:"billing"`
+	}
+	decode(t, w, &inv)
+	if w.Code != http.StatusCreated || inv.Billing["subscription_needed"] != true {
+		t.Fatalf("invite: %d %s", w.Code, w.Body)
+	}
+	anon := &client{t: t, h: h}
+	if w := anon.do("POST", "/api/invitations/register", `{"token":"`+inv.Token+`","username":"nia","password":"long-enough"}`); w.Code != http.StatusCreated {
+		t.Fatalf("register: %d %s", w.Code, w.Body)
+	}
+	other, _ := a.acc.CreateOrg(mustEnv(t, a), "Other")
+	tok, _, err := a.acc.Invite(mustEnv(t, a), other.ID, "nia@example.com", store.RoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := anon.do("POST", "/api/invitations/accept", `{"token":"`+tok+`"}`); w.Code != http.StatusOK {
+		t.Fatalf("accept: %d %s", w.Code, w.Body)
+	}
+	uid := anon.me().User.ID
+	if w := owner.do("DELETE", fmt.Sprintf("/api/orgs/%d/members/%d", org, uid), `{"password":"s3cret"}`); w.Code != http.StatusNoContent {
+		t.Fatalf("remove: %d %s", w.Code, w.Body)
+	}
+	if want := []int64{org, other.ID, org}; fmt.Sprint(changed) != fmt.Sprint(want) {
+		t.Fatalf("members changed in %v, want %v", changed, want)
+	}
+}

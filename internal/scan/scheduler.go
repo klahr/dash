@@ -21,6 +21,9 @@ type Scheduler struct {
 	// Usage, if set, holds scheduled scans back while the subscription's
 	// usage pauses the task queue; they run once it lifts.
 	Usage interface{ CanStart() (bool, string) }
+	// Hold, if set, is why an org's scheduled scans don't run now, or ""
+	// (billing: an unpaid org's).
+	Hold  func(org int64) string
 	Every time.Duration // how often schedules are checked; default a minute
 	Now   func() time.Time
 
@@ -183,6 +186,9 @@ func (s *Scheduler) Tick() []model.ScanRun {
 	now := s.now()
 	var started []model.ScanRun
 	for _, p := range s.Store.ListProjects() {
+		if s.Hold != nil && s.Hold(p.OrgID) != "" {
+			continue
+		}
 		templates, _, _ := Templates(s.Store, p)
 		for _, t := range templates {
 			if !s.due(p.ID, t, now) {

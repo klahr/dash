@@ -23,6 +23,7 @@ import (
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/api"
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/billing"
 	"github.com/klahr/dash/internal/branding"
 	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/ci"
@@ -114,6 +115,11 @@ func main() {
 	smtpPort := flag.Int("smtp-port", 0, "SMTP port: 587 (STARTTLS) or 465 (TLS) (default $DASH_SMTP_PORT, else 587)")
 	smtpUser := flag.String("smtp-user", "", "SMTP username, with $DASH_SMTP_PASSWORD (or $DASH_SMTP_USERNAME)")
 	smtpFrom := flag.String("smtp-from", "", "From address of Dash's emails, e.g. \"Dash <dash@example.com>\" (or $DASH_SMTP_FROM)")
+	stripeKey := flag.String("stripe-secret-key", "", "Stripe secret key: turns on per-seat billing of orgs with two or more members (see docs/billing.md; or $STRIPE_SECRET_KEY)")
+	stripeWebhook := flag.String("stripe-webhook-secret", "", "signing secret of the Stripe webhook endpoint /api/billing/webhook (or $STRIPE_WEBHOOK_SECRET)")
+	stripePrice := flag.String("stripe-price", "", "Stripe price id (price_…) of the recurring per-seat price (or $STRIPE_PRICE_ID)")
+	trialDays := flag.Int("billing-trial-days", -1, fmt.Sprintf("trial of an org's first subscription, in days; 0 = none (default $DASH_BILLING_TRIAL_DAYS, else %d)", billing.DefaultTrialDays))
+	billingGrace := flag.Duration("billing-grace", 0, fmt.Sprintf("how long an org may need a subscription it doesn't have before its board becomes read-only (default $DASH_BILLING_GRACE, else %s)", billing.DefaultGrace))
 	brandName := flag.String("brand-name", "", "product name in page titles, the sign-in pages and emails (default \"Dash\"; or $DASH_BRAND_NAME; see docs/branding.md)")
 	sourceURL := flag.String("source-url", "", "the \"Source code\" link in every page's footer, for the AGPL (default the upstream repository; or $DASH_SOURCE_URL)")
 	termsURL := flag.String("terms-url", "", "terms of service, linked in the footer (or $DASH_TERMS_URL)")
@@ -338,6 +344,21 @@ func main() {
 			Host: envOr(*smtpHost, "DASH_SMTP_HOST"), Port: *smtpPort, Username: envOr(*smtpUser, "DASH_SMTP_USERNAME"),
 			Password: os.Getenv("DASH_SMTP_PASSWORD"), From: envOr(*smtpFrom, "DASH_SMTP_FROM"),
 		}, *publicURL)
+	}
+	if !runnerMode {
+		apiSrv.Billing = configureBilling(st.Accounts(), billing.Config{
+			SecretKey:     envOr(*stripeKey, "STRIPE_SECRET_KEY"),
+			WebhookSecret: envOr(*stripeWebhook, "STRIPE_WEBHOOK_SECRET"),
+			PriceID:       envOr(*stripePrice, "STRIPE_PRICE_ID"),
+			TrialDays:     *trialDays,
+			Grace:         *billingGrace,
+			PublicURL:     *publicURL,
+		})
+		if b := apiSrv.Billing; b != nil {
+			authn.OnMembersChanged, authn.InviteNotice = b.MembersChanged, b.InviteNotice
+			todos.Hold, scheduler.Hold = b.Hold, b.Hold
+			b.OnChange = func(int64) { todos.Kick() }
+		}
 	}
 	var runnerCreds tunnel.Credentials
 	var reporter *dispatch.Reporter
@@ -592,6 +613,44 @@ func envOr(v, name string) string {
 		return v
 	}
 	return os.Getenv(name)
+}
+
+// configureBilling turns on per-seat billing when Stripe is configured, or
+// says why it stays off when it's configured only in part. Without any
+// Stripe settings it is off and says nothing: a self-hosted Dash has no
+// limits and no billing pages.
+func configureBilling(acc *store.Accounts, cfg billing.Config) *billing.Service {
+	if !cfg.Configured() {
+		return nil
+	}
+	if cfg.TrialDays < 0 {
+		cfg.TrialDays = billing.DefaultTrialDays
+		if v := os.Getenv("DASH_BILLING_TRIAL_DAYS"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				n = -1 // Check reports it
+			}
+			cfg.TrialDays = n
+		}
+	}
+	if cfg.Grace == 0 {
+		if v := os.Getenv("DASH_BILLING_GRACE"); v != "" {
+			d, err := time.ParseDuration(v)
+			if err != nil || d <= 0 {
+				slog.Error("billing stays off", "reason", "DASH_BILLING_GRACE: want a duration like 72h")
+				return nil
+			}
+			cfg.Grace = d
+		}
+	}
+	if err := cfg.Check(); err != nil {
+		slog.Error("billing stays off", "reason", err)
+		return nil
+	}
+	b := billing.New(acc, &billing.HTTPStripe{Key: cfg.SecretKey}, cfg)
+	slog.Info("billing on: orgs with two or more members need a subscription", "trial_days", cfg.TrialDays,
+		"grace", b.Grace(), "webhook", strings.TrimRight(cfg.PublicURL, "/")+"/api/billing/webhook")
+	return b
 }
 
 // configureMail sets up email (password reset) when SMTP is configured, and

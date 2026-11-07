@@ -157,3 +157,38 @@ func TestUnlinkedProjectTaskStartsOverHere(t *testing.T) {
 	}
 	_ = exe
 }
+
+// A held org's tasks (billing: no subscription) stay queued, here and for
+// its runners, saying why; other orgs' tasks go on, and the held ones start
+// once the hold lifts.
+func TestHeldOrgTasksWait(t *testing.T) {
+	e, st, rem, _ := remoteEngine(t)
+	held := "waiting for the organization's subscription"
+	holding := true
+	e.Hold = func(org int64) string {
+		if holding && org == 7 {
+			return held
+		}
+		return ""
+	}
+	unpaid, _ := st.CreateProject(model.Project{Name: "unpaid", OrgID: 7, RemoteURL: "https://x/y", Runners: []string{"laptop"}})
+	paid, _ := st.CreateProject(model.Project{Name: "paid", OrgID: 8, RemoteURL: "https://x/z", Runners: []string{"laptop"}})
+	a, b := queued(t, st, unpaid), queued(t, st, paid)
+
+	e.dispatch(context.Background())
+	if got, _ := st.GetTodo(a.ID); got.Status != model.StatusQueued || got.Waiting != held {
+		t.Errorf("held task: %s %q", got.Status, got.Waiting)
+	}
+	if got, _ := st.GetTodo(b.ID); got.Status != model.StatusInProgress {
+		t.Errorf("another org's task: %s %q", got.Status, got.Waiting)
+	}
+	if len(rem.sent) != 1 || rem.sent[0] != b.ID {
+		t.Errorf("sent to runners: %v", rem.sent)
+	}
+
+	holding = false
+	e.dispatch(context.Background())
+	if got, _ := st.GetTodo(a.ID); got.Status != model.StatusInProgress || got.Waiting != "" {
+		t.Errorf("once paid: %s %q", got.Status, got.Waiting)
+	}
+}

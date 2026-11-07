@@ -69,7 +69,11 @@ type TodoEngine struct {
 	// LocalTasks reports whether this Dash runs the tasks of projects
 	// without runners itself (nil: it does). A hub whose work all goes to
 	// runners says no, and those tasks wait, saying why.
-	LocalTasks   func() bool
+	LocalTasks func() bool
+	// Hold reports why an org's queued tasks may not start now, or ""
+	// (nil: they may). Billing holds the tasks of an unpaid org, wherever
+	// they would run: here or on its runners.
+	Hold         func(org int64) string
 	TestTimeout  time.Duration
 	SetupTimeout time.Duration
 	// Summarizer condenses Claude's final message into the todo's one-line
@@ -180,6 +184,12 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 			p, err := e.Store.GetProject(q.ProjectID)
 			if err != nil {
 				continue
+			}
+			if e.Hold != nil {
+				if why := e.Hold(p.OrgID); why != "" {
+					e.wait(q, why)
+					continue
+				}
 			}
 			if p.OnRunners() {
 				sent[q.ID] = true

@@ -19,6 +19,7 @@ import (
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/billing"
 	"github.com/klahr/dash/internal/branding"
 	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/ci"
@@ -41,22 +42,25 @@ import (
 type Server struct {
 	// Store is reached one org at a time (see Data); the engines below keep
 	// the whole store.
-	Store       Data
-	Git         *gitops.Git
-	Hub         *hub.Hub
-	Todos       *queue.TodoEngine
-	Merges      *queue.MergeQueue
-	Procs       *runner.Manager
-	Previews    *preview.Manager // live previews of todos in review (optional)
-	Chat        agent.Chatter
-	Auth        *auth.Auth
-	Perms       *perm.Broker
-	Board       *mcptools.Tokens // chat runs' tokens for /mcp/dash
-	OAuth       *auth.OAuth      // remote MCP clients (claude.ai) on /mcp; nil = off
-	Usage       *usage.Tracker
-	Scans       *scan.Runner    // read-only scans that file issues (optional)
-	Scheduler   *scan.Scheduler // runs scans on their schedules (optional)
-	ProjectRoot string          // where new projects without an explicit path are created
+	Store     Data
+	Git       *gitops.Git
+	Hub       *hub.Hub
+	Todos     *queue.TodoEngine
+	Merges    *queue.MergeQueue
+	Procs     *runner.Manager
+	Previews  *preview.Manager // live previews of todos in review (optional)
+	Chat      agent.Chatter
+	Auth      *auth.Auth
+	Perms     *perm.Broker
+	Board     *mcptools.Tokens // chat runs' tokens for /mcp/dash
+	OAuth     *auth.OAuth      // remote MCP clients (claude.ai) on /mcp; nil = off
+	Usage     *usage.Tracker
+	Scans     *scan.Runner    // read-only scans that file issues (optional)
+	Scheduler *scan.Scheduler // runs scans on their schedules (optional)
+	// Billing charges orgs of two or more members per seat (nil: off, as
+	// on a self-hosted Dash).
+	Billing     *billing.Service
+	ProjectRoot string // where new projects without an explicit path are created
 	// Titler names todos created without a title (optional).
 	Titler interface {
 		Title(ctx context.Context, prompt string) (string, error)
@@ -113,7 +117,7 @@ type Server struct {
 // Routes is the dashboard's handler: every route, behind the login.
 func (s *Server) Routes() http.Handler {
 	// Preview hosts never reach Dash's own routes.
-	return s.Previews.Wrap(logRequests(s.Auth.Middleware(s.mux())))
+	return s.Previews.Wrap(logRequests(s.Auth.Middleware(s.billingGate(s.mux()))))
 }
 
 func (s *Server) mux() *http.ServeMux {
@@ -138,6 +142,8 @@ func (s *Server) buildMux() *http.ServeMux {
 	// Sign-in, users, orgs and invitations (the middleware lets /api/login
 	// and the invitation-link calls through without a session)
 	s.Auth.Routes(mux)
+	// Billing (answers "off" unless Stripe is configured)
+	s.Billing.Routes(mux)
 
 	// Computers: this one plus peers, whose API is forwarded under /peer/{name}/
 	// The other computers belong to the whole Dash: only platform admins

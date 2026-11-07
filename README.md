@@ -95,6 +95,7 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
 - [Users and organizations](docs/users.md): accounts, roles, invitations, two-factor sign-in
 - [Open signup and email](docs/signup.md): self-service accounts, personal workspaces, password reset (off by default)
+- [Billing](docs/billing.md): per-seat Stripe subscriptions for organizations of two or more (off by default)
 - [Branding and the landing page](docs/branding.md): product name, terms and privacy links, logo, the AGPL source link, an optional landing page
 - [Deploy the hub](docs/deploy.md): Caddy, Cloudflare Tunnel or Tailscale, and the login on the internet
 - [Live previews](docs/previews.md): preview domain, DNS and certificates, what the proxy does

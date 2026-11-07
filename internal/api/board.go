@@ -226,19 +226,35 @@ func (b board) Todo(id string) (model.Todo, error) {
 }
 
 func (b board) CreateTodo(projectID string, t mcptools.NewTodo) (model.Todo, error) {
+	if err := b.sv.writable(); err != nil {
+		return model.Todo{}, err
+	}
 	return b.sv.addTodo(model.Todo{
 		ProjectID: projectID, Title: t.Title, Prompt: t.Prompt, Priority: t.Priority,
 		DependsOn: t.DependsOn,
 	}, t.Enqueue)
 }
 
-func (b board) QueueTodo(id string) (model.Todo, error) { return b.sv.enqueue(id) }
+func (b board) QueueTodo(id string) (model.Todo, error) {
+	if err := b.sv.writable(); err != nil {
+		return model.Todo{}, err
+	}
+	return b.sv.enqueue(id)
+}
 
 func (b board) UpdateTodo(id string, u mcptools.TodoUpdate) (model.Todo, error) {
+	if err := b.sv.writable(); err != nil {
+		return model.Todo{}, err
+	}
 	return b.sv.editTodo(id, u, nil)
 }
 
-func (b board) DeleteTodo(id string) error { return b.sv.removeTodo(context.Background(), id) }
+func (b board) DeleteTodo(id string) error {
+	if err := b.sv.writable(); err != nil {
+		return err
+	}
+	return b.sv.removeTodo(context.Background(), id)
+}
 
 func (b board) Issues(projectID string) ([]model.Issue, error) {
 	if _, err := b.sv.data.GetProject(projectID); err != nil {
@@ -248,6 +264,9 @@ func (b board) Issues(projectID string) ([]model.Issue, error) {
 }
 
 func (b board) ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error) {
+	if err := b.sv.writable(); err != nil {
+		return model.Issue{}, "", err
+	}
 	is.ProjectID = projectID
 	return b.sv.data.UpsertIssue(is)
 }
@@ -265,6 +284,9 @@ func (c localComputer) Projects() ([]model.Project, error) {
 }
 
 func (c localComputer) UpdateProject(id string, changes map[string]any) (model.Project, error) {
+	if err := c.sv.writable(); err != nil {
+		return model.Project{}, err
+	}
 	b, err := json.Marshal(changes)
 	if err != nil {
 		return model.Project{}, err
@@ -277,6 +299,9 @@ func (c localComputer) UpdateProject(id string, changes map[string]any) (model.P
 }
 
 func (c localComputer) Act(id, verb, feedback string) error {
+	if err := c.sv.writable(); err != nil {
+		return err
+	}
 	var err error
 	switch verb {
 	case "enqueue":

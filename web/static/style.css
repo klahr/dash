@@ -1176,6 +1176,9 @@ a.revert-tag { text-decoration: underline; }
 .sync-warn { display: grid; gap: 2px; margin: 0 0 12px; padding: 10px 12px; border-left: 3px solid var(--running); border-radius: 0 var(--r-s) var(--r-s) 0; background: color-mix(in srgb, var(--running) 10%, transparent); overflow-wrap: anywhere; animation: chip-in .25s var(--ease); }
 .sync-warn[hidden] { display: none; }
 .sync-warn strong { color: var(--running); }
+.billing-warn.read-only { border-left-color: var(--failed); background: color-mix(in srgb, var(--failed) 10%, transparent); }
+.billing-warn.read-only strong { color: var(--failed); }
+.billing-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 
 /* ---- builds (GitHub Actions) ---- */

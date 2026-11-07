@@ -162,6 +162,7 @@
           <span class="search-count" id="search-count"></span>
           <button class="link" id="search-clear" type="button" data-icon="x">Clear</button>
         </div>
+        <div class="sync-warn billing-warn" id="billing-banner" role="status" hidden></div>
         <div class="sync-warn" id="sync-warn" role="alert" hidden></div>
         <div class="perm-list" id="perm-banner" hidden></div>
         <div class="board" id="board"></div>
@@ -681,6 +682,10 @@
         <div id="org-invite-link" hidden></div>
         <h3 class="org-section" id="org-pending-head">Pending invitations</h3>
         <ul class="runner-list" id="org-pending"></ul>
+      </div>
+      <div id="org-billing" hidden>
+        <h3 class="org-section">Billing</h3>
+        <div id="org-billing-body"></div>
       </div>
       <div id="org-runners" hidden>
         <h3 class="org-section">Runners</h3>

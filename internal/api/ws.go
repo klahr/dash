@@ -106,6 +106,11 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		if msg.Type != "send" {
 			continue
 		}
+		if err := sv.writable(); err != nil {
+			// The chat runs Claude, which can change the projects.
+			send(agent.ChatDelta{Kind: "error", Text: err.Error()})
+			continue
+		}
 		var dir, mode, pid string
 		endReview := func() {}
 		general := msg.Project == "" && msg.Todo == ""

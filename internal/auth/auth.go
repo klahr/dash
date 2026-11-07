@@ -76,6 +76,13 @@ type Auth struct {
 	// open (a runner's tunnel) can be closed (optional).
 	OnRevoke func(store.Token)
 
+	// OnMembersChanged is told after someone joins or leaves an org, so its
+	// subscription's seats follow (billing; optional).
+	OnMembersChanged func(orgID int64)
+	// InviteNotice is added to an invitation's answer as "billing" when
+	// not nil: the org will need a subscription (billing; optional).
+	InviteNotice func(orgID int64) any
+
 	oauth *OAuth // set by NewOAuth
 
 	// Brand names Dash in emails, the authenticator app and the connector
@@ -559,6 +566,8 @@ var public = map[string]bool{
 	// The runner installer and the hub's version: nothing secret.
 	"/runner/install.sh": true,
 	"/runner/version":    true,
+	// Stripe's events: signed with the webhook secret (billing).
+	"/api/billing/webhook": true,
 }
 
 // orgFree are the API paths a signed-in user with no org may use: who am I,
