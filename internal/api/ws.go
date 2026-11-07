@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/klahr/dash/internal/agent"
+	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
@@ -94,6 +95,12 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		var dir, mode, pid string
 		endReview := func() {}
 		general := msg.Project == "" && msg.Todo == ""
+		if general && auth.FromHub(r.Context()) {
+			// A runner's chats belong to its projects; the general chat would
+			// run in this computer's home directory.
+			send(agent.ChatDelta{Kind: "error", Text: "the general chat runs on the hub; open a project to chat on this runner"})
+			continue
+		}
 		save := s.Store.SetChat
 		msg.Messages = s.chatAttachments(msg.Messages)
 		prompt := withAttachments(msg.Messages)

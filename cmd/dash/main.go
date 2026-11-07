@@ -3,8 +3,10 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -30,11 +33,19 @@ import (
 	"github.com/klahr/dash/internal/runner"
 	"github.com/klahr/dash/internal/scan"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/tunnel"
 	"github.com/klahr/dash/internal/usage"
 	"github.com/klahr/dash/web"
 )
 
 func main() {
+	// `dash runner --server https://hub --code XXXX-XXXX`: this computer's
+	// projects show in the hub's dashboard, over a connection it opens itself.
+	args := os.Args[1:]
+	runnerMode := len(args) > 0 && args[0] == "runner"
+	if runnerMode {
+		args = args[1:]
+	}
 	home, _ := os.UserHomeDir()
 	addr := flag.String("addr", "127.0.0.1:7788", "listen address; to reach Dash from other devices use HTTPS (-tls-cert, or a proxy with -trust-proxy)")
 	tlsCert := flag.String("tls-cert", "", "serve HTTPS with this certificate (PEM), e.g. from certbot or `tailscale cert`")
@@ -76,7 +87,19 @@ func main() {
 	scanTimeout := flag.Duration("scan-timeout", scan.DefaultRunTimeout, "stop a scan's Claude run after this long and mark it failed")
 	scanSchedules := flag.Bool("scan-schedules", true, "run scans (.dash/scans) on their schedules; off = only when started by hand")
 	envFile := flag.String("env", ".env", "file with DASH_USERNAME / DASH_PASSWORD (real env vars take precedence)")
-	flag.Parse()
+	var hubServer, regCode *string
+	var offlineGrace *time.Duration
+	var hubCommands *bool
+	if runnerMode {
+		flag.CommandLine.Init("dash runner", flag.ExitOnError)
+		hubServer = flag.String("server", "", "the hub's URL, e.g. https://dash.example.com (saved after registering)")
+		regCode = flag.String("code", "", "registration code from the hub's Runners page (only the first time, or to register again)")
+		offlineGrace = flag.Duration("offline-grace", 10*time.Minute, "when the hub has been unreachable this long, stop running tasks and mark them interrupted (0 = never)")
+		hubCommands = flag.Bool("hub-commands", false, "let the hub set the projects' run/test/deploy/setup commands and run ad-hoc commands; off = only commands set on this computer run")
+	}
+	_ = flag.CommandLine.Parse(args)
+	addrSet := false
+	flag.Visit(func(f *flag.Flag) { addrSet = addrSet || f.Name == "addr" })
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
@@ -84,7 +107,13 @@ func main() {
 		slog.Error("read env file", "path", *envFile, "err", err)
 		os.Exit(1)
 	}
-	authn, err := auth.New(os.Getenv("DASH_USERNAME"), os.Getenv("DASH_PASSWORD"))
+	user, pass := os.Getenv("DASH_USERNAME"), os.Getenv("DASH_PASSWORD")
+	if runnerMode && !addrSet && user == "" && pass == "" {
+		// Nobody signs in to a runner without a listener of its own; the hub
+		// reaches it through the tunnel.
+		user, pass = "runner", rand.Text()
+	}
+	authn, err := auth.New(user, pass)
 	if err != nil {
 		slog.Error("auth", "err", err) // refuse to run open: Dash executes commands
 		os.Exit(1)
@@ -95,6 +124,13 @@ func main() {
 	if peerToken != "" && len(peerToken) < 24 {
 		slog.Error("DASH_PEER_TOKEN must be at least 24 characters (try: openssl rand -hex 24)")
 		os.Exit(1)
+	}
+	if len(peers) > 0 {
+		if runnerMode {
+			slog.Error("-peer is for the hub; a runner shows in the hub's dashboard by itself")
+			os.Exit(1)
+		}
+		slog.Warn("-peer is deprecated and will be removed in the next release: run `dash runner` on the other computers instead (see docs/several-computers.md)")
 	}
 	if len(peers) > 0 && peerToken == "" {
 		slog.Error("-peer needs DASH_PEER_TOKEN, set to the same value on every computer")
@@ -224,6 +260,20 @@ func main() {
 		Static:      web.Static,
 		Addr:        *addr,
 	}
+	var runnerCreds tunnel.Credentials
+	if runnerMode {
+		apiSrv.HubCommands = *hubCommands
+		credsPath := filepath.Join(*dataDir, "runner.json")
+		if runnerCreds, err = runnerCredentials(ctx, credsPath, *hubServer, *regCode, *machine); err != nil {
+			slog.Error("runner", "err", err)
+			os.Exit(1)
+		}
+	} else {
+		apiSrv.Peers.Runners = &tunnel.Hub{Pub: events, Taken: apiSrv.Peers.Taken}
+		if err := apiSrv.Peers.Runners.Keep(filepath.Join(*dataDir, "runners.json")); err != nil {
+			slog.Warn("read runners", "err", err)
+		}
+	}
 
 	var mcpURL, permURL string
 	{
@@ -297,6 +347,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	if runnerMode {
+		watch := offlineWatch(*offlineGrace, todos)
+		watch(false) // tasks resumed at startup count as offline until the hub answers
+		client := &tunnel.Client{Creds: runnerCreds, Handler: apiSrv.RunnerRoutes(), OnState: watch}
+		if !addrSet {
+			if err := client.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("runner", "err", err)
+				os.Exit(1)
+			}
+			return
+		}
+		go func() {
+			if err := client.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("runner", "err", err)
+				stop()
+			}
+		}()
+	}
+
 	srv := &http.Server{
 		Addr:              *addr,
 		Handler:           apiSrv.Routes(),
@@ -323,6 +392,65 @@ func main() {
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("server", "err", err)
 		os.Exit(1)
+	}
+}
+
+// runnerCredentials registers with the hub when given a code, and otherwise
+// reads the credentials saved by an earlier registration.
+func runnerCredentials(ctx context.Context, path, server, code, name string) (tunnel.Credentials, error) {
+	if code != "" {
+		if server == "" {
+			return tunnel.Credentials{}, errors.New("--code needs --server, the hub's URL")
+		}
+		c, err := tunnel.Register(ctx, server, code, name)
+		if err != nil {
+			return c, err
+		}
+		if err := tunnel.SaveCredentials(path, c); err != nil {
+			return c, err
+		}
+		slog.Info("runner registered", "hub", c.Server, "name", c.Name, "saved", path)
+		return c, nil
+	}
+	c, err := tunnel.LoadCredentials(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return c, errors.New("not registered yet: get a code from the hub's Runners page and run dash runner --server <hub URL> --code <code>")
+	}
+	if err != nil {
+		return c, err
+	}
+	if server != "" {
+		u, err := tunnel.CheckServer(server)
+		if err != nil {
+			return c, err
+		}
+		if u.String() != c.Server {
+			return c, fmt.Errorf("registered with %s, not %s: register with the new hub using --code", c.Server, u)
+		}
+	}
+	return c, nil
+}
+
+// offlineWatch interrupts running tasks once the hub has been unreachable
+// for grace: their permission prompts and reviews can't reach anyone.
+func offlineWatch(grace time.Duration, todos *queue.TodoEngine) func(bool) {
+	var mu sync.Mutex
+	var timer *time.Timer
+	return func(connected bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if timer != nil {
+			timer.Stop()
+			timer = nil
+		}
+		if connected || grace <= 0 {
+			return
+		}
+		timer = time.AfterFunc(grace, func() {
+			if n := todos.Interrupt("this runner lost its connection to the hub for " + grace.String()); n > 0 {
+				slog.Warn("runner: hub unreachable, interrupted running tasks", "tasks", n)
+			}
+		})
 	}
 }
 

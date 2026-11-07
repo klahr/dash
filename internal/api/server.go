@@ -62,18 +62,35 @@ type Server struct {
 	Editor     string // command that opens a directory, e.g. "code" (optional)
 	UploadRoot string // where attached files are stored
 	CI         *ci.Watcher
-	Peers      *peer.Hub // other computers shown in this dashboard
-	Static     fs.FS     // frontend assets
-	Addr       string    // the listen address (-addr), for the connector setup guide
+	Peers      *peer.Hub // other computers shown in this dashboard: -peer servers and runners
+	// HubCommands lets the hub set and run a project's commands when this
+	// Dash is a runner (see RunnerRoutes).
+	HubCommands bool
+	Static      fs.FS  // frontend assets
+	Addr        string // the listen address (-addr), for the connector setup guide
 
 	reviewMu  sync.Mutex
 	reviewGen uint64
 	reviews   map[string]uint64 // todo id → the review turn that owns its Reviewing flag
 
 	generalTurns atomic.Int32 // global chat turns running
+
+	muxOnce sync.Once
+	muxv    *http.ServeMux
 }
 
+// Routes is the dashboard's handler: every route, behind the login.
 func (s *Server) Routes() http.Handler {
+	// Preview hosts never reach Dash's own routes.
+	return s.Previews.Wrap(logRequests(s.Auth.Middleware(s.mux())))
+}
+
+func (s *Server) mux() *http.ServeMux {
+	s.muxOnce.Do(func() { s.muxv = s.buildMux() })
+	return s.muxv
+}
+
+func (s *Server) buildMux() *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// Auth (the middleware below lets /api/login through without a session)
@@ -89,6 +106,26 @@ func (s *Server) Routes() http.Handler {
 	})
 	for _, m := range []string{"GET", "POST", "PATCH", "PUT", "DELETE"} {
 		mux.HandleFunc(m+" /peer/{name}/", s.forwardToPeer)
+	}
+	// Runners: computers that connect out to this one (`dash runner`)
+	if s.Peers != nil && s.Peers.Runners != nil {
+		rh := s.Peers.Runners
+		mux.HandleFunc("GET /api/runners", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, rh.List())
+		})
+		mux.HandleFunc("POST /api/runners/codes", func(w http.ResponseWriter, r *http.Request) {
+			code, expires := rh.NewCode()
+			writeJSON(w, http.StatusOK, map[string]any{"code": code, "expires": expires})
+		})
+		mux.HandleFunc("DELETE /api/runners/{id}", func(w http.ResponseWriter, r *http.Request) {
+			if err := rh.Revoke(r.PathValue("id")); err != nil {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})
+		mux.HandleFunc("POST /runner/register", rh.ServeRegister)
+		mux.HandleFunc("GET /runner/connect", rh.ServeConnect)
 	}
 
 	// Projects & git
@@ -242,9 +279,7 @@ func (s *Server) Routes() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"version": s.version()})
 	})
 	mux.Handle("GET /", s.static())
-
-	// Preview hosts never reach Dash's own routes.
-	return s.Previews.Wrap(logRequests(s.Auth.Middleware(mux)))
+	return mux
 }
 
 // ---- helpers ----
@@ -349,7 +384,7 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter 
 
 func logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if len(r.URL.Path) >= 3 && r.URL.Path[:3] == "/ws" {
+		if strings.HasPrefix(r.URL.Path, "/ws") || r.URL.Path == "/runner/connect" {
 			next.ServeHTTP(w, r) // hijacked connections must get the raw writer
 			return
 		}

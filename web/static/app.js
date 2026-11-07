@@ -62,6 +62,7 @@ const ICONS = {
   scan: "M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16",
   bug: "M8 10a4 4 0 0 1 8 0v4a4 4 0 0 1-8 0zM12 10v8M4 13h4M16 13h4M5 8l3 2M19 8l-3 2M5 19l3-2M19 19l-3-2M9.5 6.5 8 4M14.5 6.5 16 4",
   plug: "M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4",
+  computer: "M4 5h16v10H4zM9 19h6M12 15v4",
   down: "m7 10 5 5 5-5",
   up: "m7 14 5-5 5 5",
   wand: "M4 20 15 9M13 7l4 4M17 3v4M15 5h4M7 4v2M6 5h2M19 15v2M18 16h2",
@@ -261,10 +262,11 @@ if (vv) {
 }
 
 // Several computers can share this dashboard. Each runs its own Dash; the
-// one serving this page forwards /peer/<name>/… to the others. A project's
+// one serving this page (the hub) forwards /peer/<name>/… to the others,
+// runners (`dash runner`) through the connection they keep open to it. A project's
 // API calls go to the computer it lives on (its prefix); login, logout and
 // the computer list always go to this one.
-const HUB_ONLY = /^\/api\/(login|logout|me|machines|version|chat|connector)\b/;
+const HUB_ONLY = /^\/api\/(login|logout|me|machines|version|chat|connector|runners)\b/;
 const here = () => state.project?.prefix || "";
 const on = (prefix, path) => (HUB_ONLY.test(path) ? path : `${prefix}${path}`);
 
@@ -666,9 +668,24 @@ function connectEvents(m) {
     // Logged out: go to the login page. Server down or restarting: keep trying.
     const me = await fetch("/api/me").catch(() => null);
     if (me?.status === 401) { location.replace("/login.html"); return; }
+    // A runner that went offline or was revoked is reconnected by
+    // refreshMachines when the hub says it's back.
+    if (m.runner) {
+      const now = (state.machines || []).find((x) => x.name === m.name);
+      if (!now || !now.ok) { sockets.delete(m.name); return; }
+    }
     setTimeout(() => connectEvents(m), m.local ? 1500 : 5000);
   };
   ws.onmessage = (msg) => onEvent(JSON.parse(msg.data), m);
+}
+
+// A runner came online, went offline, registered or was revoked: list the
+// computers again, connect to the ones that are up, reload their projects.
+async function refreshMachines() {
+  state.machines = await api("GET", "/api/machines");
+  for (const m of state.machines) if (m.ok && !sockets.has(m.name)) connectEvents(m);
+  await loadProjects();
+  if ($("#runners-sheet").open) await renderRunners();
 }
 
 const multi = () => (state.machines || []).length > 1;
@@ -685,6 +702,9 @@ function onEvent(ev, m = { name: "" }) {
   if (!mine) elsewhere(ev, m);
   if (ev.type === "todo.updated" || ev.type === "todo.deleted") trackActive(ev, m);
   switch (ev.type) {
+    case "runners":
+      if (m.local) refreshMachines().catch(fail);
+      break;
     case "project.updated":
     case "project.deleted":
       loadProjects().catch(fail);
@@ -2691,6 +2711,45 @@ function connectorSteps(c) {
       h("button", { class: "btn", type: "button", onclick: attempt(openConnector) }, ico("redo"), "Check again")),
   ];
 }
+
+// ------------------------------------------------------------------ runners
+// Computers that connect to this dashboard themselves (`dash runner`): no
+// inbound access, VPN or shared secret needed on their side.
+async function renderRunners() {
+  const list = await api("GET", "/api/runners");
+  const rows = list.map((r) => h("li", { class: "runner-row" },
+    h("span", { class: `runner-dot ${r.online ? "on" : ""}`, "aria-hidden": "true" }),
+    h("span", { class: "runner-name" }, r.name),
+    h("span", { class: "runner-seen hint" }, r.online ? "online" : r.last_seen ? `offline, last seen ${ago(r.last_seen)} ago` : "never connected"),
+    h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
+      const ok = await ask({ title: `Revoke ${r.name}?`, body: "It's disconnected now and its token stops working. Its projects stay on that computer; register it again with a new code to bring it back.", ok: "Revoke", danger: true });
+      if (!ok) return;
+      await api("DELETE", `/api/runners/${encodeURIComponent(r.id)}`);
+      toast(`${r.name} revoked`);
+      await refreshMachines();
+    }) }, "Revoke")));
+  $("#runners-list").replaceChildren(...(rows.length ? rows : [h("li", { class: "hint" }, "No runners yet.")]));
+}
+
+async function addRunner() {
+  const { code, expires } = await api("POST", "/api/runners/codes");
+  const cmd = `./bin/dash runner --server ${location.origin} --code ${code}`;
+  const mins = Math.round((new Date(expires) - Date.now()) / 60000);
+  $("#runners-code").replaceChildren(
+    h("p", {}, "On the other computer, from the Dash checkout:"),
+    copyBlock(cmd, "Command copied", { pre: true }),
+    h("p", { class: "hint" }, `The code works once, for ${mins} minutes. The runner is named after its host; add `, h("code", {}, "-name work"), " to pick another name. It keeps its token and reconnects by itself, so later just run ", h("code", {}, "./bin/dash runner"), "."));
+  $("#runners-code").hidden = false;
+}
+
+async function openRunners() {
+  $("#runners-code").hidden = true;
+  await renderRunners();
+  const d = $("#runners-sheet");
+  if (!d.open) d.showModal();
+}
+$("#runners-open").addEventListener("click", attempt(openRunners));
+$("#runners-add").addEventListener("click", attempt(addRunner));
 
 async function openConnector() {
   const c = await api("GET", "/api/connector");

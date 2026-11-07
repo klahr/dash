@@ -137,6 +137,7 @@
             <div class="foot-menu-list">
               <button id="prefs-open" type="button" data-icon="prefs">Preferences</button>
               <button id="connector-open" type="button" data-icon="plug">Connect Claude</button>
+              <button id="runners-open" type="button" data-icon="computer">Runners</button>
               <button id="logout" type="button" data-icon="logout">Log out</button>
             </div>
           </details>
@@ -616,6 +617,19 @@
       <header class="sheet-head"><h2 id="connector-title" tabindex="-1" autofocus>Connect Claude</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
       <p class="hint">Add Dash as a connector in claude.ai to use it from the Claude apps on any device. Claude can then list projects, create tasks, read diffs and approve work.</p>
       <div id="connector-body"></div>
+    </form>
+  </dialog>
+
+  <!-- Runners: other computers that connect to this dashboard (`dash runner`) -->
+  <dialog class="sheet" id="runners-sheet" aria-labelledby="runners-title">
+    <form method="dialog">
+      <header class="sheet-head"><h2 id="runners-title" tabindex="-1" autofocus>Runners</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <p class="hint">Other computers run tasks for this dashboard with <code>dash runner</code>. They connect out to it, so they need no open port, VPN or shared secret.</p>
+      <ul class="runner-list" id="runners-list"></ul>
+      <div id="runners-code" hidden></div>
+      <footer class="sheet-actions">
+        <button class="btn primary" id="runners-add" type="button">Add a runner</button>
+      </footer>
     </form>
   </dialog>
 

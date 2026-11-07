@@ -70,4 +70,5 @@ previews need a domain.
   Compressed pages are passed on uncompressed. A CSP set in a `<meta>` tag isn't changed, so such
   a page may refuse to be drawn.
 - With [several computers](several-computers.md), a preview runs on the computer that has the
-  project and is served by that computer's Dash, so set `-preview-domain` on each one.
+  project and is served by that computer's Dash, so set `-preview-domain` on each one (a runner
+  also needs its own listener, see there).

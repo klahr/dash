@@ -493,3 +493,40 @@ func TestEditorEditIsCommittedWithoutClaude(t *testing.T) {
 		t.Fatalf("error = %q", stale.Error)
 	}
 }
+
+func TestInterruptFailsRunningTodosAndTheyCanBeQueuedAgain(t *testing.T) {
+	exe := &fakeExec{block: true}
+	h := newHarness(t, exe, model.Project{Name: "p"})
+	td := h.add("make a")
+	h.waitFor(td.ID, model.StatusInProgress)
+	for deadline := time.Now().Add(10 * time.Second); len(exe.Calls()) == 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("claude never started")
+		}
+	}
+	if n := h.engine.Interrupt("the hub is unreachable"); n != 1 {
+		t.Fatalf("interrupted %d todos, want 1", n)
+	}
+	td = h.waitFor(td.ID, model.StatusFailed)
+	if td.Error != "interrupted: the hub is unreachable" {
+		t.Fatalf("error %q", td.Error)
+	}
+	if td.Worktree == nil {
+		t.Fatal("the worktree should be kept to continue")
+	}
+
+	// Queued again, it runs again, and a later cancel reads as a cancel.
+	if _, err := h.st.SetStatus(td.ID, model.StatusQueued, ""); err != nil {
+		t.Fatal(err)
+	}
+	h.engine.Kick()
+	for deadline := time.Now().Add(10 * time.Second); len(exe.Calls()) < 2; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("requeued todo never ran")
+		}
+	}
+	h.engine.Cancel(td.ID)
+	if td = h.waitFor(td.ID, model.StatusFailed); td.Error != "canceled" {
+		t.Fatalf("cancel after an interrupt: %q", td.Error)
+	}
+}

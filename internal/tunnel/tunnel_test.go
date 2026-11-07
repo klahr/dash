@@ -1,0 +1,438 @@
+package tunnel
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
+)
+
+// pair connects two Sessions over a real WebSocket.
+func pair(t *testing.T) (dialer, listener *Session) {
+	t.Helper()
+	got := make(chan *Session, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		got <- NewSession(ws, false)
+	}))
+	t.Cleanup(srv.Close)
+	ws, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dialer = NewSession(ws, true)
+	listener = <-got
+	t.Cleanup(func() { dialer.Close(); listener.Close() })
+	return dialer, listener
+}
+
+func TestStreamsCarryMoreThanTheWindow(t *testing.T) {
+	a, b := pair(t)
+	payload := make([]byte, 3*streamWindow+12345)
+	_, _ = rand.Read(payload)
+
+	// b echoes every stream back.
+	go func() {
+		for {
+			c, err := b.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				_, _ = io.CopyN(c, c, int64(len(payload)))
+			}()
+		}
+	}()
+
+	var wg sync.WaitGroup
+	for range 3 { // concurrent streams don't block each other
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c, err := a.Open()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer c.Close()
+			go func() { _, _ = c.Write(payload) }()
+			got, err := io.ReadAll(c)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if !bytes.Equal(got, payload) {
+				t.Errorf("echo: got %d bytes, want %d identical", len(got), len(payload))
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func TestClosingTheSessionFailsStreams(t *testing.T) {
+	a, b := pair(t)
+	c, err := a.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Accept(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := c.Read(make([]byte, 1)); done <- err }()
+	b.Close()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("read succeeded on a dead tunnel")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("read hung after the tunnel closed")
+	}
+	if _, err := a.Open(); err == nil {
+		select {
+		case <-a.Done():
+		case <-time.After(5 * time.Second):
+			t.Fatal("the other end never noticed the tunnel close")
+		}
+	}
+}
+
+func TestReadDeadline(t *testing.T) {
+	a, _ := pair(t)
+	c, _ := a.Open()
+	_ = c.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+	if _, err := c.Read(make([]byte, 1)); !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("read past its deadline: %v", err)
+	}
+}
+
+// ---- registration ----
+
+func TestRegistrationCodeIsSingleUseAndExpires(t *testing.T) {
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	h := &Hub{now: func() time.Time { return now }}
+	path := filepath.Join(t.TempDir(), "runners.json")
+	if err := h.Keep(path); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _ := h.NewCode()
+	if _, _, err := h.Register(code, "Bad Name!"); !errors.Is(err, ErrBadName) {
+		t.Fatalf("bad name: %v", err)
+	}
+	id, token, err := h.Register(strings.ToLower(code), "work") // codes aren't case-sensitive
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id == "" || !strings.HasPrefix(token, "dr_") {
+		t.Fatalf("id %q token %q", id, token)
+	}
+	if _, _, err := h.Register(code, "other"); !errors.Is(err, ErrBadCode) {
+		t.Fatalf("second use: %v", err)
+	}
+
+	code2, _ := h.NewCode()
+	if _, _, err := h.Register(code2, "work"); !errors.Is(err, ErrNameTaken) {
+		t.Fatalf("duplicate name: %v", err)
+	}
+	now = now.Add(codeTTL + time.Second)
+	if _, _, err := h.Register(code2, "laptop"); !errors.Is(err, ErrBadCode) {
+		t.Fatalf("expired code: %v", err)
+	}
+
+	// Saved, with the token only as a hash.
+	h2 := &Hub{}
+	if err := h2.Keep(path); err != nil {
+		t.Fatal(err)
+	}
+	if !h2.Has("work") {
+		t.Fatal("runner not saved")
+	}
+	if _, ok := h2.authenticate(token); !ok {
+		t.Fatal("saved token hash doesn't match")
+	}
+	if b, _ := json.Marshal(h2.runners); bytes.Contains(b, []byte(token)) {
+		t.Fatal("token stored in plain text")
+	}
+}
+
+func TestRegistrationNamesTakenByTheHub(t *testing.T) {
+	h := &Hub{Taken: func(n string) bool { return n == "home" }}
+	code, _ := h.NewCode()
+	if _, _, err := h.Register(code, "home"); !errors.Is(err, ErrNameTaken) {
+		t.Fatalf("hub's own name: %v", err)
+	}
+}
+
+func TestWrongCodesPauseRegistration(t *testing.T) {
+	h := &Hub{}
+	code, _ := h.NewCode()
+	for range maxBadCodes {
+		if _, _, err := h.Register("AAAA-AAAA", "x"); !errors.Is(err, ErrBadCode) {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := h.Register(code, "x"); !errors.Is(err, ErrTooManyBad) {
+		t.Fatalf("after %d wrong codes: %v", maxBadCodes, err)
+	}
+}
+
+// ---- hub and runner end to end ----
+
+type testHub struct {
+	*Hub
+	srv *httptest.Server
+}
+
+func newTestHub(t *testing.T) testHub {
+	t.Helper()
+	h := &Hub{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /runner/register", h.ServeRegister)
+	mux.HandleFunc("GET /runner/connect", h.ServeConnect)
+	mux.HandleFunc("/peer/{name}/", func(w http.ResponseWriter, r *http.Request) {
+		px, ok := h.Proxy(r.PathValue("name"))
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		px.ServeHTTP(w, r)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return testHub{h, srv}
+}
+
+func (th testHub) register(t *testing.T, name string) Credentials {
+	t.Helper()
+	code, _ := th.NewCode()
+	c, err := Register(context.Background(), th.srv.URL, code, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// runnerAPI is a stand-in for a runner's Dash API.
+func runnerAPI() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Cookie") != "" || r.Header.Get("Authorization") != "" {
+			http.Error(w, "browser credentials leaked to the runner", http.StatusTeapot)
+			return
+		}
+		_, _ = io.WriteString(w, "runner:"+r.URL.Path)
+	})
+	mux.HandleFunc("GET /ws/echo", func(w http.ResponseWriter, r *http.Request) {
+		ws, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer ws.Close()
+		for {
+			typ, msg, err := ws.ReadMessage()
+			if err != nil {
+				return
+			}
+			_ = ws.WriteMessage(typ, msg)
+		}
+	})
+	return mux
+}
+
+// stateLog records OnState calls.
+type stateLog struct {
+	ch chan bool
+}
+
+func (s *stateLog) on(c bool) { s.ch <- c }
+
+func (s *stateLog) want(t *testing.T, v bool) {
+	t.Helper()
+	select {
+	case got := <-s.ch:
+		if got != v {
+			t.Fatalf("state %v, want %v", got, v)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("no state change to %v", v)
+	}
+}
+
+// waitOnline waits until the hub has the runner's tunnel (the runner may
+// report connected a moment before the hub has registered it).
+func (th testHub) waitOnline(t *testing.T, name string) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); th.session(name) == nil; {
+		if time.Now().After(deadline) {
+			t.Fatalf("%s never came online", name)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func startRunner(t *testing.T, c Credentials) (*stateLog, chan error) {
+	t.Helper()
+	states := &stateLog{ch: make(chan bool, 16)}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	cl := &Client{Creds: c, Handler: runnerAPI(), OnState: states.on, MinBackoff: 20 * time.Millisecond, MaxBackoff: 100 * time.Millisecond}
+	go func() { done <- cl.Run(ctx); close(done) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("runner didn't stop")
+		}
+	})
+	return states, done
+}
+
+func get(t *testing.T, url string) (int, string) {
+	t.Helper()
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Cookie", "dash_session=browser-secret")
+	req.Header.Set("Authorization", "Bearer something")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(res.Body)
+	return res.StatusCode, string(b)
+}
+
+func TestRunnerServesTheHubThroughItsTunnel(t *testing.T) {
+	th := newTestHub(t)
+	states, _ := startRunner(t, th.register(t, "work"))
+	states.want(t, true)
+	th.waitOnline(t, "work")
+
+	code, body := get(t, th.srv.URL+"/peer/work/api/me")
+	if code != 200 || body != "runner:/api/me" {
+		t.Fatalf("GET through tunnel: %d %q", code, body)
+	}
+	if rs := th.List(); len(rs) != 1 || !rs[0].Online || rs[0].LastSeen.IsZero() {
+		t.Fatalf("runners: %+v", rs)
+	}
+
+	// WebSockets (event stream, chat) pass through too.
+	ws, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(th.srv.URL, "http")+"/peer/work/ws/echo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	if err := ws.WriteMessage(websocket.TextMessage, []byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+	if _, msg, err := ws.ReadMessage(); err != nil || string(msg) != "hello" {
+		t.Fatalf("websocket echo: %q %v", msg, err)
+	}
+}
+
+func TestRunnerReconnectsAfterTheTunnelDrops(t *testing.T) {
+	th := newTestHub(t)
+	states, _ := startRunner(t, th.register(t, "work"))
+	states.want(t, true)
+	th.waitOnline(t, "work")
+
+	old := th.session("work")
+	old.Close() // the link dies
+	states.want(t, false)
+	states.want(t, true)
+	for deadline := time.Now().Add(10 * time.Second); th.session("work") == nil || th.session("work") == old; {
+		if time.Now().After(deadline) {
+			t.Fatal("hub never saw the reconnect")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	if code, body := get(t, th.srv.URL+"/peer/work/api/me"); code != 200 {
+		t.Fatalf("after reconnect: %d %s", code, body)
+	}
+}
+
+func TestOfflineRunnerAnswersFast(t *testing.T) {
+	th := newTestHub(t)
+	th.register(t, "work") // never connects
+	code, body := get(t, th.srv.URL+"/peer/work/api/me")
+	if code != http.StatusBadGateway || !strings.Contains(body, "offline") {
+		t.Fatalf("offline runner: %d %s", code, body)
+	}
+	if code, _ := get(t, th.srv.URL+"/peer/nobody/api/me"); code != http.StatusNotFound {
+		t.Fatalf("unknown runner: %d", code)
+	}
+}
+
+func TestRevokedRunnerIsCutOffAndStops(t *testing.T) {
+	th := newTestHub(t)
+	creds := th.register(t, "work")
+	states, done := startRunner(t, creds)
+	states.want(t, true)
+	th.waitOnline(t, "work")
+
+	if err := th.Revoke(creds.ID); err != nil {
+		t.Fatal(err)
+	}
+	states.want(t, false)
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrRevoked) {
+			t.Fatalf("runner stopped with %v, want ErrRevoked", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("revoked runner kept retrying")
+	}
+	if code, _ := get(t, th.srv.URL+"/peer/work/api/me"); code != http.StatusNotFound {
+		t.Fatalf("revoked runner still reachable: %d", code)
+	}
+}
+
+func TestConnectNeedsAValidToken(t *testing.T) {
+	th := newTestHub(t)
+	th.register(t, "work")
+	c := &Client{Creds: Credentials{Server: th.srv.URL, Token: "dr_forged"}, Handler: runnerAPI()}
+	if err := c.serveOnce(context.Background()); !errors.Is(err, ErrRevoked) {
+		t.Fatalf("forged token: %v", err)
+	}
+	// A browser page can't open the tunnel (it can't set Authorization, and
+	// its Origin is refused).
+	hdr := http.Header{"Origin": {"https://evil.example"}}
+	if _, res, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(th.srv.URL, "http")+"/runner/connect", hdr); err == nil || res == nil || res.StatusCode == http.StatusSwitchingProtocols {
+		t.Fatal("tunnel opened without a token")
+	}
+}
+
+func TestCheckServer(t *testing.T) {
+	for in, ok := range map[string]bool{
+		"https://hub.example.com":  true,
+		"https://hub.example.com/": true,
+		"http://127.0.0.1:7788":    true,
+		"http://hub.example.com":   false,
+		"hub.example.com":          false,
+		"ftp://hub":                false,
+	} {
+		if _, err := CheckServer(in); (err == nil) != ok {
+			t.Errorf("CheckServer(%q) = %v", in, err)
+		}
+	}
+}

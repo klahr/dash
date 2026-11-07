@@ -9,7 +9,7 @@ and start Dash with `-trust-proxy` so it reads the proxy's `X-Forwarded-*` heade
   no open ports and no public IP needed.
 - [**Tailscale**](#tailscale-private-only): private to your own devices.
 
-The hub is the Dash you open. Other computers can join it as peers, see
+The hub is the Dash you open. Other computers can join it as runners, which connect out to it, see
 [Several computers](several-computers.md).
 
 **The first two put Dash's login on the internet.** Read [The login](#the-login-is-internet-facing)

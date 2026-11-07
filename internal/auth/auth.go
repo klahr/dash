@@ -3,6 +3,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -260,7 +261,7 @@ var (
 // destructive. Wrong guesses count towards the same lockout as logins.
 // A request from a hub with the peer token passes: the hub asked its user.
 func (a *Auth) ConfirmPassword(r *http.Request, password string) error {
-	if a.viaPeer(r) {
+	if a.viaPeer(r) || FromHub(r.Context()) {
 		return nil
 	}
 	ip := a.clientIP(r)
@@ -276,6 +277,15 @@ func (a *Auth) ConfirmPassword(r *http.Request, password string) error {
 	a.release(ip, f)
 	return nil
 }
+
+type hubKey struct{}
+
+// WithHub marks ctx as a request the hub sent through this runner's tunnel.
+// The tunnel authenticated it; the hub asked its own user for passwords.
+func WithHub(ctx context.Context) context.Context { return context.WithValue(ctx, hubKey{}, true) }
+
+// FromHub reports whether ctx is a request from the hub over a runner tunnel.
+func FromHub(ctx context.Context) bool { v, _ := ctx.Value(hubKey{}).(bool); return v }
 
 func (a *Auth) viaPeer(r *http.Request) bool {
 	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -379,6 +389,9 @@ var public = map[string]bool{
 	// by a per-run bearer token instead.
 	"/mcp/permissions": true,
 	"/mcp/dash":        true,
+	// Runners: a registration code, or the runner's own token.
+	"/runner/register": true,
+	"/runner/connect":  true,
 }
 
 // Middleware requires a valid session for everything except public paths.

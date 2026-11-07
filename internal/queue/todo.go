@@ -65,11 +65,12 @@ type TodoEngine struct {
 		Summary(ctx context.Context, report string) (string, error)
 	}
 
-	minute  time.Duration // length of a "minute" for run limits; shortened in tests
-	wake    chan struct{}
-	runCtx  context.Context // the dispatcher's context; done on shutdown
-	mu      sync.Mutex
-	running map[string]context.CancelFunc
+	minute      time.Duration // length of a "minute" for run limits; shortened in tests
+	wake        chan struct{}
+	runCtx      context.Context // the dispatcher's context; done on shutdown
+	mu          sync.Mutex
+	running     map[string]context.CancelFunc
+	interrupted map[string]string // running todo id → why Interrupt stopped it
 }
 
 // NewTodoEngine finishes initialising e; call Run in a goroutine afterwards.
@@ -165,6 +166,7 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 				cancel()
 				e.mu.Lock()
 				delete(e.running, t.ID)
+				delete(e.interrupted, t.ID)
 				e.mu.Unlock()
 				e.Kick()
 			}()
@@ -182,6 +184,30 @@ func (e *TodoEngine) Cancel(todoID string) bool {
 		return true
 	}
 	return false
+}
+
+// Interrupt stops every running todo and marks it failed with
+// "interrupted: why" (say, a runner that lost its hub for too long), so none
+// waits forever on a person who can't reach it. Their worktrees and Claude
+// sessions are kept: queue them again to continue. It returns how many it
+// stopped.
+func (e *TodoEngine) Interrupt(why string) int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.interrupted == nil {
+		e.interrupted = map[string]string{}
+	}
+	for id, cancel := range e.running {
+		e.interrupted[id] = why
+		cancel()
+	}
+	return len(e.running)
+}
+
+func (e *TodoEngine) interruption(todoID string) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.interrupted[todoID]
 }
 
 // Pause holds a queued todo back, or stops a running one and requeues it
@@ -237,6 +263,9 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 		msg := err.Error()
 		if errors.Is(err, context.Canceled) {
 			msg = "canceled"
+		}
+		if why := e.interruption(t.ID); why != "" && ctx.Err() != nil {
+			msg = "interrupted: " + why
 		}
 		log("✖ " + msg)
 		noteFailure(e.Store, t.ID, msg, report)

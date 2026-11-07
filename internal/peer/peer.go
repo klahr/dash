@@ -1,8 +1,11 @@
 // Package peer lets one Dash show other computers' Dash servers in the same
 // dashboard. Each computer keeps its own repositories, worktrees and Claude
-// login; the Dash you open (the hub) forwards /peer/<name>/… to the other
-// one with a shared token. Run the peers behind HTTPS: a reverse proxy such as
-// Caddy, a Cloudflare Tunnel, or Tailscale (see docs/deploy.md).
+// login; the Dash you open (the hub) forwards /peer/<name>/… to the other one.
+//
+// Other computers are either runners (`dash runner`), which connect out to
+// the hub through a tunnel (package tunnel), or, deprecated, -peer servers
+// the hub dials over HTTPS with a shared DASH_PEER_TOKEN, behind a reverse
+// proxy such as Caddy, a Cloudflare Tunnel, or Tailscale (see docs/deploy.md).
 package peer
 
 import (
@@ -18,6 +21,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/hub"
+	"github.com/klahr/dash/internal/tunnel"
 )
 
 // Peer is another computer running Dash.
@@ -53,6 +57,10 @@ type Machine struct {
 	OK     bool   `json:"ok"`              // reachable and accepting our token
 	Error  string `json:"error,omitempty"` // why not
 	URL    string `json:"url,omitempty"`   // where it runs (peers only)
+	// Runner: it connects to this hub (`dash runner`) and is listed even
+	// while offline; LastSeen is when it last connected or disconnected.
+	Runner   bool       `json:"runner,omitempty"`
+	LastSeen *time.Time `json:"last_seen,omitempty"`
 }
 
 // Hub forwards requests to peers and reports which machines are reachable.
@@ -60,6 +68,8 @@ type Hub struct {
 	Self  string // this machine's name
 	Token string // shared with the peers (their DASH_PEER_TOKEN)
 	Peers []Peer
+	// Runners are computers that connect to this hub themselves (optional).
+	Runners *tunnel.Hub
 
 	client  *http.Client
 	proxies map[string]*httputil.ReverseProxy
@@ -119,8 +129,13 @@ func (h *Hub) proxy(p Peer) *httputil.ReverseProxy {
 // ServeHTTP handles /peer/{name}/….
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.init()
-	px, ok := h.proxies[r.PathValue("name")]
-	if !ok {
+	var px http.Handler
+	if p, ok := h.proxies[r.PathValue("name")]; ok {
+		px = p
+	} else if h.Runners != nil {
+		px, _ = h.Runners.Proxy(r.PathValue("name"))
+	}
+	if px == nil {
 		http.Error(w, `{"error":"no such computer"}`, http.StatusNotFound)
 		return
 	}
@@ -160,7 +175,32 @@ func (h *Hub) Machines(ctx context.Context) []Machine {
 		}()
 	}
 	wg.Wait()
+	if h.Runners != nil {
+		for _, r := range h.Runners.List() {
+			m := Machine{Name: r.Name, Prefix: "/peer/" + r.Name, OK: r.Online, Runner: true}
+			if !r.LastSeen.IsZero() {
+				m.LastSeen = &r.LastSeen
+			}
+			if !r.Online {
+				m.Error = "offline"
+			}
+			out = append(out, m)
+		}
+	}
 	return out
+}
+
+// Taken reports whether name is this computer or a -peer, for naming runners.
+func (h *Hub) Taken(name string) bool {
+	if name == h.Self {
+		return true
+	}
+	for _, p := range h.Peers {
+		if p.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Hub) ping(ctx context.Context, p Peer) error {

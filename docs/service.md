@@ -11,7 +11,7 @@ your home directory, your `~/.claude` login and your `PATH`.
 
 The unit assumes the repository is checked out at `~/dev/github/klahr/dash`. If yours is
 elsewhere, edit `WorkingDirectory` and `ExecStart` in your copy of the unit. Extra flags
-(`-trust-proxy`, `-public-url`, `-name`, `-peer`, …) go on the `ExecStart` line; secrets stay in
+(`-trust-proxy`, `-public-url`, `-name`, …) go on the `ExecStart` line; secrets stay in
 the env file.
 
 After pulling changes: rebuild, then `systemctl --user restart dash`.
