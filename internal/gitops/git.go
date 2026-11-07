@@ -5,6 +5,7 @@ package gitops
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -543,6 +544,45 @@ func (g *Git) CreateGitHubRepo(ctx context.Context, projectID, repo, name string
 		return "", err
 	}
 	return g.git(ctx, projectID, repo, "remote", "get-url", "origin")
+}
+
+// GitHubRepo is a repository as gh sees it.
+type GitHubRepo struct {
+	Name string `json:"name"` // OWNER/REPO
+	URL  string `json:"url"`
+}
+
+// LookupGitHubRepo finds name ("REPO" for the signed-in user, or
+// "OWNER/REPO") on GitHub; ok is false when it doesn't exist.
+func (g *Git) LookupGitHubRepo(ctx context.Context, name string) (repo GitHubRepo, ok bool, err error) {
+	out, err := g.ghQuiet(ctx, "", "", "repo", "view", name, "--json", "nameWithOwner,url")
+	if err != nil {
+		if strings.Contains(out, "Could not resolve to a Repository") || strings.Contains(out, "HTTP 404") {
+			return repo, false, nil
+		}
+		return repo, false, err
+	}
+	var raw struct {
+		NameWithOwner string `json:"nameWithOwner"`
+		URL           string `json:"url"`
+	}
+	if err := json.Unmarshal([]byte(jsonPart(out)), &raw); err != nil {
+		return repo, false, fmt.Errorf("gh repo view: %w", err)
+	}
+	return GitHubRepo{Name: raw.NameWithOwner, URL: raw.URL}, true, nil
+}
+
+// CloneGitHubRepo clones name into path, which must not exist or be empty.
+func (g *Git) CloneGitHubRepo(ctx context.Context, projectID, name, path string) error {
+	if ents, err := os.ReadDir(path); err == nil && len(ents) > 0 {
+		return fmt.Errorf("%s already exists and isn't empty", path)
+	}
+	parent := filepath.Dir(path)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	_, err := g.gh(ctx, projectID, parent, "repo", "clone", name, path)
+	return err
 }
 
 var remoteRe = regexp.MustCompile(`^(?:[a-z+]+://(?:[^@/]+@)?([^/:]+)(?::\d+)?/|[^@/]+@([^:/]+):)([^/]+)/([^/]+?)(?:\.git)?/?$`)

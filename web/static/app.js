@@ -908,8 +908,16 @@ function openNewProject() {
   const f = $("#new-project");
   f.machine.closest(".field").hidden = !multi();
   f.machine.replaceChildren(...(state.machines || []).filter((m) => m.ok).map((m) => h("option", { value: m.name, selected: m.name === state.project?.machine }, m.local ? `${m.name} (this computer)` : m.name)));
+  syncNewProjectGitHub();
   $("#new-project-sheet").showModal();
 }
+
+// The public toggle and hint only matter once a GitHub repository is named.
+function syncNewProjectGitHub() {
+  const named = !!$("#new-project").github.value.trim();
+  $("#new-project-github-hint").hidden = $("#new-project-public-row").hidden = !named;
+}
+$("#new-project").github.addEventListener("input", syncNewProjectGitHub);
 
 // A project's image icon, or its initial on its color.
 const projectIcon = (p, el = h("span", { class: "side-project-icon", "aria-hidden": "true" })) => {
@@ -1113,8 +1121,25 @@ $("#new-project").addEventListener("submit", attempt(async (e) => {
   e.preventDefault();
   const { machine, ...body } = Object.fromEntries(new FormData(e.target));
   const m = state.machines?.find((x) => x.name === machine) || state.machines?.[0] || { name: "", prefix: "" };
+  body.github = (body.github || "").trim();
+  body.github_public = !!body.github_public;
+  if (body.github) {
+    const repo = await api("GET", `/api/github/repo?name=${encodeURIComponent(body.github)}`, null, m.prefix);
+    if (repo.exists) {
+      const ok = await ask({
+        title: "Repository already exists",
+        body: `${repo.name} already exists on GitHub. Clone it into ${body.path || "a new folder"} for this project?`,
+        ok: "Clone",
+      });
+      if (!ok) return;
+      body.clone = true;
+      body.github = repo.name;
+    }
+  }
+  toast(body.clone ? "Cloning…" : body.github ? "Creating GitHub repository…" : "Creating project…");
   const p = await api("POST", "/api/projects", body, m.prefix);
   e.target.reset();
+  syncNewProjectGitHub();
   await loadProjects();
   await selectProject(state.projects.find((x) => x.id === p.id && x.machine === m.name));
   $("#new-project-sheet").close();

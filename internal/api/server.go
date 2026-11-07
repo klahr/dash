@@ -95,6 +95,7 @@ func (s *Server) Routes() http.Handler {
 	// A peer can't check this dashboard's password, so the hub does it first.
 	mux.HandleFunc("DELETE /peer/{name}/api/projects/{pid}", s.confirmThenForward)
 	mux.HandleFunc("POST /api/projects/{pid}/github", s.createGitHubRepo)
+	mux.HandleFunc("GET /api/github/repo", s.lookupGitHubRepo)
 	mux.HandleFunc("POST /api/projects/{pid}/push", s.pushProject)
 	mux.HandleFunc("GET /api/projects/{pid}/unpushed", s.unpushed)
 	mux.HandleFunc("GET /api/projects/{pid}/remote", s.remoteStatus(false))

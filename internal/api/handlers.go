@@ -71,6 +71,11 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		MergeMode     string   `json:"merge_mode"`
 		MaxRunMinutes int      `json:"max_run_minutes"`
 		MaxTurns      int      `json:"max_turns"`
+		// GitHub names a repository (REPO or OWNER/REPO): with Clone it is
+		// cloned (it must exist); without, it is created and pushed (it must not).
+		GitHub       string `json:"github"`
+		Clone        bool   `json:"clone"`
+		GitHubPublic bool   `json:"github_public"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
@@ -98,9 +103,42 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	}
 	id := store.NewID()
 	ctx := r.Context()
+	req.GitHub = strings.TrimSpace(req.GitHub)
+	createRemote := false
+	if req.GitHub != "" {
+		gh, exists, err := s.Git.LookupGitHubRepo(ctx, req.GitHub)
+		switch {
+		case err != nil:
+			writeErr(w, err)
+			return
+		case exists && !req.Clone:
+			writeErr(w, fmt.Errorf("%w: %s already exists on GitHub; clone it instead", errBadRequest, gh.Name))
+			return
+		case !exists && req.Clone:
+			writeErr(w, fmt.Errorf("%w: %s not found on GitHub", errBadRequest, req.GitHub))
+			return
+		case exists:
+			if err := s.Git.CloneGitHubRepo(ctx, id, gh.Name, req.Path); err != nil {
+				writeErr(w, errors.Join(errBadRequest, err))
+				return
+			}
+		default:
+			if s.Git.RemoteURL(ctx, id, req.Path) != "" {
+				writeErr(w, fmt.Errorf("%w: %s already has an origin remote", errBadRequest, req.Path))
+				return
+			}
+			createRemote = true
+		}
+	}
 	if err := s.Git.InitRepo(ctx, id, req.Path, req.DefaultBranch); err != nil {
 		writeErr(w, err)
 		return
+	}
+	if createRemote {
+		if _, err := s.Git.CreateGitHubRepo(ctx, id, req.Path, req.GitHub, !req.GitHubPublic); err != nil {
+			writeErr(w, err)
+			return
+		}
 	}
 	// An adopted repo keeps whatever branch it has checked out.
 	if b, err := s.Git.CurrentBranch(ctx, id, req.Path); err == nil && b != "HEAD" {
@@ -241,6 +279,22 @@ func checkMergeMode(mode, remote string) error {
 		return nil
 	}
 	return fmt.Errorf("%w: merge_mode must be \"local\" or \"pr\"", errBadRequest)
+}
+
+// lookupGitHubRepo tells the new-project form whether a repository exists,
+// so it can offer to clone it instead of creating it.
+func (s *Server) lookupGitHubRepo(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		writeErr(w, fmt.Errorf("%w: name is required", errBadRequest))
+		return
+	}
+	repo, ok, err := s.Git.LookupGitHubRepo(r.Context(), name)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"exists": ok, "name": repo.Name, "url": repo.URL})
 }
 
 func (s *Server) createGitHubRepo(w http.ResponseWriter, r *http.Request) {

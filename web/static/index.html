@@ -388,6 +388,9 @@
       <label class="field" hidden><span>Computer</span><select name="machine"></select></label>
       <label class="field"><span>Name</span><input name="name" required autocomplete="off" autofocus></label>
       <label class="field"><span>Existing repository path <em>optional</em></span><input name="path" placeholder="Leave empty to create a new repo" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>GitHub repository <em>optional</em></span><input name="github" placeholder="name or owner/name" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
+      <p class="hint" id="new-project-github-hint" hidden>A new private repository is created and pushed. If it already exists on GitHub, you can clone it instead.</p>
+      <label class="toggle" id="new-project-public-row" hidden><input type="checkbox" name="github_public"><span>Make the new repository public</span></label>
       <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" placeholder="npm run dev -- --port $PORT" spellcheck="false"></label>
       <label class="field"><span>Test command</span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>
       <label class="field"><span>Deploy command</span><input name="deploy_command" placeholder="./deploy.sh" spellcheck="false"></label>
