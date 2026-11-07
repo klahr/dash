@@ -865,11 +865,11 @@ async function loadPerms() {
   renderPerms();
 }
 
-// The branch only fits the header on wide screens; on phones it would crowd the project name.
-// With several computers the header names the computer too.
+// The branch (and, with several computers, the computer) only fits the header on wide screens;
+// on phones it would crowd the project name, and the menu lists both anyway.
 function renderProjectBranch() {
   const p = state.project, el = $("#project-branch");
-  el.textContent = !p ? "" : desktop.matches ? (multi() ? `${p.default_branch} · ${p.machine}` : p.default_branch) : multi() ? p.machine : "";
+  el.textContent = !p || !desktop.matches ? "" : multi() ? `${p.default_branch} · ${p.machine}` : p.default_branch;
   el.hidden = !el.textContent;
 }
 
