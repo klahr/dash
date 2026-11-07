@@ -29,7 +29,7 @@ var captureJS string
 
 // parentOrigins says who may ask for a capture: Dash's own origin as last
 // seen, and any origin on the host the preview domain hangs off (dash.example.com
-// for preview.dash.example.com), which is where the README puts Dash.
+// for preview.dash.example.com), which is where docs/previews.md puts Dash.
 func (m *Manager) parentOrigins() (origins, hosts []string) {
 	origins = []string{}
 	hosts = []string{}

@@ -1963,7 +1963,7 @@ function renderPreview() {
       break;
     case "live": // no preview domain, and not on Dash's own computer
       status.replaceChildren(h("strong", {}, "This device can't open the preview"),
-        h("p", { class: "hint" }, "Dash has no preview domain set up (-preview-domain, see the README's Live previews section), so the server is only reachable on the computer running Dash: ",
+        h("p", { class: "hint" }, "Dash has no preview domain set up (-preview-domain, see docs/previews.md), so the server is only reachable on the computer running Dash: ",
           h("a", { href: p.local_url, target: "_blank", rel: "noopener" }, p.local_url)));
       break;
     default:
