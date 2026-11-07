@@ -81,6 +81,12 @@ func TestProxyForwardsWithTokenOnly(t *testing.T) {
 		t.Fatalf("websocket message %q, %v", msg, err)
 	}
 
+	// A page on another origin (e.g. a preview subdomain) must not reach the peer.
+	_, resp, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(hub.URL, "http")+"/peer/work/ws/events", http.Header{"Origin": {"http://abc.preview.example.com"}})
+	if err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-origin websocket through the hub: want 403, got %v, %v", resp, err)
+	}
+
 	res, _ = http.Get(hub.URL + "/api/machines")
 	body, _ = io.ReadAll(res.Body)
 	if string(body) != "home:ok work:ok " {

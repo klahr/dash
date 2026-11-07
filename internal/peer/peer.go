@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/klahr/dash/internal/hub"
 )
 
 // Peer is another computer running Dash.
@@ -112,7 +114,20 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"no such computer"}`, http.StatusNotFound)
 		return
 	}
+	// The peer sees only our token and no Origin, so it can't tell a browser
+	// socket from a CLI one: check the browser's origin here, as the hub's
+	// own WebSocket endpoints do, before forwarding the upgrade.
+	if isUpgrade(r) && !hub.Upgrader.CheckOrigin(r) {
+		http.Error(w, `{"error":"origin not allowed"}`, http.StatusForbidden)
+		return
+	}
 	px.ServeHTTP(w, r)
+}
+
+// isUpgrade reports whether r asks to switch protocols (e.g. to WebSocket).
+func isUpgrade(r *http.Request) bool {
+	return r.Header.Get("Upgrade") != "" ||
+		strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade")
 }
 
 // Machines lists this computer and every peer, checking the peers now.

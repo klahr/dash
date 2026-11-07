@@ -169,6 +169,9 @@ func TestProxyAuthAndLifecycle(t *testing.T) {
 	if w := do("POST", "http://dash.test/api/todos/x/approve", map[string]string{"Origin": "http://abc123.preview.dash.test"}); w.Code != http.StatusForbidden {
 		t.Fatalf("cross-origin write from a preview: %d", w.Code)
 	}
+	if w := do("GET", "http://dash.test/peer/work/ws/chat", map[string]string{"Origin": "http://abc123.preview.dash.test", "Connection": "Upgrade", "Upgrade": "websocket"}); w.Code != http.StatusForbidden {
+		t.Fatalf("websocket from a preview: %d", w.Code)
+	}
 
 	// Leaving review stops it.
 	td.Status = model.StatusMerging

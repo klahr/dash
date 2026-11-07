@@ -154,8 +154,9 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 			return
 		}
 		// A page served from a preview is same-site with Dash, so the browser
-		// would send it Dash's SameSite cookie: don't let one drive the API.
-		if o := r.Header.Get("Origin"); o != "" && r.Method != http.MethodGet && r.Method != http.MethodHead {
+		// would send it Dash's SameSite cookie: don't let one drive the API,
+		// including over a WebSocket (whose handshake is a GET).
+		if o := r.Header.Get("Origin"); o != "" && (r.Method != http.MethodGet && r.Method != http.MethodHead || isUpgrade(r)) {
 			if u, err := url.Parse(o); err == nil {
 				if _, fromPreview := m.label(strings.ToLower(u.Hostname())); fromPreview {
 					http.Error(w, "previews can't call Dash", http.StatusForbidden)
