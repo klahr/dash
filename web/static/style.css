@@ -262,7 +262,10 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .prompt summary::after { content: "Show"; color: var(--accent); font-size: 14px; }
 .prompt[open] summary::after { content: "Hide"; }
 .prompt[open] summary { position: sticky; top: calc(-1 * var(--pad-t)); z-index: 6; background: var(--surface); border-radius: var(--r-m) var(--r-m) 0 0; }
-.prompt-text { display: flow-root; padding: 0 14px 14px; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 72ch; }
+.prompt-text { display: flow-root; padding: 0 14px 14px; overflow-wrap: anywhere; max-width: 72ch; }
+.feedback-list li + li { margin-top: 8px; }
+.msg .copy-raw { float: right; margin: -2px -6px 4px 10px; color: var(--muted); }
+.msg .copy-raw:hover { color: var(--text); }
 .feedback-list { margin: 10px 0 0; padding-left: 18px; color: var(--muted); }
 .error-note { border-left: 3px solid var(--failed); background: color-mix(in srgb, var(--failed) 10%, transparent); padding: 10px 12px; border-radius: 0 var(--r-s) var(--r-s) 0; margin-bottom: 12px; overflow-wrap: anywhere; }
 
@@ -302,30 +305,31 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .msg { max-width: 72ch; overflow-wrap: anywhere; }
 .msg.user { align-self: flex-end; background: var(--raised); padding: 10px 14px; border-radius: var(--r-l) var(--r-l) 4px var(--r-l); white-space: pre-wrap; }
 .msg.assistant { align-self: stretch; }
-.msg .reply { line-height: 1.55; }
-.msg .reply > :first-child { margin-top: 0; }
-.msg .reply > :last-child { margin-bottom: 0; }
-.msg .reply :is(p, ul, ol, pre, blockquote, .table-wrap, hr) { margin: 0 0 12px; }
-.msg .reply :is(h1, h2, h3, h4, h5, h6) { margin: 18px 0 8px; font-size: 1em; font-weight: 600; line-height: 1.3; }
-.msg .reply h1 { font-size: 1.3em; }
-.msg .reply h2 { font-size: 1.15em; }
-.msg .reply :is(ul, ol) { padding-left: 1.4em; }
-.msg .reply li + li, .msg .reply li > :is(ul, ol) { margin-top: 4px; }
-.msg .reply li > :is(ul, ol, p) { margin-bottom: 0; }
-.msg .reply li.task { list-style: none; margin-left: -1.4em; }
-.msg .reply li.task input { margin: 0 6px 0 0; vertical-align: -1px; accent-color: var(--merged); }
-.msg .reply a { color: var(--accent); }
-.msg .reply strong { color: #fff; font-weight: 600; }
-.msg .reply code { font: 0.88em var(--mono); background: var(--raised); padding: 1px 5px; border-radius: 4px; }
-.msg .reply pre { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); padding: 12px 14px; overflow-x: auto; overflow-wrap: normal; }
-.msg .reply pre code { background: none; padding: 0; font-size: 13px; white-space: pre; }
-.msg .reply blockquote { border-left: 2px solid var(--line); padding-left: 12px; color: var(--muted); }
-.msg .reply hr { border: 0; border-top: 1px solid var(--line); }
-.msg .reply .table-wrap { overflow-x: auto; }
-.msg .reply table { border-collapse: collapse; font-size: 14px; overflow-wrap: normal; }
-.msg .reply :is(th, td) { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
-.msg .reply th { background: var(--surface); font-weight: 600; }
-.msg .thinking { color: var(--muted); font-size: 14px; border-left: 2px solid var(--line); padding-left: 10px; margin-bottom: 8px; white-space: pre-wrap; }
+:is(.msg .reply, .md) { line-height: 1.55; }
+.md { white-space: normal; }
+:is(.msg .reply, .md) > :first-child { margin-top: 0; }
+:is(.msg .reply, .md) > :last-child { margin-bottom: 0; }
+:is(.msg .reply, .md) :is(p, ul, ol, pre, blockquote, .table-wrap, hr) { margin: 0 0 12px; }
+:is(.msg .reply, .md) :is(h1, h2, h3, h4, h5, h6) { margin: 18px 0 8px; font-size: 1em; font-weight: 600; line-height: 1.3; }
+:is(.msg .reply, .md) h1 { font-size: 1.3em; }
+:is(.msg .reply, .md) h2 { font-size: 1.15em; }
+:is(.msg .reply, .md) :is(ul, ol) { padding-left: 1.4em; }
+:is(.msg .reply, .md) li + li, :is(.msg .reply, .md) li > :is(ul, ol) { margin-top: 4px; }
+:is(.msg .reply, .md) li > :is(ul, ol, p) { margin-bottom: 0; }
+:is(.msg .reply, .md) li.task { list-style: none; margin-left: -1.4em; }
+:is(.msg .reply, .md) li.task input { margin: 0 6px 0 0; vertical-align: -1px; accent-color: var(--merged); }
+:is(.msg .reply, .md) a { color: var(--accent); }
+:is(.msg .reply, .md) strong { color: #fff; font-weight: 600; }
+:is(.msg .reply, .md) code { font: 0.88em var(--mono); background: var(--raised); padding: 1px 5px; border-radius: 4px; }
+:is(.msg .reply, .md) pre { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); padding: 12px 14px; overflow-x: auto; overflow-wrap: normal; }
+:is(.msg .reply, .md) pre code { background: none; padding: 0; font-size: 13px; white-space: pre; }
+:is(.msg .reply, .md) blockquote { border-left: 2px solid var(--line); padding-left: 12px; color: var(--muted); }
+:is(.msg .reply, .md) hr { border: 0; border-top: 1px solid var(--line); }
+:is(.msg .reply, .md) .table-wrap { overflow-x: auto; }
+:is(.msg .reply, .md) table { border-collapse: collapse; font-size: 14px; overflow-wrap: normal; }
+:is(.msg .reply, .md) :is(th, td) { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+:is(.msg .reply, .md) th { background: var(--surface); font-weight: 600; }
+.msg .thinking { color: var(--muted); font-size: 14px; border-left: 2px solid var(--line); padding-left: 10px; margin-bottom: 8px; }
 .msg .thinking:empty { display: none; }
 .msg .tool { margin: 0 0 10px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--surface); font-size: 13px; }
 .msg .tool summary { cursor: pointer; padding: 5px 10px; color: var(--muted); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

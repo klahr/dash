@@ -1663,9 +1663,9 @@ function renderDetail() {
   renderChecks(t);
   renderPerms();
   $("#d-prompt").replaceChildren(
-    ib({ type: "button", class: "btn small copy-prompt", onclick: attempt(() => copy(t.prompt, "Prompt copied")) }, "copy", "Copy"),
-    t.prompt,
-    ...(t.feedback?.length ? [h("ol", { class: "feedback-list" }, t.feedback.map((f) => h("li", {}, f)))] : []));
+    ib({ type: "button", class: "btn small copy-prompt", title: "Copy the raw markdown", onclick: attempt(() => copy(t.prompt, "Prompt copied")) }, "copy", "Copy"),
+    h("div", { class: "md", innerHTML: renderMarkdown(t.prompt) }),
+    ...(t.feedback?.length ? [h("ol", { class: "feedback-list" }, t.feedback.map((f) => h("li", { class: "md", innerHTML: renderMarkdown(f) })))] : []));
   $("#d-prompt-wrap").open = !t.worktree;
   $("#d-error").hidden = !t.error;
   $("#d-error").textContent = t.error || "";
@@ -3138,7 +3138,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   const from = (who) => labels ? h("div", { class: "msg-from" }, labels[who]) : null;
   const assistant = (content) => h("div", { class: "msg assistant" }, from("assistant"), h("div", { class: "reply", innerHTML: renderMarkdown(content) }), actions(content));
   const prefixOf = () => target().prefix || "";
-  const user = (m) => h("div", { class: "msg user" }, from("user"), m.content,
+  const user = (m) => h("div", { class: "msg user" }, from("user"), h("div", { class: "md", innerHTML: renderMarkdown(m.content || "") }),
     m.attachments?.length ? h("div", { class: "msg-attach" }, ...m.attachments.map((a) => attachThumb(a, null, prefixOf()))) : null);
   // Images and files dropped onto the chat or pasted into its text field.
   const attachRow = h("div", { class: "attach", hidden: true });
@@ -3163,7 +3163,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
       if (d.kind === "cwd" && cwd) { cwd.hidden = false; cwd.textContent = cwd.title = `Runs in ${d.text}`; }
       const cur = c.current;
       if (!cur) return;
-      if (d.kind === "thinking") cur.thinking.textContent += d.text;
+      if (d.kind === "thinking") { cur.think = (cur.think || "") + d.text; cur.thinking.innerHTML = renderMarkdown(cur.think); }
       else if (d.kind === "text") { cur.content += d.text; cur.seg += d.text; cur.reply.innerHTML = renderMarkdown(cur.seg); }
       else if (d.kind === "tool_use") {
         // Later text goes below the tool call, in a reply of its own.
@@ -3232,7 +3232,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   // turn asks for an answer to the last question in history, replacing
   // whatever is left of an earlier try.
   function turn({ prefix = "", ...fields }) {
-    const thinking = h("div", { class: "thinking" });
+    const thinking = h("div", { class: "thinking md" });
     const reply = h("div", { class: "reply" });
     const el = h("div", { class: "msg assistant pending" }, from("assistant"), thinking, reply);
     c.current ? c.current.el.replaceWith(el) : log.append(el);
@@ -3692,7 +3692,9 @@ function workerNode(parent, e) {
       return;
     case "prompt":
       worker.cur = null;
-      return parent.append(h("div", { class: "msg user to-agent" }, h("div", { class: "msg-from" }, "To agent"), e.text));
+      return parent.append(h("div", { class: "msg user to-agent" },
+        ib({ type: "button", class: "btn small copy-raw", title: "Copy the raw markdown", onclick: attempt(() => copy(e.text || "", "Copied")) }, "copy", "Copy"),
+        h("div", { class: "msg-from" }, "To agent"), h("div", { class: "md", innerHTML: renderMarkdown(e.text || "") })));
     case "status": {
       let cur = last("notes");
       if (!cur) { cur = worker.cur = { kind: "notes", el: h("pre", { class: "log tl-log" }) }; parent.append(cur.el); }
