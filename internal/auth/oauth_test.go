@@ -389,19 +389,12 @@ func TestOAuthConfidentialClient(t *testing.T) {
 }
 
 func TestOAuthSurvivesRestart(t *testing.T) {
-	dir := t.TempDir()
-	db, path := filepath.Join(dir, "dash.db"), filepath.Join(dir, "oauth.json")
-	_, o, h := oauthServerAt(t, db, "s3cret")
-	if err := o.Keep(path); err != nil {
-		t.Fatal(err)
-	}
+	db := filepath.Join(t.TempDir(), "dash.db")
+	_, _, h := oauthServerAt(t, db, "s3cret")
 	id, tok := fullFlow(t, h, `{"redirect_uris":["`+callback+`"]}`)
 
 	// Same credentials: clients and tokens are back.
-	_, o2, h2 := oauthServerAt(t, db, "s3cret")
-	if err := o2.Keep(path); err != nil {
-		t.Fatal(err)
-	}
+	a2, _, h2 := oauthServerAt(t, db, "s3cret")
 	if w := callMCP(h2, tok["access_token"].(string)); w.Code != http.StatusOK {
 		t.Errorf("access token after restart: %d", w.Code)
 	}
@@ -409,19 +402,13 @@ func TestOAuthSurvivesRestart(t *testing.T) {
 	if status != http.StatusOK {
 		t.Errorf("refresh after restart: %d", status)
 	}
-	o2.mu.Lock()
-	for k := range o2.tokens {
-		if k == tok["access_token"] {
-			t.Errorf("token stored in the clear")
-		}
+	u, _ := a2.acc.EnvUser()
+	if ts, _ := a2.acc.Tokens(u.ID); len(ts) != 1 || ts[0].Prefix == tok2["access_token"] || len(ts[0].Prefix) > 12 {
+		t.Errorf("stored grant: %+v", ts)
 	}
-	o2.mu.Unlock()
 
 	// A new DASH_PASSWORD: the account's tokens stop working.
-	_, o3, h3 := oauthServerAt(t, db, "changed")
-	if err := o3.Keep(path); err != nil {
-		t.Fatal(err)
-	}
+	_, _, h3 := oauthServerAt(t, db, "changed")
 	if w := callMCP(h3, tok2["access_token"].(string)); w.Code != http.StatusUnauthorized {
 		t.Errorf("access token after a password change: %d", w.Code)
 	}
@@ -430,21 +417,41 @@ func TestOAuthSurvivesRestart(t *testing.T) {
 	}
 }
 
-// Tokens in an oauth.json from before users belong to the env account.
+// Clients and refresh tokens in an oauth.json from before the token table
+// are imported, pinned to the user's only org; their access tokens aren't.
 func TestOAuthImportsLegacyTokens(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "oauth.json")
 	a, o, h := newOAuthServer(t)
 	b, _ := json.Marshal(map[string]any{
 		"account": a.legacy,
 		"clients": map[string]any{"c1": map[string]any{"redirect_uris": []string{callback}, "auth_method": "none", "created": time.Now()}},
-		"tokens":  map[string]any{sessionKey("old-access"): map[string]any{"client": "c1", "expires": time.Now().Add(time.Hour)}},
+		"tokens": map[string]any{
+			sessionKey("old-access"):  map[string]any{"client": "c1", "expires": time.Now().Add(time.Hour)},
+			sessionKey("old-refresh"): map[string]any{"client": "c1", "refresh": true, "expires": time.Now().Add(time.Hour)},
+		},
 	})
 	os.WriteFile(path, b, 0o600)
-	if err := o.Keep(path); err != nil {
+	if err := o.ImportLegacy(path); err != nil {
 		t.Fatal(err)
 	}
-	if w := callMCP(h, "old-access"); w.Code != http.StatusOK {
-		t.Fatalf("legacy token: %d", w.Code)
+	if _, err := os.Stat(path + ".imported"); err != nil {
+		t.Errorf("oauth.json not renamed: %v", err)
+	}
+	if w := callMCP(h, "old-access"); w.Code != http.StatusUnauthorized {
+		t.Errorf("legacy access token: %d", w.Code)
+	}
+	status, tok := tokens(t, h, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {"old-refresh"}, "client_id": {"c1"}})
+	if status != http.StatusOK {
+		t.Fatalf("legacy refresh token: %d %v", status, tok)
+	}
+	if w := callMCP(h, tok["access_token"].(string)); w.Code != http.StatusOK {
+		t.Errorf("access token from a legacy refresh token: %d", w.Code)
+	}
+	org, _ := a.acc.DefaultOrg()
+	u, _ := a.acc.EnvUser()
+	ts, _ := a.acc.Tokens(u.ID)
+	if len(ts) != 1 || ts[0].Kind != store.TokenOAuth || ts[0].Org.ID != org.ID {
+		t.Errorf("imported grant: %+v", ts)
 	}
 }
 

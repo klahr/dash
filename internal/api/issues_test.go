@@ -44,7 +44,7 @@ func TestTaskRunGetsOnlyIssueTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, release := s.Board.RegisterTask(p.ID, td.ID)
+	token, release := s.Board.RegisterTask(testOwner(t, s), p.ID, td.ID)
 	defer release()
 
 	var list struct {

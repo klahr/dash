@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,7 +67,7 @@ func TestMCPHandshakeAndAuth(t *testing.T) {
 	if res, _ := rpc(t, srv, "bogus", "initialize", nil); res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("unknown token: want 401, got %d", res.StatusCode)
 	}
-	token, release := b.Register("todo1", "proj1")
+	token, release := b.Register(owner, "todo1", "proj1")
 	_, out := rpc(t, srv, token, "initialize", map[string]any{"protocolVersion": "2025-06-18"})
 	if out["result"].(map[string]any)["protocolVersion"] != "2025-06-18" {
 		t.Fatalf("initialize: %v", out)
@@ -86,7 +87,7 @@ func TestAllowDenyAlways(t *testing.T) {
 	b := NewBroker(nopPub{})
 	srv := httptest.NewServer(http.HandlerFunc(b.ServeMCP))
 	defer srv.Close()
-	token, release := b.Register("todo1", "proj1")
+	token, release := b.Register(owner, "todo1", "proj1")
 	defer release()
 
 	decide := func(decision, msg string) map[string]any {
@@ -133,7 +134,7 @@ func TestAlwaysSavedForProject(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(b.ServeMCP))
 	defer srv.Close()
 
-	token1, release1 := b.Register("todo1", "proj1")
+	token1, release1 := b.Register(owner, "todo1", "proj1")
 	done := make(chan map[string]any)
 	go func() { _, out := rpc(t, srv, token1, "tools/call", call("Bash")); done <- out }()
 	if err := b.Decide(waitPending(t, b).ID, "always", ""); err != nil {
@@ -147,7 +148,7 @@ func TestAlwaysSavedForProject(t *testing.T) {
 	}
 
 	// Another todo in the same project doesn't ask.
-	token2, release2 := b.Register("todo2", "proj1")
+	token2, release2 := b.Register(owner, "todo2", "proj1")
 	defer release2()
 	_, out := rpc(t, srv, token2, "tools/call", call("Bash"))
 	if a := answer(t, out); a["behavior"] != "allow" || len(b.Pending("")) != 0 {
@@ -160,7 +161,7 @@ func TestTimeoutAndReleaseDeny(t *testing.T) {
 	b.Timeout = 50 * time.Millisecond
 	srv := httptest.NewServer(http.HandlerFunc(b.ServeMCP))
 	defer srv.Close()
-	token, release := b.Register("todo1", "proj1")
+	token, release := b.Register(owner, "todo1", "proj1")
 
 	_, out := rpc(t, srv, token, "tools/call", call("Bash"))
 	if a := answer(t, out); a["behavior"] != "deny" {
@@ -183,7 +184,7 @@ func TestRegisterFuncAnswersItself(t *testing.T) {
 	defer srv.Close()
 	var gotTool, gotCmd string
 	allow := false
-	token, release := b.RegisterFunc(func(_ context.Context, tool string, input json.RawMessage) (bool, string) {
+	token, release := b.RegisterFunc(owner, func(_ context.Context, tool string, input json.RawMessage) (bool, string) {
 		var in struct{ Command string }
 		_ = json.Unmarshal(input, &in)
 		gotTool, gotCmd = tool, in.Command
@@ -211,5 +212,36 @@ func TestRegisterFuncAnswersItself(t *testing.T) {
 	release()
 	if res, _ := rpc(t, srv, token, "tools/list", nil); res.StatusCode != http.StatusUnauthorized {
 		t.Fatal("token should stop working after release")
+	}
+}
+
+var owner = model.Owner{User: 1, Org: 1}
+
+// A run's token acts as its owner, only while they are in its org.
+func TestTokenNeedsOwnerInOrg(t *testing.T) {
+	b := NewBroker(nil)
+	member := true
+	b.Member = func(o model.Owner) bool { return o == owner && member }
+	call := func(token string) int {
+		r := httptest.NewRequest("POST", "/mcp/permissions", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		b.ServeMCP(w, r)
+		return w.Code
+	}
+	token, release := b.Register(owner, "todo1", "proj1")
+	defer release()
+	if c := call(token); c != http.StatusOK {
+		t.Fatalf("owner's run: %d", c)
+	}
+	member = false
+	if c := call(token); c != http.StatusUnauthorized {
+		t.Errorf("run of a removed member: %d", c)
+	}
+	unowned, release2 := b.Register(model.Owner{}, "todo2", "proj1")
+	defer release2()
+	member = true
+	if c := call(unowned); c != http.StatusUnauthorized {
+		t.Errorf("run with no org: %d", c)
 	}
 }

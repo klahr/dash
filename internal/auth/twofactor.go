@@ -52,12 +52,14 @@ var (
 
 func (a *Auth) twoFactorRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/login/totp", a.loginTOTP)
-	mux.HandleFunc("GET /api/account/2fa", a.signedIn(a.twoFactorStatus))
-	mux.HandleFunc("POST /api/account/2fa/setup", a.signedIn(a.setupTOTP))
-	mux.HandleFunc("POST /api/account/2fa/enable", a.signedIn(a.enableTOTP))
-	mux.HandleFunc("POST /api/account/2fa/disable", a.signedIn(a.disableTOTP))
-	mux.HandleFunc("POST /api/account/2fa/recovery-codes", a.signedIn(a.newRecoveryCodes))
-	mux.HandleFunc("PATCH /api/orgs/{oid}", a.signedIn(a.updateOrg))
+	// The second factor is a credential and requiring it is managing the
+	// org: a token may do neither.
+	mux.HandleFunc("GET /api/account/2fa", a.sessionOnly(a.twoFactorStatus))
+	mux.HandleFunc("POST /api/account/2fa/setup", a.sessionOnly(a.setupTOTP))
+	mux.HandleFunc("POST /api/account/2fa/enable", a.sessionOnly(a.enableTOTP))
+	mux.HandleFunc("POST /api/account/2fa/disable", a.sessionOnly(a.disableTOTP))
+	mux.HandleFunc("POST /api/account/2fa/recovery-codes", a.sessionOnly(a.newRecoveryCodes))
+	mux.HandleFunc("PATCH /api/orgs/{oid}", a.sessionOnly(a.updateOrg))
 }
 
 // twoFactorFree are the paths someone who must still set up two-factor

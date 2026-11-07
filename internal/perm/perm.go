@@ -32,17 +32,20 @@ var ErrNotFound = errors.New("permission request not found")
 
 // Request is one pending or answered tool-use request.
 type Request struct {
-	ID        string          `json:"id"`
-	TodoID    string          `json:"todo_id"`
-	ProjectID string          `json:"project_id"`
-	Tool      string          `json:"tool"`
-	Input     json.RawMessage `json:"input"`
-	Created   time.Time       `json:"created"`
-	Decision  string          `json:"decision,omitempty"` // allow | deny | "" while pending
-	Message   string          `json:"message,omitempty"`  // reason given to Claude on deny
+	ID        string `json:"id"`
+	TodoID    string `json:"todo_id"`
+	ProjectID string `json:"project_id"`
+	// OrgID is the org of the run that asks: its task's org.
+	OrgID    int64           `json:"org_id,omitempty"`
+	Tool     string          `json:"tool"`
+	Input    json.RawMessage `json:"input"`
+	Created  time.Time       `json:"created"`
+	Decision string          `json:"decision,omitempty"` // allow | deny | "" while pending
+	Message  string          `json:"message,omitempty"`  // reason given to Claude on deny
 }
 
 type run struct {
+	owner             model.Owner // who the run acts as: its task's (or chat's) user and org
 	todoID, projectID string
 	ask               AskFunc // set for runs registered with RegisterFunc
 }
@@ -66,6 +69,9 @@ type Broker struct {
 	pub     Publisher
 	Timeout time.Duration // unanswered requests are denied after this
 	Saved   AllowList     // optional; "always" grants are saved per project here
+	// Member reports whether a run's owner still belongs to its org; a run
+	// whose owner doesn't is refused (optional: without it, any valid owner).
+	Member func(model.Owner) bool
 
 	mu      sync.Mutex
 	tokens  map[string]run
@@ -80,14 +86,15 @@ func NewBroker(pub Publisher) *Broker {
 	}
 }
 
-// Register issues a bearer token for one Claude run of a todo. Call release
-// when the run ends; it also denies anything still pending for that run.
-func (b *Broker) Register(todoID, projectID string) (token string, release func()) {
+// Register issues a bearer token for one Claude run of a todo, acting as
+// owner: the todo's user and org. Call release when the run ends; it also
+// denies anything still pending for that run.
+func (b *Broker) Register(owner model.Owner, todoID, projectID string) (token string, release func()) {
 	buf := make([]byte, 24)
 	_, _ = rand.Read(buf)
 	token = hex.EncodeToString(buf)
 	b.mu.Lock()
-	b.tokens[token] = run{todoID: todoID, projectID: projectID}
+	b.tokens[token] = run{owner: owner, todoID: todoID, projectID: projectID}
 	b.mu.Unlock()
 	return token, func() {
 		b.mu.Lock()
@@ -105,15 +112,15 @@ func (b *Broker) Register(todoID, projectID string) (token string, release func(
 	}
 }
 
-// RegisterFunc issues a bearer token for one Claude run whose permission
-// requests are answered by ask. They don't show up in Pending. Call release
-// when the run ends.
-func (b *Broker) RegisterFunc(ask AskFunc) (token string, release func()) {
+// RegisterFunc issues a bearer token for one Claude run, acting as owner,
+// whose permission requests are answered by ask. They don't show up in
+// Pending. Call release when the run ends.
+func (b *Broker) RegisterFunc(owner model.Owner, ask AskFunc) (token string, release func()) {
 	buf := make([]byte, 24)
 	_, _ = rand.Read(buf)
 	token = hex.EncodeToString(buf)
 	b.mu.Lock()
-	b.tokens[token] = run{ask: ask}
+	b.tokens[token] = run{owner: owner, ask: ask}
 	b.mu.Unlock()
 	return token, func() {
 		b.mu.Lock()
@@ -220,7 +227,7 @@ func (b *Broker) ask(ctx context.Context, rn run, tool string, input json.RawMes
 	idb := make([]byte, 6)
 	_, _ = rand.Read(idb)
 	p := &pending{req: Request{
-		ID: hex.EncodeToString(idb), TodoID: rn.todoID, ProjectID: rn.projectID,
+		ID: hex.EncodeToString(idb), TodoID: rn.todoID, ProjectID: rn.projectID, OrgID: rn.owner.Org,
 		Tool: tool, Input: input, Created: time.Now(),
 	}, done: make(chan struct{})}
 	b.pending[p.req.ID] = p
@@ -267,6 +274,8 @@ func (b *Broker) ServeMCP(w http.ResponseWriter, r *http.Request) {
 	b.mu.Lock()
 	rn, ok := b.tokens[token]
 	b.mu.Unlock()
+	// Every run acts as a user in an org, and only while they belong to it.
+	ok = ok && rn.owner.Valid() && (b.Member == nil || b.Member(rn.owner))
 	if !ok {
 		http.Error(w, "unknown or expired token", http.StatusUnauthorized)
 		return

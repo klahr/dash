@@ -24,7 +24,8 @@ the credentials from a `.env` file instead.
 Dash can also serve the same tools itself at `/mcp`, for a custom connector in claude.ai (and so
 the Claude mobile apps). Anthropic's servers call it over the public internet, signing in with
 OAuth: when you add the connector you get Dash's login page, enter your Dash username and
-password, and allow access.
+password, and allow access. If you belong to several organizations, the page then asks which one
+the connector works in; it only ever acts in that one (see [tokens](users.md#tokens)).
 
 In the web UI, the account menu (or `:connector`) has **Connect Claude**: a step-by-step guide
 with the URL to copy, a link to claude.ai's connector settings, and how many connectors are signed
@@ -67,15 +68,20 @@ and enter `https://<machine>.<tailnet>.ts.net:8443/mcp` in claude.ai.
 ### Notes
 
 - `/mcp/dash` and `/mcp/permissions` are reachable too (Funnel matches paths by prefix; behind a
-  proxy every path is). They only accept the short-lived tokens Dash hands its own Claude runs.
+  proxy every path is). They only accept the short-lived tokens Dash hands its own Claude runs,
+  which act as the task's (or chat's) user in its org and only reach that org's projects.
 - Failed logins count towards the same lockout as the web login. Behind a proxy, `-trust-proxy`
   makes the lockout per client instead of shared by every request through the proxy.
-- Access tokens last an hour, refresh tokens 30 days and rotate on every use. They are stored
-  hashed in `oauth.json` in the data directory; delete it (and restart) to sign every connector
-  out. Changing the username or password also signs them out.
-- The connector acts as the account that connected it, in that account's first organization:
-  it sees that org's projects and tasks only. Platform admins' connectors also see the other
-  computers in the dashboard, like `dash-mcp`.
+- Access tokens last an hour, refresh tokens 30 days and rotate on every use; replaying a used
+  refresh token revokes the connector. They are stored hashed in the database, as the user's
+  tokens: **Tokens & apps** in the account menu lists the connectors you allowed and disconnects
+  them. Changing your password also signs them out. (An `oauth.json` from an older Dash is imported
+  once: connectors of a user in exactly one org carry on, others must connect again.)
+- A client may ask for `scope=read` only; then its tools can look but not change anything.
+- An [API token](users.md#tokens) works on `/mcp` as well, for MCP clients that take a bearer token.
+- The connector acts as the account that connected it, in the organization chosen when it was
+  allowed: it sees that org's projects and tasks only. Platform admins' connectors also see the
+  other computers in the dashboard, like `dash-mcp`.
 
 ## The chat's task tools
 

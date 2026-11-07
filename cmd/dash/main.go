@@ -184,8 +184,8 @@ func main() {
 			slog.Error("oauth", "err", err)
 			os.Exit(1)
 		}
-		if err := oauth.Keep(filepath.Join(*dataDir, "oauth.json")); err != nil {
-			slog.Warn("read OAuth tokens", "err", err)
+		if err := oauth.ImportLegacy(filepath.Join(*dataDir, "oauth.json")); err != nil {
+			slog.Warn("import oauth.json", "err", err)
 		}
 		slog.Info("remote MCP enabled", "url", oauth.Resource())
 	}
@@ -288,10 +288,20 @@ func main() {
 			os.Exit(1)
 		}
 	} else {
-		apiSrv.Peers.Runners = &tunnel.Hub{Pub: events, Taken: apiSrv.Peers.Taken, PreviewURL: previews.URLTemplate}
+		apiSrv.Peers.Runners = &tunnel.Hub{Pub: events, Taken: apiSrv.Peers.Taken, PreviewURL: previews.URLTemplate, Accounts: st.Accounts()}
 		previews.Remote = apiSrv.Peers.Runners // runners' previews, served here
 		if err := apiSrv.Peers.Runners.Keep(filepath.Join(*dataDir, "runners.json")); err != nil {
 			slog.Warn("read runners", "err", err)
+		}
+	}
+	// Every per-run MCP token acts as its task's (or chat's) user, in its org,
+	// and only while they belong to it.
+	todos.Owner = apiSrv.TaskOwner
+	perms.Member = apiSrv.Member
+	// Revoking a runner's token in Settings disconnects the runner.
+	authn.OnRevoke = func(t store.Token) {
+		if t.Kind == store.TokenRunner && apiSrv.Peers.Runners != nil {
+			_ = apiSrv.Peers.Runners.Revoke(t.RunnerID)
 		}
 	}
 

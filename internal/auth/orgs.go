@@ -24,26 +24,34 @@ import (
 //	POST   /api/orgs/{oid}/invitations {email, role, password}
 //	DELETE /api/orgs/{oid}/invitations/{iid}
 //	POST   /api/invitations/lookup|accept|register|decline {token, …}
+//	GET    /api/tokens                           the user's tokens and OAuth grants
+//	POST   /api/tokens {name, org_id, scopes, password}
+//	DELETE /api/tokens/{id}
 //
 // and two-factor sign-in (see twoFactorRoutes).
 //
-// Changing roles, removing members and inviting ask for the password again.
+// Changing roles, removing members, inviting and making tokens ask for the
+// password again. Requests with a token may read but not manage members,
+// invitations or credentials (sessionOnly; see RequireSession).
 func (a *Auth) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/login", a.Login)
 	mux.HandleFunc("POST /api/logout", a.Logout)
 	mux.HandleFunc("GET /api/me", a.me)
-	mux.HandleFunc("POST /api/auth/switch-org", a.signedIn(a.switchOrg))
+	mux.HandleFunc("POST /api/auth/switch-org", a.sessionOnly(a.switchOrg))
 	mux.HandleFunc("GET /api/orgs", a.signedIn(a.listOrgs))
-	mux.HandleFunc("POST /api/orgs", a.signedIn(a.createOrg))
+	mux.HandleFunc("POST /api/orgs", a.sessionOnly(a.createOrg))
 	mux.HandleFunc("GET /api/orgs/{oid}/members", a.signedIn(a.members))
-	mux.HandleFunc("PATCH /api/orgs/{oid}/members/{uid}", a.signedIn(a.setRole))
-	mux.HandleFunc("DELETE /api/orgs/{oid}/members/{uid}", a.signedIn(a.removeMember))
-	mux.HandleFunc("POST /api/orgs/{oid}/invitations", a.signedIn(a.invite))
-	mux.HandleFunc("DELETE /api/orgs/{oid}/invitations/{iid}", a.signedIn(a.revokeInvitation))
+	mux.HandleFunc("PATCH /api/orgs/{oid}/members/{uid}", a.sessionOnly(a.setRole))
+	mux.HandleFunc("DELETE /api/orgs/{oid}/members/{uid}", a.sessionOnly(a.removeMember))
+	mux.HandleFunc("POST /api/orgs/{oid}/invitations", a.sessionOnly(a.invite))
+	mux.HandleFunc("DELETE /api/orgs/{oid}/invitations/{iid}", a.sessionOnly(a.revokeInvitation))
 	mux.HandleFunc("POST /api/invitations/lookup", a.lookupInvitation)
-	mux.HandleFunc("POST /api/invitations/accept", a.signedIn(a.acceptInvitation))
+	mux.HandleFunc("POST /api/invitations/accept", a.sessionOnly(a.acceptInvitation))
 	mux.HandleFunc("POST /api/invitations/register", a.register)
 	mux.HandleFunc("POST /api/invitations/decline", a.declineInvitation)
+	mux.HandleFunc("GET /api/tokens", a.sessionOnly(a.listTokens))
+	mux.HandleFunc("POST /api/tokens", a.sessionOnly(a.createToken))
+	mux.HandleFunc("DELETE /api/tokens/{id}", a.sessionOnly(a.revokeToken))
 	a.twoFactorRoutes(mux)
 }
 
@@ -60,6 +68,11 @@ func (a *Auth) signedIn(h func(http.ResponseWriter, *http.Request, *Identity)) h
 	}
 }
 
+// sessionOnly is signedIn for a browser session: a token gets 403.
+func (a *Auth) sessionOnly(h func(http.ResponseWriter, *http.Request, *Identity)) http.HandlerFunc {
+	return RequireSession(a.signedIn(h)).ServeHTTP
+}
+
 // accountError answers with err's status and message.
 func accountError(w http.ResponseWriter, err error) {
 	code := http.StatusInternalServerError
@@ -73,9 +86,10 @@ func accountError(w http.ResponseWriter, err error) {
 		code = http.StatusConflict
 	case errors.Is(err, store.ErrBadRole), errors.Is(err, store.ErrBadEmail), errors.Is(err, store.ErrBadUsername),
 		errors.Is(err, store.ErrWeakPassword), errors.Is(err, store.ErrBadOrgName), errors.Is(err, errBadBody),
+		errors.Is(err, store.ErrNoOrg), errors.Is(err, store.ErrBadScopes), errors.Is(err, store.ErrBadTokenName),
 		errors.Is(err, store.ErrTOTPNotSetUp), errors.Is(err, store.ErrNoPendingTOTP):
 		code = http.StatusBadRequest
-	case errors.Is(err, ErrBadPassword):
+	case errors.Is(err, ErrBadPassword), errors.Is(err, ErrSessionRequired):
 		code = http.StatusForbidden // not 401: that would sign the browser out
 	case errors.Is(err, ErrLockedOut):
 		code = http.StatusTooManyRequests
@@ -118,7 +132,7 @@ func (a *Auth) me(w http.ResponseWriter, r *http.Request) {
 		accountError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"ok":       true,
 		"username": id.User.Username,
 		"user":     id.User,
@@ -127,7 +141,12 @@ func (a *Auth) me(w http.ResponseWriter, r *http.Request) {
 		// An org requires two-factor sign-in and they haven't set it up:
 		// nothing else works until they do.
 		"needs_2fa": id.Needs2FA,
-	})
+	}
+	if id.Token != nil {
+		resp["token"] = id.Token // a token works in its own org only
+		resp["orgs"] = []*store.Membership{id.Org}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (a *Auth) switchOrg(w http.ResponseWriter, r *http.Request, id *Identity) {

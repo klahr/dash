@@ -172,18 +172,17 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 		c.PermissionMode = mode
 	}
 	servers := map[string]any{}
-	if c.Board != nil && c.BoardURL != "" {
-		// The tools act as the user the turn runs for, in their org; a turn
-		// without one (no signed-in user) gets none.
-		if caller, ok := mcptools.CallerFrom(ctx); ok {
-			pid, _ := ctx.Value(projectKey{}).(string)
-			token, release := c.Board.Register(caller, pid)
-			defer release()
-			servers[mcptools.ServerName] = mcptools.ServerConfig(c.BoardURL, token)
-		}
+	// The tools and permission prompts act as the user the turn runs for, in
+	// their org; a turn without one (no signed-in user) gets neither.
+	caller, hasCaller := mcptools.CallerFrom(ctx)
+	if c.Board != nil && c.BoardURL != "" && hasCaller {
+		pid, _ := ctx.Value(projectKey{}).(string)
+		token, release := c.Board.Register(caller, pid)
+		defer release()
+		servers[mcptools.ServerName] = mcptools.ServerConfig(c.BoardURL, token)
 	}
-	if ask := approverFrom(ctx); c.shell() && ask != nil && c.Perms != nil && c.PermURL != "" {
-		token, release := c.Perms.RegisterFunc(ask)
+	if ask := approverFrom(ctx); c.shell() && ask != nil && c.Perms != nil && c.PermURL != "" && hasCaller {
+		token, release := c.Perms.RegisterFunc(caller, ask)
 		defer release()
 		servers[perm.ServerName] = perm.ServerConfig(c.PermURL, token)
 	}

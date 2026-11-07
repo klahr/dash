@@ -29,9 +29,13 @@ listen on a port of its own unless you pass `-addr` (then it also needs `DASH_US
 Projects are grouped by computer, and tasks run on the computer that has the project.
 Notifications come from all of them.
 
-The Runners page lists each runner as online or offline, with when it was last seen. **Revoke**
-disconnects a runner at once and its token stops working (the hub keeps only a hash of it). The
-runner then exits, saying so; to bring it back, register it again with a new code.
+A runner belongs to whoever made its code, in the org they were working in: its token is one of
+their [tokens](users.md#tokens), pinned to that org, and stops working if they leave it. The
+Runners page lists each runner as online or offline, with when it was last seen and whose it is.
+**Revoke** (there, or under **Tokens & apps**) disconnects a runner at once and its token stops
+working (the hub keeps only a hash of it). The runner then exits, saying so; to bring it back,
+register it again with a new code. Making codes and revoking runners is for platform admins, in a
+signed-in browser (not with an API token). Runners registered with an older hub become the env account's.
 
 ## What a runner lets the hub do
 

@@ -9,11 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,7 +26,10 @@ import (
 // OAuth is an OAuth 2.1 authorization server for remote MCP clients such as
 // claude.ai custom connectors: dynamic client registration (RFC 7591), the
 // authorization code grant with PKCE S256 behind the Dash login, and
-// rotating refresh tokens. Its access tokens are only good for MCPPath.
+// rotating refresh tokens. The user picks the org the client acts in; what
+// the client gets is a grant in the token table (store.TokenOAuth), pinned
+// to that org, listed and revocable with the user's other tokens. Its access
+// tokens are only good for MCPPath, as are API tokens there.
 type OAuth struct {
 	a    *Auth
 	base string // public origin: issuer, and base of the protected resource
@@ -33,19 +38,18 @@ type OAuth struct {
 	RedirectURIs []string
 
 	mu      sync.Mutex
-	clients map[string]*oauthClient
-	codes   map[string]authCode   // by hash
-	tokens  map[string]oauthToken // by hash, so the file can't be used to call Dash
-	store   string
+	codes   map[string]authCode      // by hash; short-lived, so not stored
+	tickets map[string]consentTicket // by hash
 }
 
 const (
 	MCPPath = "/mcp" // the protected resource
 
-	codeTTL    = time.Minute
-	accessTTL  = time.Hour
-	refreshTTL = 30 * 24 * time.Hour
-	maxClients = 100
+	codeTTL          = time.Minute
+	consentTicketTTL = 10 * time.Minute
+	accessTTL        = time.Hour
+	refreshTTL       = 30 * 24 * time.Hour
+	maxClients       = 100
 )
 
 // DefaultRedirectURIs are claude.ai's (and claude.com's) connector callbacks.
@@ -54,36 +58,20 @@ var DefaultRedirectURIs = []string{
 	"https://claude.com/api/mcp/auth_callback",
 }
 
-type oauthClient struct {
-	Name         string    `json:"name,omitempty"`
-	RedirectURIs []string  `json:"redirect_uris"`
-	AuthMethod   string    `json:"auth_method"`
-	Secret       string    `json:"secret,omitempty"` // hash; empty for public clients
-	Created      time.Time `json:"created"`
-}
-
 type authCode struct {
 	client, redirectURI, challenge string
-	user                           int64
+	user, org                      int64
+	scopes                         []string
 	expires                        time.Time
 }
 
-// oauthToken is good while its user still belongs to an org and hasn't
-// changed password since Issued.
-type oauthToken struct {
-	Client  string    `json:"client"`
-	User    int64     `json:"user"`
-	Issued  time.Time `json:"issued"`
-	Refresh bool      `json:"refresh,omitempty"`
-	Expires time.Time `json:"expires"`
-}
-
-type oauthFile struct {
-	// Account is set in files from before users: a hash of the single
-	// account's credentials, whose tokens then had no User.
-	Account string                  `json:"account,omitempty"`
-	Clients map[string]*oauthClient `json:"clients"`
-	Tokens  map[string]oauthToken   `json:"tokens"`
+// consentTicket stands for a signed-in user on the consent page's second
+// step, where someone in several orgs picks one: their password isn't sent
+// again. It is bound to the authorization request it was made for.
+type consentTicket struct {
+	client, redirectURI, challenge string
+	user                           int64
+	expires                        time.Time
 }
 
 // NewOAuth serves OAuth for a at publicURL, the origin (https://host[:port])
@@ -97,9 +85,8 @@ func NewOAuth(a *Auth, publicURL string) (*OAuth, error) {
 	o := &OAuth{
 		a: a, base: u.Scheme + "://" + u.Host,
 		RedirectURIs: DefaultRedirectURIs,
-		clients:      map[string]*oauthClient{},
 		codes:        map[string]authCode{},
-		tokens:       map[string]oauthToken{},
+		tickets:      map[string]consentTicket{},
 	}
 	a.oauth = o
 	return o, nil
@@ -113,20 +100,9 @@ func loopback(host string) bool {
 // Resource is the URL of the MCP endpoint the tokens are for.
 func (o *OAuth) Resource() string { return o.base + MCPPath }
 
-// Connected counts the clients signed in now: those holding a refresh token
-// that hasn't expired.
-func (o *OAuth) Connected() int {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	now := o.a.now()
-	seen := map[string]bool{}
-	for _, t := range o.tokens {
-		if t.Refresh && now.Before(t.Expires) && o.clients[t.Client] != nil {
-			seen[t.Client] = true
-		}
-	}
-	return len(seen)
-}
+// Connected counts the clients signed in now: those holding a grant that
+// can still be refreshed.
+func (o *OAuth) Connected() int { return o.a.acc.ConnectedClients(o.a.now()) }
 
 func (o *OAuth) public(path string) bool {
 	if o == nil {
@@ -141,11 +117,34 @@ func (o *OAuth) public(path string) bool {
 	return false
 }
 
-// Keep saves clients and tokens in path, like KeepSessions.
-func (o *OAuth) Keep(path string) error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.store = path
+// oauthFile is oauth.json, where clients and tokens were kept before the
+// token table.
+type oauthFile struct {
+	// Account is set in files from before users: a hash of the single
+	// account's credentials, whose tokens then had no User.
+	Account string `json:"account,omitempty"`
+	Clients map[string]struct {
+		Name         string    `json:"name,omitempty"`
+		RedirectURIs []string  `json:"redirect_uris"`
+		AuthMethod   string    `json:"auth_method"`
+		Secret       string    `json:"secret,omitempty"` // hash
+		Created      time.Time `json:"created"`
+	} `json:"clients"`
+	Tokens map[string]struct { // by hash
+		Client  string    `json:"client"`
+		User    int64     `json:"user"`
+		Issued  time.Time `json:"issued"`
+		Refresh bool      `json:"refresh,omitempty"`
+		Expires time.Time `json:"expires"`
+	} `json:"tokens"`
+}
+
+// ImportLegacy moves the clients and refresh tokens of an oauth.json into
+// the database, then renames it to <path>.imported. Tokens weren't pinned to
+// an org then: one whose user is in exactly one org becomes a grant pinned
+// to it (connectors refresh their access token and carry on); the rest are
+// dropped, and those clients must be connected again.
+func (o *OAuth) ImportLegacy(path string) error {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -154,34 +153,33 @@ func (o *OAuth) Keep(path string) error {
 		return err
 	}
 	var f oauthFile
-	if json.Unmarshal(b, &f) != nil {
-		return nil
-	}
-	for id, c := range f.Clients {
-		o.clients[id] = c
-	}
-	now := o.a.now()
-	legacy, isLegacy := o.a.legacyUser(f.Account) // tokens from before users belong to the env account
-	for k, t := range f.Tokens {
-		if t.User == 0 && isLegacy {
-			t.User, t.Issued = legacy, now
+	if json.Unmarshal(b, &f) == nil {
+		for id, c := range f.Clients {
+			if err := o.a.acc.ImportOAuthClient(store.OAuthClient{ID: id, Name: c.Name, RedirectURIs: c.RedirectURIs,
+				AuthMethod: c.AuthMethod, SecretHash: c.Secret, Created: c.Created}); err != nil {
+				return err
+			}
 		}
-		if t.User != 0 && now.Before(t.Expires) && o.clients[t.Client] != nil {
-			o.tokens[k] = t
+		now := o.a.now()
+		legacy, isLegacy := o.a.legacyUser(f.Account) // tokens from before users belong to the env account
+		for hash, t := range f.Tokens {
+			if t.User == 0 && isLegacy {
+				t.User, t.Issued = legacy, now
+			}
+			if !t.Refresh || t.User == 0 || !now.Before(t.Expires) || f.Clients[t.Client].RedirectURIs == nil {
+				continue
+			}
+			err := o.a.acc.ImportGrant(t.Client, t.User, hash, t.Issued, t.Expires, now)
+			if errors.Is(err, store.ErrNoSoleOrg) {
+				slog.Warn("OAuth client must connect again: its user is in several orgs", "client", t.Client, "user", t.User)
+				continue
+			}
+			if err != nil {
+				return err
+			}
 		}
 	}
-	return nil
-}
-
-func (o *OAuth) saveLocked() {
-	if o.store == "" {
-		return
-	}
-	b, _ := json.Marshal(oauthFile{Clients: o.clients, Tokens: o.tokens})
-	tmp := o.store + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		_ = os.Rename(tmp, o.store)
-	}
+	return os.Rename(path, path+".imported")
 }
 
 // Routes adds the metadata, registration, authorization and token endpoints.
@@ -195,29 +193,18 @@ func (o *OAuth) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /token", o.token)
 }
 
-// Bearer lets requests with a valid access token through to next and answers
-// the rest with 401 and where to find the authorization server.
+// Bearer lets requests with a valid OAuth access token or API token through
+// to next, as the token's user in its org (From), and answers the rest with
+// 401 and where to find the authorization server. Scopes are next's to check
+// (Identity.Can).
 func (o *OAuth) Bearer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tok, sent := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if uid, ok := o.valid(tok); sent && ok {
-			// The token acts as its user, in their first org; membership is
-			// checked now, as for a browser session.
-			u, err := o.a.acc.User(uid)
-			if err != nil {
-				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "login required"})
+		tok, sent := bearer(r)
+		if sent {
+			if id, err := o.a.tokenIdentity(tok, store.TokenOAuth, store.TokenAPI); err == nil {
+				next.ServeHTTP(w, r.WithContext(withIdentity(r.Context(), id)))
 				return
 			}
-			sess := store.Session{User: u}
-			if ms, err := o.a.acc.Memberships(uid); err == nil && len(ms) > 0 {
-				sess.Org = &ms[0]
-			}
-			if sess.Org == nil {
-				writeJSON(w, http.StatusForbidden, map[string]string{"error": "you aren't a member of any organization", "code": "no_org"})
-				return
-			}
-			next.ServeHTTP(w, r.WithContext(WithSession(r.Context(), sess)))
-			return
 		}
 		v := fmt.Sprintf("Bearer resource_metadata=%q", o.base+"/.well-known/oauth-protected-resource")
 		if sent {
@@ -228,17 +215,6 @@ func (o *OAuth) Bearer(next http.Handler) http.Handler {
 	})
 }
 
-// valid reports whether tok is a live access token, and whose.
-func (o *OAuth) valid(tok string) (int64, bool) {
-	if tok == "" {
-		return 0, false
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	t, ok := o.tokens[sessionKey(tok)]
-	return t.User, ok && !t.Refresh && o.a.now().Before(t.Expires) && o.a.acc.Active(t.User, t.Issued)
-}
-
 // ---- metadata ----
 
 func (o *OAuth) resourceMetadata(w http.ResponseWriter, r *http.Request) {
@@ -247,6 +223,7 @@ func (o *OAuth) resourceMetadata(w http.ResponseWriter, r *http.Request) {
 		"authorization_servers":    []string{o.base},
 		"bearer_methods_supported": []string{"header"},
 		"resource_name":            "Dash",
+		"scopes_supported":         store.UserScopes,
 	})
 }
 
@@ -261,6 +238,7 @@ func (o *OAuth) serverMetadata(w http.ResponseWriter, r *http.Request) {
 		"code_challenge_methods_supported":               []string{"S256"},
 		"token_endpoint_auth_methods_supported":          authMethods,
 		"authorization_response_iss_parameter_supported": true,
+		"scopes_supported":                               store.UserScopes,
 	})
 }
 
@@ -336,22 +314,21 @@ func (o *OAuth) register(w http.ResponseWriter, r *http.Request) {
 		req.ClientName = req.ClientName[:100]
 	}
 
-	id, secret := randomToken(), ""
-	c := &oauthClient{Name: req.ClientName, RedirectURIs: req.RedirectURIs, AuthMethod: req.AuthMethod, Created: o.a.now()}
+	secret := ""
+	c := store.OAuthClient{ID: randomToken(), Name: req.ClientName, RedirectURIs: req.RedirectURIs, AuthMethod: req.AuthMethod, Created: o.a.now()}
 	if req.AuthMethod != "none" {
 		secret = randomToken()
-		c.Secret = sessionKey(secret)
+		c.SecretHash = sessionKey(secret)
 	}
-	o.mu.Lock()
-	o.pruneClientsLocked()
-	if len(o.clients) >= maxClients {
-		o.mu.Unlock()
+	if err := o.a.acc.CreateOAuthClient(c, maxClients, o.a.now()); errors.Is(err, store.ErrTooManyClients) {
 		oauthErr(w, http.StatusServiceUnavailable, "temporarily_unavailable", "too many registered clients")
 		return
+	} else if err != nil {
+		slog.Error("register OAuth client", "err", err)
+		oauthErr(w, http.StatusInternalServerError, "server_error", "registration failed")
+		return
 	}
-	o.clients[id] = c
-	o.saveLocked()
-	o.mu.Unlock()
+	id := c.ID
 
 	res := map[string]any{
 		"client_id":                  id,
@@ -368,34 +345,80 @@ func (o *OAuth) register(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, res)
 }
 
-// pruneClientsLocked drops clients that registered over an hour ago and
-// hold no tokens: abandoned or never authorized.
-func (o *OAuth) pruneClientsLocked() {
-	if len(o.clients) < maxClients {
-		return
+func (o *OAuth) client(id string) *store.OAuthClient {
+	if id == "" {
+		return nil
 	}
-	used := map[string]bool{}
-	for _, t := range o.tokens {
-		used[t.Client] = true
-	}
-	for id, c := range o.clients {
-		if !used[id] && o.a.now().Sub(c.Created) > time.Hour {
-			delete(o.clients, id)
+	c, err := o.a.acc.OAuthClient(id)
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			slog.Error("look up OAuth client", "err", err)
 		}
+		return nil
 	}
-}
-
-func (o *OAuth) client(id string) *oauthClient {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.clients[id]
+	return &c
 }
 
 // ---- authorization ----
 
 type authRequest struct {
-	ClientID, RedirectURI, State, Challenge, Resource string
-	ClientName, RedirectHost, Error                   string
+	ClientID, RedirectURI, State, Challenge, Resource, Scope string
+	ClientName, RedirectHost, Error                          string
+	Scopes                                                   []string
+	// The second step, for someone in several orgs: who signed in (the
+	// ticket) and the orgs to pick from.
+	Ticket string
+	Orgs   []store.Membership
+	OrgID  int64
+}
+
+// ReadOnly reports whether the client asked for read access only.
+func (q authRequest) ReadOnly() bool { return !slices.Contains(q.Scopes, store.ScopeWrite) }
+
+// parseScope checks an OAuth scope parameter: read and/or write, both if
+// it's empty.
+func parseScope(scope string) ([]string, bool) {
+	if strings.TrimSpace(scope) == "" {
+		return slices.Clone(store.UserScopes), true
+	}
+	var out []string
+	for _, sc := range strings.Fields(scope) {
+		if !slices.Contains(store.UserScopes, sc) {
+			return nil, false
+		}
+		if !slices.Contains(out, sc) {
+			out = append(out, sc)
+		}
+	}
+	slices.Sort(out)
+	return out, true
+}
+
+// Errors from pickOrg.
+var (
+	errNoOrgs     = errors.New("your account isn't a member of any organization")
+	errChooseOrg  = errors.New("choose the organization to connect")
+	errNotInOrgID = errors.New("you aren't a member of that organization")
+)
+
+// pickOrg checks the org the user chose for a client to act in. Someone in
+// one org acts in it; someone in several must choose; a choice must be one of
+// theirs. There is no default: never the first org.
+func pickOrg(orgs []store.Membership, orgID int64) (store.Membership, error) {
+	switch {
+	case orgID != 0:
+		for _, m := range orgs {
+			if m.ID == orgID {
+				return m, nil
+			}
+		}
+		return store.Membership{}, errNotInOrgID
+	case len(orgs) == 1:
+		return orgs[0], nil
+	case len(orgs) > 1:
+		return store.Membership{}, errChooseOrg
+	}
+	return store.Membership{}, errNoOrgs
 }
 
 func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
@@ -409,7 +432,7 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 	}
 	f := r.Form
 	q := authRequest{ClientID: f.Get("client_id"), RedirectURI: f.Get("redirect_uri"), State: f.Get("state"),
-		Challenge: f.Get("code_challenge"), Resource: f.Get("resource")}
+		Challenge: f.Get("code_challenge"), Resource: f.Get("resource"), Scope: f.Get("scope")}
 	c := o.client(q.ClientID)
 	if c == nil {
 		http.Error(w, "Unknown client. Remove the connector and add it again.", http.StatusBadRequest)
@@ -434,6 +457,7 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, u.String(), http.StatusFound)
 	}
 	fail := func(kind, desc string) { reply(url.Values{"error": {kind}, "error_description": {desc}}) }
+	scopes, scopeOK := parseScope(q.Scope)
 	switch {
 	case f.Get("response_type") != "code":
 		fail("unsupported_response_type", "only response_type=code is supported")
@@ -444,7 +468,11 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 	case q.Resource != "" && strings.TrimRight(q.Resource, "/") != o.Resource():
 		fail("invalid_target", "unknown resource "+q.Resource)
 		return
+	case !scopeOK:
+		fail("invalid_scope", "scope must be read and/or write")
+		return
 	}
+	q.Scopes = scopes
 	q.ClientName = c.Name
 	if u, err := url.Parse(q.RedirectURI); err == nil {
 		q.RedirectHost = u.Host
@@ -453,45 +481,81 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 		o.consent(w, http.StatusOK, q)
 		return
 	}
+	ticket := r.PostForm.Get("ticket")
 	if r.PostForm.Get("action") != "allow" {
+		o.takeTicket(ticket, q) // spent either way
 		fail("access_denied", "the user declined")
 		return
 	}
-	ip := o.a.clientIP(r)
-	u, err := o.a.attempt(ip, strings.TrimSpace(r.PostForm.Get("username")), r.PostForm.Get("password"))
-	if err == nil && u.TOTP {
-		if strings.TrimSpace(r.PostForm.Get("code")) == "" {
-			q.Error = "Enter the code from your authenticator app, or a recovery code."
-			o.consent(w, http.StatusUnauthorized, q)
+
+	// Who: a password (and second factor), or the ticket of the first step.
+	var uid int64
+	if ticket != "" {
+		t, ok := o.takeTicket(ticket, q)
+		if !ok {
+			q.Error = "this page has expired; sign in again"
+			o.consent(w, http.StatusBadRequest, q)
 			return
 		}
-		_, err = o.a.secondFactor(ip, u.ID, r.PostForm.Get("code"))
+		uid = t.user
+	} else {
+		ip := o.a.clientIP(r)
+		u, err := o.a.attempt(ip, strings.TrimSpace(r.PostForm.Get("username")), r.PostForm.Get("password"))
+		if err == nil && u.TOTP {
+			if strings.TrimSpace(r.PostForm.Get("code")) == "" {
+				q.Error = "Enter the code from your authenticator app, or a recovery code."
+				o.consent(w, http.StatusUnauthorized, q)
+				return
+			}
+			_, err = o.a.secondFactor(ip, u.ID, r.PostForm.Get("code"))
+		}
+		switch {
+		case errors.Is(err, errLockedOut):
+			q.Error = err.Error()
+			o.consent(w, http.StatusTooManyRequests, q)
+			return
+		case errors.Is(err, errBadLogin), errors.Is(err, errBadCode):
+			q.Error = err.Error()
+			o.consent(w, http.StatusUnauthorized, q)
+			return
+		case err != nil:
+			q.Error = "sign-in failed"
+			o.consent(w, http.StatusInternalServerError, q)
+			return
+		}
+		o.a.signedInFrom(ip)
+		if required, _ := o.a.acc.Requires2FA(u.ID); required && !u.TOTP {
+			q.Error = "Your organization requires two-factor sign-in. Sign in to Dash and set it up first."
+			o.consent(w, http.StatusForbidden, q)
+			return
+		}
+		uid = u.ID
 	}
-	switch {
-	case errors.Is(err, errLockedOut):
-		q.Error = err.Error()
-		o.consent(w, http.StatusTooManyRequests, q)
-		return
-	case errors.Is(err, errBadLogin), errors.Is(err, errBadCode):
-		q.Error = err.Error()
-		o.consent(w, http.StatusUnauthorized, q)
-		return
-	case err != nil:
+
+	// Which org the client will act in.
+	orgs, err := o.a.acc.Memberships(uid)
+	if err != nil {
 		q.Error = "sign-in failed"
 		o.consent(w, http.StatusInternalServerError, q)
 		return
 	}
-	o.a.signedInFrom(ip)
-	if required, _ := o.a.acc.Requires2FA(u.ID); required && !u.TOTP {
-		q.Error = "Your organization requires two-factor sign-in. Sign in to Dash and set it up first."
+	orgID, _ := strconv.ParseInt(r.PostForm.Get("org_id"), 10, 64)
+	org, err := pickOrg(orgs, orgID)
+	switch {
+	case errors.Is(err, errNoOrgs):
+		q.Error = err.Error()
 		o.consent(w, http.StatusForbidden, q)
 		return
-	}
-	if !o.a.acc.Active(u.ID, o.a.now()) {
-		q.Error = "your account isn't a member of any organization"
-		o.consent(w, http.StatusForbidden, q)
+	case err != nil: // choose, or choose again
+		q.Orgs, q.Ticket = orgs, o.newTicket(uid, q)
+		code := http.StatusOK
+		if errors.Is(err, errNotInOrgID) {
+			q.Error, code = err.Error(), http.StatusForbidden
+		}
+		o.consent(w, code, q)
 		return
 	}
+
 	code := randomToken()
 	o.mu.Lock()
 	now := o.a.now()
@@ -500,9 +564,40 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 			delete(o.codes, k)
 		}
 	}
-	o.codes[sessionKey(code)] = authCode{client: q.ClientID, redirectURI: q.RedirectURI, challenge: q.Challenge, user: u.ID, expires: now.Add(codeTTL)}
+	o.codes[sessionKey(code)] = authCode{client: q.ClientID, redirectURI: q.RedirectURI, challenge: q.Challenge,
+		user: uid, org: org.ID, scopes: scopes, expires: now.Add(codeTTL)}
 	o.mu.Unlock()
 	reply(url.Values{"code": {code}})
+}
+
+// newTicket makes the ticket for uid's second step of q.
+func (o *OAuth) newTicket(uid int64, q authRequest) string {
+	t := randomToken()
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	now := o.a.now()
+	for k, c := range o.tickets {
+		if now.After(c.expires) {
+			delete(o.tickets, k)
+		}
+	}
+	o.tickets[sessionKey(t)] = consentTicket{client: q.ClientID, redirectURI: q.RedirectURI, challenge: q.Challenge,
+		user: uid, expires: now.Add(consentTicketTTL)}
+	return t
+}
+
+// takeTicket spends a ticket made for q.
+func (o *OAuth) takeTicket(t string, q authRequest) (consentTicket, bool) {
+	if t == "" {
+		return consentTicket{}, false
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	k := sessionKey(t)
+	c, ok := o.tickets[k]
+	delete(o.tickets, k)
+	ok = ok && o.a.now().Before(c.expires) && c.client == q.ClientID && c.redirectURI == q.RedirectURI && c.challenge == q.Challenge
+	return c, ok
 }
 
 var consentPage = template.Must(template.New("consent").Parse(`<!doctype html>
@@ -511,12 +606,13 @@ var consentPage = template.Must(template.New("consent").Parse(`<!doctype html>
 <style>
 body{font:16px system-ui,sans-serif;background:#111;color:#eee;display:flex;justify-content:center;padding:2rem 1rem;margin:0}
 main{max-width:24rem;width:100%}h1{font-size:1.4rem}p{color:#bbb;line-height:1.4}
-label{display:block;margin:.8rem 0 .3rem}input{width:100%;box-sizing:border-box;padding:.6rem;border-radius:6px;border:1px solid #444;background:#1c1c1c;color:#eee;font-size:1rem}
+label{display:block;margin:.8rem 0 .3rem}input,select{width:100%;box-sizing:border-box;padding:.6rem;border-radius:6px;border:1px solid #444;background:#1c1c1c;color:#eee;font-size:1rem}
 .err{color:#f77}.row{display:flex;gap:.6rem;margin-top:1.2rem}button{flex:1;padding:.7rem;border-radius:6px;border:0;font-size:1rem;cursor:pointer}
 .allow{background:#d97757;color:#fff}.deny{background:#333;color:#eee}
 </style></head><body><main>
 <h1>Connect {{if .ClientName}}“{{.ClientName}}”{{else}}an app{{end}} to Dash?</h1>
-<p>It will be able to see your projects and tasks and create, run, approve, rework, cancel and delete tasks on every computer in this dashboard. Tasks run Claude Code on those computers.</p>
+{{if .ReadOnly}}<p>It will be able to see the projects, tasks and issues of the organization you connect it to, on every computer in its dashboard. It can't change anything.</p>
+{{else}}<p>It will be able to see the projects and tasks of the organization you connect it to and create, run, approve, rework, cancel and delete tasks on every computer in its dashboard. Tasks run Claude Code on those computers.</p>{{end}}
 <p>After you allow it, you go back to <b>{{.RedirectHost}}</b>.</p>
 {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
 <form method="post" action="/authorize">
@@ -527,9 +623,15 @@ label{display:block;margin:.8rem 0 .3rem}input{width:100%;box-sizing:border-box;
 <input type="hidden" name="state" value="{{.State}}">
 <input type="hidden" name="code_challenge" value="{{.Challenge}}">
 <input type="hidden" name="resource" value="{{.Resource}}">
-<label for="u">Dash username</label><input id="u" name="username" autocomplete="username">
+<input type="hidden" name="scope" value="{{.Scope}}">
+{{if .Ticket}}<input type="hidden" name="ticket" value="{{.Ticket}}">
+<label for="org">Organization</label><select id="org" name="org_id" required>
+<option value="">Choose…</option>
+{{range .Orgs}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+</select>
+{{else}}<label for="u">Dash username</label><input id="u" name="username" autocomplete="username">
 <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password">
-<label for="c">Two-factor code <small>(if you've turned it on)</small></label><input id="c" name="code" inputmode="numeric" autocomplete="one-time-code">
+<label for="c">Two-factor code <small>(if you've turned it on)</small></label><input id="c" name="code" inputmode="numeric" autocomplete="one-time-code">{{end}}
 <div class="row"><button class="deny" name="action" value="deny" formnovalidate>Deny</button>
 <button class="allow" name="action" value="allow">Allow</button></div>
 </form></main></body></html>
@@ -559,7 +661,7 @@ func (o *OAuth) token(w http.ResponseWriter, r *http.Request) {
 		id, secret = f.Get("client_id"), f.Get("client_secret")
 	}
 	c := o.client(id)
-	if c == nil || c.Secret != "" && subtle.ConstantTimeCompare([]byte(sessionKey(secret)), []byte(c.Secret)) != 1 {
+	if c == nil || c.SecretHash != "" && subtle.ConstantTimeCompare([]byte(sessionKey(secret)), []byte(c.SecretHash)) != 1 {
 		oauthErr(w, http.StatusUnauthorized, "invalid_client", "unknown client or wrong secret")
 		return
 	}
@@ -568,15 +670,16 @@ func (o *OAuth) token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	o.mu.Lock()
-	defer o.mu.Unlock()
 	now := o.a.now()
-	var user int64
+	var pair store.TokenPair
+	var err error
 	switch f.Get("grant_type") {
 	case "authorization_code":
 		k := sessionKey(f.Get("code"))
+		o.mu.Lock()
 		code, ok := o.codes[k]
 		delete(o.codes, k) // single use, whatever happens next
+		o.mu.Unlock()
 		if !ok || code.client != id || now.After(code.expires) || code.redirectURI != f.Get("redirect_uri") {
 			oauthErr(w, http.StatusBadRequest, "invalid_grant", "unknown or expired code, or wrong redirect_uri")
 			return
@@ -585,40 +688,34 @@ func (o *OAuth) token(w http.ResponseWriter, r *http.Request) {
 			oauthErr(w, http.StatusBadRequest, "invalid_grant", "code_verifier does not match")
 			return
 		}
-		user = code.user
+		_ = o.a.acc.PruneTokens(now)
+		pair, err = o.a.acc.CreateGrant(store.Grant{ClientID: id, UserID: code.user, OrgID: code.org, Scopes: code.scopes},
+			accessTTL, refreshTTL, now)
+		if errors.Is(err, store.ErrNotMember) {
+			oauthErr(w, http.StatusBadRequest, "invalid_grant", "you are no longer a member of that organization")
+			return
+		}
 	case "refresh_token":
-		k := sessionKey(f.Get("refresh_token"))
-		t, ok := o.tokens[k]
-		if !ok || !t.Refresh || t.Client != id || now.After(t.Expires) {
-			oauthErr(w, http.StatusBadRequest, "invalid_grant", "unknown or expired refresh token")
+		pair, err = o.a.acc.RefreshGrant(f.Get("refresh_token"), id, accessTTL, refreshTTL, now)
+		if errors.Is(err, store.ErrTokenInvalid) {
+			oauthErr(w, http.StatusBadRequest, "invalid_grant", "unknown, expired or revoked refresh token")
 			return
 		}
-		delete(o.tokens, k) // rotation: each refresh token works once
-		if !o.a.acc.Active(t.User, t.Issued) {
-			o.saveLocked()
-			oauthErr(w, http.StatusBadRequest, "invalid_grant", "the account was signed out")
-			return
-		}
-		user = t.User
 	default:
 		oauthErr(w, http.StatusBadRequest, "unsupported_grant_type", "use authorization_code or refresh_token")
 		return
 	}
-
-	for k, t := range o.tokens {
-		if now.After(t.Expires) {
-			delete(o.tokens, k)
-		}
+	if err != nil {
+		slog.Error("issue OAuth tokens", "err", err)
+		oauthErr(w, http.StatusInternalServerError, "server_error", "could not issue tokens")
+		return
 	}
-	access, refresh := randomToken(), randomToken()
-	o.tokens[sessionKey(access)] = oauthToken{Client: id, User: user, Issued: now, Expires: now.Add(accessTTL)}
-	o.tokens[sessionKey(refresh)] = oauthToken{Client: id, User: user, Issued: now, Refresh: true, Expires: now.Add(refreshTTL)}
-	o.saveLocked()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"access_token":  access,
+		"access_token":  pair.Access,
 		"token_type":    "Bearer",
 		"expires_in":    int(accessTTL.Seconds()),
-		"refresh_token": refresh,
+		"refresh_token": pair.Refresh,
+		"scope":         strings.Join(pair.Scopes, " "),
 	})
 }
 

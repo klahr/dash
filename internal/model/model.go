@@ -162,8 +162,8 @@ type Worktree struct {
 type Todo struct {
 	ID        string `json:"id"`
 	ProjectID string `json:"project_id"`
-	// CreatedBy is the user who created the task (0: Dash itself, or from
-	// before users).
+	// CreatedBy is the user who created the task (0: Dash itself, from
+	// before users, or made on a runner by its hub). Its runs act as them.
 	CreatedBy int64  `json:"created_by,omitempty"`
 	Title     string `json:"title"`
 	Prompt    string `json:"prompt"`
@@ -428,3 +428,12 @@ type ErrInvalidTransition struct{ From, To TodoStatus }
 func (e ErrInvalidTransition) Error() string {
 	return fmt.Sprintf("invalid status transition %s → %s", e.From, e.To)
 }
+
+// Owner is who a credential acts as: a user, in one org. Both are required.
+type Owner struct {
+	User int64 `json:"user_id"`
+	Org  int64 `json:"org_id"`
+}
+
+// Valid reports whether o names both a user and an org.
+func (o Owner) Valid() bool { return o.User > 0 && o.Org > 0 }

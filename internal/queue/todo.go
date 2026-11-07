@@ -53,8 +53,12 @@ type TodoEngine struct {
 	// Board and BoardURL give every run the issue tools (report_issue,
 	// list_issues) of Dash's MCP server, so Claude can log problems it
 	// notices outside its task instead of fixing them on the wrong branch.
-	Board        *mcptools.Tokens
-	BoardURL     string
+	Board    *mcptools.Tokens
+	BoardURL string
+	// Owner is who a todo's runs act as: its user and org. The per-run
+	// tokens of the permission and board MCP servers carry it, and a run
+	// whose owner can't be found gets neither server.
+	Owner        func(model.Todo) (model.Owner, error)
 	Usage        *usage.Tracker // optional: pause when the subscription is near its limit
 	WorktreeRoot string         // <data>/worktrees
 	MaxParallel  int
@@ -529,16 +533,23 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 		req.ExtraArgs = append(req.ExtraArgs, "--add-dir", dir)
 	}
 	servers := map[string]any{}
-	if e.Perms != nil && e.BaseURL != "" {
-		token, release := e.Perms.Register(t.ID, t.ProjectID)
+	owner, ownerErr := model.Owner{}, errors.New("no owner resolver")
+	if e.Owner != nil {
+		owner, ownerErr = e.Owner(*t)
+	}
+	if ownerErr != nil && (e.Perms != nil || e.Board != nil) {
+		slog.Warn("task runs without Dash's MCP servers: no user and org to act as", "todo", t.ID, "err", ownerErr)
+	}
+	if e.Perms != nil && e.BaseURL != "" && ownerErr == nil {
+		token, release := e.Perms.Register(owner, t.ID, t.ProjectID)
 		defer release()
 		servers[perm.ServerName] = perm.ServerConfig(e.BaseURL, token)
 		req.ExtraArgs = append(req.ExtraArgs, "--permission-prompt-tool", perm.PromptTool)
 		// Claude waits on the MCP tool while a human decides; don't let it time out first.
 		req.Env = []string{"MCP_TOOL_TIMEOUT=3600000"}
 	}
-	if e.Board != nil && e.BoardURL != "" {
-		token, release := e.Board.RegisterTask(t.ProjectID, t.ID)
+	if e.Board != nil && e.BoardURL != "" && ownerErr == nil {
+		token, release := e.Board.RegisterTask(owner, t.ProjectID, t.ID)
 		defer release()
 		servers[mcptools.ServerName] = mcptools.ServerConfig(e.BoardURL, token)
 		for _, name := range mcptools.IssueToolNames {

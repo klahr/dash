@@ -140,7 +140,11 @@ func newTwoOrgs(t *testing.T) *twoOrgs {
 	}
 
 	// A permission prompt of the task, waiting for an answer.
-	token, release := s.Perms.Register(td.ID, web.ID)
+	runOwner, err := s.TaskOwner(td)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, release := s.Perms.Register(runOwner, td.ID, web.ID)
 	t.Cleanup(release)
 	go func() {
 		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"permission_prompt","arguments":{"tool_name":"Bash","input":{"command":"ls"}}}}`

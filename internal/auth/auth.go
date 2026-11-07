@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/passhash"
 	"github.com/klahr/dash/internal/store"
 )
@@ -67,6 +69,10 @@ type Auth struct {
 	// dashboard) call the API with "Authorization: Bearer <token>".
 	PeerToken string
 
+	// OnRevoke is told about each token a user revokes, so what holds it
+	// open (a runner's tunnel) can be closed (optional).
+	OnRevoke func(store.Token)
+
 	oauth *OAuth // set by NewOAuth
 }
 
@@ -82,10 +88,26 @@ func (a *Auth) Accounts() *store.Accounts { return a.acc }
 
 // ---- the request's identity ----
 
-// Identity is who made a request: the session's user and active org.
+// Identity is who made a request: the session's user and active org, or a
+// token's user and the org it is pinned to.
 type Identity struct {
 	store.Session
-	key string // the session's key, for switching its org
+	// Token is set when the request came with a token instead of a session.
+	Token *store.Token
+	key   string // the session's key, for switching its org, or the token's hash
+}
+
+// Can reports whether the request may do what needs scope: sessions may do
+// everything their user may, tokens only what they were given.
+func (id *Identity) Can(scope string) bool { return id.Token == nil || id.Token.HasScope(scope) }
+
+// Owner is who the request acts as.
+func (id *Identity) Owner() model.Owner {
+	o := model.Owner{User: id.User.ID}
+	if id.Org != nil {
+		o.Org = id.Org.ID
+	}
+	return o
 }
 
 type identityKey struct{}
@@ -94,18 +116,85 @@ func withIdentity(ctx context.Context, id *Identity) context.Context {
 	return context.WithValue(ctx, identityKey{}, id)
 }
 
+// WithIdentity is ctx for a request made as id (in-process calls on behalf
+// of a request that was authenticated already).
+func WithIdentity(ctx context.Context, id *Identity) context.Context { return withIdentity(ctx, id) }
+
 // WithSession marks ctx as a request of sess (in-process callers and tests;
 // the Middleware does this for browser sessions).
 func WithSession(ctx context.Context, sess store.Session) context.Context {
 	return withIdentity(ctx, &Identity{Session: sess})
 }
 
-// From returns the signed-in user of a request that came through the
-// Middleware with a session. Requests with the peer token, over a runner's
-// tunnel and to public paths have none.
+// From returns the user of a request that came through the Middleware with a
+// session or an API token, or through OAuth.Bearer. Requests with the peer
+// token, over a runner's tunnel and to public paths have none.
 func From(ctx context.Context) (*Identity, bool) {
 	id, ok := ctx.Value(identityKey{}).(*Identity)
 	return id, ok && id != nil
+}
+
+// ViaToken reports whether ctx's request was authenticated by a token
+// rather than a browser session.
+func ViaToken(ctx context.Context) bool {
+	id, ok := From(ctx)
+	return ok && id.Token != nil
+}
+
+// ErrSessionRequired is what a token gets for what only a signed-in browser
+// may do: managing members, invitations and credentials.
+var ErrSessionRequired = errors.New("not available with a token; sign in to Dash to do this")
+
+// RequireSession rejects requests authenticated by a token. It wraps the
+// routes that manage members, invitations and credentials, so a leaked token
+// can't mint more tokens, let anyone in or lock anyone out.
+func RequireSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ViaToken(r.Context()) {
+			writeError(w, http.StatusForbidden, ErrSessionRequired.Error())
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// bearer is the request's bearer token, if it sent one.
+func bearer(r *http.Request) (string, bool) {
+	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	tok = strings.TrimSpace(tok)
+	return tok, ok && tok != ""
+}
+
+// tokenIdentity authenticates tok as one of kinds.
+func (a *Auth) tokenIdentity(tok string, kinds ...store.TokenKind) (*Identity, error) {
+	t, s, err := a.acc.Authenticate(tok, a.now(), kinds...)
+	if err != nil {
+		if !errors.Is(err, store.ErrTokenInvalid) {
+			slog.Error("look up token", "err", err)
+		}
+		return nil, err
+	}
+	// Like a session, a person's token does nothing until they set up the
+	// two-factor sign-in an org of theirs requires. Runners carry on.
+	if s.Needs2FA && t.Kind != store.TokenRunner {
+		return nil, errTokenNeeds2FA
+	}
+	return &Identity{Session: s, Token: &t, key: store.TokenHash(tok)}, nil
+}
+
+var errTokenNeeds2FA = errors.New("set up two-factor sign-in in Dash to use your tokens")
+
+// scopeFor is the scope r needs: read for GET and HEAD requests (and the
+// read-only event stream), write for everything else, including the
+// WebSockets that send (chat, terminals).
+func scopeFor(r *http.Request) string {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return store.ScopeWrite
+	}
+	if strings.HasPrefix(r.URL.Path, "/ws/") && r.URL.Path != "/ws/events" {
+		return store.ScopeWrite
+	}
+	return store.ScopeRead
 }
 
 // session returns the identity of r's session cookie, if valid.
@@ -268,6 +357,9 @@ func (a *Auth) ConfirmPassword(r *http.Request, password string) error {
 	id, ok := From(r.Context())
 	if !ok {
 		return ErrBadPassword
+	}
+	if id.Token != nil {
+		return ErrSessionRequired
 	}
 	ip := a.clientIP(r)
 	f, ok := a.reserve(ip)
@@ -458,6 +550,10 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			return
 		}
 		api := strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/") || strings.HasPrefix(r.URL.Path, "/peer/")
+		if tok, ok := bearer(r); ok {
+			a.serveToken(w, r, tok, api, next)
+			return
+		}
 		id, ok := a.session(r)
 		if !ok {
 			if api {
@@ -493,10 +589,44 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// stillValid reports whether the session behind id still exists, its user
-// still belongs to the org they connected in, and no org requires a second
-// factor they lack.
+// serveToken passes an API request with an API token on to next, as the
+// token's user in the token's org, if the token is valid and has the scope
+// the request needs.
+func (a *Auth) serveToken(w http.ResponseWriter, r *http.Request, tok string, api bool, next http.Handler) {
+	if !api {
+		writeError(w, http.StatusUnauthorized, "tokens only work on the API")
+		return
+	}
+	id, err := a.tokenIdentity(tok, store.TokenAPI)
+	if errors.Is(err, errTokenNeeds2FA) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "2fa_required"})
+		return
+	}
+	if err != nil {
+		w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+		writeError(w, http.StatusUnauthorized, store.ErrTokenInvalid.Error())
+		return
+	}
+	if need := scopeFor(r); !id.Can(need) {
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer error="insufficient_scope", scope=%q`, need))
+		writeError(w, http.StatusForbidden, "this token doesn't have the "+need+" scope")
+		return
+	}
+	r = r.WithContext(withIdentity(r.Context(), id))
+	if strings.HasPrefix(r.URL.Path, "/ws/") {
+		w = &watchedConn{ResponseWriter: w, a: a, r: r, id: id}
+	}
+	next.ServeHTTP(w, r)
+}
+
+// stillValid reports whether the session or token behind id still exists,
+// its user still belongs to the org they connected in, and (for a session)
+// no org requires a second factor they lack.
 func (a *Auth) stillValid(id *Identity) bool {
+	if id.Token != nil {
+		_, _, err := a.acc.AuthenticateHash(id.key, a.now(), id.Token.Kind)
+		return err == nil
+	}
 	s, err := a.acc.Session(id.key, a.now())
 	if err != nil || s.Needs2FA {
 		return false

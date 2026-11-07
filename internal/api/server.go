@@ -132,14 +132,21 @@ func (s *Server) buildMux() *http.ServeMux {
 			}
 			writeJSON(w, http.StatusOK, rh.List())
 		})
-		mux.HandleFunc("POST /api/runners/codes", func(w http.ResponseWriter, r *http.Request) {
+		// A runner is a credential of the whole Dash: only a platform admin, in a
+		// signed-in browser, makes or revokes one.
+		mux.Handle("POST /api/runners/codes", auth.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !s.adminOnly(w, r) {
 				return
 			}
-			code, expires := rh.NewCode()
+			// The runner registered with the code will be the user's, in their active org.
+			code, expires, err := rh.NewCode(s.requestOwner(r))
+			if err != nil {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+				return
+			}
 			writeJSON(w, http.StatusOK, map[string]any{"code": code, "expires": expires})
-		})
-		mux.HandleFunc("DELETE /api/runners/{id}", func(w http.ResponseWriter, r *http.Request) {
+		})))
+		mux.Handle("DELETE /api/runners/{id}", auth.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !s.adminOnly(w, r) {
 				return
 			}
@@ -148,7 +155,7 @@ func (s *Server) buildMux() *http.ServeMux {
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
-		})
+		})))
 		mux.HandleFunc("POST /runner/register", rh.ServeRegister)
 		mux.HandleFunc("GET /runner/connect", rh.ServeConnect)
 	}
@@ -400,7 +407,7 @@ func writeErr(w http.ResponseWriter, err error) {
 		code = http.StatusServiceUnavailable
 	case errors.As(err, &gitErr):
 		code = http.StatusBadGateway
-	case errors.Is(err, auth.ErrBadPassword):
+	case errors.Is(err, auth.ErrBadPassword), errors.Is(err, auth.ErrSessionRequired):
 		code = http.StatusForbidden // not 401: that would sign the browser out
 	case errors.Is(err, auth.ErrLockedOut):
 		code = http.StatusTooManyRequests

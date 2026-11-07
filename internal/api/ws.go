@@ -163,8 +163,10 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		turnCtx = agent.WithApprover(turnCtx, approvals.forTurn(turnCtx))
 		turnCtx = agent.WithPermissionMode(turnCtx, mode)
 		turnCtx = agent.WithProject(turnCtx, pid)
-		if user != 0 {
-			turnCtx = mcptools.WithCaller(turnCtx, mcptools.Caller{Org: sv.c.Org, User: user})
+		// The chat's tools act as its user in their org (for another Dash's
+		// request, this Dash's env account in the default org).
+		if owner := s.requestOwner(r); owner.Valid() {
+			turnCtx = mcptools.WithCaller(turnCtx, owner)
 		}
 		if general {
 			if err := save(msg.Messages); err != nil {

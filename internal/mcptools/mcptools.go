@@ -623,6 +623,22 @@ func boardTools(b Board, o Options) []Tool {
 	}
 }
 
+// FleetReadTools are the FleetTools that only look.
+var FleetReadTools = []string{"list_projects", "list_todos", "get_todo", "list_issues", "get_diff", "get_log", "get_project"}
+
+// ReadOnly returns tools with those not in read made to fail with err: a
+// read-only caller still sees every tool, and learns why one doesn't work.
+func ReadOnly(tools []Tool, read []string, err error) []Tool {
+	out := make([]Tool, len(tools))
+	for i, t := range tools {
+		if !slices.Contains(read, t.Name) {
+			t.Run = func(Args) (any, error) { return nil, err }
+		}
+		out[i] = t
+	}
+	return out
+}
+
 // PTodo is the task id parameter.
 var PTodo = Param{"todo", "string", "Task id.", true}
 
@@ -636,8 +652,9 @@ type Tokens struct {
 
 // Scope is what a token's tools serve and for whom.
 type Scope struct {
-	// Org and User are who the chat runs for. A task's run has neither: it
-	// acts in its project's org, as Dash.
+	// Org and User are who the run acts as: the chat's user in their active
+	// org, or the task's creator in the task's org. Both are required; the
+	// tools only reach Org.
 	Org, User int64
 	Project   string // default project ("" for the general chat)
 	Todo      string // set for a running task, which only gets the IssueTools
@@ -645,8 +662,8 @@ type Scope struct {
 
 type callerKey struct{}
 
-// Caller is who a chat turn runs for.
-type Caller struct{ Org, User int64 }
+// Caller is who a run acts as: a user in an org.
+type Caller = model.Owner
 
 // WithCaller makes chat turns run with ctx serve the Dash tools as c.
 func WithCaller(ctx context.Context, c Caller) context.Context {
@@ -656,7 +673,7 @@ func WithCaller(ctx context.Context, c Caller) context.Context {
 // CallerFrom is the caller WithCaller put in ctx.
 func CallerFrom(ctx context.Context) (Caller, bool) {
 	c, ok := ctx.Value(callerKey{}).(Caller)
-	return c, ok && c.Org != 0
+	return c, ok && c.Valid()
 }
 
 // Register issues a token for one chat run of c; projectID is the default
@@ -665,10 +682,11 @@ func (t *Tokens) Register(c Caller, projectID string) (token string, release fun
 	return t.register(Scope{Org: c.Org, User: c.User, Project: projectID})
 }
 
-// RegisterTask issues a token for one run of a task: its tools are the
-// IssueTools for the task's project. Call release when the run ends.
-func (t *Tokens) RegisterTask(projectID, todoID string) (token string, release func()) {
-	return t.register(Scope{Project: projectID, Todo: todoID})
+// RegisterTask issues a token for one run of a task, acting as c (the
+// task's user and org): its tools are the IssueTools for the task's project.
+// Call release when the run ends.
+func (t *Tokens) RegisterTask(c Caller, projectID, todoID string) (token string, release func()) {
+	return t.register(Scope{Org: c.Org, User: c.User, Project: projectID, Todo: todoID})
 }
 
 func (t *Tokens) register(sc Scope) (token string, release func()) {
@@ -718,6 +736,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !ok {
 		http.Error(w, "unknown or expired token", http.StatusUnauthorized)
+		return
+	}
+	if !(Caller{Org: sc.Org, User: sc.User}).Valid() { // every run acts as a user in an org
+		http.Error(w, "this run acts for no user in no organization", http.StatusForbidden)
 		return
 	}
 	board, err := h.Board(sc)

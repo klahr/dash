@@ -26,6 +26,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/store"
 )
 
 // EvRunners tells dashboards that a runner registered, connected,
@@ -50,6 +51,7 @@ var (
 	ErrNameTaken   = errors.New("that name is already used by another computer; revoke it first or pick another -name")
 	ErrBadName     = errors.New("runner name: use lowercase letters, digits and dashes (at most 32)")
 	ErrUnknownName = errors.New("no such runner")
+	ErrNoOwner     = errors.New("a registration code is made by a signed-in user, for their organization")
 )
 
 // Runner is a registered runner as the dashboard shows it.
@@ -59,19 +61,27 @@ type Runner struct {
 	Online   bool      `json:"online"`
 	Created  time.Time `json:"created"`
 	LastSeen time.Time `json:"last_seen,omitzero"` // when it last connected or disconnected
+	// Owner registered the runner: its token acts as them, in their org.
+	Owner *store.RunnerOwner `json:"owner,omitempty"`
 }
 
+// record is a runner in runners.json. Its token is in the token table
+// (store.TokenRunner), as its owner's, pinned to their org.
 type record struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	TokenHash string    `json:"token_hash"` // sha256 of the runner's token, hex
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// TokenHash is set in files from before the token table: Keep moves it there.
+	TokenHash string    `json:"token_hash,omitempty"`
 	Created   time.Time `json:"created"`
 	LastSeen  time.Time `json:"last_seen,omitzero"`
 }
 
+// regCode is a registration code, made by Owner: the runner registered with
+// it will be theirs.
 type regCode struct {
-	Hash    string    `json:"hash"` // sha256 of the normalised code, hex
-	Expires time.Time `json:"expires"`
+	Hash    string      `json:"hash"` // sha256 of the normalised code, hex
+	Expires time.Time   `json:"expires"`
+	Owner   model.Owner `json:"owner"`
 }
 
 // Hub is the dashboard's side: it hands out registration codes, swaps them
@@ -86,6 +96,8 @@ type Hub struct {
 	// host's first label, as the runner connecting with r should be told
 	// (optional; "" without a preview domain). See PreviewHeader.
 	PreviewURL func(r *http.Request) string
+	// Accounts keep the runners' tokens.
+	Accounts *store.Accounts
 
 	now func() time.Time
 
@@ -127,7 +139,28 @@ func (h *Hub) Keep(path string) error {
 	if err := json.Unmarshal(b, &f); err != nil {
 		return err
 	}
-	h.runners, h.codes = f.Runners, f.Codes
+	h.runners = f.Runners
+	// Codes from before codes had owners can't make a runner anyone's.
+	h.codes = slices.DeleteFunc(f.Codes, func(c regCode) bool { return !c.Owner.Valid() })
+	// Runners from before the token table: their tokens move there, as the
+	// env account's (the only account then).
+	moved := false
+	for _, r := range h.runners {
+		if r.TokenHash == "" {
+			continue
+		}
+		err := h.Accounts.ImportRunnerToken(r.ID, r.Name, r.TokenHash, r.Created)
+		if err != nil && !errors.Is(err, store.ErrNoSoleOrg) && !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		if err != nil {
+			slog.Warn("runner must register again: no account to own its token", "name", r.Name, "err", err)
+		}
+		r.TokenHash, moved = "", true
+	}
+	if moved {
+		h.saveLocked()
+	}
 	return nil
 }
 
@@ -169,8 +202,12 @@ func normCode(s string) string {
 	}, s)
 }
 
-// NewCode makes a single-use registration code, valid for ten minutes.
-func (h *Hub) NewCode() (code string, expires time.Time) {
+// NewCode makes a single-use registration code, valid for ten minutes, for
+// owner: the runner registered with it acts as them, in their org.
+func (h *Hub) NewCode(owner model.Owner) (code string, expires time.Time, err error) {
+	if !owner.Valid() {
+		return "", time.Time{}, ErrNoOwner
+	}
 	b := make([]byte, codeLen)
 	_, _ = rand.Read(b)
 	for i := range b {
@@ -182,9 +219,9 @@ func (h *Hub) NewCode() (code string, expires time.Time) {
 	now := h.clock()
 	h.pruneCodesLocked(now)
 	expires = now.Add(codeTTL)
-	h.codes = append(h.codes, regCode{Hash: hash(normCode(code)), Expires: expires})
+	h.codes = append(h.codes, regCode{Hash: hash(normCode(code)), Expires: expires, Owner: owner})
 	h.saveLocked()
-	return code, expires
+	return code, expires, nil
 }
 
 func (h *Hub) pruneCodesLocked(now time.Time) {
@@ -217,9 +254,20 @@ func (h *Hub) Register(code, name string) (id, token string, err error) {
 	if h.nameTakenLocked(name) {
 		return "", "", ErrNameTaken
 	}
+	owner := h.codes[i].Owner
 	h.codes = slices.Delete(h.codes, i, i+1) // single use
-	id, token = randomString(9), "dr_"+randomString(32)
-	h.runners = append(h.runners, &record{ID: id, Name: name, TokenHash: hash(token), Created: now})
+	id = randomString(9)
+	token, _, err = h.Accounts.CreateToken(store.NewToken{
+		Kind: store.TokenRunner, Name: "Runner " + name, UserID: owner.User, OrgID: owner.Org, RunnerID: id,
+	}, now)
+	if err != nil {
+		h.saveLocked()
+		if errors.Is(err, store.ErrNotMember) {
+			return "", "", fmt.Errorf("%w: whoever made the code has left that organization", ErrBadCode)
+		}
+		return "", "", err
+	}
+	h.runners = append(h.runners, &record{ID: id, Name: name, Created: now})
 	h.saveLocked()
 	go h.changed()
 	return id, token, nil
@@ -238,16 +286,20 @@ func randomString(n int) string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// authenticate finds the runner a token belongs to.
+// authenticate finds the runner a token belongs to. The token stops
+// working once revoked, or once its owner leaves the org it is pinned to.
 func (h *Hub) authenticate(token string) (record, bool) {
-	if token == "" {
+	t, _, err := h.Accounts.Authenticate(token, h.clock(), store.TokenRunner)
+	if err != nil {
+		if !errors.Is(err, store.ErrTokenInvalid) {
+			slog.Error("look up runner token", "err", err)
+		}
 		return record{}, false
 	}
-	want := hash(token)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for _, r := range h.runners {
-		if subtle.ConstantTimeCompare([]byte(r.TokenHash), []byte(want)) == 1 {
+		if r.ID == t.RunnerID {
 			return *r, true
 		}
 	}
@@ -261,6 +313,10 @@ func (h *Hub) Revoke(id string) error {
 	if i < 0 {
 		h.mu.Unlock()
 		return ErrUnknownName
+	}
+	if err := h.Accounts.DeleteRunnerToken(id); err != nil {
+		h.mu.Unlock()
+		return err
 	}
 	h.runners = slices.Delete(h.runners, i, i+1)
 	sess, pv := h.live[id], h.previews[id]
@@ -280,12 +336,20 @@ func (h *Hub) Revoke(id string) error {
 
 // List returns the registered runners, by name.
 func (h *Hub) List() []Runner {
+	owners, err := h.Accounts.RunnerOwners()
+	if err != nil {
+		slog.Error("runner owners", "err", err)
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	out := make([]Runner, 0, len(h.runners))
 	for _, r := range h.runners {
 		_, online := h.live[r.ID]
-		out = append(out, Runner{ID: r.ID, Name: r.Name, Online: online, Created: r.Created, LastSeen: r.LastSeen})
+		var owner *store.RunnerOwner
+		if o, ok := owners[r.ID]; ok {
+			owner = &o
+		}
+		out = append(out, Runner{ID: r.ID, Name: r.Name, Online: online, Created: r.Created, LastSeen: r.LastSeen, Owner: owner})
 	}
 	slices.SortFunc(out, func(a, b Runner) int { return strings.Compare(a.Name, b.Name) })
 	return out

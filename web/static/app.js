@@ -86,6 +86,7 @@ const ICONS = {
   circle: "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z",
   box: "M5 6h14v12H5z",
   crop: "M7 3v14h14M3 7h14v14",
+  key: "M15 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12.2 11.8 4 20M7 17l2 2M5 19l2 2",
   link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
 };
 // Technology logos from devicon (MIT, see img/README.md) on a 128px grid: [brand colour, or null when too dark for the dark UI, paths].
@@ -1150,6 +1151,8 @@ $("#pm-delete").addEventListener("click", attempt(openDeleteProject));
 // others they can switch to.
 loadMe().catch(() => {});
 $("#org-open").addEventListener("click", attempt(openOrg));
+$("#tokens-open").addEventListener("click", attempt(openTokens));
+$("#token-create").addEventListener("click", attempt(createToken));
 $("#org-invite-send").addEventListener("click", attempt(sendInvite));
 $("#org-new").addEventListener("click", attempt(newOrg));
 $("#twofactor-open").addEventListener("click", attempt(openTwoFactor));
@@ -2711,9 +2714,9 @@ function connectorSteps(c) {
       step("Open Connectors in claude.ai settings.", h("p", {},
         h("a", { class: "btn small", href: CLAUDE_CONNECTORS, target: "_blank", rel: "noopener" }, ico("external"), "Open claude.ai"))),
       step("Add a custom connector.", h("p", { class: "hint" }, "Name it Dash, paste the URL and add it.")),
-      step("Connect and sign in.", h("p", { class: "hint" }, "Dash's sign-in page opens. Enter your Dash username and password, then choose Allow.")),
+      step("Connect and sign in.", h("p", { class: "hint" }, "Dash's sign-in page opens. Enter your Dash username and password, then choose Allow. If you're in several organizations, pick the one Claude works in.")),
       step("Use it in a chat.", h("p", { class: "hint" }, "Turn Dash on in the chat's tools menu. The connector also works in the Claude desktop and mobile apps."))),
-    h("p", { class: "hint" }, "A connector stays signed in while it's used at least every 30 days. Changing your Dash username or password signs every connector out."),
+    h("p", { class: "hint" }, "A connector stays signed in while it's used at least every 30 days. Disconnect it under Tokens & apps; changing your Dash username or password signs every connector out."),
     h("footer", { class: "sheet-actions" },
       h("button", { class: "btn", type: "button", onclick: attempt(openConnector) }, ico("redo"), "Check again")),
   ];
@@ -2727,7 +2730,8 @@ async function renderRunners() {
   const rows = list.map((r) => h("li", { class: "runner-row" },
     h("span", { class: `runner-dot ${r.online ? "on" : ""}`, "aria-hidden": "true" }),
     h("span", { class: "runner-name" }, r.name),
-    h("span", { class: "runner-seen hint" }, r.online ? "online" : r.last_seen ? `offline, last seen ${ago(r.last_seen)} ago` : "never connected"),
+    h("span", { class: "runner-seen hint" }, (r.online ? "online" : r.last_seen ? `offline, last seen ${ago(r.last_seen)} ago` : "never connected") +
+      (r.owner ? ` · ${r.owner.username}, ${r.owner.org.name}` : "")),
     h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
       const ok = await ask({ title: `Revoke ${r.name}?`, body: "It's disconnected now and its token stops working. Its projects stay on that computer; register it again with a new code to bring it back.", ok: "Revoke", danger: true });
       if (!ok) return;
@@ -2970,6 +2974,80 @@ async function newOrg() {
   const o = await api("POST", "/api/orgs", { name }, "");
   toast(`${o.name} created`, { tone: "ok" });
   await switchOrg(o);
+}
+
+// ------------------------------------------------------------------ tokens & connected apps
+// Everything that signs in as the user without a browser session: API
+// tokens, OAuth clients (claude.ai connectors) they allowed, and runners
+// they registered. Each is pinned to one org.
+async function openTokens() {
+  $("#token-secret").hidden = true;
+  const orgs = state.me?.orgs || [];
+  $("#token-org").replaceChildren(...orgs.map((o) => h("option", { value: o.id, selected: o.id === state.me?.org?.id }, o.name)));
+  $("#token-org").hidden = orgs.length < 2;
+  await renderTokens();
+  const d = $("#tokens-sheet");
+  if (!d.open) d.showModal();
+}
+
+function tokenDetail(t) {
+  const parts = [t.org.name];
+  if (t.kind !== "runner") parts.push(t.scopes.includes("write") ? "read and write" : "read only");
+  parts.push(t.last_used ? `used ${agoText(t.last_used)}` : "never used");
+  if (t.kind === "oauth" && t.expires) parts.push(`signed in until ${new Date(t.expires).toLocaleDateString()} unless used`);
+  else parts.push(`created ${new Date(t.created).toLocaleDateString()}`);
+  return parts.join(" · ");
+}
+
+async function renderTokens() {
+  const list = await api("GET", "/api/tokens", null, "");
+  const row = (t) => {
+    const what = { oauth: "Disconnect", runner: "Revoke", api: "Revoke" }[t.kind];
+    return h("li", { class: "runner-row" },
+      h("span", { class: "runner-name" }, t.name, t.kind === "api" ? h("code", { class: "hint" }, ` ${t.prefix}…`) : null),
+      h("span", { class: "runner-seen hint" }, tokenDetail(t)),
+      h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
+        const body = {
+          oauth: "The app is signed out at once and has to be connected again to use Dash.",
+          runner: "The runner is disconnected now and its token stops working. Register it again with a new code to bring it back.",
+          api: "Anything using this token loses access at once.",
+        }[t.kind];
+        if (!await ask({ title: `${what} ${t.name}?`, body, ok: what, danger: true })) return;
+        await api("DELETE", `/api/tokens/${t.id}`, null, "");
+        toast(`${t.name} ${t.kind === "oauth" ? "disconnected" : "revoked"}`);
+        await renderTokens();
+        if (t.kind === "runner") await refreshMachines();
+      }) }, what));
+  };
+  const of = (kind, empty) => {
+    const rows = list.filter((t) => t.kind === kind).map(row);
+    return rows.length ? rows : empty ? [h("li", { class: "hint" }, empty)] : [];
+  };
+  $("#tokens-oauth").replaceChildren(...of("oauth", "No apps connected. See Connect Claude in the account menu."));
+  $("#tokens-api").replaceChildren(...of("api", "No API tokens."));
+  const runners = of("runner");
+  $("#tokens-runner").replaceChildren(...runners);
+  $("#tokens-runner-head").hidden = !runners.length;
+}
+
+async function createToken() {
+  const name = $("#token-name").value.trim();
+  if (!name) { $("#token-name").focus(); throw new Error("Name the token, after what will use it."); }
+  const orgID = Number($("#token-org").value || state.me?.org?.id);
+  const org = (state.me?.orgs || []).find((o) => o.id === orgID);
+  if (!org) throw new Error("Pick the organization the token works in.");
+  const write = $("#token-scope").value === "write";
+  const pw = await askPassword(`Create the token “${name}”?`,
+    `It ${write ? "reads and changes" : "reads"} everything you can in ${org.name}, and nothing in your other organizations.`);
+  if (pw == null) return;
+  const res = await api("POST", "/api/tokens", { name, org_id: org.id, scopes: write ? ["read", "write"] : ["read"], password: pw }, "");
+  $("#token-secret").replaceChildren(
+    h("p", {}, "Copy the token now: Dash doesn't show it again."),
+    copyBlock(res.secret, "Token copied", { pre: true }),
+    h("p", { class: "hint" }, "Send it as ", h("code", {}, "Authorization: Bearer <token>"), ` to Dash's API (/api/…) or MCP endpoint (/mcp). It works in ${org.name} until you revoke it here, change your password or leave the organization.`));
+  $("#token-secret").hidden = false;
+  $("#token-name").value = "";
+  await renderTokens();
 }
 
 async function openConnector() {

@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/store/storetest"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
@@ -85,7 +86,8 @@ func newDevServer(t *testing.T) *devServer {
 func remoteSetup(t *testing.T) (hubSrv *httptest.Server, hub *Manager, runner *Manager) {
 	t.Helper()
 	hub = New(nil, nil, nil, "preview.dash.test")
-	th := &tunnel.Hub{PreviewURL: hub.URLTemplate}
+	acc, owner := storetest.Accounts(t)
+	th := &tunnel.Hub{PreviewURL: hub.URLTemplate, Accounts: acc}
 	hub.Remote = th
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /runner/register", th.ServeRegister)
@@ -93,7 +95,7 @@ func remoteSetup(t *testing.T) (hubSrv *httptest.Server, hub *Manager, runner *M
 	hubSrv = httptest.NewServer(hub.Wrap(mux))
 	t.Cleanup(hubSrv.Close)
 
-	code, _ := th.NewCode()
+	code, _, _ := th.NewCode(owner)
 	creds, err := tunnel.Register(context.Background(), hubSrv.URL, code, "work")
 	if err != nil {
 		t.Fatal(err)

@@ -12,32 +12,87 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/store"
 )
 
 // BoardMCP serves the chat's Dash tools (POST /mcp/dash), authenticated by
-// the per-run tokens in s.Board. A chat's tools act as the user it runs for,
-// in their org; a task's issue tools act in the task's project's org.
+// the per-run tokens in s.Board. Every run acts as a user in an org: a
+// chat's user in their active org, a task's creator in the task's org. Its
+// tools only reach that org, and stop working once the user leaves it.
 func (s *Server) BoardMCP() http.Handler {
 	return &mcptools.Handler{Tokens: s.Board, Board: func(sc mcptools.Scope) (mcptools.Board, error) {
 		c := Caller{Org: sc.Org, User: sc.User}
 		if sc.Todo != "" {
-			org, ok := s.Store.TodoOrg(sc.Todo)
-			if !ok {
+			if org, ok := s.Store.TodoOrg(sc.Todo); !ok || org != sc.Org {
 				return nil, errors.New("the task is gone")
 			}
-			c = Caller{Org: org}
 		}
-		if c.Org == 0 {
-			return nil, errNoOrg
+		if !s.Member(model.Owner{User: c.User, Org: c.Org}) {
+			return nil, errors.New("this run's user no longer belongs to its organization")
 		}
 		return board{s.as(c)}, nil
 	}}
 }
 
-// remoteMCP serves the tools of cmd/dash-mcp (POST /mcp, behind OAuth) as the
-// token's user, in their org: this computer through the service, and, for
+// Member reports whether owner's user still belongs to owner's org.
+func (s *Server) Member(owner model.Owner) bool {
+	if !owner.Valid() || s.Auth == nil {
+		return false
+	}
+	_, err := s.Auth.Accounts().Membership(owner.User, owner.Org)
+	return err == nil
+}
+
+// TaskOwner is who a task's runs act as: the user who created it, in the
+// task's org. Tasks with no creator (from before users, made by Dash itself,
+// or on a runner by its hub) act as this Dash's env account. Either way the
+// user must still belong to the task's org.
+func (s *Server) TaskOwner(t model.Todo) (model.Owner, error) {
+	org, ok := s.Store.TodoOrg(t.ID)
+	if !ok || org == 0 {
+		return model.Owner{}, fmt.Errorf("task %s has no org", t.ID)
+	}
+	o := model.Owner{User: t.CreatedBy, Org: org}
+	if o.User == 0 {
+		u, err := s.Auth.Accounts().EnvUser()
+		if err != nil {
+			return model.Owner{}, fmt.Errorf("task has no creator and there is no env account: %w", err)
+		}
+		o.User = u.ID
+	}
+	if !s.Member(o) {
+		return model.Owner{}, fmt.Errorf("user %d isn't a member of the task's org %d", o.User, o.Org)
+	}
+	return o, nil
+}
+
+// requestOwner is who a request acts as: the signed-in user (or token) in
+// their org, or for another Dash's request (a hub over this runner's tunnel),
+// this Dash's env account in the default org, where its records are.
+func (s *Server) requestOwner(r *http.Request) model.Owner {
+	if id, ok := auth.From(r.Context()); ok {
+		return id.Owner()
+	}
+	if auth.FromMachine(r.Context()) && s.Auth != nil {
+		acc := s.Auth.Accounts()
+		u, err := acc.EnvUser()
+		if err != nil {
+			return model.Owner{}
+		}
+		org, err := acc.DefaultOrg()
+		if err != nil {
+			return model.Owner{}
+		}
+		return model.Owner{User: u.ID, Org: org.ID}
+	}
+	return model.Owner{}
+}
+
+// remoteMCP serves the tools of cmd/dash-mcp (POST /mcp, behind OAuth.Bearer)
+// as the token's user, in the org the token is pinned to, within its scopes: this computer through the service, and, for
 // platform admins, the other computers in the dashboard.
 func (s *Server) remoteMCP() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,12 +102,17 @@ func (s *Server) remoteMCP() http.Handler {
 			return
 		}
 		sv := s.as(c)
+		tools := mcptools.FleetTools(mcptools.Fleet{Computers: func() ([]mcptools.Machine, error) {
+			return sv.computers(r.Context()), nil
+		}})
+		// A read-only token's tools may look but not change anything.
+		if id, ok := auth.From(r.Context()); ok && !id.Can(store.ScopeWrite) {
+			tools = mcptools.ReadOnly(tools, mcptools.FleetReadTools, errReadOnly)
+		}
 		srv := &mcptools.Server{
 			Name:         "dash",
 			Instructions: mcptools.FleetInstructions,
-			Tools: mcptools.FleetTools(mcptools.Fleet{Computers: func() ([]mcptools.Machine, error) {
-				return sv.computers(r.Context()), nil
-			}}),
+			Tools:        tools,
 		}
 		srv.ServeHTTP(w, r)
 	})
@@ -91,6 +151,9 @@ type peerAPI struct {
 	s    *Server
 	name string
 }
+
+// errReadOnly is what a read-only token gets for a tool that changes things.
+var errReadOnly = errors.New("this connection is read-only: its token doesn't have the write scope")
 
 func (a peerAPI) Call(method, path string, body, out any) error {
 	var rd io.Reader

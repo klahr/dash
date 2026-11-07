@@ -51,6 +51,20 @@ func boardServer(t *testing.T) (*Server, *events, model.Project) {
 	return s, evs, p
 }
 
+// testOwner is s's first user in the default org, who owns its records.
+func testOwner(t *testing.T, s *Server) model.Owner {
+	t.Helper()
+	u, err := s.Auth.Accounts().EnvUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	org, err := s.Auth.Accounts().DefaultOrg()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return model.Owner{User: u.ID, Org: org.ID}
+}
+
 // rpc posts one JSON-RPC call to /mcp/dash through the full router.
 func rpc(h http.Handler, token, method, params string) *httptest.ResponseRecorder {
 	body := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":%q,"params":%s}`, method, params)

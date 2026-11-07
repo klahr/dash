@@ -2,6 +2,7 @@ package queue
 
 import (
 	"encoding/json"
+	"errors"
 	"slices"
 	"testing"
 
@@ -18,6 +19,7 @@ func TestRunGetsIssueTools(t *testing.T) {
 	}}
 	h := newHarness(t, exe, model.Project{Name: "p"})
 	h.engine.Board, h.engine.BoardURL = &mcptools.Tokens{}, "http://127.0.0.1:1"
+	h.engine.Owner = func(model.Todo) (model.Owner, error) { return model.Owner{User: 1, Org: 1}, nil }
 	h.waitFor(h.add("work").ID, model.StatusReview)
 
 	args := exe.Calls()[0].ExtraArgs
@@ -31,5 +33,21 @@ func TestRunGetsIssueTools(t *testing.T) {
 	}
 	if !slices.Contains(args, "mcp__"+mcptools.ServerName+"__report_issue") || !slices.Contains(args, "--append-system-prompt") {
 		t.Fatalf("issue tools not allowed or explained: %v", args)
+	}
+}
+
+// A task with no user and org to act as runs without Dash's MCP servers:
+// a per-run token always carries both.
+func TestRunWithoutOwnerGetsNoTools(t *testing.T) {
+	exe := &fakeExec{fn: func(_ int, req agent.ExecRequest) error {
+		write(t, req.Dir, "a.txt", "a")
+		return nil
+	}}
+	h := newHarness(t, exe, model.Project{Name: "p"})
+	h.engine.Board, h.engine.BoardURL = &mcptools.Tokens{}, "http://127.0.0.1:1"
+	h.engine.Owner = func(model.Todo) (model.Owner, error) { return model.Owner{}, errors.New("nobody") }
+	h.waitFor(h.add("work").ID, model.StatusReview)
+	if args := exe.Calls()[0].ExtraArgs; slices.Contains(args, "--mcp-config") {
+		t.Fatalf("unowned run got MCP servers: %v", args)
 	}
 }

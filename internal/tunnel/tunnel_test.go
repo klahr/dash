@@ -17,6 +17,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/store/storetest"
 )
 
 // pair connects two Sessions over a real WebSocket.
@@ -128,13 +131,14 @@ func TestReadDeadline(t *testing.T) {
 
 func TestRegistrationCodeIsSingleUseAndExpires(t *testing.T) {
 	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
-	h := &Hub{now: func() time.Time { return now }}
+	acc, owner := storetest.Accounts(t)
+	h := &Hub{now: func() time.Time { return now }, Accounts: acc}
 	path := filepath.Join(t.TempDir(), "runners.json")
 	if err := h.Keep(path); err != nil {
 		t.Fatal(err)
 	}
 
-	code, _ := h.NewCode()
+	code, _, _ := h.NewCode(owner)
 	if _, _, err := h.Register(code, "Bad Name!"); !errors.Is(err, ErrBadName) {
 		t.Fatalf("bad name: %v", err)
 	}
@@ -149,7 +153,7 @@ func TestRegistrationCodeIsSingleUseAndExpires(t *testing.T) {
 		t.Fatalf("second use: %v", err)
 	}
 
-	code2, _ := h.NewCode()
+	code2, _, _ := h.NewCode(owner)
 	if _, _, err := h.Register(code2, "work"); !errors.Is(err, ErrNameTaken) {
 		t.Fatalf("duplicate name: %v", err)
 	}
@@ -159,7 +163,7 @@ func TestRegistrationCodeIsSingleUseAndExpires(t *testing.T) {
 	}
 
 	// Saved, with the token only as a hash.
-	h2 := &Hub{}
+	h2 := &Hub{Accounts: acc}
 	if err := h2.Keep(path); err != nil {
 		t.Fatal(err)
 	}
@@ -175,16 +179,18 @@ func TestRegistrationCodeIsSingleUseAndExpires(t *testing.T) {
 }
 
 func TestRegistrationNamesTakenByTheHub(t *testing.T) {
-	h := &Hub{Taken: func(n string) bool { return n == "home" }}
-	code, _ := h.NewCode()
+	acc, owner := storetest.Accounts(t)
+	h := &Hub{Taken: func(n string) bool { return n == "home" }, Accounts: acc}
+	code, _, _ := h.NewCode(owner)
 	if _, _, err := h.Register(code, "home"); !errors.Is(err, ErrNameTaken) {
 		t.Fatalf("hub's own name: %v", err)
 	}
 }
 
 func TestWrongCodesPauseRegistration(t *testing.T) {
-	h := &Hub{}
-	code, _ := h.NewCode()
+	acc, owner := storetest.Accounts(t)
+	h := &Hub{Accounts: acc}
+	code, _, _ := h.NewCode(owner)
 	for range maxBadCodes {
 		if _, _, err := h.Register("AAAA-AAAA", "x"); !errors.Is(err, ErrBadCode) {
 			t.Fatal(err)
@@ -199,12 +205,14 @@ func TestWrongCodesPauseRegistration(t *testing.T) {
 
 type testHub struct {
 	*Hub
-	srv *httptest.Server
+	srv   *httptest.Server
+	owner model.Owner
 }
 
 func newTestHub(t *testing.T) testHub {
 	t.Helper()
-	h := &Hub{}
+	acc, owner := storetest.Accounts(t)
+	h := &Hub{Accounts: acc}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /runner/register", h.ServeRegister)
 	mux.HandleFunc("GET /runner/connect", h.ServeConnect)
@@ -218,12 +226,12 @@ func newTestHub(t *testing.T) testHub {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return testHub{h, srv}
+	return testHub{h, srv, owner}
 }
 
 func (th testHub) register(t *testing.T, name string) Credentials {
 	t.Helper()
-	code, _ := th.NewCode()
+	code, _, _ := th.NewCode(th.owner)
 	c, err := Register(context.Background(), th.srv.URL, code, name)
 	if err != nil {
 		t.Fatal(err)

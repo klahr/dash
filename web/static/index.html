@@ -140,6 +140,7 @@
               <button id="twofactor-open" type="button" data-icon="lock">Two-factor sign-in</button>
               <button id="prefs-open" type="button" data-icon="prefs">Preferences</button>
               <button id="connector-open" type="button" data-icon="plug">Connect Claude</button>
+              <button id="tokens-open" type="button" data-icon="key">Tokens &amp; apps</button>
               <button id="runners-open" type="button" data-icon="computer">Runners</button>
               <button id="logout" type="button" data-icon="logout">Log out</button>
             </div>
@@ -633,6 +634,30 @@
       <footer class="sheet-actions">
         <button class="btn primary" id="runners-add" type="button">Add a runner</button>
       </footer>
+    </form>
+  </dialog>
+
+  <!-- The user's credentials: API tokens, authorised OAuth clients, runners they registered -->
+  <dialog class="sheet" id="tokens-sheet" aria-labelledby="tokens-title">
+    <form method="dialog">
+      <header class="sheet-head"><h2 id="tokens-title" tabindex="-1" autofocus>Tokens &amp; apps</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <p class="hint">Each of these acts as you, in one organization only. It stops working when you revoke it or leave that organization. Tokens can't manage members, invitations or tokens.</p>
+      <h3 class="org-section">Connected apps</h3>
+      <ul class="runner-list" id="tokens-oauth"></ul>
+      <h3 class="org-section">API tokens</h3>
+      <ul class="runner-list" id="tokens-api"></ul>
+      <div class="org-invite token-new">
+        <input type="text" id="token-name" placeholder="Name, e.g. CI" autocomplete="off" maxlength="100" aria-label="Token name">
+        <select id="token-org" aria-label="Organization"></select>
+        <select id="token-scope" aria-label="Access">
+          <option value="read">Read only</option>
+          <option value="write">Read and write</option>
+        </select>
+        <button class="btn primary" id="token-create" type="button" data-icon="plus">Create</button>
+      </div>
+      <div id="token-secret" hidden></div>
+      <h3 class="org-section" id="tokens-runner-head">Runners you registered</h3>
+      <ul class="runner-list" id="tokens-runner"></ul>
     </form>
   </dialog>
 

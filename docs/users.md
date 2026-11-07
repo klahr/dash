@@ -34,8 +34,9 @@ and pausing or resuming the task queue, which every org shares. The subscription
 meter and the merge queue's length are shown to everyone.
 
 The MCP endpoints act as a person in an org too. The chat's task tools act as the user
-chatting, in their org. A claude.ai connector (`/mcp`) acts as the account that connected
-it, in its first org, and calls Dash directly rather than through the REST API.
+chatting, in their org; a task's tools act as the user who created it, in the task's org. A
+claude.ai connector (`/mcp`) acts as the account that connected it, in the org chosen when it
+was allowed (see [tokens](#tokens)), and calls Dash directly rather than through the REST API.
 
 ## The first account
 
@@ -105,6 +106,34 @@ When you belong to more than one org, the account menu lets you switch between t
 from an org loses access at once (open live connections close within seconds), and if
 they belong to other orgs they continue in one of those.
 
+## Tokens
+
+Besides browser sessions, Dash signs in with tokens, all kept in one table, hashed, and listed
+under **Tokens & apps** in the account menu:
+
+- **API tokens** you create there, for scripts and MCP clients: `Authorization: Bearer dash_…`
+  on `/api/…` and `/mcp`. Creating one asks for your password; the token is shown once.
+- **Connected apps**: what an OAuth client such as a claude.ai connector got when you allowed it
+  (see [the connector](mcp.md#claudeai-and-the-claude-app-custom-connector)).
+- **Runners** you registered (see [several computers](several-computers.md)).
+
+Every token acts as you **in one organization**, chosen when it is made: the org picker when
+creating an API token, the consent page for a connector (if you're in several orgs), your active
+org for a runner code. There is no default: a token without an org isn't made, and a token whose
+org you leave stops working; it never moves to another of your orgs. Revoking a token ends it at
+once, and changing your password ends API tokens and connectors (not runners).
+
+Scopes narrow a token further: **read** allows `GET` requests (and the live event stream),
+**write** everything else. Whatever its scopes, a token can't manage members, invitations,
+tokens or two-factor sign-in, change org settings, switch orgs or confirm a password: those need
+a signed-in browser. While an org of yours requires two-factor sign-in that you haven't set up,
+your API tokens and connectors are refused too (your runners keep working).
+
+The tokens Dash gives its own Claude runs (for the task tools and permission prompts) carry the
+task's user and org too: the user who created the task (or, for tasks from before users, the env
+account) in the task's org. Their tools only see that org's projects, and stop working if the user
+leaves it.
+
 ## API
 
 | Method and path                                   | What                                      |
@@ -118,6 +147,9 @@ they belong to other orgs they continue in one of those.
 | `POST /api/orgs/{id}/invitations {email, role, password}` | invite; returns the link's `path` |
 | `DELETE /api/orgs/{id}/invitations/{iid}`         | revoke an invitation                      |
 | `POST /api/invitations/{lookup,accept,register,decline} {token, …}` | the invitation page    |
+| `GET /api/tokens`                                 | your API tokens, connected apps, runners  |
+| `POST /api/tokens {name, org_id, scopes, password}` | an API token; returns its `secret` once |
+| `DELETE /api/tokens/{id}`                         | revoke a token, disconnect an app or runner |
 | `POST /api/login/totp {ticket, code}`             | second sign-in step: `/api/login` answers `{totp_required, ticket}` |
 | `GET /api/account/2fa`                            | on?, recovery codes left, required?       |
 | `POST /api/account/2fa/setup`                     | a new secret, its `otpauth://` URI and QR |
@@ -125,3 +157,6 @@ they belong to other orgs they continue in one of those.
 | `POST /api/account/2fa/disable {password}`        | turn it off                               |
 | `POST /api/account/2fa/recovery-codes {password}` | new recovery codes                        |
 | `PATCH /api/orgs/{id} {require_2fa, password}`    | owners: require it of every member        |
+
+With a token, `GET /api/me` shows the token and its org, and the routes that manage members,
+invitations, tokens, two-factor sign-in and orgs answer 403.
