@@ -13,7 +13,7 @@ import (
 // names (jan, mon). @hourly, @daily, @weekly, @monthly and @yearly work too.
 type Cron struct {
 	min, hour, dom, month, dow uint64 // bit n set = n matches
-	domAny, dowAny             bool   // the field was *
+	domAny, dowAny             bool   // the field started with * (or ?)
 }
 
 var cronMacros = map[string]string{
@@ -56,7 +56,10 @@ func ParseCron(expr string) (Cron, error) {
 	if c.dow&(1<<7) != 0 { // 7 is Sunday too
 		c.dow |= 1
 	}
-	c.domAny, c.dowAny = f[2] == "*" || f[2] == "?", f[4] == "*" || f[4] == "?"
+	// As in Vixie cron, a day field starting with * (e.g. */2) counts as
+	// unrestricted for the OR rule, so it is ANDed with the other day field.
+	c.domAny = strings.HasPrefix(f[2], "*") || strings.HasPrefix(f[2], "?")
+	c.dowAny = strings.HasPrefix(f[4], "*") || strings.HasPrefix(f[4], "?")
 	return c, nil
 }
 

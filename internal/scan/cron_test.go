@@ -28,6 +28,9 @@ func TestCronNext(t *testing.T) {
 		// Day of month and weekday both set: either matches.
 		{"0 0 13 * fri", "2026-11-07 10:00", "2026-11-13 00:00"},
 		{"0 0 20 * mon", "2026-11-07 10:00", "2026-11-09 00:00"},
+		// A day field starting with * is ANDed, as in Vixie cron: odd-day Mondays.
+		{"0 6 */2 * mon", "2026-11-09 06:00", "2026-11-23 06:00"},
+		{"0 6 1-31/2 * mon", "2026-11-09 06:00", "2026-11-11 06:00"},
 		{"5/20 * * * *", "2026-11-07 10:06", "2026-11-07 10:25"},
 	} {
 		cr, err := ParseCron(c.expr)
