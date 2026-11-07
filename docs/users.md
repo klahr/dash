@@ -11,7 +11,8 @@ role in each:
 
 An org always keeps at least one owner. Separately from org roles, an account can be a
 **platform admin** of the Dash instance: it can create new orgs, and use what belongs to
-the whole instance rather than to one org (see below).
+the whole instance rather than to one org (see below). With [open signup](signup.md) on,
+every account can create orgs and has a personal workspace of its own.
 
 ## What belongs to an org
 
@@ -49,6 +50,9 @@ account keeps working with the same `.env`, and nobody is signed out by the upgr
 That account stays tied to the environment: change `DASH_USERNAME` or `DASH_PASSWORD` and
 restart, and it's renamed or gets the new password, and its sessions and Claude connectors
 are signed out. Once there are users, the variables are optional.
+
+Once [email](signup.md#email-smtp) is set up, the sign-in page offers "Forgot password?"
+(a reset link by email).
 
 Passwords are hashed with Argon2id. Signing in takes the same time whether or not a name
 exists, and five failed tries from an address lock it out for 15 minutes. Turn on
@@ -92,12 +96,13 @@ In the account menu, **Organization** lists the members of the org you're workin
 Owners and admins can change roles, remove members and invite people there. Each of
 those changes asks for your password again.
 
-Inviting someone gives you a link to send them; Dash doesn't send email. Whoever opens the
+Inviting someone gives you a link to send them; Dash doesn't email it. Whoever opens the
 link sees the org and role, and joins by signing in to an existing account or by
 creating one. They aren't a member until they accept, and they can decline instead.
 Dash says the same thing whether or not the address already has an account. A link works
 once and for 7 days, and inviting the same address again replaces it. Because the link
-is what grants access, send it only to the person you're inviting.
+is what grants access, send it only to the person you're inviting. A
+[personal workspace](signup.md#personal-workspaces) can't invite anyone.
 
 ## Several orgs
 
@@ -140,8 +145,8 @@ leaves it.
 |---------------------------------------------------|-------------------------------------------|
 | `GET /api/me`                                     | user, active org, all their orgs          |
 | `POST /api/auth/switch-org {org_id}`              | work in another org                       |
-| `GET /api/orgs`, `POST /api/orgs {name}`          | your orgs; create one (platform admins)   |
-| `GET /api/orgs/{id}/members`                      | members, and for admins the invitations   |
+| `GET /api/orgs`, `POST /api/orgs {name}`          | your orgs; create one (platform admins, or anyone with open signup) |
+| `GET /api/orgs/{id}/members`                      | members, `member_count`, and for admins the invitations |
 | `PATCH /api/orgs/{id}/members/{uid} {role, password}` | change a role                         |
 | `DELETE /api/orgs/{id}/members/{uid} {password}`  | remove a member, or leave                 |
 | `POST /api/orgs/{id}/invitations {email, role, password}` | invite; returns the link's `path` |

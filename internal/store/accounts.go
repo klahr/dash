@@ -70,6 +70,8 @@ var (
 	ErrBadOrgName    = errors.New("an organization needs a name (up to 100 characters)")
 	// ErrInvitation covers unknown, used and expired invitation links alike.
 	ErrInvitation = errors.New("this invitation link is not valid any more; ask for a new one")
+	// ErrPersonalOrg: a personal workspace has its owner as its only member.
+	ErrPersonalOrg = errors.New("a personal workspace is just for you: create an organization to invite people")
 )
 
 // MinPassword is the shortest password Dash accepts for a new account.
@@ -89,6 +91,9 @@ type Org struct {
 	Slug string `json:"slug"`
 	// Require2FA: members must sign in with two factors.
 	Require2FA bool `json:"require_2fa"`
+	// Personal: the org is its only member's personal workspace (see
+	// Accounts.EnsurePersonalOrg); it can't invite anyone.
+	Personal bool `json:"personal,omitempty"`
 }
 
 // Membership is one org a user belongs to and their role there.
@@ -410,14 +415,14 @@ func (a *Accounts) Session(key string, now time.Time) (Session, error) {
 	var active sql.NullInt64
 	var orgID sql.NullInt64
 	var name, slug, role sql.NullString
-	var require2FA, required sql.NullBool
+	var require2FA, personal, required sql.NullBool
 	err := a.db.QueryRow(`SELECT u.id, u.username, COALESCE(u.email, ''), u.is_platform_admin, u.totp_secret IS NOT NULL,
-			s.expires_at, s.active_org_id, o.id, o.name, o.slug, o.require_2fa, m.role, `+requires2FA+`
+			s.expires_at, s.active_org_id, o.id, o.name, o.slug, o.require_2fa, o.personal_user_id IS NOT NULL, m.role, `+requires2FA+`
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		LEFT JOIN org_memberships m ON m.user_id = s.user_id AND m.org_id = s.active_org_id
 		LEFT JOIN organizations o ON o.id = m.org_id
 		WHERE s.key = ?`, key).Scan(&s.User.ID, &s.User.Username, &s.User.Email, &s.User.PlatformAdmin, &s.User.TOTP,
-		&expires, &active, &orgID, &name, &slug, &require2FA, &role, &required)
+		&expires, &active, &orgID, &name, &slug, &require2FA, &personal, &role, &required)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s, ErrNotFound
 	}
@@ -430,7 +435,7 @@ func (a *Accounts) Session(key string, now time.Time) (Session, error) {
 	}
 	s.Needs2FA = !s.User.TOTP && required.Bool
 	if role.Valid {
-		s.Org = &Membership{Org: Org{ID: orgID.Int64, Name: name.String, Slug: slug.String, Require2FA: require2FA.Bool}, Role: Role(role.String)}
+		s.Org = &Membership{Org: Org{ID: orgID.Int64, Name: name.String, Slug: slug.String, Require2FA: require2FA.Bool, Personal: personal.Bool}, Role: Role(role.String)}
 		return s, nil
 	}
 	// No membership of the active org (removed, or never had one): fall
@@ -478,7 +483,7 @@ func (a *Accounts) SwitchOrg(key string, uid, orgID int64) (Membership, error) {
 
 // Memberships lists the orgs uid belongs to, oldest membership first.
 func (a *Accounts) Memberships(uid int64) ([]Membership, error) {
-	rows, err := a.db.Query(`SELECT o.id, o.name, o.slug, o.require_2fa, m.role FROM org_memberships m
+	rows, err := a.db.Query(`SELECT o.id, o.name, o.slug, o.require_2fa, o.personal_user_id IS NOT NULL, m.role FROM org_memberships m
 		JOIN organizations o ON o.id = m.org_id WHERE m.user_id = ? ORDER BY m.created_at, o.id`, uid)
 	if err != nil {
 		return nil, err
@@ -487,7 +492,7 @@ func (a *Accounts) Memberships(uid int64) ([]Membership, error) {
 	out := []Membership{}
 	for rows.Next() {
 		var m Membership
-		if err := rows.Scan(&m.ID, &m.Name, &m.Slug, &m.Require2FA, &m.Role); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.Slug, &m.Require2FA, &m.Personal, &m.Role); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -506,8 +511,9 @@ type querier interface {
 
 func membership(q querier, uid, orgID int64) (Membership, error) {
 	var m Membership
-	err := q.QueryRow(`SELECT o.id, o.name, o.slug, o.require_2fa, m.role FROM org_memberships m JOIN organizations o ON o.id = m.org_id
-		WHERE m.user_id = ? AND m.org_id = ?`, uid, orgID).Scan(&m.ID, &m.Name, &m.Slug, &m.Require2FA, &m.Role)
+	err := q.QueryRow(`SELECT o.id, o.name, o.slug, o.require_2fa, o.personal_user_id IS NOT NULL, m.role FROM org_memberships m
+		JOIN organizations o ON o.id = m.org_id
+		WHERE m.user_id = ? AND m.org_id = ?`, uid, orgID).Scan(&m.ID, &m.Name, &m.Slug, &m.Require2FA, &m.Personal, &m.Role)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m, ErrNotMember
 	}
@@ -652,6 +658,9 @@ func (a *Accounts) Invite(actor, orgID int64, email string, role Role) (string, 
 		}
 		if !mine.Role.AtLeast(RoleAdmin) || !mine.Role.AtLeast(role) {
 			return ErrForbidden
+		}
+		if mine.Personal {
+			return ErrPersonalOrg
 		}
 		inv.Org = mine.Org
 		return tx.QueryRow(`INSERT INTO org_invitations (org_id, email, role, token_hash, invited_by, created_at, expires_at)

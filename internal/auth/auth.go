@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/mail"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/passhash"
 	"github.com/klahr/dash/internal/store"
@@ -53,6 +54,7 @@ type Auth struct {
 
 	mu      sync.Mutex
 	failed  map[string]*failures    // by client IP, and by "2fa:<user id>" for second-factor guesses
+	limits  map[string]*failures    // requests that send email, by kind and client IP or address (see rateLimit)
 	tickets map[string]*loginTicket // by key: passwords checked, waiting for a second factor
 
 	now     func() time.Time // for tests
@@ -74,13 +76,17 @@ type Auth struct {
 	OnRevoke func(store.Token)
 
 	oauth *OAuth // set by NewOAuth
+
+	mail       mail.Sender // SetMail: password reset by email, and what signup needs
+	baseURL    string      // the public origin links in emails point to
+	signupOpen bool        // EnableSignup
 }
 
 // New signs people in with the accounts in acc (see Accounts.Bootstrap for
 // the first one).
 func New(acc *store.Accounts) *Auth {
 	passhash.Prime() // so the first unknown-name login isn't slower than the rest
-	return &Auth{acc: acc, failed: map[string]*failures{}, tickets: map[string]*loginTicket{}, now: time.Now, recheck: 15 * time.Second}
+	return &Auth{acc: acc, failed: map[string]*failures{}, limits: map[string]*failures{}, tickets: map[string]*loginTicket{}, now: time.Now, recheck: 15 * time.Second}
 }
 
 // Accounts are the users and orgs a signs in.
@@ -221,6 +227,7 @@ func (a *Auth) startSession(w http.ResponseWriter, r *http.Request, uid int64) e
 	tok := base64.RawURLEncoding.EncodeToString(b)
 	now := a.now()
 	_ = a.acc.PruneSessions(now)
+	a.ensurePersonal(uid) // before the session picks the org to start in
 	if err := a.acc.CreateSession(sessionKey(tok), uid, now, now.Add(sessionTTL)); err != nil {
 		return err
 	}
@@ -329,6 +336,13 @@ func (a *Auth) attempt(ip, login, password string) (store.User, error) {
 		return store.User{}, errBadLogin
 	}
 	a.release(ip, f)
+	// Only someone with the password learns the account waits for its link.
+	if unverified, err := a.acc.Unverified(u.ID); err != nil || unverified {
+		if err != nil {
+			return store.User{}, err
+		}
+		return store.User{}, errUnverified
+	}
 	return u, nil
 }
 
@@ -463,6 +477,9 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, errBadLogin):
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
+	case errors.Is(err, errUnverified):
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "unverified"})
+		return
 	case err != nil:
 		slog.Error("login", "err", err)
 		writeError(w, http.StatusInternalServerError, "sign-in failed")
@@ -513,6 +530,12 @@ var public = map[string]bool{
 	"/api/invitations/lookup":   true,
 	"/api/invitations/register": true,
 	"/api/invitations/decline":  true,
+	// Signing up and resetting a password: before there's a session.
+	"/api/signup":          true,
+	"/api/signup/resend":   true,
+	"/api/signup/verify":   true,
+	"/api/password/forgot": true,
+	"/api/password/reset":  true,
 	// Claude Code's permission prompts and the chat's Dash tools; authenticated
 	// by a per-run bearer token instead.
 	"/mcp/permissions": true,

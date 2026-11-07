@@ -17,7 +17,7 @@ import (
 //	GET    /api/me                               user, active org and all their orgs
 //	POST   /api/auth/switch-org {org_id}
 //	GET    /api/orgs                             the user's orgs
-//	POST   /api/orgs {name}                      platform admins: a new org they own
+//	POST   /api/orgs {name}                      a new org they own (platform admins, or anyone with open signup)
 //	GET    /api/orgs/{oid}/members               members (and, for admins, invitations)
 //	PATCH  /api/orgs/{oid}/members/{uid} {role, password}
 //	DELETE /api/orgs/{oid}/members/{uid} {password}
@@ -28,7 +28,8 @@ import (
 //	POST   /api/tokens {name, org_id, scopes, password}
 //	DELETE /api/tokens/{id}
 //
-// and two-factor sign-in (see twoFactorRoutes).
+// two-factor sign-in (see twoFactorRoutes), and signup and password reset
+// by email (see signupRoutes).
 //
 // Changing roles, removing members, inviting and making tokens ask for the
 // password again. Requests with a token may read but not manage members,
@@ -53,6 +54,7 @@ func (a *Auth) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/tokens", a.sessionOnly(a.createToken))
 	mux.HandleFunc("DELETE /api/tokens/{id}", a.sessionOnly(a.revokeToken))
 	a.twoFactorRoutes(mux)
+	a.signupRoutes(mux)
 }
 
 // signedIn passes the request's identity to h, and answers 401 without one
@@ -82,12 +84,13 @@ func accountError(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrNotMember), errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrInvitation):
 		code = http.StatusNotFound
 	case errors.Is(err, store.ErrLastOwner), errors.Is(err, store.ErrUsernameTaken),
-		errors.Is(err, store.ErrTOTPEnabled), errors.Is(err, store.ErrTOTPRequired), errors.Is(err, store.ErrTOTPSelf):
+		errors.Is(err, store.ErrTOTPEnabled), errors.Is(err, store.ErrTOTPRequired), errors.Is(err, store.ErrTOTPSelf),
+		errors.Is(err, store.ErrPersonalOrg):
 		code = http.StatusConflict
 	case errors.Is(err, store.ErrBadRole), errors.Is(err, store.ErrBadEmail), errors.Is(err, store.ErrBadUsername),
 		errors.Is(err, store.ErrWeakPassword), errors.Is(err, store.ErrBadOrgName), errors.Is(err, errBadBody),
 		errors.Is(err, store.ErrNoOrg), errors.Is(err, store.ErrBadScopes), errors.Is(err, store.ErrBadTokenName),
-		errors.Is(err, store.ErrTOTPNotSetUp), errors.Is(err, store.ErrNoPendingTOTP):
+		errors.Is(err, store.ErrTOTPNotSetUp), errors.Is(err, store.ErrNoPendingTOTP), errors.Is(err, store.ErrEmailLink):
 		code = http.StatusBadRequest
 	case errors.Is(err, ErrBadPassword), errors.Is(err, ErrSessionRequired):
 		code = http.StatusForbidden // not 401: that would sign the browser out
@@ -141,6 +144,8 @@ func (a *Auth) me(w http.ResponseWriter, r *http.Request) {
 		// An org requires two-factor sign-in and they haven't set it up:
 		// nothing else works until they do.
 		"needs_2fa": id.Needs2FA,
+		// Platform admins create orgs; with open signup, everyone does.
+		"can_create_orgs": a.canCreateOrgs(id.User),
 	}
 	if id.Token != nil {
 		resp["token"] = id.Token // a token works in its own org only
@@ -178,8 +183,10 @@ func (a *Auth) listOrgs(w http.ResponseWriter, r *http.Request, id *Identity) {
 	writeJSON(w, http.StatusOK, orgs)
 }
 
+func (a *Auth) canCreateOrgs(u store.User) bool { return u.PlatformAdmin || a.signupOpen }
+
 func (a *Auth) createOrg(w http.ResponseWriter, r *http.Request, id *Identity) {
-	if !id.User.PlatformAdmin {
+	if !a.canCreateOrgs(id.User) {
 		writeError(w, http.StatusForbidden, "only platform admins create organizations")
 		return
 	}
@@ -214,7 +221,12 @@ func (a *Auth) members(w http.ResponseWriter, r *http.Request, id *Identity) {
 		accountError(w, err)
 		return
 	}
-	resp := map[string]any{"org": mine.Org, "role": mine.Role, "members": members}
+	count, err := a.acc.ForOrg(oid).MemberCount()
+	if err != nil {
+		accountError(w, err)
+		return
+	}
+	resp := map[string]any{"org": mine.Org, "role": mine.Role, "members": members, "member_count": count}
 	if mine.Role.AtLeast(store.RoleAdmin) {
 		if resp["invitations"], err = a.acc.Invitations(oid); err != nil {
 			accountError(w, err)

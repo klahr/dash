@@ -2,11 +2,20 @@ const $ = (s) => document.querySelector(s);
 const loginForm = $("#login");
 const totpForm = $("#totp");
 const enrolCard = $("#enrol");
+const signupForm = $("#signup");
+const forgotForm = $("#forgot");
+const resetForm = $("#reset");
+const noticeCard = $("#notice");
 let ticket = "";
 
 function show(card) {
-  for (const c of [loginForm, totpForm, enrolCard]) c.hidden = c !== card;
+  for (const c of [loginForm, totpForm, enrolCard, signupForm, forgotForm, resetForm, noticeCard]) c.hidden = c !== card;
   card.querySelector("input")?.focus();
+}
+
+function notice(text) {
+  $("#notice-text").textContent = text;
+  show(noticeCard);
 }
 
 // Only back to a live preview or an invitation link: anything else could be
@@ -63,6 +72,13 @@ loginForm.addEventListener("submit", async (e) => {
       return;
     }
     err.textContent = data.error || `Sign-in failed (${res.status})`;
+    if (data.code === "unverified" && loginForm.username.value.includes("@")) {
+      const email = loginForm.username.value.trim();
+      err.append(" ", Object.assign(document.createElement("button"), {
+        type: "button", className: "link inline", textContent: "Send the link again",
+        onclick: async () => { const d = await submit(null, "/api/signup/resend", { email }); if (d) notice(d.message); },
+      }));
+    }
     loginForm.password.select();
   } catch {
     err.textContent = "Can't reach the Dash server.";
@@ -135,3 +151,88 @@ if (new URLSearchParams(location.search).has("enrol")) {
     else go();
   }).catch(() => {});
 }
+
+// ---- signup, verification and password reset by email ----
+
+// submit posts body to path for a form (or none), and shows what the server
+// says: the same message whether or not the address has an account.
+async function submit(form, path, body) {
+  const err = form?.querySelector(".login-error");
+  const button = form?.querySelector("button.primary");
+  if (err) err.textContent = "";
+  if (button) button.disabled = true;
+  try {
+    const { res, data } = await postJSON(path, body);
+    if (res.ok) return data;
+    if (err) err.textContent = data.error || `Something went wrong (${res.status})`;
+    else notice(data.error || `Something went wrong (${res.status})`);
+  } catch {
+    if (err) err.textContent = "Can't reach the Dash server.";
+    else notice("Can't reach the Dash server.");
+  } finally {
+    if (button) button.disabled = false;
+  }
+  return null;
+}
+
+for (const b of document.querySelectorAll(".to-login")) {
+  b.addEventListener("click", () => { history.replaceState(null, "", location.pathname + location.search); show(loginForm); });
+}
+$("#to-signup").addEventListener("click", () => show(signupForm));
+$("#to-forgot").addEventListener("click", () => {
+  if (loginForm.username.value.includes("@")) forgotForm.email.value = loginForm.username.value.trim();
+  show(forgotForm);
+});
+
+signupForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const data = await submit(signupForm, "/api/signup", { email: signupForm.email.value, password: signupForm.password.value });
+  if (data) { signupForm.reset(); notice(data.message); }
+});
+
+forgotForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const data = await submit(forgotForm, "/api/password/forgot", { email: forgotForm.email.value });
+  if (data) notice(data.message);
+});
+
+let resetToken = "";
+resetForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const data = await submit(resetForm, "/api/password/reset", { token: resetToken, password: resetForm.password.value });
+  if (!data) return;
+  resetForm.reset();
+  history.replaceState(null, "", location.pathname);
+  show(loginForm);
+  loginForm.username.value = data.username || "";
+  loginForm.password.focus();
+  $("#login-error").textContent = "";
+  loginForm.querySelector("p").textContent = "Password changed. Sign in with your new password.";
+});
+
+// Links from emails carry their token in the fragment, which isn't sent to
+// the server or in a Referer.
+(async () => {
+  const hash = new URLSearchParams(location.hash.slice(1));
+  let status = { open: false, password_reset: false };
+  try {
+    const res = await fetch("/api/signup");
+    if (res.ok) status = await res.json();
+  } catch {}
+  $("#to-signup").hidden = !status.open;
+  $("#to-forgot").hidden = !status.password_reset;
+  if (hash.has("verify")) {
+    const tok = hash.get("verify");
+    history.replaceState(null, "", location.pathname);
+    const data = await submit(null, "/api/signup/verify", { token: tok });
+    if (data) location.replace("/");
+  } else if (hash.has("reset")) {
+    resetToken = hash.get("reset");
+    history.replaceState(null, "", location.pathname);
+    show(resetForm);
+  } else if (location.hash === "#forgot" && status.password_reset) {
+    show(forgotForm);
+  } else if (location.hash === "#signup" && status.open) {
+    show(signupForm);
+  }
+})();

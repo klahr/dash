@@ -30,7 +30,56 @@
       <label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
       <button class="btn primary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5v16h4M14 8l4 4-4 4M18 12H8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Sign in</button>
       <div id="login-error" class="login-error" role="alert"></div>
+      <div class="login-links">
+        <button class="link" type="button" id="to-signup" hidden>Create an account</button>
+        <button class="link" type="button" id="to-forgot" hidden>Forgot password?</button>
+      </div>
     </form>
+    <!-- Open signup (when the server allows it) -->
+    <form id="signup" class="login-card" hidden>
+      <div class="brand">
+        <img src="favicon.svg" alt="" aria-hidden="true">
+        <span>Dash</span>
+      </div>
+      <p>Create an account. We'll email you a link to confirm your address.</p>
+      <label class="field"><span>Email</span><input name="email" type="email" autocomplete="email" autocapitalize="none" required></label>
+      <label class="field"><span>Password (at least 8 characters)</span><input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
+      <button class="btn primary">Create account</button>
+      <button class="link to-login" type="button">I have an account</button>
+      <div class="login-error" role="alert"></div>
+    </form>
+    <!-- Forgot password: a link by email -->
+    <form id="forgot" class="login-card" hidden>
+      <div class="brand">
+        <img src="favicon.svg" alt="" aria-hidden="true">
+        <span>Dash</span>
+      </div>
+      <p>Enter your account's email address and we'll send you a link to choose a new password.</p>
+      <label class="field"><span>Email</span><input name="email" type="email" autocomplete="email" autocapitalize="none" required></label>
+      <button class="btn primary">Send link</button>
+      <button class="link to-login" type="button">Back to sign in</button>
+      <div class="login-error" role="alert"></div>
+    </form>
+    <!-- From a reset link -->
+    <form id="reset" class="login-card" hidden>
+      <div class="brand">
+        <img src="favicon.svg" alt="" aria-hidden="true">
+        <span>Dash</span>
+      </div>
+      <p>Choose a new password. You'll be signed out everywhere else.</p>
+      <label class="field"><span>New password (at least 8 characters)</span><input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
+      <button class="btn primary">Set password</button>
+      <div class="login-error" role="alert"></div>
+    </form>
+    <!-- What happened: check your inbox, link expired, … -->
+    <section id="notice" class="login-card" hidden>
+      <div class="brand">
+        <img src="favicon.svg" alt="" aria-hidden="true">
+        <span>Dash</span>
+      </div>
+      <p id="notice-text" role="status"></p>
+      <button class="link to-login" type="button">Back to sign in</button>
+    </section>
     <!-- Second step, for accounts with two-factor sign-in -->
     <form id="totp" class="login-card" hidden>
       <div class="brand">

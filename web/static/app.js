@@ -2950,7 +2950,8 @@ async function renderOrg() {
   $("#org-require-2fa-row").hidden = mine !== "owner";
   $("#org-require-2fa").checked = !!org.org.require_2fa;
   $("#org-role").textContent = `You are ${mine === "admin" ? "an admin" : `${mine === "owner" ? "an owner" : "a member"}`} of ${org.org.name}.` +
-    (manage ? " Owners and admins invite people and change roles; only owners make owners." : "");
+    (org.org.personal ? " This is your personal workspace: create an organization to work with others." :
+      manage ? " Owners and admins invite people and change roles; only owners make owners." : "");
   const roleSelect = (m) => {
     const sel = h("select", { "aria-label": `Role of ${m.username}`, class: "org-role-select" },
       ...Object.keys(ROLE_LABEL).filter((r) => RANK[r] <= RANK[mine]).map((r) => h("option", { value: r, selected: r === m.role }, ROLE_LABEL[r])));
@@ -2984,7 +2985,8 @@ async function renderOrg() {
       }) }, self ? "Leave" : "Remove") : null);
   });
   $("#org-members").replaceChildren(...rows);
-  $("#org-invite-area").hidden = !manage;
+  // A personal workspace is just its owner's: new orgs are for inviting people.
+  $("#org-invite-area").hidden = !manage || !!org.org.personal;
   if (manage) {
     for (const opt of $("#org-invite-role").options) opt.hidden = opt.disabled = RANK[opt.value] > RANK[mine];
     const pending = (org.invitations || []).map((i) => h("li", { class: "runner-row" },
@@ -2998,7 +3000,7 @@ async function renderOrg() {
     $("#org-pending-head").hidden = !pending.length;
     $("#org-pending").replaceChildren(...pending);
   }
-  $("#org-new").hidden = !me.user?.is_platform_admin;
+  $("#org-new").hidden = !me.can_create_orgs;
 }
 
 async function setRequire2FA() {

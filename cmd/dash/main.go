@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -27,6 +28,7 @@ import (
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
+	"github.com/klahr/dash/internal/mail"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
@@ -106,6 +108,11 @@ func main() {
 	scanTimeout := flag.Duration("scan-timeout", scan.DefaultRunTimeout, "stop a scan's Claude run after this long and mark it failed")
 	scanSchedules := flag.Bool("scan-schedules", true, "run scans (.dash/scans) on their schedules; off = only when started by hand")
 	envFile := flag.String("env", ".env", "file with DASH_USERNAME / DASH_PASSWORD (real env vars take precedence)")
+	signup := flag.Bool("signup", false, "open signup: anyone may create an account with their email address (needs SMTP and -public-url; see docs/signup.md; or DASH_SIGNUP=1)")
+	smtpHost := flag.String("smtp-host", "", "SMTP server for signup and password-reset emails (or $DASH_SMTP_HOST)")
+	smtpPort := flag.Int("smtp-port", 0, "SMTP port: 587 (STARTTLS) or 465 (TLS) (default $DASH_SMTP_PORT, else 587)")
+	smtpUser := flag.String("smtp-user", "", "SMTP username, with $DASH_SMTP_PASSWORD (or $DASH_SMTP_USERNAME)")
+	smtpFrom := flag.String("smtp-from", "", "From address of Dash's emails, e.g. \"Dash <dash@example.com>\" (or $DASH_SMTP_FROM)")
 	hubTasks := flag.String("hub-tasks", "auto", "whether the hub runs tasks of projects not linked to a runner itself: on, off, or auto (on until a runner is registered); see docs/several-computers.md")
 	runnerGrace := flag.Duration("runner-grace", dispatch.DefaultGrace, "fail the tasks of a runner that has been offline this long, ready to be queued again (hub)")
 	var hubServer, regCode *string
@@ -298,6 +305,12 @@ func main() {
 		Static:      web.Static,
 		Addr:        *addr,
 		PublicURL:   strings.TrimRight(*publicURL, "/"),
+	}
+	if !runnerMode {
+		configureMail(authn, *signup, mail.Config{
+			Host: envOr(*smtpHost, "DASH_SMTP_HOST"), Port: *smtpPort, Username: envOr(*smtpUser, "DASH_SMTP_USERNAME"),
+			Password: os.Getenv("DASH_SMTP_PASSWORD"), From: envOr(*smtpFrom, "DASH_SMTP_FROM"),
+		}, *publicURL)
 	}
 	var runnerCreds tunnel.Credentials
 	var reporter *dispatch.Reporter
@@ -498,6 +511,60 @@ func main() {
 		slog.Error("server", "err", err)
 		os.Exit(1)
 	}
+}
+
+func envOr(v, name string) string {
+	if v != "" {
+		return v
+	}
+	return os.Getenv(name)
+}
+
+// configureMail sets up email (password reset) when SMTP is configured, and
+// opens signup if asked to and email works. When it can't, it says why and
+// Dash carries on invite-only.
+func configureMail(authn *auth.Auth, signup bool, cfg mail.Config, publicURL string) {
+	if !signup {
+		switch strings.ToLower(os.Getenv("DASH_SIGNUP")) {
+		case "1", "true", "yes", "on":
+			signup = true
+		}
+	}
+	if cfg.Port == 0 {
+		cfg.Port = 587
+		if v := os.Getenv("DASH_SMTP_PORT"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				cfg.Port = n
+			} else {
+				cfg.Port = -1 // Check reports it
+			}
+		}
+	}
+	if cfg.Host == "" && cfg.From == "" && !signup {
+		return // no email at all, as before
+	}
+	sender, err := mail.NewSMTP(cfg)
+	switch {
+	case err != nil:
+		slog.Error("email is off", "reason", err)
+	case publicURL == "":
+		err = errors.New("links in emails need the public URL: set -public-url or DASH_PUBLIC_URL")
+		slog.Error("email is off", "reason", err)
+	default:
+		authn.SetMail(sender, publicURL)
+		slog.Info("email on: password reset by email", "smtp", net.JoinHostPort(cfg.Host, fmt.Sprint(cfg.Port)))
+	}
+	if !signup {
+		return
+	}
+	if err == nil {
+		err = authn.EnableSignup()
+	}
+	if err != nil {
+		slog.Error("open signup stays off (invite-only)", "reason", err)
+		return
+	}
+	slog.Info("open signup on: anyone can create an account by confirming their email address")
 }
 
 // runnerCredentials registers with the hub when given a code, and otherwise
