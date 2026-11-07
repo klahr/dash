@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -112,6 +113,41 @@ func TestLockout(t *testing.T) {
 	// Even the right password is refused while locked out.
 	if w := do(h, "POST", "/api/login", `{"username":"admin","password":"s3cret"}`); w.Code != http.StatusTooManyRequests {
 		t.Fatalf("want 429, got %d", w.Code)
+	}
+}
+
+func TestLockoutParallel(t *testing.T) {
+	a, _ := New("admin", "s3cret")
+	const n = 4 * maxFailures
+	errs := make(chan error, n)
+	var wg sync.WaitGroup
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- a.attempt("10.0.0.1", "admin", "nope")
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	guesses := 0
+	for err := range errs {
+		if err == errBadLogin {
+			guesses++
+		}
+	}
+	if guesses != maxFailures {
+		t.Fatalf("parallel guesses checked: %d, want %d", guesses, maxFailures)
+	}
+}
+
+func TestConfirmPasswordSuccessDoesNotCount(t *testing.T) {
+	a, _ := New("u", "p")
+	r := httptest.NewRequest("DELETE", "/api/projects/x", nil)
+	for range 2 * maxFailures {
+		if err := a.ConfirmPassword(r, "p"); err != nil {
+			t.Fatalf("right password: %v", err)
+		}
 	}
 }
 

@@ -197,7 +197,11 @@ func (a *Auth) lockedOut(ip string) bool {
 	return f.count >= maxFailures
 }
 
-func (a *Auth) recordFailure(ip string) {
+// reserve counts an attempt from ip as a failure up front, in the same
+// critical section as the lockout check, so parallel guesses can't all
+// slip past it. It returns false if ip is locked out. A correct password
+// takes the reservation back with release.
+func (a *Auth) reserve(ip string) (*failures, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	f, ok := a.failed[ip]
@@ -205,7 +209,24 @@ func (a *Auth) recordFailure(ip string) {
 		f = &failures{first: a.now()}
 		a.failed[ip] = f
 	}
+	if f.count >= maxFailures {
+		return nil, false
+	}
 	f.count++
+	return f, true
+}
+
+// release undoes a reservation from reserve, unless its window has since
+// been replaced.
+func (a *Auth) release(ip string, f *failures) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.failed[ip] != f {
+		return
+	}
+	if f.count--; f.count <= 0 {
+		delete(a.failed, ip)
+	}
 }
 
 var (
@@ -215,11 +236,10 @@ var (
 
 // attempt checks a login from ip, counting failures towards its lockout.
 func (a *Auth) attempt(ip, username, password string) error {
-	if a.lockedOut(ip) {
+	if _, ok := a.reserve(ip); !ok {
 		return errLockedOut
 	}
 	if !a.check(username, password) {
-		a.recordFailure(ip)
 		time.Sleep(300 * time.Millisecond) // blunt online guessing a little more
 		return errBadLogin
 	}
@@ -243,15 +263,16 @@ func (a *Auth) ConfirmPassword(r *http.Request, password string) error {
 		return nil
 	}
 	ip := a.clientIP(r)
-	if a.lockedOut(ip) {
+	f, ok := a.reserve(ip)
+	if !ok {
 		return errLockedOut
 	}
 	p := sha256.Sum256([]byte(password))
 	if subtle.ConstantTimeCompare(p[:], a.pass[:]) != 1 {
-		a.recordFailure(ip)
 		time.Sleep(300 * time.Millisecond)
 		return ErrBadPassword
 	}
+	a.release(ip, f)
 	return nil
 }
 
