@@ -110,6 +110,12 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
 All flags: `./bin/dash -h`.
 
+## Contributing
+
+Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test and
+send a pull request. Contributors sign the [Contributor License Agreement](CLA.md) once, on
+their first pull request; you keep the copyright in your work.
+
 ## License
 
 [AGPL-3.0](LICENSE)
