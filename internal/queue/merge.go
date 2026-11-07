@@ -86,7 +86,7 @@ func (m *MergeQueue) Enqueue(job model.MergeJob) error {
 // pull request is open is followed by the PR poller instead.
 func (m *MergeQueue) Resume() {
 	for _, t := range m.Store.ListTodos("", model.StatusMerging) {
-		if t.PR != nil && t.PR.State == "OPEN" {
+		if (t.PR != nil && t.PR.State == "OPEN") || t.OnRunner() {
 			continue
 		}
 		if err := m.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID}); err != nil {
@@ -178,8 +178,8 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 	if err != nil {
 		return err
 	}
-	if t.Status != model.StatusMerging || t.Worktree == nil {
-		return fmt.Errorf("todo %s not mergeable (status %s)", t.ID, t.Status)
+	if t.Status != model.StatusMerging || t.Worktree == nil || t.OnRunner() {
+		return fmt.Errorf("todo %s not mergeable here (status %s)", t.ID, t.Status)
 	}
 	p, err := m.Store.GetProject(t.ProjectID)
 	if err != nil {

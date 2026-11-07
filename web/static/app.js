@@ -693,7 +693,8 @@ async function refreshMachines() {
   state.machines = await api("GET", "/api/machines");
   for (const m of state.machines) if (m.ok && !sockets.has(m.name)) connectEvents(m);
   await loadProjects();
-  if ($("#runners-sheet").open) await renderRunners();
+  if ($("#org-sheet").open) await renderRunners();
+  else await loadRunners();
 }
 
 const multi = () => (state.machines || []).length > 1;
@@ -1150,6 +1151,7 @@ $("#pm-delete").addEventListener("click", attempt(openDeleteProject));
 // The account menu shows who is logged in, the org they work in and the
 // others they can switch to.
 loadMe().catch(() => {});
+loadRunners().catch(() => {});
 $("#org-open").addEventListener("click", attempt(openOrg));
 $("#tokens-open").addEventListener("click", attempt(openTokens));
 $("#token-create").addEventListener("click", attempt(createToken));
@@ -1487,6 +1489,7 @@ function todoRow(t, li = -1, ri = -1) {
   if (fixing && t.status === "queued") sub = `Sent back from merge: ${fixing}`;
   if (t.status === "in_progress") { sub = state.lastLine.get(t.id) || "Working…"; subClass += " progress"; }
   if (t.paused) sub = t.status === "in_progress" ? "Pausing…" : "Paused";
+  if (t.waiting && t.status === "queued" && !t.paused) { sub = t.waiting; subClass = "todo-sub waiting-runner"; }
   if (t.error) { sub = t.error; subClass += " err"; }
   if (t.reviewing) { sub = "Claude is reviewing…"; subClass = "todo-sub progress"; }
   if (state.perms.some((p) => p.todo_id === t.id)) { sub = "Waiting for your approval"; subClass = "todo-sub waiting"; }
@@ -1504,6 +1507,7 @@ function todoRow(t, li = -1, ri = -1) {
     h("span", { class: "todo-side" },
       checkTag,
       t.paused ? h("span", { class: "paused-tag" }, "Paused") : null,
+      t.runner && ["in_progress", "review", "merging", "failed"].includes(t.status) ? h("span", { class: "runner-tag", title: "Runs on this runner" }, runnerName(t.runner)) : null,
       t.reviewing ? h("span", { class: "reviewing-tag" }, "Reviewing") : null,
       t.pr && t.status !== "merged" ? h("span", { class: "pr-tag" }, `PR #${t.pr.number}`) : null,
       t.revert ? h("span", { class: "revert-tag" }, "Reverted") : null,
@@ -1708,8 +1712,10 @@ function renderDetail() {
     h("div", { class: "md", innerHTML: renderMarkdown(t.prompt) }),
     ...(t.feedback?.length ? [h("ol", { class: "feedback-list" }, t.feedback.map((f) => h("li", { class: "md", innerHTML: renderMarkdown(f) })))] : []));
   $("#d-prompt-wrap").open = !t.worktree;
-  $("#d-error").hidden = !t.error;
-  $("#d-error").textContent = t.error || "";
+  const why = t.error ? t.error + (t.resumable && t.runner ? ` — retry to continue on ${runnerName(t.runner)}, where its session is kept.` : "")
+    : t.status === "queued" && t.waiting ? t.waiting : "";
+  $("#d-error").hidden = !why;
+  $("#d-error").textContent = why;
   renderActions(t);
   $("#d-to-agent").hidden = !canRework(t);
   renderPane();
@@ -1731,7 +1737,7 @@ function renderActions(t) {
       if (t.paused) btns.push(b("play", "Resume", post("resume", null, "Resumed"), "primary grow"));
       break;
     case "in_progress":
-      if (!t.paused) btns.push(b("pause", "Pause", post("pause", null, "Pausing")));
+      if (!t.paused && !t.runner) btns.push(b("pause", "Pause", post("pause", null, "Pausing")));
       btns.push(b("stop", "Stop", post("cancel", null, "Stopping"), "danger grow"));
       break;
     case "review":
@@ -1755,7 +1761,8 @@ function renderActions(t) {
       btns.push(t.worktree ? b("redo", "Rework", rework) : b("edit", "Edit", () => openTodoForm(t)));
       btns.push(t.worktree && t.error?.startsWith("merge:")
         ? b("merge", "Retry merge", post("approve", null, "Merging again"), "review grow")
-        : b("redo", "Retry", post("enqueue", null, "Queued again"), "primary grow"));
+        : t.resumable && t.runner ? b("redo", `Continue on ${runnerName(t.runner)}`, post("enqueue", null, "Queued again"), "primary grow")
+          : b("redo", "Retry", post("enqueue", null, "Queued again"), "primary grow"));
       break;
     case "merged":
       if (!t.revert) btns.push(b("undo", "Revert", attempt(() => revertTodo(t)), "grow"));
@@ -1768,17 +1775,19 @@ $("#d-more").addEventListener("click", attempt(async () => {
   const t = state.todos.get(state.detail);
   if (!t) return;
   const choices = [];
-  if (t.status === "review" && !t.reviewing) choices.push(["eye", "Review with Claude", reviewTodo]);
+  const here = !t.runner; // a runner's task has its worktree on the runner
+  if (t.status === "review" && !t.reviewing && here) choices.push(["eye", "Review with Claude", reviewTodo]);
   if (previewOf(t.id)) choices.push(["stop", "Stop the live preview", () => stopPreview(t.id)]);
-  if (t.worktree && ["review", "failed"].includes(t.status)) {
+  if (t.worktree && here && ["review", "failed"].includes(t.status)) {
     choices.push(["terminal", "Open shell in this worktree", () => startProc({ kind: "pty", todo_id: t.id })]);
   }
   if (t.pr) choices.push(["external", `Open pull request #${t.pr.number}`, () => window.open(t.pr.url, "_blank", "noopener")]);
-  if (t.status === "merged" && !t.revert) choices.push(["undo", "Revert this change", () => revertTodo(t)]);
+  if (t.status === "merged" && !t.revert && here) choices.push(["undo", "Revert this change", () => revertTodo(t)]);
   if (!["in_progress", "merging"].includes(t.status)) {
-    if (t.worktree && state.project?.test_command) choices.push(["check", "Run the tests again", () => api("POST", `/api/todos/${t.id}/test`).then(() => toast("Running tests…"))]);
+    if (t.worktree && here && state.project?.test_command) choices.push(["check", "Run the tests again", () => api("POST", `/api/todos/${t.id}/test`).then(() => toast("Running tests…"))]);
     choices.push(["copy", "Duplicate as a new draft", () => api("POST", `/api/todos/${t.id}/duplicate`).then(() => toast("Duplicated as a draft"))]);
-    if (t.worktree) {
+    if (t.worktree && !here) choices.push(["copy", `Copy branch name (${t.worktree.branch})`, () => copy(t.worktree.branch, "Branch name copied")]);
+    if (t.worktree && here) {
       choices.push(["code", "Open worktree in editor", () => api("POST", `/api/todos/${t.id}/open`).then(() => toast("Opening in your editor"))]);
       choices.push(["copy", `Copy branch name (${t.worktree.branch})`, () => copy(t.worktree.branch, "Branch name copied")]);
       choices.push(["copy", "Copy worktree path", () => copy(t.worktree.path, "Path copied")]);
@@ -1811,7 +1820,7 @@ const pv = {
 };
 const pvKey = (machine, id) => `${machine || ""}/${id}`;
 const previewOf = (id) => state.previews.get(pvKey(state.project?.machine, id)) || null;
-const canPreview = (t) => t?.status === "review" && !!t.worktree && !!state.project?.run_command;
+const canPreview = (t) => t?.status === "review" && !!t.worktree && !t.runner && !!state.project?.run_command;
 const PV_LABEL = { starting: "Starting…", live: "Live", crashed: "Crashed" };
 // eslint-disable-next-line no-control-regex
 const stripAnsi = (s) => s.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[@-_]|\r(?!\n)/g, "");
@@ -2723,8 +2732,6 @@ function connectorSteps(c) {
 }
 
 // ------------------------------------------------------------------ runners
-// Computers that connect to this dashboard themselves (`dash runner`): no
-// inbound access, VPN or shared secret needed on their side.
 // The one-line installer and the version runners should run (from /api/runners).
 const runnerInfo = { hub: location.origin, version: "" };
 // The "Add a runner" in progress: the runners there were before its code,
@@ -2739,29 +2746,69 @@ const shq = (s) => {
 const installCmd = (args = "") => `curl -fsSL ${runnerInfo.hub}/runner/install.sh | sh${args ? ` -s -- ${args}` : ""}`;
 const isRelease = (v) => /^v\d+\.\d+\.\d+/.test(v || "");
 
+// Computers that run the org's tasks (`dash runner`), each with its owner's
+// Claude subscription. They connect out to this dashboard: no inbound
+// access, VPN or shared secret needed on their side. Projects are linked to
+// them in their settings; the hub sends those tasks only to them.
+async function loadRunners() {
+  try {
+    const res = await api("GET", "/api/runners");
+    state.runners = res.runners;
+    state.localTasks = res.local_tasks;
+    Object.assign(runnerInfo, { hub: res.hub || location.origin, version: res.version || "" });
+  } catch {
+    state.runners = null; // this Dash has no runners (it is one, say)
+  }
+  return state.runners;
+}
+const runnerName = (id) => state.runners?.find((r) => r.id === id)?.name || "its runner";
+
+function runnerUsage(r) {
+  const u = r.reported?.usage;
+  if (!u?.known) return "";
+  if (u.paused) return ` · queue paused${u.reason ? ` (${u.reason})` : ""}`;
+  const top = [...(u.windows || [])].sort((a, b) => b.utilization - a.utilization)[0];
+  return top ? ` · ${shortLabel(top.name)} ${Math.round(top.utilization * 100)}%` : "";
+}
+
 async function renderRunners() {
-  const { runners: list, hub, version } = await api("GET", "/api/runners");
-  Object.assign(runnerInfo, { hub: hub || location.origin, version: version || "" });
+  const list = await loadRunners();
+  $("#org-runners").hidden = list === null;
+  if (list === null) return;
+  const limit = (r) => r.parallel || r.reported?.parallel || 1;
   const rows = list.map((r) => {
     const outdated = isRelease(runnerInfo.version) && r.version && r.version !== runnerInfo.version;
     return h("li", { class: "runner-row" + (outdated ? " outdated" : "") },
       h("span", { class: `runner-dot ${r.online ? "on" : ""}`, "aria-hidden": "true" }),
-      h("span", { class: "runner-name" }, r.name),
+      h("span", { class: "runner-name" }, r.name, r.paused ? h("span", { class: "paused-tag" }, "Paused") : null),
       r.version ? h("span", { class: `runner-version${outdated ? " warn" : ""}`, title: outdated ? `The hub runs ${runnerInfo.version}` : "Dash version" }, r.version) : null,
-      h("span", { class: "runner-seen hint" }, (r.online ? "online" : r.last_seen ? `offline, last seen ${ago(r.last_seen)} ago` : "never connected") +
-        (r.owner ? ` · ${r.owner.username}, ${r.owner.org.name}` : "")),
-      h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
-        const ok = await ask({ title: `Revoke ${r.name}?`, body: "It's disconnected now and its token stops working. Its projects stay on that computer; register it again with a new code to bring it back.", ok: "Revoke", danger: true });
-        if (!ok) return;
-        await api("DELETE", `/api/runners/${encodeURIComponent(r.id)}`);
-        toast(`${r.name} revoked`);
-        await refreshMachines();
-      }) }, "Revoke"),
-      outdated ? h("div", { class: "runner-update" },
+      h("span", { class: "runner-seen hint" },
+        (r.online ? `online · ${r.running} of ${limit(r)} tasks` : r.last_seen ? `offline, last seen ${ago(r.last_seen)} ago` : "never connected") +
+        (r.owner ? ` · ${r.mine ? "yours" : r.owner.username}` : "") + runnerUsage(r)),
+      r.can_manage ? h("span", { class: "runner-actions" },
+        h("label", { class: "runner-parallel", title: "Tasks at once (0: the runner's own -parallel)" }, "At once ",
+          h("input", { type: "number", min: "0", max: "64", value: String(r.parallel || 0), "aria-label": `Tasks ${r.name} runs at once`,
+            onchange: attempt(async (e) => { await api("PATCH", `/api/runners/${encodeURIComponent(r.id)}`, { parallel: Number(e.target.value) || 0 }); await renderRunners(); }) })),
+        h("button", { class: "btn small", type: "button", onclick: attempt(async () => {
+          await api("PATCH", `/api/runners/${encodeURIComponent(r.id)}`, { paused: !r.paused });
+          toast(r.paused ? `${r.name} takes tasks again` : `${r.name} paused: it finishes what it runs and takes no new tasks`);
+          await renderRunners();
+        }) }, r.paused ? "Resume" : "Pause"),
+        h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
+          const ok = await ask({ title: `Revoke ${r.name}?`, body: "It's disconnected now, its token stops working and it's unlinked from every project. Tasks it is running fail and can be queued again on another runner. Run the install command with a new code to bring it back.", ok: "Revoke", danger: true });
+          if (!ok) return;
+          await api("DELETE", `/api/runners/${encodeURIComponent(r.id)}`);
+          toast(`${r.name} revoked`);
+          await refreshMachines();
+        }) }, "Revoke")) : null,
+      outdated && r.mine ? h("div", { class: "runner-update" },
         h("p", { class: "hint" }, `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run this on ${r.name} (it keeps its registration):`),
         copyBlock(installCmd(), "Command copied", { pre: true })) : null);
   });
   $("#runners-list").replaceChildren(...(rows.length ? rows : [h("li", { class: "hint" }, "No runners yet.")]));
+  $("#runners-local").textContent = state.localTasks
+    ? "This dashboard also runs tasks of projects not linked to a runner itself."
+    : "This dashboard doesn't run tasks itself: link each project to a runner.";
   if (runnerAdd) {
     const added = list.find((r) => !runnerAdd.known.has(r.id));
     const st = $("#runner-add-status");
@@ -2816,19 +2863,10 @@ async function addRunner() {
       h("label", { class: "field" }, h("span", {}, "Projects directory ", h("em", {}, "optional")), dir)),
     h("div", { class: "segmented", role: "tablist" }, tab("One line", oneLine, manual), tab("Manual", manual, oneLine)),
     oneLine, manual,
-    h("p", { class: "hint" }, `The code works once, for ${mins} minutes.`),
+    h("p", { class: "hint" }, `The code works once, for ${mins} minutes, and makes the runner yours, in ${state.me?.org?.name || "this organization"}.`),
     h("p", { class: "runner-add-status", id: "runner-add-status", role: "status" }, "Waiting for the runner to connect…"));
   $("#runners-code").hidden = false;
 }
-
-async function openRunners() {
-  $("#runners-code").hidden = true;
-  runnerAdd = null;
-  await renderRunners();
-  const d = $("#runners-sheet");
-  if (!d.open) d.showModal();
-}
-$("#runners-open").addEventListener("click", attempt(openRunners));
 $("#runners-add").addEventListener("click", attempt(addRunner));
 
 // ------------------------------------------------------------------ account & organizations
@@ -2854,9 +2892,8 @@ async function loadMe() {
     }, ico(o.id === me.org?.id ? "check" : "users"), o.name)),
   ]));
   $("#org-open").hidden = !me.org;
-  // Runners and the queue pause are the whole Dash's, for platform admins.
+  // The queue pause is the whole Dash's, for platform admins.
   const admin = !!me.user?.is_platform_admin;
-  $("#runners-open").hidden = !admin;
   $("#queue-toggle").hidden = !admin;
   if (!me.org) {
     await ask({
@@ -2895,6 +2932,9 @@ function askPassword(title, body = "") {
 
 async function openOrg() {
   await renderOrg();
+  $("#runners-code").hidden = true;
+  runnerAdd = null;
+  await renderRunners();
   $("#org-invite-link").hidden = true;
   const d = $("#org-sheet");
   if (!d.open) d.showModal();
@@ -3509,13 +3549,40 @@ function openSettings() {
   f.color.disabled = !p.color;
   f.icon.value = p.icon || "";
   projectIcon(p, $("#settings-icon"));
+  renderRunnerPicker(p);
   syncMergeHint();
   $("#settings-sheet").returnValue = "";
   $("#settings-sheet").showModal();
 }
+// The runners a project of this hub can be linked to: the org's. A member
+// links their own; admins any. Linked, its tasks run only there and work
+// lands through pull requests.
+function renderRunnerPicker(p) {
+  const runners = !p.prefix && state.runners;
+  $("#settings-runners-field").hidden = !runners?.length && !p.runners?.length;
+  $("#settings-runners").replaceChildren(...(runners || []).map((r) => {
+    const linked = (p.runners || []).includes(r.id);
+    return h("label", { class: "runner-pick" },
+      h("input", { type: "checkbox", name: "runner", value: r.id, checked: linked, disabled: !linked && !r.can_manage }),
+      h("span", { class: `runner-dot ${r.online ? "on" : ""}`, "aria-hidden": "true" }),
+      h("span", { class: "runner-name" }, r.name),
+      h("span", { class: "hint" }, `${r.mine ? "yours" : r.owner?.username || ""}${!linked && !r.can_manage ? " · only its owner or an admin can link it" : ""}`));
+  }));
+}
+const pickedRunners = () => [...$("#settings-form").querySelectorAll('input[name="runner"]:checked')].map((x) => x.value);
+
 function syncMergeHint() {
   const f = $("#settings-form");
   const p = state.project;
+  const onRunners = !$("#settings-runners-field").hidden && pickedRunners().length > 0;
+  if (onRunners) f.merge_mode.value = "pr";
+  for (const r of f.querySelectorAll('input[name="merge_mode"][value="local"]')) r.disabled = onRunners;
+  const hint = $("#settings-runners-hint");
+  hint.hidden = $("#settings-runners-field").hidden;
+  hint.textContent = !onRunners
+    ? (state.localTasks ? "Not linked: this dashboard runs the tasks itself." : "Not linked: tasks wait until you link a runner (this dashboard doesn't run tasks itself).")
+    : !p.remote_url ? "Runners clone the project's git remote: connect a GitHub repository first."
+      : "Tasks run only on these runners, each in its own clone, and land through pull requests. If all of them are offline, tasks wait in the queue.";
   const pr = f.merge_mode.value === "pr";
   $("#auto-push-row").hidden = pr;
   $("#merge-hint").textContent = !p.remote_url
@@ -3562,6 +3629,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     max_turns: Number(f.max_turns.value) || 0,
     color: f.use_color.checked ? f.color.value : "",
     icon: f.icon.value,
+    ...($("#settings-runners-field").hidden ? {} : { runners: pickedRunners() }),
   });
   // Keep the client-only fields, and the list entry in step for its color and icon.
   state.project = { ...saved, machine: old.machine, prefix: old.prefix };

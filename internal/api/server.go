@@ -21,6 +21,7 @@ import (
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/ci"
+	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/mcptools"
@@ -30,9 +31,9 @@ import (
 	"github.com/klahr/dash/internal/preview"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/runner"
-	"github.com/klahr/dash/internal/runnerctl"
 	"github.com/klahr/dash/internal/scan"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/tunnel"
 	"github.com/klahr/dash/internal/usage"
 )
 
@@ -67,6 +68,12 @@ type Server struct {
 	UploadRoot string // where attached files are stored
 	CI         *ci.Watcher
 	Peers      *peer.Hub // other computers shown in this dashboard: -peer servers and runners
+	// Dispatch sends tasks of projects linked to runners to them (a hub's;
+	// optional).
+	Dispatch *dispatch.Dispatcher
+	// HubOrg is, on a runner, the hub's org it was registered for: it takes
+	// projects of no other org (0: not checked, an older registration).
+	HubOrg int64
 	// HubCommands lets the hub set and run a project's commands when this
 	// Dash is a runner (see RunnerRoutes).
 	HubCommands bool
@@ -126,50 +133,11 @@ func (s *Server) buildMux() *http.ServeMux {
 	}
 	mux.HandleFunc("GET /peer/{name}/preview/{tid}", s.openRunnerPreview)
 	// Runners: computers that connect out to this one (`dash runner`)
-	if s.Peers != nil && s.Peers.Runners != nil {
-		rh := s.Peers.Runners
-		mux.HandleFunc("GET /api/runners", func(w http.ResponseWriter, r *http.Request) {
-			if !s.adminOnly(w, r) {
-				return
-			}
-			// hub and version: for the command that updates an outdated runner.
-			hubURL, _ := runnerctl.HubURL(r, s.PublicURL, s.Auth.Secure(r), s.Auth.TrustProxy)
-			writeJSON(w, http.StatusOK, map[string]any{"runners": rh.List(), "hub": hubURL, "version": buildinfo.Version})
-		})
-		// A runner is a credential of the whole Dash: only a platform admin, in a
-		// signed-in browser, makes or revokes one.
-		mux.Handle("POST /api/runners/codes", auth.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !s.adminOnly(w, r) {
-				return
-			}
-			// The runner registered with the code will be the user's, in their active org.
-			code, expires, err := rh.NewCode(s.requestOwner(r))
-			if err != nil {
-				writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
-				return
-			}
-			hubURL, _ := runnerctl.HubURL(r, s.PublicURL, s.Auth.Secure(r), s.Auth.TrustProxy)
-			writeJSON(w, http.StatusOK, map[string]any{"code": code, "expires": expires, "hub": hubURL})
-		})))
-		mux.Handle("DELETE /api/runners/{id}", auth.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !s.adminOnly(w, r) {
-				return
-			}
-			if err := rh.Revoke(r.PathValue("id")); err != nil {
-				writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-		})))
-		mux.HandleFunc("POST /runner/register", rh.ServeRegister)
-		mux.HandleFunc("GET /runner/connect", rh.ServeConnect)
-		// The one-line installer, and the version it installs (no sign-in:
-		// neither holds a secret).
-		mux.HandleFunc("GET /runner/install.sh", runnerctl.ScriptHandler(s.PublicURL, buildinfo.Version, s.Auth.Secure, s.Auth.TrustProxy))
-		mux.HandleFunc("GET /runner/version", func(w http.ResponseWriter, r *http.Request) {
-			writeJSON(w, http.StatusOK, map[string]string{"version": buildinfo.Version})
-		})
+	if rh := s.fleet(); rh != nil {
+		s.runnerRoutes(mux, rh)
 	}
+	// A runner's side: tasks of its hub's projects linked to it (hub only)
+	s.hubTaskRoutes(mux)
 
 	// Projects & git
 	mux.HandleFunc("GET /api/projects", s.listProjects)
@@ -408,6 +376,7 @@ func writeErr(w http.ResponseWriter, err error) {
 	var inv model.ErrInvalidTransition
 	var invIssue model.ErrInvalidIssueTransition
 	var gitErr *gitops.CmdError
+	var callErr *tunnel.CallError
 	switch {
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, runner.ErrNotFound), errors.Is(err, preview.ErrNotFound),
 		errors.Is(err, scan.ErrNoScan):
@@ -422,8 +391,16 @@ func writeErr(w http.ResponseWriter, err error) {
 		code = http.StatusForbidden // not 401: that would sign the browser out
 	case errors.Is(err, auth.ErrLockedOut):
 		code = http.StatusTooManyRequests
-	case errors.Is(err, queue.ErrProjectBusy), errors.Is(err, scan.ErrRunning), errors.Is(err, store.ErrScanExists):
+	case errors.Is(err, queue.ErrProjectBusy), errors.Is(err, scan.ErrRunning), errors.Is(err, store.ErrScanExists),
+		errors.Is(err, queue.ErrOnRunner):
 		code = http.StatusConflict
+	case errors.Is(err, tunnel.ErrOffline):
+		code = http.StatusServiceUnavailable
+	case errors.As(err, &callErr):
+		code = http.StatusBadGateway
+		if callErr.Status == http.StatusForbidden || callErr.Status == http.StatusConflict || callErr.Status == http.StatusBadRequest {
+			code = callErr.Status
+		}
 	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency), errors.Is(err, store.ErrBadIssue),
 		errors.Is(err, preview.ErrNoRunCommand), errors.Is(err, preview.ErrNotInReview):
 		code = http.StatusBadRequest

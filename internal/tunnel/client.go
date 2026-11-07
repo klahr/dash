@@ -24,6 +24,9 @@ type Credentials struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Token  string `json:"token"`
+	// OrgID is the hub's org the runner works for (0: registered with an
+	// older hub). The runner refuses projects of any other org.
+	OrgID int64 `json:"org_id,omitempty"`
 	// Projects is the runner's -projects directory, as set up by
 	// `dash runner setup --projects` ("" = the default).
 	Projects string `json:"projects,omitempty"`
@@ -68,6 +71,7 @@ func Register(ctx context.Context, server, code, name string) (Credentials, erro
 	defer res.Body.Close()
 	var out struct {
 		ID, Name, Token, Error string
+		OrgID                  int64 `json:"org_id"`
 	}
 	_ = json.NewDecoder(res.Body).Decode(&out)
 	if res.StatusCode != http.StatusOK || out.Token == "" {
@@ -76,7 +80,7 @@ func Register(ctx context.Context, server, code, name string) (Credentials, erro
 		}
 		return Credentials{}, fmt.Errorf("register with %s: %s", u, out.Error)
 	}
-	return Credentials{Server: u.String(), ID: out.ID, Name: out.Name, Token: out.Token}, nil
+	return Credentials{Server: u.String(), ID: out.ID, Name: out.Name, Token: out.Token, OrgID: out.OrgID}, nil
 }
 
 // LoadCredentials reads credentials saved by SaveCredentials.
@@ -218,4 +222,39 @@ func (c *Client) serveOnce(ctx context.Context) error {
 	go func() { <-sess.Done(); _ = srv.Close() }()
 	_ = srv.Serve(sess)
 	return ErrSessionClosed
+}
+
+// Report posts a runner's report (see Hub.ServeReport) to the hub in creds.
+func Report(ctx context.Context, creds Credentials, report any) error {
+	u, err := CheckServer(creds.Server)
+	if err != nil {
+		return err
+	}
+	b, err := json.Marshal(report)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", u.String()+"/runner/report", bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+creds.Token)
+	res, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusUnauthorized {
+		return ErrRevoked
+	}
+	if res.StatusCode >= 300 {
+		var e struct{ Error string }
+		_ = json.NewDecoder(res.Body).Decode(&e)
+		if e.Error == "" {
+			e.Error = res.Status
+		}
+		return fmt.Errorf("report to hub: %s", e.Error)
+	}
+	return nil
 }

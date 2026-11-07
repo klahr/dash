@@ -8,9 +8,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
@@ -33,6 +36,10 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ps := sv.data.ListProjects()
+	if auth.FromHub(r.Context()) {
+		// The hub has its own copy of the projects it linked to this runner.
+		ps = slices.DeleteFunc(ps, func(p model.Project) bool { return p.HubProjectID != "" })
+	}
 	out := make([]item, len(ps))
 	for i, p := range ps {
 		out[i].Project = p
@@ -202,6 +209,9 @@ type projectUpdate struct {
 	MaxTurns      *int      `json:"max_turns"`
 	Color         *string   `json:"color"`
 	Icon          *string   `json:"icon"`
+	// Runners links the project to these runners (ids; replaces the list,
+	// [] unlinks them all).
+	Runners *[]string `json:"runners"`
 }
 
 func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
@@ -249,7 +259,18 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 		return cur, err
 	}
 	remote := sv.s.Git.RemoteURL(ctx, cur.ID, cur.Path) // pick up an origin added since
-	return sv.data.UpdateProject(id, func(p *model.Project) error {
+	if remote == "" && cur.OnRunners() {
+		remote = cur.RemoteURL // the hub's checkout may be gone; the runners have theirs
+	}
+	runners := cur.Runners
+	if req.Runners != nil {
+		withRemote := cur
+		withRemote.RemoteURL = remote
+		if runners, err = sv.linkRunners(withRemote, *req.Runners); err != nil {
+			return cur, err
+		}
+	}
+	p, err := sv.data.UpdateProject(id, func(p *model.Project) error {
 		p.RemoteURL = remote
 		set(&p.Name, req.Name)
 		set(&p.RunCommand, req.RunCommand)
@@ -285,10 +306,39 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 			if err := checkMergeMode(*req.MergeMode, p.RemoteURL); err != nil {
 				return err
 			}
+			if *req.MergeMode != model.MergePR && len(runners) > 0 && *req.MergeMode != p.MergeMode {
+				return errHubMergeOff
+			}
 			p.MergeMode = *req.MergeMode
+		}
+		p.Runners = runners
+		if len(runners) > 0 {
+			// Work lands through the remote: each runner pushes its branch
+			// and opens a pull request. Nothing merges on the hub.
+			p.MergeMode, p.AutoPush = model.MergePR, false
 		}
 		return nil
 	})
+	if err != nil {
+		return p, err
+	}
+	var gone []string
+	for _, r := range cur.Runners {
+		if !slices.Contains(runners, r) {
+			gone = append(gone, r)
+		}
+	}
+	if len(gone) > 0 && sv.s.Dispatch != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			sv.s.Dispatch.Unlink(ctx, p.ID, gone)
+		}()
+	}
+	if req.Runners != nil {
+		sv.s.Todos.Kick() // queued tasks may go elsewhere now
+	}
+	return p, nil
 }
 
 func checkMergeMode(mode, remote string) error {
@@ -592,8 +642,8 @@ func (s *Server) retestTodo(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, err := sv.data.GetTodo(r.PathValue("tid")); err != nil {
-		writeErr(w, err)
+	if t, err := sv.data.GetTodo(r.PathValue("tid")); err != nil || notOnRunner(t) != nil {
+		writeErr(w, errors.Join(err, notOnRunner(t)))
 		return
 	}
 	if err := s.Todos.RunTests(r.PathValue("tid")); err != nil {
@@ -639,6 +689,10 @@ func (s *Server) openTodo(w http.ResponseWriter, r *http.Request) {
 	}
 	t, err := sv.data.GetTodo(r.PathValue("tid"))
 	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := notOnRunner(t); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -835,8 +889,19 @@ func (s *Server) todoEvents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, err := sv.data.GetTodo(r.PathValue("tid")); err != nil {
+	t, err := sv.data.GetTodo(r.PathValue("tid"))
+	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if t.OnRunner() {
+		b, err := sv.fetchFromRunner(r.Context(), t, "events")
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(b)
 		return
 	}
 	evs, err := s.Todos.Log.Events(r.PathValue("tid"))
@@ -906,6 +971,9 @@ func (s *Server) revertTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	case t.Revert != nil:
 		writeErr(w, fmt.Errorf("%w: this task was already reverted", errBadRequest))
+		return
+	case t.OnRunner():
+		writeErr(w, fmt.Errorf("%w: this task landed through a pull request from its runner; revert it on GitHub", errBadRequest))
 		return
 	}
 	if err := s.Merges.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID, Revert: true}); err != nil {

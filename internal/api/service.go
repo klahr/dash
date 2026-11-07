@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/auth"
@@ -114,6 +115,9 @@ func (s *Server) adminOnly(w http.ResponseWriter, r *http.Request) bool {
 // addTodo creates a draft, or queues it when enqueue is set, and names it if untitled.
 func (sv *service) addTodo(t model.Todo, enqueue bool) (model.Todo, error) {
 	t.CreatedBy = sv.c.User
+	if err := sv.sendable(t.ProjectID, len(t.Attachments) > 0 || len(t.Edits) > 0); err != nil {
+		return t, err
+	}
 	t, err := sv.data.CreateTodo(t)
 	if err == nil && enqueue {
 		t, err = sv.data.SetStatus(t.ID, model.StatusQueued, "")
@@ -159,8 +163,22 @@ func (sv *service) enqueue(id string) (model.Todo, error) {
 // cancel stops a running task (accepted=true: the worker marks it failed)
 // or moves a queued one back to draft.
 func (sv *service) cancel(id string) (t model.Todo, accepted bool, err error) {
-	if _, err := sv.data.GetTodo(id); err != nil {
+	cur, err := sv.data.GetTodo(id)
+	if err != nil {
 		return t, false, err
+	}
+	if cur.OnRunner() && cur.Status == model.StatusInProgress {
+		// The runner stops it and reports it failed ("canceled").
+		d, err := sv.runnerTask(cur)
+		if err != nil {
+			return t, false, err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := d.Cancel(ctx, cur); err != nil {
+			return t, false, fmt.Errorf("%w (if it stays away, the task fails by itself and can be queued again)", err)
+		}
+		return t, true, nil
 	}
 	if sv.s.Todos.Cancel(id) {
 		return t, true, nil
@@ -206,7 +224,13 @@ func (sv *service) removeTodo(ctx context.Context, id string) error {
 	if t.Reviewing {
 		return store.ErrReviewing
 	}
-	if t.Worktree != nil && t.Status != model.StatusMerged {
+	if t.OnRunner() && sv.s.Dispatch != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			sv.s.Dispatch.Forget(ctx, t)
+		}()
+	} else if t.Worktree != nil && t.Status != model.StatusMerged {
 		if p, err := sv.data.GetProject(t.ProjectID); err == nil {
 			_ = sv.s.Git.RemoveWorktree(ctx, p.ID, p.Path, *t.Worktree)
 		}
@@ -223,6 +247,16 @@ func (sv *service) removeTodo(ctx context.Context, id string) error {
 
 // approve sends a task in review (or a failed merge) to the merge queue.
 func (sv *service) approve(id string) (model.Todo, error) {
+	cur, err := sv.data.GetTodo(id)
+	if err != nil {
+		return cur, err
+	}
+	if cur.OnRunner() {
+		return sv.approveOnRunner(context.Background(), cur)
+	}
+	if p, err := sv.data.GetProject(cur.ProjectID); err == nil && p.OnRunners() {
+		return cur, errHubMergeOff
+	}
 	t, err := sv.data.UpdateTodo(id, func(t *model.Todo) error {
 		if t.Status != model.StatusReview && t.Status != model.StatusFailed {
 			return fmt.Errorf("%w: only tasks in review (or a failed merge) can be approved", errBadRequest)
@@ -246,6 +280,11 @@ func (sv *service) approve(id string) (model.Todo, error) {
 // rework sends a reviewed (or failed) todo back to the queue with feedback;
 // the next run reuses its worktree so Claude builds on its changes.
 func (sv *service) rework(id, feedback string, atts []model.Attachment) (model.Todo, error) {
+	if cur, err := sv.data.GetTodo(id); err == nil {
+		if err := sv.sendable(cur.ProjectID, len(atts) > 0); err != nil {
+			return cur, err
+		}
+	}
 	t, err := sv.data.UpdateTodo(id, func(t *model.Todo) error {
 		fb := strings.TrimSpace(feedback)
 		if len(atts) > 0 {
@@ -275,6 +314,10 @@ func (sv *service) diff(ctx context.Context, id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if t.OnRunner() {
+		b, err := sv.fetchFromRunner(ctx, t, "diff")
+		return string(b), err
+	}
 	if t.Worktree == nil {
 		return "", fmt.Errorf("%w: task has no worktree yet", errBadRequest)
 	}
@@ -287,8 +330,18 @@ func (sv *service) diff(ctx context.Context, id string) (string, error) {
 
 // log is the task's Claude run log.
 func (sv *service) log(id string) (string, error) {
-	if _, err := sv.data.GetTodo(id); err != nil {
+	t, err := sv.data.GetTodo(id)
+	if err != nil {
 		return "", err
+	}
+	if t.OnRunner() {
+		b, err := sv.fetchFromRunner(context.Background(), t, "log")
+		if err != nil {
+			// What the hub logged itself (sent, interrupted), and why the rest is missing.
+			local, _ := sv.s.Todos.Log.Read(id)
+			return local + "\n(" + err.Error() + ")\n", nil
+		}
+		return string(b), nil
 	}
 	return sv.s.Todos.Log.Read(id)
 }

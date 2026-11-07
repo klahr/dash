@@ -8,9 +8,11 @@ see [Deploy the hub](deploy.md).
 
 ## Add a runner
 
-In the hub's dashboard, open the account menu → **Runners** → **Add a runner**. It shows a
-one-time code (valid for 10 minutes) inside a command to paste on the other computer (Linux or
-macOS, amd64 or arm64):
+In the hub's dashboard, open the account menu → **Organization** → **Add a runner** (any member
+can, in a signed-in browser). It shows a one-time code (valid for 10 minutes) inside a command to
+paste on the other computer (Linux or macOS, amd64 or arm64). The code is bound to you and the
+organization you're working in: the runner will be yours, there, and run tasks with your Claude
+login.
 
 ```sh
 curl -fsSL https://dash.example.com/runner/install.sh | sh -s -- --code ABCD-EFGH
@@ -47,7 +49,7 @@ curl -fsSL https://dash.example.com/runner/install.sh | sh
 ```
 
 It installs the hub's version if it differs, keeps the registration (and projects directory),
-and restarts the service. The Runners page shows each runner's version and flags those that
+and restarts the service. The Organization page shows each runner's version and flags those that
 differ from the hub's, with this command to copy.
 
 ### Managing the runner
@@ -80,18 +82,67 @@ A runner takes the same flags as `dash` (`-projects`, `-parallel`, `-claude-args
 listen on a port of its own unless you pass `-addr` (then it also needs `DASH_USERNAME` and
 `DASH_PASSWORD`, like a normal Dash).
 
-Projects are grouped by computer, and tasks run on the computer that has the project.
-Notifications come from all of them.
-
 A runner belongs to whoever made its code, in the org they were working in: its token is one of
 their [tokens](users.md#tokens), pinned to that org, and stops working if they leave it. The
-Runners page lists each runner as online or offline, with when it was last seen, whose it is and
-the Dash version it runs. **Revoke** (there, or under **Tokens & apps**) disconnects a runner at
-once and its token stops working (the hub keeps only a hash of it). The runner then exits, saying
-so (its systemd service doesn't restart it; launchd retries every 30 s); to bring it back, run
-the install command with a new code (revoking frees its name for that). Making codes and revoking
-runners is for platform admins, in a signed-in browser (not with an API token). Runners
-registered with an older hub become the env account's.
+Organization page lists the org's runners (other orgs never see them) as online or offline, with
+when each was last seen, whose it is, the Dash version it runs, how many tasks it is running and
+its owner's Claude usage.
+Its owner and the org's admins can:
+
+- **Pause** it: it finishes what it is running and gets no new tasks;
+- set **At once**, how many of the hub's tasks it runs at a time (0: its own `-parallel`);
+- **Revoke** it (there, or under **Tokens & apps**): it is disconnected at once, its token stops
+  working (the hub keeps only a hash of it) and it is unlinked from every project. Tasks it was
+  running fail and can be queued again on another runner. The runner exits, saying so (its
+  systemd service doesn't restart it; launchd retries every 30 s); to bring it back, run the
+  install command with a new code (revoking frees its name for that).
+
+Runners registered with an older hub become the env account's.
+
+## Shared projects: tasks on runners
+
+The hub coordinates; the runners do the work. In a project's **Settings**, tick the runners its
+tasks should run on (your own runners, or any of the org's if you're an admin). From then on:
+
+- Each task goes to one of the project's runners that is online, not paused, below its limit and
+  not held back by its owner's Claude usage, the least busy first. A task that ran before goes
+  back to the runner that has its worktree and Claude session.
+- If none can take it, the task stays queued and its card says why ("waiting for a runner: laptop
+  is offline"). It starts as soon as one can.
+- The project needs a git remote: each runner clones it into `<-projects>/hub/` the first time it
+  gets one of its tasks, and keeps that clone. Work lands through the remote: the runner pushes
+  the task's branch and opens a pull request when you approve, so **merging locally on the hub is
+  off** for linked projects.
+- Review happens on the hub as usual: the diff, the log and the timeline come from the runner.
+  Attachments and editor changes can't be sent to runners yet, and live previews, the worktree
+  shell and re-running tests are on the runner's own dashboard.
+
+The hub doesn't run tasks itself once runners are configured. `-hub-tasks` sets this: `auto` (the
+default) runs the tasks of unlinked projects on the hub only while no runner is registered, `on`
+always does (a single-user install with a runner or two for some projects), and `off` never does
+(those tasks wait, saying a runner must be linked).
+
+### Laptops that sleep
+
+If a runner disconnects while running a task (the lid closes, the Wi-Fi drops), the hub waits
+`-runner-grace` (default 2 minutes) for it to come back. After that the task fails, "interrupted:
+laptop went offline mid-task", and its **Continue on laptop** button queues it again: the runner
+picks up its worktree and Claude session where it stopped. If the runner kept going meanwhile (a
+short outage), it says so when it reconnects and the task carries on. A runner that can't reach
+the hub for its `-offline-grace` stops its tasks itself (below).
+
+### What a runner accepts from the hub
+
+A runner takes work only for projects its hub linked to it, of the organization it was registered
+for, and only for its own clone inside `<-projects>/hub/` (it picks that folder itself, and clones
+only `https://`, `ssh://` or `user@host:path` remotes, never a local path). It refuses and logs
+anything else; the hub reaches only tasks it sent, by its own ids.
+
+## Projects of a runner's own
+
+A runner's own projects (those in its `-projects` that aren't linked from the hub) still show in
+the hub's dashboard for platform admins, grouped by computer, and their tasks run on that
+computer. Notifications come from all of them.
 
 ## What a runner lets the hub do
 

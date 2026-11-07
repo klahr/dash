@@ -83,8 +83,8 @@ func (m *MergeQueue) cleanup(ctx context.Context, p model.Project) (CleanupRepor
 
 	inUse := map[string]bool{m.landingDir(p): true} // worktree paths and branches still needed
 	for _, t := range todos {
-		if t.Worktree == nil || t.Status == model.StatusMerged {
-			continue
+		if t.Worktree == nil || t.Status == model.StatusMerged || t.OnRunner() {
+			continue // a runner's task has its worktree on the runner
 		}
 		stale := m.CleanupAfter > 0 && t.Status == model.StatusFailed && time.Since(t.UpdatedAt) > m.CleanupAfter &&
 			(t.PR == nil || t.PR.State != "OPEN")

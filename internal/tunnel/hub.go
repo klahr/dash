@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -10,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -27,6 +29,7 @@ import (
 
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/usage"
 )
 
 // EvRunners tells dashboards that a runner registered, connected,
@@ -64,6 +67,43 @@ type Runner struct {
 	// Owner registered the runner: its token acts as them, in their org.
 	Owner   *store.RunnerOwner `json:"owner,omitempty"`
 	Version string             `json:"version,omitempty"` // the Dash it last connected with, e.g. v1.2.0
+	// Parallel is how many tasks the hub sends it at once (0: as many as
+	// the runner's own -parallel, which it reports). Paused: the hub sends
+	// it none.
+	Parallel int  `json:"parallel"`
+	Paused   bool `json:"paused"`
+	// Reported is what the runner last told the hub about itself: its own
+	// limit and its owner's Claude subscription usage (nil until it has).
+	Reported *Reported `json:"reported,omitempty"`
+	// Running is how many of the hub's tasks it is working on (filled in by
+	// the API).
+	Running int `json:"running"`
+}
+
+// OrgID is the org the runner works for (0: nobody's; it gets no work).
+func (r Runner) OrgID() int64 {
+	if r.Owner == nil {
+		return 0
+	}
+	return r.Owner.Org.ID
+}
+
+// Limit is how many of the hub's tasks the runner takes at once.
+func (r Runner) Limit() int {
+	switch {
+	case r.Parallel > 0:
+		return r.Parallel
+	case r.Reported != nil && r.Reported.Parallel > 0:
+		return r.Reported.Parallel
+	}
+	return 1
+}
+
+// Reported is a runner's report on itself.
+type Reported struct {
+	Parallel int             `json:"parallel"`
+	Usage    *usage.Snapshot `json:"usage,omitempty"`
+	At       time.Time       `json:"at"`
 }
 
 // record is a runner in runners.json. Its token is in the token table
@@ -75,6 +115,8 @@ type record struct {
 	TokenHash string    `json:"token_hash,omitempty"`
 	Created   time.Time `json:"created"`
 	LastSeen  time.Time `json:"last_seen,omitzero"`
+	Parallel  int       `json:"parallel,omitempty"`
+	Paused    bool      `json:"paused,omitempty"`
 	Version   string    `json:"version,omitempty"`
 }
 
@@ -100,6 +142,13 @@ type Hub struct {
 	PreviewURL func(r *http.Request) string
 	// Accounts keep the runners' tokens.
 	Accounts *store.Accounts
+	// OnState is told when a runner's tunnel comes up or goes down, and
+	// OnRevoke when a runner is revoked (both optional, called without
+	// locks held).
+	OnState  func(runnerID string, online bool)
+	OnRevoke func(runnerID string)
+	// OnReport handles a runner's POST /runner/report body (optional).
+	OnReport func(runnerID string, body []byte) error
 
 	now func() time.Time
 
@@ -110,6 +159,7 @@ type Hub struct {
 	live     map[string]*Session     // runner id → its tunnel
 	previews map[string]*previewLink // runner id → its preview connection (preview.go)
 	badAt    []time.Time             // recent wrong registration codes
+	reported map[string]*Reported    // runner id → its last report on itself
 
 	transportOnce sync.Once
 	transport     *http.Transport
@@ -233,13 +283,18 @@ func (h *Hub) pruneCodesLocked(now time.Time) {
 // Register swaps a registration code for a new runner's id and token. The
 // token is shown only now; the hub keeps its hash.
 func (h *Hub) Register(code, name string) (id, token string, err error) {
+	id, token, _, err = h.register(code, name)
+	return id, token, err
+}
+
+func (h *Hub) register(code, name string) (id, token string, org int64, err error) {
 	name = strings.ToLower(strings.TrimSpace(name))
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	now := h.clock()
 	h.badAt = slices.DeleteFunc(h.badAt, func(t time.Time) bool { return now.Sub(t) > badCodeWindow })
 	if len(h.badAt) >= maxBadCodes {
-		return "", "", ErrTooManyBad
+		return "", "", 0, ErrTooManyBad
 	}
 	h.pruneCodesLocked(now)
 	want := hash(normCode(code))
@@ -248,13 +303,13 @@ func (h *Hub) Register(code, name string) (id, token string, err error) {
 	})
 	if i < 0 {
 		h.badAt = append(h.badAt, now)
-		return "", "", ErrBadCode
+		return "", "", 0, ErrBadCode
 	}
 	if !nameRe.MatchString(name) {
-		return "", "", ErrBadName // the code stays usable with a better name
+		return "", "", 0, ErrBadName // the code stays usable with a better name
 	}
 	if h.nameTakenLocked(name) {
-		return "", "", ErrNameTaken
+		return "", "", 0, ErrNameTaken
 	}
 	owner := h.codes[i].Owner
 	h.codes = slices.Delete(h.codes, i, i+1) // single use
@@ -265,14 +320,14 @@ func (h *Hub) Register(code, name string) (id, token string, err error) {
 	if err != nil {
 		h.saveLocked()
 		if errors.Is(err, store.ErrNotMember) {
-			return "", "", fmt.Errorf("%w: whoever made the code has left that organization", ErrBadCode)
+			return "", "", 0, fmt.Errorf("%w: whoever made the code has left that organization", ErrBadCode)
 		}
-		return "", "", err
+		return "", "", 0, err
 	}
 	h.runners = append(h.runners, &record{ID: id, Name: name, Created: now})
 	h.saveLocked()
 	go h.changed()
-	return id, token, nil
+	return id, token, owner.Org, nil
 }
 
 func (h *Hub) nameTakenLocked(name string) bool {
@@ -321,6 +376,7 @@ func (h *Hub) Revoke(id string) error {
 		return err
 	}
 	h.runners = slices.Delete(h.runners, i, i+1)
+	delete(h.reported, id)
 	sess, pv := h.live[id], h.previews[id]
 	delete(h.live, id)
 	delete(h.previews, id)
@@ -331,6 +387,9 @@ func (h *Hub) Revoke(id string) error {
 	}
 	if pv != nil {
 		pv.s.Close()
+	}
+	if h.OnRevoke != nil {
+		h.OnRevoke(id)
 	}
 	h.changed()
 	return nil
@@ -351,10 +410,62 @@ func (h *Hub) List() []Runner {
 		if o, ok := owners[r.ID]; ok {
 			owner = &o
 		}
-		out = append(out, Runner{ID: r.ID, Name: r.Name, Online: online, Created: r.Created, LastSeen: r.LastSeen, Owner: owner, Version: r.Version})
+		out = append(out, h.viewLocked(r, online, owner))
 	}
 	slices.SortFunc(out, func(a, b Runner) int { return strings.Compare(a.Name, b.Name) })
 	return out
+}
+
+func (h *Hub) viewLocked(r *record, online bool, owner *store.RunnerOwner) Runner {
+	v := Runner{ID: r.ID, Name: r.Name, Online: online, Created: r.Created, LastSeen: r.LastSeen, Owner: owner,
+		Version: r.Version, Parallel: r.Parallel, Paused: r.Paused}
+	if rep := h.reported[r.ID]; rep != nil {
+		cp := *rep
+		v.Reported = &cp
+	}
+	return v
+}
+
+// Get returns the runner with id.
+func (h *Hub) Get(id string) (Runner, bool) {
+	owners, err := h.Accounts.RunnerOwners()
+	if err != nil {
+		slog.Error("runner owners", "err", err)
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	i := slices.IndexFunc(h.runners, func(r *record) bool { return r.ID == id })
+	if i < 0 {
+		return Runner{}, false
+	}
+	var owner *store.RunnerOwner
+	if o, ok := owners[id]; ok {
+		owner = &o
+	}
+	_, online := h.live[id]
+	return h.viewLocked(h.runners[i], online, owner), true
+}
+
+// Configure changes how many tasks the hub sends runner id at once
+// (parallel, 0 = the runner's own limit) and whether it sends any (paused).
+// Nil leaves a setting as it is.
+func (h *Hub) Configure(id string, parallel *int, paused *bool) error {
+	h.mu.Lock()
+	i := slices.IndexFunc(h.runners, func(r *record) bool { return r.ID == id })
+	if i < 0 {
+		h.mu.Unlock()
+		return ErrUnknownName
+	}
+	if parallel != nil {
+		h.runners[i].Parallel = max(0, min(*parallel, 64))
+	}
+	if paused != nil {
+		h.runners[i].Paused = *paused
+	}
+	h.saveLocked()
+	h.mu.Unlock()
+	h.changed()
+	return nil
 }
 
 // Has reports whether name is a registered runner.
@@ -422,7 +533,7 @@ func (h *Hub) ServeRegister(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
 		return
 	}
-	id, token, err := h.Register(req.Code, req.Name)
+	id, token, org, err := h.register(req.Code, req.Name)
 	switch {
 	case errors.Is(err, ErrTooManyBad):
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
@@ -435,7 +546,7 @@ func (h *Hub) ServeRegister(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 	default:
 		slog.Info("runner registered", "name", strings.ToLower(strings.TrimSpace(req.Name)), "id", id)
-		writeJSON(w, http.StatusOK, map[string]string{"id": id, "name": strings.ToLower(strings.TrimSpace(req.Name)), "token": token})
+		writeJSON(w, http.StatusOK, map[string]any{"id": id, "name": strings.ToLower(strings.TrimSpace(req.Name)), "token": token, "org_id": org})
 	}
 }
 
@@ -496,6 +607,9 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 	h.touch(rec.ID, version)
 	slog.Info("runner connected", "name", rec.Name, "version", version)
 	h.changed()
+	if h.OnState != nil {
+		h.OnState(rec.ID, true)
+	}
 
 	<-sess.Done()
 
@@ -510,7 +624,132 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 		h.touch(rec.ID, "")
 		slog.Info("runner disconnected", "name", rec.Name)
 		h.changed()
+		if h.OnState != nil {
+			h.OnState(rec.ID, false)
+		}
 	}
+}
+
+// ServeReport handles POST /runner/report from a runner, authenticated with
+// its token like its tunnel: what it is working on for the hub and its
+// usage. The body goes to OnReport, which accepts news only of the hub's
+// tasks sent to that runner.
+func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
+	tok, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	rec, ok := h.authenticate(tok)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unknown or revoked runner token"})
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4<<20))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
+		return
+	}
+	var self struct {
+		Parallel int             `json:"parallel"`
+		Usage    *usage.Snapshot `json:"usage"`
+	}
+	if err := json.Unmarshal(body, &self); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
+		return
+	}
+	h.mu.Lock()
+	if h.reported == nil {
+		h.reported = map[string]*Reported{}
+	}
+	prev := h.reported[rec.ID]
+	h.reported[rec.ID] = &Reported{Parallel: self.Parallel, Usage: self.Usage, At: h.clock()}
+	h.mu.Unlock()
+	if prev == nil || prev.Parallel != self.Parallel || paused(prev.Usage) != paused(self.Usage) {
+		h.changed()
+	}
+	if h.OnReport != nil {
+		if err := h.OnReport(rec.ID, body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func paused(u *usage.Snapshot) bool { return u != nil && u.Paused }
+
+// ErrOffline is returned by Call for a runner without a tunnel.
+var ErrOffline = errors.New("runner is offline")
+
+// CallError is a runner's error answer to Call.
+type CallError struct {
+	Status int
+	Msg    string
+}
+
+func (e *CallError) Error() string { return e.Msg }
+
+// Call makes a request to runner id over its tunnel: in is sent as JSON
+// (unless nil) and the JSON answer decoded into out (unless nil; a
+// *[]byte gets the raw body).
+func (h *Hub) Call(ctx context.Context, id, method, path string, in, out any) error {
+	h.mu.Lock()
+	var name string
+	for _, r := range h.runners {
+		if r.ID == id {
+			name = r.Name
+		}
+	}
+	_, online := h.live[id]
+	h.mu.Unlock()
+	if name == "" {
+		return ErrUnknownName
+	}
+	if !online {
+		return fmt.Errorf("%s: %w", name, ErrOffline)
+	}
+	var body io.Reader
+	if in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, "http://"+name+runnerHostLabel+path, body)
+	if err != nil {
+		return err
+	}
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	res, err := (&http.Client{Transport: h.idle()}).Do(req)
+	if err != nil {
+		if h.session(name) == nil {
+			return fmt.Errorf("%s: %w", name, ErrOffline)
+		}
+		return fmt.Errorf("%s is unreachable: %w", name, err)
+	}
+	defer res.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(res.Body, 32<<20))
+	if err != nil {
+		return err
+	}
+	if res.StatusCode >= 300 {
+		var e struct{ Error string }
+		_ = json.Unmarshal(b, &e)
+		if e.Error == "" {
+			e.Error = res.Status
+		}
+		return &CallError{Status: res.StatusCode, Msg: name + ": " + e.Error}
+	}
+	switch o := out.(type) {
+	case nil:
+	case *[]byte:
+		*o = b
+	default:
+		if err := json.Unmarshal(b, out); err != nil {
+			return fmt.Errorf("%s answered: %w", name, err)
+		}
+	}
+	return nil
 }
 
 // ---- proxying the dashboard's requests to a runner ----

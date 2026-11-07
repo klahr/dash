@@ -62,6 +62,14 @@ type TodoEngine struct {
 	Usage        *usage.Tracker // optional: pause when the subscription is near its limit
 	WorktreeRoot string         // <data>/worktrees
 	MaxParallel  int
+	// Remote sends the tasks of projects linked to runners to one of them
+	// (a hub's dispatch.Dispatcher; nil: such tasks wait). Those tasks
+	// don't count against MaxParallel or Usage: each runner has its own.
+	Remote Remote
+	// LocalTasks reports whether this Dash runs the tasks of projects
+	// without runners itself (nil: it does). A hub whose work all goes to
+	// runners says no, and those tasks wait, saying why.
+	LocalTasks   func() bool
 	TestTimeout  time.Duration
 	SetupTimeout time.Duration
 	// Summarizer condenses Claude's final message into the todo's one-line
@@ -80,6 +88,15 @@ type TodoEngine struct {
 	// conflict, until they have landed or left the fix-and-merge path.
 	resolving map[string]string
 }
+
+// Remote hands a queued task to a runner. An error is why it can't now
+// (the task stays queued with the error as its Waiting reason).
+type Remote interface {
+	Dispatch(ctx context.Context, p model.Project, t model.Todo) (runnerID, remoteID string, err error)
+}
+
+// NoLocalTasks is the Waiting reason of a task this Dash won't run itself.
+const NoLocalTasks = "no runner: this hub doesn't run tasks itself; link the project to a runner in its settings"
 
 // NewTodoEngine finishes initialising e; call Run in a goroutine afterwards.
 func NewTodoEngine(e *TodoEngine) *TodoEngine {
@@ -129,22 +146,24 @@ func (e *TodoEngine) Run(ctx context.Context) {
 }
 
 func (e *TodoEngine) dispatch(ctx context.Context) {
+	sent := map[string]bool{} // tasks offered to runners this round
 	for {
+		local := true // a task may start here now
 		if e.Usage != nil {
 			if ok, _ := e.Usage.CanStart(); !ok {
-				return
+				local = false
 			}
 		}
 		e.mu.Lock()
 		free := e.MaxParallel - len(e.running)
 		e.mu.Unlock()
 		if free <= 0 {
-			return
+			local = false
 		}
 		var next *model.Todo
 		var all []model.Todo // loaded only when a queued todo has dependencies
 		for _, q := range e.Store.ListTodos("", model.StatusQueued) {
-			if q.Paused {
+			if q.Paused || sent[q.ID] {
 				continue
 			}
 			if q.MergeMain && e.conflictBusy(q.ProjectID) {
@@ -158,11 +177,39 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 					continue // waits until its dependencies are merged
 				}
 			}
+			p, err := e.Store.GetProject(q.ProjectID)
+			if err != nil {
+				continue
+			}
+			if p.OnRunners() {
+				sent[q.ID] = true
+				e.sendToRunner(ctx, p, q)
+				continue
+			}
+			if e.LocalTasks != nil && !e.LocalTasks() {
+				e.wait(q, NoLocalTasks)
+				continue
+			}
+			if !local {
+				continue
+			}
 			next = &q
 			break
 		}
 		if next == nil {
 			return
+		}
+		if next.OnRunner() {
+			// It ran on a runner of a project since unlinked: it starts over here.
+			_, err := e.Store.UpdateTodo(next.ID, func(x *model.Todo) error {
+				x.Runner, x.RemoteID, x.Resumable = "", "", false
+				x.Worktree, x.Checks, x.PR = nil, nil, nil
+				return nil
+			})
+			if err != nil {
+				slog.Error("dispatch", "todo", next.ID, "err", err)
+				return
+			}
 		}
 		t, err := e.Store.SetStatus(next.ID, model.StatusInProgress, "")
 		if err != nil {
@@ -187,6 +234,48 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 			}()
 			e.work(wctx, t)
 		}()
+	}
+}
+
+// wait records why queued todo t isn't starting, if that changed.
+func (e *TodoEngine) wait(t model.Todo, why string) {
+	if t.Waiting == why {
+		return
+	}
+	_, _ = e.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+		if x.Status == model.StatusQueued {
+			x.Waiting = why
+		}
+		return nil
+	})
+}
+
+// sendToRunner hands t, a queued task of p, to one of p's runners, or
+// records why none can take it.
+func (e *TodoEngine) sendToRunner(ctx context.Context, p model.Project, t model.Todo) {
+	if e.Remote == nil {
+		e.wait(t, "no runner: this Dash doesn't send tasks to runners")
+		return
+	}
+	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	runnerID, remoteID, err := e.Remote.Dispatch(cctx, p, t)
+	cancel()
+	if err != nil {
+		e.wait(t, err.Error())
+		return
+	}
+	_, err = e.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+		now := time.Now()
+		x.Status, x.Error, x.Waiting, x.Paused, x.Resumable = model.StatusInProgress, "", "", false, false
+		x.StartedAt, x.FinishedAt = &now, nil
+		if x.Runner != runnerID {
+			x.Worktree, x.Checks, x.PR = nil, nil, nil // a fresh start on another runner
+		}
+		x.Runner, x.RemoteID = runnerID, remoteID
+		return nil
+	})
+	if err != nil {
+		slog.Error("dispatch to runner", "todo", t.ID, "err", err)
 	}
 }
 
@@ -256,6 +345,9 @@ func (e *TodoEngine) Pause(todoID string) (model.Todo, error) {
 		if x.Status != model.StatusInProgress && x.Status != model.StatusQueued {
 			return model.ErrInvalidTransition{From: x.Status, To: "paused"}
 		}
+		if x.Status == model.StatusInProgress && x.OnRunner() {
+			return ErrOnRunner
+		}
 		x.Paused = true
 		return nil
 	})
@@ -264,6 +356,10 @@ func (e *TodoEngine) Pause(todoID string) (model.Todo, error) {
 	}
 	return t, err
 }
+
+// ErrOnRunner is returned for what can't be done to a task while a runner
+// works on it.
+var ErrOnRunner = errors.New("this task is running on a runner: cancel it instead, and queue it again to continue")
 
 // Resume lets a paused todo run again.
 func (e *TodoEngine) Resume(todoID string) (model.Todo, error) {

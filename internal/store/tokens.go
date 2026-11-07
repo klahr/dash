@@ -313,13 +313,14 @@ func (a *Accounts) DeleteRunnerToken(runnerID string) error {
 // RunnerOwner is whose a runner is: the user who registered it and the org
 // its token is pinned to.
 type RunnerOwner struct {
+	UserID   int64  `json:"user_id"`
 	Username string `json:"username"`
 	Org      Org    `json:"org"`
 }
 
 // RunnerOwners maps runner ids to their owners.
 func (a *Accounts) RunnerOwners() (map[string]RunnerOwner, error) {
-	rows, err := a.db.Query(`SELECT t.runner_id, u.username, o.id, o.name, o.slug FROM tokens t
+	rows, err := a.db.Query(`SELECT t.runner_id, u.id, u.username, o.id, o.name, o.slug FROM tokens t
 		JOIN users u ON u.id = t.user_id JOIN organizations o ON o.id = t.org_id WHERE t.kind = 'runner'`)
 	if err != nil {
 		return nil, err
@@ -329,7 +330,7 @@ func (a *Accounts) RunnerOwners() (map[string]RunnerOwner, error) {
 	for rows.Next() {
 		var id string
 		var o RunnerOwner
-		if err := rows.Scan(&id, &o.Username, &o.Org.ID, &o.Org.Name, &o.Org.Slug); err != nil {
+		if err := rows.Scan(&id, &o.UserID, &o.Username, &o.Org.ID, &o.Org.Name, &o.Org.Slug); err != nil {
 			return nil, err
 		}
 		out[id] = o

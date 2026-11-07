@@ -70,6 +70,12 @@ func init() {
 		"POST /api/queue/pause", "POST /api/queue/resume",
 
 		"GET /ws/events",
+
+		// The hub's projects linked to this runner and their tasks; checked
+		// in hubtasks.go.
+		"PUT /api/hub/projects/{hpid}", "DELETE /api/hub/projects/{hpid}", "POST /api/hub/tasks",
+		"DELETE /api/hub/tasks/{htid}", "POST /api/hub/tasks/{htid}/approve", "POST /api/hub/tasks/{htid}/cancel",
+		"GET /api/hub/tasks/{htid}/diff", "GET /api/hub/tasks/{htid}/log", "GET /api/hub/tasks/{htid}/events",
 	} {
 		hubRoutes[p] = true
 	}

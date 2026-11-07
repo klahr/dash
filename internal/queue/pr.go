@@ -42,8 +42,8 @@ func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) 
 // back to Claude like a local merge conflict.
 func (m *MergeQueue) PollPRs(ctx context.Context) {
 	for _, t := range m.Store.ListTodos("", model.StatusMerging, model.StatusReview, model.StatusFailed) {
-		if t.PR == nil || t.PR.State != "OPEN" {
-			continue
+		if t.PR == nil || t.PR.State != "OPEN" || t.OnRunner() {
+			continue // a runner follows the pull requests of its tasks and reports on them
 		}
 		p, err := m.Store.GetProject(t.ProjectID)
 		if err != nil {

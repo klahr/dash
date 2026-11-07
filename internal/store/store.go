@@ -136,8 +136,10 @@ func open(db *sql.DB, path string, pub Publisher) (*Store, error) {
 	}
 	var todos []*model.Todo
 	for _, t := range s.data.Todos {
-		if t.Status == model.StatusInProgress || t.Reviewing {
-			if t.Status == model.StatusInProgress {
+		// A todo running on a runner keeps running there; the runner
+		// reports on it again when it reconnects.
+		if (t.Status == model.StatusInProgress && t.Runner == "") || t.Reviewing {
+			if t.Status == model.StatusInProgress && t.Runner == "" {
 				t.Status = model.StatusQueued
 			}
 			t.Reviewing = false // the chat turn died with the old process
@@ -530,7 +532,7 @@ func (s *Store) SetStatus(id string, to model.TodoStatus, errMsg string) (model.
 		t.Status = to
 		t.Error = errMsg
 		if to != model.StatusQueued {
-			t.Paused = false
+			t.Paused, t.Waiting = false, ""
 		}
 		now := time.Now()
 		switch to {

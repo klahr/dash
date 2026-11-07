@@ -141,7 +141,6 @@
               <button id="prefs-open" type="button" data-icon="prefs">Preferences</button>
               <button id="connector-open" type="button" data-icon="plug">Connect Claude</button>
               <button id="tokens-open" type="button" data-icon="key">Tokens &amp; apps</button>
-              <button id="runners-open" type="button" data-icon="computer">Runners</button>
               <button id="logout" type="button" data-icon="logout">Log out</button>
             </div>
           </details>
@@ -573,6 +572,11 @@
       <label class="field"><span>Deploy command</span><input name="deploy_command" spellcheck="false"></label>
       <label class="toggle"><input type="checkbox" name="auto_approve"><span>Approve tasks automatically</span></label>
       <p class="hint">Finished tasks whose tests pass go straight to the merge queue instead of waiting for review, and the Review column is hidden while it's empty.</p>
+      <fieldset class="field choice" id="settings-runners-field" hidden>
+        <legend>Runners <em>computers that run this project's tasks</em></legend>
+        <div id="settings-runners"></div>
+      </fieldset>
+      <p class="hint" id="settings-runners-hint" hidden></p>
       <fieldset class="field choice">
         <legend>When you approve a task</legend>
         <label class="radio"><input type="radio" name="merge_mode" value="local"><span>Merge it here <em>one squashed commit on the default branch</em></span></label>
@@ -624,19 +628,6 @@
     </form>
   </dialog>
 
-  <!-- Runners: other computers that connect to this dashboard (`dash runner`) -->
-  <dialog class="sheet" id="runners-sheet" aria-labelledby="runners-title">
-    <form method="dialog">
-      <header class="sheet-head"><h2 id="runners-title" tabindex="-1" autofocus>Runners</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
-      <p class="hint">Other computers run tasks for this dashboard with <code>dash runner</code>. They connect out to it, so they need no open port, VPN or shared secret. Adding one takes a single command.</p>
-      <ul class="runner-list" id="runners-list"></ul>
-      <div id="runners-code" hidden></div>
-      <footer class="sheet-actions">
-        <button class="btn primary" id="runners-add" type="button">Add a runner</button>
-      </footer>
-    </form>
-  </dialog>
-
   <!-- The user's credentials: API tokens, authorised OAuth clients, runners they registered -->
   <dialog class="sheet" id="tokens-sheet" aria-labelledby="tokens-title">
     <form method="dialog">
@@ -683,6 +674,14 @@
         <div id="org-invite-link" hidden></div>
         <h3 class="org-section" id="org-pending-head">Pending invitations</h3>
         <ul class="runner-list" id="org-pending"></ul>
+      </div>
+      <div id="org-runners" hidden>
+        <h3 class="org-section">Runners</h3>
+        <p class="hint">Computers that run this organization's tasks with <code>dash runner</code>, each with its owner's Claude subscription. They connect out to this dashboard, so they need no open port or VPN, and adding one takes a single command. Link projects to them in each project's settings.</p>
+        <p class="hint" id="runners-local"></p>
+        <ul class="runner-list" id="runners-list"></ul>
+        <div id="runners-code" hidden></div>
+        <button class="btn" id="runners-add" type="button" data-icon="plus">Add a runner</button>
       </div>
       <footer class="sheet-actions">
         <button class="btn" id="org-new" type="button" data-icon="plus" hidden>New organization</button>

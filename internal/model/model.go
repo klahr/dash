@@ -107,10 +107,24 @@ type Project struct {
 	CIHandledRun  int64     `json:"ci_handled_run,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 
+	// Runners are the ids of the runners (`dash runner`) this project's
+	// tasks are sent to, on a hub. A project with runners needs a git
+	// remote: each runner keeps its own clone, and work lands through pull
+	// requests, never by merging on the hub.
+	Runners []string `json:"runners,omitempty"`
+	// HubProjectID is set on a runner for its clone of a hub's project
+	// linked to it: the hub's id for that project. The runner takes tasks
+	// for linked projects only.
+	HubProjectID string `json:"hub_project_id,omitempty"`
+
 	// Machine is the computer the project lives on; filled in by clients
 	// that show several computers in one dashboard, never stored.
 	Machine string `json:"machine,omitempty"`
 }
+
+// OnRunners reports whether the project's tasks run on runners rather than
+// on this Dash.
+func (p Project) OnRunners() bool { return len(p.Runners) > 0 }
 
 // InvestigatesCI reports whether failed builds get a todo automatically.
 func (p Project) InvestigatesCI() bool { return p.InvestigateCI == nil || *p.InvestigateCI }
@@ -220,11 +234,32 @@ type Todo struct {
 	Revert       *Revert      `json:"revert,omitempty"` // set once a merged todo is reverted
 	CIRun        int64        `json:"ci_run,omitempty"` // the failed GitHub Actions run this todo investigates
 	Error        string       `json:"error,omitempty"`
-	CreatedAt    time.Time    `json:"created_at"`
-	UpdatedAt    time.Time    `json:"updated_at"`
-	StartedAt    *time.Time   `json:"started_at,omitempty"`
-	FinishedAt   *time.Time   `json:"finished_at,omitempty"`
+
+	// Runner is the id of the runner a hub sent the todo to (empty: it
+	// runs here), and RemoteID the runner's id for its copy. Worktree,
+	// summary, checks, PR and diff size are then the runner's, as it
+	// reports them; Worktree.Path is empty, the files being on the runner.
+	Runner   string `json:"runner,omitempty"`
+	RemoteID string `json:"remote_id,omitempty"`
+	// Waiting is why a queued todo isn't starting, e.g. all of its
+	// project's runners are offline.
+	Waiting string `json:"waiting,omitempty"`
+	// Resumable: a todo that failed on a runner still has its worktree and
+	// Claude session there, so queueing it again continues where it was.
+	Resumable bool `json:"resumable,omitempty"`
+	// HubTodoID is set on a runner for a todo its hub sent: the hub's id
+	// for it. HubNotes counts the hub's feedback notes already added.
+	HubTodoID string `json:"hub_todo_id,omitempty"`
+	HubNotes  int    `json:"hub_notes,omitempty"`
+
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
 }
+
+// OnRunner reports whether a hub sent the todo to a runner.
+func (t Todo) OnRunner() bool { return t.Runner != "" }
 
 // Blockers returns the todos among all that t depends on and that aren't
 // merged yet, in t.DependsOn order. Ids not in all (deleted) don't block.

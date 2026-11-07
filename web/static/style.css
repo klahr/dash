@@ -513,6 +513,16 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-dot.on { background: var(--merged); }
 .runner-name { font-weight: 600; }
 .runner-seen { flex: 1; margin: 0; font-size: 13px; }
+.runner-row { flex-wrap: wrap; }
+.runner-name .paused-tag { margin-left: 6px; }
+.runner-actions { display: flex; align-items: center; gap: 6px; }
+.runner-parallel { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
+.runner-parallel input { width: 4.5em; min-height: 32px; }
+#runners-add { margin-top: 10px; }
+.runner-pick { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.runner-pick .hint { margin: 0; }
+.runner-tag { font-size: 12px; font-weight: 600; color: var(--muted); }
+.todo-sub.waiting-runner { color: var(--running); }
 .runner-row:has(.runner-update) { flex-wrap: wrap; }
 .runner-version { flex: none; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); font: 12px/1.5 var(--mono); color: var(--muted); }
 .runner-version.warn { border-color: var(--running); color: var(--running); }

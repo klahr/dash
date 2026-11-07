@@ -26,6 +26,9 @@ func (s *Server) startPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, err := sv.data.GetTodo(r.PathValue("tid"))
+	if err == nil {
+		err = notOnRunner(t)
+	}
 	if err != nil {
 		writeErr(w, err)
 		return

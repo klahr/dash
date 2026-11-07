@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -799,4 +800,54 @@ func (g *Git) RemoveDetachedWorktree(ctx context.Context, projectID, repo, path 
 		_ = os.RemoveAll(path)
 		_, _ = g.git(ctx, projectID, repo, "worktree", "prune")
 	}
+}
+
+var scpRemoteRe = regexp.MustCompile(`^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[A-Za-z0-9._~/-]+$`)
+
+// AllowLocalRemotes lets CheckRemote accept local paths and file:// URLs
+// (tests only: a runner must not let its hub clone its own files).
+var AllowLocalRemotes = false
+
+// CheckRemote accepts a network git remote someone else gave us: https://,
+// ssh:// or scp-like user@host:path. It refuses local paths, file:// and
+// git's other transports (ext::, fd::), which would let whoever chose the
+// URL read files on this computer or run commands.
+func CheckRemote(remote string) error {
+	r := strings.TrimSpace(remote)
+	if AllowLocalRemotes && r != "" && !strings.HasPrefix(r, "-") {
+		return nil
+	}
+	switch {
+	case r == "" || strings.HasPrefix(r, "-") || strings.ContainsAny(r, " \t\r\n"):
+	case strings.HasPrefix(r, "https://"), strings.HasPrefix(r, "ssh://"):
+		u, err := url.Parse(r)
+		if err == nil && u.Host != "" && !strings.HasPrefix(u.Host, "-") {
+			return nil
+		}
+	case scpRemoteRe.MatchString(r) && !strings.Contains(r, "::"):
+		return nil
+	}
+	return fmt.Errorf("%q isn't a remote a runner clones: use an https://, ssh:// or user@host:path URL", remote)
+}
+
+// Clone clones remote (checked with CheckRemote) into path, which must not
+// exist or be empty. Only network transports are allowed.
+func (g *Git) Clone(ctx context.Context, projectID, remote, path string) error {
+	if err := CheckRemote(remote); err != nil {
+		return err
+	}
+	if ents, err := os.ReadDir(path); err == nil && len(ents) > 0 {
+		return fmt.Errorf("%s already exists and isn't empty", path)
+	}
+	parent := filepath.Dir(path)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	args := []string{"-c", "protocol.ext.allow=never", "-c", "protocol.fd.allow=never"}
+	if !AllowLocalRemotes {
+		args = append(args, "-c", "protocol.file.allow=never")
+	}
+	args = append(args, "clone", "--", strings.TrimSpace(remote), path)
+	_, err := g.git(ctx, projectID, parent, args...)
+	return err
 }

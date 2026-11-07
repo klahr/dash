@@ -24,6 +24,7 @@ import (
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/ci"
+	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/mcptools"
@@ -105,6 +106,8 @@ func main() {
 	scanTimeout := flag.Duration("scan-timeout", scan.DefaultRunTimeout, "stop a scan's Claude run after this long and mark it failed")
 	scanSchedules := flag.Bool("scan-schedules", true, "run scans (.dash/scans) on their schedules; off = only when started by hand")
 	envFile := flag.String("env", ".env", "file with DASH_USERNAME / DASH_PASSWORD (real env vars take precedence)")
+	hubTasks := flag.String("hub-tasks", "auto", "whether the hub runs tasks of projects not linked to a runner itself: on, off, or auto (on until a runner is registered); see docs/several-computers.md")
+	runnerGrace := flag.Duration("runner-grace", dispatch.DefaultGrace, "fail the tasks of a runner that has been offline this long, ready to be queued again (hub)")
 	var hubServer, regCode *string
 	var offlineGrace *time.Duration
 	var hubCommands *bool
@@ -297,6 +300,7 @@ func main() {
 		PublicURL:   strings.TrimRight(*publicURL, "/"),
 	}
 	var runnerCreds tunnel.Credentials
+	var reporter *dispatch.Reporter
 	if runnerMode {
 		apiSrv.HubCommands = *hubCommands
 		credsPath := filepath.Join(*dataDir, "runner.json")
@@ -304,12 +308,45 @@ func main() {
 			slog.Error("runner", "err", err)
 			os.Exit(1)
 		}
+		apiSrv.HubOrg = runnerCreds.OrgID // projects of other orgs are refused
+		// The hub hears where its tasks are, and this computer's usage.
+		reporter = &dispatch.Reporter{Store: st, Usage: tracker, Parallel: *parallel,
+			Send: func(ctx context.Context, r dispatch.Report) error {
+				err := tunnel.Report(ctx, runnerCreds, r)
+				if errors.Is(err, tunnel.ErrRevoked) {
+					return dispatch.ErrStop
+				}
+				return err
+			}}
+		also := storeEvents.also
+		storeEvents.also = func(ev model.Event) {
+			also(ev)
+			reporter.Observe(ev)
+		}
+		go reporter.Run(ctx)
 	} else {
-		apiSrv.Peers.Runners = &tunnel.Hub{Pub: events, Taken: apiSrv.Peers.Taken, PreviewURL: previews.URLTemplate, Accounts: st.Accounts()}
-		previews.Remote = apiSrv.Peers.Runners // runners' previews, served here
-		if err := apiSrv.Peers.Runners.Keep(filepath.Join(*dataDir, "runners.json")); err != nil {
+		runners := &tunnel.Hub{Pub: events, Taken: apiSrv.Peers.Taken, PreviewURL: previews.URLTemplate, Accounts: st.Accounts()}
+		apiSrv.Peers.Runners = runners
+		previews.Remote = runners // runners' previews, served here
+		if err := runners.Keep(filepath.Join(*dataDir, "runners.json")); err != nil {
 			slog.Warn("read runners", "err", err)
 		}
+		// Tasks of projects linked to runners go to them; the hub only
+		// coordinates.
+		d := &dispatch.Dispatcher{Store: st, Fleet: runners, Grace: *runnerGrace, Kick: todos.Kick, Note: todoLog.Line}
+		runners.OnState, runners.OnRevoke, runners.OnReport = d.State, d.Revoked, d.Report
+		todos.Remote, apiSrv.Dispatch = d, d
+		switch *hubTasks {
+		case "on":
+		case "off":
+			todos.LocalTasks = func() bool { return false }
+		case "auto":
+			todos.LocalTasks = func() bool { return len(runners.List()) == 0 }
+		default:
+			slog.Error("-hub-tasks: want on, off or auto", "value", *hubTasks)
+			os.Exit(1)
+		}
+		d.Start()
 	}
 	// Every per-run MCP token acts as its task's (or chat's) user, in its org,
 	// and only while they belong to it.
@@ -406,8 +443,14 @@ func main() {
 			}
 		}
 		watch(false) // tasks resumed at startup count as offline until the hub answers
+		onState := func(connected bool) {
+			watch(connected)
+			if connected {
+				reporter.Nudge() // tell the hub what happened while it couldn't hear
+			}
+		}
 		defer os.Remove(statePath)
-		client := &tunnel.Client{Creds: runnerCreds, Handler: apiSrv.RunnerRoutes(), OnState: watch, Version: buildinfo.Version,
+		client := &tunnel.Client{Creds: runnerCreds, Handler: apiSrv.RunnerRoutes(), OnState: onState, Version: buildinfo.Version,
 			Previews: previews, OnPreviewURL: func(t string) { previews.SetHub(t, runnerCreds.Name) }}
 		if !addrSet {
 			if err := client.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
