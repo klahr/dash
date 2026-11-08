@@ -355,6 +355,10 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .chat-runner.offline .chat-runner-dot { background: var(--failed); }
 .chat-runner-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .chat-runner select { width: auto; flex: none; min-height: 30px; padding: 0 8px; font-size: 13px; }
+.msg.pending .reply:empty::before {
+  content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 8px; vertical-align: -1px;
+  border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite;
+}
 .msg.pending .reply:empty::after { content: "Thinking…"; color: var(--muted); }
 .msg.error { color: var(--failed); }
 .composer {
