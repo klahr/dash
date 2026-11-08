@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -230,10 +231,10 @@ func TestPullRequestFailingChecksGoBackToClaude(t *testing.T) {
 }
 
 func TestCleanupRemovesOrphansAndStaleWorktrees(t *testing.T) {
-	h := newHarness(t, &fakeExec{fn: func(n int, req agent.ExecRequest) error { return nil }}, model.Project{Name: "p"})
+	h := newHarness(t, &fakeExec{fn: func(n int, req agent.ExecRequest) error { return errors.New("boom") }}, model.Project{Name: "p"})
 	h.merges.WorktreeRoot = h.engine.WorktreeRoot
 	h.merges.CleanupAfter = time.Hour
-	td := h.waitFor(h.add("no changes").ID, model.StatusFailed) // Claude changed nothing
+	td := h.waitFor(h.add("no changes").ID, model.StatusFailed) // Claude errored
 	if td.Worktree == nil {
 		t.Fatal("want a worktree")
 	}

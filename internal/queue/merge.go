@@ -235,7 +235,12 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 		log("↻ " + p.Base() + " moved during the merge; merging it in again")
 	}
 
-	// 3. Land it.
+	// 3. Land it; a task that changed nothing is simply closed (there is no
+	// commit to squash, and GitHub refuses a pull request without one).
+	if files, _, _, err := m.Git.DiffStat(ctx, p.ID, wt.Path, p.Base()); err == nil && files == 0 {
+		m.landed(ctx, t, p, "", "✔ closed; nothing to merge")
+		return nil
+	}
 	if p.UsesPR() {
 		return m.openPR(ctx, t, p)
 	}

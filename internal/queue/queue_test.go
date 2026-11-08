@@ -392,11 +392,16 @@ func TestNoChangesExplainedInChat(t *testing.T) {
 	exe := &fakeExec{fn: func(int, agent.ExecRequest) error { return nil }, result: "It already works; nothing to change."}
 	h := newHarness(t, exe, model.Project{Name: "p"})
 	a := h.add("noop")
-	h.waitFor(a.ID, model.StatusFailed)
+	h.waitFor(a.ID, model.StatusReview)
 	chat := h.st.TodoChat(a.ID)
 	if len(chat) != 1 || chat[0].Role != "assistant" ||
 		!strings.Contains(chat[0].Content, "without changing any files") || !strings.Contains(chat[0].Content, "It already works") {
-		t.Fatalf("want the failure explained in the chat, got %+v", chat)
+		t.Fatalf("want the answer quoted in the chat, got %+v", chat)
+	}
+	// Approving a task without changes closes it.
+	h.approve(a.ID)
+	if got := h.waitFor(a.ID, model.StatusMerged); got.MergedCommit != "" {
+		t.Fatalf("want no commit for a task without changes, got %q", got.MergedCommit)
 	}
 }
 

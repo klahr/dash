@@ -542,19 +542,26 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 		if head, err := e.Git.Head(ctx, p.ID, wt.Path, "HEAD"); err != nil {
 			fail(err)
 			return
-		} else if head == wt.BaseCommit {
-			if len(t.Edits) > 0 && !t.EditsApplied {
-				fail(errors.New("the saved edit doesn't change the file"))
-			} else {
-				fail(errors.New("Claude finished without changing any files"))
-			}
+		} else if head == wt.BaseCommit && len(t.Edits) > 0 && !t.EditsApplied {
+			fail(errors.New("the saved edit doesn't change the file"))
 			return
 		}
 		if len(t.Edits) > 0 && !t.EditsApplied {
 			_ = update(func(x *model.Todo) { x.EditsApplied = true })
 		}
-		if files, add, del, err := e.Git.DiffStat(ctx, p.ID, wt.Path, p.Base()); err == nil {
+		files, add, del, derr := e.Git.DiffStat(ctx, p.ID, wt.Path, p.Base())
+		if derr == nil {
 			_ = update(func(x *model.Todo) { x.DiffFiles, x.DiffAdd, x.DiffDel = files, add, del })
+		}
+		if derr == nil && files == 0 {
+			// An answer, an investigation or "it already works": nothing to
+			// test or merge, but not a failure. Review it; approving closes it.
+			log("✔ finished without changing any files; ready for review")
+			noteNoChanges(e.Store, t.ID, report)
+			if _, err := e.Store.SetStatus(t.ID, model.StatusReview, ""); err != nil {
+				slog.Error("set review", "todo", t.ID, "err", err)
+			}
+			return
 		}
 
 		if p.TestCommand == "" {
@@ -723,6 +730,19 @@ func noteFailure(s *store.Store, todoID, why, report string) {
 	}
 	if err := s.AppendTodoChat(todoID, model.ChatMessage{Role: "assistant", Content: msg, At: &now}); err != nil {
 		slog.Error("note failure", "todo", todoID, "err", err)
+	}
+}
+
+// noteNoChanges says in the todo's chat that Claude changed nothing,
+// quoting its final message: usually the answer or the reason.
+func noteNoChanges(s *store.Store, todoID, report string) {
+	now := time.Now()
+	msg := "**Claude finished without changing any files.** Approve to close the task, or rework it to ask for changes."
+	if report != "" {
+		msg += "\n\nClaude's last message:\n\n" + report
+	}
+	if err := s.AppendTodoChat(todoID, model.ChatMessage{Role: "assistant", Content: msg, At: &now}); err != nil {
+		slog.Error("note no changes", "todo", todoID, "err", err)
 	}
 }
 
