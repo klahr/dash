@@ -8,6 +8,8 @@
 #                    to update a computer that is registered already)
 #   --name NAME      this computer's name in the dashboard (default: its host name)
 #   --projects DIR   where the runner's projects live (default: ~/dash-projects)
+#   --data DIR       the runner's data directory (default: ~/.local/share/dash; use another
+#                    one on a computer that also runs a Dash dashboard or hub)
 #   --prefix DIR     where dash is installed (default: ~/.local/bin)
 #   --no-service     don't install a background service; run the runner in
 #                    this terminal instead
@@ -36,6 +38,8 @@ Installs a Dash runner: curl -fsSL <hub>/runner/install.sh | sh -s -- [options]
   --code CODE      registration code from the hub's Runners page (not needed to update)
   --name NAME      this computer's name in the dashboard (default: its host name)
   --projects DIR   where the runner's projects live (default: ~/dash-projects)
+  --data DIR       the runner's data directory (default: ~/.local/share/dash; use
+                   another one on a computer that also runs a Dash hub)
   --prefix DIR     where dash is installed (default: ~/.local/bin)
   --no-service     run the runner in this terminal instead of as a background service
   --skip-checks    register even if git, claude or the hub look wrong
@@ -83,15 +87,16 @@ detect_platform() {
 }
 
 main() {
-	code="" name="" projects="" prefix="" service=1 checks=1
+	code="" name="" projects="" data="" prefix="" service=1 checks=1
 	while [ $# -gt 0 ]; do
 		case "$1" in
-		--code | --name | --projects | --prefix)
+		--code | --name | --projects | --data | --prefix)
 			[ $# -ge 2 ] || die "$1 needs a value"
 			case "$1" in
 			--code) code=$2 ;;
 			--name) name=$2 ;;
 			--projects) projects=$2 ;;
+			--data) data=$2 ;;
 			--prefix) prefix=$2 ;;
 			esac
 			shift 2
@@ -99,6 +104,7 @@ main() {
 		--code=*) code=${1#*=}; shift ;;
 		--name=*) name=${1#*=}; shift ;;
 		--projects=*) projects=${1#*=}; shift ;;
+		--data=*) data=${1#*=}; shift ;;
 		--prefix=*) prefix=${1#*=}; shift ;;
 		--no-service) service=0; shift ;;
 		--skip-checks) checks=0; shift ;;
@@ -160,6 +166,7 @@ main() {
 	[ -z "$code" ] || set -- "$@" --code "$code"
 	[ -z "$name" ] || set -- "$@" --name "$name"
 	[ -z "$projects" ] || set -- "$@" --projects "$projects"
+	[ -z "$data" ] || set -- "$@" --data "$data"
 	[ "$checks" = 1 ] || set -- "$@" --skip-checks
 	[ "$service" = 1 ] || set -- "$@" --service=false
 	"$bin" "$@" || exit $?

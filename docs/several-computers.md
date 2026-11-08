@@ -29,7 +29,10 @@ That's all. The script, served by the hub (it holds no secrets, so it needs no s
 3. registers with the hub. The runner is named after its host; the dialog's **Name** field (or
    `--name work`) picks another, and **Projects directory** (`--projects ~/code`) sets where its
    projects live. It swaps the code for its own token, saved in `~/.local/share/dash/runner.json`
-   (readable only by you);
+   (readable only by you). On a computer that also runs the hub (or another Dash), give the
+   runner a name of its own and its own data directory, e.g.
+   `--name home-runner --data ~/.local/share/dash-runner`, so the two don't share a database.
+   Registering again from the same computer replaces its old registration, name included;
 4. installs and starts a background service: a systemd **user** unit (`dash-runner.service`) on
    Linux, a LaunchAgent (`com.github.klahr.dash-runner`) on macOS. It reconnects by itself,
    waiting longer between attempts while the hub is down (up to a minute). `--no-service` skips
@@ -50,7 +53,7 @@ curl -fsSL https://dash.example.com/runner/install.sh | sh
 ```
 
 It installs the hub's version if it differs, keeps the registration (and projects directory),
-and restarts the service. The Organization page shows each runner's version and flags those that
+and restarts the service. A runner set up with `--data` needs the same `--data` again. The Organization page shows each runner's version and flags those that
 differ from the hub's, with this command to copy.
 
 ### Managing the runner

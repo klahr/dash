@@ -207,7 +207,7 @@ func runScript(t *testing.T, f *fakeRelease, version, home string, args ...strin
 func TestScriptInstallsAndRegisters(t *testing.T) {
 	f := newFakeRelease(t)
 	home := t.TempDir()
-	r := runScript(t, f, "v1.2.3", home, "--code", "AB'CD $(x)", "--name", "work pc", "--projects", "/srv/my projects")
+	r := runScript(t, f, "v1.2.3", home, "--code", "AB'CD $(x)", "--name", "work pc", "--projects", "/srv/my projects", "--data=/srv/dash data")
 	if r.err != nil {
 		t.Fatalf("install failed: %v\n%s", r.err, r.out)
 	}
@@ -216,7 +216,7 @@ func TestScriptInstallsAndRegisters(t *testing.T) {
 		t.Fatalf("dash not installed executable at %s: %v", bin, err)
 	}
 	// Every value reaches dash as one argument, unchanged.
-	want := "[runner][setup][--server][http://127.0.0.1:7788][--code][AB'CD $(x)][--name][work pc][--projects][/srv/my projects]\n"
+	want := "[runner][setup][--server][http://127.0.0.1:7788][--code][AB'CD $(x)][--name][work pc][--projects][/srv/my projects][--data][/srv/dash data]\n"
 	if r.log != want {
 		t.Fatalf("dash called with\n%s\nwant\n%s\noutput:\n%s", r.log, want, r.out)
 	}
