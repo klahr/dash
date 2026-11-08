@@ -1678,9 +1678,9 @@ function flipPlay(before) {
 function renderBoardNow() {
   const items = laneItems();
   const empty = $("#board-empty");
-  // A hub that doesn't run tasks itself and has no runners yet can't do
-  // anything with a board: its home is the welcome screen, projects or not.
-  const welcome = state.runners?.length === 0 && (!state.project || !state.localTasks);
+  // The hub doesn't run tasks itself: with no runners yet it can't do
+  // anything with a board, and its home is the welcome screen, projects or not.
+  const welcome = state.runners?.length === 0;
   if (!state.project || welcome || state.runners === undefined) {
     $("#board").replaceChildren();
     $("#lane-tabs").replaceChildren();
@@ -2004,6 +2004,7 @@ function openTodoForm(t = null, { pick = false } = {}) {
     f.project.value = projectKey(state.project);
   }
   $("#todo-sheet-title").textContent = t ? "Edit task" : "New task";
+  showRunnerNeeded($("#todo-runner-note"), state.project);
   $("#todo-clear").hidden = !!t;
   if (t) {
     f.title.value = t.title;
@@ -2066,6 +2067,7 @@ function updateQuickLabel() {
 function openQuickAdd(texts = [""]) {
   if (!state.project) return toast("Select a project first", true);
   quick.rows.replaceChildren();
+  showRunnerNeeded($("#quick-runner-note"), state.project);
   quick.sheet.returnValue = "";
   quick.sheet.showModal();
   texts.forEach((t) => quickAddRow(null, t));
@@ -3286,7 +3288,6 @@ async function loadRunners() {
   try {
     const res = await api("GET", "/api/runners");
     state.runners = res.runners;
-    state.localTasks = res.local_tasks;
     Object.assign(runnerInfo, { hub: res.hub || location.origin, version: res.version || "" });
   } catch {
     state.runners = null; // this Dash has no runners (it is one, say)
@@ -3297,6 +3298,25 @@ async function loadRunners() {
   return state.runners;
 }
 const runnerName = (id) => state.runners?.find((r) => r.id === id)?.name || "its runner";
+
+// The hub never runs Claude: tasks and scans of p run only on a runner
+// linked to it. runnerNeeded says why they would wait now, or "" (also on a
+// Dash without runners of its own, a runner, and for another computer's project).
+const startRunner = "start `dash runner` on a computer with git and Claude Code (account menu → Runners → Add a runner)";
+function runnerNeeded(p) {
+  if (!p || p.prefix || !Array.isArray(state.runners)) return "";
+  if (!state.runners.length) return `A runner is required: this dashboard doesn't run Claude itself. To add one, ${startRunner}.`;
+  const linked = state.runners.filter((r) => p.runners?.includes(r.id));
+  if (!linked.length) return `No runner is linked to ${p.name}: tasks and scans wait until you link one in Project settings → Runners. This dashboard doesn't run Claude itself.`;
+  if (!linked.some((r) => r.online)) return `The runner${linked.length > 1 ? "s" : ""} linked to ${p.name} ${linked.length > 1 ? "are" : "is"} offline: tasks and scans wait until one is back (run \`dash runner\` on it).`;
+  return "";
+}
+// showRunnerNeeded fills a .runner-note element for p, hidden when nothing is missing.
+function showRunnerNeeded(el, p) {
+  const why = runnerNeeded(p);
+  el.hidden = !why;
+  el.textContent = why;
+}
 const runnerLimit = (r) => r.parallel || r.reported?.parallel || 1;
 const runnerOutdated = (r) => isRelease(runnerInfo.version) && !!r.version && r.version !== runnerInfo.version;
 const agoPhrase = (iso) => { const a = ago(iso); return a === "now" ? "just now" : `${a} ago`; };
@@ -3426,9 +3446,6 @@ async function renderRunners() {
     ico("computer"),
     h("p", { class: "empty-title" }, "No runners yet"),
     h("p", { class: "hint" }, "Add a computer with git and Claude Code logged in: you get a one-line install command for its terminal (Linux or macOS)."))]));
-  $("#runners-local").textContent = state.localTasks
-    ? "This dashboard also runs the tasks of projects not linked to a runner itself."
-    : "This dashboard doesn't run tasks itself: link each project to a runner.";
   if (runnerAdd) {
     const added = list.find((r) => !runnerAdd.known.has(r.id));
     const st = $("#runner-add-status");
@@ -3595,15 +3612,13 @@ async function openAddRunner() {
   await addRunner();
 }
 
-// The board of a hub that has no runners yet (and can't run tasks itself, or has no projects): what a runner
-// is, how to add one, and what comes after.
+// The board of a hub that has no runners yet: what a runner is, how to add one, and what comes after.
 function welcomeScreen() {
-  const needed = !state.localTasks;
   return [
     art("img/empty-board.webp", 480, 360),
     h("p", { class: "empty-title" }, "Welcome to Dash"),
     h("p", {}, "Claude does your tasks on ", h("strong", {}, "runners"), ": computers of yours with git and Claude Code logged in, each using its owner's Claude subscription. ",
-      needed ? "This dashboard doesn't run tasks itself, so start by adding one." : "This dashboard can run tasks itself too, but a runner adds a computer of your own."),
+"This dashboard doesn't run Claude itself, so start by adding one: ", h("code", {}, "dash runner"), " on a computer of yours."),
     h("ol", { class: "steps welcome-steps" },
       h("li", {}, h("strong", {}, "Add a runner. "), "Get a one-time code here, then paste the install command in a terminal on the other computer (Linux or macOS). It connects out to this dashboard: no open ports, VPN or sudo needed."),
       h("li", {}, h("strong", {}, "Create a project. "), "A project is a git repository. Link it to the runner in its settings."),
@@ -4518,7 +4533,7 @@ function syncMergeHint() {
   const hint = $("#settings-runners-hint");
   hint.hidden = $("#settings-runners-field").hidden;
   hint.textContent = !onRunners
-    ? (state.localTasks ? "Not linked: this dashboard runs the tasks itself." : "Not linked: tasks wait until you link a runner (this dashboard doesn't run tasks itself).")
+    ? "Not linked: tasks wait until you link a runner (this dashboard doesn't run tasks itself)."
     : !p.remote_url ? "Runners clone the project's git remote: connect a GitHub repository first."
       : "Tasks run only on these runners, each in its own clone. If all of them are offline, tasks wait in the queue.";
   const pr = f.merge_mode.value === "pr";
@@ -5120,10 +5135,10 @@ const chatActions = (pick, key) => (answer) => h("div", { class: "msg-actions" }
   } }, "plus", "Make this a task"),
   ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
 
-// Where the general chat runs. A hub that runs Claude itself answers in its
-// home directory; one that doesn't runs it on one of your own runners (your
-// Claude login, your subscription): the bar says which, lets you pick when
-// you have several, and says so when none is online.
+// Where the general chat runs. The hub never runs Claude: the chat runs on
+// one of your own runners (your Claude login, your subscription). The bar
+// says which, lets you pick when you have several, and says how to start one
+// when none is online. (A runner's own dashboard answers itself: no bar.)
 const chatRunner = {
   info: null, // GET /api/claude: {local, runners: [{id, name, online}]}
   get picked() { try { return localStorage.getItem("dash.chatRunner") || ""; } catch { return ""; } },
@@ -5148,8 +5163,8 @@ const chatRunner = {
     bar.classList.toggle("online", !!current);
     bar.classList.toggle("offline", !current);
     if (current) text.textContent = `Runs on ${current}, with its Claude login`;
-    else if (info.runners.length) text.textContent = `Your runner${info.runners.length > 1 ? "s are" : ` ${info.runners[0].name} is`} offline: start it to chat`;
-    else text.textContent = "No runner of yours yet: add one under Runners in the account menu, and the chat runs on your own computer with your Claude login";
+    else if (info.runners.length) text.textContent = `Your runner${info.runners.length > 1 ? "s are" : ` ${info.runners[0].name} is`} offline: run \`dash runner\` on it to chat`;
+    else text.textContent = "A runner is required to chat: this dashboard doesn't run Claude itself. Start `dash runner` on a computer of yours with Claude Code (account menu → Runners → Add a runner); the chat runs there with your Claude login";
     text.title = text.textContent;
     sel.hidden = online.length < 2;
     if (!sel.hidden) {
@@ -6730,6 +6745,7 @@ function renderScans() {
     ? h("span", {}, "This repository has no scan templates, so Dash's built-in scans run, next to any you write here with New scan. To share scans with your team, add them as markdown files in ", h("code", {}, `${scans.dir}/`), " (Export to repo gives you the file).")
     : h("span", {}, "Scans from ", h("code", {}, `${scans.dir}/`), " in this repository and the ones you write here. They read the code and add what they find to Issues; extra tools and schedules a repository template asks for apply once you approve them here."));
   $("#scan-new").hidden = !p || !scans.loaded;
+  showRunnerNeeded($("#scan-runner-note"), scans.loaded ? p : null);
   const probs = $("#scan-problems");
   probs.hidden = !scans.problems.length;
   probs.replaceChildren(...scans.problems.map((x) => h("li", {}, h("code", {}, x.file), `: ${x.error}`)));

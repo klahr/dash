@@ -19,13 +19,13 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-
-	"github.com/klahr/dash/internal/tunnel"
 )
 
-// A hub started with -hub-claude off never runs `claude` and never calls
-// the Anthropic API, whatever its users do: the general and project chats,
-// cleaning up instructions, untitled and queued tasks, scans. A fake
+// A hub never runs `claude` and never calls the Anthropic API, whatever
+// its users do: the general and project chats, cleaning up instructions,
+// untitled and queued tasks, scans. Not even a single user without a
+// runner (once Claude ran on the hub then), nor one started with the
+// removed -hub-claude on: it still starts, warns, and ignores it. A fake
 // claude that leaves a mark and a fake API that counts its calls catch any
 // code path that would.
 func TestHubWithoutClaudeNeverRunsIt(t *testing.T) {
@@ -54,7 +54,7 @@ func TestHubWithoutClaudeNeverRunsIt(t *testing.T) {
 
 	addr := freeAddr(t)
 	cmd := exec.Command(bin, "-addr", addr, "-data", filepath.Join(dir, "data"), "-projects", filepath.Join(dir, "projects"),
-		"-claude", fake, "-hub-claude", "off", "-chat", "api", "-env", filepath.Join(dir, "none.env"))
+		"-claude", fake, "-hub-claude", "on", "-hub-tasks=on", "-chat", "api", "-env", filepath.Join(dir, "none.env"))
 	cmd.Env = append(os.Environ(), "DASH_USERNAME=admin", "DASH_PASSWORD=a-long-enough-password",
 		"ANTHROPIC_BASE_URL="+anthropic.URL, "ANTHROPIC_API_KEY=sk-test", "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	var logs bytes.Buffer
@@ -65,6 +65,11 @@ func TestHubWithoutClaudeNeverRunsIt(t *testing.T) {
 	defer func() {
 		_ = cmd.Process.Signal(os.Interrupt)
 		_ = cmd.Wait()
+		for _, f := range []string{"-hub-claude is gone", "-hub-tasks is gone", "this hub runs no Claude"} {
+			if !strings.Contains(logs.String(), f) {
+				t.Errorf("log without %q", f)
+			}
+		}
 		if t.Failed() {
 			t.Logf("dash's log:\n%s", logs.String())
 		}
@@ -157,7 +162,7 @@ func TestHubWithoutClaudeNeverRunsIt(t *testing.T) {
 			break
 		}
 	}
-	if task.Title != "Add a dark mode" || task.Status != "queued" {
+	if task.Title != "Add a dark mode" || task.Status != "queued" || !strings.Contains(task.Waiting, "runner") {
 		t.Errorf("task: %+v", task)
 	}
 	time.Sleep(500 * time.Millisecond) // anything started in the background
@@ -168,36 +173,6 @@ func TestHubWithoutClaudeNeverRunsIt(t *testing.T) {
 		t.Errorf("the hub called the Anthropic API %d times", n)
 	}
 }
-
-func TestHubClaudePolicy(t *testing.T) {
-	runners, users := &fakeRunners{}, &fakeUsers{n: 1}
-	for mode, want := range map[string]bool{"on": true, "true": true, "off": false, "false": false, "auto": true} {
-		f, err := hubClaudePolicy(mode, runners, users)
-		if err != nil || f() != want {
-			t.Errorf("%s: %v %v", mode, err, err == nil && f())
-		}
-	}
-	if _, err := hubClaudePolicy("maybe", runners, users); err == nil {
-		t.Error("accepted -hub-claude maybe")
-	}
-	auto, _ := hubClaudePolicy("auto", runners, users)
-	users.n = 2
-	if auto() {
-		t.Error("auto: on with a second user")
-	}
-	users.n, runners.list = 1, []tunnel.Runner{{ID: "r"}}
-	if auto() {
-		t.Error("auto: on with a runner registered")
-	}
-}
-
-type fakeRunners struct{ list []tunnel.Runner }
-
-func (f *fakeRunners) List() []tunnel.Runner { return f.list }
-
-type fakeUsers struct{ n int }
-
-func (f *fakeUsers) UserCount() (int, error) { return f.n, nil }
 
 func freeAddr(t *testing.T) string {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

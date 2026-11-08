@@ -24,7 +24,7 @@ import (
 // Where Claude runs for the general chat and the short calls (titles,
 // summaries, cleaning up instructions).
 //
-// A hub with LocalClaude off never runs Claude itself: each of those runs
+// The hub (LocalClaude off) never runs Claude itself: each of those runs
 // on a runner of the user who asked, with that runner's `claude` login, so
 // it is billed to them. The hub picks only runners the caller registered,
 // in the org they work in; the runner checks the user it is told (see
@@ -184,7 +184,7 @@ func (s *Server) claudeInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 // projectChatOnRunner reports whether p's chat runs on one of the caller's
-// runners rather than here: always on a hub that doesn't run Claude, and
+// runners rather than here: always on the hub, which doesn't run Claude, and
 // for a project whose tasks run on runners, whose clones are there.
 func (s *Server) projectChatOnRunner(p model.Project) bool {
 	return !s.localClaude() || p.OnRunners()

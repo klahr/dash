@@ -71,8 +71,9 @@ type Server struct {
 		Refine(ctx context.Context, prompt string) (string, error)
 	}
 	// LocalClaude reports whether this Dash runs Claude itself for the
-	// general chat, titles and the clean-up (nil: it does). A hub with it
-	// off runs them on the caller's own runner (see claude.go).
+	// general chat, titles and the clean-up (nil: it does, as a runner
+	// does). The hub always says no and runs them on the caller's own
+	// runner (see claude.go).
 	LocalClaude func() bool
 	// Small runs Claude's short calls for this runner's owner when the hub
 	// asks (a runner's; optional).

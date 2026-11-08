@@ -39,6 +39,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD ["/usr/local/bin/dash", "healthcheck"]
 ENTRYPOINT ["/usr/local/bin/dash"]
 # Listen on all of the container's interfaces (publish the port only to a
-# proxy), keep state in /data, and never run Claude or tasks here. Behind
-# an HTTPS proxy add -trust-proxy, as deploy/docker-compose.yml does.
-CMD ["-addr", "0.0.0.0:7788", "-data", "/data", "-hub-claude", "off", "-hub-tasks", "off"]
+# proxy) and keep state in /data. The hub never runs Claude or tasks:
+# runners do. Behind an HTTPS proxy add -trust-proxy, as
+# deploy/docker-compose.yml does.
+CMD ["-addr", "0.0.0.0:7788", "-data", "/data"]

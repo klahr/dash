@@ -33,8 +33,8 @@ const ResumeMaxAge = 24 * time.Hour
 
 // Runner runs scans: Claude Code in a throwaway, detached worktree of the
 // project, never on a branch and never through review or the merge queue.
-// It runs at most one copy of each scan of a project at a time. On a hub
-// that doesn't run Claude, Claude's part runs on a runner (see Remote).
+// It runs at most one copy of each scan of a project at a time. On the
+// hub, which doesn't run Claude, Claude's part runs on a runner (see Remote).
 type Runner struct {
 	Store *store.Store
 	Git   *gitops.Git
@@ -53,7 +53,7 @@ type Runner struct {
 	// without them a scan reads only files.
 	GitTools *GitMCP
 	GitURL   string
-	// Remote, on a hub that doesn't run Claude itself (agent.LocalAllowed
+	// Remote, on the hub, which doesn't run Claude itself (agent.LocalAllowed
 	// is false), runs each scan's Claude on a runner linked to the project;
 	// the hub keeps the runs, their logs and the issues they file. nil: such
 	// a hub refuses to start scans.

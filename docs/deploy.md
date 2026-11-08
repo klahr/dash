@@ -20,12 +20,11 @@ before you start.
 ## A VPS behind Caddy
 
 On the VPS, install Dash as usual (see the [README](../README.md)) and run it as a
-[service](service.md). A hub for several people, or one whose work runs on
-[runners](several-computers.md), needs only `git`: no Claude Code and no API key, since it never
-runs Claude itself (`-hub-claude`, see
+[service](service.md). The hub needs only `git`: no Claude Code and no API key, since it never
+runs Claude itself (see
 [Claude runs on each user's own runner](several-computers.md#claude-runs-on-each-users-own-runner)).
-A hub that runs tasks itself, for a single user without runners, also needs Claude Code logged in.
-Then:
+Its work runs on [runners](several-computers.md), and it needs at least one: `dash runner` on a
+computer with git and Claude Code logged in. Then:
 
 1. **DNS.** Point `dash.example.com` at the VPS (A and/or AAAA record). For
    [live previews](previews.md), also point `*.preview.dash.example.com` at it, and for
@@ -148,8 +147,8 @@ runs it with Caddy in front, which gets and renews the certificates. Everything 
 one hub to the next (names, accounts, email, billing, branding) is in `deploy/.env`; the image,
 the compose file and the [Caddyfile](../deploy/caddy/Caddyfile) name no domain.
 
-**The image is the hub only.** It has no `claude`, no git and no project toolchains, and runs with
-`-hub-tasks off -hub-claude off`: projects hosted on the hub itself aren't supported in Docker.
+**The image is the hub only.** It has no `claude`, no git and no project toolchains, like every hub
+it never runs Claude or tasks, and projects hosted on the hub itself aren't supported in Docker.
 Work, chat and titles run on **runners**, installed natively on each computer with the one-line
 install from the hub's *Runners* page ([Several computers](several-computers.md)). Runners connect
 out to the hub over HTTPS, so they need no open ports, public address or Docker of their own.

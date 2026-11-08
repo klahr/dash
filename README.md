@@ -7,10 +7,12 @@ merge them one at a time.
 
 - **git**
 - **Go 1.27.3 or newer** (see [`go.mod`](go.mod)), only to build from source
-- **[Claude Code](https://claude.com/claude-code)** (`claude`), installed and logged in. Dash runs
-  it as you, so run `claude` once in a terminal first and sign in. A hub shared by several people
-  (or with runners) needs neither `claude` nor an API key: all its Claude work (tasks, scans,
-  chats, titles) runs on runners, with their owners' logins ([several computers](docs/several-computers.md#claude-runs-on-each-users-own-runner)).
+- **[Claude Code](https://claude.com/claude-code)** (`claude`), installed and logged in, on each
+  computer that runs **`dash runner`**: run `claude` once in a terminal there and sign in. The hub
+  (`dash`, the dashboard) never runs Claude and needs neither `claude` nor an API key, but it
+  needs **at least one runner**: all Claude work (tasks, scans, chats, titles) runs on runners,
+  with their owners' logins. The runner can be the same computer as the hub
+  ([several computers](docs/several-computers.md#claude-runs-on-each-users-own-runner)).
 - Optional: **[`gh`](https://cli.github.com)**, logged in, to create GitHub repositories and open
   pull requests.
 
@@ -57,6 +59,17 @@ Open <http://127.0.0.1:7788> and sign in with the `DASH_USERNAME` and `DASH_PASS
 [Users and organizations](docs/users.md)). Dash listens only on `127.0.0.1:7788` by default; to change that, see `-addr` in
 `./bin/dash -h` (and [Deploy the hub](docs/deploy.md) before exposing it).
 
+Then add a runner, the computer Claude works on: the hub runs no Claude itself, and until a
+runner is online the dashboard says so. In the account menu choose **Runners** → **Add a
+runner** and run the command it shows, here or on another computer. On the hub's own computer,
+give the runner a data folder of its own:
+
+```sh
+./bin/dash runner -data ~/.local/share/dash-runner --server http://127.0.0.1:7788 --code XXXX-XXXX
+```
+
+Link each project to a runner in its settings (**Runners**); its tasks and scans run there.
+
 Prefer the terminal? There's a terminal client too: `./bin/dash-tui` (it's in the release
 archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 
@@ -95,7 +108,7 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
   with a compose file: [Run the hub with Docker](docs/deploy.md#run-the-hub-with-docker).
 - **Use it from Claude** with the `dash-mcp` MCP server, or as a custom connector in claude.ai
   and the Claude app: [docs/mcp.md](docs/mcp.md).
-- **Several computers** in one dashboard: add each with one pasted command (`curl … /runner/install.sh | sh`), no VPN needed. Link a project to people's runners and the hub sends its tasks there, each on its owner's Claude subscription; everyone's chat, titles and clean-ups run on their own runner too, so a shared hub runs no Claude itself: [docs/several-computers.md](docs/several-computers.md).
+- **Several computers** in one dashboard: add each with one pasted command (`curl … /runner/install.sh | sh`), no VPN needed. Link a project to people's runners and the hub sends its tasks there, each on its owner's Claude subscription; everyone's chat, titles and clean-ups run on their own runner too, so the hub runs no Claude itself: [docs/several-computers.md](docs/several-computers.md).
 - **Live previews** of each task's app, served on their own subdomains:
   [docs/previews.md](docs/previews.md).
 

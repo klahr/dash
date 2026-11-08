@@ -19,4 +19,4 @@ EXPOSE 7788
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD ["/usr/local/bin/dash", "healthcheck"]
 ENTRYPOINT ["/usr/local/bin/dash"]
-CMD ["-addr", "0.0.0.0:7788", "-data", "/data", "-hub-claude", "off", "-hub-tasks", "off"]
+CMD ["-addr", "0.0.0.0:7788", "-data", "/data"]
