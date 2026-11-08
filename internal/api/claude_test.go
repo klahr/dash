@@ -295,3 +295,52 @@ func TestPlainTitle(t *testing.T) {
 		}
 	}
 }
+
+// A project's chat on a hub that doesn't run Claude runs on the caller's
+// runner linked to the project, in its clone, with the hub's permission
+// mode; the hub keeps the conversation. Without such a runner it says how
+// to get one.
+func TestHubRunsProjectChatOnTheUsersLinkedRunner(t *testing.T) {
+	f := newClaudeFleet(t)
+	hp := project(t, f.hub, "web")
+	turn := func(url string) ([]string, []string) {
+		return chatTurn(t, url, map[string]any{"project": hp.ID})
+	}
+
+	// Not linked to the owner's runner yet.
+	if kinds, texts := turn(f.ownerWS); kinds[len(kinds)-1] != "error" || !strings.Contains(texts[len(texts)-1], "Project settings → Runners") {
+		t.Fatalf("chat on an unlinked project: %v %q", kinds, texts)
+	}
+
+	if _, err := raw(f.hub).UpdateProject(hp.ID, func(p *model.Project) error {
+		p.Runners, p.ChatPermissionMode = []string{f.creds.ID}, model.ChatModeAcceptEdits
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Linked on the hub, but the runner has no clone.
+	if kinds, texts := turn(f.ownerWS); kinds[len(kinds)-1] != "error" || !strings.Contains(texts[len(texts)-1], "no clone") {
+		t.Fatalf("chat without the runner's clone: %v %q", kinds, texts)
+	}
+
+	clone := filepath.Join(f.runner.hubRoot(), "web")
+	if _, err := raw(f.runner).CreateProject(model.Project{ID: store.NewID(), Name: "web", Path: clone, DefaultBranch: "main", HubProjectID: hp.ID}); err != nil {
+		t.Fatal(err)
+	}
+	kinds, texts := turn(f.ownerWS)
+	if kinds[0] != "runner" || texts[0] != "laptop" || kinds[len(kinds)-1] != "done" {
+		t.Fatalf("owner's project chat: %v %q", kinds, texts)
+	}
+	if got := f.runner.Chat.(*echoChat).dir(); got != clone {
+		t.Errorf("ran in %q, want the runner's clone %q", got, clone)
+	}
+	eventually(t, "the hub to save the project chat", func() bool {
+		got := raw(f.hub).ProjectChat(hp.ID)
+		return len(got) == 2 && got[1].Content == "hi"
+	})
+
+	// Another member: the owner's runner isn't theirs.
+	if kinds, texts := turn(f.otherWS); kinds[len(kinds)-1] != "error" || !strings.Contains(texts[len(texts)-1], "no runner of yours") {
+		t.Fatalf("other user's project chat: %v %q", kinds, texts)
+	}
+}
