@@ -1620,6 +1620,11 @@ function openTodoForm(t = null, { pick = false } = {}) {
   (t ? f.prompt : f.title).focus();
 }
 $("#new-todo").addEventListener("click", () => openTodoForm());
+// Toasts sit to the left of the FAB; track its width (0 while hidden) so they never overlap it.
+new ResizeObserver(([e]) => {
+  const w = e.target.offsetWidth;
+  document.documentElement.style.setProperty("--fab-space", w ? `${w + 12}px` : "0px");
+}).observe($("#new-todo"));
 $("#todo-sheet").addEventListener("close", attempt(async () => {
   const action = $("#todo-sheet").returnValue;
   if (action !== "draft" && action !== "queue") {
