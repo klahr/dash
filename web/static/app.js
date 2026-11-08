@@ -3159,6 +3159,9 @@ async function renderRunners() {
       st.replaceChildren(added.online ? `Connected ✓ ${added.name} is online.` : `${added.name} registered, connecting…`);
       if (added.online) {
         runnerAdd = null;
+        const close = $("#runner-add-close");
+        if (close) { close.textContent = "Done"; close.classList.add("primary"); }
+        $("#runners-add").hidden = false;
         if (added.mine) showRunnerRepos(added).catch(fail);
       }
     }
@@ -3267,14 +3270,29 @@ async function addRunner() {
   } }, label);
   render();
   $("#runners-code").replaceChildren(
-    h("div", { class: "runner-add-fields" },
-      h("label", { class: "field" }, h("span", {}, "Name ", h("em", {}, "optional")), name),
-      h("label", { class: "field" }, h("span", {}, "Projects directory ", h("em", {}, "optional")), dir)),
-    h("div", { class: "segmented", role: "tablist" }, tab("One line", oneLine, manual), tab("Manual", manual, oneLine)),
+    h("div", { class: "runner-add-head" },
+      h("h4", {}, "Add a runner"),
+      h("div", { class: "segmented", role: "tablist", "aria-label": "How to install" }, tab("One line", oneLine, manual), tab("Manual", manual, oneLine))),
     oneLine, manual,
-    h("p", { class: "hint" }, `The code works once, for ${mins} minutes, and makes the runner yours, in ${state.me?.org?.name || "this organization"}.`),
-    h("p", { class: "runner-add-status", id: "runner-add-status", role: "status" }, "Waiting for the runner to connect…"));
+    h("details", { class: "runner-add-opts" },
+      h("summary", {}, "Name and projects directory"),
+      h("p", { class: "hint" }, "Both optional: the name defaults to the computer's host name, and the projects directory is where it looks for and clones repositories. The command above updates as you type."),
+      h("div", { class: "runner-add-fields" },
+        h("label", { class: "field" }, h("span", {}, "Name"), name),
+        h("label", { class: "field" }, h("span", {}, "Projects directory"), dir))),
+    h("div", { class: "runner-add-foot" },
+      h("p", { class: "runner-add-status", id: "runner-add-status", role: "status" }, "Waiting for the runner to connect…"),
+      h("button", { class: "btn small", id: "runner-add-close", type: "button", onclick: closeRunnerAdd }, "Cancel")),
+    h("p", { class: "hint" }, `The code works once, for ${mins} minutes, and makes the runner yours, in ${state.me?.org?.name || "this organization"}.`));
   $("#runners-code").hidden = false;
+  $("#runners-add").hidden = true;
+}
+// closeRunnerAdd puts the "Add a runner" panel away (its unused code just expires).
+function closeRunnerAdd() {
+  runnerAdd = null;
+  $("#runners-code").hidden = true;
+  $("#runners-code").replaceChildren();
+  $("#runners-add").hidden = false;
 }
 $("#runners-add").addEventListener("click", attempt(addRunner));
 
@@ -3371,9 +3389,8 @@ function askPassword(title, body = "") {
 
 async function openOrg() {
   await renderOrg();
-  $("#runners-code").hidden = true;
+  closeRunnerAdd();
   $("#runners-repos").hidden = true;
-  runnerAdd = null;
   await renderRunners();
   $("#org-invite-link").hidden = true;
   const d = $("#org-sheet");

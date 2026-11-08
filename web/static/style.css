@@ -563,12 +563,30 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 #settings-webhooks-field #webhook-add { margin-top: 10px; }
 #webhook-secret { margin-top: 10px; }
 .runner-update .hint { margin: 4px 0 0; }
+/* "Add a runner": one card with the command, its options and whether it has connected yet. */
+#runners-code { margin-top: 12px; padding: 12px 14px; border-radius: var(--r-m); background: var(--raised); border: 1px solid var(--line); }
+#runners-code .hint { margin: 6px 0 0; }
+#runners-code > div > p:first-child { margin: 12px 0 0; }
+.runner-add-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.runner-add-head h4 { margin: 0; font-size: 15px; }
+.runner-add-head .segmented { margin: 0; background: var(--bg); }
+.runner-add-head .segmented button { min-height: 30px; padding: 0 12px; font-size: 13px; }
+.runner-add-head .segmented button[aria-selected="true"] { background: var(--surface); }
+#runners-code .steps { margin-top: 12px; }
+#runners-code .steps > li:last-child { margin-bottom: 0; }
+.runner-add-opts { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.runner-add-opts > summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--muted); }
+.runner-add-opts > summary:hover, .runner-add-opts[open] > summary { color: var(--text); }
 .runner-add-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
-.runner-add-fields .field { margin: 12px 0 8px; }
+.runner-add-fields .field { margin: 10px 0 0; }
 .runner-add-fields input { width: 100%; }
 @media (max-width: 560px) { .runner-add-fields { grid-template-columns: 1fr; } }
-.runner-add-status { margin: 8px 0 0; color: var(--muted); font-weight: 600; }
+.runner-add-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.runner-add-status { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--muted); font-weight: 600; }
+.runner-add-status::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--running); animation: breathe 1.8s ease-in-out infinite; }
 .runner-add-status.on { color: var(--merged); }
+.runner-add-status.on::before { background: var(--merged); animation: none; }
+@media (prefers-reduced-motion: reduce) { .runner-add-status::before { animation: none; } }
 /* Organization: members, invitations, and the switcher in the account menu. */
 .org-section { margin: 18px 0 0; font-size: 14px; font-weight: 600; color: var(--muted); }
 .org-members .runner-seen { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -584,7 +602,6 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .invite-card .invite-what { text-align: center; }
 .invite-card .login-alt { text-align: center; font-size: 14px; color: var(--muted); }
 .invite-card .btn.secondary-action { background: none; }
-#runners-code { margin-top: 12px; }
 /* A runner's git repositories, to add as its projects. */
 .runner-repos { margin-top: 12px; padding: 10px 12px; border-radius: var(--r-m); background: var(--raised); }
 .runner-repos h4 { margin: 0; font-size: 14px; }
