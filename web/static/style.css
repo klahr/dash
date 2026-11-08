@@ -951,7 +951,11 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .col.drop-over { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 .col.drop-ok .col-head { color: var(--text); }
 .lane-tab.drop-over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--text); }
-@media (hover: hover) { .todo[data-id] { cursor: grab; } }
+@media (hover: hover) {
+  .todo[data-id] { cursor: grab; }
+  /* Hovering a card shows its whole line, in place, inside the card. */
+  .todo:hover .todo-sub { display: block; -webkit-line-clamp: unset; overflow: visible; overflow-wrap: anywhere; }
+}
 
 .drop-bar {
   position: fixed; left: 12px; right: 12px; bottom: calc(var(--nav-h) + var(--safe-b) + 12px); z-index: 90;
@@ -1273,8 +1277,11 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .col.cursor .col-head { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
   .col-body { flex: 1; overflow-y: auto; padding-bottom: 96px; }
   .col-empty { padding: 20px 16px; text-align: left; font-size: 14px; color: var(--faint); }
-  .todo { padding: 12px 14px; grid-template-columns: 22px 1fr; }
-  .todo-side { grid-column: 2; flex-direction: row; gap: 10px; padding: 0; }
+  /* minmax(0, …) and wrapping keep a card inside its column: tags and actions wrap
+     instead of running out under the next column. */
+  .todo { padding: 12px 14px; grid-template-columns: 22px minmax(0, 1fr); }
+  .todo-side { grid-column: 2; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 0; min-width: 0; }
+  .todo-side .card-actions { flex-wrap: wrap; margin-top: 0; }
   .todo-side:empty { display: none; }
   .rail::before { left: 25px; }
   .fab { right: 28px; bottom: 28px; width: auto; padding: 0 20px 0 16px; }
