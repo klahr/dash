@@ -1054,8 +1054,7 @@ async function loadPerms() {
 }
 
 // With several computers, the project's computer only fits the header on wide screens; on
-// phones it would crowd the project name, and the menu lists it anyway. The branch has a
-// button of its own (renderBranchSwitch).
+// phones it would crowd the project name, and the menu lists it anyway.
 function renderProjectBranch() {
   const p = state.project, el = $("#project-branch");
   el.textContent = p && desktop.matches && multi() ? p.machine : "";
@@ -1074,7 +1073,6 @@ function renderProjectHeader() {
   app.classList.toggle("has-project-color", !!p?.color);
   $('meta[name="theme-color"]').content = p?.color || "#101722";
   renderProjectBranch();
-  renderBranchSwitch();
   $("#project-menu").hidden = !p;
   $("#pm-github").hidden = !p || !!p.remote_url;
   renderPushMain();
@@ -1478,20 +1476,6 @@ function pushBar() {
 }
 
 // ------------------------------------------------------------------ branches
-// The top bar's branch button: the branch new tasks start from and land on. Off the default
-// branch it stands out, so work doesn't land somewhere unexpected.
-function renderBranchSwitch() {
-  const p = state.project, btn = $("#branch-switch");
-  btn.hidden = !p;
-  if (!p) return;
-  const b = baseBranch(p), off = b !== p.default_branch;
-  $("#branch-name").textContent = b;
-  btn.classList.toggle("off-default", off);
-  const label = off ? `Tasks land on ${b}, not ${p.default_branch}: switch branch or open a pull request` : `Tasks land on ${b}: switch branch`;
-  btn.title = label;
-  btn.setAttribute("aria-label", label);
-}
-
 // The open switcher's GET /branches answer, for the project it was opened on.
 let branchSheet = null;
 
@@ -1604,7 +1588,6 @@ async function createBranchPR(btn) {
   }
 }
 
-$("#branch-switch").addEventListener("click", attempt(openBranches));
 $("#pm-branch").addEventListener("click", attempt(openBranches));
 $("#branch-filter").addEventListener("input", renderBranches);
 $("#branch-filter").addEventListener("keydown", (e) => {

@@ -1701,21 +1701,7 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .tfa-tag { margin-left: 6px; font-size: 12px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
 .tfa-tag.on { color: var(--accent); border-color: currentColor; }
 
-/* Branch switcher: the top bar's branch button and its sheet. */
-.branch-switch {
-  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; flex: 0 1 auto; min-width: 0; max-width: 220px;
-  border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--muted);
-  font-family: var(--mono); font-size: 12px; white-space: nowrap;
-}
-.branch-switch .ico { width: 15px; height: 15px; flex: none; }
-.branch-switch span { overflow: hidden; text-overflow: ellipsis; }
-.branch-switch:hover { border-color: var(--accent); color: var(--text); }
-.branch-switch.off-default { border-color: var(--accent2); color: var(--accent2); }
-@media (max-width: 639px) {
-  .branch-switch { padding: 0 8px; }
-  .branch-switch:not(.off-default) span { display: none; }
-  .branch-switch.off-default { max-width: 120px; }
-}
+/* Branch switcher sheet. */
 #branch-intro code, .branch-current code, .branch-create code { font-family: var(--mono); font-size: 13px; }
 .branch-current { display: grid; gap: 10px; margin: 0 0 14px; padding: 12px; border: 1px solid var(--line); border-left: 3px solid var(--accent2); border-radius: var(--r-m); background: var(--surface); }
 .branch-current-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
