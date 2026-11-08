@@ -62,7 +62,7 @@ func (a *Auth) Routes(mux *http.ServeMux) {
 }
 
 // signedIn passes the request's identity to h, and answers 401 without one
-// (a request with the peer token, say).
+// (the hub over a runner's tunnel, say).
 func (a *Auth) signedIn(h func(http.ResponseWriter, *http.Request, *Identity)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := From(r.Context())
@@ -138,7 +138,7 @@ func pathID(r *http.Request, name string) (int64, error) {
 // me handles GET /api/me.
 func (a *Auth) me(w http.ResponseWriter, r *http.Request) {
 	id, ok := From(r.Context())
-	if !ok { // the peer token: a computer, not a person
+	if !ok { // the hub over a runner's tunnel: a computer, not a person
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
 	}

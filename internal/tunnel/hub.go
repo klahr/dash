@@ -53,7 +53,7 @@ var (
 	ErrBadCode     = errors.New("unknown or expired registration code")
 	ErrTooManyBad  = errors.New("too many wrong registration codes, try again later")
 	ErrNameTaken   = errors.New("that name is already used by another computer; revoke it first or pick another --name")
-	ErrNameHub     = errors.New("that name is the hub's own computer or one of its peers; pick another --name")
+	ErrNameHub     = errors.New("that name is the hub's own computer; pick another --name")
 	ErrBadName     = errors.New("runner name: use lowercase letters, digits and dashes (at most 32)")
 	ErrUnknownName = errors.New("no such runner")
 	ErrNoOwner     = errors.New("a registration code is made by a signed-in user, for their organization")
@@ -136,7 +136,7 @@ type regCode struct {
 type Hub struct {
 	// Pub is told when the runner list changes (optional).
 	Pub interface{ Publish(model.Event) }
-	// Taken reports names already used by this computer or a -peer (optional).
+	// Taken reports names already used by this computer (optional).
 	Taken func(name string) bool
 	// PreviewURL is where the hub serves runners' previews, with "*" for the
 	// host's first label, as the runner connecting with r should be told

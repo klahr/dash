@@ -33,7 +33,6 @@ Most important first within each section.
 - [ ] Run the same task twice and compare the attempts.
 - [ ] Edit a diff in the UI before approving.
 - [ ] Autosave the TUI todo form like the web editor.
-- [ ] Find other Dash computers on the tailnet automatically instead of `-peer` flags.
 
 ## Running it
 

@@ -255,9 +255,8 @@ func (sv *service) computers(ctx context.Context) []mcptools.Machine {
 	return out
 }
 
-// peerAPI calls another computer's REST API through the dashboard's peer
-// forwarding (s.Peers), which signs the request with that computer's
-// credentials. Only platform admins' tools use it.
+// peerAPI calls a runner's REST API through the dashboard's forwarding
+// (s.Peers), over the runner's tunnel. Only platform admins' tools use it.
 type peerAPI struct {
 	s    *Server
 	name string

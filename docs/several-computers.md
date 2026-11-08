@@ -266,16 +266,4 @@ at `https://<task>-<runner>.<preview domain>/` (so only the hub needs `-preview-
 a certificate). The runner keeps a second connection to the hub just for preview traffic, so a
 heavy page load or a busy hot-reload socket doesn't slow its tasks down, and the hub opens at most
 32 connections to a runner's previews at a time. The runner forwards only to the servers of
-previews it started itself; the hub can't ask it for any other port. Previews on a `-peer` are
-still served by that computer's own Dash.
-
-## -peer (deprecated)
-
-Before runners, the hub connected to the other computers itself: each ran a normal Dash reachable
-over HTTPS from the hub (see [Deploy the hub](deploy.md): each behind its own Caddy or Cloudflare
-Tunnel hostname, or on the same tailnet), all with the same `DASH_PEER_TOKEN`, and the hub was
-started with `-peer work=https://work.example.com`. The hub calls its peers, not the other way
-round, so a hub on a VPS can show computers at home through their tunnels; give peers hostnames
-outside the hub's preview domain (not `work.preview.dash.example.com`). This still works in this
-release, with a warning, and will be removed in the next one. To move a computer over, stop it, add it as a
-runner, and remove its `-peer` flag from the hub; its projects and tasks stay as they are.
+previews it started itself; the hub can't ask it for any other port.

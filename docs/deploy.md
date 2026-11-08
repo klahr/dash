@@ -341,7 +341,6 @@ internet entirely: keep Dash on `127.0.0.1`, run `tailscale serve --bg 7788`, st
   DNS-challenge certificate, see [Live previews](previews.md#setting-up-a-preview-domain).
 - **claude.ai connector:** Anthropic's servers aren't on your tailnet. Tailscale Funnel can expose
   just the connector's paths, see [MCP](mcp.md#claudeai-and-the-claude-app-custom-connector).
-- **Peers** can be reached at their `ts.net` names.
 
 ## The login is internet-facing
 
@@ -372,7 +371,5 @@ computers. So:
   reach Dash.
 - **Sessions** last 7 days. Changing the username or password signs out every browser and
   connector.
-- **Peers** accept `DASH_PEER_TOKEN` as a bearer token; keep it at least 24 random characters
-  (`openssl rand -hex 24`).
 - For a second login, put Cloudflare Access (above) or your proxy's own authentication in front,
   keeping the connector's paths open if you use it.

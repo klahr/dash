@@ -20,7 +20,7 @@ func TestDeleteProjectNeedsPassword(t *testing.T) {
 		t.Fatalf("project gone after a wrong password: %v", err)
 	}
 
-	// For a peer's project the hub checks the password and doesn't forward a wrong one.
+	// For a runner's project the hub checks the password and doesn't forward a wrong one.
 	_, hub, _, work := remoteServer(t)
 	r = httptest.NewRequest("DELETE", "/peer/work/api/projects/"+work.ID, strings.NewReader(`{"password":"wrong"}`))
 	r.SetPathValue("name", "work")
@@ -34,7 +34,7 @@ func TestDeleteProjectNeedsPassword(t *testing.T) {
 
 // The hub's password check must not depend on how the path is spelled: the
 // proxy forwards the decoded path, so "projects%2F<pid>" still deletes.
-func TestPeerDeleteProjectNeedsPasswordHowEverSpelled(t *testing.T) {
+func TestRunnerDeleteProjectNeedsPasswordHowEverSpelled(t *testing.T) {
 	h, _, _, work := remoteServer(t)
 	h = loggedIn(t, h)
 	for _, p := range []string{
@@ -51,7 +51,7 @@ func TestPeerDeleteProjectNeedsPasswordHowEverSpelled(t *testing.T) {
 			t.Fatalf("%s: project gone after a wrong password: %d %s", p, w.Code, w.Body)
 		}
 	}
-	// Other deletes on a peer don't ask for the password.
+	// Other deletes on a runner don't ask for the password.
 	if w := do(t, h, "DELETE", "/peer/work/api/projects/"+work.ID+"/chat", ""); w.Code == http.StatusForbidden {
 		t.Errorf("chat clear asked for a password: %d %s", w.Code, w.Body)
 	}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -10,39 +11,53 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
+	"github.com/klahr/dash/internal/tunnel"
 )
 
-const (
-	publicURL  = "https://dash.example.ts.net"
-	peerSecret = "0123456789abcdef0123456789abcdef"
-)
+const publicURL = "https://dash.example.ts.net"
 
-// remoteServer is a hub with OAuth on and one peer, "work", which has the
-// same two projects ("other" and "web") as the hub.
+// remoteServer is a hub with OAuth on and one runner, "work", connected
+// through its tunnel, which has the same two projects ("other" and "web")
+// as the hub.
 func remoteServer(t *testing.T) (h http.Handler, s *Server, home, work model.Project) {
 	t.Helper()
-	ps, _, work := boardServer(t)
-	ps.Auth.PeerToken = peerSecret
-	ps.Peers = &peer.Hub{Self: "work"}
-	ps.Git = gitops.New(nil) // for update_project
-	srv := httptest.NewServer(ps.Routes())
-	t.Cleanup(srv.Close)
-	p, err := peer.Parse("work=" + srv.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	s, _, home = boardServer(t)
-	s.Peers = &peer.Hub{Self: "home", Token: peerSecret, Peers: []peer.Peer{p}}
+	rh := &tunnel.Hub{Accounts: s.Auth.Accounts()}
+	s.Peers = &peer.Hub{Self: "home", Runners: rh}
+	rh.Taken = s.Peers.Taken
+	var err error
 	if s.OAuth, err = auth.NewOAuth(s.Auth, publicURL); err != nil {
 		t.Fatal(err)
 	}
+	srv := httptest.NewServer(s.Routes())
+	t.Cleanup(srv.Close)
+
+	ps, _, work := boardServer(t)
+	ps.Peers = &peer.Hub{Self: "work"}
+	ps.Git = gitops.New(nil) // for update_project
+	ps.HubCommands = true    // update_project sets the test command
+	code, _, err := rh.NewCode(testOwner(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	creds, err := tunnel.Register(ctx, srv.URL, code, "work", "")
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	client := &tunnel.Client{Creds: creds, Handler: ps.RunnerRoutes(), MinBackoff: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond}
+	stopped := make(chan struct{})
+	go func() { _ = client.Run(ctx); close(stopped) }()
+	t.Cleanup(func() { cancel(); <-stopped })
+	eventually(t, "the runner to come online", func() bool { r, _ := rh.Get(creds.ID); return r.Online })
 	return s.Routes(), s, home, work
 }
 
@@ -125,9 +140,6 @@ func TestRemoteMCPTokensAreSeparate(t *testing.T) {
 	if w := rpcAt(h, "/mcp", chat, "ping", "{}"); w.Code != http.StatusUnauthorized {
 		t.Errorf("/mcp took a chat-run token: %d", w.Code)
 	}
-	if w := rpcAt(h, "/mcp", peerSecret, "ping", "{}"); w.Code != http.StatusUnauthorized {
-		t.Errorf("/mcp took the peer token: %d", w.Code)
-	}
 
 	access := oauthToken(t, h)
 	if w := rpcAt(h, "/mcp", access, "ping", "{}"); w.Code != http.StatusOK {
@@ -187,7 +199,7 @@ func TestRemoteMCPToolsAcrossComputers(t *testing.T) {
 		}
 	}
 
-	// Settings on the peer, by project id.
+	// Settings on the runner, by project id.
 	text, isErr := call("update_project", `{"project":"`+work.ID+`","test_command":"go test ./...","auto_approve":true,"max_turns":7,"allowed_tools":["Bash"," "]}`)
 	if isErr {
 		t.Fatal(text)
@@ -207,20 +219,20 @@ func TestRemoteMCPToolsAcrossComputers(t *testing.T) {
 		t.Errorf("update without settings: %s", text)
 	}
 
-	// On the peer, by project id.
+	// On the runner, by project id.
 	text, isErr = call("create_todo", `{"project":"`+work.ID+`","title":"Remote task","draft":true}`)
 	if isErr {
 		t.Fatal(text)
 	}
 	created := todo(text)
 	if _, err := raw(s).GetTodo(created.ID); err == nil {
-		t.Fatalf("created on the hub, not the peer")
+		t.Fatalf("created on the hub, not the runner")
 	}
 	if text, _ := call("list_todos", `{"project":"`+work.ID+`"}`); !strings.Contains(text, "Remote task") {
-		t.Errorf("list_todos on peer: %s", text)
+		t.Errorf("list_todos on runner: %s", text)
 	}
 	if text, _ := call("get_todo", `{"todo":"`+created.ID+`"}`); todo(text).Title != "Remote task" {
-		t.Errorf("get_todo on peer: %s", text)
+		t.Errorf("get_todo on runner: %s", text)
 	}
 	if text, isErr := call("approve_todo", `{"todo":"`+created.ID+`"}`); !isErr {
 		t.Errorf("approved a draft: %s", text)

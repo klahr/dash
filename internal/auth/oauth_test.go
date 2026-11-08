@@ -210,10 +210,10 @@ func TestOAuthFlow(t *testing.T) {
 	if w := callMCP(h, access); w.Code != http.StatusOK || w.Body.String() != "tools" {
 		t.Errorf("MCP with token: %d %s", w.Code, w.Body)
 	}
-	// Access tokens are not sessions or peer tokens.
+	// Access tokens are not sessions.
 	r := httptest.NewRequest("GET", "/api/projects", nil)
 	r.Header.Set("Authorization", "Bearer "+access)
-	if _, ok := a.session(r); ok || a.viaPeer(r) {
+	if _, ok := a.session(r); ok {
 		t.Errorf("access token opens the API")
 	}
 	if w := httptest.NewRecorder(); func() int { h.ServeHTTP(w, r); return w.Code }() != http.StatusUnauthorized {

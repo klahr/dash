@@ -1,6 +1,6 @@
 // Package tunnel connects runners to a hub. A runner (`dash runner`) opens
 // one WebSocket out to the hub and keeps it open; the hub then reaches the
-// runner's Dash API through it, as if the runner were a -peer it could dial.
+// runner's Dash API through it, as if it could dial the runner.
 //
 // mux.go multiplexes many byte streams (one per HTTP connection) over that
 // WebSocket, with per-stream flow control so one slow reader (a log stream,

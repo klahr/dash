@@ -90,7 +90,7 @@ type Server struct {
 	// Notify sends events to the projects' outgoing webhooks (nil: off,
 	// as on a runner, whose hub notifies).
 	Notify *notify.Notifier
-	Peers  *peer.Hub // other computers shown in this dashboard: -peer servers and runners
+	Peers  *peer.Hub // other computers shown in this dashboard: runners
 	// Dispatch sends tasks of projects linked to runners to them (a hub's;
 	// optional).
 	Dispatch *dispatch.Dispatcher
@@ -157,7 +157,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	// Billing (answers "off" unless Stripe is configured)
 	s.Billing.Routes(mux)
 
-	// Computers: this one plus peers, whose API is forwarded under /peer/{name}/
+	// Computers: this one plus runners, whose API is forwarded under /peer/{name}/
 	// The other computers belong to the whole Dash: only platform admins
 	// see and use them; everyone else sees this computer.
 	mux.HandleFunc("GET /api/machines", func(w http.ResponseWriter, r *http.Request) {
@@ -482,10 +482,10 @@ func writeErr(w http.ResponseWriter, err error) {
 
 var errBadRequest = errors.New("bad request")
 
-// forwardToPeer handles /peer/{name}/…. A peer can't check this dashboard's
-// password and skips its own check for the hub's token, so a project delete
-// is confirmed here first. The decision uses the path as the peer will see
-// it: a route pattern like "DELETE /peer/{name}/api/projects/{pid}" matches
+// forwardToPeer handles /peer/{name}/…. A runner can't check this
+// dashboard's password and skips its own check for requests over its tunnel,
+// so a project delete is confirmed here first. The decision uses the path as
+// the runner will see it: a route pattern like "DELETE /peer/{name}/api/projects/{pid}" matches
 // escaped segments and would miss "/api/projects%2F<pid>", which the proxy
 // forwards decoded as "/api/projects/<pid>".
 func (s *Server) forwardToPeer(w http.ResponseWriter, r *http.Request) {
@@ -506,7 +506,7 @@ func isProjectPath(p string) bool {
 }
 
 // confirmThenForward checks the password in a delete-project request for a
-// peer here, then passes it on unchanged (the peer trusts the hub's token).
+// runner here, then passes it on unchanged (the runner trusts its tunnel).
 func (s *Server) confirmThenForward(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
