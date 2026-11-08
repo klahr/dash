@@ -158,6 +158,38 @@ func NotAboutCode(c PRCheck) bool {
 	return notCodeRe.MatchString(c.Label())
 }
 
+// CheckEvents returns, by check name, the event that triggered each check of
+// pull request number, e.g. pull_request or pull_request_target ("" for
+// commit statuses). It is nil when gh can't tell.
+func (g *Git) CheckEvents(ctx context.Context, projectID, dir string, number int) map[string]string {
+	// With --json gh exits 0 whatever the checks' state.
+	out, err := g.ghQuiet(ctx, projectID, dir, "pr", "checks", strconv.Itoa(number), "--json", "name,event")
+	if err != nil {
+		return nil
+	}
+	var checks []struct {
+		Name  string `json:"name"`
+		Event string `json:"event"`
+	}
+	if json.Unmarshal([]byte(jsonPart(out)), &checks) != nil {
+		return nil
+	}
+	events := make(map[string]string, len(checks))
+	for _, c := range checks {
+		// Of same-named checks, one the branch triggers wins.
+		if e, seen := events[c.Name]; !seen || e == "pull_request_target" {
+			events[c.Name] = c.Event
+		}
+	}
+	return events
+}
+
+// RunsFromBase reports a check whose workflow runs from the base branch
+// (pull_request_target), so no change to the pull request's branch affects it.
+func RunsFromBase(event string) bool {
+	return event == "pull_request_target"
+}
+
 var runIDRe = regexp.MustCompile(`/actions/runs/(\d+)`)
 
 // FailedLog returns the tail of a failed GitHub Actions run's log, or ""

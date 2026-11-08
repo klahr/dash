@@ -123,7 +123,7 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 		case len(code) > 0:
 			m.handled(t, st.HeadRefOid, fmt.Sprintf("✖ checks fail on pull request #%d: %s", n, labels(failed)))
 			t, _ = m.Store.GetTodo(t.ID)
-			_ = m.sendBack(t, p, m.checksNote(ctx, p, n, code), false, fmt.Sprintf("checks fail on pull request #%d", n))
+			_ = m.sendBack(t, p, m.checksNote(ctx, p, n, code, other), false, fmt.Sprintf("checks fail on pull request #%d", n))
 		case len(other) > 0:
 			// Not something to fix in the code (e.g. an unsigned CLA): say so
 			// and leave it to a person. PollPRs still follows the pull request.
@@ -171,7 +171,8 @@ func (m *MergeQueue) stuck(ctx context.Context, t model.Todo, st gitops.PRStatus
 }
 
 // sortFailed splits failing checks into those Claude should fix in the code
-// and those that aren't about the code (a CLA or DCO signature). Checks the
+// and those no change to the branch can fix: a CLA or DCO signature, or a
+// pull_request_target workflow, which runs from the base branch. Checks the
 // base branch doesn't require to merge are dropped: they neither go to
 // Claude nor hold the task. When the branch requires no checks (or gh can't
 // tell), every check counts as required.
@@ -179,12 +180,15 @@ func (m *MergeQueue) sortFailed(ctx context.Context, p model.Project, n int, fai
 	if len(failed) == 0 {
 		return
 	}
-	required := m.Git.RequiredChecks(ctx, p.ID, p.Path, n)
+	return classifyFailed(failed, m.Git.RequiredChecks(ctx, p.ID, p.Path, n), m.Git.CheckEvents(ctx, p.ID, p.Path, n))
+}
+
+func classifyFailed(failed []gitops.PRCheck, required map[string]bool, events map[string]string) (code, other []gitops.PRCheck) {
 	for _, c := range failed {
 		switch {
 		case len(required) > 0 && !required[c.Label()]:
 			// not required to merge: neither fixed nor waited for
-		case gitops.NotAboutCode(c):
+		case gitops.NotAboutCode(c), gitops.RunsFromBase(events[c.Label()]):
 			other = append(other, c)
 		default:
 			code = append(code, c)
@@ -231,7 +235,7 @@ func (m *MergeQueue) handled(t model.Todo, sha, line string) {
 	})
 }
 
-func (m *MergeQueue) checksNote(ctx context.Context, p model.Project, n int, failed []gitops.PRCheck) string {
+func (m *MergeQueue) checksNote(ctx context.Context, p model.Project, n int, failed, other []gitops.PRCheck) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Checks fail on pull request #%d:\n", n)
 	for _, c := range failed {
@@ -245,6 +249,12 @@ func (m *MergeQueue) checksNote(ctx context.Context, p model.Project, n int, fai
 		if log := m.Git.FailedLog(ctx, p.ID, p.Path, c, 80); log != "" {
 			fmt.Fprintf(&b, "\nLast lines of the failed log for %s:\n```\n%s\n```\n", c.Label(), log)
 			shown++
+		}
+	}
+	if len(other) > 0 {
+		b.WriteString("\nThese also fail, but no change to this branch can fix them; leave them alone:\n")
+		for _, c := range other {
+			fmt.Fprintf(&b, "- %s %s\n", c.Label(), c.URL())
 		}
 	}
 	b.WriteString("\nFix the code so these checks pass. Don't weaken or delete tests unless they are wrong.")
