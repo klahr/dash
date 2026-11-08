@@ -32,7 +32,7 @@ it:
 - Tasks and chat messages record who created them (`created_by`).
 
 What belongs to the whole Dash, and only platform admins can use: other computers
-(runners and peers, `/peer/…`, the Runners page; everyone else sees just this computer)
+(runners, `/peer/…`, the Runners page; everyone else sees just this computer)
 and pausing or resuming the task queue, which every org shares. The subscription usage
 meter and the merge queue's length are shown to everyone.
 

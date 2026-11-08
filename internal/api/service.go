@@ -40,8 +40,7 @@ type Caller struct {
 	// PlatformAdmin runs the Dash instance: other computers, the queue
 	// pause, projects anywhere on disk.
 	PlatformAdmin bool
-	// Machine: another Dash calling with the peer token or over a runner's
-	// tunnel. It acts for this Dash's default org (a runner keeps all its
+	// Machine: the hub calling over this runner's tunnel. It acts for this Dash's default org (a runner keeps all its
 	// projects there) and checked its own user's rights.
 	Machine bool
 }

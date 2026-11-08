@@ -98,10 +98,6 @@ type Auth struct {
 	// Only enable it when Dash is reachable solely through that proxy.
 	TrustProxy bool
 
-	// PeerToken lets another Dash (a "hub" showing this machine in its
-	// dashboard) call the API with "Authorization: Bearer <token>".
-	PeerToken string
-
 	// OnRevoke is told about each token a user revokes, so what holds it
 	// open (a runner's tunnel) can be closed (optional).
 	OnRevoke func(store.Token)
@@ -194,8 +190,8 @@ func WithSession(ctx context.Context, sess store.Session) context.Context {
 }
 
 // From returns the user of a request that came through the Middleware with a
-// session or an API token, or through OAuth.Bearer. Requests with the peer
-// token, over a runner's tunnel and to public paths have none.
+// session or an API token, or through OAuth.Bearer. Requests over a runner's
+// tunnel and to public paths have none.
 func From(ctx context.Context) (*Identity, bool) {
 	id, ok := ctx.Value(identityKey{}).(*Identity)
 	return id, ok && id != nil
@@ -509,10 +505,10 @@ var (
 
 // ConfirmPassword re-checks the signed-in user's password before something
 // destructive or sensitive. Wrong guesses count towards the same lockout as
-// logins. A request from a hub with the peer token passes: the hub asked
-// its user.
+// logins. A request from the hub over a runner's tunnel passes: the hub
+// asked its user.
 func (a *Auth) ConfirmPassword(r *http.Request, password string) error {
-	if a.viaPeer(r) || FromHub(r.Context()) {
+	if FromHub(r.Context()) {
 		return nil
 	}
 	id, ok := From(r.Context())
@@ -546,20 +542,10 @@ func WithHub(ctx context.Context) context.Context { return context.WithValue(ctx
 // FromHub reports whether ctx is a request from the hub over a runner tunnel.
 func FromHub(ctx context.Context) bool { v, _ := ctx.Value(hubKey{}).(bool); return v }
 
-type peerKey struct{}
-
 // FromMachine reports whether ctx is a request from another Dash rather than
-// a person: the hub over a runner's tunnel, or a hub with the peer token.
-// Those act for the whole of this Dash; the other Dash checked its own user.
-func FromMachine(ctx context.Context) bool {
-	v, _ := ctx.Value(peerKey{}).(bool)
-	return v || FromHub(ctx)
-}
-
-func (a *Auth) viaPeer(r *http.Request) bool {
-	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	return ok && a.PeerToken != "" && subtle.ConstantTimeCompare([]byte(tok), []byte(a.PeerToken)) == 1
-}
+// a person: the hub over a runner's tunnel. It acts for the whole of this
+// Dash; the hub checked its own user.
+func FromMachine(ctx context.Context) bool { return FromHub(ctx) }
 
 // Secure reports whether the browser reached Dash over HTTPS.
 func (a *Auth) Secure(r *http.Request) bool {
@@ -741,17 +727,13 @@ func orgFree(path string) bool {
 // to the login page.
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Static artwork (login page images, icons) is public too.
-		if a.viaPeer(r) {
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), peerKey{}, true)))
-			return
-		}
 		if a.Domains != nil {
 			var done bool
 			if r, done = a.serveDomains(w, r, next); done {
 				return
 			}
 		}
+		// Static artwork (login page images, icons) is public too.
 		if publicPath(r.URL.Path) || publicAsset(r.URL.Path) || a.oauth.public(r.URL.Path) || r.URL.Path == branding.LogoPath {
 			next.ServeHTTP(w, r)
 			return

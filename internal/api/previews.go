@@ -165,8 +165,8 @@ func (s *Server) openPreview(w http.ResponseWriter, r *http.Request) {
 
 // openRunnerPreview handles GET /peer/{name}/preview/{tid}, the open_url of
 // a preview on a runner as the UI asks for it: the hub serves those previews
-// (as <tid>-<name>), so it signs the browser in itself. Other computers
-// (-peer) serve their own previews.
+// (as <tid>-<name>), so it signs the browser in itself. Without a preview
+// domain the request goes to the runner.
 func (s *Server) openRunnerPreview(w http.ResponseWriter, r *http.Request) {
 	name, tid := r.PathValue("name"), r.PathValue("tid")
 	if s.Previews == nil || s.Previews.Domain == "" || !s.Previews.IsRemote(tid+"-"+name) {

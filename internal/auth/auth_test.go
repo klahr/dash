@@ -367,7 +367,6 @@ func TestImportLegacySessions(t *testing.T) {
 
 func TestConfirmPassword(t *testing.T) {
 	a := newAuth(t, "u", "p")
-	a.PeerToken = "peer-secret"
 	r := signedIn(t, a, httptest.NewRequest("DELETE", "/api/projects/x", nil))
 	if err := a.ConfirmPassword(httptest.NewRequest("DELETE", "/api/projects/x", nil), "p"); err != ErrBadPassword {
 		t.Fatalf("no signed-in user: %v", err)
@@ -378,8 +377,8 @@ func TestConfirmPassword(t *testing.T) {
 	if err := a.ConfirmPassword(r, "nope"); err != ErrBadPassword {
 		t.Fatalf("wrong password: %v", err)
 	}
-	r.Header.Set("Authorization", "Bearer peer-secret")
-	if err := a.ConfirmPassword(r, ""); err != nil {
-		t.Fatalf("hub with the peer token: %v", err)
+	hub := httptest.NewRequest("DELETE", "/api/projects/x", nil)
+	if err := a.ConfirmPassword(hub.WithContext(WithHub(hub.Context())), ""); err != nil {
+		t.Fatalf("the hub over a runner's tunnel: %v", err)
 	}
 }

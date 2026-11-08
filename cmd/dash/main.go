@@ -107,12 +107,6 @@ func main() {
 	titleModel := flag.String("title-model", "haiku", "model for automatic titles and summaries")
 	hostname, _ := os.Hostname()
 	machine := flag.String("name", strings.ToLower(strings.Split(hostname, ".")[0]), "this computer's name in the dashboard")
-	var peers []peer.Peer
-	flag.Func("peer", "another computer running Dash to show in this dashboard, as name=https://host (repeatable; needs DASH_PEER_TOKEN on both)", func(s string) error {
-		p, err := peer.Parse(s)
-		peers = append(peers, p)
-		return err
-	})
 	publicURL := flag.String("public-url", "", "public HTTPS origin (e.g. https://dash.example.com) that serves /mcp with OAuth for claude.ai custom connectors; empty = off (or $DASH_PUBLIC_URL)")
 	previewDomain := flag.String("preview-domain", "", "serve each task's live preview at https://<task>.<this domain>, e.g. preview.dash.example.com; needs a wildcard DNS record and certificate (see docs/previews.md; or $DASH_PREVIEW_DOMAIN)")
 	orgDomain := flag.String("org-domain", "", "serve each organization at https://<slug>.<this domain>, e.g. dash.example.com; needs a wildcard DNS record and certificate (see docs/deploy.md; or $DASH_ORG_DOMAIN). Empty = off")
@@ -203,24 +197,6 @@ func main() {
 		slog.Error("sign-in lockout", "err", err)
 		os.Exit(1)
 	}
-	// A shared secret lets the computers in one dashboard call each other.
-	peerToken := os.Getenv("DASH_PEER_TOKEN")
-	if peerToken != "" && len(peerToken) < 24 {
-		slog.Error("DASH_PEER_TOKEN must be at least 24 characters (try: openssl rand -hex 24)")
-		os.Exit(1)
-	}
-	if len(peers) > 0 {
-		if runnerMode {
-			slog.Error("-peer is for the hub; a runner shows in the hub's dashboard by itself")
-			os.Exit(1)
-		}
-		slog.Warn("-peer is deprecated and will be removed in the next release: run `dash runner` on the other computers instead (see docs/several-computers.md)")
-	}
-	if len(peers) > 0 && peerToken == "" {
-		slog.Error("-peer needs DASH_PEER_TOKEN, set to the same value on every computer")
-		os.Exit(1)
-	}
-	authn.PeerToken = peerToken
 	if err := authn.ImportSessions(filepath.Join(*dataDir, "sessions.json")); err != nil {
 		slog.Warn("import sessions.json", "err", err)
 	}
@@ -357,7 +333,7 @@ func main() {
 		Editor:      *editor,
 		UploadRoot:  uploads,
 		CI:          builds,
-		Peers:       &peer.Hub{Self: *machine, Token: peerToken, Peers: peers},
+		Peers:       &peer.Hub{Self: *machine},
 		Titler:      titler,
 		Refiner:     small,
 		ProjectRoot: *projectRoot,
