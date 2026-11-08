@@ -203,6 +203,9 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	if req.Existing || req.Clone {
+		p = sv.adoptFavicon(p)
+	}
 	writeJSON(w, http.StatusCreated, p)
 }
 

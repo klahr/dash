@@ -48,29 +48,8 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: attach images (PNG, JPEG, GIF, WebP, SVG), PDFs or text files", errBadRequest))
 		return
 	}
-	id := store.NewID()
-	dir := filepath.Join(s.UploadRoot, id)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		writeErr(w, err)
-		return
-	}
-	if err := os.WriteFile(filepath.Join(dir, uploadOrgFile), []byte(strconv.FormatInt(sv.c.Org, 10)), 0o600); err != nil {
-		_ = os.RemoveAll(dir)
-		writeErr(w, err)
-		return
-	}
-	path := filepath.Join(dir, name)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	a, err := sv.saveUpload(name, typ, http.MaxBytesReader(w, r.Body, maxUpload))
 	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	n, err := io.Copy(f, http.MaxBytesReader(w, r.Body, maxUpload))
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		_ = os.RemoveAll(dir)
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
 			err = fmt.Errorf("%w: files can be at most %d MB", errBadRequest, maxUpload>>20)
@@ -78,7 +57,39 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, model.Attachment{ID: id, Name: name, Type: typ, Size: n, Path: path})
+	writeJSON(w, http.StatusCreated, a)
+}
+
+// saveUpload stores body as a new upload of the caller's org, named name
+// (already clean, of type typ).
+func (sv *service) saveUpload(name, typ string, body io.Reader) (model.Attachment, error) {
+	if sv.s.UploadRoot == "" {
+		return model.Attachment{}, errors.New("this Dash has no uploads directory")
+	}
+	id := store.NewID()
+	dir := filepath.Join(sv.s.UploadRoot, id)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return model.Attachment{}, err
+	}
+	if err := os.WriteFile(filepath.Join(dir, uploadOrgFile), []byte(strconv.FormatInt(sv.c.Org, 10)), 0o600); err != nil {
+		_ = os.RemoveAll(dir)
+		return model.Attachment{}, err
+	}
+	path := filepath.Join(dir, name)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		return model.Attachment{}, err
+	}
+	n, err := io.Copy(f, body)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		return model.Attachment{}, err
+	}
+	return model.Attachment{ID: id, Name: name, Type: typ, Size: n, Path: path}, nil
 }
 
 // getUpload serves an attachment back to the UI (thumbnails, downloads).
