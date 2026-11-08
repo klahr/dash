@@ -490,6 +490,14 @@ func TestHubFollowsTheRunnersMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Its pull request waits for checks: the hub's card says so.
+	open := &model.PullRequest{Number: 10, URL: "https://github.com/x/web/pull/10", State: "OPEN",
+		Checks: []model.PRCheck{{Name: "Go", State: "pending"}}, Status: "Waiting for checks: Go (0/1 passed)"}
+	report(t, fx.d, "laptop", TaskState{HubTodoID: td.ID, ID: "r1", Status: model.StatusMerging, PR: open})
+	if got := fx.get(t, td.ID); got.Status != model.StatusMerging || got.PR == nil || got.PR.Status != open.Status || len(got.PR.Checks) != 1 {
+		t.Fatalf("after the runner reported its pull request: %+v", got.PR)
+	}
+
 	report(t, fx.d, "laptop", TaskState{HubTodoID: td.ID, ID: "r1", Status: model.StatusMerged, MergedCommit: "c0ffee"})
 	got := fx.get(t, td.ID)
 	if got.Status != model.StatusMerged || got.MergedCommit != "c0ffee" || got.FinishedAt == nil || got.PR != nil {
