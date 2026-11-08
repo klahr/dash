@@ -4330,7 +4330,8 @@ function openSettings() {
   f.setup_command.value = p.setup_command || "";
   f.copy_files.value = (p.copy_files || []).join("\n");
   f.allowed_tools.value = (p.allowed_tools || []).join("\n");
-  f.chat_permission_mode.value = p.chat_permission_mode || "";
+  // Check the radio directly: setting RadioNodeList.value to "" doesn't check value="" in Chromium.
+  for (const r of f.chat_permission_mode) r.checked = r.value === (p.chat_permission_mode || "");
   f.review_prompt.value = p.review_prompt || "";
   f.review_prompt.placeholder = DEFAULT_REVIEW_PROMPT;
   f.task_instructions.value = p.task_instructions || "";
