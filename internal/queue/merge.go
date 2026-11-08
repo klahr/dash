@@ -63,6 +63,9 @@ type MergeQueue struct {
 	jobs    chan mergeItem
 	pending atomic.Int64
 	waiting sync.Map // todo ID → a goroutine watching for its files to be committed
+
+	queuedMu sync.Mutex
+	queued   map[string]int // todo ID → its merge jobs queued or running
 }
 
 type mergeItem struct {
@@ -96,14 +99,39 @@ func (m *MergeQueue) Resume() {
 }
 
 func (m *MergeQueue) push(it mergeItem) error {
+	m.track(it.job.TodoID, 1)
 	select {
 	case m.jobs <- it:
 		m.pending.Add(1)
 		m.publish("")
 		return nil
 	default:
+		m.track(it.job.TodoID, -1)
 		return ErrMergeQueueFull
 	}
+}
+
+// track counts a todo's merge jobs queued or running (id "" is other work).
+func (m *MergeQueue) track(id string, d int) {
+	if id == "" {
+		return
+	}
+	m.queuedMu.Lock()
+	defer m.queuedMu.Unlock()
+	if m.queued == nil {
+		m.queued = map[string]int{}
+	}
+	if m.queued[id] += d; m.queued[id] <= 0 {
+		delete(m.queued, id)
+	}
+}
+
+// inQueue reports a merge job for todo id queued or running: its branch may
+// not be pushed yet, so GitHub's view of its pull request is out of date.
+func (m *MergeQueue) inQueue(id string) bool {
+	m.queuedMu.Lock()
+	defer m.queuedMu.Unlock()
+	return m.queued[id] > 0
 }
 
 // Do runs fn on the merge worker, after the jobs already queued, and waits.
@@ -167,6 +195,7 @@ func (m *MergeQueue) Run(ctx context.Context) {
 					_, _ = m.Store.SetStatus(job.TodoID, model.StatusFailed, "merge: "+err.Error())
 				}
 			}
+			m.track(job.TodoID, -1)
 			m.pending.Add(-1)
 			m.publish("")
 		}
