@@ -23,13 +23,25 @@ Every project lives on runners, in one of two ways:
   Runners page. See [below](#projects-of-a-runners-own).
 - **A shared project**: the hub's project, a git remote that one or more runners are linked to.
   Each linked runner keeps its own clone of the remote (in `<-projects>/hub/`), any of them can run
-  its tasks, and work lands on the remote. It shows under **Shared** in the dashboard. Make one in
+  its tasks, and work lands on the remote. It shows in the dashboard under each runner it is linked
+  to, with a small "shared" mark (two people). Make one in
   **+ New project** with **Share it on the hub** ticked and an existing GitHub repository: it is
   linked to the runner picked as its computer. Link more runners in its **Settings → Runners**.
   See [below](#shared-projects-tasks-on-runners).
 
 A project that is only ever worked on from one computer is simplest as that runner's own; share
 it when several people's runners (or several of yours) should take its tasks.
+
+### The Projects list
+
+The dashboard's **Projects** list has one heading per runner, alphabetically, with every project
+that runner has a clone of under it: its own projects and the shared projects linked to it, by
+name. The dot before its name says whether the runner is online. A shared project linked to several
+runners is listed under each of them; they are all the same project (the same tasks), so picking
+any of its entries opens it and highlights them all, and <kbd>J</kbd>/<kbd>K</kbd> step over it
+once. A runner with no projects is listed while it is online, so you can add some to it, and left
+out while it is offline. Shared projects no runner is linked to come last, under **Needs a
+runner** (gone once every project has one).
 
 ## Add a runner
 
@@ -280,9 +292,10 @@ anything else; the hub reaches only tasks it sent, by its own ids.
 ## Projects of a runner's own
 
 A runner's own projects (those in its `-projects` that aren't linked from the hub) show in the
-hub's dashboard for platform admins, grouped by computer, and their tasks, git and commands run on
-that computer. Notifications come from all of them. The hub has no group of its own in the
-**Projects** list: its projects are the shared ones, listed under **Shared**.
+hub's dashboard for platform admins, under their runner's heading (with the shared projects linked
+to it), and their tasks, git and commands run on that computer. Notifications come from all of
+them. The hub has no heading of its own in the **Projects** list: its projects are the shared
+ones, listed under the runners linked to them (see [The Projects list](#the-projects-list)).
 
 ### Add projects from a runner's computer
 

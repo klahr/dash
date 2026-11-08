@@ -2,6 +2,7 @@
 // /ws/chat for streaming answers, /ws/proc/:id for terminals.
 import { mdEditor, codeEditor, drafts, renderMarkdown, vimOn, setVim, invisiblesOn, setInvisibles } from "./editor.js";
 import { drawSurface, COLORS } from "./draw.js";
+import { projectGroups as groupProjects, uniqueProjects, isShared, projectRunnerNames } from "./groups.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 // The server's LC_TIME, since browsers format times by their UI language instead.
@@ -978,7 +979,7 @@ const projectStatus = (p) => {
 const seen = new Map(); // "machine/todo" → last status
 function elsewhere(ev, m) {
   const p = (state.projects || []).find((x) => x.id === ev.project_id && x.machine === m.name);
-  const where = p ? (multi() ? `${p.name} on ${m.name}` : p.name) : m.name;
+  const where = p ? (grouped() ? `${p.name} on ${projectWhere(p)}` : p.name) : m.name;
   if (ev.type === "todo.updated") {
     const key = `${m.name}/${ev.todo_id}`;
     const prev = seen.get(key);
@@ -1058,7 +1059,7 @@ async function loadPerms() {
 // phones it would crowd the project name, and the menu lists it anyway.
 function renderProjectBranch() {
   const p = state.project, el = $("#project-branch");
-  el.textContent = p && desktop.matches && multi() ? p.machine : "";
+  el.textContent = p && desktop.matches && grouped() ? projectWhere(p) : "";
   el.hidden = !el.textContent;
 }
 
@@ -1253,31 +1254,39 @@ function renderSideProjects() {
       },
       icon,
       h("span", { class: "side-project-name" }, p.name),
+      sharedMark(p),
       needsRunner(p) ? h("span", { class: "side-project-branch warn", title: "No runner is linked to it: link one in Project settings → Runners" }, "needs a runner")
         : cur && baseBranch(p) ? h("span", { class: "side-project-branch" }, baseBranch(p)) : null));
   };
-  const items = !multi() ? state.projects.map(item) : projectGroups().flatMap((g) => [
-    h("li", { class: "side-machine", title: g.title },
-      g.machine ? h("span", { class: `machine-dot ${g.machine.ok ? "ok" : "down"}`, "aria-hidden": "true" }) : null, g.name),
+  const items = !grouped() ? state.projects.map(item) : projectGroups().flatMap((g) => [
+    h("li", { class: `side-machine${g.needsRunner ? " needs-runner" : ""}`, title: g.title, "data-group": g.key }, groupHead(g)),
     ...g.projects.map(item),
   ]);
   $("#side-project-list").replaceChildren(...(items.length ? items : [h("li", { class: "machine-empty" }, "No projects yet")]));
 }
 
-// projectGroups are the PROJECTS list's groups: the hub's shared projects
-// (it has no projects of its own, so no group of its own), then each
-// runner's own.
-function projectGroups() {
-  const groups = [];
-  for (const m of state.machines || []) {
-    const projects = state.projects.filter((p) => p.machine === m.name);
-    if (m.local && isHub()) {
-      if (projects.length) groups.push({ name: "Shared", title: "Projects shared on the hub, run by the runners linked to them", projects });
-      continue;
-    }
-    groups.push({ name: m.name, machine: m, title: m.ok ? "" : m.error || "unreachable", projects });
-  }
-  return groups;
+// projectGroups are the PROJECTS list's groups (see groups.js): on a hub,
+// one per runner with every project it has a clone of, then the shared
+// projects that need a runner. A shared project can be in several groups.
+function projectGroups() { return groupProjects({ machines: state.machines || [], runners: state.runners ?? null, projects: state.projects || [] }); }
+// The list is grouped on a hub (by runner) or with several computers.
+function grouped() { return isHub() || multi(); }
+// A group's heading: the runner's online dot, then its name.
+const groupHead = (g) => [
+  g.machine ? h("span", { class: `machine-dot ${g.machine.ok ? "ok" : "down"}`, "aria-hidden": "true" }) : null,
+  h("span", { class: "side-machine-name" }, g.name)];
+// A quiet mark on the hub's shared projects, to tell them from a runner's own.
+function sharedMark(p) {
+  if (!isHub() || !isShared(p)) return null;
+  const names = projectRunnerNames(p, state.runners);
+  const title = names.length ? `Shared project, cloned on ${names.join(", ")}` : "Shared project";
+  return h("span", { class: "shared-mark", title, "aria-label": "shared" }, ico("users"));
+}
+// Where p is worked on, for labels: its runner, or a shared project's runners.
+function projectWhere(p) {
+  if (!isHub() || !isShared(p)) return p.machine;
+  const names = projectRunnerNames(p, state.runners);
+  return names.length ? names.join(", ") : "needs a runner";
 }
 
 // needsRunner reports whether p is a hub project no runner is linked to
@@ -1379,7 +1388,8 @@ function openProjects() {
 }
 // J/K: the next/previous project in sidebar order, wrapping around.
 function stepProject(d) {
-  const list = !multi() ? state.projects : projectGroups().flatMap((g) => g.projects);
+  // A shared project listed under several runners is one stop.
+  const list = !grouped() ? state.projects : uniqueProjects(projectGroups());
   if (!list.length) return;
   const i = list.findIndex((p) => projectKey(p) === projectKey(state.project));
   return selectProject(list[(((i + d) % list.length) + list.length) % list.length]);
@@ -1396,11 +1406,10 @@ function setPicker(open) {
     return h("button", {
       type: "button", role: "menuitem", title: p.path, "aria-current": cur ? "true" : "false",
       onclick: attempt(async () => { setPicker(false); if (!cur) await selectProject(p); }),
-    }, h("span", { class: "project-name" }, projectDot(p), p.name), h("span", { class: "project-branch" }, baseBranch(p)));
+    }, h("span", { class: "project-name" }, projectDot(p), p.name, sharedMark(p)), h("span", { class: "project-branch" }, baseBranch(p)));
   };
-  const items = !multi() ? state.projects.map(item) : projectGroups().flatMap((g) => [
-    h("div", { class: "side-machine", title: g.title },
-      g.machine ? h("span", { class: `machine-dot ${g.machine.ok ? "ok" : "down"}`, "aria-hidden": "true" }) : null, g.name),
+  const items = !grouped() ? state.projects.map(item) : projectGroups().flatMap((g) => [
+    h("div", { class: `side-machine${g.needsRunner ? " needs-runner" : ""}`, title: g.title, "data-group": g.key }, groupHead(g)),
     ...g.projects.map(item)]);
   list.replaceChildren(...(state.projects.length ? items : [h("div", { class: "machine-empty" }, "No projects yet")]),
     h("button", { type: "button", role: "menuitem", class: "picker-new", onclick: () => { setPicker(false); openNewProject(); } }, "+ New project"),
@@ -2072,7 +2081,7 @@ function openTodoForm(t = null, { pick = false } = {}) {
   $("#todo-project-field").hidden = !pickProject;
   if (pickProject) {
     f.project.replaceChildren(...state.projects.map((p) =>
-      h("option", { value: projectKey(p) }, multi() ? `${p.name} · ${p.machine}` : p.name)));
+      h("option", { value: projectKey(p) }, grouped() ? `${p.name} · ${projectWhere(p)}` : p.name)));
     f.project.value = projectKey(state.project);
   }
   $("#todo-sheet-title").textContent = t ? "Edit task" : "New task";
@@ -3366,7 +3375,8 @@ async function loadRunners() {
   }
   $("#runners-open").hidden = state.runners === null;
   // The board waits for the runners, and shows the welcome screen until there's one.
-  if (state.projectsLoaded) renderBoard();
+  // The projects list groups by runner, so it changes with them too.
+  if (state.projectsLoaded) { renderBoard(); renderSideProjects(); }
   return state.runners;
 }
 const runnerName = (id) => state.runners?.find((r) => r.id === id)?.name || "its runner";
@@ -5403,7 +5413,7 @@ function renderChatPane() {
     h("div", { class: "chat-pane-tab" }, tabBtn("project", "This project", [state.project ? projectIcon(state.project) : ico("repo")],
       state.project ? `${state.project.name} (follows the project picker)` : "Follows the project picker")),
     ...keptTabs().map((p) => h("div", { class: "chat-pane-tab" },
-      tabBtn(projectKey(p), p.name, [projectIcon(p)], multi() ? `${p.name} · ${p.machine}` : p.name),
+      tabBtn(projectKey(p), p.name, [projectIcon(p)], grouped() ? `${p.name} · ${projectWhere(p)}` : p.name),
       ib({ type: "button", class: "icon-btn chat-tab-close", "aria-label": `Close the ${p.name} chat`, title: "Close this tab", onclick: () => {
         pane.tabs = pane.tabs.filter((k) => k !== projectKey(p));
         savePane();
@@ -7336,8 +7346,8 @@ function paletteCommands() {
 
 function paletteProjects() {
   return state.projects.filter((p) => projectKey(p) !== projectKey(state.project)).map((p) => ({
-    kind: "Project", label: p.name, icon: "repo", hint: multi() ? p.machine : baseBranch(p),
-    text: `${p.name} ${p.machine} ${p.path}`, run: () => selectProject(p),
+    kind: "Project", label: p.name, icon: "repo", hint: grouped() ? projectWhere(p) : baseBranch(p),
+    text: `${p.name} ${p.machine} ${projectWhere(p)} ${p.path}`, run: () => selectProject(p),
   }));
 }
 
