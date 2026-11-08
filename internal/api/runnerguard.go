@@ -81,6 +81,8 @@ func init() {
 		"DELETE /api/hub/tasks/{htid}", "POST /api/hub/tasks/{htid}/approve", "POST /api/hub/tasks/{htid}/cancel",
 		"POST /api/hub/tasks/{htid}/revert",
 		"GET /api/hub/tasks/{htid}/diff", "GET /api/hub/tasks/{htid}/log", "GET /api/hub/tasks/{htid}/events",
+		// The Claude part of the hub's scans of linked projects; checked in hubtasks.go.
+		"GET /ws/hub/scan",
 
 		// Claude's short calls (titles, summaries, clean-up) for the
 		// runner's owner; checked in claude.go.

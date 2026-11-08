@@ -87,7 +87,7 @@ func main() {
 	dataDir := flag.String("data", filepath.Join(home, ".local", "share", "dash"), "state, logs and worktrees")
 	projectRoot := flag.String("projects", "", "where new projects are created (default $DASH_PROJECTS, else ~/dash-projects)")
 	parallel := flag.Int("parallel", 3, "max tasks executed concurrently")
-	claudeBin := flag.String("claude", "claude", "Claude Code binary used to execute tasks")
+	claudeBin := flag.String("claude", "claude", "Claude Code binary used to execute tasks (a hub that doesn't run Claude never uses it; see -hub-claude)")
 	claudeArgs := flag.String("claude-args", "--permission-mode acceptEdits --allowedTools Bash",
 		"extra flags for `claude -p` (space separated), e.g. --allowedTools / --model")
 	signCommits := flag.Bool("sign-commits", false, "GPG/SSH-sign commits Dash makes (needs a non-interactive signing agent)")
@@ -143,7 +143,7 @@ func main() {
 	pricingURL := flag.String("pricing-url", "", "where the landing page's \"see pricing\" links to when -team-price isn't set (or $DASH_PRICING_URL)")
 	hubTasks := flag.String("hub-tasks", "auto", "whether the hub runs tasks of projects not linked to a runner itself: on, off, or auto (on until a runner is registered); see docs/several-computers.md")
 	hubClaude := flag.String("hub-claude", "auto", "whether the hub runs Claude itself (general chat, titles, summaries, clean-up, its own tasks and scans): on, off, or auto (on while it has one user and no runner). "+
-		"Off: it never runs `claude` nor reads ANTHROPIC_API_KEY, and each user's Claude runs on their own runner; see docs/several-computers.md")
+		"Off: it needs no claude install, never runs `claude` nor reads ANTHROPIC_API_KEY; tasks and scans run on the projects' runners and chats on each user's own; see docs/several-computers.md")
 	runnerGrace := flag.Duration("runner-grace", dispatch.DefaultGrace, "fail the tasks of a runner that has been offline this long, ready to be queued again (hub)")
 	var hubServer, regCode *string
 	var offlineGrace *time.Duration
@@ -474,6 +474,9 @@ func main() {
 		}
 		runners.OnState, runners.OnRevoke, runners.OnReport = d.State, d.Revoked, d.Report
 		todos.Remote, apiSrv.Dispatch = d, d
+		// While the hub doesn't run Claude, scans run their Claude part on
+		// a runner linked to the project (the hub keeps the runs and issues).
+		scans.Remote = d
 		local, err := hubClaudePolicy(*hubClaude, runners, st.Accounts())
 		if err != nil {
 			slog.Error("-hub-claude", "err", err)
@@ -495,7 +498,7 @@ func main() {
 			os.Exit(1)
 		}
 		if !local() {
-			slog.Info("this hub doesn't run Claude: chat, titles and the clean-up run on each user's own runner")
+			slog.Info("this hub doesn't run Claude: tasks and scans run on the projects' runners; chat, titles and the clean-up on each user's own runner")
 		}
 		d.Start()
 	}

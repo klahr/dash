@@ -9,11 +9,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
+	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/scan"
 	"github.com/klahr/dash/internal/store"
 )
 
@@ -26,7 +30,9 @@ import (
 //     a folder it picks itself;
 //   - a task names a project linked that way (and still inside the
 //     projects root); anything else is refused and logged;
-//   - the hub reaches only tasks it sent, by its own ids.
+//   - the hub reaches only tasks it sent, by its own ids;
+//   - a scan names a linked project; its flags are checked (scan.Job.Check)
+//     and its worktree is a throwaway one under the runner's scans folder.
 
 func (s *Server) hubTaskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/hub/projects/{hpid}", s.hubLink)
@@ -39,6 +45,7 @@ func (s *Server) hubTaskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/diff", s.hubTaskAction("diff"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/log", s.hubTaskAction("log"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/events", s.hubTaskAction("events"))
+	mux.HandleFunc("GET "+dispatch.ScanPath, s.hubScan)
 }
 
 var errNotLinked = errors.New("that project isn't linked to this runner")
@@ -379,4 +386,83 @@ func (s *Server) followWorkBranch(ctx context.Context, sv *service, p model.Proj
 	}
 	_, err := sv.data.UpdateProject(p.ID, func(x *model.Project) error { x.WorkBranch = branch; return nil })
 	return err
+}
+
+// hubScan handles GET /ws/hub/scan: the Claude part of one of the hub's
+// scan runs, in this runner's clone of a project the hub linked (see
+// scan.Job). The hub keeps the run, its log and the issues it files; this
+// side streams back what it scans and Claude's progress, and stops when the
+// hub closes the socket.
+func (s *Server) hubScan(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.fromHub(w, r)
+	if !ok {
+		return
+	}
+	if s.Scans == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "this runner doesn't run scans"})
+		return
+	}
+	conn, err := hub.Upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	var wmu sync.Mutex
+	send := func(m scan.Message) {
+		wmu.Lock()
+		defer wmu.Unlock()
+		_ = conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
+		_ = conn.WriteJSON(m)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	var req scan.Request
+	if err := conn.ReadJSON(&req); err != nil {
+		return
+	}
+	_ = conn.SetReadDeadline(time.Time{})
+	p, ok := sv.hubProject(req.Project)
+	if !ok {
+		slog.Warn("runner: refused a scan of a project not linked to it", "project", req.Project)
+		send(scan.Message{Error: errNotLinked.Error()})
+		return
+	}
+	if err := req.Job.Check(); err != nil {
+		send(scan.Message{Error: err.Error()})
+		return
+	}
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	go func() {
+		// The hub closing the socket stops the scan.
+		defer cancel()
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+	// Scan origin's default branch as it is now: this clone's own branch
+	// moves only when a task lands here.
+	job := req.Job
+	err = s.withRemoteLock(ctx, p, func() error {
+		fctx, cancel := context.WithTimeout(ctx, branchFetchTimeout)
+		defer cancel()
+		return s.Git.FetchBranch(fctx, p.ID, p.Path, p.DefaultBranch, false)
+	})
+	if err == nil && s.Git.RemoteHasBranch(ctx, p.ID, p.Path, p.DefaultBranch) {
+		job.Ref = "refs/remotes/origin/" + p.DefaultBranch
+	} else if err != nil {
+		send(scan.Message{Log: "⚠ couldn't fetch " + p.DefaultBranch + " from origin, scanning this runner's copy: " + err.Error()})
+	}
+	slog.Info("runner: scan for the hub", "project", p.Name, "scan", job.Template.Name)
+	out, err := s.Scans.Work(ctx, p, job, scan.Hooks{
+		Log:    func(l string) { send(scan.Message{Log: l}) },
+		Target: func(o scan.Outcome) { send(scan.Message{Target: &o}) },
+		Event:  func(e model.RunEvent) { send(scan.Message{Event: &e}) },
+	})
+	if err != nil {
+		send(scan.Message{Error: err.Error(), Done: &out})
+		return
+	}
+	send(scan.Message{Done: &out})
 }

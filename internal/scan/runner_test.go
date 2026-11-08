@@ -474,3 +474,27 @@ func TestRunTimeout(t *testing.T) {
 		t.Fatalf("log: %v %q", err, b)
 	}
 }
+
+// A runner refuses a job whose settings would turn into claude flags.
+func TestJobCheck(t *testing.T) {
+	ok := Job{Template: Template{Name: "security", Scope: model.ScopeRepo, Model: "opus"}, Tools: []string{"Read", "Bash(go test:*)"}}
+	if err := ok.Check(); err != nil {
+		t.Fatalf("good job refused: %v", err)
+	}
+	for name, mut := range map[string]func(*Job){
+		"name":   func(j *Job) { j.Template.Name = "../x" },
+		"scope":  func(j *Job) { j.Template.Scope = "everything" },
+		"model":  func(j *Job) { j.Template.Model = "--dangerously-skip-permissions" },
+		"effort": func(j *Job) { j.Template.Effort = "-x" },
+		"tool":   func(j *Job) { j.Tools = append(j.Tools, "--add-dir=/") },
+		"empty":  func(j *Job) { j.Tools = append(j.Tools, " ") },
+		"commit": func(j *Job) { j.LastCommit = "--output=/tmp/x" },
+	} {
+		j := ok
+		j.Tools = append([]string(nil), ok.Tools...)
+		mut(&j)
+		if j.Check() == nil {
+			t.Errorf("%s: accepted %+v", name, j)
+		}
+	}
+}

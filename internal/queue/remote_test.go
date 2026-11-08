@@ -345,3 +345,98 @@ func TestCleanupRemovesOrphansAndStaleWorktrees(t *testing.T) {
 		t.Fatalf("dash branches left: %q", b)
 	}
 }
+
+// waitPR waits for todo id to have a pull request in status want.
+func waitPR(t *testing.T, h *harness, id string, want model.TodoStatus, ok func(model.Todo) bool) model.Todo {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		x, _ := h.st.GetTodo(id)
+		if x.PR != nil && x.Status == want && (ok == nil || ok(x)) {
+			return x
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("want status %s with a PR, got %s (error %q, fixes %d, runs %d)", want, x.Status, x.Error, x.AutoFixes, x.Runs)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// A fix pass that makes no new commit pushes the same head again. Rather
+// than wait in merging forever for a head that never changes, the task
+// fails with the failing checks named, and a merge done by hand on GitHub
+// is still noticed.
+func TestPullRequestHandledHeadStillFailing(t *testing.T) {
+	// Claude writes the same file every run: the fix pass changes nothing.
+	h := newHarness(t, &fakeExec{fn: writeFile("", "same.txt")}, model.Project{Name: "p", MaxAutoFixes: 2})
+	h.addOrigin(false, model.MergePR)
+	bin, state := fakeGh(t, t.TempDir())
+	h.git.GhBin = bin
+	write(t, filepath.Dir(state), "pr.json", `{"state":"OPEN","mergeable":"UNKNOWN","headRefOid":"","statusCheckRollup":[]}`)
+
+	td := h.waitFor(h.add("ci").ID, model.StatusReview)
+	h.approve(td.ID)
+	x := waitPR(t, h, td.ID, model.StatusMerging, nil)
+	head := gitRun(t, x.Worktree.Path, "rev-parse", "HEAD")
+	failing := `{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"` + head + `","statusCheckRollup":[
+		{"name":"build","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://example.com/x"}]}`
+	write(t, filepath.Dir(state), "pr.json", failing)
+
+	h.merges.PollPRs(context.Background())
+	x = waitPR(t, h, td.ID, model.StatusMerging, func(x model.Todo) bool { return x.Runs == 2 })
+	// While the merge job pushes the branch again, GitHub's view is stale:
+	// polling then must not judge it.
+	for deadline := time.Now().Add(10 * time.Second); h.merges.inQueue(td.ID); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the merge job never finished")
+		}
+	}
+	if got := gitRun(t, x.Worktree.Path, "rev-parse", "HEAD"); got != head {
+		t.Fatalf("the fix pass was meant to make no commit, head moved %s → %s", head, got)
+	}
+
+	h.merges.PollPRs(context.Background())
+	x = waitPR(t, h, td.ID, model.StatusFailed, nil)
+	if !strings.Contains(x.Error, "build") || !strings.Contains(x.Error, "#7") || !strings.Contains(x.Error, "no new commit") {
+		t.Fatalf("want an error naming the PR and the failing check, got %q", x.Error)
+	}
+	if x.AutoFixes != 1 || x.Runs != 2 {
+		t.Fatalf("want one fix pass, got fixes %d runs %d", x.AutoFixes, x.Runs)
+	}
+
+	// Polling again changes nothing…
+	h.merges.PollPRs(context.Background())
+	if y, _ := h.st.GetTodo(td.ID); y.Status != model.StatusFailed || y.Runs != 2 {
+		t.Fatalf("want it to stay failed, got %s runs %d", y.Status, y.Runs)
+	}
+	// …until someone merges it on GitHub.
+	write(t, filepath.Dir(state), "pr.json", `{"state":"MERGED","mergeCommit":{"oid":"`+head+`"}}`)
+	h.merges.PollPRs(context.Background())
+	if y := h.waitFor(td.ID, model.StatusMerged); y.Error != "" || y.PR.State != "MERGED" {
+		t.Fatalf("want merged without an error, got %q %+v", y.Error, y.PR)
+	}
+}
+
+// A failing CLA check isn't sent to Claude as "fix the code": the task goes
+// to review saying what blocks the merge.
+func TestPullRequestCLAFailureGoesToReview(t *testing.T) {
+	h := newHarness(t, &fakeExec{fn: writeFile("", "cla.txt")}, model.Project{Name: "p", MaxAutoFixes: 2})
+	h.addOrigin(false, model.MergePR)
+	bin, state := fakeGh(t, t.TempDir())
+	h.git.GhBin = bin
+	write(t, filepath.Dir(state), "pr.json", `{"state":"OPEN","mergeable":"UNKNOWN","headRefOid":"","statusCheckRollup":[]}`)
+
+	td := h.waitFor(h.add("cla").ID, model.StatusReview)
+	h.approve(td.ID)
+	x := waitPR(t, h, td.ID, model.StatusMerging, nil)
+	head := gitRun(t, x.Worktree.Path, "rev-parse", "HEAD")
+	write(t, filepath.Dir(state), "pr.json", `{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"`+head+`","statusCheckRollup":[
+		{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"},
+		{"context":"license/cla","state":"FAILURE","targetUrl":"https://cla.example.com"}]}`)
+
+	h.merges.PollPRs(context.Background())
+	x = waitPR(t, h, td.ID, model.StatusReview, nil)
+	if x.Runs != 1 || x.AutoFixes != 0 || !strings.Contains(x.Error, "license/cla") {
+		t.Fatalf("want review naming the CLA check with no fix pass, got runs %d fixes %d error %q", x.Runs, x.AutoFixes, x.Error)
+	}
+}
