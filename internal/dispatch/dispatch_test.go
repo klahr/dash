@@ -389,3 +389,56 @@ func TestStateOf(t *testing.T) {
 		t.Error("a session without a worktree can't be continued")
 	}
 }
+
+type recorder struct {
+	mu  sync.Mutex
+	evs []model.Event
+}
+
+func (r *recorder) Publish(ev model.Event) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.evs = append(r.evs, ev)
+}
+
+// Claude's progress on a runner reaches the hub's board: the runner's
+// reporter keeps a hub task's output for its next report, and the hub
+// streams it to its dashboards as the hub's task's events.
+func TestRunnerOutputReachesTheHubsBoard(t *testing.T) {
+	// The runner's side.
+	fx := newFixture(t)
+	rp := fx.project(t, fx.orgA)
+	mine := fx.todo(t, rp, nil) // the runner's own task: not reported
+	hubs := fx.todo(t, rp, func(x *model.Todo) { x.Status, x.HubTodoID = model.StatusInProgress, "h1" })
+	rep := &Reporter{Store: fx.st}
+	rep.Observe(model.Event{Type: model.EvTodoOutput, TodoID: mine.ID, Data: "local work"})
+	rep.Observe(model.Event{Type: model.EvTodoEvent, TodoID: hubs.ID, Data: model.RunEvent{Kind: "text", Text: "Reading the code"}})
+	rep.Observe(model.Event{Type: model.EvTodoOutput, TodoID: hubs.ID, Data: "first"})
+	rep.Observe(model.Event{Type: model.EvTodoOutput, TodoID: hubs.ID, Data: "Reading the code"})
+	r := rep.Build(time.Now())
+	if len(r.Tasks) != 1 || r.Tasks[0].Output != "Reading the code" || len(r.Tasks[0].Events) != 1 {
+		t.Fatalf("report: %+v", r.Tasks)
+	}
+	if again := rep.Build(time.Now()); again.Tasks[0].Output != "" || len(again.Tasks[0].Events) != 0 {
+		t.Fatalf("output sent twice: %+v", again.Tasks[0])
+	}
+
+	// The hub's side.
+	pub := &recorder{}
+	fx.d.Pub = pub
+	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
+	fx.fleet.set(runnerOf("desk", fx.orgA, true))
+	p := fx.project(t, fx.orgA, "laptop", "desk")
+	td := fx.todo(t, p, func(x *model.Todo) { x.Status, x.Runner, x.RemoteID = model.StatusInProgress, "laptop", "r1" })
+	ts := r.Tasks[0]
+	ts.HubTodoID, ts.ID = td.ID, "r1"
+	report(t, fx.d, "desk", ts) // not desk's task
+	if len(pub.evs) != 0 {
+		t.Fatalf("another runner's output was shown: %+v", pub.evs)
+	}
+	report(t, fx.d, "laptop", ts)
+	if len(pub.evs) != 2 || pub.evs[0].Type != model.EvTodoEvent || pub.evs[1].Type != model.EvTodoOutput ||
+		pub.evs[1].Data != "Reading the code" || pub.evs[1].TodoID != td.ID || pub.evs[1].ProjectID != p.ID {
+		t.Fatalf("published: %+v", pub.evs)
+	}
+}
