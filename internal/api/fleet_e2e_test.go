@@ -53,7 +53,7 @@ func TestHubDispatchesToARunnerEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	creds, err := tunnel.Register(ctx, srv.URL, code, "laptop")
+	creds, err := tunnel.Register(ctx, srv.URL, code, "laptop", "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -90,7 +90,7 @@ func newClaudeFleet(t *testing.T) *claudeFleet {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	if f.creds, err = tunnel.Register(ctx, srv.URL, code, "laptop"); err != nil {
+	if f.creds, err = tunnel.Register(ctx, srv.URL, code, "laptop", ""); err != nil {
 		t.Fatal(err)
 	}
 	if f.creds.UserID != owner.User {

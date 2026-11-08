@@ -182,8 +182,37 @@ func TestRegistrationNamesTakenByTheHub(t *testing.T) {
 	acc, owner := storetest.Accounts(t)
 	h := &Hub{Taken: func(n string) bool { return n == "home" }, Accounts: acc}
 	code, _, _ := h.NewCode(owner)
-	if _, _, err := h.Register(code, "home"); !errors.Is(err, ErrNameTaken) {
+	if _, _, err := h.Register(code, "home"); !errors.Is(err, ErrNameHub) {
 		t.Fatalf("hub's own name: %v", err)
+	}
+}
+
+func TestSameComputerRegistersAgain(t *testing.T) {
+	th := newTestHub(t)
+	old := th.register(t, "work")
+
+	// Another computer can't take the name.
+	code, _, _ := th.NewCode(th.owner)
+	if _, err := Register(context.Background(), th.srv.URL, code, "work", "dr_not-a-token"); err == nil || !strings.Contains(err.Error(), ErrNameTaken.Error()) {
+		t.Fatalf("other computer: %v", err)
+	}
+
+	// The same one, showing its old token, replaces its old registration.
+	again, err := Register(context.Background(), th.srv.URL, code, "work", old.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ID == old.ID {
+		t.Fatal("same id again")
+	}
+	if rs := th.List(); len(rs) != 1 || rs[0].ID != again.ID {
+		t.Fatalf("runners after re-registering: %+v", rs)
+	}
+	if _, ok := th.authenticate(old.Token); ok {
+		t.Fatal("old token still works")
+	}
+	if _, ok := th.authenticate(again.Token); !ok {
+		t.Fatal("new token doesn't work")
 	}
 }
 
@@ -232,7 +261,7 @@ func newTestHub(t *testing.T) testHub {
 func (th testHub) register(t *testing.T, name string) Credentials {
 	t.Helper()
 	code, _, _ := th.NewCode(th.owner)
-	c, err := Register(context.Background(), th.srv.URL, code, name)
+	c, err := Register(context.Background(), th.srv.URL, code, name, "")
 	if err != nil {
 		t.Fatal(err)
 	}

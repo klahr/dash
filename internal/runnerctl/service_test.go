@@ -191,7 +191,7 @@ func newTestCLI(t *testing.T) *testCLI {
 				return json.Marshal(map[string]any{"loggedIn": tc.loggedIn, "email": "me@example.com"})
 			},
 		},
-		Register: func(ctx context.Context, server, code, name string) (tunnel.Credentials, error) {
+		Register: func(ctx context.Context, server, code, name, prev string) (tunnel.Credentials, error) {
 			tc.registers++
 			if code != "ABCD-EFGH" {
 				return tunnel.Credentials{}, errors.New("unknown or expired registration code")

@@ -28,7 +28,7 @@ type CLI struct {
 	Hostname   string
 	Out, Err   io.Writer
 	Preflight  Preflight
-	Register   func(ctx context.Context, server, code, name string) (tunnel.Credentials, error)
+	Register   func(ctx context.Context, server, code, name, prev string) (tunnel.Credentials, error)
 	Executable func() (string, error)
 	// Service adjusts the service a command manages (tests: a fake Run).
 	Service func(*Service)
@@ -163,7 +163,11 @@ func (c *CLI) setup(ctx context.Context, args []string) error {
 			n = c.Hostname
 		}
 		keep := creds.Projects
-		if creds, err = c.Register(ctx, u.String(), *code, n); err != nil {
+		var prev string // registered with this hub before: replace that runner
+		if registered && creds.Server == u.String() {
+			prev = creds.Token
+		}
+		if creds, err = c.Register(ctx, u.String(), *code, n, prev); err != nil {
 			return err
 		}
 		creds.Projects = keep

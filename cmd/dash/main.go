@@ -807,11 +807,16 @@ func runnerCredentials(ctx context.Context, path, server, code, name string) (tu
 		if server == "" {
 			return tunnel.Credentials{}, errors.New("--code needs --server, the hub's URL")
 		}
-		c, err := tunnel.Register(ctx, server, code, name)
+		old, oldErr := tunnel.LoadCredentials(path)
+		var prev string // registered with this hub before: replace that runner
+		if u, err := tunnel.CheckServer(server); oldErr == nil && err == nil && old.Server == u.String() {
+			prev = old.Token
+		}
+		c, err := tunnel.Register(ctx, server, code, name, prev)
 		if err != nil {
 			return c, err
 		}
-		if old, err := tunnel.LoadCredentials(path); err == nil {
+		if oldErr == nil {
 			c.Projects = old.Projects
 		}
 		if err := tunnel.SaveCredentials(path, c); err != nil {

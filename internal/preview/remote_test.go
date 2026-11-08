@@ -96,7 +96,7 @@ func remoteSetup(t *testing.T) (hubSrv *httptest.Server, hub *Manager, runner *M
 	t.Cleanup(hubSrv.Close)
 
 	code, _, _ := th.NewCode(owner)
-	creds, err := tunnel.Register(context.Background(), hubSrv.URL, code, "work")
+	creds, err := tunnel.Register(context.Background(), hubSrv.URL, code, "work", "")
 	if err != nil {
 		t.Fatal(err)
 	}

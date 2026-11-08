@@ -56,13 +56,14 @@ func CheckServer(raw string) (*url.URL, error) {
 }
 
 // Register swaps a registration code from the hub's Runners page for this
-// runner's credentials.
-func Register(ctx context.Context, server, code, name string) (Credentials, error) {
+// runner's credentials. prev is the token this computer was registered with before, if any: the
+// hub then replaces that runner instead of refusing its name.
+func Register(ctx context.Context, server, code, name, prev string) (Credentials, error) {
 	u, err := CheckServer(server)
 	if err != nil {
 		return Credentials{}, err
 	}
-	body, _ := json.Marshal(map[string]string{"code": code, "name": name})
+	body, _ := json.Marshal(map[string]string{"code": code, "name": name, "previous": prev})
 	req, err := http.NewRequestWithContext(ctx, "POST", u.String()+"/runner/register", bytes.NewReader(body))
 	if err != nil {
 		return Credentials{}, err

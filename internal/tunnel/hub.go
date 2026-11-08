@@ -52,7 +52,8 @@ var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 var (
 	ErrBadCode     = errors.New("unknown or expired registration code")
 	ErrTooManyBad  = errors.New("too many wrong registration codes, try again later")
-	ErrNameTaken   = errors.New("that name is already used by another computer; revoke it first or pick another -name")
+	ErrNameTaken   = errors.New("that name is already used by another computer; revoke it first or pick another --name")
+	ErrNameHub     = errors.New("that name is the hub's own computer or one of its peers; pick another --name")
 	ErrBadName     = errors.New("runner name: use lowercase letters, digits and dashes (at most 32)")
 	ErrUnknownName = errors.New("no such runner")
 	ErrNoOwner     = errors.New("a registration code is made by a signed-in user, for their organization")
@@ -284,12 +285,28 @@ func (h *Hub) pruneCodesLocked(now time.Time) {
 // Register swaps a registration code for a new runner's id and token. The
 // token is shown only now; the hub keeps its hash.
 func (h *Hub) Register(code, name string) (id, token string, err error) {
-	id, token, _, err = h.register(code, name)
+	id, token, _, err = h.register(code, name, "")
 	return id, token, err
 }
 
-func (h *Hub) register(code, name string) (id, token string, owner model.Owner, err error) {
+// register is Register for a computer that may have registered before: prev
+// is the runner token it was given then (optional). If it is still valid,
+// the new registration replaces that runner, and may take its name.
+func (h *Hub) register(code, name, prev string) (id, token string, owner model.Owner, err error) {
 	name = strings.ToLower(strings.TrimSpace(name))
+	var prevID string
+	if prev != "" {
+		if old, ok := h.authenticate(prev); ok {
+			prevID = old.ID
+		}
+	}
+	defer func() { // runs after the deferred Unlock below
+		if err == nil && prevID != "" {
+			if rerr := h.Revoke(prevID); rerr != nil && !errors.Is(rerr, ErrUnknownName) {
+				slog.Error("retire re-registered runner", "id", prevID, "err", rerr)
+			}
+		}
+	}()
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	now := h.clock()
@@ -309,7 +326,10 @@ func (h *Hub) register(code, name string) (id, token string, owner model.Owner, 
 	if !nameRe.MatchString(name) {
 		return "", "", model.Owner{}, ErrBadName // the code stays usable with a better name
 	}
-	if h.nameTakenLocked(name) {
+	if h.Taken != nil && h.Taken(name) {
+		return "", "", model.Owner{}, ErrNameHub
+	}
+	if slices.ContainsFunc(h.runners, func(r *record) bool { return r.Name == name && r.ID != prevID }) {
 		return "", "", model.Owner{}, ErrNameTaken
 	}
 	owner = h.codes[i].Owner
@@ -329,13 +349,6 @@ func (h *Hub) register(code, name string) (id, token string, owner model.Owner, 
 	h.saveLocked()
 	go h.changed()
 	return id, token, owner, nil
-}
-
-func (h *Hub) nameTakenLocked(name string) bool {
-	if h.Taken != nil && h.Taken(name) {
-		return true
-	}
-	return slices.ContainsFunc(h.runners, func(r *record) bool { return r.Name == name })
 }
 
 func randomString(n int) string {
@@ -529,19 +542,21 @@ func (h *Hub) ServeRegister(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Code string `json:"code"`
 		Name string `json:"name"`
+		// Previous is the token this computer registered with before, if any.
+		Previous string `json:"previous,omitempty"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
 		return
 	}
-	id, token, owner, err := h.register(req.Code, req.Name)
+	id, token, owner, err := h.register(req.Code, req.Name, req.Previous)
 	switch {
 	case errors.Is(err, ErrTooManyBad):
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
 	case errors.Is(err, ErrBadCode):
 		time.Sleep(300 * time.Millisecond)
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
-	case errors.Is(err, ErrNameTaken):
+	case errors.Is(err, ErrNameTaken), errors.Is(err, ErrNameHub):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 	case err != nil:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
