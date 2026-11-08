@@ -29,22 +29,20 @@ jobs:
        (github.event.comment.body == 'recheck' ||
         github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'))
     steps:
-      # The action stores signatures on the cla-signatures branch but never
-      # makes it: the first run would fail with "Branch cla-signatures not
-      # found". Make it from the default branch when it is missing.
-      - name: Make the signatures branch
+      # The action writes signatures/cla.json to the cla-signatures branch but
+      # can't create the branch itself, so create it from the default branch
+      # the first time. Uses only the API; nothing from the pull request runs.
+      - name: Ensure the cla-signatures branch exists
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          BASE: ${{ github.event.repository.default_branch }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          if gh api "repos/$REPO/branches/cla-signatures" --silent 2>/dev/null; then
-            exit 0
+          if ! gh api "repos/$REPO/branches/cla-signatures" --silent 2>/dev/null; then
+            sha=$(gh api "repos/$REPO/git/ref/heads/$DEFAULT_BRANCH" --jq .object.sha)
+            gh api "repos/$REPO/git/refs" -f ref=refs/heads/cla-signatures -f sha="$sha" --silent \
+              || gh api "repos/$REPO/branches/cla-signatures" --silent # created concurrently
           fi
-          sha=$(gh api "repos/$REPO/git/ref/heads/$BASE" --jq .object.sha)
-          # Another run may make it at the same time: then it exists, and that's fine.
-          gh api -X POST "repos/$REPO/git/refs" -f ref=refs/heads/cla-signatures -f sha="$sha" --silent \
-            || gh api "repos/$REPO/branches/cla-signatures" --silent
       - uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
