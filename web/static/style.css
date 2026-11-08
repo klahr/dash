@@ -609,8 +609,17 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-parallel { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
 .runner-parallel input { width: 4.5em; min-height: 32px; }
 #runners-add { margin-top: 10px; }
-.runner-pick { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-.runner-pick .hint { margin: 0; }
+/* Project settings: one card per runner, like the merge-mode choices. */
+#settings-runners { display: grid; gap: 8px; }
+.runner-pick { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-m); cursor: pointer; transition: border-color .15s, background-color .15s; }
+.runner-pick:hover { border-color: var(--faint); }
+.runner-pick:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.runner-pick:has(input:disabled) { cursor: not-allowed; opacity: .6; }
+/* The global `input` rule sets width: 100% and padding; undo both so the checkbox doesn't fill the row. */
+.runner-pick input { accent-color: var(--accent); margin: 0; padding: 0; width: 18px; height: 18px; flex: none; cursor: inherit; }
+.runner-pick .runner-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runner-pick .hint { flex: 1; min-width: 0; margin: 0; text-align: right; font-size: 13px; overflow-wrap: anywhere; }
+#settings-runners-hint { margin-top: 8px; }
 .runner-tag { font-size: 12px; font-weight: 600; color: var(--muted); }
 .todo-sub.waiting-runner { color: var(--running); }
 .runner-row:has(.runner-update) { flex-wrap: wrap; }
