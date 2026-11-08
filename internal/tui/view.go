@@ -95,7 +95,7 @@ func (a *App) renderHeader() string {
 		right += styleWarn.Render("/"+a.query) + styleDim.Render(" (:noh)  ")
 	}
 	if a.proj != nil {
-		where := a.proj.DefaultBranch
+		where := a.proj.Base()
 		if a.multi() {
 			where += " @" + a.proj.Machine
 		}

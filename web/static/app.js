@@ -41,6 +41,8 @@ const ICONS = {
   redo: "M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4",
   undo: "M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3",
   merge: "M7 4v16M7 8c0 4 4 6 10 6M17 11l3 3-3 3",
+  branch: "M6 3.5v11M6 14.5a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM18 3.5a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM18 9.5c0 4-4 5-9.5 6.5",
+  pr: "M6 7.5v9M6 2.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM6 16.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM18 16.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM18 16.5V9a3 3 0 0 0-3-3h-3M14.5 3.5 12 6l2.5 2.5",
   external: "M14 4h6v6M20 4l-9 9M18 14v5H5V6h5",
   push: "M12 15V3.5m0 0-4.5 4.5m4.5-4.5 4.5 4.5M12 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
   rocket: "M12 2.5c3 2.2 4.5 5.5 4.5 9.5l-1.5 4h-6L7.5 12c0-4 1.5-7.3 4.5-9.5zM7.8 13.5 5 16.5V20l4-2.5M16.2 13.5l2.8 3V20l-4-2.5M12 9v.01M10.5 19.5 12 21.5l1.5-2",
@@ -739,6 +741,9 @@ async function refreshMachines() {
 }
 
 const multi = () => (state.machines || []).length > 1;
+// The branch a project's tasks start from and land on: the one picked in the branch switcher,
+// else its default branch.
+const baseBranch = (p) => p?.work_branch || p?.default_branch || "";
 function refreshLive() { setLive(!!sockets.get(state.project?.machine || state.machines?.[0]?.name)?.live); }
 function setLive(on) {
   $("#live").classList.toggle("on", on);
@@ -957,11 +962,12 @@ async function loadPerms() {
   renderPerms();
 }
 
-// The branch (and, with several computers, the computer) only fits the header on wide screens;
-// on phones it would crowd the project name, and the menu lists both anyway.
+// With several computers, the project's computer only fits the header on wide screens; on
+// phones it would crowd the project name, and the menu lists it anyway. The branch has a
+// button of its own (renderBranchSwitch).
 function renderProjectBranch() {
   const p = state.project, el = $("#project-branch");
-  el.textContent = !p || !desktop.matches ? "" : multi() ? `${p.default_branch} · ${p.machine}` : p.default_branch;
+  el.textContent = p && desktop.matches && multi() ? p.machine : "";
   el.hidden = !el.textContent;
 }
 
@@ -976,6 +982,7 @@ function renderProjectHeader() {
   app.classList.toggle("has-project-color", !!p?.color);
   $('meta[name="theme-color"]').content = p?.color || "#101722";
   renderProjectBranch();
+  renderBranchSwitch();
   $("#project-menu").hidden = !p;
   $("#pm-github").hidden = !p || !!p.remote_url;
   renderPushMain();
@@ -983,7 +990,7 @@ function renderProjectHeader() {
   const warn = $("#sync-warn");
   warn.hidden = !p?.sync_error;
   if (p?.sync_error) {
-    warn.replaceChildren(h("strong", {}, `Can't sync ${p.default_branch} with GitHub`), h("span", {}, p.sync_error),
+    warn.replaceChildren(h("strong", {}, `Can't sync ${baseBranch(p)} with GitHub`), h("span", {}, p.sync_error),
       h("span", { class: "hint" }, `Fix it in ${p.path}; Dash retries on the next merge.`));
   }
 }
@@ -1036,7 +1043,7 @@ function renderSideProjects() {
       },
       icon,
       h("span", { class: "side-project-name" }, p.name),
-      cur && p.default_branch ? h("span", { class: "side-project-branch" }, p.default_branch) : null));
+      cur && baseBranch(p) ? h("span", { class: "side-project-branch" }, baseBranch(p)) : null));
   };
   const items = !multi() ? state.projects.map(item) : state.machines.flatMap((m) => [
     h("li", { class: "side-machine", title: m.ok ? "" : m.error || "unreachable" },
@@ -1154,7 +1161,7 @@ function setPicker(open) {
     return h("button", {
       type: "button", role: "menuitem", title: p.path, "aria-current": cur ? "true" : "false",
       onclick: attempt(async () => { setPicker(false); if (!cur) await selectProject(p); }),
-    }, h("span", { class: "project-name" }, projectDot(p), p.name), h("span", { class: "project-branch" }, p.default_branch));
+    }, h("span", { class: "project-name" }, projectDot(p), p.name), h("span", { class: "project-branch" }, baseBranch(p)));
   };
   const items = !multi() ? state.projects.map(item) : state.machines.flatMap((m) => {
     const ps = state.projects.filter((p) => p.machine === m.name);
@@ -1271,7 +1278,7 @@ async function pushDone() {
   btn.disabled = true;
   try {
     await api("POST", `/api/projects/${p.id}/push`);
-    toast(`Pushed ${p.default_branch}`);
+    toast(`Pushed ${baseBranch(p)}`);
     await loadUnpushed();
   } finally { renderPushMain(); }
 }
@@ -1282,7 +1289,7 @@ function renderPushMain() {
   const btn = $("#push-main");
   btn.hidden = !p?.remote_url || p.merge_mode === "pr";
   if (btn.hidden) return;
-  const label = n ? `Push ${n} ${n === 1 ? "commit" : "commits"} to ${p.default_branch}` : `${p.default_branch} is up to date with GitHub`;
+  const label = n ? `Push ${n} ${n === 1 ? "commit" : "commits"} to ${baseBranch(p)}` : `${baseBranch(p)} is up to date with GitHub`;
   btn.disabled = !n;
   btn.title = label;
   btn.setAttribute("aria-label", label);
@@ -1294,8 +1301,151 @@ function pushBar() {
   const n = state.unpushed;
   if (!n) return null;
   return ib({ type: "button", class: "btn primary push-done", onclick: attempt(pushDone) }, "push",
-    `Push ${n} ${n === 1 ? "commit" : "commits"} to ${state.project.default_branch}`);
+    `Push ${n} ${n === 1 ? "commit" : "commits"} to ${baseBranch(state.project)}`);
 }
+
+// ------------------------------------------------------------------ branches
+// The top bar's branch button: the branch new tasks start from and land on. Off the default
+// branch it stands out, so work doesn't land somewhere unexpected.
+function renderBranchSwitch() {
+  const p = state.project, btn = $("#branch-switch");
+  btn.hidden = !p;
+  if (!p) return;
+  const b = baseBranch(p), off = b !== p.default_branch;
+  $("#branch-name").textContent = b;
+  btn.classList.toggle("off-default", off);
+  const label = off ? `Tasks land on ${b}, not ${p.default_branch}: switch branch or open a pull request` : `Tasks land on ${b}: switch branch`;
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+}
+
+// The open switcher's GET /branches answer, for the project it was opened on.
+let branchSheet = null;
+
+async function openBranches() {
+  const p = state.project;
+  if (!p) return;
+  branchSheet = { p, res: null, fetching: !!p.remote_url };
+  $("#branch-filter").value = "";
+  renderBranches();
+  $("#branch-sheet").showModal();
+  $("#branch-filter").focus();
+  await loadBranches(false); // the refs as they are, at once
+  if (p.remote_url) await loadBranches(true); // then with origin's latest
+}
+
+async function loadBranches(fetch) {
+  const s = branchSheet;
+  if (!s) return;
+  try {
+    const res = await api("GET", `/api/projects/${s.p.id}/branches${fetch ? "?fetch=1" : ""}`, null, s.p.prefix || "");
+    if (branchSheet !== s) return;
+    s.res = res;
+  } finally {
+    if (branchSheet === s && fetch) s.fetching = false;
+    if (branchSheet === s) renderBranches();
+  }
+}
+
+function renderBranches() {
+  const s = branchSheet;
+  if (!s) return;
+  const p = state.project?.id === s.p.id ? state.project : s.p, res = s.res;
+  const cur = res?.current || baseBranch(p), def = res?.default || p.default_branch;
+  const off = cur !== def;
+  $("#branch-intro").replaceChildren("New tasks start from ", h("code", {}, cur), " and land on it",
+    ...(off ? [" instead of the default branch ", h("code", {}, def), ". Tasks already started keep the branch they started from."] : [", the default branch."]));
+  $("#branch-loading").hidden = !s.fetching;
+  $("#branch-loading").textContent = res?.fetch_error ? `Couldn't fetch from origin: ${res.fetch_error}` : "Fetching branches from origin…";
+  if (res?.fetch_error) $("#branch-loading").hidden = false;
+
+  // The current branch's standing against the default one, and its pull request.
+  const box = $("#branch-current");
+  box.hidden = !off;
+  if (off) {
+    const parts = [];
+    if (res) parts.push(res.ahead ? `${res.ahead} ${res.ahead === 1 ? "commit" : "commits"} ahead of ${def}` : `nothing ${def} doesn't have yet`);
+    if (res?.behind) parts.push(`${res.behind} behind`);
+    let action;
+    if (res?.pr) {
+      action = h("a", { class: "btn primary", href: res.pr.url, target: "_blank", rel: "noopener" }, ico("external"), `Pull request #${res.pr.number}`);
+    } else {
+      const why = !p.remote_url ? "The project has no GitHub repository" : res && !res.ahead ? `${cur} has nothing to merge into ${def} yet` : "";
+      action = ib({ type: "button", class: "btn primary", id: "branch-pr", disabled: !!why || !res, title: why || `Push ${cur} and open a pull request into ${def}`,
+        onclick: attempt((e) => createBranchPR(e.currentTarget)) }, "pr", `Create pull request into ${def}`);
+    }
+    box.replaceChildren(
+      h("div", { class: "branch-current-head" }, ico("branch"), h("code", {}, cur), h("span", { class: "hint" }, parts.join(", "))),
+      h("div", { class: "branch-current-actions" }, action,
+        ib({ type: "button", class: "btn", onclick: attempt(() => switchBranch(def)) }, "undo", `Back to ${def}`)));
+  }
+
+  // Every branch, filtered by what's typed; a name that isn't one offers to create it.
+  const q = $("#branch-filter").value.trim();
+  const list = res?.branches || [{ name: cur, local: true }];
+  const shown = list.filter((b) => !q || b.name.toLowerCase().includes(q.toLowerCase()));
+  const items = shown.map((b) => {
+    const tags = [b.name === def && "default", b.name === cur && "current", !b.local && "on origin"].filter(Boolean);
+    return h("li", {}, h("button", {
+      type: "button", class: "branch-item", "aria-current": b.name === cur ? "true" : "false",
+      onclick: attempt(() => b.name !== cur && switchBranch(b.name)),
+    }, ico(b.name === cur ? "check" : "branch"), h("span", { class: "branch-item-name" }, b.name),
+    ...tags.map((t) => h("span", { class: `branch-tag ${t.replace(/ /g, "-")}` }, t))));
+  });
+  if (q && !list.some((b) => b.name === q)) {
+    items.push(h("li", {}, ib({ type: "button", class: "branch-item branch-create", onclick: attempt(() => switchBranch(q, true)) },
+      "plus", h("span", {}, "Create branch ", h("code", {}, q), " from ", h("code", {}, cur)))));
+  }
+  if (!items.length) items.push(h("li", { class: "hint" }, "No branches match."));
+  $("#branch-list").replaceChildren(...items);
+}
+
+// Point new tasks at another branch (creating it from the current one with create).
+async function switchBranch(name, create = false) {
+  const old = branchSheet?.p || state.project;
+  const saved = await api("PUT", `/api/projects/${old.id}/branch`, { branch: name, create }, old.prefix || "");
+  const p = { ...saved, machine: old.machine, prefix: old.prefix };
+  if (projectKey(state.project) === projectKey(old)) state.project = p;
+  state.projects = state.projects.map((x) => (projectKey(x) === projectKey(old) ? p : x));
+  $("#branch-sheet").close();
+  renderProjectHeader();
+  renderProjectList();
+  toast(create ? `Created ${name}` : "", { head: `New tasks land on ${baseBranch(p)}`, icon: "branch" });
+  if (state.project !== p) return;
+  state.unpushed = 0;
+  state.unpushedTodos = null;
+  await Promise.all([loadUnpushed(), loadRemote(true), state.view === "history" && loadGraph(), state.view === "files" && loadFiles()]);
+}
+
+// Push the working branch and open its pull request into the default branch.
+async function createBranchPR(btn) {
+  const s = branchSheet;
+  if (!s) return;
+  btn.disabled = true;
+  try {
+    const pr = await api("POST", `/api/projects/${s.p.id}/branch/pr`, {}, s.p.prefix || "");
+    if (branchSheet === s && s.res) { s.res.pr = pr; renderBranches(); }
+    toast(`Pull request #${pr.number} is open`, { head: "Pull request created", icon: "pr", action: { label: "Open", run: () => window.open(pr.url, "_blank", "noopener") } });
+  } finally {
+    if (btn.isConnected) btn.disabled = false;
+  }
+}
+
+$("#branch-switch").addEventListener("click", attempt(openBranches));
+$("#pm-branch").addEventListener("click", attempt(openBranches));
+$("#branch-filter").addEventListener("input", renderBranches);
+$("#branch-filter").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.isComposing) return;
+  e.preventDefault();
+  const q = e.currentTarget.value.trim(), s = branchSheet;
+  if (!q || !s) return;
+  const names = (s.res?.branches || []).map((b) => b.name);
+  const match = names.includes(q) ? q : names.filter((n) => n.toLowerCase().includes(q.toLowerCase()));
+  if (typeof match === "string") { if (match !== (s.res?.current || baseBranch(s.p))) attempt(() => switchBranch(match))(); }
+  else if (match.length === 1) attempt(() => switchBranch(match[0]))();
+  else if (!match.length) attempt(() => switchBranch(q, true))();
+});
+$("#branch-sheet").addEventListener("close", () => { branchSheet = null; });
 
 const title = (t) => t.title || t.prompt.split("\n")[0];
 const byPriority = (a, b) => a.priority - b.priority || a.created_at.localeCompare(b.created_at);
@@ -2711,8 +2861,8 @@ async function revertTodo(t) {
   const pr = state.project?.merge_mode === "pr";
   const ok = await ask({
     title: `Revert "${title(t)}"?`,
-    body: pr ? `Opens a pull request that undoes this change on ${state.project.default_branch}.`
-      : `Adds a commit that undoes this change on ${state.project?.default_branch || "the default branch"}${state.project?.auto_push ? " and pushes it" : ""}. If later work conflicts, Claude gets a task to undo it by hand.`,
+    body: pr ? `Opens a pull request that undoes this change on ${baseBranch(state.project)}.`
+      : `Adds a commit that undoes this change on ${baseBranch(state.project) || "the default branch"}${state.project?.auto_push ? " and pushes it" : ""}. If later work conflicts, Claude gets a task to undo it by hand.`,
     ok: pr ? "Open revert PR" : "Revert", danger: true,
   });
   if (!ok) return;
@@ -3706,7 +3856,7 @@ function renderChecks(t) {
   const st = $("#d-checks-state");
   st.className = `checks-state ${c.passed ? "pass" : "fail"}`;
   st.textContent = c.passed ? "Tests pass" : `Tests fail (exit ${c.exit_code})`;
-  const when = c.stage === "merge" ? `after merging ${state.project?.default_branch || "main"}` : "before review";
+  const when = c.stage === "merge" ? `after merging ${baseBranch(state.project) || "main"}` : "before review";
   $("#d-checks-meta").textContent = `${when} · ${Math.round(c.duration_s)}s`;
   $("#d-checks-output").textContent = `$ ${c.command}\n\n${c.output || "No output."}`;
   if (!c.passed && box.dataset.todo !== t.id) box.open = true;
@@ -4034,8 +4184,8 @@ function syncMergeHint() {
   $("#auto-push-row").hidden = pr;
   $("#merge-hint").textContent = !p.remote_url
     ? "Connect a GitHub repository (Projects → Create GitHub repository) to push or open pull requests."
-    : pr ? `Dash pushes the task's branch and opens a pull request against ${p.default_branch}. Merge it on GitHub.`
-      : f.auto_push.checked ? `Before each merge Dash pulls ${p.default_branch} from GitHub, so pushes don't get rejected.` : "";
+    : pr ? `Dash pushes the task's branch and opens a pull request against ${baseBranch(p)}. Merge it on GitHub.`
+      : f.auto_push.checked ? `Before each merge Dash pulls ${baseBranch(p)} from GitHub, so pushes don't get rejected.` : "";
 }
 $("#settings-form").addEventListener("change", syncMergeHint);
 
@@ -4988,9 +5138,9 @@ const refreshGraph = () => { clearTimeout(graphTimer); graphTimer = setTimeout((
 function renderGraph(res) {
   const lines = res?.graph ? res.graph.split("\n") : [];
   $("#graph-empty").hidden = lines.length > 0;
-  $("#graph-empty-text").textContent = state.project ? `${state.project.default_branch || "main"} has no commits yet.` : "Select a project to see its main branch.";
+  $("#graph-empty-text").textContent = state.project ? `${baseBranch(state.project) || "main"} has no commits yet.` : "Select a project to see its main branch.";
   // Commits above origin's tip haven't been pushed yet; dim them so the last push stands out.
-  const remote = `origin/${res?.branch || state.project?.default_branch || "main"}`;
+  const remote = `origin/${res?.branch || baseBranch(state.project) || "main"}`;
   const isRemote = (line) => line.split("\x1f")[2]?.split(", ").includes(remote);
   let unpushed = lines.some(isRemote);
   $("#graph").replaceChildren(...lines.map((line) => {
@@ -6466,7 +6616,7 @@ function paletteCommands() {
 
 function paletteProjects() {
   return state.projects.filter((p) => projectKey(p) !== projectKey(state.project)).map((p) => ({
-    kind: "Project", label: p.name, icon: "repo", hint: multi() ? p.machine : p.default_branch,
+    kind: "Project", label: p.name, icon: "repo", hint: multi() ? p.machine : baseBranch(p),
     text: `${p.name} ${p.machine} ${p.path}`, run: () => selectProject(p),
   }));
 }

@@ -491,12 +491,12 @@ func (s *Server) pushProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Merges.Remote.With(r.Context(), p.ID, func() error {
-		return s.Git.Push(r.Context(), p.ID, p.Path, p.DefaultBranch)
+		return s.Git.Push(r.Context(), p.ID, p.Path, p.Base())
 	}); err != nil {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"pushed": p.DefaultBranch})
+	writeJSON(w, http.StatusOK, map[string]string{"pushed": p.Base()})
 }
 
 // remoteStatus reports how the default branch compares with origin's and
@@ -531,8 +531,8 @@ func (s *Server) unpushed(w http.ResponseWriter, r *http.Request) {
 	}
 	n, todos := 0, []string{}
 	if p.RemoteURL != "" {
-		n, _ = s.Git.Unpushed(r.Context(), p.ID, p.Path, p.DefaultBranch)
-		if ids, err := s.Git.UnpushedTodos(r.Context(), p.ID, p.Path, p.DefaultBranch); err == nil && ids != nil {
+		n, _ = s.Git.Unpushed(r.Context(), p.ID, p.Path, p.Base())
+		if ids, err := s.Git.UnpushedTodos(r.Context(), p.ID, p.Path, p.Base()); err == nil && ids != nil {
 			todos = ids
 		}
 	}
@@ -549,13 +549,13 @@ func (s *Server) gitGraph(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	graph, err := s.Git.Graph(r.Context(), p.ID, p.Path, p.DefaultBranch, 500)
+	graph, err := s.Git.Graph(r.Context(), p.ID, p.Path, p.Base(), 500)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	s.fetchTagsSoon(p)
-	writeJSON(w, http.StatusOK, map[string]string{"branch": p.DefaultBranch, "graph": graph})
+	writeJSON(w, http.StatusOK, map[string]string{"branch": p.Base(), "graph": graph})
 }
 
 // ---------------------------------------------------------------- todos
@@ -874,7 +874,7 @@ func (s *Server) todoChanges(ctx context.Context, p model.Project, t model.Todo)
 		}
 		return diff, nil
 	}
-	return s.Git.Diff(ctx, p.ID, p.Path, p.DefaultBranch, t.Worktree.Branch)
+	return s.Git.Diff(ctx, p.ID, p.Path, p.For(t).Base(), t.Worktree.Branch)
 }
 
 func (s *Server) todoLog(w http.ResponseWriter, r *http.Request) {

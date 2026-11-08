@@ -105,7 +105,7 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 - [Live previews](docs/previews.md): preview domain, DNS and certificates, what the proxy does
 - [Draw](docs/draw.md): mark up a preview and send the picture back to Claude
 - [Scans](docs/scans.md): scheduled read-only reviews that fill a project's Issues
-- [GitHub](docs/github.md): merge locally or open pull requests, auto-approve, revert, tag releases from History
+- [GitHub](docs/github.md): merge locally or open pull requests, work on another branch and open its pull request, auto-approve, revert, tag releases from History
 - [MCP and the claude.ai connector](docs/mcp.md)
 - [Several computers](docs/several-computers.md)
 - [Use Dash from your phone](docs/phone.md)

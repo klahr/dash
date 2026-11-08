@@ -185,12 +185,13 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 	if err != nil {
 		return err
 	}
+	p = p.For(t)
 	wt := *t.Worktree
 	log := func(s string) { m.Log.Line(t, s) }
-	log("▶ merging into " + p.DefaultBranch)
+	log("▶ merging into " + p.Base())
 
 	// 0. Start from what's on GitHub, so the push (or the PR) can't be rejected.
-	p = m.refreshRemote(ctx, p)
+	p = m.refreshRemote(ctx, p).For(t)
 	if p.SyncsRemote() {
 		if err := m.syncRemote(ctx, p); err != nil {
 			return err
@@ -201,16 +202,16 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 	// 1–2. Repeated (a few times) when the default branch moves meanwhile,
 	// e.g. a commit in the project's folder while the tests ran.
 	for range 3 {
-		base, err := m.Git.Head(ctx, p.ID, p.Path, p.DefaultBranch)
+		base, err := m.Git.Head(ctx, p.ID, p.Path, p.Base())
 		if err != nil {
 			return err
 		}
 
 		// 1. Bring the default branch into the todo's branch.
-		changed, err := m.Git.MergeIn(ctx, p.ID, wt.Path, p.DefaultBranch)
+		changed, err := m.Git.MergeIn(ctx, p.ID, wt.Path, p.Base())
 		if errors.As(err, &conflict) {
 			log("⚠ " + conflict.Error())
-			return m.sendBack(t, p, "", true, "conflicts with "+p.DefaultBranch+" in "+strings.Join(conflict.Files, ", "))
+			return m.sendBack(t, p, "", true, "conflicts with "+p.Base()+" in "+strings.Join(conflict.Files, ", "))
 		}
 		if err != nil {
 			return err
@@ -223,15 +224,15 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 				return err
 			}
 			if !checks.Passed {
-				note := fmt.Sprintf("Your change was merged with the latest `%s`, and now the tests fail. %s", p.DefaultBranch, testNote(checks))
-				return m.sendBack(t, p, note, false, "tests fail after merging "+p.DefaultBranch)
+				note := fmt.Sprintf("Your change was merged with the latest `%s`, and now the tests fail. %s", p.Base(), testNote(checks))
+				return m.sendBack(t, p, note, false, "tests fail after merging "+p.Base())
 			}
 		}
 
-		if head, err := m.Git.Head(ctx, p.ID, p.Path, p.DefaultBranch); err != nil || head == base {
+		if head, err := m.Git.Head(ctx, p.ID, p.Path, p.Base()); err != nil || head == base {
 			break
 		}
-		log("↻ " + p.DefaultBranch + " moved during the merge; merging it in again")
+		log("↻ " + p.Base() + " moved during the merge; merging it in again")
 	}
 
 	// 3. Land it.
@@ -245,22 +246,22 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 	})
 	if errors.As(err, &conflict) {
 		log("⚠ " + conflict.Error())
-		return m.sendBack(t, p, "", true, "conflicts with "+p.DefaultBranch+" in "+strings.Join(conflict.Files, ", "))
+		return m.sendBack(t, p, "", true, "conflicts with "+p.Base()+" in "+strings.Join(conflict.Files, ", "))
 	}
 	if errors.As(err, new(*gitops.ErrDirtyCheckout)) {
 		return err
 	}
 	if err != nil {
-		return fmt.Errorf("squash onto %s: %w", p.DefaultBranch, err)
+		return fmt.Errorf("squash onto %s: %w", p.Base(), err)
 	}
 	// Push before marking it merged; a sync during the push may rebase the commit.
 	if p.AutoPush && p.RemoteURL != "" {
 		m.pushDefault(ctx, p, t)
-		if head, err := m.Git.Head(ctx, p.ID, p.Path, p.DefaultBranch); err == nil && sha != "" {
+		if head, err := m.Git.Head(ctx, p.ID, p.Path, p.Base()); err == nil && sha != "" {
 			sha = head
 		}
 	}
-	m.landed(ctx, t, p, sha, "✔ merged into "+p.DefaultBranch)
+	m.landed(ctx, t, p, sha, "✔ merged into "+p.Base())
 	return nil
 }
 
@@ -313,7 +314,7 @@ func (m *MergeQueue) land(ctx context.Context, p model.Project, fn func(dir stri
 		return "", err
 	}
 	defer unlock()
-	old, err := m.Git.Head(ctx, p.ID, p.Path, p.DefaultBranch)
+	old, err := m.Git.Head(ctx, p.ID, p.Path, p.Base())
 	if err != nil {
 		return "", err
 	}
@@ -328,7 +329,7 @@ func (m *MergeQueue) land(ctx context.Context, p model.Project, fn func(dir stri
 	if err != nil || head == old {
 		return head, err
 	}
-	return head, m.Git.Advance(ctx, p.ID, p.Path, p.DefaultBranch, old, head)
+	return head, m.Git.Advance(ctx, p.ID, p.Path, p.Base(), old, head)
 }
 
 func (m *MergeQueue) landingDir(p model.Project) string {
@@ -389,14 +390,14 @@ func (m *MergeQueue) wait(ctx context.Context, job model.MergeJob, err error) {
 // syncRemote fast-forwards (or rebases) the default branch onto origin's and
 // records failures on the project, where the UI shows them.
 func (m *MergeQueue) syncRemote(ctx context.Context, p model.Project) error {
-	_, err := m.land(ctx, p, func(dir string) error { return m.Git.SyncWithRemote(ctx, p.ID, dir, p.DefaultBranch) })
+	_, err := m.land(ctx, p, func(dir string) error { return m.Git.SyncWithRemote(ctx, p.ID, dir, p.Base()) })
 	if errors.As(err, new(*gitops.ErrDirtyCheckout)) {
 		return err
 	}
 	m.setSyncError(p.ID, err)
 	m.Remote.recount(ctx, p)
 	if err != nil {
-		return &syncError{fmt.Errorf("can't sync %s with GitHub: %w", p.DefaultBranch, err)}
+		return &syncError{fmt.Errorf("can't sync %s with GitHub: %w", p.Base(), err)}
 	}
 	return nil
 }
@@ -422,7 +423,7 @@ func (e *syncError) Unwrap() error { return e.error }
 // once if origin moved meanwhile. A failure doesn't undo the local merge.
 func (m *MergeQueue) pushDefault(ctx context.Context, p model.Project, t model.Todo) {
 	push := func() error {
-		return m.Remote.With(ctx, p.ID, func() error { return m.Git.Push(ctx, p.ID, p.Path, p.DefaultBranch) })
+		return m.Remote.With(ctx, p.ID, func() error { return m.Git.Push(ctx, p.ID, p.Path, p.Base()) })
 	}
 	err := push()
 	if err != nil {
@@ -436,7 +437,7 @@ func (m *MergeQueue) pushDefault(ctx context.Context, p model.Project, t model.T
 		m.Log.Line(t, "⚠ push failed (merged locally; Dash pushes again after the next merge): "+err.Error())
 		return
 	}
-	m.Log.Line(t, "⇡ pushed "+p.DefaultBranch)
+	m.Log.Line(t, "⇡ pushed "+p.Base())
 }
 
 func (m *MergeQueue) setSyncError(projectID string, err error) {

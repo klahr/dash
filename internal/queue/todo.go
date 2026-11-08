@@ -444,19 +444,20 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 				log(note)
 			}
 		}
-		base, err := e.Git.Head(ctx, p.ID, p.Path, p.DefaultBranch)
+		base, err := e.Git.Head(ctx, p.ID, p.Path, p.Base())
 		if err != nil {
 			fail(err)
 			return
 		}
 		name := "todo-" + t.ID
-		wt := model.Worktree{Name: name, Path: filepath.Join(e.WorktreeRoot, p.ID, name), Branch: "dash/" + name, BaseCommit: base}
+		wt := model.Worktree{Name: name, Path: filepath.Join(e.WorktreeRoot, p.ID, name), Branch: "dash/" + name, BaseCommit: base, BaseBranch: p.Base()}
 		if err := update(func(x *model.Todo) { x.Worktree = &wt }); err != nil {
 			fail(err)
 			return
 		}
 	}
 	wt := *t.Worktree
+	p = p.For(t) // the branch it started from, even if the project has switched since
 	if _, err := os.Stat(wt.Path); err != nil {
 		if err := e.Git.AddWorktree(ctx, p.ID, p.Path, wt); err != nil {
 			fail(err)
@@ -474,19 +475,19 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 	// 2. Bring in the default branch after a merge conflict.
 	resolving := false
 	if t.MergeMain {
-		files, err := e.Git.StartMerge(ctx, p.ID, wt.Path, p.DefaultBranch)
+		files, err := e.Git.StartMerge(ctx, p.ID, wt.Path, p.Base())
 		if err != nil {
-			fail(fmt.Errorf("merge %s into worktree: %w", p.DefaultBranch, err))
+			fail(fmt.Errorf("merge %s into worktree: %w", p.Base(), err))
 			return
 		}
 		if len(files) > 0 {
 			resolving = true
-			log("⚠ conflicts with " + p.DefaultBranch + ": " + strings.Join(files, ", "))
-			if err := addNote(conflictNote(p.DefaultBranch, files)); err != nil {
+			log("⚠ conflicts with " + p.Base() + ": " + strings.Join(files, ", "))
+			if err := addNote(conflictNote(p.Base(), files)); err != nil {
 				fail(err)
 				return
 			}
-		} else if _, err := e.Git.CommitAll(ctx, p.ID, wt.Path, "Merge "+p.DefaultBranch+" into "+wt.Branch); err != nil {
+		} else if _, err := e.Git.CommitAll(ctx, p.ID, wt.Path, "Merge "+p.Base()+" into "+wt.Branch); err != nil {
 			fail(err)
 			return
 		}
@@ -552,7 +553,7 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 		if len(t.Edits) > 0 && !t.EditsApplied {
 			_ = update(func(x *model.Todo) { x.EditsApplied = true })
 		}
-		if files, add, del, err := e.Git.DiffStat(ctx, p.ID, wt.Path, p.DefaultBranch); err == nil {
+		if files, add, del, err := e.Git.DiffStat(ctx, p.ID, wt.Path, p.Base()); err == nil {
 			_ = update(func(x *model.Todo) { x.DiffFiles, x.DiffAdd, x.DiffDel = files, add, del })
 		}
 
@@ -848,7 +849,7 @@ func (e *TodoEngine) applyEdits(ctx context.Context, t model.Todo, p model.Proje
 			return fmt.Errorf("invalid path %q", ed.Path)
 		}
 		if cur, _ := e.Git.Blob(ctx, p.ID, wt.Path, wt.BaseCommit, ed.Path); cur != ed.Blob {
-			return fmt.Errorf("%s changed on %s since it was opened in the editor; open it again and redo the edit", ed.Path, p.DefaultBranch)
+			return fmt.Errorf("%s changed on %s since it was opened in the editor; open it again and redo the edit", ed.Path, p.Base())
 		}
 		dst := filepath.Join(wt.Path, filepath.FromSlash(ed.Path))
 		fi, err := os.Lstat(dst)

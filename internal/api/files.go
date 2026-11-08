@@ -40,7 +40,7 @@ func (s *Server) listFiles(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	files, err := s.Git.Files(r.Context(), p.ID, p.Path, p.DefaultBranch)
+	files, err := s.Git.Files(r.Context(), p.ID, p.Path, p.Base())
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -55,7 +55,7 @@ func (s *Server) listFiles(w http.ResponseWriter, r *http.Request) {
 		tracked[f] = true
 	}
 	local = slices.DeleteFunc(local, func(f string) bool { return tracked[f] })
-	writeJSON(w, http.StatusOK, map[string]any{"branch": p.DefaultBranch, "files": nonNil(files), "local": nonNil(local)})
+	writeJSON(w, http.StatusOK, map[string]any{"branch": p.Base(), "files": nonNil(files), "local": nonNil(local)})
 }
 
 // localPath returns where name lives in the checkout, if it is a file git
@@ -69,8 +69,8 @@ func (s *Server) localPath(ctx context.Context, p model.Project, name string) (s
 	if !slices.Contains(local, name) {
 		return "", fmt.Errorf("%w: %s is not a local file", errBadRequest, name)
 	}
-	if blob, _ := s.Git.Blob(ctx, p.ID, p.Path, p.DefaultBranch, name); blob != "" {
-		return "", fmt.Errorf("%w: %s is on %s; edit it as a task", errBadRequest, name, p.DefaultBranch)
+	if blob, _ := s.Git.Blob(ctx, p.ID, p.Path, p.Base(), name); blob != "" {
+		return "", fmt.Errorf("%w: %s is on %s; edit it as a task", errBadRequest, name, p.Base())
 	}
 	root, err := filepath.EvalSymlinks(p.Path)
 	if err != nil {
@@ -205,9 +205,9 @@ func (s *Server) readFile(w http.ResponseWriter, r *http.Request) {
 		s.readLocalFile(w, r, p, name)
 		return
 	}
-	blob, err := s.Git.Blob(r.Context(), p.ID, p.Path, p.DefaultBranch, name)
+	blob, err := s.Git.Blob(r.Context(), p.ID, p.Path, p.Base(), name)
 	if err != nil || blob == "" {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": name + " is not on " + p.DefaultBranch})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": name + " is not on " + p.Base()})
 		return
 	}
 	content, size, err := s.Git.ReadBlob(r.Context(), p.ID, p.Path, blob, maxEditBytes)
@@ -215,7 +215,7 @@ func (s *Server) readFile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	res := map[string]any{"path": name, "blob": blob, "size": size, "branch": p.DefaultBranch}
+	res := map[string]any{"path": name, "blob": blob, "size": size, "branch": p.Base()}
 	switch {
 	case size > maxEditBytes:
 		res["too_large"] = true
@@ -257,8 +257,8 @@ func (s *Server) saveEdit(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: file is larger than %d KiB", errBadRequest, maxEditBytes>>10))
 		return
 	}
-	if cur, _ := s.Git.Blob(r.Context(), p.ID, p.Path, p.DefaultBranch, name); req.Blob == "" || cur != req.Blob {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": name + " changed on " + p.DefaultBranch + " since it was opened; reload it and edit again"})
+	if cur, _ := s.Git.Blob(r.Context(), p.ID, p.Path, p.Base(), name); req.Blob == "" || cur != req.Blob {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": name + " changed on " + p.Base() + " since it was opened; reload it and edit again"})
 		return
 	}
 	title := strings.TrimSpace(req.Title)

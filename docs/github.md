@@ -13,9 +13,29 @@ and the Review column is hidden; tasks with failing tests still wait there for y
 
 Merged tasks can be reverted with one click (`u`).
 
+## Work on another branch
+
+Tasks start from the project's default branch (`main` or `master`) and land on it, unless you pick
+another one: click the branch button in the top bar (or **Switch branch…** in the project menu).
+The switcher lists the checkout's branches and origin's (it fetches them when it opens); type to
+filter, or type a new name to create that branch from the current one. Once switched, new tasks
+start from that branch and are merged into it (or, in pull request mode, open their pull requests
+against it), and History, Files and the push button follow it. Tasks that had already started keep
+the branch they started from. A branch origin doesn't have yet is pushed when you switch to it, so
+pull requests and pushes have somewhere to go.
+
+Off the default branch, the switcher shows how far the branch is ahead of the default one and offers
+**Create pull request into main**: Dash pushes the branch and opens (or finds) its pull request,
+listing the tasks that landed on it. Merge it on GitHub, then switch back to the default branch.
+
+The same is available as `GET /api/projects/{id}/branches` (`?fetch=1` fetches origin first),
+`PUT /api/projects/{id}/branch` (`{"branch": "feature", "create": true}`) and
+`POST /api/projects/{id}/branch/pr` (optional `title` and `body`). For a project whose tasks run on
+runners, each runner's clone follows the hub's branch.
+
 ## Tag a release
 
-In **History** (the default branch's commit graph), click a commit for its menu: **Tag release…**,
+In **History** (the commit graph of the branch tasks land on), click a commit for its menu: **Tag release…**,
 **Copy SHA** and **Open on GitHub**. Commits origin doesn't have yet (the dimmed "Not pushed yet"
 rows) can't be tagged: push first.
 

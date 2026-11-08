@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -103,6 +104,10 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p, ok := sv.hubProject(hpid); ok {
+		if err := s.followWorkBranch(r.Context(), sv, p, req.WorkBranch); err != nil {
+			writeErr(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, dispatch.Linked{ProjectID: p.ID})
 		return
 	}
@@ -150,6 +155,10 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		MergeMode: model.MergePR, MaxAutoFixes: model.DefaultMaxAutoFixes, HubProjectID: hpid,
 	})
 	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := s.followWorkBranch(ctx, sv, p, req.WorkBranch); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -303,4 +312,34 @@ func (s *Server) hubTaskAction(action string) http.HandlerFunc {
 			writeJSON(w, http.StatusOK, evs)
 		}
 	}
+}
+
+// followWorkBranch makes the runner's clone p start tasks from, and land
+// them on, the hub's working branch: one origin has (the hub pushes it when
+// it switches), fetched first when the clone hasn't got it yet.
+func (s *Server) followWorkBranch(ctx context.Context, sv *service, p model.Project, branch string) error {
+	if branch == p.DefaultBranch {
+		branch = ""
+	}
+	if branch == p.WorkBranch {
+		return nil
+	}
+	if branch != "" {
+		err := s.withRemoteLock(ctx, p, func() error {
+			if !s.Git.HasBranch(ctx, p.ID, p.Path, branch) {
+				fctx, cancel := context.WithTimeout(ctx, branchFetchTimeout)
+				defer cancel()
+				if err := s.Git.FetchBranch(fctx, p.ID, p.Path, branch, false); err != nil {
+					return fmt.Errorf("fetch the hub's branch %s: %w", branch, err)
+				}
+			}
+			_, err := s.Git.EnsureBranch(ctx, p.ID, p.Path, branch, "")
+			return err
+		})
+		if err != nil {
+			return err
+		}
+	}
+	_, err := sv.data.UpdateProject(p.ID, func(x *model.Project) error { x.WorkBranch = branch; return nil })
+	return err
 }

@@ -31,7 +31,10 @@ type Link struct {
 	Name          string `json:"name"`
 	RemoteURL     string `json:"remote_url"`
 	DefaultBranch string `json:"default_branch"`
-	OrgID         int64  `json:"org_id"`
+	// WorkBranch is the branch the hub's tasks start from and land on when
+	// it isn't DefaultBranch (the hub's branch switcher); "" means DefaultBranch.
+	WorkBranch string `json:"work_branch,omitempty"`
+	OrgID      int64  `json:"org_id"`
 }
 
 // Linked is the runner's answer to Link: its project for the hub's.

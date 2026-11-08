@@ -59,6 +59,10 @@ type Project struct {
 	Name          string `json:"name"`
 	Path          string `json:"path"`
 	DefaultBranch string `json:"default_branch"`
+	// WorkBranch is the branch tasks currently start from and land on, when
+	// it isn't DefaultBranch (picked with the branch switcher); empty means
+	// DefaultBranch. See Base.
+	WorkBranch    string `json:"work_branch,omitempty"`
 	RemoteURL     string `json:"remote_url,omitempty"`
 	AutoPush      bool   `json:"auto_push"`                // push DefaultBranch after every merge
 	AutoApprove   bool   `json:"auto_approve"`             // finished todos whose tests pass skip review
@@ -126,6 +130,28 @@ type Project struct {
 	Machine string `json:"machine,omitempty"`
 }
 
+// Base is the branch tasks start from and land on: WorkBranch when one is
+// picked, else DefaultBranch.
+func (p Project) Base() string {
+	if p.WorkBranch != "" {
+		return p.WorkBranch
+	}
+	return p.DefaultBranch
+}
+
+// OnWorkBranch reports whether tasks land on a branch other than the default one.
+func (p Project) OnWorkBranch() bool { return p.Base() != p.DefaultBranch }
+
+// For returns p as seen by a todo: one that started on another branch
+// (before the branch was switched) keeps landing on the branch it started
+// from. A worktree from before branches could be switched is on DefaultBranch.
+func (p Project) For(t Todo) Project {
+	if t.Worktree != nil {
+		p.WorkBranch = t.Worktree.BaseBranch
+	}
+	return p
+}
+
 // OnRunners reports whether the project's tasks run on runners rather than
 // on this Dash.
 func (p Project) OnRunners() bool { return len(p.Runners) > 0 }
@@ -173,7 +199,11 @@ type Worktree struct {
 	Name       string `json:"name"`        // e.g. "todo-3f9a1c"
 	Path       string `json:"path"`        // absolute path on disk
 	Branch     string `json:"branch"`      // e.g. "dash/todo-3f9a1c"
-	BaseCommit string `json:"base_commit"` // DefaultBranch HEAD when created
+	BaseCommit string `json:"base_commit"` // BaseBranch HEAD when created
+	// BaseBranch is the project's Base when the worktree was made: the
+	// branch the todo is compared with and lands on. Empty in worktrees made
+	// before branches could be switched (the default branch).
+	BaseBranch string `json:"base_branch,omitempty"`
 }
 
 // Todo is a unit of AI work.

@@ -38,6 +38,7 @@
         </button>
         <div class="foot-menu-list project-picker-list" id="project-picker" role="menu" aria-label="Projects" hidden></div>
       </div>
+      <button class="branch-switch" id="branch-switch" type="button" hidden aria-haspopup="dialog" data-icon="branch"><span id="branch-name"></span></button>
       <div class="lane-chips" id="lane-chips" aria-label="Minimized columns"></div>
       <button class="previews-btn" id="previews-btn" type="button" hidden aria-haspopup="dialog" title="Running previews">
         <span class="pv-dot" aria-hidden="true"></span><span id="previews-label">Previews</span>
@@ -53,6 +54,7 @@
       <details class="foot-menu top-menu" id="project-menu" hidden>
         <summary class="icon-btn" aria-label="Project menu" title="Project menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5h.01M12 12h.01M12 19h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
         <div class="foot-menu-list">
+          <button id="pm-branch" type="button" data-icon="branch">Switch branch…</button>
           <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
           <button id="pm-github" type="button" data-icon="repo" hidden>Create GitHub repo</button>
           <button id="pm-cleanup" type="button" data-icon="trash" title="Remove leftover worktrees, branches, logs and uploads">Clean up</button>
@@ -594,6 +596,22 @@
       <footer class="sheet-actions">
         <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
         <button class="btn primary" value="ok" data-icon="tag" id="release-ok" disabled>Tag and push</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Branch switcher: the branch tasks start from and land on, and its pull request -->
+  <dialog class="sheet" id="branch-sheet" aria-labelledby="branch-title">
+    <form method="dialog" id="branch-form">
+      <header class="sheet-head"><h2 id="branch-title">Branch</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <p class="hint" id="branch-intro"></p>
+      <div class="branch-current" id="branch-current" hidden></div>
+      <label class="field"><span>Switch to <em>pick a branch, or type a new name to create it</em></span>
+        <input name="filter" id="branch-filter" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Find or create a branch…" aria-controls="branch-list"></label>
+      <p class="hint" id="branch-loading">Fetching branches from origin…</p>
+      <ul class="branch-list" id="branch-list" aria-label="Branches"></ul>
+      <footer class="sheet-actions">
+        <button class="btn" value="cancel" formnovalidate data-icon="x">Close</button>
       </footer>
     </form>
   </dialog>

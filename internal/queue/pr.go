@@ -18,7 +18,7 @@ func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) 
 	if err := m.Git.PushBranch(ctx, p.ID, wt.Path, wt.Branch); err != nil {
 		return fmt.Errorf("push %s: %w", wt.Branch, err)
 	}
-	n, url, err := m.Git.OpenPR(ctx, p.ID, wt.Path, p.DefaultBranch, wt.Branch, subject(t), prBody(t))
+	n, url, err := m.Git.OpenPR(ctx, p.ID, wt.Path, p.Base(), wt.Branch, subject(t), prBody(t))
 	if err != nil {
 		return fmt.Errorf("open pull request: %w", err)
 	}
@@ -49,6 +49,7 @@ func (m *MergeQueue) PollPRs(ctx context.Context) {
 		if err != nil {
 			continue
 		}
+		p = p.For(t)
 		st, err := m.Git.PRStatus(ctx, p.ID, p.Path, t.PR.Number)
 		if err != nil {
 			slog.Warn("pull request status", "todo", t.ID, "pr", t.PR.Number, "err", err)
@@ -88,9 +89,9 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 			if p.SyncsRemote() && m.syncRemote(ctx, p) != nil {
 				return
 			}
-			m.handled(t, st.HeadRefOid, fmt.Sprintf("⚠ pull request #%d conflicts with %s", n, p.DefaultBranch))
+			m.handled(t, st.HeadRefOid, fmt.Sprintf("⚠ pull request #%d conflicts with %s", n, p.Base()))
 			t, _ = m.Store.GetTodo(t.ID)
-			_ = m.sendBack(t, p, "", true, fmt.Sprintf("pull request #%d conflicts with %s", n, p.DefaultBranch))
+			_ = m.sendBack(t, p, "", true, fmt.Sprintf("pull request #%d conflicts with %s", n, p.Base()))
 			return
 		}
 		var failed []gitops.PRCheck

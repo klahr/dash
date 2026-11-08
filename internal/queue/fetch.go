@@ -133,7 +133,7 @@ func (r *RemoteSync) Status(p model.Project) RemoteStatus {
 	if !ok {
 		st = RemoteStatus{ProjectID: p.ID}
 	}
-	st.Branch, st.Enabled = p.DefaultBranch, p.SyncsRemote()
+	st.Branch, st.Enabled = p.Base(), p.SyncsRemote()
 	return st
 }
 
@@ -179,7 +179,7 @@ func (r *RemoteSync) record(p model.Project, fetchErr error) {
 		st.Error, st.RetryAt = brief(fetchErr), r.retryAt[p.ID]
 	}
 	r.mu.Unlock()
-	st.ProjectID, st.Branch, st.Enabled = p.ID, p.DefaultBranch, true
+	st.ProjectID, st.Branch, st.Enabled = p.ID, p.Base(), true
 	r.set(st)
 }
 
@@ -189,7 +189,7 @@ func (r *RemoteSync) recount(ctx context.Context, p model.Project) {
 	if !p.SyncsRemote() {
 		return
 	}
-	ahead, behind, err := r.Git.AheadBehind(ctx, p.ID, p.Path, p.DefaultBranch)
+	ahead, behind, err := r.Git.AheadBehind(ctx, p.ID, p.Path, p.Base())
 	if err != nil {
 		return // e.g. origin/<branch> doesn't exist yet
 	}
@@ -278,7 +278,7 @@ func (r *RemoteSync) fetch(ctx context.Context, p model.Project) {
 
 func (r *RemoteSync) fetchLocked(ctx context.Context, p model.Project, publish bool) error {
 	fctx, cancel := context.WithTimeout(ctx, r.timeout())
-	err := r.Git.FetchBranch(fctx, p.ID, p.Path, p.DefaultBranch, publish)
+	err := r.Git.FetchBranch(fctx, p.ID, p.Path, p.Base(), publish)
 	cancel()
 	if err != nil && fctx.Err() == context.DeadlineExceeded {
 		err = fmt.Errorf("fetching origin timed out after %s", r.timeout())
@@ -308,7 +308,7 @@ func (r *RemoteSync) FastForward(ctx context.Context, p model.Project) string {
 	unlock, err := r.Lock(lctx, p.ID)
 	cancel()
 	if err != nil {
-		return "⚠ origin is busy syncing; starting from local " + p.DefaultBranch
+		return "⚠ origin is busy syncing; starting from local " + p.Base()
 	}
 	defer unlock()
 	note := ""
@@ -319,20 +319,20 @@ func (r *RemoteSync) FastForward(ctx context.Context, p model.Project) string {
 	} else if err := r.fetchLocked(ctx, p, true); err != nil {
 		note = "⚠ can't fetch origin (" + brief(err) + "); "
 	}
-	moved, ahead, err := r.Git.FastForwardToOrigin(ctx, p.ID, p.Path, p.DefaultBranch)
+	moved, ahead, err := r.Git.FastForwardToOrigin(ctx, p.ID, p.Path, p.Base())
 	r.recount(ctx, p)
 	switch {
 	case errors.As(err, new(*gitops.ErrDirtyCheckout)):
-		return note + "⚠ can't fast-forward " + p.DefaultBranch + " to origin: " + err.Error() + "; starting from local"
+		return note + "⚠ can't fast-forward " + p.Base() + " to origin: " + err.Error() + "; starting from local"
 	case err != nil:
 		slog.Warn("fast-forward to origin", "project", p.Name, "err", err)
-		return note + "starting from local " + p.DefaultBranch
+		return note + "starting from local " + p.Base()
 	case moved > 0:
-		return note + fmt.Sprintf("⇣ fast-forwarded %s to origin (%s new)", p.DefaultBranch, commits(moved))
+		return note + fmt.Sprintf("⇣ fast-forwarded %s to origin (%s new)", p.Base(), commits(moved))
 	case ahead > 0:
-		return note + fmt.Sprintf("local %s has %s origin doesn't; starting from it as is (the merge reconciles them)", p.DefaultBranch, commits(ahead))
+		return note + fmt.Sprintf("local %s has %s origin doesn't; starting from it as is (the merge reconciles them)", p.Base(), commits(ahead))
 	case note != "":
-		return note + "starting from local " + p.DefaultBranch
+		return note + "starting from local " + p.Base()
 	}
 	return ""
 }

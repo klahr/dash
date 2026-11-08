@@ -34,6 +34,7 @@ func init() {
 		"POST /api/projects/{pid}/push", "GET /api/projects/{pid}/unpushed", "GET /api/projects/{pid}/remote",
 		"POST /api/projects/{pid}/remote/fetch", "GET /api/projects/{pid}/graph", "GET /api/projects/{pid}/files",
 		"GET /api/projects/{pid}/file", "PUT /api/projects/{pid}/file", "POST /api/projects/{pid}/edits",
+		"GET /api/projects/{pid}/branches", "PUT /api/projects/{pid}/branch", "POST /api/projects/{pid}/branch/pr",
 		// Release tags: made and pushed on the runner, in its clone (release.go).
 		"GET /api/projects/{pid}/release", "POST /api/projects/{pid}/tags", "GET /api/projects/{pid}/tag-format",
 

@@ -24,6 +24,7 @@ func (m *MergeQueue) revert(ctx context.Context, job model.MergeJob) {
 	if err != nil {
 		return
 	}
+	p = p.For(t) // it landed on the branch it started from
 	fail := func(err error) {
 		m.Log.Line(t, "✖ revert: "+err.Error())
 		_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Error = "Revert failed: " + err.Error(); return nil })
@@ -40,7 +41,7 @@ func (m *MergeQueue) revert(ctx context.Context, job model.MergeJob) {
 	}
 	sha := t.MergedCommit
 	if sha == "" {
-		if sha, err = m.Git.FindTodoCommit(ctx, p.ID, p.Path, p.DefaultBranch, t.ID); err != nil {
+		if sha, err = m.Git.FindTodoCommit(ctx, p.ID, p.Path, p.Base(), t.ID); err != nil {
 			fail(err)
 			return
 		}
@@ -79,7 +80,7 @@ func (m *MergeQueue) revertPR(ctx context.Context, t model.Todo, p model.Project
 	wt := model.Worktree{
 		Name: "revert-" + t.ID, Path: filepath.Join(m.WorktreeRoot, p.ID, "revert-"+t.ID), Branch: "dash/revert-" + t.ID,
 	}
-	if err := m.Git.AddWorktreeAt(ctx, p.ID, p.Path, wt.Path, wt.Branch, p.DefaultBranch); err != nil {
+	if err := m.Git.AddWorktreeAt(ctx, p.ID, p.Path, wt.Path, wt.Branch, p.Base()); err != nil {
 		fail(err)
 		return
 	}
@@ -98,7 +99,7 @@ func (m *MergeQueue) revertPR(ctx context.Context, t model.Todo, p model.Project
 		fail(err)
 		return
 	}
-	n, url, err := m.Git.OpenPR(ctx, p.ID, wt.Path, p.DefaultBranch, wt.Branch, "Revert: "+subject(t),
+	n, url, err := m.Git.OpenPR(ctx, p.ID, wt.Path, p.Base(), wt.Branch, "Revert: "+subject(t),
 		fmt.Sprintf("Reverts %s, which landed \"%s\".\n\n---\nOpened by Dash.", sha, subject(t)))
 	if err != nil {
 		fail(err)

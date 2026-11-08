@@ -12,6 +12,22 @@ import (
 
 var prURLRe = regexp.MustCompile(`https://\S+/pull/(\d+)`)
 
+// FindPR returns head's open pull request into base, if there is one.
+func (g *Git) FindPR(ctx context.Context, projectID, dir, base, head string) (number int, url string, ok bool, err error) {
+	out, err := g.ghQuiet(ctx, projectID, dir, "pr", "list", "--head", head, "--base", base, "--state", "open", "--json", "number,url")
+	if err != nil {
+		return 0, "", false, err
+	}
+	var found []struct {
+		Number int    `json:"number"`
+		URL    string `json:"url"`
+	}
+	if json.Unmarshal([]byte(jsonPart(out)), &found) != nil || len(found) == 0 {
+		return 0, "", false, nil
+	}
+	return found[0].Number, found[0].URL, true, nil
+}
+
 // OpenPR returns the open pull request for head, creating one if there is none.
 func (g *Git) OpenPR(ctx context.Context, projectID, dir, base, head, title, body string) (number int, url string, err error) {
 	out, err := g.gh(ctx, projectID, dir, "pr", "list", "--head", head, "--state", "open", "--json", "number,url")
