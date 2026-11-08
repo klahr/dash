@@ -171,9 +171,15 @@ func fakeGh(t *testing.T, dir string) (bin, stateFile string) {
 	return bin, stateFile
 }
 
+// With "Merge pull requests when checks pass" off, the pull request waits
+// for someone to merge it on GitHub, green or not.
 func TestPullRequestMode(t *testing.T) {
 	h := newHarness(t, &fakeExec{fn: writeFile("", "pr.txt")}, model.Project{Name: "p"})
 	origin, _ := h.addOrigin(false, model.MergePR)
+	off := false
+	if _, err := h.st.UpdateProject(h.proj.ID, func(p *model.Project) error { p.MergeGreenPRs = &off; return nil }); err != nil {
+		t.Fatal(err)
+	}
 	bin, state := fakeGh(t, t.TempDir())
 	h.git.GhBin = bin
 	write(t, filepath.Dir(state), "pr.json", `{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"abc","statusCheckRollup":[]}`)
@@ -200,6 +206,10 @@ func TestPullRequestMode(t *testing.T) {
 	if gitRun(t, h.proj.Path, "log", "--oneline", "main") != gitRun(t, origin, "log", "--oneline", "main") {
 		t.Fatal("PR mode must not commit to main locally")
 	}
+	h.merges.PollPRs(context.Background()) // green, but left to GitHub (the fake gh fails a merge)
+	if x, _ := h.st.GetTodo(td.ID); x.Status != model.StatusMerging || x.PR.HandledSHA != "" {
+		t.Fatalf("a green pull request was acted on with merging when checks pass off: %s %+v", x.Status, x.PR)
+	}
 
 	// GitHub merges it (here: someone merges the branch on origin).
 	other := filepath.Join(filepath.Dir(h.proj.Path), "other")
@@ -220,12 +230,18 @@ func TestPullRequestMode(t *testing.T) {
 	}
 }
 
-// On a runner, a hub's task's pull request is merged once its checks pass,
-// instead of waiting for someone to merge it on GitHub.
-func TestRunnerMergesHubTaskPullRequest(t *testing.T) {
+// A task's pull request is squash-merged once its checks pass, instead of
+// waiting for someone to merge it on GitHub: on a runner (a hub's task) and
+// on a Dash without runners alike.
+func TestGreenPullRequestIsMerged(t *testing.T) {
+	t.Run("runner", func(t *testing.T) { testGreenPullRequestIsMerged(t, "hub-p") })
+	t.Run("no runners", func(t *testing.T) { testGreenPullRequestIsMerged(t, "") })
+}
+
+func testGreenPullRequestIsMerged(t *testing.T, hubProject string) {
 	h := newHarness(t, &fakeExec{fn: writeFile("", "hub.txt")}, model.Project{Name: "p"})
 	h.addOrigin(false, model.MergePR)
-	if _, err := h.st.UpdateProject(h.proj.ID, func(p *model.Project) error { p.HubProjectID = "hub-p"; return nil }); err != nil {
+	if _, err := h.st.UpdateProject(h.proj.ID, func(p *model.Project) error { p.HubProjectID = hubProject; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()

@@ -318,6 +318,31 @@ func TestPreflightPlainHTTPHub(t *testing.T) {
 	}
 }
 
+// gh isn't needed to register a runner: every check passes without it.
+func TestPreflightDoesNotNeedGh(t *testing.T) {
+	var looked []string
+	p := Preflight{
+		LookPath: func(f string) (string, error) {
+			looked = append(looked, f)
+			if f == "gh" {
+				return "", errors.New("not found")
+			}
+			return "/usr/bin/" + f, nil
+		},
+		Output: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return json.Marshal(map[string]any{"loggedIn": true, "email": "me@example.com"})
+		},
+	}
+	for _, c := range p.Run(context.Background(), "http://dash.example.com", "claude")[:2] {
+		if !c.OK {
+			t.Errorf("%s: %+v", c.Name, c)
+		}
+	}
+	if slices.Contains(looked, "gh") {
+		t.Errorf("preflight looked for gh: %v", looked)
+	}
+}
+
 func TestServicePath(t *testing.T) {
 	if got := ServicePath("/usr/bin::/bin", "/bin", "/opt/x", ""); got != "/usr/bin:/bin:/opt/x" {
 		t.Errorf("got %s", got)

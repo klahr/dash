@@ -803,27 +803,34 @@ func contains[T comparable](xs []T, x T) bool {
 	return false
 }
 
-// LandRunnerProjectsLocally switches projects linked to runners from pull
-// requests to landing locally (the runner pushes to the default branch),
-// the default since runners stopped being forced to open pull requests.
-// Projects whose user chose pull requests themselves (MergeModeSet) keep
-// them. Their tasks with an open pull request are followed until it
-// closes. It returns the names of the projects it switched.
-func (s *Store) LandRunnerProjectsLocally() ([]string, error) {
+// DefaultMergeModes gives every project whose user didn't choose how its
+// work lands (model.Project.MergeModeSet) the default: pull requests for a
+// GitHub repository (when gh, whether this Dash has the GitHub CLI, or the
+// project's runners can open them), else merging locally. A runner's clone
+// of a hub's project is left alone: it lands the way the hub says. Tasks
+// with a pull request already open are followed until it closes, whatever
+// the mode. It returns the names of the projects it changed.
+func (s *Store) DefaultMergeModes(gh bool) ([]string, error) {
 	var names []string
 	for _, p := range s.ListProjects() {
-		if !p.OnRunners() || p.MergeMode != model.MergePR || p.MergeModeSet {
+		if p.MergeModeSet || p.HubProjectID != "" || p.MergeMode == p.DefaultMergeMode(gh) {
 			continue
 		}
+		changed := false
 		if _, err := s.UpdateProject(p.ID, func(x *model.Project) error {
-			if x.OnRunners() && x.MergeMode == model.MergePR && !x.MergeModeSet {
-				x.MergeMode = model.MergeLocal
+			if x.MergeModeSet || x.HubProjectID != "" {
+				return nil
 			}
+			mode := x.DefaultMergeMode(gh)
+			changed = x.MergeMode != mode
+			x.MergeMode = mode
 			return nil
 		}); err != nil {
 			return names, err
 		}
-		names = append(names, p.Name)
+		if changed {
+			names = append(names, p.Name)
+		}
 	}
 	return names, nil
 }

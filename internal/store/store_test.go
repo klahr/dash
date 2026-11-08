@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/klahr/dash/internal/model"
@@ -176,10 +177,12 @@ func TestOldStateWithoutDependsOnLoads(t *testing.T) {
 	}
 }
 
-// Upgrading: projects linked to runners that opened pull requests only
-// because runners used to be forced to switch to merging; a user's own
-// choice of pull requests, and projects without runners, stay.
-func TestLandRunnerProjectsLocally(t *testing.T) {
+// Upgrading: projects whose user didn't choose get the default, pull
+// requests on GitHub (also projects on runners, forced into them once and
+// switched to merging by an earlier upgrade); a user's own choice, projects
+// without a GitHub remote and runners' clones keep what they have. Without
+// gh here, GitHub projects merge, except those on runners.
+func TestDefaultMergeModes(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -193,19 +196,45 @@ func TestLandRunnerProjectsLocally(t *testing.T) {
 		}
 		return p
 	}
-	forced := mk("forced", model.Project{MergeMode: model.MergePR, Runners: []string{"r"}})
-	chosen := mk("chosen", model.Project{MergeMode: model.MergePR, MergeModeSet: true, Runners: []string{"r"}})
-	alone := mk("alone", model.Project{MergeMode: model.MergePR})
-	names, err := s.LandRunnerProjectsLocally()
-	if err != nil || len(names) != 1 || names[0] != "forced" {
-		t.Fatalf("switched %v %v", names, err)
+	const gh = "https://github.com/acme/web.git"
+	plain := mk("plain", model.Project{RemoteURL: gh})
+	ssh := mk("ssh", model.Project{RemoteURL: "git@github.com:acme/api.git", MergeMode: model.MergeLocal})
+	runners := mk("runners", model.Project{RemoteURL: gh, MergeMode: model.MergeLocal, Runners: []string{"r"}})
+	forced := mk("forced", model.Project{RemoteURL: gh, MergeMode: model.MergePR, Runners: []string{"r"}})
+	chosen := mk("chosen", model.Project{RemoteURL: gh, MergeMode: model.MergeLocal, MergeModeSet: true})
+	chosenPR := mk("chosen pr", model.Project{RemoteURL: "https://gitlab.com/acme/x.git", MergeMode: model.MergePR, MergeModeSet: true})
+	gitlab := mk("gitlab", model.Project{RemoteURL: "https://gitlab.com/acme/x.git", MergeMode: model.MergePR})
+	none := mk("none", model.Project{})
+	clone := mk("clone", model.Project{RemoteURL: gh, MergeMode: model.MergeLocal, HubProjectID: "hp"})
+
+	names, err := s.DefaultMergeModes(true)
+	slices.Sort(names)
+	if err != nil || !slices.Equal(names, []string{"gitlab", "none", "plain", "runners", "ssh"}) {
+		t.Fatalf("changed %v %v", names, err)
 	}
-	for p, want := range map[string]string{forced.ID: model.MergeLocal, chosen.ID: model.MergePR, alone.ID: model.MergePR} {
-		if got, _ := s.GetProject(p); got.MergeMode != want {
-			t.Errorf("%s: merge mode %q, want %q", got.Name, got.MergeMode, want)
+	check := func(want map[string]string) {
+		t.Helper()
+		ids := map[string]string{plain.Name: plain.ID, ssh.Name: ssh.ID, runners.Name: runners.ID, forced.Name: forced.ID,
+			chosen.Name: chosen.ID, chosenPR.Name: chosenPR.ID, gitlab.Name: gitlab.ID, none.Name: none.ID, clone.Name: clone.ID}
+		for name, mode := range want {
+			if got, _ := s.GetProject(ids[name]); got.MergeMode != mode {
+				t.Errorf("%s: merge mode %q, want %q", name, got.MergeMode, mode)
+			}
 		}
 	}
-	if names, _ := s.LandRunnerProjectsLocally(); len(names) != 0 {
-		t.Errorf("a second run switched %v", names)
+	check(map[string]string{"plain": model.MergePR, "ssh": model.MergePR, "runners": model.MergePR, "forced": model.MergePR,
+		"chosen": model.MergeLocal, "chosen pr": model.MergePR, "gitlab": model.MergeLocal, "none": model.MergeLocal,
+		"clone": model.MergeLocal})
+	if names, _ := s.DefaultMergeModes(true); len(names) != 0 {
+		t.Errorf("a second run changed %v", names)
 	}
+
+	// gh gone: only the runners still open pull requests.
+	names, _ = s.DefaultMergeModes(false)
+	slices.Sort(names)
+	if !slices.Equal(names, []string{"plain", "ssh"}) {
+		t.Errorf("without gh changed %v", names)
+	}
+	check(map[string]string{"plain": model.MergeLocal, "ssh": model.MergeLocal, "runners": model.MergePR, "forced": model.MergePR,
+		"chosen pr": model.MergePR})
 }

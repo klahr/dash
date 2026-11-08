@@ -11,7 +11,8 @@ Claude itself, `claude` as you, so it needs your home directory, your `~/.claude
 `PATH`. A hub with `-hub-claude off`, or with `-hub-claude auto` (the default) once it has several
 users or a runner, never runs `claude`; see
 [several computers](several-computers.md#claude-runs-on-each-users-own-runner). `gh` is only
-needed for optional features: pull-request merge mode, GitHub repositories (create, clone,
+needed for optional features: pull requests (the default for GitHub projects; without `gh` they
+merge on the default branch instead), GitHub repositories (create, clone,
 delete) and releases, and CI runs; it runs as you too, with your `gh auth` login.
 
 The unit assumes the repository is checked out at `~/dev/github/klahr/dash`. If yours is
