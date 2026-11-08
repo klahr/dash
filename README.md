@@ -64,11 +64,11 @@ Open <http://127.0.0.1:7788> and sign in with the `DASH_USERNAME` and `DASH_PASS
 Then add a runner, the computer the work happens on: the hub runs nothing itself (no Claude, no
 git, no project commands) and keeps no projects on its own disk, and until a runner is online the
 dashboard says so. In the account menu choose **Runners** → **Add a
-runner** and run the command it shows, here or on another computer. On the hub's own computer,
-give the runner a data folder of its own:
+runner** and run the command it shows, here or on another computer. On the hub's own computer
+too, the runner keeps its data apart from the hub's (`~/.local/share/dash-runner`):
 
 ```sh
-./bin/dash runner -data ~/.local/share/dash-runner --server http://127.0.0.1:7788 --code XXXX-XXXX
+./bin/dash runner --server http://127.0.0.1:7788 --code XXXX-XXXX
 ```
 
 Projects live on runners. A **runner's own project** is a repository on that runner's disk; a

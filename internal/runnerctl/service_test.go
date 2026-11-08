@@ -220,7 +220,7 @@ func TestSetupRegistersAndReinstallKeepsTheRegistration(t *testing.T) {
 	if code := tc.Main(ctx, "setup", []string{"--server", hub.URL, "--code", "ABCD-EFGH", "--projects", "~/work"}); code != 0 {
 		t.Fatalf("setup exited %d", code)
 	}
-	creds, err := tunnel.LoadCredentials(filepath.Join(tc.Home, ".local", "share", "dash", "runner.json"))
+	creds, err := tunnel.LoadCredentials(filepath.Join(tc.Home, ".local", "share", "dash-runner", "runner.json"))
 	if err != nil || creds.Name != "box" || creds.Server != hub.URL || creds.Projects != filepath.Join(tc.Home, "work") {
 		t.Fatalf("saved %+v, %v", creds, err)
 	}
@@ -239,7 +239,7 @@ func TestSetupRegistersAndReinstallKeepsTheRegistration(t *testing.T) {
 	if tc.registers != 1 {
 		t.Errorf("registered %d times", tc.registers)
 	}
-	again, _ := tunnel.LoadCredentials(filepath.Join(tc.Home, ".local", "share", "dash", "runner.json"))
+	again, _ := tunnel.LoadCredentials(filepath.Join(tc.Home, ".local", "share", "dash-runner", "runner.json"))
 	if again != creds {
 		t.Errorf("registration changed: %+v → %+v", creds, again)
 	}
@@ -268,7 +268,7 @@ func TestSetupRegistersAndReinstallKeepsTheRegistration(t *testing.T) {
 			t.Errorf("status lacks %q", want)
 		}
 	}
-	if err := WriteState(StatePath(filepath.Join(tc.Home, ".local", "share", "dash")), State{PID: os.Getpid(), Version: "v1.2.2", Connected: true}); err != nil {
+	if err := WriteState(StatePath(filepath.Join(tc.Home, ".local", "share", "dash-runner")), State{PID: os.Getpid(), Version: "v1.2.2", Connected: true}); err != nil {
 		t.Fatal(err)
 	}
 	tc.out.Reset()
@@ -284,7 +284,7 @@ func TestSetupRegistersAndReinstallKeepsTheRegistration(t *testing.T) {
 	if _, err := os.Stat(unit); !os.IsNotExist(err) {
 		t.Error("unit left behind")
 	}
-	if _, err := tunnel.LoadCredentials(filepath.Join(tc.Home, ".local", "share", "dash", "runner.json")); err != nil {
+	if _, err := tunnel.LoadCredentials(filepath.Join(tc.Home, ".local", "share", "dash-runner", "runner.json")); err != nil {
 		t.Error("uninstall dropped the registration")
 	}
 }

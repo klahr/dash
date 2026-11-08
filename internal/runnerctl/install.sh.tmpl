@@ -8,8 +8,8 @@
 #                    to update a computer that is registered already)
 #   --name NAME      this computer's name in the dashboard (default: its host name)
 #   --projects DIR   where the runner's projects live (default: ~/dash-projects)
-#   --data DIR       the runner's data directory (default: ~/.local/share/dash; use another
-#                    one on a computer that also runs a Dash dashboard or hub)
+#   --data DIR       the runner's data directory (default: ~/.local/share/dash-runner,
+#                    a hub's being ~/.local/share/dash)
 #   --prefix DIR     where dash is installed (default: ~/.local/bin)
 #   --no-service     don't install a background service; run the runner in
 #                    this terminal instead
@@ -38,8 +38,8 @@ Installs a Dash runner: curl -fsSL <hub>/runner/install.sh | sh -s -- [options]
   --code CODE      registration code from the hub's Runners page (not needed to update)
   --name NAME      this computer's name in the dashboard (default: its host name)
   --projects DIR   where the runner's projects live (default: ~/dash-projects)
-  --data DIR       the runner's data directory (default: ~/.local/share/dash; use
-                   another one on a computer that also runs a Dash hub)
+  --data DIR       the runner's data directory (default: ~/.local/share/dash-runner,
+                   a hub's being ~/.local/share/dash)
   --prefix DIR     where dash is installed (default: ~/.local/bin)
   --no-service     run the runner in this terminal instead of as a background service
   --skip-checks    register even if git, claude or the hub look wrong

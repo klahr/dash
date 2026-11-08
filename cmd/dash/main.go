@@ -85,7 +85,11 @@ func main() {
 	loginGlobal := flag.Int("login-global-failures", -1, fmt.Sprintf("failed sign-ins from all addresses together within -login-window before every new sign-in is refused until the window passes; signed-in sessions carry on; 0 = no global limit (default $DASH_LOGIN_GLOBAL_FAILURES, else %d)", auth.DefaultLockout.Global))
 	loginWindow := flag.Duration("login-window", 0, fmt.Sprintf("the window failed sign-ins are counted in (default $DASH_LOGIN_WINDOW, else %s)", auth.DefaultLockout.Window))
 	cleanupDays := flag.Int("cleanup-days", 14, "daily cleanup: remove worktrees of tasks that failed this many days ago, plus orphaned worktrees, branches, logs and uploads (0 = off)")
-	dataDir := flag.String("data", filepath.Join(home, ".local", "share", "dash"), "state, logs and worktrees")
+	defaultData, mode := runnerctl.HubData(home), runnerctl.ModeHub
+	if runnerMode {
+		defaultData, mode = runnerctl.RunnerData(home), runnerctl.ModeRunner
+	}
+	dataDir := flag.String("data", defaultData, "state, logs and worktrees (a hub and a runner on one computer need different ones)")
 	projectRoot := flag.String("projects", "", "where new projects are created (default $DASH_PROJECTS, else ~/dash-projects)")
 	parallel := flag.Int("parallel", 3, "max tasks executed concurrently")
 	claudeBin := flag.String("claude", "claude", "Claude Code binary used to execute tasks (dash runner only: the hub never runs Claude)")
@@ -183,6 +187,17 @@ func main() {
 		// Nobody signs in to a runner without a listener of its own; the hub
 		// reaches it through the tunnel.
 		user, pass = "runner", rand.Text()
+	}
+	// A hub and a runner on one computer each have their own data directory.
+	if runnerMode {
+		if err := runnerctl.MigrateRunnerData(home, *dataDir); err != nil {
+			slog.Error("move the runner's registration", "err", err)
+			os.Exit(1)
+		}
+	}
+	if err := runnerctl.ClaimData(*dataDir, mode); err != nil {
+		slog.Error("data directory", "err", err)
+		os.Exit(1)
 	}
 	events := hub.New()
 	storeEvents := &teePublisher{Publisher: events}

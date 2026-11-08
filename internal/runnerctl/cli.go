@@ -62,7 +62,16 @@ func (c *CLI) defaults() {
 	}
 }
 
-func (c *CLI) defaultData() string { return filepath.Join(c.Home, ".local", "share", "dash") }
+func (c *CLI) defaultData() string { return RunnerData(c.Home) }
+
+// parse parses a command's flags and readies its data directory: the
+// registration moves there from a hub's directory (MigrateRunnerData).
+func (c *CLI) parse(fs *flag.FlagSet, args []string, data *string) error {
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	return MigrateRunnerData(c.Home, *data)
+}
 
 // Main runs command with its args and returns the exit status.
 func (c *CLI) Main(ctx context.Context, command string, args []string) int {
@@ -114,7 +123,10 @@ func (c *CLI) setup(ctx context.Context, args []string) error {
 	service := fs.Bool("service", true, "install and start the background service")
 	skip := fs.Bool("skip-checks", false, "register even if the checks fail")
 	claudeBin := fs.String("claude", "claude", "Claude Code binary the runner uses")
-	if err := fs.Parse(args); err != nil {
+	if err := c.parse(fs, args, data); err != nil {
+		return err
+	}
+	if err := ClaimData(*data, ModeRunner); err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {
@@ -218,7 +230,7 @@ func (c *CLI) newService(data string) (*Service, error) {
 		return nil, fmt.Errorf("find the dash binary: %w", err)
 	}
 	args := []string{"runner"}
-	if filepath.Clean(data) != filepath.Clean(c.defaultData()) {
+	if filepath.Clean(data) != newRunnerData(c.Home) {
 		abs, err := filepath.Abs(data)
 		if err != nil {
 			return nil, err
@@ -271,7 +283,7 @@ func (c *CLI) installService(svc *Service) error {
 
 func (c *CLI) install(args []string) error {
 	fs, data := c.flags("install", "Installs and starts the background service that runs dash runner\n(a systemd user unit on Linux, a LaunchAgent on macOS).")
-	if err := fs.Parse(args); err != nil {
+	if err := c.parse(fs, args, data); err != nil {
 		return err
 	}
 	if _, err := tunnel.LoadCredentials(c.credsPath(*data)); err != nil {
@@ -286,7 +298,7 @@ func (c *CLI) install(args []string) error {
 
 func (c *CLI) uninstall(args []string) error {
 	fs, data := c.flags("uninstall", "Stops and removes the background service. The registration is kept.")
-	if err := fs.Parse(args); err != nil {
+	if err := c.parse(fs, args, data); err != nil {
 		return err
 	}
 	svc, err := c.newService(*data)
@@ -307,7 +319,7 @@ func (c *CLI) uninstall(args []string) error {
 
 func (c *CLI) status(ctx context.Context, args []string) error {
 	fs, data := c.flags("status", "Shows this runner's registration, connection and service.")
-	if err := fs.Parse(args); err != nil {
+	if err := c.parse(fs, args, data); err != nil {
 		return err
 	}
 	w := c.Out

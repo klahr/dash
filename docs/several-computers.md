@@ -65,10 +65,12 @@ That's all. The script, served by the hub (it holds no secrets, so it needs no s
    The code is only used once the checks pass;
 3. registers with the hub. The runner is named after its host; the dialog's **Name** field (or
    `--name work`) picks another, and **Projects directory** (`--projects ~/code`) sets where its
-   projects live. It swaps the code for its own token, saved in `~/.local/share/dash/runner.json`
-   (readable only by you). On a computer that also runs the hub (or another Dash), give the
-   runner a name of its own and its own data directory, e.g.
-   `--name home-runner --data ~/.local/share/dash-runner`, so the two don't share a database.
+   projects live. It swaps the code for its own token, saved in
+   `~/.local/share/dash-runner/runner.json` (readable only by you). A runner's data directory
+   (`--data`) is `~/.local/share/dash-runner` and a hub's `~/.local/share/dash`, so a hub and a
+   runner on one computer don't share a database; each refuses to start in the other's. (A runner
+   registered in `~/.local/share/dash` before keeps using it, or, when a hub uses that directory
+   too, moves its registration to `~/.local/share/dash-runner` and starts afresh there.)
    Registering again from the same computer replaces its old registration, name included;
 4. installs and starts a background service: a systemd **user** unit (`dash-runner.service`) on
    Linux, a LaunchAgent (`com.github.klahr.dash-runner`) on macOS. It reconnects by itself,
