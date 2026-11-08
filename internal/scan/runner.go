@@ -2,7 +2,6 @@ package scan
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -34,7 +33,8 @@ const ResumeMaxAge = 24 * time.Hour
 
 // Runner runs scans: Claude Code in a throwaway, detached worktree of the
 // project, never on a branch and never through review or the merge queue.
-// It runs at most one copy of each scan of a project at a time.
+// It runs at most one copy of each scan of a project at a time. On a hub
+// that doesn't run Claude, Claude's part runs on a runner (see Remote).
 type Runner struct {
 	Store *store.Store
 	Git   *gitops.Git
@@ -53,6 +53,14 @@ type Runner struct {
 	// without them a scan reads only files.
 	GitTools *GitMCP
 	GitURL   string
+	// Remote, on a hub that doesn't run Claude itself (agent.LocalAllowed
+	// is false), runs each scan's Claude on a runner linked to the project;
+	// the hub keeps the runs, their logs and the issues they file. nil: such
+	// a hub refuses to start scans.
+	Remote Remote
+	// WaitEvery is how often a run waiting for a runner asks again
+	// (default 5s).
+	WaitEvery time.Duration
 
 	mu      sync.Mutex
 	running map[string]*active // project/scan → the run
@@ -122,7 +130,7 @@ func (r *Runner) Start(projectID, name, trigger string) (model.ScanRun, error) {
 // start begins a run; from, if set, is the interrupted run it starts over,
 // whose scope, path and base commit it keeps.
 func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun) (model.ScanRun, error) {
-	if !agent.LocalAllowed() {
+	if !agent.LocalAllowed() && r.Remote == nil {
 		return model.ScanRun{}, agent.ErrNoLocalClaude
 	}
 	p, err := r.Store.GetProject(projectID)
@@ -209,17 +217,22 @@ type target struct {
 }
 
 // resolve works out the commits a run scans for its template's scope. A
-// resumed run (from set) scans the current commit but keeps the original
-// run's base, so it covers at least what the original would have.
-func (r *Runner) resolve(ctx context.Context, p model.Project, t Template, from *model.ScanRun) (target, error) {
+// resumed run (job.From set) scans the current commit but keeps the
+// original run's base, so it covers at least what the original would have.
+func (r *Runner) resolve(ctx context.Context, p model.Project, job Job) (target, error) {
+	t, from := job.Template, job.From
 	var tg target
 	head := func(ref string) (string, error) { return r.Git.Commit(ctx, p.ID, p.Path, ref) }
+	mainRef := job.Ref
+	if mainRef == "" {
+		mainRef = "refs/heads/" + p.DefaultBranch
+	}
 	var err error
 	if from != nil && from.Commit != "" {
 		// The original had worked out its target before it was cut off.
 		if t.Scope == model.ScopeSinceMain {
 			tg.commit, err = head("HEAD")
-		} else if tg.commit, err = head("refs/heads/" + p.DefaultBranch); err != nil {
+		} else if tg.commit, err = head(mainRef); err != nil {
 			tg.commit, err = head("HEAD")
 		}
 		if err != nil {
@@ -242,7 +255,7 @@ func (r *Runner) resolve(ctx context.Context, p model.Project, t Template, from 
 		if tg.commit, err = head("HEAD"); err != nil {
 			return tg, fmt.Errorf("the checkout has no commit: %w", err)
 		}
-		main, err := head("refs/heads/" + p.DefaultBranch)
+		main, err := head(mainRef)
 		if err != nil {
 			return tg, fmt.Errorf("no branch %s: %w", p.DefaultBranch, err)
 		}
@@ -255,25 +268,22 @@ func (r *Runner) resolve(ctx context.Context, p model.Project, t Template, from 
 			return tg, nil
 		}
 	} else {
-		if tg.commit, err = head("refs/heads/" + p.DefaultBranch); err != nil {
+		if tg.commit, err = head(mainRef); err != nil {
 			if tg.commit, err = head("HEAD"); err != nil {
 				return tg, fmt.Errorf("the repository has no commit: %w", err)
 			}
 		}
 	}
 	if t.Scope == model.ScopeSinceLastScan {
-		last, ok := r.Store.LastScanRun(p.ID, t.Name, func(x model.ScanRun) bool {
-			return (x.Status == model.ScanSucceeded || x.Status == model.ScanSkipped) && x.Commit != ""
-		})
 		switch {
-		case !ok:
+		case job.LastCommit == "":
 			tg.note = "First run: scanned everything"
-		case last.Commit == tg.commit:
+		case job.LastCommit == tg.commit:
 			tg.skip = "Nothing changed since the last scan"
 			return tg, nil
 		default:
 			// The merge base, in case history was rewritten since.
-			base, err := r.Git.MergeBase(ctx, p.ID, p.Path, last.Commit, tg.commit)
+			base, err := r.Git.MergeBase(ctx, p.ID, p.Path, job.LastCommit, tg.commit)
 			if err != nil || base == "" {
 				tg.note = "The last scanned commit is gone: scanned everything"
 				break
@@ -316,12 +326,18 @@ func underPath(files []string, dir string) []string {
 	return out
 }
 
+// remote reports whether runs go to a runner (see Runner.Remote).
+func (r *Runner) remote() bool { return r.Remote != nil && !agent.LocalAllowed() }
+
 func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run model.ScanRun, from *model.ScanRun) {
 	logf, _ := r.openLog(run.ID)
 	if logf != nil {
 		defer logf.Close()
 	}
+	var logMu sync.Mutex // Claude's stdout and stderr report from their own goroutines
 	logLine := func(s string) {
+		logMu.Lock()
+		defer logMu.Unlock()
 		if logf != nil && s != "" {
 			fmt.Fprintf(logf, "%s %s\n", time.Now().Format("15:04:05"), s)
 		}
@@ -350,92 +366,84 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 	}
 	logLine(fmt.Sprintf("▶ scan %s (%s) of %s", t.Name, t.Scope, p.Name))
 
-	tg, err := r.resolve(ctx, p, t, from)
-	if err != nil {
-		fail(err)
-		return
-	}
-	run, _ = r.Store.UpdateScanRun(run.ID, true, func(x *model.ScanRun) {
-		x.Commit, x.Since, x.Incremental, x.Note = tg.commit, tg.since, tg.incremental, tg.note
-	})
-	if tg.skip != "" {
-		logLine("⏭ " + tg.skip)
-		finish(func(x *model.ScanRun) { x.Status, x.Note = model.ScanSkipped, tg.skip })
-		return
-	}
-
-	dir := filepath.Join(r.Root, "worktrees", p.ID, run.ID)
-	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
-		fail(err)
-		return
-	}
-	if err := r.Git.AddDetachedWorktree(ctx, p.ID, p.Path, dir, tg.commit); err != nil {
-		fail(fmt.Errorf("check out %s: %w", short(tg.commit), err))
-		return
-	}
-	defer r.Git.RemoveDetachedWorktree(context.WithoutCancel(ctx), p.ID, p.Path, dir)
-
 	set, has := r.Store.ScanSetting(p.ID, t.Name)
 	tools, approved := Tools(t, set, has)
 	if !approved {
 		logLine(fmt.Sprintf("⚠ the template asks for tools that are not approved in Dash (%s): running with read-only tools", strings.Join(t.Tools, ", ")))
 	}
-	prompt := BuildPrompt(t, tg, r.knownIssues(p.ID, t, tg))
-	logLine("prompt:\n" + prompt)
-	var mu sync.Mutex // stdout and stderr report from their own goroutines
+	job := Job{RunID: run.ID, Template: t, Tools: tools, Timeout: r.runTimeout(), Known: r.scanIssues(p.ID, t)}
+	if from != nil {
+		job.From = &Resume{Commit: from.Commit, Since: from.Since, Incremental: from.Incremental, Note: from.Note}
+	}
+	if t.Scope == model.ScopeSinceLastScan {
+		if last, ok := r.Store.LastScanRun(p.ID, t.Name, func(x model.ScanRun) bool {
+			return (x.Status == model.ScanSucceeded || x.Status == model.ScanSkipped) && x.Commit != ""
+		}); ok {
+			job.LastCommit = last.Commit
+		}
+	}
+	var mu sync.Mutex
 	var lastActivity time.Time
-	timeout := r.runTimeout()
-	runCtx, cancelRun := context.WithTimeout(ctx, timeout)
-	defer cancelRun()
-	extra := Args(t, tools)
-	if r.GitTools != nil && r.GitURL != "" {
-		token, release := r.GitTools.Register(dir)
-		defer release()
-		cfg, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{GitServerName: GitServerConfig(r.GitURL, token)}})
-		extra = append(extra, "--mcp-config", string(cfg))
+	hooks := Hooks{
+		Log: logLine,
+		Target: func(o Outcome) {
+			run, _ = r.Store.UpdateScanRun(run.ID, true, func(x *model.ScanRun) {
+				x.Commit, x.Since, x.Incremental, x.Note = o.Commit, o.Since, o.Incremental, o.Note
+			})
+		},
+		Event: func(e model.RunEvent) {
+			line := agent.Summary(e)
+			logLine(line)
+			mu.Lock()
+			defer mu.Unlock()
+			if e.Kind != "tool_use" && e.Kind != "text" || time.Since(lastActivity) < time.Second {
+				return
+			}
+			lastActivity = time.Now()
+			act := line
+			if e.Kind == "tool_use" {
+				act = "Using " + e.Tool
+			}
+			_, _ = r.Store.UpdateScanRun(run.ID, false, func(x *model.ScanRun) { x.Activity = clip(oneLine(act), 120) })
+		},
 	}
-	res, err := r.Exec.Run(runCtx, agent.ExecRequest{Dir: dir, Prompt: prompt, ExtraArgs: extra}, func(e model.RunEvent) {
-		mu.Lock()
-		defer mu.Unlock()
-		line := agent.Summary(e)
-		logLine(line)
-		if e.Kind != "tool_use" && e.Kind != "text" || time.Since(lastActivity) < time.Second {
-			return
-		}
-		lastActivity = time.Now()
-		act := line
-		if e.Kind == "tool_use" {
-			act = "Using " + e.Tool
-		}
-		_, _ = r.Store.UpdateScanRun(run.ID, false, func(x *model.ScanRun) { x.Activity = clip(oneLine(act), 120) })
-	})
-	run, _ = r.Store.UpdateScanRun(run.ID, false, func(x *model.ScanRun) { x.CostUSD, x.Turns = res.CostUSD, res.Turns })
-	if ctx.Err() == nil && errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-		fail(fmt.Errorf("stopped: the scan ran longer than its %s limit", timeout))
+	var out Outcome
+	var err error
+	if r.remote() {
+		out, err = r.runRemote(ctx, p, job, hooks)
+	} else {
+		out, err = r.Work(ctx, p, job, hooks)
+	}
+	if err == nil && out.Skip != "" {
+		logLine("⏭ " + out.Skip)
+		finish(func(x *model.ScanRun) { x.Status, x.Note = model.ScanSkipped, out.Skip })
 		return
+	}
+	if out.CostUSD != 0 || out.Turns != 0 {
+		run, _ = r.Store.UpdateScanRun(run.ID, false, func(x *model.ScanRun) { x.CostUSD, x.Turns = out.CostUSD, out.Turns })
 	}
 	if err != nil {
 		fail(err)
 		return
 	}
-	found, err := ParseFindings(res.Result)
+	found, err := ParseFindings(out.Result)
 	if err != nil {
-		run, _ = r.Store.UpdateScanRun(run.ID, false, func(x *model.ScanRun) { x.Answer = clip(res.Result, maxAnswer) })
+		run, _ = r.Store.UpdateScanRun(run.ID, false, func(x *model.ScanRun) { x.Answer = clip(out.Result, maxAnswer) })
 		fail(err)
 		return
 	}
-	issues, invalid := Issues(t, dir, found)
+	issues, invalid := Issues(t, out.Dir, found)
 	for _, e := range invalid {
 		logLine("dropped finding: " + e.Error())
 	}
 	run.Invalid = len(invalid)
-	out, err := Record(r.Store, run, issues)
+	rec, err := Record(r.Store, run, issues)
 	if err != nil {
 		fail(err)
 		return
 	}
 	finish(func(x *model.ScanRun) {
-		*x = out
+		*x = rec
 		x.Status = model.ScanSucceeded
 	})
 	logLine(fmt.Sprintf("✔ %d findings: %d new, %d updated, %d known, %d dismissed, %d reopened",
@@ -468,9 +476,28 @@ func Record(st *store.Store, run model.ScanRun, issues []model.Issue) (model.Sca
 	return run, nil
 }
 
-// knownIssues are the issues this scan reported before, in its scope, so
-// the agent can reuse their fingerprints and leave dismissed ones out.
-func (r *Runner) knownIssues(projectID string, t Template, tg target) []model.Issue {
+// maxKnown is how many issues a scan's prompt lists as reported before.
+const maxKnown = 100
+
+// scanIssues are the issues this scan reported before (at most a few
+// hundred), for knownIssues.
+func (r *Runner) scanIssues(projectID string, t Template) []model.Issue {
+	var out []model.Issue
+	for _, is := range r.Store.ListIssues(projectID) {
+		if is.Source != t.Source() || is.Rule == "" {
+			continue
+		}
+		out = append(out, is)
+		if len(out) == 10*maxKnown {
+			break
+		}
+	}
+	return out
+}
+
+// knownIssues are the issues of all this scan reported before in its scope,
+// so the agent can reuse their fingerprints and leave dismissed ones out.
+func knownIssues(all []model.Issue, t Template, tg target) []model.Issue {
 	var in map[string]bool
 	if tg.incremental {
 		in = map[string]bool{}
@@ -479,10 +506,7 @@ func (r *Runner) knownIssues(projectID string, t Template, tg target) []model.Is
 		}
 	}
 	var out []model.Issue
-	for _, is := range r.Store.ListIssues(projectID) {
-		if is.Source != t.Source() || is.Rule == "" {
-			continue
-		}
+	for _, is := range all {
 		if in != nil && !in[is.File] {
 			continue
 		}
@@ -490,7 +514,7 @@ func (r *Runner) knownIssues(projectID string, t Template, tg target) []model.Is
 			continue
 		}
 		out = append(out, is)
-		if len(out) == 100 {
+		if len(out) == maxKnown {
 			break
 		}
 	}

@@ -9,8 +9,8 @@ merge them one at a time.
 - **Go 1.27.3 or newer** (see [`go.mod`](go.mod)), only to build from source
 - **[Claude Code](https://claude.com/claude-code)** (`claude`), installed and logged in. Dash runs
   it as you, so run `claude` once in a terminal first and sign in. A hub shared by several people
-  (or with runners) needs neither `claude` nor an API key: each person's Claude runs on their own
-  runner, with their own login ([several computers](docs/several-computers.md#claude-runs-on-each-users-own-runner)).
+  (or with runners) needs neither `claude` nor an API key: all its Claude work (tasks, scans,
+  chats, titles) runs on runners, with their owners' logins ([several computers](docs/several-computers.md#claude-runs-on-each-users-own-runner)).
 - Optional: **[`gh`](https://cli.github.com)**, logged in, to create GitHub repositories and open
   pull requests.
 

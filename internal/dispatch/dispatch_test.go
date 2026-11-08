@@ -175,8 +175,9 @@ func TestDispatchWaitsWhileRunnersAreOffline(t *testing.T) {
 	p := fx.project(t, fx.orgA, "laptop", "desk")
 	_, _, err := fx.d.Dispatch(context.Background(), p, fx.todo(t, p, nil))
 	var w *WaitError
-	if !errors.As(err, &w) || !strings.Contains(w.Reason, "laptop is offline") || !strings.Contains(w.Reason, "desk is offline") {
-		t.Fatalf("err = %v, want a wait naming both offline runners", err)
+	if !errors.As(err, &w) || !strings.HasPrefix(w.Reason, NoRunnerOnline+": ") ||
+		!strings.Contains(w.Reason, "laptop is offline") || !strings.Contains(w.Reason, "desk is offline") {
+		t.Fatalf("err = %v, want \"no runner online\" naming both offline runners", err)
 	}
 	if len(fx.fleet.calls) != 0 {
 		t.Errorf("offline runners were called: %q", fx.fleet.calls)
