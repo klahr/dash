@@ -23,6 +23,9 @@ func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) 
 		return fmt.Errorf("open pull request: %w", err)
 	}
 	if _, err := m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+		if x.Status != model.StatusMerging {
+			return nil // moved on while pushing (e.g. merged or closed on GitHub): keep what was seen
+		}
 		handled := ""
 		if x.PR != nil && x.PR.Number == n {
 			handled = x.PR.HandledSHA
@@ -39,7 +42,9 @@ func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) 
 
 // PollPRs follows open pull requests: merged ones are marked merged,
 // closed ones go back to review, and conflicts or failing checks are sent
-// back to Claude like a local merge conflict.
+// back to Claude like a local merge conflict. Tasks that failed or went to
+// review with their pull request still open are followed too, so a merge or
+// close done by hand on GitHub is noticed.
 func (m *MergeQueue) PollPRs(ctx context.Context) {
 	for _, t := range m.Store.ListTodos("", model.StatusMerging, model.StatusReview, model.StatusFailed) {
 		if t.PR == nil || t.PR.State != "OPEN" || t.OnRunner() {
@@ -82,10 +87,18 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 			return nil
 		})
 	case "OPEN":
-		if t.Status != model.StatusMerging || st.HeadRefOid == "" || st.HeadRefOid == t.PR.HandledSHA {
+		if t.Status != model.StatusMerging || st.HeadRefOid == "" {
 			return
 		}
+		// The head Dash already acted on: a fix pass that made no new commit
+		// pushed it again. Without this the task would wait in merging for a
+		// head that never changes.
+		handled := st.HeadRefOid == t.PR.HandledSHA
 		if st.Mergeable == "CONFLICTING" {
+			if handled {
+				m.stuck(ctx, t, st, model.StatusFailed, fmt.Sprintf("Pull request #%d still conflicts with %s after Claude's fix", n, p.Base()))
+				return
+			}
 			if p.SyncsRemote() && m.syncRemote(ctx, p) != nil {
 				return
 			}
@@ -103,77 +116,112 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 				failed = append(failed, c)
 			}
 		}
-		var ignored []string
-		if len(failed) > 0 {
-			info, anyRequired, err := m.Git.PRCheckInfo(ctx, p.ID, p.Path, n)
-			if err != nil {
-				slog.Warn("pull request checks", "todo", t.ID, "pr", n, "err", err)
-			} else {
-				failed, ignored = branchFixable(failed, info, anyRequired)
+		code, other := m.sortFailed(ctx, p, n, failed)
+		switch {
+		case len(code) > 0 && handled:
+			m.stuck(ctx, t, st, model.StatusFailed, fmt.Sprintf("Checks still fail on pull request #%d (%s) and Claude's fix made no new commit", n, labels(failed)))
+		case len(code) > 0:
+			m.handled(t, st.HeadRefOid, fmt.Sprintf("✖ checks fail on pull request #%d: %s", n, labels(failed)))
+			t, _ = m.Store.GetTodo(t.ID)
+			_ = m.sendBack(t, p, m.checksNote(ctx, p, n, code, other), false, fmt.Sprintf("checks fail on pull request #%d", n))
+		case len(other) > 0:
+			// Not something to fix in the code (e.g. an unsigned CLA): say so
+			// and leave it to a person. PollPRs still follows the pull request.
+			m.stuck(ctx, t, st, model.StatusReview, fmt.Sprintf("Pull request #%d can't merge: %s fails, which isn't about the code. Fix it on GitHub (e.g. sign the CLA), then merge it there or approve again", n, labels(other)))
+		default:
+			// Passing, or failing only checks that aren't required to merge.
+			// A handled head here is one GitHub refused to merge: leave it.
+			if p.HubProjectID != "" && !handled {
+				m.mergePR(ctx, t, p, st)
 			}
 		}
-		if len(failed) == 0 {
-			if p.HubProjectID != "" {
-				if st.Mergeable != "MERGEABLE" {
-					return // UNKNOWN while GitHub works it out; the next poll tries again
-				}
-				if m.mergePR(ctx, t, p, st) {
-					return
-				}
-			}
-			if len(ignored) > 0 {
-				// Not Claude's to fix: tell the user instead of spending fix passes.
-				m.handled(t, st.HeadRefOid, fmt.Sprintf("⚠ checks fail on pull request #%d that no change to this branch can fix:\n%s",
-					n, strings.Join(ignored, "\n")))
-				_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
-					x.Error = fmt.Sprintf("Checks fail on pull request #%d that no change to this branch can fix: %s. "+
-						"Merge the pull request on GitHub, after fixing them in %s if they block it.", n, strings.Join(ignored, "; "), p.Base())
-					return nil
-				})
-			}
+	}
+}
+
+// stuck moves a merging task whose pull request can't go further without a
+// person to status (failed or review), with why as its error. The pull
+// request stays open and followed, so merging or closing it on GitHub is
+// still noticed.
+func (m *MergeQueue) stuck(ctx context.Context, t model.Todo, st gitops.PRStatus, status model.TodoStatus, why string) {
+	if m.inQueue(t.ID) {
+		return // its branch is about to be pushed (again): judge what GitHub gets
+	}
+	if t.Worktree != nil {
+		// Until the push lands, GitHub still shows the old head; wait for it
+		// rather than judge the commit Claude just made by the last one.
+		if local, err := m.Git.Head(ctx, t.ProjectID, t.Worktree.Path, "HEAD"); err != nil || local != st.HeadRefOid {
 			return
 		}
-		m.handled(t, st.HeadRefOid, fmt.Sprintf("✖ checks fail on pull request #%d", n))
-		t, _ = m.Store.GetTodo(t.ID)
-		_ = m.sendBack(t, p, m.checksNote(ctx, p, n, failed, ignored), false, fmt.Sprintf("checks fail on pull request #%d", n))
 	}
+	if status == model.StatusFailed {
+		why += " — fix it on GitHub, or send it back for rework to let Claude try again"
+		noteFailure(m.Store, t.ID, why, "")
+	}
+	m.Log.Line(t, "✖ "+why)
+	_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+		if x.Status != model.StatusMerging {
+			return nil
+		}
+		x.Status, x.Error = status, why
+		if x.PR != nil {
+			x.PR.HandledSHA = st.HeadRefOid
+		}
+		return nil
+	})
+}
+
+// sortFailed splits failing checks into those Claude should fix in the code
+// and those no change to the branch can fix: a CLA or DCO signature, or a
+// pull_request_target workflow, which runs from the base branch. Checks the
+// base branch doesn't require to merge are dropped: they neither go to
+// Claude nor hold the task. When the branch requires no checks (or gh can't
+// tell), every check counts as required.
+func (m *MergeQueue) sortFailed(ctx context.Context, p model.Project, n int, failed []gitops.PRCheck) (code, other []gitops.PRCheck) {
+	if len(failed) == 0 {
+		return
+	}
+	return classifyFailed(failed, m.Git.RequiredChecks(ctx, p.ID, p.Path, n), m.Git.CheckEvents(ctx, p.ID, p.Path, n))
+}
+
+func classifyFailed(failed []gitops.PRCheck, required map[string]bool, events map[string]string) (code, other []gitops.PRCheck) {
+	for _, c := range failed {
+		switch {
+		case len(required) > 0 && !required[c.Label()]:
+			// not required to merge: neither fixed nor waited for
+		case gitops.NotAboutCode(c), gitops.RunsFromBase(events[c.Label()]):
+			other = append(other, c)
+		default:
+			code = append(code, c)
+		}
+	}
+	return
+}
+
+func labels(cs []gitops.PRCheck) string {
+	names := make([]string, len(cs))
+	for i, c := range cs {
+		names[i] = c.Label()
+	}
+	return strings.Join(names, ", ")
 }
 
 // mergePR merges the pull request of a hub's task on this runner once
 // GitHub finds it mergeable and its checks pass: approving it on the hub was
 // the review, and nobody here would merge it otherwise. When GitHub refuses
-// (e.g. a required review), it stays open to be merged there. It reports
-// whether GitHub took the merge.
-func (m *MergeQueue) mergePR(ctx context.Context, t model.Todo, p model.Project, st gitops.PRStatus) bool {
+// (e.g. a required review), it stays open to be merged there.
+func (m *MergeQueue) mergePR(ctx context.Context, t model.Todo, p model.Project, st gitops.PRStatus) {
+	if st.Mergeable != "MERGEABLE" {
+		return // UNKNOWN while GitHub works it out; the next poll tries again
+	}
 	n := t.PR.Number
 	if err := m.Git.MergePR(ctx, p.ID, p.Path, n, st.HeadRefOid); err != nil {
 		m.handled(t, st.HeadRefOid, fmt.Sprintf("⚠ couldn't merge pull request #%d: %v; merge it on GitHub", n, err))
-		return false
+		return
 	}
 	m.Log.Line(t, fmt.Sprintf("⇢ merging pull request #%d", n))
 	if st, err := m.Git.PRStatus(ctx, p.ID, p.Path, n); err == nil && st.State == "MERGED" {
 		m.followPR(ctx, t, p, st)
 	}
-	return true
-}
-
-// branchFixable splits failed checks into those a change to the pull
-// request's branch could fix and descriptions of the rest: checks run by
-// pull_request_target run the base branch's workflow, and when the base
-// branch requires some checks, the others don't hold up the merge.
-func branchFixable(failed []gitops.PRCheck, info map[string]gitops.CheckInfo, anyRequired bool) (fix []gitops.PRCheck, ignored []string) {
-	for _, c := range failed {
-		ci := info[c.Label()]
-		switch {
-		case ci.Event == "pull_request_target":
-			ignored = append(ignored, fmt.Sprintf("%s (runs the base branch's workflow via pull_request_target) %s", c.Label(), c.URL()))
-		case anyRequired && !ci.Required:
-			ignored = append(ignored, fmt.Sprintf("%s (not required for merging) %s", c.Label(), c.URL()))
-		default:
-			fix = append(fix, c)
-		}
-	}
-	return fix, ignored
 }
 
 // handled remembers that the PR's current head was dealt with.
@@ -187,7 +235,7 @@ func (m *MergeQueue) handled(t model.Todo, sha, line string) {
 	})
 }
 
-func (m *MergeQueue) checksNote(ctx context.Context, p model.Project, n int, failed []gitops.PRCheck, ignored []string) string {
+func (m *MergeQueue) checksNote(ctx context.Context, p model.Project, n int, failed, other []gitops.PRCheck) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Checks fail on pull request #%d:\n", n)
 	for _, c := range failed {
@@ -203,10 +251,10 @@ func (m *MergeQueue) checksNote(ctx context.Context, p model.Project, n int, fai
 			shown++
 		}
 	}
-	if len(ignored) > 0 {
+	if len(other) > 0 {
 		b.WriteString("\nThese also fail, but no change to this branch can fix them; leave them alone:\n")
-		for _, s := range ignored {
-			fmt.Fprintf(&b, "- %s\n", s)
+		for _, c := range other {
+			fmt.Fprintf(&b, "- %s %s\n", c.Label(), c.URL())
 		}
 	}
 	b.WriteString("\nFix the code so these checks pass. Don't weaken or delete tests unless they are wrong.")

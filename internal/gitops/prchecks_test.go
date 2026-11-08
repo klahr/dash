@@ -16,29 +16,11 @@ func fakeGh(t *testing.T, script string) *Git {
 	return &Git{GhBin: bin}
 }
 
-func TestPRCheckInfo(t *testing.T) {
-	g := fakeGh(t, `case "$*" in
-*--required*) echo '[{"name":"test","event":"pull_request"}]' ;;
-*) echo '[{"name":"test","event":"pull_request"},{"name":"CLAAssistant","event":"pull_request_target"},{"name":"lint","event":"pull_request"}]' ;;
-esac
+func TestCheckEvents(t *testing.T) {
+	g := fakeGh(t, `echo '[{"name":"test","event":"pull_request"},{"name":"CLAAssistant","event":"pull_request_target"},{"name":"lint","event":"pull_request_target"},{"name":"lint","event":"pull_request"}]'
 `)
-	info, anyRequired, err := g.PRCheckInfo(context.Background(), "p", t.TempDir(), 4)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !anyRequired || !info["test"].Required || info["lint"].Required || info["CLAAssistant"].Event != "pull_request_target" {
-		t.Fatalf("info = %+v, anyRequired = %v", info, anyRequired)
-	}
-}
-
-func TestPRCheckInfoNoneRequired(t *testing.T) {
-	g := fakeGh(t, `case "$*" in
-*--required*) echo "no required checks reported on the 'x' branch" >&2; exit 1 ;;
-*) echo '[{"name":"test","event":"pull_request"}]' ;;
-esac
-`)
-	info, anyRequired, err := g.PRCheckInfo(context.Background(), "p", t.TempDir(), 4)
-	if err != nil || anyRequired || info["test"].Event != "pull_request" {
-		t.Fatalf("info = %+v, anyRequired = %v, err = %v", info, anyRequired, err)
+	ev := g.CheckEvents(context.Background(), "p", t.TempDir(), 4)
+	if ev["test"] != "pull_request" || !RunsFromBase(ev["CLAAssistant"]) || ev["lint"] != "pull_request" {
+		t.Fatalf("events = %v", ev)
 	}
 }

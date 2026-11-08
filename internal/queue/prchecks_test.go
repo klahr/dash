@@ -6,21 +6,17 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 )
 
-// Only failed checks a change to the branch could fix go back to Claude.
-func TestBranchFixable(t *testing.T) {
-	failed := []gitops.PRCheck{{Name: "CLAAssistant"}, {Name: "test"}, {Name: "lint"}, {Context: "ci/legacy"}}
-	info := map[string]gitops.CheckInfo{
-		"CLAAssistant": {Event: "pull_request_target", Required: true},
-		"test":         {Event: "pull_request", Required: true},
-		"lint":         {Event: "pull_request"},
+// Failed checks no change to the branch can fix don't go back to Claude.
+func TestClassifyFailed(t *testing.T) {
+	failed := []gitops.PRCheck{{Name: "assistant"}, {Name: "test"}, {Name: "lint"}, {Context: "license/cla"}}
+	events := map[string]string{"assistant": "pull_request_target", "test": "pull_request", "lint": "pull_request"}
+	code, other := classifyFailed(failed, map[string]bool{"assistant": true, "test": true}, events)
+	if len(code) != 1 || code[0].Name != "test" || len(other) != 1 || other[0].Name != "assistant" {
+		t.Fatalf("code = %+v, other = %+v", code, other)
 	}
-	fix, ignored := branchFixable(failed, info, true)
-	if len(fix) != 1 || fix[0].Name != "test" || len(ignored) != 3 {
-		t.Fatalf("fix = %+v, ignored = %q", fix, ignored)
-	}
-	// Without required checks every check counts, but pull_request_target ones still can't be fixed.
-	fix, ignored = branchFixable(failed, info, false)
-	if len(fix) != 3 || len(ignored) != 1 {
-		t.Fatalf("fix = %+v, ignored = %q", fix, ignored)
+	// Without required checks every check counts.
+	code, other = classifyFailed(failed, nil, events)
+	if len(code) != 2 || len(other) != 2 {
+		t.Fatalf("code = %+v, other = %+v", code, other)
 	}
 }
