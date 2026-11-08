@@ -23,14 +23,17 @@ function inlineHTML(s) {
   const kept = [];
   const keep = (html) => `\u0000${kept.push(html) - 1}\u0000`;
   const a = (url, text) => keep(`<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`);
-  s = esc(s)
+  // \u0000 marks stashed pieces, so a NUL in the text itself (pasted from a
+  // terminal, say) would never be replaced and the loop below would spin forever.
+  s = esc(s.replace(/\u0000/g, "�"))
     .replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_, __, c) => keep(`<code>${c.trim() || c}</code>`))
     .replace(/!?\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;[^)]*&quot;)?\)/g, (m, text, url) => (SAFE_URL.test(url) ? a(url, text || url) : m))
     .replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,:;!?'&])/g, (_, pre, url) => pre + a(url, url))
     .replace(/(\*\*|__)(?=\S)([\s\S]+?\S)\1/g, "<strong>$2</strong>")
     .replace(/(^|[^*\w])([*_])(?=\S)([^*_]*?\S)\2(?![*\w])/g, "$1<em>$3</em>")
     .replace(/~~(?=\S)([\s\S]+?\S)~~/g, "<del>$1</del>");
-  while (s.includes("\u0000")) s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => kept[i]); // links can hold code
+  const STASHED = /\u0000(\d+)\u0000/;
+  while (STASHED.test(s)) s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => kept[i]); // links can hold code
   return s;
 }
 
