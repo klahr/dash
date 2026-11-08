@@ -257,12 +257,28 @@ func (s *Server) saveEdit(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: file is larger than %d KiB", errBadRequest, maxEditBytes>>10))
 		return
 	}
-	if cur, _ := s.Git.Blob(r.Context(), p.ID, p.Path, p.Base(), name); req.Blob == "" || cur != req.Blob {
+	// An empty blob creates a new file, one that isn't on the branch yet.
+	cur, _ := s.Git.Blob(r.Context(), p.ID, p.Path, p.Base(), name)
+	switch {
+	case req.Blob == "" && cur != "":
+		writeJSON(w, http.StatusConflict, map[string]string{"error": name + " already exists on " + p.Base() + "; open it and edit it instead"})
+		return
+	case cur != req.Blob:
 		writeJSON(w, http.StatusConflict, map[string]string{"error": name + " changed on " + p.Base() + " since it was opened; reload it and edit again"})
 		return
 	}
+	if req.Blob == "" {
+		if local, err := s.Git.LocalFiles(r.Context(), p.ID, p.Path); err == nil && slices.Contains(local, name) {
+			writeErr(w, fmt.Errorf("%w: %s is a local file git doesn't track; edit it in the file browser", errBadRequest, name))
+			return
+		}
+	}
 	title := strings.TrimSpace(req.Title)
-	if title == "" {
+	switch {
+	case title != "":
+	case req.Blob == "":
+		title = "Create " + name
+	default:
 		title = "Edit " + name
 	}
 	t, err := sv.addTodo(model.Todo{

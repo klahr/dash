@@ -647,6 +647,16 @@
             <label class="field"><span>Deploy command</span><input name="deploy_command" spellcheck="false"></label>
           </section>
           <section class="rail-section" data-section="claude">
+            <div class="claude-scope">
+              <h3 class="claude-scope-head">In the repository <span class="scope-tag repo">repo files</span></h3>
+              <p class="hint" id="claude-files-hint">Files Claude Code reads from the project. Edit opens them in the file editor; saving a tracked file opens a task to commit the change, files git doesn't track are saved straight to disk.</p>
+              <div id="claude-files" class="claude-files" aria-live="polite"></div>
+            </div>
+            <div class="claude-scope">
+              <h3 class="claude-scope-head">Stored by Dash <span class="scope-tag dash">Dash settings</span></h3>
+              <p class="hint">Not in the repository and nothing to commit: saved with these settings and used from the next run on.</p>
+              <label class="field"><span>Extra instructions for Dash tasks <em>added to Claude's system prompt in every task, on this computer and on runners</em></span><textarea name="task_instructions" rows="4" maxlength="32768" placeholder="e.g. Use pnpm, not npm. Keep commits small."></textarea></label>
+              <p class="hint">For guidance that belongs to the whole team, prefer CLAUDE.md above: it lives in the repo and also applies when people run Claude Code themselves.</p>
             <fieldset class="field choice">
               <legend>Chat permissions</legend>
               <label class="radio"><input type="radio" name="chat_permission_mode" value=""><span>Ask every time <em>each tool call not already allowed waits for you</em></span></label>
@@ -661,6 +671,7 @@
               <label class="field inline"><span>Turn limit per run</span><input type="number" name="max_turns" min="1" inputmode="numeric" placeholder="200"></label>
             </div>
             <p class="hint">Stops a run that goes on too long. Time spent waiting for your approval doesn't count.</p>
+            </div>
           </section>
           <section class="rail-section" data-section="runners">
             <fieldset class="field choice" id="settings-runners-field" hidden>

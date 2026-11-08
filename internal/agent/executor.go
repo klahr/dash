@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -146,7 +147,9 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 // session can't be resumed): the task plus every note so far.
 func BuildPrompt(t model.Todo) string {
 	var b strings.Builder
-	if t.Title != "" {
+	// A prompt that starts with a slash command (e.g. "/init") must reach
+	// Claude first to run as one, so it goes without the title.
+	if t.Title != "" && !slashCommand.MatchString(t.Prompt) {
 		fmt.Fprintf(&b, "# Task: %s\n\n", t.Title)
 	}
 	b.WriteString(t.Prompt)
@@ -189,6 +192,10 @@ func ContinuePrompt(notes []string) string {
 	b.WriteString(rules)
 	return b.String()
 }
+
+// slashCommand matches a prompt that starts with a slash command like
+// "/init" or "/plugin:skill", not a path like "/api/x".
+var slashCommand = regexp.MustCompile(`^/[A-Za-z][\w:-]*(\s|$)`)
 
 const rules = "\n\nWork only inside the current directory. Do not run git commit, create branches or " +
 	"change git history; Dash commits your changes for review when you finish."

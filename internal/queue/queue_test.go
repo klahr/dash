@@ -587,3 +587,34 @@ func TestInterruptFailsRunningTodosAndTheyCanBeQueuedAgain(t *testing.T) {
 		t.Fatalf("cancel after an interrupt: %q", td.Error)
 	}
 }
+
+// An edit with no blob creates a file (e.g. a new skill from the Claude
+// settings), with its folders; one that exists by then is refused.
+func TestEditorEditCreatesNewFile(t *testing.T) {
+	exe := &fakeExec{fn: func(int, agent.ExecRequest) error { return nil }}
+	h := newHarness(t, exe, model.Project{Name: "p"})
+	queue := func(path string) model.Todo {
+		td, err := h.st.CreateTodo(model.Todo{ProjectID: h.proj.ID, Title: "Create " + path,
+			Edits: []model.FileEdit{{Path: path, Content: "---\nname: x\n---\n"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if td, err = h.st.SetStatus(td.ID, model.StatusQueued, ""); err != nil {
+			t.Fatal(err)
+		}
+		h.engine.Kick()
+		return td
+	}
+	td := h.waitFor(queue(".claude/skills/x/SKILL.md").ID, model.StatusReview)
+	if got, _ := os.ReadFile(filepath.Join(td.Worktree.Path, ".claude/skills/x/SKILL.md")); string(got) != "---\nname: x\n---\n" || len(exe.Calls()) != 0 {
+		t.Fatalf("new file = %q, Claude calls %d", got, len(exe.Calls()))
+	}
+
+	write(t, h.proj.Path, "b.txt", "there\n")
+	if _, err := h.git.CommitAll(context.Background(), "p", h.proj.Path, "add b.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if failed := h.waitFor(queue("b.txt").ID, model.StatusFailed); !strings.Contains(failed.Error, "changed on main") {
+		t.Fatalf("error = %q", failed.Error)
+	}
+}

@@ -104,6 +104,13 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p, ok := sv.hubProject(hpid); ok {
+		if p.TaskInstructions != req.TaskInstructions {
+			var err error
+			if p, err = sv.data.UpdateProject(p.ID, func(x *model.Project) error { x.TaskInstructions = req.TaskInstructions; return nil }); err != nil {
+				writeErr(w, err)
+				return
+			}
+		}
 		if err := s.followWorkBranch(r.Context(), sv, p, req.WorkBranch); err != nil {
 			writeErr(w, err)
 			return
@@ -153,6 +160,7 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 	p, err := sv.data.CreateProject(model.Project{
 		ID: id, Name: req.Name, Path: path, DefaultBranch: branch, RemoteURL: s.Git.RemoteURL(ctx, id, path),
 		MergeMode: model.MergePR, MaxAutoFixes: model.DefaultMaxAutoFixes, HubProjectID: hpid,
+		TaskInstructions: req.TaskInstructions,
 	})
 	if err != nil {
 		writeErr(w, err)

@@ -84,6 +84,10 @@ type Project struct {
 	// ReviewPrompt is what the task chat's Review button asks Claude; empty
 	// means the web UI's default.
 	ReviewPrompt string `json:"review_prompt,omitempty"`
+	// TaskInstructions are extra instructions for Claude in every task of
+	// the project (on this Dash or a runner), passed with
+	// --append-system-prompt. Stored by Dash, unlike the repo's CLAUDE.md.
+	TaskInstructions string `json:"task_instructions,omitempty"`
 	// MaxAutoFixes is how many times Dash sends failing tests or merge
 	// conflicts back to Claude on its own before asking a human.
 	MaxAutoFixes int `json:"max_auto_fixes"`

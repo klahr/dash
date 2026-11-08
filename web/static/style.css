@@ -613,6 +613,37 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .webhook-row .runner-seen { flex-basis: 100%; overflow-wrap: anywhere; }
 .webhook-actions { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
 #settings-webhooks-field #webhook-add { margin-top: 10px; }
+
+/* Project settings → Claude: repo files vs settings Dash stores. */
+.claude-scope + .claude-scope { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.claude-scope-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 4px; font-size: 15px; }
+.scope-tag { flex: none; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); font: 600 11px/1.6 var(--ui); letter-spacing: .02em; color: var(--muted); white-space: nowrap; }
+.scope-tag.repo, .scope-tag.tracked { border-color: color-mix(in srgb, var(--review) 55%, transparent); color: var(--review); }
+.scope-tag.dash { border-color: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--accent); }
+.scope-tag.local { border-color: color-mix(in srgb, var(--running) 55%, transparent); color: var(--running); }
+.scope-tag.missing { border-style: dashed; color: var(--faint); }
+.claude-group { margin-top: 14px; }
+.claude-group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.claude-group-head h4 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.claude-group > .hint { margin: 2px 0 0; }
+.claude-file-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.claude-file { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: var(--r-m); background: var(--raised); }
+.claude-file.empty { background: none; border: 1px dashed var(--line); }
+.claude-file.empty .hint { margin: 0; }
+.claude-file-main { flex: 1; min-width: 0; }
+.claude-file-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; overflow-wrap: anywhere; }
+.claude-file-title code { font: 13px var(--mono); color: var(--muted); }
+.claude-file-title strong + code { font-size: 12px; }
+.claude-file-desc { margin: 4px 0 0; font-size: 14px; }
+.claude-file-preview { margin: 6px 0 0; padding: 6px 8px; max-height: 5.4em; overflow: hidden; border-radius: var(--r-s); background: var(--surface); font: 12px/1.5 var(--mono); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.claude-file-main > .hint { margin: 4px 0 0; font-size: 12px; }
+.claude-file-warn { margin-top: 6px; }
+.claude-file-warn .hint { margin: 4px 0; }
+.claude-file-actions { flex: none; display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+@media (max-width: 560px) {
+  .claude-file { flex-direction: column; }
+  .claude-file-actions { flex-direction: row; flex-wrap: wrap; }
+}
 #webhook-secret { margin-top: 10px; }
 .runner-update .hint { margin: 4px 0 0; }
 /* "Add a runner": one card with the command, its options and whether it has connected yet. */

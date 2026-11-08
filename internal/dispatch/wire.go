@@ -35,6 +35,10 @@ type Link struct {
 	// it isn't DefaultBranch (the hub's branch switcher); "" means DefaultBranch.
 	WorkBranch string `json:"work_branch,omitempty"`
 	OrgID      int64  `json:"org_id"`
+	// TaskInstructions are the hub project's extra instructions for Claude
+	// (model.Project.TaskInstructions). The link is sent before every task,
+	// so the runner's copy follows the hub's.
+	TaskInstructions string `json:"task_instructions,omitempty"`
 }
 
 // Linked is the runner's answer to Link: its project for the hub's.

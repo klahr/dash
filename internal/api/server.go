@@ -199,6 +199,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/projects/{pid}/tags", s.createTag)
 	mux.HandleFunc("GET /api/projects/{pid}/tag-format", s.tagFormatInfo)
 	mux.HandleFunc("GET /api/projects/{pid}/files", s.listFiles)
+	mux.HandleFunc("GET /api/projects/{pid}/claude-files", s.listClaudeFiles)
 	mux.HandleFunc("GET /api/projects/{pid}/file", s.readFile)
 	mux.HandleFunc("PUT /api/projects/{pid}/file", s.saveLocalFile)
 	mux.HandleFunc("POST /api/projects/{pid}/edits", s.saveEdit)

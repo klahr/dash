@@ -64,7 +64,8 @@ func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo
 	if r == nil {
 		return "", "", &WaitError{Reason: reason}
 	}
-	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID}
+	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID,
+		TaskInstructions: p.TaskInstructions}
 	if err := d.Fleet.Call(ctx, r.ID, http.MethodPut, "/api/hub/projects/"+url.PathEscape(p.ID), link, nil); err != nil {
 		return "", "", &WaitError{Reason: "waiting for a runner: " + err.Error()}
 	}

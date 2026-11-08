@@ -647,6 +647,7 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 		req.ExtraArgs = append(req.ExtraArgs, "--add-dir", dir)
 	}
 	servers := map[string]any{}
+	var system []string // appended to Claude's system prompt
 	owner, ownerErr := model.Owner{}, errors.New("no owner resolver")
 	if e.Owner != nil {
 		owner, ownerErr = e.Owner(*t)
@@ -669,7 +670,13 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 		for _, name := range mcptools.IssueToolNames {
 			req.ExtraArgs = append(req.ExtraArgs, "--allowedTools", "mcp__"+mcptools.ServerName+"__"+name)
 		}
-		req.ExtraArgs = append(req.ExtraArgs, "--append-system-prompt", issuesHint)
+		system = append(system, issuesHint)
+	}
+	if s := strings.TrimSpace(p.TaskInstructions); s != "" {
+		system = append(system, s)
+	}
+	if len(system) > 0 {
+		req.ExtraArgs = append(req.ExtraArgs, "--append-system-prompt", strings.Join(system, "\n\n"))
 	}
 	if len(servers) > 0 {
 		cfg, _ := json.Marshal(map[string]any{"mcpServers": servers})
@@ -872,6 +879,13 @@ func (e *TodoEngine) applyEdits(ctx context.Context, t model.Todo, p model.Proje
 			return fmt.Errorf("%s changed on %s since it was opened in the editor; open it again and redo the edit", ed.Path, p.Base())
 		}
 		dst := filepath.Join(wt.Path, filepath.FromSlash(ed.Path))
+		if ed.Blob == "" { // a new file
+			if err := createFile(wt.Path, dst, ed.Content); err != nil {
+				return fmt.Errorf("create %s: %w", ed.Path, err)
+			}
+			log("✎ created " + ed.Path)
+			continue
+		}
 		fi, err := os.Lstat(dst)
 		if err != nil || !fi.Mode().IsRegular() {
 			return fmt.Errorf("%s is not a regular file", ed.Path)
@@ -882,6 +896,34 @@ func (e *TodoEngine) applyEdits(ctx context.Context, t model.Todo, p model.Proje
 		log("✎ applied the edit to " + ed.Path)
 	}
 	return nil
+}
+
+// createFile writes a new file at dst inside root, making its folders,
+// unless something is there already or a folder on the way leads out of root.
+func createFile(root, dst, content string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	dir, err := filepath.EvalSymlinks(filepath.Dir(dst))
+	if err != nil {
+		return err
+	}
+	if rel, err := filepath.Rel(realRoot, dir); err != nil || !filepath.IsLocal(rel) && rel != "." {
+		return errors.New("its folder is outside the working tree")
+	}
+	f, err := os.OpenFile(filepath.Join(dir, filepath.Base(dst)), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // prepareWorktree copies untracked files and runs the setup command in a new worktree.

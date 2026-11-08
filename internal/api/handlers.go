@@ -183,6 +183,10 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, p)
 }
 
+// maxTaskInstructions caps a project's extra instructions for Claude: they
+// go on every task's command line.
+const maxTaskInstructions = 32 << 10
+
 // projectUpdate is a change to a project's settings; nil fields stay.
 type projectUpdate struct {
 	Name          *string   `json:"name"`
@@ -194,6 +198,7 @@ type projectUpdate struct {
 	AllowedTools  *[]string `json:"allowed_tools"`
 	ChatMode      *string   `json:"chat_permission_mode"`
 	ReviewPrompt  *string   `json:"review_prompt"`
+	Instructions  *string   `json:"task_instructions"`
 	MaxAutoFixes  *int      `json:"max_auto_fixes"`
 	AutoPush      *bool     `json:"auto_push"`
 	AutoApprove   *bool     `json:"auto_approve"`
@@ -236,6 +241,9 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 		default:
 			return model.Project{}, fmt.Errorf("%w: chat_permission_mode must be \"\", %q or %q", errBadRequest, model.ChatModeAuto, model.ChatModeAcceptEdits)
 		}
+	}
+	if req.Instructions != nil && len(*req.Instructions) > maxTaskInstructions {
+		return model.Project{}, fmt.Errorf("%w: task_instructions is longer than %d KiB", errBadRequest, maxTaskInstructions>>10)
 	}
 	if req.Color != nil {
 		*req.Color = strings.ToLower(strings.TrimSpace(*req.Color))
@@ -285,6 +293,9 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 		set(&p.Icon, req.Icon)
 		set(&p.ChatPermissionMode, req.ChatMode)
 		set(&p.ReviewPrompt, req.ReviewPrompt)
+		if req.Instructions != nil {
+			p.TaskInstructions = strings.TrimSpace(*req.Instructions)
+		}
 		set(&p.TagFormat, req.TagFormat)
 		if req.CopyFiles != nil {
 			p.CopyFiles = cleanList(*req.CopyFiles)

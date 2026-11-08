@@ -406,6 +406,7 @@ var ProjectSettings = []Param{
 	{"allowed_tools", "array", "Tools that run without a permission prompt in tasks, e.g. [\"Bash\", \"WebFetch\"]; replaces the list.", false},
 	{"chat_permission_mode", "string", "Permission mode of the project's chats: \"\" (ask), \"auto\" or \"acceptEdits\".", false},
 	{"review_prompt", "string", "What the task chat's Review button asks Claude (\"\" for the default).", false},
+	{"task_instructions", "string", "Extra instructions appended to Claude's system prompt in every task of the project (\"\" for none).", false},
 	{"max_auto_fixes", "integer", "How often failing tests or conflicts go back to Claude before asking a human.", false},
 	{"auto_push", "boolean", "Push the default branch after every merge.", false},
 	{"auto_approve", "boolean", "Finished tasks whose tests pass skip review.", false},
