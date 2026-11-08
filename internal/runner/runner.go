@@ -42,6 +42,11 @@ type Manager struct {
 	mu    sync.RWMutex
 	procs map[string]*proc
 	store string // file keeping the last server/test/deploy runs, if any
+	// saveMu serializes writes of store (they share its .tmp file). Once
+	// stopped, StopAll has written the final state on shutdown: processes
+	// it kills, exiting afterwards, don't write it again.
+	saveMu  sync.Mutex
+	stopped bool
 }
 
 type savedProc struct {
@@ -78,6 +83,14 @@ func (m *Manager) Keep(path string) error {
 
 // save writes the latest non-interactive run per project, kind, command and directory.
 func (m *Manager) save() {
+	m.saveMu.Lock()
+	defer m.saveMu.Unlock()
+	if !m.stopped {
+		m.write()
+	}
+}
+
+func (m *Manager) write() {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if m.store == "" {
@@ -279,7 +292,12 @@ func (m *Manager) Stop(id string) error {
 
 // StopAll is called on shutdown.
 func (m *Manager) StopAll() {
-	m.save()
+	m.saveMu.Lock()
+	if !m.stopped {
+		m.write()
+		m.stopped = true
+	}
+	m.saveMu.Unlock()
 	for _, p := range m.List("") {
 		if p.Running {
 			_ = syscall.Kill(-p.PID, syscall.SIGKILL)

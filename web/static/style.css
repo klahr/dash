@@ -548,6 +548,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 }
 .rail-nav::-webkit-scrollbar { display: none; }
 .rail-group { display: flex; gap: 6px; flex: none; }
+.rail-group:not(:has(.rail-item:not([hidden]))) { display: none; }
 .rail-head { display: none; }
 .rail-item {
   flex: none; display: flex; align-items: center; min-height: 36px; padding: 0 14px;
@@ -607,18 +608,80 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-name .paused-tag { margin-left: 6px; }
 .runner-actions { display: flex; align-items: center; gap: 6px; }
 .runner-parallel { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
-.runner-parallel input { width: 4.5em; min-height: 32px; }
-#runners-add { margin-top: 10px; }
+.runner-parallel input { width: 4.5em; min-height: 36px; padding: 0 8px; }
+/* Runners sheet: a status strip, then one card per runner. */
+#runners-sheet { max-width: 720px; }
+.runners-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.runners-stats { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.runner-stat { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; background: var(--raised); color: var(--muted); font-size: 13px; }
+.runner-stat strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.runner-stat.on strong { color: var(--merged); }
+.runner-stat.busy strong { color: var(--running); }
+.runner-stat.paused strong { color: var(--running); }
+.runner-stat.off strong { color: var(--failed); }
+.runners-about { margin-top: 10px; }
+.runners-about > summary { cursor: pointer; font-size: 14px; color: var(--muted); width: fit-content; }
+.runners-about > summary:hover, .runners-about[open] > summary { color: var(--text); }
+.runners-about .hint { margin: 6px 0 0; }
+.runners-empty { display: grid; justify-items: center; text-align: center; gap: 2px; margin-top: 16px; padding: 28px 16px; border: 1px dashed var(--line); border-radius: var(--r-m); }
+.runners-empty > .ico { width: 36px; height: 36px; color: var(--faint); margin-bottom: 6px; }
+.runners-empty .hint { max-width: 40ch; margin: 0; }
+#runners-list > .org-section:first-child { margin-top: 18px; }
+.runner-cards { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.runner-card { --tone: var(--faint); display: grid; gap: 8px; padding: 12px 14px; border-radius: var(--r-m); background: var(--raised); border: 1px solid var(--line); border-left: 3px solid var(--tone); }
+.runner-card.tone-on { --tone: var(--merged); }
+.runner-card.tone-busy { --tone: var(--running); }
+.runner-card.tone-paused { --tone: var(--running); }
+.runner-card.tone-off { --tone: var(--faint); }
+.runner-card .runner-dot { background: var(--tone); }
+.runner-card.tone-on .runner-dot, .runner-card.tone-busy .runner-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 22%, transparent); }
+.runner-card.tone-off .runner-name { color: var(--muted); }
+.runner-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.runner-card-head .runner-name { font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runner-state { margin-left: auto; flex: none; font-size: 13px; font-weight: 600; color: var(--tone); text-align: right; }
+.runner-card.tone-off .runner-state { color: var(--muted); font-weight: 400; }
+.runner-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted); }
+.runner-meta:empty { display: none; }
+.runner-owner { display: inline-flex; align-items: center; gap: 4px; }
+.runner-owner .ico { width: 14px; height: 14px; }
+.runner-usage { display: inline-flex; flex-wrap: wrap; gap: 4px 14px; }
+.runner-meter { --m: var(--merged); display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.runner-meter.mid { --m: var(--running); }
+.runner-meter.high { --m: var(--failed); }
+.runner-meter-bar { width: 64px; height: 6px; border-radius: 999px; background: var(--surface); overflow: hidden; }
+.runner-meter-fill { display: block; height: 100%; border-radius: inherit; background: var(--m); }
+.runner-meter-pct { min-width: 3ch; color: var(--text); }
+.runner-projects { display: flex; flex-wrap: wrap; gap: 6px; }
+.runner-projects .hint { margin: 0; font-size: 13px; }
+.runner-project { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runner-project:hover { border-color: var(--faint); }
+.runner-project .ico { width: 14px; height: 14px; flex: none; color: var(--muted); }
+.runner-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
+.runner-controls-gap { flex: 1; }
+.runner-card .runner-update { padding: 8px 10px; border-radius: var(--r-s); background: color-mix(in srgb, var(--running) 8%, transparent); }
+.runner-card .runner-update .hint { margin: 0; }
+#runners-code, #runners-repos:not([hidden]) { margin-top: 12px; }
+#runners-repos:not([hidden]) { padding: 12px 14px; border-radius: var(--r-m); background: var(--raised); border: 1px solid var(--line); }
+#runners-repos h4 { margin: 0; font-size: 15px; }
+.runner-repos-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 40dvh; overflow-y: auto; }
+.runner-repos-actions { display: flex; gap: 8px; margin-top: 10px; }
+#settings-runners-manage { margin-top: 6px; }
+@media (max-width: 560px) {
+  .runner-card-head { flex-wrap: wrap; }
+  .runner-controls-gap { flex-basis: 100%; height: 0; }
+  .runner-controls .btn { flex: 1 1 auto; white-space: nowrap; }
+}
+.runner-pick { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.runner-pick .hint { margin: 0; }
 /* Project settings: one card per runner, like the merge-mode choices. */
 #settings-runners { display: grid; gap: 8px; }
-.runner-pick { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-m); cursor: pointer; transition: border-color .15s, background-color .15s; }
-.runner-pick:hover { border-color: var(--faint); }
-.runner-pick:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
-.runner-pick:has(input:disabled) { cursor: not-allowed; opacity: .6; }
-/* The global `input` rule sets width: 100% and padding; undo both so the checkbox doesn't fill the row. */
-.runner-pick input { accent-color: var(--accent); margin: 0; padding: 0; width: 18px; height: 18px; flex: none; cursor: inherit; }
-.runner-pick .runner-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.runner-pick .hint { flex: 1; min-width: 0; margin: 0; text-align: right; font-size: 13px; overflow-wrap: anywhere; }
+#settings-runners .runner-pick { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-m); cursor: pointer; transition: border-color .15s, background-color .15s; }
+#settings-runners .runner-pick:hover { border-color: var(--faint); }
+#settings-runners .runner-pick:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+#settings-runners .runner-pick:has(input:disabled) { cursor: not-allowed; opacity: .6; }
+#settings-runners .runner-pick input { accent-color: var(--accent); margin: 0; padding: 0; width: 18px; height: 18px; flex: none; cursor: inherit; }
+#settings-runners .runner-pick .runner-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#settings-runners .runner-pick .hint { flex: 1; min-width: 0; margin: 0; text-align: right; font-size: 13px; overflow-wrap: anywhere; }
 #settings-runners-hint { margin-top: 8px; }
 .runner-tag { font-size: 12px; font-weight: 600; color: var(--muted); }
 .todo-sub.waiting-runner { color: var(--running); }
