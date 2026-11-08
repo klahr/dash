@@ -825,7 +825,7 @@ async function refreshMachines() {
   state.machines = await api("GET", "/api/machines");
   for (const m of state.machines) if (m.ok && !sockets.has(m.name)) connectEvents(m);
   await loadProjects();
-  if ($("#org-sheet").open) await renderRunners();
+  if ($("#runners-sheet").open) await renderRunners();
   else await loadRunners();
 }
 
@@ -1380,6 +1380,8 @@ $("#pm-delete").addEventListener("click", attempt(openDeleteProject));
 loadMe().then(() => loadBilling()).catch(() => {});
 loadRunners().catch(() => {});
 $("#org-open").addEventListener("click", attempt(openOrg));
+$("#runners-open").addEventListener("click", attempt(openRunners));
+$("#settings-runners-manage").addEventListener("click", attempt(openRunners));
 $("#tokens-open").addEventListener("click", attempt(openTokens));
 $("#token-create").addEventListener("click", attempt(createToken));
 $("#org-invite-send").addEventListener("click", attempt(sendInvite));
@@ -3252,60 +3254,143 @@ async function loadRunners() {
   } catch {
     state.runners = null; // this Dash has no runners (it is one, say)
   }
+  $("#runners-open").hidden = state.runners === null;
   // The board waits for the runners, and shows the welcome screen until there's one.
   if (state.projectsLoaded) renderBoard();
   return state.runners;
 }
 const runnerName = (id) => state.runners?.find((r) => r.id === id)?.name || "its runner";
+const runnerLimit = (r) => r.parallel || r.reported?.parallel || 1;
+const runnerOutdated = (r) => isRelease(runnerInfo.version) && !!r.version && r.version !== runnerInfo.version;
+const agoPhrase = (iso) => { const a = ago(iso); return a === "now" ? "just now" : `${a} ago`; };
 
-function runnerUsage(r) {
+// runnerStatus is what runner r is doing, in a few words, and its tone
+// (on, busy, paused, off) for the dot and the card's accent.
+function runnerStatus(r) {
+  const n = (k) => `${k} task${k === 1 ? "" : "s"}`;
+  if (!r.online) return { tone: "off", text: r.last_seen ? `Offline · seen ${agoPhrase(r.last_seen)}` : "Never connected" };
+  if (r.paused) return { tone: "paused", text: r.running ? `Paused · finishing ${n(r.running)}` : "Paused" };
   const u = r.reported?.usage;
-  if (!u?.known) return "";
-  if (u.paused) return ` · queue paused${u.reason ? ` (${u.reason})` : ""}`;
-  const top = [...(u.windows || [])].sort((a, b) => b.utilization - a.utilization)[0];
-  return top ? ` · ${shortLabel(top.name)} ${Math.round(top.utilization * 100)}%` : "";
+  if (u?.known && u.paused) return { tone: "paused", text: `Waiting on Claude limits${u.reason ? ` (${u.reason})` : ""}` };
+  if (r.running) return { tone: "busy", text: `Running ${r.running} of ${runnerLimit(r)}` };
+  return { tone: "on", text: `Idle · up to ${runnerLimit(r)} at once` };
+}
+
+// runnerUsageMeters shows how much of its owner's Claude subscription
+// windows runner r has used, fullest first.
+function runnerUsageMeters(r) {
+  const u = r.reported?.usage;
+  if (!u?.known || !u.windows?.length) return null;
+  const ws = [...u.windows].sort((a, b) => b.utilization - a.utilization).slice(0, 2);
+  return h("div", { class: "runner-usage", title: "Claude usage of the runner owner's subscription" },
+    ...ws.map((w) => {
+      const pct = Math.round(w.utilization * 100);
+      const bar = h("span", { class: "runner-meter-fill" });
+      bar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+      return h("span", { class: `runner-meter${pct >= 90 ? " high" : pct >= 70 ? " mid" : ""}` },
+        h("span", { class: "runner-meter-label" }, shortLabel(w.name)),
+        h("span", { class: "runner-meter-bar", role: "meter", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct), "aria-label": `${shortLabel(w.name)} usage` }, bar),
+        h("span", { class: "runner-meter-pct" }, `${pct}%`));
+    }));
+}
+
+// The projects linked to runner r: their tasks run there.
+const runnerProjects = (r) => (state.projects || []).filter((p) => !p.prefix && p.runners?.includes(r.id));
+
+function runnerCard(r, { showOwner }) {
+  const st = runnerStatus(r);
+  const outdated = runnerOutdated(r);
+  const patch = (body) => api("PATCH", `/api/runners/${encodeURIComponent(r.id)}`, body);
+  const projects = runnerProjects(r);
+  const controls = [];
+  if (r.can_manage) {
+    controls.push(h("label", { class: "runner-parallel", title: "How many tasks the hub sends it at once. Empty: the runner's own -parallel setting." }, "Tasks at once",
+      h("input", { type: "number", min: "0", max: "64", inputmode: "numeric", value: r.parallel ? String(r.parallel) : "",
+        placeholder: String(r.reported?.parallel || 1), "aria-label": `Tasks ${r.name} runs at once`,
+        onchange: attempt(async (e) => { await patch({ parallel: Number(e.target.value) || 0 }); await renderRunners(); }) })));
+  }
+  controls.push(h("span", { class: "runner-controls-gap" }));
+  if (r.mine) {
+    controls.push(ib({ class: "btn small", type: "button", disabled: !r.online,
+      title: r.online ? `Pick git repositories on ${r.name} to add as its projects` : `${r.name} is offline`,
+      onclick: attempt(() => showRunnerRepos(r)) }, "repo", "Add projects…"));
+  }
+  if (r.can_manage) {
+    controls.push(
+      ib({ class: "btn small", type: "button", onclick: attempt(async () => {
+        await patch({ paused: !r.paused });
+        toast(r.paused ? `${r.name} takes tasks again` : `${r.name} paused: it finishes what it runs and takes no new tasks`);
+        await renderRunners();
+      }) }, r.paused ? "play" : "pause", r.paused ? "Resume" : "Pause"),
+      ib({ class: "btn small danger", type: "button", title: `Disconnect ${r.name} and revoke its token`, onclick: attempt(async () => {
+        const ok = await ask({ title: `Revoke ${r.name}?`, body: "It's disconnected now, its token stops working and it's unlinked from every project. Tasks it is running fail and can be queued again on another runner. Run the install command with a new code to bring it back.", ok: "Revoke", danger: true });
+        if (!ok) return;
+        await api("DELETE", `/api/runners/${encodeURIComponent(r.id)}`);
+        toast(`${r.name} revoked`);
+        await refreshMachines();
+      }) }, "trash", "Revoke"));
+  }
+  return h("li", { class: `runner-card tone-${st.tone}` },
+    h("div", { class: "runner-card-head" },
+      h("span", { class: "runner-dot", "aria-hidden": "true" }),
+      h("span", { class: "runner-name" }, r.name),
+      r.version ? h("span", { class: `runner-version${outdated ? " warn" : ""}`, title: outdated ? `Out of date: the hub runs ${runnerInfo.version}` : "Dash version" }, r.version) : null,
+      h("span", { class: "runner-state" }, st.text)),
+    h("div", { class: "runner-meta" },
+      showOwner && r.owner ? h("span", { class: "runner-owner" }, ico("users"), r.owner.username) : null,
+      runnerUsageMeters(r)),
+    h("div", { class: "runner-projects" },
+      projects.length
+        ? projects.map((p) => h("button", { class: "runner-project", type: "button", title: `Open ${p.name}`,
+          onclick: () => { $("#runners-sheet").close(); selectProject(p); } }, ico("repo"), p.name))
+        : h("span", { class: "hint" }, "No projects linked yet. Link one in its project settings", r.mine ? ", or add projects from this computer." : ".")),
+    outdated && r.mine ? h("div", { class: "runner-update" },
+      h("p", { class: "hint warn" }, `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run this on ${r.name} (it keeps its registration):`),
+      copyBlock(installCmd(), "Command copied", { pre: true })) : null,
+    controls.length > 1 ? h("div", { class: "runner-controls" }, ...controls) : null);
+}
+
+function runnerStats(list) {
+  const stat = (n, label, cls = "") => h("span", { class: `runner-stat ${cls}` }, h("strong", {}, String(n)), ` ${label}`);
+  const online = list.filter((r) => r.online).length;
+  const running = list.reduce((s, r) => s + (r.running || 0), 0);
+  const paused = list.filter((r) => r.paused).length;
+  const outdated = list.filter(runnerOutdated).length;
+  return [
+    stat(online, `of ${list.length} online`, online ? "on" : "off"),
+    stat(running, running === 1 ? "task running" : "tasks running", running ? "busy" : ""),
+    paused ? stat(paused, "paused", "paused") : null,
+    outdated ? stat(outdated, "out of date", "paused") : null,
+  ].filter(Boolean);
 }
 
 async function renderRunners() {
   const list = await loadRunners();
-  $("#org-runners").hidden = list === null;
-  if (list === null) return;
-  const limit = (r) => r.parallel || r.reported?.parallel || 1;
-  const rows = list.map((r) => {
-    const outdated = isRelease(runnerInfo.version) && r.version && r.version !== runnerInfo.version;
-    return h("li", { class: "runner-row" + (outdated ? " outdated" : "") },
-      h("span", { class: `runner-dot ${r.online ? "on" : ""}`, "aria-hidden": "true" }),
-      h("span", { class: "runner-name" }, r.name, r.paused ? h("span", { class: "paused-tag" }, "Paused") : null),
-      r.version ? h("span", { class: `runner-version${outdated ? " warn" : ""}`, title: outdated ? `The hub runs ${runnerInfo.version}` : "Dash version" }, r.version) : null,
-      h("span", { class: "runner-seen hint" },
-        (r.online ? `online · ${r.running} of ${limit(r)} tasks` : r.last_seen ? `offline, last seen ${ago(r.last_seen)} ago` : "never connected") +
-        (r.owner ? ` · ${r.mine ? "yours" : r.owner.username}` : "") + runnerUsage(r)),
-      r.can_manage ? h("span", { class: "runner-actions" },
-        h("label", { class: "runner-parallel", title: "Tasks at once (0: the runner's own -parallel)" }, "At once ",
-          h("input", { type: "number", min: "0", max: "64", value: String(r.parallel || 0), "aria-label": `Tasks ${r.name} runs at once`,
-            onchange: attempt(async (e) => { await api("PATCH", `/api/runners/${encodeURIComponent(r.id)}`, { parallel: Number(e.target.value) || 0 }); await renderRunners(); }) })),
-        h("button", { class: "btn small", type: "button", onclick: attempt(async () => {
-          await api("PATCH", `/api/runners/${encodeURIComponent(r.id)}`, { paused: !r.paused });
-          toast(r.paused ? `${r.name} takes tasks again` : `${r.name} paused: it finishes what it runs and takes no new tasks`);
-          await renderRunners();
-        }) }, r.paused ? "Resume" : "Pause"),
-        h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
-          const ok = await ask({ title: `Revoke ${r.name}?`, body: "It's disconnected now, its token stops working and it's unlinked from every project. Tasks it is running fail and can be queued again on another runner. Run the install command with a new code to bring it back.", ok: "Revoke", danger: true });
-          if (!ok) return;
-          await api("DELETE", `/api/runners/${encodeURIComponent(r.id)}`);
-          toast(`${r.name} revoked`);
-          await refreshMachines();
-        }) }, "Revoke")) : null,
-      r.mine ? h("button", { class: "btn small", type: "button", disabled: !r.online,
-        title: r.online ? `Pick git repositories on ${r.name} to add as its projects` : `${r.name} is offline`,
-        onclick: attempt(() => showRunnerRepos(r)) }, "Add projects from this computer…") : null,
-      outdated && r.mine ? h("div", { class: "runner-update" },
-        h("p", { class: "hint" }, `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run this on ${r.name} (it keeps its registration):`),
-        copyBlock(installCmd(), "Command copied", { pre: true })) : null);
-  });
-  $("#runners-list").replaceChildren(...(rows.length ? rows : [h("li", { class: "hint" }, "No runners yet.")]));
+  const box = $("#runners-list");
+  if (list === null) {
+    $("#runners-stats").replaceChildren();
+    $("#runners-add").hidden = true;
+    box.replaceChildren(h("p", { class: "hint" }, "This Dash doesn't take runners."));
+    return;
+  }
+  // Yours first, then the others'; online before offline; by name.
+  const order = (a, b) => (b.online - a.online) || a.name.localeCompare(b.name);
+  const mine = list.filter((r) => r.mine).sort(order), others = list.filter((r) => !r.mine).sort(order);
+  const group = (title, rs, showOwner) => rs.length ? [
+    title ? h("h3", { class: "org-section" }, title) : null,
+    h("ul", { class: "runner-cards" }, ...rs.map((r) => runnerCard(r, { showOwner }))),
+  ] : [];
+  $("#runners-stats").replaceChildren(...(list.length ? runnerStats(list) : []));
+  if (!list.length) $(".runners-about").open = true;
+  box.replaceChildren(...(list.length ? [
+    ...group(others.length ? "Yours" : "", mine, false),
+    ...group(mine.length ? `Others in ${state.me?.org?.name || "the organization"}` : "", others, true),
+  ].filter(Boolean) : [h("div", { class: "runners-empty" },
+    ico("computer"),
+    h("p", { class: "empty-title" }, "No runners yet"),
+    h("p", { class: "hint" }, "Add a computer with git and Claude Code logged in: you get a one-line install command for its terminal (Linux or macOS)."))]));
   $("#runners-local").textContent = state.localTasks
-    ? "This dashboard also runs tasks of projects not linked to a runner itself."
+    ? "This dashboard also runs the tasks of projects not linked to a runner itself."
     : "This dashboard doesn't run tasks itself: link each project to a runner.";
   if (runnerAdd) {
     const added = list.find((r) => !runnerAdd.known.has(r.id));
@@ -3452,10 +3537,24 @@ function closeRunnerAdd() {
 }
 $("#runners-add").addEventListener("click", attempt(addRunner));
 
-// openAddRunner opens the organization sheet straight on a new runner code.
+// openRunners shows the organization's runners: what each is doing, and
+// adding, pausing, limiting and revoking them.
+async function openRunners() {
+  closeRunnerAdd();
+  $("#runners-repos").hidden = true;
+  await renderRunners();
+  const d = $("#runners-sheet");
+  if (!d.open) d.showModal();
+}
+// Enter in a field (tasks at once, the new runner's name) commits it rather
+// than submitting the sheet's form, which would close it.
+$("#runners-form").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.matches("input")) { e.preventDefault(); e.target.blur(); }
+});
+
+// openAddRunner opens the runners sheet straight on a new runner code.
 async function openAddRunner() {
-  await openOrg();
-  railLayouts.get("org-sheet").show("runners");
+  await openRunners();
   await addRunner();
 }
 
@@ -3545,9 +3644,6 @@ function askPassword(title, body = "") {
 
 async function openOrg() {
   await renderOrg();
-  closeRunnerAdd();
-  $("#runners-repos").hidden = true;
-  await renderRunners();
   $("#org-invite-link").hidden = true;
   const d = $("#org-sheet");
   if (!d.open) d.showModal();
@@ -5015,7 +5111,7 @@ const chatRunner = {
     bar.classList.toggle("offline", !current);
     if (current) text.textContent = `Runs on ${current}, with its Claude login`;
     else if (info.runners.length) text.textContent = `Your runner${info.runners.length > 1 ? "s are" : ` ${info.runners[0].name} is`} offline: start it to chat`;
-    else text.textContent = "No runner of yours yet: add one in Settings → Runners, and the chat runs on your own computer with your Claude login";
+    else text.textContent = "No runner of yours yet: add one under Runners in the account menu, and the chat runs on your own computer with your Claude login";
     text.title = text.textContent;
     sel.hidden = online.length < 2;
     if (!sel.hidden) {
@@ -7114,6 +7210,7 @@ function paletteCommands() {
     ["Claude usage", "clock", () => { renderUsage(); $("#usage-sheet").showModal(); }, ":usage", "limits"],
     state.usage && [state.usage.paused ? "Resume the queue" : "Pause the queue", state.usage.paused ? "play" : "pause", () => runCommand(state.usage.paused ? "resume" : "pause"), "", "queue"],
     ["Permission requests", "eye", () => runCommand("perms"), ":perms", "approvals allow deny"],
+    state.runners && ["Runners", "computer", openRunners, ":runners", "computers machines dash runner add install revoke"],
     ["Preferences", "prefs", openPrefs, ":prefs", "preferences vim invisibles whitespace notifications browser"],
     ["Connect Claude", "plug", openConnector, ":connector", "claude.ai connector mcp mobile app remote oauth"],
     [notifyLabel(), notifyOn() ? "bell-off" : "bell", toggleNotifications, ":notify", "notifications"],

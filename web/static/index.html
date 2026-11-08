@@ -131,6 +131,7 @@
             <div class="foot-menu-list">
               <div class="org-switch" id="org-switch" hidden></div>
               <button id="org-open" type="button" data-icon="users">Organization</button>
+              <button id="runners-open" type="button" data-icon="computer" hidden>Runners</button>
               <button id="twofactor-open" type="button" data-icon="lock">Two-factor sign-in</button>
               <button id="prefs-open" type="button" data-icon="prefs">Preferences</button>
               <button id="connector-open" type="button" data-icon="plug">Connect Claude</button>
@@ -681,6 +682,7 @@
             <fieldset class="field choice" id="settings-runners-field" hidden>
               <legend>Runners <em>computers that run this project's tasks</em></legend>
               <div id="settings-runners"></div>
+              <button class="link" type="button" id="settings-runners-manage" data-icon="computer">Manage runners…</button>
             </fieldset>
             <p class="hint" id="settings-runners-hint" hidden></p>
           </section>
@@ -794,8 +796,7 @@
             <button type="button" class="rail-item" data-rail="members">Members</button>
             <button type="button" class="rail-item" data-rail="access">Address &amp; sign-in</button>
           </div>
-          <div class="rail-group"><span class="rail-head">Resources</span>
-            <button type="button" class="rail-item" data-rail="runners">Runners</button>
+          <div class="rail-group"><span class="rail-head">Account</span>
             <button type="button" class="rail-item" data-rail="billing">Billing</button>
           </div>
         </nav>
@@ -831,16 +832,6 @@
               <p class="hint" id="org-slug-hint" hidden>3 to 40 lower-case letters, digits or hyphens. The old address keeps leading here for 30 days, and no other organization can take it meanwhile.</p>
             </div>
           </section>
-          <section class="rail-section" data-section="runners">
-            <div id="org-runners" hidden>
-              <p class="hint">Computers that run this organization's tasks with <code>dash runner</code>, each with its owner's Claude subscription. They connect out to this dashboard, so they need no open port or VPN, and adding one takes a single command. Link projects to them in each project's settings.</p>
-              <p class="hint" id="runners-local"></p>
-              <ul class="runner-list" id="runners-list"></ul>
-              <div id="runners-code" hidden></div>
-              <section id="runners-repos" class="runner-repos" hidden aria-live="polite"></section>
-              <button class="btn" id="runners-add" type="button" data-icon="plus">Add a runner</button>
-            </div>
-          </section>
           <section class="rail-section" data-section="billing">
             <div id="org-billing" hidden>
               <div id="org-billing-body"></div>
@@ -851,6 +842,25 @@
       <footer class="sheet-actions">
         <button class="btn" id="org-new" type="button" data-icon="plus" hidden>New organization</button>
       </footer>
+    </form>
+  </dialog>
+
+  <!-- Runners: the organization's computers that run tasks (`dash runner`) -->
+  <dialog class="sheet" id="runners-sheet" aria-labelledby="runners-title">
+    <form method="dialog" id="runners-form">
+      <header class="sheet-head"><h2 id="runners-title" tabindex="-1" autofocus>Runners</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <div class="runners-top">
+        <div class="runners-stats" id="runners-stats" role="status"></div>
+        <button class="btn primary small" id="runners-add" type="button" data-icon="plus">Add a runner</button>
+      </div>
+      <details class="runners-about">
+        <summary>What is a runner?</summary>
+        <p class="hint">A computer that runs this organization's tasks with <code>dash runner</code>, using its owner's Claude subscription. It connects out to this dashboard, so it needs no open port, VPN or sudo, and adding one takes a single command. Everyone in the organization sees it; its owner and the admins manage it. Link projects to runners in each project's settings.</p>
+        <p class="hint" id="runners-local"></p>
+      </details>
+      <div id="runners-code" hidden></div>
+      <section id="runners-repos" class="runner-repos" hidden aria-live="polite"></section>
+      <div id="runners-list"></div>
     </form>
   </dialog>
 

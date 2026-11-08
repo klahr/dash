@@ -41,7 +41,7 @@ type SmallClaude interface {
 
 // errNoClaudeRunner is why the hub can't run something on the caller's runner.
 var errNoClaudeRunner = errors.New("no runner of yours is online: this hub runs Claude only on its users' own runners. " +
-	"Start `dash runner` on your computer (Settings → Runners → Add a runner)")
+	"Start `dash runner` on your computer (account menu → Runners → Add a runner)")
 
 // localClaude reports whether this Dash runs Claude itself.
 func (s *Server) localClaude() bool {
