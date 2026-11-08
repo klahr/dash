@@ -103,35 +103,77 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 				failed = append(failed, c)
 			}
 		}
+		var ignored []string
+		if len(failed) > 0 {
+			info, anyRequired, err := m.Git.PRCheckInfo(ctx, p.ID, p.Path, n)
+			if err != nil {
+				slog.Warn("pull request checks", "todo", t.ID, "pr", n, "err", err)
+			} else {
+				failed, ignored = branchFixable(failed, info, anyRequired)
+			}
+		}
 		if len(failed) == 0 {
 			if p.HubProjectID != "" {
-				m.mergePR(ctx, t, p, st)
+				if st.Mergeable != "MERGEABLE" {
+					return // UNKNOWN while GitHub works it out; the next poll tries again
+				}
+				if m.mergePR(ctx, t, p, st) {
+					return
+				}
+			}
+			if len(ignored) > 0 {
+				// Not Claude's to fix: tell the user instead of spending fix passes.
+				m.handled(t, st.HeadRefOid, fmt.Sprintf("⚠ checks fail on pull request #%d that no change to this branch can fix:\n%s",
+					n, strings.Join(ignored, "\n")))
+				_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+					x.Error = fmt.Sprintf("Checks fail on pull request #%d that no change to this branch can fix: %s. "+
+						"Merge the pull request on GitHub, after fixing them in %s if they block it.", n, strings.Join(ignored, "; "), p.Base())
+					return nil
+				})
 			}
 			return
 		}
 		m.handled(t, st.HeadRefOid, fmt.Sprintf("✖ checks fail on pull request #%d", n))
 		t, _ = m.Store.GetTodo(t.ID)
-		_ = m.sendBack(t, p, m.checksNote(ctx, p, n, failed), false, fmt.Sprintf("checks fail on pull request #%d", n))
+		_ = m.sendBack(t, p, m.checksNote(ctx, p, n, failed, ignored), false, fmt.Sprintf("checks fail on pull request #%d", n))
 	}
 }
 
 // mergePR merges the pull request of a hub's task on this runner once
 // GitHub finds it mergeable and its checks pass: approving it on the hub was
 // the review, and nobody here would merge it otherwise. When GitHub refuses
-// (e.g. a required review), it stays open to be merged there.
-func (m *MergeQueue) mergePR(ctx context.Context, t model.Todo, p model.Project, st gitops.PRStatus) {
-	if st.Mergeable != "MERGEABLE" {
-		return // UNKNOWN while GitHub works it out; the next poll tries again
-	}
+// (e.g. a required review), it stays open to be merged there. It reports
+// whether GitHub took the merge.
+func (m *MergeQueue) mergePR(ctx context.Context, t model.Todo, p model.Project, st gitops.PRStatus) bool {
 	n := t.PR.Number
 	if err := m.Git.MergePR(ctx, p.ID, p.Path, n, st.HeadRefOid); err != nil {
 		m.handled(t, st.HeadRefOid, fmt.Sprintf("⚠ couldn't merge pull request #%d: %v; merge it on GitHub", n, err))
-		return
+		return false
 	}
 	m.Log.Line(t, fmt.Sprintf("⇢ merging pull request #%d", n))
 	if st, err := m.Git.PRStatus(ctx, p.ID, p.Path, n); err == nil && st.State == "MERGED" {
 		m.followPR(ctx, t, p, st)
 	}
+	return true
+}
+
+// branchFixable splits failed checks into those a change to the pull
+// request's branch could fix and descriptions of the rest: checks run by
+// pull_request_target run the base branch's workflow, and when the base
+// branch requires some checks, the others don't hold up the merge.
+func branchFixable(failed []gitops.PRCheck, info map[string]gitops.CheckInfo, anyRequired bool) (fix []gitops.PRCheck, ignored []string) {
+	for _, c := range failed {
+		ci := info[c.Label()]
+		switch {
+		case ci.Event == "pull_request_target":
+			ignored = append(ignored, fmt.Sprintf("%s (runs the base branch's workflow via pull_request_target) %s", c.Label(), c.URL()))
+		case anyRequired && !ci.Required:
+			ignored = append(ignored, fmt.Sprintf("%s (not required for merging) %s", c.Label(), c.URL()))
+		default:
+			fix = append(fix, c)
+		}
+	}
+	return fix, ignored
 }
 
 // handled remembers that the PR's current head was dealt with.
@@ -145,7 +187,7 @@ func (m *MergeQueue) handled(t model.Todo, sha, line string) {
 	})
 }
 
-func (m *MergeQueue) checksNote(ctx context.Context, p model.Project, n int, failed []gitops.PRCheck) string {
+func (m *MergeQueue) checksNote(ctx context.Context, p model.Project, n int, failed []gitops.PRCheck, ignored []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Checks fail on pull request #%d:\n", n)
 	for _, c := range failed {
@@ -159,6 +201,12 @@ func (m *MergeQueue) checksNote(ctx context.Context, p model.Project, n int, fai
 		if log := m.Git.FailedLog(ctx, p.ID, p.Path, c, 80); log != "" {
 			fmt.Fprintf(&b, "\nLast lines of the failed log for %s:\n```\n%s\n```\n", c.Label(), log)
 			shown++
+		}
+	}
+	if len(ignored) > 0 {
+		b.WriteString("\nThese also fail, but no change to this branch can fix them; leave them alone:\n")
+		for _, s := range ignored {
+			fmt.Fprintf(&b, "- %s\n", s)
 		}
 	}
 	b.WriteString("\nFix the code so these checks pass. Don't weaken or delete tests unless they are wrong.")

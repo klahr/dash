@@ -126,6 +126,58 @@ func (g *Git) PRStatus(ctx context.Context, projectID, dir string, number int) (
 	return st, nil
 }
 
+// CheckInfo tells whether a pull request's check is the branch's to fix.
+type CheckInfo struct {
+	Event    string // what triggered it, e.g. pull_request or pull_request_target ("" for commit statuses)
+	Required bool   // the base branch requires it to pass before merging
+}
+
+// PRCheckInfo returns, by check name, the triggering event of each check of
+// pull request number and whether the base branch requires it. anyRequired
+// reports whether the base branch requires any check at all.
+func (g *Git) PRCheckInfo(ctx context.Context, projectID, dir string, number int) (info map[string]CheckInfo, anyRequired bool, err error) {
+	type entry struct {
+		Name  string `json:"name"`
+		Event string `json:"event"`
+	}
+	// With --json gh exits 0 whatever the checks' state.
+	out, err := g.ghQuiet(ctx, projectID, dir, "pr", "checks", strconv.Itoa(number), "--json", "name,event")
+	if err != nil {
+		return nil, false, err
+	}
+	var all []entry
+	if err := json.Unmarshal([]byte(jsonPart(out)), &all); err != nil {
+		return nil, false, fmt.Errorf("gh pr checks: %w", err)
+	}
+	info = map[string]CheckInfo{}
+	for _, e := range all {
+		ci, seen := info[e.Name]
+		// Of same-named checks, one that the branch triggers wins.
+		if !seen || ci.Event == "pull_request_target" {
+			ci.Event = e.Event
+		}
+		info[e.Name] = ci
+	}
+	// gh fails with "no required checks reported" when none are required.
+	out, err = g.ghQuiet(ctx, projectID, dir, "pr", "checks", strconv.Itoa(number), "--required", "--json", "name,event")
+	var required []entry
+	if err != nil {
+		if strings.Contains(out, "no required checks") {
+			return info, false, nil
+		}
+		return nil, false, err
+	}
+	if err := json.Unmarshal([]byte(jsonPart(out)), &required); err != nil {
+		return nil, false, fmt.Errorf("gh pr checks --required: %w", err)
+	}
+	for _, e := range required {
+		ci := info[e.Name]
+		ci.Required = true
+		info[e.Name] = ci
+	}
+	return info, len(required) > 0, nil
+}
+
 var runIDRe = regexp.MustCompile(`/actions/runs/(\d+)`)
 
 // FailedLog returns the tail of a failed GitHub Actions run's log, or ""
