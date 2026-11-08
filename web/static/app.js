@@ -6707,7 +6707,22 @@ $("#palette-input").addEventListener("keydown", (e) => {
   else return;
   e.preventDefault();
 });
-$("#palette").addEventListener("click", (e) => { if (e.target.id === "palette") e.target.close(); }); // backdrop
+// A click on the backdrop of any modal closes it. The backdrop's clicks land on
+// the dialog itself, outside its box. Both press and release must be outside,
+// so dragging a text selection out of a field doesn't close the sheet.
+// close("cancel") like a Cancel button: sheets save only on their own values.
+const outsideDialog = (d, e) => {
+  if (e.target !== d || !d.open) return false;
+  const r = d.getBoundingClientRect();
+  return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+};
+let backdropDown = null;
+document.addEventListener("pointerdown", (e) => { backdropDown = e.target instanceof HTMLDialogElement && outsideDialog(e.target, e) ? e.target : null; });
+document.addEventListener("click", (e) => {
+  const d = backdropDown;
+  backdropDown = null;
+  if (d && outsideDialog(d, e)) d.close("cancel");
+});
 $("#palette-open").addEventListener("click", () => openPalette());
 // Ctrl-k (⌘K on a Mac) works everywhere but the terminal, even while typing.
 document.addEventListener("keydown", (e) => {
