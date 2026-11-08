@@ -1141,6 +1141,12 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .side-new-project:hover svg { border-color: var(--accent); color: var(--accent); }
 .side-machine { display: flex; align-items: center; gap: 8px; padding: 12px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--faint); }
 .side-machine:first-child { padding-top: 2px; }
+.side-machine-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-machine.needs-runner { color: var(--muted); }
+/* The hub's shared projects: a quiet mark, to tell them from a runner's own. */
+.shared-mark { flex: none; display: inline-flex; color: var(--faint); opacity: .7; }
+.shared-mark .ico { width: 13px; height: 13px; }
+.project-name .shared-mark { margin-left: 6px; vertical-align: -1px; }
 .menu-btn { position: relative; margin-left: -10px; }
 .app:has(.ci-pill.ci-failing:not([hidden]), .usage-pill.paused:not([hidden])) .menu-btn::after {
   content: ""; position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%;
@@ -1226,7 +1232,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .side-collapsed .sidebar { overflow: visible; }
   .side-collapsed .nav > button { justify-content: center; padding: 0; }
   .side-collapsed .nav > button > span:not(.badge),
-  .side-collapsed .side-projects-head, .side-collapsed .side-project-name, .side-collapsed .side-project-branch,
+  .side-collapsed .side-projects-head, .side-collapsed .side-project-name, .side-collapsed .side-project-branch, .side-collapsed .shared-mark,
   .side-collapsed .side-machine, .side-collapsed .machine-empty,
   .side-collapsed .side-new-project span, .side-collapsed .quick-btn span,
   .side-collapsed .usage-pill:not(#usage-pill), .side-collapsed .merge-status { display: none; }
