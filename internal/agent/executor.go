@@ -262,7 +262,7 @@ func Summary(e model.RunEvent) string {
 	case "status", "text":
 		return e.Text
 	case "tool_use":
-		return fmt.Sprintf("🔧 %s %s", e.Tool, truncate(string(e.Input), 200))
+		return toolLine(e.Tool, e.Input)
 	case "result":
 		if e.IsError {
 			return "✖ " + e.Text
@@ -270,6 +270,42 @@ func Summary(e model.RunEvent) string {
 		return fmt.Sprintf("✔ Claude finished (%d turns, ≈$%.2f)\n%s", e.Turns, e.CostUSD, e.Text)
 	}
 	return "" // tool results and run boundaries are noise for the text log
+}
+
+// toolLine shows a tool call the way a person reads it: "$ ls" for a shell
+// command, "🔧 Read a.go" for the rest; the raw JSON only when the input has
+// none of the usual fields.
+func toolLine(tool string, input json.RawMessage) string {
+	var in struct {
+		Command  string `json:"command"`
+		FilePath string `json:"file_path"`
+		Pattern  string `json:"pattern"`
+		Path     string `json:"path"`
+		URL      string `json:"url"`
+		Query    string `json:"query"`
+	}
+	_ = json.Unmarshal(input, &in)
+	if tool == "Bash" && in.Command != "" {
+		return "$ " + truncate(firstLine(in.Command), 200)
+	}
+	for _, s := range []string{in.Command, in.FilePath, in.Pattern, in.Path, in.URL, in.Query} {
+		if s != "" {
+			return fmt.Sprintf("🔧 %s %s", tool, truncate(firstLine(s), 200))
+		}
+	}
+	if s := strings.TrimSpace(string(input)); s == "" || s == "{}" || s == "null" {
+		return "🔧 " + tool
+	}
+	return fmt.Sprintf("🔧 %s %s", tool, truncate(string(input), 200))
+}
+
+// firstLine is s up to its first newline, with "…" when more follows.
+func firstLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i] + " …"
+	}
+	return s
 }
 
 func truncate(s string, n int) string {

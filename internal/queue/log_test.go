@@ -55,7 +55,7 @@ func TestTodoLogEvents(t *testing.T) {
 	// The text log keeps the summaries only.
 	text, _ := l.Read(td.ID)
 	lines := strings.Split(strings.TrimSpace(text), "\n")
-	if len(lines) != 2 || !strings.HasSuffix(lines[0], ` 🔧 Bash {"command":"go test ./..."}`) || !strings.HasSuffix(lines[1], " ✔ ready for review") {
+	if len(lines) != 2 || !strings.HasSuffix(lines[0], " $ go test ./...") || !strings.HasSuffix(lines[1], " ✔ ready for review") {
 		t.Errorf("text log:\n%s", text)
 	}
 

@@ -36,3 +36,20 @@ func TestMainBranch(t *testing.T) {
 		t.Fatalf("MainBranch = %q, want trunk", b)
 	}
 }
+
+// A NUL byte in a commit message (pasted into a task's prompt) used to make
+// the commit fail with "fork/exec git: invalid argument".
+func TestCommitMessageWithNUL(t *testing.T) {
+	ctx, g := context.Background(), New(nil)
+	dir := filepath.Join(t.TempDir(), "repo")
+	if err := g.InitRepo(ctx, "p", dir, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.git(ctx, "p", dir, g.committing(ctx, dir, "commit", "--allow-empty", "-m", "show $ sed but \x00instead")...); err != nil {
+		t.Fatal(err)
+	}
+	out, err := g.git(ctx, "p", dir, "log", "-n1", "--format=%s")
+	if err != nil || out != "show $ sed but instead" {
+		t.Fatalf("log = %q, %v", out, err)
+	}
+}

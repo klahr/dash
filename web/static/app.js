@@ -4434,7 +4434,10 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
 // A collapsible tool call: its input, and its output once filled in.
 function toolCall(tool, input) {
   const out = h("pre", { class: "tool-out", hidden: true });
-  const el = h("details", { class: "tool" }, h("summary", {}, h("b", {}, tool), ` ${toolSummary(tool, input)}`),
+  const head = tool === "Bash" && input?.command
+    ? [h("b", {}, "$"), ` ${toolSummary(tool, input)}`]
+    : [h("b", {}, tool), ` ${toolSummary(tool, input)}`];
+  const el = h("details", { class: "tool" }, h("summary", {}, ...head),
     h("pre", { class: "tool-in" }, toolDetail(tool, input)), out);
   return { el, out };
 }

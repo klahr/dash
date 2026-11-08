@@ -58,7 +58,10 @@ func TestSummary(t *testing.T) {
 	}{
 		{model.RunEvent{Kind: "status", Text: "▶ reusing worktree"}, "▶ reusing worktree"},
 		{model.RunEvent{Kind: "text", Text: "Hello"}, "Hello"},
-		{model.RunEvent{Kind: "tool_use", Tool: "Bash", Input: []byte(`{"command":"ls"}`)}, `🔧 Bash {"command":"ls"}`},
+		{model.RunEvent{Kind: "tool_use", Tool: "Bash", Input: []byte(`{"command":"ls"}`)}, "$ ls"},
+		{model.RunEvent{Kind: "tool_use", Tool: "Bash", Input: []byte(`{"command":"sed -n 1,5p a.go\nls","description":"x"}`)}, "$ sed -n 1,5p a.go …"},
+		{model.RunEvent{Kind: "tool_use", Tool: "Read", Input: []byte(`{"file_path":"/x/a.go","limit":5}`)}, "🔧 Read /x/a.go"},
+		{model.RunEvent{Kind: "tool_use", Tool: "TodoWrite", Input: []byte(`{}`)}, "🔧 TodoWrite"},
 		{model.RunEvent{Kind: "tool_use", Tool: "Write", Input: []byte(strings.Repeat("y", 300))}, "🔧 Write " + strings.Repeat("y", 200) + "…"},
 		{model.RunEvent{Kind: "tool_result", Text: "lots of output"}, ""},
 		{model.RunEvent{Kind: "result", Text: "Done.", Turns: 3, CostUSD: 0.5}, "✔ Claude finished (3 turns, ≈$0.50)\nDone."},

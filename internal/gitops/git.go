@@ -52,6 +52,7 @@ func (g *Git) exec(ctx context.Context, projectID, dir, bin string, args ...stri
 // run executes a command; publish=false keeps routine polling out of the activity feed.
 func (g *Git) run(ctx context.Context, publish bool, projectID, dir, bin string, args ...string) (string, error) {
 	start := time.Now()
+	args = stripNUL(args)
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1")
@@ -71,6 +72,26 @@ func (g *Git) run(ctx context.Context, publish bool, projectID, dir, bin string,
 		return out.String(), &CmdError{Args: append([]string{bin}, args...), Output: out.String(), Err: err}
 	}
 	return strings.TrimSpace(out.String()), nil
+}
+
+// stripNUL drops NUL bytes from args: no program can receive one (exec fails
+// with "invalid argument"), and a stray one pasted into a task's prompt would
+// otherwise make every commit, tag or PR carrying that prompt fail.
+func stripNUL(args []string) []string {
+	var out []string
+	for i, a := range args {
+		if strings.IndexByte(a, 0) < 0 {
+			continue
+		}
+		if out == nil {
+			out = append([]string(nil), args...)
+		}
+		out[i] = strings.ReplaceAll(a, "\x00", "")
+	}
+	if out == nil {
+		return args
+	}
+	return out
 }
 
 func (g *Git) gh(ctx context.Context, projectID, dir string, args ...string) (string, error) {
