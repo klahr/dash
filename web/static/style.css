@@ -1106,7 +1106,8 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   border-block: 1px solid var(--line);
 }
 .side-projects-head { margin: 0; padding: 0 10px 8px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
-.side-project-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 1px; }
+.side-project-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; scrollbar-width: none; min-height: 0; display: flex; flex-direction: column; gap: 1px; }
+.side-project-list::-webkit-scrollbar { display: none; }
 .side-project-list li:not(.side-machine, .machine-empty) { display: flex; flex-wrap: wrap; align-items: center; border-radius: var(--r-m); }
 .side-project {
   --project: var(--faint);
