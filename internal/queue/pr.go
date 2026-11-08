@@ -104,11 +104,33 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 			}
 		}
 		if len(failed) == 0 {
+			if p.HubProjectID != "" {
+				m.mergePR(ctx, t, p, st)
+			}
 			return
 		}
 		m.handled(t, st.HeadRefOid, fmt.Sprintf("✖ checks fail on pull request #%d", n))
 		t, _ = m.Store.GetTodo(t.ID)
 		_ = m.sendBack(t, p, m.checksNote(ctx, p, n, failed), false, fmt.Sprintf("checks fail on pull request #%d", n))
+	}
+}
+
+// mergePR merges the pull request of a hub's task on this runner once
+// GitHub finds it mergeable and its checks pass: approving it on the hub was
+// the review, and nobody here would merge it otherwise. When GitHub refuses
+// (e.g. a required review), it stays open to be merged there.
+func (m *MergeQueue) mergePR(ctx context.Context, t model.Todo, p model.Project, st gitops.PRStatus) {
+	if st.Mergeable != "MERGEABLE" {
+		return // UNKNOWN while GitHub works it out; the next poll tries again
+	}
+	n := t.PR.Number
+	if err := m.Git.MergePR(ctx, p.ID, p.Path, n, st.HeadRefOid); err != nil {
+		m.handled(t, st.HeadRefOid, fmt.Sprintf("⚠ couldn't merge pull request #%d: %v; merge it on GitHub", n, err))
+		return
+	}
+	m.Log.Line(t, fmt.Sprintf("⇢ merging pull request #%d", n))
+	if st, err := m.Git.PRStatus(ctx, p.ID, p.Path, n); err == nil && st.State == "MERGED" {
+		m.followPR(ctx, t, p, st)
 	}
 }
 
