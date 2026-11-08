@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/klahr/dash/internal/model"
@@ -28,7 +29,24 @@ type Reporter struct {
 	Keep time.Duration
 
 	wake chan struct{}
+
+	mu   sync.Mutex
+	live map[string]*liveOutput // runner todo id → Claude's output since the last report
 }
+
+// liveOutput is what a hub's task printed since the last report: the hub
+// streams it to its dashboards like a task of its own.
+type liveOutput struct {
+	line   string
+	events []model.RunEvent
+}
+
+// Live output kept per task between reports: older events are dropped (the
+// hub reads the whole log from the runner when someone opens the task).
+const (
+	maxLiveEvents = 100
+	maxLiveText   = 4000
+)
 
 // ErrStop ends Run: Send returns it when the hub revoked the runner.
 var ErrStop = errors.New("stop reporting")
@@ -58,10 +76,59 @@ func (r *Reporter) Observe(ev model.Event) {
 		if t, ok := ev.Data.(model.Todo); ok && t.HubTodoID != "" {
 			r.Nudge()
 		}
+	case model.EvTodoOutput, model.EvTodoEvent:
+		r.observeOutput(ev)
 	}
 }
 
-// Build is the report as of now.
+// observeOutput keeps a hub task's progress (todo.output and todo.event
+// events of the runner's task log) for the next report.
+func (r *Reporter) observeOutput(ev model.Event) {
+	if ev.TodoID == "" || r.Store == nil {
+		return
+	}
+	if t, err := r.Store.GetTodo(ev.TodoID); err != nil || t.HubTodoID == "" {
+		return
+	}
+	r.mu.Lock()
+	if r.live == nil {
+		r.live = map[string]*liveOutput{}
+	}
+	l := r.live[ev.TodoID]
+	if l == nil {
+		l = &liveOutput{}
+		r.live[ev.TodoID] = l
+	}
+	switch d := ev.Data.(type) {
+	case string:
+		l.line = d
+	case model.RunEvent:
+		if len(d.Text) > maxLiveText {
+			d.Text = d.Text[:maxLiveText] + "…"
+		}
+		if len(d.Input) > maxLiveText {
+			d.Input = nil
+		}
+		l.events = append(l.events, d)
+		if n := len(l.events) - maxLiveEvents; n > 0 {
+			l.events = append([]model.RunEvent(nil), l.events[n:]...)
+		}
+	}
+	r.mu.Unlock()
+	r.Nudge()
+}
+
+// takeLive hands over the output kept since the last report.
+func (r *Reporter) takeLive() map[string]*liveOutput {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	l := r.live
+	r.live = nil
+	return l
+}
+
+// Build is the report as of now, with the tasks' output since the last
+// Build.
 func (r *Reporter) Build(now time.Time) Report {
 	keep := r.Keep
 	if keep <= 0 {
@@ -72,6 +139,7 @@ func (r *Reporter) Build(now time.Time) Report {
 		u := r.Usage.Snapshot()
 		rep.Usage = &u
 	}
+	live := r.takeLive()
 	for _, t := range r.Store.ListTodos("") {
 		if t.HubTodoID == "" {
 			continue
@@ -80,7 +148,11 @@ func (r *Reporter) Build(now time.Time) Report {
 		if done && now.Sub(t.UpdatedAt) > keep {
 			continue
 		}
-		rep.Tasks = append(rep.Tasks, StateOf(t))
+		s := StateOf(t)
+		if l := live[t.ID]; l != nil {
+			s.Output, s.Events = l.line, l.events
+		}
+		rep.Tasks = append(rep.Tasks, s)
 	}
 	return rep
 }

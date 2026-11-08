@@ -46,6 +46,9 @@ type Dispatcher struct {
 	Kick func()
 	// Note adds a line to a task's log (optional).
 	Note func(t model.Todo, line string)
+	// Pub streams a running task's output, as its runner reports it, to
+	// the dashboards (optional).
+	Pub interface{ Publish(model.Event) }
 
 	mu     sync.Mutex
 	timers map[string]*time.Timer // runner id → its offline grace
@@ -181,10 +184,12 @@ func (d *Dispatcher) apply(r tunnel.Runner, ts TaskState) {
 		return
 	}
 	to := hubStatus(ts.Status)
+	var ours model.Todo // the task, if it is this runner's
 	_, err := d.Store.UpdateTodo(ts.HubTodoID, func(x *model.Todo) error {
 		if x.Runner != r.ID || (x.RemoteID != "" && x.RemoteID != ts.ID) {
 			return errSkip // sent elsewhere since, or never sent to this runner
 		}
+		ours = *x
 		switch x.Status {
 		case model.StatusQueued, model.StatusDraft, model.StatusMerged:
 			return errSkip // waiting to be sent (again), or done
@@ -237,6 +242,23 @@ func (d *Dispatcher) apply(r tunnel.Runner, ts TaskState) {
 	})
 	if err != nil && !errors.Is(err, errSkip) && !errors.Is(err, store.ErrNotFound) {
 		slog.Warn("apply runner report", "runner", r.Name, "todo", ts.HubTodoID, "err", err)
+	}
+	if ours.ID != "" {
+		d.publishOutput(ours, ts)
+	}
+}
+
+// publishOutput streams what task t printed on its runner to the hub's
+// dashboards, as todo.event and todo.output events like a task run here.
+func (d *Dispatcher) publishOutput(t model.Todo, ts TaskState) {
+	if d.Pub == nil {
+		return
+	}
+	for _, ev := range ts.Events {
+		d.Pub.Publish(model.Event{Type: model.EvTodoEvent, ProjectID: t.ProjectID, TodoID: t.ID, Data: ev, Time: ev.At})
+	}
+	if ts.Output != "" {
+		d.Pub.Publish(model.Event{Type: model.EvTodoOutput, ProjectID: t.ProjectID, TodoID: t.ID, Data: ts.Output, Time: time.Now()})
 	}
 }
 

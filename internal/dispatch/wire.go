@@ -94,6 +94,10 @@ type TaskState struct {
 	// session, so it can continue the task.
 	Session   bool      `json:"session,omitempty"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// Output is the task's latest progress line and Events its worker's
+	// events since the runner's last report, for the hub's dashboards.
+	Output string           `json:"output,omitempty"`
+	Events []model.RunEvent `json:"events,omitempty"`
 }
 
 // StateOf is what a runner reports about its copy t of a hub's task.

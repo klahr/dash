@@ -446,6 +446,8 @@ func main() {
 			also(ev)
 			reporter.Observe(ev)
 		}
+		// Claude's progress on the hub's tasks goes to the hub's board too.
+		todoLog.Pub = &teePublisher{Publisher: events, also: reporter.Observe}
 		go reporter.Run(ctx)
 	} else {
 		runners := &tunnel.Hub{Pub: events, Taken: apiSrv.Peers.Taken, PreviewURL: previews.URLTemplate, Accounts: st.Accounts()}
@@ -456,7 +458,7 @@ func main() {
 		}
 		// Tasks of projects linked to runners go to them; the hub only
 		// coordinates.
-		d := &dispatch.Dispatcher{Store: st, Fleet: runners, Grace: *runnerGrace, Kick: todos.Kick, Note: todoLog.Line}
+		d := &dispatch.Dispatcher{Store: st, Fleet: runners, Grace: *runnerGrace, Kick: todos.Kick, Note: todoLog.Line, Pub: events}
 		runners.OnState, runners.OnRevoke, runners.OnReport = d.State, d.Revoked, d.Report
 		todos.Remote, apiSrv.Dispatch = d, d
 		local, err := hubClaudePolicy(*hubClaude, runners, st.Accounts())
