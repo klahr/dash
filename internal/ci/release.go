@@ -88,10 +88,11 @@ func (w *Watcher) WatchRelease(projectID, tag, sha string) {
 	st := w.Status(projectID)
 	st.ProjectID = projectID
 	w.set(st) // shows "building" now
+	// Read the pacing here, not in the goroutine, which outlives this call.
+	every, deadline := releaseEvery, time.Now().Add(releaseFor)
 	go func() {
-		deadline := time.Now().Add(releaseFor)
 		for time.Now().Before(deadline) {
-			time.Sleep(releaseEvery)
+			time.Sleep(every)
 			rel, ok := w.followed(projectID)
 			if !ok || rel.Tag != tag || rel.State != ReleaseBuilding {
 				return
