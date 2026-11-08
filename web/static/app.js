@@ -395,6 +395,84 @@ function ask({ title, body = "", input = false, value = "", placeholder = "", ok
   });
 }
 
+// railLayout wires a sheet's .rail-layout: its sections down a rail and the
+// chosen one beside them; on a narrow screen the rail is a strip across the
+// top. The chosen section stays while the sheet is open (a re-render or a
+// sheet opened over it doesn't move it) and is the first again next time.
+// A section whose every child is hidden drops out of the rail. Arrow keys,
+// Home and End move along the rail; only the chosen entry is a tab stop, so
+// Tab goes on into its section. railLayouts.get(id).show(key) picks one.
+const railLayouts = new Map();
+function railLayout(dialog) {
+  const nav = dialog.querySelector(".rail-nav");
+  const main = dialog.querySelector(".rail-main");
+  const items = [...nav.querySelectorAll(".rail-item")];
+  const sectionOf = new Map(items.map((b) => [b, main.querySelector(`.rail-section[data-section="${b.dataset.rail}"]`)]));
+  for (const [b, s] of sectionOf) {
+    b.id ||= `${dialog.id}-rail-${b.dataset.rail}`;
+    s.id ||= `${dialog.id}-section-${b.dataset.rail}`;
+    b.setAttribute("aria-controls", s.id);
+    s.setAttribute("aria-labelledby", b.id);
+  }
+  const first = items[0].dataset.rail;
+  let wanted = first, shown = null;
+  const refresh = () => {
+    for (const [b, s] of sectionOf) {
+      const empty = [...s.children].every((c) => c.hidden);
+      if (b.hidden !== empty) b.hidden = empty;
+    }
+  };
+  // apply shows the wanted section, or the first one left if it is empty.
+  const apply = ({ focus = false } = {}) => {
+    refresh();
+    const b = items.find((x) => x.dataset.rail === wanted && !x.hidden) || items.find((x) => !x.hidden) || items[0];
+    const changed = b !== shown;
+    shown = b;
+    for (const [x, s] of sectionOf) {
+      const on = x === b;
+      x.tabIndex = on ? 0 : -1;
+      if (on) x.setAttribute("aria-current", "true"); else x.removeAttribute("aria-current");
+      s.classList.toggle("current", on);
+    }
+    if (changed) main.scrollTop = 0;
+    if (focus) b.focus();
+    if (changed && dialog.open) b.scrollIntoView({ block: "nearest", inline: "nearest" }); // the strip on a narrow screen
+  };
+  const show = (key, opts) => { wanted = key; apply(opts); };
+  nav.addEventListener("click", (e) => {
+    const b = e.target.closest(".rail-item");
+    if (b) show(b.dataset.rail);
+  });
+  nav.addEventListener("keydown", (e) => {
+    const on = items.filter((x) => !x.hidden);
+    const i = on.indexOf(e.target);
+    if (i < 0) return;
+    const next = { ArrowDown: i + 1, ArrowRight: i + 1, ArrowUp: i - 1, ArrowLeft: i - 1, Home: 0, End: on.length - 1 }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    show(on[(next + on.length) % on.length].dataset.rail, { focus: true });
+  });
+  // Saving with a bad field in a section that isn't shown: show that section
+  // first, so the browser can point at the field. Only the first bad field.
+  let pointed = false;
+  dialog.addEventListener("invalid", (e) => {
+    if (pointed) return;
+    const s = e.target.closest?.(".rail-section");
+    if (!s) return;
+    pointed = true;
+    setTimeout(() => { pointed = false; });
+    if (!s.classList.contains("current")) show(s.dataset.section);
+  }, true);
+  // Content showing or hiding (runners, webhooks, billing…) adds or drops sections.
+  new MutationObserver(() => apply()).observe(main, { subtree: true, attributes: true, attributeFilter: ["hidden"] });
+  dialog.addEventListener("close", () => { wanted = first; apply(); nav.scrollLeft = 0; });
+  apply();
+  const rail = { show, get current() { return shown.dataset.rail; } };
+  railLayouts.set(dialog.id, rail);
+  return rail;
+}
+for (const d of document.querySelectorAll("dialog.rail-sheet")) railLayout(d);
+
 // ------------------------------------------------------------------ attachments
 // Screenshots and files for Claude: an "Attach file" button, paste into the
 // text field, or drop onto the sheet.
@@ -3299,8 +3377,8 @@ $("#runners-add").addEventListener("click", attempt(addRunner));
 // openAddRunner opens the organization sheet straight on a new runner code.
 async function openAddRunner() {
   await openOrg();
+  railLayouts.get("org-sheet").show("runners");
   await addRunner();
-  $("#org-runners").scrollIntoView({ block: "start", behavior: reduceMotion.matches ? "auto" : "smooth" });
 }
 
 // The board of a hub that has no runners yet (and can't run tasks itself, or has no projects): what a runner

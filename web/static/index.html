@@ -608,68 +608,93 @@
   </dialog>
 
   <!-- Project settings -->
-  <dialog class="sheet" id="settings-sheet" aria-labelledby="settings-title">
+  <dialog class="sheet rail-sheet" id="settings-sheet" aria-labelledby="settings-title">
     <form method="dialog" id="settings-form">
       <header class="sheet-head"><h2 id="settings-title">Project settings</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
-      <label class="field"><span>Test command <em>runs before review; failures go back to Claude</em></span><input name="test_command" placeholder="go test ./..." spellcheck="false" autofocus></label>
-      <label class="field inline"><span>Automatic fix attempts</span><input type="number" name="max_auto_fixes" min="0" max="10" inputmode="numeric"></label>
-      <p class="hint">How often failing tests or merge conflicts go back to Claude before Dash asks you.</p>
-      <label class="field"><span>Setup command <em>runs once in each new worktree</em></span><input name="setup_command" placeholder="npm ci" spellcheck="false"></label>
-      <label class="field"><span>Files to copy into worktrees <em>one per line</em></span><textarea name="copy_files" rows="2" placeholder=".env" spellcheck="false"></textarea></label>
-      <label class="field"><span>Always-allowed tools <em>one per line</em></span><textarea name="allowed_tools" rows="2" placeholder="Bash" spellcheck="false"></textarea></label>
-      <p class="hint">Claude uses these without asking. "Always allow" on a request adds to this list.</p>
-      <fieldset class="field choice">
-        <legend>Chat permissions</legend>
-        <label class="radio"><input type="radio" name="chat_permission_mode" value=""><span>Ask every time <em>each tool call not already allowed waits for you</em></span></label>
-        <label class="radio"><input type="radio" name="chat_permission_mode" value="auto"><span>Auto <em>routine actions run on their own; risky ones still ask</em></span></label>
-        <label class="radio"><input type="radio" name="chat_permission_mode" value="acceptEdits"><span>Accept edits <em>file edits run on their own; commands still ask</em></span></label>
-      </fieldset>
-      <label class="field"><span>Review prompt <em>what the Review button asks Claude; empty uses the default</em></span><textarea name="review_prompt" rows="4"></textarea></label>
-      <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" spellcheck="false"></label>
-      <label class="field"><span>Deploy command</span><input name="deploy_command" spellcheck="false"></label>
-      <label class="toggle"><input type="checkbox" name="auto_approve"><span>Approve tasks automatically</span></label>
-      <p class="hint">Finished tasks whose tests pass go straight to the merge queue instead of waiting for review, and the Review column is hidden while it's empty.</p>
-      <fieldset class="field choice" id="settings-runners-field" hidden>
-        <legend>Runners <em>computers that run this project's tasks</em></legend>
-        <div id="settings-runners"></div>
-      </fieldset>
-      <p class="hint" id="settings-runners-hint" hidden></p>
-      <fieldset class="field choice">
-        <legend>When you approve a task</legend>
-        <label class="radio"><input type="radio" name="merge_mode" value="local"><span>Merge it here <em>one squashed commit on the default branch</em></span></label>
-        <label class="radio"><input type="radio" name="merge_mode" value="pr"><span>Open a pull request <em>Dash marks it merged when GitHub merges it; failing checks go back to Claude</em></span></label>
-      </fieldset>
-      <label class="toggle" id="auto-push-row"><input type="checkbox" name="auto_push"><span>Push after every merge</span></label>
-      <p class="hint" id="merge-hint"></p>
-      <label class="toggle"><input type="checkbox" name="investigate_ci"><span>Fix failed builds automatically</span></label>
-      <p class="hint">When GitHub Actions fails on the default branch, Claude gets a task with the failed log to investigate and fix it.</p>
-      <label class="field"><span>Release tag format <em>X, Y and Z are the major, minor and patch version, e.g. vX.Y.Z</em></span><input name="tag_format" placeholder="X.Y.Z" spellcheck="false" autocomplete="off"></label>
-      <p class="hint" id="tag-format-hint">Tag releases from a commit in History.</p>
-      <div class="field-row">
-        <label class="field inline"><span>Time limit per run <em>minutes</em></span><input type="number" name="max_run_minutes" min="1" inputmode="numeric" placeholder="60"></label>
-        <label class="field inline"><span>Turn limit per run</span><input type="number" name="max_turns" min="1" inputmode="numeric" placeholder="200"></label>
+      <div class="rail-layout">
+        <nav class="rail-nav" aria-label="Settings sections">
+          <div class="rail-group"><span class="rail-head">Project</span>
+            <button type="button" class="rail-item" data-rail="general">General</button>
+            <button type="button" class="rail-item" data-rail="claude">Claude</button>
+            <button type="button" class="rail-item" data-rail="runners">Runners</button>
+          </div>
+          <div class="rail-group"><span class="rail-head">Delivery</span>
+            <button type="button" class="rail-item" data-rail="approval">Approval &amp; push</button>
+            <button type="button" class="rail-item" data-rail="webhooks">Webhooks</button>
+          </div>
+        </nav>
+        <div class="rail-main">
+          <section class="rail-section" data-section="general">
+            <div class="color-row">
+              <label class="toggle"><input type="checkbox" name="use_color"><span>Project color</span></label>
+              <input type="color" name="color" aria-label="Project color" value="#8aa4ff">
+            </div>
+            <p class="hint">Marks the top bar and the project lists, so you can tell projects apart at a glance.</p>
+            <div class="color-row">
+              <span class="side-project-icon" id="settings-icon" aria-hidden="true"></span>
+              <input type="file" id="settings-icon-file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden>
+              <button class="btn small" type="button" id="settings-icon-pick">Choose icon…</button>
+              <button class="btn small" type="button" id="settings-icon-clear">Remove</button>
+              <input type="hidden" name="icon">
+            </div>
+            <p class="hint">An image shown in the project lists instead of the first letter.</p>
+            <label class="field"><span>Test command <em>runs before review; failures go back to Claude</em></span><input name="test_command" placeholder="go test ./..." spellcheck="false" autofocus></label>
+            <label class="field inline"><span>Automatic fix attempts</span><input type="number" name="max_auto_fixes" min="0" max="10" inputmode="numeric"></label>
+            <p class="hint">How often failing tests or merge conflicts go back to Claude before Dash asks you.</p>
+            <label class="field"><span>Setup command <em>runs once in each new worktree</em></span><input name="setup_command" placeholder="npm ci" spellcheck="false"></label>
+            <label class="field"><span>Files to copy into worktrees <em>one per line</em></span><textarea name="copy_files" rows="2" placeholder=".env" spellcheck="false"></textarea></label>
+            <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" spellcheck="false"></label>
+            <label class="field"><span>Deploy command</span><input name="deploy_command" spellcheck="false"></label>
+          </section>
+          <section class="rail-section" data-section="claude">
+            <fieldset class="field choice">
+              <legend>Chat permissions</legend>
+              <label class="radio"><input type="radio" name="chat_permission_mode" value=""><span>Ask every time <em>each tool call not already allowed waits for you</em></span></label>
+              <label class="radio"><input type="radio" name="chat_permission_mode" value="auto"><span>Auto <em>routine actions run on their own; risky ones still ask</em></span></label>
+              <label class="radio"><input type="radio" name="chat_permission_mode" value="acceptEdits"><span>Accept edits <em>file edits run on their own; commands still ask</em></span></label>
+            </fieldset>
+            <label class="field"><span>Always-allowed tools <em>one per line</em></span><textarea name="allowed_tools" rows="2" placeholder="Bash" spellcheck="false"></textarea></label>
+            <p class="hint">Claude uses these without asking. "Always allow" on a request adds to this list.</p>
+            <label class="field"><span>Review prompt <em>what the Review button asks Claude; empty uses the default</em></span><textarea name="review_prompt" rows="4"></textarea></label>
+            <div class="field-row">
+              <label class="field inline"><span>Time limit per run <em>minutes</em></span><input type="number" name="max_run_minutes" min="1" inputmode="numeric" placeholder="60"></label>
+              <label class="field inline"><span>Turn limit per run</span><input type="number" name="max_turns" min="1" inputmode="numeric" placeholder="200"></label>
+            </div>
+            <p class="hint">Stops a run that goes on too long. Time spent waiting for your approval doesn't count.</p>
+          </section>
+          <section class="rail-section" data-section="runners">
+            <fieldset class="field choice" id="settings-runners-field" hidden>
+              <legend>Runners <em>computers that run this project's tasks</em></legend>
+              <div id="settings-runners"></div>
+            </fieldset>
+            <p class="hint" id="settings-runners-hint" hidden></p>
+          </section>
+          <section class="rail-section" data-section="approval">
+            <label class="toggle"><input type="checkbox" name="auto_approve"><span>Approve tasks automatically</span></label>
+            <p class="hint">Finished tasks whose tests pass go straight to the merge queue instead of waiting for review, and the Review column is hidden while it's empty.</p>
+            <fieldset class="field choice">
+              <legend>When you approve a task</legend>
+              <label class="radio"><input type="radio" name="merge_mode" value="local"><span>Merge it here <em>one squashed commit on the default branch</em></span></label>
+              <label class="radio"><input type="radio" name="merge_mode" value="pr"><span>Open a pull request <em>Dash marks it merged when GitHub merges it; failing checks go back to Claude</em></span></label>
+            </fieldset>
+            <label class="toggle" id="auto-push-row"><input type="checkbox" name="auto_push"><span>Push after every merge</span></label>
+            <p class="hint" id="merge-hint"></p>
+            <label class="toggle"><input type="checkbox" name="investigate_ci"><span>Fix failed builds automatically</span></label>
+            <p class="hint">When GitHub Actions fails on the default branch, Claude gets a task with the failed log to investigate and fix it.</p>
+            <label class="field"><span>Release tag format <em>X, Y and Z are the major, minor and patch version, e.g. vX.Y.Z</em></span><input name="tag_format" placeholder="X.Y.Z" spellcheck="false" autocomplete="off"></label>
+            <p class="hint" id="tag-format-hint">Tag releases from a commit in History.</p>
+          </section>
+          <section class="rail-section" data-section="webhooks">
+            <fieldset class="field choice" id="settings-webhooks-field" hidden>
+              <legend>Notification webhooks <em>tell Slack, ntfy or your own service when tasks are ready, fail or merge, Claude needs approval or the build fails</em></legend>
+              <ul class="runner-list" id="settings-webhooks"></ul>
+              <div id="webhook-secret" hidden></div>
+              <p class="hint" id="settings-webhooks-hint" hidden></p>
+              <div><button class="btn small" type="button" id="webhook-add" data-icon="plus">Add webhook</button></div>
+            </fieldset>
+          </section>
+        </div>
       </div>
-      <p class="hint">Stops a run that goes on too long. Time spent waiting for your approval doesn't count.</p>
-      <div class="color-row">
-        <label class="toggle"><input type="checkbox" name="use_color"><span>Project color</span></label>
-        <input type="color" name="color" aria-label="Project color" value="#8aa4ff">
-      </div>
-      <p class="hint">Marks the top bar and the project lists, so you can tell projects apart at a glance.</p>
-      <div class="color-row">
-        <span class="side-project-icon" id="settings-icon" aria-hidden="true"></span>
-        <input type="file" id="settings-icon-file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden>
-        <button class="btn small" type="button" id="settings-icon-pick">Choose icon…</button>
-        <button class="btn small" type="button" id="settings-icon-clear">Remove</button>
-        <input type="hidden" name="icon">
-      </div>
-      <p class="hint">An image shown in the project lists instead of the first letter.</p>
-      <fieldset class="field choice" id="settings-webhooks-field" hidden>
-        <legend>Notification webhooks <em>tell Slack, ntfy or your own service when tasks are ready, fail or merge, Claude needs approval or the build fails</em></legend>
-        <ul class="runner-list" id="settings-webhooks"></ul>
-        <div id="webhook-secret" hidden></div>
-        <p class="hint" id="settings-webhooks-hint" hidden></p>
-        <div><button class="btn small" type="button" id="webhook-add" data-icon="plus">Add webhook</button></div>
-      </fieldset>
       <footer class="sheet-actions"><button class="btn primary" value="save" data-icon="check">Save settings</button></footer>
     </form>
   </dialog>
@@ -745,49 +770,68 @@
   </dialog>
 
   <!-- The active organization: members, roles and invitations -->
-  <dialog class="sheet" id="org-sheet" aria-labelledby="org-title">
+  <dialog class="sheet rail-sheet" id="org-sheet" aria-labelledby="org-title">
     <form method="dialog">
       <header class="sheet-head"><h2 id="org-title" tabindex="-1" autofocus>Organization</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
-      <p class="hint" id="org-role"></p>
-      <label class="org-require-2fa" id="org-require-2fa-row" hidden><input type="checkbox" id="org-require-2fa"> Require two-factor sign-in of every member</label>
-      <div id="org-address" hidden>
-        <h3 class="org-section">Address</h3>
-        <p class="hint" id="org-address-url"></p>
-        <div class="org-invite" id="org-slug-row" hidden>
-          <input type="text" id="org-slug" autocomplete="off" spellcheck="false" autocapitalize="off" pattern="[a-z0-9](?:[a-z0-9-]{1,38})[a-z0-9]" minlength="3" maxlength="40" aria-label="Subdomain name" aria-describedby="org-slug-hint">
-          <button class="btn" id="org-slug-save" type="button">Rename</button>
+      <div class="rail-layout">
+        <nav class="rail-nav" aria-label="Organization sections">
+          <div class="rail-group"><span class="rail-head">People</span>
+            <button type="button" class="rail-item" data-rail="members">Members</button>
+            <button type="button" class="rail-item" data-rail="access">Address &amp; sign-in</button>
+          </div>
+          <div class="rail-group"><span class="rail-head">Resources</span>
+            <button type="button" class="rail-item" data-rail="runners">Runners</button>
+            <button type="button" class="rail-item" data-rail="billing">Billing</button>
+          </div>
+        </nav>
+        <div class="rail-main">
+          <section class="rail-section" data-section="members">
+            <p class="hint" id="org-role"></p>
+            <ul class="runner-list org-members" id="org-members"></ul>
+            <div id="org-invite-area" hidden>
+              <h3 class="org-section">Invite someone</h3>
+              <div class="org-invite">
+                <input type="email" id="org-invite-email" placeholder="name@example.com" autocomplete="off" aria-label="Email to invite">
+                <select id="org-invite-role" aria-label="Role">
+                  <option value="member">Member</option>
+                  <option value="admin">Admin</option>
+                  <option value="owner">Owner</option>
+                </select>
+                <button class="btn primary" id="org-invite-send" type="button" data-icon="send">Invite</button>
+              </div>
+              <div id="org-invite-link" hidden></div>
+              <h3 class="org-section" id="org-pending-head">Pending invitations</h3>
+              <ul class="runner-list" id="org-pending"></ul>
+            </div>
+          </section>
+          <section class="rail-section" data-section="access">
+            <label class="org-require-2fa" id="org-require-2fa-row" hidden><input type="checkbox" id="org-require-2fa"> Require two-factor sign-in of every member</label>
+            <div id="org-address" hidden>
+              <h3 class="org-section">Address</h3>
+              <p class="hint" id="org-address-url"></p>
+              <div class="org-invite" id="org-slug-row" hidden>
+                <input type="text" id="org-slug" autocomplete="off" spellcheck="false" autocapitalize="off" pattern="[a-z0-9](?:[a-z0-9-]{1,38})[a-z0-9]" minlength="3" maxlength="40" aria-label="Subdomain name" aria-describedby="org-slug-hint">
+                <button class="btn" id="org-slug-save" type="button">Rename</button>
+              </div>
+              <p class="hint" id="org-slug-hint" hidden>3 to 40 lower-case letters, digits or hyphens. The old address keeps leading here for 30 days, and no other organization can take it meanwhile.</p>
+            </div>
+          </section>
+          <section class="rail-section" data-section="runners">
+            <div id="org-runners" hidden>
+              <p class="hint">Computers that run this organization's tasks with <code>dash runner</code>, each with its owner's Claude subscription. They connect out to this dashboard, so they need no open port or VPN, and adding one takes a single command. Link projects to them in each project's settings.</p>
+              <p class="hint" id="runners-local"></p>
+              <ul class="runner-list" id="runners-list"></ul>
+              <div id="runners-code" hidden></div>
+              <section id="runners-repos" class="runner-repos" hidden aria-live="polite"></section>
+              <button class="btn" id="runners-add" type="button" data-icon="plus">Add a runner</button>
+            </div>
+          </section>
+          <section class="rail-section" data-section="billing">
+            <div id="org-billing" hidden>
+              <div id="org-billing-body"></div>
+            </div>
+          </section>
         </div>
-        <p class="hint" id="org-slug-hint" hidden>3 to 40 lower-case letters, digits or hyphens. The old address keeps leading here for 30 days, and no other organization can take it meanwhile.</p>
-      </div>
-      <h3 class="org-section">Members</h3>
-      <ul class="runner-list org-members" id="org-members"></ul>
-      <div id="org-invite-area" hidden>
-        <h3 class="org-section">Invite someone</h3>
-        <div class="org-invite">
-          <input type="email" id="org-invite-email" placeholder="name@example.com" autocomplete="off" aria-label="Email to invite">
-          <select id="org-invite-role" aria-label="Role">
-            <option value="member">Member</option>
-            <option value="admin">Admin</option>
-            <option value="owner">Owner</option>
-          </select>
-          <button class="btn primary" id="org-invite-send" type="button" data-icon="send">Invite</button>
-        </div>
-        <div id="org-invite-link" hidden></div>
-        <h3 class="org-section" id="org-pending-head">Pending invitations</h3>
-        <ul class="runner-list" id="org-pending"></ul>
-      </div>
-      <div id="org-billing" hidden>
-        <h3 class="org-section">Billing</h3>
-        <div id="org-billing-body"></div>
-      </div>
-      <div id="org-runners" hidden>
-        <h3 class="org-section">Runners</h3>
-        <p class="hint">Computers that run this organization's tasks with <code>dash runner</code>, each with its owner's Claude subscription. They connect out to this dashboard, so they need no open port or VPN, and adding one takes a single command. Link projects to them in each project's settings.</p>
-        <p class="hint" id="runners-local"></p>
-        <ul class="runner-list" id="runners-list"></ul>
-        <div id="runners-code" hidden></div>
-        <section id="runners-repos" class="runner-repos" hidden aria-live="polite"></section>
-        <button class="btn" id="runners-add" type="button" data-icon="plus">Add a runner</button>
       </div>
       <footer class="sheet-actions">
         <button class="btn" id="org-new" type="button" data-icon="plus" hidden>New organization</button>
