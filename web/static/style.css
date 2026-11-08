@@ -673,6 +673,16 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 }
 .runner-pick { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .runner-pick .hint { margin: 0; }
+/* Project settings: one card per runner, like the merge-mode choices. */
+#settings-runners { display: grid; gap: 8px; }
+#settings-runners .runner-pick { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-m); cursor: pointer; transition: border-color .15s, background-color .15s; }
+#settings-runners .runner-pick:hover { border-color: var(--faint); }
+#settings-runners .runner-pick:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+#settings-runners .runner-pick:has(input:disabled) { cursor: not-allowed; opacity: .6; }
+#settings-runners .runner-pick input { accent-color: var(--accent); margin: 0; padding: 0; width: 18px; height: 18px; flex: none; cursor: inherit; }
+#settings-runners .runner-pick .runner-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#settings-runners .runner-pick .hint { flex: 1; min-width: 0; margin: 0; text-align: right; font-size: 13px; overflow-wrap: anywhere; }
+#settings-runners-hint { margin-top: 8px; }
 .runner-tag { font-size: 12px; font-weight: 600; color: var(--muted); }
 .todo-sub.waiting-runner { color: var(--running); }
 .runner-row:has(.runner-update) { flex-wrap: wrap; }
