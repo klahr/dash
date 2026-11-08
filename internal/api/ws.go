@@ -124,15 +124,21 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			return sv.data.SetChat(user, authored(sv.data.Chat(user), msgs, user))
 		}
 		chatter := s.Chat
-		// The general chat, or a hub project's chat, for this runner's owner.
-		forHub := msg.Todo == "" && auth.FromHub(r.Context())
+		// A chat for this runner's owner, asked through the hub.
+		forHub := auth.FromHub(r.Context())
+		var runnerDiff, runnerBranch string // a hub task's changes, as this runner has them
 		switch {
 		case forHub:
 			// This runner's owner, through the hub: Claude runs here, in a
-			// scratch directory or the runner's clone of the hub's project,
-			// and the hub keeps the conversation.
+			// scratch directory, the runner's clone of the hub's project or
+			// its worktree of the hub's task, and the hub keeps the
+			// conversation (with the task's context already in it).
 			if err := s.forOwner(r); err != nil {
 				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
+				continue
+			}
+			if msg.Todo != "" && msg.Project == "" {
+				send(agent.ChatDelta{Kind: "error", Text: "the hub didn't say which project the task is in"})
 				continue
 			}
 			if msg.Project != "" {
@@ -144,6 +150,18 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				dir, mode, pid = p.Path, p.ChatPermissionMode, p.ID
 				if validChatMode(msg.Mode) {
 					mode = msg.Mode // the hub's project settings are the ones its users edit
+				}
+				if t, ok := sv.hubTodo(msg.Todo); ok && t.ProjectID == p.ID && t.Worktree != nil {
+					// Let Claude read the files as the task left them here.
+					if _, err := os.Stat(t.Worktree.Path); err == nil && t.Status != model.StatusMerged {
+						dir, runnerBranch = t.Worktree.Path, t.Worktree.Branch
+					}
+					if s.Git != nil {
+						var err error
+						if runnerDiff, err = s.todoChanges(ctx, p, t); err != nil {
+							slog.Warn("hub task chat diff", "todo", t.ID, "err", err)
+						}
+					}
 				}
 			} else {
 				var err error
@@ -159,8 +177,8 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		case general && !s.localClaude():
 			// This hub doesn't run Claude: the caller's own runner does.
 			x, err := s.claudeRunner(sv.c, msg.Runner)
-			if err == nil && len(msg.Messages) > 0 && len(msg.Messages[len(msg.Messages)-1].Attachments) > 0 {
-				err = errors.New("files can't be sent to the chat on your runner; paste or describe them instead")
+			if err == nil {
+				err = noAttachments(msg.Messages)
 			}
 			if err != nil {
 				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
@@ -182,8 +200,8 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			if s.projectChatOnRunner(p) {
 				// Claude runs on the caller's runner, in its clone of the project.
 				x, err := s.projectChatRunner(sv.c, p, msg.Runner)
-				if err == nil && len(msg.Messages) > 0 && len(msg.Messages[len(msg.Messages)-1].Attachments) > 0 {
-					err = errors.New("files can't be sent to the chat on your runner; paste or describe them instead")
+				if err == nil {
+					err = noAttachments(msg.Messages)
 				}
 				switch {
 				case err == nil:
@@ -195,13 +213,12 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				// Else this Dash runs Claude itself and the chat stays here.
 			}
 		}
-		if chatter == nil {
-			send(agent.ChatDelta{Kind: "error", Text: "chat is not available on this Dash"})
-			continue
-		}
 		msg.Messages = sv.chatAttachments(msg.Messages)
 		prompt := withAttachments(msg.Messages)
-		if msg.Todo != "" {
+		if forHub && msg.Todo != "" {
+			prompt = withRunnerChanges(runnerBranch, runnerDiff, prompt)
+		}
+		if msg.Todo != "" && !forHub {
 			t, err := sv.data.GetTodo(msg.Todo)
 			if err != nil {
 				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
@@ -210,7 +227,25 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			var diff string
 			if p, err := sv.data.GetProject(t.ProjectID); err == nil {
 				dir, mode = p.Path, p.ChatPermissionMode
-				if t.Worktree != nil {
+				onRunner := false
+				if s.todoChatOnRunner(p, t) {
+					// Claude runs on the caller's runner: the one that ran the
+					// task, in its worktree, else one linked to the project, in
+					// its clone. The runner adds the changes it has.
+					x, err := s.todoChatRunner(sv.c, p, t, msg.Runner)
+					if err == nil {
+						err = noAttachments(msg.Messages)
+					}
+					switch {
+					case err == nil:
+						chatter, onRunner = runnerChat{fleet: s.fleet(), runner: x, user: sv.c.User, relay: relay, project: p.ID, todo: t.ID, mode: p.ChatPermissionMode}, true
+					case !s.localClaude():
+						send(agent.ChatDelta{Kind: "error", Text: err.Error()})
+						continue
+					}
+					// Else this Dash runs Claude itself and the chat stays here.
+				}
+				if !onRunner && t.Worktree != nil {
 					// Let Claude read the files as the todo left them.
 					if _, err := os.Stat(t.Worktree.Path); err == nil && t.Status != model.StatusMerged {
 						dir = t.Worktree.Path
@@ -227,12 +262,20 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				return sv.data.SetTodoChat(t.ID, authored(prev, msgs, user))
 			}
 			prompt = withTodoContext(t, diff, prompt)
+			if chatter == nil {
+				send(agent.ChatDelta{Kind: "error", Text: "chat is not available on this Dash"})
+				continue
+			}
 			if msg.Review {
 				if endReview, err = s.beginReview(sv, t.ID); err != nil {
 					send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 					continue
 				}
 			}
+		}
+		if chatter == nil {
+			send(agent.ChatDelta{Kind: "error", Text: "chat is not available on this Dash"})
+			continue
 		}
 		var turnCtx context.Context
 		turnCtx, cancelTurn = context.WithCancel(ctx)
@@ -442,6 +485,35 @@ func withAttachments(history []agent.ChatMessage) []agent.ChatMessage {
 			out[i].Content = strings.TrimSpace(m.Content + "\n\n" + agent.AttachmentList(m.Attachments))
 		}
 	}
+	return out
+}
+
+// noAttachments refuses a question with files for a chat that runs on a
+// runner, which can't read the hub's uploads.
+func noAttachments(history []agent.ChatMessage) error {
+	if len(history) > 0 && len(history[len(history)-1].Attachments) > 0 {
+		return errors.New("files can't be sent to the chat on your runner; paste or describe them instead")
+	}
+	return nil
+}
+
+// withRunnerChanges adds, on a runner, the changes its copy of a hub's task
+// has made (diff, on branch when Claude runs in its worktree) to the
+// conversation the hub sent, which already says what the task is.
+func withRunnerChanges(branch, diff string, history []agent.ChatMessage) []agent.ChatMessage {
+	if len(history) == 0 || diff == "" {
+		return history
+	}
+	if len(diff) > maxChatDiff {
+		diff = diff[:maxChatDiff] + "\n[diff truncated]"
+	}
+	var b strings.Builder
+	if branch != "" {
+		fmt.Fprintf(&b, "<worktree branch=%q>The files you can read are this worktree's, with the changes below applied.</worktree>\n", branch)
+	}
+	fmt.Fprintf(&b, "<changes>\n%s\n</changes>\n\n", diff)
+	out := append([]agent.ChatMessage(nil), history...)
+	out[0].Content = b.String() + out[0].Content
 	return out
 }
 

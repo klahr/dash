@@ -22,6 +22,7 @@ import (
 	"github.com/klahr/dash/internal/release"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
+	"github.com/klahr/dash/internal/usage"
 )
 
 // ---------------------------------------------------------------- projects
@@ -1276,7 +1277,44 @@ func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getUsage(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.Usage.Snapshot())
+	var snap usage.Snapshot
+	if s.Usage != nil {
+		snap = s.Usage.Snapshot()
+	}
+	if !s.localClaude() {
+		// This hub doesn't run Claude, so it has no usage of its own: show
+		// the caller's, as their runner last reported it.
+		if c, err := s.caller(r); err == nil {
+			if u := s.runnerUsage(c); u != nil {
+				ru := *u
+				ru.ManualPause = snap.ManualPause
+				if snap.ManualPause {
+					ru.Paused, ru.Reason, ru.Until = true, snap.Reason, time.Time{}
+				}
+				snap = ru
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, snap)
+}
+
+// runnerUsage is c's Claude usage as one of c's runners last reported it:
+// an online runner's before an offline one's, the newest report first.
+func (s *Server) runnerUsage(c Caller) *usage.Snapshot {
+	var best *tunnel.Runner
+	for _, r := range s.claudeRunners(c) {
+		if r.Reported == nil || r.Reported.Usage == nil || !r.Reported.Usage.Known {
+			continue
+		}
+		if best == nil || (r.Online && !best.Online) ||
+			(r.Online == best.Online && r.Reported.At.After(best.Reported.At)) {
+			best = &r
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	return best.Reported.Usage
 }
 
 // pauseQueue pauses or resumes the task queue, which every org shares:
