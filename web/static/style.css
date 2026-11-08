@@ -461,6 +461,20 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .graph-ref.tag { border-color: var(--accent); color: var(--accent); }
 .graph-ref.remote { background: var(--merged); color: var(--bg); font-weight: 600; }
 .graph-unpushed .graph-commit { opacity: .6; }
+.graph-commit[role="button"] { cursor: pointer; border-radius: var(--r-s); padding-inline: 4px; margin-inline: -4px; transition: background-color .15s; }
+.graph-commit[role="button"]:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.graph-commit[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.project-list button.menu-choice { flex-direction: row; align-items: center; gap: 10px; }
+.project-list button.menu-choice:disabled { opacity: .55; cursor: not-allowed; }
+.menu-choice .menu-note { font-style: normal; font-weight: 400; font-size: 13px; color: var(--muted); margin-left: auto; }
+.release-warnings { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.release-warnings:empty { display: none; }
+.release-warnings a { margin-left: 4px; }
+.radio input.release-custom { display: inline-block; width: 12em; max-width: 60%; height: auto; min-height: 32px; margin: -4px 0 0 10px; padding: 4px 8px; font: 14px var(--mono); vertical-align: middle; }
+#release-choices code, .ci-release code { font-family: var(--mono); }
+.ci-release { margin: 8px 0 12px; }
+.ci-release-failed strong { color: var(--failed); }
+.ci-release-published strong { color: var(--merged); }
 .graph-pushed { border-top: 1px dashed color-mix(in srgb, var(--merged) 55%, transparent); }
 .graph-subject { overflow-wrap: anywhere; }
 .graph-meta { color: var(--faint); font-size: 12px; }

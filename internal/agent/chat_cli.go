@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -140,6 +141,9 @@ func (c ClaudeCodeChat) args(dir string, servers map[string]any) []string {
 			allow = mcptools.BoardTools
 		}
 		for _, t := range allow {
+			if slices.Contains(mcptools.AskTools, t) {
+				continue // shell mode asks; read-only mode has no one to ask, so it can't
+			}
 			args = append(args, "--allowedTools", "mcp__"+mcptools.ServerName+"__"+t)
 		}
 	}

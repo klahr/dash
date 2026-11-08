@@ -73,6 +73,7 @@ const ICONS = {
   clock: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
   spark: "M12 3v5M12 16v5M3 12h5M16 12h5M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6",
   pin: "M9 4h6l-1 6 3 3H7l3-3zM12 13v7",
+  tag: "M3.5 12.5V4h8.5l9 9-8.5 8.5zM8 8v.01",
   fs: "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5",
   "fs-exit": "M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5",
   reload: "M4 12a8 8 0 0 1 14-5.3M20 4v4h-4M20 12a8 8 0 0 1-14 5.3M4 20v-4h4",
@@ -808,6 +809,7 @@ function onEvent(ev, m = { name: "" }) {
         notify(`Build failing on ${ev.data.branch}`, { title: state.project.name, prompt: "" });
       }
       if (state.ci?.state === "failing" && ev.data.state === "passing") toast("", { tone: "ok", head: `Build passing again on ${ev.data.branch}` });
+      releaseNews(state.ci?.release, ev.data.release);
       state.ci = ev.data;
       renderCI();
       break;
@@ -2680,18 +2682,19 @@ async function revertTodo(t) {
   toast("Reverting…");
 }
 
-// A small action sheet built on the ask dialog.
-function menu(choices) {
+// A small action sheet built on the ask dialog. A choice is [icon, label, fn]
+// or [icon, label, fn, { disabled, note }]: a disabled one shows why (note).
+function menu(choices, heading = "Actions") {
   const d = $("#ask-sheet");
-  $("#ask-title").textContent = "Actions";
+  $("#ask-title").textContent = heading;
   $("#ask-body").hidden = true;
   $("#ask-input").hidden = true;
   $("#ask-ok").hidden = true;
   let picked = null;
-  const list = h("div", { class: "project-list" }, choices.map(([icon, label, fn]) => ib({
-    type: "button", class: "btn", style: "width:100%;margin-bottom:8px",
+  const list = h("div", { class: "project-list" }, choices.map(([icon, label, fn, { disabled = false, note = "" } = {}]) => ib({
+    type: "button", class: "btn menu-choice", style: "width:100%;margin-bottom:8px", disabled, title: note || null,
     onclick: () => { picked = fn; d.close(); },
-  }, icon, label)));
+  }, icon, label, note ? h("em", { class: "menu-note" }, note) : null)));
   $("#ask-body").after(list);
   d.showModal();
   // Run the choice only after "close" fired: it may reopen this dialog via ask().
@@ -3748,31 +3751,59 @@ function runState(r) {
     startup_failure: ["failing", "Couldn't start"], cancelled: ["muted", "Cancelled"], skipped: ["muted", "Skipped"] }[r.conclusion] || ["muted", r.conclusion];
 }
 
+const RELEASE_LABEL = { building: "building", published: "published", failed: "failed", no_build: "pushed, but no workflow started for it" };
+// A release counts as news in the top bar while it builds, and for a day if it failed.
+const releaseShown = (rel) => rel && (rel.state === "building" || (rel.state === "failed" && Date.now() - new Date(rel.pushed) < 864e5));
+
+function runRow(r) {
+  const [cls, label] = runState(r);
+  return h("li", {}, h("a", { class: `run run-${cls}`, href: r.url, target: "_blank", rel: "noopener" },
+    h("span", { class: "run-dot", "aria-hidden": "true" }),
+    h("span", { class: "run-main" }, h("strong", {}, r.workflow), h("span", { class: "run-title" }, r.title)),
+    h("span", { class: "run-side" }, label, h("span", { class: "run-sha" }, `${r.sha.slice(0, 7)} · ${ago(r.created_at)}`))));
+}
+
+// releaseNews toasts how a release build ended.
+function releaseNews(prev, rel) {
+  if (!rel || prev?.tag !== rel.tag || prev.state !== "building" || rel.state === "building") return;
+  const view = rel.url ? { label: "View", run: () => window.open(rel.url, "_blank", "noopener") } : null;
+  if (rel.state === "published") toast("", { tone: "ok", icon: "tag", head: `Released ${rel.tag}`, action: view });
+  else if (rel.state === "failed") toast("The release workflow failed.", { tone: "error", head: `Release ${rel.tag} failed`, action: { label: "Ask Claude to fix it", run: investigateCI } });
+  else if (rel.state === "no_build") toast("No workflow started for it: check the tag format in the project settings.", { tone: "info", icon: "tag", head: `Pushed ${rel.tag}`, action: view });
+}
+
 function renderCI() {
   const st = state.ci;
   const pill = $("#ci-pill");
-  const show = !!(state.project?.remote_url && st && st.state !== "unknown" && st.state !== "none") || st?.state === "failing";
+  const rel = st?.release;
+  const show = !!(state.project?.remote_url && st && st.state !== "unknown" && st.state !== "none") || st?.state === "failing" || releaseShown(rel);
   pill.hidden = !show;
   if (st) {
-    pill.className = `usage-pill ci-pill ci-${st.state}`;
-    pill.textContent = CI_LABEL[st.state];
-    pill.title = CI_LABEL[st.state];
+    const [cls, label] = releaseShown(rel)
+      ? [rel.state === "building" ? "running" : "failing", rel.state === "building" ? `Building ${rel.tag}` : `Release ${rel.tag} failed`]
+      : [st.state, CI_LABEL[st.state]];
+    pill.className = `usage-pill ci-pill ci-${cls}`;
+    pill.textContent = label;
+    pill.title = label;
   }
   if (!st) return;
+  $("#ci-release").hidden = !rel;
+  if (rel) {
+    $("#ci-release").replaceChildren(
+      h("p", { class: `hint ci-release-${rel.state}` },
+        h("strong", {}, `Release ${rel.tag}`), ` ${RELEASE_LABEL[rel.state] || rel.state}`,
+        rel.state === "building" && !rel.runs.length ? " (waiting for its workflow to start)" : "",
+        ". ", rel.url ? h("a", { href: rel.url, target: "_blank", rel: "noopener" }, "GitHub release") : ""),
+      ...(rel.runs.length ? [h("ul", { class: "runs" }, ...rel.runs.map(runRow))] : []));
+  }
   const fix = st.todo_id && state.todos.get(st.todo_id);
   $("#ci-summary").replaceChildren(
     `${CI_LABEL[st.state]} on ${st.branch || "the default branch"}`,
     st.sha ? ` at ${st.sha.slice(0, 8)}` : "", ". ",
     st.error ? h("span", { class: "err-text" }, st.error) : `Checked ${ago(st.checked) === "now" ? "just now" : `${ago(st.checked)} ago`}.`,
     fix ? h("span", { class: "ci-fix" }, " Claude is fixing it: ", ib({ type: "button", class: "link inline", onclick: () => { $("#ci-sheet").close(); openDetail(fix.id); } }, "right", title(fix))) : "");
-  $("#ci-runs").replaceChildren(...(st.runs || []).slice(0, 12).map((r) => {
-    const [cls, label] = runState(r);
-    return h("li", {}, h("a", { class: `run run-${cls}`, href: r.url, target: "_blank", rel: "noopener" },
-      h("span", { class: "run-dot", "aria-hidden": "true" }),
-      h("span", { class: "run-main" }, h("strong", {}, r.workflow), h("span", { class: "run-title" }, r.title)),
-      h("span", { class: "run-side" }, label, h("span", { class: "run-sha" }, `${r.sha.slice(0, 7)} · ${ago(r.created_at)}`))));
-  }));
-  $("#ci-investigate").hidden = !(st.state === "failing" && !fix);
+  $("#ci-runs").replaceChildren(...(st.runs || []).slice(0, 12).map(runRow));
+  $("#ci-investigate").hidden = !((st.state === "failing" || rel?.state === "failed") && !fix);
 }
 
 async function openCI() {
@@ -3788,11 +3819,12 @@ $("#ci-refresh").addEventListener("click", attempt(async () => {
   renderCI();
   toast("Builds checked");
 }));
-$("#ci-investigate").addEventListener("click", attempt(async () => {
+async function investigateCI() {
   const t = await api("POST", `/api/projects/${state.project.id}/ci/investigate`);
-  $("#ci-sheet").close();
+  if ($("#ci-sheet").open) $("#ci-sheet").close();
   toast(`Queued: ${title(t)}`);
-}));
+}
+$("#ci-investigate").addEventListener("click", attempt(investigateCI));
 
 // ------------------------------------------------------------------ origin (background fetch)
 // Dash fetches origin's default branch when a project is selected and every
@@ -3846,6 +3878,8 @@ function openSettings() {
   f.auto_approve.checked = !!p.auto_approve;
   f.merge_mode.value = p.merge_mode || "local";
   f.investigate_ci.checked = p.investigate_ci !== false;
+  f.tag_format.value = p.tag_format || "X.Y.Z";
+  checkTagFormat();
   f.max_run_minutes.value = p.max_run_minutes || "";
   f.max_turns.value = p.max_turns || "";
   f.use_color.checked = !!p.color;
@@ -3895,6 +3929,30 @@ function syncMergeHint() {
       : f.auto_push.checked ? `Before each merge Dash pulls ${p.default_branch} from GitHub, so pushes don't get rejected.` : "";
 }
 $("#settings-form").addEventListener("change", syncMergeHint);
+
+// The tag format is checked as it is typed: placeholders, a valid git tag,
+// and whether the repository's release workflows run for its tags.
+let tagFormatTimer = 0, tagFormatSeq = 0;
+function checkTagFormat() {
+  clearTimeout(tagFormatTimer);
+  tagFormatTimer = setTimeout(attempt(async () => {
+    const p = state.project, f = $("#settings-form");
+    const format = f.tag_format.value.trim() || "X.Y.Z";
+    const seq = ++tagFormatSeq;
+    const res = await api("GET", `/api/projects/${p.id}/tag-format?format=${encodeURIComponent(format)}`);
+    if (seq !== tagFormatSeq) return;
+    const hint = $("#tag-format-hint");
+    f.tag_format.setCustomValidity(res.valid ? "" : res.error);
+    hint.className = `hint${!res.valid ? " err-text" : res.hint ? " warn" : ""}`;
+    if (!res.valid) return hint.replaceChildren(res.error);
+    hint.replaceChildren(`Tags look like ${res.example}. Tag a release from a commit in History.`);
+    if (res.hint) {
+      hint.append(" ", res.hint.message);
+      if (res.hint.suggest) hint.append(" ", h("button", { type: "button", class: "link inline", onclick: () => { f.tag_format.value = res.hint.suggest; checkTagFormat(); } }, `Use ${res.hint.suggest}`));
+    }
+  }), 250);
+}
+$("#settings-form").tag_format.addEventListener("input", checkTagFormat);
 $("#settings-form").use_color.addEventListener("change", (e) => { e.target.form.color.disabled = !e.target.checked; });
 $("#settings-form").color.addEventListener("input", (e) => { e.target.form.use_color.checked = true; });
 const settingsIcon = (icon) => {
@@ -3929,6 +3987,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     auto_approve: f.auto_approve.checked,
     merge_mode: f.merge_mode.value,
     investigate_ci: f.investigate_ci.checked,
+    tag_format: f.tag_format.value.trim() || "X.Y.Z",
     max_run_minutes: Number(f.max_run_minutes.value) || 0,
     max_turns: Number(f.max_turns.value) || 0,
     color: f.use_color.checked ? f.color.value : "",
@@ -4829,21 +4888,192 @@ function renderGraph(res) {
     const i = line.indexOf("\x1f");
     const cls = unpushed ? " graph-unpushed" : "";
     if (i < 0) return h("li", { class: "graph-edge" + cls }, h("span", { class: "graph-lines" }, line));
-    const [sha, refs, subject, author, when] = line.slice(i + 1).split("\x1f");
+    const [sha, refs, subject, author, when, full] = line.slice(i + 1).split("\x1f");
     const pushed = unpushed && isRemote(line);
     if (pushed) unpushed = false;
+    const commit = { sha: full || sha, short: sha, subject, pushed: !cls || pushed };
+    const open = (e) => { if (e.type === "click" || e.key === "Enter" || e.key === " ") { e.preventDefault(); commitMenu(commit).catch(fail); } };
     const ref = (r) => r === remote
       ? h("span", { class: "graph-ref remote", title: "Last pushed commit" }, `pushed · ${r}`)
       : h("span", { class: `graph-ref${r.startsWith("tag: ") ? " tag" : ""}` }, r.replace(/^HEAD -> /, ""));
     return h("li", { class: pushed ? "graph-pushed" : cls.trim(), title: cls ? "Not pushed yet" : null },
       h("span", { class: "graph-lines" }, line.slice(0, i)),
-      h("span", { class: "graph-commit" },
+      h("span", { class: "graph-commit", role: "button", tabindex: "0", "aria-haspopup": "dialog", "aria-label": `Commit ${sha}: ${subject}`, onclick: open, onkeydown: open },
         h("code", { class: "graph-sha" }, sha),
         ...(refs ? refs.split(", ").map(ref) : []),
         h("span", { class: "graph-subject" }, subject),
         h("span", { class: "graph-meta" }, `${author} · ${when}`)));
   }));
 }
+
+// GitHub's web address of a remote ("" if it isn't on GitHub).
+function githubURL(remote) {
+  const m = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?\/?$/.exec(remote || "");
+  return m ? `https://github.com/${m[1]}/${m[2]}` : "";
+}
+
+// A commit row's menu in the History view.
+async function commitMenu(c) {
+  const p = state.project;
+  if (!p) return;
+  const gh = githubURL(p.remote_url);
+  const why = !p.remote_url ? "Connect a remote first" : !c.pushed ? "Push first" : "";
+  await menu([
+    ["tag", "Tag release…", () => openRelease(c), { disabled: !!why, note: why }],
+    ["copy", "Copy SHA", () => copy(c.sha, "SHA copied")],
+    ...(gh ? [["external", "Open on GitHub", () => window.open(`${gh}/commit/${c.sha}`, "_blank", "noopener")]] : []),
+  ], `${c.short} · ${c.subject}`);
+}
+
+// ------------------------------------------------------------------ releases
+// "Tag release…" on a pushed commit: pick the next version in the project's
+// tag format, edit the notes, and Dash tags the commit and pushes the tag;
+// the builds sheet then follows the release workflow.
+function tagFormat(fmt) {
+  fmt = fmt || "X.Y.Z";
+  const [x, y, z] = ["X", "Y", "Z"].map((c) => fmt.indexOf(c));
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const n = "(0|[1-9]\\d*)";
+  const parts = [fmt.slice(0, x), fmt.slice(x + 1, y), fmt.slice(y + 1, z), fmt.slice(z + 1)];
+  const re = new RegExp(`^${esc(parts[0])}${n}${esc(parts[1])}${n}${esc(parts[2])}${n}${esc(parts[3])}$`);
+  return {
+    render: (v) => parts[0] + v[0] + parts[1] + v[1] + parts[2] + v[2] + parts[3],
+    parse: (t) => { const m = re.exec(t); return m ? [+m[1], +m[2], +m[3]] : null; },
+  };
+}
+
+let release = null; // { commit, info, format, seq } while the sheet is open
+let releaseSeq = 0;
+
+async function openRelease(c) {
+  const p = state.project;
+  const seq = ++releaseSeq;
+  release = { commit: c, info: null, seq, project: p };
+  const f = $("#release-form");
+  const gh = githubURL(p.remote_url);
+  $("#release-commit").replaceChildren(
+    gh ? h("a", { href: `${gh}/commit/${c.sha}`, target: "_blank", rel: "noopener" }, h("code", {}, c.short)) : h("code", {}, c.short),
+    ` ${c.subject}`);
+  $("#release-loading").hidden = false;
+  $("#release-loading").textContent = "Fetching tags from origin…";
+  $("#release-body").hidden = true;
+  $("#release-ok").disabled = true;
+  f.custom.value = "";
+  $("#release-sheet").returnValue = "";
+  $("#release-sheet").showModal();
+  let info;
+  try {
+    info = await api("GET", `/api/projects/${p.id}/release?sha=${encodeURIComponent(c.sha)}`);
+  } catch (e) {
+    if (release?.seq === seq) $("#release-loading").replaceChildren(h("span", { class: "err-text" }, e.message));
+    return;
+  }
+  if (release?.seq !== seq) return;
+  release.info = info;
+  release.format = tagFormat(info.format);
+  renderRelease();
+}
+
+function renderRelease() {
+  const { info } = release;
+  const f = $("#release-form");
+  const s = info.suggestions;
+  $("#release-loading").hidden = true;
+  $("#release-body").hidden = false;
+  $("#release-latest").textContent = info.previous ? `latest: ${info.previous}` : `no ${info.format} tag yet`;
+  const choice = (label, tag, note) => h("label", { class: "radio" },
+    h("input", { type: "radio", name: "version", value: tag }),
+    h("span", {}, label, " ", h("code", {}, tag), h("em", {}, note)));
+  $("#release-choices").replaceChildren(...(s.first
+    ? [choice("First release", s.first, "no release tag in this format yet")]
+    : [choice("Patch", s.patch, "fixes only"), choice("Minor", s.minor, "new features, nothing breaks"), choice("Major", s.major, "breaking changes")]));
+  f.querySelector('input[name="version"]').checked = true;
+  f.notes.value = info.notes || "";
+  f.notes.placeholder = `Release ${s.first || s.patch}`;
+
+  const warn = (text, extra) => h("li", { class: "hint warn" }, text, extra || "");
+  const ci = {
+    failing: "The build failed on this commit.",
+    running: "Builds are still running on this commit.",
+    none: "No builds ran on this commit.",
+    unknown: githubURL(state.project.remote_url) ? "Couldn't tell whether this commit's build passed." : "",
+  }[info.ci.state];
+  const failed = info.ci.runs.filter((r) => runState(r)[0] === "failing");
+  const items = [
+    !info.can_tag && info.cant_tag ? h("li", { class: "hint err-text" }, info.cant_tag) : null,
+    ci ? warn(ci, failed.length ? [" ", ...failed.slice(0, 3).map((r) => h("a", { href: r.url, target: "_blank", rel: "noopener" }, r.workflow))] : "") : null,
+    info.running ? warn(`${info.running} ${info.running === 1 ? "task is" : "tasks are"} still running or merging; ${info.running === 1 ? "its" : "their"} work won't be in this release.`) : null,
+    info.fetch_error ? warn(`Couldn't fetch tags from origin (${info.fetch_error}); the suggestions may be out of date.`) : null,
+    info.hint ? warn(info.hint.message, info.hint.suggest ? ` Set the tag format to ${info.hint.suggest} in the project settings.` : "") : null,
+  ].filter(Boolean);
+  $("#release-warnings").replaceChildren(...items);
+  $("#release-warnings").hidden = !items.length;
+  syncRelease();
+}
+
+// releaseTag is the tag the form would create, or { error }.
+function releaseTag() {
+  const f = $("#release-form");
+  const picked = f.querySelector('input[name="version"]:checked')?.value;
+  if (picked !== "custom") return { tag: picked };
+  const raw = f.custom.value.trim();
+  if (!raw) return { error: "Type a version, like 1.4.0." };
+  const fmt = release.format;
+  let v = fmt.parse(raw);
+  let tag = raw;
+  if (!v) {
+    const m = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(raw);
+    if (!m) return { error: `Use a version like 1.4.0 or a tag like ${fmt.render([1, 4, 0])} (format ${release.info.format}).` };
+    v = [+m[1], +m[2], +m[3]];
+    tag = fmt.render(v);
+  }
+  if (release.info.tags.includes(tag)) return { error: `${tag} already exists.` };
+  const latest = release.info.previous && fmt.parse(release.info.previous);
+  const lower = latest && (v[0] - latest[0] || v[1] - latest[1] || v[2] - latest[2]) < 0;
+  return { tag, note: `Tags ${tag}${lower ? ` — lower than the latest release, ${release.info.previous}` : ""}.` };
+}
+
+function syncRelease() {
+  if (!release?.info) return;
+  const r = releaseTag();
+  const custom = $("#release-form").querySelector('input[name="version"][value="custom"]').checked;
+  const hint = $("#release-custom-hint");
+  hint.hidden = !custom;
+  hint.className = `hint${r.error ? " err-text" : ""}`;
+  hint.textContent = r.error || r.note || "";
+  $("#release-ok").disabled = !release.info.can_tag || !!r.error;
+  setLabel($("#release-ok"), "tag", r.tag ? `Tag ${r.tag} and push` : "Tag and push");
+}
+
+$("#release-form").addEventListener("input", syncRelease);
+$("#release-form").addEventListener("change", syncRelease);
+$("#release-form").custom.addEventListener("focus", (e) => {
+  e.target.form.querySelector('input[name="version"][value="custom"]').checked = true;
+  syncRelease();
+});
+$("#release-form").addEventListener("submit", attempt(async (e) => {
+  if (e.submitter?.value !== "ok") return;
+  e.preventDefault(); // stays open until the tag is pushed (or it fails)
+  const r = releaseTag();
+  if (r.error || !release?.info) return;
+  const { commit, project: p } = release;
+  const ok = $("#release-ok");
+  ok.disabled = true;
+  setLabel(ok, "tag", `Pushing ${r.tag}…`);
+  try {
+    const out = await api("POST", `/api/projects/${p.id}/tags`, { sha: commit.sha, version: r.tag, notes: $("#release-form").notes.value.trim() });
+    release = null;
+    $("#release-sheet").close();
+    toast(out.build ? "The release workflow is starting; Builds shows how it goes." : `Pushed to origin.`, {
+      tone: "ok", icon: "tag", head: `Tagged ${out.tag}`,
+      action: out.build ? { label: "Builds", run: openCI } : out.url ? { label: "View", run: () => window.open(out.url, "_blank", "noopener") } : null,
+    });
+    refreshGraph();
+  } finally {
+    syncRelease();
+  }
+}));
+$("#release-sheet").addEventListener("close", () => { release = null; });
 
 // ------------------------------------------------------------------ files
 // The default branch's files as a tree, and a code editor. Saving

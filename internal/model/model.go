@@ -106,6 +106,10 @@ type Project struct {
 	InvestigateCI *bool     `json:"investigate_ci,omitempty"`
 	CIHandledRun  int64     `json:"ci_handled_run,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
+	// TagFormat names release tags: X, Y and Z stand for the major, minor
+	// and patch version, anything else is kept, e.g. "vX.Y.Z". Empty means
+	// "X.Y.Z" (see internal/release).
+	TagFormat string `json:"tag_format,omitempty"`
 
 	// Runners are the ids of the runners (`dash runner`) this project's
 	// tasks are sent to, on a hub. A project with runners needs a git

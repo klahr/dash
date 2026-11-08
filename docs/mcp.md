@@ -93,9 +93,17 @@ Dash's own chats (the general chat and each project's chat) get a smaller set of
 `dash_board`: `list_projects`, `list_todos`, `get_todo`, `create_todo` (as a draft),
 `queue_todo` (a draft, when you ask for it to run), `update_todo` (title, prompt, priority or
 dependencies; the prompt only while the task is a draft, queued or failed), `delete_todo` (only
-draft, queued or failed tasks, when you ask to remove one), `list_issues` and `report_issue`.
-A read-only chat calls them without asking; a shell chat asks for the ones that change something.
-They act as the user chatting, in the org they're working in.
+draft, queued or failed tasks, when you ask to remove one), `create_release`, `list_issues` and
+`report_issue`. A read-only chat calls them without asking, except `create_release`, which it
+can't use; a shell chat asks for the ones that change something. They act as the user chatting,
+in the org they're working in.
+
+`create_release(project, version | bump, sha?, notes?)` tags a commit (default: the tip of
+origin's default branch) in the project's tag format and pushes the tag, like **Tag release…** in
+the History view ([Tag a release](github.md#tag-a-release)): `bump` is `patch`, `minor` or
+`major` from the latest release tag, `notes` default to the tasks merged since then. Only the
+org's owners and admins can. `dash-mcp` and the connector have it too, for every computer in the
+dashboard, and `update_project` sets `tag_format`.
 
 `dash-mcp` and the connector have `update_todo` too. Their `delete_todo` deletes a task in any
 status except running or merging.

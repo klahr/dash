@@ -23,6 +23,10 @@ git tag -a v1.2.0 -m "v1.2.0"
 git push origin v1.2.0
 ```
 
+Or from the dashboard: in the Dash project's **History**, click the commit and choose **Tag
+release…** ([Tag a release](github.md#tag-a-release)). The workflow only runs for `v*` tags, so
+set the project's tag format to `vX.Y.Z` (the settings point it out while it is `X.Y.Z`).
+
 The [Release workflow](../.github/workflows/release.yml) runs the tests, then GoReleaser
 ([`.goreleaser.yaml`](../.goreleaser.yaml)) builds and publishes the release, with a changelog
 from the commits since the previous tag. A tag with a suffix, such as `v1.2.0-rc.1`, is marked

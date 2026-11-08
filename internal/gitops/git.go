@@ -322,12 +322,18 @@ func (g *Git) SyncWithRemote(ctx context.Context, projectID, repo, branch string
 	return nil
 }
 
-// FetchBranch updates origin/<branch> from origin and nothing else: no local
-// branch or checkout moves. publish=false keeps background fetches out of the
-// activity feed. Callers bound it with a context timeout.
+// FetchBranch updates origin/<branch> and origin's tags (so releases tagged
+// elsewhere show up) and nothing else: no local branch or checkout moves, and
+// a local tag that differs from origin's stays as it is. publish=false keeps
+// background fetches out of the activity feed. Callers bound it with a
+// context timeout.
 func (g *Git) FetchBranch(ctx context.Context, projectID, repo, branch string, publish bool) error {
-	_, err := g.run(ctx, publish, projectID, repo, "git", "fetch", "--quiet", "--no-tags", "origin",
-		"+refs/heads/"+branch+":refs/remotes/origin/"+branch)
+	// Not --quiet: that would hide which refs a failed fetch rejected.
+	out, err := g.run(ctx, publish, projectID, repo, "git", "fetch", "--no-tags", "origin",
+		"+refs/heads/"+branch+":refs/remotes/origin/"+branch, tagRefspec)
+	if err != nil && onlyClobbered(out) {
+		return nil
+	}
 	return err
 }
 
@@ -670,10 +676,11 @@ func (g *Git) RemoteURL(ctx context.Context, projectID, dir string) string {
 }
 
 // Graph returns `git log --graph` of branch, newest first. Commit lines carry
-// hash, refs, subject, author and relative date after the graph, separated by \x1f.
+// short hash, refs, subject, author, relative date and full hash after the
+// graph, separated by \x1f.
 func (g *Git) Graph(ctx context.Context, projectID, repo, branch string, limit int) (string, error) {
 	return g.run(ctx, false, projectID, repo, "git", "log", "--graph", "--color=never",
-		"--max-count="+strconv.Itoa(limit), "--format=\x1f%h\x1f%D\x1f%s\x1f%an\x1f%ar", branch, "--")
+		"--max-count="+strconv.Itoa(limit), "--format=\x1f%h\x1f%D\x1f%s\x1f%an\x1f%ar\x1f%H", branch, "--")
 }
 
 // Files lists the paths of the files tracked at ref.

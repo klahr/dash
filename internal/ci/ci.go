@@ -5,8 +5,10 @@ package ci
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +39,8 @@ type Status struct {
 	Error     string       `json:"error,omitempty"`
 	TodoID    string       `json:"todo_id,omitempty"` // open todo investigating a failure
 	Checked   time.Time    `json:"checked"`
+	// Release is the release tag Dash pushed last and how its build went.
+	Release *Release `json:"release,omitempty"`
 }
 
 // Watcher polls GitHub Actions for every project with a GitHub remote.
@@ -49,9 +53,10 @@ type Watcher struct {
 	// AnyRemote also polls projects whose remote isn't on github.com (tests).
 	AnyRemote bool
 
-	mu     sync.Mutex
-	status map[string]Status
-	busy   map[string]bool
+	mu       sync.Mutex
+	status   map[string]Status
+	busy     map[string]bool
+	releases map[string]Release // project ID → the release being followed
 }
 
 func (w *Watcher) Run(ctx context.Context) {
@@ -82,10 +87,14 @@ func (w *Watcher) watched(p model.Project) bool {
 func (w *Watcher) Status(projectID string) Status {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if st, ok := w.status[projectID]; ok {
-		return st
+	st, ok := w.status[projectID]
+	if !ok {
+		st = Status{ProjectID: projectID, State: Unknown, Runs: []gitops.Run{}}
 	}
-	return Status{ProjectID: projectID, State: Unknown, Runs: []gitops.Run{}}
+	if rel, ok := w.releases[projectID]; ok {
+		st.Release = &rel
+	}
+	return st
 }
 
 // Refresh checks GitHub now and investigates a new failure if the project wants that.
@@ -96,7 +105,7 @@ func (w *Watcher) Refresh(ctx context.Context, projectID string) (Status, error)
 	defer w.release(projectID)
 	p, err := w.Store.GetProject(projectID)
 	if err != nil {
-		return Status{}, err
+		return Status{}, errors.Join(errGone, err)
 	}
 	if !w.watched(p) {
 		st := Status{ProjectID: p.ID, Branch: p.DefaultBranch, State: Unknown, Runs: []gitops.Run{},
@@ -104,7 +113,7 @@ func (w *Watcher) Refresh(ctx context.Context, projectID string) (Status, error)
 		w.set(st)
 		return st, nil
 	}
-	st := Status{ProjectID: p.ID, Branch: p.DefaultBranch, Checked: time.Now()}
+	st := Status{ProjectID: p.ID, Branch: p.DefaultBranch, Checked: time.Now(), Release: w.refreshRelease(ctx, p)}
 	runs, err := w.Git.Runs(ctx, p.ID, p.Path, p.DefaultBranch, 20)
 	if err != nil {
 		st.State, st.Runs, st.Error = Unknown, []gitops.Run{}, briefErr(err)
@@ -142,6 +151,10 @@ func (w *Watcher) Investigate(ctx context.Context, projectID string) (model.Todo
 	runs, err := w.Git.Runs(ctx, p.ID, p.Path, p.DefaultBranch, 20)
 	if err != nil {
 		return model.Todo{}, err
+	}
+	if rel, ok := w.followed(p.ID); ok && rel.State == ReleaseFailed {
+		// The release tag's runs are the newest: they decide for their workflows.
+		runs = append(slices.Clone(rel.Runs), runs...)
 	}
 	t, err := w.investigate(ctx, p, runs, true)
 	if err != nil {
@@ -258,7 +271,11 @@ func (w *Watcher) fixPrompt(ctx context.Context, p model.Project, failed []gitop
 	var b strings.Builder
 	fmt.Fprintf(&b, "The GitHub Actions build on `%s` is failing:\n\n", p.DefaultBranch)
 	for _, r := range failed {
-		fmt.Fprintf(&b, "- %s (%s) on commit %s \"%s\": %s\n", r.Workflow, r.Conclusion, short(r.SHA), r.Title, r.URL)
+		ref := ""
+		if r.Branch != "" && r.Branch != p.DefaultBranch {
+			ref = fmt.Sprintf(" for `%s` (a release tag)", r.Branch)
+		}
+		fmt.Fprintf(&b, "- %s (%s) on commit %s%s \"%s\": %s\n", r.Workflow, r.Conclusion, short(r.SHA), ref, r.Title, r.URL)
 	}
 	for i, r := range failed {
 		if i == 2 {
@@ -303,7 +320,7 @@ func (w *Watcher) set(st Status) {
 	w.status[st.ProjectID] = st
 	w.mu.Unlock()
 	if had && prev.State == st.State && prev.SHA == st.SHA && prev.TodoID == st.TodoID && prev.Error == st.Error &&
-		len(prev.Runs) == len(st.Runs) && (len(st.Runs) == 0 || prev.Runs[0] == st.Runs[0]) {
+		len(prev.Runs) == len(st.Runs) && (len(st.Runs) == 0 || prev.Runs[0] == st.Runs[0]) && sameRelease(prev.Release, st.Release) {
 		return
 	}
 	if w.Pub != nil {

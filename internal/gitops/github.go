@@ -132,6 +132,7 @@ type Run struct {
 	Status     string    `json:"status"`     // queued | in_progress | completed | …
 	Conclusion string    `json:"conclusion"` // success | failure | cancelled | skipped | …
 	SHA        string    `json:"sha"`
+	Branch     string    `json:"branch,omitempty"` // the branch or tag it ran for
 	URL        string    `json:"url"`
 	Event      string    `json:"event"`
 	CreatedAt  time.Time `json:"created_at"`
@@ -148,32 +149,9 @@ func (r Run) Failed() bool {
 	return false
 }
 
-// Runs lists the newest workflow runs on branch, newest first.
+// Runs lists the newest workflow runs on branch (or of a tag), newest first.
 func (g *Git) Runs(ctx context.Context, projectID, dir, branch string, limit int) ([]Run, error) {
-	out, err := g.ghQuiet(ctx, projectID, dir, "run", "list", "--branch", branch, "--limit", strconv.Itoa(limit),
-		"--json", "databaseId,workflowName,displayTitle,status,conclusion,headSha,url,event,createdAt")
-	if err != nil {
-		return nil, err
-	}
-	var raw []struct {
-		ID         int64     `json:"databaseId"`
-		Workflow   string    `json:"workflowName"`
-		Title      string    `json:"displayTitle"`
-		Status     string    `json:"status"`
-		Conclusion string    `json:"conclusion"`
-		SHA        string    `json:"headSha"`
-		URL        string    `json:"url"`
-		Event      string    `json:"event"`
-		CreatedAt  time.Time `json:"createdAt"`
-	}
-	if err := json.Unmarshal([]byte(jsonPart(out)), &raw); err != nil {
-		return nil, fmt.Errorf("gh run list: %w", err)
-	}
-	runs := make([]Run, len(raw))
-	for i, r := range raw {
-		runs[i] = Run(r)
-	}
-	return runs, nil
+	return g.runList(ctx, projectID, dir, []string{"--branch", branch}, limit)
 }
 
 // RunFailedLog returns the tail of the failed steps' log of a run.

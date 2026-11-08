@@ -37,6 +37,7 @@ type Computer interface {
 	ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error)
 	// Text is a task's "diff" or "log".
 	Text(id, kind string) (string, error)
+	CreateRelease(projectID string, r NewRelease) (Release, error)
 }
 
 // Machine is one computer of a fleet. Board is unset while it is
@@ -251,6 +252,14 @@ func (f Fleet) ReportIssue(projectID string, is model.Issue) (model.Issue, model
 	return c.ReportIssue(p.ID, is)
 }
 
+func (f Fleet) CreateRelease(projectID string, r NewRelease) (Release, error) {
+	p, c, err := f.project(projectID)
+	if err != nil {
+		return Release{}, err
+	}
+	return c.CreateRelease(p.ID, r)
+}
+
 // Text returns a task's diff or log, cut to max characters (from the end if tail).
 func (f Fleet) Text(id, kind string, max int, tail bool) (string, error) {
 	_, c, err := f.todo(id)
@@ -354,6 +363,13 @@ func (c RESTComputer) ReportIssue(projectID string, is model.Issue) (model.Issue
 	return out.Issue, out.Result, err
 }
 
+func (c RESTComputer) CreateRelease(projectID string, r NewRelease) (Release, error) {
+	var out Release
+	return out, c.API.Call("POST", c.Prefix+"/api/projects/"+url.PathEscape(projectID)+"/tags", map[string]any{
+		"version": r.Version, "bump": r.Bump, "sha": r.SHA, "notes": r.Notes,
+	}, &out)
+}
+
 func (c RESTComputer) Text(id, kind string) (string, error) {
 	var out string
 	return out, c.API.Call("GET", c.Prefix+"/api/todos/"+url.PathEscape(id)+"/"+kind, nil, &out)
@@ -395,6 +411,7 @@ var ProjectSettings = []Param{
 	{"auto_approve", "boolean", "Finished tasks whose tests pass skip review.", false},
 	{"merge_mode", "string", "How approved work lands: \"local\" (squash onto the default branch) or \"pr\" (GitHub pull request).", false},
 	{"investigate_ci", "boolean", "Queue a task when a GitHub Actions build on the default branch fails.", false},
+	{"tag_format", "string", "How release tags are named: X, Y, Z are major, minor, patch, e.g. \"vX.Y.Z\" (default \"X.Y.Z\").", false},
 	{"max_run_minutes", "integer", "Time limit for one Claude run (0 for the default).", false},
 	{"max_turns", "integer", "Turn limit for one Claude run (0 for the default).", false},
 	{"color", "string", "Color marking the project, like \"#3a7bd5\" (\"\" for none).", false},

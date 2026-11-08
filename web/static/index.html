@@ -565,10 +565,35 @@
     <form method="dialog">
       <header class="sheet-head"><h2 id="ci-title" tabindex="-1" autofocus>Builds</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
       <p class="hint" id="ci-summary"></p>
+      <div class="ci-release" id="ci-release" hidden></div>
       <ul class="runs" id="ci-runs"></ul>
       <footer class="sheet-actions">
         <button class="btn" type="button" id="ci-refresh" data-icon="redo">Check now</button>
         <button class="btn primary" type="button" id="ci-investigate" hidden data-icon="spark">Ask Claude to fix it</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Tag a release from a commit in the History view -->
+  <dialog class="sheet" id="release-sheet" aria-labelledby="release-title">
+    <form method="dialog" id="release-form">
+      <header class="sheet-head"><h2 id="release-title" tabindex="-1" autofocus>Tag release</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <p class="hint" id="release-commit"></p>
+      <p class="hint" id="release-loading">Fetching tags from origin…</p>
+      <div id="release-body" hidden>
+        <ul class="release-warnings" id="release-warnings"></ul>
+        <fieldset class="field choice">
+          <legend>Version <em id="release-latest"></em></legend>
+          <div id="release-choices"></div>
+          <label class="radio"><input type="radio" name="version" value="custom"><span>Other <input name="custom" class="release-custom" spellcheck="false" autocomplete="off" aria-label="Other version"></span></label>
+          <p class="hint" id="release-custom-hint"></p>
+        </fieldset>
+        <label class="field"><span>Release notes <em>the tag's message; from the tasks merged since the last release</em></span><textarea name="notes" rows="7" spellcheck="true"></textarea></label>
+        <p class="hint">Dash creates an annotated tag on this commit and pushes it to origin, which starts the repository's release workflow.</p>
+      </div>
+      <footer class="sheet-actions">
+        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
+        <button class="btn primary" value="ok" data-icon="tag" id="release-ok" disabled>Tag and push</button>
       </footer>
     </form>
   </dialog>
@@ -609,6 +634,8 @@
       <p class="hint" id="merge-hint"></p>
       <label class="toggle"><input type="checkbox" name="investigate_ci"><span>Fix failed builds automatically</span></label>
       <p class="hint">When GitHub Actions fails on the default branch, Claude gets a task with the failed log to investigate and fix it.</p>
+      <label class="field"><span>Release tag format <em>X, Y and Z are the major, minor and patch version, e.g. vX.Y.Z</em></span><input name="tag_format" placeholder="X.Y.Z" spellcheck="false" autocomplete="off"></label>
+      <p class="hint" id="tag-format-hint">Tag releases from a commit in History.</p>
       <div class="field-row">
         <label class="field inline"><span>Time limit per run <em>minutes</em></span><input type="number" name="max_run_minutes" min="1" inputmode="numeric" placeholder="60"></label>
         <label class="field inline"><span>Turn limit per run</span><input type="number" name="max_turns" min="1" inputmode="numeric" placeholder="200"></label>

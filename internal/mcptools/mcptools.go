@@ -305,6 +305,23 @@ type TodoUpdate struct {
 	DependsOn     *[]string // replaces the list; empty clears it
 }
 
+// NewRelease is a release to tag: a version ("1.4.0", or a tag in the
+// project's tag format) or a bump (patch, minor or major) of the latest
+// release, on a commit (default: the tip of origin's default branch).
+type NewRelease struct {
+	Version, Bump, SHA, Notes string
+}
+
+// Release is a release tag that was created and pushed.
+type Release struct {
+	Tag      string `json:"tag"`
+	SHA      string `json:"sha"`
+	Previous string `json:"previous,omitempty"` // the release before it
+	Notes    string `json:"notes,omitempty"`
+	URL      string `json:"url,omitempty"`   // its GitHub release page
+	Build    string `json:"build,omitempty"` // "building" while Dash follows its workflow runs
+}
+
 // Board is what the board tools need from Dash.
 type Board interface {
 	// Projects lists projects, and computers that couldn't be reached.
@@ -324,6 +341,8 @@ type Board interface {
 	Issues(projectID string) ([]model.Issue, error)
 	// ReportIssue adds an issue, or updates the one with its fingerprint.
 	ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error)
+	// CreateRelease tags a commit in the project's tag format and pushes the tag.
+	CreateRelease(projectID string, r NewRelease) (Release, error)
 }
 
 // Options adapt the board tools to where they run.
@@ -340,7 +359,10 @@ type Options struct {
 // Tool names the chat may call; ReadTools never change anything.
 var (
 	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues"}
-	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "update_todo", "delete_todo", "list_issues", "report_issue"}
+	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "update_todo", "create_release", "delete_todo", "list_issues", "report_issue"}
+	// AskTools are board tools a chat never gets without asking: they publish
+	// something (a release tag pushed to origin).
+	AskTools = []string{"create_release"}
 	// IssueToolNames are what a running task gets (IssueTools).
 	IssueToolNames = []string{"list_issues", "report_issue"}
 )
@@ -600,6 +622,22 @@ func boardTools(b Board, o Options) []Tool {
 					Priority  int              `json:"priority"`
 					DependsOn []string         `json:"depends_on"`
 				}{t.ID, t.Title, t.Status, t.Priority, deps}, nil
+			}},
+		{"create_release", "Tag a release: an annotated tag in the project's tag format (e.g. vX.Y.Z), pushed to origin, " +
+			"which starts the repository's release workflow. Only when the user asks for a release. Give version or bump.", []Param{pProject,
+			{"version", "string", "The version, e.g. \"1.4.0\" (or a full tag in the project's format).", false},
+			{"bump", "string", "Instead of version: patch, minor or major, from the latest release tag (the first release is 0.1.0).", false},
+			{"sha", "string", "Commit to tag; it must be on origin (default: the tip of origin's default branch).", false},
+			{"notes", "string", "Release notes for the tag message (default: the Dash tasks merged since the previous release).", false}},
+			func(a Args) (any, error) {
+				p, err := project(a)
+				if err != nil {
+					return nil, err
+				}
+				if a.Str("version") == "" && a.Str("bump") == "" {
+					return nil, errors.New("give a version (e.g. 1.4.0) or a bump (patch, minor or major)")
+				}
+				return b.CreateRelease(p.ID, NewRelease{Version: a.Str("version"), Bump: a.Str("bump"), SHA: a.Str("sha"), Notes: a.Str("notes")})
 			}},
 		{"delete_todo", "Delete a draft, queued or failed task; only when the user asks to remove it (e.g. a draft made by mistake).", []Param{PTodo},
 			func(a Args) (any, error) {

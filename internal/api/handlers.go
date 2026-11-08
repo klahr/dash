@@ -19,6 +19,7 @@ import (
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/queue"
+	"github.com/klahr/dash/internal/release"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
 )
@@ -176,6 +177,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		RunCommand: req.RunCommand, TestCommand: req.TestCommand, DeployCommand: req.DeployCommand,
 		SetupCommand: req.SetupCommand, CopyFiles: cleanList(req.CopyFiles), MaxAutoFixes: maxFixes,
 		MaxRunMinutes: max(0, req.MaxRunMinutes), MaxTurns: max(0, req.MaxTurns),
+		TagFormat: release.DefaultFormat,
 	})
 	if err == nil && req.MergeMode == model.MergePR {
 		// Only possible when the adopted repo already has a GitHub remote.
@@ -210,6 +212,7 @@ type projectUpdate struct {
 	MaxTurns      *int      `json:"max_turns"`
 	Color         *string   `json:"color"`
 	Icon          *string   `json:"icon"`
+	TagFormat     *string   `json:"tag_format"`
 	// Runners links the project to these runners (ids; replaces the list,
 	// [] unlinks them all).
 	Runners *[]string `json:"runners"`
@@ -255,6 +258,13 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 			return model.Project{}, fmt.Errorf("%w: icon must be an uploaded image", errBadRequest)
 		}
 	}
+	if req.TagFormat != nil {
+		f, err := sv.s.checkTagFormat(ctx, strings.TrimSpace(*req.TagFormat))
+		if err != nil {
+			return model.Project{}, err
+		}
+		*req.TagFormat = f.String()
+	}
 	cur, err := sv.data.GetProject(id)
 	if err != nil {
 		return cur, err
@@ -284,6 +294,7 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 		set(&p.Icon, req.Icon)
 		set(&p.ChatPermissionMode, req.ChatMode)
 		set(&p.ReviewPrompt, req.ReviewPrompt)
+		set(&p.TagFormat, req.TagFormat)
 		if req.CopyFiles != nil {
 			p.CopyFiles = cleanList(*req.CopyFiles)
 		}
@@ -552,6 +563,7 @@ func (s *Server) gitGraph(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	s.fetchTagsSoon(p)
 	writeJSON(w, http.StatusOK, map[string]string{"branch": p.DefaultBranch, "graph": graph})
 }
 

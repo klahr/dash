@@ -188,6 +188,9 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/projects/{pid}/remote", s.remoteStatus(false))
 	mux.HandleFunc("POST /api/projects/{pid}/remote/fetch", s.remoteStatus(true))
 	mux.HandleFunc("GET /api/projects/{pid}/graph", s.gitGraph)
+	mux.HandleFunc("GET /api/projects/{pid}/release", s.getRelease)
+	mux.HandleFunc("POST /api/projects/{pid}/tags", s.createTag)
+	mux.HandleFunc("GET /api/projects/{pid}/tag-format", s.tagFormatInfo)
 	mux.HandleFunc("GET /api/projects/{pid}/files", s.listFiles)
 	mux.HandleFunc("GET /api/projects/{pid}/file", s.readFile)
 	mux.HandleFunc("PUT /api/projects/{pid}/file", s.saveLocalFile)
@@ -439,6 +442,10 @@ func writeErr(w http.ResponseWriter, err error) {
 		if callErr.Status == http.StatusForbidden || callErr.Status == http.StatusConflict || callErr.Status == http.StatusBadRequest {
 			code = callErr.Status
 		}
+	case errors.Is(err, errForbidden):
+		code = http.StatusForbidden
+	case errors.Is(err, errConflict):
+		code = http.StatusConflict
 	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency), errors.Is(err, store.ErrBadIssue),
 		errors.Is(err, preview.ErrNoRunCommand), errors.Is(err, preview.ErrNotInReview):
 		code = http.StatusBadRequest
