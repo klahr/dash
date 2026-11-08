@@ -23,7 +23,9 @@ type Check struct {
 }
 
 // Preflight checks what a runner needs before it registers: git, a logged-in
-// claude, and a hub reachable over HTTPS. The funcs default to the real thing.
+// claude, and a hub reachable over HTTPS. Not gh: a runner without it merges
+// and pushes tasks of projects that use pull requests only by default (see
+// dispatch.Link.MergeModeSet). The funcs default to the real thing.
 type Preflight struct {
 	LookPath func(file string) (string, error)
 	// Output runs a command and returns its stdout.

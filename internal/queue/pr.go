@@ -14,7 +14,7 @@ import (
 
 // openPR is step 3 in "pr" mode: push the todo's branch and open (or update)
 // its pull request. The todo stays in Merging until PollPRs sees GitHub
-// merge it.
+// merge it (Dash merges it itself once its checks pass, see mergePR).
 func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) error {
 	wt := *t.Worktree
 	if err := m.Git.PushBranch(ctx, p.ID, wt.Path, wt.Branch); err != nil {
@@ -96,7 +96,7 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 		// pushed it again. Without this the task would wait in merging for a
 		// head that never changes.
 		handled := st.HeadRefOid == t.PR.HandledSHA
-		autoMerge := p.HubProjectID != ""
+		autoMerge := p.MergesGreenPRs()
 		if st.Mergeable == "CONFLICTING" {
 			m.notePR(t, st, prStatusLine(n, p.Base(), st, nil, nil, autoMerge, handled))
 			if handled {
@@ -310,10 +310,11 @@ func labels(cs []gitops.PRCheck) string {
 	return strings.Join(names, ", ")
 }
 
-// mergePR merges the pull request of a hub's task on this runner once
-// GitHub finds it mergeable and its checks pass: approving it on the hub was
-// the review, and nobody here would merge it otherwise. When GitHub refuses
-// (e.g. a required review), it stays open to be merged there.
+// mergePR squash-merges a task's pull request once GitHub finds it
+// mergeable and its checks pass (model.Project.MergesGreenPRs): approving
+// the task was the review, and the pull request is there so GitHub's checks
+// run before the work reaches the default branch. When GitHub refuses (e.g.
+// a required review), it stays open to be merged there.
 func (m *MergeQueue) mergePR(ctx context.Context, t model.Todo, p model.Project, st gitops.PRStatus) {
 	if st.Mergeable != "MERGEABLE" {
 		return // UNKNOWN while GitHub works it out; the next poll tries again

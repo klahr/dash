@@ -220,9 +220,10 @@ func (sv *service) runnerTask(t model.Todo) (*dispatch.Dispatcher, error) {
 	return sv.s.Dispatch, nil
 }
 
-// approveOnRunner asks t's runner to land it: the runner squashes it onto
-// the default branch, runs the checks and pushes it to origin (or opens a
-// pull request, if the project opted into them), then reports it merged.
+// approveOnRunner asks t's runner to land it: the runner opens a pull
+// request ("pr" mode) and merges it once its checks pass, or squashes it
+// onto the default branch, runs the checks and pushes it to origin
+// ("local"), then reports it merged.
 func (sv *service) approveOnRunner(ctx context.Context, t model.Todo) (model.Todo, error) {
 	if t.Status != model.StatusReview && t.Status != model.StatusFailed {
 		return t, fmt.Errorf("%w: only tasks in review (or a failed merge) can be approved", errBadRequest)

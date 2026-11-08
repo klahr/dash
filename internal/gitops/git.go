@@ -103,6 +103,13 @@ func (g *Git) ghQuiet(ctx context.Context, projectID, dir string, args ...string
 	return g.run(ctx, false, projectID, dir, g.ghBin(), args...)
 }
 
+// HasGh reports whether the GitHub CLI is installed here: without it Dash
+// can't open (or merge) pull requests.
+func (g *Git) HasGh() bool {
+	_, err := exec.LookPath(g.ghBin())
+	return err == nil
+}
+
 func (g *Git) ghBin() string {
 	if g.GhBin == "" {
 		return "gh"

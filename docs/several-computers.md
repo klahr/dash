@@ -114,23 +114,26 @@ tasks should run on (your own runners, or any of the org's if you're an admin). 
 - If none can take it, the task stays queued and its card says why ("no runner online: laptop is
   offline", "waiting for a runner: laptop is busy (3 of 3 tasks)"). It starts as soon as one can.
 - The project needs a git remote: each runner clones it into `<-projects>/hub/` the first time it
-  gets one of its tasks, and keeps that clone. Work lands on the remote's default branch, the same
-  way it does without runners, but done by the runner: when you approve, it squashes the task
-  onto the default branch in its clone (one commit), runs the project's tests and pushes it. The
-  hub marks the task merged, with its commit, once the runner reports the push; the hub never
-  needs a checkout of its own.
+  gets one of its tasks, and keeps that clone. Work lands on the remote's default branch the same
+  way it does without runners, but done by the runner. On GitHub that means a pull request (the
+  default): when you approve, the runner pushes the task's branch, opens one and squash-merges it
+  once GitHub finds it mergeable and its checks pass (your approval was the review; turn **Merge
+  pull requests when checks pass** off to merge on GitHub yourself). If GitHub refuses (a required
+  review, say), the pull request stays open for you to merge there. The hub marks the task merged
+  once the runner reports it; the hub never needs a checkout, nor `gh`, of its own.
+- Pick **Merge it** (or use a remote that isn't on GitHub) and the runner squashes the task onto
+  the default branch in its clone (one commit), runs the project's tests and pushes it, without
+  waiting for GitHub's checks. Runners don't need `gh` for this: a runner without it merges this
+  way even when the project uses pull requests by default (not when you picked them).
 - If origin moved meanwhile (another runner, or someone pushing), the push is rejected and the
   runner fetches, merges the task again on top of the new tip, re-runs the tests and pushes
   again. A real conflict or failing tests go back to Claude to fix, like any merge (within the
   project's automatic fixes), then the task returns to review or fails, saying why. **Revert**
   works the same way: the runner adds the revert commit and pushes it.
-- Pull requests are opt-in: pick **Open a pull request instead** under the project's approval
-  settings and the runner pushes the task's branch and opens one when you approve, then
-  squash-merges it itself once GitHub finds it mergeable and its checks pass (your approval was
-  the review). If GitHub refuses (a required review, say), the pull request stays open for you to
-  merge there. Linked projects that opened pull requests only because older versions forced them
-  to switch to merging when the hub upgrades; tasks with a pull request already open are followed
-  until it is merged or closed.
+- Projects whose users never chose how work lands follow the default when the hub upgrades or
+  their settings change: pull requests on GitHub, merging otherwise. A choice you made stays.
+  Tasks with a pull request already open are followed until it is merged or closed, whatever the
+  mode.
 - Review happens on the hub as usual: the diff, the log and the timeline come from the runner.
   Attachments and editor changes can't be sent to runners yet, and live previews, the worktree
   shell and re-running tests are on the runner's own dashboard.

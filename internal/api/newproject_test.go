@@ -210,3 +210,67 @@ func jsonString(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
 }
+
+// A GitHub project lands work through pull requests unless its user chose
+// otherwise; one without a GitHub remote, or on a Dash without gh, merges.
+// The default follows the remote as settings are saved; a choice sticks.
+func TestDefaultMergeMode(t *testing.T) {
+	s := newProjectServer(t)
+	org := filepath.Join(s.ProjectRoot, "default")
+	add := func(body string) model.Project {
+		t.Helper()
+		w := createProjectReq(t, s, body)
+		var p model.Project
+		if w.Code != http.StatusCreated || json.Unmarshal(w.Body.Bytes(), &p) != nil {
+			t.Fatalf("create %s: %d %s", body, w.Code, w.Body)
+		}
+		return p
+	}
+	patch := func(p model.Project, body string) model.Project {
+		t.Helper()
+		w := httptest.NewRecorder()
+		s.mux().ServeHTTP(w, asOwner(t, s, httptest.NewRequest("PATCH", "/api/projects/"+p.ID, strings.NewReader(body))))
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &p) != nil {
+			t.Fatalf("patch %s: %d %s", body, w.Code, w.Body)
+		}
+		return p
+	}
+	for _, dir := range []string{"app", "chosen", "nogh"} {
+		gitClone(t, filepath.Join(org, dir), "main")
+	}
+
+	if p := add(`{"existing":true,"path":` + jsonString(filepath.Join(org, "app")) + `}`); !p.UsesPR() || p.MergeModeSet || !p.MergesGreenPRs() {
+		t.Errorf("GitHub clone: %q set %v green %v", p.MergeMode, p.MergeModeSet, p.MergesGreenPRs())
+	} else {
+		if p = patch(p, `{"name":"app","merge_mode":"pr"}`); !p.UsesPR() || p.MergeModeSet {
+			t.Errorf("saved unchanged: %q set %v", p.MergeMode, p.MergeModeSet)
+		}
+		if p = patch(p, `{"merge_mode":"local","merge_green_prs":false}`); p.UsesPR() || !p.MergeModeSet || p.MergesGreenPRs() {
+			t.Errorf("chose to merge: %q set %v green %v", p.MergeMode, p.MergeModeSet, p.MergesGreenPRs())
+		}
+		if p = patch(p, `{"name":"app again"}`); p.UsesPR() {
+			t.Error("the default overrode the user's choice")
+		}
+	}
+	if p := add(`{"existing":true,"merge_mode":"local","path":` + jsonString(filepath.Join(org, "chosen")) + `}`); p.UsesPR() || !p.MergeModeSet {
+		t.Errorf("GitHub clone, asked to merge: %q set %v", p.MergeMode, p.MergeModeSet)
+	}
+
+	// No remote: merge; once it has a GitHub origin, pull requests.
+	p := add(`{"name":"fresh"}`)
+	if p.UsesPR() || p.MergeModeSet {
+		t.Errorf("no remote: %q set %v", p.MergeMode, p.MergeModeSet)
+	}
+	if out, err := exec.Command("git", "-C", p.Path, "remote", "add", "origin", "https://github.com/me/fresh.git").CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	if p = patch(p, `{"merge_mode":"local"}`); !p.UsesPR() || p.MergeModeSet {
+		t.Errorf("origin added: %q set %v", p.MergeMode, p.MergeModeSet)
+	}
+
+	// No gh on this Dash: a GitHub clone merges.
+	s.Git.GhBin = filepath.Join(t.TempDir(), "no-gh")
+	if p := add(`{"existing":true,"path":` + jsonString(filepath.Join(org, "nogh")) + `}`); p.UsesPR() || p.MergeModeSet {
+		t.Errorf("GitHub clone without gh: %q set %v", p.MergeMode, p.MergeModeSet)
+	}
+}
