@@ -1503,17 +1503,20 @@ function flipPlay(before) {
 function renderBoardNow() {
   const items = laneItems();
   const empty = $("#board-empty");
-  if (!state.project) {
+  // A hub that doesn't run tasks itself and has no runners yet can't do
+  // anything with a board: its home is the welcome screen, projects or not.
+  const welcome = state.runners?.length === 0 && (!state.project || !state.localTasks);
+  if (!state.project || welcome || state.runners === undefined) {
     $("#board").replaceChildren();
     $("#lane-tabs").replaceChildren();
     $("#lane-chips").replaceChildren();
     $("#new-todo").hidden = true;
-    // Until the projects and runners are in, don't flash a welcome or
-    // "create your first project" that a board (or the other) then replaces.
+    // Until the projects and runners are in, don't flash a welcome, a board
+    // or "create your first project" that one of the others then replaces.
     empty.hidden = !state.projectsLoaded || state.runners === undefined;
     if (empty.hidden) return;
     // A hub with no runners yet: welcome, and explain how to add one first.
-    if (state.runners?.length === 0) { empty.replaceChildren(...welcomeScreen()); return; }
+    if (welcome) { empty.replaceChildren(...welcomeScreen()); return; }
     empty.replaceChildren(
       // Optional illustration: save as web/static/img/empty-board.webp, 960x720 (4:3). Hidden if missing.
       // Convert: magick in.png -resize 960x720^ -gravity center -extent 960x720 -quality 85 web/static/img/empty-board.webp
@@ -3080,8 +3083,8 @@ async function loadRunners() {
   } catch {
     state.runners = null; // this Dash has no runners (it is one, say)
   }
-  // The empty board shows the welcome screen until there's a runner.
-  if (!state.project && state.projectsLoaded) renderBoard();
+  // The board waits for the runners, and shows the welcome screen until there's one.
+  if (state.projectsLoaded) renderBoard();
   return state.runners;
 }
 const runnerName = (id) => state.runners?.find((r) => r.id === id)?.name || "its runner";
@@ -3269,7 +3272,7 @@ async function openAddRunner() {
   $("#org-runners").scrollIntoView({ block: "start", behavior: reduceMotion.matches ? "auto" : "smooth" });
 }
 
-// The board of a hub that has no runners and no projects yet: what a runner
+// The board of a hub that has no runners yet (and can't run tasks itself, or has no projects): what a runner
 // is, how to add one, and what comes after.
 function welcomeScreen() {
   const needed = !state.localTasks;
