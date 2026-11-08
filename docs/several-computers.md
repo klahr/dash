@@ -35,7 +35,8 @@ That's all. The script, served by the hub (it holds no secrets, so it needs no s
    waiting longer between attempts while the hub is down (up to a minute). `--no-service` skips
    this and runs the runner in the terminal instead.
 
-The dialog says **Connected ✓** when the runner comes online.
+The dialog says **Connected ✓** when the runner comes online, then lists the git repositories it
+finds in its projects directory to add as [its own projects](#projects-of-a-runners-own).
 
 On Linux a user service stops when you log out unless lingering is on; the installer says so,
 and an admin can turn it on with `sudo loginctl enable-linger <you>`.
@@ -177,6 +178,27 @@ A runner's own projects (those in its `-projects` that aren't linked from the hu
 the hub's dashboard for platform admins, grouped by computer, and their tasks run on that
 computer. Notifications come from all of them.
 
+### Add projects from a runner's computer
+
+Right after a runner connects, the **Add a runner** dialog lists the git repositories in its
+projects directory; later, **Add projects from this computer…** on the runner's row of the
+Organization page lists them again. Each shows its folder name, its path in the projects directory,
+its branch and its origin remote (without any credentials in the URL). Nothing is ticked: tick the
+ones you want (or **Select all**) and **Add selected** adds them as the runner's own projects,
+just like adding a project with that folder on the runner itself.
+
+The runner does the looking, and only:
+
+- in its projects directory: the folders there that are git repositories, and the ones a level
+  down (`~/code/org/repo`), no deeper. Hidden folders, `hub/` (the hub's clones) and repositories
+  that are already projects are left out. It never follows a symlink, so it never looks, or adds
+  anything, outside the projects directory; a folder whose `.git` is a file or a symlink (a linked
+  worktree, a submodule) isn't listed either;
+- for its owner: the hub asks only for the user who registered the runner (not another member,
+  not an org admin), and the runner checks that user as it does for [Claude](#claude-runs-on-each-users-own-runner);
+- names, paths, branches and remotes: it reads `.git/HEAD` and `.git/config`, never the files in
+  a repository. **Add selected** takes only paths that are in its listing at that moment.
+
 ## What a runner lets the hub do
 
 A runner only does the dashboard's normal work on its own projects: tasks, reviews, merges,
@@ -187,7 +209,9 @@ issues, scans, chats about a project or task, CI, previews and permission prompt
   with `-hub-commands` if you trust the hub to run commands on it);
 - adding a project outside its `-projects` directory;
 - the general chat and Claude's short calls (titles, summaries, clean-up) for anyone but its owner
-  (see [above](#claude-runs-on-each-users-own-runner)).
+  (see [above](#claude-runs-on-each-users-own-runner));
+- listing the repositories in its projects directory, or adding them, for anyone but its owner
+  (see [above](#add-projects-from-a-runners-computer)).
 
 Claude still runs tasks with the runner's `-claude-args` and asks for permission as usual; the
 prompts appear in the hub's dashboard.

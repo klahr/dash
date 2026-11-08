@@ -146,6 +146,9 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 		x, _ = rh.Get(x.ID)
 		writeJSON(w, http.StatusOK, s.view(c, x))
 	})
+	// The repositories on the caller's own runner, to add as its projects (repos.go).
+	mux.HandleFunc("GET /api/runners/{id}/repos", s.runnerRepos)
+	mux.HandleFunc("POST /api/runners/{id}/repos", s.addRunnerRepos)
 	mux.HandleFunc("POST /runner/register", rh.ServeRegister)
 	mux.HandleFunc("GET /runner/connect", rh.ServeConnect)
 	mux.HandleFunc("POST /runner/report", rh.ServeReport)

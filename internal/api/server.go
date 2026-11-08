@@ -219,6 +219,8 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/refine", s.refinePrompt)
 	mux.HandleFunc("GET /api/claude", s.claudeInfo)
 	mux.HandleFunc("POST /api/hub/claude/{kind}", s.hubClaude)
+	mux.HandleFunc("GET /api/hub/repos", s.hubRepos)
+	mux.HandleFunc("POST /api/hub/repos", s.hubAddRepos)
 
 	// Issues: known bugs, vulnerabilities and other problems, triaged into tasks
 	mux.HandleFunc("GET /api/projects/{pid}/issues", s.listIssues)

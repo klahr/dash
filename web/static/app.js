@@ -2974,6 +2974,9 @@ async function renderRunners() {
           toast(`${r.name} revoked`);
           await refreshMachines();
         }) }, "Revoke")) : null,
+      r.mine ? h("button", { class: "btn small", type: "button", disabled: !r.online,
+        title: r.online ? `Pick git repositories on ${r.name} to add as its projects` : `${r.name} is offline`,
+        onclick: attempt(() => showRunnerRepos(r)) }, "Add projects from this computer…") : null,
       outdated && r.mine ? h("div", { class: "runner-update" },
         h("p", { class: "hint" }, `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run this on ${r.name} (it keeps its registration):`),
         copyBlock(installCmd(), "Command copied", { pre: true })) : null);
@@ -2988,12 +2991,79 @@ async function renderRunners() {
     if (st && added) {
       st.classList.toggle("on", added.online);
       st.replaceChildren(added.online ? `Connected ✓ ${added.name} is online.` : `${added.name} registered, connecting…`);
-      if (added.online) runnerAdd = null;
+      if (added.online) {
+        runnerAdd = null;
+        if (added.mine) showRunnerRepos(added).catch(fail);
+      }
     }
   }
 }
 
+// showRunnerRepos lists the git repositories runner r (the caller's own)
+// finds in its projects directory, to tick and add as its projects. The
+// runner looks; it reports only names, paths, remotes and branches.
+async function showRunnerRepos(r) {
+  const box = $("#runners-repos");
+  const url = `/api/runners/${encodeURIComponent(r.id)}/repos`;
+  box.hidden = false;
+  box.replaceChildren(h("h4", {}, `Projects on ${r.name}`), h("p", { class: "hint" }, "Looking for git repositories…"));
+  box.scrollIntoView({ block: "nearest", behavior: reduceMotion.matches ? "auto" : "smooth" });
+  let res;
+  try {
+    res = await api("GET", url);
+  } catch (e) {
+    box.replaceChildren(h("h4", {}, `Projects on ${r.name}`), h("p", { class: "hint warn" }, e.message || String(e)));
+    return;
+  }
+  const close = h("button", { class: "btn small", type: "button", onclick: () => { box.hidden = true; box.replaceChildren(); } }, "Close");
+  const where = res.root ? h("code", {}, res.root) : "its projects directory";
+  if (!res.repos.length) {
+    box.replaceChildren(h("h4", {}, `Projects on ${r.name}`),
+      h("p", { class: "hint" }, "No git repositories to add in ", where, " (folders there and one level down; those already projects and the hub's clones in ", h("code", {}, "hub/"), " are left out)."),
+      h("div", { class: "runner-repos-actions" }, close));
+    return;
+  }
+  const checks = res.repos.map((x) => h("input", { type: "checkbox", value: x.path, "aria-label": x.path }));
+  const all = h("input", { type: "checkbox", "aria-label": "Select all" });
+  const addBtn = h("button", { class: "btn primary", type: "button", disabled: true }, "Add selected");
+  const sync = () => {
+    const n = checks.filter((c) => c.checked).length;
+    all.checked = n === checks.length;
+    all.indeterminate = n > 0 && n < checks.length;
+    addBtn.disabled = n === 0;
+    addBtn.textContent = n ? `Add ${n} selected` : "Add selected";
+  };
+  all.addEventListener("change", () => { for (const c of checks) c.checked = all.checked; sync(); });
+  for (const c of checks) c.addEventListener("change", sync);
+  addBtn.addEventListener("click", attempt(async () => {
+    const paths = checks.filter((c) => c.checked).map((c) => c.value);
+    addBtn.disabled = true;
+    addBtn.textContent = "Adding…";
+    let out;
+    try {
+      out = await api("POST", url, { paths });
+    } finally {
+      sync();
+    }
+    if (out.added.length) toast(`Added ${out.added.length} project${out.added.length === 1 ? "" : "s"} on ${r.name}`);
+    for (const f of out.failed) toast(`${f.path}: ${f.error}`, true);
+    await loadProjects();
+    await showRunnerRepos(r);
+  }));
+  box.replaceChildren(
+    h("h4", {}, `Projects on ${r.name}`),
+    h("p", { class: "hint" }, "Git repositories in ", where, " on ", r.name, ". Tick the ones to add as its own projects; their tasks run there."),
+    h("label", { class: "runner-pick runner-repos-all" }, all, "Select all"),
+    h("ul", { class: "runner-repos-list" }, ...res.repos.map((x, i) => h("li", {},
+      h("label", { class: "runner-pick" }, checks[i],
+        h("span", { class: "runner-repo" },
+          h("span", { class: "runner-name" }, x.name),
+          h("span", { class: "hint" }, x.path, x.branch ? ` · ${x.branch}` : " · detached", x.remote ? ` · ${x.remote}` : " · no remote")))))),
+    h("div", { class: "runner-repos-actions" }, addBtn, close));
+}
+
 async function addRunner() {
+  $("#runners-repos").hidden = true;
   const before = await api("GET", "/api/runners");
   const { code, expires, hub } = await api("POST", "/api/runners/codes");
   if (hub) runnerInfo.hub = hub;
@@ -3136,6 +3206,7 @@ function askPassword(title, body = "") {
 async function openOrg() {
   await renderOrg();
   $("#runners-code").hidden = true;
+  $("#runners-repos").hidden = true;
   runnerAdd = null;
   await renderRunners();
   $("#org-invite-link").hidden = true;

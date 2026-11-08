@@ -587,6 +587,14 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .invite-card .login-alt { text-align: center; font-size: 14px; color: var(--muted); }
 .invite-card .btn.secondary-action { background: none; }
 #runners-code { margin-top: 12px; }
+/* A runner's git repositories, to add as its projects. */
+.runner-repos { margin-top: 12px; padding: 10px 12px; border-radius: var(--r-m); background: var(--raised); }
+.runner-repos h4 { margin: 0; font-size: 14px; }
+.runner-repos-list { list-style: none; margin: 4px 0 0; padding: 0; max-height: 320px; overflow-y: auto; }
+.runner-repos-all { border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.runner-repo { display: flex; flex-direction: column; min-width: 0; }
+.runner-repo .hint { font-size: 12px; overflow-wrap: anywhere; }
+.runner-repos-actions { display: flex; gap: 8px; margin-top: 10px; }
 .copy-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; }
 .copy-text { flex: 1; min-width: 0; margin: 0; padding: 8px 10px; border-radius: var(--r-s); border: 1px solid var(--line); background: var(--bg); font: 13px/1.5 var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; }
 .copy-row .btn { flex: none; }

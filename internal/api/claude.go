@@ -188,17 +188,21 @@ func (s *Server) claudeInfo(w http.ResponseWriter, r *http.Request) {
 // registered this runner. A runner registered with an older hub doesn't
 // know its owner and takes the hub's word (the hub sends only the
 // owner's).
-func (s *Server) forOwner(r *http.Request) error {
+func (s *Server) forOwner(r *http.Request) error { return s.onlyForOwner(r, "runs Claude") }
+
+// onlyForOwner is forOwner for something else this runner does only for
+// its owner (does: "runs Claude", "lists its repositories", …).
+func (s *Server) onlyForOwner(r *http.Request, does string) error {
 	if !auth.FromHub(r.Context()) {
 		return errors.New("only this runner's hub asks it")
 	}
 	uid, err := strconv.ParseInt(r.Header.Get(tunnel.UserHeader), 10, 64)
 	if err != nil || uid == 0 {
-		return errors.New("this runner runs Claude only for its owner, and the hub didn't say whom this is for")
+		return fmt.Errorf("this runner %s only for its owner, and the hub didn't say whom this is for", does)
 	}
 	if s.HubUser != 0 && uid != s.HubUser {
-		slog.Warn("runner: refused Claude for another user", "user", uid, "owner", s.HubUser)
-		return errors.New("this runner runs Claude only for the user who registered it")
+		slog.Warn("runner: refused a request for another user", "does", does, "user", uid, "owner", s.HubUser)
+		return fmt.Errorf("this runner %s only for the user who registered it", does)
 	}
 	return nil
 }

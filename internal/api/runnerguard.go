@@ -82,6 +82,11 @@ func init() {
 		// Claude's short calls (titles, summaries, clean-up) for the
 		// runner's owner; checked in claude.go.
 		"POST /api/hub/claude/{kind}",
+
+		// The repositories in the projects directory, for the runner's
+		// owner to pick its projects from; checked in repos.go (only
+		// paths it lists, inside -projects, never under hub/).
+		"GET /api/hub/repos", "POST /api/hub/repos",
 	} {
 		hubRoutes[p] = true
 	}
