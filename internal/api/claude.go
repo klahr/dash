@@ -220,6 +220,27 @@ func (s *Server) projectChatRunner(c Caller, p model.Project, want string) (tunn
 	return tunnel.Runner{}, fmt.Errorf("your runner %s is offline: start it to chat about %s", linked[0].Name, p.Name)
 }
 
+// todoChatOnRunner reports whether t's chat runs on one of the caller's
+// runners rather than here: as p's chat does, and for a task that ran on a
+// runner, whose worktree is there.
+func (s *Server) todoChatOnRunner(p model.Project, t model.Todo) bool {
+	return s.projectChatOnRunner(p) || t.OnRunner()
+}
+
+// todoChatRunner picks c's runner to run t's chat on: the one that ran t if
+// it is c's and online, else as for p's chat (in its clone, without t's
+// worktree).
+func (s *Server) todoChatRunner(c Caller, p model.Project, t model.Todo, want string) (tunnel.Runner, error) {
+	if t.OnRunner() {
+		for _, r := range s.claudeRunners(c) {
+			if r.ID == t.Runner && r.Online {
+				return r, nil
+			}
+		}
+	}
+	return s.projectChatRunner(c, p, want)
+}
+
 // validChatMode reports whether m is a project chat permission mode.
 func validChatMode(m string) bool {
 	return m == "" || m == model.ChatModeAuto || m == model.ChatModeAcceptEdits
@@ -316,13 +337,16 @@ func (c *chatRelay) send(v any) {
 // runnerChat runs chat turns on runner, a runner of user's, through its
 // /ws/chat: the hub keeps the conversation, the runner runs `claude`. With
 // project (the hub's id), in the runner's clone of that project, with mode
-// as its permission mode; else the general chat, in a scratch directory.
+// as its permission mode, and with todo as well (the hub's id) in its
+// worktree of that task if it has one; else the general chat, in a scratch
+// directory.
 type runnerChat struct {
 	fleet   *tunnel.Hub
 	runner  tunnel.Runner
 	user    int64
 	relay   *chatRelay
 	project string
+	todo    string
 	mode    string
 }
 
@@ -342,6 +366,9 @@ func (c runnerChat) Stream(ctx context.Context, _ string, history []agent.ChatMe
 	req := map[string]any{"type": "send", "messages": history}
 	if c.project != "" {
 		req["project"], req["mode"] = c.project, c.mode
+	}
+	if c.todo != "" {
+		req["todo"] = c.todo
 	}
 	if err := conn.WriteJSON(req); err != nil {
 		return fmt.Errorf("%s: %w", c.runner.Name, err)

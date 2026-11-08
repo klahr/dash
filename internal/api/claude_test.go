@@ -344,3 +344,102 @@ func TestHubRunsProjectChatOnTheUsersLinkedRunner(t *testing.T) {
 		t.Fatalf("other user's project chat: %v %q", kinds, texts)
 	}
 }
+
+// seenChat answers like echoChat and keeps where it ran and what it was asked.
+type seenChat struct {
+	mu     sync.Mutex
+	dir    string
+	prompt string
+}
+
+func (c *seenChat) Stream(_ context.Context, dir string, h []agent.ChatMessage, emit func(agent.ChatDelta)) error {
+	c.mu.Lock()
+	c.dir = dir
+	if len(h) > 0 {
+		c.prompt = h[0].Content
+	}
+	c.mu.Unlock()
+	emit(agent.ChatDelta{Kind: "text", Text: "hi"})
+	emit(agent.ChatDelta{Kind: "done"})
+	return nil
+}
+
+func (c *seenChat) seen() (string, string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.dir, c.prompt
+}
+
+// A task's chat on a hub that doesn't run Claude runs on the caller's runner
+// that ran the task, in its worktree, with the task's context from the hub;
+// the hub keeps the conversation.
+func TestHubRunsTaskChatOnTheTasksRunner(t *testing.T) {
+	f := newClaudeFleet(t)
+	seen := &seenChat{}
+	f.runner.Chat = seen
+	hp := project(t, f.hub, "web")
+	if _, err := raw(f.hub).UpdateProject(hp.ID, func(p *model.Project) error { p.Runners = []string{f.creds.ID}; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	ht, err := raw(f.hub).CreateTodo(model.Todo{ID: store.NewID(), ProjectID: hp.ID, Title: "Dark mode", Prompt: "Add a dark mode",
+		Status: model.StatusReview, Runner: f.creds.ID, Worktree: &model.Worktree{Branch: "dash/todo-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clone := filepath.Join(f.runner.hubRoot(), "web")
+	rp, err := raw(f.runner).CreateProject(model.Project{ID: store.NewID(), Name: "web", Path: clone, DefaultBranch: "main", HubProjectID: hp.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt := t.TempDir()
+	if _, err := raw(f.runner).CreateTodo(model.Todo{ID: store.NewID(), ProjectID: rp.ID, Title: "Dark mode", Status: model.StatusReview,
+		HubTodoID: ht.ID, Worktree: &model.Worktree{Path: wt, Branch: "dash/todo-1"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	kinds, texts := chatTurn(t, f.ownerWS, map[string]any{"todo": ht.ID})
+	if kinds[0] != "runner" || texts[0] != "laptop" || kinds[len(kinds)-1] != "done" {
+		t.Fatalf("owner's task chat: %v %q", kinds, texts)
+	}
+	dir, prompt := seen.seen()
+	if dir != wt {
+		t.Errorf("ran in %q, want the runner's worktree %q", dir, wt)
+	}
+	if !strings.Contains(prompt, "<title>Dark mode</title>") || !strings.Contains(prompt, "what's up?") {
+		t.Errorf("the runner wasn't told about the task: %q", prompt)
+	}
+	eventually(t, "the hub to save the task chat", func() bool {
+		got := raw(f.hub).TodoChat(ht.ID)
+		return len(got) == 2 && got[1].Content == "hi"
+	})
+
+	// Another member: no runner of theirs on the project.
+	if kinds, texts := chatTurn(t, f.otherWS, map[string]any{"todo": ht.ID}); kinds[len(kinds)-1] != "error" || !strings.Contains(texts[len(texts)-1], "no runner of yours") {
+		t.Fatalf("other user's task chat: %v %q", kinds, texts)
+	}
+}
+
+// A hub that doesn't run Claude shows each user the Claude usage their own
+// runner reported, and nobody else's.
+func TestHubShowsUsageFromTheUsersRunner(t *testing.T) {
+	f := newClaudeFleet(t)
+	r := httptest.NewRequest("POST", "/runner/report", strings.NewReader(
+		`{"parallel":1,"usage":{"known":true,"windows":[{"name":"five_hour","utilization":0.42,"resets_at":"2099-01-01T00:00:00Z"}]}}`))
+	r.Header.Set("Authorization", "Bearer "+f.creds.Token)
+	w := httptest.NewRecorder()
+	f.rh.ServeReport(w, r)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("report: %d %s", w.Code, w.Body)
+	}
+	var u struct {
+		Known   bool
+		Windows []struct{ Utilization float64 }
+	}
+	if w := send(f.owner, "GET", "/api/usage", ""); json.Unmarshal(w.Body.Bytes(), &u) != nil || !u.Known || len(u.Windows) != 1 || u.Windows[0].Utilization != 0.42 {
+		t.Fatalf("owner's usage: %s", w.Body)
+	}
+	u.Known = false
+	if w := send(f.other, "GET", "/api/usage", ""); json.Unmarshal(w.Body.Bytes(), &u) != nil || u.Known {
+		t.Fatalf("other user sees the owner's usage: %s", w.Body)
+	}
+}
