@@ -153,3 +153,26 @@ func TestDefaultFooterHasSourceLink(t *testing.T) {
 		t.Errorf("logo without one: %d", w.Code)
 	}
 }
+
+// The sign-in, invitation and app pages load their fonts and the terminal
+// from Dash itself: a visitor's browser asks no third party for anything
+// (no Google Fonts, no CDN), and the fonts load before signing in.
+func TestPagesLoadNothingFromOtherSites(t *testing.T) {
+	_, h := brandedServer(t, branding.Config{})
+	for _, page := range []string{"login.html", "invite.html", "index.html"} {
+		b, err := os.ReadFile(filepath.Join("..", "..", "web", "static", page))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, bad := range []string{`src="http`, `href="http`, "fonts.googleapis", "fonts.gstatic", "cdn."} {
+			if strings.Contains(string(b), bad) {
+				t.Errorf("%s has %q", page, bad)
+			}
+		}
+	}
+	for _, path := range []string{"/vendor/fonts/fonts.css", "/vendor/fonts/instrument-sans-latin-wght-normal.woff2"} {
+		if w := get(t, h, path); w.Code != http.StatusOK {
+			t.Errorf("%s without a session: %d", path, w.Code)
+		}
+	}
+}

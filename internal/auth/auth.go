@@ -596,6 +596,13 @@ var public = map[string]bool{
 	"/api/billing/webhook": true,
 }
 
+// publicAsset reports whether path is static artwork the sign-in and
+// invitation pages need before there's a session: images and the
+// self-hosted fonts.
+func publicAsset(path string) bool {
+	return strings.HasPrefix(path, "/img/") || strings.HasPrefix(path, "/vendor/fonts/")
+}
+
 // orgFree are the API paths a signed-in user with no org may use: who am I,
 // sign out, pick an org, and join one.
 func orgFree(path string) bool {
@@ -625,7 +632,7 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 				return
 			}
 		}
-		if public[r.URL.Path] || strings.HasPrefix(r.URL.Path, "/img/") || a.oauth.public(r.URL.Path) || r.URL.Path == branding.LogoPath {
+		if public[r.URL.Path] || publicAsset(r.URL.Path) || a.oauth.public(r.URL.Path) || r.URL.Path == branding.LogoPath {
 			next.ServeHTTP(w, r)
 			return
 		}
