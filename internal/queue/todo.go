@@ -67,8 +67,8 @@ type TodoEngine struct {
 	// don't count against MaxParallel or Usage: each runner has its own.
 	Remote Remote
 	// LocalTasks reports whether this Dash runs the tasks of projects
-	// without runners itself (nil: it does). A hub whose work all goes to
-	// runners says no, and those tasks wait, saying why.
+	// without runners itself (nil: it does, as a runner does). A hub always
+	// says no: those tasks wait, saying a runner must be linked.
 	LocalTasks func() bool
 	// Hold reports why an org's queued tasks may not start now, or ""
 	// (nil: they may). Billing holds the tasks of an unpaid org, wherever
@@ -100,7 +100,7 @@ type Remote interface {
 }
 
 // NoLocalTasks is the Waiting reason of a task this Dash won't run itself.
-const NoLocalTasks = "no runner: this hub doesn't run tasks itself; link the project to a runner in its settings"
+const NoLocalTasks = "no runner: the hub doesn't run tasks itself; link the project to a runner in its settings (start one with `dash runner` on a computer with git and Claude Code)"
 
 // NewTodoEngine finishes initialising e; call Run in a goroutine afterwards.
 func NewTodoEngine(e *TodoEngine) *TodoEngine {

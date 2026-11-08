@@ -19,7 +19,7 @@ import (
 	"github.com/klahr/dash/internal/model"
 )
 
-// With local Claude off (a hub with -hub-claude off), no way into Claude
+// With local Claude off (as on every hub), no way into Claude
 // in this package runs it: a fake `claude` that leaves a mark is never
 // started, and the API is never called.
 func TestNoLocalClaudeRunsNothing(t *testing.T) {

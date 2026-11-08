@@ -219,6 +219,7 @@
         <div class="scans">
           <div class="scan-bar">
             <p class="scan-intro" id="scan-intro" hidden></p>
+            <p class="hint warn runner-note" id="scan-runner-note" hidden></p>
             <button class="btn small" type="button" id="scan-new" data-icon="plus" hidden>New scan</button>
           </div>
           <ul class="scan-problems" id="scan-problems" hidden></ul>
@@ -428,6 +429,7 @@
   <dialog class="sheet" id="quick-sheet" aria-labelledby="quick-title">
     <form method="dialog" id="quick-form">
       <header class="sheet-head"><h2 id="quick-title">New task</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <p class="hint warn runner-note" id="quick-runner-note" hidden></p>
       <div class="quick-rows" id="quick-rows"></div>
       <p class="hint quick-hint"><kbd>Enter</kbd> save · <kbd>Shift-Enter</kbd> another task · Claude names each task.</p>
       <div class="quick-tools">
@@ -445,6 +447,7 @@
   <dialog class="sheet" id="todo-sheet" aria-labelledby="todo-sheet-title">
     <form method="dialog" id="todo-form">
       <header class="sheet-head"><h2 id="todo-sheet-title">New task</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <p class="hint warn runner-note" id="todo-runner-note" hidden></p>
       <label class="field" id="todo-project-field" hidden><span>Project</span><select name="project"></select></label>
       <label class="field"><span>Title <em>Claude names it if empty</em></span><input name="title" placeholder="Short name for the task" autocomplete="off"></label>
       <div class="field"><span id="todo-prompt-label">Instructions for Claude <em>optional, Markdown</em></span><textarea name="prompt" rows="8" aria-labelledby="todo-prompt-label" placeholder="Describe the change you want. Claude works in its own worktree; you review the diff before it merges."></textarea></div>
@@ -851,7 +854,7 @@
       <details class="runners-about">
         <summary>What is a runner?</summary>
         <p class="hint">A computer that runs this organization's tasks with <code>dash runner</code>, using its owner's Claude subscription. It connects out to this dashboard, so it needs no open port, VPN or sudo, and adding one takes a single command. Everyone in the organization sees it; its owner and the admins manage it. Link projects to runners in each project's settings.</p>
-        <p class="hint" id="runners-local"></p>
+        <p class="hint">This dashboard doesn't run Claude or tasks itself: chats, tasks and scans run on runners, so link each project to one.</p>
       </details>
       <div id="runners-code" hidden></div>
       <section id="runners-repos" class="runner-repos" hidden aria-live="polite"></section>

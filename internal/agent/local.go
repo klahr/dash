@@ -5,9 +5,8 @@ import (
 	"sync/atomic"
 )
 
-// A hub with several users never runs Claude itself: each user's chat,
-// titles, clean-ups and tasks run on their own runner, with their own
-// `claude` login. SetLocal installs the process-wide policy and every way
+// The hub never runs Claude itself: each user's chat, titles, clean-ups
+// and tasks run on a runner (`dash runner`), with its own `claude` login. SetLocal installs the process-wide policy and every way
 // this package reaches Claude (ClaudeCode, ClaudeCodeChat, Titler, Chat)
 // checks it first, so a code path that forgets to route to a runner fails
 // instead of billing the hub's account.
@@ -15,12 +14,13 @@ import (
 var localPolicy atomic.Pointer[func() bool]
 
 // ErrNoLocalClaude is returned instead of running Claude when this Dash may
-// not (a hub with -hub-claude off).
+// not (the hub: only `dash runner` runs Claude).
 var ErrNoLocalClaude = errors.New("this hub doesn't run Claude: Claude runs on each user's own runner (start `dash runner` on your computer)")
 
 // SetLocal sets whether this process may run Claude itself (nil: always,
-// the default, as on a runner or a single-user Dash). allowed is asked
-// before each run, so it may change, e.g. once a runner registers.
+// the default, as on a runner). The hub sets it to never, as the safety
+// net behind routing all its Claude work to runners. allowed is asked
+// before each run.
 func SetLocal(allowed func() bool) {
 	if allowed == nil {
 		localPolicy.Store(nil)

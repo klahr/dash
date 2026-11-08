@@ -138,19 +138,19 @@ tasks should run on (your own runners, or any of the org's if you're an admin). 
   Attachments and editor changes can't be sent to runners yet, and live previews, the worktree
   shell and re-running tests are on the runner's own dashboard.
 
-The hub doesn't run tasks itself once runners are configured. `-hub-tasks` sets this: `auto` (the
-default) runs the tasks of unlinked projects on the hub only while no runner is registered, `on`
-always does (a single-user install with a runner or two for some projects; add `-hub-claude on`
-too, since the hub otherwise stops running Claude once a runner registers), and `off` never does
-(those tasks wait, saying a runner must be linked). With `-hub-claude off` (below) the hub runs no
-tasks whatever `-hub-tasks` says.
+The hub never runs tasks itself: a task of a project not linked to a runner waits, saying a runner
+must be linked. (`-hub-tasks` is gone; an old start command that still passes it starts, logs a
+warning and ignores it.)
 
 ## Claude runs on each user's own runner
 
-A hub with several users, or with runners, doesn't run Claude at all: the hub keeps the board
-(the database) and serves the website, and the runners do all the Claude work, each with its own
-`claude` login (its owner's subscription). The hub needs **no `claude` install, no `-claude` flag,
-no login and no API key**; it never starts `claude` and never reads `ANTHROPIC_API_KEY`. Runners
+The hub doesn't run Claude at all, and can't be made to: it keeps the board (the database) and
+serves the website, and the runners do all the Claude work, each with its own `claude` login (its
+owner's subscription). So **a hub needs at least one runner**: start `dash runner` on a computer
+with git and Claude Code logged in (account menu → **Runners** → **Add a runner** gives the
+command). Until one is online, the dashboard says so where Claude would be used. The hub needs
+**no `claude` install, no `-claude` flag, no login and no API key**; it never starts `claude` and
+never reads `ANTHROPIC_API_KEY`. Runners
 keep no board of their own for the hub's work: what Claude changes on the board through Dash's
 tools (issues it reports, tasks it creates) goes straight to the hub's.
 
@@ -187,11 +187,9 @@ the install command with a new code to register them again.
 Their Claude usage is the runner's: it shows with the runner's usage on the Organization page,
 never as the hub's.
 
-`-hub-claude` sets this: `auto` (the default) lets the hub run Claude itself only while it has a
-single user and no runner, so a single-user Dash on one computer (standalone, no runners) works as
-it always did, with its own `claude`; `off` never does, so a hub on a server without Claude Code
-starts and works from the first runner on; `on` always does, billing everything to the hub's own
-`claude` login (or, with `-chat api`, its `ANTHROPIC_API_KEY`).
+This used to be a choice (`-hub-claude`, with a single-user hub running Claude itself by default).
+The flag is gone: an old start command that still passes it starts, logs a warning and ignores it.
+Claude's flags (`-claude`, `-claude-args`, `-chat`, `-title-model`, …) are a runner's.
 
 ### Laptops that sleep
 

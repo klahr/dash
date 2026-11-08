@@ -93,7 +93,7 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 		}
 		// hub and version: for the command that updates an outdated runner.
 		hubURL, _ := s.hubURL(r)
-		writeJSON(w, http.StatusOK, map[string]any{"runners": out, "local_tasks": s.localTasks(), "hub": hubURL, "version": buildinfo.Version})
+		writeJSON(w, http.StatusOK, map[string]any{"runners": out, "hub": hubURL, "version": buildinfo.Version})
 	})
 	// A code registers a runner as the caller's, in their active org; only
 	// a signed-in browser makes one (not an API token).
@@ -179,11 +179,6 @@ func (s *Server) managedRunner(w http.ResponseWriter, r *http.Request) (Caller, 
 		return c, x, false
 	}
 	return c, x, true
-}
-
-// localTasks reports whether this Dash runs tasks of projects without runners.
-func (s *Server) localTasks() bool {
-	return s.Todos == nil || s.Todos.LocalTasks == nil || s.Todos.LocalTasks()
 }
 
 // linkRunners checks a project's new runner list for c: every runner in

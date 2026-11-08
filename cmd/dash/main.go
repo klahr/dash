@@ -87,12 +87,12 @@ func main() {
 	dataDir := flag.String("data", filepath.Join(home, ".local", "share", "dash"), "state, logs and worktrees")
 	projectRoot := flag.String("projects", "", "where new projects are created (default $DASH_PROJECTS, else ~/dash-projects)")
 	parallel := flag.Int("parallel", 3, "max tasks executed concurrently")
-	claudeBin := flag.String("claude", "claude", "Claude Code binary used to execute tasks (a hub that doesn't run Claude never uses it; see -hub-claude)")
+	claudeBin := flag.String("claude", "claude", "Claude Code binary used to execute tasks (dash runner only: the hub never runs Claude)")
 	claudeArgs := flag.String("claude-args", "--permission-mode acceptEdits --allowedTools Bash",
-		"extra flags for `claude -p` (space separated), e.g. --allowedTools / --model")
+		"extra flags for `claude -p` (space separated), e.g. --allowedTools / --model (dash runner only)")
 	signCommits := flag.Bool("sign-commits", false, "GPG/SSH-sign commits Dash makes (needs a non-interactive signing agent)")
 	chatBackend := flag.String("chat", "claude-code",
-		"chat backend: claude-code (uses the claude CLI login, e.g. a subscription) or api (Anthropic API key)")
+		"chat backend (dash runner only): claude-code (uses the claude CLI login, e.g. a subscription) or api (Anthropic API key)")
 	chatTools := flag.String("chat-tools", agent.ChatShell,
 		"claude-code chat tools: shell (every tool, your Claude Code settings and MCP servers, as in a terminal; you approve calls they don't allow in the chat) or readonly (Read, Grep, Glob)")
 	var chatAllow []string
@@ -135,9 +135,14 @@ func main() {
 	landing := flag.Bool("landing", false, "show a landing page at / to visitors who aren't signed in, instead of the sign-in page (or DASH_LANDING=1)")
 	teamPrice := flag.String("team-price", "", "the team plan's price on the landing page, as shown, e.g. \"€8 per seat / month\" (or $DASH_TEAM_PRICE)")
 	pricingURL := flag.String("pricing-url", "", "where the landing page's \"see pricing\" links to when -team-price isn't set (or $DASH_PRICING_URL)")
-	hubTasks := flag.String("hub-tasks", "auto", "whether the hub runs tasks of projects not linked to a runner itself: on, off, or auto (on until a runner is registered); see docs/several-computers.md")
-	hubClaude := flag.String("hub-claude", "auto", "whether the hub runs Claude itself (general chat, titles, summaries, clean-up, its own tasks and scans): on, off, or auto (on while it has one user and no runner). "+
-		"Off: it needs no claude install, never runs `claude` nor reads ANTHROPIC_API_KEY; tasks and scans run on the projects' runners and chats on each user's own; see docs/several-computers.md")
+	// Removed flags, still accepted so an old start command keeps working.
+	var removed []string
+	for _, name := range removedFlags {
+		flag.Func(name, "removed and ignored: the hub never runs Claude or tasks itself", func(string) error {
+			removed = append(removed, name)
+			return nil
+		})
+	}
 	runnerGrace := flag.Duration("runner-grace", dispatch.DefaultGrace, "fail the tasks of a runner that has been offline this long, ready to be queued again (hub)")
 	var hubServer, regCode *string
 	var offlineGrace *time.Duration
@@ -164,6 +169,9 @@ func main() {
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	slog.Info("dash", "version", buildinfo.Version)
+	for _, name := range removed {
+		slog.Warn("-" + name + " is gone and ignored: the hub never runs Claude or tasks itself, runners (dash runner) do. Remove it from the start command")
+	}
 
 	if err := auth.LoadDotEnv(*envFile); err != nil {
 		slog.Error("read env file", "path", *envFile, "err", err)
@@ -298,8 +306,11 @@ func main() {
 		WorktreeRoot: merges.WorktreeRoot,
 		MaxParallel:  *parallel,
 	})
+	// Claude's short calls. Only a runner makes them: the hub has no tasks
+	// of its own to summarise, and asks the caller's runner for titles and
+	// clean-ups (Titler only says whether to name untitled tasks there).
 	small := agent.Titler{Bin: *claudeBin, Model: *titleModel}
-	if *autoTitles {
+	if *autoTitles && runnerMode {
 		todos.Summarizer = small
 	}
 	var titler interface {
@@ -335,7 +346,6 @@ func main() {
 		CI:          builds,
 		Peers:       &peer.Hub{Self: *machine},
 		Titler:      titler,
-		Refiner:     small,
 		ProjectRoot: *projectRoot,
 		Static:      web.Static,
 		Addr:        *addr,
@@ -406,7 +416,7 @@ func main() {
 		apiSrv.HubOrg = runnerCreds.OrgID // projects of other orgs are refused
 		// The hub may run the general chat and Claude's short calls here for
 		// this runner's owner only, with this computer's `claude` login.
-		apiSrv.HubUser, apiSrv.Small = runnerCreds.UserID, small
+		apiSrv.HubUser, apiSrv.Small, apiSrv.Refiner = runnerCreds.UserID, small, small
 		apiSrv.ChatDir = filepath.Join(*dataDir, "chat")
 		// The board tools of the hub's tasks and chats act on the hub's board.
 		apiSrv.HubBoard = func(ctx context.Context, hubTodo, hubProject string, body []byte) (*http.Response, error) {
@@ -453,29 +463,14 @@ func main() {
 		// While the hub doesn't run Claude, scans run their Claude part on
 		// a runner linked to the project (the hub keeps the runs and issues).
 		scans.Remote = d
-		local, err := hubClaudePolicy(*hubClaude, runners, st.Accounts())
-		if err != nil {
-			slog.Error("-hub-claude", "err", err)
-			os.Exit(1)
-		}
-		// Off: every way to Claude in this process refuses (agent.SetLocal),
-		// and the chat and short calls go to the caller's runner.
-		agent.SetLocal(local)
-		apiSrv.LocalClaude = local
-		switch *hubTasks {
-		case "on":
-			todos.LocalTasks = local
-		case "off":
-			todos.LocalTasks = func() bool { return false }
-		case "auto":
-			todos.LocalTasks = func() bool { return len(runners.List()) == 0 && local() }
-		default:
-			slog.Error("-hub-tasks: want on, off or auto", "value", *hubTasks)
-			os.Exit(1)
-		}
-		if !local() {
-			slog.Info("this hub doesn't run Claude: tasks and scans run on the projects' runners; chat, titles and the clean-up on each user's own runner")
-		}
+		// The hub never runs Claude: every way to Claude in this process
+		// refuses (agent.SetLocal), the chat and short calls go to the
+		// caller's runner, and tasks of projects not linked to a runner
+		// wait, saying one must be linked.
+		never := func() bool { return false }
+		agent.SetLocal(never)
+		apiSrv.LocalClaude, todos.LocalTasks = never, never
+		slog.Info("this hub runs no Claude: tasks, scans and chats run on runners. Start `dash runner` on a computer with git and Claude Code (account menu → Runners → Add a runner)")
 		d.Start()
 	}
 	// Every per-run MCP token acts as its task's (or chat's) user, in its org,
@@ -551,8 +546,10 @@ func main() {
 	go merges.Run(ctx) // the one and only merge worker
 	go merges.Remote.Run(ctx)
 
-	switch *chatBackend {
-	case "claude-code":
+	// The chat runs on runners only: the hub relays it to the caller's.
+	switch chat := *chatBackend; {
+	case !runnerMode:
+	case chat == "claude-code":
 		if *chatTools != agent.ChatReadOnly && *chatTools != agent.ChatShell {
 			slog.Error("unknown -chat-tools", "value", *chatTools)
 			os.Exit(1)
@@ -564,7 +561,7 @@ func main() {
 			Bin: *claudeBin, Dir: home, Tools: *chatTools, AllowedTools: chatAllow,
 			Perms: perms, PermURL: permURL, Board: apiSrv.Board, BoardURL: mcpURL, OnRateLimit: tracker.Observe,
 		}
-	case "api":
+	case chat == "api":
 		apiSrv.Chat = agent.NewChat()
 	default:
 		slog.Error("unknown -chat backend", "value", *chatBackend)
@@ -640,26 +637,9 @@ func main() {
 	}
 }
 
-// hubClaudePolicy is -hub-claude: whether the hub runs Claude itself. auto
-// keeps a single-user Dash without runners working as before, and turns
-// off once a runner registers or a second user joins.
-func hubClaudePolicy(mode string, runners interface{ List() []tunnel.Runner }, acc interface{ UserCount() (int, error) }) (func() bool, error) {
-	switch strings.ToLower(mode) {
-	case "on", "true", "1":
-		return func() bool { return true }, nil
-	case "off", "false", "0":
-		return func() bool { return false }, nil
-	case "auto", "":
-		return func() bool {
-			if len(runners.List()) > 0 {
-				return false
-			}
-			n, err := acc.UserCount()
-			return err == nil && n <= 1
-		}, nil
-	}
-	return nil, fmt.Errorf("want on, off or auto, not %q", mode)
-}
+// removedFlags are flags old start commands may still pass (-hub-claude
+// off, -hub-tasks=off): each takes its value and is ignored, with a warning.
+var removedFlags = []string{"hub-claude", "hub-tasks"}
 
 // envBool reports whether the variable name is set to 1, true, yes or on.
 func envBool(name string) bool {
