@@ -17,6 +17,7 @@ import (
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
@@ -182,6 +183,48 @@ func (s *Server) claudeInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// projectChatOnRunner reports whether p's chat runs on one of the caller's
+// runners rather than here: always on a hub that doesn't run Claude, and
+// for a project whose tasks run on runners, whose clones are there.
+func (s *Server) projectChatOnRunner(p model.Project) bool {
+	return !s.localClaude() || p.OnRunners()
+}
+
+// projectChatRunner picks c's runner to run p's chat on: want if it is one
+// of c's linked to p, else the first of those online. Only a runner p is
+// linked to has a clone of it.
+func (s *Server) projectChatRunner(c Caller, p model.Project, want string) (tunnel.Runner, error) {
+	var linked []tunnel.Runner
+	for _, r := range s.claudeRunners(c) {
+		if slices.Contains(p.Runners, r.ID) {
+			linked = append(linked, r)
+		}
+	}
+	if len(linked) == 0 {
+		if !s.localClaude() {
+			return tunnel.Runner{}, fmt.Errorf("no runner of yours works on %s: this hub runs Claude only on its users' own runners. "+
+				"Link one of yours to it in Project settings → Runners", p.Name)
+		}
+		return tunnel.Runner{}, fmt.Errorf("no runner of yours works on %s: link one of yours to it in Project settings → Runners", p.Name)
+	}
+	if want != "" {
+		if i := slices.IndexFunc(linked, func(r tunnel.Runner) bool { return r.ID == want && r.Online }); i >= 0 {
+			return linked[i], nil
+		}
+	}
+	for _, r := range linked {
+		if r.Online {
+			return r, nil
+		}
+	}
+	return tunnel.Runner{}, fmt.Errorf("your runner %s is offline: start it to chat about %s", linked[0].Name, p.Name)
+}
+
+// validChatMode reports whether m is a project chat permission mode.
+func validChatMode(m string) bool {
+	return m == "" || m == model.ChatModeAuto || m == model.ChatModeAcceptEdits
+}
+
 // ---- a runner's side: Claude for its owner, asked by the hub ----
 
 // forOwner reports whether r, from the hub, is made for the user who
@@ -270,13 +313,17 @@ func (c *chatRelay) send(v any) {
 	}
 }
 
-// runnerChat runs general chat turns on runner, a runner of user's, through
-// its /ws/chat: the hub keeps the conversation, the runner runs `claude`.
+// runnerChat runs chat turns on runner, a runner of user's, through its
+// /ws/chat: the hub keeps the conversation, the runner runs `claude`. With
+// project (the hub's id), in the runner's clone of that project, with mode
+// as its permission mode; else the general chat, in a scratch directory.
 type runnerChat struct {
-	fleet  *tunnel.Hub
-	runner tunnel.Runner
-	user   int64
-	relay  *chatRelay
+	fleet   *tunnel.Hub
+	runner  tunnel.Runner
+	user    int64
+	relay   *chatRelay
+	project string
+	mode    string
 }
 
 func (c runnerChat) Stream(ctx context.Context, _ string, history []agent.ChatMessage, emit func(agent.ChatDelta)) error {
@@ -292,7 +339,11 @@ func (c runnerChat) Stream(ctx context.Context, _ string, history []agent.ChatMe
 	// runner's socket, which ends its turn and denies what waits for approval.
 	defer context.AfterFunc(ctx, func() { conn.Close() })()
 	_ = conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
-	if err := conn.WriteJSON(map[string]any{"type": "send", "messages": history}); err != nil {
+	req := map[string]any{"type": "send", "messages": history}
+	if c.project != "" {
+		req["project"], req["mode"] = c.project, c.mode
+	}
+	if err := conn.WriteJSON(req); err != nil {
 		return fmt.Errorf("%s: %w", c.runner.Name, err)
 	}
 	for {

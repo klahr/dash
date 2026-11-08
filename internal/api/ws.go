@@ -49,7 +49,10 @@ import (
 // {"kind":"runner","text":"<name>"}. A runner runs the global chat only for
 // its owner, asked through the hub, and doesn't save it (the hub does).
 // With "project", Claude runs in that project's main checkout and the turn is
-// saved to GET /api/projects/{id}/chat.
+// saved to GET /api/projects/{id}/chat. On a hub that doesn't run Claude, or
+// for a project whose tasks run on runners, it runs instead on the caller's
+// runner linked to the project (announced with {"kind":"runner"}), in that
+// runner's clone and with the hub project's permission mode; the hub saves it.
 // With "todo", the conversation is about that todo: Claude sees its title,
 // status, instructions and changes, runs in its worktree while it has one,
 // and the turn is saved to GET /api/todos/{id}/chat. With "review": true as
@@ -89,7 +92,8 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			ID       string              `json:"id"`
 			Decision string              `json:"decision"`
 			Review   bool                `json:"review"` // with "todo": the turn reviews it, locking its status
-			Runner   string              `json:"runner"` // general chat on a hub that doesn't run Claude: which of the caller's runners
+			Runner   string              `json:"runner"` // chat on a hub that doesn't run Claude: which of the caller's runners
+			Mode     string              `json:"mode"`   // a hub's project chat on its runner: the hub project's permission mode
 		}
 		if err := conn.ReadJSON(&msg); err != nil {
 			cancelTurn() // denies whatever is waiting for approval
@@ -120,19 +124,33 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			return sv.data.SetChat(user, authored(sv.data.Chat(user), msgs, user))
 		}
 		chatter := s.Chat
-		forHub := general && auth.FromHub(r.Context())
+		// The general chat, or a hub project's chat, for this runner's owner.
+		forHub := msg.Todo == "" && auth.FromHub(r.Context())
 		switch {
 		case forHub:
 			// This runner's owner, through the hub: Claude runs here, in a
-			// scratch directory, and the hub keeps the conversation.
+			// scratch directory or the runner's clone of the hub's project,
+			// and the hub keeps the conversation.
 			if err := s.forOwner(r); err != nil {
 				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 				continue
 			}
-			var err error
-			if dir, err = s.chatScratch(); err != nil {
-				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
-				continue
+			if msg.Project != "" {
+				p, ok := sv.hubProject(msg.Project)
+				if !ok {
+					send(agent.ChatDelta{Kind: "error", Text: "this runner has no clone of that project: link the project to it in Project settings → Runners"})
+					continue
+				}
+				dir, mode, pid = p.Path, p.ChatPermissionMode, p.ID
+				if validChatMode(msg.Mode) {
+					mode = msg.Mode // the hub's project settings are the ones its users edit
+				}
+			} else {
+				var err error
+				if dir, err = s.chatScratch(); err != nil {
+					send(agent.ChatDelta{Kind: "error", Text: err.Error()})
+					continue
+				}
 			}
 			save = func([]agent.ChatMessage) error { return nil }
 		case general && sv.c.User == 0:
@@ -150,13 +168,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			}
 			chatter = runnerChat{fleet: s.fleet(), runner: x, user: sv.c.User, relay: relay}
 		}
-		if chatter == nil {
-			send(agent.ChatDelta{Kind: "error", Text: "chat is not available on this Dash"})
-			continue
-		}
-		msg.Messages = sv.chatAttachments(msg.Messages)
-		prompt := withAttachments(msg.Messages)
-		if msg.Project != "" && msg.Todo == "" {
+		if msg.Project != "" && msg.Todo == "" && !forHub {
 			p, err := sv.data.GetProject(msg.Project)
 			if err != nil {
 				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
@@ -167,7 +179,28 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				prev, _ := sv.data.ProjectChat(p.ID)
 				return sv.data.SetProjectChat(p.ID, authored(prev, msgs, user))
 			}
+			if s.projectChatOnRunner(p) {
+				// Claude runs on the caller's runner, in its clone of the project.
+				x, err := s.projectChatRunner(sv.c, p, msg.Runner)
+				if err == nil && len(msg.Messages) > 0 && len(msg.Messages[len(msg.Messages)-1].Attachments) > 0 {
+					err = errors.New("files can't be sent to the chat on your runner; paste or describe them instead")
+				}
+				switch {
+				case err == nil:
+					chatter = runnerChat{fleet: s.fleet(), runner: x, user: sv.c.User, relay: relay, project: p.ID, mode: p.ChatPermissionMode}
+				case !s.localClaude():
+					send(agent.ChatDelta{Kind: "error", Text: err.Error()})
+					continue
+				}
+				// Else this Dash runs Claude itself and the chat stays here.
+			}
 		}
+		if chatter == nil {
+			send(agent.ChatDelta{Kind: "error", Text: "chat is not available on this Dash"})
+			continue
+		}
+		msg.Messages = sv.chatAttachments(msg.Messages)
+		prompt := withAttachments(msg.Messages)
 		if msg.Todo != "" {
 			t, err := sv.data.GetTodo(msg.Todo)
 			if err != nil {
