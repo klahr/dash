@@ -67,9 +67,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo
 	if r == nil {
 		return "", "", &WaitError{Reason: reason}
 	}
-	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID,
-		TaskInstructions: p.TaskInstructions}
-	if err := d.Fleet.Call(ctx, r.ID, http.MethodPut, "/api/hub/projects/"+url.PathEscape(p.ID), link, nil); err != nil {
+	if err := d.link(ctx, *r, p); err != nil {
 		return "", "", &WaitError{Reason: "waiting for a runner: " + err.Error()}
 	}
 	task := Task{HubTodoID: t.ID, HubProjectID: p.ID, Title: t.Title, Prompt: t.Prompt, Feedback: t.Feedback,
@@ -121,7 +119,7 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string
 		if len(why) == 0 {
 			return nil, "no runner: the runners linked to this project were revoked; link another in the project's settings"
 		}
-		return nil, "waiting for a runner: " + strings.Join(why, "; ")
+		return nil, waitReason(why)
 	}
 	// The runner that has the task's worktree and session continues it.
 	if i := slices.IndexFunc(cands, func(r tunnel.Runner) bool { return r.ID == t.Runner }); i >= 0 {

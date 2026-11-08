@@ -180,8 +180,8 @@ func (s *Scheduler) NextRun(projectID string, t Template) time.Time {
 
 // Tick starts the scans that are due and returns their runs.
 func (s *Scheduler) Tick() []model.ScanRun {
-	if !agent.LocalAllowed() {
-		return nil // a hub that doesn't run Claude itself
+	if !agent.LocalAllowed() && s.Runner.Remote == nil {
+		return nil // a hub that doesn't run Claude and can't send scans to runners
 	}
 	now := s.now()
 	var started []model.ScanRun

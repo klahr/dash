@@ -58,6 +58,11 @@ Look for vulnerabilities in {{path}} …
   change it, in the Scans section. A run missed while Dash was down runs once at
   startup, and a scan never runs twice at the same time. Scheduled scans wait while the
   subscription usage pauses the task queue. `-scan-schedules=false` turns schedules off.
+- **On a hub.** A hub that doesn't run Claude (see [several computers](several-computers.md#claude-runs-on-each-users-own-runner))
+  sends each run's Claude part to one of the project's runners: it checks origin's default branch
+  out in its clone and runs Claude there, and the hub records the findings. While none of the
+  project's runners is online the run waits, showing "no runner online", and goes ahead as soon as
+  one connects; a project with no runner linked can't be scanned. `-scan-timeout` is the hub's.
 - **Reports.** Each run shows what it found, e.g. "2 new, 3 already known, 1 reopened". The
   numbers link to those issues. A scheduled run that finds new critical or high issues sends a
   notification.

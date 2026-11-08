@@ -111,8 +111,8 @@ tasks should run on (your own runners, or any of the org's if you're an admin). 
 - Each task goes to one of the project's runners that is online, not paused, below its limit and
   not held back by its owner's Claude usage, the least busy first. A task that ran before goes
   back to the runner that has its worktree and Claude session.
-- If none can take it, the task stays queued and its card says why ("waiting for a runner: laptop
-  is offline"). It starts as soon as one can.
+- If none can take it, the task stays queued and its card says why ("no runner online: laptop is
+  offline", "waiting for a runner: laptop is busy (3 of 3 tasks)"). It starts as soon as one can.
 - The project needs a git remote: each runner clones it into `<-projects>/hub/` the first time it
   gets one of its tasks, and keeps that clone. Work lands through the remote: the runner pushes
   the task's branch and opens a pull request when you approve, then squash-merges it itself once
@@ -132,10 +132,24 @@ tasks whatever `-hub-tasks` says.
 
 ## Claude runs on each user's own runner
 
-A hub with several users, or with runners, doesn't run Claude at all: every use of Claude is
-billed to the user who asked for it, through their own runner and their own `claude` login (their
-own subscription). The hub needs **no `claude` install and no API key**; it never starts `claude`
-and never reads `ANTHROPIC_API_KEY`.
+A hub with several users, or with runners, doesn't run Claude at all: the hub keeps the board
+(the database) and serves the website, and the runners do all the Claude work, each with its own
+`claude` login (its owner's subscription). The hub needs **no `claude` install, no `-claude` flag,
+no login and no API key**; it never starts `claude` and never reads `ANTHROPIC_API_KEY`. Runners
+keep no board of their own for the hub's work: what Claude changes on the board through Dash's
+tools (issues it reports, tasks it creates) goes straight to the hub's.
+
+Where each kind of Claude work runs:
+
+- **Tasks**: on one of the project's runners (see [above](#shared-projects-tasks-on-runners)).
+  A task of a project with no runner linked waits, saying a runner must be linked.
+- **Scans**: on one of the project's runners online, in a throwaway checkout of its clone at
+  origin's default branch. The hub keeps the runs, their logs and the issues they file; the run's
+  log says which runner it ran on. With the project's runners all offline a run waits, showing
+  "no runner online: laptop is offline", and starts when one comes back; a project with no runner
+  linked can't be scanned. A repository scan's approved tools apply on the runner.
+- **Project and task chats**: on one of your runners linked to the project (a task's chat on the
+  runner that ran it).
 
 - **General chat**: runs on one of your runners, in a scratch folder (`<-data>/chat` on that
   computer), not in any project. The chat's header says which runner it runs on; with several
@@ -145,6 +159,9 @@ and never reads `ANTHROPIC_API_KEY`.
   runners; with none online it is named after the first line of its instructions. A task's
   summary is written by the runner that ran it.
 - **Clean up** (in the task form): runs on one of your runners; with none online it says so.
+
+Nothing falls back to running Claude on the hub: work with no runner to go to waits (tasks,
+scans) or says so (chats, clean-up).
 
 A runner does these only for its owner, the user whose code registered it: the hub sends a
 user's calls only to that user's own runners in the org they're working in (never another
@@ -156,10 +173,10 @@ Their Claude usage is the runner's: it shows with the runner's usage on the Orga
 never as the hub's.
 
 `-hub-claude` sets this: `auto` (the default) lets the hub run Claude itself only while it has a
-single user and no runner, so a single-user Dash on one computer works as it always did; `off`
-never does; `on` always does, billing everything to the hub's own `claude` login (or, with `-chat
-api`, its `ANTHROPIC_API_KEY`). Project and task chats of projects on the hub, and scans of them,
-need Claude on the hub: with it off they say so.
+single user and no runner, so a single-user Dash on one computer (standalone, no runners) works as
+it always did, with its own `claude`; `off` never does, so a hub on a server without Claude Code
+starts and works from the first runner on; `on` always does, billing everything to the hub's own
+`claude` login (or, with `-chat api`, its `ANTHROPIC_API_KEY`).
 
 ### Laptops that sleep
 
