@@ -8,12 +8,13 @@
 // parallel limit) and sends it there over the runner's tunnel. The runner
 // runs the task in its own clone of the project's git remote, with its
 // owner's Claude login, and reports back on POST /runner/report. Approved
-// work lands through the remote: the runner squashes it onto the default
-// branch in its clone, runs the checks and pushes it to origin, merging
-// again on top of origin when another runner (or anyone) pushed first; the
-// hub marks the task merged once the runner reports the commit. Projects
-// that opted into pull requests get one instead, which the runner merges
-// once its checks pass. Nothing merges on the hub.
+// work lands through the remote: in "pr" mode (the default on GitHub) the
+// runner pushes the task's branch and opens a pull request, which it merges
+// once its checks pass (unless the project turned that off); in "local"
+// mode it squashes the task onto the default branch in its clone, runs the
+// checks and pushes it to origin, merging again on top of origin when
+// another runner (or anyone) pushed first. The hub marks the task merged
+// once the runner reports it. Nothing merges on the hub.
 //
 // The runner checks every task against the projects linked to it (see the
 // api package's hub task routes): it takes work only for a project the hub
@@ -43,6 +44,13 @@ type Link struct {
 	// lands approved work by pushing it to the default branch, "pr" through
 	// a pull request.
 	MergeMode string `json:"merge_mode,omitempty"`
+	// MergeModeSet is whether the hub's user chose MergeMode. A default
+	// "pr" falls back to "local" on a runner without gh, so runners don't
+	// need gh unless someone asked for pull requests.
+	MergeModeSet bool `json:"merge_mode_set,omitempty"`
+	// MergeGreenPRs is the hub project's model.Project.MergeGreenPRs: the
+	// runner merges a task's pull request once its checks pass, unless false.
+	MergeGreenPRs *bool `json:"merge_green_prs,omitempty"`
 	// TaskInstructions are the hub project's extra instructions for Claude
 	// (model.Project.TaskInstructions). The link is sent before every task,
 	// so the runner's copy follows the hub's.

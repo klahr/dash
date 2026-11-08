@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -168,38 +170,41 @@ func TestRunnerOwnersAndAdminsManageRunners(t *testing.T) {
 }
 
 // Linking: in the org, your own runner (or any as an admin), only with a
-// git remote. Work still merges locally (on the runners, which push), and
-// pull requests are only ever the user's choice.
+// git remote. A GitHub project's work lands through pull requests unless
+// its user chose otherwise (the runners open them; the hub needs no gh),
+// and choosing to merge sticks.
 func TestLinkingProjectsToRunners(t *testing.T) {
 	f := newFleetServer(t)
+	f.s.Git.GhBin = filepath.Join(t.TempDir(), "no-gh") // the hub has no gh
 	path := "/api/projects/" + f.web.ID
 	if w := send(f.c, "PATCH", path, `{"runners":["`+f.ids["u-box"]+`"]}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "only they") {
 		t.Errorf("member linking someone else's runner: %d %s", w.Code, w.Body)
 	}
 	w := send(f.c, "PATCH", path, `{"runners":["`+f.ids["c-box"]+`"]}`)
 	var p model.Project
-	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &p) != nil || len(p.Runners) != 1 || p.UsesPR() || p.AutoPush ||
-		!p.LandsOnOrigin() || p.MergeModeSet {
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &p) != nil || len(p.Runners) != 1 || !p.UsesPR() || p.AutoPush ||
+		p.LandsOnOrigin() || p.MergeModeSet || !p.MergesGreenPRs() {
 		t.Fatalf("member linking their runner: %d %s", w.Code, w.Body)
 	}
 	// The admin adds u's; c may keep the list as it is (with u-box in it).
 	if w := send(f.d, "PATCH", path, `{"runners":["`+f.ids["c-box"]+`","`+f.ids["u-box"]+`"]}`); w.Code != http.StatusOK {
 		t.Errorf("admin linking u's runner: %d %s", w.Code, w.Body)
 	}
-	if w := send(f.c, "PATCH", path, `{"name":"renamed","runners":["`+f.ids["c-box"]+`","`+f.ids["u-box"]+`"]}`); w.Code != http.StatusOK {
+	if w := send(f.c, "PATCH", path, `{"name":"renamed","merge_mode":"pr","runners":["`+f.ids["c-box"]+`","`+f.ids["u-box"]+`"]}`); w.Code != http.StatusOK {
 		t.Errorf("member saving settings with runners linked: %d %s", w.Code, w.Body)
 	}
-	// Pull requests are an explicit choice, kept; and merging can come back.
+	// Merging is an explicit choice, kept by upgrades; and pull requests
+	// can come back.
+	w = send(f.c, "PATCH", path, `{"merge_mode":"local","merge_green_prs":false}`)
+	if json.Unmarshal(w.Body.Bytes(), &p) != nil || w.Code != http.StatusOK || p.UsesPR() || !p.MergeModeSet || !p.LandsOnOrigin() || p.MergesGreenPRs() {
+		t.Errorf("choosing to merge with runners linked: %d %s", w.Code, w.Body)
+	}
+	if names, _ := raw(f.s).DefaultMergeModes(true); slices.Contains(names, p.Name) {
+		t.Errorf("the upgrade switched a project whose user chose to merge: %v", names)
+	}
 	w = send(f.c, "PATCH", path, `{"merge_mode":"pr"}`)
-	if json.Unmarshal(w.Body.Bytes(), &p) != nil || w.Code != http.StatusOK || !p.UsesPR() || !p.MergeModeSet {
-		t.Errorf("choosing pull requests with runners linked: %d %s", w.Code, w.Body)
-	}
-	if names, _ := raw(f.s).LandRunnerProjectsLocally(); len(names) != 0 {
-		t.Errorf("the upgrade switched a project whose user chose pull requests: %v", names)
-	}
-	w = send(f.c, "PATCH", path, `{"merge_mode":"local"}`)
-	if json.Unmarshal(w.Body.Bytes(), &p) != nil || w.Code != http.StatusOK || p.UsesPR() {
-		t.Errorf("merging locally again with runners linked: %d %s", w.Code, w.Body)
+	if json.Unmarshal(w.Body.Bytes(), &p) != nil || w.Code != http.StatusOK || !p.UsesPR() {
+		t.Errorf("pull requests again with runners linked: %d %s", w.Code, w.Body)
 	}
 	// Attachments can't follow a task to a runner.
 	if _, err := (&service{s: f.s, c: ownerCaller(t, f.s), data: raw(f.s).ForOrg(f.web.OrgID)}).addTodo(model.Todo{
@@ -274,14 +279,36 @@ func TestRunnerOnlyTakesWorkForLinkedProjects(t *testing.T) {
 	if w := link(7, remote); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), p.ID) {
 		t.Errorf("linking again: %d %s", w.Code, w.Body)
 	}
-	// The clone lands tasks the way the hub's project says.
-	for _, mode := range []string{model.MergePR, ""} {
-		body, _ := json.Marshal(dispatch.Link{Name: "Shared App", RemoteURL: remote, DefaultBranch: "main", OrgID: 7, MergeMode: mode})
-		if w := send(h, "PUT", "/api/hub/projects/hub-p1", string(body)); w.Code != http.StatusOK {
-			t.Fatalf("linking with merge mode %q: %d %s", mode, w.Code, w.Body)
+	// The clone lands tasks the way the hub's project says, except that a
+	// runner without gh merges when pull requests are only the default.
+	gh := filepath.Join(t.TempDir(), "gh")
+	if err := os.WriteFile(gh, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	off := false
+	for _, c := range []struct {
+		mode   string
+		chosen bool
+		hasGh  bool
+		green  *bool
+		wantPR bool
+	}{
+		{model.MergePR, false, true, nil, true},
+		{model.MergePR, false, false, nil, false},
+		{model.MergePR, true, false, &off, true},
+		{"", false, true, nil, false},
+	} {
+		s.Git.GhBin = gh
+		if !c.hasGh {
+			s.Git.GhBin = filepath.Join(t.TempDir(), "no-gh")
 		}
-		if got, _ := raw(s).GetProject(p.ID); got.UsesPR() != (mode == model.MergePR) {
-			t.Errorf("hub's merge mode %q, the clone's %q", mode, got.MergeMode)
+		body, _ := json.Marshal(dispatch.Link{Name: "Shared App", RemoteURL: remote, DefaultBranch: "main", OrgID: 7,
+			MergeMode: c.mode, MergeModeSet: c.chosen, MergeGreenPRs: c.green})
+		if w := send(h, "PUT", "/api/hub/projects/hub-p1", string(body)); w.Code != http.StatusOK {
+			t.Fatalf("linking with %+v: %d %s", c, w.Code, w.Body)
+		}
+		if got, _ := raw(s).GetProject(p.ID); got.UsesPR() != c.wantPR || got.MergesGreenPRs() != (c.green == nil) {
+			t.Errorf("hub's link %+v, the clone's merge mode %q, merging green PRs %v", c, got.MergeMode, got.MergesGreenPRs())
 		}
 	}
 

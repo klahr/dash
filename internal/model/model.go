@@ -5,6 +5,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -91,16 +92,20 @@ type Project struct {
 	// MaxAutoFixes is how many times Dash sends failing tests or merge
 	// conflicts back to Claude on its own before asking a human.
 	MaxAutoFixes int `json:"max_auto_fixes"`
-	// MergeMode is how approved work lands: "local" (the default: squash
+	// MergeMode is how approved work lands: "pr" (push the branch and open
+	// a GitHub pull request, merged once its checks pass, see MergeGreenPRs;
+	// Dash marks the todo merged when the PR is merged) or "local" (squash
 	// onto the default branch, then push if AutoPush; on runners always
-	// pushed, see LandsOnOrigin) or "pr", an explicit opt-in (push the branch
-	// and open a GitHub pull request; Dash marks the todo merged when the PR
-	// is merged).
+	// pushed, see LandsOnOrigin). Unless the user chose (MergeModeSet), it
+	// is DefaultMergeMode: pull requests for GitHub projects.
 	MergeMode string `json:"merge_mode,omitempty"`
 	// MergeModeSet records that a user changed MergeMode themselves, so
-	// upgrades that change the default (see store.LandRunnerProjectsLocally)
-	// leave their choice alone.
+	// the default (see store.DefaultMergeModes) leaves their choice alone.
 	MergeModeSet bool `json:"merge_mode_set,omitempty"`
+	// MergeGreenPRs squash-merges a task's pull request once GitHub finds
+	// it mergeable and its checks pass (nil means on); off, it waits for
+	// someone to merge it on GitHub.
+	MergeGreenPRs *bool `json:"merge_green_prs,omitempty"`
 	// Limits for one Claude run; 0 means the default. Time spent waiting
 	// for a human to answer a permission prompt doesn't count.
 	MaxRunMinutes int `json:"max_run_minutes,omitempty"`
@@ -127,10 +132,10 @@ type Project struct {
 
 	// Runners are the ids of the runners (`dash runner`) this project's
 	// tasks are sent to, on a hub. A project with runners needs a git
-	// remote: each runner keeps its own clone and lands approved work by
-	// squashing it onto the default branch there and pushing it to origin
-	// (or through a pull request, if the project opted into "pr"); the hub
-	// never merges in a checkout of its own.
+	// remote: each runner keeps its own clone and lands approved work
+	// through a pull request ("pr", the default on GitHub), or by squashing
+	// it onto the default branch there and pushing it to origin ("local");
+	// the hub never merges in a checkout of its own.
 	Runners []string `json:"runners,omitempty"`
 	// HubProjectID is set on a runner for its clone of a hub's project
 	// linked to it: the hub's id for that project. The runner takes tasks
@@ -185,6 +190,36 @@ const (
 
 // UsesPR reports whether approved todos are landed through GitHub pull requests.
 func (p Project) UsesPR() bool { return p.MergeMode == MergePR }
+
+// MergesGreenPRs reports whether Dash merges a task's pull request itself
+// once its checks pass.
+func (p Project) MergesGreenPRs() bool { return p.MergeGreenPRs == nil || *p.MergeGreenPRs }
+
+// DefaultMergeMode is how p lands work when its user didn't choose: through
+// pull requests when its remote is on GitHub and gh can open them, else
+// "local". gh is whether this Dash has gh; for a project on runners it
+// doesn't matter here, as the runners land the work (a runner without gh
+// merges instead, see dispatch.Link.MergeModeSet).
+func (p Project) DefaultMergeMode(gh bool) string {
+	if IsGitHub(p.RemoteURL) && (gh || p.OnRunners()) {
+		return MergePR
+	}
+	return MergeLocal
+}
+
+// IsGitHub reports whether remote is a repository on GitHub.
+func IsGitHub(remote string) bool {
+	r := strings.ToLower(strings.TrimSpace(remote))
+	if i := strings.Index(r, "://"); i >= 0 {
+		r = r[i+3:]
+	}
+	if i := strings.IndexByte(r, '@'); i >= 0 && i < strings.IndexByte(r+"/", '/') {
+		r = r[i+1:]
+	}
+	host, _, _ := strings.Cut(r, "/")
+	host, _, _ = strings.Cut(host, ":")
+	return host == "github.com" || strings.HasSuffix(host, ".github.com")
+}
 
 // SyncsRemote reports whether the default branch is kept in step with origin
 // before merging: whenever Dash pushes it or opens pull requests against it.

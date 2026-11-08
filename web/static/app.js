@@ -4488,6 +4488,7 @@ function openSettings() {
   f.auto_push.checked = !!p.auto_push;
   f.auto_approve.checked = !!p.auto_approve;
   f.merge_mode.value = p.merge_mode || "local";
+  f.merge_green_prs.checked = p.merge_green_prs !== false;
   f.investigate_ci.checked = p.investigate_ci !== false;
   f.tag_format.value = p.tag_format || "X.Y.Z";
   checkTagFormat();
@@ -4537,14 +4538,18 @@ function syncMergeHint() {
     : !p.remote_url ? "Runners clone the project's git remote: connect a GitHub repository first."
       : "Tasks run only on these runners, each in its own clone. If all of them are offline, tasks wait in the queue.";
   const pr = f.merge_mode.value === "pr";
+  const green = f.merge_green_prs.checked;
   // On runners, merging is pushing: there's no separate push to turn on.
   $("#auto-push-row").hidden = pr || onRunners;
+  $("#merge-green-row").hidden = !pr;
+  const who = onRunners ? "The runner" : "Dash";
   $("#merge-hint").textContent = !p.remote_url
     ? (pr ? "Connect a GitHub repository (Projects → Create GitHub repository) to open pull requests." : "")
-    : pr && onRunners ? `Only if you want pull requests: the runner pushes the task's branch, opens a pull request against ${baseBranch(p)} and merges it once its checks pass.`
-    : pr ? `Dash pushes the task's branch and opens a pull request against ${baseBranch(p)}. Merge it on GitHub.`
-    : onRunners ? `The runner squashes the task onto ${baseBranch(p)}, runs the tests and pushes it. If someone pushed first, it merges again on top; conflicts and failing tests go back to Claude.`
-      : f.auto_push.checked ? `Before each merge Dash pulls ${baseBranch(p)} from GitHub, so pushes don't get rejected.` : "";
+    : pr ? `${who} pushes the task's branch and opens a pull request against ${baseBranch(p)}. ${green
+      ? "Once GitHub's checks pass it merges it (squashed); failing checks and conflicts go back to Claude."
+      : "Failing checks and conflicts go back to Claude; merge it on GitHub, and Dash marks the task merged."}`
+    : onRunners ? `The runner squashes the task onto ${baseBranch(p)}, runs the tests and pushes it, without waiting for GitHub's checks. If someone pushed first, it merges again on top; conflicts and failing tests go back to Claude.`
+      : f.auto_push.checked ? `Before each merge Dash pulls ${baseBranch(p)} from GitHub, so pushes don't get rejected. GitHub's checks run only after it's pushed.` : "";
 }
 $("#settings-form").addEventListener("change", syncMergeHint);
 
@@ -4605,6 +4610,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     auto_push: f.auto_push.checked,
     auto_approve: f.auto_approve.checked,
     merge_mode: f.merge_mode.value,
+    merge_green_prs: f.merge_green_prs.checked,
     investigate_ci: f.investigate_ci.checked,
     tag_format: f.tag_format.value.trim() || "X.Y.Z",
     max_run_minutes: Number(f.max_run_minutes.value) || 0,

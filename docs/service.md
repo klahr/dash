@@ -11,7 +11,8 @@ and your `PATH`. The hub never runs `claude` and needs no Claude Code installed:
 [runners](several-computers.md), and a hub needs at least one. Start `dash runner` on a computer
 with git and Claude Code logged in; [`dash runner install`](several-computers.md) keeps a runner
 running as a service the same way. `gh` is only
-needed for optional features: pull-request merge mode, GitHub repositories (create, clone,
+needed for optional features: pull requests (the default for GitHub projects; without `gh` they
+merge on the default branch instead), GitHub repositories (create, clone,
 delete) and releases, and CI runs; it runs as you too, with your `gh auth` login.
 
 The unit assumes the repository is checked out at `~/dev/github/klahr/dash`. If yours is

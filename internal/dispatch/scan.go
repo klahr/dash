@@ -145,6 +145,6 @@ const NoRunnerOnline = "no runner online"
 // link makes sure runner r has a clone of p, with the hub's settings.
 func (d *Dispatcher) link(ctx context.Context, r tunnel.Runner, p model.Project) error {
 	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID,
-		MergeMode: p.MergeMode, TaskInstructions: p.TaskInstructions}
+		MergeMode: p.MergeMode, MergeModeSet: p.MergeModeSet, MergeGreenPRs: p.MergeGreenPRs, TaskInstructions: p.TaskInstructions}
 	return d.Fleet.Call(ctx, r.ID, http.MethodPut, "/api/hub/projects/"+url.PathEscape(p.ID), link, nil)
 }

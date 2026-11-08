@@ -14,7 +14,8 @@ merge them one at a time.
   with their owners' logins. The runner can be the same computer as the hub
   ([several computers](docs/several-computers.md#claude-runs-on-each-users-own-runner)).
 - Optional: **[`gh`](https://cli.github.com)**, logged in, to create GitHub repositories and open
-  pull requests.
+  pull requests. Without it, GitHub projects merge on the default branch instead of opening pull
+  requests.
 
 ## Quick start
 
@@ -92,9 +93,11 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    Dash asks you.
 4. **Review.** When Claude is done the task lands in *Review*. Open it and read the diff on the
    **Changes** tab. Not right? Click **Rework**, say what to change, and it goes back to Claude.
-5. **Approve.** Click **Approve**. The task goes through *Merging* (one squashed commit on the
-   default branch, pushed to GitHub if you like; pull requests are opt-in, see
-   [GitHub](docs/github.md)) and ends up in *Done*.
+5. **Approve.** Click **Approve**. The task goes through *Merging* and ends up in *Done*. In a
+   GitHub project Dash opens a pull request and squash-merges it once GitHub's checks pass, so
+   CI runs before anything reaches the default branch; without GitHub (or if you pick **Merge
+   it**) it becomes one squashed commit on the default branch, pushed if you like. See
+   [GitHub](docs/github.md).
 
 Queue as many tasks as you like: they run in parallel, each in its own worktree.
 

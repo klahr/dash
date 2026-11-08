@@ -3,13 +3,22 @@
 Connect a repository from Projects → Create GitHub repository (uses `gh`). In the project's
 settings, choose what approving a task does:
 
-- **Merge it** (the default): one squashed commit on the default branch. With "Push after every
-  merge", Dash pulls from GitHub first, so the push isn't rejected. In a project whose tasks run
-  on [runners](several-computers.md), the runner does this in its clone and always pushes; if
-  someone pushed first it merges again on top of their work.
-- **Open a pull request instead** (opt-in, for teams that review on GitHub): Dash pushes the
-  branch and opens a PR. Failing checks and conflicts go back to Claude, and the task is marked
-  merged when the PR is merged on GitHub.
+- **Open a pull request** (the default for a GitHub repository, when `gh` is installed): Dash
+  pushes the branch and opens a PR, so GitHub's checks run before the work reaches the default
+  branch. Failing checks and conflicts go back to Claude. With **Merge pull requests when checks
+  pass** (on by default), Dash squash-merges the PR itself once GitHub finds it mergeable and its
+  checks pass: your approval was the review. Turn it off to merge on GitHub yourself; the task is
+  marked merged when the PR is. If GitHub refuses the merge (a required review, say), the PR stays
+  open for you to merge there.
+- **Merge it**: one squashed commit on the default branch, with no GitHub checks first; the only
+  choice for a project without a GitHub remote, or on a Dash without `gh`. With "Push after
+  every merge", Dash pulls from GitHub first, so the push isn't rejected. In a project whose
+  tasks run on [runners](several-computers.md), the runner does this in its clone and always
+  pushes; if someone pushed first it merges again on top of their work.
+
+Until you pick one yourself, the project follows the default: connecting a GitHub repository
+switches it to pull requests (and losing `gh` back to merging). Once you choose, your choice
+stays.
 
 With "Approve tasks automatically", finished tasks whose tests pass go straight to the merge queue
 and the Review column is hidden; tasks with failing tests still wait there for you.

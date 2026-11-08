@@ -111,6 +111,11 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 	case "", model.MergeLocal:
 	case model.MergePR:
 		mode = model.MergePR
+		if !req.MergeModeSet && !s.Git.HasGh() {
+			// Pull requests only by default, and this runner has no gh to
+			// open them: it merges and pushes instead.
+			mode = model.MergeLocal
+		}
 	default:
 		writeErr(w, fmt.Errorf("%w: merge_mode must be \"local\" or \"pr\"", errBadRequest))
 		return
@@ -121,12 +126,11 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p, ok := sv.hubProject(hpid); ok {
-		if p.TaskInstructions != req.TaskInstructions || p.MergeMode != mode {
-			// The hub's project decides how its tasks land; a clone linked
-			// when every runner opened pull requests switches to pushing.
+		if p.TaskInstructions != req.TaskInstructions || p.MergeMode != mode || p.MergesGreenPRs() != greenOn(req.MergeGreenPRs) {
+			// The hub's project decides how its tasks land.
 			var err error
 			if p, err = sv.data.UpdateProject(p.ID, func(x *model.Project) error {
-				x.TaskInstructions, x.MergeMode = req.TaskInstructions, mode
+				x.TaskInstructions, x.MergeMode, x.MergeGreenPRs = req.TaskInstructions, mode, req.MergeGreenPRs
 				return nil
 			}); err != nil {
 				writeErr(w, err)
@@ -181,7 +185,7 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := sv.data.CreateProject(model.Project{
 		ID: id, Name: req.Name, Path: path, DefaultBranch: branch, RemoteURL: s.Git.RemoteURL(ctx, id, path),
-		MergeMode: mode, MaxAutoFixes: model.DefaultMaxAutoFixes, HubProjectID: hpid,
+		MergeMode: mode, MergeGreenPRs: req.MergeGreenPRs, MaxAutoFixes: model.DefaultMaxAutoFixes, HubProjectID: hpid,
 		TaskInstructions: req.TaskInstructions,
 	})
 	if err != nil {
@@ -195,6 +199,9 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 	slog.Info("runner: hub linked a project", "name", p.Name, "path", p.Path)
 	writeJSON(w, http.StatusCreated, dispatch.Linked{ProjectID: p.ID})
 }
+
+// greenOn is model.Project.MergesGreenPRs for a MergeGreenPRs setting.
+func greenOn(v *bool) bool { return model.Project{MergeGreenPRs: v}.MergesGreenPRs() }
 
 // hubUnlink handles DELETE /api/hub/projects/{hpid}: the runner takes no
 // more tasks for it. Its clone stays, as a project of the runner's own.

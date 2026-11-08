@@ -186,20 +186,26 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	req.DefaultBranch = s.adoptedBranch(ctx, id, req.Path, req.DefaultBranch)
-	p, err := sv.data.CreateProject(model.Project{
+	remote := s.Git.RemoteURL(ctx, id, req.Path)
+	// Asking for pull requests is only possible when the repo already has
+	// a remote; without asking, GitHub projects get them (DefaultMergeMode).
+	if err := checkMergeMode(req.MergeMode, remote); err != nil {
+		writeErr(w, err)
+		return
+	}
+	np := model.Project{
 		ID: id, Name: req.Name, Path: req.Path, DefaultBranch: req.DefaultBranch,
-		RemoteURL: s.Git.RemoteURL(ctx, id, req.Path), AutoPush: req.AutoPush,
+		RemoteURL: remote, AutoPush: req.AutoPush,
 		RunCommand: req.RunCommand, TestCommand: req.TestCommand, DeployCommand: req.DeployCommand,
 		SetupCommand: req.SetupCommand, CopyFiles: cleanList(req.CopyFiles), MaxAutoFixes: maxFixes,
 		MaxRunMinutes: max(0, req.MaxRunMinutes), MaxTurns: max(0, req.MaxTurns),
 		TagFormat: release.DefaultFormat,
-	})
-	if err == nil && req.MergeMode == model.MergePR {
-		// Only possible when the adopted repo already has a GitHub remote.
-		if err = checkMergeMode(req.MergeMode, p.RemoteURL); err == nil {
-			p, err = sv.data.UpdateProject(p.ID, func(p *model.Project) error { p.MergeMode = model.MergePR; return nil })
-		}
 	}
+	np.MergeMode = np.DefaultMergeMode(s.Git.HasGh())
+	if req.MergeMode != "" && req.MergeMode != np.MergeMode {
+		np.MergeMode, np.MergeModeSet = req.MergeMode, true
+	}
+	p, err := sv.data.CreateProject(np)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -230,6 +236,7 @@ type projectUpdate struct {
 	AutoPush      *bool     `json:"auto_push"`
 	AutoApprove   *bool     `json:"auto_approve"`
 	MergeMode     *string   `json:"merge_mode"`
+	MergeGreenPRs *bool     `json:"merge_green_prs"`
 	InvestigateCI *bool     `json:"investigate_ci"`
 	MaxRunMinutes *int      `json:"max_run_minutes"`
 	MaxTurns      *int      `json:"max_turns"`
@@ -299,6 +306,7 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 	if remote == "" && cur.OnRunners() {
 		remote = cur.RemoteURL // the hub's checkout may be gone; the runners have theirs
 	}
+	gh := sv.s.Git.HasGh()
 	runners := cur.Runners
 	if req.Runners != nil {
 		withRemote := cur
@@ -343,6 +351,10 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 			v := *req.InvestigateCI
 			p.InvestigateCI = &v
 		}
+		if req.MergeGreenPRs != nil {
+			v := *req.MergeGreenPRs
+			p.MergeGreenPRs = &v
+		}
 		if req.MergeMode != nil {
 			if err := checkMergeMode(*req.MergeMode, p.RemoteURL); err != nil {
 				return err
@@ -357,6 +369,11 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 			p.MergeMode = mode
 		}
 		p.Runners = runners
+		if !p.MergeModeSet && p.HubProjectID == "" {
+			// The default follows the remote and the runners; a runner's
+			// clone lands the way its hub says.
+			p.MergeMode = p.DefaultMergeMode(gh)
+		}
 		if len(runners) > 0 {
 			// The runners push to origin themselves (see
 			// model.Project.LandsOnOrigin); the hub doesn't push.

@@ -526,12 +526,14 @@ func main() {
 		}
 	}
 
-	// Runners used to open a pull request for every task; they now push to
-	// the default branch unless the project chose pull requests.
-	if names, err := st.LandRunnerProjectsLocally(); err != nil {
-		slog.Warn("switch runner projects to landing locally", "err", err)
+	// GitHub projects land work through pull requests, so GitHub's checks
+	// run before it reaches the default branch, unless their user chose
+	// otherwise; projects that can't open pull requests (no GitHub remote,
+	// or no gh here) merge locally.
+	if names, err := st.DefaultMergeModes(git.HasGh()); err != nil {
+		slog.Warn("default merge modes", "err", err)
 	} else if len(names) > 0 {
-		slog.Info("projects linked to runners now land tasks on their default branch instead of through pull requests", "projects", names)
+		slog.Info("projects switched to their default way of landing work (pull requests on GitHub, else merging)", "projects", names)
 	}
 
 	go builds.Run(ctx)
