@@ -661,9 +661,10 @@ async function connectAll() {
 
 function connectEvents(m) {
   const ws = new WebSocket(wsURL(on(m.prefix, "/ws/events")));
-  const sock = { ws, live: false };
+  const sock = { ws, live: false, timer: 0 };
   sockets.set(m.name, sock);
   ws.onopen = () => {
+    if (sockets.get(m.name) !== sock) return ws.close(); // replaced by reviveSockets meanwhile
     sock.live = true;
     refreshLive();
     if (m.local) {
@@ -674,6 +675,7 @@ function connectEvents(m) {
     loadPreviews(m).catch(() => {});
   };
   ws.onclose = async () => {
+    if (sockets.get(m.name) !== sock) return; // replaced: its successor is already connecting
     sock.live = false;
     refreshLive();
     // Logged out: go to the login page. Server down or restarting: keep trying.
@@ -685,10 +687,46 @@ function connectEvents(m) {
       const now = (state.machines || []).find((x) => x.name === m.name);
       if (!now || !now.ok) { sockets.delete(m.name); return; }
     }
-    setTimeout(() => connectEvents(m), m.local ? 1500 : 5000);
+    if (sockets.get(m.name) !== sock) return; // revived while we asked
+    sock.timer = setTimeout(() => { if (sockets.get(m.name) === sock) connectEvents(m); }, m.local ? 1500 : 5000);
   };
   ws.onmessage = (msg) => onEvent(JSON.parse(msg.data), m);
 }
+
+// A phone suspends a page sent to the home screen (or a locked screen) and
+// drops its sockets, often without telling it: on return a socket may be
+// closed with its retry timer throttled, or still claim to be open with
+// nothing behind it. So on return, connect again at once: sockets that are
+// down right away, and after a longer absence open-looking ones too, since
+// those can't be trusted (the server stops pinging after a minute).
+let hiddenAt = document.hidden ? Date.now() : 0;
+function reviveSockets() {
+  const away = hiddenAt ? Date.now() - hiddenAt : 0;
+  hiddenAt = 0;
+  const stale = (ws) => ws.readyState > 1 || (away > 15000 && ws.readyState === 1);
+  for (const m of state.machines || []) {
+    const sock = sockets.get(m.name);
+    if (!m.ok || (sock && !stale(sock.ws))) continue;
+    if (sock) { clearTimeout(sock.timer); sockets.delete(m.name); sock.ws.close(); }
+    connectEvents(m);
+  }
+  refreshLive();
+  // The open terminal and preview log reconnect too; both replay their scrollback.
+  if (termWS && stale(termWS) && state.view === "run") {
+    const p = state.procs.find((x) => x.id === attached && x.running);
+    if (p) attach(p);
+  }
+  if (pv.ws && stale(pv.ws)) {
+    const p = state.todos.get(pv.todo) && previewOf(pv.todo);
+    if (p?.process_id === pv.proc) connectLog(p);
+  }
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) hiddenAt = Date.now();
+  else reviveSockets();
+});
+window.addEventListener("pageshow", (e) => { if (e.persisted) reviveSockets(); });
+window.addEventListener("online", reviveSockets);
 
 // A runner came online, went offline, registered or was revoked: list the
 // computers again, connect to the ones that are up, reload their projects.
