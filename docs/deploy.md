@@ -259,7 +259,7 @@ database after a restore, fix the owner:
 
 ### Build the image yourself
 
-Release images are published to `ghcr.io/<owner>/dash` for amd64 and arm64 on every `v*` tag,
+Release images are published to `ghcr.io/<owner>/dash` for amd64 and arm64 on every `X.Y.Z` release tag,
 tagged with the version and `latest`. For a fork or local changes, build from the repository's
 root and point `DASH_IMAGE`/`DASH_VERSION` at it:
 

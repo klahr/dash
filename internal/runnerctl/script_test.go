@@ -71,7 +71,10 @@ func TestScriptRendering(t *testing.T) {
 	if !strings.Contains(string(b), "VERSION=''\n") {
 		t.Error("a dev hub should install the latest release")
 	}
-	for v, want := range map[string]string{"v1.2.0": "v1.2.0", "v1.2.0-rc.1": "v1.2.0-rc.1", "dev": "", "v1.2.0-3-gabc123": "", "1.2": ""} {
+	for v, want := range map[string]string{
+		"1.2.0": "1.2.0", "1.2.0-rc.1": "1.2.0-rc.1", "v1.2.0": "v1.2.0", "v1.2.0-rc.1": "v1.2.0-rc.1",
+		"dev": "", "1.2.0-3-gabc123": "", "v1.2.0-3-gabc123": "", "1.2": "", "x1.2.0": "",
+	} {
 		if got := ReleaseVersion(v); got != want {
 			t.Errorf("ReleaseVersion(%q) = %q, want %q", v, got, want)
 		}

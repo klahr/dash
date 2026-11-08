@@ -215,7 +215,7 @@ func TestTagFormatSetting(t *testing.T) {
 }
 
 // The settings warn when the repository's release workflow runs on tags the
-// format doesn't make (the Dash repository's own runs on "v*").
+// format doesn't make (e.g. a workflow on "v*").
 func TestTagFormatWorkflowHint(t *testing.T) {
 	rr := newReleaseRepo(t, "X.Y.Z")
 	wf := filepath.Join(rr.repo, ".github", "workflows")

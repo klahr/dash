@@ -161,6 +161,15 @@ func TestWorkflowHint(t *testing.T) {
 	if h := WorkflowHint(v, triggers); h != nil {
 		t.Errorf("vX.Y.Z matches v*, got %+v", h)
 	}
+	// A numeric trigger, as in Dash's own release.yml: X.Y.Z (and its
+	// pre-releases) start it, vX.Y.Z doesn't.
+	numeric := TagTriggers(map[string][]byte{"release.yml": []byte("on:\n  push:\n    tags: [\"[0-9]+.[0-9]+.[0-9]+*\"]\n")})
+	if h := WorkflowHint(plain, numeric); h != nil {
+		t.Errorf("X.Y.Z matches [0-9]+.[0-9]+.[0-9]+*, got %+v", h)
+	}
+	if h := WorkflowHint(v, numeric); h == nil || h.Suggest != "X.Y.Z" {
+		t.Errorf("vX.Y.Z against a numeric trigger: %+v", h)
+	}
 	// No workflow filters tags: nothing to warn about.
 	if h := WorkflowHint(plain, TagTriggers(map[string][]byte{"ci.yml": files["ci.yml"]})); h != nil {
 		t.Errorf("no tag workflows: %+v", h)
@@ -174,6 +183,10 @@ func TestWorkflowFilters(t *testing.T) {
 	}{
 		{"on:\n  push:\n    tags: ['v[0-9]+.[0-9]+.[0-9]+']\n", "v1.22.3", true},
 		{"on:\n  push:\n    tags: ['v[0-9]+.[0-9]+.[0-9]+']\n", "1.2.3", false},
+		{"on:\n  push:\n    tags: ['[0-9]+.[0-9]+.[0-9]+*']\n", "0.1.1", true},
+		{"on:\n  push:\n    tags: ['[0-9]+.[0-9]+.[0-9]+*']\n", "10.20.30-rc.1", true},
+		{"on:\n  push:\n    tags: ['[0-9]+.[0-9]+.[0-9]+*']\n", "v0.1.1", false},
+		{"on:\n  push:\n    tags: ['[0-9]+.[0-9]+.[0-9]+*']\n", "1.2", false},
 		{"on:\n  push:\n    tags: ['*']\n", "app/1.2.3", false}, // * stops at /
 		{"on:\n  push:\n    tags: ['**']\n", "app/1.2.3", true},
 		{"on:\n  push:\n    tags: ['v*', '!v0.*']\n", "v0.1.0", false},

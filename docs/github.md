@@ -45,7 +45,8 @@ suffixes such as `-rc.1` aren't supported yet.
 If the repository has a GitHub Actions workflow that runs on pushed tags (`on.push.tags` in
 `.github/workflows/*.yml`) and the format's tags wouldn't match it, the settings say so and offer a
 matching format: with `X.Y.Z` and a workflow on `v*`, pushing a tag wouldn't start the release.
-(Dash's own repository releases on `v*` tags, so its project uses `vX.Y.Z`.)
+(Dash's own repository releases on `[0-9]+.[0-9]+.[0-9]+*` tags, so its project uses the default
+`X.Y.Z`.)
 
 Besides the History view, a release can be tagged with `POST /api/projects/{id}/tags`
 (`{"bump": "minor"}` or `{"version": "1.4.0"}`, optional `sha` and `notes`) or the

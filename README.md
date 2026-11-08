@@ -21,8 +21,8 @@ version and platform from the [releases page](https://github.com/klahr/dash/rele
 
 ```sh
 VERSION=1.2.0 OS=linux ARCH=amd64   # OS: linux or darwin, ARCH: amd64 or arm64
-curl -fLO "https://github.com/klahr/dash/releases/download/v$VERSION/dash_${VERSION}_${OS}_${ARCH}.tar.gz"
-curl -fLO "https://github.com/klahr/dash/releases/download/v$VERSION/checksums.txt"
+curl -fLO "https://github.com/klahr/dash/releases/download/$VERSION/dash_${VERSION}_${OS}_${ARCH}.tar.gz"
+curl -fLO "https://github.com/klahr/dash/releases/download/$VERSION/checksums.txt"
 sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 --ignore-missing -c checksums.txt
 mkdir dash && tar -xzf "dash_${VERSION}_${OS}_${ARCH}.tar.gz" -C dash
 cd dash && mkdir bin && mv dash dash-tui dash-mcp bin/

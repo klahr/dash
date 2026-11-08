@@ -26,8 +26,9 @@ var scriptSrc string
 
 var scriptTmpl = template.Must(template.New("install.sh").Funcs(template.FuncMap{"sq": ShellQuote}).Parse(scriptSrc))
 
-// releaseRe matches the tags GoReleaser publishes, e.g. v1.2.0 or v1.2.0-rc.1.
-var releaseRe = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$`)
+// releaseRe matches the tags GoReleaser publishes, e.g. 1.2.0 or 1.2.0-rc.1
+// (and v1.2.0, the format of earlier releases).
+var releaseRe = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$`)
 
 // ReleaseVersion is the release a runner of this hub should install: the
 // hub's own version, or "" (the latest release) for a build from source.
@@ -41,7 +42,7 @@ func ReleaseVersion(version string) string {
 // ScriptParams fill in the install script.
 type ScriptParams struct {
 	Hub       string // the hub's base URL, e.g. https://dash.example.com
-	Version   string // release to install, e.g. v1.2.0; "" = latest
+	Version   string // release to install, e.g. 1.2.0; "" = latest
 	Releases  string // default Releases
 	LatestAPI string // default LatestAPI
 }

@@ -67,7 +67,7 @@ type Runner struct {
 	LastSeen time.Time `json:"last_seen,omitzero"` // when it last connected or disconnected
 	// Owner registered the runner: its token acts as them, in their org.
 	Owner   *store.RunnerOwner `json:"owner,omitempty"`
-	Version string             `json:"version,omitempty"` // the Dash it last connected with, e.g. v1.2.0
+	Version string             `json:"version,omitempty"` // the Dash it last connected with, e.g. 1.2.0
 	// Parallel is how many tasks the hub sends it at once (0: as many as
 	// the runner's own -parallel, which it reports). Paused: the hub sends
 	// it none.
