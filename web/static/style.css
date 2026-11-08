@@ -1061,11 +1061,6 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .side-new-project:hover svg { border-color: var(--accent); color: var(--accent); }
 .side-machine { display: flex; align-items: center; gap: 8px; padding: 12px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--faint); }
 .side-machine:first-child { padding-top: 2px; }
-.menu-btn { position: relative; margin-left: -10px; }
-.app:has(.ci-pill.ci-failing:not([hidden]), .usage-pill.paused:not([hidden])) .menu-btn::after {
-  content: ""; position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%;
-  background: var(--failed); box-shadow: 0 0 0 2px var(--bg);
-}
 @media (max-width: 1023px) {
   .menu {
     position: fixed; inset: 0 auto 0 0; z-index: 50; width: min(320px, 86vw);
@@ -1137,8 +1132,6 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .nav > button:hover { background: var(--raised); }
   .nav > button.active { background: var(--raised); }
   .nav .badge { position: static; margin-left: auto; }
-  /* The top bar's menu button collapses the sidebar to its icons. */
-  .app:not(.side-collapsed) .menu-btn::after { display: none; }
   .app.side-collapsed { --side-w: 68px; }
   .side-collapsed .brand { width: auto; }
   .side-collapsed .sidebar { overflow: visible; }
