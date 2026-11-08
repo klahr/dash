@@ -785,6 +785,7 @@ func clone(t model.Todo) model.Todo {
 	}
 	if t.PR != nil {
 		pr := *t.PR
+		pr.Checks = append([]model.PRCheck(nil), t.PR.Checks...)
 		cp.PR = &pr
 	}
 	if t.Revert != nil {

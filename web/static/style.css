@@ -1371,7 +1371,13 @@ dialog.file-over, .file-over { outline: 2px dashed color-mix(in srgb, var(--acce
 .attach-tag .clip svg { width: 13px; height: 13px; }
 
 /* ---- pull requests, reverts, sync ---- */
-.pr-tag { font-size: 12px; font-weight: 600; color: var(--review); }
+.pr-tag { font-size: 12px; font-weight: 600; color: var(--review); cursor: pointer; }
+.pr-tag:hover { text-decoration: underline; }
+.todo-sub.pr-status.progress { font-family: inherit; font-size: inherit; }
+.todo-sub.pr-status.waiting { font-weight: 600; }
+.pr-status.progress { color: var(--running); }
+.pr-status.waiting { color: var(--review); }
+.pr-status.err { color: var(--failed); }
 .revert-tag { font-size: 12px; font-weight: 600; color: var(--muted); }
 .card-actions { display: flex; gap: 6px; margin-top: 4px; }
 .review-chip, .preview-chip, .approve-chip, .enqueue-chip {

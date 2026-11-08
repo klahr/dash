@@ -259,6 +259,16 @@ func TestRunnerMergesHubTaskPullRequest(t *testing.T) {
 	if _, err := os.Stat(merged); err == nil {
 		t.Fatal("merged before its checks finished")
 	}
+	// The card shows what the merge waits for.
+	x, _ := h.st.GetTodo(td.ID)
+	if x.PR.Status != "Waiting for checks: build (0/1 passed)" || len(x.PR.Checks) != 1 || x.PR.Checks[0] != (model.PRCheck{Name: "build", State: "pending"}) {
+		t.Fatalf("PR = %+v, want the pending check kept on the task", *x.PR)
+	}
+	updated := x.UpdatedAt
+	h.merges.PollPRs(context.Background())
+	if x, _ := h.st.GetTodo(td.ID); !x.UpdatedAt.Equal(updated) {
+		t.Fatal("an unchanged pull request shouldn't update the task on every poll")
+	}
 
 	write(t, dir, "pr.json", `{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"abc","statusCheckRollup":[
 		{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}]}`)

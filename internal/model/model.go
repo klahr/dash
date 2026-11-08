@@ -377,6 +377,17 @@ type PullRequest struct {
 	// HandledSHA is the head commit whose conflicts or failing checks were
 	// already sent back to Claude, so the same failure isn't sent twice.
 	HandledSHA string `json:"handled_sha,omitempty"`
+	// Checks are GitHub's checks on the head, and Status one line on what the
+	// merge waits for, both as last seen while the task was merging.
+	Checks []PRCheck `json:"checks,omitempty"`
+	Status string    `json:"status,omitempty"`
+}
+
+// PRCheck is one GitHub check on a pull request's head.
+type PRCheck struct {
+	Name  string `json:"name"`
+	State string `json:"state"` // pending | passed | failed
+	URL   string `json:"url,omitempty"`
 }
 
 // Revert records how a merged todo was undone.
