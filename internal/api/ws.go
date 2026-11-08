@@ -287,6 +287,10 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		if owner := s.requestOwner(r); owner.Valid() {
 			turnCtx = mcptools.WithCaller(turnCtx, owner)
 		}
+		if forHub {
+			// The hub's chat: its tools act on the hub's board.
+			turnCtx = mcptools.ForHub(turnCtx, msg.Project)
+		}
 		if general {
 			if err := save(msg.Messages); err != nil {
 				slog.Error("save chat", "err", err)

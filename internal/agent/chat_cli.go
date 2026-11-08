@@ -184,7 +184,13 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	caller, hasCaller := mcptools.CallerFrom(ctx)
 	if c.Board != nil && c.BoardURL != "" && hasCaller {
 		pid, _ := ctx.Value(projectKey{}).(string)
-		token, release := c.Board.Register(caller, pid)
+		var token string
+		var release func()
+		if hp, ok := mcptools.HubFrom(ctx); ok {
+			token, release = c.Board.RegisterHub(caller, hp) // a turn for this runner's hub uses the hub's board
+		} else {
+			token, release = c.Board.Register(caller, pid)
+		}
 		defer release()
 		servers[mcptools.ServerName] = mcptools.ServerConfig(c.BoardURL, token)
 	}

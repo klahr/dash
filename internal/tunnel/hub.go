@@ -903,3 +903,16 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
 }
+
+// Authenticate is the runner whose token r carries (Authorization: Bearer).
+func (h *Hub) Authenticate(r *http.Request) (Runner, bool) {
+	tok, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if tok == "" {
+		return Runner{}, false
+	}
+	rec, ok := h.authenticate(tok)
+	if !ok {
+		return Runner{}, false
+	}
+	return h.Get(rec.ID)
+}

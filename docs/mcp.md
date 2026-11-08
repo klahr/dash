@@ -98,6 +98,14 @@ draft, queued or failed tasks, when you ask to remove one), `create_release`, `l
 can't use; a shell chat asks for the ones that change something. They act as the user chatting,
 in the org they're working in.
 
+When a hub runs a chat or a task on a runner, these tools act on the hub's board, not the
+runner's: the runner passes each call to the hub (`POST /runner/mcp/dash`, with its runner
+token), and the hub decides who it acts as. A task's run acts as the task's owner, and only for a
+task the hub sent that runner. A chat acts as the runner's owner, in the runner's org, and only in
+projects linked to that runner. So tasks and issues created there show up on the hub's board,
+under the hub's ids. If the hub can't be reached, the tool call fails; it never writes to the
+runner's own database instead.
+
 `create_release(project, version | bump, sha?, notes?)` tags a commit (default: the tip of
 origin's default branch) in the project's tag format and pushes the tag, like **Tag release…** in
 the History view ([Tag a release](github.md#tag-a-release)): `bump` is `patch`, `minor` or

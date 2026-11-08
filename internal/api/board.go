@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,13 +17,26 @@ import (
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/tunnel"
 )
 
 // BoardMCP serves the chat's Dash tools (POST /mcp/dash), authenticated by
 // the per-run tokens in s.Board. Every run acts as a user in an org: a
 // chat's user in their active org, a task's creator in the task's org. Its
 // tools only reach that org, and stop working once the user leaves it.
+//
+// On a runner, the runs of its hub's work (the hub's tasks, the chats the
+// hub asks for) get the hub's board instead: their calls go to the hub
+// (runnerBoard there), so what they create is on the board the hub's users
+// see, under the hub's ids. If the hub can't be reached the call fails;
+// it never falls back to this runner's own board.
 func (s *Server) BoardMCP() http.Handler {
+	h := s.boardHandler()
+	h.Hub = s.toHubBoard
+	return h
+}
+
+func (s *Server) boardHandler() *mcptools.Handler {
 	return &mcptools.Handler{Tokens: s.Board, Board: func(sc mcptools.Scope) (mcptools.Board, error) {
 		c := Caller{Org: sc.Org, User: sc.User}
 		if sc.Todo != "" {
@@ -35,6 +49,103 @@ func (s *Server) BoardMCP() http.Handler {
 		}
 		return board{s.as(c)}, nil
 	}}
+}
+
+// maxBoardRequest bounds one board tool call passed on to the hub.
+const maxBoardRequest = 4 << 20
+
+// toHubBoard passes on to the hub the board calls of a run of the hub's
+// work on this runner, and reports whether sc is such a run.
+func (s *Server) toHubBoard(w http.ResponseWriter, r *http.Request, sc mcptools.Scope) bool {
+	hubTodo, hubProject := "", sc.HubProject
+	switch {
+	case sc.Hub:
+	case sc.Todo != "":
+		org, ok := s.Store.TodoOrg(sc.Todo)
+		if !ok {
+			return false
+		}
+		t, err := s.Store.ForOrg(org).GetTodo(sc.Todo)
+		if err != nil || t.HubTodoID == "" {
+			return false // this runner's own task
+		}
+		hubTodo = t.HubTodoID
+	default:
+		return false
+	}
+	if s.HubBoard == nil {
+		http.Error(w, "this run's board is its hub's, and this Dash isn't connected to a hub", http.StatusBadGateway)
+		return true
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBoardRequest))
+	if err != nil {
+		http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
+		return true
+	}
+	res, err := s.HubBoard(r.Context(), hubTodo, hubProject, body)
+	if err != nil {
+		http.Error(w, "the hub's board can't be reached: "+err.Error(), http.StatusBadGateway)
+		return true
+	}
+	defer res.Body.Close()
+	for _, k := range []string{"Content-Type", "Mcp-Session-Id"} {
+		if v := res.Header.Get(k); v != "" {
+			w.Header().Set(k, v)
+		}
+	}
+	w.WriteHeader(res.StatusCode)
+	_, _ = io.Copy(w, res.Body)
+	return true
+}
+
+// runnerBoard handles POST /runner/mcp/dash on a hub: the board tool calls
+// of a run of the hub's work on one of its runners, authenticated with the
+// runner's token. The hub decides who the run acts as, from its own
+// records: a task's run as the task's owner, and only for a task the hub
+// sent that runner; a chat as the runner's owner, in the runner's org, and
+// in a project only if it is linked to that runner.
+func (s *Server) runnerBoard(rh *tunnel.Hub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		x, ok := rh.Authenticate(r)
+		if !ok {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unknown or revoked runner token"})
+			return
+		}
+		if x.Owner == nil || x.OrgID() == 0 {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "this runner works for nobody"})
+			return
+		}
+		sc, err := s.runnerScope(x, r.Header.Get(tunnel.BoardTodoHeader), r.Header.Get(tunnel.BoardProjectHeader))
+		if err != nil {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			return
+		}
+		s.boardHandler().Serve(w, r, sc)
+	}
+}
+
+// runnerScope is what a board call from runner x for the hub's task
+// hubTodo, or else for a chat in hubProject, may reach.
+func (s *Server) runnerScope(x tunnel.Runner, hubTodo, hubProject string) (mcptools.Scope, error) {
+	org := x.OrgID()
+	if hubTodo != "" {
+		t, err := s.Store.ForOrg(org).GetTodo(hubTodo)
+		if o, ok := s.Store.TodoOrg(hubTodo); !ok || o != org || err != nil || t.Runner != x.ID {
+			return mcptools.Scope{}, errors.New("no such task on this runner")
+		}
+		owner, err := s.TaskOwner(t)
+		if err != nil {
+			return mcptools.Scope{}, err
+		}
+		return mcptools.Scope{Org: owner.Org, User: owner.User, Project: t.ProjectID, Todo: t.ID}, nil
+	}
+	if hubProject != "" {
+		p, err := s.Store.ForOrg(org).GetProject(hubProject)
+		if o, ok := s.Store.ProjectOrg(hubProject); !ok || o != org || err != nil || !slices.Contains(p.Runners, x.ID) {
+			return mcptools.Scope{}, errors.New("no such project linked to this runner")
+		}
+	}
+	return mcptools.Scope{Org: org, User: x.Owner.UserID, Project: hubProject}, nil
 }
 
 // Member reports whether owner's user still belongs to owner's org.

@@ -97,6 +97,10 @@ type Server struct {
 	// HubOrg is, on a runner, the hub's org it was registered for: it takes
 	// projects of no other org (0: not checked, an older registration).
 	HubOrg int64
+	// HubBoard, on a runner, posts an MCP request of the hub's work (see
+	// tunnel.Board) to the hub's board: the board tools of the hub's tasks
+	// and of the chats the hub asks for act there, never on this Dash.
+	HubBoard func(ctx context.Context, hubTodo, hubProject string, body []byte) (*http.Response, error)
 	// HubCommands lets the hub set and run a project's commands when this
 	// Dash is a runner (see RunnerRoutes).
 	HubCommands bool

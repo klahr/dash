@@ -264,3 +264,46 @@ func Report(ctx context.Context, creds Credentials, report any) error {
 	}
 	return nil
 }
+
+// BoardPath is where a runner sends the Dash board tool calls (MCP
+// JSON-RPC) of the hub's work it runs: the hub's tasks and the chats the
+// hub asks for. The hub serves them on its own board.
+const BoardPath = "/runner/mcp/dash"
+
+// Which hub work a board call is for: the hub's ids of its task (a task's
+// run) or of the chat's project (none: the general chat).
+const (
+	BoardTodoHeader    = "X-Dash-Hub-Todo"
+	BoardProjectHeader = "X-Dash-Hub-Project"
+)
+
+// Board posts body, an MCP request of a run of the hub's task hubTodo
+// (or, without one, of a chat in the hub's project hubProject), to the hub
+// in creds. The caller closes the answer's body.
+func Board(ctx context.Context, creds Credentials, hubTodo, hubProject string, body []byte) (*http.Response, error) {
+	u, err := CheckServer(creds.Server)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", u.String()+BoardPath, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Authorization", "Bearer "+creds.Token)
+	if hubTodo != "" {
+		req.Header.Set(BoardTodoHeader, hubTodo)
+	} else if hubProject != "" {
+		req.Header.Set(BoardProjectHeader, hubProject)
+	}
+	res, err := (&http.Client{Timeout: 2 * time.Minute}).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("the hub's board: %w", err)
+	}
+	if res.StatusCode == http.StatusUnauthorized {
+		res.Body.Close()
+		return nil, ErrRevoked
+	}
+	return res, nil
+}

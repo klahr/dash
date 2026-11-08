@@ -432,6 +432,10 @@ func main() {
 		// this runner's owner only, with this computer's `claude` login.
 		apiSrv.HubUser, apiSrv.Small = runnerCreds.UserID, small
 		apiSrv.ChatDir = filepath.Join(*dataDir, "chat")
+		// The board tools of the hub's tasks and chats act on the hub's board.
+		apiSrv.HubBoard = func(ctx context.Context, hubTodo, hubProject string, body []byte) (*http.Response, error) {
+			return tunnel.Board(ctx, runnerCreds, hubTodo, hubProject, body)
+		}
 		// The hub hears where its tasks are, and this computer's usage.
 		reporter = &dispatch.Reporter{Store: st, Usage: tracker, Parallel: *parallel,
 			Send: func(ctx context.Context, r dispatch.Report) error {

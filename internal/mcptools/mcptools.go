@@ -696,9 +696,31 @@ type Scope struct {
 	Org, User int64
 	Project   string // default project ("" for the general chat)
 	Todo      string // set for a running task, which only gets the IssueTools
+	// Hub marks a runner's run of its hub's work (a hub task, or a chat the
+	// hub asked for): its tools are the hub's board, never this Dash's.
+	// HubProject and HubTodo are then the hub's ids for the run's project
+	// and task.
+	Hub                 bool
+	HubProject, HubTodo string
 }
 
 type callerKey struct{}
+
+type hubKey struct{}
+
+// ForHub makes chat turns run with ctx, which run for this runner's hub,
+// serve the hub's board: hubProject is the hub's id of the chat's project
+// ("" for the general chat).
+func ForHub(ctx context.Context, hubProject string) context.Context {
+	return context.WithValue(ctx, hubKey{}, hubProject)
+}
+
+// HubFrom is the hub project ForHub put in ctx; ok is false for a turn
+// that isn't the hub's.
+func HubFrom(ctx context.Context) (hubProject string, ok bool) {
+	hubProject, ok = ctx.Value(hubKey{}).(string)
+	return
+}
 
 // Caller is who a run acts as: a user in an org.
 type Caller = model.Owner
@@ -725,6 +747,13 @@ func (t *Tokens) Register(c Caller, projectID string) (token string, release fun
 // Call release when the run ends.
 func (t *Tokens) RegisterTask(c Caller, projectID, todoID string) (token string, release func()) {
 	return t.register(Scope{Org: c.Org, User: c.User, Project: projectID, Todo: todoID})
+}
+
+// RegisterHub issues a token for one chat run of c that this runner runs
+// for its hub: its tools are the hub's board, defaulting to the hub's
+// project hubProject. Call release when the run ends.
+func (t *Tokens) RegisterHub(c Caller, hubProject string) (token string, release func()) {
+	return t.register(Scope{Org: c.Org, User: c.User, Hub: true, HubProject: hubProject})
 }
 
 func (t *Tokens) register(sc Scope) (token string, release func()) {
@@ -759,6 +788,10 @@ type Handler struct {
 	Tokens *Tokens
 	// Board is the board a token's scope may use: its org's, as its user.
 	Board func(Scope) (Board, error)
+	// Hub, if set, serves a scope's calls on another Dash (a runner's hub)
+	// and reports whether it did; a scope it doesn't take is served here.
+	// A Hub scope (Scope.Hub) is never served here.
+	Hub func(w http.ResponseWriter, r *http.Request, sc Scope) bool
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -776,6 +809,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown or expired token", http.StatusUnauthorized)
 		return
 	}
+	if h.Hub != nil && h.Hub(w, r, sc) {
+		return
+	}
+	if sc.Hub {
+		// The hub's work changes the hub's board or nothing: a copy here
+		// would be on a board nobody sees.
+		http.Error(w, "this run's board is its hub's, which this Dash can't reach", http.StatusBadGateway)
+		return
+	}
+	h.Serve(w, r, sc)
+}
+
+// Serve answers r with the tools of sc, which the caller vouches for.
+func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, sc Scope) {
 	if !(Caller{Org: sc.Org, User: sc.User}).Valid() { // every run acts as a user in an org
 		http.Error(w, "this run acts for no user in no organization", http.StatusForbidden)
 		return

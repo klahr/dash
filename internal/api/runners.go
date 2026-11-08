@@ -152,6 +152,7 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 	mux.HandleFunc("POST /runner/register", rh.ServeRegister)
 	mux.HandleFunc("GET /runner/connect", rh.ServeConnect)
 	mux.HandleFunc("POST /runner/report", rh.ServeReport)
+	mux.HandleFunc("POST "+tunnel.BoardPath, s.runnerBoard(rh))
 	// The one-line installer, and the version it installs (no sign-in:
 	// neither holds a secret).
 	mux.HandleFunc("GET /runner/install.sh", runnerctl.ScriptHandlerFor(s.hubURL, buildinfo.Version))

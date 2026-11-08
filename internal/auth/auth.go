@@ -708,6 +708,7 @@ var public = map[string]bool{
 	"/runner/register": true,
 	"/runner/connect":  true,
 	"/runner/report":   true,
+	"/runner/mcp/dash": true,
 	// The runner installer and the hub's version: nothing secret.
 	"/runner/install.sh": true,
 	"/runner/version":    true,
