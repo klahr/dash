@@ -384,6 +384,13 @@ func TestPullRequestHandledHeadStillFailing(t *testing.T) {
 
 	h.merges.PollPRs(context.Background())
 	x = waitPR(t, h, td.ID, model.StatusMerging, func(x model.Todo) bool { return x.Runs == 2 })
+	// While the merge job pushes the branch again, GitHub's view is stale:
+	// polling then must not judge it.
+	for deadline := time.Now().Add(10 * time.Second); h.merges.inQueue(td.ID); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the merge job never finished")
+		}
+	}
 	if got := gitRun(t, x.Worktree.Path, "rev-parse", "HEAD"); got != head {
 		t.Fatalf("the fix pass was meant to make no commit, head moved %s → %s", head, got)
 	}

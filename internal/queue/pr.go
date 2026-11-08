@@ -23,6 +23,9 @@ func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) 
 		return fmt.Errorf("open pull request: %w", err)
 	}
 	if _, err := m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+		if x.Status != model.StatusMerging {
+			return nil // moved on while pushing (e.g. merged or closed on GitHub): keep what was seen
+		}
 		handled := ""
 		if x.PR != nil && x.PR.Number == n {
 			handled = x.PR.HandledSHA
@@ -140,6 +143,9 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 // request stays open and followed, so merging or closing it on GitHub is
 // still noticed.
 func (m *MergeQueue) stuck(ctx context.Context, t model.Todo, st gitops.PRStatus, status model.TodoStatus, why string) {
+	if m.inQueue(t.ID) {
+		return // its branch is about to be pushed (again): judge what GitHub gets
+	}
 	if t.Worktree != nil {
 		// Until the push lands, GitHub still shows the old head; wait for it
 		// rather than judge the commit Claude just made by the last one.
