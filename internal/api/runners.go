@@ -211,9 +211,6 @@ func (sv *service) linkRunners(p model.Project, ids []string) ([]string, error) 
 	return out, nil
 }
 
-// errHubMergeOff is why a project linked to runners can't merge on the hub.
-var errHubMergeOff = fmt.Errorf("%w: projects linked to runners land work through pull requests; merging locally on the hub is off", errBadRequest)
-
 // runnerTask returns the dispatcher for t, a task on a runner, or an
 // error if this Dash has none.
 func (sv *service) runnerTask(t model.Todo) (*dispatch.Dispatcher, error) {
@@ -223,7 +220,9 @@ func (sv *service) runnerTask(t model.Todo) (*dispatch.Dispatcher, error) {
 	return sv.s.Dispatch, nil
 }
 
-// approveOnRunner asks t's runner to land it, through a pull request.
+// approveOnRunner asks t's runner to land it: the runner squashes it onto
+// the default branch, runs the checks and pushes it to origin (or opens a
+// pull request, if the project opted into them), then reports it merged.
 func (sv *service) approveOnRunner(ctx context.Context, t model.Todo) (model.Todo, error) {
 	if t.Status != model.StatusReview && t.Status != model.StatusFailed {
 		return t, fmt.Errorf("%w: only tasks in review (or a failed merge) can be approved", errBadRequest)
@@ -243,6 +242,22 @@ func (sv *service) approveOnRunner(ctx context.Context, t model.Todo) (model.Tod
 		}
 		return nil
 	})
+}
+
+// revertOnRunner asks the runner that landed t to undo it; the task
+// updates when the runner reports the revert.
+func (sv *service) revertOnRunner(ctx context.Context, t model.Todo) error {
+	d, err := sv.runnerTask(t)
+	if err != nil {
+		return err
+	}
+	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := d.Revert(cctx, t); err != nil {
+		return err
+	}
+	_, err = sv.data.UpdateTodo(t.ID, func(x *model.Todo) error { x.Error, x.RevertConflict = "", nil; return nil })
+	return err
 }
 
 // fetchFromRunner gets a task's diff, log or events from its runner.

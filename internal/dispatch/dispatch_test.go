@@ -22,6 +22,7 @@ type fakeFleet struct {
 	mu      sync.Mutex
 	runners map[string]tunnel.Runner
 	calls   []string // "runner METHOD path"
+	links   []Link   // the links sent
 }
 
 func (f *fakeFleet) Get(id string) (tunnel.Runner, bool) {
@@ -47,6 +48,9 @@ func (f *fakeFleet) Call(_ context.Context, id, method, path string, in, out any
 	f.mu.Lock()
 	r, ok := f.runners[id]
 	f.calls = append(f.calls, id+" "+method+" "+path)
+	if l, ok := in.(Link); ok {
+		f.links = append(f.links, l)
+	}
 	f.mu.Unlock()
 	if !ok {
 		return tunnel.ErrUnknownName
@@ -441,5 +445,79 @@ func TestRunnerOutputReachesTheHubsBoard(t *testing.T) {
 	if len(pub.evs) != 2 || pub.evs[0].Type != model.EvTodoEvent || pub.evs[1].Type != model.EvTodoOutput ||
 		pub.evs[1].Data != "Reading the code" || pub.evs[1].TodoID != td.ID || pub.evs[1].ProjectID != p.ID {
 		t.Fatalf("published: %+v", pub.evs)
+	}
+}
+
+// A project on runners lands its tasks the way the hub's project says
+// (merging, unless it chose pull requests); the hub marks a task merged with
+// the commit its runner pushed, follows its revert, queues a task for
+// Claude once when the revert conflicts, and shows why an approved task
+// came back to review.
+func TestHubFollowsTheRunnersMerge(t *testing.T) {
+	fx := newFixture(t)
+	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
+	p, err := fx.st.CreateProject(model.Project{Name: "web", OrgID: fx.orgA, RemoteURL: "https://github.com/x/web",
+		DefaultBranch: "main", Runners: []string{"laptop"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var undone []string
+	fx.d.Undo = func(t model.Todo, files []string) { undone = append(undone, t.ID+":"+strings.Join(files, ",")) }
+
+	td := fx.todo(t, p, nil)
+	if _, _, err := fx.d.Dispatch(context.Background(), p, td); err != nil {
+		t.Fatal(err)
+	}
+	if len(fx.fleet.links) != 1 || fx.fleet.links[0].MergeMode == model.MergePR {
+		t.Fatalf("links sent: %+v", fx.fleet.links)
+	}
+	for _, st := range []model.TodoStatus{model.StatusInProgress, model.StatusReview, model.StatusMerging} {
+		if td, err = fx.st.UpdateTodo(td.ID, func(x *model.Todo) error {
+			x.Status, x.Runner, x.RemoteID = st, "laptop", "r1"
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Not pushed (GitHub unreachable): back to review, saying so.
+	why := "Not merged, can't sync with GitHub: can't push main"
+	report(t, fx.d, "laptop", TaskState{HubTodoID: td.ID, ID: "r1", Status: model.StatusReview, Error: why})
+	if got := fx.get(t, td.ID); got.Status != model.StatusReview || got.Error != why {
+		t.Fatalf("after a failed push: %s %q", got.Status, got.Error)
+	}
+	if _, err := fx.st.SetStatus(td.ID, model.StatusMerging, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	report(t, fx.d, "laptop", TaskState{HubTodoID: td.ID, ID: "r1", Status: model.StatusMerged, MergedCommit: "c0ffee"})
+	got := fx.get(t, td.ID)
+	if got.Status != model.StatusMerged || got.MergedCommit != "c0ffee" || got.FinishedAt == nil || got.PR != nil {
+		t.Fatalf("after the runner pushed it: %+v", got)
+	}
+
+	// Its revert conflicts: one task for Claude, however often it's reported.
+	conflict := TaskState{HubTodoID: td.ID, ID: "r1", Status: model.StatusMerged, MergedCommit: "c0ffee",
+		RevertConflict: []string{"a.go"}, Error: "Reverting conflicts with later work in a.go"}
+	report(t, fx.d, "laptop", conflict)
+	report(t, fx.d, "laptop", conflict)
+	if len(undone) != 1 || undone[0] != td.ID+":a.go" {
+		t.Errorf("undo tasks queued: %v", undone)
+	}
+
+	// Reverted on the runner.
+	rev := &model.Revert{Commit: "dec0de", At: time.Now()}
+	report(t, fx.d, "laptop", TaskState{HubTodoID: td.ID, ID: "r1", Status: model.StatusMerged, MergedCommit: "c0ffee", Revert: rev})
+	if got := fx.get(t, td.ID); got.Revert == nil || got.Revert.Commit != "dec0de" || got.Status != model.StatusMerged || len(got.RevertConflict) != 0 {
+		t.Fatalf("after the runner reverted it: %+v", got)
+	}
+
+	// A project that chose pull requests tells its runners so.
+	pr, _ := fx.st.UpdateProject(p.ID, func(x *model.Project) error { x.MergeMode = model.MergePR; return nil })
+	if _, _, err := fx.d.Dispatch(context.Background(), pr, fx.todo(t, pr, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if l := fx.fleet.links[len(fx.fleet.links)-1]; l.MergeMode != model.MergePR {
+		t.Errorf("link of a pull request project: %+v", l)
 	}
 }

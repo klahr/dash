@@ -463,6 +463,15 @@ func main() {
 		// Tasks of projects linked to runners go to them; the hub only
 		// coordinates.
 		d := &dispatch.Dispatcher{Store: st, Fleet: runners, Grace: *runnerGrace, Kick: todos.Kick, Note: todoLog.Line, Pub: events}
+		d.Undo = func(t model.Todo, files []string) {
+			nt, err := queue.UndoTodo(st, t, t.MergedCommit, files)
+			if err != nil {
+				todoLog.Line(t, "✖ revert: "+err.Error())
+				return
+			}
+			todoLog.Line(t, "⚠ reverting on the runner conflicts with later work in "+strings.Join(files, ", ")+"; queued \""+nt.Title+"\" for Claude")
+			todos.Kick()
+		}
 		runners.OnState, runners.OnRevoke, runners.OnReport = d.State, d.Revoked, d.Report
 		todos.Remote, apiSrv.Dispatch = d, d
 		// While the hub doesn't run Claude, scans run their Claude part on
@@ -544,6 +553,14 @@ func main() {
 				slog.Info("default branch fixed", "project", p.Name, "branch", b)
 			}
 		}
+	}
+
+	// Runners used to open a pull request for every task; they now push to
+	// the default branch unless the project chose pull requests.
+	if names, err := st.LandRunnerProjectsLocally(); err != nil {
+		slog.Warn("switch runner projects to landing locally", "err", err)
+	} else if len(names) > 0 {
+		slog.Info("projects linked to runners now land tasks on their default branch instead of through pull requests", "projects", names)
 	}
 
 	go builds.Run(ctx)

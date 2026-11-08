@@ -1446,9 +1446,13 @@ async function loadTodos() {
   loadUnpushed().catch(fail);
 }
 
+// landsOnGitHub: approved work reaches GitHub as it merges, with nothing
+// left to push from here: through pull requests, or pushed by the runners.
+const landsOnGitHub = (p) => p.merge_mode === "pr" || !!p.runners?.length;
+
 async function loadUnpushed() {
   const p = state.project;
-  if (!p?.remote_url || p.merge_mode === "pr") { state.unpushed = 0; renderPushMain(); return; }
+  if (!p?.remote_url || landsOnGitHub(p)) { state.unpushed = 0; renderPushMain(); return; }
   const { count, todos = [] } = await api("GET", `/api/projects/${p.id}/unpushed`);
   const same = (a, b) => a && a.size === b.length && b.every((id) => a.has(id));
   if (state.project !== p || (count === state.unpushed && same(state.unpushedTodos, todos))) return;
@@ -1473,7 +1477,7 @@ async function pushDone() {
 function renderPushMain() {
   const p = state.project, n = state.unpushed;
   const btn = $("#push-main");
-  btn.hidden = !p?.remote_url || p.merge_mode === "pr";
+  btn.hidden = !p?.remote_url || landsOnGitHub(p);
   if (btn.hidden) return;
   const label = n ? `Push ${n} ${n === 1 ? "commit" : "commits"} to ${baseBranch(p)}` : `${baseBranch(p)} is up to date with GitHub`;
   btn.disabled = !n;
@@ -1810,11 +1814,12 @@ function ago(iso) {
   return `${Math.floor(s / 86400)}d`;
 }
 
-// A merged todo is pushed once origin has its commit (in "pr" mode, merging is pushing).
+// A merged todo is pushed once origin has its commit (in "pr" mode, and on
+// runners, merging is pushing).
 function isPushed(t) {
   const p = state.project;
   if (t.status !== "merged" || !p?.remote_url) return false;
-  if (p.merge_mode === "pr") return true;
+  if (landsOnGitHub(p)) return true;
   return !!state.unpushedTodos && !state.unpushedTodos.has(t.id);
 }
 
@@ -3035,10 +3040,11 @@ $("#d-to-agent").addEventListener("click", attempt(async () => {
 async function revertTodo(t) {
   if (t.status !== "merged" || t.revert) throw new Error("Only merged tasks can be reverted.");
   const pr = state.project?.merge_mode === "pr";
+  const pushes = state.project?.auto_push || !!state.project?.runners?.length;
   const ok = await ask({
     title: `Revert "${title(t)}"?`,
     body: pr ? `Opens a pull request that undoes this change on ${baseBranch(state.project)}.`
-      : `Adds a commit that undoes this change on ${baseBranch(state.project) || "the default branch"}${state.project?.auto_push ? " and pushes it" : ""}. If later work conflicts, Claude gets a task to undo it by hand.`,
+      : `Adds a commit that undoes this change on ${baseBranch(state.project) || "the default branch"}${pushes ? " and pushes it" : ""}. If later work conflicts, Claude gets a task to undo it by hand.`,
     ok: pr ? "Open revert PR" : "Revert", danger: true,
   });
   if (!ok) return;
@@ -4460,8 +4466,8 @@ function openSettings() {
 let settingsSnapshot = "";
 const formSnapshot = (f) => new URLSearchParams(new FormData(f)).toString();
 // The runners a project of this hub can be linked to: the org's. A member
-// links their own; admins any. Linked, its tasks run only there and work
-// lands through pull requests.
+// links their own; admins any. Linked, its tasks run only there and the
+// runner pushes approved work to the default branch.
 function renderRunnerPicker(p) {
   const runners = !p.prefix && state.runners;
   $("#settings-runners-field").hidden = !runners?.length && !p.runners?.length;
@@ -4480,20 +4486,20 @@ function syncMergeHint() {
   const f = $("#settings-form");
   const p = state.project;
   const onRunners = !$("#settings-runners-field").hidden && pickedRunners().length > 0;
-  if (onRunners) f.merge_mode.value = "pr";
-  for (const r of f.querySelectorAll('input[name="merge_mode"][value="local"]')) r.disabled = onRunners;
   const hint = $("#settings-runners-hint");
   hint.hidden = $("#settings-runners-field").hidden;
   hint.textContent = !onRunners
     ? (state.localTasks ? "Not linked: this dashboard runs the tasks itself." : "Not linked: tasks wait until you link a runner (this dashboard doesn't run tasks itself).")
     : !p.remote_url ? "Runners clone the project's git remote: connect a GitHub repository first."
-      : "Tasks run only on these runners, each in its own clone, and land through pull requests the runner merges once their checks pass. If all of them are offline, tasks wait in the queue.";
+      : "Tasks run only on these runners, each in its own clone. If all of them are offline, tasks wait in the queue.";
   const pr = f.merge_mode.value === "pr";
-  $("#auto-push-row").hidden = pr;
+  // On runners, merging is pushing: there's no separate push to turn on.
+  $("#auto-push-row").hidden = pr || onRunners;
   $("#merge-hint").textContent = !p.remote_url
-    ? "Connect a GitHub repository (Projects → Create GitHub repository) to push or open pull requests."
-    : pr && onRunners ? `The runner pushes the task's branch, opens a pull request against ${baseBranch(p)} and merges it once its checks pass.`
+    ? (pr ? "Connect a GitHub repository (Projects → Create GitHub repository) to open pull requests." : "")
+    : pr && onRunners ? `Only if you want pull requests: the runner pushes the task's branch, opens a pull request against ${baseBranch(p)} and merges it once its checks pass.`
     : pr ? `Dash pushes the task's branch and opens a pull request against ${baseBranch(p)}. Merge it on GitHub.`
+    : onRunners ? `The runner squashes the task onto ${baseBranch(p)}, runs the tests and pushes it. If someone pushed first, it merges again on top; conflicts and failing tests go back to Claude.`
       : f.auto_push.checked ? `Before each merge Dash pulls ${baseBranch(p)} from GitHub, so pushes don't get rejected.` : "";
 }
 $("#settings-form").addEventListener("change", syncMergeHint);

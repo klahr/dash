@@ -41,6 +41,7 @@ func (s *Server) hubTaskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/hub/tasks/{htid}", s.hubTaskAction("delete"))
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/approve", s.hubTaskAction("approve"))
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/cancel", s.hubTaskAction("cancel"))
+	mux.HandleFunc("POST /api/hub/tasks/{htid}/revert", s.hubTaskAction("revert"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/diff", s.hubTaskAction("diff"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/log", s.hubTaskAction("log"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/events", s.hubTaskAction("events"))
@@ -105,15 +106,29 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hpid := r.PathValue("hpid")
+	mode := model.MergeLocal
+	switch req.MergeMode {
+	case "", model.MergeLocal:
+	case model.MergePR:
+		mode = model.MergePR
+	default:
+		writeErr(w, fmt.Errorf("%w: merge_mode must be \"local\" or \"pr\"", errBadRequest))
+		return
+	}
 	if s.HubOrg != 0 && req.OrgID != s.HubOrg {
 		slog.Warn("runner: refused a project of another org", "project", hpid, "org", req.OrgID)
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "this runner works for another organization"})
 		return
 	}
 	if p, ok := sv.hubProject(hpid); ok {
-		if p.TaskInstructions != req.TaskInstructions {
+		if p.TaskInstructions != req.TaskInstructions || p.MergeMode != mode {
+			// The hub's project decides how its tasks land; a clone linked
+			// when every runner opened pull requests switches to pushing.
 			var err error
-			if p, err = sv.data.UpdateProject(p.ID, func(x *model.Project) error { x.TaskInstructions = req.TaskInstructions; return nil }); err != nil {
+			if p, err = sv.data.UpdateProject(p.ID, func(x *model.Project) error {
+				x.TaskInstructions, x.MergeMode = req.TaskInstructions, mode
+				return nil
+			}); err != nil {
 				writeErr(w, err)
 				return
 			}
@@ -166,7 +181,7 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := sv.data.CreateProject(model.Project{
 		ID: id, Name: req.Name, Path: path, DefaultBranch: branch, RemoteURL: s.Git.RemoteURL(ctx, id, path),
-		MergeMode: model.MergePR, MaxAutoFixes: model.DefaultMaxAutoFixes, HubProjectID: hpid,
+		MergeMode: mode, MaxAutoFixes: model.DefaultMaxAutoFixes, HubProjectID: hpid,
 		TaskInstructions: req.TaskInstructions,
 	})
 	if err != nil {
@@ -284,6 +299,20 @@ func (s *Server) hubTaskAction(action string) http.HandlerFunc {
 				return
 			}
 			writeJSON(w, http.StatusAccepted, dispatch.StateOf(t))
+		case "revert":
+			switch {
+			case t.Status != model.StatusMerged:
+				writeErr(w, fmt.Errorf("%w: only merged tasks can be reverted", errBadRequest))
+				return
+			case t.Revert != nil:
+				writeErr(w, fmt.Errorf("%w: this task was already reverted", errBadRequest))
+				return
+			}
+			if err := s.Merges.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID, Revert: true}); err != nil {
+				writeErr(w, err)
+				return
+			}
+			w.WriteHeader(http.StatusAccepted)
 		case "cancel":
 			if _, _, err := sv.cancel(t.ID); err != nil {
 				writeErr(w, err)

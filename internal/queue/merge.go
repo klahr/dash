@@ -34,7 +34,11 @@ var ErrMergeQueueFull = errors.New("merge queue is full")
 //     to Claude the same way
 //  3. land it: squash the branch onto the default branch (one commit per
 //     todo) and push, or in "pr" mode push the branch and open a pull
-//     request, which PollPRs follows until GitHub merges it
+//     request, which PollPRs follows until GitHub merges it. In a project
+//     shared through origin (a runner's clone of its hub's project) the
+//     squash is pushed before the default branch moves, and the todo is
+//     merged only once origin has it; when origin moved meanwhile, steps
+//     0–3 run again on top of it (see landPushed)
 //
 // When landing would overwrite uncommitted changes in the project's folder,
 // the job waits until those files are committed or stashed (see wait).
@@ -59,6 +63,10 @@ type MergeQueue struct {
 	// Remote fetches origin in the background and owns the per-project lock
 	// every fetch, push and move of the default branch here takes.
 	Remote *RemoteSync
+
+	// beforePush, when set (tests), runs just before a shared project's
+	// merge is pushed, e.g. to push to origin first.
+	beforePush func()
 
 	jobs    chan mergeItem
 	pending atomic.Int64
@@ -219,60 +227,91 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 	log := func(s string) { m.Log.Line(t, s) }
 	log("▶ merging into " + p.Base())
 
-	// 0. Start from what's on GitHub, so the push (or the PR) can't be rejected.
-	p = m.refreshRemote(ctx, p).For(t)
-	if p.SyncsRemote() {
-		if err := m.syncRemote(ctx, p); err != nil {
-			return err
-		}
-	}
-
 	var conflict *gitops.ErrConflict
-	// 1–2. Repeated (a few times) when the default branch moves meanwhile,
-	// e.g. a commit in the project's folder while the tests ran.
-	for range 3 {
-		base, err := m.Git.Head(ctx, p.ID, p.Path, p.Base())
-		if err != nil {
-			return err
+	// A shared project's merge counts once origin has it; when origin moves
+	// between the sync and the push (another runner, someone's push), the
+	// whole merge runs again on top of origin's new tip.
+	for attempt := 1; ; attempt++ {
+		// 0. Start from what's on GitHub, so the push (or the PR) can't be rejected.
+		p = m.refreshRemote(ctx, p).For(t)
+		if p.SyncsRemote() {
+			if err := m.syncRemote(ctx, p); err != nil {
+				return err
+			}
 		}
 
-		// 1. Bring the default branch into the todo's branch.
-		changed, err := m.Git.MergeIn(ctx, p.ID, wt.Path, p.Base())
+		// 1–2. Repeated (a few times) when the default branch moves meanwhile,
+		// e.g. a commit in the project's folder while the tests ran.
+		for range 3 {
+			base, err := m.Git.Head(ctx, p.ID, p.Path, p.Base())
+			if err != nil {
+				return err
+			}
+
+			// 1. Bring the default branch into the todo's branch.
+			changed, err := m.Git.MergeIn(ctx, p.ID, wt.Path, p.Base())
+			if errors.As(err, &conflict) {
+				log("⚠ " + conflict.Error())
+				return m.sendBack(t, p, "", true, "conflicts with "+p.Base()+" in "+strings.Join(conflict.Files, ", "))
+			}
+			if err != nil {
+				return err
+			}
+
+			// 2. Re-test if the default branch moved since the todo's tests ran.
+			if changed && p.TestCommand != "" {
+				checks := runChecks(ctx, m.Log, t, p, wt.Path, "merge", m.TestTimeout)
+				if t, err = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Checks = &checks; return nil }); err != nil {
+					return err
+				}
+				if !checks.Passed {
+					note := fmt.Sprintf("Your change was merged with the latest `%s`, and now the tests fail. %s", p.Base(), testNote(checks))
+					return m.sendBack(t, p, note, false, "tests fail after merging "+p.Base())
+				}
+			}
+
+			if head, err := m.Git.Head(ctx, p.ID, p.Path, p.Base()); err != nil || head == base {
+				break
+			}
+			log("↻ " + p.Base() + " moved during the merge; merging it in again")
+		}
+
+		// 3. Land it; a task that changed nothing is simply closed (there is no
+		// commit to squash, and GitHub refuses a pull request without one).
+		if files, _, _, err := m.Git.DiffStat(ctx, p.ID, wt.Path, p.Base()); err == nil && files == 0 {
+			m.landed(ctx, t, p, "", "✔ closed; nothing to merge")
+			return nil
+		}
+		// A pull request opened before the project switched to merging
+		// locally is followed until it closes, rather than landed twice.
+		if p.UsesPR() || (t.PR != nil && t.PR.State == "OPEN") {
+			return m.openPR(ctx, t, p)
+		}
+		if !p.LandsOnOrigin() {
+			break
+		}
+		sha, err := m.landPushed(ctx, p, func(dir string) (string, error) {
+			return m.Git.SquashInto(ctx, p.ID, dir, wt.Branch, commitMessage(t))
+		})
 		if errors.As(err, &conflict) {
 			log("⚠ " + conflict.Error())
 			return m.sendBack(t, p, "", true, "conflicts with "+p.Base()+" in "+strings.Join(conflict.Files, ", "))
 		}
+		var moved *originMoved
+		if errors.As(err, &moved) {
+			if attempt < maxLandAttempts {
+				log("↻ " + moved.Error() + "; merging again on top of it")
+				continue
+			}
+			return &syncError{fmt.Errorf("%w %d times in a row; approve again to retry", moved, attempt)}
+		}
 		if err != nil {
 			return err
 		}
-
-		// 2. Re-test if the default branch moved since the todo's tests ran.
-		if changed && p.TestCommand != "" {
-			checks := runChecks(ctx, m.Log, t, p, wt.Path, "merge", m.TestTimeout)
-			if t, err = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Checks = &checks; return nil }); err != nil {
-				return err
-			}
-			if !checks.Passed {
-				note := fmt.Sprintf("Your change was merged with the latest `%s`, and now the tests fail. %s", p.Base(), testNote(checks))
-				return m.sendBack(t, p, note, false, "tests fail after merging "+p.Base())
-			}
-		}
-
-		if head, err := m.Git.Head(ctx, p.ID, p.Path, p.Base()); err != nil || head == base {
-			break
-		}
-		log("↻ " + p.Base() + " moved during the merge; merging it in again")
-	}
-
-	// 3. Land it; a task that changed nothing is simply closed (there is no
-	// commit to squash, and GitHub refuses a pull request without one).
-	if files, _, _, err := m.Git.DiffStat(ctx, p.ID, wt.Path, p.Base()); err == nil && files == 0 {
-		m.landed(ctx, t, p, "", "✔ closed; nothing to merge")
+		m.landed(ctx, t, p, sha, "✔ merged into "+p.Base()+" and pushed")
 		return nil
 	}
-	if p.UsesPR() {
-		return m.openPR(ctx, t, p)
-	}
+
 	var sha string
 	_, err = m.land(ctx, p, func(dir string) (err error) {
 		sha, err = m.Git.SquashInto(ctx, p.ID, dir, wt.Branch, commitMessage(t))
@@ -297,6 +336,77 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 	}
 	m.landed(ctx, t, p, sha, "✔ merged into "+p.Base())
 	return nil
+}
+
+// maxLandAttempts is how many times a shared project's merge (or revert) is
+// redone on top of origin when origin keeps moving before the push.
+const maxLandAttempts = 5
+
+// originMoved is a push rejected because origin's branch moved on since
+// the merge started.
+type originMoved struct{ branch string }
+
+func (e *originMoved) Error() string { return "origin's " + e.branch + " moved on before the push" }
+
+// landPushed is land for a shared project (model.Project.LandsOnOrigin):
+// fn commits in Dash's own checkout of the default branch and returns the
+// commit, which is pushed to origin before the default branch moves to it,
+// so a merge counts only once origin has it. A push rejected because origin
+// moved returns *originMoved (nothing changed; merge again on top of it),
+// any other failure a *syncError.
+func (m *MergeQueue) landPushed(ctx context.Context, p model.Project, fn func(dir string) (string, error)) (string, error) {
+	unlock, err := m.Remote.Lock(ctx, p.ID)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	old, err := m.Git.Head(ctx, p.ID, p.Path, p.Base())
+	if err != nil {
+		return "", err
+	}
+	dir := m.landingDir(p)
+	if err := m.Git.LandingCheckout(ctx, p.ID, p.Path, dir, old); err != nil {
+		return "", err
+	}
+	sha, err := fn(dir)
+	if err != nil || sha == "" {
+		return sha, err
+	}
+	if m.beforePush != nil {
+		m.beforePush()
+	}
+	if err := m.Git.PushHead(ctx, p.ID, dir, p.Base()); err != nil {
+		if m.originMovedFrom(ctx, p, old) {
+			return "", &originMoved{branch: p.Base()}
+		}
+		m.setSyncError(p.ID, err)
+		return "", &syncError{fmt.Errorf("can't push %s to GitHub: %w", p.Base(), err)}
+	}
+	m.setSyncError(p.ID, nil)
+	// Pushed: the default branch here follows. Should that fail (files in
+	// the way in the project's folder), origin has the commit anyway and
+	// the next sync brings it in.
+	if err := m.Git.Advance(ctx, p.ID, p.Path, p.Base(), old, sha); err != nil {
+		slog.Warn("move the default branch after pushing", "project", p.Name, "err", err)
+	}
+	m.Remote.recount(ctx, p)
+	return sha, nil
+}
+
+// originMovedFrom fetches origin's branch and reports whether it has
+// commits old doesn't: then a push from old was rejected for that.
+func (m *MergeQueue) originMovedFrom(ctx context.Context, p model.Project, old string) bool {
+	fctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	if err := m.Git.FetchBranch(fctx, p.ID, p.Path, p.Base(), false); err != nil {
+		return false
+	}
+	tip, err := m.Git.Head(ctx, p.ID, p.Path, "refs/remotes/origin/"+p.Base())
+	if err != nil || tip == old {
+		return false
+	}
+	mb, err := m.Git.MergeBase(ctx, p.ID, p.Path, tip, old)
+	return err == nil && mb != tip
 }
 
 // landed marks a todo merged and removes its worktree.

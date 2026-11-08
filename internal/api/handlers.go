@@ -347,16 +347,20 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 			if err := checkMergeMode(*req.MergeMode, p.RemoteURL); err != nil {
 				return err
 			}
-			if *req.MergeMode != model.MergePR && len(runners) > 0 && *req.MergeMode != p.MergeMode {
-				return errHubMergeOff
+			mode := *req.MergeMode
+			if mode == "" {
+				mode = model.MergeLocal
 			}
-			p.MergeMode = *req.MergeMode
+			if cur := p.MergeMode; mode != cur && (cur != "" || mode != model.MergeLocal) {
+				p.MergeModeSet = true // the user's choice, kept from now on
+			}
+			p.MergeMode = mode
 		}
 		p.Runners = runners
 		if len(runners) > 0 {
-			// Work lands through the remote: each runner pushes its branch
-			// and opens a pull request. Nothing merges on the hub.
-			p.MergeMode, p.AutoPush = model.MergePR, false
+			// The runners push to origin themselves (see
+			// model.Project.LandsOnOrigin); the hub doesn't push.
+			p.AutoPush = false
 		}
 		return nil
 	})
@@ -1017,7 +1021,11 @@ func (s *Server) revertTodo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: this task was already reverted", errBadRequest))
 		return
 	case t.OnRunner():
-		writeErr(w, fmt.Errorf("%w: this task landed through a pull request from its runner; revert it on GitHub", errBadRequest))
+		if err := sv.revertOnRunner(r.Context(), t); err != nil {
+			writeErr(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 	if err := s.Merges.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID, Revert: true}); err != nil {

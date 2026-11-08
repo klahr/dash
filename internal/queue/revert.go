@@ -10,6 +10,7 @@ import (
 
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/store"
 )
 
 // revert undoes a merged todo: a revert commit on the default branch (then
@@ -30,14 +31,24 @@ func (m *MergeQueue) revert(ctx context.Context, job model.MergeJob) {
 		_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Error = "Revert failed: " + err.Error(); return nil })
 	}
 	m.Log.Line(t, "↶ reverting")
-	if p.SyncsRemote() {
+	if len(t.RevertConflict) > 0 {
+		_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.RevertConflict = nil; return nil })
+	}
+	sync := func() bool {
+		if !p.SyncsRemote() {
+			return true
+		}
 		if err := m.syncRemote(ctx, p); errors.As(err, new(*gitops.ErrDirtyCheckout)) {
 			m.wait(ctx, job, err)
-			return
+			return false
 		} else if err != nil {
 			fail(err)
-			return
+			return false
 		}
+		return true
+	}
+	if !sync() {
+		return
 	}
 	sha := t.MergedCommit
 	if sha == "" {
@@ -48,6 +59,31 @@ func (m *MergeQueue) revert(ctx context.Context, job model.MergeJob) {
 	}
 	msg := fmt.Sprintf("Revert \"%s\"\n\nThis reverts commit %s.\n\nDash-Revert: %s", subject(t), sha, t.ID)
 
+	if p.LandsOnOrigin() {
+		// Like a merge: pushed before it counts, redone on top of origin
+		// when origin moved meanwhile.
+		for attempt := 1; ; attempt++ {
+			rsha, err := m.landPushed(ctx, p, func(dir string) (string, error) {
+				return m.Git.RevertCommit(ctx, p.ID, dir, sha, msg)
+			})
+			var conflict *gitops.ErrConflict
+			var moved *originMoved
+			switch {
+			case errors.As(err, &conflict):
+				m.revertByClaude(t, p, sha, conflict.Files)
+			case errors.As(err, &moved) && attempt < maxLandAttempts:
+				m.Log.Line(t, "↻ "+moved.Error()+"; reverting again on top of it")
+				if sync() {
+					continue
+				}
+			case err != nil:
+				fail(err)
+			default:
+				m.reverted(t, &model.Revert{Commit: rsha, At: time.Now()}, "↶ reverted in "+short(rsha)+" and pushed")
+			}
+			return
+		}
+	}
 	if p.UsesPR() {
 		m.revertPR(ctx, t, p, sha, msg, fail)
 		return
@@ -113,28 +149,50 @@ func (m *MergeQueue) reverted(t model.Todo, r *model.Revert, line string) {
 	_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Revert, x.Error = r, ""; return nil })
 }
 
-// revertByClaude queues a todo asking Claude to undo the change by hand.
+// revertByClaude queues a todo asking Claude to undo the change by hand. A
+// hub's task on a runner only records the conflict: its hub, which the
+// people reviewing the work look at, queues that todo (see UndoTodo).
 func (m *MergeQueue) revertByClaude(t model.Todo, p model.Project, sha string, files []string) {
-	prompt := fmt.Sprintf("Undo the change an earlier task made, which landed as commit %s (\"%s\"). "+
-		"`git revert` conflicts because later work changed the same code (%s), so do it by hand: remove that "+
-		"change's behaviour while keeping everything added since working. Run `git show %s` to see the "+
-		"change.\n\nThe earlier task was:\n\n%s", short(sha), subject(t), strings.Join(files, ", "), sha, quote(t.Prompt))
-	nt, err := m.Store.CreateTodo(model.Todo{ProjectID: p.ID, Title: "Undo: " + subject(t), Prompt: prompt})
-	if err == nil {
-		_, err = m.Store.SetStatus(nt.ID, model.StatusQueued, "")
+	if t.HubTodoID != "" {
+		m.Log.Line(t, "⚠ git revert conflicts with later work in "+strings.Join(files, ", ")+"; the hub queues a task for Claude to undo it by hand")
+		_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+			x.RevertConflict = files
+			x.Error = "Reverting conflicts with later work in " + strings.Join(files, ", ")
+			return nil
+		})
+		return
 	}
+	nt, err := UndoTodo(m.Store, t, sha, files)
 	if err != nil {
 		m.Log.Line(t, "✖ revert: "+err.Error())
 		return
 	}
 	m.Log.Line(t, "⚠ git revert conflicts with later work in "+strings.Join(files, ", ")+"; queued \""+nt.Title+"\" for Claude")
-	_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
-		x.Error = "Reverting conflicts with later work, so Claude got a task to undo it by hand: " + nt.Title
-		return nil
-	})
 	if m.Kick != nil {
 		m.Kick()
 	}
+}
+
+// UndoTodo queues a todo in t's project asking Claude to undo t, which
+// landed as commit sha, by hand, since reverting it conflicts in files, and
+// notes it on t.
+func UndoTodo(st *store.Store, t model.Todo, sha string, files []string) (model.Todo, error) {
+	prompt := fmt.Sprintf("Undo the change an earlier task made, which landed as commit %s (\"%s\"). "+
+		"`git revert` conflicts because later work changed the same code (%s), so do it by hand: remove that "+
+		"change's behaviour while keeping everything added since working. Run `git show %s` to see the "+
+		"change.\n\nThe earlier task was:\n\n%s", short(sha), subject(t), strings.Join(files, ", "), sha, quote(t.Prompt))
+	nt, err := st.CreateTodo(model.Todo{ProjectID: t.ProjectID, CreatedBy: t.CreatedBy, Title: "Undo: " + subject(t), Prompt: prompt})
+	if err == nil {
+		nt, err = st.SetStatus(nt.ID, model.StatusQueued, "")
+	}
+	if err != nil {
+		return nt, err
+	}
+	_, _ = st.UpdateTodo(t.ID, func(x *model.Todo) error {
+		x.Error = "Reverting conflicts with later work, so Claude got a task to undo it by hand: " + nt.Title
+		return nil
+	})
+	return nt, nil
 }
 
 func short(sha string) string {

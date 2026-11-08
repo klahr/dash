@@ -8,8 +8,12 @@
 // parallel limit) and sends it there over the runner's tunnel. The runner
 // runs the task in its own clone of the project's git remote, with its
 // owner's Claude login, and reports back on POST /runner/report. Approved
-// work lands through the remote (a pull request the runner merges once its
-// checks pass), never by merging on the hub.
+// work lands through the remote: the runner squashes it onto the default
+// branch in its clone, runs the checks and pushes it to origin, merging
+// again on top of origin when another runner (or anyone) pushed first; the
+// hub marks the task merged once the runner reports the commit. Projects
+// that opted into pull requests get one instead, which the runner merges
+// once its checks pass. Nothing merges on the hub.
 //
 // The runner checks every task against the projects linked to it (see the
 // api package's hub task routes): it takes work only for a project the hub
@@ -35,6 +39,10 @@ type Link struct {
 	// it isn't DefaultBranch (the hub's branch switcher); "" means DefaultBranch.
 	WorkBranch string `json:"work_branch,omitempty"`
 	OrgID      int64  `json:"org_id"`
+	// MergeMode is the hub project's model.Project.MergeMode: "" or "local"
+	// lands approved work by pushing it to the default branch, "pr" through
+	// a pull request.
+	MergeMode string `json:"merge_mode,omitempty"`
 	// TaskInstructions are the hub project's extra instructions for Claude
 	// (model.Project.TaskInstructions). The link is sent before every task,
 	// so the runner's copy follows the hub's.
@@ -90,6 +98,12 @@ type TaskState struct {
 	Runs      int                `json:"runs,omitempty"`
 	Checks    *model.Checks      `json:"checks,omitempty"`
 	PR        *model.PullRequest `json:"pr,omitempty"`
+	// MergedCommit is the commit that landed the task on origin's default
+	// branch, Revert how it was undone since, and RevertConflict the files
+	// a revert conflicted in (the hub then queues a task to undo it by hand).
+	MergedCommit   string        `json:"merged_commit,omitempty"`
+	Revert         *model.Revert `json:"revert,omitempty"`
+	RevertConflict []string      `json:"revert_conflict,omitempty"`
 	// Session: the runner still has the task's worktree and Claude
 	// session, so it can continue the task.
 	Session   bool      `json:"session,omitempty"`
@@ -105,7 +119,8 @@ func StateOf(t model.Todo) TaskState {
 	s := TaskState{
 		HubTodoID: t.HubTodoID, ID: t.ID, Status: t.Status, Paused: t.Paused, Error: t.Error, Summary: t.Summary,
 		DiffFiles: t.DiffFiles, DiffAdd: t.DiffAdd, DiffDel: t.DiffDel, CostUSD: t.CostUSD, Runs: t.Runs,
-		Checks: t.Checks, PR: t.PR, Session: t.Worktree != nil && t.SessionID != "", UpdatedAt: t.UpdatedAt,
+		Checks: t.Checks, PR: t.PR, MergedCommit: t.MergedCommit, Revert: t.Revert, RevertConflict: t.RevertConflict,
+		Session: t.Worktree != nil && t.SessionID != "", UpdatedAt: t.UpdatedAt,
 	}
 	if t.Worktree != nil {
 		s.Branch = t.Worktree.Branch
