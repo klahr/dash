@@ -18,6 +18,7 @@ import (
 
 	"github.com/creack/pty"
 
+	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
 )
@@ -158,6 +159,9 @@ func shell(dir, command string) *exec.Cmd {
 }
 
 func (m *Manager) startPiped(projectID string, kind model.ProcessKind, command, url string, cmd *exec.Cmd, init func(*model.Process)) (model.Process, error) {
+	if err := localrun.Check(string(kind) + ": " + command); err != nil {
+		return model.Process{}, err
+	}
 	r, w, err := os.Pipe()
 	if err != nil {
 		return model.Process{}, err
@@ -184,6 +188,9 @@ func (m *Manager) StartPTY(projectID, dir, command string, cols, rows uint16) (m
 		if command == "" {
 			command = "bash"
 		}
+	}
+	if err := localrun.Check("terminal: " + command); err != nil {
+		return model.Process{}, err
 	}
 	cmd := exec.Command("bash", "-lc", "exec "+command)
 	cmd.Dir = dir

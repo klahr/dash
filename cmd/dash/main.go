@@ -31,6 +31,7 @@ import (
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
+	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/mail"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
@@ -270,6 +271,14 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if !runnerMode {
+		// The hub runs nothing on its own computer: no git, gh, project
+		// commands or terminals, and no working trees. Every way to run one
+		// in this process refuses (localrun), behind the API forwarding each
+		// project's work to the runners linked to it.
+		localrun.Set(func() bool { return false })
+	}
+
 	// ---- services ----
 	git := gitops.New(events)
 	git.SignCommits = *signCommits
@@ -470,7 +479,13 @@ func main() {
 		never := func() bool { return false }
 		agent.SetLocal(never)
 		apiSrv.LocalClaude, todos.LocalTasks = never, never
-		slog.Info("this hub runs no Claude: tasks, scans and chats run on runners. Start `dash runner` on a computer with git and Claude Code (account menu → Runners → Add a runner)")
+		// Nor anything else: a project's git, files, releases and commands
+		// are forwarded to its runners, GitHub's builds read with their gh.
+		apiSrv.RunnerOnly = true
+		builds.Git = api.RunnerGitHub{S: apiSrv}
+		merges.CleanupEvery, merges.PRPoll = 0, 0 // the runners clean up and follow pull requests
+		slog.Info("this hub runs nothing itself: tasks, scans, chats, git and project commands run on runners. Start `dash runner` on a computer with git and Claude Code (account menu → Runners → Add a runner)")
+		warnUnlinked(st.ListProjects())
 		d.Start()
 	}
 	// Every per-run MCP token acts as its task's (or chat's) user, in its org,
@@ -516,6 +531,9 @@ func main() {
 	// Projects adopted with a default branch the repo doesn't have (e.g. "main"
 	// in a master repo) get the repo's real main line.
 	for _, p := range st.ListProjects() {
+		if !runnerMode {
+			break // the hub has no checkouts: a runner's clone finds origin's main line (see api's linkOn)
+		}
 		if _, err := os.Stat(p.Path); err != nil || git.HasBranch(ctx, p.ID, p.Path, p.DefaultBranch) {
 			continue
 		}
@@ -530,7 +548,7 @@ func main() {
 	// run before it reaches the default branch, unless their user chose
 	// otherwise; projects that can't open pull requests (no GitHub remote,
 	// or no gh here) merge locally.
-	if names, err := st.DefaultMergeModes(git.HasGh()); err != nil {
+	if names, err := st.DefaultMergeModes(runnerMode && git.HasGh()); err != nil {
 		slog.Warn("default merge modes", "err", err)
 	} else if len(names) > 0 {
 		slog.Info("projects switched to their default way of landing work (pull requests on GitHub, else merging)", "projects", names)
@@ -544,7 +562,9 @@ func main() {
 	go todos.Run(ctx)
 	merges.Resume()
 	go merges.Run(ctx) // the one and only merge worker
-	go merges.Remote.Run(ctx)
+	if runnerMode {
+		go merges.Remote.Run(ctx) // the hub fetches nothing: its projects' clones are on runners
+	}
 
 	// The chat runs on runners only: the hub relays it to the caller's.
 	switch chat := *chatBackend; {
@@ -634,6 +654,20 @@ func main() {
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("server", "err", err)
 		os.Exit(1)
+	}
+}
+
+// warnUnlinked logs the hub's projects no runner is linked to: made on the
+// hub before it stopped running anything itself. They stay, with their
+// tasks, and their files stay on disk; their work waits until a runner is
+// linked (Project settings → Runners), and the dashboard says so.
+func warnUnlinked(ps []model.Project) {
+	for _, p := range ps {
+		if !p.OnRunners() {
+			slog.Warn("project needs a runner: the hub runs nothing itself, so its tasks, git and commands wait until one is linked "+
+				"(Project settings → Runners), or remove it from the hub (its files stay) and add it on a runner with \"Add projects from this computer…\"",
+				"project", p.Name, "path", p.Path)
+		}
 	}
 }
 

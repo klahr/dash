@@ -5,17 +5,18 @@ merge them one at a time.
 
 ## Requirements
 
-- **git**
 - **Go 1.27.3 or newer** (see [`go.mod`](go.mod)), only to build from source
-- **[Claude Code](https://claude.com/claude-code)** (`claude`), installed and logged in, on each
-  computer that runs **`dash runner`**: run `claude` once in a terminal there and sign in. The hub
-  (`dash`, the dashboard) never runs Claude and needs neither `claude` nor an API key, but it
-  needs **at least one runner**: all Claude work (tasks, scans, chats, titles) runs on runners,
-  with their owners' logins. The runner can be the same computer as the hub
-  ([several computers](docs/several-computers.md#claude-runs-on-each-users-own-runner)).
-- Optional: **[`gh`](https://cli.github.com)**, logged in, to create GitHub repositories and open
-  pull requests. Without it, GitHub projects merge on the default branch instead of opening pull
-  requests.
+- **At least one runner.** The hub (`dash`, the dashboard) runs nothing on its own computer: it
+  signs people in and keeps the board, and every task, scan, chat, git command and project
+  command runs on a runner (**`dash runner`**), with its owner's logins. The hub needs **no
+  `claude`, `git` or `gh`** installed and no API key. The runner can be the same computer as the
+  hub ([several computers](docs/several-computers.md)). Each computer that runs `dash runner` needs:
+  - **git**;
+  - **[Claude Code](https://claude.com/claude-code)** (`claude`), installed and logged in: run
+    `claude` once in a terminal there and sign in;
+  - optional: **[`gh`](https://cli.github.com)**, logged in, to create GitHub repositories and
+    open pull requests. Without it, GitHub projects merge on the default branch instead of opening
+    pull requests.
 
 ## Quick start
 
@@ -60,8 +61,9 @@ Open <http://127.0.0.1:7788> and sign in with the `DASH_USERNAME` and `DASH_PASS
 [Users and organizations](docs/users.md)). Dash listens only on `127.0.0.1:7788` by default; to change that, see `-addr` in
 `./bin/dash -h` (and [Deploy the hub](docs/deploy.md) before exposing it).
 
-Then add a runner, the computer Claude works on: the hub runs no Claude itself, and until a
-runner is online the dashboard says so. In the account menu choose **Runners** → **Add a
+Then add a runner, the computer the work happens on: the hub runs nothing itself (no Claude, no
+git, no project commands) and keeps no projects on its own disk, and until a runner is online the
+dashboard says so. In the account menu choose **Runners** → **Add a
 runner** and run the command it shows, here or on another computer. On the hub's own computer,
 give the runner a data folder of its own:
 
@@ -69,16 +71,23 @@ give the runner a data folder of its own:
 ./bin/dash runner -data ~/.local/share/dash-runner --server http://127.0.0.1:7788 --code XXXX-XXXX
 ```
 
-Link each project to a runner in its settings (**Runners**); its tasks and scans run there.
+Projects live on runners. A **runner's own project** is a repository on that runner's disk; a
+**shared project** is a git remote linked to one or more runners, each of which clones it, and any
+of them can run its tasks (tick **Share it on the hub** in **New project**, and link more runners
+in its settings, **Runners**). See
+[Two kinds of projects](docs/several-computers.md#two-kinds-of-projects). A hub that kept projects
+of its own before this: see
+[Moving projects off the hub](docs/several-computers.md#moving-projects-off-the-hub).
 
 Prefer the terminal? There's a terminal client too: `./bin/dash-tui` (it's in the release
 archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 
 ## Your first task
 
-1. **Create a project.** Click **New project** and give it a name to start a new repository, or
-   switch to **Existing clone** to add a git repository you already have: pick one of the clones
-   Dash finds in your projects folder, or give its path (the name defaults to its folder's).
+1. **Create a project.** Click **New project**, pick the runner it lives on (**Computer**), and
+   give it a name to start a new repository, or switch to **Existing clone** to add a git
+   repository you already have: pick one of the clones Dash finds in that runner's projects
+   folder, or give its path (the name defaults to its folder's).
    **Add existing clone** in the project menu and the command palette opens it directly.
    A clone (existing or from GitHub) that has a favicon gets it as its project icon.
    A *Test command* (e.g. `go test ./...`) is optional but lets Dash check Claude's work.
@@ -111,7 +120,7 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
   with a compose file: [Run the hub with Docker](docs/deploy.md#run-the-hub-with-docker).
 - **Use it from Claude** with the `dash-mcp` MCP server, or as a custom connector in claude.ai
   and the Claude app: [docs/mcp.md](docs/mcp.md).
-- **Several computers** in one dashboard: add each with one pasted command (`curl … /runner/install.sh | sh`), no VPN needed. Link a project to people's runners and the hub sends its tasks there, each on its owner's Claude subscription; everyone's chat, titles and clean-ups run on their own runner too, so the hub runs no Claude itself: [docs/several-computers.md](docs/several-computers.md).
+- **Several computers** in one dashboard: add each with one pasted command (`curl … /runner/install.sh | sh`), no VPN needed. Share a project with people's runners and the hub sends its tasks, git and commands there, each on its owner's Claude subscription; everyone's chat, titles and clean-ups run on their own runner too, so the hub runs nothing itself: [docs/several-computers.md](docs/several-computers.md).
 - **Live previews** of each task's app, served on their own subdomains:
   [docs/previews.md](docs/previews.md).
 

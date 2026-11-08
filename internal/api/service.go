@@ -238,7 +238,7 @@ func (sv *service) removeTodo(ctx context.Context, id string) error {
 			defer cancel()
 			sv.s.Dispatch.Forget(ctx, t)
 		}()
-	} else if t.Worktree != nil && t.Status != model.StatusMerged {
+	} else if t.Worktree != nil && t.Status != model.StatusMerged && !sv.s.RunnerOnly {
 		if p, err := sv.data.GetProject(t.ProjectID); err == nil {
 			_ = sv.s.Git.RemoveWorktree(ctx, p.ID, p.Path, *t.Worktree)
 		}

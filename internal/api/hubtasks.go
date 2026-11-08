@@ -42,10 +42,13 @@ func (s *Server) hubTaskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/approve", s.hubTaskAction("approve"))
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/cancel", s.hubTaskAction("cancel"))
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/revert", s.hubTaskAction("revert"))
+	mux.HandleFunc("POST /api/hub/tasks/{htid}/test", s.hubTaskAction("test"))
+	mux.HandleFunc("POST /api/hub/tasks/{htid}/open", s.hubTaskAction("open"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/diff", s.hubTaskAction("diff"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/log", s.hubTaskAction("log"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/events", s.hubTaskAction("events"))
 	mux.HandleFunc("GET "+dispatch.ScanPath, s.hubScan)
+	mux.HandleFunc("POST /api/hub/github/{hpid}", s.hubGitHub)
 }
 
 var errNotLinked = errors.New("that project isn't linked to this runner")
@@ -125,12 +128,22 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "this runner works for another organization"})
 		return
 	}
+	// The hub's commands, when this runner takes commands from the hub.
+	commands := func(x *model.Project) {
+		if s.HubCommands {
+			x.SetupCommand, x.TestCommand, x.RunCommand, x.DeployCommand = req.SetupCommand, req.TestCommand, req.RunCommand, req.DeployCommand
+		}
+	}
 	if p, ok := sv.hubProject(hpid); ok {
-		if p.TaskInstructions != req.TaskInstructions || p.MergeMode != mode || p.MergesGreenPRs() != greenOn(req.MergeGreenPRs) {
+		want := p
+		commands(&want)
+		if p.TaskInstructions != req.TaskInstructions || p.MergeMode != mode || p.MergesGreenPRs() != greenOn(req.MergeGreenPRs) ||
+			want.SetupCommand != p.SetupCommand || want.TestCommand != p.TestCommand || want.RunCommand != p.RunCommand || want.DeployCommand != p.DeployCommand {
 			// The hub's project decides how its tasks land.
 			var err error
 			if p, err = sv.data.UpdateProject(p.ID, func(x *model.Project) error {
 				x.TaskInstructions, x.MergeMode, x.MergeGreenPRs = req.TaskInstructions, mode, req.MergeGreenPRs
+				commands(x)
 				return nil
 			}); err != nil {
 				writeErr(w, err)
@@ -141,7 +154,7 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, dispatch.Linked{ProjectID: p.ID})
+		writeJSON(w, http.StatusOK, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch})
 		return
 	}
 	if err := gitops.CheckRemote(req.RemoteURL); err != nil {
@@ -183,11 +196,13 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	p, err := sv.data.CreateProject(model.Project{
+	np := model.Project{
 		ID: id, Name: req.Name, Path: path, DefaultBranch: branch, RemoteURL: s.Git.RemoteURL(ctx, id, path),
 		MergeMode: mode, MergeGreenPRs: req.MergeGreenPRs, MaxAutoFixes: model.DefaultMaxAutoFixes, HubProjectID: hpid,
 		TaskInstructions: req.TaskInstructions,
-	})
+	}
+	commands(&np)
+	p, err := sv.data.CreateProject(np)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -197,7 +212,7 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("runner: hub linked a project", "name", p.Name, "path", p.Path)
-	writeJSON(w, http.StatusCreated, dispatch.Linked{ProjectID: p.ID})
+	writeJSON(w, http.StatusCreated, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch})
 }
 
 // greenOn is model.Project.MergesGreenPRs for a MergeGreenPRs setting.
@@ -316,6 +331,21 @@ func (s *Server) hubTaskAction(action string) http.HandlerFunc {
 				return
 			}
 			if err := s.Merges.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID, Revert: true}); err != nil {
+				writeErr(w, err)
+				return
+			}
+			w.WriteHeader(http.StatusAccepted)
+		case "test":
+			if err := s.Todos.RunTests(t.ID); err != nil {
+				if !errors.Is(err, store.ErrNotFound) {
+					err = fmt.Errorf("%w: %v", errBadRequest, err)
+				}
+				writeErr(w, err)
+				return
+			}
+			w.WriteHeader(http.StatusAccepted)
+		case "open":
+			if err := s.openWorktree(t); err != nil {
 				writeErr(w, err)
 				return
 			}
@@ -472,4 +502,48 @@ func (s *Server) hubScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	send(scan.Message{Done: &out})
+}
+
+// hubGitHub handles POST /api/hub/github/{hpid}: gh in this runner's clone
+// of a project the hub linked, for the hub's CI view (see
+// api.RunnerGitHub): reading builds, a release's page, a failed build's
+// log, and re-running a build. Nothing else.
+func (s *Server) hubGitHub(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.fromHub(w, r)
+	if !ok {
+		return
+	}
+	p, ok := sv.hubProject(r.PathValue("hpid"))
+	if !ok {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": errNotLinked.Error()})
+		return
+	}
+	var req dispatch.GitHubCall
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	limit := min(max(req.Limit, 1), 200)
+	ctx := r.Context()
+	var out dispatch.GitHubAnswer
+	var err error
+	switch req.Op {
+	case dispatch.GitHubRuns:
+		out.Runs, err = s.Git.Runs(ctx, p.ID, p.Path, req.Ref, limit)
+	case dispatch.GitHubCommitRuns:
+		out.Runs, err = s.Git.RunsForCommit(ctx, p.ID, p.Path, req.Ref, limit)
+	case dispatch.GitHubReleaseURL:
+		out.URL, err = s.Git.ReleaseURL(ctx, p.ID, p.Path, req.Ref)
+	case dispatch.GitHubRerun:
+		err = s.Git.RerunRun(ctx, p.ID, p.Path, req.RunID, req.FailedOnly)
+	case dispatch.GitHubFailedLog:
+		out.Log = s.Git.RunFailedLog(ctx, p.ID, p.Path, req.RunID, limit)
+	default:
+		err = fmt.Errorf("%w: unknown op %q", errBadRequest, req.Op)
+	}
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }

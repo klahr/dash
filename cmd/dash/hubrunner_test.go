@@ -61,8 +61,6 @@ func TestHubWithoutClaudeRunsItsWorkOnARunner(t *testing.T) {
 	origin := httptest.NewTLSServer(&cgi.Handler{Path: backend, Env: []string{"GIT_PROJECT_ROOT=" + repos, "GIT_HTTP_EXPORT_ALL=1"}})
 	defer origin.Close()
 	remote := origin.URL + "/app.git"
-	hubClone := filepath.Join(dir, "hub-projects", "app")
-	run(t, "", gitEnv, gitBin, "clone", "-q", remote, hubClone)
 
 	// The hub: default flags, no claude on its PATH.
 	hubPath := pathWithout(t, "claude")
@@ -73,8 +71,6 @@ func TestHubWithoutClaudeRunsItsWorkOnARunner(t *testing.T) {
 	api := newClient(t, base)
 	waitFor(t, hubLogs, "the hub to start", func() bool { code, _ := api.try("GET", "/api/version", nil); return code != 0 })
 	api.must("POST", "/api/login", map[string]string{"username": "admin", "password": "a-long-enough-password"}, http.StatusOK, nil)
-	var p struct{ ID, RemoteURL string }
-	api.must("POST", "/api/projects", map[string]string{"name": "app", "path": hubClone}, http.StatusCreated, &p)
 
 	// A runner, registered with a code, with the fake claude.
 	var code struct{ Code string }
@@ -99,7 +95,9 @@ func TestHubWithoutClaudeRunsItsWorkOnARunner(t *testing.T) {
 		}
 		return runnerID != ""
 	})
-	api.must("PATCH", "/api/projects/"+p.ID, map[string]any{"runners": []string{runnerID}}, http.StatusOK, nil)
+	// A project shared with it: the hub keeps none on its own disk.
+	var p struct{ ID, RemoteURL string }
+	api.must("POST", "/api/projects", map[string]any{"name": "app", "remote_url": remote, "runners": []string{runnerID}}, http.StatusCreated, &p)
 
 	// A task without a title: titled on the runner, run there, and its
 	// report_issue lands on the hub's board.

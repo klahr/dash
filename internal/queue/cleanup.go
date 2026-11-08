@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/model"
+
+	"github.com/klahr/dash/internal/localrun"
 )
 
 // CleanupReport says what a cleanup removed.
@@ -266,6 +268,9 @@ func (m *MergeQueue) DeleteProject(ctx context.Context, projectID string, files 
 			return
 		}
 		root := filepath.Join(m.WorktreeRoot, p.ID)
+		if !localrun.Allowed() {
+			return // the hub: no checkout, worktrees or branches of its own
+		}
 		if files {
 			_ = os.RemoveAll(root)
 			if rerr := os.RemoveAll(p.Path); rerr != nil {

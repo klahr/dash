@@ -43,10 +43,21 @@ type Status struct {
 	Release *Release `json:"release,omitempty"`
 }
 
+// GitHub is how a Watcher reads GitHub Actions: gh in the project's
+// clone (a *gitops.Git) or, on the hub, which has no clones and no gh,
+// gh on a runner linked to the project.
+type GitHub interface {
+	Runs(ctx context.Context, projectID, dir, ref string, limit int) ([]gitops.Run, error)
+	RunsForCommit(ctx context.Context, projectID, dir, sha string, limit int) ([]gitops.Run, error)
+	ReleaseURL(ctx context.Context, projectID, dir, tag string) (string, error)
+	RerunRun(ctx context.Context, projectID, dir string, runID int64, failedOnly bool) error
+	RunFailedLog(ctx context.Context, projectID, dir string, runID int64, lines int) string
+}
+
 // Watcher polls GitHub Actions for every project with a GitHub remote.
 type Watcher struct {
 	Store *store.Store
-	Git   *gitops.Git
+	Git   GitHub
 	Pub   Publisher
 	Kick  func()        // wake the todo engine after queueing a fix
 	Every time.Duration // poll interval

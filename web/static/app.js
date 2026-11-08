@@ -1099,10 +1099,34 @@ const notifyLabel = () => notifyOn() ? "Turn off notifications" : "Turn on notif
 // handler, with the event).
 function openNewProject(mode) {
   const f = $("#new-project");
-  f.machine.closest(".field").hidden = !multi();
-  f.machine.replaceChildren(...(state.machines || []).filter((m) => m.ok).map((m) => h("option", { value: m.name, selected: m.name === state.project?.machine }, m.local ? `${m.name} (this computer)` : m.name)));
+  const machines = projectMachines();
+  if (isHub() && !machines.length) {
+    // The hub keeps no projects itself: they live on runners.
+    fail(new Error(state.runners?.length ? noRunnerOnline : `A runner is required: this dashboard keeps no projects itself. To add one, ${startRunner}.`));
+    return;
+  }
+  const pick = defaultMachine(machines);
+  f.machine.closest(".field").hidden = !multi() && !isHub();
+  f.machine.replaceChildren(...machines.map((m) => h("option", { value: m.name, selected: m.name === pick },
+    m.local ? `${m.name} (this computer)` : `${m.name}${state.runners?.find((r) => r.name === m.name)?.mine ? " (yours)" : ""}`)));
   setNewProjectMode(mode === "existing" ? "existing" : "new");
   $("#new-project-sheet").showModal();
+}
+
+// isHub reports whether this dashboard is a hub: it has runners (or could),
+// and keeps no projects on its own computer.
+const isHub = () => Array.isArray(state.runners);
+const noRunnerOnline = "No runner is online. Start one with `dash runner`.";
+
+// projectMachines are the computers a project can be made on: on a hub,
+// its runners that are online (never the hub itself); elsewhere, this one.
+const projectMachines = () => (state.machines || []).filter((m) => m.ok && (!isHub() || m.runner));
+
+// defaultMachine picks where a new project goes: an online runner of the
+// user's own, else the open project's computer, else the first.
+function defaultMachine(machines) {
+  const mine = machines.find((m) => state.runners?.find((r) => r.name === m.name)?.mine);
+  return (mine || machines.find((m) => m.name === state.project?.machine) || machines[0])?.name;
 }
 const openAddClone = () => openNewProject("existing");
 
@@ -1118,6 +1142,8 @@ function setNewProjectMode(mode) {
   $("#new-project-title").textContent = existing ? "Add existing clone" : "New project";
   $("#new-project-submit").textContent = existing ? "Add project" : "Create project";
   $("#new-project-github-row").hidden = existing;
+  $("#new-project-share-row").hidden = existing || !isHub();
+  if (existing) f.share.checked = false;
   f.name.required = !existing;
   $("#new-project-name-label").replaceChildren("Name", ...(existing ? [" ", h("em", {}, "optional")] : []));
   $("#new-project-path-label").replaceChildren(...(existing ? ["Path of the clone"] : ["Folder ", h("em", {}, "optional")]));
@@ -1180,10 +1206,18 @@ for (const b of $$("#new-project-mode button")) b.addEventListener("click", () =
 
 // The public toggle and hint only matter once a GitHub repository is named.
 function syncNewProjectGitHub() {
-  const named = newProjectMode() === "new" && !!$("#new-project").github.value.trim();
-  $("#new-project-github-hint").hidden = $("#new-project-public-row").hidden = !named;
+  const f = $("#new-project");
+  const share = newProjectMode() === "new" && f.share.checked;
+  const named = newProjectMode() === "new" && !!f.github.value.trim();
+  $("#new-project-github-hint").hidden = $("#new-project-public-row").hidden = !named || share;
+  $("#new-project-share-hint").hidden = !share;
+  // A shared project is an existing GitHub repository, cloned on its runners.
+  $("#new-project-path-row").hidden = share || (newProjectMode() === "existing" && f.clone_pick.value !== OTHER_CLONE);
+  f.github.required = share;
+  f.github.placeholder = share ? "owner/name of an existing repository" : "name or owner/name";
 }
 $("#new-project").github.addEventListener("input", syncNewProjectGitHub);
+$("#new-project").share.addEventListener("change", syncNewProjectGitHub);
 
 // A project's image icon, or its initial on its color.
 const projectIcon = (p, el = h("span", { class: "side-project-icon", "aria-hidden": "true" })) => {
@@ -1219,15 +1253,36 @@ function renderSideProjects() {
       },
       icon,
       h("span", { class: "side-project-name" }, p.name),
-      cur && baseBranch(p) ? h("span", { class: "side-project-branch" }, baseBranch(p)) : null));
+      needsRunner(p) ? h("span", { class: "side-project-branch warn", title: "No runner is linked to it: link one in Project settings → Runners" }, "needs a runner")
+        : cur && baseBranch(p) ? h("span", { class: "side-project-branch" }, baseBranch(p)) : null));
   };
-  const items = !multi() ? state.projects.map(item) : state.machines.flatMap((m) => [
-    h("li", { class: "side-machine", title: m.ok ? "" : m.error || "unreachable" },
-      h("span", { class: `machine-dot ${m.ok ? "ok" : "down"}`, "aria-hidden": "true" }), m.name),
-    ...state.projects.filter((p) => p.machine === m.name).map(item),
+  const items = !multi() ? state.projects.map(item) : projectGroups().flatMap((g) => [
+    h("li", { class: "side-machine", title: g.title },
+      g.machine ? h("span", { class: `machine-dot ${g.machine.ok ? "ok" : "down"}`, "aria-hidden": "true" }) : null, g.name),
+    ...g.projects.map(item),
   ]);
   $("#side-project-list").replaceChildren(...(items.length ? items : [h("li", { class: "machine-empty" }, "No projects yet")]));
 }
+
+// projectGroups are the PROJECTS list's groups: the hub's shared projects
+// (it has no projects of its own, so no group of its own), then each
+// runner's own.
+function projectGroups() {
+  const groups = [];
+  for (const m of state.machines || []) {
+    const projects = state.projects.filter((p) => p.machine === m.name);
+    if (m.local && isHub()) {
+      if (projects.length) groups.push({ name: "Shared", title: "Projects shared on the hub, run by the runners linked to them", projects });
+      continue;
+    }
+    groups.push({ name: m.name, machine: m, title: m.ok ? "" : m.error || "unreachable", projects });
+  }
+  return groups;
+}
+
+// needsRunner reports whether p is a hub project no runner is linked to
+// (made on the hub before it stopped running anything itself).
+const needsRunner = (p) => isHub() && !!p && !p.prefix && !p.runners?.length;
 
 async function cleanup() {
   const p = state.project;
@@ -1255,7 +1310,11 @@ function openDeleteProject() {
   f.reset();
   $("#delete-project-title").textContent = `Delete ${p.name}`;
   $("#delete-project-path").textContent = p.path;
-  $("#delete-github-row").hidden = $("#delete-github-hint").hidden = !p.remote_url;
+  // A hub project is only forgotten: its clones stay on the runners (and
+  // any files from before the hub stopped keeping projects stay on disk).
+  const onHub = isHub() && !p.prefix;
+  $("#delete-project .choice").hidden = onHub;
+  $("#delete-github-row").hidden = $("#delete-github-hint").hidden = !p.remote_url || onHub;
   $("#delete-github-hint").textContent = `Deletes ${p.remote_url} for good, with its issues and pull requests. gh needs the delete_repo scope.`;
   syncDeleteProject();
   $("#delete-project-sheet").showModal();
@@ -1320,7 +1379,7 @@ function openProjects() {
 }
 // J/K: the next/previous project in sidebar order, wrapping around.
 function stepProject(d) {
-  const list = !multi() ? state.projects : state.machines.flatMap((m) => state.projects.filter((p) => p.machine === m.name));
+  const list = !multi() ? state.projects : projectGroups().flatMap((g) => g.projects);
   if (!list.length) return;
   const i = list.findIndex((p) => projectKey(p) === projectKey(state.project));
   return selectProject(list[(((i + d) % list.length) + list.length) % list.length]);
@@ -1339,11 +1398,10 @@ function setPicker(open) {
       onclick: attempt(async () => { setPicker(false); if (!cur) await selectProject(p); }),
     }, h("span", { class: "project-name" }, projectDot(p), p.name), h("span", { class: "project-branch" }, baseBranch(p)));
   };
-  const items = !multi() ? state.projects.map(item) : state.machines.flatMap((m) => {
-    const ps = state.projects.filter((p) => p.machine === m.name);
-    return [h("div", { class: "side-machine", title: m.ok ? "" : m.error || "unreachable" },
-      h("span", { class: `machine-dot ${m.ok ? "ok" : "down"}`, "aria-hidden": "true" }), m.name), ...ps.map(item)];
-  });
+  const items = !multi() ? state.projects.map(item) : projectGroups().flatMap((g) => [
+    h("div", { class: "side-machine", title: g.title },
+      g.machine ? h("span", { class: `machine-dot ${g.machine.ok ? "ok" : "down"}`, "aria-hidden": "true" }) : null, g.name),
+    ...g.projects.map(item)]);
   list.replaceChildren(...(state.projects.length ? items : [h("div", { class: "machine-empty" }, "No projects yet")]),
     h("button", { type: "button", role: "menuitem", class: "picker-new", onclick: () => { setPicker(false); openNewProject(); } }, "+ New project"),
     h("button", { type: "button", role: "menuitem", class: "picker-new", onclick: () => { setPicker(false); openAddClone(); } }, "+ Add existing clone"));
@@ -1402,9 +1460,26 @@ for (const menu of $$(".foot-menu")) {
 $("#new-project").addEventListener("submit", attempt(async (e) => {
   if (e.submitter?.value === "cancel") return;
   e.preventDefault();
-  const { machine, clone_pick: pick, ...body } = Object.fromEntries(new FormData(e.target));
+  const { machine, clone_pick: pick, share, ...body } = Object.fromEntries(new FormData(e.target));
   const m = state.machines?.find((x) => x.name === machine) || state.machines?.[0] || { name: "", prefix: "" };
   const existing = newProjectMode() === "existing";
+  if (isHub() && !m.runner) throw new Error(noRunnerOnline);
+  if (share && !existing) {
+    // Shared: the hub's project, linked to the picked runner, which clones it.
+    const runner = state.runners.find((r) => r.name === m.name);
+    const repo = await api("GET", `/api/github/repo?name=${encodeURIComponent((body.github || "").trim())}`, null, m.prefix);
+    if (!repo.exists) throw new Error(`${body.github} isn't on GitHub (or ${m.name} can't see it). Create it first: uncheck "Share", create the project, then share the repository.`);
+    toast("Sharing…");
+    const p = await api("POST", "/api/projects", { name: body.name, github: repo.name, runners: [runner.id],
+      run_command: body.run_command, test_command: body.test_command, deploy_command: body.deploy_command }, "");
+    e.target.reset();
+    setNewProjectMode("new");
+    await loadProjects();
+    await selectProject(state.projects.find((x) => x.id === p.id && !x.prefix));
+    $("#new-project-sheet").close();
+    toast(`Shared ${p.name} with ${m.name}`);
+    return;
+  }
   body.github = existing ? "" : (body.github || "").trim();
   body.github_public = !existing && !!body.github_public;
   if (existing) {
@@ -1703,6 +1778,7 @@ function renderBoardNow() {
   }
   empty.hidden = true;
   $("#new-todo").hidden = false;
+  renderRunnerBanner();
 
   // Mobile opens on whatever needs attention first.
   if (!state.lane || laneHidden(state.lane)) {
@@ -3303,10 +3379,24 @@ function runnerNeeded(p) {
   if (!p || p.prefix || !Array.isArray(state.runners)) return "";
   if (!state.runners.length) return `A runner is required: this dashboard doesn't run Claude itself. To add one, ${startRunner}.`;
   const linked = state.runners.filter((r) => p.runners?.includes(r.id));
-  if (!linked.length) return `No runner is linked to ${p.name}: tasks and scans wait until you link one in Project settings → Runners. This dashboard doesn't run Claude itself.`;
-  if (!linked.some((r) => r.online)) return `The runner${linked.length > 1 ? "s" : ""} linked to ${p.name} ${linked.length > 1 ? "are" : "is"} offline: tasks and scans wait until one is back (run \`dash runner\` on it).`;
+  if (!linked.length) return `${p.name} needs a runner: no runner is linked to it, so its tasks, scans, git history, files and commands wait until you link one in Project settings → Runners. This dashboard runs nothing itself.`;
+  if (!linked.some((r) => r.online)) return `No runner is online for this project. Start one with \`dash runner\`. Until then its tasks and scans wait, and its git history, files and commands can't be shown.`;
   return "";
 }
+// renderRunnerBanner says above the board when the open project's git,
+// files and commands can't be reached (no runner linked, or none online),
+// with a way to link one.
+function renderRunnerBanner() {
+  const el = $("#runner-banner");
+  const p = state.project;
+  const why = isHub() && p && !p.prefix && state.runners?.length ? runnerNeeded(p) : "";
+  el.hidden = !why;
+  if (!why) return el.replaceChildren();
+  el.replaceChildren(why, " ", needsRunner(p)
+    ? h("button", { type: "button", class: "link inline", onclick: () => { openSettings(); $("#settings-runners-field")?.scrollIntoView({ block: "center" }); } }, "Link a runner")
+    : h("button", { type: "button", class: "link inline", onclick: attempt(() => openRunners()) }, "Runners"));
+}
+
 // showRunnerNeeded fills a .runner-note element for p, hidden when nothing is missing.
 function showRunnerNeeded(el, p) {
   const why = runnerNeeded(p);
@@ -4491,9 +4581,9 @@ function syncMergeHint() {
   const hint = $("#settings-runners-hint");
   hint.hidden = $("#settings-runners-field").hidden;
   hint.textContent = !onRunners
-    ? "Not linked: tasks wait until you link a runner (this dashboard doesn't run tasks itself)."
+    ? "Not linked: tasks, git history, files and commands wait until you link a runner (this dashboard runs nothing itself)."
     : !p.remote_url ? "Runners clone the project's git remote: connect a GitHub repository first."
-      : "Tasks run only on these runners, each in its own clone. If all of them are offline, tasks wait in the queue.";
+      : "Tasks, git, files and commands run only on these runners, each in its own clone. If all of them are offline, tasks wait in the queue.";
   const pr = f.merge_mode.value === "pr";
   const green = f.merge_green_prs.checked;
   // On runners, merging is pushing: there's no separate push to turn on.

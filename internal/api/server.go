@@ -26,6 +26,7 @@ import (
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
+	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/notify"
@@ -102,6 +103,11 @@ type Server struct {
 	// tunnel.Board) to the hub's board: the board tools of the hub's tasks
 	// and of the chats the hub asks for act there, never on this Dash.
 	HubBoard func(ctx context.Context, hubTodo, hubProject string, body []byte) (*http.Response, error)
+	// RunnerOnly is set on the hub: it runs nothing on its own computer
+	// (no git, gh, shell commands or terminals, no working trees). Its
+	// projects' work is forwarded to the runners linked to them (see
+	// hubproxy.go), and it refuses to make projects on its own disk.
+	RunnerOnly bool
 	// HubCommands lets the hub set and run a project's commands when this
 	// Dash is a runner (see RunnerRoutes).
 	HubCommands bool
@@ -193,21 +199,21 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/projects/{pid}/github", s.createGitHubRepo)
 	mux.HandleFunc("GET /api/github/repo", s.lookupGitHubRepo)
 	mux.HandleFunc("GET /api/repos", s.localRepos)
-	mux.HandleFunc("POST /api/projects/{pid}/push", s.pushProject)
-	mux.HandleFunc("GET /api/projects/{pid}/unpushed", s.unpushed)
-	mux.HandleFunc("GET /api/projects/{pid}/remote", s.remoteStatus(false))
-	mux.HandleFunc("POST /api/projects/{pid}/remote/fetch", s.remoteStatus(true))
-	mux.HandleFunc("GET /api/projects/{pid}/graph", s.gitGraph)
-	mux.HandleFunc("GET /api/projects/{pid}/branches", s.listBranches)
-	mux.HandleFunc("PUT /api/projects/{pid}/branch", s.switchBranch)
-	mux.HandleFunc("POST /api/projects/{pid}/branch/pr", s.branchPR)
-	mux.HandleFunc("GET /api/projects/{pid}/release", s.getRelease)
-	mux.HandleFunc("POST /api/projects/{pid}/tags", s.createTag)
-	mux.HandleFunc("GET /api/projects/{pid}/tag-format", s.tagFormatInfo)
-	mux.HandleFunc("GET /api/projects/{pid}/files", s.listFiles)
-	mux.HandleFunc("GET /api/projects/{pid}/claude-files", s.listClaudeFiles)
-	mux.HandleFunc("GET /api/projects/{pid}/file", s.readFile)
-	mux.HandleFunc("PUT /api/projects/{pid}/file", s.saveLocalFile)
+	mux.HandleFunc("POST /api/projects/{pid}/push", s.viaRunner(s.pushProject))
+	mux.HandleFunc("GET /api/projects/{pid}/unpushed", s.viaRunner(s.unpushed))
+	mux.HandleFunc("GET /api/projects/{pid}/remote", s.viaRunner(s.remoteStatus(false)))
+	mux.HandleFunc("POST /api/projects/{pid}/remote/fetch", s.viaRunner(s.remoteStatus(true)))
+	mux.HandleFunc("GET /api/projects/{pid}/graph", s.viaRunner(s.gitGraph))
+	mux.HandleFunc("GET /api/projects/{pid}/branches", s.viaRunner(s.listBranches))
+	mux.HandleFunc("PUT /api/projects/{pid}/branch", s.viaRunner(s.switchBranch))
+	mux.HandleFunc("POST /api/projects/{pid}/branch/pr", s.viaRunner(s.branchPR))
+	mux.HandleFunc("GET /api/projects/{pid}/release", s.viaRunner(s.getRelease))
+	mux.HandleFunc("POST /api/projects/{pid}/tags", s.viaRunner(s.createTag))
+	mux.HandleFunc("GET /api/projects/{pid}/tag-format", s.viaRunner(s.tagFormatInfo))
+	mux.HandleFunc("GET /api/projects/{pid}/files", s.viaRunner(s.listFiles))
+	mux.HandleFunc("GET /api/projects/{pid}/claude-files", s.viaRunner(s.listClaudeFiles))
+	mux.HandleFunc("GET /api/projects/{pid}/file", s.viaRunner(s.readFile))
+	mux.HandleFunc("PUT /api/projects/{pid}/file", s.viaRunner(s.saveLocalFile))
 	mux.HandleFunc("POST /api/projects/{pid}/edits", s.saveEdit)
 
 	// Todos & queues
@@ -302,7 +308,7 @@ func (s *Server) buildMux() *http.ServeMux {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
-	mux.HandleFunc("POST /api/projects/{pid}/cleanup", s.cleanupProject)
+	mux.HandleFunc("POST /api/projects/{pid}/cleanup", s.viaRunner(s.cleanupProject))
 
 	// GitHub Actions builds of the default branch
 	mux.HandleFunc("GET /api/projects/{pid}/ci", s.getCI)
@@ -326,9 +332,9 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/uploads/{id}/{name}", s.getUpload)
 
 	// Execution, testing, deployment
-	mux.HandleFunc("GET /api/projects/{pid}/processes", s.listProcesses)
-	mux.HandleFunc("POST /api/projects/{pid}/processes", s.startProcess)
-	mux.HandleFunc("DELETE /api/processes/{procid}", s.stopProcess)
+	mux.HandleFunc("GET /api/projects/{pid}/processes", s.viaRunner(s.listProcesses))
+	mux.HandleFunc("POST /api/projects/{pid}/processes", s.viaRunner(s.startProcess))
+	mux.HandleFunc("DELETE /api/processes/{procid}", s.processViaRunner(s.stopProcess))
 
 	// Live previews: a todo's server, proxied at <todo>.<preview domain>
 	mux.HandleFunc("POST /api/todos/{tid}/preview", s.startPreview)
@@ -387,7 +393,7 @@ func (s *Server) buildMux() *http.ServeMux {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
-	mux.HandleFunc("GET /ws/proc/{procid}", s.procWS)
+	mux.HandleFunc("GET /ws/proc/{procid}", s.processViaRunner(s.procWS))
 
 	// Frontend
 	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
@@ -463,7 +469,8 @@ func writeErr(w http.ResponseWriter, err error) {
 	case errors.Is(err, queue.ErrProjectBusy), errors.Is(err, scan.ErrRunning), errors.Is(err, store.ErrScanExists),
 		errors.Is(err, queue.ErrOnRunner):
 		code = http.StatusConflict
-	case errors.Is(err, tunnel.ErrOffline):
+	case errors.Is(err, tunnel.ErrOffline), errors.Is(err, errNoRunnerOnline), errors.Is(err, errNoRunnerLinked),
+		errors.Is(err, localrun.ErrHub):
 		code = http.StatusServiceUnavailable
 	case errors.As(err, &callErr):
 		code = http.StatusBadGateway

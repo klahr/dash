@@ -11,8 +11,9 @@ and start Dash with `-trust-proxy` so it reads the proxy's `X-Forwarded-*` heade
   no open ports and no public IP needed.
 - [**Tailscale**](#tailscale-private-only): private to your own devices.
 
-The hub is the Dash you open. Other computers can join it as runners, which connect out to it, see
-[Several computers](several-computers.md).
+The hub is the Dash you open. It runs nothing on its own computer: the work (tasks, scans, chats,
+git, `gh` and the projects' commands) runs on runners, other computers that connect out to it, and
+a hub needs at least one. See [Several computers](several-computers.md).
 
 **The first two put Dash's login on the internet.** Read [The login](#the-login-is-internet-facing)
 before you start.
@@ -20,11 +21,11 @@ before you start.
 ## A VPS behind Caddy
 
 On the VPS, install Dash as usual (see the [README](../README.md)) and run it as a
-[service](service.md). The hub needs only `git`: no Claude Code and no API key, since it never
-runs Claude itself (see
-[Claude runs on each user's own runner](several-computers.md#claude-runs-on-each-users-own-runner)).
-Its work runs on [runners](several-computers.md), and it needs at least one: `dash runner` on a
-computer with git and Claude Code logged in. Then:
+[service](service.md). The hub needs nothing else installed: no Claude Code, no API key, no `git`
+and no `gh`, since it runs nothing itself (see
+[Several computers](several-computers.md)). Its work runs on [runners](several-computers.md), and
+it needs at least one: `dash runner` on a computer with git and Claude Code logged in (and `gh`
+for pull requests). Then:
 
 1. **DNS.** Point `dash.example.com` at the VPS (A and/or AAAA record). For
    [live previews](previews.md), also point `*.preview.dash.example.com` at it, and for
@@ -147,8 +148,8 @@ runs it with Caddy in front, which gets and renews the certificates. Everything 
 one hub to the next (names, accounts, email, billing, branding) is in `deploy/.env`; the image,
 the compose file and the [Caddyfile](../deploy/caddy/Caddyfile) name no domain.
 
-**The image is the hub only.** It has no `claude`, no git and no project toolchains, like every hub
-it never runs Claude or tasks, and projects hosted on the hub itself aren't supported in Docker.
+**The image is the hub only.** It has no `claude`, no git, no `gh` and no project toolchains, and
+needs none: like every hub it runs nothing itself and keeps no projects on its own disk.
 Work, chat and titles run on **runners**, installed natively on each computer with the one-line
 install from the hub's *Runners* page ([Several computers](several-computers.md)). Runners connect
 out to the hub over HTTPS, so they need no open ports, public address or Docker of their own.
