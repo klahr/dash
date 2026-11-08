@@ -4065,6 +4065,10 @@ function renderCI() {
     fix ? h("span", { class: "ci-fix" }, " Claude is fixing it: ", ib({ type: "button", class: "link inline", onclick: () => { $("#ci-sheet").close(); openDetail(fix.id); } }, "right", title(fix))) : "");
   $("#ci-runs").replaceChildren(...(st.runs || []).slice(0, 12).map(runRow));
   $("#ci-investigate").hidden = !((st.state === "failing" || rel?.state === "failed") && !fix);
+  // A finished build can be run again on GitHub (failed jobs only when it failed).
+  const failed = st.state === "failing" || rel?.state === "failed";
+  $("#ci-retry").hidden = !(failed || st.state === "passing");
+  $("#ci-retry .label").textContent = failed ? "Retry failed jobs" : "Re-run build";
 }
 
 async function openCI() {
@@ -4079,6 +4083,15 @@ $("#ci-refresh").addEventListener("click", attempt(async () => {
   state.ci = await api("POST", `/api/projects/${state.project.id}/ci/refresh`);
   renderCI();
   toast("Builds checked");
+}));
+$("#ci-retry").addEventListener("click", attempt(async () => {
+  const b = $("#ci-retry");
+  b.disabled = true;
+  try {
+    state.ci = await api("POST", `/api/projects/${state.project.id}/ci/retry`);
+  } finally { b.disabled = false; }
+  renderCI();
+  toast("Build restarted on GitHub");
 }));
 async function investigateCI() {
   const t = await api("POST", `/api/projects/${state.project.id}/ci/investigate`);

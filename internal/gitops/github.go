@@ -170,6 +170,17 @@ func (g *Git) Runs(ctx context.Context, projectID, dir, branch string, limit int
 	return g.runList(ctx, projectID, dir, []string{"--branch", branch}, limit)
 }
 
+// RerunRun starts a finished workflow run again: only its failed jobs when
+// failedOnly, else all of them.
+func (g *Git) RerunRun(ctx context.Context, projectID, dir string, runID int64, failedOnly bool) error {
+	args := []string{"run", "rerun", strconv.FormatInt(runID, 10)}
+	if failedOnly {
+		args = append(args, "--failed")
+	}
+	_, err := g.gh(ctx, projectID, dir, args...)
+	return err
+}
+
 // RunFailedLog returns the tail of the failed steps' log of a run.
 func (g *Git) RunFailedLog(ctx context.Context, projectID, dir string, runID int64, lines int) string {
 	out, err := g.gh(ctx, projectID, dir, "run", "view", strconv.FormatInt(runID, 10), "--log-failed")

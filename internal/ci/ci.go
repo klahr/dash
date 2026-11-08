@@ -167,6 +167,71 @@ func (w *Watcher) Investigate(ctx context.Context, projectID string) (model.Todo
 	return *t, nil
 }
 
+// Retry re-runs the newest commit's build on the default branch (and the
+// followed release's, when it failed): the failed jobs of failed workflows,
+// or every finished workflow again when none failed. It returns the status
+// checked right after.
+func (w *Watcher) Retry(ctx context.Context, projectID string) (Status, error) {
+	p, err := w.Store.GetProject(projectID)
+	if err != nil {
+		return Status{}, err
+	}
+	if !w.watched(p) {
+		return Status{}, errors.New("connect a GitHub repository to see builds")
+	}
+	runs, err := w.Git.Runs(ctx, p.ID, p.Path, p.DefaultBranch, 20)
+	if err != nil {
+		return Status{}, err
+	}
+	var latest []gitops.Run
+	if len(runs) > 0 {
+		latest = latestPerWorkflow(runs, runs[0].SHA)
+	}
+	if rel, ok := w.followed(p.ID); ok && rel.State == ReleaseFailed {
+		latest = append(latest, latestPerWorkflow(rel.Runs, rel.SHA)...)
+	}
+	targets, failedOnly := retryTargets(latest)
+	if len(targets) == 0 {
+		if len(latest) == 0 {
+			return Status{}, fmt.Errorf("no builds ran on %s yet", p.DefaultBranch)
+		}
+		return Status{}, errors.New("the build is still running")
+	}
+	var errs []error
+	for _, r := range targets {
+		if err := w.Git.RerunRun(ctx, p.ID, p.Path, r.ID, failedOnly); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", r.Workflow, err))
+		}
+	}
+	if len(errs) == len(targets) {
+		return Status{}, errors.Join(errs...)
+	}
+	if len(errs) > 0 {
+		slog.Warn("retry build", "project", p.Name, "err", errors.Join(errs...))
+	}
+	st, _ := w.Refresh(ctx, p.ID)
+	return st, nil
+}
+
+// retryTargets picks the runs to re-run: the failed ones (their failed jobs
+// only), else every finished one.
+func retryTargets(runs []gitops.Run) (out []gitops.Run, failedOnly bool) {
+	for _, r := range runs {
+		if r.Failed() {
+			out = append(out, r)
+		}
+	}
+	if len(out) > 0 {
+		return out, true
+	}
+	for _, r := range runs {
+		if r.Done() {
+			out = append(out, r)
+		}
+	}
+	return out, false
+}
+
 // summarize derives the state from the runs of the newest commit.
 func summarize(runs []gitops.Run) (state, sha string) {
 	if len(runs) == 0 {

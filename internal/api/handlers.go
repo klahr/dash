@@ -1037,6 +1037,28 @@ func (s *Server) refreshCI(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, st) // a gh failure is reported in st.Error
 }
 
+// retryCI re-runs the default branch's newest build on GitHub Actions.
+func (s *Server) retryCI(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if _, err := sv.data.GetProject(r.PathValue("pid")); err != nil {
+		writeErr(w, err)
+		return
+	}
+	st, err := s.CI.Retry(r.Context(), r.PathValue("pid"))
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeErr(w, err)
+			return
+		}
+		writeErr(w, fmt.Errorf("%w: %v", errBadRequest, err))
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
+}
+
 // investigateCI asks Claude to look into the failing build now.
 func (s *Server) investigateCI(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)

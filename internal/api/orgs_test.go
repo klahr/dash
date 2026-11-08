@@ -253,6 +253,7 @@ func TestOrgCannotReachAnotherOrgsRecords(t *testing.T) {
 		{"GET", "/api/projects/" + pid + "/ci", ""},
 		{"POST", "/api/projects/" + pid + "/ci/refresh", ""},
 		{"POST", "/api/projects/" + pid + "/ci/investigate", ""},
+		{"POST", "/api/projects/" + pid + "/ci/retry", ""},
 		{"GET", "/api/projects/" + pid + "/processes", ""},
 		{"POST", "/api/projects/" + pid + "/processes", `{"kind":"task","command":"true"}`},
 

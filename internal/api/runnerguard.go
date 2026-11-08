@@ -59,6 +59,7 @@ func init() {
 		"GET /ws/chat", // the general chat only for the runner's owner (see forOwner)
 
 		"GET /api/projects/{pid}/ci", "POST /api/projects/{pid}/ci/refresh", "POST /api/projects/{pid}/ci/investigate",
+		"POST /api/projects/{pid}/ci/retry",
 
 		"POST /api/uploads", "GET /api/uploads/{id}/{name}",
 

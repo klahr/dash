@@ -114,3 +114,41 @@ func TestGhErrorsAreReported(t *testing.T) {
 		t.Fatalf("want an unknown state with an error, got %+v (%v)", st, err)
 	}
 }
+
+func TestRetryRerunsFailedJobsOfNewestCommit(t *testing.T) {
+	w, p, setRuns := newWatcher(t, false)
+	ctx := context.Background()
+	// gh logs each `run rerun` call so the test sees what was retried.
+	logFile := filepath.Join(p.Path, "reruns.log")
+	script := "#!/bin/sh\ncase \"$1 $2\" in\n\"run list\") cat " + filepath.Join(p.Path, "runs.json") + " ;;\n" +
+		"\"run rerun\") shift 2; echo \"$*\" >> " + logFile + " ;;\n*) exit 1 ;;\nesac\n"
+	if err := os.WriteFile(w.Git.GhBin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reruns := func() string {
+		b, _ := os.ReadFile(logFile)
+		_ = os.Remove(logFile)
+		return strings.TrimSpace(string(b))
+	}
+
+	setRuns(runs(run(12, "CI", "bbb", "completed", "failure"), run(11, "Lint", "bbb", "completed", "success"), run(10, "CI", "aaa", "completed", "failure")))
+	if _, err := w.Retry(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := reruns(); got != "12 --failed" {
+		t.Fatalf("failed build: reran %q, want only run 12's failed jobs", got)
+	}
+
+	setRuns(runs(run(14, "CI", "ccc", "completed", "success"), run(13, "Lint", "ccc", "completed", "cancelled")))
+	if _, err := w.Retry(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := reruns(); got != "14\n13" {
+		t.Fatalf("passing build: reran %q, want every workflow", got)
+	}
+
+	setRuns(runs(run(15, "CI", "ddd", "in_progress", "")))
+	if _, err := w.Retry(ctx, p.ID); err == nil || reruns() != "" {
+		t.Fatal("a running build shouldn't be retried")
+	}
+}

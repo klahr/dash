@@ -297,6 +297,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/projects/{pid}/ci", s.getCI)
 	mux.HandleFunc("POST /api/projects/{pid}/ci/refresh", s.refreshCI)
 	mux.HandleFunc("POST /api/projects/{pid}/ci/investigate", s.investigateCI)
+	mux.HandleFunc("POST /api/projects/{pid}/ci/retry", s.retryCI)
 
 	// Attachments (screenshots for Claude)
 	mux.HandleFunc("POST /api/uploads", s.upload)
