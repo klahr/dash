@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +20,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/klahr/dash/internal/tunnel"
 )
 
 // A hub never runs `claude` and never calls the Anthropic API, whatever
@@ -65,7 +68,7 @@ func TestHubWithoutClaudeNeverRunsIt(t *testing.T) {
 	defer func() {
 		_ = cmd.Process.Signal(os.Interrupt)
 		_ = cmd.Wait()
-		for _, f := range []string{"-hub-claude is gone", "-hub-tasks is gone", "this hub runs no Claude"} {
+		for _, f := range []string{"-hub-claude is gone", "-hub-tasks is gone", "this hub runs nothing itself"} {
 			if !strings.Contains(logs.String(), f) {
 				t.Errorf("log without %q", f)
 			}
@@ -102,7 +105,18 @@ func TestHubWithoutClaudeNeverRunsIt(t *testing.T) {
 	if code, body := call("POST", "/api/login", map[string]string{"username": "admin", "password": "a-long-enough-password"}); code != http.StatusOK {
 		t.Fatalf("login: %d %s", code, body)
 	}
-	code, body := call("POST", "/api/projects", map[string]string{"name": "app"})
+	// A runner registers but never connects: the hub has no project of
+	// its own, so the project is shared with it, and its work waits.
+	code, body := call("POST", "/api/runners/codes", map[string]any{})
+	var rc struct{ Code string }
+	if code != http.StatusOK || json.Unmarshal([]byte(body), &rc) != nil {
+		t.Fatalf("runner code: %d %s", code, body)
+	}
+	creds, err := tunnel.Register(context.Background(), base, rc.Code, "laptop", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, body = call("POST", "/api/projects", map[string]any{"name": "app", "remote_url": "https://example.com/app.git", "runners": []string{creds.ID}})
 	var p struct{ ID string }
 	if code != http.StatusCreated && code != http.StatusOK || json.Unmarshal([]byte(body), &p) != nil || p.ID == "" {
 		t.Fatalf("create project: %d %s", code, body)

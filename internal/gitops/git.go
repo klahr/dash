@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -53,6 +54,9 @@ func (g *Git) exec(ctx context.Context, projectID, dir, bin string, args ...stri
 func (g *Git) run(ctx context.Context, publish bool, projectID, dir, bin string, args ...string) (string, error) {
 	start := time.Now()
 	args = stripNUL(args)
+	if err := localrun.Check(bin + " " + strings.Join(args, " ")); err != nil {
+		return "", err
+	}
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1")
@@ -764,6 +768,9 @@ func (g *Git) ReadBlob(ctx context.Context, projectID, repo, blob string, max in
 	}
 	if size, err = strconv.ParseInt(s, 10, 64); err != nil || size > max {
 		return nil, size, err
+	}
+	if err := localrun.Check("git cat-file blob"); err != nil {
+		return nil, 0, err
 	}
 	cmd := exec.CommandContext(ctx, "git", "cat-file", "blob", blob)
 	cmd.Dir = repo

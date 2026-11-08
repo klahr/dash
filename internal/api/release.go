@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -470,5 +471,23 @@ func (b board) CreateRelease(projectID string, r mcptools.NewRelease) (mcptools.
 	if err != nil {
 		return mcptools.Release{}, fmt.Errorf("no project %q (see list_projects)", projectID)
 	}
+	if b.sv.s.RunnerOnly {
+		return b.sv.releaseOnRunner(context.Background(), p, r)
+	}
 	return b.sv.createRelease(context.Background(), p, r)
+}
+
+// releaseOnRunner tags a release of the hub's project p on a runner linked
+// to it, which makes and pushes the tag in its clone.
+func (sv *service) releaseOnRunner(ctx context.Context, p model.Project, r mcptools.NewRelease) (mcptools.Release, error) {
+	var out mcptools.Release
+	run, rpid, err := sv.projectRunner(ctx, p, "")
+	if err != nil {
+		return out, err
+	}
+	cctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	body := map[string]string{"sha": r.SHA, "version": r.Version, "bump": r.Bump, "notes": r.Notes}
+	err = sv.s.fleet().Call(cctx, run.ID, http.MethodPost, "/api/projects/"+url.PathEscape(rpid)+"/tags", body, &out)
+	return out, err
 }

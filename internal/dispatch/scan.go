@@ -144,7 +144,18 @@ const NoRunnerOnline = "no runner online"
 
 // link makes sure runner r has a clone of p, with the hub's settings.
 func (d *Dispatcher) link(ctx context.Context, r tunnel.Runner, p model.Project) error {
+	_, err := d.Link(ctx, r.ID, p)
+	return err
+}
+
+// Link makes sure runner id has a clone of p, with the hub's settings, and
+// returns the runner's project for it: the hub forwards p's git, files and
+// commands there. The runner clones p's remote the first time.
+func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Linked, error) {
 	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID,
-		MergeMode: p.MergeMode, MergeModeSet: p.MergeModeSet, MergeGreenPRs: p.MergeGreenPRs, TaskInstructions: p.TaskInstructions}
-	return d.Fleet.Call(ctx, r.ID, http.MethodPut, "/api/hub/projects/"+url.PathEscape(p.ID), link, nil)
+		MergeMode: p.MergeMode, MergeModeSet: p.MergeModeSet, MergeGreenPRs: p.MergeGreenPRs, TaskInstructions: p.TaskInstructions,
+		SetupCommand: p.SetupCommand, TestCommand: p.TestCommand, RunCommand: p.RunCommand, DeployCommand: p.DeployCommand}
+	var out Linked
+	err := d.Fleet.Call(ctx, id, http.MethodPut, "/api/hub/projects/"+url.PathEscape(p.ID), link, &out)
+	return out, err
 }

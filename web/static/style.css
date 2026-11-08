@@ -1449,6 +1449,7 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .machine-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
 .machine-dot.ok { background: var(--merged); }
 .machine-dot.down { background: var(--failed); }
+.side-project-branch.warn { color: var(--running); }
 .machine-empty { color: var(--faint); font-size: 14px; padding: 4px 4px 4px 16px; }
 select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-m); min-height: 44px; padding: 0 12px; width: 100%; }
 

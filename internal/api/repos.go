@@ -209,6 +209,10 @@ func (s *Server) localRepos(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if s.RunnerOnly {
+		writeErr(w, errHubHasNoProjects)
+		return
+	}
 	root, err := s.ProjectRoot, error(nil)
 	if !sv.c.PlatformAdmin {
 		root, err = sv.projectsRoot()

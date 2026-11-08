@@ -122,7 +122,7 @@ func TestRetryRerunsFailedJobsOfNewestCommit(t *testing.T) {
 	logFile := filepath.Join(p.Path, "reruns.log")
 	script := "#!/bin/sh\ncase \"$1 $2\" in\n\"run list\") cat " + filepath.Join(p.Path, "runs.json") + " ;;\n" +
 		"\"run rerun\") shift 2; echo \"$*\" >> " + logFile + " ;;\n*) exit 1 ;;\nesac\n"
-	if err := os.WriteFile(w.Git.GhBin, []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(w.Git.(*gitops.Git).GhBin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	reruns := func() string {

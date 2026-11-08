@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/klahr/dash/internal/localrun"
 )
 
 const tailLines = 200
@@ -22,6 +24,9 @@ func runShell(ctx context.Context, dir, command string, timeout time.Duration, e
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
+	}
+	if err := localrun.Check("shell: " + command); err != nil {
+		return -1, "", err
 	}
 	cmd := exec.CommandContext(ctx, "bash", "-lc", command)
 	cmd.Dir = dir

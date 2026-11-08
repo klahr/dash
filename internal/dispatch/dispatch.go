@@ -430,6 +430,21 @@ func (d *Dispatcher) Revert(ctx context.Context, t model.Todo) error {
 	return d.Fleet.Call(ctx, t.Runner, http.MethodPost, taskPath(t, "/revert"), struct{}{}, nil)
 }
 
+// Test asks t's runner to run the project's tests again in t's worktree.
+func (d *Dispatcher) Test(ctx context.Context, t model.Todo) error {
+	return d.Fleet.Call(ctx, t.Runner, http.MethodPost, taskPath(t, "/test"), struct{}{}, nil)
+}
+
+// Open asks t's runner to open t's worktree in its editor (-editor there).
+func (d *Dispatcher) Open(ctx context.Context, t model.Todo) error {
+	return d.Fleet.Call(ctx, t.Runner, http.MethodPost, taskPath(t, "/open"), struct{}{}, nil)
+}
+
+// GitHub makes a GitHubCall about the hub's project projectID on runner id.
+func (d *Dispatcher) GitHub(ctx context.Context, id, projectID string, call GitHubCall, out *GitHubAnswer) error {
+	return d.Fleet.Call(ctx, id, http.MethodPost, "/api/hub/github/"+url.PathEscape(projectID), call, out)
+}
+
 // Cancel asks t's runner to stop it.
 func (d *Dispatcher) Cancel(ctx context.Context, t model.Todo) error {
 	return d.Fleet.Call(ctx, t.Runner, http.MethodPost, taskPath(t, "/cancel"), struct{}{}, nil)

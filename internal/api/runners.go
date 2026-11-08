@@ -273,7 +273,7 @@ func (sv *service) sendable(projectID string, files bool) error {
 	if !files {
 		return nil
 	}
-	if p, err := sv.data.GetProject(projectID); err == nil && p.OnRunners() {
+	if p, err := sv.data.GetProject(projectID); err == nil && (p.OnRunners() || sv.s.RunnerOnly) {
 		return fmt.Errorf("%w: attachments and editor changes can't be sent to runners; describe them in the instructions instead", errBadRequest)
 	}
 	return nil

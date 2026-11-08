@@ -25,6 +25,7 @@ package dispatch
 import (
 	"time"
 
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/usage"
 )
@@ -55,11 +56,21 @@ type Link struct {
 	// (model.Project.TaskInstructions). The link is sent before every task,
 	// so the runner's copy follows the hub's.
 	TaskInstructions string `json:"task_instructions,omitempty"`
+	// The hub project's shell commands (setup, test, run, deploy). A
+	// runner takes them only when it was started with -hub-commands;
+	// otherwise its clone keeps the commands set on the runner.
+	SetupCommand  string `json:"setup_command,omitempty"`
+	TestCommand   string `json:"test_command,omitempty"`
+	RunCommand    string `json:"run_command,omitempty"`
+	DeployCommand string `json:"deploy_command,omitempty"`
 }
 
 // Linked is the runner's answer to Link: its project for the hub's.
 type Linked struct {
 	ProjectID string `json:"project_id"`
+	// DefaultBranch is the clone's default branch: origin's, which may
+	// differ from the one the hub guessed when the project was made.
+	DefaultBranch string `json:"default_branch,omitempty"`
 }
 
 // Task is POST /api/hub/tasks on a runner: run the hub's task.
@@ -134,4 +145,31 @@ func StateOf(t model.Todo) TaskState {
 		s.Branch = t.Worktree.Branch
 	}
 	return s
+}
+
+// GitHubCall is POST /api/hub/github/{hub project id} on a runner: the
+// hub, which has no gh and no clone, reads (or re-runs) the project's
+// GitHub Actions builds with gh in the runner's clone. Op is one of the
+// GitHub* constants.
+type GitHubCall struct {
+	Op         string `json:"op"`
+	Ref        string `json:"ref,omitempty"` // a branch or tag (runs), a commit (commit_runs) or a tag (release_url)
+	Limit      int    `json:"limit,omitempty"`
+	RunID      int64  `json:"run_id,omitempty"`
+	FailedOnly bool   `json:"failed_only,omitempty"`
+}
+
+const (
+	GitHubRuns       = "runs"
+	GitHubCommitRuns = "commit_runs"
+	GitHubReleaseURL = "release_url"
+	GitHubRerun      = "rerun"
+	GitHubFailedLog  = "failed_log"
+)
+
+// GitHubAnswer is the runner's answer to a GitHubCall.
+type GitHubAnswer struct {
+	Runs []gitops.Run `json:"runs,omitempty"`
+	URL  string       `json:"url,omitempty"`
+	Log  string       `json:"log,omitempty"`
 }

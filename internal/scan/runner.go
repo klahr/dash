@@ -14,6 +14,7 @@ import (
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/gitops"
+	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
 )
@@ -112,6 +113,9 @@ func (r *Runner) Cleanup(ctx context.Context) {
 		return
 	}
 	_ = os.RemoveAll(root)
+	if !localrun.Allowed() {
+		return // the hub's scans run on runners: it has no clones to prune
+	}
 	for _, p := range r.Store.ListProjects() {
 		r.Git.PruneWorktrees(ctx, p.ID, p.Path)
 	}

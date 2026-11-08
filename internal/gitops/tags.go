@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -246,6 +247,36 @@ func (g *Git) runList(ctx context.Context, projectID, dir string, filter []strin
 
 // CheckRefFormat asks git whether name (e.g. "refs/tags/v1.2.3") is a valid ref name.
 func (g *Git) CheckRefFormat(ctx context.Context, name string) error {
+	if !localrun.Allowed() {
+		return CheckRefName(name) // the hub has no git: the same rules, in Go
+	}
 	_, err := g.run(ctx, false, "", "", "git", "check-ref-format", name)
 	return err
+}
+
+// CheckRefName applies git check-ref-format's rules to name (a full ref,
+// e.g. "refs/tags/v1.2.3") without git.
+func CheckRefName(name string) error {
+	bad := func(why string) error { return fmt.Errorf("%q isn't a valid ref name: %s", name, why) }
+	switch {
+	case name == "" || name == "@":
+		return bad("empty")
+	case !strings.Contains(name, "/"):
+		return bad("it needs at least one /")
+	case strings.HasSuffix(name, "/") || strings.HasSuffix(name, "."):
+		return bad("it ends with / or .")
+	case strings.Contains(name, "..") || strings.Contains(name, "@{") || strings.Contains(name, "//"):
+		return bad("it contains .., @{ or //")
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f || strings.ContainsRune(" ~^:?*[\\", r) {
+			return bad(fmt.Sprintf("it contains %q", r))
+		}
+	}
+	for _, part := range strings.Split(name, "/") {
+		if strings.HasPrefix(part, ".") || strings.HasSuffix(part, ".lock") {
+			return bad("a part starts with . or ends with .lock")
+		}
+	}
+	return nil
 }

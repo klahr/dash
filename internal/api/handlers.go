@@ -15,6 +15,7 @@ import (
 
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/gitops"
+	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
@@ -96,6 +97,11 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		// Existing adds a repository already cloned at Path: it must be one
 		// (and not a project yet), and the name defaults to its folder's.
 		Existing bool `json:"existing"`
+		// On the hub only, which keeps no projects on its own disk: a
+		// shared project is the remote (RemoteURL, or GitHub's OWNER/REPO)
+		// and the runners it is linked to, which clone it.
+		RemoteURL string   `json:"remote_url"`
+		Runners   []string `json:"runners"`
 	}
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -103,6 +109,55 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
+		return
+	}
+	if s.RunnerOnly {
+		remote := strings.TrimSpace(req.RemoteURL)
+		if gh := strings.Trim(strings.TrimSpace(req.GitHub), "/"); remote == "" && strings.Count(gh, "/") == 1 {
+			remote = "https://github.com/" + strings.TrimSuffix(gh, ".git") + ".git"
+		}
+		if req.Path != "" || req.Existing || remote == "" || len(req.Runners) == 0 {
+			writeErr(w, errHubHasNoProjects)
+			return
+		}
+		if err := gitops.CheckRemote(remote); err != nil {
+			writeErr(w, errors.Join(errBadRequest, err))
+			return
+		}
+		if strings.TrimSpace(req.Name) == "" {
+			writeErr(w, fmt.Errorf("%w: name is required", errBadRequest))
+			return
+		}
+		if req.DefaultBranch == "" {
+			req.DefaultBranch = "main"
+		}
+		maxFixes := model.DefaultMaxAutoFixes
+		if req.MaxAutoFixes != nil {
+			maxFixes = max(0, *req.MaxAutoFixes)
+		}
+		np := model.Project{
+			ID: store.NewID(), OrgID: sv.c.Org, Name: strings.TrimSpace(req.Name), DefaultBranch: req.DefaultBranch, RemoteURL: remote,
+			RunCommand: req.RunCommand, TestCommand: req.TestCommand, DeployCommand: req.DeployCommand,
+			SetupCommand: req.SetupCommand, CopyFiles: cleanList(req.CopyFiles), MaxAutoFixes: maxFixes,
+			MaxRunMinutes: max(0, req.MaxRunMinutes), MaxTurns: max(0, req.MaxTurns), TagFormat: release.DefaultFormat,
+		}
+		runners, err := sv.linkRunners(np, req.Runners)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		np.Runners = runners
+		np.MergeMode = np.DefaultMergeMode(false)
+		if req.MergeMode != "" && req.MergeMode != np.MergeMode {
+			np.MergeMode, np.MergeModeSet = req.MergeMode, true
+		}
+		p, err := sv.data.CreateProject(np)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		s.Todos.Kick()
+		writeJSON(w, http.StatusCreated, p)
 		return
 	}
 	if err := checkMergeMode(req.MergeMode, ""); err != nil && req.MergeMode != model.MergePR {
@@ -302,11 +357,15 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 	if err != nil {
 		return cur, err
 	}
-	remote := sv.s.Git.RemoteURL(ctx, cur.ID, cur.Path) // pick up an origin added since
-	if remote == "" && cur.OnRunners() {
-		remote = cur.RemoteURL // the hub's checkout may be gone; the runners have theirs
+	remote, gh := cur.RemoteURL, false
+	if !sv.s.RunnerOnly {
+		// Pick up an origin added since (the hub has no checkout to look in).
+		remote = sv.s.Git.RemoteURL(ctx, cur.ID, cur.Path)
+		if remote == "" && cur.OnRunners() {
+			remote = cur.RemoteURL // the checkout may be gone; the runners have theirs
+		}
+		gh = sv.s.Git.HasGh()
 	}
-	gh := sv.s.Git.HasGh()
 	runners := cur.Runners
 	if req.Runners != nil {
 		withRemote := cur
@@ -419,6 +478,10 @@ func checkMergeMode(mode, remote string) error {
 // lookupGitHubRepo tells the new-project form whether a repository exists,
 // so it can offer to clone it instead of creating it.
 func (s *Server) lookupGitHubRepo(w http.ResponseWriter, r *http.Request) {
+	if s.RunnerOnly {
+		writeErr(w, fmt.Errorf("%w: the hub runs no gh; ask a runner (/peer/<runner>/api/github/repo)", errBadRequest))
+		return
+	}
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if name == "" {
 		writeErr(w, fmt.Errorf("%w: name is required", errBadRequest))
@@ -448,6 +511,10 @@ func (s *Server) createGitHubRepo(w http.ResponseWriter, r *http.Request) {
 	p, err := sv.data.GetProject(r.PathValue("pid"))
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if s.RunnerOnly {
+		writeErr(w, fmt.Errorf("%w: the hub doesn't create GitHub repositories (it runs no gh); create the repository on GitHub or from a runner's project, then share it", errBadRequest))
 		return
 	}
 	if req.Name == "" {
@@ -496,6 +563,11 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, queue.ErrProjectBusy)
 		return
 	}
+	if s.RunnerOnly && (req.DeleteFiles || req.DeleteGitHub) {
+		// The hub keeps no files of its projects, and runs no gh.
+		writeErr(w, fmt.Errorf("%w: the hub only forgets the project: its clones stay on the runners, and its GitHub repository on GitHub", errBadRequest))
+		return
+	}
 	if req.DeleteGitHub {
 		remote := s.Git.RemoteURL(r.Context(), p.ID, p.Path)
 		if remote == "" {
@@ -513,7 +585,7 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if s.Procs != nil {
+	if s.Procs != nil && !s.RunnerOnly {
 		for _, proc := range s.Procs.List(p.ID) {
 			_ = s.Procs.Stop(proc.ID)
 		}
@@ -707,8 +779,22 @@ func (s *Server) retestTodo(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if t, err := sv.data.GetTodo(r.PathValue("tid")); err != nil || notOnRunner(t) != nil {
-		writeErr(w, errors.Join(err, notOnRunner(t)))
+	t, err := sv.data.GetTodo(r.PathValue("tid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if t.OnRunner() {
+		// The tests run on its runner, in its worktree there.
+		if err := sv.onRunner(r.Context(), t, func(ctx context.Context) error { return s.Dispatch.Test(ctx, t) }); err != nil {
+			writeErr(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+	if s.RunnerOnly {
+		writeErr(w, fmt.Errorf("%w: this task hasn't run on a runner yet, so it has nothing to test", errBadRequest))
 		return
 	}
 	if err := s.Todos.RunTests(r.PathValue("tid")); err != nil {
@@ -757,27 +843,38 @@ func (s *Server) openTodo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if err := notOnRunner(t); err != nil {
+	if t.OnRunner() {
+		// Its worktree is on its runner: the runner's editor opens it there.
+		err = sv.onRunner(r.Context(), t, func(ctx context.Context) error { return s.Dispatch.Open(ctx, t) })
+	} else {
+		err = s.openWorktree(t)
+	}
+	if err != nil {
 		writeErr(w, err)
 		return
 	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// openWorktree opens t's worktree in -editor, on this computer.
+func (s *Server) openWorktree(t model.Todo) error {
 	if s.Editor == "" {
-		writeErr(w, fmt.Errorf("%w: no editor configured; start dash with -editor (e.g. -editor code)", errBadRequest))
-		return
+		return fmt.Errorf("%w: no editor configured; start dash with -editor (e.g. -editor code)", errBadRequest)
 	}
-	if t.Worktree == nil {
-		writeErr(w, fmt.Errorf("%w: this task has no worktree", errBadRequest))
-		return
+	if t.Worktree == nil || t.Worktree.Path == "" {
+		return fmt.Errorf("%w: this task has no worktree", errBadRequest)
+	}
+	if err := localrun.Check("editor: " + s.Editor); err != nil {
+		return err
 	}
 	args := append(strings.Fields(s.Editor), t.Worktree.Path)
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // outlives the request
 	if err := cmd.Start(); err != nil {
-		writeErr(w, err)
-		return
+		return err
 	}
 	go func() { _ = cmd.Wait() }()
-	w.WriteHeader(http.StatusAccepted)
+	return nil
 }
 
 func (s *Server) getTodo(w http.ResponseWriter, r *http.Request) {
@@ -1051,6 +1148,10 @@ func (s *Server) revertTodo(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusAccepted)
 }
+
+// errHubHasNoProjects is why the hub refuses a project on its own disk.
+var errHubHasNoProjects = fmt.Errorf("%w: the hub keeps no projects on its own computer. Create or add the project on a runner "+
+	"(pick the runner as its computer), or share a repository by giving its remote_url (or github OWNER/REPO) and the runners to link it to", errBadRequest)
 
 func (s *Server) cleanupProject(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)

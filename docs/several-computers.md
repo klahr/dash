@@ -6,6 +6,31 @@ computers are **runners**: they connect out to the hub and keep that connection 
 need no open port, VPN or shared secret. The hub must be reachable over HTTPS from the runners,
 see [Deploy the hub](deploy.md).
 
+The hub is a coordinator and **runs nothing on its own computer**: it signs people in, keeps the
+users, the board and the database, and forwards work to runners. Every task, scan, chat, git
+command, `gh` call, project command (setup, test, run, deploy) and terminal runs on a runner, and
+the hub keeps no working tree of any project. So **a hub needs at least one runner**, and needs
+**no `claude`, `git` or `gh` installed**. There is no flag to make the hub run things itself.
+
+## Two kinds of projects
+
+Every project lives on runners, in one of two ways:
+
+- **A runner's own project**: a repository on one runner's disk, in its `-projects` directory. Its
+  tasks, git and commands run on that runner only, and it shows in the dashboard under the
+  runner's name. Make one with **+ New project** or **+ Add existing clone** (pick the runner as
+  its **Computer**), or with **Add projects from this computer…** on the runner's row of the
+  Runners page. See [below](#projects-of-a-runners-own).
+- **A shared project**: the hub's project, a git remote that one or more runners are linked to.
+  Each linked runner keeps its own clone of the remote (in `<-projects>/hub/`), any of them can run
+  its tasks, and work lands on the remote. It shows under **Shared** in the dashboard. Make one in
+  **+ New project** with **Share it on the hub** ticked and an existing GitHub repository: it is
+  linked to the runner picked as its computer. Link more runners in its **Settings → Runners**.
+  See [below](#shared-projects-tasks-on-runners).
+
+A project that is only ever worked on from one computer is simplest as that runner's own; share
+it when several people's runners (or several of yours) should take its tasks.
+
 ## Add a runner
 
 In the hub's dashboard, open the account menu → **Organization** → **Add a runner** (any member
@@ -105,8 +130,8 @@ Runners registered with an older hub become the env account's.
 
 ## Shared projects: tasks on runners
 
-The hub coordinates; the runners do the work. In a project's **Settings**, tick the runners its
-tasks should run on (your own runners, or any of the org's if you're an admin). From then on:
+The hub coordinates; the runners do the work. In a shared project's **Settings → Runners**, tick
+the runners it is linked to (your own runners, or any of the org's if you're an admin). From then on:
 
 - Each task goes to one of the project's runners that is online, not paused, below its limit and
   not held back by its owner's Claude usage, the least busy first. A task that ran before goes
@@ -134,13 +159,58 @@ tasks should run on (your own runners, or any of the org's if you're an admin). 
   their settings change: pull requests on GitHub, merging otherwise. A choice you made stays.
   Tasks with a pull request already open are followed until it is merged or closed, whatever the
   mode.
-- Review happens on the hub as usual: the diff, the log and the timeline come from the runner.
-  Attachments and editor changes can't be sent to runners yet, and live previews, the worktree
-  shell and re-running tests are on the runner's own dashboard.
+- Review happens on the hub as usual: the diff, the log and the timeline come from the runner,
+  and **Run tests again** runs them on the task's runner, in its worktree there. Attachments and
+  editor changes can't be sent to runners yet, and live previews and terminals are on the
+  runner's own dashboard.
+
+### Everything else about a shared project also runs on a runner
+
+The hub has no clone of a shared project, so whatever needs one is forwarded, over the runner's
+connection, to the clone of one of the project's runners that is online:
+
+- the git views: **History** (the log and graph), branches and switching the working branch
+  (made and pushed by the runner), the default branch's state against origin, **Push**, pull
+  requests from the working branch, release tags (**Tag release…** and the `create_release` tool);
+- the file browser and the `CLAUDE.md` and settings files;
+- the project's commands: **Run**, **Test** and **Deploy**, also in a task's worktree (they run on
+  that task's runner). Terminals aren't offered from the hub at all: open them on the runner's own
+  dashboard. The runner runs the commands set on its clone; started with `-hub-commands`, it takes
+  the shared project's commands from the hub (set in its settings on the hub), each time the
+  project is linked;
+- GitHub Actions: the hub's **CI** view, the automatic investigation of a failing build, and
+  **Retry** read and re-run the builds with `gh` on a runner;
+- **Clean up** cleans the runner's clone.
+
+When none of the project's runners is online these fail at once with "No runner is online for this
+project. Start one with `dash runner`." (the dashboard also says so above the board); nothing falls
+back to the hub. A project no runner is linked to says it **needs a runner**, with a **Link a
+runner** button.
 
 The hub never runs tasks itself: a task of a project not linked to a runner waits, saying a runner
 must be linked. (`-hub-tasks` is gone; an old start command that still passes it starts, logs a
 warning and ignores it.)
+
+### Moving projects off the hub
+
+A hub from before this kept projects of its own, in its own `-projects` directory. They are kept,
+with their tasks, issues and history on the board, and the hub deletes nothing on disk; at
+startup it logs a warning for each project no runner is linked to (`project needs a runner`), and
+the dashboard marks them **needs a runner**. Their work waits until you do one of these, per
+project:
+
+1. **Link it to a runner** (Project settings → Runners), if it has a git remote: the runner clones
+   the remote and the project carries on as a shared project. A project without a remote can't be
+   linked: push it somewhere first (e.g. create the GitHub repository from the folder on disk with
+   `gh repo create --source . --push`), then set up the project again as below.
+2. **Remove it from the hub and add it on a runner**: delete the project in its settings (on the
+   hub this only forgets it; its folder stays on disk), move or clone the repository into a
+   runner's projects directory if it isn't on a runner's computer yet, then add it with **Add
+   projects from this computer…** on the runner's row of the Runners page. It becomes that
+   runner's own project.
+
+Once no project is left on the hub's disk, the hub's `-projects` directory can go, and `git`, `gh`
+and `claude` can be uninstalled from the hub's computer.
 
 ## Claude runs on each user's own runner
 
@@ -209,9 +279,10 @@ anything else; the hub reaches only tasks it sent, by its own ids.
 
 ## Projects of a runner's own
 
-A runner's own projects (those in its `-projects` that aren't linked from the hub) still show in
-the hub's dashboard for platform admins, grouped by computer, and their tasks run on that
-computer. Notifications come from all of them.
+A runner's own projects (those in its `-projects` that aren't linked from the hub) show in the
+hub's dashboard for platform admins, grouped by computer, and their tasks, git and commands run on
+that computer. Notifications come from all of them. The hub has no group of its own in the
+**Projects** list: its projects are the shared ones, listed under **Shared**.
 
 ### Add projects from a runner's computer
 
@@ -239,9 +310,10 @@ The runner does the looking, and only:
 A runner only does the dashboard's normal work on its own projects: tasks, reviews, merges,
 issues, scans, chats about a project or task, CI, previews and permission prompts. It refuses:
 
-- terminals and ad-hoc commands;
-- setting a project's run, test, deploy or setup command (set those on the runner, or start it
-  with `-hub-commands` if you trust the hub to run commands on it);
+- terminals and ad-hoc commands, on its own projects and on its clones of shared ones;
+- setting a project's run, test, deploy or setup command, or taking a shared project's from the
+  hub (set those on the runner, or start it with `-hub-commands` if you trust the hub to run
+  commands on it);
 - adding a project outside its `-projects` directory;
 - the general chat and Claude's short calls (titles, summaries, clean-up) for anyone but its owner
   (see [above](#claude-runs-on-each-users-own-runner));

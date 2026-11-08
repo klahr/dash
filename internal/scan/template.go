@@ -30,6 +30,8 @@ import (
 	"strings"
 
 	"github.com/klahr/dash/internal/model"
+
+	"github.com/klahr/dash/internal/localrun"
 )
 
 // Dir is where a repository keeps its scan templates.
@@ -403,7 +405,13 @@ type TemplateSource interface {
 }
 
 func Templates(st TemplateSource, p model.Project) (active, shadowed []Template, problems []Problem) {
-	active, problems = Load(p.Path)
+	if p.Path == "" || !localrun.Allowed() {
+		// The hub has no working tree of its projects (their clones are on
+		// runners): the built-ins and the scans written in Dash.
+		active = Builtins()
+	} else {
+		active, problems = Load(p.Path)
+	}
 	n := len(active)
 	for _, m := range st.ScanTemplates(p.ID) {
 		t, err := Custom(m)
