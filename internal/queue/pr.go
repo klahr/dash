@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/klahr/dash/internal/gitops"
@@ -94,7 +96,9 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 		// pushed it again. Without this the task would wait in merging for a
 		// head that never changes.
 		handled := st.HeadRefOid == t.PR.HandledSHA
+		autoMerge := p.HubProjectID != ""
 		if st.Mergeable == "CONFLICTING" {
+			m.notePR(t, st, prStatusLine(n, p.Base(), st, nil, nil, autoMerge, handled))
 			if handled {
 				m.stuck(ctx, t, st, model.StatusFailed, fmt.Sprintf("Pull request #%d still conflicts with %s after Claude's fix", n, p.Base()))
 				return
@@ -110,13 +114,16 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 		var failed []gitops.PRCheck
 		for _, c := range st.Checks {
 			if c.Pending() {
-				return // act once every check has finished
+				// act once every check has finished
+				m.notePR(t, st, prStatusLine(n, p.Base(), st, nil, nil, autoMerge, handled))
+				return
 			}
 			if c.Failed() {
 				failed = append(failed, c)
 			}
 		}
 		code, other := m.sortFailed(ctx, p, n, failed)
+		m.notePR(t, st, prStatusLine(n, p.Base(), st, code, other, autoMerge, handled))
 		switch {
 		case len(code) > 0 && handled:
 			m.stuck(ctx, t, st, model.StatusFailed, fmt.Sprintf("Checks still fail on pull request #%d (%s) and Claude's fix made no new commit", n, labels(failed)))
@@ -131,10 +138,108 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 		default:
 			// Passing, or failing only checks that aren't required to merge.
 			// A handled head here is one GitHub refused to merge: leave it.
-			if p.HubProjectID != "" && !handled {
+			if autoMerge && !handled {
 				m.mergePR(ctx, t, p, st)
 			}
 		}
+	}
+}
+
+// notePR keeps what GitHub last said about a merging task's pull request
+// on the task, for its card: the checks and what the merge waits for.
+func (m *MergeQueue) notePR(t model.Todo, st gitops.PRStatus, line string) {
+	checks := prChecks(st.Checks)
+	if t.PR.Status == line && slices.Equal(t.PR.Checks, checks) {
+		return // unchanged: don't write (and broadcast) on every poll
+	}
+	_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+		if x.PR == nil || x.PR.Number != t.PR.Number {
+			return nil
+		}
+		x.PR.Checks, x.PR.Status = checks, line
+		return nil
+	})
+}
+
+func prChecks(cs []gitops.PRCheck) []model.PRCheck {
+	if len(cs) == 0 {
+		return nil
+	}
+	out := make([]model.PRCheck, len(cs))
+	for i, c := range cs {
+		state := "passed"
+		switch {
+		case c.Pending():
+			state = "pending"
+		case c.Failed():
+			state = "failed"
+		}
+		out[i] = model.PRCheck{Name: c.Label(), State: state, URL: c.URL()}
+	}
+	return out
+}
+
+// prStatusLine is what a merging card says about pull request n: what its
+// merge waits for. code and other are its failing checks, sorted as
+// sortFailed does; autoMerge is set when Dash merges it once it can, and
+// handled when Dash already acted on its head.
+func prStatusLine(n int, base string, st gitops.PRStatus, code, other []gitops.PRCheck, autoMerge, handled bool) string {
+	if st.Mergeable == "CONFLICTING" {
+		if handled {
+			return "Still conflicts with " + base + " after Claude's fix"
+		}
+		return "Conflicts with " + base + ", sent back to Claude"
+	}
+	var pending []gitops.PRCheck
+	passed := 0
+	for _, c := range st.Checks {
+		switch {
+		case c.Pending():
+			pending = append(pending, c)
+		case !c.Failed():
+			passed++
+		}
+	}
+	if len(pending) > 0 {
+		return fmt.Sprintf("Waiting for checks: %s (%d/%d passed)", labels(pending), passed, len(st.Checks))
+	}
+	plural := func(cs []gitops.PRCheck) string {
+		if len(cs) == 1 {
+			return "Check"
+		}
+		return "Checks"
+	}
+	switch {
+	case len(code) > 0 && handled:
+		return fmt.Sprintf("%s still failing after Claude's fix: %s", plural(code), labels(code))
+	case len(code) > 0:
+		return fmt.Sprintf("%s failed: %s, sent back to Claude", plural(code), labels(code))
+	case len(other) > 0:
+		why := make([]string, len(other))
+		for i, c := range other {
+			why[i] = blockedBy(c)
+		}
+		return "Blocked: " + strings.Join(why, ", ")
+	case !autoMerge || handled:
+		return "Waiting for you to merge on GitHub"
+	}
+	return fmt.Sprintf("Merging PR #%d…", n)
+}
+
+var (
+	claRe = regexp.MustCompile(`(?i)(^|[^a-z])cla([^a-z]|$)|contributor license`)
+	dcoRe = regexp.MustCompile(`(?i)(^|[^a-z])dco([^a-z]|$)|signed[- ]off`)
+)
+
+// blockedBy says why a failing check no code change can fix holds a merge.
+func blockedBy(c gitops.PRCheck) string {
+	switch l := c.Label(); {
+	case claRe.MatchString(l):
+		return "CLA not signed"
+	case dcoRe.MatchString(l):
+		return "commits not signed off (DCO)"
+	default:
+		return l + " failed (it runs from the base branch)"
 	}
 }
 

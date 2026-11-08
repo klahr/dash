@@ -209,3 +209,31 @@ func TestLandRunnerProjectsLocally(t *testing.T) {
 		t.Errorf("a second run switched %v", names)
 	}
 }
+
+// A pull request's check state is kept with the task and survives a reopen.
+func TestPullRequestChecksKept(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dash.db")
+	s, err := Open(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _ := s.CreateProject(model.Project{Name: "p"})
+	td, _ := s.CreateTodo(model.Todo{ProjectID: p.ID, Title: "a"})
+	want := model.PullRequest{Number: 10, URL: "https://github.com/o/r/pull/10", State: "OPEN",
+		Checks: []model.PRCheck{{Name: "Go", State: "passed", URL: "https://ci/1"}, {Name: "Docker", State: "pending"}},
+		Status: "Waiting for checks: Docker (1/2 passed)"}
+	if _, err := s.UpdateTodo(td.ID, func(x *model.Todo) error { pr := want; x.PR = &pr; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	// An update that gives up leaves the stored checks as they were.
+	_, _ = s.UpdateTodo(td.ID, func(x *model.Todo) error { x.PR.Checks[0].State = "failed"; return errors.New("give up") })
+	if got, _ := s.GetTodo(td.ID); got.PR.Checks[0].State != "passed" {
+		t.Fatal("an abandoned update changed the stored checks")
+	}
+	if s, err = Open(path, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetTodo(td.ID); !reflect.DeepEqual(*got.PR, want) {
+		t.Fatalf("after reopen: %+v, want %+v", *got.PR, want)
+	}
+}

@@ -1872,6 +1872,7 @@ function todoRow(t, li = -1, ri = -1) {
   if (t.status === "in_progress") { sub = state.lastLine.get(t.id) || "Working…"; subClass += " progress"; }
   if (t.paused) sub = t.status === "in_progress" ? "Pausing…" : "Paused";
   if (t.waiting && t.status === "queued" && !t.paused) { sub = t.waiting; subClass = "todo-sub waiting-runner"; }
+  if (t.status === "merging" && t.pr?.state === "OPEN") { sub = prStatus(t.pr); subClass = `todo-sub pr-status ${prTone(sub)}`; }
   if (t.error) { sub = t.error; subClass += " err"; }
   if (t.reviewing) { sub = "Claude is reviewing…"; subClass = "todo-sub progress"; }
   if (state.perms.some((p) => p.todo_id === t.id)) { sub = "Waiting for your approval"; subClass = "todo-sub waiting"; }
@@ -1891,7 +1892,7 @@ function todoRow(t, li = -1, ri = -1) {
       t.paused ? h("span", { class: "paused-tag" }, "Paused") : null,
       t.runner && ["in_progress", "review", "merging", "failed"].includes(t.status) ? h("span", { class: "runner-tag", title: "Runs on this runner" }, runnerName(t.runner)) : null,
       t.reviewing ? h("span", { class: "reviewing-tag" }, "Reviewing") : null,
-      t.pr && t.status !== "merged" ? h("span", { class: "pr-tag" }, `PR #${t.pr.number}`) : null,
+      t.pr && t.status !== "merged" ? prTag(t.pr) : null,
       t.revert ? h("span", { class: "revert-tag" }, "Reverted") : null,
       t.ci_run ? h("span", { class: "ci-tag" }, "Build fix") : null,
       fixing ? h("span", { class: "sentback-tag", title: `Sent back from merge: ${fixing}` }, /conflict/.test(fixing) ? "Merge conflict" : "Failing checks") : null,
@@ -1906,6 +1907,33 @@ function todoRow(t, li = -1, ri = -1) {
       t.priority ? h("span", {}, `P${t.priority}`) : null,
       t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, reviewChip(t), approveChip(t)) : null,
       t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null));
+}
+
+// What a merging task's pull request waits for, as the hub last saw it.
+function prStatus(pr) {
+  return pr.status || `Waiting for GitHub on PR #${pr.number}…`;
+}
+
+function prTone(line) {
+  if (/^(Blocked|Checks? (failed|still)|Still conflicts)/.test(line)) return "err";
+  if (/^Waiting for you/.test(line)) return "waiting";
+  return "progress";
+}
+
+// One line per check, for a tooltip.
+function prChecksTitle(pr) {
+  const mark = { passed: "✓", failed: "✗", pending: "…" };
+  return (pr.checks || []).map((c) => `${mark[c.state] || "·"} ${c.name}`).join("\n");
+}
+
+// The card's "PR #N", opening the pull request. A span, as the card is a
+// <button>, which can't nest a link.
+function prTag(pr) {
+  const open = (e) => { e.stopPropagation(); window.open(pr.url, "_blank", "noopener"); };
+  return h("span", {
+    class: "pr-tag", role: "link", title: `Open pull request #${pr.number} on GitHub`,
+    onpointerdown: (e) => e.stopPropagation(), onclick: open,
+  }, `PR #${pr.number}`);
 }
 
 // Spans, not buttons: the card itself is a <button>, which can't nest one.
@@ -2198,6 +2226,7 @@ function renderDetail() {
     t.runs ? h("span", {}, `${t.runs} ${t.runs === 1 ? "run" : "runs"}${t.cost_usd ? ` · ≈$${t.cost_usd.toFixed(2)}` : ""}`) : null,
     t.auto_fixes ? h("span", {}, `Fixed automatically ${t.auto_fixes}×`) : null,
     t.pr ? h("a", { class: "pr-link", href: t.pr.url, target: "_blank", rel: "noopener" }, `Pull request #${t.pr.number}${t.pr.state === "OPEN" ? "" : ` · ${t.pr.state.toLowerCase()}`}`) : null,
+    t.pr && t.status === "merging" && t.pr.state === "OPEN" ? h("span", { class: `pr-status ${prTone(prStatus(t.pr))}`, title: prChecksTitle(t.pr) }, prStatus(t.pr)) : null,
     t.merged_commit ? h("span", { class: "branch", title: t.merged_commit }, t.merged_commit.slice(0, 8)) : null,
     t.revert ? (t.revert.pr_url
       ? h("a", { class: "revert-tag", href: t.revert.pr_url, target: "_blank", rel: "noopener" }, "Revert pull request")
