@@ -1287,20 +1287,30 @@ $("#delete-project").addEventListener("submit", attempt(async (e) => {
 }));
 
 // Phones open the sidebar's projects, actions and status as a drawer from the
-// top bar's project name; on desktop [ collapses the sidebar to its icons.
+// top bar; on desktop the same button collapses the sidebar to its icons.
 const menuOpen = () => $(".app").classList.contains("menu-open");
 const sideCollapsed = () => $(".app").classList.contains("side-collapsed");
+function syncMenuBtn() {
+  const btn = $("#menu-open");
+  const label = !desktop.matches ? "Menu" : sideCollapsed() ? "Expand sidebar" : "Collapse sidebar";
+  btn.setAttribute("aria-expanded", String(desktop.matches ? !sideCollapsed() : menuOpen()));
+  btn.setAttribute("aria-label", label);
+  btn.title = desktop.matches ? `${label} ([)` : "";
+}
 function setSideCollapsed(on) {
   $(".app").classList.toggle("side-collapsed", on);
   try { localStorage.setItem("dash.sideCollapsed", on ? "1" : "0"); } catch {}
+  syncMenuBtn();
 }
 function setMenu(open) {
   open = open && !desktop.matches;
   $(".app").classList.toggle("menu-open", open);
   $("#menu-scrim").hidden = !open;
   $("#project-switch").setAttribute("aria-expanded", String(open));
+  syncMenuBtn();
 }
 try { $(".app").classList.toggle("side-collapsed", localStorage.getItem("dash.sideCollapsed") === "1"); } catch {}
+syncMenuBtn();
 function openProjects() {
   if (desktop.matches && sideCollapsed()) return setPicker(true);
   renderProjectList();
@@ -1353,7 +1363,8 @@ $("#project-picker").addEventListener("keydown", (e) => {
   else return;
   e.preventDefault(); e.stopPropagation();
 });
-$("#menu-close").addEventListener("click", () => { setMenu(false); $("#project-switch").focus(); });
+$("#menu-open").addEventListener("click", () => desktop.matches ? setSideCollapsed(!sideCollapsed()) : openProjects());
+$("#menu-close").addEventListener("click", () => { setMenu(false); $("#menu-open").focus(); });
 $("#menu-scrim").addEventListener("click", () => setMenu(false));
 desktop.addEventListener("change", () => { setMenu(false); $("#project-picker").hidden = true; renderProjectBranch(); });
 $("#side-new-project").addEventListener("click", openNewProject);
