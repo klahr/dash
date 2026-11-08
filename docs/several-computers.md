@@ -115,8 +115,10 @@ tasks should run on (your own runners, or any of the org's if you're an admin). 
   is offline"). It starts as soon as one can.
 - The project needs a git remote: each runner clones it into `<-projects>/hub/` the first time it
   gets one of its tasks, and keeps that clone. Work lands through the remote: the runner pushes
-  the task's branch and opens a pull request when you approve, so **merging locally on the hub is
-  off** for linked projects.
+  the task's branch and opens a pull request when you approve, then squash-merges it itself once
+  GitHub finds it mergeable and its checks pass (your approval was the review). If GitHub refuses
+  (a required review, say), the pull request stays open for you to merge there. **Merging locally
+  on the hub is off** for linked projects.
 - Review happens on the hub as usual: the diff, the log and the timeline come from the runner.
   Attachments and editor changes can't be sent to runners yet, and live previews, the worktree
   shell and re-running tests are on the runner's own dashboard.

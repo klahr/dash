@@ -53,6 +53,13 @@ func (g *Git) OpenPR(ctx context.Context, projectID, dir, base, head, title, bod
 	return n, m[0], nil
 }
 
+// MergePR squash-merges pull request number on GitHub, provided its head is
+// still head (so commits pushed meanwhile aren't merged unseen).
+func (g *Git) MergePR(ctx context.Context, projectID, dir string, number int, head string) error {
+	_, err := g.gh(ctx, projectID, dir, "pr", "merge", strconv.Itoa(number), "--squash", "--match-head-commit", head)
+	return err
+}
+
 // PRStatus is what Dash needs to know about a pull request.
 type PRStatus struct {
 	State       string `json:"state"`     // OPEN | MERGED | CLOSED

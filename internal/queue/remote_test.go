@@ -220,6 +220,55 @@ func TestPullRequestMode(t *testing.T) {
 	}
 }
 
+// On a runner, a hub's task's pull request is merged once its checks pass,
+// instead of waiting for someone to merge it on GitHub.
+func TestRunnerMergesHubTaskPullRequest(t *testing.T) {
+	h := newHarness(t, &fakeExec{fn: writeFile("", "hub.txt")}, model.Project{Name: "p"})
+	h.addOrigin(false, model.MergePR)
+	if _, err := h.st.UpdateProject(h.proj.ID, func(p *model.Project) error { p.HubProjectID = "hub-p"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	state := filepath.Join(dir, "pr.json")
+	merged := filepath.Join(dir, "merged")
+	bin := filepath.Join(dir, "gh")
+	script := "#!/bin/sh\ncase \"$1 $2\" in\n" +
+		"\"pr list\") echo '[]' ;;\n" +
+		"\"pr create\") echo https://github.com/o/r/pull/7 ;;\n" +
+		"\"pr view\") cat " + state + " ;;\n" +
+		"\"pr merge\") echo \"$*\" > " + merged + "; echo '{\"state\":\"MERGED\"}' > " + state + " ;;\n" +
+		"*) echo \"unexpected gh $*\" >&2; exit 1 ;;\nesac\n"
+	write(t, dir, "gh", script)
+	if err := os.Chmod(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h.git.GhBin = bin
+	write(t, dir, "pr.json", `{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"abc","statusCheckRollup":[
+		{"name":"build","status":"IN_PROGRESS"}]}`)
+
+	td := h.waitFor(h.add("on a runner").ID, model.StatusReview)
+	h.approve(td.ID)
+	deadline := time.Now().Add(10 * time.Second)
+	for x, _ := h.st.GetTodo(td.ID); x.PR == nil; x, _ = h.st.GetTodo(td.ID) {
+		if time.Now().After(deadline) {
+			t.Fatal("no PR opened")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	h.merges.PollPRs(context.Background())
+	if _, err := os.Stat(merged); err == nil {
+		t.Fatal("merged before its checks finished")
+	}
+
+	write(t, dir, "pr.json", `{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"abc","statusCheckRollup":[
+		{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}]}`)
+	h.merges.PollPRs(context.Background())
+	h.waitFor(td.ID, model.StatusMerged)
+	if b, _ := os.ReadFile(merged); !strings.Contains(string(b), "pr merge 7 --squash --match-head-commit abc") {
+		t.Fatalf("want the PR squash-merged at its head, got %q", b)
+	}
+}
+
 func TestPullRequestFailingChecksGoBackToClaude(t *testing.T) {
 	h := newHarness(t, &fakeExec{fn: writeFile("", "ci.txt")}, model.Project{Name: "p", MaxAutoFixes: 1})
 	h.addOrigin(false, model.MergePR)

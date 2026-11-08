@@ -4391,11 +4391,12 @@ function syncMergeHint() {
   hint.textContent = !onRunners
     ? (state.localTasks ? "Not linked: this dashboard runs the tasks itself." : "Not linked: tasks wait until you link a runner (this dashboard doesn't run tasks itself).")
     : !p.remote_url ? "Runners clone the project's git remote: connect a GitHub repository first."
-      : "Tasks run only on these runners, each in its own clone, and land through pull requests. If all of them are offline, tasks wait in the queue.";
+      : "Tasks run only on these runners, each in its own clone, and land through pull requests the runner merges once their checks pass. If all of them are offline, tasks wait in the queue.";
   const pr = f.merge_mode.value === "pr";
   $("#auto-push-row").hidden = pr;
   $("#merge-hint").textContent = !p.remote_url
     ? "Connect a GitHub repository (Projects → Create GitHub repository) to push or open pull requests."
+    : pr && onRunners ? `The runner pushes the task's branch, opens a pull request against ${baseBranch(p)} and merges it once its checks pass.`
     : pr ? `Dash pushes the task's branch and opens a pull request against ${baseBranch(p)}. Merge it on GitHub.`
       : f.auto_push.checked ? `Before each merge Dash pulls ${baseBranch(p)} from GitHub, so pushes don't get rejected.` : "";
 }

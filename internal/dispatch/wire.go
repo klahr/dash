@@ -8,8 +8,8 @@
 // parallel limit) and sends it there over the runner's tunnel. The runner
 // runs the task in its own clone of the project's git remote, with its
 // owner's Claude login, and reports back on POST /runner/report. Approved
-// work lands through the remote (a pull request), never by merging on the
-// hub.
+// work lands through the remote (a pull request the runner merges once its
+// checks pass), never by merging on the hub.
 //
 // The runner checks every task against the projects linked to it (see the
 // api package's hub task routes): it takes work only for a project the hub
