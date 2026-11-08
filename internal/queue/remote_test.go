@@ -82,6 +82,36 @@ func TestMergeSyncsWithOriginAndPushes(t *testing.T) {
 	}
 }
 
+// A manual push when origin has moved on brings in origin's commits first
+// instead of failing as a non-fast-forward.
+func TestPushDefaultSyncsWhenOriginMoved(t *testing.T) {
+	h := newHarness(t, &fakeExec{}, model.Project{Name: "p"})
+	origin, other := h.addOrigin(false, "")
+
+	write(t, h.proj.Path, "mine.txt", "mine\n")
+	gitRun(t, h.proj.Path, "add", "-A")
+	gitRun(t, h.proj.Path, "commit", "-m", "mine")
+	write(t, other, "theirs.txt", "theirs\n")
+	gitRun(t, other, "add", "-A")
+	gitRun(t, other, "commit", "-m", "theirs")
+	gitRun(t, other, "push", "origin", "main")
+
+	if err := h.merges.PushDefault(context.Background(), h.proj); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := gitRun(t, origin, "rev-parse", "main"), gitRun(t, h.proj.Path, "rev-parse", "main"); got != want {
+		t.Fatalf("origin/main = %s, want local main %s", got, want)
+	}
+	for _, f := range []string{"mine.txt", "theirs.txt"} {
+		if _, err := os.Stat(filepath.Join(h.proj.Path, f)); err != nil {
+			t.Fatalf("main checkout should have %s: %v", f, err)
+		}
+	}
+	if p, _ := h.st.GetProject(h.proj.ID); p.SyncError != "" {
+		t.Fatalf("unexpected sync error %q", p.SyncError)
+	}
+}
+
 func TestRevertMergedTodo(t *testing.T) {
 	h := newHarness(t, &fakeExec{fn: writeFile("", "feature.txt")}, model.Project{Name: "p"})
 	origin, _ := h.addOrigin(true, "")

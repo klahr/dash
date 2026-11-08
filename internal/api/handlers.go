@@ -524,9 +524,7 @@ func (s *Server) pushProject(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: project has no remote; create one via /github first", errBadRequest))
 		return
 	}
-	if err := s.Merges.Remote.With(r.Context(), p.ID, func() error {
-		return s.Git.Push(r.Context(), p.ID, p.Path, p.Base())
-	}); err != nil {
+	if err := s.Merges.PushDefault(r.Context(), p); err != nil {
 		writeErr(w, err)
 		return
 	}

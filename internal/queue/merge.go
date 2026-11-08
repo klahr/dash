@@ -427,6 +427,27 @@ func (e *syncError) Unwrap() error { return e.error }
 // pushDefault pushes the default branch after a merge, syncing and retrying
 // once if origin moved meanwhile. A failure doesn't undo the local merge.
 func (m *MergeQueue) pushDefault(ctx context.Context, p model.Project, t model.Todo) {
+	if err := m.pushSynced(ctx, p); err != nil {
+		m.Log.Line(t, "⚠ push failed (merged locally; Dash pushes again after the next merge): "+err.Error())
+		return
+	}
+	m.Log.Line(t, "⇡ pushed "+p.Base())
+}
+
+// PushDefault pushes the default branch on the merge worker (after the
+// merges already queued), first bringing in origin's new commits if origin
+// moved on, so a push rejected as non-fast-forward is retried once synced.
+func (m *MergeQueue) PushDefault(ctx context.Context, p model.Project) error {
+	var err error
+	if derr := m.Do(ctx, func(c context.Context) { err = m.pushSynced(c, p) }); derr != nil {
+		return derr
+	}
+	return err
+}
+
+// pushSynced pushes the default branch, syncing with origin and retrying
+// once if the push fails, and records the outcome on the project.
+func (m *MergeQueue) pushSynced(ctx context.Context, p model.Project) error {
 	push := func() error {
 		return m.Remote.With(ctx, p.ID, func() error { return m.Git.Push(ctx, p.ID, p.Path, p.Base()) })
 	}
@@ -438,11 +459,7 @@ func (m *MergeQueue) pushDefault(ctx context.Context, p model.Project, t model.T
 	}
 	m.setSyncError(p.ID, err)
 	m.Remote.recount(ctx, p)
-	if err != nil {
-		m.Log.Line(t, "⚠ push failed (merged locally; Dash pushes again after the next merge): "+err.Error())
-		return
-	}
-	m.Log.Line(t, "⇡ pushed "+p.Base())
+	return err
 }
 
 func (m *MergeQueue) setSyncError(projectID string, err error) {
