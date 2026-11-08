@@ -201,12 +201,18 @@ type ClonedRepo struct {
 // localRepos handles GET /api/repos: the git repositories already cloned
 // in the caller's projects folder that aren't projects yet, to add one
 // as a project (POST /api/projects with existing and its dir as path).
+// Platform admins, who may add a project anywhere, get the whole projects
+// directory (e.g. ~/dev/github/me), org folders and all; everyone else
+// their org's folder in it.
 func (s *Server) localRepos(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
 		return
 	}
-	root, err := sv.projectsRoot()
+	root, err := s.ProjectRoot, error(nil)
+	if !sv.c.PlatformAdmin {
+		root, err = sv.projectsRoot()
+	}
 	if err == nil && s.ProjectRoot == "" {
 		err = fmt.Errorf("%w: this Dash has no projects directory", errBadRequest)
 	}

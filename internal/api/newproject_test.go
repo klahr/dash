@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 )
@@ -117,10 +118,15 @@ func gitClone(t *testing.T, dir, branch string) {
 	}
 }
 
-func listLocalRepos(t *testing.T, s *Server) (root string, repos []ClonedRepo) {
+// listLocalRepos lists the clones as the owner, a platform admin when admin
+// is set and else a plain member of the org.
+func listLocalRepos(t *testing.T, s *Server, admin bool) (root string, repos []ClonedRepo) {
 	t.Helper()
 	w := httptest.NewRecorder()
-	s.localRepos(w, asOwner(t, s, httptest.NewRequest("GET", "/api/repos", nil)))
+	sess := ownerSession(t, s)
+	sess.User.PlatformAdmin = admin
+	r := httptest.NewRequest("GET", "/api/repos", nil)
+	s.localRepos(w, r.WithContext(auth.WithSession(r.Context(), sess)))
 	var got struct {
 		Root  string       `json:"root"`
 		Repos []ClonedRepo `json:"repos"`
@@ -137,7 +143,7 @@ func listLocalRepos(t *testing.T, s *Server) (root string, repos []ClonedRepo) {
 func TestAddExistingClone(t *testing.T) {
 	s := newProjectServer(t)
 	org := filepath.Join(s.ProjectRoot, "default")
-	if root, repos := listLocalRepos(t, s); root != org || len(repos) != 0 {
+	if root, repos := listLocalRepos(t, s, false); root != org || len(repos) != 0 {
 		t.Fatalf("before the org folder exists: %q %+v", root, repos)
 	}
 	gitClone(t, filepath.Join(org, "app"), "trunk")
@@ -145,7 +151,7 @@ func TestAddExistingClone(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(org, "notes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, repos := listLocalRepos(t, s)
+	_, repos := listLocalRepos(t, s, false)
 	if len(repos) != 2 || repos[0].Path != "app" || repos[0].Dir != filepath.Join(org, "app") || repos[0].Branch != "trunk" || repos[1].Path != "team/lib" {
 		t.Fatalf("listed: %+v", repos)
 	}
@@ -158,7 +164,7 @@ func TestAddExistingClone(t *testing.T) {
 	if p.Name != "app" || p.Path != repos[0].Dir || p.DefaultBranch != "trunk" || p.RemoteURL != "https://github.com/me/app.git" {
 		t.Fatalf("added project: %+v", p)
 	}
-	if _, repos := listLocalRepos(t, s); len(repos) != 1 || repos[0].Path != "team/lib" {
+	if _, repos := listLocalRepos(t, s, false); len(repos) != 1 || repos[0].Path != "team/lib" {
 		t.Fatalf("after adding: %+v", repos)
 	}
 
@@ -176,6 +182,27 @@ func TestAddExistingClone(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(org, "gone")); !os.IsNotExist(err) {
 		t.Fatalf("a missing clone must not be created: %v", err)
+	}
+}
+
+// A platform admin sees the clones in the whole projects directory (such as
+// ~/dev/github/me), not only their org's folder, without the hub's clones
+// and the projects.
+func TestListClonesAsPlatformAdmin(t *testing.T) {
+	s := newProjectServer(t)
+	gitClone(t, filepath.Join(s.ProjectRoot, "tool"), "main")
+	gitClone(t, filepath.Join(s.ProjectRoot, "default", "app"), "main")
+	gitClone(t, filepath.Join(s.ProjectRoot, "hub", "theirs"), "main")
+	gitClone(t, filepath.Join(s.ProjectRoot, "done"), "main")
+	if w := createProjectReq(t, s, `{"existing":true,"path":`+jsonString(filepath.Join(s.ProjectRoot, "done"))+`}`); w.Code != http.StatusCreated {
+		t.Fatalf("add: %d %s", w.Code, w.Body)
+	}
+	root, repos := listLocalRepos(t, s, true)
+	if root != s.ProjectRoot || len(repos) != 2 || repos[0].Path != "default/app" || repos[1].Path != "tool" || repos[1].Dir != filepath.Join(s.ProjectRoot, "tool") {
+		t.Fatalf("listed: %q %+v", root, repos)
+	}
+	if _, repos := listLocalRepos(t, s, false); len(repos) != 1 || repos[0].Path != "app" {
+		t.Fatalf("as a member: %+v", repos)
 	}
 }
 
