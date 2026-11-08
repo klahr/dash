@@ -357,6 +357,19 @@ func (sv *service) log(id string) (string, error) {
 
 // ---- projects on disk, processes ----
 
+// projectsRoot is the folder the caller's projects go in: the projects root
+// for another Dash, else the org's own folder inside it.
+func (sv *service) projectsRoot() (string, error) {
+	if sv.c.Machine {
+		return sv.s.ProjectRoot, nil
+	}
+	org := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(sv.c.OrgFolder), "-"), "-")
+	if org == "" {
+		return "", fmt.Errorf("%w: your organization has no folder for projects", errBadRequest)
+	}
+	return filepath.Join(sv.s.ProjectRoot, org), nil
+}
+
 // projectPath is where a new project named name goes. Platform admins may
 // give any path; everyone else gets, or must give, a folder inside their
 // org's own folder, <projects root>/<org folder>/, so one org can't adopt
@@ -365,13 +378,9 @@ func (sv *service) log(id string) (string, error) {
 // the runner guard checks.
 func (sv *service) projectPath(name, path string) (string, error) {
 	slug := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(name), "-"), "-")
-	root := sv.s.ProjectRoot
-	if !sv.c.Machine {
-		org := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(sv.c.OrgFolder), "-"), "-")
-		if org == "" {
-			return "", fmt.Errorf("%w: your organization has no folder for projects", errBadRequest)
-		}
-		root = filepath.Join(sv.s.ProjectRoot, org)
+	root, err := sv.projectsRoot()
+	if err != nil {
+		return "", err
 	}
 	if path == "" {
 		if slug == "" {

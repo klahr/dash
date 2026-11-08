@@ -166,6 +166,12 @@ func (c *Client) CreateProject(name, path string) (p model.Project, err error) {
 	return p, c.do("POST", "/api/projects", map[string]string{"name": name, "path": path}, &p)
 }
 
+// AddClone adds the repository already cloned at path as a project; name
+// "" names it after its folder.
+func (c *Client) AddClone(path, name string) (p model.Project, err error) {
+	return p, c.do("POST", "/api/projects", map[string]any{"existing": true, "path": path, "name": name}, &p)
+}
+
 func (c *Client) PushProject(pid string) error {
 	return c.do("POST", "/api/projects/"+pid+"/push", nil, nil)
 }

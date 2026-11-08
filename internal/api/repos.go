@@ -167,6 +167,12 @@ func redactRemote(remote string) string {
 // ownRepos is findRepos for this Dash: its projects directory, without
 // the hub's clones and the repositories that are already projects.
 func (sv *service) ownRepos() ([]LocalRepo, error) {
+	return findRepos(sv.s.ProjectRoot, "hub", sv.isProjectPath())
+}
+
+// isProjectPath returns a func reporting whether a folder is already one
+// of the org's projects (following symlinks either side).
+func (sv *service) isProjectPath() func(abs string) bool {
 	have := map[string]bool{}
 	mark := func(p string) {
 		have[filepath.Clean(p)] = true
@@ -177,13 +183,69 @@ func (sv *service) ownRepos() ([]LocalRepo, error) {
 	for _, p := range sv.data.ListProjects() {
 		mark(p.Path)
 	}
-	return findRepos(sv.s.ProjectRoot, "hub", func(abs string) bool {
+	return func(abs string) bool {
 		if have[filepath.Clean(abs)] {
 			return true
 		}
 		real, err := filepath.EvalSymlinks(abs)
 		return err == nil && have[real]
-	})
+	}
+}
+
+// ClonedRepo is a LocalRepo with its full path, to add as a project.
+type ClonedRepo struct {
+	LocalRepo
+	Dir string `json:"dir"`
+}
+
+// localRepos handles GET /api/repos: the git repositories already cloned
+// in the caller's projects folder that aren't projects yet, to add one
+// as a project (POST /api/projects with existing and its dir as path).
+func (s *Server) localRepos(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	root, err := sv.projectsRoot()
+	if err == nil && s.ProjectRoot == "" {
+		err = fmt.Errorf("%w: this Dash has no projects directory", errBadRequest)
+	}
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	out := []ClonedRepo{}
+	if _, statErr := os.Stat(root); statErr == nil {
+		skip := ""
+		if filepath.Clean(root) == filepath.Clean(s.ProjectRoot) {
+			skip = "hub" // the hub's clones of its runners' projects
+		}
+		repos, err := findRepos(root, skip, sv.isProjectPath())
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		for _, x := range repos {
+			out = append(out, ClonedRepo{x, filepath.Join(root, filepath.FromSlash(x.Path))})
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"repos": out, "root": root})
+}
+
+// checkExistingRepo makes sure path is a git repository that isn't one of
+// the org's projects yet, before it's added as one.
+func (sv *service) checkExistingRepo(path string) error {
+	fi, err := os.Stat(path)
+	if err != nil || !fi.IsDir() {
+		return fmt.Errorf("%w: no folder at %s", errBadRequest, path)
+	}
+	if _, err := os.Stat(filepath.Join(path, ".git")); err != nil {
+		return fmt.Errorf("%w: %s is not a git repository (no .git in it)", errBadRequest, path)
+	}
+	if sv.isProjectPath()(path) {
+		return fmt.Errorf("%w: %s is already a project", errBadRequest, path)
+	}
+	return nil
 }
 
 // adoptedBranch is the default branch of a project made from the repo at

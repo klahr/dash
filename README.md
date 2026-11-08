@@ -62,8 +62,10 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 
 ## Your first task
 
-1. **Create a project.** Click **New project**. Give it a name, and either point *Existing
-   repository path* at a git repository you already have, or leave it empty to create a new one.
+1. **Create a project.** Click **New project** and give it a name to start a new repository, or
+   switch to **Existing clone** to add a git repository you already have: pick one of the clones
+   Dash finds in your projects folder, or give its path (the name defaults to its folder's).
+   **Add existing clone** in the project menu and the command palette opens it directly.
    A *Test command* (e.g. `go test ./...`) is optional but lets Dash check Claude's work.
 2. **Add a task.** Click **New task** (or press <kbd>n</kbd>) and write what Claude should do,
    as you would in a chat; Claude names the task. <kbd>Enter</kbd> saves it, <kbd>Shift</kbd>+<kbd>Enter</kbd>

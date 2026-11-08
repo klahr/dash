@@ -164,6 +164,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .empty-title { color: var(--text); font-weight: 600; font-size: 17px; margin: 0 0 6px; }
 .empty p { margin: 0 0 6px; }
 .empty .btn { margin-top: 14px; }
+.empty-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
 .empty .welcome-steps { text-align: left; margin: 18px auto 0; max-width: 42ch; }
 .empty .welcome-steps > li { margin-bottom: 12px; }
 .empty .welcome-steps strong { color: var(--text); }
@@ -1012,6 +1013,8 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .project-picker-list button[aria-current="true"] { background: var(--raised); box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
 .project-picker-list .project-branch { overflow: hidden; text-overflow: ellipsis; }
 .project-picker-list .picker-new { margin-top: 4px; border-top: 1px solid var(--line); border-radius: 0 0 6px 6px; color: var(--muted); justify-content: flex-start; }
+.project-picker-list .picker-new:has(+ .picker-new) { border-radius: 0; }
+.project-picker-list .picker-new + .picker-new { margin-top: 0; border-top: 0; }
 .project-picker-list .side-machine { padding: 8px 10px 2px; }
 .merge-status:empty { display: none; }
 .merge-status { flex-basis: 100%; }

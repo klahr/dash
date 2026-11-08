@@ -92,6 +92,9 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		GitHub       string `json:"github"`
 		Clone        bool   `json:"clone"`
 		GitHubPublic bool   `json:"github_public"`
+		// Existing adds a repository already cloned at Path: it must be one
+		// (and not a project yet), and the name defaults to its folder's.
+		Existing bool `json:"existing"`
 	}
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -109,6 +112,20 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	if req.MaxAutoFixes != nil {
 		maxFixes = max(0, *req.MaxAutoFixes)
 	}
+	req.Path = strings.TrimSpace(req.Path)
+	if req.Existing {
+		if req.Path == "" {
+			writeErr(w, fmt.Errorf("%w: the path of the existing clone is required", errBadRequest))
+			return
+		}
+		if strings.TrimSpace(req.GitHub) != "" {
+			writeErr(w, fmt.Errorf("%w: an existing clone keeps its own remote; leave GitHub empty", errBadRequest))
+			return
+		}
+		if strings.TrimSpace(req.Name) == "" {
+			req.Name = filepath.Base(store.CleanPath(req.Path))
+		}
+	}
 	if strings.TrimSpace(req.Name) == "" {
 		writeErr(w, fmt.Errorf("%w: name is required", errBadRequest))
 		return
@@ -119,6 +136,12 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Path = path
+	if req.Existing {
+		if err := sv.checkExistingRepo(path); err != nil {
+			writeErr(w, err)
+			return
+		}
+	}
 	if req.DefaultBranch == "" {
 		req.DefaultBranch = "main"
 	}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -99,4 +100,86 @@ func TestCreateProjectCreatesGitHubRepo(t *testing.T) {
 	if p.RemoteURL != "https://github.com/me/fresh.git" {
 		t.Fatalf("want origin set, got %+v", p)
 	}
+}
+
+// gitClone makes a real repository at dir on branch, with one commit and an
+// origin, as a clone made outside Dash would be.
+func gitClone(t *testing.T, dir, branch string) {
+	t.Helper()
+	for _, args := range [][]string{
+		{"init", "-q", "-b", branch, dir},
+		{"-C", dir, "-c", "commit.gpgsign=false", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "first"},
+		{"-C", dir, "remote", "add", "origin", "https://github.com/me/" + filepath.Base(dir) + ".git"},
+	} {
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+}
+
+func listLocalRepos(t *testing.T, s *Server) (root string, repos []ClonedRepo) {
+	t.Helper()
+	w := httptest.NewRecorder()
+	s.localRepos(w, asOwner(t, s, httptest.NewRequest("GET", "/api/repos", nil)))
+	var got struct {
+		Root  string       `json:"root"`
+		Repos []ClonedRepo `json:"repos"`
+	}
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &got) != nil {
+		t.Fatalf("list repos: %d %s", w.Code, w.Body)
+	}
+	return got.Root, got.Repos
+}
+
+// An existing clone in the org's folder is listed, added as a project
+// named after its folder on its own branch, and then no longer listed nor
+// addable again.
+func TestAddExistingClone(t *testing.T) {
+	s := newProjectServer(t)
+	org := filepath.Join(s.ProjectRoot, "default")
+	if root, repos := listLocalRepos(t, s); root != org || len(repos) != 0 {
+		t.Fatalf("before the org folder exists: %q %+v", root, repos)
+	}
+	gitClone(t, filepath.Join(org, "app"), "trunk")
+	gitClone(t, filepath.Join(org, "team", "lib"), "main")
+	if err := os.MkdirAll(filepath.Join(org, "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, repos := listLocalRepos(t, s)
+	if len(repos) != 2 || repos[0].Path != "app" || repos[0].Dir != filepath.Join(org, "app") || repos[0].Branch != "trunk" || repos[1].Path != "team/lib" {
+		t.Fatalf("listed: %+v", repos)
+	}
+
+	w := createProjectReq(t, s, `{"existing":true,"path":`+jsonString(repos[0].Dir)+`}`)
+	var p model.Project
+	if w.Code != http.StatusCreated || json.Unmarshal(w.Body.Bytes(), &p) != nil {
+		t.Fatalf("add: %d %s", w.Code, w.Body)
+	}
+	if p.Name != "app" || p.Path != repos[0].Dir || p.DefaultBranch != "trunk" || p.RemoteURL != "https://github.com/me/app.git" {
+		t.Fatalf("added project: %+v", p)
+	}
+	if _, repos := listLocalRepos(t, s); len(repos) != 1 || repos[0].Path != "team/lib" {
+		t.Fatalf("after adding: %+v", repos)
+	}
+
+	for name, body := range map[string]string{
+		"again":       `{"existing":true,"path":` + jsonString(p.Path) + `}`,
+		"not a repo":  `{"existing":true,"path":` + jsonString(filepath.Join(org, "notes")) + `}`,
+		"missing":     `{"existing":true,"path":` + jsonString(filepath.Join(org, "gone")) + `}`,
+		"no path":     `{"existing":true,"name":"x"}`,
+		"with github": `{"existing":true,"path":` + jsonString(filepath.Join(org, "team", "lib")) + `,"github":"there"}`,
+		"outside org": `{"existing":true,"path":` + jsonString(t.TempDir()) + `}`,
+	} {
+		if w := createProjectReq(t, s, body); w.Code != http.StatusBadRequest {
+			t.Fatalf("%s: want 400, got %d %s", name, w.Code, w.Body)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(org, "gone")); !os.IsNotExist(err) {
+		t.Fatalf("a missing clone must not be created: %v", err)
+	}
+}
+
+func jsonString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }

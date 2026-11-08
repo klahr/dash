@@ -12,7 +12,7 @@ import (
 var commands = []string{
 	"project ", "push", "task ", "todo ", "new ", "board", "chat", "procs",
 	"ci", "fix", "cleanup", "pause", "resume", "perms", "copy path", "copy prompt", "copy",
-	"run ", "newproject ", "noh", "old", "clear", "refresh", "help", "q",
+	"run ", "newproject ", "addclone ", "noh", "old", "clear", "refresh", "help", "q",
 }
 
 // commandSuggestions are whole command lines for the : prompt: every

@@ -477,16 +477,22 @@
   <dialog class="sheet" id="new-project-sheet" aria-labelledby="new-project-title">
     <form method="dialog" id="new-project">
       <header class="sheet-head"><h2 id="new-project-title">New project</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <div class="segmented" role="tablist" id="new-project-mode" aria-label="Where the repository comes from">
+        <button type="button" role="tab" data-mode="new" aria-selected="true">New repository</button>
+        <button type="button" role="tab" data-mode="existing" aria-selected="false">Existing clone</button>
+      </div>
       <label class="field" hidden><span>Computer</span><select name="machine"></select></label>
-      <label class="field"><span>Name</span><input name="name" required autocomplete="off" autofocus></label>
-      <label class="field"><span>Existing repository path <em>optional</em></span><input name="path" placeholder="Leave empty to create a new repo" autocomplete="off" spellcheck="false"></label>
-      <label class="field"><span>GitHub repository <em>optional</em></span><input name="github" placeholder="name or owner/name" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
+      <label class="field" id="new-project-clone-row" hidden><span>Clone</span><select name="clone_pick"></select></label>
+      <p class="hint" id="new-project-clone-hint" hidden></p>
+      <label class="field" id="new-project-path-row"><span id="new-project-path-label">Folder <em>optional</em></span><input name="path" placeholder="Leave empty for a new folder named after the project" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
+      <label class="field"><span id="new-project-name-label">Name</span><input name="name" required autocomplete="off" autofocus></label>
+      <label class="field" id="new-project-github-row"><span>GitHub repository <em>optional</em></span><input name="github" placeholder="name or owner/name" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
       <p class="hint" id="new-project-github-hint" hidden>A new private repository is created and pushed. If it already exists on GitHub, you can clone it instead.</p>
       <label class="toggle" id="new-project-public-row" hidden><input type="checkbox" name="github_public"><span>Make the new repository public</span></label>
       <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" placeholder="npm run dev -- --port $PORT" spellcheck="false"></label>
       <label class="field"><span>Test command</span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>
       <label class="field"><span>Deploy command</span><input name="deploy_command" placeholder="./deploy.sh" spellcheck="false"></label>
-      <button class="btn primary" data-icon="plus">Create project</button>
+      <button class="btn primary" data-icon="plus" <span id="new-project-submit">Create project</span></button>
     </form>
   </dialog>
 

@@ -693,6 +693,6 @@ var helpText = styleBox.Render(strings.Join([]string{
 	styleAccent.Render("Chat") + "          t make the last answer a task · i insert · Enter send · Alt+Enter newline · Esc normal · x stop · dd/:clear",
 	styleAccent.Render("Procs") + "         Enter attach (Ctrl-] detaches) · R run · T test · D deploy · ! shell · x stop · o open",
 	styleAccent.Render("Form") + "          Tab field · Esc normal · :w draft · :wq/ZZ queue · :q! discard",
-	styleAccent.Render("Commands") + "      :project <name> · :newproject <name> [path] · :task <prompt> · :new [prompt]",
+	styleAccent.Render("Commands") + "      :project <name> · :newproject <name> [path] · :addclone <path> [name] · :task <prompt> · :new [prompt]",
 	"              :run <cmd> · :push · :pause / :resume the queue · :perms · :board :chat :procs · :clear",
 }, "\n"))

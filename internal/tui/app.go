@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -1637,6 +1638,22 @@ func (a *App) runCommand(line string) tea.Cmd {
 		a.proj = nil
 		return a.action("project created", func() error {
 			_, err := a.c.CreateProject(pname, strings.TrimSpace(path))
+			return err
+		})
+	case "addclone", "ac":
+		path, pname, _ := strings.Cut(arg, " ")
+		if path == "" {
+			a.setFlash("usage: :addclone <path> [name]", true)
+			return nil
+		}
+		pname = strings.TrimSpace(pname)
+		a.startPj = pname
+		if pname == "" {
+			a.startPj = filepath.Base(path)
+		}
+		a.proj = nil
+		return a.action("clone added", func() error {
+			_, err := a.c.AddClone(path, pname)
 			return err
 		})
 	case "new", "o":
