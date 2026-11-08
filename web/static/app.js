@@ -693,7 +693,6 @@ const state = {
   perms: [],           // pending permission requests for this project
   usage: null,
   view: "board",
-  query: "",           // board search (/)
   showOld: false,      // show merged todos older than a day
   unpushed: 0,         // commits on the default branch origin doesn't have
   unpushedTodos: null, // ids of merged todos origin doesn't have yet (null until known)
@@ -1625,13 +1624,11 @@ $("#branch-sheet").addEventListener("close", () => { branchSheet = null; });
 const title = (t) => t.title || t.prompt.split("\n")[0];
 const byPriority = (a, b) => a.priority - b.priority || a.created_at.localeCompare(b.created_at);
 
-const matches = (t, q) => !q || `${t.title} ${t.prompt}`.toLowerCase().includes(q.toLowerCase());
 const isOld = (t) => t.status === "merged" && Date.now() - new Date(t.finished_at || t.updated_at) > DAY;
 
 function laneItems() {
   const out = Object.fromEntries(LANES.map((l) => [l.key, []]));
   for (const t of state.todos.values()) {
-    if (!matches(t, state.query)) continue;
     if (!state.showOld && isOld(t)) continue;
     const lane = LANES.find((l) => l.statuses.includes(t.status));
     if (lane) out[lane.key].push(t);
@@ -1735,11 +1732,10 @@ function renderBoardNow() {
       l.key === "done" ? pushBar() : null,
       items[l.key].length
         ? h("ol", { class: "rail" }, items[l.key].map((t, ri) => h("li", {}, todoRow(t, li, ri))))
-        : h("p", { class: "col-empty" }, state.query ? "No matches." : l.empty),
+        : h("p", { class: "col-empty" }, l.empty),
       l.key === "draft" ? enqueueAllBtn(items.draft) : null,
       l.key === "done" ? oldToggle() : null,
       l.key === "done" ? clearDoneBtn() : null))));
-  syncSearchBar();
   updateNeedsYou(items);
 
   $(".lane-tab[aria-selected=true]")?.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -1760,7 +1756,7 @@ function toggleCollapsed(key) {
 }
 
 function oldToggle() {
-  const hidden = [...state.todos.values()].filter((t) => isOld(t) && matches(t, state.query)).length;
+  const hidden = [...state.todos.values()].filter(isOld).length;
   if (!hidden && !state.showOld) return null;
   return ib({ class: "link older", onclick: () => { state.showOld = !state.showOld; renderBoard(); } }, state.showOld ? "up" : "down",
     state.showOld ? "Hide merged tasks older than a day" : `Show ${hidden} older merged ${hidden === 1 ? "task" : "tasks"}`);
@@ -4083,45 +4079,6 @@ function updateNeedsYou(items) {
 function renderTitle() {
   const base = state.project ? `${state.project.name} | Dash` : "Dash";
   document.title = state.needsYou ? `(${state.needsYou}) ${base}` : base;
-}
-
-// ------------------------------------------------------------------ search (/)
-function openSearch() {
-  showView("board");
-  $("#search-bar").hidden = false;
-  const input = $("#search-input");
-  input.focus();
-  input.select();
-}
-function syncSearchBar() {
-  const bar = $("#search-bar");
-  if (state.query && bar.hidden) bar.hidden = false;
-  if (document.activeElement !== $("#search-input")) $("#search-input").value = state.query;
-  const n = Object.values(laneItems()).reduce((a, l) => a + l.length, 0);
-  $("#search-count").textContent = state.query ? `${n} ${n === 1 ? "match" : "matches"}` : "";
-}
-function clearSearch() {
-  state.query = "";
-  $("#search-input").value = "";
-  $("#search-bar").hidden = true;
-  renderBoard();
-}
-$("#search-input").addEventListener("input", (e) => { state.query = e.target.value; keys.cur.row = 0; renderBoard(); });
-$("#search-input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") { e.preventDefault(); e.target.blur(); jumpMatch(1, true); }
-  if (e.key === "Escape") { e.preventDefault(); clearSearch(); e.target.blur(); }
-});
-$("#search-clear").addEventListener("click", clearSearch);
-$("#search-open").addEventListener("click", openSearch);
-
-// n / N: next/previous match in lane order
-function jumpMatch(dir, fromStart = false) {
-  const flat = [];
-  LANES.forEach((l, li) => laneTodos(li).forEach((t, ri) => flat.push([li, ri])));
-  if (!flat.length) return toast("No matches");
-  let i = fromStart ? 0 : flat.findIndex(([li, ri]) => li === keys.cur.lane && ri === keys.cur.row);
-  if (!fromStart) i = (i + dir + flat.length) % flat.length;
-  moveCursor(...flat[Math.max(0, i)]);
 }
 
 // ------------------------------------------------------------------ diff comments
@@ -7168,7 +7125,6 @@ async function runCommand(line) {
       if (!state.perms.length) return toast("No permission requests waiting");
       showView("board"); closeDetail();
       return $("#perm-banner").scrollIntoView({ block: "nearest" });
-    case "noh": case "nohlsearch": return clearSearch();
     case "notify": case "notifications": return toggleNotifications();
     case "vim": return toggleVim();
     case "list": case "invisibles": return toggleInvisibles();
@@ -7237,7 +7193,6 @@ function paletteCommands() {
     ["Shell", "terminal", go("run"), "gs", "run terminal processes view"],
     ["History", "log", go("history"), "gh", "git graph tree commits view"],
     ["Files", "code", go("files"), "gf", "browse edit source code tree editor"],
-    p && ["Filter the board", "search", openSearch, "/", "search todos tasks"],
     ["Switch project", "repo", openProjects, "p", "projects"],
     ["New project", "plus", openNewProject, "", "create add"],
     ["Add existing clone", "repo", openAddClone, "", "new project adopt import local repository folder"],
@@ -7524,21 +7479,18 @@ async function handleNormal(k, n, hadCount) {
       if (menuOpen()) return setMenu(false);
       if (k === "Escape" && pane.open && paneOverlays()) return toggleChatPane(false);
       if (state.detail) return closeDetail();
-      if (k === "Escape" && state.query) return clearSearch();
       return;
     case "y": case "A":
       if (await permKey(k) === false) toast("No permission request waiting");
       return;
     case "n": case "N":
-      // n answers "deny" only when a permission request is in view; while
-      // searching the board, n/N are next/previous match; otherwise n is a
-      // new task (quick sheet) and N one with all options (full form).
-      if (k === "n" && state.perms.length && (state.detail ? state.perms.some((p) => p.todo_id === state.detail) : !state.query)) return permKey("n");
-      if (state.view === "board" && !state.detail && state.query) return jumpMatch(k === "n" ? 1 : -1);
+      // n answers "deny" only when a permission request is in view; otherwise
+      // n is a new task (quick sheet) and N one with all options (full form).
+      if (k === "n" && state.perms.length && (!state.detail || state.perms.some((p) => p.todo_id === state.detail))) return permKey("n");
       if (!state.project) return;
       return k === "n" ? openQuickAdd() : openTodoForm();
     case "/":
-      if (state.view === "board" && !state.detail) return openSearch();
+      if (state.project) return openPalette("#");
       break;
   }
 
