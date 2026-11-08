@@ -354,9 +354,18 @@ computers. So:
 - **Lockout:** after 5 failed logins from one IP address within 15 minutes, that address is locked
   out until the 15 minutes pass. Failed sign-ins through the claude.ai connector and wrong
   passwords on destructive actions count too, and so do wrong two-factor codes (which are also
-  limited per account, from any address). The limits are fixed (`maxFailures` and
-  `failureWindow` in [`internal/auth/auth.go`](../internal/auth/auth.go)), and they are per
-  address, so they slow down one guesser, not many.
+  limited per account, from any address). On top of that, after 100 failed sign-ins from all
+  addresses together within the window, every new sign-in is refused until it passes, so many
+  addresses can't share out the guessing; signed-in browsers and connectors carry on, and
+  confirming your password on a destructive action still works. An attacker can use that to keep
+  others from signing in for a while, so set the global limit with your traffic in mind.
+  Tune the limits with `-login-max-failures` (5), `-login-global-failures` (100; 0 turns the
+  global limit off) and `-login-window` (15m), or `DASH_LOGIN_MAX_FAILURES`,
+  `DASH_LOGIN_GLOBAL_FAILURES` and `DASH_LOGIN_WINDOW`.
+- **Lockouts are logged** as `level=WARN msg="sign-in lockout: too many failed attempts" ip=…`
+  (once per address and window; the global one without `ip`), so fail2ban or similar can ban
+  the address at the firewall or proxy, e.g. with
+  `failregex = msg="sign-in lockout: too many failed attempts" ip=<HOST>`.
 - **`-trust-proxy` is what makes the lockout per client.** Without it every request seems to come
   from the proxy, so one guesser locks everyone out. With it, Dash takes the client from the last
   `X-Forwarded-For` entry, the one your proxy added. Only use it when the proxy is the only way to

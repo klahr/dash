@@ -467,7 +467,7 @@ func (a *Auth) register(w http.ResponseWriter, r *http.Request) {
 		accountError(w, err)
 		return
 	}
-	a.release(ip, f)
+	a.release(f)
 	a.membersChanged(m.ID)
 	if err := a.startSession(w, r, u.ID); err != nil {
 		accountError(w, err)

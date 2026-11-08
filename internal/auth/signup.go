@@ -324,12 +324,12 @@ func (a *Auth) resetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		if errors.Is(err, store.ErrWeakPassword) {
-			a.release(ip, f)
+			a.release(f)
 		}
 		accountError(w, err)
 		return
 	}
-	a.release(ip, f)
+	a.release(f)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": u.Username})
 }
 

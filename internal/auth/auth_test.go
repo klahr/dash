@@ -195,6 +195,59 @@ func TestLockoutParallel(t *testing.T) {
 	}
 }
 
+func TestGlobalLockout(t *testing.T) {
+	a := newAuth(t, "admin", "s3cret")
+	now := time.Now()
+	a.now = func() time.Time { return now }
+	a.Lockout = Lockout{PerIP: 3, Global: 5, Window: time.Minute}
+	// Five addresses, one wrong guess each: under every per-address limit,
+	// but the global budget is spent.
+	for i := range 5 {
+		if _, err := a.attempt("10.0.1."+string(rune('0'+i)), "admin", "nope"); err != errBadLogin {
+			t.Fatalf("guess %d: %v", i, err)
+		}
+	}
+	if _, err := a.attempt("10.0.2.1", "admin", "s3cret"); err != errLockedOut {
+		t.Fatalf("new address after the global budget: %v, want locked out", err)
+	}
+	if !a.lockedOut("10.0.2.2") {
+		t.Fatal("lockedOut should report the global lockout")
+	}
+	// Someone signed in can still confirm their password.
+	r := signedIn(t, a, httptest.NewRequest("DELETE", "/api/projects/x", nil))
+	if err := a.ConfirmPassword(r, "s3cret"); err != nil {
+		t.Fatalf("confirm while globally locked out: %v", err)
+	}
+	now = now.Add(time.Minute + time.Second)
+	if _, err := a.attempt("10.0.2.1", "admin", "s3cret"); err != nil {
+		t.Fatalf("after the window: %v", err)
+	}
+}
+
+func TestGlobalLockoutRightPasswordsDontCount(t *testing.T) {
+	a := newAuth(t, "admin", "s3cret")
+	a.Lockout = Lockout{PerIP: 3, Global: 2, Window: time.Minute}
+	for i := range 5 {
+		if _, err := a.attempt("10.0.3."+string(rune('0'+i)), "admin", "s3cret"); err != nil {
+			t.Fatalf("login %d: %v", i, err)
+		}
+	}
+}
+
+func TestGlobalLockoutOff(t *testing.T) {
+	a := newAuth(t, "admin", "s3cret")
+	a.Lockout = Lockout{PerIP: 1, Global: 0, Window: time.Minute}
+	for i := range 5 {
+		a.attempt("10.0.4."+string(rune('0'+i)), "admin", "nope")
+	}
+	if _, err := a.attempt("10.0.5.1", "admin", "s3cret"); err != nil {
+		t.Fatalf("no global limit: %v", err)
+	}
+	if _, err := a.attempt("10.0.4.0", "admin", "s3cret"); err != errLockedOut {
+		t.Fatalf("per-address limit of 1: %v, want locked out", err)
+	}
+}
+
 func TestConfirmPasswordSuccessDoesNotCount(t *testing.T) {
 	a := newAuth(t, "u", "p")
 	r := signedIn(t, a, httptest.NewRequest("DELETE", "/api/projects/x", nil))

@@ -79,6 +79,9 @@ func main() {
 	tlsCert := flag.String("tls-cert", "", "serve HTTPS with this certificate (PEM), e.g. from certbot or `tailscale cert`")
 	tlsKey := flag.String("tls-key", "", "private key for -tls-cert")
 	trustProxy := flag.Bool("trust-proxy", false, "trust X-Forwarded-Proto/-For/-Host from a reverse proxy that terminates TLS (Caddy, nginx, a Cloudflare Tunnel, Tailscale Serve)")
+	loginPerIP := flag.Int("login-max-failures", -1, fmt.Sprintf("failed sign-ins from one address within -login-window before it is locked out until the window passes (default $DASH_LOGIN_MAX_FAILURES, else %d)", auth.DefaultLockout.PerIP))
+	loginGlobal := flag.Int("login-global-failures", -1, fmt.Sprintf("failed sign-ins from all addresses together within -login-window before every new sign-in is refused until the window passes; signed-in sessions carry on; 0 = no global limit (default $DASH_LOGIN_GLOBAL_FAILURES, else %d)", auth.DefaultLockout.Global))
+	loginWindow := flag.Duration("login-window", 0, fmt.Sprintf("the window failed sign-ins are counted in (default $DASH_LOGIN_WINDOW, else %s)", auth.DefaultLockout.Window))
 	cleanupDays := flag.Int("cleanup-days", 14, "daily cleanup: remove worktrees of tasks that failed this many days ago, plus orphaned worktrees, branches, logs and uploads (0 = off)")
 	dataDir := flag.String("data", filepath.Join(home, ".local", "share", "dash"), "state, logs and worktrees")
 	projectRoot := flag.String("projects", "", "where new projects are created (default $DASH_PROJECTS, else ~/dash-projects)")
@@ -194,6 +197,10 @@ func main() {
 	authn := auth.New(st.Accounts())
 	authn.Legacy(user, pass)
 	authn.TrustProxy, hub.TrustProxy = *trustProxy, *trustProxy
+	if authn.Lockout, err = lockoutConfig(*loginPerIP, *loginGlobal, *loginWindow); err != nil {
+		slog.Error("sign-in lockout", "err", err)
+		os.Exit(1)
+	}
 	// A shared secret lets the computers in one dashboard call each other.
 	peerToken := os.Getenv("DASH_PEER_TOKEN")
 	if peerToken != "" && len(peerToken) < 24 {
@@ -637,6 +644,53 @@ func envBool(name string) bool {
 		return true
 	}
 	return false
+}
+
+// lockoutConfig is the sign-in lockout from the flags (negative or zero:
+// not set), else the environment, else the defaults.
+func lockoutConfig(perIP, global int, window time.Duration) (auth.Lockout, error) {
+	l := auth.DefaultLockout
+	envInt := func(flagVal int, flagName, name string, min int, dst *int) error {
+		if flagVal < 0 {
+			v := os.Getenv(name)
+			if v == "" {
+				return nil
+			}
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return fmt.Errorf("%s: %w", name, err)
+			}
+			flagVal = n
+		}
+		if flagVal < min {
+			return fmt.Errorf("-%s / %s must be at least %d, not %d", flagName, name, min, flagVal)
+		}
+		*dst = flagVal
+		return nil
+	}
+	if err := envInt(perIP, "login-max-failures", "DASH_LOGIN_MAX_FAILURES", 1, &l.PerIP); err != nil {
+		return l, err
+	}
+	if err := envInt(global, "login-global-failures", "DASH_LOGIN_GLOBAL_FAILURES", 0, &l.Global); err != nil {
+		return l, err
+	}
+	if window <= 0 {
+		if v := os.Getenv("DASH_LOGIN_WINDOW"); v != "" {
+			d, err := time.ParseDuration(v)
+			if err != nil || d <= 0 {
+				return l, fmt.Errorf("DASH_LOGIN_WINDOW: want a duration such as 15m, not %q", v)
+			}
+			window = d
+		}
+	}
+	if window > 0 {
+		l.Window = window
+	}
+	if l.Global > 0 && l.Global < l.PerIP {
+		slog.Warn("sign-in lockout: the global limit is below the per-address one, so one address can lock everyone out", "global", l.Global, "per_ip", l.PerIP)
+	}
+	slog.Info("sign-in lockout", "per_ip", l.PerIP, "global", l.Global, "window", l.Window)
+	return l, nil
 }
 
 func envOr(v, name string) string {

@@ -35,9 +35,28 @@ const (
 	CookieName = "dash_session"
 	sessionTTL = 7 * 24 * time.Hour
 
-	maxFailures   = 5                // per client IP …
-	failureWindow = 15 * time.Minute // … within this window, then locked out until it passes
+	// The default Lockout.
+	maxFailures    = 5                // per client IP …
+	failureWindow  = 15 * time.Minute // … within this window, then locked out until it passes
+	globalFailures = 100              // from all addresses together within the window
 )
+
+// Lockout limits failed sign-in attempts: wrong passwords, two-factor codes,
+// password-reset and invitation tokens.
+type Lockout struct {
+	// PerIP failures from one client address within Window lock that
+	// address out until the window passes (at least 1).
+	PerIP int
+	// Global failures from all addresses together within Window lock out
+	// every new sign-in until the window passes, so many addresses can't
+	// share out the guessing. Signed-in sessions carry on, and confirming
+	// one's password isn't affected. 0: no global limit.
+	Global int
+	Window time.Duration
+}
+
+// DefaultLockout is the lockout New starts with.
+var DefaultLockout = Lockout{PerIP: maxFailures, Global: globalFailures, Window: failureWindow}
 
 // sessionKey is what's kept for a session or token: a hash, so the database
 // can't be used to sign in.
@@ -47,8 +66,17 @@ func sessionKey(tok string) string {
 }
 
 type failures struct {
-	count int
-	first time.Time
+	count  int
+	first  time.Time
+	logged bool // its lockout has been logged
+}
+
+// hold is a failure counted up front by reserve, until release takes it
+// back.
+type hold struct {
+	key    string
+	f      *failures
+	global *failures // nil: not counted globally
 }
 
 type Auth struct {
@@ -56,6 +84,7 @@ type Auth struct {
 
 	mu      sync.Mutex
 	failed  map[string]*failures    // by client IP, and by "2fa:<user id>" for second-factor guesses
+	global  *failures               // from every address (Lockout.Global)
 	limits  map[string]*failures    // requests that send email, by kind and client IP or address (see rateLimit)
 	tickets map[string]*loginTicket // by key: passwords checked, waiting for a second factor
 
@@ -84,6 +113,9 @@ type Auth struct {
 	// not nil: the org will need a subscription (billing; optional).
 	InviteNotice func(orgID int64) any
 
+	// Lockout limits failed sign-ins; set it before serving.
+	Lockout Lockout
+
 	oauth *OAuth // set by NewOAuth
 
 	// Brand names Dash in emails, the authenticator app and the connector
@@ -111,7 +143,7 @@ func New(acc *store.Accounts) *Auth {
 	passhash.Prime() // so the first unknown-name login isn't slower than the rest
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
-	return &Auth{acc: acc, failed: map[string]*failures{}, limits: map[string]*failures{}, tickets: map[string]*loginTicket{}, now: time.Now, recheck: 15 * time.Second,
+	return &Auth{acc: acc, failed: map[string]*failures{}, limits: map[string]*failures{}, tickets: map[string]*loginTicket{}, now: time.Now, Lockout: DefaultLockout, recheck: 15 * time.Second,
 		handoffKey: key, handoffsUsed: map[string]time.Time{}}
 }
 
@@ -285,50 +317,127 @@ func (a *Auth) startSessionIn(w http.ResponseWriter, r *http.Request, uid, org i
 
 // ---- lockout ----
 
-// lockedOut reports whether ip has too many recent failed logins.
+// lockout is a.Lockout with its zero values filled in.
+func (a *Auth) lockout() Lockout {
+	l := a.Lockout
+	if l.PerIP < 1 {
+		l.PerIP = maxFailures
+	}
+	if l.Window <= 0 {
+		l.Window = failureWindow
+	}
+	if l.Global < 0 {
+		l.Global = 0
+	}
+	return l
+}
+
+// window is the failures counted for key within the current window,
+// starting a new one if needed. a.mu must be held.
+func (a *Auth) window(key string, l Lockout) *failures {
+	f, ok := a.failed[key]
+	if !ok || a.now().Sub(f.first) > l.Window {
+		f = &failures{first: a.now()}
+		a.failed[key] = f
+	}
+	return f
+}
+
+// globalWindow is the failures from every address within the current
+// window. a.mu must be held.
+func (a *Auth) globalWindow(l Lockout) *failures {
+	if a.global == nil || a.now().Sub(a.global.first) > l.Window {
+		a.global = &failures{first: a.now()}
+	}
+	return a.global
+}
+
+// full reports whether f has reached limit, logging the lockout the first
+// time it is enforced, for fail2ban and the like. a.mu must be held.
+func (a *Auth) full(f *failures, limit int, l Lockout, key string) bool {
+	if f.count < limit {
+		return false
+	}
+	if !f.logged {
+		f.logged = true
+		until := f.first.Add(l.Window).UTC().Format(time.RFC3339)
+		if key == "" {
+			slog.Warn("sign-in lockout: too many failed attempts from all addresses; new sign-ins are refused",
+				"failures", f.count, "until", until)
+		} else if uid, ok := strings.CutPrefix(key, "2fa:"); ok {
+			slog.Warn("sign-in lockout: too many wrong two-factor codes", "user", uid, "failures", f.count, "until", until)
+		} else {
+			slog.Warn("sign-in lockout: too many failed attempts", "ip", key, "failures", f.count, "until", until)
+		}
+	}
+	return true
+}
+
+// lockedOut reports whether ip has too many recent failed logins, or every
+// address together has.
 func (a *Auth) lockedOut(ip string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	l := a.lockout()
+	if l.Global > 0 && a.full(a.globalWindow(l), l.Global, l, "") {
+		return true
+	}
 	f, ok := a.failed[ip]
 	if !ok {
 		return false
 	}
-	if a.now().Sub(f.first) > failureWindow {
+	if a.now().Sub(f.first) > l.Window {
 		delete(a.failed, ip)
 		return false
 	}
-	return f.count >= maxFailures
+	return a.full(f, l.PerIP, l, ip)
 }
 
 // reserve counts an attempt from ip as a failure up front, in the same
 // critical section as the lockout check, so parallel guesses can't all
-// slip past it. It returns false if ip is locked out. A correct password
-// takes the reservation back with release.
-func (a *Auth) reserve(ip string) (*failures, bool) {
+// slip past it. It counts towards the global limit too. It returns false if
+// ip, or everyone, is locked out. A correct password takes the reservation
+// back with release.
+func (a *Auth) reserve(ip string) (*hold, bool) { return a.reserveKey(ip, true) }
+
+// reserveLocal is reserve without the global limit: for checks by someone
+// already signed in (confirming their password, enrolling a second factor),
+// so a lockout of new sign-ins doesn't stop them, and for keys other than
+// the client's address.
+func (a *Auth) reserveLocal(key string) (*hold, bool) { return a.reserveKey(key, false) }
+
+func (a *Auth) reserveKey(key string, global bool) (*hold, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	f, ok := a.failed[ip]
-	if !ok || a.now().Sub(f.first) > failureWindow {
-		f = &failures{first: a.now()}
-		a.failed[ip] = f
-	}
-	if f.count >= maxFailures {
+	l := a.lockout()
+	h := &hold{key: key, f: a.window(key, l)}
+	if a.full(h.f, l.PerIP, l, key) {
 		return nil, false
 	}
-	f.count++
-	return f, true
+	if global && l.Global > 0 {
+		h.global = a.globalWindow(l)
+		if a.full(h.global, l.Global, l, "") {
+			return nil, false
+		}
+		h.global.count++
+	}
+	h.f.count++
+	return h, true
 }
 
 // release undoes a reservation from reserve, unless its window has since
 // been replaced.
-func (a *Auth) release(ip string, f *failures) {
+func (a *Auth) release(h *hold) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.failed[ip] != f {
+	if h.global != nil && a.global == h.global && h.global.count > 0 {
+		h.global.count--
+	}
+	if a.failed[h.key] != h.f {
 		return
 	}
-	if f.count--; f.count <= 0 {
-		delete(a.failed, ip)
+	if h.f.count--; h.f.count <= 0 {
+		delete(a.failed, h.key)
 	}
 }
 
@@ -373,7 +482,7 @@ func (a *Auth) attempt(ip, login, password string) (store.User, error) {
 		time.Sleep(300 * time.Millisecond) // blunt online guessing a little more
 		return store.User{}, errBadLogin
 	}
-	a.release(ip, f)
+	a.release(f)
 	// Only someone with the password learns the account waits for its link.
 	if unverified, err := a.acc.Unverified(u.ID); err != nil || unverified {
 		if err != nil {
@@ -413,8 +522,9 @@ func (a *Auth) ConfirmPassword(r *http.Request, password string) error {
 	if id.Token != nil {
 		return ErrSessionRequired
 	}
-	ip := a.clientIP(r)
-	f, ok := a.reserve(ip)
+	// Per address only: a global lockout of new sign-ins mustn't stop
+	// someone already signed in.
+	f, ok := a.reserveLocal(a.clientIP(r))
 	if !ok {
 		return errLockedOut
 	}
@@ -423,7 +533,7 @@ func (a *Auth) ConfirmPassword(r *http.Request, password string) error {
 		time.Sleep(300 * time.Millisecond)
 		return ErrBadPassword
 	}
-	a.release(ip, f)
+	a.release(f)
 	return nil
 }
 

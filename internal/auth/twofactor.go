@@ -97,7 +97,7 @@ func (a *Auth) ticket(tok string) (*loginTicket, bool) {
 func (a *Auth) failedTicket(tok string, t *loginTicket) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if t.tries++; t.tries >= maxFailures {
+	if t.tries++; t.tries >= a.lockout().PerIP {
 		delete(a.tickets, sessionKey(tok))
 	}
 }
@@ -118,22 +118,22 @@ func (a *Auth) secondFactor(ip string, uid int64, code string) (recovery bool, e
 	if !ok {
 		return false, errLockedOut
 	}
-	fu, ok := a.reserve(userKey(uid))
+	fu, ok := a.reserveLocal(userKey(uid))
 	if !ok {
-		a.release(ip, fip)
+		a.release(fip)
 		return false, errLockedOut
 	}
 	ok, recovery, err = a.checkCode(uid, code)
 	if err != nil {
-		a.release(ip, fip)
-		a.release(userKey(uid), fu)
+		a.release(fip)
+		a.release(fu)
 		return false, err
 	}
 	if !ok {
 		time.Sleep(300 * time.Millisecond)
 		return false, errBadCode
 	}
-	a.release(ip, fip)
+	a.release(fip)
 	a.mu.Lock()
 	delete(a.failed, userKey(uid))
 	a.mu.Unlock()
@@ -284,15 +284,14 @@ func (a *Auth) enableTOTP(w http.ResponseWriter, r *http.Request, id *Identity) 
 		accountError(w, err)
 		return
 	}
-	ip := a.clientIP(r)
-	f, ok := a.reserve(ip)
+	f, ok := a.reserveLocal(a.clientIP(r)) // signed in already: per address only
 	if !ok {
 		accountError(w, ErrLockedOut)
 		return
 	}
 	secret, err := a.acc.PendingTOTP(id.User.ID)
 	if err != nil {
-		a.release(ip, f)
+		a.release(f)
 		accountError(w, err)
 		return
 	}
@@ -302,7 +301,7 @@ func (a *Auth) enableTOTP(w http.ResponseWriter, r *http.Request, id *Identity) 
 		writeError(w, http.StatusBadRequest, errBadCode.Error()+"; check the time on your phone and try the next one")
 		return
 	}
-	a.release(ip, f)
+	a.release(f)
 	stored, shown := newRecoveryCodes()
 	if err := a.acc.ConfirmTOTP(id.User.ID, secret, step, stored); err != nil {
 		accountError(w, err)

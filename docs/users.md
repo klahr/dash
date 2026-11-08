@@ -72,7 +72,8 @@ your password again.
 With it on, signing in asks for a code after the password, and so does connecting
 Claude (the connector's sign-in page has a field for it). Each code works once. Wrong
 codes count towards the same lockout as wrong passwords: five failed tries from an
-address, password or code, lock it out for 15 minutes, and a right password doesn't
+address, password or code, lock it out for 15 minutes (the defaults; see
+[Deploy the hub](deploy.md#the-login-is-internet-facing)), and a right password doesn't
 reset the count until the code is right too. Wrong codes also count per account, so
 someone with a stolen password can't keep guessing from other addresses.
 
