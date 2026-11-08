@@ -28,11 +28,10 @@ const (
 	tabBoard tab = iota
 	tabChat
 	tabProcs
-	tabActivity
 	numTabs
 )
 
-var tabNames = [numTabs]string{"Board", "Chat", "Procs", "Activity"}
+var tabNames = [numTabs]string{"Board", "Chat", "Procs"}
 
 type mode int
 
@@ -104,9 +103,6 @@ type App struct {
 
 	procs   []model.Process
 	procRow int
-
-	activity []string
-	actOff   int
 
 	chat       []chatEntry
 	chatHist   []agent.ChatMessage
@@ -718,24 +714,6 @@ func (a *App) handleEvent(ev wireEvent) tea.Cmd {
 		if k := ev.TodoID + "log"; a.dText[k] != "" || a.dID == ev.TodoID {
 			a.dText[k] += ev.Time.Local().Format(time.TimeOnly) + " " + line + "\n"
 		}
-	case model.EvGitOp:
-		if !mine && ev.ProjectID != "" {
-			return nil
-		}
-		var d struct {
-			Cmd string `json:"cmd"`
-			OK  bool   `json:"ok"`
-			MS  int64  `json:"ms"`
-		}
-		_ = json.Unmarshal(ev.Data, &d)
-		mark := styleOK.Render("✓")
-		if !d.OK {
-			mark = styleErr.Render("✗")
-		}
-		a.activity = append(a.activity, fmt.Sprintf("%s %s %s %s", styleDim.Render(ev.Time.Local().Format(time.TimeOnly)), mark, d.Cmd, styleDim.Render(fmt.Sprintf("(%dms)", d.MS))))
-		if len(a.activity) > 2000 {
-			a.activity = a.activity[len(a.activity)-2000:]
-		}
 	case model.EvMergeQueue:
 		var d struct {
 			Pending int `json:"pending"`
@@ -1083,8 +1061,6 @@ func (a *App) normalKey(s string) tea.Cmd {
 		return a.chatKey(s, n)
 	case tabProcs:
 		return a.procsKey(s, n)
-	case tabActivity:
-		a.actOff = scrollKey(s, n, a.actOff, a.bodyHeight())
 	}
 	return nil
 }
@@ -1100,8 +1076,6 @@ func (a *App) moveTo(i int) tea.Cmd {
 		a.row = clamp(i, 0, len(a.cols[a.col])-1)
 	case a.tab == tabProcs:
 		a.procRow = clamp(i, 0, len(a.procs)-1)
-	case a.tab == tabActivity:
-		a.actOff = i
 	case a.tab == tabChat:
 		a.chatOff = 1 << 30 // top
 	}
@@ -1641,8 +1615,6 @@ func (a *App) runCommand(line string) tea.Cmd {
 		a.tab, a.overlay = tabChat, ovNone
 	case "procs", "ps":
 		a.tab, a.overlay = tabProcs, ovNone
-	case "activity", "log":
-		a.tab, a.overlay = tabActivity, ovNone
 	case "p", "project":
 		if arg == "" {
 			a.overlay = ovPicker

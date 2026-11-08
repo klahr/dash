@@ -10,7 +10,7 @@ import (
 // commands offered by Tab completion on the : line, most used first. A
 // trailing space means the command takes an argument.
 var commands = []string{
-	"project ", "push", "task ", "todo ", "new ", "board", "chat", "procs", "activity",
+	"project ", "push", "task ", "todo ", "new ", "board", "chat", "procs",
 	"ci", "fix", "cleanup", "pause", "resume", "perms", "copy path", "copy prompt", "copy",
 	"run ", "newproject ", "noh", "old", "clear", "refresh", "help", "q",
 }

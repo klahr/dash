@@ -817,7 +817,6 @@ function onEvent(ev, m = { name: "" }) {
       if (state.detail === ev.todo_id) addWorkerEvent(ev.todo_id, ev.data);
       break;
     case "git.op":
-      if (mine || (!ev.project_id && sameMachine)) addActivity(ev);
       if (mine) refreshGraph();
       break;
     case "merge.queue":
@@ -5115,17 +5114,6 @@ function renderProcs() {
   ensureShell();
 }
 
-// ------------------------------------------------------------------ activity
-function addActivity(ev) {
-  const d = ev.data;
-  $("#activity-empty").hidden = true;
-  $("#activity").prepend(h("li", {},
-    h("span", { class: d.ok ? "ok" : "bad", "aria-label": d.ok ? "succeeded" : "failed" }, d.ok ? "✓" : "✗"),
-    h("code", {}, d.cmd),
-    h("time", {}, `${new Date(ev.time).toLocaleTimeString(timeLocale)} · ${d.ms} ms`)));
-  while ($("#activity").children.length > 300) $("#activity").lastChild.remove();
-}
-
 // ------------------------------------------------------------------ history
 // The default branch's commit graph, as `git log --graph` draws it.
 async function loadGraph() {
@@ -6358,10 +6346,10 @@ $("#issue-f-run").addEventListener("click", () => { iss.filter.run = null; iss.f
 // ------------------------------------------------------------------ vim keys
 // Normal mode is the default; typing in a field or the terminal is insert
 // mode. Esc (Ctrl-] in the terminal) returns to normal mode.
-const VIEWS = ["board", "issues", "scans", "run", "activity", "history", "files"];
+const VIEWS = ["board", "issues", "scans", "run", "history", "files"];
 const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
-const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gi|gS|gc|gs|ga|gh|gf|G|F|u|p|c|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gi|gS|gc|gs|gh|gf|G|F|u|p|c|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 const openDialog = () => document.querySelector("dialog[open]");
 
@@ -6480,7 +6468,6 @@ async function runCommand(line) {
       if (!arg) return showView("run");
       need(); return startProc({ kind: "pty", command: arg });
     case "ps": case "procs": return showView("run");
-    case "activity": case "log": return showView("activity");
     case "history": case "graph": case "tree": return showView("history");
     case "p": case "project": {
       if (!arg) return openProjects();
@@ -6586,7 +6573,6 @@ function paletteCommands() {
     [pane.pinned ? "Unpin chat" : "Pin chat", "pin", togglePin, ":pin", "pin unpin chat overlay dock"],
     fsSupported && [isFullscreen() ? "Exit fullscreen" : "Fullscreen", isFullscreen() ? "fs-exit" : "fs", () => toggleFullscreen(), "F", "fullscreen full screen maximize kiosk"],
     ["Shell", "terminal", go("run"), "gs", "run terminal processes view"],
-    ["Activity", "log", go("activity"), "ga", "events view"],
     ["History", "log", go("history"), "gh", "git graph tree commits view"],
     ["Files", "code", go("files"), "gf", "browse edit source code tree editor"],
     p && ["Filter the board", "search", openSearch, "/", "search todos tasks"],
@@ -6846,7 +6832,6 @@ async function handleNormal(k, n, hadCount) {
     case "gc": return toggleChatPane();
     case "c": return toggleChatPane(true, "project");
     case "gs": return showView("run");
-    case "ga": return showView("activity");
     case "gh": return showView("history");
     case "gf": return showView("files");
     case "gi": return showView("issues");
@@ -6936,7 +6921,7 @@ async function handleNormal(k, n, hadCount) {
       }
       return;
     }
-    case "activity": case "history":
+    case "history":
       if (["j", "k", "ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b", "gg", "G"].includes(k)) return scrollBy(scroller(), k, n);
   }
 }

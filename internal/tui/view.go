@@ -234,8 +234,6 @@ func (a *App) renderBody() string {
 		return a.renderChat()
 	case tabProcs:
 		return a.renderProcs()
-	case tabActivity:
-		return a.renderPane(a.activity, &a.actOff)
 	}
 	return ""
 }
@@ -696,5 +694,5 @@ var helpText = styleBox.Render(strings.Join([]string{
 	styleAccent.Render("Procs") + "         Enter attach (Ctrl-] detaches) · R run · T test · D deploy · ! shell · x stop · o open",
 	styleAccent.Render("Form") + "          Tab field · Esc normal · :w draft · :wq/ZZ queue · :q! discard",
 	styleAccent.Render("Commands") + "      :project <name> · :newproject <name> [path] · :task <prompt> · :new [prompt]",
-	"              :run <cmd> · :push · :pause / :resume the queue · :perms · :board :chat :procs :activity · :clear",
+	"              :run <cmd> · :push · :pause / :resume the queue · :perms · :board :chat :procs · :clear",
 }, "\n"))
