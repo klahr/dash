@@ -54,7 +54,7 @@ const (
 	ovPerms
 )
 
-// Board columns; failed todos are shown with merged under "Done".
+// Board columns; failed todos wait under "Review" with work to look at.
 var columns = []struct {
 	title    string
 	statuses []model.TodoStatus
@@ -62,9 +62,9 @@ var columns = []struct {
 	{"Draft", []model.TodoStatus{model.StatusDraft}},
 	{"Queued", []model.TodoStatus{model.StatusQueued}},
 	{"Running", []model.TodoStatus{model.StatusInProgress}},
-	{"Review", []model.TodoStatus{model.StatusReview}},
+	{"Review", []model.TodoStatus{model.StatusReview, model.StatusFailed}},
 	{"Merging", []model.TodoStatus{model.StatusMerging}},
-	{"Done", []model.TodoStatus{model.StatusMerged, model.StatusFailed}},
+	{"Done", []model.TodoStatus{model.StatusMerged}},
 }
 
 type chatEntry struct {

@@ -582,9 +582,9 @@ const LANES = [
   { key: "draft", label: "Drafts", statuses: ["draft"], empty: "Drafts wait here until you queue them." },
   { key: "queued", label: "Queued", statuses: ["queued"], empty: "Nothing waiting. New tasks start here." },
   { key: "in_progress", label: "Running", statuses: ["in_progress"], empty: "No agents working right now." },
-  { key: "review", label: "Review", statuses: ["review"], empty: "Nothing to review. Finished work lands here." },
+  { key: "review", label: "Review", statuses: ["review", "failed"], empty: "Nothing to review. Finished and failed work lands here." },
   { key: "merging", label: "Merging", statuses: ["merging"], empty: "The merge queue is clear." },
-  { key: "done", label: "Done", statuses: ["merged", "failed"], empty: "Merged and failed tasks show up here." },
+  { key: "done", label: "Done", statuses: ["merged"], empty: "Merged tasks show up here." },
 ];
 const STATUS_LABEL = { draft: "Draft", queued: "Queued", in_progress: "Running", review: "Ready for review", merging: "Merging", merged: "Merged", failed: "Failed" };
 
@@ -1604,7 +1604,8 @@ async function enqueueAll(drafts) {
   toast(bad ? `Queued ${n}, ${bad} failed` : `Queued ${n} ${n === 1 ? "task" : "tasks"}`);
 }
 
-const doneTodos = () => [...state.todos.values()].filter((t) => t.status === "merged" || t.status === "failed");
+// Failed tasks wait in Review to be retried, reworked or deleted, so Clear Done leaves them.
+const doneTodos = () => [...state.todos.values()].filter((t) => t.status === "merged");
 
 function clearDoneBtn() {
   if (!doneTodos().length) return null;
@@ -1614,11 +1615,10 @@ function clearDoneBtn() {
 async function clearDone() {
   const list = doneTodos();
   if (!list.length) return;
-  const failed = list.filter((t) => t.status === "failed").length;
   const unpushed = list.filter((t) => t.status === "merged" && state.unpushedTodos?.has(t.id)).length;
   const n = list.length;
   if (!await ask({ title: unpushed ? `Not all done tasks are pushed — clear ${n} anyway?` : `Clear ${n} done ${n === 1 ? "task" : "tasks"}?`,
-    body: `Deletes every merged and failed task in this project${failed ? `, including the worktrees and branches of ${failed} failed` : ""}. This can't be undone.` +
+    body: "Deletes every merged task in this project. This can't be undone." +
       (unpushed ? ` ${unpushed} merged ${unpushed === 1 ? "task hasn't" : "tasks haven't"} been pushed yet. Their changes are not discarded: the commits stay on the local default branch and can still be pushed.` : ""),
     ok: "Clear", danger: true })) return;
   const res = await Promise.allSettled(list.map((t) => api("DELETE", `/api/todos/${t.id}`)));
@@ -5493,7 +5493,7 @@ function dropAction(t, lane) {
   const from = t.status;
   const to = LANES.find((l) => l.key === lane);
   if (!to) return null;
-  if (to.statuses.includes(from)) return ["draft", "queued", "review"].includes(lane) ? { kind: "reorder" } : null;
+  if (to.statuses.includes(from)) return ["draft", "queued", "review"].includes(lane) && from !== "failed" ? { kind: "reorder" } : null;
   if (t.reviewing) return null; // locked until the review finishes
   const go = (verb, label) => ({ kind: "action", verb, label });
   if (lane === "queued" && ["draft", "failed"].includes(from)) return go("enqueue", "Added to queue");
@@ -6373,7 +6373,7 @@ function laneSkipped(li) { return (desktop.matches && state.collapsed.has(LANES[
 // With auto approve, finished work skips Review; the lane only shows while
 // something still waits there (failing tests, a merge that came back).
 function laneHidden(key) {
-  return key === "review" && !!state.project?.auto_approve && ![...state.todos.values()].some((t) => t.status === "review");
+  return key === "review" && !!state.project?.auto_approve && ![...state.todos.values()].some((t) => ["review", "failed"].includes(t.status));
 }
 function stepLane(lane, d) {
   const step = Math.sign(d);
