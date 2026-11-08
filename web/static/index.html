@@ -165,7 +165,7 @@
         <div class="perm-list" id="perm-banner" hidden></div>
         <div class="board" id="board"></div>
         <div class="empty" id="board-empty" hidden></div>
-        <button class="fab" id="new-todo" aria-label="New task">
+        <button class="fab" id="new-todo" aria-label="New task (n) — Shift+N for all options" title="New task (n) — Shift+N for all options">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
           <span>New task</span>
         </button>
@@ -438,6 +438,23 @@
     </aside>
     <div class="scrim" id="scrim" hidden></div>
   </div>
+
+  <!-- Quick add (FAB, n): one field per task -->
+  <dialog class="sheet" id="quick-sheet" aria-labelledby="quick-title">
+    <form method="dialog" id="quick-form">
+      <header class="sheet-head"><h2 id="quick-title">New task</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <div class="quick-rows" id="quick-rows"></div>
+      <p class="hint quick-hint"><kbd>Enter</kbd> save · <kbd>Shift-Enter</kbd> another task · Claude names each task.</p>
+      <div class="quick-tools">
+        <button class="link" type="button" id="quick-another" data-icon="plus">Another task</button>
+        <button class="link" type="button" id="quick-more" data-icon="edit">More options…</button>
+      </div>
+      <footer class="sheet-actions quick-foot">
+        <label class="toggle"><input type="checkbox" id="quick-queue"><span>Queue right away</span></label>
+        <button class="btn primary" value="add" data-icon="check"><span id="quick-submit-label">Save task as draft</span></button>
+      </footer>
+    </form>
+  </dialog>
 
   <!-- New / edit todo -->
   <dialog class="sheet" id="todo-sheet" aria-labelledby="todo-sheet-title">
@@ -761,14 +778,15 @@
       <dl class="keys">
         <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with tasks · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
         <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gi</kbd>/<kbd>gS</kbd>/<kbd>gs</kbd>/<kbd>ga</kbd>/<kbd>gh</kbd>/<kbd>gf</kbd> Board/Issues/Scans/Shell/Activity/History/Files · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> sections, <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>J</kbd>/<kbd>K</kbd> next/previous project · <kbd>c</kbd> project chat · <kbd>[</kbd> collapse sidebar · <kbd>F</kbd> fullscreen on/off · <kbd>Ctrl-k</kbd> search projects, tasks and commands · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
-        <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review, enqueue a draft; <kbd>Space</kbd> opens) · <kbd>a</kbd> new · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>t</kbd> live preview (<kbd>D</kbd> draws on it: <kbd>p</kbd>/<kbd>a</kbd>/<kbd>o</kbd>/<kbd>b</kbd>/<kbd>c</kbd> pen/arrow/circle/box/crop, <kbd>1</kbd>–<kbd>3</kbd> colour, <kbd>x</kbd> exact capture (desktop Chrome), <kbd>Ctrl-z</kbd> undo, <kbd>Enter</kbd> add to review, <kbd>Esc</kbd> done) · <kbd>!</kbd> shell in worktree</dd>
+        <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review, enqueue a draft; <kbd>Space</kbd> opens) · <kbd>n</kbd> (or <kbd>a</kbd>) new task · <kbd>N</kbd> new task with all options · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>t</kbd> live preview (<kbd>D</kbd> draws on it: <kbd>p</kbd>/<kbd>a</kbd>/<kbd>o</kbd>/<kbd>b</kbd>/<kbd>c</kbd> pen/arrow/circle/box/crop, <kbd>1</kbd>–<kbd>3</kbd> colour, <kbd>x</kbd> exact capture (desktop Chrome), <kbd>Ctrl-z</kbd> undo, <kbd>Enter</kbd> add to review, <kbd>Esc</kbd> done) · <kbd>!</kbd> shell in worktree</dd>
         <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> changes ↔ timeline · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
-        <dt>Search</dt><dd><kbd>/</kbd> filter the board · <kbd>Enter</kbd> jump to first match · <kbd>n</kbd>/<kbd>N</kbd> next/previous · <kbd>Esc</kbd> or <code>:noh</code> clear</dd>
+        <dt>Search</dt><dd><kbd>/</kbd> filter the board · <kbd>Enter</kbd> jump to first match · <kbd>n</kbd>/<kbd>N</kbd> next/previous (while searching) · <kbd>Esc</kbd> or <code>:noh</code> clear</dd>
         <dt>More</dt><dd><kbd>T</kbd> run tests again · <kbd>Y</kbd> duplicate · <kbd>E</kbd> open worktree in editor · <kbd>u</kbd> revert a merged task · <kbd>O</kbd> open its pull request · click a diff line to comment · paste or drop images into a task</dd>
         <dt>Approvals</dt><dd><kbd>y</kbd> allow · <kbd>A</kbd> always allow that tool for the task · <kbd>n</kbd> deny</dd>
         <dt>Task chat</dt><dd><kbd>h</kbd>/<kbd>l</kbd> to the Timeline tab · <kbd>i</kbd> type (side chat only; the agent won't see it)</dd>
         <dt>Chat</dt><dd><kbd>gc</kbd> open/close the chat pane · <kbd>Enter</kbd> send · <kbd>Esc</kbd> stop typing, again to close the overlay · <kbd>Ctrl-k</kbd> "Pin chat" keeps it beside the content</dd>
         <dt>Shell</dt><dd><kbd>i</kbd> type into terminal · <kbd>Ctrl-]</kbd> leave terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> new shell</dd>
+        <dt>New task</dt><dd><kbd>Enter</kbd> save · <kbd>Shift-Enter</kbd> another task · <kbd>Backspace</kbd> in an empty field removes it · a pasted text stays one task · <kbd>Esc</kbd> close</dd>
         <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> add to queue · <kbd>Ctrl-Shift-Enter</kbd>/<kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>
         <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:task …</code> <code>:new</code> <code>:run cmd</code> <code>:shell</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:prefs</code> <code>:connector</code> <code>:perms</code> <code>:board</code> <code>:chat</code> <code>:pin</code> <code>:fullscreen</code> <code>:activity</code> <code>:history</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:vim</code> <code>:list</code> <code>:q</code></dd>
       </dl>

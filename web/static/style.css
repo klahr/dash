@@ -511,6 +511,16 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .sheet-actions .btn { flex: 1; }
 .sheet-actions .btn.shrink { flex: 0 0 auto; }
 
+/* ---------- quick add (FAB, n) ---------- */
+.quick-rows { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 0; }
+/* One line per task; a multi-line paste grows the field (app.js sizes it). */
+.quick-row { resize: none; overflow-y: auto; min-height: 0; max-height: 40dvh; font-size: 16px; line-height: 1.45; }
+.quick-tools { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin: 4px -4px 0; }
+.quick-foot { align-items: center; flex-wrap: wrap; }
+.quick-foot .toggle { flex: 0 1 auto; font-weight: 500; }
+.quick-foot .btn { flex: 1 1 auto; }
+@media (hover: none) { .quick-hint { display: none; } }
+
 /* ---------- Connect Claude guide ---------- */
 .connector-status { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; padding: 10px 12px; border-radius: var(--r-m); background: var(--raised); font-size: 14px; }
 .connector-status::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }

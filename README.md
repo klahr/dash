@@ -65,10 +65,13 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 1. **Create a project.** Click **New project**. Give it a name, and either point *Existing
    repository path* at a git repository you already have, or leave it empty to create a new one.
    A *Test command* (e.g. `go test ./...`) is optional but lets Dash check Claude's work.
-2. **Add a task.** Click **New task** (or press <kbd>A</kbd>). Give it a title and write
-   *Instructions for Claude*, as you would in a chat.
-3. **Queue it.** Click **Add to queue** (or **Save as draft** to queue it later from the
-   *Drafts* column). The task moves to *Queued*, then *Running* as soon as Claude starts on it in
+2. **Add a task.** Click **New task** (or press <kbd>n</kbd>) and write what Claude should do,
+   as you would in a chat; Claude names the task. <kbd>Enter</kbd> saves it, <kbd>Shift</kbd>+<kbd>Enter</kbd>
+   adds a field for another task (a pasted multi-line text stays one task). **More options…**
+   (or <kbd>Shift</kbd>+<kbd>N</kbd>) opens the full form, with a title, priority, dependencies and
+   attachments.
+3. **Queue it.** Tick **Queue right away** (Dash remembers it), or in the full form click **Add to
+   queue**; otherwise the task is saved as a draft to queue later from the *Drafts* column. The task moves to *Queued*, then *Running* as soon as Claude starts on it in
    its own worktree. Open the card to follow along; if Claude needs permission for something,
    Dash asks you.
 4. **Review.** When Claude is done the task lands in *Review*. Open it and read the diff on the

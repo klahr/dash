@@ -1619,12 +1619,126 @@ function openTodoForm(t = null, { pick = false } = {}) {
   $("#todo-sheet").showModal();
   (t ? f.prompt : f.title).focus();
 }
-$("#new-todo").addEventListener("click", () => openTodoForm());
+$("#new-todo").addEventListener("click", () => openQuickAdd());
 // Toasts sit to the left of the FAB; track its width (0 while hidden) so they never overlap it.
 new ResizeObserver(([e]) => {
   const w = e.target.offsetWidth;
   document.documentElement.style.setProperty("--fab-space", w ? `${w + 12}px` : "0px");
 }).observe($("#new-todo"));
+
+// ------------------------------------------------------------------ quick add
+// The quick sheet (FAB, n): one field per task, the text is its prompt and
+// Claude names it. A multi-line paste stays one task; the field just grows.
+// "More options…" carries the text over to the full form (Shift+N).
+const quick = {
+  sheet: $("#quick-sheet"),
+  rows: $("#quick-rows"),
+  queue: $("#quick-queue"),
+};
+try { quick.queue.checked = localStorage.getItem("dash.quickQueue") === "1"; } catch {}
+
+function quickRow(text = "") {
+  const ta = h("textarea", {
+    class: "quick-row", rows: 1, enterkeyhint: "done", autocomplete: "off",
+    "aria-label": "Instructions for the task", placeholder: "What should Claude do?",
+  });
+  ta.value = text;
+  return ta;
+}
+const quickFields = () => $$(".quick-row", quick.rows);
+const quickTexts = () => quickFields().map((r) => r.value.trim()).filter(Boolean);
+function fitQuickRow(ta) {
+  ta.style.height = "auto";
+  ta.style.height = `${ta.scrollHeight + (ta.offsetHeight - ta.clientHeight)}px`;
+}
+function quickAddRow(after = null, text = "") {
+  const ta = quickRow(text);
+  after ? after.after(ta) : quick.rows.append(ta);
+  fitQuickRow(ta);
+  ta.focus();
+  return ta;
+}
+function updateQuickLabel() {
+  const n = quickTexts().length;
+  const what = n > 1 ? `${n} tasks` : "task";
+  $("#quick-submit-label").textContent = quick.queue.checked ? `Queue ${what}` : `Save ${what} as draft${n > 1 ? "s" : ""}`;
+}
+
+function openQuickAdd(texts = [""]) {
+  if (!state.project) return toast("Select a project first", true);
+  quick.rows.replaceChildren();
+  quick.sheet.returnValue = "";
+  quick.sheet.showModal();
+  texts.forEach((t) => quickAddRow(null, t));
+  updateQuickLabel();
+}
+
+async function submitQuick() {
+  const texts = quickTexts();
+  if (!texts.length) { quickFields()[0]?.focus(); return; }
+  const p = state.project;
+  const enqueue = quick.queue.checked;
+  quick.sheet.close("add");
+  let done = 0;
+  try {
+    for (const prompt of texts) {
+      await api("POST", `/api/projects/${p.id}/todos`, { title: "", prompt, enqueue }, p.prefix || "");
+      done++;
+    }
+  } catch (e) {
+    // Give back what wasn't saved so nothing typed is lost.
+    if (projectKey(state.project) === projectKey(p)) openQuickAdd(texts.slice(done));
+    throw e;
+  }
+  const n = texts.length;
+  toast(enqueue ? (n > 1 ? `Added ${n} tasks to the queue` : "Added to queue") : (n > 1 ? `Saved ${n} drafts` : "Saved as draft"));
+  if (projectKey(state.project) === projectKey(p)) state.lane = enqueue ? "queued" : "draft";
+}
+
+function quickMore() {
+  const text = quickTexts().join("\n\n");
+  quick.sheet.close("more");
+  openTodoForm();
+  if (!text) return;
+  const f = $("#todo-form");
+  const kept = f.prompt.value.trim(); // a restored draft of the full form
+  f.prompt.value = kept ? `${kept}\n\n${text}` : text;
+  promptEditor.render();
+  draft.changed();
+}
+
+quick.rows.addEventListener("input", (e) => {
+  if (e.target.matches(".quick-row")) fitQuickRow(e.target);
+  updateQuickLabel();
+});
+quick.rows.addEventListener("keydown", (e) => {
+  const ta = e.target;
+  if (!ta.matches(".quick-row") || e.isComposing) return;
+  if (e.key === "Enter" && e.shiftKey && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault();
+    quickAddRow(ta);
+  } else if (e.key === "Enter" && !e.altKey) {
+    e.preventDefault();
+    attempt(submitQuick)();
+  } else if (e.key === "Backspace" && !ta.value && quickFields().length > 1) {
+    e.preventDefault();
+    const prev = ta.previousElementSibling || ta.nextElementSibling;
+    ta.remove();
+    prev.focus();
+    prev.setSelectionRange(prev.value.length, prev.value.length);
+    updateQuickLabel();
+  }
+});
+quick.queue.addEventListener("change", () => {
+  try { localStorage.setItem("dash.quickQueue", quick.queue.checked ? "1" : "0"); } catch {}
+  updateQuickLabel();
+  (quick.last?.isConnected ? quick.last : quickFields().at(-1))?.focus(); // keep typing
+});
+quick.rows.addEventListener("focusin", (e) => { if (e.target.matches(".quick-row")) quick.last = e.target; });
+$("#quick-form").addEventListener("submit", (e) => { e.preventDefault(); if (e.submitter?.value === "cancel") return quick.sheet.close(); attempt(submitQuick)(); });
+$("#quick-another").addEventListener("click", () => quickAddRow(quickFields().at(-1)));
+$("#quick-more").addEventListener("click", quickMore);
+
 $("#todo-sheet").addEventListener("close", attempt(async () => {
   const action = $("#todo-sheet").returnValue;
   if (action !== "draft" && action !== "queue") {
@@ -5971,7 +6085,8 @@ function paletteCommands() {
   const go = (view) => () => { closeDetail(); showView(view); };
   const serve = techFor("web:run"), deploy = techFor("task:deploy");
   return [
-    p && ["New task", "plus", () => openTodoForm(), "a", "add create todo"],
+    p && ["New task", "plus", () => openQuickAdd(), "n", "add create todo quick"],
+    p && ["New task with all options", "plus", () => openTodoForm(), "N", "add create todo full form title priority dependencies attachments"],
     ["Board", "flag", go("board"), "gb", "view lanes"],
     ["Issues", "bug", go("issues"), "gi", "bugs vulnerabilities problems triage scan"],
     ["Scans", "scan", go("scans"), "gS", "scan security review dependency audit schedule cron"],
@@ -6259,10 +6374,13 @@ async function handleNormal(k, n, hadCount) {
       if (await permKey(k) === false) toast("No permission request waiting");
       return;
     case "n": case "N":
-      // n answers "deny" only when a permission request is in view; otherwise next/previous search match.
+      // n answers "deny" only when a permission request is in view; while
+      // searching the board, n/N are next/previous match; otherwise n is a
+      // new task (quick sheet) and N one with all options (full form).
       if (k === "n" && state.perms.length && (state.detail ? state.perms.some((p) => p.todo_id === state.detail) : !state.query)) return permKey("n");
-      if (state.view === "board" && !state.detail) return jumpMatch(k === "n" ? 1 : -1);
-      return;
+      if (state.view === "board" && !state.detail && state.query) return jumpMatch(k === "n" ? 1 : -1);
+      if (!state.project) return;
+      return k === "n" ? openQuickAdd() : openTodoForm();
     case "/":
       if (state.view === "board" && !state.detail) return openSearch();
       break;
@@ -6308,7 +6426,7 @@ async function handleNormal(k, n, hadCount) {
           if (t) return openDetail(t.id);
           return;
         }
-        case "a": return openTodoForm();
+        case "a": return openQuickAdd();
       }
       const t = cursorTodo();
       if (t) await todoKey(t, k);
