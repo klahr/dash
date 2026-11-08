@@ -91,10 +91,16 @@ type Project struct {
 	// MaxAutoFixes is how many times Dash sends failing tests or merge
 	// conflicts back to Claude on its own before asking a human.
 	MaxAutoFixes int `json:"max_auto_fixes"`
-	// MergeMode is how approved work lands: "local" (squash onto the default
-	// branch here, then push if AutoPush) or "pr" (push the branch and open a
-	// GitHub pull request; Dash marks the todo merged when the PR is merged).
+	// MergeMode is how approved work lands: "local" (the default: squash
+	// onto the default branch, then push if AutoPush; on runners always
+	// pushed, see LandsOnOrigin) or "pr", an explicit opt-in (push the branch
+	// and open a GitHub pull request; Dash marks the todo merged when the PR
+	// is merged).
 	MergeMode string `json:"merge_mode,omitempty"`
+	// MergeModeSet records that a user changed MergeMode themselves, so
+	// upgrades that change the default (see store.LandRunnerProjectsLocally)
+	// leave their choice alone.
+	MergeModeSet bool `json:"merge_mode_set,omitempty"`
 	// Limits for one Claude run; 0 means the default. Time spent waiting
 	// for a human to answer a permission prompt doesn't count.
 	MaxRunMinutes int `json:"max_run_minutes,omitempty"`
@@ -121,8 +127,10 @@ type Project struct {
 
 	// Runners are the ids of the runners (`dash runner`) this project's
 	// tasks are sent to, on a hub. A project with runners needs a git
-	// remote: each runner keeps its own clone, and work lands through pull
-	// requests, never by merging on the hub.
+	// remote: each runner keeps its own clone and lands approved work by
+	// squashing it onto the default branch there and pushing it to origin
+	// (or through a pull request, if the project opted into "pr"); the hub
+	// never merges in a checkout of its own.
 	Runners []string `json:"runners,omitempty"`
 	// HubProjectID is set on a runner for its clone of a hub's project
 	// linked to it: the hub's id for that project. The runner takes tasks
@@ -180,7 +188,19 @@ func (p Project) UsesPR() bool { return p.MergeMode == MergePR }
 
 // SyncsRemote reports whether the default branch is kept in step with origin
 // before merging: whenever Dash pushes it or opens pull requests against it.
-func (p Project) SyncsRemote() bool { return p.RemoteURL != "" && (p.AutoPush || p.UsesPR()) }
+func (p Project) SyncsRemote() bool {
+	return p.RemoteURL != "" && (p.AutoPush || p.UsesPR() || p.Shared())
+}
+
+// Shared reports whether the project's work is shared through origin by
+// several Dashes: a hub's project with runners, or a runner's clone of one.
+func (p Project) Shared() bool { return p.OnRunners() || p.HubProjectID != "" }
+
+// LandsOnOrigin reports whether a merge counts only once it is pushed: a
+// shared project in "local" mode squashes onto the default branch and
+// pushes it, and when origin moved meanwhile merges again on top of it.
+// Nobody else would ever see a commit that stayed in one runner's clone.
+func (p Project) LandsOnOrigin() bool { return p.RemoteURL != "" && !p.UsesPR() && p.Shared() }
 
 // RunMinutes is the time limit for one Claude run.
 func (p Project) RunMinutes() int {
@@ -270,13 +290,16 @@ type Todo struct {
 	MergedCommit string       `json:"merged_commit,omitempty"`
 	PR           *PullRequest `json:"pr,omitempty"`     // in "pr" merge mode
 	Revert       *Revert      `json:"revert,omitempty"` // set once a merged todo is reverted
-	CIRun        int64        `json:"ci_run,omitempty"` // the failed GitHub Actions run this todo investigates
-	Error        string       `json:"error,omitempty"`
+	// RevertConflict lists the files a revert of the todo conflicted in, on
+	// a runner, so its hub queues a task for Claude to undo it by hand.
+	RevertConflict []string `json:"revert_conflict,omitempty"`
+	CIRun          int64    `json:"ci_run,omitempty"` // the failed GitHub Actions run this todo investigates
+	Error          string   `json:"error,omitempty"`
 
 	// Runner is the id of the runner a hub sent the todo to (empty: it
 	// runs here), and RemoteID the runner's id for its copy. Worktree,
-	// summary, checks, PR and diff size are then the runner's, as it
-	// reports them; Worktree.Path is empty, the files being on the runner.
+	// summary, checks, PR, diff size, merged commit and revert are then the
+	// runner's, as it reports them; Worktree.Path is empty, the files being on the runner.
 	Runner   string `json:"runner,omitempty"`
 	RemoteID string `json:"remote_id,omitempty"`
 	// Waiting is why a queued todo isn't starting, e.g. all of its

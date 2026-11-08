@@ -80,7 +80,8 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 4. **Review.** When Claude is done the task lands in *Review*. Open it and read the diff on the
    **Changes** tab. Not right? Click **Rework**, say what to change, and it goes back to Claude.
 5. **Approve.** Click **Approve**. The task goes through *Merging* (one squashed commit on the
-   default branch, or a pull request, see [GitHub](docs/github.md)) and ends up in *Done*.
+   default branch, pushed to GitHub if you like; pull requests are opt-in, see
+   [GitHub](docs/github.md)) and ends up in *Done*.
 
 Queue as many tasks as you like: they run in parallel, each in its own worktree.
 

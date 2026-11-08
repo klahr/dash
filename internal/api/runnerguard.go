@@ -79,6 +79,7 @@ func init() {
 		// in hubtasks.go.
 		"PUT /api/hub/projects/{hpid}", "DELETE /api/hub/projects/{hpid}", "POST /api/hub/tasks",
 		"DELETE /api/hub/tasks/{htid}", "POST /api/hub/tasks/{htid}/approve", "POST /api/hub/tasks/{htid}/cancel",
+		"POST /api/hub/tasks/{htid}/revert",
 		"GET /api/hub/tasks/{htid}/diff", "GET /api/hub/tasks/{htid}/log", "GET /api/hub/tasks/{htid}/events",
 
 		// Claude's short calls (titles, summaries, clean-up) for the

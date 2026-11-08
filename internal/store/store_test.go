@@ -175,3 +175,37 @@ func TestOldStateWithoutDependsOnLoads(t *testing.T) {
 		t.Fatalf("got %+v, %v", got, err)
 	}
 }
+
+// Upgrading: projects linked to runners that opened pull requests only
+// because runners used to be forced to switch to merging; a user's own
+// choice of pull requests, and projects without runners, stay.
+func TestLandRunnerProjectsLocally(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	mk := func(name string, p model.Project) model.Project {
+		p.Name = name
+		p, err := s.CreateProject(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	forced := mk("forced", model.Project{MergeMode: model.MergePR, Runners: []string{"r"}})
+	chosen := mk("chosen", model.Project{MergeMode: model.MergePR, MergeModeSet: true, Runners: []string{"r"}})
+	alone := mk("alone", model.Project{MergeMode: model.MergePR})
+	names, err := s.LandRunnerProjectsLocally()
+	if err != nil || len(names) != 1 || names[0] != "forced" {
+		t.Fatalf("switched %v %v", names, err)
+	}
+	for p, want := range map[string]string{forced.ID: model.MergeLocal, chosen.ID: model.MergePR, alone.ID: model.MergePR} {
+		if got, _ := s.GetProject(p); got.MergeMode != want {
+			t.Errorf("%s: merge mode %q, want %q", got.Name, got.MergeMode, want)
+		}
+	}
+	if names, _ := s.LandRunnerProjectsLocally(); len(names) != 0 {
+		t.Errorf("a second run switched %v", names)
+	}
+}

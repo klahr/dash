@@ -114,11 +114,23 @@ tasks should run on (your own runners, or any of the org's if you're an admin). 
 - If none can take it, the task stays queued and its card says why ("waiting for a runner: laptop
   is offline"). It starts as soon as one can.
 - The project needs a git remote: each runner clones it into `<-projects>/hub/` the first time it
-  gets one of its tasks, and keeps that clone. Work lands through the remote: the runner pushes
-  the task's branch and opens a pull request when you approve, then squash-merges it itself once
-  GitHub finds it mergeable and its checks pass (your approval was the review). If GitHub refuses
-  (a required review, say), the pull request stays open for you to merge there. **Merging locally
-  on the hub is off** for linked projects.
+  gets one of its tasks, and keeps that clone. Work lands on the remote's default branch, the same
+  way it does without runners, but done by the runner: when you approve, it squashes the task
+  onto the default branch in its clone (one commit), runs the project's tests and pushes it. The
+  hub marks the task merged, with its commit, once the runner reports the push; the hub never
+  needs a checkout of its own.
+- If origin moved meanwhile (another runner, or someone pushing), the push is rejected and the
+  runner fetches, merges the task again on top of the new tip, re-runs the tests and pushes
+  again. A real conflict or failing tests go back to Claude to fix, like any merge (within the
+  project's automatic fixes), then the task returns to review or fails, saying why. **Revert**
+  works the same way: the runner adds the revert commit and pushes it.
+- Pull requests are opt-in: pick **Open a pull request instead** under the project's approval
+  settings and the runner pushes the task's branch and opens one when you approve, then
+  squash-merges it itself once GitHub finds it mergeable and its checks pass (your approval was
+  the review). If GitHub refuses (a required review, say), the pull request stays open for you to
+  merge there. Linked projects that opened pull requests only because older versions forced them
+  to switch to merging when the hub upgrades; tasks with a pull request already open are followed
+  until it is merged or closed.
 - Review happens on the hub as usual: the diff, the log and the timeline come from the runner.
   Attachments and editor changes can't be sent to runners yet, and live previews, the worktree
   shell and re-running tests are on the runner's own dashboard.

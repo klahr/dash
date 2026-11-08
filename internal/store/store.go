@@ -802,3 +802,28 @@ func contains[T comparable](xs []T, x T) bool {
 	}
 	return false
 }
+
+// LandRunnerProjectsLocally switches projects linked to runners from pull
+// requests to landing locally (the runner pushes to the default branch),
+// the default since runners stopped being forced to open pull requests.
+// Projects whose user chose pull requests themselves (MergeModeSet) keep
+// them. Their tasks with an open pull request are followed until it
+// closes. It returns the names of the projects it switched.
+func (s *Store) LandRunnerProjectsLocally() ([]string, error) {
+	var names []string
+	for _, p := range s.ListProjects() {
+		if !p.OnRunners() || p.MergeMode != model.MergePR || p.MergeModeSet {
+			continue
+		}
+		if _, err := s.UpdateProject(p.ID, func(x *model.Project) error {
+			if x.OnRunners() && x.MergeMode == model.MergePR && !x.MergeModeSet {
+				x.MergeMode = model.MergeLocal
+			}
+			return nil
+		}); err != nil {
+			return names, err
+		}
+		names = append(names, p.Name)
+	}
+	return names, nil
+}

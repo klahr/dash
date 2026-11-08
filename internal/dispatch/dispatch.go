@@ -49,6 +49,9 @@ type Dispatcher struct {
 	// Pub streams a running task's output, as its runner reports it, to
 	// the dashboards (optional).
 	Pub interface{ Publish(model.Event) }
+	// Undo queues a task for Claude to undo merged task t by hand, as its
+	// runner couldn't revert it without conflicts in files (optional).
+	Undo func(t model.Todo, files []string)
 
 	mu     sync.Mutex
 	timers map[string]*time.Timer // runner id → its offline grace
@@ -68,7 +71,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo
 		return "", "", &WaitError{Reason: reason}
 	}
 	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID,
-		TaskInstructions: p.TaskInstructions}
+		MergeMode: p.MergeMode, TaskInstructions: p.TaskInstructions}
 	if err := d.Fleet.Call(ctx, r.ID, http.MethodPut, "/api/hub/projects/"+url.PathEscape(p.ID), link, nil); err != nil {
 		return "", "", &WaitError{Reason: "waiting for a runner: " + err.Error()}
 	}
@@ -185,14 +188,37 @@ func (d *Dispatcher) apply(r tunnel.Runner, ts TaskState) {
 	}
 	to := hubStatus(ts.Status)
 	var ours model.Todo // the task, if it is this runner's
+	undo := false       // its revert conflicted just now
 	_, err := d.Store.UpdateTodo(ts.HubTodoID, func(x *model.Todo) error {
 		if x.Runner != r.ID || (x.RemoteID != "" && x.RemoteID != ts.ID) {
 			return errSkip // sent elsewhere since, or never sent to this runner
 		}
 		ours = *x
 		switch x.Status {
-		case model.StatusQueued, model.StatusDraft, model.StatusMerged:
-			return errSkip // waiting to be sent (again), or done
+		case model.StatusQueued, model.StatusDraft:
+			return errSkip // waiting to be sent (again)
+		case model.StatusMerged:
+			// Done; only a revert (or its conflict) may follow.
+			if ts.Status != model.StatusMerged {
+				return errSkip
+			}
+			before := *x
+			if x.MergedCommit == "" {
+				x.MergedCommit = ts.MergedCommit
+			}
+			if ts.Revert != nil {
+				x.Revert, x.RevertConflict, x.Error = ts.Revert, nil, ""
+			}
+			if len(ts.RevertConflict) > 0 && len(x.RevertConflict) == 0 {
+				x.RevertConflict, undo = ts.RevertConflict, true
+			}
+			if ts.Error != "" && ts.Revert == nil && !undo && len(x.RevertConflict) == 0 {
+				x.Error = ts.Error // e.g. "Revert failed: …"
+			}
+			if reflect.DeepEqual(before, *x) {
+				return errSkip
+			}
+			return nil
 		case model.StatusFailed:
 			// Back from the dead only if the hub, not the runner, failed it:
 			// the runner kept going while it was out of reach.
@@ -214,6 +240,9 @@ func (d *Dispatcher) apply(r tunnel.Runner, ts TaskState) {
 		x.Summary, x.CostUSD, x.Runs, x.Checks, x.PR = ts.Summary, ts.CostUSD, ts.Runs, ts.Checks, ts.PR
 		x.DiffFiles, x.DiffAdd, x.DiffDel = ts.DiffFiles, ts.DiffAdd, ts.DiffDel
 		x.RemoteID = ts.ID
+		if to == model.StatusMerged {
+			x.MergedCommit = ts.MergedCommit
+		}
 		if ts.Branch != "" {
 			name := ts.Branch[strings.LastIndex(ts.Branch, "/")+1:]
 			x.Worktree = &model.Worktree{Name: name, Branch: ts.Branch} // no Path: the files are on the runner
@@ -221,6 +250,9 @@ func (d *Dispatcher) apply(r tunnel.Runner, ts TaskState) {
 		x.Error, x.Resumable = "", false
 		if to == model.StatusQueued {
 			x.Resumable = true
+		}
+		if to == model.StatusReview {
+			x.Error = ts.Error // e.g. why an approved task wasn't merged after all
 		}
 		if to == model.StatusFailed {
 			x.Error, x.Resumable = ts.Error, ts.Session
@@ -245,6 +277,11 @@ func (d *Dispatcher) apply(r tunnel.Runner, ts TaskState) {
 	}
 	if ours.ID != "" {
 		d.publishOutput(ours, ts)
+	}
+	if undo && d.Undo != nil {
+		if t, err := d.Store.GetTodo(ts.HubTodoID); err == nil {
+			d.Undo(t, ts.RevertConflict)
+		}
 	}
 }
 
@@ -384,9 +421,15 @@ func taskPath(t model.Todo, rest string) string {
 	return "/api/hub/tasks/" + url.PathEscape(t.ID) + rest
 }
 
-// Approve asks t's runner to land it (through a pull request).
+// Approve asks t's runner to land it: push it to origin's default branch
+// (or open a pull request, in "pr" mode).
 func (d *Dispatcher) Approve(ctx context.Context, t model.Todo) error {
 	return d.Fleet.Call(ctx, t.Runner, http.MethodPost, taskPath(t, "/approve"), struct{}{}, nil)
+}
+
+// Revert asks the runner that landed t to undo it, the way it landed.
+func (d *Dispatcher) Revert(ctx context.Context, t model.Todo) error {
+	return d.Fleet.Call(ctx, t.Runner, http.MethodPost, taskPath(t, "/revert"), struct{}{}, nil)
 }
 
 // Cancel asks t's runner to stop it.

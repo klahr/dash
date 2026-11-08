@@ -304,6 +304,14 @@ func (g *Git) Push(ctx context.Context, projectID, repo, branch string) error {
 	return err
 }
 
+// PushHead pushes what is checked out in dir (e.g. a detached landing
+// checkout) to origin's branch, only as a fast-forward: when origin moved on
+// meanwhile, the push is rejected and nothing changes there.
+func (g *Git) PushHead(ctx context.Context, projectID, dir, branch string) error {
+	_, err := g.git(ctx, projectID, dir, "push", "origin", "HEAD:refs/heads/"+branch)
+	return err
+}
+
 // PushBranch publishes a work branch, overwriting the remote copy only if
 // it is the one Dash pushed last (--force-with-lease).
 func (g *Git) PushBranch(ctx context.Context, projectID, dir, branch string) error {

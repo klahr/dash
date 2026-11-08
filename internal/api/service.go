@@ -263,9 +263,6 @@ func (sv *service) approve(id string) (model.Todo, error) {
 	if cur.OnRunner() {
 		return sv.approveOnRunner(context.Background(), cur)
 	}
-	if p, err := sv.data.GetProject(cur.ProjectID); err == nil && p.OnRunners() {
-		return cur, errHubMergeOff
-	}
 	t, err := sv.data.UpdateTodo(id, func(t *model.Todo) error {
 		if t.Status != model.StatusReview && t.Status != model.StatusFailed {
 			return fmt.Errorf("%w: only tasks in review (or a failed merge) can be approved", errBadRequest)

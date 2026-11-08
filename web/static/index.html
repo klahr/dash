@@ -691,8 +691,8 @@
             <p class="hint">Finished tasks whose tests pass go straight to the merge queue instead of waiting for review, and the Review column is hidden while it's empty.</p>
             <fieldset class="field choice">
               <legend>When you approve a task</legend>
-              <label class="radio"><input type="radio" name="merge_mode" value="local"><span>Merge it here <em>one squashed commit on the default branch</em></span></label>
-              <label class="radio"><input type="radio" name="merge_mode" value="pr"><span>Open a pull request <em>Dash marks it merged when GitHub merges it; failing checks go back to Claude</em></span></label>
+              <label class="radio"><input type="radio" name="merge_mode" value="local"><span>Merge it <em>one squashed commit on the default branch</em></span></label>
+              <label class="radio"><input type="radio" name="merge_mode" value="pr"><span>Open a pull request instead <em>only if you review on GitHub: Dash marks it merged when GitHub merges it</em></span></label>
             </fieldset>
             <label class="toggle" id="auto-push-row"><input type="checkbox" name="auto_push"><span>Push after every merge</span></label>
             <p class="hint" id="merge-hint"></p>
