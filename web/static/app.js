@@ -4948,13 +4948,19 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
       if (d.kind === "thinking") { cur.think = (cur.think || "") + d.text; cur.thinking.innerHTML = renderMarkdown(cur.think); }
       else if (d.kind === "text") { cur.content += d.text; cur.seg += d.text; cur.reply.innerHTML = renderMarkdown(cur.seg); }
       else if (d.kind === "tool_use") {
-        // Later text goes below the tool call, in a reply of its own.
+        // Later text goes below the tool call, in a reply of its own. A reply
+        // still empty moves below it instead, so consecutive tool calls share
+        // one "Thinking…" at the end rather than one after each call.
         const { el, out } = toolCall(d.tool, d.input);
         cur.tools.set(d.id, { el, out });
-        cur.reply.after(el);
-        cur.reply = h("div", { class: "reply" });
-        el.after(cur.reply);
-        cur.seg = "";
+        if (cur.seg) {
+          cur.reply.after(el);
+          cur.reply = h("div", { class: "reply" });
+          el.after(cur.reply);
+          cur.seg = "";
+        } else {
+          cur.reply.before(el);
+        }
       } else if (d.kind === "tool_result") {
         const t = cur.tools.get(d.id);
         if (t) toolResult(t, d);
