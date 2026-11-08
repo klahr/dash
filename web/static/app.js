@@ -930,8 +930,10 @@ function onEvent(ev, m = { name: "" }) {
       break;
     case "usage.updated":
       if (!sameMachine) break;
-      state.usage = ev.data;
-      renderUsage();
+      // On a hub that doesn't run Claude the usage shown is your runner's,
+      // which only GET /api/usage gives.
+      if (chatRunner.info?.local === false) loadUsage().catch(() => {});
+      else { state.usage = ev.data; renderUsage(); }
       break;
     case "ci.updated":
       if (!mine) break;
@@ -7578,7 +7580,13 @@ desktop.addEventListener("change", () => { if (state.detail) $("#scrim").hidden 
 renderBoard();
 setMode();
 setInterval(() => { if (!document.hidden) renderBoard(); }, 30000); // keep "4m"/"2h" current
-setInterval(() => { if (!document.hidden) renderUsage(); }, 60000); // keep the usage pace current
+// Keep the usage pace current; on a hub that doesn't run Claude, fetch your
+// runner's latest report too (runners report without an event).
+setInterval(() => {
+  if (document.hidden) return;
+  if (chatRunner.info?.local === false) loadUsage().catch(() => renderUsage());
+  else renderUsage();
+}, 60000);
 connectAll().catch(fail);
 
 // ------------------------------------------------------------------ app updates
