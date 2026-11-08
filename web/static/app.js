@@ -1065,6 +1065,7 @@ function renderProjectBranch() {
 function renderProjectHeader() {
   const p = state.project;
   $("#project-name").replaceChildren(...(p ? [projectDot(p), p.name].filter(Boolean) : ["No project"]));
+  renderBrand();
   renderTitle();
   // The project's own color marks the top bar (and the phone's browser chrome).
   const app = $(".app");
@@ -1191,6 +1192,15 @@ const projectIcon = (p, el = h("span", { class: "side-project-icon", "aria-hidde
   el.replaceChildren(p.icon ? h("img", { src: on(p.prefix || "", `/api/uploads/${p.icon}`), alt: "" }) : [...p.name][0]?.toUpperCase() || "?");
   return el;
 };
+// The top bar's brand: the active project's icon and name, or Dash's own without one.
+// Phones show only the icon (CSS hides the name).
+const dashBrand = { logo: $("#brand-logo"), name: $("#brand-name").textContent };
+function renderBrand() {
+  const p = state.project, brand = $(".brand");
+  brand.querySelector(".brand-icon, #brand-logo").replaceWith(p ? projectIcon(p, h("span", { class: "side-project-icon brand-icon", "aria-hidden": "true" })) : dashBrand.logo);
+  $("#brand-name").textContent = p ? p.name : dashBrand.name;
+  brand.classList.toggle("is-project", !!p);
+}
 const projectDot = (p) => (p.color ? h("span", { class: "project-dot", style: `--project: ${p.color}`, "aria-hidden": "true" }) : null);
 
 // Desktop sidebar / phone menu: every project, one click away. The current one
