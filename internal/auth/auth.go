@@ -669,6 +669,15 @@ func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
 
 // Public paths reachable without a session: the login and invitation pages
 // and their assets.
+// notifyActionPrefix is notify.ActionPath: the Approve/Deny buttons of
+// ntfy notifications, whose signed token in the path is the credential.
+const notifyActionPrefix = "/api/notify/permission/"
+
+// publicPath reports whether path is served without signing in.
+func publicPath(path string) bool {
+	return public[path] || strings.HasPrefix(path, notifyActionPrefix)
+}
+
 var public = map[string]bool{
 	"/login.html":           true,
 	"/login.js":             true,
@@ -742,7 +751,7 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 				return
 			}
 		}
-		if public[r.URL.Path] || publicAsset(r.URL.Path) || a.oauth.public(r.URL.Path) || r.URL.Path == branding.LogoPath {
+		if publicPath(r.URL.Path) || publicAsset(r.URL.Path) || a.oauth.public(r.URL.Path) || r.URL.Path == branding.LogoPath {
 			next.ServeHTTP(w, r)
 			return
 		}

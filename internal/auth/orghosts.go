@@ -218,7 +218,7 @@ func (a *Auth) serveOrgHost(w http.ResponseWriter, r *http.Request, slug string,
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if public[path] || publicAsset(path) || a.oauth.public(path) || path == branding.LogoPath {
+	if publicPath(path) || publicAsset(path) || a.oauth.public(path) || path == branding.LogoPath {
 		next.ServeHTTP(w, r) // the OAuth endpoints pin to the host's org themselves
 		return
 	}

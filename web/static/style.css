@@ -558,6 +558,10 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-version { flex: none; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); font: 12px/1.5 var(--mono); color: var(--muted); }
 .runner-version.warn { border-color: var(--running); color: var(--running); }
 .runner-update { flex-basis: 100%; min-width: 0; }
+.webhook-row .runner-seen { flex-basis: 100%; overflow-wrap: anywhere; }
+.webhook-actions { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
+#settings-webhooks-field #webhook-add { margin-top: 10px; }
+#webhook-secret { margin-top: 10px; }
 .runner-update .hint { margin: 4px 0 0; }
 .runner-add-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 .runner-add-fields .field { margin: 12px 0 8px; }

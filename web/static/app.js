@@ -274,6 +274,17 @@ if (vv) {
 // the computer list always go to this one.
 const HUB_ONLY = /^\/api\/(login|logout|me|machines|version|chat|connector|runners|auth|orgs|invitations)\b/;
 const here = () => state.project?.prefix || "";
+
+// Links from notifications open a task: /?project=<id>&task=<id>.
+const deepLink = (() => {
+  const q = new URLSearchParams(location.search);
+  const link = { project: q.get("project"), task: q.get("task") };
+  if (!link.project) return null;
+  q.delete("project");
+  q.delete("task");
+  history.replaceState(null, "", location.pathname + (q.size ? `?${q}` : "") + location.hash);
+  return link;
+})();
 const on = (prefix, path) => (HUB_ONLY.test(path) ? path : `${prefix}${path}`);
 
 async function api(method, path, body, prefix = here()) {
@@ -924,12 +935,15 @@ async function loadProjects() {
   const first = !state.projectsLoaded;
   state.projectsLoaded = true;
   const saved = (() => { try { return localStorage.getItem("dash.project"); } catch { return null; } })();
-  const want = projectKey(state.project) || saved;
+  const link = first ? deepLink : null;
+  const want = (link?.project && state.projects.some((p) => p.id === link.project) ? link.project : null) || projectKey(state.project) || saved;
   const next = state.projects.find((p) => projectKey(p) === want || p.id === want) || state.projects[0] || null;
   if (projectKey(next) !== projectKey(state.project)) await selectProject(next);
   else { state.project = next; renderProjectHeader(); if (first && !next) renderBoard(); }
   renderProjectList();
+  if (link?.task && next?.id === link.project) { showView("board"); openDetail(link.task).catch(() => {}); }
 }
+
 
 async function selectProject(p) {
   state.project = p;
@@ -4163,6 +4177,8 @@ function openSettings() {
   projectIcon(p, $("#settings-icon"));
   renderRunnerPicker(p);
   syncMergeHint();
+  $("#webhook-secret").hidden = true;
+  loadWebhooks().catch(fail);
   $("#settings-sheet").returnValue = "";
   $("#settings-sheet").showModal();
 }
@@ -4275,6 +4291,158 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
   renderProjectList();
   renderBoard(); // auto approve shows or hides Review
   toast("Settings saved");
+}));
+
+// ------------------------------------------------------------------ notification webhooks
+// A project's outgoing webhooks, in its settings. They save as you go, not
+// with the settings form.
+const WEBHOOK_EVENTS = {
+  "task.review": "Ready for review",
+  "task.failed": "Failed",
+  "task.merged": "Merged",
+  "permission.needed": "Claude needs approval",
+  "build.failing": "Build failing",
+  "webhook.test": "Test",
+};
+const WEBHOOK_FORMATS = { json: "JSON", slack: "Slack", ntfy: "ntfy" };
+const hooks = { list: [], info: null, editing: null };
+const webhookHost = (u) => { try { return new URL(u).host; } catch { return u; } };
+
+async function loadWebhooks() {
+  const p = state.project;
+  let res;
+  try {
+    res = await api("GET", `/api/projects/${p.id}/webhooks`);
+  } catch {
+    $("#settings-webhooks-field").hidden = true; // e.g. an older Dash on another computer
+    return;
+  }
+  if (state.project !== p) return;
+  hooks.list = res.webhooks;
+  hooks.info = res;
+  $("#settings-webhooks-field").hidden = false;
+  renderWebhooks();
+}
+
+function webhookStatus(w) {
+  if (!w.last_at) return h("span", { class: "runner-seen hint" }, "nothing sent yet");
+  const what = WEBHOOK_EVENTS[w.last_event] || w.last_event;
+  if (w.last_error) return h("span", { class: "runner-seen hint err-text", title: w.last_error }, `${what} failed ${agoText(w.last_at)}: ${w.last_error}`);
+  return h("span", { class: "runner-seen hint" }, `${what} delivered ${agoText(w.last_at)}`);
+}
+
+function renderWebhooks() {
+  const hint = $("#settings-webhooks-hint");
+  const notes = [];
+  if (hooks.info && !hooks.info.enabled) notes.push("This Dash doesn't send notifications (a runner: its hub does).");
+  if (hooks.info && hooks.info.enabled && !hooks.info.links) notes.push("Set -public-url so notifications link back to the task.");
+  hint.hidden = !notes.length;
+  hint.textContent = notes.join(" ");
+  const p = state.project;
+  const done = (w) => { hooks.list = hooks.list.map((x) => (x.id === w.id ? w : x)); renderWebhooks(); };
+  $("#settings-webhooks").replaceChildren(...(hooks.list.length ? hooks.list.map((w) => h("li", { class: "runner-row webhook-row" },
+    h("input", { type: "checkbox", checked: w.enabled, title: w.enabled ? "On: click to pause" : "Paused: click to turn on", "aria-label": `${w.name || webhookHost(w.url)} on`,
+      onchange: attempt(async (e) => done(await api("PATCH", `/api/webhooks/${w.id}`, { enabled: e.target.checked }))) }),
+    h("span", { class: "runner-name" }, w.name || webhookHost(w.url), h("span", { class: "hint" }, ` · ${WEBHOOK_FORMATS[w.format] || w.format}${w.enabled ? "" : " · paused"}`)),
+    webhookStatus(w),
+    h("span", { class: "webhook-actions" },
+      h("button", { class: "btn small", type: "button", onclick: attempt(async (e) => {
+        e.target.disabled = true;
+        try {
+          const res = await api("POST", `/api/webhooks/${w.id}/test`);
+          if (res.webhook) done(res.webhook);
+          if (res.ok) toast("Test notification delivered", { tone: "ok" });
+          else throw new Error(`Test failed: ${res.error}`);
+        } finally { e.target.disabled = false; }
+      }) }, "Send test"),
+      h("button", { class: "btn small", type: "button", onclick: () => editWebhook(w) }, "Edit"),
+      w.format === "json" ? h("button", { class: "btn small", type: "button", onclick: attempt(async () => {
+        if (!await ask({ title: "Rotate the signing secret?", body: "The current secret stops working at once: update your receiver with the new one.", ok: "Rotate" })) return;
+        const res = await api("POST", `/api/webhooks/${w.id}/rotate`);
+        showWebhookSecret(res.secret);
+      }) }, "Rotate secret") : null,
+      h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
+        if (!await ask({ title: `Delete ${w.name || webhookHost(w.url)}?`, body: "Dash stops sending notifications to it.", ok: "Delete", danger: true })) return;
+        await api("DELETE", `/api/webhooks/${w.id}`);
+        hooks.list = hooks.list.filter((x) => x.id !== w.id);
+        if (state.project === p) renderWebhooks();
+      }) }, "Delete")))) : [h("li", { class: "hint" }, "No webhooks yet.")]));
+}
+
+function showWebhookSecret(secret) {
+  const el = $("#webhook-secret");
+  el.replaceChildren(
+    h("p", {}, "Copy the signing secret now: Dash doesn't show it again."),
+    copyBlock(secret, "Secret copied", { pre: true }),
+    h("p", { class: "hint" }, "Each delivery has a ", h("code", {}, "Dash-Signature: t=<unix time>,v1=<signature>"),
+      " header: the hex HMAC-SHA256 of ", h("code", {}, "<t>.<body>"), " with this secret. Check it, and that t is recent, before trusting the request."));
+  el.hidden = false;
+}
+
+function editWebhook(w = null) {
+  hooks.editing = w;
+  const f = $("#webhook-form");
+  $("#webhook-title").textContent = w ? "Edit webhook" : "Add webhook";
+  f.format.value = w?.format || "slack";
+  f.url.value = w?.url || "";
+  f.name.value = w?.name || "";
+  f.token.value = "";
+  f.token_clear.checked = false;
+  f.enabled.checked = w ? w.enabled : true;
+  const on = new Set(w ? w.events : Object.keys(WEBHOOK_EVENTS));
+  $("#webhook-events").replaceChildren(...(hooks.info?.events || Object.keys(WEBHOOK_EVENTS).filter((e) => e !== "webhook.test")).map((e) =>
+    h("label", { class: "toggle" }, h("input", { type: "checkbox", name: "event", value: e, checked: on.has(e) }), h("span", {}, WEBHOOK_EVENTS[e] || e))));
+  syncWebhookForm();
+  $("#webhook-sheet").returnValue = "";
+  $("#webhook-sheet").showModal();
+}
+
+function syncWebhookForm() {
+  const f = $("#webhook-form");
+  const fmt = f.format.value;
+  const w = hooks.editing;
+  $("#webhook-token-row").hidden = fmt !== "ntfy" && !w?.has_token;
+  $("#webhook-token-clear-row").hidden = !w?.has_token;
+  f.token.placeholder = w?.has_token ? "Saved: type a new one to replace it" : "";
+  f.url.placeholder = { slack: "https://hooks.slack.com/services/…", ntfy: "https://ntfy.sh/my-dash-topic", json: "https://example.com/dash-webhook" }[fmt];
+  const priv = hooks.info && !hooks.info.allow_private ? " Private and local network addresses aren't allowed on this Dash." : "";
+  $("#webhook-format-hint").textContent = {
+    slack: "A short message with a link to the task.",
+    ntfy: "Approvals and failures arrive with high priority; tapping opens the task. Approval requests get Approve and Deny buttons that work for 15 minutes.",
+    json: "Dash shows the signing secret once, after you save.",
+  }[fmt] + priv;
+}
+$("#webhook-form").addEventListener("change", (e) => { if (e.target.name === "format") syncWebhookForm(); });
+$("#webhook-add").addEventListener("click", () => editWebhook(null));
+$("#webhook-sheet").addEventListener("close", attempt(async () => {
+  if ($("#webhook-sheet").returnValue !== "save") return;
+  const f = $("#webhook-form");
+  const w = hooks.editing;
+  const body = {
+    format: f.format.value,
+    url: f.url.value.trim(),
+    name: f.name.value.trim(),
+    enabled: f.enabled.checked,
+    events: [...f.querySelectorAll('input[name="event"]:checked')].map((x) => x.value),
+  };
+  if (f.token.value.trim()) body.token = f.token.value.trim();
+  else if (f.token_clear.checked) body.token = "";
+  try {
+    if (w) {
+      const saved = await api("PATCH", `/api/webhooks/${w.id}`, body);
+      hooks.list = hooks.list.map((x) => (x.id === saved.id ? saved : x));
+      toast("Webhook saved");
+    } else {
+      const res = await api("POST", `/api/projects/${state.project.id}/webhooks`, body);
+      hooks.list = [...hooks.list, res.webhook];
+      if (res.webhook.format === "json") showWebhookSecret(res.secret);
+      toast("Webhook added: try Send test", { tone: "ok" });
+    }
+  } catch (e) {
+    $("#webhook-sheet").showModal(); // keep what was typed
+    throw e;
+  }
+  renderWebhooks();
 }));
 
 // ------------------------------------------------------------------ chat

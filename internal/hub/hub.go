@@ -75,6 +75,12 @@ type Hub struct {
 	// but All subscribers. Without it, only events with OrgID set are
 	// delivered per org.
 	ProjectOrg func(projectID string) (int64, bool)
+
+	// Observe, if set, sees every published event as well, e.g. outgoing
+	// notifications (internal/notify). Publishers may hold their own locks
+	// (the store does), so it must not block or call back into them. Set it
+	// before serving.
+	Observe func(model.Event)
 }
 
 func New() *Hub { return &Hub{clients: map[*client]struct{}{}} }
@@ -104,6 +110,9 @@ func (h *Hub) Publish(ev model.Event) {
 	h.mu.RUnlock()
 	for _, c := range slow {
 		h.remove(c)
+	}
+	if h.Observe != nil {
+		h.Observe(ev)
 	}
 }
 

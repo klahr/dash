@@ -663,7 +663,40 @@
         <input type="hidden" name="icon">
       </div>
       <p class="hint">An image shown in the project lists instead of the first letter.</p>
+      <fieldset class="field choice" id="settings-webhooks-field" hidden>
+        <legend>Notification webhooks <em>tell Slack, ntfy or your own service when tasks are ready, fail or merge, Claude needs approval or the build fails</em></legend>
+        <ul class="runner-list" id="settings-webhooks"></ul>
+        <div id="webhook-secret" hidden></div>
+        <p class="hint" id="settings-webhooks-hint" hidden></p>
+        <div><button class="btn small" type="button" id="webhook-add" data-icon="plus">Add webhook</button></div>
+      </fieldset>
       <footer class="sheet-actions"><button class="btn primary" value="save" data-icon="check">Save settings</button></footer>
+    </form>
+  </dialog>
+
+  <!-- A notification webhook of the project (opened from project settings) -->
+  <dialog class="sheet small" id="webhook-sheet" aria-labelledby="webhook-title">
+    <form method="dialog" id="webhook-form">
+      <header class="sheet-head"><h2 id="webhook-title">Add webhook</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <fieldset class="field choice">
+        <legend>Format</legend>
+        <label class="radio"><input type="radio" name="format" value="slack"><span>Slack <em>an incoming webhook URL from a Slack app</em></span></label>
+        <label class="radio"><input type="radio" name="format" value="ntfy"><span>ntfy <em>a topic URL, e.g. https://ntfy.sh/my-dash-topic, for phone notifications</em></span></label>
+        <label class="radio"><input type="radio" name="format" value="json"><span>JSON <em>a signed JSON POST to your own service</em></span></label>
+      </fieldset>
+      <label class="field"><span>URL</span><input name="url" type="url" required spellcheck="false" autocomplete="off" placeholder="https://hooks.slack.com/services/…"></label>
+      <label class="field"><span>Name <em>optional</em></span><input name="name" maxlength="100" autocomplete="off"></label>
+      <div id="webhook-token-row">
+        <label class="field"><span>Access token <em>optional: for protected or self-hosted ntfy servers</em></span><input name="token" type="password" autocomplete="new-password" spellcheck="false"></label>
+        <label class="toggle" id="webhook-token-clear-row" hidden><input type="checkbox" name="token_clear"><span>Remove the saved token</span></label>
+      </div>
+      <p class="hint" id="webhook-format-hint"></p>
+      <fieldset class="field choice">
+        <legend>Send</legend>
+        <div id="webhook-events"></div>
+      </fieldset>
+      <label class="toggle"><input type="checkbox" name="enabled"><span>On</span></label>
+      <footer class="sheet-actions"><button class="btn primary" value="save" data-icon="check">Save webhook</button></footer>
     </form>
   </dialog>
 

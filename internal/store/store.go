@@ -388,7 +388,7 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 				return err
 			}
 		}
-		for _, table := range []string{"todos", "issues", "scan_runs", "scan_settings", "scan_templates"} {
+		for _, table := range []string{"todos", "issues", "scan_runs", "scan_settings", "scan_templates", "webhooks"} {
 			if _, err := tx.Exec("DELETE FROM "+table+" WHERE project_id = ?", id); err != nil {
 				return err
 			}

@@ -28,6 +28,7 @@ import (
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/notify"
 	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/preview"
@@ -86,7 +87,10 @@ type Server struct {
 	Editor     string // command that opens a directory, e.g. "code" (optional)
 	UploadRoot string // where attached files are stored
 	CI         *ci.Watcher
-	Peers      *peer.Hub // other computers shown in this dashboard: -peer servers and runners
+	// Notify sends events to the projects' outgoing webhooks (nil: off,
+	// as on a runner, whose hub notifies).
+	Notify *notify.Notifier
+	Peers  *peer.Hub // other computers shown in this dashboard: -peer servers and runners
 	// Dispatch sends tasks of projects linked to runners to them (a hub's;
 	// optional).
 	Dispatch *dispatch.Dispatcher
@@ -298,6 +302,17 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/projects/{pid}/ci/refresh", s.refreshCI)
 	mux.HandleFunc("POST /api/projects/{pid}/ci/investigate", s.investigateCI)
 	mux.HandleFunc("POST /api/projects/{pid}/ci/retry", s.retryCI)
+
+	// Outgoing notification webhooks (generic JSON, Slack, ntfy)
+	mux.HandleFunc("GET /api/projects/{pid}/webhooks", s.listWebhooks)
+	mux.HandleFunc("POST /api/projects/{pid}/webhooks", s.createWebhook)
+	mux.HandleFunc("PATCH /api/webhooks/{wid}", s.updateWebhook)
+	mux.HandleFunc("DELETE /api/webhooks/{wid}", s.deleteWebhook)
+	mux.HandleFunc("POST /api/webhooks/{wid}/rotate", s.rotateWebhook)
+	mux.HandleFunc("POST /api/webhooks/{wid}/test", s.testWebhook)
+	if s.Notify != nil && s.Notify.Actions != nil {
+		mux.Handle("POST "+notify.ActionPath+"{token}", s.Notify.Actions) // public: see auth.publicPath
+	}
 
 	// Attachments (screenshots for Claude)
 	mux.HandleFunc("POST /api/uploads", s.upload)

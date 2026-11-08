@@ -34,6 +34,7 @@ import (
 	"github.com/klahr/dash/internal/mail"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/notify"
 	"github.com/klahr/dash/internal/orgdomain"
 	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/perm"
@@ -116,6 +117,7 @@ func main() {
 	previewDomain := flag.String("preview-domain", "", "serve each task's live preview at https://<task>.<this domain>, e.g. preview.dash.example.com; needs a wildcard DNS record and certificate (see docs/previews.md; or $DASH_PREVIEW_DOMAIN)")
 	orgDomain := flag.String("org-domain", "", "serve each organization at https://<slug>.<this domain>, e.g. dash.example.com; needs a wildcard DNS record and certificate (see docs/deploy.md; or $DASH_ORG_DOMAIN). Empty = off")
 	orgReserved := flag.String("org-reserved", "", "comma-separated subdomains no organization may take, replacing the defaults ("+strings.Join(store.DefaultReservedSlugs, ",")+"); the preview domain's label is always reserved (or $DASH_ORG_RESERVED)")
+	webhookPrivate := flag.String("webhook-private", "", "let outgoing notification webhooks reach private, loopback and link-local addresses: on, off, or empty = on unless Stripe billing is configured, i.e. on a self-hosted Dash (or $DASH_WEBHOOK_PRIVATE)")
 	previewIdle := flag.Duration("preview-idle", preview.DefaultIdle, "stop a live preview after this long without traffic")
 	scanTimeout := flag.Duration("scan-timeout", scan.DefaultRunTimeout, "stop a scan's Claude run after this long and mark it failed")
 	scanSchedules := flag.Bool("scan-schedules", true, "run scans (.dash/scans) on their schedules; off = only when started by hand")
@@ -396,6 +398,24 @@ func main() {
 			authn.OnMembersChanged, authn.InviteNotice = b.MembersChanged, b.InviteNotice
 			todos.Hold, scheduler.Hold = b.Hold, b.Hold
 			b.OnChange = func(int64) { todos.Kick() }
+		}
+		// Outgoing notification webhooks; a runner's hub sends its own.
+		allowPrivate, err := webhookPrivateAllowed(envOr(*webhookPrivate, "DASH_WEBHOOK_PRIVATE"), apiSrv.Billing != nil)
+		if err != nil {
+			slog.Error("-webhook-private", "err", err)
+			os.Exit(1)
+		}
+		notifier := &notify.Notifier{
+			Store:        st,
+			Origin:       linkOrigin(st, authn.Domains, *publicURL, *addr, useTLS),
+			AllowPrivate: allowPrivate,
+			Actions:      notify.NewActions(perms.Decide),
+		}
+		events.Observe = notifier.Observe
+		notifier.Start(ctx)
+		apiSrv.Notify = notifier
+		if !allowPrivate {
+			slog.Info("notification webhooks may not reach private addresses (-webhook-private=on allows them)")
 		}
 	}
 	var runnerCreds tunnel.Credentials
@@ -839,6 +859,51 @@ func offlineWatch(grace time.Duration, todos *queue.TodoEngine) func(bool) {
 				slog.Warn("runner: hub unreachable, interrupted running tasks", "tasks", n)
 			}
 		})
+	}
+}
+
+// webhookPrivateAllowed reads -webhook-private: whether webhooks may reach
+// private addresses. Unset, a self-hosted Dash (no billing) allows it and
+// a hosted one doesn't.
+func webhookPrivateAllowed(v string, hosted bool) (bool, error) {
+	switch strings.ToLower(v) {
+	case "":
+		return !hosted, nil
+	case "1", "true", "yes", "on":
+		return true, nil
+	case "0", "false", "no", "off":
+		return false, nil
+	}
+	return false, fmt.Errorf("want on or off, not %q", v)
+}
+
+// linkOrigin is where notifications link back to a project's tasks: its
+// org's subdomain with org subdomains, else -public-url, else the listen
+// address (fine on this computer only).
+func linkOrigin(st *store.Store, d *orgdomain.Domain, publicURL, addr string, tls bool) func(projectID string) string {
+	return func(projectID string) string {
+		if d != nil {
+			if org, ok := st.ProjectOrg(projectID); ok {
+				if o, err := st.Accounts().Org(org); err == nil {
+					return d.Origin(o.Slug)
+				}
+			}
+		}
+		if publicURL != "" {
+			return strings.TrimRight(publicURL, "/")
+		}
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return ""
+		}
+		if host == "" || host == "0.0.0.0" || host == "::" {
+			host = "localhost"
+		}
+		scheme := "http"
+		if tls {
+			scheme = "https"
+		}
+		return scheme + "://" + net.JoinHostPort(host, port)
 	}
 }
 
