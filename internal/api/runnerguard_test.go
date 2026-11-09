@@ -15,6 +15,7 @@ import (
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/runner"
+	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
@@ -244,6 +245,130 @@ func TestRunnerRunsTheGeneralChatOnlyForItsOwner(t *testing.T) {
 		t.Errorf("ran in %q, want the scratch dir %q", got, s.ChatDir)
 	}
 	if got := raw(s).Chat(ownerCaller(t, s).Org, ownerCaller(t, s).User); len(got) != 0 {
+		t.Errorf("the runner saved the hub's conversation: %+v", got)
+	}
+}
+
+// runnerChatTurn sends one question to h's /ws/chat as the hub would for
+// user, with fields, and returns the kinds and texts of what came back.
+func runnerChatTurn(t *testing.T, srv *httptest.Server, user string, fields map[string]any) (kinds, texts []string) {
+	t.Helper()
+	hdr := http.Header{}
+	hdr.Set(tunnel.UserHeader, user)
+	ws, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http")+"/ws/chat", hdr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	req := map[string]any{"type": "send", "messages": []map[string]string{{"role": "user", "content": "what's up?"}}}
+	for k, v := range fields {
+		req[k] = v
+	}
+	if err := ws.WriteJSON(req); err != nil {
+		t.Fatal(err)
+	}
+	_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+	for {
+		var d struct{ Kind, Text string }
+		if err := ws.ReadJSON(&d); err != nil {
+			t.Fatal(err)
+		}
+		kinds, texts = append(kinds, d.Kind), append(texts, d.Text)
+		if d.Kind == "done" || d.Kind == "error" {
+			return kinds, texts
+		}
+	}
+}
+
+// The chat of one of the runner's own projects (made or added on it, which
+// the hub keeps no record of), opened through the hub: it runs in the
+// project's folder for the runner's owner only, and the runner keeps the
+// conversation, with its owner as the author, as the hub's UI reads it from
+// the runner. So do its own tasks' chats, in their worktrees.
+func TestRunnerChatsInItsOwnProjectThroughTheHub(t *testing.T) {
+	s, h, p := runnerServer(t)
+	s.HubUser = 42
+	seen := &seenChat{}
+	s.Chat = seen
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	// Someone else: refused before anything runs.
+	if kinds, texts := runnerChatTurn(t, srv, "7", map[string]any{"project": p.ID}); kinds[len(kinds)-1] != "error" || !strings.Contains(texts[len(texts)-1], "registered it") {
+		t.Fatalf("another user's chat in the runner's project: %v %q", kinds, texts)
+	}
+	if dir, _ := seen.seen(); dir != "" {
+		t.Fatal("Claude ran for someone other than the runner's owner")
+	}
+
+	kinds, texts := runnerChatTurn(t, srv, "42", map[string]any{"project": p.ID})
+	if kinds[len(kinds)-1] != "done" {
+		t.Fatalf("owner's chat in the runner's project: %v %q", kinds, texts)
+	}
+	if dir, _ := seen.seen(); dir != p.Path {
+		t.Errorf("ran in %q, want the project's folder %q", dir, p.Path)
+	}
+	got := raw(s).ProjectChat(p.ID)
+	if len(got) != 2 || got[0].CreatedBy != 42 || got[1].Content != "hi" {
+		t.Fatalf("saved project chat: %+v", got)
+	}
+
+	// Its own task: in the task's worktree, with the task's context.
+	wt := t.TempDir()
+	td, err := raw(s).CreateTodo(model.Todo{ID: store.NewID(), ProjectID: p.ID, Title: "Dark mode", Prompt: "Add a dark mode",
+		Status: model.StatusReview, Worktree: &model.Worktree{Path: wt, Branch: "dash/todo-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kinds, texts := runnerChatTurn(t, srv, "42", map[string]any{"project": p.ID, "todo": td.ID}); kinds[len(kinds)-1] != "done" {
+		t.Fatalf("owner's chat in the runner's own task: %v %q", kinds, texts)
+	}
+	dir, prompt := seen.seen()
+	if dir != wt {
+		t.Errorf("task chat ran in %q, want its worktree %q", dir, wt)
+	}
+	if !strings.Contains(prompt, "<title>Dark mode</title>") {
+		t.Errorf("the chat wasn't told about the task: %q", prompt)
+	}
+	if got := raw(s).TodoChat(td.ID); len(got) != 2 || got[0].CreatedBy != 42 || got[1].Content != "hi" {
+		t.Fatalf("saved task chat: %+v", got)
+	}
+
+	// A task of another project, named with this one.
+	other, err := raw(s).CreateProject(model.Project{ID: store.NewID(), Name: "other", Path: t.TempDir(), DefaultBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kinds, texts := runnerChatTurn(t, srv, "42", map[string]any{"project": other.ID, "todo": td.ID}); kinds[len(kinds)-1] != "error" || !strings.Contains(texts[len(texts)-1], "no task with that id") {
+		t.Fatalf("task chat with the wrong project: %v %q", kinds, texts)
+	}
+
+	// No such project: said plainly, with no advice to link it.
+	kinds, texts = runnerChatTurn(t, srv, "42", map[string]any{"project": "nope"})
+	if last := texts[len(texts)-1]; kinds[len(kinds)-1] != "error" || last != "this runner has no project with that id" {
+		t.Fatalf("chat in an unknown project: %v %q", kinds, texts)
+	}
+	// The hub's own chat in a hub project this runner has no clone of.
+	kinds, texts = runnerChatTurn(t, srv, "42", map[string]any{"project": "nope", "hub": true})
+	if kinds[len(kinds)-1] != "error" || !strings.Contains(texts[len(texts)-1], "Project settings → Runners") {
+		t.Fatalf("hub chat in an unlinked project: %v %q", kinds, texts)
+	}
+	// A clone of a hub project is reached only by the hub's id, as before.
+	clone, err := raw(s).CreateProject(model.Project{ID: store.NewID(), Name: "web", Path: t.TempDir(), DefaultBranch: "main", HubProjectID: "hp1", HubCheckout: model.HubCloned})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kinds, texts := runnerChatTurn(t, srv, "42", map[string]any{"project": clone.ID}); kinds[len(kinds)-1] != "error" {
+		t.Fatalf("chat in a hub clone by the runner's id: %v %q", kinds, texts)
+	}
+	n := len(raw(s).ProjectChat(clone.ID))
+	if kinds, texts := runnerChatTurn(t, srv, "42", map[string]any{"project": "hp1", "hub": true, "mode": model.ChatModeAcceptEdits}); kinds[len(kinds)-1] != "done" {
+		t.Fatalf("hub chat in its linked project: %v %q", kinds, texts)
+	}
+	if dir, _ := seen.seen(); dir != clone.Path {
+		t.Errorf("hub chat ran in %q, want the clone %q", dir, clone.Path)
+	}
+	if got := raw(s).ProjectChat(clone.ID); len(got) != n {
 		t.Errorf("the runner saved the hub's conversation: %+v", got)
 	}
 }

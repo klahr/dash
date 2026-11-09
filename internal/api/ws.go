@@ -96,6 +96,9 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			Review   bool                `json:"review"` // with "todo": the turn reviews it, locking its status
 			Runner   string              `json:"runner"` // chat on a hub that doesn't run Claude: which of the caller's runners
 			Mode     string              `json:"mode"`   // a hub's project chat on its runner: the hub project's permission mode
+			// Hub marks a hub's own chat on its runner (runnerChat): Project
+			// and Todo are the hub's ids, not the runner's.
+			Hub bool `json:"hub"`
 		}
 		if err := conn.ReadJSON(&msg); err != nil {
 			cancelTurn() // denies whatever is waiting for approval
@@ -128,6 +131,32 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		chatter := s.Chat
 		// A chat for this runner's owner, asked through the hub.
 		forHub := auth.FromHub(r.Context())
+		// ownViaHub: a chat in one of this runner's own projects (made or
+		// added here, which the hub keeps no record of), opened through the
+		// hub at /peer/{runner}/…. It runs and is saved here, as on this
+		// runner, where the hub's UI reads it back from.
+		ownViaHub := false
+		if forHub {
+			if err := s.forOwner(r); err != nil {
+				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
+				continue
+			}
+			if msg.Project != "" {
+				if _, linked := sv.hubProject(msg.Project); !linked {
+					if msg.Hub {
+						// The hub's project, which this runner has no checkout of.
+						send(agent.ChatDelta{Kind: "error", Text: "this runner has no clone of that project: link the project to it in Project settings → Runners"})
+						continue
+					}
+					if _, err := sv.ownProject(msg.Project); err != nil {
+						send(agent.ChatDelta{Kind: "error", Text: "this runner has no project with that id"})
+						continue
+					}
+					forHub, ownViaHub = false, true
+					user = hubUser(r) // the runner's owner, checked above
+				}
+			}
+		}
 		var runnerDiff, runnerBranch string // a hub task's changes, as this runner has them
 		switch {
 		case forHub:
@@ -135,20 +164,12 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			// scratch directory, the runner's clone of the hub's project or
 			// its worktree of the hub's task, and the hub keeps the
 			// conversation (with the task's context already in it).
-			if err := s.forOwner(r); err != nil {
-				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
-				continue
-			}
 			if msg.Todo != "" && msg.Project == "" {
 				send(agent.ChatDelta{Kind: "error", Text: "the hub didn't say which project the task is in"})
 				continue
 			}
 			if msg.Project != "" {
-				p, ok := sv.hubProject(msg.Project)
-				if !ok {
-					send(agent.ChatDelta{Kind: "error", Text: "this runner has no clone of that project: link the project to it in Project settings → Runners"})
-					continue
-				}
+				p, _ := sv.hubProject(msg.Project) // found above
 				dir, mode, pid = p.Path, p.ChatPermissionMode, p.ID
 				if validChatMode(msg.Mode) {
 					mode = msg.Mode // the hub's project settings are the ones its users edit
@@ -195,6 +216,9 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			dir, mode, pid = p.Path, p.ChatPermissionMode, p.ID
+			if ownViaHub && msg.Mode != "" && validChatMode(msg.Mode) {
+				mode = msg.Mode
+			}
 			save = func(msgs []agent.ChatMessage) error {
 				prev, _ := sv.data.ProjectChat(p.ID)
 				return sv.data.SetProjectChat(p.ID, authored(prev, msgs, user))
@@ -222,6 +246,9 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		}
 		if msg.Todo != "" && !forHub {
 			t, err := sv.data.GetTodo(msg.Todo)
+			if err == nil && ownViaHub && t.ProjectID != msg.Project {
+				err = errors.New("this runner has no task with that id in that project")
+			}
 			if err != nil {
 				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 				continue
@@ -229,6 +256,9 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			var diff string
 			if p, err := sv.data.GetProject(t.ProjectID); err == nil {
 				dir, mode = p.Path, p.ChatPermissionMode
+				if ownViaHub && msg.Mode != "" && validChatMode(msg.Mode) {
+					mode = msg.Mode
+				}
 				onRunner := false
 				if s.todoChatOnRunner(p, t) {
 					// Claude runs on the caller's runner: the one that ran the

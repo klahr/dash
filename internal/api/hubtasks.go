@@ -86,6 +86,17 @@ func (sv *service) hubProject(hpid string) (model.Project, bool) {
 	return model.Project{}, false
 }
 
+// ownProject is the runner's own project pid: made or added on this
+// runner, not a checkout of a hub's project. The hub keeps no record of it
+// and reaches it through /peer/{runner}/… by this runner's id.
+func (sv *service) ownProject(pid string) (model.Project, error) {
+	p, err := sv.data.GetProject(pid)
+	if err == nil && p.LinkedFromHub() {
+		return model.Project{}, fmt.Errorf("%w: project %s", store.ErrNotFound, pid)
+	}
+	return p, err
+}
+
 // hubTodo is the runner's copy of the hub's task htid, in a linked project.
 func (sv *service) hubTodo(htid string) (model.Todo, bool) {
 	if htid == "" {

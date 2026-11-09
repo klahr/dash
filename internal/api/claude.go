@@ -261,6 +261,13 @@ func (s *Server) onlyForOwner(r *http.Request, does string) error {
 	return nil
 }
 
+// hubUser is the hub's user a request from the hub is made for (0 if it
+// doesn't say): after forOwner, this runner's owner.
+func hubUser(r *http.Request) int64 {
+	uid, _ := strconv.ParseInt(r.Header.Get(tunnel.UserHeader), 10, 64)
+	return uid
+}
+
 // hubClaude handles POST /api/hub/claude/{kind}: one of Claude's short
 // calls for this runner's owner, {"text"} in and out.
 func (s *Server) hubClaude(w http.ResponseWriter, r *http.Request) {
@@ -355,7 +362,7 @@ func (c runnerChat) Stream(ctx context.Context, _ string, history []agent.ChatMe
 	_ = conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 	req := map[string]any{"type": "send", "messages": history}
 	if c.project != "" {
-		req["project"], req["mode"] = c.project, c.mode
+		req["project"], req["mode"], req["hub"] = c.project, c.mode, true
 	}
 	if c.todo != "" {
 		req["todo"] = c.todo
