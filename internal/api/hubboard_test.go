@@ -86,7 +86,7 @@ func TestRunnerChatBoardToolsActOnTheHub(t *testing.T) {
 func TestRunnerTaskReportsIssuesToTheHub(t *testing.T) {
 	hub, runner, creds, linked, _ := hubWithRunner(t)
 	h := runner.BoardMCP()
-	rp, err := raw(runner).CreateProject(model.Project{Name: "clone", HubProjectID: linked.ID})
+	rp, err := raw(runner).CreateProject(model.Project{Name: "clone", HubProjectID: linked.ID, HubCheckout: model.HubCloned})
 	if err != nil {
 		t.Fatal(err)
 	}

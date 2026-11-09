@@ -92,8 +92,11 @@ func init() {
 
 		// The repositories in the projects directory, for the runner's
 		// owner to pick its projects from; checked in repos.go (only
-		// paths it lists, inside -projects, never under hub/).
+		// paths it lists, inside -projects, not the old hub/ clones).
 		"GET /api/hub/repos", "POST /api/hub/repos",
+		// The runner owner's GitHub repositories, through its gh, for the
+		// hub's new-project form; checked in ghrepos.go.
+		"GET /api/hub/github-repos", "POST /api/hub/github-repos",
 	} {
 		hubRoutes[p] = true
 	}

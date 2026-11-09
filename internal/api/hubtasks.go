@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/release"
 	"github.com/klahr/dash/internal/scan"
 	"github.com/klahr/dash/internal/store"
 )
@@ -26,10 +29,12 @@ import (
 // runner's tunnel, and the runner checks everything it is sent:
 //
 //   - a link names the hub's org the runner was registered for and a
-//     network git remote; the runner clones it into <projects root>/hub/,
-//     a folder it picks itself;
-//   - a task names a project linked that way (and still inside the
-//     projects root); anything else is refused and logged;
+//     network git remote; the runner clones it into <projects root>/<repo>,
+//     a folder it picks itself (never a path the hub sends), or adopts a
+//     clone of the same remote already there; a folder holding anything
+//     else is never touched (the next free name, <repo>-2, … is used);
+//   - a task names a project linked that way, by the hub's id, which the
+//     runner keeps with its checkout; anything else is refused and logged;
 //   - the hub reaches only tasks it sent, by its own ids;
 //   - a scan names a linked project; its flags are checked (scan.Job.Check)
 //     and its worktree is a throwaway one under the runner's scans folder.
@@ -63,17 +68,15 @@ func (s *Server) fromHub(w http.ResponseWriter, r *http.Request) (*service, bool
 	return s.service(w, r)
 }
 
-// hubRoot is where a runner clones its hub's projects.
-func (s *Server) hubRoot() string { return filepath.Join(s.ProjectRoot, "hub") }
-
-// hubProject is the runner's clone of the hub's project hpid, if the hub
-// linked it and it is inside the projects root.
+// hubProject is the runner's checkout of the hub's project hpid, if the
+// hub linked it: found by the hub's id, wherever it is (see
+// model.Project.LinkedFromHub).
 func (sv *service) hubProject(hpid string) (model.Project, bool) {
 	if hpid == "" {
 		return model.Project{}, false
 	}
 	for _, p := range sv.data.ListProjects() {
-		if p.HubProjectID == hpid && within(sv.s.hubRoot(), p.Path) {
+		if p.HubProjectID == hpid && p.LinkedFromHub() {
 			return p, true
 		}
 	}
@@ -89,7 +92,7 @@ func (sv *service) hubTodo(htid string) (model.Todo, bool) {
 		if t.HubTodoID != htid {
 			continue
 		}
-		if p, err := sv.data.GetProject(t.ProjectID); err == nil && p.HubProjectID != "" && within(sv.s.hubRoot(), p.Path) {
+		if p, err := sv.data.GetProject(t.ProjectID); err == nil && p.LinkedFromHub() {
 			return t, true
 		}
 	}
@@ -167,7 +170,7 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch})
+		writeJSON(w, http.StatusOK, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch, Path: p.Path})
 		return
 	}
 	if err := gitops.CheckRemote(req.RemoteURL); err != nil {
@@ -178,45 +181,54 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: this runner has no projects root (-projects)", errBadRequest))
 		return
 	}
-	slug := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(req.Name), "-"), "-")
-	if slug == "" {
-		slug = "project"
-	}
-	path := filepath.Join(s.hubRoot(), slug)
-	if _, err := os.Stat(path); err == nil {
-		path += "-" + strings.Trim(slugRe.ReplaceAllString(strings.ToLower(hpid), "-"), "-")
-	}
-	if !within(s.hubRoot(), path) || filepath.Clean(path) == filepath.Clean(s.hubRoot()) {
-		writeErr(w, fmt.Errorf("%w: bad project name", errBadRequest))
-		return
-	}
-	id := store.NewID()
 	ctx := r.Context()
-	if err := s.Git.Clone(ctx, id, req.RemoteURL, path); err != nil {
-		writeErr(w, errors.Join(errBadRequest, err))
+	hubLinks.Lock() // two links never pick the same free folder
+	defer hubLinks.Unlock()
+	if p, ok := sv.hubProject(hpid); ok { // linked while this waited
+		writeJSON(w, http.StatusOK, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch, Path: p.Path})
 		return
 	}
-	branch := req.DefaultBranch
-	if branch == "" || !s.Git.HasBranch(ctx, id, path, branch) {
-		if b := s.Git.MainBranch(ctx, id, path); b != "" {
-			branch = b
+	place, err := s.hubPlace(ctx, sv, hpid, req.Name, req.RemoteURL)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	path, id := place.Path, store.NewID()
+	if place.Own != nil {
+		id = place.Own.ID
+	}
+	how := model.HubAdopted
+	if !place.Adopt {
+		how = model.HubCloned
+		if err := s.Git.Clone(ctx, id, req.RemoteURL, path); err != nil {
+			writeErr(w, errors.Join(errBadRequest, err))
+			return
 		}
 	}
-	if branch == "" {
-		branch = "main"
-	}
+	branch := s.hubBranch(ctx, id, path, req.DefaultBranch)
 	if err := s.Git.InitRepo(ctx, id, path, branch); err != nil { // an empty remote gets a first commit
 		writeErr(w, err)
 		return
 	}
-	np := model.Project{
-		ID: id, Name: req.Name, Path: path, DefaultBranch: branch, RemoteURL: s.Git.RemoteURL(ctx, id, path),
-		MergeMode: mode, MergeGreenPRs: req.MergeGreenPRs, MaxAutoFixes: model.DefaultMaxAutoFixes, HubProjectID: hpid,
-		TaskInstructions: req.TaskInstructions,
+	link := func(x *model.Project) {
+		x.HubProjectID, x.HubCheckout = hpid, how
+		x.DefaultBranch, x.RemoteURL = branch, s.Git.RemoteURL(ctx, id, path)
+		x.TaskInstructions, x.MergeMode, x.MergeGreenPRs = req.TaskInstructions, mode, req.MergeGreenPRs
+		x.MergeModeSet = false
+		commands(x)
+		review(x)
 	}
-	commands(&np)
-	review(&np)
-	p, err := sv.data.CreateProject(np)
+	var p model.Project
+	status := http.StatusCreated
+	if place.Own != nil {
+		// The runner's own project in that folder becomes the hub's.
+		p, err = sv.data.UpdateProject(id, func(x *model.Project) error { link(x); return nil })
+		status = http.StatusOK
+	} else {
+		np := model.Project{ID: id, Name: req.Name, Path: path, MaxAutoFixes: model.DefaultMaxAutoFixes, TagFormat: release.DefaultFormat}
+		link(&np)
+		p, err = sv.data.CreateProject(np)
+	}
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -225,8 +237,112 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	slog.Info("runner: hub linked a project", "name", p.Name, "path", p.Path)
-	writeJSON(w, http.StatusCreated, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch})
+	slog.Info("runner: hub linked a project", "name", p.Name, "path", p.Path, "checkout", how)
+	writeJSON(w, status, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch, Path: p.Path, Adopted: place.Adopt})
+}
+
+// hubLinks serialises linking, which picks folders.
+var hubLinks sync.Mutex
+
+// maxHubSuffix bounds the names tried for a hub's project: <repo>,
+// <repo>-2, … <repo>-<maxHubSuffix>.
+const maxHubSuffix = 100
+
+// hubPlacement is where a hub's project goes on this runner.
+type hubPlacement struct {
+	Path  string
+	Adopt bool           // a clone of the same remote is there already
+	Own   *model.Project // the runner's own project in that folder, to link
+}
+
+// hubPlace picks the folder for the hub's project hpid with remote: the
+// projects root's <repo> (the remote's last path part, else the project's
+// name), else the first of <repo>-2, <repo>-3, … that is free or holds a
+// clone of the same remote. A folder holding anything else (another
+// repository, files, a symlink, a clone already linked to another of the
+// hub's projects) is never used. The path is always a direct child of the
+// projects root; nothing the hub sends is a path.
+func (s *Server) hubPlace(ctx context.Context, sv *service, hpid, name, remote string) (hubPlacement, error) {
+	if s.ProjectRoot == "" {
+		return hubPlacement{}, fmt.Errorf("%w: this runner has no projects root (-projects)", errBadRequest)
+	}
+	root := filepath.Clean(s.ProjectRoot)
+	base := folderName(gitops.RemoteRepo(remote))
+	if base == "" {
+		base = folderName(name)
+	}
+	if base == "" {
+		base = "project"
+	}
+	projects := map[string]model.Project{}
+	for _, p := range sv.data.ListProjects() {
+		projects[filepath.Clean(p.Path)] = p
+	}
+	for i := 1; i <= maxHubSuffix; i++ {
+		folder := base
+		if i > 1 {
+			folder = fmt.Sprintf("%s-%d", base, i)
+		}
+		path := filepath.Join(root, folder)
+		if !within(root, path) || path == root || filepath.Dir(path) != root {
+			return hubPlacement{}, fmt.Errorf("%w: bad project name", errBadRequest)
+		}
+		own, isProject := projects[path]
+		fi, err := os.Lstat(path)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			if !isProject { // a project whose folder is gone keeps its name
+				return hubPlacement{Path: path}, nil
+			}
+			continue
+		case err != nil || !fi.IsDir() || !isRepo(path):
+			continue // a file, a symlink, a plain folder: not ours to touch
+		case !gitops.SameRemote(s.Git.RemoteURL(ctx, "", path), remote):
+			continue // another repository
+		case isProject && own.HubProjectID != "" && own.HubProjectID != hpid:
+			continue // a clone of the same remote, already the hub's for another project
+		case isProject:
+			return hubPlacement{Path: path, Adopt: true, Own: &own}, nil
+		}
+		return hubPlacement{Path: path, Adopt: true}, nil
+	}
+	return hubPlacement{}, fmt.Errorf("%w: no free folder for %s in %s (%s through %s-%d are taken)", errBadRequest, base, root, base, base, maxHubSuffix)
+}
+
+var folderRe = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+// folderName makes s a safe folder name: letters, digits, '.', '_' and
+// '-', not starting with '.' or '-' ("" when nothing is left).
+func folderName(s string) string {
+	return strings.TrimLeft(strings.Trim(folderRe.ReplaceAllString(strings.TrimSpace(s), "-"), "-"), ".-")
+}
+
+// hubBranch is the default branch of the runner's checkout at path: want
+// (the hub's), made from origin's when the checkout lacks it, else the
+// checkout's main line, else "main".
+func (s *Server) hubBranch(ctx context.Context, id, path, want string) string {
+	if want != "" && !s.Git.HasBranch(ctx, id, path, want) && s.Git.RemoteHasBranch(ctx, id, path, want) {
+		_, _ = s.Git.EnsureBranch(ctx, id, path, want, "")
+	}
+	if want == "" || !s.Git.HasBranch(ctx, id, path, want) {
+		if b := s.Git.MainBranch(ctx, id, path); b != "" {
+			return b
+		}
+	}
+	if want == "" {
+		want = "main"
+	}
+	return want
+}
+
+// LegacyHubClone reports whether a project with a HubProjectID was its
+// hub's under the old rule: cloned under <projectRoot>/hub/. See
+// store.BackfillHubCheckouts.
+func LegacyHubClone(projectRoot string) func(model.Project) bool {
+	hub := filepath.Join(projectRoot, "hub")
+	return func(p model.Project) bool {
+		return projectRoot != "" && within(hub, p.Path) && filepath.Clean(p.Path) != hub
+	}
 }
 
 // greenOn is model.Project.MergesGreenPRs for a MergeGreenPRs setting.
@@ -240,7 +356,7 @@ func (s *Server) hubUnlink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p, ok := sv.hubProject(r.PathValue("hpid")); ok {
-		if _, err := sv.data.UpdateProject(p.ID, func(x *model.Project) error { x.HubProjectID = ""; return nil }); err != nil {
+		if _, err := sv.data.UpdateProject(p.ID, func(x *model.Project) error { x.HubProjectID, x.HubCheckout = "", ""; return nil }); err != nil {
 			writeErr(w, err)
 			return
 		}

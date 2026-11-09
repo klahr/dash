@@ -1110,8 +1110,181 @@ function openNewProject(mode) {
   f.machine.closest(".field").hidden = !multi() && !isHub();
   f.machine.replaceChildren(...machines.map((m) => h("option", { value: m.name, selected: m.name === pick },
     m.local ? `${m.name} (this computer)` : `${m.name}${state.runners?.find((r) => r.name === m.name)?.mine ? " (yours)" : ""}`)));
-  setNewProjectMode(mode === "existing" ? "existing" : "new");
+  $("#new-project-machine-label").textContent = isHub() ? "Runner" : "Computer";
+  $("#new-project-mode").hidden = isHub();
+  $("#new-project-hub-mode").hidden = !isHub();
+  if (isHub()) setHubMode("gh");
+  else setNewProjectMode(mode === "existing" ? "existing" : "new");
   $("#new-project-sheet").showModal();
+}
+
+// ---- New project on a hub: a git remote its runners clone, never a folder.
+// The repository comes from the user's GitHub repositories (listed with the
+// picked runner's gh), a new one (created with that gh), or a pasted URL.
+// The runner it is linked to clones it into <projects>/<repo>, or adopts a
+// clone of the same remote already there.
+const hubMode = () => $("#new-project-hub-mode [aria-selected=true]")?.dataset.mode || "gh";
+const ghState = { cache: new Map(), pick: null, loading: "" };
+// The runner picked in the sheet, from state.runners.
+function sheetRunner() {
+  const name = $("#new-project").machine.value;
+  return state.runners?.find((r) => r.name === name) || null;
+}
+
+function setHubMode(mode) {
+  const f = $("#new-project");
+  for (const b of $$("#new-project-hub-mode button")) b.setAttribute("aria-selected", String(b.dataset.mode === mode));
+  $("#new-project-title").textContent = "New project";
+  $("#new-project-submit").textContent = mode === "create" ? "Create repository and project" : "Create project";
+  for (const id of ["new-project-clone-row", "new-project-clone-hint", "new-project-path-row"]) $(`#${id}`).hidden = true;
+  f.path.required = f.clone_pick.required = false;
+  $("#new-project-gh").hidden = mode !== "gh";
+  $("#new-project-url-row").hidden = mode !== "url";
+  f.remote_url.required = mode === "url";
+  $("#new-project-github-row").hidden = mode !== "create";
+  f.github.required = mode === "create";
+  f.github.placeholder = "name, or owner/name for an organization";
+  $("#new-project-public-row").hidden = mode !== "create";
+  $("#new-project-hub-hint").hidden = false;
+  f.name.required = false;
+  $("#new-project-name-label").replaceChildren("Name ", h("em", {}, "optional"));
+  syncHubMode();
+  if (mode === "gh") loadGitHubRepos().catch(fail);
+}
+for (const b of $$("#new-project-hub-mode button")) b.addEventListener("click", () => setHubMode(b.dataset.mode));
+
+// syncHubMode updates what depends on the fields: the name's default and
+// the GitHub hint.
+function syncHubMode() {
+  const f = $("#new-project");
+  const mode = hubMode(), r = sheetRunner();
+  const fromURL = (u) => (u || "").trim().replace(/\/+$/, "").replace(/\.git$/, "").split(/[/:]/).pop() || "";
+  f.name.placeholder = mode === "gh" ? ghState.pick?.name || "the repository's name"
+    : mode === "create" ? fromURL(f.github.value) || "the repository's name"
+      : fromURL(f.remote_url.value) || "the repository's name";
+  const hint = $("#new-project-github-hint");
+  hint.hidden = mode !== "create";
+  hint.textContent = r && !r.mine ? `Only ${r.name}'s owner can create repositories with its GitHub login. Pick one of your runners, or paste a remote URL.`
+    : `A new empty ${f.github_public.checked ? "public" : "private"} repository is created on GitHub with ${r?.name || "the runner"}'s gh, then cloned there.`;
+}
+$("#new-project").remote_url.addEventListener("input", syncHubMode);
+$("#new-project").github_public.addEventListener("change", () => { if (isHub()) syncHubMode(); });
+
+// The GitHub mark (github.com/logos), inline: no request for an icon.
+const GH_MARK = "M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.69 5.4-5.25 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z";
+const ghMark = (cls = "gh-mark") => {
+  const t = document.createElement("template");
+  t.innerHTML = `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${GH_MARK}" fill="currentColor"/></svg>`;
+  return t.content.firstChild;
+};
+// An owner's avatar from GitHub, or the mark when it doesn't load.
+const ghAvatar = (owner) => {
+  const img = h("img", { class: "gh-avatar", alt: "", width: 20, height: 20, loading: "lazy", referrerPolicy: "no-referrer",
+    src: `https://github.com/${encodeURIComponent(owner)}.png?size=40` });
+  img.addEventListener("error", () => img.replaceWith(ghMark("gh-avatar gh-mark")), { once: true });
+  return img;
+};
+
+// loadGitHubRepos lists the user's repositories with the picked runner's
+// gh (once per runner while the page is open).
+async function loadGitHubRepos(refresh = false) {
+  const r = sheetRunner(), hint = $("#gh-hint");
+  ghState.pick = null;
+  syncHubMode();
+  if (!r) { $("#gh-list").replaceChildren(); hint.textContent = noRunnerOnline; return; }
+  if (!r.mine) {
+    $("#gh-list").replaceChildren();
+    hint.textContent = `Only ${r.name}'s owner can list repositories with its GitHub login. Pick one of your runners, or paste a remote URL.`;
+    return;
+  }
+  if (!refresh && ghState.cache.has(r.id)) { renderGitHubRepos(); return; }
+  ghState.loading = r.id;
+  $("#gh-list").replaceChildren(h("div", { class: "gh-empty" }, `Asking ${r.name}'s gh for your repositories…`));
+  hint.textContent = "";
+  try {
+    ghState.cache.set(r.id, await api("GET", `/api/runners/${encodeURIComponent(r.id)}/github-repos`, null, ""));
+  } catch (e) {
+    if (sheetRunner()?.id !== r.id) return;
+    $("#gh-list").replaceChildren();
+    hint.textContent = `${e.message || e} You can paste a remote URL instead.`;
+    return;
+  } finally {
+    if (ghState.loading === r.id) ghState.loading = "";
+  }
+  if (sheetRunner()?.id === r.id && hubMode() === "gh") renderGitHubRepos();
+}
+
+// renderGitHubRepos shows the cached list, filtered, grouped by owner. A
+// repository that already has a project is marked and can't be picked.
+const GH_SHOWN = 200;
+function renderGitHubRepos() {
+  const r = sheetRunner(), res = r && ghState.cache.get(r.id);
+  if (!res) return;
+  const q = $("#gh-filter").value.trim().toLowerCase();
+  const all = res.repos || [];
+  const hits = all.filter((x) => !q || x.nameWithOwner.toLowerCase().includes(q) || (x.description || "").toLowerCase().includes(q));
+  const rows = [];
+  let owner = null;
+  for (const x of hits.slice(0, GH_SHOWN)) {
+    if (x.owner !== owner) {
+      owner = x.owner;
+      rows.push(h("div", { class: "gh-owner", role: "presentation" }, ghAvatar(owner), h("span", {}, owner), owner === res.user ? h("em", {}, "you") : null));
+    }
+    const picked = ghState.pick?.nameWithOwner === x.nameWithOwner;
+    const hints = [x.isPrivate && "private", x.isFork && "fork", x.isArchived && "archived", x.updatedAt && `updated ${agoText(x.updatedAt)}`].filter(Boolean);
+    rows.push(h("button", {
+      type: "button", class: `gh-repo${x.linked ? " linked" : ""}`, role: "option", "aria-selected": String(picked), "aria-disabled": x.linked ? "true" : null,
+      title: x.linked ? `Already the project ${x.linked}` : x.url || x.nameWithOwner,
+      onclick: () => { if (x.linked) return; ghState.pick = x; renderGitHubRepos(); syncHubMode(); },
+    },
+    ghMark(),
+    h("span", { class: "gh-repo-text" },
+      h("span", { class: "gh-repo-title" }, h("span", { class: "gh-repo-owner" }, `${x.owner}/`), h("strong", {}, x.name)),
+      x.description ? h("span", { class: "gh-repo-desc" }, x.description) : null,
+      h("span", { class: "gh-repo-meta" }, ...hints.map((t) => h("span", {}, t)), x.linked ? h("span", { class: "gh-linked" }, `project: ${x.linked}`) : null))));
+  }
+  $("#gh-list").replaceChildren(...(rows.length ? rows : [h("div", { class: "gh-empty" }, all.length ? "No repository matches." : "No repositories on GitHub yet: create one instead.")]));
+  const more = hits.length - GH_SHOWN;
+  $("#gh-hint").textContent = more > 0 ? `${more} more; type to narrow the list.`
+    : all.length ? `${all.length} ${all.length === 1 ? "repository" : "repositories"} from ${r.name}'s gh (signed in as ${res.user}).` : "";
+}
+$("#gh-filter").addEventListener("input", renderGitHubRepos);
+$("#gh-filter").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); $(".gh-repo:not(.linked)", $("#gh-list"))?.click(); }
+});
+
+// submitHubProject makes the hub's project from the sheet and links it to
+// the picked runner, which clones (or adopts) it.
+async function submitHubProject(form, body) {
+  const r = sheetRunner();
+  if (!r) throw new Error(noRunnerOnline);
+  const mode = hubMode();
+  let remote = "", name = (body.name || "").trim();
+  if (mode === "gh") {
+    const x = ghState.pick;
+    if (!x) throw new Error("Pick a repository from the list.");
+    remote = `https://github.com/${x.nameWithOwner}.git`;
+    name ||= x.name;
+  } else if (mode === "create") {
+    if (!r.mine) throw new Error(`Only ${r.name}'s owner can create repositories with its GitHub login.`);
+    toast("Creating GitHub repository…");
+    const repo = await api("POST", `/api/runners/${encodeURIComponent(r.id)}/github-repos`, { name: body.github.trim(), public: !!body.github_public }, "");
+    remote = `https://github.com/${repo.name}.git`;
+    name ||= repo.name.split("/").pop();
+    ghState.cache.delete(r.id);
+  } else {
+    remote = (body.remote_url || "").trim();
+    name ||= remote.replace(/\/+$/, "").replace(/\.git$/, "").split(/[/:]/).pop();
+  }
+  toast(`Linking to ${r.name}…`);
+  const p = await api("POST", "/api/projects", { name, remote_url: remote, runners: [r.id],
+    run_command: body.run_command, test_command: body.test_command, deploy_command: body.deploy_command }, "");
+  form.reset();
+  ghState.pick = null;
+  await loadProjects();
+  await selectProject(state.projects.find((x) => x.id === p.id && !x.prefix));
+  $("#new-project-sheet").close();
+  toast(`Created ${p.name}; ${r.name} clones it into its projects folder`, { tone: "ok" });
 }
 
 // isHub reports whether this dashboard is a hub: it has runners (or could),
@@ -1143,8 +1316,8 @@ function setNewProjectMode(mode) {
   $("#new-project-title").textContent = existing ? "Add existing clone" : "New project";
   $("#new-project-submit").textContent = existing ? "Add project" : "Create project";
   $("#new-project-github-row").hidden = existing;
-  $("#new-project-share-row").hidden = existing || !isHub();
-  if (existing) f.share.checked = false;
+  $("#new-project-gh").hidden = $("#new-project-url-row").hidden = $("#new-project-hub-hint").hidden = true;
+  f.remote_url.required = false;
   f.name.required = !existing;
   $("#new-project-name-label").replaceChildren("Name", ...(existing ? [" ", h("em", {}, "optional")] : []));
   $("#new-project-path-label").replaceChildren(...(existing ? ["Path of the clone"] : ["Folder ", h("em", {}, "optional")]));
@@ -1202,23 +1375,23 @@ function syncClonePick() {
   f.name.placeholder = picked || (other ? "the folder's name" : "");
 }
 $("#new-project").clone_pick.addEventListener("change", syncClonePick);
-$("#new-project").machine.addEventListener("change", () => { if (newProjectMode() === "existing") loadClones().catch(fail); });
+$("#new-project").machine.addEventListener("change", () => {
+  if (isHub()) { syncHubMode(); if (hubMode() === "gh") loadGitHubRepos().catch(fail); return; }
+  if (newProjectMode() === "existing") loadClones().catch(fail);
+});
 for (const b of $$("#new-project-mode button")) b.addEventListener("click", () => setNewProjectMode(b.dataset.mode));
 
 // The public toggle and hint only matter once a GitHub repository is named.
 function syncNewProjectGitHub() {
+  if (isHub()) return syncHubMode();
   const f = $("#new-project");
-  const share = newProjectMode() === "new" && f.share.checked;
   const named = newProjectMode() === "new" && !!f.github.value.trim();
-  $("#new-project-github-hint").hidden = $("#new-project-public-row").hidden = !named || share;
-  $("#new-project-share-hint").hidden = !share;
-  // A shared project is an existing GitHub repository, cloned on its runners.
-  $("#new-project-path-row").hidden = share || (newProjectMode() === "existing" && f.clone_pick.value !== OTHER_CLONE);
-  f.github.required = share;
-  f.github.placeholder = share ? "owner/name of an existing repository" : "name or owner/name";
+  $("#new-project-github-hint").hidden = $("#new-project-public-row").hidden = !named;
+  $("#new-project-path-row").hidden = newProjectMode() === "existing" && f.clone_pick.value !== OTHER_CLONE;
+  f.github.required = false;
+  f.github.placeholder = "name or owner/name";
 }
 $("#new-project").github.addEventListener("input", syncNewProjectGitHub);
-$("#new-project").share.addEventListener("change", syncNewProjectGitHub);
 
 // A project's image icon, or its initial on its color.
 const projectIcon = (p, el = h("span", { class: "side-project-icon", "aria-hidden": "true" })) => {
@@ -1413,7 +1586,7 @@ function setPicker(open) {
     ...g.projects.map(item)]);
   list.replaceChildren(...(state.projects.length ? items : [h("div", { class: "machine-empty" }, "No projects yet")]),
     h("button", { type: "button", role: "menuitem", class: "picker-new", onclick: () => { setPicker(false); openNewProject(); } }, "+ New project"),
-    h("button", { type: "button", role: "menuitem", class: "picker-new", onclick: () => { setPicker(false); openAddClone(); } }, "+ Add existing clone"));
+    isHub() ? null : h("button", { type: "button", role: "menuitem", class: "picker-new", onclick: () => { setPicker(false); openAddClone(); } }, "+ Add existing clone"));
   ($("button[aria-current=true]", list) || $("button", list))?.focus();
 }
 $("#project-switch").addEventListener("click", (e) => {
@@ -1469,26 +1642,11 @@ for (const menu of $$(".foot-menu")) {
 $("#new-project").addEventListener("submit", attempt(async (e) => {
   if (e.submitter?.value === "cancel") return;
   e.preventDefault();
-  const { machine, clone_pick: pick, share, ...body } = Object.fromEntries(new FormData(e.target));
+  const { machine, clone_pick: pick, ...body } = Object.fromEntries(new FormData(e.target));
+  if (isHub()) return submitHubProject(e.target, body);
   const m = state.machines?.find((x) => x.name === machine) || state.machines?.[0] || { name: "", prefix: "" };
   const existing = newProjectMode() === "existing";
   if (isHub() && !m.runner) throw new Error(noRunnerOnline);
-  if (share && !existing) {
-    // Shared: the hub's project, linked to the picked runner, which clones it.
-    const runner = state.runners.find((r) => r.name === m.name);
-    const repo = await api("GET", `/api/github/repo?name=${encodeURIComponent((body.github || "").trim())}`, null, m.prefix);
-    if (!repo.exists) throw new Error(`${body.github} isn't on GitHub (or ${m.name} can't see it). Create it first: uncheck "Share", create the project, then share the repository.`);
-    toast("Sharing…");
-    const p = await api("POST", "/api/projects", { name: body.name, github: repo.name, runners: [runner.id],
-      run_command: body.run_command, test_command: body.test_command, deploy_command: body.deploy_command }, "");
-    e.target.reset();
-    setNewProjectMode("new");
-    await loadProjects();
-    await selectProject(state.projects.find((x) => x.id === p.id && !x.prefix));
-    $("#new-project-sheet").close();
-    toast(`Shared ${p.name} with ${m.name}`);
-    return;
-  }
   body.github = existing ? "" : (body.github || "").trim();
   body.github_public = !existing && !!body.github_public;
   if (existing) {
@@ -3578,7 +3736,7 @@ async function showRunnerRepos(r) {
   const where = res.root ? h("code", {}, res.root) : "its projects directory";
   if (!res.repos.length) {
     box.replaceChildren(h("h4", {}, `Projects on ${r.name}`),
-      h("p", { class: "hint" }, "No git repositories to add in ", where, " (folders there and one level down; those already projects and the hub's clones in ", h("code", {}, "hub/"), " are left out)."),
+      h("p", { class: "hint" }, "No git repositories to add in ", where, " (folders there and one level down; those already projects, the hub's among them, and old clones in ", h("code", {}, "hub/"), " are left out)."),
       h("div", { class: "runner-repos-actions" }, close));
     return;
   }
@@ -5718,11 +5876,13 @@ function attach(p) {
 
 async function startProc(req, show = true) {
   const p = await api("POST", `/api/projects/${state.project.id}/processes`, { ...req, cols: term.cols, rows: term.rows });
+  // A runner's checkout of a hub project with uncommitted changes runs them.
+  if (p.warning) toast(p.warning, { tone: "paused", head: "Uncommitted changes", ms: 9000 });
   if (!show) return loadProcs();
   closeDetail();
   attach(p);
   showView("run");
-  if (p.url) toast(`Server starting at ${p.url}`);
+  if (p.url && !p.warning) toast(`Server starting at ${p.url}`);
 }
 
 // The Shell view is only a terminal: show the project's running shell, or open one.

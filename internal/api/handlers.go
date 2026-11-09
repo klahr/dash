@@ -42,7 +42,7 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 	ps := sv.data.ListProjects()
 	if auth.FromHub(r.Context()) {
 		// The hub has its own copy of the projects it linked to this runner.
-		ps = slices.DeleteFunc(ps, func(p model.Project) bool { return p.HubProjectID != "" })
+		ps = slices.DeleteFunc(ps, func(p model.Project) bool { return p.LinkedFromHub() })
 	}
 	out := make([]item, len(ps))
 	for i, p := range ps {
@@ -1323,6 +1323,15 @@ func (s *Server) startProcess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	warning := ""
+	if dir == p.Path && req.Kind != model.ProcPTY {
+		var err error
+		if warning, err = s.checkoutWarning(r.Context(), p, req.Preset == "deploy"); err != nil {
+			writeErr(w, err)
+			return
+		}
+	}
+
 	var proc model.Process
 	switch req.Kind {
 	case model.ProcWeb:
@@ -1338,7 +1347,33 @@ func (s *Server) startProcess(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, proc)
+	writeJSON(w, http.StatusCreated, struct {
+		model.Process
+		Warning string `json:"warning,omitempty"`
+	}{proc, warning})
+}
+
+// checkoutWarning looks at the folder of a project that guards its
+// checkout (a runner's checkout of its hub's project, maybe an adopted one
+// its owner also works in) before a command runs there: with uncommitted
+// changes to tracked files, a deploy is refused (it would ship work nobody
+// committed) and anything else runs with the returned warning.
+func (s *Server) checkoutWarning(ctx context.Context, p model.Project, refuse bool) (string, error) {
+	if !p.GuardsCheckout() {
+		return "", nil
+	}
+	files, err := s.Git.CheckoutChanges(ctx, p.ID, p.Path)
+	if err != nil || len(files) == 0 {
+		return "", nil
+	}
+	what := strings.Join(files, ", ")
+	if len(files) > 5 {
+		what = strings.Join(files[:5], ", ") + fmt.Sprintf(" and %d more", len(files)-5)
+	}
+	if refuse {
+		return "", fmt.Errorf("%w: %s has uncommitted changes (%s); commit or stash them before deploying from it", errBadRequest, p.Path, what)
+	}
+	return fmt.Sprintf("%s has uncommitted changes (%s): this runs with them, and tasks wait to land until they're committed or stashed", p.Path, what), nil
 }
 
 func (s *Server) stopProcess(w http.ResponseWriter, r *http.Request) {

@@ -543,6 +543,17 @@ func main() {
 	scans.ResumeInterrupted()
 	merges.Perms, merges.Kick = perms, todos.Kick
 
+	// A runner finds its hub's projects by id: the clones made under
+	// <projects>/hub/ before that stay where they are (with their worktrees
+	// and task branches), marked once as the hub's.
+	if runnerMode && apiSrv.ProjectRoot != "" {
+		if names, err := st.BackfillHubCheckouts(api.LegacyHubClone(apiSrv.ProjectRoot)); err != nil {
+			slog.Warn("hub projects under hub/", "err", err)
+		} else if len(names) > 0 {
+			slog.Info("the hub's projects under hub/ stay there, now found by id", "projects", names)
+		}
+	}
+
 	// Projects adopted with a default branch the repo doesn't have (e.g. "main"
 	// in a master repo) get the repo's real main line.
 	for _, p := range st.ListProjects() {

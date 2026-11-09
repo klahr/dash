@@ -804,6 +804,35 @@ func contains[T comparable](xs []T, x T) bool {
 	return false
 }
 
+// BackfillHubCheckouts is a runner's one-time upgrade to finding its hub's
+// projects by id (a HubProjectID with HubCheckout set). Before, a project
+// was the hub's when it had a HubProjectID and its folder was under
+// <projects>/hub/: those (legacy reports true for them) stay the hub's
+// where they are, worktrees and task branches and all, marked HubLegacy;
+// any other project with a HubProjectID wasn't the hub's under the old
+// rule and stays unmarked (and so isn't the hub's; nothing is cleared, so
+// a runner started once with another -projects folder loses nothing).
+// Projects with HubCheckout set are left alone, so running it again
+// changes nothing. It returns the names of the projects it marked.
+func (s *Store) BackfillHubCheckouts(legacy func(model.Project) bool) ([]string, error) {
+	var marked []string
+	for _, p := range s.ListProjects() {
+		if p.HubProjectID == "" || p.HubCheckout != "" || !legacy(p) {
+			continue
+		}
+		if _, err := s.UpdateProject(p.ID, func(x *model.Project) error {
+			if x.HubProjectID != "" && x.HubCheckout == "" {
+				x.HubCheckout = model.HubLegacy
+			}
+			return nil
+		}); err != nil {
+			return marked, err
+		}
+		marked = append(marked, p.Name)
+	}
+	return marked, nil
+}
+
 // DefaultMergeModes gives every project whose user didn't choose how its
 // work lands (model.Project.MergeModeSet) the default: pull requests for a
 // GitHub repository (when gh, whether this Dash has the GitHub CLI, or the

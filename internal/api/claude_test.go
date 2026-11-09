@@ -323,8 +323,8 @@ func TestHubRunsProjectChatOnTheUsersLinkedRunner(t *testing.T) {
 		t.Fatalf("chat without the runner's clone: %v %q", kinds, texts)
 	}
 
-	clone := filepath.Join(f.runner.hubRoot(), "web")
-	if _, err := raw(f.runner).CreateProject(model.Project{ID: store.NewID(), Name: "web", Path: clone, DefaultBranch: "main", HubProjectID: hp.ID}); err != nil {
+	clone := filepath.Join(f.runner.ProjectRoot, "web")
+	if _, err := raw(f.runner).CreateProject(model.Project{ID: store.NewID(), Name: "web", Path: clone, DefaultBranch: "main", HubProjectID: hp.ID, HubCheckout: model.HubCloned}); err != nil {
 		t.Fatal(err)
 	}
 	kinds, texts := turn(f.ownerWS)
@@ -386,8 +386,8 @@ func TestHubRunsTaskChatOnTheTasksRunner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clone := filepath.Join(f.runner.hubRoot(), "web")
-	rp, err := raw(f.runner).CreateProject(model.Project{ID: store.NewID(), Name: "web", Path: clone, DefaultBranch: "main", HubProjectID: hp.ID})
+	clone := filepath.Join(f.runner.ProjectRoot, "web")
+	rp, err := raw(f.runner).CreateProject(model.Project{ID: store.NewID(), Name: "web", Path: clone, DefaultBranch: "main", HubProjectID: hp.ID, HubCheckout: model.HubCloned})
 	if err != nil {
 		t.Fatal(err)
 	}

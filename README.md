@@ -73,8 +73,9 @@ too, the runner keeps its data apart from the hub's (`~/.local/share/dash-runner
 
 Projects live on runners. A **runner's own project** is a repository on that runner's disk; a
 **shared project** is a git remote linked to one or more runners, each of which clones it, and any
-of them can run its tasks (tick **Share it on the hub** in **New project**, and link more runners
-in its settings, **Runners**). See
+of them can run its tasks (**New project** on the hub: pick one of your GitHub repositories,
+create one, or paste a remote URL; each runner clones it into its projects folder, or adopts a
+clone of it already there; link more runners in its settings, **Runners**). See
 [Two kinds of projects](docs/several-computers.md#two-kinds-of-projects). A hub that kept projects
 of its own before this: see
 [Moving projects off the hub](docs/several-computers.md#moving-projects-off-the-hub).
@@ -84,9 +85,11 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 
 ## Your first task
 
-1. **Create a project.** Click **New project**, pick the runner it lives on (**Computer**), and
-   give it a name to start a new repository, or switch to **Existing clone** to add a git
-   repository you already have: pick one of the clones Dash finds in that runner's projects
+1. **Create a project.** On a hub, click **New project**, pick the **Runner**, then one of your
+   GitHub repositories (listed with that runner's `gh`, filterable), a new one, or a remote URL;
+   the runner clones it into its projects folder (or adopts a clone of it already there). On a
+   Dash of your own, give it a name to start a new repository, or switch to **Existing clone** to
+   add a git repository you already have: pick one of the clones Dash finds in the projects
    folder, or give its path (the name defaults to its folder's).
    **Add existing clone** in the project menu and the command palette opens it directly.
    A clone (existing or from GitHub) that has a favicon gets it as its project icon.

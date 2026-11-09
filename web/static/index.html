@@ -478,15 +478,26 @@
         <button type="button" role="tab" data-mode="new" aria-selected="true">New repository</button>
         <button type="button" role="tab" data-mode="existing" aria-selected="false">Existing clone</button>
       </div>
-      <label class="field" hidden><span>Computer</span><select name="machine"></select></label>
+      <!-- On a hub: a project is a git remote its runners clone, never a folder. -->
+      <div class="segmented" role="tablist" id="new-project-hub-mode" aria-label="Where the repository comes from" hidden>
+        <button type="button" role="tab" data-mode="gh" aria-selected="true">Your GitHub repos</button>
+        <button type="button" role="tab" data-mode="create" aria-selected="false">New GitHub repo</button>
+        <button type="button" role="tab" data-mode="url" aria-selected="false">Remote URL</button>
+      </div>
+      <label class="field" hidden><span id="new-project-machine-label">Computer</span><select name="machine"></select></label>
+      <div class="gh-browser" id="new-project-gh" hidden>
+        <input type="search" id="gh-filter" placeholder="Filter by name or description" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Filter repositories" aria-controls="gh-list">
+        <div class="gh-list" id="gh-list" role="listbox" aria-label="GitHub repositories" tabindex="-1"></div>
+        <p class="hint" id="gh-hint"></p>
+      </div>
+      <label class="field" id="new-project-url-row" hidden><span>Git remote</span><input name="remote_url" placeholder="https://github.com/owner/repo.git or git@github.com:owner/repo.git" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
       <label class="field" id="new-project-clone-row" hidden><span>Clone</span><select name="clone_pick"></select></label>
       <p class="hint" id="new-project-clone-hint" hidden></p>
       <label class="field" id="new-project-path-row"><span id="new-project-path-label">Folder <em>optional</em></span><input name="path" placeholder="Leave empty for a new folder named after the project" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
       <label class="field"><span id="new-project-name-label">Name</span><input name="name" required autocomplete="off" autofocus></label>
       <label class="field" id="new-project-github-row"><span>GitHub repository <em>optional</em></span><input name="github" placeholder="name or owner/name" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
-      <label class="toggle" id="new-project-share-row" hidden><input type="checkbox" name="share"><span>Share it on the hub: every runner linked to it can run its tasks</span></label>
-      <p class="hint" id="new-project-share-hint" hidden>Shared projects clone an existing GitHub repository on each runner linked to them (this one first; link more in Project settings → Runners). Unshared, it is this runner's own project.</p>
       <p class="hint" id="new-project-github-hint" hidden>A new private repository is created and pushed. If it already exists on GitHub, you can clone it instead.</p>
+      <p class="hint" id="new-project-hub-hint" hidden>Each runner linked to the project clones it into its projects folder as <code>&lt;projects&gt;/&lt;repo&gt;</code>, or uses a clone of the same repository already there. A folder holding anything else is left alone (the clone becomes <code>&lt;repo&gt;-2</code>).</p>
       <label class="toggle" id="new-project-public-row" hidden><input type="checkbox" name="github_public"><span>Make the new repository public</span></label>
       <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" placeholder="npm run dev -- --port $PORT" spellcheck="false"></label>
       <label class="field"><span>Test command</span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>

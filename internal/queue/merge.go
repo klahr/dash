@@ -41,7 +41,9 @@ var ErrMergeQueueFull = errors.New("merge queue is full")
 //     0–3 run again on top of it (see landPushed)
 //
 // When landing would overwrite uncommitted changes in the project's folder,
-// the job waits until those files are committed or stashed (see wait).
+// the job waits until those files are committed or stashed (see wait). In
+// a runner's checkout of its hub's project, any uncommitted change to a
+// tracked file there makes it wait (see checkoutClean).
 //
 // The same worker also reverts merged todos and runs cleanups, since those
 // move the default branch too.
@@ -360,6 +362,9 @@ func (m *MergeQueue) landPushed(ctx context.Context, p model.Project, fn func(di
 		return "", err
 	}
 	defer unlock()
+	if err := m.checkoutClean(ctx, p); err != nil {
+		return "", err // before the push: nothing changes until they're committed
+	}
 	old, err := m.Git.Head(ctx, p.ID, p.Path, p.Base())
 	if err != nil {
 		return "", err
@@ -458,6 +463,9 @@ func (m *MergeQueue) land(ctx context.Context, p model.Project, fn func(dir stri
 		return "", err
 	}
 	defer unlock()
+	if err := m.checkoutClean(ctx, p); err != nil {
+		return "", err
+	}
 	old, err := m.Git.Head(ctx, p.ID, p.Path, p.Base())
 	if err != nil {
 		return "", err
@@ -474,6 +482,25 @@ func (m *MergeQueue) land(ctx context.Context, p model.Project, fn func(dir stri
 		return head, err
 	}
 	return head, m.Git.Advance(ctx, p.ID, p.Path, p.Base(), old, head)
+}
+
+// checkoutClean refuses, with an *gitops.ErrDirtyCheckout, to move the
+// branch checked out in the folder of a project that guards its checkout
+// (model.Project.GuardsCheckout: a runner's checkout of its hub's project,
+// maybe one it adopted that its owner also works in) while that folder has
+// uncommitted changes to tracked files, even ones the move wouldn't touch.
+// The job then waits for them to be committed or stashed (see wait); they
+// are never overwritten. A folder with another branch checked out, or
+// detached, isn't moved by landing, so it doesn't matter.
+func (m *MergeQueue) checkoutClean(ctx context.Context, p model.Project) error {
+	if !p.GuardsCheckout() || m.Git.CheckedOut(ctx, p.ID, p.Path) != p.Base() {
+		return nil
+	}
+	files, err := m.Git.CheckoutChanges(ctx, p.ID, p.Path)
+	if err != nil || len(files) == 0 {
+		return nil // e.g. no commit yet: Advance still refuses to overwrite anything
+	}
+	return &gitops.ErrDirtyCheckout{Dir: p.Path, Files: files}
 }
 
 func (m *MergeQueue) landingDir(p model.Project) string {

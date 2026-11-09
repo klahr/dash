@@ -18,19 +18,37 @@ Every project lives on runners, in one of two ways:
 
 - **A runner's own project**: a repository on one runner's disk, in its `-projects` directory. Its
   tasks, git and commands run on that runner only, and it shows in the dashboard under the
-  runner's name. Make one with **+ New project** or **+ Add existing clone** (pick the runner as
-  its **Computer**), or with **Add projects from this computer…** on the runner's row of the
-  Runners page. See [below](#projects-of-a-runners-own).
+  runner's name. Make one with **Add projects from this computer…** on the runner's row of the
+  Runners page, or on the runner's own dashboard. See [below](#projects-of-a-runners-own).
 - **A shared project**: the hub's project, a git remote that one or more runners are linked to.
-  Each linked runner keeps its own clone of the remote (in `<-projects>/hub/`), any of them can run
-  its tasks, and work lands on the remote. It shows in the dashboard under each runner it is linked
-  to, with a small "shared" mark (two people). Make one in
-  **+ New project** with **Share it on the hub** ticked and an existing GitHub repository: it is
-  linked to the runner picked as its computer. Link more runners in its **Settings → Runners**.
+  Each linked runner keeps its own clone of the remote, straight in its projects folder
+  (`<-projects>/<repo>`), any of them can run its tasks, and work lands on the remote. It shows in
+  the dashboard under each runner it is linked to, with a small "shared" mark (two people). Make
+  one with **+ New project** (see [New project on the hub](#new-project-on-the-hub)): it is linked
+  to the runner picked as its **Runner**. Link more runners in its **Settings → Runners**.
   See [below](#shared-projects-tasks-on-runners).
 
 A project that is only ever worked on from one computer is simplest as that runner's own; share
 it when several people's runners (or several of yours) should take its tasks.
+
+### New project on the hub
+
+The hub keeps no folders, so **+ New project** never asks for one. Pick the **Runner** the project
+is linked to first, then where the repository comes from:
+
+- **Your GitHub repos**: the repositories of the GitHub account the runner's `gh` is signed in to,
+  and of the organizations that account belongs to (one `gh repo list` per owner). Each row shows
+  the GitHub mark, `owner/name` and its description, and whether it is private, a fork or
+  archived and when it was last updated, under a heading per owner (with their GitHub avatar). The
+  filter box matches names and descriptions. A repository that is already one of the org's
+  projects is marked and can't be picked again.
+- **New GitHub repo**: a name (or `owner/name` for an organization) creates an empty repository
+  with the runner's `gh`, private unless you tick **public**, and makes the project from it.
+- **Remote URL**: any `https://`, `ssh://` or `git@host:path` remote.
+
+Listing and creating repositories use the runner owner's GitHub login, so only the runner's owner
+can use those two (anyone can paste a URL); the hub has no GitHub login of its own. The name
+defaults to the repository's.
 
 ### The Projects list
 
@@ -152,8 +170,9 @@ the runners it is linked to (your own runners, or any of the org's if you're an 
   back to the runner that has its worktree and Claude session.
 - If none can take it, the task stays queued and its card says why ("no runner online: laptop is
   offline", "waiting for a runner: laptop is busy (3 of 3 tasks)"). It starts as soon as one can.
-- The project needs a git remote: each runner clones it into `<-projects>/hub/` the first time it
-  gets one of its tasks, and keeps that clone. Work lands on the remote's default branch the same
+- The project needs a git remote: each runner clones it into its projects folder the first time
+  it is linked (see [Where a runner keeps a shared project](#where-a-runner-keeps-a-shared-project)),
+  and keeps that clone. Work lands on the remote's default branch the same
   way it does without runners, but done by the runner. On GitHub that means a pull request (the
   default): when you approve, the runner pushes the task's branch, opens one and squash-merges it
   once GitHub finds it mergeable and its checks pass (your approval was the review; turn **Merge
@@ -287,9 +306,35 @@ the hub for its `-offline-grace` stops its tasks itself (below).
 ### What a runner accepts from the hub
 
 A runner takes work only for projects its hub linked to it, of the organization it was registered
-for, and only for its own clone inside `<-projects>/hub/` (it picks that folder itself, and clones
-only `https://`, `ssh://` or `user@host:path` remotes, never a local path). It refuses and logs
-anything else; the hub reaches only tasks it sent, by its own ids.
+for. It keeps the hub's id for the project with its checkout and finds it by that id, never by a
+path from the hub: the hub sends a remote, and the runner picks the folder itself, inside its
+`-projects` (it clones only `https://`, `ssh://` or `user@host:path` remotes, never a local path).
+It refuses and logs anything else; the hub reaches only tasks it sent, by its own ids.
+
+### Where a runner keeps a shared project
+
+When a project is linked to it, a runner puts it straight in its projects folder, named after the
+remote: `https://github.com/klahr/dash.git` becomes `~/dev/github/klahr/dash` for a runner started
+with `-projects ~/dev/github/klahr`.
+
+- **A clone of the same repository is already there** (the remote compared without caring about
+  `https` or `ssh`, credentials or a trailing `.git`): the runner adopts it instead of cloning.
+  If it was one of the runner's own projects, that project becomes the shared one (unlinking
+  makes it the runner's own again).
+- **Something else is there** (another repository, a folder that isn't one, a file, a symlink, or
+  a clone of the same remote already linked to another shared project): it is never touched; the
+  runner takes the next free name, `dash-2`, `dash-3`, …
+- **Your own edits in an adopted clone**: tasks still work in worktrees, but landing one moves the
+  checked-out branch of that folder. So while it has uncommitted changes to tracked files, a task
+  you approved waits ("Waiting for you to commit or stash …") and lands once you commit or stash
+  them; nothing is pushed meanwhile and your changes are never overwritten. Starting the project's
+  run or test command there warns about them; its deploy command is refused until they are
+  committed. Switching the working branch only makes branches; it doesn't touch the folder.
+- **Runners from before** cloned shared projects into `<-projects>/hub/<name>`. Those stay where
+  they are, with their worktrees, task branches and uncommitted work: on its first start after the
+  upgrade the runner marks them as the hub's once and from then on finds them by id. Only new
+  links go to `<-projects>/<repo>`. To move one, unlink it, move the folder, and link it again
+  (the runner adopts it at its new place).
 
 ## Projects of a runner's own
 
@@ -311,8 +356,9 @@ just like adding a project with that folder on the runner itself.
 The runner does the looking, and only:
 
 - in its projects directory: the folders there that are git repositories, and the ones a level
-  down (`~/code/org/repo`), no deeper. Hidden folders, `hub/` (the hub's clones) and repositories
-  that are already projects are left out. It never follows a symlink, so it never looks, or adds
+  down (`~/code/org/repo`), no deeper. Hidden folders, `hub/` (shared projects' clones from before
+  they went straight into the projects folder) and repositories that are already projects (the
+  shared ones among them) are left out. It never follows a symlink, so it never looks, or adds
   anything, outside the projects directory; a folder whose `.git` is a file or a symlink (a linked
   worktree, a submodule) isn't listed either;
 - for its owner: the hub asks only for the user who registered the runner (not another member,

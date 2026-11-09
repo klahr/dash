@@ -18,7 +18,8 @@
 //
 // The runner checks every task against the projects linked to it (see the
 // api package's hub task routes): it takes work only for a project the hub
-// linked to it, in the org it was registered for, cloned inside its own
+// linked to it (by the hub's project id, which it keeps with its checkout),
+// in the org it was registered for, cloned or adopted inside its own
 // projects root, and ignores anything else.
 package dispatch
 
@@ -31,8 +32,9 @@ import (
 )
 
 // Link is PUT /api/hub/projects/{hub project id} on a runner: the hub
-// links one of its projects to the runner, which clones RemoteURL into its
-// projects root (or finds its clone from an earlier link).
+// links one of its projects to the runner, which clones RemoteURL into
+// <its projects root>/<repo>, adopts a clone of RemoteURL already there, or
+// finds its checkout from an earlier link by the hub's project id.
 type Link struct {
 	Name          string `json:"name"`
 	RemoteURL     string `json:"remote_url"`
@@ -79,6 +81,12 @@ type Linked struct {
 	// DefaultBranch is the clone's default branch: origin's, which may
 	// differ from the one the hub guessed when the project was made.
 	DefaultBranch string `json:"default_branch,omitempty"`
+	// Path is where the runner keeps its checkout: <its projects
+	// folder>/<repo> (or <repo>-2, … when that folder holds something else).
+	Path string `json:"path,omitempty"`
+	// Adopted is whether a clone of the remote was already there and the
+	// runner took it over instead of cloning.
+	Adopted bool `json:"adopted,omitempty"`
 }
 
 // Task is POST /api/hub/tasks on a runner: run the hub's task.

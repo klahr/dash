@@ -139,8 +139,14 @@ type Project struct {
 	Runners []string `json:"runners,omitempty"`
 	// HubProjectID is set on a runner for its clone of a hub's project
 	// linked to it: the hub's id for that project. The runner takes tasks
-	// for linked projects only.
+	// for linked projects only, found by this id (never by where they are).
 	HubProjectID string `json:"hub_project_id,omitempty"`
+	// HubCheckout is how the runner came by the checkout of a hub's
+	// project: HubCloned (it cloned it into its projects folder),
+	// HubAdopted (a clone of the same remote was already there; its owner
+	// may also work in it by hand) or HubLegacy (cloned under
+	// <projects>/hub/ before hub projects were found by id).
+	HubCheckout string `json:"hub_checkout,omitempty"`
 
 	// Machine is the computer the project lives on; filled in by clients
 	// that show several computers in one dashboard, never stored.
@@ -230,6 +236,25 @@ func (p Project) SyncsRemote() bool {
 // Shared reports whether the project's work is shared through origin by
 // several Dashes: a hub's project with runners, or a runner's clone of one.
 func (p Project) Shared() bool { return p.OnRunners() || p.HubProjectID != "" }
+
+// How a runner came by its checkout of a hub's project (HubCheckout).
+const (
+	HubCloned  = "cloned"
+	HubAdopted = "adopted"
+	HubLegacy  = "legacy"
+)
+
+// GuardsCheckout reports whether landing work must wait while the
+// project's folder has uncommitted changes to tracked files, not only ones
+// the landing would overwrite: a runner's checkout of a hub's project,
+// which its owner may be working in by hand (see queue.MergeQueue.land).
+func (p Project) GuardsCheckout() bool { return p.LinkedFromHub() }
+
+// LinkedFromHub reports whether p is a runner's checkout of its hub's
+// project: the hub linked it (HubProjectID) and the runner placed or
+// adopted it in its projects folder (HubCheckout). The hub reaches only
+// those, by their HubProjectID.
+func (p Project) LinkedFromHub() bool { return p.HubProjectID != "" && p.HubCheckout != "" }
 
 // LandsOnOrigin reports whether a merge counts only once it is pushed: a
 // shared project in "local" mode squashes onto the default branch and

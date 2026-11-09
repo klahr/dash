@@ -71,6 +71,8 @@ func (m *MergeQueue) revert(ctx context.Context, job model.MergeJob) {
 			switch {
 			case errors.As(err, &conflict):
 				m.revertByClaude(t, p, sha, conflict.Files)
+			case errors.As(err, new(*gitops.ErrDirtyCheckout)):
+				m.wait(ctx, job, err)
 			case errors.As(err, &moved) && attempt < maxLandAttempts:
 				m.Log.Line(t, "↻ "+moved.Error()+"; reverting again on top of it")
 				if sync() {

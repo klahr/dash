@@ -242,7 +242,8 @@ func runnerSide(t *testing.T, hubOrg int64) (s *Server, h http.Handler, remote s
 }
 
 // A runner takes work only for projects its hub linked to it, of the org it
-// was registered for, cloned inside its own projects root; it refuses
+// was registered for, cloned into its own projects root (<root>/<repo>,
+// named after the remote); it refuses
 // anything else, and nobody but the hub reaches these routes.
 func TestRunnerOnlyTakesWorkForLinkedProjects(t *testing.T) {
 	s, h, remote := runnerSide(t, 7)
@@ -272,8 +273,8 @@ func TestRunnerOnlyTakesWorkForLinkedProjects(t *testing.T) {
 		t.Fatalf("link: %d %s", w.Code, w.Body)
 	}
 	p, err := raw(s).GetProject(linked.ProjectID)
-	if err != nil || !within(filepath.Join(s.ProjectRoot, "hub"), p.Path) || p.MergeMode != model.MergeLocal ||
-		!p.LandsOnOrigin() || p.HubProjectID != "hub-p1" {
+	if err != nil || p.Path != filepath.Join(s.ProjectRoot, "remote") || p.MergeMode != model.MergeLocal ||
+		!p.LandsOnOrigin() || p.HubProjectID != "hub-p1" || p.HubCheckout != model.HubCloned || linked.Path != p.Path || linked.Adopted {
 		t.Fatalf("linked project %+v %v", p, err)
 	}
 	if w := link(7, remote); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), p.ID) {
