@@ -110,6 +110,29 @@
   .stale.on{display:block}
   .error{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:36px;color:var(--dim);background:var(--bg)}
   .error.on{display:flex}
+
+  /* Narrow or portrait screens (a laptop window, a portrait TV, a phone):
+     everything stacks into one column and the page scrolls instead of
+     shrinking a 1920-wide canvas to an unreadable size. wall.js sets the
+     classes and the canvas width. */
+  html.narrow,html.narrow body{overflow-x:hidden;overflow-y:auto;cursor:auto}
+  html.narrow body{height:auto}
+  .narrow .tv{height:auto;grid-template-rows:auto;overflow:visible}
+  .narrow header{flex-wrap:wrap;gap:16px 28px}
+  .narrow .brand{order:-2;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .narrow .clock{order:-1;min-width:0}
+  .narrow .usage{margin-left:0}
+  .narrow .pipeline{grid-template-columns:repeat(3,1fr)}
+  .narrow main{grid-template-columns:minmax(0,1fr)}
+  .narrow .side{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto}
+  .narrow .spark{flex:none;height:120px}
+  .phone header{gap:12px 20px}
+  .phone .queue-state{font-size:22px;padding:8px 16px}
+  .phone .usage{width:100%;gap:20px}
+  .phone .meter{flex:1;width:auto}
+  .phone .pipeline{grid-template-columns:repeat(2,1fr);gap:12px}
+  .phone .stage .v{font-size:60px}
+  .phone .side{grid-template-columns:minmax(0,1fr)}
 </style>
 </head>
 <body>

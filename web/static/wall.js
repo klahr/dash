@@ -305,9 +305,11 @@ function renderTicker(d) {
   });
 }
 
+let last = null; // the latest data, to lay out again on a resize
+
 function render(d) {
+  last = d;
   const now = new Date(d.now);
-  skew = now - Date.now();
   renderHeader(d);
   renderPipeline(d, now);
   renderRunning(d);
@@ -316,6 +318,7 @@ function render(d) {
   renderToday(d);
   renderTicker(d);
   tick();
+  fitPage();
 }
 
 // ---- polling ----
@@ -328,40 +331,103 @@ function apiURL() {
 }
 
 let failures = 0;
+let timer = 0, inflight = false;
+
+function schedule(ms) {
+  clearTimeout(timer);
+  timer = setTimeout(poll, ms);
+}
 
 async function poll() {
+  if (inflight) return;
+  inflight = true;
+  let next = POLL_MS;
   try {
     const res = await fetch(apiURL(), { credentials: "same-origin", cache: "no-store" });
     if (res.status === 401 || res.status === 403) {
       $("error").textContent = params.get("token") ? "This wall link is invalid or was revoked." : "Sign in to see the wall.";
       $("error").classList.add("on");
       if (!params.get("token")) location.href = "/login.html?next=" + encodeURIComponent(location.pathname + location.search);
-      setTimeout(poll, 60000);
-      return;
+      next = 60000;
+    } else {
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      const d = await res.json();
+      skew = new Date(d.now) - Date.now();
+      render(d);
+      failures = 0;
+      $("error").classList.remove("on");
+      $("stale").classList.remove("on");
     }
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
-    render(await res.json());
-    failures = 0;
-    $("error").classList.remove("on");
-    $("stale").classList.remove("on");
   } catch (e) {
     failures++;
     if (failures >= 2) $("stale").classList.add("on");
+  } finally {
+    inflight = false;
   }
-  setTimeout(poll, POLL_MS);
+  schedule(next);
 }
 
-// Scale the 1920×1080 canvas to fit any screen.
-function scale() {
-  const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+// ---- layout ----
+//
+// Wide screens get the TV layout: designed at 1920×1080 and scaled so one
+// side matches the screen exactly, with the canvas stretched along the other
+// side, so 16:10, 4:3 and ultra-wide screens are filled instead of
+// letterboxed. Narrow or portrait screens get a stacked, scrolling layout on
+// a narrower canvas so the text stays readable.
+
+let zoom = 1, narrow = false;
+
+function layout() {
+  const W = innerWidth, H = innerHeight;
+  narrow = W < 1100 || W / H < 1.3;
+  const phone = narrow && W < 760;
+  document.documentElement.classList.toggle("narrow", narrow);
+  document.documentElement.classList.toggle("phone", phone);
   const tv = $("tv");
-  tv.style.transform = `scale(${s})`;
-  tv.style.left = Math.max(0, (innerWidth - 1920 * s) / 2) + "px";
-  tv.style.top = Math.max(0, (innerHeight - 1080 * s) / 2) + "px";
+  if (narrow) {
+    const base = phone ? 640 : 1000;
+    zoom = W / base;
+    tv.style.width = base + "px";
+    tv.style.height = "";
+    tv.style.minHeight = H / zoom + "px";
+    tv.style.left = tv.style.top = "0px";
+  } else {
+    zoom = Math.min(W / 1920, H / 1080);
+    tv.style.width = W / zoom + "px";
+    tv.style.height = H / zoom + "px";
+    tv.style.minHeight = "";
+    tv.style.left = tv.style.top = "0px";
+  }
+  tv.style.transform = `scale(${zoom})`;
+  fitPage();
 }
 
-addEventListener("resize", scale);
-scale();
+// fitPage gives the scaled canvas a scroll area in the stacked layout (a
+// transform doesn't change the space an element takes up).
+function fitPage() {
+  document.body.style.height = narrow ? Math.ceil($("tv").offsetHeight * zoom) + "px" : "";
+}
+
+let resizing = 0;
+addEventListener("resize", () => {
+  cancelAnimationFrame(resizing);
+  resizing = requestAnimationFrame(() => {
+    layout();
+    // Lay the lists out again now, not at the next poll: how many cards fit
+    // and whether the ticker has to scroll both depend on the size.
+    if (last) {
+      lastTicker = "";
+      render(last);
+    }
+  });
+});
+
+// A hidden tab's timers are throttled; catch up as soon as it's shown.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") poll();
+});
+
+layout();
 tick();
 setInterval(tick, 1000);
 poll();

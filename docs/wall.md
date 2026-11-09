@@ -1,7 +1,9 @@
 # Wall view
 
 A read-only, full-screen dashboard of an organization's work for a TV in the office, at
-`/wall`. It is laid out for 1920×1080 and scales to any screen; nothing on it needs a click.
+`/wall`. It is laid out for 1920×1080 and scales to fill any landscape screen (16:10, 4:3 and
+ultra-wide screens are filled, not letterboxed). Narrow or portrait screens (a laptop window, a
+portrait TV, a phone) get a stacked layout that scrolls. Nothing on it needs a click.
 
 From top to bottom: whether the queue runs and how many runner slots are busy, the Claude
 usage of the 5-hour and 7-day windows (with a marker where the queue pauses), a clock; the
