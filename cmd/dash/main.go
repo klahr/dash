@@ -116,7 +116,7 @@ func main() {
 	previewDomain := flag.String("preview-domain", "", "serve each task's live preview at https://<task>.<this domain>, e.g. preview.dash.example.com; needs a wildcard DNS record and certificate (see docs/previews.md; or $DASH_PREVIEW_DOMAIN)")
 	orgDomain := flag.String("org-domain", "", "serve each organization at https://<slug>.<this domain>, e.g. dash.example.com; needs a wildcard DNS record and certificate (see docs/deploy.md; or $DASH_ORG_DOMAIN). Empty = off")
 	orgReserved := flag.String("org-reserved", "", "comma-separated subdomains no organization may take, replacing the defaults ("+strings.Join(store.DefaultReservedSlugs, ",")+"); the preview domain's label is always reserved (or $DASH_ORG_RESERVED)")
-	webhookPrivate := flag.String("webhook-private", "", "let outgoing notification webhooks reach private, loopback and link-local addresses: on, off, or empty = on unless Stripe billing is configured, i.e. on a self-hosted Dash (or $DASH_WEBHOOK_PRIVATE)")
+	webhookPrivate := flag.String("webhook-private", "", "let outgoing notification webhooks reach private, loopback and link-local addresses: on, off, or empty = on unless Stripe billing is configured or signup is open, i.e. on an invite-only self-hosted Dash (or $DASH_WEBHOOK_PRIVATE)")
 	previewIdle := flag.Duration("preview-idle", preview.DefaultIdle, "stop a live preview after this long without traffic")
 	scanTimeout := flag.Duration("scan-timeout", scan.DefaultRunTimeout, "stop a scan's Claude run after this long and mark it failed")
 	scanSchedules := flag.Bool("scan-schedules", true, "run scans (.dash/scans) on their schedules; off = only when started by hand")
@@ -411,7 +411,10 @@ func main() {
 			b.OnChange = func(int64) { todos.Kick() }
 		}
 		// Outgoing notification webhooks; a runner's hub sends its own.
-		allowPrivate, err := webhookPrivateAllowed(envOr(*webhookPrivate, "DASH_WEBHOOK_PRIVATE"), apiSrv.Billing != nil)
+		// Strangers may create webhooks when billing is on or signup is
+		// open: either way they must not reach this hub's network by default.
+		public := apiSrv.Billing != nil || authn.SignupOpen()
+		allowPrivate, err := webhookPrivateAllowed(envOr(*webhookPrivate, "DASH_WEBHOOK_PRIVATE"), public)
 		if err != nil {
 			slog.Error("-webhook-private", "err", err)
 			os.Exit(1)
@@ -935,12 +938,12 @@ func offlineWatch(grace time.Duration, todos *queue.TodoEngine) func(bool) {
 }
 
 // webhookPrivateAllowed reads -webhook-private: whether webhooks may reach
-// private addresses. Unset, a self-hosted Dash (no billing) allows it and
-// a hosted one doesn't.
-func webhookPrivateAllowed(v string, hosted bool) (bool, error) {
+// private addresses. Unset, a private Dash (invite-only, no billing) allows
+// it and a public one (Stripe billing or open signup) doesn't.
+func webhookPrivateAllowed(v string, public bool) (bool, error) {
 	switch strings.ToLower(v) {
 	case "":
-		return !hosted, nil
+		return !public, nil
 	case "1", "true", "yes", "on":
 		return true, nil
 	case "0", "false", "no", "off":
