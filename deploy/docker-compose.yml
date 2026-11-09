@@ -27,7 +27,8 @@ services:
     command:
       - -addr=0.0.0.0:7788
       - -data=/data
-      - -trust-proxy # only Caddy can reach it: the port isn't published
+      - -trust-proxy # only Caddy can reach it: the port isn't published,
+      - -allow-unsafe=proxy-addr # so listening on the container's network is fine
     volumes:
       - dash-data:/data
     # The image's HEALTHCHECK (`dash healthcheck`), spelled out for compose.

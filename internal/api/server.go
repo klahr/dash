@@ -133,8 +133,9 @@ type Server struct {
 
 // Routes is the dashboard's handler: every route, behind the login.
 func (s *Server) Routes() http.Handler {
-	// Preview hosts never reach Dash's own routes.
-	return s.Previews.Wrap(logRequests(s.Auth.Middleware(s.billingGate(s.mux()))))
+	// Preview hosts never reach Dash's own routes, nor get its security
+	// headers (a task's app keeps its own).
+	return s.Previews.Wrap(s.Auth.Headers(logRequests(s.Auth.Middleware(s.billingGate(s.mux())))))
 }
 
 func (s *Server) mux() *http.ServeMux {

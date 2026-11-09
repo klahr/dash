@@ -9,6 +9,13 @@ const verifyForm = $("#verify");
 const noticeCard = $("#notice");
 let ticket = "";
 
+// Decorative pictures that fail to load go away (not with an inline
+// onerror: the Content-Security-Policy allows no inline script).
+for (const img of document.querySelectorAll("img[data-optional]")) {
+  if (img.complete && !img.naturalWidth && img.loading !== "lazy") img.remove(); // failed already (a lazy one may not have started)
+  else img.addEventListener("error", () => img.remove());
+}
+
 function show(card) {
   for (const c of [loginForm, totpForm, enrolCard, signupForm, forgotForm, verifyForm, resetForm, noticeCard]) c.hidden = c !== card;
   card.querySelector("input")?.focus();

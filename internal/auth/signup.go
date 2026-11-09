@@ -52,6 +52,10 @@ func (a *Auth) SetMail(sender mail.Sender, baseURL string) {
 	a.mail, a.baseURL = sender, strings.TrimRight(baseURL, "/")
 }
 
+// MailOn reports whether Dash can send email: password reset, and the
+// address confirmations open signup relies on.
+func (a *Auth) MailOn() bool { return a.mail != nil && a.baseURL != "" }
+
 // EnableSignup opens self-service registration. It needs SetMail first.
 func (a *Auth) EnableSignup() error {
 	if a.mail == nil || a.baseURL == "" {

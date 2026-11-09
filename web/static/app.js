@@ -5,6 +5,12 @@ import { drawSurface, COLORS } from "./draw.js";
 import { projectGroups as groupProjects, uniqueProjects, isShared, projectRunnerNames } from "./groups.js";
 
 const $ = (s, el = document) => el.querySelector(s);
+// Decorative pictures that fail to load go away (not with an inline
+// onerror: the Content-Security-Policy allows no inline script).
+for (const img of document.querySelectorAll("img[data-optional]")) {
+  if (img.complete && !img.naturalWidth && img.loading !== "lazy") img.remove(); // failed already (a lazy one may not have started)
+  else img.addEventListener("error", () => img.remove());
+}
 // The server's LC_TIME, since browsers format times by their UI language instead.
 const timeLocale = (() => {
   const l = document.querySelector('meta[name="dash-time-locale"]')?.content;

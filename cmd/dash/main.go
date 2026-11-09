@@ -123,7 +123,8 @@ func main() {
 	previewDomain := flag.String("preview-domain", "", "serve each task's live preview at https://<task>.<this domain>, e.g. preview.dash.example.com; needs a wildcard DNS record and certificate (see docs/previews.md; or $DASH_PREVIEW_DOMAIN)")
 	orgDomain := flag.String("org-domain", "", "serve each organization at https://<slug>.<this domain>, e.g. dash.example.com; needs a wildcard DNS record and certificate (see docs/deploy.md; or $DASH_ORG_DOMAIN). Empty = off")
 	orgReserved := flag.String("org-reserved", "", "comma-separated subdomains no organization may take, replacing the defaults ("+strings.Join(store.DefaultReservedSlugs, ",")+"); the preview domain's label is always reserved (or $DASH_ORG_RESERVED)")
-	webhookPrivate := flag.String("webhook-private", "", "let outgoing notification webhooks reach private, loopback and link-local addresses: on, off, or empty = on unless Stripe billing is configured or signup is open, i.e. on an invite-only self-hosted Dash (or $DASH_WEBHOOK_PRIVATE)")
+	webhookPrivate := flag.String("webhook-private", "", "let outgoing notification webhooks reach private, loopback and link-local addresses: on, off, or empty = on unless Stripe billing is configured, signup is open or Dash is internet-facing (-public-url or -trust-proxy), i.e. on an invite-only private Dash (or $DASH_WEBHOOK_PRIVATE)")
+	allowUnsafe := flag.String("allow-unsafe", "", "start an internet-facing Dash (-public-url or -trust-proxy) despite these failed safety checks, with a warning: comma-separated "+strings.Join(exposureChecks, ",")+", or all (see docs/deploy.md; or $DASH_ALLOW_UNSAFE)")
 	previewIdle := flag.Duration("preview-idle", preview.DefaultIdle, "stop a live preview after this long without traffic")
 	scanTimeout := flag.Duration("scan-timeout", scan.DefaultRunTimeout, "stop a scan's Claude run after this long and mark it failed")
 	scanSchedules := flag.Bool("scan-schedules", true, "run scans (.dash/scans) on their schedules; off = only when started by hand")
@@ -403,6 +404,24 @@ func main() {
 			Password: os.Getenv("DASH_SMTP_PASSWORD"), From: envOr(*smtpFrom, "DASH_SMTP_FROM"),
 		}, *publicURL)
 	}
+	// An internet-facing Dash refuses weak credentials and unsafe settings
+	// (a runner without a listener of its own is reached only through its
+	// hub's tunnel).
+	exposed := exposure{
+		PublicURL: *publicURL, TrustProxy: *trustProxy, Addr: *addr,
+		Username: user, Password: os.Getenv("DASH_PASSWORD"),
+		SignupOpen: authn.SignupOpen(), MailOn: authn.MailOn(),
+		AllowUnsafe: envOr(*allowUnsafe, "DASH_ALLOW_UNSAFE"),
+	}
+	if runnerMode && !addrSet {
+		exposed = exposure{}
+	}
+	if err := checkExposure(exposed); err != nil {
+		slog.Error("unsafe configuration", "err", err)
+		os.Exit(1)
+	}
+	// It answers with HSTS and Secure cookies whatever the proxy says.
+	authn.Public = exposed.Public()
 	if !runnerMode {
 		apiSrv.Billing = configureBilling(st.Accounts(), billing.Config{
 			SecretKey:     envOr(*stripeKey, "STRIPE_SECRET_KEY"),
@@ -419,12 +438,19 @@ func main() {
 		}
 		// Outgoing notification webhooks; a runner's hub sends its own.
 		// Strangers may create webhooks when billing is on or signup is
-		// open: either way they must not reach this hub's network by default.
-		public := apiSrv.Billing != nil || authn.SignupOpen()
-		allowPrivate, err := webhookPrivateAllowed(envOr(*webhookPrivate, "DASH_WEBHOOK_PRIVATE"), public)
+		// open, and anyone who takes over an account can on an
+		// internet-facing hub: none of them may reach this hub's network by
+		// default.
+		public := apiSrv.Billing != nil || authn.SignupOpen() || exposed.Public()
+		wp := envOr(*webhookPrivate, "DASH_WEBHOOK_PRIVATE")
+		allowPrivate, err := webhookPrivateAllowed(wp, public)
 		if err != nil {
 			slog.Error("-webhook-private", "err", err)
 			os.Exit(1)
+		}
+		if allowPrivate && exposed.Public() {
+			slog.Warn("UNSAFE: notification webhooks of this internet-facing hub may reach private, loopback and link-local addresses " +
+				"(-webhook-private=" + wp + "): whoever takes over an account can probe this hub's network")
 		}
 		notifier := &notify.Notifier{
 			Store:        st,

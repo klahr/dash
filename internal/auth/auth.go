@@ -98,6 +98,10 @@ type Auth struct {
 	// Only enable it when Dash is reachable solely through that proxy.
 	TrustProxy bool
 
+	// Public says Dash is internet-facing (-public-url or -trust-proxy): its
+	// cookies are always Secure and its answers carry HSTS (see Headers).
+	Public bool
+
 	// OnRevoke is told about each token a user revokes, so what holds it
 	// open (a runner's tunnel) can be closed (optional).
 	OnRevoke func(store.Token)
@@ -303,7 +307,7 @@ func (a *Auth) startSessionIn(w http.ResponseWriter, r *http.Request, uid, org i
 		Path:     "/",
 		MaxAge:   int(sessionTTL.Seconds()),
 		HttpOnly: true,
-		Secure:   a.Secure(r),
+		Secure:   a.secureCookie(r),
 		// Strict: the cookie is never sent on cross-site requests, which also
 		// stops other sites from driving the API or opening WebSockets (CSRF).
 		SameSite: http.SameSiteStrictMode,
@@ -645,7 +649,7 @@ func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
 		_ = a.acc.DeleteSessionFamily(sessionKey(c.Value))
 	}
 	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
-		Secure: a.Secure(r), SameSite: http.SameSiteStrictMode})
+		Secure: a.secureCookie(r), SameSite: http.SameSiteStrictMode})
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
 		http.Redirect(w, r, "/login.html", http.StatusSeeOther)
 		return

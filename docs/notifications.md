@@ -87,11 +87,12 @@ secret or token (Slack and ntfy URLs are secrets themselves).
 
 ## Private addresses
 
-On a hosted Dash, or any Dash with open signup, webhooks may not reach private, loopback,
+On a hosted Dash, an internet-facing one (`-public-url` or `-trust-proxy`), or any Dash with open signup, webhooks may not reach private, loopback,
 link-local or carrier-grade NAT addresses. This is checked when you save the URL and again on every connection, after DNS,
 so internal services aren't reachable through a webhook. An invite-only self-hosted Dash
-(no Stripe billing and no open signup) allows these addresses, so you can notify a service on your own network.
-`-webhook-private=on|off` (or `DASH_WEBHOOK_PRIVATE`) overrides the default.
+(no Stripe billing, no open signup, not internet-facing) allows these addresses, so you can notify a service on your own network.
+`-webhook-private=on|off` (or `DASH_WEBHOOK_PRIVATE`) overrides the default; `on` on an internet-facing Dash logs an
+`UNSAFE` warning at every start.
 
 Runners (`dash runner`) send no notifications. Their hub sends them for the tasks it gives
 the runners.

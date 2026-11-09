@@ -41,5 +41,6 @@ ENTRYPOINT ["/usr/local/bin/dash"]
 # Listen on all of the container's interfaces (publish the port only to a
 # proxy) and keep state in /data. The hub never runs Claude or tasks:
 # runners do. Behind an HTTPS proxy add -trust-proxy, as
-# deploy/docker-compose.yml does.
+# deploy/docker-compose.yml does (with -allow-unsafe=proxy-addr: only the
+# proxy can reach the container's port).
 CMD ["-addr", "0.0.0.0:7788", "-data", "/data"]

@@ -158,7 +158,8 @@ out to the hub over HTTPS, so they need no open ports, public address or Docker 
 
 1. **A server** with Docker and the compose plugin, ports **80** and **443** open (and SSH).
    Nothing else needs to be reachable: the hub's port 7788 isn't published, only Caddy reaches it,
-   which is what makes `-trust-proxy` safe.
+   which is what makes `-trust-proxy` safe (the compose file says so with `-allow-unsafe=proxy-addr`,
+   see [below](#the-login-is-internet-facing)).
 2. **DNS records** pointing at the server (A and/or AAAA):
 
    | Record                         | For                                        |
@@ -174,7 +175,8 @@ out to the hub over HTTPS, so they need no open ports, public address or Docker 
    cp docker.env.example .env
    ```
 
-   and set at least `DASH_DOMAIN`, `ACME_EMAIL`, `DASH_USERNAME` and `DASH_PASSWORD`.
+   and set at least `DASH_DOMAIN`, `ACME_EMAIL`, `DASH_USERNAME` and `DASH_PASSWORD` (16 or more
+   random characters, e.g. `openssl rand -base64 24`: the hub refuses to start with `change-me`).
    `DASH_PUBLIC_URL` defaults to `https://$DASH_DOMAIN`. Every other setting from
    [`.env.example`](../.env.example) (SMTP, signup, Stripe, branding) goes in the same file. Pin
    `DASH_VERSION` to a release (e.g. `1.2.0`) rather than running `latest`.
@@ -368,6 +370,35 @@ internet entirely: keep Dash on `127.0.0.1`, run `tailscale serve --bg 7788`, st
 
 Behind Caddy or a tunnel, anyone can reach Dash's login page, and Dash runs commands on your
 computers. So:
+
+- **Dash refuses to start with unsafe settings.** Started with `-public-url` or `-trust-proxy`
+  (`DASH_PUBLIC_URL` counts), Dash takes itself to be internet-facing and checks:
+
+  | Check        | Refuses when                                                                                       |
+  | ------------ | -------------------------------------------------------------------------------------------------- |
+  | `password`   | `DASH_PASSWORD` is unset, shorter than 16 characters, a known example (`change-me`, `password`, the docs' examples…), the username, or a few characters repeated |
+  | `public-url` | `-public-url` isn't `https://` (`http://localhost` and `127.0.0.1` are fine)                        |
+  | `proxy-addr` | `-trust-proxy` while `-addr` isn't a loopback address: whoever reaches the port directly can forge `X-Forwarded-For` (escaping the lockout) and `X-Forwarded-Proto` |
+  | `signup`     | open signup is on without working email, so new addresses can't be confirmed                       |
+
+  Each failure is logged as `level=ERROR msg="unsafe for an internet-facing Dash" check=…` and Dash
+  exits. If you know better, for instance the hub in [Docker](#run-the-hub-with-docker) listens on
+  `0.0.0.0` but only Caddy can reach its port, name the checks to skip in
+  `-allow-unsafe=proxy-addr,…` (or `DASH_ALLOW_UNSAFE`; `all` skips every one). Each skipped check is then
+  logged at every start as `level=WARN msg="UNSAFE: …"`.
+
+  `DASH_PASSWORD` must be set, even after the first start, so it can be checked: it keeps the first
+  account's password in step with it. Passwords people choose in the app need 8 characters.
+- **Webhooks stay on the internet.** An internet-facing Dash's
+  [notification webhooks](notifications.md#private-addresses) may not reach private, loopback or
+  link-local addresses unless you set `-webhook-private=on`, which then logs an `UNSAFE` warning at
+  every start.
+- **Security headers.** Every page and API answer carries a `Content-Security-Policy` (scripts
+  only from Dash itself, no inline script or `eval`, no `<object>`, framed only by Dash's own pages)
+  and `X-Content-Type-Options: nosniff`. An internet-facing Dash also sends
+  `Strict-Transport-Security: max-age=31536000` (its own host only, not org or preview subdomains),
+  and its session cookie is always `Secure` (and `HttpOnly`, `SameSite=Strict`), even if the proxy
+  forgets `X-Forwarded-Proto`. Live previews keep their app's own headers.
 
 - **Use a long random password** for `DASH_PASSWORD` (`openssl rand -base64 24`), and **turn on
   two-factor sign-in** (account menu → Two-factor sign-in). Org owners can require it of every
