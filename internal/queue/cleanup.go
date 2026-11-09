@@ -174,6 +174,7 @@ func (m *MergeQueue) cleanupFiles() CleanupReport {
 	}
 	for _, f := range logs {
 		id, ext, _ := strings.Cut(f.Name(), ".")
+		ext = strings.TrimSuffix(ext, ".trim") // left by a trim (TodoLog.MaxBytes) cut short
 		if (ext != "log" && ext != "events.jsonl") || todos[id] {
 			continue
 		}

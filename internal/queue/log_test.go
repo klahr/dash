@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,5 +90,58 @@ func TestTodoLogEvents(t *testing.T) {
 	}
 	if text, _ := l.Read(td.ID); text != "" {
 		t.Errorf("text log after Remove: %q", text)
+	}
+}
+
+// A log past MaxBytes keeps its newest events, whole, behind a note, and
+// never grows much beyond the cap.
+func TestTodoLogCapped(t *testing.T) {
+	l := &TodoLog{Pub: &recordPub{}, Root: t.TempDir(), MaxBytes: 4096}
+	td := model.Todo{ID: "t1", ProjectID: "p1"}
+	for i := range 500 {
+		l.Event(td, model.RunEvent{Kind: "text", Text: fmt.Sprintf("line %03d %s", i, strings.Repeat("x", 40))})
+	}
+	for _, p := range []string{l.eventsPath(td.ID), l.path(td.ID)} {
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Size() > l.MaxBytes {
+			t.Errorf("%s is %d bytes, over the cap of %d", filepath.Base(p), info.Size(), l.MaxBytes)
+		}
+		if _, err := os.Stat(p + ".trim"); !os.IsNotExist(err) {
+			t.Errorf("temporary file left: %v", err)
+		}
+	}
+	evs, err := l.Events(td.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) < 10 || evs[0].Kind != "status" || !strings.Contains(evs[0].Text, "trimmed") {
+		t.Fatalf("first event: %+v (of %d)", evs[0], len(evs))
+	}
+	for _, e := range evs[1:] {
+		if e.Kind != "text" || !strings.HasPrefix(e.Text, "line ") {
+			t.Fatalf("a cut or stray event: %+v", e)
+		}
+	}
+	if last := evs[len(evs)-1].Text; !strings.HasPrefix(last, "line 499 ") {
+		t.Errorf("newest event lost: %q", last)
+	}
+	text, _ := l.Read(td.ID)
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	if !strings.Contains(lines[0], "trimmed") || !strings.Contains(lines[len(lines)-1], "line 499 ") {
+		t.Errorf("text log: first %q, last %q", lines[0], lines[len(lines)-1])
+	}
+}
+
+func TestTodoLogUncapped(t *testing.T) {
+	l := &TodoLog{Pub: &recordPub{}, Root: t.TempDir()}
+	td := model.Todo{ID: "t1", ProjectID: "p1"}
+	for i := range 200 {
+		l.Event(td, model.RunEvent{Kind: "text", Text: fmt.Sprintf("line %d", i)})
+	}
+	if evs, _ := l.Events(td.ID); len(evs) != 200 {
+		t.Errorf("%d events, want all 200", len(evs))
 	}
 }

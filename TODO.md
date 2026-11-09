@@ -20,7 +20,7 @@ Most important first within each section.
 - [ ] Browser tests for the main flows: new todo, review, rework with comments, approve,
       drag and drop, permission approval.
 - [ ] More TUI tests (7% coverage) and API handler tests (18%).
-- [ ] Back up `dash.db` (e.g. `sqlite3 dash.db .backup`), and cap or rotate todo logs.
+- [x] Back up `dash.db` (`dash backup`, `-backup-dir`), and cap or rotate todo logs (`-log-max-mb`).
 - [ ] Try PR mode and failed-build investigation against a real GitHub repository.
 
 ## Features

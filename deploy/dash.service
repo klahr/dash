@@ -11,6 +11,12 @@
 #   journalctl --user -u dash -f
 #
 # After pulling changes: rebuild, then `systemctl --user restart dash`.
+#
+# Backups (docs/service.md): set DASH_BACKUP_DIR=backups in the env file for a
+# daily copy of the database in ~/.local/share/dash/backups (newest 7 kept),
+# or run `bin/dash backup ~/dash-backups/` any time, while Dash runs.
+# To restore: stop the service, remove dash.db-wal and dash.db-shm, copy the
+# backup over ~/.local/share/dash/dash.db, start it again.
 
 [Unit]
 Description=Dash (parallel Claude tasks on :7788)
@@ -20,7 +26,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=%h/dev/github/klahr/dash
-# Extra flags go here (-trust-proxy, -public-url, -name ...).
+# Extra flags go here (-trust-proxy, -public-url, -name, -backup-dir ...).
 # Secrets stay in the env file, not in this unit.
 ExecStart=%h/dev/github/klahr/dash/bin/dash -env %h/.config/dash/env -trust-proxy
 

@@ -2,6 +2,7 @@ package queue
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,7 +21,11 @@ import (
 type TodoLog struct {
 	Pub  Publisher
 	Root string // <data>/logs
-	mu   sync.Mutex
+	// MaxBytes caps each of a todo's two log files (0 = no cap). A file
+	// that grows past it is cut to its newest half, behind a note saying
+	// earlier output was trimmed, so a long or chatty run can't fill the disk.
+	MaxBytes int64
+	mu       sync.Mutex
 }
 
 // Line logs one of Dash's own progress notes.
@@ -50,6 +55,69 @@ func (l *TodoLog) Event(t model.Todo, ev model.RunEvent) {
 	appendTo(l.eventsPath(t.ID), string(b)+"\n")
 	if line != "" {
 		appendTo(l.path(t.ID), fmt.Sprintf("%s %s\n", ev.At.Format(time.TimeOnly), line))
+	}
+	if l.MaxBytes > 0 {
+		capFile(l.eventsPath(t.ID), l.MaxBytes, func(first []byte) string {
+			var next model.RunEvent
+			at := ev.At
+			if json.Unmarshal(first, &next) == nil && !next.At.IsZero() {
+				at = next.At
+			}
+			b, _ := json.Marshal(model.RunEvent{Kind: "status", Text: trimmedNote(l.MaxBytes), At: at})
+			return string(b) + "\n"
+		})
+		capFile(l.path(t.ID), l.MaxBytes, func([]byte) string {
+			return fmt.Sprintf("%s %s\n", ev.At.Format(time.TimeOnly), trimmedNote(l.MaxBytes))
+		})
+	}
+}
+
+func trimmedNote(max int64) string {
+	return fmt.Sprintf("✂ earlier output trimmed: this log keeps about its newest %s", humanBytes(max/2))
+}
+
+// capFile cuts a file larger than max to its newest max/2 bytes, from the
+// start of a line, behind the line note returns (given the first line
+// kept). The newer half is written to a new file renamed over the old, so a
+// reader sees either whole file.
+func capFile(path string, max int64, note func(first []byte) string) {
+	info, err := os.Stat(path)
+	if err != nil || info.Size() <= max {
+		return
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	keep := max / 2
+	tail := make([]byte, keep)
+	n, err := f.ReadAt(tail, info.Size()-keep)
+	if err != nil && n < len(tail) {
+		return
+	}
+	// Drop the line the cut lands in, unless it lands right after a newline.
+	prev := make([]byte, 1)
+	if _, err := f.ReadAt(prev, info.Size()-keep-1); err != nil || prev[0] != '\n' {
+		i := bytes.IndexByte(tail, '\n')
+		if i < 0 {
+			tail = nil // one line longer than keep: nothing whole to keep
+		} else {
+			tail = tail[i+1:]
+		}
+	}
+	first, _, _ := bytes.Cut(tail, []byte("\n"))
+	tmp := path + ".trim"
+	out, err := os.Create(tmp)
+	if err != nil {
+		return
+	}
+	_, werr := out.WriteString(note(first))
+	if werr == nil {
+		_, werr = out.Write(tail)
+	}
+	if cerr := out.Close(); werr != nil || cerr != nil || os.Rename(tmp, path) != nil {
+		_ = os.Remove(tmp)
 	}
 }
 

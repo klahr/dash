@@ -61,6 +61,9 @@ func main() {
 	if len(args) > 0 && args[0] == "healthcheck" {
 		os.Exit(healthcheck(args[1:]))
 	}
+	if len(args) > 0 && args[0] == "backup" {
+		os.Exit(backupCmd(args[1:]))
+	}
 	if len(args) > 0 && args[0] == "reset-2fa" {
 		os.Exit(resetTwoFactor(args[1:]))
 	}
@@ -85,6 +88,10 @@ func main() {
 	loginGlobal := flag.Int("login-global-failures", -1, fmt.Sprintf("failed sign-ins from all addresses together within -login-window before every new sign-in is refused until the window passes; signed-in sessions carry on; 0 = no global limit (default $DASH_LOGIN_GLOBAL_FAILURES, else %d)", auth.DefaultLockout.Global))
 	loginWindow := flag.Duration("login-window", 0, fmt.Sprintf("the window failed sign-ins are counted in (default $DASH_LOGIN_WINDOW, else %s)", auth.DefaultLockout.Window))
 	cleanupDays := flag.Int("cleanup-days", 14, "daily cleanup: remove worktrees of tasks that failed this many days ago, plus orphaned worktrees, branches, logs and uploads (0 = off)")
+	logMaxMB := flag.Int("log-max-mb", 32, "cap each task's log files at this many MB: a longer log keeps its newest half (0 = no cap)")
+	backupDir := flag.String("backup-dir", "", "write a timestamped backup of the database (dash-<time>.db) to this directory every -backup-every; empty = off (or $DASH_BACKUP_DIR)")
+	backupKeep := flag.Int("backup-keep", -1, "keep this many backups in -backup-dir, removing older ones; 0 = keep all (default $DASH_BACKUP_KEEP, else 7)")
+	backupEvery := flag.Duration("backup-every", 0, "how often to back up to -backup-dir (default $DASH_BACKUP_EVERY, else 24h)")
 	defaultData, mode := runnerctl.HubData(home), runnerctl.ModeHub
 	if runnerMode {
 		defaultData, mode = runnerctl.RunnerData(home), runnerctl.ModeRunner
@@ -313,7 +320,7 @@ func main() {
 	tracker := usage.New(events, *pauseAt)
 	perms := perm.NewBroker(events)
 	perms.Saved = st
-	todoLog := &queue.TodoLog{Pub: events, Root: filepath.Join(*dataDir, "logs")}
+	todoLog := &queue.TodoLog{Pub: events, Root: filepath.Join(*dataDir, "logs"), MaxBytes: int64(max(*logMaxMB, 0)) << 20}
 	merges := queue.NewMergeQueue(st, git, events, todoLog, 1024)
 	uploads := filepath.Join(*dataDir, "uploads")
 	merges.WorktreeRoot, merges.UploadRoot = filepath.Join(*dataDir, "worktrees"), uploads
@@ -604,6 +611,18 @@ func main() {
 		slog.Info("projects switched to their default way of landing work (pull requests on GitHub, else merging)", "projects", names)
 	}
 
+	if dir := envOr(*backupDir, "DASH_BACKUP_DIR"); dir != "" {
+		every, keep, err := backupSchedule(*backupEvery, *backupKeep)
+		if err != nil {
+			slog.Error("backups", "err", err)
+			os.Exit(1)
+		}
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(*dataDir, dir)
+		}
+		slog.Info("scheduled backups", "dir", dir, "every", every, "keep", keep)
+		go store.ScheduleBackups(ctx, filepath.Join(*dataDir, "dash.db"), dir, every, keep)
+	}
 	go builds.Run(ctx)
 	if *scanSchedules {
 		go scheduler.Run(ctx)
@@ -1054,5 +1073,82 @@ func resetTwoFactor(args []string) int {
 		return 1
 	}
 	fmt.Printf("Two-factor sign-in is off for %s. If an organization of theirs requires it, they set it up again when they next sign in.\n", u.Username)
+	return 0
+}
+
+// backupSchedule is how often to back up and how many backups to keep,
+// from the flags (negative or zero: not set), else the environment, else
+// daily and 7.
+func backupSchedule(every time.Duration, keep int) (time.Duration, int, error) {
+	if every <= 0 {
+		every = 24 * time.Hour
+		if v := os.Getenv("DASH_BACKUP_EVERY"); v != "" {
+			d, err := time.ParseDuration(v)
+			if err != nil || d <= 0 {
+				return 0, 0, fmt.Errorf("DASH_BACKUP_EVERY: want a duration such as 24h, not %q", v)
+			}
+			every = d
+		}
+	}
+	if every < time.Minute {
+		return 0, 0, fmt.Errorf("-backup-every must be at least a minute, not %s", every)
+	}
+	if keep < 0 {
+		keep = 7
+		if v := os.Getenv("DASH_BACKUP_KEEP"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 {
+				return 0, 0, fmt.Errorf("DASH_BACKUP_KEEP: want a number, 0 or more, not %q", v)
+			}
+			keep = n
+		}
+	}
+	return every, keep, nil
+}
+
+// backupCmd is `dash backup [-data dir] [-keep n] <file or directory>`: a
+// consistent copy of the database, taken while Dash runs. Into a directory
+// it writes a timestamped dash-<time>.db and, with -keep, removes older
+// ones, so a cron job or systemd timer can call it as it is.
+func backupCmd(args []string) int {
+	home, _ := os.UserHomeDir()
+	fs := flag.NewFlagSet("dash backup", flag.ExitOnError)
+	dataDir := fs.String("data", runnerctl.HubData(home), "the server's -data directory")
+	keep := fs.Int("keep", 0, "when backing up into a directory, keep this many timestamped backups there and remove older ones (0 = keep all)")
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "usage: dash backup [-data dir] [-keep n] <file or directory>\n\n"+
+			"Copies the database consistently while Dash runs. Into a directory, the copy is named dash-<UTC time>.db.")
+		fs.PrintDefaults()
+	}
+	_ = fs.Parse(args)
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return 2
+	}
+	src, dest := filepath.Join(*dataDir, "dash.db"), fs.Arg(0)
+	if _, err := os.Stat(src); err != nil {
+		fmt.Fprintln(os.Stderr, "no Dash database at", src, "(use -data)")
+		return 1
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if info, err := os.Stat(dest); err == nil && info.IsDir() || strings.HasSuffix(dest, string(filepath.Separator)) {
+		path, err := store.BackupTo(ctx, src, dest, *keep, time.Now())
+		if path == "" {
+			fmt.Fprintln(os.Stderr, "backup:", err)
+			return 1
+		}
+		fmt.Println(path)
+		if err != nil { // written, but older ones weren't all removed
+			fmt.Fprintln(os.Stderr, "backup:", err)
+			return 1
+		}
+		return 0
+	}
+	if err := store.Backup(ctx, src, dest); err != nil {
+		fmt.Fprintln(os.Stderr, "backup:", err)
+		return 1
+	}
+	fmt.Println(dest)
 	return 0
 }

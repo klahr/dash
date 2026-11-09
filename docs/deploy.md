@@ -220,41 +220,63 @@ Set `DASH_VERSION` in `.env` to the new release (see [Releases](releases.md)), t
 docker compose pull && docker compose up -d
 ```
 
-The database migrates itself at start. To go back, set the previous version; take a backup
-first, since a newer version's migrations may not be undone by an older one.
+The database migrates itself at start. To go back, set the previous version and restore the backup
+you took first (`docker compose exec dash dash backup -data /data /data/backups/`, see
+below): an older version refuses a database a newer one has migrated.
 
 ### Back up and restore
 
 All of the hub's state (the SQLite database, sessions, logs, uploads) is in one volume,
 `dash_dash-data`, mounted at `/data`. Caddy's certificates are in `dash_caddy-data`; it gets new
-ones if they are lost.
+ones if they are lost. The database is what matters: everything else is either rebuilt (sessions
+mean signing in again) or nice to have (task logs, uploaded images).
 
-The simplest backup stops the hub for a moment, so the database is consistent:
+**Scheduled backups.** [`deploy/docker.env.example`](../deploy/docker.env.example) sets
+`DASH_BACKUP_DIR=/data/backups`: the hub writes a consistent copy of the database there once a
+day, as `dash-<UTC time>.db`, and keeps the newest 7 (`DASH_BACKUP_KEEP`; `DASH_BACKUP_EVERY`
+for another interval, e.g. `6h`). The first is written at start unless one less than a day old is
+already there. They are in the same volume as the database, so copy them off the server too, e.g.
+from a nightly cron job on the host:
+
+```sh
+docker compose cp dash:/data/backups/. /srv/backups/dash/
+```
+
+**A backup now**, while the hub runs, with `dash backup` in the container (it prints the file's
+name):
+
+```sh
+docker compose exec dash dash backup -data /data /data/backups/
+docker compose cp dash:/data/backups/dash-20260131T030000Z.db .
+```
+
+`dash backup` uses SQLite's `VACUUM INTO`, so the copy is a single consistent snapshot even while
+tasks are being written, and it checks the copy before naming it. To copy the rest of the data
+too (logs, uploads), stop the hub for a moment: `docker compose stop dash`,
+`docker compose cp dash:/data ./dash-data-$(date +%F)`, `docker compose start dash`.
+
+**Restore.** Stop the hub, put the backup in place as `dash.db` and remove the old database's
+write-ahead log (`dash.db-wal`, `dash.db-shm`): left beside a different database, SQLite could
+apply it to the restored one. The image has no shell, so do it from a throwaway container. For a
+backup already in `/data/backups`:
 
 ```sh
 docker compose stop dash
-docker compose cp dash:/data ./dash-backup-$(date +%F)
+docker run --rm --volumes-from dash-dash-1 alpine sh -c '
+  cp /data/dash.db /data/dash.db.before-restore &&
+  cp /data/backups/dash-20260131T030000Z.db /data/dash.db &&
+  rm -f /data/dash.db-wal /data/dash.db-shm &&
+  chown 65532:65532 /data/dash.db'
 docker compose start dash
 ```
 
-Without stopping it, take an online copy with SQLite's `.backup` from a throwaway container (the
-hub's image has no shell or `sqlite3`):
+For a backup on the host, first `docker compose cp ./dash-20260131T030000Z.db dash:/data/backups/`
+(it works while the container is stopped). A backup from an older version is migrated at start;
+one from a newer version is refused, so restore with the version that took it or a newer one.
+`dash.db.before-restore` is the database you replaced; delete it once all is well.
 
-```sh
-docker run --rm --volumes-from dash-dash-1 -v "$PWD:/backup" alpine \
-  sh -c 'apk add -q sqlite && sqlite3 /data/dash.db ".backup /backup/dash.db"'
-```
-
-To restore, stop the hub, copy the backup into the volume and start it again:
-
-```sh
-docker compose stop dash
-docker compose cp ./dash-backup-2026-01-31/. dash:/data/
-docker compose start dash
-```
-
-Files copied in this way may be owned by root; Dash runs as user 65532. If it can't write its
-database after a restore, fix the owner:
+Files copied into the volume with `docker compose cp` may be owned by root; Dash runs as user
+65532. If it can't write its data after a restore, fix the owner:
 `docker run --rm --volumes-from dash-dash-1 alpine chown -R 65532:65532 /data`.
 
 ### Build the image yourself

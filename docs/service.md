@@ -21,3 +21,61 @@ elsewhere, edit `WorkingDirectory` and `ExecStart` in your copy of the unit. Ext
 the env file.
 
 After pulling changes: rebuild, then `systemctl --user restart dash`.
+
+## Back up and restore
+
+The hub keeps its state in `~/.local/share/dash` (the `-data` directory): the SQLite database
+`dash.db`, which is what matters, plus sessions, task logs and uploads. A runner keeps its own in
+`~/.local/share/dash-runner`; the commands below take `-data` for it.
+
+**Scheduled backups.** Set a backup directory in `~/.config/dash/env` and restart the service:
+
+```sh
+DASH_BACKUP_DIR=backups     # relative to the data directory, or an absolute path
+DASH_BACKUP_KEEP=7          # the newest 7 are kept; 0 keeps all
+DASH_BACKUP_EVERY=24h
+```
+
+(or `-backup-dir`, `-backup-keep` and `-backup-every` on the `ExecStart` line). Dash then writes
+a consistent copy of the database, `dash-<UTC time>.db`, every day, and removes older ones beyond
+the newest 7. The first is written at start unless one younger than the interval is already
+there, so restarts don't push older backups out. `journalctl --user -u dash` shows
+`backup written` for each, or why one failed. Point it at another disk, or copy the directory
+off the computer, to survive losing this one.
+
+**A backup now**, while Dash runs:
+
+```sh
+bin/dash backup ~/dash-backups/          # writes ~/dash-backups/dash-<UTC time>.db
+bin/dash backup -keep 14 ~/dash-backups/ # ... and keeps only the newest 14 there
+bin/dash backup ~/dash-before-upgrade.db # or to a file of your choice (it must not exist)
+```
+
+It uses SQLite's `VACUUM INTO`: a single consistent snapshot, taken without stopping Dash or
+blocking its writes, and checked before it is given its name. It is safe to run from cron or a
+systemd timer instead of `DASH_BACKUP_DIR`. The copy holds password hashes and tokens, so it is
+readable only by you; keep it that way.
+
+**Restore.** Stop Dash, put the backup in place as `dash.db`, and remove the old database's
+write-ahead log (`dash.db-wal`, `dash.db-shm`): left beside a different database, SQLite could
+apply it to the restored one.
+
+```sh
+systemctl --user stop dash
+cd ~/.local/share/dash
+mv dash.db dash.db.before-restore
+rm -f dash.db-wal dash.db-shm
+cp backups/dash-20260131T030000Z.db dash.db
+systemctl --user start dash
+```
+
+A backup from an older version is migrated at start; one from a newer version is refused, so
+restore with the version that took it or a newer one. Delete `dash.db.before-restore` once all is
+well.
+
+## Disk use
+
+Each task's log is capped: a log file past 32 MB is cut to its newest half, behind a note that
+earlier output was trimmed (`-log-max-mb`; 0 = no cap). The daily cleanup (`-cleanup-days`,
+14 by default) removes the logs of deleted tasks, the worktrees of tasks that failed that many
+days ago, and orphaned worktrees, branches and uploads.
