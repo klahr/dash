@@ -339,7 +339,28 @@ func hubStatus(s model.TodoStatus) model.TodoStatus {
 	return s
 }
 
+// safeLinks drops the links in ts that aren't pages on GitHub: the runner
+// isn't trusted, and the hub's dashboard shows them (see
+// model.IsGitHubWebURL).
+func safeLinks(ts *TaskState) {
+	if ts.PR != nil {
+		pr := *ts.PR
+		pr.URL = model.GitHubWebURL(pr.URL)
+		pr.Checks = slices.Clone(pr.Checks)
+		for i := range pr.Checks {
+			pr.Checks[i].URL = model.GitHubWebURL(pr.Checks[i].URL)
+		}
+		ts.PR = &pr
+	}
+	if ts.Revert != nil {
+		rv := *ts.Revert
+		rv.PRURL = model.GitHubWebURL(rv.PRURL)
+		ts.Revert = &rv
+	}
+}
+
 func (d *Dispatcher) apply(r tunnel.Runner, ts TaskState) {
+	safeLinks(&ts)
 	org, ok := d.Store.ProjectOrg(projectOf(d.Store, ts.HubTodoID))
 	if !ok || org != r.OrgID() {
 		return

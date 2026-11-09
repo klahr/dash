@@ -5,6 +5,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -225,6 +226,27 @@ func IsGitHub(remote string) bool {
 	host, _, _ := strings.Cut(r, "/")
 	host, _, _ = strings.Cut(host, ":")
 	return host == "github.com" || strings.HasSuffix(host, ".github.com")
+}
+
+// IsGitHubWebURL reports whether u is an https:// page on GitHub (a pull
+// request, a check, a workflow run, a release), the only links a runner may
+// report: a runner isn't trusted, and a link it reports is shown on the
+// hub's dashboard, where it must not lead back into the hub itself.
+func IsGitHubWebURL(u string) bool {
+	x, err := url.Parse(u)
+	if err != nil || x.Scheme != "https" || x.User != nil || x.Opaque != "" {
+		return false
+	}
+	host := strings.ToLower(x.Hostname())
+	return x.Port() == "" && (host == "github.com" || strings.HasSuffix(host, ".github.com"))
+}
+
+// GitHubWebURL is u if it is a page on GitHub (see IsGitHubWebURL), else "".
+func GitHubWebURL(u string) string {
+	if IsGitHubWebURL(u) {
+		return u
+	}
+	return ""
 }
 
 // SyncsRemote reports whether the default branch is kept in step with origin

@@ -881,7 +881,9 @@ func (h *Hub) Proxy(name string) (http.Handler, bool) {
 			r.Out.Header.Del(UserHeader) // a person doesn't say whom they are
 		},
 		ModifyResponse: func(res *http.Response) error {
-			res.Header.Del("Set-Cookie")
+			// The answer is served on the hub's origin: the runner doesn't
+			// get to choose how it renders (see SafeRunnerHeader).
+			SafeRunnerHeader(res.Header, res.StatusCode)
 			if res.StatusCode == http.StatusUnauthorized {
 				res.StatusCode, res.Status = http.StatusBadGateway, "502 Bad Gateway"
 			}

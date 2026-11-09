@@ -164,11 +164,21 @@ type forwarded struct {
 
 func (f forwarded) ok() bool { return f.code >= 200 && f.code < 300 }
 
+// forwardedHeaders are the headers of a runner's answer the hub passes on;
+// the rest (cookies, policies, …) are the hub's to set, not a runner's.
+var forwardedHeaders = []string{"Content-Type", "Content-Disposition", "Cache-Control", "Etag", "Last-Modified", "Retry-After"}
+
 func (f forwarded) write(w http.ResponseWriter) {
-	for k, v := range f.header {
-		if k != "Content-Length" {
-			w.Header()[k] = v
+	h := http.Header{}
+	for _, k := range forwardedHeaders {
+		if v := f.header.Values(k); len(v) > 0 {
+			h[k] = v
 		}
+	}
+	// Served on the hub's origin: never as the runner's HTML or script.
+	tunnel.SafeRunnerHeader(h, f.code)
+	for k, v := range h {
+		w.Header()[k] = v
 	}
 	w.WriteHeader(f.code)
 	_, _ = w.Write(f.body)
@@ -478,17 +488,26 @@ func (g RunnerGitHub) call(ctx context.Context, projectID string, req dispatch.G
 
 func (g RunnerGitHub) Runs(ctx context.Context, projectID, _, ref string, limit int) ([]gitops.Run, error) {
 	out, err := g.call(ctx, projectID, dispatch.GitHubCall{Op: dispatch.GitHubRuns, Ref: ref, Limit: limit})
-	return out.Runs, err
+	return safeRuns(out.Runs), err
 }
 
 func (g RunnerGitHub) RunsForCommit(ctx context.Context, projectID, _, sha string, limit int) ([]gitops.Run, error) {
 	out, err := g.call(ctx, projectID, dispatch.GitHubCall{Op: dispatch.GitHubCommitRuns, Ref: sha, Limit: limit})
-	return out.Runs, err
+	return safeRuns(out.Runs), err
 }
 
 func (g RunnerGitHub) ReleaseURL(ctx context.Context, projectID, _, tag string) (string, error) {
 	out, err := g.call(ctx, projectID, dispatch.GitHubCall{Op: dispatch.GitHubReleaseURL, Ref: tag})
-	return out.URL, err
+	return model.GitHubWebURL(out.URL), err
+}
+
+// safeRuns are runs a runner reported, without links that aren't pages on
+// GitHub (see model.IsGitHubWebURL).
+func safeRuns(runs []gitops.Run) []gitops.Run {
+	for i := range runs {
+		runs[i].URL = model.GitHubWebURL(runs[i].URL)
+	}
+	return runs
 }
 
 func (g RunnerGitHub) RerunRun(ctx context.Context, projectID, _ string, runID int64, failedOnly bool) error {
