@@ -8,7 +8,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/anthropics/anthropic-sdk-go/v2 v2.7.0
 	github.com/charmbracelet/x/ansi v0.11.9
-	github.com/chromedp/cdproto v0.159.0
+	github.com/chromedp/cdproto v0.159.2
 	github.com/chromedp/chromedp v0.23.0
 	github.com/creack/pty v1.1.24
 	github.com/gorilla/websocket v1.5.3
