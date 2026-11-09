@@ -1,0 +1,36 @@
+# Weekly update pull requests, grouped per ecosystem so each week brings at
+# most one PR for each.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go-modules:
+        patterns: ["*"]
+
+  # The workflows pin actions by commit SHA with the version in a comment;
+  # Dependabot updates both.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # Dockerfile (the hub from source), deploy/Dockerfile.release (the release
+  # image) and deploy/caddy/Dockerfile. Base images on floating tags
+  # (e.g. distroless :nonroot, busybox:stable) are only updated if pinned by
+  # digest; golang:${GO_VERSION} follows go.mod's go line (CI checks they match).
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /deploy
+      - /deploy/caddy
+    schedule:
+      interval: weekly
+    groups:
+      docker-images:
+        patterns: ["*"]

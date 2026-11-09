@@ -33,7 +33,6 @@ var (
 	styleBox     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cAccent).Padding(0, 1)
 	styleModeN   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(cAccent).Padding(0, 1)
 	styleModeI   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(cOK).Padding(0, 1)
-	styleModeC   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(cWarn).Padding(0, 1)
 	statusColors = map[model.TodoStatus]lipgloss.Style{
 		model.StatusInProgress: styleWarn,
 		model.StatusReview:     styleAccent,

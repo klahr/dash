@@ -217,9 +217,8 @@ type (
 		err error
 	}
 	resultMsg struct { // outcome of a one-shot action
-		ok     string
-		err    error
-		reload bool
+		ok  string
+		err error
 	}
 	procStartedMsg struct {
 		p   model.Process

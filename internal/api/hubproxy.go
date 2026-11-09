@@ -33,10 +33,14 @@ import (
 // the request fails with errNoRunnerOnline; it never falls back to the hub.
 
 // errNoRunnerOnline is why the hub can't do a project's work right now.
+//
+//lint:ignore ST1005 shown to the user verbatim as a sentence
 var errNoRunnerOnline = errors.New("No runner is online for this project. Start one with `dash runner`.")
 
 // errNoRunnerLinked is why the hub can't do the work of a project no
 // runner is linked to (one made on the hub before it ran nothing itself).
+//
+//lint:ignore ST1005 shown to the user verbatim as a sentence
 var errNoRunnerLinked = errors.New("No runner is linked to this project: link one in Project settings → Runners (start one with `dash runner`).")
 
 // projectRunner picks the runner that does p's work for the hub: one of

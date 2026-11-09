@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call: # the release workflow runs all of CI first
 
 permissions:
   contents: read
@@ -39,6 +40,16 @@ jobs:
 
       - name: Vet
         run: go vet ./...
+
+      # Pinned by version (go.sum's checksum database checks the download);
+      # bump these by hand. staticcheck must be built with the Go in go.mod.
+      - name: Staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+
+      # Fails only on vulnerabilities the code can reach, not on every
+      # vulnerable module in go.sum.
+      - name: Govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
       - name: Build
         run: go build ./...

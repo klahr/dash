@@ -142,6 +142,9 @@ func (sv *service) findUpload(id string) (model.Attachment, error) {
 	for _, e := range entries {
 		if e.Name() == uploadOrgFile {
 			b, err := os.ReadFile(filepath.Join(dir, uploadOrgFile))
+			if err != nil {
+				return model.Attachment{}, store.ErrNotFound
+			}
 			if org, err = strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64); err != nil || org == 0 {
 				return model.Attachment{}, store.ErrNotFound
 			}

@@ -157,10 +157,7 @@ func (t *Template) setFields(front string) error {
 		case "schedule", "cron":
 			t.Schedule = val
 		case "tools", "allowed_tools":
-			t.Tools = nil
-			for _, tool := range splitList(val) {
-				t.Tools = append(t.Tools, tool)
-			}
+			t.Tools = splitList(val)
 		default:
 			return fmt.Errorf("frontmatter line %d: unknown setting %q (name, title, kind, scope, path, model, effort, schedule or tools)", n, key)
 		}
