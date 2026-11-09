@@ -5914,19 +5914,27 @@ const chatUnread = (() => {
 function saveChatUnread() {
   try { localStorage.setItem("dash.chatUnread", JSON.stringify([...chatUnread])); } catch {}
 }
+// Another project's chats whose tab you closed while a reply streamed: the
+// reply doesn't bring the tab back (until you talk in that chat again).
+const chatDismissed = new Set();
 // onState for a pane chat: a turn that ends while you aren't looking at the
 // chat leaves it unread.
 function paneChatState(key, get) {
   let wasBusy = false;
   return () => {
     const busy = get().busy;
-    if (wasBusy && !busy && !viewingChat(key) && !chatUnread.has(key)) {
+    if (wasBusy && !busy && chatDismissed.delete(key)) {
+      // Its tab was closed: nobody is waiting for this reply.
+    } else if (wasBusy && !busy && !viewingChat(key) && !chatUnread.has(key)) {
       chatUnread.add(key);
       saveChatUnread();
       renderChatDots();
     }
+    // Another project's chat shows as a tab while it streams or is unread.
+    const changed = wasBusy !== busy;
     wasBusy = busy;
-    renderChatBadge();
+    if (changed && key !== "general" && key !== projectKey(state.project)) renderChatPane();
+    else renderChatBadge();
   };
 }
 
@@ -5994,13 +6002,23 @@ const wide = matchMedia("(min-width: 1280px)");
 const CHAT_MIN_W = 280;
 const pane = (() => {
   const get = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
-  const base = { open: false, pinned: false, width: null, tab: null, tabs: [] };
-  try { const s = JSON.parse(get("dash.chatPane")); if (s) return { ...base, ...s }; } catch {}
+  // projectTabs: the chats added with + in each project, by projectKey.
+  const base = { open: false, pinned: false, width: null, tab: null, projectTabs: {} };
+  // Only well-formed tab lists survive: stored data may be stale or from an older version.
+  const tabLists = (v) => Object.fromEntries(Object.entries(v && typeof v === "object" && !Array.isArray(v) ? v : {})
+    .map(([k, list]) => [k, Array.isArray(list) ? [...new Set(list.filter((t) => typeof t === "string" && t && t !== k))] : []])
+    .filter(([, list]) => list.length));
+  try {
+    const s = JSON.parse(get("dash.chatPane"));
+    if (s && typeof s === "object") {
+      // The old shared tab list ("tabs") is dropped, not carried over.
+      const { tabs, ...rest } = s;
+      return { ...base, ...rest, tab: typeof s.tab === "string" ? s.tab : null, projectTabs: tabLists(s.projectTabs) };
+    }
+  } catch {}
   // Carry over the board chat's settings: it pushed the board aside, like pinned.
   const old = get("dash.boardChat");
-  let tabs = [];
-  try { tabs = JSON.parse(get("dash.chatTabs") || "[]"); } catch {}
-  return { ...base, open: old === "1", pinned: old != null, width: Number(get("dash.boardChatW")) || null, tab: old === "1" ? "project" : null, tabs };
+  return { ...base, open: old === "1", pinned: old != null, width: Number(get("dash.boardChatW")) || null, tab: old === "1" ? "project" : null };
 })();
 function savePane() {
   try {
@@ -6032,8 +6050,8 @@ function projectChatFor(p) {
     actions: chatActions(false, key),
     onState: paneChatState(key, () => pc.chat),
   });
-  // A project chat you talk in stays as a tab after you switch projects.
-  pc.chat.input.form.addEventListener("submit", () => keepChatTab(key));
+  // Talking in a chat again wants its reply, even if its tab was closed mid-reply.
+  pc.chat.input.form.addEventListener("submit", () => chatDismissed.delete(key));
   projectChats.set(key, pc);
   return pc;
 }
@@ -6046,11 +6064,43 @@ async function loadProjectChat(p) {
   if (!pc.chat.history.length && !pc.chat.busy) pc.chat.reset(saved);
 }
 
-// Kept project chats other than the selected project's, which is "This project".
-const keptTabs = () => pane.tabs.map(projectByKey).filter((p) => p && projectKey(p) !== projectKey(state.project));
-function keepChatTab(key) {
-  if (pane.tabs.includes(key)) return;
-  pane.tabs.push(key);
+// Tabs are This project, General, then the chats added with + in the selected
+// project (each project has its own), then other projects' chats with a reply
+// in flight or unread, until it has been seen ("passing" tabs).
+const addedTabs = () => pane.projectTabs[projectKey(state.project)] || [];
+// Passing chats stay while they stream, are unread, or are the tab you're on.
+const passingTabs = new Set();
+let passingProject = null;
+function keptTabs() {
+  const cur = projectKey(state.project), added = addedTabs();
+  // A seen reply's tab doesn't follow you into another project.
+  const moved = passingProject !== cur;
+  passingProject = cur;
+  const busy = (k) => !!projectChats.get(k)?.chat.busy;
+  for (const k of [...projectChats.keys(), ...chatUnread]) {
+    if (k !== "general" && k !== cur && !added.includes(k) && !chatDismissed.has(k) && (busy(k) || chatUnread.has(k))) passingTabs.add(k);
+  }
+  for (const k of passingTabs) {
+    if (k === cur || added.includes(k) || chatDismissed.has(k) || (!busy(k) && !chatUnread.has(k) && (pane.tab !== k || moved))) passingTabs.delete(k);
+  }
+  return [...new Set([...added, ...passingTabs])].map(projectByKey).filter((p) => p && projectKey(p) !== cur);
+}
+function addChatTab(key) {
+  const cur = projectKey(state.project);
+  if (!cur || key === cur) return;
+  const list = addedTabs();
+  if (!list.includes(key)) pane.projectTabs[cur] = [...list, key];
+  showChatTab(key);
+}
+function closeChatTab(key) {
+  const cur = projectKey(state.project), list = addedTabs().filter((k) => k !== key);
+  if (list.length) pane.projectTabs[cur] = list;
+  else delete pane.projectTabs[cur];
+  passingTabs.delete(key);
+  // Closed mid-reply: the reply doesn't reopen it.
+  if (projectChats.get(key)?.chat.busy) chatDismissed.add(key);
+  if (chatUnread.delete(key)) saveChatUnread();
+  if (pane.tab === key) pane.tab = "project";
   savePane();
   renderChatPane();
 }
@@ -6101,13 +6151,11 @@ function renderChatPane() {
     h("div", { class: "chat-pane-tab" }, tabBtn("general", "General", [ico("spark")], "General chat, in your home directory")),
     ...keptTabs().map((p) => h("div", { class: "chat-pane-tab" },
       tabBtn(projectKey(p), p.name, [projectIcon(p)], grouped() ? `${p.name} · ${projectWhere(p)}` : p.name),
-      ib({ type: "button", class: "icon-btn chat-tab-close", "aria-label": `Close the ${p.name} chat`, title: "Close this tab", onclick: () => {
-        pane.tabs = pane.tabs.filter((k) => k !== projectKey(p));
-        if (chatUnread.delete(projectKey(p))) saveChatUnread();
-        savePane();
-        renderChatPane();
-      } }, "x"))),
+      ib({ type: "button", class: "icon-btn chat-tab-close", "aria-label": `Close the ${p.name} chat`, title: "Close this tab", onclick: () => closeChatTab(projectKey(p)) }, "x"))),
   );
+  // + adds another project's chat as a tab, in this project only.
+  $("#chat-tab-add").hidden = !state.project;
+  if (!state.project) setChatTabPicker(false);
 
   // Show the tab's panel; the others (and their streams) stay as they are.
   const show = (el, on) => {
@@ -6122,6 +6170,59 @@ function renderChatPane() {
   if (cur && pane.open) loadProjectChat(cur).catch((e) => toast(`Couldn't load the project chat: ${e.message}`, true));
   markChatSeen();
 }
+
+// The + tab's picker: every project but this one and those with a tab already,
+// filtered by what you type.
+function chatTabCandidates() {
+  const have = new Set([projectKey(state.project), ...keptTabs().map(projectKey)]);
+  const seen = new Set();
+  return (state.projects || []).filter((p) => {
+    const k = projectKey(p);
+    if (have.has(k) || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+function renderChatTabOptions() {
+  const q = $("#chat-tab-search").value.trim();
+  let list = chatTabCandidates();
+  if (q) {
+    list = list.map((p) => {
+      const s = fuzzyScore(p.name, q);
+      // Not the path: its long temp or home directories match almost any letters in order.
+      return { p, s: s >= 0 ? s * 2 : fuzzyScore(`${p.name} ${p.machine} ${projectWhere(p)}`, q) };
+    }).filter((x) => x.s >= 0).sort((a, b) => b.s - a.s).map((x) => x.p);
+  }
+  $("#chat-tab-options").replaceChildren(...(list.length ? list.map((p) => h("button", {
+    type: "button", role: "menuitem", title: p.path,
+    onclick: () => { setChatTabPicker(false); addChatTab(projectKey(p)); },
+  }, h("span", { class: "project-name" }, projectDot(p), p.name, sharedMark(p)), h("span", { class: "project-branch" }, grouped() ? projectWhere(p) : baseBranch(p))))
+    : [h("div", { class: "machine-empty" }, q ? "No matching projects" : "No other projects")]));
+}
+function setChatTabPicker(open) {
+  const el = $("#chat-tab-picker");
+  if (el.hidden === !open) return;
+  el.hidden = !open;
+  $("#chat-tab-add")?.setAttribute("aria-expanded", String(open));
+  if (!open) return;
+  $("#chat-tab-search").value = "";
+  renderChatTabOptions();
+  $("#chat-tab-search").focus();
+}
+$("#chat-tab-search").addEventListener("input", renderChatTabOptions);
+$("#chat-tab-add").addEventListener("click", () => setChatTabPicker($("#chat-tab-picker").hidden));
+document.addEventListener("click", (e) => { if (!$("#chat-tab-picker").hidden && !e.target.closest("#chat-tab-picker, #chat-tab-add")) setChatTabPicker(false); });
+$("#chat-tab-picker").addEventListener("keydown", (e) => {
+  const btns = $$("#chat-tab-options button");
+  const i = btns.indexOf(document.activeElement);
+  const inSearch = e.target === $("#chat-tab-search");
+  if (e.key === "Escape") { setChatTabPicker(false); $("#chat-tab-add")?.focus(); }
+  else if (e.key === "Enter" && inSearch) btns[0]?.click();
+  else if (e.key === "ArrowDown" || (!inSearch && e.key === "j")) (btns[i + 1] || btns[0])?.focus();
+  else if (e.key === "ArrowUp" || (!inSearch && e.key === "k")) (i <= 0 ? $("#chat-tab-search") : btns[i - 1]).focus();
+  else return;
+  e.preventDefault(); e.stopPropagation();
+});
 
 // The chat key of a tab: "general", or the projectKey of its project.
 function tabChatKey(tab) {
@@ -6146,7 +6247,7 @@ window.addEventListener("storage", (e) => {
   if (e.key !== "dash.chatUnread") return;
   chatUnread.clear();
   try { for (const k of JSON.parse(e.newValue) || []) chatUnread.add(k); } catch {}
-  markChatSeen();
+  renderChatPane(); // an unread chat shows as a tab; marks the one on screen seen
 });
 // The green dots on the unread chats' tabs, and the Chat buttons' badge.
 function renderChatDots() {
@@ -6168,6 +6269,7 @@ function showChatTab(tab) {
 function toggleChatPane(open = !pane.open, tab = null) {
   pane.open = open;
   if (tab) pane.tab = tab;
+  if (!open) setChatTabPicker(false);
   savePane();
   renderChatPane();
   // On mobile the chat is a page: opening it doesn't pop the keyboard up over the nav.

@@ -292,6 +292,12 @@
       <div class="chat-pane-resize" id="pc-resize" role="separator" aria-orientation="vertical" aria-label="Resize the chat" tabindex="0" title="Drag to resize · double-click to reset"></div>
       <header class="chat-pane-head">
         <div class="chat-pane-tabs" id="chat-tabs" role="tablist" aria-label="Chats"></div>
+        <!-- + adds another project's chat as a tab; outside the tabs, so it never scrolls away. -->
+        <button class="icon-btn chat-tab-add" id="chat-tab-add" type="button" aria-label="Add a project's chat as a tab" title="Add a project's chat" aria-haspopup="true" aria-expanded="false" aria-controls="chat-tab-picker" data-icon="plus" hidden></button>
+        <div class="foot-menu-list project-picker-list chat-tab-picker" id="chat-tab-picker" role="dialog" aria-label="Add a project's chat" hidden>
+          <input class="chat-tab-search" id="chat-tab-search" type="search" placeholder="Search projects…" aria-label="Search projects" aria-controls="chat-tab-options" autocomplete="off" spellcheck="false">
+          <div class="chat-tab-options" id="chat-tab-options" role="menu" aria-label="Projects"></div>
+        </div>
         <button class="icon-btn" id="pc-pin" type="button" aria-pressed="false" aria-label="Pin the chat" title="Pin the chat" data-icon="pin"></button>
         <button class="icon-btn" id="pc-clear" type="button" aria-label="Clear this chat" title="Clear this chat" data-icon="trash"></button>
         <button class="icon-btn" id="pc-close" type="button" aria-label="Close the chat" title="Close (Esc)" data-icon="x"></button>

@@ -178,6 +178,104 @@ func TestBrowserTerminalPreview(t *testing.T) {
 	}
 }
 
+// The chat pane's tabs: This project and General, plus the chats added with
+// + in each project (each project its own), plus another project's chat
+// while its reply streams or is unread.
+func TestBrowserChatTabs(t *testing.T) {
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	api := h.api
+	b := newBrowser(t, chrome)
+	// Stale tabs from an older version (a shared list) and junk don't break the pane.
+	b.do("open the hub", chromedp.Navigate(h.base+"/"))
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`localStorage.setItem("dash.chatTabs", '["laptop/x"]');
+		localStorage.setItem("dash.chatPane", '{"open":false,"tab":"laptop/x","tabs":["laptop/x"],"projectTabs":{"a":"nope","b":[1,null,"b"],"c":["laptop/x"]}}'); true`)); err != nil {
+		t.Fatal(err)
+	}
+	b.signIn(h)
+	const peer = "/peer/laptop"
+	for _, name := range []string{"lib", "web"} {
+		api.must("POST", peer+"/api/projects", map[string]any{"name": name}, http.StatusCreated, nil)
+	}
+	b.do("reload", chromedp.Reload())
+	b.waitJS("every project", `document.querySelectorAll("#side-project-list .side-project").length === 3`)
+	b.clickTextUntil(`#side-project-list .side-project`, "app", `document.querySelector("#project-name")?.textContent === "app"`)
+
+	tabs := func(want string) {
+		b.t.Helper()
+		b.waitJS("the tabs "+want, `[...document.querySelectorAll("#chat-tabs .chat-tab-name")].map((n) => n.textContent).join(",") === `+fmt.Sprintf("%q", want))
+	}
+	options := `[...document.querySelectorAll("#chat-tab-options button .project-name")].map((n) => n.textContent).join(",")`
+	b.until("open the chat", `!document.querySelector("#chat-pane").hidden`, chromedp.Click(chromedp.ID("pc-open")))
+	tabs("This project,General")
+	if stored, _ := chromedp.Run(b.ctx, chromedp.Evaluate[string](`localStorage.getItem("dash.chatPane")`)); strings.Contains(stored, `"tabs"`) || strings.Contains(stored, "nope") {
+		t.Fatalf("the old tabs are still stored: %s", stored)
+	}
+
+	// + lists the other projects, filters them, and adds the pick as a tab.
+	b.do("open the + picker", chromedp.Click(chromedp.ID("chat-tab-add")))
+	b.waitJS("the picker with lib and web", `!document.querySelector("#chat-tab-picker").hidden && `+options+` === "lib,web" && document.activeElement?.id === "chat-tab-search"`)
+	b.do("search for we", chromedp.SendKeys(chromedp.ID("chat-tab-search"), "we"))
+	b.waitJS("only web", options+` === "web"`)
+	b.do("pick it", chromedp.SendKeys(chromedp.ID("chat-tab-search"), "\r"))
+	b.waitJS("the picker closed", `document.querySelector("#chat-tab-picker").hidden`)
+	tabs("This project,General,web")
+	b.waitJS("web's chat shown", `document.querySelector('#chat-tabs [aria-selected="true"] .chat-tab-name')?.textContent === "web"`)
+	b.do("open the + picker again", chromedp.Click(chromedp.ID("chat-tab-add")))
+	b.waitJS("only lib left", options+` === "lib"`)
+	b.do("close it with Escape", chromedp.SendKeys(chromedp.ID("chat-tab-search"), "\x1b"))
+	b.waitJS("the picker closed", `document.querySelector("#chat-tab-picker").hidden`)
+
+	// Another project has its own tabs.
+	b.clickTextUntil(`#side-project-list .side-project`, "lib", `document.querySelector("#project-name")?.textContent === "lib"`)
+	tabs("This project,General")
+	b.do("open the + picker in lib", chromedp.Click(chromedp.ID("chat-tab-add")))
+	b.waitJS("app and web", options+` === "app,web"`)
+	b.clickText("#chat-tab-options button", "app")
+	tabs("This project,General,app")
+	b.clickTextUntil(`#side-project-list .side-project`, "app", `document.querySelector("#project-name")?.textContent === "app"`)
+	tabs("This project,General,web")
+
+	// They survive a reload.
+	b.do("reload", chromedp.Reload())
+	b.waitJS("app selected", `document.querySelector("#project-name")?.textContent === "app"`)
+	tabs("This project,General,web")
+
+	// A reply streaming in a chat you leave keeps its tab until you've seen it.
+	hold := h.calls + ".chat-hold"
+	if err := os.WriteFile(hold, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(hold) })
+	b.clickText("#chat-tabs .chat-pane-tab-btn", "This project")
+	panel := `#chat-pane .chat-panel[data-chat]:not([hidden])`
+	b.do("ask app's chat", chromedp.SendKeys(chromedp.CSS(panel+` textarea`), "Hi\r"))
+	b.waitJS("the reply streaming", `document.querySelector("`+panel+`")?.textContent.includes("Hello from the runner")`)
+	b.clickTextUntil(`#side-project-list .side-project`, "web", `document.querySelector("#project-name")?.textContent === "web"`)
+	tabs("This project,General,app")
+	if err := os.Remove(hold); err != nil {
+		t.Fatal(err)
+	}
+	b.waitJS("app's tab unread", `[...document.querySelectorAll("#chat-tabs .chat-pane-tab-btn.unread .chat-tab-name")].map((n) => n.textContent).join() === "app"`)
+	b.do("reload", chromedp.Reload())
+	b.waitJS("web selected", `document.querySelector("#project-name")?.textContent === "web"`)
+	tabs("This project,General,app") // unread survives a reload
+	b.clickText("#chat-tabs .chat-pane-tab-btn", "app")
+	b.waitJS("app's tab read", `!document.querySelector("#chat-tabs .chat-pane-tab-btn.unread")`)
+	tabs("This project,General,app") // still there while you read it
+	b.clickText("#chat-tabs .chat-pane-tab-btn", "General")
+	tabs("This project,General")
+
+	// Closing a tab.
+	b.clickTextUntil(`#side-project-list .side-project`, "app", `document.querySelector("#project-name")?.textContent === "app"`)
+	tabs("This project,General,web")
+	b.do("close web's tab", chromedp.Click(chromedp.CSS(`#chat-tabs .chat-tab-close`)))
+	tabs("This project,General")
+	b.do("reload", chromedp.Reload())
+	b.waitJS("app selected", `document.querySelector("#project-name")?.textContent === "app"`)
+	tabs("This project,General")
+}
+
 // needChrome is the Chrome to test with, or skips the test (see
 // TestBrowserMainFlows).
 func needChrome(t *testing.T) string {

@@ -59,6 +59,12 @@ func main() {
 		line(map[string]any{"type": "stream_event", "event": map[string]any{"type": "message_start"}})
 		line(map[string]any{"type": "stream_event", "event": map[string]any{"type": "content_block_delta",
 			"delta": map[string]any{"type": "text_delta", "text": "Hello from the runner"}}})
+		// A reply stays streaming while $FAKECLAUDE_LOG.chat-hold exists.
+		for f := os.Getenv("FAKECLAUDE_LOG"); f != ""; time.Sleep(50 * time.Millisecond) {
+			if _, err := os.Stat(f + ".chat-hold"); err != nil {
+				break
+			}
+		}
 		result("Hello from the runner")
 	case "scan":
 		result("Looked around.\n\n```json\n" + `{"findings": [{"title": "Scan finding from the runner", "type": "bug", "severity": "high", ` +
