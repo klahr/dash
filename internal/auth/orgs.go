@@ -195,6 +195,10 @@ func (a *Auth) switchOrg(w http.ResponseWriter, r *http.Request, id *Identity) {
 }
 
 func (a *Auth) listOrgs(w http.ResponseWriter, r *http.Request, id *Identity) {
+	if id.Token != nil { // a token works in its own org only, as in me
+		writeJSON(w, http.StatusOK, []*store.Membership{id.Org})
+		return
+	}
 	orgs, err := a.acc.Memberships(id.User.ID)
 	if err != nil {
 		accountError(w, err)
@@ -229,6 +233,12 @@ func (a *Auth) members(w http.ResponseWriter, r *http.Request, id *Identity) {
 	oid, err := pathID(r, "oid")
 	if err != nil {
 		accountError(w, err)
+		return
+	}
+	if id.Token != nil && (id.Org == nil || id.Org.ID != oid) {
+		// A token works in its own org only: another of the user's orgs is
+		// as unknown to it as an org they aren't in.
+		accountError(w, store.ErrNotMember)
 		return
 	}
 	mine, err := a.acc.Membership(id.User.ID, oid)

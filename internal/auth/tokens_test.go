@@ -67,6 +67,19 @@ func TestAPITokenActsInItsOrg(t *testing.T) {
 	if w.Code != http.StatusOK || tm.Org == nil || tm.Org.ID != two.ID || len(tm.Orgs) != 1 || tm.User.ID != me.User.ID {
 		t.Fatalf("me with token: %d %s", w.Code, w.Body)
 	}
+	// Nor does it see the user's other orgs or their members.
+	var orgs []store.Membership
+	w = withBearer(h, secret, "GET", "/api/orgs", "")
+	decode(t, w, &orgs)
+	if w.Code != http.StatusOK || len(orgs) != 1 || orgs[0].ID != two.ID {
+		t.Errorf("orgs with token: %d %s", w.Code, w.Body)
+	}
+	if w := withBearer(h, secret, "GET", fmt.Sprintf("/api/orgs/%d/members", me.Org.ID), ""); w.Code != http.StatusNotFound {
+		t.Errorf("another org's members with token: %d %s", w.Code, w.Body)
+	}
+	if w := withBearer(h, secret, "GET", fmt.Sprintf("/api/orgs/%d/members", two.ID), ""); w.Code != http.StatusOK {
+		t.Errorf("own org's members with token: %d %s", w.Code, w.Body)
+	}
 	if w := withBearer(h, secret, "GET", "/api/projects", ""); w.Code != http.StatusOK || w.Body.String() != "private" {
 		t.Errorf("API with token: %d %s", w.Code, w.Body)
 	}
