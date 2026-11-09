@@ -99,7 +99,7 @@ func (s *Server) createWebhook(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	hook := model.Webhook{ProjectID: r.PathValue("pid"), Format: model.WebhookJSON, Enabled: true, Events: model.NotifyEvents}
+	hook := model.Webhook{ProjectID: r.PathValue("pid"), Format: model.WebhookJSON, Enabled: true, Events: model.DefaultNotifyEvents}
 	in.apply(&hook)
 	if err := s.checkWebhook(&hook); err != nil {
 		writeErr(w, err)

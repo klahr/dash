@@ -188,6 +188,18 @@ the runners it is linked to (your own runners, or any of the org's if you're an 
   again. A real conflict or failing tests go back to Claude to fix, like any merge (within the
   project's automatic fixes), then the task returns to review or fails, saying why. **Revert**
   works the same way: the runner adds the revert commit and pushes it.
+- Runners keep each other current. When a runner pushes the branch tasks land on (a merge, a
+  revert, **Push**, a pull request it merged), it tells the hub, which tells the project's other
+  online runners right away, over the connection they already keep open. Each one fetches, and if
+  its clone's checkout is on that branch, clean and strictly behind, fast-forwards it. A checkout
+  with uncommitted changes or commits of its own is left alone; the project then shows "beta: 2
+  commits behind origin" in the sidebar, with a **Pull** button that fast-forwards only and says
+  why when it can't. Task worktrees are never touched, and running tasks stay on their runner.
+  Runners fetch again whenever they reconnect, and every 5 minutes even when nobody looks at the
+  project, so pushes made outside Dash (by hand, or a pull request merged on GitHub) show up too.
+  A webhook can be told when a checkout is left behind (`checkout.behind`, off unless you tick
+  it; at most once every 6 hours per runner). A GitHub push webhook on the hub could trigger the
+  same fan-out for outside pushes; it isn't there yet.
 - Projects whose users never chose how work lands follow the default when the hub upgrades or
   their settings change: pull requests on GitHub, merging otherwise. A choice you made stays.
   Tasks with a pull request already open are followed until it is merged or closed, whatever the

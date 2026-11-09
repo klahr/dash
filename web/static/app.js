@@ -953,6 +953,12 @@ function onEvent(ev, m = { name: "" }) {
       if (state.remote?.ahead !== ev.data.ahead || state.remote?.behind !== ev.data.behind) loadUnpushed().catch(() => {});
       state.remote = ev.data;
       renderRemote();
+      loadCheckouts().catch(() => {});
+      break;
+    case "checkouts.updated":
+      if (!mine) break;
+      state.checkouts = ev.data || [];
+      renderCheckouts();
       break;
   }
 }
@@ -1044,6 +1050,9 @@ async function selectProject(p) {
   state.remote = null;
   renderRemote();
   loadRemote(true).catch(() => {});
+  state.checkouts = [];
+  renderCheckouts();
+  loadCheckouts().catch(() => {});
   renderChatPane();
   resetIssues();
   resetScans();
@@ -4682,6 +4691,40 @@ function renderRemote() {
   pill.setAttribute("aria-label", pill.title);
 }
 $("#remote-pill").addEventListener("click", attempt(async () => { await loadRemote(true, true); toast("Fetching origin"); }));
+// Checkouts behind origin: when another runner pushes, the project's other
+// runners fetch at once and fast-forward a clean checkout; one with
+// uncommitted changes or local commits is left alone and listed here, with
+// a Pull button (fast-forward only; the runner refuses anything else).
+async function loadCheckouts() {
+  const p = state.project;
+  if (!p?.remote_url) return;
+  const list = await api("GET", `/api/projects/${p.id}/checkouts`);
+  if (state.project === p) { state.checkouts = list || []; renderCheckouts(); }
+}
+
+function renderCheckouts() {
+  const box = $("#checkouts"), list = state.checkouts || [];
+  box.hidden = !list.length;
+  box.replaceChildren(...list.map((c) => {
+    const where = c.runner_name || "This checkout";
+    const n = `${c.behind} ${c.behind === 1 ? "commit" : "commits"}`;
+    const why = c.stuck ? `Left alone: ${c.stuck}.` : "Catching up with origin…";
+    return h("div", { class: "checkout-behind", title: `${where}: ${c.branch} is ${n} behind origin. ${why}` },
+      h("span", {}, `${where}: ${n} behind origin`, h("span", { class: "hint" }, c.stuck || `catching up on ${c.branch}`)),
+      h("button", { class: "btn small", type: "button", title: "Fast-forward to origin (only if nothing local is in the way)",
+        onclick: attempt(async (e) => {
+          e.currentTarget.disabled = true;
+          const q = c.runner ? `?runner=${encodeURIComponent(c.runner)}` : "";
+          try {
+            const res = await api("POST", `/api/projects/${state.project.id}/remote/pull${q}`);
+            toast(res?.moved ? `Pulled ${res.moved} ${res.moved === 1 ? "commit" : "commits"} into ${where === "This checkout" ? "the checkout" : where}` : "Already up to date");
+          } finally {
+            loadCheckouts().catch(() => {});
+          }
+        }) }, "Pull"));
+  }));
+}
+
 // Keep the open project marked as selected so the server keeps fetching it.
 setInterval(() => { if (!document.hidden) loadRemote(false).catch(() => {}); }, 4 * 60000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) loadRemote(true).catch(() => {}); });
@@ -4990,6 +5033,7 @@ const WEBHOOK_EVENTS = {
   "task.merged": "Merged",
   "permission.needed": "Claude needs approval",
   "build.failing": "Build failing",
+  "checkout.behind": "Checkout left behind origin",
   "webhook.test": "Test",
 };
 const WEBHOOK_FORMATS = { json: "JSON", slack: "Slack", ntfy: "ntfy" };
@@ -5077,7 +5121,8 @@ function editWebhook(w = null) {
   f.token.value = "";
   f.token_clear.checked = false;
   f.enabled.checked = w ? w.enabled : true;
-  const on = new Set(w ? w.events : Object.keys(WEBHOOK_EVENTS));
+  // A runner's checkout left behind origin is opt-in: it matters to whoever sits at that runner.
+  const on = new Set(w ? w.events : Object.keys(WEBHOOK_EVENTS).filter((e) => e !== "checkout.behind"));
   $("#webhook-events").replaceChildren(...(hooks.info?.events || Object.keys(WEBHOOK_EVENTS).filter((e) => e !== "webhook.test")).map((e) =>
     h("label", { class: "toggle" }, h("input", { type: "checkbox", name: "event", value: e, checked: on.has(e) }), h("span", {}, WEBHOOK_EVENTS[e] || e))));
   syncWebhookForm();

@@ -119,6 +119,41 @@ type Report struct {
 	// commands, terminals) on the runner changed since the last report: the
 	// hub tells their dashboards to list them again.
 	Procs []string `json:"procs,omitempty"`
+	// Pushes are the runner's pushes to origin since its last report: the
+	// hub tells the project's other runners (OriginMoved).
+	Pushes []Push `json:"pushes,omitempty"`
+	// Checkouts are the runner's clones of the hub's projects whose
+	// checkout is behind origin, all of them every time (none: none is).
+	// Nil from a runner older than this field: the hub keeps what it had.
+	Checkouts *[]CheckoutState `json:"checkouts,omitempty"`
+}
+
+// Push is a runner's push of a hub's project's branch to origin.
+type Push struct {
+	HubProjectID string `json:"hub_project_id"`
+	Branch       string `json:"branch"`
+	SHA          string `json:"sha"`
+}
+
+// CheckoutState is a runner's checkout of a hub's project that is behind
+// origin (queue.RemoteStatus).
+type CheckoutState struct {
+	HubProjectID string `json:"hub_project_id"`
+	Branch       string `json:"branch"`
+	Behind       int    `json:"behind"`
+	Ahead        int    `json:"ahead,omitempty"`
+	Stuck        string `json:"stuck,omitempty"`
+}
+
+// OriginMovedPath is POST on a runner: the hub tells it that another
+// runner pushed a branch of the hub's project {hpid}; the body is an
+// OriginMoved. The runner fetches and brings its checkout up to date.
+const OriginMovedPath = "/api/hub/projects/{hpid}/origin"
+
+// OriginMoved is "origin's Branch now points at SHA".
+type OriginMoved struct {
+	Branch string `json:"branch"`
+	SHA    string `json:"sha"`
 }
 
 // TaskState is where one of the hub's tasks is on the runner.

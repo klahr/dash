@@ -16,6 +16,7 @@ last delivery went.
 | `task.merged`       | a task's work landed                                         |
 | `permission.needed` | Claude waits for you to approve a tool                       |
 | `build.failing`     | GitHub Actions starts failing on the default branch          |
+| `checkout.behind`   | a runner's checkout was left behind origin (off by default)  |
 | `webhook.test`      | the Send test button (always sent, whatever is ticked)       |
 
 These are the moments the web app notifies you of. Links point back to the task in Dash
@@ -56,7 +57,10 @@ address your phone can reach.
 
 `permission.needed` events also have `"permission": {"id", "tool"}`, and `build.failing`
 events have `"build": {"branch", "sha", "url"}` (`task` is the task investigating the failure,
-if there is one). The headers `Dash-Event` and `Dash-Delivery` repeat the type and id; the id
+if there is one). `checkout.behind` events say in `message` which runners' checkouts of the
+project another runner's push left behind, and why (uncommitted changes, local commits): a
+clean checkout follows origin by itself. New webhooks don't subscribe to it; each runner's
+checkout notifies at most once every 6 hours. The headers `Dash-Event` and `Dash-Delivery` repeat the type and id; the id
 stays the same when a delivery is retried, so you can drop duplicates.
 
 ### Verifying the signature

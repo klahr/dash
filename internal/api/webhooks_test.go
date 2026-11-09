@@ -47,7 +47,7 @@ func TestWebhookAPI(t *testing.T) {
 		Secret  string        `json:"secret"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
-	if created.Secret == "" || created.Webhook.ID == "" || !created.Webhook.Enabled || len(created.Webhook.Events) != len(model.NotifyEvents) || !created.Webhook.HasToken {
+	if created.Secret == "" || created.Webhook.ID == "" || !created.Webhook.Enabled || len(created.Webhook.Events) != len(model.DefaultNotifyEvents) || !created.Webhook.HasToken {
 		t.Fatalf("created %s", w.Body)
 	}
 

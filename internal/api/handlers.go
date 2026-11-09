@@ -648,6 +648,54 @@ func (s *Server) remoteStatus(fetch bool) http.HandlerFunc {
 	}
 }
 
+// pullRemote handles POST /api/projects/{pid}/remote/pull: fetch origin and
+// fast-forward the default branch, and the project's folder with it, only
+// if that is a fast-forward of a clean checkout; otherwise 409 says why and
+// nothing changes. On a hub, ?runner= names the runner whose checkout to
+// pull (see viaRunner).
+func (s *Server) pullRemote(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	p, err := sv.data.GetProject(r.PathValue("pid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	moved, err := s.Merges.Remote.Pull(r.Context(), p)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"moved": moved, "remote": s.Merges.Remote.Status(p)})
+}
+
+// listCheckouts handles GET /api/projects/{pid}/checkouts: the checkouts of
+// the project that are behind origin. On a hub, the runners' as they last
+// reported them; elsewhere this Dash's own, if it is.
+func (s *Server) listCheckouts(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	p, err := sv.data.GetProject(r.PathValue("pid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	out := []model.Checkout{}
+	switch {
+	case s.Dispatch != nil:
+		out = s.Dispatch.Checkouts(p.ID)
+	case s.Merges != nil && s.Merges.Remote != nil:
+		if st := s.Merges.Remote.Status(p); st.Enabled && st.Behind > 0 {
+			out = append(out, model.Checkout{Branch: st.Branch, Behind: st.Behind, Ahead: st.Ahead, Stuck: st.Stuck})
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // unpushed counts the default branch's commits (merged todos) origin doesn't have yet.
 func (s *Server) unpushed(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)

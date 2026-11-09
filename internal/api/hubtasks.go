@@ -42,6 +42,7 @@ import (
 func (s *Server) hubTaskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/hub/projects/{hpid}", s.hubLink)
 	mux.HandleFunc("DELETE /api/hub/projects/{hpid}", s.hubUnlink)
+	mux.HandleFunc("POST "+dispatch.OriginMovedPath, s.hubOriginMoved)
 	mux.HandleFunc("POST /api/hub/tasks", s.hubTask)
 	mux.HandleFunc("DELETE /api/hub/tasks/{htid}", s.hubTaskAction("delete"))
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/approve", s.hubTaskAction("approve"))
@@ -362,6 +363,41 @@ func (s *Server) hubUnlink(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// hubOriginMoved handles POST /api/hub/projects/{hpid}/origin: another
+// runner pushed a branch of the hub's project. The fetch (and fast-forward
+// of a clean checkout) runs in the background; the hub doesn't wait for it.
+// Only this runner's clone's main checkout may move, never a task's worktree.
+func (s *Server) hubOriginMoved(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.fromHub(w, r)
+	if !ok {
+		return
+	}
+	var req dispatch.OriginMoved
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if !gitops.IsSHA(req.SHA) || gitops.CheckRefName("refs/heads/"+req.Branch) != nil {
+		writeErr(w, fmt.Errorf("%w: want a branch and a commit id", errBadRequest))
+		return
+	}
+	p, ok := sv.hubProject(r.PathValue("hpid"))
+	if !ok {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": errNotLinked.Error()})
+		return
+	}
+	if s.Merges != nil && s.Merges.Remote != nil {
+		s.following.Add(1)
+		go func() {
+			defer s.following.Done()
+			if err := s.Merges.Remote.OriginMoved(context.WithoutCancel(r.Context()), p, req.Branch, req.SHA); err != nil {
+				slog.Info("runner: follow origin", "project", p.Name, "branch", req.Branch, "err", err)
+			}
+		}()
+	}
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // hubTask handles POST /api/hub/tasks: run the hub's task, or continue it.

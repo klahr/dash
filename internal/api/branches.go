@@ -126,6 +126,7 @@ func (s *Server) setWorkBranch(ctx context.Context, sv *service, p model.Project
 			if err := s.withRemoteLock(ctx, p, func() error { return s.Git.Push(ctx, p.ID, p.Path, branch) }); err != nil {
 				return p, fmt.Errorf("the branch %s was made here, but pushing it to origin failed: %w", branch, err)
 			}
+			s.reportPush(ctx, p, branch)
 		}
 	}
 	work := branch
@@ -176,6 +177,7 @@ func (s *Server) branchPR(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("push %s: %w", branch, err))
 		return
 	}
+	s.reportPush(ctx, p, branch)
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		title = branch
@@ -217,4 +219,15 @@ func (s *Server) withRemoteLock(ctx context.Context, p model.Project, fn func() 
 		return fn()
 	}
 	return s.Merges.Remote.With(ctx, p.ID, fn)
+}
+
+// reportPush tells whoever follows Dash's pushes (a runner's hub, see
+// queue.MergeQueue.OnPushed) that branch was just pushed to origin.
+func (s *Server) reportPush(ctx context.Context, p model.Project, branch string) {
+	if s.Merges == nil || s.Merges.OnPushed == nil {
+		return
+	}
+	if sha, err := s.Git.Head(ctx, p.ID, p.Path, branch); err == nil {
+		s.Merges.OnPushed(p, branch, sha)
+	}
 }

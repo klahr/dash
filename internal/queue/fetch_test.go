@@ -135,6 +135,7 @@ func TestFetchBacksOffAfterFailuresAndResetsOnSuccess(t *testing.T) {
 func TestDueOnlySelectedOrBusyProjectsThatSync(t *testing.T) {
 	h := newHarness(t, &fakeExec{fn: writeFile("", "x.txt")}, model.Project{Name: "p"})
 	r, clk := h.remote()
+	r.Idle = -1 // no occasional fetch of idle projects (TestIdleProjectsArePolledSlowly)
 	if len(r.Due()) != 0 {
 		t.Fatal("a project without origin is due")
 	}

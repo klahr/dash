@@ -683,6 +683,42 @@ func (g *Git) CurrentBranch(ctx context.Context, projectID, dir string) (string,
 	return g.git(ctx, projectID, dir, "rev-parse", "--abbrev-ref", "HEAD")
 }
 
+// CheckoutState is the branch checked out in dir ("" when HEAD is
+// detached, see CheckedOut) and whether dir has uncommitted changes to
+// tracked files. Untracked files don't count: a fast-forward that would
+// overwrite one stops on its own (see Advance).
+func (g *Git) CheckoutState(ctx context.Context, projectID, dir string) (branch string, dirty bool, err error) {
+	branch = g.CheckedOut(ctx, projectID, dir)
+	out, err := g.run(ctx, false, projectID, dir, "git", "status", "--porcelain", "--untracked-files=no")
+	if err != nil {
+		return branch, false, err
+	}
+	return branch, strings.TrimSpace(out) != "", nil
+}
+
+// Contains reports whether commit sha exists in repo and is ref or one of
+// its ancestors (false when either is unknown).
+func (g *Git) Contains(ctx context.Context, projectID, repo, sha, ref string) bool {
+	if !IsSHA(sha) {
+		return false
+	}
+	_, err := g.run(ctx, false, projectID, repo, "git", "merge-base", "--is-ancestor", sha+"^{commit}", ref)
+	return err == nil
+}
+
+// IsSHA reports whether s looks like a full or abbreviated commit id.
+func IsSHA(s string) bool {
+	if len(s) < 7 || len(s) > 64 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // HasBranch reports whether the local branch exists.
 func (g *Git) HasBranch(ctx context.Context, projectID, dir, branch string) bool {
 	_, err := g.run(ctx, false, projectID, dir, "git", "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)

@@ -39,7 +39,10 @@ const (
 	DefaultTimeout  = 10 * time.Second
 	DefaultAttempts = 4
 	DefaultBackoff  = 2 * time.Second
-	queueSize       = 1024
+	// DefaultBehindEvery limits checkout.behind: a checkout that keeps
+	// getting stuck and unstuck notifies at most this often.
+	DefaultBehindEvery = 6 * time.Hour
+	queueSize          = 1024
 )
 
 // Notifier turns hub events into webhook deliveries. Set its fields, then
@@ -64,9 +67,15 @@ type Notifier struct {
 	queue  chan model.Event
 	client *http.Client
 
+	// BehindEvery is how often, at most, one runner's checkout of a
+	// project being left behind origin notifies (DefaultBehindEvery).
+	BehindEvery time.Duration
+
 	// Seen by the run loop only.
 	status map[string]model.TodoStatus // todo id → last status
 	ci     map[string]string           // project id → last build state
+	stuck  map[[2]string]bool          // {project, runner} → its checkout is left behind
+	told   map[[2]string]time.Time     // {project, runner} → when that last notified
 
 	wg sync.WaitGroup
 }
@@ -76,6 +85,7 @@ func (n *Notifier) init() {
 		n.queue = make(chan model.Event, queueSize)
 		n.status = map[string]model.TodoStatus{}
 		n.ci = map[string]string{}
+		n.stuck, n.told = map[[2]string]bool{}, map[[2]string]time.Time{}
 		n.client = newClient(n.timeout(), n.AllowPrivate)
 	})
 }
@@ -113,7 +123,7 @@ func (n *Notifier) now() time.Time {
 // loop, and dropped with a warning if it falls far behind.
 func (n *Notifier) Observe(ev model.Event) {
 	switch ev.Type {
-	case model.EvTodoUpdated, model.EvTodoDeleted, model.EvPermission, model.EvCI:
+	case model.EvTodoUpdated, model.EvTodoDeleted, model.EvPermission, model.EvCI, model.EvCheckouts:
 	default:
 		return
 	}
@@ -257,6 +267,15 @@ func (n *Notifier) classify(ev model.Event) (Notification, bool) {
 		if todoID != "" {
 			message = "Claude is investigating"
 		}
+	case model.EvCheckouts:
+		cs, ok := ev.Data.([]model.Checkout)
+		if !ok {
+			return Notification{}, false
+		}
+		if message = n.newlyStuck(ev.ProjectID, cs); message == "" {
+			return Notification{}, false
+		}
+		kind = model.NotifyBehind
 	default:
 		return Notification{}, false
 	}
@@ -266,6 +285,49 @@ func (n *Notifier) classify(ev model.Event) (Notification, bool) {
 	}
 	note.Message, note.Permission, note.Build = message, permRef, build
 	return note, true
+}
+
+// newlyStuck notes which runners' checkouts of project pid are left behind
+// origin now, and describes those that weren't before and haven't notified
+// within BehindEvery ("" if none).
+func (n *Notifier) newlyStuck(pid string, cs []model.Checkout) string {
+	every := n.BehindEvery
+	if every <= 0 {
+		every = DefaultBehindEvery
+	}
+	now := n.now()
+	stuckNow := map[[2]string]bool{}
+	var lines []string
+	for _, c := range cs {
+		if c.Stuck == "" {
+			continue
+		}
+		k := [2]string{pid, c.Runner}
+		stuckNow[k] = true
+		if n.stuck[k] {
+			continue
+		}
+		n.stuck[k] = true
+		if at, ok := n.told[k]; ok && now.Sub(at) < every {
+			continue
+		}
+		n.told[k] = now
+		who := c.RunnerName
+		if who == "" {
+			who = "The checkout"
+		}
+		s := "s"
+		if c.Behind == 1 {
+			s = ""
+		}
+		lines = append(lines, fmt.Sprintf("%s: %s is %d commit%s behind origin (%s)", who, c.Branch, c.Behind, s, c.Stuck))
+	}
+	for k := range n.stuck {
+		if k[0] == pid && !stuckNow[k] {
+			delete(n.stuck, k)
+		}
+	}
+	return strings.Join(lines, "; ")
 }
 
 // build fills in a notification of kind about a project and (optionally)

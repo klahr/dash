@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
 )
@@ -32,7 +33,7 @@ func init() {
 		"GET /api/projects", "POST /api/projects", "GET /api/projects/{pid}", "PATCH /api/projects/{pid}",
 		"DELETE /api/projects/{pid}", "POST /api/projects/{pid}/github", "GET /api/github/repo",
 		"POST /api/projects/{pid}/push", "GET /api/projects/{pid}/unpushed", "GET /api/projects/{pid}/remote",
-		"POST /api/projects/{pid}/remote/fetch", "GET /api/projects/{pid}/graph", "GET /api/projects/{pid}/files",
+		"POST /api/projects/{pid}/remote/fetch", "POST /api/projects/{pid}/remote/pull", "GET /api/projects/{pid}/graph", "GET /api/projects/{pid}/files",
 		"GET /api/projects/{pid}/file", "PUT /api/projects/{pid}/file", "POST /api/projects/{pid}/edits",
 		"GET /api/projects/{pid}/branches", "PUT /api/projects/{pid}/branch", "POST /api/projects/{pid}/branch/pr",
 		// Release tags: made and pushed on the runner, in its clone (release.go).
@@ -78,6 +79,7 @@ func init() {
 		// The hub's projects linked to this runner and their tasks; checked
 		// in hubtasks.go.
 		"PUT /api/hub/projects/{hpid}", "DELETE /api/hub/projects/{hpid}", "POST /api/hub/tasks",
+		"POST " + dispatch.OriginMovedPath, // another runner pushed: fetch, and follow in a clean checkout
 		"DELETE /api/hub/tasks/{htid}", "POST /api/hub/tasks/{htid}/approve", "POST /api/hub/tasks/{htid}/cancel",
 		"POST /api/hub/tasks/{htid}/revert", "POST /api/hub/tasks/{htid}/test", "POST /api/hub/tasks/{htid}/open",
 		"GET /api/hub/tasks/{htid}/diff", "GET /api/hub/tasks/{htid}/log", "GET /api/hub/tasks/{htid}/events",

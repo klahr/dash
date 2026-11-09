@@ -126,7 +126,9 @@ type Server struct {
 	generalTurns map[string]int // general chat turns running, by "<org>:<user>"
 
 	muxOnce sync.Once
-	muxv    *http.ServeMux
+	// following counts the fetches "origin moved" news started (tests wait).
+	following sync.WaitGroup
+	muxv      *http.ServeMux
 }
 
 // Routes is the dashboard's handler: every route, behind the login.
@@ -203,6 +205,8 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/projects/{pid}/unpushed", s.viaRunner(s.unpushed))
 	mux.HandleFunc("GET /api/projects/{pid}/remote", s.viaRunner(s.remoteStatus(false)))
 	mux.HandleFunc("POST /api/projects/{pid}/remote/fetch", s.viaRunner(s.remoteStatus(true)))
+	mux.HandleFunc("POST /api/projects/{pid}/remote/pull", s.viaRunner(s.pullRemote))
+	mux.HandleFunc("GET /api/projects/{pid}/checkouts", s.listCheckouts)
 	mux.HandleFunc("GET /api/projects/{pid}/graph", s.viaRunner(s.gitGraph))
 	mux.HandleFunc("GET /api/projects/{pid}/branches", s.viaRunner(s.listBranches))
 	mux.HandleFunc("PUT /api/projects/{pid}/branch", s.viaRunner(s.switchBranch))
@@ -459,6 +463,8 @@ func writeErr(w http.ResponseWriter, err error) {
 		errors.Is(err, scan.ErrNoScan):
 		code = http.StatusNotFound
 	case errors.As(err, &inv), errors.As(err, &invIssue), errors.Is(err, store.ErrReviewing):
+		code = http.StatusConflict
+	case errors.As(err, new(*queue.PullRefused)):
 		code = http.StatusConflict
 	case errors.Is(err, queue.ErrMergeQueueFull), errors.Is(err, errScansOff):
 		code = http.StatusServiceUnavailable

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
@@ -55,6 +56,11 @@ type Dispatcher struct {
 
 	mu     sync.Mutex
 	timers map[string]*time.Timer // runner id → its offline grace
+
+	originMu  sync.Mutex
+	origin    map[[2]string]string                 // {hub project id, branch} → the last sha passed on
+	checkouts map[string]map[string]model.Checkout // hub project id → runner id → its checkout behind origin
+	fanouts   sync.WaitGroup                       // OriginMoved calls in flight (tests)
 }
 
 // WaitError is why no runner can take a task now; the task stays queued.
@@ -161,6 +167,12 @@ func (d *Dispatcher) Report(id string, body []byte) error {
 	for _, ts := range rep.Tasks {
 		d.apply(r, ts)
 	}
+	for _, p := range rep.Pushes {
+		d.pushed(r, p)
+	}
+	if rep.Checkouts != nil {
+		d.setCheckouts(r, *rep.Checkouts)
+	}
 	for _, pid := range rep.Procs {
 		d.procsChanged(r, pid)
 	}
@@ -168,6 +180,136 @@ func (d *Dispatcher) Report(id string, body []byte) error {
 		d.Kick() // a slot may have come free, or the usage limit lifted
 	}
 	return nil
+}
+
+// pushed passes runner r's push on to the project's other online runners,
+// so they fetch it at once rather than at their next poll. News about a
+// project r isn't linked to (or of another org) is dropped, and so is news
+// the hub passed on already: runners resend pushes when a report failed.
+func (d *Dispatcher) pushed(r tunnel.Runner, push Push) {
+	if push.HubProjectID == "" || push.Branch == "" || !gitops.IsSHA(push.SHA) {
+		return
+	}
+	p, err := d.Store.GetProject(push.HubProjectID)
+	if err != nil || p.OrgID != r.OrgID() || !slices.Contains(p.Runners, r.ID) {
+		return
+	}
+	key := [2]string{p.ID, push.Branch}
+	d.originMu.Lock()
+	if d.origin == nil {
+		d.origin = map[[2]string]string{}
+	}
+	if d.origin[key] == push.SHA {
+		d.originMu.Unlock()
+		return
+	}
+	d.origin[key] = push.SHA
+	d.originMu.Unlock()
+	msg := OriginMoved{Branch: push.Branch, SHA: push.SHA}
+	path := strings.Replace(OriginMovedPath, "{hpid}", url.PathEscape(p.ID), 1)
+	for _, id := range p.Runners {
+		if id == r.ID {
+			continue // it knows
+		}
+		o, ok := d.Fleet.Get(id)
+		if !ok || !o.Online || o.OrgID() != p.OrgID {
+			continue // an offline runner fetches when it comes back
+		}
+		d.fanouts.Add(1)
+		go func() {
+			defer d.fanouts.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := d.Fleet.Call(ctx, id, http.MethodPost, path, msg, nil); err != nil {
+				slog.Info("tell runner origin moved", "runner", o.Name, "project", p.Name, "err", err)
+			}
+		}()
+	}
+}
+
+// setCheckouts replaces what the hub knows of runner r's checkouts behind
+// origin, and tells the dashboards of each project whose list changed.
+func (d *Dispatcher) setCheckouts(r tunnel.Runner, states []CheckoutState) {
+	now := time.Now()
+	news := map[string]bool{}
+	d.originMu.Lock()
+	if d.checkouts == nil {
+		d.checkouts = map[string]map[string]model.Checkout{}
+	}
+	seen := map[string]bool{}
+	for _, cs := range states {
+		if cs.Behind <= 0 || seen[cs.HubProjectID] {
+			continue
+		}
+		p, err := d.Store.GetProject(cs.HubProjectID)
+		if err != nil || p.OrgID != r.OrgID() || !slices.Contains(p.Runners, r.ID) {
+			continue
+		}
+		seen[p.ID] = true
+		c := model.Checkout{Runner: r.ID, RunnerName: r.Name, Branch: cs.Branch, Behind: cs.Behind, Ahead: cs.Ahead, Stuck: cs.Stuck, Since: now}
+		byRunner := d.checkouts[p.ID]
+		if byRunner == nil {
+			byRunner = map[string]model.Checkout{}
+			d.checkouts[p.ID] = byRunner
+		}
+		if old, ok := byRunner[r.ID]; ok {
+			c.Since = old.Since
+			if old == c {
+				continue
+			}
+		}
+		byRunner[r.ID] = c
+		news[p.ID] = true
+	}
+	for pid, byRunner := range d.checkouts {
+		if _, ok := byRunner[r.ID]; ok && !seen[pid] {
+			delete(byRunner, r.ID)
+			news[pid] = true
+		}
+	}
+	d.originMu.Unlock()
+	for pid := range news {
+		d.publishCheckouts(pid)
+	}
+}
+
+// forgetCheckouts drops runner id's checkouts (it was revoked).
+func (d *Dispatcher) forgetCheckouts(id string) {
+	var news []string
+	d.originMu.Lock()
+	for pid, byRunner := range d.checkouts {
+		if _, ok := byRunner[id]; ok {
+			delete(byRunner, id)
+			news = append(news, pid)
+		}
+	}
+	d.originMu.Unlock()
+	for _, pid := range news {
+		d.publishCheckouts(pid)
+	}
+}
+
+// Checkouts lists the runners whose checkout of the hub's project
+// projectID is behind origin, as they last reported, by runner name.
+func (d *Dispatcher) Checkouts(projectID string) []model.Checkout {
+	d.originMu.Lock()
+	defer d.originMu.Unlock()
+	out := []model.Checkout{}
+	for id, c := range d.checkouts[projectID] {
+		if r, ok := d.Fleet.Get(id); ok {
+			c.RunnerName = r.Name
+		}
+		out = append(out, c)
+	}
+	slices.SortFunc(out, func(a, b model.Checkout) int { return strings.Compare(a.RunnerName, b.RunnerName) })
+	return out
+}
+
+func (d *Dispatcher) publishCheckouts(projectID string) {
+	if d.Pub == nil {
+		return
+	}
+	d.Pub.Publish(model.Event{Type: model.EvCheckouts, ProjectID: projectID, Data: d.Checkouts(projectID), Time: time.Now()})
 }
 
 // procsChanged tells the dashboards that the processes of project pid on
@@ -377,6 +519,7 @@ func (d *Dispatcher) Revoked(id string) {
 		}
 	}
 	d.interrupt(id, "its runner was revoked", false)
+	d.forgetCheckouts(id)
 	if d.Kick != nil {
 		d.Kick()
 	}

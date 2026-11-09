@@ -588,6 +588,7 @@ const (
 	EvUsage          EventType = "usage.updated"      // subscription rate-limit usage / queue pause state
 	EvCI             EventType = "ci.updated"         // GitHub Actions status of a project's default branch
 	EvRemote         EventType = "remote.updated"     // how the default branch compares with origin's, after a fetch
+	EvCheckouts      EventType = "checkouts.updated"  // a hub's project: the runners whose checkout is behind origin; Data is []Checkout
 	EvPreview        EventType = "preview.updated"    // a todo's live preview started, came up, crashed or stopped
 	EvIssueUpdated   EventType = "issue.updated"      // an issue was added or changed; Data is the Issue
 	EvIssueDeleted   EventType = "issue.deleted"      // Data is {"id": …}
@@ -595,6 +596,20 @@ const (
 	EvScanSettings   EventType = "scan.settings"      // a scan's schedule was turned on/off or edited; Data is the ScanSetting
 	EvScanTemplate   EventType = "scan.template"      // a Dash scan template was created, edited or deleted; Data is {"name": …, "deleted": bool}
 )
+
+// Checkout is a runner's main checkout of a hub's project that is behind
+// origin: another runner (or anyone) pushed, and the runner couldn't, or
+// hasn't yet, fast-forwarded it. A hub keeps the latest of these its runners
+// reported; a Dash without runners has at most one per project, its own.
+type Checkout struct {
+	Runner     string    `json:"runner,omitempty"` // the runner's id ("" = this Dash's own checkout)
+	RunnerName string    `json:"runner_name,omitempty"`
+	Branch     string    `json:"branch"`
+	Behind     int       `json:"behind"` // origin's commits the checkout's branch doesn't have
+	Ahead      int       `json:"ahead,omitempty"`
+	Stuck      string    `json:"stuck,omitempty"` // why it was left behind ("" = it may still fast-forward)
+	Since      time.Time `json:"since,omitzero"`  // when it was first reported behind
+}
 
 // Event is the envelope for everything pushed over /ws/events.
 type Event struct {

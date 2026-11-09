@@ -67,6 +67,7 @@ var looks = map[model.NotifyEvent]struct {
 	model.NotifyMerged:     {"Merged", ":white_check_mark:", "white_check_mark", false},
 	model.NotifyPermission: {"Claude needs your approval", ":raising_hand:", "raising_hand", true},
 	model.NotifyBuild:      {"Build failing", ":rotating_light:", "rotating_light", false},
+	model.NotifyBehind:     {"Checkout behind origin", ":arrow_down:", "arrow_down", false},
 	model.NotifyTest:       {"Test notification", ":wave:", "wave", false},
 }
 

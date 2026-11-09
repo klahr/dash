@@ -1062,7 +1062,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 /* ---------- menu: sidebar on desktop, drawer on mobile ---------- */
 .side-projects { order: 3; }
 .quick-actions { order: 4; margin-top: 8px; flex-wrap: wrap; }
-.ci-pill, .remote-pill { order: 5; margin-top: 8px; }
+.ci-pill, .remote-pill, .checkouts { order: 5; margin-top: 8px; }
 /* Usage and the account sit at the bottom: pushed down when there is room, kept in
    view (sticky) when the projects make the sidebar or drawer scroll. The scroller has
    no bottom padding so nothing shows below; the group pads itself instead. */
@@ -1469,6 +1469,13 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 /* ---- origin ahead/behind (background fetch) ---- */
 .remote-pill { --c: var(--running); }
 .remote-pill.remote-error { --c: var(--muted); color: var(--muted); font-weight: 400; }
+/* ---- checkouts left behind origin (another runner pushed) ---- */
+.checkouts { display: flex; flex-direction: column; gap: 6px; }
+.checkout-behind { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border: 1px solid var(--line); border-radius: var(--r-m); font-size: 13px; }
+.checkout-behind::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--running); }
+.checkout-behind > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.checkout-behind .hint { display: block; font-size: 12px; }
+.checkout-behind button { flex: none; min-height: 28px; padding: 0 10px; }
 .ci-tag, .sentback-tag { font-size: 12px; font-weight: 600; color: var(--failed); }
 .err-text { color: var(--failed); }
 .link.inline { min-height: 0; padding: 0; font: inherit; font-weight: 600; gap: 4px; vertical-align: bottom; }

@@ -28,12 +28,57 @@ type Reporter struct {
 	// Keep is how long finished tasks are still reported (default a day),
 	// so the hub hears of what finished while it couldn't be reached.
 	Keep time.Duration
+	// Checkouts lists the clones of the hub's projects whose checkout is
+	// behind origin, for every report (optional).
+	Checkouts func() []CheckoutState
 
+	once sync.Once
 	wake chan struct{}
 
-	mu    sync.Mutex
-	live  map[string]*liveOutput // runner todo id → Claude's output since the last report
-	procs map[string]bool        // hub project ids whose processes changed since the last report
+	mu     sync.Mutex
+	live   map[string]*liveOutput // runner todo id → Claude's output since the last report
+	procs  map[string]bool        // hub project ids whose processes changed since the last report
+	pushes []Push                 // not yet reported
+}
+
+// maxPushes bounds the pushes kept while the hub can't be reached: only the
+// latest per branch matters, and older ones are dropped first.
+const maxPushes = 100
+
+// Pushed reports, soon, that this runner pushed a branch of a hub's project.
+func (r *Reporter) Pushed(p Push) {
+	if p.HubProjectID == "" || p.SHA == "" {
+		return
+	}
+	r.mu.Lock()
+	r.pushes = append(r.pushes, p)
+	if n := len(r.pushes) - maxPushes; n > 0 {
+		r.pushes = append([]Push(nil), r.pushes[n:]...)
+	}
+	r.mu.Unlock()
+	r.Nudge()
+}
+
+// takePushes hands over the pushes not reported yet.
+func (r *Reporter) takePushes() []Push {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p := r.pushes
+	r.pushes = nil
+	return p
+}
+
+// unsent puts back pushes a report failed to deliver, before newer ones.
+func (r *Reporter) unsent(p []Push) {
+	if len(p) == 0 {
+		return
+	}
+	r.mu.Lock()
+	r.pushes = append(append([]Push(nil), p...), r.pushes...)
+	if n := len(r.pushes) - maxPushes; n > 0 {
+		r.pushes = append([]Push(nil), r.pushes[n:]...)
+	}
+	r.mu.Unlock()
 }
 
 // liveOutput is what a hub's task printed since the last report: the hub
@@ -54,9 +99,7 @@ const (
 var ErrStop = errors.New("stop reporting")
 
 func (r *Reporter) init() {
-	if r.wake == nil {
-		r.wake = make(chan struct{}, 1)
-	}
+	r.once.Do(func() { r.wake = make(chan struct{}, 1) })
 }
 
 // Nudge asks for a report soon.
@@ -72,7 +115,7 @@ func (r *Reporter) Nudge() {
 // usage are reported.
 func (r *Reporter) Observe(ev model.Event) {
 	switch ev.Type {
-	case model.EvUsage:
+	case model.EvUsage, model.EvRemote:
 		r.Nudge()
 	case model.EvTodoUpdated:
 		if t, ok := ev.Data.(model.Todo); ok && t.HubTodoID != "" {
@@ -177,6 +220,14 @@ func (r *Reporter) Build(now time.Time) Report {
 		rep.Usage = &u
 	}
 	live := r.takeLive()
+	rep.Pushes = r.takePushes()
+	if r.Checkouts != nil {
+		c := r.Checkouts()
+		if c == nil {
+			c = []CheckoutState{}
+		}
+		rep.Checkouts = &c
+	}
 	if procs := r.takeProcs(); len(procs) > 0 {
 		rep.Procs = procs
 	}
@@ -220,10 +271,14 @@ func (r *Reporter) Run(ctx context.Context) {
 		case <-tick.C:
 		}
 		sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		err := r.Send(sctx, r.Build(time.Now()))
+		rep := r.Build(time.Now())
+		err := r.Send(sctx, rep)
 		cancel()
 		if errors.Is(err, ErrStop) {
 			return
+		}
+		if err != nil {
+			r.unsent(rep.Pushes) // the next report tries again; the hub ignores news it had
 		}
 		if err != nil && ctx.Err() == nil {
 			slog.Debug("runner: report to hub", "err", err) // the heartbeat tries again

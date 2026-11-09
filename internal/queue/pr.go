@@ -77,6 +77,9 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 		if st.MergeCommit != nil {
 			sha = st.MergeCommit.Oid
 		}
+		if t.Status == model.StatusMerging {
+			m.pushed(p, p.Base(), sha) // merged by Dash (or by hand just now): origin's branch moved
+		}
 		m.landed(ctx, t, p, sha, fmt.Sprintf("✔ pull request #%d merged", n))
 		if t.Worktree != nil {
 			m.Git.DeleteRemoteBranch(ctx, p.ID, p.Path, t.Worktree.Branch)

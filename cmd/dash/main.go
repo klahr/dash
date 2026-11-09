@@ -463,6 +463,24 @@ func main() {
 		}
 		// Claude's progress on the hub's tasks goes to the hub's board too.
 		todoLog.Pub = &teePublisher{Publisher: events, also: reporter.Observe}
+		// Pushes to origin go to the hub, which tells the project's other
+		// runners at once; and the hub hears which checkouts are behind.
+		merges.OnPushed = func(p model.Project, branch, sha string) {
+			if p.HubProjectID != "" {
+				reporter.Pushed(dispatch.Push{HubProjectID: p.HubProjectID, Branch: branch, SHA: sha})
+			}
+		}
+		merges.Remote.Pub = &teePublisher{Publisher: events, also: reporter.Observe}
+		reporter.Checkouts = func() []dispatch.CheckoutState {
+			var out []dispatch.CheckoutState
+			for _, rs := range merges.Remote.Behind() {
+				if p, err := st.GetProject(rs.ProjectID); err == nil && p.HubProjectID != "" {
+					out = append(out, dispatch.CheckoutState{HubProjectID: p.HubProjectID, Branch: rs.Branch,
+						Behind: rs.Behind, Ahead: rs.Ahead, Stuck: rs.Stuck})
+				}
+			}
+			return out
+		}
 		// …and when its processes start or end, so its dashboards list them again.
 		procEvents.also = reporter.Observe
 		go reporter.Run(ctx)
@@ -633,6 +651,8 @@ func main() {
 			watch(connected)
 			if connected {
 				reporter.Nudge() // tell the hub what happened while it couldn't hear
+				// Catch up on what the other runners pushed meanwhile.
+				go merges.Remote.FetchAll(ctx)
 			}
 		}
 		defer os.Remove(statePath)

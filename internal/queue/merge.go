@@ -65,6 +65,10 @@ type MergeQueue struct {
 	// Remote fetches origin in the background and owns the per-project lock
 	// every fetch, push and move of the default branch here takes.
 	Remote *RemoteSync
+	// OnPushed is told when origin's branch now points at sha because Dash
+	// moved it here: a push, or a pull request merged (optional). A runner
+	// tells its hub, which tells the project's other runners.
+	OnPushed func(p model.Project, branch, sha string)
 
 	// beforePush, when set (tests), runs just before a shared project's
 	// merge is pushed, e.g. to push to origin first.
@@ -388,6 +392,7 @@ func (m *MergeQueue) landPushed(ctx context.Context, p model.Project, fn func(di
 		return "", &syncError{fmt.Errorf("can't push %s to GitHub: %w", p.Base(), err)}
 	}
 	m.setSyncError(p.ID, nil)
+	m.pushed(p, p.Base(), sha)
 	// Pushed: the default branch here follows. Should that fail (files in
 	// the way in the project's folder), origin has the commit anyway and
 	// the next sync brings it in.
@@ -623,9 +628,20 @@ func (m *MergeQueue) pushSynced(ctx context.Context, p model.Project) error {
 			err = push()
 		}
 	}
+	if err == nil {
+		if head, herr := m.Git.Head(ctx, p.ID, p.Path, p.Base()); herr == nil {
+			m.pushed(p, p.Base(), head)
+		}
+	}
 	m.setSyncError(p.ID, err)
 	m.Remote.recount(ctx, p)
 	return err
+}
+
+func (m *MergeQueue) pushed(p model.Project, branch, sha string) {
+	if m.OnPushed != nil && sha != "" {
+		m.OnPushed(p, branch, sha)
+	}
 }
 
 func (m *MergeQueue) setSyncError(projectID string, err error) {

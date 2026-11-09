@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -139,6 +140,8 @@ func (s *Server) viaRunner(h http.HandlerFunc) http.HandlerFunc {
 			s.listProcessesOnRunners(w, r, sv, p)
 		case "POST /api/projects/{pid}/processes":
 			s.startProcessOnRunner(w, r, sv, p)
+		case "POST /api/projects/{pid}/remote/pull":
+			s.pullOnRunner(w, r, sv, p)
 		default:
 			res, err := sv.forward(r, p, "", nil)
 			if err != nil {
@@ -496,4 +499,33 @@ func (g RunnerGitHub) RerunRun(ctx context.Context, projectID, _ string, runID i
 func (g RunnerGitHub) RunFailedLog(ctx context.Context, projectID, _ string, runID int64, lines int) string {
 	out, _ := g.call(ctx, projectID, dispatch.GitHubCall{Op: dispatch.GitHubFailedLog, RunID: runID, Limit: lines})
 	return out.Log
+}
+
+// pullOnRunner is POST /api/projects/{pid}/remote/pull on a hub: the
+// runner named by ?runner= (it must be online and linked to p) pulls origin
+// into its checkout, fast-forward only.
+func (s *Server) pullOnRunner(w http.ResponseWriter, r *http.Request, sv *service, p model.Project) {
+	id := r.URL.Query().Get("runner")
+	online := s.onlineRunners(p)
+	if id == "" && len(online) == 1 {
+		id = online[0].ID
+	}
+	if id == "" {
+		writeErr(w, fmt.Errorf("%w: say which runner's checkout to pull (?runner=)", errBadRequest))
+		return
+	}
+	if !slices.ContainsFunc(online, func(x tunnel.Runner) bool { return x.ID == id }) {
+		if !slices.Contains(p.Runners, id) {
+			writeErr(w, fmt.Errorf("%w: that runner isn't linked to %s", errBadRequest, p.Name))
+			return
+		}
+		writeErr(w, errNoRunnerOnline)
+		return
+	}
+	res, err := sv.forward(r, p, id, nil)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	res.write(w)
 }
