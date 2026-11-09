@@ -157,6 +157,12 @@ textarea { resize: vertical; line-height: 1.45; }
   background: var(--review); color: #08202a; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
 }
 .nav .badge.quiet { background: var(--raised); color: var(--text); }
+/* Board tab: a breathing yellow dot while tasks run, a steady green one once they've all merged. */
+.nav .board-dot {
+  top: 10px; left: calc(50% + 8px); min-width: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%;
+  background: var(--running); animation: breathe 1.8s ease-in-out infinite;
+}
+.nav .board-dot.done { background: var(--merged); animation: none; box-shadow: 0 0 0 2px var(--surface); }
 /* Chat tab (mobile): a breathing dot while an answer streams, a "!" while one waits on approval. */
 .nav .chat-badge {
   top: 10px; left: calc(50% + 8px); min-width: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%;
@@ -1374,6 +1380,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .side-collapsed #usage-pill .usage-detail { display: none; }
   .side-collapsed #usage-pill .usage-pies { display: flex; flex-direction: column; align-items: center; gap: 6px; }
   .side-collapsed .nav .badge { position: absolute; top: 3px; right: 1px; margin: 0; }
+  .side-collapsed .nav .board-dot { top: 6px; left: auto; right: 6px; }
   .side-collapsed .side-project-list { display: flex; flex-direction: column; gap: 4px; }
   .side-collapsed .side-project-list li.current { box-shadow: none; background: none; }
   .side-collapsed .side-project { justify-content: center; padding: 0; min-height: 40px; }

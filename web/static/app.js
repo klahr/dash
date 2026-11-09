@@ -2060,6 +2060,25 @@ function renderBoardNow() {
   }
   badge.hidden = !review;
   badge.textContent = review;
+  renderBoardDot(review);
+}
+
+// The Board button's dot when nothing waits on you: yellow while tasks run or
+// merge, green once every task that ran this session has landed in Done.
+// Waiting work wins: the review-coloured count above replaces the dot.
+const boardRun = { project: null, ids: new Set() };
+function renderBoardDot(waiting) {
+  const pid = state.project?.id ?? null;
+  if (boardRun.project !== pid) { boardRun.project = pid; boardRun.ids.clear(); }
+  const active = [...state.todos.values()].filter((t) => t.status === "in_progress" || t.status === "merging");
+  // A new run after everything settled starts a fresh round.
+  if (active.length && !active.some((t) => boardRun.ids.has(t.id))) boardRun.ids.clear();
+  for (const t of active) boardRun.ids.add(t.id);
+  const tracked = [...boardRun.ids].map((id) => state.todos.get(id)).filter(Boolean);
+  const done = !active.length && tracked.length > 0 && tracked.every((t) => t.status === "merged");
+  const dot = $("#board-dot");
+  dot.hidden = !!waiting || (!active.length && !done);
+  dot.classList.toggle("done", !active.length && done);
 }
 
 function toggleCollapsed(key) {
