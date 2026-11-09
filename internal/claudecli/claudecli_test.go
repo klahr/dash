@@ -158,7 +158,7 @@ func (f fakeCLI) run(_ context.Context, _ string, args ...string) (string, error
 	return f.probe, f.probeErr
 }
 
-var exit1 = errors.New("exit status 1")
+var errExit1 = errors.New("exit status 1")
 
 func TestCheck(t *testing.T) {
 	const noInput = "Error: Input must be provided either through stdin or as a prompt argument when using --print"
@@ -168,14 +168,14 @@ func TestCheck(t *testing.T) {
 		version string
 		want    string // in the only warning; "" for none
 	}{
-		{"as expected", fakeCLI{version: "2.1.319 (Claude Code)", probe: noInput, probeErr: exit1}, "2.1.319", ""},
-		{"prompt tool gone", fakeCLI{version: "3.0.0 (Claude Code)", probe: "error: unknown option '--permission-prompt-tool'", probeErr: exit1}, "3.0.0",
+		{"as expected", fakeCLI{version: "2.1.319 (Claude Code)", probe: noInput, probeErr: errExit1}, "2.1.319", ""},
+		{"prompt tool gone", fakeCLI{version: "3.0.0 (Claude Code)", probe: "error: unknown option '--permission-prompt-tool'", probeErr: errExit1}, "3.0.0",
 			"no longer accepts --permission-prompt-tool"},
-		{"stream-json gone", fakeCLI{version: "3.0.0 (Claude Code)", probe: "error: option '--output-format <format>' argument 'stream-json' is invalid. Allowed choices are text, json.", probeErr: exit1}, "3.0.0",
+		{"stream-json gone", fakeCLI{version: "3.0.0 (Claude Code)", probe: "error: option '--output-format <format>' argument 'stream-json' is invalid. Allowed choices are text, json.", probeErr: errExit1}, "3.0.0",
 			"rejected a flag"},
 		{"runs without input", fakeCLI{version: "3.0.0 (Claude Code)"}, "3.0.0", "without a prompt succeeded"},
-		{"not installed", fakeCLI{versionErr: errors.New(`exec: "claude": executable file not found in $PATH`), probeErr: exit1}, "", "Couldn't run"},
-		{"odd version", fakeCLI{version: "Claude Code, the next generation", probe: noInput, probeErr: exit1}, "", "not a version"},
+		{"not installed", fakeCLI{versionErr: errors.New(`exec: "claude": executable file not found in $PATH`), probeErr: errExit1}, "", "Couldn't run"},
+		{"odd version", fakeCLI{version: "Claude Code, the next generation", probe: noInput, probeErr: errExit1}, "", "not a version"},
 	}
 	for _, c := range cases {
 		m := &Monitor{run: c.cli.run}
@@ -196,7 +196,7 @@ func TestCheck(t *testing.T) {
 }
 
 func TestNewVersionForgetsOldRunWarnings(t *testing.T) {
-	cli := fakeCLI{version: "2.1.0 (Claude Code)", probe: "no input", probeErr: exit1}
+	cli := fakeCLI{version: "2.1.0 (Claude Code)", probe: "no input", probeErr: errExit1}
 	m := &Monitor{run: cli.run}
 	m.Check(context.Background())
 	m.Stream().Line(`{"type":"result"}`)
