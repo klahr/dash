@@ -5571,7 +5571,8 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
 }
 
 // A collapsible tool call: its input, and its output once filled in. Until
-// then it shows a spinner, and how long it has run once that's a while.
+// then it shows a spinner (a check or cross once done, in the same space so the
+// text doesn't move), and how long it has run once that's a while.
 function toolCall(tool, input, since = Date.now()) {
   const out = h("pre", { class: "tool-out", hidden: true });
   const head = tool === "Bash" && input?.command
@@ -5588,12 +5589,14 @@ function toolResult(t, d) {
   t.el.classList.toggle("error", !!d.is_error);
   toolSettled(t, d.at ? Date.parse(d.at) : Date.now());
 }
-// A tool call is done: its spinner goes, and a long one keeps how long it took.
+// A tool call is done: its spinner turns into a mark in the same space, and a long one keeps how long it took.
 function toolSettled(t, end = null) {
   if (t.done) return;
   t.done = true;
   t.el.classList.remove("running");
-  t.el.querySelector(".act-spin")?.remove();
+  // No result means it stopped with the turn: neither passed nor failed.
+  const mark = t.out.hidden ? ["cut", "■"] : t.el.classList.contains("error") ? ["bad", "✗"] : ["ok", "✓"];
+  t.el.querySelector(".act-spin")?.replaceWith(h("span", { class: `tool-mark ${mark[0]}`, "aria-hidden": "true" }, mark[1]));
   delete t.time.dataset.since;
   const ms = end - t.since;
   t.time.textContent = end && ms >= 3000 ? duration(ms) : "";

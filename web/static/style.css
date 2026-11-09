@@ -371,6 +371,9 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .msg .tool.running { border-color: color-mix(in srgb, var(--running) 45%, var(--line)); }
 .msg .tool.running .tool-time { color: var(--running); }
 .msg .tool.error summary { color: var(--failed); }
+.msg .tool .tool-mark { flex: none; width: 14px; text-align: center; font-weight: 700; line-height: 1; color: var(--merged); }
+.msg .tool .tool-mark.bad { color: var(--failed); }
+.msg .tool .tool-mark.cut { color: var(--muted); font-weight: 400; }
 .msg .tool pre { margin: 0; padding: 8px 10px; border-top: 1px solid var(--line); font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
 .msg .tool .tool-out { color: #c9d3e3; background: var(--bg); }
 .msg .perm { margin: 0 0 10px; }
