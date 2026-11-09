@@ -397,6 +397,7 @@
             <button type="button" data-width="full" data-icon="monitor" title="Full width" aria-label="Full width"></button>
           </div>
           <button class="btn small pv-draw-btn" type="button" id="pv-draw-btn" data-icon="edit" title="Draw on a snapshot of the page, crop it and add it to the review (D)" aria-keyshortcuts="Shift+D">Draw</button>
+          <button class="btn small pv-transcript-btn" type="button" id="pv-transcript" data-icon="redo" title="Send back for rework with the terminal's last lines, or only what you selected in it" hidden>Send back with transcript</button>
           <span class="pv-spacer"></span>
           <button class="icon-btn" type="button" id="pv-reload" data-icon="reload" title="Reload" aria-label="Reload"></button>
           <button class="icon-btn" type="button" id="pv-open" data-icon="external" title="Open in a new tab" aria-label="Open in a new tab"></button>
@@ -407,6 +408,8 @@
         </div>
         <div class="pv-stage" id="pv-stage">
           <div class="pv-frame" id="pv-frame"><iframe id="pv-iframe" title="Live preview" hidden></iframe></div>
+          <!-- Terminal preview (CLI projects): the preview's PTY in xterm.js -->
+          <div class="pv-term" id="pv-term" hidden></div>
           <div class="pv-status" id="pv-status" hidden></div>
           <!-- Draw mode: a still picture of the page, with marks on top -->
           <div class="draw-stage" id="draw-stage" hidden aria-label="Snapshot of the preview: draw on it"></div>
@@ -433,6 +436,17 @@
           <button class="icon-btn" type="button" id="draw-copy" data-icon="copy" title="Copy the picture" aria-label="Copy"></button>
           <button class="btn small" type="button" id="draw-done" data-icon="x" title="Back to the live page (Esc)">Done</button>
           <button class="btn small primary" type="button" id="draw-add" data-icon="plus" title="Add the picture to the rework notes (Enter)">Add to review</button>
+        </div>
+        <!-- Phone: keys a touch keyboard lacks, for the terminal preview -->
+        <div class="pv-keys" id="pv-keys" role="toolbar" aria-label="Terminal keys" hidden>
+          <button type="button" data-key="esc">Esc</button>
+          <button type="button" data-key="tab">Tab</button>
+          <button type="button" data-key="ctrl-c">^C</button>
+          <button type="button" data-key="ctrl-d">^D</button>
+          <button type="button" data-key="up" aria-label="Up">↑</button>
+          <button type="button" data-key="down" aria-label="Down">↓</button>
+          <button type="button" data-key="left" aria-label="Left">←</button>
+          <button type="button" data-key="right" aria-label="Right">→</button>
         </div>
         <details class="pv-log" id="pv-log">
           <summary>Server log</summary>

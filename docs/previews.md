@@ -26,6 +26,11 @@ runner's owner). It stops like a web preview, with keystrokes counting as traffi
 fails or the shell exits, it shows as crashed; `GET /api/todos/<task>/preview/log?lines=N` returns
 its last lines as plain text, for **Send back**.
 
+In the web client, **Preview** on such a task opens that terminal beside the task (full screen on
+a phone, with a row of Esc, Tab, Ctrl-C, Ctrl-D and arrow keys). Draw doesn't apply; instead
+**Send back with transcript** puts the terminal's last 200 lines into the rework notes, or only
+what you selected in the terminal if you selected something.
+
 ## Setting up a preview domain
 
 Dash serves each preview through its own listener at `https://<task>.<preview domain>/`, as a

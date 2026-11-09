@@ -863,6 +863,10 @@ function reviveSockets() {
     const p = state.todos.get(pv.todo) && previewOf(pv.todo);
     if (p?.process_id === pv.proc) connectLog(p);
   }
+  if (pv.term && stale(pv.term)) {
+    const p = state.todos.get(pv.todo) && previewOf(pv.todo);
+    if (p?.process_id === pv.termProc && p.state === "live") connectTerm(p);
+  }
 }
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) hiddenAt = Date.now();
@@ -2729,8 +2733,10 @@ const pv = {
 };
 const pvKey = (machine, id) => `${machine || ""}/${id}`;
 const previewOf = (id) => state.previews.get(pvKey(state.project?.machine, id)) || null;
-// Terminal previews (preview_kind "terminal") have no pane here yet.
-const canPreview = (t) => t?.status === "review" && !!t.worktree && !t.runner && !!state.project?.run_command && state.project?.preview_kind !== "terminal";
+// A CLI project (preview_kind "terminal") previews in a terminal and needs no run_command.
+const termProject = () => state.project?.preview_kind === "terminal";
+const isTermPreview = (p) => (p ? p.kind === "terminal" : termProject());
+const canPreview = (t) => t?.status === "review" && !!t.worktree && !t.runner && (termProject() || !!state.project?.run_command);
 const PV_LABEL = { starting: "Starting…", live: "Live", crashed: "Crashed" };
 // eslint-disable-next-line no-control-regex
 const stripAnsi = (s) => s.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[@-_]|\r(?!\n)/g, "");
@@ -2785,7 +2791,7 @@ function previewButton(t) {
 // previewTodo opens t's preview pane, starting its server if it isn't running.
 async function previewTodo(t) {
   if (!t) return;
-  if (!state.project?.run_command) throw new Error("Set a start server command in the project's settings to preview tasks.");
+  if (!termProject() && !state.project?.run_command) throw new Error("Set a start server command in the project's settings to preview tasks.");
   if (!canPreview(t)) throw new Error("Only tasks ready for review can be previewed.");
   if (state.detail !== t.id) await openDetail(t.id);
   pv.todo = t.id;
@@ -2804,6 +2810,7 @@ function hidePreview() {
   endDraw();
   pv.todo = null;
   disconnectLog();
+  disconnectTerm();
   pv.shown = null;
   $("#pv-iframe").src = "about:blank"; // stops the app (and counts as no traffic)
   $("#pv-iframe").hidden = true;
@@ -2860,6 +2867,97 @@ function renderLog() {
   if (tail) tail.textContent = lastLines(8) || "No output yet.";
 }
 
+// A terminal preview (CLI projects) is the preview's PTY in xterm.js, over
+// the WebSocket in its terminal_url (procWS's protocol). Made on first use.
+let pvTerm = null;
+let pvFit = null;
+const pvSend = (msg) => pv.term?.readyState === 1 && pv.term.send(JSON.stringify(msg));
+function fitPvTerm() {
+  if (!pvTerm || $("#pv-term").hidden) return;
+  try { pvFit.fit(); pvSend({ type: "resize", cols: pvTerm.cols, rows: pvTerm.rows }); } catch {}
+}
+function pvTermOnce() {
+  if (pvTerm) return pvTerm;
+  pvTerm = new window.Terminal(TERM_OPTS);
+  pvFit = new window.FitAddon.FitAddon();
+  pvTerm.loadAddon(pvFit);
+  pvTerm.open($("#pv-term"));
+  new ResizeObserver(fitPvTerm).observe($("#pv-term"));
+  pvTerm.onData((data) => pvSend({ type: "input", data }));
+  // Ctrl-] leaves the terminal, as in the Shell view.
+  pvTerm.attachCustomKeyEventHandler((e) => {
+    if (e.type === "keydown" && e.ctrlKey && e.key === "]") { pvTerm.blur(); setMode(); return false; }
+    return true;
+  });
+  return pvTerm;
+}
+
+function disconnectTerm() {
+  pv.term?.close();
+  pv.term = null;
+  pv.termProc = null;
+}
+
+function connectTerm(p) {
+  disconnectTerm();
+  const term = pvTermOnce();
+  pv.termProc = p.process_id;
+  term.reset();
+  const ws = new WebSocket(wsURL(on(p.prefix, p.terminal_url || `/ws/todos/${encodeURIComponent(p.todo_id)}/preview`)));
+  ws.binaryType = "arraybuffer";
+  ws.onopen = fitPvTerm;
+  ws.onmessage = (m) => {
+    if (typeof m.data === "string") {
+      const msg = JSON.parse(m.data);
+      if (msg.type === "exit") term.write(`\r\n\x1b[90mExited with code ${msg.code}\x1b[0m\r\n`);
+    } else {
+      term.write(new Uint8Array(m.data));
+    }
+  };
+  pv.term = ws;
+  requestAnimationFrame(() => { fitPvTerm(); if (desktop.matches) term.focus(); });
+}
+
+// The last n lines of the terminal on screen and in its scrollback.
+function termBufferTail(n) {
+  const buf = pvTerm?.buffer.active;
+  if (!buf) return "";
+  const lines = [];
+  for (let i = Math.max(0, buf.length - n); i < buf.length; i++) lines.push(buf.getLine(i)?.translateToString(true) ?? "");
+  return lines.join("\n");
+}
+
+// Lines of the terminal preview sent back with "Send back with transcript".
+const TRANSCRIPT_LINES = 200;
+
+// A crashed terminal preview has no log stream: fetch its last lines once.
+async function loadTermLog(t, p) {
+  if (pv.logFor === p.process_id) return;
+  pv.logFor = p.process_id;
+  pv.log = "";
+  const raw = await api("GET", `/api/todos/${t.id}/preview/log?lines=${TRANSCRIPT_LINES}`, null, p.prefix).catch(() => termBufferTail(TRANSCRIPT_LINES));
+  if (pv.logFor !== p.process_id) return;
+  pv.log = stripAnsi(String(raw));
+  renderLog();
+}
+
+const fence = (text) => { const ticks = "`".repeat(Math.max(3, ...(text.match(/`{3,}/g) || []).map((m) => m.length + 1))); return `${ticks}\n${text}\n${ticks}`; };
+
+// Sends the task back with what the terminal preview shows: the part
+// selected in the terminal, or else its last TRANSCRIPT_LINES lines.
+async function sendBackWithTranscript(t) {
+  const p = previewOf(t.id);
+  if (!p || !isTermPreview(p)) return;
+  const sel = pvTerm?.hasSelection() ? pvTerm.getSelection().trimEnd() : "";
+  let text = sel;
+  if (!text) {
+    const raw = await api("GET", `/api/todos/${t.id}/preview/log?lines=${TRANSCRIPT_LINES}`, null, p.prefix).catch(() => termBufferTail(TRANSCRIPT_LINES));
+    text = stripAnsi(String(raw)).trimEnd();
+  }
+  const head = sel ? "From the terminal preview (the part I selected):" : "The end of the terminal preview's transcript:";
+  if (await reworkTodo(t, `${head}\n\n${fence(text)}`)) hidePreview();
+}
+
 function renderPreview() {
   const t = state.todos.get(state.detail);
   const open = !!t && pv.todo === t.id;
@@ -2867,11 +2965,17 @@ function renderPreview() {
   $("#detail").classList.toggle("previewing", open);
   if (!open) return;
   const p = previewOf(t.id);
-  if (p && p.process_id !== pv.proc) connectLog(p);
+  const termKind = isTermPreview(p);
+  if (p && !termKind && p.process_id !== pv.proc) connectLog(p);
   const st = p?.state || "stopped";
   $("#d-preview").dataset.state = st;
+  $("#d-preview").dataset.kind = termKind ? "terminal" : "web";
   $("#pv-state").replaceChildren(h("span", { class: `pv-dot ${st}`, "aria-hidden": "true" }),
-    p ? `${PV_LABEL[st]}${st === "live" ? ` · :${p.port}` : ""}` : "Not running");
+    p ? `${PV_LABEL[st]}${st === "live" && !termKind ? ` · :${p.port}` : ""}` : "Not running");
+  $("#pv-log summary").textContent = termKind ? "Terminal log" : "Server log";
+  if (termKind) return renderTermPreview(t, p, st);
+  $("#pv-term").hidden = $("#pv-keys").hidden = $("#pv-transcript").hidden = true;
+  if (pv.term) disconnectTerm();
   for (const b of $$(".pv-widths button")) b.setAttribute("aria-pressed", String(b.dataset.width === pv.width));
   $("#pv-frame").style.setProperty("--pv-w", pv.width === "full" ? "100%" : `${pv.width}px`);
   $("#pv-frame").classList.toggle("full", pv.width === "full");
@@ -2923,13 +3027,61 @@ function renderPreview() {
   }
 }
 
+// A terminal preview's pane: the live terminal, or what became of it. The
+// web preview's widths, Draw and link buttons don't apply (CSS hides them).
+function renderTermPreview(t, p, st) {
+  if (pv.ws) disconnectLog();
+  const frame = $("#pv-iframe");
+  if (pv.shown) { pv.shown = null; frame.src = "about:blank"; }
+  frame.hidden = true;
+  const live = st === "live";
+  $("#pv-term").hidden = $("#pv-keys").hidden = !live;
+  $("#pv-transcript").hidden = false;
+  $("#pv-transcript").disabled = !live || !canRework(t);
+  $("#pv-stop").disabled = !p;
+  const status = $("#pv-status");
+  if (live) {
+    status.hidden = true;
+    if (pv.termProc !== p.process_id) connectTerm(p);
+    return;
+  }
+  if (pv.term) disconnectTerm();
+  status.hidden = false;
+  const cmd = state.project?.preview_command;
+  const tail = () => h("pre", { class: "log pv-tail", id: "pv-tail" }, lastLines(8) || "No output yet.");
+  const restart = () => ib({ class: "btn", type: "button", onclick: attempt(() => previewTodo(t)) }, "play", "Start again");
+  switch (st) {
+    case "starting":
+      status.replaceChildren(h("div", { class: "spinner big", "aria-hidden": "true" }), h("strong", {}, "Opening the terminal"),
+        cmd ? h("p", { class: "hint" }, h("code", {}, cmd)) : null);
+      break;
+    case "crashed":
+      loadTermLog(t, p);
+      if (pv.crashed !== p.process_id) { pv.crashed = p.process_id; $("#pv-log").open = true; }
+      status.replaceChildren(h("strong", { class: "pv-err" }, `The terminal exited${p.exit_code != null ? ` with code ${p.exit_code}` : ""}`),
+        tail(),
+        h("div", { class: "pv-status-actions" },
+          canRework(t) ? ib({ class: "btn primary", type: "button", onclick: attempt(() => sendBackWithLog(t)) }, "redo", "Send back with this log") : null,
+          restart()));
+      break;
+    default:
+      status.replaceChildren(h("strong", {}, "The preview isn't running"),
+        h("p", { class: "hint" }, "It stops after 30 minutes without typing, and when the task is approved or sent back."),
+        canPreview(t) ? restart() : null);
+  }
+}
+
 // Crashed: send the task back to Claude with the end of the server's log.
 async function sendBackWithLog(t) {
   const p = previewOf(t.id);
-  const raw = await api("GET", `/api/todos/${t.id}/preview/log`, null, p?.prefix).catch(() => pv.log);
+  const term = isTermPreview(p);
+  const raw = await api("GET", `/api/todos/${t.id}/preview/log${term ? `?lines=${TRANSCRIPT_LINES}` : ""}`, null, p?.prefix).catch(() => pv.log);
   const log = stripAnsi(String(raw)).trimEnd().slice(-6000);
   const how = p?.exit_code != null ? `exited with code ${p.exit_code}` : "crashed";
-  const note = `The preview server (\`${state.project?.run_command || "run_command"}\`, with $PORT set) ${how}. Make it start and serve the app. The end of its log:\n\n\`\`\`\n${log}\n\`\`\``;
+  const cmd = state.project?.preview_command;
+  const note = term
+    ? `The terminal preview (${cmd ? `\`${cmd}\`` : "a shell"} in the task's worktree, with ./.dash-bin on PATH as $DASH_BIN) ${how}. Make it work. The end of its output:\n\n${fence(log)}`
+    : `The preview server (\`${state.project?.run_command || "run_command"}\`, with $PORT set) ${how}. Make it start and serve the app. The end of its log:\n\n\`\`\`\n${log}\n\`\`\``;
   if (await reworkTodo(t, note)) hidePreview();
 }
 
@@ -2966,18 +3118,31 @@ $("#pv-copy").addEventListener("click", attempt(async () => { const p = previewO
 $("#pv-qr").addEventListener("click", () => { const p = previewOf(pv.todo); if (p?.url) openQR(p.url, p.prefix); });
 $("#pv-stop").addEventListener("click", attempt(() => stopPreview()));
 $("#pv-close").addEventListener("click", hidePreview);
+$("#pv-transcript").addEventListener("click", attempt(() => { const t = state.todos.get(pv.todo); if (t) return sendBackWithTranscript(t); }));
+// Phone: keys a touch keyboard lacks. Arrows follow the app's cursor key mode.
+const PV_KEYS = { esc: "\x1b", tab: "\t", "ctrl-c": "\x03", "ctrl-d": "\x04" };
+const PV_ARROWS = { up: "A", down: "B", right: "C", left: "D" };
+$$("#pv-keys [data-key]").forEach((b) => {
+  b.addEventListener("mousedown", (e) => e.preventDefault()); // the terminal keeps focus (and the keyboard stays up)
+  b.addEventListener("click", () => {
+    const k = b.dataset.key;
+    pvSend({ type: "input", data: PV_KEYS[k] ?? `\x1b${pvTerm?.modes?.applicationCursorKeysMode ? "O" : "["}${PV_ARROWS[k]}` });
+  });
+});
 // Phone: the preview is full screen; this sheet leads back out.
 $("#pv-fab").addEventListener("click", attempt(async () => {
   const t = state.todos.get(pv.todo);
   if (!t) return hidePreview();
   const p = previewOf(t.id);
+  const term = isTermPreview(p); // Draw, Reload and links are for web pages
   const choices = [["minimize", "Back to task", hidePreview]];
-  if (p?.state === "live" && p.url) choices.push(["edit", "Draw", startDraw]);
-  if (p?.state === "live") choices.push(["reload", "Reload", reloadPreview]);
+  if (!term && p?.state === "live" && p.url) choices.push(["edit", "Draw", startDraw]);
+  if (!term && p?.state === "live") choices.push(["reload", "Reload", reloadPreview]);
+  if (canRework(t) && term && p?.state === "live") choices.push(["redo", pvTerm?.hasSelection() ? "Send back with the selection" : "Send back with transcript", () => sendBackWithTranscript(t)]);
   if (canRework(t)) choices.push(["redo", "Send back", () => (p?.state === "crashed" ? sendBackWithLog(t) : reworkTodo(t).then((sent) => sent && hidePreview()))]);
   if (p) {
-    choices.push(["external", "Open in a new tab", () => window.open(p.url || p.local_url, "_blank", "noopener")]);
-    if (p.url) choices.push(["link", "Copy link", () => copy(p.url, "Preview link copied")]);
+    if (!term) choices.push(["external", "Open in a new tab", () => window.open(p.url || p.local_url, "_blank", "noopener")]);
+    if (!term && p.url) choices.push(["link", "Copy link", () => copy(p.url, "Preview link copied")]);
     choices.push(["stop", "Stop the preview", () => stopPreview(t.id)]);
   }
   await menu(choices);
@@ -3113,6 +3278,7 @@ async function startDraw() {
   if (draw.on || draw.busy) return;
   const t = state.todos.get(pv.todo);
   const p = t && previewOf(t.id);
+  if (isTermPreview(p)) return; // nothing to draw on: Send back with transcript instead
   if (!p || p.state !== "live" || !pv.shown) throw new Error("Start the preview first: draw mode works on the live page.");
   if (!p.url) throw new Error("Drawing needs a preview domain (-preview-domain): the snapshot is taken through Dash's preview proxy.");
   draw.busy = true;
@@ -3379,7 +3545,7 @@ $("#previews-btn").addEventListener("click", () => {
           await previewTodo(t);
         }) },
           h("span", { class: "pv-row-title" }, p.title || p.todo_id),
-          h("span", { class: "pv-row-sub" }, [proj?.name, multi() ? p.machine : null, PV_LABEL[p.state] || p.state, `:${p.port}`].filter(Boolean).join(" · "))),
+          h("span", { class: "pv-row-sub" }, [proj?.name, multi() ? p.machine : null, PV_LABEL[p.state] || p.state, p.kind === "terminal" ? "terminal" : `:${p.port}`].filter(Boolean).join(" · "))),
         ib({ class: "icon-btn", type: "button", title: "Stop", "aria-label": `Stop the preview of ${p.title}`, onclick: attempt(async () => {
           await api("DELETE", `/api/todos/${p.todo_id}/preview`, null, p.prefix);
         }) }, "stop"));
@@ -6317,10 +6483,12 @@ function workerNode(parent, e) {
 }
 
 // ------------------------------------------------------------------ run: processes & terminal
-const term = new window.Terminal({
+// The Shell view's and the terminal preview's look.
+const TERM_OPTS = {
   fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 13, cursorBlink: true,
   theme: { background: "#0a0f17", foreground: "#e6ecf5", cursor: "#8aa4ff", selectionBackground: "#2a384d" },
-});
+};
+const term = new window.Terminal(TERM_OPTS);
 const fit = new window.FitAddon.FitAddon();
 term.loadAddon(fit);
 term.open($("#term"));

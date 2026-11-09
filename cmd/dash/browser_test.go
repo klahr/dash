@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
 )
 
@@ -26,29 +28,11 @@ import (
 // $PATH. Without one it is skipped, unless $DASH_TEST_BROWSER=require (as
 // in CI), when it fails instead.
 func TestBrowserMainFlows(t *testing.T) {
-	if testing.Short() {
-		t.Skip("builds and runs dash and Chrome")
-	}
-	chrome := findChrome()
-	if chrome == "" {
-		if os.Getenv("DASH_TEST_BROWSER") == "require" {
-			t.Fatal("no Chrome or Chromium found: set DASH_TEST_CHROME")
-		}
-		t.Skip("needs Chrome or Chromium (set DASH_TEST_CHROME)")
-	}
+	chrome := needChrome(t)
 	h := startRunnerHub(t)
 	api, pid := h.api, h.project.ID
 	b := newBrowser(t, chrome)
-
-	// Sign in.
-	b.do("open the hub", chromedp.Navigate(h.base+"/"))
-	b.do("sign in",
-		chromedp.WaitVisible(chromedp.CSS(`#login input[name=username]`)),
-		chromedp.SendKeys(chromedp.CSS(`#login input[name=username]`), h.username),
-		chromedp.SendKeys(chromedp.CSS(`#login input[name=password]`), h.password),
-		chromedp.Click(chromedp.CSS(`#login button.btn.primary`)),
-	)
-	b.waitJS("the board with the project", `document.querySelector("#project-name")?.textContent === "app" && !!document.querySelector('#board .col[data-lane="review"]')`)
+	b.signIn(h)
 
 	// Create a task from the quick sheet, queued right away.
 	b.do("open the new task sheet", chromedp.Click(chromedp.ID("new-todo")))
@@ -131,6 +115,99 @@ func TestBrowserMainFlows(t *testing.T) {
 	if _, diff := api.try("GET", peer+"/api/todos/"+third.ID+"/diff", nil); !strings.Contains(diff, "permission.txt") || !strings.Contains(diff, "+allow") {
 		t.Fatalf("the run wasn't allowed its command:\n%s", diff)
 	}
+}
+
+// A CLI project's terminal preview: open it on a task in review, type in
+// it, and send the task back with the terminal's transcript as the rework
+// notes. In a project of the runner's own, whose runner opens terminals for
+// the hub (-hub-commands): the preview runs there, reached through the hub.
+func TestBrowserTerminalPreview(t *testing.T) {
+	chrome := needChrome(t)
+	h := startRunnerHub(t, "-hub-commands")
+	api := h.api
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+
+	const peer = "/peer/laptop"
+	var cli struct{ ID string }
+	api.must("POST", peer+"/api/projects", map[string]any{"name": "cli"}, http.StatusCreated, &cli)
+	api.must("PATCH", peer+"/api/projects/"+cli.ID, map[string]any{"preview_kind": "terminal"}, http.StatusOK, nil)
+	var task struct{ ID string }
+	api.must("POST", peer+"/api/projects/"+cli.ID+"/todos", map[string]any{"title": "CLI change", "prompt": "Change the CLI", "enqueue": true},
+		http.StatusCreated, &task)
+	waitStatus(t, api, peer+"/api/todos/"+task.ID, "review", nil)
+
+	b.clickText(`#side-project-list .side-project`, "cli")
+	b.waitJS("the CLI project", `document.querySelector("#project-name")?.textContent === "cli"`)
+	b.waitCard(task.ID, "review")
+	b.openTask(task.ID)
+
+	// The Preview button opens a terminal instead of a page; Draw is gone.
+	b.clickText("#d-actions button", "Preview")
+	b.waitJS("the terminal preview", `!document.querySelector("#pv-term").hidden && !!document.querySelector("#pv-term .xterm") && document.querySelector("#d-preview").dataset.state === "live"`)
+	b.waitJS("no Draw button", `getComputedStyle(document.querySelector("#pv-draw-btn")).display === "none" && document.querySelector("#pv-iframe").hidden`)
+	b.waitJS("the Live badge", `document.querySelector("#pv-state").textContent.includes("Live")`)
+	b.waitJS("the Previews (1) button", `!document.querySelector("#previews-btn").hidden && document.querySelector("#previews-label").textContent.includes("(1)")`)
+
+	// Type a command: its output shows in the terminal.
+	rows := `[...document.querySelectorAll("#pv-term .xterm-rows > div")].map((r) => r.textContent.trimEnd())`
+	b.waitJS("the shell's prompt", rows+`.some((r) => r.trim() !== "")`)
+	// SendKeys' synthetic key and char events would each reach xterm.js as
+	// input (typing every letter twice): insert the text, then press Enter.
+	b.do("type echo hi",
+		chromedp.Focus(chromedp.CSS(`#pv-term textarea.xterm-helper-textarea`)),
+		chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+			if _, err := cdp.Call(ctx, t, input.InsertText, input.InsertTextParams{Text: "echo hi"}); err != nil {
+				return err
+			}
+			for _, typ := range []input.DispatchKeyEventType{input.DispatchKeyEventTypeRawKeyDown, input.DispatchKeyEventTypeKeyUp} {
+				if _, err := cdp.Call(ctx, t, input.DispatchKeyEvent, input.DispatchKeyEventParams{
+					Type: typ, Key: "Enter", Code: "Enter", WindowsVirtualKeyCode: 13, NativeVirtualKeyCode: 13}); err != nil {
+					return err
+				}
+			}
+			return nil
+		}))
+	b.waitJS("hi in the terminal", rows+`.some((r) => r.trim() === "hi")`)
+
+	// Send back with transcript: the terminal's text goes into the rework notes.
+	b.do("send back with transcript", chromedp.Click(chromedp.ID("pv-transcript")))
+	b.waitJS("the transcript in the notes", `document.querySelector("#ask-sheet").open && /echo hi/.test(document.querySelector("#ask-input").value) && /^hi$/m.test(document.querySelector("#ask-input").value)`)
+	b.until("send it back", `!document.querySelector("#ask-sheet").open`, chromedp.Click(chromedp.ID("ask-ok")))
+	waitStatus(t, api, peer+"/api/todos/"+task.ID, "review", func(td todo) bool { return td.Runs > 1 })
+	if _, diff := api.try("GET", peer+"/api/todos/"+task.ID+"/diff", nil); !strings.Contains(diff, "echo hi") {
+		t.Fatalf("the rework didn't get the transcript:\n%s", diff)
+	}
+}
+
+// needChrome is the Chrome to test with, or skips the test (see
+// TestBrowserMainFlows).
+func needChrome(t *testing.T) string {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("builds and runs dash and Chrome")
+	}
+	chrome := findChrome()
+	if chrome == "" {
+		if os.Getenv("DASH_TEST_BROWSER") == "require" {
+			t.Fatal("no Chrome or Chromium found: set DASH_TEST_CHROME")
+		}
+		t.Skip("needs Chrome or Chromium (set DASH_TEST_CHROME)")
+	}
+	return chrome
+}
+
+// signIn signs in to the hub and waits for the board with its project.
+func (b *browser) signIn(h *runnerHub) {
+	b.t.Helper()
+	b.do("open the hub", chromedp.Navigate(h.base+"/"))
+	b.do("sign in",
+		chromedp.WaitVisible(chromedp.CSS(`#login input[name=username]`)),
+		chromedp.SendKeys(chromedp.CSS(`#login input[name=username]`), h.username),
+		chromedp.SendKeys(chromedp.CSS(`#login input[name=password]`), h.password),
+		chromedp.Click(chromedp.CSS(`#login button.btn.primary`)),
+	)
+	b.waitJS("the board with the project", `document.querySelector("#project-name")?.textContent === "app" && !!document.querySelector('#board .col[data-lane="review"]')`)
 }
 
 // findChrome is $DASH_TEST_CHROME, or a Chrome or Chromium on $PATH.

@@ -1685,6 +1685,19 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 }
 .pv-fab .ico { width: 26px; height: 26px; }
 .pv-fab .ico path { stroke-width: 3.4; }
+/* Terminal preview: xterm.js instead of the iframe; a web page's tools don't apply. */
+.pv-term { position: absolute; inset: 0; padding: 6px; background: #0a0f17; }
+.pv-term[hidden] { display: none; }
+.preview[data-kind="terminal"] :is(.pv-widths, #pv-draw-btn, #pv-reload, #pv-open, #pv-copy, #pv-qr) { display: none; }
+.preview[data-kind="terminal"]:not([data-state="crashed"]) .pv-log { display: none; }
+.pv-transcript-btn { margin-left: 6px; }
+.pv-transcript-btn[hidden] { display: none; }
+.pv-transcript-btn:disabled { opacity: .4; }
+.pv-keys { display: flex; gap: 4px; padding: 6px 8px calc(6px + var(--safe-b)); border-top: 1px solid var(--line); background: var(--surface); overflow-x: auto; }
+.pv-keys[hidden] { display: none; }
+.pv-keys button { flex: none; min-width: 40px; min-height: 40px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-s, 6px); background: var(--raised); color: var(--text); font: 13px var(--mono); touch-action: manipulation; }
+.pv-keys button:active { background: var(--line); }
+.pv-keys:not([hidden]) ~ .pv-fab { bottom: calc(68px + var(--safe-b)); } /* above the keys */
 #pv-stop:not(:disabled), .pv-row .icon-btn { color: var(--failed); }
 :is(#pv-stop, .pv-row .icon-btn, .previews-sheet .danger) .ico path { fill: currentColor; }
 
@@ -1718,6 +1731,7 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
   .detail.previewing > .actionbar { grid-column: 1; grid-row: 4; }
   .detail.previewing > .preview { grid-column: 2; grid-row: 1 / -1; border-left: 1px solid var(--line); }
   .pv-fab { display: none; }
+  .pv-keys { display: none; }
 }
 
 /* ---------- preview draw mode ---------- */

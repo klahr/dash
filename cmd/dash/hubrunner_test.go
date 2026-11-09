@@ -143,7 +143,8 @@ type runnerHub struct {
 	username, password string
 }
 
-func startRunnerHub(t *testing.T) *runnerHub {
+// runnerFlags are added to the runner's command line, e.g. -hub-commands.
+func startRunnerHub(t *testing.T, runnerFlags ...string) *runnerHub {
 	t.Helper()
 	gitBin, err := exec.LookPath("git")
 	if err != nil {
@@ -197,6 +198,7 @@ func startRunnerHub(t *testing.T) *runnerHub {
 	h.runnerEnv = append(gitEnv, "FAKECLAUDE_LOG="+calls, "PATH="+filepath.Dir(fake)+string(os.PathListSeparator)+hubPath)
 	h.runnerArgs = []string{"runner", "-data", filepath.Join(dir, "runner"), "-projects", filepath.Join(dir, "runner-projects"),
 		"-name", "laptop", "-env", filepath.Join(dir, "none.env")}
+	h.runnerArgs = append(h.runnerArgs, runnerFlags...)
 	h.runner = startDash(t, dash, h.runnerEnv, append(h.runnerArgs, "--server", h.base, "--code", code.Code)...)
 	waitFor(t, h.runner, "the runner to come online", func() bool {
 		var rs struct {
