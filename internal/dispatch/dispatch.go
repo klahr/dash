@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
 )
@@ -61,7 +63,16 @@ type Dispatcher struct {
 	origin    map[[2]string]string                 // {hub project id, branch} → the last sha passed on
 	checkouts map[string]map[string]model.Checkout // hub project id → runner id → its checkout behind origin
 	fanouts   sync.WaitGroup                       // OriginMoved calls in flight (tests)
+
+	permMu sync.Mutex
+	perms  map[string]map[string]perm.Request // runner id → request id → its pending request, with the hub's ids
+	// answered are requests the hub answered lately: a report the runner
+	// built before the answer reached it doesn't bring them back.
+	answered map[string]time.Time
 }
+
+// answeredFor is how long the hub ignores a request it answered.
+const answeredFor = time.Minute
 
 // WaitError is why no runner can take a task now; the task stays queued.
 type WaitError struct{ Reason string }
@@ -176,6 +187,7 @@ func (d *Dispatcher) Report(id string, body []byte) error {
 	for _, pid := range rep.Procs {
 		d.procsChanged(r, pid)
 	}
+	d.setPermissions(r, rep.Permissions)
 	if d.Kick != nil {
 		d.Kick() // a slot may have come free, or the usage limit lifted
 	}
@@ -516,6 +528,9 @@ func (d *Dispatcher) State(id string, online bool) {
 		delete(d.timers, id)
 	}
 	if !online {
+		// Its requests can't be answered while it is gone; it reports
+		// those still waiting when it is back.
+		d.setPermissions(tunnel.Runner{ID: id}, nil)
 		grace := d.Grace
 		if grace <= 0 {
 			grace = DefaultGrace
@@ -559,6 +574,7 @@ func (d *Dispatcher) Revoked(id string) {
 	}
 	d.interrupt(id, "its runner was revoked", false)
 	d.forgetCheckouts(id)
+	d.setPermissions(tunnel.Runner{ID: id}, nil)
 	if d.Kick != nil {
 		d.Kick()
 	}
@@ -620,6 +636,150 @@ func (d *Dispatcher) Start() {
 			d.State(r.ID, false)
 		}
 	}
+}
+
+// ---- permission requests of tasks on runners ----
+
+// permGone is the Decision of a runner's request that the hub stops
+// showing without having answered it: it was answered on the runner, its
+// task ended, or the runner went away.
+const permGone = "gone"
+
+// setPermissions replaces the permission requests runner r reported as
+// waiting, keeping those of tasks the hub sent r, in r's org, and tells the
+// dashboards of each request that came or went.
+func (d *Dispatcher) setPermissions(r tunnel.Runner, ps []Permission) {
+	d.permMu.Lock()
+	for id, at := range d.answered {
+		if time.Since(at) > answeredFor {
+			delete(d.answered, id)
+		}
+	}
+	answered := maps.Clone(d.answered)
+	d.permMu.Unlock()
+	now := map[string]perm.Request{}
+	for _, p := range ps {
+		if p.ID == "" || len(now) >= 200 {
+			continue
+		}
+		if _, ok := answered[p.ID]; ok {
+			continue
+		}
+		t, err := d.Store.GetTodo(p.HubTodoID)
+		if err != nil || t.Runner != r.ID || t.Status != model.StatusInProgress {
+			continue
+		}
+		pr, err := d.Store.GetProject(t.ProjectID)
+		if err != nil || pr.OrgID != r.OrgID() {
+			continue
+		}
+		input := p.Input
+		if !json.Valid(input) {
+			input = json.RawMessage("{}")
+		}
+		now[p.ID] = perm.Request{ID: p.ID, TodoID: t.ID, ProjectID: t.ProjectID, OrgID: pr.OrgID,
+			Tool: p.Tool, Input: input, Created: p.Created}
+	}
+	d.permMu.Lock()
+	if d.perms == nil {
+		d.perms = map[string]map[string]perm.Request{}
+	}
+	was := d.perms[r.ID]
+	if len(now) == 0 {
+		delete(d.perms, r.ID)
+	} else {
+		d.perms[r.ID] = now
+	}
+	d.permMu.Unlock()
+	for id, q := range was {
+		if _, ok := now[id]; !ok {
+			q.Decision = permGone
+			d.publishPermission(q)
+		}
+	}
+	for id, q := range now {
+		if _, ok := was[id]; !ok {
+			d.publishPermission(q)
+		}
+	}
+}
+
+func (d *Dispatcher) publishPermission(q perm.Request) {
+	if d.Pub != nil {
+		d.Pub.Publish(model.Event{Type: model.EvPermission, ProjectID: q.ProjectID, TodoID: q.TodoID, Data: q, Time: time.Now()})
+	}
+}
+
+// Permissions lists the permission requests waiting on runners, with the
+// hub's task and project ids, optionally for one project, oldest first.
+func (d *Dispatcher) Permissions(projectID string) []perm.Request {
+	d.permMu.Lock()
+	defer d.permMu.Unlock()
+	out := []perm.Request{}
+	for _, m := range d.perms {
+		for _, q := range m {
+			if projectID == "" || q.ProjectID == projectID {
+				out = append(out, q)
+			}
+		}
+	}
+	slices.SortFunc(out, func(a, b perm.Request) int { return a.Created.Compare(b.Created) })
+	return out
+}
+
+// Permission is the permission request id waiting on a runner.
+func (d *Dispatcher) Permission(id string) (perm.Request, bool) {
+	q, _, ok := d.permission(id)
+	return q, ok
+}
+
+func (d *Dispatcher) permission(id string) (perm.Request, string, bool) {
+	d.permMu.Lock()
+	defer d.permMu.Unlock()
+	for rid, m := range d.perms {
+		if q, ok := m[id]; ok {
+			return q, rid, true
+		}
+	}
+	return perm.Request{}, "", false
+}
+
+// DecidePermission answers the permission request id waiting on a runner
+// (allow, always or deny), on that runner. It is perm.ErrNotFound when no
+// runner waits on id.
+func (d *Dispatcher) DecidePermission(ctx context.Context, id, decision, message string) error {
+	q, rid, ok := d.permission(id)
+	if !ok {
+		return perm.ErrNotFound
+	}
+	path := strings.NewReplacer("{htid}", url.PathEscape(q.TodoID), "{id}", url.PathEscape(id)).Replace(PermissionPath)
+	err := d.Fleet.Call(ctx, rid, http.MethodPost, path, PermissionAnswer{Decision: decision, Message: message}, nil)
+	var callErr *tunnel.CallError
+	if errors.As(err, &callErr) && callErr.Status == http.StatusNotFound {
+		err = perm.ErrNotFound // answered or ended meanwhile
+	}
+	if err != nil && !errors.Is(err, perm.ErrNotFound) {
+		return err
+	}
+	d.permMu.Lock()
+	_, still := d.perms[rid][id]
+	delete(d.perms[rid], id)
+	if d.answered == nil {
+		d.answered = map[string]time.Time{}
+	}
+	d.answered[id] = time.Now()
+	d.permMu.Unlock()
+	if still {
+		q.Decision, q.Message = decision, message
+		if decision == "always" {
+			q.Decision = "allow"
+		}
+		if err != nil {
+			q.Decision = permGone
+		}
+		d.publishPermission(q)
+	}
+	return err
 }
 
 // ---- what the API does with a task on a runner ----

@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"sort"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/usage"
 )
@@ -37,6 +39,9 @@ type Reporter struct {
 	// Checkouts lists the clones of the hub's projects whose checkout is
 	// behind origin, for every report (optional).
 	Checkouts func() []CheckoutState
+	// Perms lists the permission requests waiting on the runner (its
+	// perm.Broker's Pending); those of the hub's tasks go in every report.
+	Perms func() []perm.Request
 
 	once sync.Once
 	wake chan struct{}
@@ -131,6 +136,13 @@ func (r *Reporter) Observe(ev model.Event) {
 		r.observeOutput(ev)
 	case model.EvProcUpdated:
 		r.observeProc(ev)
+	case model.EvPermission:
+		if ev.TodoID == "" || r.Store == nil {
+			return
+		}
+		if t, err := r.Store.GetTodo(ev.TodoID); err == nil && t.HubTodoID != "" {
+			r.Nudge() // the hub's board shows it, or stops showing it
+		}
 	}
 }
 
@@ -241,7 +253,11 @@ func (r *Reporter) Build(now time.Time) Report {
 	if procs := r.takeProcs(); len(procs) > 0 {
 		rep.Procs = procs
 	}
-	for _, t := range r.Store.ListTodos("") {
+	todos := r.Store.ListTodos("")
+	if r.Perms != nil {
+		rep.Permissions = hubPermissions(r.Perms(), todos)
+	}
+	for _, t := range todos {
 		if t.HubTodoID == "" {
 			continue
 		}
@@ -256,6 +272,65 @@ func (r *Reporter) Build(now time.Time) Report {
 		rep.Tasks = append(rep.Tasks, s)
 	}
 	return rep
+}
+
+// Bounds on the permission requests in a report, which the hub takes up to
+// 4 MiB of: a request's input is cut down past maxPermInput.
+const (
+	maxPerms        = 50
+	maxPermInput    = 64 << 10
+	maxPermInputStr = 4000
+)
+
+// hubPermissions are the requests of reqs that the hub's tasks (in todos)
+// wait on, with the hub's task ids, oldest first.
+func hubPermissions(reqs []perm.Request, todos []model.Todo) []Permission {
+	hub := map[string]string{}
+	for _, t := range todos {
+		if t.HubTodoID != "" {
+			hub[t.ID] = t.HubTodoID
+		}
+	}
+	var out []Permission
+	for _, q := range reqs {
+		htid := hub[q.TodoID]
+		if htid == "" || q.Decision != "" {
+			continue
+		}
+		out = append(out, Permission{ID: q.ID, HubTodoID: htid, Tool: q.Tool, Input: shortInput(q.Input), Created: q.Created})
+		if len(out) == maxPerms {
+			break
+		}
+	}
+	return out
+}
+
+// shortInput is a tool call's input, its long strings cut when it is
+// bigger than maxPermInput (an Edit of a large file): the board shows the
+// command or path, not whole files.
+func shortInput(in json.RawMessage) json.RawMessage {
+	if len(in) <= maxPermInput {
+		return in
+	}
+	var m map[string]any
+	if json.Unmarshal(in, &m) != nil {
+		return json.RawMessage("{}")
+	}
+	for k, v := range m {
+		switch x := v.(type) {
+		case string:
+			if len(x) > maxPermInputStr {
+				m[k] = x[:maxPermInputStr] + "…"
+			}
+		case map[string]any, []any:
+			m[k] = "…"
+		}
+	}
+	b, err := json.Marshal(m)
+	if err != nil || len(b) > maxPermInput {
+		return json.RawMessage("{}")
+	}
+	return b
 }
 
 // Run reports until ctx ends or Send returns ErrStop.

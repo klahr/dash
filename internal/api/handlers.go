@@ -1456,8 +1456,15 @@ func (s *Server) listPermissions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	project := r.URL.Query().Get("project")
+	all := s.Perms.Pending(project)
+	if s.Dispatch != nil {
+		// The hub's tasks wait on their runners' requests.
+		all = append(all, s.Dispatch.Permissions(project)...)
+		slices.SortStableFunc(all, func(a, b perm.Request) int { return a.Created.Compare(b.Created) })
+	}
 	out := []perm.Request{}
-	for _, req := range s.Perms.Pending(r.URL.Query().Get("project")) {
+	for _, req := range all {
 		if sv.data.OwnsProject(req.ProjectID) {
 			out = append(out, req)
 		}
@@ -1478,11 +1485,31 @@ func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if pr, ok := s.Perms.Get(r.PathValue("id")); !ok || !sv.data.OwnsProject(pr.ProjectID) {
+	id := r.PathValue("id")
+	if _, ok := s.Perms.Get(id); !ok && s.Dispatch != nil {
+		// A request of a hub's task, waiting on its runner.
+		pr, ok := s.Dispatch.Permission(id)
+		if !ok || !sv.data.OwnsProject(pr.ProjectID) {
+			writeErr(w, store.ErrNotFound)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		if err := s.Dispatch.DecidePermission(ctx, id, req.Decision, req.Message); err != nil {
+			if errors.Is(err, perm.ErrNotFound) {
+				err = store.ErrNotFound
+			}
+			writeErr(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if pr, ok := s.Perms.Get(id); !ok || !sv.data.OwnsProject(pr.ProjectID) {
 		writeErr(w, store.ErrNotFound)
 		return
 	}
-	if err := s.Perms.Decide(r.PathValue("id"), req.Decision, req.Message); err != nil {
+	if err := s.Perms.Decide(id, req.Decision, req.Message); err != nil {
 		if errors.Is(err, perm.ErrNotFound) {
 			writeErr(w, store.ErrNotFound)
 			return

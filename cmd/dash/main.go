@@ -334,7 +334,9 @@ func main() {
 	// What looks changed about the installed Claude Code CLI: checked on a
 	// runner, shown in task logs and on the hub's Runners page.
 	cli := &claudecli.Monitor{Bin: *claudeBin}
-	perms := perm.NewBroker(events)
+	// A runner tells its hub of the requests of the hub's tasks (see reporter).
+	permEvents := &teePublisher{Publisher: events}
+	perms := perm.NewBroker(permEvents)
 	perms.Saved = st
 	todoLog := &queue.TodoLog{Pub: events, Root: filepath.Join(*dataDir, "logs"), MaxBytes: int64(max(*logMaxMB, 0)) << 20}
 	merges := queue.NewMergeQueue(st, git, events, todoLog, 1024)
@@ -481,7 +483,16 @@ func main() {
 			Store:        st,
 			Origin:       linkOrigin(st, authn.Domains, *publicURL, *addr, useTLS),
 			AllowPrivate: allowPrivate,
-			Actions:      notify.NewActions(perms.Decide),
+			Actions: notify.NewActions(func(id, decision, message string) error {
+				err := perms.Decide(id, decision, message)
+				if errors.Is(err, perm.ErrNotFound) && apiSrv.Dispatch != nil {
+					// A request of a hub's task, waiting on its runner.
+					dctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+					defer cancel()
+					err = apiSrv.Dispatch.DecidePermission(dctx, id, decision, message)
+				}
+				return err
+			}),
 		}
 		events.Observe = notifier.Observe
 		notifier.Start(ctx)
@@ -544,6 +555,10 @@ func main() {
 		}
 		// …and when its processes start or end, so its dashboards list them again.
 		procEvents.also = reporter.Observe
+		// Claude's permission requests in the hub's tasks are answered on
+		// the hub's board.
+		reporter.Perms = func() []perm.Request { return perms.Pending("") }
+		permEvents.also = reporter.Observe
 		go reporter.Run(ctx)
 		// The hub hears of the Claude Code version and warnings at once.
 		cli.OnChange(func() {

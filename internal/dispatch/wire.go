@@ -24,6 +24,7 @@
 package dispatch
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/klahr/dash/internal/claudecli"
@@ -133,6 +134,32 @@ type Report struct {
 	// checkout is behind origin, all of them every time (none: none is).
 	// Nil from a runner older than this field: the hub keeps what it had.
 	Checkouts *[]CheckoutState `json:"checkouts,omitempty"`
+	// Permissions are the tool calls Claude asks to make in the hub's tasks
+	// that wait for a human's answer on the runner, all of them every time
+	// (none: none waits). The hub shows them on its board and answers them
+	// with PermissionPath.
+	Permissions []Permission `json:"permissions,omitempty"`
+}
+
+// Permission is a permission request of one of the hub's tasks, pending on
+// the runner (perm.Request, with the hub's task id).
+type Permission struct {
+	ID        string          `json:"id"` // the runner's request id
+	HubTodoID string          `json:"hub_todo_id"`
+	Tool      string          `json:"tool"`
+	Input     json.RawMessage `json:"input,omitempty"`
+	Created   time.Time       `json:"created"`
+}
+
+// PermissionPath is POST on a runner: the hub answers the permission
+// request {id} of its task {htid}; the body is a PermissionAnswer.
+const PermissionPath = "/api/hub/tasks/{htid}/permissions/{id}"
+
+// PermissionAnswer is how a permission request was answered: allow,
+// always or deny.
+type PermissionAnswer struct {
+	Decision string `json:"decision"`
+	Message  string `json:"message,omitempty"`
 }
 
 // Push is a runner's push of a hub's project's branch to origin.

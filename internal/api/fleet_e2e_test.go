@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
+	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/tunnel"
 )
@@ -96,6 +98,60 @@ func TestHubDispatchesToARunnerEndToEnd(t *testing.T) {
 		t.Errorf("runner's project %+v", rp)
 	}
 
+	// Claude asks to run a tool: the request waits on the runner's broker,
+	// reaches the hub's board in the runner's report, and is answered there.
+	token, release := runner.Perms.Register(owner, copyOnRunner.ID, copyOnRunner.ProjectID)
+	defer release()
+	answered := make(chan string, 1)
+	go func() {
+		call := httptest.NewRequest("POST", "/mcp/permissions", strings.NewReader(
+			`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"permission_prompt","arguments":{"tool_name":"Bash","input":{"command":"make"}}}}`))
+		call.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		runner.Perms.ServeMCP(w, call)
+		answered <- w.Body.String()
+	}()
+	eventually(t, "the request to wait on the runner", func() bool { return len(runner.Perms.Pending("")) == 1 })
+	reporter.Perms = func() []perm.Request { return runner.Perms.Pending("") }
+	if err := reporter.Send(ctx, reporter.Build(time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	listPerms := func() []perm.Request {
+		w := httptest.NewRecorder()
+		hub.mux().ServeHTTP(w, asOwner(t, hub, httptest.NewRequest("GET", "/api/permissions?project="+p.ID, nil)))
+		var out []perm.Request
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != http.StatusOK {
+			t.Fatalf("hub's permissions: %d %s", w.Code, w.Body)
+		}
+		return out
+	}
+	pending := listPerms()
+	if len(pending) != 1 || pending[0].TodoID != td.ID || pending[0].ProjectID != p.ID || pending[0].Tool != "Bash" {
+		t.Fatalf("hub's board shows %+v", pending)
+	}
+	w := httptest.NewRecorder()
+	hub.mux().ServeHTTP(w, asOwner(t, hub, httptest.NewRequest("POST", "/api/permissions/"+pending[0].ID, strings.NewReader(`{"decision":"allow"}`))))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("answering on the hub: %d %s", w.Code, w.Body)
+	}
+	select {
+	case a := <-answered:
+		if !strings.Contains(a, `\"behavior\":\"allow\"`) {
+			t.Fatalf("Claude was told %s", a)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the runner's request wasn't answered")
+	}
+	if left := listPerms(); len(left) != 0 {
+		t.Errorf("still shown after answering: %+v", left)
+	}
+	if err := reporter.Send(ctx, reporter.Build(time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	if left := listPerms(); len(left) != 0 {
+		t.Errorf("shown again after the next report: %+v", left)
+	}
+
 	// The runner finishes it and reports.
 	for _, st := range []model.TodoStatus{model.StatusInProgress, model.StatusReview} {
 		_, err := raw(runner).UpdateTodo(copyOnRunner.ID, func(x *model.Todo) error {
@@ -122,7 +178,7 @@ func TestHubDispatchesToARunnerEndToEnd(t *testing.T) {
 		t.Errorf("runner's Claude Code warnings not reported: %+v", r.Reported)
 	}
 	// The hub reads the task's log from the runner.
-	w := httptest.NewRecorder()
+	w = httptest.NewRecorder()
 	hub.mux().ServeHTTP(w, asOwner(t, hub, httptest.NewRequest("GET", "/api/todos/"+td.ID+"/events", nil)))
 	if w.Code != http.StatusOK {
 		t.Errorf("events from the runner: %d %s", w.Code, w.Body)

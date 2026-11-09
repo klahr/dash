@@ -19,6 +19,7 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/release"
 	"github.com/klahr/dash/internal/scan"
 	"github.com/klahr/dash/internal/store"
@@ -53,6 +54,7 @@ func (s *Server) hubTaskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/diff", s.hubTaskAction("diff"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/log", s.hubTaskAction("log"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/events", s.hubTaskAction("events"))
+	mux.HandleFunc("POST "+dispatch.PermissionPath, s.hubPermission)
 	mux.HandleFunc("GET "+dispatch.ScanPath, s.hubScan)
 	mux.HandleFunc("POST /api/hub/github/{hpid}", s.hubGitHub)
 }
@@ -398,6 +400,39 @@ func (s *Server) hubOriginMoved(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// hubPermission handles POST dispatch.PermissionPath: the hub's user
+// answered a permission request of the hub's task {htid} on its board.
+func (s *Server) hubPermission(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.fromHub(w, r)
+	if !ok {
+		return
+	}
+	var req dispatch.PermissionAnswer
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	t, ok := sv.hubTodo(r.PathValue("htid"))
+	if !ok || s.Perms == nil {
+		writeErr(w, fmt.Errorf("%w: no such task from the hub", store.ErrNotFound))
+		return
+	}
+	id := r.PathValue("id")
+	if pr, ok := s.Perms.Get(id); !ok || pr.TodoID != t.ID {
+		writeErr(w, fmt.Errorf("%w: that permission request was answered or has ended", store.ErrNotFound))
+		return
+	}
+	if err := s.Perms.Decide(id, req.Decision, req.Message); err != nil {
+		if errors.Is(err, perm.ErrNotFound) {
+			writeErr(w, fmt.Errorf("%w: that permission request was answered or has ended", store.ErrNotFound))
+			return
+		}
+		writeErr(w, fmt.Errorf("%w: %v", errBadRequest, err))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // hubTask handles POST /api/hub/tasks: run the hub's task, or continue it.
