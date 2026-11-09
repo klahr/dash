@@ -1304,6 +1304,11 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   /* Bottom nav: Board · Chat · Issues · Shell · Files. Scans and History are in the
      menu drawer (.menu-views); the Chat tab replaces the top bar's chat button. */
   .nav > button:is([data-view="scans"], [data-view="history"]), #pc-open { display: none; }
+  /* Open issues nobody has dealt with yet: a dot on the Issues icon (the count is in its title). */
+  .nav #issue-badge {
+    top: 10px; left: calc(50% + 8px); min-width: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%;
+    background: var(--review); font-size: 0; box-shadow: 0 0 0 2px var(--surface);
+  }
   /* Chat is a page like the others (the nav's Chat tab, shown active): the view under it
      (and the board's New-task button) is hidden and the chat fills the room between the
      top bar and the nav. It's fixed and fitted to the visible area (app.js sets --vv-*),
