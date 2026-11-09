@@ -686,7 +686,7 @@ const state = {
   lastLine: new Map(),
   lane: null,          // mobile: selected lane key
   detail: null,        // open todo id
-  pane: "diff",
+  pane: "timeline",
   diff: "",
   diffOpen: new Set(), // diff files the user expanded in the open todo
   procs: [],
@@ -2258,8 +2258,7 @@ async function openDetail(id) {
   state.detail = id;
   // On a desktop the task's running preview opens beside it.
   if (desktop.matches && previewOf(id)) pv.todo = id;
-  const t = state.todos.get(id);
-  state.pane = t?.worktree ? "diff" : "timeline";
+  state.pane = "timeline";
   state.diff = "";
   state.diffOpen = new Set();
   $("#detail").hidden = false;
@@ -7621,7 +7620,7 @@ async function handleNormal(k, n, hadCount) {
     const t = state.todos.get(state.detail);
     if (["j", "k", "ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b", "gg", "G"].includes(k)) return scrollBy(scroller(), k, n);
     if (["h", "l"].includes(k)) {
-      const panes = ["diff", "timeline"];
+      const panes = ["timeline", "diff"];
       state.pane = panes[(panes.indexOf(state.pane) + (k === "l" ? 1 : panes.length - 1)) % panes.length];
       return renderPane();
     }
