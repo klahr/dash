@@ -138,6 +138,9 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 	commands := func(x *model.Project) {
 		if s.HubCommands {
 			x.SetupCommand, x.TestCommand, x.RunCommand, x.DeployCommand = req.SetupCommand, req.TestCommand, req.RunCommand, req.DeployCommand
+			if k, err := checkPreviewKind(req.PreviewKind); err == nil {
+				x.PreviewKind, x.PreviewCommand = k, strings.TrimSpace(req.PreviewCommand)
+			}
 		}
 	}
 	// The hub's review settings; an older hub that doesn't send them leaves
@@ -156,7 +159,8 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		review(&want)
 		if p.TaskInstructions != req.TaskInstructions || p.MergeMode != mode || p.MergesGreenPRs() != greenOn(req.MergeGreenPRs) ||
 			want.AutoApprove != p.AutoApprove || want.MaxAutoFixes != p.MaxAutoFixes ||
-			want.SetupCommand != p.SetupCommand || want.TestCommand != p.TestCommand || want.RunCommand != p.RunCommand || want.DeployCommand != p.DeployCommand {
+			want.SetupCommand != p.SetupCommand || want.TestCommand != p.TestCommand || want.RunCommand != p.RunCommand || want.DeployCommand != p.DeployCommand ||
+			want.PreviewKind != p.PreviewKind || want.PreviewCommand != p.PreviewCommand {
 			// The hub's project decides how its tasks land.
 			var err error
 			if p, err = sv.data.UpdateProject(p.ID, func(x *model.Project) error {

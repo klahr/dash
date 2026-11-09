@@ -9,6 +9,23 @@ server crashes, its log opens, and **Send back with this log** hands it to Claud
 
 To mark up a preview and send the picture back to Claude, see [Draw](draw.md).
 
+## Terminal previews (CLI tools)
+
+A command-line tool never opens a port, so set **Preview tasks in** to *a terminal* in the
+project's settings (`preview_kind: "terminal"`). The preview is then a terminal in the task's
+worktree: the **terminal preview command** (`preview_command`) runs there, or a plain shell when
+it is empty. `./.dash-bin` (git ignores it) is on `PATH` and in `$DASH_BIN`, so for example
+
+    go build -o $DASH_BIN/tool . && exec $SHELL
+
+leaves you at a prompt where `tool` is the task's build. Such a project needs no `run_command`.
+The preview is live at once, has no URL, and is attached to over the WebSocket in its
+`terminal_url` (`/ws/todos/<task>/preview`, the same protocol as other terminals; under
+`/peer/<runner>/` for a runner's tasks, which open it only with `-hub-commands` and for the
+runner's owner). It stops like a web preview, with keystrokes counting as traffic. If the command
+fails or the shell exits, it shows as crashed; `GET /api/todos/<task>/preview/log?lines=N` returns
+its last lines as plain text, for **Send back**.
+
 ## Setting up a preview domain
 
 Dash serves each preview through its own listener at `https://<task>.<preview domain>/`, as a

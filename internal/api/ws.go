@@ -22,6 +22,8 @@ import (
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
+	"github.com/klahr/dash/internal/preview"
+	"github.com/klahr/dash/internal/runner"
 	"github.com/klahr/dash/internal/store"
 )
 
@@ -585,6 +587,38 @@ func (s *Server) procWS(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	s.terminalWS(w, r, sess, nil)
+}
+
+// previewTerminalWS handles GET /ws/todos/{tid}/preview: it attaches to the
+// task's terminal preview, with procWS's protocol. Typing keeps the preview
+// from being stopped as idle. A runner's task is reached the same way under
+// /peer/{runner}/.
+func (s *Server) previewTerminalWS(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if s.Previews == nil {
+		writeErr(w, preview.ErrNotFound)
+		return
+	}
+	tid := r.PathValue("tid")
+	if _, err := sv.data.GetTodo(tid); err != nil {
+		writeErr(w, preview.ErrNotFound)
+		return
+	}
+	sess, touch, err := s.Previews.Terminal(tid)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	s.terminalWS(w, r, sess, touch)
+}
+
+// terminalWS streams sess to xterm.js over a WebSocket (see procWS);
+// onInput, if set, is called on every keystroke.
+func (s *Server) terminalWS(w http.ResponseWriter, r *http.Request, sess *runner.Session, onInput func()) {
 	conn, err := hub.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		sess.Detach()
@@ -607,6 +641,9 @@ func (s *Server) procWS(w http.ResponseWriter, r *http.Request) {
 			}
 			switch msg.Type {
 			case "input":
+				if onInput != nil {
+					onInput()
+				}
 				_ = sess.Write([]byte(msg.Data))
 			case "resize":
 				_ = sess.Resize(msg.Cols, msg.Rows)
@@ -629,12 +666,8 @@ func (s *Server) procWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Output closed: either the process exited or the client went away.
-	if info := s.Procs.List(sess.Info.ProjectID); len(info) > 0 {
-		for _, p := range info {
-			if p.ID == sess.Info.ID && !p.Running && p.ExitCode != nil {
-				b, _ := json.Marshal(map[string]any{"type": "exit", "code": *p.ExitCode})
-				_ = write(websocket.TextMessage, b)
-			}
-		}
+	if p, err := s.Procs.Get(sess.Info.ID); err == nil && !p.Running && p.ExitCode != nil {
+		b, _ := json.Marshal(map[string]any{"type": "exit", "code": *p.ExitCode})
+		_ = write(websocket.TextMessage, b)
 	}
 }

@@ -106,8 +106,14 @@ func New(procs *runner.Manager, pub Publisher, todos Todos, domain string) *Mana
 
 // Start runs t's preview, or returns the one already starting or live.
 // A crashed preview is started again.
+//
+// A terminal preview (model.PreviewTerminal) runs the project's
+// preview_command, or a plain shell, in a PTY in the worktree: it is live at
+// once (there is no port to wait for) and has no URL; the UI attaches to it
+// with Terminal.
 func (m *Manager) Start(t model.Todo, p model.Project) (model.Preview, error) {
-	if strings.TrimSpace(p.RunCommand) == "" {
+	terminal := p.TerminalPreview()
+	if !terminal && strings.TrimSpace(p.RunCommand) == "" {
 		return model.Preview{}, ErrNoRunCommand
 	}
 	if t.Status != model.StatusReview || t.Worktree == nil {
@@ -125,14 +131,26 @@ func (m *Manager) Start(t model.Todo, p model.Project) (model.Preview, error) {
 		e.mu.Unlock()
 		delete(m.entries, t.ID)
 	}
-	proc, err := m.Procs.StartWebFor(p.ID, t.ID, t.Worktree.Path, p.RunCommand)
-	if err != nil {
-		return model.Preview{}, err
+	var e *entry
+	if terminal {
+		proc, err := m.startTerminal(t, p)
+		if err != nil {
+			return model.Preview{}, err
+		}
+		e = &entry{done: make(chan struct{}), info: model.Preview{
+			TodoID: t.ID, ProjectID: p.ID, ProcessID: proc.ID, Title: todoTitle(t), Kind: model.PreviewTerminal,
+			State: model.PreviewLive, TerminalURL: TerminalPath(t.ID), StartedAt: proc.StartedAt,
+		}}
+	} else {
+		proc, err := m.Procs.StartWebFor(p.ID, t.ID, t.Worktree.Path, p.RunCommand)
+		if err != nil {
+			return model.Preview{}, err
+		}
+		e = &entry{done: make(chan struct{}), info: model.Preview{
+			TodoID: t.ID, ProjectID: p.ID, ProcessID: proc.ID, Title: todoTitle(t), Kind: model.PreviewWeb, Port: proc.Port, State: model.PreviewStarting,
+			LocalURL: fmt.Sprintf("http://localhost:%d/", proc.Port), StartedAt: proc.StartedAt,
+		}}
 	}
-	e := &entry{done: make(chan struct{}), info: model.Preview{
-		TodoID: t.ID, ProjectID: p.ID, ProcessID: proc.ID, Title: todoTitle(t), Port: proc.Port, State: model.PreviewStarting,
-		LocalURL: fmt.Sprintf("http://localhost:%d/", proc.Port), StartedAt: proc.StartedAt,
-	}}
 	e.touch()
 	m.entries[t.ID] = e
 	go m.watch(e)
@@ -143,6 +161,9 @@ func (m *Manager) Start(t model.Todo, p model.Project) (model.Preview, error) {
 // info is e as the UI sees it, with the addresses it is served at now.
 func (m *Manager) info(e *entry) model.Preview {
 	p := e.snapshot()
+	if p.Kind == model.PreviewTerminal {
+		return p // attached to over a WebSocket, not served
+	}
 	p.URL, p.OpenURL = m.URL(p.TodoID), ""
 	if p.URL != "" {
 		p.OpenURL = "/preview/" + p.TodoID
@@ -186,7 +207,7 @@ func (m *Manager) watch(e *entry) {
 	}()
 	tick := time.NewTicker(250 * time.Millisecond)
 	defer tick.Stop()
-	probing := true
+	probing := info.Kind != model.PreviewTerminal // a terminal has no port: it's live already
 	for {
 		select {
 		case <-exited:

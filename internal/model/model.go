@@ -71,6 +71,15 @@ type Project struct {
 	RunCommand    string `json:"run_command,omitempty"`    // e.g. "npm run dev" — gets $PORT
 	TestCommand   string `json:"test_command,omitempty"`   // e.g. "go test ./..."
 	DeployCommand string `json:"deploy_command,omitempty"` // e.g. "./deploy.sh" or "adb install …"
+	// PreviewKind is how a task in review is previewed: PreviewWeb ("" too)
+	// runs RunCommand and proxies its port; PreviewTerminal opens a terminal
+	// in the task's worktree (for CLI tools, which open no port), running
+	// PreviewCommand, or a plain shell when that is empty.
+	PreviewKind string `json:"preview_kind,omitempty"`
+	// PreviewCommand runs in the worktree of a terminal preview, with
+	// ./.dash-bin on PATH and $DASH_BIN set to it, e.g.
+	// "go build -o ./.dash-bin/tool . && exec $SHELL".
+	PreviewCommand string `json:"preview_command,omitempty"`
 	// SetupCommand runs once in every new worktree before Claude starts,
 	// e.g. "npm ci". CopyFiles are copied from the main checkout first
 	// (untracked files such as ".env" that worktrees don't get from git).
@@ -529,21 +538,36 @@ const (
 	PreviewStopped  PreviewState = "stopped"  // stopped (by hand, idle, or the todo left review); only in events
 )
 
+// Preview kinds (Project.PreviewKind).
+const (
+	PreviewWeb      = "web"
+	PreviewTerminal = "terminal"
+)
+
+// TerminalPreview reports whether p's tasks are previewed in a terminal.
+func (p Project) TerminalPreview() bool { return p.PreviewKind == PreviewTerminal }
+
 // Preview is a todo's project run_command running in its worktree, served
-// at URL through Dash's reverse proxy (a subdomain per todo).
+// at URL through Dash's reverse proxy (a subdomain per todo); or, for a
+// terminal preview (Kind PreviewTerminal), a PTY in the worktree that the UI
+// attaches to at /ws/todos/{todo}/preview (no port, no URL).
 type Preview struct {
 	TodoID    string       `json:"todo_id"`
 	ProjectID string       `json:"project_id"`
 	ProcessID string       `json:"process_id"`
 	Title     string       `json:"title"` // the todo's, for lists of previews
+	Kind      string       `json:"kind"`  // PreviewWeb or PreviewTerminal
 	Port      int          `json:"port"`
 	State     PreviewState `json:"state"`
+	// TerminalURL is the WebSocket path (on the Dash serving this preview)
+	// that attaches to a terminal preview, as procWS's protocol.
+	TerminalURL string `json:"terminal_url,omitempty"`
 	// URL is the proxied address, e.g. https://<todo>.preview.example.com/;
 	// empty when no preview domain is configured. LocalURL is the server
 	// itself, reachable from this computer only. OpenURL is a path on Dash
 	// that signs the browser in to the preview and redirects there.
 	URL       string    `json:"url,omitempty"`
-	LocalURL  string    `json:"local_url"`
+	LocalURL  string    `json:"local_url,omitempty"`
 	OpenURL   string    `json:"open_url,omitempty"`
 	ExitCode  *int      `json:"exit_code,omitempty"`
 	Reason    string    `json:"reason,omitempty"` // why it stopped (events only)

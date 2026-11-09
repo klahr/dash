@@ -75,6 +75,10 @@ type Link struct {
 	TestCommand   string `json:"test_command,omitempty"`
 	RunCommand    string `json:"run_command,omitempty"`
 	DeployCommand string `json:"deploy_command,omitempty"`
+	// The hub project's preview settings (model.Project.PreviewKind and
+	// PreviewCommand), taken like its commands: a terminal preview is a shell.
+	PreviewKind    string `json:"preview_kind,omitempty"`
+	PreviewCommand string `json:"preview_command,omitempty"`
 }
 
 // Linked is the runner's answer to Link: its project for the hub's.

@@ -77,19 +77,21 @@ var colorRe = regexp.MustCompile(`^#[0-9a-f]{6}$`)
 
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name          string   `json:"name"`
-		Path          string   `json:"path"` // optional: adopt an existing directory/repo
-		DefaultBranch string   `json:"default_branch"`
-		RunCommand    string   `json:"run_command"`
-		TestCommand   string   `json:"test_command"`
-		DeployCommand string   `json:"deploy_command"`
-		SetupCommand  string   `json:"setup_command"`
-		CopyFiles     []string `json:"copy_files"`
-		MaxAutoFixes  *int     `json:"max_auto_fixes"`
-		AutoPush      bool     `json:"auto_push"`
-		MergeMode     string   `json:"merge_mode"`
-		MaxRunMinutes int      `json:"max_run_minutes"`
-		MaxTurns      int      `json:"max_turns"`
+		Name           string   `json:"name"`
+		Path           string   `json:"path"` // optional: adopt an existing directory/repo
+		DefaultBranch  string   `json:"default_branch"`
+		RunCommand     string   `json:"run_command"`
+		TestCommand    string   `json:"test_command"`
+		DeployCommand  string   `json:"deploy_command"`
+		SetupCommand   string   `json:"setup_command"`
+		PreviewKind    string   `json:"preview_kind"`    // "web" (default) | "terminal"
+		PreviewCommand string   `json:"preview_command"` // terminal previews: runs in the worktree
+		CopyFiles      []string `json:"copy_files"`
+		MaxAutoFixes   *int     `json:"max_auto_fixes"`
+		AutoPush       bool     `json:"auto_push"`
+		MergeMode      string   `json:"merge_mode"`
+		MaxRunMinutes  int      `json:"max_run_minutes"`
+		MaxTurns       int      `json:"max_turns"`
 		// GitHub names a repository (REPO or OWNER/REPO): with Clone it is
 		// cloned (it must exist); without, it is created and pushed (it must not).
 		GitHub       string `json:"github"`
@@ -112,6 +114,12 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	kind, err := checkPreviewKind(req.PreviewKind)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	req.PreviewKind, req.PreviewCommand = kind, strings.TrimSpace(req.PreviewCommand)
 	if s.RunnerOnly {
 		remote := strings.TrimSpace(req.RemoteURL)
 		if gh := strings.Trim(strings.TrimSpace(req.GitHub), "/"); remote == "" && strings.Count(gh, "/") == 1 {
@@ -139,7 +147,8 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		np := model.Project{
 			ID: store.NewID(), OrgID: sv.c.Org, Name: strings.TrimSpace(req.Name), DefaultBranch: req.DefaultBranch, RemoteURL: remote,
 			RunCommand: req.RunCommand, TestCommand: req.TestCommand, DeployCommand: req.DeployCommand,
-			SetupCommand: req.SetupCommand, CopyFiles: cleanList(req.CopyFiles), MaxAutoFixes: maxFixes,
+			SetupCommand: req.SetupCommand, PreviewKind: req.PreviewKind, PreviewCommand: req.PreviewCommand,
+			CopyFiles: cleanList(req.CopyFiles), MaxAutoFixes: maxFixes,
 			MaxRunMinutes: max(0, req.MaxRunMinutes), MaxTurns: max(0, req.MaxTurns), TagFormat: release.DefaultFormat,
 		}
 		runners, err := sv.linkRunners(np, req.Runners)
@@ -253,7 +262,8 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		ID: id, Name: req.Name, Path: req.Path, DefaultBranch: req.DefaultBranch,
 		RemoteURL: remote, AutoPush: req.AutoPush,
 		RunCommand: req.RunCommand, TestCommand: req.TestCommand, DeployCommand: req.DeployCommand,
-		SetupCommand: req.SetupCommand, CopyFiles: cleanList(req.CopyFiles), MaxAutoFixes: maxFixes,
+		SetupCommand: req.SetupCommand, PreviewKind: req.PreviewKind, PreviewCommand: req.PreviewCommand,
+		CopyFiles: cleanList(req.CopyFiles), MaxAutoFixes: maxFixes,
 		MaxRunMinutes: max(0, req.MaxRunMinutes), MaxTurns: max(0, req.MaxTurns),
 		TagFormat: release.DefaultFormat,
 	}
@@ -272,33 +282,59 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, p)
 }
 
+// checkPreviewKind validates a project's preview_kind and returns it as
+// stored: "" for web previews (the default), model.PreviewTerminal.
+// Terminal previews need no run_command; web ones do, when started.
+func checkPreviewKind(k string) (string, error) {
+	switch normPreviewKind(k) {
+	case model.PreviewWeb:
+		return "", nil
+	case model.PreviewTerminal:
+		return model.PreviewTerminal, nil
+	}
+	return "", fmt.Errorf("%w: preview_kind must be %q or %q", errBadRequest, model.PreviewWeb, model.PreviewTerminal)
+}
+
+// normPreviewKind is k with "" meaning web.
+func normPreviewKind(k string) string {
+	k = strings.ToLower(strings.TrimSpace(k))
+	if k == "" {
+		return model.PreviewWeb
+	}
+	return k
+}
+
 // maxTaskInstructions caps a project's extra instructions for Claude: they
 // go on every task's command line.
 const maxTaskInstructions = 32 << 10
 
 // projectUpdate is a change to a project's settings; nil fields stay.
 type projectUpdate struct {
-	Name          *string   `json:"name"`
-	RunCommand    *string   `json:"run_command"`
-	TestCommand   *string   `json:"test_command"`
-	DeployCommand *string   `json:"deploy_command"`
-	SetupCommand  *string   `json:"setup_command"`
-	CopyFiles     *[]string `json:"copy_files"`
-	AllowedTools  *[]string `json:"allowed_tools"`
-	ChatMode      *string   `json:"chat_permission_mode"`
-	ReviewPrompt  *string   `json:"review_prompt"`
-	Instructions  *string   `json:"task_instructions"`
-	MaxAutoFixes  *int      `json:"max_auto_fixes"`
-	AutoPush      *bool     `json:"auto_push"`
-	AutoApprove   *bool     `json:"auto_approve"`
-	MergeMode     *string   `json:"merge_mode"`
-	MergeGreenPRs *bool     `json:"merge_green_prs"`
-	InvestigateCI *bool     `json:"investigate_ci"`
-	MaxRunMinutes *int      `json:"max_run_minutes"`
-	MaxTurns      *int      `json:"max_turns"`
-	Color         *string   `json:"color"`
-	Icon          *string   `json:"icon"`
-	TagFormat     *string   `json:"tag_format"`
+	Name          *string `json:"name"`
+	RunCommand    *string `json:"run_command"`
+	TestCommand   *string `json:"test_command"`
+	DeployCommand *string `json:"deploy_command"`
+	SetupCommand  *string `json:"setup_command"`
+	// PreviewKind is "web" (run_command, proxied) or "terminal"
+	// (preview_command, or a shell, in a terminal in the worktree).
+	PreviewKind    *string   `json:"preview_kind"`
+	PreviewCommand *string   `json:"preview_command"`
+	CopyFiles      *[]string `json:"copy_files"`
+	AllowedTools   *[]string `json:"allowed_tools"`
+	ChatMode       *string   `json:"chat_permission_mode"`
+	ReviewPrompt   *string   `json:"review_prompt"`
+	Instructions   *string   `json:"task_instructions"`
+	MaxAutoFixes   *int      `json:"max_auto_fixes"`
+	AutoPush       *bool     `json:"auto_push"`
+	AutoApprove    *bool     `json:"auto_approve"`
+	MergeMode      *string   `json:"merge_mode"`
+	MergeGreenPRs  *bool     `json:"merge_green_prs"`
+	InvestigateCI  *bool     `json:"investigate_ci"`
+	MaxRunMinutes  *int      `json:"max_run_minutes"`
+	MaxTurns       *int      `json:"max_turns"`
+	Color          *string   `json:"color"`
+	Icon           *string   `json:"icon"`
+	TagFormat      *string   `json:"tag_format"`
 	// Runners links the project to these runners (ids; replaces the list,
 	// [] unlinks them all).
 	Runners *[]string `json:"runners"`
@@ -331,6 +367,13 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 		default:
 			return model.Project{}, fmt.Errorf("%w: chat_permission_mode must be \"\", %q or %q", errBadRequest, model.ChatModeAuto, model.ChatModeAcceptEdits)
 		}
+	}
+	if req.PreviewKind != nil {
+		k, err := checkPreviewKind(*req.PreviewKind)
+		if err != nil {
+			return model.Project{}, err
+		}
+		req.PreviewKind = &k
 	}
 	if req.Instructions != nil && len(*req.Instructions) > maxTaskInstructions {
 		return model.Project{}, fmt.Errorf("%w: task_instructions is longer than %d KiB", errBadRequest, maxTaskInstructions>>10)
@@ -382,6 +425,10 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 		set(&p.TestCommand, req.TestCommand)
 		set(&p.DeployCommand, req.DeployCommand)
 		set(&p.SetupCommand, req.SetupCommand)
+		set(&p.PreviewKind, req.PreviewKind)
+		if req.PreviewCommand != nil {
+			p.PreviewCommand = strings.TrimSpace(*req.PreviewCommand)
+		}
 		set(&p.AutoPush, req.AutoPush)
 		set(&p.AutoApprove, req.AutoApprove)
 		set(&p.Color, req.Color)

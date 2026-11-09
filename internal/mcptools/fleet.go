@@ -401,6 +401,8 @@ var ProjectSettings = []Param{
 	{"run_command", "string", "Starts the app, e.g. \"npm run dev\"; gets $PORT.", false},
 	{"test_command", "string", "Runs the tests after each task, e.g. \"go test ./...\".", false},
 	{"deploy_command", "string", "Deploys, e.g. \"./deploy.sh\".", false},
+	{"preview_kind", "string", "How tasks in review are previewed: \"web\" (run_command, opened in a browser; the default) or \"terminal\" (a terminal in the task's worktree, for CLI tools; run_command not needed).", false},
+	{"preview_command", "string", "Terminal previews: runs in the task's worktree, with ./.dash-bin on PATH and $DASH_BIN set, e.g. \"go build -o $DASH_BIN/tool . && exec $SHELL\" (\"\" for a plain shell).", false},
 	{"setup_command", "string", "Runs once in every new worktree before Claude starts, e.g. \"npm ci\".", false},
 	{"copy_files", "array", "Untracked files copied from the main checkout into new worktrees, e.g. [\".env\"]; replaces the list.", false},
 	{"allowed_tools", "array", "Tools that run without a permission prompt in tasks, e.g. [\"Bash\", \"WebFetch\"]; replaces the list.", false},

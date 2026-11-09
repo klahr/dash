@@ -679,6 +679,9 @@
             <label class="field"><span>Setup command <em>runs once in each new worktree</em></span><input name="setup_command" placeholder="npm ci" spellcheck="false"></label>
             <label class="field"><span>Files to copy into worktrees <em>one per line</em></span><textarea name="copy_files" rows="2" placeholder=".env" spellcheck="false"></textarea></label>
             <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" spellcheck="false"></label>
+            <label class="field inline"><span>Preview tasks in</span><select name="preview_kind"><option value="web">a browser (start server command)</option><option value="terminal">a terminal (CLI tools)</option></select></label>
+            <label class="field"><span>Terminal preview command <em>runs in the task's worktree; ./.dash-bin is on PATH as $DASH_BIN</em></span><input name="preview_command" placeholder="go build -o $DASH_BIN/tool . &amp;&amp; exec $SHELL" spellcheck="false"></label>
+            <p class="hint">Empty: a plain shell in the task's worktree.</p>
             <label class="field"><span>Deploy command</span><input name="deploy_command" spellcheck="false"></label>
           </section>
           <section class="rail-section" data-section="repository">

@@ -409,6 +409,8 @@ func (s *Server) buildMux() *http.ServeMux {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /ws/proc/{procid}", s.processViaRunner(s.procWS))
+	// A task's terminal preview (see preview.TerminalPath).
+	mux.HandleFunc("GET /ws/todos/{tid}/preview", s.previewTerminalWS)
 
 	// Frontend
 	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
@@ -499,7 +501,7 @@ func writeErr(w http.ResponseWriter, err error) {
 	case errors.Is(err, errConflict):
 		code = http.StatusConflict
 	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency), errors.Is(err, store.ErrBadIssue),
-		errors.Is(err, preview.ErrNoRunCommand), errors.Is(err, preview.ErrNotInReview):
+		errors.Is(err, preview.ErrNoRunCommand), errors.Is(err, preview.ErrNotInReview), errors.Is(err, preview.ErrNotTerminal):
 		code = http.StatusBadRequest
 	}
 	writeJSON(w, code, map[string]string{"error": err.Error()})
@@ -521,7 +523,25 @@ func (s *Server) forwardToPeer(w http.ResponseWriter, r *http.Request) {
 		s.confirmThenForward(w, r)
 		return
 	}
+	if isPreviewStartOrTerminal(r.Method, peer.ForwardedPath(r)) {
+		// A terminal preview is a shell, which a runner opens only for the
+		// user who registered it: say whom this is for.
+		if c, err := s.caller(r); err == nil {
+			r = r.WithContext(tunnel.WithUser(r.Context(), c.User))
+		}
+	}
 	s.Peers.ServeHTTP(w, r)
+}
+
+// isPreviewStartOrTerminal reports whether method and p (once cleaned) start a
+// task's preview (POST /api/todos/{tid}/preview) or attach to its terminal
+// (GET /ws/todos/{tid}/preview).
+func isPreviewStartOrTerminal(method, p string) bool {
+	parts := strings.Split(strings.TrimPrefix(path.Clean("/"+p), "/"), "/")
+	if len(parts) != 4 || parts[2] == "" || parts[1] != "todos" || parts[3] != "preview" {
+		return false
+	}
+	return method == http.MethodPost && parts[0] == "api" || method == http.MethodGet && parts[0] == "ws"
 }
 
 // isProjectPath reports whether p, once cleaned, is /api/projects/{pid}.

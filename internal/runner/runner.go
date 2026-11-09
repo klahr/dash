@@ -211,12 +211,24 @@ func (m *Manager) StartPTY(projectID, dir, command string, cols, rows uint16, o 
 			command = "bash"
 		}
 	}
+	return m.startPTY(projectID, dir, command, "exec "+command, nil, cols, rows, origin(o).set)
+}
+
+// StartPTYFor runs script (a bash script, not exec'd, so "build && exec
+// $SHELL" works) attached to a pseudo-terminal in a todo's worktree, with env
+// added to the environment: a terminal preview. The process carries the
+// todo's id; command is what it shows as.
+func (m *Manager) StartPTYFor(projectID, todoID, dir, command, script string, env []string, cols, rows uint16) (model.Process, error) {
+	return m.startPTY(projectID, dir, command, script, env, cols, rows, func(i *model.Process) { i.TodoID = todoID })
+}
+
+func (m *Manager) startPTY(projectID, dir, command, script string, env []string, cols, rows uint16, init func(*model.Process)) (model.Process, error) {
 	if err := localrun.Check("terminal: " + command); err != nil {
 		return model.Process{}, err
 	}
-	cmd := exec.Command("bash", "-lc", "exec "+command)
+	cmd := exec.Command("bash", "-lc", script)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	cmd.Env = append(append(os.Environ(), "TERM=xterm-256color"), env...)
 	if cols == 0 || rows == 0 {
 		cols, rows = 120, 32
 	}
@@ -224,7 +236,7 @@ func (m *Manager) StartPTY(projectID, dir, command string, cols, rows uint16, o 
 	if err != nil {
 		return model.Process{}, err
 	}
-	p := m.register(projectID, model.ProcPTY, command, "", cmd, tty, origin(o).set)
+	p := m.register(projectID, model.ProcPTY, command, "", cmd, tty, init)
 	go m.pump(p, tty)
 	go m.wait(p, tty)
 	return p.snapshot(), nil

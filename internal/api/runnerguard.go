@@ -72,7 +72,9 @@ func init() {
 		"GET /api/projects/{pid}/processes", "POST /api/projects/{pid}/processes", "DELETE /api/processes/{procid}",
 		"GET /ws/proc/{procid}", // terminals only with -hub-commands, for the owner (hubTerminal)
 
+		// Terminal previews are terminals: checked in hubCheck.
 		"POST /api/todos/{tid}/preview", "DELETE /api/todos/{tid}/preview", "GET /api/todos/{tid}/preview/log",
+		"GET /ws/todos/{tid}/preview",
 		"GET /api/previews", "DELETE /api/previews", "GET /api/qr", "GET /preview/{tid}",
 
 		"GET /api/permissions", "POST /api/permissions/{id}", "GET /api/usage",
@@ -209,6 +211,20 @@ func (s *Server) hubCheck(r *http.Request) error {
 		if p, err := s.Procs.Get(segment(r, 2)); err == nil && p.Kind == model.ProcPTY {
 			return s.hubTerminal(r)
 		}
+	case "GET /ws/todos/{tid}/preview":
+		return s.hubTerminal(r)
+	case "POST /api/todos/{tid}/preview":
+		// A terminal preview is a shell in the task's worktree.
+		c, err := s.caller(r)
+		if err != nil {
+			return nil // the handler refuses it
+		}
+		sv := s.as(c)
+		if t, err := sv.data.GetTodo(segment(r, 2)); err == nil {
+			if p, err := sv.data.GetProject(t.ProjectID); err == nil && p.TerminalPreview() {
+				return s.hubTerminal(r)
+			}
+		}
 	}
 	return nil
 }
@@ -233,15 +249,18 @@ type commandFields struct {
 	Test   *string `json:"test_command"`
 	Deploy *string `json:"deploy_command"`
 	Setup  *string `json:"setup_command"`
+	// A terminal preview runs preview_command, or a shell without one.
+	Preview     *string `json:"preview_command"`
+	PreviewKind *string `json:"preview_kind"`
 }
 
 func (c commandFields) any() bool {
-	for _, v := range []*string{c.Run, c.Test, c.Deploy, c.Setup} {
+	for _, v := range []*string{c.Run, c.Test, c.Deploy, c.Setup, c.Preview} {
 		if v != nil && strings.TrimSpace(*v) != "" {
 			return true
 		}
 	}
-	return false
+	return c.PreviewKind != nil && *c.PreviewKind == model.PreviewTerminal
 }
 
 // changes reports whether c sets a command to something other than p has.
@@ -250,12 +269,12 @@ func (c commandFields) changes(p model.Project) bool {
 	for _, x := range []struct {
 		v   *string
 		cur string
-	}{{c.Run, p.RunCommand}, {c.Test, p.TestCommand}, {c.Deploy, p.DeployCommand}, {c.Setup, p.SetupCommand}} {
+	}{{c.Run, p.RunCommand}, {c.Test, p.TestCommand}, {c.Deploy, p.DeployCommand}, {c.Setup, p.SetupCommand}, {c.Preview, p.PreviewCommand}} {
 		if x.v != nil && strings.TrimSpace(*x.v) != strings.TrimSpace(x.cur) {
 			return true
 		}
 	}
-	return false
+	return c.PreviewKind != nil && normPreviewKind(*c.PreviewKind) != normPreviewKind(p.PreviewKind)
 }
 
 // peekJSON decodes r's body into v and puts the body back for the handler.

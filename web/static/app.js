@@ -2729,7 +2729,8 @@ const pv = {
 };
 const pvKey = (machine, id) => `${machine || ""}/${id}`;
 const previewOf = (id) => state.previews.get(pvKey(state.project?.machine, id)) || null;
-const canPreview = (t) => t?.status === "review" && !!t.worktree && !t.runner && !!state.project?.run_command;
+// Terminal previews (preview_kind "terminal") have no pane here yet.
+const canPreview = (t) => t?.status === "review" && !!t.worktree && !t.runner && !!state.project?.run_command && state.project?.preview_kind !== "terminal";
 const PV_LABEL = { starting: "Starting…", live: "Live", crashed: "Crashed" };
 // eslint-disable-next-line no-control-regex
 const stripAnsi = (s) => s.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[@-_]|\r(?!\n)/g, "");
@@ -4897,6 +4898,8 @@ function openSettings() {
   f.review_prompt.placeholder = DEFAULT_REVIEW_PROMPT;
   f.task_instructions.value = p.task_instructions || "";
   f.run_command.value = p.run_command || "";
+  f.preview_kind.value = p.preview_kind || "web";
+  f.preview_command.value = p.preview_command || "";
   f.deploy_command.value = p.deploy_command || "";
   f.auto_push.checked = !!p.auto_push;
   f.auto_approve.checked = !!p.auto_approve;
@@ -5020,6 +5023,8 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     review_prompt: f.review_prompt.value.trim(),
     task_instructions: f.task_instructions.value.trim(),
     run_command: f.run_command.value.trim(),
+    preview_kind: f.preview_kind.value,
+    preview_command: f.preview_command.value.trim(),
     deploy_command: f.deploy_command.value.trim(),
     auto_push: f.auto_push.checked,
     auto_approve: f.auto_approve.checked,

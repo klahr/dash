@@ -2,8 +2,10 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/klahr/dash/internal/model"
@@ -14,8 +16,9 @@ import (
 // errNoPreviews answers preview calls on a Server built without previews (tests).
 var errNoPreviews = errors.New("previews are not available")
 
-// startPreview runs the todo's project run_command in its worktree, or
-// returns the preview already running.
+// startPreview runs the todo's project run_command in its worktree (or, for
+// a terminal preview, its preview_command in a terminal there), or returns
+// the preview already running.
 func (s *Server) startPreview(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -67,8 +70,10 @@ func (s *Server) stopPreview(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// previewLog returns the end of the preview server's output, e.g. to send
-// it back to Claude when it crashed.
+// previewLog returns the end of the preview's output, e.g. to send it back
+// to Claude when it crashed: a web preview's server log as written, or a
+// terminal preview's last lines as plain text (?lines=N, default
+// preview.DefaultLogLines, at most maxPreviewLogLines).
 func (s *Server) previewLog(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -83,7 +88,16 @@ func (s *Server) previewLog(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, preview.ErrNotFound)
 		return
 	}
-	b, err := s.Procs.Tail(pv.ProcessID, 16*1024)
+	lines := 0
+	if v := r.URL.Query().Get("lines"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			writeErr(w, fmt.Errorf("%w: lines must be a positive number", errBadRequest))
+			return
+		}
+		lines = min(n, maxPreviewLogLines)
+	}
+	b, err := s.Previews.Log(pv.TodoID, lines)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -91,6 +105,9 @@ func (s *Server) previewLog(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write(b)
 }
+
+// maxPreviewLogLines caps the lines of a terminal preview's log.
+const maxPreviewLogLines = 5000
 
 // listPreviews is the previews of the caller's org's tasks.
 func (s *Server) listPreviews(w http.ResponseWriter, r *http.Request) {

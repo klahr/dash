@@ -167,9 +167,11 @@ func (m *Manager) DialPreview(todoID string) (net.Conn, int, error) {
 		return nil, 0, tunnel.ErrPreviewNotRunning
 	}
 	e.mu.Lock()
-	state, addr, port := e.info.State, e.addr, e.info.Port
+	state, addr, port, kind := e.info.State, e.addr, e.info.Port, e.info.Kind
 	e.mu.Unlock()
 	switch {
+	case kind == model.PreviewTerminal:
+		return nil, 0, tunnel.ErrPreviewNotRunning // no server: it's attached to over /ws/todos/{tid}/preview
 	case state == model.PreviewStarting:
 		return nil, 0, tunnel.ErrPreviewStarting
 	case state != model.PreviewLive || addr == "":

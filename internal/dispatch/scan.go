@@ -155,7 +155,8 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID,
 		MergeMode: p.MergeMode, MergeModeSet: p.MergeModeSet, MergeGreenPRs: p.MergeGreenPRs, TaskInstructions: p.TaskInstructions,
 		AutoApprove: &p.AutoApprove, MaxAutoFixes: &p.MaxAutoFixes,
-		SetupCommand: p.SetupCommand, TestCommand: p.TestCommand, RunCommand: p.RunCommand, DeployCommand: p.DeployCommand}
+		SetupCommand: p.SetupCommand, TestCommand: p.TestCommand, RunCommand: p.RunCommand, DeployCommand: p.DeployCommand,
+		PreviewKind: p.PreviewKind, PreviewCommand: p.PreviewCommand}
 	var out Linked
 	err := d.Fleet.Call(ctx, id, http.MethodPut, "/api/hub/projects/"+url.PathEscape(p.ID), link, &out)
 	return out, err
