@@ -138,6 +138,24 @@ for (const el of $$("[data-icon]")) el.prepend(ico(el.dataset.icon));
 const wsURL = (path) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
 const desktop = matchMedia("(min-width: 1024px)");
 
+// A tap on a composer's buttons (send, Send to agent, a file chip's ×) must not
+// take focus from its text field: the keyboard would close, the composer move
+// down with it, and the click miss the button, so it took a second tap. Holding
+// on to focus also keeps the keyboard up after sending, as in a messaging app.
+// Only touch and pen: a mouse click (desktop) behaves as before, and keyboard and
+// screen reader activation don't go through these events at all.
+{
+  let touch = false;
+  const keep = (e) => {
+    const b = e.target.closest?.(".composer button");
+    if (!b || !b.closest(".composer").contains(document.activeElement) || !document.activeElement.matches("textarea")) return;
+    e.preventDefault();
+  };
+  document.addEventListener("pointerdown", (e) => { touch = e.pointerType !== "mouse"; if (touch) keep(e); }, true);
+  // The mousedown a tap fires after touchend is what moves focus.
+  document.addEventListener("mousedown", (e) => { if (touch) keep(e); }, true);
+}
+
 // On-screen keyboard (mobile). The chat page and the task detail sheet
 // are fitted to the part of the screen the keyboard leaves free: their head
 // stays at the top, only the scroller (chat log / detail body) gets shorter
