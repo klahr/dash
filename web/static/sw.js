@@ -19,7 +19,8 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   const url = new URL(req.url);
-  if (req.method !== "GET" || url.origin !== location.origin || LIVE.test(url.pathname)) return;
+  // The wall view isn't the app: caching it as "/" would replace the app's shell.
+  if (req.method !== "GET" || url.origin !== location.origin || LIVE.test(url.pathname) || url.pathname === "/wall") return;
   e.respondWith((async () => {
     try {
       const res = await fetch(req, { cache: "no-cache" });

@@ -81,6 +81,9 @@ type Hub struct {
 	// (the store does), so it must not block or call back into them. Set it
 	// before serving.
 	Observe func(model.Event)
+
+	actMu    sync.Mutex
+	activity map[string]model.RunEvent // todo id → its latest tool call (see Activity)
 }
 
 func New() *Hub { return &Hub{clients: map[*client]struct{}{}} }
@@ -111,9 +114,58 @@ func (h *Hub) Publish(ev model.Event) {
 	for _, c := range slow {
 		h.remove(c)
 	}
+	h.noteActivity(ev)
 	if h.Observe != nil {
 		h.Observe(ev)
 	}
+}
+
+// maxActivity bounds the activity map: past it, the oldest entries go.
+const maxActivity = 512
+
+// noteActivity keeps each task's latest tool call (the file being edited,
+// the command running) for the wall view, and forgets deleted tasks.
+func (h *Hub) noteActivity(ev model.Event) {
+	if ev.TodoID == "" {
+		return
+	}
+	switch ev.Type {
+	case model.EvTodoEvent:
+		re, ok := ev.Data.(model.RunEvent)
+		if !ok || re.Kind != "tool_use" {
+			return
+		}
+		if re.At.IsZero() {
+			re.At = ev.Time
+		}
+		h.actMu.Lock()
+		defer h.actMu.Unlock()
+		if h.activity == nil {
+			h.activity = map[string]model.RunEvent{}
+		}
+		h.activity[ev.TodoID] = re
+		for len(h.activity) > maxActivity {
+			oldest, at := "", time.Time{}
+			for id, x := range h.activity {
+				if oldest == "" || x.At.Before(at) {
+					oldest, at = id, x.At
+				}
+			}
+			delete(h.activity, oldest)
+		}
+	case model.EvTodoDeleted:
+		h.actMu.Lock()
+		delete(h.activity, ev.TodoID)
+		h.actMu.Unlock()
+	}
+}
+
+// Activity is task todoID's latest tool call seen since this Dash started.
+func (h *Hub) Activity(todoID string) (model.RunEvent, bool) {
+	h.actMu.Lock()
+	defer h.actMu.Unlock()
+	re, ok := h.activity[todoID]
+	return re, ok
 }
 
 // orgOf is the org ev belongs to; scoped is false for events about Dash as

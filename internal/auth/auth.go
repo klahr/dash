@@ -682,6 +682,7 @@ var public = map[string]bool{
 	"/favicon.svg":          true,
 	"/manifest.webmanifest": true,
 	"/sw.js":                true, // service worker updates must not hit the login redirect
+	"/wall.js":              true, // the wall view's script: a TV with a wall token has no session
 	"/api/login":            true,
 	"/api/login/totp":       true, // the login's ticket is its credential
 	// An invitation link's token is its own credential.
@@ -713,6 +714,17 @@ var public = map[string]bool{
 // publicAsset reports whether path is static artwork the sign-in and
 // invitation pages need before there's a session: images and the
 // self-hosted fonts.
+// WallPaths are the wall view's page and data. Opened with ?token=, they
+// skip the session: the handler checks the token (a store.WallToken), which
+// grants these two paths and nothing else. Without one, they need a session
+// as usual.
+var WallPaths = map[string]bool{"/wall": true, "/api/wall": true}
+
+// wallToken reports whether r is a GET of a wall path carrying a token.
+func wallToken(r *http.Request) bool {
+	return (r.Method == http.MethodGet || r.Method == http.MethodHead) && WallPaths[r.URL.Path] && r.URL.Query().Get("token") != ""
+}
+
 func publicAsset(path string) bool {
 	return strings.HasPrefix(path, "/img/") || strings.HasPrefix(path, "/vendor/fonts/")
 }
@@ -745,7 +757,7 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			}
 		}
 		// Static artwork (login page images, icons) is public too.
-		if publicPath(r.URL.Path) || publicAsset(r.URL.Path) || a.oauth.public(r.URL.Path) || r.URL.Path == branding.LogoPath {
+		if publicPath(r.URL.Path) || publicAsset(r.URL.Path) || a.oauth.public(r.URL.Path) || r.URL.Path == branding.LogoPath || wallToken(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -765,7 +777,7 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 				return
 			}
 			login := "/login.html"
-			if strings.HasPrefix(r.URL.Path, "/preview/") || a.Domains != nil && strings.HasPrefix(r.URL.Path, "/go/") {
+			if strings.HasPrefix(r.URL.Path, "/preview/") || r.URL.Path == "/wall" || a.Domains != nil && strings.HasPrefix(r.URL.Path, "/go/") {
 				// Opening a preview (say from its QR code), or an org's
 				// subdomain, continues there after signing in.
 				login += "?next=" + url.QueryEscape(r.URL.RequestURI())

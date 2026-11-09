@@ -26,13 +26,13 @@ function notice(text) {
   show(noticeCard);
 }
 
-// Only back to a live preview, an invitation link or an org's subdomain
+// Only back to a live preview, the wall view, an invitation link or an org's subdomain
 // (/go/<slug>, which checks its own next): anything else could be an open
 // redirect.
 function go() {
   const next = new URLSearchParams(location.search).get("next") || "";
   const ok = /^\/preview\/[a-z0-9-]+(\?|$)/.test(next) || /^\/invite\.html#[A-Za-z0-9_-]+$/.test(next) ||
-    /^\/go\/[a-z0-9-]+(\?|$)/.test(next);
+    /^\/go\/[a-z0-9-]+(\?|$)/.test(next) || /^\/wall(\?[A-Za-z0-9=&%_-]*)?$/.test(next);
   location.replace(ok ? next : "/");
 }
 

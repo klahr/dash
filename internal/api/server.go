@@ -409,6 +409,11 @@ func (s *Server) buildMux() *http.ServeMux {
 	// A task's terminal preview (see preview.TerminalPath).
 	mux.HandleFunc("GET /ws/todos/{tid}/preview", s.previewTerminalWS)
 
+	// The wall view: a read-only TV dashboard (wall.go)
+	mux.HandleFunc("GET /wall", s.wallPage)
+	mux.HandleFunc("GET /api/wall", s.getWall)
+	s.wallTokenRoutes(mux)
+
 	// Frontend
 	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"version": s.version(), "release": buildinfo.Version})
