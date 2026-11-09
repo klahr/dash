@@ -138,7 +138,7 @@ for (const el of $$("[data-icon]")) el.prepend(ico(el.dataset.icon));
 const wsURL = (path) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
 const desktop = matchMedia("(min-width: 1024px)");
 
-// On-screen keyboard (mobile). The full-screen sheets (chat pane, task detail)
+// On-screen keyboard (mobile). The chat page and the task detail sheet
 // are fitted to the part of the screen the keyboard leaves free: their head
 // stays at the top, only the scroller (chat log / detail body) gets shorter
 // and the composer sits right on the keyboard. How a browser tells us about
@@ -739,12 +739,7 @@ function showView(name) {
 function applyView(name) {
   state.view = name;
   try { localStorage.setItem("dash.view", name); } catch {}
-  $$(".nav > button[data-view], .menu-views [data-view]").forEach((b) => {
-    const on = b.dataset.view === name;
-    b.classList.toggle("active", on);
-    b.toggleAttribute("aria-current", on);
-    if (on) b.setAttribute("aria-current", "page");
-  });
+  renderNavActive();
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
   if (name === "run") requestAnimationFrame(() => { fitTerm(); ensureShell(); });
   if (name === "history") loadGraph().catch(fail);
@@ -752,9 +747,23 @@ function applyView(name) {
   if (name === "issues" && state.project) loadIssues().catch(fail);
   if (name === "scans" && state.project) loadScans().catch(fail);
 }
+// On mobile the chat is a page of its own (the nav's Chat tab): while it is
+// open, Chat is the active section rather than the view under it.
+// (.chat-open, not pane: applyView runs at startup before pane exists.)
+const chatPage = () => !desktop.matches && $(".app").classList.contains("chat-open");
+function renderNavActive() {
+  const chatOn = chatPage();
+  const mark = (b, on) => {
+    b.classList.toggle("active", on);
+    b.toggleAttribute("aria-current", on);
+    if (on) b.setAttribute("aria-current", "page");
+  };
+  $$(".nav > button[data-view], .menu-views [data-view]").forEach((b) => mark(b, !chatOn && b.dataset.view === state.view));
+  mark($("#nav-chat"), chatOn);
+}
+desktop.addEventListener("change", () => renderNavActive());
 // The nav's sections, and the menu drawer's copies of those that don't fit the
-// bottom nav on mobile (Scans, History). On mobile the chat sheet is a tab of
-// its own: picking a section closes it.
+// bottom nav on mobile (Scans, History). Picking one leaves the mobile chat page.
 $$(".nav > button[data-view], .menu-views [data-view]").forEach((b) => b.addEventListener("click", () => {
   if (!desktop.matches && pane.open) toggleChatPane(false);
   if (b.closest(".menu-views")) setMenu(false);
@@ -5869,7 +5878,7 @@ function renderChatPane() {
   else app.style.removeProperty("--chat-w");
   $("#chat-pane").hidden = !pane.open;
   $("#pc-open").setAttribute("aria-pressed", String(pane.open));
-  $("#nav-chat").setAttribute("aria-expanded", String(pane.open));
+  renderNavActive();
   const pin = $("#pc-pin");
   pin.setAttribute("aria-pressed", String(pane.pinned));
   pin.title = pane.pinned ? "Unpin the chat (overlay)" : "Pin the chat beside the content";
@@ -5919,8 +5928,13 @@ function toggleChatPane(open = !pane.open, tab = null) {
   if (tab) pane.tab = tab;
   savePane();
   renderChatPane();
-  if (open) activeChat()?.input.focus();
-  else if ($("#chat-pane").contains(document.activeElement)) document.activeElement.blur();
+  // On mobile the chat is a page: opening it doesn't pop the keyboard up over the nav.
+  if (open) { if (desktop.matches) activeChat()?.input.focus(); }
+  else {
+    if ($("#chat-pane").contains(document.activeElement)) document.activeElement.blur();
+    // The mobile chat page hid the shell's view; fit its terminal again.
+    if (!desktop.matches && state.view === "run") requestAnimationFrame(fitTerm);
+  }
 }
 function togglePin() {
   pane.pinned = !pane.pinned;
@@ -5930,8 +5944,9 @@ function togglePin() {
 }
 wide.addEventListener("change", renderChatPane);
 $("#pc-open").addEventListener("click", () => toggleChatPane());
-// The mobile bottom nav's Chat tab: always on the current project's chat, ready to type in.
-$("#nav-chat").addEventListener("click", () => toggleChatPane(!pane.open, state.project ? "project" : "general"));
+// The mobile bottom nav's Chat tab: opens the chat page on the current project's chat.
+// Like any other tab, tapping it while it's shown keeps it.
+$("#nav-chat").addEventListener("click", () => { if (!pane.open) toggleChatPane(true, state.project ? "project" : "general"); });
 // Its badge: a pane chat is streaming an answer, or waits on a permission request.
 function renderChatBadge() {
   const chats = [chat, ...[...projectChats.values()].map((pc) => pc.chat)];

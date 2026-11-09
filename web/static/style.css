@@ -417,7 +417,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
   background: var(--accent); color: #0d1424; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
 }
 #pc-pin[aria-pressed="true"] .ico { fill: currentColor; }
-/* Chat pane: a full-screen sheet on mobile; see desktop for overlay and pinned. */
+/* Chat pane: a page between the top bar and the nav on mobile; see desktop for overlay and pinned. */
 .chat-pane {
   position: fixed; inset: 0; z-index: 46; display: flex; flex-direction: column; min-height: 0;
   padding: env(safe-area-inset-top, 0px) 0 var(--safe-b); background: var(--bg);
@@ -1271,31 +1271,38 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .foot-menu.account-menu > summary { width: 100%; height: auto; min-height: 44px; }
   .foot-menu-list button { min-height: 44px; }
   .menu-scrim { position: fixed; inset: 0; z-index: 49; background: rgba(4, 8, 15, .5); animation: fade-in .2s var(--ease); }
-  /* The full-screen sheets must not scroll the page behind them, or the browser toolbar shifts them. */
+  /* The task sheet and the chat page must not scroll the page behind them, or the browser toolbar shifts them. */
   html:has(.app.chat-open), html:has(.detail:not([hidden])) { overflow: hidden; }
-  /* Fit the sheets to the visible area (app.js sets --vv-*), which shrinks when the
-     keyboard opens: the head stays on top, only the log scrolls, the composer sits on the keyboard. */
-  .chat-pane, .detail { inset: var(--vv-top, 0px) 0 auto 0; height: var(--vv-h, 100dvh); }
+  /* Fit the task sheet to the visible area (app.js sets --vv-*), which shrinks when the
+     keyboard opens: the head stays on top, only the body scrolls, the composer sits on the keyboard. */
+  .detail { inset: var(--vv-top, 0px) 0 auto 0; height: var(--vv-h, 100dvh); }
   /* A composer has focus but no API reported the keyboard (app.js sets .kb-env): take it from CSS where the browser has it. */
-  .kb-env :is(.chat-pane, .detail) { height: calc(var(--vv-h, 100dvh) - env(keyboard-inset-height, 0px)); }
-  /* With the keyboard up, the home-indicator inset and the action bar only take room from the log. */
-  .chat-pane:has(.composer textarea:focus) { padding-bottom: 0; }
-  .chat-pane:has(.composer textarea:focus) .composer { padding-bottom: 10px; }
+  .kb-env .detail { height: calc(var(--vv-h, 100dvh) - env(keyboard-inset-height, 0px)); }
+  /* With the keyboard up, the action bar only takes room from the body. */
   .detail:has(.composer textarea:focus) .actionbar { display: none; }
 
   /* Bottom nav: Board · Chat · Issues · Shell · Files. Scans and History are in the
      menu drawer (.menu-views); the Chat tab replaces the top bar's chat button. */
   .nav > button:is([data-view="scans"], [data-view="history"]), #pc-open { display: none; }
-  /* The chat sheet is a tab: it stops above the nav, which shows Chat as the active
-     tab, until the composer takes focus and the keyboard needs the room. */
-  .chat-pane { height: calc(var(--vv-h, 100dvh) - var(--nav-h) - var(--safe-b)); padding-bottom: 0; }
+  /* Chat is a page like the others (the nav's Chat tab, shown active): the view under it
+     (and the board's New-task button) is hidden and the chat fills the room between the
+     top bar and the nav. It's fixed and fitted to the visible area (app.js sets --vv-*),
+     which shrinks when the keyboard opens: the tabs stay on top, only the log scrolls.
+     --chat-top: below the top bar, or the visible top once iOS pans the top bar away. */
+  .app.chat-open main { display: none; }
+  #pc-close { display: none; }
+  .chat-pane {
+    --chat-top: max(var(--vv-top, 0px), var(--top-h));
+    z-index: 15; inset: var(--chat-top) 0 auto 0; padding: 0;
+    height: calc(var(--vv-top, 0px) + var(--vv-h, 100dvh) - var(--chat-top) - var(--nav-h) - var(--safe-b));
+  }
   .chat-pane .composer { padding-bottom: 10px; }
-  .chat-pane:has(.composer textarea:focus) { height: var(--vv-h, 100dvh); }
-  .kb-env .chat-pane:has(.composer textarea:focus) { height: calc(var(--vv-h, 100dvh) - env(keyboard-inset-height, 0px)); }
-  .app.chat-open .nav > button.active { color: var(--muted); }
-  .app.chat-open .nav > button.active svg { color: inherit; }
-  .app.chat-open .nav > .nav-chat { color: var(--text); }
-  .app.chat-open .nav > .nav-chat svg { color: var(--accent); }
+  /* Composer focused: the chat covers the nav (under the keyboard, or riding on it where the
+     page resizes) and runs down to the keyboard, the composer right on it. */
+  .chat-pane:has(.composer textarea:focus) { z-index: 31; height: calc(var(--vv-top, 0px) + var(--vv-h, 100dvh) - var(--chat-top)); }
+  .kb-env .chat-pane:has(.composer textarea:focus) { height: calc(var(--vv-top, 0px) + var(--vv-h, 100dvh) - var(--chat-top) - env(keyboard-inset-height, 0px)); }
+  /* Toasts go under the chat's tabs, clear of the composer. */
+  html:has(.app.chat-open) .toasts { top: calc(max(var(--vv-top, 0px), var(--top-h)) + 60px); bottom: auto; right: 12px; }
 }
 
 /* ---------- tablet ---------- */

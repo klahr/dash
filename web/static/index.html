@@ -68,8 +68,8 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M12 4v9M18 4v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="6" cy="9" r="2"/><circle cx="12" cy="15" r="2"/><circle cx="18" cy="18" r="2"/></svg>
         <span>Board</span><span class="badge" id="review-badge" hidden></span>
       </button>
-      <!-- Mobile only: opens the chat sheet on the current project's chat (desktop has #pc-open). -->
-      <button class="nav-chat" id="nav-chat" type="button" aria-label="Chat" aria-controls="chat-pane" aria-expanded="false">
+      <!-- Mobile only: the chat page, on the current project's chat (desktop has #pc-open). -->
+      <button class="nav-chat" id="nav-chat" type="button" title="Chat (gc)" aria-label="Chat" aria-controls="chat-pane">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 17h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 5 5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         <span>Chat</span><span class="badge chat-badge" id="chat-badge" hidden></span>
       </button>
@@ -288,7 +288,7 @@
 
     <!-- Chat: General, the selected project's and kept project chats, as tabs.
          Overlays the content, or takes a column when pinned (wide screens only);
-         a full-screen sheet on mobile. -->
+         on mobile a page between the top bar and the bottom nav (the nav's Chat tab). -->
     <aside class="chat-pane" id="chat-pane" hidden aria-label="Chat">
       <div class="chat-pane-resize" id="pc-resize" role="separator" aria-orientation="vertical" aria-label="Resize the chat" tabindex="0" title="Drag to resize · double-click to reset"></div>
       <header class="chat-pane-head">
