@@ -278,7 +278,7 @@ function renderToday(d) {
   hours.forEach((v, i) => {
     const hgt = v ? Math.max(6, (v / max) * 104) : 3;
     sp.append(svg("rect", { x: (i * slot + (slot - w) / 2).toFixed(1), y: (110 - hgt).toFixed(1), width: w.toFixed(1), height: hgt.toFixed(1), rx: 3,
-      fill: v ? "#3ecf8e" : "#2a2f39", opacity: i === hours.length - 1 ? 1 : 0.55 }));
+      style: "fill:var(" + (v ? "--ok" : "--line") + ")", opacity: i === hours.length - 1 ? 1 : 0.55 }));
   });
   $("spark-from").textContent = pad(from) + ":00";
 }
