@@ -6,3 +6,5 @@ bin/
 dist/
 deploy/
 docs/
+dash
+dash-tui
