@@ -1,7 +1,8 @@
 // The wall view: a read-only TV dashboard. It polls /api/wall every few
 // seconds and ticks the clock and the running tasks' timers in between.
 // Options come from the page's own URL: ?token= (a wall link, no sign-in),
-// ?project= (one project), ?privacy=1 (no titles or costs).
+// ?project= (one project), ?privacy=1 (public mode: only what anyone may
+// see; a public wall token always has it).
 "use strict";
 
 const params = new URLSearchParams(location.search);
@@ -86,7 +87,7 @@ function tick() {
 
 function renderHeader(d) {
   const scope = d.project ? d.project : "all projects";
-  $("scope").textContent = (d.org ? d.org + " · " : "") + scope + (d.privacy ? " · privacy" : "");
+  $("scope").textContent = (d.org ? d.org + " · " : "") + scope + (d.privacy ? " · public view" : "");
 
   const q = $("queue");
   const busy = d.queue.busy, slots = d.queue.slots;
@@ -175,7 +176,7 @@ function renderRunning(d) {
     return;
   }
   list.replaceChildren(...d.running.map((r) => {
-    const meta = [r.project, "runner " + r.runner, "run " + r.run];
+    const meta = [r.project, d.privacy ? r.runner : "runner " + r.runner, "run " + r.run];
     if (r.cost_usd != null) meta.push(money(r.cost_usd));
     const changed = r.add || r.del;
     return h("div", { class: "card" },
@@ -206,7 +207,8 @@ function renderNeeds(d, now) {
         h("div", {}, h("div", { class: "t" }, n.title), h("div", { class: "why" }, why.join(" · "))),
         h("div", { class: "age num" }, age(since)));
     }
-    const why = ["Failed", n.project, n.reason || "no reason given"];
+    const why = ["Failed", n.project];
+    if (!d.privacy) why.push(n.reason || "no reason given");
     if (n.resumable) why.push("resumable");
     return h("div", { class: "item" + (n.old ? " old" : ""), style: "--c:var(--bad)" }, h("i", { class: "bar2" }),
       h("div", {}, h("div", { class: "t" }, n.title), h("div", { class: "why" }, why.join(" · "))),

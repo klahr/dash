@@ -76,7 +76,7 @@ func TestWallAggregates(t *testing.T) {
 	setTodo(t, s, web, func(x *model.Todo) { x.Status, x.Waiting = model.StatusQueued, "all runners offline" })
 	setTodo(t, s, web, func(x *model.Todo) {
 		x.Title, x.Status, x.StartedAt, x.Runs, x.CostUSD, x.DiffAdd, x.DiffDel = "Building it", model.StatusInProgress, at(-10*time.Minute), 2, 1.5, 20, 3
-		x.SentBack = "failing tests"
+		x.SentBack = "conflicts with main in secret/a.go"
 	})
 	setTodo(t, s, web, func(x *model.Todo) {
 		x.Title, x.Status, x.FinishedAt, x.Checks = "old review", model.StatusReview, at(-3*time.Hour), &model.Checks{Passed: true}
@@ -123,7 +123,7 @@ func TestWallAggregates(t *testing.T) {
 		t.Errorf("oldest review %v", st.ReviewOldest)
 	}
 	if len(d.Running) != 1 || d.Running[0].Title != "Building it" || d.Running[0].Run != 3 || d.Running[0].CostUSD == nil ||
-		*d.Running[0].CostUSD != 1.5 || d.Running[0].SentBack != "failing tests" || d.Running[0].Runner != "this computer" {
+		*d.Running[0].CostUSD != 1.5 || d.Running[0].SentBack != "conflicts with main in secret/a.go" || d.Running[0].Runner != "this computer" {
 		t.Errorf("running %+v", d.Running)
 	}
 	if len(d.Needs) != 3 || d.Needs[0].Title != "old review" || !d.Needs[0].Old || d.Needs[0].Tests != "passed" ||
@@ -147,16 +147,26 @@ func TestWallAggregates(t *testing.T) {
 		t.Errorf("leaked: %s", body)
 	}
 
-	// Privacy: no titles, prompts or costs.
+	// Public mode: no titles, prompts, names, reasons or costs.
 	d, _ = getWallJSON(t, h, "/api/wall?privacy=1")
 	body, _ = json.Marshal(d)
-	for _, secret := range []string{"Building it", "old review", "landed", "XSS in form"} {
+	for _, secret := range []string{"Building it", "old review", "landed", "XSS in form", "secret", "a.go", `"` + web.Name + `"`, "· " + web.Name} {
 		if strings.Contains(string(body), secret) {
-			t.Errorf("privacy mode shows %q", secret)
+			t.Errorf("public mode shows %q", secret)
 		}
 	}
-	if d.Running[0].CostUSD != nil || d.Today.SpendUSD != nil || !d.Privacy {
-		t.Errorf("privacy mode shows costs: %+v %+v", d.Running[0], d.Today)
+	if d.Running[0].CostUSD != nil || d.Today.SpendUSD != nil || !d.Privacy || d.Locked {
+		t.Errorf("public mode shows costs: %+v %+v", d.Running[0], d.Today)
+	}
+	if !strings.HasPrefix(d.Running[0].Project, "Project ") || d.Running[0].SentBack != "merge conflict" || d.Needs[2].Reason != "" {
+		t.Errorf("public mode: %+v %+v", d.Running[0], d.Needs[2])
+	}
+	// ...and projects are found by id only, not by guessing names.
+	if _, code := getWallJSON(t, h, "/api/wall?privacy=1&project="+web.Name); code != http.StatusNotFound {
+		t.Errorf("public mode, project by name: %d", code)
+	}
+	if d, code := getWallJSON(t, h, "/api/wall?privacy=1&project="+web.ID); code != http.StatusOK || d.Project != d.Running[0].Project {
+		t.Errorf("public mode, project by id: %d %q", code, d.Project)
 	}
 
 	// The project filter, by name or id.
@@ -266,7 +276,7 @@ func TestWallTokens(t *testing.T) {
 	setTodo(t, s, theirs, func(x *model.Todo) {
 		x.Title, x.Status, x.StartedAt = "theirs", model.StatusInProgress, at(-time.Minute)
 	})
-	other, _, err := s.Store.Accounts().CreateWallToken(two.ID, owner.User, "their TV", time.Now())
+	other, _, err := s.Store.Accounts().CreateWallToken(two.ID, owner.User, "their TV", false, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,6 +290,26 @@ func TestWallTokens(t *testing.T) {
 	if err := s.Store.Accounts().RevokeWallToken(two.ID, made.Token.ID); err == nil {
 		t.Error("another org revoked our token")
 	}
+
+	// A public token's wall is always in public mode.
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/api/wall/tokens", strings.NewReader(`{"public":true}`)))
+	var pub struct {
+		Token  store.WallToken `json:"token"`
+		Secret string          `json:"secret"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &pub)
+	if w.Code != http.StatusCreated || !pub.Token.Public || pub.Token.Name != "Public wall" {
+		t.Fatalf("public token: %d %s", w.Code, w.Body)
+	}
+	for _, url := range []string{"/api/wall?token=" + pub.Secret, "/api/wall?privacy=0&token=" + pub.Secret} {
+		d, code := getWallJSON(t, routes, url)
+		if code != http.StatusOK || !d.Privacy || !d.Locked || len(d.Running) != 1 || d.Running[0].Title == "ours" || d.Running[0].Project == web.Name {
+			t.Errorf("%s: %d %+v", url, code, d.Running)
+		}
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("DELETE", "/api/wall/tokens/"+itoa(pub.Token.ID), nil))
 
 	// Members who aren't admins can't manage them.
 	member(t, s, owner.Org, "bob", store.RoleMember)

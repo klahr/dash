@@ -28,7 +28,7 @@ Options (combine them with `&`):
 | Option | Effect |
 | --- | --- |
 | `?project=<name or id>` | Only that project |
-| `?privacy=1` | No task titles, prompts, issue titles, activity lines or costs |
+| `?privacy=1` | The public view (below) |
 | `?token=<wall token>` | Open it without signing in (below) |
 
 ## A link for a TV
@@ -48,6 +48,23 @@ curl -b cookies.txt -X DELETE https://dash.example.com/api/wall/tokens/3 # revok
 
 Open `https://dash.example.com/wall?token=dashw_…` on the TV. Anyone with the link sees
 the wall, so treat it like a password; add `&privacy=1` where visitors walk past.
+
+## The public view
+
+The public view shows only what anyone may see: the counts in each stage, timers, lines
+changed, runner slots, Claude usage and merges per hour. It hides task titles and
+prompts, project names (they become "Project A", "Project B"…, lettered by when the
+project was made), runner names ("Runner A"…), why a task failed, why it was sent back
+(only "merge conflict" or "failing tests"), activity lines, issue titles and costs. With
+it, `?project=` takes a project's id only, so names can't be guessed.
+
+Open it with `?privacy=1`, or make a **public wall token**: its wall is always the public
+view, whatever its link says, so it is the one to put on a screen outside the office or
+share outside the organization.
+
+```sh
+curl -b cookies.txt -X POST https://dash.example.com/api/wall/tokens -d '{"name":"Lobby","public":true}'
+```
 
 ## What it doesn't show yet
 

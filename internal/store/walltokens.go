@@ -10,24 +10,28 @@ import (
 // signing in. It grants read access to the wall's data and nothing else:
 // the auth middleware never accepts it as an API token or a session.
 type WallToken struct {
-	ID        int64     `json:"id"`
-	OrgID     int64     `json:"org_id"`
-	CreatedBy int64     `json:"created_by,omitempty"`
-	Name      string    `json:"name"`
-	Prefix    string    `json:"prefix"`
-	Created   time.Time `json:"created"`
-	LastUsed  time.Time `json:"last_used,omitzero"`
+	ID        int64  `json:"id"`
+	OrgID     int64  `json:"org_id"`
+	CreatedBy int64  `json:"created_by,omitempty"`
+	Name      string `json:"name"`
+	Prefix    string `json:"prefix"`
+	// Public tokens always show the wall in public mode (see the api's
+	// wall view): what anyone may see, for a screen outside the office or a
+	// link shared outside the org.
+	Public   bool      `json:"public"`
+	Created  time.Time `json:"created"`
+	LastUsed time.Time `json:"last_used,omitzero"`
 }
 
 const prefixWall = "dashw_"
 
-const wallCols = `SELECT id, org_id, COALESCE(created_by, 0), name, token_prefix, created_at, last_used_at FROM wall_tokens`
+const wallCols = `SELECT id, org_id, COALESCE(created_by, 0), name, token_prefix, public, created_at, last_used_at FROM wall_tokens`
 
 func scanWallToken(sc interface{ Scan(...any) error }) (WallToken, error) {
 	var t WallToken
 	var created int64
 	var used sql.NullInt64
-	err := sc.Scan(&t.ID, &t.OrgID, &t.CreatedBy, &t.Name, &t.Prefix, &created, &used)
+	err := sc.Scan(&t.ID, &t.OrgID, &t.CreatedBy, &t.Name, &t.Prefix, &t.Public, &created, &used)
 	if errors.Is(err, sql.ErrNoRows) {
 		return t, ErrNotFound
 	}
@@ -42,8 +46,8 @@ func scanWallToken(sc interface{ Scan(...any) error }) (WallToken, error) {
 }
 
 // CreateWallToken makes a wall token for org, made by uid, and returns its
-// secret: shown only now.
-func (a *Accounts) CreateWallToken(org, uid int64, name string, now time.Time) (string, WallToken, error) {
+// secret: shown only now. A public one always shows the wall in public mode.
+func (a *Accounts) CreateWallToken(org, uid int64, name string, public bool, now time.Time) (string, WallToken, error) {
 	if org == 0 {
 		return "", WallToken{}, ErrNoOrg
 	}
@@ -56,8 +60,8 @@ func (a *Accounts) CreateWallToken(org, uid int64, name string, now time.Time) (
 	if uid != 0 {
 		by = uid
 	}
-	res, err := a.db.Exec(`INSERT INTO wall_tokens (org_id, created_by, name, token_hash, token_prefix, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		org, by, name, hashToken(secret), secret[:prefixShown], now.Unix())
+	res, err := a.db.Exec(`INSERT INTO wall_tokens (org_id, created_by, name, token_hash, token_prefix, public, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		org, by, name, hashToken(secret), secret[:prefixShown], public, now.Unix())
 	if err != nil {
 		return "", WallToken{}, err
 	}

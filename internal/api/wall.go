@@ -6,6 +6,12 @@ package api
 // session sees its active org; a TV opens /wall?token=<wall token> instead,
 // a read-only token an org admin makes (/api/wall/tokens) that reaches
 // these two paths and nothing else (see auth.WallPaths).
+//
+// Public mode (?privacy=1, and always with a public wall token) shows only
+// what anyone may see, for a screen visitors walk past or a link shared
+// outside the org: counts, timers, line counts and usage, but no task
+// titles or prompts, project or runner names, failure or sent-back
+// reasons, activity lines, issue titles or costs.
 
 import (
 	"errors"
@@ -38,7 +44,8 @@ type wallData struct {
 	Now     time.Time    `json:"now"`
 	Org     string       `json:"org"`
 	Project string       `json:"project,omitempty"` // the ?project= filter's name
-	Privacy bool         `json:"privacy"`
+	Privacy bool         `json:"privacy"`           // public mode
+	Locked  bool         `json:"locked,omitempty"`  // public mode by a public wall token: can't be turned off
 	Queue   wallQueue    `json:"queue"`
 	Usage   wallUsage    `json:"usage"`
 	Stages  wallStage    `json:"stages"`
@@ -145,21 +152,23 @@ type wallEvent struct {
 }
 
 // wallCaller is who may see r's wall: a wall token's org (?token=), else
-// the session's.
-func (s *Server) wallCaller(r *http.Request) (Caller, error) {
+// the session's. public is true for a public wall token: its wall is
+// always in public mode.
+func (s *Server) wallCaller(r *http.Request) (c Caller, public bool, err error) {
 	if tok := r.URL.Query().Get("token"); tok != "" && auth.WallPaths[r.URL.Path] {
 		wt, err := s.Store.Accounts().AuthenticateWall(tok, time.Now())
 		if err != nil {
-			return Caller{}, err
+			return Caller{}, false, err
 		}
-		return Caller{Org: wt.OrgID}, nil
+		return Caller{Org: wt.OrgID}, wt.Public, nil
 	}
-	return s.caller(r)
+	c, err = s.caller(r)
+	return c, false, err
 }
 
 // wallPage serves GET /wall.
 func (s *Server) wallPage(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.wallCaller(r); err != nil {
+	if _, _, err := s.wallCaller(r); err != nil {
 		http.Error(w, "this wall link is invalid or was revoked", http.StatusUnauthorized)
 		return
 	}
@@ -176,7 +185,7 @@ func (s *Server) wallPage(w http.ResponseWriter, r *http.Request) {
 
 // getWall serves GET /api/wall[?project=<id or name>][&privacy=1][&tz=<minutes>].
 func (s *Server) getWall(w http.ResponseWriter, r *http.Request) {
-	c, err := s.wallCaller(r)
+	c, public, err := s.wallCaller(r)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return
@@ -188,7 +197,8 @@ func (s *Server) getWall(w http.ResponseWriter, r *http.Request) {
 			loc = time.FixedZone("", -m*60)
 		}
 	}
-	d, err := s.wall(c, q.Get("project"), q.Get("privacy") == "1", time.Now().In(loc))
+	d, err := s.wall(c, q.Get("project"), public || q.Get("privacy") == "1", time.Now().In(loc))
+	d.Locked = public
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -197,7 +207,7 @@ func (s *Server) getWall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, d)
 }
 
-// wall sums up c's org's work as of now.
+// wall sums up c's org's work as of now; privacy is public mode.
 func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wallData, error) {
 	data := s.Store.ForOrg(c.Org)
 	d := wallData{Now: now, Privacy: privacy, Running: []wallRun{}, Needs: []wallNeed{}, Runners: []wallRunner{}, Events: []wallEvent{},
@@ -207,17 +217,28 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 	}
 
 	projects := data.ListProjects()
+	// In public mode a project is "Project A", "Project B"…: its letter by
+	// when it was made, so it keeps it as projects come and go.
+	alias := wallAliases(projects, func(p model.Project) (string, time.Time) { return p.ID, p.CreatedAt }, "Project ")
 	if project != "" {
-		i := slices.IndexFunc(projects, func(p model.Project) bool { return p.ID == project || strings.EqualFold(p.Name, project) })
+		i := slices.IndexFunc(projects, func(p model.Project) bool {
+			// Public mode matches no names: they mustn't be guessable.
+			return p.ID == project || !privacy && strings.EqualFold(p.Name, project)
+		})
 		if i < 0 {
 			return d, fmt.Errorf("%w: no project %q", store.ErrNotFound, project)
 		}
 		projects = projects[i : i+1]
-		d.Project = projects[0].Name
 	}
 	byProject := map[string]model.Project{}
 	for _, p := range projects {
+		if privacy {
+			p.Name = alias[p.ID]
+		}
 		byProject[p.ID] = p
+	}
+	if project != "" {
+		d.Project = byProject[projects[0].ID].Name
 	}
 	var todos []model.Todo
 	for _, t := range data.ListTodos("") {
@@ -235,12 +256,16 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 			}
 		}
 	}
+	runnerAlias := wallAliases(runners, func(r tunnel.Runner) (string, time.Time) { return r.ID, r.Created }, "Runner ")
 	runnerName := func(id string) string {
 		if id == "" {
 			return "this computer"
 		}
 		for _, r := range runners {
 			if r.ID == id {
+				if privacy {
+					return runnerAlias[id]
+				}
 				return r.Name
 			}
 		}
@@ -260,6 +285,27 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 	midnight := time.Date(y, m, dd, 0, 0, 0, 0, now.Location())
 	today := func(at *time.Time) bool { return at != nil && !at.Before(midnight) }
 	d.Today.Midnight, d.Today.Hour, d.Today.PerHour = midnight, now.Hour(), make([]int, 24)
+
+	// sentBack is why a task was sent back; in public mode only its kind
+	// (the reason names files and branches).
+	sentBack := func(why string) string {
+		if !privacy || why == "" {
+			return why
+		}
+		switch {
+		case strings.HasPrefix(why, "conflicts"):
+			return "merge conflict"
+		case strings.Contains(why, "tests fail"):
+			return "failing tests"
+		}
+		return "sent back"
+	}
+	reason := func(err string) string {
+		if privacy {
+			return "" // an error quotes commands, paths and output
+		}
+		return wallLine(err, 160)
+	}
 
 	var runningTotal time.Duration
 	var spend float64
@@ -283,7 +329,7 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 		case model.StatusInProgress:
 			d.Stages.Running++
 			run := wallRun{ID: t.ID, Title: title(t), Project: p.Name, Color: p.Color, Runner: runnerName(t.Runner), Run: t.Runs + 1,
-				StartedAt: t.StartedAt, Add: t.DiffAdd, Del: t.DiffDel, Files: t.DiffFiles, SentBack: t.SentBack}
+				StartedAt: t.StartedAt, Add: t.DiffAdd, Del: t.DiffDel, Files: t.DiffFiles, SentBack: sentBack(t.SentBack)}
 			if !privacy {
 				cost := t.CostUSD
 				run.CostUSD = &cost
@@ -341,7 +387,7 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 				since = *t.FinishedAt
 			}
 			d.Needs = append(d.Needs, wallNeed{Kind: "failed", ID: t.ID, Title: title(t), Project: p.Name, Since: since,
-				Old: now.Sub(since) > wallFailedOld, Reason: wallLine(t.Error, 160), Resume: t.Resumable})
+				Old: now.Sub(since) > wallFailedOld, Reason: reason(t.Error), Resume: t.Resumable})
 		}
 	}
 	if d.Stages.Running > 0 {
@@ -387,9 +433,9 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 		}
 	}
 
-	s.wallRunners(&d, todos, projects, runners)
+	s.wallRunners(&d, todos, projects, runners, runnerName)
 	s.wallQueue(&d, c, runners)
-	d.Events = wallEvents(todos, byProject, runners, title, runnerName, now)
+	d.Events = wallEvents(todos, byProject, runners, title, runnerName, sentBack, now)
 	return d, nil
 }
 
@@ -408,7 +454,7 @@ func startOf(r wallRun) time.Time {
 }
 
 // wallRunners fills in the runners (or this computer) and how busy they are.
-func (s *Server) wallRunners(d *wallData, todos []model.Todo, projects []model.Project, runners []tunnel.Runner) {
+func (s *Server) wallRunners(d *wallData, todos []model.Todo, projects []model.Project, runners []tunnel.Runner, name func(string) string) {
 	if !s.hub() {
 		slots := 1
 		if s.Todos != nil {
@@ -419,7 +465,7 @@ func (s *Server) wallRunners(d *wallData, todos []model.Todo, projects []model.P
 		return
 	}
 	for _, r := range runners {
-		wr := wallRunner{Name: r.Name, Online: r.Online, Paused: r.Paused, Slots: r.Limit()}
+		wr := wallRunner{Name: name(r.ID), Online: r.Online, Paused: r.Paused, Slots: r.Limit()}
 		if !r.LastSeen.IsZero() {
 			ls := r.LastSeen
 			wr.LastSeen = &ls
@@ -513,7 +559,7 @@ func bestUsage(runners []tunnel.Runner) *usage.Snapshot {
 // wallEvents is the ticker: what happened lately, newest first, as told by
 // the tasks' own timestamps (Dash keeps no event history).
 func wallEvents(todos []model.Todo, byProject map[string]model.Project, runners []tunnel.Runner,
-	title func(model.Todo) string, runnerName func(string) string, now time.Time) []wallEvent {
+	title func(model.Todo) string, runnerName, sentBack func(string) string, now time.Time) []wallEvent {
 	since := now.Add(-24 * time.Hour)
 	out := []wallEvent{}
 	add := func(at *time.Time, kind, text string) {
@@ -536,7 +582,7 @@ func wallEvents(todos []model.Todo, byProject map[string]model.Project, runners 
 				if t.StartedAt != nil {
 					at = *t.StartedAt
 				}
-				add(&at, "sent_back", "sent back "+name+": "+wallLine(t.SentBack, 80))
+				add(&at, "sent_back", "sent back "+name+": "+wallLine(sentBack(t.SentBack), 80))
 			} else {
 				add(t.StartedAt, "started", "started "+name+" on "+runnerName(t.Runner))
 			}
@@ -549,7 +595,7 @@ func wallEvents(todos []model.Todo, byProject map[string]model.Project, runners 
 	for _, r := range runners {
 		if !r.Online && !r.LastSeen.IsZero() {
 			at := r.LastSeen
-			add(&at, "offline", r.Name+" went offline")
+			add(&at, "offline", runnerName(r.ID)+" went offline")
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
@@ -557,6 +603,40 @@ func wallEvents(todos []model.Todo, byProject map[string]model.Project, runners 
 		out = out[:wallMaxEvents]
 	}
 	return out
+}
+
+// wallAliases names xs for public mode: prefix plus a letter (A…Z, then
+// AA…), in the order they were made (then by id).
+func wallAliases[T any](xs []T, key func(T) (string, time.Time), prefix string) map[string]string {
+	type k struct {
+		id string
+		at time.Time
+	}
+	ks := make([]k, 0, len(xs))
+	for _, x := range xs {
+		id, at := key(x)
+		ks = append(ks, k{id, at})
+	}
+	sort.Slice(ks, func(i, j int) bool {
+		if !ks[i].at.Equal(ks[j].at) {
+			return ks[i].at.Before(ks[j].at)
+		}
+		return ks[i].id < ks[j].id
+	})
+	out := make(map[string]string, len(ks))
+	for i, x := range ks {
+		out[x.id] = prefix + wallLetters(i)
+	}
+	return out
+}
+
+// wallLetters is A for 0, B for 1, …, Z, AA, AB…
+func wallLetters(i int) string {
+	s := ""
+	for i++; i > 0; i = (i - 1) / 26 {
+		s = string(rune('A'+(i-1)%26)) + s
+	}
+	return s
 }
 
 // wallLine is s's first non-empty line, cut to max runes.
@@ -608,7 +688,8 @@ func (s *Server) wallTokenRoutes(mux *http.ServeMux) {
 			return
 		}
 		var req struct {
-			Name string `json:"name"`
+			Name   string `json:"name"`
+			Public bool   `json:"public"`
 		}
 		if err := decode(r, &req); err != nil {
 			writeErr(w, err)
@@ -616,8 +697,11 @@ func (s *Server) wallTokenRoutes(mux *http.ServeMux) {
 		}
 		if strings.TrimSpace(req.Name) == "" {
 			req.Name = "Wall"
+			if req.Public {
+				req.Name = "Public wall"
+			}
 		}
-		secret, t, err := s.Store.Accounts().CreateWallToken(c.Org, c.User, req.Name, time.Now())
+		secret, t, err := s.Store.Accounts().CreateWallToken(c.Org, c.User, req.Name, req.Public, time.Now())
 		if errors.Is(err, store.ErrBadTokenName) {
 			err = errors.Join(errBadRequest, err)
 		}
