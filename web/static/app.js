@@ -5727,6 +5727,30 @@ const chatRunner = {
 $("#chat-runner-pick").addEventListener("change", (e) => { chatRunner.picked = e.target.value; chatRunner.render(); });
 chatRunner.load().catch(() => {}); // an older Dash without /api/claude: the bar stays hidden
 
+// Pane chats with a reply nobody has looked at yet, by chat key ("general" or a
+// projectKey). Kept in localStorage so a reload still shows them.
+const chatUnread = (() => {
+  try { return new Set(JSON.parse(localStorage.getItem("dash.chatUnread")) || []); } catch { return new Set(); }
+})();
+function saveChatUnread() {
+  try { localStorage.setItem("dash.chatUnread", JSON.stringify([...chatUnread])); } catch {}
+}
+// onState for a pane chat: a turn that ends while you aren't looking at the
+// chat leaves it unread.
+function paneChatState(key, get) {
+  let wasBusy = false;
+  return () => {
+    const busy = get().busy;
+    if (wasBusy && !busy && !viewingChat(key) && !chatUnread.has(key)) {
+      chatUnread.add(key);
+      saveChatUnread();
+      renderChatDots();
+    }
+    wasBusy = busy;
+    renderChatBadge();
+  };
+}
+
 // The global chat isn't about any project: it runs in the home directory of
 // this machine, or on one of your runners (chatRunner).
 const chat = makeChat({
@@ -5737,7 +5761,7 @@ const chat = makeChat({
   actions: chatActions(true),
   cwd: $("#chat-cwd"),
   resume: true,
-  onState: () => renderChatBadge(),
+  onState: paneChatState("general", () => chat),
 });
 
 // The server saves every turn, so the conversation survives restarts. A
@@ -5827,7 +5851,7 @@ function projectChatFor(p) {
     // A turn left streaming when the chat was cleared is saved when it finishes.
     saved: () => { if (!pc.chat.busy) { pc.loaded = false; loadProjectChat(proj()).catch(fail); } },
     actions: chatActions(false, key),
-    onState: renderChatBadge,
+    onState: paneChatState(key, () => pc.chat),
   });
   // A project chat you talk in stays as a tab after you switch projects.
   pc.chat.input.form.addEventListener("submit", () => keepChatTab(key));
@@ -5888,8 +5912,9 @@ function renderChatPane() {
   const cur = tabProject(tab);
   const tabBtn = (id, label, kids, title = label) => h("button", {
     type: "button", role: "tab", class: "chat-pane-tab-btn", "aria-selected": String(tab === id), title,
+    "data-chat": tabChatKey(id) || "", "data-title": title,
     onclick: () => showChatTab(id),
-  }, ...kids, h("span", { class: "chat-tab-name" }, label));
+  }, ...kids, h("span", { class: "chat-tab-name" }, label), h("span", { class: "chat-tab-unread", "aria-hidden": "true" }));
   // "This project" leads: General is rarely used.
   $("#chat-tabs").replaceChildren(
     h("div", { class: "chat-pane-tab" }, tabBtn("project", "This project", [state.project ? projectIcon(state.project) : ico("repo")],
@@ -5899,6 +5924,7 @@ function renderChatPane() {
       tabBtn(projectKey(p), p.name, [projectIcon(p)], grouped() ? `${p.name} · ${projectWhere(p)}` : p.name),
       ib({ type: "button", class: "icon-btn chat-tab-close", "aria-label": `Close the ${p.name} chat`, title: "Close this tab", onclick: () => {
         pane.tabs = pane.tabs.filter((k) => k !== projectKey(p));
+        if (chatUnread.delete(projectKey(p))) saveChatUnread();
         savePane();
         renderChatPane();
       } }, "x"))),
@@ -5915,6 +5941,42 @@ function renderChatPane() {
   for (const [key, pc] of projectChats) show(pc.panel, !!cur && key === projectKey(cur));
   $("#pc-clear").disabled = !activeChat();
   if (cur && pane.open) loadProjectChat(cur).catch((e) => toast(`Couldn't load the project chat: ${e.message}`, true));
+  markChatSeen();
+}
+
+// The chat key of a tab: "general", or the projectKey of its project.
+function tabChatKey(tab) {
+  if (tab === "general") return "general";
+  const p = tabProject(tab);
+  return p ? projectKey(p) : null;
+}
+// Whether you're looking at that chat right now: its tab is shown in the open
+// pane, and the page isn't in the background.
+function viewingChat(key) {
+  return pane.open && !document.hidden && tabChatKey(paneTab()) === key;
+}
+// The chat on screen has been seen: it's no longer unread.
+function markChatSeen() {
+  const key = tabChatKey(paneTab());
+  if (key && viewingChat(key) && chatUnread.delete(key)) saveChatUnread();
+  renderChatDots();
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) markChatSeen(); });
+// Another window read (or left) a reply: follow its unread chats.
+window.addEventListener("storage", (e) => {
+  if (e.key !== "dash.chatUnread") return;
+  chatUnread.clear();
+  try { for (const k of JSON.parse(e.newValue) || []) chatUnread.add(k); } catch {}
+  markChatSeen();
+});
+// The green dots on the unread chats' tabs, and the Chat buttons' badge.
+function renderChatDots() {
+  for (const b of $$("#chat-tabs .chat-pane-tab-btn")) {
+    const on = !!b.dataset.chat && chatUnread.has(b.dataset.chat);
+    b.classList.toggle("unread", on);
+    b.title = on ? `${b.dataset.title} · new reply` : b.dataset.title;
+  }
+  renderChatBadge();
 }
 
 function showChatTab(tab) {
@@ -5948,16 +6010,28 @@ $("#pc-open").addEventListener("click", () => toggleChatPane());
 // The mobile bottom nav's Chat tab: opens the chat page on the current project's chat.
 // Like any other tab, tapping it while it's shown keeps it.
 $("#nav-chat").addEventListener("click", () => { if (!pane.open) toggleChatPane(true, state.project ? "project" : "general"); });
-// Its badge: a pane chat is streaming an answer, or waits on a permission request.
+// The Chat buttons' badge (the bottom nav's and the top bar's): a pane chat waits
+// on a permission request ("!"), is streaming an answer (a breathing dot), or has
+// a reply you haven't read (a green dot), in that order.
 function renderChatBadge() {
   const chats = [chat, ...[...projectChats.values()].map((pc) => pc.chat)];
   const waiting = chats.some((c) => c.waiting), busy = chats.some((c) => c.busy);
-  const b = $("#chat-badge");
-  b.hidden = !waiting && !busy;
-  b.classList.toggle("perm", waiting);
-  b.textContent = waiting ? "!" : "";
-  b.title = waiting ? "Claude needs approval" : busy ? "Claude is answering" : "";
-  $("#nav-chat").setAttribute("aria-label", waiting ? "Chat: Claude needs approval" : busy ? "Chat: Claude is answering" : "Chat");
+  // Only chats that still have a tab count: a closed tab's reply can't be read.
+  const tabs = new Set(["general", state.project && projectKey(state.project), ...keptTabs().map(projectKey)]);
+  const unread = [...chatUnread].some((k) => tabs.has(k));
+  const kind = waiting ? "perm" : busy ? "busy" : unread ? "unread" : "";
+  const says = { perm: "Claude needs approval", busy: "Claude is answering", unread: "new reply" }[kind];
+  for (const b of $$(".chat-badge")) {
+    b.hidden = !kind;
+    b.classList.toggle("perm", waiting);
+    b.classList.toggle("unread", kind === "unread");
+    b.textContent = waiting ? "!" : "";
+    b.title = kind === "unread" ? "New reply" : says || "";
+  }
+  for (const btn of [$("#nav-chat"), $("#pc-open")]) {
+    btn.setAttribute("aria-label", says ? `Chat: ${says}` : "Chat");
+    btn.title = says ? `Chat: ${says} (gc)` : "Chat (gc)";
+  }
 }
 $("#pc-close").addEventListener("click", () => toggleChatPane(false));
 $("#pc-pin").addEventListener("click", togglePin);

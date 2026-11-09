@@ -165,6 +165,19 @@ textarea { resize: vertical; line-height: 1.45; }
   background: var(--running); animation: breathe 1.8s ease-in-out infinite;
 }
 .nav .chat-badge.perm { top: 8px; left: calc(50% + 6px); min-width: 18px; width: auto; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--review); animation: none; }
+/* The top bar's Chat button (desktop) wears the same badge in its corner. */
+#pc-open { position: relative; }
+#pc-open .chat-badge {
+  position: absolute; top: 8px; right: 8px; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--running); animation: breathe 1.8s ease-in-out infinite;
+}
+#pc-open .chat-badge.perm {
+  top: 4px; right: 2px; width: auto; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+  background: var(--review); color: #08202a; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; animation: none;
+}
+/* A finished reply you haven't read: a steady green dot, ringed so it stands off the icon. */
+.chat-badge.unread { background: var(--merged); animation: none; box-shadow: 0 0 0 2px var(--surface); }
+#pc-open .chat-badge.unread { box-shadow: 0 0 0 2px var(--bg); }
 @media (max-width: 400px) { .nav > button { font-size: 11px; letter-spacing: -.01em; } }
 .sidebar { display: contents; }
 
@@ -437,6 +450,9 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .chat-pane-tab .side-project-icon { width: 20px; height: 20px; font-size: 11px; }
 .chat-pane-tab:has(.chat-tab-close) .chat-pane-tab-btn { padding-right: 2px; }
 .chat-tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* A tab whose chat has a reply you haven't read. */
+.chat-tab-unread { display: none; flex: none; width: 8px; height: 8px; margin-left: -2px; border-radius: 50%; background: var(--merged); box-shadow: 0 0 0 2px color-mix(in srgb, var(--merged) 22%, transparent); }
+.chat-pane-tab-btn.unread .chat-tab-unread { display: block; }
 .chat-tab-close { width: 28px; height: 28px; flex: none; margin-right: 2px; }
 .chat-tab-close .ico { width: 15px; height: 15px; }
 .chat-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
