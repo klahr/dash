@@ -976,11 +976,20 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .col.drop-over { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 .col.drop-ok .col-head { color: var(--text); }
 .lane-tab.drop-over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--text); }
-@media (hover: hover) {
-  .todo[data-id] { cursor: grab; }
-  /* Hovering a card shows its whole line, in place, inside the card. */
-  .todo:hover .todo-sub { display: block; -webkit-line-clamp: unset; overflow: visible; overflow-wrap: anywhere; }
+@media (hover: hover) { .todo[data-id], .todo-float > .todo { cursor: grab; } }
+
+/* Resting the mouse on a board card (desktop) shows a widened copy of it,
+   fixed over the card and its neighbours, with the whole sub line (app.js: hoverCard). */
+.todo-float {
+  position: fixed; z-index: 34; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--raised); border-radius: var(--r-m);
+  box-shadow: 0 18px 40px rgba(2, 6, 14, .55), 0 0 0 1px var(--line);
+  animation: fade-in .12s var(--ease);
 }
+.todo-float > .todo:not(.cursor) { background: transparent; }
+.todo-float > .todo { border-radius: inherit; box-sizing: border-box; }
+.todo-float .todo-sub { display: block; -webkit-line-clamp: unset; overflow: visible; overflow-wrap: anywhere; }
+.is-dragging .todo-float { display: none; }
 
 .drop-bar {
   position: fixed; left: 12px; right: 12px; bottom: calc(var(--nav-h) + var(--safe-b) + 12px); z-index: 90;

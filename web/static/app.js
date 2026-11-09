@@ -1886,6 +1886,7 @@ function renderBoard() {
   const before = flipFirst();
   renderBoardNow();
   flipPlay(before);
+  hoverCard.sync();
 }
 
 // FLIP: cards glide from where they were to where they are now, so a live
@@ -6421,8 +6422,11 @@ function dropAction(t, lane) {
   return null;
 }
 
-$("#board").addEventListener("pointerdown", (e) => {
-  const card = e.target.closest(".todo[data-id]");
+$("#board").addEventListener("pointerdown", (e) => pendDrag(e.target.closest(".todo[data-id]"), e));
+
+// A press on a card (or on its widened hover copy, which passes the board's
+// card) may become a drag once the pointer moves.
+function pendDrag(card, e) {
   if (!card || e.button > 0) return;
   const t = state.todos.get(card.dataset.id);
   if (!t) return;
@@ -6430,7 +6434,7 @@ $("#board").addEventListener("pointerdown", (e) => {
   if (drag.pending.touch) {
     drag.pending.timer = setTimeout(() => drag.pending && startDrag(drag.pending.x, drag.pending.y), 320);
   }
-});
+}
 
 document.addEventListener("pointermove", (e) => {
   if (drag.active) { moveDrag(e.clientX, e.clientY); return; }
@@ -6457,12 +6461,14 @@ function cancelPending() {
 function startDrag(x, y) {
   const { card, t } = drag.pending;
   cancelPending();
+  hoverCard.close();
   const r = card.getBoundingClientRect();
   drag.active = true;
   drag.t = t;
   drag.card = card;
-  drag.dx = x - r.left;
-  drag.dy = y - r.top;
+  // Clamped: a drag from the widened hover copy can start outside the card.
+  drag.dx = Math.max(0, Math.min(x - r.left, r.width - 16));
+  drag.dy = Math.max(0, Math.min(y - r.top, r.height - 8));
   drag.ghost = card.cloneNode(true);
   drag.ghost.classList.add("drag-ghost");
   drag.ghost.style.width = `${r.width}px`;
@@ -6594,6 +6600,120 @@ async function reorder(t, laneKey, index) {
   renderBoard();
   await Promise.all(changes.map(([x, i]) => api("PATCH", `/api/todos/${x.id}`, { priority: i })));
 }
+
+// ------------------------------------------------------------------ hover card
+// On the desktop board with a mouse, resting on a card shows it widened to a
+// readable width, floating over the neighbouring columns. The columns don't
+// change: the widened card is a copy, fixed over the card, outside the
+// scrolling column so nothing clips it. It is rendered from the task like the
+// card, with its own handlers, and follows the card's live updates. A press
+// on it starts a drag of the card itself.
+const HOVER_DELAY = 300, HOVER_W = 460, HOVER_MARGIN = 12;
+const canHover = matchMedia("(hover: hover) and (pointer: fine)");
+const hoverCard = {
+  el: null, card: null, row: null, rect: null, waiting: null, timer: 0, watch: null,
+  want(card) {
+    if (card === this.card || card === this.waiting) return;
+    this.cancel();
+    if (!card || !desktop.matches || !canHover.matches || drag.active || drag.pending) return;
+    this.waiting = card;
+    this.timer = setTimeout(() => {
+      this.waiting = null;
+      // Live updates may have re-rendered the board meanwhile: take today's card.
+      const now = card.isConnected ? card : $(`#board .todo[data-id="${CSS.escape(card.dataset.id)}"]`);
+      if (now) this.open(now);
+    }, HOVER_DELAY);
+  },
+  cancel() { clearTimeout(this.timer); this.waiting = null; },
+  open(card) {
+    if (drag.active || drag.pending || !card.matches(":hover")) return;
+    this.close();
+    const r = card.getBoundingClientRect();
+    const w = Math.max(r.width, Math.min(HOVER_W, innerWidth - 2 * HOVER_MARGIN));
+    const sub = card.querySelector(".todo-sub");
+    // Already wide and nothing cut off: there is nothing more to show.
+    if (w <= r.width + 1 && !(sub && sub.scrollHeight > sub.clientHeight + 1)) return;
+    this.card = card;
+    this.el = h("div", { class: "todo-float", "aria-hidden": "true",
+      onpointerleave: (e) => { if (e.pointerType !== "touch") this.close(); },
+      onpointerdown: (e) => { if (this.card) pendDrag(this.card, e); },
+      // The wheel scrolls the column underneath, as it would without the copy.
+      onwheel: (e) => { const body = this.card?.closest(".col-body"); this.close(); body?.scrollBy({ top: e.deltaY, left: e.deltaX }); },
+      oncontextmenu: (e) => e.preventDefault(),
+    });
+    document.body.append(this.el);
+    this.render();
+    this.place(r, w);
+    this.watch = new MutationObserver(() => this.render());
+    this.observe();
+  },
+  observe() {
+    this.watch.disconnect();
+    this.watch.observe(this.card, { attributes: true, attributeFilter: ["class"], childList: true, subtree: true, characterData: true });
+  },
+  // Copies the card: fresh content from the task, the card's classes (status,
+  // selection, keyboard cursor). The row element stays, so a press that
+  // started on it still ends in a click.
+  render() {
+    const t = this.card && state.todos.get(this.card.dataset.id);
+    if (!t) return this.close();
+    const fresh = todoRow(t);
+    if (!this.row) {
+      this.row = fresh;
+      this.row.removeAttribute("data-id"); // board code looks cards up by data-id; this isn't one
+      this.row.tabIndex = -1;
+      this.el.append(this.row);
+    } else {
+      this.row.replaceChildren(...fresh.childNodes);
+    }
+    this.row.className = this.card.className;
+    this.row.style.minHeight = `${this.card.offsetHeight}px`; // always covers the card
+  },
+  place(r, w) {
+    const el = this.el;
+    this.rect = r;
+    let left = r.left;
+    if (left + w > innerWidth - HOVER_MARGIN) left = r.right - w; // rightmost column: grow to the left
+    left = Math.max(HOVER_MARGIN, Math.min(left, innerWidth - HOVER_MARGIN - w));
+    el.style.width = `${w}px`;
+    el.style.maxHeight = `${innerHeight - 2 * HOVER_MARGIN}px`;
+    el.style.left = `${left}px`;
+    el.style.top = `${r.top}px`;
+    const hgt = el.offsetHeight;
+    if (r.top + hgt > innerHeight - HOVER_MARGIN) el.style.top = `${Math.max(HOVER_MARGIN, innerHeight - HOVER_MARGIN - hgt)}px`;
+  },
+  // After the board re-renders: follow the new card, or close if it moved.
+  sync() {
+    if (!this.card || this.card.isConnected) return; // same card: the observer follows it
+    const card = $(`#board .todo[data-id="${CSS.escape(this.card.dataset.id)}"]`);
+    // Gone, or gliding to a new place (FLIP): the pointer is no longer on it.
+    if (!card || drag.active || card.getAnimations().length) return this.close();
+    const r = card.getBoundingClientRect();
+    if (Math.abs(r.left - this.rect.left) > 1 || Math.abs(r.top - this.rect.top) > 1 || Math.abs(r.width - this.rect.width) > 1) return this.close();
+    this.card = card;
+    this.observe();
+    this.render();
+    this.place(r, parseFloat(this.el.style.width));
+  },
+  close() {
+    this.cancel();
+    this.watch?.disconnect();
+    this.el?.remove();
+    this.el = this.card = this.row = this.watch = null;
+  },
+};
+$("#board").addEventListener("pointerover", (e) => {
+  if (e.pointerType === "touch" || e.buttons) return;
+  hoverCard.want(e.target.closest(".todo[data-id]"));
+});
+$("#board").addEventListener("pointerout", (e) => {
+  const card = e.target.closest(".todo[data-id]");
+  if (card && card === hoverCard.waiting && !card.contains(e.relatedTarget)) hoverCard.cancel();
+});
+addEventListener("scroll", (e) => { if (hoverCard.el && !hoverCard.el.contains(e.target)) hoverCard.close(); }, true);
+addEventListener("resize", () => hoverCard.close());
+addEventListener("blur", () => hoverCard.close());
+desktop.addEventListener("change", () => hoverCard.close());
 
 // ------------------------------------------------------------------ issues
 // A standing list of what is wrong with the project (bugs, vulnerabilities,
