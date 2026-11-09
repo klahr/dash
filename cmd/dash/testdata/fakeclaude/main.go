@@ -4,7 +4,10 @@
 //
 // A task reports an issue through the board tools dash gives it (the
 // "dash_board" server of --mcp-config) and writes a file, so the test can see
-// both on the hub.
+// both on the hub. A task whose prompt says "ask permission" first asks to
+// run a command through dash's --permission-prompt-tool and writes the
+// answer to permission.txt; a resumed run (rework) writes the notes it got
+// to rework-by-runner.txt.
 package main
 
 import (
@@ -23,6 +26,16 @@ func main() {
 	args := os.Args[1:]
 	stdin, _ := io.ReadAll(os.Stdin)
 	has := func(a string) bool { return slices.Contains(args, a) }
+	// Dash's check of the CLI (internal/claudecli): its version, and -p
+	// without a prompt, which Claude Code refuses.
+	if has("--version") {
+		fmt.Println("2.1.0 (Claude Code)")
+		return
+	}
+	if len(bytes.TrimSpace(stdin)) == 0 {
+		fmt.Fprintln(os.Stderr, "Error: Input must be provided either through stdin or as a prompt argument when using --print")
+		os.Exit(1)
+	}
 	kind := "task"
 	switch {
 	case has("text"): // --output-format text: titles, summaries, clean-ups
@@ -51,14 +64,30 @@ func main() {
 		result("Looked around.\n\n```json\n" + `{"findings": [{"title": "Scan finding from the runner", "type": "bug", "severity": "high", ` +
 			`"file": "README.md", "line": 1, "details": "found", "fingerprint": "fake:readme"}]}` + "\n```")
 	default:
-		if err := reportIssue(args); err != nil {
+		if _, err := callTool(args, "dash_board", "report_issue", map[string]any{
+			"title": "Issue reported by the task on the runner", "type": "bug", "severity": "low"}); err != nil {
 			fmt.Fprintln(os.Stderr, "report_issue:", err)
 			os.Exit(1)
 		}
 		hold()
-		if err := os.WriteFile("done-by-runner.txt", []byte("done\n"), 0o644); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+		files := map[string]string{"done-by-runner.txt": "done\n"}
+		if strings.Contains(string(stdin), "ask permission") {
+			out, err := callTool(args, "dash", "permission_prompt", map[string]any{
+				"tool_name": "Bash", "input": map[string]any{"command": "echo fake-permission-check"}})
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "permission_prompt:", err)
+				os.Exit(1)
+			}
+			files["permission.txt"] = behavior(out) + "\n"
+		}
+		if has("--resume") {
+			files["rework-by-runner.txt"] = string(stdin)
+		}
+		for name, content := range files {
+			if err := os.WriteFile(name, []byte(content), 0o644); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
 		}
 		line(map[string]any{"type": "system", "subtype": "init", "session_id": "fake-session"})
 		line(map[string]any{"type": "assistant", "message": map[string]any{"content": []map[string]any{{"type": "text", "text": "Working on: " + firstLine(string(stdin))}}}})
@@ -95,7 +124,7 @@ func line(v any) {
 }
 
 func result(text string) {
-	line(map[string]any{"type": "result", "subtype": "success", "result": text, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "fake-session"})
+	line(map[string]any{"type": "result", "subtype": "success", "is_error": false, "result": text, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "fake-session"})
 }
 
 func firstLine(s string) string {
@@ -103,9 +132,9 @@ func firstLine(s string) string {
 	return s
 }
 
-// reportIssue calls report_issue on the board server of the --mcp-config
-// dash passed.
-func reportIssue(args []string) error {
+// callTool calls a tool on one of the MCP servers of the --mcp-config dash
+// passed and returns the response.
+func callTool(args []string, server, tool string, arguments map[string]any) ([]byte, error) {
 	var url, auth string
 	for i, a := range args {
 		if a != "--mcp-config" || i+1 >= len(args) {
@@ -120,15 +149,15 @@ func reportIssue(args []string) error {
 		if json.Unmarshal([]byte(args[i+1]), &cfg) != nil {
 			continue
 		}
-		if s, ok := cfg.MCPServers["dash_board"]; ok {
+		if s, ok := cfg.MCPServers[server]; ok {
 			url, auth = s.URL, s.Headers["Authorization"]
 		}
 	}
 	if url == "" {
-		return fmt.Errorf("no dash_board MCP server in %q", args)
+		return nil, fmt.Errorf("no %s MCP server in %q", server, args)
 	}
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{
-		"name": "report_issue", "arguments": map[string]any{"title": "Issue reported by the task on the runner", "type": "bug", "severity": "low"},
+		"name": tool, "arguments": arguments,
 	}})
 	req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -136,12 +165,29 @@ func reportIssue(args []string) error {
 	req.Header.Set("Authorization", auth)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer res.Body.Close()
 	out, _ := io.ReadAll(res.Body)
 	if res.StatusCode != http.StatusOK || bytes.Contains(out, []byte(`"isError":true`)) || bytes.Contains(out, []byte(`"error"`)) {
-		return fmt.Errorf("%s: %s", res.Status, out)
+		return nil, fmt.Errorf("%s: %s", res.Status, out)
 	}
-	return nil
+	return out, nil
+}
+
+// behavior is "allow" or "deny" from a permission_prompt response.
+func behavior(out []byte) string {
+	var res struct {
+		Result struct {
+			Content []struct{ Text string } `json:"content"`
+		} `json:"result"`
+	}
+	_ = json.Unmarshal(out, &res)
+	for _, c := range res.Result.Content {
+		var answer struct{ Behavior string }
+		if json.Unmarshal([]byte(c.Text), &answer) == nil && answer.Behavior != "" {
+			return answer.Behavior
+		}
+	}
+	return "unknown: " + string(out)
 }

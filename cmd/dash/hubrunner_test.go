@@ -29,75 +29,9 @@ func TestHubWithoutClaudeRunsItsWorkOnARunner(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and runs dash")
 	}
-	gitBin, err := exec.LookPath("git")
-	if err != nil {
-		t.Skip("needs git")
-	}
-	backend := filepath.Join(strings.TrimSpace(run(t, "", nil, gitBin, "--exec-path")), "git-http-backend")
-	if _, err := os.Stat(backend); err != nil {
-		t.Skip("needs git-http-backend")
-	}
-	dir := t.TempDir()
-	dash := filepath.Join(dir, "dash")
-	run(t, "", nil, "go", "build", "-o", dash, ".")
-	fake := filepath.Join(dir, "fakebin", "claude")
-	run(t, "", nil, "go", "build", "-o", fake, "./testdata/fakeclaude")
-	calls := filepath.Join(dir, "claude-calls")
-
-	// The project's origin, served over HTTPS (runners clone only network
-	// remotes); both computers skip the test certificate's check.
-	repos := filepath.Join(dir, "repos")
-	gitEnv := []string{"GIT_SSL_NO_VERIFY=1", "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
-		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com", "GIT_CONFIG_GLOBAL=" + filepath.Join(dir, "gitconfig")}
-	seed := filepath.Join(dir, "seed")
-	run(t, "", gitEnv, gitBin, "init", "-q", "-b", "main", seed)
-	if err := os.WriteFile(filepath.Join(seed, "README.md"), []byte("# app\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	run(t, seed, gitEnv, gitBin, "add", ".")
-	run(t, seed, gitEnv, gitBin, "commit", "-q", "-m", "first")
-	run(t, "", gitEnv, gitBin, "clone", "-q", "--bare", seed, filepath.Join(repos, "app.git"))
-	run(t, filepath.Join(repos, "app.git"), gitEnv, gitBin, "config", "http.receivepack", "true")
-	origin := httptest.NewTLSServer(&cgi.Handler{Path: backend, Env: []string{"GIT_PROJECT_ROOT=" + repos, "GIT_HTTP_EXPORT_ALL=1"}})
-	defer origin.Close()
-	remote := origin.URL + "/app.git"
-
-	// The hub: default flags, no claude on its PATH.
-	hubPath := pathWithout(t, "claude")
-	addr := freeAddr(t)
-	hubLogs := startDash(t, dash, append(gitEnv, "PATH="+hubPath, "DASH_USERNAME=admin", "DASH_PASSWORD=a-long-enough-password"),
-		"-addr", addr, "-data", filepath.Join(dir, "hub"), "-projects", filepath.Join(dir, "hub-projects"), "-env", filepath.Join(dir, "none.env"))
-	base := "http://" + addr
-	api := newClient(t, base)
-	waitFor(t, hubLogs, "the hub to start", func() bool { code, _ := api.try("GET", "/api/version", nil); return code != 0 })
-	api.must("POST", "/api/login", map[string]string{"username": "admin", "password": "a-long-enough-password"}, http.StatusOK, nil)
-
-	// A runner, registered with a code, with the fake claude.
-	var code struct{ Code string }
-	api.must("POST", "/api/runners/codes", map[string]any{}, http.StatusOK, &code)
-	runnerEnv := append(gitEnv, "FAKECLAUDE_LOG="+calls, "PATH="+filepath.Dir(fake)+string(os.PathListSeparator)+hubPath)
-	runnerArgs := []string{"runner", "-data", filepath.Join(dir, "runner"), "-projects", filepath.Join(dir, "runner-projects"),
-		"-name", "laptop", "-env", filepath.Join(dir, "none.env")}
-	runner := startDash(t, dash, runnerEnv, append(runnerArgs, "--server", base, "--code", code.Code)...)
-	var runnerID string
-	waitFor(t, runner, "the runner to come online", func() bool {
-		var rs struct {
-			Runners []struct {
-				ID, Name string
-				Online   bool
-			}
-		}
-		api.must("GET", "/api/runners", nil, http.StatusOK, &rs)
-		for _, r := range rs.Runners {
-			if r.Name == "laptop" && r.Online {
-				runnerID = r.ID
-			}
-		}
-		return runnerID != ""
-	})
-	// A project shared with it: the hub keeps none on its own disk.
-	var p struct{ ID, RemoteURL string }
-	api.must("POST", "/api/projects", map[string]any{"name": "app", "remote_url": remote, "runners": []string{runnerID}}, http.StatusCreated, &p)
+	h := startRunnerHub(t)
+	dash, addr, api, hubLogs, runner, p := h.dash, h.addr, h.api, h.hub, h.runner, h.project
+	calls, runnerID, runnerEnv, runnerArgs := h.calls, h.runnerID, h.runnerEnv, h.runnerArgs
 
 	// A task without a title: titled on the runner, run there, and its
 	// report_issue lands on the hub's board.
@@ -191,6 +125,98 @@ func TestHubWithoutClaudeRunsItsWorkOnARunner(t *testing.T) {
 }
 
 // ---- helpers ----
+
+// runnerHub is a hub with no claude, a runner registered to it whose claude
+// is testdata/fakeclaude, and a project shared with the runner whose origin
+// is a bare repository served over HTTPS.
+type runnerHub struct {
+	dash, base, addr   string
+	api                *client
+	hub, runner        *proc
+	runnerID           string
+	runnerEnv          []string
+	runnerArgs         []string
+	calls              string // what fakeclaude ran, one line per call
+	gitEnv             []string
+	origin             string // the bare repository's path
+	project            struct{ ID, RemoteURL string }
+	username, password string
+}
+
+func startRunnerHub(t *testing.T) *runnerHub {
+	t.Helper()
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("needs git")
+	}
+	backend := filepath.Join(strings.TrimSpace(run(t, "", nil, gitBin, "--exec-path")), "git-http-backend")
+	if _, err := os.Stat(backend); err != nil {
+		t.Skip("needs git-http-backend")
+	}
+	dir := t.TempDir()
+	dash := filepath.Join(dir, "dash")
+	run(t, "", nil, "go", "build", "-o", dash, ".")
+	fake := filepath.Join(dir, "fakebin", "claude")
+	run(t, "", nil, "go", "build", "-o", fake, "./testdata/fakeclaude")
+	calls := filepath.Join(dir, "claude-calls")
+
+	// The project's origin, served over HTTPS (runners clone only network
+	// remotes); both computers skip the test certificate's check.
+	repos := filepath.Join(dir, "repos")
+	gitEnv := []string{"GIT_SSL_NO_VERIFY=1", "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com", "GIT_CONFIG_GLOBAL=" + filepath.Join(dir, "gitconfig")}
+	seed := filepath.Join(dir, "seed")
+	run(t, "", gitEnv, gitBin, "init", "-q", "-b", "main", seed)
+	if err := os.WriteFile(filepath.Join(seed, "README.md"), []byte("# app\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, seed, gitEnv, gitBin, "add", ".")
+	run(t, seed, gitEnv, gitBin, "commit", "-q", "-m", "first")
+	bare := filepath.Join(repos, "app.git")
+	run(t, "", gitEnv, gitBin, "clone", "-q", "--bare", seed, bare)
+	run(t, bare, gitEnv, gitBin, "config", "http.receivepack", "true")
+	origin := httptest.NewTLSServer(&cgi.Handler{Path: backend, Env: []string{"GIT_PROJECT_ROOT=" + repos, "GIT_HTTP_EXPORT_ALL=1"}})
+	t.Cleanup(origin.Close)
+	remote := origin.URL + "/app.git"
+
+	// The hub: default flags, no claude on its PATH.
+	h := &runnerHub{dash: dash, calls: calls, gitEnv: gitEnv, origin: bare, username: "admin", password: "a-long-enough-password"}
+	hubPath := pathWithout(t, "claude")
+	h.addr = freeAddr(t)
+	h.hub = startDash(t, dash, append(gitEnv, "PATH="+hubPath, "DASH_USERNAME="+h.username, "DASH_PASSWORD="+h.password),
+		"-addr", h.addr, "-data", filepath.Join(dir, "hub"), "-projects", filepath.Join(dir, "hub-projects"), "-env", filepath.Join(dir, "none.env"))
+	h.base = "http://" + h.addr
+	api := newClient(t, h.base)
+	h.api = api
+	waitFor(t, h.hub, "the hub to start", func() bool { code, _ := api.try("GET", "/api/version", nil); return code != 0 })
+	api.must("POST", "/api/login", map[string]string{"username": h.username, "password": h.password}, http.StatusOK, nil)
+
+	// A runner, registered with a code, with the fake claude.
+	var code struct{ Code string }
+	api.must("POST", "/api/runners/codes", map[string]any{}, http.StatusOK, &code)
+	h.runnerEnv = append(gitEnv, "FAKECLAUDE_LOG="+calls, "PATH="+filepath.Dir(fake)+string(os.PathListSeparator)+hubPath)
+	h.runnerArgs = []string{"runner", "-data", filepath.Join(dir, "runner"), "-projects", filepath.Join(dir, "runner-projects"),
+		"-name", "laptop", "-env", filepath.Join(dir, "none.env")}
+	h.runner = startDash(t, dash, h.runnerEnv, append(h.runnerArgs, "--server", h.base, "--code", code.Code)...)
+	waitFor(t, h.runner, "the runner to come online", func() bool {
+		var rs struct {
+			Runners []struct {
+				ID, Name string
+				Online   bool
+			}
+		}
+		api.must("GET", "/api/runners", nil, http.StatusOK, &rs)
+		for _, r := range rs.Runners {
+			if r.Name == "laptop" && r.Online {
+				h.runnerID = r.ID
+			}
+		}
+		return h.runnerID != ""
+	})
+	// A project shared with it: the hub keeps none on its own disk.
+	api.must("POST", "/api/projects", map[string]any{"name": "app", "remote_url": remote, "runners": []string{h.runnerID}}, http.StatusCreated, &h.project)
+	return h
+}
 
 func run(t *testing.T, dir string, env []string, name string, args ...string) string {
 	t.Helper()

@@ -1,0 +1,325 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/chromedp/chromedp"
+)
+
+// The web client's main flows, clicked through in headless Chrome against
+// a real hub whose work runs on a real runner with testdata/fakeclaude for
+// Claude Code: sign in, create a task and watch it run, comment on its diff
+// and send it back for rework, approve it and see it merged into origin,
+// drag a draft into the queue, and allow a command a task asks permission
+// for.
+//
+// It needs Chrome or Chromium: $DASH_TEST_CHROME, or one chromedp finds on
+// $PATH. Without one it is skipped, unless $DASH_TEST_BROWSER=require (as
+// in CI), when it fails instead.
+func TestBrowserMainFlows(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and runs dash and Chrome")
+	}
+	chrome := findChrome()
+	if chrome == "" {
+		if os.Getenv("DASH_TEST_BROWSER") == "require" {
+			t.Fatal("no Chrome or Chromium found: set DASH_TEST_CHROME")
+		}
+		t.Skip("needs Chrome or Chromium (set DASH_TEST_CHROME)")
+	}
+	h := startRunnerHub(t)
+	api, pid := h.api, h.project.ID
+	b := newBrowser(t, chrome)
+
+	// Sign in.
+	b.do("open the hub", chromedp.Navigate(h.base+"/"))
+	b.do("sign in",
+		chromedp.WaitVisible(chromedp.CSS(`#login input[name=username]`)),
+		chromedp.SendKeys(chromedp.CSS(`#login input[name=username]`), h.username),
+		chromedp.SendKeys(chromedp.CSS(`#login input[name=password]`), h.password),
+		chromedp.Click(chromedp.CSS(`#login button.btn.primary`)),
+	)
+	b.waitJS("the board with the project", `document.querySelector("#project-name")?.textContent === "app" && !!document.querySelector('#board .col[data-lane="review"]')`)
+
+	// Create a task from the quick sheet, queued right away.
+	b.do("open the new task sheet", chromedp.Click(chromedp.ID("new-todo")))
+	b.do("wait for the sheet", chromedp.WaitVisible(chromedp.CSS(`#quick-sheet[open] #quick-rows .quick-row`)))
+	b.waitJS("the task's row focused", `document.activeElement?.matches("#quick-rows .quick-row")`)
+	b.do("write the task", chromedp.SendKeys(chromedp.CSS(`#quick-rows .quick-row`), "Add a done file"))
+	b.waitJS("the task written", `document.querySelector("#quick-rows .quick-row").value === "Add a done file"`)
+	b.do("tick Queue right away", chromedp.Click(chromedp.CSS(`label.toggle:has(#quick-queue) span`))) // a new profile: unticked
+	b.waitJS("Queue right away ticked", `document.querySelector("#quick-queue").checked`)
+	b.waitJS("the Queue task button", `document.querySelector("#quick-submit-label").textContent === "Queue task"`)
+	b.do("submit the task", chromedp.Click(chromedp.CSS(`#quick-form button[value=add]`)))
+	b.waitJS("the sheet to close", `!document.querySelector("#quick-sheet").open`)
+	first := waitTodo(t, api, pid, "Add a done file")
+
+	// See it run: it lands in Review, and its timeline shows the agent's work.
+	b.waitCard(first, "review")
+	b.openTask(first)
+	b.waitJS("the agent's output in the timeline", `document.querySelector("#d-chat-log")?.textContent.includes("Working on: Add a done file")`)
+
+	// Review: comment on a line of the diff, and send the comment for rework.
+	b.do("show the changes", chromedp.Click(chromedp.CSS(`.pane-tabs button[data-pane=diff]`)))
+	b.waitJS("the diff", `document.querySelector("#d-diff")?.textContent.includes("done-by-runner.txt")`)
+	b.clickText(`#d-diff details.diff-file > summary`, "done-by-runner.txt")
+	b.do("comment on a line",
+		chromedp.Click(chromedp.CSS(`#d-diff .diff-lines > div[data-ln][data-file="done-by-runner.txt"]`)),
+		chromedp.WaitVisible(chromedp.CSS(`#d-diff .comment-box textarea`)),
+		chromedp.SendKeys(chromedp.CSS(`#d-diff .comment-box textarea`), "Say it louder"),
+		chromedp.Click(chromedp.CSS(`#d-diff .comment-box button.primary`)),
+	)
+	b.clickText("#d-actions button", "Send 1 comment")
+	b.do("add a note",
+		chromedp.WaitVisible(chromedp.ID("ask-input")),
+		chromedp.SendKeys(chromedp.ID("ask-input"), "And add a rework file"),
+	)
+	b.waitJS("the note written", `document.querySelector("#ask-input").value === "And add a rework file"`)
+	b.until("send it back", `!document.querySelector("#ask-sheet").open`, chromedp.Click(chromedp.ID("ask-ok")))
+	waitStatus(t, api, "/api/todos/"+first, "review", func(td todo) bool { return td.Status == "review" && td.Runs > 1 })
+	if _, diff := api.try("GET", "/api/todos/"+first+"/diff", nil); !strings.Contains(diff, "rework-by-runner.txt") ||
+		!strings.Contains(diff, "Say it louder") || !strings.Contains(diff, "And add a rework file") {
+		t.Fatalf("the rework didn't get the comment and the note:\n%s", diff)
+	}
+	b.waitJS("the reworked diff", `document.querySelector("#d-diff")?.textContent.includes("rework-by-runner.txt")`)
+
+	// Approve and merge: the change reaches origin's main.
+	b.clickText("#d-actions button", "Approve")
+	waitStatus(t, api, "/api/todos/"+first, "merged", nil)
+	b.waitCard(first, "done")
+	files := run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "ls-tree", "--name-only", "main")
+	if !strings.Contains(files, "done-by-runner.txt") || !strings.Contains(files, "rework-by-runner.txt") {
+		t.Fatalf("origin's main after the merge: %s", files)
+	}
+	b.do("close the task", chromedp.Click(chromedp.ID("d-close")))
+
+	// Drag and drop: a draft dragged to Queued runs.
+	var second struct{ ID string }
+	api.must("POST", "/api/projects/"+pid+"/todos", map[string]any{"title": "Dragged", "prompt": "Run when dragged"},
+		http.StatusCreated, &second)
+	b.waitCard(second.ID, "draft")
+	b.drag(second.ID, "draft", "queued")
+	waitStatus(t, api, "/api/todos/"+second.ID, "review", nil)
+	b.waitCard(second.ID, "review")
+
+	// Permission approval: a task asks to run a command; allow it on the
+	// board. In a project of the runner's own (the platform admin sees the
+	// runner's projects, through the hub): the hub's projects can't show
+	// their runners' permission requests yet.
+	const peer = "/peer/laptop"
+	var local struct{ ID string }
+	api.must("POST", peer+"/api/projects", map[string]any{"name": "local"}, http.StatusCreated, &local)
+	b.clickText(`#side-project-list .side-project`, "local")
+	b.waitJS("the runner's project", `document.querySelector("#project-name")?.textContent === "local"`)
+	var third struct{ ID string }
+	api.must("POST", peer+"/api/projects/"+local.ID+"/todos", map[string]any{"title": "Needs a command", "prompt": "ask permission to run a command", "enqueue": true},
+		http.StatusCreated, &third)
+	b.waitJS("the permission request", `[...document.querySelectorAll("#perm-banner .perm")].some((p) => p.textContent.includes("echo fake-permission-check"))`)
+	b.do("allow the command", chromedp.Click(chromedp.CSS(`#perm-banner .perm button.allow`)))
+	waitStatus(t, api, peer+"/api/todos/"+third.ID, "review", nil)
+	b.waitCard(third.ID, "review")
+	b.waitJS("the permission request to go", `!document.querySelector("#perm-banner .perm")`)
+	if _, diff := api.try("GET", peer+"/api/todos/"+third.ID+"/diff", nil); !strings.Contains(diff, "permission.txt") || !strings.Contains(diff, "+allow") {
+		t.Fatalf("the run wasn't allowed its command:\n%s", diff)
+	}
+}
+
+// findChrome is $DASH_TEST_CHROME, or a Chrome or Chromium on $PATH.
+func findChrome() string {
+	if p := os.Getenv("DASH_TEST_CHROME"); p != "" {
+		return p
+	}
+	for _, name := range []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome", "headless_shell", "headless-shell"} {
+		if p, err := exec.LookPath(name); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// browser is a headless Chrome tab that fails its test on the first step
+// that doesn't work, with a screenshot and the page's text in the log.
+type browser struct {
+	t   *testing.T
+	ctx context.Context
+	dir string
+}
+
+func newBrowser(t *testing.T, chrome string) *browser {
+	t.Helper()
+	dir := t.TempDir()
+	ctx, cancel := chromedp.NewContext(context.Background(), chromedp.WithAllocatorOptions(
+		chromedp.ExecPath(chrome),
+		chromedp.UserDataDir(filepath.Join(dir, "profile")),
+		// Wide enough for the desktop board, every lane side by side.
+		chromedp.WindowSize(1600, 1000),
+		chromedp.Flag("no-sandbox", true), // CI containers
+	))
+	t.Cleanup(cancel)
+	b := &browser{t: t, ctx: ctx, dir: dir}
+	// The first Run starts the browser for the life of ctx (no timeout here).
+	if err := chromedp.Do(ctx, chromedp.Navigate("about:blank")); err != nil {
+		t.Fatalf("start %s: %v", chrome, err)
+	}
+	return b
+}
+
+func (b *browser) do(what string, steps ...chromedp.Action[chromedp.Void]) {
+	b.t.Helper()
+	ctx, cancel := context.WithTimeout(b.ctx, 30*time.Second)
+	defer cancel()
+	if err := chromedp.Do(ctx, steps...); err != nil {
+		b.fail(what, err)
+	}
+}
+
+// try runs a step that a re-render may defeat (its node replaced between
+// the query and the input), for a caller that checks the outcome and tries
+// again.
+func (b *browser) try(step chromedp.Action[chromedp.Void]) {
+	ctx, cancel := context.WithTimeout(b.ctx, 10*time.Second)
+	defer cancel()
+	if err := chromedp.Do(ctx, step); err != nil {
+		b.t.Logf("retrying after: %v", err)
+	}
+}
+
+// until runs step until a JavaScript expression is true: for a click a
+// re-render may swallow, where a second one does no harm.
+func (b *browser) until(what, expr string, step chromedp.Action[chromedp.Void]) {
+	b.t.Helper()
+	for range 20 {
+		b.try(step)
+		for range 20 {
+			if ok, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`!!(`+expr+`)`)); err == nil && ok {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	b.fail(what, fmt.Errorf("%s stayed false", expr))
+}
+
+// waitJS waits for a JavaScript expression to be true, across page loads.
+func (b *browser) waitJS(what, expr string) {
+	b.t.Helper()
+	var last error
+	for deadline := time.Now().Add(60 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		ctx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
+		ok, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`!!(`+expr+`)`))
+		cancel()
+		if err == nil && ok {
+			return
+		}
+		last = err
+	}
+	if last == nil {
+		last = fmt.Errorf("timed out")
+	}
+	b.fail("wait for "+what, last)
+}
+
+// waitCard waits for a task's card in a lane of the board.
+func (b *browser) waitCard(id, lane string) {
+	b.t.Helper()
+	b.waitJS(fmt.Sprintf("task %s in %s", id, lane), fmt.Sprintf(`!!document.querySelector('#board .col[data-lane=%q] .todo[data-id=%q]')`, lane, id))
+}
+
+// openTask clicks a task's card until its detail opens: a click while the
+// board is still settling after the sheet closed can miss.
+func (b *browser) openTask(id string) {
+	b.t.Helper()
+	open := fmt.Sprintf(`!document.querySelector("#detail").hidden && document.querySelector("#board .todo.selected")?.dataset.id === %q`, id)
+	b.until("open task "+id, open, chromedp.Click(chromedp.CSS(cardSel(id)+" .todo-title")))
+}
+
+// drag drags a task's card from one lane to another until it leaves the
+// first: like a click, a drag while the board re-renders can miss.
+func (b *browser) drag(id, from, to string) {
+	b.t.Helper()
+	left := fmt.Sprintf(`!document.querySelector('#board .col[data-lane=%q] .todo[data-id=%q]')`, from, id)
+	b.until("drag task "+id+" to "+to, left, chromedp.DragAndDrop(chromedp.CSS(cardSel(id)+" .todo-title"),
+		chromedp.CSS(fmt.Sprintf(`#board .col[data-lane=%q] .col-head`, to))))
+}
+
+// clickText clicks the first element matching sel whose text has text.
+func (b *browser) clickText(sel, text string) {
+	b.t.Helper()
+	mark := fmt.Sprintf(`(() => {
+		document.querySelectorAll("[data-e2e-click]").forEach((e) => e.removeAttribute("data-e2e-click"));
+		const el = [...document.querySelectorAll(%q)].find((e) => e.textContent.includes(%q) && !e.disabled);
+		if (el) el.setAttribute("data-e2e-click", "");
+		return !!el;
+	})()`, sel, text)
+	b.waitJS(fmt.Sprintf("%q in %s", text, sel), mark)
+	b.do("click "+text, chromedp.Click(chromedp.CSS(`[data-e2e-click]`)))
+}
+
+func (b *browser) fail(what string, err error) {
+	b.t.Helper()
+	ctx, cancel := context.WithTimeout(b.ctx, 10*time.Second)
+	defer cancel()
+	if png, err := chromedp.Run(ctx, chromedp.FullScreenshot(90)); err == nil {
+		shot := filepath.Join(os.TempDir(), "dash-browser-test.png")
+		if os.WriteFile(shot, png, 0o644) == nil {
+			b.t.Logf("screenshot: %s", shot)
+		}
+	}
+	if text, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.body?.innerText ?? ""`)); err == nil {
+		b.t.Logf("the page's text:\n%s", text)
+	}
+	b.t.Fatalf("%s: %v", what, err)
+}
+
+func cardSel(id string) string { return fmt.Sprintf(`#board .todo[data-id=%q]`, id) }
+
+type todo struct {
+	ID, Title, Prompt, Status, Error string
+	Runs                             int
+}
+
+// waitTodo waits for the project's task with this prompt and returns its id.
+func waitTodo(t *testing.T, api *client, pid, prompt string) string {
+	t.Helper()
+	var id string
+	waitFor(t, nil, "the task "+prompt, func() bool {
+		var todos []todo
+		api.must("GET", "/api/projects/"+pid+"/todos", nil, http.StatusOK, &todos)
+		for _, td := range todos {
+			if strings.TrimSpace(td.Prompt) == prompt {
+				id = td.ID
+			}
+		}
+		return id != ""
+	})
+	return id
+}
+
+// waitStatus waits for the task at path (/api/todos/<id>, maybe under a
+// /peer/ prefix) to reach a status (and ok, if given), failing at once if
+// it fails.
+func waitStatus(t *testing.T, api *client, path, status string, ok func(todo) bool) {
+	t.Helper()
+	var td todo
+	for deadline := time.Now().Add(60 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+		td = todo{}
+		api.must("GET", path, nil, http.StatusOK, &td)
+		if td.Status == status && (ok == nil || ok(td)) {
+			return
+		}
+		if td.Status == "failed" && status != "failed" || time.Now().After(deadline) {
+			_, log := api.try("GET", path+"/log", nil)
+			raw, _ := json.Marshal(td)
+			t.Fatalf("%s isn't %s: %s\n%s", path, status, raw, log)
+		}
+	}
+}

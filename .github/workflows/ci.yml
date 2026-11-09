@@ -54,7 +54,11 @@ jobs:
       - name: Build
         run: go build ./...
 
+      # Includes the browser tests (cmd/dash/browser_test.go) in the
+      # runner's Google Chrome; required here, so they can't skip.
       - name: Test
+        env:
+          DASH_TEST_BROWSER: require
         run: go test -race ./...
 
   web:

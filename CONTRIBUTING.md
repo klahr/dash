@@ -59,6 +59,15 @@ GitHub. Tests that run git create throwaway repositories in `t.TempDir()`; see
 (such as commit signing) out of the way. For UI changes, also try them in the browser, and on a
 narrow phone-sized window.
 
+[`cmd/dash/browser_test.go`](cmd/dash/browser_test.go) clicks through the web client's main
+flows (sign in, new task, review, rework with comments, approve and merge, drag and drop,
+permission approval) in headless Chrome, against a real hub and runner with
+[`testdata/fakeclaude`](cmd/dash/testdata/fakeclaude/main.go) for Claude Code. It uses the
+Chrome or Chromium on your `PATH`, or `DASH_TEST_CHROME=/path/to/chrome`, and is skipped
+without one (CI sets `DASH_TEST_BROWSER=require` so it can't be skipped there). Run it alone
+with `go test -run TestBrowserMainFlows -v ./cmd/dash`; when a step fails it logs the page's
+text and saves a screenshot.
+
 ## Code style
 
 - **Go:** `gofmt`, and `go vet` clean. Standard library first; add a dependency only when it

@@ -15,7 +15,7 @@ Most important first within each section.
 ## Quality
 
 - [ ] Split `web/static/app.js` (~2,000 lines) into modules.
-- [ ] Browser tests for the main flows: new todo, review, rework with comments, approve,
+- [x] Browser tests for the main flows: new todo, review, rework with comments, approve,
       drag and drop, permission approval.
 - [ ] More TUI tests (10% coverage) and API handler tests (69%; authorization is covered table-driven in internal/api/orgs_test.go and authz_test.go — add new endpoints to recordEndpoints or orgEndpoints there).
 - [x] Back up `dash.db` (`dash backup`, `-backup-dir`), and cap or rotate todo logs (`-log-max-mb`).
