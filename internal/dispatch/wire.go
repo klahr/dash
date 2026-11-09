@@ -56,6 +56,14 @@ type Link struct {
 	// (model.Project.TaskInstructions). The link is sent before every task,
 	// so the runner's copy follows the hub's.
 	TaskInstructions string `json:"task_instructions,omitempty"`
+	// AutoApprove is the hub project's model.Project.AutoApprove: finished
+	// tasks whose tests pass skip review and go straight to merging. It is
+	// nil from hubs that predate it; the runner then keeps its own setting.
+	AutoApprove *bool `json:"auto_approve,omitempty"`
+	// MaxAutoFixes is the hub project's model.Project.MaxAutoFixes: how many
+	// times failing tests or merge conflicts go back to Claude on their own.
+	// Nil (older hubs) keeps the runner's setting.
+	MaxAutoFixes *int `json:"max_auto_fixes,omitempty"`
 	// The hub project's shell commands (setup, test, run, deploy). A
 	// runner takes them only when it was started with -hub-commands;
 	// otherwise its clone keeps the commands set on the runner.

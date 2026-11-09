@@ -55,3 +55,30 @@ func TestScanPicksALinkedRunnerOrWaits(t *testing.T) {
 		t.Errorf("calls to laptop %q, want the link", got)
 	}
 }
+
+// The link carries the hub project's review settings, so a change to
+// "Approve tasks automatically" reaches the runner with the next task.
+func TestLinkCarriesReviewSettings(t *testing.T) {
+	fx := newFixture(t)
+	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
+	p := fx.project(t, fx.orgA, "laptop")
+	p.AutoApprove, p.MaxAutoFixes = true, 5
+	if _, err := fx.d.Link(context.Background(), "laptop", p); err != nil {
+		t.Fatal(err)
+	}
+	if len(fx.fleet.links) != 1 {
+		t.Fatalf("links sent %d", len(fx.fleet.links))
+	}
+	l := fx.fleet.links[0]
+	if l.AutoApprove == nil || !*l.AutoApprove || l.MaxAutoFixes == nil || *l.MaxAutoFixes != 5 {
+		t.Errorf("link %+v, want auto approve and 5 automatic fixes", l)
+	}
+	// Turned off, it is sent as false, not left out.
+	p.AutoApprove = false
+	if _, err := fx.d.Link(context.Background(), "laptop", p); err != nil {
+		t.Fatal(err)
+	}
+	if l := fx.fleet.links[1]; l.AutoApprove == nil || *l.AutoApprove {
+		t.Errorf("link after turning it off %+v", l)
+	}
+}

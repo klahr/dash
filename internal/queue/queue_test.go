@@ -618,3 +618,20 @@ func TestEditorEditCreatesNewFile(t *testing.T) {
 		t.Fatalf("error = %q", failed.Error)
 	}
 }
+
+// A runner's copy of a hub project approves automatically when the hub's
+// link said so: a finished task whose tests pass goes to the merge queue,
+// not to review.
+func TestHubLinkedProjectAutoApproves(t *testing.T) {
+	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
+		write(t, req.Dir, "a.txt", "pass\n")
+		return nil
+	}}
+	h := newHarness(t, exe, model.Project{Name: "p", HubProjectID: "hub-p1", AutoApprove: true,
+		MaxAutoFixes: model.DefaultMaxAutoFixes, TestCommand: "grep -qx pass a.txt"})
+	td := h.waitFor(h.add("good").ID, model.StatusMerged)
+	log, _ := h.engine.Log.Read(td.ID)
+	if !strings.Contains(string(log), "approved automatically") || strings.Contains(string(log), "ready for review") {
+		t.Errorf("want the task approved automatically, log:\n%s", log)
+	}
+}

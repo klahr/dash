@@ -154,6 +154,7 @@ func (d *Dispatcher) link(ctx context.Context, r tunnel.Runner, p model.Project)
 func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Linked, error) {
 	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID,
 		MergeMode: p.MergeMode, MergeModeSet: p.MergeModeSet, MergeGreenPRs: p.MergeGreenPRs, TaskInstructions: p.TaskInstructions,
+		AutoApprove: &p.AutoApprove, MaxAutoFixes: &p.MaxAutoFixes,
 		SetupCommand: p.SetupCommand, TestCommand: p.TestCommand, RunCommand: p.RunCommand, DeployCommand: p.DeployCommand}
 	var out Linked
 	err := d.Fleet.Call(ctx, id, http.MethodPut, "/api/hub/projects/"+url.PathEscape(p.ID), link, &out)

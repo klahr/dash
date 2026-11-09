@@ -134,16 +134,29 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 			x.SetupCommand, x.TestCommand, x.RunCommand, x.DeployCommand = req.SetupCommand, req.TestCommand, req.RunCommand, req.DeployCommand
 		}
 	}
+	// The hub's review settings; an older hub that doesn't send them leaves
+	// the runner's own.
+	review := func(x *model.Project) {
+		if req.AutoApprove != nil {
+			x.AutoApprove = *req.AutoApprove
+		}
+		if req.MaxAutoFixes != nil {
+			x.MaxAutoFixes = max(0, *req.MaxAutoFixes)
+		}
+	}
 	if p, ok := sv.hubProject(hpid); ok {
 		want := p
 		commands(&want)
+		review(&want)
 		if p.TaskInstructions != req.TaskInstructions || p.MergeMode != mode || p.MergesGreenPRs() != greenOn(req.MergeGreenPRs) ||
+			want.AutoApprove != p.AutoApprove || want.MaxAutoFixes != p.MaxAutoFixes ||
 			want.SetupCommand != p.SetupCommand || want.TestCommand != p.TestCommand || want.RunCommand != p.RunCommand || want.DeployCommand != p.DeployCommand {
 			// The hub's project decides how its tasks land.
 			var err error
 			if p, err = sv.data.UpdateProject(p.ID, func(x *model.Project) error {
 				x.TaskInstructions, x.MergeMode, x.MergeGreenPRs = req.TaskInstructions, mode, req.MergeGreenPRs
 				commands(x)
+				review(x)
 				return nil
 			}); err != nil {
 				writeErr(w, err)
@@ -202,6 +215,7 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		TaskInstructions: req.TaskInstructions,
 	}
 	commands(&np)
+	review(&np)
 	p, err := sv.data.CreateProject(np)
 	if err != nil {
 		writeErr(w, err)

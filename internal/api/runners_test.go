@@ -355,3 +355,39 @@ func TestRunnerOnlyTakesWorkForLinkedProjects(t *testing.T) {
 	}
 
 }
+
+// The runner's copy of a hub project follows the hub's review settings:
+// set when the project is created from the link, updated by every later
+// link, and kept when an older hub doesn't send them.
+func TestHubLinkCarriesReviewSettings(t *testing.T) {
+	s, h, remote := runnerSide(t, 7)
+	link := func(auto *bool, fixes *int) model.Project {
+		t.Helper()
+		b, _ := json.Marshal(dispatch.Link{Name: "Shared App", RemoteURL: remote, DefaultBranch: "main", OrgID: 7,
+			AutoApprove: auto, MaxAutoFixes: fixes})
+		w := send(h, "PUT", "/api/hub/projects/hub-p1", string(b))
+		var linked dispatch.Linked
+		if w.Code/100 != 2 || json.Unmarshal(w.Body.Bytes(), &linked) != nil {
+			t.Fatalf("link: %d %s", w.Code, w.Body)
+		}
+		p, err := raw(s).GetProject(linked.ProjectID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	on, off, five, one := true, false, 5, 1
+	if p := link(&on, &five); !p.AutoApprove || p.MaxAutoFixes != 5 {
+		t.Errorf("created from the link: auto approve %v, fixes %d", p.AutoApprove, p.MaxAutoFixes)
+	}
+	if p := link(&off, &one); p.AutoApprove || p.MaxAutoFixes != 1 {
+		t.Errorf("updated by the link: auto approve %v, fixes %d", p.AutoApprove, p.MaxAutoFixes)
+	}
+	if p := link(&on, &one); !p.AutoApprove {
+		t.Errorf("turned on again on the hub, the runner's copy still has it off")
+	}
+	// An older hub sends neither: the runner keeps what it has.
+	if p := link(nil, nil); !p.AutoApprove || p.MaxAutoFixes != 1 {
+		t.Errorf("link from an older hub: auto approve %v, fixes %d", p.AutoApprove, p.MaxAutoFixes)
+	}
+}
