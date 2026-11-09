@@ -10,7 +10,7 @@ import {
   markdown, languages, vim, getCM,
 } from "./vendor/codemirror.js";
 
-const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 // ---- rendering (chat answers). Everything is escaped first; links only keep
 // http(s) and mailto URLs, so model output can't inject markup or scripts.
@@ -27,8 +27,11 @@ function inlineHTML(s) {
   // terminal, say) would never be replaced and the loop below would spin forever.
   s = esc(s.replace(/\u0000/g, "�"))
     .replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_, __, c) => keep(`<code>${c.trim() || c}</code>`))
-    .replace(/!?\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;[^)]*&quot;)?\)/g, (m, text, url) => (SAFE_URL.test(url) ? a(url, text || url) : m))
-    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,:;!?'&])/g, (_, pre, url) => pre + a(url, url))
+    // URLs must never take in a \u0000N\u0000 placeholder: unstashing it would
+    // put a whole <a …> (or <code>) inside this link's href and break out of
+    // the attribute.
+    .replace(/!?\[([^\]]*)\]\(([^)\s\u0000]+)(?:\s+&quot;[^)]*&quot;)?\)/g, (m, text, url) => (SAFE_URL.test(url) ? a(url, text || url) : m))
+    .replace(/(^|[\s(])(https?:\/\/[^\s<)\u0000]+[^\s<).,:;!?'&\u0000])/g, (_, pre, url) => pre + a(url, url))
     .replace(/(\*\*|__)(?=\S)([\s\S]+?\S)\1/g, "<strong>$2</strong>")
     .replace(/(^|[^*\w])([*_])(?=\S)([^*_]*?\S)\2(?![*\w])/g, "$1<em>$3</em>")
     .replace(/~~(?=\S)([\s\S]+?\S)~~/g, "<del>$1</del>");
