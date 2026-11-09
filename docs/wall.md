@@ -19,6 +19,10 @@ It refreshes every 5 seconds.
 Signed in, open `https://<your dash>/wall`: it shows your active organization, across all
 of its projects.
 
+**Wall view** in the account menu configures it: pick a project and privacy mode, open the
+wall with them, and (org admins) make and revoke TV links, below. The options are kept in
+that browser; they become part of the link.
+
 Options (combine them with `&`):
 
 | Option | Effect |
@@ -31,7 +35,7 @@ Options (combine them with `&`):
 
 A TV shouldn't keep someone's session. An org admin makes a **wall token** instead: it
 opens `/wall` (and its data, `/api/wall`) for that organization and nothing else, not the
-API and not the dashboard.
+API and not the dashboard. Make one in **Wall view → Links for TVs**, or with the API:
 
 ```sh
 # make one (as an org admin, signed in; the secret is shown only now)

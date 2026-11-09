@@ -155,6 +155,7 @@
               <button id="prefs-open" type="button" data-icon="prefs">Preferences</button>
               <button id="connector-open" type="button" data-icon="plug">Connect Claude</button>
               <button id="tokens-open" type="button" data-icon="key">Tokens &amp; apps</button>
+              <button id="wall-open" type="button" data-icon="tv">Wall view</button>
               <button id="logout" type="button" data-icon="logout">Log out</button>
               <!--DASH_FOOTER-->
             </div>
@@ -885,6 +886,29 @@
       <div id="token-secret" hidden></div>
       <h3 class="org-section" id="tokens-runner-head">Runners you registered</h3>
       <ul class="runner-list" id="tokens-runner"></ul>
+    </form>
+  </dialog>
+
+  <!-- The wall view (/wall): its options, and the links org admins make for TVs -->
+  <dialog class="sheet" id="wall-sheet" aria-labelledby="wall-title">
+    <form method="dialog" id="wall-form">
+      <header class="sheet-head"><h2 id="wall-title" tabindex="-1" autofocus>Wall view</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <p class="hint">A read-only, full-screen dashboard of the organization's work for a TV in the office. It refreshes by itself every few seconds.</p>
+      <h3 class="org-section">Show</h3>
+      <label class="field"><span>Projects</span>
+        <select name="project" id="wall-project"><option value="">All projects</option></select>
+      </label>
+      <label class="toggle"><input type="checkbox" name="privacy"><span>Privacy: hide task titles, prompts, issue titles, activity and costs (for screens visitors walk past)</span></label>
+      <h3 class="org-section">Open it here</h3>
+      <div id="wall-link"></div>
+      <h3 class="org-section">Links for TVs</h3>
+      <p class="hint" id="wall-tokens-hint">A TV shouldn't keep anyone's session. A TV link opens the wall of this organization, with the options above, without signing in, and nothing else. Anyone with the link sees the wall: treat it like a password.</p>
+      <ul class="runner-list" id="wall-tokens"></ul>
+      <div class="org-invite token-new" id="wall-token-new">
+        <input type="text" id="wall-token-name" placeholder="Name, e.g. Office TV" autocomplete="off" maxlength="100" aria-label="TV link name">
+        <button class="btn primary" id="wall-token-create" type="button" data-icon="plus">Create link</button>
+      </div>
+      <div id="wall-token-secret" hidden></div>
     </form>
   </dialog>
 
