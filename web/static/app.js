@@ -7290,12 +7290,21 @@ function scanSummary(r) {
   return r.findings ? parts.join(", ") : "No issues found";
 }
 
-// showRunIssues opens Issues filtered to what a run added ("new") or brought back ("reopened").
-function showRunIssues(run, which) {
-  const ids = which === "reopened" ? run.reopened_issues || [] : run.new_issues || [];
-  iss.filter.run = { id: run.id, ids: new Set(ids), label: `${which === "reopened" ? "Reopened" : "New"} · ${scanLabel(run.scan)}, ${agoText(run.started_at)}` };
-  iss.filter.status = "all";
-  $("#issue-f-status").value = "all";
+// showRunIssues opens Issues filtered to what a run added ("new"), brought
+// back ("reopened") or both ("all"). With select, the ones that can still be
+// triaged are checked, ready for a bulk action.
+function showRunIssues(run, which, select = false) {
+  const ids = which === "reopened" ? run.reopened_issues || []
+    : which === "all" ? [...(run.new_issues || []), ...(run.reopened_issues || [])]
+    : run.new_issues || [];
+  const what = { reopened: "Reopened", all: "Found" }[which] || "New";
+  iss.filter.run = { id: run.id, ids: new Set(ids), label: `${what} · ${scanLabel(run.scan)}, ${agoText(run.started_at)}` };
+  iss.filter.status = select ? "active" : "all";
+  $("#issue-f-status").value = iss.filter.status;
+  if (select) {
+    iss.checked.clear();
+    for (const i of iss.list) if (iss.filter.run.ids.has(i.id) && triageable(i)) iss.checked.add(i.id);
+  }
   showView("issues");
   renderIssues();
 }
@@ -7582,6 +7591,8 @@ function scanReport(r, compact = false) {
       return n ? h("button", { type: "button", class: "scan-count link muted", title, onclick: () => showRunIssues(r, nw[k] ? "new" : "reopened") }, `${n} ${text}`) : null;
     };
     const urgent = iss.loaded && (r.new_issues?.length || r.reopened_issues?.length) ? nw.urgent + ro.urgent : r.urgent;
+    // What "Select all" would check: this run's issues that can still be triaged.
+    const selectable = iss.loaded && (r.new_issues?.length || r.reopened_issues?.length) ? nw.open + nw.task + ro.open + ro.task : 0;
     body = h("p", { class: "scan-counts" },
       link(nw.open, "new", "new") || h("span", { class: "scan-count" }, "0 new"),
       known ? h("span", { class: "scan-count" }, `${known} already known`) : null,
@@ -7591,7 +7602,8 @@ function scanReport(r, compact = false) {
       since("fixed", "fixed", "New or reopened issues from this run that have been fixed since"),
       since("dismissed", "dismissed since", "New or reopened issues from this run that were dismissed since"),
       nw.gone + ro.gone ? h("span", { class: "scan-count muted", title: "New or reopened issues from this run that were deleted since" }, `${nw.gone + ro.gone} deleted`) : null,
-      urgent ? h("span", { class: "sev sev-high scan-urgent", title: "New or reopened issues of critical or high severity that are still open" }, `${urgent} urgent`) : null);
+      urgent ? h("span", { class: "sev sev-high scan-urgent", title: "New or reopened issues of critical or high severity that are still open" }, `${urgent} urgent`) : null,
+      selectable ? ib({ type: "button", class: "btn small scan-select", title: "Open the new and reopened issues from this run that can still be triaged, all selected, to create tasks for them or dismiss them", onclick: () => showRunIssues(r, "all", true) }, "checks", `Select all ${selectable}`) : null);
   } else {
     body = h("p", { class: `scan-msg${r.status === "failed" ? " error" : ""}` }, r.status === "running" ? h("span", { class: "spinner", "aria-hidden": "true" }) : null, scanSummary(r));
   }

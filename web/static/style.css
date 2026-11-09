@@ -1852,6 +1852,7 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .scan-count.new { font-weight: 600; }
 .scan-count.muted { color: var(--muted); }
 .scan-urgent { width: auto; padding: 2px 8px; }
+.scan-select { margin-left: auto; }
 .scan-msg { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
 .scan-msg.error { color: var(--failed); white-space: pre-wrap; }
 .scan-note, .scan-never { margin: 6px 0 0; font-size: 13px; color: var(--faint); }
