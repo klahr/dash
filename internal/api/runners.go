@@ -38,6 +38,14 @@ func (s *Server) fleet() *tunnel.Hub {
 	return s.Peers.Runners
 }
 
+// hub reports whether this Server is the hub: the one runners connect to
+// (Peers.Runners). The hub runs nothing on its own computer (no git, gh,
+// Claude, shell commands or terminals, no working trees): its projects'
+// work is forwarded to the runners linked to them (see hubproxy.go), and
+// it never makes projects on its own disk. Every other Server is a
+// runner's, which does that work itself.
+func (s *Server) hub() bool { return s.fleet() != nil }
+
 // orgAdmin reports whether c is an admin (or owner) of their org.
 func (s *Server) orgAdmin(c Caller) bool {
 	if c.Machine {
@@ -149,6 +157,7 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 	// The repositories on the caller's own runner, to add as its projects (repos.go).
 	mux.HandleFunc("GET /api/runners/{id}/repos", s.runnerRepos)
 	mux.HandleFunc("POST /api/runners/{id}/repos", s.addRunnerRepos)
+	mux.HandleFunc("POST /api/runners/{id}/projects", s.createRunnerProject)
 	mux.HandleFunc("GET /api/runners/{id}/github-repos", s.runnerGitHubRepos)
 	mux.HandleFunc("POST /api/runners/{id}/github-repos", s.createRunnerGitHubRepo)
 	mux.HandleFunc("POST /runner/register", rh.ServeRegister)
@@ -269,13 +278,13 @@ func (sv *service) fetchFromRunner(ctx context.Context, t model.Todo, what strin
 	return d.Fetch(cctx, t, what)
 }
 
-// sendable refuses files for a task of a project linked to runners: they
-// are on the hub, out of the runners' reach.
+// sendable refuses files for a task on the hub: they would be on the hub,
+// out of the runners' reach.
 func (sv *service) sendable(projectID string, files bool) error {
 	if !files {
 		return nil
 	}
-	if p, err := sv.data.GetProject(projectID); err == nil && (p.OnRunners() || sv.s.RunnerOnly) {
+	if _, err := sv.data.GetProject(projectID); err == nil && sv.s.hub() {
 		return fmt.Errorf("%w: attachments and editor changes can't be sent to runners; describe them in the instructions instead", errBadRequest)
 	}
 	return nil

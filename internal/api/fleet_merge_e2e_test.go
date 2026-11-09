@@ -55,7 +55,7 @@ func TestHubTaskOnRunnerLandsOnOriginWithoutPR(t *testing.T) {
 	d := &dispatch.Dispatcher{Store: raw(hub), Fleet: rh, Grace: time.Minute}
 	rh.OnState, rh.OnRevoke, rh.OnReport = d.State, d.Revoked, d.Report
 	engine := queue.NewTodoEngine(&queue.TodoEngine{Store: raw(hub), Pub: hub.Hub, Log: &queue.TodoLog{Root: t.TempDir()},
-		Remote: d, LocalTasks: func() bool { return false }})
+		Remote: d})
 	d.Kick = engine.Kick
 	hub.Todos, hub.Dispatch = engine, d
 	ctx, cancel := context.WithCancel(context.Background())

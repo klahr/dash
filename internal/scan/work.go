@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/agent"
+	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
 )
@@ -18,9 +19,9 @@ import (
 // A scan run has two parts: the bookkeeping (the run, its log, the issues
 // it files), done where the board is, and the work on a checkout (working
 // out the commits, a throwaway worktree, Claude), done where Claude runs.
-// On a standalone Dash both happen in one process. A hub that doesn't run
-// Claude keeps the bookkeeping and sends the work, as a Job, to a runner
-// with a clone of the project (Remote), which streams back what Hooks get.
+// The hub, which runs no Claude, keeps the bookkeeping and sends the work,
+// as a Job, to a runner with a clone of the project (Remote), which streams
+// back what Hooks get. A runner's scans of its own projects do both.
 
 // Job is a scan run's work on a checkout.
 type Job struct {
@@ -139,8 +140,8 @@ func (j Job) Check() error {
 // checks the one to scan out in a throwaway worktree, and runs Claude
 // there. It doesn't touch the store's scan runs (the caller keeps those).
 func (r *Runner) Work(ctx context.Context, p model.Project, job Job, h Hooks) (Outcome, error) {
-	if !agent.LocalAllowed() {
-		return Outcome{}, agent.ErrNoLocalClaude
+	if err := localrun.Check("scan " + job.Template.Name); err != nil {
+		return Outcome{}, fmt.Errorf("%w: %w", agent.ErrNoLocalClaude, err)
 	}
 	t := job.Template
 	tg, err := r.resolve(ctx, p, job)

@@ -12,12 +12,12 @@ import (
 	"github.com/klahr/dash/internal/tunnel"
 )
 
-// The hub (RunnerOnly) refuses projects on its own disk, and answers the
+// The hub refuses projects on its own disk, and answers the
 // working-tree routes of a project no runner can serve with a clear error,
 // never by running git itself (its Git would fail the test: no repository).
 func TestHubForwardsOrRefusesWorkingTreeRoutes(t *testing.T) {
 	s, _, p := boardServer(t)
-	s.Git, s.RunnerOnly = gitops.New(nil), true
+	s.Git = gitops.New(nil)
 	rh := &tunnel.Hub{Accounts: s.Auth.Accounts()}
 	s.Peers = &peer.Hub{Self: "hub", Runners: rh}
 	call := func(method, path, body string) *httptest.ResponseRecorder {

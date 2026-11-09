@@ -157,7 +157,7 @@ func (s *Server) saveLocalFile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if s.RunnerOnly {
+	if s.hub() {
 		writeErr(w, fmt.Errorf("%w: files of a shared project can't be edited from the hub; describe the change in a task instead", errBadRequest))
 		return
 	}

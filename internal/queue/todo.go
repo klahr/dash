@@ -62,14 +62,12 @@ type TodoEngine struct {
 	Usage        *usage.Tracker // optional: pause when the subscription is near its limit
 	WorktreeRoot string         // <data>/worktrees
 	MaxParallel  int
-	// Remote sends the tasks of projects linked to runners to one of them
-	// (a hub's dispatch.Dispatcher; nil: such tasks wait). Those tasks
-	// don't count against MaxParallel or Usage: each runner has its own.
+	// Remote, on the hub (its dispatch.Dispatcher), sends every task to one
+	// of its project's runners: the hub runs none itself, and the tasks of
+	// a project no runner is linked to wait for one (NoRunnerLinked). Nil
+	// on a runner, which runs the tasks it is given here, at most
+	// MaxParallel at a time.
 	Remote Remote
-	// LocalTasks reports whether this Dash runs the tasks of projects
-	// without runners itself (nil: it does, as a runner does). A hub always
-	// says no: those tasks wait, saying a runner must be linked.
-	LocalTasks func() bool
 	// Hold reports why an org's queued tasks may not start now, or ""
 	// (nil: they may). Billing holds the tasks of an unpaid org, wherever
 	// they would run: here or on its runners.
@@ -100,8 +98,9 @@ type Remote interface {
 	Dispatch(ctx context.Context, p model.Project, t model.Todo) (runnerID, remoteID string, err error)
 }
 
-// NoLocalTasks is the Waiting reason of a task this Dash won't run itself.
-const NoLocalTasks = "no runner: the hub doesn't run tasks itself; link the project to a runner in its settings (start one with `dash runner` on a computer with git and Claude Code)"
+// NoRunnerLinked is the Waiting reason of a hub's task whose project no
+// runner is linked to.
+const NoRunnerLinked = "no runner: the hub doesn't run tasks itself; link the project to a runner in its settings (start one with `dash runner` on a computer with git and Claude Code)"
 
 // NewTodoEngine finishes initialising e; call Run in a goroutine afterwards.
 func NewTodoEngine(e *TodoEngine) *TodoEngine {
@@ -192,13 +191,14 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 					continue
 				}
 			}
-			if p.OnRunners() {
-				sent[q.ID] = true
-				e.sendToRunner(ctx, p, q)
-				continue
-			}
-			if e.LocalTasks != nil && !e.LocalTasks() {
-				e.wait(q, NoLocalTasks)
+			if e.Remote != nil {
+				// The hub: tasks go to runners, never run here.
+				if p.OnRunners() {
+					sent[q.ID] = true
+					e.sendToRunner(ctx, p, q)
+				} else {
+					e.wait(q, NoRunnerLinked)
+				}
 				continue
 			}
 			if !local {
@@ -209,18 +209,6 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 		}
 		if next == nil {
 			return
-		}
-		if next.OnRunner() {
-			// It ran on a runner of a project since unlinked: it starts over here.
-			_, err := e.Store.UpdateTodo(next.ID, func(x *model.Todo) error {
-				x.Runner, x.RemoteID, x.Resumable = "", "", false
-				x.Worktree, x.Checks, x.PR = nil, nil, nil
-				return nil
-			})
-			if err != nil {
-				slog.Error("dispatch", "todo", next.ID, "err", err)
-				return
-			}
 		}
 		t, err := e.Store.SetStatus(next.ID, model.StatusInProgress, "")
 		if err != nil {
@@ -266,10 +254,6 @@ func (e *TodoEngine) wait(t model.Todo, why string) {
 // sendToRunner hands t, a queued task of p, to one of p's runners, or
 // records why none can take it.
 func (e *TodoEngine) sendToRunner(ctx context.Context, p model.Project, t model.Todo) {
-	if e.Remote == nil {
-		e.wait(t, "no runner: this Dash doesn't send tasks to runners")
-		return
-	}
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	runnerID, remoteID, err := e.Remote.Dispatch(cctx, p, t)
 	cancel()

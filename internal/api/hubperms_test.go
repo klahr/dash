@@ -20,7 +20,6 @@ import (
 // hub's dashboard, and the hub user's answer reaches Claude on the runner.
 func TestHubAnswersPermissionRequestsOfTasksOnRunners(t *testing.T) {
 	hub, _, _ := boardServer(t)
-	hub.RunnerOnly = true
 	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}
 	hub.Peers = &peer.Hub{Self: "hub", Runners: rh}
 	d := &dispatch.Dispatcher{Store: raw(hub), Fleet: rh, Grace: time.Minute}

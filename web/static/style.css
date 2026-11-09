@@ -316,6 +316,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .segmented { display: inline-flex; padding: 3px; gap: 2px; border-radius: var(--r-m); background: var(--surface); border: 1px solid var(--line); margin-bottom: 12px; }
 .segmented button { min-height: 36px; padding: 0 14px; border-radius: 8px; color: var(--muted); font-weight: 600; }
 .segmented button[aria-selected="true"] { background: var(--raised); color: var(--text); }
+#new-project-hub-mode { flex-wrap: wrap; max-width: 100%; } /* four sources: wrap on phones */
 #d-diffstat { font-weight: 500; font-size: 13px; margin-left: 4px; }
 .plus { color: var(--merged); } .minus { color: var(--failed); }
 

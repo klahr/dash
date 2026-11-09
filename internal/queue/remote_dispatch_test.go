@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
@@ -104,17 +103,16 @@ func TestRunnerProjectTasksWaitWhileRunnersAreOffline(t *testing.T) {
 	}
 }
 
-// A hub that doesn't run tasks itself leaves tasks of unlinked projects
-// queued, saying so.
-func TestHubWithoutLocalTasks(t *testing.T) {
+// The hub runs no task itself: tasks of projects no runner is linked to
+// stay queued, saying so.
+func TestHubWaitsForARunner(t *testing.T) {
 	e, st, _, exe := remoteEngine(t)
-	e.LocalTasks = func() bool { return false }
 	local, _ := st.CreateProject(model.Project{Name: "local"})
 	td := queued(t, st, local)
 
 	e.dispatch(context.Background())
 	got, _ := st.GetTodo(td.ID)
-	if got.Status != model.StatusQueued || got.Waiting != NoLocalTasks || len(exe.Calls()) != 0 {
+	if got.Status != model.StatusQueued || got.Waiting != NoRunnerLinked || len(exe.Calls()) != 0 {
 		t.Errorf("local task on a runners-only hub: %s %q, %d runs", got.Status, got.Waiting, len(exe.Calls()))
 	}
 }
@@ -130,11 +128,11 @@ func TestPauseRefusesRunnerTasks(t *testing.T) {
 	}
 }
 
-// A task that ran on a runner of a project since unlinked starts over on
-// the hub, as the hub's own.
-func TestUnlinkedProjectTaskStartsOverHere(t *testing.T) {
-	e, st, _, exe := remoteEngine(t)
-	p, _ := st.CreateProject(model.Project{Name: "was-shared", Path: t.TempDir(), DefaultBranch: "main"})
+// A task that ran on a runner of a project since unlinked never starts
+// over on the hub: it waits for a runner to be linked again.
+func TestUnlinkedProjectTaskWaitsForARunner(t *testing.T) {
+	e, st, rem, exe := remoteEngine(t)
+	p, _ := st.CreateProject(model.Project{Name: "was-shared", RemoteURL: "https://x/y", DefaultBranch: "main"})
 	td := queued(t, st, p)
 	_, _ = st.UpdateTodo(td.ID, func(x *model.Todo) error {
 		x.Runner, x.RemoteID, x.Resumable, x.Worktree = "laptop", "r1", true, &model.Worktree{Branch: "dash/todo-r1"}
@@ -142,20 +140,9 @@ func TestUnlinkedProjectTaskStartsOverHere(t *testing.T) {
 	})
 	e.dispatch(context.Background())
 	got, _ := st.GetTodo(td.ID)
-	if got.Status == model.StatusQueued || got.OnRunner() || got.RemoteID != "" || got.Resumable {
-		t.Errorf("after dispatch: %+v", got)
+	if got.Status != model.StatusQueued || got.Waiting != NoRunnerLinked || len(exe.Calls()) != 0 || len(rem.sent) != 0 {
+		t.Errorf("after dispatch: %s %q, %d runs here", got.Status, got.Waiting, len(exe.Calls()))
 	}
-	// Its worker fails here (the folder isn't a repository); wait for it.
-	for deadline := time.Now().Add(10 * time.Second); ; {
-		e.mu.Lock()
-		n := len(e.running)
-		e.mu.Unlock()
-		if n == 0 || time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	_ = exe
 }
 
 // A held org's tasks (billing: no subscription) stay queued, here and for

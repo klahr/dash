@@ -66,7 +66,6 @@ func newClaudeFleet(t *testing.T) *claudeFleet {
 	f.hub = hub
 	f.rh = &tunnel.Hub{Accounts: hub.Auth.Accounts()}
 	hub.Peers = &peer.Hub{Self: "hub", Runners: f.rh}
-	hub.LocalClaude = func() bool { return false }
 	hub.Titler, hub.Refiner, hub.Chat = f.hubSmall, f.hubSmall, noChat{t}
 	srv := httptest.NewServer(hub.Routes())
 	t.Cleanup(srv.Close)

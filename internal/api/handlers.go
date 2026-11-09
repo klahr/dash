@@ -100,6 +100,9 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		// Existing adds a repository already cloned at Path: it must be one
 		// (and not a project yet), and the name defaults to its folder's.
 		Existing bool `json:"existing"`
+		// LocalOnly makes a new repository with no remote, in a new folder
+		// (no Path, GitHub or Existing): deleting the project deletes it.
+		LocalOnly bool `json:"local_only"`
 		// On the hub only, which keeps no projects on its own disk: a
 		// shared project is the remote (RemoteURL, or GitHub's OWNER/REPO)
 		// and the runners it is linked to, which clone it.
@@ -120,7 +123,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.PreviewKind, req.PreviewCommand = kind, strings.TrimSpace(req.PreviewCommand)
-	if s.RunnerOnly {
+	if s.hub() {
 		remote := strings.TrimSpace(req.RemoteURL)
 		if gh := strings.Trim(strings.TrimSpace(req.GitHub), "/"); remote == "" && strings.Count(gh, "/") == 1 {
 			remote = "https://github.com/" + strings.TrimSuffix(gh, ".git") + ".git"
@@ -179,6 +182,10 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		maxFixes = max(0, *req.MaxAutoFixes)
 	}
 	req.Path = strings.TrimSpace(req.Path)
+	if req.LocalOnly && (req.Path != "" || req.Existing || strings.TrimSpace(req.GitHub) != "") {
+		writeErr(w, fmt.Errorf("%w: a local-only project is a new repository in a new folder: no path, existing clone or GitHub", errBadRequest))
+		return
+	}
 	if req.Existing {
 		if req.Path == "" {
 			writeErr(w, fmt.Errorf("%w: the path of the existing clone is required", errBadRequest))
@@ -196,9 +203,17 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: name is required", errBadRequest))
 		return
 	}
+	newFolder := req.Path == ""
 	path, err := sv.projectPath(req.Name, req.Path)
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if newFolder && !emptyOrMissing(path) {
+		// A folder named after the project is made for it: never one that
+		// holds something else (another project's clone, say), which
+		// deleting this project with its folder would take along.
+		writeErr(w, fmt.Errorf("%w: %s already exists; pick another name, or add it as an existing clone", errBadRequest, path))
 		return
 	}
 	req.Path = path
@@ -265,7 +280,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		SetupCommand: req.SetupCommand, PreviewKind: req.PreviewKind, PreviewCommand: req.PreviewCommand,
 		CopyFiles: cleanList(req.CopyFiles), MaxAutoFixes: maxFixes,
 		MaxRunMinutes: max(0, req.MaxRunMinutes), MaxTurns: max(0, req.MaxTurns),
-		TagFormat: release.DefaultFormat,
+		TagFormat: release.DefaultFormat, LocalOnly: req.LocalOnly,
 	}
 	np.MergeMode = np.DefaultMergeMode(s.Git.HasGh())
 	if req.MergeMode != "" && req.MergeMode != np.MergeMode {
@@ -402,7 +417,7 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 		return cur, err
 	}
 	remote, gh := cur.RemoteURL, false
-	if !sv.s.RunnerOnly {
+	if !sv.s.hub() {
 		// Pick up an origin added since (the hub has no checkout to look in).
 		remote = sv.s.Git.RemoteURL(ctx, cur.ID, cur.Path)
 		if remote == "" && cur.OnRunners() {
@@ -526,7 +541,7 @@ func checkMergeMode(mode, remote string) error {
 // lookupGitHubRepo tells the new-project form whether a repository exists,
 // so it can offer to clone it instead of creating it.
 func (s *Server) lookupGitHubRepo(w http.ResponseWriter, r *http.Request) {
-	if s.RunnerOnly {
+	if s.hub() {
 		writeErr(w, fmt.Errorf("%w: the hub runs no gh; ask a runner (/peer/<runner>/api/github/repo)", errBadRequest))
 		return
 	}
@@ -561,7 +576,7 @@ func (s *Server) createGitHubRepo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if s.RunnerOnly {
+	if s.hub() {
 		writeErr(w, fmt.Errorf("%w: the hub doesn't create GitHub repositories (it runs no gh); create the repository on GitHub or from a runner's project, then share it", errBadRequest))
 		return
 	}
@@ -611,7 +626,9 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, queue.ErrProjectBusy)
 		return
 	}
-	if s.RunnerOnly && (req.DeleteFiles || req.DeleteGitHub) {
+	// A local-only project's folder is the project: it goes with it.
+	req.DeleteFiles = req.DeleteFiles || p.LocalOnly
+	if s.hub() && (req.DeleteFiles || req.DeleteGitHub) {
 		// The hub keeps no files of its projects, and runs no gh.
 		writeErr(w, fmt.Errorf("%w: the hub only forgets the project: its clones stay on the runners, and its GitHub repository on GitHub", errBadRequest))
 		return
@@ -633,7 +650,7 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if s.Procs != nil && !s.RunnerOnly {
+	if s.Procs != nil && !s.hub() {
 		for _, proc := range s.Procs.List(p.ID) {
 			_ = s.Procs.Stop(proc.ID)
 		}
@@ -889,8 +906,8 @@ func (s *Server) retestTodo(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
-	if s.RunnerOnly {
-		writeErr(w, fmt.Errorf("%w: this task hasn't run on a runner yet, so it has nothing to test", errBadRequest))
+	if s.hub() {
+		writeErr(w, fmt.Errorf("%w, so it has nothing to test", errNotRunYet))
 		return
 	}
 	if err := s.Todos.RunTests(r.PathValue("tid")); err != nil {
@@ -942,6 +959,8 @@ func (s *Server) openTodo(w http.ResponseWriter, r *http.Request) {
 	if t.OnRunner() {
 		// Its worktree is on its runner: the runner's editor opens it there.
 		err = sv.onRunner(r.Context(), t, func(ctx context.Context) error { return s.Dispatch.Open(ctx, t) })
+	} else if s.hub() {
+		err = fmt.Errorf("%w, so it has no worktree to open", errNotRunYet)
 	} else {
 		err = s.openWorktree(t)
 	}
@@ -1237,6 +1256,9 @@ func (s *Server) revertTodo(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(http.StatusAccepted)
 		return
+	case s.hub():
+		writeErr(w, fmt.Errorf("%w, so there is nothing to revert", errNotRunYet))
+		return
 	}
 	if err := s.Merges.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID, Revert: true}); err != nil {
 		writeErr(w, err)
@@ -1244,6 +1266,10 @@ func (s *Server) revertTodo(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusAccepted)
 }
+
+// errNotRunYet is why the hub can't do something to a task's work: it has
+// none before a runner has run it (the hub keeps no worktrees).
+var errNotRunYet = fmt.Errorf("%w: this task hasn't run on a runner yet", errBadRequest)
 
 // errHubHasNoProjects is why the hub refuses a project on its own disk.
 var errHubHasNoProjects = fmt.Errorf("%w: the hub keeps no projects on its own computer. Create or add the project on a runner "+
@@ -1572,7 +1598,7 @@ func (s *Server) getUsage(w http.ResponseWriter, r *http.Request) {
 	if s.Usage != nil {
 		snap = s.Usage.Snapshot()
 	}
-	if !s.localClaude() {
+	if s.hub() {
 		// This hub doesn't run Claude, so it has no usage of its own: show
 		// the caller's, as their runner last reported it.
 		if c, err := s.caller(r); err == nil {

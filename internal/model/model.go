@@ -157,6 +157,10 @@ type Project struct {
 	// may also work in it by hand) or HubLegacy (cloned under
 	// <projects>/hub/ before hub projects were found by id).
 	HubCheckout string `json:"hub_checkout,omitempty"`
+	// LocalOnly marks a runner's own project made as a new repository with
+	// no remote (the hub's New project → Local only), for throwaway work:
+	// deleting the project deletes its folder too.
+	LocalOnly bool `json:"local_only,omitempty"`
 
 	// Machine is the computer the project lives on; filled in by clients
 	// that show several computers in one dashboard, never stored.

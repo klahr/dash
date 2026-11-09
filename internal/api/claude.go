@@ -24,7 +24,7 @@ import (
 // Where Claude runs for the general chat and the short calls (titles,
 // summaries, cleaning up instructions).
 //
-// The hub (LocalClaude off) never runs Claude itself: each of those runs
+// The hub never runs Claude itself: each of those runs
 // on a runner of the user who asked, with that runner's `claude` login, so
 // it is billed to them. The hub picks only runners the caller registered,
 // in the org they work in; the runner checks the user it is told (see
@@ -43,11 +43,6 @@ type SmallClaude interface {
 // errNoClaudeRunner is why the hub can't run something on the caller's runner.
 var errNoClaudeRunner = errors.New("no runner of yours is online: this hub runs Claude only on its users' own runners. " +
 	"Start `dash runner` on your computer (account menu → Runners → Add a runner)")
-
-// localClaude reports whether this Dash runs Claude itself.
-func (s *Server) localClaude() bool {
-	return (s.LocalClaude == nil || s.LocalClaude()) && agent.LocalAllowed()
-}
 
 // claudeRunners are c's own runners in c's org, by name: those the hub may
 // run c's chat and short calls on.
@@ -112,7 +107,7 @@ func (sv *service) smallCall(ctx context.Context, kind, text string) (string, er
 func (sv *service) title(ctx context.Context, prompt string) string {
 	var title string
 	var err error
-	if sv.s.localClaude() {
+	if !sv.s.hub() {
 		title, err = sv.s.Titler.Title(ctx, prompt)
 	} else {
 		title, err = sv.smallCall(ctx, "title", prompt)
@@ -150,7 +145,7 @@ func plainTitle(prompt string) string {
 
 // refine cleans up instructions here or on the caller's runner.
 func (sv *service) refine(ctx context.Context, prompt string) (string, error) {
-	if sv.s.localClaude() {
+	if !sv.s.hub() {
 		if sv.s.Refiner == nil {
 			return "", errNoRefiner
 		}
@@ -176,7 +171,7 @@ func (s *Server) claudeInfo(w http.ResponseWriter, r *http.Request) {
 	out := struct {
 		Local   bool     `json:"local"`
 		Runners []runner `json:"runners"`
-	}{Local: s.localClaude(), Runners: []runner{}}
+	}{Local: !s.hub(), Runners: []runner{}}
 	for _, x := range s.claudeRunners(sv.c) {
 		out.Runners = append(out.Runners, runner{ID: x.ID, Name: x.Name, Online: x.Online})
 	}
@@ -184,11 +179,9 @@ func (s *Server) claudeInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 // projectChatOnRunner reports whether p's chat runs on one of the caller's
-// runners rather than here: always on the hub, which doesn't run Claude, and
-// for a project whose tasks run on runners, whose clones are there.
-func (s *Server) projectChatOnRunner(p model.Project) bool {
-	return !s.localClaude() || p.OnRunners()
-}
+// runners rather than here: always on the hub, which doesn't run Claude; a
+// runner runs the chats it is asked for itself.
+func (s *Server) projectChatOnRunner(model.Project) bool { return s.hub() }
 
 // projectChatRunner picks c's runner to run p's chat on: want if it is one
 // of c's linked to p, else the first of those online. Only a runner p is
@@ -201,11 +194,8 @@ func (s *Server) projectChatRunner(c Caller, p model.Project, want string) (tunn
 		}
 	}
 	if len(linked) == 0 {
-		if !s.localClaude() {
-			return tunnel.Runner{}, fmt.Errorf("no runner of yours works on %s: this hub runs Claude only on its users' own runners. "+
-				"Link one of yours to it in Project settings → Runners", p.Name)
-		}
-		return tunnel.Runner{}, fmt.Errorf("no runner of yours works on %s: link one of yours to it in Project settings → Runners", p.Name)
+		return tunnel.Runner{}, fmt.Errorf("no runner of yours works on %s: this hub runs Claude only on its users' own runners. "+
+			"Link one of yours to it in Project settings → Runners", p.Name)
 	}
 	if want != "" {
 		if i := slices.IndexFunc(linked, func(r tunnel.Runner) bool { return r.ID == want && r.Online }); i >= 0 {

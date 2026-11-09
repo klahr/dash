@@ -46,7 +46,7 @@ func TestRunnersFollowEachOthersPushes(t *testing.T) {
 	hub.Peers = &peer.Hub{Self: "hub", Runners: rh}
 	d := &dispatch.Dispatcher{Store: raw(hub), Fleet: rh, Grace: time.Minute, Pub: hub.Hub}
 	rh.OnState, rh.OnRevoke, rh.OnReport = d.State, d.Revoked, d.Report
-	hub.Dispatch, hub.RunnerOnly = d, true
+	hub.Dispatch = d
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	t.Cleanup(func() { cancel(); wg.Wait() })

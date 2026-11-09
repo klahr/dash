@@ -176,7 +176,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		case general && sv.c.User == 0:
 			send(agent.ChatDelta{Kind: "error", Text: "the general chat is a person's: sign in to use it"})
 			continue
-		case general && !s.localClaude():
+		case general && s.hub():
 			// This hub doesn't run Claude: the caller's own runner does.
 			x, err := s.claudeRunner(sv.c, msg.Runner)
 			if err == nil {
@@ -208,7 +208,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				switch {
 				case err == nil:
 					chatter = runnerChat{fleet: s.fleet(), runner: x, user: sv.c.User, relay: relay, project: p.ID, mode: p.ChatPermissionMode}
-				case !s.localClaude():
+				case s.hub():
 					send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 					continue
 				}
@@ -241,7 +241,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 					switch {
 					case err == nil:
 						chatter, onRunner = runnerChat{fleet: s.fleet(), runner: x, user: sv.c.User, relay: relay, project: p.ID, todo: t.ID, mode: p.ChatPermissionMode}, true
-					case !s.localClaude():
+					case s.hub():
 						send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 						continue
 					}

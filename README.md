@@ -46,9 +46,9 @@ Either way you end up with `./bin/dash`, which the rest of this README and the d
 
 Edit `.env` and set `DASH_USERNAME` and `DASH_PASSWORD` (the example's `admin` / `change-me`
 are placeholders: change the password). On first start they become the first account, and
-Dash refuses to start without them, because it runs commands on your computer. Optionally set `DASH_PROJECTS` to where new projects should be created
-(the default is `~/dash-projects`; the `-projects` flag does the same). Each organization's new projects
-go in a folder of its own there, named after the org (`~/dash-projects/default/` at first).
+Dash refuses to start without them: whoever signs in can have Claude and commands run on the runners.
+The hub keeps no projects on its disk: where projects live is each runner's `-projects` (or
+`DASH_PROJECTS` in the runner's environment; `~/dash-projects` by default).
 
 Run it:
 
@@ -85,14 +85,14 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 
 ## Your first task
 
-1. **Create a project.** On a hub, click **New project**, pick the **Runner**, then one of your
-   GitHub repositories (listed with that runner's `gh`, filterable), a new one, or a remote URL;
-   the runner clones it into its projects folder (or adopts a clone of it already there). On a
-   Dash of your own, give it a name to start a new repository, or switch to **Existing clone** to
-   add a git repository you already have: pick one of the clones Dash finds in the projects
-   folder, or give its path (the name defaults to its folder's).
-   **Add existing clone** in the project menu and the command palette opens it directly.
-   A clone (existing or from GitHub) that has a favicon gets it as its project icon.
+1. **Create a project.** Click **New project** and pick the **Runner** it lives on (every project
+   is on a runner; the hub keeps none). Then pick one of your GitHub repositories (listed with
+   that runner's `gh`, filterable), a **New GitHub repo**, or a **Remote URL**: the runner clones it
+   into its projects folder (or adopts a clone of it already there). For throwaway work, pick
+   **Local only**: the runner starts a new repository in its projects folder (`git init` and an
+   initial commit), with no remote and no GitHub; deleting that project deletes its folder too.
+   Repositories already on a runner's disk are added with **Add projects from this computer…** on
+   its row of the Runners page. A clone that has a favicon gets it as its project icon.
    A *Test command* (e.g. `go test ./...`) is optional but lets Dash check Claude's work.
 2. **Add a task.** Click **New task** (or press <kbd>n</kbd>) and write what Claude should do,
    as you would in a chat; Claude names the task. <kbd>Enter</kbd> saves it, <kbd>Shift</kbd>+<kbd>Enter</kbd>

@@ -51,7 +51,6 @@
         <div class="foot-menu-list">
           <button id="pm-branch" type="button" data-icon="branch">Switch branch…</button>
           <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
-          <button id="pm-github" type="button" data-icon="repo" hidden>Create GitHub repo</button>
           <button id="pm-cleanup" type="button" data-icon="trash" title="Remove leftover worktrees, branches, logs and uploads">Clean up</button>
           <button id="pm-delete" type="button" data-icon="trash" class="danger">Delete project…</button>
         </div>
@@ -506,30 +505,25 @@
   <dialog class="sheet" id="new-project-sheet" aria-labelledby="new-project-title">
     <form method="dialog" id="new-project">
       <header class="sheet-head"><h2 id="new-project-title">New project</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
-      <div class="segmented" role="tablist" id="new-project-mode" aria-label="Where the repository comes from">
-        <button type="button" role="tab" data-mode="new" aria-selected="true">New repository</button>
-        <button type="button" role="tab" data-mode="existing" aria-selected="false">Existing clone</button>
-      </div>
-      <!-- On a hub: a project is a git remote its runners clone, never a folder. -->
-      <div class="segmented" role="tablist" id="new-project-hub-mode" aria-label="Where the repository comes from" hidden>
+      <!-- Every project is on a runner: a git remote its runners clone, or a runner's local-only repository. -->
+      <div class="segmented" role="tablist" id="new-project-hub-mode" aria-label="Where the repository comes from">
         <button type="button" role="tab" data-mode="gh" aria-selected="true">Your GitHub repos</button>
         <button type="button" role="tab" data-mode="create" aria-selected="false">New GitHub repo</button>
         <button type="button" role="tab" data-mode="url" aria-selected="false">Remote URL</button>
+        <button type="button" role="tab" data-mode="local" aria-selected="false">Local only</button>
       </div>
-      <label class="field" hidden><span id="new-project-machine-label">Computer</span><select name="machine"></select></label>
+      <label class="field"><span id="new-project-machine-label">Runner</span><select name="machine"></select></label>
       <div class="gh-browser" id="new-project-gh" hidden>
         <input type="search" id="gh-filter" placeholder="Filter by name or description" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Filter repositories" aria-controls="gh-list">
         <div class="gh-list" id="gh-list" role="listbox" aria-label="GitHub repositories" tabindex="-1"></div>
         <p class="hint" id="gh-hint"></p>
       </div>
       <label class="field" id="new-project-url-row" hidden><span>Git remote</span><input name="remote_url" placeholder="https://github.com/owner/repo.git or git@github.com:owner/repo.git" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
-      <label class="field" id="new-project-clone-row" hidden><span>Clone</span><select name="clone_pick"></select></label>
-      <p class="hint" id="new-project-clone-hint" hidden></p>
-      <label class="field" id="new-project-path-row"><span id="new-project-path-label">Folder <em>optional</em></span><input name="path" placeholder="Leave empty for a new folder named after the project" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
-      <label class="field"><span id="new-project-name-label">Name</span><input name="name" required autocomplete="off" autofocus></label>
-      <label class="field" id="new-project-github-row"><span>GitHub repository <em>optional</em></span><input name="github" placeholder="name or owner/name" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
-      <p class="hint" id="new-project-github-hint" hidden>A new private repository is created and pushed. If it already exists on GitHub, you can clone it instead.</p>
-      <p class="hint" id="new-project-hub-hint" hidden>Each runner linked to the project clones it into its projects folder as <code>&lt;projects&gt;/&lt;repo&gt;</code>, or uses a clone of the same repository already there. A folder holding anything else is left alone (the clone becomes <code>&lt;repo&gt;-2</code>).</p>
+      <label class="field"><span id="new-project-name-label">Name</span><input name="name" autocomplete="off" autofocus></label>
+      <label class="field" id="new-project-github-row" hidden><span>GitHub repository</span><input name="github" placeholder="name, or owner/name for an organization" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
+      <p class="hint" id="new-project-github-hint" hidden></p>
+      <p class="hint" id="new-project-local-hint" hidden>A new git repository with an initial commit, in a new folder named after the project in <span id="new-project-local-where">the runner</span>'s projects folder. No remote, no GitHub: for throwaway work, on this runner only. Deleting the project deletes its folder too.</p>
+      <p class="hint" id="new-project-hub-hint">Each runner linked to the project clones it into its projects folder as <code>&lt;projects&gt;/&lt;repo&gt;</code>, or uses a clone of the same repository already there. A folder holding anything else is left alone (the clone becomes <code>&lt;repo&gt;-2</code>).</p>
       <label class="toggle" id="new-project-public-row" hidden><input type="checkbox" name="github_public"><span>Make the new repository public</span></label>
       <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" placeholder="npm run dev -- --port $PORT" spellcheck="false"></label>
       <label class="field"><span>Test command</span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>
@@ -579,6 +573,7 @@
         <label class="radio"><input type="radio" name="files" value="keep" checked><span>Keep the folder <em id="delete-project-path"></em></span></label>
         <label class="radio"><input type="radio" name="files" value="delete"><span>Delete the folder <em>everything in it, including uncommitted and unpushed work</em></span></label>
       </fieldset>
+      <p class="hint" id="delete-local-only" hidden>A local-only project: its folder <em id="delete-local-path"></em> is deleted with it, with everything in it.</p>
       <label class="toggle" id="delete-github-row"><input type="checkbox" name="github"><span>Also delete the GitHub repository</span></label>
       <p class="hint" id="delete-github-hint"></p>
       <label class="field"><span>Password <em>to confirm</em></span><input type="password" name="password" required autocomplete="current-password"></label>

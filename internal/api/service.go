@@ -238,7 +238,7 @@ func (sv *service) removeTodo(ctx context.Context, id string) error {
 			defer cancel()
 			sv.s.Dispatch.Forget(ctx, t)
 		}()
-	} else if t.Worktree != nil && t.Status != model.StatusMerged && !sv.s.RunnerOnly {
+	} else if t.Worktree != nil && t.Status != model.StatusMerged && !sv.s.hub() {
 		if p, err := sv.data.GetProject(t.ProjectID); err == nil {
 			_ = sv.s.Git.RemoveWorktree(ctx, p.ID, p.Path, *t.Worktree)
 		}
@@ -261,6 +261,9 @@ func (sv *service) approve(id string) (model.Todo, error) {
 	}
 	if cur.OnRunner() {
 		return sv.approveOnRunner(context.Background(), cur)
+	}
+	if sv.s.hub() {
+		return cur, fmt.Errorf("%w, so it has no work to merge; queue it instead", errNotRunYet)
 	}
 	t, err := sv.data.UpdateTodo(id, func(t *model.Todo) error {
 		if t.Status != model.StatusReview && t.Status != model.StatusFailed {

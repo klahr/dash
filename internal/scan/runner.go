@@ -54,10 +54,10 @@ type Runner struct {
 	// without them a scan reads only files.
 	GitTools *GitMCP
 	GitURL   string
-	// Remote, on the hub, which doesn't run Claude itself (agent.LocalAllowed
-	// is false), runs each scan's Claude on a runner linked to the project;
-	// the hub keeps the runs, their logs and the issues they file. nil: such
-	// a hub refuses to start scans.
+	// Remote, on the hub, which doesn't run Claude itself, runs each scan's
+	// Claude on a runner linked to the project; the hub keeps the runs,
+	// their logs and the issues they file. Nil on a runner, which runs its
+	// scans here.
 	Remote Remote
 	// WaitEvery is how often a run waiting for a runner asks again
 	// (default 5s).
@@ -134,9 +134,6 @@ func (r *Runner) Start(projectID, name, trigger string) (model.ScanRun, error) {
 // start begins a run; from, if set, is the interrupted run it starts over,
 // whose scope, path and base commit it keeps.
 func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun) (model.ScanRun, error) {
-	if !agent.LocalAllowed() && r.Remote == nil {
-		return model.ScanRun{}, agent.ErrNoLocalClaude
-	}
 	p, err := r.Store.GetProject(projectID)
 	if err != nil {
 		return model.ScanRun{}, err
@@ -331,7 +328,7 @@ func underPath(files []string, dir string) []string {
 }
 
 // remote reports whether runs go to a runner (see Runner.Remote).
-func (r *Runner) remote() bool { return r.Remote != nil && !agent.LocalAllowed() }
+func (r *Runner) remote() bool { return r.Remote != nil }
 
 func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run model.ScanRun, from *model.ScanRun) {
 	logf, _ := r.openLog(run.ID)

@@ -19,7 +19,7 @@ Every project lives on runners, in one of two ways:
 - **A runner's own project**: a repository on one runner's disk, in its `-projects` directory. Its
   tasks, git and commands run on that runner only, and it shows in the dashboard under the
   runner's name. Make one with **Add projects from this computer…** on the runner's row of the
-  Runners page, or on the runner's own dashboard. See [below](#projects-of-a-runners-own).
+  Runners page, or start a new one with **+ New project** → **Local only**. See [below](#projects-of-a-runners-own).
 - **A shared project**: the hub's project, a git remote that one or more runners are linked to.
   Each linked runner keeps its own clone of the remote, straight in its projects folder
   (`<-projects>/<repo>`), any of them can run its tasks, and work lands on the remote. It shows in
@@ -45,6 +45,13 @@ is linked to first, then where the repository comes from:
 - **New GitHub repo**: a name (or `owner/name` for an organization) creates an empty repository
   with the runner's `gh`, private unless you tick **public**, and makes the project from it.
 - **Remote URL**: any `https://`, `ssh://` or `git@host:path` remote.
+- **Local only**: no remote and no GitHub, for throwaway work. The runner makes a new repository
+  in a new folder named after the project in its projects folder (in the org's folder there),
+  with `git init` and an initial commit, and the project is that runner's own (not shared). Only
+  the runner's owner can make one, and a folder of that name that already holds something is
+  refused, never taken over. Deleting the project deletes its folder on the runner too (the
+  delete dialog says so). To put it on GitHub later, run `gh repo create --source . --push` in
+  the folder and share it as a new project.
 
 Listing and creating repositories use the runner owner's GitHub login, so only the runner's owner
 can use those two (anyone can paste a URL); the hub has no GitHub login of its own. The name
@@ -139,7 +146,9 @@ Without the script (or to build from source), the dialog's **Manual** tab has th
 3. Optionally, `dash runner install` keeps it running in the background as above (or write your
    own service around `dash runner`, see [Run as a service](service.md)).
 
-A runner takes the same flags as `dash` (`-projects`, `-parallel`, `-claude-args`, …). It doesn't
+A runner takes the same flags as `dash`, and its own: the flags about running work (`-projects`,
+`-parallel`, `-claude`, `-claude-args`, `-chat`, `-editor`, …) only matter to a runner; the hub
+accepts them, logs a warning that it ignores them, and leaves them out of `dash -h`. It doesn't
 listen on a port of its own unless you pass `-addr` (then it also needs `DASH_USERNAME` and
 `DASH_PASSWORD`, like a normal Dash).
 
@@ -314,7 +323,8 @@ never as the hub's.
 
 This used to be a choice (`-hub-claude`, with a single-user hub running Claude itself by default).
 The flag is gone: an old start command that still passes it starts, logs a warning and ignores it.
-Claude's flags (`-claude`, `-claude-args`, `-chat`, `-title-model`, …) are a runner's.
+Claude's flags (`-claude`, `-claude-args`, `-chat`, `-title-model`, …) are a runner's: the hub
+ignores them, with a warning.
 
 ### Laptops that sleep
 

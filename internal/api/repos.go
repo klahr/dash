@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -209,7 +210,7 @@ func (s *Server) localRepos(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if s.RunnerOnly {
+	if s.hub() {
 		writeErr(w, errHubHasNoProjects)
 		return
 	}
@@ -286,6 +287,15 @@ func (sv *service) adoptRepo(ctx context.Context, name, path string) (model.Proj
 		RemoteURL: s.Git.RemoteURL(ctx, id, path), MaxAutoFixes: model.DefaultMaxAutoFixes,
 		TagFormat: release.DefaultFormat,
 	})
+}
+
+// emptyOrMissing reports whether dir doesn't exist or is an empty directory.
+func emptyOrMissing(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return true
+	}
+	return err == nil && len(entries) == 0
 }
 
 const ownerRepos = "lists and adds its repositories"
@@ -401,6 +411,44 @@ func (s *Server) ownedRunner(w http.ResponseWriter, r *http.Request) (Caller, tu
 		return c, x, false
 	}
 	return c, x, true
+}
+
+// localProject is a new local-only project: a repository on its runner
+// alone, with no remote.
+type localProject struct {
+	Name      string `json:"name"`
+	LocalOnly bool   `json:"local_only"`
+	commandFields
+}
+
+// createRunnerProject handles POST /api/runners/{id}/projects on the hub: a
+// local-only project, the caller's runner's own, made there as a new
+// repository (git init and an initial commit) in a new folder named after
+// it in the runner's projects folder, with no remote. For throwaway work:
+// deleting it deletes that folder too.
+func (s *Server) createRunnerProject(w http.ResponseWriter, r *http.Request) {
+	c, x, ok := s.ownedRunner(w, r)
+	if !ok {
+		return
+	}
+	var req localProject
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if req.Name = strings.TrimSpace(req.Name); req.Name == "" {
+		writeErr(w, fmt.Errorf("%w: name is required", errBadRequest))
+		return
+	}
+	req.LocalOnly = true
+	ctx, cancel := context.WithTimeout(tunnel.WithUser(r.Context(), c.User), time.Minute)
+	defer cancel()
+	var out model.Project
+	if err := s.fleet().Call(ctx, x.ID, http.MethodPost, "/api/projects", req, &out); err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, out)
 }
 
 // runnerRepos handles GET /api/runners/{id}/repos: the repositories in the

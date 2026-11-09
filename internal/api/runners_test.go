@@ -70,7 +70,8 @@ func newFleetServer(t *testing.T) *fleetServer {
 	if out, err := exec.Command("git", "-C", repo, "remote", "add", "origin", "https://github.com/x/web.git").CombinedOutput(); err != nil {
 		t.Fatalf("%v %s", err, out)
 	}
-	if f.web, err = raw(s).CreateProject(model.Project{Name: "shared", Path: repo, DefaultBranch: "main", OrgID: owner.Org}); err != nil {
+	if f.web, err = raw(s).CreateProject(model.Project{Name: "shared", Path: repo, DefaultBranch: "main", OrgID: owner.Org,
+		RemoteURL: "https://github.com/x/web.git"}); err != nil {
 		t.Fatal(err)
 	}
 

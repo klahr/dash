@@ -104,12 +104,12 @@ func main() {
 	dataDir := flag.String("data", defaultData, "state, logs and worktrees (a hub and a runner on one computer need different ones)")
 	projectRoot := flag.String("projects", "", "where new projects are created (default $DASH_PROJECTS, else ~/dash-projects)")
 	parallel := flag.Int("parallel", 3, "max tasks executed concurrently")
-	claudeBin := flag.String("claude", "claude", "Claude Code binary used to execute tasks (dash runner only: the hub never runs Claude)")
+	claudeBin := flag.String("claude", "claude", "Claude Code binary used to execute tasks")
 	claudeArgs := flag.String("claude-args", "--permission-mode acceptEdits --allowedTools Bash",
-		"extra flags for `claude -p` (space separated), e.g. --allowedTools / --model (dash runner only)")
+		"extra flags for `claude -p` (space separated), e.g. --allowedTools / --model")
 	signCommits := flag.Bool("sign-commits", false, "GPG/SSH-sign commits Dash makes (needs a non-interactive signing agent)")
 	chatBackend := flag.String("chat", "claude-code",
-		"chat backend (dash runner only): claude-code (uses the claude CLI login, e.g. a subscription) or api (Anthropic API key)")
+		"chat backend: claude-code (uses the claude CLI login, e.g. a subscription) or api (Anthropic API key)")
 	chatTools := flag.String("chat-tools", agent.ChatShell,
 		"claude-code chat tools: shell (every tool, your Claude Code settings and MCP servers, as in a terminal; you approve calls they don't allow in the chat) or readonly (Read, Grep, Glob)")
 	var chatAllow []string
@@ -154,7 +154,7 @@ func main() {
 	teamPrice := flag.String("team-price", "", "the team plan's price on the landing page, as shown, e.g. \"€8 per seat / month\" (or $DASH_TEAM_PRICE)")
 	pricingURL := flag.String("pricing-url", "", "where the landing page's \"see pricing\" links to when -team-price isn't set (or $DASH_PRICING_URL)")
 	// Removed flags, still accepted so an old start command keeps working.
-	var removed []string
+	var removed, ignored []string
 	for _, name := range removedFlags {
 		flag.Func(name, "removed and ignored: the hub never runs Claude or tasks itself", func(string) error {
 			removed = append(removed, name)
@@ -177,7 +177,25 @@ func main() {
 		offlineGrace = flag.Duration("offline-grace", 10*time.Minute, "when the hub has been unreachable this long, stop running tasks and mark them interrupted (0 = never)")
 		hubCommands = flag.Bool("hub-commands", false, "let the hub set the projects' run/test/deploy/setup commands and run ad-hoc commands, and open terminals for the runner's owner from the hub; off = only commands set on this computer run")
 	}
+	if !runnerMode {
+		flag.CommandLine.Usage = func() {
+			fmt.Fprintf(flag.CommandLine.Output(), "usage: dash [flags]          run the hub, the dashboard (see dash runner -h for a runner's flags)\n"+
+				"       dash version|healthcheck|backup|reset-2fa\n\nflags:\n")
+			printFlags(flag.CommandLine, func(name string) bool {
+				return slices.Contains(runnerFlags, name) || slices.Contains(removedFlags, name)
+			})
+		}
+	}
 	_ = flag.CommandLine.Parse(args)
+	if !runnerMode {
+		// The hub runs no tasks, Claude or commands: the flags about those
+		// are a runner's. Old start commands may still pass them.
+		flag.Visit(func(f *flag.Flag) {
+			if slices.Contains(runnerFlags, f.Name) {
+				ignored = append(ignored, f.Name)
+			}
+		})
+	}
 	if *showVersion {
 		fmt.Println("dash", buildinfo.Version)
 		return
@@ -196,6 +214,9 @@ func main() {
 	slog.Info("dash", "version", buildinfo.Version)
 	for _, name := range removed {
 		slog.Warn("-" + name + " is gone and ignored: the hub never runs Claude or tasks itself, runners (dash runner) do. Remove it from the start command")
+	}
+	for _, name := range ignored {
+		slog.Warn("-" + name + " is a flag of dash runner, ignored by the hub, which runs no tasks, Claude or commands itself. Remove it from the hub's start command (pass it to dash runner)")
 	}
 
 	if envErr != nil {
@@ -307,10 +328,10 @@ func main() {
 	defer stop()
 
 	if !runnerMode {
-		// The hub runs nothing on its own computer: no git, gh, project
-		// commands or terminals, and no working trees. Every way to run one
-		// in this process refuses (localrun), behind the API forwarding each
-		// project's work to the runners linked to it.
+		// The hub runs nothing on its own computer: no Claude, git, gh,
+		// project commands or terminals, and no working trees. Every way to
+		// run one in this process refuses (localrun), behind the API
+		// forwarding each project's work to the runners linked to it.
 		localrun.Set(func() bool { return false })
 	}
 
@@ -592,16 +613,12 @@ func main() {
 		// While the hub doesn't run Claude, scans run their Claude part on
 		// a runner linked to the project (the hub keeps the runs and issues).
 		scans.Remote = d
-		// The hub never runs Claude: every way to Claude in this process
-		// refuses (agent.SetLocal), the chat and short calls go to the
-		// caller's runner, and tasks of projects not linked to a runner
-		// wait, saying one must be linked.
-		never := func() bool { return false }
-		agent.SetLocal(never)
-		apiSrv.LocalClaude, todos.LocalTasks = never, never
-		// Nor anything else: a project's git, files, releases and commands
-		// are forwarded to its runners, GitHub's builds read with their gh.
-		apiSrv.RunnerOnly = true
+		// The hub never runs Claude (the chat and short calls go to the
+		// caller's runner, tasks of projects not linked to a runner wait,
+		// saying one must be linked), nor anything else: a project's git,
+		// files, releases and commands are forwarded to its runners,
+		// GitHub's builds read with their gh. localrun refuses whatever
+		// would still try to run here.
 		builds.Git = api.RunnerGitHub{S: apiSrv}
 		merges.CleanupEvery, merges.PRPoll = 0, 0 // the runners clean up and follow pull requests
 		slog.Info("this hub runs nothing itself: tasks, scans, chats, git and project commands run on runners. Start `dash runner` on a computer with git and Claude Code (account menu → Runners → Add a runner)")
@@ -849,6 +866,24 @@ func warnUnlinked(ps []model.Project) {
 				"project", p.Name, "path", p.Path)
 		}
 	}
+}
+
+// runnerFlags are about running tasks, Claude, scans and commands, which only
+// runners (`dash runner`) do: the hub accepts them, with a warning, and
+// ignores them (they are left out of its -h).
+var runnerFlags = []string{"projects", "parallel", "claude", "claude-args", "sign-commits", "chat", "chat-tools", "chat-allow",
+	"pause-at", "permission-prompts", "editor", "title-model", "cleanup-days"}
+
+// printFlags is fs.PrintDefaults without the flags hide picks.
+func printFlags(fs *flag.FlagSet, hide func(name string) bool) {
+	shown := flag.NewFlagSet(fs.Name(), flag.ContinueOnError)
+	shown.SetOutput(fs.Output())
+	fs.VisitAll(func(f *flag.Flag) {
+		if !hide(f.Name) {
+			shown.Var(f.Value, f.Name, f.Usage)
+		}
+	})
+	shown.PrintDefaults()
 }
 
 // removedFlags are flags old start commands may still pass (-hub-claude

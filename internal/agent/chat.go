@@ -47,7 +47,7 @@ type Chat struct {
 
 // NewChat uses the SDK's default credential chain (ANTHROPIC_API_KEY,
 // ANTHROPIC_AUTH_TOKEN, or an `ant auth login` profile). The credentials
-// are read on the first turn this Dash may run itself (see SetLocal), not
+// are read on the first turn this Dash may run itself (see checkLocal), not
 // before.
 func NewChat(opts ...option.RequestOption) *Chat {
 	return &Chat{

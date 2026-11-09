@@ -471,7 +471,7 @@ func (b board) CreateRelease(projectID string, r mcptools.NewRelease) (mcptools.
 	if err != nil {
 		return mcptools.Release{}, fmt.Errorf("no project %q (see list_projects)", projectID)
 	}
-	if b.sv.s.RunnerOnly {
+	if b.sv.s.hub() {
 		return b.sv.releaseOnRunner(context.Background(), p, r)
 	}
 	return b.sv.createRelease(context.Background(), p, r)

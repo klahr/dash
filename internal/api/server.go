@@ -72,11 +72,6 @@ type Server struct {
 	Refiner interface {
 		Refine(ctx context.Context, prompt string) (string, error)
 	}
-	// LocalClaude reports whether this Dash runs Claude itself for the
-	// general chat, titles and the clean-up (nil: it does, as a runner
-	// does). The hub always says no and runs them on the caller's own
-	// runner (see claude.go).
-	LocalClaude func() bool
 	// Small runs Claude's short calls for this runner's owner when the hub
 	// asks (a runner's; optional).
 	Small SmallClaude
@@ -104,11 +99,6 @@ type Server struct {
 	// tunnel.Board) to the hub's board: the board tools of the hub's tasks
 	// and of the chats the hub asks for act there, never on this Dash.
 	HubBoard func(ctx context.Context, hubTodo, hubProject string, body []byte) (*http.Response, error)
-	// RunnerOnly is set on the hub: it runs nothing on its own computer
-	// (no git, gh, shell commands or terminals, no working trees). Its
-	// projects' work is forwarded to the runners linked to them (see
-	// hubproxy.go), and it refuses to make projects on its own disk.
-	RunnerOnly bool
 	// HubCommands lets the hub set and run a project's commands when this
 	// Dash is a runner (see RunnerRoutes).
 	HubCommands bool

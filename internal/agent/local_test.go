@@ -16,6 +16,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go/v2/option"
 
+	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -36,8 +37,8 @@ func TestNoLocalClaudeRunsNothing(t *testing.T) {
 	}))
 	defer api.Close()
 
-	SetLocal(func() bool { return false })
-	defer SetLocal(nil)
+	localrun.Set(func() bool { return false })
+	defer localrun.Set(nil)
 
 	ctx := context.Background()
 	history := []ChatMessage{{Role: "user", Content: "hi"}}
@@ -70,7 +71,7 @@ func TestNoLocalClaudeRunsNothing(t *testing.T) {
 	}
 
 	// Turned back on, the same calls do run it.
-	SetLocal(nil)
+	localrun.Set(nil)
 	_, _ = titler.Title(ctx, "x")
 	if _, err := os.Stat(mark); err != nil {
 		t.Error("the fake claude didn't run with local Claude on: the test checks nothing")

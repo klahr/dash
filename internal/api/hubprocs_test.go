@@ -28,7 +28,6 @@ import (
 // restarted the hub).
 func TestHubListsRunnerQuickActionsWithTheirPreset(t *testing.T) {
 	hub, _, _ := boardServer(t)
-	hub.RunnerOnly = true
 	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}
 	hub.Peers = &peer.Hub{Self: "hub", Runners: rh}
 	d := &dispatch.Dispatcher{Store: raw(hub), Fleet: rh, Grace: 50 * time.Millisecond}
@@ -158,7 +157,6 @@ func sessionOf(t *testing.T, s *Server, uid, org int64) store.Session {
 // the hub, with the scrollback again on reattaching.
 func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
 	hub, _, _ := boardServer(t)
-	hub.RunnerOnly = true
 	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}
 	hub.Peers = &peer.Hub{Self: "hub", Runners: rh}
 	d := &dispatch.Dispatcher{Store: raw(hub), Fleet: rh, Grace: 50 * time.Millisecond}

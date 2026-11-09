@@ -21,7 +21,7 @@ import (
 	"github.com/klahr/dash/internal/tunnel"
 )
 
-// The hub runs nothing on its own computer (Server.RunnerOnly): it has no
+// The hub runs nothing on its own computer (Server.hub): it has no
 // working tree of its projects, no git, no gh and no shell. Each of its
 // projects is shared with one or more runners (model.Project.Runners), each
 // of which keeps a clone of the project's remote. Everything about a
@@ -124,7 +124,7 @@ func (sv *service) onRunner(ctx context.Context, t model.Todo, fn func(context.C
 // the project {pid}, to the project's clone on one of its runners instead.
 func (s *Server) viaRunner(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.RunnerOnly {
+		if !s.hub() {
 			h(w, r)
 			return
 		}
@@ -465,7 +465,7 @@ func (sv *service) processRunner(id string) (tunnel.Runner, string, error) {
 // output back.
 func (s *Server) processViaRunner(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.RunnerOnly {
+		if !s.hub() {
 			h(w, r)
 			return
 		}

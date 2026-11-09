@@ -26,9 +26,9 @@ it:
 - **The general chat** is your own: each user has one per org, which nobody else sees. On a
   hub with several users it runs on your own runner, with your Claude login (see
   [several computers](several-computers.md#claude-runs-on-each-users-own-runner)).
-- **New projects** are created in the org's own folder, `<projects root>/<org slug>/`
-  (e.g. `~/dash-projects/default/my-app`). Adopting an existing folder only works inside
-  it; platform admins may adopt a folder anywhere.
+- **New projects** on a runner (Local only, or added from its computer) go in the org's own
+  folder in the runner's projects directory, `<projects root>/<org slug>/` (e.g.
+  `~/dash-projects/default/my-app`).
 - Tasks and chat messages record who created them (`created_by`).
 
 What belongs to the whole Dash, and only platform admins can use: other computers
