@@ -369,23 +369,25 @@ func TestRecordCounts(t *testing.T) {
 
 func TestRunToolsNeedApproval(t *testing.T) {
 	fx := newFixture(t, "deps", "---\ntools: Read, Bash\n---\nAudit.")
+	var dir string
 	allowed := func() string {
 		t.Helper()
-		args := fx.exec.reqs[len(fx.exec.reqs)-1].ExtraArgs
-		for i, a := range args {
+		req := fx.exec.reqs[len(fx.exec.reqs)-1]
+		dir = req.Dir
+		for i, a := range req.ExtraArgs {
 			if a == "--allowedTools" {
-				return args[i+1]
+				return req.ExtraArgs[i+1]
 			}
 		}
-		t.Fatalf("no --allowedTools in %q", args)
+		t.Fatalf("no --allowedTools in %q", req.ExtraArgs)
 		return ""
 	}
-	readOnly := strings.Join(DefaultTools, ",")
+	readOnly := func() string { return strings.Join(Confine(DefaultTools, dir), ",") }
 	// Not approved: read-only tools.
 	if r := fx.run(t, "deps"); r.Status != model.ScanSucceeded {
 		t.Fatalf("run: %+v", r)
 	}
-	if got := allowed(); got != readOnly {
+	if got := allowed(); got != readOnly() {
 		t.Fatalf("unapproved tools used: %s", got)
 	}
 	// Approved: the template's.
@@ -393,13 +395,13 @@ func TestRunToolsNeedApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	fx.run(t, "deps")
-	if got := allowed(); got != "Read,Bash" {
+	if got := allowed(); got != strings.Join(Confine([]string{"Read", "Bash"}, dir), ",") || strings.Contains(got, "Read,") {
 		t.Fatalf("approved tools: %s", got)
 	}
 	// The template asks for more: the approval no longer applies.
 	writeTemplate(t, fx, "deps", "---\ntools: Read, Bash, WebFetch\n---\nAudit.")
 	fx.run(t, "deps")
-	if got := allowed(); got != readOnly {
+	if got := allowed(); got != readOnly() {
 		t.Fatalf("approval applied to changed tools: %s", got)
 	}
 	tm := mustFind(t, fx, "deps")
@@ -424,7 +426,7 @@ func flagValue(args []string, name string) (string, bool) {
 // Scans run unattended: no user/project settings or hooks, and anything
 // outside the allowed tools is denied at once instead of asking.
 func TestArgsNeverAsk(t *testing.T) {
-	args := Args(Template{Model: "sonnet"}, []string{"Read", "Bash(npm audit:*)"})
+	args := Args(Template{Model: "sonnet"}, []string{"Read", "Bash(npm audit:*)"}, "")
 	if v, ok := flagValue(args, "--setting-sources"); !ok || v != "" {
 		t.Errorf("--setting-sources %q %v, want empty", v, ok)
 	}
@@ -450,6 +452,49 @@ func TestArgsNeverAsk(t *testing.T) {
 	}
 	if v, _ := flagValue(args, "--model"); v != "sonnet" {
 		t.Errorf("--model %q", v)
+	}
+}
+
+// With a checkout, the file tools read only it, and never the runner's
+// token or the user's credentials, even in a data directory that holds the
+// checkout.
+func TestArgsConfineFileTools(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	data := filepath.Join(home, ".local", "share", "dash-runner")
+	root := filepath.Join(data, "scans")
+	dir := filepath.Join(root, "worktrees", "p", "run")
+	args := Args(Template{}, nil, dir, data, root)
+	allow, _ := flagValue(args, "--allowedTools")
+	for _, tool := range []string{"Read", "Grep", "Glob"} {
+		if slices.Contains(strings.Split(allow, ","), tool) {
+			t.Errorf("unscoped %s in %q", tool, allow)
+		}
+		if want := tool + "(/" + filepath.ToSlash(dir) + "/**)"; !strings.Contains(allow, want) {
+			t.Errorf("no %s in %q", want, allow)
+		}
+	}
+	if !strings.Contains(allow, "Task") || !strings.Contains(allow, "mcp__") {
+		t.Errorf("other tools dropped: %q", allow)
+	}
+	deny, _ := flagValue(args, "--disallowedTools")
+	for _, want := range []string{
+		"Edit,Write,NotebookEdit",
+		"Read(/" + filepath.ToSlash(filepath.Join(home, ".ssh")) + "/**)",
+		"Grep(/" + filepath.ToSlash(filepath.Join(home, ".config", "gh")) + "/**)",
+		"Glob(/" + filepath.ToSlash(filepath.Join(home, ".claude")) + "/**)",
+		"Read(/" + filepath.ToSlash(filepath.Join(data, "*.json")) + ")",
+		"Read(/" + filepath.ToSlash(filepath.Join(root, "logs")) + "/**)",
+	} {
+		if !strings.Contains(deny, want) {
+			t.Errorf("no %s in %q", want, deny)
+		}
+	}
+	// A deny rule beats an allow rule: nothing holding the checkout is denied whole.
+	for _, p := range []string{data, root, filepath.Join(root, "worktrees")} {
+		if strings.Contains(deny, "(/"+filepath.ToSlash(p)+"/**)") {
+			t.Errorf("%s denied whole: %q", p, deny)
+		}
 	}
 }
 

@@ -175,7 +175,9 @@ func (r *Runner) Work(ctx context.Context, p model.Project, job Job, h Hooks) (O
 	}
 	runCtx, cancelRun := context.WithTimeout(ctx, timeout)
 	defer cancelRun()
-	extra := Args(t, job.Tools)
+	// The tools may read the checkout only: not the runner's data directory
+	// (its hub token) or the user's credentials.
+	extra := Args(t, job.Tools, dir, filepath.Dir(r.Root), r.Root)
 	if r.GitTools != nil && r.GitURL != "" {
 		token, release := r.GitTools.Register(dir)
 		defer release()

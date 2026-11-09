@@ -568,16 +568,25 @@ func Tools(t Template, set model.ScanSetting, hasSetting bool) (tools []string, 
 // tool call outside the allowed tools is denied at once (dontAsk, and no
 // prompt handler), and the user's and project's settings are not loaded, so
 // their hooks (e.g. a PermissionRequest hook that asks a phone) don't run.
-func Args(t Template, tools []string) []string {
+//
+// With a checkout dir, the file tools are confined to it (see Confine): a
+// prompt injection in the scanned code must not be able to read the
+// runner's token or the user's credentials and quote them in a finding.
+func Args(t Template, tools []string, dir string, secrets ...string) []string {
 	if len(tools) == 0 {
 		tools = DefaultTools
+	}
+	deny := []string{"Edit", "Write", "NotebookEdit"}
+	if dir != "" {
+		tools = Confine(tools, dir)
+		deny = append(deny, DenyReads(dir, secrets)...)
 	}
 	args := []string{
 		"--setting-sources", "",
 		"--permission-mode", "dontAsk",
 		"--permission-prompts", "none",
 		"--allowedTools", strings.Join(tools, ","),
-		"--disallowedTools", "Edit,Write,NotebookEdit",
+		"--disallowedTools", strings.Join(deny, ","),
 	}
 	if t.Model != "" {
 		args = append(args, "--model", t.Model)
@@ -586,6 +595,102 @@ func Args(t Template, tools []string) []string {
 		args = append(args, "--effort", t.Effort)
 	}
 	return args
+}
+
+// fileTools read files; unscoped, they read anything the runner's user can.
+var fileTools = []string{"Read", "Grep", "Glob"}
+
+// pathRule is a permission rule for tool on the absolute path p and, with
+// tree, everything below it ("//" marks an absolute path).
+func pathRule(tool, p string, tree bool) string {
+	r := tool + "(//" + strings.TrimPrefix(filepath.ToSlash(p), "/")
+	if tree {
+		r += "/**"
+	}
+	return r + ")"
+}
+
+// Confine replaces the unscoped file tools (Read, Grep, Glob) in tools with
+// ones limited to the checkout dir. Other tools, and file tools a trusted
+// or approved template already scoped itself, are left as they are.
+func Confine(tools []string, dir string) []string {
+	dirs := []string{dir}
+	if real, err := filepath.EvalSymlinks(dir); err == nil && real != dir {
+		dirs = append(dirs, real)
+	}
+	out := make([]string, 0, len(tools)+len(dirs)*len(fileTools))
+	for _, tool := range tools {
+		if !slices.Contains(fileTools, strings.TrimSpace(tool)) {
+			out = append(out, tool)
+			continue
+		}
+		for _, d := range dirs {
+			out = append(out, pathRule(strings.TrimSpace(tool), d, true))
+		}
+	}
+	return out
+}
+
+// homeSecrets are credentials in the user's home a scan never reads.
+var homeSecrets = []string{
+	".ssh", ".gnupg", ".aws", ".config/gh", ".config/gcloud", ".claude", ".claude.json",
+	".netrc", ".git-credentials", ".docker", ".kube",
+	".local/share/dash", ".local/share/dash-runner", ".local/share/dash-hub",
+}
+
+// dataSecrets are the files in a Dash data directory a scan never reads:
+// the runner's registration (its hub token), the database, other runs'
+// logs and the tasks' worktrees.
+var dataSecrets = []string{"*.json", "dash.db*", "logs", "worktrees", "uploads"}
+
+// DenyReads are deny rules for the file tools on credentials: the ones in
+// the user's home, and the Dash data directories (secrets, e.g. the parent
+// of the runner's scan root). A deny rule wins over an allow rule, so a
+// directory that holds the checkout dir itself is not denied whole, only
+// its known secret files.
+func DenyReads(dir string, secrets []string) []string {
+	var paths []string
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		for _, s := range homeSecrets {
+			paths = append(paths, filepath.Join(home, s))
+		}
+	}
+	paths = append(paths, secrets...)
+	inside := func(parent string) bool {
+		rel, err := filepath.Rel(parent, dir)
+		return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	}
+	var deny []string
+	add := func(p string, tree bool) {
+		for _, tool := range fileTools {
+			r := pathRule(tool, p, tree)
+			if !slices.Contains(deny, r) {
+				deny = append(deny, r)
+			}
+		}
+	}
+	for _, p := range paths {
+		if p == "" || !filepath.IsAbs(p) {
+			continue
+		}
+		p = filepath.Clean(p)
+		if !inside(p) {
+			add(p, false)
+			add(p, true)
+			continue
+		}
+		for _, s := range dataSecrets {
+			sub := filepath.Join(p, s)
+			if inside(sub) {
+				continue
+			}
+			add(sub, false)
+			if !strings.Contains(s, "*") {
+				add(sub, true)
+			}
+		}
+	}
+	return deny
 }
 
 // BuildPrompt is what the scan agent is asked: the template's prompt, what
