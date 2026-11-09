@@ -43,6 +43,13 @@ const h = (tag, props = {}, ...kids) => {
   el.append(...kids.flat().filter((k) => k != null && k !== false));
   return el;
 };
+// entering marks a node just arriving (not one redrawn from history) so it
+// animates in once; the class goes when its animation ends, so showing a
+// hidden pane again doesn't replay it.
+const entering = (el) => { el?.classList?.add("enter"); return el; };
+const entered = (e) => { if (e.target.classList?.contains("enter") && e.animationName.startsWith("enter-")) e.target.classList.remove("enter"); };
+document.addEventListener("animationend", entered);
+document.addEventListener("animationcancel", entered);
 // Line icons for buttons on a 24px grid. Static buttons name theirs with data-icon.
 const ICONS = {
   plus: "M12 5v14M5 12h14",
@@ -5592,7 +5599,13 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   const input = form.q;
   const sendBtn = form.querySelector("button:not([type=button])");
   const finish = () => { c.current = null; c.waiting.clear(); sendBtn.disabled = false; onState(); };
-  const toEnd = () => { if (log.offsetParent) scroller().scrollTop = scroller().scrollHeight; };
+  // smooth glides there when a new message arrives and the end is within a screen.
+  const toEnd = (smooth = false) => {
+    if (!log.offsetParent) return;
+    const sc = scroller(), near = sc.scrollHeight - sc.scrollTop - sc.clientHeight < sc.clientHeight;
+    const glide = smooth && near && !matchMedia("(prefers-reduced-motion: reduce)").matches;
+    sc.scrollTo({ top: sc.scrollHeight, behavior: glide ? "smooth" : "instant" });
+  };
   const from = (who) => labels ? h("div", { class: "msg-from" }, labels[who]) : null;
   const assistant = (m) => h("div", { class: "msg assistant" }, from("assistant"), h("div", { class: "reply", innerHTML: renderMarkdown(m.content) }), usageLine(m.usage), actions(m.content));
   const prefixOf = () => target().prefix || "";
@@ -5638,11 +5651,12 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
         } else {
           cur.reply.before(el);
         }
+        entering(el);
       } else if (d.kind === "tool_result") {
         const t = cur.tools.get(d.id);
         if (t) toolResult(t, d);
       } else if (d.kind === "permission") {
-        cur.reply.before(chatPermCard(d, (decision) => ws.send(JSON.stringify({ type: "permission", id: d.id, decision }))));
+        cur.reply.before(entering(chatPermCard(d, (decision) => ws.send(JSON.stringify({ type: "permission", id: d.id, decision })))));
         c.waiting.add(d.id);
         onState();
       } else if (d.kind === "permission_decided") {
@@ -5656,8 +5670,8 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
         cur.el.classList.remove("pending");
         for (const t of cur.tools.values()) toolSettled(t);
         const u = usageLine(cur.usage);
-        if (u) cur.el.append(u);
-        if (cur.content) cur.el.append(actions(cur.content));
+        if (u) cur.el.append(entering(u));
+        if (cur.content) cur.el.append(entering(actions(cur.content)));
         if (cur.content) c.history.push({ role: "assistant", content: cur.content, at: cur.at, ...(cur.usage ? { usage: cur.usage } : {}) });
         else c.history.pop(); // keep history alternating
         finish();
@@ -5696,7 +5710,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
     empty.hidden = true;
     const m = { role: "user", content: q, at: new Date().toISOString(), ...(attachments.length ? { attachments } : {}) };
     c.history.push(m);
-    log.append(user(m));
+    log.append(entering(user(m)));
     sendBtn.disabled = true;
     turn(target());
   }
@@ -5706,9 +5720,9 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   function turn({ prefix = "", ...fields }) {
     const thinking = h("div", { class: "thinking md" });
     const reply = h("div", { class: "reply" });
-    const el = h("div", { class: "msg assistant pending" }, from("assistant"), thinking, reply);
+    const el = entering(h("div", { class: "msg assistant pending" }, from("assistant"), thinking, reply));
     c.current ? c.current.el.replaceWith(el) : log.append(el);
-    toEnd();
+    toEnd(true);
     c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), target: { prefix, ...fields }, at: new Date().toISOString() };
     onState();
     const ws = socket(prefix);
@@ -6367,6 +6381,8 @@ function addWorkerEvent(id, e) {
 // Agent turn at its end (or a new one), Dash's notes into a log block, and run
 // boundaries become dividers.
 function workerNode(parent, e) {
+  // Live events animate in; a timeline being rebuilt (into a fragment) doesn't.
+  const enter = (el) => parent.nodeType === Node.ELEMENT_NODE ? entering(el) : el;
   const last = (kind) => (worker.cur?.kind === kind && worker.cur.el === parent.lastElementChild ? worker.cur : null);
   const divider = (text, cls = "") => { worker.cur = null; parent.append(h("div", { class: `tl-divider ${cls}`, role: "separator" }, h("span", {}, text))); };
   switch (e.kind) {
@@ -6381,9 +6397,9 @@ function workerNode(parent, e) {
       return;
     case "prompt":
       worker.cur = null;
-      return parent.append(h("div", { class: "msg user to-agent" },
+      return parent.append(enter(h("div", { class: "msg user to-agent" },
         ib({ type: "button", class: "btn small copy-raw", title: "Copy the raw markdown", onclick: attempt(() => copy(e.text || "", "Copied")) }, "copy", "Copy"),
-        h("div", { class: "msg-from" }, "To agent"), h("div", { class: "md", innerHTML: renderMarkdown(e.text || "") })));
+        h("div", { class: "msg-from" }, "To agent"), h("div", { class: "md", innerHTML: renderMarkdown(e.text || "") }))));
     case "status": {
       const text = e.text || "";
       const start = /^▶ (setup|tests): ([^]*)/.exec(text);
@@ -6416,7 +6432,7 @@ function workerNode(parent, e) {
   let cur = last("agent");
   if (!cur) {
     const reply = h("div", { class: "reply" });
-    cur = worker.cur = { kind: "agent", el: h("div", { class: "msg assistant agent" }, h("div", { class: "msg-from" }, "Agent"), reply), reply, seg: "" };
+    cur = worker.cur = { kind: "agent", el: enter(h("div", { class: "msg assistant agent" }, h("div", { class: "msg-from" }, "Agent"), reply)), reply, seg: "" };
     parent.append(cur.el);
   }
   switch (e.kind) {
@@ -6428,7 +6444,7 @@ function workerNode(parent, e) {
       // Later text goes below the tool call, in a reply of its own.
       const t = toolCall(e.tool, e.input || {}, Date.parse(e.at) || Date.now());
       worker.tools.set(e.id, t);
-      cur.el.append(t.el);
+      cur.el.append(enter(t.el));
       cur.reply = h("div", { class: "reply" });
       cur.el.append(cur.reply);
       cur.seg = "";

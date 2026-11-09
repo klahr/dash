@@ -412,13 +412,27 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .chat-runner.offline .chat-runner-dot { background: var(--failed); }
 .chat-runner-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .chat-runner select { width: auto; flex: none; min-height: 30px; padding: 0 8px; font-size: 13px; }
-/* One "Thinking…", on the reply still to come; earlier empty ones say nothing */
+/* One "Thinking…", on the reply still to come; earlier empty ones say nothing.
+   A soft highlight sweeps across the word until the first text arrives. */
 .msg.pending .reply:empty:not(:last-of-type) { display: none; }
-.msg.pending .reply:empty::before {
-  content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 8px; vertical-align: -1px;
-  border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite;
+.msg.pending .reply:empty::after {
+  content: "Thinking…"; color: transparent; -webkit-background-clip: text; background-clip: text;
+  background-image: linear-gradient(90deg, var(--muted) 0 35%, var(--text) 50%, var(--muted) 65% 100%);
+  background-size: 300% 100%; background-position: 100% 0; animation: thinking-sweep 1.6s ease-in-out infinite;
 }
-.msg.pending .reply:empty::after { content: "Thinking…"; color: var(--muted); }
+@keyframes thinking-sweep { to { background-position: 0 0; } }
+
+/* New arrivals in a chat (marked .enter by the script; history redrawn by
+   reset isn't): quick, small, transform and opacity only. */
+@keyframes enter-rise { from { opacity: 0; transform: translateY(6px) scale(.98); } }
+@keyframes enter-fade { from { opacity: 0; } }
+@keyframes enter-card { from { opacity: 0; transform: translateY(4px); } }
+.msg.user.enter { transform-origin: bottom right; animation: enter-rise .22s cubic-bezier(.2, .8, .3, 1); }
+.msg.assistant.enter { animation: enter-fade .2s ease-out; }
+.msg .tool.enter, .msg .perm.enter { animation: enter-card .2s ease-out; }
+.msg :is(.msg-usage, .msg-actions).enter { animation: enter-fade .25s ease-out; }
+/* Opening a tool call fades its body in rather than popping it. */
+.msg .tool[open] > pre:not([hidden]) { animation: enter-card .16s ease-out; }
 .msg.error { color: var(--failed); }
 .composer {
   display: flex; align-items: flex-end; gap: 8px; padding: 10px 12px;
