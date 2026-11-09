@@ -5924,6 +5924,7 @@ function attach(p) {
 
 async function startProc(req, show = true) {
   const p = await api("POST", `/api/projects/${state.project.id}/processes`, { ...req, cols: term.cols, rows: term.rows });
+  if (req.preset && !req.todo_id) quickStarted.set(`${req.kind}:${req.preset}`, p.id);
   // A runner's checkout of a hub project with uncommitted changes runs them.
   if (p.warning) toast(p.warning, { tone: "paused", head: "Uncommitted changes", ms: 9000 });
   if (!show) return loadProcs();
@@ -6007,12 +6008,19 @@ const quickPlainIcons = new Map($$(".quick-btn").map((b) => [b, b.querySelector(
 // A process running in the project's own checkout, not a task's worktree. Dash marks it
 // (main); on a hub its dir is the runner's clone, never the hub's path. Processes from
 // before Dash marked them go by their dir.
-const inMain = (x) => x.main || (!x.preset && x.dir === state.project?.path);
+// A runner older than those marks lists its processes with its clone's dir: there, one
+// that isn't a task's (no todo_id, not in a worktree) is taken to be in the checkout.
+const inMain = (x) => x.main || (!x.preset && (x.dir === state.project?.path
+  || (x.runner && !x.todo_id && !/\/worktrees\//.test(x.dir || ""))));
+// The process each quick action last started from this page, by spec: found even when
+// its runner doesn't mark it (see inMain).
+const quickStarted = new Map();
 function quickProc(spec) {
   const cmd = quickCmd(spec);
   if (!cmd) return null;
   const [kind, preset] = spec.split(":");
-  return state.procs.filter((x) => x.kind === kind && inMain(x) && (x.preset ? x.preset === preset : x.command === cmd))
+  const mine = quickStarted.get(spec);
+  return state.procs.filter((x) => x.id === mine || (x.kind === kind && inMain(x) && (x.preset ? x.preset === preset : x.command === cmd)))
     .reduce((a, b) => (!a || b.started_at > a.started_at ? b : a), null);
 }
 
