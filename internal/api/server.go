@@ -513,25 +513,15 @@ func (s *Server) forwardToPeer(w http.ResponseWriter, r *http.Request) {
 		s.confirmThenForward(w, r)
 		return
 	}
-	if isPreviewStartOrTerminal(r.Method, peer.ForwardedPath(r)) {
-		// A terminal preview is a shell, which a runner opens only for the
-		// user who registered it: say whom this is for.
-		if c, err := s.caller(r); err == nil {
-			r = r.WithContext(tunnel.WithUser(r.Context(), c.User))
-		}
+	// Say whom this is for: a runner runs Claude (chats included), opens
+	// terminals and lists repositories only for the user who registered it
+	// (onlyForOwner). The proxy drops whatever X-Dash-User the browser sent
+	// and sets this one, the logged-in user's; a machine caller (User 0)
+	// names nobody.
+	if c, err := s.caller(r); err == nil && !c.Machine && c.User != 0 {
+		r = r.WithContext(tunnel.WithUser(r.Context(), c.User))
 	}
 	s.Peers.ServeHTTP(w, r)
-}
-
-// isPreviewStartOrTerminal reports whether method and p (once cleaned) start a
-// task's preview (POST /api/todos/{tid}/preview) or attach to its terminal
-// (GET /ws/todos/{tid}/preview).
-func isPreviewStartOrTerminal(method, p string) bool {
-	parts := strings.Split(strings.TrimPrefix(path.Clean("/"+p), "/"), "/")
-	if len(parts) != 4 || parts[2] == "" || parts[1] != "todos" || parts[3] != "preview" {
-		return false
-	}
-	return method == http.MethodPost && parts[0] == "api" || method == http.MethodGet && parts[0] == "ws"
 }
 
 // isProjectPath reports whether p, once cleaned, is /api/projects/{pid}.

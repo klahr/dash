@@ -557,3 +557,75 @@ func TestHubTellsTheRunnerWhomACallIsFor(t *testing.T) {
 		t.Errorf("DialWS to an unknown runner: %v", err)
 	}
 }
+
+// The proxy sets X-Dash-User to the user the hub checked (WithUser), over
+// whatever the browser claimed, for plain requests and WebSocket upgrades;
+// with no checked user it sends none.
+func TestProxyNamesTheCheckedUserNotTheClaimedOne(t *testing.T) {
+	th := newTestHub(t)
+	c := th.register(t, "work")
+	states, _ := startRunner(t, c)
+	states.want(t, true)
+	th.waitOnline(t, "work")
+
+	px, ok := th.Proxy("work")
+	if !ok {
+		t.Fatal("no proxy for the runner")
+	}
+	var uid int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if uid != 0 {
+			r = r.WithContext(WithUser(r.Context(), uid))
+		}
+		px.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+
+	get := func(forged string) string {
+		req, _ := http.NewRequest("GET", srv.URL+"/peer/work/api/who", nil)
+		if forged != "" {
+			req.Header.Set(UserHeader, forged)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		b, _ := io.ReadAll(res.Body)
+		return string(b)
+	}
+	dial := func(forged string) string {
+		hdr := http.Header{}
+		if forged != "" {
+			hdr.Set(UserHeader, forged)
+		}
+		ws, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http")+"/peer/work/ws/who", hdr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ws.Close()
+		_, msg, err := ws.ReadMessage()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(msg)
+	}
+
+	uid = 42
+	if got := get("7"); got != `"42"` {
+		t.Errorf("request for user 42 claiming 7 reached the runner as %s", got)
+	}
+	if got := get(""); got != `"42"` {
+		t.Errorf("request for user 42 reached the runner as %s", got)
+	}
+	if got := dial("7"); got != "42" {
+		t.Errorf("websocket for user 42 claiming 7 reached the runner as %q", got)
+	}
+	uid = 0
+	if got := get("7"); got != `""` {
+		t.Errorf("request for nobody claiming 7 reached the runner as %s", got)
+	}
+	if got := dial("7"); got != "" {
+		t.Errorf("websocket for nobody claiming 7 reached the runner as %q", got)
+	}
+}
