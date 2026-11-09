@@ -5890,10 +5890,11 @@ function renderChatPane() {
     type: "button", role: "tab", class: "chat-pane-tab-btn", "aria-selected": String(tab === id), title,
     onclick: () => showChatTab(id),
   }, ...kids, h("span", { class: "chat-tab-name" }, label));
+  // "This project" leads: General is rarely used.
   $("#chat-tabs").replaceChildren(
-    h("div", { class: "chat-pane-tab" }, tabBtn("general", "General", [ico("spark")], "General chat, in your home directory")),
     h("div", { class: "chat-pane-tab" }, tabBtn("project", "This project", [state.project ? projectIcon(state.project) : ico("repo")],
       state.project ? `${state.project.name} (follows the project picker)` : "Follows the project picker")),
+    h("div", { class: "chat-pane-tab" }, tabBtn("general", "General", [ico("spark")], "General chat, in your home directory")),
     ...keptTabs().map((p) => h("div", { class: "chat-pane-tab" },
       tabBtn(projectKey(p), p.name, [projectIcon(p)], grouped() ? `${p.name} · ${projectWhere(p)}` : p.name),
       ib({ type: "button", class: "icon-btn chat-tab-close", "aria-label": `Close the ${p.name} chat`, title: "Close this tab", onclick: () => {
