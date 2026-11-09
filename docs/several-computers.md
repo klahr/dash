@@ -405,7 +405,9 @@ issues, scans, chats about a project or task, CI, previews and permission prompt
   (see [above](#add-projects-from-a-runners-computer)).
 
 Claude still runs tasks with the runner's `-claude-args` and asks for permission as usual; the
-prompts appear in the hub's dashboard.
+runner reports the prompts of the hub's tasks to the hub, so they appear in the hub's dashboard
+(and its notifications), and the hub sends your answer back to the runner. While the runner is
+offline, its prompts aren't listed on the hub; they show again when it reconnects.
 
 ## When a runner goes offline
 
