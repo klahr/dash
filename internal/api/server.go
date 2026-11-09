@@ -28,6 +28,7 @@ import (
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/mcptools"
+	"github.com/klahr/dash/internal/metrics"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/notify"
 	"github.com/klahr/dash/internal/peer"
@@ -114,6 +115,9 @@ type Server struct {
 	Static      fs.FS  // frontend assets
 	Addr        string // the listen address (-addr), for the connector setup guide
 	PublicURL   string // -public-url: the hub's address runners are told (optional; else the request's)
+	// MetricsToken, if set, serves /metrics on this listener to callers
+	// with it as their bearer token (empty: /metrics isn't served here).
+	MetricsToken string
 	// Brand is how this Dash presents itself: name, legal links, logo, the
 	// landing page (empty fields: the defaults).
 	Brand branding.Config
@@ -135,7 +139,10 @@ type Server struct {
 func (s *Server) Routes() http.Handler {
 	// Preview hosts never reach Dash's own routes, nor get its security
 	// headers (a task's app keeps its own).
-	return s.Previews.Wrap(s.Auth.Headers(logRequests(s.Auth.Middleware(s.billingGate(s.mux())))))
+	// /healthz and /metrics answer before sign-in (see ops.go); every request
+	// is counted and timed for /metrics, by the route pattern that served it.
+	return s.Previews.Wrap(s.Auth.Headers(metrics.Instrument(s.ops(
+		logRequests(s.Auth.Middleware(s.billingGate(metrics.Route(s.mux()))))))))
 }
 
 func (s *Server) mux() *http.ServeMux {

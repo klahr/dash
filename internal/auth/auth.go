@@ -25,6 +25,7 @@ import (
 
 	"github.com/klahr/dash/internal/branding"
 	"github.com/klahr/dash/internal/mail"
+	"github.com/klahr/dash/internal/metrics"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/orgdomain"
 	"github.com/klahr/dash/internal/passhash"
@@ -362,11 +363,14 @@ func (a *Auth) full(f *failures, limit int, l Lockout, key string) bool {
 		f.logged = true
 		until := f.first.Add(l.Window).UTC().Format(time.RFC3339)
 		if key == "" {
+			metrics.SignInLockouts.Inc("global")
 			slog.Warn("sign-in lockout: too many failed attempts from all addresses; new sign-ins are refused",
 				"failures", f.count, "until", until)
 		} else if uid, ok := strings.CutPrefix(key, "2fa:"); ok {
+			metrics.SignInLockouts.Inc("2fa")
 			slog.Warn("sign-in lockout: too many wrong two-factor codes", "user", uid, "failures", f.count, "until", until)
 		} else {
+			metrics.SignInLockouts.Inc("ip")
 			slog.Warn("sign-in lockout: too many failed attempts", "ip", key, "failures", f.count, "until", until)
 		}
 	}

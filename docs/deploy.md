@@ -16,7 +16,7 @@ git, `gh` and the projects' commands) runs on runners, other computers that conn
 a hub needs at least one. See [Several computers](several-computers.md).
 
 **The first two put Dash's login on the internet.** Read [The login](#the-login-is-internet-facing)
-before you start.
+before you start. To watch it in production, see [Monitoring](#monitoring).
 
 ## A VPS behind Caddy
 
@@ -190,7 +190,7 @@ out to the hub over HTTPS, so they need no open ports, public address or Docker 
    Open `https://dash.example.com`, sign in, and add runners from the *Runners* page.
 
 `docker compose ps` shows the hub's health: the image checks `dash healthcheck`, which asks the
-hub's own `/runner/version`, and Caddy only starts once the hub is healthy.
+hub's own [`/healthz`](#health), and Caddy only starts once the hub is healthy.
 
 ### Previews and org subdomains (wildcard certificates)
 
@@ -553,3 +553,108 @@ computers. So:
   connector.
 - For a second login, put Cloudflare Access (above) or your proxy's own authentication in front,
   keeping the connector's paths open if you use it.
+
+## Monitoring
+
+Three things to watch a hub with: a health endpoint for Docker, load balancers and uptime checks,
+Prometheus metrics, and structured logs.
+
+### Health
+
+`GET /healthz` answers `200` when the hub can serve: its database answers (within 3 seconds) and
+has every migration this version knows applied. Otherwise it answers `503`, naming the check that
+failed; the log has the error (`msg="health check failed"`).
+
+```json
+{"status":"ok","version":"1.4.0","checks":{"database":"ok","migrations":"ok"}}
+```
+
+It needs no sign-in and answers on every host name (also org subdomains), so point any uptime
+check at `https://dash.example.com/healthz`. The Docker image's `HEALTHCHECK` runs
+`dash healthcheck`, which asks `http://127.0.0.1:7788/healthz`; give it another URL as its
+argument if the hub listens elsewhere (`dash healthcheck http://127.0.0.1:8080/healthz`).
+`/runner/version` stays what runners ask for the hub's version; it says nothing about health.
+
+### Metrics
+
+Metrics are off until you choose where Prometheus reads them, in the text format at `/metrics`:
+
+- **On a listener of their own:** `-metrics-addr 127.0.0.1:9090` (or `DASH_METRICS_ADDR`) serves
+  `/metrics` and `/healthz` there, without sign-in. It must be a loopback address, for a
+  Prometheus or agent on the same computer, unless you also set a token. On a native install
+  that's the simple way.
+- **On the hub's own address, with a token:** set `DASH_METRICS_TOKEN` (16 or more characters,
+  e.g. `openssl rand -hex 24`; an environment variable or `.env` only, so it isn't in the process
+  list) and `/metrics` answers callers that send it as a bearer token, through Caddy like
+  everything else, and `401` to everyone else. With `-metrics-addr` too, that listener asks for
+  it as well, and may then listen on any address (say the container's, for a Prometheus on the
+  same Docker network).
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: dash
+    scheme: https
+    authorization:
+      credentials_file: /etc/prometheus/dash-token   # DASH_METRICS_TOKEN
+    static_configs:
+      - targets: [dash.example.com]
+```
+
+| Metric | Type | What |
+| --- | --- | --- |
+| `dash_runners_connected` | gauge | runners connected to the hub now |
+| `dash_runners_registered` | gauge | runners registered with the hub |
+| `dash_tasks{status}` | gauge | tasks in each status, in every org: `draft`, `queued`, `in_progress` (running), `review`, `merging`, `merged`, `failed` |
+| `dash_tasks_failed_total` | counter | tasks that failed since the hub started |
+| `dash_merge_queue_length` | gauge | approved tasks waiting in or being landed by the merge queue |
+| `dash_http_requests_total{method,route,code}` | counter | requests answered, by route pattern (`/api/todos/{tid}`; `other` for static files and refused requests) |
+| `dash_http_request_duration_seconds{method,route}` | histogram | time to answer them (WebSockets and runner tunnels are counted, not timed) |
+| `dash_signin_lockouts_total{scope}` | counter | sign-in lockouts as they start: `ip` (one address), `global` (all addresses), `2fa` (one account's codes) |
+| `dash_webhook_deliveries_total{result}` | counter | notification webhook deliveries after retries: `ok` or `failed` |
+| `dash_build_info{version}` | gauge | always 1, with the running version |
+| `dash_start_time_seconds` | gauge | when the hub started (Unix time) |
+| `dash_goroutines` | gauge | goroutines running now |
+
+Some alerts to start from:
+
+```yaml
+groups:
+  - name: dash
+    rules:
+      - alert: DashDown
+        expr: up{job="dash"} == 0
+        for: 5m
+      - alert: DashNoRunners
+        expr: dash_runners_connected == 0 and dash_tasks{status="queued"} > 0
+        for: 15m
+      - alert: DashTasksFailing
+        expr: increase(dash_tasks_failed_total[1h]) > 5
+      - alert: DashMergeQueueStuck
+        expr: dash_merge_queue_length > 0 and changes(dash_merge_queue_length[1h]) == 0
+        for: 1h
+      - alert: DashServerErrors
+        expr: sum(rate(dash_http_requests_total{code=~"5.."}[5m])) / sum(rate(dash_http_requests_total[5m])) > 0.05
+        for: 10m
+      - alert: DashSignInLockouts
+        expr: increase(dash_signin_lockouts_total{scope="global"}[15m]) > 0
+      - alert: DashWebhooksFailing
+        expr: increase(dash_webhook_deliveries_total{result="failed"}[1h]) > 10
+```
+
+A runner serves the same metrics with `-metrics-addr` (its own tasks, no runner counts).
+
+### Logs
+
+Dash logs to standard error with Go's `slog`: one record per line, with a level, a message and
+key/value attributes (`err`, `project`, `ip`, …). Two settings:
+
+- `-log-format json` (or `DASH_LOG_FORMAT=json`): one JSON object per line, for log shippers
+  (Loki/Promtail, Vector, Fluent Bit, Datadog, CloudWatch), e.g.
+  `{"time":"2026-11-09T13:24:59Z","level":"WARN","msg":"sign-in lockout: too many failed attempts","ip":"203.0.113.7","failures":5,"until":"…"}`.
+  The default, `text`, writes the same as `key=value` lines.
+- `-log-level` (or `DASH_LOG_LEVEL`): `debug`, `info` (the default), `warn` or `error`.
+
+With Docker the log is `docker compose logs dash`; with the [service](service.md),
+`journalctl --user -u dash`. The [fail2ban filter](#the-login-is-internet-facing) above matches
+the text format; with JSON, match `"msg":"sign-in lockout: too many failed attempts","ip":"<HOST>"`.

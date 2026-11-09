@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/metrics"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -532,6 +533,9 @@ func (s *Store) UpdateTodo(id string, fn func(*model.Todo) error) (model.Todo, e
 	})
 	if err != nil {
 		return cp, err
+	}
+	if cp.Status == model.StatusFailed && t.Status != model.StatusFailed {
+		metrics.TasksFailed.Inc()
 	}
 	s.emit(model.EvTodoUpdated, cp.ProjectID, cp.ID, cp)
 	s.emitIssues(resolved)

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/ci"
+	"github.com/klahr/dash/internal/metrics"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 )
@@ -426,7 +427,10 @@ retry:
 		}
 	}
 	msg := ""
-	if err != nil {
+	if err == nil {
+		metrics.WebhookDeliveries.Inc("ok")
+	} else {
+		metrics.WebhookDeliveries.Inc("failed")
 		msg = err.Error()
 		host := ""
 		if u, perr := url.Parse(w.URL); perr == nil {

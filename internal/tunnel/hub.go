@@ -416,6 +416,19 @@ func (h *Hub) Revoke(id string) error {
 	return nil
 }
 
+// Counts is how many runners are registered, and how many of them are
+// connected now (/metrics).
+func (h *Hub) Counts() (registered, connected int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, r := range h.runners {
+		if _, ok := h.live[r.ID]; ok {
+			connected++
+		}
+	}
+	return len(h.runners), connected
+}
+
 // List returns the registered runners, by name.
 func (h *Hub) List() []Runner {
 	owners, err := h.Accounts.RunnerOwners()

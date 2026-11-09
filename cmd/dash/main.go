@@ -35,6 +35,7 @@ import (
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/mail"
 	"github.com/klahr/dash/internal/mcptools"
+	"github.com/klahr/dash/internal/metrics"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/notify"
 	"github.com/klahr/dash/internal/orgdomain"
@@ -93,6 +94,9 @@ func main() {
 	backupDir := flag.String("backup-dir", "", "write a timestamped backup of the database (dash-<time>.db) to this directory every -backup-every; empty = off (or $DASH_BACKUP_DIR)")
 	backupKeep := flag.Int("backup-keep", -1, "keep this many backups in -backup-dir, removing older ones; 0 = keep all (default $DASH_BACKUP_KEEP, else 7)")
 	backupEvery := flag.Duration("backup-every", 0, "how often to back up to -backup-dir (default $DASH_BACKUP_EVERY, else 24h)")
+	logFormat := flag.String("log-format", "", "log as text (key=value lines) or json (one object per line, for log shippers) (default $DASH_LOG_FORMAT, else text)")
+	logLevel := flag.String("log-level", "", "log debug, info, warn or error and above (default $DASH_LOG_LEVEL, else info)")
+	metricsAddr := flag.String("metrics-addr", "", "serve /metrics (Prometheus) and /healthz on this extra listener, e.g. 127.0.0.1:9090; only on loopback unless $DASH_METRICS_TOKEN is set (or $DASH_METRICS_ADDR; see docs/deploy.md#monitoring)")
 	defaultData, mode := runnerctl.HubData(home), runnerctl.ModeHub
 	if runnerMode {
 		defaultData, mode = runnerctl.RunnerData(home), runnerctl.ModeRunner
@@ -181,14 +185,21 @@ func main() {
 	addrSet := false
 	flag.Visit(func(f *flag.Flag) { addrSet = addrSet || f.Name == "addr" })
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	// The env file first: it may set the log format too.
+	envErr := auth.LoadDotEnv(*envFile)
+	logger, err := newLogger(os.Stderr, envOr(*logFormat, "DASH_LOG_FORMAT"), envOr(*logLevel, "DASH_LOG_LEVEL"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "dash:", err)
+		os.Exit(2)
+	}
+	slog.SetDefault(logger)
 	slog.Info("dash", "version", buildinfo.Version)
 	for _, name := range removed {
 		slog.Warn("-" + name + " is gone and ignored: the hub never runs Claude or tasks itself, runners (dash runner) do. Remove it from the start command")
 	}
 
-	if err := auth.LoadDotEnv(*envFile); err != nil {
-		slog.Error("read env file", "path", *envFile, "err", err)
+	if envErr != nil {
+		slog.Error("read env file", "path", *envFile, "err", envErr)
 		os.Exit(1)
 	}
 	user, pass := os.Getenv("DASH_USERNAME"), os.Getenv("DASH_PASSWORD")
@@ -395,6 +406,16 @@ func main() {
 			PricingURL: envOr(*pricingURL, "DASH_PRICING_URL"),
 		}.WithDefaults(),
 	}
+	// Monitoring: /healthz always; /metrics with a token on this listener,
+	// and on -metrics-addr.
+	metricsToken := os.Getenv("DASH_METRICS_TOKEN")
+	*metricsAddr = envOr(*metricsAddr, "DASH_METRICS_ADDR")
+	if err := checkMetrics(*metricsAddr, metricsToken); err != nil {
+		slog.Error("metrics", "err", err)
+		os.Exit(1)
+	}
+	apiSrv.MetricsToken = metricsToken
+	apiSrv.RegisterMetrics(metrics.Default)
 	if err := apiSrv.Brand.Check(); err != nil {
 		slog.Error("branding", "err", err) // a broken link in every page's footer
 		os.Exit(1)
@@ -750,6 +771,16 @@ func main() {
 				stop()
 			}
 		}()
+	}
+
+	if *metricsAddr != "" {
+		if err := serveOps(ctx, *metricsAddr, apiSrv.OpsHandler(metricsToken)); err != nil {
+			slog.Error("metrics listener", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("metrics listening", "url", "http://"+*metricsAddr+"/metrics", "token", metricsToken != "")
+	} else if metricsToken != "" {
+		slog.Info("metrics on /metrics, for callers with DASH_METRICS_TOKEN")
 	}
 
 	srv := &http.Server{

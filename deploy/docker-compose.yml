@@ -31,7 +31,8 @@ services:
       - -allow-unsafe=proxy-addr # so listening on the container's network is fine
     volumes:
       - dash-data:/data
-    # The image's HEALTHCHECK (`dash healthcheck`), spelled out for compose.
+    # The image's HEALTHCHECK, spelled out for compose: `dash healthcheck`
+    # asks the hub's /healthz (database answers, migrations applied).
     healthcheck:
       test: ["CMD", "/usr/local/bin/dash", "healthcheck"]
       interval: 30s

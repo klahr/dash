@@ -9,9 +9,10 @@ import (
 	"time"
 )
 
-// defaultHealthURL is a hub's own public, secret-free endpoint on its
-// default address. It answers on any Host, also with org subdomains on.
-const defaultHealthURL = "http://127.0.0.1:7788/runner/version"
+// defaultHealthURL is the hub's health endpoint on its default address:
+// 200 once its database answers with every migration applied. It needs no
+// sign-in and answers on any Host, also with org subdomains on.
+const defaultHealthURL = "http://127.0.0.1:7788/healthz"
 
 // healthcheck is `dash healthcheck [url]`: exit 0 if Dash answers url with
 // 200 within a few seconds, else 1. It is the Docker image's HEALTHCHECK,
