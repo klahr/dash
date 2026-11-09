@@ -159,6 +159,12 @@ textarea { resize: vertical; line-height: 1.45; }
   background: var(--review); color: #08202a; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
 }
 .nav .badge.quiet { background: var(--raised); color: var(--text); }
+/* Chat tab (mobile): a breathing dot while an answer streams, a "!" while one waits on approval. */
+.nav .chat-badge {
+  top: 10px; left: calc(50% + 8px); min-width: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%;
+  background: var(--running); animation: breathe 1.8s ease-in-out infinite;
+}
+.nav .chat-badge.perm { top: 8px; left: calc(50% + 6px); min-width: 18px; width: auto; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--review); animation: none; }
 @media (max-width: 400px) { .nav > button { font-size: 11px; letter-spacing: -.01em; } }
 .sidebar { display: contents; }
 
@@ -1118,6 +1124,13 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 /* Usage and the account sit at the bottom: pushed down when there is room, kept in
    view (sticky) when the projects make the sidebar or drawer scroll. The scroller has
    no bottom padding so nothing shows below; the group pads itself instead. */
+/* Mobile: the sections the bottom nav has no room for (Scans, History); the side rail has them on desktop. */
+.menu-views { order: 4; display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.menu-view { position: relative; display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 10px; border-radius: var(--r-m); color: var(--muted); font-size: 15px; font-weight: 500; text-align: left; }
+.menu-view svg { width: 22px; height: 22px; flex: none; }
+.menu-view:hover, .menu-view.active { background: var(--raised); color: var(--text); }
+.menu-view.active svg { color: var(--accent); }
+.menu-view .badge { position: static; margin-left: auto; }
 .side-bottom {
   order: 6; position: sticky; bottom: 0; z-index: 1; display: flex; flex-direction: column;
   margin-top: auto; padding: 8px 0 12px; background: var(--surface);
@@ -1269,6 +1282,20 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .chat-pane:has(.composer textarea:focus) { padding-bottom: 0; }
   .chat-pane:has(.composer textarea:focus) .composer { padding-bottom: 10px; }
   .detail:has(.composer textarea:focus) .actionbar { display: none; }
+
+  /* Bottom nav: Board · Chat · Issues · Shell · Files. Scans and History are in the
+     menu drawer (.menu-views); the Chat tab replaces the top bar's chat button. */
+  .nav > button:is([data-view="scans"], [data-view="history"]), #pc-open { display: none; }
+  /* The chat sheet is a tab: it stops above the nav, which shows Chat as the active
+     tab, until the composer takes focus and the keyboard needs the room. */
+  .chat-pane { height: calc(var(--vv-h, 100dvh) - var(--nav-h) - var(--safe-b)); padding-bottom: 0; }
+  .chat-pane .composer { padding-bottom: 10px; }
+  .chat-pane:has(.composer textarea:focus) { height: var(--vv-h, 100dvh); }
+  .kb-env .chat-pane:has(.composer textarea:focus) { height: calc(var(--vv-h, 100dvh) - env(keyboard-inset-height, 0px)); }
+  .app.chat-open .nav > button.active { color: var(--muted); }
+  .app.chat-open .nav > button.active svg { color: inherit; }
+  .app.chat-open .nav > .nav-chat { color: var(--text); }
+  .app.chat-open .nav > .nav-chat svg { color: var(--accent); }
 }
 
 /* ---------- tablet ---------- */
@@ -1304,7 +1331,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
     padding: 12px 12px 0; gap: 2px; background: var(--surface); border-right: 1px solid var(--line);
   }
   .nav { display: contents; }
-  .menu-head, .menu-scrim { display: none; }
+  .menu-head, .menu-scrim, .nav > .nav-chat, .menu-views { display: none; }
   .menu { display: contents; }
   .nav > button { order: 2; }
   .nav > button { flex-direction: row; justify-content: flex-start; gap: 12px; min-height: 42px; padding: 0 10px; border-radius: var(--r-m); font-size: 15px; }

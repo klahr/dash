@@ -68,6 +68,11 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M12 4v9M18 4v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="6" cy="9" r="2"/><circle cx="12" cy="15" r="2"/><circle cx="18" cy="18" r="2"/></svg>
         <span>Board</span><span class="badge" id="review-badge" hidden></span>
       </button>
+      <!-- Mobile only: opens the chat sheet on the current project's chat (desktop has #pc-open). -->
+      <button class="nav-chat" id="nav-chat" type="button" aria-label="Chat" aria-controls="chat-pane" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 17h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 5 5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        <span>Chat</span><span class="badge chat-badge" id="chat-badge" hidden></span>
+      </button>
       <button data-view="issues" title="Issues (gi)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 10a4 4 0 0 1 8 0v4a4 4 0 0 1-8 0zM12 10v8M4 13h4M16 13h4M5 8l3 2M19 8l-3 2M5 19l3-2M19 19l-3-2M9.5 6.5 8 4M14.5 6.5 16 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Issues</span><span class="badge quiet" id="issue-badge" hidden></span>
@@ -102,6 +107,17 @@
           <button class="side-new-project" id="side-new-project" type="button" title="New project">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
             <span>New project</span>
+          </button>
+        </div>
+        <!-- Mobile only: the sections that don't fit the bottom nav (the side rail has them on desktop). -->
+        <div class="menu-views" aria-label="More sections">
+          <button class="menu-view" data-view="scans" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Scans</span><span class="badge quiet" id="menu-scan-badge" hidden></span>
+          </button>
+          <button class="menu-view" data-view="history" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M7 9c0 4 10 2 10 7M7 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="16" r="2"/></svg>
+            <span>History</span>
           </button>
         </div>
         <div class="quick-actions" id="quick-actions">

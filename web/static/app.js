@@ -739,7 +739,7 @@ function showView(name) {
 function applyView(name) {
   state.view = name;
   try { localStorage.setItem("dash.view", name); } catch {}
-  $$(".nav > button").forEach((b) => {
+  $$(".nav > button[data-view], .menu-views [data-view]").forEach((b) => {
     const on = b.dataset.view === name;
     b.classList.toggle("active", on);
     b.toggleAttribute("aria-current", on);
@@ -752,7 +752,14 @@ function applyView(name) {
   if (name === "issues" && state.project) loadIssues().catch(fail);
   if (name === "scans" && state.project) loadScans().catch(fail);
 }
-$$(".nav > button[data-view]").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
+// The nav's sections, and the menu drawer's copies of those that don't fit the
+// bottom nav on mobile (Scans, History). On mobile the chat sheet is a tab of
+// its own: picking a section closes it.
+$$(".nav > button[data-view], .menu-views [data-view]").forEach((b) => b.addEventListener("click", () => {
+  if (!desktop.matches && pane.open) toggleChatPane(false);
+  if (b.closest(".menu-views")) setMenu(false);
+  showView(b.dataset.view);
+}));
 {
   const saved = (() => { try { return localStorage.getItem("dash.view"); } catch { return null; } })();
   if (saved && $(`.nav > button[data-view="${saved}"]`)) applyView(saved);
@@ -5420,11 +5427,12 @@ function usageLine(u) {
 // restarting, say) is sent again once Dash is back. labels ({user, assistant})
 // head each message with who it's from; merge(nodes, saved) places a saved
 // conversation's messages among other nodes.
-function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {} }) {
-  const c = { history: [], current: null, ws: null, prefix: "" };
+function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {} }) {
+  // waiting: ids of the permission requests the current turn waits on an answer to.
+  const c = { history: [], current: null, ws: null, prefix: "", waiting: new Set() };
   const input = form.q;
   const sendBtn = form.querySelector("button:not([type=button])");
-  const finish = () => { c.current = null; sendBtn.disabled = false; };
+  const finish = () => { c.current = null; c.waiting.clear(); sendBtn.disabled = false; onState(); };
   const toEnd = () => { if (log.offsetParent) scroller().scrollTop = scroller().scrollHeight; };
   const from = (who) => labels ? h("div", { class: "msg-from" }, labels[who]) : null;
   const assistant = (m) => h("div", { class: "msg assistant" }, from("assistant"), h("div", { class: "reply", innerHTML: renderMarkdown(m.content) }), usageLine(m.usage), actions(m.content));
@@ -5476,7 +5484,10 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
         if (t) toolResult(t, d);
       } else if (d.kind === "permission") {
         cur.reply.before(chatPermCard(d, (decision) => ws.send(JSON.stringify({ type: "permission", id: d.id, decision }))));
+        c.waiting.add(d.id);
+        onState();
       } else if (d.kind === "permission_decided") {
+        if (c.waiting.delete(d.id)) onState();
         const st = log.querySelector(`.perm[data-id="${d.id}"] .perm-actions`);
         st?.replaceChildren(h("span", { class: "perm-status" }, { allow: "Approved", deny: "Denied", timeout: "Not answered in time: denied" }[d.text] || d.text));
       }
@@ -5540,6 +5551,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
     c.current ? c.current.el.replaceWith(el) : log.append(el);
     toEnd();
     c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), target: { prefix, ...fields }, at: new Date().toISOString() };
+    onState();
     const ws = socket(prefix);
     ws.fields = fields;
     const go = () => ws.send(JSON.stringify({ type: "send", ...fields, messages: c.history }));
@@ -5585,7 +5597,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
     turn(target());
   }
 
-  return { reset, resumeLast, input, toEnd, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; } };
+  return { reset, resumeLast, input, toEnd, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
 }
 
 // A collapsible tool call: its input, and its output once filled in. Until
@@ -5716,6 +5728,7 @@ const chat = makeChat({
   actions: chatActions(true),
   cwd: $("#chat-cwd"),
   resume: true,
+  onState: () => renderChatBadge(),
 });
 
 // The server saves every turn, so the conversation survives restarts. A
@@ -5805,6 +5818,7 @@ function projectChatFor(p) {
     // A turn left streaming when the chat was cleared is saved when it finishes.
     saved: () => { if (!pc.chat.busy) { pc.loaded = false; loadProjectChat(proj()).catch(fail); } },
     actions: chatActions(false, key),
+    onState: renderChatBadge,
   });
   // A project chat you talk in stays as a tab after you switch projects.
   pc.chat.input.form.addEventListener("submit", () => keepChatTab(key));
@@ -5855,6 +5869,7 @@ function renderChatPane() {
   else app.style.removeProperty("--chat-w");
   $("#chat-pane").hidden = !pane.open;
   $("#pc-open").setAttribute("aria-pressed", String(pane.open));
+  $("#nav-chat").setAttribute("aria-expanded", String(pane.open));
   const pin = $("#pc-pin");
   pin.setAttribute("aria-pressed", String(pane.pinned));
   pin.title = pane.pinned ? "Unpin the chat (overlay)" : "Pin the chat beside the content";
@@ -5915,6 +5930,19 @@ function togglePin() {
 }
 wide.addEventListener("change", renderChatPane);
 $("#pc-open").addEventListener("click", () => toggleChatPane());
+// The mobile bottom nav's Chat tab: always on the current project's chat, ready to type in.
+$("#nav-chat").addEventListener("click", () => toggleChatPane(!pane.open, state.project ? "project" : "general"));
+// Its badge: a pane chat is streaming an answer, or waits on a permission request.
+function renderChatBadge() {
+  const chats = [chat, ...[...projectChats.values()].map((pc) => pc.chat)];
+  const waiting = chats.some((c) => c.waiting), busy = chats.some((c) => c.busy);
+  const b = $("#chat-badge");
+  b.hidden = !waiting && !busy;
+  b.classList.toggle("perm", waiting);
+  b.textContent = waiting ? "!" : "";
+  b.title = waiting ? "Claude needs approval" : busy ? "Claude is answering" : "";
+  $("#nav-chat").setAttribute("aria-label", waiting ? "Chat: Claude needs approval" : busy ? "Chat: Claude is answering" : "Chat");
+}
 $("#pc-close").addEventListener("click", () => toggleChatPane(false));
 $("#pc-pin").addEventListener("click", togglePin);
 
@@ -7498,10 +7526,12 @@ function describeCron(expr) {
 
 function renderScanBadge() {
   const n = scans.list.filter((s) => s.running).length;
-  const b = $("#scan-badge");
-  b.hidden = !n;
-  b.textContent = n;
-  b.title = `${plural(n, "scan")} running`;
+  // The side rail's, and on mobile the menu drawer's.
+  for (const b of $$("#scan-badge, #menu-scan-badge")) {
+    b.hidden = !n;
+    b.textContent = n;
+    b.title = `${plural(n, "scan")} running`;
+  }
 }
 
 function renderScans() {
