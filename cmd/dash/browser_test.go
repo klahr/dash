@@ -247,7 +247,7 @@ func TestBrowserChatTabs(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Remove(hold) })
-	b.clickText("#chat-tabs .chat-pane-tab-btn", "This project")
+	b.clickTextUntil("#chat-tabs .chat-pane-tab-btn", "This project", `document.querySelector('#chat-tabs [aria-selected="true"] .chat-tab-name')?.textContent === "This project"`)
 	panel := `#chat-pane .chat-panel[data-chat]:not([hidden])`
 	b.do("ask app's chat", chromedp.SendKeys(chromedp.CSS(panel+` textarea`), "Hi\r"))
 	b.waitJS("the reply streaming", `document.querySelector("`+panel+`")?.textContent.includes("Hello from the runner")`)
@@ -260,7 +260,7 @@ func TestBrowserChatTabs(t *testing.T) {
 	b.do("reload", chromedp.Reload())
 	b.waitJS("web selected", `document.querySelector("#project-name")?.textContent === "web"`)
 	tabs("This project,General,app") // unread survives a reload
-	b.clickText("#chat-tabs .chat-pane-tab-btn", "app")
+	b.clickTextUntil("#chat-tabs .chat-pane-tab-btn", "app", `document.querySelector('#chat-tabs [aria-selected="true"] .chat-tab-name')?.textContent === "app"`)
 	b.waitJS("app's tab read", `!document.querySelector("#chat-tabs .chat-pane-tab-btn.unread")`)
 	tabs("This project,General,app") // still there while you read it
 	b.clickText("#chat-tabs .chat-pane-tab-btn", "General")
