@@ -54,10 +54,14 @@ func (g *Git) exec(ctx context.Context, projectID, dir, bin string, args ...stri
 func (g *Git) run(ctx context.Context, publish bool, projectID, dir, bin string, args ...string) (string, error) {
 	start := time.Now()
 	args = stripNUL(args)
-	if err := localrun.Check(bin + " " + strings.Join(args, " ")); err != nil {
+	tool := localrun.Git
+	if bin == g.ghBin() {
+		tool = localrun.Gh
+	}
+	cmd, err := localrun.Command(ctx, tool, bin, args...)
+	if err != nil {
 		return "", err
 	}
-	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1")
 	// When ctx ends, git is killed but a child it started (ssh) may keep the
@@ -65,7 +69,7 @@ func (g *Git) run(ctx context.Context, publish bool, projectID, dir, bin string,
 	cmd.WaitDelay = 5 * time.Second
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
-	err := cmd.Run()
+	err = cmd.Run()
 	if g.pub != nil && publish {
 		g.pub.Publish(model.Event{Type: model.EvGitOp, ProjectID: projectID, Time: time.Now(), Data: map[string]any{
 			"cmd": bin + " " + strings.Join(args, " "), "dir": dir, "ok": err == nil,
@@ -815,10 +819,10 @@ func (g *Git) ReadBlob(ctx context.Context, projectID, repo, blob string, max in
 	if size, err = strconv.ParseInt(s, 10, 64); err != nil || size > max {
 		return nil, size, err
 	}
-	if err := localrun.Check("git cat-file blob"); err != nil {
+	cmd, err := localrun.Command(ctx, localrun.Git, "git", "cat-file", "blob", blob)
+	if err != nil {
 		return nil, 0, err
 	}
-	cmd := exec.CommandContext(ctx, "git", "cat-file", "blob", blob)
 	cmd.Dir = repo
 	content, err = cmd.Output()
 	return content, size, err

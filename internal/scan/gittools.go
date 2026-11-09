@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path"
 	"regexp"
 	"strconv"
@@ -291,10 +290,10 @@ const maxGitOutput = 256 << 10
 func gitOutput(dir string, args []string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	if err := localrun.Check("git " + strings.Join(args, " ")); err != nil {
+	cmd, err := localrun.Command(ctx, localrun.Git, "git", append([]string{"--no-pager", "-c", "color.ui=false"}, args...)...)
+	if err != nil {
 		return "", err
 	}
-	cmd := exec.CommandContext(ctx, "git", append([]string{"--no-pager", "-c", "color.ui=false"}, args...)...)
 	cmd.Dir = dir
 	cmd.Env = append(gitEnv(), "GIT_TERMINAL_PROMPT=0", "GIT_PAGER=cat", "PAGER=cat", "GIT_OPTIONAL_LOCKS=0")
 	cmd.WaitDelay = 5 * time.Second
