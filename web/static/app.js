@@ -5861,7 +5861,7 @@ function chatPermCard(p, decide) {
       ib({ class: "btn danger", onclick: answer("deny") }, "x", "Deny")));
 }
 
-// "Make this a task" saves the answer as a draft right away, its instructions
+// "Draft task" saves the answer as a draft right away, its instructions
 // cleaned up first (as the form's Clean up does); if that fails the answer is
 // kept as it is. key: the project a project chat is about; its tasks go there
 // even when another project is selected. The general chat's go to the selected project.
@@ -5882,9 +5882,9 @@ const chatActions = (pick, key) => (answer) => h("div", { class: "msg-actions" }
         { tone: "ok", action: other || !t?.id ? undefined : openTodo(t.id) });
     } finally {
       btn.disabled = false;
-      btn.lastChild.textContent = "Make this a task";
+      btn.lastChild.textContent = "Draft task";
     }
-  }) }, "plus", "Make this a task"),
+  }) }, "plus", "Draft task"),
   ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
 
 // Where the general chat runs. The hub never runs Claude: the chat runs on
