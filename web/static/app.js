@@ -887,7 +887,7 @@ function onEvent(ev, m = { name: "" }) {
         // Nothing runs for a task back in drafts or the queue, or merged: drop an activity whose end we missed.
         if (["draft", "queued", "merged"].includes(ev.data.status)) state.activity.delete(ev.todo_id);
         renderBoard();
-        if (state.view === "issues" && prev?.status !== ev.data.status && iss.list.some((i) => i.todo_ids?.includes(ev.todo_id))) renderIssues();
+        if (state.view === "issues" && (prev?.status !== ev.data.status || prev?.paused !== ev.data.paused) && iss.list.some((i) => i.todo_ids?.includes(ev.todo_id))) renderIssues();
         if (state.detail === ev.todo_id) {
           renderDetail();
           if (prev?.status !== ev.data.status && ev.data.worktree) loadDiff();
@@ -7135,6 +7135,25 @@ const SEVERITIES = ["critical", "high", "medium", "low", "info"];
 const ISSUE_TYPES = { bug: "Bug", vuln: "Vulnerability", issue: "Issue" };
 const ISSUE_STATUSES = { open: "Open", task_created: "Task created", resolved: "Resolved", dismissed: "Dismissed" };
 const triageable = (i) => i.status === "open" || i.status === "task_created";
+// Only open issues are picked for bulk actions: one with a task is already
+// being dealt with (it can still get another task or be dismissed from its
+// own row).
+const pickable = (i) => i.status === "open";
+// The list is grouped by where an issue stands, in this order.
+const ISSUE_GROUPS = [
+  { key: "open", label: "Needs triage", hint: "Not dealt with yet: create a task or dismiss" },
+  { key: "task", label: "In a task", hint: "A task is working on these; they are resolved when it is merged" },
+  { key: "closed", label: "Closed", hint: "Resolved or dismissed" },
+];
+const issueGroup = (i) => i.status === "open" ? "open" : i.status === "task_created" ? "task" : "closed";
+// The task linked to an issue that says most about where it stands: one
+// still going beats one that failed beats a merged one.
+function issueTask(i) {
+  const ts = (i.todo_ids || []).map((id) => state.todos.get(id)).filter(Boolean);
+  const rank = (t) => ({ in_progress: 0, merging: 1, review: 2, queued: 3, draft: 4, failed: 5, merged: 6 })[t.status] ?? 7;
+  return ts.sort((a, b) => rank(a) - rank(b))[0] || null;
+}
+const taskLabel = (t) => !t ? "Task" : t.paused ? "Paused" : STATUS_LABEL[t.status] || t.status;
 const iss = {
   list: [],
   loaded: false,      // list holds the project's issues (scan reports read their status from it)
@@ -7205,8 +7224,13 @@ function renderIssues() {
   renderIssueBadge();
   const list = $("#issue-list");
   const shown = iss.list.filter(issueVisible);
-  for (const id of iss.checked) if (!iss.list.some((i) => i.id === id && triageable(i))) iss.checked.delete(id);
-  list.replaceChildren(...shown.map(issueRow));
+  for (const id of iss.checked) if (!iss.list.some((i) => i.id === id && pickable(i))) iss.checked.delete(id);
+  // Grouped by where they stand; headings only when there is more than one group.
+  const groups = ISSUE_GROUPS.map((g) => ({ ...g, items: shown.filter((i) => issueGroup(i) === g.key) })).filter((g) => g.items.length);
+  list.replaceChildren(...groups.flatMap((g) => [
+    groups.length > 1 ? h("li", { class: `issue-group g-${g.key}`, title: g.hint }, h("span", {}, g.label), h("span", { class: "issue-group-n" }, g.items.length)) : null,
+    ...g.items.map(issueRow),
+  ].filter(Boolean)));
   const empty = $("#issue-empty");
   empty.hidden = shown.length > 0;
   $("#issue-empty-title").textContent = !state.project ? "No project" : iss.list.length ? "No issues match" : "No issues";
@@ -7236,10 +7260,10 @@ function renderIssueBulk() {
   const shown = iss.list.filter(issueVisible);
   const picked = shown.filter((i) => iss.checked.has(i.id));
   const all = $("#issue-all");
-  const pickable = shown.filter(triageable);
-  all.checked = pickable.length > 0 && picked.length === pickable.length;
-  all.indeterminate = picked.length > 0 && picked.length < pickable.length;
-  all.disabled = !pickable.length;
+  const can = shown.filter(pickable);
+  all.checked = can.length > 0 && picked.length === can.length;
+  all.indeterminate = picked.length > 0 && picked.length < can.length;
+  all.disabled = !can.length;
   $("#issue-bulk").hidden = !iss.checked.size;
   $("#issue-count").textContent = `${iss.checked.size} selected`;
   $("#issue-combine").disabled = iss.checked.size < 2;
@@ -7252,16 +7276,23 @@ function issueRow(i) {
     renderIssues();
     $(`#issue-list .issue[data-id="${i.id}"] .issue-main`)?.focus();
   };
-  const tasks = (i.todo_ids || []).map((id) => {
-    const t = state.todos.get(id);
-    return h("button", { type: "button", class: "issue-task", title: t ? `${title(t)} (${t.status.replace("_", " ")})` : "Open the task", onclick: () => openDetail(id) },
-      ico("draft"), t ? (t.status === "merged" ? "Merged" : "Task") : "Task");
-  });
-  return h("li", { class: `issue status-${i.status}${open ? " open" : ""}`, "data-id": i.id },
+  // Each linked task, with where it stands; the busiest first.
+  const linked = (i.todo_ids || []).map((id) => ({ id, t: state.todos.get(id) }));
+  const lead = issueTask(i);
+  linked.sort((a, b) => (b.t === lead) - (a.t === lead));
+  const tasks = linked.map(({ id, t }) => issueTaskChip(id, t));
+  // An issue with a task shows what the task is doing where the checkbox
+  // would be: it is being dealt with, not waiting to be picked.
+  const running = lead && !lead.paused && (lead.status === "in_progress" || lead.status === "merging");
+  const mark = i.status === "task_created"
+    ? h("span", { class: `issue-mark${lead ? ` s-${lead.status}` : ""}`, title: lead ? `A task is on it: ${taskLabel(lead)}` : "A task is on it", role: "img", "aria-label": "In a task" },
+      running ? h("span", { class: "act-spin", "aria-hidden": "true" }) : ico(lead?.status === "failed" ? "x" : "draft"))
+    : h("input", { type: "checkbox", class: "issue-check", checked: iss.checked.has(i.id), disabled: !pickable(i),
+      "aria-label": `Select ${i.title}`, title: pickable(i) ? "Select for a bulk action" : `${ISSUE_STATUSES[i.status]}; reopen it to triage`,
+      onchange: (e) => { e.target.checked ? iss.checked.add(i.id) : iss.checked.delete(i.id); renderIssueBulk(); } });
+  return h("li", { class: `issue status-${i.status}${lead?.status === "failed" && i.status === "task_created" ? " task-failed" : ""}${open ? " open" : ""}`, "data-id": i.id },
     h("div", { class: "issue-row" },
-      h("input", { type: "checkbox", class: "issue-check", checked: iss.checked.has(i.id), disabled: !triageable(i),
-        "aria-label": `Select ${i.title}`, title: triageable(i) ? "Select for a bulk action" : `${ISSUE_STATUSES[i.status]}; reopen it to triage`,
-        onchange: (e) => { e.target.checked ? iss.checked.add(i.id) : iss.checked.delete(i.id); renderIssueBulk(); } }),
+      mark,
       h("span", { class: `sev sev-${i.severity}`, title: `Severity: ${i.severity}` }, i.severity),
       h("button", { type: "button", class: "issue-main", "aria-expanded": String(open), onclick: toggle },
         h("span", { class: `issue-type type-${i.type}` }, i.type === "vuln" ? "vuln" : i.type),
@@ -7272,6 +7303,34 @@ function issueRow(i) {
     open ? (iss.editing === i.id ? issueEditor(i) : issueBody(i)) : null);
 }
 
+// issueTaskChip is a linked task as a pill that opens it and says where it
+// stands (Draft, Queued, Running, Ready for review, Failed, Merged).
+function issueTaskChip(id, t) {
+  const busy = t && !t.paused && (t.status === "in_progress" || t.status === "merging");
+  return h("button", { type: "button", class: `issue-task${t ? ` s-${t.status}` : ""}`, title: t ? `${title(t)}: ${taskLabel(t)}. Open the task` : "Open the task", onclick: () => openDetail(id) },
+    busy ? h("span", { class: "act-spin", "aria-hidden": "true" }) : ico(t?.status === "merged" ? "merge" : t?.status === "failed" ? "x" : "draft"),
+    taskLabel(t));
+}
+
+// issueTaskNote explains, in an issue with a task, what happens next.
+function issueTaskNote(i) {
+  if (i.status !== "task_created") return null;
+  const t = issueTask(i);
+  const n = (i.todo_ids || []).length;
+  const next = !t ? "It is resolved when its task is merged."
+    : t.paused ? "The task is paused; resume it to carry on."
+    : { draft: "The task is a draft: start it from the board to have it fixed.",
+        queued: "The task is queued and starts when a slot is free.",
+        in_progress: "The task is running now.",
+        merging: "The task is being merged; the issue is resolved when it lands.",
+        review: "The task is done and waiting for your review; merging it resolves this issue.",
+        failed: "The task failed: open it to retry, or create another task.",
+      }[t.status] || "It is resolved when the task is merged.";
+  return h("div", { class: `issue-tasknote${t ? ` s-${t.status}` : ""}` },
+    h("p", {}, h("strong", {}, n > 1 ? `${n} tasks are on this issue. ` : "A task is on this issue. "), next),
+    t ? ib({ type: "button", class: "btn small", onclick: () => openDetail(t.id) }, "right", "Open the task") : null);
+}
+
 function issueBody(i) {
   const act = (label, icon, run, cls = "btn small") => ib({ type: "button", class: cls, onclick: attempt(run) }, icon, label);
   const patch = (body) => api("PATCH", `/api/issues/${i.id}`, body);
@@ -7280,12 +7339,13 @@ function issueBody(i) {
       `${ISSUE_TYPES[i.type] || i.type} · ${sourceLabel(i.source)} · ${ago(i.created_at)} ago`,
       i.updated_at !== i.created_at ? ` · updated ${ago(i.updated_at)} ago` : "",
       i.rule ? ` · rule ${i.rule}` : ""),
+    issueTaskNote(i),
     i.status === "dismissed" ? h("p", { class: "issue-reason" }, `Dismissed${i.dismiss_reason ? `: ${i.dismiss_reason}` : ""}`) : null,
     i.details ? h("div", { class: "issue-md", innerHTML: renderMarkdown(i.details) }) : h("p", { class: "issue-none" }, "No details yet."),
     i.fix ? h("div", { class: "issue-fix" }, h("h4", {}, "Suggested fix"), h("div", { class: "issue-md", innerHTML: renderMarkdown(i.fix) })) : null,
     h("div", { class: "issue-actions" },
       act("Edit", "edit", () => { iss.editing = i.id; renderIssues(); }),
-      triageable(i) ? act("Create task", "plus", () => issueTasks([i.id], false, false)) : null,
+      triageable(i) ? act(i.status === "task_created" ? "Create another task" : "Create task", "plus", () => issueTasks([i.id], false, false)) : null,
       triageable(i) ? act("Dismiss", "x", () => dismissIssues([i.id])) : null,
       i.status === "open" ? act("Mark resolved", "check", () => patch({ status: "resolved" })) : null,
       !triageable(i) ? act("Reopen", "undo", () => patch({ status: "open" })) : null,
@@ -7370,7 +7430,7 @@ for (const [key, id] of [["type", "#issue-f-type"], ["severity", "#issue-f-sever
   $(id).addEventListener("change", (e) => { iss.filter[key] = e.target.value; renderIssues(); });
 }
 $("#issue-all").addEventListener("change", (e) => {
-  for (const i of iss.list.filter(issueVisible).filter(triageable)) e.target.checked ? iss.checked.add(i.id) : iss.checked.delete(i.id);
+  for (const i of iss.list.filter(issueVisible).filter(pickable)) e.target.checked ? iss.checked.add(i.id) : iss.checked.delete(i.id);
   for (const box of $$("#issue-list .issue-check")) if (!box.disabled) box.checked = e.target.checked;
   renderIssueBulk();
 });
@@ -7475,8 +7535,8 @@ function scanSummary(r) {
 }
 
 // showRunIssues opens Issues filtered to what a run added ("new"), brought
-// back ("reopened") or both ("all"). With select, the ones that can still be
-// triaged are checked, ready for a bulk action.
+// back ("reopened") or both ("all"). With select, the ones still open (no
+// task yet) are checked, ready for a bulk action.
 function showRunIssues(run, which, select = false) {
   const ids = which === "reopened" ? run.reopened_issues || []
     : which === "all" ? [...(run.new_issues || []), ...(run.reopened_issues || [])]
@@ -7487,7 +7547,7 @@ function showRunIssues(run, which, select = false) {
   $("#issue-f-status").value = iss.filter.status;
   if (select) {
     iss.checked.clear();
-    for (const i of iss.list) if (iss.filter.run.ids.has(i.id) && triageable(i)) iss.checked.add(i.id);
+    for (const i of iss.list) if (iss.filter.run.ids.has(i.id) && pickable(i)) iss.checked.add(i.id);
   }
   showView("issues");
   renderIssues();
@@ -7777,8 +7837,8 @@ function scanReport(r, compact = false) {
       return n ? h("button", { type: "button", class: "scan-count link muted", title, onclick: () => showRunIssues(r, nw[k] ? "new" : "reopened") }, `${n} ${text}`) : null;
     };
     const urgent = iss.loaded && (r.new_issues?.length || r.reopened_issues?.length) ? nw.urgent + ro.urgent : r.urgent;
-    // What "Select all" would check: this run's issues that can still be triaged.
-    const selectable = iss.loaded && (r.new_issues?.length || r.reopened_issues?.length) ? nw.open + nw.task + ro.open + ro.task : 0;
+    // What "Select all" would check: this run's issues that are still open (not in a task).
+    const selectable = iss.loaded && (r.new_issues?.length || r.reopened_issues?.length) ? nw.open + ro.open : 0;
     body = h("p", { class: "scan-counts" },
       link(nw.open, "new", "new") || h("span", { class: "scan-count" }, "0 new"),
       known ? h("span", { class: "scan-count" }, `${known} already known`) : null,
@@ -7789,7 +7849,7 @@ function scanReport(r, compact = false) {
       since("dismissed", "dismissed since", "New or reopened issues from this run that were dismissed since"),
       nw.gone + ro.gone ? h("span", { class: "scan-count muted", title: "New or reopened issues from this run that were deleted since" }, `${nw.gone + ro.gone} deleted`) : null,
       urgent ? h("span", { class: "sev sev-high scan-urgent", title: "New or reopened issues of critical or high severity that are still open" }, `${urgent} urgent`) : null,
-      selectable ? ib({ type: "button", class: "btn small scan-select", title: "Open the new and reopened issues from this run that can still be triaged, all selected, to create tasks for them or dismiss them", onclick: () => showRunIssues(r, "all", true) }, "checks", `Select all ${selectable}`) : null);
+      selectable ? ib({ type: "button", class: "btn small scan-select", title: "Open the new and reopened issues from this run that are still open, all selected, to create tasks for them or dismiss them", onclick: () => showRunIssues(r, "all", true) }, "checks", `Select all ${selectable}`) : null);
   } else {
     body = h("p", { class: `scan-msg${r.status === "failed" ? " error" : ""}` }, r.status === "running" ? h("span", { class: "spinner", "aria-hidden": "true" }) : null, scanSummary(r));
   }

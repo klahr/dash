@@ -1797,9 +1797,35 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
   flex: none; display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 10px;
   border-radius: 999px; font-size: 13px; color: var(--muted); border: 1px solid var(--line);
 }
-.issue-task { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-.issue-task:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+/* A linked task's pill takes the task's status colour (--c from .s-*). */
+.issue-task { color: var(--c, var(--accent)); border-color: color-mix(in srgb, var(--c, var(--accent)) 45%, var(--line)); background: color-mix(in srgb, var(--c, var(--accent)) 8%, transparent); font-weight: 500; }
+.issue-task.s-draft { --c: var(--muted); }
+.issue-task:hover { background: color-mix(in srgb, var(--c, var(--accent)) 16%, transparent); }
 .issue-task .ico { width: 14px; height: 14px; }
+.issue-task .act-spin { width: 8px; height: 8px; }
+/* Group headings: Needs triage / In a task / Closed. */
+.issue-group {
+  display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: var(--bg, var(--surface));
+  font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+}
+.issue-group:not(:first-child) { border-top: 1px solid var(--line); }
+.issue-group + .issue { border-top: 1px solid var(--line); }
+.issue-group-n { font-weight: 500; color: var(--faint); }
+.issue-group.g-task { color: var(--accent); }
+/* An issue with a task is being dealt with: no checkbox, a marker in the
+   task's colour, a stripe down the side and a quieter title. */
+.issue-mark { flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; color: var(--c, var(--accent)); }
+.issue-mark.s-draft { --c: var(--muted); }
+.issue-mark .ico { width: 16px; height: 16px; }
+.issue.status-task_created { box-shadow: inset 3px 0 0 var(--accent); }
+.issue.status-task_created .issue-title { color: var(--muted); font-weight: 400; }
+.issue.task-failed { box-shadow: inset 3px 0 0 var(--failed); }
+.issue-tasknote {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 8px 12px;
+  border-radius: var(--r-m); font-size: 14px; border: 1px solid color-mix(in srgb, var(--c, var(--accent)) 40%, var(--line)); background: color-mix(in srgb, var(--c, var(--accent)) 8%, transparent);
+}
+.issue-tasknote.s-draft { --c: var(--muted); }
+.issue-tasknote p { flex: 1 1 16rem; margin: 0; }
 .issue-body { padding: 0 14px 14px 50px; }
 .issue-meta { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
 .issue-reason { margin: 0 0 8px; font-size: 14px; color: var(--muted); font-style: italic; }
