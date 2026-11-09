@@ -5690,15 +5690,30 @@ function chatPermCard(p, decide) {
       ib({ class: "btn danger", onclick: answer("deny") }, "x", "Deny")));
 }
 
-// key: the project a project chat is about; its tasks go there even when another project is selected.
+// "Make this a task" saves the answer as a draft right away, its instructions
+// cleaned up first (as the form's Clean up does); if that fails the answer is
+// kept as it is. key: the project a project chat is about; its tasks go there
+// even when another project is selected. The general chat's go to the selected project.
 const chatActions = (pick, key) => (answer) => h("div", { class: "msg-actions" },
-  ib({ class: "link", onclick: () => {
-    pick ||= !!key && key !== projectKey(state.project);
-    if (!(pick ? state.projects?.length : state.project)) return toast(pick ? "Create a project first" : "Select a project first", true);
-    openTodoForm(null, { pick });
-    if (key && pick) $("#todo-form").project.value = key;
-    $("#todo-form").prompt.value = answer;
-  } }, "plus", "Make this a task"),
+  ib({ class: "link", onclick: attempt(async (e) => {
+    const p = (key && state.projects?.find((x) => projectKey(x) === key)) || (!key && state.project);
+    if (!p) return toast(pick && !state.projects?.length ? "Create a project first" : "Select a project first", true);
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.lastChild.textContent = "Saving draft…";
+    try {
+      let prompt = answer.trim(), cleaned = true;
+      try { prompt = (await api("POST", "/api/refine", { prompt })).prompt?.trim() || prompt; } catch { cleaned = false; }
+      const t = await api("POST", `/api/projects/${p.id}/todos`, { title: "", prompt, enqueue: false }, p.prefix || "");
+      const other = projectKey(p) !== projectKey(state.project);
+      if (!other) state.lane = "draft";
+      toast(`Saved as draft${other ? ` in ${p.name}` : ""}${cleaned ? "" : " (instructions not cleaned up)"}`,
+        { tone: "ok", action: other || !t?.id ? undefined : openTodo(t.id) });
+    } finally {
+      btn.disabled = false;
+      btn.lastChild.textContent = "Make this a task";
+    }
+  }) }, "plus", "Make this a task"),
   ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
 
 // Where the general chat runs. The hub never runs Claude: the chat runs on
