@@ -102,8 +102,7 @@ func TestBrowserMainFlows(t *testing.T) {
 	const peer = "/peer/laptop"
 	var local struct{ ID string }
 	api.must("POST", peer+"/api/projects", map[string]any{"name": "local"}, http.StatusCreated, &local)
-	b.clickText(`#side-project-list .side-project`, "local")
-	b.waitJS("the runner's project", `document.querySelector("#project-name")?.textContent === "local"`)
+	b.clickTextUntil(`#side-project-list .side-project`, "local", `document.querySelector("#project-name")?.textContent === "local"`)
 	var third struct{ ID string }
 	api.must("POST", peer+"/api/projects/"+local.ID+"/todos", map[string]any{"title": "Needs a command", "prompt": "ask permission to run a command", "enqueue": true},
 		http.StatusCreated, &third)
@@ -137,8 +136,7 @@ func TestBrowserTerminalPreview(t *testing.T) {
 		http.StatusCreated, &task)
 	waitStatus(t, api, peer+"/api/todos/"+task.ID, "review", nil)
 
-	b.clickText(`#side-project-list .side-project`, "cli")
-	b.waitJS("the CLI project", `document.querySelector("#project-name")?.textContent === "cli"`)
+	b.clickTextUntil(`#side-project-list .side-project`, "cli", `document.querySelector("#project-name")?.textContent === "cli"`)
 	b.waitCard(task.ID, "review")
 	b.openTask(task.ID)
 
@@ -331,14 +329,38 @@ func (b *browser) drag(id, from, to string) {
 // clickText clicks the first element matching sel whose text has text.
 func (b *browser) clickText(sel, text string) {
 	b.t.Helper()
-	mark := fmt.Sprintf(`(() => {
+	b.waitJS(fmt.Sprintf("%q in %s", text, sel), markText(sel, text))
+	b.do("click "+text, chromedp.Click(chromedp.CSS(`[data-e2e-click]`)))
+}
+
+// clickTextUntil clicks the first element matching sel whose text has text
+// until a JavaScript expression is true: for a list a re-render may replace
+// (the sidebar's projects, reloaded as the hub links one), taking the
+// marked node, and the click, with it.
+func (b *browser) clickTextUntil(sel, text, expr string) {
+	b.t.Helper()
+	for range 20 {
+		b.waitJS(fmt.Sprintf("%q in %s", text, sel), markText(sel, text))
+		b.try(chromedp.Click(chromedp.CSS(`[data-e2e-click]`)))
+		for range 20 {
+			if ok, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`!!(`+expr+`)`)); err == nil && ok {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	b.fail("click "+text, fmt.Errorf("%s stayed false", expr))
+}
+
+// markText marks the first element matching sel whose text has text with
+// data-e2e-click, reporting whether there is one.
+func markText(sel, text string) string {
+	return fmt.Sprintf(`(() => {
 		document.querySelectorAll("[data-e2e-click]").forEach((e) => e.removeAttribute("data-e2e-click"));
 		const el = [...document.querySelectorAll(%q)].find((e) => e.textContent.includes(%q) && !e.disabled);
 		if (el) el.setAttribute("data-e2e-click", "");
 		return !!el;
 	})()`, sel, text)
-	b.waitJS(fmt.Sprintf("%q in %s", text, sel), mark)
-	b.do("click "+text, chromedp.Click(chromedp.CSS(`[data-e2e-click]`)))
 }
 
 func (b *browser) fail(what string, err error) {
