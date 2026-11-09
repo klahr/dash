@@ -12,10 +12,24 @@ for (const img of document.querySelectorAll("img[data-optional]")) {
   else img.addEventListener("error", () => img.remove());
 }
 // The server's LC_TIME, since browsers format times by their UI language instead.
-const timeLocale = (() => {
+const serverTimeLocale = (() => {
   const l = document.querySelector('meta[name="dash-time-locale"]')?.content;
   try { return l && Intl.DateTimeFormat.supportedLocalesOf(l).length ? [l] : []; } catch { return []; }
 })();
+// The "Time format" preference: "24", "12" or "" (the locale decides).
+const clockPref = () => { try { return localStorage.getItem("dash.clock") || ""; } catch { return ""; } };
+// timeLocale is what clock times are formatted with: the server's locale,
+// with the hour cycle the preference asks for.
+let timeLocale = serverTimeLocale;
+function applyClockPref() {
+  const hourCycle = { 24: "h23", 12: "h12" }[clockPref()];
+  if (!hourCycle) { timeLocale = serverTimeLocale; return; }
+  try {
+    const base = serverTimeLocale[0] || new Intl.DateTimeFormat().resolvedOptions().locale;
+    timeLocale = [new Intl.Locale(base, { hourCycle }).toString()];
+  } catch { timeLocale = serverTimeLocale; }
+}
+applyClockPref();
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const h = (tag, props = {}, ...kids) => {
   const el = document.createElement(tag);
@@ -3673,6 +3687,7 @@ function syncPrefs() {
   f.vim.checked = vimOn();
   f.invisibles.checked = invisiblesOn();
   f.notify.checked = notifyOn();
+  f.clock.value = clockPref();
 }
 function openPrefs() {
   syncPrefs();
@@ -3680,6 +3695,11 @@ function openPrefs() {
 }
 $("#prefs-form").vim.addEventListener("change", (e) => { if (e.target.checked !== vimOn()) toggleVim(); });
 $("#prefs-form").invisibles.addEventListener("change", (e) => { if (e.target.checked !== invisiblesOn()) toggleInvisibles(); });
+$("#prefs-form").clock.addEventListener("change", (e) => {
+  try { e.target.value ? localStorage.setItem("dash.clock", e.target.value) : localStorage.removeItem("dash.clock"); } catch {}
+  applyClockPref();
+  renderUsage();
+});
 // Asking for permission needs this change event's user gesture.
 $("#prefs-form").notify.addEventListener("change", attempt(async (e) => {
   try { if (e.target.checked !== notifyOn()) await toggleNotifications(); } finally { syncPrefs(); }
@@ -4939,7 +4959,7 @@ function renderRemote() {
     parts.length ? `${b}: ${parts.join(", ")}.` : "",
     st.behind && !st.ahead ? "New tasks start from origin's version." : "",
     st.behind && st.ahead ? "The next merge reconciles them." : "",
-    st.error ? `Last fetch failed: ${st.error}. Retrying ${st.retry_at ? `at ${new Date(st.retry_at).toLocaleTimeString()}` : "soon"}.` : "",
+    st.error ? `Last fetch failed: ${st.error}. Retrying ${st.retry_at ? `at ${new Date(st.retry_at).toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit" })}` : "soon"}.` : "",
     st.fetched ? `Fetched ${ago(st.fetched) === "now" ? "just now" : `${ago(st.fetched)} ago`}. Click to fetch now.` : "Click to fetch now.",
   ].filter(Boolean).join(" ");
   pill.setAttribute("aria-label", pill.title);
