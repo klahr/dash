@@ -344,6 +344,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 :is(.msg .reply, .md) th { background: var(--surface); font-weight: 600; }
 .msg .thinking { color: var(--muted); font-size: 14px; border-left: 2px solid var(--line); padding-left: 10px; margin-bottom: 8px; }
 .msg .thinking:empty { display: none; }
+.msg .msg-usage { color: var(--muted); font-size: 12px; font-family: var(--mono); margin-top: 6px; cursor: default; }
 .msg .tool { margin: 0 0 10px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--surface); font-size: 13px; }
 .msg .tool summary { cursor: pointer; padding: 5px 10px; color: var(--muted); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .msg .tool summary b { color: var(--text); font-weight: 600; }

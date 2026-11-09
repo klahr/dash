@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/mcptools"
+	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 )
 
@@ -230,14 +231,27 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 
 	var resultErr error
 	var wroteText, newMessage bool
+	started := time.Now()
+	think := newThinkClock()
+	var usage *model.ChatUsage
 	pumpLines(stdout, func(line string) {
 		var ev struct {
 			Type          string          `json:"type"`
 			IsError       bool            `json:"is_error"`
 			Result        string          `json:"result"`
 			RateLimitInfo json.RawMessage `json:"rate_limit_info"`
-			Event         struct {
-				Type  string `json:"type"`
+			DurationMS    int64           `json:"duration_ms"`
+			Usage         *struct {
+				InputTokens              int64 `json:"input_tokens"`
+				OutputTokens             int64 `json:"output_tokens"`
+				CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+				CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+			} `json:"usage"`
+			Event struct {
+				Type         string `json:"type"`
+				ContentBlock struct {
+					Type string `json:"type"`
+				} `json:"content_block"`
 				Delta struct {
 					Type     string `json:"type"`
 					Text     string `json:"text"`
@@ -257,8 +271,15 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 				c.OnRateLimit(ev.RateLimitInfo)
 			}
 		case "stream_event":
-			if ev.Event.Type == "message_start" {
+			switch ev.Event.Type {
+			case "message_start":
 				newMessage = true
+			case "content_block_start":
+				if t := ev.Event.ContentBlock.Type; t == "thinking" || t == "redacted_thinking" {
+					think.begin()
+				}
+			case "content_block_stop":
+				think.end()
 			}
 			if ev.Event.Type != "content_block_delta" {
 				return
@@ -288,6 +309,11 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 			if ev.IsError {
 				resultErr = fmt.Errorf("claude: %s", ev.Result)
 			}
+			usage = &model.ChatUsage{DurationMS: ev.DurationMS}
+			if u := ev.Usage; u != nil {
+				usage.InputTokens, usage.OutputTokens = u.InputTokens, u.OutputTokens
+				usage.CacheReadTokens, usage.CacheCreationTokens = u.CacheReadInputTokens, u.CacheCreationInputTokens
+			}
 		}
 	})
 	if err := cmd.Wait(); err != nil {
@@ -302,6 +328,14 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	if resultErr != nil {
 		return resultErr
 	}
+	if usage == nil {
+		usage = &model.ChatUsage{}
+	}
+	if usage.DurationMS == 0 {
+		usage.DurationMS = time.Since(started).Milliseconds()
+	}
+	usage.ThinkingMS = think.ms()
+	emit(usageDelta(*usage))
 	emit(ChatDelta{Kind: "done"})
 	return nil
 }

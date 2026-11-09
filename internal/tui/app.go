@@ -72,6 +72,7 @@ type chatEntry struct {
 	role     string // user | assistant | error
 	text     string
 	thinking string
+	usage    *model.ChatUsage
 }
 
 // App is the Bubble Tea model. It uses pointer receivers; goroutines reach it
@@ -482,6 +483,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			last.text += msg.Text
 		case "thinking":
 			last.thinking += msg.Text
+		case "usage":
+			last.usage = msg.Usage
 		case "error":
 			a.chat = append(a.chat, chatEntry{role: "error", text: msg.Text})
 		}
@@ -500,7 +503,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.chatHist = msg.ms
 		for _, m := range msg.ms {
-			a.chat = append(a.chat, chatEntry{role: m.Role, text: m.Content})
+			a.chat = append(a.chat, chatEntry{role: m.Role, text: m.Content, usage: m.Usage})
 		}
 		return a, nil
 
@@ -513,7 +516,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i := len(a.chat) - 1; i >= 0; i-- {
 			if a.chat[i].role == "assistant" {
 				if a.chat[i].text != "" {
-					a.chatHist = append(a.chatHist, agent.ChatMessage{Role: "assistant", Content: a.chat[i].text})
+					a.chatHist = append(a.chatHist, agent.ChatMessage{Role: "assistant", Content: a.chat[i].text, Usage: a.chat[i].usage})
 				} else {
 					a.chatHist = a.chatHist[:len(a.chatHist)-1] // drop the unanswered user turn
 				}

@@ -539,6 +539,9 @@ func (a *App) renderChat() string {
 			} else {
 				lines = append(lines, indent(strings.Join(renderMarkdown(e.text, wrapW), "\n"), "  ")...)
 			}
+			if u := usageText(e.usage); u != "" {
+				lines = append(lines, "  "+styleDim.Render(u))
+			}
 		case "error":
 			lines = append(lines, indent(styleErr.Width(wrapW).Render("⚠ "+e.text), "  ")...)
 		}
@@ -555,6 +558,44 @@ func (a *App) renderChat() string {
 	}
 	input := border.Render(strings.Repeat("─", a.w)) + "\n" + a.chatInput.View()
 	return hist + "\n" + input
+}
+
+// usageText shows what an answer took: "12k in · 845 out · thought 8s · 23s".
+func usageText(u *model.ChatUsage) string {
+	if u == nil {
+		return ""
+	}
+	parts := []string{
+		fmtTokens(u.InputTokens+u.CacheReadTokens+u.CacheCreationTokens) + " in",
+		fmtTokens(u.OutputTokens) + " out",
+	}
+	if u.ThinkingMS >= 500 {
+		parts = append(parts, "thought "+fmtMS(u.ThinkingMS))
+	}
+	if u.DurationMS > 0 {
+		parts = append(parts, fmtMS(u.DurationMS))
+	}
+	return strings.Join(parts, " · ")
+}
+
+func fmtTokens(n int64) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n)/1e6)
+	case n >= 10_000:
+		return fmt.Sprintf("%.0fk", float64(n)/1e3)
+	case n >= 1_000:
+		return fmt.Sprintf("%.1fk", float64(n)/1e3)
+	}
+	return fmt.Sprint(n)
+}
+
+func fmtMS(ms int64) string {
+	s := (ms + 500) / 1000
+	if s < 60 {
+		return fmt.Sprintf("%ds", s)
+	}
+	return fmt.Sprintf("%dm %ds", s/60, s%60)
 }
 
 // ago formats elapsed time compactly: "now", "4m", "3h", "2d".

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/anthropics/anthropic-sdk-go/v2/option"
@@ -21,9 +22,11 @@ type ChatMessage = model.ChatMessage
 // ChatDelta is one streamed fragment sent back to the frontend.
 type ChatDelta struct {
 	// "thinking" | "text" | "tool_use" | "tool_result" | "permission" |
-	// "permission_decided" | "cwd" | "done" | "error"
+	// "permission_decided" | "cwd" | "usage" | "done" | "error"
 	Kind string `json:"kind"`
-	Text string `json:"text,omitempty"` // tool_result: the output; permission_decided: allow|deny|timeout; cwd: the directory
+	// Usage is set on "usage", sent just before "done".
+	Usage *model.ChatUsage `json:"usage,omitempty"`
+	Text  string           `json:"text,omitempty"` // tool_result: the output; permission_decided: allow|deny|timeout; cwd: the directory
 	// ID is the tool_use id (tool_use, tool_result) or the permission request id.
 	ID      string          `json:"id,omitempty"`
 	Tool    string          `json:"tool,omitempty"`
@@ -96,8 +99,21 @@ func (c *Chat) Stream(ctx context.Context, _ string, history []ChatMessage, emit
 	})
 	defer stream.Close()
 
+	started := time.Now()
+	think := newThinkClock()
+	var usage model.ChatUsage
 	for stream.Next() {
 		switch ev := stream.Current().AsAny().(type) {
+		case anthropic.BetaRawMessageStartEvent:
+			u := ev.Message.Usage
+			usage.InputTokens, usage.OutputTokens = u.InputTokens, u.OutputTokens
+			usage.CacheReadTokens, usage.CacheCreationTokens = u.CacheReadInputTokens, u.CacheCreationInputTokens
+		case anthropic.BetaRawContentBlockStartEvent:
+			if t := ev.ContentBlock.Type; t == "thinking" || t == "redacted_thinking" {
+				think.begin()
+			}
+		case anthropic.BetaRawContentBlockStopEvent:
+			think.end()
 		case anthropic.BetaRawContentBlockDeltaEvent:
 			switch d := ev.Delta.AsAny().(type) {
 			case anthropic.BetaTextDelta:
@@ -106,6 +122,14 @@ func (c *Chat) Stream(ctx context.Context, _ string, history []ChatMessage, emit
 				emit(ChatDelta{Kind: "thinking", Text: d.Thinking})
 			}
 		case anthropic.BetaRawMessageDeltaEvent:
+			// The counts here are cumulative; zero means not reported.
+			if u := ev.Usage; u.OutputTokens > 0 {
+				usage.OutputTokens = u.OutputTokens
+			}
+			if u := ev.Usage; u.InputTokens > 0 {
+				usage.InputTokens = u.InputTokens
+				usage.CacheReadTokens, usage.CacheCreationTokens = u.CacheReadInputTokens, u.CacheCreationInputTokens
+			}
 			if ev.Delta.StopReason == anthropic.BetaStopReasonRefusal {
 				emit(ChatDelta{Kind: "error", Text: "Claude declined this request."})
 			}
@@ -123,6 +147,8 @@ func (c *Chat) Stream(ctx context.Context, _ string, history []ChatMessage, emit
 		}
 		return err
 	}
+	usage.ThinkingMS, usage.DurationMS = think.ms(), time.Since(started).Milliseconds()
+	emit(usageDelta(usage))
 	emit(ChatDelta{Kind: "done"})
 	return nil
 }

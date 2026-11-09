@@ -4973,6 +4973,31 @@ $("#webhook-sheet").addEventListener("close", attempt(async () => {
 }));
 
 // ------------------------------------------------------------------ chat
+// usageLine shows what an answer took: tokens in and out, time spent
+// thinking and in all. Null for answers saved before Dash recorded it.
+const fmtTokens = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}k` : String(n);
+const fmtSecs = (ms) => {
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+};
+function usageLine(u) {
+  if (!u) return null;
+  const cacheRead = u.cache_read_tokens || 0, cacheNew = u.cache_creation_tokens || 0;
+  const input = (u.input_tokens || 0) + cacheRead + cacheNew;
+  const parts = [`${fmtTokens(input)} in`, `${fmtTokens(u.output_tokens || 0)} out`];
+  if (u.thinking_ms >= 500) parts.push(`thought ${fmtSecs(u.thinking_ms)}`);
+  if (u.duration_ms) parts.push(fmtSecs(u.duration_ms));
+  const title = [
+    `Input: ${(u.input_tokens || 0).toLocaleString()} tokens`,
+    cacheRead ? `Read from cache: ${cacheRead.toLocaleString()}` : null,
+    cacheNew ? `Written to cache: ${cacheNew.toLocaleString()}` : null,
+    `Output: ${(u.output_tokens || 0).toLocaleString()} tokens (thinking included)`,
+    u.thinking_ms ? `Thinking: ${fmtSecs(u.thinking_ms)}` : null,
+    u.duration_ms ? `Total: ${fmtSecs(u.duration_ms)}` : null,
+  ].filter(Boolean).join("\n");
+  return h("div", { class: "msg-usage", title }, parts.join(" · "));
+}
+
 // makeChat drives one conversation UI: a log, its empty state and a composer.
 // target() names where it runs ({prefix, ...fields sent with each turn});
 // clear() deletes its saved conversation.
@@ -4988,7 +5013,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   const finish = () => { c.current = null; sendBtn.disabled = false; };
   const toEnd = () => { if (log.offsetParent) scroller().scrollTop = scroller().scrollHeight; };
   const from = (who) => labels ? h("div", { class: "msg-from" }, labels[who]) : null;
-  const assistant = (content) => h("div", { class: "msg assistant" }, from("assistant"), h("div", { class: "reply", innerHTML: renderMarkdown(content) }), actions(content));
+  const assistant = (m) => h("div", { class: "msg assistant" }, from("assistant"), h("div", { class: "reply", innerHTML: renderMarkdown(m.content) }), usageLine(m.usage), actions(m.content));
   const prefixOf = () => target().prefix || "";
   const user = (m) => h("div", { class: "msg user" }, from("user"), h("div", { class: "md", innerHTML: renderMarkdown(m.content || "") }),
     m.attachments?.length ? h("div", { class: "msg-attach" }, ...m.attachments.map((a) => attachThumb(a, null, prefixOf()))) : null);
@@ -5041,11 +5066,14 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
         const st = log.querySelector(`.perm[data-id="${d.id}"] .perm-actions`);
         st?.replaceChildren(h("span", { class: "perm-status" }, { allow: "Approved", deny: "Denied", timeout: "Not answered in time: denied" }[d.text] || d.text));
       }
+      else if (d.kind === "usage") cur.usage = d.usage;
       else if (d.kind === "error") { cur.el.classList.add("error"); cur.reply.append(h("p", {}, d.text)); }
       if (d.kind === "done" || d.kind === "error") {
         cur.el.classList.remove("pending");
+        const u = usageLine(cur.usage);
+        if (u) cur.el.append(u);
         if (cur.content) cur.el.append(actions(cur.content));
-        if (cur.content) c.history.push({ role: "assistant", content: cur.content, at: cur.at });
+        if (cur.content) c.history.push({ role: "assistant", content: cur.content, at: cur.at, ...(cur.usage ? { usage: cur.usage } : {}) });
         else c.history.pop(); // keep history alternating
         finish();
       }
@@ -5073,7 +5101,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   function reset(saved = []) {
     if (c.current) { c.ws = null; finish(); }
     c.history = [...saved];
-    const nodes = merge(saved.map((m) => m.role === "user" ? user(m) : assistant(m.content)), saved);
+    const nodes = merge(saved.map((m) => m.role === "user" ? user(m) : assistant(m)), saved);
     empty.hidden = nodes.length > 0;
     log.replaceChildren(empty, ...nodes);
     toEnd();

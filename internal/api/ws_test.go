@@ -231,3 +231,42 @@ func TestGeneralChatFailedTurn(t *testing.T) {
 	}
 	waitFor(t, "the question to be dropped", func() bool { return len(raw(s).Chat(ownerCaller(t, s).Org, ownerCaller(t, s).User)) == 2 })
 }
+
+// usageChat answers "hi" and reports what the answer took.
+type usageChat struct{}
+
+func (usageChat) Stream(_ context.Context, _ string, _ []agent.ChatMessage, emit func(agent.ChatDelta)) error {
+	emit(agent.ChatDelta{Kind: "text", Text: "hi"})
+	emit(agent.ChatDelta{Kind: "usage", Usage: &model.ChatUsage{InputTokens: 10, OutputTokens: 20, ThinkingMS: 1500, DurationMS: 3000}})
+	emit(agent.ChatDelta{Kind: "done"})
+	return nil
+}
+
+// The answer's tokens and time are saved with it, so the chat shows them
+// after a reload.
+func TestGeneralChatSavesUsage(t *testing.T) {
+	s, _, _ := boardServer(t)
+	s.Chat = usageChat{}
+	conn := chatSocket(t, s)
+	if err := conn.WriteJSON(map[string]any{"type": "send", "messages": []agent.ChatMessage{{Role: "user", Content: "q"}}}); err != nil {
+		t.Fatal(err)
+	}
+	var sawUsage bool
+	for {
+		var d agent.ChatDelta
+		if err := conn.ReadJSON(&d); err != nil {
+			t.Fatal(err)
+		}
+		sawUsage = sawUsage || (d.Kind == "usage" && d.Usage != nil && d.Usage.OutputTokens == 20)
+		if d.Kind == "done" {
+			break
+		}
+	}
+	if !sawUsage {
+		t.Error("the client wasn't sent the usage")
+	}
+	got := raw(s).Chat(ownerCaller(t, s).Org, ownerCaller(t, s).User)
+	if len(got) != 2 || got[1].Usage == nil || got[1].Usage.ThinkingMS != 1500 || got[1].Usage.InputTokens != 10 {
+		t.Fatalf("saved %+v", got)
+	}
+}

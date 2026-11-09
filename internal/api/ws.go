@@ -303,15 +303,19 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				defer s.generalTurn(sv.c, -1)
 			}
 			var reply strings.Builder
+			var usage *model.ChatUsage
 			saved := false
 			started := time.Now() // places the reply right after its question in a task's timeline
 			err := chatter.Stream(ctx, dir, prompt, func(d agent.ChatDelta) {
 				if d.Kind == "text" {
 					reply.WriteString(d.Text)
 				}
+				if d.Kind == "usage" {
+					usage = d.Usage
+				}
 				if d.Kind == "done" && reply.Len() > 0 {
 					// Save before telling the client, so a reload right after sees it.
-					turn := append(history[:len(history):len(history)], agent.ChatMessage{Role: "assistant", Content: reply.String(), At: &started})
+					turn := append(history[:len(history):len(history)], agent.ChatMessage{Role: "assistant", Content: reply.String(), At: &started, Usage: usage})
 					if err := save(turn); err != nil {
 						slog.Error("save chat", "err", err)
 					}

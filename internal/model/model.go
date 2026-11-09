@@ -507,6 +507,19 @@ type ChatMessage struct {
 	// CreatedBy is the user who wrote a user message (0 for Claude's
 	// answers and messages from before users).
 	CreatedBy int64 `json:"created_by,omitempty"`
+	// Usage is what Claude's answer took (assistant messages only).
+	Usage *ChatUsage `json:"usage,omitempty"`
+}
+
+// ChatUsage is the tokens and time one chat answer took.
+type ChatUsage struct {
+	InputTokens         int64 `json:"input_tokens"`
+	OutputTokens        int64 `json:"output_tokens"`
+	CacheReadTokens     int64 `json:"cache_read_tokens,omitempty"`
+	CacheCreationTokens int64 `json:"cache_creation_tokens,omitempty"`
+	// ThinkingMS is the time spent in thinking blocks; DurationMS the whole answer.
+	ThinkingMS int64 `json:"thinking_ms,omitempty"`
+	DurationMS int64 `json:"duration_ms,omitempty"`
 }
 
 // RunEvent is one step of a todo's worker: a Claude run's text, tool calls

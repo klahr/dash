@@ -1,7 +1,10 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -171,5 +174,41 @@ func TestToolBlockDeltas(t *testing.T) {
 	}
 	if got[2].Text != "ab" || !got[2].IsError {
 		t.Errorf("tool_result parts: %+v", got[2])
+	}
+}
+
+// TestChatUsage: the turn's tokens come from the result event, and the time
+// between a thinking block's start and stop counts as thinking.
+func TestChatUsage(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "claude")
+	script := `#!/bin/sh
+cat >/dev/null
+echo '{"type":"stream_event","event":{"type":"message_start"}}'
+echo '{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"thinking"}}}'
+echo '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"hmm"}}}'
+sleep 0.3
+echo '{"type":"stream_event","event":{"type":"content_block_stop"}}'
+echo '{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"text"}}}'
+echo '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"hi"}}}'
+echo '{"type":"stream_event","event":{"type":"content_block_stop"}}'
+echo '{"type":"result","is_error":false,"result":"hi","duration_ms":4200,"usage":{"input_tokens":12,"output_tokens":345,"cache_read_input_tokens":1000,"cache_creation_input_tokens":50}}'
+`
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var got []ChatDelta
+	err := ClaudeCodeChat{Bin: bin}.Stream(context.Background(), t.TempDir(), []ChatMessage{{Role: "user", Content: "q"}}, func(d ChatDelta) { got = append(got, d) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(got); n < 2 || got[n-1].Kind != "done" || got[n-2].Kind != "usage" {
+		t.Fatalf("want usage then done at the end, got %+v", got)
+	}
+	u := got[len(got)-2].Usage
+	if u.InputTokens != 12 || u.OutputTokens != 345 || u.CacheReadTokens != 1000 || u.CacheCreationTokens != 50 || u.DurationMS != 4200 {
+		t.Errorf("usage: %+v", u)
+	}
+	if u.ThinkingMS < 250 || u.ThinkingMS > 2000 {
+		t.Errorf("thinking ms = %d, want about 300", u.ThinkingMS)
 	}
 }
