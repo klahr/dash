@@ -39,6 +39,7 @@ type twoOrgs struct {
 	proc    model.Process
 	perm    string // the waiting permission prompt's id
 	upload  model.Attachment
+	hook    model.Webhook
 	beta    store.Org
 	bUser   store.User
 	cUser   store.User
@@ -120,6 +121,10 @@ func newTwoOrgs(t *testing.T) *twoOrgs {
 	if err := st.SetChat(owner.Org.ID, owner.User.ID, secret); err != nil {
 		t.Fatal(err)
 	}
+	hook, err := st.CreateWebhook(model.Webhook{ProjectID: web.ID, Name: "secret hook", URL: "https://hooks.example.com/x", Format: "json", Enabled: true, Secret: "hook-secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.Previews.Start(td, web); err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +133,7 @@ func newTwoOrgs(t *testing.T) *twoOrgs {
 		t.Fatal(err)
 	}
 
-	o := &twoOrgs{s: s, h: s.Routes(), web: web, todo: td, issue: is, run: run, proc: proc, beta: beta, bUser: bUser, cUser: cUser}
+	o := &twoOrgs{s: s, h: s.Routes(), web: web, todo: td, issue: is, run: run, proc: proc, hook: hook, beta: beta, bUser: bUser, cUser: cUser}
 	o.a = loggedIn(t, o.h)
 	o.b = loginAs(t, o.h, "b", "b-password")
 	o.c = loginAs(t, o.h, "c", "c-password")
@@ -211,14 +216,22 @@ func (o *twoOrgs) untouched(t *testing.T, after string) {
 	if len(o.s.Perms.Pending("")) != 1 {
 		t.Fatalf("after %s: permission prompt answered", after)
 	}
+	if h, err := st.GetWebhook(o.hook.ID); err != nil || h.Name != o.hook.Name || h.URL != o.hook.URL || h.Secret != o.hook.Secret || !h.Enabled {
+		t.Fatalf("after %s: webhook changed: %+v %v", after, h, err)
+	}
+	if hooks, _ := st.ListWebhooks(o.web.ID); len(hooks) != 1 {
+		t.Fatalf("after %s: %d webhooks in the project", after, len(hooks))
+	}
 }
 
-// Every endpoint that names a record of another org answers as if it didn't
-// exist, and changes nothing.
-func TestOrgCannotReachAnotherOrgsRecords(t *testing.T) {
-	o := newTwoOrgs(t)
-	pid, tid, iid, rid := o.web.ID, o.todo.ID, o.issue.ID, o.run.ID
-	cases := []struct{ method, path, body string }{
+// endpoint is one API call.
+type endpoint struct{ method, path, body string }
+
+// recordEndpoints are the calls that read or change one of Default's
+// records by naming it: none may reach it for anyone outside Default.
+func (o *twoOrgs) recordEndpoints() []endpoint {
+	pid, tid, iid, rid, hid := o.web.ID, o.todo.ID, o.issue.ID, o.run.ID, o.hook.ID
+	return []endpoint{
 		{"GET", "/api/projects/" + pid, ""},
 		{"PATCH", "/api/projects/" + pid, `{"name":"mine","color":"#000000"}`},
 		{"DELETE", "/api/projects/" + pid, `{"password":"b-password","delete_files":true}`},
@@ -257,6 +270,23 @@ func TestOrgCannotReachAnotherOrgsRecords(t *testing.T) {
 		{"GET", "/api/projects/" + pid + "/processes", ""},
 		{"POST", "/api/projects/" + pid + "/processes", `{"kind":"task","command":"true"}`},
 
+		{"POST", "/api/projects/" + pid + "/remote/pull", `{}`},
+		{"GET", "/api/projects/" + pid + "/checkouts", ""},
+		{"GET", "/api/projects/" + pid + "/branches", ""},
+		{"PUT", "/api/projects/" + pid + "/branch", `{"branch":"main"}`},
+		{"POST", "/api/projects/" + pid + "/branch/pr", `{}`},
+		{"GET", "/api/projects/" + pid + "/release", ""},
+		{"POST", "/api/projects/" + pid + "/tags", `{"tag":"v9.9.9"}`},
+		{"GET", "/api/projects/" + pid + "/tag-format", ""},
+		{"GET", "/api/projects/" + pid + "/repo-info", ""},
+		{"GET", "/api/projects/" + pid + "/claude-files", ""},
+		{"GET", "/api/projects/" + pid + "/webhooks", ""},
+		{"POST", "/api/projects/" + pid + "/webhooks", `{"name":"intruder","url":"https://evil.example.com","format":"json"}`},
+		{"PATCH", "/api/webhooks/" + hid, `{"name":"mine","url":"https://evil.example.com"}`},
+		{"DELETE", "/api/webhooks/" + hid, ""},
+		{"POST", "/api/webhooks/" + hid + "/rotate", ""},
+		{"POST", "/api/webhooks/" + hid + "/test", ""},
+
 		{"GET", "/api/todos/" + tid, ""},
 		{"PATCH", "/api/todos/" + tid, `{"title":"mine"}`},
 		{"DELETE", "/api/todos/" + tid, ""},
@@ -290,7 +320,14 @@ func TestOrgCannotReachAnotherOrgsRecords(t *testing.T) {
 		{"POST", "/api/permissions/" + o.perm, `{"decision":"allow"}`},
 		{"GET", "/api/uploads/" + o.upload.ID + "/" + o.upload.Name, ""},
 	}
-	for _, tc := range cases {
+}
+
+// Every endpoint that names a record of another org answers as if it didn't
+// exist, and changes nothing.
+func TestOrgCannotReachAnotherOrgsRecords(t *testing.T) {
+	o := newTwoOrgs(t)
+	pid, tid := o.web.ID, o.todo.ID
+	for _, tc := range o.recordEndpoints() {
 		w := do(t, o.b, tc.method, tc.path, tc.body)
 		if w.Code != http.StatusNotFound {
 			t.Errorf("%s %s as another org: want 404, got %d %s", tc.method, tc.path, w.Code, strings.TrimSpace(w.Body.String()))

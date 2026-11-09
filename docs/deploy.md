@@ -399,6 +399,12 @@ computers. So:
   `Strict-Transport-Security: max-age=31536000` (its own host only, not org or preview subdomains),
   and its session cookie is always `Secure` (and `HttpOnly`, `SameSite=Strict`), even if the proxy
   forgets `X-Forwarded-Proto`. Live previews keep their app's own headers.
+- **Cross-origin requests.** Requests that change something (and WebSockets) are refused when the
+  browser says they come from a page on another host (`Origin`), with or without org subdomains.
+  `SameSite` alone doesn't stop pages on the same site: a sibling subdomain, or a dev server on
+  another port of Dash's host (ports don't count for sites). Behind a proxy, Dash compares with
+  the `Host` it is given, or with `X-Forwarded-Host` under `-trust-proxy`. Calls with an API token,
+  and the links in notification buttons, carry their own credential and aren't checked.
 
 - **Use a long random password** for `DASH_PASSWORD` (`openssl rand -base64 24`), and **turn on
   two-factor sign-in** (account menu → Two-factor sign-in). Org owners can require it of every

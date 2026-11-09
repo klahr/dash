@@ -72,3 +72,56 @@ func TestPublicSecureCookie(t *testing.T) {
 		}
 	}
 }
+
+// Without org subdomains, too, a page of another origin can't use the
+// session cookie to change anything: SameSite lets it through from a
+// sibling subdomain or another port of the same host.
+func TestCrossOriginRefusedWithoutDomains(t *testing.T) {
+	a, h := newServer(t)
+	cookie := sessionCookie(t, do(h, "POST", "http://localhost:8080/api/login", `{"username":"admin","password":"s3cret"}`))
+	send := func(method, path, origin string, hdr ...string) int {
+		t.Helper()
+		r := httptest.NewRequest(method, "http://localhost:8080"+path, strings.NewReader(`{}`))
+		r.RemoteAddr = "10.0.0.1:1234"
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		for i := 0; i+1 < len(hdr); i += 2 {
+			r.Header.Set(hdr[i], hdr[i+1])
+		}
+		r.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	for _, o := range []string{"http://localhost:3000", "http://evil.example", "null"} {
+		if code := send("POST", "/api/projects", o); code != http.StatusForbidden {
+			t.Errorf("POST from %s: %d", o, code)
+		}
+		if code := send("GET", "/ws/events", o, "Connection", "Upgrade", "Upgrade", "websocket"); code != http.StatusForbidden {
+			t.Errorf("WebSocket from %s: %d", o, code)
+		}
+		if code := send("POST", "/api/login", o); code != http.StatusForbidden {
+			t.Errorf("login from %s: %d", o, code)
+		}
+	}
+	for name, code := range map[string]int{
+		"same origin":          send("POST", "/api/projects", "http://localhost:8080"),
+		"no Origin":            send("POST", "/api/projects", ""),
+		"cross-origin GET":     send("GET", "/api/projects", "http://evil.example"),
+		"a notify action link": send("POST", notifyActionPrefix+"tok", "https://ntfy.sh"),
+	} {
+		if code == http.StatusForbidden {
+			t.Errorf("%s: refused", name)
+		}
+	}
+	// Behind a trusted proxy, the host it forwards is the page's.
+	proxied := send("POST", "/api/projects", "https://dash.example.com", "X-Forwarded-Host", "dash.example.com")
+	if proxied != http.StatusForbidden {
+		t.Errorf("X-Forwarded-Host without -trust-proxy: %d", proxied)
+	}
+	a.TrustProxy = true
+	if code := send("POST", "/api/projects", "https://dash.example.com", "X-Forwarded-Host", "dash.example.com"); code == http.StatusForbidden {
+		t.Errorf("X-Forwarded-Host from a trusted proxy: refused")
+	}
+}

@@ -115,9 +115,12 @@ func (a *Auth) pinned(r *http.Request, id *Identity) bool {
 }
 
 // sameOrigin rejects a browser request that changes something (or opens a
-// WebSocket) from a page on another host: SameSite cookies don't stop that
-// between subdomains of one site, which org subdomains are. Requests with
-// a bearer token carry no ambient credentials and are let through.
+// WebSocket) from a page on another host. SameSite cookies don't stop that
+// from a host of the same site: another org's subdomain, another app on a
+// sibling subdomain, or any server on another port of Dash's own host (a
+// site ignores ports), such as a dev server a task started. Requests with
+// a bearer token carry no ambient credentials and are let through, as are
+// notification actions, whose credential is the token in their URL.
 func (a *Auth) sameOrigin(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
 		if !isUpgrade(r) {
@@ -131,8 +134,19 @@ func (a *Auth) sameOrigin(w http.ResponseWriter, r *http.Request) bool {
 	if _, ok := bearer(r); ok {
 		return true
 	}
-	if u, err := url.Parse(o); err == nil && u.Host != "" && strings.EqualFold(u.Host, a.reqHost(r)) {
+	if strings.HasPrefix(r.URL.Path, notifyActionPrefix) {
 		return true
+	}
+	if u, err := url.Parse(o); err == nil && u.Host != "" {
+		if strings.EqualFold(u.Host, a.reqHost(r)) {
+			return true
+		}
+		// Without org subdomains, a trusted proxy's X-Forwarded-Host is the
+		// host the browser asked for, as the WebSocket upgrader accepts it.
+		if f := r.Header.Get("X-Forwarded-Host"); a.TrustProxy && a.Domains == nil && f != "" &&
+			strings.EqualFold(u.Host, strings.TrimSpace(strings.Split(f, ",")[0])) {
+			return true
+		}
 	}
 	writeError(w, http.StatusForbidden, "cross-origin request refused")
 	return false
@@ -170,13 +184,10 @@ func (a *Auth) goURL(r *http.Request, slug, next string) string {
 	return u
 }
 
-// serveDomains handles what is different with org subdomains: the Origin
-// check, framing, and the hosts other than the base domain. It returns
-// whether it answered r; if not, r goes on (possibly with a new context).
+// serveDomains handles what is different with org subdomains: framing, and
+// the hosts other than the base domain. It returns whether it answered r;
+// if not, r goes on (possibly with a new context).
 func (a *Auth) serveDomains(w http.ResponseWriter, r *http.Request, next http.Handler) (*http.Request, bool) {
-	if !a.sameOrigin(w, r) {
-		return r, true
-	}
 	// Each host may be framed by itself only: not by another org's host,
 	// and not by a preview.
 	w.Header().Set("Content-Security-Policy", "frame-ancestors 'self'")

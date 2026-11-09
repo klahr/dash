@@ -731,6 +731,9 @@ func orgFree(path string) bool {
 // to the login page.
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !a.sameOrigin(w, r) { // CSRF: see sameOrigin
+			return
+		}
 		if a.Domains != nil {
 			var done bool
 			if r, done = a.serveDomains(w, r, next); done {
