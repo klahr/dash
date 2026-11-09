@@ -162,7 +162,7 @@ func main() {
 		hubServer = flag.String("server", "", "the hub's URL, e.g. https://dash.example.com (saved after registering)")
 		regCode = flag.String("code", "", "registration code from the hub's Runners page (only the first time, or to register again)")
 		offlineGrace = flag.Duration("offline-grace", 10*time.Minute, "when the hub has been unreachable this long, stop running tasks and mark them interrupted (0 = never)")
-		hubCommands = flag.Bool("hub-commands", false, "let the hub set the projects' run/test/deploy/setup commands and run ad-hoc commands; off = only commands set on this computer run")
+		hubCommands = flag.Bool("hub-commands", false, "let the hub set the projects' run/test/deploy/setup commands and run ad-hoc commands, and open terminals for the runner's owner from the hub; off = only commands set on this computer run")
 	}
 	_ = flag.CommandLine.Parse(args)
 	if *showVersion {
@@ -451,7 +451,7 @@ func main() {
 			return tunnel.Board(ctx, runnerCreds, hubTodo, hubProject, body)
 		}
 		// The hub hears where its tasks are, and this computer's usage.
-		reporter = &dispatch.Reporter{Store: st, Usage: tracker, Parallel: *parallel,
+		reporter = &dispatch.Reporter{Store: st, Usage: tracker, Parallel: *parallel, Terminals: *hubCommands,
 			Send: func(ctx context.Context, r dispatch.Report) error {
 				err := tunnel.Report(ctx, runnerCreds, r)
 				if errors.Is(err, tunnel.ErrRevoked) {

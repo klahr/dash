@@ -306,7 +306,7 @@ async function api(method, path, body, prefix = here()) {
     throw new Error(data.error);
   }
   if (res.status === 402 && data.code === "billing_read_only") loadBilling().catch(() => {}); // show the banner
-  if (!res.ok) throw new Error(data.error || data || res.statusText);
+  if (!res.ok) throw Object.assign(new Error(data.error || data || res.statusText), { status: res.status });
   return data;
 }
 
@@ -2647,7 +2647,7 @@ $("#d-more").addEventListener("click", attempt(async () => {
   const here = !t.runner; // a runner's task has its worktree on the runner
   if (t.status === "review" && !t.reviewing && here) choices.push(["eye", "Review with Claude", reviewTodo]);
   if (previewOf(t.id)) choices.push(["stop", "Stop the live preview", () => stopPreview(t.id)]);
-  if (t.worktree && here && ["review", "failed"].includes(t.status)) {
+  if (t.worktree && (here || (t.remote_id && !shellBlocked(state.project, t.runner))) && ["review", "failed"].includes(t.status)) {
     choices.push(["terminal", "Open shell in this worktree", () => startProc({ kind: "pty", todo_id: t.id })]);
   }
   if (t.pr) choices.push(["external", `Open pull request #${t.pr.number}`, () => window.open(t.pr.url, "_blank", "noopener")]);
@@ -3629,6 +3629,8 @@ async function loadRunners() {
   } catch {
     state.runners = null; // this Dash has no runners (it is one, say)
   }
+  shellRefused = null; // a runner came or went, or now opens terminals: try again
+  if (state.view === "run") ensureShell();
   $("#runners-open").hidden = state.runners === null;
   // The board waits for the runners, and shows the welcome screen until there's one.
   // The projects list groups by runner, so it changes with them too.
@@ -6070,6 +6072,7 @@ term.attachCustomKeyEventHandler((e) => {
 });
 
 function attach(p) {
+  renderShellNote();
   termWS?.close();
   attached = p.id;
   term.reset();
@@ -6103,16 +6106,59 @@ async function startProc(req, show = true) {
   if (p.url && !p.warning) toast(`Server starting at ${p.url}`);
 }
 
+// Why no terminal opens for project p (on a task's runner, with runnerID) on the hub,
+// from its runners: only on the caller's own runner, and only one started with
+// -hub-commands. "" when one may (or the runner hasn't said: it answers itself).
+function shellBlocked(p = state.project, runnerID = "") {
+  if (!p || p.prefix || !isHub()) return "";
+  const online = state.runners.filter((r) => r.online && (runnerID ? r.id === runnerID : p.runners?.includes(r.id)));
+  if (!online.length) return "";
+  const mine = online.filter((r) => r.mine);
+  if (!mine.length) {
+    const names = online.map((r) => r.name).join(", ");
+    return `Terminals open only on your own runner, and ${names} ${online.length > 1 ? "belong" : "belongs"} to another member. Its owner can open one, or link a runner of yours to ${p.name}.`;
+  }
+  if (mine.every((r) => r.reported && !r.reported.terminals)) {
+    return `${mine.map((r) => r.name).join(", ")} doesn't open terminals for the hub. Start it with -hub-commands to allow it.`;
+  }
+  return "";
+}
+
+// openShell opens a terminal (req: todo_id, command), or says why it can't.
+function openShell(req = {}, runnerID = "") {
+  const why = shellBlocked(state.project, runnerID);
+  if (why) throw new Error(why);
+  return startProc({ kind: "pty", ...req });
+}
+
 // The Shell view is only a terminal: show the project's running shell, or open one.
+// When the runner refuses, say why once instead of asking again with every update
+// (until the runners or the project change).
 let opening = false;
+let shellRefused = null; // { pid, msg }
+function renderShellNote(msg) {
+  $("#shell-note").hidden = !msg;
+  $("#term-wrap").hidden = !!msg;
+  $("#shell-note-text").textContent = msg || "";
+}
 function ensureShell() {
   if (state.view !== "run" || !state.project || opening) return;
-  if (attached && state.procs.some((p) => p.id === attached)) return;
-  const pty = state.procs.filter((p) => p.kind === "pty" && p.running && inMain(p))
+  if (attached && state.procs.some((p) => p.id === attached)) return renderShellNote();
+  const blocked = shellBlocked(); // another member's shell is theirs: the runner won't attach it either
+  const pty = !blocked && state.procs.filter((p) => p.kind === "pty" && p.running && inMain(p))
     .reduce((a, b) => (!a || b.started_at > a.started_at ? b : a), null);
-  if (pty) return attach(pty);
+  if (pty) { renderShellNote(); return attach(pty); }
+  const pid = state.project.id;
+  const why = blocked || (shellRefused?.pid === pid ? shellRefused.msg : "");
+  renderShellNote(why);
+  if (why) return;
   opening = true;
-  startProc({ kind: "pty" }).catch(fail).finally(() => { opening = false; });
+  startProc({ kind: "pty" })
+    .catch((e) => {
+      shellRefused = { pid, msg: e.message || String(e) };
+      if (state.project?.id === pid) renderShellNote(shellRefused.msg);
+    })
+    .finally(() => { opening = false; });
 }
 
 const runPreset = attempt(async (e) => {
@@ -7705,7 +7751,7 @@ async function todoKey(t, k) {
     case "+": return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority - 1 });
     case "-": return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority + 1 });
     case "t": return previewTodo(t);
-    case "!": return startProc({ kind: "pty", todo_id: t.id });
+    case "!": return openShell({ todo_id: t.id }, t.runner);
     case "dd":
       if (await ask({ title: `Delete "${title(t)}"?`, body: "Its worktree and branch are removed too. This can't be undone.", ok: "Delete", danger: true })) {
         await api("DELETE", `/api/todos/${t.id}`);
@@ -7744,7 +7790,7 @@ async function runCommand(line) {
     case "fs": case "full": case "fullscreen": return toggleFullscreen();
     case "run": case "!": case "sh": case "shell":
       if (!arg) return showView("run");
-      need(); return startProc({ kind: "pty", command: arg });
+      need(); return openShell({ command: arg });
     case "ps": case "procs": return showView("run");
     case "history": case "graph": case "tree": return showView("history");
     case "p": case "project": {
@@ -7868,7 +7914,7 @@ function paletteCommands() {
     p?.run_command && [serve.label || "Run", serve.icon || "play", () => startProc({ kind: "web", preset: "run" }), "R", `run web ${serve.icon || ""}`],
     p?.test_command && ["Run tests", "check", () => startProc({ kind: "task", preset: "test" }), "T", "test"],
     p?.deploy_command && [deploy.label || "Deploy", deploy.icon || "rocket", () => startProc({ kind: "task", preset: "deploy" }), "D", `release ship ${deploy.icon || ""}`],
-    p && ["Open a shell", "terminal", () => startProc({ kind: "pty" }), "!", "terminal pty"],
+    p && !shellBlocked(p) && ["Open a shell", "terminal", () => openShell(), "!", "terminal pty"],
     p && state.unpushed > 0 && ["Push merged work", "push", pushDone, ":push", "git"],
     p && ["Clean up", "trash", cleanup, ":cleanup", "worktrees branches"],
     p && ["Delete project…", "trash", openDeleteProject, "", "remove repo clone github"],
@@ -8216,7 +8262,7 @@ async function handleNormal(k, n, hadCount) {
         case "R": return startProc({ kind: "web", preset: "run" });
         case "T": return startProc({ kind: "task", preset: "test" });
         case "D": return startProc({ kind: "task", preset: "deploy" });
-        case "!": return startProc({ kind: "pty" });
+        case "!": return openShell();
       }
       return;
     }

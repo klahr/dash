@@ -21,6 +21,9 @@ type Reporter struct {
 	Store    *store.Store
 	Usage    *usage.Tracker // optional
 	Parallel int            // the runner's -parallel
+	// Terminals: the runner opens terminals for its owner on the hub (it
+	// runs with -hub-commands).
+	Terminals bool
 	// Send posts the report (tunnel.Report with the runner's credentials).
 	Send func(ctx context.Context, r Report) error
 	// Every is the heartbeat (default 30s).
@@ -214,7 +217,7 @@ func (r *Reporter) Build(now time.Time) Report {
 	if keep <= 0 {
 		keep = 24 * time.Hour
 	}
-	rep := Report{Parallel: r.Parallel}
+	rep := Report{Parallel: r.Parallel, Terminals: r.Terminals}
 	if r.Usage != nil {
 		u := r.Usage.Snapshot()
 		rep.Usage = &u

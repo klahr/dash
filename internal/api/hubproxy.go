@@ -347,7 +347,8 @@ func (s *Server) listProcessesOnRunners(w http.ResponseWriter, r *http.Request, 
 // startProcessOnRunner starts one of p's commands on a runner: with todo_id,
 // on the task's runner, in its worktree there. Terminals and commands the
 // hub makes up are the runner's to allow (see hubCheck); neither ever runs
-// on the hub.
+// on the hub. A terminal opens only on a runner of the caller's own (the
+// runner checks it too, from tunnel.UserHeader).
 func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv *service, p model.Project) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
@@ -359,6 +360,7 @@ func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv
 		writeErr(w, errors.Join(errBadRequest, err))
 		return
 	}
+	pty := req["kind"] == string(model.ProcPTY)
 	prefer := ""
 	if tid, _ := req["todo_id"].(string); tid != "" {
 		t, err := sv.data.GetTodo(tid)
@@ -376,6 +378,9 @@ func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv
 			return
 		}
 	}
+	if pty && prefer == "" {
+		prefer = s.terminalRunner(sv.c, p)
+	}
 	run, rpid, err := sv.projectRunner(r.Context(), p, prefer)
 	if err != nil {
 		writeErr(w, err)
@@ -384,6 +389,13 @@ func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv
 	if prefer != "" && run.ID != prefer {
 		writeErr(w, fmt.Errorf("%w (the task's worktree is on its runner, which is offline)", errNoRunnerOnline))
 		return
+	}
+	if pty {
+		if err := ownsRunner(sv.c, run); err != nil {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			return
+		}
+		r = r.WithContext(tunnel.WithUser(r.Context(), sv.c.User))
 	}
 	res, err := s.forwardTo(r, run, "/api/projects/"+url.PathEscape(rpid)+"/processes", body, rpid, p.ID)
 	if err != nil {
@@ -394,6 +406,34 @@ func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv
 		res.body = rewriteProcs(res.body, run, sv.runnerTodos(p))
 	}
 	res.write(w)
+}
+
+// terminalRunner is the online runner of p a terminal for c opens on: one
+// of c's own, one that said it opens terminals (-hub-commands) first; ""
+// when none of them is c's.
+func (s *Server) terminalRunner(c Caller, p model.Project) string {
+	id := ""
+	for _, run := range s.onlineRunners(p) {
+		if ownsRunner(c, run) != nil {
+			continue
+		}
+		if run.Reported != nil && run.Reported.Terminals {
+			return run.ID
+		}
+		if id == "" {
+			id = run.ID
+		}
+	}
+	return id
+}
+
+// ownsRunner reports whether c registered run: only its owner gets a
+// terminal on it, not the other members of its org.
+func ownsRunner(c Caller, run tunnel.Runner) error {
+	if c.User == 0 || run.Owner == nil || run.Owner.UserID != c.User {
+		return fmt.Errorf("terminals on %s open only for the user who registered it", run.Name)
+	}
+	return nil
 }
 
 // processRunner is the runner of a process the hub listed (see hubProcID),
@@ -414,7 +454,11 @@ func (sv *service) processRunner(id string) (tunnel.Runner, string, error) {
 }
 
 // processViaRunner handles DELETE /api/processes/{procid} and GET
-// /ws/proc/{procid} on the hub: they go to the process's runner.
+// /ws/proc/{procid} on the hub: they go to the process's runner. They say
+// whom they are for (tunnel.UserHeader): the runner lets only its owner
+// attach to a terminal (hubTerminal). The socket goes through as it is,
+// both ways: keyboard input and resizes to the runner, the scrollback and
+// output back.
 func (s *Server) processViaRunner(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.RunnerOnly {
@@ -443,12 +487,12 @@ func (s *Server) processViaRunner(h http.HandlerFunc) http.HandlerFunc {
 				writeErr(w, errNoRunnerOnline)
 				return
 			}
-			out := r.Clone(r.Context())
+			out := r.Clone(tunnel.WithUser(r.Context(), sv.c.User))
 			out.URL.Path, out.URL.RawPath = "/peer/"+run.Name+path, ""
 			px.ServeHTTP(w, out)
 			return
 		}
-		res, err := s.forwardTo(r, run, path, nil, "", "")
+		res, err := s.forwardTo(r.WithContext(tunnel.WithUser(r.Context(), sv.c.User)), run, path, nil, "", "")
 		if err != nil {
 			writeErr(w, err)
 			return

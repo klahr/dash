@@ -112,9 +112,12 @@ type Accepted struct {
 
 // Report is POST /runner/report: a runner's news for its hub.
 type Report struct {
-	Parallel int             `json:"parallel"` // the runner's own -parallel
-	Usage    *usage.Snapshot `json:"usage,omitempty"`
-	Tasks    []TaskState     `json:"tasks,omitempty"`
+	Parallel int `json:"parallel"` // the runner's own -parallel
+	// Terminals: the runner opens terminals for its owner from the hub
+	// (it runs with -hub-commands).
+	Terminals bool            `json:"terminals,omitempty"`
+	Usage     *usage.Snapshot `json:"usage,omitempty"`
+	Tasks     []TaskState     `json:"tasks,omitempty"`
 	// Procs are the hub's projects whose processes (run/test/deploy
 	// commands, terminals) on the runner changed since the last report: the
 	// hub tells their dashboards to list them again.

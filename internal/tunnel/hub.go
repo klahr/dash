@@ -105,7 +105,10 @@ func (r Runner) Limit() int {
 type Reported struct {
 	Parallel int             `json:"parallel"`
 	Usage    *usage.Snapshot `json:"usage,omitempty"`
-	At       time.Time       `json:"at"`
+	// Terminals: it opens terminals for its owner from the hub
+	// (-hub-commands).
+	Terminals bool      `json:"terminals"`
+	At        time.Time `json:"at"`
 }
 
 // record is a runner in runners.json. Its token is in the token table
@@ -663,8 +666,9 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var self struct {
-		Parallel int             `json:"parallel"`
-		Usage    *usage.Snapshot `json:"usage"`
+		Parallel  int             `json:"parallel"`
+		Usage     *usage.Snapshot `json:"usage"`
+		Terminals bool            `json:"terminals"`
 	}
 	if err := json.Unmarshal(body, &self); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
@@ -675,9 +679,9 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 		h.reported = map[string]*Reported{}
 	}
 	prev := h.reported[rec.ID]
-	h.reported[rec.ID] = &Reported{Parallel: self.Parallel, Usage: self.Usage, At: h.clock()}
+	h.reported[rec.ID] = &Reported{Parallel: self.Parallel, Usage: self.Usage, Terminals: self.Terminals, At: h.clock()}
 	h.mu.Unlock()
-	if prev == nil || prev.Parallel != self.Parallel || paused(prev.Usage) != paused(self.Usage) {
+	if prev == nil || prev.Parallel != self.Parallel || prev.Terminals != self.Terminals || paused(prev.Usage) != paused(self.Usage) {
 		h.changed()
 	}
 	if h.OnReport != nil {
@@ -879,6 +883,10 @@ func (h *Hub) Proxy(name string) (http.Handler, bool) {
 			r.Out.Header.Del("Authorization")
 			r.Out.Header.Del("Proxy-Authorization")
 			r.Out.Header.Del(UserHeader) // a person doesn't say whom they are
+			// The hub says it, for requests it checked (WithUser).
+			if uid, ok := userFrom(r.In.Context()); ok {
+				r.Out.Header.Set(UserHeader, strconv.FormatInt(uid, 10))
+			}
 		},
 		ModifyResponse: func(res *http.Response) error {
 			// The answer is served on the hub's origin: the runner doesn't

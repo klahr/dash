@@ -470,6 +470,8 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 /* ---------- run ---------- */
 #view-run.active { display: flex; height: calc(100dvh - var(--top-h) - var(--nav-h) - var(--safe-b)); background: #0a0f17; }
 .term-wrap { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.term-wrap[hidden] { display: none; }
+.shell-note { align-self: center; }
 
 /* Files: tree beside (desktop) or above (mobile) a plain editor */
 #view-files.active { display: flex; height: calc(100dvh - var(--top-h) - var(--nav-h) - var(--safe-b)); }

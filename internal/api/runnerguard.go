@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,9 +19,10 @@ import (
 
 // hubRoutes are the routes a hub may call on a runner (`dash runner`): the
 // dashboard's normal work on the runner's own projects and tasks. Missing on
-// purpose: terminals and ad-hoc commands, the general chat (it runs in the
-// home directory, not a project), the MCP endpoints (local Claude runs use
+// purpose: the MCP endpoints (local Claude runs use
 // those on loopback), other computers (/peer/…), the static UI and login.
+// Terminals, ad-hoc commands and the general chat are here but checked
+// (hubCheck, forOwner).
 // The guard compares against the pattern the mux actually picked, so a path
 // can't reach a handler not listed here by matching a looser pattern.
 var hubRoutes = map[string]bool{}
@@ -66,7 +68,7 @@ func init() {
 
 		// The project's own run/test/deploy commands; checked in hubGuard.
 		"GET /api/projects/{pid}/processes", "POST /api/projects/{pid}/processes", "DELETE /api/processes/{procid}",
-		"GET /ws/proc/{procid}", // output only: hubGuard refuses terminals
+		"GET /ws/proc/{procid}", // terminals only with -hub-commands, for the owner (hubTerminal)
 
 		"POST /api/todos/{tid}/preview", "DELETE /api/todos/{tid}/preview", "GET /api/todos/{tid}/preview/log",
 		"GET /api/previews", "DELETE /api/previews", "GET /api/qr", "GET /preview/{tid}",
@@ -128,6 +130,26 @@ func (s *Server) RunnerRoutes() http.Handler {
 // errHubCommand is why the hub may not set or run a command.
 const errHubCommand = "this runner doesn't take commands from the hub; set the project's commands on the runner, or start it with -hub-commands"
 
+// errHubTerminal is why the hub may not open a terminal on this runner.
+const errHubTerminal = "this runner doesn't open terminals for the hub; start it with -hub-commands to allow its owner to"
+
+// hubTerminal reports whether the hub may open (or attach to) a terminal
+// on this runner for r: only with -hub-commands (a shell can do whatever a
+// deploy command can), and only for the user who registered the runner.
+// It starts in the project's checkout or a task's worktree here, never a
+// folder the hub names (see startProcess).
+func (s *Server) hubTerminal(r *http.Request) error {
+	if !s.HubCommands {
+		return errors.New(errHubTerminal)
+	}
+	if s.HubUser == 0 {
+		// Registered with an older hub: it can't tell its owner from the
+		// org's other members.
+		return errors.New("this runner doesn't know who registered it, so it opens no terminals for the hub; register it again with a new code")
+	}
+	return s.onlyForOwner(r, "opens terminals")
+}
+
 // hubCheck refuses requests that are allowed routes but would run something
 // the hub made up, or reach outside the runner's projects.
 func (s *Server) hubCheck(r *http.Request) error {
@@ -175,14 +197,14 @@ func (s *Server) hubCheck(r *http.Request) error {
 			return nil
 		}
 		if req.Kind == model.ProcPTY {
-			return fmt.Errorf("terminals on a runner are only available on the runner itself")
+			return s.hubTerminal(r)
 		}
 		if req.Command != "" && !s.HubCommands {
 			return fmt.Errorf("%s", errHubCommand)
 		}
 	case "GET /ws/proc/{procid}":
 		if p, err := s.Procs.Get(segment(r, 2)); err == nil && p.Kind == model.ProcPTY {
-			return fmt.Errorf("terminals on a runner are only available on the runner itself")
+			return s.hubTerminal(r)
 		}
 	}
 	return nil
