@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/branding"
+	"github.com/klahr/dash/internal/localpath"
 	"github.com/klahr/dash/internal/orgdomain"
 	"github.com/klahr/dash/internal/store"
 )
@@ -156,10 +157,7 @@ func accountEntry(path string) bool {
 
 // safeNext is next if it's a path on this host, else "/".
 func safeNext(next string) string {
-	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") || strings.ContainsAny(next, "\r\n") {
-		return "/"
-	}
-	return next
+	return localpath.Safe(next)
 }
 
 // goURL is where on the base domain a browser goes to be handed to slug's

@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/klahr/dash/internal/localpath"
 )
 
 // How a browser signs in to a preview host. Dash's session cookie belongs to
@@ -200,10 +202,7 @@ func (m *Manager) serve(w http.ResponseWriter, r *http.Request, label string) {
 			Name: cookieName, Value: m.sign("c", label, time.Now().Add(cookieTTL)), Path: "/",
 			MaxAge: int(cookieTTL.Seconds()), HttpOnly: true, Secure: secure, SameSite: ss,
 		})
-		next := q.Get("next")
-		if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") {
-			next = "/"
-		}
+		next := localpath.Safe(q.Get("next"))
 		w.Header().Set("Cache-Control", "no-store")
 		http.Redirect(w, r, next, http.StatusFound)
 		return
