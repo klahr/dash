@@ -93,8 +93,12 @@ func migrations() ([]migration, error) {
 }
 
 // migrate brings the schema up to date, one transaction per migration. The
-// schema version is SQLite's user_version.
-func migrate(db *sql.DB) error {
+// schema version is SQLite's user_version. Migrations only go forward: an
+// older Dash refuses the database afterwards. Before migrating a database
+// that has a schema already (not a new one), backup is called with the
+// version it has and the one it gets, and an error from it stops the
+// migration (optional).
+func migrate(db *sql.DB, backup func(from, to int) error) error {
 	ms, err := migrations()
 	if err != nil {
 		return err
@@ -104,7 +108,13 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 	if cur > len(ms) {
-		return fmt.Errorf("database schema is version %d, newer than this Dash knows (%d)", cur, len(ms))
+		return fmt.Errorf("database schema is version %d, newer than this Dash knows (%d): "+
+			"run the Dash version that last used it (or a newer one), or restore a backup taken before it", cur, len(ms))
+	}
+	if cur > 0 && cur < len(ms) && backup != nil {
+		if err := backup(cur, len(ms)); err != nil {
+			return fmt.Errorf("back up the database before migrating it from schema %d to %d: %w", cur, len(ms), err)
+		}
 	}
 	for _, m := range ms[cur:] {
 		tx, err := db.Begin()

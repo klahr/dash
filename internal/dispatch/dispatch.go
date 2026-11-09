@@ -361,21 +361,36 @@ func safeLinks(ts *TaskState) {
 
 func (d *Dispatcher) apply(r tunnel.Runner, ts TaskState) {
 	safeLinks(&ts)
-	org, ok := d.Store.ProjectOrg(projectOf(d.Store, ts.HubTodoID))
-	if !ok || org != r.OrgID() {
+	p, err := d.Store.GetProject(projectOf(d.Store, ts.HubTodoID))
+	if err != nil || p.OrgID != r.OrgID() {
 		return
 	}
 	to := hubStatus(ts.Status)
 	var ours model.Todo // the task, if it is this runner's
 	undo := false       // its revert conflicted just now
-	_, err := d.Store.UpdateTodo(ts.HubTodoID, func(x *model.Todo) error {
+	adopted := false    // taken by the runner before the hub recorded it
+	nt, err := d.Store.UpdateTodo(ts.HubTodoID, func(x *model.Todo) error {
+		// A task the runner took but the hub never recorded as sent (the hub
+		// stopped between the two) is the runner's: sending it again would
+		// run it twice, on another runner or from scratch on this one.
+		adopt := x.Status == model.StatusQueued && x.Runner == "" && x.RemoteID == "" &&
+			to == model.StatusInProgress && slices.Contains(p.Runners, r.ID)
+		adopted = false
+		if adopt {
+			now := time.Now()
+			x.Runner, x.Waiting, x.Paused = r.ID, "", false
+			x.StartedAt, x.FinishedAt = &now, nil
+		}
 		if x.Runner != r.ID || (x.RemoteID != "" && x.RemoteID != ts.ID) {
 			return errSkip // sent elsewhere since, or never sent to this runner
 		}
 		ours = *x
 		switch x.Status {
 		case model.StatusQueued, model.StatusDraft:
-			return errSkip // waiting to be sent (again)
+			if !adopt {
+				return errSkip // waiting to be sent (again)
+			}
+			adopted = true
 		case model.StatusMerged:
 			// Done; only a revert (or its conflict) may follow.
 			if ts.Status != model.StatusMerged {
@@ -453,6 +468,9 @@ func (d *Dispatcher) apply(r tunnel.Runner, ts TaskState) {
 	})
 	if err != nil && !errors.Is(err, errSkip) && !errors.Is(err, store.ErrNotFound) {
 		slog.Warn("apply runner report", "runner", r.Name, "todo", ts.HubTodoID, "err", err)
+	}
+	if adopted && err == nil && d.Note != nil {
+		d.Note(nt, "→ running on runner "+r.Name+" (it reported the task before the hub recorded sending it)")
 	}
 	if ours.ID != "" {
 		d.publishOutput(ours, ts)
@@ -546,7 +564,9 @@ func (d *Dispatcher) Revoked(id string) {
 	}
 }
 
-// interrupt fails the tasks runner id is running.
+// interrupt fails the tasks runner id is running or merging. A merge the
+// runner finishes after all still counts: its report moves the task on
+// (see apply), and approving it again once the runner is back retries it.
 func (d *Dispatcher) interrupt(id, why string, resumable bool) {
 	name := id
 	if r, ok := d.Fleet.Get(id); ok {
@@ -556,17 +576,23 @@ func (d *Dispatcher) interrupt(id, why string, resumable bool) {
 	if resumable {
 		msg = InterruptedPrefix + name + " " + why
 	}
-	for _, t := range d.Store.ListTodos("", model.StatusInProgress) {
+	for _, t := range d.Store.ListTodos("", model.StatusInProgress, model.StatusMerging) {
 		if t.Runner != id {
 			continue
 		}
 		nt, err := d.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
-			if x.Status != model.StatusInProgress || x.Runner != id {
+			if (x.Status != model.StatusInProgress && x.Status != model.StatusMerging) || x.Runner != id {
 				return errSkip
 			}
+			merging := x.Status == model.StatusMerging
 			now := time.Now()
 			x.Status, x.Error, x.FinishedAt = model.StatusFailed, msg, &now
-			x.Resumable = resumable && x.RemoteID != ""
+			// Claude's work is done in a merging task: there is no session
+			// to continue, only the merge to approve again.
+			x.Resumable = resumable && x.RemoteID != "" && !merging
+			if merging && resumable {
+				x.Error += " while merging; approve it again once it is back"
+			}
 			if !resumable {
 				x.Runner, x.RemoteID = "", "" // nothing to continue: start over elsewhere
 			}
@@ -578,11 +604,12 @@ func (d *Dispatcher) interrupt(id, why string, resumable bool) {
 	}
 }
 
-// Start arms the offline grace of every runner that has tasks running but
-// isn't connected (the hub just started): they fail unless it comes back.
+// Start arms the offline grace of every runner that has tasks running or
+// merging but isn't connected (the hub just started): they fail unless it
+// comes back.
 func (d *Dispatcher) Start() {
 	seen := map[string]bool{}
-	for _, t := range d.Store.ListTodos("", model.StatusInProgress) {
+	for _, t := range d.Store.ListTodos("", model.StatusInProgress, model.StatusMerging) {
 		if t.Runner == "" || seen[t.Runner] {
 			continue
 		}

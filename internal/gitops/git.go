@@ -230,6 +230,16 @@ func (e *ErrConflict) Error() string {
 	return "merge conflict in " + strings.Join(e.Files, ", ")
 }
 
+// AbortStaleMerge aborts a merge left in progress in dir, e.g. by a Dash
+// stopped in the middle of MergeIn, and reports whether there was one.
+func (g *Git) AbortStaleMerge(ctx context.Context, projectID, dir string) bool {
+	if _, err := g.git(ctx, projectID, dir, "rev-parse", "-q", "--verify", "MERGE_HEAD"); err != nil {
+		return false
+	}
+	_, err := g.git(ctx, projectID, dir, "merge", "--abort")
+	return err == nil
+}
+
 // MergeIn merges branch into the branch checked out in dir and commits.
 // On conflict the merge is aborted (dir is left as it was) and an
 // *ErrConflict lists the conflicting files. changed reports whether HEAD moved.

@@ -669,6 +669,20 @@ func main() {
 	go todos.Run(ctx)
 	merges.Resume()
 	go merges.Run(ctx) // the one and only merge worker
+	// On the way out (SIGTERM, Ctrl-C), before the store closes: running
+	// tasks stop their Claude and test processes (each in a process group
+	// of its own, which would outlive Dash and run beside the resumed task)
+	// and stay in progress, and a merge in hand stays merging; both resume
+	// at the next start.
+	defer func() {
+		stop()
+		if !todos.Wait(shutdownWait) {
+			slog.Warn("shutdown: tasks still stopping", "after", shutdownWait)
+		}
+		if !merges.Wait(shutdownWait) {
+			slog.Warn("shutdown: the merge worker is still stopping", "after", shutdownWait)
+		}
+	}()
 	if runnerMode {
 		go merges.Remote.Run(ctx) // the hub fetches nothing: its projects' clones are on runners
 	}
@@ -744,8 +758,13 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	shutDown := make(chan struct{})
 	go func() {
+		defer close(shutDown)
 		<-ctx.Done()
+		slog.Info("shutting down", "reason", context.Cause(ctx))
+		// Requests in flight (an approval, a runner's report) finish;
+		// runners' tunnels drop and they reconnect to the next hub.
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
@@ -765,7 +784,12 @@ func main() {
 		slog.Error("server", "err", err)
 		os.Exit(1)
 	}
+	<-shutDown // ListenAndServe returns at once; Shutdown waits for the requests
 }
+
+// shutdownWait is how long Dash waits, on the way out, for its running tasks
+// and merge to stop (Claude gets 10 seconds after SIGTERM before SIGKILL).
+const shutdownWait = 20 * time.Second
 
 // warnUnlinked logs the hub's projects no runner is linked to: made on the
 // hub before it stopped running anything itself. They stay, with their

@@ -38,7 +38,9 @@ Environment=PATH=%h/.local/bin:%h/go/bin:/usr/local/bin:/usr/bin:/bin
 
 Restart=on-failure
 RestartSec=3
-TimeoutStopSec=20
+# On SIGTERM, Dash waits up to 20s for running tasks' Claude and tests to
+# stop (they resume at the next start): give it that, and a little more.
+TimeoutStopSec=30
 
 [Install]
 WantedBy=default.target

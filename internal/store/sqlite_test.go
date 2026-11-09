@@ -392,14 +392,14 @@ func TestMigrateFromEmpty(t *testing.T) {
 	// Migrating again is a no-op.
 	s = reopen(t, s, path)
 	checkDB(s.db)
-	if err := migrate(s.db); err != nil {
+	if err := migrate(s.db, nil); err != nil {
 		t.Fatal(err)
 	}
 	// A database from a newer Dash is refused rather than misread.
 	if _, err := s.db.Exec("PRAGMA user_version = 999"); err != nil {
 		t.Fatal(err)
 	}
-	if err := migrate(s.db); err == nil {
+	if err := migrate(s.db, nil); err == nil {
 		t.Fatal("migrated a database newer than this Dash")
 	}
 }

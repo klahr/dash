@@ -87,6 +87,7 @@ type TodoEngine struct {
 	runCtx      context.Context // the dispatcher's context; done on shutdown
 	mu          sync.Mutex
 	running     map[string]context.CancelFunc
+	workers     sync.WaitGroup    // the goroutines working on running todos (see Wait)
 	interrupted map[string]string // running todo id → why Interrupt stopped it
 	// resolving holds the todos (id → project id) dispatched to fix a merge
 	// conflict, until they have landed or left the fix-and-merge path.
@@ -233,7 +234,9 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 			e.resolving[t.ID] = t.ProjectID
 		}
 		e.mu.Unlock()
+		e.workers.Add(1)
 		go func() {
+			defer e.workers.Done()
 			defer func() {
 				cancel()
 				e.mu.Lock()
@@ -311,6 +314,13 @@ func (e *TodoEngine) conflictBusy(projectID string) bool {
 		}
 	}
 	return busy
+}
+
+// Wait waits, up to timeout, for the todos running when Run's context
+// ended to stop (their Claude and test processes signalled, each left in
+// progress to resume at the next start), and reports whether they all did.
+func (e *TodoEngine) Wait(timeout time.Duration) bool {
+	return waitGroup(&e.workers, timeout)
 }
 
 // Cancel stops a running todo. Returns false if it was not running.

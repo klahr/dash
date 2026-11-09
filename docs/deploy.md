@@ -219,12 +219,15 @@ edit `wildcard` in `deploy/caddy/Caddyfile`. The token is passed to Caddy only, 
 Set `DASH_VERSION` in `.env` to the new release (see [Releases](releases.md)), then
 
 ```sh
+docker compose exec dash dash backup -data /data /data/backups/   # a backup to go back to
 docker compose pull && docker compose up -d
 ```
 
-The database migrates itself at start. To go back, set the previous version and restore the backup
-you took first (`docker compose exec dash dash backup -data /data /data/backups/`, see
-below): an older version refuses a database a newer one has migrated.
+The database migrates itself at start, after copying itself to
+`/data/dash.db.pre-migration-<from>-to-<to>-<time>`. Migrations only go forward: to go back, set
+the previous version and restore the backup (see [Back up and restore](#back-up-and-restore)).
+What happens to running work, and the whole procedure, is in
+[Upgrades, restarts and rollback](#upgrades-restarts-and-rollback).
 
 ### Back up and restore
 
@@ -293,6 +296,124 @@ docker build --build-arg VERSION=$(git describe --tags --always) -t dash:local .
 
 with `DASH_IMAGE=dash` and `DASH_VERSION=local` in `deploy/.env`. Under the AGPL, a hub you
 changed should point `DASH_SOURCE_URL` at your source.
+
+## Upgrades, restarts and rollback
+
+The hub only coordinates. The work (Claude, tests, merges, pushes) runs on runners, so restarting
+the hub for a deploy or an upgrade, or after a crash, doesn't stop any of it. These rules apply
+whether the hub runs as a [service](service.md) or in [Docker](#run-the-hub-with-docker).
+
+### What a hub restart does to running work
+
+- **Stopping.** On `SIGTERM` (`systemctl stop`, `docker compose up -d` with a new image,
+  `docker stop`) or Ctrl-C, the hub logs `shutting down`, stops taking new connections, gives
+  requests in flight (an approval, a runner's report) up to 5 seconds to finish, and exits with
+  status 0. It needs no longer than that, well inside Docker's 10 seconds and the service's
+  `TimeoutStopSec`.
+- **Runners reconnect on their own.** A runner whose connection drops tries again after about 1
+  second, then waits twice as long after each failure, up to 1 minute, with some jitter so they
+  don't all reconnect at once. When it is back it reports every task it has for the hub,
+  including tasks that finished while the hub was down (it keeps reporting finished tasks for a
+  day). Restart the hub at any time; no runner needs touching.
+- **Running tasks** stay `in_progress` on the hub. After it starts, the hub gives each runner
+  with running tasks `-runner-grace` (2 minutes by default) to reconnect. That is longer than a
+  runner's longest wait between attempts, so a restart never fails a task by itself.
+- **A runner that doesn't come back** within the grace has its running tasks failed with
+  "interrupted: <runner> went offline mid-task", so none look busy forever. They can be resumed:
+  queue them again and they continue on that runner, with their worktree and Claude session.
+  If the runner comes back on its own and says it kept working, the hub puts the task back on
+  it, with nothing lost.
+- **Merging tasks** (approved, being landed by their runner) work the same way. Past the grace
+  they fail with "… while merging; approve it again once it is back", and never stay `merging`
+  forever. A runner that finished the merge meanwhile still reports it, and the task becomes
+  `merged`.
+- **Approving** asks the task's runner to land it. If the runner can't be reached, the approval
+  is refused and the task stays in review. If the hub dies just after the runner took the
+  approval, the runner lands the task anyway and the hub hears of it when the runner reconnects.
+  A merge is never landed twice or half-way: the runner pushes the squashed commit to origin
+  before it counts the task merged.
+- **A task sent just as the hub stopped**, which the runner took but the hub never recorded,
+  belongs to that runner once it reports the task running. It isn't sent a second time.
+- **Permission prompts** are held by the runner whose Claude asked. A hub restart doesn't drop
+  them, and Claude keeps waiting for the answer. A runner that can't reach its hub for
+  `-offline-grace` (10 minutes) stops its running tasks instead, so they don't wait forever on
+  a prompt nobody can see (see [When a runner goes offline](several-computers.md#when-a-runner-goes-offline)).
+- **A crash** (`kill -9`, out of memory, power loss) is handled the same way: every change to
+  the database is a transaction, written completely or not at all, so the hub starts again from
+  its last committed state.
+
+### What a runner restart does
+
+- **Stopping** (`SIGTERM`, `dash runner install` during an update, Ctrl-C): the runner signals
+  its running tasks' Claude and test processes and waits up to 20 seconds for them to exit.
+  Claude runs in a process group of its own, and without that wait it could keep running after
+  the runner exits, beside the copy resumed at the next start. The tasks stay in progress (their
+  log says "interrupted by shutdown; will resume on restart") and continue with their Claude
+  session when the runner starts again. The hub keeps showing them running for up to
+  `-runner-grace`.
+- **A merge in hand** stays `merging` and starts again from the beginning at the next start.
+  Tests cut off by the shutdown don't count as failing. A merge left unfinished in the task's
+  worktree is undone first, and nothing has landed until the push to origin succeeds.
+- **A revert in hand** isn't kept: the task says "Revert failed: interrupted by shutdown; revert
+  it again".
+- **A crash** of the runner (or its computer) may leave Claude running if only the runner
+  process dies: systemd's default `KillMode` stops the whole service, Claude included. At the
+  next start the runner resumes its tasks. If it stayed away past the hub's grace, the hub has
+  failed those tasks in the meantime, and the runner's first report puts them back on it.
+
+### Upgrading the hub
+
+1. **Read the [release notes](releases.md)** of every version between yours and the new one.
+2. **Take a backup:** `dash backup ~/dash-backups/` (in Docker:
+   `docker compose exec dash dash backup -data /data /data/backups/`). It runs while the hub
+   runs, without stopping anything.
+3. **Install the new version and restart:** a new binary and `systemctl --user restart dash`, or
+   a new `DASH_VERSION` and `docker compose pull && docker compose up -d`. Running tasks carry on
+   as described above.
+4. **Watch the log** (`journalctl --user -u dash -f` or `docker compose logs -f dash`):
+   - `database backed up before migrating … backup=…/dash.db.pre-migration-<from>-to-<to>-<time>`
+     when the new version changes the database. Dash copies the database beside itself before
+     each migration, and doesn't start if that copy fails (e.g. a full disk).
+   - `dash listening`, then `runner connected name=… version=…` as the runners come back.
+5. **Update the runners** (optional, in any order): the Organization page flags runners whose
+   version differs from the hub's, with the command that updates each
+   ([Update a runner](several-computers.md#update-a-runner)). A runner restarted for an update
+   resumes its tasks.
+
+**Migrations only go forward.** Each one runs in a single transaction: if it fails, the database
+stays exactly as it was, Dash exits with the error, and the previous version still runs on it.
+Once a migration has run, an older Dash refuses to start on that database ("database schema is
+version N, newer than this Dash knows") rather than misread it. There are no down-migrations.
+
+### Rolling back
+
+To go back to the previous version after it migrated the database:
+
+1. Stop the hub.
+2. Restore the copy taken before the migration (or your own backup from step 2) as `dash.db`, and
+   delete `dash.db-wal` and `dash.db-shm`. As a service:
+
+   ```sh
+   systemctl --user stop dash
+   cd ~/.local/share/dash
+   mv dash.db dash.db.after-upgrade
+   rm -f dash.db-wal dash.db-shm
+   cp dash.db.pre-migration-10-to-11-20261109T120000Z dash.db
+   ```
+
+   In Docker, do the same in a throwaway container, as in
+   [Back up and restore](#back-up-and-restore), with `/data/dash.db.pre-migration-…` as the
+   file to copy.
+3. Install the previous version and start it.
+
+Anything that changed after the backup is lost with the rollback: tasks created or finished
+since. Runners report the tasks they still have when they reconnect: tasks the restored database
+already has catch up, but tasks created after the backup are unknown to it and stay on the
+runners only. Without a migration (same schema), rolling back is just installing the previous
+version: no restore needed.
+
+The pre-migration copies are never deleted by Dash (scheduled backups don't prune them).
+Delete them once the new version has proved itself.
 
 ## At home through a Cloudflare Tunnel
 

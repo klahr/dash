@@ -55,6 +55,9 @@ type harness struct {
 	engine *TodoEngine
 	merges *MergeQueue
 	proj   model.Project
+	log    *TodoLog
+	// stop stops the loops as a shutdown does, and waits for them.
+	stop func()
 }
 
 func newHarness(t *testing.T, exe agent.Executor, p model.Project) *harness {
@@ -92,8 +95,9 @@ func newHarness(t *testing.T, exe agent.Executor, p model.Project) *harness {
 	wg.Add(2)
 	go func() { defer wg.Done(); e.Run(ctx) }()
 	go func() { defer wg.Done(); mq.Run(ctx) }()
-	t.Cleanup(func() { cancel(); wg.Wait() })
-	return &harness{t: t, st: st, git: g, engine: e, merges: mq, proj: p}
+	stop := sync.OnceFunc(func() { cancel(); wg.Wait() })
+	t.Cleanup(stop)
+	return &harness{t: t, st: st, git: g, engine: e, merges: mq, proj: p, log: log, stop: stop}
 }
 
 func (h *harness) add(title string) model.Todo {

@@ -7,11 +7,13 @@
 package store
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -116,7 +118,14 @@ func Open(path string, pub Publisher) (*Store, error) {
 }
 
 func open(db *sql.DB, path string, pub Publisher) (*Store, error) {
-	if err := migrate(db); err != nil {
+	if err := migrate(db, func(from, to int) error {
+		dest := PreMigrationBackup(path, from, to, time.Now())
+		if err := Backup(context.Background(), path, dest); err != nil {
+			return err
+		}
+		slog.Info("database backed up before migrating", "from", from, "to", to, "backup", dest)
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	if legacy := filepath.Join(filepath.Dir(path), LegacyFile); legacy != filepath.Clean(path) {

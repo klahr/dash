@@ -182,3 +182,11 @@ func newestBackup(dir string) (time.Time, bool) {
 	}
 	return newest, !newest.IsZero()
 }
+
+// PreMigrationBackup is where Open copies the database at path before
+// migrating it from schema version from to version to: beside it, as
+// dash.db.pre-migration-<from>-to-<to>-<UTC time>. Scheduled backups never
+// prune it; delete it once the new version is known to work.
+func PreMigrationBackup(path string, from, to int, t time.Time) string {
+	return fmt.Sprintf("%s.pre-migration-%d-to-%d-%s", path, from, to, t.UTC().Format(backupStamp))
+}

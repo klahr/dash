@@ -27,6 +27,11 @@ func (m *MergeQueue) revert(ctx context.Context, job model.MergeJob) {
 	}
 	p = p.For(t) // it landed on the branch it started from
 	fail := func(err error) {
+		if ctx.Err() != nil {
+			// A revert isn't kept across restarts: say so, rather than
+			// the error of the git command the shutdown cut off.
+			err = errors.New("interrupted by shutdown; revert it again")
+		}
 		m.Log.Line(t, "✖ revert: "+err.Error())
 		_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Error = "Revert failed: " + err.Error(); return nil })
 	}

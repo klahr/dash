@@ -16,6 +16,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -54,6 +55,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "report_issue:", err)
 			os.Exit(1)
 		}
+		hold()
 		if err := os.WriteFile("done-by-runner.txt", []byte("done\n"), 0o644); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -61,6 +63,29 @@ func main() {
 		line(map[string]any{"type": "system", "subtype": "init", "session_id": "fake-session"})
 		line(map[string]any{"type": "assistant", "message": map[string]any{"content": []map[string]any{{"type": "text", "text": "Working on: " + firstLine(string(stdin))}}}})
 		result("Wrote done-by-runner.txt.")
+	}
+}
+
+// hold keeps a task running while the file $FAKECLAUDE_HOLD exists, so a
+// test can stop the hub or the runner mid-task. Each held run appends its
+// pid to $FAKECLAUDE_HOLD.pids first.
+func hold() {
+	path := os.Getenv("FAKECLAUDE_HOLD")
+	if path == "" {
+		return
+	}
+	if _, err := os.Stat(path); err != nil {
+		return
+	}
+	if f, err := os.OpenFile(path+".pids", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+		fmt.Fprintln(f, os.Getpid())
+		f.Close()
+	}
+	for {
+		if _, err := os.Stat(path); err != nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 

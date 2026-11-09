@@ -76,7 +76,8 @@ type MergeQueue struct {
 
 	jobs    chan mergeItem
 	pending atomic.Int64
-	waiting sync.Map // todo ID → a goroutine watching for its files to be committed
+	running sync.WaitGroup // Run, while it runs (see Wait)
+	waiting sync.Map       // todo ID → a goroutine watching for its files to be committed
 
 	queuedMu sync.Mutex
 	queued   map[string]int // todo ID → its merge jobs queued or running
@@ -96,6 +97,24 @@ func NewMergeQueue(s *store.Store, g *gitops.Git, pub Publisher, log *TodoLog, c
 // Enqueue adds a job without blocking the caller (an HTTP handler).
 func (m *MergeQueue) Enqueue(job model.MergeJob) error {
 	return m.push(mergeItem{job: job})
+}
+
+// Wait waits, up to timeout, for Run to return once its context ended (the
+// merge in hand stopped and left to resume), and reports whether it did.
+func (m *MergeQueue) Wait(timeout time.Duration) bool {
+	return waitGroup(&m.running, timeout)
+}
+
+// waitGroup waits for wg up to timeout and reports whether it finished.
+func waitGroup(wg *sync.WaitGroup, timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 // Resume queues again the merges a previous process was running or had
@@ -166,6 +185,8 @@ func (m *MergeQueue) Pending() int { return int(m.pending.Load()) }
 
 // Run is the single merge worker. Start exactly one.
 func (m *MergeQueue) Run(ctx context.Context) {
+	m.running.Add(1)
+	defer m.running.Done()
 	poll := tickerOrNil(m.PRPoll)
 	clean := tickerOrNil(m.CleanupEvery)
 	for {
@@ -193,7 +214,15 @@ func (m *MergeQueue) Run(ctx context.Context) {
 			m.publish(job.TodoID)
 			if job.Revert {
 				m.revert(ctx, job)
-			} else if err := m.process(ctx, job); errors.As(err, new(*gitops.ErrDirtyCheckout)) {
+			} else if err := m.process(ctx, job); err != nil && ctx.Err() != nil {
+				// Dash is stopping, not the merge failing: the todo stays
+				// merging and Resume queues it again at the next start.
+				// Nothing counts until origin has it (or the default branch
+				// moved to it), so the merge starts over cleanly.
+				if t, gerr := m.Store.GetTodo(job.TodoID); gerr == nil && t.Status == model.StatusMerging {
+					m.Log.Line(t, "■ merge interrupted by shutdown; will resume on restart")
+				}
+			} else if errors.As(err, new(*gitops.ErrDirtyCheckout)) {
 				m.wait(ctx, job, err)
 			} else if err != nil {
 				slog.Warn("merge failed", "todo", job.TodoID, "err", err)
@@ -232,6 +261,11 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 	wt := *t.Worktree
 	log := func(s string) { m.Log.Line(t, s) }
 	log("▶ merging into " + p.Base())
+	// A merge cut off by a shutdown or crash starts over from the todo's
+	// own commits.
+	if m.Git.AbortStaleMerge(ctx, p.ID, wt.Path) {
+		log("↺ undid a merge of " + p.Base() + " left unfinished; starting it over")
+	}
 
 	var conflict *gitops.ErrConflict
 	// A shared project's merge counts once origin has it; when origin moves
@@ -267,6 +301,9 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 			// 2. Re-test if the default branch moved since the todo's tests ran.
 			if changed && p.TestCommand != "" {
 				checks := runChecks(ctx, m.Log, t, p, wt.Path, "merge", m.TestTimeout)
+				if ctx.Err() != nil {
+					return ctx.Err() // tests cut off by a shutdown haven't failed
+				}
 				if t, err = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Checks = &checks; return nil }); err != nil {
 					return err
 				}

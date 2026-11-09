@@ -73,6 +73,12 @@ A backup from an older version is migrated at start; one from a newer version is
 restore with the version that took it or a newer one. Delete `dash.db.before-restore` once all is
 well.
 
+**Upgrades.** Before a new version migrates the database, Dash copies it to
+`dash.db.pre-migration-<from>-to-<to>-<UTC time>` beside it. Migrations only go forward, so that
+copy (or your own backup) is the way back to the older version. See
+[Upgrades, restarts and rollback](deploy.md#upgrades-restarts-and-rollback) for the whole
+procedure and what happens to running tasks.
+
 ## Disk use
 
 Each task's log is capped: a log file past 32 MB is cut to its newest half, behind a note that
