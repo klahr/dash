@@ -1187,14 +1187,16 @@ function openNewProject() {
     fail(new Error("Projects are made from the hub's dashboard: New project there, on this runner."));
     return;
   }
-  const machines = projectMachines();
-  if (!machines.length) {
-    fail(new Error(state.runners?.length ? noRunnerOnline : `A runner is required: this dashboard keeps no projects itself. To add one, ${startRunner}.`));
+  const runners = projectRunners();
+  if (!runners.length) {
+    fail(new Error(!state.runners.length ? `A runner is required: this dashboard keeps no projects itself. To add one, ${startRunner}.`
+      : state.runners.some((r) => r.online) ? "None of the online runners is yours, and only a runner's owner or an admin of the organization can link projects to it. Start your own with `dash runner`."
+        : noRunnerOnline));
     return;
   }
-  const pick = defaultMachine(machines);
-  f.machine.replaceChildren(...machines.map((m) => h("option", { value: m.name, selected: m.name === pick },
-    `${m.name}${state.runners?.find((r) => r.name === m.name)?.mine ? " (yours)" : ""}`)));
+  const pick = defaultRunner(runners);
+  f.machine.replaceChildren(...runners.map((r) => h("option", { value: r.name, selected: r.name === pick },
+    `${r.name}${r.mine ? " (yours)" : ""}`)));
   setHubMode("gh");
   $("#new-project-sheet").showModal();
 }
@@ -1384,9 +1386,12 @@ async function submitLocalProject(form, r, name, body) {
     run_command: body.run_command, test_command: body.test_command, deploy_command: body.deploy_command }, "");
   form.reset();
   await loadProjects();
-  await selectProject(state.projects.find((x) => x.id === p.id && x.machine === r.name));
+  const made = state.projects.find((x) => x.id === p.id && x.machine === r.name);
+  if (made) await selectProject(made);
   $("#new-project-sheet").close();
-  toast(`Created ${p.name} on ${r.name}, local only`, { tone: "ok" });
+  // Only platform admins see runners' own projects in this dashboard.
+  toast(made ? `Created ${p.name} on ${r.name}, local only`
+    : `Created ${p.name} on ${r.name}, local only: open it from ${r.name}'s own dashboard`, { tone: "ok" });
 }
 
 // isHub reports whether this dashboard is a hub: it has runners (or could),
@@ -1395,15 +1400,17 @@ async function submitLocalProject(form, r, name, body) {
 const isHub = () => Array.isArray(state.runners);
 const noRunnerOnline = "No runner is online. Start one with `dash runner`.";
 
-// projectMachines are the computers a project can be made on: on a hub,
-// its runners that are online (never the hub itself); elsewhere, this one.
-const projectMachines = () => (state.machines || []).filter((m) => m.ok && (!isHub() || m.runner));
+// projectRunners are the runners a project can be made on: the org's online
+// runners the user may link projects to (their own, or any as an admin).
+// From state.runners, not state.machines: only platform admins see the
+// runners among the machines.
+const projectRunners = () => (state.runners || []).filter((r) => r.online && (r.mine || r.can_manage));
 
-// defaultMachine picks where a new project goes: an online runner of the
+// defaultRunner picks where a new project goes: an online runner of the
 // user's own, else the open project's computer, else the first.
-function defaultMachine(machines) {
-  const mine = machines.find((m) => state.runners?.find((r) => r.name === m.name)?.mine);
-  return (mine || machines.find((m) => m.name === state.project?.machine) || machines[0])?.name;
+function defaultRunner(runners) {
+  const mine = runners.find((r) => r.mine);
+  return (mine || runners.find((r) => r.name === state.project?.machine) || runners[0])?.name;
 }
 $("#new-project").machine.addEventListener("change", () => { syncHubMode(); if (hubMode() === "gh") loadGitHubRepos().catch(fail); });
 
