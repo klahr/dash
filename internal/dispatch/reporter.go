@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/usage"
@@ -24,6 +25,8 @@ type Reporter struct {
 	// Terminals: the runner opens terminals for its owner on the hub (it
 	// runs with -hub-commands).
 	Terminals bool
+	// Claude reports the runner's Claude Code CLI (optional).
+	Claude *claudecli.Monitor
 	// Send posts the report (tunnel.Report with the runner's credentials).
 	Send func(ctx context.Context, r Report) error
 	// Every is the heartbeat (default 30s).
@@ -221,6 +224,10 @@ func (r *Reporter) Build(now time.Time) Report {
 	if r.Usage != nil {
 		u := r.Usage.Snapshot()
 		rep.Usage = &u
+	}
+	if r.Claude != nil {
+		c := r.Claude.Status()
+		rep.Claude = &c
 	}
 	live := r.takeLive()
 	rep.Pushes = r.takePushes()

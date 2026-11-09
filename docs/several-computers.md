@@ -147,7 +147,12 @@ A runner belongs to whoever made its code, in the org they were working in: its 
 their [tokens](users.md#tokens), pinned to that org, and stops working if they leave it. The
 Organization page lists the org's runners (other orgs never see them) as online or offline, with
 when each was last seen, whose it is, the Dash version it runs, how many tasks it is running and
-its owner's Claude usage.
+its owner's Claude usage. It also shows the runner's Claude Code version. If Claude Code changes in a
+way Dash relies on, the runner shows a warning, and so does the log of each task it runs. The runner
+checks the version and whether `claude -p` still accepts `--output-format stream-json` and
+`--permission-prompt-tool` when it starts and every hour. On every run, it checks that the
+stream-json events (the session's start, messages, `rate_limit_event`, the result) still have the
+fields Dash reads.
 Its owner and the org's admins can:
 
 - **Pause** it: it finishes what it is running and gets no new tasks;

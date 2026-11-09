@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
@@ -61,7 +62,9 @@ func TestHubDispatchesToARunnerEndToEnd(t *testing.T) {
 		t.Fatalf("runner registered for org %d, want %d", creds.OrgID, owner.Org)
 	}
 	runner, runnerAPI, remote := runnerSide(t, creds.OrgID)
-	reporter := &dispatch.Reporter{Store: raw(runner), Parallel: 2,
+	cli := &claudecli.Monitor{}
+	cli.Stream().Line(`{"type":"result","subtype":"success"}`) // a changed Claude Code
+	reporter := &dispatch.Reporter{Store: raw(runner), Parallel: 2, Claude: cli,
 		Send: func(ctx context.Context, r dispatch.Report) error { return tunnel.Report(ctx, creds, r) }}
 	rctx, stopRunner := context.WithCancel(ctx)
 	client := &tunnel.Client{Creds: creds, Handler: runnerAPI, MinBackoff: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond}
@@ -113,6 +116,10 @@ func TestHubDispatchesToARunnerEndToEnd(t *testing.T) {
 	}
 	if r, _ := rh.Get(creds.ID); r.Reported == nil || r.Reported.Parallel != 2 || r.Limit() != 2 {
 		t.Errorf("runner's own limit not reported: %+v", r.Reported)
+	}
+	if r, _ := rh.Get(creds.ID); r.Reported == nil || r.Reported.Claude == nil || len(r.Reported.Claude.Warnings) != 1 ||
+		!strings.Contains(r.Reported.Claude.Warnings[0], "total_cost_usd is missing") {
+		t.Errorf("runner's Claude Code warnings not reported: %+v", r.Reported)
 	}
 	// The hub reads the task's log from the runner.
 	w := httptest.NewRecorder()

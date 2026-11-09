@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
@@ -54,6 +55,8 @@ type ClaudeCodeChat struct {
 	BoardURL string
 	// OnRateLimit receives the rate_limit_info of every rate_limit_event.
 	OnRateLimit func(json.RawMessage)
+	// CLI collects what looks changed about the Claude Code CLI (optional).
+	CLI *claudecli.Monitor
 }
 
 type approverKey struct{}
@@ -234,7 +237,9 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	started := time.Now()
 	think := newThinkClock()
 	var usage *model.ChatUsage
+	check := c.CLI.Stream()
 	pumpLines(stdout, func(line string) {
+		check.Line(line) // the chat has no log: the Runners page shows them
 		var ev struct {
 			Type          string          `json:"type"`
 			IsError       bool            `json:"is_error"`
@@ -328,6 +333,7 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	if resultErr != nil {
 		return resultErr
 	}
+	check.End()
 	if usage == nil {
 		usage = &model.ChatUsage{}
 	}

@@ -3679,6 +3679,8 @@ function showRunnerNeeded(el, p) {
 }
 const runnerLimit = (r) => r.parallel || r.reported?.parallel || 1;
 const runnerOutdated = (r) => isRelease(runnerInfo.version) && !!r.version && r.version !== runnerInfo.version;
+// runnerClaudeWarnings is what runner r found changed about its Claude Code CLI.
+const runnerClaudeWarnings = (r) => r.reported?.claude?.warnings || [];
 const agoPhrase = (iso) => { const a = ago(iso); return a === "now" ? "just now" : `${a} ago`; };
 
 // runnerStatus is what runner r is doing, in a few words, and its tone
@@ -3717,6 +3719,8 @@ const runnerProjects = (r) => (state.projects || []).filter((p) => !p.prefix && 
 function runnerCard(r, { showOwner }) {
   const st = runnerStatus(r);
   const outdated = runnerOutdated(r);
+  const claude = r.reported?.claude;
+  const claudeWarns = runnerClaudeWarnings(r);
   const patch = (body) => api("PATCH", `/api/runners/${encodeURIComponent(r.id)}`, body);
   const projects = runnerProjects(r);
   const controls = [];
@@ -3752,6 +3756,9 @@ function runnerCard(r, { showOwner }) {
       h("span", { class: "runner-dot", "aria-hidden": "true" }),
       h("span", { class: "runner-name" }, r.name),
       r.version ? h("span", { class: `runner-version${outdated ? " warn" : ""}`, title: outdated ? `Out of date: the hub runs ${runnerInfo.version}` : "Dash version" }, r.version) : null,
+      claude ? h("span", { class: `runner-version${claudeWarns.length ? " warn" : ""}`,
+        title: claudeWarns.length ? "Claude Code version: its output or flags look different from what Dash expects" : "Claude Code version" },
+        `Claude ${claude.version || "?"}`) : null,
       h("span", { class: "runner-state" }, st.text)),
     h("div", { class: "runner-meta" },
       showOwner && r.owner ? h("span", { class: "runner-owner" }, ico("users"), r.owner.username) : null,
@@ -3764,6 +3771,9 @@ function runnerCard(r, { showOwner }) {
     outdated && r.mine ? h("div", { class: "runner-update" },
       h("p", { class: "hint warn" }, `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run this on ${r.name} (it keeps its registration):`),
       copyBlock(installCmd(), "Command copied", { pre: true })) : null,
+    claudeWarns.length ? h("div", { class: "runner-update runner-claude-warn", role: "status" },
+      h("p", { class: "hint warn" }, `Claude Code${claude.version ? ` ${claude.version}` : ""} on ${r.name} doesn't look the way Dash expects. Tasks may fail or miss usage limits; updating Dash may help:`),
+      h("ul", {}, ...claudeWarns.map((w) => h("li", {}, w)))) : null,
     controls.length > 1 ? h("div", { class: "runner-controls" }, ...controls) : null);
 }
 
@@ -3773,11 +3783,13 @@ function runnerStats(list) {
   const running = list.reduce((s, r) => s + (r.running || 0), 0);
   const paused = list.filter((r) => r.paused).length;
   const outdated = list.filter(runnerOutdated).length;
+  const claudeWarn = list.filter((r) => runnerClaudeWarnings(r).length).length;
   return [
     stat(online, `of ${list.length} online`, online ? "on" : "off"),
     stat(running, running === 1 ? "task running" : "tasks running", running ? "busy" : ""),
     paused ? stat(paused, "paused", "paused") : null,
     outdated ? stat(outdated, "out of date", "paused") : null,
+    claudeWarn ? stat(claudeWarn, "with Claude Code warnings", "paused") : null,
   ].filter(Boolean);
 }
 

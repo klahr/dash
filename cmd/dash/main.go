@@ -28,6 +28,7 @@ import (
 	"github.com/klahr/dash/internal/branding"
 	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/ci"
+	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
@@ -319,6 +320,9 @@ func main() {
 	}
 
 	tracker := usage.New(events, *pauseAt)
+	// What looks changed about the installed Claude Code CLI: checked on a
+	// runner, shown in task logs and on the hub's Runners page.
+	cli := &claudecli.Monitor{Bin: *claudeBin}
 	perms := perm.NewBroker(events)
 	perms.Saved = st
 	todoLog := &queue.TodoLog{Pub: events, Root: filepath.Join(*dataDir, "logs"), MaxBytes: int64(max(*logMaxMB, 0)) << 20}
@@ -331,7 +335,7 @@ func main() {
 	todos := queue.NewTodoEngine(&queue.TodoEngine{
 		Store:        st,
 		Git:          git,
-		Exec:         agent.ClaudeCode{Bin: *claudeBin, Args: strings.Fields(*claudeArgs), OnRateLimit: tracker.Observe},
+		Exec:         agent.ClaudeCode{Bin: *claudeBin, Args: strings.Fields(*claudeArgs), OnRateLimit: tracker.Observe, CLI: cli},
 		Pub:          events,
 		Log:          todoLog,
 		Merges:       merges,
@@ -356,7 +360,7 @@ func main() {
 	// claude flags (read-only tools), not -claude-args.
 	scans := &scan.Runner{
 		Store: st, Git: git, Context: ctx,
-		Exec:       agent.ClaudeCode{Bin: *claudeBin, OnRateLimit: tracker.Observe},
+		Exec:       agent.ClaudeCode{Bin: *claudeBin, OnRateLimit: tracker.Observe, CLI: cli},
 		Root:       filepath.Join(*dataDir, "scans"),
 		RunTimeout: *scanTimeout,
 		GitTools:   &scan.GitMCP{},
@@ -484,7 +488,7 @@ func main() {
 			return tunnel.Board(ctx, runnerCreds, hubTodo, hubProject, body)
 		}
 		// The hub hears where its tasks are, and this computer's usage.
-		reporter = &dispatch.Reporter{Store: st, Usage: tracker, Parallel: *parallel, Terminals: *hubCommands,
+		reporter = &dispatch.Reporter{Store: st, Usage: tracker, Parallel: *parallel, Terminals: *hubCommands, Claude: cli,
 			Send: func(ctx context.Context, r dispatch.Report) error {
 				err := tunnel.Report(ctx, runnerCreds, r)
 				if errors.Is(err, tunnel.ErrRevoked) {
@@ -520,6 +524,14 @@ func main() {
 		// …and when its processes start or end, so its dashboards list them again.
 		procEvents.also = reporter.Observe
 		go reporter.Run(ctx)
+		// The hub hears of the Claude Code version and warnings at once.
+		cli.OnChange(func() {
+			for _, w := range cli.Warnings() {
+				slog.Warn("claude code cli", "warning", w)
+			}
+			reporter.Nudge()
+		})
+		go cli.Run(ctx, time.Hour) // Claude Code updates itself
 	} else {
 		runners := &tunnel.Hub{Pub: events, Taken: apiSrv.Peers.Taken, PreviewURL: previews.URLTemplate, Accounts: st.Accounts()}
 		apiSrv.Peers.Runners = runners
@@ -675,6 +687,7 @@ func main() {
 		apiSrv.Chat = agent.ClaudeCodeChat{
 			Bin: *claudeBin, Dir: home, Tools: *chatTools, AllowedTools: chatAllow,
 			Perms: perms, PermURL: permURL, Board: apiSrv.Board, BoardURL: mcpURL, OnRateLimit: tracker.Observe,
+			CLI: cli,
 		}
 	case chat == "api":
 		apiSrv.Chat = agent.NewChat()

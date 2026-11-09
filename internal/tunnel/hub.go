@@ -28,6 +28,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/usage"
@@ -107,8 +108,11 @@ type Reported struct {
 	Usage    *usage.Snapshot `json:"usage,omitempty"`
 	// Terminals: it opens terminals for its owner from the hub
 	// (-hub-commands).
-	Terminals bool      `json:"terminals"`
-	At        time.Time `json:"at"`
+	Terminals bool `json:"terminals"`
+	// Claude is its Claude Code CLI: version and warnings (nil until a
+	// runner that knows to report it has).
+	Claude *claudecli.Status `json:"claude,omitempty"`
+	At     time.Time         `json:"at"`
 }
 
 // record is a runner in runners.json. Its token is in the token table
@@ -666,9 +670,10 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var self struct {
-		Parallel  int             `json:"parallel"`
-		Usage     *usage.Snapshot `json:"usage"`
-		Terminals bool            `json:"terminals"`
+		Parallel  int               `json:"parallel"`
+		Usage     *usage.Snapshot   `json:"usage"`
+		Terminals bool              `json:"terminals"`
+		Claude    *claudecli.Status `json:"claude"`
 	}
 	if err := json.Unmarshal(body, &self); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
@@ -679,9 +684,13 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 		h.reported = map[string]*Reported{}
 	}
 	prev := h.reported[rec.ID]
-	h.reported[rec.ID] = &Reported{Parallel: self.Parallel, Usage: self.Usage, Terminals: self.Terminals, At: h.clock()}
+	if self.Claude != nil {
+		self.Claude = cleanClaude(*self.Claude)
+	}
+	h.reported[rec.ID] = &Reported{Parallel: self.Parallel, Usage: self.Usage, Terminals: self.Terminals, Claude: self.Claude, At: h.clock()}
 	h.mu.Unlock()
-	if prev == nil || prev.Parallel != self.Parallel || prev.Terminals != self.Terminals || paused(prev.Usage) != paused(self.Usage) {
+	if prev == nil || prev.Parallel != self.Parallel || prev.Terminals != self.Terminals || paused(prev.Usage) != paused(self.Usage) ||
+		claudeKey(prev.Claude) != claudeKey(self.Claude) {
 		h.changed()
 	}
 	if h.OnReport != nil {
@@ -694,6 +703,34 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func paused(u *usage.Snapshot) bool { return u != nil && u.Paused }
+
+// cleanClaude bounds what a runner reports about its Claude Code CLI.
+func cleanClaude(c claudecli.Status) *claudecli.Status {
+	c.Version = cleanVersion(c.Version)
+	if len(c.Warnings) > 10 {
+		c.Warnings = c.Warnings[:10]
+	}
+	ws := make([]string, 0, len(c.Warnings))
+	for _, w := range c.Warnings {
+		if len(w) > 500 {
+			w = w[:500] + "…"
+		}
+		ws = append(ws, w)
+	}
+	if len(ws) == 0 {
+		ws = nil
+	}
+	c.Warnings = ws
+	return &c
+}
+
+// claudeKey is what of a Claude status the runners list shows.
+func claudeKey(c *claudecli.Status) string {
+	if c == nil {
+		return ""
+	}
+	return c.Version + "\x00" + strings.Join(c.Warnings, "\x00")
+}
 
 // ErrOffline is returned by Call for a runner without a tunnel.
 var ErrOffline = errors.New("runner is offline")

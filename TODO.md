@@ -11,8 +11,6 @@ Most important first within each section.
       build, so the installed app notifies you when it's closed.
 - [ ] One merge worker per project, so a long test run in one project doesn't hold up merges
       in the others.
-- [ ] Detect Claude Code CLI changes: check the version and warn when the stream-json output,
-      `rate_limit_event` or `--permission-prompt-tool` no longer look as expected.
 
 ## Quality
 

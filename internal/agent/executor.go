@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -56,6 +57,14 @@ type ClaudeCode struct {
 	Args []string // extra flags, e.g. permission mode / allowed tools
 	// OnRateLimit receives the rate_limit_info of every rate_limit_event.
 	OnRateLimit func(json.RawMessage)
+	// CLI collects what looks changed about the Claude Code CLI; the run's
+	// log shows it too (optional).
+	CLI *claudecli.Monitor
+}
+
+// cliWarning is how a Claude Code CLI warning shows in a task's log.
+func cliWarning(w string) model.RunEvent {
+	return model.RunEvent{Kind: "status", Text: "⚠ Claude Code CLI: " + w}
 }
 
 func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.RunEvent)) (ExecResult, error) {
@@ -93,6 +102,10 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 	}
 
 	var res ExecResult
+	check := c.CLI.Stream()
+	for _, w := range check.Start() {
+		emit(cliWarning(w))
+	}
 	stderrDone := make(chan struct{})
 	go func() {
 		defer close(stderrDone)
@@ -106,6 +119,9 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 
 	var resultErr error
 	pumpLines(stdout, func(l string) {
+		for _, w := range check.Line(l) {
+			emit(cliWarning(w))
+		}
 		ev, ok := parseStreamLine(l)
 		if !ok {
 			emit(model.RunEvent{Kind: "status", Text: l})
@@ -139,6 +155,9 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 			return res, resultErr
 		}
 		return res, fmt.Errorf("claude exited: %w", err)
+	}
+	for _, w := range check.End() {
+		emit(cliWarning(w))
 	}
 	return res, resultErr
 }

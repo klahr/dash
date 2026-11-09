@@ -728,6 +728,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-controls-gap { flex: 1; }
 .runner-card .runner-update { padding: 8px 10px; border-radius: var(--r-s); background: color-mix(in srgb, var(--running) 8%, transparent); }
 .runner-card .runner-update .hint { margin: 0; }
+.runner-claude-warn ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px; overflow-wrap: anywhere; }
 #runners-code, #runners-repos:not([hidden]) { margin-top: 12px; }
 #runners-repos:not([hidden]) { padding: 12px 14px; border-radius: var(--r-m); background: var(--raised); border: 1px solid var(--line); }
 #runners-repos h4 { margin: 0; font-size: 15px; }

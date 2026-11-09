@@ -26,6 +26,7 @@ package dispatch
 import (
 	"time"
 
+	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/usage"
@@ -117,7 +118,10 @@ type Report struct {
 	// (it runs with -hub-commands).
 	Terminals bool            `json:"terminals,omitempty"`
 	Usage     *usage.Snapshot `json:"usage,omitempty"`
-	Tasks     []TaskState     `json:"tasks,omitempty"`
+	// Claude is the runner's Claude Code CLI: its version and what looks
+	// changed about it (nil from a runner older than this field).
+	Claude *claudecli.Status `json:"claude,omitempty"`
+	Tasks  []TaskState       `json:"tasks,omitempty"`
 	// Procs are the hub's projects whose processes (run/test/deploy
 	// commands, terminals) on the runner changed since the last report: the
 	// hub tells their dashboards to list them again.

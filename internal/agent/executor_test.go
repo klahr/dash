@@ -1,9 +1,13 @@
 package agent
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -72,5 +76,60 @@ func TestSummary(t *testing.T) {
 		if got := Summary(c.ev); got != c.want {
 			t.Errorf("Summary(%+v) = %q, want %q", c.ev, got, c.want)
 		}
+	}
+}
+
+// fakeClaude is a `claude` that prints out and exits 0.
+func fakeClaude(t *testing.T, out string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "out.jsonl"), []byte(out), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "claude")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\ncat >/dev/null\ncat '"+dir+"/out.jsonl'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return bin
+}
+
+func runFake(t *testing.T, cli *claudecli.Monitor, out string) []string {
+	t.Helper()
+	var warns []string
+	c := ClaudeCode{Bin: fakeClaude(t, out), CLI: cli}
+	_, err := c.Run(context.Background(), ExecRequest{Dir: t.TempDir(), Prompt: "hi"}, func(e model.RunEvent) {
+		if strings.HasPrefix(e.Text, "⚠ Claude Code CLI: ") {
+			warns = append(warns, e.Text)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return warns
+}
+
+func TestRunLogsClaudeCodeOutputChanges(t *testing.T) {
+	sample, err := os.ReadFile("../claudecli/testdata/2.1.319-tool.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli := &claudecli.Monitor{}
+	if w := runFake(t, cli, string(sample)); w != nil {
+		t.Fatalf("recorded sample: %v", w)
+	}
+
+	// A newer Claude Code that renamed the cost and dropped the init event.
+	changed := `{"type":"assistant","message":{"content":[{"type":"text","text":"Done."}]}}` + "\n" +
+		`{"type":"result","subtype":"success","is_error":false,"session_id":"s1","num_turns":1,"cost":{"usd":0.1},"result":"Done."}` + "\n"
+	w := runFake(t, cli, changed)
+	if len(w) != 2 || !strings.Contains(w[0], "total_cost_usd is missing") || !strings.Contains(w[1], "no system event") {
+		t.Fatalf("task log warnings: %v", w)
+	}
+	if got := cli.Warnings(); len(got) != 2 {
+		t.Fatalf("the Runners page should hear of them: %v", got)
+	}
+	// The next run starts its log with them, once.
+	if w := runFake(t, cli, string(sample)); len(w) != 2 {
+		t.Fatalf("next run: %v", w)
 	}
 }
