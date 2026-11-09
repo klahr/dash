@@ -225,6 +225,13 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 }
 .todo-sub.progress { font-family: var(--mono); font-size: 12px; -webkit-line-clamp: 1; color: var(--running); }
 .todo-sub.err { color: var(--failed); }
+/* What a task is busy with: spinner, label, elapsed time, latest output line. */
+.todo-sub.activity { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.todo-sub.activity .act-label { font-family: var(--ui); font-weight: 600; font-size: 13px; }
+.todo-sub.activity .act-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.todo-sub.activity .act-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.act-spin { flex: none; display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--running) 30%, transparent); border-top-color: var(--running); animation: spin .8s linear infinite; vertical-align: -1px; }
+@media (prefers-reduced-motion: reduce) { .act-spin { animation-duration: 2.4s; } }
 .todo-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; padding-top: 2px; }
 .paused-tag { font-size: 12px; font-weight: 600; color: var(--muted); }
 
@@ -355,6 +362,14 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .msg .tool { margin: 0 0 10px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--surface); font-size: 13px; }
 .msg .tool summary { cursor: pointer; padding: 5px 10px; color: var(--muted); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .msg .tool summary b { color: var(--text); font-weight: 600; }
+.msg .tool summary { display: flex; align-items: center; gap: 6px; list-style: none; }
+.msg .tool summary::before { content: "▸"; flex: none; color: var(--faint); }
+.msg .tool[open] summary::before { content: "▾"; }
+.msg .tool summary::-webkit-details-marker { display: none; }
+.msg .tool .tool-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.msg .tool .tool-time { margin-left: auto; flex: none; color: var(--faint); font-variant-numeric: tabular-nums; }
+.msg .tool.running { border-color: color-mix(in srgb, var(--running) 45%, var(--line)); }
+.msg .tool.running .tool-time { color: var(--running); }
 .msg .tool.error summary { color: var(--failed); }
 .msg .tool pre { margin: 0; padding: 8px 10px; border-top: 1px solid var(--line); font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
 .msg .tool .tool-out { color: #c9d3e3; background: var(--bg); }
@@ -437,6 +452,20 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .tl-divider.error { color: var(--failed); }
 .tl-error { margin: 0; color: var(--failed); font-size: 14px; }
 .tl-log { min-height: 0; max-height: 240px; overflow: auto; padding: 8px 12px; font-size: 12px; }
+/* A step Dash runs (setup, tests): live while running, then how it went. */
+.tl-phase { border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); }
+.tl-phase > summary { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; font-size: 14px; list-style: none; }
+.tl-phase > summary::-webkit-details-marker { display: none; }
+.tl-phase > summary code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 12px var(--mono); }
+.tl-phase .act-time { margin-left: auto; flex: none; color: var(--muted); font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+.tl-phase .phase-mark { flex: none; font-weight: 700; }
+.tl-phase .tl-log { border: 0; border-top: 1px solid var(--line); border-radius: 0 0 var(--r-m) var(--r-m); }
+.tl-phase.running { border-color: color-mix(in srgb, var(--running) 50%, var(--line)); }
+.tl-phase.running b { color: var(--running); }
+.tl-phase.pass .phase-mark, .tl-phase.done .phase-mark { color: var(--merged); }
+.tl-phase.fail { border-color: color-mix(in srgb, var(--failed) 50%, var(--line)); }
+.tl-phase.fail .phase-mark, .tl-phase.fail b { color: var(--failed); }
+.tl-phase.stopped .phase-mark { color: var(--muted); }
 
 /* ---------- run ---------- */
 #view-run.active { display: flex; height: calc(100dvh - var(--top-h) - var(--nav-h) - var(--safe-b)); background: #0a0f17; }
@@ -893,6 +922,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .checks-state { --c: var(--muted); font-weight: 600; color: var(--c); display: inline-flex; align-items: center; gap: 8px; }
 .checks-state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
 .checks-state.pass { --c: var(--merged); } .checks-state.fail { --c: var(--failed); }
+.checks-state.running { --c: var(--running); gap: 0; } .checks-state.running::before { display: none; }
 .checks-meta { color: var(--muted); font-size: 13px; font-family: var(--mono); overflow-wrap: anywhere; }
 .checks .log { margin: 0 12px 12px; max-height: 320px; overflow: auto; }
 .check-tag { font-size: 12px; font-weight: 600; }

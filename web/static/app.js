@@ -694,7 +694,8 @@ const state = {
   project: null,
   todos: new Map(),
   lastLine: new Map(),
-  lane: null,          // mobile: selected lane key
+  activity: new Map(), // todo id → what it is busy with right now (see trackActivity)
+  lane: null,         // mobile: selected lane key
   detail: null,        // open todo id
   pane: "timeline",
   diff: "",
@@ -870,6 +871,8 @@ function onEvent(ev, m = { name: "" }) {
       {
         const prev = state.todos.get(ev.todo_id);
         state.todos.set(ev.todo_id, ev.data);
+        // Nothing runs for a task back in drafts or the queue, or merged: drop an activity whose end we missed.
+        if (["draft", "queued", "merged"].includes(ev.data.status)) state.activity.delete(ev.todo_id);
         renderBoard();
         if (state.view === "issues" && prev?.status !== ev.data.status && iss.list.some((i) => i.todo_ids?.includes(ev.todo_id))) renderIssues();
         if (state.detail === ev.todo_id) {
@@ -915,6 +918,7 @@ function onEvent(ev, m = { name: "" }) {
       if (mine) updateLiveLine(ev.todo_id);
       break;
     case "todo.event":
+      if (mine) trackActivity(ev.todo_id, ev.data);
       if (state.detail === ev.todo_id) addWorkerEvent(ev.todo_id, ev.data);
       break;
     case "git.op":
@@ -2131,6 +2135,9 @@ function todoRow(t, li = -1, ri = -1) {
   const fixing = t.sent_back && ["queued", "in_progress"].includes(t.status) ? t.sent_back : "";
   if (fixing && t.status === "queued") sub = `Sent back from merge: ${fixing}`;
   if (t.status === "in_progress") { sub = state.lastLine.get(t.id) || "Working…"; subClass += " progress"; }
+  // Tests or setup running, in any state (a manual test run on a task in review, the merge queue's tests).
+  const act = state.activity.get(t.id);
+  if (act && t.status !== "draft") { sub = activityNodes(act); subClass = "todo-sub progress activity"; }
   if (t.paused) sub = t.status === "in_progress" ? "Pausing…" : "Paused";
   if (t.waiting && t.status === "queued" && !t.paused) { sub = t.waiting; subClass = "todo-sub waiting-runner"; }
   if (t.status === "merging" && t.pr?.state === "OPEN") { sub = prStatus(t.pr); subClass = `todo-sub pr-status ${prTone(sub)}`; }
@@ -2246,8 +2253,78 @@ function enqueueChip(t) {
 
 function updateLiveLine(id) {
   const el = $(`.todo[data-id="${id}"] .todo-sub.progress`);
-  if (el) el.textContent = state.lastLine.get(id);
+  if (!el) return;
+  const act = state.activity.get(id);
+  if (act) {
+    // Only the output line changes while the same activity runs; the timer keeps ticking.
+    const line = el.querySelector(".act-line");
+    if (el.dataset.act === act.key && line) line.textContent = act.line || act.cmd;
+    else el.replaceChildren(...activityNodes(act));
+    el.dataset.act = act.key;
+    return;
+  }
+  delete el.dataset.act;
+  el.textContent = state.lastLine.get(id);
 }
+
+// ------------------------------------------------------------------ live activity
+// What a task is busy with right now, from its worker's events: a phase Dash
+// runs itself (setup, tests) or a shell command of Claude's. Each has a start,
+// so cards and the timeline can show how long it has been going, and its
+// latest output line. Other tools are quick and the progress line covers them.
+const TEST_CMD = /(^|[\s;&|/(])(go test|cargo test|pytest|jest|vitest|mocha|phpunit|rspec|ctest|dotnet test|mvn (-\S+ )*(test|verify)|gradlew? (\S+ )*test|(npm|pnpm|yarn|bun)( run)? test|make (\S+ )*(test|check)|tox|unittest|node --test|deno test|swift test|flutter test|mix test)\b/;
+function trackActivity(id, e) {
+  const cur = state.activity.get(id);
+  const at = Date.now(); // not e.at: the runner's clock may differ from this one
+  let m;
+  if (e.kind === "status" && (m = /^▶ (setup|tests): ([^]*)/.exec(e.text || ""))) {
+    state.activity.set(id, { key: `${m[1]}${at}`, label: m[1] === "tests" ? "Running tests" : "Setting up the worktree", cmd: m[2], line: "", since: at });
+  } else if (e.kind === "status" && (e.text || "").startsWith("│ ")) {
+    if (cur && !cur.tool) cur.line = e.text.slice(2);
+    return; // the card's line updates with todo.output
+  } else if (e.kind === "tool_use" && e.tool === "Bash") {
+    const cmd = String(e.input?.command || "").trim().split("\n")[0];
+    state.activity.set(id, { key: e.id, tool: e.id, label: TEST_CMD.test(cmd) ? "Claude is running tests" : "Claude is running", cmd, line: "", since: at });
+  } else if (e.kind === "tool_result") {
+    if (!cur?.tool || cur.tool !== e.id) return;
+    state.activity.delete(id);
+    state.lastLine.set(id, `${e.is_error ? "✗" : "✓"} ${cur.cmd} (${duration(at - cur.since)})`);
+  } else {
+    if (!cur) return;
+    state.activity.delete(id); // something else is happening now
+  }
+  // The activity changed: cards that show it in a state the live line doesn't cover re-render.
+  const t = state.todos.get(id);
+  if (t?.status === "in_progress") updateLiveLine(id);
+  else renderBoard();
+  if (t && state.detail === id) renderChecks(t);
+}
+
+function activityNodes(a) {
+  return [
+    h("span", { class: "act-spin", "aria-hidden": "true" }),
+    h("span", { class: "act-label" }, a.label),
+    h("span", { class: "act-time", "data-since": String(a.since) }, duration(Date.now() - a.since)),
+    h("span", { class: "act-line" }, a.line || a.cmd),
+  ];
+}
+
+// "8s", "1m 05s", "1h 02m"
+function duration(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+  return `${Math.floor(s / 3600)}h ${String(Math.floor(s / 60) % 60).padStart(2, "0")}m`;
+}
+// Elapsed-time labels on whatever is still running tick once a second.
+setInterval(() => {
+  if (document.hidden) return;
+  const now = Date.now();
+  for (const el of document.querySelectorAll("[data-since]")) {
+    const ms = now - Number(el.dataset.since);
+    el.textContent = el.dataset.quiet != null && ms < 3000 ? "" : duration(ms);
+  }
+}, 1000);
 
 // ------------------------------------------------------------------ new / edit todo
 let editing = null;
@@ -4424,9 +4501,21 @@ async function sendComments(t) {
 function renderChecks(t) {
   const box = $("#d-checks");
   const c = t.checks;
+  const st = $("#d-checks-state");
+  // Dash's tests running now replace the last result until they finish.
+  const run = state.activity.get(t.id);
+  if (run && !run.tool && run.label === "Running tests") {
+    box.hidden = false;
+    st.className = "checks-state running";
+    st.replaceChildren(h("span", { class: "act-spin", "aria-hidden": "true" }), " Running tests");
+    $("#d-checks-meta").replaceChildren(h("span", { "data-since": String(run.since) }, duration(Date.now() - run.since)),
+      c ? ` · last run ${c.passed ? "passed" : "failed"}` : "");
+    $("#d-checks-output").textContent = `$ ${run.cmd}\n\nThe output streams into the timeline.`;
+    delete box.dataset.todo; // open it again if this run fails
+    return;
+  }
   box.hidden = !c;
   if (!c) return;
-  const st = $("#d-checks-state");
   st.className = `checks-state ${c.passed ? "pass" : "fail"}`;
   st.textContent = c.passed ? "Tests pass" : `Tests fail (exit ${c.exit_code})`;
   const when = c.stage === "merge" ? `after merging ${baseBranch(state.project) || "main"}` : "before review";
@@ -5263,8 +5352,8 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
         // Later text goes below the tool call, in a reply of its own. A reply
         // still empty moves below it instead, so consecutive tool calls share
         // one "Thinking…" at the end rather than one after each call.
-        const { el, out } = toolCall(d.tool, d.input);
-        cur.tools.set(d.id, { el, out });
+        const t = toolCall(d.tool, d.input), { el } = t;
+        cur.tools.set(d.id, t);
         if (cur.seg) {
           cur.reply.after(el);
           cur.reply = h("div", { class: "reply" });
@@ -5286,6 +5375,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
       else if (d.kind === "error") { cur.el.classList.add("error"); cur.reply.append(h("p", {}, d.text)); }
       if (d.kind === "done" || d.kind === "error") {
         cur.el.classList.remove("pending");
+        for (const t of cur.tools.values()) toolSettled(t);
         const u = usageLine(cur.usage);
         if (u) cur.el.append(u);
         if (cur.content) cur.el.append(actions(cur.content));
@@ -5389,20 +5479,33 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   return { reset, resumeLast, input, toEnd, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; } };
 }
 
-// A collapsible tool call: its input, and its output once filled in.
-function toolCall(tool, input) {
+// A collapsible tool call: its input, and its output once filled in. Until
+// then it shows a spinner, and how long it has run once that's a while.
+function toolCall(tool, input, since = Date.now()) {
   const out = h("pre", { class: "tool-out", hidden: true });
   const head = tool === "Bash" && input?.command
     ? [h("b", {}, "$"), ` ${toolSummary(tool, input)}`]
     : [h("b", {}, tool), ` ${toolSummary(tool, input)}`];
-  const el = h("details", { class: "tool" }, h("summary", {}, ...head),
+  const time = h("span", { class: "tool-time", "data-since": String(since), "data-quiet": "" });
+  const el = h("details", { class: "tool running" }, h("summary", {}, h("span", { class: "act-spin", "aria-hidden": "true" }), h("span", { class: "tool-head" }, ...head), time),
     h("pre", { class: "tool-in" }, toolDetail(tool, input)), out);
-  return { el, out };
+  return { el, out, time, since };
 }
 function toolResult(t, d) {
   t.out.hidden = false;
   t.out.textContent = d.text || "(no output)";
   t.el.classList.toggle("error", !!d.is_error);
+  toolSettled(t, d.at ? Date.parse(d.at) : Date.now());
+}
+// A tool call is done: its spinner goes, and a long one keeps how long it took.
+function toolSettled(t, end = null) {
+  if (t.done) return;
+  t.done = true;
+  t.el.classList.remove("running");
+  t.el.querySelector(".act-spin")?.remove();
+  delete t.time.dataset.since;
+  const ms = end - t.since;
+  t.time.textContent = end && ms >= 3000 ? duration(ms) : "";
 }
 
 // Tool calls in the chat: a one-line summary, and the full input when expanded.
@@ -5800,7 +5903,42 @@ async function loadTodoChat() {
 // The task chat's log is the task's timeline: the worker's runs (labelled
 // Agent) among the side chat's turns (labelled Chat), in time order. Only the
 // worker's events are kept here; the chat keeps its own history.
-const worker = { id: null, events: [], live: [], cur: null, tools: new Map() };
+const worker = { id: null, events: [], live: [], cur: null, tools: new Map(), phase: null };
+
+// A step Dash runs itself (setup, tests): a spinner and a timer while it runs,
+// its output underneath, and how it went once it ends.
+function phaseBlock(label, cmd, since) {
+  const spin = h("span", { class: "act-spin", "aria-hidden": "true" });
+  const name = h("b", {}, label);
+  const time = h("span", { class: "act-time", "data-since": String(since) }, duration(Date.now() - since));
+  const log = h("pre", { class: "log tl-log", hidden: true });
+  const el = h("details", { class: "tl-phase running", open: true }, h("summary", {}, spin, name, h("code", {}, cmd), time), log);
+  return { el, spin, name, time, log, since };
+}
+
+// endPhase closes the open phase at event e. A test result line becomes its
+// header (and true is returned, as it says nothing more); any other event
+// means the phase is over too.
+function endPhase(e) {
+  const p = worker.phase;
+  if (!p) return false;
+  worker.phase = null;
+  const text = e.kind === "status" ? e.text || "" : "";
+  const res = /^([✔✖]) (tests (passed|failed)[^]*)/.exec(text);
+  const cls = res ? (res[1] === "✔" ? "pass" : "fail") : e.kind === "run_end" && e.is_error ? "stopped" : "done";
+  p.el.classList.replace("running", cls);
+  p.spin.replaceWith(h("span", { class: "phase-mark", "aria-hidden": "true" }, { pass: "✓", fail: "✗", stopped: "■", done: "✓" }[cls]));
+  delete p.time.dataset.since;
+  if (res) {
+    p.name.textContent = res[2][0].toUpperCase() + res[2].slice(1);
+    p.time.remove(); // the line has the duration
+  } else {
+    p.time.textContent = duration((Date.parse(e.at) || Date.now()) - p.since);
+    if (cls === "stopped") p.name.textContent += " (stopped)";
+  }
+  if (cls === "pass" || cls === "done") p.el.open = false; // the output matters when it failed
+  return !!res;
+}
 
 const clock = (iso) => new Date(iso).toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit" });
 
@@ -5813,6 +5951,7 @@ function timeline(nodes, saved) {
   ].sort((a, b) => a.at - b.at || a.i - b.i);
   const frag = document.createDocumentFragment();
   worker.cur = null;
+  worker.phase = null;
   worker.tools = new Map();
   for (const it of items) it.ev ? workerNode(frag, it.ev) : frag.append(it.node);
   return [...frag.childNodes];
@@ -5839,6 +5978,9 @@ function workerNode(parent, e) {
     case "run_start":
       return divider(`Agent · ${e.text || "Started"} · ${clock(e.at)}`, "agent");
     case "run_end":
+      // Whatever didn't report its end stopped with the run.
+      endPhase(e);
+      for (const t of worker.tools.values()) toolSettled(t);
       divider(`Agent ${e.is_error ? "stopped" : "finished"} · ${clock(e.at)}`, e.is_error ? "agent error" : "agent");
       if (e.is_error && e.text) parent.append(h("p", { class: "tl-error" }, e.text));
       return;
@@ -5848,6 +5990,23 @@ function workerNode(parent, e) {
         ib({ type: "button", class: "btn small copy-raw", title: "Copy the raw markdown", onclick: attempt(() => copy(e.text || "", "Copied")) }, "copy", "Copy"),
         h("div", { class: "msg-from" }, "To agent"), h("div", { class: "md", innerHTML: renderMarkdown(e.text || "") })));
     case "status": {
+      const text = e.text || "";
+      const start = /^▶ (setup|tests): ([^]*)/.exec(text);
+      if (start) {
+        endPhase(e);
+        const p = worker.phase = phaseBlock(start[1] === "tests" ? "Running tests" : "Setting up the worktree", start[2], Date.parse(e.at));
+        worker.cur = null;
+        parent.append(p.el);
+        return;
+      }
+      if (worker.phase && text.startsWith("│ ")) {
+        const log = worker.phase.log, end = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+        log.hidden = false;
+        log.append(`${text.slice(2)}\n`);
+        if (end) log.scrollTop = log.scrollHeight;
+        return;
+      }
+      if (worker.phase && endPhase(e)) return; // the phase's own result line
       let cur = last("notes");
       if (!cur) { cur = worker.cur = { kind: "notes", el: h("pre", { class: "log tl-log" }) }; parent.append(cur.el); }
       cur.el.append(`${new Date(e.at).toLocaleTimeString(timeLocale)} ${e.text}\n`);
@@ -5872,7 +6031,7 @@ function workerNode(parent, e) {
       break;
     case "tool_use": {
       // Later text goes below the tool call, in a reply of its own.
-      const t = toolCall(e.tool, e.input || {});
+      const t = toolCall(e.tool, e.input || {}, Date.parse(e.at) || Date.now());
       worker.tools.set(e.id, t);
       cur.el.append(t.el);
       cur.reply = h("div", { class: "reply" });
