@@ -799,6 +799,15 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-repo { display: flex; flex-direction: column; min-width: 0; }
 .runner-repo .hint { font-size: 12px; overflow-wrap: anywhere; }
 .runner-repos-actions { display: flex; gap: 8px; margin-top: 10px; }
+/* Each repository a card, like the project settings' runner picker; the global `input` rule's width and padding undone. */
+.runner-repos-list { display: grid; gap: 6px; padding: 2px 0; }
+#runners-repos .runner-pick { gap: 10px; cursor: pointer; }
+#runners-repos .runner-pick input { accent-color: var(--accent); margin: 0; padding: 0; width: 18px; height: 18px; flex: none; cursor: inherit; }
+#runners-repos .runner-repos-all { margin-top: 10px; padding: 6px 12px 10px; }
+#runners-repos .runner-repos-list .runner-pick { padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); transition: border-color .15s, background-color .15s; }
+#runners-repos .runner-repos-list .runner-pick:hover { border-color: var(--faint); }
+#runners-repos .runner-repos-list .runner-pick:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+#runners-repos .runner-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .copy-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; }
 .copy-text { flex: 1; min-width: 0; margin: 0; padding: 8px 10px; border-radius: var(--r-s); border: 1px solid var(--line); background: var(--bg); font: 13px/1.5 var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; }
 .copy-row .btn { flex: none; }
