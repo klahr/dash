@@ -532,6 +532,67 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .term-wrap[hidden] { display: none; }
 .shell-note { align-self: center; }
 
+/* ---------- try: the project's CLI in a terminal on a runner ---------- */
+.quick-why { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.35; }
+.quick-btn:disabled { opacity: .55; cursor: not-allowed; }
+.quick-btn:disabled:hover { border-color: var(--line); }
+#view-try.active { display: flex; flex-direction: column; height: calc(100dvh - var(--top-h) - var(--nav-h) - var(--safe-b)); background: #0a0f17; }
+.try-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 6px 8px;
+  border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.try-where { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 100%; } /* phones: tabs and actions below */
+.try-runner select { min-height: 36px; max-width: 40vw; padding: 0 8px; border-radius: var(--r-s, 6px); border: 1px solid var(--line); background: var(--raised); color: var(--text); font-size: 13px; }
+.try-runner select:disabled { opacity: 1; appearance: none; border-color: transparent; background: transparent; color: var(--muted); padding: 0 2px; }
+.try-runner[hidden] { display: none; }
+.try-commit {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex: 1; min-height: 36px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: var(--r-s, 6px); background: var(--raised); color: var(--text); text-align: left; cursor: pointer;
+}
+.try-commit:hover:not(:disabled) { border-color: var(--accent); }
+.try-commit code { flex: none; font: 600 12px var(--mono); color: var(--accent); }
+.try-subject { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.try-tabs { display: flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.try-tabs button { min-height: 32px; padding: 0 12px; border: 0; background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; }
+.try-tabs button[aria-selected="true"] { background: var(--raised); color: var(--text); }
+.try-actions { display: flex; gap: 2px; margin-left: auto; }
+#try-chat { display: none; }
+.try-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.try-body .term-wrap { padding: 4px 0 0 6px; }
+.try-status { flex: 1; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 24px 16px; color: var(--text); }
+.try-status[hidden] { display: none; }
+.try-status.strip { flex: none; flex-direction: row; flex-wrap: wrap; padding: 8px 12px; border-top: 1px solid var(--line); background: var(--surface); }
+.try-status .hint { max-width: 46ch; margin: 0; }
+.try-keys[hidden] { display: none; }
+.chat-try-back { align-self: center; flex: none; }
+.chat-try-back[hidden] { display: none; }
+/* The commit picker */
+.try-commits-sheet form { display: flex; flex-direction: column; max-height: calc(88dvh - var(--kb-h, 0px)); }
+.try-commit-search { width: 100%; min-height: 40px; margin: 4px 0 8px; }
+.try-commit-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; flex: 1; }
+.try-commit-row {
+  display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 10px 6px; border: 0; border-bottom: 1px solid var(--line);
+  background: transparent; color: var(--text); text-align: left; cursor: pointer;
+}
+.try-commit-row:hover, .try-commit-row:focus-visible { background: var(--raised); }
+.try-commit-row.active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.try-commit-row code { flex: none; min-width: 7ch; font: 600 12px var(--mono); color: var(--accent); }
+.try-commit-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.try-commit-subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.try-commit-meta { color: var(--muted); font-size: 12px; }
+.try-commit-loading { display: flex; justify-content: center; padding: 20px; }
+.try-commit-note:empty { display: none; }
+@media (min-width: 1024px) {
+  #view-try.active { height: auto; overflow: hidden; }
+  .try-where { flex-basis: 320px; }
+  .try-tabs, .try-keys { display: none; }
+  #try-chat { display: inline-flex; }
+  .try-commits-sheet { max-width: 640px; margin: auto; border-radius: var(--r-l); border: 1px solid var(--line); }
+  /* The chat sits beside the terminal, not over it (a pinned chat on a wide screen has a column already). */
+  .app.chat-open #view-try.active { margin-right: var(--chat-pane-w); }
+}
+@media (min-width: 1280px) { .app.chat-pinned.chat-open #view-try.active { margin-right: 0; } }
+
 /* Files: tree beside (desktop) or above (mobile) a plain editor */
 #view-files.active { display: flex; height: calc(100dvh - var(--top-h) - var(--nav-h) - var(--safe-b)); }
 .files { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }

@@ -358,8 +358,8 @@ type Options struct {
 
 // Tool names the chat may call; ReadTools never change anything.
 var (
-	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues"}
-	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "update_todo", "create_release", "delete_todo", "list_issues", "report_issue"}
+	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues", "read_try_terminal"}
+	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "update_todo", "create_release", "delete_todo", "list_issues", "report_issue", "read_try_terminal"}
 	// AskTools are board tools a chat never gets without asking: they publish
 	// something (a release tag pushed to origin).
 	AskTools = []string{"create_release"}
@@ -368,9 +368,50 @@ var (
 )
 
 // Tools returns list_projects, list_todos, get_todo, create_todo,
-// queue_todo, update_todo and delete_todo, and the IssueTools.
+// queue_todo, update_todo and delete_todo, and the IssueTools; and
+// read_try_terminal when b reads Try terminals (TryReader).
 func Tools(b Board, o Options) []Tool {
-	return append(boardTools(b, o), IssueTools(b, o)...)
+	tools := append(boardTools(b, o), IssueTools(b, o)...)
+	if tr, ok := b.(TryReader); ok {
+		tools = append(tools, TryTool(b, tr, o))
+	}
+	return tools
+}
+
+// TryOutput is the end of a project's Try terminal and what it runs.
+type TryOutput struct {
+	Runner   string `json:"runner"`
+	Commit   string `json:"commit"`
+	Subject  string `json:"subject"`
+	Ref      string `json:"ref,omitempty"` // what was asked for; "" for the default branch's tip
+	Branch   string `json:"branch"`
+	State    string `json:"state"` // live, or crashed once its command ended
+	ExitCode *int   `json:"exit_code,omitempty"`
+	Text     string `json:"output"`
+}
+
+// TryReader is a Board that can read a project's Try terminal: the
+// terminal the user tries the project's CLI in, on a runner, at a commit.
+type TryReader interface {
+	// ReadTry returns the last lines of the project's Try terminal as plain text.
+	ReadTry(projectID string, lines int) (TryOutput, error)
+}
+
+// TryTool returns read_try_terminal.
+func TryTool(b Board, tr TryReader, o Options) Tool {
+	pProject, project := projectParam(o)
+	return Tool{"read_try_terminal",
+		"Read the last lines of the project's Try terminal as plain text: the terminal next to the chat where the user tries the project's CLI, " +
+			"with which runner and commit it runs. Call it whenever the user refers to what just happened there (\"that crashed\", \"the last command\", \"this error\"), " +
+			"and before filing what they found with report_issue or create_todo, to quote the command and its output and name the commit.",
+		[]Param{pProject, {"lines", "integer", "How many of the last lines to return (default 80, at most 5000).", false}},
+		func(a Args) (any, error) {
+			p, err := project(b, a)
+			if err != nil {
+				return nil, err
+			}
+			return tr.ReadTry(p.ID, a.Num("lines", 80))
+		}}
 }
 
 func projectParam(o Options) (Param, func(b Board, a Args) (model.Project, error)) {

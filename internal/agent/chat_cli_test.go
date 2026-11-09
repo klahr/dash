@@ -122,7 +122,7 @@ func TestChatArgsBoard(t *testing.T) {
 	if got := allowed(ro); !slices.Equal(got, []string{"mcp__dash_board__list_projects", "mcp__dash_board__list_todos",
 		"mcp__dash_board__get_todo", "mcp__dash_board__create_todo", "mcp__dash_board__queue_todo",
 		"mcp__dash_board__update_todo", "mcp__dash_board__delete_todo",
-		"mcp__dash_board__list_issues", "mcp__dash_board__report_issue"}) {
+		"mcp__dash_board__list_issues", "mcp__dash_board__report_issue", "mcp__dash_board__read_try_terminal"}) {
 		t.Errorf("readonly --allowedTools %q", got)
 	}
 	if _, ok := flag(ro, "--permission-prompt-tool"); ok {
@@ -137,7 +137,7 @@ func TestChatArgsBoard(t *testing.T) {
 		t.Errorf("shell --mcp-config %q", raw)
 	}
 	if got := allowed(sh); !slices.Equal(got, []string{"mcp__dash_board__list_projects", "mcp__dash_board__list_todos",
-		"mcp__dash_board__get_todo", "mcp__dash_board__list_issues", "Read"}) {
+		"mcp__dash_board__get_todo", "mcp__dash_board__list_issues", "mcp__dash_board__read_try_terminal", "Read"}) {
 		t.Errorf("shell --allowedTools %q", got)
 	}
 	if got, _ := flag(sh, "--permission-prompt-tool"); got != perm.PromptTool {

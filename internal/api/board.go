@@ -16,6 +16,7 @@ import (
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/preview"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
 )
@@ -379,6 +380,27 @@ func (b board) ReportIssue(projectID string, is model.Issue) (model.Issue, model
 	}
 	is.ProjectID = projectID
 	return b.sv.data.UpsertIssue(is)
+}
+
+// ReadTry is the end of the project's Try terminal, read from the runner
+// it runs on (try.go), for the chat's read_try_terminal.
+func (b board) ReadTry(projectID string, lines int) (mcptools.TryOutput, error) {
+	p, err := b.sv.data.GetProject(projectID)
+	if err != nil {
+		return mcptools.TryOutput{}, fmt.Errorf("no project %q (see list_projects)", projectID)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := b.sv.s.readTry(ctx, b.sv.c, p, lines)
+	if errors.Is(err, preview.ErrNoTry) {
+		return mcptools.TryOutput{}, errors.New("no Try terminal is running for " + p.Name + ": the user opens one with Try in the project view")
+	}
+	if err != nil {
+		return mcptools.TryOutput{}, err
+	}
+	ss := out.Session
+	return mcptools.TryOutput{Runner: ss.Runner, Commit: ss.Commit, Subject: ss.Subject, Ref: ss.Ref, Branch: ss.Branch,
+		State: string(ss.State), ExitCode: ss.ExitCode, Text: out.Text}, nil
 }
 
 // localComputer is this computer for the fleet tools of /mcp: the board,

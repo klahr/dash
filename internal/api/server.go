@@ -112,6 +112,11 @@ type Server struct {
 	// landing page (empty fields: the defaults).
 	Brand branding.Config
 
+	// TryRoot is where a runner makes its try sessions' worktrees
+	// (<data>/try; see try.go).
+	TryRoot string
+	tries   trySessions // on a hub: which runner each project's try session runs on
+
 	reviewMu  sync.Mutex
 	reviewGen uint64
 	reviews   map[string]uint64 // todo id → the review turn that owns its Reviewing flag
@@ -189,6 +194,8 @@ func (s *Server) buildMux() *http.ServeMux {
 	}
 	// A runner's side: tasks of its hub's projects linked to it (hub only)
 	s.hubTaskRoutes(mux)
+	// Try: a terminal on a project at a commit, on a runner (try.go)
+	s.tryRoutes(mux)
 
 	// Projects & git
 	mux.HandleFunc("GET /api/projects", s.listProjects)
@@ -460,7 +467,7 @@ func writeErr(w http.ResponseWriter, err error) {
 	var gitErr *gitops.CmdError
 	var callErr *tunnel.CallError
 	switch {
-	case errors.Is(err, store.ErrNotFound), errors.Is(err, runner.ErrNotFound), errors.Is(err, preview.ErrNotFound),
+	case errors.Is(err, store.ErrNotFound), errors.Is(err, runner.ErrNotFound), errors.Is(err, preview.ErrNotFound), errors.Is(err, preview.ErrNoTry),
 		errors.Is(err, scan.ErrNoScan):
 		code = http.StatusNotFound
 	case errors.As(err, &inv), errors.As(err, &invIssue), errors.Is(err, store.ErrReviewing):

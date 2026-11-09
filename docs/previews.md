@@ -31,6 +31,33 @@ a phone, with a row of Esc, Tab, Ctrl-C, Ctrl-D and arrow keys). Draw doesn't ap
 **Send back with transcript** puts the terminal's last 200 lines into the rework notes, or only
 what you selected in the terminal if you selected something.
 
+### Try: the project itself, at any commit
+
+**Try** (in the sidebar, or the phone's menu, of a CLI project on a hub; `:try`) opens the same
+kind of terminal on the project rather than a task, to test it without one in review. It always
+runs on a runner, never on the hub: one that is connected, has the project linked and opens
+terminals for you (`-hub-commands`, and only for the runner's owner). With one such runner it is
+picked by itself; with several, pick one in the Try header; with none, Try is greyed out and says
+why.
+
+On that runner Dash fetches the default branch from origin and makes a **detached worktree** of its
+clone (under `<data>/try/`), never touching the clone's own checkout, and runs `preview_command`
+there with `$DASH_BIN` as above. The header shows the runner and the commit (short hash and
+subject); tap the commit to pick another from the branch's history (searchable, the latest 100
+matches, or type any hash, tag or branch). Picking one, or another runner, replaces the session and
+its worktree. A project has one try session; opening Try again reattaches to it. It stops after 30
+minutes without typing (or with **Stop**), and its worktree is removed.
+
+The project chat sits beside the terminal (on a phone: the **Chat** tab, and **Terminal** to come
+back). While a session runs, the chat is told about it and can read the terminal's last lines with
+the `read_try_terminal` tool. Say "note …" or describe a bug and it files an issue (`report_issue`)
+with the command, its output and the commit hash; say "make a task of this" and it creates a draft
+task instead. Turn issues into tasks later from the Issues list as usual.
+
+The hub's routes are `GET|POST|DELETE /api/projects/<id>/try` (`{"runner", "ref"}` to start),
+`GET /api/projects/<id>/try/commits?runner=&q=&fetch=1`, `GET /api/projects/<id>/try/log?lines=N`
+and the terminal at `/ws/projects/<id>/try`; each goes through to the runner over its tunnel.
+
 ## Setting up a preview domain
 
 Dash serves each preview through its own listener at `https://<task>.<preview domain>/`, as a

@@ -92,6 +92,10 @@ func init() {
 		"POST " + dispatch.PermissionPath, // the hub's board answers its task's permission request
 		// The Claude part of the hub's scans of linked projects; checked in hubtasks.go.
 		"GET /ws/hub/scan",
+		// Try sessions of linked projects: their commits, and a terminal in a
+		// worktree at one of them; checked in try.go and (terminals) hubCheck.
+		"GET /api/hub/projects/{hpid}/commits", "GET /api/hub/projects/{hpid}/try", "POST /api/hub/projects/{hpid}/try",
+		"DELETE /api/hub/projects/{hpid}/try", "GET /api/hub/projects/{hpid}/try/log", "GET /ws/hub/projects/{hpid}/try",
 		// gh for the hub's CI view of linked projects; checked in hubtasks.go.
 		"POST /api/hub/github/{hpid}",
 
@@ -212,6 +216,10 @@ func (s *Server) hubCheck(r *http.Request) error {
 			return s.hubTerminal(r)
 		}
 	case "GET /ws/todos/{tid}/preview":
+		return s.hubTerminal(r)
+	case "GET /api/hub/projects/{hpid}/try", "POST /api/hub/projects/{hpid}/try", "DELETE /api/hub/projects/{hpid}/try",
+		"GET /api/hub/projects/{hpid}/try/log", "GET /ws/hub/projects/{hpid}/try":
+		// A try session is a terminal in a worktree of the project here.
 		return s.hubTerminal(r)
 	case "POST /api/todos/{tid}/preview":
 		// A terminal preview is a shell in the task's worktree.

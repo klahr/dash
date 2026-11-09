@@ -49,6 +49,11 @@ type entry struct {
 	seen atomic.Int64 // unix nanos of the last traffic
 	done chan struct{}
 	gone bool // stopped or replaced: the watcher must not touch the map
+
+	// try is set for a project's try session (see try.go), kept under
+	// tryKey(project) rather than a todo id; cleanup runs once it stops.
+	try     *model.TrySession
+	cleanup func()
 }
 
 func (e *entry) snapshot() model.Preview {
@@ -121,7 +126,7 @@ func (m *Manager) Start(t model.Todo, p model.Project) (model.Preview, error) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if e := m.entries[t.ID]; e != nil {
+	if e := m.entries[t.ID]; e != nil && e.try == nil {
 		if s := m.info(e); s.State != model.PreviewCrashed {
 			e.touch()
 			return s, nil
@@ -133,7 +138,7 @@ func (m *Manager) Start(t model.Todo, p model.Project) (model.Preview, error) {
 	}
 	var e *entry
 	if terminal {
-		proc, err := m.startTerminal(t, p)
+		proc, err := m.startTerminal(p, t.ID, t.Worktree.Path)
 		if err != nil {
 			return model.Preview{}, err
 		}
@@ -259,8 +264,11 @@ func (m *Manager) exited(e *entry) {
 	if p, err := m.Procs.Get(e.info.ProcessID); err == nil {
 		e.info.ExitCode = p.ExitCode
 	}
+	try := e.try != nil
 	e.mu.Unlock()
-	m.publish(m.info(e))
+	if !try { // a try session has no event: the UI asks for it
+		m.publish(m.info(e))
+	}
 }
 
 // Get returns todoID's preview.
@@ -275,7 +283,10 @@ func (m *Manager) Get(todoID string) (model.Preview, bool) {
 func (m *Manager) entry(todoID string) *entry {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.entries[todoID]
+	if e := m.entries[todoID]; e != nil && e.try == nil {
+		return e
+	}
+	return nil
 }
 
 // List returns every preview, newest first.
@@ -283,7 +294,9 @@ func (m *Manager) List() []model.Preview {
 	m.mu.Lock()
 	out := make([]model.Preview, 0, len(m.entries))
 	for _, e := range m.entries {
-		out = append(out, m.info(e))
+		if e.try == nil {
+			out = append(out, m.info(e))
+		}
 	}
 	m.mu.Unlock()
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt.After(out[j].StartedAt) })
@@ -294,7 +307,12 @@ func (m *Manager) List() []model.Preview {
 func (m *Manager) Stop(todoID, reason string) error {
 	m.mu.Lock()
 	e := m.entries[todoID]
-	delete(m.entries, todoID)
+	if e != nil && e.try != nil {
+		e = nil // a try session: StopTry
+	}
+	if e != nil {
+		delete(m.entries, todoID)
+	}
 	m.mu.Unlock()
 	if e == nil {
 		return ErrNotFound
@@ -365,6 +383,7 @@ func (m *Manager) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			m.StopAll("Dash is shutting down")
+			m.StopTries("Dash is shutting down")
 			return
 		case <-t.C:
 			m.sweep(time.Now())
@@ -376,6 +395,11 @@ func (m *Manager) sweep(now time.Time) {
 	idle := m.IdleAfter
 	if idle <= 0 {
 		idle = DefaultIdle
+	}
+	for _, s := range m.Tries() {
+		if now.Sub(s.LastSeen) > idle {
+			_ = m.StopTry(s.ProjectID, fmt.Sprintf("no typing for %d minutes", int(idle.Minutes())))
+		}
 	}
 	for _, p := range m.List() {
 		if now.Sub(p.LastSeen) > idle {

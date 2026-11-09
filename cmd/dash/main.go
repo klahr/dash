@@ -403,6 +403,10 @@ func main() {
 	scans.PruneLogs()
 	scheduler := &scan.Scheduler{Store: st, Runner: scans, Usage: tracker}
 	builds := &ci.Watcher{Store: st, Git: git, Pub: events, Kick: todos.Kick, Every: time.Minute}
+	// Try sessions' worktrees (a runner's): none outlives Dash, so those a
+	// stopped Dash left are removed (git forgets them at the next prune).
+	tryRoot := filepath.Join(*dataDir, "try")
+	_ = os.RemoveAll(tryRoot)
 	apiSrv := &api.Server{
 		Store: st, Git: git, Hub: events, Todos: todos, Merges: merges, Procs: procs, Previews: previews,
 		Auth:        authn,
@@ -414,6 +418,7 @@ func main() {
 		Scheduler:   scheduler,
 		Editor:      *editor,
 		UploadRoot:  uploads,
+		TryRoot:     tryRoot,
 		CI:          builds,
 		Peers:       &peer.Hub{Self: *machine},
 		Titler:      titler,

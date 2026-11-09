@@ -132,6 +132,10 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5c3 2.2 4.5 5.5 4.5 9.5l-1.5 4h-6L7.5 12c0-4 1.5-7.3 4.5-9.5zM7.8 13.5 5 16.5V20l4-2.5M16.2 13.5l2.8 3V20l-4-2.5M12 9v.01M10.5 19.5 12 21.5l1.5-2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span>Deploy</span>
           </button>
+          <button class="quick-btn" id="quick-try" type="button" hidden data-icon="terminal" title="Try the project in a terminal on a runner, at main or an older commit">
+            <span>Try</span>
+          </button>
+          <p class="quick-why" id="quick-try-why" hidden></p>
         </div>
         <button class="usage-pill remote-pill" id="remote-pill" type="button" hidden title="The default branch compared with origin's"></button>
         <div class="checkouts" id="checkouts" hidden aria-label="Checkouts behind origin"></div>
@@ -251,6 +255,44 @@
         <div class="empty shell-note" id="shell-note" hidden><p class="empty-title">No terminal here</p><p id="shell-note-text"></p></div>
       </section>
 
+      <!-- Try: the project's CLI in a terminal on a runner, at main or a commit picked from history -->
+      <section class="view" id="view-try" aria-label="Try">
+        <header class="try-head">
+          <div class="try-where">
+            <label class="try-runner" id="try-runner-wrap" title="The runner Try runs on">
+              <span class="sr-only">Runner</span>
+              <select id="try-runner"></select>
+            </label>
+            <button class="try-commit" id="try-commit" type="button" aria-haspopup="dialog" title="Pick the commit to try">
+              <code id="try-sha">main</code><span class="try-subject" id="try-subject"></span>
+            </button>
+          </div>
+          <div class="try-tabs" role="tablist" aria-label="Try">
+            <button type="button" role="tab" id="try-tab-term" aria-selected="true">Terminal</button>
+            <button type="button" role="tab" id="try-tab-chat" aria-selected="false">Chat</button>
+          </div>
+          <div class="try-actions">
+            <button class="icon-btn" type="button" id="try-chat" data-icon="comment" title="Chat beside the terminal" aria-label="Chat"></button>
+            <button class="icon-btn" type="button" id="try-restart" data-icon="reload" title="Start again at this commit" aria-label="Start again"></button>
+            <button class="icon-btn" type="button" id="try-stop" data-icon="stop" title="Stop (removes its worktree on the runner)" aria-label="Stop"></button>
+          </div>
+        </header>
+        <div class="try-body">
+          <div class="term-wrap" id="try-term-wrap" hidden><div id="try-term"></div></div>
+          <div class="empty try-status" id="try-status" hidden></div>
+        </div>
+        <div class="pv-keys try-keys" id="try-keys" role="toolbar" aria-label="Terminal keys" hidden>
+          <button type="button" data-key="esc">Esc</button>
+          <button type="button" data-key="tab">Tab</button>
+          <button type="button" data-key="ctrl-c">^C</button>
+          <button type="button" data-key="ctrl-d">^D</button>
+          <button type="button" data-key="up" aria-label="Up">↑</button>
+          <button type="button" data-key="down" aria-label="Down">↓</button>
+          <button type="button" data-key="left" aria-label="Left">←</button>
+          <button type="button" data-key="right" aria-label="Right">→</button>
+        </div>
+      </section>
+
       <!-- History: git graph of the default branch -->
       <section class="view" id="view-history" aria-label="History">
         <ol class="graph" id="graph"></ol>
@@ -291,6 +333,7 @@
     <aside class="chat-pane" id="chat-pane" hidden aria-label="Chat">
       <div class="chat-pane-resize" id="pc-resize" role="separator" aria-orientation="vertical" aria-label="Resize the chat" tabindex="0" title="Drag to resize · double-click to reset"></div>
       <header class="chat-pane-head">
+        <button class="btn small chat-try-back" id="chat-try-back" type="button" data-icon="terminal" hidden title="Back to the Try terminal">Terminal</button>
         <div class="chat-pane-tabs" id="chat-tabs" role="tablist" aria-label="Chats"></div>
         <!-- + adds another project's chat as a tab; outside the tabs, so it never scrolls away. -->
         <button class="icon-btn chat-tab-add" id="chat-tab-add" type="button" aria-label="Add a project's chat as a tab" title="Add a project's chat" aria-haspopup="true" aria-expanded="false" aria-controls="chat-tab-picker" data-icon="plus" hidden></button>

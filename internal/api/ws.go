@@ -244,6 +244,13 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		if forHub && msg.Todo != "" {
 			prompt = withRunnerChanges(runnerBranch, runnerDiff, prompt)
 		}
+		if msg.Project != "" && msg.Todo == "" && !forHub {
+			// The user is trying the project in its Try terminal: the chat
+			// reads it and files what they find (see TryInstructions).
+			if p, err := sv.data.GetProject(msg.Project); err == nil {
+				prompt = withTryContext(s.tryContext(ctx, sv.c, p), prompt)
+			}
+		}
 		if msg.Todo != "" && !forHub {
 			t, err := sv.data.GetTodo(msg.Todo)
 			if err == nil && ownViaHub && t.ProjectID != msg.Project {
@@ -559,6 +566,17 @@ func withRunnerChanges(branch, diff string, history []agent.ChatMessage) []agent
 
 // maxChatDiff caps the patch given to the todo chat each turn.
 const maxChatDiff = 200_000
+
+// withTryContext puts note (TryInstructions, or "") before the newest
+// question, so it describes the session as it is now.
+func withTryContext(note string, history []agent.ChatMessage) []agent.ChatMessage {
+	if note == "" || len(history) == 0 {
+		return history
+	}
+	out := append([]agent.ChatMessage(nil), history...)
+	out[len(out)-1].Content = note + out[len(out)-1].Content
+	return out
+}
 
 // withTodoContext tells Claude which todo the conversation is about by
 // prefixing the first message. The todo is read fresh every turn, so edits

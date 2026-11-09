@@ -33,8 +33,11 @@ var ErrNotTerminal = errors.New("this task's preview is not a terminal")
 // TerminalPath is the WebSocket path that attaches to todoID's terminal preview.
 func TerminalPath(todoID string) string { return "/ws/todos/" + url.PathEscape(todoID) + "/preview" }
 
-func (m *Manager) startTerminal(t model.Todo, p model.Project) (model.Process, error) {
-	bin := filepath.Join(t.Worktree.Path, BinDir)
+// startTerminal runs p's preview_command (or a shell) in a PTY in dir, with
+// dir/.dash-bin on PATH as $DASH_BIN: a task's worktree (todoID set) for its
+// terminal preview, or a try session's worktree (todoID "").
+func (m *Manager) startTerminal(p model.Project, todoID, dir string) (model.Process, error) {
+	bin := filepath.Join(dir, BinDir)
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		return model.Process{}, err
 	}
@@ -49,7 +52,7 @@ func (m *Manager) startTerminal(t model.Todo, p model.Project) (model.Process, e
 	// A login shell may set PATH afresh from the profile: put the folder
 	// in front of whatever that leaves.
 	script := `export PATH="$DASH_BIN:$PATH"` + "\n" + command
-	return m.Procs.StartPTYFor(p.ID, t.ID, t.Worktree.Path, shown, script, []string{"DASH_BIN=" + bin}, 0, 0)
+	return m.Procs.StartPTYFor(p.ID, todoID, dir, shown, script, []string{"DASH_BIN=" + bin}, 0, 0)
 }
 
 // Terminal attaches to todoID's terminal preview. touch marks activity
