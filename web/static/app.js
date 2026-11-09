@@ -6492,11 +6492,11 @@ const inMain = (x) => x.main || (!x.preset && (x.dir === state.project?.path
 // its runner doesn't mark it (see inMain).
 const quickStarted = new Map();
 function quickProc(spec) {
+  // Found even with the command cleared, so a run still going can be viewed or stopped.
   const cmd = quickCmd(spec);
-  if (!cmd) return null;
   const [kind, preset] = spec.split(":");
   const mine = quickStarted.get(spec);
-  return state.procs.filter((x) => x.id === mine || (x.kind === kind && inMain(x) && (x.preset ? x.preset === preset : x.command === cmd)))
+  return state.procs.filter((x) => x.id === mine || (x.kind === kind && inMain(x) && (x.preset ? x.preset === preset : !!cmd && x.command === cmd)))
     .reduce((a, b) => (!a || b.started_at > a.started_at ? b : a), null);
 }
 
@@ -6504,9 +6504,9 @@ function renderQuick() {
   for (const [sel, verb, generic, noun, key] of [["#quick-server", "Serving", "Run", "server run", "R"], ["#quick-test", "Testing", "Run Tests", "test run", "T"], ["#quick-deploy", "Deploying", "Deploy", "deploy", "D"]]) {
     const btn = $(sel);
     const spec = btn.dataset.run;
-    btn.hidden = !state.project;
-    btn.disabled = !quickCmd(spec);
-    const proc = quickProc(spec);
+    const proc = state.project ? quickProc(spec) : null;
+    // Shown only with a command set, or while a run of it is still going.
+    btn.hidden = !state.project || !(quickCmd(spec) || proc?.running);
     const ok = proc && !proc.running && proc.exit_code === 0 && sel !== "#quick-server";
     const bad = proc && !proc.running && proc.exit_code != null && proc.exit_code !== 0;
     const cut = proc && !proc.running && proc.exit_code == null;
@@ -6529,8 +6529,7 @@ function renderQuick() {
     const secs = proc ? Math.max(0, Math.floor((Date.now() - new Date(proc.started_at)) / 1000)) : 0;
     const elapsed = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
     btn.querySelector("span").textContent = stop ? "Stop" : proc?.running ? `${verb} ${elapsed}` : done;
-    btn.title = btn.disabled ? `No ${noun.split(" ")[0]} command — set one in project settings`
-      : stop ? "Running — click to stop it"
+    btn.title = stop ? "Running — click to stop it"
       : proc?.running ? `${verb}… ${elapsed} — click to view output`
       : ok ? `Last ${noun} passed — click to run again`
       : bad ? `Last ${noun} failed (exit ${proc.exit_code}) — click to run again`

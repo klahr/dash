@@ -121,9 +121,7 @@ textarea { resize: vertical; line-height: 1.45; }
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; min-width: 36px; padding: 0 10px;
   border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 13px; font-weight: 600; white-space: nowrap; flex: none;
 }
-.quick-btn:hover:not(:disabled) { border-color: var(--accent); }
-.quick-btn:disabled { opacity: .5; cursor: default; }
-.quick-btn:disabled svg { color: var(--muted); }
+.quick-btn:hover { border-color: var(--accent); }
 .quick-btn svg { width: 16px; height: 16px; color: var(--accent); flex: none; }
 .quick-btn span { font-variant-numeric: tabular-nums; }
 .quick-btn.running { border-color: var(--running); background: color-mix(in srgb, var(--running) 10%, var(--surface)); }
