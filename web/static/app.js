@@ -720,6 +720,7 @@ const state = {
   lastLine: new Map(),
   activity: new Map(), // todo id → what it is busy with right now (see trackActivity)
   lane: null,         // mobile: selected lane key
+  follow: null,       // { ids, lane, until }: new tasks the selected lane follows for a moment
   detail: null,        // open todo id
   pane: "timeline",
   diff: "",
@@ -1097,6 +1098,7 @@ async function selectProject(p) {
   state.unpushed = 0;
   state.unpushedTodos = null;
   state.lane = null;
+  state.follow = null;
   closeDetail();
   try { if (p) localStorage.setItem("dash.project", projectKey(p)); } catch {}
   renderProjectHeader();
@@ -2017,6 +2019,16 @@ function renderBoardNow() {
   $("#new-todo").hidden = false;
   renderRunnerBanner();
 
+  // A task just added may already have moved on (a queued task picked up at
+  // once is Running): follow it rather than show its old lane empty.
+  const f = state.follow;
+  if (f && (Date.now() > f.until || state.lane !== f.lane)) state.follow = null;
+  else if (f && !items[state.lane]?.length) {
+    const t = f.ids.map((id) => state.todos.get(id)).find(Boolean);
+    const lane = t && LANES.find((l) => l.statuses.includes(t.status))?.key;
+    if (lane && lane !== state.lane) state.lane = f.lane = lane;
+  }
+
   // Mobile opens on whatever needs attention first.
   if (!state.lane || laneHidden(state.lane)) {
     state.lane = ["review", "in_progress", "queued", "draft"].find((k) => items[k].length) || "queued";
@@ -2482,9 +2494,11 @@ async function submitQuick() {
   const enqueue = quick.queue.checked;
   quick.sheet.close("add");
   let done = 0;
+  const ids = [];
   try {
     for (const prompt of texts) {
-      await api("POST", `/api/projects/${p.id}/todos`, { title: "", prompt, enqueue }, p.prefix || "");
+      const t = await api("POST", `/api/projects/${p.id}/todos`, { title: "", prompt, enqueue }, p.prefix || "");
+      if (t?.id) ids.push(t.id);
       done++;
     }
   } catch (e) {
@@ -2494,7 +2508,16 @@ async function submitQuick() {
   }
   const n = texts.length;
   toast(enqueue ? (n > 1 ? `Added ${n} tasks to the queue` : "Added to queue") : (n > 1 ? `Saved ${n} drafts` : "Saved as draft"));
-  if (projectKey(state.project) === projectKey(p)) state.lane = enqueue ? "queued" : "draft";
+  if (projectKey(state.project) === projectKey(p)) showNewTasks(enqueue ? "queued" : "draft", ids);
+}
+
+// Show the lane new tasks were added to. The board follows them for a few
+// seconds, so a queued task the runner starts at once is shown under Running
+// instead of leaving an empty Queued lane on screen.
+function showNewTasks(lane, ids) {
+  state.lane = lane;
+  state.follow = ids.length ? { ids, lane, until: Date.now() + 15000 } : null;
+  if (ids.length) renderBoard();
 }
 
 function quickMore() {
@@ -2562,10 +2585,10 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
     const p = (pickProject && state.projects.find((x) => projectKey(x) === f.project.value)) || state.project;
     // Attachments are uploaded to the current project's computer.
     if (body.attachments.length && p.prefix !== here()) throw new Error(`Attachments can't be sent to ${p.name} on ${p.machine}; remove them or pick a project on this computer.`);
-    await api("POST", `/api/projects/${p.id}/todos`, { ...body, enqueue: action === "queue" }, p.prefix || "");
+    const t = await api("POST", `/api/projects/${p.id}/todos`, { ...body, enqueue: action === "queue" }, p.prefix || "");
     const other = projectKey(p) !== projectKey(state.project);
     toast(`${action === "queue" ? "Added to queue" : "Saved as draft"}${other ? ` in ${p.name}` : ""}`);
-    if (!other) state.lane = action === "queue" ? "queued" : "draft";
+    if (!other) showNewTasks(action === "queue" ? "queued" : "draft", t?.id ? [t.id] : []);
   }
   draft.done();
 }));
