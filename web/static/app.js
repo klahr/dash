@@ -368,6 +368,16 @@ async function copy(text, msg) {
   }
 }
 
+// Copy button on rendered markdown code blocks (see renderMarkdown).
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest?.(".code-copy");
+  const code = btn?.closest(".code-block")?.querySelector("pre code");
+  if (!code) return;
+  e.preventDefault();
+  e.stopPropagation();
+  copy(code.textContent, "Copied");
+});
+
 // ask() shows a confirmation or a text question as a sheet. Resolves to the
 // entered text (or true), or null when cancelled.
 function ask({ title, body = "", input = false, value = "", placeholder = "", ok = "OK", danger = false, attach = false, attachments = [] }) {
