@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/klahr/dash/internal/passhash"
 )
 
 func openAccounts(t *testing.T) (*Store, *Accounts) {
@@ -24,7 +26,7 @@ func openAccounts(t *testing.T) (*Store, *Accounts) {
 func TestSignUpVerifyAndPersonalOrg(t *testing.T) {
 	s, a := openAccounts(t)
 	now := time.Now()
-	res, err := a.SignUp("ann@example.com", "ann-password", now)
+	res, err := a.SignUp("ann@example.com", now)
 	if err != nil || !res.Created || res.Token == "" || res.User.Username != "ann" {
 		t.Fatalf("signup: %+v %v", res, err)
 	}
@@ -35,15 +37,18 @@ func TestSignUpVerifyAndPersonalOrg(t *testing.T) {
 		t.Fatalf("orgs before verifying: %+v", ms)
 	}
 	// A second "ann" gets another username.
-	res2, err := a.SignUp("ann@other.example.com", "ann-password", now)
+	res2, err := a.SignUp("ann@other.example.com", now)
 	if err != nil || res2.User.Username != "ann2" {
 		t.Fatalf("second ann: %+v %v", res2, err)
 	}
 	// Expired links don't work.
-	if _, err := a.VerifyEmail(res.Token, now.Add(VerifyTTL+time.Second)); !errors.Is(err, ErrEmailLink) {
+	if _, err := a.VerifyEmail(res.Token, "ann-password", now.Add(VerifyTTL+time.Second)); !errors.Is(err, ErrEmailLink) {
 		t.Fatalf("expired: %v", err)
 	}
-	u, err := a.VerifyEmail(res.Token, now)
+	if _, err := a.VerifyEmail(res.Token, "short", now); !errors.Is(err, ErrWeakPassword) {
+		t.Fatalf("weak password: %v", err)
+	}
+	u, err := a.VerifyEmail(res.Token, "ann-password", now)
 	if err != nil || u.ID != res.User.ID {
 		t.Fatalf("verify: %+v %v", u, err)
 	}
@@ -62,7 +67,7 @@ func TestSignUpVerifyAndPersonalOrg(t *testing.T) {
 		t.Fatalf("ensure again: %+v %v", o, err)
 	}
 	// Signing up again for a confirmed address changes nothing.
-	again, err := a.SignUp("ANN@example.com", "other-password", now)
+	again, err := a.SignUp("ANN@example.com", now)
 	if err != nil || !again.Existing || again.Token != "" {
 		t.Fatalf("again: %+v %v", again, err)
 	}
@@ -94,8 +99,8 @@ func TestPasswordResetSkipsEnvAccount(t *testing.T) {
 func TestResetTokenExpires(t *testing.T) {
 	_, a := openAccounts(t)
 	now := time.Now()
-	res, _ := a.SignUp("bo@example.com", "bo-password", now)
-	if _, err := a.VerifyEmail(res.Token, now); err != nil {
+	res, _ := a.SignUp("bo@example.com", now)
+	if _, err := a.VerifyEmail(res.Token, "bo-password", now); err != nil {
 		t.Fatal(err)
 	}
 	_, tok, ok, err := a.RequestPasswordReset("bo@example.com", now)
@@ -112,5 +117,56 @@ func TestResetTokenExpires(t *testing.T) {
 	}
 	if _, err := a.ResetPassword(tok2, "new-password", now); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Signing up for someone else's address leaves no password the signer knows:
+// the address's owner chooses it from the link.
+func TestSignUpBeforeOwnerCantTakeOver(t *testing.T) {
+	_, a := openAccounts(t)
+	now := time.Now()
+	first, err := a.SignUp("vic@example.com", now) // the attacker
+	if err != nil || !first.Created {
+		t.Fatalf("first: %+v %v", first, err)
+	}
+	_, hash, err := a.Credentials("vic@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, _, _ := passhash.Verify(hash, "attacker-pw"); ok {
+		t.Fatal("unverified account has a known password")
+	}
+	second, err := a.SignUp("vic@example.com", now) // the owner
+	if err != nil || !second.Pending {
+		t.Fatalf("second: %+v %v", second, err)
+	}
+	if _, err := a.VerifyEmail(first.Token, "attacker-pw", now); !errors.Is(err, ErrEmailLink) {
+		t.Fatalf("replaced link: %v", err)
+	}
+	if _, err := a.VerifyEmail(second.Token, "victim-password", now); err != nil {
+		t.Fatal(err)
+	}
+	_, hash, _ = a.Credentials("vic@example.com")
+	if ok, _, _ := passhash.Verify(hash, "victim-password"); !ok {
+		t.Fatal("owner's password isn't the account's")
+	}
+}
+
+func TestStaleUnverifiedAccountsAreDeleted(t *testing.T) {
+	_, a := openAccounts(t)
+	now := time.Now()
+	if _, err := a.SignUp("old@example.com", now); err != nil {
+		t.Fatal(err)
+	}
+	later := now.Add(VerifyTTL + time.Minute)
+	if _, err := a.SignUp("someone@example.com", later); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.Credentials("old@example.com"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stale account kept: %v", err)
+	}
+	again, err := a.SignUp("old@example.com", later)
+	if err != nil || !again.Created || again.User.Username != "old" {
+		t.Fatalf("again: %+v %v", again, err)
 	}
 }

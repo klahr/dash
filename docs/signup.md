@@ -64,22 +64,28 @@ an install built for it (see [Deploy the hub](deploy.md)).
 
 ## What signing up does
 
-1. Someone enters an email address and a password (at least 8 characters, hashed with
-   Argon2id like every account). Dash answers **"If you can sign up with that address,
+1. Someone enters an email address. Dash answers **"If you can sign up with that address,
    we've sent it a link"**, whatever the case:
    - a new address gets an account that can't sign in yet, and a link to confirm it;
-   - an address waiting for its link gets a new link (the password stays the one chosen
-     first, so whoever signs up second can't take over the account);
+   - an address waiting for its link gets a new link, which replaces the old one;
    - an address that has an account gets an email saying so, with a link to reset the
      password. The account doesn't change.
 
    So the page never tells whether an address has an account, the same rule as for
-   invitations. Dash hashes the password in every case and sends email in the background,
+   invitations. Dash does the same work in every case and sends email in the background,
    so the answer takes as long either way.
 2. The link (`https://dash.example.com/login.html#verify=…`) works once, for 24 hours. A
-   new one replaces it; signing in before confirming says so and offers to send it again.
-3. Opening it confirms the address, creates the account's **personal workspace** and signs
-   them in there.
+   new one replaces it: signing up again with the address sends one (so does
+   `POST /api/signup/resend`).
+3. Opening it asks for a password (at least 8 characters, hashed with Argon2id like every
+   account). Choosing one confirms the address, creates the account's **personal
+   workspace** and signs them in there.
+
+   The password is chosen only there, by whoever can read the address's email, and never
+   when signing up. That way nobody can sign up for someone else's address first and keep
+   a password the real owner doesn't know. `POST /api/signup` ignores a `password` sent to
+   it; `POST /api/signup/verify` takes `{token, password}`. An unconfirmed account whose
+   links have all expired is deleted, so the address and username are free again.
 
 The username is made from the address (`ann@example.com` becomes `ann`, or `ann2`, …).
 People sign in with their email address or that username.
@@ -116,16 +122,17 @@ Signing up and asking for the link again share a limit; asking for a reset link 
 own. Each allows 10 requests an hour per client address and 3 an hour per email address,
 then answers 429 until the hour has passed. Behind a reverse proxy, run Dash with
 `-trust-proxy` so the limits see the client's address rather than the proxy's. Setting a
-new password from a link counts towards the same lockout as failed sign-ins.
+password from a link (reset or confirmation) counts towards the same lockout as failed
+sign-ins.
 
 ## API
 
 | Method and path                             | What                                                  |
 |---------------------------------------------|-------------------------------------------------------|
 | `GET /api/signup`                           | `{open, password_reset}`: what the sign-in page shows |
-| `POST /api/signup {email, password}`        | sign up; always `202` with a message                  |
+| `POST /api/signup {email}`                   | sign up; always `202` with a message                  |
 | `POST /api/signup/resend {email}`           | the confirmation link again; always `202`             |
-| `POST /api/signup/verify {token}`           | confirm and sign in                                   |
+| `POST /api/signup/verify {token, password}` | confirm, choose the password and sign in              |
 | `POST /api/password/forgot {email}`         | a reset link; always `202`                            |
 | `POST /api/password/reset {token, password}` | set the new password                                 |
 

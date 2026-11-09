@@ -114,10 +114,7 @@ func TestSignupNeedsVerification(t *testing.T) {
 	if w := anon.do("GET", "/api/signup", ""); !strings.Contains(w.Body.String(), `"open":true`) {
 		t.Fatalf("status: %s", w.Body)
 	}
-	if w := signUp(anon, "Carla.Doe+dash@example.com", "short"); w.Code != http.StatusBadRequest {
-		t.Fatalf("weak password: %d", w.Code)
-	}
-	if w := signUp(anon, "Carla.Doe+dash@example.com", "carla-password"); w.Code != http.StatusAccepted {
+	if w := anon.do("POST", "/api/signup", `{"email":"Carla.Doe+dash@example.com"}`); w.Code != http.StatusAccepted {
 		t.Fatalf("signup: %d %s", w.Code, w.Body)
 	}
 	m := box.next(t)
@@ -126,20 +123,18 @@ func TestSignupNeedsVerification(t *testing.T) {
 	}
 	tok := tokenIn(t, m)
 
-	// Not before the link.
-	w := anon.do("POST", "/api/login", `{"username":"carla.doe+dash@example.com","password":"carla-password"}`)
-	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), `"code":"unverified"`) {
+	// No password signs in before the link.
+	if w := anon.do("POST", "/api/login", `{"username":"carla.doe+dash@example.com","password":"carla-password"}`); w.Code != http.StatusUnauthorized {
 		t.Fatalf("login before verifying: %d %s", w.Code, w.Body)
 	}
-	// A wrong password says nothing about the account.
-	if w := anon.do("POST", "/api/login", `{"username":"carla.doe+dash@example.com","password":"wrong-password"}`); w.Code != http.StatusUnauthorized {
-		t.Fatalf("wrong password: %d %s", w.Code, w.Body)
-	}
 
-	if w := anon.do("POST", "/api/signup/verify", `{"token":"nope"}`); w.Code != http.StatusBadRequest {
+	if w := anon.do("POST", "/api/signup/verify", `{"token":"nope","password":"carla-password"}`); w.Code != http.StatusBadRequest {
 		t.Fatalf("bad link: %d", w.Code)
 	}
-	if w := anon.do("POST", "/api/signup/verify", `{"token":"`+tok+`"}`); w.Code != http.StatusOK {
+	if w := anon.do("POST", "/api/signup/verify", `{"token":"`+tok+`","password":"short"}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("weak password: %d", w.Code)
+	}
+	if w := anon.do("POST", "/api/signup/verify", `{"token":"`+tok+`","password":"carla-password"}`); w.Code != http.StatusOK {
 		t.Fatalf("verify: %d %s", w.Code, w.Body)
 	}
 	// Signed in, in their personal workspace, the only member.
@@ -151,7 +146,7 @@ func TestSignupNeedsVerification(t *testing.T) {
 		t.Fatalf("member count %d, %v", n, err)
 	}
 	// The link works once.
-	if w := anon.do("POST", "/api/signup/verify", `{"token":"`+tok+`"}`); w.Code != http.StatusBadRequest {
+	if w := anon.do("POST", "/api/signup/verify", `{"token":"`+tok+`","password":"other-password"}`); w.Code != http.StatusBadRequest {
 		t.Fatalf("link again: %d", w.Code)
 	}
 	signIn(t, h, "carla.doe+dash@example.com", "carla-password")
@@ -168,7 +163,7 @@ func TestSignupDoesntRevealAccounts(t *testing.T) {
 	if fresh.Code != http.StatusAccepted || fresh.Code != taken.Code || fresh.Body.String() != taken.Body.String() {
 		t.Fatalf("new: %d %s; taken: %d %s", fresh.Code, fresh.Body, taken.Code, taken.Body)
 	}
-	box.next(t) // dan's link
+	firstTok := tokenIn(t, box.next(t)) // dan's link
 	m := box.next(t)
 	if m.To != "bea@example.com" || !strings.Contains(m.Body, "already") || strings.Contains(m.Body, "#verify=") {
 		t.Fatalf("to the existing account: %+v", m)
@@ -176,20 +171,26 @@ func TestSignupDoesntRevealAccounts(t *testing.T) {
 	// bea's password is unchanged.
 	signIn(t, h, "bea", "pw-bea-long")
 
-	// Signing up again for a pending address resends its link, without
-	// changing its password.
-	again := signUp(anon, "dan@example.com", "attacker-password")
+	// Signing up again for a pending address sends a new link, replacing the
+	// old. The password sent with a signup counts for nothing: whoever opens
+	// the link (the address's owner) chooses it.
+	again := signUp(anon, "dan@example.com", "other-password")
 	if again.Body.String() != fresh.Body.String() {
 		t.Fatalf("again: %s", again.Body)
 	}
 	tok := tokenIn(t, box.next(t))
-	if w := anon.do("POST", "/api/signup/verify", `{"token":"`+tok+`"}`); w.Code != http.StatusOK {
+	if w := anon.do("POST", "/api/signup/verify", `{"token":"`+firstTok+`","password":"dan-password"}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("replaced link: %d", w.Code)
+	}
+	if w := anon.do("POST", "/api/signup/verify", `{"token":"`+tok+`","password":"dan-chosen-password"}`); w.Code != http.StatusOK {
 		t.Fatalf("verify: %d", w.Code)
 	}
-	if w := do(h, "POST", "/api/login", `{"username":"dan@example.com","password":"attacker-password"}`); w.Code != http.StatusUnauthorized {
-		t.Fatalf("second signup's password works: %d", w.Code)
+	for _, pw := range []string{"dan-password", "other-password"} {
+		if w := do(h, "POST", "/api/login", `{"username":"dan@example.com","password":"`+pw+`"}`); w.Code != http.StatusUnauthorized {
+			t.Fatalf("a signup's password %q works: %d", pw, w.Code)
+		}
 	}
-	signIn(t, h, "dan@example.com", "dan-password")
+	signIn(t, h, "dan@example.com", "dan-chosen-password")
 
 	// Resending and password reset answer alike for every address.
 	r1 := anon.do("POST", "/api/signup/resend", `{"email":"nobody@example.com"}`)

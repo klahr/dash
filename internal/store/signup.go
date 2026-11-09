@@ -47,8 +47,7 @@ type SignupResult struct {
 	// Created: a new, unverified account.
 	Created bool
 	// Pending: an unverified account had the address already; Token is a new
-	// link for it. Its password is left as it was, so whoever signed up
-	// second can't take over the account the first will confirm.
+	// link for it, replacing the earlier one.
 	Pending bool
 	// Existing: a confirmed account has the address.
 	Existing bool
@@ -58,22 +57,26 @@ type SignupResult struct {
 func CleanEmail(email string) (string, error) { return cleanEmail(email) }
 
 // SignUp creates an unverified account for email, with a username made
-// from the address. The password is hashed whatever happens, so the answer
-// takes as long whether or not the address has an account.
-func (a *Accounts) SignUp(email, password string, now time.Time) (SignupResult, error) {
+// from the address. It has no password yet: whoever opens the link sent to
+// the address chooses it (VerifyEmail), so nobody can sign up for someone
+// else's address beforehand and keep a password they know. Until then its
+// hash is of a random secret, so no password signs it in. A hash is made
+// whatever happens, so the answer takes as long whether or not the address
+// has an account. Unverified accounts whose links have expired are deleted.
+func (a *Accounts) SignUp(email string, now time.Time) (SignupResult, error) {
 	var res SignupResult
 	email, err := cleanEmail(email)
 	if err != nil {
 		return res, err
 	}
-	if len(password) < MinPassword {
-		return res, ErrWeakPassword
-	}
-	hash, err := passhash.Hash(password)
+	hash, err := passhash.Hash(newToken())
 	if err != nil {
 		return res, err
 	}
 	err = inTx(a.db, func(tx *sql.Tx) error {
+		if err := deleteStaleUnverified(tx, now); err != nil {
+			return err
+		}
 		var unverified bool
 		err := tx.QueryRow(userCols+" WHERE email = ?", email).Scan(&res.User.ID, &res.User.Username, &res.User.Email,
 			&res.User.PlatformAdmin, &res.User.TOTP)
@@ -102,6 +105,16 @@ func (a *Accounts) SignUp(email, password string, now time.Time) (SignupResult, 
 		return SignupResult{}, err
 	}
 	return res, nil
+}
+
+// deleteStaleUnverified deletes the accounts that signed up longer ago than
+// a link lasts and have no link that still works (nor any membership).
+func deleteStaleUnverified(tx *sql.Tx, now time.Time) error {
+	_, err := tx.Exec(`DELETE FROM users WHERE unverified = 1 AND env_managed = 0 AND created_at <= ?
+		AND NOT EXISTS (SELECT 1 FROM email_tokens t WHERE t.user_id = users.id AND t.expires_at > ?)
+		AND NOT EXISTS (SELECT 1 FROM org_memberships m WHERE m.user_id = users.id)`,
+		now.Add(-VerifyTTL).Unix(), now.Unix())
+	return err
 }
 
 func createUnverified(tx *sql.Tx, email, hash string, now time.Time) (User, error) {
@@ -172,6 +185,18 @@ func useEmailToken(tx *sql.Tx, tok string, purpose EmailPurpose, now time.Time) 
 	return uid, err
 }
 
+// checkEmailToken reports whether tok is a link for purpose that still
+// works, without using it up.
+func (a *Accounts) checkEmailToken(tok string, purpose EmailPurpose, now time.Time) error {
+	var ok bool
+	err := a.db.QueryRow("SELECT EXISTS (SELECT 1 FROM email_tokens WHERE token_hash = ? AND purpose = ? AND expires_at > ?)",
+		hashToken(tok), purpose, now.Unix()).Scan(&ok)
+	if err == nil && !ok {
+		return ErrEmailLink
+	}
+	return err
+}
+
 // ResendVerification is a new verification link for the unverified account
 // with email; ok is false when there's none (no account, or it's confirmed).
 func (a *Accounts) ResendVerification(email string, now time.Time) (u User, tok string, ok bool, err error) {
@@ -194,16 +219,35 @@ func (a *Accounts) ResendVerification(email string, now time.Time) (u User, tok 
 	return u, tok, ok && err == nil, err
 }
 
-// VerifyEmail confirms the address of the account tok was sent to, so it can
-// sign in, and gives it its personal workspace.
-func (a *Accounts) VerifyEmail(tok string, now time.Time) (User, error) {
+// VerifyEmail confirms the address of the account tok was sent to, sets its
+// password (chosen now, by whoever has the link: the address's owner), so
+// it can sign in, and gives it its personal workspace.
+func (a *Accounts) VerifyEmail(tok, password string, now time.Time) (User, error) {
+	if len(password) < MinPassword {
+		return User{}, ErrWeakPassword
+	}
+	if err := a.checkEmailToken(tok, PurposeVerify, now); err != nil { // before the slow hash
+		return User{}, err
+	}
+	hash, err := passhash.Hash(password)
+	if err != nil {
+		return User{}, err
+	}
 	var u User
-	err := inTx(a.db, func(tx *sql.Tx) error {
+	err = inTx(a.db, func(tx *sql.Tx) error {
 		uid, err := useEmailToken(tx, tok, PurposeVerify, now)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec("UPDATE users SET unverified = 0 WHERE id = ?", uid); err != nil {
+		res, err := tx.Exec("UPDATE users SET unverified = 0, password_hash = ?, password_changed_at = ? WHERE id = ? AND unverified = 1 AND env_managed = 0",
+			hash, now.UnixNano(), uid)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n != 1 {
+			return ErrEmailLink
+		}
+		if _, err := tx.Exec("DELETE FROM email_tokens WHERE user_id = ? AND purpose = ?", uid, PurposeVerify); err != nil {
 			return err
 		}
 		if u, err = scanUserRow(tx.QueryRow(userCols+" WHERE id = ?", uid)); err != nil {
@@ -263,13 +307,7 @@ func (a *Accounts) RequestPasswordReset(email string, now time.Time) (u User, to
 // CheckResetToken reports whether tok is a reset link that still works,
 // without using it up.
 func (a *Accounts) CheckResetToken(tok string, now time.Time) error {
-	var ok bool
-	err := a.db.QueryRow("SELECT EXISTS (SELECT 1 FROM email_tokens WHERE token_hash = ? AND purpose = 'reset' AND expires_at > ?)",
-		hashToken(tok), now.Unix()).Scan(&ok)
-	if err == nil && !ok {
-		return ErrEmailLink
-	}
-	return err
+	return a.checkEmailToken(tok, PurposeReset, now)
 }
 
 // ResetPassword sets the password of the account a reset link was sent to,

@@ -5,11 +5,12 @@ const enrolCard = $("#enrol");
 const signupForm = $("#signup");
 const forgotForm = $("#forgot");
 const resetForm = $("#reset");
+const verifyForm = $("#verify");
 const noticeCard = $("#notice");
 let ticket = "";
 
 function show(card) {
-  for (const c of [loginForm, totpForm, enrolCard, signupForm, forgotForm, resetForm, noticeCard]) c.hidden = c !== card;
+  for (const c of [loginForm, totpForm, enrolCard, signupForm, forgotForm, verifyForm, resetForm, noticeCard]) c.hidden = c !== card;
   card.querySelector("input")?.focus();
 }
 
@@ -188,7 +189,7 @@ $("#to-forgot").addEventListener("click", () => {
 
 signupForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const data = await submit(signupForm, "/api/signup", { email: signupForm.email.value, password: signupForm.password.value });
+  const data = await submit(signupForm, "/api/signup", { email: signupForm.email.value });
   if (data) { signupForm.reset(); notice(data.message); }
 });
 
@@ -196,6 +197,13 @@ forgotForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const data = await submit(forgotForm, "/api/password/forgot", { email: forgotForm.email.value });
   if (data) notice(data.message);
+});
+
+let verifyToken = "";
+verifyForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const data = await submit(verifyForm, "/api/signup/verify", { token: verifyToken, password: verifyForm.password.value });
+  if (data) location.replace("/");
 });
 
 let resetToken = "";
@@ -224,10 +232,9 @@ resetForm.addEventListener("submit", async (e) => {
   $("#to-signup").hidden = !status.open;
   $("#to-forgot").hidden = !status.password_reset;
   if (hash.has("verify")) {
-    const tok = hash.get("verify");
+    verifyToken = hash.get("verify");
     history.replaceState(null, "", location.pathname);
-    const data = await submit(null, "/api/signup/verify", { token: tok });
-    if (data) location.replace("/");
+    show(verifyForm);
   } else if (hash.has("reset")) {
     resetToken = hash.get("reset");
     history.replaceState(null, "", location.pathname);

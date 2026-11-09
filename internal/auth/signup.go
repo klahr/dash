@@ -18,9 +18,11 @@ import (
 // differs goes to that address, by email.
 //
 //	GET  /api/signup                     {open, password_reset}: what the login page offers
-//	POST /api/signup {email, password}   an unverified account, and a link to confirm it
+//	POST /api/signup {email}             an unverified account, and a link to confirm it
 //	POST /api/signup/resend {email}      the confirmation link again
-//	POST /api/signup/verify {token}      confirm, get a personal workspace, sign in
+//	POST /api/signup/verify {token, password}
+//	                                     confirm, choose the password, get a personal
+//	                                     workspace, sign in
 //	POST /api/password/forgot {email}    a link to choose a new password
 //	POST /api/password/reset {token, password}
 
@@ -125,7 +127,7 @@ func (a *Auth) sendVerification(u store.User, tok string) {
 	b := a.brand()
 	a.send(mail.Message{To: u.Email, Subject: "Confirm your email address for " + b.Name, Body: "Hello,\n\n" +
 		"Someone, hopefully you, signed up for " + b.Name + " at " + a.baseURL + " with this address.\n" +
-		"Open this link within 24 hours to confirm it and sign in:\n\n" +
+		"Open this link within 24 hours to confirm it, choose your password and sign in:\n\n" +
 		a.link("verify="+tok) + "\n\n" +
 		"If it wasn't you, ignore this email: no account is made without the link.\n" + b.MailFooter()})
 }
@@ -172,9 +174,11 @@ func (a *Auth) signUp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, errSignupClosed.Error())
 		return
 	}
+	// A password sent here (as older clients do) is ignored: it's chosen
+	// when the link is opened, by whoever can read the address's email, so
+	// nobody can sign up for someone else's address and keep a password.
 	var req struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email string `json:"email"`
 	}
 	if err := decodeBody(w, r, &req); err != nil {
 		accountError(w, err)
@@ -186,15 +190,11 @@ func (a *Auth) signUp(w http.ResponseWriter, r *http.Request) {
 		accountError(w, err)
 		return
 	}
-	if len(req.Password) < store.MinPassword {
-		accountError(w, store.ErrWeakPassword)
-		return
-	}
 	if a.rateLimit(r, "signup", email) {
 		writeError(w, http.StatusTooManyRequests, errRateLimited.Error())
 		return
 	}
-	res, err := a.acc.SignUp(email, req.Password, a.now())
+	res, err := a.acc.SignUp(email, a.now())
 	if err != nil {
 		accountError(w, err)
 		return
@@ -240,25 +240,37 @@ func (a *Auth) resendVerification(w http.ResponseWriter, r *http.Request) {
 	accepted(w, checkInbox)
 }
 
-// verifyEmail confirms an address and signs its new account in. It works
-// after signup is closed again too: the account was made while it was open.
+// verifyEmail confirms an address, sets the password its owner chooses and
+// signs its new account in. It works after signup is closed again too: the
+// account was made while it was open. Tries count towards the address's
+// lockout, since each costs a hash.
 func (a *Auth) verifyEmail(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Token string `json:"token"`
+		Token    string `json:"token"`
+		Password string `json:"password"`
 	}
 	if err := decodeBody(w, r, &req); err != nil {
 		accountError(w, err)
 		return
 	}
-	u, err := a.acc.VerifyEmail(strings.TrimSpace(req.Token), a.now())
+	f, ok := a.reserve(a.clientIP(r))
+	if !ok {
+		accountError(w, ErrLockedOut)
+		return
+	}
+	u, err := a.acc.VerifyEmail(strings.TrimSpace(req.Token), req.Password, a.now())
 	if errors.Is(err, store.ErrEmailLink) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err != nil {
+		if errors.Is(err, store.ErrWeakPassword) {
+			a.release(f)
+		}
 		accountError(w, err)
 		return
 	}
+	a.release(f)
 	// A new account has no second factor yet, nor an org requiring one.
 	if err := a.startSession(w, r, u.ID); err != nil {
 		accountError(w, err)

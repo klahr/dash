@@ -39,9 +39,8 @@
         <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
         <span>{{DASH_NAME}}</span>
       </div>
-      <p>Create an account. We'll email you a link to confirm your address.</p>
+      <p>Create an account. We'll email you a link to confirm your address and choose your password.</p>
       <label class="field"><span>Email</span><input name="email" type="email" autocomplete="email" autocapitalize="none" required></label>
-      <label class="field"><span>Password (at least 8 characters)</span><input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
       <button class="btn primary">Create account</button>
       <button class="link to-login" type="button">I have an account</button>
       <div class="login-error" role="alert"></div>
@@ -56,6 +55,17 @@
       <label class="field"><span>Email</span><input name="email" type="email" autocomplete="email" autocapitalize="none" required></label>
       <button class="btn primary">Send link</button>
       <button class="link to-login" type="button">Back to sign in</button>
+      <div class="login-error" role="alert"></div>
+    </form>
+    <!-- From a verification link: the address's owner chooses the password -->
+    <form id="verify" class="login-card" hidden>
+      <div class="brand">
+        <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
+        <span>{{DASH_NAME}}</span>
+      </div>
+      <p>Your address is almost confirmed. Choose a password for your account.</p>
+      <label class="field"><span>Password (at least 8 characters)</span><input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
+      <button class="btn primary">Confirm and sign in</button>
       <div class="login-error" role="alert"></div>
     </form>
     <!-- From a reset link -->
