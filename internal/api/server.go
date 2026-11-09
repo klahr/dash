@@ -214,6 +214,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/projects/{pid}/release", s.viaRunner(s.getRelease))
 	mux.HandleFunc("POST /api/projects/{pid}/tags", s.viaRunner(s.createTag))
 	mux.HandleFunc("GET /api/projects/{pid}/tag-format", s.viaRunner(s.tagFormatInfo))
+	mux.HandleFunc("GET /api/projects/{pid}/repo-info", s.viaRunner(s.repoInfo))
 	mux.HandleFunc("GET /api/projects/{pid}/files", s.viaRunner(s.listFiles))
 	mux.HandleFunc("GET /api/projects/{pid}/claude-files", s.viaRunner(s.listClaudeFiles))
 	mux.HandleFunc("GET /api/projects/{pid}/file", s.viaRunner(s.readFile))

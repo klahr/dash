@@ -1918,3 +1918,13 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .branch-tag.current { color: var(--merged); }
 .branch-tag.default { color: var(--accent); }
 .branch-create { color: var(--accent); }
+
+/* Project settings → Repository: what GitHub says about origin. */
+.repo-info .claude-scope-head a { color: inherit; }
+.repo-info .repo-sub { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.repo-desc { margin: 6px 0 10px; font-size: 15px; line-height: 1.45; }
+.repo-topics { display: flex; flex-wrap: wrap; gap: 6px; }
+.repo-topics a { padding: 1px 9px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 12px; text-decoration: none; }
+.repo-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 12px 0; font-size: 14px; }
+.repo-facts dt { color: var(--muted); }
+.repo-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }

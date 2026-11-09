@@ -4865,6 +4865,7 @@ function openSettings() {
   $("#webhook-secret").hidden = true;
   loadWebhooks().catch(fail);
   loadClaudeFiles().catch(fail);
+  loadRepoInfo();
   settingsSnapshot = formSnapshot(f);
   $("#settings-sheet").returnValue = "";
   $("#settings-sheet").showModal();
@@ -4988,6 +4989,94 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
   renderBoard(); // auto approve shows or hides Review
   toast("Settings saved");
 }));
+
+// ------------------------------------------------------------------ repository
+// The Repository section of the project settings: what GitHub says about
+// origin (description, license, latest release, counts and the repository's
+// own settings), read with gh each time the settings open. Read-only: it is
+// changed on GitHub.
+let repoInfoSeq = 0;
+async function loadRepoInfo() {
+  const p = state.project, box = $("#settings-repo"), seq = ++repoInfoSeq;
+  box.replaceChildren(h("p", { class: "hint" }, "Asking GitHub about the repository…"));
+  let res;
+  try {
+    res = await api("GET", `/api/projects/${p.id}/repo-info`);
+  } catch (err) {
+    res = { remote_url: p.remote_url, github: null, error: err.message };
+  }
+  if (seq !== repoInfoSeq || state.project !== p) return;
+  box.replaceChildren(...renderRepoInfo(p, res).filter(Boolean));
+}
+
+const LICENSE_NAMES = { other: "Other (GitHub couldn't tell which)" };
+const fmtDate = (iso) => new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+const fmtSize = (kb) => (kb >= 1024 * 1024 ? `${(kb / 1024 / 1024).toFixed(1)} GB` : kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`);
+const ext = (href, text) => h("a", { href, target: "_blank", rel: "noopener" }, text);
+const isSet = (iso) => iso && !iso.startsWith("0001-");
+
+function renderRepoInfo(p, res) {
+  const g = res.github;
+  const remote = res.remote_url || p.remote_url;
+  if (!g) {
+    return [
+      remote ? h("p", {}, "Origin: ", h("code", {}, remote)) : null,
+      h("p", { class: "hint" }, res.error || "GitHub has nothing to say about this repository."),
+      res.latest_tag ? h("p", {}, "Latest release tag: ", h("code", {}, res.latest_tag)) : null,
+    ];
+  }
+  const tags = [
+    h("span", { class: `scope-tag ${g.visibility === "PUBLIC" ? "repo" : "dash"}` }, (g.visibility || "").toLowerCase() || "private"),
+    g.is_archived && h("span", { class: "scope-tag local" }, "archived"),
+    g.is_fork && h("span", { class: "scope-tag" }, "fork"),
+    g.is_template && h("span", { class: "scope-tag" }, "template"),
+  ];
+  const row = (label, ...value) => [h("dt", {}, label), h("dd", {}, ...value)];
+  const on = (x) => (x ? "on" : "off");
+  const rel = g.latest_release;
+  const facts = [
+    row("License", g.license ? (LICENSE_NAMES[g.license.key] || g.license.name || g.license.key) : h("span", { class: "hint" }, "None found")),
+    row("Latest release", rel
+      ? [ext(rel.url, rel.tag), rel.name && rel.name !== rel.tag ? ` “${rel.name}”` : "", isSet(rel.published_at) ? h("span", { class: "hint" }, ` · ${fmtDate(rel.published_at)}`) : null]
+      : h("span", { class: "hint" }, "No GitHub release")),
+    res.latest_tag && res.latest_tag !== rel?.tag ? row("Latest tag", h("code", {}, res.latest_tag), h("span", { class: "hint" }, " in this clone")) : null,
+    g.default_branch ? row("Default branch", h("code", {}, g.default_branch)) : null,
+    g.language ? row("Language", g.language) : null,
+    g.parent ? row("Forked from", ext(`https://github.com/${g.parent}`, g.parent)) : null,
+    row("Activity", `★ ${g.stars} · ${g.forks} forks · ${g.watchers} watching`),
+    row("Open", ext(`${g.url}/issues`, `${g.open_issues} issues`), " · ", ext(`${g.url}/pulls`, `${g.open_prs} pull requests`)),
+    isSet(g.pushed_at) ? row("Last push", agoText(g.pushed_at)) : null,
+    isSet(g.created_at) ? row("Created", fmtDate(g.created_at)) : null,
+    g.disk_kb ? row("Size", fmtSize(g.disk_kb)) : null,
+    g.viewer_permission ? row("Your access", g.viewer_permission.toLowerCase()) : null,
+  ];
+  const methods = [g.squash_merge && "squash", g.merge_commit && "merge commit", g.rebase_merge && "rebase"].filter(Boolean);
+  const settings = [
+    row("Pull request merges", methods.length ? methods.join(", ") : "none allowed"),
+    row("Delete branch on merge", on(g.delete_branch_on_merge)),
+    row("Features", Object.entries({ Issues: g.has_issues, Wiki: g.has_wiki, Discussions: g.has_discussions, Projects: g.has_projects })
+      .map(([k, v]) => `${k} ${on(v)}`).join(" · ")),
+  ];
+  // Things that trip Dash up, from the repository's settings.
+  const warnings = [
+    p.merge_mode === "pr" && !g.squash_merge && "Dash merges pull requests squashed, but squash merging is off for this repository: turn it on in GitHub's settings.",
+    g.default_branch && p.default_branch && g.default_branch !== p.default_branch && `GitHub's default branch is ${g.default_branch}, but this project's is ${p.default_branch}.`,
+    g.is_archived && "The repository is archived: it is read-only, so pushes fail.",
+  ].filter(Boolean);
+  const admin = g.viewer_permission === "ADMIN";
+  return [
+    h("h3", { class: "claude-scope-head" }, ext(g.url, g.name_with_owner), ...tags),
+    h("p", { class: g.description ? "repo-desc" : "hint" }, g.description || "No description."),
+    g.homepage ? h("p", {}, ext(g.homepage, g.homepage)) : null,
+    g.topics.length ? h("p", { class: "repo-topics" }, ...g.topics.map((t) => ext(`https://github.com/topics/${encodeURIComponent(t)}`, t))) : null,
+    ...warnings.map((w) => h("p", { class: "hint warn" }, w)),
+    h("dl", { class: "repo-facts" }, ...facts.flat().filter(Boolean)),
+    h("h3", { class: "claude-scope-head repo-sub" }, "GitHub settings"),
+    h("dl", { class: "repo-facts" }, ...settings.flat()),
+    h("p", { class: "hint" }, "Read from GitHub when the settings open; ",
+      admin ? ext(`${g.url}/settings`, "change them on GitHub") : "an admin of the repository changes them on GitHub", "."),
+  ];
+}
 
 // ------------------------------------------------------------------ Claude files
 // The Claude section of the project settings lists the repo's Claude Code

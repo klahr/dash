@@ -40,6 +40,8 @@ func init() {
 		"GET /api/projects/{pid}/branches", "PUT /api/projects/{pid}/branch", "POST /api/projects/{pid}/branch/pr",
 		// Release tags: made and pushed on the runner, in its clone (release.go).
 		"GET /api/projects/{pid}/release", "POST /api/projects/{pid}/tags", "GET /api/projects/{pid}/tag-format",
+		// What GitHub says about the repository, for the project settings (repoinfo.go).
+		"GET /api/projects/{pid}/repo-info",
 
 		"GET /api/projects/{pid}/todos", "POST /api/projects/{pid}/todos", "GET /api/projects/{pid}/queues",
 		"GET /api/todos/{tid}", "PATCH /api/todos/{tid}", "DELETE /api/todos/{tid}",
