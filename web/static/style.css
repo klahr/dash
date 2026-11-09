@@ -1349,10 +1349,16 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .side-new-project:hover { background: var(--raised); color: var(--text); }
 .side-new-project svg { box-sizing: border-box; width: 22px; height: 22px; padding: 4px; border: 1px dashed var(--line); border-radius: var(--r-s); color: var(--muted); }
 .side-new-project:hover svg { border-color: var(--accent); color: var(--accent); }
-.side-machine { display: flex; align-items: center; gap: 8px; padding: 12px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--faint); }
+/* A runner heads its projects: its name stands out from them a little, and
+   they hang from its dot on a guide line, like a folder's contents. */
+.side-machine { display: flex; align-items: center; gap: 8px; padding: 14px 10px 4px; font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--muted); }
 .side-machine:first-child { padding-top: 2px; }
-.side-machine-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-machine-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-machine-count { flex: none; padding: 0 6px; border-radius: 999px; background: var(--raised); font-size: 11px; font-weight: 500; color: var(--faint); }
 .side-machine.needs-runner { color: var(--muted); }
+.side-project-list li.in-group { position: relative; margin-left: 14px; }
+.side-project-list li.in-group::before { content: ""; position: absolute; left: -1px; top: -1px; bottom: 0; width: 1px; background: var(--line); }
+.side-project-list li.in-group .side-project { padding-left: 10px; }
 /* The hub's shared projects: a quiet mark, to tell them from a runner's own. */
 .shared-mark { flex: none; display: inline-flex; color: var(--faint); opacity: .7; }
 .shared-mark .ico { width: 13px; height: 13px; }
@@ -1479,7 +1485,9 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .side-collapsed .nav .board-dot { top: 6px; left: auto; right: 6px; }
   .side-collapsed .side-project-list { display: flex; flex-direction: column; gap: 4px; }
   .side-collapsed .side-project-list li.current { box-shadow: none; background: none; }
-  .side-collapsed .side-project { justify-content: center; padding: 0; min-height: 40px; }
+  .side-collapsed .side-project, .side-collapsed .side-project-list li.in-group .side-project { justify-content: center; padding: 0; min-height: 40px; }
+  .side-collapsed .side-project-list li.in-group { margin-left: 0; }
+  .side-collapsed .side-project-list li.in-group::before { display: none; }
   .side-collapsed .side-project-icon { width: 32px; height: 32px; font-size: 13px; }
   .side-collapsed .side-project[aria-current="true"] .side-project-icon { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent); }
   .side-collapsed .side-new-project { justify-content: center; padding: 0; }

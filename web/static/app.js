@@ -1455,13 +1455,13 @@ const projectDot = (p) => (p.color ? h("span", { class: "project-dot", style: `-
 // Desktop sidebar / phone menu: every project, one click away. The current one
 // shows its branch; its settings and actions live in the top bar's project menu.
 function renderSideProjects() {
-  const item = (p) => {
+  const item = (p, inGroup) => {
     const cur = projectKey(state.project) === projectKey(p);
     const st = projectStatus(p);
     const stLabel = st === "running" ? "Claude is working" : st === "review" ? "Ready for review" : "";
     const icon = projectIcon(p);
     if (st) icon.append(h("span", { class: `side-project-status ${st}` }));
-    return h("li", { class: cur ? "current" : "" },
+    return h("li", { class: [cur && "current", inGroup && "in-group"].filter(Boolean).join(" ") },
       h("button", {
         type: "button", class: "side-project", title: [p.name, p.path, stLabel].filter(Boolean).join("\n"), "aria-current": cur ? "true" : "false",
         "aria-label": stLabel ? `${p.name}, ${stLabel.toLowerCase()}` : null,
@@ -1473,9 +1473,10 @@ function renderSideProjects() {
       needsRunner(p) ? h("span", { class: "side-project-branch warn", title: "No runner is linked to it: link one in Project settings → Runners" }, "needs a runner")
         : cur && baseBranch(p) ? h("span", { class: "side-project-branch" }, baseBranch(p)) : null));
   };
-  const items = !grouped() ? state.projects.map(item) : projectGroups().flatMap((g) => [
-    h("li", { class: `side-machine${g.needsRunner ? " needs-runner" : ""}`, title: g.title, "data-group": g.key }, groupHead(g)),
-    ...g.projects.map(item),
+  // Grouped, each runner heads its projects, which hang from it on a guide line.
+  const items = !grouped() ? state.projects.map((p) => item(p)) : projectGroups().flatMap((g) => [
+    h("li", { class: `side-machine${g.needsRunner ? " needs-runner" : ""}`, title: groupTitle(g), "data-group": g.key }, groupHead(g)),
+    ...g.projects.map((p) => item(p, true)),
   ]);
   $("#side-project-list").replaceChildren(...(items.length ? items : [h("li", { class: "machine-empty" }, "No projects yet")]));
 }
@@ -1486,10 +1487,14 @@ function renderSideProjects() {
 function projectGroups() { return groupProjects({ machines: state.machines || [], runners: state.runners ?? null, projects: state.projects || [] }); }
 // The list is grouped on a hub (by runner) or with several computers.
 function grouped() { return isHub() || multi(); }
-// A group's heading: the runner's online dot, then its name.
+// A group's heading: the runner's online dot, its name, and how many
+// projects it holds, so it reads as the owner of the projects under it.
 const groupHead = (g) => [
   g.machine ? h("span", { class: `machine-dot ${g.machine.ok ? "ok" : "down"}`, "aria-hidden": "true" }) : null,
-  h("span", { class: "side-machine-name" }, g.name)];
+  h("span", { class: "side-machine-name" }, g.name),
+  h("span", { class: "side-machine-count", "aria-label": `${g.projects.length} project${g.projects.length === 1 ? "" : "s"}` }, String(g.projects.length))];
+// A group heading's tooltip: why it is offline or what it holds.
+const groupTitle = (g) => [g.machine && `Projects on ${g.name}`, g.title].filter(Boolean).join("\n");
 // A quiet mark on the hub's shared projects, to tell them from a runner's own.
 function sharedMark(p) {
   if (!isHub() || !isShared(p)) return null;
@@ -1619,7 +1624,7 @@ function setPicker(open) {
     }, h("span", { class: "project-name" }, projectDot(p), p.name, sharedMark(p)), h("span", { class: "project-branch" }, baseBranch(p)));
   };
   const items = !grouped() ? state.projects.map(item) : projectGroups().flatMap((g) => [
-    h("div", { class: `side-machine${g.needsRunner ? " needs-runner" : ""}`, title: g.title, "data-group": g.key }, groupHead(g)),
+    h("div", { class: `side-machine${g.needsRunner ? " needs-runner" : ""}`, title: groupTitle(g), "data-group": g.key }, groupHead(g)),
     ...g.projects.map(item)]);
   list.replaceChildren(...(state.projects.length ? items : [h("div", { class: "machine-empty" }, "No projects yet")]),
     h("button", { type: "button", role: "menuitem", class: "picker-new", onclick: () => { setPicker(false); openNewProject(); } }, "+ New project"));
