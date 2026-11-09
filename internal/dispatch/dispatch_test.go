@@ -448,6 +448,56 @@ func TestRunnerOutputReachesTheHubsBoard(t *testing.T) {
 	}
 }
 
+// A process of a hub's project starting or ending on a runner (a deploy
+// finishing, say) reaches the hub's dashboards, which list the project's
+// processes again: the runner reports the hub's project, and the hub tells
+// only about a project of the runner's org linked to it.
+func TestRunnerProcessChangesReachTheHubsDashboards(t *testing.T) {
+	// The runner's side.
+	fx := newFixture(t)
+	own := fx.project(t, fx.orgA) // the runner's own project: not reported
+	clone, err := fx.st.CreateProject(model.Project{Name: "clone", OrgID: fx.orgA, RemoteURL: "https://github.com/x/clone",
+		DefaultBranch: "main", MergeMode: model.MergePR, HubProjectID: "hp1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep := &Reporter{Store: fx.st}
+	rep.Observe(model.Event{Type: model.EvProcUpdated, ProjectID: own.ID})
+	rep.Observe(model.Event{Type: model.EvProcUpdated, ProjectID: clone.ID})
+	rep.Observe(model.Event{Type: model.EvProcUpdated, ProjectID: clone.ID})
+	if r := rep.Build(time.Now()); len(r.Procs) != 1 || r.Procs[0] != "hp1" {
+		t.Fatalf("reported procs: %v", r.Procs)
+	}
+	if again := rep.Build(time.Now()); len(again.Procs) != 0 {
+		t.Fatalf("reported twice: %v", again.Procs)
+	}
+
+	// The hub's side.
+	pub := &recorder{}
+	fx.d.Pub = pub
+	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
+	fx.fleet.set(runnerOf("other", fx.orgB, true))
+	p := fx.project(t, fx.orgA, "laptop")
+	unlinked := fx.project(t, fx.orgA)
+	send := func(runner string, procs ...string) {
+		t.Helper()
+		b, _ := json.Marshal(Report{Procs: procs})
+		if err := fx.d.Report(runner, b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	send("other", p.ID)            // another org's runner
+	send("laptop", unlinked.ID)    // not linked to it
+	send("laptop", "no-such-proj") // gone
+	if len(pub.evs) != 0 {
+		t.Fatalf("published for a project not the runner's: %+v", pub.evs)
+	}
+	send("laptop", p.ID)
+	if len(pub.evs) != 1 || pub.evs[0].Type != model.EvProcUpdated || pub.evs[0].ProjectID != p.ID {
+		t.Fatalf("published: %+v", pub.evs)
+	}
+}
+
 // A project on runners lands its tasks the way the hub's project says
 // (merging, unless it chose pull requests); the hub marks a task merged with
 // the commit its runner pushed, follows its revert, queues a task for

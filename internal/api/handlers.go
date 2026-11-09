@@ -21,6 +21,7 @@ import (
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/release"
+	"github.com/klahr/dash/internal/runner"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
 	"github.com/klahr/dash/internal/usage"
@@ -1315,8 +1316,15 @@ func (s *Server) startProcess(w http.ResponseWriter, r *http.Request) {
 		}
 		dir = t.Worktree.Path
 	}
+	// The dashboard finds its quick actions and its shell by these (see
+	// model.Process): a hub lists this computer's processes with its own
+	// project path, which isn't this clone's.
+	o := runner.Origin{Main: req.TodoID == ""}
 	if req.Command == "" {
 		req.Command = map[string]string{"run": p.RunCommand, "test": p.TestCommand, "deploy": p.DeployCommand}[req.Preset]
+		if req.Command != "" {
+			o.Preset = req.Preset
+		}
 	}
 	if req.Command == "" && req.Kind != model.ProcPTY {
 		writeErr(w, fmt.Errorf("%w: no command given and project has no %q command configured", errBadRequest, req.Preset))
@@ -1335,11 +1343,11 @@ func (s *Server) startProcess(w http.ResponseWriter, r *http.Request) {
 	var proc model.Process
 	switch req.Kind {
 	case model.ProcWeb:
-		proc, err = s.Procs.StartWeb(p.ID, dir, req.Command)
+		proc, err = s.Procs.StartWeb(p.ID, dir, req.Command, o)
 	case model.ProcTask, "":
-		proc, err = s.Procs.StartTask(p.ID, dir, req.Command)
+		proc, err = s.Procs.StartTask(p.ID, dir, req.Command, o)
 	case model.ProcPTY:
-		proc, err = s.Procs.StartPTY(p.ID, dir, req.Command, req.Cols, req.Rows)
+		proc, err = s.Procs.StartPTY(p.ID, dir, req.Command, req.Cols, req.Rows, o)
 	default:
 		err = fmt.Errorf("%w: unknown kind %q", errBadRequest, req.Kind)
 	}

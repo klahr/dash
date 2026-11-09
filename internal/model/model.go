@@ -484,9 +484,17 @@ type Process struct {
 	URL       string      `json:"url,omitempty"`
 	Port      int         `json:"port,omitempty"`    // web servers: their $PORT
 	TodoID    string      `json:"todo_id,omitempty"` // set for a todo's live preview
-	Running   bool        `json:"running"`
-	ExitCode  *int        `json:"exit_code,omitempty"`
-	StartedAt time.Time   `json:"started_at"`
+	// Preset is the project's command it runs (run | test | deploy), when
+	// started from one rather than with a command of its own.
+	Preset string `json:"preset,omitempty"`
+	// Main says it runs in the project's own checkout, not a task's
+	// worktree. With Preset, it is one of the project's quick actions; a
+	// running Main terminal is the project's shell. The dashboard goes by
+	// these rather than Dir, which on a hub is the runner's clone.
+	Main      bool      `json:"main,omitempty"`
+	Running   bool      `json:"running"`
+	ExitCode  *int      `json:"exit_code,omitempty"`
+	StartedAt time.Time `json:"started_at"`
 }
 
 // PreviewState is where a todo's live preview is in its life.

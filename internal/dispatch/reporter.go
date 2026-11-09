@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -30,8 +31,9 @@ type Reporter struct {
 
 	wake chan struct{}
 
-	mu   sync.Mutex
-	live map[string]*liveOutput // runner todo id → Claude's output since the last report
+	mu    sync.Mutex
+	live  map[string]*liveOutput // runner todo id → Claude's output since the last report
+	procs map[string]bool        // hub project ids whose processes changed since the last report
 }
 
 // liveOutput is what a hub's task printed since the last report: the hub
@@ -78,7 +80,28 @@ func (r *Reporter) Observe(ev model.Event) {
 		}
 	case model.EvTodoOutput, model.EvTodoEvent:
 		r.observeOutput(ev)
+	case model.EvProcUpdated:
+		r.observeProc(ev)
 	}
+}
+
+// observeProc keeps, for the next report, that a process of the clone of a
+// hub's project started or ended.
+func (r *Reporter) observeProc(ev model.Event) {
+	if ev.ProjectID == "" || r.Store == nil {
+		return
+	}
+	p, err := r.Store.GetProject(ev.ProjectID)
+	if err != nil || p.HubProjectID == "" {
+		return
+	}
+	r.mu.Lock()
+	if r.procs == nil {
+		r.procs = map[string]bool{}
+	}
+	r.procs[p.HubProjectID] = true
+	r.mu.Unlock()
+	r.Nudge()
 }
 
 // observeOutput keeps a hub task's progress (todo.output and todo.event
@@ -127,6 +150,20 @@ func (r *Reporter) takeLive() map[string]*liveOutput {
 	return l
 }
 
+// takeProcs hands over the hub projects whose processes changed since the
+// last report.
+func (r *Reporter) takeProcs() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, 0, len(r.procs))
+	for id := range r.procs {
+		out = append(out, id)
+	}
+	r.procs = nil
+	sort.Strings(out)
+	return out
+}
+
 // Build is the report as of now, with the tasks' output since the last
 // Build.
 func (r *Reporter) Build(now time.Time) Report {
@@ -140,6 +177,9 @@ func (r *Reporter) Build(now time.Time) Report {
 		rep.Usage = &u
 	}
 	live := r.takeLive()
+	if procs := r.takeProcs(); len(procs) > 0 {
+		rep.Procs = procs
+	}
 	for _, t := range r.Store.ListTodos("") {
 		if t.HubTodoID == "" {
 			continue

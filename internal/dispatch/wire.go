@@ -115,6 +115,10 @@ type Report struct {
 	Parallel int             `json:"parallel"` // the runner's own -parallel
 	Usage    *usage.Snapshot `json:"usage,omitempty"`
 	Tasks    []TaskState     `json:"tasks,omitempty"`
+	// Procs are the hub's projects whose processes (run/test/deploy
+	// commands, terminals) on the runner changed since the last report: the
+	// hub tells their dashboards to list them again.
+	Procs []string `json:"procs,omitempty"`
 }
 
 // TaskState is where one of the hub's tasks is on the runner.

@@ -297,7 +297,8 @@ func main() {
 	// ---- services ----
 	git := gitops.New(events)
 	git.SignCommits = *signCommits
-	procs := runner.NewManager(events)
+	procEvents := &teePublisher{Publisher: events}
+	procs := runner.NewManager(procEvents)
 	if err := procs.Keep(filepath.Join(*dataDir, "processes.json")); err != nil {
 		slog.Warn("read processes", "err", err)
 	}
@@ -462,6 +463,8 @@ func main() {
 		}
 		// Claude's progress on the hub's tasks goes to the hub's board too.
 		todoLog.Pub = &teePublisher{Publisher: events, also: reporter.Observe}
+		// …and when its processes start or end, so its dashboards list them again.
+		procEvents.also = reporter.Observe
 		go reporter.Run(ctx)
 	} else {
 		runners := &tunnel.Hub{Pub: events, Taken: apiSrv.Peers.Taken, PreviewURL: previews.URLTemplate, Accounts: st.Accounts()}

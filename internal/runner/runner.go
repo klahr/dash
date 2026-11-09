@@ -125,15 +125,36 @@ func NewManager(pub Publisher) *Manager {
 	return &Manager{pub: pub, procs: map[string]*proc{}}
 }
 
+// Origin is where a process the dashboard started comes from: the
+// project's preset command it runs, and whether it runs in the project's
+// own checkout (see model.Process).
+type Origin struct {
+	Preset string
+	Main   bool
+}
+
+func (o Origin) set(i *model.Process) { i.Preset, i.Main = o.Preset, o.Main }
+
+func origin(o []Origin) Origin {
+	if len(o) > 0 {
+		return o[0]
+	}
+	return Origin{}
+}
+
 // StartWeb runs a server command with $PORT set to a free port and exposes
 // http://localhost:$PORT.
-func (m *Manager) StartWeb(projectID, dir, command string) (model.Process, error) {
-	return m.StartWebFor(projectID, "", dir, command)
+func (m *Manager) StartWeb(projectID, dir, command string, o ...Origin) (model.Process, error) {
+	return m.startWeb(projectID, "", dir, command, origin(o))
 }
 
 // StartWebFor is StartWeb for a server running a todo's worktree (a live
 // preview); the process carries the todo's id.
 func (m *Manager) StartWebFor(projectID, todoID, dir, command string) (model.Process, error) {
+	return m.startWeb(projectID, todoID, dir, command, Origin{})
+}
+
+func (m *Manager) startWeb(projectID, todoID, dir, command string, o Origin) (model.Process, error) {
 	port, err := freePort()
 	if err != nil {
 		return model.Process{}, err
@@ -142,12 +163,13 @@ func (m *Manager) StartWebFor(projectID, todoID, dir, command string) (model.Pro
 	cmd.Env = append(cmd.Env, fmt.Sprintf("PORT=%d", port))
 	return m.startPiped(projectID, model.ProcWeb, command, fmt.Sprintf("http://localhost:%d", port), cmd, func(i *model.Process) {
 		i.Port, i.TodoID = port, todoID
+		o.set(i)
 	})
 }
 
 // StartTask runs a one-shot command (tests, build, deploy).
-func (m *Manager) StartTask(projectID, dir, command string) (model.Process, error) {
-	return m.startPiped(projectID, model.ProcTask, command, "", shell(dir, command), nil)
+func (m *Manager) StartTask(projectID, dir, command string, o ...Origin) (model.Process, error) {
+	return m.startPiped(projectID, model.ProcTask, command, "", shell(dir, command), origin(o).set)
 }
 
 func shell(dir, command string) *exec.Cmd {
@@ -182,7 +204,7 @@ func (m *Manager) startPiped(projectID string, kind model.ProcessKind, command, 
 // StartPTY runs command (default: the user's shell) attached to a pseudo-terminal.
 // pty.Start uses Setsid, which already makes the child a process-group leader,
 // so Setpgid must not be set as well (the kernel rejects the combination).
-func (m *Manager) StartPTY(projectID, dir, command string, cols, rows uint16) (model.Process, error) {
+func (m *Manager) StartPTY(projectID, dir, command string, cols, rows uint16, o ...Origin) (model.Process, error) {
 	if command == "" {
 		command = os.Getenv("SHELL")
 		if command == "" {
@@ -202,7 +224,7 @@ func (m *Manager) StartPTY(projectID, dir, command string, cols, rows uint16) (m
 	if err != nil {
 		return model.Process{}, err
 	}
-	p := m.register(projectID, model.ProcPTY, command, "", cmd, tty, nil)
+	p := m.register(projectID, model.ProcPTY, command, "", cmd, tty, origin(o).set)
 	go m.pump(p, tty)
 	go m.wait(p, tty)
 	return p.snapshot(), nil

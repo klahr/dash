@@ -762,7 +762,8 @@ function connectEvents(m) {
       checkForUpdate(); // a reconnect often means Dash restarted, maybe updated
       loadChat().catch(() => {});
     }
-    loadProjects().catch(fail);
+    // Dash restarted (a deploy of Dash itself does): its runners kept their processes.
+    loadProjects().then(() => loadProcs()).catch(fail);
     loadPreviews(m).catch(() => {});
   };
   ws.onclose = async () => {
@@ -825,6 +826,7 @@ async function refreshMachines() {
   state.machines = await api("GET", "/api/machines");
   for (const m of state.machines) if (m.ok && !sockets.has(m.name)) connectEvents(m);
   await loadProjects();
+  loadProcs().catch(() => {}); // a runner back online lists its processes again
   if ($("#runners-sheet").open) await renderRunners();
   else await loadRunners();
 }
@@ -5891,7 +5893,7 @@ let opening = false;
 function ensureShell() {
   if (state.view !== "run" || !state.project || opening) return;
   if (attached && state.procs.some((p) => p.id === attached)) return;
-  const pty = state.procs.filter((p) => p.kind === "pty" && p.running && p.dir === state.project.path)
+  const pty = state.procs.filter((p) => p.kind === "pty" && p.running && inMain(p))
     .reduce((a, b) => (!a || b.started_at > a.started_at ? b : a), null);
   if (pty) return attach(pty);
   opening = true;
@@ -5957,12 +5959,15 @@ const techFor = (spec) => {
   return hit ? { icon: hit[1], label: hit[2] } : {};
 };
 const quickPlainIcons = new Map($$(".quick-btn").map((b) => [b, b.querySelector("svg")]));
+// A process running in the project's own checkout, not a task's worktree. Dash marks it
+// (main); on a hub its dir is the runner's clone, never the hub's path. Processes from
+// before Dash marked them go by their dir.
+const inMain = (x) => x.main || (!x.preset && x.dir === state.project?.path);
 function quickProc(spec) {
-  const p = state.project;
   const cmd = quickCmd(spec);
   if (!cmd) return null;
-  const kind = spec.split(":")[0];
-  return state.procs.filter((x) => x.kind === kind && x.command === cmd && x.dir === p.path)
+  const [kind, preset] = spec.split(":");
+  return state.procs.filter((x) => x.kind === kind && inMain(x) && (x.preset ? x.preset === preset : x.command === cmd))
     .reduce((a, b) => (!a || b.started_at > a.started_at ? b : a), null);
 }
 

@@ -161,10 +161,28 @@ func (d *Dispatcher) Report(id string, body []byte) error {
 	for _, ts := range rep.Tasks {
 		d.apply(r, ts)
 	}
+	for _, pid := range rep.Procs {
+		d.procsChanged(r, pid)
+	}
 	if d.Kick != nil {
 		d.Kick() // a slot may have come free, or the usage limit lifted
 	}
 	return nil
+}
+
+// procsChanged tells the dashboards that the processes of project pid on
+// runner r changed, so they list them again (the hub lists them from its
+// runners, see api's listProcessesOnRunners). Only for a project of r's org
+// linked to r.
+func (d *Dispatcher) procsChanged(r tunnel.Runner, pid string) {
+	if d.Pub == nil {
+		return
+	}
+	p, err := d.Store.GetProject(pid)
+	if err != nil || p.OrgID != r.OrgID() || !slices.Contains(p.Runners, r.ID) {
+		return
+	}
+	d.Pub.Publish(model.Event{Type: model.EvProcUpdated, ProjectID: p.ID, Time: time.Now()})
 }
 
 // hubStatus is the hub's status for a task the runner reports in s: queued
