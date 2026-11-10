@@ -47,3 +47,5 @@ Most important first within each section.
 - [ ] Turn on GitHub security for the repo: secret scanning with push protection, Dependabot
       alerts and security updates, and private vulnerability reporting (the README links to advisories).
 - [ ] Protect `main`: require the CI and CLA checks to pass before merging.
+- [ ] Do a clean install from the docs alone, on a fresh VPS with Caddy and with Docker
+      (`docs/deploy.md`), and fix every step that trips you up.
