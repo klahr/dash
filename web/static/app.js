@@ -5701,8 +5701,18 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   // waiting: ids of the permission requests the current turn waits on an answer to.
   const c = { history: [], current: null, ws: null, prefix: "", waiting: new Set() };
   const input = form.q;
+  // While a reply streams, the send button stops it instead.
   const sendBtn = form.querySelector("button:not([type=button])");
-  const finish = () => { c.current = null; c.waiting.clear(); sendBtn.disabled = false; onState(); };
+  const sendLook = { html: sendBtn.innerHTML, label: sendBtn.getAttribute("aria-label") };
+  const stopLook = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/></svg>`;
+  const busyButton = (busy) => {
+    sendBtn.disabled = false;
+    sendBtn.classList.toggle("stop", busy);
+    sendBtn.innerHTML = busy ? stopLook : sendLook.html;
+    sendBtn.setAttribute("aria-label", busy ? "Stop the reply" : sendLook.label);
+    sendBtn.title = busy ? "Stop" : "";
+  };
+  const finish = () => { c.current = null; c.waiting.clear(); busyButton(false); onState(); };
   // smooth glides there when a new message arrives and the end is within a screen.
   const toEnd = (smooth = false) => {
     if (!log.offsetParent) return;
@@ -5815,8 +5825,26 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
     const m = { role: "user", content: q, at: new Date().toISOString(), ...(attachments.length ? { attachments } : {}) };
     c.history.push(m);
     log.append(entering(user(m)));
-    sendBtn.disabled = true;
     turn(target());
+  }
+
+  // stop ends the reply streaming now. What it said so far stays (the server
+  // saves it too); a reply with nothing in it yet takes its question back out.
+  function stop() {
+    const cur = c.current;
+    if (!cur) return;
+    if (c.ws?.readyState === 1) c.ws.send(JSON.stringify({ type: "cancel" }));
+    cur.el.classList.remove("pending");
+    for (const st of cur.el.querySelectorAll(".perm-actions")) st.replaceChildren(h("span", { class: "perm-status" }, "Stopped: denied"));
+    for (const t of cur.tools.values()) toolSettled(t);
+    cur.el.append(h("div", { class: "msg-usage" }, "Stopped"));
+    if (cur.content) {
+      cur.el.append(entering(actions(cur.content)));
+      c.history.push({ role: "assistant", content: cur.content, at: cur.at });
+    } else {
+      c.history.pop(); // keep history alternating
+    }
+    finish();
   }
 
   // turn asks for an answer to the last question in history, replacing
@@ -5828,6 +5856,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
     c.current ? c.current.el.replaceWith(el) : log.append(el);
     toEnd(true);
     c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), target: { prefix, ...fields }, at: new Date().toISOString() };
+    busyButton(true);
     onState();
     const ws = socket(prefix);
     ws.fields = fields;
@@ -5847,7 +5876,8 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   input.addEventListener("input", autoGrow);
   form.addEventListener("submit", attempt(async (e) => {
     e.preventDefault();
-    if (c.current) return;
+    // Only a press of the button stops a reply: Enter in the text field doesn't.
+    if (c.current) return e.submitter === sendBtn ? stop() : undefined;
     await att.settled();
     const q = input.value.trim(), files = att.items();
     if ((!q && !files.length) || c.current) return;
@@ -5870,11 +5900,10 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   function resumeLast() {
     if (c.current || c.history.at(-1)?.role !== "user") return;
     empty.hidden = true;
-    sendBtn.disabled = true;
     turn(target());
   }
 
-  return { reset, resumeLast, input, toEnd, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
+  return { reset, resumeLast, stop, input, toEnd, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
 }
 
 // A collapsible tool call: its input, and its output once filled in. Until

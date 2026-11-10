@@ -232,6 +232,56 @@ func TestGeneralChatFailedTurn(t *testing.T) {
 	waitFor(t, "the question to be dropped", func() bool { return len(raw(s).Chat(ownerCaller(t, s).Org, ownerCaller(t, s).User)) == 2 })
 }
 
+// partialChat says "so far" and then waits for its turn to end.
+type partialChat struct{}
+
+func (partialChat) Stream(ctx context.Context, _ string, _ []agent.ChatMessage, emit func(agent.ChatDelta)) error {
+	emit(agent.ChatDelta{Kind: "text", Text: "so far"})
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// Stopping a reply keeps what it said so far, instead of leaving the question
+// to be asked again.
+func TestGeneralChatStopKeepsPartialReply(t *testing.T) {
+	s, _, _ := boardServer(t)
+	s.Chat = partialChat{}
+	conn := chatSocket(t, s)
+	if err := conn.WriteJSON(map[string]any{"type": "send", "messages": []agent.ChatMessage{{Role: "user", Content: "q"}}}); err != nil {
+		t.Fatal(err)
+	}
+	var d agent.ChatDelta
+	if err := conn.ReadJSON(&d); err != nil || d.Kind != "text" {
+		t.Fatalf("got %+v, %v", d, err)
+	}
+	if err := conn.WriteJSON(map[string]any{"type": "cancel"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the partial reply to be saved", func() bool {
+		got := raw(s).Chat(ownerCaller(t, s).Org, ownerCaller(t, s).User)
+		return len(got) == 2 && got[1].Role == "assistant" && got[1].Content == "so far"
+	})
+}
+
+// Stopping a reply before it said anything takes the question back out.
+func TestGeneralChatStopBeforeReply(t *testing.T) {
+	s, _, _ := boardServer(t)
+	s.Chat = stubChat{}
+	prev := []agent.ChatMessage{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}
+	if err := raw(s).SetChat(ownerCaller(t, s).Org, ownerCaller(t, s).User, prev); err != nil {
+		t.Fatal(err)
+	}
+	conn := chatSocket(t, s)
+	if err := conn.WriteJSON(map[string]any{"type": "send", "messages": append(prev, agent.ChatMessage{Role: "user", Content: "x"})}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the busy turn", func() bool { return s.generalBusy(ownerCaller(t, s)) })
+	if err := conn.WriteJSON(map[string]any{"type": "cancel"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the question to be dropped", func() bool { return len(raw(s).Chat(ownerCaller(t, s).Org, ownerCaller(t, s).User)) == 2 })
+}
+
 // usageChat answers "hi" and reports what the answer took.
 type usageChat struct{}
 

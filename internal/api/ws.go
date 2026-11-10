@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -30,7 +31,7 @@ import (
 // chatWS streams Claude responses. Protocol (JSON text frames):
 //
 //	client → {"type":"send","project":"<id>","todo":"<id>","messages":[{"role":"user","content":"…"}, …]}
-//	client → {"type":"cancel"}
+//	client → {"type":"cancel"} stops the reply streaming, keeping what it said so far
 //	client → {"type":"permission","id":"<id>","decision":"allow"|"deny"}
 //	server → {"kind":"thinking"|"text"|"done"|"error","text":"…"}
 //	server → {"kind":"cwd","text":"<dir>"} where the turn runs
@@ -82,6 +83,12 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelAll := context.WithCancel(r.Context())
 	defer cancelAll()
 	var cancelTurn context.CancelFunc = func() {}
+	// stopTurn marks the running turn stopped by the user (a "cancel"), which
+	// keeps what it said so far, before cancelTurn cuts it short.
+	stopTurn := func() {}
+	// turnDone closes when the last turn has finished saving.
+	turnDone := make(chan struct{})
+	close(turnDone)
 	approvals := &chatApprovals{send: send, timeout: chatApprovalTimeout}
 	relay := &chatRelay{} // the turn running on the caller's runner, if any
 
@@ -111,9 +118,18 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
+		if msg.Type == "cancel" {
+			stopTurn()
+		}
 		cancelTurn()
 		if msg.Type != "send" {
 			continue
+		}
+		// Let a stopped turn save what it said before this one saves the
+		// conversation (which already has it).
+		select {
+		case <-turnDone:
+		case <-time.After(5 * time.Second):
 		}
 		if err := sv.writable(); err != nil {
 			// The chat runs Claude, which can change the projects.
@@ -335,7 +351,12 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				slog.Error("save chat", "err", err)
 			}
 		}
+		var stopped atomic.Bool
+		stopTurn = func() { stopped.Store(true) }
+		done := make(chan struct{})
+		turnDone = done
 		go func(ctx context.Context, history []agent.ChatMessage) {
+			defer close(done)
 			defer endReview()
 			if general && !forHub {
 				s.generalTurn(sv.c, 1)
@@ -346,6 +367,9 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			saved := false
 			started := time.Now() // places the reply right after its question in a task's timeline
 			err := chatter.Stream(ctx, dir, prompt, func(d agent.ChatDelta) {
+				if ctx.Err() != nil {
+					return // cut short: the client has moved on
+				}
 				if d.Kind == "text" {
 					reply.WriteString(d.Text)
 				}
@@ -362,6 +386,23 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				}
 				send(d)
 			})
+			if stopped.Load() && !saved {
+				// Stopped by the user: keep what it said so far, as the client
+				// does, or (with nothing said) take the question back out.
+				var turn []agent.ChatMessage
+				switch {
+				case reply.Len() > 0:
+					turn = append(history[:len(history):len(history)], agent.ChatMessage{Role: "assistant", Content: reply.String(), At: &started, Usage: usage})
+				case general && len(history) > 0:
+					turn = history[:len(history)-1]
+				}
+				if turn != nil {
+					if err := save(turn); err != nil {
+						slog.Error("save chat", "err", err)
+					}
+				}
+				return
+			}
 			if err != nil && ctx.Err() == nil {
 				slog.Warn("chat", "err", err)
 				send(agent.ChatDelta{Kind: "error", Text: err.Error()})
