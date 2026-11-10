@@ -247,7 +247,11 @@ func TestBrowserChatTabs(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Remove(hold) })
-	b.clickTextUntil("#chat-tabs .chat-pane-tab-btn", "This project", `document.querySelector('#chat-tabs [aria-selected="true"] .chat-tab-name')?.textContent === "This project"`)
+	// App's own chat was last picked as lib's "app" tab, so This project already
+	// looks selected here: wait for the click itself, or a missed one leaves
+	// that tab picked, and it follows us to web below (where it'd be on screen,
+	// so never unread).
+	b.clickTextUntil("#chat-tabs .chat-pane-tab-btn", "This project", `JSON.parse(localStorage.getItem("dash.chatPane"))?.tab === "project"`)
 	panel := `#chat-pane .chat-panel[data-chat]:not([hidden])`
 	b.do("ask app's chat", chromedp.SendKeys(chromedp.CSS(panel+` textarea`), "Hi\r"))
 	b.waitJS("the reply streaming", `document.querySelector("`+panel+`")?.textContent.includes("Hello from the runner")`)
