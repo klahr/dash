@@ -120,6 +120,7 @@ func (s *Store) upsertIssueLocked(in model.Issue) (model.Issue, model.UpsertResu
 			s.data.Issues = map[string]*model.Issue{}
 		}
 		s.data.Issues[in.ID] = &in
+		s.issueIndexLocked()[issueKey(in.ProjectID, in.Fingerprint)] = in.ID
 		return in, model.UpsertNew, nil
 	}
 	if old.Status == model.IssueDismissed {
@@ -157,12 +158,51 @@ func (s *Store) upsertIssueLocked(in model.Issue) (model.Issue, model.UpsertResu
 }
 
 func (s *Store) findIssueLocked(projectID, fingerprint string) *model.Issue {
-	for _, is := range s.data.Issues {
-		if is.ProjectID == projectID && is.Fingerprint == fingerprint {
-			return is
-		}
+	id, ok := s.issueIndexLocked()[issueKey(projectID, fingerprint)]
+	if !ok {
+		return nil
+	}
+	if is, ok := s.data.Issues[id]; ok && is.ProjectID == projectID && is.Fingerprint == fingerprint {
+		return is
 	}
 	return nil
+}
+
+// issueKey is an issue's key in snapshot.issueIDs.
+func issueKey(projectID, fingerprint string) string {
+	return projectID + "\x00" + fingerprint
+}
+
+// issueIndexLocked returns the (project, fingerprint) → id index of the
+// issues, building it if memory was (re)loaded since. The caller holds the
+// write lock.
+func (s *Store) issueIndexLocked() map[string]string {
+	if s.data.issueIDs == nil {
+		idx := make(map[string]string, len(s.data.Issues))
+		for id, is := range s.data.Issues {
+			idx[issueKey(is.ProjectID, is.Fingerprint)] = id
+		}
+		s.data.issueIDs = idx
+	}
+	return s.data.issueIDs
+}
+
+// unindexIssueLocked forgets is's (project, fingerprint) key, which it no
+// longer has (deleted, or given another fingerprint). Should an older issue
+// share that key, it takes the key over.
+func (s *Store) unindexIssueLocked(is *model.Issue) {
+	idx := s.issueIndexLocked()
+	k := issueKey(is.ProjectID, is.Fingerprint)
+	if idx[k] != is.ID {
+		return
+	}
+	delete(idx, k)
+	for id, o := range s.data.Issues {
+		if id != is.ID && o.ProjectID == is.ProjectID && o.Fingerprint == is.Fingerprint {
+			idx[k] = id
+			return
+		}
+	}
 }
 
 func (s *Store) GetIssue(id string) (model.Issue, error) {
@@ -225,6 +265,10 @@ func (s *Store) UpdateIssue(id string, fn func(*model.Issue) error) (model.Issue
 	}
 	cp.UpdatedAt = time.Now()
 	s.data.Issues[id] = &cp
+	if cp.Fingerprint != old.Fingerprint {
+		s.unindexIssueLocked(old)
+		s.issueIndexLocked()[issueKey(cp.ProjectID, cp.Fingerprint)] = id
+	}
 	if err := s.writeLocked(func(tx *sql.Tx) error { return putIssue(tx, &cp) }); err != nil {
 		return cp, err
 	}
@@ -290,6 +334,7 @@ func (s *Store) DeleteIssue(id string) (model.Issue, error) {
 		return model.Issue{}, ErrNotFound
 	}
 	delete(s.data.Issues, id)
+	s.unindexIssueLocked(is)
 	if err := s.writeLocked(func(tx *sql.Tx) error { return deleteRow(tx, "issues", id) }); err != nil {
 		return *is, err
 	}

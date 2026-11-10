@@ -69,6 +69,10 @@ type snapshot struct {
 	// Issues are each project's known bugs, vulnerabilities and other
 	// problems, keyed by issue id.
 	Issues map[string]*model.Issue `json:"issues,omitempty"`
+	// issueIDs indexes Issues by issueKey(project id, fingerprint) → issue
+	// id, so an upsert finds the issue it updates without scanning them all.
+	// nil until built (see Store.issueIndexLocked).
+	issueIDs map[string]string
 	// ScanRuns are the recent runs of each project's scans, keyed by run id.
 	ScanRuns map[string]*model.ScanRun `json:"scan_runs,omitempty"`
 	// ScanSettings are the schedule changes and approvals users made, keyed by
@@ -373,6 +377,9 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 	for iid, is := range s.data.Issues {
 		if is.ProjectID == id {
 			delete(s.data.Issues, iid)
+			if s.data.issueIDs != nil {
+				delete(s.data.issueIDs, issueKey(is.ProjectID, is.Fingerprint))
+			}
 		}
 	}
 	for rid, r := range s.data.ScanRuns {

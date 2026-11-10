@@ -72,6 +72,58 @@ func TestUpsertIssueByFingerprint(t *testing.T) {
 	}
 }
 
+// The fingerprint index follows edits, deletes and project deletes.
+func TestIssueFingerprintIndex(t *testing.T) {
+	s, p, _ := issueStore(t)
+	q, err := s.CreateProject(model.Project{Name: "q", Path: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := model.Issue{ProjectID: p.ID, Title: "Leak", Type: model.IssueBug, File: "a.go"}
+	a := mustUpsert(t, s, in, model.UpsertNew)
+	// Same fingerprint in another project is another issue.
+	inQ := in
+	inQ.ProjectID = q.ID
+	mustUpsert(t, s, inQ, model.UpsertNew)
+
+	// Retitled: the old report is new again, the new title finds it.
+	if _, err := s.UpdateIssue(a.ID, func(is *model.Issue) error { is.Title = "Memory leak"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if b := mustUpsert(t, s, model.Issue{ProjectID: p.ID, Title: "memory leak", Type: model.IssueBug, File: "a.go", Line: 3}, model.UpsertUpdated); b.ID != a.ID {
+		t.Fatalf("retitled issue not found: %+v", b)
+	}
+	old := mustUpsert(t, s, in, model.UpsertNew)
+
+	// Deleted: reported again, it is new.
+	if _, err := s.DeleteIssue(old.ID); err != nil {
+		t.Fatal(err)
+	}
+	if c := mustUpsert(t, s, in, model.UpsertNew); c.ID == old.ID {
+		t.Fatal("deleted issue came back with its id")
+	}
+
+	// A batch finds the issues it already has.
+	counts, _, err := s.UpsertIssueBatch(q.ID, "scan", []model.Issue{inQ, {Title: "Other", Type: model.IssueBug}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts.New != 1 {
+		t.Fatalf("batch counts: %+v", counts)
+	}
+
+	// Project deleted: its issues leave the index; the other project's stay.
+	if _, err := s.DeleteProject(q.ID); err != nil {
+		t.Fatal(err)
+	}
+	if s.findIssueLocked(q.ID, inQ.ComputeFingerprint()) != nil {
+		t.Fatal("deleted project's issue still indexed")
+	}
+	if len(s.data.issueIDs) != len(s.data.Issues) {
+		t.Fatalf("index has %d keys for %d issues", len(s.data.issueIDs), len(s.data.Issues))
+	}
+}
+
 func TestUpsertIssueKeepsScanKind(t *testing.T) {
 	s, p, path := issueStore(t)
 	// Filed before issues carried their scan's kind: a later report adds it,
