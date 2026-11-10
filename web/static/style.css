@@ -797,7 +797,6 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-seen { flex: 1; margin: 0; font-size: 13px; }
 .runner-row { flex-wrap: wrap; }
 .runner-name .paused-tag { margin-left: 6px; }
-.runner-actions { display: flex; align-items: center; gap: 6px; }
 .runner-parallel { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
 .runner-parallel input { width: 4.5em; min-height: 36px; padding: 0 8px; }
 /* Runners sheet: a status strip, then one card per runner. */
