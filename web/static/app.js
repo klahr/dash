@@ -7980,7 +7980,7 @@ async function clearPriority(t) {
 // scrolling column so nothing clips it. It is rendered from the task like the
 // card, with its own handlers, and follows the card's live updates. A press
 // on it starts a drag of the card itself.
-const HOVER_DELAY = 300, HOVER_W = 460, HOVER_MARGIN = 12;
+const HOVER_DELAY = 300, HOVER_W = 460, HOVER_MAX_H = 360, HOVER_MARGIN = 12;
 const canHover = matchMedia("(hover: hover) and (pointer: fine)");
 const hoverCard = {
   el: null, card: null, row: null, rect: null, waiting: null, timer: 0, watch: null,
@@ -8009,8 +8009,14 @@ const hoverCard = {
     this.el = h("div", { class: "todo-float", "aria-hidden": "true",
       onpointerleave: (e) => { if (e.pointerType !== "touch") this.close(); },
       onpointerdown: (e) => { if (this.card) pendDrag(this.card, e); },
-      // The wheel scrolls the column underneath, as it would without the copy.
-      onwheel: (e) => { const body = this.card?.closest(".col-body"); this.close(); body?.scrollBy({ top: e.deltaY, left: e.deltaX }); },
+      // A tall copy scrolls itself; at its end (or if it fits) the wheel
+      // scrolls the column underneath, as it would without the copy.
+      onwheel: (e) => {
+        const el = this.el;
+        if (el && !e.deltaX && (e.deltaY < 0 ? el.scrollTop > 0 : el.scrollTop + el.clientHeight < el.scrollHeight - 1)) return;
+        e.preventDefault();
+        const body = this.card?.closest(".col-body"); this.close(); body?.scrollBy({ top: e.deltaY, left: e.deltaX });
+      },
       oncontextmenu: (e) => e.preventDefault(),
     });
     document.body.append(this.el);
@@ -8049,7 +8055,8 @@ const hoverCard = {
     if (left + w > innerWidth - HOVER_MARGIN) left = r.right - w; // rightmost column: grow to the left
     left = Math.max(HOVER_MARGIN, Math.min(left, innerWidth - HOVER_MARGIN - w));
     el.style.width = `${w}px`;
-    el.style.maxHeight = `${innerHeight - 2 * HOVER_MARGIN}px`;
+    // Long texts don't cover the whole board: past a cap the copy scrolls.
+    el.style.maxHeight = `${Math.max(r.height, Math.min(HOVER_MAX_H, innerHeight - 2 * HOVER_MARGIN))}px`;
     el.style.left = `${left}px`;
     el.style.top = `${r.top}px`;
     const hgt = el.offsetHeight;

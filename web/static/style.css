@@ -1159,7 +1159,8 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 @media (hover: hover) { .todo[data-id], .todo-float > .todo { cursor: grab; } }
 
 /* Resting the mouse on a board card (desktop) shows a widened copy of it,
-   fixed over the card and its neighbours, with the whole sub line (app.js: hoverCard). */
+   fixed over the card and its neighbours, with the whole sub line. Its height is
+   capped and a long one scrolls (app.js: hoverCard). */
 .todo-float {
   position: fixed; z-index: 34; overflow-y: auto; overscroll-behavior: contain;
   background: var(--raised); border-radius: var(--r-m);
