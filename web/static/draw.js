@@ -7,7 +7,6 @@
 // pixels per CSS pixel, and flatten() renders at that resolution.
 
 export const COLORS = { red: "#ff3b30", yellow: "#ffd60a", blue: "#0a84ff" };
-export const TOOLS = ["pen", "arrow", "circle", "box", "crop"];
 
 const LINE = 4;            // stroke width, CSS px of the picture
 const HANDLE = 10;         // crop handle hit radius, screen px
