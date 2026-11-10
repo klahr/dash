@@ -91,8 +91,10 @@ func (s *Server) as(c Caller) *service {
 	return &service{s: s, c: c, data: s.Store.ForOrg(c.Org).AsUser(c.User)}
 }
 
-// service returns the service for r's caller, or answers r and returns false.
-func (s *Server) service(w http.ResponseWriter, r *http.Request) (*service, bool) {
+// callerOr returns r's caller, or answers r and returns false: 401 when
+// nobody is signed in, 403 when they are but have no org (a 401 would sign
+// the browser out).
+func (s *Server) callerOr(w http.ResponseWriter, r *http.Request) (Caller, bool) {
 	c, err := s.caller(r)
 	if err != nil {
 		code := http.StatusUnauthorized
@@ -100,6 +102,15 @@ func (s *Server) service(w http.ResponseWriter, r *http.Request) (*service, bool
 			code = http.StatusForbidden
 		}
 		writeJSON(w, code, map[string]string{"error": err.Error()})
+		return c, false
+	}
+	return c, true
+}
+
+// service returns the service for r's caller, or answers r and returns false.
+func (s *Server) service(w http.ResponseWriter, r *http.Request) (*service, bool) {
+	c, ok := s.callerOr(w, r)
+	if !ok {
 		return nil, false
 	}
 	return s.as(c), true

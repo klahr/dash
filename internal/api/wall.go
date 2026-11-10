@@ -654,9 +654,8 @@ func wallLine(s string, max int) string {
 // wallAdmin is r's caller if they are an admin of their org, signed in
 // with a session; otherwise it answers r.
 func (s *Server) wallAdmin(w http.ResponseWriter, r *http.Request) (Caller, bool) {
-	c, err := s.caller(r)
-	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+	c, ok := s.callerOr(w, r)
+	if !ok {
 		return c, false
 	}
 	if c.Machine || !s.orgAdmin(c) {

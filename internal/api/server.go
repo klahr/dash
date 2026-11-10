@@ -186,9 +186,8 @@ func (s *Server) buildMux() *http.ServeMux {
 	// The other computers belong to the whole Dash: only platform admins
 	// see and use them; everyone else sees this computer.
 	mux.HandleFunc("GET /api/machines", func(w http.ResponseWriter, r *http.Request) {
-		c, err := s.caller(r)
-		if err != nil {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+		c, ok := s.callerOr(w, r)
+		if !ok {
 			return
 		}
 		ms := s.Peers.Machines(r.Context())
@@ -464,9 +463,8 @@ func (s *Server) buildMux() *http.ServeMux {
 // eventsWS handles GET /ws/events: the caller receives their org's events
 // (and those about Dash as a whole); another Dash receives all of them.
 func (s *Server) eventsWS(w http.ResponseWriter, r *http.Request) {
-	c, err := s.caller(r)
-	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+	c, ok := s.callerOr(w, r)
+	if !ok {
 		return
 	}
 	s.Hub.ServeWS(w, r, hub.Subscriber{Org: c.Org, All: c.Machine})

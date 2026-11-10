@@ -88,9 +88,8 @@ var errNoRunner = errors.New("no such runner in your organization")
 
 func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 	mux.HandleFunc("GET /api/runners", func(w http.ResponseWriter, r *http.Request) {
-		c, err := s.caller(r)
-		if err != nil {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+		c, ok := s.callerOr(w, r)
+		if !ok {
 			return
 		}
 		out := []runnerView{}
@@ -172,12 +171,12 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 	})
 }
 
-// managedRunner is the runner in r's path if the caller may manage it, or
-// answers r and returns false. Another org's runner is "not found".
-func (s *Server) managedRunner(w http.ResponseWriter, r *http.Request) (Caller, tunnel.Runner, bool) {
-	c, err := s.caller(r)
-	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+// runnerFor is the runner in r's path if allowed lets the caller at it;
+// otherwise it answers r (403 with denied) and returns false. Another org's
+// runner is "not found".
+func (s *Server) runnerFor(w http.ResponseWriter, r *http.Request, allowed func(Caller, tunnel.Runner) bool, denied string) (Caller, tunnel.Runner, bool) {
+	c, ok := s.callerOr(w, r)
+	if !ok {
 		return c, tunnel.Runner{}, false
 	}
 	x, ok := s.orgRunner(c, r.PathValue("id"))
@@ -185,11 +184,17 @@ func (s *Server) managedRunner(w http.ResponseWriter, r *http.Request) (Caller, 
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": errNoRunner.Error()})
 		return c, x, false
 	}
-	if !s.canManageRunner(c, x) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only the runner's owner or an admin of the organization can do that"})
+	if !allowed(c, x) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": denied})
 		return c, x, false
 	}
 	return c, x, true
+}
+
+// managedRunner is the runner in r's path if the caller may manage it, or
+// answers r and returns false.
+func (s *Server) managedRunner(w http.ResponseWriter, r *http.Request) (Caller, tunnel.Runner, bool) {
+	return s.runnerFor(w, r, s.canManageRunner, "only the runner's owner or an admin of the organization can do that")
 }
 
 // linkRunners checks a project's new runner list for c: every runner in

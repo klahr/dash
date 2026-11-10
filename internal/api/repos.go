@@ -346,21 +346,9 @@ func (s *Server) hubAddRepos(w http.ResponseWriter, r *http.Request) {
 // its owner sees and adds the repositories on its computer (the runner
 // checks that too). Another org's runner is "not found".
 func (s *Server) ownedRunner(w http.ResponseWriter, r *http.Request) (Caller, tunnel.Runner, bool) {
-	c, err := s.caller(r)
-	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
-		return c, tunnel.Runner{}, false
-	}
-	x, ok := s.orgRunner(c, r.PathValue("id"))
-	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": errNoRunner.Error()})
-		return c, x, false
-	}
-	if x.Owner == nil || x.Owner.UserID != c.User {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only the runner's owner can see and add the repositories on its computer"})
-		return c, x, false
-	}
-	return c, x, true
+	return s.runnerFor(w, r, func(c Caller, x tunnel.Runner) bool {
+		return x.Owner != nil && x.Owner.UserID == c.User
+	}, "only the runner's owner can see and add the repositories on its computer")
 }
 
 // localProject is a new local-only project: a repository on its runner
