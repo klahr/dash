@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+
+	"github.com/klahr/dash/internal/fsutil"
 )
 
 // State is what a running `dash runner` writes about its connection to the
@@ -24,14 +26,7 @@ func StatePath(dataDir string) string { return filepath.Join(dataDir, "runner-st
 // WriteState saves st at path (best effort: status is a convenience).
 func WriteState(path string, st State) error {
 	b, _ := json.Marshal(st)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsutil.WriteFileAtomic(path, b, 0o600)
 }
 
 // ReadState reads the state file; ok is false when there is none or the

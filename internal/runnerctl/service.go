@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/klahr/dash/internal/fsutil"
 )
 
 // Names of the background service.
@@ -161,13 +163,7 @@ func (s *Service) Install() (InstallResult, error) {
 	}
 	res := InstallResult{File: file}
 	if old, err := os.ReadFile(file); err != nil || !bytes.Equal(old, def) {
-		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
-			return res, err
-		}
-		if err := os.WriteFile(file+".tmp", def, 0o644); err != nil {
-			return res, err
-		}
-		if err := os.Rename(file+".tmp", file); err != nil {
+		if err := fsutil.WriteFileAtomic(file, def, 0o644); err != nil {
 			return res, err
 		}
 		res.Changed = true

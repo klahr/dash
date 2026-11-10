@@ -11,11 +11,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/klahr/dash/internal/fsutil"
 )
 
 // Credentials are what a runner keeps after registering with a hub.
@@ -102,15 +102,8 @@ func LoadCredentials(path string) (Credentials, error) {
 
 // SaveCredentials writes c readable by this user only.
 func SaveCredentials(path string, c Credentials) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
 	b, _ := json.MarshalIndent(c, "", "  ")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsutil.WriteFileAtomic(path, b, 0o600)
 }
 
 // Client keeps a runner's tunnel to its hub open and serves the hub's

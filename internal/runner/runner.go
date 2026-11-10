@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/creack/pty"
 
+	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
@@ -115,9 +117,8 @@ func (m *Manager) write() {
 		out = append(out, s)
 	}
 	b, _ := json.Marshal(out)
-	tmp := m.store + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		_ = os.Rename(tmp, m.store)
+	if err := fsutil.WriteFileAtomic(m.store, b, 0o600); err != nil {
+		slog.Warn("save processes", "err", err)
 	}
 }
 

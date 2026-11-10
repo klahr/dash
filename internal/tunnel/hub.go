@@ -18,7 +18,6 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -29,6 +28,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/klahr/dash/internal/claudecli"
+	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/usage"
@@ -233,14 +233,7 @@ func (h *Hub) saveLocked() {
 		return
 	}
 	b, _ := json.MarshalIndent(map[string]any{"runners": h.runners, "codes": h.codes}, "", "  ")
-	tmp := h.path + ".tmp"
-	if err := os.MkdirAll(filepath.Dir(h.path), 0o700); err == nil {
-		if err = os.WriteFile(tmp, b, 0o600); err == nil {
-			err = os.Rename(tmp, h.path)
-		}
-		if err == nil {
-			return
-		}
+	if err := fsutil.WriteFileAtomic(h.path, b, 0o600); err != nil {
 		slog.Warn("save runners", "err", err)
 	}
 }
