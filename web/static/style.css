@@ -275,8 +275,8 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 
 .fab {
   position: fixed; right: 16px; bottom: calc(var(--nav-h) + var(--safe-b) + 16px); z-index: 25;
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 52px; height: 52px; padding: 0;
-  border-radius: 26px; background: var(--accent); color: #0d1424; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 56px; height: 56px; padding: 0;
+  border-radius: 16px; background: var(--accent); color: #0d1424; font-weight: 700; /* M3 FAB: 56dp, 16dp corners */
   box-shadow: 0 8px 24px rgba(5, 10, 20, .5);
 }
 .fab > span { display: none; }
@@ -1181,7 +1181,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .login-art { display: block; width: min(320px, 80vw); height: auto; margin: 0 auto 8px; border-radius: var(--r-l); }
 
 /* ---------- toasts ---------- */
-.toasts { position: fixed; left: 12px; right: calc(16px + var(--fab-space, 64px)); bottom: calc(var(--nav-h) + var(--safe-b) + 16px); z-index: 60; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
+.toasts { position: fixed; left: 12px; right: calc(16px + var(--fab-space, 68px)); bottom: calc(var(--nav-h) + var(--safe-b) + 16px); z-index: 60; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
 .toast {
   --c: var(--accent);
   position: relative; display: flex; align-items: flex-start; gap: 10px; width: min(440px, 100%); max-width: 520px; padding: 10px 6px 12px 12px; overflow: hidden;
@@ -1791,7 +1791,7 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .pv-log .log { max-height: 30vh; min-height: 0; overflow: auto; margin: 0 8px 8px; }
 .pv-fab {
   position: absolute; right: 16px; bottom: calc(16px + var(--safe-b)); z-index: 2;
-  display: flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 26px;
+  display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 16px;
   background: var(--accent); color: #0d1424; box-shadow: 0 8px 24px rgba(5, 10, 20, .5);
 }
 .pv-fab .ico { width: 26px; height: 26px; }
