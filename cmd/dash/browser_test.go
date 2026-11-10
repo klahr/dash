@@ -35,16 +35,22 @@ func TestBrowserMainFlows(t *testing.T) {
 	b.signIn(h)
 
 	// Create a task from the quick sheet, queued right away.
-	b.do("open the new task sheet", chromedp.Click(chromedp.ID("new-todo")))
+	// The sheet's clicks retry until they take: under load a click can land
+	// while the page is still settling and miss. Each has its effect at once
+	// (the sheet opens, the box ticks, the sheet closes as the task is sent),
+	// so a click is only repeated when the one before it didn't land.
+	b.until("open the new task sheet", `document.querySelector("#quick-sheet").open`, chromedp.Click(chromedp.ID("new-todo")))
 	b.do("wait for the sheet", chromedp.WaitVisible(chromedp.CSS(`#quick-sheet[open] #quick-rows .quick-row`)))
 	b.waitJS("the task's row focused", `document.activeElement?.matches("#quick-rows .quick-row")`)
 	b.do("write the task", chromedp.SendKeys(chromedp.CSS(`#quick-rows .quick-row`), "Add a done file"))
 	b.waitJS("the task written", `document.querySelector("#quick-rows .quick-row").value === "Add a done file"`)
-	b.do("tick Queue right away", chromedp.Click(chromedp.CSS(`label.toggle:has(#quick-queue) span`))) // a new profile: unticked
-	b.waitJS("Queue right away ticked", `document.querySelector("#quick-queue").checked`)
+	// A new profile: unticked.
+	b.until("tick Queue right away", `document.querySelector("#quick-queue").checked`, chromedp.Click(chromedp.CSS(`label.toggle:has(#quick-queue) span`)))
 	b.waitJS("the Queue task button", `document.querySelector("#quick-submit-label").textContent === "Queue task"`)
-	b.do("submit the task", chromedp.Click(chromedp.CSS(`#quick-form button[value=add]`)))
-	b.waitJS("the sheet to close", `!document.querySelector("#quick-sheet").open`)
+	// The sheet closes as the task is sent; a failed send opens it again with
+	// the text kept, so a repeated click sends the task again.
+	b.until("submit the task and the sheet to close", `!document.querySelector("#quick-sheet").open`,
+		chromedp.Click(chromedp.CSS(`#quick-form button[value=add]:not(:disabled)`)))
 	first := waitTodo(t, api, pid, "Add a done file")
 
 	// See it run: it lands in Review, and its timeline shows the agent's work.
@@ -218,7 +224,7 @@ func TestBrowserChatTabs(t *testing.T) {
 	}
 
 	// + lists the other projects, filters them, and adds the pick as a tab.
-	b.do("open the + picker", chromedp.Click(chromedp.ID("chat-tab-add")))
+	b.until("open the + picker", `!document.querySelector("#chat-tab-picker").hidden`, chromedp.Click(chromedp.ID("chat-tab-add")))
 	b.waitJS("the picker with lib and web", `!document.querySelector("#chat-tab-picker").hidden && `+options+` === "lib,web" && document.activeElement?.id === "chat-tab-search"`)
 	b.do("search for we", chromedp.SendKeys(chromedp.ID("chat-tab-search"), "we"))
 	b.waitJS("only web", options+` === "web"`)
@@ -226,7 +232,7 @@ func TestBrowserChatTabs(t *testing.T) {
 	b.waitJS("the picker closed", `document.querySelector("#chat-tab-picker").hidden`)
 	tabs("This project,General,web")
 	b.waitJS("web's chat shown", `document.querySelector('#chat-tabs [aria-selected="true"] .chat-tab-name')?.textContent === "web"`)
-	b.do("open the + picker again", chromedp.Click(chromedp.ID("chat-tab-add")))
+	b.until("open the + picker again", `!document.querySelector("#chat-tab-picker").hidden`, chromedp.Click(chromedp.ID("chat-tab-add")))
 	b.waitJS("only lib left", options+` === "lib"`)
 	b.do("close it with Escape", chromedp.SendKeys(chromedp.ID("chat-tab-search"), "\x1b"))
 	b.waitJS("the picker closed", `document.querySelector("#chat-tab-picker").hidden`)
@@ -234,7 +240,7 @@ func TestBrowserChatTabs(t *testing.T) {
 	// Another project has its own tabs.
 	b.clickTextUntil(`#side-project-list .side-project`, "lib", `document.querySelector("#project-name")?.textContent === "lib"`)
 	tabs("This project,General")
-	b.do("open the + picker in lib", chromedp.Click(chromedp.ID("chat-tab-add")))
+	b.until("open the + picker in lib", `!document.querySelector("#chat-tab-picker").hidden`, chromedp.Click(chromedp.ID("chat-tab-add")))
 	b.waitJS("app and web", options+` === "app,web"`)
 	b.clickText("#chat-tab-options button", "app")
 	tabs("This project,General,app")
@@ -278,7 +284,8 @@ func TestBrowserChatTabs(t *testing.T) {
 	// Closing a tab.
 	b.clickTextUntil(`#side-project-list .side-project`, "app", `document.querySelector("#project-name")?.textContent === "app"`)
 	tabs("This project,General,web")
-	b.do("close web's tab", chromedp.Click(chromedp.CSS(`#chat-tabs .chat-tab-close`)))
+	b.until("close web's tab", `![...document.querySelectorAll("#chat-tabs .chat-tab-name")].some((n) => n.textContent === "web")`,
+		chromedp.Click(chromedp.CSS(`#chat-tabs .chat-tab-close`)))
 	tabs("This project,General")
 	b.do("reload", chromedp.Reload())
 	b.waitJS("app selected", `document.querySelector("#project-name")?.textContent === "app"`)
@@ -367,20 +374,26 @@ func (b *browser) do(what string, steps ...chromedp.Action[chromedp.Void]) {
 // try runs a step that a re-render may defeat (its node replaced between
 // the query and the input), for a caller that checks the outcome and tries
 // again.
-func (b *browser) try(step chromedp.Action[chromedp.Void]) {
+func (b *browser) try(what string, step chromedp.Action[chromedp.Void]) error {
 	ctx, cancel := context.WithTimeout(b.ctx, 10*time.Second)
 	defer cancel()
-	if err := chromedp.Do(ctx, step); err != nil {
-		b.t.Logf("retrying after: %v", err)
+	err := chromedp.Do(ctx, step)
+	if err != nil {
+		b.t.Logf("%s: retrying after: %v", what, err)
 	}
+	return err
 }
 
 // until runs step until a JavaScript expression is true: for a click a
 // re-render may swallow, where a second one does no harm.
 func (b *browser) until(what, expr string, step chromedp.Action[chromedp.Void]) {
 	b.t.Helper()
+	start := time.Now()
+	var last error
 	for range 20 {
-		b.try(step)
+		if err := b.try(what, step); err != nil {
+			last = err
+		}
 		for range 20 {
 			if ok, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`!!(`+expr+`)`)); err == nil && ok {
 				return
@@ -388,14 +401,19 @@ func (b *browser) until(what, expr string, step chromedp.Action[chromedp.Void]) 
 			time.Sleep(50 * time.Millisecond)
 		}
 	}
-	b.fail(what, fmt.Errorf("%s stayed false", expr))
+	err := fmt.Errorf("still false after 20 tries in %s: %s", time.Since(start).Round(time.Second), expr)
+	if last != nil {
+		err = fmt.Errorf("%w (the last failed try: %v)", err, last)
+	}
+	b.fail(what, err)
 }
 
 // waitJS waits for a JavaScript expression to be true, across page loads.
 func (b *browser) waitJS(what, expr string) {
 	b.t.Helper()
+	const wait = 60 * time.Second
 	var last error
-	for deadline := time.Now().Add(60 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+	for deadline := time.Now().Add(wait); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
 		ctx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
 		ok, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`!!(`+expr+`)`))
 		cancel()
@@ -404,10 +422,11 @@ func (b *browser) waitJS(what, expr string) {
 		}
 		last = err
 	}
-	if last == nil {
-		last = fmt.Errorf("timed out")
+	err := fmt.Errorf("timed out after %s: %s", wait, expr)
+	if last != nil {
+		err = fmt.Errorf("%w (the last check: %v)", err, last)
 	}
-	b.fail("wait for "+what, last)
+	b.fail("wait for "+what, err)
 }
 
 // waitCard waits for a task's card in a lane of the board.
@@ -448,7 +467,7 @@ func (b *browser) clickTextUntil(sel, text, expr string) {
 	b.t.Helper()
 	for range 20 {
 		b.waitJS(fmt.Sprintf("%q in %s", text, sel), markText(sel, text))
-		b.try(chromedp.Click(chromedp.CSS(`[data-e2e-click]`)))
+		b.try("click "+text, chromedp.Click(chromedp.CSS(`[data-e2e-click]`)))
 		for range 20 {
 			if ok, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`!!(`+expr+`)`)); err == nil && ok {
 				return
