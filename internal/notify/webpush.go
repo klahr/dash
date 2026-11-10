@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -37,15 +38,6 @@ import (
 
 // PushEvents are the events pushed to browsers.
 var PushEvents = []model.NotifyEvent{model.NotifyReview, model.NotifyFailed, model.NotifyPermission, model.NotifyBuild}
-
-func pushes(e model.NotifyEvent) bool {
-	for _, p := range PushEvents {
-		if p == e {
-			return true
-		}
-	}
-	return false
-}
 
 // PushStore is what Web Push reads and writes: the browsers subscribed to
 // a project's org.
@@ -347,7 +339,7 @@ func (n *Notifier) PushEnabled() bool { return n != nil && n.Push != nil && n.VA
 // push sends note to the browsers subscribed to its project's org, if it
 // is one of PushEvents.
 func (n *Notifier) push(ctx context.Context, note Notification) {
-	if !n.PushEnabled() || !pushes(note.Type) {
+	if !n.PushEnabled() || !slices.Contains(PushEvents, note.Type) {
 		return
 	}
 	org, ok := n.Push.ProjectOrg(note.Project.ID)

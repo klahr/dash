@@ -429,13 +429,13 @@ func (s *Store) ToolAllowed(projectID, tool string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	p, ok := s.data.Projects[projectID]
-	return ok && contains(p.AllowedTools, tool)
+	return ok && slices.Contains(p.AllowedTools, tool)
 }
 
 // AllowTool adds tool to the project's always-allowed list.
 func (s *Store) AllowTool(projectID, tool string) error {
 	_, err := s.UpdateProject(projectID, func(p *model.Project) error {
-		if !contains(p.AllowedTools, tool) {
+		if !slices.Contains(p.AllowedTools, tool) {
 			p.AllowedTools = append(append([]string(nil), p.AllowedTools...), tool)
 		}
 		return nil
@@ -506,7 +506,7 @@ func (s *Store) listTodos(keep func(projectID string) bool, statuses ...model.To
 		if !keep(t.ProjectID) {
 			continue
 		}
-		if len(statuses) > 0 && !contains(statuses, t.Status) {
+		if len(statuses) > 0 && !slices.Contains(statuses, t.Status) {
 			continue
 		}
 		out = append(out, *t)
@@ -835,15 +835,6 @@ func clone(t model.Todo) model.Todo {
 		cp.ExternalRef = &r
 	}
 	return cp
-}
-
-func contains[T comparable](xs []T, x T) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
-		}
-	}
-	return false
 }
 
 // BackfillHubCheckouts is a runner's one-time upgrade to finding its hub's

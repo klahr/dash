@@ -198,7 +198,7 @@ func (t *Template) normalize() error {
 		t.Kind = KindCustom
 	}
 	t.Kind = NormalizeKind(t.Kind)
-	if !contains(kinds, t.Kind) {
+	if !slices.Contains(kinds, t.Kind) {
 		return fmt.Errorf("unknown kind %q (%s, %s or %s)", t.Kind,
 			strings.Join(kinds[:len(kinds)-2], ", "), kinds[len(kinds)-2], kinds[len(kinds)-1])
 	}
@@ -213,13 +213,13 @@ func (t *Template) normalize() error {
 		}
 	}
 	t.Scope = strings.ReplaceAll(t.Scope, "-", "_")
-	if !contains(scopes, t.Scope) {
+	if !slices.Contains(scopes, t.Scope) {
 		return fmt.Errorf("unknown scope %q (%s)", t.Scope, strings.Join(scopes, ", "))
 	}
 	if t.Scope == model.ScopePath && t.Path == "" {
 		return fmt.Errorf("scope path needs a path")
 	}
-	if t.Effort != "" && !contains(efforts, t.Effort) {
+	if t.Effort != "" && !slices.Contains(efforts, t.Effort) {
 		return fmt.Errorf("unknown effort %q (%s)", t.Effort, strings.Join(efforts, ", "))
 	}
 	if t.Schedule != "" {
@@ -492,13 +492,4 @@ func splitList(s string) []string {
 		}
 	}
 	return out
-}
-
-func contains(xs []string, x string) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
-		}
-	}
-	return false
 }

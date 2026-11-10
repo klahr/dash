@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -129,22 +130,13 @@ func parseAllowUnsafe(v string) (map[string]bool, error) {
 			for _, c := range exposureChecks {
 				allowed[c] = true
 			}
-		case contains(exposureChecks, name):
+		case slices.Contains(exposureChecks, name):
 			allowed[name] = true
 		default:
 			return nil, fmt.Errorf("unknown check %q: want all or some of %s", name, strings.Join(exposureChecks, ","))
 		}
 	}
 	return allowed, nil
-}
-
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
 
 // checkExposure logs the unsafe settings of an internet-facing Dash and
