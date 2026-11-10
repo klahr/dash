@@ -116,9 +116,6 @@ func (s *Service) Grace() time.Duration { return s.cfg.Grace }
 // SetClock replaces time.Now, for tests.
 func (s *Service) SetClock(now func() time.Time) { s.now = now }
 
-// Enabled reports whether billing is on.
-func (s *Service) Enabled() bool { return s != nil }
-
 // good reports whether a subscription in Stripe status st is paid for.
 func good(st string) bool { return st == "active" || st == "trialing" }
 

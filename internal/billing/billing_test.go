@@ -173,7 +173,7 @@ func TestBillingIsOffByDefault(t *testing.T) {
 		t.Fatal("an empty config turns billing on")
 	}
 	var off *Service
-	if off.Enabled() || off.ReadOnly(1) || off.Hold(1) != "" || off.InviteNotice(1) != nil {
+	if off.ReadOnly(1) || off.Hold(1) != "" || off.InviteNotice(1) != nil {
 		t.Fatal("billing off still holds something back")
 	}
 	off.MembersChanged(1) // no panic
