@@ -43,3 +43,4 @@ Most important first within each section.
 
 - [ ] Replace the hard-coded checkout path `%h/dev/github/klahr/dash` in `deploy/dash.service`
       (WorkingDirectory, ExecStart) with a neutral one, and update `docs/service.md` to match.
+- [ ] Replace the `dashhost.dev` example domain in `docs/deploy.md` with a reserved one (`example.dev`).
