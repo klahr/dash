@@ -282,6 +282,59 @@ func TestGeneralChatStopBeforeReply(t *testing.T) {
 	waitFor(t, "the question to be dropped", func() bool { return len(raw(s).Chat(ownerCaller(t, s).Org, ownerCaller(t, s).User)) == 2 })
 }
 
+// Stopping a task chat's reply keeps what it said so far on the task's
+// timeline, after its question.
+func TestTodoChatStopKeepsPartialReply(t *testing.T) {
+	s, _, p := boardServer(t)
+	s.Chat = partialChat{}
+	td, err := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "t", Prompt: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := chatSocket(t, s)
+	if err := conn.WriteJSON(map[string]any{"type": "send", "project": p.ID, "todo": td.ID, "messages": []agent.ChatMessage{{Role: "user", Content: "q"}}}); err != nil {
+		t.Fatal(err)
+	}
+	var d agent.ChatDelta
+	if err := conn.ReadJSON(&d); err != nil || d.Kind != "text" {
+		t.Fatalf("got %+v, %v", d, err)
+	}
+	if err := conn.WriteJSON(map[string]any{"type": "cancel"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the partial reply to be saved", func() bool {
+		got := raw(s).TodoChat(td.ID)
+		return len(got) == 2 && got[0].Role == "user" && got[0].Content == "q" && got[1].Role == "assistant" && got[1].Content == "so far"
+	})
+}
+
+// Stopping a task chat's reply before it said anything saves nothing.
+func TestTodoChatStopBeforeReply(t *testing.T) {
+	s, _, p := boardServer(t)
+	s.Chat = stubChat{}
+	td, err := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "t", Prompt: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := chatSocket(t, s)
+	if err := conn.WriteJSON(map[string]any{"type": "send", "project": p.ID, "todo": td.ID, "messages": []agent.ChatMessage{{Role: "user", Content: "q"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.WriteJSON(map[string]any{"type": "cancel"}); err != nil {
+		t.Fatal(err)
+	}
+	// The socket handles messages in order and a new turn waits for the
+	// stopped one to finish saving: once this general-chat question is
+	// saved, the task's turn is over.
+	if err := conn.WriteJSON(map[string]any{"type": "send", "messages": []agent.ChatMessage{{Role: "user", Content: "next"}}}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the next turn", func() bool { return len(raw(s).Chat(ownerCaller(t, s).Org, ownerCaller(t, s).User)) == 1 })
+	if got := raw(s).TodoChat(td.ID); len(got) != 0 {
+		t.Fatalf("saved %+v", got)
+	}
+}
+
 // usageChat answers "hi" and reports what the answer took.
 type usageChat struct{}
 
