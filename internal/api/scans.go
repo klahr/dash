@@ -245,8 +245,8 @@ func customScan(projectID string, req scanRequest) (scan.Template, error) {
 	return t, nil
 }
 
-// createScan adds a scan written in Dash. Its name may not be one the
-// project's scans use already.
+// createScan adds a scan written in Dash. Its name may not be another Dash
+// scan's; a built-in or repository scan of that name is replaced by it.
 func (s *Server) createScan(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -267,13 +267,17 @@ func (s *Server) createScan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if other, ok := scan.FindIn(sv.data, p, t.Name); ok && other.Origin != scan.SourceDash {
-		writeErr(w, fmt.Errorf("%w: the %s scan %q has that name; pick another", store.ErrScanExists, other.Origin, t.Name))
-		return
-	}
 	if _, err := sv.data.SaveScanTemplate(t.Record(p.ID), true); err != nil {
 		writeErr(w, err)
 		return
+	}
+	// It replaces a built-in or repository scan of its name: settings made
+	// for that one (a schedule, approvals) don't carry over.
+	if _, has := sv.data.ScanSetting(p.ID, t.Name); has {
+		if _, err := sv.data.SetScanSetting(p.ID, t.Name, func(st *model.ScanSetting) { *st = model.ScanSetting{} }); err != nil {
+			writeErr(w, err)
+			return
+		}
 	}
 	writeJSON(w, http.StatusCreated, sv.scanInfo(p.ID, t))
 }
@@ -326,20 +330,14 @@ func (s *Server) editScan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	ts, shadowed, _ := scan.Templates(sv.data, p)
-	if cur, ok := scan.Pick(ts, t.Name); ok && cur.Origin == scan.SourceDash {
-		t = cur
-		if t.Schedule != old.Schedule {
-			// A new schedule in the editor replaces one changed in the list.
-			if set, has := sv.data.ScanSetting(p.ID, t.Name); has && set.Schedule != "" {
-				if _, err := sv.data.SetScanSetting(p.ID, t.Name, func(st *model.ScanSetting) { st.Schedule = "" }); err != nil {
-					writeErr(w, err)
-					return
-				}
+	if t.Schedule != old.Schedule {
+		// A new schedule in the editor replaces one changed in the list.
+		if set, has := sv.data.ScanSetting(p.ID, t.Name); has && set.Schedule != "" {
+			if _, err := sv.data.SetScanSetting(p.ID, t.Name, func(st *model.ScanSetting) { st.Schedule = "" }); err != nil {
+				writeErr(w, err)
+				return
 			}
 		}
-	} else if sh, ok := scan.Pick(shadowed, t.Name); ok {
-		t = sh
 	}
 	writeJSON(w, http.StatusOK, sv.scanInfo(p.ID, t))
 }
@@ -355,10 +353,10 @@ func (s *Server) deleteScan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	// A shadowed scan's settings belong to the scan that shadows it.
-	cur, ok := scan.FindIn(sv.data, p, rec.Name)
-	keep := ok && cur.Origin != scan.SourceDash
-	if err := sv.data.DeleteScanTemplate(p.ID, rec.Name, keep); err != nil {
+	// A Dash scan is never shadowed, so the settings under its name are its
+	// own: a built-in or repository scan it replaced comes back with none
+	// (its schedule off).
+	if err := sv.data.DeleteScanTemplate(p.ID, rec.Name, false); err != nil {
 		writeErr(w, err)
 		return
 	}

@@ -84,6 +84,8 @@ func TestScanApprovals(t *testing.T) {
 		}
 	}
 	type info struct {
+		Name          string   `json:"name"`
+		Builtin       bool     `json:"builtin"`
 		Tools         []string `json:"tools"`
 		ToolsApproved bool     `json:"tools_approved"`
 		Schedule      struct {
@@ -96,10 +98,23 @@ func TestScanApprovals(t *testing.T) {
 		t.Helper()
 		var list struct{ Scans []info }
 		w := do(t, h, "GET", "/api/projects/"+p.ID+"/scans", "")
-		if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil || len(list.Scans) != 1 {
+		if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil || len(list.Scans) != 4 {
 			t.Fatalf("list: %d %s", w.Code, w.Body)
 		}
-		return list.Scans[0]
+		var deps *info
+		for i, in := range list.Scans {
+			switch {
+			case in.Name == "deps":
+				deps = &list.Scans[i]
+			case !in.Builtin || in.Schedule.Enabled || in.Schedule.Cron == "":
+				// The built-ins are there too, their schedules off.
+				t.Fatalf("built-in next to a repository scan: %+v", in)
+			}
+		}
+		if deps == nil {
+			t.Fatalf("no deps: %s", w.Body)
+		}
+		return *deps
 	}
 	patch := func(body string, code int) {
 		t.Helper()
@@ -171,16 +186,12 @@ func TestDashScanEndpoints(t *testing.T) {
 		return out
 	}
 
-	// Validation, and names of the built-ins are taken.
+	// Validation.
 	for _, bad := range []string{`{"name":"a b","prompt":"x"}`, `{"name":"x","prompt":""}`, `{"name":"x","schedule":"nope","prompt":"x"}`, `{"name":"x","kind":"what","prompt":"x"}`} {
 		if w := do(t, h, "POST", base, bad); w.Code != http.StatusBadRequest {
 			t.Errorf("%s: %d %s", bad, w.Code, w.Body)
 		}
 	}
-	if w := do(t, h, "POST", base, `{"name":"security","prompt":"x"}`); w.Code != http.StatusConflict {
-		t.Fatalf("built-in name: %d %s", w.Code, w.Body)
-	}
-
 	w := do(t, h, "POST", base, `{"name":"mine","title":"Mine","kind":"security","schedule":"0 6 * * *","tools":["Bash(npm audit:*)"],"prompt":"Check {{path}}."}`)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", w.Code, w.Body)
@@ -224,34 +235,57 @@ func TestDashScanEndpoints(t *testing.T) {
 		t.Fatalf("delete unknown: %d", w.Code)
 	}
 
-	// A repository template of the same name shadows it.
+	// A repository template of the same name is replaced by the Dash scan;
+	// it is listed as shadowed.
 	dir := filepath.Join(repo, ".dash", "scans")
 	_ = os.MkdirAll(dir, 0o755)
-	if err := os.WriteFile(filepath.Join(dir, "mine.md"), []byte("Repo."), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "mine.md"), []byte("---\nschedule: 0 9 * * *\n---\nRepo."), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	l = list()
-	if l["mine/repo"].Prompt != "Repo." || l["mine/dash"].ShadowedBy != ".dash/scans/mine.md" || len(l) != 2 {
+	if l["mine/dash"].ShadowedBy != "" || l["mine/repo"].Prompt != "Repo." || l["mine/repo"].ShadowedBy != "dash" || len(l) != 5 {
 		t.Fatalf("shadowed: %+v", l)
 	}
-	// The shadowed one can still be edited; it stays shadowed.
 	w = do(t, h, "PUT", base+"/mine", `{"prompt":"Still mine."}`)
 	if w.Code != http.StatusOK || !json.Valid(w.Body.Bytes()) {
-		t.Fatalf("edit shadowed: %d %s", w.Code, w.Body)
+		t.Fatalf("edit: %d %s", w.Code, w.Body)
 	}
 	var edited info
 	_ = json.Unmarshal(w.Body.Bytes(), &edited)
-	if edited.ShadowedBy == "" || edited.Prompt != "Still mine." {
-		t.Fatalf("edited shadowed: %+v", edited)
+	if edited.ShadowedBy != "" || edited.Source != "dash" || edited.Prompt != "Still mine." {
+		t.Fatalf("edited: %+v", edited)
 	}
-	// Deleting it keeps the repository scan's settings.
+	// Deleting it brings the repository scan back, without the Dash scan's
+	// settings: its schedule is off.
 	if w := do(t, h, "DELETE", base+"/mine", ""); w.Code != http.StatusNoContent {
 		t.Fatalf("delete: %d %s", w.Code, w.Body)
 	}
-	if _, has := raw(s).ScanSetting(p.ID, "mine"); !has {
-		t.Fatal("repository scan's settings deleted")
+	if _, has := raw(s).ScanSetting(p.ID, "mine"); has {
+		t.Fatal("the Dash scan's settings kept")
 	}
-	if l = list(); len(l) != 1 || l["mine/repo"].Name == "" {
+	if l = list(); len(l) != 4 || l["mine/repo"].ShadowedBy != "" || l["mine/repo"].Schedule.Enabled {
 		t.Fatalf("after delete: %+v", l)
+	}
+
+	// A Dash scan replaces a built-in of its name too; the built-in's
+	// settings don't carry over, and deleting it brings the built-in back.
+	if w := do(t, h, "PATCH", base+"/security", `{"enabled":false,"schedule":"15 3 * * *"}`); w.Code != http.StatusOK {
+		t.Fatalf("patch built-in: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, h, "POST", base, `{"name":"security","schedule":"0 5 * * *","prompt":"Our security."}`); w.Code != http.StatusCreated {
+		t.Fatalf("override built-in: %d %s", w.Code, w.Body)
+	}
+	l = list()
+	if sec := l["security/dash"]; sec.Prompt != "Our security." || !sec.Schedule.Enabled || sec.Schedule.Cron != "0 5 * * *" || len(l) != 4 {
+		t.Fatalf("overridden: %+v", l)
+	}
+	if _, ok := l["security/builtin"]; ok {
+		t.Fatalf("built-in listed: %+v", l)
+	}
+	if w := do(t, h, "DELETE", base+"/security", ""); w.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d %s", w.Code, w.Body)
+	}
+	if sec, ok := list()["security/builtin"]; !ok || sec.Schedule.Enabled {
+		t.Fatalf("built-in back: %+v", sec)
 	}
 }

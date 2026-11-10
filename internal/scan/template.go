@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -67,8 +68,8 @@ type Template struct {
 	// or SourceDash. "" (a template parsed on its own) counts as a
 	// repository one.
 	Origin string `json:"source,omitempty"`
-	// ShadowedBy, on a Dash template, is the template of the same name
-	// that is used instead (a repository file, or "built-in").
+	// ShadowedBy, on a repository template, is where the template of the
+	// same name that is used instead comes from: SourceDash.
 	ShadowedBy string `json:"shadowed_by,omitempty"`
 }
 
@@ -251,7 +252,8 @@ func (t Template) Render(path, since string) string {
 //go:embed builtin/*.md
 var builtinFS embed.FS
 
-// Builtins are the templates used for a repository without its own.
+// Builtins are the templates every project has, unless a repository or
+// Dash scan of the same name replaces one.
 func Builtins() []Template {
 	entries, _ := fs.ReadDir(builtinFS, "builtin")
 	var out []Template
@@ -273,8 +275,9 @@ type Problem struct {
 	Error string `json:"error"`
 }
 
-// Load reads the templates in repo/.dash/scans; a repository without any
-// gets the built-ins. Files that don't parse are reported, not fatal.
+// Load is the built-ins and the templates in repo/.dash/scans; a repository
+// template replaces the built-in of the same name. Files that don't parse,
+// and a second file using a name, are reported, not fatal.
 func Load(repo string) ([]Template, []Problem) {
 	dir := filepath.Join(repo, filepath.FromSlash(Dir))
 	entries, err := os.ReadDir(dir)
@@ -283,7 +286,7 @@ func Load(repo string) ([]Template, []Problem) {
 	}
 	var out []Template
 	var problems []Problem
-	seen := map[string]string{}
+	seen := map[string]string{} // name: the repository file that uses it
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
 			continue
@@ -310,8 +313,10 @@ func Load(repo string) ([]Template, []Problem) {
 		t.File, t.Origin = rel, SourceRepo
 		out = append(out, t)
 	}
-	if len(out) == 0 && len(problems) == 0 {
-		return Builtins(), nil
+	for _, b := range Builtins() {
+		if _, replaced := seen[b.Name]; !replaced {
+			out = append(out, b)
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, problems
@@ -392,15 +397,17 @@ func (t Template) Markdown() string {
 	return b.String()
 }
 
-// Templates are a project's scans: the repository's templates (or the
-// built-ins, when it has none) and the ones written in Dash. A Dash
-// template whose name another one uses is shadowed: it is returned in
-// shadowed, with ShadowedBy set, and does not run.
 // TemplateSource has the Dash scans users wrote (a store, or one org's view of it).
 type TemplateSource interface {
 	ScanTemplates(projectID string) []model.ScanTemplate
 }
 
+// Templates are a project's scans: the built-ins, the repository's templates
+// and the ones written in Dash. A name is used by one scan: a Dash scan
+// replaces a repository template or built-in of its name, and a repository
+// template replaces a built-in. A repository template a Dash scan replaces
+// is returned in shadowed, with ShadowedBy SourceDash, and does not run; a
+// replaced built-in is left out.
 func Templates(st TemplateSource, p model.Project) (active, shadowed []Template, problems []Problem) {
 	if p.Path == "" || !localrun.Allowed() {
 		// The hub has no working tree of its projects (their clones are on
@@ -409,20 +416,20 @@ func Templates(st TemplateSource, p model.Project) (active, shadowed []Template,
 	} else {
 		active, problems = Load(p.Path)
 	}
-	n := len(active)
 	for _, m := range st.ScanTemplates(p.ID) {
 		t, err := Custom(m)
 		if err != nil {
-			// Saved before a rule changed: show it, so it can be fixed.
+			// Saved before a rule changed: show it, so it can be fixed. The
+			// scan of its name, if any, keeps running meanwhile.
 			problems = append(problems, Problem{File: "Dash scan " + m.Name, Error: err.Error()})
 			continue
 		}
-		if other, clash := Pick(active[:n], t.Name); clash {
-			t.ShadowedBy = other.File
-			if other.Builtin {
-				t.ShadowedBy = "built-in"
+		if i := slices.IndexFunc(active, func(o Template) bool { return o.Name == t.Name }); i >= 0 {
+			if other := active[i]; other.Origin == SourceRepo {
+				other.ShadowedBy = SourceDash
+				shadowed = append(shadowed, other)
 			}
-			shadowed = append(shadowed, t)
+			active[i] = t
 			continue
 		}
 		active = append(active, t)

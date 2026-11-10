@@ -7,12 +7,19 @@ queue.
 
 Scans come from three places, marked on each card:
 
-- **Built-in:** Dash's security scan, code review and dependency audit, used when the repository
-  has no scan files of its own.
+- **Built-in:** Dash's security scan (`security`), code review (`code-review`) and dependency
+  audit (`dependencies`), in every project.
 - **Repository:** markdown files in `.dash/scans/<name>.md`, versioned and shared with your team.
 - **Dash:** scans you write in the Scans section with "New scan", kept by Dash for this project
   only. "Duplicate" on any scan starts a new Dash scan from its prompt and settings, and
   "Export to repo" on a Dash scan shows its `.dash/scans/<name>.md` file to copy and commit.
+
+A scan's name is its identity, and one scan uses each name: a Dash scan replaces a repository
+or built-in scan of the same name, and a repository file replaces the built-in of the same name.
+So `.dash/scans/security.md` is your team's own security scan instead of Dash's, while the other
+built-ins keep running next to it. A repository file replaced by a Dash scan is shown as
+"Replaced" and does not run until you delete the Dash scan. Two repository files with the same
+name are reported as a problem; the second one is not used.
 
 A repository file:
 
@@ -33,9 +40,9 @@ Look for vulnerabilities in {{path}} …
 - **Dash scans.** The editor has the same settings as a file's frontmatter (title, kind,
   scope, path, model, effort, schedule, tools) and the prompt, and checks them with the same
   rules. Only Dash scans can be edited or deleted in Dash; a scan's name can't change (duplicate
-  it instead). Deleting one keeps its earlier runs and the issues it filed. Repository and
-  built-in scans win a name clash: a Dash scan with the same name is shown as shadowed and does
-  not run until you delete it or the other scan goes away.
+  it instead). Deleting one keeps its earlier runs and the issues it filed. Creating one with
+  the name of a built-in or repository scan replaces that scan; its schedule and approvals don't
+  carry over. Deleting it brings the replaced scan back, with its schedule off.
 - **Scopes.** `since_last_scan` looks only at what changed since this scan's last run, which
   makes it the cheap daily option. If nothing changed, the run is skipped. `since_main` looks at
   the checkout's current branch compared with the default branch. `{{path}}` and `{{since}}` in
@@ -70,9 +77,11 @@ Look for vulnerabilities in {{path}} …
 ## API
 
 - `GET /api/projects/{pid}/scans` lists the scans, each with `source` (`builtin`, `repo` or
-  `dash`); a shadowed Dash scan has `shadowed_by` (the repository file, or `built-in`).
+  `dash`); a repository scan replaced by a Dash scan of the same name is listed too, with
+  `shadowed_by: "dash"`.
 - `POST /api/projects/{pid}/scans` creates a Dash scan: `{"name", "title", "kind", "scope",
-  "path", "model", "effort", "schedule", "tools": [], "prompt"}`. 409 if the name is taken.
+  "path", "model", "effort", "schedule", "tools": [], "prompt"}`. 409 if another Dash scan has
+  the name; a built-in or repository scan of the name is replaced.
 - `PUT /api/projects/{pid}/scans/{name}` replaces a Dash scan's prompt and settings.
 - `DELETE /api/projects/{pid}/scans/{name}` deletes a Dash scan; its runs and issues stay.
 - `PATCH /api/projects/{pid}/scans/{name}` changes any scan's schedule and approvals, and

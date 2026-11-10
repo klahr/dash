@@ -131,16 +131,87 @@ func TestLoad(t *testing.T) {
 	write("dup.md", "---\nname: a\n---\nAgain.")
 	write("notes.txt", "ignored")
 	ts, problems = Load(repo)
-	if len(ts) != 2 || ts[0].Name != "a" || ts[1].Name != "b" || ts[0].Builtin || ts[1].File != ".dash/scans/b.md" {
-		t.Fatalf("templates: %+v", ts)
+	// The built-ins stay next to the repository's templates.
+	if len(ts) != 2+len(Builtins()) || len(problems) != 2 {
+		t.Fatalf("templates: %+v, problems: %+v", ts, problems)
 	}
-	if len(problems) != 2 {
-		t.Fatalf("problems: %+v", problems)
+	if a, _ := Pick(ts, "a"); a.Builtin || a.Origin != SourceRepo || a.Prompt != "A." {
+		t.Fatalf("a: %+v", a)
 	}
-	if _, ok := Find(repo, "security"); ok {
-		t.Fatal("built-ins used although the repo has templates")
+	if b, _ := Pick(ts, "b"); b.File != ".dash/scans/b.md" || b.Origin != SourceRepo {
+		t.Fatalf("b: %+v", b)
+	}
+	if tm, ok := Find(repo, "security"); !ok || !tm.Builtin || tm.Origin != SourceBuiltin {
+		t.Fatalf("security: %+v %v", tm, ok)
+	}
+	for i := 1; i < len(ts); i++ {
+		if ts[i-1].Name >= ts[i].Name {
+			t.Fatalf("not sorted by name: %+v", ts)
+		}
 	}
 	if tm, ok := Find(repo, "b"); !ok || tm.Kind != KindSecurity {
 		t.Fatalf("find: %+v %v", tm, ok)
+	}
+}
+
+func TestLoadUnrelatedRepoScanKeepsBuiltins(t *testing.T) {
+	repo := t.TempDir()
+	dir := filepath.Join(repo, ".dash", "scans")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "licenses.md"), []byte("Check licenses."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ts, problems := Load(repo)
+	if len(problems) != 0 || len(ts) != len(Builtins())+1 {
+		t.Fatalf("templates: %+v, problems: %+v", ts, problems)
+	}
+	for _, b := range Builtins() {
+		if tm, ok := Pick(ts, b.Name); !ok || !tm.Builtin || tm.Origin != SourceBuiltin || tm.File != "" {
+			t.Errorf("built-in %s: %+v %v", b.Name, tm, ok)
+		}
+	}
+	if tm, ok := Pick(ts, "licenses"); !ok || tm.Origin != SourceRepo || tm.Builtin {
+		t.Fatalf("licenses: %+v %v", tm, ok)
+	}
+}
+
+func TestLoadRepoScanOverridesBuiltin(t *testing.T) {
+	repo := t.TempDir()
+	dir := filepath.Join(repo, ".dash", "scans")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, src string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("security.md", "---\nkind: security\n---\nOur own security scan.")
+	write("sec2.md", "---\nname: security\n---\nAnother one.")
+	ts, problems := Load(repo)
+	// Shadowing a built-in is no problem; a second file of the name is.
+	if len(problems) != 1 || problems[0].File != ".dash/scans/security.md" && problems[0].File != ".dash/scans/sec2.md" {
+		t.Fatalf("problems: %+v", problems)
+	}
+	if len(ts) != len(Builtins()) {
+		t.Fatalf("templates: %+v", ts)
+	}
+	n := 0
+	for _, tm := range ts {
+		if tm.Name == "security" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("%d scans called security: %+v", n, ts)
+	}
+	tm, ok := Find(repo, "security")
+	if !ok || tm.Builtin || tm.Origin != SourceRepo || tm.File == "" || tm.Trusted() {
+		t.Fatalf("security: %+v %v", tm, ok)
+	}
+	if tm, _ := Find(repo, "code-review"); !tm.Builtin {
+		t.Fatalf("code-review: %+v", tm)
 	}
 }

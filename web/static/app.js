@@ -8392,9 +8392,9 @@ function renderScans() {
   const p = state.project;
   const intro = $("#scan-intro");
   intro.hidden = !p || !scans.loaded;
-  intro.replaceChildren(scans.builtin
-    ? h("span", {}, "This repository has no scan templates, so Dash's built-in scans run, next to any you write here with New scan. To share scans with your team, add them as markdown files in ", h("code", {}, `${scans.dir}/`), " (Export to repo gives you the file).")
-    : h("span", {}, "Scans from ", h("code", {}, `${scans.dir}/`), " in this repository and the ones you write here. They read the code and add what they find to Issues; extra tools and schedules a repository template asks for apply once you approve them here."));
+  intro.replaceChildren(h("span", {}, "Dash's built-in scans, the ones in ", h("code", {}, `${scans.dir}/`),
+    " in this repository and the ones you write here with New scan. They read the code and add what they find to Issues. A repository scan replaces the built-in of the same name, and one written here replaces either. Extra tools and schedules a repository scan asks for apply once you approve them here; to share a scan with your team, add it to ",
+    h("code", {}, `${scans.dir}/`), " (Export to repo gives you the file)."));
   $("#scan-new").hidden = !p || !scans.loaded;
   showRunnerNeeded($("#scan-runner-note"), scans.loaded ? p : null);
   const probs = $("#scan-problems");
@@ -8458,17 +8458,16 @@ function scanCard(s) {
       hist.filter((r) => r.id !== s.last_run?.id && r.id !== s.last_report?.id).length ? null : h("li", { class: "scan-never" }, "No earlier runs.")) : null);
 }
 
-// shadowedScanCard is a Dash scan that doesn't run because a repository (or
-// built-in) scan has its name.
+// shadowedScanCard is a repository scan that doesn't run because a scan
+// written in Dash has its name.
 function shadowedScanCard(s) {
-  const by = s.shadowed_by === "built-in" ? "the built-in scan" : h("code", {}, s.shadowed_by);
   return h("li", { class: "scan-card shadowed", "data-scan": s.name },
     h("div", { class: "scan-head" },
       h("div", { class: "scan-id" },
-        h("div", { class: "scan-name" }, h("strong", {}, s.title), h("span", { class: `scan-kind kind-${s.kind}` }, SCAN_KINDS[s.kind] || s.kind), h("span", { class: "scan-shadow-tag" }, "Shadowed")),
-        h("div", { class: "scan-meta" }, "written in Dash"),
+        h("div", { class: "scan-name" }, h("strong", {}, s.title), h("span", { class: `scan-kind kind-${s.kind}` }, SCAN_KINDS[s.kind] || s.kind), h("span", { class: "scan-shadow-tag" }, "Replaced")),
+        h("div", { class: "scan-meta" }, scanSource(s)),
         scanActions(s))),
-    h("p", { class: "scan-note" }, "Not used: ", by, ` is also called “${s.name}” and runs instead. Duplicate this scan under another name, or delete it.`));
+    h("p", { class: "scan-note" }, `Not used: the scan written in Dash called “${s.name}” runs instead. Delete that one to use this file again.`));
 }
 
 // scanActions edit, duplicate, export or delete a scan. Only scans written
@@ -8479,7 +8478,7 @@ function scanActions(s) {
   const del = attempt(async () => {
     if (!await ask({
       title: `Delete ${s.title}?`, danger: true, ok: "Delete scan",
-      body: `The scan is removed from Dash. Its earlier runs and the issues it found (source scan:${s.name}) stay.`,
+      body: `The scan is removed from Dash. Its earlier runs and the issues it found (source scan:${s.name}) stay. If a built-in or repository scan is also called “${s.name}”, it is used again, with its schedule off.`,
     })) return;
     await api("DELETE", url);
     scans.history.delete(s.name);
@@ -8490,7 +8489,7 @@ function scanActions(s) {
     const file = `${scans.dir}/${s.name}.md`;
     const v = await ask({
       title: "Export to repo", input: true, value: s.markdown, ok: "Copy",
-      body: `Save this as ${file} and commit it to share the scan with your team. Once it's merged, the repository's file is used and this one is shadowed; delete it here then.`,
+      body: `Save this as ${file} and commit it to share the scan with your team. Once it's merged, delete this one here so the repository's file is used: a scan written in Dash replaces a repository file of the same name.`,
     });
     if (v !== null) await copy(s.markdown, `Copied ${file}`);
   });
@@ -8548,6 +8547,11 @@ $("#scan-form").addEventListener("submit", attempt(async (e) => {
     tools: f.tools.value.split("\n").map((x) => x.trim()).filter(Boolean), prompt: f.prompt.value,
   };
   const pid = state.project.id;
+  const replaces = !scanEditing && scans.list.find((x) => x.name === body.name && x.source !== "dash" && !x.shadowed_by);
+  if (replaces && !await ask({
+    title: `Replace ${replaces.title}?`, ok: "Replace",
+    body: `The ${replaces.builtin ? "built-in scan" : `repository scan ${replaces.file}`} is called “${body.name}” too. The new scan runs instead of it until you delete the new one.`,
+  })) return;
   if (scanEditing) await api("PUT", `/api/projects/${pid}/scans/${encodeURIComponent(scanEditing.name)}`, body);
   else await api("POST", `/api/projects/${pid}/scans`, body);
   const what = scanEditing ? "Saved" : "Created";

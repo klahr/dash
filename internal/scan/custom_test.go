@@ -71,38 +71,54 @@ func TestTemplatesMergeAndShadow(t *testing.T) {
 	save("mine")
 	save("security") // the built-in's name
 
-	// No repository templates: the built-ins next to the Dash ones; a
-	// built-in wins a name clash.
+	// No repository templates: the built-ins next to the Dash ones; a Dash
+	// scan replaces the built-in of its name, which is not listed.
 	active, shadowed, problems := Templates(st, p)
-	if len(active) != len(Builtins())+1 || len(problems) != 0 {
-		t.Fatalf("active: %+v %v", active, problems)
-	}
-	if len(shadowed) != 1 || shadowed[0].Name != "security" || shadowed[0].ShadowedBy != "built-in" {
-		t.Fatalf("shadowed: %+v", shadowed)
+	if len(active) != len(Builtins())+1 || len(problems) != 0 || len(shadowed) != 0 {
+		t.Fatalf("active: %+v shadowed: %+v %v", active, shadowed, problems)
 	}
 	if tm, ok := FindIn(st, p, "mine"); !ok || tm.Origin != SourceDash || tm.Prompt != "Dash mine." {
 		t.Fatalf("find mine: %+v", tm)
 	}
-	if tm, _ := FindIn(st, p, "security"); !tm.Builtin {
+	if tm, _ := FindIn(st, p, "security"); tm.Builtin || tm.Origin != SourceDash || tm.Prompt != "Dash security." {
 		t.Fatalf("security: %+v", tm)
 	}
+	if tm, _ := FindIn(st, p, "code-review"); !tm.Builtin || tm.Origin != SourceBuiltin {
+		t.Fatalf("code-review: %+v", tm)
+	}
 
-	// A repository template wins over a Dash one of the same name.
+	// Repository templates: one replaces a built-in, and Dash scans replace
+	// repository templates and built-ins alike.
 	dir := filepath.Join(repo, ".dash", "scans")
 	_ = os.MkdirAll(dir, 0o755)
-	if err := os.WriteFile(filepath.Join(dir, "mine.md"), []byte("Repo mine."), 0o644); err != nil {
-		t.Fatal(err)
+	for name, src := range map[string]string{"mine.md": "Repo mine.", "security.md": "Repo security.", "dependencies.md": "Repo deps."} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	active, shadowed, _ = Templates(st, p)
-	// The built-ins are gone; "security" from Dash now runs.
-	if len(active) != 2 || active[0].Name != "mine" || active[0].Origin != SourceRepo || active[1].Name != "security" || active[1].Origin != SourceDash {
-		t.Fatalf("active: %+v", active)
+	active, shadowed, problems = Templates(st, p)
+	if len(active) != len(Builtins())+1 || len(problems) != 0 {
+		t.Fatalf("active: %+v %v", active, problems)
 	}
-	if len(shadowed) != 1 || shadowed[0].Name != "mine" || shadowed[0].ShadowedBy != ".dash/scans/mine.md" {
+	want := map[string]string{"mine": SourceDash, "security": SourceDash, "dependencies": SourceRepo, "code-review": SourceBuiltin}
+	for i, tm := range active {
+		if want[tm.Name] != tm.Origin {
+			t.Errorf("%s: origin %q, want %q", tm.Name, tm.Origin, want[tm.Name])
+		}
+		if i > 0 && active[i-1].Name >= tm.Name {
+			t.Errorf("not sorted: %+v", active)
+		}
+	}
+	if tm, _ := FindIn(st, p, "dependencies"); tm.Prompt != "Repo deps." || tm.File != ".dash/scans/dependencies.md" {
+		t.Fatalf("dependencies: %+v", tm)
+	}
+	if tm, _ := FindIn(st, p, "security"); tm.Prompt != "Dash security." {
+		t.Fatalf("security: %+v", tm)
+	}
+	// The repository files the Dash scans replace are listed as shadowed.
+	if len(shadowed) != 2 || shadowed[0].Name != "mine" || shadowed[1].Name != "security" ||
+		shadowed[0].ShadowedBy != SourceDash || shadowed[1].Origin != SourceRepo || shadowed[1].File != ".dash/scans/security.md" {
 		t.Fatalf("shadowed: %+v", shadowed)
-	}
-	if tm, _ := FindIn(st, p, "mine"); tm.Prompt != "Repo mine." {
-		t.Fatalf("find mine: %+v", tm)
 	}
 }
 

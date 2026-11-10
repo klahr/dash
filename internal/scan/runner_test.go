@@ -336,8 +336,8 @@ func TestRunNoOverlap(t *testing.T) {
 
 func TestRunUnknownScan(t *testing.T) {
 	fx := newFixture(t, "a", "Go.")
-	if _, err := fx.runner.Start(fx.p.ID, "security", "manual"); !errors.Is(err, ErrNoScan) {
-		t.Fatalf("built-in in a repo with templates: %v", err)
+	if _, err := fx.runner.Start(fx.p.ID, "nope", "manual"); !errors.Is(err, ErrNoScan) {
+		t.Fatalf("unknown scan: %v", err)
 	}
 }
 
