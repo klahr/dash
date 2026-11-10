@@ -191,14 +191,12 @@ func TestBrowserChecklist(t *testing.T) {
 	})
 
 	// Tick one.
-	b.waitJS("the first item", markText("#cl-body .cl-item", "First thing"))
-	b.do("tick it", chromedp.Click(chromedp.CSS(`[data-e2e-click] .cl-check input`)))
+	b.clickIn("#cl-body .cl-item", "First thing", ".cl-check input")
 	onOrigin("the tick on origin", func(s string) bool { return strings.Contains(s, "- [x] First thing") })
 	b.waitJS("the tick saved", `!document.querySelector("#cl-body .cl-item.pending") && document.querySelector("#cl-body .cl-item.done")?.textContent.includes("First thing")`)
 
 	// Move one to a draft.
-	b.waitJS("the second item", markText("#cl-body .cl-item", "Second thing"))
-	b.do("move it to a draft", chromedp.Click(chromedp.CSS(`[data-e2e-click] .cl-move button`)))
+	b.clickIn("#cl-body .cl-item", "Second thing", ".cl-move button")
 	b.waitJS("the item gone", `![...document.querySelectorAll("#cl-body .cl-item")].some((e) => e.textContent.includes("Second thing"))`)
 	b.waitJS("the toast", `[...document.querySelectorAll("#toasts .toast")].some((e) => e.textContent.includes("Moved to draft"))`)
 	onOrigin("the item gone from origin", func(s string) bool { return !strings.Contains(s, "Second thing") && strings.Contains(s, "Third thing") })
@@ -739,6 +737,22 @@ func (b *browser) clickTextUntil(sel, text, expr string) {
 		}
 	}
 	b.fail("click "+text, fmt.Errorf("%s stayed false", expr))
+}
+
+// clickIn clicks inner inside the first element matching sel whose text has
+// text, for a list a re-render may replace (the checklist, read again when
+// the runner reports a commit) and a click that mustn't be repeated: it
+// clicks again only when the marked node went before the click found it.
+func (b *browser) clickIn(sel, text, inner string) {
+	b.t.Helper()
+	var err error
+	for range 20 {
+		b.waitJS(fmt.Sprintf("%q in %s", text, sel), markText(sel, text))
+		if err = b.try("click "+inner+" in "+text, 3*time.Second, chromedp.Click(chromedp.CSS(`[data-e2e-click] `+inner))); err == nil {
+			return
+		}
+	}
+	b.fail("click "+inner+" in "+text, err)
 }
 
 // markText marks the first element matching sel whose text has text with
