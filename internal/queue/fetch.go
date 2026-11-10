@@ -29,7 +29,7 @@ type RemoteStatus struct {
 	RetryAt time.Time `json:"retry_at,omitzero"`
 	Fetched time.Time `json:"fetched,omitzero"` // last successful fetch
 	// Stuck is why the project's checkout was left behind origin instead of
-	// fast-forwarded (uncommitted changes, local commits): see SyncCheckout.
+	// fast-forwarded (uncommitted changes, local commits): see syncCheckout.
 	// "" while it isn't behind, or may still follow.
 	Stuck string `json:"stuck,omitempty"`
 }
@@ -408,7 +408,7 @@ func follows(p model.Project) bool { return p.HubProjectID != "" && p.SyncsRemot
 // OriginMoved is told that origin's branch now points at sha (another
 // runner pushed it; the hub passed the news on). It fetches unless sha is
 // already known to be on origin's branch, so repeated or out-of-order news
-// costs nothing, then brings the checkout up to date (SyncCheckout). News
+// costs nothing, then brings the checkout up to date (syncCheckout). News
 // about any branch but the one tasks land on is ignored.
 func (r *RemoteSync) OriginMoved(ctx context.Context, p model.Project, branch, sha string) error {
 	if !p.SyncsRemote() || branch != p.Base() {
@@ -461,20 +461,11 @@ func (r *RemoteSync) FetchAll(ctx context.Context) {
 	}
 }
 
-// SyncCheckout brings a following project's default branch (and its
+// syncCheckout brings a following project's default branch (and its
 // checkout's files, when it is checked out) up to origin's, as of the last
-// fetch, holding the project's lock. Only a clean, strictly behind branch
-// moves; with uncommitted changes, local commits or a diverged history it
-// stays as it is, and Stuck says why.
-func (r *RemoteSync) SyncCheckout(ctx context.Context, p model.Project) {
-	unlock, err := r.Lock(ctx, p.ID)
-	if err != nil {
-		return
-	}
-	defer unlock()
-	r.syncCheckout(ctx, p)
-}
-
+// fetch. The caller holds the project's lock. Only a clean, strictly behind
+// branch moves; with uncommitted changes, local commits or a diverged
+// history it stays as it is, and Stuck says why.
 func (r *RemoteSync) syncCheckout(ctx context.Context, p model.Project) {
 	if !follows(p) {
 		return
