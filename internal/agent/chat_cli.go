@@ -34,11 +34,9 @@ const (
 // API key. Each turn is a fresh `claude -p` run with the conversation so far
 // in the prompt.
 type ClaudeCodeChat struct {
-	Bin    string // default "claude"
-	Model  string // optional --model
-	System string
-	Dir    string // working directory of the global chat (Stream gets no dir); default os.TempDir()
-	Tools  string // ChatReadOnly (default) or ChatShell
+	Bin   string // default "claude"
+	Dir   string // working directory of the global chat (Stream gets no dir); default os.TempDir()
+	Tools string // ChatReadOnly (default) or ChatShell
 	// AllowedTools run without asking in shell mode (--allowedTools), e.g. "Bash(git status *)".
 	AllowedTools []string
 	// PermissionMode is passed as --permission-mode in shell mode, e.g. "auto".
@@ -90,9 +88,6 @@ func WithProject(ctx context.Context, projectID string) context.Context {
 func (c ClaudeCodeChat) shell() bool { return c.Tools == ChatShell }
 
 func (c ClaudeCodeChat) system(dir string) string {
-	if c.System != "" {
-		return c.System
-	}
 	where := " You run in the user's home directory"
 	if dir != "" {
 		where = " You run in the project's checkout"
@@ -161,9 +156,6 @@ func (c ClaudeCodeChat) args(dir string, servers map[string]any) []string {
 		if c.PermissionMode != "" {
 			args = append(args, "--permission-mode", c.PermissionMode)
 		}
-	}
-	if c.Model != "" {
-		args = append(args, "--model", c.Model)
 	}
 	return args
 }

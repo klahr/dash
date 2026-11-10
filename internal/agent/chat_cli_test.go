@@ -43,7 +43,7 @@ func TestChatArgsReadOnly(t *testing.T) {
 }
 
 func TestChatArgsShell(t *testing.T) {
-	c := ClaudeCodeChat{Tools: ChatShell, Model: "opus", AllowedTools: []string{"Bash(ssh defaultuser@phone *)", "Read"}}
+	c := ClaudeCodeChat{Tools: ChatShell, AllowedTools: []string{"Bash(ssh defaultuser@phone *)", "Read"}}
 	servers := map[string]any{perm.ServerName: perm.ServerConfig("http://127.0.0.1:1", "tok")}
 	cfg := perm.MCPConfig("http://127.0.0.1:1", "tok")
 	args := c.args("/repo", servers)
@@ -67,9 +67,6 @@ func TestChatArgsShell(t *testing.T) {
 	}
 	if !slices.Equal(allowed, c.AllowedTools) {
 		t.Errorf("--allowedTools %q", allowed)
-	}
-	if m, _ := flag(args, "--model"); m != "opus" {
-		t.Errorf("--model %q", m)
 	}
 	sys, _ := flag(args, "--system-prompt")
 	if !strings.Contains(sys, "Bash") || strings.Contains(sys, "cannot edit") || !strings.Contains(sys, "project's checkout") {
