@@ -101,14 +101,17 @@ func TestScriptHandler(t *testing.T) {
 		return w.Body.String()
 	}
 	secure := func(r *http.Request) bool { return r.Header.Get("X-Forwarded-Proto") == "https" }
+	handler := func(publicURL, version string) http.HandlerFunc {
+		return ScriptHandlerFor(func(r *http.Request) (string, error) { return HubURL(r, publicURL, secure(r), true) }, version)
+	}
 
 	// -public-url wins over whatever the request says.
-	h := ScriptHandler("https://dash.example.com/", "v1.2.0", secure, true)
+	h := handler("https://dash.example.com/", "v1.2.0")
 	if s := get(h, "evil.example", map[string]string{"X-Forwarded-Host": "evil2.example"}); !strings.Contains(s, "HUB=https://dash.example.com\n") || !strings.Contains(s, "VERSION=v1.2.0\n") {
 		t.Errorf("public URL not used:\n%s", s)
 	}
 	// Else the origin the request reached, through a trusted proxy.
-	h = ScriptHandler("", "dev", secure, true)
+	h = handler("", "dev")
 	if s := get(h, "127.0.0.1:7788", map[string]string{"X-Forwarded-Host": "dash.example.org", "X-Forwarded-Proto": "https"}); !strings.Contains(s, "HUB=https://dash.example.org\n") {
 		t.Errorf("forwarded host not used:\n%s", s)
 	}
