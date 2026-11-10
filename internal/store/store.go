@@ -487,7 +487,8 @@ func (s *Store) GetTodo(id string) (model.Todo, error) {
 	return *t, nil
 }
 
-// ListTodos returns a project's todos in queue order (priority, then age).
+// ListTodos returns a project's todos in queue order (model.QueueBefore:
+// prioritised ones by priority then age, then unprioritised ones by age).
 // An empty status list means all statuses.
 func (s *Store) ListTodos(projectID string, statuses ...model.TodoStatus) []model.Todo {
 	return s.listTodos(func(p string) bool { return projectID == "" || p == projectID }, statuses...)
@@ -509,12 +510,7 @@ func (s *Store) listTodos(keep func(projectID string) bool, statuses ...model.To
 		}
 		out = append(out, *t)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Priority != out[j].Priority {
-			return out[i].Priority < out[j].Priority
-		}
-		return out[i].CreatedAt.Before(out[j].CreatedAt)
-	})
+	sort.Slice(out, func(i, j int) bool { return model.QueueBefore(out[i], out[j]) })
 	return out
 }
 

@@ -334,7 +334,10 @@ type Todo struct {
 	CreatedBy int64  `json:"created_by,omitempty"`
 	Title     string `json:"title"`
 	Prompt    string `json:"prompt"`
-	Priority  int    `json:"priority"` // lower runs first; ties broken by CreatedAt
+	// Priority orders the queue: prioritised todos run first, lower before
+	// higher, then every unprioritised (nil) one, oldest first. Ties are
+	// broken by CreatedAt. 0 is a real priority, not "unset".
+	Priority *int `json:"priority"`
 	// DependsOn are ids of other todos in the same project that must be
 	// merged before this one starts: its worktree branches from the default
 	// branch then, so it builds on their code. Until then it waits queued.
@@ -416,6 +419,21 @@ type Todo struct {
 
 // OnRunner reports whether a hub sent the todo to a runner.
 func (t Todo) OnRunner() bool { return t.Runner != "" }
+
+// QueueBefore reports whether a runs before b: prioritised todos first, by
+// priority ascending, then oldest first; unprioritised ones after all of
+// them, oldest first.
+func QueueBefore(a, b Todo) bool {
+	switch {
+	case a.Priority != nil && b.Priority == nil:
+		return true
+	case a.Priority == nil && b.Priority != nil:
+		return false
+	case a.Priority != nil && *a.Priority != *b.Priority:
+		return *a.Priority < *b.Priority
+	}
+	return a.CreatedAt.Before(b.CreatedAt)
+}
 
 // Blockers returns the todos among all that t depends on and that aren't
 // merged yet, in t.DependsOn order. Ids not in all (deleted) don't block.

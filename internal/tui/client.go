@@ -179,7 +179,7 @@ func (c *Client) Todos(pid string) (ts []model.Todo, err error) {
 type NewTodo struct {
 	Title    string `json:"title"`
 	Prompt   string `json:"prompt"`
-	Priority int    `json:"priority"`
+	Priority *int   `json:"priority"` // nil: unprioritised
 	Enqueue  bool   `json:"enqueue"`
 }
 

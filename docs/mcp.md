@@ -92,8 +92,8 @@ and enter `https://<machine>.<tailnet>.ts.net:8443/mcp` in claude.ai.
 
 Dash's own chats (the general chat and each project's chat) get a smaller set of task tools,
 `dash_board`: `list_projects`, `list_todos`, `get_todo`, `create_todo` (as a draft),
-`queue_todo` (a draft, when you ask for it to run), `update_todo` (title, prompt, priority or
-dependencies; the prompt only while the task is a draft, queued or failed), `delete_todo` (only
+`queue_todo` (a draft, when you ask for it to run), `update_todo` (title, prompt, priority, or
+`clear_priority` to unset it, or dependencies; the prompt only while the task is a draft, queued or failed), `delete_todo` (only
 draft, queued or failed tasks, when you ask to remove one), `create_release`, `list_issues` and
 `report_issue`. A read-only chat calls them without asking, except `create_release`, which it
 can't use; a shell chat asks for the ones that change something. They act as the user chatting,

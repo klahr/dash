@@ -193,7 +193,7 @@ func (a *App) hints() string {
 	case ovDetail:
 		return "Tab log/diff/tests · j/k ^d/^u gg/G · s queue a approve r rework x cancel z pause t try ! shell · q back"
 	case ovForm:
-		return "i insert · j/k field · +/- priority · :w draft · :wq queue · :q! discard"
+		return "i insert · j/k field · +/- priority · _ clear · :w draft · :wq queue · :q! discard"
 	case ovPicker:
 		return "j/k · Enter select · q close"
 	case ovPerms:
@@ -393,7 +393,10 @@ func (a *App) renderDetail() string {
 		st = styleDim
 	}
 	head := styleBold.Render(title(t)) + "  " + st.Render(string(t.Status))
-	meta := []string{fmt.Sprintf("priority %d", t.Priority)}
+	var meta []string
+	if t.Priority != nil {
+		meta = append(meta, fmt.Sprintf("priority %d", *t.Priority))
+	}
 	if t.Worktree != nil {
 		meta = append(meta, t.Worktree.Branch)
 	}
@@ -665,7 +668,7 @@ func (a *App) renderForm() string {
 		styleBold.Render(head), "",
 		label("Title", 0), a.fTitle.View(), "",
 		label("Prompt", 1), a.fPrompt.View(), "",
-		styleDim.Render(fmt.Sprintf("priority %d (+/-)", a.fPrio)), "",
+		styleDim.Render(formPriority(a.fPrio)), "",
 		styleDim.Render(":w save draft · :wq save & queue · :q! discard"),
 	}, "\n")
 	return styleBox.Width(min(a.w-4, 104)).Render(body)
@@ -724,7 +727,7 @@ var helpText = styleBox.Render(strings.Join([]string{
 	styleAccent.Render("Global") + "        gt/gT next/prev tab · p projects · : command · ? help · ctrl+l reload · q/ZZ/:q quit",
 	styleAccent.Render("Motion") + "        h j k l · w/b next/prev column · gg G · {count}j · ctrl+d/u/f/b",
 	styleAccent.Render("Task") + "          Enter open · o new · e edit · s queue · x cancel · z pause · a approve · r rework",
-	"              dd delete · +/- (K/J) priority · t try in worktree · ! shell in worktree",
+	"              dd delete · +/- (K/J) priority · _ clear priority · t try in worktree · ! shell in worktree",
 	styleAccent.Render("More") + "          / search · n/N next/prev match · :noh clear · T rerun tests · Y duplicate · E open in editor · :copy [path|prompt]",
 	"              u revert a merged task · gx copy its pull request link · :cleanup remove stale worktrees",
 	"              :ci build status · :fix ask Claude to fix the failing build · Tab completes : commands",
@@ -736,3 +739,11 @@ var helpText = styleBox.Render(strings.Join([]string{
 	styleAccent.Render("Commands") + "      :project <name> · :newproject <name> [path] · :addclone <path> [name] · :task <prompt> · :new [prompt]",
 	"              :run <cmd> · :push · :pause / :resume the queue · :perms · :board :chat :procs · :clear",
 }, "\n"))
+
+// formPriority is the task form's priority line.
+func formPriority(p *int) string {
+	if p == nil {
+		return "no priority (+/- to set)"
+	}
+	return fmt.Sprintf("priority %d (+/- · _ clears)", *p)
+}

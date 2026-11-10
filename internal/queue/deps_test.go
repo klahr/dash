@@ -34,7 +34,7 @@ func TestDependentWaitsUntilDependencyIsMerged(t *testing.T) {
 	}}
 	h := newHarness(t, exe, model.Project{Name: "p"})
 
-	base, err := h.st.CreateTodo(model.Todo{ProjectID: h.proj.ID, Title: "base", Prompt: "do base", Priority: 5})
+	base, err := h.st.CreateTodo(model.Todo{ProjectID: h.proj.ID, Title: "base", Prompt: "do base", Priority: new(5)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,14 +44,14 @@ func TestDependentWaitsUntilDependencyIsMerged(t *testing.T) {
 	h.engine.Kick()
 	h.waitFor(base.ID, model.StatusReview)
 
-	next, err := h.st.CreateTodo(model.Todo{ProjectID: h.proj.ID, Title: "next", Prompt: "do next", DependsOn: []string{base.ID}})
+	next, err := h.st.CreateTodo(model.Todo{ProjectID: h.proj.ID, Title: "next", Prompt: "do next", Priority: new(0), DependsOn: []string{base.ID}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.st.SetStatus(next.ID, model.StatusQueued, ""); err != nil {
 		t.Fatal(err)
 	}
-	other, err := h.st.CreateTodo(model.Todo{ProjectID: h.proj.ID, Title: "other", Prompt: "do other", Priority: 10})
+	other, err := h.st.CreateTodo(model.Todo{ProjectID: h.proj.ID, Title: "other", Prompt: "do other", Priority: new(10)})
 	if err != nil {
 		t.Fatal(err)
 	}

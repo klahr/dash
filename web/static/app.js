@@ -643,7 +643,7 @@ const draft = drafts({
     const f = $("#todo-form");
     f.title.value = d.title ?? "";
     f.prompt.value = d.prompt ?? "";
-    f.priority.value = d.priority ?? 0;
+    f.priority.value = d.priority ?? "";
     todoAttach.reset(d.attachments || []);
     depPicker.reset(editing, d.depends_on ?? editing?.depends_on ?? []); // drafts from before dependencies have none
     promptEditor.render();
@@ -666,7 +666,7 @@ function discardDraft() {
   const t = editing;
   const f = $("#todo-form");
   f.reset();
-  if (t) { f.title.value = t.title; f.prompt.value = t.prompt; f.priority.value = t.priority; }
+  if (t) { f.title.value = t.title; f.prompt.value = t.prompt; f.priority.value = t.priority ?? ""; }
   todoAttach.reset(t?.attachments || []);
   depPicker.reset(t, t?.depends_on || []);
   promptEditor.render();
@@ -1882,7 +1882,10 @@ $("#branch-filter").addEventListener("keydown", (e) => {
 $("#branch-sheet").addEventListener("close", () => { branchSheet = null; });
 
 const title = (t) => t.title || t.prompt.split("\n")[0];
-const byPriority = (a, b) => a.priority - b.priority || a.created_at.localeCompare(b.created_at);
+// Queue order: prioritised tasks first, lower before higher, oldest first
+// among equals; then those without a priority (null), oldest first.
+const hasPriority = (t) => t.priority != null;
+const byPriority = (a, b) => (hasPriority(b) - hasPriority(a)) || (a.priority ?? 0) - (b.priority ?? 0) || a.created_at.localeCompare(b.created_at);
 
 const isOld = (t) => t.status === "merged" && Date.now() - new Date(t.finished_at || t.updated_at) > DAY;
 
@@ -2199,7 +2202,7 @@ function todoRow(t, li = -1, ri = -1) {
       t.status === "in_progress" && t.started_at ? h("span", { title: "Running for" }, ago(t.started_at)) : null,
       previewTag(t),
       t.status === "review" && t.finished_at ? h("span", { title: "Waiting for review" }, ago(t.finished_at)) : null,
-      t.priority ? h("span", {}, `P${t.priority}`) : null,
+      hasPriority(t) ? h("span", { class: "prio-tag", title: `Priority ${t.priority} (lower runs first)` }, `P${t.priority}`) : null,
       t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, reviewChip(t), approveChip(t)) : null,
       t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null));
 }
@@ -2371,7 +2374,7 @@ function openTodoForm(t = null, { pick = false } = {}) {
   if (t) {
     f.title.value = t.title;
     f.prompt.value = t.prompt;
-    f.priority.value = t.priority;
+    f.priority.value = t.priority ?? "";
   }
   todoAttach.reset(t?.attachments || []);
   depPicker.reset(t, t?.depends_on || []);
@@ -2524,7 +2527,7 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
   draft.flush(); // if saving fails below, the draft is still there
   const f = $("#todo-form");
   await todoAttach.settled();
-  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), priority: Number(f.priority.value) || 0, attachments: todoAttach.ids(), depends_on: depPicker.ids() };
+  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), priority: formPriority(f.priority.value), attachments: todoAttach.ids(), depends_on: depPicker.ids() };
   if (!body.title && !body.prompt) throw new Error("Add a title or instructions before saving.");
   if (editing) {
     await api("PATCH", `/api/todos/${editing.id}`, body);
@@ -2616,7 +2619,7 @@ function renderDetail() {
   $("#d-meta").replaceChildren(...[
     h("span", { class: `status s-${t.status}` }, STATUS_LABEL[t.status] || t.status),
     t.worktree ? h("span", { class: "branch" }, t.worktree.branch) : null,
-    t.priority ? h("span", {}, `Priority ${t.priority}`) : null,
+    hasPriority(t) ? h("span", {}, `Priority ${t.priority}`) : null,
     depMeta(t),
     t.runs ? h("span", {}, `${t.runs} ${t.runs === 1 ? "run" : "runs"}${t.cost_usd ? ` · ≈$${t.cost_usd.toFixed(2)}` : ""}`) : null,
     t.auto_fixes ? h("span", {}, `Fixed automatically ${t.auto_fixes}×`) : null,
@@ -2712,6 +2715,7 @@ $("#d-more").addEventListener("click", attempt(async () => {
   if (t.status === "merged" && !t.revert && here) choices.push(["undo", "Revert this change", () => revertTodo(t)]);
   if (!["in_progress", "merging"].includes(t.status)) {
     if (t.worktree && here && state.project?.test_command) choices.push(["check", "Run the tests again", () => api("POST", `/api/todos/${t.id}/test`).then(() => toast("Running tests…"))]);
+    if (hasPriority(t)) choices.push(["x", "Clear priority", () => clearPriority(t)]);
     choices.push(["copy", "Duplicate as a new draft", () => api("POST", `/api/todos/${t.id}/duplicate`).then(() => toast("Duplicated as a draft"))]);
     if (t.worktree && !here) choices.push(["copy", `Copy branch name (${t.worktree.branch})`, () => copy(t.worktree.branch, "Branch name copied")]);
     if (t.worktree && here) {
@@ -7828,7 +7832,7 @@ async function endDrag() {
   cleanupDrag();
   try {
     if (target.action.kind === "reorder") {
-      await reorder(t, target.lane, target.index);
+      await reorder(t, target.lane, target.index, true);
     } else if (target.action.kind === "rework") {
       renderBoard();
       const feedback = await ask({ title: "Send back for rework", body: "Claude continues in the same worktree with your notes.", input: true, placeholder: "What should change?", ok: "Send back" });
@@ -7851,14 +7855,63 @@ async function endDrag() {
   }
 }
 
-// Reorder a lane by rewriting priorities 0..n-1 (lower runs first).
-async function reorder(t, laneKey, index) {
-  const lane = laneItems()[laneKey].filter((x) => x.id !== t.id);
-  lane.splice(Math.min(index, lane.length), 0, t);
-  const changes = lane.map((x, i) => [x, i]).filter(([x, i]) => x.priority !== i);
-  for (const [x, i] of changes) state.todos.set(x.id, { ...state.todos.get(x.id), priority: i });
+// Reprioritise t for a drop at index among the lane's other cards. Only t
+// changes: dropped among the prioritised cards it gets a priority between its
+// neighbours, right after the last one that one plus 1, and among the cards
+// without a priority (always ordered by age) it loses its own. Only when there
+// is no free integer between the neighbours are the lane's prioritised cards
+// renumbered 0..n; cards without a priority are never touched. inLane: t
+// was already in this lane, so a drop where it was changes nothing.
+async function reorder(t, laneKey, index, inLane = false) {
+  if (!Number.isFinite(index)) return; // dropped on a lane tab: no position
+  const all = laneItems()[laneKey];
+  if (inLane && all.findIndex((x) => x.id === t.id) === index) return;
+  const prio = all.filter((x) => x.id !== t.id && hasPriority(x));
+  const k = prio.length;
+  let changes; // [task, new priority (null: none)]
+  if (index > k || (k === 0 && index > 0)) {
+    changes = [[t, null]];
+  } else if (index === k) {
+    changes = [[t, k ? prio[k - 1].priority + 1 : 0]];
+  } else {
+    // Between prio[index - 1] and prio[index]; at the top, keep to 0 and up.
+    const hi = prio[index].priority;
+    const lo = index > 0 ? prio[index - 1].priority : Math.min(hi, 0) - 1;
+    if (hi - lo >= 2) {
+      changes = [[t, lo + Math.floor((hi - lo) / 2)]];
+    } else {
+      const order = [...prio];
+      order.splice(index, 0, t);
+      changes = order.map((x, i) => [x, i]);
+    }
+  }
+  changes = changes.filter(([x, p]) => (x.priority ?? null) !== p);
+  if (!changes.length) return;
+  for (const [x, p] of changes) state.todos.set(x.id, { ...state.todos.get(x.id), priority: p });
   renderBoard();
-  await Promise.all(changes.map(([x, i]) => api("PATCH", `/api/todos/${x.id}`, { priority: i })));
+  await Promise.all(changes.map(([x, p]) => api("PATCH", `/api/todos/${x.id}`, { priority: p })));
+}
+
+// The task form's priority field: empty is no priority.
+function formPriority(v) {
+  v = String(v).trim();
+  if (!v) return null;
+  const n = Number(v);
+  if (!Number.isInteger(n)) throw new Error("Priority must be a whole number, or empty for none.");
+  return n;
+}
+
+// One more than the highest priority among t's lane (0 if none): the slot
+// right after the prioritised cards, where a task given a priority goes.
+function nextPriority(t) {
+  const lane = LANES.find((l) => l.statuses.includes(t.status));
+  const ps = (lane ? laneItems()[lane.key] : []).filter((x) => x.id !== t.id && hasPriority(x)).map((x) => x.priority);
+  return ps.length ? Math.max(...ps) + 1 : 0;
+}
+
+async function clearPriority(t) {
+  await api("PATCH", `/api/todos/${t.id}`, { priority: null });
+  toast("Priority cleared");
 }
 
 // ------------------------------------------------------------------ hover card
@@ -8817,8 +8870,11 @@ async function todoKey(t, k) {
       if (!t.pr) throw new Error("This task has no pull request.");
       return window.open(t.pr.url, "_blank", "noopener");
     case "e": return openTodoForm(t);
-    case "+": return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority - 1 });
-    case "-": return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority + 1 });
+    case "+": return api("PATCH", `/api/todos/${t.id}`, { priority: hasPriority(t) ? t.priority - 1 : nextPriority(t) });
+    case "-":
+      if (!hasPriority(t)) throw new Error("This task has no priority to lower.");
+      return api("PATCH", `/api/todos/${t.id}`, { priority: t.priority + 1 });
+    case "_": return hasPriority(t) ? clearPriority(t) : undefined;
     case "t": return previewTodo(t);
     case "!": return openShell({ todo_id: t.id }, t.runner);
     case "dd":

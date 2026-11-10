@@ -115,7 +115,7 @@ type App struct {
 	// new/edit todo form
 	fTitle  textinput.Model
 	fPrompt textarea.Model
-	fPrio   int
+	fPrio   *int   // nil: unprioritised
 	fField  int    // 0 title, 1 prompt
 	fEditID string // "" = new todo
 
@@ -655,12 +655,7 @@ func (a *App) rebuildCols() {
 		}
 	}
 	for _, col := range a.cols {
-		sort.Slice(col, func(i, j int) bool {
-			if col[i].Priority != col[j].Priority {
-				return col[i].Priority < col[j].Priority
-			}
-			return col[i].CreatedAt.Before(col[j].CreatedAt)
-		})
+		sort.Slice(col, func(i, j int) bool { return model.QueueBefore(col[i], col[j]) })
 	}
 	a.row = clamp(a.row, 0, len(a.cols[a.col])-1)
 }
@@ -1195,9 +1190,22 @@ func (a *App) todoAction(s string) tea.Cmd {
 	case "e", "c":
 		return a.openForm(&t)
 	case "+", "K":
-		return a.action("", func() error { return a.c.UpdateTodo(t.ID, map[string]any{"priority": t.Priority - 1}) })
+		p := a.nextPriority() // an unprioritised task goes right after the prioritised ones
+		if t.Priority != nil {
+			p = *t.Priority - 1
+		}
+		return a.action("", func() error { return a.c.UpdateTodo(t.ID, map[string]any{"priority": p}) })
 	case "-", "J":
-		return a.action("", func() error { return a.c.UpdateTodo(t.ID, map[string]any{"priority": t.Priority + 1}) })
+		if t.Priority == nil {
+			a.setFlash("no priority to lower (_ clears one)", false)
+			return nil
+		}
+		return a.action("", func() error { return a.c.UpdateTodo(t.ID, map[string]any{"priority": *t.Priority + 1}) })
+	case "_":
+		if t.Priority == nil {
+			return nil
+		}
+		return a.action("priority cleared", func() error { return a.c.UpdateTodo(t.ID, map[string]any{"priority": nil}) })
 	case "t":
 		return a.startProc(StartProc{Kind: model.ProcWeb, Preset: "run", TodoID: t.ID})
 	case "!":
@@ -1377,11 +1385,15 @@ func (a *App) openForm(t *model.Todo) tea.Cmd {
 	a.overlay = ovForm
 	a.fTitle.Reset()
 	a.fPrompt.Reset()
-	a.fPrio, a.fEditID = 0, ""
+	a.fPrio, a.fEditID = nil, ""
 	if t != nil {
 		a.fTitle.SetValue(t.Title)
 		a.fPrompt.SetValue(t.Prompt)
-		a.fPrio, a.fEditID = t.Priority, t.ID
+		a.fEditID = t.ID
+		if t.Priority != nil {
+			p := *t.Priority
+			a.fPrio = &p
+		}
 	}
 	a.fField = 1
 	if t == nil {
@@ -1399,12 +1411,33 @@ func (a *App) formKey(s string) tea.Cmd {
 		a.fField = 1
 	case "k", "up", "shift+tab":
 		a.fField = 0
-	case "+":
-		a.fPrio--
-	case "-":
-		a.fPrio++
+	case "+", "-":
+		p := 0
+		if a.fPrio != nil {
+			p = *a.fPrio
+			if s == "+" {
+				p--
+			} else {
+				p++
+			}
+		}
+		a.fPrio = &p
+	case "_":
+		a.fPrio = nil
 	}
 	return nil
+}
+
+// nextPriority is one more than the highest priority in the current column
+// (0 when none is prioritised): the slot right after its prioritised tasks.
+func (a *App) nextPriority() int {
+	n := 0
+	for _, t := range a.cols[a.col] {
+		if t.Priority != nil && *t.Priority >= n {
+			n = *t.Priority + 1
+		}
+	}
+	return n
 }
 
 func (a *App) formDirty() bool {

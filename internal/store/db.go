@@ -180,6 +180,9 @@ func importLegacy(db *sql.DB, legacy string) error {
 			}
 		}
 		for _, t := range data.Todos {
+			if t.Priority != nil && *t.Priority == 0 {
+				t.Priority = nil // 0 meant "unset" before priorities were optional (see 0013)
+			}
 			if err := putTodo(tx, t); err != nil {
 				return err
 			}

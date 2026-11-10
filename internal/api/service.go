@@ -207,7 +207,12 @@ func (sv *service) editTodo(id string, u mcptools.TodoUpdate, atts *[]model.Atta
 		set(&t.Attachments, atts)
 		set(&t.Title, u.Title)
 		set(&t.Prompt, u.Prompt)
-		set(&t.Priority, u.Priority)
+		if u.ClearPriority {
+			t.Priority = nil
+		} else if u.Priority != nil {
+			p := *u.Priority
+			t.Priority = &p
+		}
 		set(&t.DependsOn, u.DependsOn) // validated by the store
 		return nil
 	})

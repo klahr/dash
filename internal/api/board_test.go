@@ -299,16 +299,16 @@ func TestBoardMCPUpdateTodo(t *testing.T) {
 		ID        string           `json:"id"`
 		Title     string           `json:"title"`
 		Status    model.TodoStatus `json:"status"`
-		Priority  int              `json:"priority"`
+		Priority  *int             `json:"priority"`
 		DependsOn []string         `json:"depends_on"`
 	}
 	if err := json.Unmarshal([]byte(text), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.ID != c.ID || got.Title != "C" || got.Status != model.StatusDraft || got.Priority != 3 || strings.Join(got.DependsOn, ",") != a.ID+","+b.ID {
+	if got.ID != c.ID || got.Title != "C" || got.Status != model.StatusDraft || got.Priority == nil || *got.Priority != 3 || strings.Join(got.DependsOn, ",") != a.ID+","+b.ID {
 		t.Errorf("update_todo %s", text)
 	}
-	if td, _ := raw(s).GetTodo(c.ID); td.Prompt != "C" || td.Priority != 3 || len(td.DependsOn) != 2 {
+	if td, _ := raw(s).GetTodo(c.ID); td.Prompt != "C" || td.Priority == nil || *td.Priority != 3 || len(td.DependsOn) != 2 {
 		t.Errorf("stored %+v", td)
 	}
 
@@ -324,6 +324,33 @@ func TestBoardMCPUpdateTodo(t *testing.T) {
 	}
 	if td, _ := raw(s).GetTodo(c.ID); len(td.DependsOn) != 0 {
 		t.Errorf("deps not cleared: %v", td.DependsOn)
+	}
+
+	// Leaving priority out keeps it; clear_priority or null unsets it, and
+	// 0 is a real priority.
+	if td, _ := raw(s).GetTodo(c.ID); td.Priority == nil || *td.Priority != 3 {
+		t.Errorf("priority lost by an update without it: %v", td.Priority)
+	}
+	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+c.ID+`","clear_priority":true}`); isErr || !strings.Contains(strings.Join(strings.Fields(text), ""), `"priority":null`) {
+		t.Fatalf("clear_priority: %s", text)
+	}
+	if td, _ := raw(s).GetTodo(c.ID); td.Priority != nil {
+		t.Errorf("priority not cleared: %d", *td.Priority)
+	}
+	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+c.ID+`","priority":0}`); isErr {
+		t.Fatal(text)
+	}
+	if td, _ := raw(s).GetTodo(c.ID); td.Priority == nil || *td.Priority != 0 {
+		t.Errorf("priority 0 not set: %v", td.Priority)
+	}
+	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+c.ID+`","priority":null}`); isErr {
+		t.Fatal(text)
+	}
+	if td, _ := raw(s).GetTodo(c.ID); td.Priority != nil {
+		t.Errorf("priority null did not clear: %d", *td.Priority)
+	}
+	if text, isErr := call(t, h, token, "update_todo", `{"todo":"`+c.ID+`","priority":2,"clear_priority":true}`); !isErr {
+		t.Errorf("priority and clear_priority together accepted: %s", text)
 	}
 
 	// The store's rules: no cycles, no tasks in other projects.

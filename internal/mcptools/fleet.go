@@ -330,6 +330,8 @@ func (c RESTComputer) UpdateTodo(id string, u TodoUpdate) (model.Todo, error) {
 	}
 	if u.Priority != nil {
 		changes["priority"] = *u.Priority
+	} else if u.ClearPriority {
+		changes["priority"] = nil // null unsets it
 	}
 	if u.DependsOn != nil {
 		deps := *u.DependsOn

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -773,7 +774,7 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Title       string   `json:"title"`
 		Prompt      string   `json:"prompt"`
-		Priority    int      `json:"priority"`
+		Priority    *int     `json:"priority"`    // null or absent: unprioritised
 		Enqueue     bool     `json:"enqueue"`     // skip Draft
 		Attachments []string `json:"attachments"` // upload ids
 		DependsOn   []string `json:"depends_on"`  // todo ids that must be merged first
@@ -954,13 +955,33 @@ func (s *Server) getTodo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
+// nullableInt is a JSON field that tells absent (Set false) from null (Set,
+// Value nil) and a number (Set, Value).
+type nullableInt struct {
+	Set   bool
+	Value *int
+}
+
+func (n *nullableInt) UnmarshalJSON(b []byte) error {
+	n.Set, n.Value = true, nil
+	if string(b) == "null" {
+		return nil
+	}
+	var v int
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	n.Value = &v
+	return nil
+}
+
 func (s *Server) updateTodo(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Title       *string   `json:"title"`
-		Prompt      *string   `json:"prompt"`
-		Priority    *int      `json:"priority"`
-		Attachments *[]string `json:"attachments"` // upload ids; replaces the list
-		DependsOn   *[]string `json:"depends_on"`  // todo ids; replaces the list
+		Title       *string     `json:"title"`
+		Prompt      *string     `json:"prompt"`
+		Priority    nullableInt `json:"priority"`    // null unsets it
+		Attachments *[]string   `json:"attachments"` // upload ids; replaces the list
+		DependsOn   *[]string   `json:"depends_on"`  // todo ids; replaces the list
 	}
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -980,7 +1001,8 @@ func (s *Server) updateTodo(w http.ResponseWriter, r *http.Request) {
 		atts = &a
 	}
 	t, err := sv.editTodo(r.PathValue("tid"), mcptools.TodoUpdate{
-		Title: req.Title, Prompt: req.Prompt, Priority: req.Priority, DependsOn: req.DependsOn,
+		Title: req.Title, Prompt: req.Prompt, DependsOn: req.DependsOn,
+		Priority: req.Priority.Value, ClearPriority: req.Priority.Set && req.Priority.Value == nil,
 	}, atts)
 	if err != nil {
 		writeErr(w, err)
