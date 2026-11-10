@@ -1206,6 +1206,9 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .login-art { display: block; width: min(320px, 80vw); height: auto; margin: 0 auto 8px; border-radius: var(--r-l); }
 
 /* ---------- toasts ---------- */
+/* #toasts is a popover="manual" (app.js raiseToasts) so it can sit in the top
+   layer above open sheets; undo the UA popover box first. */
+.toasts { inset: auto; width: auto; height: auto; margin: 0; padding: 0; border: 0; background: none; color: inherit; overflow: visible; }
 .toasts { position: fixed; left: 12px; right: calc(16px + var(--fab-space, 68px)); bottom: calc(var(--nav-h) + var(--safe-b) + 16px); z-index: 60; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
 .toast {
   --c: var(--accent);
@@ -1460,6 +1463,10 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .kb-env .chat-pane:has(.composer textarea:focus) { height: calc(var(--vv-top, 0px) + var(--vv-h, 100dvh) - var(--chat-top) - env(keyboard-inset-height, 0px)); }
   /* Toasts go under the chat's tabs, clear of the composer. */
   html:has(.app.chat-open) .toasts { top: calc(max(var(--vv-top, 0px), var(--top-h)) + 60px); bottom: auto; right: 12px; }
+  /* Over a sheet (moved into it, see raiseToasts): at the top, clear of the
+     sheet's buttons; the FAB and chat are under the backdrop (this beats
+     the chat-open rule above, which still matches by :has). */
+  html .sheet[open] > .toasts { top: calc(var(--vv-top, 0px) + env(safe-area-inset-top, 0px) + 12px); bottom: auto; right: 12px; }
 }
 
 /* ---------- tablet ---------- */
@@ -1591,6 +1598,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .toasts { right: calc(28px + var(--fab-space, 0px)); bottom: 28px; }
   /* The overlaid chat covers the FAB: toasts sit just left of the pane. */
   .app.chat-open .toasts { right: calc(var(--chat-pane-w) + 28px); }
+  .sheet > .toasts { right: 28px; }
 
   .detail { left: auto; bottom: 0; width: min(760px, 58vw); border-left: 1px solid var(--line); box-shadow: -24px 0 48px rgba(3, 6, 12, .45); }
   .scrim { position: fixed; inset: 0; z-index: 35; background: rgba(4, 8, 15, .35); }

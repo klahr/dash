@@ -387,6 +387,42 @@ function toast(msg, opts = {}) {
   box.append(t);
   while (box.children.length > 4) box.firstChild.remove();
   run();
+  raiseToasts();
+}
+
+// Sheets are modal <dialog>s in the top layer, above any z-index, and they make
+// everything outside them inert. So while a modal is open, #toasts moves into
+// the topmost one, and as a popover="manual" it's (re)shown after it so it is
+// drawn above its blurred ::backdrop. Without popover support, toasts stay as before.
+const toastBox = $("#toasts");
+const toastHome = document.createComment("toasts");
+toastBox.before(toastHome);
+const modals = []; // open modal dialogs, oldest first
+function raiseToasts() {
+  if (!toastBox.showPopover) return;
+  for (let i = modals.length - 1; i >= 0; i--) if (!modals[i].isConnected || !modals[i].matches(":modal")) modals.splice(i, 1);
+  const host = modals.at(-1);
+  if (host ? toastBox.parentNode !== host : toastBox.previousSibling !== toastHome) {
+    if (host) host.append(toastBox); else toastHome.after(toastBox); // moving hides the popover
+  }
+  // Re-adding puts it last in the top layer. With no modal open it stays out of
+  // the top layer (a hidden popover still renders, as .toasts sets display).
+  if (toastBox.matches(":popover-open")) toastBox.hidePopover();
+  if (host && toastBox.children.length) toastBox.showPopover();
+}
+if (toastBox.showPopover) {
+  toastBox.popover = "manual";
+  new MutationObserver((records) => {
+    for (const { target: d } of records) {
+      if (d.localName !== "dialog") continue;
+      const i = modals.indexOf(d);
+      if (i >= 0) modals.splice(i, 1);
+      if (d.open && d.matches(":modal")) modals.push(d);
+    }
+    raiseToasts();
+  }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["open"] });
+  // Hide the empty popover once its last toast is gone.
+  new MutationObserver(() => { if (!toastBox.children.length) raiseToasts(); }).observe(toastBox, { childList: true });
 }
 const openTodo = (id) => ({ label: "Open", run: () => openDetail(id) });
 const fail = (e) => toast(e.message || String(e), true);
