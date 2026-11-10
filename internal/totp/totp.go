@@ -52,7 +52,12 @@ func decode(secret string) ([]byte, error) {
 	return enc.DecodeString(strings.ToUpper(strings.TrimRight(strings.ReplaceAll(secret, " ", ""), "=")))
 }
 
-// Code is the code for secret at t.
+// Code is the code for secret at t, as an authenticator app would show it.
+//
+// Production code checks codes with Verify and never needs to make one; Code
+// is exported for tests (here and in internal/auth) that must type a valid
+// code. It lives outside a _test.go file because test files aren't visible
+// to other packages' tests.
 func Code(secret string, t time.Time) (string, error) {
 	key, err := decode(secret)
 	if err != nil {
