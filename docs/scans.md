@@ -7,8 +7,9 @@ queue.
 
 Scans come from three places, marked on each card:
 
-- **Built-in:** Dash's security scan (`security`), code review (`code-review`) and dependency
-  audit (`dependencies`), in every project. The dependency audit reports vulnerable, abandoned
+- **Built-in:** Dash's security scan (`security`), code review (`code-review`), dependency
+  audit (`dependencies`) and test gaps (`test-gaps`: changed code with no test covering it, and
+  tests that can't fail), in every project. The dependency audit reports vulnerable, abandoned
   and far outdated dependencies, and checks licences against the project's own (its LICENSE file
   or manifest, else proprietary): dependencies whose licence clashes with it (GPL or AGPL in an
   MIT or proprietary project, say), with no or an unknown licence, or whose licence changed in an

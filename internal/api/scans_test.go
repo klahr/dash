@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/scan"
 )
 
 func TestScanEndpoints(t *testing.T) {
@@ -31,7 +32,7 @@ func TestScanEndpoints(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil || w.Code != http.StatusOK {
 		t.Fatalf("list: %d %s", w.Code, w.Body)
 	}
-	if !list.Builtin || len(list.Scans) != 3 || list.Scans[0].Schedule.Enabled || list.Scans[0].Schedule.Cron == "" {
+	if !list.Builtin || len(list.Scans) != len(scan.Builtins()) || list.Scans[0].Schedule.Enabled || list.Scans[0].Schedule.Cron == "" {
 		t.Fatalf("list: %+v", list)
 	}
 
@@ -98,7 +99,7 @@ func TestScanApprovals(t *testing.T) {
 		t.Helper()
 		var list struct{ Scans []info }
 		w := do(t, h, "GET", "/api/projects/"+p.ID+"/scans", "")
-		if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil || len(list.Scans) != 4 {
+		if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil || len(list.Scans) != len(scan.Builtins())+1 {
 			t.Fatalf("list: %d %s", w.Code, w.Body)
 		}
 		var deps *info
@@ -201,7 +202,7 @@ func TestDashScanEndpoints(t *testing.T) {
 	}
 	l := list()
 	mine, ok := l["mine/dash"]
-	if !ok || len(l) != 4 || !mine.Schedule.Enabled || !mine.ToolsApproved || mine.Markdown == "" {
+	if !ok || len(l) != len(scan.Builtins())+1 || !mine.Schedule.Enabled || !mine.ToolsApproved || mine.Markdown == "" {
 		t.Fatalf("list: %+v", l)
 	}
 
@@ -243,7 +244,7 @@ func TestDashScanEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 	l = list()
-	if l["mine/dash"].ShadowedBy != "" || l["mine/repo"].Prompt != "Repo." || l["mine/repo"].ShadowedBy != "dash" || len(l) != 5 {
+	if l["mine/dash"].ShadowedBy != "" || l["mine/repo"].Prompt != "Repo." || l["mine/repo"].ShadowedBy != "dash" || len(l) != len(scan.Builtins())+2 {
 		t.Fatalf("shadowed: %+v", l)
 	}
 	w = do(t, h, "PUT", base+"/mine", `{"prompt":"Still mine."}`)
@@ -263,7 +264,7 @@ func TestDashScanEndpoints(t *testing.T) {
 	if _, has := raw(s).ScanSetting(p.ID, "mine"); has {
 		t.Fatal("the Dash scan's settings kept")
 	}
-	if l = list(); len(l) != 4 || l["mine/repo"].ShadowedBy != "" || l["mine/repo"].Schedule.Enabled {
+	if l = list(); len(l) != len(scan.Builtins())+1 || l["mine/repo"].ShadowedBy != "" || l["mine/repo"].Schedule.Enabled {
 		t.Fatalf("after delete: %+v", l)
 	}
 
@@ -276,7 +277,7 @@ func TestDashScanEndpoints(t *testing.T) {
 		t.Fatalf("override built-in: %d %s", w.Code, w.Body)
 	}
 	l = list()
-	if sec := l["security/dash"]; sec.Prompt != "Our security." || !sec.Schedule.Enabled || sec.Schedule.Cron != "0 5 * * *" || len(l) != 4 {
+	if sec := l["security/dash"]; sec.Prompt != "Our security." || !sec.Schedule.Enabled || sec.Schedule.Cron != "0 5 * * *" || len(l) != len(scan.Builtins())+1 {
 		t.Fatalf("overridden: %+v", l)
 	}
 	if _, ok := l["security/builtin"]; ok {

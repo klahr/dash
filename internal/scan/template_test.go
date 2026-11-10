@@ -182,12 +182,13 @@ func TestBuiltins(t *testing.T) {
 			t.Errorf("%s: builtin %v schedule %q", b.Name, b.Builtin, b.Schedule)
 		}
 	}
-	for _, n := range []string{"security", "code-review", "dependencies"} {
+	for _, n := range []string{"security", "code-review", "dependencies", "test-gaps"} {
 		if _, ok := names[n]; !ok {
 			t.Errorf("no built-in %s (have %v)", n, names)
 		}
 	}
-	if names["security"].Kind != KindSecurity || names["dependencies"].Kind != KindDependencies {
+	if names["security"].Kind != KindSecurity || names["dependencies"].Kind != KindDependencies ||
+		names["test-gaps"].Kind != KindTests || names["test-gaps"].Scope != model.ScopeSinceLastScan {
 		t.Errorf("kinds: %+v", names)
 	}
 	// The dependency audit covers vulnerabilities, outdated packages and licences.
