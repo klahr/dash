@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/klahr/dash/internal/model"
 )
@@ -35,6 +36,78 @@ func TestChatSurvivesReopen(t *testing.T) {
 	}
 	if s, _ = Open(path, nil); len(s.Chat(1, 1)) != 0 {
 		t.Fatalf("cleared chat came back: %v", s.Chat(1, 1))
+	}
+}
+
+// A chat client sends the whole conversation each turn: saving it writes
+// only the messages that changed, and the result is still what was set.
+func TestSetChatWritesOnlyWhatChanged(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dash.db")
+	s, err := Open(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	q := model.ChatMessage{Role: "user", Content: "hi", CreatedBy: 7, At: &at}
+	a := model.ChatMessage{Role: "assistant", Content: "hello", Usage: &model.ChatUsage{InputTokens: 3}}
+	if err := s.SetChat(1, 1, []model.ChatMessage{q, a}); err != nil {
+		t.Fatal(err)
+	}
+	// Mark the stored rows: a row rewritten loses its mark.
+	if _, err := s.db.Exec(`UPDATE chat_messages SET data = json_set(data, '$.content', 'kept ' || seq) WHERE kind = 'main'`); err != nil {
+		t.Fatal(err)
+	}
+	reopen := func() []model.ChatMessage {
+		t.Helper()
+		r, err := Open(path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.Chat(1, 1)
+	}
+	contents := func(msgs []model.ChatMessage) []string {
+		var out []string
+		for _, m := range msgs {
+			out = append(out, m.Content)
+		}
+		return out
+	}
+
+	// A new turn: the conversation so far (an equal copy) and two more.
+	at2 := at.Local() // the same instant, as the client sends it back
+	q2, a2 := model.ChatMessage{Role: "user", Content: "more"}, model.ChatMessage{Role: "assistant", Content: "sure"}
+	q1 := q
+	q1.At = &at2
+	if err := s.SetChat(1, 1, []model.ChatMessage{q1, {Role: "assistant", Content: "hello", Usage: &model.ChatUsage{InputTokens: 3}}, q2, a2}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := contents(reopen()), []string{"kept 0", "kept 1", "more", "sure"}; !slices.Equal(got, want) {
+		t.Fatalf("after a turn: %q, want %q", got, want)
+	}
+
+	// An answer that changed and a shorter conversation: the rest goes.
+	a.Content = "hello again"
+	if err := s.SetChat(1, 1, []model.ChatMessage{q, a}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := contents(reopen()), []string{"kept 0", "hello again"}; !slices.Equal(got, want) {
+		t.Fatalf("after editing: %q, want %q", got, want)
+	}
+
+	// Another field differing is a change too.
+	q.CreatedBy = 8
+	if err := s.SetChat(1, 1, []model.ChatMessage{q, a}); err != nil {
+		t.Fatal(err)
+	}
+	if got := reopen(); !reflect.DeepEqual(contents(got), []string{"hi", "hello again"}) || got[0].CreatedBy != 8 {
+		t.Fatalf("after changing the author: %+v", got)
+	}
+
+	if err := s.SetChat(1, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := reopen(); len(got) != 0 {
+		t.Fatalf("cleared chat came back: %v", got)
 	}
 }
 

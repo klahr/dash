@@ -696,6 +696,7 @@ func (s *Store) SetChat(org, user int64, msgs []model.ChatMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	owner := mainChatOwner(org, user)
+	prev := s.data.MainChats[owner]
 	if s.data.MainChats == nil {
 		s.data.MainChats = map[string][]model.ChatMessage{}
 	}
@@ -704,7 +705,7 @@ func (s *Store) SetChat(org, user int64, msgs []model.ChatMessage) error {
 	} else {
 		s.data.MainChats[owner] = append([]model.ChatMessage(nil), msgs...)
 	}
-	return s.writeLocked(func(tx *sql.Tx) error { return setChat(tx, chatMain, owner, org, msgs) })
+	return s.writeLocked(func(tx *sql.Tx) error { return updateChat(tx, chatMain, owner, org, prev, msgs) })
 }
 
 // MainChats are every user's general chats, in no order (for cleanup).
@@ -741,6 +742,7 @@ func (s *Store) SetTodoChat(todoID string, msgs []model.ChatMessage) error {
 		return ErrNotFound
 	}
 	org := s.projectOrgLocked(t.ProjectID)
+	prev := s.data.TodoChats[todoID]
 	if len(msgs) == 0 {
 		delete(s.data.TodoChats, todoID)
 	} else {
@@ -749,7 +751,7 @@ func (s *Store) SetTodoChat(todoID string, msgs []model.ChatMessage) error {
 		}
 		s.data.TodoChats[todoID] = append([]model.ChatMessage(nil), msgs...)
 	}
-	return s.writeLocked(func(tx *sql.Tx) error { return setChat(tx, chatTodo, todoID, org, msgs) })
+	return s.writeLocked(func(tx *sql.Tx) error { return updateChat(tx, chatTodo, todoID, org, prev, msgs) })
 }
 
 // AppendTodoChat adds a message to the conversation about a todo.
@@ -784,6 +786,7 @@ func (s *Store) SetProjectChat(projectID string, msgs []model.ChatMessage) error
 		return ErrNotFound
 	}
 	org := p.OrgID
+	prev := s.data.ProjectChats[projectID]
 	if len(msgs) == 0 {
 		delete(s.data.ProjectChats, projectID)
 	} else {
@@ -792,7 +795,7 @@ func (s *Store) SetProjectChat(projectID string, msgs []model.ChatMessage) error
 		}
 		s.data.ProjectChats[projectID] = append([]model.ChatMessage(nil), msgs...)
 	}
-	return s.writeLocked(func(tx *sql.Tx) error { return setChat(tx, chatProject, projectID, org, msgs) })
+	return s.writeLocked(func(tx *sql.Tx) error { return updateChat(tx, chatProject, projectID, org, prev, msgs) })
 }
 
 // clone copies a todo deeply enough that changing the copy (including the

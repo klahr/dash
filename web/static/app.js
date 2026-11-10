@@ -5789,8 +5789,18 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
       const sc = scroller();
       if (sc.scrollHeight - sc.scrollTop - sc.clientHeight < 120) toEnd();
     };
-    ws.onclose = () => {
+    ws.onclose = (e) => {
       if (ws !== c.ws || !c.current) return;
+      if (e.code === 1009) {
+        // The server refuses a conversation this long (see maxChatFrame).
+        c.ws = null;
+        c.current.el.classList.remove("pending");
+        c.current.el.classList.add("error");
+        c.current.reply.textContent = "This conversation is too long to send. Clear it, or start a new one.";
+        c.history.pop();
+        finish();
+        return;
+      }
       if (resume) {
         c.ws = null;
         c.current.reply.textContent = "Connection lost. Picking up when Dash is back…";

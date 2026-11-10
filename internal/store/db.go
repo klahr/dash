@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -421,6 +422,42 @@ func setChat(tx *sql.Tx, kind, owner string, org int64, msgs []model.ChatMessage
 		}
 	}
 	return nil
+}
+
+// updateChat turns a stored conversation, prev, into msgs, writing only what
+// differs: the messages both start with stay, the rest of prev is deleted and
+// the rest of msgs inserted. A turn that adds a question and its answer to a
+// long conversation writes those two rows, not the whole conversation again.
+func updateChat(tx *sql.Tx, kind, owner string, org int64, prev, msgs []model.ChatMessage) error {
+	n := 0
+	for n < len(prev) && n < len(msgs) && sameChatMessage(prev[n], msgs[n]) {
+		n++
+	}
+	if n < len(prev) {
+		if _, err := tx.Exec("DELETE FROM chat_messages WHERE kind = ? AND owner_id = ? AND seq >= ?", kind, owner, n); err != nil {
+			return err
+		}
+	}
+	for i := n; i < len(msgs); i++ {
+		if err := putChatMessage(tx, kind, owner, org, i, msgs[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sameChatMessage reports whether a and b would be stored the same.
+func sameChatMessage(a, b model.ChatMessage) bool {
+	if a.Role != b.Role || a.Content != b.Content || a.CreatedBy != b.CreatedBy || !slices.Equal(a.Attachments, b.Attachments) {
+		return false
+	}
+	if (a.At == nil) != (b.At == nil) || a.At != nil && !a.At.Equal(*b.At) {
+		return false
+	}
+	if (a.Usage == nil) != (b.Usage == nil) || a.Usage != nil && *a.Usage != *b.Usage {
+		return false
+	}
+	return true
 }
 
 func putChatMessage(tx *sql.Tx, kind, owner string, org int64, seq int, m model.ChatMessage) error {

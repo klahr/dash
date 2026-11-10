@@ -71,6 +71,14 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
+	// The client sends the whole conversation each turn, which is kept in
+	// memory and saved: refuse a longer one (the browser sees close code
+	// 1009). A hub's request has the task's context and changes added.
+	if auth.FromHub(r.Context()) {
+		conn.SetReadLimit(maxChatFrame + maxChatDiff + 1<<20)
+	} else {
+		conn.SetReadLimit(maxChatFrame)
+	}
 
 	var wmu sync.Mutex
 	send := func(d agent.ChatDelta) {
@@ -604,6 +612,10 @@ func withRunnerChanges(branch, diff string, history []agent.ChatMessage) []agent
 	out[0].Content = b.String() + out[0].Content
 	return out
 }
+
+// maxChatFrame caps a chat client's message, the whole conversation with
+// the new question, which caps how long a conversation can grow.
+const maxChatFrame = 8 << 20
 
 // maxChatDiff caps the patch given to the todo chat each turn.
 const maxChatDiff = 200_000
