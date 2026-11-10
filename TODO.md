@@ -25,7 +25,6 @@ Most important first within each section.
 - [ ] Split a large task into several todos (Claude proposes, you confirm).
 - [ ] Run the same task twice and compare the attempts.
 - [ ] Edit a diff in the UI before approving.
-- [ ] Autosave the TUI todo form like the web editor.
 
 ## Running it
 
