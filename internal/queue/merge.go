@@ -75,6 +75,9 @@ type MergeQueue struct {
 	// beforePush, when set (tests), runs just before a shared project's
 	// merge is pushed, e.g. to push to origin first.
 	beforePush func()
+	// dirtyPoll is how often a job waiting for uncommitted changes checks
+	// the files again (default 5 seconds; shortened in tests).
+	dirtyPoll time.Duration
 
 	capacity int
 	pending  atomic.Int64
@@ -679,7 +682,11 @@ func (m *MergeQueue) wait(ctx context.Context, job model.MergeJob, err error) {
 	}
 	go func() {
 		defer m.waiting.Delete(job.TodoID)
-		tick := time.NewTicker(5 * time.Second)
+		poll := m.dirtyPoll
+		if poll <= 0 {
+			poll = 5 * time.Second
+		}
+		tick := time.NewTicker(poll)
 		defer tick.Stop()
 		since := time.Now()
 		for {

@@ -232,8 +232,6 @@ func runnerSide(t *testing.T, hubOrg int64) (s *Server, h http.Handler, remote s
 	if err := s.Git.InitRepo(context.Background(), "remote", remote, "main"); err != nil {
 		t.Fatal(err)
 	}
-	gitops.AllowLocalRemotes = true
-	t.Cleanup(func() { gitops.AllowLocalRemotes = false })
 	return s, s.RunnerRoutes(), remote
 }
 
@@ -242,6 +240,7 @@ func runnerSide(t *testing.T, hubOrg int64) (s *Server, h http.Handler, remote s
 // named after the remote); it refuses
 // anything else, and nobody but the hub reaches these routes.
 func TestRunnerOnlyTakesWorkForLinkedProjects(t *testing.T) {
+	serial(t) // turns gitops.AllowLocalRemotes off for a moment
 	s, h, remote := runnerSide(t, 7)
 	task := func(project, todo string) *httptest.ResponseRecorder {
 		b, _ := json.Marshal(dispatch.Task{HubTodoID: todo, HubProjectID: project, Title: "t", Prompt: "do it"})
@@ -258,12 +257,13 @@ func TestRunnerOnlyTakesWorkForLinkedProjects(t *testing.T) {
 		t.Errorf("link from another org: %d %s", w.Code, w.Body)
 	}
 	gitops.AllowLocalRemotes = false
-	if w := link(7, remote); w.Code != http.StatusBadRequest {
+	w := link(7, remote)
+	gitops.AllowLocalRemotes = true
+	if w.Code != http.StatusBadRequest {
 		t.Errorf("link to a local path: %d %s", w.Code, w.Body)
 	}
-	gitops.AllowLocalRemotes = true
 
-	w := link(7, remote)
+	w = link(7, remote)
 	var linked dispatch.Linked
 	if w.Code != http.StatusCreated || json.Unmarshal(w.Body.Bytes(), &linked) != nil {
 		t.Fatalf("link: %d %s", w.Code, w.Body)

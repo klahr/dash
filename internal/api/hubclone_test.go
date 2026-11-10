@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/klahr/dash/internal/dispatch"
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/peer"
 )
 
@@ -18,6 +19,7 @@ import (
 // which repository and which protocol, instead of git's exit 128; with no
 // -github-protocol it uses ssh, even when the hub's remote is https://.
 func TestHubLinkReportsNoAccess(t *testing.T) {
+	serial(t) // t.Setenv
 	s, h, _ := runnerSide(t, 7)
 	s.Peers = &peer.Hub{Self: "rg-klarre-runner"}
 	ssh := filepath.Join(t.TempDir(), "ssh")
@@ -48,6 +50,7 @@ func TestHubLinkReportsNoAccess(t *testing.T) {
 // branch, pushed with an upstream, whatever init.defaultBranch says here;
 // a project's clone URL is what the runner clones.
 func TestHubLinkSeedsEmptyRemote(t *testing.T) {
+	serial(t) // t.Setenv
 	cfg := filepath.Join(t.TempDir(), "gitconfig")
 	if err := os.WriteFile(cfg, []byte("[init]\n\tdefaultBranch = master\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -85,6 +88,9 @@ func TestHubLinkSeedsEmptyRemote(t *testing.T) {
 
 // A project's clone URL holds no credentials.
 func TestCheckCloneURL(t *testing.T) {
+	serial(t)
+	gitops.AllowLocalRemotes = false // as on a real runner
+	t.Cleanup(func() { gitops.AllowLocalRemotes = true })
 	for _, ok := range []string{"", "git@github-deploy:klahr/dash-infra.git", "https://git.example.com/team/app.git", "ssh://git@git.example.com/team/app.git"} {
 		if _, err := checkCloneURL(ok); err != nil {
 			t.Errorf("checkCloneURL(%q): %v", ok, err)

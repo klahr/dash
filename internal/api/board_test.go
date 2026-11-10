@@ -27,8 +27,30 @@ type events struct {
 
 func (e *events) Publish(ev model.Event) { e.mu.Lock(); e.evs = append(e.evs, ev); e.mu.Unlock() }
 
+// testMode records, per test, whether it runs in parallel ("parallel") or
+// must not because it changes process-wide state ("serial", e.g. t.Setenv).
+var testMode sync.Map // *testing.T → string
+
+// serial keeps t out of the parallel tests; call it before boardServer.
+func serial(t *testing.T) {
+	testMode.Store(t, "serial")
+	t.Cleanup(func() { testMode.Delete(t) })
+}
+
+// parallel runs t in parallel with the other tests that build a server
+// (each has its own store and folders), unless it is serial or already
+// parallel.
+func parallel(t *testing.T) {
+	if _, set := testMode.LoadOrStore(t, "parallel"); set {
+		return
+	}
+	t.Cleanup(func() { testMode.Delete(t) })
+	t.Parallel()
+}
+
 func boardServer(t *testing.T) (*Server, *events, model.Project) {
 	t.Helper()
+	parallel(t)
 	evs := &events{}
 	st, err := store.Open(filepath.Join(t.TempDir(), "dash.db"), evs)
 	if err != nil {

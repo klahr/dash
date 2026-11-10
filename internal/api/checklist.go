@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/klahr/dash/internal/checklist"
@@ -40,9 +41,9 @@ func checklistConflict(err error) error {
 	return err
 }
 
-// afterMoveTask, when set (tests), runs between a move's task and the
-// item's removal.
-var afterMoveTask func()
+// afterMoveTask holds hooks (tests) keyed by project ID: a project's hook
+// runs between a move's task and the item's removal.
+var afterMoveTask sync.Map // project ID → func()
 
 var errStaleVersion = fmt.Errorf("%w: %w", errConflict, checklist.ErrStale)
 
@@ -205,8 +206,8 @@ func (sv *service) moveChecklistItem(ctx context.Context, p model.Project, m mcp
 		return mcptools.ChecklistMoved{}, err
 	}
 	out := mcptools.ChecklistMoved{Task: t}
-	if afterMoveTask != nil {
-		afterMoveTask()
+	if f, ok := afterMoveTask.Load(p.ID); ok {
+		f.(func())()
 	}
 	saved, err := sv.changeChecklist(ctx, p, mcptools.ChecklistChange{
 		Version: &cur.Version,

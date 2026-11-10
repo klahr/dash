@@ -21,13 +21,25 @@ import (
 
 // OWASP's first recommendation (2024): 19 MiB, 2 passes, 1 lane. About
 // 50 ms a guess, and every guess has to hold 19 MiB.
-const (
+var (
 	memoryKiB uint32 = 19 * 1024
 	passes    uint32 = 2
-	lanes     uint8  = 1
-	saltLen          = 16
-	keyLen    uint32 = 32
 )
+
+const (
+	lanes   uint8  = 1
+	saltLen        = 16
+	keyLen  uint32 = 32
+)
+
+// UseWeakParamsForTests makes Hash use the cheapest Argon2id parameters
+// (8 KiB, 1 pass), so test suites that create many accounts don't spend
+// most of their time hashing. Call it only from tests (e.g. TestMain),
+// before any hashing: it is not safe for concurrent use and its hashes are
+// trivially brute-forced.
+func UseWeakParamsForTests() {
+	memoryKiB, passes = 8, 1
+}
 
 // ErrMalformed is returned for a stored value that isn't an Argon2id PHC
 // string this package wrote.

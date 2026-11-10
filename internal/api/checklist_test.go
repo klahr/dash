@@ -263,13 +263,13 @@ func TestChecklistMoveToTask(t *testing.T) {
 // the answer says the item is still there.
 func TestChecklistMoveConflictKeepsTask(t *testing.T) {
 	s, p, h := checklistServer(t, repoTodo)
-	afterMoveTask = func() {
+	afterMoveTask.Store(p.ID, func() {
 		if err := os.WriteFile(filepath.Join(p.Path, "TODO.md"), []byte(repoTodo+"- [ ] Theirs\r\n"), 0o644); err != nil {
 			t.Error(err)
 		}
 		gitIn(t, p.Path, "commit", "-qam", "theirs")
-	}
-	t.Cleanup(func() { afterMoveTask = nil })
+	})
+	t.Cleanup(func() { afterMoveTask.Delete(p.ID) })
 	c := readList(t, h, p)
 	b, _ := json.Marshal(mcptools.ChecklistMove{Ref: items(c)[0].Ref})
 	w := do(t, h, "POST", "/api/projects/"+p.ID+"/checklist/move", string(b))

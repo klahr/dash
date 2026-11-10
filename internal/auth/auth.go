@@ -56,6 +56,11 @@ type Lockout struct {
 	Window time.Duration
 }
 
+// failurePause is how long a failed sign-in attempt (wrong password,
+// two-factor code or token) waits before answering, to blunt online
+// guessing a little more. Tests shorten it.
+var failurePause = 300 * time.Millisecond
+
 // DefaultLockout is the lockout New starts with.
 var DefaultLockout = Lockout{PerIP: maxFailures, Global: globalFailures, Window: failureWindow}
 
@@ -502,7 +507,7 @@ func (a *Auth) attempt(ip, login, password string) (store.User, error) {
 		return store.User{}, err
 	}
 	if !a.verify(u, hash, err == nil, password) {
-		time.Sleep(300 * time.Millisecond) // blunt online guessing a little more
+		time.Sleep(failurePause)
 		return store.User{}, errBadLogin
 	}
 	a.release(f)
@@ -561,7 +566,7 @@ func (a *Auth) ConfirmPassword(r *http.Request, password string) error {
 	}
 	hash, err := a.acc.PasswordHash(id.User.ID)
 	if !a.verify(id.User, hash, err == nil, password) {
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(failurePause)
 		return ErrBadPassword
 	}
 	a.release(f)

@@ -62,6 +62,7 @@ type harness struct {
 
 func newHarness(t *testing.T, exe agent.Executor, p model.Project) *harness {
 	t.Helper()
+	t.Parallel() // each harness has its own store, repo and loops
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
@@ -83,6 +84,7 @@ func newHarness(t *testing.T, exe agent.Executor, p model.Project) *harness {
 	}
 	log := &TodoLog{Pub: nopPub{}, Root: filepath.Join(dir, "logs")}
 	mq := NewMergeQueue(st, g, nopPub{}, log, 16)
+	mq.dirtyPoll = 50 * time.Millisecond
 	mq.WorktreeRoot = filepath.Join(dir, "worktrees")
 	e := NewTodoEngine(&TodoEngine{
 		Store: st, Git: g, Exec: exe, Pub: nopPub{}, Log: log, Merges: mq,

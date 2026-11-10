@@ -2,12 +2,25 @@ package api
 
 import (
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/mcptools"
+	"github.com/klahr/dash/internal/passhash"
 	"github.com/klahr/dash/internal/store"
 )
+
+// TestMain makes password hashing cheap (nearly every test signs someone
+// in, and the real Argon2id parameters were most of this package's run
+// time) and lets runners link to local paths, the tests' remotes. Tests run
+// in parallel (see boardServer), so neither changes per test.
+func TestMain(m *testing.M) {
+	passhash.UseWeakParamsForTests()
+	gitops.AllowLocalRemotes = true
+	os.Exit(m.Run())
+}
 
 // raw is the whole store behind s, for tests that set up or inspect records
 // across orgs.

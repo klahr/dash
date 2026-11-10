@@ -578,7 +578,10 @@ func (g *Git) Advance(ctx context.Context, projectID, repo, branch, old, new str
 
 // Dirty lists which of files have uncommitted changes (or exist untracked) in dir.
 func (g *Git) Dirty(ctx context.Context, projectID, dir string, files []string) ([]string, error) {
-	args := []string{"status", "--porcelain", "-z", "--untracked-files=all", "--"}
+	// --no-optional-locks: this polls folders people work in (see
+	// MergeQueue.wait); refreshing the index would take index.lock and could
+	// make their own git stash or commit fail.
+	args := []string{"--no-optional-locks", "status", "--porcelain", "-z", "--untracked-files=all", "--"}
 	for _, f := range files {
 		args = append(args, ":(top,literal)"+f) // read-tree names files from the repo root
 	}
