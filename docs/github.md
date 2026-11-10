@@ -6,7 +6,7 @@ repo** (with the picked runner's `gh`; the hub runs no `gh` of its own), or by p
 on the runner (`gh repo create --source . --push`), then make a project of it on the hub. In the
 project's settings, choose what approving a task does:
 
-- **Open a pull request** (the default for a GitHub repository, when `gh` is installed): Dash
+- **Open a pull request** (the default for a GitHub repository, when the runner has `gh`): Dash
   pushes the branch and opens a PR, so GitHub's checks run before the work reaches the default
   branch. Failing checks and conflicts go back to Claude. With **Merge pull requests when checks
   pass** (on by default), Dash squash-merges the PR itself once GitHub finds it mergeable and its
@@ -14,13 +14,12 @@ project's settings, choose what approving a task does:
   marked merged when the PR is. If GitHub refuses the merge (a required review, say), the PR stays
   open for you to merge there.
 - **Merge it**: one squashed commit on the default branch, with no GitHub checks first; the only
-  choice for a project without a GitHub remote, or on a Dash without `gh`. With "Push after
-  every merge", Dash pulls from GitHub first, so the push isn't rejected. In a project whose
-  tasks run on [runners](several-computers.md), the runner does this in its clone and always
-  pushes; if someone pushed first it merges again on top of their work.
+  choice for a project without a GitHub remote, or when its runner has no `gh`. The
+  [runner](several-computers.md) does this in its clone and always pushes to origin, pulling
+  first; if someone pushed first it merges again on top of their work.
 
 Until you pick one yourself, the project follows the default: connecting a GitHub repository
-switches it to pull requests (and losing `gh` back to merging). Once you choose, your choice
+switches it to pull requests (and a runner without `gh` merges instead). Once you choose, your choice
 stays.
 
 With "Approve tasks automatically", finished tasks whose tests pass go straight to the merge queue
