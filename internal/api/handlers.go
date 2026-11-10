@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -84,43 +85,46 @@ var slugRe = regexp.MustCompile(`[^a-z0-9-]+`)
 
 var colorRe = regexp.MustCompile(`^#[0-9a-f]{6}$`)
 
+// projectRequest is the body of POST /api/projects.
+type projectRequest struct {
+	Name           string   `json:"name"`
+	Path           string   `json:"path"` // optional: adopt an existing directory/repo
+	DefaultBranch  string   `json:"default_branch"`
+	RunCommand     string   `json:"run_command"`
+	TestCommand    string   `json:"test_command"`
+	DeployCommand  string   `json:"deploy_command"`
+	SetupCommand   string   `json:"setup_command"`
+	PreviewKind    string   `json:"preview_kind"`    // "web" (default) | "terminal"
+	PreviewCommand string   `json:"preview_command"` // terminal previews: runs in the worktree
+	CopyFiles      []string `json:"copy_files"`
+	MaxAutoFixes   *int     `json:"max_auto_fixes"`
+	AutoPush       bool     `json:"auto_push"`
+	MergeMode      string   `json:"merge_mode"`
+	MaxRunMinutes  int      `json:"max_run_minutes"`
+	MaxTurns       int      `json:"max_turns"`
+	// GitHub names a repository (REPO or OWNER/REPO): with Clone it is
+	// cloned (it must exist); without, it is created and pushed (it must not).
+	GitHub       string `json:"github"`
+	Clone        bool   `json:"clone"`
+	GitHubPublic bool   `json:"github_public"`
+	// Existing adds a repository already cloned at Path: it must be one
+	// (and not a project yet), and the name defaults to its folder's.
+	Existing bool `json:"existing"`
+	// LocalOnly makes a new repository with no remote, in a new folder
+	// (no Path, GitHub or Existing): deleting the project deletes it.
+	LocalOnly bool `json:"local_only"`
+	// On the hub only, which keeps no projects on its own disk: a
+	// shared project is the remote (RemoteURL, or GitHub's OWNER/REPO)
+	// and the runners it is linked to, which clone it.
+	RemoteURL string   `json:"remote_url"`
+	Runners   []string `json:"runners"`
+	// CloneURL is the URL the runners clone as it is (see
+	// model.Project.CloneURL); empty, they pick it from RemoteURL.
+	CloneURL string `json:"clone_url"`
+}
+
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name           string   `json:"name"`
-		Path           string   `json:"path"` // optional: adopt an existing directory/repo
-		DefaultBranch  string   `json:"default_branch"`
-		RunCommand     string   `json:"run_command"`
-		TestCommand    string   `json:"test_command"`
-		DeployCommand  string   `json:"deploy_command"`
-		SetupCommand   string   `json:"setup_command"`
-		PreviewKind    string   `json:"preview_kind"`    // "web" (default) | "terminal"
-		PreviewCommand string   `json:"preview_command"` // terminal previews: runs in the worktree
-		CopyFiles      []string `json:"copy_files"`
-		MaxAutoFixes   *int     `json:"max_auto_fixes"`
-		AutoPush       bool     `json:"auto_push"`
-		MergeMode      string   `json:"merge_mode"`
-		MaxRunMinutes  int      `json:"max_run_minutes"`
-		MaxTurns       int      `json:"max_turns"`
-		// GitHub names a repository (REPO or OWNER/REPO): with Clone it is
-		// cloned (it must exist); without, it is created and pushed (it must not).
-		GitHub       string `json:"github"`
-		Clone        bool   `json:"clone"`
-		GitHubPublic bool   `json:"github_public"`
-		// Existing adds a repository already cloned at Path: it must be one
-		// (and not a project yet), and the name defaults to its folder's.
-		Existing bool `json:"existing"`
-		// LocalOnly makes a new repository with no remote, in a new folder
-		// (no Path, GitHub or Existing): deleting the project deletes it.
-		LocalOnly bool `json:"local_only"`
-		// On the hub only, which keeps no projects on its own disk: a
-		// shared project is the remote (RemoteURL, or GitHub's OWNER/REPO)
-		// and the runners it is linked to, which clone it.
-		RemoteURL string   `json:"remote_url"`
-		Runners   []string `json:"runners"`
-		// CloneURL is the URL the runners clone as it is (see
-		// model.Project.CloneURL); empty, they pick it from RemoteURL.
-		CloneURL string `json:"clone_url"`
-	}
+	var req projectRequest
 	sv, ok := s.service(w, r)
 	if !ok {
 		return
@@ -135,53 +139,17 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.PreviewKind, req.PreviewCommand = kind, strings.TrimSpace(req.PreviewCommand)
+	// The value is checked before anything is cloned or created; whether
+	// pull requests are possible once the remote is known.
+	if err := checkMergeMode(req.MergeMode, ""); err != nil && req.MergeMode != model.MergePR {
+		writeErr(w, err)
+		return
+	}
+	if req.DefaultBranch == "" {
+		req.DefaultBranch = "main"
+	}
 	if s.hub() {
-		remote := strings.TrimSpace(req.RemoteURL)
-		if gh := strings.Trim(strings.TrimSpace(req.GitHub), "/"); remote == "" && strings.Count(gh, "/") == 1 {
-			remote = "https://github.com/" + strings.TrimSuffix(gh, ".git") + ".git"
-		}
-		if req.Path != "" || req.Existing || remote == "" || len(req.Runners) == 0 {
-			writeErr(w, errHubHasNoProjects)
-			return
-		}
-		if err := gitops.CheckRemote(remote); err != nil {
-			writeErr(w, errors.Join(errBadRequest, err))
-			return
-		}
-		cloneURL, err := checkCloneURL(req.CloneURL)
-		if err != nil {
-			writeErr(w, err)
-			return
-		}
-		if strings.TrimSpace(req.Name) == "" {
-			writeErr(w, fmt.Errorf("%w: name is required", errBadRequest))
-			return
-		}
-		if req.DefaultBranch == "" {
-			req.DefaultBranch = "main"
-		}
-		maxFixes := model.DefaultMaxAutoFixes
-		if req.MaxAutoFixes != nil {
-			maxFixes = max(0, *req.MaxAutoFixes)
-		}
-		np := model.Project{
-			ID: store.NewID(), OrgID: sv.c.Org, Name: strings.TrimSpace(req.Name), DefaultBranch: req.DefaultBranch, RemoteURL: remote, CloneURL: cloneURL,
-			RunCommand: req.RunCommand, TestCommand: req.TestCommand, DeployCommand: req.DeployCommand,
-			SetupCommand: req.SetupCommand, PreviewKind: req.PreviewKind, PreviewCommand: req.PreviewCommand,
-			CopyFiles: cleanList(req.CopyFiles), MaxAutoFixes: maxFixes,
-			MaxRunMinutes: max(0, req.MaxRunMinutes), MaxTurns: max(0, req.MaxTurns), TagFormat: release.DefaultFormat,
-		}
-		runners, err := sv.linkRunners(np, req.Runners)
-		if err != nil {
-			writeErr(w, err)
-			return
-		}
-		np.Runners = runners
-		np.MergeMode = np.DefaultMergeMode(false)
-		if req.MergeMode != "" && req.MergeMode != np.MergeMode {
-			np.MergeMode, np.MergeModeSet = req.MergeMode, true
-		}
-		p, err := sv.data.CreateProject(np)
+		p, err := sv.createHubProject(req)
 		if err != nil {
 			writeErr(w, err)
 			return
@@ -190,118 +158,28 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, p)
 		return
 	}
-	if err := checkMergeMode(req.MergeMode, ""); err != nil && req.MergeMode != model.MergePR {
-		writeErr(w, err)
-		return
-	}
-	maxFixes := model.DefaultMaxAutoFixes
-	if req.MaxAutoFixes != nil {
-		maxFixes = max(0, *req.MaxAutoFixes)
-	}
-	req.Path = strings.TrimSpace(req.Path)
-	if req.LocalOnly && (req.Path != "" || req.Existing || strings.TrimSpace(req.GitHub) != "") {
-		writeErr(w, fmt.Errorf("%w: a local-only project is a new repository in a new folder: no path, existing clone or GitHub", errBadRequest))
-		return
-	}
-	if req.Existing {
-		if req.Path == "" {
-			writeErr(w, fmt.Errorf("%w: the path of the existing clone is required", errBadRequest))
-			return
-		}
-		if strings.TrimSpace(req.GitHub) != "" {
-			writeErr(w, fmt.Errorf("%w: an existing clone keeps its own remote; leave GitHub empty", errBadRequest))
-			return
-		}
-		if strings.TrimSpace(req.Name) == "" {
-			req.Name = filepath.Base(store.CleanPath(req.Path))
-		}
-	}
-	if strings.TrimSpace(req.Name) == "" {
-		writeErr(w, fmt.Errorf("%w: name is required", errBadRequest))
-		return
-	}
-	newFolder := req.Path == ""
-	path, err := sv.projectPath(req.Name, req.Path)
+	path, err := sv.prepareProjectPath(&req)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	if newFolder && !emptyOrMissing(path) {
-		// A folder named after the project is made for it: never one that
-		// holds something else (another project's clone, say), which
-		// deleting this project with its folder would take along.
-		writeErr(w, fmt.Errorf("%w: %s already exists; pick another name, or add it as an existing clone", errBadRequest, path))
-		return
-	}
 	req.Path = path
-	if req.Existing {
-		if err := sv.checkExistingRepo(path); err != nil {
-			writeErr(w, err)
-			return
-		}
-	}
-	if req.DefaultBranch == "" {
-		req.DefaultBranch = "main"
-	}
 	id := store.NewID()
 	ctx := r.Context()
-	req.GitHub = strings.TrimSpace(req.GitHub)
-	createRemote := false
-	if req.GitHub != "" {
-		gh, exists, err := s.Git.LookupGitHubRepo(ctx, req.GitHub)
-		switch {
-		case err != nil:
-			writeErr(w, err)
-			return
-		case exists && !req.Clone:
-			writeErr(w, fmt.Errorf("%w: %s already exists on GitHub; clone it instead", errBadRequest, gh.Name))
-			return
-		case !exists && req.Clone:
-			writeErr(w, fmt.Errorf("%w: %s not found on GitHub", errBadRequest, req.GitHub))
-			return
-		case exists:
-			if err := s.Git.CloneGitHubRepo(ctx, id, gh.Name, req.Path); err != nil {
-				writeErr(w, errors.Join(errBadRequest, err))
-				return
-			}
-		default:
-			if s.Git.RemoteURL(ctx, id, req.Path) != "" {
-				writeErr(w, fmt.Errorf("%w: %s already has an origin remote", errBadRequest, req.Path))
-				return
-			}
-			createRemote = true
-		}
-	}
-	if err := s.Git.InitRepo(ctx, id, req.Path, req.DefaultBranch); err != nil {
+	if err := s.setupGitHubRemote(ctx, id, &req); err != nil {
 		writeErr(w, err)
 		return
-	}
-	if createRemote {
-		if _, err := s.Git.CreateGitHubRepo(ctx, id, req.Path, req.GitHub, !req.GitHubPublic); err != nil {
-			writeErr(w, err)
-			return
-		}
 	}
 	req.DefaultBranch = s.adoptedBranch(ctx, id, req.Path, req.DefaultBranch)
-	remote := s.Git.RemoteURL(ctx, id, req.Path)
 	// Asking for pull requests is only possible when the repo already has
 	// a remote; without asking, GitHub projects get them (DefaultMergeMode).
-	if err := checkMergeMode(req.MergeMode, remote); err != nil {
+	np, err := newProjectFromRequest(req, model.Project{
+		ID: id, Path: req.Path, RemoteURL: s.Git.RemoteURL(ctx, id, req.Path),
+		AutoPush: req.AutoPush, LocalOnly: req.LocalOnly,
+	}, s.Git.HasGh())
+	if err != nil {
 		writeErr(w, err)
 		return
-	}
-	np := model.Project{
-		ID: id, Name: req.Name, Path: req.Path, DefaultBranch: req.DefaultBranch,
-		RemoteURL: remote, AutoPush: req.AutoPush,
-		RunCommand: req.RunCommand, TestCommand: req.TestCommand, DeployCommand: req.DeployCommand,
-		SetupCommand: req.SetupCommand, PreviewKind: req.PreviewKind, PreviewCommand: req.PreviewCommand,
-		CopyFiles: cleanList(req.CopyFiles), MaxAutoFixes: maxFixes,
-		MaxRunMinutes: max(0, req.MaxRunMinutes), MaxTurns: max(0, req.MaxTurns),
-		TagFormat: release.DefaultFormat, LocalOnly: req.LocalOnly,
-	}
-	np.MergeMode = np.DefaultMergeMode(s.Git.HasGh())
-	if req.MergeMode != "" && req.MergeMode != np.MergeMode {
-		np.MergeMode, np.MergeModeSet = req.MergeMode, true
 	}
 	p, err := sv.data.CreateProject(np)
 	if err != nil {
@@ -312,6 +190,142 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		p = sv.adoptFavicon(p)
 	}
 	writeJSON(w, http.StatusCreated, p)
+}
+
+// newProjectFromRequest is the project req asks for: base (its ID, remote
+// and the fields only one kind of project has) with req's settings, their
+// defaults filled in, and its merge mode checked against base's remote. gh
+// is whether this Dash can open pull requests (see DefaultMergeMode).
+func newProjectFromRequest(req projectRequest, base model.Project, gh bool) (model.Project, error) {
+	if err := checkMergeMode(req.MergeMode, base.RemoteURL); err != nil {
+		return model.Project{}, err
+	}
+	np := base
+	np.Name = strings.TrimSpace(req.Name)
+	np.DefaultBranch = cmp.Or(req.DefaultBranch, "main")
+	np.RunCommand, np.TestCommand, np.DeployCommand, np.SetupCommand = req.RunCommand, req.TestCommand, req.DeployCommand, req.SetupCommand
+	np.PreviewKind, np.PreviewCommand = req.PreviewKind, req.PreviewCommand
+	np.CopyFiles = cleanList(req.CopyFiles)
+	np.MaxAutoFixes = model.DefaultMaxAutoFixes
+	if req.MaxAutoFixes != nil {
+		np.MaxAutoFixes = max(0, *req.MaxAutoFixes)
+	}
+	np.MaxRunMinutes, np.MaxTurns = max(0, req.MaxRunMinutes), max(0, req.MaxTurns)
+	np.TagFormat = release.DefaultFormat
+	np.MergeMode = np.DefaultMergeMode(gh)
+	if req.MergeMode != "" && req.MergeMode != np.MergeMode {
+		np.MergeMode, np.MergeModeSet = req.MergeMode, true
+	}
+	return np, nil
+}
+
+// createHubProject creates a project on the hub, which keeps none on its
+// own disk: the remote and the runners that clone it.
+func (sv *service) createHubProject(req projectRequest) (model.Project, error) {
+	remote := strings.TrimSpace(req.RemoteURL)
+	if gh := strings.Trim(strings.TrimSpace(req.GitHub), "/"); remote == "" && strings.Count(gh, "/") == 1 {
+		remote = "https://github.com/" + strings.TrimSuffix(gh, ".git") + ".git"
+	}
+	if req.Path != "" || req.Existing || remote == "" || len(req.Runners) == 0 {
+		return model.Project{}, errHubHasNoProjects
+	}
+	if err := gitops.CheckRemote(remote); err != nil {
+		return model.Project{}, errors.Join(errBadRequest, err)
+	}
+	cloneURL, err := checkCloneURL(req.CloneURL)
+	if err != nil {
+		return model.Project{}, err
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		return model.Project{}, fmt.Errorf("%w: name is required", errBadRequest)
+	}
+	base := model.Project{ID: store.NewID(), OrgID: sv.c.Org, RemoteURL: remote, CloneURL: cloneURL}
+	if base.Runners, err = sv.linkRunners(base, req.Runners); err != nil {
+		return model.Project{}, err
+	}
+	np, err := newProjectFromRequest(req, base, false)
+	if err != nil {
+		return model.Project{}, err
+	}
+	return sv.data.CreateProject(np)
+}
+
+// prepareProjectPath checks where a new local project goes and returns its
+// folder: req.Path, an existing clone, or a new folder named after it. It
+// fills in req.Name from an existing clone's folder.
+func (sv *service) prepareProjectPath(req *projectRequest) (string, error) {
+	req.Path = strings.TrimSpace(req.Path)
+	if req.LocalOnly && (req.Path != "" || req.Existing || strings.TrimSpace(req.GitHub) != "") {
+		return "", fmt.Errorf("%w: a local-only project is a new repository in a new folder: no path, existing clone or GitHub", errBadRequest)
+	}
+	if req.Existing {
+		if req.Path == "" {
+			return "", fmt.Errorf("%w: the path of the existing clone is required", errBadRequest)
+		}
+		if strings.TrimSpace(req.GitHub) != "" {
+			return "", fmt.Errorf("%w: an existing clone keeps its own remote; leave GitHub empty", errBadRequest)
+		}
+		if strings.TrimSpace(req.Name) == "" {
+			req.Name = filepath.Base(store.CleanPath(req.Path))
+		}
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		return "", fmt.Errorf("%w: name is required", errBadRequest)
+	}
+	newFolder := req.Path == ""
+	path, err := sv.projectPath(req.Name, req.Path)
+	if err != nil {
+		return "", err
+	}
+	if newFolder && !emptyOrMissing(path) {
+		// A folder named after the project is made for it: never one that
+		// holds something else (another project's clone, say), which
+		// deleting this project with its folder would take along.
+		return "", fmt.Errorf("%w: %s already exists; pick another name, or add it as an existing clone", errBadRequest, path)
+	}
+	if req.Existing {
+		if err := sv.checkExistingRepo(path); err != nil {
+			return "", err
+		}
+	}
+	return path, nil
+}
+
+// setupGitHubRemote makes req.Path a repository: cloned from GitHub (with
+// Clone), or initialized and, given a GitHub name, pushed to a new
+// repository there.
+func (s *Server) setupGitHubRemote(ctx context.Context, id string, req *projectRequest) error {
+	req.GitHub = strings.TrimSpace(req.GitHub)
+	createRemote := false
+	if req.GitHub != "" {
+		gh, exists, err := s.Git.LookupGitHubRepo(ctx, req.GitHub)
+		switch {
+		case err != nil:
+			return err
+		case exists && !req.Clone:
+			return fmt.Errorf("%w: %s already exists on GitHub; clone it instead", errBadRequest, gh.Name)
+		case !exists && req.Clone:
+			return fmt.Errorf("%w: %s not found on GitHub", errBadRequest, req.GitHub)
+		case exists:
+			if err := s.Git.CloneGitHubRepo(ctx, id, gh.Name, req.Path); err != nil {
+				return errors.Join(errBadRequest, err)
+			}
+		default:
+			if s.Git.RemoteURL(ctx, id, req.Path) != "" {
+				return fmt.Errorf("%w: %s already has an origin remote", errBadRequest, req.Path)
+			}
+			createRemote = true
+		}
+	}
+	if err := s.Git.InitRepo(ctx, id, req.Path, req.DefaultBranch); err != nil {
+		return err
+	}
+	if createRemote {
+		if _, err := s.Git.CreateGitHubRepo(ctx, id, req.Path, req.GitHub, !req.GitHubPublic); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // checkPreviewKind validates a project's preview_kind and returns it as

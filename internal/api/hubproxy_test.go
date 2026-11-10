@@ -33,6 +33,10 @@ func TestHubForwardsOrRefusesWorkingTreeRoutes(t *testing.T) {
 			t.Errorf("POST /api/projects %s: %d %s", body, w.Code, w.Body)
 		}
 	}
+	// A shared project's merge mode is checked like a local one's.
+	if w := call("POST", "/api/projects", `{"name":"x","remote_url":"https://example.com/x.git","runners":["r1"],"merge_mode":"squash"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "merge_mode must be") {
+		t.Errorf("POST /api/projects with a bad merge_mode: %d %s", w.Code, w.Body)
+	}
 
 	// p has no runner linked: everything that needs its working tree says so.
 	for _, rt := range []struct{ method, path, body string }{

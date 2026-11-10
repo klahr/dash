@@ -128,19 +128,15 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hpid := r.PathValue("hpid")
-	mode := model.MergeLocal
-	switch req.MergeMode {
-	case "", model.MergeLocal:
-	case model.MergePR:
-		mode = model.MergePR
-		if !req.MergeModeSet && !s.Git.HasGh() {
-			// Pull requests only by default, and this runner has no gh to
-			// open them: it merges and pushes instead.
-			mode = model.MergeLocal
-		}
-	default:
-		writeErr(w, fmt.Errorf("%w: merge_mode must be \"local\" or \"pr\"", errBadRequest))
+	if err := checkMergeMode(req.MergeMode, req.RemoteURL); err != nil {
+		writeErr(w, err)
 		return
+	}
+	mode := model.MergeLocal
+	if req.MergeMode == model.MergePR && (req.MergeModeSet || s.Git.HasGh()) {
+		// Pull requests only by default, and a runner with no gh to open
+		// them merges and pushes instead.
+		mode = model.MergePR
 	}
 	if s.HubOrg != 0 && req.OrgID != s.HubOrg {
 		slog.Warn("runner: refused a project of another org", "project", hpid, "org", req.OrgID)
