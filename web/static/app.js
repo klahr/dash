@@ -5758,20 +5758,33 @@ function usageLine(u) {
 // conversation's messages among other nodes.
 function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {} }) {
   // waiting: ids of the permission requests the current turn waits on an answer to.
-  const c = { history: [], current: null, ws: null, prefix: "", waiting: new Set() };
+  // queue: messages written while a reply streams ({q, files}), sent together
+  // as one message once it's done.
+  const c = { history: [], current: null, ws: null, prefix: "", waiting: new Set(), queue: [] };
   const input = form.q;
-  // While a reply streams, the send button stops it instead.
+  // While a reply streams, the send button stops it instead, unless there's
+  // something in the composer: then it queues that.
   const sendBtn = form.querySelector("button:not([type=button])");
   const sendLook = { html: sendBtn.innerHTML, label: sendBtn.getAttribute("aria-label") };
   const stopLook = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/></svg>`;
-  const busyButton = (busy) => {
+  const composing = () => !!input.value.trim() || att.items().length > 0;
+  const busyButton = () => {
+    const stopping = !!c.current && !composing();
     sendBtn.disabled = false;
-    sendBtn.classList.toggle("stop", busy);
-    sendBtn.innerHTML = busy ? stopLook : sendLook.html;
-    sendBtn.setAttribute("aria-label", busy ? "Stop the reply" : sendLook.label);
-    sendBtn.title = busy ? "Stop" : "";
+    sendBtn.classList.toggle("stop", stopping);
+    sendBtn.innerHTML = stopping ? stopLook : sendLook.html;
+    sendBtn.setAttribute("aria-label", stopping ? "Stop the reply" : c.current ? "Queue the message" : sendLook.label);
+    sendBtn.title = stopping ? "Stop" : c.current ? "Queue: sent when Claude is done" : "";
   };
-  const finish = () => { c.current = null; c.waiting.clear(); busyButton(false); onState(); };
+  // A turn that ends sends what's queued (done) or, when it was stopped or
+  // failed, puts it back in the composer to send again or not.
+  const finish = (drain = false) => {
+    c.current = null;
+    c.waiting.clear();
+    busyButton();
+    onState();
+    drain ? drainQueue() : restoreQueue();
+  };
   // smooth glides there when a new message arrives and the end is within a screen.
   const toEnd = (smooth = false) => {
     if (!log.offsetParent) return;
@@ -5787,7 +5800,46 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   // Images and files dropped onto the chat or pasted into its text field.
   const attachRow = h("div", { class: "attach", hidden: true });
   form.prepend(attachRow);
-  const att = attachBox(attachRow, input, () => {}, { zone: form.parentElement, compact: true, prefix: prefixOf });
+  const att = attachBox(attachRow, input, () => busyButton(), { zone: form.parentElement, compact: true, prefix: prefixOf });
+
+  // The queue shows above the composer: tap a message to take it back to edit, × drops it.
+  const queueRow = h("div", { class: "chat-queue", hidden: true });
+  form.prepend(queueRow);
+  const renderQueue = () => {
+    queueRow.hidden = !c.queue.length;
+    queueRow.replaceChildren(...c.queue.map((m) => h("div", { class: "queued" },
+      h("button", { type: "button", class: "queued-text", title: "Edit this queued message", onclick: () => unqueue(m, true) },
+        h("span", { class: "queued-tag" }, "Queued"),
+        h("span", { class: "queued-body" }, m.q || `${m.files.length} file${m.files.length > 1 ? "s" : ""}`),
+        m.q && m.files.length ? h("span", { class: "queued-files" }, `+${m.files.length}`) : null),
+      h("button", { type: "button", class: "chip-x", "aria-label": "Remove from the queue", title: "Remove", onclick: () => unqueue(m) }, "×"))));
+    busyButton();
+  };
+  // edit puts the messages back in the composer, ahead of what's in it already.
+  const toComposer = (msgs) => {
+    if (!msgs.length) return;
+    input.value = [...msgs.map((m) => m.q), input.value.trim()].filter(Boolean).join("\n\n");
+    att.reset([...msgs.flatMap((m) => m.files), ...att.items()]);
+    autoGrow();
+  };
+  function unqueue(m, edit = false) {
+    c.queue = c.queue.filter((x) => x !== m);
+    if (edit) { toComposer([m]); input.focus(); }
+    renderQueue();
+  }
+  function restoreQueue() {
+    if (!c.queue.length) return;
+    toComposer(c.queue);
+    c.queue = [];
+    renderQueue();
+  }
+  function drainQueue() {
+    if (!c.queue.length) return;
+    const q = c.queue.map((m) => m.q).filter(Boolean).join("\n\n"), files = c.queue.flatMap((m) => m.files);
+    c.queue = [];
+    renderQueue();
+    send(q, files);
+  }
 
   function socket(prefix) {
     if (c.ws && c.ws.readyState <= 1 && c.prefix === prefix) return c.ws;
@@ -5847,7 +5899,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
         if (cur.content) cur.el.append(entering(actions(cur.content)));
         if (cur.content) c.history.push({ role: "assistant", content: cur.content, at: cur.at, ...(cur.usage ? { usage: cur.usage } : {}) });
         else c.history.pop(); // keep history alternating
-        finish();
+        finish(d.kind === "done" && !!cur.content);
       }
       const sc = scroller();
       if (sc.scrollHeight - sc.scrollTop - sc.clientHeight < 120) toEnd();
@@ -5925,7 +5977,7 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
     c.current ? c.current.el.replaceWith(el) : log.append(el);
     toEnd(true);
     c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), target: { prefix, ...fields }, at: new Date().toISOString() };
-    busyButton(true);
+    busyButton();
     onState();
     const ws = socket(prefix);
     ws.fields = fields;
@@ -5937,27 +5989,34 @@ function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = ()
   // with "/" (a path, say) is sent as a message.
   const commands = {
     clear: async () => { await clear(); reset(); },
-    help: () => toast("/clear starts a new conversation. /help shows this.", { head: "Chat commands" }),
+    help: () => toast("/clear starts a new conversation. /help shows this. Messages sent while Claude answers are queued and go once it's done; Up in an empty composer edits the last one.", { head: "Chat commands" }),
   };
   commands.new = commands.reset = commands.clear;
 
   const autoGrow = () => { input.style.height = "auto"; input.style.height = `${input.scrollHeight}px`; };
-  input.addEventListener("input", autoGrow);
+  input.addEventListener("input", () => { autoGrow(); if (c.current) busyButton(); });
   form.addEventListener("submit", attempt(async (e) => {
     e.preventDefault();
-    // Only a press of the button stops a reply: Enter in the text field doesn't.
-    if (c.current) return e.submitter === sendBtn ? stop() : undefined;
+    // With nothing written, only a press of the button stops a reply: Enter in the text field doesn't.
+    if (c.current && !composing()) return e.submitter === sendBtn ? stop() : undefined;
     await att.settled();
     const q = input.value.trim(), files = att.items();
-    if ((!q && !files.length) || c.current) return;
+    if (!q && !files.length) return;
     const cmd = /^\/(\w+)$/.exec(q)?.[1].toLowerCase();
     input.value = "";
     autoGrow();
     if (!files.length && Object.hasOwn(commands, cmd)) return commands[cmd]();
     att.reset();
+    // While Claude answers, the message waits its turn.
+    if (c.current) { c.queue.push({ q, files }); renderQueue(); return; }
     send(q, files);
   }));
   input.addEventListener("keydown", (e) => {
+    // Up in an empty composer takes the last queued message back to edit.
+    if (e.key === "ArrowUp" && !input.value && c.queue.length) {
+      e.preventDefault();
+      return unqueue(c.queue.at(-1), true);
+    }
     // Enter sends on devices with a hardware keyboard; on touch keyboards Enter adds a line.
     if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) {
       e.preventDefault();

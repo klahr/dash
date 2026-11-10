@@ -1629,6 +1629,15 @@ dialog.file-over, .file-over { outline: 2px dashed color-mix(in srgb, var(--acce
 .composer { flex-wrap: wrap; }
 .composer textarea { flex: 1 1 0; width: auto; min-width: 0; }
 .composer .attach { flex: 0 0 100%; margin: 0; }
+/* Messages queued while Claude answers, above the composer. */
+.chat-queue { flex: 0 0 100%; display: flex; flex-direction: column; gap: 6px; }
+.chat-queue[hidden] { display: none; }
+.queued { display: flex; align-items: center; border: 1px dashed var(--line); border-radius: var(--r-m); background: var(--raised); animation: chip-in .22s var(--ease); }
+.queued-text { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 4px 4px 12px; border: 0; background: none; color: var(--text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.queued-tag { flex: none; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.queued-body { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queued-files { flex: none; font-size: 12px; color: var(--muted); }
+.queued .chip-x { min-height: 40px; }
 .msg-attach { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; white-space: normal; }
 .msg-attach .chip { background: var(--bg); }
 .msg-attach .chip img { width: 72px; height: 54px; }
