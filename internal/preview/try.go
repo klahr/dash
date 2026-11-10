@@ -210,4 +210,8 @@ func (m *Manager) waitExited(id string) {
 }
 
 // Sweep stops what has been idle as of now (Run does it every 30 seconds).
+// Test hook: production goes through Run; internal/api's Try tests call this
+// to force an idle stop, and being in another package they need it exported.
+//
+//lint:ignore U1000 test hook for internal/api tests
 func (m *Manager) Sweep(now time.Time) { m.sweep(now) }
