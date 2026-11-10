@@ -7,7 +7,7 @@
   --line: #2a384d;
   --text: #e6ecf5;
   --muted: #8a9ab2;
-  --faint: #5b6a82;
+  --faint: #8393ac; /* ≥4.5:1 on --bg, --surface and --raised (WCAG 1.4.3) */
 
   --accent: #8aa4ff;   /* brand + queued */
   --running: #f2b84b;
