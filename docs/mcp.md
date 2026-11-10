@@ -28,8 +28,9 @@ password, and allow access. If you belong to several organizations, the page the
 the connector works in; it only ever acts in that one (see [tokens](users.md#tokens)).
 
 In the web UI, the account menu (or `:connector`) has **Connect Claude**: a step-by-step guide
-with the URL to copy, a link to claude.ai's connector settings, and how many connectors are signed
-in. Without `-public-url` it shows the commands below for your setup instead.
+for the people using the dashboard, with the URL to copy, a link to claude.ai's connector settings,
+and how many connectors are signed in. Without `-public-url` it only says the connector is off
+(and, to platform admins, which flag turns it on); setting it up is described below.
 
 **That login is the only thing between the internet and a server that runs commands on your
 computers.** Use a strong password, see [the login](deploy.md#the-login-is-internet-facing).

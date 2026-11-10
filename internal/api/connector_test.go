@@ -10,7 +10,6 @@ func connector(t *testing.T, s *Server) (st struct {
 	Enabled   bool   `json:"enabled"`
 	URL       string `json:"url"`
 	Connected int    `json:"connected"`
-	Local     string `json:"local"`
 }) {
 	t.Helper()
 	w := httptest.NewRecorder()
@@ -23,8 +22,7 @@ func connector(t *testing.T, s *Server) (st struct {
 
 func TestConnectorStatus(t *testing.T) {
 	off, _, _ := boardServer(t)
-	off.Addr = ":9000"
-	if st := connector(t, off); st.Enabled || st.URL != "" || st.Local != "http://127.0.0.1:9000" {
+	if st := connector(t, off); st.Enabled || st.URL != "" {
 		t.Errorf("without -public-url: %+v", st)
 	}
 
@@ -36,18 +34,5 @@ func TestConnectorStatus(t *testing.T) {
 	oauthToken(t, h)
 	if st := connector(t, s); st.Connected != 2 {
 		t.Errorf("after two sign-ins: %+v", st)
-	}
-}
-
-func TestLocalURL(t *testing.T) {
-	for addr, want := range map[string]string{
-		"127.0.0.1:7788": "http://127.0.0.1:7788",
-		"0.0.0.0:80":     "http://127.0.0.1:80",
-		"[::1]:7788":     "http://[::1]:7788",
-		"":               "http://127.0.0.1:7788",
-	} {
-		if got := localURL(addr); got != want {
-			t.Errorf("localURL(%q) = %q, want %q", addr, got, want)
-		}
 	}
 }

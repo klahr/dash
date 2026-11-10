@@ -3739,8 +3739,9 @@ $("#prefs-form").notify.addEventListener("change", attempt(async (e) => {
 }));
 
 // ------------------------------------------------------------------ Connect Claude (claude.ai custom connector)
-// A guide to adding Dash as a custom connector in claude.ai. When /mcp is off
-// (no -public-url) it shows how to turn it on first.
+// A guide to adding Dash as a custom connector in claude.ai, so Claude can
+// work with your board from any chat. The connector only exists when the
+// dashboard is served with -public-url; otherwise this says so.
 const CLAUDE_CONNECTORS = "https://claude.ai/settings/connectors";
 
 function copyBlock(text, msg, { pre = false } = {}) {
@@ -3752,34 +3753,17 @@ function copyBlock(text, msg, { pre = false } = {}) {
 function connectorSteps(c) {
   const step = (head, ...body) => h("li", {}, h("strong", {}, head), ...body);
   if (!c.enabled) {
-    const restart = (origin, how) => step("Restart Dash with that address.", copyBlock(`./bin/dash -trust-proxy -public-url ${origin}`, "Command copied", { pre: true }),
-      h("p", { class: "hint" }, "Or set ", h("code", {}, `DASH_PUBLIC_URL=${origin}`), " in Dash's env file (", h("code", {}, "~/.config/dash/env"), ` for the service). ${how}`));
-    const again = step("Open this guide again.", h("p", { class: "hint" }, "It then gives you the URL to add in claude.ai."));
-    let steps;
-    if (location.protocol === "https:" && !location.hostname.endsWith(".ts.net")) {
-      // Behind Caddy or a Cloudflare Tunnel the address Dash is open on is
-      // usually public already, and is then the public URL itself.
-      steps = h("ol", { class: "steps" },
-        step("Make sure this address is reachable from the internet.", h("p", { class: "hint" },
-          "Behind Caddy or a Cloudflare Tunnel it is. If it's private, expose at least ", h("code", {}, c.paths.join(" ")), ` (forwarded to ${c.local}) on a public HTTPS address and use that below. See docs/deploy.md.`)),
-        restart(location.origin, "Use the address exactly as the internet reaches it, with a port only if it isn't 443."),
-        again);
-    } else {
-      const host = location.hostname.endsWith(".ts.net") ? location.hostname : "<machine>.<tailnet>.ts.net";
-      const origin = `https://${host}:8443`;
-      const funnel = `for p in ${c.paths.join(" ")}; do\n  tailscale funnel --bg --https=8443 --set-path=$p ${c.local}$p\ndone`;
-      steps = h("ol", { class: "steps" },
-        step("Expose only the connector's paths.", h("p", { class: "hint" }, "With Tailscale Funnel, on this computer (or put Dash behind Caddy or a Cloudflare Tunnel, see docs/deploy.md):"), copyBlock(funnel, "Commands copied", { pre: true })),
-        restart(origin, "Use the address exactly as Funnel serves it, port included."),
-        again);
-    }
+    const admin = !!state.me?.user?.is_platform_admin;
     return [
-      h("p", { class: "connector-status off" }, "The connector is off. Anthropic's servers call Dash over the internet, so it needs a public HTTPS address first."),
-      steps,
-      h("p", { class: "hint warn" }, "Your Dash login is all that stands between the internet and a server that runs commands on your computers. Use a strong password."),
+      h("p", { class: "connector-status off" }, "The claude.ai connector isn't turned on for this dashboard."),
+      admin
+        ? h("p", { class: "hint" }, "Start Dash with ", h("code", {}, "-public-url"), " (or ", h("code", {}, "DASH_PUBLIC_URL"),
+          ") set to the public HTTPS address people open it at. See docs/mcp.md.")
+        : h("p", { class: "hint" }, "Ask whoever runs this dashboard to turn it on."),
     ];
   }
   const n = c.connected;
+  const org = state.me?.org?.name;
   return [
     h("p", { class: `connector-status ${n ? "on" : ""}` },
       n ? `Connected: ${n} connector${n === 1 ? " is" : "s are"} signed in.` : "Ready. No connector has signed in yet."),
@@ -3788,9 +3772,11 @@ function connectorSteps(c) {
       step("Open Connectors in claude.ai settings.", h("p", {},
         h("a", { class: "btn small", href: CLAUDE_CONNECTORS, target: "_blank", rel: "noopener" }, ico("external"), "Open claude.ai"))),
       step("Add a custom connector.", h("p", { class: "hint" }, "Name it Dash, paste the URL and add it.")),
-      step("Connect and sign in.", h("p", { class: "hint" }, "Dash's sign-in page opens. Enter your Dash username and password, then choose Allow. If you're in several organizations, pick the one Claude works in.")),
+      step("Connect and sign in.", h("p", { class: "hint" },
+        "Dash's sign-in page opens. Sign in as you do here, then choose Allow.",
+        org ? ` If you're in several organizations, pick the one Claude should work in (you're in ${org} now).` : " If you're in several organizations, pick the one Claude should work in.")),
       step("Use it in a chat.", h("p", { class: "hint" }, "Turn Dash on in the chat's tools menu. The connector also works in the Claude desktop and mobile apps."))),
-    h("p", { class: "hint" }, "A connector stays signed in while it's used at least every 30 days. Disconnect it under Tokens & apps; changing your Dash username or password signs every connector out."),
+    h("p", { class: "hint" }, "A connector stays signed in while it's used at least every 30 days. Disconnect it under Tokens & apps; changing your password signs every connector out."),
     h("footer", { class: "sheet-actions" },
       h("button", { class: "btn", type: "button", onclick: attempt(openConnector) }, ico("redo"), "Check again")),
   ];

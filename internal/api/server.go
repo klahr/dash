@@ -103,7 +103,6 @@ type Server struct {
 	// Dash is a runner (see RunnerRoutes).
 	HubCommands bool
 	Static      fs.FS  // frontend assets
-	Addr        string // the listen address (-addr), for the connector setup guide
 	PublicURL   string // -public-url: the hub's address runners are told (optional; else the request's)
 	// MetricsToken, if set, serves /metrics on this listener to callers
 	// with it as their bearer token (empty: /metrics isn't served here).

@@ -424,7 +424,6 @@ func main() {
 		Titler:      titler,
 		ProjectRoot: *projectRoot,
 		Static:      web.Static,
-		Addr:        *addr,
 		PublicURL:   strings.TrimRight(*publicURL, "/"),
 		Brand: branding.Config{
 			Name: envOr(*brandName, "DASH_BRAND_NAME"), SourceURL: envOr(*sourceURL, "DASH_SOURCE_URL"),
