@@ -6462,6 +6462,14 @@ function renderChatDots() {
 function renderTryBack() {
   const b = $("#chat-try-back");
   if (b) b.hidden = !(state.view === "try" && !desktop.matches);
+  // The Try view's Terminal/Chat tabs say which of the two is showing.
+  const chatOn = pane.open && !desktop.matches;
+  for (const [id, on] of [["#try-tab-term", !chatOn], ["#try-tab-chat", chatOn]]) {
+    const t = $(id);
+    if (!t) continue;
+    t.setAttribute("aria-selected", String(on));
+    t.tabIndex = on ? 0 : -1; // one tab stop for the tablist; arrows move between tabs
+  }
 }
 
 function showChatTab(tab) {
@@ -7141,8 +7149,7 @@ function renderTry() {
   $("#try-commit").disabled = !tryState.runner || !!tryState.starting;
   $("#try-restart").disabled = !tryState.runner || !!tryState.starting;
   $("#try-stop").disabled = !s || !!tryState.starting;
-  $("#try-tab-term").setAttribute("aria-selected", "true");
-  $("#try-tab-chat").setAttribute("aria-selected", "false");
+  renderTryBack();
 
   const attachable = !!s && s.state === "live" && !tryState.starting && tryState.refused !== s.process_id;
   // A session that exited keeps its last screen, with what to do next below it.
@@ -7238,6 +7245,16 @@ $("#try-runner").addEventListener("change", attempt(async (e) => {
 $("#try-chat").addEventListener("click", () => toggleChatPane(true, "project"));
 $("#try-tab-chat").addEventListener("click", () => toggleChatPane(true, "project"));
 $("#try-tab-term").addEventListener("click", () => { if (pane.open && !desktop.matches) toggleChatPane(false); });
+// Tablist keys: arrows/Home/End move to the other tab and select it.
+$(".try-tabs").addEventListener("keydown", (e) => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+  e.preventDefault();
+  const tabs = [$("#try-tab-term"), $("#try-tab-chat")];
+  const i = tabs.indexOf(document.activeElement);
+  const next = e.key === "Home" ? tabs[0] : e.key === "End" ? tabs[1] : tabs[(i + 1) % 2];
+  next.focus();
+  next.click();
+});
 $("#chat-try-back").addEventListener("click", () => toggleChatPane(false));
 $$("#try-keys [data-key]").forEach((b) => {
   b.addEventListener("mousedown", (e) => e.preventDefault()); // the terminal keeps focus (and the keyboard stays up)
