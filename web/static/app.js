@@ -1795,8 +1795,6 @@ $("#pm-delete").addEventListener("click", attempt(openDeleteProject));
 // The account menu shows who is logged in, the org they work in and the
 // others they can switch to.
 loadMe().then(() => loadBilling()).catch(() => {});
-// Notifications on: keep this browser subscribed to pushes, in the org it's in now.
-if (notifyOn()) pushSubscribe().catch((e) => console.warn("web push", e));
 loadRunners().catch(() => {});
 $("#org-open").addEventListener("click", attempt(openOrg));
 $("#runners-open").addEventListener("click", attempt(openRunners));
@@ -5145,6 +5143,10 @@ async function testPush() {
   if (!res.ok) throw new Error(`The push didn't go through: ${res.error}`);
   toast("Test notification sent", { tone: "ok" });
 }
+// Notifications on: keep this browser subscribed to pushes, in the org it's in now.
+// Here, after notifyOn and pushSupported: a const called before its line throws
+// and would stop the rest of this script.
+if (notifyOn()) pushSubscribe().catch((e) => console.warn("web push", e));
 // A click on a pushed notification while Dash is open: go to its task.
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (e) => {
