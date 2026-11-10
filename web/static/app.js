@@ -8948,12 +8948,12 @@ $("#issue-clear").addEventListener("click", () => { iss.checked.clear(); renderI
 
 // ------------------------------------------------------------------ scans
 // Preconfigured, read-only reviews of the project (security, code review,
-// dependency audit, dead code, or the team's own templates in .dash/scans/) that run on
+// dependency audit, dead code, duplication and complexity, or the team's own templates in .dash/scans/) that run on
 // demand or on a schedule and file what they find in Issues.
 const SCAN_KINDS = {
   security: "Security", code_review: "Code review", dependencies: "Dependencies", tests: "Tests", docs: "Docs",
   performance: "Performance", dead_code: "Dead code", flaky_tests: "Flaky tests", accessibility: "Accessibility",
-  breaking_changes: "Breaking changes", custom: "Custom",
+  breaking_changes: "Breaking changes", maintainability: "Duplication & complexity", custom: "Custom",
 };
 const SCAN_SCOPES = { repo: "Whole repository", since_last_scan: "Changes since the last scan", since_main: "Branch vs. main", path: "One path" };
 const scans = { list: [], problems: [], builtin: false, dir: ".dash/scans", loaded: false, history: new Map() };

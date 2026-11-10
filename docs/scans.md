@@ -11,7 +11,7 @@ Scans come from three places, marked on each card:
   audit (`dependencies`), test gaps (`test-gaps`: changed code with no test covering it, and
   tests that can't fail), docs drift (`docs-drift`: README, `docs/` and CLAUDE.md content the
   code no longer matches), performance review (`performance`), dead code scan (`dead-code`),
-  flaky tests (`flaky-tests`), accessibility (`accessibility`: missing labels and alt text,
+  duplication and complexity (`maintainability`), flaky tests (`flaky-tests`), accessibility (`accessibility`: missing labels and alt text,
   poor colour contrast, keyboard traps, missing focus styles, wrong ARIA and non-semantic
   interactive elements) and breaking changes (`breaking-changes`: what the checkout's branch
   changes compared with the default branch that breaks callers or users: public API and HTTP
@@ -25,6 +25,12 @@ Scans come from three places, marked on each card:
   run for N+1 queries, unbounded loops, reads and allocations, missing database indexes for
   added or changed queries, and slow or blocking work in request handlers. It only reports
   problems with a plausible real cost, and each finding explains the cost and the fix. The
+  duplication and complexity scan (suggested monthly, on the 15th at 06:00) looks at the whole
+  repository for duplicated logic (naming every copy and where one shared version should live),
+  functions too long, nested or branchy to follow, and needless layers: pass-through wrappers,
+  single-implementation abstractions, unvaried options and hand-written versions of existing
+  helpers. It skips style nitpicks, small repeats, generated and vendored code and migrations,
+  and each finding says what gets simpler and how risky the change is. The
   dependency audit reports vulnerable, abandoned
   and far outdated dependencies, and checks licences against the project's own (its LICENSE file
   or manifest, else proprietary): dependencies whose licence clashes with it (GPL or AGPL in an
@@ -85,19 +91,20 @@ Look for vulnerabilities in {{path}} …
   scan files records its kind (`scan_kind`). Issues has a scan-kind filter once a scan has filed
   some, and the API and `list_issues` filter by kind too (see API below):
 
-  | Kind               | Aliases                                     | Default type |
-  | ------------------ | ------------------------------------------- | ------------ |
-  | `security`         | `sec`, `vuln`                               | vuln         |
-  | `dependencies`     | `deps`, `dep`, `dependency`                 | vuln         |
-  | `code_review`      | `review`                                    | bug          |
-  | `tests`            | `test`, `testing`, `coverage`               | issue        |
-  | `docs`             | `doc`, `documentation`                      | issue        |
-  | `performance`      | `perf`                                      | issue        |
-  | `dead_code`        | `deadcode`, `unused`, `unused_code`         | issue        |
-  | `flaky_tests`      | `flaky`, `flaky_test`, `flakes`             | bug          |
-  | `accessibility`    | `a11y`                                      | bug          |
-  | `breaking_changes` | `breaking`, `breaking_change`, `breaks`     | bug          |
-  | `custom` (default) |                                             | issue        |
+  | Kind               | Aliases                                                   | Default type |
+  | ------------------ | --------------------------------------------------------- | ------------ |
+  | `security`         | `sec`, `vuln`                                             | vuln         |
+  | `dependencies`     | `deps`, `dep`, `dependency`                               | vuln         |
+  | `code_review`      | `review`                                                  | bug          |
+  | `tests`            | `test`, `testing`, `coverage`                             | issue        |
+  | `docs`             | `doc`, `documentation`                                    | issue        |
+  | `performance`      | `perf`                                                    | issue        |
+  | `dead_code`        | `deadcode`, `unused`, `unused_code`                       | issue        |
+  | `flaky_tests`      | `flaky`, `flaky_test`, `flakes`                           | bug          |
+  | `accessibility`    | `a11y`                                                    | bug          |
+  | `breaking_changes` | `breaking`, `breaking_change`, `breaks`                   | bug          |
+  | `maintainability`  | `duplication`, `duplicate_code`, `complexity`, `refactor` | issue        |
+  | `custom` (default) |                                                           | issue        |
 
   Kinds are case-insensitive and `-` or a space works for `_` (`dead-code`, `Flaky Tests`); the
   canonical name is what is saved and exported.

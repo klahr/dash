@@ -103,6 +103,11 @@ func TestKinds(t *testing.T) {
 		{"breaking_changes", KindBreakingChanges, model.IssueBug},
 		{"breaking", KindBreakingChanges, model.IssueBug},
 		{"breaking-change", KindBreakingChanges, model.IssueBug},
+		{"maintainability", KindMaintainability, model.IssueOther},
+		{"duplication", KindMaintainability, model.IssueOther},
+		{"duplicate-code", KindMaintainability, model.IssueOther},
+		{"Complexity", KindMaintainability, model.IssueOther},
+		{"refactor", KindMaintainability, model.IssueOther},
 		{"custom", KindCustom, model.IssueOther},
 	} {
 		tm, err := ParseTemplate("x", []byte("---\nkind: "+c.kind+"\n---\nGo."))
@@ -119,7 +124,7 @@ func TestKinds(t *testing.T) {
 			t.Errorf("%s: round trip %q %v", c.kind, back.Kind, err)
 		}
 	}
-	if got := len(model.ScanKinds()); got != 11 {
+	if got := len(model.ScanKinds()); got != 12 {
 		t.Errorf("Kinds: %d %v", got, model.ScanKinds())
 	}
 	// The error names every kind.
@@ -185,7 +190,7 @@ func TestBuiltins(t *testing.T) {
 			t.Errorf("%s: builtin %v schedule %q", b.Name, b.Builtin, b.Schedule)
 		}
 	}
-	for _, n := range []string{"security", "code-review", "dependencies", "test-gaps", "docs-drift", "performance", "dead-code", "flaky-tests", "accessibility", "breaking-changes"} {
+	for _, n := range []string{"security", "code-review", "dependencies", "test-gaps", "docs-drift", "performance", "dead-code", "flaky-tests", "accessibility", "breaking-changes", "maintainability"} {
 		if _, ok := names[n]; !ok {
 			t.Errorf("no built-in %s (have %v)", n, names)
 		}
@@ -195,6 +200,7 @@ func TestBuiltins(t *testing.T) {
 		names["docs-drift"].Kind != KindDocs || names["docs-drift"].Scope != model.ScopeSinceLastScan ||
 		names["performance"].Kind != KindPerformance || names["performance"].Scope != model.ScopeSinceLastScan ||
 		names["dead-code"].Kind != KindDeadCode ||
+		names["maintainability"].Kind != KindMaintainability || names["maintainability"].Scope != model.ScopeRepo ||
 		names["flaky-tests"].Kind != KindFlakyTests || names["flaky-tests"].Scope != model.ScopeRepo ||
 		names["accessibility"].Kind != KindAccessibility || names["accessibility"].Scope != model.ScopeSinceLastScan ||
 		names["breaking-changes"].Kind != KindBreakingChanges || names["breaking-changes"].Scope != model.ScopeSinceMain {
@@ -254,6 +260,19 @@ func TestBuiltins(t *testing.T) {
 	for _, want := range []string{"whole", "reflection", "templates", "as a string", "exported API of a library", "git_blame", "90 days", "FIXME", "Do not change any files"} {
 		if !strings.Contains(dead, want) {
 			t.Errorf("dead code prompt lacks %q", want)
+		}
+	}
+	// The maintainability scan runs monthly on another day than dead code and
+	// covers duplication, complexity and needless layers, checking for an
+	// existing helper first.
+	mt := names["maintainability"]
+	if mt.Title != "Duplication and complexity" || mt.Schedule != "0 6 15 * *" {
+		t.Errorf("maintainability: title %q schedule %q", mt.Title, mt.Schedule)
+	}
+	mp := mt.Render("", "")
+	for _, want := range []string{"Duplicate code", "every location", "Complexity", "early", "one implementation", "standard library", "search the whole repository", "duplication in tests", "migrations", "pays for itself", "risky", "Do not change any files"} {
+		if !strings.Contains(mp, want) {
+			t.Errorf("maintainability prompt lacks %q", want)
 		}
 	}
 }

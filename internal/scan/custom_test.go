@@ -21,7 +21,8 @@ func TestCustomValidation(t *testing.T) {
 	}
 	for kind, want := range map[string]string{
 		"tests": KindTests, " Test ": KindTests, "docs": KindDocs, "PERF": KindPerformance, "dead-code": KindDeadCode,
-		"flaky": KindFlakyTests, "a11y": KindAccessibility, "breaking": KindBreakingChanges, "": KindCustom,
+		"flaky": KindFlakyTests, "a11y": KindAccessibility, "breaking": KindBreakingChanges,
+		"duplication": KindMaintainability, "Complexity": KindMaintainability, "": KindCustom,
 	} {
 		tm, err := Custom(model.ScanTemplate{Name: "k", Kind: kind, Prompt: "x"})
 		if err != nil || tm.Kind != want || tm.Record("p").Kind != want {
@@ -111,7 +112,7 @@ func TestTemplatesMergeAndShadow(t *testing.T) {
 	if len(active) != len(Builtins())+1 || len(problems) != 0 {
 		t.Fatalf("active: %+v %v", active, problems)
 	}
-	want := map[string]string{"mine": SourceDash, "security": SourceDash, "dependencies": SourceRepo, "code-review": SourceBuiltin, "test-gaps": SourceBuiltin, "docs-drift": SourceBuiltin, "performance": SourceBuiltin, "dead-code": SourceBuiltin, "flaky-tests": SourceBuiltin, "accessibility": SourceBuiltin, "breaking-changes": SourceBuiltin}
+	want := map[string]string{"mine": SourceDash, "security": SourceDash, "dependencies": SourceRepo, "code-review": SourceBuiltin, "test-gaps": SourceBuiltin, "docs-drift": SourceBuiltin, "performance": SourceBuiltin, "dead-code": SourceBuiltin, "flaky-tests": SourceBuiltin, "accessibility": SourceBuiltin, "breaking-changes": SourceBuiltin, "maintainability": SourceBuiltin}
 	for i, tm := range active {
 		if want[tm.Name] != tm.Origin {
 			t.Errorf("%s: origin %q, want %q", tm.Name, tm.Origin, want[tm.Name])

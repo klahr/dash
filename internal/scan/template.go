@@ -52,6 +52,7 @@ const (
 	KindFlakyTests      = model.ScanKindFlakyTests
 	KindAccessibility   = model.ScanKindAccessibility
 	KindBreakingChanges = model.ScanKindBreakingChanges
+	KindMaintainability = model.ScanKindMaintainability
 	KindCustom          = model.ScanKindCustom
 )
 
@@ -240,8 +241,8 @@ func (t *Template) normalize() error {
 // FindingType is the type of a finding that names none: a vulnerability
 // for security and dependency scans; a bug where what is found is wrong
 // behaviour (code review, a flaky test, a change that breaks callers, a UI
-// some users can't use); otherwise an issue (a missing test or doc, slow or
-// dead code, a custom scan's finding).
+// some users can't use); otherwise an issue (a missing test or doc, slow,
+// dead, duplicated or overly complex code, a custom scan's finding).
 func (t Template) FindingType() model.IssueType {
 	switch t.Kind {
 	case KindSecurity, KindDependencies:
