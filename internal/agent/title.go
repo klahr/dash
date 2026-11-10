@@ -111,7 +111,7 @@ func (t Titler) Split(ctx context.Context, prompt string) ([]Part, error) {
 func parseParts(s string) ([]Part, error) {
 	i, j := strings.IndexByte(s, '['), strings.LastIndexByte(s, ']')
 	if i < 0 || j < i {
-		return nil, errors.New("Claude didn't propose any tasks")
+		return nil, errors.New("no tasks were proposed")
 	}
 	var raw []struct {
 		Title  string `json:"title"`
@@ -119,7 +119,7 @@ func parseParts(s string) ([]Part, error) {
 		After  []int  `json:"after"`
 	}
 	if err := json.Unmarshal([]byte(s[i:j+1]), &raw); err != nil {
-		return nil, fmt.Errorf("Claude's proposal wasn't readable: %w", err)
+		return nil, fmt.Errorf("the proposed tasks weren't readable: %w", err)
 	}
 	var parts []Part
 	kept := make([]int, len(raw)) // raw index → index in parts, or -1
@@ -139,7 +139,7 @@ func parseParts(s string) ([]Part, error) {
 		parts = append(parts, p)
 	}
 	if len(parts) == 0 {
-		return nil, errors.New("Claude didn't propose any tasks")
+		return nil, errors.New("no tasks were proposed")
 	}
 	return parts, nil
 }
