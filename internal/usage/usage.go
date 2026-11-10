@@ -120,15 +120,30 @@ func (t *Tracker) Snapshot() Snapshot {
 		s.Paused, s.Reason = true, "Paused by you"
 		return s
 	}
+	return s.Reevaluate(now)
+}
+
+// Limited reports whether a window's status means Claude Code refuses work.
+// Only "rejected" is a limit: "allowed_warning" is Claude Code saying the
+// window is getting close, and its utilization tells how close.
+func Limited(status string) bool {
+	return status == "rejected"
+}
+
+// Reevaluate works out again, as of now, whether the windows pause the
+// queue: a snapshot reported earlier (say by a runner) may name windows that
+// have since reset. A manual pause is kept as it is.
+func (s Snapshot) Reevaluate(now time.Time) Snapshot {
+	if s.ManualPause {
+		return s
+	}
+	s.Paused, s.Reason, s.Until = false, "", time.Time{}
 	for _, w := range s.Windows {
 		if !w.ResetsAt.After(now) {
 			continue // window already reset; its numbers are stale
 		}
-		// Only "rejected" is a limit: "allowed_warning" is Claude Code
-		// saying the window is getting close, and its utilization tells
-		// how close.
-		limited := w.Status == "rejected"
-		high := t.pauseAt > 0 && t.pauseAt < 1 && w.Utilization >= t.pauseAt
+		limited := Limited(w.Status)
+		high := s.PauseAt > 0 && s.PauseAt < 1 && w.Utilization >= s.PauseAt
 		if limited || high {
 			s.Paused = true
 			s.Reason = fmt.Sprintf("%s usage at %.0f%%", label(w.Name), w.Utilization*100)

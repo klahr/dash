@@ -1513,7 +1513,8 @@ func (s *Server) getUsage(w http.ResponseWriter, r *http.Request) {
 				if snap.ManualPause {
 					ru.Paused, ru.Reason, ru.Until = true, snap.Reason, time.Time{}
 				}
-				snap = ru
+				// The runner's verdict may be stale: its windows may have reset since.
+				snap = ru.Reevaluate(time.Now())
 			}
 		}
 	}

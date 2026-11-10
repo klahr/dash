@@ -518,7 +518,8 @@ func (s *Server) wallQueue(d *wallData, c Caller, runners []tunnel.Runner) {
 			if snap.ManualPause {
 				ru.Paused, ru.Reason = true, snap.Reason
 			}
-			snap = ru
+			// The runner's verdict may be stale: its windows may have reset since.
+			snap = ru.Reevaluate(time.Now())
 		}
 	}
 	d.Usage = wallUsage{Known: snap.Known, PauseAt: snap.PauseAt, Windows: snap.Windows}

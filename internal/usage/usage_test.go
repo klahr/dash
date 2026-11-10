@@ -85,3 +85,36 @@ func TestManualPause(t *testing.T) {
 		t.Fatal("resume should unblock")
 	}
 }
+
+// A warning is not a limit: Claude Code still runs, the queue keeps going.
+func TestWarningStatusDoesNotBlock(t *testing.T) {
+	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	tr := New(nil, 0.9)
+	tr.now = func() time.Time { return now }
+	tr.Observe(json.RawMessage(`{"status":"allowed_warning","rateLimitType":"seven_day","resetsAt":` +
+		fmt.Sprint(now.Add(48*time.Hour).Unix()) + `}`))
+	if ok, why := tr.CanStart(); !ok {
+		t.Fatalf("allowed_warning should not block, got %q", why)
+	}
+}
+
+// A snapshot reported earlier is worked out again once its window resets.
+func TestReevaluateStaleSnapshot(t *testing.T) {
+	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	tr := New(nil, 0.9)
+	tr.now = func() time.Time { return now }
+	tr.Observe(info("allowed", 0.2, 0.2, now.Add(time.Hour)))
+	tr.Observe(json.RawMessage(`{"status":"rejected","rateLimitType":"seven_day","resetsAt":` +
+		fmt.Sprint(now.Add(time.Hour).Unix()) + `}`))
+	s := tr.Snapshot()
+	if !s.Paused || s.Reason != "Weekly limit reached" {
+		t.Fatalf("want weekly limit, got %v %q", s.Paused, s.Reason)
+	}
+	if r := s.Reevaluate(now.Add(2 * time.Hour)); r.Paused || r.Reason != "" || !r.Until.IsZero() {
+		t.Fatalf("after reset: %v %q %v", r.Paused, r.Reason, r.Until)
+	}
+	s.ManualPause, s.Reason = true, "Paused by you"
+	if r := s.Reevaluate(now.Add(2 * time.Hour)); !r.Paused || r.Reason != "Paused by you" {
+		t.Fatalf("manual pause kept: %v %q", r.Paused, r.Reason)
+	}
+}
