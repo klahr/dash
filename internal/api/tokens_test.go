@@ -253,10 +253,7 @@ func TestRunnerCodesNeedSession(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &c); err != nil || w.Code != http.StatusOK || c.Code == "" {
 		t.Fatalf("runner code: %d %s", w.Code, w.Body)
 	}
-	_, runnerToken, err := s.Peers.Runners.Register(c.Code, "work")
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, runnerToken := registerRunner(t, s.Peers.Runners, c.Code, "work")
 	tok, sess, err := acc.Authenticate(runnerToken, time.Now(), store.TokenRunner)
 	if err != nil || tok.UserID != owner.User || tok.Org.ID != owner.Org || sess.Org.ID != owner.Org {
 		t.Fatalf("runner token %+v %v", tok, err)

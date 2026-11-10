@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -56,10 +57,7 @@ func newFleetServer(t *testing.T) *fleetServer {
 		if err != nil {
 			t.Fatal(err)
 		}
-		id, _, err := rh.Register(code, name)
-		if err != nil {
-			t.Fatal(err)
-		}
+		id, _ := registerRunner(t, rh, code, name)
 		f.ids[name] = id
 	}
 
@@ -140,10 +138,7 @@ func TestRunnerOwnersAndAdminsManageRunners(t *testing.T) {
 	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &code) != nil {
 		t.Fatalf("member's code: %d %s", w.Code, w.Body)
 	}
-	id, _, err := f.rh.Register(code.Code, "c-laptop")
-	if err != nil {
-		t.Fatal(err)
-	}
+	id, _ := registerRunner(t, f.rh, code.Code, "c-laptop")
 	if r, _ := f.rh.Get(id); r.Owner == nil || r.Owner.Username != "c" || r.OrgID() != testOwner(t, f.s).Org {
 		t.Errorf("c's new runner: %+v", r.Owner)
 	}
@@ -392,4 +387,18 @@ func TestHubLinkCarriesReviewSettings(t *testing.T) {
 	if p := link(nil, nil); !p.AutoApprove || p.MaxAutoFixes != 1 {
 		t.Errorf("link from an older hub: auto approve %v, fixes %d", p.AutoApprove, p.MaxAutoFixes)
 	}
+}
+
+// registerRunner swaps a registration code for a runner's id and token
+// through rh's POST /runner/register handler, as `dash runner --code` does.
+func registerRunner(t *testing.T, rh *tunnel.Hub, code, name string) (id, token string) {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"code": code, "name": name})
+	w := httptest.NewRecorder()
+	rh.ServeRegister(w, httptest.NewRequest("POST", "/runner/register", bytes.NewReader(body)))
+	var res struct{ ID, Token string }
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &res) != nil {
+		t.Fatalf("register runner %q: %d %s", name, w.Code, w.Body)
+	}
+	return res.ID, res.Token
 }

@@ -50,10 +50,7 @@ func TestHubForwardsOrRefusesWorkingTreeRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, _, err := rh.Register(code, "laptop")
-	if err != nil {
-		t.Fatal(err)
-	}
+	id, _ := registerRunner(t, rh, code, "laptop")
 	s.Dispatch = nil // projectRunner needs a dispatcher to link: none online either way
 	if _, err := raw(s).UpdateProject(p.ID, func(x *model.Project) error {
 		x.Runners, x.RemoteURL = []string{id}, "https://example.com/web.git"

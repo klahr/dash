@@ -139,26 +139,26 @@ func TestRegistrationCodeIsSingleUseAndExpires(t *testing.T) {
 	}
 
 	code, _, _ := h.NewCode(owner)
-	if _, _, err := h.Register(code, "Bad Name!"); !errors.Is(err, ErrBadName) {
+	if _, _, _, err := h.register(code, "Bad Name!", ""); !errors.Is(err, ErrBadName) {
 		t.Fatalf("bad name: %v", err)
 	}
-	id, token, err := h.Register(strings.ToLower(code), "work") // codes aren't case-sensitive
+	id, token, _, err := h.register(strings.ToLower(code), "work", "") // codes aren't case-sensitive
 	if err != nil {
 		t.Fatal(err)
 	}
 	if id == "" || !strings.HasPrefix(token, "dr_") {
 		t.Fatalf("id %q token %q", id, token)
 	}
-	if _, _, err := h.Register(code, "other"); !errors.Is(err, ErrBadCode) {
+	if _, _, _, err := h.register(code, "other", ""); !errors.Is(err, ErrBadCode) {
 		t.Fatalf("second use: %v", err)
 	}
 
 	code2, _, _ := h.NewCode(owner)
-	if _, _, err := h.Register(code2, "work"); !errors.Is(err, ErrNameTaken) {
+	if _, _, _, err := h.register(code2, "work", ""); !errors.Is(err, ErrNameTaken) {
 		t.Fatalf("duplicate name: %v", err)
 	}
 	now = now.Add(codeTTL + time.Second)
-	if _, _, err := h.Register(code2, "laptop"); !errors.Is(err, ErrBadCode) {
+	if _, _, _, err := h.register(code2, "laptop", ""); !errors.Is(err, ErrBadCode) {
 		t.Fatalf("expired code: %v", err)
 	}
 
@@ -182,7 +182,7 @@ func TestRegistrationNamesTakenByTheHub(t *testing.T) {
 	acc, owner := storetest.Accounts(t)
 	h := &Hub{Taken: func(n string) bool { return n == "home" }, Accounts: acc}
 	code, _, _ := h.NewCode(owner)
-	if _, _, err := h.Register(code, "home"); !errors.Is(err, ErrNameHub) {
+	if _, _, _, err := h.register(code, "home", ""); !errors.Is(err, ErrNameHub) {
 		t.Fatalf("hub's own name: %v", err)
 	}
 }
@@ -221,11 +221,11 @@ func TestWrongCodesPauseRegistration(t *testing.T) {
 	h := &Hub{Accounts: acc}
 	code, _, _ := h.NewCode(owner)
 	for range maxBadCodes {
-		if _, _, err := h.Register("AAAA-AAAA", "x"); !errors.Is(err, ErrBadCode) {
+		if _, _, _, err := h.register("AAAA-AAAA", "x", ""); !errors.Is(err, ErrBadCode) {
 			t.Fatal(err)
 		}
 	}
-	if _, _, err := h.Register(code, "x"); !errors.Is(err, ErrTooManyBad) {
+	if _, _, _, err := h.register(code, "x", ""); !errors.Is(err, ErrTooManyBad) {
 		t.Fatalf("after %d wrong codes: %v", maxBadCodes, err)
 	}
 }

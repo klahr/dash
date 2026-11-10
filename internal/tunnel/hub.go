@@ -49,7 +49,7 @@ const (
 
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
-// Errors from Register.
+// Errors from register.
 var (
 	ErrBadCode     = errors.New("unknown or expired registration code")
 	ErrTooManyBad  = errors.New("too many wrong registration codes, try again later")
@@ -289,16 +289,10 @@ func (h *Hub) pruneCodesLocked(now time.Time) {
 	h.codes = slices.DeleteFunc(h.codes, func(c regCode) bool { return !now.Before(c.Expires) })
 }
 
-// Register swaps a registration code for a new runner's id and token. The
-// token is shown only now; the hub keeps its hash.
-func (h *Hub) Register(code, name string) (id, token string, err error) {
-	id, token, _, err = h.register(code, name, "")
-	return id, token, err
-}
-
-// register is Register for a computer that may have registered before: prev
-// is the runner token it was given then (optional). If it is still valid,
-// the new registration replaces that runner, and may take its name.
+// register swaps a registration code for a new runner's id and token (the
+// token is shown only now; the hub keeps its hash). prev is the runner token
+// the computer was given if it registered before (optional). If it is still
+// valid, the new registration replaces that runner, and may take its name.
 func (h *Hub) register(code, name, prev string) (id, token string, owner model.Owner, err error) {
 	name = strings.ToLower(strings.TrimSpace(name))
 	var prevID string
