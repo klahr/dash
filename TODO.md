@@ -4,8 +4,6 @@ Most important first within each section.
 
 ## Next
 
-- [ ] Push notifications (Web Push) for ready for review, failed, approval needed and failed
-      build, so the installed app notifies you when it's closed.
 
 ## Quality
 
