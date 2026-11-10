@@ -6526,7 +6526,7 @@ function renderTryBack() {
   const b = $("#chat-try-back");
   if (b) b.hidden = !(state.view === "try" && !desktop.matches);
   // The Try view's Terminal/Chat tabs say which of the two is showing.
-  const chatOn = pane.open && !desktop.matches;
+  const chatOn = chatPage(); // not pane: applyView calls this at startup before pane exists
   for (const [id, on] of [["#try-tab-term", !chatOn], ["#try-tab-chat", chatOn]]) {
     const t = $(id);
     if (!t) continue;
