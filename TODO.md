@@ -56,3 +56,5 @@ Most important first within each section.
       (`docs/billing.md`), tested with one real payment and a refund.
 - [ ] If others will sign up on your hub: publish terms of service, a privacy policy (GDPR:
       what you store, where, for how long) and a contact address.
+- [ ] Cut the launch release (`docs/releases.md`), check the archives and the
+      `ghcr.io/klahr/dash` image, then set the repo's description, homepage and topics on GitHub.
