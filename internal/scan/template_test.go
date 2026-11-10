@@ -182,15 +182,24 @@ func TestBuiltins(t *testing.T) {
 			t.Errorf("%s: builtin %v schedule %q", b.Name, b.Builtin, b.Schedule)
 		}
 	}
-	for _, n := range []string{"security", "code-review", "dependencies", "test-gaps", "docs-drift"} {
+	for _, n := range []string{"security", "code-review", "dependencies", "test-gaps", "docs-drift", "performance"} {
 		if _, ok := names[n]; !ok {
 			t.Errorf("no built-in %s (have %v)", n, names)
 		}
 	}
 	if names["security"].Kind != KindSecurity || names["dependencies"].Kind != KindDependencies ||
 		names["test-gaps"].Kind != KindTests || names["test-gaps"].Scope != model.ScopeSinceLastScan ||
-		names["docs-drift"].Kind != KindDocs || names["docs-drift"].Scope != model.ScopeSinceLastScan {
+		names["docs-drift"].Kind != KindDocs || names["docs-drift"].Scope != model.ScopeSinceLastScan ||
+		names["performance"].Kind != KindPerformance || names["performance"].Scope != model.ScopeSinceLastScan {
 		t.Errorf("kinds: %+v", names)
+	}
+	// The performance review covers N+1 queries, unbounded work, indexes and
+	// slow handlers, and asks for the cost and the fix.
+	perf := names["performance"].Render("", "")
+	for _, want := range []string{"N+1", "Unbounded", "indexes", "request handlers", "plausible real cost", "suggested fix"} {
+		if !strings.Contains(perf, want) {
+			t.Errorf("performance prompt lacks %q", want)
+		}
 	}
 	// The dependency audit covers vulnerabilities, outdated packages and licences.
 	deps := names["dependencies"].Render("", "")

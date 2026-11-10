@@ -111,7 +111,7 @@ func TestTemplatesMergeAndShadow(t *testing.T) {
 	if len(active) != len(Builtins())+1 || len(problems) != 0 {
 		t.Fatalf("active: %+v %v", active, problems)
 	}
-	want := map[string]string{"mine": SourceDash, "security": SourceDash, "dependencies": SourceRepo, "code-review": SourceBuiltin, "test-gaps": SourceBuiltin, "docs-drift": SourceBuiltin}
+	want := map[string]string{"mine": SourceDash, "security": SourceDash, "dependencies": SourceRepo, "code-review": SourceBuiltin, "test-gaps": SourceBuiltin, "docs-drift": SourceBuiltin, "performance": SourceBuiltin}
 	for i, tm := range active {
 		if want[tm.Name] != tm.Origin {
 			t.Errorf("%s: origin %q, want %q", tm.Name, tm.Origin, want[tm.Name])

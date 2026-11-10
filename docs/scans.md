@@ -9,8 +9,13 @@ Scans come from three places, marked on each card:
 
 - **Built-in:** Dash's security scan (`security`), code review (`code-review`), dependency
   audit (`dependencies`), test gaps (`test-gaps`: changed code with no test covering it, and
-  tests that can't fail) and docs drift (`docs-drift`: README, `docs/` and CLAUDE.md content the
-  code no longer matches), in every project. The dependency audit reports vulnerable, abandoned
+  tests that can't fail), docs drift (`docs-drift`: README, `docs/` and CLAUDE.md content the
+  code no longer matches) and performance review (`performance`), in every project. The
+  performance review (suggested weekly, Mondays at 07:00) looks at what changed since its last
+  run for N+1 queries, unbounded loops, reads and allocations, missing database indexes for
+  added or changed queries, and slow or blocking work in request handlers. It only reports
+  problems with a plausible real cost, and each finding explains the cost and the fix. The
+  dependency audit reports vulnerable, abandoned
   and far outdated dependencies, and checks licences against the project's own (its LICENSE file
   or manifest, else proprietary): dependencies whose licence clashes with it (GPL or AGPL in an
   MIT or proprietary project, say), with no or an unknown licence, or whose licence changed in an
