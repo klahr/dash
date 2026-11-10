@@ -19,7 +19,18 @@ func TestCustomValidation(t *testing.T) {
 		tm.Prompt != "Look at {{path}}." || tm.Origin != SourceDash || !tm.Trusted() {
 		t.Fatalf("normalized: %+v", tm)
 	}
+	for kind, want := range map[string]string{
+		"tests": KindTests, " Test ": KindTests, "docs": KindDocs, "PERF": KindPerformance, "dead-code": KindDeadCode,
+		"flaky": KindFlakyTests, "a11y": KindAccessibility, "breaking": KindBreakingChanges, "": KindCustom,
+	} {
+		tm, err := Custom(model.ScanTemplate{Name: "k", Kind: kind, Prompt: "x"})
+		if err != nil || tm.Kind != want || tm.Record("p").Kind != want {
+			t.Errorf("kind %q: %q %v", kind, tm.Kind, err)
+		}
+	}
 	for _, bad := range []model.ScanTemplate{
+		{Name: "ok", Kind: "speed", Prompt: "x"},
+		{Name: "ok", Kind: "flaky tests and more", Prompt: "x"},
 		{Name: "", Prompt: "x"},
 		{Name: "a b", Prompt: "x"},
 		{Name: "../x", Prompt: "x"},

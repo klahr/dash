@@ -26,7 +26,7 @@ A repository file:
 ```markdown
 ---
 name: security            # default: the file name
-kind: security            # security | code_review | dependencies | custom: the default issue type
+kind: security            # see Kinds below; sets the default issue type
 scope: since_last_scan    # repo | since_last_scan | since_main | path
 path: internal            # optional: limit the scan to a directory
 model: opus               # optional: claude --model
@@ -37,6 +37,26 @@ tools: Read, Grep, Glob   # optional, needs approval in Dash; default: read-only
 Look for vulnerabilities in {{path}} …
 ```
 
+- **Kinds.** A scan's kind sets the type a finding gets when it names none, and every issue a
+  scan files records its kind (`scan_kind`). Issues has a scan-kind filter once a scan has filed
+  some, and the API and `list_issues` filter by kind too (see API below):
+
+  | Kind               | Aliases                                     | Default type |
+  | ------------------ | ------------------------------------------- | ------------ |
+  | `security`         | `sec`, `vuln`                               | vuln         |
+  | `dependencies`     | `deps`, `dep`, `dependency`                 | vuln         |
+  | `code_review`      | `review`                                    | bug          |
+  | `tests`            | `test`, `testing`, `coverage`               | issue        |
+  | `docs`             | `doc`, `documentation`                      | issue        |
+  | `performance`      | `perf`                                      | issue        |
+  | `dead_code`        | `deadcode`, `unused`, `unused_code`         | issue        |
+  | `flaky_tests`      | `flaky`, `flaky_test`, `flakes`             | bug          |
+  | `accessibility`    | `a11y`                                      | bug          |
+  | `breaking_changes` | `breaking`, `breaking_change`, `breaks`     | bug          |
+  | `custom` (default) |                                             | issue        |
+
+  Kinds are case-insensitive and `-` or a space works for `_` (`dead-code`, `Flaky Tests`); the
+  canonical name is what is saved and exported.
 - **Dash scans.** The editor has the same settings as a file's frontmatter (title, kind,
   scope, path, model, effort, schedule, tools) and the prompt, and checks them with the same
   rules. Only Dash scans can be edited or deleted in Dash; a scan's name can't change (duplicate
@@ -84,5 +104,8 @@ Look for vulnerabilities in {{path}} …
   the name; a built-in or repository scan of the name is replaced.
 - `PUT /api/projects/{pid}/scans/{name}` replaces a Dash scan's prompt and settings.
 - `DELETE /api/projects/{pid}/scans/{name}` deletes a Dash scan; its runs and issues stay.
+- `GET /api/projects/{pid}/issues?kind=<kind>&type=<type>` lists the issues a kind of scan filed
+  (aliases work; an unknown kind is a 400), optionally of one type (`bug`, `vuln`, `issue`). The
+  MCP `list_issues` tool takes the same `kind`.
 - `PATCH /api/projects/{pid}/scans/{name}` changes any scan's schedule and approvals, and
   `POST …/scans/{name}/run` runs it.

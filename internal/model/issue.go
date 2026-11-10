@@ -33,8 +33,11 @@ type Issue struct {
 	// in for the title in the fingerprint so rewording doesn't duplicate.
 	Rule string `json:"rule,omitempty"`
 	// Source is who reported it: "manual", "scan:<name>" or "agent:<todo id>".
-	Source string      `json:"source"`
-	Status IssueStatus `json:"status"`
+	Source string `json:"source"`
+	// ScanKind is the kind of scan that reported it (scan.Kinds: "security",
+	// "tests", "performance", …); "" when no scan did.
+	ScanKind string      `json:"scan_kind,omitempty"`
+	Status   IssueStatus `json:"status"`
 	// Fingerprint identifies the same issue across reports (see ComputeFingerprint).
 	Fingerprint   string    `json:"fingerprint"`
 	TodoIDs       []string  `json:"todo_ids,omitempty"` // tasks created for it

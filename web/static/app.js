@@ -7953,7 +7953,7 @@ const iss = {
   checked: new Set(), // ids picked for a bulk action
   expanded: new Set(),
   editing: null,      // id of the issue whose fields are being edited
-  filter: { type: "", severity: "", status: "active", source: "", run: null }, // run: { id, ids, label } from a scan report
+  filter: { type: "", severity: "", status: "active", source: "", kind: "", run: null }, // kind: the scan kind that filed it; run: { id, ids, label } from a scan report
 };
 
 function sortIssues() {
@@ -7999,6 +7999,7 @@ function issueVisible(i) {
   if (f.severity && i.severity !== f.severity) return false;
   if (f.status === "active" ? !triageable(i) : f.status && f.status !== "all" && i.status !== f.status) return false;
   if (f.source && i.source !== f.source && !i.source.startsWith(f.source + ":")) return false;
+  if (f.kind && i.scan_kind !== f.kind) return false;
   return true;
 }
 
@@ -8044,6 +8045,16 @@ function renderIssues() {
     if (!want.includes(iss.filter.source)) iss.filter.source = "";
     sel.value = iss.filter.source;
   }
+  // Kinds of scan that filed issues, for the kind filter (shown once there are any).
+  const kindSel = $("#issue-f-kind");
+  const seenKinds = new Set(iss.list.map((i) => i.scan_kind).filter(Boolean));
+  const wantKinds = ["", ...Object.keys(SCAN_KINDS).filter((k) => seenKinds.has(k)), ...[...seenKinds].filter((k) => !(k in SCAN_KINDS))];
+  if (iss.filter.kind && !wantKinds.includes(iss.filter.kind)) iss.filter.kind = "";
+  if ([...kindSel.options].map((o) => o.value).join() !== wantKinds.join()) {
+    kindSel.replaceChildren(...wantKinds.map((k) => h("option", { value: k }, k ? SCAN_KINDS[k] || k : "Any scan kind")));
+  }
+  kindSel.value = iss.filter.kind;
+  kindSel.hidden = wantKinds.length < 2;
   renderIssueBulk();
 }
 
@@ -8219,7 +8230,7 @@ $("#issue-add").addEventListener("submit", attempt(async (e) => {
     renderIssues();
   }
 }));
-for (const [key, id] of [["type", "#issue-f-type"], ["severity", "#issue-f-severity"], ["status", "#issue-f-status"], ["source", "#issue-f-source"]]) {
+for (const [key, id] of [["type", "#issue-f-type"], ["severity", "#issue-f-severity"], ["status", "#issue-f-status"], ["source", "#issue-f-source"], ["kind", "#issue-f-kind"]]) {
   $(id).addEventListener("change", (e) => { iss.filter[key] = e.target.value; renderIssues(); });
 }
 $("#issue-all").addEventListener("change", (e) => {
@@ -8236,7 +8247,11 @@ $("#issue-clear").addEventListener("click", () => { iss.checked.clear(); renderI
 // Preconfigured, read-only reviews of the project (security, code review,
 // dependency audit, or the team's own templates in .dash/scans/) that run on
 // demand or on a schedule and file what they find in Issues.
-const SCAN_KINDS = { security: "Security", code_review: "Code review", dependencies: "Dependencies", custom: "Custom" };
+const SCAN_KINDS = {
+  security: "Security", code_review: "Code review", dependencies: "Dependencies", tests: "Tests", docs: "Docs",
+  performance: "Performance", dead_code: "Dead code", flaky_tests: "Flaky tests", accessibility: "Accessibility",
+  breaking_changes: "Breaking changes", custom: "Custom",
+};
 const SCAN_SCOPES = { repo: "Whole repository", since_last_scan: "Changes since the last scan", since_main: "Branch vs. main", path: "One path" };
 const scans = { list: [], problems: [], builtin: false, dir: ".dash/scans", loaded: false, history: new Map() };
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;

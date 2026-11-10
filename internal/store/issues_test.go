@@ -72,6 +72,23 @@ func TestUpsertIssueByFingerprint(t *testing.T) {
 	}
 }
 
+func TestUpsertIssueKeepsScanKind(t *testing.T) {
+	s, p, path := issueStore(t)
+	// Filed before issues carried their scan's kind: a later report adds it,
+	// and a report without one keeps it.
+	a := mustUpsert(t, s, model.Issue{ProjectID: p.ID, Title: "Slow query", File: "db.go", Source: "scan:perf"}, model.UpsertNew)
+	b := mustUpsert(t, s, model.Issue{ProjectID: p.ID, Title: "Slow query", File: "db.go", Source: "scan:perf", ScanKind: model.ScanKindPerformance}, model.UpsertUpdated)
+	if b.ID != a.ID || b.ScanKind != model.ScanKindPerformance {
+		t.Fatalf("kind not added: %+v", b)
+	}
+	if c := mustUpsert(t, s, model.Issue{ProjectID: p.ID, Title: "Slow query", File: "db.go", Source: "scan:perf"}, model.UpsertKnown); c.ScanKind != model.ScanKindPerformance {
+		t.Fatalf("kind lost: %+v", c)
+	}
+	if s, _ = Open(path, nil); s.ListIssues(p.ID)[0].ScanKind != model.ScanKindPerformance {
+		t.Fatalf("kind after reopen: %+v", s.ListIssues(p.ID))
+	}
+}
+
 func TestUpsertIssueValidates(t *testing.T) {
 	s, p, _ := issueStore(t)
 	for _, in := range []model.Issue{

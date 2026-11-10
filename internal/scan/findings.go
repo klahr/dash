@@ -352,7 +352,7 @@ func Issues(t Template, root string, fs []Finding) (issues []model.Issue, errs [
 			errs = append(errs, err)
 			continue
 		}
-		is.Source = t.Source()
+		is.Source, is.ScanKind = t.Source(), t.Kind
 		if err := is.Normalize(); err != nil {
 			errs = append(errs, err)
 			continue

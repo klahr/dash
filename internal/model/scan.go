@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Scan scopes: what part of the repository a scan looks at.
 const (
@@ -9,6 +12,59 @@ const (
 	ScopeSinceMain     = "since_main"      // the checkout's branch compared with the default branch
 	ScopePath          = "path"            // one directory or file
 )
+
+// Scan kinds. A kind sets the type of a finding that names none, and the
+// issues a scan files carry it (Issue.ScanKind), so they can be filtered by it.
+const (
+	ScanKindSecurity        = "security"
+	ScanKindCodeReview      = "code_review"
+	ScanKindDependencies    = "dependencies"
+	ScanKindTests           = "tests"
+	ScanKindDocs            = "docs"
+	ScanKindPerformance     = "performance"
+	ScanKindDeadCode        = "dead_code"
+	ScanKindFlakyTests      = "flaky_tests"
+	ScanKindAccessibility   = "accessibility"
+	ScanKindBreakingChanges = "breaking_changes"
+	ScanKindCustom          = "custom"
+)
+
+// ScanKinds are the scan kinds, custom last.
+func ScanKinds() []string {
+	return []string{
+		ScanKindSecurity, ScanKindCodeReview, ScanKindDependencies, ScanKindTests, ScanKindDocs,
+		ScanKindPerformance, ScanKindDeadCode, ScanKindFlakyTests, ScanKindAccessibility,
+		ScanKindBreakingChanges, ScanKindCustom,
+	}
+}
+
+// scanKindAliases are other names accepted for a kind (after lower-casing
+// and turning '-' and ' ' into '_').
+var scanKindAliases = map[string]string{
+	"sec": ScanKindSecurity, "vuln": ScanKindSecurity, "vulns": ScanKindSecurity,
+	"review":     ScanKindCodeReview,
+	"dependency": ScanKindDependencies, "deps": ScanKindDependencies, "dep": ScanKindDependencies,
+	"test": ScanKindTests, "testing": ScanKindTests, "coverage": ScanKindTests, "test_coverage": ScanKindTests,
+	"doc": ScanKindDocs, "documentation": ScanKindDocs,
+	"perf":     ScanKindPerformance,
+	"deadcode": ScanKindDeadCode, "unused": ScanKindDeadCode, "unused_code": ScanKindDeadCode,
+	"flaky": ScanKindFlakyTests, "flaky_test": ScanKindFlakyTests, "flakes": ScanKindFlakyTests, "flakiness": ScanKindFlakyTests,
+	"a11y":     ScanKindAccessibility,
+	"breaking": ScanKindBreakingChanges, "breaking_change": ScanKindBreakingChanges, "breaks": ScanKindBreakingChanges,
+}
+
+// NormalizeScanKind is a scan kind's canonical name: lower case, '-' and
+// ' ' as '_', aliases resolved ("test" is tests, "perf" performance, "a11y"
+// accessibility, "dead-code" dead_code). It does not check that the result
+// is a kind.
+func NormalizeScanKind(kind string) string {
+	k := strings.ToLower(strings.TrimSpace(kind))
+	k = strings.NewReplacer("-", "_", " ", "_").Replace(k)
+	if a, ok := scanKindAliases[k]; ok {
+		return a
+	}
+	return k
+}
 
 // ScanRun statuses.
 const (

@@ -69,6 +69,89 @@ func TestParseTemplateDefaults(t *testing.T) {
 	}
 }
 
+func TestKinds(t *testing.T) {
+	for _, c := range []struct {
+		kind string
+		want string
+		typ  model.IssueType
+	}{
+		{"security", KindSecurity, model.IssueVuln},
+		{"dependencies", KindDependencies, model.IssueVuln},
+		{"deps", KindDependencies, model.IssueVuln},
+		{"code_review", KindCodeReview, model.IssueBug},
+		{"code-review", KindCodeReview, model.IssueBug},
+		{"tests", KindTests, model.IssueOther},
+		{"test", KindTests, model.IssueOther},
+		{"Testing", KindTests, model.IssueOther},
+		{"docs", KindDocs, model.IssueOther},
+		{"doc", KindDocs, model.IssueOther},
+		{"documentation", KindDocs, model.IssueOther},
+		{"performance", KindPerformance, model.IssueOther},
+		{"perf", KindPerformance, model.IssueOther},
+		{"dead_code", KindDeadCode, model.IssueOther},
+		{"dead-code", KindDeadCode, model.IssueOther},
+		{"\"dead code\"", KindDeadCode, model.IssueOther},
+		{"deadcode", KindDeadCode, model.IssueOther},
+		{"unused", KindDeadCode, model.IssueOther},
+		{"flaky_tests", KindFlakyTests, model.IssueBug},
+		{"flaky", KindFlakyTests, model.IssueBug},
+		{"flaky-test", KindFlakyTests, model.IssueBug},
+		{"accessibility", KindAccessibility, model.IssueBug},
+		{"a11y", KindAccessibility, model.IssueBug},
+		{"A11Y", KindAccessibility, model.IssueBug},
+		{"breaking_changes", KindBreakingChanges, model.IssueBug},
+		{"breaking", KindBreakingChanges, model.IssueBug},
+		{"breaking-change", KindBreakingChanges, model.IssueBug},
+		{"custom", KindCustom, model.IssueOther},
+	} {
+		tm, err := ParseTemplate("x", []byte("---\nkind: "+c.kind+"\n---\nGo."))
+		if err != nil {
+			t.Errorf("%s: %v", c.kind, err)
+			continue
+		}
+		if tm.Kind != c.want || tm.FindingType() != c.typ {
+			t.Errorf("%s: kind %q type %q, want %q %q", c.kind, tm.Kind, tm.FindingType(), c.want, c.typ)
+		}
+		// The canonical name survives a round trip.
+		back, err := ParseTemplate("x", []byte(tm.Markdown()))
+		if err != nil || back.Kind != c.want {
+			t.Errorf("%s: round trip %q %v", c.kind, back.Kind, err)
+		}
+	}
+	if got := len(Kinds()); got != 11 {
+		t.Errorf("Kinds: %d %v", got, Kinds())
+	}
+	// The error names every kind.
+	_, err := ParseTemplate("x", []byte("---\nkind: vibes\n---\nGo."))
+	if err == nil {
+		t.Fatal("vibes accepted")
+	}
+	for _, k := range Kinds() {
+		if !strings.Contains(err.Error(), k) {
+			t.Errorf("error %q does not name %s", err, k)
+		}
+	}
+}
+
+func TestIssuesCarryScanKind(t *testing.T) {
+	tm, err := ParseTemplate("a11y-check", []byte("---\nkind: a11y\n---\nGo."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	is, errs := Issues(tm, "", []Finding{{Title: "Button has no label"}, {Title: "XSS", Type: "vuln"}})
+	if len(errs) != 0 || len(is) != 2 {
+		t.Fatalf("issues: %+v %v", is, errs)
+	}
+	for _, i := range is {
+		if i.ScanKind != KindAccessibility || i.Source != "scan:a11y-check" {
+			t.Errorf("issue: %+v", i)
+		}
+	}
+	if is[0].Type != model.IssueBug || is[1].Type != model.IssueVuln {
+		t.Errorf("types: %q %q", is[0].Type, is[1].Type)
+	}
+}
+
 func TestParseTemplateErrors(t *testing.T) {
 	for name, src := range map[string]string{
 		"unclosed":      "---\nname: x\nGo.",

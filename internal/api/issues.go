@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/klahr/dash/internal/model"
@@ -41,7 +42,21 @@ func (s *Server) listIssues(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, sv.data.ListIssues(pid))
+	// ?type= (bug, vuln, issue) and ?kind= (the kind of scan that filed
+	// them, aliases allowed) narrow the list.
+	ty := model.IssueType(r.URL.Query().Get("type"))
+	kind := model.NormalizeScanKind(r.URL.Query().Get("kind"))
+	if kind != "" && !slices.Contains(model.ScanKinds(), kind) {
+		writeErr(w, fmt.Errorf("%w: unknown kind %q (%s)", errBadRequest, r.URL.Query().Get("kind"), strings.Join(model.ScanKinds(), ", ")))
+		return
+	}
+	out := []model.Issue{}
+	for _, i := range sv.data.ListIssues(pid) {
+		if (ty == "" || i.Type == ty) && (kind == "" || i.ScanKind == kind) {
+			out = append(out, i)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // addIssue adds one issue (the web UI's quick add needs only a title), or

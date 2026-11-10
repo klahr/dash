@@ -141,6 +141,9 @@ func (s *Store) upsertIssueLocked(in model.Issue) (model.Issue, model.UpsertResu
 	if in.Rule != "" {
 		cp.Rule = in.Rule
 	}
+	if in.ScanKind != "" {
+		cp.ScanKind = in.ScanKind
+	}
 	res := model.UpsertUpdated
 	if cp.Status == model.IssueResolved {
 		cp.Status, res = model.IssueOpen, model.UpsertReopened // it came back
@@ -358,7 +361,7 @@ func cloneIssue(is model.Issue) model.Issue {
 func issueEqual(a, b model.Issue) bool {
 	return a.Title == b.Title && a.Type == b.Type && a.Severity == b.Severity &&
 		a.File == b.File && a.Line == b.Line && a.Details == b.Details && a.Fix == b.Fix &&
-		a.Rule == b.Rule && a.Source == b.Source && a.Status == b.Status &&
+		a.Rule == b.Rule && a.Source == b.Source && a.ScanKind == b.ScanKind && a.Status == b.Status &&
 		a.Fingerprint == b.Fingerprint && a.DismissReason == b.DismissReason &&
 		slices.Equal(a.TodoIDs, b.TodoIDs)
 }

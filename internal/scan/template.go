@@ -1,5 +1,6 @@
 // Package scan runs preconfigured, read-only Claude Code scans of a project
-// (security, code review, dependency audit, or the team's own) on demand or
+// (security, code review, dependency audit, tests, docs, performance, dead
+// code, flaky tests, accessibility, breaking changes, or the team's own) on demand or
 // on a schedule, and files what they find in the project's Issues.
 //
 // A scan template is a markdown file in the repository, .dash/scans/<name>.md:
@@ -38,13 +39,28 @@ import (
 // Dir is where a repository keeps its scan templates.
 const Dir = ".dash/scans"
 
-// Kinds of scan; a kind sets the type a finding gets when it names none.
+// Kinds of scan; a kind sets the type a finding gets when it names none
+// (FindingType), and its findings' issues carry it (model.Issue.ScanKind).
 const (
-	KindSecurity     = "security"
-	KindCodeReview   = "code_review"
-	KindDependencies = "dependencies"
-	KindCustom       = "custom"
+	KindSecurity        = model.ScanKindSecurity
+	KindCodeReview      = model.ScanKindCodeReview
+	KindDependencies    = model.ScanKindDependencies
+	KindTests           = model.ScanKindTests
+	KindDocs            = model.ScanKindDocs
+	KindPerformance     = model.ScanKindPerformance
+	KindDeadCode        = model.ScanKindDeadCode
+	KindFlakyTests      = model.ScanKindFlakyTests
+	KindAccessibility   = model.ScanKindAccessibility
+	KindBreakingChanges = model.ScanKindBreakingChanges
+	KindCustom          = model.ScanKindCustom
 )
+
+// Kinds are the scan kinds, in the order the scan editor lists them.
+func Kinds() []string { return append([]string(nil), kinds...) }
+
+// NormalizeKind is kind's canonical name (see model.NormalizeScanKind):
+// "perf" is performance, "a11y" accessibility, "dead-code" dead_code.
+func NormalizeKind(kind string) string { return model.NormalizeScanKind(kind) }
 
 // Template is one scan: its settings (the frontmatter) and its prompt (the body).
 type Template struct {
@@ -94,7 +110,7 @@ var (
 	nameRE  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 	efforts = []string{"low", "medium", "high", "xhigh", "max"}
 	scopes  = []string{model.ScopeRepo, model.ScopeSinceLastScan, model.ScopeSinceMain, model.ScopePath}
-	kinds   = []string{KindSecurity, KindCodeReview, KindDependencies, KindCustom}
+	kinds   = model.ScanKinds()
 )
 
 // ParseTemplate reads a template file. name is used when the frontmatter
@@ -146,7 +162,7 @@ func (t *Template) setFields(front string) error {
 		case "title":
 			t.Title = val
 		case "kind":
-			t.Kind = strings.ToLower(val)
+			t.Kind = val // normalize resolves case and aliases
 		case "scope":
 			t.Scope = strings.ToLower(val)
 		case "path":
@@ -177,15 +193,10 @@ func (t *Template) normalize() error {
 	if t.Kind == "" {
 		t.Kind = KindCustom
 	}
-	t.Kind = strings.ReplaceAll(t.Kind, "-", "_")
-	if t.Kind == "review" {
-		t.Kind = KindCodeReview
-	}
-	if t.Kind == "dependency" || t.Kind == "deps" {
-		t.Kind = KindDependencies
-	}
+	t.Kind = NormalizeKind(t.Kind)
 	if !contains(kinds, t.Kind) {
-		return fmt.Errorf("unknown kind %q (%s)", t.Kind, strings.Join(kinds, ", "))
+		return fmt.Errorf("unknown kind %q (%s, %s or %s)", t.Kind,
+			strings.Join(kinds[:len(kinds)-2], ", "), kinds[len(kinds)-2], kinds[len(kinds)-1])
 	}
 	t.Path = model.NormalizePath(t.Path)
 	if strings.HasPrefix(t.Path, "../") || t.Path == ".." {
@@ -218,12 +229,16 @@ func (t *Template) normalize() error {
 	return nil
 }
 
-// FindingType is the type of a finding that names none.
+// FindingType is the type of a finding that names none: a vulnerability
+// for security and dependency scans; a bug where what is found is wrong
+// behaviour (code review, a flaky test, a change that breaks callers, a UI
+// some users can't use); otherwise an issue (a missing test or doc, slow or
+// dead code, a custom scan's finding).
 func (t Template) FindingType() model.IssueType {
 	switch t.Kind {
 	case KindSecurity, KindDependencies:
 		return model.IssueVuln
-	case KindCodeReview:
+	case KindCodeReview, KindFlakyTests, KindBreakingChanges, KindAccessibility:
 		return model.IssueBug
 	}
 	return model.IssueOther
@@ -342,7 +357,7 @@ func Pick(ts []Template, name string) (Template, bool) {
 // its defaults; the result is its template.
 func Custom(m model.ScanTemplate) (Template, error) {
 	t := Template{
-		Name: m.Name, Title: strings.TrimSpace(m.Title), Kind: strings.ToLower(strings.TrimSpace(m.Kind)),
+		Name: m.Name, Title: strings.TrimSpace(m.Title), Kind: NormalizeKind(m.Kind),
 		Scope: strings.ToLower(strings.TrimSpace(m.Scope)), Path: strings.TrimSpace(m.Path),
 		Model: strings.TrimSpace(m.Model), Effort: strings.ToLower(strings.TrimSpace(m.Effort)),
 		Schedule: strings.TrimSpace(m.Schedule), Prompt: strings.TrimSpace(m.Prompt),

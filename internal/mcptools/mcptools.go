@@ -438,7 +438,8 @@ func IssueTools(b Board, o Options) []Tool {
 	return []Tool{
 		{"list_issues", "List the project's known issues (bugs, vulnerabilities, other problems), most severe first. Check it before reporting one.", []Param{pProject,
 			{"status", "string", "Only this status: open, task_created, resolved or dismissed (default: open and task_created).", false},
-			{"type", "string", "Only this type: bug, vuln or issue.", false}},
+			{"type", "string", "Only this type: bug, vuln or issue.", false},
+			{"kind", "string", "Only issues filed by this kind of scan: " + strings.Join(model.ScanKinds(), ", ") + " (aliases such as perf, a11y or dead-code work too).", false}},
 			func(a Args) (any, error) {
 				p, err := project(b, a)
 				if err != nil {
@@ -456,7 +457,12 @@ func IssueTools(b Board, o Options) []Tool {
 					Location string            `json:"location,omitempty"`
 					Status   model.IssueStatus `json:"status"`
 					Source   string            `json:"source"`
+					Kind     string            `json:"kind,omitempty"`
 					Tasks    []string          `json:"tasks,omitempty"`
+				}
+				kind := model.NormalizeScanKind(a.Str("kind"))
+				if kind != "" && !slices.Contains(model.ScanKinds(), kind) {
+					return nil, fmt.Errorf("unknown kind %q (%s)", a.Str("kind"), strings.Join(model.ScanKinds(), ", "))
 				}
 				out := []row{}
 				for _, i := range is {
@@ -470,7 +476,10 @@ func IssueTools(b Board, o Options) []Tool {
 					if ty := a.Str("type"); ty != "" && string(i.Type) != ty {
 						continue
 					}
-					out = append(out, row{i.ID, i.Title, i.Type, i.Severity, i.Location(), i.Status, i.Source, i.TodoIDs})
+					if kind != "" && i.ScanKind != kind {
+						continue
+					}
+					out = append(out, row{i.ID, i.Title, i.Type, i.Severity, i.Location(), i.Status, i.Source, i.ScanKind, i.TodoIDs})
 				}
 				return out, nil
 			}},

@@ -80,6 +80,60 @@ func TestTaskRunGetsOnlyIssueTools(t *testing.T) {
 	}
 }
 
+func TestIssuesFilteredByScanKind(t *testing.T) {
+	s, _, p := boardServer(t)
+	h := loggedIn(t, s.Routes())
+	for _, is := range []model.Issue{
+		{ProjectID: p.ID, Title: "Missing alt text", Type: model.IssueBug, Source: "scan:ui", ScanKind: model.ScanKindAccessibility},
+		{ProjectID: p.ID, Title: "N+1 query", Type: model.IssueOther, Source: "scan:speed", ScanKind: model.ScanKindPerformance},
+		{ProjectID: p.ID, Title: "Typo", Source: "manual"},
+	} {
+		if _, _, err := raw(s).UpsertIssue(is); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := "/api/projects/" + p.ID + "/issues"
+	titles := func(query string) string {
+		t.Helper()
+		w := do(t, h, "GET", base+query, "")
+		var is []model.Issue
+		if err := json.Unmarshal(w.Body.Bytes(), &is); err != nil {
+			t.Fatalf("%s: %d %s", query, w.Code, w.Body)
+		}
+		var out []string
+		for _, i := range is {
+			out = append(out, i.Title)
+		}
+		return strings.Join(out, ",")
+	}
+	if got := titles("?kind=a11y"); got != "Missing alt text" {
+		t.Errorf("kind=a11y: %q", got)
+	}
+	if got := titles("?kind=performance&type=issue"); got != "N+1 query" {
+		t.Errorf("kind=performance: %q", got)
+	}
+	if got := titles("?kind=tests"); got != "" {
+		t.Errorf("kind=tests: %q", got)
+	}
+	if w := do(t, h, "GET", base+"?kind=vibes", ""); w.Code != http.StatusBadRequest {
+		t.Errorf("unknown kind: %d %s", w.Code, w.Body)
+	}
+
+	td, err := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Prompt: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, release := s.Board.RegisterTask(testOwner(t, s), p.ID, td.ID)
+	defer release()
+	text, isErr := callResult(t, rpc(s.Routes(), token, "tools/call", `{"name":"list_issues","arguments":{"kind":"perf"}}`))
+	if isErr || !strings.Contains(text, "N+1 query") || strings.Contains(text, "alt text") || strings.Contains(text, "Typo") {
+		t.Fatalf("list_issues kind=perf: %s", text)
+	}
+	if _, isErr := callResult(t, rpc(s.Routes(), token, "tools/call", `{"name":"list_issues","arguments":{"kind":"vibes"}}`)); !isErr {
+		t.Fatal("list_issues accepted an unknown kind")
+	}
+}
+
 func TestIssueTriageIntoTasks(t *testing.T) {
 	s, _, p := boardServer(t)
 	h := loggedIn(t, s.Routes())
