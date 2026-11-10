@@ -413,6 +413,29 @@ func TestWebhookKeepsTheSubscription(t *testing.T) {
 	}
 }
 
+func TestOldSubscriptionEndingKeepsTheNewOne(t *testing.T) {
+	f := newFixture(t)
+	f.join(f.team)
+	if _, err := f.b.Checkout(context.Background(), f.team); err != nil {
+		t.Fatal(err)
+	}
+	t0 := f.now
+	f.webhook("evt_1", "customer.subscription.created", t0, subObject("sub_1", "cus_1", "active", f.team, 2))
+	f.fake.subs["sub_2"] = Subscription{ID: "sub_2", Customer: "cus_1", Status: "active", ItemID: "si_sub_2", Quantity: 2, OrgID: f.team}
+	f.webhook("evt_2", "customer.subscription.created", t0.Add(time.Hour), subObject("sub_2", "cus_1", "active", f.team, 2))
+	// The old subscription's cancellation arrives after the new one is active.
+	if w := f.webhook("evt_3", "customer.subscription.deleted", t0.Add(2*time.Hour), subObject("sub_1", "cus_1", "canceled", f.team, 2)); w.Code != http.StatusOK {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if b, _ := f.acc.OrgBilling(f.team); b.SubscriptionID != "sub_2" || b.Status != "active" {
+		t.Fatalf("the old subscription's end replaced the new one: %+v", b)
+	}
+	f.now = f.now.Add(DefaultGrace + time.Hour)
+	if f.b.ReadOnly(f.team) {
+		t.Fatal("an org paying for its new subscription became read-only")
+	}
+}
+
 func TestWebhookChecksTheSignature(t *testing.T) {
 	f := newFixture(t)
 	body := `{"id":"evt_1","type":"customer.subscription.created","created":1,"data":{"object":{}}}`
