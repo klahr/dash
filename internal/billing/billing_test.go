@@ -413,6 +413,37 @@ func TestWebhookKeepsTheSubscription(t *testing.T) {
 	}
 }
 
+func TestWebhookFailureLetsStripeRetry(t *testing.T) {
+	f := newFixture(t)
+	f.join(f.team)
+	if _, err := f.b.Checkout(context.Background(), f.team); err != nil {
+		t.Fatal(err)
+	}
+	checkout := map[string]any{
+		"mode": "subscription", "client_reference_id": fmt.Sprint(f.team), "customer": "cus_1", "subscription": "sub_1",
+	}
+
+	// Stripe can't return the subscription yet: the event fails, and isn't
+	// recorded as handled.
+	w := f.webhook("evt_x", "checkout.session.completed", f.now, checkout)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("failed event: %d %s, want 500", w.Code, w.Body)
+	}
+	if b, _ := f.acc.OrgBilling(f.team); b.SubscriptionID != "" {
+		t.Fatalf("a failed event recorded a subscription: %+v", b)
+	}
+
+	// Stripe's retry of the same event is applied, not taken for a duplicate.
+	f.fake.subs["sub_1"] = Subscription{ID: "sub_1", Customer: "cus_1", Status: "active", ItemID: "si_1", Quantity: 2, OrgID: f.team}
+	w = f.webhook("evt_x", "checkout.session.completed", f.now, checkout)
+	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), "duplicate") {
+		t.Fatalf("retry: %d %s", w.Code, w.Body)
+	}
+	if b, _ := f.acc.OrgBilling(f.team); b.SubscriptionID != "sub_1" || b.Status != "active" {
+		t.Fatalf("the retry wasn't applied: %+v", b)
+	}
+}
+
 func TestOldSubscriptionEndingKeepsTheNewOne(t *testing.T) {
 	f := newFixture(t)
 	f.join(f.team)
