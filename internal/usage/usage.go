@@ -20,7 +20,7 @@ type Window struct {
 	Name        string    `json:"name"`
 	Utilization float64   `json:"utilization"` // 0..1
 	ResetsAt    time.Time `json:"resets_at"`
-	Status      string    `json:"status"` // "allowed", or a limited state
+	Status      string    `json:"status"` // "allowed", "allowed_warning" (near the limit) or "rejected"
 }
 
 // Snapshot is what the UI shows.
@@ -56,9 +56,10 @@ func New(pub Publisher, pauseAt float64) *Tracker {
 }
 
 type rawInfo struct {
-	Status         string `json:"status"`
-	ResetsAt       int64  `json:"resetsAt"`
-	RateLimitType  string `json:"rateLimitType"`
+	Status         string   `json:"status"`
+	ResetsAt       int64    `json:"resetsAt"`
+	RateLimitType  string   `json:"rateLimitType"`
+	Utilization    *float64 `json:"utilization"`
 	UnifiedWindows map[string]struct {
 		Utilization float64 `json:"utilization"`
 		ResetsAt    int64   `json:"resetsAt"`
@@ -83,6 +84,9 @@ func (t *Tracker) Observe(raw json.RawMessage) {
 	if len(info.UnifiedWindows) == 0 && info.RateLimitType != "" {
 		w := t.windows[info.RateLimitType]
 		w.Name, w.Status, w.ResetsAt = info.RateLimitType, info.Status, time.Unix(info.ResetsAt, 0)
+		if info.Utilization != nil {
+			w.Utilization = *info.Utilization
+		}
 		t.windows[info.RateLimitType] = w
 	}
 	t.mu.Unlock()
@@ -120,7 +124,10 @@ func (t *Tracker) Snapshot() Snapshot {
 		if !w.ResetsAt.After(now) {
 			continue // window already reset; its numbers are stale
 		}
-		limited := w.Status != "" && w.Status != "allowed"
+		// Only "rejected" is a limit: "allowed_warning" is Claude Code
+		// saying the window is getting close, and its utilization tells
+		// how close.
+		limited := w.Status == "rejected"
 		high := t.pauseAt > 0 && t.pauseAt < 1 && w.Utilization >= t.pauseAt
 		if limited || high {
 			s.Paused = true
@@ -150,6 +157,12 @@ func label(name string) string {
 		return "Weekly"
 	case "seven_day_opus":
 		return "Weekly Opus"
+	case "seven_day_sonnet":
+		return "Weekly Sonnet"
+	case "seven_day_overage_included":
+		return "Weekly (with extra usage)"
+	case "overage":
+		return "Extra usage"
 	}
 	return name
 }
