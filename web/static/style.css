@@ -655,6 +655,26 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .graph-commit[role="button"] { cursor: pointer; border-radius: var(--r-s); padding-inline: 4px; margin-inline: -4px; transition: background-color .15s; }
 .graph-commit[role="button"]:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .graph-commit[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.graph li.selected .graph-commit { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+
+/* History's commit pane: the task detail's panel (.detail), without the scrim. */
+.commit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.commit-actions .menu-note { font-style: normal; font-size: 13px; color: var(--muted); }
+.commit-sha { font: 12px/20px var(--mono); color: var(--muted); padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-s); cursor: copy; }
+.commit-sha:hover { color: var(--text); border-color: var(--muted); }
+.commit-message { margin: 0 0 14px; padding: 12px 14px; font: 13px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: #c9d3e3; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); }
+.commit-facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0 0 18px; font-size: 13px; }
+.commit-facts dt { color: var(--muted); }
+.commit-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.commit-email { color: var(--faint); }
+.commit-parent { font-family: var(--mono); font-size: 12.5px; }
+.commit-files-head { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.commit-files-head .counts { font-weight: 500; font-size: 13px; }
+.file-status { flex: none; width: 18px; border-radius: 4px; font: 600 11px/18px var(--mono); text-align: center; color: var(--muted); background: var(--raised); }
+.file-status.st-A { color: var(--merged); }
+.file-status.st-D { color: var(--failed); }
+.file-status:is(.st-R, .st-C) { color: var(--accent); }
+.diff-lines > .meta { padding: 8px 12px; white-space: normal; }
 .project-list button.menu-choice { flex-direction: row; align-items: center; gap: 10px; }
 .project-list button.menu-choice:disabled { opacity: .55; cursor: not-allowed; }
 .menu-choice .menu-note { font-style: normal; font-weight: 400; font-size: 13px; color: var(--muted); margin-left: auto; }
@@ -1634,6 +1654,8 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .sheet > .toasts { right: 28px; }
 
   .detail { left: auto; bottom: 0; width: min(760px, 58vw); border-left: 1px solid var(--line); box-shadow: -24px 0 48px rgba(3, 6, 12, .45); }
+  /* The graph stays usable beside an open commit: it makes room for the pane. */
+  html:has(#commit-detail:not([hidden])) #view-history .graph { margin-right: min(760px, 58vw); }
   .scrim { position: fixed; inset: 0; z-index: 35; background: rgba(4, 8, 15, .35); }
   .detail-body { --pad-t: 16px; --pad-x: 24px; padding: var(--pad-t) var(--pad-x) 32px; }
   .actionbar { padding: 12px 24px; }

@@ -49,9 +49,11 @@ runners, each runner's clone follows the hub's branch.
 
 ## Tag a release
 
-In **History** (the commit graph of the branch tasks land on), click a commit for its menu: **Tag release…**,
-**Copy SHA** and **Open on GitHub**. Commits origin doesn't have yet (the dimmed "Not pushed yet"
-rows) can't be tagged: push first.
+In **History** (the commit graph of the branch tasks land on), click a commit (or move to it with
+`j`/`k`) to open it in a pane beside the graph (full screen on a phone): its whole message, author
+and committer, parents, and the files it changed, each with its diff. The pane's head has
+**Tag release…**, **Copy SHA** and **Open on GitHub**. Commits origin doesn't have yet (the dimmed
+"Not pushed yet" rows) can't be tagged: push first. `Esc` closes the pane.
 
 **Tag release…** fetches origin's tags, then offers the next patch, minor and major version after
 the latest release tag (the highest version, not the newest tag), or 0.1.0 for the first one, plus

@@ -219,6 +219,8 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/projects/{pid}/remote/pull", s.viaRunner(s.pullRemote))
 	mux.HandleFunc("GET /api/projects/{pid}/checkouts", s.listCheckouts)
 	mux.HandleFunc("GET /api/projects/{pid}/graph", s.viaRunner(s.gitGraph))
+	mux.HandleFunc("GET /api/projects/{pid}/commits/{sha}", s.viaRunner(s.getCommit))
+	mux.HandleFunc("GET /api/projects/{pid}/commits/{sha}/diff", s.viaRunner(s.commitDiff))
 	mux.HandleFunc("GET /api/projects/{pid}/branches", s.viaRunner(s.listBranches))
 	mux.HandleFunc("PUT /api/projects/{pid}/branch", s.viaRunner(s.switchBranch))
 	mux.HandleFunc("POST /api/projects/{pid}/branch/pr", s.viaRunner(s.branchPR))
@@ -499,7 +501,7 @@ func writeErr(w http.ResponseWriter, err error) {
 	var callErr *tunnel.CallError
 	switch {
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, runner.ErrNotFound), errors.Is(err, preview.ErrNotFound), errors.Is(err, preview.ErrNoTry),
-		errors.Is(err, scan.ErrNoScan):
+		errors.Is(err, scan.ErrNoScan), errors.Is(err, gitops.ErrNoCommit), errors.Is(err, gitops.ErrNoFileChange):
 		code = http.StatusNotFound
 	case errors.As(err, &inv), errors.As(err, &invIssue), errors.Is(err, store.ErrReviewing):
 		code = http.StatusConflict

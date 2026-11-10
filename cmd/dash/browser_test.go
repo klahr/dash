@@ -15,6 +15,7 @@ import (
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 )
 
 // The web client's main flows, clicked through in headless Chrome against
@@ -193,6 +194,78 @@ func TestBrowserChecklist(t *testing.T) {
 	}, http.StatusOK, nil)
 	b.waitJS("the change made elsewhere", `[...document.querySelectorAll("#cl-body .cl-item")].some((e) => e.textContent.includes("Made elsewhere"))`)
 	b.waitJS("no Reload button", `!document.querySelector("#cl-reload")`)
+}
+
+// The History view's commit pane, on a project whose clone is on a runner:
+// select a commit, open a changed file's diff, move with j/k and the arrow
+// keys, follow a parent link and close the pane with Esc.
+func TestBrowserHistoryCommitPane(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	api, pid := h.api, h.project.ID
+
+	// A second commit on origin, pulled into the runner's clone.
+	work := filepath.Join(t.TempDir(), "work")
+	run(t, "", h.gitEnv, "git", "clone", "-q", h.origin, work)
+	if err := os.WriteFile(filepath.Join(work, "notes.txt"), []byte("hello history\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, work, h.gitEnv, "git", "add", ".")
+	run(t, work, h.gitEnv, "git", "commit", "-q", "-m", "Add notes\n\nA body line.")
+	run(t, work, h.gitEnv, "git", "push", "-q", "origin", "main")
+	waitFor(t, nil, "the runner's clone to pull the commit", func() bool {
+		api.try("POST", "/api/projects/"+pid+"/remote/pull", nil)
+		code, body := api.try("GET", "/api/projects/"+pid+"/graph", nil)
+		var g struct{ Commits []struct{ Subject string } }
+		return code == http.StatusOK && json.Unmarshal([]byte(body), &g) == nil && len(g.Commits) == 2
+	})
+
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	b.until("open History", `document.querySelector("#view-history.active")`,
+		chromedp.Click(chromedp.CSS(`.nav > button[data-view=history]`)))
+	b.waitJS("both commits", `document.querySelectorAll("#graph li").length === 2`)
+
+	title := func(s string) string {
+		return fmt.Sprintf(`!document.querySelector("#commit-detail").hidden && document.querySelector("#cd-title").textContent === %q`, s)
+	}
+	selected := func(i int) string {
+		return fmt.Sprintf(`document.querySelectorAll("#graph li")[%d].classList.contains("selected") && document.querySelectorAll("#graph li.selected").length === 1`, i)
+	}
+	b.until("select the newest commit", title("Add notes"), chromedp.Click(chromedp.CSS(`#graph li:first-child .graph-commit`)))
+	b.waitJS("its row selected", selected(0))
+	b.waitJS("its message and files", `document.querySelector("#cd-message").textContent === "A body line." && document.querySelector("#cd-files").textContent.includes("notes.txt")`)
+	b.waitJS("the actions in the head", `[...document.querySelectorAll("#cd-actions button")].map((e) => e.textContent).join("|").includes("Copy SHA")`)
+	b.clickText(`#cd-files details.diff-file > summary`, "notes.txt")
+	b.waitJS("the file's diff", `document.querySelector("#cd-files .diff-lines")?.textContent.includes("+hello history")`)
+
+	// j moves to the older commit (focus is on the row), k and ArrowDown back and forth.
+	b.do("press j", chromedp.KeyEvent("j"))
+	b.waitJS("the older commit shown", title("first")+` && document.querySelector("#cd-files").textContent.includes("README.md")`)
+	b.waitJS("its row selected", selected(1))
+	b.do("press k", chromedp.KeyEvent("k"))
+	b.waitJS("the newer commit again", title("Add notes")+` && document.querySelector("#cd-files").textContent.includes("notes.txt")`)
+	b.do("press ArrowDown", chromedp.KeyEvent(kb.ArrowDown))
+	b.waitJS("the older commit again", title("first"))
+	b.do("press ArrowUp", chromedp.KeyEvent(kb.ArrowUp))
+	b.waitJS("back to the newest", title("Add notes")+` && document.querySelector("#cd-facts").textContent.includes("Parent")`)
+
+	// The parent link selects the parent.
+	b.do("follow the parent", chromedp.Click(chromedp.CSS(`#cd-facts .commit-parent`)))
+	b.waitJS("the parent shown", title("first")+" && "+selected(1))
+
+	// The selection survives a refresh of the graph.
+	b.do("refresh the graph", chromedp.Click(chromedp.CSS(`.nav > button[data-view=history]`)))
+	b.waitJS("still selected", selected(1))
+
+	// Esc closes the pane and clears the selection.
+	// (Focus off the History nav button, whose list takes Esc for itself.)
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`document.activeElement?.blur(), true`)); err != nil {
+		t.Fatal(err)
+	}
+	b.do("press Esc", chromedp.KeyEvent(kb.Escape))
+	b.waitJS("the pane closed", `document.querySelector("#commit-detail").hidden && !document.querySelector("#graph li.selected")`)
 }
 
 // A CLI project's terminal preview: open it on a task in review, type in
