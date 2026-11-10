@@ -3,6 +3,7 @@ package scan
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -182,7 +183,7 @@ func TestBuiltins(t *testing.T) {
 			t.Errorf("%s: builtin %v schedule %q", b.Name, b.Builtin, b.Schedule)
 		}
 	}
-	for _, n := range []string{"security", "code-review", "dependencies", "test-gaps", "docs-drift", "performance", "dead-code"} {
+	for _, n := range []string{"security", "code-review", "dependencies", "test-gaps", "docs-drift", "performance", "dead-code", "flaky-tests"} {
 		if _, ok := names[n]; !ok {
 			t.Errorf("no built-in %s (have %v)", n, names)
 		}
@@ -191,7 +192,8 @@ func TestBuiltins(t *testing.T) {
 		names["test-gaps"].Kind != KindTests || names["test-gaps"].Scope != model.ScopeSinceLastScan ||
 		names["docs-drift"].Kind != KindDocs || names["docs-drift"].Scope != model.ScopeSinceLastScan ||
 		names["performance"].Kind != KindPerformance || names["performance"].Scope != model.ScopeSinceLastScan ||
-		names["dead-code"].Kind != KindDeadCode {
+		names["dead-code"].Kind != KindDeadCode ||
+		names["flaky-tests"].Kind != KindFlakyTests || names["flaky-tests"].Scope != model.ScopeRepo {
 		t.Errorf("kinds: %+v", names)
 	}
 	// The performance review covers N+1 queries, unbounded work, indexes and
@@ -200,6 +202,18 @@ func TestBuiltins(t *testing.T) {
 	for _, want := range []string{"N+1", "Unbounded", "indexes", "request handlers", "plausible real cost", "suggested fix"} {
 		if !strings.Contains(perf, want) {
 			t.Errorf("performance prompt lacks %q", want)
+		}
+	}
+	// The flaky-test scan runs the suite, so it needs a shell, and it repeats
+	// the runs within a time cap.
+	flaky := names["flaky-tests"]
+	if !slices.Contains(flaky.Tools, "Bash") {
+		t.Errorf("flaky-tests tools: %q", flaky.Tools)
+	}
+	fp := flaky.Render("", "")
+	for _, want := range []string{"3 to 5 runs", "-shuffle=on", "25 minutes", "timeout", "timing", "ordering", "shared state", "network", "Do not change any files"} {
+		if !strings.Contains(fp, want) {
+			t.Errorf("flaky-tests prompt lacks %q", want)
 		}
 	}
 	// The dependency audit covers vulnerabilities, outdated packages and licences.
