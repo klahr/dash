@@ -5,7 +5,7 @@ import { state } from "./state.js";
 import { refreshMachines } from "./events.js";
 import { copyBlock } from "./prefs.js";
 import { askPassword } from "./account.js";
-import { agoText } from "./scans.js";
+import { agoText } from "./branches.js";
 
 // ------------------------------------------------------------------ tokens & connected apps
 // Everything that signs in as the user without a browser session: API

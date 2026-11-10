@@ -367,6 +367,9 @@ export function ago(iso) {
   return `${Math.floor(s / 86400)}d`;
 }
 
+// "just now", "2m ago"
+export const agoText = (iso) => { const a = ago(iso); return a === "now" ? "just now" : `${a} ago`; };
+
 // A merged todo is pushed once origin has its commit (in "pr" mode, and on
 // runners, merging is pushing).
 function isPushed(t) {

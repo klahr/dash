@@ -5,7 +5,7 @@ import { attempt, busy, toast } from "./dialogs.js";
 import { attachBox } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { projectKey } from "./events.js";
-import { ago, byPriority, title } from "./branches.js";
+import { agoText, byPriority, title } from "./branches.js";
 import { editing, pickProject, showNewTasks } from "./todos.js";
 import { formPriority } from "./dnd.js";
 
@@ -73,7 +73,7 @@ export const draft = drafts({
     el.dataset.state = st;
     if (st === "saved") { el.replaceChildren("Draft saved on this device"); return; }
     if (st === "restored") {
-      el.replaceChildren(`Restored your unsaved draft from ${ago(new Date(at).toISOString()) === "now" ? "just now" : `${ago(new Date(at).toISOString())} ago`}. `,
+      el.replaceChildren(`Restored your unsaved draft from ${agoText(at)}. `,
         ib({ type: "button", class: "link inline", onclick: discardDraft }, "trash", "Discard it"));
       return;
     }

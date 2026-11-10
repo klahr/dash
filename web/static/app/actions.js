@@ -2,7 +2,7 @@ import { $, h, ib } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, busy, toast } from "./dialogs.js";
 import { state } from "./state.js";
-import { ago, title } from "./branches.js";
+import { ago, agoText, title } from "./branches.js";
 import { openDetail } from "./detail.js";
 
 // ------------------------------------------------------------------ GitHub Actions
@@ -69,7 +69,7 @@ export function renderCI() {
   $("#ci-summary").replaceChildren(
     `${CI_LABEL[st.state]} on ${st.branch || "the default branch"}`,
     st.sha ? ` at ${st.sha.slice(0, 8)}` : "", ". ",
-    st.error ? h("span", { class: "err-text" }, st.error) : `Checked ${ago(st.checked) === "now" ? "just now" : `${ago(st.checked)} ago`}.`,
+    st.error ? h("span", { class: "err-text" }, st.error) : `Checked ${agoText(st.checked)}.`,
     fix ? h("span", { class: "ci-fix" }, " Claude is fixing it: ", ib({ type: "button", class: "link inline", onclick: () => { $("#ci-sheet").close(); openDetail(fix.id); } }, "right", title(fix))) : "");
   $("#ci-runs").replaceChildren(...(st.runs || []).slice(0, 12).map(runRow));
   $("#ci-investigate").hidden = !((st.state === "failing" || rel?.state === "failed") && !fix);

@@ -3,7 +3,7 @@ import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { connectorSteps, copyBlock } from "./prefs.js";
-import { agoText } from "./scans.js";
+import { agoText } from "./branches.js";
 
 // ------------------------------------------------------------------ wall view
 // Configures /wall: which projects it shows and privacy mode (kept in this

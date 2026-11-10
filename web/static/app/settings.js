@@ -5,12 +5,11 @@ import { uploadFile } from "./attachments.js";
 import { state } from "./state.js";
 import { baseBranch } from "./events.js";
 import { projectIcon, renderProjectHeader, renderProjectList } from "./projects.js";
-import { renderBoard } from "./branches.js";
+import { agoText, renderBoard } from "./branches.js";
 import { DEFAULT_REVIEW_PROMPT } from "./drawmode.js";
 import { loadClaudeFiles } from "./claudefiles.js";
 import { loadWebhooks } from "./webhooks.js";
 import { loadBoard } from "./backend.js";
-import { agoText } from "./scans.js";
 
 // ------------------------------------------------------------------ project settings
 export function openSettings() {

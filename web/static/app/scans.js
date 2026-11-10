@@ -4,7 +4,7 @@ import { ask, attempt, copy, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { showView } from "./nav.js";
 import { selectProject } from "./projects.js";
-import { ago } from "./branches.js";
+import { agoText } from "./branches.js";
 import { showRunnerNeeded } from "./runners.js";
 import { notifyOn } from "./notifications.js";
 import { iss, pickable, renderIssues, triageable } from "./issues.js";
@@ -127,7 +127,6 @@ function showRunIssues(run, which, select = false) {
   renderIssues();
 }
 
-export const agoText = (iso) => (ago(iso) === "now" ? "just now" : `${ago(iso)} ago`);
 
 // "in 5m", "in 3h", "in 2d"
 function until(iso) {

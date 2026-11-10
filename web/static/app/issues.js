@@ -4,7 +4,7 @@ import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { showView } from "./nav.js";
-import { ago, title } from "./branches.js";
+import { agoText, title } from "./branches.js";
 import { openDetail, openTodo } from "./detail.js";
 import { SCAN_KINDS, renderScans } from "./scans.js";
 
@@ -229,8 +229,8 @@ function issueBody(i) {
   const patch = (body) => api("PATCH", `/api/issues/${i.id}`, body);
   return h("div", { class: "issue-body" },
     h("p", { class: "issue-meta" },
-      `${ISSUE_TYPES[i.type] || i.type} · ${sourceLabel(i.source)} · ${ago(i.created_at)} ago`,
-      i.updated_at !== i.created_at ? ` · updated ${ago(i.updated_at)} ago` : "",
+      `${ISSUE_TYPES[i.type] || i.type} · ${sourceLabel(i.source)} · ${agoText(i.created_at)}`,
+      i.updated_at !== i.created_at ? ` · updated ${agoText(i.updated_at)}` : "",
       i.rule ? ` · rule ${i.rule}` : ""),
     issueTaskNote(i),
     i.status === "dismissed" ? h("p", { class: "issue-reason" }, `Dismissed${i.dismiss_reason ? `: ${i.dismiss_reason}` : ""}`) : null,

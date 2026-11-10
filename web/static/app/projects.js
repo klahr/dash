@@ -7,7 +7,7 @@ import { state } from "./state.js";
 import { showView } from "./nav.js";
 import { baseBranch, eventFor, latest, multi, projectKey, projectStatus, refreshLive } from "./events.js";
 import { loadTodos, pushDone, renderPushMain } from "./board.js";
-import { renderBoard } from "./branches.js";
+import { agoText, renderBoard } from "./branches.js";
 import { closeDetail, openDetail } from "./detail.js";
 import { openPrefs, syncPrefs } from "./prefs.js";
 import { loadRunners, openRunners, startRunner } from "./runners.js";
@@ -27,7 +27,7 @@ import { loadProcs, loadTry, renderProcs } from "./try.js";
 import { closeCommit, loadGraph, renderGraph } from "./history.js";
 import { loadFiles, renderFile, renderFileTree } from "./files.js";
 import { loadIssues, resetIssues } from "./issues.js";
-import { agoText, loadScans, resetScans } from "./scans.js";
+import { loadScans, resetScans } from "./scans.js";
 import { loadChecklist } from "./checklist.js";
 
 // ------------------------------------------------------------------ projects

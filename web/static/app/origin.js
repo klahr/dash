@@ -2,7 +2,7 @@ import { $, h, timeLocale } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
-import { ago } from "./branches.js";
+import { agoText } from "./branches.js";
 
 // ------------------------------------------------------------------ origin (background fetch)
 // Dash fetches origin's default branch when a project is selected and every
@@ -29,7 +29,7 @@ export function renderRemote() {
     st.behind && !st.ahead ? "New tasks start from origin's version." : "",
     st.behind && st.ahead ? "The next merge reconciles them." : "",
     st.error ? `Last fetch failed: ${st.error}. Retrying ${st.retry_at ? `at ${new Date(st.retry_at).toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit" })}` : "soon"}.` : "",
-    st.fetched ? `Fetched ${ago(st.fetched) === "now" ? "just now" : `${ago(st.fetched)} ago`}. Click to fetch now.` : "Click to fetch now.",
+    st.fetched ? `Fetched ${agoText(st.fetched)}. Click to fetch now.` : "Click to fetch now.",
   ].filter(Boolean).join(" ");
   pill.setAttribute("aria-label", pill.title);
 }

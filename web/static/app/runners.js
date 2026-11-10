@@ -4,7 +4,7 @@ import { art, ask, attempt, fail, reduceMotion, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { refreshMachines } from "./events.js";
 import { isHub, loadProjects, needsRunner, openNewProject, renderSideProjects, selectProject } from "./projects.js";
-import { ago, renderBoard } from "./branches.js";
+import { agoText, renderBoard } from "./branches.js";
 import { copyBlock } from "./prefs.js";
 import { shortLabel } from "./usage.js";
 import { openSettings } from "./settings.js";
@@ -85,13 +85,12 @@ const runnerLimit = (r) => r.parallel || r.reported?.parallel || 1;
 const runnerOutdated = (r) => isRelease(runnerInfo.version) && !!r.version && r.version !== runnerInfo.version;
 // runnerClaudeWarnings is what runner r found changed about its Claude Code CLI.
 const runnerClaudeWarnings = (r) => r.reported?.claude?.warnings || [];
-export const agoPhrase = (iso) => { const a = ago(iso); return a === "now" ? "just now" : `${a} ago`; };
 
 // runnerStatus is what runner r is doing, in a few words, and its tone
 // (on, busy, paused, off) for the dot and the card's accent.
 function runnerStatus(r) {
   const n = (k) => `${k} task${k === 1 ? "" : "s"}`;
-  if (!r.online) return { tone: "off", text: r.last_seen ? `Offline · seen ${agoPhrase(r.last_seen)}` : "Never connected" };
+  if (!r.online) return { tone: "off", text: r.last_seen ? `Offline · seen ${agoText(r.last_seen)}` : "Never connected" };
   if (r.paused) return { tone: "paused", text: r.running ? `Paused · finishing ${n(r.running)}` : "Paused" };
   const u = r.reported?.usage;
   if (u?.known && u.paused) return { tone: "paused", text: `Waiting on Claude limits${u.reason ? ` (${u.reason})` : ""}` };

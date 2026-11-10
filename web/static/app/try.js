@@ -7,7 +7,7 @@ import { showView } from "./nav.js";
 import { setMenu } from "./projects.js";
 import { closeDetail } from "./detail.js";
 import { PV_ARROWS, PV_KEYS } from "./preview.js";
-import { agoPhrase } from "./runners.js";
+import { agoText } from "./branches.js";
 import { pane, renderTryBack, toggleChatPane } from "./chatpane.js";
 import { TERM_OPTS, ensureShell, renderQuick } from "./terminal.js";
 import { setMode } from "./vim.js";
@@ -236,7 +236,7 @@ async function openTryCommits() {
     list.replaceChildren(...[
       q ? null : row(`Latest ${branch}`, "fetched from origin when it starts", "", cur && !cur.ref, h("code", {}, branch)),
       typed ? row(`Check out “${q}”`, "a hash, tag or branch", q, false, h("code", {}, "ref")) : null,
-      ...commits.map((c) => row(c.subject, `${c.author} · ${agoPhrase(c.date)}`, c.sha, cur?.ref && cur.commit === c.sha, h("code", {}, c.short))),
+      ...commits.map((c) => row(c.subject, `${c.author} · ${agoText(c.date)}`, c.sha, cur?.ref && cur.commit === c.sha, h("code", {}, c.short))),
     ].filter(Boolean));
     note.textContent = commits.length >= 100 ? "Showing the latest 100 matches; search to narrow them." : !commits.length && q ? "No commit on the branch matches; you can still check out what you typed." : "";
   };

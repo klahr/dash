@@ -3,7 +3,7 @@ import { api } from "./api.js";
 import { ask, attempt, busy, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { copyBlock } from "./prefs.js";
-import { agoText } from "./scans.js";
+import { agoText } from "./branches.js";
 
 // ------------------------------------------------------------------ notification webhooks
 // Outgoing webhooks: a project's, in its settings, and the user's personal
