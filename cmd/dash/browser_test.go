@@ -898,11 +898,23 @@ func TestBrowserSwipeLanes(t *testing.T) {
 	api.must("POST", "/api/projects/"+pid+"/todos", map[string]any{"title": "Hold me", "prompt": "Stay a draft"}, http.StatusCreated, &draft)
 	b.waitCard(draft.ID, "draft")
 
-	// Count the slide-ins of a lane.
+	// Count the slide-ins of a lane, and note how far the page got wider than
+	// the screen while one ran: a phone grows its layout viewport to fit, which
+	// pushes the fixed bottom nav off-screen.
 	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(() => {
 		window.e2eSlides = 0;
+		window.e2eOverflow = 0;
 		const animate = Element.prototype.animate;
-		Element.prototype.animate = function (...a) { if (this.matches(".col")) window.e2eSlides++; return animate.apply(this, a); };
+		Element.prototype.animate = function (...a) {
+			if (!this.matches(".col")) return animate.apply(this, a);
+			window.e2eSlides++;
+			const r = animate.apply(this, a);
+			r.pause();
+			r.currentTime = 0;
+			window.e2eOverflow = Math.max(window.e2eOverflow, document.documentElement.scrollWidth - document.documentElement.clientWidth);
+			r.play();
+			return r;
+		};
 		return true;
 	})()`)); err != nil {
 		b.fail("count the slide-ins", err)
@@ -953,6 +965,7 @@ func TestBrowserSwipeLanes(t *testing.T) {
 	swipe("swipe left", 300, 500, 120, 510, 0)
 	lane("queued")
 	b.waitJS("a slide-in", `window.e2eSlides === 1`)
+	b.waitJS("a slide-in within the screen's width", `window.e2eOverflow === 0`)
 	swipe("swipe right", 120, 500, 300, 520, 0)
 	lane("draft")
 

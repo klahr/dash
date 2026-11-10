@@ -226,9 +226,13 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 
 .board { padding: 8px 0 96px; }
 /* One lane at a time: the board fills the screen down to the nav, so a
-   swipe to the next lane works below a short lane's last card too. */
+   swipe to the next lane works below a short lane's last card too.
+   The next lane slides in from the right (app/branches.js); clipped, so it
+   never makes the page wider than the screen, which on a phone grows the
+   layout viewport and pushes the fixed bottom nav off-screen. */
 @media (max-width: 1023px) {
   #view-board.active { display: flex; flex-direction: column; min-height: calc(100dvh - var(--top-h) - var(--nav-h) - var(--safe-b)); }
+  .board { overflow-x: clip; }
   .board:not(:empty) { flex: 1 0 auto; }
 }
 .col { display: none; }
