@@ -57,21 +57,20 @@ func (g *Git) run(ctx context.Context, publish bool, projectID, dir, bin string,
 
 // runEnv is run with env added to the command's environment.
 func (g *Git) runEnv(ctx context.Context, publish bool, env []string, projectID, dir, bin string, args ...string) (string, error) {
+	return g.runIn(ctx, publish, env, nil, projectID, dir, bin, args...)
+}
+
+// runIn is runEnv with stdin (nil for none) fed to the command.
+func (g *Git) runIn(ctx context.Context, publish bool, env []string, stdin []byte, projectID, dir, bin string, args ...string) (string, error) {
 	start := time.Now()
 	args = stripNUL(args)
-	tool := localrun.Git
-	if bin == g.ghBin() {
-		tool = localrun.Gh
-	}
-	cmd, err := localrun.Command(ctx, tool, bin, args...)
+	cmd, err := g.command(ctx, dir, env, bin, args...)
 	if err != nil {
 		return "", err
 	}
-	cmd.Dir = dir
-	cmd.Env = append(append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1"), env...)
-	// When ctx ends, git is killed but a child it started (ssh) may keep the
-	// output pipe open; don't wait for it forever.
-	cmd.WaitDelay = 5 * time.Second
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err = cmd.Run()
@@ -85,6 +84,26 @@ func (g *Git) runEnv(ctx context.Context, publish bool, env []string, projectID,
 		return out.String(), &CmdError{Args: append([]string{bin}, args...), Output: out.String(), Err: err}
 	}
 	return strings.TrimSpace(out.String()), nil
+}
+
+// command prepares bin (git or gh) to run in dir with env added: no prompts,
+// NUL-free args, and a bounded wait once ctx ends. Every git and gh Dash
+// runs goes through here.
+func (g *Git) command(ctx context.Context, dir string, env []string, bin string, args ...string) (*exec.Cmd, error) {
+	tool := localrun.Git
+	if bin == g.ghBin() {
+		tool = localrun.Gh
+	}
+	cmd, err := localrun.Command(ctx, tool, bin, stripNUL(args)...)
+	if err != nil {
+		return nil, err
+	}
+	cmd.Dir = dir
+	cmd.Env = append(append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1"), env...)
+	// When ctx ends, git is killed but a child it started (ssh) may keep the
+	// output pipe open; don't wait for it forever.
+	cmd.WaitDelay = 5 * time.Second
+	return cmd, nil
 }
 
 // stripNUL drops NUL bytes from args: no program can receive one (exec fails
@@ -886,13 +905,17 @@ func (g *Git) ReadBlob(ctx context.Context, projectID, repo, blob string, max in
 	if size, err = strconv.ParseInt(s, 10, 64); err != nil || size > max {
 		return nil, size, err
 	}
-	cmd, err := localrun.Command(ctx, localrun.Git, "git", "cat-file", "blob", blob)
+	args := []string{"cat-file", "blob", blob}
+	cmd, err := g.command(ctx, repo, nil, "git", args...)
 	if err != nil {
 		return nil, 0, err
 	}
-	cmd.Dir = repo
-	content, err = cmd.Output()
-	return content, size, err
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	if err := cmd.Run(); err != nil {
+		return nil, 0, &CmdError{Args: append([]string{"git"}, stripNUL(args)...), Output: errb.String(), Err: err}
+	}
+	return out.Bytes(), size, nil
 }
 
 // Unpushed counts the commits on branch that origin doesn't have, as of the

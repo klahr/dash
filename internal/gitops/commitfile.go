@@ -1,33 +1,16 @@
 package gitops
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/klahr/dash/internal/localrun"
 )
 
 // plumb runs git in repo with extra environment and input, for plumbing
 // commands that don't touch any checkout.
 func (g *Git) plumb(ctx context.Context, repo string, env []string, stdin []byte, args ...string) (string, error) {
-	cmd, err := localrun.Command(ctx, localrun.Git, "git", stripNUL(args)...)
-	if err != nil {
-		return "", err
-	}
-	cmd.Dir = repo
-	cmd.Env = append(append(os.Environ(), "GIT_TERMINAL_PROMPT=0"), env...)
-	if stdin != nil {
-		cmd.Stdin = bytes.NewReader(stdin)
-	}
-	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &out
-	if err := cmd.Run(); err != nil {
-		return out.String(), &CmdError{Args: append([]string{"git"}, args...), Output: out.String(), Err: err}
-	}
-	return strings.TrimSpace(out.String()), nil
+	return g.runIn(ctx, false, env, stdin, "", repo, "git", args...)
 }
 
 // CommitFile makes a commit on top of parent that sets path to content and
