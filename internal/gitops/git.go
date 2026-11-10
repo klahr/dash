@@ -52,6 +52,11 @@ func (g *Git) exec(ctx context.Context, projectID, dir, bin string, args ...stri
 
 // run executes a command; publish=false keeps routine polling out of the activity feed.
 func (g *Git) run(ctx context.Context, publish bool, projectID, dir, bin string, args ...string) (string, error) {
+	return g.runEnv(ctx, publish, nil, projectID, dir, bin, args...)
+}
+
+// runEnv is run with env added to the command's environment.
+func (g *Git) runEnv(ctx context.Context, publish bool, env []string, projectID, dir, bin string, args ...string) (string, error) {
 	start := time.Now()
 	args = stripNUL(args)
 	tool := localrun.Git
@@ -63,7 +68,7 @@ func (g *Git) run(ctx context.Context, publish bool, projectID, dir, bin string,
 		return "", err
 	}
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1")
+	cmd.Env = append(append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1"), env...)
 	// When ctx ends, git is killed but a child it started (ssh) may keep the
 	// output pipe open; don't wait for it forever.
 	cmd.WaitDelay = 5 * time.Second
@@ -145,19 +150,47 @@ func (g *Git) git(ctx context.Context, projectID, dir string, args ...string) (s
 
 // InitRepo makes sure path is a repository with at least one commit
 // (worktrees need a commit to branch from). Existing history is untouched.
+// A repository with no commits (a new one, or the clone of an empty
+// remote) gets an empty first commit on branch, whatever this computer's
+// init.defaultBranch.
 func (g *Git) InitRepo(ctx context.Context, projectID, path, branch string) error {
+	_, err := g.SeedRepo(ctx, projectID, path, branch)
+	return err
+}
+
+// SeedRepo is InitRepo, and reports whether it made the first commit.
+func (g *Git) SeedRepo(ctx context.Context, projectID, path, branch string) (seeded bool, err error) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
-		return err
+		return false, err
 	}
 	if _, err := g.git(ctx, projectID, path, "rev-parse", "--git-dir"); err != nil {
 		if _, err := g.git(ctx, projectID, path, "init", "-b", branch); err != nil {
-			return err
+			return false, err
 		}
 	}
 	if _, err := g.git(ctx, projectID, path, "rev-parse", "--verify", "HEAD"); err == nil {
-		return nil
+		return false, nil
 	}
-	_, err := g.git(ctx, projectID, path, g.committing(ctx, path, "commit", "--allow-empty", "-m", "Initial commit (Dash)")...)
+	// An empty clone's HEAD is whatever init.defaultBranch says here
+	// (master when it is unset), not the project's branch.
+	if branch != "" {
+		if _, err := g.git(ctx, projectID, path, "check-ref-format", "--branch", branch); err != nil {
+			return false, fmt.Errorf("%q isn't a branch name: %w", branch, err)
+		}
+		if _, err := g.git(ctx, projectID, path, "symbolic-ref", "HEAD", "refs/heads/"+branch); err != nil {
+			return false, err
+		}
+	}
+	if _, err := g.git(ctx, projectID, path, g.committing(ctx, path, "commit", "--allow-empty", "-m", "Initial commit (Dash)")...); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// PushUpstream pushes branch to origin and makes origin's its upstream:
+// what InitRepo seeded in an empty clone.
+func (g *Git) PushUpstream(ctx context.Context, projectID, repo, branch string) error {
+	_, err := g.git(ctx, projectID, repo, "push", "-u", "origin", "refs/heads/"+branch+":refs/heads/"+branch)
 	return err
 }
 
@@ -974,11 +1007,7 @@ func (g *Git) Clone(ctx context.Context, projectID, remote, path string) error {
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return err
 	}
-	args := []string{"-c", "protocol.ext.allow=never", "-c", "protocol.fd.allow=never"}
-	if !AllowLocalRemotes {
-		args = append(args, "-c", "protocol.file.allow=never")
-	}
-	args = append(args, "clone", "--", strings.TrimSpace(remote), path)
+	args := append(transportArgs(), "clone", "--", strings.TrimSpace(remote), path)
 	_, err := g.git(ctx, projectID, parent, args...)
 	return err
 }

@@ -152,7 +152,7 @@ func (d *Dispatcher) link(ctx context.Context, r tunnel.Runner, p model.Project)
 // returns the runner's project for it: the hub forwards p's git, files and
 // commands there. The runner clones p's remote the first time.
 func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Linked, error) {
-	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID,
+	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, CloneURL: p.CloneURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID,
 		MergeMode: p.MergeMode, MergeModeSet: p.MergeModeSet, MergeGreenPRs: p.MergeGreenPRs, TaskInstructions: p.TaskInstructions,
 		AutoApprove: &p.AutoApprove, MaxAutoFixes: &p.MaxAutoFixes,
 		SetupCommand: p.SetupCommand, TestCommand: p.TestCommand, RunCommand: p.RunCommand, DeployCommand: p.DeployCommand,

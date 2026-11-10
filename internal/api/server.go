@@ -106,8 +106,11 @@ type Server struct {
 	// HubCommands lets the hub set and run a project's commands when this
 	// Dash is a runner (see RunnerRoutes).
 	HubCommands bool
-	Static      fs.FS  // frontend assets
-	PublicURL   string // -public-url: the hub's address runners are told (optional; else the request's)
+	// GitHubProtocol is how this runner clones the hub's GitHub projects:
+	// gitops.ProtocolSSH ("" too) or gitops.ProtocolHTTPS (-github-protocol).
+	GitHubProtocol string
+	Static         fs.FS  // frontend assets
+	PublicURL      string // -public-url: the hub's address runners are told (optional; else the request's)
 	// MetricsToken, if set, serves /metrics on this listener to callers
 	// with it as their bearer token (empty: /metrics isn't served here).
 	MetricsToken string

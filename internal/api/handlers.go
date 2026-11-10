@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -116,6 +117,9 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		// and the runners it is linked to, which clone it.
 		RemoteURL string   `json:"remote_url"`
 		Runners   []string `json:"runners"`
+		// CloneURL is the URL the runners clone as it is (see
+		// model.Project.CloneURL); empty, they pick it from RemoteURL.
+		CloneURL string `json:"clone_url"`
 	}
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -144,6 +148,11 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, errors.Join(errBadRequest, err))
 			return
 		}
+		cloneURL, err := checkCloneURL(req.CloneURL)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
 		if strings.TrimSpace(req.Name) == "" {
 			writeErr(w, fmt.Errorf("%w: name is required", errBadRequest))
 			return
@@ -156,7 +165,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 			maxFixes = max(0, *req.MaxAutoFixes)
 		}
 		np := model.Project{
-			ID: store.NewID(), OrgID: sv.c.Org, Name: strings.TrimSpace(req.Name), DefaultBranch: req.DefaultBranch, RemoteURL: remote,
+			ID: store.NewID(), OrgID: sv.c.Org, Name: strings.TrimSpace(req.Name), DefaultBranch: req.DefaultBranch, RemoteURL: remote, CloneURL: cloneURL,
 			RunCommand: req.RunCommand, TestCommand: req.TestCommand, DeployCommand: req.DeployCommand,
 			SetupCommand: req.SetupCommand, PreviewKind: req.PreviewKind, PreviewCommand: req.PreviewCommand,
 			CopyFiles: cleanList(req.CopyFiles), MaxAutoFixes: maxFixes,
@@ -358,6 +367,9 @@ type projectUpdate struct {
 	Color          *string   `json:"color"`
 	Icon           *string   `json:"icon"`
 	TagFormat      *string   `json:"tag_format"`
+	// CloneURL is the hub's project's model.Project.CloneURL ("" clears
+	// it). Runners that cloned the project already keep their origin.
+	CloneURL *string `json:"clone_url"`
 	// Runners links the project to these runners (ids; replaces the list,
 	// [] unlinks them all).
 	Runners *[]string `json:"runners"`
@@ -420,6 +432,16 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 		}
 		*req.TagFormat = f.String()
 	}
+	if req.CloneURL != nil {
+		if !sv.s.hub() {
+			return model.Project{}, fmt.Errorf("%w: clone_url is a hub's project's setting", errBadRequest)
+		}
+		u, err := checkCloneURL(*req.CloneURL)
+		if err != nil {
+			return model.Project{}, err
+		}
+		req.CloneURL = &u
+	}
 	cur, err := sv.data.GetProject(id)
 	if err != nil {
 		return cur, err
@@ -462,6 +484,7 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 			p.TaskInstructions = strings.TrimSpace(*req.Instructions)
 		}
 		set(&p.TagFormat, req.TagFormat)
+		set(&p.CloneURL, req.CloneURL)
 		if req.CopyFiles != nil {
 			p.CopyFiles = cleanList(*req.CopyFiles)
 		}
@@ -1643,4 +1666,23 @@ func nonNil[T any](xs []T) []T {
 		return []T{}
 	}
 	return xs
+}
+
+// checkCloneURL checks a project's clone_url: "" (none), or a remote a
+// runner clones (gitops.CheckRemote) that carries no password or token,
+// which would be stored with the project and shown to everyone in it.
+func checkCloneURL(u string) (string, error) {
+	u = strings.TrimSpace(u)
+	if u == "" {
+		return "", nil
+	}
+	if err := gitops.CheckRemote(u); err != nil {
+		return "", errors.Join(errBadRequest, err)
+	}
+	if x, err := url.Parse(u); err == nil && x.User != nil {
+		if _, ok := x.User.Password(); ok || (x.Scheme == "https" && x.User.Username() != "") {
+			return "", fmt.Errorf("%w: clone_url must not hold credentials: set them up on the runner (an SSH key, or a git credential helper)", errBadRequest)
+		}
+	}
+	return u, nil
 }

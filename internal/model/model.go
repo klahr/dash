@@ -64,8 +64,13 @@ type Project struct {
 	// WorkBranch is the branch tasks currently start from and land on, when
 	// it isn't DefaultBranch (picked with the branch switcher); empty means
 	// DefaultBranch. See Base.
-	WorkBranch    string `json:"work_branch,omitempty"`
-	RemoteURL     string `json:"remote_url,omitempty"`
+	WorkBranch string `json:"work_branch,omitempty"`
+	RemoteURL  string `json:"remote_url,omitempty"`
+	// CloneURL, on a hub's project, is the URL its runners clone, as it is
+	// (a remote that isn't GitHub's, a deploy key's SSH alias). Empty, they
+	// clone RemoteURL, a GitHub repository over the runner's own
+	// -github-protocol. It is a URL only: never credentials.
+	CloneURL      string `json:"clone_url,omitempty"`
 	AutoPush      bool   `json:"auto_push"`                // push DefaultBranch after every merge
 	AutoApprove   bool   `json:"auto_approve"`             // finished todos whose tests pass skip review
 	RunCommand    string `json:"run_command,omitempty"`    // e.g. "npm run dev" — gets $PORT

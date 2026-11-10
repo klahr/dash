@@ -84,6 +84,10 @@ func TestRunnersFollowEachOthersPushes(t *testing.T) {
 			t.Fatal(err)
 		}
 		s, api, _ := runnerSide(t, creds.OrgID)
+		// Before runnerSide's folders go (cleanups run last first): no
+		// more news over the tunnels, and the fetches the last push's news
+		// started (git still writing in the clone) are done.
+		t.Cleanup(func() { cancel(); wg.Wait(); s.following.Wait() })
 		merges := queue.NewMergeQueue(raw(s), s.Git, s.Hub, &queue.TodoLog{Pub: s.Hub, Root: t.TempDir()}, 16)
 		merges.WorktreeRoot = filepath.Join(t.TempDir(), "worktrees")
 		s.Merges = merges

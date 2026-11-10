@@ -166,6 +166,7 @@ func main() {
 	var hubServer, regCode *string
 	var offlineGrace *time.Duration
 	var hubCommands *bool
+	var githubProtocol *string
 	if runnerMode {
 		flag.CommandLine.Init("dash runner", flag.ExitOnError)
 		flag.CommandLine.Usage = func() {
@@ -176,6 +177,7 @@ func main() {
 		hubServer = flag.String("server", "", "the hub's URL, e.g. https://dash.example.com (saved after registering)")
 		regCode = flag.String("code", "", "registration code from the hub's Runners page (only the first time, or to register again)")
 		offlineGrace = flag.Duration("offline-grace", 10*time.Minute, "when the hub has been unreachable this long, stop running tasks and mark them interrupted (0 = never)")
+		githubProtocol = flag.String("github-protocol", "", "how this runner clones, fetches and pushes the hub's GitHub projects: ssh (git@github.com:…, with this computer's SSH keys) or https (needs a git credential helper, e.g. gh auth setup-git) (default $DASH_GITHUB_PROTOCOL, else ssh); a project's clone URL, when set, is used as it is")
 		hubCommands = flag.Bool("hub-commands", false, "let the hub set the projects' run/test/deploy/setup commands and run ad-hoc commands, and open terminals for the runner's owner from the hub; off = only commands set on this computer run")
 	}
 	if !runnerMode {
@@ -578,6 +580,14 @@ func main() {
 	var reporter *dispatch.Reporter
 	if runnerMode {
 		apiSrv.HubCommands = *hubCommands
+		proto := *githubProtocol
+		if proto == "" {
+			proto = os.Getenv("DASH_GITHUB_PROTOCOL")
+		}
+		if apiSrv.GitHubProtocol, err = gitops.ParseGitHubProtocol(proto); err != nil {
+			slog.Error("runner: -github-protocol", "err", err)
+			os.Exit(2)
+		}
 		credsPath := filepath.Join(*dataDir, "runner.json")
 		if runnerCreds, err = runnerCredentials(ctx, credsPath, *hubServer, *regCode, *machine); err != nil {
 			slog.Error("runner", "err", err)

@@ -195,6 +195,13 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, errors.Join(errBadRequest, err))
 		return
 	}
+	// What this runner clones: the project's own clone URL, else its
+	// GitHub repository over this runner's protocol.
+	cloneURL := gitops.CloneRemote(req.RemoteURL, req.CloneURL, s.GitHubProtocol)
+	if err := gitops.CheckRemote(cloneURL); err != nil {
+		writeErr(w, errors.Join(errBadRequest, err))
+		return
+	}
 	if s.ProjectRoot == "" {
 		writeErr(w, fmt.Errorf("%w: this runner has no projects root (-projects)", errBadRequest))
 		return
@@ -211,7 +218,7 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch, Path: p.Path})
 		return
 	}
-	place, err := s.hubPlace(ctx, sv, hpid, req.Name, req.RemoteURL)
+	place, err := s.hubPlace(ctx, sv, hpid, req.Name, req.RemoteURL, cloneURL)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -223,7 +230,13 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 	how := model.HubAdopted
 	if !place.Adopt {
 		how = model.HubCloned
-		if err := s.Git.Clone(ctx, id, req.RemoteURL, path); err != nil {
+		// A remote this computer can't read says so, rather than with
+		// git's exit 128 ("could not read Username", "Permission denied").
+		if err := s.Git.CheckAccess(ctx, id, s.machineName(), cloneURL); err != nil {
+			writeErr(w, errors.Join(errBadRequest, err))
+			return
+		}
+		if err := s.Git.Clone(ctx, id, cloneURL, path); err != nil {
 			// hubPlace picked a folder that didn't exist: what the failed
 			// clone left there would look like a clone of this remote.
 			_ = os.RemoveAll(path)
@@ -232,9 +245,16 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	branch := s.hubBranch(ctx, id, path, req.DefaultBranch)
-	if err := s.Git.InitRepo(ctx, id, path, branch); err != nil { // an empty remote gets a first commit
+	seeded, err := s.Git.SeedRepo(ctx, id, path, branch) // an empty remote gets a first commit
+	if err != nil {
 		writeErr(w, err)
 		return
+	}
+	if seeded {
+		// on branch, published so the other runners clone the same one
+		if err := s.Git.PushUpstream(ctx, id, path, branch); err != nil {
+			slog.Warn("runner: pushing the first commit of an empty repository", "path", path, "branch", branch, "err", err)
+		}
 	}
 	link := func(x *model.Project) {
 		x.HubProjectID, x.HubCheckout = hpid, how
@@ -290,8 +310,9 @@ type hubPlacement struct {
 // clone of the same remote. A folder holding anything else (another
 // repository, files, a symlink, a clone already linked to another of the
 // hub's projects) is never used. The path is always a direct child of the
-// projects root; nothing the hub sends is a path.
-func (s *Server) hubPlace(ctx context.Context, sv *service, hpid, name, remote string) (hubPlacement, error) {
+// projects root; nothing the hub sends is a path. A clone whose origin is
+// one of also (the URL this runner clones) is of the same remote too.
+func (s *Server) hubPlace(ctx context.Context, sv *service, hpid, name, remote string, also ...string) (hubPlacement, error) {
 	if s.ProjectRoot == "" {
 		return hubPlacement{}, fmt.Errorf("%w: this runner has no projects root (-projects)", errBadRequest)
 	}
@@ -326,7 +347,7 @@ func (s *Server) hubPlace(ctx context.Context, sv *service, hpid, name, remote s
 			continue
 		case err != nil || !fi.IsDir() || !isRepo(path):
 			continue // a file, a symlink, a plain folder: not ours to touch
-		case !gitops.SameRemote(s.Git.RemoteURL(ctx, "", path), remote):
+		case !sameRemote(s.Git.RemoteURL(ctx, "", path), append([]string{remote}, also...)):
 			continue // another repository
 		case isProject && own.HubProjectID != "" && own.HubProjectID != hpid:
 			continue // a clone of the same remote, already the hub's for another project
@@ -772,4 +793,22 @@ func (s *Server) hubGitHub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// machineName is this computer's name in the dashboard, for messages.
+func (s *Server) machineName() string {
+	if s.Peers != nil {
+		return s.Peers.Self
+	}
+	return ""
+}
+
+// sameRemote reports whether origin is any of remotes (gitops.SameRemote).
+func sameRemote(origin string, remotes []string) bool {
+	for _, r := range remotes {
+		if gitops.SameRemote(origin, r) {
+			return true
+		}
+	}
+	return false
 }

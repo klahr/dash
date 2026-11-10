@@ -344,6 +344,29 @@ path from the hub: the hub sends a remote, and the runner picks the folder itsel
 `-projects` (it clones only `https://`, `ssh://` or `user@host:path` remotes, never a local path).
 It refuses and logs anything else; the hub reaches only tasks it sent, by its own ids.
 
+### How a runner reaches GitHub
+
+A runner clones a shared GitHub project over **SSH** by default (`git@github.com:owner/repo.git`,
+with the computer's SSH keys), whatever form the hub's remote has. Start it with
+`-github-protocol=https` (or `DASH_GITHUB_PROTOCOL=https`) to use `https://github.com/owner/repo.git`
+instead; private repositories then need a git credential helper on that computer, e.g.
+`gh auth setup-git`, or a personal access token. The clone's origin is that URL, so fetches and
+pushes use the same protocol. Clones made before keep their origin.
+
+A project can instead have a **clone URL** (New project → Clone URL, or `clone_url` in the API),
+which every runner clones as it is: a remote that isn't GitHub's, or an SSH host alias for a deploy
+key (`git@github-deploy:owner/repo.git`). It is a URL only; credentials in it are refused, and stay
+on the runner.
+
+Before cloning, the runner checks it can read the remote (`git ls-remote`, never prompting:
+`GIT_TERMINAL_PROMPT=0`, ssh in batch mode) and otherwise fails the link with, for example,
+"runner laptop cannot access owner/repo over ssh: git@github.com: Permission denied (publickey)".
+An empty repository (just created on GitHub) passes; the runner gives it a first commit on the
+project's default branch, whatever the computer's `init.defaultBranch`, and pushes it.
+
+Creating a GitHub repository (New project → New GitHub repo) still uses the runner's `gh` login,
+whichever protocol it clones over.
+
 ### Where a runner keeps a shared project
 
 When a project is linked to it, a runner puts it straight in its projects folder, named after the

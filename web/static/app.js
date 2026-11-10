@@ -1318,6 +1318,7 @@ function setHubMode(mode) {
   f.github.placeholder = "name, or owner/name for an organization";
   $("#new-project-public-row").hidden = mode !== "create";
   $("#new-project-hub-hint").hidden = mode === "local";
+  $("#new-project-clone-row").hidden = mode === "local";
   $("#new-project-local-hint").hidden = mode !== "local";
   f.name.required = mode === "local";
   $("#new-project-name-label").replaceChildren(...(mode === "local" ? ["Name"] : ["Name ", h("em", {}, "optional")]));
@@ -1454,7 +1455,7 @@ async function submitHubProject(form, body) {
     name ||= remote.replace(/\/+$/, "").replace(/\.git$/, "").split(/[/:]/).pop();
   }
   toast(`Linking to ${r.name}…`);
-  const p = await api("POST", "/api/projects", { name, remote_url: remote, runners: [r.id],
+  const p = await api("POST", "/api/projects", { name, remote_url: remote, clone_url: (body.clone_url || "").trim(), runners: [r.id],
     run_command: body.run_command, test_command: body.test_command, deploy_command: body.deploy_command }, "");
   form.reset();
   ghState.pick = null;

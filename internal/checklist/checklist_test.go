@@ -7,10 +7,12 @@ import (
 	"testing"
 )
 
-// The repository's own TODO.md.
+// A snapshot of the repository's own TODO.md: the live one changes as
+// Dash checks off, moves and removes its items, so the test can't rely on
+// what it says.
 func fixture(t *testing.T) string {
 	t.Helper()
-	b, err := os.ReadFile("../../TODO.md")
+	b, err := os.ReadFile("testdata/TODO.md")
 	if err != nil {
 		t.Fatal(err)
 	}

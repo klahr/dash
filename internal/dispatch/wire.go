@@ -38,8 +38,11 @@ import (
 // <its projects root>/<repo>, adopts a clone of RemoteURL already there, or
 // finds its checkout from an earlier link by the hub's project id.
 type Link struct {
-	Name          string `json:"name"`
-	RemoteURL     string `json:"remote_url"`
+	Name      string `json:"name"`
+	RemoteURL string `json:"remote_url"`
+	// CloneURL is the hub project's model.Project.CloneURL: when set the
+	// runner clones it as it is, else RemoteURL over its -github-protocol.
+	CloneURL      string `json:"clone_url,omitempty"`
 	DefaultBranch string `json:"default_branch"`
 	// WorkBranch is the branch the hub's tasks start from and land on when
 	// it isn't DefaultBranch (the hub's branch switcher); "" means DefaultBranch.
