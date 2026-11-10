@@ -54,7 +54,7 @@ function blocks(lines) {
       const fence = m[1], body = [];
       for (i++; i < lines.length && !(lines[i].trim().startsWith(fence[0].repeat(fence.length)) && !lines[i].trim().slice(fence.length).trim()); i++) body.push(lines[i]);
       i++;
-      // The copy button is handled by a document-level click listener in app.js,
+      // The copy button is handled by a document-level click listener in app/dialogs.js,
       // so it keeps working when streaming replies re-render the HTML.
       out.push(`<div class="code-block"><button type="button" class="code-copy" title="Copy" aria-label="Copy code"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v11H9zM5 15H4V4h11v1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><pre><code${m[2] ? ` class="lang-${m[2]}"` : ""}>${esc(body.join("\n"))}</code></pre></div>`);
       continue;

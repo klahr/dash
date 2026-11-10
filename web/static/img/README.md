@@ -16,4 +16,4 @@ with headless Chromium in the dark theme at 2× (the phone at 3×, 390×640):
 - landing/review.webp       the task panel of a task in review with a file's diff open
 - landing/phone.webp        the board's Review lane on a phone
 
-The technology logos on the Run and Deploy buttons (TECH_ICONS in ../app.js) are inlined from devicon (https://github.com/devicons/devicon), MIT License, Copyright (c) 2015 konpa.
+The technology logos on the Run and Deploy buttons (TECH_ICONS in ../app/dom.js) are inlined from devicon (https://github.com/devicons/devicon), MIT License, Copyright (c) 2015 konpa.

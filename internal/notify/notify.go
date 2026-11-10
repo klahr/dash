@@ -201,7 +201,7 @@ func (n *Notifier) handle(ctx context.Context, ev model.Event) {
 }
 
 // classify reports whether ev is a moment to notify of, as the web app
-// decides it (web/static/app.js onEvent): a task's status changing to
+// decides it (web/static/app/events.js onEvent): a task's status changing to
 // review, failed or merged; a new permission request; a build turning
 // failing.
 func (n *Notifier) classify(ev model.Event) (Notification, bool) {
