@@ -119,15 +119,15 @@ func TestKinds(t *testing.T) {
 			t.Errorf("%s: round trip %q %v", c.kind, back.Kind, err)
 		}
 	}
-	if got := len(Kinds()); got != 11 {
-		t.Errorf("Kinds: %d %v", got, Kinds())
+	if got := len(model.ScanKinds()); got != 11 {
+		t.Errorf("Kinds: %d %v", got, model.ScanKinds())
 	}
 	// The error names every kind.
 	_, err := ParseTemplate("x", []byte("---\nkind: vibes\n---\nGo."))
 	if err == nil {
 		t.Fatal("vibes accepted")
 	}
-	for _, k := range Kinds() {
+	for _, k := range model.ScanKinds() {
 		if !strings.Contains(err.Error(), k) {
 			t.Errorf("error %q does not name %s", err, k)
 		}
@@ -290,7 +290,7 @@ func TestLoad(t *testing.T) {
 	if b, _ := Pick(ts, "b"); b.File != ".dash/scans/b.md" || b.Origin != SourceRepo {
 		t.Fatalf("b: %+v", b)
 	}
-	if tm, ok := Find(repo, "security"); !ok || !tm.Builtin || tm.Origin != SourceBuiltin {
+	if tm, ok := Pick(ts, "security"); !ok || !tm.Builtin || tm.Origin != SourceBuiltin {
 		t.Fatalf("security: %+v %v", tm, ok)
 	}
 	for i := 1; i < len(ts); i++ {
@@ -298,7 +298,7 @@ func TestLoad(t *testing.T) {
 			t.Fatalf("not sorted by name: %+v", ts)
 		}
 	}
-	if tm, ok := Find(repo, "b"); !ok || tm.Kind != KindSecurity {
+	if tm, ok := Pick(ts, "b"); !ok || tm.Kind != KindSecurity {
 		t.Fatalf("find: %+v %v", tm, ok)
 	}
 }
@@ -356,11 +356,11 @@ func TestLoadRepoScanOverridesBuiltin(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("%d scans called security: %+v", n, ts)
 	}
-	tm, ok := Find(repo, "security")
+	tm, ok := Pick(ts, "security")
 	if !ok || tm.Builtin || tm.Origin != SourceRepo || tm.File == "" || tm.Trusted() {
 		t.Fatalf("security: %+v %v", tm, ok)
 	}
-	if tm, _ := Find(repo, "code-review"); !tm.Builtin {
+	if tm, _ := Pick(ts, "code-review"); !tm.Builtin {
 		t.Fatalf("code-review: %+v", tm)
 	}
 }

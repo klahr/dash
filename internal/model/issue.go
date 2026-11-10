@@ -34,7 +34,7 @@ type Issue struct {
 	Rule string `json:"rule,omitempty"`
 	// Source is who reported it: "manual", "scan:<name>" or "agent:<todo id>".
 	Source string `json:"source"`
-	// ScanKind is the kind of scan that reported it (scan.Kinds: "security",
+	// ScanKind is the kind of scan that reported it (ScanKinds: "security",
 	// "tests", "performance", …); "" when no scan did.
 	ScanKind string      `json:"scan_kind,omitempty"`
 	Status   IssueStatus `json:"status"`

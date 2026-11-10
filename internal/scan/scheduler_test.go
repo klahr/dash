@@ -241,7 +241,8 @@ func TestSchedulerWaitsForUsage(t *testing.T) {
 
 func mustFind(t *testing.T, fx *fixture, name string) Template {
 	t.Helper()
-	tm, ok := Find(fx.repo, name)
+	ts, _ := Load(fx.repo)
+	tm, ok := Pick(ts, name)
 	if !ok {
 		t.Fatalf("no template %s", name)
 	}

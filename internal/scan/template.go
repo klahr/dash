@@ -55,9 +55,6 @@ const (
 	KindCustom          = model.ScanKindCustom
 )
 
-// Kinds are the scan kinds, in the order the scan editor lists them.
-func Kinds() []string { return append([]string(nil), kinds...) }
-
 // NormalizeKind is kind's canonical name (see model.NormalizeScanKind):
 // "perf" is performance, "a11y" accessibility, "dead-code" dead_code.
 func NormalizeKind(kind string) string { return model.NormalizeScanKind(kind) }
@@ -346,12 +343,6 @@ func Load(repo string) ([]Template, []Problem) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, problems
-}
-
-// Find is the template called name in repo.
-func Find(repo, name string) (Template, bool) {
-	ts, _ := Load(repo)
-	return Pick(ts, name)
 }
 
 // Pick is the template called name in ts.
