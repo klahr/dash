@@ -105,7 +105,11 @@ func (c ClaudeCodeChat) system(dir string) string {
 	if c.Board != nil && c.BoardURL != "" {
 		s += " You can list, create, queue, change and delete Dash tasks with the " + mcptools.ServerName + " tools; create them as drafts and queue a draft (queue_todo) only when the user asks for it to run. " +
 			"Fix a task's title, prompt, priority or dependencies with update_todo; delete a task (delete_todo) only when the user asks to remove it. " +
-			"When the user decides to build or change something, create a Dash task for it instead of editing code yourself."
+			"When the user decides to build or change something, create a Dash task for it instead of editing code yourself. " +
+			"The project's checklist is its TODO.md, the user's to-do list in the repository, separate from the task board: read it with read_checklist, " +
+			"and change it with add_checklist_item, check_checklist_item, edit_checklist_item and delete_checklist_item (each change is committed right away). " +
+			"When the user says to add something to the todo list, the to-do list or TODO.md, add a checklist item, not a task; " +
+			"move_checklist_item_to_task turns an item into a draft task and removes it from TODO.md (queue: true only when the user asks for it to run)."
 	}
 	return s
 }

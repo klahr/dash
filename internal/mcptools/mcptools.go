@@ -348,6 +348,13 @@ type Board interface {
 	ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error)
 	// CreateRelease tags a commit in the project's tag format and pushes the tag.
 	CreateRelease(projectID string, r NewRelease) (Release, error)
+	// ReadChecklist reads the project's TODO.md as a checklist.
+	ReadChecklist(projectID string) (Checklist, error)
+	// ChangeChecklist changes TODO.md and saves it: committed straight onto
+	// the default branch (or written in the checkout when git doesn't track it).
+	ChangeChecklist(projectID string, c ChecklistChange) (ChecklistSaved, error)
+	// MoveChecklistItem creates a task from an item, then removes the item.
+	MoveChecklistItem(projectID string, m ChecklistMove) (ChecklistMoved, error)
 }
 
 // Options adapt the board tools to where they run.
@@ -363,8 +370,10 @@ type Options struct {
 
 // Tool names the chat may call; ReadTools never change anything.
 var (
-	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues", "read_try_terminal"}
-	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "update_todo", "create_release", "delete_todo", "list_issues", "report_issue", "read_try_terminal"}
+	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues", "read_try_terminal", "read_checklist"}
+	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "update_todo", "create_release", "delete_todo",
+		"read_checklist", "add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "move_checklist_item_to_task",
+		"list_issues", "report_issue", "read_try_terminal"}
 	// AskTools are board tools a chat never gets without asking: they publish
 	// something (a release tag pushed to origin).
 	AskTools = []string{"create_release"}
@@ -373,8 +382,11 @@ var (
 )
 
 // Tools returns list_projects, list_todos, get_todo, create_todo,
-// queue_todo, update_todo and delete_todo, and the IssueTools; and
-// read_try_terminal when b reads Try terminals (TryReader).
+// queue_todo, update_todo, create_release and delete_todo; the checklist
+// tools on the project's TODO.md (read_checklist, add_checklist_item,
+// check_checklist_item, edit_checklist_item, delete_checklist_item and
+// move_checklist_item_to_task); the IssueTools; and read_try_terminal when
+// b reads Try terminals (TryReader).
 func Tools(b Board, o Options) []Tool {
 	tools := append(boardTools(b, o), IssueTools(b, o)...)
 	if tr, ok := b.(TryReader); ok {
@@ -543,7 +555,7 @@ func boardTools(b Board, o Options) []Tool {
 		createDesc = "Create a task for Claude to work on. It stays a draft on the board unless draft is false."
 		draftDesc = "false queues it to run right away; only when the user asks for that (default true)."
 	}
-	return []Tool{
+	tools := []Tool{
 		{"list_projects", "List the projects on every computer in this Dash.", nil,
 			func(a Args) (any, error) {
 				ps, unreachable, err := b.Projects()
@@ -724,10 +736,11 @@ func boardTools(b Board, o Options) []Tool {
 				return fmt.Sprintf("Deleted task %s (%s).", t.ID, t.Title), nil
 			}},
 	}
+	return append(tools, checklistTools(b, o, project, pProject)...)
 }
 
 // FleetReadTools are the FleetTools that only look.
-var FleetReadTools = []string{"list_projects", "list_todos", "get_todo", "list_issues", "get_diff", "get_log", "get_project"}
+var FleetReadTools = []string{"list_projects", "list_todos", "get_todo", "list_issues", "get_diff", "get_log", "get_project", "read_checklist"}
 
 // ReadOnly returns tools with those not in read made to fail with err: a
 // read-only caller still sees every tool, and learns why one doesn't work.

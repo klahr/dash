@@ -91,6 +91,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         <span>Files</span>
       </button>
+      <button data-view="checklist" title="Checklist: TODO.md (gl)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5l1.5 1.5L8 5.5M4 12.5l1.5 1.5L8 11.5M4.5 18.5h3M11 7h9M11 13h9M11 19h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Checklist</span>
+      </button>
       <!-- Projects, project actions and status: part of the sidebar on desktop,
            a drawer behind the menu button on mobile. -->
       <div class="menu-scrim" id="menu-scrim" hidden></div>
@@ -116,6 +120,10 @@
           <button class="menu-view" data-view="history" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M7 9c0 4 10 2 10 7M7 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="16" r="2"/></svg>
             <span>History</span>
+          </button>
+          <button class="menu-view" data-view="checklist" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5l1.5 1.5L8 5.5M4 12.5l1.5 1.5L8 11.5M4.5 18.5h3M11 7h9M11 13h9M11 19h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Checklist</span>
           </button>
         </div>
         <div class="quick-actions" id="quick-actions">
@@ -319,6 +327,30 @@
             </header>
             <textarea class="file-text" id="file-text" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="File content" hidden></textarea>
             <div class="empty" id="file-empty"><p class="empty-title" id="file-empty-title">No file open</p><p id="file-empty-text">Pick a file on the left to view and edit it. Saving creates a task that goes to review like any other; local files git doesn't track, like .env, are saved straight to disk.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Checklist: the project's TODO.md as a task list. Ticking, adding and
+           editing commit straight to the default branch (batched); moving an
+           item makes a task of it. -->
+      <section class="view" id="view-checklist" aria-label="Checklist">
+        <div class="checklist">
+          <header class="cl-head">
+            <h2 class="cl-title">TODO.md</h2>
+            <span class="cl-state" id="cl-state" aria-live="polite"></span>
+            <button class="btn small" type="button" id="cl-reload" data-icon="reload" title="Read TODO.md again">Reload</button>
+          </header>
+          <div class="cl-body" id="cl-body"></div>
+          <form class="cl-add" id="cl-add" hidden>
+            <input id="cl-add-text" placeholder="Add an item" autocomplete="off" aria-label="New item">
+            <select id="cl-add-section" aria-label="Section"></select>
+            <button class="btn primary" type="submit" data-icon="plus">Add</button>
+          </form>
+          <div class="empty" id="cl-empty" hidden>
+            <p class="empty-title" id="cl-empty-title">No TODO.md</p>
+            <p id="cl-empty-text">This project has no TODO.md at the root of its repository. Add a first item to create one.</p>
+            <button class="btn primary" type="button" id="cl-create" data-icon="plus">Create TODO.md</button>
           </div>
         </div>
       </section>
@@ -1097,13 +1129,14 @@
       <p class="hint">Vim-style. Typing in a field or the terminal is insert mode; Esc (Ctrl-] in the terminal) returns to normal mode.</p>
       <dl class="keys">
         <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with tasks · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
-        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gi</kbd>/<kbd>gS</kbd>/<kbd>gs</kbd>/<kbd>gh</kbd>/<kbd>gf</kbd> Board/Issues/Scans/Shell/History/Files · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> projects, again for sections (toggles), <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>J</kbd>/<kbd>K</kbd> next/previous project · <kbd>c</kbd> project chat · <kbd>[</kbd> collapse sidebar · <kbd>Ctrl-k</kbd> search projects, tasks and commands, <kbd>/</kbd> just tasks · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
+        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gi</kbd>/<kbd>gS</kbd>/<kbd>gs</kbd>/<kbd>gh</kbd>/<kbd>gf</kbd>/<kbd>gl</kbd> Board/Issues/Scans/Shell/History/Files/Checklist · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> projects, again for sections (toggles), <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>J</kbd>/<kbd>K</kbd> next/previous project · <kbd>c</kbd> project chat · <kbd>[</kbd> collapse sidebar · <kbd>Ctrl-k</kbd> search projects, tasks and commands, <kbd>/</kbd> just tasks · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
         <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review, enqueue a draft; <kbd>Space</kbd> opens) · <kbd>n</kbd> (or <kbd>a</kbd>) new task · <kbd>N</kbd> new task with all options · <kbd>e</kbd> edit · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>_</kbd> clear priority · <kbd>t</kbd> live preview (<kbd>D</kbd> draws on it: <kbd>p</kbd>/<kbd>a</kbd>/<kbd>o</kbd>/<kbd>b</kbd>/<kbd>c</kbd> pen/arrow/circle/box/crop, <kbd>1</kbd>–<kbd>3</kbd> colour, <kbd>x</kbd> exact capture (desktop Chrome), <kbd>Ctrl-z</kbd> undo, <kbd>Enter</kbd> add to review, <kbd>Esc</kbd> done) · <kbd>!</kbd> shell in worktree</dd>
         <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> timeline ↔ changes · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
         <dt>More</dt><dd><kbd>T</kbd> run tests again · <kbd>Y</kbd> duplicate · <kbd>E</kbd> open worktree in editor · <kbd>u</kbd> revert a merged task · <kbd>O</kbd> open its pull request · click a diff line (or Tab to its <kbd>+</kbd> button and press Enter) to comment · paste or drop images into a task</dd>
         <dt>Approvals</dt><dd><kbd>y</kbd> allow · <kbd>A</kbd> always allow that tool for the task · <kbd>n</kbd> deny</dd>
         <dt>Task chat</dt><dd><kbd>h</kbd>/<kbd>l</kbd> to the Timeline tab · <kbd>i</kbd> type (side chat only; the agent won't see it)</dd>
         <dt>Chat</dt><dd><kbd>gc</kbd> open/close the chat pane · <kbd>Enter</kbd> send · <kbd>Esc</kbd> stop typing, again to close the overlay · <kbd>Ctrl-k</kbd> "Pin chat" keeps it beside the content</dd>
+        <dt>Checklist</dt><dd><kbd>j</kbd>/<kbd>k</kbd> move between items · <kbd>x</kbd>/<kbd>Space</kbd> check or uncheck · <kbd>m</kbd> move to a draft task · <kbd>M</kbd> move &amp; queue · <kbd>e</kbd> edit · <kbd>dd</kbd> delete · <kbd>a</kbd> add an item · changes are committed to TODO.md a moment after the last one</dd>
         <dt>Shell</dt><dd><kbd>i</kbd> type into terminal · <kbd>Ctrl-]</kbd> leave terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> new shell</dd>
         <dt>New task</dt><dd><kbd>Enter</kbd> save · <kbd>Shift-Enter</kbd> another task · <kbd>Backspace</kbd> in an empty field removes it · a pasted text stays one task · <kbd>Esc</kbd> close</dd>
         <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> add to queue · <kbd>Ctrl-Shift-Enter</kbd>/<kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>

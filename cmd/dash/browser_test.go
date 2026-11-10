@@ -127,6 +127,64 @@ func TestBrowserMainFlows(t *testing.T) {
 	}
 }
 
+// The checklist (TODO.md) of a hub's project, whose checkout is on its
+// runner: create TODO.md from the empty state, add items, tick one and move
+// one to a draft task. Each change reaches origin's main as a commit, with
+// no task for it.
+func TestBrowserChecklist(t *testing.T) {
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	api, pid := h.api, h.project.ID
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	onOrigin := func(what string, ok func(string) bool) {
+		t.Helper()
+		waitFor(t, nil, what, func() bool {
+			out, err := exec.Command("git", "--git-dir", h.origin, "show", "main:TODO.md").CombinedOutput()
+			return err == nil && ok(string(out))
+		})
+	}
+
+	b.until("open the checklist", `document.querySelector("#view-checklist.active")`,
+		chromedp.Click(chromedp.CSS(`.nav > button[data-view=checklist]`)))
+	b.waitJS("the empty state", `!document.querySelector("#cl-empty").hidden`)
+	b.until("create TODO.md", `document.querySelector("#ask-sheet").open`, chromedp.Click(chromedp.ID("cl-create")))
+	b.do("write the first item", chromedp.SendKeys(chromedp.ID("ask-input"), "First thing"))
+	b.waitJS("the item written", `document.querySelector("#ask-input").value === "First thing"`)
+	b.until("save it", `!document.querySelector("#ask-sheet").open`, chromedp.Click(chromedp.ID("ask-ok")))
+	b.waitJS("the saved item", `[...document.querySelectorAll("#cl-body .cl-item:not(.pending)")].some((e) => e.textContent.includes("First thing"))`)
+	onOrigin("TODO.md created on origin", func(s string) bool { return strings.Contains(s, "- [ ] First thing") })
+
+	// Two quick additions are saved together.
+	for _, item := range []string{"Second thing", "Third thing"} {
+		b.do("add "+item, chromedp.SendKeys(chromedp.ID("cl-add-text"), item))
+		b.waitJS(item+" written", fmt.Sprintf(`document.querySelector("#cl-add-text").value === %q`, item))
+		b.do("submit "+item, chromedp.Click(chromedp.CSS(`#cl-add button[type=submit]`)))
+	}
+	b.waitJS("both saved", `document.querySelectorAll("#cl-body .cl-item:not(.pending)").length === 3`)
+	onOrigin("both items on origin", func(s string) bool {
+		return strings.Contains(s, "- [ ] Second thing\n- [ ] Third thing")
+	})
+
+	// Tick one.
+	b.waitJS("the first item", markText("#cl-body .cl-item", "First thing"))
+	b.do("tick it", chromedp.Click(chromedp.CSS(`[data-e2e-click] .cl-check input`)))
+	onOrigin("the tick on origin", func(s string) bool { return strings.Contains(s, "- [x] First thing") })
+	b.waitJS("the tick saved", `!document.querySelector("#cl-body .cl-item.pending") && document.querySelector("#cl-body .cl-item.done")?.textContent.includes("First thing")`)
+
+	// Move one to a draft.
+	b.waitJS("the second item", markText("#cl-body .cl-item", "Second thing"))
+	b.do("move it to a draft", chromedp.Click(chromedp.CSS(`[data-e2e-click] .cl-move button`)))
+	b.waitJS("the item gone", `![...document.querySelectorAll("#cl-body .cl-item")].some((e) => e.textContent.includes("Second thing"))`)
+	b.waitJS("the toast", `[...document.querySelectorAll("#toasts .toast")].some((e) => e.textContent.includes("Moved to draft"))`)
+	onOrigin("the item gone from origin", func(s string) bool { return !strings.Contains(s, "Second thing") && strings.Contains(s, "Third thing") })
+	var todos []todo
+	api.must("GET", "/api/projects/"+pid+"/todos", nil, http.StatusOK, &todos)
+	if len(todos) != 1 || todos[0].Title != "Second thing" || todos[0].Status != "draft" {
+		t.Fatalf("tasks: %+v", todos)
+	}
+}
+
 // A CLI project's terminal preview: open it on a task in review, type in
 // it, and send the task back with the terminal's transcript as the rework
 // notes. In a project of the runner's own, whose runner opens terminals for

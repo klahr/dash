@@ -224,6 +224,12 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/projects/{pid}/claude-files", s.viaRunner(s.listClaudeFiles))
 	mux.HandleFunc("GET /api/projects/{pid}/file", s.viaRunner(s.readFile))
 	mux.HandleFunc("PUT /api/projects/{pid}/file", s.viaRunner(s.saveLocalFile))
+	// The checklist (TODO.md). Saving and moving pass the file's part on to
+	// a runner themselves (see checklist.go): a task they make belongs on
+	// this Dash's board, not the runner's.
+	mux.HandleFunc("GET /api/projects/{pid}/checklist", s.viaRunner(s.getChecklist))
+	mux.HandleFunc("POST /api/projects/{pid}/checklist", s.postChecklist)
+	mux.HandleFunc("POST /api/projects/{pid}/checklist/move", s.moveChecklist)
 	mux.HandleFunc("POST /api/projects/{pid}/edits", s.saveEdit)
 
 	// Todos & queues

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -91,44 +92,106 @@ func fileVersion(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *Server) readLocalFile(w http.ResponseWriter, r *http.Request, p model.Project, name string) {
-	full, err := s.localPath(r.Context(), p, name)
+// fileContent is a file as the editor (and the checklist) reads it.
+type fileContent struct {
+	Path     string  `json:"path"`
+	Blob     string  `json:"blob,omitempty"` // its blob on the branch, or the hash of a local file
+	Size     int64   `json:"size"`
+	Branch   string  `json:"branch,omitempty"`
+	Local    bool    `json:"local,omitempty"`
+	TooLarge bool    `json:"too_large,omitempty"`
+	Binary   bool    `json:"binary,omitempty"`
+	Content  *string `json:"content,omitempty"` // unset when too large or binary
+}
+
+// setContent fills in content, unless it is too large or binary.
+func (f *fileContent) setContent(content []byte) {
+	switch {
+	case len(content) > maxEditBytes || f.Size > maxEditBytes:
+		f.TooLarge = true
+	case bytes.IndexByte(content, 0) >= 0 || !utf8.Valid(content):
+		f.Binary = true
+	default:
+		c := string(content)
+		f.Content = &c
+	}
+}
+
+// localFile reads name, a file git doesn't track, from p's checkout.
+func (s *Server) localFile(ctx context.Context, p model.Project, name string) (fileContent, error) {
+	full, err := s.localPath(ctx, p, name)
 	if err != nil {
-		writeErr(w, err)
-		return
+		return fileContent{}, err
 	}
 	f, err := os.Open(full)
 	if err != nil {
-		writeErr(w, err)
-		return
+		return fileContent{}, err
 	}
 	defer f.Close()
 	st, err := f.Stat()
 	if err != nil {
-		writeErr(w, err)
-		return
+		return fileContent{}, err
 	}
-	res := map[string]any{"path": name, "size": st.Size(), "local": true}
+	res := fileContent{Path: name, Size: st.Size(), Local: true}
 	if st.Size() > maxEditBytes {
-		res["too_large"] = true
-		writeJSON(w, http.StatusOK, res)
-		return
+		res.TooLarge = true
+		return res, nil
 	}
 	content, err := io.ReadAll(io.LimitReader(f, maxEditBytes+1))
+	if err != nil {
+		return fileContent{}, err
+	}
+	res.Blob = fileVersion(content)
+	res.setContent(content)
+	return res, nil
+}
+
+// branchFile reads name from p's default branch as committed; ok is false
+// when it isn't there.
+func (s *Server) branchFile(ctx context.Context, p model.Project, name string) (res fileContent, ok bool, err error) {
+	blob, err := s.Git.Blob(ctx, p.ID, p.Path, p.Base(), name)
+	if err != nil || blob == "" {
+		return fileContent{}, false, nil
+	}
+	content, size, err := s.Git.ReadBlob(ctx, p.ID, p.Path, blob, maxEditBytes)
+	if err != nil {
+		return fileContent{}, false, err
+	}
+	res = fileContent{Path: name, Blob: blob, Size: size, Branch: p.Base()}
+	res.setContent(content)
+	return res, true, nil
+}
+
+func (s *Server) readLocalFile(w http.ResponseWriter, r *http.Request, p model.Project, name string) {
+	res, err := s.localFile(r.Context(), p, name)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	res["blob"] = fileVersion(content)
-	switch {
-	case len(content) > maxEditBytes:
-		res["too_large"] = true
-	case bytes.IndexByte(content, 0) >= 0 || !utf8.Valid(content):
-		res["binary"] = true
-	default:
-		res["content"] = string(content)
-	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// writeLocalFile writes name, a file git doesn't track, in p's checkout,
+// unless it changed on disk since it was read (version is the hash of what
+// was read), and returns its new version.
+func (s *Server) writeLocalFile(ctx context.Context, p model.Project, name, version, content string) (string, error) {
+	if s.hub() {
+		return "", fmt.Errorf("%w: files of a shared project can't be edited from the hub; describe the change in a task instead", errBadRequest)
+	}
+	if len(content) > maxEditBytes {
+		return "", fmt.Errorf("%w: file is larger than %d KiB", errBadRequest, maxEditBytes>>10)
+	}
+	full, err := s.localPath(ctx, p, name)
+	if err != nil {
+		return "", err
+	}
+	if cur, err := os.ReadFile(full); err != nil || fileVersion(cur) != version {
+		return "", fmt.Errorf("%w: %s changed on disk since it was opened; reload it and edit again", errConflict, name)
+	}
+	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+		return "", err
+	}
+	return fileVersion([]byte(content)), nil
 }
 
 // saveLocalFile writes a local file in the checkout, unless it changed on
@@ -157,28 +220,16 @@ func (s *Server) saveLocalFile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if s.hub() {
-		writeErr(w, fmt.Errorf("%w: files of a shared project can't be edited from the hub; describe the change in a task instead", errBadRequest))
+	blob, err := s.writeLocalFile(r.Context(), p, name, req.Blob, req.Content)
+	if errors.Is(err, errConflict) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": strings.TrimPrefix(err.Error(), errConflict.Error()+": ")})
 		return
 	}
-	if len(req.Content) > maxEditBytes {
-		writeErr(w, fmt.Errorf("%w: file is larger than %d KiB", errBadRequest, maxEditBytes>>10))
-		return
-	}
-	full, err := s.localPath(r.Context(), p, name)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	if cur, err := os.ReadFile(full); err != nil || fileVersion(cur) != req.Blob {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": name + " changed on disk since it was opened; reload it and edit again"})
-		return
-	}
-	if err := os.WriteFile(full, []byte(req.Content), 0o644); err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"path": name, "blob": fileVersion([]byte(req.Content))})
+	writeJSON(w, http.StatusOK, map[string]any{"path": name, "blob": blob})
 }
 
 // cleanRepoPath rejects paths that leave the repository.
@@ -209,24 +260,14 @@ func (s *Server) readFile(w http.ResponseWriter, r *http.Request) {
 		s.readLocalFile(w, r, p, name)
 		return
 	}
-	blob, err := s.Git.Blob(r.Context(), p.ID, p.Path, p.Base(), name)
-	if err != nil || blob == "" {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": name + " is not on " + p.Base()})
-		return
-	}
-	content, size, err := s.Git.ReadBlob(r.Context(), p.ID, p.Path, blob, maxEditBytes)
+	res, found, err := s.branchFile(r.Context(), p, name)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	res := map[string]any{"path": name, "blob": blob, "size": size, "branch": p.Base()}
-	switch {
-	case size > maxEditBytes:
-		res["too_large"] = true
-	case bytes.IndexByte(content, 0) >= 0 || !utf8.Valid(content):
-		res["binary"] = true
-	default:
-		res["content"] = string(content)
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": name + " is not on " + p.Base()})
+		return
 	}
 	writeJSON(w, http.StatusOK, res)
 }
@@ -257,43 +298,50 @@ func (s *Server) saveEdit(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if len(req.Content) > maxEditBytes {
-		writeErr(w, fmt.Errorf("%w: file is larger than %d KiB", errBadRequest, maxEditBytes>>10))
+	t, err := sv.queueEdit(r.Context(), p, name, req.Blob, req.Content, req.Title)
+	if errors.Is(err, errConflict) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": strings.TrimPrefix(err.Error(), errConflict.Error()+": ")})
 		return
 	}
-	// An empty blob creates a new file, one that isn't on the branch yet.
-	cur, _ := s.Git.Blob(r.Context(), p.ID, p.Path, p.Base(), name)
-	switch {
-	case req.Blob == "" && cur != "":
-		writeJSON(w, http.StatusConflict, map[string]string{"error": name + " already exists on " + p.Base() + "; open it and edit it instead"})
-		return
-	case cur != req.Blob:
-		writeJSON(w, http.StatusConflict, map[string]string{"error": name + " changed on " + p.Base() + " since it was opened; reload it and edit again"})
-		return
-	}
-	if req.Blob == "" {
-		if local, err := s.Git.LocalFiles(r.Context(), p.ID, p.Path); err == nil && slices.Contains(local, name) {
-			writeErr(w, fmt.Errorf("%w: %s is a local file git doesn't track; edit it in the file browser", errBadRequest, name))
-			return
-		}
-	}
-	title := strings.TrimSpace(req.Title)
-	switch {
-	case title != "":
-	case req.Blob == "":
-		title = "Create " + name
-	default:
-		title = "Edit " + name
-	}
-	t, err := sv.addTodo(model.Todo{
-		ProjectID: p.ID, Title: title,
-		Prompt: fmt.Sprintf("`%s` was edited by hand in Dash's file editor; the change is already committed in this working tree. "+
-			"Keep it, and only change what the notes below ask for.", name),
-		Edits: []model.FileEdit{{Path: name, Blob: req.Blob, Content: req.Content}},
-	}, true)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, t)
+}
+
+// queueEdit queues a task that commits content as name, made from the file
+// at blob on the default branch ("" for a new file), and goes to review.
+func (sv *service) queueEdit(ctx context.Context, p model.Project, name, blob, content, title string) (model.Todo, error) {
+	if len(content) > maxEditBytes {
+		return model.Todo{}, fmt.Errorf("%w: file is larger than %d KiB", errBadRequest, maxEditBytes>>10)
+	}
+	s := sv.s
+	// An empty blob creates a new file, one that isn't on the branch yet.
+	cur, _ := s.Git.Blob(ctx, p.ID, p.Path, p.Base(), name)
+	switch {
+	case blob == "" && cur != "":
+		return model.Todo{}, fmt.Errorf("%w: %s already exists on %s; open it and edit it instead", errConflict, name, p.Base())
+	case cur != blob:
+		return model.Todo{}, fmt.Errorf("%w: %s changed on %s since it was opened; reload it and edit again", errConflict, name, p.Base())
+	}
+	if blob == "" {
+		if local, err := s.Git.LocalFiles(ctx, p.ID, p.Path); err == nil && slices.Contains(local, name) {
+			return model.Todo{}, fmt.Errorf("%w: %s is a local file git doesn't track; edit it in the file browser", errBadRequest, name)
+		}
+	}
+	title = strings.TrimSpace(title)
+	switch {
+	case title != "":
+	case blob == "":
+		title = "Create " + name
+	default:
+		title = "Edit " + name
+	}
+	return sv.addTodo(model.Todo{
+		ProjectID: p.ID, Title: title,
+		Prompt: fmt.Sprintf("`%s` was edited by hand in Dash's file editor; the change is already committed in this working tree. "+
+			"Keep it, and only change what the notes below ask for.", name),
+		Edits: []model.FileEdit{{Path: name, Blob: blob, Content: content}},
+	}, true)
 }

@@ -137,6 +137,7 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 - [Live previews](docs/previews.md): preview domain, DNS and certificates, what the proxy does
 - [Draw](docs/draw.md): mark up a preview and send the picture back to Claude
 - [Scans](docs/scans.md): scheduled read-only reviews that fill a project's Issues
+- [Checklist](docs/checklist.md): tick off, add to and edit the repository's TODO.md (committed straight to the default branch), and move an item onto the board as a task
 - [Wall view](docs/wall.md): a read-only TV dashboard of an organization's work, with a sign-in-free link for the TV
 - [Task boards](docs/boards.md): keep a project's board in Dash or in an external tracker, synced both ways (the backend interface for Favro, Trello and Jira)
 - [Notification webhooks](docs/notifications.md): send reviews, failures, merges, approvals and failing builds to Slack, ntfy or a signed JSON endpoint

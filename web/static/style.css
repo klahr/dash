@@ -1464,7 +1464,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 
   /* Bottom nav: Board · Chat · Issues · Shell · Files. Scans and History are in the
      menu drawer (.menu-views); the Chat tab replaces the top bar's chat button. */
-  .nav > button:is([data-view="scans"], [data-view="history"]), #pc-open { display: none; }
+  .nav > button:is([data-view="scans"], [data-view="history"], [data-view="checklist"]), #pc-open { display: none; }
   /* Open issues nobody has dealt with yet: a dot on the Issues icon (the count is in its title). */
   .nav #issue-badge {
     top: 10px; left: calc(50% + 8px); min-width: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%;
@@ -2222,3 +2222,47 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .repo-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 12px 0; font-size: 14px; }
 .repo-facts dt { color: var(--muted); }
 .repo-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+/* ---- Checklist: the project's TODO.md as a task list ---- */
+.checklist { width: 100%; max-width: 860px; margin: 0 auto; padding: 12px 16px 24px; }
+.cl-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.cl-title { margin: 0; font: 600 15px/1.3 var(--mono); }
+.cl-state { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cl-section { margin: 18px 0 6px; }
+.cl-section h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.cl-section.lvl-1 h3 { font-size: 17px; letter-spacing: 0; text-transform: none; color: var(--text); }
+.cl-note { margin: 4px 0 8px; color: var(--muted); font-size: 14px; white-space: pre-wrap; }
+.cl-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); }
+.cl-item { display: flex; align-items: flex-start; gap: 4px; padding: 2px 6px 2px calc(4px + var(--indent, 0) * 22px); border-top: 1px solid var(--line); position: relative; }
+.cl-item:first-child { border-top: 0; }
+.cl-item:focus-visible, .cl-item.cursor { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-s); }
+.cl-item.pending .cl-text::after { content: " •"; color: var(--running); }
+/* A 44px tap target around an ordinary-looking checkbox. */
+.cl-check { flex: none; display: grid; place-items: center; width: 44px; height: 44px; margin: 0; cursor: pointer; }
+.cl-check input { width: 20px; height: 20px; margin: 0; accent-color: var(--merged); cursor: pointer; }
+.cl-text { flex: 1; min-width: 0; padding: 11px 0; overflow-wrap: anywhere; cursor: text; }
+.cl-item.done .cl-text { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--faint); }
+.cl-more { display: block; color: var(--muted); font-size: 13px; white-space: pre-wrap; }
+.cl-actions { flex: none; display: flex; align-items: center; gap: 2px; padding: 6px 0; }
+.cl-move { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-s); overflow: hidden; }
+.cl-move button { min-height: 32px; padding: 0 10px; border: 0; background: var(--raised); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.cl-move button + button { border-left: 1px solid var(--line); padding: 0 8px; }
+.cl-move button:hover { background: color-mix(in srgb, var(--accent) 18%, var(--raised)); }
+.cl-move .ico { width: 16px; height: 16px; }
+.cl-menu { position: absolute; right: 6px; top: calc(100% - 4px); z-index: 5; display: flex; flex-direction: column; min-width: 180px; padding: 4px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-m); box-shadow: 0 8px 24px rgb(0 0 0 / .4); }
+.cl-menu button { min-height: 40px; padding: 0 12px; text-align: left; border: 0; border-radius: var(--r-s); background: none; color: var(--text); font: inherit; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.cl-menu button:hover, .cl-menu button:focus-visible { background: var(--surface); }
+.cl-icon { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: var(--r-s); background: none; color: var(--muted); cursor: pointer; }
+.cl-icon:hover { color: var(--text); background: var(--raised); }
+.cl-icon .ico { width: 16px; height: 16px; }
+.cl-edit { flex: 1; min-width: 0; padding: 6px 0; }
+.cl-edit textarea { width: 100%; min-height: 64px; font: inherit; }
+.cl-add { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.cl-add input { flex: 1 1 240px; min-height: 44px; }
+.cl-add select { flex: 0 1 180px; min-height: 44px; }
+.cl-add .btn { min-height: 44px; }
+@media (max-width: 719px) {
+  .checklist { padding: 8px 10px 24px; }
+  .cl-move .cl-move-label { display: none; }
+  .cl-item .cl-icon.cl-del { display: none; }
+}
