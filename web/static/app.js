@@ -2522,7 +2522,17 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
 $("#todo-form").noValidate = true;
 
 // ------------------------------------------------------------------ detail
+// The panel is modal (a scrim on desktop, full screen on phones): the rest of the
+// app is inert while it is open, and closing it returns focus to what opened it.
+let detailOpener = null;
+const detailBackground = () => [".topbar", ".sidebar", ".nav", "main", "#chat-pane"].map((s) => $(s)).filter(Boolean);
+const setDetailModal = (on) => detailBackground().forEach((el) => { el.inert = on; });
+
 async function openDetail(id) {
+  // Opening another task from inside the panel keeps the original opener.
+  const a = document.activeElement;
+  if (a && a !== document.body && !$("#detail").contains(a)) detailOpener = a;
+  setDetailModal(true);
   if (state.detail !== id) hidePreview();
   state.detail = id;
   // On a desktop the task's running preview opens beside it.
@@ -2541,11 +2551,22 @@ async function openDetail(id) {
 
 function closeDetail() {
   hidePreview();
-  const wasOpen = state.detail && !$("#detail").hidden;
+  const id = state.detail;
+  const wasOpen = id && !$("#detail").hidden;
   state.detail = null;
   const hide = () => { if (!state.detail) { $("#detail").hidden = true; $("#scrim").hidden = true; } };
   if (wasOpen) leave($("#detail"), "closing", hide); else hide();
   $$(".todo.selected").forEach((e) => e.classList.remove("selected"));
+  setDetailModal(false);
+  const opener = detailOpener;
+  detailOpener = null;
+  // Only take focus back if it was in the panel (or lost); a close caused by
+  // something else (switching project, a dialog) leaves focus where it is.
+  if (!wasOpen) return;
+  const a = document.activeElement;
+  if (a && a !== document.body && !$("#detail").contains(a)) return;
+  const back = opener?.isConnected && !opener.closest("[hidden]") ? opener : $(`.todo[data-id="${id}"]`);
+  back?.focus({ preventScroll: false });
 }
 $("#d-close").addEventListener("click", closeDetail);
 $("#scrim").addEventListener("click", closeDetail);
