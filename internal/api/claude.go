@@ -22,7 +22,7 @@ import (
 )
 
 // Where Claude runs for the general chat and the short calls (titles,
-// summaries, cleaning up instructions).
+// summaries, cleaning up instructions, splitting a large task).
 //
 // The hub never runs Claude itself: each of those runs
 // on a runner of the user who asked, with that runner's `claude` login, so
@@ -38,6 +38,7 @@ type SmallClaude interface {
 	Title(ctx context.Context, prompt string) (string, error)
 	Summary(ctx context.Context, report string) (string, error)
 	Refine(ctx context.Context, prompt string) (string, error)
+	Split(ctx context.Context, prompt string) ([]agent.Part, error)
 }
 
 // errNoClaudeRunner is why the hub can't run something on the caller's runner.
@@ -155,6 +156,55 @@ func (sv *service) refine(ctx context.Context, prompt string) (string, error) {
 }
 
 var errNoRefiner = errors.New("cleaning up instructions is not available")
+
+// split proposes how to break a large task into todos, here or on the
+// caller's runner.
+func (sv *service) split(ctx context.Context, prompt string) ([]agent.Part, error) {
+	if !sv.s.hub() {
+		if sv.s.Splitter == nil {
+			return nil, errNoSplitter
+		}
+		return sv.s.Splitter.Split(ctx, prompt)
+	}
+	r, err := sv.s.claudeRunner(sv.c, "")
+	if err != nil {
+		return nil, err
+	}
+	var out struct {
+		Parts []agent.Part `json:"parts"`
+	}
+	ctx = tunnel.WithUser(ctx, sv.c.User)
+	if err := sv.s.fleet().Call(ctx, r.ID, http.MethodPost, "/api/hub/claude/split", map[string]string{"text": prompt}, &out); err != nil {
+		return nil, err
+	}
+	return checkParts(out.Parts, r.Name)
+}
+
+// checkParts keeps a runner's proposal within what Split makes: parts with
+// instructions, at most agent.MaxParts, each after earlier ones only.
+func checkParts(parts []agent.Part, from string) ([]agent.Part, error) {
+	var out []agent.Part
+	for _, p := range parts {
+		p.Title, p.Prompt = strings.TrimSpace(p.Title), strings.TrimSpace(p.Prompt)
+		if p.Prompt == "" || len(out) == agent.MaxParts {
+			continue
+		}
+		after := p.After
+		p.After = nil
+		for _, i := range after {
+			if i >= 0 && i < len(out) && !slices.Contains(p.After, i) {
+				p.After = append(p.After, i)
+			}
+		}
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("%s proposed no tasks", from)
+	}
+	return out, nil
+}
+
+var errNoSplitter = errors.New("splitting a task is not available")
 
 // claudeInfo handles GET /api/claude: where the caller's chat runs, for the
 // chat's header. local: this Dash runs it; else on one of runners.
@@ -275,7 +325,8 @@ func hubUser(r *http.Request) int64 {
 }
 
 // hubClaude handles POST /api/hub/claude/{kind}: one of Claude's short
-// calls for this runner's owner, {"text"} in and out.
+// calls for this runner's owner, {"text"} in and out ({"parts"} out for a
+// split).
 func (s *Server) hubClaude(w http.ResponseWriter, r *http.Request) {
 	if err := s.forOwner(r); err != nil {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
@@ -290,6 +341,15 @@ func (s *Server) hubClaude(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Small == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "this runner doesn't run Claude's short calls"})
+		return
+	}
+	if r.PathValue("kind") == "split" {
+		parts, err := s.Small.Split(r.Context(), req.Text)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"parts": parts})
 		return
 	}
 	var call func(context.Context, string) (string, error)

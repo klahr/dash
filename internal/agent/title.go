@@ -2,9 +2,12 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -15,6 +18,9 @@ import (
 type Titler struct {
 	Bin   string // default "claude"
 	Model string // default "haiku"
+	// SplitModel splits large tasks (default "sonnet"): planning the parts
+	// takes more judgement than naming them.
+	SplitModel string
 }
 
 func (t Titler) Title(ctx context.Context, prompt string) (string, error) {
@@ -56,22 +62,110 @@ func (t Titler) Refine(ctx context.Context, prompt string) (string, error) {
 	return cleanRefined(out)
 }
 
-// ask runs the model on input, cut to limit bytes when limit > 0.
+// Part is one of the todos a large task is split into.
+type Part struct {
+	Title  string `json:"title"`
+	Prompt string `json:"prompt"`
+	// After are the parts (indexes into the split, all before this one)
+	// that must be merged before this one starts.
+	After []int `json:"after,omitempty"`
+}
+
+// MaxParts is how many todos a task is split into at most.
+const MaxParts = 10
+
+// Split proposes how to break a large task into smaller todos, each one
+// that can be done, reviewed and merged on its own. Nothing is stored: the
+// user confirms (and edits) the parts first.
+func (t Titler) Split(ctx context.Context, prompt string) ([]Part, error) {
+	if len(prompt) > maxRefine {
+		return nil, errors.New("instructions are too long to split")
+	}
+	model := t.SplitModel
+	if model == "" {
+		model = "sonnet"
+	}
+	out, err := t.run(ctx, model, 3*time.Minute,
+		"You plan software work for a coding agent. Reply with only JSON.",
+		"Split the task below into smaller tasks for a coding agent working in the repository. "+
+			"Each task must be done, reviewed and merged on its own and leave the code working, so a "+
+			"reviewer can read its diff in one sitting. Use as few tasks as the work needs, at most "+
+			fmt.Sprint(MaxParts)+"; a task that is already small stays one. In order: earlier tasks first.\n\n"+
+			"Reply with only a JSON array, one object per task: "+
+			`{"title": "...", "prompt": "...", "after": [1]}. `+
+			"title: at most 6 words, sentence case, starting with a verb. "+
+			"prompt: self-contained instructions; the agent sees only this task, so repeat the context, "+
+			"constraints, file names, identifiers and code from the original that it needs. Do not invent "+
+			"requirements that are not in the original. "+
+			"after: the numbers (1-based) of earlier tasks in the array that must be merged before this one "+
+			"can start; leave it empty when it doesn't build on them.\n\nTask:\n"+prompt)
+	if err != nil {
+		return nil, err
+	}
+	return parseParts(out)
+}
+
+// parseParts reads Split's reply: a JSON array, perhaps in a code fence or
+// with words around it. "after" is 1-based there and 0-based in a Part;
+// numbers that don't name an earlier part are dropped.
+func parseParts(s string) ([]Part, error) {
+	i, j := strings.IndexByte(s, '['), strings.LastIndexByte(s, ']')
+	if i < 0 || j < i {
+		return nil, errors.New("Claude didn't propose any tasks")
+	}
+	var raw []struct {
+		Title  string `json:"title"`
+		Prompt string `json:"prompt"`
+		After  []int  `json:"after"`
+	}
+	if err := json.Unmarshal([]byte(s[i:j+1]), &raw); err != nil {
+		return nil, fmt.Errorf("Claude's proposal wasn't readable: %w", err)
+	}
+	var parts []Part
+	kept := make([]int, len(raw)) // raw index → index in parts, or -1
+	for i, r := range raw {
+		kept[i] = -1
+		p := Part{Prompt: strings.TrimSpace(r.Prompt)}
+		if p.Prompt == "" || len(parts) == MaxParts {
+			continue
+		}
+		p.Title, _ = cleanTitle(r.Title) // untitled: named when it's created
+		for _, n := range r.After {
+			if n >= 1 && n-1 < i && kept[n-1] >= 0 && !slices.Contains(p.After, kept[n-1]) {
+				p.After = append(p.After, kept[n-1])
+			}
+		}
+		kept[i] = len(parts)
+		parts = append(parts, p)
+	}
+	if len(parts) == 0 {
+		return nil, errors.New("Claude didn't propose any tasks")
+	}
+	return parts, nil
+}
+
+// ask runs the small model on input, cut to limit bytes when limit > 0.
 func (t Titler) ask(ctx context.Context, system, input string, limit int) (string, error) {
-	if err := checkLocal(); err != nil {
-		return "", err
-	}
-	bin, model := t.Bin, t.Model
-	if bin == "" {
-		bin = "claude"
-	}
+	model := t.Model
 	if model == "" {
 		model = "haiku"
 	}
 	if limit > 0 && len(input) > limit {
 		input = input[:limit]
 	}
-	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	return t.run(ctx, model, 90*time.Second, system, input)
+}
+
+// run runs model on input, without tools, for at most timeout.
+func (t Titler) run(ctx context.Context, model string, timeout time.Duration, system, input string) (string, error) {
+	if err := checkLocal(); err != nil {
+		return "", err
+	}
+	bin := t.Bin
+	if bin == "" {
+		bin = "claude"
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "-p", "--output-format", "text", "--model", model,
 		"--tools", "", "--no-session-persistence", "--strict-mcp-config", "--setting-sources", "",

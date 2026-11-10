@@ -34,6 +34,7 @@ func orgEndpoints() []endpoint {
 		{"GET", "/api/usage", ""},
 		{"POST", "/api/uploads?name=x.png", "png"},
 		{"POST", "/api/refine", `{"prompt":"x"}`},
+		{"POST", "/api/split", `{"prompt":"x"}`},
 		{"GET", "/api/hub/repos", ""},
 		{"POST", "/api/queue/pause", ""},
 		{"POST", "/api/queue/resume", ""},

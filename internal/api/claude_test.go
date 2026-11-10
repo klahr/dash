@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -37,7 +38,18 @@ func (f *fakeSmall) call(kind, text string) (string, error) {
 func (f *fakeSmall) Title(_ context.Context, p string) (string, error)   { return f.call("title", p) }
 func (f *fakeSmall) Summary(_ context.Context, r string) (string, error) { return f.call("summary", r) }
 func (f *fakeSmall) Refine(_ context.Context, p string) (string, error)  { return f.call("refine", p) }
-func (f *fakeSmall) n() int                                              { f.mu.Lock(); defer f.mu.Unlock(); return len(f.calls) }
+
+// Split proposes two good parts and some a runner mustn't pass on: one
+// without instructions and dependencies on itself and later parts.
+func (f *fakeSmall) Split(_ context.Context, p string) ([]agent.Part, error) {
+	title, err := f.call("split", p)
+	return []agent.Part{
+		{Title: title, Prompt: "Do the first half.", After: []int{0, 1}},
+		{Prompt: " "},
+		{Title: "Second half", Prompt: "Do the second half.", After: []int{0, 0, -1, 5}},
+	}, err
+}
+func (f *fakeSmall) n() int { f.mu.Lock(); defer f.mu.Unlock(); return len(f.calls) }
 
 // noChat fails the test if the hub runs a chat turn itself.
 type noChat struct{ t *testing.T }
@@ -112,6 +124,10 @@ func newClaudeFleet(t *testing.T) *claudeFleet {
 	return f
 }
 
+func (f *claudeFleet) split(h http.Handler) *httptest.ResponseRecorder {
+	return send(h, "POST", "/api/split", `{"prompt":"Add accounts: a users table, then a signup form"}`)
+}
+
 func (f *claudeFleet) refine(h http.Handler) *httptest.ResponseRecorder {
 	return send(h, "POST", "/api/refine", `{"prompt":"hey! could you add a dark mode? thanks"}`)
 }
@@ -178,6 +194,13 @@ func TestHubRunsClaudeOnTheUsersOwnRunner(t *testing.T) {
 	if w := f.refine(f.owner); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "refine from runner") {
 		t.Fatalf("owner's clean-up: %d %s", w.Code, w.Body)
 	}
+	var split struct{ Parts []agent.Part }
+	if w := f.split(f.owner); w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &split) != nil {
+		t.Fatalf("owner's split: %d %s", w.Code, w.Body)
+	}
+	if want := []agent.Part{{Title: "split from runner", Prompt: "Do the first half."}, {Title: "Second half", Prompt: "Do the second half.", After: []int{0}}}; !reflect.DeepEqual(split.Parts, want) {
+		t.Errorf("owner's split: %+v, want %+v", split.Parts, want)
+	}
 	if title := f.newTask(t, f.owner, "Add a dark mode\n\nwith a toggle"); title != "title from runner" {
 		t.Errorf("owner's task title %q", title)
 	}
@@ -206,6 +229,9 @@ func TestHubRunsClaudeOnTheUsersOwnRunner(t *testing.T) {
 	if w := f.refine(f.other); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "no runner of yours") {
 		t.Fatalf("other user's clean-up: %d %s", w.Code, w.Body)
 	}
+	if w := f.split(f.other); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "no runner of yours") {
+		t.Fatalf("other user's split: %d %s", w.Code, w.Body)
+	}
 	if title := f.newTask(t, f.other, "## Fix the login form\nIt breaks on Safari"); title != "Fix the login form" {
 		t.Errorf("other user's task title %q, want the first line", title)
 	}
@@ -227,6 +253,9 @@ func TestHubRunsClaudeOnTheUsersOwnRunner(t *testing.T) {
 	before = f.small.n()
 	if w := f.refine(f.owner); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "no runner of yours is online") {
 		t.Fatalf("clean-up with the runner offline: %d %s", w.Code, w.Body)
+	}
+	if w := f.split(f.owner); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "no runner of yours is online") {
+		t.Fatalf("split with the runner offline: %d %s", w.Code, w.Body)
 	}
 	if title := f.newTask(t, f.owner, "Make the build faster, please, it takes forever on every single change we make to the code"); title != "Make the build faster, please, it takes forever on every…" {
 		t.Errorf("title with the runner offline %q", title)
@@ -264,7 +293,7 @@ func TestRunnerRunsShortCallsOnlyForItsOwner(t *testing.T) {
 	if small.n() != 0 {
 		t.Fatal("ran Claude for someone other than the owner")
 	}
-	for _, kind := range []string{"title", "summary", "refine"} {
+	for _, kind := range []string{"title", "summary", "refine", "split"} {
 		if w := call("42", kind); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), kind+" from runner") {
 			t.Errorf("%s for the owner: %d %s", kind, w.Code, w.Body)
 		}
@@ -277,9 +306,12 @@ func TestRunnerRunsShortCallsOnlyForItsOwner(t *testing.T) {
 	if w.Code != http.StatusForbidden {
 		t.Errorf("short call not from the hub: %d %s", w.Code, w.Body)
 	}
-	// The old clean-up route isn't offered to the hub any more.
-	if w := hubCall(h, "POST", "/api/refine", `{"prompt":"x"}`); w.Code != http.StatusForbidden {
-		t.Errorf("POST /api/refine from the hub: %d %s", w.Code, w.Body)
+	// The old clean-up route isn't offered to the hub any more, nor the
+	// browser's split: the hub asks through /api/hub/claude.
+	for _, path := range []string{"/api/refine", "/api/split"} {
+		if w := hubCall(h, "POST", path, `{"prompt":"x"}`); w.Code != http.StatusForbidden {
+			t.Errorf("POST %s from the hub: %d %s", path, w.Code, w.Body)
+		}
 	}
 }
 

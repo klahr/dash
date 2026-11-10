@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -211,6 +212,55 @@ func TestBrowserChecklist(t *testing.T) {
 	}, http.StatusOK, nil)
 	b.waitJS("the change made elsewhere", `[...document.querySelectorAll("#cl-body .cl-item")].some((e) => e.textContent.includes("Made elsewhere"))`)
 	b.waitJS("no Reload button", `!document.querySelector("#cl-reload")`)
+}
+
+// Split a large task: from the full task form, Claude (on the user's
+// runner) proposes tasks; one is edited, another added, and saving makes
+// them drafts, the second waiting for the first.
+func TestBrowserSplitTask(t *testing.T) {
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	api, pid := h.api, h.project.ID
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+
+	b.until("open the new task sheet", `document.querySelector("#quick-sheet").open`, chromedp.Click(chromedp.ID("new-todo")))
+	b.do("write the task", chromedp.SendKeys(chromedp.CSS(`#quick-sheet[open] #quick-rows .quick-row`), "Add accounts"))
+	b.waitJS("the task written", `document.querySelector("#quick-rows .quick-row").value === "Add accounts"`)
+	b.until("open the full form", `document.querySelector("#todo-sheet").open`, chromedp.Click(chromedp.ID("quick-more")))
+	b.waitJS("the instructions carried over", `document.querySelector("#todo-form").prompt.value === "Add accounts"`)
+	b.until("split it", `document.querySelector("#split-sheet").open`, chromedp.Click(chromedp.CSS(`#todo-split:not(:disabled)`)))
+	b.waitJS("Claude's two tasks", `document.querySelectorAll("#split-parts .split-part").length === 2 &&
+		document.querySelector("#split-parts .split-part:nth-child(2) .split-after")?.textContent === "Builds on task 1"`)
+	b.do("edit the first title", chromedp.SendKeys(chromedp.CSS(`#split-parts .split-part:first-child .split-title`), " first"))
+	b.waitJS("the title edited", `document.querySelector("#split-parts .split-title").value === "Add the users table first"`)
+	b.do("add a task", chromedp.Click(chromedp.ID("split-add")))
+	b.do("write it", chromedp.SendKeys(chromedp.CSS(`#split-parts .split-part:nth-child(3) .split-prompt`), "Document accounts"))
+	b.waitJS("three tasks", `document.querySelector("#split-draft-label").textContent === "Save 3 drafts"`)
+	b.until("save them", `!document.querySelector("#todo-sheet").open`, chromedp.Click(chromedp.CSS(`#split-form button[value=draft]`)))
+	b.waitJS("the toast", `[...document.querySelectorAll("#toasts .toast")].some((e) => e.textContent.includes("Saved 3 drafts"))`)
+
+	var todos []struct {
+		ID, Title, Prompt, Status string
+		DependsOn                 []string `json:"depends_on"`
+	}
+	api.must("GET", "/api/projects/"+pid+"/todos", nil, http.StatusOK, &todos)
+	byPrompt := map[string]int{}
+	for i, td := range todos {
+		byPrompt[td.Prompt] = i
+		if td.Status != "draft" {
+			t.Errorf("task %q is %s, want a draft", td.Prompt, td.Status)
+		}
+	}
+	first, ok1 := byPrompt["Create the users table."]
+	second, ok2 := byPrompt["Build the signup form on the users table."]
+	_, ok3 := byPrompt["Document accounts"]
+	if len(todos) != 3 || !ok1 || !ok2 || !ok3 {
+		t.Fatalf("tasks after the split: %+v", todos)
+	}
+	if todos[first].Title != "Add the users table first" || !slices.Equal(todos[second].DependsOn, []string{todos[first].ID}) {
+		t.Errorf("tasks after the split: %+v", todos)
+	}
 }
 
 // A personal webhook, from the account menu: add one, send it a test and

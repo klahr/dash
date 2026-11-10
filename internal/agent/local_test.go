@@ -57,6 +57,7 @@ func TestNoLocalClaudeRunsNothing(t *testing.T) {
 		"title":   func() error { _, err := titler.Title(ctx, "x"); return err },
 		"summary": func() error { _, err := titler.Summary(ctx, "x"); return err },
 		"refine":  func() error { _, err := titler.Refine(ctx, "x"); return err },
+		"split":   func() error { _, err := titler.Split(ctx, "x"); return err },
 	}
 	for name, call := range calls {
 		if err := call(); !errors.Is(err, ErrNoLocalClaude) {

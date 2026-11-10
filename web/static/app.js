@@ -104,6 +104,7 @@ const ICONS = {
   down: "m7 10 5 5 5-5",
   up: "m7 14 5-5 5 5",
   wand: "M4 20 15 9M13 7l4 4M17 3v4M15 5h4M7 4v2M6 5h2M19 15v2M18 16h2",
+  split: "M3 12h6l4-6h8M9 12l4 6h8M18 3l3 3-3 3M18 15l3 3-3 3",
   right: "M5 12h14m-5-5 5 5-5 5",
   minimize: "M15 6l-6 6 6 6",
   clock: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
@@ -765,6 +766,138 @@ $("#todo-refine").addEventListener("click", attempt(async () => {
     f.prompt.readOnly = false;
     btn.lastChild.textContent = "Clean up";
   }
+}));
+// Split asks Claude how to break a large task into smaller ones and shows
+// them in a sheet over the form to edit, drop or add to. Saving them makes
+// one task each, with the form's priority, model, files and dependencies;
+// a part Claude says builds on earlier ones starts after they are merged.
+// The form's task itself isn't saved (an edited one is replaced).
+const split = {
+  sheet: $("#split-sheet"),
+  list: $("#split-parts"),
+  parts: [],          // { title, prompt, after: Set of parts, id once created }
+  splittable: (t) => !t || t.status === "draft" || t.status === "queued",
+};
+$("#todo-split").addEventListener("click", attempt(async () => {
+  const f = $("#todo-form");
+  const btn = $("#todo-split");
+  const before = f.prompt.value;
+  if (!before.trim()) throw new Error("Write the instructions to split first.");
+  btn.disabled = true;
+  f.prompt.readOnly = true;
+  btn.lastChild.textContent = "Splitting…";
+  try {
+    const { parts } = await api("POST", "/api/split", { prompt: before });
+    if (f.prompt.value !== before || !$("#todo-sheet").open) return; // the form changed meanwhile
+    const made = (parts || []).map((p) => ({ title: p.title || "", prompt: p.prompt || "", after: new Set() }));
+    (parts || []).forEach((p, i) => (p.after || []).forEach((j) => { if (j < i) made[i].after.add(made[j]); }));
+    openSplit(made);
+  } finally {
+    btn.disabled = false;
+    f.prompt.readOnly = false;
+    btn.lastChild.textContent = "Split…";
+  }
+}));
+
+function openSplit(parts) {
+  split.parts = parts;
+  const one = parts.length === 1;
+  $("#split-hint").textContent = (one
+    ? "Claude thinks this is small enough for one task. Add more below if you still want to split it."
+    : `Claude proposes ${parts.length} tasks. Edit, remove or add tasks; nothing is saved until you do.`)
+    + (editing ? ` They replace “${title(editing)}”.` : "");
+  renderSplit();
+  split.sheet.returnValue = "";
+  split.sheet.showModal();
+  split.list.querySelector("input")?.focus();
+}
+
+function renderSplit() {
+  const parts = split.parts;
+  const num = (p) => parts.indexOf(p) + 1;
+  split.list.replaceChildren(...parts.map((p, i) => {
+    const titleIn = h("input", { class: "split-title", value: p.title, readOnly: !!p.id, placeholder: "Claude names it if empty", autocomplete: "off", "aria-label": `Title of task ${i + 1}`, oninput: () => { p.title = titleIn.value; } });
+    const promptIn = h("textarea", { class: "split-prompt", rows: 4, readOnly: !!p.id, placeholder: "Instructions for Claude", "aria-label": `Instructions for task ${i + 1}`, oninput: () => { p.prompt = promptIn.value; } });
+    promptIn.value = p.prompt;
+    const after = [...p.after].map(num).sort((a, b) => a - b);
+    return h("li", { class: `split-part${p.id ? " saved" : ""}` },
+      h("div", { class: "split-head" },
+        h("span", { class: "split-num", "aria-hidden": "true" }, String(i + 1)),
+        titleIn,
+        p.id ? h("span", { class: "split-saved" }, "Saved") :
+          ib({ type: "button", class: "icon-btn", "aria-label": `Remove task ${i + 1}`, title: "Remove this task", onclick: () => removeSplitPart(p) }, "x")),
+      promptIn,
+      after.length ? h("p", { class: "hint split-after" }, `Builds on ${after.length > 1 ? "tasks" : "task"} ${after.join(", ")}`) : null);
+  }));
+  const n = parts.filter((p) => !p.id).length;
+  const what = n === 1 ? "task" : `${n} tasks`;
+  $("#split-draft-label").textContent = n === 1 ? "Save as draft" : `Save ${n} drafts`;
+  $("#split-queue-label").textContent = `Queue ${what}`;
+  $("#split-order-row").hidden = !parts.some((p) => p.after.size);
+}
+
+function removeSplitPart(p) {
+  split.parts = split.parts.filter((x) => x !== p);
+  for (const x of split.parts) x.after.delete(p);
+  renderSplit();
+}
+$("#split-add").addEventListener("click", () => {
+  split.parts.push({ title: "", prompt: "", after: new Set() });
+  renderSplit();
+  split.list.lastElementChild?.querySelector("input")?.focus();
+});
+// Enter in a title goes on to its instructions rather than submitting the
+// sheet (whose first button is Close).
+split.list.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || !e.target.matches(".split-title") || e.isComposing) return;
+  e.preventDefault();
+  e.target.closest(".split-part")?.querySelector(".split-prompt")?.focus();
+});
+$("#split-form").noValidate = true;
+
+// saveSplit makes the parts not saved yet as tasks of p, with the form's
+// priority, model, files and dependencies.
+async function saveSplit(parts, p, enqueue) {
+  const left = parts.filter((x) => !x.id);
+  if (!left.length) throw new Error("Add a task to save.");
+  if (left.some((x) => !x.prompt)) throw new Error("Each task needs instructions; remove the empty ones.");
+  const f = $("#todo-form");
+  await todoAttach.settled();
+  const attachments = todoAttach.ids();
+  if (attachments.length && p.prefix !== here()) throw new Error(`Attachments can't be sent to ${p.name} on ${p.machine}; remove them or pick a project on this computer.`);
+  const common = { priority: formPriority(f.priority.value), model: f.model.value, attachments };
+  const deps = depPicker.ids();
+  const order = $("#split-order").checked;
+  for (const part of left) {
+    const depends_on = [...new Set([...deps, ...(order ? [...part.after].map((x) => x.id) : [])])].filter(Boolean);
+    const t = await api("POST", `/api/projects/${p.id}/todos`, { ...common, title: part.title, prompt: part.prompt, depends_on, enqueue }, p.prefix || "");
+    part.id = t.id;
+  }
+}
+
+// Saving the parts: they are made one by one, in order, so a part's
+// dependencies already have ids. If one fails, the sheet stays with the
+// saved ones marked, and saving again makes the rest.
+split.sheet.addEventListener("close", attempt(async () => {
+  const action = split.sheet.returnValue;
+  if (action !== "draft" && action !== "queue") return;
+  const parts = split.parts;
+  for (const p of parts) { p.title = p.title.trim(); p.prompt = p.prompt.trim(); }
+  const project = (pickProject && state.projects.find((x) => projectKey(x) === $("#todo-form").project.value)) || state.project;
+  try {
+    await saveSplit(parts, project, action === "queue");
+  } catch (e) {
+    if ($("#todo-sheet").open) { renderSplit(); split.sheet.showModal(); }
+    throw e;
+  }
+  const enqueue = action === "queue";
+  const replaced = editing;
+  $("#todo-sheet").close("split");
+  if (replaced) await api("DELETE", `/api/todos/${replaced.id}`);
+  const n = parts.length;
+  const other = projectKey(project) !== projectKey(state.project);
+  toast(`${enqueue ? `Queued ${n} task${n > 1 ? "s" : ""}` : `Saved ${n} draft${n > 1 ? "s" : ""}`}${replaced ? ` in place of “${title(replaced)}”` : ""}${other ? ` in ${project.name}` : ""}`);
+  if (!other) showNewTasks(enqueue ? "queued" : "draft", parts.map((x) => x.id));
 }));
 $("#todo-form").addEventListener("input", () => draft.changed());
 $("#todo-form").addEventListener("change", () => draft.changed());
@@ -2528,6 +2661,7 @@ function openTodoForm(t = null, { pick = false } = {}) {
   $("#todo-sheet-title").textContent = t ? "Edit task" : "New task";
   showRunnerNeeded($("#todo-runner-note"), state.project);
   $("#todo-clear").hidden = !!t;
+  $("#todo-split").hidden = !split.splittable(t);
   if (t) {
     f.title.value = t.title;
     f.prompt.value = t.prompt;
@@ -2676,6 +2810,7 @@ $("#quick-more").addEventListener("click", quickMore);
 
 $("#todo-sheet").addEventListener("close", attempt(async () => {
   const action = $("#todo-sheet").returnValue;
+  if (action === "split") return draft.done(); // saved as the split's tasks
   if (action !== "draft" && action !== "queue") {
     const kept = draft.has(draftKey(editing));
     draft.close();

@@ -861,6 +861,36 @@ func (s *Server) refinePrompt(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"prompt": out})
 }
 
+// splitPrompt proposes how to split a large task into smaller todos; the
+// form shows the parts to edit and confirm, and nothing is stored.
+func (s *Server) splitPrompt(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if strings.TrimSpace(req.Prompt) == "" {
+		writeErr(w, fmt.Errorf("%w: prompt is required", errBadRequest))
+		return
+	}
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	parts, err := sv.split(r.Context(), req.Prompt)
+	if errors.Is(err, errNoSplitter) || errors.Is(err, errNoClaudeRunner) || errors.Is(err, tunnel.ErrOffline) {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		return
+	}
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"parts": parts})
+}
+
 func (s *Server) retestTodo(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {

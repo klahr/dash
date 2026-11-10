@@ -593,6 +593,7 @@
       <div class="prompt-tools">
         <div class="draft-status" id="todo-draft" aria-live="polite"></div>
         <button class="btn small attach-btn" type="button" id="todo-refine" data-icon="wand" title="Rewrite the instructions without the chatter, e.g. after pasting a chat answer">Clean up</button>
+        <button class="btn small attach-btn" type="button" id="todo-split" data-icon="split" title="Claude proposes smaller tasks to do this in; you edit and confirm them">Split…</button>
       </div>
       <div class="attach" id="todo-attach" data-attach></div>
       <div class="field-row">
@@ -605,6 +606,21 @@
         <button class="btn shrink" type="button" id="todo-clear" data-icon="trash">Clear</button>
         <button class="btn" value="draft" id="todo-save-draft" data-icon="draft">Save as draft</button>
         <button class="btn primary" value="queue" data-icon="queue">Add to queue</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Split a large task: Claude's proposal, to edit and confirm (over the task form) -->
+  <dialog class="sheet" id="split-sheet" aria-labelledby="split-title">
+    <form method="dialog" id="split-form">
+      <header class="sheet-head"><h2 id="split-title">Split into tasks</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <p class="hint" id="split-hint"></p>
+      <ol class="split-parts" id="split-parts"></ol>
+      <button class="link" type="button" id="split-add" data-icon="plus">Another task</button>
+      <label class="toggle" id="split-order-row"><input type="checkbox" id="split-order" checked><span>Start each one after the tasks it builds on</span></label>
+      <footer class="sheet-actions">
+        <button class="btn" value="draft" data-icon="draft"><span id="split-draft-label">Save as drafts</span></button>
+        <button class="btn primary" value="queue" data-icon="queue"><span id="split-queue-label">Add to queue</span></button>
       </footer>
     </form>
   </dialog>

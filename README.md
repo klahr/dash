@@ -98,7 +98,9 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    as you would in a chat; Claude names the task. <kbd>Enter</kbd> saves it, <kbd>Shift</kbd>+<kbd>Enter</kbd>
    adds a field for another task (a pasted multi-line text stays one task). **More options…**
    (or <kbd>Shift</kbd>+<kbd>N</kbd>) opens the full form, with a title, priority, dependencies and
-   attachments.
+   attachments. For a large task, **Split…** there has Claude propose smaller tasks that can each
+   be reviewed and merged on their own; edit, remove or add to them, then save them all, each
+   one waiting for the tasks it builds on.
 3. **Queue it.** Tick **Queue right away** (Dash remembers it), or in the full form click **Add to
    queue**; otherwise the task is saved as a draft to queue later from the *Drafts* column. The task moves to *Queued*, then *Running* as soon as Claude starts on it in
    its own worktree. Open the card to follow along; if Claude needs permission for something,
@@ -125,7 +127,7 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
   with a compose file: [Run the hub with Docker](docs/deploy.md#run-the-hub-with-docker).
 - **Use it from Claude** with the `dash-mcp` MCP server, or as a custom connector in claude.ai
   and the Claude app: [docs/mcp.md](docs/mcp.md).
-- **Several computers** in one dashboard: add each with one pasted command (`curl … /runner/install.sh | sh`), no VPN needed. Share a project with people's runners and the hub sends its tasks, git and commands there, each on its owner's Claude subscription; everyone's chat, titles and clean-ups run on their own runner too, so the hub runs nothing itself: [docs/several-computers.md](docs/several-computers.md).
+- **Several computers** in one dashboard: add each with one pasted command (`curl … /runner/install.sh | sh`), no VPN needed. Share a project with people's runners and the hub sends its tasks, git and commands there, each on its owner's Claude subscription; everyone's chat, titles, clean-ups and splits run on their own runner too, so the hub runs nothing itself: [docs/several-computers.md](docs/several-computers.md).
 - **Live previews** of each task's app, served on their own subdomains:
   [docs/previews.md](docs/previews.md).
 

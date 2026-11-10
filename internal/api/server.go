@@ -76,6 +76,10 @@ type Server struct {
 	Refiner interface {
 		Refine(ctx context.Context, prompt string) (string, error)
 	}
+	// Splitter proposes how to split a large task into todos (optional).
+	Splitter interface {
+		Split(ctx context.Context, prompt string) ([]agent.Part, error)
+	}
 	// Small runs Claude's short calls for this runner's owner when the hub
 	// asks (a runner's; optional).
 	Small SmallClaude
@@ -263,6 +267,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/todos/{tid}/open", s.openTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/revert", s.revertTodo)
 	mux.HandleFunc("POST /api/refine", s.refinePrompt)
+	mux.HandleFunc("POST /api/split", s.splitPrompt)
 	mux.HandleFunc("GET /api/claude", s.claudeInfo)
 	mux.HandleFunc("POST /api/hub/claude/{kind}", s.hubClaude)
 	mux.HandleFunc("GET /api/hub/repos", s.hubRepos)

@@ -1710,6 +1710,20 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .prompt-tools { display: flex; align-items: flex-start; gap: 8px; margin: -6px 0 8px; }
 .prompt-tools .draft-status { flex: 1; margin: 0; align-self: center; }
 
+/* ---- split a task: Claude's proposed parts ---- */
+.split-parts { list-style: none; margin: 12px -3px 4px; padding: 3px; display: flex; flex-direction: column; gap: 12px; max-height: min(60dvh, 640px); overflow-y: auto; }
+.split-part { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--raised); }
+.split-part.saved { opacity: .6; }
+.split-head { display: flex; align-items: center; gap: 8px; }
+.split-num { flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--surface); color: var(--muted); font-size: 13px; font-weight: 650; }
+.split-title { flex: 1; min-width: 0; font-weight: 600; }
+.split-saved { flex: none; color: var(--merged); font-size: 13px; font-weight: 600; padding: 0 6px; }
+.split-prompt { min-height: 5.5em; }
+.split-after { margin: 0; font-size: 13px; }
+#split-order-row { display: flex; }
+#split-order-row[hidden] { display: none; }
+@media (max-width: 1023px) { .split-title, .split-prompt { font-size: 16px; } } /* no iOS zoom */
+
 /* ---- update bar ---- */
 .update-bar {
   position: fixed; z-index: 60; left: 50%; bottom: calc(var(--nav-h) + var(--safe-b) + 84px); transform: translateX(-50%);

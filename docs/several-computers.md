@@ -309,10 +309,11 @@ Where each kind of Claude work runs:
 - **Titles and summaries**: a task created without a title is named by Claude on one of your
   runners; with none online it is named after the first line of its instructions. A task's
   summary is written by the runner that ran it.
-- **Clean up** (in the task form): runs on one of your runners; with none online it says so.
+- **Clean up** and **Split…** (in the task form): run on one of your runners; with none online
+  they say so.
 
 Nothing falls back to running Claude on the hub: work with no runner to go to waits (tasks,
-scans) or says so (chats, clean-up).
+scans) or says so (chats, clean-up, split).
 
 A runner does these only for its owner, the user whose code registered it: the hub sends a
 user's calls only to that user's own runners in the org they're working in (never another
@@ -434,7 +435,7 @@ issues, scans, chats about a project or task, CI, previews and permission prompt
   hub (set those on the runner, or start it with `-hub-commands` if you trust the hub to run
   commands on it);
 - adding a project outside its `-projects` directory;
-- the general chat and Claude's short calls (titles, summaries, clean-up) for anyone but its owner
+- the general chat and Claude's short calls (titles, summaries, clean-up, split) for anyone but its owner
   (see [above](#claude-runs-on-each-users-own-runner));
 - chats, and the shell commands typed in them with `!` ([Chat](chat.md#shell-commands-with-)), for
   anyone but its owner, and `!` commands at all when its chat is read-only (`-chat-tools readonly`);

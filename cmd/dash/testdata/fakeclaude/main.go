@@ -1,5 +1,5 @@
 // Command fakeclaude stands in for Claude Code in tests that run dash's
-// binaries: it answers the way dash calls `claude -p` for a title, a chat
+// binaries: it answers the way dash calls `claude -p` for a title, a split, a chat
 // turn, a scan and a task, and records each call in $FAKECLAUDE_LOG.
 //
 // A task reports an issue through the board tools dash gives it (the
@@ -54,6 +54,13 @@ func main() {
 	}
 	switch kind {
 	case "small":
+		// A split's system prompt asks for JSON: two tasks, the second
+		// building on the first.
+		if i := slices.Index(args, "--system-prompt"); i >= 0 && i+1 < len(args) && strings.Contains(args[i+1], "JSON") {
+			fmt.Println(`[{"title": "Add the users table", "prompt": "Create the users table."},` +
+				` {"title": "Add the signup form", "prompt": "Build the signup form on the users table.", "after": [1]}]`)
+			return
+		}
 		fmt.Println("Title from the runner")
 	case "chat":
 		line(map[string]any{"type": "stream_event", "event": map[string]any{"type": "message_start"}})
