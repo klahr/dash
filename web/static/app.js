@@ -3510,8 +3510,12 @@ function renderPreviewsBtn() {
   const btn = $("#previews-btn");
   btn.hidden = !list.length;
   btn.dataset.state = list.some((p) => p.state === "crashed") ? "crashed" : list.some((p) => p.state === "live") ? "live" : "starting";
-  $("#previews-label").replaceChildren(h("span", { class: "pv-word" }, "Previews "), `(${list.length})`);
-  btn.title = `${list.length} running ${list.length === 1 ? "preview" : "previews"}`;
+  // The dot's colour alone isn't enough (WCAG 1.4.1): say a crash in words too.
+  const crashed = list.filter((p) => p.state === "crashed").length;
+  $("#previews-label").replaceChildren(h("span", { class: "pv-word" }, "Previews "), `(${list.length})`,
+    crashed ? h("span", { class: "pv-warn" }, " · crashed") : "");
+  btn.title = `${list.length} running ${list.length === 1 ? "preview" : "previews"}` +
+    (crashed ? `, ${crashed} crashed` : "");
 }
 
 $("#previews-btn").addEventListener("click", () => {

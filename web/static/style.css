@@ -1772,6 +1772,7 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .previews-btn .pv-dot { background: var(--merged); }
 .previews-btn[data-state="starting"] .pv-dot { background: var(--running); }
 .previews-btn[data-state="crashed"] .pv-dot { background: var(--failed); }
+.previews-btn .pv-warn { color: var(--failed); font-weight: 600; }
 @media (max-width: 639px) { .previews-btn .pv-word { display: none; } }
 
 .preview { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
