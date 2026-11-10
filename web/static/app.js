@@ -1303,7 +1303,8 @@ function setHubMode(mode) {
   const f = $("#new-project");
   for (const b of $$("#new-project-hub-mode button")) b.setAttribute("aria-selected", String(b.dataset.mode === mode));
   $("#new-project-title").textContent = "New project";
-  $("#new-project-submit").textContent = mode === "create" ? "Create repository and project" : "Create project";
+  // gh and url add a repository that already exists; create and local make one.
+  $("#new-project-submit").textContent = { gh: "Add project", url: "Add project", create: "Create repository and project" }[mode] || "Create project";
   $("#new-project-gh").hidden = mode !== "gh";
   $("#new-project-url-row").hidden = mode !== "url";
   f.remote_url.required = mode === "url";
@@ -1455,7 +1456,7 @@ async function submitHubProject(form, body) {
   await loadProjects();
   await selectProject(state.projects.find((x) => x.id === p.id && !x.prefix));
   $("#new-project-sheet").close();
-  toast(`Created ${p.name}; ${r.name} clones it into its projects folder`, { tone: "ok" });
+  toast(`${mode === "create" ? "Created" : "Added"} ${p.name}; ${r.name} clones it into its projects folder`, { tone: "ok" });
 }
 
 // submitLocalProject makes a local-only project: the runner r's own, a new
