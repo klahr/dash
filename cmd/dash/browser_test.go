@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
@@ -879,4 +880,156 @@ func TestBrowserFavroBoard(t *testing.T) {
 	if c := fv.Card(org, card); c.Name != "From Favro" {
 		t.Fatalf("the card: %+v", c)
 	}
+}
+
+// On a phone the board shows one lane at a time, and a sideways swipe moves
+// to the next or previous shown lane, as the tabs do. Not from the screen's
+// edge, not mostly vertical, not in something that scrolls sideways, not
+// past the first or last lane, and not once a long-press dragged a card.
+func TestBrowserSwipeLanes(t *testing.T) {
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	api, pid := h.api, h.project.ID
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	b.waitJS("the one-lane layout", `!matchMedia("(min-width: 1024px)").matches && document.querySelectorAll("#board .col").length && [...document.querySelectorAll("#board .col")].filter((c) => c.offsetWidth).length === 1`)
+	var draft struct{ ID string }
+	api.must("POST", "/api/projects/"+pid+"/todos", map[string]any{"title": "Hold me", "prompt": "Stay a draft"}, http.StatusCreated, &draft)
+	b.waitCard(draft.ID, "draft")
+
+	// Count the slide-ins of a lane.
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(() => {
+		window.e2eSlides = 0;
+		const animate = Element.prototype.animate;
+		Element.prototype.animate = function (...a) { if (this.matches(".col")) window.e2eSlides++; return animate.apply(this, a); };
+		return true;
+	})()`)); err != nil {
+		b.fail("count the slide-ins", err)
+	}
+
+	lane := func(want string) {
+		t.Helper()
+		b.waitJS("the "+want+" lane", fmt.Sprintf(`document.querySelector("#board .col.active")?.dataset.lane === %q && document.querySelector(".lane-tab[aria-selected=true]")?.dataset.lane === %q`, want, want))
+	}
+	// swipe drags one finger from (x0, y0) to (x1, y1), holding it down
+	// first for hold.
+	swipe := func(what string, x0, y0, x1, y1 float64, hold time.Duration) {
+		t.Helper()
+		b.do(what, chromedp.Func(func(ctx context.Context, tg *chromedp.Target) error {
+			touch := func(typ input.DispatchTouchEventType, x, y float64) error {
+				p := input.DispatchTouchEventParams{Type: typ, TouchPoints: []*input.TouchPoint{}}
+				if typ != input.DispatchTouchEventTypeTouchEnd {
+					p.TouchPoints = []*input.TouchPoint{{X: x, Y: y}}
+				}
+				_, err := cdp.Call(ctx, tg, input.DispatchTouchEvent, p)
+				return err
+			}
+			if err := touch(input.DispatchTouchEventTypeTouchStart, x0, y0); err != nil {
+				return err
+			}
+			time.Sleep(hold)
+			for i := 1; i <= 6; i++ {
+				f := float64(i) / 6
+				if err := touch(input.DispatchTouchEventTypeTouchMove, x0+(x1-x0)*f, y0+(y1-y0)*f); err != nil {
+					return err
+				}
+				time.Sleep(16 * time.Millisecond)
+			}
+			return touch(input.DispatchTouchEventTypeTouchEnd, 0, 0)
+		}))
+	}
+	still := func(what, want string) {
+		t.Helper()
+		time.Sleep(300 * time.Millisecond)
+		lane(want)
+	}
+
+	b.until("show the drafts", `document.querySelector("#board .col.active")?.dataset.lane === "draft"`, chromedp.Click(chromedp.CSS(`.lane-tab[data-lane=draft]`)))
+	still("swipe right on the first lane", "draft")
+	swipe("swipe right on the first lane", 120, 500, 300, 510, 0)
+	still("swipe right on the first lane", "draft")
+
+	swipe("swipe left", 300, 500, 120, 510, 0)
+	lane("queued")
+	b.waitJS("a slide-in", `window.e2eSlides === 1`)
+	swipe("swipe right", 120, 500, 300, 520, 0)
+	lane("draft")
+
+	swipe("a short swipe", 300, 500, 260, 500, 0)
+	still("a short swipe", "draft")
+	swipe("a mostly vertical swipe", 300, 400, 220, 600, 0)
+	still("a mostly vertical swipe", "draft")
+	swipe("a swipe from the screen's edge", 385, 500, 150, 500, 0)
+	still("a swipe from the screen's edge", "draft")
+
+	// In something that scrolls sideways (a code block, a row of chips).
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(() => {
+		const s = document.createElement("div");
+		s.id = "e2e-scroller";
+		s.style.cssText = "overflow-x: auto; position: fixed; left: 0; right: 0; top: 300px; height: 80px; z-index: 50";
+		s.innerHTML = '<div style="width: 2000px; height: 80px"></div>';
+		document.querySelector("#board .col.active .col-body").append(s);
+		return true;
+	})()`)); err != nil {
+		b.fail("add a sideways scroller", err)
+	}
+	swipe("swipe in a sideways scroller", 300, 340, 100, 340, 0)
+	still("swipe in a sideways scroller", "draft")
+	b.waitJS("the scroller still there", `!!document.querySelector("#e2e-scroller")`)
+
+	// A long-press drags the card instead.
+	b.do("scroll the card into view", chromedp.ScrollIntoView(chromedp.CSS(cardSel(draft.ID))))
+	r, err := chromedp.Run(b.ctx, chromedp.Evaluate[struct{ X, Y float64 }](fmt.Sprintf(`(() => { const r = document.querySelector(%q).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`, cardSel(draft.ID))))
+	if err != nil {
+		b.fail("find the card", err)
+	}
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(() => {
+		window.e2eDragged = false;
+		new MutationObserver(() => { if (document.body.classList.contains("is-dragging")) window.e2eDragged = true; })
+			.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+		return true;
+	})()`)); err != nil {
+		b.fail("watch for a drag", err)
+	}
+	swipe("long-press and drag the card sideways", r.X+80, r.Y, r.X-100, r.Y+5, 500*time.Millisecond)
+	b.waitJS("the card dragged", `window.e2eDragged`)
+	still("long-press and drag the card sideways", "draft")
+	b.waitJS("the drag over", `!document.body.classList.contains("is-dragging")`)
+
+	// The last lane, and a hidden one: with auto approve, Review isn't shown.
+	b.until("open the project menu", `document.querySelector("#project-menu").open`, chromedp.Click(chromedp.CSS(`#project-menu > summary`)))
+	b.until("open the settings", `document.querySelector("#settings-sheet").open`, chromedp.Click(chromedp.ID("pm-settings")))
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(() => {
+		document.querySelector("#settings-form [name=auto_approve]").checked = true;
+		document.querySelector("#settings-sheet").close("save");
+		return true;
+	})()`)); err != nil {
+		b.fail("approve automatically", err)
+	}
+	b.waitJS("Review hidden", `document.querySelector(".lane-tab[data-lane=review]")?.hidden && document.querySelector('#board .col[data-lane="review"]').hidden`)
+	b.until("show Running", `document.querySelector("#board .col.active")?.dataset.lane === "in_progress"`, chromedp.Click(chromedp.CSS(`.lane-tab[data-lane=in_progress]`)))
+	swipe("swipe left past Review", 300, 500, 120, 500, 0)
+	lane("merging")
+	swipe("swipe right past Review", 120, 500, 300, 500, 0)
+	lane("in_progress")
+	b.until("show Done", `document.querySelector("#board .col.active")?.dataset.lane === "done"`, chromedp.Click(chromedp.CSS(`.lane-tab[data-lane=done]`)))
+	swipe("swipe left on the last lane", 300, 500, 120, 500, 0)
+	still("swipe left on the last lane", "done")
+
+	// No slide-in when the user asks for less motion.
+	b.do("reduce motion", chromedp.Func(func(ctx context.Context, tg *chromedp.Target) error {
+		_, err := cdp.Call(ctx, tg, emulation.SetEmulatedMedia, emulation.SetEmulatedMediaParams{
+			Features: []*emulation.MediaFeature{{Name: "prefers-reduced-motion", Value: "reduce"}}})
+		return err
+	}))
+	b.waitJS("reduced motion", `matchMedia("(prefers-reduced-motion: reduce)").matches`)
+	slides := `window.e2eSlides`
+	before, err := chromedp.Run(b.ctx, chromedp.Evaluate[int](slides))
+	if err != nil {
+		b.fail("count the slide-ins", err)
+	}
+	swipe("swipe right with reduced motion", 120, 500, 300, 500, 0)
+	lane("merging")
+	b.waitJS("no slide-in", fmt.Sprintf(`window.e2eSlides === %d`, before))
 }

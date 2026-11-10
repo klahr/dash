@@ -19,6 +19,7 @@ import { drag } from "./dnd.js";
 import { hoverCard } from "./hovercard.js";
 import { loadChecklist } from "./checklist.js";
 import { keys, laneHidden, todoKey } from "./vim.js";
+import { desktop } from "./viewport.js";
 
 // ------------------------------------------------------------------ branches
 // The open switcher's GET /branches answer, for the project it was opened on.
@@ -305,6 +306,70 @@ function renderBoardDot(waiting) {
   dot.hidden = !!waiting || (!active.length && !done);
   dot.classList.toggle("done", !active.length && done);
 }
+
+// ------------------------------------------------------------------ swipe between lanes (phones)
+// On a phone the board shows one lane at a time: a horizontal swipe on it
+// moves to the next lane (left) or the previous one (right), as the tabs do.
+// Passive listeners, so vertical scrolling in the lane is never held up. Not
+// from the screen's edges (iOS's back gesture), nor in anything that scrolls
+// sideways itself, nor once a long-press has started dragging a card.
+const SWIPE = { min: 50, edge: 20 };
+let swipe = null;
+
+// Whether el, or an ancestor inside the board, scrolls sideways.
+function inSideScroller(el) {
+  for (; el && el.id !== "board"; el = el.parentElement) {
+    const ox = getComputedStyle(el).overflowX;
+    if ((ox === "auto" || ox === "scroll") && el.scrollWidth > el.clientWidth) return true;
+  }
+  return false;
+}
+
+// The next shown lane from the current one in direction d (+1/-1), or null
+// at the first or last.
+function swipeLane(d) {
+  const shown = LANES.map((l) => l.key).filter((k) => !laneHidden(k));
+  const i = shown.indexOf(state.lane);
+  return i < 0 ? null : shown[i + d] ?? null;
+}
+
+$("#board").addEventListener("touchstart", (e) => {
+  swipe = null;
+  if (desktop.matches || e.touches.length !== 1 || drag.active) return;
+  const t = e.touches[0];
+  if (t.clientX < SWIPE.edge || t.clientX > innerWidth - SWIPE.edge) return;
+  if (inSideScroller(e.target)) return;
+  swipe = { x: t.clientX, y: t.clientY, dx: 0, dy: 0 };
+}, { passive: true });
+
+$("#board").addEventListener("touchmove", (e) => {
+  if (!swipe) return;
+  if (drag.active || e.touches.length !== 1) { swipe = null; return; }
+  const t = e.touches[0];
+  swipe.dx = t.clientX - swipe.x;
+  swipe.dy = t.clientY - swipe.y;
+}, { passive: true });
+
+$("#board").addEventListener("touchcancel", () => { swipe = null; }, { passive: true });
+
+$("#board").addEventListener("touchend", (e) => {
+  const s = swipe;
+  swipe = null;
+  if (!s || drag.active || desktop.matches) return;
+  const t = e.changedTouches[0];
+  if (t) { s.dx = t.clientX - s.x; s.dy = t.clientY - s.y; }
+  // Clearly sideways: well past the threshold and mostly horizontal.
+  if (Math.abs(s.dx) <= SWIPE.min || Math.abs(s.dx) < 2 * Math.abs(s.dy)) return;
+  const d = s.dx < 0 ? 1 : -1;
+  const lane = swipeLane(d);
+  if (!lane) return;
+  state.lane = lane;
+  renderBoard();
+  if (reduceMotion.matches) return;
+  $("#board .col.active")?.animate(
+    [{ transform: `translateX(${d * 48}px)`, opacity: 0.4 }, { transform: "none", opacity: 1 }],
+    { duration: 220, easing: EASE });
+}, { passive: true });
 
 function toggleCollapsed(key) {
   if (!state.collapsed.delete(key)) state.collapsed.add(key);
