@@ -1681,6 +1681,45 @@ function setMenu(open) {
   syncMenuBtn();
 }
 try { $(".app").classList.toggle("side-collapsed", localStorage.getItem("dash.sideCollapsed") === "1"); } catch {}
+
+// Desktop: drag the sidebar's right edge to resize it, like the chat pane. The
+// width survives collapsing; CSS also caps it at 40vw so main stays usable.
+const SIDE_MIN_W = 180, SIDE_MAX_W = 480;
+function setSideWidth(w, save = true) {
+  w = w == null ? null : Math.min(SIDE_MAX_W, Math.max(SIDE_MIN_W, Math.round(w)));
+  if (w) $(".app").style.setProperty("--side-w-set", `${w}px`);
+  else $(".app").style.removeProperty("--side-w-set");
+  if (save) try { w ? localStorage.setItem("dash.sideW", String(w)) : localStorage.removeItem("dash.sideW"); } catch {}
+}
+try { setSideWidth(Number(localStorage.getItem("dash.sideW")) || null, false); } catch {}
+{
+  const handle = $("#side-resize"), panel = $(".sidebar");
+  handle.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add("dragging");
+    const left = panel.getBoundingClientRect().left;
+    const move = (ev) => setSideWidth(ev.clientX - left, false);
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.classList.remove("dragging");
+      setSideWidth(panel.getBoundingClientRect().width);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up, { once: true });
+    handle.addEventListener("pointercancel", up, { once: true });
+  });
+  handle.addEventListener("dblclick", () => setSideWidth(null));
+  handle.addEventListener("keydown", (e) => {
+    const step = e.shiftKey ? 64 : 16;
+    const d = e.key === "ArrowRight" ? step : e.key === "ArrowLeft" ? -step : 0;
+    if (!d) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setSideWidth(panel.getBoundingClientRect().width + d);
+  });
+}
 syncMenuBtn();
 function openProjects() {
   if (desktop.matches && sideCollapsed()) return setPicker(true);
