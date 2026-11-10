@@ -921,9 +921,27 @@ function setLive(on) {
   $("#live-label").textContent = on ? "Live" : "Offline";
 }
 
+// A project's tasks and permission requests are fetched over REST and then
+// kept current by live events. On a busy computer or a slow network the
+// fetch's answer can arrive after newer events (a task created, a request
+// made just after it was read), and would undo them: the events seen while
+// a fetch is on its way are kept, to replay over its answer (latest).
+const inflight = new Set();
+async function latest(fetchIt) {
+  const seen = [];
+  inflight.add(seen);
+  try {
+    return { data: await fetchIt(), seen };
+  } finally {
+    inflight.delete(seen);
+  }
+}
+const eventFor = (p, ev, m) => !!p && ev.project_id === p.id && m.name === p.machine;
+
 function onEvent(ev, m = { name: "" }) {
+  for (const seen of inflight) seen.push({ ev, m });
   const sameMachine = !state.project || m.name === state.project.machine;
-  const mine = state.project && ev.project_id === state.project.id && sameMachine;
+  const mine = eventFor(state.project, ev, m);
   if (!mine) elsewhere(ev, m);
   if (ev.type === "todo.updated" || ev.type === "todo.deleted") trackActive(ev, m);
   switch (ev.type) {
@@ -1145,8 +1163,17 @@ async function selectProject(p) {
 }
 
 async function loadPerms() {
-  if (!state.project) return;
-  state.perms = await api("GET", `/api/permissions?project=${state.project.id}`);
+  const p = state.project;
+  if (!p) return;
+  const { data, seen } = await latest(() => api("GET", `/api/permissions?project=${p.id}`));
+  if (projectKey(state.project) !== projectKey(p)) return; // another project's by now
+  let perms = data;
+  for (const { ev, m } of seen) {
+    if (ev.type !== "permission.updated" || !eventFor(p, ev, m)) continue;
+    perms = perms.filter((x) => x.id !== ev.data.id);
+    if (!ev.data.decision) perms.push(ev.data);
+  }
+  state.perms = perms;
   renderPerms();
 }
 
@@ -1697,9 +1724,17 @@ $("#new-project").addEventListener("submit", attempt(async (e) => {
 
 // ------------------------------------------------------------------ board
 async function loadTodos() {
-  if (!state.project) return;
-  const list = await api("GET", `/api/projects/${state.project.id}/todos`);
-  state.todos = new Map(list.map((t) => [t.id, t]));
+  const p = state.project;
+  if (!p) return;
+  const { data: list, seen } = await latest(() => api("GET", `/api/projects/${p.id}/todos`));
+  if (projectKey(state.project) !== projectKey(p)) return; // another project's by now
+  const todos = new Map(list.map((t) => [t.id, t]));
+  for (const { ev, m } of seen) {
+    if (!eventFor(p, ev, m)) continue;
+    if (ev.type === "todo.updated") todos.set(ev.todo_id, ev.data);
+    else if (ev.type === "todo.deleted") todos.delete(ev.todo_id);
+  }
+  state.todos = todos;
   renderBoard();
   if (state.detail) renderDetail();
   loadUnpushed().catch(fail);
