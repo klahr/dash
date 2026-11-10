@@ -2,6 +2,7 @@ import { $, h, ib } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
+import { projectKey } from "./events.js";
 import { showView } from "./nav.js";
 import { formSnapshot, markSettingsSaved, settingsSnapshot } from "./settings.js";
 import { loadFiles, newFile, openFile } from "./files.js";
@@ -36,7 +37,7 @@ export async function loadClaudeFiles() {
     if (seq === claudeFilesSeq) box.replaceChildren(h("p", { class: "hint warn" }, `Couldn't read the repository's Claude files: ${e.message}`));
     return;
   }
-  if (seq !== claudeFilesSeq || state.project !== p) return;
+  if (seq !== claudeFilesSeq || projectKey(state.project) !== projectKey(p)) return;
   renderClaudeFiles(res);
 }
 

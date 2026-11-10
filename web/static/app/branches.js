@@ -114,7 +114,7 @@ async function switchBranch(name, create = false) {
   renderProjectHeader();
   renderProjectList();
   toast(create ? `Created ${name}` : "", { head: `New tasks land on ${baseBranch(p)}`, icon: "branch" });
-  if (state.project !== p) return;
+  if (projectKey(state.project) !== projectKey(p)) return;
   state.unpushed = 0;
   state.unpushedTodos = null;
   await Promise.all([loadUnpushed(), loadRemote(true), state.view === "history" && loadGraph(), state.view === "files" && loadFiles(), state.view === "checklist" && loadChecklist()]);

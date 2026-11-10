@@ -5,7 +5,7 @@ import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { copy, fail, leave } from "./dialogs.js";
 import { cp, hist, state } from "./state.js";
-import { baseBranch } from "./events.js";
+import { baseBranch, projectKey } from "./events.js";
 import { detailBackground } from "./detail.js";
 import { diffLines, parseDiff } from "./drawmode.js";
 import { openRelease } from "./releases.js";
@@ -17,7 +17,7 @@ export async function loadGraph() {
   const p = state.project;
   if (!p) return renderGraph(null);
   const res = await api("GET", `/api/projects/${p.id}/graph`);
-  if (state.project === p) renderGraph(res);
+  if (projectKey(state.project) === projectKey(p)) renderGraph(res);
 }
 
 let graphTimer = 0;
@@ -123,7 +123,7 @@ async function selectCommit(sha, { wait = 0 } = {}) {
   $("#cd-body").scrollTop = 0;
   const res = await commitLoad.run((signal) => api("GET", commitAPI(p, sha), undefined, undefined, { signal }), { wait })
     .catch((e) => ({ error: e }));
-  if (res.stale || cp.sha !== sha || state.project !== p) return;
+  if (res.stale || cp.sha !== sha || projectKey(state.project) !== projectKey(p)) return;
   if (res.error) cp.error = res.error.message;
   else cp.detail = res.value;
   renderCommit();

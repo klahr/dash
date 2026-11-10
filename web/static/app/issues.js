@@ -3,6 +3,7 @@ import { $, $$, h, ib, ico } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { STATUS_LABEL, state } from "./state.js";
+import { projectKey } from "./events.js";
 import { showView } from "./nav.js";
 import { agoText, title } from "./branches.js";
 import { openDetail, openTodo } from "./detail.js";
@@ -53,7 +54,7 @@ export async function loadIssues() {
   const p = state.project;
   if (!p) return;
   const list = await api("GET", `/api/projects/${p.id}/issues`);
-  if (state.project !== p) return;
+  if (projectKey(state.project) !== projectKey(p)) return;
   iss.list = list;
   iss.loaded = true;
   sortIssues();

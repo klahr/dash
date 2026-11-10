@@ -2,6 +2,7 @@ import { $, $$, h, ib, ico, timeLocale } from "./dom.js";
 import { api, here, on } from "./api.js";
 import { ask, attempt, copy, toast } from "./dialogs.js";
 import { state } from "./state.js";
+import { projectKey } from "./events.js";
 import { showView } from "./nav.js";
 import { selectProject } from "./projects.js";
 import { agoText } from "./branches.js";
@@ -26,7 +27,7 @@ export async function loadScans() {
   const p = state.project;
   if (!p) return;
   const r = await api("GET", `/api/projects/${p.id}/scans`);
-  if (state.project !== p) return;
+  if (projectKey(state.project) !== projectKey(p)) return;
   Object.assign(scans, { list: r.scans, problems: r.problems, builtin: r.builtin, dir: r.dir, loaded: true });
   for (const name of scans.history.keys()) loadScanHistory(name).catch(() => {});
   renderScans();
@@ -41,7 +42,7 @@ export function resetScans() {
 async function loadScanHistory(name) {
   const p = state.project;
   const runs = await api("GET", `/api/projects/${p.id}/scan-runs?scan=${encodeURIComponent(name)}`);
-  if (state.project !== p) return;
+  if (projectKey(state.project) !== projectKey(p)) return;
   scans.history.set(name, runs);
   renderScans();
 }
@@ -73,7 +74,7 @@ export function onScanRun(ev) {
 // high issues.
 export function scanFinished(run, p, where = "") {
   if (run.status === "running" || !run.finished_at) return;
-  const go = p ? { label: "Show", run: async () => { if (state.project !== p) await selectProject(p); showRunIssues(run, "new"); } } : null;
+  const go = p ? { label: "Show", run: async () => { if (projectKey(state.project) !== projectKey(p)) await selectProject(p); showRunIssues(run, "new"); } } : null;
   const head = `${scanLabel(run.scan)}${where ? ` · ${where}` : ""}`;
   if (run.trigger !== "manual") {
     if (run.status !== "succeeded" || !run.urgent) return;

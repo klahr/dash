@@ -2,6 +2,7 @@ import { $, h, timeLocale } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
+import { projectKey } from "./events.js";
 import { agoText } from "./branches.js";
 
 // ------------------------------------------------------------------ origin (background fetch)
@@ -12,7 +13,7 @@ export async function loadRemote(fetch, force) {
   const p = state.project;
   if (!p?.remote_url) return;
   const st = await api(fetch ? "POST" : "GET", `/api/projects/${p.id}/remote${fetch ? `/fetch${force ? "?force=1" : ""}` : ""}`);
-  if (state.project === p) { state.remote = st; renderRemote(); }
+  if (projectKey(state.project) === projectKey(p)) { state.remote = st; renderRemote(); }
 }
 
 export function renderRemote() {
@@ -42,7 +43,7 @@ export async function loadCheckouts() {
   const p = state.project;
   if (!p?.remote_url) return;
   const list = await api("GET", `/api/projects/${p.id}/checkouts`);
-  if (state.project === p) { state.checkouts = list || []; renderCheckouts(); }
+  if (projectKey(state.project) === projectKey(p)) { state.checkouts = list || []; renderCheckouts(); }
 }
 
 export function renderCheckouts() {

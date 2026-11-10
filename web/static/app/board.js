@@ -33,7 +33,7 @@ export async function loadUnpushed() {
   if (!p?.remote_url || landsOnGitHub(p)) { state.unpushed = 0; renderPushMain(); return; }
   const { count, todos = [] } = await api("GET", `/api/projects/${p.id}/unpushed`);
   const same = (a, b) => a && a.size === b.length && b.every((id) => a.has(id));
-  if (state.project !== p || (count === state.unpushed && same(state.unpushedTodos, todos))) return;
+  if (projectKey(state.project) !== projectKey(p) || (count === state.unpushed && same(state.unpushedTodos, todos))) return;
   state.unpushed = count;
   state.unpushedTodos = new Set(todos);
   renderBoard();

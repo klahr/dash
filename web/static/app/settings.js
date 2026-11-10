@@ -3,7 +3,7 @@ import { api } from "./api.js";
 import { attempt, fail, toast } from "./dialogs.js";
 import { uploadFile } from "./attachments.js";
 import { state } from "./state.js";
-import { baseBranch } from "./events.js";
+import { baseBranch, projectKey } from "./events.js";
 import { projectIcon, renderProjectHeader, renderProjectList } from "./projects.js";
 import { agoText, renderBoard } from "./branches.js";
 import { DEFAULT_REVIEW_PROMPT } from "./drawmode.js";
@@ -193,7 +193,7 @@ async function loadRepoInfo() {
   } catch (err) {
     res = { remote_url: p.remote_url, github: null, error: err.message };
   }
-  if (seq !== repoInfoSeq || state.project !== p) return;
+  if (seq !== repoInfoSeq || projectKey(state.project) !== projectKey(p)) return;
   box.replaceChildren(...renderRepoInfo(p, res).filter(Boolean));
 }
 
