@@ -637,6 +637,13 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 		emit(model.RunEvent{Kind: "prompt", Text: n})
 	}
 	req.ExtraArgs = append(req.ExtraArgs, "--max-turns", strconv.Itoa(p.TurnLimit()))
+	if m, err := model.CleanModel(t.Model); err != nil {
+		log("⚠ " + err.Error() + "; running on the default model")
+	} else if m != "" {
+		// After -claude-args, so it wins over a --model there.
+		req.ExtraArgs = append(req.ExtraArgs, "--model", m)
+		log("model: " + m)
+	}
 	for _, dir := range attachmentDirs(t.Attachments) {
 		req.ExtraArgs = append(req.ExtraArgs, "--add-dir", dir)
 	}

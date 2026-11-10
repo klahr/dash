@@ -104,6 +104,8 @@ type Task struct {
 	HubProjectID string `json:"hub_project_id"`
 	Title        string `json:"title"`
 	Prompt       string `json:"prompt"`
+	// Model is the task's claude --model (empty: the runner's default).
+	Model string `json:"model,omitempty"`
 	// Feedback is all of the hub's notes for Claude (rework requests); the
 	// runner adds those it doesn't have yet.
 	Feedback []string `json:"feedback,omitempty"`

@@ -801,6 +801,7 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 		Enqueue     bool     `json:"enqueue"`     // skip Draft
 		Attachments []string `json:"attachments"` // upload ids
 		DependsOn   []string `json:"depends_on"`  // todo ids that must be merged first
+		Model       string   `json:"model"`       // claude --model; empty: the default
 	}
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -821,7 +822,7 @@ func (s *Server) createTodo(w http.ResponseWriter, r *http.Request) {
 	}
 	t, err := sv.addTodo(model.Todo{
 		ProjectID: r.PathValue("pid"), Title: req.Title, Prompt: req.Prompt, Priority: req.Priority,
-		Attachments: atts, DependsOn: req.DependsOn,
+		Attachments: atts, DependsOn: req.DependsOn, Model: req.Model,
 	}, req.Enqueue)
 	if err != nil {
 		writeErr(w, err)
@@ -910,7 +911,7 @@ func (s *Server) duplicateTodo(w http.ResponseWriter, r *http.Request) {
 		title += " (copy)"
 	}
 	t, err := sv.data.CreateTodo(model.Todo{ProjectID: src.ProjectID, CreatedBy: sv.c.User, Title: title, Prompt: src.Prompt,
-		Priority: src.Priority, Attachments: src.Attachments, Edits: src.Edits, DependsOn: src.DependsOn})
+		Priority: src.Priority, Attachments: src.Attachments, Edits: src.Edits, DependsOn: src.DependsOn, Model: src.Model})
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -1005,6 +1006,7 @@ func (s *Server) updateTodo(w http.ResponseWriter, r *http.Request) {
 		Priority    nullableInt `json:"priority"`    // null unsets it
 		Attachments *[]string   `json:"attachments"` // upload ids; replaces the list
 		DependsOn   *[]string   `json:"depends_on"`  // todo ids; replaces the list
+		Model       *string     `json:"model"`       // "" goes back to the default
 	}
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -1024,7 +1026,7 @@ func (s *Server) updateTodo(w http.ResponseWriter, r *http.Request) {
 		atts = &a
 	}
 	t, err := sv.editTodo(r.PathValue("tid"), mcptools.TodoUpdate{
-		Title: req.Title, Prompt: req.Prompt, DependsOn: req.DependsOn,
+		Title: req.Title, Prompt: req.Prompt, DependsOn: req.DependsOn, Model: req.Model,
 		Priority: req.Priority.Value, ClearPriority: req.Priority.Set && req.Priority.Value == nil,
 	}, atts)
 	if err != nil {

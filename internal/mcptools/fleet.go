@@ -329,7 +329,7 @@ func (c RESTComputer) CreateTodo(projectID string, t NewTodo) (model.Todo, error
 	var out model.Todo
 	return out, c.API.Call("POST", c.Prefix+"/api/projects/"+url.PathEscape(projectID)+"/todos", map[string]any{
 		"title": t.Title, "prompt": t.Prompt, "priority": t.Priority, "enqueue": t.Enqueue,
-		"depends_on": t.DependsOn,
+		"depends_on": t.DependsOn, "model": t.Model,
 	}, &out)
 }
 
@@ -366,6 +366,9 @@ func (c RESTComputer) UpdateTodo(id string, u TodoUpdate) (model.Todo, error) {
 			deps = []string{} // [] clears the list; null would leave it
 		}
 		changes["depends_on"] = deps
+	}
+	if u.Model != nil {
+		changes["model"] = *u.Model
 	}
 	var out model.Todo
 	return out, c.API.Call("PATCH", c.Prefix+"/api/todos/"+url.PathEscape(id), changes, &out)

@@ -91,7 +91,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo
 	if err := d.link(ctx, *r, p); err != nil {
 		return "", "", &WaitError{Reason: "waiting for a runner: " + err.Error()}
 	}
-	task := Task{HubTodoID: t.ID, HubProjectID: p.ID, Title: t.Title, Prompt: t.Prompt, Feedback: t.Feedback,
+	task := Task{HubTodoID: t.ID, HubProjectID: p.ID, Title: t.Title, Prompt: t.Prompt, Model: t.Model, Feedback: t.Feedback,
 		Fresh: t.Runner != r.ID}
 	var acc Accepted
 	if err := d.Fleet.Call(ctx, r.ID, http.MethodPost, "/api/hub/tasks", task, &acc); err != nil {

@@ -678,19 +678,29 @@ const depPicker = (() => {
   };
 })();
 
+// setModelField selects a task's model in the form, adding an option for a
+// model id that isn't one of the aliases (set through the API or MCP).
+function setModelField(f, m) {
+  const sel = f.model;
+  $$("option[data-custom]", sel).forEach((o) => o.remove());
+  if (m && ![...sel.options].some((o) => o.value === m)) sel.append(h("option", { value: m, "data-custom": "" }, m));
+  sel.value = m;
+}
+
 // The todo form autosaves to this browser while you type; reopening the
 // form (even after a reload or a crash) brings the draft back.
 const draftKey = (t) => `${projectKey(state.project)}/${t?.id || "new"}`;
 const draft = drafts({
   read() {
     const f = $("#todo-form");
-    return { title: f.title.value, prompt: f.prompt.value, priority: f.priority.value, attachments: todoAttach.items(), depends_on: depPicker.ids() };
+    return { title: f.title.value, prompt: f.prompt.value, priority: f.priority.value, model: f.model.value, attachments: todoAttach.items(), depends_on: depPicker.ids() };
   },
   write(d) {
     const f = $("#todo-form");
     f.title.value = d.title ?? "";
     f.prompt.value = d.prompt ?? "";
     f.priority.value = d.priority ?? "";
+    setModelField(f, d.model ?? editing?.model ?? "");
     todoAttach.reset(d.attachments || []);
     depPicker.reset(editing, d.depends_on ?? editing?.depends_on ?? []); // drafts from before dependencies have none
     promptEditor.render();
@@ -714,6 +724,7 @@ function discardDraft() {
   const f = $("#todo-form");
   f.reset();
   if (t) { f.title.value = t.title; f.prompt.value = t.prompt; f.priority.value = t.priority ?? ""; }
+  setModelField(f, t?.model || "");
   todoAttach.reset(t?.attachments || []);
   depPicker.reset(t, t?.depends_on || []);
   promptEditor.render();
@@ -2345,6 +2356,7 @@ function todoRow(t, li = -1, ri = -1) {
       t.status === "in_progress" && t.started_at ? h("span", { title: "Running for" }, ago(t.started_at)) : null,
       previewTag(t),
       t.status === "review" && t.finished_at ? h("span", { title: "Waiting for review" }, ago(t.finished_at)) : null,
+      t.model ? h("span", { class: "model-tag", title: `Runs on ${t.model}` }, t.model) : null,
       hasPriority(t) ? h("span", { class: "prio-tag", title: `Priority ${t.priority} (lower runs first)` }, `P${t.priority}`) : null,
       t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, reviewChip(t), approveChip(t)) : null,
       t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null));
@@ -2521,6 +2533,7 @@ function openTodoForm(t = null, { pick = false } = {}) {
     f.prompt.value = t.prompt;
     f.priority.value = t.priority ?? "";
   }
+  setModelField(f, t?.model || "");
   todoAttach.reset(t?.attachments || []);
   depPicker.reset(t, t?.depends_on || []);
   promptEditor.render();
@@ -2672,7 +2685,7 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
   draft.flush(); // if saving fails below, the draft is still there
   const f = $("#todo-form");
   await todoAttach.settled();
-  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), priority: formPriority(f.priority.value), attachments: todoAttach.ids(), depends_on: depPicker.ids() };
+  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), priority: formPriority(f.priority.value), model: f.model.value, attachments: todoAttach.ids(), depends_on: depPicker.ids() };
   if (!body.title && !body.prompt) throw new Error("Add a title or instructions before saving.");
   if (editing) {
     await api("PATCH", `/api/todos/${editing.id}`, body);

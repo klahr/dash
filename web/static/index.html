@@ -596,8 +596,9 @@
       <div class="attach" id="todo-attach" data-attach></div>
       <div class="field-row">
         <label class="field inline"><span>Priority</span><input type="number" name="priority" value="" step="1" placeholder="None" inputmode="numeric"></label>
+        <label class="field inline" title="The Claude model the task runs on, from its next run"><span>Model</span><select name="model"><option value="">Default</option><option value="opus">Opus (hard tasks)</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku (small tasks)</option></select></label>
       </div>
-      <p class="hint">Prioritised tasks run first, lower numbers before higher. Leave it empty for none: those run after them, oldest first.</p>
+      <p class="hint">Prioritised tasks run first, lower numbers before higher. Leave it empty for none: those run after them, oldest first. Pick Opus for hard tasks and Sonnet or Haiku for small ones; Default uses Dash's configured model.</p>
       <div class="field" id="todo-deps-field" hidden><span id="todo-deps-label">Depends on <em>starts once these are merged</em></span><div class="dep-picker" id="todo-deps" role="group" aria-labelledby="todo-deps-label"></div></div>
       <footer class="sheet-actions">
         <button class="btn shrink" type="button" id="todo-clear" data-icon="trash">Clear</button>

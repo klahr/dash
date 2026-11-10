@@ -346,9 +346,13 @@ type Todo struct {
 	// DependsOn are ids of other todos in the same project that must be
 	// merged before this one starts: its worktree branches from the default
 	// branch then, so it builds on their code. Until then it waits queued.
-	DependsOn []string   `json:"depends_on"`
-	Status    TodoStatus `json:"status"`
-	Worktree  *Worktree  `json:"worktree,omitempty"`
+	DependsOn []string `json:"depends_on"`
+	// Model is the Claude model the task runs on (claude --model): an alias
+	// such as "opus", "sonnet" or "haiku", or a full model id. Empty: Dash's
+	// default (-claude-args, else Claude Code's own default).
+	Model    string     `json:"model,omitempty"`
+	Status   TodoStatus `json:"status"`
+	Worktree *Worktree  `json:"worktree,omitempty"`
 	// Feedback holds notes for Claude: reviewer rework notes and automatic
 	// ones (failing tests, merge conflicts). FeedbackSent counts how many
 	// Claude has already seen, so a resumed session only gets the new ones.
@@ -426,6 +430,31 @@ type Todo struct {
 	UpdatedAt  time.Time  `json:"updated_at"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// TodoModels are the model aliases offered for a task; any other Claude
+// model id (e.g. "claude-sonnet-5-5") is accepted too.
+var TodoModels = []string{"opus", "sonnet", "haiku"}
+
+// CleanModel trims and checks a task's model: empty (the default), an alias
+// or a model id, one word of letters, digits and ".-_[]:" starting with a
+// letter, so it can never pass as a flag of claude.
+func CleanModel(m string) (string, error) {
+	m = strings.TrimSpace(m)
+	if m == "" {
+		return "", nil
+	}
+	ok := len(m) <= 100 && (m[0] >= 'a' && m[0] <= 'z' || m[0] >= 'A' && m[0] <= 'Z')
+	for _, r := range m {
+		if !ok {
+			break
+		}
+		ok = r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune(".-_[]:", r)
+	}
+	if !ok {
+		return "", fmt.Errorf("invalid model %q: use an alias (%s) or a model id", m, strings.Join(TodoModels, ", "))
+	}
+	return m, nil
 }
 
 // OnRunner reports whether a hub sent the todo to a runner.

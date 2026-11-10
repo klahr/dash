@@ -124,10 +124,15 @@ func (s *Server) adminOnly(w http.ResponseWriter, r *http.Request) bool {
 // addTodo creates a draft, or queues it when enqueue is set, and names it if untitled.
 func (sv *service) addTodo(t model.Todo, enqueue bool) (model.Todo, error) {
 	t.CreatedBy = sv.c.User
+	m, err := model.CleanModel(t.Model)
+	if err != nil {
+		return t, fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	t.Model = m
 	if err := sv.sendable(t.ProjectID, len(t.Attachments) > 0 || len(t.Edits) > 0); err != nil {
 		return t, err
 	}
-	t, err := sv.data.CreateTodo(t)
+	t, err = sv.data.CreateTodo(t)
 	if err == nil && enqueue {
 		t, err = sv.data.SetStatus(t.ID, model.StatusQueued, "")
 		sv.s.Todos.Kick()
@@ -199,6 +204,13 @@ func (sv *service) cancel(id string) (t model.Todo, accepted bool, err error) {
 // /api/todos/{tid} and the board chat's update_todo. The prompt and
 // attachments can only change while it is a draft, queued or failed.
 func (sv *service) editTodo(id string, u mcptools.TodoUpdate, atts *[]model.Attachment) (model.Todo, error) {
+	if u.Model != nil {
+		m, err := model.CleanModel(*u.Model)
+		if err != nil {
+			return model.Todo{}, fmt.Errorf("%w: %v", errBadRequest, err)
+		}
+		u.Model = &m
+	}
 	t, err := sv.data.UpdateTodo(id, func(t *model.Todo) error {
 		editable := t.Status == model.StatusDraft || t.Status == model.StatusQueued || t.Status == model.StatusFailed
 		if (u.Prompt != nil || atts != nil) && !editable {
@@ -214,6 +226,7 @@ func (sv *service) editTodo(id string, u mcptools.TodoUpdate, atts *[]model.Atta
 			t.Priority = &p
 		}
 		set(&t.DependsOn, u.DependsOn) // validated by the store
+		set(&t.Model, u.Model)         // used from its next run
 		return nil
 	})
 	if err != nil {
