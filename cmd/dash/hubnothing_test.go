@@ -115,7 +115,7 @@ func TestHubRunsNothingItself(t *testing.T) {
 	waitFor(t, hubLogs, "the hub to start", func() bool { code, _ := api.try("GET", "/api/version", nil); return code != 0 })
 	api.must("POST", "/api/login", map[string]string{"username": "admin", "password": "a-long-enough-password"}, http.StatusOK, nil)
 
-	// No project on the hub's disk, nor a look for clones there.
+	// No project on the hub's disk.
 	hubClone := filepath.Join(dir, "hub-projects", "app")
 	run(t, "", o.env, o.git, "clone", "-q", o.remote, hubClone)
 	if code, body := api.try("POST", "/api/projects", map[string]any{"name": "app", "path": hubClone, "existing": true}); code != http.StatusBadRequest ||
@@ -124,9 +124,6 @@ func TestHubRunsNothingItself(t *testing.T) {
 	}
 	if code, body := api.try("POST", "/api/projects", map[string]any{"name": "new"}); code != http.StatusBadRequest {
 		t.Errorf("a new project on the hub: %d %s", code, body)
-	}
-	if code, _ := api.try("GET", "/api/repos", nil); code != http.StatusBadRequest {
-		t.Errorf("the hub looked for clones on its disk: %d", code)
 	}
 
 	// A runner that takes the hub's commands, with git and the fake claude.

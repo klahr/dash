@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 )
@@ -118,54 +117,25 @@ func gitClone(t *testing.T, dir, branch string) {
 	}
 }
 
-// listLocalRepos lists the clones as the owner, a platform admin when admin
-// is set and else a plain member of the org.
-func listLocalRepos(t *testing.T, s *Server, admin bool) (root string, repos []ClonedRepo) {
-	t.Helper()
-	w := httptest.NewRecorder()
-	sess := ownerSession(t, s)
-	sess.User.PlatformAdmin = admin
-	r := httptest.NewRequest("GET", "/api/repos", nil)
-	s.localRepos(w, r.WithContext(auth.WithSession(r.Context(), sess)))
-	var got struct {
-		Root  string       `json:"root"`
-		Repos []ClonedRepo `json:"repos"`
-	}
-	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &got) != nil {
-		t.Fatalf("list repos: %d %s", w.Code, w.Body)
-	}
-	return got.Root, got.Repos
-}
-
-// An existing clone in the org's folder is listed, added as a project
-// named after its folder on its own branch, and then no longer listed nor
-// addable again.
+// An existing clone in the org's folder is added as a project named after
+// its folder on its own branch, and then can't be added again.
 func TestAddExistingClone(t *testing.T) {
 	s := newProjectServer(t)
 	org := filepath.Join(s.ProjectRoot, "default")
-	if root, repos := listLocalRepos(t, s, false); root != org || len(repos) != 0 {
-		t.Fatalf("before the org folder exists: %q %+v", root, repos)
-	}
 	gitClone(t, filepath.Join(org, "app"), "trunk")
 	gitClone(t, filepath.Join(org, "team", "lib"), "main")
 	if err := os.MkdirAll(filepath.Join(org, "notes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, repos := listLocalRepos(t, s, false)
-	if len(repos) != 2 || repos[0].Path != "app" || repos[0].Dir != filepath.Join(org, "app") || repos[0].Branch != "trunk" || repos[1].Path != "team/lib" {
-		t.Fatalf("listed: %+v", repos)
-	}
 
-	w := createProjectReq(t, s, `{"existing":true,"path":`+jsonString(repos[0].Dir)+`}`)
+	dir := filepath.Join(org, "app")
+	w := createProjectReq(t, s, `{"existing":true,"path":`+jsonString(dir)+`}`)
 	var p model.Project
 	if w.Code != http.StatusCreated || json.Unmarshal(w.Body.Bytes(), &p) != nil {
 		t.Fatalf("add: %d %s", w.Code, w.Body)
 	}
-	if p.Name != "app" || p.Path != repos[0].Dir || p.DefaultBranch != "trunk" || p.RemoteURL != "https://github.com/me/app.git" {
+	if p.Name != "app" || p.Path != dir || p.DefaultBranch != "trunk" || p.RemoteURL != "https://github.com/me/app.git" {
 		t.Fatalf("added project: %+v", p)
-	}
-	if _, repos := listLocalRepos(t, s, false); len(repos) != 1 || repos[0].Path != "team/lib" {
-		t.Fatalf("after adding: %+v", repos)
 	}
 
 	for name, body := range map[string]string{
@@ -182,27 +152,6 @@ func TestAddExistingClone(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(org, "gone")); !os.IsNotExist(err) {
 		t.Fatalf("a missing clone must not be created: %v", err)
-	}
-}
-
-// A platform admin sees the clones in the whole projects directory (such as
-// ~/dev/github/me), not only their org's folder, without the hub's clones
-// and the projects.
-func TestListClonesAsPlatformAdmin(t *testing.T) {
-	s := newProjectServer(t)
-	gitClone(t, filepath.Join(s.ProjectRoot, "tool"), "main")
-	gitClone(t, filepath.Join(s.ProjectRoot, "default", "app"), "main")
-	gitClone(t, filepath.Join(s.ProjectRoot, "hub", "theirs"), "main")
-	gitClone(t, filepath.Join(s.ProjectRoot, "done"), "main")
-	if w := createProjectReq(t, s, `{"existing":true,"path":`+jsonString(filepath.Join(s.ProjectRoot, "done"))+`}`); w.Code != http.StatusCreated {
-		t.Fatalf("add: %d %s", w.Code, w.Body)
-	}
-	root, repos := listLocalRepos(t, s, true)
-	if root != s.ProjectRoot || len(repos) != 2 || repos[0].Path != "default/app" || repos[1].Path != "tool" || repos[1].Dir != filepath.Join(s.ProjectRoot, "tool") {
-		t.Fatalf("listed: %q %+v", root, repos)
-	}
-	if _, repos := listLocalRepos(t, s, false); len(repos) != 1 || repos[0].Path != "app" {
-		t.Fatalf("as a member: %+v", repos)
 	}
 }
 

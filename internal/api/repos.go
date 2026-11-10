@@ -193,56 +193,6 @@ func (sv *service) isProjectPath() func(abs string) bool {
 	}
 }
 
-// ClonedRepo is a LocalRepo with its full path, to add as a project.
-type ClonedRepo struct {
-	LocalRepo
-	Dir string `json:"dir"`
-}
-
-// localRepos handles GET /api/repos: the git repositories already cloned
-// in the caller's projects folder that aren't projects yet, to add one
-// as a project (POST /api/projects with existing and its dir as path).
-// Platform admins, who may add a project anywhere, get the whole projects
-// directory (e.g. ~/dev/github/me), org folders and all; everyone else
-// their org's folder in it.
-func (s *Server) localRepos(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
-	if !ok {
-		return
-	}
-	if s.hub() {
-		writeErr(w, errHubHasNoProjects)
-		return
-	}
-	root, err := s.ProjectRoot, error(nil)
-	if !sv.c.PlatformAdmin {
-		root, err = sv.projectsRoot()
-	}
-	if err == nil && s.ProjectRoot == "" {
-		err = fmt.Errorf("%w: this Dash has no projects directory", errBadRequest)
-	}
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	out := []ClonedRepo{}
-	if _, statErr := os.Stat(root); statErr == nil {
-		skip := ""
-		if filepath.Clean(root) == filepath.Clean(s.ProjectRoot) {
-			skip = "hub" // the hub's clones of its runners' projects
-		}
-		repos, err := findRepos(root, skip, sv.isProjectPath())
-		if err != nil {
-			writeErr(w, err)
-			return
-		}
-		for _, x := range repos {
-			out = append(out, ClonedRepo{x, filepath.Join(root, filepath.FromSlash(x.Path))})
-		}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"repos": out, "root": root})
-}
-
 // checkExistingRepo makes sure path is a git repository that isn't one of
 // the org's projects yet, before it's added as one.
 func (sv *service) checkExistingRepo(path string) error {

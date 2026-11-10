@@ -31,9 +31,6 @@ func TestHubForwardsOrRefusesWorkingTreeRoutes(t *testing.T) {
 			t.Errorf("POST /api/projects %s: %d %s", body, w.Code, w.Body)
 		}
 	}
-	if w := call("GET", "/api/repos", ""); w.Code != http.StatusBadRequest {
-		t.Errorf("GET /api/repos on the hub: %d %s", w.Code, w.Body)
-	}
 
 	// p has no runner linked: everything that needs its working tree says so.
 	for _, rt := range []struct{ method, path, body string }{
