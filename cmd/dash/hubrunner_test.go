@@ -374,14 +374,24 @@ func (c *client) hasIssue(pid, title string) bool {
 	return strings.Contains(b, title)
 }
 
+// scanName is a scan that runs in any repository: not one limited to some
+// files (requires_files), which the test project may not have.
 func (c *client) scanName(pid string) string {
 	c.t.Helper()
-	var res struct{ Scans []struct{ Name string } }
-	c.must("GET", "/api/projects/"+pid+"/scans", nil, http.StatusOK, &res)
-	if len(res.Scans) == 0 {
-		c.t.Fatal("no scans")
+	var res struct {
+		Scans []struct {
+			Name          string
+			RequiresFiles []string `json:"requires_files"`
+		}
 	}
-	return res.Scans[0].Name
+	c.must("GET", "/api/projects/"+pid+"/scans", nil, http.StatusOK, &res)
+	for _, s := range res.Scans {
+		if len(s.RequiresFiles) == 0 {
+			return s.Name
+		}
+	}
+	c.t.Fatal("no scan that runs in any repository")
+	return ""
 }
 
 // chat sends one message to the general chat and returns its answer.

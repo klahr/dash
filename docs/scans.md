@@ -10,8 +10,12 @@ Scans come from three places, marked on each card:
 - **Built-in:** Dash's security scan (`security`), code review (`code-review`), dependency
   audit (`dependencies`), test gaps (`test-gaps`: changed code with no test covering it, and
   tests that can't fail), docs drift (`docs-drift`: README, `docs/` and CLAUDE.md content the
-  code no longer matches), performance review (`performance`), dead code scan (`dead-code`) and
-  flaky tests (`flaky-tests`), in every project. The
+  code no longer matches), performance review (`performance`), dead code scan (`dead-code`),
+  flaky tests (`flaky-tests`) and accessibility (`accessibility`: missing labels and alt text,
+  poor colour contrast, keyboard traps, missing focus styles, wrong ARIA and non-semantic
+  interactive elements), in every project. The accessibility scan (suggested weekly, Wednesdays
+  at 07:00) only runs in repositories with web front-end files (HTML, JSX, TSX, Vue, Svelte, Go
+  and other HTML templates; see `requires_files` below) and is skipped in others. The
   performance review (suggested weekly, Mondays at 07:00) looks at what changed since its last
   run for N+1 queries, unbounded loops, reads and allocations, missing database indexes for
   added or changed queries, and slow or blocking work in request handlers. It only reports
@@ -57,10 +61,19 @@ model: opus               # optional: claude --model
 effort: high              # optional: claude --effort
 schedule: 0 6 * * *       # optional cron expression (this computer's time zone)
 tools: Read, Grep, Glob   # optional, needs approval in Dash; default: read-only tools and Dash's git diff/log/show/blame tools
+requires_files: *.html, src/**/*.{ts,tsx}   # optional: only run if the repository has such a file
 ---
 Look for vulnerabilities in {{path}} …
 ```
 
+- **Required files.** `requires_files` limits a scan to repositories that have at least one file
+  matching one of its globs, under `path` if it has one. Before Claude starts, the run looks
+  through the commit it scans (not `.git`, `node_modules` or `vendor`); with no match the run is
+  skipped ("No files matching …") and costs nothing. Globs match paths from the repository root:
+  `*` stays within a directory, `?` is one character, `**` is any number of directories (`**/`
+  also none) and `{a,b}` is either. A glob without `/` matches a file name in any directory, as in
+  `.gitignore`: `*.vue` is `**/*.vue`. The setting is for template files (built-in and
+  `.dash/scans/`); scans written in Dash don't have it, so duplicating a scan that has it drops it.
 - **Kinds.** A scan's kind sets the type a finding gets when it names none, and every issue a
   scan files records its kind (`scan_kind`). Issues has a scan-kind filter once a scan has filed
   some, and the API and `list_issues` filter by kind too (see API below):

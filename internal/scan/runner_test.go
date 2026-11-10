@@ -298,6 +298,27 @@ func TestRunSinceMainAndPath(t *testing.T) {
 	}
 }
 
+func TestRunRequiresFiles(t *testing.T) {
+	fx := newFixture(t, "web", "---\nscope: since_last_scan\nrequires_files: *.tsx, web/**/*.{html,vue}\n---\nGo.")
+	// No front-end files: skipped without calling Claude.
+	r := fx.run(t, "web")
+	if r.Status != model.ScanSkipped || !strings.Contains(r.Note, "*.tsx") || len(fx.exec.reqs) != 0 {
+		t.Fatalf("no web files: %+v (%d calls)", r, len(fx.exec.reqs))
+	}
+	if wts := gitRun(t, fx.repo, "worktree", "list"); strings.Count(wts, "\n") != 0 {
+		t.Fatalf("worktrees left: %s", wts)
+	}
+	// One outside the glob's directory doesn't count; one in it does.
+	commitFile(t, fx.repo, "docs/page.html", "<p>\n")
+	if r := fx.run(t, "web"); r.Status != model.ScanSkipped {
+		t.Fatalf("html outside web/: %+v", r)
+	}
+	commitFile(t, fx.repo, "web/app/App.vue", "<template/>\n")
+	if r := fx.run(t, "web"); r.Status != model.ScanSucceeded || len(fx.exec.reqs) != 1 {
+		t.Fatalf("with a vue file: %+v", r)
+	}
+}
+
 func TestRunNoOverlap(t *testing.T) {
 	fx := newFixture(t, "slow", "Go.")
 	fx.exec.release, fx.exec.started = make(chan struct{}), make(chan struct{}, 4)

@@ -168,6 +168,18 @@ func (r *Runner) Work(ctx context.Context, p model.Project, job Job, h Hooks) (O
 	}
 	defer r.Git.RemoveDetachedWorktree(context.WithoutCancel(ctx), p.ID, p.Path, dir)
 
+	// A scan for some kinds of file only (requires_files) doesn't run in a
+	// repository with none of them.
+	if ok, err := requiresMet(t, dir); err != nil {
+		return out, err
+	} else if !ok {
+		out.Skip = "No files matching " + strings.Join(t.RequiresFiles, ", ")
+		if t.Path != "" {
+			out.Skip += " under " + t.Path
+		}
+		return out, nil
+	}
+
 	prompt := BuildPrompt(t, tg, knownIssues(job.Known, t, tg))
 	h.log("prompt:\n" + prompt)
 	timeout := job.Timeout

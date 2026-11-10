@@ -183,7 +183,7 @@ func TestBuiltins(t *testing.T) {
 			t.Errorf("%s: builtin %v schedule %q", b.Name, b.Builtin, b.Schedule)
 		}
 	}
-	for _, n := range []string{"security", "code-review", "dependencies", "test-gaps", "docs-drift", "performance", "dead-code", "flaky-tests"} {
+	for _, n := range []string{"security", "code-review", "dependencies", "test-gaps", "docs-drift", "performance", "dead-code", "flaky-tests", "accessibility"} {
 		if _, ok := names[n]; !ok {
 			t.Errorf("no built-in %s (have %v)", n, names)
 		}
@@ -193,8 +193,26 @@ func TestBuiltins(t *testing.T) {
 		names["docs-drift"].Kind != KindDocs || names["docs-drift"].Scope != model.ScopeSinceLastScan ||
 		names["performance"].Kind != KindPerformance || names["performance"].Scope != model.ScopeSinceLastScan ||
 		names["dead-code"].Kind != KindDeadCode ||
-		names["flaky-tests"].Kind != KindFlakyTests || names["flaky-tests"].Scope != model.ScopeRepo {
+		names["flaky-tests"].Kind != KindFlakyTests || names["flaky-tests"].Scope != model.ScopeRepo ||
+		names["accessibility"].Kind != KindAccessibility || names["accessibility"].Scope != model.ScopeSinceLastScan {
 		t.Errorf("kinds: %+v", names)
+	}
+	// Only the accessibility scan is limited to some files: web front ends.
+	for _, b := range bs {
+		if (len(b.RequiresFiles) > 0) != (b.Name == "accessibility") {
+			t.Errorf("%s: requires_files %v", b.Name, b.RequiresFiles)
+		}
+	}
+	a11y := names["accessibility"]
+	for _, f := range []string{"index.html", "web/src/App.tsx", "ui/Button.jsx", "src/App.vue", "src/routes/+page.svelte", "internal/web/templates/page.gohtml", "tmpl/base.tmpl"} {
+		if !requiresMatch(t, a11y.RequiresFiles, f) {
+			t.Errorf("accessibility scan doesn't apply to %s", f)
+		}
+	}
+	for _, f := range []string{"main.go", "internal/api/server.ts", "README.md", "styles.css"} {
+		if requiresMatch(t, a11y.RequiresFiles, f) {
+			t.Errorf("accessibility scan applies to %s", f)
+		}
 	}
 	// The performance review covers N+1 queries, unbounded work, indexes and
 	// slow handlers, and asks for the cost and the fix.
@@ -341,5 +359,72 @@ func TestLoadRepoScanOverridesBuiltin(t *testing.T) {
 	}
 	if tm, _ := Find(repo, "code-review"); !tm.Builtin {
 		t.Fatalf("code-review: %+v", tm)
+	}
+}
+
+func requiresMatch(t *testing.T, globs []string, file string) bool {
+	t.Helper()
+	for _, g := range globs {
+		re, err := globRE(g)
+		if err != nil {
+			t.Fatalf("%s: %v", g, err)
+		}
+		if re.MatchString(file) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRequiresFiles(t *testing.T) {
+	tm, err := ParseTemplate("w", []byte("---\nrequires_files: [*.html, \"src/**/*.{ts,tsx}\", web/*.vue]\n---\nGo."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"*.html", "src/**/*.{ts,tsx}", "web/*.vue"}; !slices.Equal(tm.RequiresFiles, want) {
+		t.Fatalf("requires_files %q, want %q", tm.RequiresFiles, want)
+	}
+	if !strings.Contains(tm.Markdown(), "requires_files: *.html, src/**/*.{ts,tsx}, web/*.vue\n") {
+		t.Errorf("markdown:\n%s", tm.Markdown())
+	}
+	for file, want := range map[string]bool{
+		"index.html": true, "a/b/index.html": true, "index.htmlx": false,
+		"src/x.ts": true, "src/a/b/x.tsx": true, "lib/x.ts": false, "src/x.js": false,
+		"web/App.vue": true, "web/sub/App.vue": false, "x/web/App.vue": false,
+	} {
+		if got := requiresMatch(t, tm.RequiresFiles, file); got != want {
+			t.Errorf("%s: match %v, want %v", file, got, want)
+		}
+	}
+	for _, bad := range []string{"*.{html", "*.html}", "{a,{b}}"} {
+		if _, err := ParseTemplate("w", []byte("---\nrequires_files: x, "+bad+"\n---\nGo.")); err == nil {
+			t.Errorf("%q: no error", bad)
+		}
+	}
+
+	// In a checkout: under the template's path, not in node_modules.
+	dir := t.TempDir()
+	for _, f := range []string{"main.go", "node_modules/pkg/index.html", "web/app.vue"} {
+		_ = os.MkdirAll(filepath.Join(dir, filepath.Dir(f)), 0o755)
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct {
+		globs []string
+		path  string
+		want  bool
+	}{
+		{nil, "", true},
+		{[]string{"*.html"}, "", false},
+		{[]string{"*.vue"}, "", true},
+		{[]string{"*.vue"}, "web", true},
+		{[]string{"*.vue"}, "internal", false},
+		{[]string{"web/*.vue"}, "web", true},
+	} {
+		got, err := requiresMet(Template{RequiresFiles: c.globs, Path: c.path}, dir)
+		if err != nil || got != c.want {
+			t.Errorf("%v under %q: %v %v, want %v", c.globs, c.path, got, err, c.want)
+		}
 	}
 }

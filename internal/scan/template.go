@@ -75,8 +75,12 @@ type Template struct {
 	// Tools are the Claude Code tools the scan may use (--allowedTools);
 	// empty means read-only ones (DefaultTools). A repository template's
 	// apply only once a user approves them in Dash (see Tools).
-	Tools  []string `json:"tools,omitempty"`
-	Prompt string   `json:"prompt"`
+	Tools []string `json:"tools,omitempty"`
+	// RequiresFiles are globs (see globRE) of which the scanned commit
+	// must have a file for the scan to run; empty: it always runs. A run of
+	// a repository without one is skipped before Claude starts.
+	RequiresFiles []string `json:"requires_files,omitempty"`
+	Prompt        string   `json:"prompt"`
 	// File is the template's path in the repository; "" for a built-in.
 	File    string `json:"file,omitempty"`
 	Builtin bool   `json:"builtin,omitempty"`
@@ -175,8 +179,10 @@ func (t *Template) setFields(front string) error {
 			t.Schedule = val
 		case "tools", "allowed_tools":
 			t.Tools = splitList(val)
+		case "requires_files":
+			t.RequiresFiles = splitList(val)
 		default:
-			return fmt.Errorf("frontmatter line %d: unknown setting %q (name, title, kind, scope, path, model, effort, schedule or tools)", n, key)
+			return fmt.Errorf("frontmatter line %d: unknown setting %q (name, title, kind, scope, path, model, effort, schedule, tools or requires_files)", n, key)
 		}
 	}
 	return nil
@@ -221,6 +227,11 @@ func (t *Template) normalize() error {
 	if t.Schedule != "" {
 		if _, err := ParseCron(t.Schedule); err != nil {
 			return fmt.Errorf("schedule: %w", err)
+		}
+	}
+	for _, g := range t.RequiresFiles {
+		if _, err := globRE(g); err != nil {
+			return fmt.Errorf("requires_files: %w", err)
 		}
 	}
 	if t.Prompt == "" {
@@ -406,6 +417,7 @@ func (t Template) Markdown() string {
 	line("effort", t.Effort)
 	line("schedule", t.Schedule)
 	line("tools", strings.Join(t.Tools, ", "))
+	line("requires_files", strings.Join(t.RequiresFiles, ", "))
 	b.WriteString("---\n")
 	b.WriteString(t.Prompt)
 	b.WriteString("\n")
@@ -466,20 +478,20 @@ func unquote(s string) string {
 	return s
 }
 
-// splitList splits "a, b" or "[a, b]" on commas outside parentheses, so
-// "Bash(npm audit:*)" stays whole.
+// splitList splits "a, b" or "[a, b]" on commas outside parentheses and
+// braces, so "Bash(npm audit:*)" and "**/*.{htm,html}" stay whole.
 func splitList(s string) []string {
 	s = strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(s), "["), "]")
 	var out []string
 	depth, start := 0, 0
 	for i, r := range s + "," {
 		switch r {
-		case '(':
+		case '(', '{':
 			depth++
-		case ')':
+		case ')', '}':
 			depth--
 		case ',':
-			if depth <= 0 {
+			if depth <= 0 || i == len(s) { // an unclosed ( or { keeps its item
 				if v := unquote(strings.TrimSpace(s[start:min(i, len(s))])); v != "" {
 					out = append(out, v)
 				}
