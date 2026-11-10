@@ -8208,7 +8208,7 @@ $("#issue-clear").addEventListener("click", () => { iss.checked.clear(); renderI
 
 // ------------------------------------------------------------------ scans
 // Preconfigured, read-only reviews of the project (security, code review,
-// dependency audit, or the team's own templates in .dash/scans/) that run on
+// dependency audit, dead code, or the team's own templates in .dash/scans/) that run on
 // demand or on a schedule and file what they find in Issues.
 const SCAN_KINDS = {
   security: "Security", code_review: "Code review", dependencies: "Dependencies", tests: "Tests", docs: "Docs",
@@ -8393,7 +8393,7 @@ function scanCard(s) {
   const editCron = attempt(async () => {
     const v = await ask({
       title: `Schedule of ${s.title}`, input: true, value: sch.cron, placeholder: "0 6 * * *", ok: "Save",
-      body: `A cron expression: minute hour day month weekday, in this computer's time. E.g. "0 6 * * *" daily at 06:00, "0 7 * * 1-5" weekdays at 07:00, "@hourly".${sch.default ? ` Empty: the template's (${sch.default}).` : ""}`,
+      body: `A cron expression: minute hour day month weekday, in this computer's time. E.g. "0 6 * * *" daily at 06:00, "0 7 * * 1-5" weekdays at 07:00, "0 6 1 * *" monthly on the 1st at 06:00, "@hourly".${sch.default ? ` Empty: the template's (${sch.default}).` : ""}`,
     });
     if (v === null) return;
     await patch({ schedule: v.trim(), ...(v.trim() && !sch.enabled ? { enabled: true } : {}) });

@@ -10,7 +10,8 @@ Scans come from three places, marked on each card:
 - **Built-in:** Dash's security scan (`security`), code review (`code-review`), dependency
   audit (`dependencies`), test gaps (`test-gaps`: changed code with no test covering it, and
   tests that can't fail), docs drift (`docs-drift`: README, `docs/` and CLAUDE.md content the
-  code no longer matches) and performance review (`performance`), in every project. The
+  code no longer matches), performance review (`performance`) and dead code scan
+  (`dead-code`), in every project. The
   performance review (suggested weekly, Mondays at 07:00) looks at what changed since its last
   run for N+1 queries, unbounded loops, reads and allocations, missing database indexes for
   added or changed queries, and slow or blocking work in request handlers. It only reports
@@ -21,6 +22,10 @@ Scans come from three places, marked on each card:
   MIT or proprietary project, say), with no or an unknown licence, or whose licence changed in an
   upgrade in the lock files' recent history. It reads the licences from the package managers'
   lock files and metadata already on the computer and installs nothing.
+  The dead code scan (suggested monthly) reports unused functions, types, flags, routes, config
+  keys and files, and TODO/FIXME comments older than 90 days (dated with git blame) worth
+  turning into issues. It checks "unused" against the whole repository, including references by
+  string, reflection and templates, and leaves out the exported API of libraries.
 - **Repository:** markdown files in `.dash/scans/<name>.md`, versioned and shared with your team.
 - **Dash:** scans you write in the Scans section with "New scan", kept by Dash for this project
   only. "Duplicate" on any scan starts a new Dash scan from its prompt and settings, and

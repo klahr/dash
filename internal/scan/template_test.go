@@ -182,7 +182,7 @@ func TestBuiltins(t *testing.T) {
 			t.Errorf("%s: builtin %v schedule %q", b.Name, b.Builtin, b.Schedule)
 		}
 	}
-	for _, n := range []string{"security", "code-review", "dependencies", "test-gaps", "docs-drift", "performance"} {
+	for _, n := range []string{"security", "code-review", "dependencies", "test-gaps", "docs-drift", "performance", "dead-code"} {
 		if _, ok := names[n]; !ok {
 			t.Errorf("no built-in %s (have %v)", n, names)
 		}
@@ -190,7 +190,8 @@ func TestBuiltins(t *testing.T) {
 	if names["security"].Kind != KindSecurity || names["dependencies"].Kind != KindDependencies ||
 		names["test-gaps"].Kind != KindTests || names["test-gaps"].Scope != model.ScopeSinceLastScan ||
 		names["docs-drift"].Kind != KindDocs || names["docs-drift"].Scope != model.ScopeSinceLastScan ||
-		names["performance"].Kind != KindPerformance || names["performance"].Scope != model.ScopeSinceLastScan {
+		names["performance"].Kind != KindPerformance || names["performance"].Scope != model.ScopeSinceLastScan ||
+		names["dead-code"].Kind != KindDeadCode {
 		t.Errorf("kinds: %+v", names)
 	}
 	// The performance review covers N+1 queries, unbounded work, indexes and
@@ -206,6 +207,18 @@ func TestBuiltins(t *testing.T) {
 	for _, want := range []string{"vulnerable", "abandoned", "project's own", "clashes", "no licence", "licence changed", "Do not change any files"} {
 		if !strings.Contains(deps, want) {
 			t.Errorf("dependency audit prompt lacks %q", want)
+		}
+	}
+	// The dead code scan covers the whole repository once a month and checks
+	// "unused" against indirect references; old TODOs are dated with blame.
+	dc := names["dead-code"]
+	if dc.Scope != model.ScopeRepo || dc.Schedule != "0 6 1 * *" {
+		t.Errorf("dead-code: scope %q schedule %q", dc.Scope, dc.Schedule)
+	}
+	dead := dc.Render("", "")
+	for _, want := range []string{"whole", "reflection", "templates", "as a string", "exported API of a library", "git_blame", "90 days", "FIXME", "Do not change any files"} {
+		if !strings.Contains(dead, want) {
+			t.Errorf("dead code prompt lacks %q", want)
 		}
 	}
 }
