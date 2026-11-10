@@ -90,6 +90,19 @@ func TestBrowserMainFlows(t *testing.T) {
 	}
 	b.waitJS("the reworked diff", `document.querySelector("#d-diff")?.textContent.includes("rework-by-runner.txt")`)
 
+	// Edit a file of the change before approving: committed on the task's
+	// branch on the runner, and merged with the rest.
+	b.until("open the file to edit", `document.querySelector("#diff-edit-sheet").open`,
+		chromedp.Click(chromedp.CSS(`#d-diff details.diff-file > summary button.diff-edit[aria-label="Edit done-by-runner.txt"]`)))
+	b.do("edit it",
+		chromedp.WaitVisible(chromedp.CSS(`#diff-edit-sheet .cm-content`)),
+		chromedp.Click(chromedp.CSS(`#diff-edit-sheet .cm-content`)),
+		chromedp.KeyEvent("Edited in review\r"),
+	)
+	b.waitJS("the edit typed", `document.querySelector("#diff-edit-text").value.includes("Edited in review")`)
+	b.until("save the edit", `!document.querySelector("#diff-edit-sheet").open`, chromedp.Click(chromedp.CSS(`#diff-edit-save:not(:disabled)`)))
+	b.waitJS("the edit in the diff", `document.querySelector("#d-diff")?.textContent.includes("Edited in review")`)
+
 	// Approve and merge: the change reaches origin's main.
 	b.clickText("#d-actions button", "Approve")
 	waitStatus(t, api, "/api/todos/"+first, "merged", nil)
@@ -97,6 +110,9 @@ func TestBrowserMainFlows(t *testing.T) {
 	files := run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "ls-tree", "--name-only", "main")
 	if !strings.Contains(files, "done-by-runner.txt") || !strings.Contains(files, "rework-by-runner.txt") {
 		t.Fatalf("origin's main after the merge: %s", files)
+	}
+	if got := run(t, "", h.gitEnv, "git", "--git-dir", h.origin, "show", "main:done-by-runner.txt"); !strings.Contains(got, "Edited in review") {
+		t.Fatalf("the edit made in review didn't land: %q", got)
 	}
 	b.do("close the task", chromedp.Click(chromedp.ID("d-close")))
 

@@ -53,6 +53,8 @@ func (s *Server) hubTaskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/open", s.hubTaskAction("open"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/diff", s.hubTaskAction("diff"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/log", s.hubTaskAction("log"))
+	mux.HandleFunc("GET /api/hub/tasks/{htid}/file", s.hubTaskFile)
+	mux.HandleFunc("PUT /api/hub/tasks/{htid}/file", s.hubTaskFile)
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/events", s.hubTaskAction("events"))
 	mux.HandleFunc("POST "+dispatch.PermissionPath, s.hubPermission)
 	mux.HandleFunc("GET "+dispatch.ScanPath, s.hubScan)

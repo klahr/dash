@@ -759,6 +759,21 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .sheet-actions .btn { flex: 1; }
 .sheet-actions .btn.shrink { flex: 0 0 auto; }
 
+/* Editing a file of a task in review (openDiffEdit in app.js): the editor
+   fills the sheet between its header and Save. */
+.sheet.edit-sheet { height: calc(92dvh - var(--kb-h, 0px)); }
+.sheet.edit-sheet[open] { display: flex; flex-direction: column; overflow: hidden; }
+.edit-sheet > form { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.edit-sheet .sheet-head { flex: none; }
+.edit-sheet .sheet-head h2 { font-family: var(--mono); font-size: 15px; overflow-wrap: anywhere; }
+.edit-sheet .hint { flex: none; margin-bottom: 10px; }
+.edit-sheet .code-editor { border: 1px solid var(--line); border-radius: var(--r-m); overflow: hidden; }
+.edit-sheet .sheet-actions { flex: none; align-items: center; }
+.edit-state { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; }
+@media (min-width: 640px) { .sheet.edit-sheet { height: min(820px, calc(88dvh - var(--kb-h, 0px))); } }
+@media (min-width: 760px) { .sheet.edit-sheet { max-width: 960px; } }
+.diff-file > summary .diff-edit { flex: none; }
+
 /* ---------- rail layout (railLayout in app.js) ----------
    A larger sheet's sections down a rail, the chosen one beside them. Narrow
    (a bottom sheet on a phone): the rail is a strip across the top that

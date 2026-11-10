@@ -3846,9 +3846,13 @@ function parseDiff(text) {
   let cur = null;
   for (const line of text.split("\n")) {
     if (line.startsWith("diff --git")) {
-      cur = { path: line.replace(/^diff --git a\/(.*) b\/.*$/, "$1"), lines: [], add: 0, del: 0 };
+      const path = line.replace(/^diff --git a\/(.*) b\/.*$/, "$1");
+      // to: the path after the change (a rename's new name).
+      cur = { path, to: line.replace(/^diff --git a\/.* b\/(.*)$/, "$1") || path, lines: [], add: 0, del: 0, deleted: false, binary: false };
       files.push(cur);
     } else if (cur) {
+      if (line.startsWith("deleted file")) cur.deleted = true;
+      if (line.startsWith("Binary files ")) cur.binary = true;
       if (/^(index |new file|deleted file|similarity|rename |old mode|new mode|--- |\+\+\+ )/.test(line)) continue;
       if (line.startsWith("+")) cur.add++;
       else if (line.startsWith("-")) cur.del++;
@@ -3871,11 +3875,16 @@ function renderDiff(text) {
     return;
   }
   const commented = new Set(commentsFor(state.detail).map((c) => c.file));
+  const t = state.todos.get(state.detail), editable = canEditDiff(t);
   $("#d-diff").replaceChildren(...files.map((f) => h("details", {
     class: "diff-file", open: state.diffOpen.has(f.path) || commented.has(f.path),
     ontoggle: (e) => state.diffOpen[e.target.open ? "add" : "delete"](f.path),
   },
-    h("summary", {}, h("span", { class: "path" }, f.path), h("span", { class: "counts" }, h("span", { class: "plus" }, `+${f.add}`), " ", h("span", { class: "minus" }, `−${f.del}`))),
+    h("summary", {}, h("span", { class: "path" }, f.path), h("span", { class: "counts" }, h("span", { class: "plus" }, `+${f.add}`), " ", h("span", { class: "minus" }, `−${f.del}`)),
+      editable && !f.deleted && !f.binary ? ib({
+        type: "button", class: "btn small diff-edit", title: `Edit ${f.to} before approving`, "aria-label": `Edit ${f.to}`,
+        onclick: (e) => { e.preventDefault(); e.stopPropagation(); openDiffEdit(t.id, f.to).catch(fail); },
+      }, "edit", "Edit") : null),
     h("div", { class: "diff-lines" }, diffLines(f, {
       comments: commentsFor(state.detail).filter((c) => c.file === f.path),
       commentable: ["review", "failed"].includes(state.todos.get(state.detail)?.status),
@@ -3913,6 +3922,77 @@ function diffLines(f, { comments = [], commentable = false } = {}) {
   }
   return rows;
 }
+
+// ------------------------------------------------------------------ editing a task's changes in review
+// The reviewer fixes a file of the task before approving it: the file as the
+// task's branch has it, and saving commits the new content on that branch
+// (on its runner for a task that ran on one), so approving lands it too.
+function canEditDiff(t) { return !!t?.worktree && ["review", "failed"].includes(t.status) && !t.reviewing; }
+const diffEditText = $("#diff-edit-text");
+const diffEditor = codeEditor(diffEditText);
+const diffEdit = { id: null, path: null, blob: "", original: "", saving: false };
+const diffEditDirty = () => !!diffEdit.path && diffEditText.value !== diffEdit.original;
+
+async function openDiffEdit(id, path) {
+  const res = await api("GET", `/api/todos/${id}/file?path=${encodeURIComponent(path)}`);
+  if (res.binary) return toast(`${path} isn't text, so it can't be edited here.`);
+  if (res.too_large) return toast(`${path} is ${Math.round(res.size / 1024)} KiB; the editor opens files up to 512 KiB.`);
+  Object.assign(diffEdit, { id, path, blob: res.blob, original: res.content ?? "", saving: false });
+  $("#diff-edit-title").textContent = path;
+  $("#diff-edit-hint").textContent = `Saving commits the change on ${res.branch || "the task's branch"}, so approving merges it with the rest.`;
+  diffEditor.load(diffEdit.original, path);
+  renderDiffEdit();
+  $("#diff-edit-sheet").showModal();
+  diffEditor.view.focus();
+}
+
+function renderDiffEdit() {
+  const dirty = diffEditDirty();
+  $("#diff-edit-save").disabled = !dirty || diffEdit.saving;
+  $("#diff-edit-revert").disabled = !dirty || diffEdit.saving;
+  $("#diff-edit-state").textContent = diffEdit.saving ? "Committing…" : dirty ? "Modified" : "";
+}
+
+async function saveDiffEdit() {
+  if (!diffEditDirty() || diffEdit.saving) return;
+  const { id, path, blob } = diffEdit, content = diffEditText.value;
+  diffEdit.saving = true;
+  renderDiffEdit();
+  try {
+    await api("PUT", `/api/todos/${id}/file`, { path, blob, content });
+    diffEdit.original = content;
+  } finally {
+    diffEdit.saving = false;
+    renderDiffEdit();
+  }
+  $("#diff-edit-sheet").close();
+  toast(`Committed your edit to ${path}`);
+  if (state.detail === id) loadDiff();
+}
+
+// Closing with unsaved changes asks first (the × and Cancel, or Escape).
+async function closeDiffEdit() {
+  if (diffEditDirty() && !(await ask({ title: `Discard your changes to ${diffEdit.path}?`, ok: "Discard", danger: true }))) return;
+  diffEdit.original = diffEditText.value; // nothing left to lose
+  $("#diff-edit-sheet").close();
+}
+$("#diff-edit-form").addEventListener("submit", (e) => {
+  if (e.submitter?.value !== "cancel" || !diffEditDirty()) return;
+  e.preventDefault();
+  closeDiffEdit().catch(fail);
+});
+$("#diff-edit-sheet").addEventListener("cancel", (e) => {
+  if (!diffEditDirty()) return;
+  e.preventDefault();
+  closeDiffEdit().catch(fail);
+});
+$("#diff-edit-sheet").addEventListener("close", () => { diffEdit.path = null; });
+diffEditText.addEventListener("input", renderDiffEdit);
+diffEditor.el.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "s") { e.preventDefault(); e.stopPropagation(); saveDiffEdit().catch(fail); }
+}, true);
+$("#diff-edit-save").addEventListener("click", () => saveDiffEdit().catch(fail));
+$("#diff-edit-revert").addEventListener("click", () => diffEditor.replace(diffEdit.original));
 
 function toggleVim() {
   setVim(!vimOn());
@@ -8742,7 +8822,7 @@ $("#file-revert").addEventListener("click", () => {
   fileEditor.replace(s.original); // undoable; its input event updates s.text
 });
 $("#file-filter").addEventListener("input", renderFileTree);
-addEventListener("beforeunload", (e) => { if ([...fileSessions.values()].some(fileDirty)) e.preventDefault(); });
+addEventListener("beforeunload", (e) => { if ([...fileSessions.values()].some(fileDirty) || diffEditDirty()) e.preventDefault(); });
 
 // ------------------------------------------------------------------ drag & drop
 // Drag a card to another lane to act on it, or within a lane to reorder.

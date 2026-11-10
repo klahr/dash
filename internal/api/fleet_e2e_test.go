@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -155,10 +156,16 @@ func TestHubDispatchesToARunnerEndToEnd(t *testing.T) {
 	}
 
 	// The runner finishes it and reports.
+	rp, _ := raw(runner).GetProject(copyOnRunner.ProjectID)
+	rwt := filepath.Join(t.TempDir(), "wt")
+	rgit(t, rp.Path, "worktree", "add", "-q", "-b", "dash/todo-x", rwt)
+	writeRepoFile(t, rwt, "about.html", "<h1>About</h1>\n")
+	rgit(t, rwt, "add", "-A")
+	rgit(t, rwt, "commit", "-q", "-m", "about")
 	for _, st := range []model.TodoStatus{model.StatusInProgress, model.StatusReview} {
 		_, err := raw(runner).UpdateTodo(copyOnRunner.ID, func(x *model.Todo) error {
 			x.Status, x.Summary = st, "Added the about page."
-			x.Worktree, x.SessionID = &model.Worktree{Branch: "dash/todo-x", Path: "/somewhere"}, "s1"
+			x.Worktree, x.SessionID = &model.Worktree{Branch: "dash/todo-x", Path: rwt}, "s1"
 			return nil
 		})
 		if err != nil {
@@ -184,6 +191,27 @@ func TestHubDispatchesToARunnerEndToEnd(t *testing.T) {
 	hub.mux().ServeHTTP(w, asOwner(t, hub, httptest.NewRequest("GET", "/api/todos/"+td.ID+"/events", nil)))
 	if w.Code != http.StatusOK {
 		t.Errorf("events from the runner: %d %s", w.Code, w.Body)
+	}
+
+	// The reviewer edits a file of the task before approving: read and
+	// committed on the runner, through the hub.
+	w = httptest.NewRecorder()
+	hub.mux().ServeHTTP(w, asOwner(t, hub, httptest.NewRequest("GET", "/api/todos/"+td.ID+"/file?path=about.html", nil)))
+	var f fileContent
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &f) != nil || f.Content == nil || *f.Content != "<h1>About</h1>\n" {
+		t.Fatalf("file from the runner: %d %s", w.Code, w.Body)
+	}
+	edit, _ := json.Marshal(todoFileEdit{Path: "about.html", Blob: f.Blob, Content: "<h1>About us</h1>\n"})
+	w = httptest.NewRecorder()
+	hub.mux().ServeHTTP(w, asOwner(t, hub, httptest.NewRequest("PUT", "/api/todos/"+td.ID+"/file", strings.NewReader(string(edit)))))
+	if w.Code != http.StatusOK {
+		t.Fatalf("saving an edit on the runner: %d %s", w.Code, w.Body)
+	}
+	if got := rgit(t, rp.Path, "show", "dash/todo-x:about.html"); got != "<h1>About us</h1>" {
+		t.Errorf("runner's branch has %q", got)
+	}
+	if got, _ := raw(hub).GetTodo(td.ID); got.DiffFiles != 1 || got.DiffAdd != 1 {
+		t.Errorf("hub's task size after the edit: %d files +%d", got.DiffFiles, got.DiffAdd)
 	}
 
 	// Offline: a new task waits, saying so.

@@ -73,3 +73,12 @@ func (g *Git) PushCommit(ctx context.Context, projectID, repo, sha, branch strin
 	_, err := g.git(ctx, projectID, repo, "push", "origin", sha+":refs/heads/"+branch)
 	return err
 }
+
+// FastForward moves the branch checked out in dir to sha, a commit made on
+// top of it, and updates the checkout's files to match. It fails, changing
+// nothing, when sha doesn't descend from the branch or a local change in
+// dir would be overwritten.
+func (g *Git) FastForward(ctx context.Context, projectID, dir, sha string) error {
+	_, err := g.git(ctx, projectID, dir, "merge", "--ff-only", "--quiet", sha)
+	return err
+}

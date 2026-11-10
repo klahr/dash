@@ -846,6 +846,18 @@ func (d *Dispatcher) Fetch(ctx context.Context, t model.Todo, what string) ([]by
 	return b, err
 }
 
+// TaskFile reads a file of t's branch on its runner, for editing it in
+// review; out gets the runner's JSON answer.
+func (d *Dispatcher) TaskFile(ctx context.Context, t model.Todo, path string, out any) error {
+	return d.Fleet.Call(ctx, t.Runner, http.MethodGet, taskPath(t, "/file?path="+url.QueryEscape(path)), nil, out)
+}
+
+// SaveTaskFile commits an edit (in) to a file on t's branch on its runner;
+// out gets the runner's JSON answer.
+func (d *Dispatcher) SaveTaskFile(ctx context.Context, t model.Todo, in, out any) error {
+	return d.Fleet.Call(ctx, t.Runner, http.MethodPut, taskPath(t, "/file"), in, out)
+}
+
 // Unlink tells runners the hub no longer sends them a project's tasks, so
 // they refuse any that still come (best effort: the hub stops sending them
 // either way; an offline runner keeps its link until told).

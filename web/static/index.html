@@ -1147,6 +1147,21 @@
     </form>
   </dialog>
 
+  <!-- Edit a file of a task in review: saving commits it on the task's branch -->
+  <dialog class="sheet edit-sheet" id="diff-edit-sheet" aria-labelledby="diff-edit-title">
+    <form method="dialog" id="diff-edit-form">
+      <header class="sheet-head"><h2 id="diff-edit-title">Edit file</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <p class="hint" id="diff-edit-hint">Saving commits the change on the task's branch, so approving merges it with the rest.</p>
+      <textarea class="file-text" id="diff-edit-text" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="File content"></textarea>
+      <footer class="sheet-actions">
+        <span class="edit-state" id="diff-edit-state" aria-live="polite"></span>
+        <button class="btn shrink" type="button" id="diff-edit-revert" data-icon="undo">Revert</button>
+        <button class="btn shrink" value="cancel" formnovalidate data-icon="x">Cancel</button>
+        <button class="btn primary shrink" type="button" id="diff-edit-save" data-icon="check" title="Commit on the task's branch (Ctrl+S)">Save</button>
+      </footer>
+    </form>
+  </dialog>
+
   <!-- Search everything (Ctrl-k) -->
   <dialog class="sheet palette" id="palette" aria-label="Search everything">
     <div class="palette-field">
