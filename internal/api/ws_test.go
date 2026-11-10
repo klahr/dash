@@ -263,6 +263,54 @@ func TestGeneralChatStopKeepsPartialReply(t *testing.T) {
 	})
 }
 
+// slowStopChat says "so far", waits for its turn to end and then takes a
+// while to return, as a turn on a runner can.
+type slowStopChat struct{ returned *atomic.Int32 }
+
+func (c slowStopChat) Stream(ctx context.Context, _ string, _ []agent.ChatMessage, emit func(agent.ChatDelta)) error {
+	defer c.returned.Add(1)
+	emit(agent.ChatDelta{Kind: "text", Text: "so far"})
+	<-ctx.Done()
+	time.Sleep(200 * time.Millisecond)
+	return ctx.Err()
+}
+
+// A question sent right after stopping a reply waits for the stopped turn to
+// save, so that save can't overwrite the conversation the new turn saved.
+func TestGeneralChatSendAfterStop(t *testing.T) {
+	s, _, _ := boardServer(t)
+	returned := new(atomic.Int32)
+	s.Chat = slowStopChat{returned: returned}
+	conn := chatSocket(t, s)
+	q1 := agent.ChatMessage{Role: "user", Content: "q1"}
+	if err := conn.WriteJSON(map[string]any{"type": "send", "messages": []agent.ChatMessage{q1}}); err != nil {
+		t.Fatal(err)
+	}
+	var d agent.ChatDelta
+	if err := conn.ReadJSON(&d); err != nil || d.Kind != "text" {
+		t.Fatalf("got %+v, %v", d, err)
+	}
+	if err := conn.WriteJSON(map[string]any{"type": "cancel"}); err != nil {
+		t.Fatal(err)
+	}
+	msgs := []agent.ChatMessage{q1, {Role: "assistant", Content: "so far"}, {Role: "user", Content: "q2"}}
+	if err := conn.WriteJSON(map[string]any{"type": "send", "messages": msgs}); err != nil {
+		t.Fatal(err)
+	}
+	// The second turn has saved its question once it says something (the
+	// stopped turn says nothing more), and the stopped one has saved once it
+	// returns.
+	if err := conn.ReadJSON(&d); err != nil || d.Kind != "text" {
+		t.Fatalf("got %+v, %v", d, err)
+	}
+	waitFor(t, "the stopped turn to return", func() bool { return returned.Load() >= 1 })
+	time.Sleep(50 * time.Millisecond) // and to save, were it still to
+	got := raw(s).Chat(ownerCaller(t, s).Org, ownerCaller(t, s).User)
+	if len(got) != 3 || got[1].Content != "so far" || got[2].Role != "user" || got[2].Content != "q2" {
+		t.Fatalf("saved %+v", got)
+	}
+}
+
 // Stopping a reply before it said anything takes the question back out.
 func TestGeneralChatStopBeforeReply(t *testing.T) {
 	s, _, _ := boardServer(t)
