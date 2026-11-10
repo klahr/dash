@@ -1,6 +1,6 @@
 import { $, h } from "./dom.js";
 import { api } from "./api.js";
-import { ask, attempt, toast } from "./dialogs.js";
+import { ask, attempt, busy, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { copyBlock } from "./prefs.js";
 import { agoText } from "./scans.js";
@@ -262,29 +262,20 @@ $("#board-fields").addEventListener("change", (e) => {
   const name = e.target.dataset?.boardField;
   if (name) boardFieldChanged(name);
 });
-$("#board-save").addEventListener("click", attempt(async (e) => {
-  e.target.disabled = true;
-  try { await saveBoard(); } finally { e.target.disabled = false; }
-}));
-$("#board-test").addEventListener("click", attempt(async (e) => {
-  e.target.disabled = true;
-  try {
-    const res = await api("POST", `/api/projects/${state.project.id}/tracker/test`, boardBody());
-    if (!res.ok) throw new Error(`Connection failed: ${res.error}`);
-    // The tracker's columns, to pick from in the mapping (and to map by name).
-    showBoardColumns(res.columns || []);
-    toast(res.columns?.length ? `Connected: ${res.columns.length} columns found` : "Connected", { tone: "ok" });
-  } finally { e.target.disabled = false; }
-}));
-$("#board-sync").addEventListener("click", attempt(async (e) => {
-  e.target.disabled = true;
-  try {
-    const res = await api("POST", `/api/projects/${state.project.id}/tracker/sync`);
-    if (res.state) { board.state = res.state; renderBoardStatus(); }
-    if (!res.ok) throw new Error(`Sync failed: ${res.error}`);
-    toast("Synced", { tone: "ok" });
-  } finally { e.target.disabled = false; }
-}));
+$("#board-save").addEventListener("click", attempt((e) => busy(e.currentTarget, saveBoard)));
+$("#board-test").addEventListener("click", attempt((e) => busy(e.currentTarget, async () => {
+  const res = await api("POST", `/api/projects/${state.project.id}/tracker/test`, boardBody());
+  if (!res.ok) throw new Error(`Connection failed: ${res.error}`);
+  // The tracker's columns, to pick from in the mapping (and to map by name).
+  showBoardColumns(res.columns || []);
+  toast(res.columns?.length ? `Connected: ${res.columns.length} columns found` : "Connected", { tone: "ok" });
+})));
+$("#board-sync").addEventListener("click", attempt((e) => busy(e.currentTarget, async () => {
+  const res = await api("POST", `/api/projects/${state.project.id}/tracker/sync`);
+  if (res.state) { board.state = res.state; renderBoardStatus(); }
+  if (!res.ok) throw new Error(`Sync failed: ${res.error}`);
+  toast("Synced", { tone: "ok" });
+})));
 $("#board-secret").addEventListener("click", attempt(async () => {
   if (board.state.config.has_webhook_secret && !await ask({ title: "Make a new webhook secret?", body: "The current one stops working at once: update the tracker's webhook with the new one.", ok: "New secret" })) return;
   const res = await api("POST", `/api/projects/${state.project.id}/tracker/webhook-secret`);

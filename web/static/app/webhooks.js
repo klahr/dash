@@ -1,6 +1,6 @@
 import { $, h } from "./dom.js";
 import { api } from "./api.js";
-import { ask, attempt, fail, toast } from "./dialogs.js";
+import { ask, attempt, busy, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { copyBlock } from "./prefs.js";
 import { agoText } from "./scans.js";
@@ -112,15 +112,12 @@ function renderWebhooks(sc = hookScopes.project) {
       h("span", { class: "runner-name" }, w.name || webhookHost(w.url), h("span", { class: "hint" }, ` · ${WEBHOOK_FORMATS[w.format] || w.format}${w.enabled ? "" : " · paused"}`)),
       webhookStatus(w),
       h("span", { class: "webhook-actions" },
-        h("button", { class: "btn small", type: "button", onclick: attempt(async (e) => {
-          e.target.disabled = true;
-          try {
-            const res = await api("POST", `/api/webhooks/${w.id}/test`);
-            if (res.webhook) done(res.webhook);
-            if (res.ok) toast("Test notification delivered", { tone: "ok" });
-            else throw new Error(`Test failed: ${res.error}`);
-          } finally { e.target.disabled = false; }
-        }) }, "Send test"),
+        h("button", { class: "btn small", type: "button", onclick: attempt((e) => busy(e.currentTarget, async () => {
+          const res = await api("POST", `/api/webhooks/${w.id}/test`);
+          if (res.webhook) done(res.webhook);
+          if (res.ok) toast("Test notification delivered", { tone: "ok" });
+          else throw new Error(`Test failed: ${res.error}`);
+        })) }, "Send test"),
         h("button", { class: "btn small", type: "button", "aria-expanded": String(open), onclick: attempt(async () => {
           if (open) { hooks.history.delete(w.id); renderWebhooks(sc); return; }
           hooks.history.set(w.id, null);

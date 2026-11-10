@@ -77,6 +77,23 @@ if (toastBox.showPopover) {
 }
 export const fail = (e) => toast(e.message || String(e), true);
 export const attempt = (fn) => async (...a) => { try { await fn(...a); } catch (e) { fail(e); } };
+// Runs fn with btn disabled (and, given a label, showing it in place of the
+// button's text, its last child) so a double click doesn't run it twice.
+// Pass e.currentTarget, not e.target: a click on the button's icon targets the SVG.
+export async function busy(btn, fn, { label } = {}) {
+  const text = btn.lastChild;
+  const before = text?.textContent;
+  btn.disabled = true;
+  if (label != null && text) text.textContent = label;
+  try {
+    return await fn();
+  } finally {
+    if (btn.isConnected) {
+      btn.disabled = false;
+      if (label != null && text) text.textContent = before;
+    }
+  }
+}
 
 // Optional illustration; disappears if the image file isn't there.
 export function art(src, w, hgt) {

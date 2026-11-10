@@ -1,6 +1,6 @@
 import { $, $$, h, ib, ico } from "./dom.js";
 import { api } from "./api.js";
-import { EASE, art, ask, attempt, reduceMotion, toast } from "./dialogs.js";
+import { EASE, art, ask, attempt, busy, reduceMotion, toast } from "./dialogs.js";
 import { clip } from "./attachments.js";
 import { DAY, LANES, state } from "./state.js";
 import { baseBranch, projectKey } from "./events.js";
@@ -123,14 +123,11 @@ async function switchBranch(name, create = false) {
 async function createBranchPR(btn) {
   const s = branchSheet;
   if (!s) return;
-  btn.disabled = true;
-  try {
+  await busy(btn, async () => {
     const pr = await api("POST", `/api/projects/${s.p.id}/branch/pr`, {}, s.p.prefix || "");
     if (branchSheet === s && s.res) { s.res.pr = pr; renderBranches(); }
     toast(`Pull request #${pr.number} is open`, { head: "Pull request created", icon: "pr", action: { label: "Open", run: () => window.open(pr.url, "_blank", "noopener") } });
-  } finally {
-    if (btn.isConnected) btn.disabled = false;
-  }
+  });
 }
 
 $("#pm-branch").addEventListener("click", attempt(openBranches));

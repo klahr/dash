@@ -1,7 +1,7 @@
 import { drafts, mdEditor } from "../editor.js";
 import { $, $$, h, ib } from "./dom.js";
 import { api, here } from "./api.js";
-import { attempt, toast } from "./dialogs.js";
+import { attempt, busy, toast } from "./dialogs.js";
 import { attachBox } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { projectKey } from "./events.js";
@@ -114,18 +114,16 @@ $("#todo-refine").addEventListener("click", attempt(async () => {
   const before = f.prompt.value;
   if (!before.trim()) throw new Error("Write or paste instructions to clean up first.");
   const set = (v) => { f.prompt.value = v; promptEditor.render(); draft.changed(); };
-  btn.disabled = true;
   f.prompt.readOnly = true;
-  btn.lastChild.textContent = "Cleaning up…";
   try {
-    const { prompt } = await api("POST", "/api/refine", { prompt: before });
-    if (f.prompt.value !== before) return; // the form changed meanwhile
-    set(prompt);
-    toast("Instructions cleaned up", { tone: "ok", action: { label: "Undo", run: () => set(before) } });
+    await busy(btn, async () => {
+      const { prompt } = await api("POST", "/api/refine", { prompt: before });
+      if (f.prompt.value !== before) return; // the form changed meanwhile
+      set(prompt);
+      toast("Instructions cleaned up", { tone: "ok", action: { label: "Undo", run: () => set(before) } });
+    }, { label: "Cleaning up…" });
   } finally {
-    btn.disabled = false;
     f.prompt.readOnly = false;
-    btn.lastChild.textContent = "Clean up";
   }
 }));
 // Split asks Claude how to break a large task into smaller ones and shows
@@ -144,19 +142,17 @@ $("#todo-split").addEventListener("click", attempt(async () => {
   const btn = $("#todo-split");
   const before = f.prompt.value;
   if (!before.trim()) throw new Error("Write the instructions to split first.");
-  btn.disabled = true;
   f.prompt.readOnly = true;
-  btn.lastChild.textContent = "Splitting…";
   try {
-    const { parts } = await api("POST", "/api/split", { prompt: before });
-    if (f.prompt.value !== before || !$("#todo-sheet").open) return; // the form changed meanwhile
-    const made = (parts || []).map((p) => ({ title: p.title || "", prompt: p.prompt || "", after: new Set() }));
-    (parts || []).forEach((p, i) => (p.after || []).forEach((j) => { if (j < i) made[i].after.add(made[j]); }));
-    openSplit(made);
+    await busy(btn, async () => {
+      const { parts } = await api("POST", "/api/split", { prompt: before });
+      if (f.prompt.value !== before || !$("#todo-sheet").open) return; // the form changed meanwhile
+      const made = (parts || []).map((p) => ({ title: p.title || "", prompt: p.prompt || "", after: new Set() }));
+      (parts || []).forEach((p, i) => (p.after || []).forEach((j) => { if (j < i) made[i].after.add(made[j]); }));
+      openSplit(made);
+    }, { label: "Splitting…" });
   } finally {
-    btn.disabled = false;
     f.prompt.readOnly = false;
-    btn.lastChild.textContent = "Split…";
   }
 }));
 

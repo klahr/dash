@@ -2,7 +2,7 @@ import { renderMarkdown } from "../editor.js";
 import { $, entering, h, ib } from "./dom.js";
 import { wsURL } from "./viewport.js";
 import { api, here, on } from "./api.js";
-import { ask, attempt, copy, fail, toast } from "./dialogs.js";
+import { ask, attempt, busy, copy, fail, toast } from "./dialogs.js";
 import { attachBox, attachThumb } from "./attachments.js";
 import { state } from "./state.js";
 import { showView } from "./nav.js";
@@ -539,10 +539,7 @@ export const chatActions = (pick, key) => (answer) => h("div", { class: "msg-act
   ib({ class: "link", onclick: attempt(async (e) => {
     const p = (key && state.projects?.find((x) => projectKey(x) === key)) || (!key && state.project);
     if (!p) return toast(pick && !state.projects?.length ? "Create a project first" : "Select a project first", true);
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    btn.lastChild.textContent = "Saving draft…";
-    try {
+    await busy(e.currentTarget, async () => {
       let prompt = answer.trim(), cleaned = true;
       try { prompt = (await api("POST", "/api/refine", { prompt })).prompt?.trim() || prompt; } catch { cleaned = false; }
       const t = await api("POST", `/api/projects/${p.id}/todos`, { title: "", prompt, enqueue: false }, p.prefix || "");
@@ -550,10 +547,7 @@ export const chatActions = (pick, key) => (answer) => h("div", { class: "msg-act
       if (!other) state.lane = "draft";
       toast(`Saved as draft${other ? ` in ${p.name}` : ""}${cleaned ? "" : " (instructions not cleaned up)"}`,
         { tone: "ok", action: other || !t?.id ? undefined : openTodo(t.id) });
-    } finally {
-      btn.disabled = false;
-      btn.lastChild.textContent = "Draft task";
-    }
+    }, { label: "Saving draft…" });
   }) }, "plus", "Draft task"),
   ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
 

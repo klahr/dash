@@ -2,7 +2,7 @@ import { projectGroups as groupProjects, isShared, projectRunnerNames, projectSu
 import { $, $$, h, ico, setLabel } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api, deepLink, on } from "./api.js";
-import { attempt, fail, toast } from "./dialogs.js";
+import { attempt, busy, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { showView } from "./nav.js";
 import { baseBranch, eventFor, latest, multi, projectKey, projectStatus, refreshLive } from "./events.js";
@@ -503,16 +503,14 @@ $("#delete-project").addEventListener("submit", attempt(async (e) => {
   e.preventDefault();
   const f = e.target;
   const p = state.project;
-  const btn = $("#delete-project-ok");
-  btn.disabled = true;
-  try {
-    await api("DELETE", `/api/projects/${p.id}`, { password: f.password.value, delete_files: f.files.value === "delete", delete_github: !$("#delete-github-row").hidden && f.github.checked }, p.prefix);
-  } catch (err) {
-    f.password.select();
-    throw err;
-  } finally {
-    btn.disabled = false;
-  }
+  await busy($("#delete-project-ok"), async () => {
+    try {
+      await api("DELETE", `/api/projects/${p.id}`, { password: f.password.value, delete_files: f.files.value === "delete", delete_github: !$("#delete-github-row").hidden && f.github.checked }, p.prefix);
+    } catch (err) {
+      f.password.select();
+      throw err;
+    }
+  });
   $("#delete-project-sheet").close();
   await loadProjects(); // moves on to another project
   toast(`${p.name} deleted`, { tone: "ok" });

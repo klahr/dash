@@ -1,6 +1,6 @@
 import { $, h, ib } from "./dom.js";
 import { api } from "./api.js";
-import { attempt, toast } from "./dialogs.js";
+import { attempt, busy, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { ago, title } from "./branches.js";
 import { openDetail } from "./detail.js";
@@ -93,11 +93,7 @@ $("#ci-refresh").addEventListener("click", attempt(async () => {
   toast("Builds checked");
 }));
 $("#ci-retry").addEventListener("click", attempt(async () => {
-  const b = $("#ci-retry");
-  b.disabled = true;
-  try {
-    state.ci = await api("POST", `/api/projects/${state.project.id}/ci/retry`);
-  } finally { b.disabled = false; }
+  state.ci = await busy($("#ci-retry"), () => api("POST", `/api/projects/${state.project.id}/ci/retry`));
   renderCI();
   toast("Build restarted on GitHub");
 }));
