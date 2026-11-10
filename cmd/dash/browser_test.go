@@ -18,6 +18,9 @@ import (
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
+
+	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/tracker/favro/favrotest"
 )
 
 // The web client's main flows, clicked through in headless Chrome against
@@ -805,5 +808,75 @@ func waitStatus(t *testing.T, api *client, path, status string, ok func(todo) bo
 			raw, _ := json.Marshal(td)
 			t.Fatalf("%s isn't %s: %s\n%s", path, status, raw, log)
 		}
+	}
+}
+
+// A project's board moved to Favro in its settings: after the email and
+// token, the organization and board are picked from dropdowns loaded from
+// (a fake) Favro, the columns are mapped by name, and saving starts the
+// sync, which exports nothing and imports the board's queued card.
+func TestBrowserFavroBoard(t *testing.T) {
+	chrome := needChrome(t)
+	fv := favrotest.New(t)
+	fv.AddAccount("ada@example.com", "tok-ADA-1")
+	org := fv.AddOrg("Acme", "ada@example.com")
+	fv.AddOrg("Not Ada's")
+	coll := fv.AddCollection(org, "Engineering")
+	fv.AddBoard(org, coll, "Roadmap", "Ideas")
+	widget, cols := fv.AddBoard(org, coll, "Sprint", "Backlog", "Ready", "In progress", "Code review", "Shipped")
+	card := fv.AddCard(org, favrotest.Card{WidgetCommonID: widget, ColumnID: cols[1], Name: "From Favro"})
+	t.Setenv("DASH_TEST_FAVRO_URL", fv.APIURL())
+	h := startRunnerHub(t)
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+
+	b.until("open the project menu", `document.querySelector("#project-menu").open`, chromedp.Click(chromedp.CSS(`#project-menu > summary`)))
+	b.until("open the settings", `document.querySelector("#settings-sheet").open`, chromedp.Click(chromedp.ID("pm-settings")))
+	b.waitJS("the board backends", `[...document.querySelectorAll("#board-backend option")].some((o) => o.value === "favro")`)
+	set := func(what, sel, value string) {
+		t.Helper()
+		js := fmt.Sprintf(`(() => { const el = document.querySelector(%q); el.value = %q; el.dispatchEvent(new Event("change", { bubbles: true })); return el.value === %q; })()`, sel, value, value)
+		if ok, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](js)); err != nil || !ok {
+			b.fail(what, fmt.Errorf("set %s = %q: %v", sel, value, err))
+		}
+	}
+	set("pick Favro", "#board-backend", "favro")
+	b.waitJS("Favro's form", `!!document.querySelector('#board-fields [data-board-field="widget_common_id"]')`)
+	set("type the email", `#board-fields [data-board-field="email"]`, "ada@example.com")
+	set("type the token", `#board-fields [data-board-field="token"]`, "tok-ADA-1")
+	b.waitJS("the organizations", fmt.Sprintf(`[...document.querySelectorAll('[data-board-field="organization_id"] option')].map((o) => o.textContent).join() === "Pick the organization,Acme" && document.querySelector('[data-board-field="organization_id"] option[value=%q]')`, org))
+	set("pick the organization", `#board-fields [data-board-field="organization_id"]`, org)
+	b.waitJS("the boards", fmt.Sprintf(`!!document.querySelector('[data-board-field="widget_common_id"] option[value=%q]')`, widget))
+	set("pick the board", `#board-fields [data-board-field="widget_common_id"]`, widget)
+	b.waitJS("the columns mapped by name", `document.querySelector('[data-board-status="queued"]').value === "Ready" && document.querySelector('[data-board-status="review"]').value === "Code review" && document.querySelector('[data-board-status="merged"]').value === "Shipped"`)
+	if ok, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(document.querySelector('input[name=board_export_choice][value=no]').checked = true)`)); err != nil || !ok {
+		b.fail("leave the tasks in Dash", err)
+	}
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`document.querySelector("#board-save").scrollIntoView(), document.querySelector("#board-save").click(), true`)); err != nil {
+		b.fail("save the board", err)
+	}
+	b.waitJS("it syncs", `document.querySelector("#board-status").textContent.includes("Synced with Favro")`)
+
+	var st struct {
+		Config model.TrackerConfig `json:"config"`
+	}
+	h.api.must("GET", "/api/projects/"+h.project.ID+"/tracker", nil, http.StatusOK, &st)
+	var cfg map[string]string
+	_ = json.Unmarshal(st.Config.Config, &cfg)
+	if st.Config.Backend != "favro" || cfg["widget_common_id"] != widget || cfg["organization_id"] != org || cfg["email"] != "ada@example.com" ||
+		st.Config.StatusMap[model.StatusQueued] != "Ready" || !st.Config.HasCredentials {
+		t.Fatalf("saved: %+v %s", st.Config, st.Config.Config)
+	}
+	if strings.Contains(string(st.Config.Config), "tok-ADA-1") {
+		t.Fatal("the token is in the settings")
+	}
+	b.waitJS("the imported card's task", `[...document.querySelectorAll("#board .todo")].some((e) => e.textContent.includes("From Favro"))`)
+	for _, r := range fv.Requests() {
+		if r.Token != "tok-ADA-1" {
+			t.Fatalf("a request without the token: %+v", r)
+		}
+	}
+	if c := fv.Card(org, card); c.Name != "From Favro" {
+		t.Fatalf("the card: %+v", c)
 	}
 }

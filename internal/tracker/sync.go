@@ -87,6 +87,9 @@ func bodyHash(s string) string {
 // their card ids, its status as the column the project maps it to.
 func (w *worker) dashFields(t model.Todo) fields {
 	f := fields{Title: t.Title, Body: t.Prompt, Priority: t.Priority, Column: w.cfg.ColumnFor(t.Status)}
+	if w.skips(FieldPriority) {
+		f.Priority = nil
+	}
 	for _, id := range t.DependsOn {
 		if l, ok := w.links[id]; ok && l.Ref.ID != "" {
 			f.Deps = append(f.Deps, l.Ref.ID)
@@ -96,8 +99,17 @@ func (w *worker) dashFields(t model.Todo) fields {
 	return f
 }
 
-func extFields(it Item) fields {
+// skips reports whether the backend leaves a field to Dash.
+func (w *worker) skips(field string) bool {
+	fs, ok := w.be.(FieldSkipper)
+	return ok && slices.Contains(fs.Skips(), field)
+}
+
+func (w *worker) extFields(it Item) fields {
 	f := fields{Title: it.Title, Body: it.Description, Priority: it.Priority, Column: it.Column}
+	if w.skips(FieldPriority) {
+		f.Priority = nil
+	}
 	f.Deps = append([]string(nil), it.DependsOn...)
 	slices.Sort(f.Deps)
 	f.Deps = slices.Compact(f.Deps)
@@ -393,9 +405,12 @@ func (w *worker) inbound(ctx context.Context, it Item) error {
 		_, err := w.m.Store.SetExternalRef(id, nil)
 		return err
 	}
-	ef := extFields(it)
+	ef := w.extFields(it)
 	st := &l.st
-	newComments := w.readComments(t, l, it.Comments)
+	newComments, err := w.readComments(&t, l, it.Comments)
+	if err != nil {
+		return err
+	}
 	if ef.hash() == l.ExtHash && st.Ext.hash() == l.ExtHash {
 		// Nothing changed there (or it is an echo of Dash's own push).
 		if newComments || it.Version != l.ExtVersion {
@@ -572,9 +587,12 @@ func (w *worker) moveFromTracker(ctx context.Context, t *model.Todo, l *link, co
 func statusWord(s model.TodoStatus) string { return strings.ReplaceAll(string(s), "_", " ") }
 
 // readComments adds the card's new comments by people to the todo's chat;
-// it reports whether there were any comments it hadn't seen.
-func (w *worker) readComments(t model.Todo, l *link, comments []Comment) bool {
+// it reports whether there were any comments it hadn't seen. On a todo in
+// review they are also rework feedback when the project wants that (see
+// CommentFeedbacker): kept as notes, or sending it back to Claude at once.
+func (w *worker) readComments(t *model.Todo, l *link, comments []Comment) (bool, error) {
 	seen := false
+	var feedback []string
 	for _, c := range comments {
 		if c.ID == "" || slices.Contains(l.st.Seen, c.ID) {
 			continue
@@ -594,8 +612,41 @@ func (w *worker) readComments(t model.Todo, l *link, comments []Comment) bool {
 		}
 		msg := fmt.Sprintf("**%s** commented in %s:\n\n%s", who, label(w.be.Name()), c.Body)
 		_ = w.m.Store.AppendTodoChat(t.ID, model.ChatMessage{Role: "user", Content: msg, At: &at})
+		if strings.TrimSpace(c.Body) != "" {
+			feedback = append(feedback, msg)
+		}
 	}
-	return seen
+	policy := FeedbackChat
+	if cf, ok := w.be.(CommentFeedbacker); ok {
+		policy = cf.CommentFeedback()
+	}
+	if len(feedback) == 0 || policy == FeedbackChat || t.Status != model.StatusReview {
+		return seen, nil
+	}
+	nt, err := w.m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+		if x.Status != model.StatusReview {
+			return errSkip
+		}
+		x.Feedback = append(x.Feedback, feedback...)
+		if policy == FeedbackRework && InboundAllowed(x.Status, model.StatusQueued) {
+			// As the Rework button: a person is involved again.
+			x.Status, x.Error = model.StatusQueued, ""
+			x.Paused, x.Waiting = false, ""
+			x.AutoFixes, x.AutoMerge, x.SentBack = 0, false, ""
+		}
+		return nil
+	})
+	switch {
+	case errors.Is(err, errSkip), errors.Is(err, store.ErrReviewing):
+		return seen, nil // Claude is reviewing it: the comments stay in the chat
+	case err != nil:
+		return seen, err
+	}
+	*t = nt
+	if t.Status == model.StatusQueued && w.m.Kick != nil {
+		w.m.Kick()
+	}
+	return seen, nil
 }
 
 // importCard makes a todo of a card Dash hasn't seen, when it sits in a
@@ -613,7 +664,11 @@ func (w *worker) importCard(_ context.Context, it Item) error {
 	if ref.Provider == "" {
 		ref.Provider = w.be.Name()
 	}
-	nt := model.Todo{ProjectID: w.cfg.ProjectID, Title: it.Title, Prompt: it.Description, Priority: it.Priority,
+	prio := it.Priority
+	if w.skips(FieldPriority) {
+		prio = nil
+	}
+	nt := model.Todo{ProjectID: w.cfg.ProjectID, Title: it.Title, Prompt: it.Description, Priority: prio,
 		DependsOn: w.todoIDs(it.DependsOn), ExternalRef: &ref}
 	t, err := w.m.Store.CreateTodo(nt)
 	if errors.Is(err, store.ErrBadDependency) {
@@ -632,7 +687,7 @@ func (w *worker) importCard(_ context.Context, it Item) error {
 		}
 	}
 	l := &link{TrackerLink: model.TrackerLink{TodoID: t.ID, ProjectID: t.ProjectID, Ref: ref, ExtVersion: it.Version}}
-	l.st = linkState{Dash: w.dashFields(t), Ext: extFields(it), Status: t.Status}
+	l.st = linkState{Dash: w.dashFields(t), Ext: w.extFields(it), Status: t.Status}
 	for _, c := range it.Comments {
 		if c.ID != "" {
 			l.st.Seen = remember(l.st.Seen, c.ID) // its history stays on the card

@@ -48,6 +48,7 @@ import (
 	"github.com/klahr/dash/internal/scan"
 	"github.com/klahr/dash/internal/store"
 	boardsync "github.com/klahr/dash/internal/tracker"
+	"github.com/klahr/dash/internal/tracker/favro" // the Favro board backend
 	"github.com/klahr/dash/internal/tunnel"
 	"github.com/klahr/dash/internal/usage"
 	"github.com/klahr/dash/web"
@@ -569,7 +570,11 @@ func main() {
 
 		// Projects whose board is an external tracker (Favro…) are synced
 		// with it, one worker each; a runner's projects are its hub's.
-		boards := &boardsync.Manager{Store: st, Kick: todos.Kick}
+		// Only dash's own end-to-end tests set it: Favro's API at a fake.
+		if v := os.Getenv("DASH_TEST_FAVRO_URL"); v != "" {
+			favro.SetDefaultBaseURL(v)
+		}
+		boards := &boardsync.Manager{Store: st, Kick: todos.Kick, PublicURL: *publicURL}
 		also := storeEvents.also
 		storeEvents.also = func(ev model.Event) {
 			if also != nil {

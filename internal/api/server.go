@@ -372,6 +372,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/projects/{pid}/tracker", s.getTracker)
 	mux.HandleFunc("PUT /api/projects/{pid}/tracker", s.putTracker)
 	mux.HandleFunc("POST /api/projects/{pid}/tracker/test", s.testTracker)
+	mux.HandleFunc("POST /api/projects/{pid}/tracker/options", s.trackerOptions)
 	mux.HandleFunc("POST /api/projects/{pid}/tracker/sync", s.syncTracker)
 	mux.HandleFunc("POST /api/projects/{pid}/tracker/webhook-secret", s.rotateTrackerSecret)
 	mux.HandleFunc("POST /api/projects/{pid}/tracker/webhook", s.trackerWebhook) // public: see auth.TrackerWebhookPath

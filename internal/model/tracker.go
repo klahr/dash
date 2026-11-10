@@ -39,6 +39,11 @@ type TrackerConfig struct {
 	// (shown once, when made or rotated).
 	WebhookSecret    string `json:"-"`
 	HasWebhookSecret bool   `json:"has_webhook_secret"`
+	// WebhookURL is the public address of the project's webhook endpoint,
+	// when Dash has a public URL (hub setups): set by the sync engine before
+	// it builds the backend, never stored. Backends that register their
+	// webhooks with the tracker (and sign with the URL) use it.
+	WebhookURL string `json:"-"`
 	// SwitchedAt is when the project moved to this backend: todos created
 	// before it stay Dash-only unless they were exported then.
 	SwitchedAt time.Time `json:"switched_at,omitzero"`

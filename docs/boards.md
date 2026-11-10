@@ -5,8 +5,9 @@ own board (`dash`). A project can also be planned in an external tracker
 instead, such as Favro (first), Trello or Jira. Dash then keeps the tracker
 and its own tasks in sync, both ways. Set it in **Project settings → Board**.
 
-So far only Dash's own board ships. This page describes the model and the
-interface the tracker backends are written against (`internal/tracker`).
+Besides Dash's own board, **Favro** ships: see [favro.md](favro.md) for how
+to set it up. This page describes the model and the interface the tracker
+backends are written against (`internal/tracker`).
 
 ## Per project
 
@@ -69,6 +70,15 @@ Each linked task has an `external_ref` (`provider`, `id`, `url`).
   Dash's own comments aren't read back as people's.
 - **Deleted.** A task deleted in Dash deletes its card. A card deleted in the
   tracker leaves its task in Dash, unlinked.
+- **Comments as rework feedback.** Comments by people go to the task's chat.
+  A backend can let its project choose more for comments on a task in
+  review: keep them as rework notes, or send the task back to Claude with
+  them (as the Rework button does).
+- **Webhooks.** A backend that registers its own webhook with the tracker
+  (Favro) does so when the project's worker starts, at
+  `<public URL>/api/projects/{id}/tracker/webhook`, when Dash has a public
+  URL (`-public-url`, i.e. hub setups). It removes it when the project
+  leaves that board or is deleted. Without a public URL, Dash only polls.
 
 ## Switching a project's board
 
@@ -91,6 +101,7 @@ choice is made.
     GET  /api/projects/{id}/tracker                 backend, sync status, backends to pick from, recent events
     PUT  /api/projects/{id}/tracker                 {backend, config, status_map, credentials, clear_credentials, export, confirm}
     POST /api/projects/{id}/tracker/test            try settings (or the saved ones) without saving; answers the tracker's columns
+    POST /api/projects/{id}/tracker/options?field=  a dropdown's choices (e.g. Favro's organizations), for unsaved settings
     POST /api/projects/{id}/tracker/sync            sync now
     POST /api/projects/{id}/tracker/webhook-secret  new webhook secret, answered once
     POST /api/projects/{id}/tracker/webhook         the tracker's webhook (no session: the project's secret)
@@ -136,7 +147,13 @@ tracker.Register(tracker.Registration{
   `Deleted` when the change feed reports deleted or archived cards, and
   `Comments` if you can (their ids matter).
 - Optional interfaces: `Webhooker` verifies webhook calls with the
-  project's secret (its signature scheme). `Tester` backs the settings'
-  Test connection button. `ColumnLister` offers the board's columns in the
-  mapping editor.
+  project's secret (its signature scheme). `WebhookRegistrar` registers and
+  removes the webhook on the tracker (with `cfg.WebhookURL`). `Tester` backs
+  the settings' Test connection button. `ColumnLister` offers the board's
+  columns in the mapping editor. `CommentFeedbacker` picks what comments on
+  a task in review do. `FieldSkipper` leaves fields the board can't hold
+  (priority) to Dash instead of reading their absence as a clear.
+- Settings fields can be dropdowns (`Type: "select"`), with fixed `Options`
+  or `Dynamic` ones the registration's `Options` func lists (reloaded when
+  a field in `DependsOn` changes).
 - `internal/tracker/trackertest` is an in-memory provider to test against.

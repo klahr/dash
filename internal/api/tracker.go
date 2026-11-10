@@ -21,6 +21,7 @@ import (
 //	GET  /api/projects/{pid}/tracker                 the backend, its sync status and the backends to pick from
 //	PUT  /api/projects/{pid}/tracker                 save it; switching boards may answer 409 asking for a decision
 //	POST /api/projects/{pid}/tracker/test            try settings (or the saved ones) without saving
+//	POST /api/projects/{pid}/tracker/options         a dropdown's choices (?field=), for unsaved settings
 //	POST /api/projects/{pid}/tracker/sync            sync now
 //	POST /api/projects/{pid}/tracker/webhook-secret  new webhook secret, answered once
 //	POST /api/projects/{pid}/tracker/webhook         the tracker's webhook (public: the project's secret is the credential)
@@ -124,8 +125,11 @@ func (s *Server) trackerState(sv *service, pid string) (map[string]any, error) {
 		"running":      s.Trackers != nil && s.Trackers.Running(pid),
 		"linked":       linked,
 		"unlinked":     unlinked,
-		"webhook_path": "/api/projects/" + pid + "/tracker/webhook",
-		"events":       events,
+		"webhook_path": tracker.WebhookPath(pid),
+		// Set when Dash has a public URL: backends that register their own
+		// webhooks (Favro) point them here.
+		"webhook_url": s.trackerWebhookURL(pid),
+		"events":      events,
 	}, nil
 }
 
@@ -229,6 +233,57 @@ func (s *Server) testTracker(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
+func (s *Server) trackerWebhookURL(pid string) string {
+	if s.Trackers == nil {
+		return ""
+	}
+	return s.Trackers.WebhookURL(pid)
+}
+
+// trackerOptions answers the choices of a backend's dynamic settings field
+// (e.g. Favro's organizations, once the token is typed in) for the settings
+// in the body merged into the saved ones, without saving them.
+func (s *Server) trackerOptions(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	pid := r.PathValue("pid")
+	saved, err := sv.data.TrackerConfig(pid)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	var in trackerInput
+	if err := decode(r, &in); err != nil {
+		writeErr(w, err)
+		return
+	}
+	cfg, err := in.config(saved)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if s.Trackers == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errTrackersOff.Error()})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	opts, err := s.Trackers.Options(ctx, cfg, r.URL.Query().Get("field"))
+	switch {
+	case errors.Is(err, tracker.ErrNoOptions):
+		writeErr(w, errors.Join(errBadRequest, err))
+	case err != nil:
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+	default:
+		if opts == nil {
+			opts = []tracker.Option{}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "options": opts})
+	}
+}
+
 func (s *Server) syncTracker(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -289,7 +344,7 @@ func (s *Server) rotateTrackerSecret(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, errors.Join(errBadRequest, err))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"secret": cfg.WebhookSecret, "path": "/api/projects/" + pid + "/tracker/webhook"})
+	writeJSON(w, http.StatusOK, map[string]string{"secret": cfg.WebhookSecret, "path": tracker.WebhookPath(pid), "url": s.Trackers.WebhookURL(pid)})
 }
 
 // trackerWebhook is a tracker's call to a project's webhook. Whatever is

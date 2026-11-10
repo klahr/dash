@@ -291,6 +291,7 @@ func (o *twoOrgs) recordEndpoints() []endpoint {
 		{"GET", "/api/projects/" + pid + "/tracker", ""},
 		{"PUT", "/api/projects/" + pid + "/tracker", `{"backend":"dash","confirm":true}`},
 		{"POST", "/api/projects/" + pid + "/tracker/test", `{"backend":"dash"}`},
+		{"POST", "/api/projects/" + pid + "/tracker/options?field=organization_id", `{"backend":"favro"}`},
 		{"POST", "/api/projects/" + pid + "/tracker/sync", ""},
 		{"POST", "/api/projects/" + pid + "/tracker/webhook-secret", ""},
 

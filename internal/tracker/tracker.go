@@ -161,6 +161,63 @@ type Field struct {
 	// sent back to the browser.
 	Secret   bool `json:"secret,omitempty"`
 	Required bool `json:"required,omitempty"`
+	// Type is "select" for a dropdown (default: a text input).
+	Type string `json:"type,omitempty"`
+	// Options are a select's fixed choices.
+	Options []Option `json:"options,omitempty"`
+	// Dynamic: a select whose choices the tracker supplies (see
+	// Registration.Options), loaded again whenever a field it DependsOn
+	// changes.
+	Dynamic   bool     `json:"dynamic,omitempty"`
+	DependsOn []string `json:"depends_on,omitempty"`
+}
+
+// Option is one choice of a select field.
+type Option struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// OptionsFunc lists a dynamic field's choices for a config that may be
+// incomplete (the fields it depends on are set, those after it maybe not).
+type OptionsFunc func(ctx context.Context, cfg ProjectConfig, creds Credentials, field string) ([]Option, error)
+
+// WebhookRegistrar is a Backend that registers its webhook with the
+// tracker itself. When Dash has a public URL the engine calls Register
+// as the project's worker starts (with cfg.WebhookURL and the project's
+// secret; it should replace any webhook of its own already there), and
+// Unregister when the project leaves the board or is deleted.
+type WebhookRegistrar interface {
+	RegisterWebhook(ctx context.Context, url, secret string) error
+	UnregisterWebhook(ctx context.Context, url string) error
+}
+
+// FieldPriority names the priority field (see FieldSkipper).
+const FieldPriority = "priority"
+
+// FieldSkipper is a Backend whose project's board can't hold some intent
+// fields (as set up): the engine leaves them to Dash, neither pushing them
+// nor reading them, rather than reading their absence as a clear.
+type FieldSkipper interface {
+	Skips() []string
+}
+
+// Comment feedback policies (see CommentFeedbacker).
+const (
+	// FeedbackChat: comments by people only go to the todo's chat.
+	FeedbackChat = ""
+	// FeedbackNote: comments on a todo in review are also kept as rework
+	// notes, sent to Claude when the todo is reworked.
+	FeedbackNote = "note"
+	// FeedbackRework: a comment on a todo in review sends it back to
+	// Claude with the comment as its rework feedback.
+	FeedbackRework = "rework"
+)
+
+// CommentFeedbacker is a Backend whose project chose what the tracker's
+// comments on a todo in review do (a Feedback* policy).
+type CommentFeedbacker interface {
+	CommentFeedback() string
 }
 
 // Registration is a backend's entry in the registry.
@@ -176,6 +233,11 @@ type Registration struct {
 	// another board is told from editing its settings (default: the
 	// config's canonical JSON).
 	Board func(config json.RawMessage) string `json:"-"`
+	// Options lists the choices of the Dynamic fields (optional).
+	Options OptionsFunc `json:"-"`
+	// AutoWebhook: the backend registers its webhook with the tracker
+	// itself (WebhookRegistrar) when Dash has a public URL.
+	AutoWebhook bool `json:"auto_webhook,omitempty"`
 	// Native is Dash's own board: built by the Manager on its store, never
 	// synced.
 	Native bool `json:"native,omitempty"`
@@ -254,6 +316,21 @@ func New(cfg ProjectConfig) (Backend, error) {
 		return nil, errors.New("tracker: the native backend is built with NewNative")
 	}
 	return r.New(cfg, cfg.Credentials)
+}
+
+// ErrNoOptions is returned for a field whose backend lists no choices.
+var ErrNoOptions = errors.New("this field has no choices to load")
+
+// Options lists a dynamic field's choices for cfg (see Registration.Options).
+func Options(ctx context.Context, cfg ProjectConfig, field string) ([]Option, error) {
+	r, ok := Lookup(cfg.Backend)
+	if !ok {
+		return nil, fmt.Errorf("%w %q", ErrUnknownBackend, cfg.Backend)
+	}
+	if r.Options == nil || !slices.ContainsFunc(r.Fields, func(f Field) bool { return f.Name == field && f.Dynamic }) {
+		return nil, ErrNoOptions
+	}
+	return r.Options(ctx, cfg, cfg.Credentials, field)
 }
 
 // BoardOf names the board cfg points at (see Registration.Board).

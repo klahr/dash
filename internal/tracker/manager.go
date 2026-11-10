@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,6 +32,10 @@ type Manager struct {
 	// PollEvery is how often workers poll their trackers (DefaultPollEvery).
 	PollEvery time.Duration
 	Now       func() time.Time
+	// PublicURL is the address the trackers reach this Dash at (hub
+	// setups), e.g. https://dash.example.com; empty: none, so backends that
+	// register their own webhooks don't, and the engine only polls.
+	PublicURL string
 
 	// mu guards the fields below. It is only held for map operations, never
 	// while calling the store: Observe is called with the store's lock held.
@@ -43,6 +49,26 @@ func (m *Manager) now() time.Time {
 		return m.Now()
 	}
 	return time.Now()
+}
+
+// WebhookURL is the public address of a project's webhook endpoint (""
+// without a PublicURL).
+func (m *Manager) WebhookURL(projectID string) string {
+	if m.PublicURL == "" || projectID == "" {
+		return ""
+	}
+	return strings.TrimRight(m.PublicURL, "/") + WebhookPath(projectID)
+}
+
+// WebhookPath is the path of a project's webhook endpoint.
+func WebhookPath(projectID string) string {
+	return "/api/projects/" + url.PathEscape(projectID) + "/tracker/webhook"
+}
+
+// build makes cfg's backend, told its project's webhook address.
+func (m *Manager) build(cfg ProjectConfig) (Backend, error) {
+	cfg.WebhookURL = m.WebhookURL(cfg.ProjectID)
+	return New(cfg)
 }
 
 func (m *Manager) pollEvery() time.Duration {
@@ -73,6 +99,7 @@ func (m *Manager) Start(ctx context.Context) error {
 
 // start runs a worker for cfg's project (not native).
 func (m *Manager) start(cfg ProjectConfig) error {
+	cfg.WebhookURL = m.WebhookURL(cfg.ProjectID)
 	be, err := New(cfg)
 	if err != nil {
 		return err
@@ -105,6 +132,39 @@ func (m *Manager) Stop(projectID string) {
 	if w != nil {
 		w.cancel()
 		<-w.done
+	}
+}
+
+// retire stops a deleted project's worker and takes its webhook off the
+// tracker.
+func (m *Manager) retire(projectID string) {
+	m.mu.Lock()
+	w := m.workers[projectID]
+	m.mu.Unlock()
+	if w == nil {
+		return
+	}
+	m.Stop(projectID)
+	m.unregister(w.be, w.cfg)
+}
+
+// unregister takes a project's webhook off its tracker, when its backend
+// registered one. A failure is only logged: the webhook then calls an
+// endpoint that refuses it.
+func (m *Manager) unregister(be Backend, cfg ProjectConfig) {
+	wr, ok := be.(WebhookRegistrar)
+	url := m.WebhookURL(cfg.ProjectID)
+	if !ok || url == "" {
+		return
+	}
+	parent := m.ctx
+	if parent == nil || parent.Err() != nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
+	defer cancel()
+	if err := wr.UnregisterWebhook(ctx, url); err != nil {
+		slog.Warn("board backend: remove webhook", "project", cfg.ProjectID, "backend", cfg.Backend, "err", err)
 	}
 }
 
@@ -159,7 +219,7 @@ func (m *Manager) Observe(ev model.Event) {
 		}
 	case model.EvProjectDeleted:
 		if m.worker(ev.ProjectID) != nil {
-			go m.Stop(ev.ProjectID)
+			go m.retire(ev.ProjectID)
 		}
 	}
 }
@@ -230,7 +290,7 @@ func (m *Manager) Test(ctx context.Context, cfg ProjectConfig) ([]Column, error)
 	if cfg.Native() {
 		return nil, nil
 	}
-	be, err := New(cfg)
+	be, err := m.build(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -246,6 +306,16 @@ func (m *Manager) Test(ctx context.Context, cfg ProjectConfig) ([]Column, error)
 		return cl.Columns(ctx)
 	}
 	return nil, nil
+}
+
+// Options lists a dynamic settings field's choices for cfg (not saved),
+// e.g. the organizations an API token can see.
+func (m *Manager) Options(ctx context.Context, cfg ProjectConfig, field string) ([]Option, error) {
+	if cfg.Native() {
+		return nil, ErrNoOptions
+	}
+	cfg.WebhookURL = m.WebhookURL(cfg.ProjectID)
+	return Options(ctx, cfg, field)
 }
 
 // ---- switching backends ----
@@ -332,11 +402,18 @@ func (m *Manager) Apply(ctx context.Context, projectID string, next ProjectConfi
 		if switching {
 			next.SwitchedAt = m.now()
 		}
-		if _, err := New(next); err != nil { // its settings must at least build
+		if _, err := m.build(next); err != nil { // its settings must at least build
 			return next, err
 		}
 	}
 	m.Stop(projectID)
+	if !old.Native() && (switching || old.Backend != next.Backend) {
+		// Leaving the board: its webhook goes (the new one, if any, is
+		// registered as the worker starts).
+		if be, err := m.build(old); err == nil {
+			m.unregister(be, old)
+		}
+	}
 	if switching && !old.Native() {
 		if err := m.Store.UnlinkTracker(projectID); err != nil {
 			return next, err
@@ -452,6 +529,7 @@ func (w *worker) takeDirty() []string {
 
 func (w *worker) run(ctx context.Context) {
 	defer close(w.done)
+	w.registerWebhook(ctx)
 	_ = w.cycle(ctx)
 	tick := time.NewTicker(w.m.pollEvery())
 	defer tick.Stop()
@@ -469,6 +547,25 @@ func (w *worker) run(ctx context.Context) {
 			reply <- w.cycle(ctx)
 		}
 	}
+}
+
+// registerWebhook registers the project's webhook with its tracker, when
+// the backend does that and Dash has a public URL. Without one the worker
+// polls (as it does anyway, less often than a webhook would wake it).
+func (w *worker) registerWebhook(ctx context.Context) {
+	wr, ok := w.be.(WebhookRegistrar)
+	if !ok || w.cfg.WebhookURL == "" || w.cfg.WebhookSecret == "" {
+		return
+	}
+	rctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	if err := wr.RegisterWebhook(rctx, w.cfg.WebhookURL, w.cfg.WebhookSecret); err != nil {
+		if ctx.Err() == nil {
+			slog.Warn("board backend: register webhook (polling only)", "project", w.cfg.ProjectID, "backend", w.cfg.Backend, "err", err)
+		}
+		return
+	}
+	slog.Info("board backend: webhook registered", "project", w.cfg.ProjectID, "backend", w.cfg.Backend)
 }
 
 // flush pushes the todos the store announced changes to.
