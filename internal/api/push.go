@@ -78,7 +78,7 @@ func (s *Server) subscribePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.Notify.PushEnabled() {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errPushOff.Error()})
+		writeErr(w, errPushOff)
 		return
 	}
 	var in pushInput
@@ -129,7 +129,7 @@ func (s *Server) testPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.Notify.PushEnabled() {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errPushOff.Error()})
+		writeErr(w, errPushOff)
 		return
 	}
 	var in pushInput

@@ -163,7 +163,7 @@ func (s *Server) putTracker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Trackers == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errTrackersOff.Error()})
+		writeErr(w, errTrackersOff)
 		return
 	}
 	next, err := in.config(saved)
@@ -218,7 +218,7 @@ func (s *Server) testTracker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Trackers == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errTrackersOff.Error()})
+		writeErr(w, errTrackersOff)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -265,7 +265,7 @@ func (s *Server) trackerOptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Trackers == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errTrackersOff.Error()})
+		writeErr(w, errTrackersOff)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -295,7 +295,7 @@ func (s *Server) syncTracker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Trackers == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errTrackersOff.Error()})
+		writeErr(w, errTrackersOff)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
@@ -328,7 +328,7 @@ func (s *Server) rotateTrackerSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Trackers == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errTrackersOff.Error()})
+		writeErr(w, errTrackersOff)
 		return
 	}
 	if cfg.Native() {

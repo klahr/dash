@@ -516,7 +516,8 @@ func writeErr(w http.ResponseWriter, err error) {
 		code = http.StatusConflict
 	case errors.As(err, new(*queue.PullRefused)):
 		code = http.StatusConflict
-	case errors.Is(err, queue.ErrMergeQueueFull), errors.Is(err, errScansOff):
+	case errors.Is(err, queue.ErrMergeQueueFull), errors.Is(err, errScansOff), errors.Is(err, errTrackersOff),
+		errors.Is(err, errPushOff), errors.Is(err, errNotifyOff):
 		code = http.StatusServiceUnavailable
 	case errors.As(err, &gitErr):
 		code = http.StatusBadGateway

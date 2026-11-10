@@ -232,7 +232,7 @@ func (s *Server) testWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Notify == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errNotifyOff.Error()})
+		writeErr(w, errNotifyOff)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
