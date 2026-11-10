@@ -184,10 +184,6 @@ func withIdentity(ctx context.Context, id *Identity) context.Context {
 	return context.WithValue(ctx, identityKey{}, id)
 }
 
-// WithIdentity is ctx for a request made as id (in-process calls on behalf
-// of a request that was authenticated already).
-func WithIdentity(ctx context.Context, id *Identity) context.Context { return withIdentity(ctx, id) }
-
 // WithSession marks ctx as a request of sess (in-process callers and tests;
 // the Middleware does this for browser sessions).
 func WithSession(ctx context.Context, sess store.Session) context.Context {
