@@ -160,26 +160,9 @@ func (n *Notifier) Start(ctx context.Context) {
 	}()
 }
 
-// evFlush marks the place in the queue Flush waits for.
+// evFlush marks a place in the queue: the run loop closes the event's
+// channel when it reaches it. Tests use it to wait for queued events.
 const evFlush model.EventType = "notify.flush"
-
-// Flush waits until the events observed so far are handled and their
-// deliveries done (tests, and a graceful stop).
-func (n *Notifier) Flush(ctx context.Context) {
-	n.init()
-	done := make(chan struct{})
-	select {
-	case n.queue <- model.Event{Type: evFlush, Data: done}:
-	case <-ctx.Done():
-		return
-	}
-	select {
-	case <-done:
-	case <-ctx.Done():
-		return
-	}
-	n.wg.Wait()
-}
 
 // handle turns one hub event into a notification, if it is one, and sends
 // it to the webhooks of its project that want it.

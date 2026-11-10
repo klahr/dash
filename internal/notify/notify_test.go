@@ -307,7 +307,13 @@ func setup(t *testing.T, hooks ...model.Webhook) (*Notifier, *fakeStore, context
 
 // settle waits for the run loop to take every queued event and for the
 // deliveries it started.
-func settle(n *Notifier) { n.Flush(context.Background()) }
+func settle(n *Notifier) {
+	n.init()
+	done := make(chan struct{})
+	n.queue <- model.Event{Type: evFlush, Data: done}
+	<-done
+	n.wg.Wait()
+}
 
 func status(fs *fakeStore, n *Notifier, s model.TodoStatus, errMsg string) {
 	t, _ := fs.GetTodo("t1")
