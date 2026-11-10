@@ -1,5 +1,5 @@
-# Dash as a systemd *user* service. It runs claude, git and gh as you, so it
-# needs your home, ~/.claude login and PATH: a user service, not a system one.
+# Dash's hub as a systemd *user* service. The hub runs no claude, git or gh
+# itself: tasks run on runners (dash runner, installed with dash runner install).
 #
 #   go build -o bin/dash ./cmd/dash
 #   mkdir -p ~/.config/dash && cp .env.example ~/.config/dash/env
@@ -19,7 +19,7 @@
 # backup over ~/.local/share/dash/dash.db, start it again.
 
 [Unit]
-Description=Dash (parallel Claude tasks on :7788)
+Description=Dash hub (dashboard on :7788)
 After=network-online.target
 Wants=network-online.target
 
@@ -30,16 +30,9 @@ WorkingDirectory=%h/dev/github/klahr/dash
 # Secrets stay in the env file, not in this unit.
 ExecStart=%h/dev/github/klahr/dash/bin/dash -env %h/.config/dash/env -trust-proxy
 
-# claude is installed in ~/.local/bin, which is not on systemd's default PATH.
-Environment=PATH=%h/.local/bin:%h/go/bin:/usr/local/bin:/usr/bin:/bin
-# A service doesn't inherit your shell's SSH agent. If pushes to SSH remotes
-# fail, point this at your agent's socket (or use HTTPS + `gh auth setup-git`).
-#Environment=SSH_AUTH_SOCK=%t/ssh-agent.socket
-
 Restart=on-failure
 RestartSec=3
-# On SIGTERM, Dash waits up to 20s for running tasks' Claude and tests to
-# stop (they resume at the next start): give it that, and a little more.
+# On SIGTERM, Dash waits up to 20s to shut down: give it that, and a little more.
 TimeoutStopSec=30
 
 [Install]
