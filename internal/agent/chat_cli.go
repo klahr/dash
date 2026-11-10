@@ -384,17 +384,18 @@ func (b contentBlock) delta() (ChatDelta, bool) {
 }
 
 // transcript renders the conversation as one prompt. A single question is
-// passed through as-is.
+// passed through as-is. A "!" command the user ran is shown as theirs, with
+// its output (ShellText).
 func transcript(history []ChatMessage) string {
 	if len(history) == 1 {
-		return history[0].Content
+		return ShellText(history[0])
 	}
 	var b strings.Builder
 	b.WriteString("Here is our conversation so far:\n\n<conversation>\n")
 	for _, m := range history[:len(history)-1] {
-		fmt.Fprintf(&b, "<%s>\n%s\n</%s>\n", m.Role, m.Content, m.Role)
+		fmt.Fprintf(&b, "<%s>\n%s\n</%s>\n", m.Role, ShellText(m), m.Role)
 	}
 	b.WriteString("</conversation>\n\nReply to my latest message:\n\n")
-	b.WriteString(history[len(history)-1].Content)
+	b.WriteString(ShellText(history[len(history)-1]))
 	return b.String()
 }

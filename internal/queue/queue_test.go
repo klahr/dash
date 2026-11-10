@@ -89,13 +89,20 @@ func newHarness(t *testing.T, exe agent.Executor, p model.Project) *harness {
 		WorktreeRoot: filepath.Join(dir, "worktrees"), MaxParallel: 2,
 	})
 	mq.Kick = e.Kick
-	// Stop the loops and wait for them before TempDir is removed: a job may
-	// still be running git in the repo (e.g. removing a merged worktree).
+	// Stop the loops and wait for them, and for the tasks and merges they
+	// started, before TempDir is removed: a job may still be running git in
+	// the repo (e.g. removing a merged worktree, or a fix run's worktree).
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() { defer wg.Done(); e.Run(ctx) }()
 	go func() { defer wg.Done(); mq.Run(ctx) }()
-	stop := sync.OnceFunc(func() { cancel(); wg.Wait() })
+	stop := sync.OnceFunc(func() {
+		cancel()
+		wg.Wait()
+		if !e.Wait(10*time.Second) || !mq.Wait(10*time.Second) {
+			t.Error("the task engine or merge queue didn't stop")
+		}
+	})
 	t.Cleanup(stop)
 	return &harness{t: t, st: st, git: g, engine: e, merges: mq, proj: p, log: log, stop: stop}
 }

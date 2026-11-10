@@ -85,10 +85,13 @@ type Server struct {
 	HubUser int64
 	// ChatDir is where a runner runs the general chat its hub asks for
 	// (default: the temp dir).
-	ChatDir    string
-	Editor     string // command that opens a directory, e.g. "code" (optional)
-	UploadRoot string // where attached files are stored
-	CI         *ci.Watcher
+	ChatDir string
+	// ChatCommandTimeout stops a "!" command run from a chat (default
+	// agent.DefaultShellTimeout).
+	ChatCommandTimeout time.Duration
+	Editor             string // command that opens a directory, e.g. "code" (optional)
+	UploadRoot         string // where attached files are stored
+	CI                 *ci.Watcher
 	// Notify sends events to the projects' outgoing webhooks (nil: off,
 	// as on a runner, whose hub notifies).
 	Notify *notify.Notifier

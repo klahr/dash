@@ -33,12 +33,15 @@ import (
 //	client → {"type":"send","project":"<id>","todo":"<id>","messages":[{"role":"user","content":"…"}, …]}
 //	client → {"type":"cancel"} stops the reply streaming, keeping what it said so far
 //	client → {"type":"permission","id":"<id>","decision":"allow"|"deny"}
+//	client → {"type":"shell","id":"<id>","project":"<id>","todo":"<id>","messages":[…, {"role":"user","content":"!<command>"}]}
 //	server → {"kind":"thinking"|"text"|"done"|"error","text":"…"}
 //	server → {"kind":"cwd","text":"<dir>"} where the turn runs
 //	server → {"kind":"tool_use","id":"…","tool":"Bash","input":{…}}
 //	server → {"kind":"tool_result","id":"…","text":"<output>","is_error":bool}
 //	server → {"kind":"permission","id":"<id>","tool":"Bash","input":{…}} asks to approve a tool call
 //	server → {"kind":"permission_decided","id":"<id>","text":"allow"|"deny"|"timeout"}
+//	server → {"kind":"shell_output","id":"<id>","text":"<output so far>"}
+//	server → {"kind":"shell_done","id":"<id>","shell":{"command","output","exit_code",…}}
 //
 // The client owns the conversation history and sends it in full each turn.
 // Each completed turn is saved, and GET /api/chat returns it after a restart.
@@ -61,6 +64,12 @@ import (
 // and the turn is saved to GET /api/todos/{id}/chat. With "review": true as
 // well, the todo (which must be in review) is marked reviewing until the turn
 // ends, and its status can't change meanwhile.
+//
+// A "shell" message runs a command the user typed with a leading "!" in a
+// project's or a task's chat instead of asking Claude (see chatShell): in
+// the directory Claude would run in, on the same runner, and its last
+// message, with the command's result added, is saved like a turn. "cancel"
+// stops it; its "id" comes back on its deltas.
 func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -135,9 +144,10 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			stopTurn()
 		}
 		cancelTurn()
-		if msg.Type != "send" {
+		if msg.Type != "send" && msg.Type != "shell" {
 			continue
 		}
+		shell := msg.Type == "shell"
 		// Let a stopped turn save what it said before this one saves the
 		// conversation (which already has it).
 		select {
@@ -152,6 +162,14 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		var dir, mode, pid string
 		endReview := func() {}
 		general := msg.Project == "" && msg.Todo == ""
+		var command string
+		if shell {
+			var err error
+			if command, err = shellRequest(general, msg.Messages); err != nil {
+				send(agent.ChatDelta{Kind: "error", ID: msg.ID, Text: err.Error()})
+				continue
+			}
+		}
 		// Each conversation is saved with who wrote its new questions.
 		user := sv.c.User
 		save := func(msgs []agent.ChatMessage) error {
@@ -208,7 +226,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 					if _, err := os.Stat(t.Worktree.Path); err == nil && t.Status != model.StatusMerged {
 						dir, runnerBranch = t.Worktree.Path, t.Worktree.Branch
 					}
-					if s.Git != nil {
+					if s.Git != nil && !shell {
 						var err error
 						if runnerDiff, err = s.todoChanges(ctx, p, t); err != nil {
 							slog.Warn("hub task chat diff", "todo", t.ID, "err", err)
@@ -269,11 +287,11 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		msg.Messages = sv.chatAttachments(msg.Messages)
-		prompt := withAttachments(msg.Messages)
+		prompt := withAttachments(agent.WithShellText(msg.Messages))
 		if forHub && msg.Todo != "" {
 			prompt = withRunnerChanges(runnerBranch, runnerDiff, prompt)
 		}
-		if msg.Project != "" && msg.Todo == "" && !forHub {
+		if msg.Project != "" && msg.Todo == "" && !forHub && !shell {
 			// The user is trying the project in its Try terminal: the chat
 			// reads it and files what they find (see TryInstructions).
 			if p, err := sv.data.GetProject(msg.Project); err == nil {
@@ -318,7 +336,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 					if _, err := os.Stat(t.Worktree.Path); err == nil && t.Status != model.StatusMerged {
 						dir = t.Worktree.Path
 					}
-					if s.Git != nil {
+					if s.Git != nil && !shell {
 						if diff, err = s.todoChanges(ctx, p, t); err != nil {
 							slog.Warn("todo chat diff", "todo", t.ID, "err", err)
 						}
@@ -334,7 +352,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 				send(agent.ChatDelta{Kind: "error", Text: "chat is not available on this Dash"})
 				continue
 			}
-			if msg.Review {
+			if msg.Review && !shell {
 				if endReview, err = s.beginReview(sv, t.ID); err != nil {
 					send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 					continue
@@ -344,6 +362,12 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		if chatter == nil {
 			send(agent.ChatDelta{Kind: "error", Text: "chat is not available on this Dash"})
 			continue
+		}
+		if shell {
+			if err := s.shellAllowed(chatter); err != nil {
+				send(agent.ChatDelta{Kind: "error", ID: msg.ID, Text: err.Error()})
+				continue
+			}
 		}
 		var turnCtx context.Context
 		turnCtx, cancelTurn = context.WithCancel(ctx)
@@ -365,6 +389,30 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		turnSeq++
 		seq := turnSeq
 		turnMu.Unlock()
+		if shell {
+			stopTurn = func() {}
+			done := make(chan struct{})
+			turnDone = done
+			sh := chatShell{chatter: chatter, dir: dir, command: command, id: msg.ID, timeout: s.ChatCommandTimeout, send: send}
+			go func(ctx context.Context, history []agent.ChatMessage) {
+				defer close(done)
+				turn, ok := sh.run(ctx, history)
+				if !ok {
+					return
+				}
+				// Saved (unless a newer turn already has the conversation)
+				// before the client hears it ended, so a reload has it.
+				turnMu.Lock()
+				if turnSeq == seq {
+					if err := save(turn); err != nil {
+						slog.Error("save chat", "err", err)
+					}
+				}
+				turnMu.Unlock()
+				sh.finish(*turn[len(turn)-1].Shell)
+			}(turnCtx, msg.Messages)
+			continue
+		}
 		if general {
 			if err := save(msg.Messages); err != nil {
 				slog.Error("save chat", "err", err)

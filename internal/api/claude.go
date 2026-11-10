@@ -171,9 +171,15 @@ func (s *Server) claudeInfo(w http.ResponseWriter, r *http.Request) {
 	out := struct {
 		Local   bool     `json:"local"`
 		Runners []runner `json:"runners"`
-	}{Local: !s.hub(), Runners: []runner{}}
+		// Commands: project and task chats run "!" commands (here, or on
+		// one of the caller's runners).
+		Commands bool `json:"commands"`
+	}{Local: !s.hub(), Runners: []runner{}, Commands: s.chatCommands()}
 	for _, x := range s.claudeRunners(sv.c) {
 		out.Runners = append(out.Runners, runner{ID: x.ID, Name: x.Name, Online: x.Online})
+		if x.Reported != nil && x.Reported.ChatCommands {
+			out.Commands = true
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

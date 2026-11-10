@@ -634,6 +634,28 @@ type ChatMessage struct {
 	CreatedBy int64 `json:"created_by,omitempty"`
 	// Usage is what Claude's answer took (assistant messages only).
 	Usage *ChatUsage `json:"usage,omitempty"`
+	// Shell is set on a user message that was a shell command the user ran
+	// from the chat with a leading "!" (Content is the "!command" as typed):
+	// what it printed and how it ended. Claude didn't run it, but sees it on
+	// the next turn.
+	Shell *ChatShell `json:"shell,omitempty"`
+}
+
+// ChatShell is a "!" command run from a chat, and its result.
+type ChatShell struct {
+	Command string `json:"command"`
+	// Dir is where it ran (on Runner, when that's not this Dash).
+	Dir    string `json:"dir,omitempty"`
+	Runner string `json:"runner,omitempty"`
+	// Output is its stdout and stderr together, capped: a long one keeps its
+	// start and end (Truncated says so, and the output marks the cut).
+	Output    string `json:"output"`
+	Truncated bool   `json:"truncated,omitempty"`
+	// ExitCode is its exit status; -1 when it didn't exit on its own (Error
+	// says why: timed out, stopped, couldn't start).
+	ExitCode   int    `json:"exit_code"`
+	Error      string `json:"error,omitempty"`
+	DurationMS int64  `json:"duration_ms,omitempty"`
 }
 
 // ChatUsage is the tokens and time one chat answer took.

@@ -113,6 +113,9 @@ func TestRunnersFollowEachOthersPushes(t *testing.T) {
 		go func() { defer wg.Done(); merges.Run(ctx) }()
 		go func() { defer wg.Done(); fr.reporter.Run(ctx) }()
 		go func() { defer wg.Done(); _ = client.Run(ctx) }()
+		// Cleanups run last first: stop the runner, and wait for the fetches
+		// it follows origin with, before its directories above are removed.
+		t.Cleanup(func() { cancel(); wg.Wait(); s.following.Wait() })
 		eventually(t, name+" to come online", func() bool { r, _ := rh.Get(creds.ID); return r.Online })
 		return fr
 	}

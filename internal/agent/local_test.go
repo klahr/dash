@@ -80,7 +80,8 @@ func TestNoLocalClaudeRunsNothing(t *testing.T) {
 
 // Every function in this package that starts a process or makes an API
 // client checks the policy first, so a new way into Claude can't forget
-// it.
+// it. One that runs something else (the chat's "!" commands) checks
+// localrun's.
 func TestEveryClaudeCallChecksThePolicy(t *testing.T) {
 	fset := token.NewFileSet()
 	files, err := filepath.Glob("*.go")
@@ -112,6 +113,8 @@ func TestEveryClaudeCallChecksThePolicy(t *testing.T) {
 						switch x.Name + "." + sel.Sel.Name {
 						case "exec.Command", "exec.CommandContext", "anthropic.NewClient":
 							reaches = true
+						case "localrun.Check":
+							checks = true
 						}
 					}
 				case *ast.Ident:
@@ -122,7 +125,7 @@ func TestEveryClaudeCallChecksThePolicy(t *testing.T) {
 				return true
 			})
 			if reaches && !checks && fn.Name.Name != "NewChat" {
-				t.Errorf("%s: %s reaches Claude without checkLocal()", fset.Position(fn.Pos()), fn.Name.Name)
+				t.Errorf("%s: %s reaches Claude without checkLocal() (or runs a process without localrun.Check)", fset.Position(fn.Pos()), fn.Name.Name)
 			}
 		}
 	}

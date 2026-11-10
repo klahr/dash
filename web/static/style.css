@@ -2266,3 +2266,29 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
   .cl-move .cl-move-label { display: none; }
   .cl-item .cl-icon.cl-del { display: none; }
 }
+
+/* "!" commands in a chat: a block with the command, where it ran, its output
+   and how it ended; the composer shows shell mode while its text starts with "!". */
+.msg.shell { align-self: stretch; max-width: none; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--surface); font-size: 13px; overflow: hidden; }
+.msg.shell .msg-from { padding: 6px 10px 0; }
+.msg.shell.running { border-color: color-mix(in srgb, var(--running) 45%, var(--line)); }
+.msg.shell.failed { border-color: color-mix(in srgb, var(--failed) 40%, var(--line)); }
+.msg.shell.error { color: inherit; }
+.shell-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; }
+.shell-line { flex: 1; min-width: 0; font: 13px var(--mono); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: none; padding: 0; }
+.shell-line b { color: var(--accent); }
+.shell-status { flex: none; display: flex; align-items: center; gap: 6px; color: var(--muted); font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+.shell-exit.ok { color: var(--merged); }
+.shell-exit.bad { color: var(--failed); }
+.shell-where { padding: 0 10px 6px; color: var(--faint); font: 11px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell-where:empty { display: none; }
+.shell-out { margin: 0; padding: 8px 10px; border-top: 1px solid var(--line); font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; color: #c9d3e3; background: var(--bg); }
+.msg.shell.running .shell-out:empty { display: none; }
+.shell-note { padding: 6px 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.shell-note p { margin: 0; }
+.shell-note p + p { margin-top: 4px; }
+.shell-tag { flex: 0 0 100%; font-size: 12px; color: var(--muted); padding: 0 6px; }
+.shell-tag[hidden] { display: none; }
+.shell-tag b { color: var(--text); margin-right: 4px; }
+.composer.shell-mode .shell-tag b { color: var(--accent); font-family: var(--mono); }
+.composer.shell-mode textarea { font-family: var(--mono); border-color: var(--accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }

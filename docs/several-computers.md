@@ -299,7 +299,8 @@ Where each kind of Claude work runs:
   linked can't be scanned. Repository scans (`.dash/scans/`) are used only by a runner's own
   projects; hub projects use built-in and Dash scans.
 - **Project and task chats**: on one of your runners linked to the project (a task's chat on the
-  runner that ran it).
+  runner that ran it). Shell commands typed in them with a leading `!` run there too, in the same
+  folder, never on the hub: see [Chat](chat.md#shell-commands-with-).
 
 - **General chat**: runs on one of your runners, in a scratch folder (`<-data>/chat` on that
   computer), not in any project. The chat's header says which runner it runs on; with several
@@ -435,6 +436,8 @@ issues, scans, chats about a project or task, CI, previews and permission prompt
 - adding a project outside its `-projects` directory;
 - the general chat and Claude's short calls (titles, summaries, clean-up) for anyone but its owner
   (see [above](#claude-runs-on-each-users-own-runner));
+- chats, and the shell commands typed in them with `!` ([Chat](chat.md#shell-commands-with-)), for
+  anyone but its owner, and `!` commands at all when its chat is read-only (`-chat-tools readonly`);
 - listing the repositories in its projects directory, or adding them, for anyone but its owner
   (see [above](#add-projects-from-a-runners-computer)).
 

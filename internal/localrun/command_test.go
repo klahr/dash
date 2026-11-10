@@ -74,6 +74,7 @@ var execAllowed = map[string]string{
 	"internal/agent/executor.go":      "claude (agent's guard)",
 	"internal/agent/title.go":         "claude (agent's guard)",
 	"internal/agent/chat_cli.go":      "claude (agent's guard)",
+	"internal/agent/shell.go":         "the user's shell for a chat's ! commands (localrun.Check)",
 	"internal/claudecli/claudecli.go": "claude --version probe (runners only)",
 	"internal/runnerctl/preflight.go": "claude auth status (`dash runner` setup)",
 	"internal/runnerctl/service.go":   "systemctl/launchctl (`dash runner` setup)",

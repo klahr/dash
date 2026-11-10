@@ -124,8 +124,11 @@ type Report struct {
 	Parallel int `json:"parallel"` // the runner's own -parallel
 	// Terminals: the runner opens terminals for its owner from the hub
 	// (it runs with -hub-commands).
-	Terminals bool            `json:"terminals,omitempty"`
-	Usage     *usage.Snapshot `json:"usage,omitempty"`
+	Terminals bool `json:"terminals,omitempty"`
+	// ChatCommands: its chats run "!" commands for its owner (its chat
+	// isn't read-only).
+	ChatCommands bool            `json:"chat_commands,omitempty"`
+	Usage        *usage.Snapshot `json:"usage,omitempty"`
 	// Claude is the runner's Claude Code CLI: its version and what looks
 	// changed about it (nil from a runner older than this field).
 	Claude *claudecli.Status `json:"claude,omitempty"`

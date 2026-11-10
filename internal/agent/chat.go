@@ -22,16 +22,19 @@ type ChatMessage = model.ChatMessage
 // ChatDelta is one streamed fragment sent back to the frontend.
 type ChatDelta struct {
 	// "thinking" | "text" | "tool_use" | "tool_result" | "permission" |
-	// "permission_decided" | "cwd" | "usage" | "done" | "error"
+	// "permission_decided" | "cwd" | "usage" | "done" | "error", and for a
+	// "!" command "shell_output" (Text: output as it comes) and "shell_done"
+	// (Shell: the result)
 	Kind string `json:"kind"`
 	// Usage is set on "usage", sent just before "done".
 	Usage *model.ChatUsage `json:"usage,omitempty"`
 	Text  string           `json:"text,omitempty"` // tool_result: the output; permission_decided: allow|deny|timeout; cwd: the directory
 	// ID is the tool_use id (tool_use, tool_result) or the permission request id.
-	ID      string          `json:"id,omitempty"`
-	Tool    string          `json:"tool,omitempty"`
-	Input   json.RawMessage `json:"input,omitempty"`
-	IsError bool            `json:"is_error,omitempty"`
+	ID      string           `json:"id,omitempty"`
+	Tool    string           `json:"tool,omitempty"`
+	Input   json.RawMessage  `json:"input,omitempty"`
+	IsError bool             `json:"is_error,omitempty"`
+	Shell   *model.ChatShell `json:"shell,omitempty"`
 }
 
 // Chat answers through the Anthropic Messages API (billed to an API key).
@@ -70,7 +73,7 @@ func (c *Chat) Stream(ctx context.Context, _ string, history []ChatMessage, emit
 	c.once.Do(func() { c.client = anthropic.NewClient(c.opts...) })
 	msgs := make([]anthropic.BetaMessageParam, 0, len(history))
 	for _, m := range history {
-		block := anthropic.NewBetaTextBlock(m.Content)
+		block := anthropic.NewBetaTextBlock(ShellText(m))
 		switch m.Role {
 		case "user":
 			msgs = append(msgs, anthropic.NewBetaUserMessage(block))

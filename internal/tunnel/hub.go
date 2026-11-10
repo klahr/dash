@@ -109,6 +109,9 @@ type Reported struct {
 	// Terminals: it opens terminals for its owner from the hub
 	// (-hub-commands).
 	Terminals bool `json:"terminals"`
+	// ChatCommands: its chats run "!" commands for its owner (its chat
+	// isn't read-only).
+	ChatCommands bool `json:"chat_commands,omitempty"`
 	// Claude is its Claude Code CLI: version and warnings (nil until a
 	// runner that knows to report it has).
 	Claude *claudecli.Status `json:"claude,omitempty"`
@@ -677,10 +680,11 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var self struct {
-		Parallel  int               `json:"parallel"`
-		Usage     *usage.Snapshot   `json:"usage"`
-		Terminals bool              `json:"terminals"`
-		Claude    *claudecli.Status `json:"claude"`
+		Parallel     int               `json:"parallel"`
+		Usage        *usage.Snapshot   `json:"usage"`
+		Terminals    bool              `json:"terminals"`
+		ChatCommands bool              `json:"chat_commands"`
+		Claude       *claudecli.Status `json:"claude"`
 	}
 	if err := json.Unmarshal(body, &self); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
@@ -694,9 +698,9 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 	if self.Claude != nil {
 		self.Claude = cleanClaude(*self.Claude)
 	}
-	h.reported[rec.ID] = &Reported{Parallel: self.Parallel, Usage: self.Usage, Terminals: self.Terminals, Claude: self.Claude, At: h.clock()}
+	h.reported[rec.ID] = &Reported{Parallel: self.Parallel, Usage: self.Usage, Terminals: self.Terminals, ChatCommands: self.ChatCommands, Claude: self.Claude, At: h.clock()}
 	h.mu.Unlock()
-	if prev == nil || prev.Parallel != self.Parallel || prev.Terminals != self.Terminals || paused(prev.Usage) != paused(self.Usage) ||
+	if prev == nil || prev.Parallel != self.Parallel || prev.Terminals != self.Terminals || prev.ChatCommands != self.ChatCommands || paused(prev.Usage) != paused(self.Usage) ||
 		claudeKey(prev.Claude) != claudeKey(self.Claude) {
 		h.changed()
 	}

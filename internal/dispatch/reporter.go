@@ -27,6 +27,8 @@ type Reporter struct {
 	// Terminals: the runner opens terminals for its owner on the hub (it
 	// runs with -hub-commands).
 	Terminals bool
+	// ChatCommands: its chats run "!" commands for its owner.
+	ChatCommands bool
 	// Claude reports the runner's Claude Code CLI (optional).
 	Claude *claudecli.Monitor
 	// Send posts the report (tunnel.Report with the runner's credentials).
@@ -249,7 +251,7 @@ func (r *Reporter) Build(now time.Time) Report {
 	if keep <= 0 {
 		keep = 24 * time.Hour
 	}
-	rep := Report{Parallel: r.Parallel, Terminals: r.Terminals}
+	rep := Report{Parallel: r.Parallel, Terminals: r.Terminals, ChatCommands: r.ChatCommands}
 	if r.Usage != nil {
 		u := r.Usage.Snapshot()
 		rep.Usage = &u

@@ -118,6 +118,7 @@ func main() {
 		chatAllow = append(chatAllow, s)
 		return nil
 	})
+	chatCommandTimeout := flag.Duration("chat-command-timeout", agent.DefaultShellTimeout, "how long a command run from a chat with a leading ! may run before it is stopped")
 	pauseAt := flag.Float64("pause-at", 0.9, "pause the task queue when a subscription usage window reaches this fraction (0 = only when limited)")
 	askPerms := flag.Bool("permission-prompts", true, "send Claude's permission requests to the UI instead of denying them")
 	editor := flag.String("editor", os.Getenv("DASH_EDITOR"), "command that opens a worktree on this machine, e.g. \"code\" (or $DASH_EDITOR)")
@@ -598,12 +599,14 @@ func main() {
 		// this runner's owner only, with this computer's `claude` login.
 		apiSrv.HubUser, apiSrv.Small, apiSrv.Refiner = runnerCreds.UserID, small, small
 		apiSrv.ChatDir = filepath.Join(*dataDir, "chat")
+		apiSrv.ChatCommandTimeout = *chatCommandTimeout
 		// The board tools of the hub's tasks and chats act on the hub's board.
 		apiSrv.HubBoard = func(ctx context.Context, hubTodo, hubProject string, body []byte) (*http.Response, error) {
 			return tunnel.Board(ctx, runnerCreds, hubTodo, hubProject, body)
 		}
 		// The hub hears where its tasks are, and this computer's usage.
 		reporter = &dispatch.Reporter{Store: st, Usage: tracker, Parallel: *parallel, Terminals: *hubCommands, Claude: cli,
+			ChatCommands: !(*chatBackend == "claude-code" && *chatTools == agent.ChatReadOnly),
 			Send: func(ctx context.Context, r dispatch.Report) error {
 				err := tunnel.Report(ctx, runnerCreds, r)
 				if errors.Is(err, tunnel.ErrRevoked) {
