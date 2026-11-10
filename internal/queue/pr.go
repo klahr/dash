@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync/atomic"
 
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
@@ -48,9 +49,39 @@ func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) 
 // review with their pull request still open are followed too, so a merge or
 // close done by hand on GitHub is noticed.
 func (m *MergeQueue) PollPRs(ctx context.Context) {
+	m.pollPRs(ctx, "")
+}
+
+// schedulePRPolls queues, on the worker of every project with an open pull
+// request, a poll of that project's pull requests (unless one is queued
+// already), so a merged one lands after the project's merges in hand and a
+// slow project never delays the others.
+func (m *MergeQueue) schedulePRPolls() {
+	seen := map[string]bool{}
+	for _, t := range m.openPRs() {
+		if pid := t.ProjectID; !seen[pid] {
+			seen[pid] = true
+			m.later(pid, func(l *lane) *atomic.Bool { return &l.polling }, func(c context.Context) { m.pollPRs(c, pid) })
+		}
+	}
+}
+
+// openPRs is the todos whose open pull requests this Dash follows.
+func (m *MergeQueue) openPRs() []model.Todo {
+	var out []model.Todo
 	for _, t := range m.Store.ListTodos("", model.StatusMerging, model.StatusReview, model.StatusFailed) {
-		if t.PR == nil || t.PR.State != "OPEN" || t.OnRunner() {
-			continue // a runner follows the pull requests of its tasks and reports on them
+		if t.PR != nil && t.PR.State == "OPEN" && !t.OnRunner() {
+			out = append(out, t) // a runner follows the pull requests of its tasks and reports on them
+		}
+	}
+	return out
+}
+
+// pollPRs follows the open pull requests of project projectID ("" for all).
+func (m *MergeQueue) pollPRs(ctx context.Context, projectID string) {
+	for _, t := range m.openPRs() {
+		if projectID != "" && t.ProjectID != projectID {
+			continue
 		}
 		p, err := m.Store.GetProject(t.ProjectID)
 		if err != nil {

@@ -19,10 +19,11 @@ import (
 
 var ErrMergeQueueFull = errors.New("merge queue is full")
 
-// MergeQueue lands approved todos on the default branch one at a time. A
-// single goroutine drains the channel, so there are never two merges in
-// flight. Merges happen in a checkout only Dash uses (see land), so work in
-// the project's own folder can't break them.
+// MergeQueue lands approved todos on their projects' default branches. Each
+// project has its own merge worker (a lane), so a project's merges happen
+// one at a time while a long test run in one project never holds up merges
+// in the others. Merges happen in a checkout only Dash uses (see land), so
+// work in the project's own folder can't break them.
 //
 // Per job:
 //  0. when the project pushes to or opens PRs on GitHub, sync the default
@@ -45,8 +46,9 @@ var ErrMergeQueueFull = errors.New("merge queue is full")
 // a runner's checkout of its hub's project, any uncommitted change to a
 // tracked file there makes it wait (see checkoutClean).
 //
-// The same worker also reverts merged todos and runs cleanups, since those
-// move the default branch too.
+// A project's worker also reverts its merged todos, follows its pull
+// requests and runs its cleanups, since those move the default branch or
+// remove worktrees too.
 type MergeQueue struct {
 	Store       *store.Store
 	Git         *gitops.Git
@@ -74,10 +76,16 @@ type MergeQueue struct {
 	// merge is pushed, e.g. to push to origin first.
 	beforePush func()
 
-	jobs    chan mergeItem
-	pending atomic.Int64
-	running sync.WaitGroup // Run, while it runs (see Wait)
-	waiting sync.Map       // todo ID → a goroutine watching for its files to be committed
+	capacity int
+	pending  atomic.Int64
+	running  sync.WaitGroup // Run and the lanes' workers, while they run (see Wait)
+
+	lanesMu sync.Mutex
+	lanes   map[string]*lane // project ID → its merge worker
+	ctx     context.Context  // Run's; nil until Run starts
+	stopped bool             // Run returned: no new workers start
+	filesMu sync.Mutex       // cleanupFiles, which looks at every project
+	waiting sync.Map         // todo ID → a goroutine watching for its files to be committed
 
 	queuedMu sync.Mutex
 	queued   map[string]int // todo ID → its merge jobs queued or running
@@ -86,21 +94,31 @@ type MergeQueue struct {
 type mergeItem struct {
 	job model.MergeJob
 	fn  func(context.Context) // other work that moves the default branch or removes worktrees
+	// quiet work (a timer's) isn't counted in Pending.
+	quiet bool
+}
+
+// lane is one project's merge worker and its queue.
+type lane struct {
+	jobs     chan mergeItem
+	polling  atomic.Bool // a pull request poll is queued or running
+	cleaning atomic.Bool // a timed cleanup is queued or running
 }
 
 func NewMergeQueue(s *store.Store, g *gitops.Git, pub Publisher, log *TodoLog, capacity int) *MergeQueue {
 	return &MergeQueue{Store: s, Git: g, Pub: pub, Log: log, TestTimeout: 20 * time.Minute, PRPoll: time.Minute,
-		Remote: &RemoteSync{Store: s, Git: g, Pub: pub},
-		jobs:   make(chan mergeItem, capacity)}
+		Remote: &RemoteSync{Store: s, Git: g, Pub: pub}, capacity: capacity}
 }
 
-// Enqueue adds a job without blocking the caller (an HTTP handler).
+// Enqueue adds a job to its project's queue without blocking the caller
+// (an HTTP handler).
 func (m *MergeQueue) Enqueue(job model.MergeJob) error {
-	return m.push(mergeItem{job: job})
+	return m.push(job.ProjectID, mergeItem{job: job})
 }
 
-// Wait waits, up to timeout, for Run to return once its context ended (the
-// merge in hand stopped and left to resume), and reports whether it did.
+// Wait waits, up to timeout, for Run and every project's worker to return
+// once their context ended (the merges in hand stopped and left to resume),
+// and reports whether they did.
 func (m *MergeQueue) Wait(timeout time.Duration) bool {
 	return waitGroup(&m.running, timeout)
 }
@@ -131,16 +149,72 @@ func (m *MergeQueue) Resume() {
 	}
 }
 
-func (m *MergeQueue) push(it mergeItem) error {
+// push queues it on project projectID's worker. Each project's queue holds
+// up to capacity jobs.
+func (m *MergeQueue) push(projectID string, it mergeItem) error {
+	l := m.lane(projectID)
 	m.track(it.job.TodoID, 1)
+	if !it.quiet {
+		m.pending.Add(1) // before the worker can take it and count it done
+	}
 	select {
-	case m.jobs <- it:
-		m.pending.Add(1)
-		m.publish("")
+	case l.jobs <- it:
+		if !it.quiet {
+			m.publish("")
+		}
 		return nil
 	default:
 		m.track(it.job.TodoID, -1)
+		if !it.quiet {
+			m.pending.Add(-1)
+		}
 		return ErrMergeQueueFull
+	}
+}
+
+// lane is project id's worker, made (and started, once Run runs) on first use.
+func (m *MergeQueue) lane(id string) *lane {
+	m.lanesMu.Lock()
+	defer m.lanesMu.Unlock()
+	if l := m.lanes[id]; l != nil {
+		return l
+	}
+	if m.lanes == nil {
+		m.lanes = map[string]*lane{}
+	}
+	l := &lane{jobs: make(chan mergeItem, max(m.capacity, 1))}
+	m.lanes[id] = l
+	if m.ctx != nil && !m.stopped {
+		m.start(l)
+	}
+	return l
+}
+
+// start runs l's worker; lanesMu is held.
+func (m *MergeQueue) start(l *lane) {
+	m.running.Add(1)
+	go func() {
+		defer m.running.Done()
+		for {
+			select {
+			case <-m.ctx.Done():
+				return
+			case it := <-l.jobs:
+				m.handle(m.ctx, it)
+			}
+		}
+	}()
+}
+
+// later queues fn as quiet work on project id's worker, unless the work
+// flag says (and then holds) is already queued there.
+func (m *MergeQueue) later(id string, flag func(*lane) *atomic.Bool, fn func(context.Context)) {
+	busy := flag(m.lane(id))
+	if !busy.CompareAndSwap(false, true) {
+		return
+	}
+	if m.push(id, mergeItem{quiet: true, fn: func(c context.Context) { defer busy.Store(false); fn(c) }}) != nil {
+		busy.Store(false)
 	}
 }
 
@@ -167,10 +241,11 @@ func (m *MergeQueue) inQueue(id string) bool {
 	return m.queued[id] > 0
 }
 
-// Do runs fn on the merge worker, after the jobs already queued, and waits.
-func (m *MergeQueue) Do(ctx context.Context, fn func(context.Context)) error {
+// Do runs fn on project projectID's merge worker, after the jobs already
+// queued there, and waits.
+func (m *MergeQueue) Do(ctx context.Context, projectID string, fn func(context.Context)) error {
 	done := make(chan struct{})
-	if err := m.push(mergeItem{fn: func(c context.Context) { defer close(done); fn(c) }}); err != nil {
+	if err := m.push(projectID, mergeItem{fn: func(c context.Context) { defer close(done); fn(c) }}); err != nil {
 		return err
 	}
 	select {
@@ -183,66 +258,88 @@ func (m *MergeQueue) Do(ctx context.Context, fn func(context.Context)) error {
 
 func (m *MergeQueue) Pending() int { return int(m.pending.Load()) }
 
-// Run is the single merge worker. Start exactly one.
+// Run starts the projects' merge workers and follows pull requests and
+// timed cleanups, handing each project's to its worker. Start exactly one;
+// it returns once ctx ends.
 func (m *MergeQueue) Run(ctx context.Context) {
 	m.running.Add(1)
 	defer m.running.Done()
+	m.lanesMu.Lock()
+	m.ctx = ctx
+	for _, l := range m.lanes {
+		m.start(l) // the jobs queued before Run (Resume)
+	}
+	m.lanesMu.Unlock()
 	poll := tickerOrNil(m.PRPoll)
 	clean := tickerOrNil(m.CleanupEvery)
 	for {
 		select {
 		case <-ctx.Done():
+			m.lanesMu.Lock()
+			m.stopped = true
+			m.lanesMu.Unlock()
 			return
 		case <-poll:
-			m.PollPRs(ctx)
+			m.schedulePRPolls()
 		case <-clean:
 			for _, p := range m.Store.ListProjects() {
-				if r, err := m.cleanup(ctx, p); err != nil {
-					slog.Warn("cleanup", "project", p.Name, "err", err)
-				} else if !r.Empty() {
-					slog.Info("cleanup", "project", p.Name, "report", r.String())
-				}
+				m.later(p.ID, func(l *lane) *atomic.Bool { return &l.cleaning }, func(c context.Context) {
+					p, err := m.Store.GetProject(p.ID)
+					if err != nil {
+						return // deleted meanwhile
+					}
+					if r, err := m.cleanup(c, p); err != nil {
+						slog.Warn("cleanup", "project", p.Name, "err", err)
+					} else if !r.Empty() {
+						slog.Info("cleanup", "project", p.Name, "report", r.String())
+					}
+				})
 			}
-		case it := <-m.jobs:
-			if it.fn != nil {
-				it.fn(ctx)
-				m.pending.Add(-1)
-				m.publish("")
-				continue
-			}
-			job := it.job
-			m.publish(job.TodoID)
-			if job.Revert {
-				m.revert(ctx, job)
-			} else if err := m.process(ctx, job); err != nil && ctx.Err() != nil {
-				// Dash is stopping, not the merge failing: the todo stays
-				// merging and Resume queues it again at the next start.
-				// Nothing counts until origin has it (or the default branch
-				// moved to it), so the merge starts over cleanly.
-				if t, gerr := m.Store.GetTodo(job.TodoID); gerr == nil && t.Status == model.StatusMerging {
-					m.Log.Line(t, "■ merge interrupted by shutdown; will resume on restart")
-				}
-			} else if errors.As(err, new(*gitops.ErrDirtyCheckout)) {
-				m.wait(ctx, job, err)
-			} else if err != nil {
-				slog.Warn("merge failed", "todo", job.TodoID, "err", err)
-				if t, gerr := m.Store.GetTodo(job.TodoID); gerr == nil {
-					m.Log.Line(t, "✖ merge: "+err.Error())
-				}
-				var se *syncError
-				if errors.As(err, &se) {
-					// The work is fine; GitHub isn't reachable or main diverged. Approve again once fixed.
-					_, _ = m.Store.SetStatus(job.TodoID, model.StatusReview, "Not merged, can't sync with GitHub: "+brief(err))
-				} else {
-					noteFailure(m.Store, job.TodoID, "merge: "+err.Error(), "")
-					_, _ = m.Store.SetStatus(job.TodoID, model.StatusFailed, "merge: "+err.Error())
-				}
-			}
-			m.track(job.TodoID, -1)
+		}
+	}
+}
+
+// handle runs one item on its project's worker.
+func (m *MergeQueue) handle(ctx context.Context, it mergeItem) {
+	if it.fn != nil {
+		it.fn(ctx)
+		if !it.quiet {
 			m.pending.Add(-1)
 			m.publish("")
 		}
+		return
 	}
+	job := it.job
+	m.publish(job.TodoID)
+	if job.Revert {
+		m.revert(ctx, job)
+	} else if err := m.process(ctx, job); err != nil && ctx.Err() != nil {
+		// Dash is stopping, not the merge failing: the todo stays
+		// merging and Resume queues it again at the next start.
+		// Nothing counts until origin has it (or the default branch
+		// moved to it), so the merge starts over cleanly.
+		if t, gerr := m.Store.GetTodo(job.TodoID); gerr == nil && t.Status == model.StatusMerging {
+			m.Log.Line(t, "■ merge interrupted by shutdown; will resume on restart")
+		}
+	} else if errors.As(err, new(*gitops.ErrDirtyCheckout)) {
+		m.wait(ctx, job, err)
+	} else if err != nil {
+		slog.Warn("merge failed", "todo", job.TodoID, "err", err)
+		if t, gerr := m.Store.GetTodo(job.TodoID); gerr == nil {
+			m.Log.Line(t, "✖ merge: "+err.Error())
+		}
+		var se *syncError
+		if errors.As(err, &se) {
+			// The work is fine; GitHub isn't reachable or main diverged. Approve again once fixed.
+			_, _ = m.Store.SetStatus(job.TodoID, model.StatusReview, "Not merged, can't sync with GitHub: "+brief(err))
+		} else {
+			noteFailure(m.Store, job.TodoID, "merge: "+err.Error(), "")
+			_, _ = m.Store.SetStatus(job.TodoID, model.StatusFailed, "merge: "+err.Error())
+		}
+	}
+	m.track(job.TodoID, -1)
+	m.pending.Add(-1)
+	m.publish("")
 }
 
 func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
@@ -646,12 +743,12 @@ func (m *MergeQueue) pushDefault(ctx context.Context, p model.Project, t model.T
 	m.Log.Line(t, "⇡ pushed "+p.Base())
 }
 
-// PushDefault pushes the default branch on the merge worker (after the
-// merges already queued), first bringing in origin's new commits if origin
+// PushDefault pushes the default branch on the project's merge worker
+// (after the merges already queued there), first bringing in origin's new commits if origin
 // moved on, so a push rejected as non-fast-forward is retried once synced.
 func (m *MergeQueue) PushDefault(ctx context.Context, p model.Project) error {
 	var err error
-	if derr := m.Do(ctx, func(c context.Context) { err = m.pushSynced(c, p) }); derr != nil {
+	if derr := m.Do(ctx, p.ID, func(c context.Context) { err = m.pushSynced(c, p) }); derr != nil {
 		return derr
 	}
 	return err
@@ -751,8 +848,8 @@ func tickerOrNil(d time.Duration) <-chan time.Time {
 	return time.NewTicker(d).C
 }
 
-// publish tells every dashboard how deep the merge queue is. The queue is
-// shared by all orgs; which task is being merged is not said, as it may be
+// publish tells every dashboard how many merges are queued, in all
+// projects together. The count is shared by all orgs; which task is being merged is not said, as it may be
 // another org's (its todo.updated events tell its own org).
 func (m *MergeQueue) publish(current string) {
 	_ = current

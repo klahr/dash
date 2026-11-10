@@ -30,7 +30,7 @@ func (m *MergeQueue) CommitFile(ctx context.Context, p model.Project, path, blob
 	if p.UsesPR() {
 		return "", "", ErrUsesPR
 	}
-	if derr := m.Do(ctx, func(c context.Context) { sha, newBlob, err = m.commitFile(c, p, path, blob, content, msg) }); derr != nil {
+	if derr := m.Do(ctx, p.ID, func(c context.Context) { sha, newBlob, err = m.commitFile(c, p, path, blob, content, msg) }); derr != nil {
 		return "", "", derr
 	}
 	return sha, newBlob, err

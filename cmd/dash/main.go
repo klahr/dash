@@ -783,7 +783,7 @@ func main() {
 	go previews.Run(ctx)
 	go todos.Run(ctx)
 	merges.Resume()
-	go merges.Run(ctx) // the one and only merge worker
+	go merges.Run(ctx) // one merge worker per project
 	// On the way out (SIGTERM, Ctrl-C), before the store closes: running
 	// tasks stop their Claude and test processes (each in a process group
 	// of its own, which would outlive Dash and run beside the resumed task)

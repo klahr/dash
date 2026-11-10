@@ -1224,7 +1224,7 @@ func (s *Server) reworkTodo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
-// revertTodo undoes a merged todo on the merge worker; the todo updates
+// revertTodo undoes a merged todo on its project's merge worker; the todo updates
 // when it's done (or an "Undo:" todo appears if Claude has to do it by hand).
 func (s *Server) revertTodo(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)

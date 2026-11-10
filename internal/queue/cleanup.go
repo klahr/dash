@@ -48,12 +48,12 @@ func (r CleanupReport) String() string {
 	return fmt.Sprintf("removed %s (%s)", strings.Join(parts, ", "), humanBytes(r.Bytes))
 }
 
-// Cleanup tidies one project on the merge worker (it touches the main
+// Cleanup tidies one project on its merge worker (it touches the main
 // checkout's worktree list and branches) and reports what it removed.
 func (m *MergeQueue) Cleanup(ctx context.Context, projectID string) (CleanupReport, error) {
 	var rep CleanupReport
 	var err error
-	if derr := m.Do(ctx, func(c context.Context) {
+	if derr := m.Do(ctx, projectID, func(c context.Context) {
 		var p model.Project
 		if p, err = m.Store.GetProject(projectID); err == nil {
 			rep, err = m.cleanup(c, p)
@@ -140,6 +140,8 @@ func (m *MergeQueue) cleanup(ctx context.Context, p model.Project) (CleanupRepor
 // cleanupFiles removes logs of todos that no longer exist and uploads no
 // todo, chat or project icon refers to (after a day, so a todo being written can still use them).
 func (m *MergeQueue) cleanupFiles() CleanupReport {
+	m.filesMu.Lock() // every project's worker cleans these up
+	defer m.filesMu.Unlock()
 	var r CleanupReport
 	var logs, uploads []fs.DirEntry
 	if m.Log != nil && m.Log.Root != "" {
@@ -245,13 +247,13 @@ func Busy(todos []model.Todo) bool {
 	return false
 }
 
-// DeleteProject forgets a project on the merge worker (so no merge is
+// DeleteProject forgets a project on its merge worker (so no merge is
 // halfway through it) and removes its worktrees and dash/ branches. With
 // files, the project's own folder goes too. It returns the deleted todos.
 func (m *MergeQueue) DeleteProject(ctx context.Context, projectID string, files bool) ([]model.Todo, error) {
 	var todos []model.Todo
 	var err error
-	if derr := m.Do(ctx, func(c context.Context) {
+	if derr := m.Do(ctx, projectID, func(c context.Context) {
 		var p model.Project
 		if p, err = m.Store.GetProject(projectID); err != nil {
 			return
