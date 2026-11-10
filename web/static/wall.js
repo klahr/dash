@@ -287,6 +287,13 @@ function renderToday(d) {
 
 const icons = { merged: "✓", started: "▶", sent_back: "↩", ci: "✗", review: "●", failed: "✗", offline: "⚠" };
 let lastTicker = "";
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+reducedMotion.addEventListener("change", () => {
+  if (last) {
+    lastTicker = "";
+    renderTicker(last);
+  }
+});
 
 function renderTicker(d) {
   const key = JSON.stringify(d.events);
@@ -297,10 +304,15 @@ function renderTicker(d) {
     h("span", {}, h("b", {}, hhmm(new Date(e.at))), " ", e.kind ? h("span", { class: "k-" + e.kind }, icons[e.kind] || "") : "", " ", e.text));
   el.classList.remove("scroll");
   el.replaceChildren(...spans);
-  // Scroll only when it doesn't fit; doubled so the loop is seamless.
+  // Scroll only when it doesn't fit; doubled so the loop is seamless. With
+  // reduced motion it stays still and the wrapper scrolls by hand instead.
   requestAnimationFrame(() => {
-    if (el.scrollWidth > el.parentElement.clientWidth) {
-      el.append(...spans.map((s) => s.cloneNode(true)));
+    if (!reducedMotion.matches && el.scrollWidth > el.parentElement.clientWidth) {
+      el.append(...spans.map((s) => {
+        const c = s.cloneNode(true);
+        c.setAttribute("aria-hidden", "true");
+        return c;
+      }));
       el.style.setProperty("--dur", Math.max(30, el.scrollWidth / 2 / 80) + "s"); // ~80 px/s
       el.classList.add("scroll");
     }

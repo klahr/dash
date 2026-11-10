@@ -105,6 +105,13 @@
   .ticker .k-merged{color:var(--ok)} .ticker .k-started{color:var(--run)} .ticker .k-sent_back{color:var(--bad)}
   .ticker .k-ci,.ticker .k-failed,.ticker .k-offline{color:var(--bad)} .ticker .k-review{color:var(--rev)}
   @keyframes scroll{to{transform:translateX(-50%)}}
+  /* WCAG 2.2.2: hovering or focusing the ticker pauses it so an item can be read. */
+  .tickwrap:hover .ticker,.tickwrap:focus-within .ticker{animation-play-state:paused}
+  .tickwrap:focus-visible{outline:2px solid var(--text);outline-offset:4px}
+  @media (prefers-reduced-motion: reduce){
+    .ticker.scroll,.pulse{animation:none}
+    .tickwrap{overflow-x:auto}
+  }
 
   .stale{position:absolute;right:36px;bottom:8px;font-size:15px;color:var(--bad);display:none}
   .stale.on{display:block}
@@ -172,7 +179,7 @@
 
   <footer>
     <span class="lbl">Latest</span>
-    <div class="tickwrap"><div class="ticker" id="ticker"></div></div>
+    <div class="tickwrap" tabindex="0" role="region" aria-label="Latest events (hover or focus to pause)"><div class="ticker" id="ticker"></div></div>
   </footer>
   <div class="stale" id="stale">connection lost · retrying</div>
   <div class="error" id="error"></div>
