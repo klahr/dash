@@ -186,6 +186,10 @@ func (h *Hub) orgOf(ev model.Event) (org int64, scoped bool) {
 }
 
 // Clients is how many dashboards are connected.
+//
+// Test hook: nothing in production calls it. internal/api's tests use it
+// to wait until their websocket clients have registered before publishing.
+// It is exported because those tests live in another package.
 func (h *Hub) Clients() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
