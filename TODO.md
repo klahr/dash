@@ -8,8 +8,6 @@ Most important first within each section.
 ## Quality
 
 - [ ] Split `web/static/app.js` (~2,000 lines) into modules.
-- [x] Browser tests for the main flows: new todo, review, rework with comments, approve,
-      drag and drop, permission approval.
 - [x] Back up `dash.db` (`dash backup`, `-backup-dir`), and cap or rotate todo logs (`-log-max-mb`).
 - [ ] Try PR mode and failed-build investigation against a real GitHub repository.
 
