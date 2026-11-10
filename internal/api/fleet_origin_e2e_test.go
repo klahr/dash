@@ -33,6 +33,35 @@ type pubFunc func(model.Event)
 
 func (f pubFunc) Publish(ev model.Event) { f(ev) }
 
+// drainHandler serves h until drain, which refuses new requests and waits
+// for those in flight.
+type drainHandler struct {
+	h       http.Handler
+	mu      sync.Mutex
+	drained bool
+	running sync.WaitGroup
+}
+
+func (d *drainHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	d.mu.Lock()
+	if d.drained {
+		d.mu.Unlock()
+		http.Error(w, "stopped", http.StatusServiceUnavailable)
+		return
+	}
+	d.running.Add(1)
+	d.mu.Unlock()
+	defer d.running.Done()
+	d.h.ServeHTTP(w, r)
+}
+
+func (d *drainHandler) drain() {
+	d.mu.Lock()
+	d.drained = true
+	d.mu.Unlock()
+	d.running.Wait()
+}
+
 // When one runner pushes, the hub tells the project's other runners, which
 // fetch at once: a clean checkout follows origin, one with uncommitted
 // changes stays as it is and shows on the hub as behind, with a Pull that
@@ -86,10 +115,15 @@ func TestRunnersFollowEachOthersPushes(t *testing.T) {
 			t.Fatal(err)
 		}
 		s, api, _ := runnerSide(t, creds.OrgID)
+		// The tunnel's server doesn't wait for its handlers when it stops, so
+		// track them: s.following.Add runs in a handler, and must be done
+		// before s.following.Wait.
+		served := &drainHandler{h: api}
 		// Before runnerSide's folders go (cleanups run last first): no
 		// more news over the tunnels, and the fetches the last push's news
 		// started (git still writing in the clone) are done.
-		t.Cleanup(func() { cancel(); wg.Wait(); s.following.Wait() })
+		stop := func() { cancel(); wg.Wait(); served.drain(); s.following.Wait() }
+		t.Cleanup(stop)
 		merges := queue.NewMergeQueue(raw(s), s.Git, s.Hub, &queue.TodoLog{Pub: s.Hub, Root: t.TempDir()}, 16)
 		merges.WorktreeRoot = filepath.Join(t.TempDir(), "worktrees")
 		s.Merges = merges
@@ -110,14 +144,14 @@ func TestRunnersFollowEachOthersPushes(t *testing.T) {
 		merges.OnPushed = func(p model.Project, branch, sha string) {
 			fr.reporter.Pushed(dispatch.Push{HubProjectID: p.HubProjectID, Branch: branch, SHA: sha})
 		}
-		client := &tunnel.Client{Creds: creds, Handler: api, MinBackoff: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond}
+		client := &tunnel.Client{Creds: creds, Handler: served, MinBackoff: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond}
 		wg.Add(3)
 		go func() { defer wg.Done(); merges.Run(ctx) }()
 		go func() { defer wg.Done(); fr.reporter.Run(ctx) }()
 		go func() { defer wg.Done(); _ = client.Run(ctx) }()
 		// Cleanups run last first: stop the runner, and wait for the fetches
 		// it follows origin with, before its directories above are removed.
-		t.Cleanup(func() { cancel(); wg.Wait(); s.following.Wait() })
+		t.Cleanup(stop)
 		eventually(t, name+" to come online", func() bool { r, _ := rh.Get(creds.ID); return r.Online })
 		return fr
 	}
