@@ -105,8 +105,6 @@ const ICONS = {
   spark: "M12 3v5M12 16v5M3 12h5M16 12h5M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6",
   pin: "M9 4h6l-1 6 3 3H7l3-3zM12 13v7",
   tag: "M3.5 12.5V4h8.5l9 9-8.5 8.5zM8 8v.01",
-  fs: "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5",
-  "fs-exit": "M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5",
   reload: "M4 12a8 8 0 0 1 14-5.3M20 4v4h-4M20 12a8 8 0 0 1-14 5.3M4 20v-4h4",
   qr: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 18h2v2h-2zM14 20h2M20 14v2",
   phone: "M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM11 18h2",
@@ -187,11 +185,8 @@ const desktop = matchMedia("(min-width: 1024px)");
 //    (interactive-widget=resizes-content in the viewport meta).
 //  - iOS keeps the layout viewport and shrinks and pans the visual viewport
 //    instead (--vv-top follows the pan).
-//  - Chrome in fullscreen shrinks neither and draws the keyboard over the
-//    page. Only the VirtualKeyboard API sees it then, and only once
-//    overlaysContent is on.
-// So whenever a composer has focus (and always in fullscreen) we turn on
-// overlaysContent and the API reports the keyboard in every mode. The free
+// So whenever a composer has focus we turn on overlaysContent and the
+// VirtualKeyboard API reports the keyboard the same way in every mode. The free
 // part ends at whichever is higher: the visual viewport's bottom or the
 // keyboard's top edge. We never take one off the other, so a keyboard that
 // both report is not counted twice. If neither reports it, CSS falls back to
@@ -201,7 +196,6 @@ const vv = window.visualViewport;
 if (vv) {
   const root = document.documentElement;
   const vk = navigator.virtualKeyboard;
-  const fullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
   const displayMode = () => ["fullscreen", "standalone", "minimal-ui", "browser"].find((m) => matchMedia(`(display-mode: ${m})`).matches) || "?";
   const isComposer = (el) => !desktop.matches && !!el?.matches?.(".composer textarea");
   const editing = () => !!document.activeElement?.matches?.("input, textarea, select, [contenteditable]");
@@ -236,9 +230,8 @@ if (vv) {
   // Keep the latest messages in view as the scroller shrinks.
   const keepEnd = () => { if (stick?.isConnected && isComposer(document.activeElement)) stick.scrollTop = stick.scrollHeight; };
   // Ask the VirtualKeyboard API to report the keyboard (and lay it over the
-  // page) in fullscreen, where nothing else sees it, and while a composer has
-  // focus, so that it is measured the same way in a tab, an installed app and fullscreen.
-  const overlay = (on = fullscreen() || displayMode() === "fullscreen" || isComposer(document.activeElement)) => {
+  // page) while a composer has focus, so that it is measured the same way in a tab and an installed app.
+  const overlay = (on = isComposer(document.activeElement)) => {
     if (!vk) return;
     if (vk.overlaysContent !== on) vk.overlaysContent = on;
     if (!on) kbY = kbH = 0;
@@ -261,9 +254,6 @@ if (vv) {
     }, true);
   }
   const modeChange = () => { overlay(); fit(); };
-  document.addEventListener("fullscreenchange", modeChange);
-  document.addEventListener("webkitfullscreenchange", modeChange);
-  matchMedia("(display-mode: fullscreen)").addEventListener?.("change", modeChange);
   // iOS may scroll only the page (not the visual viewport) to reveal a focused input.
   addEventListener("scroll", () => { if (pageY !== null && scrollY !== pageY) scrollTo(scrollX, pageY); }, { passive: true });
   document.addEventListener("focusin", (e) => {
@@ -303,14 +293,13 @@ if (vv) {
         vk ? `vk overlaysContent ${vk.overlaysContent}  rect y ${n(r.y)} h ${n(r.height)}` : "vk: no VirtualKeyboard API",
         `kbH ${n(kbH)} (top ${n(kbY)})  env(kb-inset-h) ${probe.offsetHeight}  kb-env ${root.classList.contains("kb-env")}`,
         `--vv-top ${css.getPropertyValue("--vv-top")}  --vv-h ${css.getPropertyValue("--vv-h")}  --kb-h ${css.getPropertyValue("--kb-h")}`,
-        `fullscreen ${fullscreen()}  display-mode ${displayMode()}`,
+        `display-mode ${displayMode()}`,
         `composer ${rect(comp)}  focused ${isComposer(document.activeElement)}`,
         `pane ${rect(document.querySelector(".app.chat-open .chat-pane, .detail:not([hidden])"))}`,
       ].join("\n");
     };
     setInterval(debug, 500);
   }
-  overlay(); // the page may already be fullscreen (reloaded in it, or installed with display: fullscreen)
   fit();
 }
 
@@ -6458,32 +6447,6 @@ function renderChatBadge() {
 $("#pc-close").addEventListener("click", () => toggleChatPane(false));
 $("#pc-pin").addEventListener("click", togglePin);
 
-// Fullscreen: hides the browser's own chrome. Browsers without the API for
-// pages (iPhone Safari) get no button; installing the app to the home screen
-// gives them a chromeless window instead.
-const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
-const fsSupported = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
-function isFullscreen() { return !!fsEl(); }
-async function toggleFullscreen(on = !isFullscreen()) {
-  if (!fsSupported) return toast("This browser can't go fullscreen. Add Dash to the home screen for a full-window app.");
-  if (on === isFullscreen()) return;
-  const root = document.documentElement;
-  if (on) await (root.requestFullscreen?.({ navigationUI: "hide" }) ?? root.webkitRequestFullscreen?.());
-  else await (document.exitFullscreen?.() ?? document.webkitExitFullscreen?.());
-}
-function renderFullscreen() {
-  const b = $("#fs-toggle"), on = isFullscreen();
-  b.hidden = !fsSupported;
-  b.setAttribute("aria-pressed", String(on));
-  b.setAttribute("aria-label", on ? "Exit fullscreen" : "Fullscreen");
-  b.title = on ? "Exit fullscreen (F)" : "Fullscreen (F)";
-  b.querySelector(".ico")?.replaceWith(ico(on ? "fs-exit" : "fs"));
-}
-document.addEventListener("fullscreenchange", renderFullscreen);
-document.addEventListener("webkitfullscreenchange", renderFullscreen);
-$("#fs-toggle").addEventListener("click", attempt(() => toggleFullscreen()));
-renderFullscreen();
-
 $("#pc-clear").addEventListener("click", attempt(async () => {
   const c = activeChat();
   if (c?.history.length) await c.clear();
@@ -8799,7 +8762,6 @@ async function runCommand(line) {
     case "b": case "board": return showView("board");
     case "c": case "chat": return toggleChatPane();
     case "pin": case "unpin": return togglePin();
-    case "fs": case "full": case "fullscreen": return toggleFullscreen();
     case "run": case "!": case "sh": case "shell":
       if (!arg) return showView("run");
       need(); return openShell({ command: arg });
@@ -8916,7 +8878,6 @@ function paletteCommands() {
     ["Scans", "scan", go("scans"), "gS", "scan security review dependency audit schedule cron"],
     ["Toggle chat", "comment", () => toggleChatPane(), "gc", "chat open close claude ask project general"],
     [pane.pinned ? "Unpin chat" : "Pin chat", "pin", togglePin, ":pin", "pin unpin chat overlay dock"],
-    fsSupported && [isFullscreen() ? "Exit fullscreen" : "Fullscreen", isFullscreen() ? "fs-exit" : "fs", () => toggleFullscreen(), "F", "fullscreen full screen maximize kiosk"],
     ["Shell", "terminal", go("run"), "gs", "run terminal processes view"],
     ["History", "log", go("history"), "gh", "git graph tree commits view"],
     ["Files", "code", go("files"), "gf", "browse edit source code tree editor"],
@@ -9198,7 +9159,6 @@ async function handleNormal(k, n, hadCount) {
     case "p": return openProjects();
     case "J": case "K": return stepProject(k === "J" ? n : -n);
     case "[": return desktop.matches && setSideCollapsed(!sideCollapsed());
-    case "F": return toggleFullscreen();
     case "o": return openSections();
     case "Escape": case "q":
       if (menuOpen()) return setMenu(false);
