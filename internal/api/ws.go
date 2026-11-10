@@ -97,6 +97,11 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 	// turnDone closes when the last turn has finished saving.
 	turnDone := make(chan struct{})
 	close(turnDone)
+	// turnSeq numbers the turns, so a stopped turn whose save comes late
+	// (after the next send stopped waiting for it) doesn't write over the
+	// newer conversation. Guarded by turnMu, held across that late save.
+	var turnMu sync.Mutex
+	var turnSeq uint64
 	approvals := &chatApprovals{send: send, timeout: chatApprovalTimeout}
 	relay := &chatRelay{} // the turn running on the caller's runner, if any
 
@@ -354,6 +359,12 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			// The hub's chat: its tools act on the hub's board.
 			turnCtx = mcptools.ForHub(turnCtx, msg.Project)
 		}
+		// From here this turn's conversation is the newest: a stopped turn
+		// still saving finishes first, a later one skips its save.
+		turnMu.Lock()
+		turnSeq++
+		seq := turnSeq
+		turnMu.Unlock()
 		if general {
 			if err := save(msg.Messages); err != nil {
 				slog.Error("save chat", "err", err)
@@ -405,9 +416,14 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 					turn = history[:len(history)-1]
 				}
 				if turn != nil {
-					if err := save(turn); err != nil {
-						slog.Error("save chat", "err", err)
+					turnMu.Lock()
+					// A newer turn's conversation already has this one's.
+					if turnSeq == seq {
+						if err := save(turn); err != nil {
+							slog.Error("save chat", "err", err)
+						}
 					}
+					turnMu.Unlock()
 				}
 				return
 			}
