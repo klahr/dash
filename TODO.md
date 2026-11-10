@@ -11,8 +11,6 @@ Most important first within each section.
 
 ## Features
 
-- [ ] Personal notification webhooks (one user's, across their projects) besides the per-project
-      ones, and a delivery history per webhook rather than only the last result.
 - [ ] Todos that wait for another todo to merge.
 - [ ] Split a large task into several todos (Claude proposes, you confirm).
 - [ ] Run the same task twice and compare the attempts.
