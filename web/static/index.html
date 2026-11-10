@@ -37,7 +37,7 @@
         </button>
         <div class="foot-menu-list project-picker-list" id="project-picker" role="menu" aria-label="Projects" hidden></div>
       </div>
-      <div class="lane-chips" id="lane-chips" aria-label="Minimized columns"></div>
+      <div class="lane-chips" id="lane-chips" role="group" aria-label="Minimized columns"></div>
       <button class="previews-btn" id="previews-btn" type="button" hidden aria-haspopup="dialog" title="Running previews">
         <span class="pv-dot" aria-hidden="true"></span><span id="previews-label">Previews</span>
       </button>
@@ -99,7 +99,7 @@
           <span>Menu</span>
           <button class="icon-btn" id="menu-close" type="button" aria-label="Close menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
         </div>
-        <div class="side-projects" aria-labelledby="side-projects-title">
+        <div class="side-projects" role="group" aria-labelledby="side-projects-title">
           <h2 class="side-projects-head" id="side-projects-title">Projects</h2>
           <ul class="side-project-list" id="side-project-list"></ul>
           <button class="side-new-project" id="side-new-project" type="button" title="New project">
@@ -108,7 +108,7 @@
           </button>
         </div>
         <!-- Mobile only: the sections that don't fit the bottom nav (the side rail has them on desktop). -->
-        <div class="menu-views" aria-label="More sections">
+        <div class="menu-views" role="group" aria-label="More sections">
           <button class="menu-view" data-view="scans" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span>Scans</span><span class="badge quiet" id="menu-scan-badge" hidden></span>
@@ -137,7 +137,7 @@
           <p class="quick-why" id="quick-try-why" hidden></p>
         </div>
         <button class="usage-pill remote-pill" id="remote-pill" type="button" hidden title="The default branch compared with origin's"></button>
-        <div class="checkouts" id="checkouts" hidden aria-label="Checkouts behind origin"></div>
+        <div class="checkouts" id="checkouts" role="group" hidden aria-label="Checkouts behind origin"></div>
         <button class="usage-pill ci-pill" id="ci-pill" hidden aria-haspopup="dialog" title="GitHub Actions on the default branch"></button>
         <!-- Claude usage and the account: always at the bottom of the sidebar / drawer. -->
         <div class="side-bottom">
@@ -166,6 +166,7 @@
     </div>
 
     <main>
+      <h1 class="sr-only">{{DASH_NAME}}</h1>
       <!-- Board -->
       <section class="view active" id="view-board" aria-label="Board">
         <div class="board-tools">
@@ -305,7 +306,7 @@
         <div class="files">
           <div class="file-side">
             <input type="search" id="file-filter" placeholder="Filter files" autocomplete="off" spellcheck="false" aria-label="Filter files">
-            <div class="file-tree" id="file-tree" aria-label="Repository files"></div>
+            <div class="file-tree" id="file-tree" role="group" aria-label="Repository files"></div>
           </div>
           <div class="file-main">
             <header class="file-head" id="file-head" hidden>
@@ -461,7 +462,7 @@
           <div class="pv-term" id="pv-term" hidden></div>
           <div class="pv-status" id="pv-status" hidden></div>
           <!-- Draw mode: a still picture of the page, with marks on top -->
-          <div class="draw-stage" id="draw-stage" hidden aria-label="Snapshot of the preview: draw on it"></div>
+          <div class="draw-stage" id="draw-stage" role="group" hidden aria-label="Snapshot of the preview: draw on it"></div>
           <div class="draw-wait" id="draw-wait" hidden><span class="spinner big" aria-hidden="true"></span>Taking a snapshot…</div>
         </div>
         <div class="draw-bar" id="draw-bar" role="toolbar" aria-label="Draw" hidden>

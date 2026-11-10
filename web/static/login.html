@@ -19,10 +19,10 @@
          Convert: magick in.png -resize 1280x800^ -gravity center -extent 1280x800 -quality 85 web/static/img/login-art.webp
          Files are embedded in the binary: rebuild and restart dash afterwards. -->
       <img class="login-art" src="img/login-art.webp" alt="" width="640" height="400" data-optional>
-      <div class="brand">
+      <h1 class="brand">
         <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
         <span>{{DASH_NAME}}</span>
-      </div>
+      </h1>
       <p>Sign in to manage your agents.</p>
       <label class="field"><span>Username or email</span><input name="username" autocomplete="username" autocapitalize="none" required autofocus></label>
       <label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
@@ -35,10 +35,10 @@
     </form>
     <!-- Open signup (when the server allows it) -->
     <form id="signup" class="login-card" hidden>
-      <div class="brand">
+      <h1 class="brand">
         <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
         <span>{{DASH_NAME}}</span>
-      </div>
+      </h1>
       <p>Create an account. We'll email you a link to confirm your address and choose your password.</p>
       <label class="field"><span>Email</span><input name="email" type="email" autocomplete="email" autocapitalize="none" required></label>
       <button class="btn primary">Create account</button>
@@ -47,10 +47,10 @@
     </form>
     <!-- Forgot password: a link by email -->
     <form id="forgot" class="login-card" hidden>
-      <div class="brand">
+      <h1 class="brand">
         <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
         <span>{{DASH_NAME}}</span>
-      </div>
+      </h1>
       <p>Enter your account's email address and we'll send you a link to choose a new password.</p>
       <label class="field"><span>Email</span><input name="email" type="email" autocomplete="email" autocapitalize="none" required></label>
       <button class="btn primary">Send link</button>
@@ -59,10 +59,10 @@
     </form>
     <!-- From a verification link: the address's owner chooses the password -->
     <form id="verify" class="login-card" hidden>
-      <div class="brand">
+      <h1 class="brand">
         <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
         <span>{{DASH_NAME}}</span>
-      </div>
+      </h1>
       <p>Your address is almost confirmed. Choose a password for your account.</p>
       <label class="field"><span>Password (at least 8 characters)</span><input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
       <button class="btn primary">Confirm and sign in</button>
@@ -70,10 +70,10 @@
     </form>
     <!-- From a reset link -->
     <form id="reset" class="login-card" hidden>
-      <div class="brand">
+      <h1 class="brand">
         <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
         <span>{{DASH_NAME}}</span>
-      </div>
+      </h1>
       <p>Choose a new password. You'll be signed out everywhere else.</p>
       <label class="field"><span>New password (at least 8 characters)</span><input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
       <button class="btn primary">Set password</button>
@@ -81,19 +81,19 @@
     </form>
     <!-- What happened: check your inbox, link expired, … -->
     <section id="notice" class="login-card" hidden>
-      <div class="brand">
+      <h1 class="brand">
         <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
         <span>{{DASH_NAME}}</span>
-      </div>
+      </h1>
       <p id="notice-text" role="status"></p>
       <button class="link to-login" type="button">Back to sign in</button>
     </section>
     <!-- Second step, for accounts with two-factor sign-in -->
     <form id="totp" class="login-card" hidden>
-      <div class="brand">
+      <h1 class="brand">
         <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
         <span>{{DASH_NAME}}</span>
-      </div>
+      </h1>
       <p id="totp-prompt">Enter the code from your authenticator app.</p>
       <label class="field"><span id="totp-label">6-digit code</span><input name="code" inputmode="numeric" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" required></label>
       <button class="btn primary">Verify</button>
@@ -102,10 +102,10 @@
     </form>
     <!-- Setting up two-factor sign-in, when an org requires it -->
     <section id="enrol" class="login-card enrol-card" hidden aria-labelledby="enrol-title">
-      <div class="brand">
+      <h1 class="brand">
         <img src="{{DASH_LOGO}}" alt="" aria-hidden="true">
         <span>{{DASH_NAME}}</span>
-      </div>
+      </h1>
       <h2 id="enrol-title">Set up two-factor sign-in</h2>
       <div id="enrol-body"></div>
       <button class="link" type="button" id="enrol-logout">Sign out</button>
