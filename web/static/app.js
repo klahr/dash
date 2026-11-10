@@ -2,7 +2,7 @@
 // /ws/chat for streaming answers, /ws/proc/:id for terminals.
 import { mdEditor, codeEditor, drafts, renderMarkdown, vimOn, setVim, invisiblesOn, setInvisibles } from "./editor.js";
 import { drawSurface, COLORS } from "./draw.js";
-import { projectGroups as groupProjects, uniqueProjects, isShared, projectRunnerNames } from "./groups.js";
+import { projectGroups as groupProjects, uniqueProjects, isShared, projectRunnerNames, projectSubtitle } from "./groups.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 // Decorative pictures that fail to load go away (not with an inline
@@ -1507,7 +1507,11 @@ function renderBrand() {
   $("#brand-name").textContent = p ? p.name : dashBrand.name;
   brand.classList.toggle("is-project", !!p);
 }
-const projectDot = (p) => (p.color ? h("span", { class: "project-dot", style: `--project: ${p.color}`, "aria-hidden": "true" }) : null);
+// A project list's two-line label: the name line, and under it, smaller and
+// muted, the project's owner/repo (projectSubtitle) when it has one.
+const projectLabel = (nameLine, sub, cls) =>
+  h("span", { class: `project-label ${cls}` }, nameLine, sub ? h("span", { class: "project-sub" }, sub) : null);
+const projectDot = (p) => (p.color ?h("span", { class: "project-dot", style: `--project: ${p.color}`, "aria-hidden": "true" }) : null);
 
 // Desktop sidebar / phone menu: every project, one click away. The current one
 // shows its branch; its settings and actions live in the top bar's project menu.
@@ -1518,14 +1522,15 @@ function renderSideProjects() {
     const stLabel = st === "running" ? "Claude is working" : st === "review" ? "Ready for review" : "";
     const icon = projectIcon(p);
     if (st) icon.append(h("span", { class: `side-project-status ${st}` }));
+    const sub = projectSubtitle(p);
     return h("li", { class: [cur && "current", inGroup && "in-group"].filter(Boolean).join(" ") },
       h("button", {
-        type: "button", class: "side-project", title: [p.name, p.path, stLabel].filter(Boolean).join("\n"), "aria-current": cur ? "true" : "false",
-        "aria-label": stLabel ? `${p.name}, ${stLabel.toLowerCase()}` : null,
+        type: "button", class: "side-project", title: [p.name, sub, p.path, stLabel].filter(Boolean).join("\n"), "aria-current": cur ? "true" : "false",
+        "aria-label": [p.name, sub, stLabel.toLowerCase()].filter(Boolean).join(", "),
         onclick: attempt(async () => { await selectProject(p); setMenu(false); }),
       },
       icon,
-      h("span", { class: "side-project-name" }, p.name),
+      projectLabel(h("span", { class: "side-project-name" }, p.name), sub, "side-project-text"),
       sharedMark(p),
       needsRunner(p) ? h("span", { class: "side-project-branch warn", title: "No runner is linked to it: link one in Project settings → Runners" }, "needs a runner")
         : cur && baseBranch(p) ? h("span", { class: "side-project-branch" }, baseBranch(p)) : null));
@@ -1695,10 +1700,13 @@ function setPicker(open) {
   if (!open) return;
   const item = (p) => {
     const cur = projectKey(state.project) === projectKey(p);
+    const sub = projectSubtitle(p);
     return h("button", {
-      type: "button", role: "menuitem", title: p.path, "aria-current": cur ? "true" : "false",
+      type: "button", role: "menuitem", title: [p.name, sub, p.path].filter(Boolean).join("\n"), "aria-current": cur ? "true" : "false",
+      "aria-label": [p.name, sub, baseBranch(p)].filter(Boolean).join(", "),
       onclick: attempt(async () => { setPicker(false); if (!cur) await selectProject(p); }),
-    }, h("span", { class: "project-name" }, projectDot(p), p.name, sharedMark(p)), h("span", { class: "project-branch" }, baseBranch(p)));
+    }, projectLabel(h("span", { class: "project-name" }, projectDot(p), p.name, sharedMark(p)), sub, "picker-text"),
+    h("span", { class: "project-branch" }, baseBranch(p)));
   };
   const items = !grouped() ? state.projects.map(item) : projectGroups().flatMap((g) => [
     h("div", { class: `side-machine${g.needsRunner ? " needs-runner" : ""}`, title: groupTitle(g), "data-group": g.key }, groupHead(g)),

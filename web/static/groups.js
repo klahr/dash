@@ -66,3 +66,28 @@ export function projectRunnerNames(p, runners) {
   if (!isShared(p) || !Array.isArray(runners)) return [p.machine].filter(Boolean);
   return runners.filter((r) => p.runners?.includes(r.id)).map((r) => r.name).sort((a, b) => byName({ name: a }, { name: b }));
 }
+
+// remoteRepo is the repository a remote names, as owner/repo: https, ssh://
+// and scp-like git@host:owner/repo.git, on GitHub or any other host (a
+// GitLab subgroup keeps its full path), without .git. It is "" for a local
+// path or no remote.
+export function remoteRepo(remote) {
+  const r = String(remote || "").trim().replace(/\/+$/, "").replace(/\.git$/i, "");
+  if (/^file:/i.test(r)) return "";
+  // scheme://[user[:pass]@]host[:port]/path, or scp-like [user@]host:path
+  // (a host of two or more letters, so C:\ isn't one).
+  const m = /^[a-z][a-z\d+.-]*:\/\/[^/]+\/(.+)$/i.exec(r) || /^(?:[^@/\s]+@)?[^@/:\\\s]{2,}:(?!\/)(.+)$/.exec(r);
+  return m ? m[1].split("/").filter(Boolean).join("/") : "";
+}
+
+// projectSubtitle is the line under a project's name in project lists: its
+// repository as owner/repo, even when the repo is called like the project
+// (the owner tells something). Without a hosted remote it is the project's
+// folder, unless that is just its name again ("").
+export function projectSubtitle(p) {
+  if (!p) return "";
+  const repo = remoteRepo(p.remote_url);
+  if (repo) return repo;
+  const dir = String(p.remote_url || p.path || "").trim().replace(/[\\/]+$/, "").split(/[\\/]/).pop().replace(/\.git$/i, "");
+  return dir && dir.toLowerCase() !== String(p.name || "").trim().toLowerCase() ? dir : "";
+}

@@ -1346,6 +1346,9 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .project-picker-list button { display: flex; justify-content: space-between; gap: 16px; flex: none; }
 .project-picker-list button[aria-current="true"] { background: var(--raised); box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
 .project-picker-list .project-branch { overflow: hidden; text-overflow: ellipsis; }
+.project-picker-list button:has(.project-sub) { padding-block: 3px; }
+/* The owner/repo line lines up with the name, past its dot. */
+.picker-text:has(.project-dot) .project-sub { padding-left: 16px; }
 .project-picker-list .picker-new { margin-top: 4px; border-top: 1px solid var(--line); border-radius: 0 0 6px 6px; color: var(--muted); justify-content: flex-start; }
 .project-picker-list .picker-new:has(+ .picker-new) { border-radius: 0; }
 .project-picker-list .picker-new + .picker-new { margin-top: 0; border-top: 0; }
@@ -1377,7 +1380,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .side-project-status.running { background: var(--running); }
 .side-project-status.review { background: var(--review); }
 .side-project-icon img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
-.side-project-name { flex: 1; min-width: 0; }
+.side-project-text { flex: 1; }
 .side-project-name, .side-project-branch { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-project-branch { flex: 0 1 auto; max-width: 45%; padding: 1px 6px; border-radius: var(--r-s); background: var(--bg); font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--muted); }
 .side-project-list li.current { background: var(--raised); }
@@ -1397,6 +1400,10 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .side-project-list li.in-group { position: relative; margin-left: 14px; }
 .side-project-list li.in-group::before { content: ""; position: absolute; left: -1px; top: -1px; bottom: 0; width: 1px; background: var(--line); }
 .side-project-list li.in-group .side-project { padding-left: 10px; }
+/* Project lists' two-line label: the name, and under it the owner/repo. */
+.project-label { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.project-sub { font-size: .85em; font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-project:has(.project-sub) { padding-block: 2px; }
 /* The hub's shared projects: a quiet mark, to tell them from a runner's own. */
 .shared-mark { flex: none; display: inline-flex; color: var(--faint); opacity: .7; }
 .shared-mark .ico { width: 13px; height: 13px; }
@@ -1516,7 +1523,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .side-collapsed .sidebar { overflow: visible; }
   .side-collapsed .nav > button { justify-content: center; padding: 0; }
   .side-collapsed .nav > button > span:not(.badge),
-  .side-collapsed .side-projects-head, .side-collapsed .side-project-name, .side-collapsed .side-project-branch, .side-collapsed .shared-mark,
+  .side-collapsed .side-projects-head, .side-collapsed .side-project-text, .side-collapsed .side-project-branch, .side-collapsed .shared-mark,
   .side-collapsed .side-machine, .side-collapsed .machine-empty,
   .side-collapsed .side-new-project span, .side-collapsed .quick-btn span,
   .side-collapsed .usage-pill:not(#usage-pill), .side-collapsed .merge-status { display: none; }

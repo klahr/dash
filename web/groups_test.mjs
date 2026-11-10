@@ -2,7 +2,7 @@
 // `node --test web/`; groups_test.go runs them as part of `go test ./...`.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { projectGroups, uniqueProjects, projectRunnerNames } from "./static/groups.js";
+import { projectGroups, uniqueProjects, projectRunnerNames, remoteRepo, projectSubtitle } from "./static/groups.js";
 
 const hub = { name: "hub", local: true, ok: true, prefix: "" };
 const runner = (name, ok) => ({ name, runner: true, ok, prefix: `/peer/${name}`, error: ok ? "" : "offline" });
@@ -66,4 +66,35 @@ test("members who don't see the runners' computers still get their org's runners
 test("without runners (not a hub), one group per computer", () => {
   const gs = projectGroups({ machines: [hub], runners: null, projects: [shared("p6", "b"), shared("p7", "a")] });
   assert.deepEqual(gs.map((g) => [g.name, g.projects.map((p) => p.name)]), [["hub", ["a", "b"]]]);
+});
+
+test("remoteRepo reads owner/repo from https, ssh and other hosts", () => {
+  const cases = {
+    "https://github.com/klahr/dash": "klahr/dash",
+    "https://github.com/klahr/dash.git": "klahr/dash",
+    "https://github.com/klahr/dash/": "klahr/dash",
+    "https://x-access-token:abc@github.com/klahr/dash.git": "klahr/dash",
+    "git@github.com:klahr/dash.git": "klahr/dash",
+    "ssh://git@github.com:22/klahr/dash.git": "klahr/dash",
+    "git@gitlab.com:group/sub/tool.git": "group/sub/tool",
+    "https://codeberg.org/someone/thing": "someone/thing",
+    "/home/me/src/dash": "",
+    "file:///home/me/src/dash.git": "",
+    "C:\\src\\dash": "",
+    "../dash": "",
+    "": "",
+  };
+  for (const [remote, want] of Object.entries(cases)) assert.equal(remoteRepo(remote), want, remote);
+  assert.equal(remoteRepo(undefined), "");
+});
+
+test("projectSubtitle: owner/repo, else the folder unless it is the name", () => {
+  assert.equal(projectSubtitle({ name: "Dash", remote_url: "git@github.com:klahr/dash.git", path: "/x/dash" }), "klahr/dash");
+  // The owner is worth showing even when the repo is called like the project.
+  assert.equal(projectSubtitle({ name: "zonventure", remote_url: "https://github.com/klahr/zonventure" }), "klahr/zonventure");
+  assert.equal(projectSubtitle({ name: "Dash", path: "/home/me/src/dash-web" }), "dash-web");
+  assert.equal(projectSubtitle({ name: "Dash", path: "/home/me/src/DASH/" }), "");
+  assert.equal(projectSubtitle({ name: "Dash", remote_url: "/srv/git/tools.git", path: "/x/dash" }), "tools");
+  assert.equal(projectSubtitle({ name: "Dash" }), "");
+  assert.equal(projectSubtitle(null), "");
 });
