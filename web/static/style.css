@@ -15,6 +15,13 @@
   --merged: #6fd39a;
   --failed: #ff7a7a;
   --accent2: #c79bff;
+  /* History graph lanes: distinct hues, each ≥3:1 on --bg (WCAG 1.4.11). */
+  --lane-0: var(--accent);
+  --lane-1: var(--merged);
+  --lane-2: var(--running);
+  --lane-3: var(--accent2);
+  --lane-4: var(--review);
+  --lane-5: #ff8fb8;
 
   --ui: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -624,15 +631,27 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 
 /* ---------- history ---------- */
 .graph { list-style: none; margin: 0; padding: 8px 16px; font-size: 13px; }
-.graph li { display: flex; align-items: baseline; gap: 8px; min-height: 22px; }
-.graph-edge { min-height: 0 !important; line-height: 1; }
-.graph-lines { flex: none; white-space: pre; font-family: var(--mono); color: var(--accent); }
-.graph-commit { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; padding: 3px 0; }
+.graph li { display: flex; align-items: flex-start; gap: 8px; min-height: 26px; }
+/* The lanes beside a commit: the upper part is as tall as the dot's offset,
+   the lower one stretches to the row's height so wrapped subjects keep the
+   lines joined. */
+.graph-lane { --dot-y: 13px; flex: none; align-self: stretch; position: relative; display: flex; flex-direction: column; width: var(--graph-w, 14px); }
+.graph-up { flex: none; height: var(--dot-y); }
+.graph-down { flex: 1; position: relative; }
+.graph-lane svg { display: block; width: 100%; height: 100%; fill: none; overflow: visible; }
+.graph-down svg { position: absolute; inset: 0; } /* so its viewBox doesn't size the row */
+.graph-lane path { stroke-width: 2; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+/* The commit's dot: hollow when not pushed yet, ringed where origin's branch
+   points, smaller for a merge. */
+.graph-dot { position: absolute; left: var(--x); top: var(--dot-y); width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--bg); }
+.graph-dot.merge { width: 8px; height: 8px; margin: -4px 0 0 -4px; }
+.graph-dot.unpushed { background: var(--bg); border: 2px solid var(--c); }
+.graph-dot.remote { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--c); }
+.graph-commit { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; padding: 3px 0; line-height: 20px; }
 .graph-sha { font-family: var(--mono); font-size: 12px; color: var(--muted); }
-.graph-ref { padding: 0 6px; border-radius: var(--r-s); border: 1px solid var(--merged); color: var(--merged); font-size: 11.5px; }
+.graph-ref { line-height: 18px; padding: 0 6px; border-radius: var(--r-s); border: 1px solid var(--merged); color: var(--merged); font-size: 11.5px; }
 .graph-ref.tag { border-color: var(--accent); color: var(--accent); }
 .graph-ref.remote { background: var(--merged); color: var(--bg); font-weight: 600; }
-.graph-unpushed .graph-commit { opacity: .6; }
 .graph-commit[role="button"] { cursor: pointer; border-radius: var(--r-s); padding-inline: 4px; margin-inline: -4px; transition: background-color .15s; }
 .graph-commit[role="button"]:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .graph-commit[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -647,7 +666,6 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .ci-release { margin: 8px 0 12px; }
 .ci-release-failed strong { color: var(--failed); }
 .ci-release-published strong { color: var(--merged); }
-.graph-pushed { border-top: 1px dashed color-mix(in srgb, var(--merged) 55%, transparent); }
 .graph-subject { overflow-wrap: anywhere; }
 .graph-meta { color: var(--faint); font-size: 12px; }
 

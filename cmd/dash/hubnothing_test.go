@@ -168,9 +168,12 @@ func TestHubRunsNothingItself(t *testing.T) {
 	waitFor(t, runner, "the tests to run again", func() bool { return strings.Count(taskLog(), "tests-ran-on-the-runner") > before })
 
 	// The project's history, branches, files and commands come from the runner.
-	var graph struct{ Branch, Graph string }
+	var graph struct {
+		Branch  string
+		Commits []struct{ Subject string }
+	}
 	api.must("GET", "/api/projects/"+p.ID+"/graph", nil, http.StatusOK, &graph)
-	if graph.Branch != "main" || !strings.Contains(graph.Graph, "first") {
+	if graph.Branch != "main" || len(graph.Commits) == 0 || graph.Commits[len(graph.Commits)-1].Subject != "first" {
 		t.Errorf("graph from the runner: %+v", graph)
 	}
 	if code, body := api.try("GET", "/api/projects/"+p.ID+"/branches", nil); code != http.StatusOK || !strings.Contains(body, "main") {

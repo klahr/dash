@@ -3,6 +3,7 @@
 import { mdEditor, codeEditor, drafts, renderMarkdown, vimOn, setVim, invisiblesOn, setInvisibles } from "./editor.js";
 import { drawSurface, COLORS } from "./draw.js";
 import { projectGroups as groupProjects, uniqueProjects, isShared, projectRunnerNames, projectSubtitle } from "./groups.js";
+import { graphLayout } from "./graphlayout.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 // Decorative pictures that fail to load go away (not with an inline
@@ -7789,7 +7790,8 @@ function renderProcs() {
 }
 
 // ------------------------------------------------------------------ history
-// The default branch's commit graph, as `git log --graph` draws it.
+// The default branch's commit graph: a dot per commit on coloured lanes, as
+// GUI git clients draw it.
 async function loadGraph() {
   const p = state.project;
   if (!p) return renderGraph(null);
@@ -7800,33 +7802,52 @@ async function loadGraph() {
 let graphTimer = 0;
 const refreshGraph = () => { clearTimeout(graphTimer); graphTimer = setTimeout(() => state.view === "history" && loadGraph().catch(() => {}), 800); };
 
+const LANE_W = 14;
+
+// A row's lines as an SVG. The upper part has a fixed height (the dot sits
+// level with the first line of text); the lower one stretches to the row's
+// height however much its subject wraps, keeping its strokes even.
+function graphLines(lines, width, stretch) {
+  const x = (k) => LANE_W / 2 + k * LANE_W, H = stretch ? 100 : 13;
+  const d = lines.map(([a, b, c]) => {
+    const path = a === b ? `M${x(a)} 0V${H}` : `M${x(a)} 0C${x(a)} ${H / 2} ${x(b)} ${H / 2} ${x(b)} ${H}`;
+    return `<path d="${path}" style="stroke:var(--lane-${c})"/>`;
+  }).join("");
+  const svg = h("span", { class: stretch ? "graph-down" : "graph-up", "aria-hidden": "true" });
+  svg.innerHTML = `<svg viewBox="0 0 ${width * LANE_W} ${H}" preserveAspectRatio="none">${d}</svg>`;
+  return svg;
+}
+
 function renderGraph(res) {
-  const lines = res?.graph ? res.graph.split("\n") : [];
-  $("#graph-empty").hidden = lines.length > 0;
+  const commits = res?.commits || [];
+  $("#graph-empty").hidden = commits.length > 0;
   $("#graph-empty-text").textContent = state.project ? `${baseBranch(state.project) || "main"} has no commits yet.` : "Select a project to see its main branch.";
-  // Commits above origin's tip haven't been pushed yet; dim them so the last push stands out.
+  // Commits origin's tip can't reach haven't been pushed yet: their dots are hollow.
   const remote = `origin/${res?.branch || baseBranch(state.project) || "main"}`;
-  const isRemote = (line) => line.split("\x1f")[2]?.split(", ").includes(remote);
-  let unpushed = lines.some(isRemote);
-  $("#graph").replaceChildren(...lines.map((line) => {
-    const i = line.indexOf("\x1f");
-    const cls = unpushed ? " graph-unpushed" : "";
-    if (i < 0) return h("li", { class: "graph-edge" + cls }, h("span", { class: "graph-lines" }, line));
-    const [sha, refs, subject, author, when, full] = line.slice(i + 1).split("\x1f");
-    const pushed = unpushed && isRemote(line);
-    if (pushed) unpushed = false;
-    const commit = { sha: full || sha, short: sha, subject, pushed: !cls || pushed };
+  const tip = commits.find((c) => c.refs?.includes(remote));
+  const pushed = new Set(tip ? [tip.hash] : []);
+  for (const c of commits) if (pushed.has(c.hash)) c.parents?.forEach((p) => pushed.add(p));
+  const { rows, width } = graphLayout(commits);
+  const graph = $("#graph");
+  graph.style.setProperty("--graph-w", `${width * LANE_W}px`);
+  graph.replaceChildren(...commits.map((c, i) => {
+    const { col, color, up, down } = rows[i];
+    const isPushed = !tip || pushed.has(c.hash);
+    const commit = { sha: c.hash, short: c.short, subject: c.subject, pushed: isPushed };
     const open = (e) => { if (e.type === "click" || e.key === "Enter" || e.key === " ") { e.preventDefault(); commitMenu(commit).catch(fail); } };
     const ref = (r) => r === remote
       ? h("span", { class: "graph-ref remote", title: "Last pushed commit" }, `pushed · ${r}`)
       : h("span", { class: `graph-ref${r.startsWith("tag: ") ? " tag" : ""}` }, r.replace(/^HEAD -> /, ""));
-    return h("li", { class: pushed ? "graph-pushed" : cls.trim(), title: cls ? "Not pushed yet" : null },
-      h("span", { class: "graph-lines" }, line.slice(0, i)),
-      h("span", { class: "graph-commit", role: "button", tabindex: "0", "aria-haspopup": "dialog", "aria-label": `Commit ${sha}: ${subject}`, onclick: open, onkeydown: open },
-        h("code", { class: "graph-sha" }, sha),
-        ...(refs ? refs.split(", ").map(ref) : []),
-        h("span", { class: "graph-subject" }, subject),
-        h("span", { class: "graph-meta" }, `${author} · ${when}`)));
+    const dot = "graph-dot" + (isPushed ? "" : " unpushed") + (c === tip ? " remote" : "") + (c.parents?.length > 1 ? " merge" : "");
+    return h("li", { title: isPushed ? null : "Not pushed yet" },
+      h("span", { class: "graph-lane" },
+        graphLines(up, width, false), graphLines(down, width, true),
+        h("span", { class: dot, style: `--x:${col * LANE_W + LANE_W / 2}px;--c:var(--lane-${color})` })),
+      h("span", { class: "graph-commit", role: "button", tabindex: "0", "aria-haspopup": "dialog", "aria-label": `Commit ${c.short}: ${c.subject}`, onclick: open, onkeydown: open },
+        h("code", { class: "graph-sha" }, c.short),
+        ...(c.refs || []).map(ref),
+        h("span", { class: "graph-subject" }, c.subject),
+        h("span", { class: "graph-meta" }, `${c.author} · ${c.when}`)));
   }));
 }
 

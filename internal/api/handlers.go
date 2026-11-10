@@ -741,13 +741,13 @@ func (s *Server) gitGraph(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	graph, err := s.Git.Graph(r.Context(), p.ID, p.Path, p.Base(), 500)
+	commits, err := s.Git.Graph(r.Context(), p.ID, p.Path, p.Base(), 500)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	s.fetchTagsSoon(p)
-	writeJSON(w, http.StatusOK, map[string]string{"branch": p.Base(), "graph": graph})
+	writeJSON(w, http.StatusOK, map[string]any{"branch": p.Base(), "commits": commits})
 }
 
 // ---------------------------------------------------------------- todos

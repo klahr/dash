@@ -765,12 +765,43 @@ func (g *Git) RemoteURL(ctx context.Context, projectID, dir string) string {
 	return out
 }
 
-// Graph returns `git log --graph` of branch, newest first. Commit lines carry
-// short hash, refs, subject, author, relative date and full hash after the
-// graph, separated by \x1f.
-func (g *Git) Graph(ctx context.Context, projectID, repo, branch string, limit int) (string, error) {
-	return g.run(ctx, false, projectID, repo, "git", "log", "--graph", "--color=never",
-		"--max-count="+strconv.Itoa(limit), "--format=\x1f%h\x1f%D\x1f%s\x1f%an\x1f%ar\x1f%H", branch, "--")
+// GraphCommit is one commit of a branch's history, with its parents so the
+// client can draw the graph's lanes.
+type GraphCommit struct {
+	Hash    string   `json:"hash"`
+	Short   string   `json:"short"`
+	Parents []string `json:"parents"`
+	Refs    []string `json:"refs"`
+	Subject string   `json:"subject"`
+	Author  string   `json:"author"`
+	When    string   `json:"when"`
+}
+
+// Graph returns up to limit commits of branch, newest first, in topological
+// order: a commit comes before its parents and a branch's commits stay
+// together, which is what drawing lanes needs.
+func (g *Git) Graph(ctx context.Context, projectID, repo, branch string, limit int) ([]GraphCommit, error) {
+	out, err := g.run(ctx, false, projectID, repo, "git", "log", "--topo-order",
+		"--max-count="+strconv.Itoa(limit), "--format=%H\x1f%h\x1f%P\x1f%D\x1f%s\x1f%an\x1f%ar\x1e", branch, "--")
+	if err != nil {
+		return nil, err
+	}
+	commits := []GraphCommit{}
+	for _, rec := range strings.Split(out, "\x1e") {
+		f := strings.Split(strings.TrimLeft(rec, "\n"), "\x1f")
+		if len(f) < 7 {
+			continue
+		}
+		c := GraphCommit{Hash: f[0], Short: f[1], Parents: strings.Fields(f[2]), Refs: []string{}, Subject: f[4], Author: f[5], When: f[6]}
+		if c.Parents == nil {
+			c.Parents = []string{}
+		}
+		if f[3] != "" {
+			c.Refs = strings.Split(f[3], ", ")
+		}
+		commits = append(commits, c)
+	}
+	return commits, nil
 }
 
 // Files lists the paths of the files tracked at ref.
