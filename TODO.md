@@ -51,3 +51,6 @@ Most important first within each section.
       (`docs/deploy.md`), and fix every step that trips you up.
 - [ ] Production hub: 2FA on the admin account, scheduled `dash backup` with one restore
       tested, and an alert on `/healthz` and the metrics (`docs/deploy.md#monitoring`).
+- [ ] If others will sign up on your hub: SMTP with SPF/DKIM set up for the sending domain
+      (`docs/signup.md`), and Stripe in live mode with Tax, the customer portal and the webhook
+      (`docs/billing.md`), tested with one real payment and a refund.
