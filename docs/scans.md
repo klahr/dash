@@ -8,7 +8,12 @@ queue.
 Scans come from three places, marked on each card:
 
 - **Built-in:** Dash's security scan (`security`), code review (`code-review`) and dependency
-  audit (`dependencies`), in every project.
+  audit (`dependencies`), in every project. The dependency audit reports vulnerable, abandoned
+  and far outdated dependencies, and checks licences against the project's own (its LICENSE file
+  or manifest, else proprietary): dependencies whose licence clashes with it (GPL or AGPL in an
+  MIT or proprietary project, say), with no or an unknown licence, or whose licence changed in an
+  upgrade in the lock files' recent history. It reads the licences from the package managers'
+  lock files and metadata already on the computer and installs nothing.
 - **Repository:** markdown files in `.dash/scans/<name>.md`, versioned and shared with your team.
 - **Dash:** scans you write in the Scans section with "New scan", kept by Dash for this project
   only. "Duplicate" on any scan starts a new Dash scan from its prompt and settings, and

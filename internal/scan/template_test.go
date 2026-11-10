@@ -190,6 +190,13 @@ func TestBuiltins(t *testing.T) {
 	if names["security"].Kind != KindSecurity || names["dependencies"].Kind != KindDependencies {
 		t.Errorf("kinds: %+v", names)
 	}
+	// The dependency audit covers vulnerabilities, outdated packages and licences.
+	deps := names["dependencies"].Render("", "")
+	for _, want := range []string{"vulnerable", "abandoned", "project's own", "clashes", "no licence", "licence changed", "Do not change any files"} {
+		if !strings.Contains(deps, want) {
+			t.Errorf("dependency audit prompt lacks %q", want)
+		}
+	}
 }
 
 func TestLoad(t *testing.T) {
