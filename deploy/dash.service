@@ -25,10 +25,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/dev/github/klahr/dash
+WorkingDirectory=%h/dash
 # Extra flags go here (-trust-proxy, -public-url, -name, -backup-dir ...).
 # Secrets stay in the env file, not in this unit.
-ExecStart=%h/dev/github/klahr/dash/bin/dash -env %h/.config/dash/env -trust-proxy
+ExecStart=%h/dash/bin/dash -env %h/.config/dash/env -trust-proxy
 
 Restart=on-failure
 RestartSec=3

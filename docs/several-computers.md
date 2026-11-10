@@ -347,8 +347,8 @@ It refuses and logs anything else; the hub reaches only tasks it sent, by its ow
 ### Where a runner keeps a shared project
 
 When a project is linked to it, a runner puts it straight in its projects folder, named after the
-remote: `https://github.com/klahr/dash.git` becomes `~/dev/github/klahr/dash` for a runner started
-with `-projects ~/dev/github/klahr`.
+remote: `https://github.com/klahr/dash.git` becomes `~/src/klahr/dash` for a runner started
+with `-projects ~/src/klahr`.
 
 - **A clone of the same repository is already there** (the remote compared without caring about
   `https` or `ssh`, credentials or a trailing `.git`): the runner adopts it instead of cloning.

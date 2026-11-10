@@ -34,7 +34,7 @@ Most important first within each section.
 
 ## Running it
 
-- [ ] Docker image (Dash, git, gh, Claude Code, common toolchains) and docker-compose with
-      volumes for repos, data, Claude login and gh config.
+- [x] Docker image for the hub (`Dockerfile`, `ghcr.io/klahr/dash`) and docker-compose
+      (`deploy/docker-compose.yml`); git, gh and Claude Code run on the runners.
+- [x] Optional 2FA (TOTP) for the login.
 - [ ] Optional sandbox for Claude's runs (container or user with limited rights).
-- [ ] Optional 2FA (TOTP) for the login.

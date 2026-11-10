@@ -463,8 +463,8 @@ handles the certificates. Your domain's DNS must be on Cloudflare.
 - **Certificate:** Cloudflare's free Universal certificate covers only `example.com` and
   `*.example.com`, not `*.preview.dash.example.com`. Either order an edge certificate for
   `*.preview.dash.example.com` (Advanced Certificate Manager), or give Dash a domain of its own
-  (`dashhost.dev`) at the apex and run it with `-preview-domain dashhost.dev`, so previews are
-  `<task>.dashhost.dev`, one level down. Don't use a preview domain that other hosts you use sit
+  (`example.dev`) at the apex and run it with `-preview-domain example.dev`, so previews are
+  `<task>.example.dev`, one level down. Don't use a preview domain that other hosts you use sit
   under: Dash treats every `<name>.<preview domain>` as a preview.
 - **Cache:** Cloudflare caches `.js`, `.css` and images by URL unless told otherwise, also from
   previews that need a login. Add a Cache Rule that bypasses the cache for `dash.example.com` and

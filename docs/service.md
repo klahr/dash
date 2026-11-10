@@ -15,7 +15,7 @@ releases and CI runs). [`dash runner install`](several-computers.md) keeps a run
 user service the same way; a runner runs `git` and `gh` as you, with your `PATH` and `gh auth`
 login.
 
-The unit assumes the repository is checked out at `~/dev/github/klahr/dash`. If yours is
+The unit assumes the repository is checked out at `~/dash`. If yours is
 elsewhere, edit `WorkingDirectory` and `ExecStart` in your copy of the unit. Extra flags
 (`-trust-proxy`, `-public-url`, `-name`, …) go on the `ExecStart` line; secrets stay in
 the env file.
