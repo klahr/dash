@@ -235,7 +235,6 @@ func (o *twoOrgs) recordEndpoints() []endpoint {
 		{"GET", "/api/projects/" + pid, ""},
 		{"PATCH", "/api/projects/" + pid, `{"name":"mine","color":"#000000"}`},
 		{"DELETE", "/api/projects/" + pid, `{"password":"b-password","delete_files":true}`},
-		{"POST", "/api/projects/" + pid + "/github", `{"name":"x"}`},
 		{"POST", "/api/projects/" + pid + "/push", `{}`},
 		{"GET", "/api/projects/" + pid + "/unpushed", ""},
 		{"GET", "/api/projects/" + pid + "/remote", ""},

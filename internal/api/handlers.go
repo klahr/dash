@@ -565,44 +565,6 @@ func (s *Server) lookupGitHubRepo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"exists": ok, "name": repo.Name, "url": repo.URL})
 }
 
-func (s *Server) createGitHubRepo(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name    string `json:"name"`
-		Private bool   `json:"private"`
-	}
-	sv, ok := s.service(w, r)
-	if !ok {
-		return
-	}
-	if err := decode(r, &req); err != nil {
-		writeErr(w, err)
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	if s.hub() {
-		writeErr(w, fmt.Errorf("%w: the hub doesn't create GitHub repositories (it runs no gh); create the repository on GitHub or from a runner's project, then share it", errBadRequest))
-		return
-	}
-	if req.Name == "" {
-		req.Name = filepath.Base(p.Path)
-	}
-	url, err := s.Git.CreateGitHubRepo(r.Context(), p.ID, p.Path, req.Name, req.Private)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	p, err = sv.data.UpdateProject(p.ID, func(p *model.Project) error { p.RemoteURL = url; return nil })
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, p)
-}
-
 // deleteProject removes a project from Dash after the user re-enters the
 // password. Optionally its folder goes too, and its GitHub repository; the
 // GitHub one first, so a gh failure leaves everything else as it was.
