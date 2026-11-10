@@ -38,3 +38,8 @@ Most important first within each section.
       (`deploy/docker-compose.yml`); git, gh and Claude Code run on the runners.
 - [x] Optional 2FA (TOTP) for the login.
 - [ ] Optional sandbox for Claude's runs (container or user with limited rights).
+
+## Go live
+
+- [ ] Replace the hard-coded checkout path `%h/dev/github/klahr/dash` in `deploy/dash.service`
+      (WorkingDirectory, ExecStart) with a neutral one, and update `docs/service.md` to match.
