@@ -46,14 +46,21 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 		ps = slices.DeleteFunc(ps, func(p model.Project) bool { return p.LinkedFromHub() })
 	}
 	out := make([]item, len(ps))
+	idx := make(map[string]int, len(ps))
 	for i, p := range ps {
 		out[i].Project = p
-		for _, t := range sv.data.ListTodos(p.ID, model.StatusInProgress, model.StatusReview) {
-			if out[i].Active == nil {
-				out[i].Active = map[string]model.TodoStatus{}
-			}
-			out[i].Active[t.ID] = t.Status
+		idx[p.ID] = i
+	}
+	// One pass over the store for all projects, not one per project.
+	for _, t := range sv.data.ListTodos("", model.StatusInProgress, model.StatusReview) {
+		i, ok := idx[t.ProjectID]
+		if !ok {
+			continue
 		}
+		if out[i].Active == nil {
+			out[i].Active = map[string]model.TodoStatus{}
+		}
+		out[i].Active[t.ID] = t.Status
 	}
 	writeJSON(w, http.StatusOK, out)
 }
