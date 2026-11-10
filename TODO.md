@@ -46,3 +46,4 @@ Most important first within each section.
 - [ ] Replace the `dashhost.dev` example domain in `docs/deploy.md` with a reserved one (`example.dev`).
 - [ ] Turn on GitHub security for the repo: secret scanning with push protection, Dependabot
       alerts and security updates, and private vulnerability reporting (the README links to advisories).
+- [ ] Protect `main`: require the CI and CLA checks to pass before merging.
