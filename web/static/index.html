@@ -163,6 +163,7 @@
               <button id="prefs-open" type="button" data-icon="prefs">Preferences</button>
               <button id="connector-open" type="button" data-icon="plug">Connect Claude</button>
               <button id="tokens-open" type="button" data-icon="key">Tokens &amp; apps</button>
+              <button id="me-webhooks-open" type="button" data-icon="bell">My webhooks</button>
               <button id="wall-open" type="button" data-icon="tv">Wall view</button>
               <button id="logout" type="button" data-icon="logout">Log out</button>
               <!--DASH_FOOTER-->
@@ -930,6 +931,18 @@
       </fieldset>
       <label class="toggle"><input type="checkbox" name="enabled"><span>On</span></label>
       <footer class="sheet-actions"><button class="btn primary" value="save" data-icon="check">Save webhook</button></footer>
+    </form>
+  </dialog>
+
+  <!-- The user's personal notification webhooks: every project of their org -->
+  <dialog class="sheet" id="me-webhooks-sheet" aria-labelledby="me-webhooks-title">
+    <form method="dialog">
+      <header class="sheet-head"><h2 id="me-webhooks-title" tabindex="-1" autofocus>My webhooks</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <p class="hint" id="me-webhooks-intro">Your own notification webhooks: Slack, ntfy or your own service hear about every project of this organization, for as long as you are a member. Only you see them. A project's own webhooks are in its settings.</p>
+      <ul class="runner-list" id="me-webhooks"></ul>
+      <div id="me-webhook-secret" hidden></div>
+      <p class="hint" id="me-webhooks-hint" hidden></p>
+      <div><button class="btn small" type="button" id="me-webhook-add" data-icon="plus">Add webhook</button></div>
     </form>
   </dialog>
 

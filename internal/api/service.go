@@ -88,7 +88,7 @@ type service struct {
 
 // as returns the service for c.
 func (s *Server) as(c Caller) *service {
-	return &service{s: s, c: c, data: s.Store.ForOrg(c.Org)}
+	return &service{s: s, c: c, data: s.Store.ForOrg(c.Org).AsUser(c.User)}
 }
 
 // service returns the service for r's caller, or answers r and returns false.

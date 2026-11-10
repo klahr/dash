@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/notify"
+	"github.com/klahr/dash/internal/store"
 )
 
 func TestWebhookAPI(t *testing.T) {
@@ -134,5 +136,67 @@ func TestNotifyActionIsPublic(t *testing.T) {
 	s.Routes().ServeHTTP(w, httptest.NewRequest("GET", "/api/projects", nil))
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("api without a session: %d", w.Code)
+	}
+}
+
+func TestPersonalWebhookAPI(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer srv.Close()
+	s, _, p := boardServer(t)
+	s.Notify = &notify.Notifier{Store: raw(s), AllowPrivate: true, Attempts: 1}
+	h := s.mux()
+	owner := ownerSession(t, s)
+	someoneElse := owner
+	someoneElse.User.ID = owner.User.ID + 100
+	call := func(sess store.Session, method, path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r.WithContext(auth.WithSession(r.Context(), sess)))
+		return w
+	}
+
+	w := call(owner, "POST", "/api/me/webhooks", `{"url":"`+srv.URL+`","format":"json","name":"Mine","project_id":"`+p.ID+`"}`)
+	var created struct {
+		Webhook model.Webhook `json:"webhook"`
+		Secret  string        `json:"secret"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &created)
+	if w.Code != http.StatusCreated || created.Secret == "" || created.Webhook.ProjectID != "" || created.Webhook.UserID != owner.User.ID {
+		t.Fatalf("create: %d %s", w.Code, w.Body)
+	}
+	id := created.Webhook.ID
+	if w := call(owner, "GET", "/api/me/webhooks", ""); w.Code != 200 || !strings.Contains(w.Body.String(), id) || strings.Contains(w.Body.String(), created.Secret) {
+		t.Fatalf("list: %d %s", w.Code, w.Body)
+	}
+	// Not among the project's webhooks, and nobody else's to see or change.
+	if w := call(owner, "GET", "/api/projects/"+p.ID+"/webhooks", ""); strings.Contains(w.Body.String(), id) {
+		t.Fatalf("in the project's list: %s", w.Body)
+	}
+	if w := call(someoneElse, "GET", "/api/me/webhooks", ""); w.Code != 200 || strings.Contains(w.Body.String(), id) {
+		t.Fatalf("someone else's list: %d %s", w.Code, w.Body)
+	}
+	for _, c := range []endpoint{{"PATCH", "/api/webhooks/" + id, `{"enabled":false}`}, {"DELETE", "/api/webhooks/" + id, ""},
+		{"POST", "/api/webhooks/" + id + "/test", ""}, {"GET", "/api/webhooks/" + id + "/deliveries", ""}} {
+		if w := call(someoneElse, c.method, c.path, c.body); w.Code != http.StatusNotFound {
+			t.Fatalf("someone else %s %s: %d %s", c.method, c.path, w.Code, w.Body)
+		}
+	}
+
+	// Send test, then its history.
+	if w := call(owner, "POST", "/api/webhooks/"+id+"/test", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"ok":true`) || hits.Load() != 1 {
+		t.Fatalf("test: %d %s", w.Code, w.Body)
+	}
+	w = call(owner, "GET", "/api/webhooks/"+id+"/deliveries", "")
+	var hist struct {
+		Deliveries []model.WebhookDelivery `json:"deliveries"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &hist)
+	if w.Code != 200 || len(hist.Deliveries) != 1 || hist.Deliveries[0].Event != model.NotifyTest || hist.Deliveries[0].Status != 200 || hist.Deliveries[0].Attempts != 1 {
+		t.Fatalf("deliveries: %d %s", w.Code, w.Body)
+	}
+	if w := call(owner, "DELETE", "/api/webhooks/"+id, ""); w.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d %s", w.Code, w.Body)
 	}
 }

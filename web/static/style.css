@@ -926,6 +926,15 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .webhook-row .runner-seen { flex-basis: 100%; overflow-wrap: anywhere; }
 .webhook-actions { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
 #settings-webhooks-field #webhook-add { margin-top: 10px; }
+#me-webhook-add { margin-top: 10px; }
+.webhook-history { display: block; padding: 4px 12px 10px; }
+.webhook-history ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.webhook-history li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.webhook-history li:last-child { border-bottom: 0; }
+.webhook-history .wh-when { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+.webhook-history .wh-what { flex: 1; min-width: 12em; overflow-wrap: anywhere; }
+.webhook-history .wh-result { flex: none; font: 12px/1.5 var(--mono); }
+.webhook-history .wh-error { flex-basis: 100%; overflow-wrap: anywhere; }
 
 /* Project settings → Claude: repo files vs settings Dash stores. */
 .claude-scope + .claude-scope { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }

@@ -41,15 +41,21 @@ const (
 // WebhookFormats are the supported formats.
 var WebhookFormats = []string{WebhookJSON, WebhookSlack, WebhookNtfy}
 
-// Webhook is an outgoing notification target of a project.
+// Webhook is an outgoing notification target: a project's (ProjectID), or
+// a person's (UserID, OrgID: told about every project of that org while
+// they are a member of it).
 type Webhook struct {
-	ID        string        `json:"id"`
-	ProjectID string        `json:"project_id"`
-	Name      string        `json:"name,omitempty"`
-	URL       string        `json:"url"`
-	Format    string        `json:"format"`
-	Events    []NotifyEvent `json:"events"`
-	Enabled   bool          `json:"enabled"`
+	ID        string `json:"id"`
+	ProjectID string `json:"project_id"` // "" for a personal webhook
+	// UserID and OrgID are a personal webhook's owner and org (0 for a
+	// project's).
+	UserID  int64         `json:"user_id,omitempty"`
+	OrgID   int64         `json:"-"`
+	Name    string        `json:"name,omitempty"`
+	URL     string        `json:"url"`
+	Format  string        `json:"format"`
+	Events  []NotifyEvent `json:"events"`
+	Enabled bool          `json:"enabled"`
 	// Secret signs generic JSON deliveries. It is shown once, when the
 	// webhook is made or the secret rotated; never in lists.
 	Secret string `json:"-"`
@@ -65,6 +71,9 @@ type Webhook struct {
 	LastEvent NotifyEvent `json:"last_event,omitempty"`
 	LastError string      `json:"last_error,omitempty"`
 }
+
+// Personal reports whether w is a person's, not a project's.
+func (w Webhook) Personal() bool { return w.ProjectID == "" }
 
 // Wants reports whether w is on and subscribed to ev. Tests always go out.
 func (w Webhook) Wants(ev NotifyEvent) bool {
@@ -107,4 +116,26 @@ func (w *Webhook) Normalize() error {
 	}
 	w.HasToken = w.Token != ""
 	return nil
+}
+
+// WebhookDelivery is one delivery of a notification to a webhook, as its
+// history keeps it.
+type WebhookDelivery struct {
+	ID        int64       `json:"id"`
+	WebhookID string      `json:"webhook_id"`
+	At        time.Time   `json:"at"`
+	Event     NotifyEvent `json:"event"`
+	// Delivery is the notification's id, as the Dash-Delivery header sent it.
+	Delivery string `json:"delivery,omitempty"`
+	// The project and task (or other subject) it was about, named as they
+	// were then.
+	ProjectID string `json:"project_id,omitempty"`
+	Project   string `json:"project,omitempty"`
+	Subject   string `json:"subject,omitempty"`
+	Attempts  int    `json:"attempts"`
+	// Status is the HTTP status of the last attempt (0: no answer).
+	Status     int   `json:"status,omitempty"`
+	DurationMS int64 `json:"duration_ms"`
+	// Error is why it failed ("" = it went through).
+	Error string `json:"error,omitempty"`
 }

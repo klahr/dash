@@ -10,14 +10,22 @@ import (
 	"github.com/klahr/dash/internal/notify"
 )
 
-// Outgoing notification webhooks, set up in a project's settings:
+// Outgoing notification webhooks, set up in a project's settings, and
+// personal ones (the caller's, told about every project of their active
+// org):
 //
 //	GET    /api/projects/{pid}/webhooks   list (never the secrets)
 //	POST   /api/projects/{pid}/webhooks   create; answers the signing secret, once
+//	GET    /api/me/webhooks               list the caller's personal webhooks in their org
+//	POST   /api/me/webhooks               create one; answers the signing secret, once
 //	PATCH  /api/webhooks/{wid}            edit
 //	DELETE /api/webhooks/{wid}
 //	POST   /api/webhooks/{wid}/rotate     new signing secret, answered once
 //	POST   /api/webhooks/{wid}/test       send a test notification now
+//	GET    /api/webhooks/{wid}/deliveries its recent deliveries, newest first
+//
+// A personal webhook is reached only by its owner, in the org it was made
+// in.
 //
 // and POST /api/notify/permission/{token}, the Approve/Deny buttons of ntfy
 // notifications (public: the token is the credential).
@@ -79,14 +87,60 @@ func (s *Server) listWebhooks(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	writeJSON(w, http.StatusOK, s.webhookList(hooks, r.PathValue("pid")))
+}
+
+// webhookList is a list of webhooks as the settings show it, with what
+// they need to know about this Dash's notifications.
+func (s *Server) webhookList(hooks []model.Webhook, projectID string) map[string]any {
+	return map[string]any{
 		"webhooks":      hooks,
 		"events":        model.NotifyEvents,
 		"formats":       model.WebhookFormats,
 		"allow_private": s.Notify == nil || s.Notify.AllowPrivate,
 		"enabled":       s.Notify != nil,
-		"links":         s.Notify != nil && s.Notify.Origin != nil && s.Notify.Origin(r.PathValue("pid")) != "",
-	})
+		"links":         s.Notify != nil && s.Notify.Origin != nil && s.Notify.Origin(projectID) != "",
+	}
+}
+
+// personCaller is the signed-in person a personal webhook request is for
+// (not another Dash), or answers r and returns nil.
+func (s *Server) personCaller(w http.ResponseWriter, r *http.Request) *service {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return nil
+	}
+	if sv.c.User == 0 {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "personal webhooks are a person's"})
+		return nil
+	}
+	return sv
+}
+
+func (s *Server) listPersonalWebhooks(w http.ResponseWriter, r *http.Request) {
+	sv := s.personCaller(w, r)
+	if sv == nil {
+		return
+	}
+	hooks, err := sv.data.ListPersonalWebhooks()
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	// Links use the org's address; any of its projects tells it.
+	pid := ""
+	if ps := sv.data.ListProjects(); len(ps) > 0 {
+		pid = ps[0].ID
+	}
+	writeJSON(w, http.StatusOK, s.webhookList(hooks, pid))
+}
+
+func (s *Server) createPersonalWebhook(w http.ResponseWriter, r *http.Request) {
+	sv := s.personCaller(w, r)
+	if sv == nil {
+		return
+	}
+	s.newWebhook(w, r, sv, "")
 }
 
 func (s *Server) createWebhook(w http.ResponseWriter, r *http.Request) {
@@ -94,12 +148,18 @@ func (s *Server) createWebhook(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	s.newWebhook(w, r, sv, r.PathValue("pid"))
+}
+
+// newWebhook creates a webhook of the project, or (projectID "") a
+// personal one of the caller's, from r's body.
+func (s *Server) newWebhook(w http.ResponseWriter, r *http.Request, sv *service, projectID string) {
 	var in webhookInput
 	if err := decode(r, &in); err != nil {
 		writeErr(w, err)
 		return
 	}
-	hook := model.Webhook{ProjectID: r.PathValue("pid"), Format: model.WebhookJSON, Enabled: true, Events: model.DefaultNotifyEvents}
+	hook := model.Webhook{ProjectID: projectID, Format: model.WebhookJSON, Enabled: true, Events: model.DefaultNotifyEvents}
 	in.apply(&hook)
 	if err := s.checkWebhook(&hook); err != nil {
 		writeErr(w, err)
@@ -185,4 +245,17 @@ func (s *Server) testWebhook(w http.ResponseWriter, r *http.Request) {
 		res["webhook"] = hook
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) webhookDeliveries(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	ds, err := sv.data.ListWebhookDeliveries(r.PathValue("wid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deliveries": ds})
 }

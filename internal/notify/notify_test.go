@@ -191,19 +191,20 @@ func TestCheckURL(t *testing.T) {
 // ---- the notifier, against a fake store and a test server ----
 
 type fakeStore struct {
-	mu       sync.Mutex
-	projects map[string]model.Project
-	todos    map[string]model.Todo
-	hooks    []model.Webhook
-	records  []string // "<webhook>:<event>:<error>"
+	mu         sync.Mutex
+	projects   map[string]model.Project
+	todos      map[string]model.Todo
+	hooks      []model.Webhook
+	records    []string // "<webhook>:<event>:<error>"
+	deliveries []model.WebhookDelivery
 }
 
-func (f *fakeStore) ListWebhooks(pid string) ([]model.Webhook, error) {
+func (f *fakeStore) WebhooksFor(pid string) ([]model.Webhook, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []model.Webhook
 	for _, w := range f.hooks {
-		if w.ProjectID == pid {
+		if w.ProjectID == pid || w.Personal() {
 			out = append(out, w)
 		}
 	}
@@ -236,10 +237,11 @@ func (f *fakeStore) ListTodos(string, ...model.TodoStatus) []model.Todo {
 	}
 	return out
 }
-func (f *fakeStore) RecordWebhookDelivery(id string, ev model.NotifyEvent, _ time.Time, msg string) error {
+func (f *fakeStore) RecordWebhookDelivery(d model.WebhookDelivery) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.records = append(f.records, id+":"+string(ev)+":"+msg)
+	f.records = append(f.records, d.WebhookID+":"+string(d.Event)+":"+d.Error)
+	f.deliveries = append(f.deliveries, d)
 	return nil
 }
 func (f *fakeStore) setTodo(t model.Todo) {
@@ -519,5 +521,50 @@ func TestNtfyPermissionButtons(t *testing.T) {
 	n.Actions.ServeHTTP(rec, httptest.NewRequest("POST", ActionPath+tok, nil))
 	if rec.Code != 200 || len(decided) != 1 || decided[0] != "perm1:deny" {
 		t.Fatalf("deny: %d %v (%s)", rec.Code, decided, acts)
+	}
+}
+
+func TestPersonalWebhooksAndHistory(t *testing.T) {
+	shared := newReceiver(t, 503, 200)
+	mine := newReceiver(t, 404)
+	n, fs, _ := setup(t,
+		model.Webhook{ID: "proj", ProjectID: "p1", URL: shared.URL, Format: model.WebhookJSON, Enabled: true, Events: model.NotifyEvents, Secret: "s"},
+		// Someone's personal webhooks: one to the project's URL (sent there once), one of their own.
+		model.Webhook{ID: "dup", UserID: 7, OrgID: 1, URL: shared.URL, Format: model.WebhookJSON, Enabled: true, Events: model.NotifyEvents, Secret: "s"},
+		model.Webhook{ID: "me", UserID: 7, OrgID: 1, URL: mine.URL, Format: model.WebhookJSON, Enabled: true, Events: []model.NotifyEvent{model.NotifyFailed}, Secret: "s"},
+	)
+	status(fs, n, model.StatusFailed, "boom")
+	settle(n)
+	if got := strings.Join(shared.events(), " "); got != "task.failed task.failed" { // a 503, then the retry
+		t.Fatalf("shared URL got %s", got)
+	}
+	if got := strings.Join(mine.events(), " "); got != "task.failed" {
+		t.Fatalf("personal webhook got %s", got)
+	}
+	byID := map[string]model.WebhookDelivery{}
+	for _, d := range fs.deliveries {
+		byID[d.WebhookID] = d
+	}
+	if len(fs.deliveries) != 2 {
+		t.Fatalf("deliveries %+v", fs.deliveries)
+	}
+	if d := byID["proj"]; d.Attempts != 2 || d.Status != 200 || d.Error != "" || d.Project != "Shop" || d.ProjectID != "p1" || d.Subject != "Checkout" || d.Delivery == "" || !d.At.Equal(t0) {
+		t.Fatalf("project webhook's delivery %+v", d)
+	}
+	if d := byID["me"]; d.Attempts != 1 || d.Status != 404 || !strings.Contains(d.Error, "404") {
+		t.Fatalf("personal webhook's delivery %+v", d)
+	}
+
+	// A personal webhook's test is about no project.
+	if err := n.Test(context.Background(), model.Webhook{ID: "me2", UserID: 7, OrgID: 1, URL: shared.URL, Format: model.WebhookJSON, Secret: "s"}); err != nil {
+		t.Fatal(err)
+	}
+	var p struct {
+		Project ProjectRef `json:"project"`
+		Task    TaskRef    `json:"task"`
+	}
+	_ = json.Unmarshal([]byte(shared.bodies[len(shared.bodies)-1]), &p)
+	if p.Project.ID != "" || p.Task.URL != "https://dash.example.com/" {
+		t.Fatalf("personal test payload %+v", p)
 	}
 }

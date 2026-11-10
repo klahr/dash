@@ -29,11 +29,13 @@ import (
 
 // Store is what the notifier reads: webhooks, and the records events name.
 type Store interface {
-	ListWebhooks(projectID string) ([]model.Webhook, error)
+	// WebhooksFor lists the webhooks a project's events go to: its own,
+	// and the personal webhooks of its org's members.
+	WebhooksFor(projectID string) ([]model.Webhook, error)
 	GetProject(id string) (model.Project, error)
 	GetTodo(id string) (model.Todo, error)
 	ListTodos(projectID string, statuses ...model.TodoStatus) []model.Todo
-	RecordWebhookDelivery(id string, ev model.NotifyEvent, at time.Time, errMsg string) error
+	RecordWebhookDelivery(d model.WebhookDelivery) error
 }
 
 // Defaults.
@@ -170,22 +172,26 @@ func (n *Notifier) Start(ctx context.Context) {
 const evFlush model.EventType = "notify.flush"
 
 // handle turns one hub event into a notification, if it is one, and sends
-// it to the webhooks of its project that want it.
+// it to the webhooks that want it: its project's, and its org's members'
+// personal ones. A URL gets it once, though a project's and someone's
+// personal webhook both go there.
 func (n *Notifier) handle(ctx context.Context, ev model.Event) {
 	note, ok := n.classify(ev)
 	if !ok {
 		return
 	}
 	n.push(ctx, note)
-	hooks, err := n.Store.ListWebhooks(note.Project.ID)
+	hooks, err := n.Store.WebhooksFor(note.Project.ID)
 	if err != nil {
 		slog.Error("notifications: list webhooks", "project", note.Project.ID, "err", err)
 		return
 	}
+	sent := map[string]bool{}
 	for _, w := range hooks {
-		if !w.Wants(note.Type) {
+		if !w.Wants(note.Type) || sent[w.URL] {
 			continue
 		}
+		sent[w.URL] = true
 		n.wg.Add(1)
 		go func(w model.Webhook) {
 			defer n.wg.Done()
@@ -372,16 +378,23 @@ func newEventID() string {
 }
 
 // Test sends a test notification to w once, now, and reports how it went.
+// A personal webhook's test is about no project.
 func (n *Notifier) Test(ctx context.Context, w model.Webhook) error {
 	n.init()
 	note, ok := n.build(model.NotifyTest, w.ProjectID, "")
+	if w.Personal() {
+		note.Project, ok = ProjectRef{Name: "Personal webhook"}, true
+	}
 	if !ok {
 		return errors.New("the webhook's project is gone")
 	}
 	note.Message = "This is a test from Dash: this webhook works."
 	note.Task = &TaskRef{ID: "test", Title: "Test notification", Status: model.StatusReview, URL: n.origin(w.ProjectID)}
 	if note.Task.URL != "" {
-		note.Task.URL += "/?" + url.Values{"project": {w.ProjectID}}.Encode()
+		note.Task.URL += "/"
+		if w.ProjectID != "" {
+			note.Task.URL += "?" + url.Values{"project": {w.ProjectID}}.Encode()
+		}
 	}
 	return n.deliver(ctx, w, note, 1)
 }
@@ -393,10 +406,22 @@ type errPermanent struct{ error }
 func (e errPermanent) Unwrap() error { return e.error }
 
 // deliver sends note to w, trying up to attempts times on network errors,
-// 5xx and 429, with exponential backoff, and records the outcome on w.
-// Errors never carry the URL (Slack's and ntfy's URLs are secrets).
+// 5xx and 429, with exponential backoff, and records the outcome in w's
+// history. Errors never carry the URL (Slack's and ntfy's URLs are secrets).
 func (n *Notifier) deliver(ctx context.Context, w model.Webhook, note Notification, attempts int) error {
-	err := n.retry(ctx, attempts, func() error { return n.send(ctx, w, note) })
+	d := model.WebhookDelivery{WebhookID: w.ID, Event: note.Type, Delivery: note.ID,
+		ProjectID: note.Project.ID, Project: note.Project.Name}
+	if note.Task != nil && note.Type != model.NotifyTest {
+		d.Subject = note.Task.Title
+	}
+	start := time.Now()
+	err := n.retry(ctx, attempts, func() error {
+		d.Attempts++
+		var err error
+		d.Status, err = n.send(ctx, w, note)
+		return err
+	})
+	d.DurationMS = time.Since(start).Milliseconds()
 	msg := ""
 	if err == nil {
 		metrics.WebhookDeliveries.Inc("ok")
@@ -407,9 +432,10 @@ func (n *Notifier) deliver(ctx context.Context, w model.Webhook, note Notificati
 		if u, perr := url.Parse(w.URL); perr == nil {
 			host = u.Hostname()
 		}
-		slog.Warn("webhook delivery failed", "webhook", w.ID, "project", w.ProjectID, "event", note.Type, "host", host, "err", msg)
+		slog.Warn("webhook delivery failed", "webhook", w.ID, "project", note.Project.ID, "event", note.Type, "host", host, "err", msg)
 	}
-	if rerr := n.Store.RecordWebhookDelivery(w.ID, note.Type, n.now(), msg); rerr != nil {
+	d.At, d.Error = n.now(), msg
+	if rerr := n.Store.RecordWebhookDelivery(d); rerr != nil {
 		slog.Error("notifications: record delivery", "webhook", w.ID, "err", rerr)
 	}
 	return err
@@ -439,8 +465,8 @@ func (n *Notifier) retry(ctx context.Context, attempts int, try func() error) er
 	return err
 }
 
-// send makes one attempt.
-func (n *Notifier) send(ctx context.Context, w model.Webhook, note Notification) error {
+// send makes one attempt, and answers the HTTP status (0: none).
+func (n *Notifier) send(ctx context.Context, w model.Webhook, note Notification) (int, error) {
 	var actions []ntfyAction
 	if w.Format == model.WebhookNtfy && note.Permission != nil && n.Actions != nil {
 		if o := n.origin(note.Project.ID); o != "" {
@@ -449,7 +475,7 @@ func (n *Notifier) send(ctx context.Context, w model.Webhook, note Notification)
 	}
 	req, err := request(ctx, w, note, n.now(), actions)
 	if err != nil {
-		return errPermanent{err}
+		return 0, errPermanent{err}
 	}
 	resp, err := n.client.Do(req)
 	if err != nil {
@@ -458,18 +484,19 @@ func (n *Notifier) send(ctx context.Context, w model.Webhook, note Notification)
 			err = ue.Err // without the URL
 		}
 		if errors.Is(err, ErrPrivateAddress) {
-			return errPermanent{err}
+			return 0, errPermanent{err}
 		}
-		return err
+		return 0, err
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	resp.Body.Close()
+	code := resp.StatusCode
 	switch {
-	case resp.StatusCode >= 200 && resp.StatusCode < 300:
-		return nil
-	case resp.StatusCode >= 500 || resp.StatusCode == 429:
-		return fmt.Errorf("the server answered %s", resp.Status)
+	case code >= 200 && code < 300:
+		return code, nil
+	case code >= 500 || code == 429:
+		return code, fmt.Errorf("the server answered %s", resp.Status)
 	default:
-		return errPermanent{fmt.Errorf("the server answered %s", resp.Status)}
+		return code, errPermanent{fmt.Errorf("the server answered %s", resp.Status)}
 	}
 }

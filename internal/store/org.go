@@ -18,10 +18,17 @@ import (
 type OrgStore struct {
 	s   *Store
 	org int64
+	// user, if set, is the person working in the org: it reaches their
+	// personal records there too (personal webhooks).
+	user int64
 }
 
 // ForOrg returns the store as org sees it.
 func (s *Store) ForOrg(org int64) *OrgStore { return &OrgStore{s: s, org: org} }
+
+// AsUser returns the org's view for user, who also reaches their own
+// personal records in it.
+func (o *OrgStore) AsUser(user int64) *OrgStore { return &OrgStore{s: o.s, org: o.org, user: user} }
 
 // OrgID is the org this view belongs to.
 func (o *OrgStore) OrgID() int64 { return o.org }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -194,6 +195,56 @@ func TestBrowserChecklist(t *testing.T) {
 	}, http.StatusOK, nil)
 	b.waitJS("the change made elsewhere", `[...document.querySelectorAll("#cl-body .cl-item")].some((e) => e.textContent.includes("Made elsewhere"))`)
 	b.waitJS("no Reload button", `!document.querySelector("#cl-reload")`)
+}
+
+// A personal webhook, from the account menu: add one, send it a test and
+// read its delivery history.
+func TestBrowserPersonalWebhook(t *testing.T) {
+	chrome := needChrome(t)
+	got := make(chan string, 10)
+	recv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got <- r.Header.Get("Dash-Event")
+	}))
+	t.Cleanup(recv.Close)
+	h := startRunnerHub(t)
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+
+	b.until("open the account menu", `document.querySelector("#foot-menu").open`, chromedp.Click(chromedp.CSS(`#foot-menu > summary`)))
+	b.until("open My webhooks", `document.querySelector("#me-webhooks-sheet").open`, chromedp.Click(chromedp.ID("me-webhooks-open")))
+	b.waitJS("the empty list", `document.querySelector("#me-webhooks").textContent.includes("No webhooks yet")`)
+	b.until("add one", `document.querySelector("#webhook-sheet").open`, chromedp.Click(chromedp.ID("me-webhook-add")))
+	b.waitJS("the personal form", `document.querySelector("#webhook-title").textContent === "Add personal webhook"`)
+	b.do("fill it in",
+		chromedp.Click(chromedp.CSS(`#webhook-form input[name=format][value=json]`)),
+		chromedp.SendKeys(chromedp.CSS(`#webhook-form input[name=url]`), recv.URL+"/mine"),
+		chromedp.SendKeys(chromedp.CSS(`#webhook-form input[name=name]`), "My receiver"),
+	)
+	b.until("save it", `!document.querySelector("#webhook-sheet").open`, chromedp.Click(chromedp.CSS(`#webhook-form button[value=save]`)))
+	b.waitJS("the webhook and its secret", `document.querySelector("#me-webhooks").textContent.includes("My receiver") && !document.querySelector("#me-webhook-secret").hidden`)
+
+	b.do("send a test", chromedp.Click(chromedp.CSS(`#me-webhooks .webhook-actions button`)))
+	select {
+	case ev := <-got:
+		if ev != "webhook.test" {
+			t.Fatalf("received %q", ev)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("no test delivery")
+	}
+	b.waitJS("its status", `document.querySelector("#me-webhooks .runner-seen")?.textContent.includes("Test delivered")`)
+	b.waitJS("the History button", markText("#me-webhooks .webhook-actions button", "History"))
+	b.do("open its history", chromedp.Click(chromedp.CSS(`[data-e2e-click]`)))
+	b.waitJS("the test delivery in it", `[...document.querySelectorAll("#me-webhooks .webhook-history li")].some((e) => e.textContent.includes("Test") && e.textContent.includes("HTTP 200"))`)
+
+	// It isn't the project's.
+	var hooks struct {
+		Webhooks []json.RawMessage `json:"webhooks"`
+	}
+	h.api.must("GET", "/api/projects/"+h.project.ID+"/webhooks", nil, http.StatusOK, &hooks)
+	if len(hooks.Webhooks) != 0 {
+		t.Fatalf("the project's webhooks: %s", hooks.Webhooks)
+	}
 }
 
 // The History view's commit pane, on a project whose clone is on a runner:
