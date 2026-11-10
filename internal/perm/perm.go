@@ -370,13 +370,6 @@ func writeRPC(w http.ResponseWriter, id json.RawMessage, result any, rerr *rpcEr
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// MCPConfig returns the --mcp-config JSON pointing Claude Code at baseURL.
-func MCPConfig(baseURL, token string) string {
-	cfg := map[string]any{"mcpServers": map[string]any{ServerName: ServerConfig(baseURL, token)}}
-	b, _ := json.Marshal(cfg)
-	return string(b)
-}
-
 // ServerConfig is the --mcp-config entry for the permission server at baseURL.
 func ServerConfig(baseURL, token string) map[string]any {
 	return map[string]any{

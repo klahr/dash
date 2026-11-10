@@ -45,7 +45,8 @@ func TestChatArgsReadOnly(t *testing.T) {
 func TestChatArgsShell(t *testing.T) {
 	c := ClaudeCodeChat{Tools: ChatShell, AllowedTools: []string{"Bash(ssh defaultuser@phone *)", "Read"}}
 	servers := map[string]any{perm.ServerName: perm.ServerConfig("http://127.0.0.1:1", "tok")}
-	cfg := perm.MCPConfig("http://127.0.0.1:1", "tok")
+	b, _ := json.Marshal(map[string]any{"mcpServers": servers})
+	cfg := string(b)
 	args := c.args("/repo", servers)
 	// Same access as `claude` in a terminal: all tools, the user's settings and MCP servers.
 	for _, f := range []string{"--tools", "--strict-mcp-config", "--setting-sources"} {
