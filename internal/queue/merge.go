@@ -79,6 +79,7 @@ type MergeQueue struct {
 	capacity int
 	pending  atomic.Int64
 	running  sync.WaitGroup // Run and the lanes' workers, while they run (see Wait)
+	workers  sync.WaitGroup // the lanes' workers only: Run waits for them before it returns
 
 	lanesMu sync.Mutex
 	lanes   map[string]*lane // project ID → its merge worker
@@ -193,8 +194,10 @@ func (m *MergeQueue) lane(id string) *lane {
 // start runs l's worker; lanesMu is held.
 func (m *MergeQueue) start(l *lane) {
 	m.running.Add(1)
+	m.workers.Add(1)
 	go func() {
 		defer m.running.Done()
+		defer m.workers.Done()
 		for {
 			select {
 			case <-m.ctx.Done():
@@ -260,7 +263,7 @@ func (m *MergeQueue) Pending() int { return int(m.pending.Load()) }
 
 // Run starts the projects' merge workers and follows pull requests and
 // timed cleanups, handing each project's to its worker. Start exactly one;
-// it returns once ctx ends.
+// it returns once ctx ends and every worker has stopped.
 func (m *MergeQueue) Run(ctx context.Context) {
 	m.running.Add(1)
 	defer m.running.Done()
@@ -278,6 +281,10 @@ func (m *MergeQueue) Run(ctx context.Context) {
 			m.lanesMu.Lock()
 			m.stopped = true
 			m.lanesMu.Unlock()
+			// The merges in hand stop and are left to resume; wait for
+			// them, so that once Run returns no worker is still running
+			// git in a checkout (callers may remove it next).
+			m.workers.Wait()
 			return
 		case <-poll:
 			m.schedulePRPolls()
