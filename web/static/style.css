@@ -1566,6 +1566,8 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .chat-pane .chat-log { padding: 16px; }
   .chat-pane .composer { padding: 12px 16px 16px; }
   .toasts { right: calc(28px + var(--fab-space, 0px)); bottom: 28px; }
+  /* The overlaid chat covers the FAB: toasts sit just left of the pane. */
+  .app.chat-open .toasts { right: calc(var(--chat-pane-w) + 28px); }
 
   .detail { left: auto; bottom: 0; width: min(760px, 58vw); border-left: 1px solid var(--line); box-shadow: -24px 0 48px rgba(3, 6, 12, .45); }
   .scrim { position: fixed; inset: 0; z-index: 35; background: rgba(4, 8, 15, .35); }

@@ -386,6 +386,8 @@
         </section>
       </template>
     </aside>
+    <!-- Inside .app so it can read the chat pane's width variables. -->
+    <div class="toasts" id="toasts" aria-live="polite"></div>
 
     <!-- Todo detail: full screen on mobile, side panel on desktop -->
     <aside class="detail" id="detail" hidden aria-labelledby="d-title">
@@ -1061,8 +1063,6 @@
       <!--DASH_FOOTER-->
     </form>
   </dialog>
-
-  <div class="toasts" id="toasts" aria-live="polite"></div>
 
   <script src="/vendor/xterm/xterm.js"></script>
   <script src="/vendor/xterm/addon-fit.js"></script>
