@@ -31,9 +31,11 @@ it:
   `~/dash-projects/default/my-app`).
 - Tasks and chat messages record who created them (`created_by`).
 
-What belongs to the whole Dash, and only platform admins can use: other computers
-(runners, `/peer/…`, the Runners page; everyone else sees just this computer)
-and pausing or resuming the task queue, which every org shares. The subscription usage
+Runners belong to the org of the person who registered them: every member sees the org's
+runners and can register their own (see [several computers](several-computers.md)). What
+belongs to the whole Dash, and only platform admins can use: runners' own dashboards
+(`/peer/…`, and the computer picker; everyone else sees just this computer) and pausing or
+resuming the task queue, which every org shares. The subscription usage
 meter and the merge queue's length are shown to everyone.
 
 The MCP endpoints act as a person in an org too. The chat's task tools act as the user
