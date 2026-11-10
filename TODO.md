@@ -49,3 +49,5 @@ Most important first within each section.
 - [ ] Protect `main`: require the CI and CLA checks to pass before merging.
 - [ ] Do a clean install from the docs alone, on a fresh VPS with Caddy and with Docker
       (`docs/deploy.md`), and fix every step that trips you up.
+- [ ] Production hub: 2FA on the admin account, scheduled `dash backup` with one restore
+      tested, and an alert on `/healthz` and the metrics (`docs/deploy.md#monitoring`).
