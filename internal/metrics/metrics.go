@@ -32,6 +32,11 @@ var (
 	// retries, by result: "ok" or "failed".
 	WebhookDeliveries = Default.Counter("dash_webhook_deliveries_total",
 		"Outgoing notification webhook deliveries after retries, by result (ok, failed).", "result")
+	// PushDeliveries counts Web Push deliveries to browsers, after
+	// retries, by result: "ok", "failed" or "gone" (the browser dropped
+	// the subscription, which is then deleted).
+	PushDeliveries = Default.Counter("dash_push_deliveries_total",
+		"Web Push deliveries to browsers after retries, by result (ok, failed, gone).", "result")
 	// TasksFailed counts tasks moving to failed.
 	TasksFailed = Default.Counter("dash_tasks_failed_total",
 		"Tasks that have failed since the hub started.")

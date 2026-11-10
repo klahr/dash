@@ -347,6 +347,11 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("DELETE /api/webhooks/{wid}", s.deleteWebhook)
 	mux.HandleFunc("POST /api/webhooks/{wid}/rotate", s.rotateWebhook)
 	mux.HandleFunc("POST /api/webhooks/{wid}/test", s.testWebhook)
+	// Web Push to this browser (the installed app, while it's closed)
+	mux.HandleFunc("GET /api/push", s.pushInfo)
+	mux.HandleFunc("PUT /api/push/subscription", s.subscribePush)
+	mux.HandleFunc("DELETE /api/push/subscription", s.unsubscribePush)
+	mux.HandleFunc("POST /api/push/test", s.testPush)
 	if s.Notify != nil && s.Notify.Actions != nil {
 		mux.Handle("POST "+notify.ActionPath+"{token}", s.Notify.Actions) // public: see auth.publicPath
 	}

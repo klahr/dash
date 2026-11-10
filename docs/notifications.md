@@ -1,13 +1,48 @@
-# Notification webhooks
+# Notifications
 
-Dash can tell other services when something needs you, not just the open browser tab. Each
+Dash can tell you when something needs you, not just in the open browser tab: by **push
+notifications** to your browser or installed app, and by **webhooks** to other services.
+
+## Push notifications
+
+Turn on **Preferences → Notifications** in each browser that should notify you. While Dash is
+open in the background, the page notifies you itself; where the browser supports Web Push
+(Chrome, Edge, Firefox, Safari on macOS, and the installed app on iOS 16.4 or later), the hub
+also pushes these to the browser, so they arrive while Dash is closed:
+
+- a task is ready for review
+- a task failed
+- Claude waits for you to approve a tool, with **Approve** and **Deny** buttons where the
+  system shows them (they work for 15 minutes, until the request is answered, or until Dash
+  restarts)
+- GitHub Actions starts failing on the default branch
+
+Tapping a notification opens the task. **Send a test**, under the switch, pushes one right away.
+On an iPhone or iPad, add Dash to the home screen first ([phone.md](phone.md)) and turn
+notifications on in the installed app: Safari tabs can't get pushes there.
+
+A browser gets the notifications of every project in the org it was in when you turned them on
+(open Dash in another org to move it there), for as long as you are a member. Turning
+notifications off, or logging out, unsubscribes it.
+
+Pushes are encrypted for the browser (RFC 8291) and signed with the hub's own key (VAPID,
+RFC 8292), which Dash makes on first start and keeps in its database: the browser vendor's push
+service sees neither the content nor can it send in your hub's name. Dash needs no setup for
+them, only outgoing HTTPS to the push services (`fcm.googleapis.com`, `*.push.services.mozilla.com`,
+`*.push.apple.com`, …). They aren't sent to private addresses on a hub that doesn't allow those
+for webhooks (see [Private addresses](#private-addresses)). Subscriptions the browser drops are
+deleted at the next push. Runners don't push; their hub does.
+
+## Notification webhooks
+
+Each
 project has its own webhooks: **Project settings → Notification webhooks → Add webhook**.
 
 A webhook has a URL, a format, the events it sends and an on/off switch. **Send test** posts a
 test notification right away (even to a paused webhook) and the list shows how each webhook's
 last delivery went.
 
-## Events
+### Events
 
 | Event               | When                                                         |
 | ------------------- | ------------------------------------------------------------ |
@@ -23,7 +58,7 @@ These are the moments the web app notifies you of. Links point back to the task 
 (`/?project=<id>&task=<id>`); set `-public-url` (or `DASH_PUBLIC_URL`) so they use the address
 people reach Dash at. With org subdomains, links use the project's org subdomain.
 
-## Formats
+### Formats
 
 **Slack**: create an incoming webhook in a Slack app and paste its URL. Each event is one short
 line with an emoji and a link to the task.
@@ -63,7 +98,7 @@ clean checkout follows origin by itself. New webhooks don't subscribe to it; eac
 checkout notifies at most once every 6 hours. The headers `Dash-Event` and `Dash-Delivery` repeat the type and id; the id
 stays the same when a delivery is retried, so you can drop duplicates.
 
-### Verifying the signature
+#### Verifying the signature
 
 Dash shows a JSON webhook's signing secret (`whsec_…`) once, when you create it. **Rotate
 secret** replaces it, and the old one stops working at once. Each delivery is signed the way
@@ -77,7 +112,7 @@ Dash-Signature: t=1794139200,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff
 compare in constant time, and refuse requests whose `t` is more than a few minutes from now.
 In Go, `notify.Verify(body, header, secret, time.Now(), 5*time.Minute)` does all of this.
 
-## Delivery
+### Delivery
 
 Deliveries run in the background, so a slow or unreachable service never holds up the queue.
 Each attempt has a 10 second timeout. Network errors, 5xx and 429 answers are retried with
@@ -85,7 +120,7 @@ exponential backoff (4 attempts over about 15 seconds). Other answers, and redir
 as failures right away. Failures are logged with the webhook's id and host, but never its URL,
 secret or token (Slack and ntfy URLs are secrets themselves).
 
-## Private addresses
+### Private addresses
 
 On a hosted Dash, an internet-facing one (`-public-url` or `-trust-proxy`), or any Dash with open signup, webhooks may not reach private, loopback,
 link-local or carrier-grade NAT addresses. This is checked when you save the URL and again on every connection, after DNS,

@@ -312,7 +312,7 @@ if (vv) {
 // runners (`dash runner`) through the connection they keep open to it. A project's
 // API calls go to the computer it lives on (its prefix); login, logout and
 // the computer list always go to this one.
-const HUB_ONLY = /^\/api\/(login|logout|me|machines|version|chat|connector|runners|auth|orgs|invitations)\b/;
+const HUB_ONLY = /^\/api\/(login|logout|me|machines|version|chat|connector|runners|auth|orgs|invitations|push)\b/;
 const here = () => state.project?.prefix || "";
 
 // Links from notifications open a task: /?project=<id>&task=<id>.
@@ -793,6 +793,7 @@ const state = {
   procs: [],
   previews: new Map(), // "machine/todo id" → live preview, on every computer
   perms: [],           // pending permission requests for this project
+  pushOn: false,       // this browser gets the hub's Web Push notifications
   usage: null,
   view: "board",
   showOld: false,      // show merged todos older than a day
@@ -1017,8 +1018,8 @@ function onEvent(ev, m = { name: "" }) {
           renderDetail(); // the open task's "waiting for" line
         }
         if (prev && prev.status !== ev.data.status) {
-          if (ev.data.status === "review") { toast(title(ev.data), { tone: "review", head: "Ready for review", action: openTodo(ev.todo_id) }); notify("Ready for review", ev.data); }
-          if (ev.data.status === "failed") { toast(title(ev.data), { tone: "error", head: "Failed", action: openTodo(ev.todo_id) }); notify("Failed", ev.data, ev.data.error); }
+          if (ev.data.status === "review") { toast(title(ev.data), { tone: "review", head: "Ready for review", action: openTodo(ev.todo_id) }); notify("Ready for review", ev.data, "", !here()); }
+          if (ev.data.status === "failed") { toast(title(ev.data), { tone: "error", head: "Failed", action: openTodo(ev.todo_id) }); notify("Failed", ev.data, ev.data.error, !here()); }
           if (ev.data.status === "merged") { toast(title(ev.data), { tone: "ok", head: "Merged", icon: "merge" }); notify("Merged", ev.data); loadUnpushed().catch(fail); }
         }
         if (prev && prev.revert?.commit !== ev.data.revert?.commit) loadUnpushed().catch(fail);
@@ -1076,7 +1077,7 @@ function onEvent(ev, m = { name: "" }) {
         state.perms.push(ev.data);
         const t = state.todos.get(ev.data.todo_id);
         toast(t ? `${describePerm(ev.data).title} · ${title(t)}` : describePerm(ev.data).title, { tone: "approval", head: "Claude needs your approval", action: t ? { label: "Review", run: () => openDetail(t.id) } : null });
-        if (t) notify(`Claude wants to ${describePerm(ev.data).title}`, t, describePerm(ev.data).detail);
+        if (t) notify(`Claude wants to ${describePerm(ev.data).title}`, t, describePerm(ev.data).detail, !here());
       }
       renderPerms();
       break;
@@ -1091,7 +1092,7 @@ function onEvent(ev, m = { name: "" }) {
       if (!mine) break;
       if (state.ci?.state && state.ci.state !== "failing" && ev.data.state === "failing") {
         toast(ev.data.todo_id ? "Claude is on it" : "", { tone: "error", head: `Build failing on ${ev.data.branch}`, action: ev.data.todo_id ? openTodo(ev.data.todo_id) : null });
-        notify(`Build failing on ${ev.data.branch}`, { title: state.project.name, prompt: "" });
+        notify(`Build failing on ${ev.data.branch}`, { title: state.project.name, prompt: "" }, "", !here());
       }
       if (state.ci?.state === "failing" && ev.data.state === "passing") toast("", { tone: "ok", head: `Build passing again on ${ev.data.branch}` });
       releaseNews(state.ci?.release, ev.data.release);
@@ -1794,6 +1795,8 @@ $("#pm-delete").addEventListener("click", attempt(openDeleteProject));
 // The account menu shows who is logged in, the org they work in and the
 // others they can switch to.
 loadMe().then(() => loadBilling()).catch(() => {});
+// Notifications on: keep this browser subscribed to pushes, in the org it's in now.
+if (notifyOn()) pushSubscribe().catch((e) => console.warn("web push", e));
 loadRunners().catch(() => {});
 $("#org-open").addEventListener("click", attempt(openOrg));
 $("#runners-open").addEventListener("click", attempt(openRunners));
@@ -3902,6 +3905,7 @@ function syncPrefs() {
   f.vim.checked = vimOn();
   f.invisibles.checked = invisiblesOn();
   f.notify.checked = notifyOn();
+  $("#push-hint").hidden = !(notifyOn() && state.pushOn);
   f.clock.value = clockPref();
 }
 function openPrefs() {
@@ -3915,6 +3919,7 @@ $("#prefs-form").clock.addEventListener("change", (e) => {
   applyClockPref();
   renderUsage();
 });
+$("#push-test").addEventListener("click", attempt(testPush));
 // Asking for permission needs this change event's user gesture.
 $("#prefs-form").notify.addEventListener("change", attempt(async (e) => {
   try { if (e.target.checked !== notifyOn()) await toggleNotifications(); } finally { syncPrefs(); }
@@ -5073,9 +5078,12 @@ async function openConnector() {
 
 // ------------------------------------------------------------------ notifications & tab title
 const notifyOn = () => { try { return localStorage.getItem("dash.notify") === "1"; } catch { return false; } };
-function notify(what, t, detail = "") {
+// pushed: a notification the hub also pushes to this browser (Web Push),
+// which shows it even with Dash closed; the page leaves those to the push.
+function notify(what, t, detail = "", pushed = false) {
   if (!notifyOn() || !("Notification" in window) || Notification.permission !== "granted") return;
   if (document.visibilityState === "visible" && document.hasFocus()) return; // the page already shows it
+  if (pushed && state.pushOn) return;
   const n = new Notification(`${what}: ${title(t)}`, { body: detail || "", tag: `dash-${t.id}`, silent: false });
   n.onclick = () => { window.focus(); showView("board"); openDetail(t.id); n.close(); };
 }
@@ -5083,14 +5091,71 @@ async function toggleNotifications() {
   if (!("Notification" in window)) throw new Error("This browser doesn't support notifications.");
   if (notifyOn()) {
     try { localStorage.setItem("dash.notify", "0"); } catch {}
+    await pushUnsubscribe().catch(() => {});
     toast("Notifications off");
   } else {
     const perm = await Notification.requestPermission();
     if (perm !== "granted") throw new Error("Notifications are blocked for this site in your browser settings.");
     try { localStorage.setItem("dash.notify", "1"); } catch {}
-    toast("Notifications on: you'll hear about reviews, failures and approvals while Dash is in the background");
+    let pushed = false;
+    try { pushed = await pushSubscribe(); } catch (e) { console.warn("web push", e); }
+    toast(pushed
+      ? "Notifications on: you'll hear about reviews, failures, approvals and failing builds, even with Dash closed"
+      : "Notifications on: you'll hear about reviews, failures and approvals while Dash is in the background");
   }
   renderProjectList();
+}
+
+// ---- Web Push: notifications while Dash is closed (sw.js shows them)
+const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const b64urlBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+// pushSubscribe subscribes this browser to the hub's pushes (permission
+// must be granted) and reports whether it did: false where the browser or
+// the hub can't (a runner, an old browser, iOS Safari outside the installed app).
+async function pushSubscribe() {
+  state.pushOn = false;
+  if (!pushSupported() || Notification.permission !== "granted") return false;
+  const info = await api("GET", "/api/push", null, "");
+  if (!info.enabled) return false;
+  const reg = await navigator.serviceWorker.ready;
+  const key = b64urlBytes(info.key);
+  let sub = await reg.pushManager.getSubscription();
+  if (sub && sub.options?.applicationServerKey) {
+    const had = new Uint8Array(sub.options.applicationServerKey);
+    if (had.length !== key.length || had.some((b, i) => b !== key[i])) { await sub.unsubscribe(); sub = null; } // another hub's key
+  }
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  await api("PUT", "/api/push/subscription", sub.toJSON(), "");
+  state.pushOn = true;
+  return true;
+}
+async function pushUnsubscribe() {
+  state.pushOn = false;
+  if (!pushSupported()) return;
+  const reg = await navigator.serviceWorker.getRegistration();
+  const sub = await reg?.pushManager.getSubscription();
+  if (!sub) return;
+  await api("DELETE", "/api/push/subscription", { endpoint: sub.endpoint }, "").catch(() => {});
+  await sub.unsubscribe();
+}
+async function testPush() {
+  if (!notifyOn() || !state.pushOn) throw new Error("Turn notifications on first (in Preferences); this browser or Dash may not support pushes.");
+  const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+  const res = await api("POST", "/api/push/test", { endpoint: sub.endpoint }, "");
+  if (!res.ok) throw new Error(`The push didn't go through: ${res.error}`);
+  toast("Test notification sent", { tone: "ok" });
+}
+// A click on a pushed notification while Dash is open: go to its task.
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data?.type !== "dash.open") return;
+    const q = new URL(e.data.url, location.origin).searchParams;
+    const p = state.projects.find((x) => x.id === q.get("project"));
+    (async () => {
+      if (p && p.id !== state.project?.id) await selectProject(p);
+      if (q.get("task") && p) { showView("board"); await openDetail(q.get("task")); }
+    })().catch(fail);
+  });
 }
 // Tab title shows how many things wait for you: reviews + permission requests.
 function updateNeedsYou(items) {
@@ -10485,6 +10550,7 @@ $("#todo-form").addEventListener("keydown", (e) => {
 
 // ------------------------------------------------------------------ boot
 async function logout() {
+  await pushUnsubscribe().catch(() => {}); // this browser stops getting the account's notifications
   await fetch("/api/logout", { method: "POST" });
   location.replace("/login.html");
 }

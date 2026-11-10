@@ -612,6 +612,7 @@ scrape_configs:
 | `dash_http_request_duration_seconds{method,route}` | histogram | time to answer them (WebSockets and runner tunnels are counted, not timed) |
 | `dash_signin_lockouts_total{scope}` | counter | sign-in lockouts as they start: `ip` (one address), `global` (all addresses), `2fa` (one account's codes) |
 | `dash_webhook_deliveries_total{result}` | counter | notification webhook deliveries after retries: `ok` or `failed` |
+| `dash_push_deliveries_total{result}` | counter | Web Push deliveries to browsers after retries: `ok`, `failed` or `gone` (the browser dropped the subscription) |
 | `dash_build_info{version}` | gauge | always 1, with the running version |
 | `dash_start_time_seconds` | gauge | when the hub started (Unix time) |
 | `dash_goroutines` | gauge | goroutines running now |

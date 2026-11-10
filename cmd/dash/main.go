@@ -554,6 +554,15 @@ func main() {
 				return err
 			}),
 		}
+		// Web Push to the browsers that turned notifications on, signed
+		// with the hub's VAPID key (made on first start, then kept).
+		if key, err := st.PushVAPIDKey(notify.NewVAPIDPrivateKey); err != nil {
+			slog.Warn("web push off: VAPID key", "err", err)
+		} else if notifier.VAPID, err = notify.ParseVAPIDKey(key); err != nil {
+			slog.Warn("web push off: VAPID key", "err", err)
+		} else {
+			notifier.Push = st
+		}
 		events.Observe = notifier.Observe
 		notifier.Start(ctx)
 		apiSrv.Notify = notifier

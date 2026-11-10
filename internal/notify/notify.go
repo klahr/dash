@@ -1,5 +1,6 @@
-// Package notify sends Dash's events to outgoing webhooks: generic signed
-// JSON, Slack incoming webhooks and ntfy topics. It watches the event hub
+// Package notify sends Dash's events to outgoing webhooks (generic signed
+// JSON, Slack incoming webhooks and ntfy topics) and, by Web Push, to the
+// browsers that turned notifications on. It watches the event hub
 // (hub.Hub.Observe) for the moments the web app notifies the user of: a
 // task ready for review, failed or merged, Claude waiting for an approval,
 // and the default branch's build starting to fail. Deliveries run in the
@@ -60,9 +61,13 @@ type Notifier struct {
 	Attempts     int           // tries per delivery (DefaultAttempts)
 	Backoff      time.Duration // wait before the 2nd try; doubles after (DefaultBackoff)
 	// Actions, if set, adds Approve/Deny buttons to ntfy notifications of
-	// permission requests (needs Origin).
+	// permission requests (needs Origin), and to pushed ones.
 	Actions *Actions
-	Now     func() time.Time
+	// Push and VAPID, both set, push PushEvents to the browsers of the
+	// project's org's members that turned notifications on (webpush.go).
+	Push  PushStore
+	VAPID *VAPIDKey
+	Now   func() time.Time
 
 	once   sync.Once
 	queue  chan model.Event
@@ -171,6 +176,7 @@ func (n *Notifier) handle(ctx context.Context, ev model.Event) {
 	if !ok {
 		return
 	}
+	n.push(ctx, note)
 	hooks, err := n.Store.ListWebhooks(note.Project.ID)
 	if err != nil {
 		slog.Error("notifications: list webhooks", "project", note.Project.ID, "err", err)
@@ -390,25 +396,7 @@ func (e errPermanent) Unwrap() error { return e.error }
 // 5xx and 429, with exponential backoff, and records the outcome on w.
 // Errors never carry the URL (Slack's and ntfy's URLs are secrets).
 func (n *Notifier) deliver(ctx context.Context, w model.Webhook, note Notification, attempts int) error {
-	var err error
-retry:
-	for i := 0; i < attempts; i++ {
-		if i > 0 {
-			t := time.NewTimer(n.backoff() << (i - 1))
-			select {
-			case <-ctx.Done():
-				t.Stop()
-				err = ctx.Err()
-				break retry
-			case <-t.C:
-			}
-		}
-		err = n.send(ctx, w, note)
-		var pe errPermanent
-		if err == nil || errors.As(err, &pe) {
-			break
-		}
-	}
+	err := n.retry(ctx, attempts, func() error { return n.send(ctx, w, note) })
 	msg := ""
 	if err == nil {
 		metrics.WebhookDeliveries.Inc("ok")
@@ -423,6 +411,30 @@ retry:
 	}
 	if rerr := n.Store.RecordWebhookDelivery(w.ID, note.Type, n.now(), msg); rerr != nil {
 		slog.Error("notifications: record delivery", "webhook", w.ID, "err", rerr)
+	}
+	return err
+}
+
+// retry calls try up to attempts times until it succeeds or fails for
+// good (errPermanent), waiting n.backoff() before the 2nd call and twice
+// as long before each next one.
+func (n *Notifier) retry(ctx context.Context, attempts int, try func() error) error {
+	var err error
+	for i := 0; i < attempts; i++ {
+		if i > 0 {
+			t := time.NewTimer(n.backoff() << (i - 1))
+			select {
+			case <-ctx.Done():
+				t.Stop()
+				return ctx.Err()
+			case <-t.C:
+			}
+		}
+		err = try()
+		var pe errPermanent
+		if err == nil || errors.As(err, &pe) {
+			break
+		}
 	}
 	return err
 }

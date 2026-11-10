@@ -36,3 +36,58 @@ self.addEventListener("fetch", (e) => {
     }
   })());
 });
+
+// Web Push: the hub pushes reviews, failures, approvals and failing builds
+// (internal/notify/webpush.go), so they arrive while Dash is closed. An open,
+// focused Dash shows them itself, so the push is dropped there.
+self.addEventListener("push", (e) => {
+  let p = {};
+  try { p = e.data ? e.data.json() : {}; } catch { p = { title: e.data ? e.data.text() : "Dash" }; }
+  e.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    if (p.type !== "webhook.test" && wins.some((c) => c.visibilityState === "visible" && c.focused)) return;
+    const actions = (p.actions || []).slice(0, 2).map((a) => ({ action: a.action, title: a.title }));
+    await self.registration.showNotification(p.title || "Dash", {
+      body: p.body || "", tag: p.tag || undefined, renotify: !!p.tag, icon: "/img/icon-192.png", badge: "/img/icon-192.png",
+      requireInteraction: p.type === "permission.needed", actions,
+      data: { url: p.url || "/", actions: p.actions || [] },
+    });
+  })());
+});
+
+self.addEventListener("notificationclick", (e) => {
+  const n = e.notification;
+  const data = n.data || {};
+  n.close();
+  const act = (data.actions || []).find((a) => a.action === e.action);
+  e.waitUntil((async () => {
+    if (act) {
+      // Approve / Deny: answer without opening Dash; say so if it didn't work.
+      const res = await fetch(act.url, { method: "POST" }).catch(() => null);
+      if (!res || !res.ok) {
+        const why = res && res.status === 409 ? "It was already answered, or the run ended." : "Open Dash to answer it.";
+        await self.registration.showNotification("Couldn't answer the request", { body: why, tag: n.tag });
+      }
+      return;
+    }
+    const url = new URL(data.url || "/", self.location.origin).href;
+    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const win = wins.find((c) => new URL(c.url).origin === self.location.origin);
+    if (win) {
+      win.postMessage({ type: "dash.open", url });
+      return win.focus();
+    }
+    return self.clients.openWindow(url);
+  })());
+});
+
+// The browser renewed the subscription: tell the hub (no page is open).
+self.addEventListener("pushsubscriptionchange", (e) => {
+  e.waitUntil((async () => {
+    const info = await fetch("/api/push").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (!info || !info.enabled) return;
+    const key = Uint8Array.from(atob(info.key.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+    const sub = e.newSubscription || await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    await fetch("/api/push/subscription", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sub) });
+  })());
+});
