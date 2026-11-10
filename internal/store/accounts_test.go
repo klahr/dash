@@ -211,9 +211,6 @@ func TestEnvAccountFollowsTheEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := time.Now()
-	if !acc.Active(u.ID, before) {
-		t.Fatal("env user not active")
-	}
 
 	if err := acc.Bootstrap("root", "changed"); err != nil {
 		t.Fatal(err)
@@ -221,8 +218,9 @@ func TestEnvAccountFollowsTheEnvironment(t *testing.T) {
 	if _, err := acc.Session("k", time.Now()); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("session survived new credentials: %v", err)
 	}
-	if acc.Active(u.ID, before) {
-		t.Fatal("a token from before the change is still good")
+	var changed int64
+	if err := s.db.QueryRow("SELECT password_changed_at FROM users WHERE id = ?", u.ID).Scan(&changed); err != nil || changed <= before.UnixNano() {
+		t.Fatalf("password_changed_at %d not after %d (%v): older tokens would still be good", changed, before.UnixNano(), err)
 	}
 	got, hash, err := acc.Credentials("root")
 	if ok, _, _ := passhash.Verify(hash, "changed"); err != nil || got.ID != u.ID || !ok {

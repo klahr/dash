@@ -388,18 +388,6 @@ func (a *Accounts) Rehash(uid int64, hash string) error {
 	return err
 }
 
-// Active reports whether uid still belongs to an org, hasn't changed
-// password (or been renamed from the environment) since t, and isn't held
-// back by an org requiring two-factor sign-in they haven't set up.
-// Long-lived credentials such as OAuth tokens check it.
-func (a *Accounts) Active(uid int64, t time.Time) bool {
-	var changed int64
-	var member, totp, required bool
-	err := a.db.QueryRow(`SELECT u.password_changed_at, EXISTS (SELECT 1 FROM org_memberships WHERE user_id = u.id),
-		u.totp_secret IS NOT NULL, `+requires2FA+` FROM users u WHERE u.id = ?`, uid).Scan(&changed, &member, &totp, &required)
-	return err == nil && member && changed <= t.UnixNano() && (totp || !required)
-}
-
 // ---- sessions ----
 
 // CreateSession stores a session for uid under key (a hash of the cookie),
