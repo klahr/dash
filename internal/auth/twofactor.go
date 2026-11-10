@@ -70,10 +70,6 @@ func twoFactorFree(path string) bool {
 	return orgFree(path) || strings.HasPrefix(path, "/api/account/2fa") || public[path]
 }
 
-func (a *Auth) newTicket(uid int64) string {
-	return a.newTicketFor(&loginTicket{user: uid, method: store.MethodPassword})
-}
-
 // newTicketFor keeps t, waiting for its second factor, and returns its token.
 func (a *Auth) newTicketFor(t *loginTicket) string {
 	tok := randomToken()
