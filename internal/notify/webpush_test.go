@@ -109,10 +109,13 @@ func checkVAPID(t *testing.T, hdr http.Header, key *VAPIDKey) map[string]any {
 		t.Fatalf("jwt %q", tok)
 	}
 	pub := mustB64(t, k)
-	x, y := elliptic.Unmarshal(elliptic.P256(), pub) //nolint:staticcheck // test only
+	pk, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), pub)
+	if err != nil {
+		t.Fatalf("public key: %v", err)
+	}
 	sig := mustB64(t, parts[2])
 	h := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
-	if !ecdsa.Verify(&ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y}, h[:], new(big.Int).SetBytes(sig[:32]), new(big.Int).SetBytes(sig[32:])) {
+	if !ecdsa.Verify(pk, h[:], new(big.Int).SetBytes(sig[:32]), new(big.Int).SetBytes(sig[32:])) {
 		t.Fatal("VAPID signature doesn't verify")
 	}
 	var claims map[string]any

@@ -158,12 +158,13 @@ func TestSignupDoesntRevealAccounts(t *testing.T) {
 	addUser(t, a, org.ID, "bea", store.RoleMember) // bea@example.com
 	anon := &client{t: t, h: h}
 
+	// Emails go out in the background, so take each before the next signup.
 	fresh := signUp(anon, "dan@example.com", "dan-password")
+	firstTok := tokenIn(t, box.next(t)) // dan's link
 	taken := signUp(anon, "BEA@example.com", "bea-other-password")
 	if fresh.Code != http.StatusAccepted || fresh.Code != taken.Code || fresh.Body.String() != taken.Body.String() {
 		t.Fatalf("new: %d %s; taken: %d %s", fresh.Code, fresh.Body, taken.Code, taken.Body)
 	}
-	firstTok := tokenIn(t, box.next(t)) // dan's link
 	m := box.next(t)
 	if m.To != "bea@example.com" || !strings.Contains(m.Body, "already") || strings.Contains(m.Body, "#verify=") {
 		t.Fatalf("to the existing account: %+v", m)

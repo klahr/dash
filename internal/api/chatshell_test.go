@@ -232,7 +232,7 @@ func TestChatShellRefused(t *testing.T) {
 	if _, _, errText := shellTurn(t, conn, nil, []agent.ChatMessage{cmdMsg("!touch ran")}, nil); !strings.Contains(errText, "general chat") {
 		t.Errorf("general chat: %q", errText)
 	}
-	if _, _, errText := shellTurn(t, conn, map[string]any{"project": p.ID}, []agent.ChatMessage{cmdMsg("touch ran")}, nil); !strings.Contains(errText, "starts with !") {
+	if _, _, errText := shellTurn(t, conn, map[string]any{"project": p.ID}, []agent.ChatMessage{cmdMsg("touch ran")}, nil); !strings.Contains(errText, `starts with "!"`) {
 		t.Errorf("not a command: %q", errText)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "ran")); err == nil {

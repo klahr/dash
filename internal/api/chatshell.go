@@ -32,7 +32,7 @@ func shellRequest(general bool, msgs []agent.ChatMessage) (string, error) {
 	}
 	cmd, ok := agent.ShellCommand(msgs[len(msgs)-1].Content)
 	if !ok {
-		return "", fmt.Errorf("%w: a command to run starts with !", errBadRequest)
+		return "", fmt.Errorf("%w: a command to run starts with \"!\"", errBadRequest)
 	}
 	return cmd, nil
 }
