@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 )
 
 // The tools Dash runs through Command. Every git and gh process in Dash is
@@ -28,4 +30,17 @@ func Command(ctx context.Context, tool, bin string, args ...string) (*exec.Cmd, 
 		return nil, fmt.Errorf("this hub doesn't run %s (%s): %w", tool, what, ErrHub)
 	}
 	return exec.CommandContext(ctx, bin, args...), nil
+}
+
+// Claude is the default binary for Claude Code when none is configured.
+const Claude = "claude"
+
+// Group runs cmd in its own process group, so cancelling it (its context
+// ending) sends sig to everything it started, not just the direct child. wait
+// bounds how long Wait then waits for output pipes a leftover grandchild may
+// still hold (see exec.Cmd.WaitDelay). Call it before cmd.Start.
+func Group(cmd *exec.Cmd, sig syscall.Signal, wait time.Duration) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, sig) }
+	cmd.WaitDelay = wait
 }

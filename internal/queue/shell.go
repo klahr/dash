@@ -31,9 +31,7 @@ func runShell(ctx context.Context, dir, command string, timeout time.Duration, e
 	cmd := exec.CommandContext(ctx, "bash", "-lc", command)
 	cmd.Dir = dir
 	cmd.Env = append(append(os.Environ(), "CI=1"), env...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	cmd.WaitDelay = 5 * time.Second
+	localrun.Group(cmd, syscall.SIGKILL, 5*time.Second)
 
 	pr, pw := io.Pipe()
 	cmd.Stdout, cmd.Stderr = pw, pw

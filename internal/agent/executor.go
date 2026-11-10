@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/claudecli"
+	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -73,7 +74,7 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 	}
 	bin := c.Bin
 	if bin == "" {
-		bin = "claude"
+		bin = localrun.Claude
 	}
 	args := append([]string{"-p", "--output-format", "stream-json", "--verbose"}, c.Args...)
 	args = append(args, req.ExtraArgs...)
@@ -85,9 +86,7 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 	cmd.Env = append(os.Environ(), req.Env...)
 	cmd.Stdin = strings.NewReader(req.Prompt)
 	// Own process group so cancel kills Claude and everything it spawned.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
-	cmd.WaitDelay = 10 * time.Second
+	localrun.Group(cmd, syscall.SIGTERM, 10*time.Second)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

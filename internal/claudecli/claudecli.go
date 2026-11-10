@@ -17,7 +17,10 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+
+	"github.com/klahr/dash/internal/localrun"
 )
 
 // Status is what Dash knows about the installed Claude Code CLI.
@@ -104,7 +107,7 @@ func (m *Monitor) Check(ctx context.Context) Status {
 	}
 	bin := m.Bin
 	if bin == "" {
-		bin = "claude"
+		bin = localrun.Claude
 	}
 	run := m.run
 	if run == nil {
@@ -193,6 +196,9 @@ func runCLI(ctx context.Context, bin string, args ...string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = os.TempDir()
+	// Its own process group, so the timeout stops what claude started too,
+	// and Run doesn't block on a grandchild holding the output pipe.
+	localrun.Group(cmd, syscall.SIGKILL, 5*time.Second)
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err := cmd.Run()

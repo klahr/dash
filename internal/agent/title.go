@@ -11,6 +11,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/klahr/dash/internal/localrun"
 )
 
 // Titler writes short titles for todos created without one, using a small
@@ -163,7 +165,7 @@ func (t Titler) run(ctx context.Context, model string, timeout time.Duration, sy
 	}
 	bin := t.Bin
 	if bin == "" {
-		bin = "claude"
+		bin = localrun.Claude
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -172,8 +174,8 @@ func (t Titler) run(ctx context.Context, model string, timeout time.Duration, sy
 		"--system-prompt", system)
 	cmd.Dir = os.TempDir()
 	cmd.Stdin = strings.NewReader(input)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	// Don't wait on a grandchild that keeps stdout open past the timeout.
+	localrun.Group(cmd, syscall.SIGKILL, 5*time.Second)
 	out, err := cmd.Output()
 	return string(out), err
 }

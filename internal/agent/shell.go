@@ -84,10 +84,8 @@ func RunShell(ctx context.Context, dir, command string, timeout time.Duration, e
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "TERM=dumb", "PAGER=cat", "GIT_PAGER=cat", "GIT_TERMINAL_PROMPT=0")
 	// Its own process group, so stopping it stops what it started too.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	// Don't wait on a background process that keeps the output open.
-	cmd.WaitDelay = 2 * time.Second
+	// Don't wait over 2s on a background process that keeps the output open.
+	localrun.Group(cmd, syscall.SIGKILL, 2*time.Second)
 	out := &shellOutput{emit: emit}
 	cmd.Stdout, cmd.Stderr = out, out // one pipe: stdout and stderr in the order written
 

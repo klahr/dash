@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/claudecli"
+	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
@@ -173,7 +174,7 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	}
 	bin := c.Bin
 	if bin == "" {
-		bin = "claude"
+		bin = localrun.Claude
 	}
 	if mode, ok := ctx.Value(permissionModeKey{}).(string); ok {
 		c.PermissionMode = mode
@@ -215,9 +216,7 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	}
 	emit(ChatDelta{Kind: "cwd", Text: cmd.Dir})
 	cmd.Stdin = strings.NewReader(transcript(history))
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
-	cmd.WaitDelay = 5 * time.Second
+	localrun.Group(cmd, syscall.SIGTERM, 5*time.Second)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()
