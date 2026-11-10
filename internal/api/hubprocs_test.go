@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -134,20 +136,27 @@ func TestRewriteProcsKeepsQuickActionMarks(t *testing.T) {
 	}
 }
 
-// sessionOf is user uid's session in org.
+// sessionOf is user uid's session in org, stored and read back the way a
+// signed-in request's is.
 func sessionOf(t *testing.T, s *Server, uid, org int64) store.Session {
 	t.Helper()
 	acc := raw(s).Accounts()
-	u, err := acc.User(uid)
+	now := time.Now()
+	key := fmt.Sprintf("test-session-%d", sessionSeq.Add(1))
+	if err := acc.CreateSessionIn(key, uid, org, "", now, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := acc.Session(key, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := acc.Membership(uid, org)
-	if err != nil {
-		t.Fatal(err)
+	if sess.Org == nil || sess.Org.ID != org {
+		t.Fatalf("user %d is not a member of org %d", uid, org)
 	}
-	return store.Session{User: u, Org: &m}
+	return sess
 }
+
+var sessionSeq atomic.Int64
 
 // A hub opens a terminal on a project's runner only when the runner takes
 // commands from the hub (-hub-commands), and only for the user who

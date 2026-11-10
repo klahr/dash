@@ -182,3 +182,34 @@ func TestRowsCarryTheirProjectsOrg(t *testing.T) {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// A runner's copy of a hub's task is queued from the start: no event ever
+// shows it as a draft, which the hub would read as canceled on the runner.
+func TestCreateQueuedTodoIsNeverADraft(t *testing.T) {
+	evs := &recordedEvents{}
+	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), evs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	p, err := s.CreateProject(model.Project{Name: "app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs.evs = nil
+	td, err := s.CreateQueuedTodo(model.Todo{ProjectID: p.ID, Prompt: "go", HubTodoID: "ht"})
+	if err != nil || td.Status != model.StatusQueued {
+		t.Fatalf("created: %+v %v", td, err)
+	}
+	if got, _ := s.GetTodo(td.ID); got.Status != model.StatusQueued {
+		t.Errorf("stored: %s", got.Status)
+	}
+	for _, ev := range evs.evs {
+		if x, ok := ev.Data.(model.Todo); ok && x.Status != model.StatusQueued {
+			t.Errorf("event %s shows the task %s", ev.Type, x.Status)
+		}
+	}
+	if _, err := s.CreateQueuedTodo(model.Todo{ProjectID: "nope"}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown project: %v", err)
+	}
+}

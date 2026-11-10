@@ -121,6 +121,15 @@ func (o *OrgStore) CreateTodo(t model.Todo) (model.Todo, error) {
 	return o.s.CreateTodo(t)
 }
 
+// CreateQueuedTodo is CreateTodo for a todo queued from the start (see
+// Store.CreateQueuedTodo).
+func (o *OrgStore) CreateQueuedTodo(t model.Todo) (model.Todo, error) {
+	if !o.ownsProject(t.ProjectID) {
+		return t, ErrNotFound
+	}
+	return o.s.CreateQueuedTodo(t)
+}
+
 func (o *OrgStore) UpdateTodo(id string, fn func(*model.Todo) error) (model.Todo, error) {
 	if !o.ownsTodo(id) {
 		return model.Todo{}, ErrNotFound

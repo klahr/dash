@@ -353,11 +353,6 @@ func (a *Accounts) scanUser(row *sql.Row) (User, error) {
 	return u, err
 }
 
-// User returns the user with id.
-func (a *Accounts) User(id int64) (User, error) {
-	return a.scanUser(a.db.QueryRow(userCols+" WHERE id = ?", id))
-}
-
 // Credentials returns the user whose username or email is login, and their
 // password hash. A username wins over another account's email.
 func (a *Accounts) Credentials(login string) (User, string, error) {

@@ -502,13 +502,12 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, dispatch.Accepted{ID: t.ID, Resumed: true})
 		return
 	}
-	t, err := sv.data.CreateTodo(model.Todo{
+	// Queued from the start: a report caught between creating a draft and
+	// queueing it would tell the hub the task was canceled here.
+	t, err := sv.data.CreateQueuedTodo(model.Todo{
 		ProjectID: p.ID, Title: req.Title, Prompt: req.Prompt, Feedback: req.Feedback,
 		HubTodoID: req.HubTodoID, HubNotes: len(req.Feedback),
 	})
-	if err == nil {
-		t, err = sv.data.SetStatus(t.ID, model.StatusQueued, "")
-	}
 	if err != nil {
 		writeErr(w, err)
 		return

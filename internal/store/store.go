@@ -445,13 +445,24 @@ func (s *Store) AllowTool(projectID, tool string) error {
 // ---- Todos ----
 
 func (s *Store) CreateTodo(t model.Todo) (model.Todo, error) {
+	return s.createTodo(t, model.StatusDraft)
+}
+
+// CreateQueuedTodo is CreateTodo for a todo that is queued from the start,
+// never seen as a draft: a hub reads a draft task on its runner as one
+// canceled there.
+func (s *Store) CreateQueuedTodo(t model.Todo) (model.Todo, error) {
+	return s.createTodo(t, model.StatusQueued)
+}
+
+func (s *Store) createTodo(t model.Todo, status model.TodoStatus) (model.Todo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.data.Projects[t.ProjectID]; !ok {
 		return t, ErrNotFound
 	}
 	t.ID = NewID()
-	t.Status = model.StatusDraft
+	t.Status = status
 	t.CreatedAt = time.Now()
 	t.UpdatedAt = t.CreatedAt
 	t.DependsOn = cleanIDs(t.DependsOn)
