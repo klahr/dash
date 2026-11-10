@@ -1098,7 +1098,13 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .older { display: flex; margin: 4px 16px 16px 52px; min-height: 36px; font-size: 14px; }
 .msg-actions { display: flex; gap: 14px; margin-top: 6px; }
 .msg-actions .link { min-height: 32px; padding: 0; font-size: 14px; }
-.diff-lines div[data-ln] { cursor: pointer; }
+.diff-lines div[data-ln] { cursor: pointer; position: relative; }
+.diff-lines .ln-comment {
+  position: absolute; left: 0; top: 0; width: 12px; height: 100%; padding: 0; border: 0; border-radius: 2px;
+  background: var(--accent); color: var(--bg); font: 600 11px/1 var(--mono); cursor: pointer; opacity: 0;
+}
+.diff-lines div[data-ln]:hover .ln-comment, .diff-lines .ln-comment:focus-visible { opacity: 1; }
+.diff-lines .ln-comment:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .diff-lines div[data-ln]:hover { outline: 1px solid var(--line); outline-offset: -1px; }
 .diff-lines .meta { color: var(--faint); }
 .diff-lines .comment, .comment-box {

@@ -56,9 +56,14 @@ func TestBrowserMainFlows(t *testing.T) {
 	b.do("show the changes", chromedp.Click(chromedp.CSS(`.pane-tabs button[data-pane=diff]`)))
 	b.waitJS("the diff", `document.querySelector("#d-diff")?.textContent.includes("done-by-runner.txt")`)
 	b.clickText(`#d-diff details.diff-file > summary`, "done-by-runner.txt")
+	// From the keyboard: each line's comment button opens the box on Enter.
 	b.do("comment on a line",
-		chromedp.Click(chromedp.CSS(`#d-diff .diff-lines > div[data-ln][data-file="done-by-runner.txt"]`)),
+		chromedp.Focus(chromedp.CSS(`#d-diff .diff-lines > div[data-ln][data-file="done-by-runner.txt"] button.ln-comment`)),
+		chromedp.KeyEvent("\r"),
 		chromedp.WaitVisible(chromedp.CSS(`#d-diff .comment-box textarea`)),
+	)
+	b.waitJS("the comment box focused", `document.activeElement?.matches("#d-diff .comment-box textarea")`)
+	b.do("write the comment",
 		chromedp.SendKeys(chromedp.CSS(`#d-diff .comment-box textarea`), "Say it louder"),
 		chromedp.Click(chromedp.CSS(`#d-diff .comment-box button.primary`)),
 	)

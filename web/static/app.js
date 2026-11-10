@@ -3689,6 +3689,7 @@ function renderDiff(text) {
 // with saved review comments under their lines.
 function diffLines(f) {
   const comments = commentsFor(state.detail).filter((c) => c.file === f.path);
+  const commentable = ["review", "failed"].includes(state.todos.get(state.detail)?.status);
   const rows = [];
   let oldLn = 0, newLn = 0;
   for (const l of f.lines) {
@@ -3702,7 +3703,10 @@ function diffLines(f) {
     const side = l.startsWith("-") ? "old" : "new";
     const ln = side === "old" ? oldLn++ : newLn++;
     if (l.startsWith(" ") || l === "") oldLn++;
-    rows.push(h("div", { class: l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "", "data-ln": ln, "data-side": side, "data-file": f.path, title: "Click to comment" }, l || " "));
+    // The button gives keyboard and screen reader users a way to open the comment box.
+    rows.push(h("div", { class: l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "", "data-ln": ln, "data-side": side, "data-file": f.path, title: commentable ? "Click to comment" : null },
+      commentable ? h("button", { type: "button", class: "ln-comment", "aria-label": `Comment on ${f.path} ${side === "old" ? "removed line" : "line"} ${ln}` }, "+") : null,
+      h("span", { class: "code" }, l || " ")));
     for (const c of comments.filter((c) => c.line === ln && c.side === side)) {
       rows.push(h("div", { class: "comment" },
         h("span", {}, c.text),
@@ -4765,24 +4769,31 @@ $("#d-diff").addEventListener("click", (e) => {
   const line = e.target.closest(".diff-lines > div[data-ln]");
   const t = state.todos.get(state.detail);
   if (!line || !t || !["review", "failed"].includes(t.status)) return;
-  if (line.nextElementSibling?.classList.contains("comment-box")) return;
+  if (line.nextElementSibling?.classList.contains("comment-box")) return line.nextElementSibling.querySelector("textarea").focus();
+  const trigger = line.querySelector(".ln-comment");
+  // Closing the box puts focus back on the line's comment button.
+  const close = () => { box.remove(); trigger?.focus(); };
   const box = h("form", { class: "comment-box" },
-    h("textarea", { rows: 3, placeholder: "What should Claude change here?", "aria-label": "Comment on this line" }),
+    h("textarea", { rows: 3, placeholder: "What should Claude change here?", "aria-label": `Comment on ${line.dataset.file} line ${line.dataset.ln}` }),
     h("div", { class: "comment-actions" },
-      ib({ type: "button", class: "btn", onclick: () => box.remove() }, "x", "Cancel"),
+      ib({ type: "button", class: "btn", onclick: close }, "x", "Cancel"),
       ib({ class: "btn primary" }, "comment", "Add comment")));
   box.addEventListener("submit", (ev) => {
     ev.preventDefault();
     const text = box.querySelector("textarea").value.trim();
-    if (!text) return box.remove();
-    state.comments[t.id] = [...commentsFor(t.id), { file: line.dataset.file, line: Number(line.dataset.ln), side: line.dataset.side, code: line.textContent, text }];
+    if (!text) return close();
+    const { file, ln, side } = line.dataset;
+    state.comments[t.id] = [...commentsFor(t.id), { file, line: Number(ln), side, code: line.querySelector(".code").textContent, text }];
     saveComments();
     renderPane();
     renderActions(t);
+    [...$("#d-diff").querySelectorAll(".diff-lines > div[data-ln]")]
+      .find((d) => d.dataset.file === file && d.dataset.ln === ln && d.dataset.side === side)
+      ?.querySelector(".ln-comment")?.focus();
   });
   box.querySelector("textarea").addEventListener("keydown", (ev) => {
     if (ev.ctrlKey && ev.key === "Enter") box.requestSubmit();
-    if (ev.key === "Escape") { ev.stopPropagation(); box.remove(); }
+    if (ev.key === "Escape") { ev.stopPropagation(); close(); }
   });
   line.after(box);
   box.querySelector("textarea").focus();
