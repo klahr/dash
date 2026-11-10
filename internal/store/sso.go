@@ -132,19 +132,17 @@ func (a *Accounts) HasPassword(uid int64) (bool, error) {
 // UserByEmail is the account with email, and whether it still waits for
 // its signup link.
 func (a *Accounts) UserByEmail(email string) (User, bool, error) {
-	var u User
 	var unverified bool
-	err := a.db.QueryRow("SELECT id, username, COALESCE(email, ''), is_platform_admin, totp_secret IS NOT NULL, unverified FROM users WHERE email = ?", email).
-		Scan(&u.ID, &u.Username, &u.Email, &u.PlatformAdmin, &u.TOTP, &unverified)
-	if errors.Is(err, sql.ErrNoRows) {
-		return u, false, ErrNotFound
+	u, err := scanUser(a.db.QueryRow("SELECT "+userFields+", unverified FROM users WHERE email = ?", email), &unverified)
+	if err != nil {
+		return u, false, err
 	}
-	return u, unverified, err
+	return u, unverified, nil
 }
 
 // User is the account uid.
 func (a *Accounts) User(uid int64) (User, error) {
-	return a.scanUser(a.db.QueryRow(userCols+" WHERE id = ?", uid))
+	return scanUser(a.db.QueryRow(userCols+" WHERE id = ?", uid))
 }
 
 // Join is what a new account made by a provider sign-in joins: an
@@ -194,7 +192,7 @@ func (a *Accounts) CreateIdentityUser(email string, id Identity, join Join, now 
 		default:
 			return err
 		}
-		if u, err = scanUserRow(tx.QueryRow(userCols+" WHERE id = ?", uid)); err != nil {
+		if u, err = scanUser(tx.QueryRow(userCols+" WHERE id = ?", uid)); err != nil {
 			return err
 		}
 		id.UserID = uid

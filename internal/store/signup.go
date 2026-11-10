@@ -78,8 +78,8 @@ func (a *Accounts) SignUp(email string, now time.Time) (SignupResult, error) {
 			return err
 		}
 		var unverified bool
-		err := tx.QueryRow(userCols+" WHERE email = ?", email).Scan(&res.User.ID, &res.User.Username, &res.User.Email,
-			&res.User.PlatformAdmin, &res.User.TOTP)
+		var err error
+		res.User, err = scanUser(tx.QueryRow(userCols+" WHERE email = ?", email))
 		switch {
 		case err == nil:
 			if err := tx.QueryRow("SELECT unverified FROM users WHERE id = ?", res.User.ID).Scan(&unverified); err != nil {
@@ -90,7 +90,7 @@ func (a *Accounts) SignUp(email string, now time.Time) (SignupResult, error) {
 				return nil
 			}
 			res.Pending = true
-		case errors.Is(err, sql.ErrNoRows):
+		case errors.Is(err, ErrNotFound):
 			if res.User, err = createUnverified(tx, email, hash, now); err != nil {
 				return err
 			}
@@ -205,8 +205,9 @@ func (a *Accounts) ResendVerification(email string, now time.Time) (u User, tok 
 		return u, "", false, err
 	}
 	err = inTx(a.db, func(tx *sql.Tx) error {
-		err := tx.QueryRow(userCols+" WHERE email = ? AND unverified = 1", email).Scan(&u.ID, &u.Username, &u.Email, &u.PlatformAdmin, &u.TOTP)
-		if errors.Is(err, sql.ErrNoRows) {
+		var err error
+		u, err = scanUser(tx.QueryRow(userCols+" WHERE email = ? AND unverified = 1", email))
+		if errors.Is(err, ErrNotFound) {
 			return nil
 		}
 		if err != nil {
@@ -250,21 +251,12 @@ func (a *Accounts) VerifyEmail(tok, password string, now time.Time) (User, error
 		if _, err := tx.Exec("DELETE FROM email_tokens WHERE user_id = ? AND purpose = ?", uid, PurposeVerify); err != nil {
 			return err
 		}
-		if u, err = scanUserRow(tx.QueryRow(userCols+" WHERE id = ?", uid)); err != nil {
+		if u, err = scanUser(tx.QueryRow(userCols+" WHERE id = ?", uid)); err != nil {
 			return err
 		}
 		_, err = a.ensurePersonalOrg(tx, u, now)
 		return err
 	})
-	return u, err
-}
-
-func scanUserRow(row *sql.Row) (User, error) {
-	var u User
-	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.PlatformAdmin, &u.TOTP)
-	if errors.Is(err, sql.ErrNoRows) {
-		return u, ErrNotFound
-	}
 	return u, err
 }
 
@@ -289,9 +281,9 @@ func (a *Accounts) RequestPasswordReset(email string, now time.Time) (u User, to
 		return u, "", false, err
 	}
 	err = inTx(a.db, func(tx *sql.Tx) error {
-		err := tx.QueryRow(userCols+" WHERE email = ? AND unverified = 0 AND env_managed = 0", email).
-			Scan(&u.ID, &u.Username, &u.Email, &u.PlatformAdmin, &u.TOTP)
-		if errors.Is(err, sql.ErrNoRows) {
+		var err error
+		u, err = scanUser(tx.QueryRow(userCols+" WHERE email = ? AND unverified = 0 AND env_managed = 0", email))
+		if errors.Is(err, ErrNotFound) {
 			return nil
 		}
 		if err != nil {
@@ -340,7 +332,7 @@ func (a *Accounts) ResetPassword(tok, password string, now time.Time) (User, err
 		if _, err := tx.Exec("DELETE FROM email_tokens WHERE user_id = ? AND purpose = 'reset'", uid); err != nil {
 			return err
 		}
-		u, err = scanUserRow(tx.QueryRow(userCols+" WHERE id = ?", uid))
+		u, err = scanUser(tx.QueryRow(userCols+" WHERE id = ?", uid))
 		return err
 	})
 	return u, err
@@ -354,7 +346,7 @@ func (a *Accounts) ResetPassword(tok, password string, now time.Time) (User, err
 func (a *Accounts) EnsurePersonalOrg(uid int64) (Org, error) {
 	var o Org
 	err := inTx(a.db, func(tx *sql.Tx) error {
-		u, err := scanUserRow(tx.QueryRow(userCols+" WHERE id = ?", uid))
+		u, err := scanUser(tx.QueryRow(userCols+" WHERE id = ?", uid))
 		if err != nil {
 			return err
 		}

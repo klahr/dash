@@ -352,18 +352,24 @@ func (a *Accounts) DefaultOrg() (Org, error) {
 
 // EnvUser is the account DASH_USERNAME describes, if any.
 func (a *Accounts) EnvUser() (User, error) {
-	return a.scanUser(a.db.QueryRow(userCols + " WHERE env_managed = 1"))
+	return scanUser(a.db.QueryRow(userCols + " WHERE env_managed = 1"))
 }
 
 // ---- users and passwords ----
 
-const userCols = "SELECT id, username, COALESCE(email, ''), is_platform_admin, totp_secret IS NOT NULL FROM users"
+// userFields are the users columns scanUser reads, in its order.
+const userFields = "id, username, COALESCE(email, ''), is_platform_admin, totp_secret IS NOT NULL"
 
-func (a *Accounts) scanUser(row *sql.Row) (User, error) {
+// userCols selects userFields; append a WHERE clause.
+const userCols = "SELECT " + userFields + " FROM users"
+
+// scanUser reads a row selected by userCols (or userFields followed by
+// columns scanned into extra). No row is ErrNotFound.
+func scanUser(sc interface{ Scan(...any) error }, extra ...any) (User, error) {
 	var u User
-	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.PlatformAdmin, &u.TOTP)
+	err := sc.Scan(append([]any{&u.ID, &u.Username, &u.Email, &u.PlatformAdmin, &u.TOTP}, extra...)...)
 	if errors.Is(err, sql.ErrNoRows) {
-		return u, ErrNotFound
+		return User{}, ErrNotFound
 	}
 	return u, err
 }
@@ -371,15 +377,13 @@ func (a *Accounts) scanUser(row *sql.Row) (User, error) {
 // Credentials returns the user whose username or email is login, and their
 // password hash. A username wins over another account's email.
 func (a *Accounts) Credentials(login string) (User, string, error) {
-	var u User
 	var hash string
-	err := a.db.QueryRow(`SELECT id, username, COALESCE(email, ''), is_platform_admin, totp_secret IS NOT NULL, password_hash FROM users
-		WHERE username = ?1 OR email = ?1 ORDER BY username = ?1 DESC LIMIT 1`, login).
-		Scan(&u.ID, &u.Username, &u.Email, &u.PlatformAdmin, &u.TOTP, &hash)
-	if errors.Is(err, sql.ErrNoRows) {
-		return u, "", ErrNotFound
+	u, err := scanUser(a.db.QueryRow(`SELECT `+userFields+`, password_hash FROM users
+		WHERE username = ?1 OR email = ?1 ORDER BY username = ?1 DESC LIMIT 1`, login), &hash)
+	if err != nil {
+		return u, "", err
 	}
-	return u, hash, err
+	return u, hash, nil
 }
 
 // PasswordHash is the user's stored password hash.
