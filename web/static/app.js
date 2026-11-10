@@ -44,6 +44,9 @@ const h = (tag, props = {}, ...kids) => {
   el.append(...kids.flat().filter((k) => k != null && k !== false));
   return el;
 };
+// fill replaces el's children like replaceChildren, but skips null/false kids
+// the way h() does (replaceChildren would print them as "null"/"false").
+const fill = (el, ...kids) => el.replaceChildren(...kids.flat().filter((k) => k != null && k !== false));
 // entering marks a node just arriving (not one redrawn from history) so it
 // animates in once; the class goes when its animation ends, so showing a
 // hidden pane again doesn't replay it.
@@ -3125,7 +3128,7 @@ function renderPreview() {
           h("a", { href: p.local_url, target: "_blank", rel: "noopener" }, p.local_url)));
       break;
     default:
-      status.replaceChildren(h("strong", {}, "The preview isn't running"),
+      fill(status, h("strong", {}, "The preview isn't running"),
         h("p", { class: "hint" }, "It stops after 30 minutes without traffic, and when the task is approved or sent back."),
         canPreview(t) ? restart() : null);
   }
@@ -3156,7 +3159,7 @@ function renderTermPreview(t, p, st) {
   const restart = () => ib({ class: "btn", type: "button", onclick: attempt(() => previewTodo(t)) }, "play", "Start again");
   switch (st) {
     case "starting":
-      status.replaceChildren(h("div", { class: "spinner big", "aria-hidden": "true" }), h("strong", {}, "Opening the terminal"),
+      fill(status, h("div", { class: "spinner big", "aria-hidden": "true" }), h("strong", {}, "Opening the terminal"),
         cmd ? h("p", { class: "hint" }, h("code", {}, cmd)) : null);
       break;
     case "crashed":
@@ -3169,7 +3172,7 @@ function renderTermPreview(t, p, st) {
           restart()));
       break;
     default:
-      status.replaceChildren(h("strong", {}, "The preview isn't running"),
+      fill(status, h("strong", {}, "The preview isn't running"),
         h("p", { class: "hint" }, "It stops after 30 minutes without typing, and when the task is approved or sent back."),
         canPreview(t) ? restart() : null);
   }
@@ -4538,7 +4541,7 @@ async function renderOrgSSO(o, mine) {
     h("span", { class: "hint" }, new Date(e.at).toLocaleString(), " · "), e.user || e.actor || "", " ", SSO_EVENTS[e.kind] || e.kind,
     e.detail ? h("span", { class: "hint" }, ` · ${e.detail}`) : null));
 
-  box.replaceChildren(
+  fill(box,
     h("p", { class: "hint" }, status),
     h("h3", { class: "org-section" }, "Google Workspace domains"),
     h("ul", { class: "runner-list sso-domains" }, ...domains),
@@ -4583,7 +4586,7 @@ async function renderPlatformSSO(el) {
       toast(`${d.domain} verified for ${d.org}`, { tone: "ok" });
       await renderPlatformSSO(el);
     }) }, "Approve")));
-  el.replaceChildren(
+  fill(el,
     h("h3", { class: "org-section" }, "This Dash's Google client (platform admins)"),
     h("p", { class: "hint" }, s.from_env ? "Set by DASH_GOOGLE_CLIENT_ID and DASH_GOOGLE_CLIENT_SECRET." : "Used by every organization without its own. Redirect URI:"),
     copyBlock(s.redirect_uri, "Redirect URI copied"),
@@ -4766,7 +4769,7 @@ function renderBillingBanner() {
   if (pastDue && b.has_account) text += " Update the card in the billing portal.";
   if (!b.can_manage) text += " Ask an owner of the organization to subscribe.";
   el.classList.toggle("read-only", !!b.read_only);
-  el.replaceChildren(h("strong", {}, head), h("span", {}, text),
+  fill(el, h("strong", {}, head), h("span", {}, text),
     b.can_manage ? h("div", { class: "billing-actions" }, ...billingButtons(b)) : null);
   el.hidden = false;
 }
@@ -8094,7 +8097,7 @@ function renderFileTree() {
   const q = $("#file-filter").value.trim().toLowerCase();
   if (!q) return tree.replaceChildren(...dirNodes(s, fileTreeOf(s), ""));
   const hits = s.list.filter((f) => f.toLowerCase().includes(q)), max = 300;
-  tree.replaceChildren(...hits.slice(0, max).map((f) => fileItem(s, f, f)),
+  fill(tree, ...hits.slice(0, max).map((f) => fileItem(s, f, f)),
     hits.length > max ? note(`${hits.length - max} more; type more to narrow it down`) : null,
     hits.length ? null : note("No matching files"));
 }
