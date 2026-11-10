@@ -22,10 +22,10 @@ func TestFetchBringsTags(t *testing.T) {
 	if err := g.FetchBranch(ctx, "p", repo, "main", false); err != nil {
 		t.Fatalf("fetch with a clashing tag: %v", err)
 	}
-	if got, _ := g.TagCommit(ctx, "p", repo, "v1.0.0"); got != sha {
+	if got, _ := g.Commit(ctx, "p", repo, "refs/tags/v1.0.0"); got != sha {
 		t.Errorf("v1.0.0 is %q, want %s", got, sha)
 	}
-	if got, _ := g.TagCommit(ctx, "p", repo, "clash"); got == sha {
+	if got, _ := g.Commit(ctx, "p", repo, "refs/tags/clash"); got == sha {
 		t.Error("the local tag was overwritten")
 	}
 

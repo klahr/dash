@@ -76,11 +76,6 @@ func (g *Git) RemoteHasTag(ctx context.Context, projectID, repo, tag string) (bo
 	return strings.TrimSpace(out) != "", nil
 }
 
-// TagCommit is the commit a tag points at.
-func (g *Git) TagCommit(ctx context.Context, projectID, repo, tag string) (string, error) {
-	return g.Commit(ctx, projectID, repo, "refs/tags/"+tag)
-}
-
 // CreateTag makes an annotated tag on sha with msg. Like commits, it isn't
 // signed unless SignCommits is on.
 func (g *Git) CreateTag(ctx context.Context, projectID, repo, tag, sha, msg string) error {
