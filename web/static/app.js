@@ -9716,8 +9716,8 @@ document.addEventListener("keydown", (e) => {
   attempt(handleNormal)(k, n, hadCount);
 });
 
-// Sidebar lists: o focuses the sections, p the projects (in the phone menu),
-// Tab switches between them. j/k move, Enter opens the focused item, Esc, q
+// Sidebar lists: o focuses the projects and then toggles between them and the
+// sections, p the projects (in the phone menu), Tab switches between them. j/k move, Enter opens the focused item, Esc, q
 // or l leave the list.
 const SECTIONS = ".nav > button[data-view]";
 const PROJECTS = "#side-project-list .side-project";
@@ -9730,6 +9730,17 @@ function sidebarList(el) {
 function openSections() {
   setMenu(false);
   $(`.nav > button[data-view="${state.view}"]`)?.focus();
+}
+
+// o: the projects list first; pressed again, it switches to the sections
+// list and back.
+function toggleSidebarList() {
+  const picker = $("#project-picker");
+  if (sidebarList(document.activeElement) === PROJECTS || !picker.hidden) {
+    if (!picker.hidden) setPicker(false);
+    return openSections();
+  }
+  return openProjects();
 }
 
 function openSection(name) {
@@ -9776,7 +9787,7 @@ async function handleNormal(k, n, hadCount) {
     case "p": return openProjects();
     case "J": case "K": return stepProject(k === "J" ? n : -n);
     case "[": return desktop.matches && setSideCollapsed(!sideCollapsed());
-    case "o": return openSections();
+    case "o": return toggleSidebarList();
     case "Escape": case "q":
       if (menuOpen()) return setMenu(false);
       if (k === "Escape" && pane.open && paneOverlays()) return toggleChatPane(false);
