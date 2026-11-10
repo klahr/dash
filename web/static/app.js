@@ -5296,7 +5296,14 @@ async function loadRepoInfo() {
 const LICENSE_NAMES = { other: "Other (GitHub couldn't tell which)" };
 const fmtDate = (iso) => new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 const fmtSize = (kb) => (kb >= 1024 * 1024 ? `${(kb / 1024 / 1024).toFixed(1)} GB` : kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`);
-const ext = (href, text) => h("a", { href, target: "_blank", rel: "noopener" }, text);
+// ext links to an outside web page; anything but an absolute http(s) URL
+// (javascript:, data:, a path on Dash itself, …) is shown as plain text, since
+// the links come from a runner's answer (the hub drops the ones it won't show).
+const ext = (href, text) => {
+  let ok = false;
+  try { ok = ["https:", "http:"].includes(new URL(href).protocol); } catch {}
+  return ok ? h("a", { href, target: "_blank", rel: "noopener" }, text) : h("span", {}, text);
+};
 const isSet = (iso) => iso && !iso.startsWith("0001-");
 
 function renderRepoInfo(p, res) {

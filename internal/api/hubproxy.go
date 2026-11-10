@@ -146,6 +146,8 @@ func (s *Server) viaRunner(h http.HandlerFunc) http.HandlerFunc {
 			s.startProcessOnRunner(w, r, sv, p)
 		case "POST /api/projects/{pid}/remote/pull":
 			s.pullOnRunner(w, r, sv, p)
+		case "GET /api/projects/{pid}/repo-info":
+			s.repoInfoOnRunner(w, r, sv, p)
 		default:
 			res, err := sv.forward(r, p, "", nil)
 			if err != nil {

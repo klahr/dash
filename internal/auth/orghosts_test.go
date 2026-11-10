@@ -389,8 +389,21 @@ func TestOrgHostOriginCheck(t *testing.T) {
 		t.Errorf("same-origin POST: %d %s", w.Code, w.Body)
 	}
 	// Pages may only be framed by their own host.
-	if w := b.do("GET", orgHost("acme")+"/", ""); w.Header().Get("Content-Security-Policy") != "frame-ancestors 'self'" {
+	if w := b.do("GET", orgHost("acme")+"/", ""); !strings.HasSuffix(w.Header().Get("Content-Security-Policy"), "frame-ancestors 'self'") {
 		t.Errorf("CSP: %q", w.Header().Get("Content-Security-Policy"))
+	}
+}
+
+func TestWithFrameAncestorsSelf(t *testing.T) {
+	for in, want := range map[string]string{
+		"":                                     "frame-ancestors 'self'",
+		ContentSecurityPolicy:                  ContentSecurityPolicy,
+		"script-src 'self'":                    "script-src 'self'; frame-ancestors 'self'",
+		"frame-ancestors *; script-src 'self'": "script-src 'self'; frame-ancestors 'self'",
+	} {
+		if got := withFrameAncestorsSelf(in); got != want {
+			t.Errorf("withFrameAncestorsSelf(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

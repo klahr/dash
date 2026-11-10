@@ -2,10 +2,14 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/klahr/dash/internal/gitops"
+	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/release"
 )
 
@@ -21,6 +25,51 @@ type projectRepoInfo struct {
 	GitHub    *gitops.RepoInfo `json:"github"`
 	Error     string           `json:"error,omitempty"`
 	LatestTag string           `json:"latest_tag,omitempty"`
+}
+
+// repoInfoOnRunner is repoInfo on the hub: a runner answers it, and the
+// links in its answer are kept only if they are pages on GitHub (the
+// homepage: any http(s) page). The runner isn't trusted, and the hub's
+// project settings show them as links (see model.IsGitHubWebURL).
+func (s *Server) repoInfoOnRunner(w http.ResponseWriter, r *http.Request, sv *service, p model.Project) {
+	res, err := sv.forward(r, p, "", nil)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if !res.ok() {
+		res.write(w)
+		return
+	}
+	var out projectRepoInfo
+	if err := json.Unmarshal(res.body, &out); err != nil {
+		writeErr(w, fmt.Errorf("the runner's answer: %w", err))
+		return
+	}
+	safeRepoLinks(&out)
+	writeJSON(w, http.StatusOK, out)
+}
+
+// safeRepoLinks drops the links in x that may not be shown on the hub.
+func safeRepoLinks(x *projectRepoInfo) {
+	g := x.GitHub
+	if g == nil {
+		return
+	}
+	g.URL = model.GitHubWebURL(g.URL)
+	g.Homepage = webURL(g.Homepage)
+	if g.LatestRelease != nil {
+		g.LatestRelease.URL = model.GitHubWebURL(g.LatestRelease.URL)
+	}
+}
+
+// webURL is u if it is an http(s) page, else "".
+func webURL(u string) string {
+	x, err := url.Parse(u)
+	if err != nil || (x.Scheme != "https" && x.Scheme != "http") || x.Host == "" || x.User != nil {
+		return ""
+	}
+	return u
 }
 
 // repoInfo handles GET /api/projects/{pid}/repo-info.

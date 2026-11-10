@@ -189,8 +189,9 @@ func (a *Auth) goURL(r *http.Request, slug, next string) string {
 // if not, r goes on (possibly with a new context).
 func (a *Auth) serveDomains(w http.ResponseWriter, r *http.Request, next http.Handler) (*http.Request, bool) {
 	// Each host may be framed by itself only: not by another org's host,
-	// and not by a preview.
-	w.Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
+	// and not by a preview. Only the frame-ancestors directive changes: the
+	// rest of the policy (Headers: script-src and so on) still applies.
+	w.Header().Set("Content-Security-Policy", withFrameAncestorsSelf(w.Header().Get("Content-Security-Policy")))
 	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 	switch kind, label := a.Domains.Parse(a.reqHost(r)); kind {
 	case orgdomain.Invalid:
@@ -207,6 +208,20 @@ func (a *Auth) serveDomains(w http.ResponseWriter, r *http.Request, next http.Ha
 		return r.WithContext(context.WithValue(r.Context(), baseHostKey{}, true)), false
 	}
 	return r, false
+}
+
+// withFrameAncestorsSelf is csp with its frame-ancestors directive, if any,
+// replaced by frame-ancestors 'self'; the other directives are kept.
+func withFrameAncestorsSelf(csp string) string {
+	var keep []string
+	for _, d := range strings.Split(csp, ";") {
+		f := strings.Fields(d)
+		if len(f) == 0 || strings.EqualFold(f[0], "frame-ancestors") {
+			continue
+		}
+		keep = append(keep, strings.TrimSpace(d))
+	}
+	return strings.Join(append(keep, "frame-ancestors 'self'"), "; ")
 }
 
 // serveOrgHost serves a request to slug's subdomain.
