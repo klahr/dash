@@ -915,25 +915,8 @@ func (s *Server) retestTodo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if t.OnRunner() {
-		// The tests run on its runner, in its worktree there.
-		if err := sv.onRunner(r.Context(), t, func(ctx context.Context) error { return s.Dispatch.Test(ctx, t) }); err != nil {
-			writeErr(w, err)
-			return
-		}
-		w.WriteHeader(http.StatusAccepted)
-		return
-	}
-	if s.hub() {
-		writeErr(w, fmt.Errorf("%w, so it has nothing to test", errNotRunYet))
-		return
-	}
-	if err := s.Todos.RunTests(r.PathValue("tid")); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			writeErr(w, err)
-			return
-		}
-		writeErr(w, fmt.Errorf("%w: %v", errBadRequest, err))
+	if err := sv.runTests(r.Context(), t); err != nil {
+		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
@@ -1166,8 +1149,7 @@ func (s *Server) todoDiff(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte(diff))
+	writeText(w, diff)
 }
 
 // todoChanges returns the patch a todo's worktree has made (t.Worktree must be set).
@@ -1196,8 +1178,7 @@ func (s *Server) todoLog(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte(log))
+	writeText(w, log)
 }
 
 // todoEvents is the todo's worker events, oldest first, for its timeline.
@@ -1282,25 +1263,7 @@ func (s *Server) revertTodo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	switch {
-	case t.Status != model.StatusMerged:
-		writeErr(w, fmt.Errorf("%w: only merged tasks can be reverted", errBadRequest))
-		return
-	case t.Revert != nil:
-		writeErr(w, fmt.Errorf("%w: this task was already reverted", errBadRequest))
-		return
-	case t.OnRunner():
-		if err := sv.revertOnRunner(r.Context(), t); err != nil {
-			writeErr(w, err)
-			return
-		}
-		w.WriteHeader(http.StatusAccepted)
-		return
-	case s.hub():
-		writeErr(w, fmt.Errorf("%w, so there is nothing to revert", errNotRunYet))
-		return
-	}
-	if err := s.Merges.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID, Revert: true}); err != nil {
+	if err := sv.revert(r.Context(), t); err != nil {
 		writeErr(w, err)
 		return
 	}

@@ -502,6 +502,12 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// writeText answers with plain text.
+func writeText(w http.ResponseWriter, s string) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(s))
+}
+
 func writeErr(w http.ResponseWriter, err error) {
 	code := http.StatusInternalServerError
 	var inv model.ErrInvalidTransition

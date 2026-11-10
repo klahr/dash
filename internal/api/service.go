@@ -314,6 +314,39 @@ func (sv *service) approve(id string) (model.Todo, error) {
 	return t, nil
 }
 
+// revert undoes a merged task on its project's merge worker (or its runner's);
+// the task updates when it's done.
+func (sv *service) revert(ctx context.Context, t model.Todo) error {
+	switch {
+	case t.Status != model.StatusMerged:
+		return fmt.Errorf("%w: only merged tasks can be reverted", errBadRequest)
+	case t.Revert != nil:
+		return fmt.Errorf("%w: this task was already reverted", errBadRequest)
+	case t.OnRunner():
+		return sv.revertOnRunner(ctx, t)
+	case sv.s.hub():
+		return fmt.Errorf("%w, so there is nothing to revert", errNotRunYet)
+	}
+	return sv.s.Merges.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID, Revert: true})
+}
+
+// runTests reruns a task's tests in its worktree (on its runner, if it has one).
+func (sv *service) runTests(ctx context.Context, t model.Todo) error {
+	if t.OnRunner() {
+		return sv.onRunner(ctx, t, func(ctx context.Context) error { return sv.s.Dispatch.Test(ctx, t) })
+	}
+	if sv.s.hub() {
+		return fmt.Errorf("%w, so it has nothing to test", errNotRunYet)
+	}
+	if err := sv.s.Todos.RunTests(t.ID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		return fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	return nil
+}
+
 // rework sends a reviewed (or failed) todo back to the queue with feedback;
 // the next run reuses its worktree so Claude builds on its changes.
 func (sv *service) rework(id, feedback string, atts []model.Attachment) (model.Todo, error) {

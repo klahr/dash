@@ -568,24 +568,13 @@ func (s *Server) hubTaskAction(action string) http.HandlerFunc {
 			}
 			writeJSON(w, http.StatusAccepted, dispatch.StateOf(t))
 		case "revert":
-			switch {
-			case t.Status != model.StatusMerged:
-				writeErr(w, fmt.Errorf("%w: only merged tasks can be reverted", errBadRequest))
-				return
-			case t.Revert != nil:
-				writeErr(w, fmt.Errorf("%w: this task was already reverted", errBadRequest))
-				return
-			}
-			if err := s.Merges.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID, Revert: true}); err != nil {
+			if err := sv.revert(r.Context(), t); err != nil {
 				writeErr(w, err)
 				return
 			}
 			w.WriteHeader(http.StatusAccepted)
 		case "test":
-			if err := s.Todos.RunTests(t.ID); err != nil {
-				if !errors.Is(err, store.ErrNotFound) {
-					err = fmt.Errorf("%w: %v", errBadRequest, err)
-				}
+			if err := sv.runTests(r.Context(), t); err != nil {
 				writeErr(w, err)
 				return
 			}
@@ -612,7 +601,7 @@ func (s *Server) hubTaskAction(action string) http.HandlerFunc {
 			w.WriteHeader(http.StatusNoContent)
 		case "diff":
 			if t.Worktree == nil {
-				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+				writeText(w, "")
 				return
 			}
 			diff, err := sv.diff(r.Context(), t.ID)
@@ -620,16 +609,14 @@ func (s *Server) hubTaskAction(action string) http.HandlerFunc {
 				writeErr(w, err)
 				return
 			}
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			_, _ = w.Write([]byte(diff))
+			writeText(w, diff)
 		case "log":
 			log, err := sv.log(t.ID)
 			if err != nil {
 				writeErr(w, err)
 				return
 			}
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			_, _ = w.Write([]byte(log))
+			writeText(w, log)
 		case "events":
 			evs, err := s.Todos.Log.Events(t.ID)
 			if err != nil {

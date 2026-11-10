@@ -52,8 +52,7 @@ func (s *Server) commitDiff(w http.ResponseWriter, r *http.Request) {
 	if len(diff) > maxCommitDiff {
 		diff = diff[:maxCommitDiff] + "\n[diff truncated]"
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte(diff))
+	writeText(w, diff)
 }
 
 // commitErr makes gitops' refusals of a hash or path a 400 (writeErr

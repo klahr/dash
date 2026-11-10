@@ -102,8 +102,7 @@ func (s *Server) previewLog(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write(b)
+	writeText(w, string(b))
 }
 
 // maxPreviewLogLines caps the lines of a terminal preview's log.

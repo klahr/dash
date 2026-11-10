@@ -408,8 +408,7 @@ func (s *Server) scanRunLog(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write(b)
+	writeText(w, string(b))
 }
 
 func (s *Server) cancelScanRun(w http.ResponseWriter, r *http.Request) {
