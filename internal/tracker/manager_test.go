@@ -137,16 +137,6 @@ func todoByRef(st *store.Store, pid, cardID string) (model.Todo, bool) {
 	return model.Todo{}, false
 }
 
-func count(calls []string, prefix string) int {
-	n := 0
-	for _, c := range calls {
-		if strings.HasPrefix(c, prefix) {
-			n++
-		}
-	}
-	return n
-}
-
 func TestInboundCreateAndUpdate(t *testing.T) {
 	fake := trackertest.Register(t, "fake")
 	e := newEnv(t)
