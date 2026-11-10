@@ -12,7 +12,6 @@ Most important first within each section.
 ## Features
 
 - [ ] Todos that wait for another todo to merge.
-- [ ] Split a large task into several todos (Claude proposes, you confirm).
 - [ ] Run the same task twice and compare the attempts.
 - [ ] Edit a diff in the UI before approving.
 
