@@ -50,16 +50,6 @@ func newOrigin(t *testing.T, dir string) origin {
 	return origin{git: gitBin, remote: srv.URL + "/app.git", bare: bare, env: env}
 }
 
-// buildDash builds dash and the fake claude into dir.
-func buildDash(t *testing.T, dir string) (dash, fakeClaude string) {
-	t.Helper()
-	dash = filepath.Join(dir, "dash")
-	run(t, "", nil, "go", "build", "-o", dash, ".")
-	fakeClaude = filepath.Join(dir, "fakebin", "claude")
-	run(t, "", nil, "go", "build", "-o", fakeClaude, "./testdata/fakeclaude")
-	return dash, fakeClaude
-}
-
 // registerRunner starts a runner named name with the fake claude,
 // registered with a code from the hub, and returns it with its id.
 func registerRunner(t *testing.T, api *client, dash, fake, dir, name string, env []string, extra ...string) (*proc, string, []string) {
@@ -95,12 +85,10 @@ func registerRunner(t *testing.T, api *client, dash, fake, dir, name string, env
 // branches, files and commands from the runner. With the runner gone, those
 // views say no runner is online; projects on the hub's own disk are refused.
 func TestHubRunsNothingItself(t *testing.T) {
-	if testing.Short() {
-		t.Skip("builds and runs dash")
-	}
+	endToEnd(t)
 	dir := t.TempDir()
 	o := newOrigin(t, dir)
-	dash, fake := buildDash(t, dir)
+	dash, fake := buildDash(t)
 
 	// The hub: an empty PATH, so any git, gh, claude or shell it tried
 	// to run would fail (and log localrun.Refused before even trying).

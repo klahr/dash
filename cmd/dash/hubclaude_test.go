@@ -32,17 +32,12 @@ import (
 // claude that leaves a mark and a fake API that counts its calls catch any
 // code path that would.
 func TestHubWithoutClaudeNeverRunsIt(t *testing.T) {
-	if testing.Short() {
-		t.Skip("builds and runs dash")
-	}
+	endToEnd(t)
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("needs git")
 	}
 	dir := t.TempDir()
-	bin := filepath.Join(dir, "dash")
-	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
-		t.Fatalf("build: %v\n%s", err, out)
-	}
+	bin, _ := buildDash(t)
 	mark := filepath.Join(dir, "claude-ran")
 	fake := filepath.Join(dir, "claude")
 	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho \"$@\" >> "+mark+"\nexit 1\n"), 0o755); err != nil {

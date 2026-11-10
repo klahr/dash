@@ -15,6 +15,7 @@ import (
 // same name is refused rather than taking over the folder, and deleting the
 // project deletes its folder on the runner too.
 func TestHubLocalOnlyProject(t *testing.T) {
+	endToEnd(t)
 	h := startRunnerHub(t)
 	api := h.api
 	root := h.runnerArgs[slices.Index(h.runnerArgs, "-projects")+1]

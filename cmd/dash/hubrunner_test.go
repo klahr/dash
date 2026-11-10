@@ -29,9 +29,7 @@ import (
 // runner is online. Both are dash's real binaries; the runner's `claude` is
 // testdata/fakeclaude, and the hub's PATH has no claude at all.
 func TestHubWithoutClaudeRunsItsWorkOnARunner(t *testing.T) {
-	if testing.Short() {
-		t.Skip("builds and runs dash")
-	}
+	endToEnd(t)
 	h := startRunnerHub(t)
 	dash, addr, api, hubLogs, runner, p := h.dash, h.addr, h.api, h.hub, h.runner, h.project
 	calls, runnerID, runnerEnv, runnerArgs := h.calls, h.runnerID, h.runnerEnv, h.runnerArgs
@@ -158,10 +156,7 @@ func startRunnerHub(t *testing.T, runnerFlags ...string) *runnerHub {
 		t.Skip("needs git-http-backend")
 	}
 	dir := t.TempDir()
-	dash := filepath.Join(dir, "dash")
-	run(t, "", nil, "go", "build", "-o", dash, ".")
-	fake := filepath.Join(dir, "fakebin", "claude")
-	run(t, "", nil, "go", "build", "-o", fake, "./testdata/fakeclaude")
+	dash, fake := buildDash(t)
 	calls := filepath.Join(dir, "claude-calls")
 
 	// The project's origin, served over HTTPS (runners clone only network
@@ -187,7 +182,8 @@ func startRunnerHub(t *testing.T, runnerFlags ...string) *runnerHub {
 	h := &runnerHub{dash: dash, calls: calls, gitEnv: gitEnv, origin: bare, username: "admin", password: "a-long-enough-password"}
 	hubPath := pathWithout(t, "claude")
 	h.addr = freeAddr(t)
-	h.hub = startDash(t, dash, append(gitEnv, "PATH="+hubPath, "DASH_USERNAME="+h.username, "DASH_PASSWORD="+h.password),
+	// A scan waiting for a runner asks again often, not every 5s.
+	h.hub = startDash(t, dash, append(gitEnv, "PATH="+hubPath, "DASH_USERNAME="+h.username, "DASH_PASSWORD="+h.password, "DASH_TEST_SCAN_WAIT_EVERY=200ms"),
 		"-addr", h.addr, "-data", filepath.Join(dir, "hub"), "-projects", filepath.Join(dir, "hub-projects"), "-env", filepath.Join(dir, "none.env"))
 	h.base = "http://" + h.addr
 	api := newClient(t, h.base)
@@ -331,9 +327,10 @@ const waitTimeout = 3 * time.Minute
 func waitFor(t *testing.T, p *proc, what string, ok func() bool) {
 	t.Helper()
 	start := time.Now()
-	for lastPoll.reset(); !ok(); lastPoll.reset() {
+	polls := pollsOf(t)
+	for polls.reset(); !ok(); polls.reset() {
 		if time.Since(start) > waitTimeout {
-			msg := fmt.Sprintf("timed out after %s waiting for %s\nthe last poll's API responses:\n%s", time.Since(start).Round(time.Second), what, lastPoll.get())
+			msg := fmt.Sprintf("timed out after %s waiting for %s\nthe last poll's API responses:\n%s", time.Since(start).Round(time.Second), what, polls.get())
 			if p != nil {
 				msg += fmt.Sprintf("\nend of the log of dash %s:\n%s", p.name, tail(p.logs.String(), 40))
 			}
@@ -343,10 +340,14 @@ func waitFor(t *testing.T, p *proc, what string, ok func() bool) {
 	}
 }
 
-// lastPoll is the API requests clients made since waitFor's last poll began,
-// with their responses, for its timeout message. The package's tests don't
-// run in parallel.
-var lastPoll recorder
+// lastPolls has, per test, the API requests its clients made since
+// waitFor's last poll began, with their responses, for its timeout message.
+var lastPolls sync.Map // test name → *recorder
+
+func pollsOf(t *testing.T) *recorder {
+	r, _ := lastPolls.LoadOrStore(t.Name(), &recorder{})
+	return r.(*recorder)
+}
 
 type recorder struct {
 	mu    sync.Mutex
@@ -403,7 +404,7 @@ func (c *client) try(method, path string, body any) (int, string) {
 	req.Header.Set("Content-Type", "application/json")
 	res, err := c.c.Do(req)
 	if err != nil {
-		lastPoll.add("%s %s: %v", method, path, err)
+		pollsOf(c.t).add("%s %s: %v", method, path, err)
 		return 0, err.Error()
 	}
 	defer res.Body.Close()
@@ -412,7 +413,7 @@ func (c *client) try(method, path string, body any) (int, string) {
 	if len(got) > 2000 {
 		got = got[:2000] + "…"
 	}
-	lastPoll.add("%s %s: %d %s", method, path, res.StatusCode, got)
+	pollsOf(c.t).add("%s %s: %d %s", method, path, res.StatusCode, got)
 	return res.StatusCode, string(out)
 }
 

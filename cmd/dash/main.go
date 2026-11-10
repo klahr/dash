@@ -424,6 +424,13 @@ func main() {
 		RunTimeout: *scanTimeout,
 		GitTools:   &scan.GitMCP{},
 	}
+	// How often a scan waiting for a runner asks again (default 5s): only
+	// dash's own end-to-end tests set it, so they don't wait seconds for it.
+	if v := os.Getenv("DASH_TEST_SCAN_WAIT_EVERY"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			scans.WaitEvery = d
+		}
+	}
 	scans.Cleanup(ctx)
 	scans.PruneLogs()
 	scheduler := &scan.Scheduler{Store: st, Runner: scans, Usage: tracker}

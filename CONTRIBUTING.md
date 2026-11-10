@@ -52,6 +52,11 @@ for f in web/static/*.js; do node --check "$f"; done
 node --test web/                            # also run by go test, when node is installed
 ```
 
+For a quick loop while you work, `go test -short ./...` skips the end-to-end tests in
+[`cmd/dash`](cmd/dash) (the `TestHub…` and `TestBrowser…` tests, which build dash and run a
+real hub and runner). Run the full suite, without `-short`, before you open a pull request; CI
+always does.
+
 Tests live next to the code they test (`foo.go` and `foo_test.go`) and use the standard
 `testing` package. They must not depend on your own setup: no network, no real Claude, no
 GitHub. Tests that run git create throwaway repositories in `t.TempDir()`; see

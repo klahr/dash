@@ -28,6 +28,7 @@ import (
 // $PATH. Without one it is skipped, unless $DASH_TEST_BROWSER=require (as
 // in CI), when it fails instead.
 func TestBrowserMainFlows(t *testing.T) {
+	endToEnd(t)
 	chrome := needChrome(t)
 	h := startRunnerHub(t)
 	api, pid := h.api, h.project.ID
@@ -190,6 +191,7 @@ func TestBrowserChecklist(t *testing.T) {
 // notes. In a project of the runner's own, whose runner opens terminals for
 // the hub (-hub-commands): the preview runs there, reached through the hub.
 func TestBrowserTerminalPreview(t *testing.T) {
+	endToEnd(t)
 	chrome := needChrome(t)
 	h := startRunnerHub(t, "-hub-commands")
 	api := h.api
@@ -251,6 +253,7 @@ func TestBrowserTerminalPreview(t *testing.T) {
 // + in each project (each project its own), plus another project's chat
 // while its reply streams or is unread.
 func TestBrowserChatTabs(t *testing.T) {
+	endToEnd(t)
 	chrome := needChrome(t)
 	h := startRunnerHub(t)
 	api := h.api
@@ -354,9 +357,6 @@ func TestBrowserChatTabs(t *testing.T) {
 // TestBrowserMainFlows).
 func needChrome(t *testing.T) string {
 	t.Helper()
-	if testing.Short() {
-		t.Skip("builds and runs dash and Chrome")
-	}
 	chrome := findChrome()
 	if chrome == "" {
 		if os.Getenv("DASH_TEST_BROWSER") == "require" {
@@ -431,9 +431,9 @@ func (b *browser) do(what string, steps ...chromedp.Action[chromedp.Void]) {
 
 // try runs a step that a re-render may defeat (its node replaced between
 // the query and the input), for a caller that checks the outcome and tries
-// again.
-func (b *browser) try(what string, step chromedp.Action[chromedp.Void]) error {
-	ctx, cancel := context.WithTimeout(b.ctx, 10*time.Second)
+// again, giving up on it after wait.
+func (b *browser) try(what string, wait time.Duration, step chromedp.Action[chromedp.Void]) error {
+	ctx, cancel := context.WithTimeout(b.ctx, wait)
 	defer cancel()
 	err := chromedp.Do(ctx, step)
 	if err != nil {
@@ -449,7 +449,7 @@ func (b *browser) until(what, expr string, step chromedp.Action[chromedp.Void]) 
 	start := time.Now()
 	var last error
 	for range 20 {
-		if err := b.try(what, step); err != nil {
+		if err := b.try(what, 10*time.Second, step); err != nil {
 			last = err
 		}
 		for range 20 {
@@ -525,7 +525,9 @@ func (b *browser) clickTextUntil(sel, text, expr string) {
 	b.t.Helper()
 	for range 20 {
 		b.waitJS(fmt.Sprintf("%q in %s", text, sel), markText(sel, text))
-		b.try("click "+text, chromedp.Click(chromedp.CSS(`[data-e2e-click]`)))
+		// The node was just marked: if the click can't find it, a re-render
+		// replaced it, and waiting won't bring it back; mark the new one.
+		b.try("click "+text, 3*time.Second, chromedp.Click(chromedp.CSS(`[data-e2e-click]`)))
 		for range 20 {
 			if ok, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`!!(`+expr+`)`)); err == nil && ok {
 				return

@@ -41,10 +41,8 @@ func newFleet(t *testing.T) *fleet {
 		t.Skip("needs git-http-backend")
 	}
 	f := &fleet{t: t, dir: t.TempDir(), gitBin: gitBin}
-	f.dash = filepath.Join(f.dir, "dash")
-	run(t, "", nil, "go", "build", "-o", f.dash, ".")
-	fake := filepath.Join(f.dir, "fakebin", "claude")
-	run(t, "", nil, "go", "build", "-o", fake, "./testdata/fakeclaude")
+	dash, fake := buildDash(t)
+	f.dash = dash
 	f.hold = filepath.Join(f.dir, "hold")
 
 	repos := filepath.Join(f.dir, "repos")
@@ -220,9 +218,7 @@ func crash(p *proc) {
 // past the hub's grace has its task failed, and coming back continues it.
 // Nothing stays in progress or merging.
 func TestHubAndRunnerRestartsLoseNoWork(t *testing.T) {
-	if testing.Short() {
-		t.Skip("builds and runs dash")
-	}
+	endToEnd(t)
 	f := newFleet(t)
 
 	// 1. A deploy: SIGTERM to the hub while a task runs on the runner.
