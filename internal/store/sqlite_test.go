@@ -76,6 +76,8 @@ const legacyState = `{
 }`
 
 func TestImportStateJSON(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	legacy := filepath.Join(dir, LegacyFile)
 	if err := os.WriteFile(legacy, []byte(legacyState), 0o644); err != nil {
@@ -163,6 +165,8 @@ func TestImportStateJSON(t *testing.T) {
 }
 
 func TestImportBadStateJSONFailsOpen(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	legacy := filepath.Join(dir, LegacyFile)
 	if err := os.WriteFile(legacy, []byte(`{"projects": [`), 0o644); err != nil {
@@ -177,6 +181,8 @@ func TestImportBadStateJSONFailsOpen(t *testing.T) {
 }
 
 func TestRoundTripEveryRecord(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {
@@ -335,6 +341,8 @@ func TestRoundTripEveryRecord(t *testing.T) {
 }
 
 func TestScanRunPruneIsPersisted(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {
@@ -355,6 +363,8 @@ func TestScanRunPruneIsPersisted(t *testing.T) {
 }
 
 func TestMigrateFromEmpty(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "sub", "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {
@@ -405,6 +415,8 @@ func TestMigrateFromEmpty(t *testing.T) {
 }
 
 func TestFailedWriteLeavesMemoryAsStored(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {

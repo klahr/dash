@@ -17,6 +17,7 @@ import (
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/queue"
+	"github.com/klahr/dash/internal/testbin"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
@@ -45,6 +46,8 @@ func git(t *testing.T, dir string, args ...string) string {
 // request is opened, and the hub shows it merged with the pushed commit.
 // Reverting it on the hub reverts it on origin the same way.
 func TestHubTaskOnRunnerLandsOnOriginWithoutPR(t *testing.T) {
+	parallel(t)
+
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
@@ -91,9 +94,7 @@ func TestHubTaskOnRunnerLandsOnOriginWithoutPR(t *testing.T) {
 	}
 	runner, runnerAPI, _ := runnerSide(t, creds.OrgID)
 	gh := filepath.Join(t.TempDir(), "gh")
-	if err := os.WriteFile(gh, []byte("#!/bin/sh\necho \"$*\" >> "+gh+".calls\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	testbin.Write(t, gh, "#!/bin/sh\necho \"$*\" >> "+gh+".calls\nexit 1\n")
 	runner.Git.GhBin = gh
 	rlog := &queue.TodoLog{Pub: runner.Hub, Root: t.TempDir()}
 	merges := queue.NewMergeQueue(raw(runner), runner.Git, runner.Hub, rlog, 16)

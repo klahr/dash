@@ -169,6 +169,8 @@ func subObject(id, customer, status string, org int64, quantity int) map[string]
 }
 
 func TestBillingIsOffByDefault(t *testing.T) {
+	t.Parallel()
+
 	if (Config{}).Configured() {
 		t.Fatal("an empty config turns billing on")
 	}
@@ -207,6 +209,8 @@ func TestBillingIsOffByDefault(t *testing.T) {
 }
 
 func TestConfigCheck(t *testing.T) {
+	t.Parallel()
+
 	ok := Config{SecretKey: "sk_test_1", WebhookSecret: "whsec_1", PriceID: "price_1", TrialDays: 14, PublicURL: "https://dash.test"}
 	if err := ok.Check(); err != nil {
 		t.Fatal(err)
@@ -225,6 +229,8 @@ func TestConfigCheck(t *testing.T) {
 }
 
 func TestPersonalWorkspaceAndSoloOrgsAreFree(t *testing.T) {
+	t.Parallel()
+
 	f := newFixture(t)
 	personal, err := f.acc.EnsurePersonalOrg(f.owner)
 	if err != nil {
@@ -243,6 +249,8 @@ func TestPersonalWorkspaceAndSoloOrgsAreFree(t *testing.T) {
 }
 
 func TestInstanceDefaultOrgIsNeverBilled(t *testing.T) {
+	t.Parallel()
+
 	f := newFixture(t)
 	def, err := f.acc.DefaultOrg()
 	if err != nil {
@@ -257,6 +265,8 @@ func TestInstanceDefaultOrgIsNeverBilled(t *testing.T) {
 }
 
 func TestUnpaidOrgBecomesReadOnlyAfterGrace(t *testing.T) {
+	t.Parallel()
+
 	f := newFixture(t)
 	if n := f.b.InviteNotice(f.team); n == nil {
 		t.Error("inviting a second member into an unpaid org says nothing about a subscription")
@@ -298,6 +308,8 @@ func TestUnpaidOrgBecomesReadOnlyAfterGrace(t *testing.T) {
 }
 
 func TestCheckoutAndPortal(t *testing.T) {
+	t.Parallel()
+
 	f := newFixture(t)
 	if _, err := f.b.Portal(context.Background(), f.team); !errors.Is(err, ErrNoCustomer) {
 		t.Fatalf("portal without a customer: %v", err)
@@ -345,6 +357,8 @@ func TestCheckoutAndPortal(t *testing.T) {
 }
 
 func TestWebhookKeepsTheSubscription(t *testing.T) {
+	t.Parallel()
+
 	f := newFixture(t)
 	f.join(f.team)
 	if _, err := f.b.Checkout(context.Background(), f.team); err != nil {
@@ -414,6 +428,8 @@ func TestWebhookKeepsTheSubscription(t *testing.T) {
 }
 
 func TestWebhookFailureLetsStripeRetry(t *testing.T) {
+	t.Parallel()
+
 	f := newFixture(t)
 	f.join(f.team)
 	if _, err := f.b.Checkout(context.Background(), f.team); err != nil {
@@ -445,6 +461,8 @@ func TestWebhookFailureLetsStripeRetry(t *testing.T) {
 }
 
 func TestOldSubscriptionEndingKeepsTheNewOne(t *testing.T) {
+	t.Parallel()
+
 	f := newFixture(t)
 	f.join(f.team)
 	if _, err := f.b.Checkout(context.Background(), f.team); err != nil {
@@ -468,6 +486,8 @@ func TestOldSubscriptionEndingKeepsTheNewOne(t *testing.T) {
 }
 
 func TestWebhookChecksTheSignature(t *testing.T) {
+	t.Parallel()
+
 	f := newFixture(t)
 	body := `{"id":"evt_1","type":"customer.subscription.created","created":1,"data":{"object":{}}}`
 	mux := http.NewServeMux()
@@ -498,6 +518,8 @@ func TestWebhookChecksTheSignature(t *testing.T) {
 }
 
 func TestSeatsFollowMembers(t *testing.T) {
+	t.Parallel()
+
 	f := newFixture(t)
 	f.join(f.team)
 	if len(f.fake.updates) != 0 {

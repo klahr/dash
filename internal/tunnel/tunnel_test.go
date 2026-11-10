@@ -46,6 +46,8 @@ func pair(t *testing.T) (dialer, listener *Session) {
 }
 
 func TestStreamsCarryMoreThanTheWindow(t *testing.T) {
+	t.Parallel()
+
 	a, b := pair(t)
 	payload := make([]byte, 3*streamWindow+12345)
 	_, _ = rand.Read(payload)
@@ -90,6 +92,8 @@ func TestStreamsCarryMoreThanTheWindow(t *testing.T) {
 }
 
 func TestClosingTheSessionFailsStreams(t *testing.T) {
+	t.Parallel()
+
 	a, b := pair(t)
 	c, err := a.Open()
 	if err != nil {
@@ -119,6 +123,8 @@ func TestClosingTheSessionFailsStreams(t *testing.T) {
 }
 
 func TestReadDeadline(t *testing.T) {
+	t.Parallel()
+
 	a, _ := pair(t)
 	c, _ := a.Open()
 	_ = c.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
@@ -130,6 +136,8 @@ func TestReadDeadline(t *testing.T) {
 // ---- registration ----
 
 func TestRegistrationCodeIsSingleUseAndExpires(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
 	acc, owner := storetest.Accounts(t)
 	h := &Hub{now: func() time.Time { return now }, Accounts: acc}
@@ -179,6 +187,8 @@ func TestRegistrationCodeIsSingleUseAndExpires(t *testing.T) {
 }
 
 func TestRegistrationNamesTakenByTheHub(t *testing.T) {
+	t.Parallel()
+
 	acc, owner := storetest.Accounts(t)
 	h := &Hub{Taken: func(n string) bool { return n == "home" }, Accounts: acc}
 	code, _, _ := h.NewCode(owner)
@@ -188,6 +198,8 @@ func TestRegistrationNamesTakenByTheHub(t *testing.T) {
 }
 
 func TestSameComputerRegistersAgain(t *testing.T) {
+	t.Parallel()
+
 	th := newTestHub(t)
 	old := th.register(t, "work")
 
@@ -217,6 +229,8 @@ func TestSameComputerRegistersAgain(t *testing.T) {
 }
 
 func TestWrongCodesPauseRegistration(t *testing.T) {
+	t.Parallel()
+
 	acc, owner := storetest.Accounts(t)
 	h := &Hub{Accounts: acc}
 	code, _, _ := h.NewCode(owner)
@@ -371,6 +385,8 @@ func get(t *testing.T, url string) (int, string) {
 }
 
 func TestRunnerServesTheHubThroughItsTunnel(t *testing.T) {
+	t.Parallel()
+
 	th := newTestHub(t)
 	states, _ := startRunner(t, th.register(t, "work"))
 	states.want(t, true)
@@ -399,6 +415,8 @@ func TestRunnerServesTheHubThroughItsTunnel(t *testing.T) {
 }
 
 func TestRunnerReconnectsAfterTheTunnelDrops(t *testing.T) {
+	t.Parallel()
+
 	th := newTestHub(t)
 	states, _ := startRunner(t, th.register(t, "work"))
 	states.want(t, true)
@@ -421,6 +439,8 @@ func TestRunnerReconnectsAfterTheTunnelDrops(t *testing.T) {
 }
 
 func TestOfflineRunnerAnswersFast(t *testing.T) {
+	t.Parallel()
+
 	th := newTestHub(t)
 	th.register(t, "work") // never connects
 	code, body := get(t, th.srv.URL+"/peer/work/api/me")
@@ -433,6 +453,8 @@ func TestOfflineRunnerAnswersFast(t *testing.T) {
 }
 
 func TestRevokedRunnerIsCutOffAndStops(t *testing.T) {
+	t.Parallel()
+
 	th := newTestHub(t)
 	creds := th.register(t, "work")
 	states, done := startRunner(t, creds)
@@ -457,6 +479,8 @@ func TestRevokedRunnerIsCutOffAndStops(t *testing.T) {
 }
 
 func TestConnectNeedsAValidToken(t *testing.T) {
+	t.Parallel()
+
 	th := newTestHub(t)
 	th.register(t, "work")
 	c := &Client{Creds: Credentials{Server: th.srv.URL, Token: "dr_forged"}, Handler: runnerAPI()}
@@ -472,6 +496,8 @@ func TestConnectNeedsAValidToken(t *testing.T) {
 }
 
 func TestCheckServer(t *testing.T) {
+	t.Parallel()
+
 	for in, ok := range map[string]bool{
 		"https://hub.example.com":  true,
 		"https://hub.example.com/": true,
@@ -487,6 +513,8 @@ func TestCheckServer(t *testing.T) {
 }
 
 func TestHubRecordsTheRunnersVersion(t *testing.T) {
+	t.Parallel()
+
 	th := newTestHub(t)
 	creds := th.register(t, "work")
 	states := &stateLog{ch: make(chan bool, 16)}
@@ -516,6 +544,8 @@ func TestHubRecordsTheRunnersVersion(t *testing.T) {
 // learns their id), and nobody else can: a browser's request through the
 // proxy loses the header.
 func TestHubTellsTheRunnerWhomACallIsFor(t *testing.T) {
+	t.Parallel()
+
 	th := newTestHub(t)
 	c := th.register(t, "work")
 	if c.UserID != th.owner.User || c.UserID == 0 {
@@ -562,6 +592,8 @@ func TestHubTellsTheRunnerWhomACallIsFor(t *testing.T) {
 // whatever the browser claimed, for plain requests and WebSocket upgrades;
 // with no checked user it sends none.
 func TestProxyNamesTheCheckedUserNotTheClaimedOne(t *testing.T) {
+	t.Parallel()
+
 	th := newTestHub(t)
 	c := th.register(t, "work")
 	states, _ := startRunner(t, c)

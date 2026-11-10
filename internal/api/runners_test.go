@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -18,6 +17,7 @@ import (
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/testbin"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
@@ -105,6 +105,8 @@ func runnerNames(t *testing.T, w *httptest.ResponseRecorder) map[string]runnerVi
 // An org sees, configures and revokes only its own runners: another org's
 // don't exist for it.
 func TestRunnersAreScopedToTheirOrg(t *testing.T) {
+	parallel(t)
+
 	f := newFleetServer(t)
 	if got := runnerNames(t, send(f.u, "GET", "/api/runners", "")); len(got) != 2 || got["b-box"].ID != "" || !got["u-box"].Mine || !got["c-box"].CanManage {
 		t.Errorf("Default's runners: %+v", got)
@@ -132,6 +134,8 @@ func TestRunnersAreScopedToTheirOrg(t *testing.T) {
 // Any member makes a code (the runner will be theirs, in their org); only a
 // runner's owner and the org's admins pause, limit or revoke it.
 func TestRunnerOwnersAndAdminsManageRunners(t *testing.T) {
+	parallel(t)
+
 	f := newFleetServer(t)
 	w := send(f.c, "POST", "/api/runners/codes", "")
 	var code struct{ Code string }
@@ -170,6 +174,8 @@ func TestRunnerOwnersAndAdminsManageRunners(t *testing.T) {
 // its user chose otherwise (the runners open them; the hub needs no gh),
 // and choosing to merge sticks.
 func TestLinkingProjectsToRunners(t *testing.T) {
+	parallel(t)
+
 	f := newFleetServer(t)
 	f.s.Git.GhBin = filepath.Join(t.TempDir(), "no-gh") // the hub has no gh
 	path := "/api/projects/" + f.web.ID
@@ -279,9 +285,7 @@ func TestRunnerOnlyTakesWorkForLinkedProjects(t *testing.T) {
 	// The clone lands tasks the way the hub's project says, except that a
 	// runner without gh merges when pull requests are only the default.
 	gh := filepath.Join(t.TempDir(), "gh")
-	if err := os.WriteFile(gh, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	testbin.Write(t, gh, "#!/bin/sh\nexit 1\n")
 	off := false
 	for _, c := range []struct {
 		mode   string
@@ -357,6 +361,8 @@ func TestRunnerOnlyTakesWorkForLinkedProjects(t *testing.T) {
 // set when the project is created from the link, updated by every later
 // link, and kept when an older hub doesn't send them.
 func TestHubLinkCarriesReviewSettings(t *testing.T) {
+	parallel(t)
+
 	s, h, remote := runnerSide(t, 7)
 	link := func(auto *bool, fixes *int) model.Project {
 		t.Helper()

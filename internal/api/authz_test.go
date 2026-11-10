@@ -89,6 +89,8 @@ func (o *twoOrgs) join(t *testing.T, uid, org int64, email string) {
 // Requests without a session or a valid token are refused before they
 // reach any handler.
 func TestSignedOutRequestsAreRefused(t *testing.T) {
+	parallel(t)
+
 	o := newTwoOrgs(t)
 	acc := o.s.Auth.Accounts()
 	revoked, tok, err := acc.CreateToken(store.NewToken{Kind: store.TokenAPI, Name: "old", UserID: o.cUser.ID, OrgID: ownerSession(t, o.s).Org.ID, Scopes: store.UserScopes}, time.Now())
@@ -138,6 +140,8 @@ func refused(w *httptest.ResponseRecorder) bool {
 // A token pinned to one org works in that org only, even for a user who is
 // a member of both: it reaches nothing of another org of theirs.
 func TestOrgPinnedTokenStaysInItsOrg(t *testing.T) {
+	parallel(t)
+
 	o := newTwoOrgs(t)
 	o.join(t, o.cUser.ID, o.beta.ID, "c@example.com")
 	def := ownerSession(t, o.s).Org.ID
@@ -183,6 +187,8 @@ func TestOrgPinnedTokenStaysInItsOrg(t *testing.T) {
 
 // A read-only token may look at its org's records but change none of them.
 func TestReadOnlyTokenChangesNothing(t *testing.T) {
+	parallel(t)
+
 	o := newTwoOrgs(t)
 	ro := withToken(o.h, o.token(t, o.cUser.ID, ownerSession(t, o.s).Org.ID, []string{"read"}))
 	for _, e := range append(o.recordEndpoints(), orgEndpoints()...) {
@@ -252,6 +258,8 @@ func (o *twoOrgs) statefulEndpoints() []endpoint {
 // A page of another site (or another org's subdomain) can't use a
 // signed-in browser's cookie to change anything, nor open a socket.
 func TestCrossOriginWritesAreRefused(t *testing.T) {
+	parallel(t)
+
 	o := newTwoOrgs(t)
 	d, err := orgdomain.New("dash.example.com", nil, "")
 	if err != nil {
@@ -314,6 +322,8 @@ func TestCrossOriginWritesAreRefused(t *testing.T) {
 // site, or another app on a subdomain of the same site, which SameSite
 // cookies don't keep out) can't use the cookie to change anything either.
 func TestCrossOriginWritesAreRefusedWithoutOrgDomains(t *testing.T) {
+	parallel(t)
+
 	o := newTwoOrgs(t)
 	cookies := o.login(t, "dash.example.com", "c", "c-password")
 	send := o.crossOrigin(t, cookies, "dash.example.com")

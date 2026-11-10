@@ -11,6 +11,8 @@ import (
 )
 
 func TestWebhookCRUD(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {
@@ -117,6 +119,8 @@ func TestWebhookCRUD(t *testing.T) {
 }
 
 func TestWebhooksBelongToTheProjectsOrg(t *testing.T) {
+	t.Parallel()
+
 	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), nil)
 	if err != nil {
 		t.Fatal(err)

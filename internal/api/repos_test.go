@@ -41,6 +41,8 @@ func fakeRepo(t *testing.T, dir, branch, remote string) {
 // deeper ones, existing projects, or anything a symlink leads to (inside
 // or outside the directory).
 func TestFindReposStaysInsideTheProjectsDirectory(t *testing.T) {
+	parallel(t)
+
 	root := filepath.Join(t.TempDir(), "code")
 	outside := t.TempDir()
 	fakeRepo(t, filepath.Join(root, "app"), "main", "https://alice:s3cret@github.com/x/app.git")
@@ -123,6 +125,8 @@ func ownerCall(h http.Handler, method, path, body, uid string) *httptest.Respons
 // only what the listing has: nothing under hub/, outside -projects, or
 // already a project.
 func TestRunnerAddsRepositoriesOnlyForItsOwner(t *testing.T) {
+	parallel(t)
+
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("needs git")
 	}
@@ -182,6 +186,8 @@ func TestRunnerAddsRepositoriesOnlyForItsOwner(t *testing.T) {
 // On the hub, only a runner's owner asks it for its repositories: not
 // another member, not an org admin, not another org.
 func TestOnlyARunnersOwnerListsItsRepositories(t *testing.T) {
+	parallel(t)
+
 	f := newFleetServer(t)
 	cBox := "/api/runners/" + f.ids["c-box"] + "/repos"
 	for _, c := range []struct {

@@ -17,7 +17,7 @@ import (
 // time) and lets runners link to local paths, the tests' remotes. Tests run
 // in parallel (see boardServer), so neither changes per test.
 func TestMain(m *testing.M) {
-	passhash.UseWeakParamsForTests()
+	passhash.UseCheapParamsInTests()
 	gitops.AllowLocalRemotes = true
 	os.Exit(m.Run())
 }
@@ -60,4 +60,10 @@ func chatCaller(t *testing.T, s *Server) mcptools.Caller {
 // asOwner makes r a request of the owner.
 func asOwner(t *testing.T, s *Server, r *http.Request) *http.Request {
 	return r.WithContext(auth.WithSession(r.Context(), ownerSession(t, s)))
+}
+
+// noFailDelay is a with wrong passwords and codes answered at once.
+func noFailDelay(a *auth.Auth) *auth.Auth {
+	a.NoFailDelayInTests()
+	return a
 }

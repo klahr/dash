@@ -152,6 +152,8 @@ func (fx *fixture) get(t *testing.T, id string) model.Todo {
 // in the project's org: never to another org's runner, even when it is
 // linked by mistake, nor to an unlinked runner of the same org.
 func TestDispatchRoutesOnlyToLinkedRunnersOfTheOrg(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
 	fx.fleet.set(runnerOf("idle", fx.orgA, true))     // same org, not linked
@@ -173,6 +175,8 @@ func TestDispatchRoutesOnlyToLinkedRunnersOfTheOrg(t *testing.T) {
 
 // With every linked runner offline the task waits, and says why.
 func TestDispatchWaitsWhileRunnersAreOffline(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("laptop", fx.orgA, false))
 	fx.fleet.set(runnerOf("desk", fx.orgA, false))
@@ -198,6 +202,8 @@ func TestDispatchWaitsWhileRunnersAreOffline(t *testing.T) {
 
 // Each runner has its own parallel limit, pause and usage limit.
 func TestDispatchRespectsEachRunnersLimits(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	r := runnerOf("laptop", fx.orgA, true)
 	r.Parallel = 1
@@ -234,6 +240,8 @@ func TestDispatchRespectsEachRunnersLimits(t *testing.T) {
 // The least loaded runner gets new work; a task that ran before goes back
 // to the runner that has its session.
 func TestDispatchPrefersTheRunnerWithTheSession(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("a", fx.orgA, true))
 	fx.fleet.set(runnerOf("b", fx.orgA, true))
@@ -253,6 +261,8 @@ func TestDispatchPrefersTheRunnerWithTheSession(t *testing.T) {
 // A runner that stays offline past the grace has its running tasks failed,
 // ready to continue; one back in time keeps them.
 func TestOfflineRunnerFailsItsTasksCleanly(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
 	p := fx.project(t, fx.orgA, "laptop")
@@ -303,6 +313,8 @@ func report(t *testing.T, d *Dispatcher, runner string, tasks ...TaskState) {
 // A runner's report changes only the tasks the hub sent to that runner, in
 // its org: not another runner's, nor another org's.
 func TestReportsOnlyChangeTheRunnersOwnTasks(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
 	fx.fleet.set(runnerOf("desk", fx.orgA, true))
@@ -346,6 +358,8 @@ func TestReportsOnlyChangeTheRunnersOwnTasks(t *testing.T) {
 // Revoking a runner unlinks it everywhere and fails what it was running
 // (to start over elsewhere: its worktree is out of reach).
 func TestRevokedRunnerIsUnlinkedAndItsTasksFail(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
 	fx.fleet.set(runnerOf("desk", fx.orgA, true))
@@ -370,6 +384,8 @@ func TestRevokedRunnerIsUnlinkedAndItsTasksFail(t *testing.T) {
 
 // At start, tasks of runners that aren't connected fail after the grace.
 func TestStartArmsTheGraceOfOfflineRunners(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("laptop", fx.orgA, false))
 	p := fx.project(t, fx.orgA, "laptop")
@@ -385,6 +401,8 @@ func TestStartArmsTheGraceOfOfflineRunners(t *testing.T) {
 }
 
 func TestStateOf(t *testing.T) {
+	t.Parallel()
+
 	s := StateOf(model.Todo{ID: "x", HubTodoID: "h", Status: model.StatusFailed, SessionID: "s",
 		Worktree: &model.Worktree{Branch: "dash/todo-x"}})
 	if !s.Session || s.Branch != "dash/todo-x" || s.HubTodoID != "h" {
@@ -410,6 +428,8 @@ func (r *recorder) Publish(ev model.Event) {
 // reporter keeps a hub task's output for its next report, and the hub
 // streams it to its dashboards as the hub's task's events.
 func TestRunnerOutputReachesTheHubsBoard(t *testing.T) {
+	t.Parallel()
+
 	// The runner's side.
 	fx := newFixture(t)
 	rp := fx.project(t, fx.orgA)
@@ -453,6 +473,8 @@ func TestRunnerOutputReachesTheHubsBoard(t *testing.T) {
 // processes again: the runner reports the hub's project, and the hub tells
 // only about a project of the runner's org linked to it.
 func TestRunnerProcessChangesReachTheHubsDashboards(t *testing.T) {
+	t.Parallel()
+
 	// The runner's side.
 	fx := newFixture(t)
 	own := fx.project(t, fx.orgA) // the runner's own project: not reported
@@ -556,6 +578,8 @@ func TestRunnerChecklistChangesReachTheHubsDashboards(t *testing.T) {
 // Claude once when the revert conflicts, and shows why an approved task
 // came back to review.
 func TestHubFollowsTheRunnersMerge(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
 	p, err := fx.st.CreateProject(model.Project{Name: "web", OrgID: fx.orgA, RemoteURL: "https://github.com/x/web",

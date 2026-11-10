@@ -13,6 +13,8 @@ import (
 )
 
 func TestDeleteProjectKeepsFolder(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, nil, model.Project{Name: "p"})
 	ctx := context.Background()
 	td, _ := h.st.CreateTodo(model.Todo{ProjectID: h.proj.ID, Title: "x"})
@@ -43,6 +45,8 @@ func TestDeleteProjectKeepsFolder(t *testing.T) {
 }
 
 func TestDeleteProjectWithFolder(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, nil, model.Project{Name: "p"})
 	if _, err := h.merges.DeleteProject(context.Background(), h.proj.ID, true); err != nil {
 		t.Fatal(err)
@@ -53,6 +57,8 @@ func TestDeleteProjectWithFolder(t *testing.T) {
 }
 
 func TestDeleteProjectRefusesBusyAndOddFolders(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, nil, model.Project{Name: "p"})
 	td, _ := h.st.CreateTodo(model.Todo{ProjectID: h.proj.ID, Title: "x"})
 	if _, err := h.st.UpdateTodo(td.ID, func(x *model.Todo) error { x.Reviewing = true; return nil }); err != nil {

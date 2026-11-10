@@ -11,6 +11,8 @@ import (
 )
 
 func TestCustomValidation(t *testing.T) {
+	t.Parallel()
+
 	tm, err := Custom(model.ScanTemplate{Name: "lint", Kind: "Review", Path: "./web/", Prompt: " Look at {{path}}. "})
 	if err != nil {
 		t.Fatal(err)
@@ -51,6 +53,8 @@ func TestCustomValidation(t *testing.T) {
 }
 
 func TestMarkdownRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	tm, err := Custom(model.ScanTemplate{Name: "deps", Title: "Deps", Kind: "dependencies", Scope: "since_last_scan",
 		Model: "opus", Effort: "high", Schedule: "0 6 * * 1", Tools: []string{"Read", "Bash(npm audit:*)"}, Prompt: "Audit {{since}}."})
 	if err != nil {
@@ -68,6 +72,8 @@ func TestMarkdownRoundTrip(t *testing.T) {
 }
 
 func TestTemplatesMergeAndShadow(t *testing.T) {
+	t.Parallel()
+
 	st, err := store.Open(filepath.Join(t.TempDir(), "state.json"), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -135,6 +141,8 @@ func TestTemplatesMergeAndShadow(t *testing.T) {
 }
 
 func TestDashScanTrusted(t *testing.T) {
+	t.Parallel()
+
 	tm, _ := Custom(model.ScanTemplate{Name: "x", Schedule: "0 6 * * *", Tools: []string{"Bash(npm audit:*)"}, Prompt: "Go."})
 	if tools, ok := Tools(tm, model.ScanSetting{}, false); !ok || tools[0] != "Bash(npm audit:*)" {
 		t.Fatalf("tools: %v %v", tools, ok)
@@ -166,6 +174,8 @@ func TestDashScanTrusted(t *testing.T) {
 }
 
 func TestRunDashScan(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "", "")
 	if _, err := fx.st.SaveScanTemplate(model.ScanTemplate{ProjectID: fx.p.ID, Name: "mine", Kind: KindCustom, Scope: model.ScopeRepo, Prompt: "Dash scan of {{path}}."}, true); err != nil {
 		t.Fatal(err)

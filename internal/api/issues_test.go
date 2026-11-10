@@ -38,6 +38,8 @@ func do(t *testing.T, h http.Handler, method, path, body string) *httptest.Respo
 }
 
 func TestTaskRunGetsOnlyIssueTools(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	h := s.Routes()
 	td, err := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Prompt: "build it"})
@@ -81,6 +83,8 @@ func TestTaskRunGetsOnlyIssueTools(t *testing.T) {
 }
 
 func TestIssuesFilteredByScanKind(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	h := loggedIn(t, s.Routes())
 	for _, is := range []model.Issue{
@@ -135,6 +139,8 @@ func TestIssuesFilteredByScanKind(t *testing.T) {
 }
 
 func TestIssueTriageIntoTasks(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	h := loggedIn(t, s.Routes())
 	base := "/api/projects/" + p.ID + "/issues"

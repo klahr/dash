@@ -169,6 +169,8 @@ func chatTurn(t *testing.T, url string, extra map[string]any) (kinds, texts []st
 // without a runner of theirs online, titles come from the instructions and
 // the chat and clean-up say why they can't run.
 func TestHubRunsClaudeOnTheUsersOwnRunner(t *testing.T) {
+	parallel(t)
+
 	f := newClaudeFleet(t)
 	ownerID := testOwner(t, f.hub).User
 
@@ -240,6 +242,8 @@ func TestHubRunsClaudeOnTheUsersOwnRunner(t *testing.T) {
 // The runner's own check: a short call for anyone but its owner, or for
 // nobody in particular, is refused even if the hub sent it.
 func TestRunnerRunsShortCallsOnlyForItsOwner(t *testing.T) {
+	parallel(t)
+
 	s, h, _ := runnerServer(t)
 	small := &fakeSmall{where: "runner"}
 	s.HubUser, s.Small = 42, small
@@ -280,6 +284,8 @@ func TestRunnerRunsShortCallsOnlyForItsOwner(t *testing.T) {
 }
 
 func TestPlainTitle(t *testing.T) {
+	parallel(t)
+
 	for in, want := range map[string]string{
 		"Fix the bug":                "Fix the bug",
 		"\n\n## Heading here\nbody":  "Heading here",
@@ -300,6 +306,8 @@ func TestPlainTitle(t *testing.T) {
 // mode; the hub keeps the conversation. Without such a runner it says how
 // to get one.
 func TestHubRunsProjectChatOnTheUsersLinkedRunner(t *testing.T) {
+	parallel(t)
+
 	f := newClaudeFleet(t)
 	hp := project(t, f.hub, "web")
 	turn := func(url string) ([]string, []string) {
@@ -373,6 +381,8 @@ func (c *seenChat) seen() (string, string) {
 // that ran the task, in its worktree, with the task's context from the hub;
 // the hub keeps the conversation.
 func TestHubRunsTaskChatOnTheTasksRunner(t *testing.T) {
+	parallel(t)
+
 	f := newClaudeFleet(t)
 	seen := &seenChat{}
 	f.runner.Chat = seen
@@ -421,6 +431,8 @@ func TestHubRunsTaskChatOnTheTasksRunner(t *testing.T) {
 // A hub that doesn't run Claude shows each user the Claude usage their own
 // runner reported, and nobody else's.
 func TestHubShowsUsageFromTheUsersRunner(t *testing.T) {
+	parallel(t)
+
 	f := newClaudeFleet(t)
 	r := httptest.NewRequest("POST", "/runner/report", strings.NewReader(
 		`{"parallel":1,"usage":{"known":true,"windows":[{"name":"five_hour","utilization":0.42,"resets_at":"2099-01-01T00:00:00Z"}]}}`))

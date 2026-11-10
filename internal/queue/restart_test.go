@@ -20,6 +20,8 @@ import (
 // again from the todo's own commits, also when a merge was left unfinished
 // in its worktree, and lands once.
 func TestMergeCutOffByShutdownResumesAtTheNextStart(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		write(t, req.Dir, "a.txt", "a\n")
 		return nil

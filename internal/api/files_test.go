@@ -12,6 +12,8 @@ import (
 )
 
 func TestCleanRepoPath(t *testing.T) {
+	parallel(t)
+
 	for in, want := range map[string]string{"a.go": "a.go", "./web/x.js": "web/x.js", "a/../b": "b"} {
 		if got, err := cleanRepoPath(in); err != nil || got != want {
 			t.Errorf("%q: got %q, %v; want %q", in, got, err, want)
@@ -25,6 +27,8 @@ func TestCleanRepoPath(t *testing.T) {
 }
 
 func TestLocalPath(t *testing.T) {
+	parallel(t)
+
 	ctx, g := context.Background(), gitops.New(nil)
 	dir := filepath.Join(t.TempDir(), "repo")
 	if err := g.InitRepo(ctx, "p", dir, "main"); err != nil {

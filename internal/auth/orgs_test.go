@@ -83,6 +83,8 @@ func (c *client) me() meResp {
 }
 
 func TestMeShowsUserAndOrg(t *testing.T) {
+	t.Parallel()
+
 	_, h := newServer(t)
 	m := signIn(t, h, "admin", "s3cret").me()
 	if m.Username != "admin" || !m.User.PlatformAdmin || m.Org == nil || m.Org.Slug != "default" || m.Org.Role != store.RoleOwner || len(m.Orgs) != 1 {
@@ -91,6 +93,8 @@ func TestMeShowsUserAndOrg(t *testing.T) {
 }
 
 func TestLoginWithEmailAndUnknownNames(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	org, _ := a.acc.DefaultOrg()
 	addUser(t, a, org.ID, "bea", store.RoleMember)
@@ -106,6 +110,8 @@ func TestLoginWithEmailAndUnknownNames(t *testing.T) {
 }
 
 func TestInviteRegisterAndAccept(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	owner := signIn(t, h, "admin", "s3cret")
 	org := owner.me().Org
@@ -192,6 +198,8 @@ func mustEnv(t *testing.T, a *Auth) int64 {
 // Inviting answers the same for an address with an account and one without,
 // and so does registering with a link to an address that has one.
 func TestInvitationDoesNotRevealAccounts(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	org, _ := a.acc.DefaultOrg()
 	addUser(t, a, org.ID, "known", store.RoleMember) // known@example.com has an account
@@ -227,6 +235,8 @@ func TestInvitationDoesNotRevealAccounts(t *testing.T) {
 }
 
 func TestRoleChecks(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	org, _ := a.acc.DefaultOrg()
 	ownerID := mustEnv(t, a)
@@ -283,6 +293,8 @@ func TestRoleChecks(t *testing.T) {
 }
 
 func TestSwitchOrgAndRemovalTakesEffectAtOnce(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	def, _ := a.acc.DefaultOrg()
 	second, _ := a.acc.CreateOrg(mustEnv(t, a), "Second")
@@ -328,6 +340,8 @@ func TestSwitchOrgAndRemovalTakesEffectAtOnce(t *testing.T) {
 
 // An open WebSocket is closed soon after its user is removed from the org.
 func TestWebSocketClosedOnRemoval(t *testing.T) {
+	t.Parallel()
+
 	a := newAuth(t, "admin", "s3cret")
 	a.recheck = 20 * time.Millisecond
 	def, _ := a.acc.DefaultOrg()
@@ -377,6 +391,8 @@ func TestWebSocketClosedOnRemoval(t *testing.T) {
 // Billing hears of every member who joins or leaves (to update the seats),
 // and an invitation's answer carries its notice.
 func TestMembershipChangesReachBilling(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	var changed []int64
 	a.OnMembersChanged = func(org int64) { changed = append(changed, org) }

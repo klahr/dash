@@ -21,6 +21,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	"github.com/klahr/dash/internal/branding"
@@ -56,11 +57,6 @@ type Lockout struct {
 	Window time.Duration
 }
 
-// failurePause is how long a failed sign-in attempt (wrong password,
-// two-factor code or token) waits before answering, to blunt online
-// guessing a little more. Tests shorten it.
-var failurePause = 300 * time.Millisecond
-
 // DefaultLockout is the lockout New starts with.
 var DefaultLockout = Lockout{PerIP: maxFailures, Global: globalFailures, Window: failureWindow}
 
@@ -94,9 +90,10 @@ type Auth struct {
 	limits  map[string]*failures    // requests that send email, by kind and client IP or address (see rateLimit)
 	tickets map[string]*loginTicket // by key: passwords checked, waiting for a second factor
 
-	now     func() time.Time // for tests
-	recheck time.Duration    // how often an open WebSocket re-checks its session
-	legacy  string           // the single account's hash in sessions.json / oauth.json, before users
+	now       func() time.Time // for tests
+	failDelay time.Duration    // failedAttemptDelay; NoFailDelayInTests sets 0
+	recheck   time.Duration    // how often an open WebSocket re-checks its session
+	legacy    string           // the single account's hash in sessions.json / oauth.json, before users
 
 	// TrustProxy honours X-Forwarded-For and X-Forwarded-Proto from a
 	// reverse proxy (Caddy, nginx, a Cloudflare Tunnel, Tailscale Serve) that
@@ -163,10 +160,31 @@ func New(acc *store.Accounts) *Auth {
 	passhash.Prime() // so the first unknown-name login isn't slower than the rest
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
-	a := &Auth{acc: acc, failed: map[string]*failures{}, limits: map[string]*failures{}, tickets: map[string]*loginTicket{}, now: time.Now, Lockout: DefaultLockout, recheck: 15 * time.Second,
+	a := &Auth{acc: acc, failed: map[string]*failures{}, limits: map[string]*failures{}, tickets: map[string]*loginTicket{}, now: time.Now, failDelay: failedAttemptDelay, Lockout: DefaultLockout, recheck: 15 * time.Second,
 		handoffKey: key, handoffsUsed: map[string]time.Time{}, flows: map[string]*oidcFlow{}, links: map[string]*pendingLink{}}
 	a.rp.now = func() time.Time { return a.now() }
 	return a
+}
+
+// failedAttemptDelay is how long a wrong password or two-factor code waits
+// before its answer, to blunt online guessing a little more.
+const failedAttemptDelay = 300 * time.Millisecond
+
+// failedAttemptWait waits after a wrong password or code (failedAttemptDelay).
+func (a *Auth) failedAttemptWait() {
+	if a.failDelay > 0 {
+		time.Sleep(a.failDelay)
+	}
+}
+
+// NoFailDelayInTests makes a's wrong passwords and codes answer at once,
+// for tests that fail on purpose many times. It panics outside a test
+// binary (built by go test): a server always waits.
+func (a *Auth) NoFailDelayInTests() {
+	if !testing.Testing() {
+		panic("auth: NoFailDelayInTests outside a test")
+	}
+	a.failDelay = 0
 }
 
 // brand is a.Brand with its defaults.
@@ -507,7 +525,7 @@ func (a *Auth) attempt(ip, login, password string) (store.User, error) {
 		return store.User{}, err
 	}
 	if !a.verify(u, hash, err == nil, password) {
-		time.Sleep(failurePause)
+		a.failedAttemptWait() // blunt online guessing a little more
 		return store.User{}, errBadLogin
 	}
 	a.release(f)
@@ -566,7 +584,7 @@ func (a *Auth) ConfirmPassword(r *http.Request, password string) error {
 	}
 	hash, err := a.acc.PasswordHash(id.User.ID)
 	if !a.verify(id.User, hash, err == nil, password) {
-		time.Sleep(failurePause)
+		a.failedAttemptWait()
 		return ErrBadPassword
 	}
 	a.release(f)

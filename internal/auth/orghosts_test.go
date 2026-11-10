@@ -110,6 +110,8 @@ func (b *browser) enter(slug, next string) string {
 func orgHost(slug string) string { return "https://" + slug + "." + baseDomain }
 
 func TestOrgDomainsOffByDefault(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	if a.Domains != nil {
 		t.Fatal("org subdomains on by default")
@@ -131,6 +133,8 @@ func TestOrgDomainsOffByDefault(t *testing.T) {
 }
 
 func TestOrgHostResolvesOrg(t *testing.T) {
+	t.Parallel()
+
 	a, h := domainServer(t)
 	admin := mustEnv(t, a)
 	acme, err := a.acc.CreateOrg(admin, "Acme")
@@ -161,6 +165,8 @@ func TestOrgHostResolvesOrg(t *testing.T) {
 }
 
 func TestOrgHostBaseDomainPicker(t *testing.T) {
+	t.Parallel()
+
 	a, h := domainServer(t)
 	b := newBrowser(t, h)
 	// Signed out: the base domain's / is the sign-in page (or landing).
@@ -189,6 +195,8 @@ func TestOrgHostBaseDomainPicker(t *testing.T) {
 }
 
 func TestOrgHostSignedOutGoesThroughBase(t *testing.T) {
+	t.Parallel()
+
 	_, h := domainServer(t)
 	b := newBrowser(t, h)
 	w := b.do("GET", orgHost("acme")+"/x?y=1", "")
@@ -211,6 +219,8 @@ func TestOrgHostSignedOutGoesThroughBase(t *testing.T) {
 }
 
 func TestOrgHostNonMemberGets404(t *testing.T) {
+	t.Parallel()
+
 	a, h := domainServer(t)
 	admin := mustEnv(t, a)
 	if _, err := a.acc.CreateOrg(admin, "Acme"); err != nil {
@@ -259,6 +269,8 @@ func mustUser(t *testing.T, a *Auth, name string) int64 {
 }
 
 func TestOrgHostInvalidAndReservedNames(t *testing.T) {
+	t.Parallel()
+
 	_, h := domainServer(t)
 	b := newBrowser(t, h)
 	if w := b.do("GET", "https://www."+baseDomain+"/a?b=1", ""); w.Code != http.StatusMovedPermanently || w.Header().Get("Location") != "https://"+baseDomain+"/a?b=1" {
@@ -272,6 +284,8 @@ func TestOrgHostInvalidAndReservedNames(t *testing.T) {
 }
 
 func TestSessionCookieIsHostOnly(t *testing.T) {
+	t.Parallel()
+
 	_, h := domainServer(t)
 	b := newBrowser(t, h)
 	w := b.do("POST", "https://"+baseDomain+"/api/login", `{"username":"admin","password":"s3cret"}`)
@@ -297,6 +311,8 @@ func TestSessionCookieIsHostOnly(t *testing.T) {
 }
 
 func TestHandoffTokenSingleUseAndExpiring(t *testing.T) {
+	t.Parallel()
+
 	a, h := domainServer(t)
 	b := newBrowser(t, h)
 	b.login("admin", "s3cret")
@@ -356,6 +372,8 @@ func TestHandoffTokenSingleUseAndExpiring(t *testing.T) {
 }
 
 func TestLogoutOnOrgHostSignsOutEverywhere(t *testing.T) {
+	t.Parallel()
+
 	_, h := domainServer(t)
 	b := newBrowser(t, h)
 	b.login("admin", "s3cret")
@@ -371,6 +389,8 @@ func TestLogoutOnOrgHostSignsOutEverywhere(t *testing.T) {
 }
 
 func TestOrgHostOriginCheck(t *testing.T) {
+	t.Parallel()
+
 	a, h := domainServer(t)
 	if _, err := a.acc.CreateOrg(mustEnv(t, a), "Acme"); err != nil {
 		t.Fatal(err)
@@ -395,6 +415,8 @@ func TestOrgHostOriginCheck(t *testing.T) {
 }
 
 func TestWithFrameAncestorsSelf(t *testing.T) {
+	t.Parallel()
+
 	for in, want := range map[string]string{
 		"":                                     "frame-ancestors 'self'",
 		ContentSecurityPolicy:                  ContentSecurityPolicy,
@@ -408,6 +430,8 @@ func TestWithFrameAncestorsSelf(t *testing.T) {
 }
 
 func TestOrgHostTrustProxy(t *testing.T) {
+	t.Parallel()
+
 	a, h := domainServer(t)
 	a.TrustProxy = true
 	b := newBrowser(t, h)
@@ -441,6 +465,8 @@ func withHeaders(host string, kv ...string) *http.Request {
 }
 
 func TestRenameOrgSlug(t *testing.T) {
+	t.Parallel()
+
 	a, h := domainServer(t)
 	def, _ := a.acc.DefaultOrg()
 	addUser(t, a, def.ID, "bob", store.RoleMember)
@@ -483,6 +509,8 @@ func TestRenameOrgSlug(t *testing.T) {
 }
 
 func TestMCPTokenPinnedBySubdomain(t *testing.T) {
+	t.Parallel()
+
 	a, _, h := newOAuthServer(t)
 	d, err := orgdomain.New(baseDomain, nil, "")
 	if err != nil {
@@ -557,6 +585,8 @@ func TestMCPTokenPinnedBySubdomain(t *testing.T) {
 }
 
 func TestAPITokenPinnedBySubdomain(t *testing.T) {
+	t.Parallel()
+
 	a, h := domainServer(t)
 	admin := mustEnv(t, a)
 	acme, _ := a.acc.CreateOrg(admin, "Acme")

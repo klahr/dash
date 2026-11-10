@@ -23,6 +23,8 @@ func openSlugAccounts(t *testing.T) (*Store, *Accounts, User) {
 }
 
 func TestValidSlug(t *testing.T) {
+	t.Parallel()
+
 	for s, ok := range map[string]bool{
 		"acme": true, "a-b": true, "abc": true, "a1b2c3": true, "org-2": true,
 		"ab": false, "": false, "-abc": false, "abc-": false, "ABC": false, "a_b": false, "a.b": false,
@@ -36,6 +38,8 @@ func TestValidSlug(t *testing.T) {
 }
 
 func TestNewOrgSlugsAvoidReservedNames(t *testing.T) {
+	t.Parallel()
+
 	s, acc, u := openSlugAccounts(t)
 	for name, want := range map[string]string{"Admin": "admin-org", "A": "a-org", "WWW": "www-org", "Ab": "ab-org"} {
 		o, err := acc.CreateOrg(u.ID, name)
@@ -53,6 +57,8 @@ func TestNewOrgSlugsAvoidReservedNames(t *testing.T) {
 }
 
 func TestSetOrgSlug(t *testing.T) {
+	t.Parallel()
+
 	_, acc, u := openSlugAccounts(t)
 	now := time.Now()
 	acme, _ := acc.CreateOrg(u.ID, "Acme")
@@ -121,6 +127,8 @@ func TestSetOrgSlug(t *testing.T) {
 }
 
 func TestFixSlugs(t *testing.T) {
+	t.Parallel()
+
 	s, acc, u := openSlugAccounts(t)
 	o, _ := acc.CreateOrg(u.ID, "Acme")
 	// An org from before the rules, or with a name reserved since.
@@ -147,6 +155,8 @@ func TestFixSlugs(t *testing.T) {
 }
 
 func TestSessionFamily(t *testing.T) {
+	t.Parallel()
+
 	_, acc, u := openSlugAccounts(t)
 	now := time.Now()
 	acme, _ := acc.CreateOrg(u.ID, "Acme")

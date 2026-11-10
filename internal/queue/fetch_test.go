@@ -33,6 +33,8 @@ func (h *harness) remote() (*RemoteSync, *fakeClock) {
 }
 
 func TestRemoteLockIsSharedAndTryLockSkips(t *testing.T) {
+	parallel(t)
+
 	r := &RemoteSync{}
 	unlock, ok := r.TryLock("p")
 	if !ok {
@@ -60,6 +62,8 @@ func TestRemoteLockIsSharedAndTryLockSkips(t *testing.T) {
 }
 
 func TestFetchSkipsWhileLockedAndReportsOriginAhead(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "x.txt")}, model.Project{Name: "p"})
 	_, other := h.addOrigin(true, "")
 	r, _ := h.remote()
@@ -86,6 +90,8 @@ func TestFetchSkipsWhileLockedAndReportsOriginAhead(t *testing.T) {
 }
 
 func TestFetchBacksOffAfterFailuresAndResetsOnSuccess(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "x.txt")}, model.Project{Name: "p"})
 	origin, _ := h.addOrigin(true, "")
 	r, clk := h.remote()
@@ -133,6 +139,8 @@ func TestFetchBacksOffAfterFailuresAndResetsOnSuccess(t *testing.T) {
 }
 
 func TestDueOnlySelectedOrBusyProjectsThatSync(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "x.txt")}, model.Project{Name: "p"})
 	r, clk := h.remote()
 	r.Idle = -1 // no occasional fetch of idle projects (TestIdleProjectsArePolledSlowly)
@@ -164,6 +172,8 @@ func TestDueOnlySelectedOrBusyProjectsThatSync(t *testing.T) {
 }
 
 func TestNewTodoStartsFromOriginWhenLocalIsBehind(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "mine.txt")}, model.Project{Name: "p"})
 	_, other := h.addOrigin(true, "")
 	write(t, other, "theirs.txt", "theirs\n")
@@ -189,6 +199,8 @@ func TestNewTodoStartsFromOriginWhenLocalIsBehind(t *testing.T) {
 }
 
 func TestNewTodoKeepsDivergedLocalBranch(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "mine.txt")}, model.Project{Name: "p"})
 	_, other := h.addOrigin(true, "")
 	gitRun(t, other, "commit", "--allow-empty", "-q", "-m", "theirs")
@@ -206,6 +218,8 @@ func TestNewTodoKeepsDivergedLocalBranch(t *testing.T) {
 }
 
 func TestNewTodoStartsWhenOriginIsUnreachable(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "mine.txt")}, model.Project{Name: "p"})
 	origin, _ := h.addOrigin(true, "")
 	if err := os.RemoveAll(origin); err != nil {

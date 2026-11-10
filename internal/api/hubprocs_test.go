@@ -29,6 +29,8 @@ import (
 // the marks, also once the command has finished (as after a deploy that
 // restarted the hub).
 func TestHubListsRunnerQuickActionsWithTheirPreset(t *testing.T) {
+	parallel(t)
+
 	hub, _, _ := boardServer(t)
 	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}
 	hub.Peers = &peer.Hub{Self: "hub", Runners: rh}
@@ -123,6 +125,8 @@ func TestHubListsRunnerQuickActionsWithTheirPreset(t *testing.T) {
 // rewriteProcs gives a runner's processes the hub's ids and keeps the rest,
 // the quick-action marks among them.
 func TestRewriteProcsKeepsQuickActionMarks(t *testing.T) {
+	parallel(t)
+
 	body := []byte(`[{"id":"p1","kind":"task","preset":"deploy","main":true,"todo_id":"rt"},{"id":"p2","kind":"pty"}]`)
 	var got []map[string]any
 	if err := json.Unmarshal(rewriteProcs(body, tunnel.Runner{ID: "r1", Name: "laptop"}, map[string]string{"rt": "ht"}), &got); err != nil {
@@ -165,6 +169,8 @@ var sessionSeq atomic.Int64
 // the hub asks, and its socket carries keyboard input and resizes through
 // the hub, with the scrollback again on reattaching.
 func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
+	parallel(t)
+
 	hub, _, _ := boardServer(t)
 	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}
 	hub.Peers = &peer.Hub{Self: "hub", Runners: rh}

@@ -17,6 +17,8 @@ import (
 // doesn't touch, and lands once they're stashed. The changes are never
 // overwritten.
 func TestHubCheckoutWithUncommittedChangesWaits(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "feature.txt")}, model.Project{Name: "p"})
 	origin, _, _ := h.runnerProject()
 	write(t, h.proj.Path, "notes.txt", "v1\n")
@@ -65,6 +67,8 @@ func TestHubCheckoutWithUncommittedChangesWaits(t *testing.T) {
 // checkoutClean only looks at a hub project's folder with the branch that
 // lands checked out.
 func TestCheckoutClean(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{}, model.Project{Name: "p"})
 	ctx := context.Background()
 	write(t, h.proj.Path, "a.txt", "1")

@@ -61,6 +61,8 @@ func (fx *fixture) interrupt(t *testing.T, name, trigger string) model.ScanRun {
 }
 
 func TestShutdownInterruptsUserCancelCancels(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "slow", "Go.")
 	r := fx.interrupt(t, "slow", "manual")
 	if r.Note == "" {
@@ -85,6 +87,8 @@ func TestShutdownInterruptsUserCancelCancels(t *testing.T) {
 }
 
 func TestStoreMarksStaleRunningInterrupted(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	st, _ := store.Open(path, nil)
 	p, _ := st.CreateProject(model.Project{Name: "p", Path: t.TempDir()})
@@ -96,6 +100,8 @@ func TestStoreMarksStaleRunningInterrupted(t *testing.T) {
 }
 
 func TestResumeOnceAfterCrash(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "sec", "---\nscope: repo\n---\nGo.")
 	// A crash: the run is still "running" in the saved state.
 	orig, err := fx.st.CreateScanRun(model.ScanRun{ProjectID: fx.p.ID, Scan: "sec", Trigger: "schedule", Scope: model.ScopeRepo, Status: model.ScanRunning, StartedAt: time.Now().Add(-time.Minute)})
@@ -128,6 +134,8 @@ func TestResumeOnceAfterCrash(t *testing.T) {
 }
 
 func TestResumedRunNotRestartedAgain(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "sec", "Go.")
 	fx.interrupt(t, "sec", "manual")
 	// The restart is cut off too, as if the scan itself crashed Dash.
@@ -153,6 +161,8 @@ func TestResumedRunNotRestartedAgain(t *testing.T) {
 }
 
 func TestResumeSkipsOldGoneAndSuperseded(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "sec", "Go.")
 	now := time.Now()
 	fx.runner.Now = func() time.Time { return now }
@@ -187,6 +197,8 @@ func TestResumeSkipsOldGoneAndSuperseded(t *testing.T) {
 }
 
 func TestResumeNoDuplicateWithSchedulerCatchUp(t *testing.T) {
+	t.Parallel()
+
 	fx, s, c := schedFixture(t, "---\nschedule: 0 */6 * * *\n---\nGo.")
 	enable(t, fx, "nightly")
 	// The 06:00 run is cut off by a shutdown.
@@ -227,6 +239,8 @@ func TestResumeNoDuplicateWithSchedulerCatchUp(t *testing.T) {
 }
 
 func TestResumeKeepsTarget(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "daily", "---\nscope: since_last_scan\npath: pkg\n---\nCheck {{since}}.")
 	commitFile(t, fx.repo, "pkg/a.go", "package pkg\n")
 	first := fx.run(t, "daily")

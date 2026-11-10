@@ -38,6 +38,8 @@ func (f pubFunc) Publish(ev model.Event) { f(ev) }
 // changes stays as it is and shows on the hub as behind, with a Pull that
 // refuses until it can fast-forward.
 func TestRunnersFollowEachOthersPushes(t *testing.T) {
+	parallel(t)
+
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
@@ -232,6 +234,8 @@ func TestRunnersFollowEachOthersPushes(t *testing.T) {
 // A runner takes "origin moved" only from its hub, about a project linked
 // to it, naming a branch and a commit.
 func TestRunnerChecksOriginNews(t *testing.T) {
+	parallel(t)
+
 	s, h, remote := runnerSide(t, 7)
 	s.Merges = queue.NewMergeQueue(raw(s), s.Git, s.Hub, &queue.TodoLog{Root: t.TempDir()}, 4)
 	b, _ := json.Marshal(dispatch.Link{Name: "Shared App", RemoteURL: remote, DefaultBranch: "main", OrgID: 7})

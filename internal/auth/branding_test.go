@@ -8,6 +8,8 @@ import (
 )
 
 func TestEmailsCarryTheBrand(t *testing.T) {
+	t.Parallel()
+
 	a, h, box := newSignupServer(t)
 	a.Brand = branding.Config{Name: "Acme Agents", Contact: "help@acme.example"}
 	anon := &client{t: t, h: h}
@@ -27,6 +29,8 @@ func TestEmailsCarryTheBrand(t *testing.T) {
 }
 
 func TestEmailsDefaultToDash(t *testing.T) {
+	t.Parallel()
+
 	_, h, box := newSignupServer(t)
 	signUp(&client{t: t, h: h}, "bob@example.com", "a-long-password")
 	m := box.next(t)

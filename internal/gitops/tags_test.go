@@ -11,6 +11,8 @@ import (
 // and with FetchTags; a local tag that differs from origin's stays and
 // doesn't make the fetch fail.
 func TestFetchBringsTags(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	g, repo, other := remoteRepos(t)
 	sha := commitIn(t, other, "a.txt")
@@ -45,6 +47,8 @@ func TestFetchBringsTags(t *testing.T) {
 }
 
 func TestCreateAndPushTag(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	g, repo, _ := remoteRepos(t)
 	sha := commitIn(t, repo, "a.txt")
@@ -77,6 +81,8 @@ func TestCreateAndPushTag(t *testing.T) {
 }
 
 func TestOnlyClobbered(t *testing.T) {
+	t.Parallel()
+
 	out := " ! [rejected]        clash      -> clash  (would clobber existing tag)\n"
 	if !onlyClobbered(out) {
 		t.Error("clobbered tag counted as a failure")

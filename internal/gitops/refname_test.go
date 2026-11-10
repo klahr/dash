@@ -8,6 +8,8 @@ import (
 
 // CheckRefName, the hub's check without git, agrees with git check-ref-format.
 func TestCheckRefNameAgreesWithGit(t *testing.T) {
+	t.Parallel()
+
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("needs git")
 	}

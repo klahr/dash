@@ -21,6 +21,8 @@ import (
 )
 
 func TestWithTodoContext(t *testing.T) {
+	parallel(t)
+
 	history := []agent.ChatMessage{{Role: "user", Content: "make it better"}, {Role: "assistant", Content: "ok"}}
 	td := model.Todo{Title: "Dark mode", Prompt: "Add a dark theme", Status: model.StatusDraft, Feedback: []string{"use CSS vars"}}
 	got := withTodoContext(td, "+body { background: black }", history)
@@ -42,6 +44,8 @@ func TestWithTodoContext(t *testing.T) {
 }
 
 func TestChatAttachments(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	s.UploadRoot = t.TempDir()
 	dir := filepath.Join(s.UploadRoot, "0123456789ab")
@@ -75,6 +79,8 @@ func approvalClient(timeout time.Duration) (*chatApprovals, chan agent.ChatDelta
 }
 
 func TestChatApprovals(t *testing.T) {
+	parallel(t)
+
 	input := json.RawMessage(`{"command":"uname -a"}`)
 	for _, tc := range []struct {
 		name    string
@@ -107,6 +113,8 @@ func TestChatApprovals(t *testing.T) {
 }
 
 func TestChatApprovalTimeout(t *testing.T) {
+	parallel(t)
+
 	a, sent := approvalClient(20 * time.Millisecond)
 	ok, msg := a.forTurn(context.Background())(context.Background(), "Edit", json.RawMessage(`{}`))
 	if ok || msg == "" {
@@ -119,6 +127,8 @@ func TestChatApprovalTimeout(t *testing.T) {
 }
 
 func TestChatApprovalTurnEnds(t *testing.T) {
+	parallel(t)
+
 	a, sent := approvalClient(time.Minute)
 	turn, endTurn := context.WithCancel(context.Background())
 	done := make(chan bool)
@@ -191,6 +201,8 @@ func waitFor(t *testing.T, what string, ok func() bool) {
 // A question is saved as it arrives, so a turn cut off by a restart (here the
 // connection dropping) can be asked again.
 func TestGeneralChatSavesQuestion(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	s.Chat = stubChat{}
 	prev := []agent.ChatMessage{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}
@@ -215,6 +227,8 @@ func TestGeneralChatSavesQuestion(t *testing.T) {
 
 // A turn that fails takes its question back out, as the client does.
 func TestGeneralChatFailedTurn(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	s.Chat = stubChat{err: errors.New("boom")}
 	prev := []agent.ChatMessage{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}
@@ -244,6 +258,8 @@ func (partialChat) Stream(ctx context.Context, _ string, _ []agent.ChatMessage, 
 // Stopping a reply keeps what it said so far, instead of leaving the question
 // to be asked again.
 func TestGeneralChatStopKeepsPartialReply(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	s.Chat = partialChat{}
 	conn := chatSocket(t, s)
@@ -278,6 +294,8 @@ func (c slowStopChat) Stream(ctx context.Context, _ string, _ []agent.ChatMessag
 // A question sent right after stopping a reply waits for the stopped turn to
 // save, so that save can't overwrite the conversation the new turn saved.
 func TestGeneralChatSendAfterStop(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	returned := new(atomic.Int32)
 	s.Chat = slowStopChat{returned: returned}
@@ -313,6 +331,8 @@ func TestGeneralChatSendAfterStop(t *testing.T) {
 
 // Stopping a reply before it said anything takes the question back out.
 func TestGeneralChatStopBeforeReply(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	s.Chat = stubChat{}
 	prev := []agent.ChatMessage{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}
@@ -333,6 +353,8 @@ func TestGeneralChatStopBeforeReply(t *testing.T) {
 // Stopping a task chat's reply keeps what it said so far on the task's
 // timeline, after its question.
 func TestTodoChatStopKeepsPartialReply(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	s.Chat = partialChat{}
 	td, err := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "t", Prompt: "p"})
@@ -358,6 +380,8 @@ func TestTodoChatStopKeepsPartialReply(t *testing.T) {
 
 // Stopping a task chat's reply before it said anything saves nothing.
 func TestTodoChatStopBeforeReply(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	s.Chat = stubChat{}
 	td, err := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "t", Prompt: "p"})
@@ -396,6 +420,8 @@ func (usageChat) Stream(_ context.Context, _ string, _ []agent.ChatMessage, emit
 // The answer's tokens and time are saved with it, so the chat shows them
 // after a reload.
 func TestGeneralChatSavesUsage(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	s.Chat = usageChat{}
 	conn := chatSocket(t, s)

@@ -19,6 +19,8 @@ import (
 // A hub task's permission request, asked on its runner, shows on the
 // hub's dashboard, and the hub user's answer reaches Claude on the runner.
 func TestHubAnswersPermissionRequestsOfTasksOnRunners(t *testing.T) {
+	parallel(t)
+
 	hub, _, _ := boardServer(t)
 	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}
 	hub.Peers = &peer.Hub{Self: "hub", Runners: rh}

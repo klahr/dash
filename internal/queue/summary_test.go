@@ -3,6 +3,8 @@ package queue
 import "testing"
 
 func TestFirstSentence(t *testing.T) {
+	parallel(t)
+
 	for in, want := range map[string]string{
 		"Fixed the bug. Also ran tests.": "Fixed the bug.",
 		"Added v1.2\nsupport":            "Added v1.2 support",

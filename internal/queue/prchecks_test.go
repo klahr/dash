@@ -10,6 +10,8 @@ import (
 
 // Failed checks no change to the branch can fix don't go back to Claude.
 func TestClassifyFailed(t *testing.T) {
+	parallel(t)
+
 	failed := []gitops.PRCheck{{Name: "assistant"}, {Name: "test"}, {Name: "lint"}, {Context: "license/cla"}}
 	events := map[string]string{"assistant": "pull_request_target", "test": "pull_request", "lint": "pull_request"}
 	code, other := classifyFailed(failed, map[string]bool{"assistant": true, "test": true}, events)
@@ -25,6 +27,8 @@ func TestClassifyFailed(t *testing.T) {
 
 // A merging card says what its pull request waits for.
 func TestPRStatusLine(t *testing.T) {
+	parallel(t)
+
 	done := func(name, conclusion string) gitops.PRCheck {
 		return gitops.PRCheck{Name: name, Status: "COMPLETED", Conclusion: conclusion}
 	}
@@ -63,6 +67,8 @@ func TestPRStatusLine(t *testing.T) {
 }
 
 func TestPRChecks(t *testing.T) {
+	parallel(t)
+
 	got := prChecks([]gitops.PRCheck{
 		{Name: "Go", Status: "COMPLETED", Conclusion: "SUCCESS", DetailsURL: "https://ci/1"},
 		{Name: "Docker", Status: "QUEUED"},

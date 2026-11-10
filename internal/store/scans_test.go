@@ -9,6 +9,8 @@ import (
 )
 
 func TestScanTemplates(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "state.json")
 	s, err := Open(path, nil)
 	if err != nil {

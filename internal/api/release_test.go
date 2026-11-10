@@ -94,6 +94,8 @@ func (rr *releaseRepo) commit(t *testing.T, title, summary string, push bool) st
 }
 
 func TestTagRelease(t *testing.T) {
+	parallel(t)
+
 	rr := newReleaseRepo(t, "vX.Y.Z")
 	sha := rr.commit(t, "Add login", "Users can sign in with a password.", true)
 
@@ -141,6 +143,8 @@ func TestTagRelease(t *testing.T) {
 }
 
 func TestTagReleaseNeedsAPushedCommit(t *testing.T) {
+	parallel(t)
+
 	rr := newReleaseRepo(t, "")
 	sha := rr.commit(t, "Local only", "", false)
 	if info := rr.info(t, sha); info.Pushed || info.CanTag || !strings.Contains(info.CantTag, "Push first") {
@@ -158,6 +162,8 @@ func TestTagReleaseNeedsAPushedCommit(t *testing.T) {
 // Tags pushed from another clone are fetched before working out the next
 // version, and the highest version wins over the newest tag.
 func TestReleaseSeesTagsPushedElsewhere(t *testing.T) {
+	parallel(t)
+
 	rr := newReleaseRepo(t, "X.Y.Z")
 	other := filepath.Join(t.TempDir(), "other")
 	rgit(t, filepath.Dir(other), "clone", "-q", rr.origin, other)
@@ -177,6 +183,8 @@ func TestReleaseSeesTagsPushedElsewhere(t *testing.T) {
 }
 
 func TestOnlyAdminsTagReleases(t *testing.T) {
+	parallel(t)
+
 	rr := newReleaseRepo(t, "")
 	owner := testOwner(t, rr.s)
 	member(t, rr.s, owner.Org, "m", store.RoleMember)
@@ -197,6 +205,8 @@ func TestOnlyAdminsTagReleases(t *testing.T) {
 }
 
 func TestTagFormatSetting(t *testing.T) {
+	parallel(t)
+
 	rr := newReleaseRepo(t, "")
 	for _, bad := range []string{"X.Y", "Z.Y.X", "v X.Y.Z", "X.Y.Z.lock"} {
 		if w := rr.call(t, "PATCH", "", `{"tag_format":"`+bad+`"}`); w.Code != http.StatusBadRequest {
@@ -217,6 +227,8 @@ func TestTagFormatSetting(t *testing.T) {
 // The settings warn when the repository's release workflow runs on tags the
 // format doesn't make (e.g. a workflow on "v*").
 func TestTagFormatWorkflowHint(t *testing.T) {
+	parallel(t)
+
 	rr := newReleaseRepo(t, "X.Y.Z")
 	wf := filepath.Join(rr.repo, ".github", "workflows")
 	if err := os.MkdirAll(wf, 0o755); err != nil {
@@ -260,6 +272,8 @@ func TestTagFormatWorkflowHint(t *testing.T) {
 // create_release is a board tool: the chat creates a release through the
 // same backend.
 func TestCreateReleaseTool(t *testing.T) {
+	parallel(t)
+
 	rr := newReleaseRepo(t, "release-X.Y.Z")
 	rr.commit(t, "Ship it", "", true)
 	token, release := rr.s.Board.Register(chatCaller(t, rr.s), rr.p.ID)
@@ -277,6 +291,8 @@ func TestCreateReleaseTool(t *testing.T) {
 }
 
 func TestRunnerGuardAllowsReleases(t *testing.T) {
+	parallel(t)
+
 	for _, p := range []string{"GET /api/projects/{pid}/release", "POST /api/projects/{pid}/tags", "GET /api/projects/{pid}/tag-format"} {
 		if !hubRoutes[p] {
 			t.Errorf("%s isn't offered to the hub", p)

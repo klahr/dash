@@ -74,6 +74,8 @@ func signUp(c *client, email, password string) *httptest.ResponseRecorder {
 }
 
 func TestSignupOffByDefault(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	anon := &client{t: t, h: h}
 	w := anon.do("GET", "/api/signup", "")
@@ -109,6 +111,8 @@ func TestSignupOffByDefault(t *testing.T) {
 }
 
 func TestSignupNeedsVerification(t *testing.T) {
+	t.Parallel()
+
 	a, h, box := newSignupServer(t)
 	anon := &client{t: t, h: h}
 	if w := anon.do("GET", "/api/signup", ""); !strings.Contains(w.Body.String(), `"open":true`) {
@@ -153,6 +157,8 @@ func TestSignupNeedsVerification(t *testing.T) {
 }
 
 func TestSignupDoesntRevealAccounts(t *testing.T) {
+	t.Parallel()
+
 	a, h, box := newSignupServer(t)
 	org, _ := a.acc.DefaultOrg()
 	addUser(t, a, org.ID, "bea", store.RoleMember) // bea@example.com
@@ -211,6 +217,8 @@ func TestSignupDoesntRevealAccounts(t *testing.T) {
 }
 
 func TestSignupRateLimits(t *testing.T) {
+	t.Parallel()
+
 	_, h, box := newSignupServer(t)
 	anon := &client{t: t, h: h}
 	for i := 0; i < limitPerEmail; i++ {
@@ -237,6 +245,8 @@ func TestSignupRateLimits(t *testing.T) {
 }
 
 func TestPersonalWorkspaceForExistingUsers(t *testing.T) {
+	t.Parallel()
+
 	a, h, _ := newSignupServer(t)
 	org, _ := a.acc.DefaultOrg()
 	addUser(t, a, org.ID, "bea", store.RoleMember)
@@ -289,6 +299,8 @@ func TestPersonalWorkspaceForExistingUsers(t *testing.T) {
 }
 
 func TestPasswordReset(t *testing.T) {
+	t.Parallel()
+
 	a, h, box := newSignupServer(t)
 	org, _ := a.acc.DefaultOrg()
 	addUser(t, a, org.ID, "bea", store.RoleMember)
@@ -322,6 +334,8 @@ func TestPasswordReset(t *testing.T) {
 }
 
 func TestPasswordResetWithoutSignup(t *testing.T) {
+	t.Parallel()
+
 	// Email alone (no open signup) gives password reset, not signup.
 	a, h := newServer(t)
 	box := newOutbox()

@@ -35,6 +35,8 @@ func readBody(t *testing.T, res *http.Response) string {
 }
 
 func TestInjectCapture(t *testing.T) {
+	t.Parallel()
+
 	page := "<!doctype html><html lang=en><HEAD><title>x</title></HEAD><body>hi</body></html>"
 	res := htmlResponse(t, "iframe", "text/html; charset=utf-8", page, nil)
 	if err := injectCapture(res); err != nil {
@@ -80,6 +82,8 @@ func TestInjectCapture(t *testing.T) {
 }
 
 func TestAllowCapture(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct{ in, want string }{
 		// script-src gains 'self', images and fetches what rendering needs.
 		{"default-src 'self'; script-src 'self' 'unsafe-inline' cdn.example",
@@ -101,6 +105,8 @@ func TestAllowCapture(t *testing.T) {
 }
 
 func TestParentOrigins(t *testing.T) {
+	t.Parallel()
+
 	m, _, _ := setup(t, "preview.dash.example.com")
 	m.SetOrigin(httptest.NewRequest("GET", "http://dash.example.com:7788/api/previews", nil))
 	o, h := m.parentOrigins("")

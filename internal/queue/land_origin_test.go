@@ -11,6 +11,7 @@ import (
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/testbin"
 )
 
 // runnerProject makes h's project a runner's clone of a hub's project in
@@ -29,10 +30,7 @@ func (h *harness) runnerProject() (origin, other, ghCalls string) {
 	}
 	dir := h.t.TempDir()
 	ghCalls = filepath.Join(dir, "calls")
-	write(h.t, dir, "gh", "#!/bin/sh\necho \"$*\" >> "+ghCalls+"\nexit 1\n")
-	if err := os.Chmod(filepath.Join(dir, "gh"), 0o755); err != nil {
-		h.t.Fatal(err)
-	}
+	testbin.Write(h.t, filepath.Join(dir, "gh"), "#!/bin/sh\necho \"$*\" >> "+ghCalls+"\nexit 1\n")
 	h.git.GhBin = filepath.Join(dir, "gh")
 	return origin, other, ghCalls
 }
@@ -62,6 +60,8 @@ func noPR(t *testing.T, td model.Todo, ghCalls string) {
 // the runner's clone, pushed, and merged with that commit. No pull request.
 // Reverting it pushes the revert the same way.
 func TestRunnerLandsHubTaskOnOriginWithoutPR(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "feature.txt")}, model.Project{Name: "p"})
 	origin, _, ghCalls := h.runnerProject()
 
@@ -101,6 +101,8 @@ func TestRunnerLandsHubTaskOnOriginWithoutPR(t *testing.T) {
 // rejected, so it merges again on top of origin's new tip, runs the checks
 // again and pushes.
 func TestRunnerRetriesPushWhenOriginMoved(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "mine.txt")}, model.Project{Name: "p", TestCommand: "test -f mine.txt"})
 	origin, other, ghCalls := h.runnerProject()
 
@@ -135,6 +137,8 @@ func TestRunnerRetriesPushWhenOriginMoved(t *testing.T) {
 // again conflicts, which goes back to Claude as a normal fix pass; once
 // fixed it lands on origin.
 func TestRunnerPushRaceConflictGoesToClaude(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		path := filepath.Join(req.Dir, "shared.txt")
 		b, _ := os.ReadFile(path)
@@ -178,6 +182,8 @@ func TestRunnerPushRaceConflictGoesToClaude(t *testing.T) {
 // Without fixes left, the conflict after a push race fails the task with
 // a clear error, and origin keeps only the other push.
 func TestRunnerPushRaceConflictWithoutFixesFails(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "shared.txt")}, model.Project{Name: "p", MaxAutoFixes: 0})
 	origin, other, ghCalls := h.runnerProject()
 
@@ -198,6 +204,8 @@ func TestRunnerPushRaceConflictWithoutFixesFails(t *testing.T) {
 // merging locally keeps its pull request: sent back to the merge queue it
 // updates it rather than landing twice.
 func TestOpenPullRequestIsFollowedAfterSwitchingToLocal(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "pr.txt")}, model.Project{Name: "p"})
 	origin, _ := h.addOrigin(false, model.MergePR)
 	if _, err := h.st.UpdateProject(h.proj.ID, func(p *model.Project) error { p.HubProjectID = "hub-p"; return nil }); err != nil {

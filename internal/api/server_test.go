@@ -18,12 +18,14 @@ import (
 
 // Routes panics at startup if two patterns conflict; build it here.
 func TestRoutesRegister(t *testing.T) {
+	parallel(t)
+
 	st, err := store.Open(filepath.Join(t.TempDir(), "dash.db"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	s := &Server{Hub: hub.New(), Auth: auth.New(st.Accounts()), Perms: perm.NewBroker(nil), Static: fstest.MapFS{"index.html": {Data: []byte("ok")}}}
+	s := &Server{Hub: hub.New(), Auth: noFailDelay(auth.New(st.Accounts())), Perms: perm.NewBroker(nil), Static: fstest.MapFS{"index.html": {Data: []byte("ok")}}}
 	h := s.Routes()
 
 	for _, tc := range []struct {
@@ -46,6 +48,8 @@ func TestRoutesRegister(t *testing.T) {
 }
 
 func TestUploadRoundTrip(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	s.UploadRoot = t.TempDir()
 	w := httptest.NewRecorder()

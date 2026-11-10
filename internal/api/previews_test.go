@@ -63,6 +63,8 @@ func reviewTodo(t *testing.T, st *store.Store, pid string) model.Todo {
 // project doesn't: its preview is a terminal in the task's worktree, which
 // the UI attaches to over a WebSocket, and whose last lines can be sent back.
 func TestTerminalPreviewWithoutRunCommand(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	s.Git = gitops.New(nil)
 	s.Procs = runner.NewManager(s.Hub)
@@ -137,6 +139,8 @@ func TestTerminalPreviewWithoutRunCommand(t *testing.T) {
 }
 
 func TestQRCode(t *testing.T) {
+	parallel(t)
+
 	s := &Server{}
 	get := func(text string) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
@@ -181,6 +185,8 @@ func TestQRCode(t *testing.T) {
 // only with -hub-commands and for the user who registered the runner; its
 // socket carries keystrokes both ways, and its log comes back as text.
 func TestRunnerTerminalPreviewThroughTheHub(t *testing.T) {
+	parallel(t)
+
 	hub, _, _ := boardServer(t)
 	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}
 	hub.Peers = &peer.Hub{Self: "hub", Runners: rh}

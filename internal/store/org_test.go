@@ -16,6 +16,8 @@ func (r *recordedEvents) Publish(ev model.Event) { r.evs = append(r.evs, ev) }
 // Two orgs: each sees and changes only its own projects and what belongs to
 // them; the other's records don't exist for it.
 func TestForOrgIsolates(t *testing.T) {
+	t.Parallel()
+
 	evs := &recordedEvents{}
 	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), evs)
 	if err != nil {
@@ -146,6 +148,8 @@ func TestForOrgIsolates(t *testing.T) {
 
 // Each record's row carries its project's org, so the database agrees.
 func TestRowsCarryTheirProjectsOrg(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {
@@ -186,6 +190,8 @@ func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 // A runner's copy of a hub's task is queued from the start: no event ever
 // shows it as a draft, which the hub would read as canceled on the runner.
 func TestCreateQueuedTodoIsNeverADraft(t *testing.T) {
+	t.Parallel()
+
 	evs := &recordedEvents{}
 	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), evs)
 	if err != nil {

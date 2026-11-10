@@ -15,30 +15,54 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"testing"
 
 	"golang.org/x/crypto/argon2"
 )
 
-// OWASP's first recommendation (2024): 19 MiB, 2 passes, 1 lane. About
-// 50 ms a guess, and every guess has to hold 19 MiB.
-var (
-	memoryKiB uint32 = 19 * 1024
-	passes    uint32 = 2
-)
+// params are the cost settings Hash uses.
+type params struct {
+	memoryKiB uint32
+	passes    uint32
+	lanes     uint8
+}
+
+// production is OWASP's first recommendation (2024): 19 MiB, 2 passes, 1
+// lane. About 50 ms a guess, and every guess has to hold 19 MiB.
+var production = params{memoryKiB: 19 * 1024, passes: 2, lanes: 1}
+
+// cheap is the least Argon2id allows, for tests only (UseCheapParamsInTests).
+var cheap = params{memoryKiB: 8, passes: 1, lanes: 1}
 
 const (
-	lanes   uint8  = 1
 	saltLen        = 16
 	keyLen  uint32 = 32
 )
 
-// UseWeakParamsForTests makes Hash use the cheapest Argon2id parameters
-// (8 KiB, 1 pass), so test suites that create many accounts don't spend
-// most of their time hashing. Call it only from tests (e.g. TestMain),
-// before any hashing: it is not safe for concurrent use and its hashes are
-// trivially brute-forced.
-func UseWeakParamsForTests() {
-	memoryKiB, passes = 8, 1
+// testParams, when set, replaces production in a test binary.
+var testParams atomic.Pointer[params]
+
+// current is what Hash uses now: production, except in a test binary that
+// called UseCheapParamsInTests.
+func current() params {
+	if p := testParams.Load(); p != nil {
+		return *p
+	}
+	return production
+}
+
+// UseCheapParamsInTests makes Hash use the cheapest Argon2id settings, so
+// tests that create and sign in accounts don't spend their time hashing.
+// Hashes keep their parameters, so either kind still verifies. It panics
+// outside a test binary (built by go test): production always hashes with
+// the real settings. Call it from TestMain, before any test runs.
+func UseCheapParamsInTests() {
+	if !testing.Testing() {
+		panic("passhash: cheap parameters are for tests only")
+	}
+	p := cheap
+	testParams.Store(&p)
 }
 
 // ErrMalformed is returned for a stored value that isn't an Argon2id PHC
@@ -46,14 +70,16 @@ func UseWeakParamsForTests() {
 var ErrMalformed = errors.New("passhash: malformed hash")
 
 // Hash returns a new Argon2id PHC string for password.
-func Hash(password string) (string, error) {
+func Hash(password string) (string, error) { return hashWith(current(), password) }
+
+func hashWith(p params, password string) (string, error) {
 	salt := make([]byte, saltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	key := argon2.IDKey([]byte(password), salt, passes, memoryKiB, lanes, keyLen)
+	key := argon2.IDKey([]byte(password), salt, p.passes, p.memoryKiB, p.lanes, keyLen)
 	enc := base64.RawStdEncoding
-	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s", argon2.Version, memoryKiB, passes, lanes,
+	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s", argon2.Version, p.memoryKiB, p.passes, p.lanes,
 		enc.EncodeToString(salt), enc.EncodeToString(key)), nil
 }
 
@@ -88,7 +114,8 @@ func Verify(stored, password string) (ok, rehash bool, err error) {
 	if subtle.ConstantTimeCompare(got, want) != 1 {
 		return false, false, nil
 	}
-	return true, m < memoryKiB || t < passes || p < lanes, nil
+	cur := current()
+	return true, m < cur.memoryKiB || t < cur.passes || p < cur.lanes, nil
 }
 
 var (

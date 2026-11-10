@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/passhash"
 	"github.com/klahr/dash/internal/store"
 )
 
@@ -22,8 +23,11 @@ func Accounts(t testing.TB) (*store.Accounts, model.Owner) {
 }
 
 // Bootstrap makes "admin" the first user of st, owner of the default org.
+// Passwords are hashed with the cheap test setting from here on
+// (passhash.UseCheapParamsInTests).
 func Bootstrap(t testing.TB, st *store.Store) (*store.Accounts, model.Owner) {
 	t.Helper()
+	passhash.UseCheapParamsInTests()
 	acc := st.Accounts()
 	if err := acc.Bootstrap("admin", "s3cret-password"); err != nil {
 		t.Fatal(err)

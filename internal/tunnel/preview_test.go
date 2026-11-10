@@ -40,6 +40,8 @@ func (f *fakePreviews) DialPreview(id string) (net.Conn, int, error) {
 }
 
 func TestPreviewStreamsAreLimitedAndKeepOffTaskTraffic(t *testing.T) {
+	t.Parallel()
+
 	th := newTestHub(t)
 	creds := th.register(t, "work")
 	fp := &fakePreviews{}
@@ -116,6 +118,8 @@ func TestPreviewStreamsAreLimitedAndKeepOffTaskTraffic(t *testing.T) {
 }
 
 func TestPreviewOfUnknownOrOfflineRunner(t *testing.T) {
+	t.Parallel()
+
 	th := newTestHub(t)
 	th.register(t, "work")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

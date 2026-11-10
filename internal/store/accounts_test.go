@@ -39,6 +39,8 @@ func orgsOf(t *testing.T, s *Store) map[string]map[string]int {
 // env account as its first user, owner of a "default" org that every record
 // is assigned to.
 func TestMigrateToAccounts(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	db, err := openDB(path)
 	if err != nil {
@@ -132,6 +134,8 @@ func TestMigrateToAccounts(t *testing.T) {
 
 // Records imported from a state.json are assigned to the default org too.
 func TestImportedRecordsGetTheDefaultOrg(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, LegacyFile), []byte(legacyState), 0o600); err != nil {
 		t.Fatal(err)
@@ -154,6 +158,8 @@ func TestImportedRecordsGetTheDefaultOrg(t *testing.T) {
 
 // New rows get the default org; updating a row keeps whatever org it has.
 func TestWritesKeepTheRowsOrg(t *testing.T) {
+	t.Parallel()
+
 	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -196,6 +202,8 @@ func TestWritesKeepTheRowsOrg(t *testing.T) {
 }
 
 func TestEnvAccountFollowsTheEnvironment(t *testing.T) {
+	t.Parallel()
+
 	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -229,6 +237,8 @@ func TestEnvAccountFollowsTheEnvironment(t *testing.T) {
 }
 
 func TestSlugs(t *testing.T) {
+	t.Parallel()
+
 	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -254,6 +264,8 @@ func TestSlugs(t *testing.T) {
 }
 
 func TestInvitationsExpire(t *testing.T) {
+	t.Parallel()
+
 	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), nil)
 	if err != nil {
 		t.Fatal(err)

@@ -135,7 +135,7 @@ func (a *Auth) secondFactor(ip string, uid int64, code string) (recovery bool, e
 		return false, err
 	}
 	if !ok {
-		time.Sleep(failurePause)
+		a.failedAttemptWait()
 		return false, errBadCode
 	}
 	a.release(fip)
@@ -312,7 +312,7 @@ func (a *Auth) enableTOTP(w http.ResponseWriter, r *http.Request, id *Identity) 
 	}
 	step, ok := totp.Verify(secret, req.Code, a.now())
 	if !ok {
-		time.Sleep(failurePause)
+		a.failedAttemptWait()
 		writeError(w, http.StatusBadRequest, errBadCode.Error()+"; check the time on your phone and try the next one")
 		return
 	}

@@ -33,6 +33,8 @@ func eventually(t *testing.T, what string, ok func() bool) {
 // over the runner's tunnel; the runner reports back; while the runner is
 // offline new tasks wait; revoking it unlinks it.
 func TestHubDispatchesToARunnerEndToEnd(t *testing.T) {
+	parallel(t)
+
 	// The hub
 	hub, _, _ := boardServer(t)
 	acc := hub.Auth.Accounts()

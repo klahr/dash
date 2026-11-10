@@ -12,6 +12,8 @@ import (
 )
 
 func TestScanEndpoints(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	p, _ = raw(s).UpdateProject(p.ID, func(x *model.Project) error { x.Path = t.TempDir(); return nil })
 	h := loggedIn(t, s.Routes())
@@ -80,6 +82,8 @@ func TestScanEndpoints(t *testing.T) {
 }
 
 func TestScanApprovals(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	repo := t.TempDir()
 	p, _ = raw(s).UpdateProject(p.ID, func(x *model.Project) error { x.Path = repo; return nil })
@@ -165,6 +169,8 @@ func TestScanApprovals(t *testing.T) {
 }
 
 func TestDashScanEndpoints(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	repo := t.TempDir()
 	p, _ = raw(s).UpdateProject(p.ID, func(x *model.Project) error { x.Path = repo; return nil })

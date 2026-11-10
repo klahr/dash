@@ -36,6 +36,8 @@ func permEvents(r *recorder) []perm.Request {
 // broker: the runner reports those of the hub's tasks, with the hub's ids,
 // and leaves out its own tasks' and those already answered.
 func TestReporterSendsTheHubsTasksPermissionRequests(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	rp := fx.project(t, fx.orgA)
 	mine := fx.todo(t, rp, nil)
@@ -63,6 +65,8 @@ func TestReporterSendsTheHubsTasksPermissionRequests(t *testing.T) {
 // them on that runner, and stops showing them once they are answered or
 // the runner no longer has them.
 func TestHubRelaysPermissionRequestsOfTasksOnRunners(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	pub := &recorder{}
 	fx.d.Pub = pub

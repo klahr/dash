@@ -10,6 +10,7 @@ import (
 
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/testbin"
 )
 
 // fakeGh is a gh that answers the calls listing and creating repositories,
@@ -32,15 +33,15 @@ case "$*" in
   *) echo "unexpected: $*" >&2; exit 1 ;;
 esac
 `
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	testbin.Write(t, bin, script)
 	return bin, log
 }
 
 // A runner lists its owner's GitHub repositories (with their
 // organisations') and creates new ones with its gh, only for its owner.
 func TestRunnerGitHubReposForItsOwner(t *testing.T) {
+	parallel(t)
+
 	s, h, _ := runnerSide(t, 7)
 	s.HubUser = 42
 	gh, log := fakeGh(t)
@@ -103,6 +104,8 @@ func TestRunnerGitHubReposForItsOwner(t *testing.T) {
 // The hub marks the repositories it already has a project for, whichever
 // URL form the project was made with.
 func TestMarkLinked(t *testing.T) {
+	parallel(t)
+
 	repos := []GitHubRepoItem{
 		{GitHubListing: gitops.GitHubListing{NameWithOwner: "alice/dash", URL: "https://github.com/alice/dash"}},
 		{GitHubListing: gitops.GitHubListing{NameWithOwner: "alice/site", URL: "https://github.com/alice/site"}},

@@ -8,6 +8,8 @@ import (
 )
 
 func TestHeaders(t *testing.T) {
+	t.Parallel()
+
 	a := &Auth{}
 	h := a.Headers(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/own" { // a handler's own policy replaces the default
@@ -48,6 +50,8 @@ func TestHeaders(t *testing.T) {
 // An internet-facing Dash's session cookie is Secure even when the proxy
 // doesn't say the browser came over HTTPS.
 func TestPublicSecureCookie(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	login := func() *http.Cookie {
 		r := httptest.NewRequest("POST", "/api/login", strings.NewReader(`{"username":"admin","password":"s3cret"}`))
@@ -77,6 +81,8 @@ func TestPublicSecureCookie(t *testing.T) {
 // session cookie to change anything: SameSite lets it through from a
 // sibling subdomain or another port of the same host.
 func TestCrossOriginRefusedWithoutDomains(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	cookie := sessionCookie(t, do(h, "POST", "http://localhost:8080/api/login", `{"username":"admin","password":"s3cret"}`))
 	send := func(method, path, origin string, hdr ...string) int {

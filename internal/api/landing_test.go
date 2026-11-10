@@ -28,6 +28,8 @@ func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
 }
 
 func TestLandingOffByDefault(t *testing.T) {
+	parallel(t)
+
 	_, h := brandedServer(t, branding.Config{})
 	w := get(t, h, "/")
 	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/login.html" {
@@ -36,6 +38,8 @@ func TestLandingOffByDefault(t *testing.T) {
 }
 
 func TestLandingOn(t *testing.T) {
+	parallel(t)
+
 	_, h := brandedServer(t, branding.Config{Name: "Acme Agents", Landing: true, TeamPrice: "€8 per seat / month",
 		TermsURL: "https://acme.example/terms", PrivacyURL: "https://acme.example/privacy"})
 	w := get(t, h, "/")
@@ -81,6 +85,8 @@ func TestLandingOn(t *testing.T) {
 }
 
 func TestLandingSeePricingWithoutPrice(t *testing.T) {
+	parallel(t)
+
 	_, h := brandedServer(t, branding.Config{Landing: true, PricingURL: "https://acme.example/pricing"})
 	body := get(t, h, "/").Body.String()
 	if !strings.Contains(body, `<a href="https://acme.example/pricing">see pricing</a>`) {
@@ -92,6 +98,8 @@ func TestLandingSeePricingWithoutPrice(t *testing.T) {
 }
 
 func TestSignedInBypassesLanding(t *testing.T) {
+	parallel(t)
+
 	_, h := brandedServer(t, branding.Config{Name: "Acme Agents", Landing: true})
 	w := get(t, loggedIn(t, h), "/")
 	if w.Code != http.StatusOK {
@@ -107,6 +115,8 @@ func TestSignedInBypassesLanding(t *testing.T) {
 }
 
 func TestPagesCarryTheBrand(t *testing.T) {
+	parallel(t)
+
 	logo := filepath.Join(t.TempDir(), "logo.png")
 	if err := os.WriteFile(logo, []byte("\x89PNG\r\n\x1a\nfake"), 0o600); err != nil {
 		t.Fatal(err)
@@ -144,6 +154,8 @@ func TestPagesCarryTheBrand(t *testing.T) {
 }
 
 func TestDefaultFooterHasSourceLink(t *testing.T) {
+	parallel(t)
+
 	_, h := brandedServer(t, branding.Config{})
 	body := get(t, h, "/login.html").Body.String()
 	if !strings.Contains(body, `<a href="`+branding.DefaultSourceURL+`" rel="noopener">Source code</a></footer>`) {
@@ -158,6 +170,8 @@ func TestDefaultFooterHasSourceLink(t *testing.T) {
 // from Dash itself: a visitor's browser asks no third party for anything
 // (no Google Fonts, no CDN), and the fonts load before signing in.
 func TestPagesLoadNothingFromOtherSites(t *testing.T) {
+	parallel(t)
+
 	_, h := brandedServer(t, branding.Config{})
 	for _, page := range []string{"login.html", "invite.html", "index.html"} {
 		b, err := os.ReadFile(filepath.Join("..", "..", "web", "static", page))

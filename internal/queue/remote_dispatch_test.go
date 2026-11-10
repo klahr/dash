@@ -61,6 +61,8 @@ func queued(t *testing.T, st *store.Store, p model.Project) model.Todo {
 // Tasks of a project linked to runners go to the dispatcher, never to the
 // hub's own Claude, and don't use the hub's parallel slots.
 func TestRunnerProjectTasksGoToTheirRunners(t *testing.T) {
+	parallel(t)
+
 	e, st, rem, exe := remoteEngine(t)
 	shared, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", Runners: []string{"laptop"}})
 	a, b := queued(t, st, shared), queued(t, st, shared) // more than MaxParallel
@@ -84,6 +86,8 @@ func TestRunnerProjectTasksGoToTheirRunners(t *testing.T) {
 // With no runner able to take it, a task stays queued and says why; it is
 // tried again later.
 func TestRunnerProjectTasksWaitWhileRunnersAreOffline(t *testing.T) {
+	parallel(t)
+
 	e, st, rem, _ := remoteEngine(t)
 	rem.err = errors.New("waiting for a runner: laptop is offline")
 	shared, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", Runners: []string{"laptop"}})
@@ -106,6 +110,8 @@ func TestRunnerProjectTasksWaitWhileRunnersAreOffline(t *testing.T) {
 // The hub runs no task itself: tasks of projects no runner is linked to
 // stay queued, saying so.
 func TestHubWaitsForARunner(t *testing.T) {
+	parallel(t)
+
 	e, st, _, exe := remoteEngine(t)
 	local, _ := st.CreateProject(model.Project{Name: "local"})
 	td := queued(t, st, local)
@@ -119,6 +125,8 @@ func TestHubWaitsForARunner(t *testing.T) {
 
 // A task running on a runner can't be paused from the hub.
 func TestPauseRefusesRunnerTasks(t *testing.T) {
+	parallel(t)
+
 	e, st, _, _ := remoteEngine(t)
 	shared, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", Runners: []string{"laptop"}})
 	td := queued(t, st, shared)
@@ -131,6 +139,8 @@ func TestPauseRefusesRunnerTasks(t *testing.T) {
 // A task that ran on a runner of a project since unlinked never starts
 // over on the hub: it waits for a runner to be linked again.
 func TestUnlinkedProjectTaskWaitsForARunner(t *testing.T) {
+	parallel(t)
+
 	e, st, rem, exe := remoteEngine(t)
 	p, _ := st.CreateProject(model.Project{Name: "was-shared", RemoteURL: "https://x/y", DefaultBranch: "main"})
 	td := queued(t, st, p)
@@ -149,6 +159,8 @@ func TestUnlinkedProjectTaskWaitsForARunner(t *testing.T) {
 // its runners, saying why; other orgs' tasks go on, and the held ones start
 // once the hold lifts.
 func TestHeldOrgTasksWait(t *testing.T) {
+	parallel(t)
+
 	e, st, rem, _ := remoteEngine(t)
 	held := "waiting for the organization's subscription"
 	holding := true

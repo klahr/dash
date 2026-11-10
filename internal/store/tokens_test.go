@@ -30,6 +30,8 @@ func tokenAccounts(t *testing.T) (s *Store, acc *Accounts, uid, org1, org2 int64
 }
 
 func TestTokenIsPinnedToItsOrg(t *testing.T) {
+	t.Parallel()
+
 	_, acc, uid, org1, org2 := tokenAccounts(t)
 	now := time.Now()
 
@@ -100,6 +102,8 @@ func addMember(t *testing.T, acc *Accounts, inviter, org int64, name string, rol
 }
 
 func TestTokenScopesAndNames(t *testing.T) {
+	t.Parallel()
+
 	_, acc, uid, org1, _ := tokenAccounts(t)
 	now := time.Now()
 	for _, sc := range [][]string{nil, {}, {"admin"}, {"read", "runner"}} {
@@ -122,6 +126,8 @@ func TestTokenScopesAndNames(t *testing.T) {
 }
 
 func TestTokenExpiryPasswordAndRevocation(t *testing.T) {
+	t.Parallel()
+
 	s, acc, uid, org1, _ := tokenAccounts(t)
 	now := time.Now()
 	secret, tok, err := acc.CreateToken(NewToken{Kind: TokenAPI, Name: "x", UserID: uid, OrgID: org1, Scopes: UserScopes, Expires: now.Add(time.Hour)}, now)
@@ -170,6 +176,8 @@ func TestTokenExpiryPasswordAndRevocation(t *testing.T) {
 }
 
 func TestGrantRefreshRotationAndReplay(t *testing.T) {
+	t.Parallel()
+
 	_, acc, uid, _, org2 := tokenAccounts(t)
 	now := time.Now()
 	if err := acc.CreateOAuthClient(OAuthClient{ID: "c1", Name: "Claude", RedirectURIs: []string{"https://claude.ai/cb"}, AuthMethod: "none", Created: now}, 10, now); err != nil {
@@ -216,6 +224,8 @@ func TestGrantRefreshRotationAndReplay(t *testing.T) {
 }
 
 func TestOAuthClientLimit(t *testing.T) {
+	t.Parallel()
+
 	_, acc, uid, org1, _ := tokenAccounts(t)
 	now := time.Now()
 	c := func(id string, at time.Time) OAuthClient {
@@ -248,6 +258,8 @@ func TestOAuthClientLimit(t *testing.T) {
 // Credentials from before tokens had orgs are imported only when the org is
 // unambiguous: the user's only one.
 func TestImportNeedsSoleOrg(t *testing.T) {
+	t.Parallel()
+
 	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), nil)
 	if err != nil {
 		t.Fatal(err)

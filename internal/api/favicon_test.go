@@ -34,6 +34,8 @@ func ico(img []byte) []byte {
 }
 
 func TestFindFavicon(t *testing.T) {
+	parallel(t)
+
 	png := append(append([]byte{}, pngMagic...), "image"...)
 	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`)
 
@@ -63,6 +65,8 @@ func TestFindFavicon(t *testing.T) {
 
 // An existing clone with a favicon gets it as its icon; one without has none.
 func TestAddExistingCloneTakesFavicon(t *testing.T) {
+	parallel(t)
+
 	s := newProjectServer(t)
 	s.UploadRoot = t.TempDir()
 	org := filepath.Join(s.ProjectRoot, "default")

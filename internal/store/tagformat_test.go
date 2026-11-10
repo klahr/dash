@@ -8,6 +8,8 @@ import (
 // Migration 0009 writes the default tag format into existing projects and
 // keeps one a project already set.
 func TestMigrateTagFormat(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	db, err := openDB(path)
 	if err != nil {

@@ -10,6 +10,8 @@ import (
 )
 
 func TestParseAheadBehind(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		in            string
 		ahead, behind int
@@ -47,9 +49,7 @@ func remoteRepos(t *testing.T) (g *Git, repo, other string) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
-	t.Setenv("GIT_CONFIG_COUNT", "1")
-	t.Setenv("GIT_CONFIG_KEY_0", "commit.gpgsign")
-	t.Setenv("GIT_CONFIG_VALUE_0", "false")
+	// TestMain keeps the developer's commit signing out of git.
 	base := t.TempDir()
 	g = New(nil)
 	repo, other = filepath.Join(base, "repo"), filepath.Join(base, "other")
@@ -75,6 +75,8 @@ func commitIn(t *testing.T, dir, file string) string {
 }
 
 func TestFetchAndAheadBehind(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	g, repo, other := remoteRepos(t)
 	commitIn(t, other, "a.txt")
@@ -96,6 +98,8 @@ func TestFetchAndAheadBehind(t *testing.T) {
 }
 
 func TestFastForwardToOriginOnlyWhenStrictlyBehind(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	t.Run("behind", func(t *testing.T) {

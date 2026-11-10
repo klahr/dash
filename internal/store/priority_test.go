@@ -13,6 +13,8 @@ import (
 // age, and unprioritised ones after all of them, oldest first; 0 is a real
 // priority.
 func TestListTodosQueueOrder(t *testing.T) {
+	t.Parallel()
+
 	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -59,6 +61,8 @@ func TestListTodosQueueOrder(t *testing.T) {
 // Migration 0013 turns priority 0 (which meant unset) into no priority and
 // keeps every other value.
 func TestMigrateOptionalPriority(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	db, err := openDB(path)
 	if err != nil {

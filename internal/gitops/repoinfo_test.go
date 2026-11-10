@@ -8,6 +8,8 @@ import (
 )
 
 func TestParseRepoInfo(t *testing.T) {
+	t.Parallel()
+
 	out := `A new release of gh is available
 {"nameWithOwner":"klahr/dash","url":"https://github.com/klahr/dash","description":" Dashboard for Claude ","homepageUrl":"",
  "visibility":"PUBLIC","isArchived":false,"isFork":true,"isTemplate":false,"parent":{"id":"x","name":"up","owner":{"id":"y","login":"acme"}},
@@ -50,6 +52,8 @@ func TestParseRepoInfo(t *testing.T) {
 
 // A bare repository: no license, release, language, parent or topics.
 func TestParseRepoInfoEmpty(t *testing.T) {
+	t.Parallel()
+
 	info, err := ParseRepoInfo(`{"nameWithOwner":"a/b","url":"u","description":null,"homepageUrl":null,"parent":null,"licenseInfo":null,"latestRelease":null,"primaryLanguage":null,"repositoryTopics":null,"defaultBranchRef":null}`)
 	if err != nil {
 		t.Fatal(err)
@@ -60,6 +64,8 @@ func TestParseRepoInfoEmpty(t *testing.T) {
 }
 
 func TestRepoInfoAsksGh(t *testing.T) {
+	t.Parallel()
+
 	g := fakeGh(t, `echo '{"nameWithOwner":"klahr/dash","url":"https://github.com/klahr/dash"}'`)
 	info, err := g.RepoInfo(context.Background(), "git@github.com:klahr/dash.git")
 	if err != nil {

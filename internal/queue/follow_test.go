@@ -33,6 +33,8 @@ func head(t *testing.T, dir, ref string) string {
 }
 
 func TestOriginMovedFastForwardsCleanCheckout(t *testing.T) {
+	parallel(t)
+
 	h, r, _, other := followHarness(t)
 	pushFrom(t, other, "theirs.txt", "theirs\n")
 	sha := head(t, other, "main")
@@ -55,6 +57,8 @@ func TestOriginMovedFastForwardsCleanCheckout(t *testing.T) {
 }
 
 func TestOriginMovedLeavesDirtyCheckoutBehind(t *testing.T) {
+	parallel(t)
+
 	h, r, _, other := followHarness(t)
 	write(t, h.proj.Path, "README", "my edit\n")
 	before := head(t, h.proj.Path, "main")
@@ -86,6 +90,8 @@ func TestOriginMovedLeavesDirtyCheckoutBehind(t *testing.T) {
 }
 
 func TestOriginMovedLeavesDivergedCheckoutBehind(t *testing.T) {
+	parallel(t)
+
 	h, r, _, other := followHarness(t)
 	gitRun(t, h.proj.Path, "commit", "--allow-empty", "-q", "-m", "mine")
 	mine := head(t, h.proj.Path, "main")
@@ -104,6 +110,8 @@ func TestOriginMovedLeavesDivergedCheckoutBehind(t *testing.T) {
 }
 
 func TestOriginMovedDuplicatesAndOldNewsAreNoOps(t *testing.T) {
+	parallel(t)
+
 	h, r, origin, other := followHarness(t)
 	pushFrom(t, other, "a.txt", "a\n")
 	a := head(t, other, "main")
@@ -142,6 +150,8 @@ func TestOriginMovedDuplicatesAndOldNewsAreNoOps(t *testing.T) {
 }
 
 func TestOriginMovedNeverTouchesTaskWorktrees(t *testing.T) {
+	parallel(t)
+
 	h, r, _, other := followHarness(t)
 	wt := h.t.TempDir() + "/wt"
 	gitRun(t, h.proj.Path, "worktree", "add", "-q", "-b", "dash/task", wt, "main")
@@ -159,6 +169,8 @@ func TestOriginMovedNeverTouchesTaskWorktrees(t *testing.T) {
 }
 
 func TestPullFastForwardsOnly(t *testing.T) {
+	parallel(t)
+
 	h, r, _, other := followHarness(t)
 	ctx := context.Background()
 	gitRun(t, h.proj.Path, "commit", "--allow-empty", "-q", "-m", "mine")
@@ -189,6 +201,8 @@ func TestPullFastForwardsOnly(t *testing.T) {
 }
 
 func TestIdleProjectsArePolledSlowly(t *testing.T) {
+	parallel(t)
+
 	h, r, _, _ := followHarness(t)
 	_, clk := h.remote()
 	r.Idle = 5 * time.Minute
@@ -210,6 +224,8 @@ func TestIdleProjectsArePolledSlowly(t *testing.T) {
 }
 
 func TestFetchAllCatchesUpOnReconnect(t *testing.T) {
+	parallel(t)
+
 	h, r, _, other := followHarness(t)
 	pushFrom(t, other, "theirs.txt", "theirs\n")
 	want := head(t, other, "main")
@@ -220,6 +236,8 @@ func TestFetchAllCatchesUpOnReconnect(t *testing.T) {
 }
 
 func TestLandingOnOriginReportsThePush(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "mine.txt")}, model.Project{Name: "p"})
 	_, other, _ := h.runnerProject()
 	var mu sync.Mutex

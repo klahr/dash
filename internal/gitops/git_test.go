@@ -17,6 +17,8 @@ func gitIn(t *testing.T, dir string, args ...string) {
 }
 
 func TestMainBranch(t *testing.T) {
+	t.Parallel()
+
 	ctx, g := context.Background(), New(nil)
 	dir := filepath.Join(t.TempDir(), "repo")
 	if err := g.InitRepo(ctx, "p", dir, "master"); err != nil {
@@ -42,6 +44,8 @@ func TestMainBranch(t *testing.T) {
 // A NUL byte in a commit message (pasted into a task's prompt) used to make
 // the commit fail with "fork/exec git: invalid argument".
 func TestCommitMessageWithNUL(t *testing.T) {
+	t.Parallel()
+
 	ctx, g := context.Background(), New(nil)
 	dir := filepath.Join(t.TempDir(), "repo")
 	if err := g.InitRepo(ctx, "p", dir, "main"); err != nil {
@@ -59,6 +63,8 @@ func TestCommitMessageWithNUL(t *testing.T) {
 // Graph returns commits with their parents in topological order, so a merge
 // lists both parents and every commit comes before its parents.
 func TestGraph(t *testing.T) {
+	t.Parallel()
+
 	ctx, g := context.Background(), New(nil)
 	dir := filepath.Join(t.TempDir(), "repo")
 	if err := g.InitRepo(ctx, "p", dir, "main"); err != nil {

@@ -14,6 +14,8 @@ func at(s string) time.Time {
 }
 
 func TestCronNext(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct{ expr, after, want string }{
 		{"0 6 * * *", "2026-11-07 05:59", "2026-11-07 06:00"},
 		{"0 6 * * *", "2026-11-07 06:00", "2026-11-08 06:00"}, // strictly after
@@ -49,6 +51,8 @@ func TestCronNext(t *testing.T) {
 }
 
 func TestParseCronErrors(t *testing.T) {
+	t.Parallel()
+
 	for _, e := range []string{"", "* * * *", "60 * * * *", "* 24 * * *", "* * 0 * *", "* * * 13 *", "* * * * 8", "*/0 * * * *", "5-1 * * * *", "x * * * *"} {
 		if _, err := ParseCron(e); err == nil {
 			t.Errorf("%q: no error", e)
@@ -57,6 +61,8 @@ func TestParseCronErrors(t *testing.T) {
 }
 
 func TestDue(t *testing.T) {
+	t.Parallel()
+
 	daily, _ := ParseCron("0 6 * * *")
 	// Ran this morning: not due again until tomorrow 06:00.
 	if Due(daily, at("2026-11-07 06:00"), at("2026-11-07 23:59")) {

@@ -16,6 +16,8 @@ import (
 )
 
 func TestFrontmatter(t *testing.T) {
+	parallel(t)
+
 	meta, body := frontmatter("---\r\nname: pdf-tools\r\ndescription: \"Fill \\\"PDF\\\" forms\"\r\nallowed-tools: Read\r\n---\r\n# PDF\r\nUse it.\r\n")
 	if meta["name"] != "pdf-tools" || meta["description"] != `Fill "PDF" forms` || !strings.HasPrefix(body, "# PDF") {
 		t.Fatalf("meta %q body %q", meta, body)
@@ -32,6 +34,8 @@ func TestFrontmatter(t *testing.T) {
 // The Claude section lists the repo's Claude files: tracked ones from the
 // default branch, local ones from the checkout, with what's missing.
 func TestClaudeFilesEndpoint(t *testing.T) {
+	parallel(t)
+
 	ctx, g := context.Background(), gitops.New(nil)
 	dir := filepath.Join(t.TempDir(), "repo")
 	if err := g.InitRepo(ctx, "p", dir, "main"); err != nil {
@@ -137,6 +141,8 @@ func TestClaudeFilesEndpoint(t *testing.T) {
 
 // The task instructions are a project setting, trimmed and capped.
 func TestTaskInstructionsSetting(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	s.Git = gitops.New(nil)
 	h := loggedIn(t, s.Routes())
@@ -155,6 +161,8 @@ func TestTaskInstructionsSetting(t *testing.T) {
 // A runner's copy of a hub project follows the hub's task instructions,
 // which the hub sends with the link before every task.
 func TestRunnerFollowsTaskInstructions(t *testing.T) {
+	parallel(t)
+
 	s, h, remote := runnerSide(t, 7)
 	link := func(instr string) string {
 		t.Helper()
@@ -181,6 +189,8 @@ func TestRunnerFollowsTaskInstructions(t *testing.T) {
 // "Generate with /init" queues a task whose prompt is the slash command; it
 // must reach Claude first to run as one.
 func TestSlashCommandPrompt(t *testing.T) {
+	parallel(t)
+
 	got := agent.BuildPrompt(model.Todo{Title: "Generate CLAUDE.md", Prompt: "/init"})
 	if !strings.HasPrefix(got, "/init\n") {
 		t.Fatalf("slash command prompt %q", got)

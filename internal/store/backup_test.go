@@ -14,6 +14,8 @@ import (
 // A backup of a database Dash has open, mid-use, opens as a store with the
 // data in it, and the live store carries on writing.
 func TestBackupLiveDatabase(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	src := filepath.Join(dir, "dash.db")
 	s, err := Open(src, nil)
@@ -67,6 +69,8 @@ func TestBackupLiveDatabase(t *testing.T) {
 }
 
 func TestBackupMissingDatabase(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	if err := Backup(context.Background(), filepath.Join(dir, "nope.db"), filepath.Join(dir, "b.db")); err == nil {
 		t.Fatal("backed up a database that doesn't exist")
@@ -77,6 +81,8 @@ func TestBackupMissingDatabase(t *testing.T) {
 }
 
 func TestBackupToPrunes(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	src := filepath.Join(dir, "dash.db")
 	s, err := Open(src, nil)
@@ -112,6 +118,8 @@ func TestBackupToPrunes(t *testing.T) {
 }
 
 func TestPruneBackupsLeavesOtherFiles(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	for _, n := range []string{
 		"dash-20260101T000000Z.db", "dash-20260102T000000Z.db", "dash-20260103T000000Z.db",

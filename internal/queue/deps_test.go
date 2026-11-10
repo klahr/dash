@@ -18,6 +18,8 @@ import (
 // task with a worse priority runs meanwhile, and the dependent starts once
 // the dependency is merged, on top of its code.
 func TestDependentWaitsUntilDependencyIsMerged(t *testing.T) {
+	parallel(t)
+
 	var sawBase atomic.Bool
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		switch {
@@ -84,6 +86,8 @@ func TestDependentWaitsUntilDependencyIsMerged(t *testing.T) {
 }
 
 func TestDependencyCyclesAreRejected(t *testing.T) {
+	parallel(t)
+
 	st, err := store.Open(filepath.Join(t.TempDir(), "dash.db"), nil)
 	if err != nil {
 		t.Fatal(err)

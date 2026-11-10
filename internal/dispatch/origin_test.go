@@ -60,6 +60,8 @@ func originCalls(f *fakeFleet, id string) []string {
 // A runner's push goes to the project's other online runners in its org,
 // and not back to the runner that pushed.
 func TestPushFansOutToOtherRunnersOnly(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	for _, id := range []string{"a", "b", "c"} {
 		fx.fleet.set(runnerOf(id, fx.orgA, true))
@@ -96,6 +98,8 @@ func TestPushFansOutToOtherRunnersOnly(t *testing.T) {
 
 // Pushes of a project the runner isn't linked to, or not a commit, are dropped.
 func TestPushFromUnlinkedRunnerIsIgnored(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("a", fx.orgA, true))
 	fx.fleet.set(runnerOf("b", fx.orgA, true))
@@ -111,6 +115,8 @@ func TestPushFromUnlinkedRunnerIsIgnored(t *testing.T) {
 // The hub keeps each runner's checkouts behind origin as last reported,
 // and tells the dashboards when they change.
 func TestCheckoutsBehindAreKeptPerRunner(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	pub := &recordPub{}
 	fx.d.Pub = pub
@@ -159,6 +165,8 @@ func TestCheckoutsBehindAreKeptPerRunner(t *testing.T) {
 
 // A push the hub didn't hear of (the report failed) goes in the next report.
 func TestReporterResendsPushesAfterAFailedReport(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	var mu sync.Mutex
 	var sent []Report

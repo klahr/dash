@@ -26,6 +26,22 @@ import (
 
 // ---- a fake Google: discovery, keys, and a token endpoint ----
 
+// fakeIdPKeys are the fake Google's signing key and the "bad signature"
+// key, made once: generating RSA keys took most of these tests' time. Every
+// fakeIdP serves on its own httptest server, so sharing them crosses
+// nothing.
+var fakeIdPKeys = sync.OnceValues(func() ([2]*rsa.PrivateKey, error) {
+	var keys [2]*rsa.PrivateKey
+	for i := range keys {
+		k, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			return keys, err
+		}
+		keys[i] = k
+	}
+	return keys, nil
+})
+
 type fakeIdP struct {
 	t       *testing.T
 	srv     *httptest.Server
@@ -46,13 +62,11 @@ type fakeGrant struct {
 func newFakeIdP(t *testing.T) *fakeIdP {
 	t.Helper()
 	p := &fakeIdP{t: t, clients: map[string]string{}, grants: map[string]fakeGrant{}}
-	var err error
-	if p.key, err = rsa.GenerateKey(rand.Reader, 2048); err != nil {
+	keys, err := fakeIdPKeys()
+	if err != nil {
 		t.Fatal(err)
 	}
-	if p.other, err = rsa.GenerateKey(rand.Reader, 2048); err != nil {
-		t.Fatal(err)
-	}
+	p.key, p.other = keys[0], keys[1]
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
@@ -344,6 +358,8 @@ func roleIn(ms []store.Membership, org int64) store.Role {
 // ---- tests ----
 
 func TestGoogleNotConfigured(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, true)
 	b := newGBrowser(t, e.h)
 	for _, p := range []string{GoogleStartPath, GoogleStartPath + "?org=" + e.acme.Slug, GoogleCallbackPath + "?state=x&code=y"} {
@@ -358,6 +374,8 @@ func TestGoogleNotConfigured(t *testing.T) {
 }
 
 func TestGoogleAutoJoinInstanceClient(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, false)
 	e.setSSO(func(s *store.OrgSSO) { s.AutoJoin = true })
 	b := newGBrowser(t, e.h)
@@ -394,6 +412,8 @@ func TestGoogleAutoJoinInstanceClient(t *testing.T) {
 }
 
 func TestGoogleOrgClient(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, true) // no instance client: the org's own only
 	e.ownClient()
 	e.setSSO(func(s *store.OrgSSO) { s.AutoJoin = true })
@@ -420,6 +440,8 @@ func TestGoogleOrgClient(t *testing.T) {
 }
 
 func TestGoogleTokenChecks(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, false)
 	e.a.signupOpen = true
 	cases := []struct {
@@ -457,6 +479,8 @@ func TestGoogleTokenChecks(t *testing.T) {
 }
 
 func TestGoogleStateAndBinding(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, false)
 	e.a.signupOpen = true
 	who := person{sub: "g-s", email: "s@gmail.com"}
@@ -503,6 +527,8 @@ func TestGoogleStateAndBinding(t *testing.T) {
 }
 
 func TestGoogleJoinRules(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, false)
 	// Auto-join off, signup closed: an acme.com account can't get in.
 	b := newGBrowser(t, e.h)
@@ -542,6 +568,8 @@ func TestGoogleJoinRules(t *testing.T) {
 }
 
 func TestGoogleRemovedMemberStaysOut(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, false)
 	e.setSSO(func(s *store.OrgSSO) { s.AutoJoin = true })
 	who := person{sub: "g-gil", email: "gil@acme.com", hd: "acme.com"}
@@ -575,6 +603,8 @@ func (e *gEnv) register(username, email string, org int64, role store.Role) stor
 var linkRe = regexp.MustCompile(`#google_link=([A-Za-z0-9_-]+)`)
 
 func TestGoogleExistingEmail(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, false)
 	bob := e.register("bob", "bob@example.org", e.acme.ID, store.RoleMember)
 
@@ -626,6 +656,8 @@ func TestGoogleExistingEmail(t *testing.T) {
 }
 
 func TestGoogleInvitation(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, false)
 	admin, _ := e.a.acc.EnvUser()
 	accept := func(tok string, who person) *httptest.ResponseRecorder {
@@ -668,6 +700,8 @@ func TestGoogleInvitation(t *testing.T) {
 }
 
 func TestGoogleRequired(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, false)
 	e.setSSO(func(s *store.OrgSSO) { s.RequireGoogle = true })
 	dan := e.register("dan", "dan@acme.com", e.acme.ID, store.RoleMember)
@@ -711,6 +745,8 @@ func TestGoogleRequired(t *testing.T) {
 }
 
 func TestGoogleTestModeNeverSignsIn(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, false)
 	b := newGBrowser(t, e.h)
 	b.login("admin", "s3cret")
@@ -742,6 +778,8 @@ func TestGoogleTestModeNeverSignsIn(t *testing.T) {
 }
 
 func TestGoogleOrgSubdomainHandoff(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, true, false)
 	e.setSSO(func(s *store.OrgSSO) { s.AutoJoin = true })
 	slug := e.acme.Slug
@@ -779,6 +817,8 @@ func TestGoogleOrgSubdomainHandoff(t *testing.T) {
 }
 
 func TestGoogleSecretNeverShown(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, true)
 	b := newGBrowser(t, e.h)
 	b.login("admin", "s3cret")
@@ -817,6 +857,8 @@ func TestGoogleSecretNeverShown(t *testing.T) {
 }
 
 func TestGoogleOnlyAccount(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, false)
 	e.setSSO(func(s *store.OrgSSO) { s.AutoJoin = true })
 	b := newGBrowser(t, e.h)
@@ -841,6 +883,8 @@ func TestGoogleOnlyAccount(t *testing.T) {
 }
 
 func TestSignOutMember(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, false)
 	eva := e.register("eva", "eva@example.org", e.acme.ID, store.RoleMember)
 	b := newGBrowser(t, e.h)
@@ -862,6 +906,8 @@ func TestSignOutMember(t *testing.T) {
 }
 
 func TestDomainClaims(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, false)
 	admin, _ := e.a.acc.EnvUser()
 	other, _ := e.a.acc.CreateOrg(admin.ID, "Other")
@@ -884,6 +930,8 @@ func TestDomainClaims(t *testing.T) {
 var totpTicketRe = regexp.MustCompile(`#google_totp=([A-Za-z0-9_-]+)`)
 
 func TestGoogleThenTOTP(t *testing.T) {
+	t.Parallel()
+
 	e := newGEnv(t, false, false)
 	fay := e.register("fay", "fay@acme.com", e.acme.ID, store.RoleMember)
 	secret := totp.NewSecret()

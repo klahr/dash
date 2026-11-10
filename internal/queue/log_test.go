@@ -23,6 +23,8 @@ func (p *recordPub) Publish(ev model.Event) {
 }
 
 func TestTodoLogEvents(t *testing.T) {
+	parallel(t)
+
 	pub := &recordPub{}
 	l := &TodoLog{Pub: pub, Root: t.TempDir()}
 	td := model.Todo{ID: "t1", ProjectID: "p1"}
@@ -96,6 +98,8 @@ func TestTodoLogEvents(t *testing.T) {
 // A log past MaxBytes keeps its newest events, whole, behind a note, and
 // never grows much beyond the cap.
 func TestTodoLogCapped(t *testing.T) {
+	parallel(t)
+
 	l := &TodoLog{Pub: &recordPub{}, Root: t.TempDir(), MaxBytes: 4096}
 	td := model.Todo{ID: "t1", ProjectID: "p1"}
 	for i := range 500 {
@@ -136,6 +140,8 @@ func TestTodoLogCapped(t *testing.T) {
 }
 
 func TestTodoLogUncapped(t *testing.T) {
+	parallel(t)
+
 	l := &TodoLog{Pub: &recordPub{}, Root: t.TempDir()}
 	td := model.Todo{ID: "t1", ProjectID: "p1"}
 	for i := range 200 {

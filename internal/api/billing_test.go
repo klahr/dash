@@ -37,6 +37,8 @@ func (stripeStub) UpdateQuantity(context.Context, string, string, int) (billing.
 // can be read but not changed, by the API, the MCP tools or the chat; its
 // owner can still subscribe, and removing the other member frees it.
 func TestUnpaidOrgIsReadOnly(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	st := raw(s)
 	acc := st.Accounts()
@@ -155,6 +157,8 @@ func TestUnpaidOrgIsReadOnly(t *testing.T) {
 
 // With billing off (no Stripe), nothing is ever read-only.
 func TestNoBillingNoLimits(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	h := s.Routes()
 	a := loggedIn(t, h)

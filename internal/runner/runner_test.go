@@ -34,6 +34,8 @@ func readUntil(t *testing.T, s *Session, want string) string {
 }
 
 func TestPTYRoundTripAndStop(t *testing.T) {
+	t.Parallel()
+
 	m := NewManager(nopPub{})
 	p, err := m.StartPTY("proj", t.TempDir(), "bash --norc --noprofile", 80, 24)
 	if err != nil {
@@ -70,6 +72,8 @@ func TestPTYRoundTripAndStop(t *testing.T) {
 }
 
 func TestTaskExitCode(t *testing.T) {
+	t.Parallel()
+
 	m := NewManager(nopPub{})
 	p, err := m.StartTask("proj", t.TempDir(), "echo out; exit 3")
 	if err != nil {
@@ -90,6 +94,8 @@ func TestTaskExitCode(t *testing.T) {
 }
 
 func TestKeepRestoresLastRuns(t *testing.T) {
+	t.Parallel()
+
 	path := t.TempDir() + "/processes.json"
 	dir := t.TempDir()
 	m := NewManager(nopPub{})

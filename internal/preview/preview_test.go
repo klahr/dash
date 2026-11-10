@@ -59,6 +59,8 @@ func waitState(t *testing.T, m *Manager, id string, want model.PreviewState) mod
 }
 
 func TestStartRequiresRunCommandAndReview(t *testing.T) {
+	t.Parallel()
+
 	m, _, td := setup(t, "")
 	if _, err := m.Start(td, model.Project{ID: "p1"}); err != ErrNoRunCommand {
 		t.Fatalf("want ErrNoRunCommand, got %v", err)
@@ -70,6 +72,8 @@ func TestStartRequiresRunCommandAndReview(t *testing.T) {
 }
 
 func TestCrashKeepsLog(t *testing.T) {
+	t.Parallel()
+
 	m, procs, td := setup(t, "")
 	p, err := m.Start(td, model.Project{ID: "p1", RunCommand: "echo boom on $PORT; exit 3"})
 	if err != nil {
@@ -94,6 +98,8 @@ func TestCrashKeepsLog(t *testing.T) {
 }
 
 func TestProxyAuthAndLifecycle(t *testing.T) {
+	t.Parallel()
+
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("needs python3 for a test server")
 	}
@@ -192,6 +198,8 @@ func TestProxyAuthAndLifecycle(t *testing.T) {
 }
 
 func TestIdleSweep(t *testing.T) {
+	t.Parallel()
+
 	m, _, td := setup(t, "")
 	if _, err := m.Start(td, model.Project{ID: "p1", RunCommand: "sleep 30"}); err != nil {
 		t.Fatal(err)
@@ -209,6 +217,8 @@ func TestIdleSweep(t *testing.T) {
 
 // Hot reload: WebSockets pass through the proxy, and their traffic counts as activity.
 func TestProxyWebSocket(t *testing.T) {
+	t.Parallel()
+
 	up := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == "http://"+r.Host }}
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := up.Upgrade(w, r, nil)

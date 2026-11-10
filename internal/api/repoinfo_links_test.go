@@ -7,6 +7,8 @@ import (
 )
 
 func TestSafeRepoLinks(t *testing.T) {
+	parallel(t)
+
 	x := projectRepoInfo{GitHub: &gitops.RepoInfo{
 		URL:           "javascript:alert(1)//",
 		Homepage:      "javascript:alert(2)",

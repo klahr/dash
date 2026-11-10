@@ -48,6 +48,8 @@ func hubCall(h http.Handler, method, path, body string) *httptest.ResponseRecord
 }
 
 func TestRunnerOffersTheHubOnlyItsProjects(t *testing.T) {
+	parallel(t)
+
 	_, h, p := runnerServer(t)
 	if w := hubCall(h, "GET", "/api/projects", ""); w.Code != http.StatusOK {
 		t.Fatalf("list projects (no login needed over the tunnel): %d %s", w.Code, w.Body)
@@ -75,6 +77,8 @@ func TestRunnerOffersTheHubOnlyItsProjects(t *testing.T) {
 }
 
 func TestRunnerRefusesCommandsFromTheHub(t *testing.T) {
+	parallel(t)
+
 	s, h, p := runnerServer(t)
 	procs := "/api/projects/" + p.ID + "/processes"
 
@@ -123,6 +127,8 @@ func TestRunnerRefusesCommandsFromTheHub(t *testing.T) {
 // from browsers' requests), and only in its project's checkout or a task's
 // worktree: the hub doesn't choose the folder.
 func TestRunnerOpensTerminalsForItsOwnerOnly(t *testing.T) {
+	parallel(t)
+
 	s, h, p := runnerServer(t)
 	procs := "/api/projects/" + p.ID + "/processes"
 	as := func(user, method, path, body string) *httptest.ResponseRecorder {
@@ -179,6 +185,8 @@ func TestRunnerOpensTerminalsForItsOwnerOnly(t *testing.T) {
 }
 
 func TestRunnerSkipsThePasswordTheHubAlreadyAsked(t *testing.T) {
+	parallel(t)
+
 	// A missing project is reported after the password check: 404 means
 	// the check passed, 403 that it wanted a password.
 	_, h, _ := runnerServer(t)
@@ -198,6 +206,8 @@ func TestRunnerSkipsThePasswordTheHubAlreadyAsked(t *testing.T) {
 // It runs in the runner's scratch directory, and the hub keeps the
 // conversation.
 func TestRunnerRunsTheGeneralChatOnlyForItsOwner(t *testing.T) {
+	parallel(t)
+
 	s, h, _ := runnerServer(t)
 	s.HubUser = 42
 	s.ChatDir = filepath.Join(t.TempDir(), "chat")
@@ -286,6 +296,8 @@ func runnerChatTurn(t *testing.T, srv *httptest.Server, user string, fields map[
 // conversation, with its owner as the author, as the hub's UI reads it from
 // the runner. So do its own tasks' chats, in their worktrees.
 func TestRunnerChatsInItsOwnProjectThroughTheHub(t *testing.T) {
+	parallel(t)
+
 	s, h, p := runnerServer(t)
 	s.HubUser = 42
 	seen := &seenChat{}

@@ -33,6 +33,8 @@ func waitStatus(t *testing.T, fx *fixture, id string, not model.TodoStatus) mode
 // doesn't stay merging forever: it fails, saying to approve it again, and
 // the runner's report, when it does come back, still moves it on.
 func TestMergingTaskOfARunnerThatStaysAwayFails(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("laptop", fx.orgA, false))
 	p := fx.project(t, fx.orgA, "laptop")
@@ -60,6 +62,8 @@ func TestMergingTaskOfARunnerThatStaysAwayFails(t *testing.T) {
 // A runner that goes offline mid-merge, while the hub runs, fails it the
 // same way after the grace; a blip doesn't.
 func TestRunnerGoingOfflineMidMerge(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
 	p := fx.project(t, fx.orgA, "laptop")
@@ -80,6 +84,8 @@ func TestRunnerGoingOfflineMidMerge(t *testing.T) {
 
 // Revoking a runner fails its merging tasks too, to start over elsewhere.
 func TestRevokedRunnersMergingTaskFails(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
 	p := fx.project(t, fx.orgA, "laptop")
@@ -95,6 +101,8 @@ func TestRevokedRunnersMergingTaskFails(t *testing.T) {
 // still queued here, the task is the runner's once it reports it running,
 // rather than being sent again (to another runner, or from scratch).
 func TestTaskTakenJustBeforeTheHubStoppedIsAdopted(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
 	fx.fleet.set(runnerOf("desk", fx.orgA, true))

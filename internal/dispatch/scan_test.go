@@ -22,6 +22,8 @@ func (wsFakeFleet) DialWS(context.Context, string, string) (*websocket.Conn, err
 // offline it waits, saying no runner is online; a paused one is no
 // different.
 func TestScanPicksALinkedRunnerOrWaits(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	fx.d.Fleet = wsFakeFleet{fx.fleet}
 	ctx := context.Background()
@@ -59,6 +61,8 @@ func TestScanPicksALinkedRunnerOrWaits(t *testing.T) {
 // The link carries the hub project's review settings, so a change to
 // "Approve tasks automatically" reaches the runner with the next task.
 func TestLinkCarriesReviewSettings(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
 	p := fx.project(t, fx.orgA, "laptop")

@@ -13,6 +13,8 @@ import (
 // branch; one started after switching back lands on the default branch, and
 // a task that started before a switch keeps the branch it started from.
 func TestTasksLandOnTheWorkingBranch(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		write(t, req.Dir, "f"+string(rune('0'+n))+".txt", "x\n")
 		return nil

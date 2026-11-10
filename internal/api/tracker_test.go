@@ -15,6 +15,8 @@ import (
 )
 
 func TestTrackerAPI(t *testing.T) {
+	parallel(t)
+
 	fake := trackertest.Register(t, "fake")
 	fake.RequireToken("b1", "tok-secret-1")
 	s, _, p := boardServer(t)
@@ -148,6 +150,8 @@ func TestTrackerAPI(t *testing.T) {
 }
 
 func TestTrackerAPIOff(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	h := s.mux()
 	r := asOwner(t, s, httptest.NewRequest("PUT", "/api/projects/"+p.ID+"/tracker", strings.NewReader(`{"backend":"dash"}`)))

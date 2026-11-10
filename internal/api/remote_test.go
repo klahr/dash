@@ -116,6 +116,8 @@ func rpcAt(h http.Handler, path, token, method, params string) *httptest.Respons
 }
 
 func TestRemoteMCPOff(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	h := s.Routes()
 	for _, path := range []string{"/mcp", "/authorize", "/.well-known/oauth-authorization-server"} {
@@ -128,6 +130,8 @@ func TestRemoteMCPOff(t *testing.T) {
 }
 
 func TestRemoteMCPTokensAreSeparate(t *testing.T) {
+	parallel(t)
+
 	h, s, home, _ := remoteServer(t)
 
 	w := rpcAt(h, "/mcp", "", "ping", "{}")
@@ -177,6 +181,8 @@ func TestRemoteMCPTokensAreSeparate(t *testing.T) {
 }
 
 func TestRemoteMCPToolsAcrossComputers(t *testing.T) {
+	parallel(t)
+
 	h, s, home, work := remoteServer(t)
 	access := oauthToken(t, h)
 	call := func(tool, args string) (string, bool) {

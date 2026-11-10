@@ -21,12 +21,15 @@ import (
 	"github.com/klahr/dash/internal/preview"
 	"github.com/klahr/dash/internal/runner"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/testbin"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
 // Try runs only on a runner that is connected, has the project linked and
 // opens terminals for the caller (its owner); with none, Try says why.
 func TestTryRunnerEligibility(t *testing.T) {
+	parallel(t)
+
 	me := Caller{User: 1, Org: 10}
 	own := &store.RunnerOwner{UserID: 1, Org: store.Org{ID: 10}}
 	other := &store.RunnerOwner{UserID: 2, Org: store.Org{ID: 10}}
@@ -77,9 +80,7 @@ func TestTryRunnerEligibility(t *testing.T) {
 // commitTool commits a tool.sh that prints version to the remote's main.
 func commitTool(t *testing.T, remote, version string) string {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(remote, "tool.sh"), []byte("#!/bin/sh\necho tool-"+version+"\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	testbin.Write(t, filepath.Join(remote, "tool.sh"), "#!/bin/sh\necho tool-"+version+"\n")
 	gitIn(t, remote, "add", "tool.sh")
 	gitIn(t, remote, "commit", "-q", "-m", "tool "+version)
 	return gitIn(t, remote, "rev-parse", "HEAD")
@@ -91,6 +92,8 @@ func commitTool(t *testing.T, remote, version string) string {
 // removes the worktree. The hub reaches it all over the runner's tunnel:
 // the commit list, the terminal, and its output for the chat.
 func TestTryOnARunnerThroughTheHub(t *testing.T) {
+	parallel(t)
+
 	hub, _, _ := boardServer(t)
 	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}
 	hub.Peers = &peer.Hub{Self: "hub", Runners: rh}
@@ -329,6 +332,8 @@ func TestTryOnARunnerThroughTheHub(t *testing.T) {
 // Only the hub reaches a runner's try routes, for projects linked to it;
 // the terminal ones only for the runner's owner, with -hub-commands.
 func TestRunnerTryRoutesAreGuarded(t *testing.T) {
+	parallel(t)
+
 	s, h, _ := runnerSide(t, 7)
 	s.Procs = runner.NewManager(s.Hub)
 	s.Previews = preview.New(s.Procs, s.Hub, raw(s), "")
@@ -356,6 +361,8 @@ func TestRunnerTryRoutesAreGuarded(t *testing.T) {
 
 // read_try_terminal is a read-only board tool, offered with the board tools.
 func TestReadTryTerminalIsAReadTool(t *testing.T) {
+	parallel(t)
+
 	for _, list := range [][]string{mcptools.ReadTools, mcptools.BoardTools} {
 		found := false
 		for _, n := range list {

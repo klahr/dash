@@ -50,6 +50,8 @@ func needGit(t *testing.T) {
 // A clone of the same remote already in <projects>/<repo> is adopted, not
 // cloned again, and the user's uncommitted work in it stays as it was.
 func TestHubLinkAdoptsAnExistingClone(t *testing.T) {
+	parallel(t)
+
 	needGit(t)
 	s, h, remote := runnerSide(t, 7)
 	ctx := context.Background()
@@ -87,6 +89,8 @@ func TestHubLinkAdoptsAnExistingClone(t *testing.T) {
 // that asked reloads): a clone killed half way would leave a folder with
 // origin set but no valid HEAD, adopted, and failed on, by every later link.
 func TestHubLinkClonesWhenTheRequestGoesAway(t *testing.T) {
+	parallel(t)
+
 	needGit(t)
 	s, h, remote := runnerSide(t, 7)
 	b, _ := json.Marshal(dispatch.Link{Name: "Shared App", RemoteURL: remote, DefaultBranch: "main", OrgID: 7})
@@ -110,6 +114,8 @@ func TestHubLinkClonesWhenTheRequestGoesAway(t *testing.T) {
 
 // The runner's own project in that folder becomes the hub's, keeping its id.
 func TestHubLinkAdoptsTheRunnersOwnProject(t *testing.T) {
+	parallel(t)
+
 	needGit(t)
 	s, h, remote := runnerSide(t, 7)
 	ctx := context.Background()
@@ -141,6 +147,8 @@ func TestHubLinkAdoptsTheRunnersOwnProject(t *testing.T) {
 // A folder holding another repository, files, or a clone already linked to
 // another of the hub's projects is never used: the next free name is.
 func TestHubLinkNameClashes(t *testing.T) {
+	parallel(t)
+
 	needGit(t)
 	s, h, remote := runnerSide(t, 7)
 	ctx := context.Background()
@@ -187,6 +195,8 @@ func TestHubLinkNameClashes(t *testing.T) {
 // The folder is named after the remote, cleaned of anything a path could
 // use to leave the projects folder; the hub never sends a path.
 func TestHubPlaceStaysInTheProjectsFolder(t *testing.T) {
+	parallel(t)
+
 	for in, want := range map[string]string{
 		"dash":        "dash",
 		"../../etc":   "etc",
@@ -219,6 +229,8 @@ func TestHubPlaceStaysInTheProjectsFolder(t *testing.T) {
 // Clones under <projects>/hub/ from before keep working where they are:
 // the upgrade marks them as the hub's once, and tasks find them by id.
 func TestHubLegacyClonesKeepWorking(t *testing.T) {
+	parallel(t)
+
 	needGit(t)
 	s, h, remote := runnerSide(t, 7)
 	ctx := context.Background()
@@ -276,6 +288,8 @@ func TestHubLegacyClonesKeepWorking(t *testing.T) {
 // A run command in a hub project's checkout with uncommitted changes runs
 // with a warning; a deploy is refused. Other projects aren't checked.
 func TestCheckoutWarning(t *testing.T) {
+	parallel(t)
+
 	needGit(t)
 	s, h, remote := runnerSide(t, 7)
 	_, linked := hubLinkAs(t, h, "hub-p1", remote)

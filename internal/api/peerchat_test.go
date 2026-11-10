@@ -23,6 +23,8 @@ import (
 // is refused for another hub user, and an X-Dash-User the browser sends
 // changes neither.
 func TestRunnerChatThroughTheHubIsForTheLoggedInUser(t *testing.T) {
+	parallel(t)
+
 	hub, _, _ := boardServer(t)
 	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}
 	hub.Peers = &peer.Hub{Self: "hub", Runners: rh}

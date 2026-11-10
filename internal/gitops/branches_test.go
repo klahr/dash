@@ -7,6 +7,8 @@ import (
 )
 
 func TestBranches(t *testing.T) {
+	t.Parallel()
+
 	ctx, g := context.Background(), New(nil)
 	root := t.TempDir()
 	origin, dir := filepath.Join(root, "origin.git"), filepath.Join(root, "repo")

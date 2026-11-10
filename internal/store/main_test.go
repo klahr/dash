@@ -7,9 +7,10 @@ import (
 	"github.com/klahr/dash/internal/passhash"
 )
 
-// TestMain makes password hashing cheap: the real Argon2id parameters were
-// most of this package's run time.
+// TestMain hashes passwords with the cheapest Argon2id setting: at the
+// production one, hashing takes much of these tests' time. The passhash
+// package's own tests keep the production setting.
 func TestMain(m *testing.M) {
-	passhash.UseWeakParamsForTests()
+	passhash.UseCheapParamsInTests()
 	os.Exit(m.Run())
 }

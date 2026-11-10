@@ -62,7 +62,7 @@ type harness struct {
 
 func newHarness(t *testing.T, exe agent.Executor, p model.Project) *harness {
 	t.Helper()
-	t.Parallel() // each harness has its own store, repo and loops
+	parallel(t) // each harness has its own store, repo and loops
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
@@ -156,6 +156,8 @@ func write(t *testing.T, dir, name, content string) {
 }
 
 func TestAutoApproveSkipsReviewOnlyWhenTestsPass(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		write(t, req.Dir, "a.txt", map[bool]string{true: "pass\n", false: "broken\n"}[n == 1])
 		return nil
@@ -168,6 +170,8 @@ func TestAutoApproveSkipsReviewOnlyWhenTestsPass(t *testing.T) {
 }
 
 func TestResumeQueuesMergesLostInARestart(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		write(t, req.Dir, "a.txt", "a\n")
 		return nil
@@ -183,6 +187,8 @@ func TestResumeQueuesMergesLostInARestart(t *testing.T) {
 }
 
 func TestFailingTestsGoBackToClaudeWithResume(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		if n == 1 {
 			write(t, req.Dir, "a.txt", "broken\n")
@@ -253,6 +259,8 @@ func TestFailingTestsGoBackToClaudeWithResume(t *testing.T) {
 }
 
 func TestTestsStillFailingAfterFixesReachesReview(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		write(t, req.Dir, "a.txt", "broken "+string(rune('0'+n))+"\n")
 		return nil
@@ -265,6 +273,8 @@ func TestTestsStillFailingAfterFixesReachesReview(t *testing.T) {
 }
 
 func TestSetupAndCopyFiles(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		for _, f := range []string{".env", "setup.txt"} {
 			if _, err := os.Stat(filepath.Join(req.Dir, f)); err != nil {
@@ -280,6 +290,8 @@ func TestSetupAndCopyFiles(t *testing.T) {
 }
 
 func TestConflictIsResolvedByClaudeAndMerged(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		path := filepath.Join(req.Dir, "shared.txt")
 		b, _ := os.ReadFile(path)
@@ -335,6 +347,8 @@ func TestConflictIsResolvedByClaudeAndMerged(t *testing.T) {
 // Two approved todos that both conflict are fixed one after the other: the
 // second waits for the first to land, so one fix each covers everything.
 func TestConflictsAreFixedOneAtATime(t *testing.T) {
+	parallel(t)
+
 	var mu sync.Mutex
 	fixing, overlap := 0, false
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
@@ -385,6 +399,8 @@ func TestConflictsAreFixedOneAtATime(t *testing.T) {
 }
 
 func TestConflictWithoutFixesLeftFails(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		return os.WriteFile(filepath.Join(req.Dir, "shared.txt"), []byte(filepath.Base(req.Dir)+"\n"), 0o644)
 	}}
@@ -402,6 +418,8 @@ func TestConflictWithoutFixesLeftFails(t *testing.T) {
 }
 
 func TestNoChangesExplainedInChat(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(int, agent.ExecRequest) error { return nil }, result: "It already works; nothing to change."}
 	h := newHarness(t, exe, model.Project{Name: "p"})
 	a := h.add("noop")
@@ -421,6 +439,8 @@ func TestNoChangesExplainedInChat(t *testing.T) {
 // Resolving a conflict by keeping exactly our side leaves nothing to stage;
 // the merge must still be concluded.
 func TestConflictResolvedAsOursStillMerges(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		return os.WriteFile(filepath.Join(req.Dir, "shared.txt"), []byte(filepath.Base(req.Dir)+"\n"), 0o644)
 	}}
@@ -436,6 +456,8 @@ func TestConflictResolvedAsOursStillMerges(t *testing.T) {
 
 // A commit on main while the merge re-tests is merged in and tested before landing.
 func TestMainMovingDuringMergeIsMergedAgain(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		write(t, req.Dir, "a.txt", "a\n")
 		return nil
@@ -489,6 +511,8 @@ func (p *pauseExec) Run(ctx context.Context, req agent.ExecRequest, emit func(mo
 }
 
 func TestPauseRequeuesAndResumeContinuesTheSession(t *testing.T) {
+	parallel(t)
+
 	exe := &pauseExec{started: make(chan struct{}), fakeExec: fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		write(t, req.Dir, "a.txt", "done\n")
 		return nil
@@ -525,6 +549,8 @@ func TestPauseRequeuesAndResumeContinuesTheSession(t *testing.T) {
 }
 
 func TestEditorEditIsCommittedWithoutClaude(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(int, agent.ExecRequest) error { return nil }}
 	h := newHarness(t, exe, model.Project{Name: "p"})
 	ctx := context.Background()
@@ -565,6 +591,8 @@ func TestEditorEditIsCommittedWithoutClaude(t *testing.T) {
 }
 
 func TestInterruptFailsRunningTodosAndTheyCanBeQueuedAgain(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{block: true}
 	h := newHarness(t, exe, model.Project{Name: "p"})
 	td := h.add("make a")
@@ -604,6 +632,8 @@ func TestInterruptFailsRunningTodosAndTheyCanBeQueuedAgain(t *testing.T) {
 // An edit with no blob creates a file (e.g. a new skill from the Claude
 // settings), with its folders; one that exists by then is refused.
 func TestEditorEditCreatesNewFile(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(int, agent.ExecRequest) error { return nil }}
 	h := newHarness(t, exe, model.Project{Name: "p"})
 	queue := func(path string) model.Todo {
@@ -636,6 +666,8 @@ func TestEditorEditCreatesNewFile(t *testing.T) {
 // link said so: a finished task whose tests pass goes to the merge queue,
 // not to review.
 func TestHubLinkedProjectAutoApproves(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
 		write(t, req.Dir, "a.txt", "pass\n")
 		return nil

@@ -47,6 +47,8 @@ func hubWithRunner(t *testing.T) (hub, runner *Server, creds tunnel.Credentials,
 // A chat the hub runs on a runner creates its tasks on the hub's board, in
 // the hub's project: nothing lands on the runner's own board.
 func TestRunnerChatBoardToolsActOnTheHub(t *testing.T) {
+	parallel(t)
+
 	hub, runner, _, linked, unlinked := hubWithRunner(t)
 	h := runner.BoardMCP()
 	runnerTodos := len(raw(runner).ListTodos(""))
@@ -84,6 +86,8 @@ func TestRunnerChatBoardToolsActOnTheHub(t *testing.T) {
 // credited to the hub's task; a task the hub didn't send that runner is
 // refused.
 func TestRunnerTaskReportsIssuesToTheHub(t *testing.T) {
+	parallel(t)
+
 	hub, runner, creds, linked, _ := hubWithRunner(t)
 	h := runner.BoardMCP()
 	rp, err := raw(runner).CreateProject(model.Project{Name: "clone", HubProjectID: linked.ID, HubCheckout: model.HubCloned})
@@ -138,6 +142,8 @@ func TestRunnerTaskReportsIssuesToTheHub(t *testing.T) {
 // When the hub can't be reached, the hub's work fails visibly instead of
 // writing to the runner's own board.
 func TestRunnerHubBoardUnreachable(t *testing.T) {
+	parallel(t)
+
 	_, runner, _, linked, _ := hubWithRunner(t)
 	runner.HubBoard = func(context.Context, string, string, []byte) (*http.Response, error) {
 		return nil, errors.New("connection refused")

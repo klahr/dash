@@ -8,6 +8,8 @@ import (
 )
 
 func TestDeleteProjectNeedsPassword(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	r := httptest.NewRequest("DELETE", "/api/projects/"+p.ID, strings.NewReader(`{"password":"wrong"}`))
 	r.SetPathValue("pid", p.ID)
@@ -35,6 +37,8 @@ func TestDeleteProjectNeedsPassword(t *testing.T) {
 // The hub's password check must not depend on how the path is spelled: the
 // proxy forwards the decoded path, so "projects%2F<pid>" still deletes.
 func TestRunnerDeleteProjectNeedsPasswordHowEverSpelled(t *testing.T) {
+	parallel(t)
+
 	h, _, _, work := remoteServer(t)
 	h = loggedIn(t, h)
 	for _, p := range []string{

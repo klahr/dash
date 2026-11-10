@@ -27,6 +27,7 @@ func openAuth(t *testing.T, path, username, password string) *Auth {
 		t.Fatal(err)
 	}
 	a := New(st.Accounts())
+	a.NoFailDelayInTests() // TestFailedLoginWaits keeps the production delay
 	a.Legacy(username, password)
 	return a
 }
@@ -96,6 +97,8 @@ func sessionCookie(t *testing.T, w *httptest.ResponseRecorder) *http.Cookie {
 }
 
 func TestFirstStartNeedsCredentials(t *testing.T) {
+	t.Parallel()
+
 	st, err := store.Open(filepath.Join(t.TempDir(), "dash.db"), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -109,6 +112,8 @@ func TestFirstStartNeedsCredentials(t *testing.T) {
 }
 
 func TestUnauthenticatedAccess(t *testing.T) {
+	t.Parallel()
+
 	_, h := newServer(t)
 	if w := do(h, "GET", "/api/projects", ""); w.Code != http.StatusUnauthorized {
 		t.Fatalf("api: want 401, got %d", w.Code)
@@ -126,6 +131,8 @@ func TestUnauthenticatedAccess(t *testing.T) {
 }
 
 func TestLoginLogout(t *testing.T) {
+	t.Parallel()
+
 	_, h := newServer(t)
 	if w := do(h, "POST", "/api/login", `{"username":"admin","password":"wrong"}`); w.Code != http.StatusUnauthorized {
 		t.Fatalf("wrong password: want 401, got %d", w.Code)
@@ -148,6 +155,8 @@ func TestLoginLogout(t *testing.T) {
 }
 
 func TestSessionExpires(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	now := time.Now()
 	a.now = func() time.Time { return now }
@@ -159,6 +168,8 @@ func TestSessionExpires(t *testing.T) {
 }
 
 func TestLockout(t *testing.T) {
+	t.Parallel()
+
 	_, h := newServer(t)
 	for i := 0; i < maxFailures; i++ {
 		do(h, "POST", "/api/login", `{"username":"admin","password":"nope"}`)
@@ -170,6 +181,8 @@ func TestLockout(t *testing.T) {
 }
 
 func TestLockoutParallel(t *testing.T) {
+	t.Parallel()
+
 	a := newAuth(t, "admin", "s3cret")
 	const n = 4 * maxFailures
 	errs := make(chan error, n)
@@ -196,6 +209,8 @@ func TestLockoutParallel(t *testing.T) {
 }
 
 func TestGlobalLockout(t *testing.T) {
+	t.Parallel()
+
 	a := newAuth(t, "admin", "s3cret")
 	now := time.Now()
 	a.now = func() time.Time { return now }
@@ -225,6 +240,8 @@ func TestGlobalLockout(t *testing.T) {
 }
 
 func TestGlobalLockoutRightPasswordsDontCount(t *testing.T) {
+	t.Parallel()
+
 	a := newAuth(t, "admin", "s3cret")
 	a.Lockout = Lockout{PerIP: 3, Global: 2, Window: time.Minute}
 	for i := range 5 {
@@ -235,6 +252,8 @@ func TestGlobalLockoutRightPasswordsDontCount(t *testing.T) {
 }
 
 func TestGlobalLockoutOff(t *testing.T) {
+	t.Parallel()
+
 	a := newAuth(t, "admin", "s3cret")
 	a.Lockout = Lockout{PerIP: 1, Global: 0, Window: time.Minute}
 	for i := range 5 {
@@ -249,6 +268,8 @@ func TestGlobalLockoutOff(t *testing.T) {
 }
 
 func TestConfirmPasswordSuccessDoesNotCount(t *testing.T) {
+	t.Parallel()
+
 	a := newAuth(t, "u", "p")
 	r := signedIn(t, a, httptest.NewRequest("DELETE", "/api/projects/x", nil))
 	for range 2 * maxFailures {
@@ -281,6 +302,8 @@ func TestLoadDotEnv(t *testing.T) {
 }
 
 func TestTrustProxy(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	login := func(proto, xff string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("POST", "/api/login", strings.NewReader(`{"username":"admin","password":"s3cret"}`))
@@ -307,6 +330,8 @@ func TestTrustProxy(t *testing.T) {
 }
 
 func TestSessionsSurviveRestart(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	h1 := serve(openAuth(t, path, "admin", "s3cret"))
 	c := sessionCookie(t, do(h1, "POST", "/api/login", `{"username":"admin","password":"s3cret"}`))
@@ -335,6 +360,8 @@ func TestSessionsSurviveRestart(t *testing.T) {
 // Sessions from sessions.json (Dash before users) carry over to the env
 // account, if they were made for the same credentials.
 func TestImportLegacySessions(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	key := sessionKey("old-cookie")
 	write := func(account string) string {
@@ -366,6 +393,8 @@ func TestImportLegacySessions(t *testing.T) {
 }
 
 func TestConfirmPassword(t *testing.T) {
+	t.Parallel()
+
 	a := newAuth(t, "u", "p")
 	r := signedIn(t, a, httptest.NewRequest("DELETE", "/api/projects/x", nil))
 	if err := a.ConfirmPassword(httptest.NewRequest("DELETE", "/api/projects/x", nil), "p"); err != ErrBadPassword {

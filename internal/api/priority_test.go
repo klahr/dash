@@ -11,6 +11,8 @@ import (
 // A task's priority is optional: created without one it is null, PATCH
 // leaves it alone when absent, sets it (0 included) and clears it with null.
 func TestTodoPriorityIsOptional(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	h := loggedIn(t, s.Routes())
 	decodeTodo := func(body []byte) model.Todo {

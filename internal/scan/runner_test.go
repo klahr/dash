@@ -164,6 +164,8 @@ const findingsAB = "Done.\n```json\n{\"findings\": [" +
 	"]}\n```"
 
 func TestRunRecordsFindings(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "sec", "---\nkind: security\nscope: repo\n---\nScan {{path}}.")
 	fx.exec.setAnswer(findingsAB)
 	r := fx.run(t, "sec")
@@ -200,6 +202,8 @@ func TestRunRecordsFindings(t *testing.T) {
 }
 
 func TestRunCountsKnownDismissedReopened(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "sec", "---\nkind: security\n---\nScan.")
 	fx.exec.setAnswer(findingsAB)
 	fx.run(t, "sec")
@@ -245,6 +249,8 @@ func TestRunCountsKnownDismissedReopened(t *testing.T) {
 }
 
 func TestRunSinceLastScan(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "daily", "---\nscope: since_last_scan\n---\nCheck {{since}}.")
 	first := fx.run(t, "daily")
 	if first.Status != model.ScanSucceeded || first.Incremental || first.Since != "" || first.Note == "" {
@@ -279,6 +285,8 @@ func TestRunSinceLastScan(t *testing.T) {
 }
 
 func TestRunSinceMainAndPath(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "branch", "---\nscope: since_main\npath: web\n---\nGo.")
 	if r := fx.run(t, "branch"); r.Status != model.ScanSkipped {
 		t.Fatalf("on main: %+v", r)
@@ -299,6 +307,8 @@ func TestRunSinceMainAndPath(t *testing.T) {
 }
 
 func TestRunRequiresFiles(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "web", "---\nscope: since_last_scan\nrequires_files: *.tsx, web/**/*.{html,vue}\n---\nGo.")
 	// No front-end files: skipped without calling Claude.
 	r := fx.run(t, "web")
@@ -320,6 +330,8 @@ func TestRunRequiresFiles(t *testing.T) {
 }
 
 func TestRunNoOverlap(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "slow", "Go.")
 	fx.exec.release, fx.exec.started = make(chan struct{}), make(chan struct{}, 4)
 	r, err := fx.runner.Start(fx.p.ID, "slow", "manual")
@@ -356,6 +368,8 @@ func TestRunNoOverlap(t *testing.T) {
 }
 
 func TestRunUnknownScan(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "a", "Go.")
 	if _, err := fx.runner.Start(fx.p.ID, "nope", "manual"); !errors.Is(err, ErrNoScan) {
 		t.Fatalf("unknown scan: %v", err)
@@ -363,6 +377,8 @@ func TestRunUnknownScan(t *testing.T) {
 }
 
 func TestRecordCounts(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "x", "Go.")
 	run, err := fx.st.CreateScanRun(model.ScanRun{ProjectID: fx.p.ID, Scan: "x", Status: model.ScanRunning})
 	if err != nil {
@@ -389,6 +405,8 @@ func TestRecordCounts(t *testing.T) {
 }
 
 func TestRunToolsNeedApproval(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "deps", "---\ntools: Read, Bash\n---\nAudit.")
 	var dir string
 	allowed := func() string {
@@ -447,6 +465,8 @@ func flagValue(args []string, name string) (string, bool) {
 // Scans run unattended: no user/project settings or hooks, and anything
 // outside the allowed tools is denied at once instead of asking.
 func TestArgsNeverAsk(t *testing.T) {
+	t.Parallel()
+
 	args := Args(Template{Model: "sonnet"}, []string{"Read", "Bash(npm audit:*)"}, "")
 	if v, ok := flagValue(args, "--setting-sources"); !ok || v != "" {
 		t.Errorf("--setting-sources %q %v, want empty", v, ok)
@@ -520,6 +540,8 @@ func TestArgsConfineFileTools(t *testing.T) {
 }
 
 func TestPromptSaysToolsAreFixed(t *testing.T) {
+	t.Parallel()
+
 	p := BuildPrompt(Template{Prompt: "Go."}, target{}, nil)
 	if !strings.Contains(p, "Verify findings by reading the code") {
 		t.Errorf("prompt does not say to verify by reading code:\n%s", p)
@@ -528,6 +550,8 @@ func TestPromptSaysToolsAreFixed(t *testing.T) {
 
 // A run that takes longer than the limit is stopped and fails, keeping its log.
 func TestRunTimeout(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "slow", "Go.")
 	fx.exec.release = make(chan struct{}) // never released
 	fx.runner.RunTimeout = 50 * time.Millisecond
@@ -543,6 +567,8 @@ func TestRunTimeout(t *testing.T) {
 
 // A runner refuses a job whose settings would turn into claude flags.
 func TestJobCheck(t *testing.T) {
+	t.Parallel()
+
 	ok := Job{Template: Template{Name: "security", Scope: model.ScopeRepo, Model: "opus"}, Tools: []string{"Read", "Bash(go test:*)"}}
 	if err := ok.Check(); err != nil {
 		t.Fatalf("good job refused: %v", err)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/testbin"
 )
 
 func gitRun(t *testing.T, dir string, args ...string) string {
@@ -54,6 +55,8 @@ func writeFile(dir, name string) func(int, agent.ExecRequest) error {
 }
 
 func TestMergeSyncsWithOriginAndPushes(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "mine.txt")}, model.Project{Name: "p", MaxAutoFixes: 1})
 	origin, other := h.addOrigin(true, "")
 
@@ -85,6 +88,8 @@ func TestMergeSyncsWithOriginAndPushes(t *testing.T) {
 // A manual push when origin has moved on brings in origin's commits first
 // instead of failing as a non-fast-forward.
 func TestPushDefaultSyncsWhenOriginMoved(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{}, model.Project{Name: "p"})
 	origin, other := h.addOrigin(false, "")
 
@@ -113,6 +118,8 @@ func TestPushDefaultSyncsWhenOriginMoved(t *testing.T) {
 }
 
 func TestRevertMergedTodo(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "feature.txt")}, model.Project{Name: "p"})
 	origin, _ := h.addOrigin(true, "")
 	td := h.waitFor(h.add("feature").ID, model.StatusReview)
@@ -143,6 +150,8 @@ func TestRevertMergedTodo(t *testing.T) {
 }
 
 func TestRunTimeLimitStopsClaude(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{block: true}
 	h := newHarness(t, exe, model.Project{Name: "p", MaxRunMinutes: 1, MaxTurns: 7})
 	h.engine.minute = 100 * time.Millisecond
@@ -165,15 +174,15 @@ func fakeGh(t *testing.T, dir string) (bin, stateFile string) {
 		"\"pr create\") echo https://github.com/o/r/pull/7 ;;\n" +
 		"\"pr view\") cat " + stateFile + " ;;\n" +
 		"*) echo \"unexpected gh $*\" >&2; exit 1 ;;\nesac\n"
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	testbin.Write(t, bin, script)
 	return bin, stateFile
 }
 
 // With "Merge pull requests when checks pass" off, the pull request waits
 // for someone to merge it on GitHub, green or not.
 func TestPullRequestMode(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "pr.txt")}, model.Project{Name: "p"})
 	origin, _ := h.addOrigin(false, model.MergePR)
 	off := false
@@ -234,6 +243,8 @@ func TestPullRequestMode(t *testing.T) {
 // waiting for someone to merge it on GitHub: on a runner (a hub's task) and
 // on a Dash without runners alike.
 func TestGreenPullRequestIsMerged(t *testing.T) {
+	parallel(t)
+
 	t.Run("runner", func(t *testing.T) { testGreenPullRequestIsMerged(t, "hub-p") })
 	t.Run("no runners", func(t *testing.T) { testGreenPullRequestIsMerged(t, "") })
 }
@@ -254,10 +265,7 @@ func testGreenPullRequestIsMerged(t *testing.T, hubProject string) {
 		"\"pr view\") cat " + state + " ;;\n" +
 		"\"pr merge\") echo \"$*\" > " + merged + "; echo '{\"state\":\"MERGED\"}' > " + state + " ;;\n" +
 		"*) echo \"unexpected gh $*\" >&2; exit 1 ;;\nesac\n"
-	write(t, dir, "gh", script)
-	if err := os.Chmod(bin, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	testbin.Write(t, filepath.Join(dir, "gh"), script)
 	h.git.GhBin = bin
 	write(t, dir, "pr.json", `{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"abc","statusCheckRollup":[
 		{"name":"build","status":"IN_PROGRESS"}]}`)
@@ -296,6 +304,8 @@ func testGreenPullRequestIsMerged(t *testing.T, hubProject string) {
 }
 
 func TestPullRequestFailingChecksGoBackToClaude(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "ci.txt")}, model.Project{Name: "p", MaxAutoFixes: 1})
 	h.addOrigin(false, model.MergePR)
 	bin, state := fakeGh(t, t.TempDir())
@@ -336,6 +346,8 @@ func TestPullRequestFailingChecksGoBackToClaude(t *testing.T) {
 }
 
 func TestCleanupRemovesOrphansAndStaleWorktrees(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: func(n int, req agent.ExecRequest) error { return errors.New("boom") }}, model.Project{Name: "p"})
 	h.merges.WorktreeRoot = h.engine.WorktreeRoot
 	h.merges.CleanupAfter = time.Hour
@@ -393,6 +405,8 @@ func waitPR(t *testing.T, h *harness, id string, want model.TodoStatus, ok func(
 // fails with the failing checks named, and a merge done by hand on GitHub
 // is still noticed.
 func TestPullRequestHandledHeadStillFailing(t *testing.T) {
+	parallel(t)
+
 	// Claude writes the same file every run: the fix pass changes nothing.
 	h := newHarness(t, &fakeExec{fn: writeFile("", "same.txt")}, model.Project{Name: "p", MaxAutoFixes: 2})
 	h.addOrigin(false, model.MergePR)
@@ -446,6 +460,8 @@ func TestPullRequestHandledHeadStillFailing(t *testing.T) {
 // A failing CLA check isn't sent to Claude as "fix the code": the task goes
 // to review saying what blocks the merge.
 func TestPullRequestCLAFailureGoesToReview(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, &fakeExec{fn: writeFile("", "cla.txt")}, model.Project{Name: "p", MaxAutoFixes: 2})
 	h.addOrigin(false, model.MergePR)
 	bin, state := fakeGh(t, t.TempDir())

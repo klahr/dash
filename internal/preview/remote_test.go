@@ -121,6 +121,8 @@ func addLive(m *Manager, todoID string, d *devServer) *entry {
 }
 
 func TestRunnerPreviewThroughTheTunnel(t *testing.T) {
+	t.Parallel()
+
 	dev := newDevServer(t)
 	hubSrv, hub, runner := remoteSetup(t)
 	e := addLive(runner, "abc123", dev)
@@ -238,6 +240,8 @@ func TestRunnerPreviewThroughTheTunnel(t *testing.T) {
 // The runner only forwards to previews it started, at the address their
 // server answered on; the hub can't name another port.
 func TestRunnerDialsOnlyItsOwnPreviews(t *testing.T) {
+	t.Parallel()
+
 	m := New(nil, nil, nil, "")
 	if _, _, err := m.DialPreview("abc123"); err != tunnel.ErrPreviewNotRunning {
 		t.Fatalf("unknown todo: %v", err)

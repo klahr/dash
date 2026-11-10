@@ -13,6 +13,8 @@ import (
 
 // Every run gets the issue tools, so Claude can report problems outside its task.
 func TestRunGetsIssueTools(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(_ int, req agent.ExecRequest) error {
 		write(t, req.Dir, "a.txt", "a")
 		return nil
@@ -39,6 +41,8 @@ func TestRunGetsIssueTools(t *testing.T) {
 // A task with no user and org to act as runs without Dash's MCP servers:
 // a per-run token always carries both.
 func TestRunWithoutOwnerGetsNoTools(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(_ int, req agent.ExecRequest) error {
 		write(t, req.Dir, "a.txt", "a")
 		return nil
@@ -56,6 +60,8 @@ func TestRunWithoutOwnerGetsNoTools(t *testing.T) {
 // issue tools' hint and without replacing it, and also when there are no
 // issue tools.
 func TestRunGetsTaskInstructions(t *testing.T) {
+	parallel(t)
+
 	exe := &fakeExec{fn: func(_ int, req agent.ExecRequest) error {
 		write(t, req.Dir, "a.txt", req.Prompt)
 		return nil

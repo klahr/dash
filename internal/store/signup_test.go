@@ -24,6 +24,8 @@ func openAccounts(t *testing.T) (*Store, *Accounts) {
 }
 
 func TestSignUpVerifyAndPersonalOrg(t *testing.T) {
+	t.Parallel()
+
 	s, a := openAccounts(t)
 	now := time.Now()
 	res, err := a.SignUp("ann@example.com", now)
@@ -77,6 +79,8 @@ func TestSignUpVerifyAndPersonalOrg(t *testing.T) {
 }
 
 func TestPasswordResetSkipsEnvAccount(t *testing.T) {
+	t.Parallel()
+
 	s, a := openAccounts(t)
 	if _, err := s.db.Exec("UPDATE users SET email = 'admin@example.com' WHERE env_managed = 1"); err != nil {
 		t.Fatal(err)
@@ -97,6 +101,8 @@ func TestPasswordResetSkipsEnvAccount(t *testing.T) {
 }
 
 func TestResetTokenExpires(t *testing.T) {
+	t.Parallel()
+
 	_, a := openAccounts(t)
 	now := time.Now()
 	res, _ := a.SignUp("bo@example.com", now)
@@ -123,6 +129,8 @@ func TestResetTokenExpires(t *testing.T) {
 // Signing up for someone else's address leaves no password the signer knows:
 // the address's owner chooses it from the link.
 func TestSignUpBeforeOwnerCantTakeOver(t *testing.T) {
+	t.Parallel()
+
 	_, a := openAccounts(t)
 	now := time.Now()
 	first, err := a.SignUp("vic@example.com", now) // the attacker
@@ -153,6 +161,8 @@ func TestSignUpBeforeOwnerCantTakeOver(t *testing.T) {
 }
 
 func TestStaleUnverifiedAccountsAreDeleted(t *testing.T) {
+	t.Parallel()
+
 	_, a := openAccounts(t)
 	now := time.Now()
 	if _, err := a.SignUp("old@example.com", now); err != nil {

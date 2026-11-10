@@ -38,6 +38,8 @@ func writesA(t *testing.T) *fakeExec {
 }
 
 func TestMergeWaitsForUncommittedChangesToItsFiles(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, writesA(t), model.Project{Name: "p"})
 	td := h.waitFor(h.add("a").ID, model.StatusReview)
 	write(t, h.proj.Path, "a.txt", "mine\n")
@@ -71,6 +73,8 @@ func TestMergeWaitsForUncommittedChangesToItsFiles(t *testing.T) {
 }
 
 func TestMergeKeepsUnrelatedUncommittedWork(t *testing.T) {
+	parallel(t)
+
 	exe := writesA(t)
 	h := newHarness(t, exe, model.Project{Name: "p"})
 	write(t, h.proj.Path, "b.txt", "b\n")
@@ -96,6 +100,8 @@ func TestMergeKeepsUnrelatedUncommittedWork(t *testing.T) {
 }
 
 func TestMergeLandsWhileFolderIsOnAnotherBranch(t *testing.T) {
+	parallel(t)
+
 	h := newHarness(t, writesA(t), model.Project{Name: "p"})
 	td := h.waitFor(h.add("a").ID, model.StatusReview)
 	gitIn(t, h.proj.Path, "checkout", "-qb", "mine")

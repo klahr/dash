@@ -3,6 +3,8 @@ package gitops
 import "testing"
 
 func TestRepoName(t *testing.T) {
+	t.Parallel()
+
 	for in, want := range map[string]string{
 		"https://github.com/klahr/dash.git":           "github.com/klahr/dash",
 		"https://github.com/klahr/dash":               "github.com/klahr/dash",

@@ -332,6 +332,8 @@ func (o *twoOrgs) recordEndpoints() []endpoint {
 // Every endpoint that names a record of another org answers as if it didn't
 // exist, and changes nothing.
 func TestOrgCannotReachAnotherOrgsRecords(t *testing.T) {
+	parallel(t)
+
 	o := newTwoOrgs(t)
 	pid, tid := o.web.ID, o.todo.ID
 	for _, tc := range o.recordEndpoints() {
@@ -358,6 +360,8 @@ func TestOrgCannotReachAnotherOrgsRecords(t *testing.T) {
 
 // Lists show only the caller's org's records.
 func TestOrgListsAreScoped(t *testing.T) {
+	parallel(t)
+
 	o := newTwoOrgs(t)
 	lists := []string{"/api/projects", "/api/previews", "/api/permissions", "/api/chat", "/api/machines"}
 	for _, path := range lists {
@@ -385,6 +389,8 @@ func TestOrgListsAreScoped(t *testing.T) {
 
 // Each user has a general chat of their own, also within one org.
 func TestGeneralChatIsPerUser(t *testing.T) {
+	parallel(t)
+
 	o := newTwoOrgs(t)
 	for name, h := range map[string]http.Handler{"another org": o.b, "the same org": o.c} {
 		if w := do(t, h, "GET", "/api/chat", ""); w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != "[]" {
@@ -402,6 +408,8 @@ func TestGeneralChatIsPerUser(t *testing.T) {
 // The chat socket only reaches the caller's org's projects and tasks, and
 // saves who asked.
 func TestChatSocketIsScoped(t *testing.T) {
+	parallel(t)
+
 	o := newTwoOrgs(t)
 	o.s.Chat = stubChat{}
 	srv := httptest.NewServer(o.b)
@@ -440,6 +448,8 @@ func TestChatSocketIsScoped(t *testing.T) {
 
 // Dashboards receive only their org's events, and those about Dash as a whole.
 func TestEventsAreScopedToTheOrg(t *testing.T) {
+	parallel(t)
+
 	o := newTwoOrgs(t)
 	srv := httptest.NewServer(o.h)
 	t.Cleanup(srv.Close)
@@ -504,6 +514,8 @@ func TestEventsAreScopedToTheOrg(t *testing.T) {
 
 // The chat's board tools act in the chat user's org.
 func TestBoardMCPIsScoped(t *testing.T) {
+	parallel(t)
+
 	o := newTwoOrgs(t)
 	token, release := o.s.Board.Register(mcptools.Caller{Org: o.beta.ID, User: o.bUser.ID}, "")
 	defer release()
@@ -540,6 +552,8 @@ func TestBoardMCPIsScoped(t *testing.T) {
 // /mcp (claude.ai connectors) calls the service as the token's user, not
 // the REST API past the login.
 func TestRemoteMCPIsScoped(t *testing.T) {
+	parallel(t)
+
 	o := newTwoOrgs(t)
 	h := o.s.remoteMCP()
 	callAs := func(sess store.Session, tool, args string) (string, bool) {
@@ -578,6 +592,8 @@ func TestRemoteMCPIsScoped(t *testing.T) {
 // A member's new projects go in their org's folder; platform admins may
 // put them anywhere.
 func TestNewProjectsStayInTheOrgsFolder(t *testing.T) {
+	parallel(t)
+
 	o := newTwoOrgs(t)
 	o.s.Git = nil // no git needed to be refused
 	outside, root := t.TempDir(), o.s.ProjectRoot
@@ -609,6 +625,8 @@ func TestNewProjectsStayInTheOrgsFolder(t *testing.T) {
 
 // Other computers, runners and the queue pause belong to the whole Dash.
 func TestInstanceThingsAreForPlatformAdmins(t *testing.T) {
+	parallel(t)
+
 	o := newTwoOrgs(t)
 	for _, c := range []struct{ method, path string }{
 		{"POST", "/api/queue/pause"},
@@ -627,6 +645,8 @@ func TestInstanceThingsAreForPlatformAdmins(t *testing.T) {
 
 // Uploads belong to the org they were uploaded in.
 func TestUploadsAreScoped(t *testing.T) {
+	parallel(t)
+
 	o := newTwoOrgs(t)
 	if w := do(t, o.c, "GET", "/api/uploads/"+o.upload.ID+"/"+o.upload.Name, ""); w.Code != http.StatusOK {
 		t.Errorf("same org: %d", w.Code)

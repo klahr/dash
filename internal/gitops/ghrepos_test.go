@@ -7,9 +7,13 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/klahr/dash/internal/testbin"
 )
 
 func TestSameRemote(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		a, b string
 		want bool
@@ -32,6 +36,8 @@ func TestSameRemote(t *testing.T) {
 }
 
 func TestRemoteRepo(t *testing.T) {
+	t.Parallel()
+
 	for in, want := range map[string]string{
 		"https://github.com/klahr/dash.git": "dash",
 		"git@github.com:klahr/Dash.git":     "Dash",
@@ -48,6 +54,8 @@ func TestRemoteRepo(t *testing.T) {
 // gh's JSON comes with null or empty descriptions, and sometimes a warning
 // before it.
 func TestParseGitHubRepos(t *testing.T) {
+	t.Parallel()
+
 	out := `warning: something gh says first
 [{"name":"dash","nameWithOwner":"klahr/dash","description":"Dashboard for Claude","isPrivate":false,"isFork":false,"isArchived":false,"updatedAt":"2026-11-01T10:00:00Z","url":"https://github.com/klahr/dash"},
  {"name":"old","nameWithOwner":"acme/old","description":null,"isPrivate":true,"isFork":true,"isArchived":true,"updatedAt":"2020-01-01T00:00:00Z","url":"https://github.com/acme/old"},
@@ -80,6 +88,8 @@ func TestParseGitHubRepos(t *testing.T) {
 // GitHubRepos asks gh once per owner: the user's repositories, then each
 // organisation's.
 func TestGitHubReposOneCallPerOwner(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls")
 	gh := filepath.Join(dir, "gh")
@@ -93,9 +103,7 @@ case "$*" in
   *) exit 1 ;;
 esac
 `
-	if err := os.WriteFile(gh, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	testbin.Write(t, gh, script)
 	g := New(nil)
 	g.GhBin = gh
 	user, repos, err := g.GitHubRepos(context.Background())
@@ -128,6 +136,8 @@ func splitLines(s string) []string {
 }
 
 func TestCheckoutChanges(t *testing.T) {
+	t.Parallel()
+
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

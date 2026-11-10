@@ -11,6 +11,8 @@ import (
 )
 
 func TestParseTemplate(t *testing.T) {
+	t.Parallel()
+
 	src := "---\r\n" +
 		"# a comment\r\n" +
 		"name: sec\r\n" +
@@ -53,6 +55,8 @@ func TestParseTemplate(t *testing.T) {
 }
 
 func TestParseTemplateDefaults(t *testing.T) {
+	t.Parallel()
+
 	tm, err := ParseTemplate("lint", []byte("Find problems."))
 	if err != nil {
 		t.Fatal(err)
@@ -71,6 +75,8 @@ func TestParseTemplateDefaults(t *testing.T) {
 }
 
 func TestKinds(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		kind string
 		want string
@@ -140,6 +146,8 @@ func TestKinds(t *testing.T) {
 }
 
 func TestIssuesCarryScanKind(t *testing.T) {
+	t.Parallel()
+
 	tm, err := ParseTemplate("a11y-check", []byte("---\nkind: a11y\n---\nGo."))
 	if err != nil {
 		t.Fatal(err)
@@ -159,6 +167,8 @@ func TestIssuesCarryScanKind(t *testing.T) {
 }
 
 func TestParseTemplateErrors(t *testing.T) {
+	t.Parallel()
+
 	for name, src := range map[string]string{
 		"unclosed":      "---\nname: x\nGo.",
 		"unknown key":   "---\nshedule: 0 6 * * *\n---\nGo.",
@@ -180,6 +190,8 @@ func TestParseTemplateErrors(t *testing.T) {
 }
 
 func TestBuiltins(t *testing.T) {
+	t.Parallel()
+
 	bs := Builtins()
 	names := map[string]Template{}
 	for _, b := range bs {
@@ -278,6 +290,8 @@ func TestBuiltins(t *testing.T) {
 }
 
 func TestLoad(t *testing.T) {
+	t.Parallel()
+
 	repo := t.TempDir()
 	// No templates: the built-ins.
 	ts, problems := Load(repo)
@@ -323,6 +337,8 @@ func TestLoad(t *testing.T) {
 }
 
 func TestLoadUnrelatedRepoScanKeepsBuiltins(t *testing.T) {
+	t.Parallel()
+
 	repo := t.TempDir()
 	dir := filepath.Join(repo, ".dash", "scans")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -346,6 +362,8 @@ func TestLoadUnrelatedRepoScanKeepsBuiltins(t *testing.T) {
 }
 
 func TestLoadRepoScanOverridesBuiltin(t *testing.T) {
+	t.Parallel()
+
 	repo := t.TempDir()
 	dir := filepath.Join(repo, ".dash", "scans")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -399,6 +417,8 @@ func requiresMatch(t *testing.T, globs []string, file string) bool {
 }
 
 func TestRequiresFiles(t *testing.T) {
+	t.Parallel()
+
 	tm, err := ParseTemplate("w", []byte("---\nrequires_files: [*.html, \"src/**/*.{ts,tsx}\", web/*.vue]\n---\nGo."))
 	if err != nil {
 		t.Fatal(err)

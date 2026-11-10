@@ -12,6 +12,7 @@ import (
 
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/testbin"
 )
 
 // fakeGitHub is a gh that knows one repository, me/there: viewing it works,
@@ -34,9 +35,7 @@ case "$1 $2" in
 *) echo "unexpected gh $*" >&2; exit 1 ;;
 esac
 `
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	testbin.Write(t, bin, script)
 	return bin
 }
 
@@ -55,6 +54,8 @@ func createProjectReq(t *testing.T, s *Server, body string) *httptest.ResponseRe
 }
 
 func TestCreateProjectClonesExistingGitHubRepo(t *testing.T) {
+	parallel(t)
+
 	s := newProjectServer(t)
 	if w := createProjectReq(t, s, `{"name":"There","github":"there"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "clone it") {
 		t.Fatalf("existing repo without clone: want 400, got %d %s", w.Code, w.Body)
@@ -73,6 +74,8 @@ func TestCreateProjectClonesExistingGitHubRepo(t *testing.T) {
 }
 
 func TestCreateProjectCreatesGitHubRepo(t *testing.T) {
+	parallel(t)
+
 	s := newProjectServer(t)
 	w := createProjectReq(t, s, `{"name":"Fresh","github":"fresh"}`)
 	var p model.Project
@@ -102,6 +105,8 @@ func gitClone(t *testing.T, dir, branch string) {
 // An existing clone in the org's folder is added as a project named after
 // its folder on its own branch, and then can't be added again.
 func TestAddExistingClone(t *testing.T) {
+	parallel(t)
+
 	s := newProjectServer(t)
 	org := filepath.Join(s.ProjectRoot, "default")
 	gitClone(t, filepath.Join(org, "app"), "trunk")
@@ -146,6 +151,8 @@ func jsonString(s string) string {
 // otherwise; one without a GitHub remote, or on a Dash without gh, merges.
 // The default follows the remote as settings are saved; a choice sticks.
 func TestDefaultMergeMode(t *testing.T) {
+	parallel(t)
+
 	s := newProjectServer(t)
 	org := filepath.Join(s.ProjectRoot, "default")
 	add := func(body string) model.Project {

@@ -16,6 +16,8 @@ import (
 )
 
 func TestWebhookAPI(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	s.Notify = &notify.Notifier{Store: raw(s), AllowPrivate: false, Attempts: 1}
 	h := s.mux()
@@ -88,6 +90,8 @@ func TestWebhookAPI(t *testing.T) {
 }
 
 func TestWebhookSendTest(t *testing.T) {
+	parallel(t)
+
 	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
@@ -117,6 +121,8 @@ func TestWebhookSendTest(t *testing.T) {
 
 // The ntfy buttons' endpoint needs no session: its token is the credential.
 func TestNotifyActionIsPublic(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	var decided string
 	s.Notify = &notify.Notifier{Store: raw(s), Actions: notify.NewActions(func(id, d, _ string) error { decided = id + ":" + d; return nil })}

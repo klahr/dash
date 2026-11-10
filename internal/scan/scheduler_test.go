@@ -33,6 +33,8 @@ func enable(t *testing.T, fx *fixture, name string) {
 }
 
 func TestSchedulerRunsWhenDue(t *testing.T) {
+	t.Parallel()
+
 	fx, s, c := schedFixture(t, "---\nschedule: 0 6 * * *\n---\nGo.")
 	enable(t, fx, "nightly")
 	// Turned on at 12:00: nothing ran before, so wait for the next slot.
@@ -59,6 +61,8 @@ func TestSchedulerRunsWhenDue(t *testing.T) {
 }
 
 func TestSchedulerCatchesUpOnce(t *testing.T) {
+	t.Parallel()
+
 	fx, s, c := schedFixture(t, "---\nschedule: 0 6 * * *\n---\nGo.")
 	c.t = at("2026-11-01 12:00")
 	enable(t, fx, "nightly")
@@ -89,6 +93,8 @@ func TestSchedulerCatchesUpOnce(t *testing.T) {
 }
 
 func TestSchedulerNoOverlap(t *testing.T) {
+	t.Parallel()
+
 	fx, s, c := schedFixture(t, "---\nschedule: '*/5 * * * *'\n---\nGo.")
 	fx.exec.release, fx.exec.started = make(chan struct{}), make(chan struct{}, 4)
 	c.t = at("2026-11-07 12:05")
@@ -122,6 +128,8 @@ func TestSchedulerNoOverlap(t *testing.T) {
 }
 
 func TestSchedulerSettings(t *testing.T) {
+	t.Parallel()
+
 	fx, s, c := schedFixture(t, "")
 	// Built-ins: the schedule is a suggestion, off by default.
 	sec := mustFind(t, fx, "security")
@@ -176,6 +184,8 @@ func TestSchedulerSettings(t *testing.T) {
 }
 
 func TestSchedulerRepoScheduleNeedsApproval(t *testing.T) {
+	t.Parallel()
+
 	fx, s, c := schedFixture(t, "---\nschedule: 0 6 * * *\n---\nGo.")
 	tm := mustFind(t, fx, "nightly")
 	set, has := fx.st.ScanSetting(fx.p.ID, "nightly")
@@ -222,6 +232,8 @@ type pausedUsage struct{ paused bool }
 func (u *pausedUsage) CanStart() (bool, string) { return !u.paused, "usage" }
 
 func TestSchedulerWaitsForUsage(t *testing.T) {
+	t.Parallel()
+
 	fx, s, c := schedFixture(t, "---\nschedule: 0 6 * * *\n---\nGo.")
 	enable(t, fx, "nightly")
 	u := &pausedUsage{paused: true}

@@ -3,16 +3,14 @@ package auth
 import (
 	"os"
 	"testing"
-	"time"
 
 	"github.com/klahr/dash/internal/passhash"
 )
 
-// TestMain makes password hashing cheap and failed sign-ins quick: the real
-// Argon2id parameters and the pause after each failure were most of this
-// package's run time.
+// TestMain hashes passwords with the cheapest Argon2id setting: at the
+// production one, hashing takes most of these tests' time. The passhash
+// package's own tests keep the production setting.
 func TestMain(m *testing.M) {
-	passhash.UseWeakParamsForTests()
-	failurePause = time.Millisecond
+	passhash.UseCheapParamsInTests()
 	os.Exit(m.Run())
 }

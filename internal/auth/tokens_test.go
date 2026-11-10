@@ -37,6 +37,8 @@ func (c *client) newToken(orgID int64, scopes, password string) (string, store.T
 }
 
 func TestAPITokenActsInItsOrg(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	c := signIn(t, h, "admin", "s3cret")
 	me := c.me()
@@ -103,6 +105,8 @@ func TestAPITokenActsInItsOrg(t *testing.T) {
 }
 
 func TestAPITokenScopes(t *testing.T) {
+	t.Parallel()
+
 	_, h := newServer(t)
 	c := signIn(t, h, "admin", "s3cret")
 	org := c.me().Org.ID
@@ -133,6 +137,8 @@ func TestAPITokenScopes(t *testing.T) {
 
 // Tokens can read but not manage members, invitations or credentials.
 func TestRequireSession(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	c := signIn(t, h, "admin", "s3cret")
 	org := c.me().Org.ID
@@ -174,6 +180,8 @@ func TestRequireSession(t *testing.T) {
 }
 
 func TestRevokeToken(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	c := signIn(t, h, "admin", "s3cret")
 	org := c.me().Org.ID
@@ -206,6 +214,8 @@ func TestRevokeToken(t *testing.T) {
 // Someone in several orgs picks the one the OAuth client acts in; the grant
 // is pinned to it, listed with their tokens, and revocable.
 func TestOAuthConsentPicksOrg(t *testing.T) {
+	t.Parallel()
+
 	a, _, h := newOAuthServer(t)
 	u, _ := a.acc.EnvUser()
 	def, _ := a.acc.DefaultOrg()
@@ -296,6 +306,8 @@ func TestOAuthConsentPicksOrg(t *testing.T) {
 
 // API tokens work on /mcp too; a bad scope parameter goes back to the client.
 func TestOAuthBearerTakesAPITokens(t *testing.T) {
+	t.Parallel()
+
 	a, _, h := newOAuthServer(t)
 	u, _ := a.acc.EnvUser()
 	org, _ := a.acc.DefaultOrg()
@@ -327,6 +339,8 @@ func between(s, start, end string) string {
 // A token is no way around an org's two-factor requirement, nor into the
 // second-factor settings.
 func TestTokensAndTwoFactor(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	admin, _ := a.acc.EnvUser()
 	org, _ := a.acc.DefaultOrg()

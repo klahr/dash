@@ -35,6 +35,8 @@ func mustUpsert(t *testing.T, s *Store, in model.Issue, want model.UpsertResult)
 }
 
 func TestUpsertIssueByFingerprint(t *testing.T) {
+	t.Parallel()
+
 	s, p, path := issueStore(t)
 	a := mustUpsert(t, s, model.Issue{ProjectID: p.ID, Title: "Nil deref in handler", Type: model.IssueBug, File: "./api/h.go", Line: 10}, model.UpsertNew)
 	if a.Status != model.IssueOpen || a.Severity != model.SevMedium || a.Source != "manual" || a.File != "api/h.go" {
@@ -74,6 +76,8 @@ func TestUpsertIssueByFingerprint(t *testing.T) {
 
 // The fingerprint index follows edits, deletes and project deletes.
 func TestIssueFingerprintIndex(t *testing.T) {
+	t.Parallel()
+
 	s, p, _ := issueStore(t)
 	q, err := s.CreateProject(model.Project{Name: "q", Path: t.TempDir()})
 	if err != nil {
@@ -125,6 +129,8 @@ func TestIssueFingerprintIndex(t *testing.T) {
 }
 
 func TestUpsertIssueKeepsScanKind(t *testing.T) {
+	t.Parallel()
+
 	s, p, path := issueStore(t)
 	// Filed before issues carried their scan's kind: a later report adds it,
 	// and a report without one keeps it.
@@ -142,6 +148,8 @@ func TestUpsertIssueKeepsScanKind(t *testing.T) {
 }
 
 func TestUpsertIssueValidates(t *testing.T) {
+	t.Parallel()
+
 	s, p, _ := issueStore(t)
 	for _, in := range []model.Issue{
 		{ProjectID: p.ID, Title: "  "},
@@ -158,6 +166,8 @@ func TestUpsertIssueValidates(t *testing.T) {
 }
 
 func TestDismissedIssueStaysDismissed(t *testing.T) {
+	t.Parallel()
+
 	s, p, _ := issueStore(t)
 	in := model.Issue{ProjectID: p.ID, Title: "Weak hash", Type: model.IssueVuln, File: "auth.go", Source: "scan:gosec"}
 	a := mustUpsert(t, s, in, model.UpsertNew)
@@ -184,6 +194,8 @@ func TestDismissedIssueStaysDismissed(t *testing.T) {
 }
 
 func TestResolvedIssueReopensWhenReportedAgain(t *testing.T) {
+	t.Parallel()
+
 	s, p, _ := issueStore(t)
 	in := model.Issue{ProjectID: p.ID, Title: "Race in cache", Type: model.IssueBug}
 	a := mustUpsert(t, s, in, model.UpsertNew)
@@ -204,6 +216,8 @@ func TestResolvedIssueReopensWhenReportedAgain(t *testing.T) {
 }
 
 func TestIssueStatusTransitions(t *testing.T) {
+	t.Parallel()
+
 	s, p, _ := issueStore(t)
 	a := mustUpsert(t, s, model.Issue{ProjectID: p.ID, Title: "a"}, model.UpsertNew)
 	step := func(to model.IssueStatus, ok bool) {
@@ -252,6 +266,8 @@ func TestIssueStatusTransitions(t *testing.T) {
 }
 
 func TestMergedTodoResolvesItsIssues(t *testing.T) {
+	t.Parallel()
+
 	s, p, _ := issueStore(t)
 	a := mustUpsert(t, s, model.Issue{ProjectID: p.ID, Title: "a"}, model.UpsertNew)
 	b := mustUpsert(t, s, model.Issue{ProjectID: p.ID, Title: "b"}, model.UpsertNew)
@@ -285,6 +301,8 @@ func TestMergedTodoResolvesItsIssues(t *testing.T) {
 }
 
 func TestDeletedTodoReopensItsIssues(t *testing.T) {
+	t.Parallel()
+
 	s, p, _ := issueStore(t)
 	a := mustUpsert(t, s, model.Issue{ProjectID: p.ID, Title: "a"}, model.UpsertNew)
 	t1, _ := s.CreateTodo(model.Todo{ProjectID: p.ID, Prompt: "1"})

@@ -3,6 +3,8 @@ package gitops
 import "testing"
 
 func TestNotAboutCode(t *testing.T) {
+	t.Parallel()
+
 	for name, want := range map[string]bool{
 		"CLA": true, "license/cla": true, "cla-bot": true, "DCO": true, "Contributor License Agreement": true,
 		"build": false, "test (ubuntu)": false, "clang-tidy": false, "declare": false, "lint": false,

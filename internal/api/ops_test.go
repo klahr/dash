@@ -22,6 +22,8 @@ func opsGet(h http.Handler, path string, hdr ...string) *httptest.ResponseRecord
 }
 
 func TestHealthz(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	h := s.Routes()
 	w := opsGet(h, "/healthz") // no session
@@ -44,6 +46,8 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestMetricsNeedToken(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	// Without a token /metrics isn't served on the dashboard's listener:
 	// it's a page behind sign-in like any other.
@@ -66,6 +70,8 @@ func TestMetricsNeedToken(t *testing.T) {
 }
 
 func TestOpsMetrics(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	td, err := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "a"})
 	if err != nil {

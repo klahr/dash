@@ -46,6 +46,8 @@ func project(t *testing.T, s *Server, name string) model.Project {
 // A run's token reaches only its owner's org: projects and tasks of other
 // orgs don't exist for its tools.
 func TestRunTokenOnlyReachesItsOrg(t *testing.T) {
+	parallel(t)
+
 	s, _, web := boardServer(t)
 	h := s.Routes()
 	owner := testOwner(t, s)
@@ -114,6 +116,8 @@ func TestRunTokenOnlyReachesItsOrg(t *testing.T) {
 // A run's token needs a user and an org, and stops working when the user
 // leaves the org.
 func TestRunTokenNeedsOwnerInOrg(t *testing.T) {
+	parallel(t)
+
 	s, _, web := boardServer(t)
 	h := s.Routes()
 	owner := testOwner(t, s)
@@ -146,6 +150,8 @@ func TestRunTokenNeedsOwnerInOrg(t *testing.T) {
 // A task's runs act as its creator in its org; tasks without a creator act
 // as the env account.
 func TestTaskOwner(t *testing.T) {
+	parallel(t)
+
 	s, _, web := boardServer(t)
 	owner := testOwner(t, s)
 	bob := member(t, s, owner.Org, "bob", store.RoleMember)
@@ -178,6 +184,8 @@ func TestTaskOwner(t *testing.T) {
 
 // Tasks made through the API record who made them.
 func TestCreateTodoRecordsCreator(t *testing.T) {
+	parallel(t)
+
 	s, _, web := boardServer(t)
 	owner := testOwner(t, s)
 	org := owner.Org
@@ -197,6 +205,8 @@ func TestCreateTodoRecordsCreator(t *testing.T) {
 
 // A read-only token's /mcp tools may look but not change anything.
 func TestRemoteMCPReadOnlyToken(t *testing.T) {
+	parallel(t)
+
 	h, s, home, _ := remoteServer(t)
 	owner := testOwner(t, s)
 	ro, _, err := s.Auth.Accounts().CreateToken(store.NewToken{Kind: store.TokenAPI, Name: "ro", UserID: owner.User, OrgID: owner.Org, Scopes: []string{"read"}}, time.Now())
@@ -222,6 +232,8 @@ func TestRemoteMCPReadOnlyToken(t *testing.T) {
 // Only a signed-in browser makes runner codes, and the runner registered
 // with one is its maker's, in their active org.
 func TestRunnerCodesNeedSession(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	acc := s.Auth.Accounts()
 	s.Peers = &peer.Hub{Self: "home", Runners: &tunnel.Hub{Accounts: acc}}

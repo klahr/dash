@@ -10,6 +10,8 @@ import (
 )
 
 func TestParseFindings(t *testing.T) {
+	t.Parallel()
+
 	one := `{"title":"x"}`
 	for name, answer := range map[string]string{
 		"fenced":      "I looked around.\n\n```json\n{\"findings\": [" + one + "]}\n```\n",
@@ -39,6 +41,8 @@ func TestParseFindings(t *testing.T) {
 // findings block, whose closing fence used to be taken for an opening one,
 // and an example {"findings": []} in the prose.
 func TestParseFindingsRunAnswer(t *testing.T) {
+	t.Parallel()
+
 	b, err := os.ReadFile("testdata/answer-478b2012b849.md")
 	if err != nil {
 		t.Fatal(err)
@@ -53,6 +57,8 @@ func TestParseFindingsRunAnswer(t *testing.T) {
 }
 
 func TestParseFindingsFences(t *testing.T) {
+	t.Parallel()
+
 	one := `{"title":"x"}`
 	obj := "{\"findings\": [" + one + "]}"
 	for name, answer := range map[string]string{
@@ -77,6 +83,8 @@ func TestParseFindingsFences(t *testing.T) {
 }
 
 func TestValidateFinding(t *testing.T) {
+	t.Parallel()
+
 	parse := func(js string) Finding {
 		fs, err := ParseFindings(`{"findings": [` + js + `]}`)
 		if err != nil || len(fs) != 1 {
@@ -134,6 +142,8 @@ func TestValidateFinding(t *testing.T) {
 }
 
 func TestIssuesDropsInvalidAndDuplicates(t *testing.T) {
+	t.Parallel()
+
 	tm := Template{Name: "sec", Kind: KindSecurity}
 	fs, err := ParseFindings(`{"findings": [
 		{"title":"Hardcoded key","file":"cfg.go","line":3,"fingerprint":"hardcoded-key"},

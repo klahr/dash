@@ -67,6 +67,8 @@ func setTodo(t *testing.T, s *Server, p model.Project, fn func(*model.Todo)) mod
 func at(d time.Duration) *time.Time { x := time.Now().Add(d); return &x }
 
 func TestWallAggregates(t *testing.T) {
+	parallel(t)
+
 	s, web := wallServer(t)
 	h := loginAs(t, s.Routes(), "u", "p")
 
@@ -182,6 +184,8 @@ func TestWallAggregates(t *testing.T) {
 }
 
 func TestWallActivity(t *testing.T) {
+	parallel(t)
+
 	s, web := wallServer(t)
 	h := loginAs(t, s.Routes(), "u", "p")
 	td := setTodo(t, s, web, func(x *model.Todo) { x.Status, x.StartedAt = model.StatusInProgress, at(-time.Minute) })
@@ -197,6 +201,8 @@ func TestWallActivity(t *testing.T) {
 }
 
 func TestWallNeedsSignInOrToken(t *testing.T) {
+	parallel(t)
+
 	s, _ := wallServer(t)
 	h := s.Routes()
 	if _, code := getWallJSON(t, h, "/api/wall"); code != http.StatusUnauthorized {
@@ -215,6 +221,8 @@ func TestWallNeedsSignInOrToken(t *testing.T) {
 }
 
 func TestWallTokens(t *testing.T) {
+	parallel(t)
+
 	s, web := wallServer(t)
 	routes := s.Routes()
 	h := loginAs(t, routes, "u", "p")

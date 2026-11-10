@@ -49,6 +49,8 @@ func waitGone(t *testing.T, m *Manager, id, what string) {
 }
 
 func TestTerminalPreview(t *testing.T) {
+	t.Parallel()
+
 	m, procs, td := setup(t, "preview.dash.test")
 	// No run_command needed; it goes live at once, with no port or URL.
 	p, err := m.Start(td, terminalProject(`printf '#!/bin/sh\necho tool-ran\n' > "$DASH_BIN/tool"; chmod +x "$DASH_BIN/tool"; echo built; exec bash --norc --noprofile`))
@@ -127,6 +129,8 @@ func TestTerminalPreview(t *testing.T) {
 }
 
 func TestTerminalPreviewIdle(t *testing.T) {
+	t.Parallel()
+
 	m, _, td := setup(t, "")
 	if _, err := m.Start(td, terminalProject("exec sleep 30")); err != nil {
 		t.Fatal(err)
@@ -143,6 +147,8 @@ func TestTerminalPreviewIdle(t *testing.T) {
 }
 
 func TestTerminalPreviewCrashKeepsLog(t *testing.T) {
+	t.Parallel()
+
 	m, _, td := setup(t, "")
 	if _, err := m.Start(td, terminalProject("echo 'main.go:3: undefined: foo' >&2; exit 2")); err != nil {
 		t.Fatal(err)
@@ -163,6 +169,8 @@ func TestTerminalPreviewCrashKeepsLog(t *testing.T) {
 }
 
 func TestTerminalOnlyForTerminalPreviews(t *testing.T) {
+	t.Parallel()
+
 	m, _, td := setup(t, "")
 	if _, _, err := m.Terminal(td.ID); err != ErrNotFound {
 		t.Fatalf("no preview: %v", err)
@@ -179,6 +187,8 @@ func TestTerminalOnlyForTerminalPreviews(t *testing.T) {
 }
 
 func TestPlainText(t *testing.T) {
+	t.Parallel()
+
 	for in, want := range map[string]string{
 		"\x1b[1;32mok\x1b[0m\r\n":                "ok\n",
 		"\x1b]0;title\x07$ ls\r\n":               "$ ls\n",

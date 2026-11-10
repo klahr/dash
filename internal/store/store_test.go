@@ -13,6 +13,8 @@ import (
 )
 
 func TestChatSurvivesReopen(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {
@@ -42,6 +44,8 @@ func TestChatSurvivesReopen(t *testing.T) {
 // A chat client sends the whole conversation each turn: saving it writes
 // only the messages that changed, and the result is still what was set.
 func TestSetChatWritesOnlyWhatChanged(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {
@@ -112,6 +116,8 @@ func TestSetChatWritesOnlyWhatChanged(t *testing.T) {
 }
 
 func TestTodoChatSurvivesReopenAndGoesWithTodo(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {
@@ -150,6 +156,8 @@ func TestTodoChatSurvivesReopenAndGoesWithTodo(t *testing.T) {
 }
 
 func TestReviewingLocksStatusUntilReopen(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {
@@ -189,6 +197,8 @@ func TestReviewingLocksStatusUntilReopen(t *testing.T) {
 }
 
 func TestDependsOnValidationAndDelete(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {
@@ -235,6 +245,8 @@ func TestDependsOnValidationAndDelete(t *testing.T) {
 }
 
 func TestOldStateWithoutDependsOnLoads(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dash.db")
 	old := `{"projects":{"p":{"id":"p","name":"p"}},"todos":{"t":{"id":"t","project_id":"p","title":"t","status":"queued"}}}`
@@ -256,6 +268,8 @@ func TestOldStateWithoutDependsOnLoads(t *testing.T) {
 // without a GitHub remote and runners' clones keep what they have. Without
 // gh here, GitHub projects merge, except those on runners.
 func TestDefaultMergeModes(t *testing.T) {
+	t.Parallel()
+
 	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -314,6 +328,8 @@ func TestDefaultMergeModes(t *testing.T) {
 
 // A pull request's check state is kept with the task and survives a reopen.
 func TestPullRequestChecksKept(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {

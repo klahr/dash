@@ -21,6 +21,8 @@ func connector(t *testing.T, s *Server) (st struct {
 }
 
 func TestConnectorStatus(t *testing.T) {
+	parallel(t)
+
 	off, _, _ := boardServer(t)
 	if st := connector(t, off); st.Enabled || st.URL != "" {
 		t.Errorf("without -public-url: %+v", st)

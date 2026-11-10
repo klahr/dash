@@ -79,6 +79,7 @@ var execAllowed = map[string]string{
 	"internal/runnerctl/preflight.go": "claude auth status (`dash runner` setup)",
 	"internal/runnerctl/service.go":   "systemctl/launchctl (`dash runner` setup)",
 	"internal/tui/app.go":             "xdg-open/open (the TUI client)",
+	"internal/testbin/testbin.go":     "sh writing tests' stand-in executables (tests only)",
 }
 
 // TestNoDirectGitOrGh fails when code outside this package starts git or gh

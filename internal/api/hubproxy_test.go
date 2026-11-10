@@ -16,6 +16,8 @@ import (
 // working-tree routes of a project no runner can serve with a clear error,
 // never by running git itself (its Git would fail the test: no repository).
 func TestHubForwardsOrRefusesWorkingTreeRoutes(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	s.Git = gitops.New(nil)
 	rh := &tunnel.Hub{Accounts: s.Auth.Accounts()}
@@ -70,6 +72,8 @@ func TestHubForwardsOrRefusesWorkingTreeRoutes(t *testing.T) {
 // A runner's SVG upload (most project icons) is served inline, so an <img>
 // shows it, yet sandboxed, so its script can't run.
 func TestForwardedServesSVGInlineButSandboxed(t *testing.T) {
+	parallel(t)
+
 	w := httptest.NewRecorder()
 	forwarded{
 		code:   http.StatusOK,

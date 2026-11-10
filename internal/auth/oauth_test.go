@@ -122,6 +122,8 @@ func callMCP(h http.Handler, token string) *httptest.ResponseRecorder {
 }
 
 func TestOAuthMetadata(t *testing.T) {
+	t.Parallel()
+
 	_, _, h := newOAuthServer(t)
 	for _, path := range []string{"/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"} {
 		m := decodeJSON(t, do(h, "GET", path, ""))
@@ -144,6 +146,8 @@ func TestOAuthMetadata(t *testing.T) {
 }
 
 func TestNewOAuthNeedsHTTPSOrigin(t *testing.T) {
+	t.Parallel()
+
 	a := newAuth(t, "admin", "s3cret")
 	for _, u := range []string{"", "http://dash.example.net", "https://dash.example.net/dash", "ftp://x"} {
 		if _, err := NewOAuth(a, u); err == nil {
@@ -156,6 +160,8 @@ func TestNewOAuthNeedsHTTPSOrigin(t *testing.T) {
 }
 
 func TestMCPNeedsBearerToken(t *testing.T) {
+	t.Parallel()
+
 	_, _, h := newOAuthServer(t)
 	want := `Bearer resource_metadata="` + base + `/.well-known/oauth-protected-resource"`
 	w := callMCP(h, "")
@@ -173,6 +179,8 @@ func TestMCPNeedsBearerToken(t *testing.T) {
 }
 
 func TestOAuthFlow(t *testing.T) {
+	t.Parallel()
+
 	a, _, h := newOAuthServer(t)
 	c := register(t, h, `{"client_name":"Claude","redirect_uris":["`+callback+`"],"grant_types":["authorization_code","refresh_token"],"token_endpoint_auth_method":"none"}`)
 	id := c["client_id"].(string)
@@ -231,6 +239,8 @@ func TestOAuthFlow(t *testing.T) {
 }
 
 func TestOAuthPKCE(t *testing.T) {
+	t.Parallel()
+
 	_, _, h := newOAuthServer(t)
 	id := register(t, h, `{"redirect_uris":["`+callback+`"]}`)["client_id"].(string)
 
@@ -260,6 +270,8 @@ func TestOAuthPKCE(t *testing.T) {
 }
 
 func TestOAuthRedirectURI(t *testing.T) {
+	t.Parallel()
+
 	_, _, h := newOAuthServer(t)
 	for _, uri := range []string{"https://evil.example/cb", "http://evil.example/cb", "https://claude.ai.evil.example/api/mcp/auth_callback", "javascript:alert(1)"} {
 		if w := do(h, "POST", "/register", `{"redirect_uris":["`+uri+`"]}`); w.Code != http.StatusBadRequest ||
@@ -295,6 +307,8 @@ func TestOAuthRedirectURI(t *testing.T) {
 }
 
 func TestOAuthDeny(t *testing.T) {
+	t.Parallel()
+
 	_, _, h := newOAuthServer(t)
 	id := register(t, h, `{"redirect_uris":["`+callback+`"]}`)["client_id"].(string)
 	v := authParams(id)
@@ -307,6 +321,8 @@ func TestOAuthDeny(t *testing.T) {
 }
 
 func TestOAuthSharesLockout(t *testing.T) {
+	t.Parallel()
+
 	_, _, h := newOAuthServer(t)
 	id := register(t, h, `{"redirect_uris":["`+callback+`"]}`)["client_id"].(string)
 	for range maxFailures {
@@ -339,6 +355,8 @@ func fullFlow(t *testing.T, h http.Handler, registration string) (string, map[st
 }
 
 func TestOAuthRefreshRotation(t *testing.T) {
+	t.Parallel()
+
 	_, _, h := newOAuthServer(t)
 	id, tok := fullFlow(t, h, `{"redirect_uris":["`+callback+`"]}`)
 	refresh := tok["refresh_token"].(string)
@@ -365,6 +383,8 @@ func TestOAuthRefreshRotation(t *testing.T) {
 }
 
 func TestOAuthConfidentialClient(t *testing.T) {
+	t.Parallel()
+
 	_, _, h := newOAuthServer(t)
 	c := register(t, h, `{"redirect_uris":["`+callback+`"],"token_endpoint_auth_method":"client_secret_post"}`)
 	id, secret := c["client_id"].(string), c["client_secret"].(string)
@@ -389,6 +409,8 @@ func TestOAuthConfidentialClient(t *testing.T) {
 }
 
 func TestOAuthSurvivesRestart(t *testing.T) {
+	t.Parallel()
+
 	db := filepath.Join(t.TempDir(), "dash.db")
 	_, _, h := oauthServerAt(t, db, "s3cret")
 	id, tok := fullFlow(t, h, `{"redirect_uris":["`+callback+`"]}`)
@@ -420,6 +442,8 @@ func TestOAuthSurvivesRestart(t *testing.T) {
 // Clients and refresh tokens in an oauth.json from before the token table
 // are imported, pinned to the user's only org; their access tokens aren't.
 func TestOAuthImportsLegacyTokens(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "oauth.json")
 	a, o, h := newOAuthServer(t)
 	b, _ := json.Marshal(map[string]any{
@@ -457,6 +481,8 @@ func TestOAuthImportsLegacyTokens(t *testing.T) {
 
 // A token stops working once its user belongs to no org.
 func TestOAuthTokenNeedsMembership(t *testing.T) {
+	t.Parallel()
+
 	a, _, h := newOAuthServer(t)
 	_, tok := fullFlow(t, h, `{"redirect_uris":["`+callback+`"]}`)
 	u, _ := a.acc.EnvUser()

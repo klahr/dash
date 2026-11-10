@@ -61,6 +61,7 @@ func boardServer(t *testing.T) (*Server, *events, model.Project) {
 		t.Fatal(err)
 	}
 	a := auth.New(st.Accounts())
+	a.NoFailDelayInTests()
 	if _, err := st.CreateProject(model.Project{Name: "other"}); err != nil {
 		t.Fatal(err)
 	}
@@ -118,6 +119,8 @@ func callResult(t *testing.T, w *httptest.ResponseRecorder) (text string, isErro
 }
 
 func TestBoardMCPAuth(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	h := s.Routes()
 
@@ -156,6 +159,8 @@ func TestBoardMCPAuth(t *testing.T) {
 }
 
 func TestBoardMCPCreateTodoDefaultsToChatProject(t *testing.T) {
+	parallel(t)
+
 	s, evs, p := boardServer(t)
 	h := s.Routes()
 	token, release := s.Board.Register(chatCaller(t, s), p.ID)
@@ -199,6 +204,8 @@ func TestBoardMCPCreateTodoDefaultsToChatProject(t *testing.T) {
 }
 
 func TestBoardMCPQueueTodoOnlyDrafts(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	h := s.Routes()
 	token, release := s.Board.Register(chatCaller(t, s), p.ID)
@@ -246,6 +253,8 @@ func TestBoardMCPQueueTodoOnlyDrafts(t *testing.T) {
 }
 
 func TestBoardMCPGeneralChatNeedsProject(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	h := s.Routes()
 	token, release := s.Board.Register(chatCaller(t, s), "")
@@ -259,6 +268,8 @@ func TestBoardMCPGeneralChatNeedsProject(t *testing.T) {
 }
 
 func TestListProjectsActive(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	run, _ := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Prompt: "a"})
 	draft, _ := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Prompt: "b"})
@@ -296,6 +307,8 @@ func call(t *testing.T, h http.Handler, token, name, args string) (string, bool)
 }
 
 func TestBoardMCPUpdateTodo(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	h := s.Routes()
 	token, release := s.Board.Register(chatCaller(t, s), p.ID)
@@ -407,6 +420,8 @@ func TestBoardMCPUpdateTodo(t *testing.T) {
 }
 
 func TestBoardMCPDeleteTodo(t *testing.T) {
+	parallel(t)
+
 	s, _, p := boardServer(t)
 	h := s.Routes()
 	token, release := s.Board.Register(chatCaller(t, s), p.ID)

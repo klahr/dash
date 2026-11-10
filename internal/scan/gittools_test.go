@@ -18,6 +18,8 @@ import (
 // No default tool may be a Bash rule: "Bash(git log:*)" allows
 // git log --output=<file>, which writes anywhere.
 func TestDefaultToolsHaveNoBash(t *testing.T) {
+	t.Parallel()
+
 	for _, tool := range DefaultTools {
 		if strings.HasPrefix(tool, "Bash") {
 			t.Errorf("default tool %q runs a shell command", tool)
@@ -60,6 +62,8 @@ func gitTool(t *testing.T, dir, name string) mcptools.Tool {
 }
 
 func TestGitToolsRead(t *testing.T) {
+	t.Parallel()
+
 	dir := gitRepo(t)
 	cases := []struct {
 		tool string
@@ -88,6 +92,8 @@ func TestGitToolsRead(t *testing.T) {
 
 // Nothing a scan passes reaches git as an option, so --output can't write.
 func TestGitToolsRefuseOptions(t *testing.T) {
+	t.Parallel()
+
 	dir := gitRepo(t)
 	target := filepath.Join(t.TempDir(), "pwned")
 	cases := []struct {
@@ -116,6 +122,8 @@ func TestGitToolsRefuseOptions(t *testing.T) {
 // A scan run gets the git tools server, with a token for its own checkout
 // that stops working when the run ends.
 func TestRunServesGitTools(t *testing.T) {
+	t.Parallel()
+
 	fx := newFixture(t, "s", "---\nkind: security\n---\nLook.")
 	fx.runner.GitTools = &GitMCP{}
 	srv := httptest.NewServer(fx.runner.GitTools)

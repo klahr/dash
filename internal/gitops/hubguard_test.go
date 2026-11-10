@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/klahr/dash/internal/localrun"
+	"github.com/klahr/dash/internal/testbin"
 )
 
 // On the hub, git and gh refuse to start, whichever Git method asks.
@@ -22,9 +23,7 @@ func TestHubRunsNoGitOrGh(t *testing.T) {
 	mark := filepath.Join(t.TempDir(), "ran")
 	for _, name := range []string{"git", "gh"} {
 		script := "#!/bin/sh\necho " + name + " >> " + mark + "\n"
-		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755); err != nil {
-			t.Fatal(err)
-		}
+		testbin.Write(t, filepath.Join(bin, name), script)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 

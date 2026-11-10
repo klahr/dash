@@ -10,6 +10,8 @@ import (
 )
 
 func TestBranchSwitcher(t *testing.T) {
+	parallel(t)
+
 	rr := newReleaseRepo(t, "")
 	rgit(t, rr.repo, "push", "-q", "origin", "main:refs/heads/from-origin")
 

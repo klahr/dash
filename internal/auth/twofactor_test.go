@@ -91,6 +91,8 @@ func doFrom(h http.Handler, ip, method, path, body string, cookies ...*http.Cook
 }
 
 func TestEnrolTOTP(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	clk := pinClock(a)
 	c := signIn(t, h, "admin", "s3cret")
@@ -137,6 +139,8 @@ func TestEnrolTOTP(t *testing.T) {
 }
 
 func TestLoginWithTOTP(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	clk := pinClock(a)
 	secret, _ := enrol(t, signIn(t, h, "admin", "s3cret"), clk)
@@ -176,6 +180,8 @@ func TestLoginWithTOTP(t *testing.T) {
 }
 
 func TestLoginWithRecoveryCode(t *testing.T) {
+	t.Parallel()
+
 	dbPath := filepath.Join(t.TempDir(), "dash.db")
 	a := openAuth(t, dbPath, "admin", "s3cret")
 	h := serve(a)
@@ -222,6 +228,8 @@ func TestLoginWithRecoveryCode(t *testing.T) {
 }
 
 func TestTwoFactorLockout(t *testing.T) {
+	t.Parallel()
+
 	t.Run("both steps share the address's lockout", func(t *testing.T) {
 		a, h := newServer(t)
 		clk := pinClock(a)
@@ -286,6 +294,8 @@ func TestTwoFactorLockout(t *testing.T) {
 }
 
 func TestDisableTOTP(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	clk := pinClock(a)
 	c := signIn(t, h, "admin", "s3cret")
@@ -303,6 +313,8 @@ func TestDisableTOTP(t *testing.T) {
 }
 
 func TestOrgRequires2FA(t *testing.T) {
+	t.Parallel()
+
 	a, h := newServer(t)
 	clk := pinClock(a)
 	org, _ := a.acc.DefaultOrg()
@@ -373,6 +385,8 @@ func TestOrgRequires2FA(t *testing.T) {
 
 // The Claude connector's sign-in can't skip the second factor.
 func TestOAuthAsksForSecondFactor(t *testing.T) {
+	t.Parallel()
+
 	a, _, h := newOAuthServer(t)
 	clk := pinClock(a)
 	c := &client{t: t, h: h}

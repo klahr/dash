@@ -69,6 +69,8 @@ func userVersion(t *testing.T, path string) int {
 // up. The database as it was is copied beside it first, so going back to
 // the older version is restoring that copy.
 func TestUpgradeMigrationKeepsRunningWorkAndBacksUpFirst(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dash.db")
 	old := oldDatabase(t, path,
@@ -157,6 +159,8 @@ func TestUpgradeMigrationKeepsRunningWorkAndBacksUpFirst(t *testing.T) {
 
 // A new database has nothing to back up.
 func TestNewDatabaseIsNotBackedUp(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "dash.db")
 	s, err := Open(path, nil)
 	if err != nil {

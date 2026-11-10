@@ -15,6 +15,8 @@ import (
 // The runner installer and the hub's version need no sign-in; codes come
 // with the hub URL the dialog's one-liner uses.
 func TestRunnerInstallerIsPublic(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	s.Peers = &peer.Hub{Self: "home", Runners: &tunnel.Hub{}}
 	s.PublicURL = "https://dash.example.com"
@@ -49,6 +51,8 @@ func TestRunnerInstallerIsPublic(t *testing.T) {
 // With org subdomains, a runner added from an org's subdomain is told that
 // address: the install command and the registration point there.
 func TestRunnerInstallUsesOrgSubdomain(t *testing.T) {
+	parallel(t)
+
 	s, _, _ := boardServer(t)
 	s.Peers = &peer.Hub{Self: "home", Runners: &tunnel.Hub{}}
 	s.PublicURL = "https://dash.example.com"

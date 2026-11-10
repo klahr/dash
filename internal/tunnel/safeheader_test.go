@@ -6,6 +6,8 @@ import (
 )
 
 func TestSafeRunnerHeader(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct{ in, want, disp string }{
 		{"application/json", "application/json; charset=utf-8", ""},
 		{"text/plain; charset=utf-8", "text/plain; charset=utf-8", ""},

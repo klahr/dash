@@ -13,6 +13,8 @@ import (
 // this keeps handlers from going around it through the engines' stores or
 // by naming the whole store's type.
 func TestAPIReachesRecordsOnlyPerOrg(t *testing.T) {
+	parallel(t)
+
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)

@@ -14,6 +14,8 @@ import (
 // The HTTP client sends what Stripe expects: Checkout with automatic tax,
 // tax ID collection and the org in the metadata; prorated seat changes.
 func TestHTTPStripeRequests(t *testing.T) {
+	t.Parallel()
+
 	var mu sync.Mutex
 	got := map[string]url.Values{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

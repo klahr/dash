@@ -5,6 +5,8 @@ import "testing"
 // A runner clones only network remotes its hub names: no local paths,
 // file:// or git's command-running transports.
 func TestCheckRemote(t *testing.T) {
+	t.Parallel()
+
 	for _, ok := range []string{
 		"https://github.com/acme/web.git", "ssh://git@github.com/acme/web.git", "git@github.com:acme/web.git",
 	} {
