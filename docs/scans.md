@@ -11,9 +11,14 @@ Scans come from three places, marked on each card:
   audit (`dependencies`), test gaps (`test-gaps`: changed code with no test covering it, and
   tests that can't fail), docs drift (`docs-drift`: README, `docs/` and CLAUDE.md content the
   code no longer matches), performance review (`performance`), dead code scan (`dead-code`),
-  flaky tests (`flaky-tests`) and accessibility (`accessibility`: missing labels and alt text,
+  flaky tests (`flaky-tests`), accessibility (`accessibility`: missing labels and alt text,
   poor colour contrast, keyboard traps, missing focus styles, wrong ARIA and non-semantic
-  interactive elements), in every project. The accessibility scan (suggested weekly, Wednesdays
+  interactive elements) and breaking changes (`breaking-changes`: what the checkout's branch
+  changes compared with the default branch that breaks callers or users: public API and HTTP
+  endpoint changes, schema changes with no migration or a destructive one, removed or renamed
+  flags, config keys and environment variables, and changed file formats), in every project.
+  Breaking changes has scope `since_main` and no suggested schedule: run it with "Run now" while
+  the project's folder has the branch to check out. The accessibility scan (suggested weekly, Wednesdays
   at 07:00) only runs in repositories with web front-end files (HTML, JSX, TSX, Vue, Svelte, Go
   and other HTML templates; see `requires_files` below) and is skipped in others. The
   performance review (suggested weekly, Mondays at 07:00) looks at what changed since its last

@@ -32,8 +32,18 @@ func TestScanEndpoints(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil || w.Code != http.StatusOK {
 		t.Fatalf("list: %d %s", w.Code, w.Body)
 	}
-	if !list.Builtin || len(list.Scans) != len(scan.Builtins()) || list.Scans[0].Schedule.Enabled || list.Scans[0].Schedule.Cron == "" {
+	if !list.Builtin || len(list.Scans) != len(scan.Builtins()) {
 		t.Fatalf("list: %+v", list)
+	}
+	// Each built-in shows its suggested schedule (breaking-changes has none), off.
+	cron := map[string]string{}
+	for _, b := range scan.Builtins() {
+		cron[b.Name] = b.Schedule
+	}
+	for _, in := range list.Scans {
+		if in.Schedule.Enabled || in.Schedule.Cron != cron[in.Name] {
+			t.Fatalf("list: %+v", list)
+		}
 	}
 
 	// Turn a schedule on, with another expression; a bad one is refused.
@@ -107,7 +117,7 @@ func TestScanApprovals(t *testing.T) {
 			switch {
 			case in.Name == "deps":
 				deps = &list.Scans[i]
-			case !in.Builtin || in.Schedule.Enabled || in.Schedule.Cron == "":
+			case !in.Builtin || in.Schedule.Enabled || (in.Schedule.Cron == "") != (in.Name == "breaking-changes"):
 				// The built-ins are there too, their schedules off.
 				t.Fatalf("built-in next to a repository scan: %+v", in)
 			}

@@ -179,11 +179,13 @@ func TestBuiltins(t *testing.T) {
 	names := map[string]Template{}
 	for _, b := range bs {
 		names[b.Name] = b
-		if !b.Builtin || b.Schedule == "" {
+		// Breaking changes compares a branch with the default branch, so it
+		// suggests no schedule.
+		if !b.Builtin || (b.Schedule == "") != (b.Name == "breaking-changes") {
 			t.Errorf("%s: builtin %v schedule %q", b.Name, b.Builtin, b.Schedule)
 		}
 	}
-	for _, n := range []string{"security", "code-review", "dependencies", "test-gaps", "docs-drift", "performance", "dead-code", "flaky-tests", "accessibility"} {
+	for _, n := range []string{"security", "code-review", "dependencies", "test-gaps", "docs-drift", "performance", "dead-code", "flaky-tests", "accessibility", "breaking-changes"} {
 		if _, ok := names[n]; !ok {
 			t.Errorf("no built-in %s (have %v)", n, names)
 		}
@@ -194,7 +196,8 @@ func TestBuiltins(t *testing.T) {
 		names["performance"].Kind != KindPerformance || names["performance"].Scope != model.ScopeSinceLastScan ||
 		names["dead-code"].Kind != KindDeadCode ||
 		names["flaky-tests"].Kind != KindFlakyTests || names["flaky-tests"].Scope != model.ScopeRepo ||
-		names["accessibility"].Kind != KindAccessibility || names["accessibility"].Scope != model.ScopeSinceLastScan {
+		names["accessibility"].Kind != KindAccessibility || names["accessibility"].Scope != model.ScopeSinceLastScan ||
+		names["breaking-changes"].Kind != KindBreakingChanges || names["breaking-changes"].Scope != model.ScopeSinceMain {
 		t.Errorf("kinds: %+v", names)
 	}
 	// Only the accessibility scan is limited to some files: web front ends.

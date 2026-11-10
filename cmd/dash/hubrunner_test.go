@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/klahr/dash/internal/model"
 )
 
 // A hub on a computer without Claude Code does all its Claude work on a
@@ -381,16 +383,19 @@ func (c *client) scanName(pid string) string {
 	var res struct {
 		Scans []struct {
 			Name          string
+			Scope         string
 			RequiresFiles []string `json:"requires_files"`
 		}
 	}
 	c.must("GET", "/api/projects/"+pid+"/scans", nil, http.StatusOK, &res)
+	// A since_main scan is skipped in a checkout of the default branch, and
+	// one that requires files in repositories without them.
 	for _, s := range res.Scans {
-		if len(s.RequiresFiles) == 0 {
+		if s.Scope != model.ScopeSinceMain && len(s.RequiresFiles) == 0 {
 			return s.Name
 		}
 	}
-	c.t.Fatal("no scan that runs in any repository")
+	c.t.Fatal("no scan that runs in any checkout of the default branch")
 	return ""
 }
 
