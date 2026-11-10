@@ -1635,7 +1635,10 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 /* Pinned chat takes a column only when there is room; narrower, it overlays. */
 @media (min-width: 1280px) {
   .app.chat-pinned.chat-open { grid-template: "top top top" var(--top-h) "side main chat" 1fr / var(--side-w) 1fr var(--chat-pane-w); }
-  .chat-pinned .chat-pane { grid-area: chat; position: relative; inset: auto; z-index: auto; width: auto; min-height: 0; box-shadow: none; animation: none; }
+  /* Keeps the floating pane's shadow. z-index 15 paints it over main's sticky
+     heads (board tools, column heads, z ≤ 10) but under the FAB, hover card,
+     scrim, detail sheet, status line, menus and toasts. */
+  .chat-pinned .chat-pane { grid-area: chat; position: relative; inset: auto; z-index: 15; width: auto; min-height: 0; animation: none; }
   .chat-pinned.chat-open .fab { right: calc(var(--chat-pane-w) + 28px); }
   .chat-pinned.chat-open .toasts { right: calc(var(--chat-pane-w) + 28px + var(--fab-space, 0px)); }
   .chat-pinned.chat-open :is(.detail, .statusline) { right: var(--chat-pane-w); }
