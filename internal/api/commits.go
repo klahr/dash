@@ -15,13 +15,8 @@ const maxCommitDiff = 1 << 20
 // getCommit is one commit of the project's repository for the History
 // view's detail pane: message, author, committer and changed files.
 func (s *Server) getCommit(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, p, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	d, err := s.Git.CommitDetail(r.Context(), p.ID, p.Path, r.PathValue("sha"))
@@ -35,13 +30,8 @@ func (s *Server) getCommit(w http.ResponseWriter, r *http.Request) {
 // commitDiff is the patch a commit made to one file (?path=), compared
 // with its first parent (the empty tree for a root commit), as text.
 func (s *Server) commitDiff(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, p, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	diff, err := s.Git.CommitFileDiff(r.Context(), p.ID, p.Path, r.PathValue("sha"), r.URL.Query().Get("path"))

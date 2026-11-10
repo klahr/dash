@@ -61,13 +61,8 @@ func (sv *service) scanInfo(projectID string, t scan.Template) scanInfo {
 var errScansOff = errors.New("scans are not available on this server")
 
 func (s *Server) listScans(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	sv, p, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	templates, shadowed, problems := scan.Templates(sv.data, p)
@@ -102,12 +97,8 @@ func (s *Server) listScans(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runScan(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, _, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	if _, err := sv.data.GetProject(r.PathValue("pid")); err != nil {
-		writeErr(w, err)
 		return
 	}
 	if s.Scans == nil {
@@ -129,7 +120,7 @@ func (s *Server) runScan(w http.ResponseWriter, r *http.Request) {
 // template asks for something else by now. approve_tools [] withdraws the
 // approval.
 func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	sv, p, ok := s.project(w, r)
 	if !ok {
 		return
 	}
@@ -141,11 +132,6 @@ func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
 		ApproveSchedule *string   `json:"approve_schedule"`
 	}
 	if err := decode(r, &req); err != nil {
-		writeErr(w, err)
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -248,17 +234,12 @@ func customScan(projectID string, req scanRequest) (scan.Template, error) {
 // createScan adds a scan written in Dash. Its name may not be another Dash
 // scan's; a built-in or repository scan of that name is replaced by it.
 func (s *Server) createScan(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	sv, p, ok := s.project(w, r)
 	if !ok {
 		return
 	}
 	var req scanRequest
 	if err := decode(r, &req); err != nil {
-		writeErr(w, err)
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
 		writeErr(w, err)
 		return
 	}

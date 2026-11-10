@@ -69,13 +69,8 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, p, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, p)
@@ -657,13 +652,8 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) pushProject(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	sv, p, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	if url := s.Git.RemoteURL(r.Context(), p.ID, p.Path); url != p.RemoteURL {
@@ -686,13 +676,8 @@ func (s *Server) pushProject(w http.ResponseWriter, r *http.Request) {
 // remote.updated event; ?force=1 fetches even while backing off after failures.
 func (s *Server) remoteStatus(fetch bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		sv, ok := s.service(w, r)
+		_, p, ok := s.project(w, r)
 		if !ok {
-			return
-		}
-		p, err := sv.data.GetProject(r.PathValue("pid"))
-		if err != nil {
-			writeErr(w, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, s.Merges.Remote.Select(r.Context(), p, fetch, r.URL.Query().Get("force") == "1"))
@@ -705,13 +690,8 @@ func (s *Server) remoteStatus(fetch bool) http.HandlerFunc {
 // nothing changes. On a hub, ?runner= names the runner whose checkout to
 // pull (see viaRunner).
 func (s *Server) pullRemote(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, p, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	moved, err := s.Merges.Remote.Pull(r.Context(), p)
@@ -726,13 +706,8 @@ func (s *Server) pullRemote(w http.ResponseWriter, r *http.Request) {
 // the project that are behind origin. On a hub, the runners' as they last
 // reported them; elsewhere this Dash's own, if it is.
 func (s *Server) listCheckouts(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, p, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	out := []model.Checkout{}
@@ -749,13 +724,8 @@ func (s *Server) listCheckouts(w http.ResponseWriter, r *http.Request) {
 
 // unpushed counts the default branch's commits (merged todos) origin doesn't have yet.
 func (s *Server) unpushed(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, p, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	n, todos := 0, []string{}
@@ -769,13 +739,8 @@ func (s *Server) unpushed(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) gitGraph(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, p, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	commits, err := s.Git.Graph(r.Context(), p.ID, p.Path, p.Base(), 500)
@@ -906,13 +871,8 @@ func (s *Server) splitPrompt(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) retestTodo(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	sv, t, ok := s.todo(w, r)
 	if !ok {
-		return
-	}
-	t, err := sv.data.GetTodo(r.PathValue("tid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	if err := sv.runTests(r.Context(), t); err != nil {
@@ -924,13 +884,8 @@ func (s *Server) retestTodo(w http.ResponseWriter, r *http.Request) {
 
 // duplicateTodo copies a todo's instructions into a new draft.
 func (s *Server) duplicateTodo(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	sv, src, ok := s.todo(w, r)
 	if !ok {
-		return
-	}
-	src, err := sv.data.GetTodo(r.PathValue("tid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	title := src.Title
@@ -948,15 +903,11 @@ func (s *Server) duplicateTodo(w http.ResponseWriter, r *http.Request) {
 
 // openTodo opens the todo's worktree in the configured editor on the Dash machine.
 func (s *Server) openTodo(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	sv, t, ok := s.todo(w, r)
 	if !ok {
 		return
 	}
-	t, err := sv.data.GetTodo(r.PathValue("tid"))
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
+	var err error
 	if t.OnRunner() {
 		// Its worktree is on its runner: the runner's editor opens it there.
 		err = sv.onRunner(r.Context(), t, func(ctx context.Context) error { return s.Dispatch.Open(ctx, t) })
@@ -994,13 +945,8 @@ func (s *Server) openWorktree(t model.Todo) error {
 }
 
 func (s *Server) getTodo(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, t, ok := s.todo(w, r)
 	if !ok {
-		return
-	}
-	t, err := sv.data.GetTodo(r.PathValue("tid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, t)
@@ -1106,12 +1052,8 @@ func (s *Server) cancelTodo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) pauseTodo(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, _, ok := s.todo(w, r)
 	if !ok {
-		return
-	}
-	if _, err := sv.data.GetTodo(r.PathValue("tid")); err != nil {
-		writeErr(w, err)
 		return
 	}
 	t, err := s.Todos.Pause(r.PathValue("tid"))
@@ -1123,12 +1065,8 @@ func (s *Server) pauseTodo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resumeTodo(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, _, ok := s.todo(w, r)
 	if !ok {
-		return
-	}
-	if _, err := sv.data.GetTodo(r.PathValue("tid")); err != nil {
-		writeErr(w, err)
 		return
 	}
 	t, err := s.Todos.Resume(r.PathValue("tid"))
@@ -1183,13 +1121,8 @@ func (s *Server) todoLog(w http.ResponseWriter, r *http.Request) {
 
 // todoEvents is the todo's worker events, oldest first, for its timeline.
 func (s *Server) todoEvents(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	sv, t, ok := s.todo(w, r)
 	if !ok {
-		return
-	}
-	t, err := sv.data.GetTodo(r.PathValue("tid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	if t.OnRunner() {
@@ -1254,13 +1187,8 @@ func (s *Server) reworkTodo(w http.ResponseWriter, r *http.Request) {
 // revertTodo undoes a merged todo on its project's merge worker; the todo updates
 // when it's done (or an "Undo:" todo appears if Claude has to do it by hand).
 func (s *Server) revertTodo(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	sv, t, ok := s.todo(w, r)
 	if !ok {
-		return
-	}
-	t, err := sv.data.GetTodo(r.PathValue("tid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	if err := sv.revert(r.Context(), t); err != nil {
@@ -1279,12 +1207,8 @@ var errHubHasNoProjects = fmt.Errorf("%w: the hub keeps no projects on its own c
 	"(pick the runner as its computer), or share a repository by giving its remote_url (or github OWNER/REPO) and the runners to link it to", errBadRequest)
 
 func (s *Server) cleanupProject(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, _, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	if _, err := sv.data.GetProject(r.PathValue("pid")); err != nil {
-		writeErr(w, err)
 		return
 	}
 	rep, err := s.Merges.Cleanup(r.Context(), r.PathValue("pid"))
@@ -1296,24 +1220,16 @@ func (s *Server) cleanupProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getCI(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, _, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	if _, err := sv.data.GetProject(r.PathValue("pid")); err != nil {
-		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.CI.Status(r.PathValue("pid")))
 }
 
 func (s *Server) refreshCI(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, _, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	if _, err := sv.data.GetProject(r.PathValue("pid")); err != nil {
-		writeErr(w, err)
 		return
 	}
 	st, err := s.CI.Refresh(r.Context(), r.PathValue("pid"))
@@ -1326,12 +1242,8 @@ func (s *Server) refreshCI(w http.ResponseWriter, r *http.Request) {
 
 // retryCI re-runs the default branch's newest build on GitHub Actions.
 func (s *Server) retryCI(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, _, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	if _, err := sv.data.GetProject(r.PathValue("pid")); err != nil {
-		writeErr(w, err)
 		return
 	}
 	st, err := s.CI.Retry(r.Context(), r.PathValue("pid"))
@@ -1348,12 +1260,8 @@ func (s *Server) retryCI(w http.ResponseWriter, r *http.Request) {
 
 // investigateCI asks Claude to look into the failing build now.
 func (s *Server) investigateCI(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, _, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	if _, err := sv.data.GetProject(r.PathValue("pid")); err != nil {
-		writeErr(w, err)
 		return
 	}
 	t, err := s.CI.Investigate(r.Context(), r.PathValue("pid"))
@@ -1392,12 +1300,8 @@ func (s *Server) getQueues(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------- processes
 
 func (s *Server) listProcesses(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, _, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	if _, err := sv.data.GetProject(r.PathValue("pid")); err != nil {
-		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, nonNil(s.Procs.List(r.PathValue("pid"))))
@@ -1414,16 +1318,11 @@ func (s *Server) startProcess(w http.ResponseWriter, r *http.Request) {
 		Cols    uint16            `json:"cols"`
 		Rows    uint16            `json:"rows"`
 	}
-	sv, ok := s.service(w, r)
+	sv, p, ok := s.project(w, r)
 	if !ok {
 		return
 	}
 	if err := decode(r, &req); err != nil {
-		writeErr(w, err)
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -1464,7 +1363,10 @@ func (s *Server) startProcess(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var proc model.Process
+	var (
+		proc model.Process
+		err  error
+	)
 	switch req.Kind {
 	case model.ProcWeb:
 		proc, err = s.Procs.StartWeb(p.ID, dir, req.Command, o)

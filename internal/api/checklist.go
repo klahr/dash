@@ -224,22 +224,9 @@ func (sv *service) moveChecklistItem(ctx context.Context, p model.Project, m mcp
 
 // ---- REST ----
 
-func (s *Server) checklistProject(w http.ResponseWriter, r *http.Request) (*service, model.Project, bool) {
-	sv, ok := s.service(w, r)
-	if !ok {
-		return nil, model.Project{}, false
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
-		return nil, model.Project{}, false
-	}
-	return sv, p, true
-}
-
 // getChecklist handles GET /api/projects/{pid}/checklist.
 func (s *Server) getChecklist(w http.ResponseWriter, r *http.Request) {
-	sv, p, ok := s.checklistProject(w, r)
+	sv, p, ok := s.project(w, r)
 	if !ok {
 		return
 	}
@@ -254,7 +241,7 @@ func (s *Server) getChecklist(w http.ResponseWriter, r *http.Request) {
 // postChecklist handles POST /api/projects/{pid}/checklist: a batch of
 // changes (mcptools.ChecklistChange), saved as one commit.
 func (s *Server) postChecklist(w http.ResponseWriter, r *http.Request) {
-	sv, p, ok := s.checklistProject(w, r)
+	sv, p, ok := s.project(w, r)
 	if !ok {
 		return
 	}
@@ -273,7 +260,7 @@ func (s *Server) postChecklist(w http.ResponseWriter, r *http.Request) {
 
 // moveChecklist handles POST /api/projects/{pid}/checklist/move.
 func (s *Server) moveChecklist(w http.ResponseWriter, r *http.Request) {
-	sv, p, ok := s.checklistProject(w, r)
+	sv, p, ok := s.project(w, r)
 	if !ok {
 		return
 	}

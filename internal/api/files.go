@@ -33,13 +33,8 @@ const maxEditBytes = 512 << 10
 // commit, so they are read from and saved straight to the project's checkout.
 
 func (s *Server) listFiles(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, p, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	files, err := s.Git.Files(r.Context(), p.ID, p.Path, p.Base())
@@ -202,7 +197,7 @@ func (s *Server) writeLocalFile(ctx context.Context, p model.Project, name, vers
 // saveLocalFile writes a local file in the checkout, unless it changed on
 // disk since it was read (blob is the hash of what was read).
 func (s *Server) saveLocalFile(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, p, ok := s.project(w, r)
 	if !ok {
 		return
 	}
@@ -212,11 +207,6 @@ func (s *Server) saveLocalFile(w http.ResponseWriter, r *http.Request) {
 		Content string `json:"content"`
 	}
 	if err := decode(r, &req); err != nil {
-		writeErr(w, err)
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -247,13 +237,8 @@ func cleanRepoPath(p string) (string, error) {
 }
 
 func (s *Server) readFile(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, p, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	name, err := cleanRepoPath(r.URL.Query().Get("path"))
@@ -279,7 +264,7 @@ func (s *Server) readFile(w http.ResponseWriter, r *http.Request) {
 
 // saveEdit queues a todo that commits the new content of a file.
 func (s *Server) saveEdit(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	sv, p, ok := s.project(w, r)
 	if !ok {
 		return
 	}
@@ -290,11 +275,6 @@ func (s *Server) saveEdit(w http.ResponseWriter, r *http.Request) {
 		Title   string `json:"title"`
 	}
 	if err := decode(r, &req); err != nil {
-		writeErr(w, err)
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
 		writeErr(w, err)
 		return
 	}

@@ -52,13 +52,8 @@ func editableInReview(t model.Todo) error {
 // todoFile handles GET /api/todos/{tid}/file?path=: the file as the task's
 // branch has it.
 func (s *Server) todoFile(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	sv, t, ok := s.todo(w, r)
 	if !ok {
-		return
-	}
-	t, err := sv.data.GetTodo(r.PathValue("tid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	name, err := cleanRepoPath(r.URL.Query().Get("path"))
@@ -88,7 +83,7 @@ func (s *Server) todoFile(w http.ResponseWriter, r *http.Request) {
 // saveTodoFile handles PUT /api/todos/{tid}/file: commits an edit on the
 // task's branch.
 func (s *Server) saveTodoFile(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	sv, t, ok := s.todo(w, r)
 	if !ok {
 		return
 	}
@@ -97,16 +92,14 @@ func (s *Server) saveTodoFile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	t, err := sv.data.GetTodo(r.PathValue("tid"))
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
 	if err := editableInReview(t); err != nil {
 		writeErr(w, err)
 		return
 	}
-	var res todoFileSaved
+	var (
+		res todoFileSaved
+		err error
+	)
 	if t.OnRunner() {
 		if req.Path, err = cleanRepoPath(req.Path); err != nil {
 			writeErr(w, err)

@@ -128,13 +128,8 @@ func (s *Server) viaRunner(h http.HandlerFunc) http.HandlerFunc {
 			h(w, r)
 			return
 		}
-		sv, ok := s.service(w, r)
+		sv, p, ok := s.project(w, r)
 		if !ok {
-			return
-		}
-		p, err := sv.data.GetProject(r.PathValue("pid"))
-		if err != nil {
-			writeErr(w, err)
 			return
 		}
 		switch r.Pattern {

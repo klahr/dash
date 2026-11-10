@@ -74,13 +74,8 @@ func webURL(u string) string {
 
 // repoInfo handles GET /api/projects/{pid}/repo-info.
 func (s *Server) repoInfo(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, p, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	out := projectRepoInfo{RemoteURL: p.RemoteURL}

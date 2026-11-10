@@ -47,13 +47,8 @@ const (
 )
 
 func (s *Server) listClaudeFiles(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, p, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	files, err := s.claudeFiles(r.Context(), p)

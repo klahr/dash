@@ -116,6 +116,36 @@ func (s *Server) service(w http.ResponseWriter, r *http.Request) (*service, bool
 	return s.as(c), true
 }
 
+// project is the caller's service and the project {pid} of r. When either
+// can't be had it answers r with the error and returns false.
+func (s *Server) project(w http.ResponseWriter, r *http.Request) (*service, model.Project, bool) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return nil, model.Project{}, false
+	}
+	p, err := sv.data.GetProject(r.PathValue("pid"))
+	if err != nil {
+		writeErr(w, err)
+		return nil, model.Project{}, false
+	}
+	return sv, p, true
+}
+
+// todo is the caller's service and the task {tid} of r. When either can't be
+// had it answers r with the error and returns false.
+func (s *Server) todo(w http.ResponseWriter, r *http.Request) (*service, model.Todo, bool) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return nil, model.Todo{}, false
+	}
+	t, err := sv.data.GetTodo(r.PathValue("tid"))
+	if err != nil {
+		writeErr(w, err)
+		return nil, model.Todo{}, false
+	}
+	return sv, t, true
+}
+
 // adminOnly answers r with 403 and returns false unless its caller is a
 // platform admin.
 func (s *Server) adminOnly(w http.ResponseWriter, r *http.Request) bool {

@@ -30,15 +30,10 @@ type branchList struct {
 	FetchError string `json:"fetch_error,omitempty"`
 }
 
-// branchProject loads the project of r and refreshes its origin URL.
-func (s *Server) branchProject(w http.ResponseWriter, r *http.Request) (*service, model.Project, bool) {
-	return s.releaseProject(w, r)
-}
-
 // listBranches handles GET /api/projects/{pid}/branches[?fetch=1]: the
 // branches the switcher offers. With fetch, origin's are fetched first.
 func (s *Server) listBranches(w http.ResponseWriter, r *http.Request) {
-	_, p, ok := s.branchProject(w, r)
+	_, p, ok := s.releaseProject(w, r)
 	if !ok {
 		return
 	}
@@ -87,7 +82,7 @@ func (s *Server) switchBranch(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	sv, p, ok := s.branchProject(w, r)
+	sv, p, ok := s.releaseProject(w, r)
 	if !ok {
 		return
 	}
@@ -159,7 +154,7 @@ func (s *Server) branchPR(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	sv, p, ok := s.branchProject(w, r)
+	sv, p, ok := s.releaseProject(w, r)
 	if !ok {
 		return
 	}

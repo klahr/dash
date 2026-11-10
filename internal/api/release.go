@@ -374,13 +374,8 @@ func (s *Server) withRemote(ctx context.Context, projectID string, fn func() err
 
 // releaseProject is the request's project, refreshed with origin's URL.
 func (s *Server) releaseProject(w http.ResponseWriter, r *http.Request) (*service, model.Project, bool) {
-	sv, ok := s.service(w, r)
+	sv, p, ok := s.project(w, r)
 	if !ok {
-		return nil, model.Project{}, false
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
 		return nil, p, false
 	}
 	if url := s.Git.RemoteURL(r.Context(), p.ID, p.Path); url != "" && url != p.RemoteURL {
@@ -433,13 +428,8 @@ func (s *Server) createTag(w http.ResponseWriter, r *http.Request) {
 // tag format is valid, an example tag, and whether the repository's release
 // workflows would run for its tags. Without format, the project's own.
 func (s *Server) tagFormatInfo(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
+	_, p, ok := s.project(w, r)
 	if !ok {
-		return
-	}
-	p, err := sv.data.GetProject(r.PathValue("pid"))
-	if err != nil {
-		writeErr(w, err)
 		return
 	}
 	format := p.TagFormat
