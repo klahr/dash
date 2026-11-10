@@ -296,7 +296,8 @@ Where each kind of Claude work runs:
   origin's default branch. The hub keeps the runs, their logs and the issues they file; the run's
   log says which runner it ran on. With the project's runners all offline a run waits, showing
   "no runner online: laptop is offline", and starts when one comes back; a project with no runner
-  linked can't be scanned. A repository scan's approved tools apply on the runner.
+  linked can't be scanned. Repository scans (`.dash/scans/`) are used only by a runner's own
+  projects; hub projects use built-in and Dash scans.
 - **Project and task chats**: on one of your runners linked to the project (a task's chat on the
   runner that ran it).
 
