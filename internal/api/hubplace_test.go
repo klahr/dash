@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,6 +80,31 @@ func TestHubLinkAdoptsAnExistingClone(t *testing.T) {
 	b, _ := json.Marshal(dispatch.Task{HubTodoID: "t1", HubProjectID: "hub-p1", Title: "t", Prompt: "p"})
 	if w := send(h, "POST", "/api/hub/tasks", string(b)); w.Code != http.StatusCreated {
 		t.Errorf("task: %d %s", w.Code, w.Body)
+	}
+}
+
+// A link finishes its clone when the hub's request goes away (the browser
+// that asked reloads): a clone killed half way would leave a folder with
+// origin set but no valid HEAD, adopted, and failed on, by every later link.
+func TestHubLinkClonesWhenTheRequestGoesAway(t *testing.T) {
+	needGit(t)
+	s, h, remote := runnerSide(t, 7)
+	b, _ := json.Marshal(dispatch.Link{Name: "Shared App", RemoteURL: remote, DefaultBranch: "main", OrgID: 7})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	w := httptest.NewRecorder()
+	r := httptest.NewRequestWithContext(ctx, "PUT", "/api/hub/projects/hub-p1", strings.NewReader(string(b)))
+	r.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("link: %d %s", w.Code, w.Body)
+	}
+	path := filepath.Join(s.ProjectRoot, "remote")
+	if gitIn(t, path, "rev-parse", "HEAD") != gitIn(t, remote, "rev-parse", "HEAD") {
+		t.Error("the clone isn't origin's")
+	}
+	if code, linked := hubLinkAs(t, h, "hub-p1", remote); code != http.StatusOK || linked.Path != path {
+		t.Errorf("linking again: %d %+v", code, linked)
 	}
 }
 

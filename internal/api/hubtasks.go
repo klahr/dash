@@ -199,7 +199,12 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: this runner has no projects root (-projects)", errBadRequest))
 		return
 	}
-	ctx := r.Context()
+	// The link finishes even when the hub's request goes away (the browser
+	// that asked reloads, say): a clone killed half way leaves a folder with
+	// origin set but no valid HEAD, which hubPlace would then adopt on every
+	// later link, and fail on.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), hubLinkTimeout)
+	defer cancel()
 	hubLinks.Lock() // two links never pick the same free folder
 	defer hubLinks.Unlock()
 	if p, ok := sv.hubProject(hpid); ok { // linked while this waited
@@ -219,6 +224,9 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 	if !place.Adopt {
 		how = model.HubCloned
 		if err := s.Git.Clone(ctx, id, req.RemoteURL, path); err != nil {
+			// hubPlace picked a folder that didn't exist: what the failed
+			// clone left there would look like a clone of this remote.
+			_ = os.RemoveAll(path)
 			writeErr(w, errors.Join(errBadRequest, err))
 			return
 		}
@@ -261,6 +269,9 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 
 // hubLinks serialises linking, which picks folders.
 var hubLinks sync.Mutex
+
+// hubLinkTimeout bounds a link, its first clone included.
+const hubLinkTimeout = 30 * time.Minute
 
 // maxHubSuffix bounds the names tried for a hub's project: <repo>,
 // <repo>-2, … <repo>-<maxHubSuffix>.
