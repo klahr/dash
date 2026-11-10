@@ -2,12 +2,9 @@
 // ------------------------------------------------------------------ DOM helpers, icons & clock format
 
 export const $ = (s, el = document) => el.querySelector(s);
-// Decorative pictures that fail to load go away (not with an inline
-// onerror: the Content-Security-Policy allows no inline script).
-for (const img of document.querySelectorAll("img[data-optional]")) {
-  if (img.complete && !img.naturalWidth && img.loading !== "lazy") img.remove(); // failed already (a lazy one may not have started)
-  else img.addEventListener("error", () => img.remove());
-}
+// Decorative pictures that fail to load go away (pagekit.js is a classic
+// script that index.html loads first).
+window.DashPage.optionalImages();
 // The server's LC_TIME, since browsers format times by their UI language instead.
 const serverTimeLocale = (() => {
   const l = document.querySelector('meta[name="dash-time-locale"]')?.content;

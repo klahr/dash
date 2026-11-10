@@ -744,6 +744,7 @@ var public = map[string]bool{
 	"/login.html":           true,
 	"/login.js":             true,
 	"/twofactor.js":         true,
+	"/pagekit.js":           true,
 	"/invite.html":          true,
 	"/invite.js":            true,
 	"/style.css":            true,

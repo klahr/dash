@@ -10,19 +10,7 @@ const POLL_MS = 5000;
 const $ = (id) => document.getElementById(id);
 
 // h builds an element; strings become text nodes (never HTML).
-function h(tag, attrs, ...kids) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs || {})) {
-    if (v == null || v === false) continue;
-    if (k === "style") el.style.cssText = v;
-    else el.setAttribute(k, v);
-  }
-  for (const k of kids.flat()) {
-    if (k == null || k === false) continue;
-    el.append(k instanceof Node ? k : String(k));
-  }
-  return el;
-}
+const h = DashPage.el;
 
 function svg(tag, attrs) {
   const el = document.createElementNS("http://www.w3.org/2000/svg", tag);

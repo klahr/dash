@@ -5,22 +5,14 @@
 const $ = (s) => document.querySelector(s);
 const token = decodeURIComponent(location.hash.slice(1));
 const err = $("#invite-error");
+const { el, CANT_REACH } = DashPage;
 
-async function post(path, body) {
-  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, ...body }) });
-  const data = res.status === 204 ? {} : await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-  return data;
-}
+// post sends the invitation's token along with body.
+const post = (path, body) => DashPage.post(path, { token, ...body });
 
-function busy(btn, fn) {
-  return async (e) => {
-    e?.preventDefault();
-    err.textContent = "";
-    btn.disabled = true;
-    try { await fn(); } catch (e) { err.textContent = e.message || "Can't reach the Dash server."; } finally { btn.disabled = false; }
-  };
-}
+// busy makes a click handler that runs fn with btn disabled, showing what
+// goes wrong in the page's error line.
+const busy = (btn, fn) => () => DashPage.busy({ button: btn, error: err }, fn);
 
 const article = (role) => (role === "admin" || role === "owner" ? "an" : "a");
 
@@ -30,7 +22,7 @@ async function load() {
   const what = $("#invite-what");
   what.replaceChildren(
     inv.invited_by ? `${inv.invited_by} invited you` : "You're invited",
-    " to join ", Object.assign(document.createElement("strong"), { textContent: inv.org.name }),
+    " to join ", el("strong", {}, inv.org.name),
     ` as ${article(inv.role)} ${inv.role}.`);
   document.title = `Join ${inv.org.name} · ${document.querySelector("meta[name=dash-name]")?.content || "Dash"}`;
   if (inv.google && !inv.signed_in_as) {
@@ -51,15 +43,18 @@ $("#invite-accept").addEventListener("click", busy($("#invite-accept"), async ()
   await post("/api/invitations/accept");
   location.replace("/");
 }));
-$("#invite-register").addEventListener("submit", (e) => busy(e.target.querySelector("button"), async () => {
-  const f = e.target;
-  await post("/api/invitations/register", { username: f.username.value.trim(), password: f.password.value });
-  location.replace("/");
-})(e));
+const register = $("#invite-register");
+register.addEventListener("submit", (e) => {
+  e.preventDefault();
+  busy(register.querySelector("button.primary"), async () => {
+    await post("/api/invitations/register", { username: register.username.value.trim(), password: register.password.value });
+    location.replace("/");
+  })();
+});
 // Joining with Google: the token goes in a form's body, never in a URL.
 $("#invite-google-btn").addEventListener("click", () => {
-  const f = Object.assign(document.createElement("form"), { method: "POST", action: "/auth/google/start" });
-  f.append(Object.assign(document.createElement("input"), { type: "hidden", name: "invite", value: token }));
+  const f = el("form", { method: "POST", action: "/auth/google/start" },
+    el("input", { type: "hidden", name: "invite", value: token }));
   document.body.append(f);
   f.submit();
 });
@@ -74,5 +69,5 @@ $("#invite-signout").addEventListener("click", busy($("#invite-signout"), async 
 }));
 
 load().catch((e) => {
-  $("#invite-what").textContent = e.message || "Can't reach the Dash server.";
+  $("#invite-what").textContent = e instanceof TypeError ? CANT_REACH : e.message; // a TypeError: fetch failed
 });

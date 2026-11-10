@@ -1,28 +1,9 @@
 // Setting up two-factor sign-in, shared by the login page (when an org
 // requires it) and the account menu: scan a QR code, confirm with a code,
 // then save the recovery codes.
+// Needs pagekit.js.
 (() => {
-  function el(tag, attrs = {}, ...kids) {
-    const e = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (v == null || v === false) continue;
-      if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
-      else e.setAttribute(k, v === true ? "" : v);
-    }
-    e.append(...kids.flat().filter((k) => k != null));
-    return e;
-  }
-
-  async function post(path, body) {
-    const res = await fetch(path, {
-      method: "POST",
-      headers: body ? { "Content-Type": "application/json" } : {},
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-    return data;
-  }
+  const { el, post } = DashPage;
 
   // recoveryCodes shows codes in box, with copy and download, and calls
   // done when the user says they've saved them.
@@ -63,23 +44,18 @@
         el("code", {}, s.secret.replace(/(.{4})/g, "$1 ").trim())),
       el("label", { class: "field" }, el("span", {}, "Code from the app"), input),
       button, err);
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      err.textContent = "";
-      button.disabled = true;
+    DashPage.busyForm(form, async () => {
       try {
         const r = await post("/api/account/2fa/enable", { code: input.value });
         recoveryCodes(box, r.recovery_codes, () => done(r.recovery_codes));
       } catch (x) {
-        err.textContent = x.message;
         input.select();
-      } finally {
-        button.disabled = false;
+        throw x;
       }
     });
     box.replaceChildren(form);
     input.focus();
   }
 
-  window.DashTwoFactor = { enrol, recoveryCodes, post };
+  window.DashTwoFactor = { enrol, recoveryCodes };
 })();

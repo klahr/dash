@@ -1,4 +1,5 @@
 const $ = (s) => document.querySelector(s);
+const { el, postJSON, post, ServerError, busy, busyForm, formParts, CANT_REACH } = DashPage;
 const loginForm = $("#login");
 const totpForm = $("#totp");
 const enrolCard = $("#enrol");
@@ -10,12 +11,7 @@ const noticeCard = $("#notice");
 let ticket = "";
 let googleLink = ""; // a Google account waiting for this password to link it
 
-// Decorative pictures that fail to load go away (not with an inline
-// onerror: the Content-Security-Policy allows no inline script).
-for (const img of document.querySelectorAll("img[data-optional]")) {
-  if (img.complete && !img.naturalWidth && img.loading !== "lazy") img.remove(); // failed already (a lazy one may not have started)
-  else img.addEventListener("error", () => img.remove());
-}
+DashPage.optionalImages();
 
 function show(card) {
   for (const c of [loginForm, totpForm, enrolCard, signupForm, forgotForm, verifyForm, resetForm, noticeCard]) c.hidden = c !== card;
@@ -37,15 +33,6 @@ function go() {
   location.replace(ok ? next : "/");
 }
 
-async function postJSON(path, body) {
-  const res = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return { res, data: await res.json().catch(() => ({})) };
-}
-
 // An org requires two-factor sign-in and this account hasn't set it up.
 async function enrol() {
   show(enrolCard);
@@ -56,47 +43,37 @@ async function enrol() {
       done: go,
     });
   } catch (e) {
-    body.replaceChildren(Object.assign(document.createElement("p"), { className: "login-error", textContent: e.message }));
+    body.replaceChildren(el("p", { class: "login-error" }, e.message));
   }
 }
 
-loginForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
+busyForm(loginForm, async () => {
   const err = $("#login-error");
-  const button = loginForm.querySelector("button");
-  err.textContent = "";
-  button.disabled = true;
-  try {
-    const { res, data } = await postJSON("/api/login", { username: loginForm.username.value, password: loginForm.password.value, link: googleLink });
-    if (res.ok) {
-      if (data.google_linked) googleLink = "";
-      if (data.totp_required) {
-        ticket = data.ticket;
-        loginForm.password.value = "";
-        totpForm.reset();
-        $("#totp-error").textContent = "";
-        show(totpForm);
-      } else if (data.enrol_2fa) {
-        await enrol();
-      } else {
-        go();
-      }
-      return;
+  const { res, data } = await postJSON("/api/login", { username: loginForm.username.value, password: loginForm.password.value, link: googleLink });
+  if (res.ok) {
+    if (data.google_linked) googleLink = "";
+    if (data.totp_required) {
+      ticket = data.ticket;
+      loginForm.password.value = "";
+      totpForm.reset();
+      $("#totp-error").textContent = "";
+      show(totpForm);
+    } else if (data.enrol_2fa) {
+      await enrol();
+    } else {
+      go();
     }
-    err.textContent = data.error || `Sign-in failed (${res.status})`;
-    if (data.code === "unverified" && loginForm.username.value.includes("@")) {
-      const email = loginForm.username.value.trim();
-      err.append(" ", Object.assign(document.createElement("button"), {
-        type: "button", className: "link inline", textContent: "Send the link again",
-        onclick: async () => { const d = await submit(null, "/api/signup/resend", { email }); if (d) notice(d.message); },
-      }));
-    }
-    loginForm.password.select();
-  } catch {
-    err.textContent = "Can't reach the Dash server.";
-  } finally {
-    button.disabled = false;
+    return;
   }
+  err.textContent = data.error || `Sign-in failed (${res.status})`;
+  if (data.code === "unverified" && loginForm.username.value.includes("@")) {
+    const email = loginForm.username.value.trim();
+    err.append(" ", el("button", {
+      type: "button", class: "link inline",
+      onclick: async () => { const d = await submit(null, "/api/signup/resend", { email }); if (d) notice(d.message); },
+    }, "Send the link again"));
+  }
+  loginForm.password.select();
 });
 
 let recoveryMode = false;
@@ -112,41 +89,28 @@ $("#totp-recovery").addEventListener("click", () => {
   input.focus();
 });
 
-totpForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const err = $("#totp-error");
-  const button = totpForm.querySelector("button.primary");
-  err.textContent = "";
-  button.disabled = true;
-  try {
-    const { res, data } = await postJSON("/api/login/totp", { ticket, code: totpForm.code.value });
-    if (res.ok) {
-      if (data.recovery_used) {
-        const left = data.recovery_codes_left;
-        totpForm.replaceChildren(
-          Object.assign(document.createElement("p"), {
-            textContent: `You signed in with a recovery code. ${left === 0 ? "You have none left" : `${left} left`}: make new ones under Two-factor sign-in in the account menu${left < 3 ? " now" : ""}.`,
-          }),
-          Object.assign(document.createElement("button"), { className: "btn primary", type: "button", textContent: "Continue", onclick: go }),
-        );
-        totpForm.querySelector("button").focus();
-        return;
-      }
-      go();
+busyForm(totpForm, async () => {
+  const { res, data } = await postJSON("/api/login/totp", { ticket, code: totpForm.code.value });
+  if (res.ok) {
+    if (data.recovery_used) {
+      const left = data.recovery_codes_left;
+      totpForm.replaceChildren(
+        el("p", {}, `You signed in with a recovery code. ${left === 0 ? "You have none left" : `${left} left`}: make new ones under Two-factor sign-in in the account menu${left < 3 ? " now" : ""}.`),
+        el("button", { class: "btn primary", type: "button", onclick: go }, "Continue"),
+      );
+      totpForm.querySelector("button").focus();
       return;
     }
-    if (data.code === "ticket_expired") {
-      show(loginForm);
-      $("#login-error").textContent = data.error;
-      return;
-    }
-    err.textContent = data.error || `Sign-in failed (${res.status})`;
-    totpForm.code.select();
-  } catch {
-    err.textContent = "Can't reach the Dash server.";
-  } finally {
-    button.disabled = false;
+    go();
+    return;
   }
+  if (data.code === "ticket_expired") {
+    show(loginForm);
+    $("#login-error").textContent = data.error;
+    return;
+  }
+  $("#totp-error").textContent = data.error || `Sign-in failed (${res.status})`;
+  totpForm.code.select();
 });
 
 $("#enrol-logout").addEventListener("click", async () => {
@@ -168,23 +132,14 @@ if (new URLSearchParams(location.search).has("enrol")) {
 
 // submit posts body to path for a form (or none), and shows what the server
 // says: the same message whether or not the address has an account.
+// It returns the server's answer, or null after an error.
 async function submit(form, path, body) {
-  const err = form?.querySelector(".login-error");
-  const button = form?.querySelector("button.primary");
-  if (err) err.textContent = "";
-  if (button) button.disabled = true;
   try {
-    const { res, data } = await postJSON(path, body);
-    if (res.ok) return data;
-    if (err) err.textContent = data.error || `Something went wrong (${res.status})`;
-    else notice(data.error || `Something went wrong (${res.status})`);
-  } catch {
-    if (err) err.textContent = "Can't reach the Dash server.";
-    else notice("Can't reach the Dash server.");
-  } finally {
-    if (button) button.disabled = false;
+    return (await busy(form ? formParts(form) : {}, () => post(path, body))) ?? null;
+  } catch (e) {
+    notice(e instanceof ServerError ? e.message : CANT_REACH);
+    return null;
   }
-  return null;
 }
 
 for (const b of document.querySelectorAll(".to-login")) {
