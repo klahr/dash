@@ -58,9 +58,9 @@ A minimal `.env` for a hosted Dash:
     DASH_SMTP_PASSWORD=…
     DASH_SMTP_FROM="Dash <dash@example.com>"
 
-Remember that Dash runs commands and Claude Code on the machine it runs on, as the user it
-runs as, for every org. Open signup means letting strangers do that: only turn it on for
-an install built for it (see [Deploy the hub](deploy.md)).
+Remember that Dash runs commands and Claude Code on its runners, as their owners; the hub
+itself runs none. Open signup lets strangers sign up, register runners and use your hub:
+only turn it on for an install built for it (see [Deploy the hub](deploy.md)).
 
 ## What signing up does
 
