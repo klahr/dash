@@ -202,7 +202,6 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/projects/{pid}", s.getProject)
 	mux.HandleFunc("PATCH /api/projects/{pid}", s.updateProject)
 	mux.HandleFunc("DELETE /api/projects/{pid}", s.deleteProject)
-	mux.HandleFunc("GET /api/github/repo", s.lookupGitHubRepo)
 	mux.HandleFunc("POST /api/projects/{pid}/push", s.viaRunner(s.pushProject))
 	mux.HandleFunc("GET /api/projects/{pid}/unpushed", s.viaRunner(s.unpushed))
 	mux.HandleFunc("GET /api/projects/{pid}/remote", s.viaRunner(s.remoteStatus(false)))

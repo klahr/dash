@@ -33,7 +33,7 @@ func init() {
 		"GET /api/version",
 
 		"GET /api/projects", "POST /api/projects", "GET /api/projects/{pid}", "PATCH /api/projects/{pid}",
-		"DELETE /api/projects/{pid}", "GET /api/github/repo",
+		"DELETE /api/projects/{pid}",
 		"POST /api/projects/{pid}/push", "GET /api/projects/{pid}/unpushed", "GET /api/projects/{pid}/remote",
 		"POST /api/projects/{pid}/remote/fetch", "POST /api/projects/{pid}/remote/pull", "GET /api/projects/{pid}/graph", "GET /api/projects/{pid}/files",
 		"GET /api/projects/{pid}/file", "PUT /api/projects/{pid}/file", "POST /api/projects/{pid}/edits",

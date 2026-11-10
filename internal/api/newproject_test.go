@@ -54,24 +54,6 @@ func createProjectReq(t *testing.T, s *Server, body string) *httptest.ResponseRe
 	return w
 }
 
-func TestLookupGitHubRepo(t *testing.T) {
-	s := newProjectServer(t)
-	for name, want := range map[string]bool{"there": true, "nowhere": false} {
-		w := httptest.NewRecorder()
-		s.lookupGitHubRepo(w, httptest.NewRequest("GET", "/api/github/repo?name="+name, nil))
-		var got struct {
-			Exists bool   `json:"exists"`
-			Name   string `json:"name"`
-		}
-		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &got) != nil || got.Exists != want {
-			t.Fatalf("%s: %d %s", name, w.Code, w.Body)
-		}
-		if want && got.Name != "me/there" {
-			t.Fatalf("want me/there, got %q", got.Name)
-		}
-	}
-}
-
 func TestCreateProjectClonesExistingGitHubRepo(t *testing.T) {
 	s := newProjectServer(t)
 	if w := createProjectReq(t, s, `{"name":"There","github":"there"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "clone it") {

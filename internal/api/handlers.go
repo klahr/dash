@@ -545,26 +545,6 @@ func checkMergeMode(mode, remote string) error {
 	return fmt.Errorf("%w: merge_mode must be \"local\" or \"pr\"", errBadRequest)
 }
 
-// lookupGitHubRepo tells the new-project form whether a repository exists,
-// so it can offer to clone it instead of creating it.
-func (s *Server) lookupGitHubRepo(w http.ResponseWriter, r *http.Request) {
-	if s.hub() {
-		writeErr(w, fmt.Errorf("%w: the hub runs no gh; ask a runner (/peer/<runner>/api/github/repo)", errBadRequest))
-		return
-	}
-	name := strings.TrimSpace(r.URL.Query().Get("name"))
-	if name == "" {
-		writeErr(w, fmt.Errorf("%w: name is required", errBadRequest))
-		return
-	}
-	repo, ok, err := s.Git.LookupGitHubRepo(r.Context(), name)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"exists": ok, "name": repo.Name, "url": repo.URL})
-}
-
 // deleteProject removes a project from Dash after the user re-enters the
 // password. Optionally its folder goes too, and its GitHub repository; the
 // GitHub one first, so a gh failure leaves everything else as it was.
