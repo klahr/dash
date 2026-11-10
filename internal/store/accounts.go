@@ -120,6 +120,10 @@ type Invitation struct {
 	InvitedBy string    `json:"invited_by,omitempty"`
 	Created   time.Time `json:"created"`
 	Expires   time.Time `json:"expires"`
+	// AnyEmail: whoever has the link may accept it, even by signing in
+	// with Google as another address. Off, a Google sign-in must be the
+	// invited address (a password account accepts with the link either way).
+	AnyEmail bool `json:"any_email"`
 }
 
 // Session is who a browser session belongs to and the org they are working
@@ -132,7 +136,18 @@ type Session struct {
 	// Family is shared by the sessions one sign-in made on the base domain
 	// and the org subdomains it was handed to ("" for older sessions).
 	Family string
+	// Method is how the sign-in was made: MethodPassword or MethodGoogle.
+	Method string
+	// AuthAt is when the sign-in was made (a handed-off session keeps its
+	// family's); zero for sessions from before it was recorded.
+	AuthAt time.Time
 }
+
+// Sign-in methods (Session.Method).
+const (
+	MethodPassword = "password"
+	MethodGoogle   = "google"
+)
 
 // ---- validation ----
 
@@ -394,14 +409,27 @@ func (a *Accounts) CreateSession(key string, uid int64, now, expires time.Time) 
 // CreateSessionIn stores a session for uid under key working in org (0:
 // the user's first org), in family (see Session.Family; "" for none).
 func (a *Accounts) CreateSessionIn(key string, uid, org int64, family string, now, expires time.Time) error {
-	var fam any
+	return a.CreateSessionVia(key, uid, org, family, "", now, expires)
+}
+
+// CreateSessionVia is CreateSessionIn for a sign-in made with method
+// (MethodPassword, MethodGoogle). With method "", the session is another
+// host's of family's sign-in: it takes the method and time of the
+// family's first session (MethodPassword and now without one).
+func (a *Accounts) CreateSessionVia(key string, uid, org int64, family, method string, now, expires time.Time) error {
+	var fam, meth any
 	if family != "" {
 		fam = family
 	}
-	_, err := a.db.Exec(`INSERT INTO sessions (key, user_id, active_org_id, family, created_at, expires_at)
+	if method != "" {
+		meth = method
+	}
+	_, err := a.db.Exec(`INSERT INTO sessions (key, user_id, active_org_id, family, created_at, expires_at, method, auth_at)
 		VALUES (?1, ?2, COALESCE((SELECT org_id FROM org_memberships WHERE user_id = ?2 AND org_id = ?3),
-			(SELECT org_id FROM org_memberships WHERE user_id = ?2 ORDER BY created_at, org_id LIMIT 1)), ?4, ?5, ?6)`,
-		key, uid, org, fam, now.Unix(), expires.Unix())
+			(SELECT org_id FROM org_memberships WHERE user_id = ?2 ORDER BY created_at, org_id LIMIT 1)), ?4, ?5, ?6,
+			COALESCE(?7, (SELECT method FROM sessions WHERE family = ?4 AND user_id = ?2 ORDER BY created_at LIMIT 1), 'password'),
+			CASE WHEN ?7 IS NULL THEN COALESCE((SELECT MIN(auth_at) FROM sessions WHERE family = ?4 AND user_id = ?2 AND auth_at > 0), ?5) ELSE ?5 END)`,
+		key, uid, org, fam, now.Unix(), expires.Unix(), meth)
 	return err
 }
 
@@ -411,18 +439,18 @@ func (a *Accounts) CreateSessionIn(key string, uid, org int64, family string, no
 // ErrNotFound (and expired ones are deleted).
 func (a *Accounts) Session(key string, now time.Time) (Session, error) {
 	var s Session
-	var expires int64
+	var expires, authAt int64
 	var active sql.NullInt64
 	var orgID sql.NullInt64
 	var name, slug, folder, role, family sql.NullString
 	var require2FA, personal, required sql.NullBool
 	err := a.db.QueryRow(`SELECT u.id, u.username, COALESCE(u.email, ''), u.is_platform_admin, u.totp_secret IS NOT NULL,
-			s.expires_at, s.active_org_id, o.id, o.name, o.slug, COALESCE(o.folder, o.slug), o.require_2fa, o.personal_user_id IS NOT NULL, m.role, s.family, `+requires2FA+`
+			s.expires_at, s.active_org_id, o.id, o.name, o.slug, COALESCE(o.folder, o.slug), o.require_2fa, o.personal_user_id IS NOT NULL, m.role, s.family, s.method, s.auth_at, `+requires2FA+`
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		LEFT JOIN org_memberships m ON m.user_id = s.user_id AND m.org_id = s.active_org_id
 		LEFT JOIN organizations o ON o.id = m.org_id
 		WHERE s.key = ?`, key).Scan(&s.User.ID, &s.User.Username, &s.User.Email, &s.User.PlatformAdmin, &s.User.TOTP,
-		&expires, &active, &orgID, &name, &slug, &folder, &require2FA, &personal, &role, &family, &required)
+		&expires, &active, &orgID, &name, &slug, &folder, &require2FA, &personal, &role, &family, &s.Method, &authAt, &required)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s, ErrNotFound
 	}
@@ -435,6 +463,9 @@ func (a *Accounts) Session(key string, now time.Time) (Session, error) {
 	}
 	s.Needs2FA = !s.User.TOTP && required.Bool
 	s.Family = family.String
+	if authAt > 0 {
+		s.AuthAt = time.Unix(authAt, 0)
+	}
 	if role.Valid {
 		s.Org = &Membership{Org: Org{ID: orgID.Int64, Name: name.String, Slug: slug.String, Require2FA: require2FA.Bool, Personal: personal.Bool, Folder: folder.String}, Role: Role(role.String)}
 		return s, nil
@@ -660,6 +691,12 @@ const InvitationTTL = 7 * 24 * time.Hour
 // doesn't look at whether email has an account. Inviting the same address
 // again replaces the earlier invitation, whose link stops working.
 func (a *Accounts) Invite(actor, orgID int64, email string, role Role) (string, Invitation, error) {
+	return a.InviteWith(actor, orgID, email, role, true)
+}
+
+// InviteWith is Invite, saying whether a Google sign-in accepting it may
+// be another address than email (see Invitation.AnyEmail).
+func (a *Accounts) InviteWith(actor, orgID int64, email string, role Role, anyEmail bool) (string, Invitation, error) {
 	var inv Invitation
 	email, err := cleanEmail(email)
 	if err != nil {
@@ -682,27 +719,28 @@ func (a *Accounts) Invite(actor, orgID int64, email string, role Role) (string, 
 			return ErrPersonalOrg
 		}
 		inv.Org = mine.Org
-		return tx.QueryRow(`INSERT INTO org_invitations (org_id, email, role, token_hash, invited_by, created_at, expires_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
+		return tx.QueryRow(`INSERT INTO org_invitations (org_id, email, role, token_hash, invited_by, created_at, expires_at, any_email)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (org_id, email) DO UPDATE SET role = excluded.role, token_hash = excluded.token_hash,
-				invited_by = excluded.invited_by, created_at = excluded.created_at, expires_at = excluded.expires_at
-			RETURNING id`, orgID, email, role, hashToken(tok), actor, now.Unix(), now.Add(InvitationTTL).Unix()).Scan(&inv.ID)
+				invited_by = excluded.invited_by, created_at = excluded.created_at, expires_at = excluded.expires_at,
+				any_email = excluded.any_email
+			RETURNING id`, orgID, email, role, hashToken(tok), actor, now.Unix(), now.Add(InvitationTTL).Unix(), anyEmail).Scan(&inv.ID)
 	})
 	if err != nil {
 		return "", inv, err
 	}
-	inv.Email, inv.Role = email, role
+	inv.Email, inv.Role, inv.AnyEmail = email, role, anyEmail
 	inv.Created, inv.Expires = time.Unix(now.Unix(), 0).UTC(), time.Unix(now.Add(InvitationTTL).Unix(), 0).UTC()
 	return tok, inv, nil
 }
 
-const invitationCols = `SELECT i.id, o.id, o.name, o.slug, i.email, i.role, COALESCE(u.username, ''), i.created_at, i.expires_at
+const invitationCols = `SELECT i.id, o.id, o.name, o.slug, i.email, i.role, COALESCE(u.username, ''), i.created_at, i.expires_at, i.any_email
 	FROM org_invitations i JOIN organizations o ON o.id = i.org_id LEFT JOIN users u ON u.id = i.invited_by`
 
 func scanInvitation(sc interface{ Scan(...any) error }) (Invitation, error) {
 	var inv Invitation
 	var created, expires int64
-	err := sc.Scan(&inv.ID, &inv.Org.ID, &inv.Org.Name, &inv.Org.Slug, &inv.Email, &inv.Role, &inv.InvitedBy, &created, &expires)
+	err := sc.Scan(&inv.ID, &inv.Org.ID, &inv.Org.Name, &inv.Org.Slug, &inv.Email, &inv.Role, &inv.InvitedBy, &created, &expires, &inv.AnyEmail)
 	inv.Created, inv.Expires = time.Unix(created, 0).UTC(), time.Unix(expires, 0).UTC()
 	return inv, err
 }

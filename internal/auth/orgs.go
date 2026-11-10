@@ -56,6 +56,8 @@ func (a *Auth) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/tokens/{id}", a.sessionOnly(a.revokeToken))
 	a.twoFactorRoutes(mux)
 	a.signupRoutes(mux)
+	a.googleRoutes(mux)
+	a.ssoRoutes(mux)
 	if a.Domains != nil {
 		mux.HandleFunc("GET /go/{slug}", a.goOrg)
 	}
@@ -96,14 +98,20 @@ func accountError(w http.ResponseWriter, err error) {
 		code = http.StatusNotFound
 	case errors.Is(err, store.ErrLastOwner), errors.Is(err, store.ErrUsernameTaken),
 		errors.Is(err, store.ErrTOTPEnabled), errors.Is(err, store.ErrTOTPRequired), errors.Is(err, store.ErrTOTPSelf),
-		errors.Is(err, store.ErrPersonalOrg), errors.Is(err, store.ErrSlugTaken):
+		errors.Is(err, store.ErrPersonalOrg), errors.Is(err, store.ErrSlugTaken),
+		errors.Is(err, store.ErrIdentityTaken), errors.Is(err, store.ErrIdentityLinked), errors.Is(err, store.ErrNoPassword),
+		errors.Is(err, store.ErrDomainTaken):
 		code = http.StatusConflict
 	case errors.Is(err, store.ErrBadRole), errors.Is(err, store.ErrBadEmail), errors.Is(err, store.ErrBadUsername),
 		errors.Is(err, store.ErrWeakPassword), errors.Is(err, store.ErrBadOrgName), errors.Is(err, errBadBody),
 		errors.Is(err, store.ErrNoOrg), errors.Is(err, store.ErrBadScopes), errors.Is(err, store.ErrBadTokenName),
 		errors.Is(err, store.ErrTOTPNotSetUp), errors.Is(err, store.ErrNoPendingTOTP), errors.Is(err, store.ErrEmailLink),
-		errors.Is(err, store.ErrBadSlug), errors.Is(err, store.ErrSlugReserved):
+		errors.Is(err, store.ErrBadSlug), errors.Is(err, store.ErrSlugReserved),
+		errors.Is(err, store.ErrBadDomain), errors.Is(err, store.ErrBadJoinRole):
 		code = http.StatusBadRequest
+	case errors.Is(err, ErrReauthGoogle):
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "reauth_google"})
+		return
 	case errors.Is(err, ErrBadPassword), errors.Is(err, ErrSessionRequired):
 		code = http.StatusForbidden // not 401: that would sign the browser out
 	case errors.Is(err, ErrLockedOut):
@@ -159,6 +167,10 @@ func (a *Auth) me(w http.ResponseWriter, r *http.Request) {
 		// Platform admins create orgs; with open signup, everyone does.
 		"can_create_orgs": a.canCreateOrgs(id.User),
 	}
+	if has, err := a.acc.HasPassword(id.User.ID); err == nil {
+		resp["has_password"] = has // without one, a recent Google sign-in confirms changes
+	}
+	resp["google_available"] = a.googleAvailable(id)
 	if id.Token != nil {
 		resp["token"] = id.Token // a token works in its own org only
 		resp["orgs"] = []*store.Membership{id.Org}
@@ -346,6 +358,9 @@ func (a *Auth) invite(w http.ResponseWriter, r *http.Request, id *Identity) {
 		Email    string     `json:"email"`
 		Role     store.Role `json:"role"`
 		Password string     `json:"password"`
+		// AnyEmail: accepting by signing in with Google may be another
+		// address than Email.
+		AnyEmail bool `json:"any_email"`
 	}
 	if err := decodeBody(w, r, &req); err != nil {
 		accountError(w, err)
@@ -368,7 +383,7 @@ func (a *Auth) invite(w http.ResponseWriter, r *http.Request, id *Identity) {
 		accountError(w, err)
 		return
 	}
-	tok, inv, err := a.acc.Invite(id.User.ID, oid, req.Email, req.Role)
+	tok, inv, err := a.acc.InviteWith(id.User.ID, oid, req.Email, req.Role, req.AnyEmail)
 	if err != nil {
 		accountError(w, err)
 		return
@@ -431,7 +446,11 @@ func (a *Auth) lookupInvitation(w http.ResponseWriter, r *http.Request) {
 		accountError(w, err)
 		return
 	}
-	resp := map[string]any{"org": inv.Org, "role": inv.Role, "email": inv.Email, "invited_by": inv.InvitedBy, "expires": inv.Expires}
+	resp := map[string]any{"org": inv.Org, "role": inv.Role, "email": inv.Email, "invited_by": inv.InvitedBy, "expires": inv.Expires,
+		"any_email": inv.AnyEmail}
+	if _, ok := a.googleClient(inv.Org.ID); ok {
+		resp["google"] = true // accept by signing in with Google
+	}
 	if id, ok := a.session(r); ok {
 		resp["signed_in_as"] = id.User.Username
 	}

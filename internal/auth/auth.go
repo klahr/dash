@@ -136,6 +136,20 @@ type Auth struct {
 	Domains      *orgdomain.Domain
 	handoffKey   []byte               // signs handoff tokens; new on every start
 	handoffsUsed map[string]time.Time // spent handoff tokens' nonces, until they'd expire anyway
+
+	// Google is the instance's Google sign-in client (google.go); orgs may
+	// have their own, and a platform admin may set the instance's in
+	// settings instead.
+	Google GoogleConfig
+	// PublicURL is the public origin (-public-url): Google's redirect URI
+	// is on it. Empty: the base domain's, or the request's host.
+	PublicURL string
+
+	sealer       *Sealer                 // SetSecretKey: seals client secrets in the database
+	rp           oidcRP                  // OpenID providers' discovery and keys
+	googleIssuer string                  // tests: a fake Google
+	flows        map[string]*oidcFlow    // sign-ins at a provider, by the hash of their state
+	links        map[string]*pendingLink // Google identities waiting for their account's password
 }
 
 // New signs people in with the accounts in acc (see Accounts.Bootstrap for
@@ -144,8 +158,10 @@ func New(acc *store.Accounts) *Auth {
 	passhash.Prime() // so the first unknown-name login isn't slower than the rest
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
-	return &Auth{acc: acc, failed: map[string]*failures{}, limits: map[string]*failures{}, tickets: map[string]*loginTicket{}, now: time.Now, Lockout: DefaultLockout, recheck: 15 * time.Second,
-		handoffKey: key, handoffsUsed: map[string]time.Time{}}
+	a := &Auth{acc: acc, failed: map[string]*failures{}, limits: map[string]*failures{}, tickets: map[string]*loginTicket{}, now: time.Now, Lockout: DefaultLockout, recheck: 15 * time.Second,
+		handoffKey: key, handoffsUsed: map[string]time.Time{}, flows: map[string]*oidcFlow{}, links: map[string]*pendingLink{}}
+	a.rp.now = func() time.Time { return a.now() }
+	return a
 }
 
 // brand is a.Brand with its defaults.
@@ -278,21 +294,28 @@ func (a *Auth) session(r *http.Request) (*Identity, bool) {
 	return &Identity{Session: s, key: key}, true
 }
 
-// startSession signs uid in on this browser.
+// startSession signs uid in on this browser with their password.
 func (a *Auth) startSession(w http.ResponseWriter, r *http.Request, uid int64) error {
-	return a.startSessionIn(w, r, uid, 0, newFamily())
+	return a.startSessionVia(w, r, uid, 0, newFamily(), store.MethodPassword)
 }
 
 // startSessionIn signs uid in on this browser and host, working in org (0:
-// their first), as one of family's sessions (see store.Session.Family).
+// their first), as one of family's sessions (see store.Session.Family),
+// signed in the way the family was.
 func (a *Auth) startSessionIn(w http.ResponseWriter, r *http.Request, uid, org int64, family string) error {
+	return a.startSessionVia(w, r, uid, org, family, "")
+}
+
+// startSessionVia is startSessionIn for a sign-in made with method
+// (store.MethodPassword, store.MethodGoogle; "": as family's).
+func (a *Auth) startSessionVia(w http.ResponseWriter, r *http.Request, uid, org int64, family, method string) error {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
 	tok := base64.RawURLEncoding.EncodeToString(b)
 	now := a.now()
 	_ = a.acc.PruneSessions(now)
 	a.ensurePersonal(uid) // before the session picks the org to start in
-	if err := a.acc.CreateSessionIn(sessionKey(tok), uid, org, family, now, now.Add(sessionTTL)); err != nil {
+	if err := a.acc.CreateSessionVia(sessionKey(tok), uid, org, family, method, now, now.Add(sessionTTL)); err != nil {
 		return err
 	}
 	// No Domain: the cookie is the host's alone. On the parent domain it
@@ -524,6 +547,14 @@ func (a *Auth) ConfirmPassword(r *http.Request, password string) error {
 	}
 	// Per address only: a global lockout of new sign-ins mustn't stop
 	// someone already signed in.
+	if has, err := a.acc.HasPassword(id.User.ID); err == nil && !has {
+		// An account made by signing in with Google has no password: a
+		// recent Google sign-in confirms instead.
+		if id.Method == store.MethodGoogle && !id.AuthAt.IsZero() && a.now().Sub(id.AuthAt) <= reauthWindow {
+			return nil
+		}
+		return ErrReauthGoogle
+	}
 	f, ok := a.reserveLocal(a.clientIP(r))
 	if !ok {
 		return errLockedOut
@@ -536,6 +567,10 @@ func (a *Auth) ConfirmPassword(r *http.Request, password string) error {
 	a.release(f)
 	return nil
 }
+
+// ErrReauthGoogle is what ConfirmPassword says to an account without a
+// password whose Google sign-in isn't recent.
+var ErrReauthGoogle = errors.New("your account signs in with Google and has no password: sign out, sign in with Google again and retry within 10 minutes (or choose a password with “Forgot password?”)")
 
 type hubKey struct{}
 
@@ -601,6 +636,7 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		Link     string `json:"link"` // a Google identity waiting for this password (google.go)
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -624,7 +660,8 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if u.TOTP {
-		writeJSON(w, http.StatusOK, map[string]any{"totp_required": true, "ticket": a.newTicket(u.ID)})
+		writeJSON(w, http.StatusOK, map[string]any{"totp_required": true,
+			"ticket": a.newTicketFor(&loginTicket{user: u.ID, method: store.MethodPassword, link: req.Link})})
 		return
 	}
 	a.signedInFrom(ip)
@@ -637,7 +674,7 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("login", "err", err)
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true, "enrol_2fa": enrol})
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true, "enrol_2fa": enrol, "google_linked": a.redeemLink(r, req.Link, u.ID)})
 }
 
 // Logout handles POST /api/logout. It signs out the session's whole
@@ -703,6 +740,10 @@ var public = map[string]bool{
 	"/api/signup/verify":   true,
 	"/api/password/forgot": true,
 	"/api/password/reset":  true,
+	// Signing in with Google (google.go): before there's a session.
+	GoogleStartPath:    true,
+	GoogleCallbackPath: true,
+	googleStatusPath:   true,
 	// Claude Code's permission prompts and the chat's Dash tools; authenticated
 	// by a per-run bearer token instead.
 	"/mcp/permissions": true,
@@ -811,6 +852,10 @@ func (a *Auth) serveSession(w http.ResponseWriter, r *http.Request, id *Identity
 	}
 	if id.Org == nil && api && !orgFree(r.URL.Path) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "you aren't a member of any organization", "code": "no_org"})
+		return
+	}
+	if id.Org != nil && id.Method != store.MethodGoogle && !orgFree(r.URL.Path) && a.googleRequired(id) {
+		a.answerGoogleRequired(w, r, id, api)
 		return
 	}
 	r = r.WithContext(withIdentity(r.Context(), id))

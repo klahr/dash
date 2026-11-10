@@ -166,7 +166,8 @@ func isAPI(path string) bool {
 // they happen on the base domain only.
 func accountEntry(path string) bool {
 	return strings.HasPrefix(path, "/api/login") || strings.HasPrefix(path, "/api/signup") ||
-		strings.HasPrefix(path, "/api/password/") || strings.HasPrefix(path, "/api/invitations/")
+		strings.HasPrefix(path, "/api/password/") || strings.HasPrefix(path, "/api/invitations/") ||
+		path == googleStatusPath
 }
 
 // safeNext is next if it's a path on this host, else "/".
@@ -238,6 +239,17 @@ func (a *Auth) serveOrgHost(w http.ResponseWriter, r *http.Request, slug string,
 	case path == "/invite.html": // the browser keeps the #token
 		http.Redirect(w, r, a.origin(r, "")+"/invite.html", http.StatusSeeOther)
 		return
+	case path == GoogleStartPath && r.Method == http.MethodGet:
+		// Google sign-in starts (and comes back) on the base domain; this
+		// org is the one to sign in to.
+		q := r.URL.Query()
+		q.Set("org", slug)
+		q.Del("invite")
+		http.Redirect(w, r, a.origin(r, "")+GoogleStartPath+"?"+q.Encode(), http.StatusSeeOther)
+		return
+	case strings.HasPrefix(path, "/auth/"):
+		writeError(w, http.StatusNotFound, "not found")
+		return
 	case accountEntry(path) || path == "/go/" || strings.HasPrefix(path, "/go/"):
 		writeError(w, http.StatusNotFound, "not found")
 		return
@@ -292,6 +304,7 @@ func (a *Auth) serveOrgHost(w http.ResponseWriter, r *http.Request, slug string,
 var hostPage = template.Must(template.New("host").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{.Title}} · {{.Brand.Name}}</title>
+{{if .Refresh}}<meta http-equiv="refresh" content="0;url={{.Refresh}}">{{end}}
 <style>
 body{font:16px system-ui,sans-serif;background:#111;color:#eee;display:flex;justify-content:center;padding:3rem 1rem;margin:0}
 main{max-width:26rem;width:100%}h1{font-size:1.4rem}p{color:#bbb;line-height:1.45}a{color:#f0a37f}
@@ -303,6 +316,7 @@ button{padding:.55rem 1rem;border-radius:6px;border:0;background:#333;color:#eee
 </style></head><body><main>
 <h1>{{.Title}}</h1>
 {{if .Text}}<p>{{.Text}}</p>{{end}}
+{{if .Reason}}<p><small>Reason: <code>{{.Reason}}</code></small></p>{{end}}
 {{if .Orgs}}<ul>{{range .Orgs}}<li><a href="/go/{{.Slug}}">{{.Name}}<small>{{.Host}}</small></a></li>{{end}}</ul>{{end}}
 {{if .Link}}<p><a href="{{.Link}}">{{.LinkText}}</a></p>{{end}}
 {{if .SignOut}}<form method="post" action="/api/logout"><button>Sign out</button></form>{{end}}
@@ -316,6 +330,8 @@ type hostPageData struct {
 	Orgs           []pageOrg
 	Link, LinkText string
 	SignOut        bool
+	Refresh        string // go on to this URL at once
+	Reason         string // why something failed, by name
 	Brand          branding.Config
 }
 

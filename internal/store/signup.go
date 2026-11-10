@@ -330,7 +330,7 @@ func (a *Accounts) ResetPassword(tok, password string, now time.Time) (User, err
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec("UPDATE users SET password_hash = ?, password_changed_at = ? WHERE id = ? AND env_managed = 0",
+		if _, err := tx.Exec("UPDATE users SET password_hash = ?, has_password = 1, password_changed_at = ? WHERE id = ? AND env_managed = 0",
 			hash, now.UnixNano(), uid); err != nil {
 			return err
 		}

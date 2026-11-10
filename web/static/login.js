@@ -8,6 +8,7 @@ const resetForm = $("#reset");
 const verifyForm = $("#verify");
 const noticeCard = $("#notice");
 let ticket = "";
+let googleLink = ""; // a Google account waiting for this password to link it
 
 // Decorative pictures that fail to load go away (not with an inline
 // onerror: the Content-Security-Policy allows no inline script).
@@ -66,8 +67,9 @@ loginForm.addEventListener("submit", async (e) => {
   err.textContent = "";
   button.disabled = true;
   try {
-    const { res, data } = await postJSON("/api/login", { username: loginForm.username.value, password: loginForm.password.value });
+    const { res, data } = await postJSON("/api/login", { username: loginForm.username.value, password: loginForm.password.value, link: googleLink });
     if (res.ok) {
+      if (data.google_linked) googleLink = "";
       if (data.totp_required) {
         ticket = data.ticket;
         loginForm.password.value = "";
@@ -227,10 +229,44 @@ resetForm.addEventListener("submit", async (e) => {
   loginForm.querySelector("p").textContent = "Password changed. Sign in with your new password.";
 });
 
+// Sign in with Google, when this Dash (or the org being signed in to) has
+// it: the org is the one /go/<slug> in ?next leads to.
+async function setupGoogle() {
+  const next = new URLSearchParams(location.search).get("next") || "";
+  const org = (next.match(/^\/go\/([a-z0-9-]+)/) || [])[1] || new URLSearchParams(location.search).get("org") || "";
+  try {
+    const res = await fetch("/api/auth/google" + (org ? `?org=${encodeURIComponent(org)}` : ""));
+    if (!res.ok) return;
+    const g = await res.json();
+    if (!g.enabled) return;
+    const q = new URLSearchParams();
+    if (org) q.set("org", org);
+    if (next) q.set("next", next);
+    for (const area of document.querySelectorAll(".google-area")) {
+      area.querySelector("a").href = g.start + (q.size ? `?${q}` : "");
+      area.hidden = false;
+    }
+  } catch {}
+}
+setupGoogle();
+
 // Links from emails carry their token in the fragment, which isn't sent to
-// the server or in a Referer.
+// the server or in a Referer; so do Google sign-ins that need a second step.
 (async () => {
   const hash = new URLSearchParams(location.hash.slice(1));
+  if (hash.has("google_totp")) {
+    // Google signed in; the authenticator code is still to come.
+    ticket = hash.get("google_totp");
+    history.replaceState(null, "", location.pathname + location.search);
+    totpForm.reset();
+    show(totpForm);
+    return;
+  }
+  if (hash.has("google_link")) {
+    googleLink = hash.get("google_link");
+    history.replaceState(null, "", location.pathname + location.search);
+    loginForm.querySelector("p").textContent = "Sign in with your password once to link your Google account. After that, Google signs you in.";
+  }
   let status = { open: false, password_reset: false };
   try {
     const res = await fetch("/api/signup");

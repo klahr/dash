@@ -144,6 +144,97 @@ task's user and org too: the user who created the task (or, for tasks from befor
 account) in the task's org. Their tools only see that org's projects, and stop working if the user
 leaves it.
 
+## Sign in with Google
+
+Organizations on Google Workspace can let their people sign in with their Google accounts
+(OpenID Connect: Dash checks Google's signed ID token, with PKCE, state, a nonce and a cookie
+tying the sign-in to the browser that started it). Without a Google client nothing changes: there
+is no button, and `/auth/google/*` answers 404.
+
+### Creating the Google OAuth client
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), pick or create a project.
+2. **APIs & Services → OAuth consent screen**: user type **Internal** if only your Workspace should
+   sign in (Google then refuses everyone else), **External** for an instance serving several
+   organizations. The scopes are `openid`, `email` and `profile`.
+3. **Credentials → Create credentials → OAuth client ID**, type **Web application**, with this one
+   **authorized redirect URI**:
+
+   ```
+   https://<your Dash>/auth/google/callback
+   ```
+
+   `<your Dash>` is the host of `DASH_PUBLIC_URL`. With org subdomains it's the base domain
+   (`https://dash.example.com/auth/google/callback`), never an org's subdomain: everyone comes back
+   there and is then handed to their org's address, so you register one URI however many orgs there
+   are. The org settings page shows the exact URI to copy.
+
+### The instance's client, or an org's own
+
+- **The instance's** serves every organization that has none of its own. Set
+  `DASH_GOOGLE_CLIENT_ID` and `DASH_GOOGLE_CLIENT_SECRET` (in the environment or `.env`), or, if they
+  aren't set, a platform admin enters them under **Organization → Google sign-in**.
+- **An org's own**: an owner enters a client ID and secret under **Organization → Google sign-in**.
+  Its consent screen shows their organization and can be Internal to their Workspace. Signing in
+  to that org then uses it, and it only lets in accounts of the org's verified domains who are (or
+  become, by the rules below) members.
+
+Client secrets entered in Dash are encrypted (AES-256-GCM) with the hub's secret key before they
+reach the database, and the API never returns them: it says whether one is set. The key is
+`DASH_SECRET_KEY` (64 hex digits, e.g. `openssl rand -hex 32`), or else `<data>/secret.key`, made
+on first start. Back it up with the database: without it, stored client secrets can't be read and
+have to be entered again.
+
+### Org settings (owners and admins)
+
+Under **Organization → Google sign-in**:
+
+- **Google Workspace domains**, e.g. `example.com` (several allowed). A domain counts once it's
+  verified: an *owner* signs in with Google with an account of that Workspace (adding the domain
+  after linking one, or the **Test Google sign-in** button), or a platform admin approves it. A
+  verified domain belongs to one organization only. Dash trusts Google's `hd` (hosted domain)
+  claim, never the address's domain alone; consumer `gmail.com` accounts have none.
+- **Auto-join**: someone whose Google account is in a verified domain joins the org on their
+  *first* Google sign-in, as member (or admin; never owner). Someone an admin removes doesn't come
+  back by signing in again. Off, they need an invitation as before.
+- **Require Google sign-in**: members whose address is in a verified domain can't use the org with
+  a password session; they're asked to sign in with Google. Owners keep their password, so a broken
+  Google setup can't lock everyone out. API tokens and runners are unaffected.
+- **Also ask for the two-factor code after Google** (off by default): members with two-factor
+  sign-in enter their code after Google too. An org that requires two-factor sign-in always asks.
+- **Test Google sign-in** goes through Google with the org's client and shows what Google said
+  (address, Workspace domain, whether it's verified). It never signs anyone in.
+- **Sign out** on a member ends their sessions in the org at once.
+- **Recent sign-in activity**: Google sign-ins and failures, links, joins and setting changes (the
+  audit log, also in the server log as `auth event`).
+
+### Who gets in
+
+Google accounts are matched on Google's stable account id (`sub`), not the email address.
+
+- **Invitations**: the invitation page has **Join with Google**. The Google address must be the
+  invited one unless the inviter ticked *Let them join with any Google account*.
+- **A new account** with no invitation joins an org by auto-join only. Otherwise, with open signup
+  it gets a personal workspace, as signing up by email would; without, the sign-in page says the
+  organization hasn't enabled Dash. Nobody becomes an owner by signing in.
+- **An address that already has an account**: Google's first sign-in links to it only if its `hd`
+  is a verified domain of an org that account belongs to. Otherwise Dash asks for the account's
+  password once to confirm the link, so whoever holds a Google account with someone's address
+  can't take over their Dash account.
+- **Account → Google account** links or unlinks Google. An account made by signing in with Google
+  has no password: it can't unlink until it chooses one (*Forgot password?*), and where Dash asks
+  for the password before a change, a Google sign-in within the last 10 minutes confirms instead.
+- Failed Google sign-ins count towards the sign-in lockout, and answer with a page naming the reason
+  (never Google's raw error).
+
+### Removing people
+
+Dash checks with Google at every sign-in: someone suspended or removed in Google Workspace can't
+sign in with Google again, and an org that requires Google refuses an account no longer in its
+domain. **Sessions they already have last until they expire (7 days)**: end them with **Sign out**
+on the member (or remove the member, which takes effect at once). Their API tokens keep working
+until revoked or the member is removed.
+
 ## API
 
 | Method and path                                   | What                                      |
@@ -154,7 +245,7 @@ leaves it.
 | `GET /api/orgs/{id}/members`                      | members, `member_count`, and for admins the invitations |
 | `PATCH /api/orgs/{id}/members/{uid} {role, password}` | change a role                         |
 | `DELETE /api/orgs/{id}/members/{uid} {password}`  | remove a member, or leave                 |
-| `POST /api/orgs/{id}/invitations {email, role, password}` | invite; returns the link's `path` |
+| `POST /api/orgs/{id}/invitations {email, role, any_email, password}` | invite; returns the link's `path` |
 | `DELETE /api/orgs/{id}/invitations/{iid}`         | revoke an invitation                      |
 | `POST /api/invitations/{lookup,accept,register,decline} {token, …}` | the invitation page    |
 | `GET /api/tokens`                                 | your API tokens, connected apps, runners  |
@@ -167,6 +258,13 @@ leaves it.
 | `POST /api/account/2fa/disable {password}`        | turn it off                               |
 | `POST /api/account/2fa/recovery-codes {password}` | new recovery codes                        |
 | `PATCH /api/orgs/{id} {require_2fa, password}`    | owners: require it of every member        |
+| `GET /auth/google/start?org=&next=` (or `POST` with `invite`) | sign in with Google; `purpose=link` links the signed-in account, `purpose=test` tests an org's setup |
+| `GET /api/auth/google?org=`                       | whether the sign-in page offers Google    |
+| `GET /api/orgs/{id}/sso`, `PATCH … {client_id, client_secret, auto_join, join_role, require_google, google_2fa, password}` | an org's Google sign-in settings |
+| `POST /api/orgs/{id}/sso/domains {domain, password}`, `DELETE …/{domain}` | its Workspace domains |
+| `POST /api/orgs/{id}/members/{uid}/sign-out {password}` | admins: end a member's sessions in the org |
+| `GET /api/account/google`, `DELETE … {password}`  | your linked Google account; unlink        |
+| `GET /api/admin/sso`, `PUT /api/admin/sso/google`, `POST /api/admin/sso/domains/verify` | platform admins: the instance's client, approving domains |
 
 With a token, `GET /api/me` shows the token and its org, and the routes that manage members,
 invitations, tokens, two-factor sign-in and orgs answer 403.

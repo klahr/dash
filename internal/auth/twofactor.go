@@ -42,6 +42,9 @@ type loginTicket struct {
 	user    int64
 	expires time.Time
 	tries   int
+	method  string // how the first step was made (store.MethodPassword, store.MethodGoogle)
+	org     int64  // the org to sign in to (0: their first)
+	link    string // a Google identity to link once signed in (redeemLink)
 }
 
 var (
@@ -68,6 +71,11 @@ func twoFactorFree(path string) bool {
 }
 
 func (a *Auth) newTicket(uid int64) string {
+	return a.newTicketFor(&loginTicket{user: uid, method: store.MethodPassword})
+}
+
+// newTicketFor keeps t, waiting for its second factor, and returns its token.
+func (a *Auth) newTicketFor(t *loginTicket) string {
 	tok := randomToken()
 	now := a.now()
 	a.mu.Lock()
@@ -77,7 +85,8 @@ func (a *Auth) newTicket(uid int64) string {
 			delete(a.tickets, k)
 		}
 	}
-	a.tickets[sessionKey(tok)] = &loginTicket{user: uid, expires: now.Add(ticketTTL)}
+	t.expires = now.Add(ticketTTL)
+	a.tickets[sessionKey(tok)] = t
 	return tok
 }
 
@@ -221,12 +230,22 @@ func (a *Auth) loginTOTP(w http.ResponseWriter, r *http.Request) {
 	}
 	a.dropTicket(req.Ticket)
 	a.signedInFrom(ip)
-	if err := a.startSession(w, r, t.user); err != nil {
+	method := t.method
+	if method == "" {
+		method = store.MethodPassword
+	}
+	if err := a.startSessionVia(w, r, t.user, t.org, newFamily(), method); err != nil {
 		slog.Error("create session", "err", err)
 		writeError(w, http.StatusInternalServerError, "sign-in failed")
 		return
 	}
 	resp := map[string]any{"ok": true}
+	if method == store.MethodGoogle {
+		a.audit(r, store.AuthEvent{OrgID: t.org, UserID: t.user, Kind: "signin.google", Detail: "with two-factor code"})
+	}
+	if a.redeemLink(r, t.link, t.user) {
+		resp["google_linked"] = true
+	}
 	if recovery {
 		left, _ := a.acc.RecoveryCodesLeft(t.user)
 		resp["recovery_used"], resp["recovery_codes_left"] = true, left

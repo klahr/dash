@@ -151,6 +151,7 @@
               <button id="org-open" type="button" data-icon="users">Organization</button>
               <button id="runners-open" type="button" data-icon="computer" hidden>Runners</button>
               <button id="twofactor-open" type="button" data-icon="lock">Two-factor sign-in</button>
+              <button id="google-open" type="button" data-icon="key" hidden>Google account</button>
               <button id="prefs-open" type="button" data-icon="prefs">Preferences</button>
               <button id="connector-open" type="button" data-icon="plug">Connect Claude</button>
               <button id="tokens-open" type="button" data-icon="key">Tokens &amp; apps</button>
@@ -960,6 +961,7 @@
           <div class="rail-group"><span class="rail-head">People</span>
             <button type="button" class="rail-item" data-rail="members">Members</button>
             <button type="button" class="rail-item" data-rail="access">Address &amp; sign-in</button>
+            <button type="button" class="rail-item" data-rail="sso">Google sign-in</button>
           </div>
           <div class="rail-group"><span class="rail-head">Account</span>
             <button type="button" class="rail-item" data-rail="billing">Billing</button>
@@ -980,6 +982,7 @@
                 </select>
                 <button class="btn primary" id="org-invite-send" type="button" data-icon="send">Invite</button>
               </div>
+              <label class="org-require-2fa" id="org-invite-any-row" hidden><input type="checkbox" id="org-invite-any"> Let them join with any Google account, not just this address</label>
               <div id="org-invite-link" hidden></div>
               <h3 class="org-section" id="org-pending-head">Pending invitations</h3>
               <ul class="runner-list" id="org-pending"></ul>
@@ -996,6 +999,9 @@
               </div>
               <p class="hint" id="org-slug-hint" hidden>3 to 40 lower-case letters, digits or hyphens. The old address keeps leading here for 30 days, and no other organization can take it meanwhile.</p>
             </div>
+          </section>
+          <section class="rail-section" data-section="sso">
+            <div id="org-sso" hidden></div>
           </section>
           <section class="rail-section" data-section="billing">
             <div id="org-billing" hidden>
@@ -1035,6 +1041,14 @@
       <header class="sheet-head"><h2 id="twofactor-title" tabindex="-1" autofocus>Two-factor sign-in</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
     </form>
     <div class="twofactor-body" id="twofactor-body"></div>
+  </dialog>
+
+  <!-- The Google account linked to this one: link, unlink -->
+  <dialog class="sheet" id="google-sheet" aria-labelledby="google-title">
+    <form method="dialog">
+      <header class="sheet-head"><h2 id="google-title" tabindex="-1" autofocus>Google account</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+    </form>
+    <div class="twofactor-body" id="google-body"></div>
   </dialog>
 
   <!-- Re-enter the password before a sensitive change -->

@@ -33,6 +33,10 @@ async function load() {
     " to join ", Object.assign(document.createElement("strong"), { textContent: inv.org.name }),
     ` as ${article(inv.role)} ${inv.role}.`);
   document.title = `Join ${inv.org.name} · ${document.querySelector("meta[name=dash-name]")?.content || "Dash"}`;
+  if (inv.google && !inv.signed_in_as) {
+    $("#invite-google").hidden = false;
+    $("#invite-google-hint").textContent = inv.any_email ? "With any Google account." : `With the Google account of ${inv.email}.`;
+  }
   if (inv.signed_in_as) {
     $("#invite-accept").textContent = `Accept as ${inv.signed_in_as}`;
     $("#invite-signed-in").hidden = false;
@@ -52,6 +56,13 @@ $("#invite-register").addEventListener("submit", (e) => busy(e.target.querySelec
   await post("/api/invitations/register", { username: f.username.value.trim(), password: f.password.value });
   location.replace("/");
 })(e));
+// Joining with Google: the token goes in a form's body, never in a URL.
+$("#invite-google-btn").addEventListener("click", () => {
+  const f = Object.assign(document.createElement("form"), { method: "POST", action: "/auth/google/start" });
+  f.append(Object.assign(document.createElement("input"), { type: "hidden", name: "invite", value: token }));
+  document.body.append(f);
+  f.submit();
+});
 $("#invite-decline").addEventListener("click", busy($("#invite-decline"), async () => {
   await post("/api/invitations/decline");
   $("#invite-signed-in").hidden = $("#invite-register").hidden = $("#invite-decline").hidden = true;

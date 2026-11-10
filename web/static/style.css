@@ -1236,6 +1236,16 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .login-error { color: var(--failed); min-height: 1.5em; font-size: 14px; text-align: center; }
 .login-links { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px; }
 .login-links [hidden] { display: none; }
+/* Sign in with Google */
+.google-area { display: flex; flex-direction: column; gap: 8px; }
+.google-area[hidden] { display: none; }
+.login-or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+.login-or::before, .login-or::after { content: ""; flex: 1; border-top: 1px solid var(--line, #2a3345); }
+.google-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; }
+.google-btn svg { width: 18px; height: 18px; flex: none; }
+.sso-domains .tag-ok { color: var(--ok, #6c6); }
+.sso-domains .tag-wait { color: var(--muted); }
+.sso-events { font-size: 13px; max-height: 14em; overflow: auto; }
 
 /* Source code (AGPL), terms, privacy, contact: the end of every page. */
 .site-footer { font-size: 13px; color: var(--faint); text-align: center; }

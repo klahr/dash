@@ -304,6 +304,30 @@ func main() {
 			*projectRoot = c.Projects // from `dash runner setup --projects`
 		}
 	}
+	// Sign in with Google (docs/users.md): the instance's client from the
+	// environment; orgs' own clients and one set in settings are sealed in
+	// the database with the hub's secret key.
+	if !runnerMode {
+		authn.PublicURL = *publicURL
+		authn.Google = auth.GoogleConfig{ClientID: os.Getenv("DASH_GOOGLE_CLIENT_ID"), ClientSecret: os.Getenv("DASH_GOOGLE_CLIENT_SECRET")}
+		if (authn.Google.ClientID == "") != (authn.Google.ClientSecret == "") {
+			slog.Error("DASH_GOOGLE_CLIENT_ID and DASH_GOOGLE_CLIENT_SECRET go together")
+			os.Exit(1)
+		}
+		key, err := auth.LoadSecretKey(os.Getenv("DASH_SECRET_KEY"), filepath.Join(*dataDir, "secret.key"))
+		if err == nil {
+			err = authn.SetSecretKey(key)
+		}
+		if err != nil {
+			slog.Error("secret key", "err", err)
+			os.Exit(1)
+		}
+		if authn.Google.ClientID != "" && *publicURL != "" {
+			slog.Info("google sign-in", "redirect_uri", strings.TrimRight(*publicURL, "/")+auth.GoogleCallbackPath)
+		} else if authn.Google.ClientID != "" {
+			slog.Warn("google sign-in without -public-url: the redirect URI follows the host the browser used; set DASH_PUBLIC_URL to the one registered with Google")
+		}
+	}
 	var oauth *auth.OAuth
 	if *publicURL != "" {
 		if oauth, err = auth.NewOAuth(authn, *publicURL); err != nil {
