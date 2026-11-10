@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cgi"
@@ -319,13 +320,65 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
-func waitFor(t *testing.T, _ *proc, what string, ok func() bool) {
+// waitTimeout is how long waitFor waits. These tests run real dash processes
+// and, under `go test ./...`, compete for the CPU with every other package's
+// tests, so it is far longer than the few seconds each wait usually takes.
+const waitTimeout = 3 * time.Minute
+
+// waitFor polls ok until it holds. On timeout it fails with the API
+// responses of its last poll and the end of p's log (p may be nil), so the
+// cause shows next to the failure; the cleanup still logs every process.
+func waitFor(t *testing.T, p *proc, what string, ok func() bool) {
 	t.Helper()
-	for deadline := time.Now().Add(60 * time.Second); !ok(); time.Sleep(100 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
+	start := time.Now()
+	for lastPoll.reset(); !ok(); lastPoll.reset() {
+		if time.Since(start) > waitTimeout {
+			msg := fmt.Sprintf("timed out after %s waiting for %s\nthe last poll's API responses:\n%s", time.Since(start).Round(time.Second), what, lastPoll.get())
+			if p != nil {
+				msg += fmt.Sprintf("\nend of the log of dash %s:\n%s", p.name, tail(p.logs.String(), 40))
+			}
+			t.Fatal(msg)
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// lastPoll is the API requests clients made since waitFor's last poll began,
+// with their responses, for its timeout message. The package's tests don't
+// run in parallel.
+var lastPoll recorder
+
+type recorder struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (r *recorder) reset() { r.mu.Lock(); r.lines = nil; r.mu.Unlock() }
+
+func (r *recorder) add(format string, args ...any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.lines) < 20 {
+		r.lines = append(r.lines, fmt.Sprintf(format, args...))
+	}
+}
+
+func (r *recorder) get() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.lines) == 0 {
+		return "(none)"
+	}
+	return strings.Join(r.lines, "\n")
+}
+
+// tail is the last n lines of s.
+func tail(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 type client struct {
@@ -350,10 +403,16 @@ func (c *client) try(method, path string, body any) (int, string) {
 	req.Header.Set("Content-Type", "application/json")
 	res, err := c.c.Do(req)
 	if err != nil {
+		lastPoll.add("%s %s: %v", method, path, err)
 		return 0, err.Error()
 	}
 	defer res.Body.Close()
 	out, _ := io.ReadAll(res.Body)
+	got := string(out)
+	if len(got) > 2000 {
+		got = got[:2000] + "…"
+	}
+	lastPoll.add("%s %s: %d %s", method, path, res.StatusCode, got)
 	return res.StatusCode, string(out)
 }
 
