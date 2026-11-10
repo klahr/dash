@@ -1569,7 +1569,14 @@ function syncMenuBtn() {
   btn.setAttribute("aria-expanded", String(desktop.matches ? !sideCollapsed() : menuOpen()));
   btn.setAttribute("aria-label", label);
   btn.title = desktop.matches ? `${label} ([)` : "";
+  // The project name opens the dropdown on desktop and the drawer on phones.
+  $("#project-switch").setAttribute("aria-controls", desktop.matches ? "project-picker" : "menu");
 }
+// While the phone drawer is open it is modal: everything behind the scrim
+// (the top bar, main, the chat pane and the bottom nav's own buttons, which
+// share #menu's parent) is inert. An open task panel keeps its own inert state.
+const menuBackground = () => [...[".topbar", "main", "#chat-pane"].map((s) => $(s)).filter(Boolean),
+  ...$$(".nav > *").filter((el) => el.id !== "menu" && el.id !== "menu-scrim")];
 function setSideCollapsed(on) {
   $(".app").classList.toggle("side-collapsed", on);
   try { localStorage.setItem("dash.sideCollapsed", on ? "1" : "0"); } catch {}
@@ -1577,9 +1584,22 @@ function setSideCollapsed(on) {
 }
 function setMenu(open) {
   open = open && !desktop.matches;
+  const wasOpen = menuOpen();
+  const menu = $("#menu");
   $(".app").classList.toggle("menu-open", open);
   $("#menu-scrim").hidden = !open;
   $("#project-switch").setAttribute("aria-expanded", String(open));
+  if (open !== wasOpen) {
+    // The task panel makes the top bar, main and chat pane inert itself (and the
+    // whole .nav), so closing the drawer over it leaves those inert.
+    for (const el of menuBackground()) el.inert = open || (!!state.detail && !el.closest(".nav"));
+    if (open) { menu.setAttribute("role", "dialog"); menu.setAttribute("aria-modal", "true"); menu.setAttribute("aria-label", "Menu"); }
+    else { menu.removeAttribute("role"); menu.removeAttribute("aria-modal"); menu.removeAttribute("aria-label"); }
+    // Closing returns focus to the menu button, unless the caller already moved it
+    // somewhere outside the drawer (a section button, the palette).
+    const a = document.activeElement;
+    if (!open && (!a || a === document.body || menu.contains(a))) $("#menu-open").focus();
+  }
   syncMenuBtn();
 }
 try { $(".app").classList.toggle("side-collapsed", localStorage.getItem("dash.sideCollapsed") === "1"); } catch {}
