@@ -11,7 +11,11 @@ func TestSafeRunnerHeader(t *testing.T) {
 		{"text/plain; charset=utf-8", "text/plain; charset=utf-8", ""},
 		{"image/png", "image/png", ""},
 		{"text/html; charset=utf-8", "application/octet-stream", "attachment"},
-		{"image/svg+xml", "application/octet-stream", "attachment"},
+		// SVG renders inline (project icons); the sandbox CSP and nosniff,
+		// checked below for every case, keep its script from running.
+		{"image/svg+xml", "image/svg+xml", ""},
+		{"IMAGE/SVG+XML", "image/svg+xml", ""},
+		{"image/svg+xml; charset=utf-8", "image/svg+xml", ""},
 		{"application/javascript", "application/octet-stream", "attachment"},
 		{"TEXT/HTML", "application/octet-stream", "attachment"},
 		{"", "application/octet-stream", "attachment"},

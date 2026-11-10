@@ -66,3 +66,21 @@ func TestHubForwardsOrRefusesWorkingTreeRoutes(t *testing.T) {
 		t.Errorf("deleting a hub project's files: %d %s", w.Code, w.Body)
 	}
 }
+
+// A runner's SVG upload (most project icons) is served inline, so an <img>
+// shows it, yet sandboxed, so its script can't run.
+func TestForwardedServesSVGInlineButSandboxed(t *testing.T) {
+	w := httptest.NewRecorder()
+	forwarded{
+		code:   http.StatusOK,
+		header: http.Header{"Content-Type": {"image/svg+xml"}, "Content-Security-Policy": {"script-src *"}},
+		body:   []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`),
+	}.write(w)
+	h := w.Header()
+	if h.Get("Content-Type") != "image/svg+xml" || h.Get("Content-Disposition") != "" {
+		t.Fatalf("not inline: %v", h)
+	}
+	if h.Get("Content-Security-Policy") != tunnel.RunnerCSP || h.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("not sandboxed: %v", h)
+	}
+}

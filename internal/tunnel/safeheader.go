@@ -12,13 +12,20 @@ import (
 // session. So the hub never lets a runner choose how its answer is
 // rendered: SafeRunnerHeader keeps only the content types the dashboard
 // reads from runners (JSON, plain text such as logs and diffs, event
-// streams, raster images such as uploads) and makes anything else a
+// streams, images such as uploads and project icons) and makes anything else a
 // download, and it always forbids sniffing and script.
 
 // RunnerCSP is the Content-Security-Policy of every answer from a runner.
 const RunnerCSP = "default-src 'none'; sandbox"
 
 // safeRunnerTypes are the media types a runner's answer may keep.
+//
+// SVG is allowed even though an SVG can hold script, because most project
+// icons are SVG (findFavicon prefers favicon.svg). Its script can't run: the
+// answer always carries nosniff and RunnerCSP, whose sandbox and
+// default-src 'none' stop script and outside loads both in an <img> (which
+// never runs script anyway) and when the SVG is opened directly. The hub's
+// own getUpload relies on the same headers for SVG.
 var safeRunnerTypes = map[string]bool{
 	"application/json":  true,
 	"text/plain":        true,
@@ -27,6 +34,7 @@ var safeRunnerTypes = map[string]bool{
 	"image/jpeg":        true,
 	"image/gif":         true,
 	"image/webp":        true,
+	"image/svg+xml":     true,
 }
 
 // SafeRunnerHeader makes h, the header of a runner's answer, safe to serve
