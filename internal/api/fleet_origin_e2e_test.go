@@ -44,7 +44,16 @@ func TestRunnersFollowEachOthersPushes(t *testing.T) {
 	hub, _, _ := boardServer(t)
 	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}
 	hub.Peers = &peer.Hub{Self: "hub", Runners: rh}
-	d := &dispatch.Dispatcher{Store: raw(hub), Fleet: rh, Grace: time.Minute, Pub: hub.Hub}
+	var hubMu sync.Mutex
+	hubChecklists := map[string]int{} // checklist.updated events the hub published, per project
+	d := &dispatch.Dispatcher{Store: raw(hub), Fleet: rh, Grace: time.Minute, Pub: pubFunc(func(ev model.Event) {
+		if ev.Type == model.EvChecklist {
+			hubMu.Lock()
+			hubChecklists[ev.ProjectID]++
+			hubMu.Unlock()
+		}
+		hub.Hub.Publish(ev)
+	})}
 	rh.OnState, rh.OnRevoke, rh.OnReport = d.State, d.Revoked, d.Report
 	hub.Dispatch = d
 	ctx, cancel := context.WithCancel(context.Background())
@@ -192,6 +201,25 @@ func TestRunnersFollowEachOthersPushes(t *testing.T) {
 	if st := a.merges.Remote.Status(pa); st.Behind != 0 || st.Stuck != "" {
 		t.Errorf("alpha's status %+v", st)
 	}
+
+	// A checklist edit on the hub is committed on a runner; the hub's
+	// dashboards hear that TODO.md changed, to read it again.
+	hubMu.Lock()
+	if n := hubChecklists[p.ID]; n != 0 {
+		t.Errorf("checklist news before TODO.md existed: %d", n)
+	}
+	hubMu.Unlock()
+	w = httptest.NewRecorder()
+	hub.mux().ServeHTTP(w, asOwner(t, hub, httptest.NewRequest("POST", "/api/projects/"+p.ID+"/checklist",
+		strings.NewReader(`{"ops":[{"op":"add","text":"From the hub"}]}`))))
+	if w.Code != http.StatusOK {
+		t.Fatalf("checklist edit on the hub: %d %s", w.Code, w.Body)
+	}
+	eventually(t, "the hub to announce the checklist change", func() bool {
+		hubMu.Lock()
+		defer hubMu.Unlock()
+		return hubChecklists[p.ID] > 0
+	})
 }
 
 // A runner takes "origin moved" only from its hub, about a project linked

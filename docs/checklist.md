@@ -45,8 +45,16 @@ Where a change goes depends on the file:
   and the list shows the change once that task is merged. On a hub, such a project's `TODO.md`
   can't be changed from the checklist.
 
-If the file changed since you loaded it (someone pushed, or another tab saved), the save is
-refused, the view reloads `TODO.md`, and a message asks you to make your change again.
+The list updates by itself when `TODO.md` changes elsewhere: a change from another tab or
+device, from a chat's or Claude's checklist tools, or a merge, pull or sync that brings in a new
+`TODO.md`. On a hub, the runner that committed the change tells the hub, which tells the page.
+While you have changes that aren't saved yet, or are editing an item, the list waits and reads the
+file once you're done. If the file changed since you loaded it (someone pushed, or another tab
+saved), the save is refused, the view reloads `TODO.md`, and a message asks you to make your
+change again.
+
+Dash doesn't watch the files in the checkout: after editing an untracked `TODO.md` by hand, press
+`r` on the Checklist view to read it again.
 
 ## Moving an item to the board
 
@@ -63,7 +71,7 @@ toast says the item is still in the file; nothing is created twice.
 
 On the Checklist view: `j`/`k` move between items, `x` (or `Space`) checks or unchecks, `m`
 moves the item to a draft, `M` moves and queues it, `e` (or `Enter`) edits, `dd` deletes, `a`
-focuses the "Add an item" field.
+focuses the "Add an item" field, `r` reads `TODO.md` again.
 
 ## MCP tools
 
@@ -98,3 +106,7 @@ tasks are what `create_todo` makes.
 - `POST /api/projects/{id}/checklist/move` with `{"ref": "…", "queue": false, "priority": 1,
   "depends_on": []}`: answers `{"task": …, "removed": true}`, or `removed: false` with `error`
   when the task was made but the item is still there.
+
+The `/ws/events` stream sends `checklist.updated` (with `project_id` and `data.version`, the
+file's new version, empty when it is gone or, on a hub, not known) whenever `TODO.md` changes on
+the default branch, or a checklist save writes an untracked one.

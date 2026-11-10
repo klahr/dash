@@ -1019,7 +1019,7 @@ function onEvent(ev, m = { name: "" }) {
         if (prev && prev.status !== ev.data.status) {
           if (ev.data.status === "review") { toast(title(ev.data), { tone: "review", head: "Ready for review", action: openTodo(ev.todo_id) }); notify("Ready for review", ev.data); }
           if (ev.data.status === "failed") { toast(title(ev.data), { tone: "error", head: "Failed", action: openTodo(ev.todo_id) }); notify("Failed", ev.data, ev.data.error); }
-          if (ev.data.status === "merged") { toast(title(ev.data), { tone: "ok", head: "Merged", icon: "merge" }); notify("Merged", ev.data); loadUnpushed().catch(fail); if (state.view === "checklist" && !cl.pending.length) loadChecklist().catch(fail); }
+          if (ev.data.status === "merged") { toast(title(ev.data), { tone: "ok", head: "Merged", icon: "merge" }); notify("Merged", ev.data); loadUnpushed().catch(fail); }
         }
         if (prev && prev.revert?.commit !== ev.data.revert?.commit) loadUnpushed().catch(fail);
         if (prev && !prev.revert && ev.data.revert) {
@@ -1062,6 +1062,9 @@ function onEvent(ev, m = { name: "" }) {
       break;
     case "process.updated":
       if (mine) loadProcs().catch(fail);
+      break;
+    case "checklist.updated":
+      if (mine) clChanged(ev.data?.version);
       break;
     case "preview.updated":
       previewEvent(ev.data, m);
@@ -1859,7 +1862,7 @@ async function pushDone() {
   try {
     await api("POST", `/api/projects/${p.id}/push`);
     toast(`Pushed ${baseBranch(p)}`);
-    await Promise.all([loadUnpushed(), state.view === "checklist" && loadChecklist()]);
+    await loadUnpushed(); // a checklist the push's sync changed hears of it (checklist.updated)
   } finally { renderPushMain(); }
 }
 
@@ -9401,13 +9404,14 @@ const cl = {
   cursor: null,     // ref (or "tmp:n") of the item the keys act on
   editing: null,    // ref being edited
   menu: null,       // ref whose move menu is open
+  stale: null,      // TODO.md changed elsewhere while there were unsaved changes: its new version (true: not known)
 };
 
 const clItemsOf = (doc) => (doc?.sections || []).flatMap((s) => s.entries.filter((e) => e.item).map((e) => e.item));
 
 function resetChecklist() {
   clearTimeout(cl.timer);
-  Object.assign(cl, { key: projectKey(state.project), doc: null, pending: [], timer: null, cursor: null, editing: null, menu: null });
+  Object.assign(cl, { key: projectKey(state.project), doc: null, pending: [], timer: null, cursor: null, editing: null, menu: null, stale: null });
   renderChecklist();
 }
 
@@ -9419,10 +9423,33 @@ async function loadChecklist() {
   }
   if (!p) return renderChecklist();
   await flushChecklist();
+  cl.stale = null; // what is read now is as new as it gets
   const doc = await api("GET", `/api/projects/${p.id}/checklist`);
   if (projectKey(state.project) !== projectKey(p)) return;
   cl.doc = doc;
   renderChecklist();
+}
+
+// clChanged is told that the open project's TODO.md changed (checklist.updated:
+// a commit from another tab or device, the board's MCP tools, a merge, pull
+// or sync, or a save of an untracked TODO.md). The checklist on screen reads
+// it again, unless that is the version it shows already (its own save); with
+// changes not saved yet, or an item being edited, it waits for those: saving
+// answers with the file as committed, and a clash is a 409 that reads it
+// again. A checklist not on screen is read when it is opened.
+function clChanged(version) {
+  if (state.view !== "checklist" || !cl.doc) return;
+  if (version && version === cl.doc.version) return;
+  cl.stale = version || true;
+  clCatchUp();
+}
+
+// clCatchUp reads TODO.md again if it changed elsewhere and nothing of the
+// user's is in the way any more.
+function clCatchUp() {
+  if (!cl.stale || cl.pending.length || cl.editing || cl.saving || state.view !== "checklist") return;
+  if (cl.stale === cl.doc?.version) { cl.stale = null; return; }
+  loadChecklist().catch(fail);
 }
 
 // queueOp records a change, shows it, and saves it after CL_DELAY.
@@ -9456,6 +9483,7 @@ async function flushChecklist() {
   const ops = cl.pending.map(({ tmp, ...o }) => o);
   const sent = cl.pending;
   cl.pending = [];
+  cl.stale = null; // the save answers with TODO.md as it is after it
   renderChecklistState("Saving…");
   cl.saving = api("POST", `/api/projects/${p.id}/checklist`, { version: cl.doc.version, ops }, p.prefix || "");
   try {
@@ -9479,9 +9507,11 @@ async function flushChecklist() {
       return;
     }
     cl.pending = [];
+    cl.saving = null; // or loadChecklist's flush waits for this save forever
     await loadChecklist().catch(fail);
   } finally {
     cl.saving = null;
+    clCatchUp(); // changed elsewhere while this was saving
   }
 }
 
@@ -9531,7 +9561,6 @@ function renderChecklist() {
   if (!p) { $("#cl-empty").hidden = false; $("#cl-empty-title").textContent = "No project"; $("#cl-empty-text").textContent = "Select a project to see its TODO.md."; $("#cl-create").hidden = true; }
   else { $("#cl-empty-title").textContent = "No TODO.md"; $("#cl-empty-text").textContent = "This project has no TODO.md at the root of its repository. Add a first item to create one."; $("#cl-create").hidden = false; }
   $("#cl-add").hidden = !exists;
-  $("#cl-reload").hidden = !p;
   renderChecklistState();
   const sel = $("#cl-add-section"), keep = sel.value;
   sel.replaceChildren(...sections.filter((s) => s.title).map((s) => h("option", { value: s.title }, s.title)));
@@ -9570,7 +9599,7 @@ function clItem(it) {
       const [first, ...rest] = ta.value.trim().split("\n");
       if (save && first.trim() && ta.value.trim() !== (it.more ? `${it.text}\n${it.more}` : it.text)) {
         queueOp(clOp(it, { op: "edit", text: first.trim(), more: rest.join("\n").trim() }));
-      } else renderChecklist();
+      } else { renderChecklist(); clCatchUp(); }
     };
     ta.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); done(true); }
@@ -9643,12 +9672,12 @@ $("#cl-create").addEventListener("click", attempt(async () => {
   const text = await ask({ title: "Create TODO.md", body: "Its first item:", input: true, placeholder: "Something to do", ok: "Create" });
   if (text) { addChecklistItem(text, ""); await flushChecklist(); }
 }));
-$("#cl-reload").addEventListener("click", () => loadChecklist().catch(fail));
 addEventListener("pagehide", () => { if (cl.pending.length) flushChecklist().catch(() => {}); });
 document.addEventListener("visibilitychange", () => { if (document.hidden && cl.pending.length) flushChecklist().catch(() => {}); });
 
 // Keys on the checklist view: j/k move, x toggles, m/M move, e edits, dd
-// deletes, a adds.
+// deletes, a adds, r reads TODO.md again (it updates by itself; r is for
+// edits made by hand to a TODO.md git doesn't track).
 function clMoveCursor(d, abs) {
   const refs = $$("#cl-body .cl-item").map((el) => el.dataset.ref);
   if (!refs.length) return;
@@ -9670,6 +9699,7 @@ async function checklistKey(k, n, hadCount) {
     case "gg": return clMoveCursor(0, hadCount ? n - 1 : 0);
     case "G": return clMoveCursor(0, hadCount ? n - 1 : Infinity);
     case "a": case "i": return $("#cl-add").hidden ? $("#cl-create").click() : $("#cl-add-text").focus();
+    case "r": return loadChecklist();
   }
   if (!it) return;
   switch (k) {

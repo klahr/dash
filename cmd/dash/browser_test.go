@@ -184,6 +184,15 @@ func TestBrowserChecklist(t *testing.T) {
 	if len(todos) != 1 || todos[0].Title != "Second thing" || todos[0].Status != "draft" {
 		t.Fatalf("tasks: %+v", todos)
 	}
+
+	// A change made elsewhere (another tab, the board's MCP tools) shows
+	// up by itself: the runner commits it, the hub hears of it in the
+	// runner's report and tells the page, which reads TODO.md again.
+	api.must("POST", "/api/projects/"+pid+"/checklist", map[string]any{
+		"ops": []map[string]any{{"op": "add", "text": "Made elsewhere"}},
+	}, http.StatusOK, nil)
+	b.waitJS("the change made elsewhere", `[...document.querySelectorAll("#cl-body .cl-item")].some((e) => e.textContent.includes("Made elsewhere"))`)
+	b.waitJS("no Reload button", `!document.querySelector("#cl-reload")`)
 }
 
 // A CLI project's terminal preview: open it on a task in review, type in

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/checklist"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
@@ -75,6 +76,9 @@ type RemoteSync struct {
 	retryAt  map[string]time.Time
 	selected map[string]time.Time
 	tried    map[string]time.Time // last fetch attempt, for Idle
+	// checklists is each project's TODO.md blob on its default branch as
+	// last seen ("" = none there), for checklistMoved.
+	checklists map[string]string
 }
 
 func (r *RemoteSync) clock() time.Time {
@@ -206,6 +210,7 @@ func (r *RemoteSync) record(p model.Project, fetchErr error) {
 // recount refreshes the ahead/behind counts from the refs as they are (no
 // fetch), e.g. after a merge moved the default branch.
 func (r *RemoteSync) recount(ctx context.Context, p model.Project) {
+	r.checklistMoved(ctx, p)
 	if !p.SyncsRemote() {
 		return
 	}
@@ -219,6 +224,47 @@ func (r *RemoteSync) recount(ctx context.Context, p model.Project) {
 		st.Stuck = "" // caught up, however that happened
 	}
 	r.set(st)
+}
+
+// checklistMoved publishes model.EvChecklist when p's TODO.md on the
+// default branch isn't the blob it was when last looked at: a merge, a
+// commit of the file, a pull or a sync changed it. It is called wherever
+// the default branch may have moved (recount, MergeQueue.land); reading
+// the blob's id is one rev-parse. The first look at a project tells too,
+// unless it has no TODO.md: nobody can have it on screen older than that.
+func (r *RemoteSync) checklistMoved(ctx context.Context, p model.Project) {
+	if p.Path == "" {
+		return
+	}
+	blob, err := r.Git.Blob(ctx, p.ID, p.Path, "refs/heads/"+p.Base(), checklist.Name)
+	if err != nil && ctx.Err() != nil {
+		return
+	}
+	if err != nil {
+		blob = "" // no TODO.md there (or no branch yet)
+	}
+	r.mu.Lock()
+	if r.checklists == nil {
+		r.checklists = map[string]string{}
+	}
+	prev, had := r.checklists[p.ID]
+	r.checklists[p.ID] = blob
+	r.mu.Unlock()
+	if prev == blob && (had || blob == "") {
+		return
+	}
+	r.ChecklistChanged(p.ID, blob)
+}
+
+// ChecklistChanged tells dashboards (and, on a runner, the hub) that
+// project id's TODO.md changed, so an open checklist reads it again.
+// version is the file's version now, as the checklist API gives it ("" =
+// gone, or not known): a dashboard that has it already needn't read it.
+func (r *RemoteSync) ChecklistChanged(projectID, version string) {
+	if r.Pub != nil {
+		r.Pub.Publish(model.Event{Type: model.EvChecklist, ProjectID: projectID,
+			Data: map[string]string{"path": checklist.Name, "version": version}, Time: r.clock()})
+	}
 }
 
 // Behind lists the projects whose default branch is behind origin's, as of

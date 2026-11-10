@@ -675,6 +675,7 @@ const (
 	EvUsage          EventType = "usage.updated"      // subscription rate-limit usage / queue pause state
 	EvCI             EventType = "ci.updated"         // GitHub Actions status of a project's default branch
 	EvRemote         EventType = "remote.updated"     // how the default branch compares with origin's, after a fetch
+	EvChecklist      EventType = "checklist.updated"  // the project's TODO.md changed (on the default branch, or in the checkout when git doesn't track it)
 	EvCheckouts      EventType = "checkouts.updated"  // a hub's project: the runners whose checkout is behind origin; Data is []Checkout
 	EvPreview        EventType = "preview.updated"    // a todo's live preview started, came up, crashed or stopped
 	EvIssueUpdated   EventType = "issue.updated"      // an issue was added or changed; Data is the Issue

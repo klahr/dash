@@ -49,6 +49,7 @@ type Reporter struct {
 	mu     sync.Mutex
 	live   map[string]*liveOutput // runner todo id → Claude's output since the last report
 	procs  map[string]bool        // hub project ids whose processes changed since the last report
+	lists  map[string]bool        // hub project ids whose TODO.md changed since the last report
 	pushes []Push                 // not yet reported
 }
 
@@ -136,6 +137,8 @@ func (r *Reporter) Observe(ev model.Event) {
 		r.observeOutput(ev)
 	case model.EvProcUpdated:
 		r.observeProc(ev)
+	case model.EvChecklist:
+		r.observeChecklist(ev)
 	case model.EvPermission:
 		if ev.TodoID == "" || r.Store == nil {
 			return
@@ -148,7 +151,15 @@ func (r *Reporter) Observe(ev model.Event) {
 
 // observeProc keeps, for the next report, that a process of the clone of a
 // hub's project started or ended.
-func (r *Reporter) observeProc(ev model.Event) {
+func (r *Reporter) observeProc(ev model.Event) { r.observeProject(ev, &r.procs) }
+
+// observeChecklist keeps, for the next report, that the TODO.md of the
+// clone of a hub's project changed (committed here, or brought in).
+func (r *Reporter) observeChecklist(ev model.Event) { r.observeProject(ev, &r.lists) }
+
+// observeProject adds the hub project of ev's project to set, and asks for
+// a report soon.
+func (r *Reporter) observeProject(ev model.Event, set *map[string]bool) {
 	if ev.ProjectID == "" || r.Store == nil {
 		return
 	}
@@ -157,10 +168,10 @@ func (r *Reporter) observeProc(ev model.Event) {
 		return
 	}
 	r.mu.Lock()
-	if r.procs == nil {
-		r.procs = map[string]bool{}
+	if *set == nil {
+		*set = map[string]bool{}
 	}
-	r.procs[p.HubProjectID] = true
+	(*set)[p.HubProjectID] = true
 	r.mu.Unlock()
 	r.Nudge()
 }
@@ -213,14 +224,20 @@ func (r *Reporter) takeLive() map[string]*liveOutput {
 
 // takeProcs hands over the hub projects whose processes changed since the
 // last report.
-func (r *Reporter) takeProcs() []string {
+func (r *Reporter) takeProcs() []string { return r.take(&r.procs) }
+
+// takeChecklists hands over the hub projects whose TODO.md changed since
+// the last report.
+func (r *Reporter) takeChecklists() []string { return r.take(&r.lists) }
+
+func (r *Reporter) take(set *map[string]bool) []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]string, 0, len(r.procs))
-	for id := range r.procs {
+	out := make([]string, 0, len(*set))
+	for id := range *set {
 		out = append(out, id)
 	}
-	r.procs = nil
+	*set = nil
 	sort.Strings(out)
 	return out
 }
@@ -252,6 +269,9 @@ func (r *Reporter) Build(now time.Time) Report {
 	}
 	if procs := r.takeProcs(); len(procs) > 0 {
 		rep.Procs = procs
+	}
+	if lists := r.takeChecklists(); len(lists) > 0 {
+		rep.Checklists = lists
 	}
 	todos := r.Store.ListTodos("")
 	if r.Perms != nil {

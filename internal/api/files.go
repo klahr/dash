@@ -16,6 +16,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/klahr/dash/internal/checklist"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -191,7 +192,11 @@ func (s *Server) writeLocalFile(ctx context.Context, p model.Project, name, vers
 	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
 		return "", err
 	}
-	return fileVersion([]byte(content)), nil
+	v := fileVersion([]byte(content))
+	if name == checklist.Name && s.Merges != nil {
+		s.Merges.Remote.ChecklistChanged(p.ID, v) // open checklists read it again
+	}
+	return v, nil
 }
 
 // saveLocalFile writes a local file in the checkout, unless it changed on

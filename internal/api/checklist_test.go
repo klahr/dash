@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/klahr/dash/internal/checklist"
@@ -151,7 +152,13 @@ func TestChecklistCommitConflict(t *testing.T) {
 
 // An untracked TODO.md is saved in the checkout, with no commit.
 func TestChecklistLocalFile(t *testing.T) {
-	_, p, h := checklistServer(t, "")
+	s, p, h := checklistServer(t, "")
+	var told atomic.Int32 // checklist.updated events: open checklists read it again
+	s.Merges.Remote.Pub = pubFunc(func(ev model.Event) {
+		if ev.Type == model.EvChecklist && ev.ProjectID == p.ID {
+			told.Add(1)
+		}
+	})
 	if c := readList(t, h, p); c.Exists || c.Version != "" {
 		t.Fatalf("no file: %+v", c)
 	}
@@ -168,6 +175,9 @@ func TestChecklistLocalFile(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(p.Path, "TODO.md")); string(b) != "- [x] Local\n" {
 		t.Errorf("file: %q", b)
+	}
+	if n := told.Load(); n != 1 {
+		t.Errorf("%d checklist.updated events for the saved local file, want 1", n)
 	}
 	if gitIn(t, p.Path, "rev-parse", "main") != head {
 		t.Error("committed a local file")

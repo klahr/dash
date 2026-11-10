@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/checklist"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
@@ -187,6 +188,9 @@ func (d *Dispatcher) Report(id string, body []byte) error {
 	for _, pid := range rep.Procs {
 		d.procsChanged(r, pid)
 	}
+	for _, pid := range rep.Checklists {
+		d.projectEvent(r, pid, model.EvChecklist, map[string]string{"path": checklist.Name})
+	}
 	d.setPermissions(r, rep.Permissions)
 	if d.Kick != nil {
 		d.Kick() // a slot may have come free, or the usage limit lifted
@@ -329,6 +333,12 @@ func (d *Dispatcher) publishCheckouts(projectID string) {
 // runners, see api's listProcessesOnRunners). Only for a project of r's org
 // linked to r.
 func (d *Dispatcher) procsChanged(r tunnel.Runner, pid string) {
+	d.projectEvent(r, pid, model.EvProcUpdated, nil)
+}
+
+// projectEvent publishes an event of type t about hub project pid, which
+// runner r reported news of, if r is one of its runners.
+func (d *Dispatcher) projectEvent(r tunnel.Runner, pid string, t model.EventType, data any) {
 	if d.Pub == nil {
 		return
 	}
@@ -336,7 +346,7 @@ func (d *Dispatcher) procsChanged(r tunnel.Runner, pid string) {
 	if err != nil || p.OrgID != r.OrgID() || !slices.Contains(p.Runners, r.ID) {
 		return
 	}
-	d.Pub.Publish(model.Event{Type: model.EvProcUpdated, ProjectID: p.ID, Time: time.Now()})
+	d.Pub.Publish(model.Event{Type: t, ProjectID: p.ID, Data: data, Time: time.Now()})
 }
 
 // hubStatus is the hub's status for a task the runner reports in s: queued

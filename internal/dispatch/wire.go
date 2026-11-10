@@ -131,6 +131,10 @@ type Report struct {
 	// commands, terminals) on the runner changed since the last report: the
 	// hub tells their dashboards to list them again.
 	Procs []string `json:"procs,omitempty"`
+	// Checklists are the hub's projects whose TODO.md changed on the
+	// runner since the last report (committed there, or brought in by a
+	// merge, pull or sync): the hub tells their dashboards to read it again.
+	Checklists []string `json:"checklists,omitempty"`
 	// Pushes are the runner's pushes to origin since its last report: the
 	// hub tells the project's other runners (OriginMoved).
 	Pushes []Push `json:"pushes,omitempty"`
