@@ -4,9 +4,6 @@ Most important first within each section.
 
 ## Next
 
-- [ ] Use Dash for a week on a real repo with real Claude Code and GitHub; fix what breaks.
-      Only stand-ins have exercised: PR mode, failed-build investigation, several computers,
-      run limits.
 - [ ] Push notifications (Web Push) for ready for review, failed, approval needed and failed
       build, so the installed app notifies you when it's closed.
 - [ ] One merge worker per project, so a long test run in one project doesn't hold up merges
