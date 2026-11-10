@@ -47,6 +47,7 @@ import (
 	"github.com/klahr/dash/internal/runnerctl"
 	"github.com/klahr/dash/internal/scan"
 	"github.com/klahr/dash/internal/store"
+	boardsync "github.com/klahr/dash/internal/tracker"
 	"github.com/klahr/dash/internal/tunnel"
 	"github.com/klahr/dash/internal/usage"
 	"github.com/klahr/dash/web"
@@ -522,6 +523,22 @@ func main() {
 		events.Observe = notifier.Observe
 		notifier.Start(ctx)
 		apiSrv.Notify = notifier
+
+		// Projects whose board is an external tracker (Favro…) are synced
+		// with it, one worker each; a runner's projects are its hub's.
+		boards := &boardsync.Manager{Store: st, Kick: todos.Kick}
+		also := storeEvents.also
+		storeEvents.also = func(ev model.Event) {
+			if also != nil {
+				also(ev)
+			}
+			boards.Observe(ev)
+		}
+		if err := boards.Start(ctx); err != nil {
+			slog.Warn("board backends", "err", err)
+		}
+		defer boards.StopAll() // before the store closes
+		apiSrv.Trackers = boards
 		if !allowPrivate {
 			slog.Info("notification webhooks may not reach private addresses (-webhook-private=on allows them)")
 		}

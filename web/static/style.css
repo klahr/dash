@@ -789,6 +789,11 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .steps > li { margin-bottom: 16px; }
 .steps > li::marker { color: var(--muted); font-weight: 600; }
 .steps p { margin: 6px 0 0; }
+.board-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 12px; margin-top: 6px; }
+.board-map-row { display: grid; grid-template-columns: 7em 1fr; align-items: center; gap: 8px; font-size: 14px; }
+.board-map-row input { min-width: 0; }
+.board-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+#board-webhook { margin-top: 10px; }
 .runner-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
 .runner-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--r-m); background: var(--raised); }
 .runner-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted, #888); }

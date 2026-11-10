@@ -38,6 +38,7 @@ import (
 	"github.com/klahr/dash/internal/runner"
 	"github.com/klahr/dash/internal/scan"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/tracker"
 	"github.com/klahr/dash/internal/tunnel"
 	"github.com/klahr/dash/internal/usage"
 )
@@ -60,6 +61,9 @@ type Server struct {
 	Usage     *usage.Tracker
 	Scans     *scan.Runner    // read-only scans that file issues (optional)
 	Scheduler *scan.Scheduler // runs scans on their schedules (optional)
+	// Trackers syncs projects whose board is an external tracker (nil:
+	// every board is Dash's own, and the backend can't be changed).
+	Trackers *tracker.Manager
 	// Billing charges orgs of two or more members per seat (nil: off, as
 	// on a self-hosted Dash).
 	Billing     *billing.Service
@@ -334,6 +338,15 @@ func (s *Server) buildMux() *http.ServeMux {
 	if s.Notify != nil && s.Notify.Actions != nil {
 		mux.Handle("POST "+notify.ActionPath+"{token}", s.Notify.Actions) // public: see auth.publicPath
 	}
+
+	// The project's board backend (Dash's own, or an external tracker)
+	mux.HandleFunc("GET /api/projects/{pid}/tracker", s.getTracker)
+	mux.HandleFunc("PUT /api/projects/{pid}/tracker", s.putTracker)
+	mux.HandleFunc("POST /api/projects/{pid}/tracker/test", s.testTracker)
+	mux.HandleFunc("POST /api/projects/{pid}/tracker/sync", s.syncTracker)
+	mux.HandleFunc("POST /api/projects/{pid}/tracker/webhook-secret", s.rotateTrackerSecret)
+	mux.HandleFunc("POST /api/projects/{pid}/tracker/webhook", s.trackerWebhook) // public: see auth.TrackerWebhookPath
+	mux.HandleFunc("HEAD /api/projects/{pid}/tracker/webhook", s.trackerWebhook)
 
 	// Attachments (screenshots for Claude)
 	mux.HandleFunc("POST /api/uploads", s.upload)

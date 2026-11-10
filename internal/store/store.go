@@ -405,7 +405,8 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 				return err
 			}
 		}
-		for _, table := range []string{"todos", "issues", "scan_runs", "scan_settings", "scan_templates", "webhooks"} {
+		for _, table := range []string{"todos", "issues", "scan_runs", "scan_settings", "scan_templates", "webhooks",
+			"tracker_projects", "tracker_links", "project_events"} {
 			if _, err := tx.Exec("DELETE FROM "+table+" WHERE project_id = ?", id); err != nil {
 				return err
 			}
@@ -828,6 +829,10 @@ func clone(t model.Todo) model.Todo {
 	if t.Revert != nil {
 		r := *t.Revert
 		cp.Revert = &r
+	}
+	if t.ExternalRef != nil {
+		r := *t.ExternalRef
+		cp.ExternalRef = &r
 	}
 	return cp
 }

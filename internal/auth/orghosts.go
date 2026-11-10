@@ -134,8 +134,8 @@ func (a *Auth) sameOrigin(w http.ResponseWriter, r *http.Request) bool {
 	if _, ok := bearer(r); ok {
 		return true
 	}
-	if strings.HasPrefix(r.URL.Path, notifyActionPrefix) {
-		return true
+	if strings.HasPrefix(r.URL.Path, notifyActionPrefix) || TrackerWebhookPath(r.URL.Path) {
+		return true // no cookie counts there: the token or webhook secret is the credential
 	}
 	if u, err := url.Parse(o); err == nil && u.Host != "" {
 		if strings.EqualFold(u.Host, a.reqHost(r)) {

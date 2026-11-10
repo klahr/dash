@@ -665,7 +665,19 @@ const notifyActionPrefix = "/api/notify/permission/"
 
 // publicPath reports whether path is served without signing in.
 func publicPath(path string) bool {
-	return public[path] || strings.HasPrefix(path, notifyActionPrefix)
+	return public[path] || strings.HasPrefix(path, notifyActionPrefix) || TrackerWebhookPath(path)
+}
+
+// TrackerWebhookPath reports whether path is a project's board backend
+// webhook, /api/projects/{id}/tracker/webhook: an external tracker calls it,
+// verified with the project's own webhook secret (internal/tracker).
+func TrackerWebhookPath(path string) bool {
+	id, ok := strings.CutPrefix(path, "/api/projects/")
+	if !ok {
+		return false
+	}
+	id, ok = strings.CutSuffix(id, "/tracker/webhook")
+	return ok && id != "" && !strings.ContainsAny(id, "/.%")
 }
 
 var public = map[string]bool{

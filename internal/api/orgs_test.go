@@ -285,6 +285,11 @@ func (o *twoOrgs) recordEndpoints() []endpoint {
 		{"DELETE", "/api/webhooks/" + hid, ""},
 		{"POST", "/api/webhooks/" + hid + "/rotate", ""},
 		{"POST", "/api/webhooks/" + hid + "/test", ""},
+		{"GET", "/api/projects/" + pid + "/tracker", ""},
+		{"PUT", "/api/projects/" + pid + "/tracker", `{"backend":"dash","confirm":true}`},
+		{"POST", "/api/projects/" + pid + "/tracker/test", `{"backend":"dash"}`},
+		{"POST", "/api/projects/" + pid + "/tracker/sync", ""},
+		{"POST", "/api/projects/" + pid + "/tracker/webhook-secret", ""},
 
 		{"GET", "/api/todos/" + tid, ""},
 		{"PATCH", "/api/todos/" + tid, `{"title":"mine"}`},

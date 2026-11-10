@@ -716,6 +716,7 @@
             <button type="button" class="rail-item" data-rail="repository">Repository</button>
             <button type="button" class="rail-item" data-rail="claude">Claude</button>
             <button type="button" class="rail-item" data-rail="runners">Runners</button>
+            <button type="button" class="rail-item" data-rail="board">Board</button>
           </div>
           <div class="rail-group"><span class="rail-head">Delivery</span>
             <button type="button" class="rail-item" data-rail="approval">Approval &amp; push</button>
@@ -785,6 +786,39 @@
               <button class="link" type="button" id="settings-runners-manage" data-icon="computer">Manage runners…</button>
             </fieldset>
             <p class="hint" id="settings-runners-hint" hidden></p>
+          </section>
+          <section class="rail-section" data-section="board">
+            <!-- The project's board backend. Saved with its own button, not the settings form: its inputs have no names. -->
+            <fieldset class="field choice" id="settings-board-field" hidden>
+              <legend>Task board <em>where this project's tasks are planned: Dash's own board, or an external tracker kept in sync both ways</em></legend>
+              <label class="field"><span>Board</span><select id="board-backend"></select></label>
+              <p class="hint" id="board-backend-hint"></p>
+              <div id="board-external" hidden>
+                <div id="board-fields"></div>
+                <label class="field" id="board-config-raw-row" hidden><span>Settings <em>JSON, as the backend expects them</em></span><textarea id="board-config-raw" rows="3" spellcheck="false"></textarea></label>
+                <label class="toggle" id="board-creds-clear-row" hidden><input type="checkbox" id="board-creds-clear"><span>Remove the saved credentials</span></label>
+                <fieldset class="field choice">
+                  <legend>Status mapping <em>the tracker's column for each task status; leave one empty to not move cards for it</em></legend>
+                  <div class="board-map" id="board-map"></div>
+                  <datalist id="board-columns"></datalist>
+                </fieldset>
+              </div>
+              <fieldset class="field choice" id="board-export-row" hidden>
+                <legend>The project's <span id="board-open-count">open</span> tasks</legend>
+                <label class="radio"><input type="radio" name="board_export_choice" value="yes" form="board-export-form"><span>Export them as new cards <em>running tasks keep running and are linked as they are exported</em></span></label>
+                <label class="radio"><input type="radio" name="board_export_choice" value="no" form="board-export-form"><span>Leave them in Dash only <em>only tasks made from now on get cards</em></span></label>
+              </fieldset>
+              <div class="board-actions">
+                <button class="btn small primary" type="button" id="board-save" data-icon="check">Save board</button>
+                <button class="btn small" type="button" id="board-test">Test connection</button>
+                <button class="btn small" type="button" id="board-sync" hidden>Sync now</button>
+                <button class="btn small" type="button" id="board-secret" hidden>New webhook secret</button>
+              </div>
+              <p class="hint" id="board-status" hidden></p>
+              <div id="board-webhook" hidden></div>
+              <ul class="runner-list" id="board-events"></ul>
+            </fieldset>
+            <p class="hint" id="settings-board-hint" hidden></p>
           </section>
           <section class="rail-section" data-section="approval">
             <label class="toggle"><input type="checkbox" name="auto_approve"><span>Approve tasks automatically</span></label>

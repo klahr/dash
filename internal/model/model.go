@@ -411,6 +411,12 @@ type Todo struct {
 	HubTodoID string `json:"hub_todo_id,omitempty"`
 	HubNotes  int    `json:"hub_notes,omitempty"`
 
+	// ExternalRef is the card standing for the todo in its project's
+	// external tracker (nil: none, e.g. a project on Dash's own board). The
+	// tracker owns the todo's intent (title, prompt, priority, dependencies,
+	// status column); everything else here stays Dash's (internal/tracker).
+	ExternalRef *ExternalRef `json:"external_ref,omitempty"`
+
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`
