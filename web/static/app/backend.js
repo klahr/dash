@@ -2,6 +2,7 @@ import { $, h } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, toast } from "./dialogs.js";
 import { state } from "./state.js";
+import { projectKey } from "./events.js";
 import { copyBlock } from "./prefs.js";
 import { agoText } from "./branches.js";
 
@@ -23,7 +24,7 @@ export async function loadBoard() {
     $("#settings-board-field").hidden = true; // e.g. an older Dash on another computer
     return;
   }
-  if (state.project !== p) return;
+  if (projectKey(state.project) !== projectKey(p)) return;
   board.state = res;
   $("#settings-board-field").hidden = !res.enabled;
   const hint = $("#settings-board-hint");
@@ -110,7 +111,7 @@ async function loadBoardOptions(names) {
     } catch (e) {
       res = { ok: false, error: e.message };
     }
-    if (seq !== board.loadSeq || state.project !== p || $("#board-backend").value !== name) return; // superseded
+    if (seq !== board.loadSeq || projectKey(state.project) !== projectKey(p) || $("#board-backend").value !== name) return; // superseded
     if (!res.ok) {
       el.replaceChildren(h("option", { value: keep }, keep ? `${keep} (couldn't load: ${res.error})` : `Couldn't load: ${res.error}`));
       el.value = keep;
@@ -167,7 +168,7 @@ async function loadBoardColumns() {
   const p = state.project;
   let res;
   try { res = await api("POST", `/api/projects/${p.id}/tracker/test`, boardBody({ partial: true })); } catch { return; }
-  if (state.project !== p || !res.ok) return;
+  if (projectKey(state.project) !== projectKey(p) || !res.ok) return;
   showBoardColumns(res.columns || []);
 }
 
@@ -249,7 +250,7 @@ async function saveBoard(extra = {}) {
     if (!ok) return;
     return saveBoard({ ...extra, export: body.export ?? false, confirm: true });
   }
-  if (state.project !== p) return;
+  if (projectKey(state.project) !== projectKey(p)) return;
   board.state = res;
   $("#board-backend").value = res.config.backend || "dash";
   renderBoardForm();
