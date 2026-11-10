@@ -2377,10 +2377,12 @@ function updateLiveLine(id) {
     if (el.dataset.act === act.key && line) line.textContent = act.line || act.cmd;
     else el.replaceChildren(...activityNodes(act));
     el.dataset.act = act.key;
+    el.classList.add("activity"); // its spans laid out with gaps, as on a card rendered with the activity
     return;
   }
   delete el.dataset.act;
-  el.textContent = state.lastLine.get(id);
+  el.classList.remove("activity");
+  el.textContent = state.lastLine.get(id) || "Working…";
 }
 
 // ------------------------------------------------------------------ live activity
@@ -5116,7 +5118,7 @@ function renderChecks(t) {
   if (run && !run.tool && run.label === "Running tests") {
     box.hidden = false;
     st.className = "checks-state running";
-    st.replaceChildren(h("span", { class: "act-spin", "aria-hidden": "true" }), " Running tests");
+    st.replaceChildren(h("span", { class: "act-spin", "aria-hidden": "true" }), h("span", {}, "Running tests"));
     $("#d-checks-meta").replaceChildren(h("span", { "data-since": String(run.since) }, duration(Date.now() - run.since)),
       c ? ` · last run ${c.passed ? "passed" : "failed"}` : "");
     $("#d-checks-output").textContent = `$ ${run.cmd}\n\nThe output streams into the timeline.`;

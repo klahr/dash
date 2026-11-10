@@ -1073,7 +1073,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .checks-state { --c: var(--muted); font-weight: 600; color: var(--c); display: inline-flex; align-items: center; gap: 8px; }
 .checks-state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
 .checks-state.pass { --c: var(--merged); } .checks-state.fail { --c: var(--failed); }
-.checks-state.running { --c: var(--running); gap: 0; } .checks-state.running::before { display: none; }
+.checks-state.running { --c: var(--running); gap: 6px; } .checks-state.running::before { display: none; }
 .checks-meta { color: var(--muted); font-size: 13px; font-family: var(--mono); overflow-wrap: anywhere; }
 .checks .log { margin: 0 12px 12px; max-height: 320px; overflow: auto; }
 .check-tag { font-size: 12px; font-weight: 600; }
@@ -1193,6 +1193,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .todo-float > .todo:not(.cursor) { background: transparent; }
 .todo-float > .todo { border-radius: inherit; box-sizing: border-box; }
 .todo-float .todo-sub { display: block; -webkit-line-clamp: unset; overflow: visible; overflow-wrap: anywhere; }
+.todo-float .todo-sub.activity { display: flex; } /* the spinner, label, timer and output keep their gaps in the copy */
 .is-dragging .todo-float { display: none; }
 /* The card's tags and buttons stay in sight at the bottom of a copy that
    scrolls, over the float's background; the margins and padding cancel out,
