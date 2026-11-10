@@ -49,20 +49,23 @@ function usageLine(u) {
 // head each message with who it's from; merge(nodes, saved) places a saved
 // conversation's messages among other nodes. With shell (project and task
 // chats), a message starting with "!" runs as a shell command where the
-// chat runs instead of going to Claude (see runShell).
+// chat runs instead of going to Claude (see shellRunner).
+//
+// Its parts (chatQueue, shellRunner, chatStreamHandler) share c: the chat's
+// state and the helpers they call one another through.
 export function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {}, shell = false }) {
   // waiting: ids of the permission requests the current turn waits on an answer to.
   // queue: messages written while a reply streams ({q, files}), sent together
   // as one message once it's done.
-  const c = { history: [], current: null, ws: null, prefix: "", waiting: new Set(), queue: [] };
-  const input = form.q;
+  const c = { history: [], current: null, ws: null, prefix: "", waiting: new Set(), queue: [], log, empty, form, target, actions, labels, scroller, onState };
+  const input = c.input = form.q;
   // While a reply streams, the send button stops it instead, unless there's
   // something in the composer: then it queues that.
   const sendBtn = form.querySelector("button:not([type=button])");
   const sendLook = { html: sendBtn.innerHTML, label: sendBtn.getAttribute("aria-label") };
   const stopLook = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/></svg>`;
   const composing = () => !!input.value.trim() || att.items().length > 0;
-  const busyButton = () => {
+  c.busyButton = () => {
     const stopping = !!c.current && !composing();
     sendBtn.disabled = false;
     sendBtn.classList.toggle("stop", stopping);
@@ -73,31 +76,31 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   };
   // A turn that ends sends what's queued (done) or, when it was stopped or
   // failed, puts it back in the composer to send again or not.
-  const finish = (drain = false) => {
+  const finish = c.finish = (drain = false) => {
     c.current = null;
     c.waiting.clear();
-    busyButton();
+    c.busyButton();
     onState();
-    drain ? drainQueue() : restoreQueue();
+    drain ? queue.drain() : queue.restore();
   };
   // smooth glides there when a new message arrives and the end is within a screen.
-  const toEnd = (smooth = false) => {
+  const toEnd = c.toEnd = (smooth = false) => {
     if (!log.offsetParent) return;
     const sc = scroller(), near = sc.scrollHeight - sc.scrollTop - sc.clientHeight < sc.clientHeight;
     const glide = smooth && near && !matchMedia("(prefers-reduced-motion: reduce)").matches;
     sc.scrollTo({ top: sc.scrollHeight, behavior: glide ? "smooth" : "instant" });
   };
-  const from = (who) => labels ? h("div", { class: "msg-from" }, labels[who]) : null;
+  const from = c.from = (who) => labels ? h("div", { class: "msg-from" }, labels[who]) : null;
   const assistant = (m) => h("div", { class: "msg assistant" }, from("assistant"), h("div", { class: "reply", innerHTML: renderMarkdown(m.content) }), usageLine(m.usage), actions(m.content));
   const prefixOf = () => target().prefix || "";
-  const user = (m) => m.shell ? shellBlock(m, labels && from("user")).el : h("div", { class: "msg user" }, from("user"), h("div", { class: "md", innerHTML: renderMarkdown(m.content || "") }),
+  const user = (m) => m.shell ? sh.block(m, labels && from("user")).el : h("div", { class: "msg user" }, from("user"), h("div", { class: "md", innerHTML: renderMarkdown(m.content || "") }),
     m.attachments?.length ? h("div", { class: "msg-attach" }, ...m.attachments.map((a) => attachThumb(a, null, prefixOf()))) : null);
 
   // "!" commands: the composer shows shell mode while its text starts with
   // "!". A read-only chat (or a hub whose runners don't allow them) runs none:
   // the text goes to Claude as it is.
-  const shellOn = () => shell && chatRunner.info?.commands !== false;
-  const isShell = (q) => /^!\s*\S/.test(q || "");
+  const shellOn = c.shellOn = () => shell && chatRunner.info?.commands !== false;
+  const isShell = c.isShell = (q) => /^!\s*\S/.test(q || "");
   const shellTag = h("div", { class: "shell-tag", role: "status", hidden: true });
   form.prepend(shellTag);
   const shellMode = () => {
@@ -112,56 +115,14 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   // Images and files dropped onto the chat or pasted into its text field.
   const attachRow = h("div", { class: "attach", hidden: true });
   form.prepend(attachRow);
-  const att = attachBox(attachRow, input, () => busyButton(), { zone: form.parentElement, compact: true, prefix: prefixOf });
+  const att = c.att = attachBox(attachRow, input, () => c.busyButton(), { zone: form.parentElement, compact: true, prefix: prefixOf });
 
-  // The queue shows above the composer: tap a message to take it back to edit, × drops it.
-  const queueRow = h("div", { class: "chat-queue", hidden: true });
-  form.prepend(queueRow);
-  const renderQueue = () => {
-    queueRow.hidden = !c.queue.length;
-    queueRow.replaceChildren(...c.queue.map((m) => h("div", { class: "queued" },
-      h("button", { type: "button", class: "queued-text", title: "Edit this queued message", onclick: () => unqueue(m, true) },
-        h("span", { class: "queued-tag" }, "Queued"),
-        h("span", { class: "queued-body" }, m.q || `${m.files.length} file${m.files.length > 1 ? "s" : ""}`),
-        m.q && m.files.length ? h("span", { class: "queued-files" }, `+${m.files.length}`) : null),
-      h("button", { type: "button", class: "chip-x", "aria-label": "Remove from the queue", title: "Remove", onclick: () => unqueue(m) }, "×"))));
-    busyButton();
-  };
-  // edit puts the messages back in the composer, ahead of what's in it already.
-  const toComposer = (msgs) => {
-    if (!msgs.length) return;
-    input.value = [...msgs.map((m) => m.q), input.value.trim()].filter(Boolean).join("\n\n");
-    att.reset([...msgs.flatMap((m) => m.files), ...att.items()]);
-    autoGrow();
-  };
-  function unqueue(m, edit = false) {
-    c.queue = c.queue.filter((x) => x !== m);
-    if (edit) { toComposer([m]); input.focus(); }
-    renderQueue();
-  }
-  function restoreQueue() {
-    if (!c.queue.length) return;
-    toComposer(c.queue);
-    c.queue = [];
-    renderQueue();
-  }
-  function drainQueue() {
-    if (!c.queue.length) return;
-    // A queued "!" command runs on its own; what's queued after it waits for it.
-    const cmd = (m) => !m.files.length && shellOn() && isShell(m.q);
-    if (cmd(c.queue[0])) {
-      const m = c.queue.shift();
-      renderQueue();
-      return runShell(m.q);
-    }
-    const i = c.queue.findIndex(cmd), take = i < 0 ? c.queue : c.queue.slice(0, i);
-    c.queue = i < 0 ? [] : c.queue.slice(i);
-    const q = take.map((m) => m.q).filter(Boolean).join("\n\n"), files = take.flatMap((m) => m.files);
-    renderQueue();
-    send(q, files);
-  }
+  const queue = chatQueue(c);
+  const sh = shellRunner(c);
+  c.runShell = sh.run;
+  const onStream = chatStreamHandler(c);
 
-  function socket(prefix) {
+  c.socket = (prefix) => {
     if (c.ws && c.ws.readyState <= 1 && c.prefix === prefix) return c.ws;
     c.ws?.close();
     const ws = c.ws = new WebSocket(wsURL(on(prefix, "/ws/chat")));
@@ -178,52 +139,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
       }
       if (d.kind === "cwd" && cwd) { cwd.hidden = false; cwd.textContent = cwd.title = `Runs in ${d.text}`; }
       if (d.kind === "runner") onRunner(d.text);
-      const cur = c.current;
-      if (!cur) return;
-      if (cur.shell) return shellDelta(cur, d);
-      if (d.kind === "thinking") { cur.think = (cur.think || "") + d.text; cur.thinking.innerHTML = renderMarkdown(cur.think); }
-      else if (d.kind === "text") { cur.content += d.text; cur.seg += d.text; cur.reply.innerHTML = renderMarkdown(cur.seg); }
-      else if (d.kind === "tool_use") {
-        // Later text goes below the tool call, in a reply of its own. A reply
-        // still empty moves below it instead, so consecutive tool calls share
-        // one "Thinking…" at the end rather than one after each call.
-        const t = toolCall(d.tool, d.input), { el } = t;
-        cur.tools.set(d.id, t);
-        if (cur.seg) {
-          cur.reply.after(el);
-          cur.reply = h("div", { class: "reply" });
-          el.after(cur.reply);
-          cur.seg = "";
-        } else {
-          cur.reply.before(el);
-        }
-        entering(el);
-      } else if (d.kind === "tool_result") {
-        const t = cur.tools.get(d.id);
-        if (t) toolResult(t, d);
-      } else if (d.kind === "permission") {
-        cur.reply.before(entering(chatPermCard(d, (decision) => ws.send(JSON.stringify({ type: "permission", id: d.id, decision })))));
-        c.waiting.add(d.id);
-        onState();
-      } else if (d.kind === "permission_decided") {
-        if (c.waiting.delete(d.id)) onState();
-        const st = log.querySelector(`.perm[data-id="${d.id}"] .perm-actions`);
-        st?.replaceChildren(h("span", { class: "perm-status" }, { allow: "Approved", deny: "Denied", timeout: "Not answered in time: denied" }[d.text] || d.text));
-      }
-      else if (d.kind === "usage") cur.usage = d.usage;
-      else if (d.kind === "error") { cur.el.classList.add("error"); cur.reply.append(h("p", {}, d.text)); }
-      if (d.kind === "done" || d.kind === "error") {
-        cur.el.classList.remove("pending");
-        for (const t of cur.tools.values()) toolSettled(t);
-        const u = usageLine(cur.usage);
-        if (u) cur.el.append(entering(u));
-        if (cur.content) cur.el.append(entering(actions(cur.content)));
-        if (cur.content) c.history.push({ role: "assistant", content: cur.content, at: cur.at, ...(cur.usage ? { usage: cur.usage } : {}) });
-        else c.history.pop(); // keep history alternating
-        finish(d.kind === "done" && !!cur.content);
-      }
-      const sc = scroller();
-      if (sc.scrollHeight - sc.scrollTop - sc.clientHeight < 120) toEnd();
+      onStream(ws, d);
     };
     ws.onclose = (e) => {
       if (ws !== c.ws || !c.current) return;
@@ -239,7 +155,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
       }
       if (c.current.shell) {
         // Whether it ran (and was saved) isn't known: the saved chat says.
-        shellEnded(c.current, { error: "Connection lost: reload to see whether it ran" }, false);
+        sh.ended(c.current, { error: "Connection lost: reload to see whether it ran" }, false);
         return;
       }
       if (resume) {
@@ -254,7 +170,25 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
       finish();
     };
     return ws;
-  }
+  };
+
+  // settleTurn ends the reply cur: done, failed or stopped. What it said
+  // stays in the history; a reply with nothing in it takes its question back
+  // out. A reply that's done with something in it sends what's queued.
+  c.settleTurn = (cur, { stopped = false, failed = false } = {}) => {
+    cur.el.classList.remove("pending");
+    if (stopped) for (const st of cur.el.querySelectorAll(".perm-actions")) st.replaceChildren(h("span", { class: "perm-status" }, "Stopped: denied"));
+    for (const t of cur.tools.values()) toolSettled(t);
+    const u = stopped ? h("div", { class: "msg-usage" }, "Stopped") : entering(usageLine(cur.usage));
+    if (u) cur.el.append(u);
+    if (cur.content) {
+      cur.el.append(entering(actions(cur.content)));
+      c.history.push({ role: "assistant", content: cur.content, at: cur.at, ...(cur.usage && !stopped ? { usage: cur.usage } : {}) });
+    } else {
+      c.history.pop(); // keep history alternating
+    }
+    finish(!stopped && !failed && !!cur.content);
+  };
 
   // reset shows another (or a cleared) conversation. A reply still streaming
   // is left to finish on its own socket.
@@ -267,32 +201,22 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     toEnd();
   }
 
-  function send(q, attachments = []) {
+  const send = c.send = (q, attachments = []) => {
     empty.hidden = true;
     const m = { role: "user", content: q, at: new Date().toISOString(), ...(attachments.length ? { attachments } : {}) };
     c.history.push(m);
     log.append(entering(user(m)));
     turn(target());
-  }
+  };
 
   // stop ends the reply streaming now. What it said so far stays (the server
   // saves it too); a reply with nothing in it yet takes its question back out.
   function stop() {
     const cur = c.current;
     if (!cur) return;
-    if (cur.shell) return stopShell(cur);
+    if (cur.shell) return sh.stop(cur);
     if (c.ws?.readyState === 1) c.ws.send(JSON.stringify({ type: "cancel" }));
-    cur.el.classList.remove("pending");
-    for (const st of cur.el.querySelectorAll(".perm-actions")) st.replaceChildren(h("span", { class: "perm-status" }, "Stopped: denied"));
-    for (const t of cur.tools.values()) toolSettled(t);
-    cur.el.append(h("div", { class: "msg-usage" }, "Stopped"));
-    if (cur.content) {
-      cur.el.append(entering(actions(cur.content)));
-      c.history.push({ role: "assistant", content: cur.content, at: cur.at });
-    } else {
-      c.history.pop(); // keep history alternating
-    }
-    finish();
+    c.settleTurn(cur, { stopped: true });
   }
 
   // turn asks for an answer to the last question in history, replacing
@@ -304,18 +228,196 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     c.current ? c.current.el.replaceWith(el) : log.append(el);
     toEnd(true);
     c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), target: { prefix, ...fields }, at: new Date().toISOString() };
-    busyButton();
+    c.busyButton();
     onState();
-    const ws = socket(prefix);
+    const ws = c.socket(prefix);
     ws.fields = fields;
     const go = () => ws.send(JSON.stringify({ type: "send", ...fields, messages: c.history }));
     ws.readyState === 1 ? go() : ws.addEventListener("open", go, { once: true });
   }
 
+  // Slash commands run here instead of going to Claude. Anything else starting
+  // with "/" (a path, say) is sent as a message.
+  const commands = {
+    clear: async () => { await clear(); reset(); },
+    help: () => toast(`/clear starts a new conversation. /help shows this.${shell ? " !command runs a shell command where the chat runs (no terminal); Claude sees it and its output next turn." : ""} Messages sent while Claude answers are queued and go once it's done; Up in an empty composer edits the last one.`, { head: "Chat commands" }),
+  };
+  commands.new = commands.reset = commands.clear;
+
+  const autoGrow = c.autoGrow = () => { input.style.height = "auto"; input.style.height = `${input.scrollHeight}px`; shellMode(); };
+  input.addEventListener("input", () => { autoGrow(); if (c.current) c.busyButton(); });
+  form.addEventListener("submit", attempt(async (e) => {
+    e.preventDefault();
+    // With nothing written, only a press of the button stops a reply: Enter in the text field doesn't.
+    if (c.current && !composing()) return e.submitter === sendBtn ? stop() : undefined;
+    await att.settled();
+    const q = input.value.trim(), files = att.items();
+    if (!q && !files.length) return;
+    const cmd = /^\/(\w+)$/.exec(q)?.[1].toLowerCase();
+    input.value = "";
+    autoGrow();
+    if (!files.length && Object.hasOwn(commands, cmd)) return commands[cmd]();
+    att.reset();
+    // While Claude answers, the message waits its turn.
+    if (c.current) return queue.push({ q, files });
+    if (!files.length && shellOn() && isShell(q)) return sh.run(q);
+    send(q, files);
+  }));
+  input.addEventListener("keydown", (e) => {
+    // Up in an empty composer takes the last queued message back to edit.
+    if (e.key === "ArrowUp" && !input.value && c.queue.length) {
+      e.preventDefault();
+      return queue.unqueue(c.queue.at(-1), true);
+    }
+    // Enter sends on devices with a hardware keyboard; on touch keyboards Enter adds a line.
+    if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+
+  // resumeLast answers a question left unanswered in a saved conversation.
+  function resumeLast() {
+    if (c.current || c.history.at(-1)?.role !== "user" || c.history.at(-1).shell) return;
+    empty.hidden = true;
+    turn(target());
+  }
+
+  return { reset, resumeLast, stop, input, toEnd, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
+}
+
+// chatQueue holds the messages written while a reply streams (c.queue). The
+// queue shows above the composer: tap a message to take it back to edit, ×
+// drops it.
+function chatQueue(c) {
+  const { input, att } = c;
+  const row = h("div", { class: "chat-queue", hidden: true });
+  c.form.prepend(row);
+  const render = () => {
+    row.hidden = !c.queue.length;
+    row.replaceChildren(...c.queue.map((m) => h("div", { class: "queued" },
+      h("button", { type: "button", class: "queued-text", title: "Edit this queued message", onclick: () => unqueue(m, true) },
+        h("span", { class: "queued-tag" }, "Queued"),
+        h("span", { class: "queued-body" }, m.q || `${m.files.length} file${m.files.length > 1 ? "s" : ""}`),
+        m.q && m.files.length ? h("span", { class: "queued-files" }, `+${m.files.length}`) : null),
+      h("button", { type: "button", class: "chip-x", "aria-label": "Remove from the queue", title: "Remove", onclick: () => unqueue(m) }, "×"))));
+    c.busyButton();
+  };
+  // edit puts the messages back in the composer, ahead of what's in it already.
+  const toComposer = (msgs) => {
+    if (!msgs.length) return;
+    input.value = [...msgs.map((m) => m.q), input.value.trim()].filter(Boolean).join("\n\n");
+    att.reset([...msgs.flatMap((m) => m.files), ...att.items()]);
+    c.autoGrow();
+  };
+  function unqueue(m, edit = false) {
+    c.queue = c.queue.filter((x) => x !== m);
+    if (edit) { toComposer([m]); input.focus(); }
+    render();
+  }
+  function push(m) {
+    c.queue.push(m);
+    render();
+  }
+  function restore() {
+    if (!c.queue.length) return;
+    toComposer(c.queue);
+    c.queue = [];
+    render();
+  }
+  function drain() {
+    if (!c.queue.length) return;
+    // A queued "!" command runs on its own; what's queued after it waits for it.
+    const cmd = (m) => !m.files.length && c.shellOn() && c.isShell(m.q);
+    if (cmd(c.queue[0])) {
+      const m = c.queue.shift();
+      render();
+      return c.runShell(m.q);
+    }
+    const i = c.queue.findIndex(cmd), take = i < 0 ? c.queue : c.queue.slice(0, i);
+    c.queue = i < 0 ? [] : c.queue.slice(i);
+    const q = take.map((m) => m.q).filter(Boolean).join("\n\n"), files = take.flatMap((m) => m.files);
+    render();
+    c.send(q, files);
+  }
+  return { push, unqueue, restore, drain };
+}
+
+// chatStreamHandler returns what handles a message from the chat's current
+// socket ws: it fills in the reply streaming (or the command running) in it.
+function chatStreamHandler(c) {
+  return (ws, d) => {
+    const cur = c.current;
+    if (!cur) return;
+    if (cur.shell) return c.shell.delta(cur, d);
+    switch (d.kind) {
+      case "thinking":
+        cur.think = (cur.think || "") + d.text;
+        cur.thinking.innerHTML = renderMarkdown(cur.think);
+        break;
+      case "text":
+        cur.content += d.text;
+        cur.seg += d.text;
+        cur.reply.innerHTML = renderMarkdown(cur.seg);
+        break;
+      case "tool_use": {
+        // Later text goes below the tool call, in a reply of its own. A reply
+        // still empty moves below it instead, so consecutive tool calls share
+        // one "Thinking…" at the end rather than one after each call.
+        const t = toolCall(d.tool, d.input), { el } = t;
+        cur.tools.set(d.id, t);
+        if (cur.seg) {
+          cur.reply.after(el);
+          cur.reply = h("div", { class: "reply" });
+          el.after(cur.reply);
+          cur.seg = "";
+        } else {
+          cur.reply.before(el);
+        }
+        entering(el);
+        break;
+      }
+      case "tool_result": {
+        const t = cur.tools.get(d.id);
+        if (t) toolResult(t, d);
+        break;
+      }
+      case "permission":
+        cur.reply.before(entering(chatPermCard(d, (decision) => ws.send(JSON.stringify({ type: "permission", id: d.id, decision })))));
+        c.waiting.add(d.id);
+        c.onState();
+        break;
+      case "permission_decided": {
+        if (c.waiting.delete(d.id)) c.onState();
+        const st = c.log.querySelector(`.perm[data-id="${d.id}"] .perm-actions`);
+        st?.replaceChildren(h("span", { class: "perm-status" }, { allow: "Approved", deny: "Denied", timeout: "Not answered in time: denied" }[d.text] || d.text));
+        break;
+      }
+      case "usage":
+        cur.usage = d.usage;
+        break;
+      case "error":
+        cur.el.classList.add("error");
+        cur.reply.append(h("p", {}, d.text));
+        c.settleTurn(cur, { failed: true });
+        break;
+      case "done":
+        c.settleTurn(cur);
+        break;
+    }
+    const sc = c.scroller();
+    if (sc.scrollHeight - sc.scrollTop - sc.clientHeight < 120) c.toEnd();
+  };
+}
+
+// shellRunner runs "!" commands where the chat runs, each shown as a block in
+// the log. Its message, with the result, is saved in the conversation, which
+// Claude sees next turn.
+function shellRunner(c) {
   // A "!" command as a block in the log: the command, where it ran, its
   // output (streaming in while it runs) and how it ended. head: the "You"
   // label of a chat whose messages are labelled.
-  function shellBlock(m, head = null) {
+  function block(m, head = null) {
     const sh = m.shell, command = sh?.command ?? m.content.replace(/^\s*!\s*/, "");
     const since = m.at ? Date.parse(m.at) : Date.now();
     const status = h("span", { class: "shell-status" });
@@ -325,7 +427,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     const el = h("div", { class: "msg shell" }, head,
       h("div", { class: "shell-head" }, h("code", { class: "shell-line", title: command }, h("b", {}, "!"), ` ${command}`), status), where, out, note);
     const b = { el, status, where, out, note, since };
-    if (sh) shellResult(b, sh);
+    if (sh) result(b, sh);
     else {
       el.classList.add("running");
       status.replaceChildren(h("span", { class: "act-spin", "aria-hidden": "true" }), h("span", { class: "tool-time", "data-since": String(since) }));
@@ -333,8 +435,8 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     }
     return b;
   }
-  // shellResult shows how a command ended (sh: the server's record of it).
-  function shellResult(b, sh) {
+  // result shows how a command ended (sh: the server's record of it).
+  function result(b, sh) {
     b.el.classList.remove("running");
     const failed = !!sh.error || sh.exit_code !== 0;
     b.el.classList.toggle("failed", failed);
@@ -354,29 +456,28 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     b.note.hidden = !notes.length;
     b.note.replaceChildren(...notes);
   }
-  // runShell runs q ("!command") where the chat runs. Its message, with the
-  // result, is saved in the conversation, which Claude sees next turn.
-  function runShell(q) {
-    empty.hidden = true;
+  // run runs q ("!command") where the chat runs.
+  function run(q) {
+    c.empty.hidden = true;
     const m = { role: "user", content: q, at: new Date().toISOString() };
     c.history.push(m);
-    const b = shellBlock(m, labels && from("user"));
-    log.append(entering(b.el));
+    const b = block(m, c.labels && c.from("user"));
+    c.log.append(entering(b.el));
     const id = Math.random().toString(36).slice(2, 10);
     c.current = { shell: true, id, m, b, el: b.el, out: "" };
-    toEnd(true);
-    busyButton();
-    onState();
-    const { prefix = "", ...fields } = target();
+    c.toEnd(true);
+    c.busyButton();
+    c.onState();
+    const { prefix = "", ...fields } = c.target();
     delete fields.review; // a command reviews nothing
-    const ws = socket(prefix);
+    const ws = c.socket(prefix);
     ws.fields = fields;
     const go = () => ws.send(JSON.stringify({ type: "shell", id, ...fields, messages: c.history }));
     ws.readyState === 1 ? go() : ws.addEventListener("open", go, { once: true });
   }
   // The live output is capped: the saved result keeps its start and end.
   const maxLive = 200_000;
-  function shellDelta(cur, d) {
+  function delta(cur, d) {
     if (d.id && d.id !== cur.id) return;
     if (d.kind === "shell_output") {
       cur.out += d.text;
@@ -385,19 +486,19 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
       o.textContent = cur.out;
       if (end) o.scrollTop = o.scrollHeight;
     } else if (d.kind === "shell_done" && d.shell) {
-      shellEnded(cur, d.shell, true);
+      ended(cur, d.shell, true);
     } else if (d.kind === "error") {
-      shellEnded(cur, { error: d.text }, false);
+      ended(cur, { error: d.text }, false);
     }
   }
-  // shellEnded settles the current command: ran (its message, with sh, stays
+  // ended settles the current command: ran (its message, with sh, stays
   // in the conversation, as the server saved it) or not (taken back out).
-  function shellEnded(cur, sh, ran) {
+  function ended(cur, sh, ran) {
     if (c.current !== cur) return;
     clearTimeout(cur.giveUp);
     if (ran) {
       cur.m.shell = sh;
-      shellResult(cur.b, sh);
+      result(cur.b, sh);
     } else {
       cur.b.el.classList.remove("running");
       cur.b.el.classList.add("failed", "error");
@@ -406,66 +507,18 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
       cur.b.note.replaceChildren(h("p", {}, sh.error));
       if (c.history.at(-1) === cur.m) c.history.pop();
     }
-    finish(ran);
+    c.finish(ran);
   }
-  // stopShell stops the command; its result (what it printed until then)
+  // stop stops the command; its result (what it printed until then)
   // still comes back, and is kept.
-  function stopShell(cur) {
+  function stop(cur) {
     if (cur.stopping) return;
     cur.stopping = true;
     cur.b.status.replaceChildren(h("span", { class: "act-spin", "aria-hidden": "true" }), " Stopping…");
     if (c.ws?.readyState === 1) c.ws.send(JSON.stringify({ type: "cancel" }));
-    cur.giveUp = setTimeout(() => shellEnded(cur, { command: cur.m.content.replace(/^\s*!\s*/, ""), output: cur.out, exit_code: -1, error: "stopped" }, true), 15000);
+    cur.giveUp = setTimeout(() => ended(cur, { command: cur.m.content.replace(/^\s*!\s*/, ""), output: cur.out, exit_code: -1, error: "stopped" }, true), 15000);
   }
-
-  // Slash commands run here instead of going to Claude. Anything else starting
-  // with "/" (a path, say) is sent as a message.
-  const commands = {
-    clear: async () => { await clear(); reset(); },
-    help: () => toast(`/clear starts a new conversation. /help shows this.${shell ? " !command runs a shell command where the chat runs (no terminal); Claude sees it and its output next turn." : ""} Messages sent while Claude answers are queued and go once it's done; Up in an empty composer edits the last one.`, { head: "Chat commands" }),
-  };
-  commands.new = commands.reset = commands.clear;
-
-  const autoGrow = () => { input.style.height = "auto"; input.style.height = `${input.scrollHeight}px`; shellMode(); };
-  input.addEventListener("input", () => { autoGrow(); if (c.current) busyButton(); });
-  form.addEventListener("submit", attempt(async (e) => {
-    e.preventDefault();
-    // With nothing written, only a press of the button stops a reply: Enter in the text field doesn't.
-    if (c.current && !composing()) return e.submitter === sendBtn ? stop() : undefined;
-    await att.settled();
-    const q = input.value.trim(), files = att.items();
-    if (!q && !files.length) return;
-    const cmd = /^\/(\w+)$/.exec(q)?.[1].toLowerCase();
-    input.value = "";
-    autoGrow();
-    if (!files.length && Object.hasOwn(commands, cmd)) return commands[cmd]();
-    att.reset();
-    // While Claude answers, the message waits its turn.
-    if (c.current) { c.queue.push({ q, files }); renderQueue(); return; }
-    if (!files.length && shellOn() && isShell(q)) return runShell(q);
-    send(q, files);
-  }));
-  input.addEventListener("keydown", (e) => {
-    // Up in an empty composer takes the last queued message back to edit.
-    if (e.key === "ArrowUp" && !input.value && c.queue.length) {
-      e.preventDefault();
-      return unqueue(c.queue.at(-1), true);
-    }
-    // Enter sends on devices with a hardware keyboard; on touch keyboards Enter adds a line.
-    if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) {
-      e.preventDefault();
-      form.requestSubmit();
-    }
-  });
-
-  // resumeLast answers a question left unanswered in a saved conversation.
-  function resumeLast() {
-    if (c.current || c.history.at(-1)?.role !== "user" || c.history.at(-1).shell) return;
-    empty.hidden = true;
-    turn(target());
-  }
-
-  return { reset, resumeLast, stop, input, toEnd, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
+  return c.shell = { block, run, delta, ended, stop };
 }
 
 // A collapsible tool call: its input, and its output once filled in. Until
