@@ -1176,6 +1176,14 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .todo-float > .todo { border-radius: inherit; box-sizing: border-box; }
 .todo-float .todo-sub { display: block; -webkit-line-clamp: unset; overflow: visible; overflow-wrap: anywhere; }
 .is-dragging .todo-float { display: none; }
+/* The card's tags and buttons stay in sight at the bottom of a copy that
+   scrolls, over the float's background; the margins and padding cancel out,
+   so the layout is the card's, and the background reaches the edges. */
+.todo-float > .todo > .todo-side {
+  position: sticky; bottom: 0; z-index: 1; background: var(--raised);
+  margin: -4px -14px -12px -47px; padding: 4px 14px 12px 47px; /* 3px: the keyboard cursor's stripe */
+}
+.todo-float > .todo.cursor > .todo-side { background: inherit; }
 
 .drop-bar {
   position: fixed; left: 12px; right: 12px; bottom: calc(var(--nav-h) + var(--safe-b) + 12px); z-index: 90;

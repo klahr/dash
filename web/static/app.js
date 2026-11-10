@@ -8383,9 +8383,15 @@ async function clearPriority(t) {
 // on it starts a drag of the card itself.
 const HOVER_DELAY = 300, HOVER_W = 460, HOVER_MAX_H = 360, HOVER_MARGIN = 12;
 const canHover = matchMedia("(hover: hover) and (pointer: fine)");
+// A card's controls: on them the copy doesn't open, so a button doesn't move
+// away under the pointer reaching for it. (The title is a button too, but a
+// press anywhere on the card opens the task.)
+const CARD_CTRL = ".card-actions, a, button:not(.todo-open)";
+const CARD_CTRL_HOVER = ".card-actions:hover, a:hover, button:not(.todo-open):hover";
 const hoverCard = {
   el: null, card: null, row: null, rect: null, waiting: null, timer: 0, watch: null,
-  want(card) {
+  want(card, target) {
+    if (card && target?.closest(CARD_CTRL)) { if (card === this.waiting) this.cancel(); return; }
     if (card === this.card || card === this.waiting) return;
     this.cancel();
     if (!card || !desktop.matches || !canHover.matches || drag.active || drag.pending) return;
@@ -8399,7 +8405,7 @@ const hoverCard = {
   },
   cancel() { clearTimeout(this.timer); this.waiting = null; },
   open(card) {
-    if (drag.active || drag.pending || !card.matches(":hover")) return;
+    if (drag.active || drag.pending || !card.matches(":hover") || card.querySelector(CARD_CTRL_HOVER)) return;
     this.close();
     const r = card.getBoundingClientRect();
     const w = Math.max(r.width, Math.min(HOVER_W, innerWidth - 2 * HOVER_MARGIN));
@@ -8461,7 +8467,17 @@ const hoverCard = {
     el.style.left = `${left}px`;
     el.style.top = `${r.top}px`;
     const hgt = el.offsetHeight;
-    if (r.top + hgt > innerHeight - HOVER_MARGIN) el.style.top = `${Math.max(HOVER_MARGIN, innerHeight - HOVER_MARGIN - hgt)}px`;
+    let top = r.top;
+    // The copy's buttons where the card's are, so they don't jump under the
+    // pointer, as far as the copy still covers the card (it closes only when
+    // the pointer leaves it) and stays on screen.
+    const mine = this.card.querySelector(".card-actions"), theirs = this.row.querySelector(".card-actions");
+    if (mine && theirs) {
+      top += mine.getBoundingClientRect().top - theirs.getBoundingClientRect().top;
+      top = Math.min(r.top, Math.max(top, r.bottom - hgt));
+    }
+    top = Math.max(HOVER_MARGIN, Math.min(top, innerHeight - HOVER_MARGIN - hgt));
+    el.style.top = `${top}px`;
   },
   // After the board re-renders: follow the new card, or close if it moved.
   sync() {
@@ -8485,7 +8501,7 @@ const hoverCard = {
 };
 $("#board").addEventListener("pointerover", (e) => {
   if (e.pointerType === "touch" || e.buttons) return;
-  hoverCard.want(e.target.closest(".todo[data-id]"));
+  hoverCard.want(e.target.closest(".todo[data-id]"), e.target);
 });
 $("#board").addEventListener("pointerout", (e) => {
   const card = e.target.closest(".todo[data-id]");
