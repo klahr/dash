@@ -479,11 +479,18 @@ func (s *Store) GetTodo(id string) (model.Todo, error) {
 // ListTodos returns a project's todos in queue order (priority, then age).
 // An empty status list means all statuses.
 func (s *Store) ListTodos(projectID string, statuses ...model.TodoStatus) []model.Todo {
+	return s.listTodos(func(p string) bool { return projectID == "" || p == projectID }, statuses...)
+}
+
+// listTodos is ListTodos for the todos whose project keep accepts: it
+// filters before copying and sorting, so a narrow list stays cheap however
+// many todos the store holds.
+func (s *Store) listTodos(keep func(projectID string) bool, statuses ...model.TodoStatus) []model.Todo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var out []model.Todo
 	for _, t := range s.data.Todos {
-		if projectID != "" && t.ProjectID != projectID {
+		if !keep(t.ProjectID) {
 			continue
 		}
 		if len(statuses) > 0 && !contains(statuses, t.Status) {

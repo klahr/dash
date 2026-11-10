@@ -112,7 +112,7 @@ func TestForOrgIsolates(t *testing.T) {
 	notFound("SaveScanTemplate", err)
 	notFound("DeleteScanTemplate", b.DeleteScanTemplate(pa.ID, "deps", false))
 
-	if len(b.ListTodos("")) != 0 || len(b.ListTodos(pa.ID)) != 0 || len(b.ListIssues("")) != 0 || len(b.ListIssues(pa.ID)) != 0 ||
+	if len(b.ListTodos("")) != 0 || len(b.ListTodos(pa.ID)) != 0 || len(b.ListIssues("")) != 0 || len(b.ListIssues(pa.ID)) != 0 || len(b.OpenIssues(nil)) != 0 ||
 		len(b.ListScanRuns(pa.ID, "")) != 0 || len(b.ScanTemplates(pa.ID)) != 0 || len(b.Chat(u.ID)) != 0 {
 		t.Error("the other org's lists show a's records")
 	}
@@ -127,7 +127,7 @@ func TestForOrgIsolates(t *testing.T) {
 	if got, _ := a.GetTodo(td.ID); got.Title != "a's" || got.CreatedBy != u.ID {
 		t.Errorf("a's todo: %+v", got)
 	}
-	if len(a.ListTodos("")) != 1 || len(a.ListIssues("")) != 1 || len(a.Chat(u.ID)) != 1 {
+	if len(a.ListTodos("")) != 1 || len(a.ListIssues("")) != 1 || len(a.OpenIssues(nil)) != 1 || len(a.Chat(u.ID)) != 1 {
 		t.Error("a lost its records")
 	}
 

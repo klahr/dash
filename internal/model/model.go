@@ -423,9 +423,22 @@ func (t Todo) Blockers(all []Todo) []Todo {
 	if len(t.DependsOn) == 0 {
 		return nil
 	}
+	return t.BlockersIn(TodosByID(all))
+}
+
+// TodosByID indexes todos by id, for BlockersIn over many todos.
+func TodosByID(all []Todo) map[string]Todo {
 	byID := make(map[string]Todo, len(all))
 	for _, x := range all {
 		byID[x.ID] = x
+	}
+	return byID
+}
+
+// BlockersIn is Blockers with the todos already indexed by TodosByID.
+func (t Todo) BlockersIn(byID map[string]Todo) []Todo {
+	if len(t.DependsOn) == 0 {
+		return nil
 	}
 	var out []Todo
 	for _, id := range t.DependsOn {

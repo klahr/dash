@@ -217,11 +217,17 @@ func (s *Store) GetIssue(id string) (model.Issue, error) {
 
 // ListIssues returns a project's issues, most severe first, then newest.
 func (s *Store) ListIssues(projectID string) []model.Issue {
+	return s.listIssues(func(is *model.Issue) bool { return projectID == "" || is.ProjectID == projectID })
+}
+
+// listIssues is ListIssues for the issues keep accepts: it filters before
+// cloning and sorting.
+func (s *Store) listIssues(keep func(*model.Issue) bool) []model.Issue {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := []model.Issue{}
 	for _, is := range s.data.Issues {
-		if projectID == "" || is.ProjectID == projectID {
+		if keep(is) {
 			out = append(out, cloneIssue(*is))
 		}
 	}

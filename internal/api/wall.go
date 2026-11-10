@@ -240,12 +240,14 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 	if project != "" {
 		d.Project = byProject[projects[0].ID].Name
 	}
-	var todos []model.Todo
-	for _, t := range data.ListTodos("") {
-		if _, ok := byProject[t.ProjectID]; ok {
-			todos = append(todos, t)
-		}
+	// Only this org's (or this project's) todos are copied: the store
+	// filters before it copies and sorts.
+	scope := ""
+	if project != "" {
+		scope = projects[0].ID
 	}
+	todos := data.ListTodos(scope)
+	byID := model.TodosByID(todos) // once, for every queued task's blockers
 
 	// Runners: the org's, or this computer when it runs tasks itself.
 	var runners []tunnel.Runner
@@ -321,7 +323,7 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 			switch {
 			case t.Paused:
 				d.Stages.Paused++
-			case len(t.Blockers(todos)) > 0:
+			case len(t.BlockersIn(byID)) > 0:
 				d.Stages.Blocked++
 			case t.Waiting != "":
 				d.Stages.WaitingRunner++
@@ -414,15 +416,10 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 		d.Today.FirstTry = &f
 	}
 
-	// Open issues
-	var open []model.Issue
-	for _, p := range projects {
-		for _, is := range data.ListIssues(p.ID) {
-			if is.Status == model.IssueOpen {
-				open = append(open, is)
-				d.Issues.Severity[string(is.Severity)]++
-			}
-		}
+	// Open issues: one pass over the store for the whole org.
+	open := data.OpenIssues(func(id string) bool { _, ok := byProject[id]; return ok })
+	for _, is := range open {
+		d.Issues.Severity[string(is.Severity)]++
 	}
 	d.Issues.Open = len(open)
 	if !privacy {

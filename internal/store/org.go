@@ -102,13 +102,7 @@ func (o *OrgStore) ListTodos(projectID string, statuses ...model.TodoStatus) []m
 		}
 		return o.s.ListTodos(projectID, statuses...)
 	}
-	var out []model.Todo
-	for _, t := range o.s.ListTodos("", statuses...) {
-		if o.ownsProject(t.ProjectID) {
-			out = append(out, t)
-		}
-	}
-	return out
+	return o.s.listTodos(o.ownsProject, statuses...)
 }
 
 func (o *OrgStore) GetTodo(id string) (model.Todo, error) {
@@ -208,13 +202,17 @@ func (o *OrgStore) ListIssues(projectID string) []model.Issue {
 	if projectID != "" && !o.ownsProject(projectID) {
 		return []model.Issue{}
 	}
-	out := []model.Issue{}
-	for _, is := range o.s.ListIssues(projectID) {
-		if o.ownsProject(is.ProjectID) {
-			out = append(out, is)
-		}
-	}
-	return out
+	return o.s.listIssues(func(is *model.Issue) bool {
+		return (projectID == "" || is.ProjectID == projectID) && o.ownsProject(is.ProjectID)
+	})
+}
+
+// OpenIssues is the open issues of the org's projects that keep accepts
+// (nil keeps all), most severe first, then newest.
+func (o *OrgStore) OpenIssues(keep func(projectID string) bool) []model.Issue {
+	return o.s.listIssues(func(is *model.Issue) bool {
+		return is.Status == model.IssueOpen && (keep == nil || keep(is.ProjectID)) && o.ownsProject(is.ProjectID)
+	})
 }
 
 func (o *OrgStore) UpsertIssue(in model.Issue) (model.Issue, model.UpsertResult, error) {
