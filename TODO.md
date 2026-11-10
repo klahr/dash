@@ -7,7 +7,6 @@ Most important first within each section.
 
 ## Quality
 
-- [ ] Split `web/static/app.js` (~2,000 lines) into modules.
 - [ ] Try PR mode and failed-build investigation against a real GitHub repository.
 
 ## Features
