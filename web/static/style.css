@@ -235,6 +235,12 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
   width: 100%; text-align: left; padding: 14px 16px 14px 16px; min-height: 64px;
 }
 .todo:hover, .todo.selected { background: var(--surface); }
+/* The card's title is the button that opens it (app.js: todoRow); the whole
+   card is clickable, and the focus ring goes around the card. */
+.todo { cursor: pointer; }
+.todo-open { display: block; width: 100%; text-align: left; }
+.todo-open:focus-visible { outline: none; }
+.todo:has(> .todo-main > .todo-open:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-s); }
 .todo .node {
   justify-self: center; margin-top: 4px; width: 14px; height: 14px; border-radius: 50%;
   background: var(--bg); border: 3px solid var(--c); position: relative; z-index: 1;
@@ -1629,7 +1635,7 @@ dialog.file-over, .file-over { outline: 2px dashed color-mix(in srgb, var(--acce
 .attach-tag .clip svg { width: 13px; height: 13px; }
 
 /* ---- pull requests, reverts, sync ---- */
-.pr-tag { font-size: 12px; font-weight: 600; color: var(--review); cursor: pointer; }
+.pr-tag { font-size: 12px; font-weight: 600; color: var(--review); cursor: pointer; text-decoration: none; }
 .pr-tag:hover { text-decoration: underline; }
 .todo-sub.pr-status.progress { font-family: inherit; font-size: inherit; }
 .todo-sub.pr-status.waiting { font-weight: 600; }
@@ -1737,8 +1743,8 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .dep-status { flex: none; font-size: 13px; color: var(--c, var(--faint)); }
 .todo-sub.deps, .deps { color: var(--muted); }
 .todo-sub.deps.stuck, .deps.stuck { color: var(--running); font-weight: 600; }
-.dep-link { color: var(--text); text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 2px; cursor: pointer; border-radius: 3px; }
-.dep-link:hover, .dep-link:focus-visible { text-decoration-color: currentColor; outline: none; }
+.dep-link { display: inline; text-align: inherit; color: var(--text); text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 2px; cursor: pointer; border-radius: 3px; }
+.dep-link:hover, .dep-link:focus-visible { text-decoration-color: currentColor; }
 .deps.stuck .dep-link, .todo-sub.deps.stuck .dep-link { color: var(--failed); }
 
 /* ---------- live preview ---------- */

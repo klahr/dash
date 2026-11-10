@@ -2099,13 +2099,12 @@ function depWait(t) {
   return { deps, stuck: deps.filter((d) => d.status === "failed" || d.status === "draft") };
 }
 
-// A dependency's title that opens it; a span since cards are buttons.
+// A dependency's title that opens it.
 function depLink(d) {
-  return h("span", {
-    class: "dep-link", role: "link", tabindex: "0", title: `Open “${title(d)}”`,
+  return h("button", {
+    type: "button", class: "dep-link", title: `Open “${title(d)}”`,
     onpointerdown: (e) => e.stopPropagation(),
     onclick: (e) => { e.stopPropagation(); openDetail(d.id); },
-    onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); openDetail(d.id); } },
   }, title(d));
 }
 
@@ -2150,12 +2149,19 @@ function todoRow(t, li = -1, ri = -1) {
   const checkTag = t.checks && ["review", "merging", "failed"].includes(t.status)
     ? h("span", { class: `check-tag ${t.checks.passed ? "pass" : "fail"}` }, t.checks.passed ? "Tests pass" : "Tests fail")
     : null;
-  return h("button", {
+  // The card is a container, not a button: its title is the button that opens
+  // the task, and its actions (chips, PR link, dependency links) are sibling
+  // controls, so each is focusable and announced on its own. A press anywhere
+  // else on the card opens the task too.
+  return h("div", {
     class: `todo s-${t.status}${isPushed(t) ? " pushed" : ""}${t.reviewing ? " reviewing" : ""}${state.detail === t.id ? " selected" : ""}${atCursor ? " cursor" : ""}`,
-    "data-id": t.id, onclick: () => openDetail(t.id),
+    "data-id": t.id,
+    onclick: (e) => { if (!e.target.closest("a, button:not(.todo-open)")) openDetail(t.id); },
   },
     h("span", { class: "node", "aria-hidden": "true" }),
-    h("span", { class: "todo-main" }, h("span", { class: "todo-title" }, title(t)), h("span", { class: subClass }, sub)),
+    h("span", { class: "todo-main" },
+      h("button", { type: "button", class: "todo-open" }, h("span", { class: "todo-title" }, title(t))),
+      h("span", { class: subClass }, sub)),
     h("span", { class: "todo-side" },
       checkTag,
       t.paused ? h("span", { class: "paused-tag" }, "Paused") : null,
@@ -2195,20 +2201,17 @@ function prChecksTitle(pr) {
   return (pr.checks || []).map((c) => `${mark[c.state] || "·"} ${c.name}`).join("\n");
 }
 
-// The card's "PR #N", opening the pull request. A span, as the card is a
-// <button>, which can't nest a link.
+// The card's "PR #N", opening the pull request.
 function prTag(pr) {
-  const open = (e) => { e.stopPropagation(); window.open(pr.url, "_blank", "noopener"); };
-  return h("span", {
-    class: "pr-tag", role: "link", title: `Open pull request #${pr.number} on GitHub`,
-    onpointerdown: (e) => e.stopPropagation(), onclick: open,
+  return h("a", {
+    class: "pr-tag", href: pr.url, target: "_blank", rel: "noopener", title: `Open pull request #${pr.number} on GitHub`,
+    onpointerdown: (e) => e.stopPropagation(), onclick: (e) => e.stopPropagation(),
   }, `PR #${pr.number}`);
 }
 
-// Spans, not buttons: the card itself is a <button>, which can't nest one.
 function reviewChip(t) {
-  return h("span", {
-    class: "review-chip", role: "button", title: "Have Claude review the changes",
+  return h("button", {
+    type: "button", class: "review-chip", title: "Have Claude review the changes",
     onpointerdown: (e) => e.stopPropagation(),
     onclick: (e) => {
       e.stopPropagation();
@@ -2220,8 +2223,8 @@ function reviewChip(t) {
 // Opens the task with its live preview, starting the server if needed.
 function previewChip(t) {
   const p = previewOf(t.id);
-  return h("span", {
-    class: "preview-chip", role: "button", title: "Open the live preview",
+  return h("button", {
+    type: "button", class: "preview-chip", title: "Open the live preview",
     onpointerdown: (e) => e.stopPropagation(),
     onclick: (e) => {
       e.stopPropagation();
@@ -2231,8 +2234,8 @@ function previewChip(t) {
 }
 
 function approveChip(t) {
-  return h("span", {
-    class: "approve-chip", role: "button", title: "Approve and merge without opening the diff",
+  return h("button", {
+    type: "button", class: "approve-chip", title: "Approve and merge without opening the diff",
     onpointerdown: (e) => e.stopPropagation(),
     onclick: (e) => {
       e.stopPropagation();
@@ -2242,8 +2245,8 @@ function approveChip(t) {
 }
 
 function enqueueChip(t) {
-  return h("span", {
-    class: "enqueue-chip", role: "button", title: "Move to the queue",
+  return h("button", {
+    type: "button", class: "enqueue-chip", title: "Move to the queue",
     onpointerdown: (e) => e.stopPropagation(),
     onclick: (e) => {
       e.stopPropagation();
@@ -7866,11 +7869,12 @@ const hoverCard = {
     if (!this.row) {
       this.row = fresh;
       this.row.removeAttribute("data-id"); // board code looks cards up by data-id; this isn't one
-      this.row.tabIndex = -1;
       this.el.append(this.row);
     } else {
       this.row.replaceChildren(...fresh.childNodes);
     }
+    // The copy is aria-hidden: keep its controls out of the tab order.
+    for (const el of this.row.querySelectorAll("button, a")) el.tabIndex = -1;
     this.row.className = this.card.className;
     this.row.style.minHeight = `${this.card.offsetHeight}px`; // always covers the card
   },
@@ -9106,7 +9110,7 @@ document.addEventListener("keydown", (e) => {
   // (except sections, which also close the open todo and leave the list).
   // Enter on a focused Review card approves it, like its Approve chip;
   // on a Draft card it enqueues, like its Enqueue chip.
-  const card = k === "Enter" && state.todos.get(target.closest?.("button.todo.s-review, button.todo.s-draft")?.dataset.id);
+  const card = k === "Enter" && state.todos.get(target.closest?.(".todo-open")?.closest(".todo.s-review, .todo.s-draft")?.dataset.id);
   if (card && enterKey(card)) {
     e.preventDefault();
     attempt(todoKey)(card, enterKey(card));
