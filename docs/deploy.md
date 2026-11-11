@@ -121,7 +121,8 @@ letters, digits and hyphens, not starting or ending with a hyphen, unique, and n
   connectors keep working; update them meanwhile), and no other org can take it until then.
 - When you turn org subdomains on, orgs whose slug can't be a subdomain (too short, reserved) get
   a new one from their name; Dash logs each.
-- An org's folder for new projects (`<projects root>/<folder>/`) is fixed when the org is made and
+- An org's folder for the projects runners keep (**Add project**'s clones and local-only
+  repositories, `<projects root>/<folder>/`) is fixed when the org is made and
   doesn't follow renames, so a slug given up and taken later never brings another org's checkouts
   with it.
 

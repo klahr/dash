@@ -1,7 +1,7 @@
 # GitHub
 
-A GitHub project is made on the hub with **New project** → **Your GitHub repos** or **New GitHub
-repo** (with the picked runner's `gh`; the hub runs no `gh` of its own), or by pasting its URL. A
+A GitHub project is made on the hub with **Add project** → **From GitHub** or **New GitHub
+repository** (with the picked runner's `gh`; the hub runs no `gh` of its own), or **From URL**. A
 **Local only** project has no remote: to put one on GitHub, create the repository from its folder
 on the runner (`gh repo create --source . --push`), then make a project of it on the hub. In the
 project's settings, under **How finished tasks land**, choose:

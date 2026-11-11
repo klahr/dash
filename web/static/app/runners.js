@@ -528,7 +528,7 @@ function renderRunnerLinks() {
 
   const rows = [];
   const seen = new Set();
-  // The owner's GitHub repositories, grouped by owner, as in New project.
+  // The owner's GitHub repositories, grouped by owner, as in Add project.
   if (links.gh) {
     let ghOwner = null;
     for (const x of links.gh.repos || []) {
@@ -702,6 +702,6 @@ export function welcomeScreen() {
       h("li", {}, h("strong", {}, "Add tasks. "), "Each runs in its own worktree and comes back for review.")),
     h("div", { class: "welcome-actions" },
       ib({ class: "btn primary", onclick: attempt(openAddRunner) }, "plus", "Add a runner"),
-      ib({ class: "btn", onclick: openNewProject }, "plus", "New project")),
+      ib({ class: "btn", onclick: openNewProject }, "plus", "Add project")),
   ];
 }

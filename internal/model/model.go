@@ -173,7 +173,7 @@ type Project struct {
 	// (see api.MoveHubClones).
 	HubOrgFolder string `json:"hub_org_folder,omitempty"`
 	// LocalOnly marks a runner's own project made as a new repository with
-	// no remote (the hub's New project → Local only), for throwaway work:
+	// no remote (the hub's Add project → Local only), for throwaway work:
 	// deleting the project deletes its folder too.
 	LocalOnly bool `json:"local_only,omitempty"`
 

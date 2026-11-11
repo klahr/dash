@@ -226,7 +226,7 @@ function renderBoardNow() {
       h("p", { class: "empty-title" }, "Create your first project"),
       h("p", {}, "A project is a git repository. Every task runs in its own worktree, so several can run at once."),
       h("div", { class: "empty-actions" },
-        ib({ class: "btn primary", onclick: () => openNewProject() }, "plus", "New project")));
+        ib({ class: "btn primary", onclick: () => openNewProject() }, "plus", "Add project")));
     return;
   }
   empty.hidden = true;

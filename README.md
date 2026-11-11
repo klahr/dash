@@ -73,7 +73,7 @@ too, the runner keeps its data apart from the hub's (`~/.local/share/dash-runner
 
 Projects live on runners. A **runner's own project** is a repository on that runner's disk; a
 **shared project** is a git remote linked to one or more runners, each of which clones it, and any
-of them can run its tasks (**New project** on the hub: pick one of your GitHub repositories,
+of them can run its tasks (**Add project** on the hub: pick one of your GitHub repositories,
 create one, or paste a remote URL; each runner clones it into its projects folder, or adopts a
 clone of it already there; link more runners in its settings, **Runners**). See
 [Two kinds of projects](docs/several-computers.md#two-kinds-of-projects). A hub that kept projects
@@ -85,10 +85,11 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 
 ## Your first task
 
-1. **Create a project.** Click **New project** and pick the **Runner** it lives on (every project
-   is on a runner; the hub keeps none). Then pick one of your GitHub repositories (listed with
-   that runner's `gh`, filterable), a **New GitHub repo**, or a **Remote URL**: the runner clones it
-   into its projects folder (or adopts a clone of it already there). For throwaway work, pick
+1. **Add a project.** Click **Add project** (every project is on a runner; the hub keeps none,
+   and with several runners you pick one beside the title). Then pick **From GitHub** (your
+   repositories, listed with that runner's `gh`, filterable), **New GitHub repository**, or **From
+   URL**: the runner clones it into its projects folder (or adopts a clone of it already there),
+   and the dialog shows each step until the clone is done. For throwaway work, pick
    **Local only**: the runner starts a new repository in its projects folder (`git init` and an
    initial commit), with no remote and no GitHub; deleting that project deletes its folder too.
    Repositories already on a runner's disk are added with **Add projects from this computer…** on
