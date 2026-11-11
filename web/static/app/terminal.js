@@ -68,8 +68,8 @@ export async function startProc(req, show = true) {
 }
 
 // Why no terminal opens for project p (on a task's runner, with runnerID) on the hub,
-// from its runners: only on the caller's own runner, and only one started with
-// -hub-commands. "" when one may (or the runner hasn't said: it answers itself).
+// from its runners: only on the caller's own runner, and only one that says it
+// opens terminals (an older one may not). "" when one may (or the runner hasn't said: it answers itself).
 export function shellBlocked(p = state.project, runnerID = "") {
   if (!p || p.prefix || !isHub()) return "";
   const online = state.runners.filter((r) => r.online && (runnerID ? r.id === runnerID : p.runners?.includes(r.id)));
@@ -80,7 +80,7 @@ export function shellBlocked(p = state.project, runnerID = "") {
     return `Terminals open only on your own runner, and ${names} ${online.length > 1 ? "belong" : "belongs"} to another member. Its owner can open one, or link a runner of yours to ${p.name}.`;
   }
   if (mine.every((r) => r.reported && !r.reported.terminals)) {
-    return `${mine.map((r) => r.name).join(", ")} doesn't open terminals for the hub. Start it with -hub-commands to allow it.`;
+    return `${mine.map((r) => r.name).join(", ")} doesn't open terminals for the hub: it is older than this hub, update it.`;
   }
   return "";
 }

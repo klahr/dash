@@ -256,8 +256,8 @@ projects on a runner's **Projects…** screen (below). From then on:
 - Review happens on the hub as usual: the diff, the log and the timeline come from the runner,
   and **Run tests again** runs them on the task's runner, in its worktree there. Attachments and
   editor changes can't be sent to runners yet, and live previews are on the runner's own
-  dashboard. A terminal in the task's worktree opens from the hub for the runner's owner when it
-  runs with `-hub-commands` (see below).
+  dashboard. A terminal in the task's worktree opens from the hub for the runner's owner (see
+  below).
 
 ### A runner's projects
 
@@ -308,17 +308,15 @@ connection, to the clone of one of the project's runners that is online:
   requests from the working branch, release tags (**Tag release…** and the `create_release` tool);
 - the file browser and the `CLAUDE.md` and settings files;
 - the project's commands: **Run**, **Test** and **Deploy**, also in a task's worktree (they run on
-  that task's runner). The runner runs the commands set on its clone; started with `-hub-commands`, it takes
-  the shared project's commands from the hub (set in its settings on the hub), each time the
-  project is linked;
+  that task's runner). The runner always takes the shared project's commands from the hub (set
+  in its settings on the hub), each time the project is linked;
 - the **Shell** view and **Open shell in this worktree** on a task: a terminal on the runner, in
   the project's checkout there or the task's worktree, only for the user who registered the runner
-  and only when it runs with `-hub-commands` (a shell can do whatever a deploy command can). The
-  hub chooses neither the runner's folder nor whose terminal it is: the runner checks its owner
-  itself. Without the flag, or for the org's other members, the Shell view says why;
-- `!` commands in a project's or a task's chat: likewise only with `-hub-commands`, for the user
-  who registered the runner, and only when its chat runs commands (`-chat-tools shell`; never
-  with `-chat api`);
+  (a shell can do whatever a deploy command can). The hub chooses neither the runner's folder nor
+  whose terminal it is: the runner checks its owner itself. For the org's other members, or on a
+  runner older than the hub, the Shell view says why;
+- `!` commands in a project's or a task's chat: likewise only for the user who registered the
+  runner, and only when its chat runs commands (`-chat-tools shell`; never with `-chat api`);
 - GitHub Actions: the hub's **CI** view, the automatic investigation of a failing build, and
   **Retry** read and re-run the builds with `gh` on a runner;
 - **Clean up** cleans the runner's clone.
@@ -525,11 +523,8 @@ The runner does the looking, and only:
 A runner only does the dashboard's normal work on its own projects: tasks, reviews, merges,
 issues, scans, chats about a project or task, CI, previews and permission prompts. It refuses:
 
-- terminals and ad-hoc commands, on its own projects and on its clones of shared ones (with
-  `-hub-commands` it takes ad-hoc commands, and opens terminals for its owner only);
-- setting a project's run, test, deploy or setup command, or taking a shared project's from the
-  hub (set those on the runner, or start it with `-hub-commands` if you trust the hub to run
-  commands on it);
+- terminals for anyone but its owner (it always takes the hub's project commands and ad-hoc
+  commands, and opens terminals for its owner);
 - adding a project outside its `-projects` directory;
 - the general chat and Claude's short calls (titles, summaries, clean-up, split) for anyone but its owner
   (see [above](#claude-runs-on-each-users-own-runner));

@@ -77,6 +77,9 @@ func main() {
 	for _, name := range o.removed {
 		slog.Warn("-" + name + " is gone and ignored: the hub never runs Claude or tasks itself, runners (dash runner) do. Remove it from the start command")
 	}
+	if o.hubCommands {
+		slog.Info("-hub-commands is no longer needed: a runner always takes commands from the hub. Remove it from the start command")
+	}
 	for _, name := range o.ignored {
 		slog.Warn("-" + name + " is a flag of dash runner, ignored by the hub, which runs no tasks, Claude or commands itself. Remove it from the hub's start command (pass it to dash runner)")
 	}

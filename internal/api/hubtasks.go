@@ -144,13 +144,11 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "this runner works for another organization"})
 		return
 	}
-	// The hub's commands, when this runner takes commands from the hub.
+	// The hub's commands.
 	commands := func(x *model.Project) {
-		if s.HubCommands {
-			x.SetupCommand, x.TestCommand, x.RunCommand, x.DeployCommand = req.SetupCommand, req.TestCommand, req.RunCommand, req.DeployCommand
-			if k, err := checkPreviewKind(req.PreviewKind); err == nil {
-				x.PreviewKind, x.PreviewCommand = k, strings.TrimSpace(req.PreviewCommand)
-			}
+		x.SetupCommand, x.TestCommand, x.RunCommand, x.DeployCommand = req.SetupCommand, req.TestCommand, req.RunCommand, req.DeployCommand
+		if k, err := checkPreviewKind(req.PreviewKind); err == nil {
+			x.PreviewKind, x.PreviewCommand = k, strings.TrimSpace(req.PreviewCommand)
 		}
 	}
 	// The hub's review settings; an older hub that doesn't send them leaves

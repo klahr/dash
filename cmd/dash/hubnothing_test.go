@@ -114,10 +114,10 @@ func TestHubRunsNothingItself(t *testing.T) {
 		t.Errorf("a new project on the hub: %d %s", code, body)
 	}
 
-	// A runner that takes the hub's commands, with git and the fake claude.
+	// A runner, with git and the fake claude.
 	calls := filepath.Join(dir, "claude-calls")
 	runnerEnv := append(o.env, "FAKECLAUDE_LOG="+calls, "PATH="+filepath.Dir(fake)+string(os.PathListSeparator)+os.Getenv("PATH"))
-	runner, runnerID, runnerArgs := registerRunner(t, api, dash, fake, dir, "laptop", runnerEnv, "-hub-commands")
+	runner, runnerID, runnerArgs := registerRunner(t, api, dash, fake, dir, "laptop", runnerEnv)
 
 	// A shared project: the remote and the runner it is linked to.
 	var p struct {
@@ -192,8 +192,7 @@ func TestHubRunsNothingItself(t *testing.T) {
 	if code, body := api.try("DELETE", "/api/processes/"+proc.ID, nil); code != http.StatusAccepted && code != http.StatusOK {
 		t.Errorf("stopping the runner's process: %d %s", code, body)
 	}
-	// A terminal: the runner takes the hub's commands (-hub-commands), and
-	// the admin registered it, so it opens one in its checkout.
+	// A terminal: the admin registered the runner, so it opens one in its checkout.
 	var shell struct {
 		ID, Dir, Kind string
 		Main          bool

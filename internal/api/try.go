@@ -78,8 +78,8 @@ type tryRunner struct {
 }
 
 // tryRunners are the runners p's try session may run on for c: online,
-// linked to p (p.Runners), in p's org, opening terminals for the hub
-// (-hub-commands) and registered by c (terminals open only for a runner's
+// linked to p (p.Runners), in p's org, opening terminals for the hub (an
+// older runner may not) and registered by c (terminals open only for a runner's
 // owner). When there is none, why says so in a sentence for the UI.
 func tryRunners(fleet []tunnel.Runner, p model.Project, c Caller) (out []tryRunner, why string) {
 	linked, online, terms := 0, 0, 0
@@ -108,7 +108,7 @@ func tryRunners(fleet []tunnel.Runner, p model.Project, c Caller) (out []tryRunn
 	case online == 0:
 		why = "No runner with this project is connected."
 	case terms == 0:
-		why = "No connected runner with this project allows terminals (start it with -hub-commands)."
+		why = "No connected runner with this project allows terminals: update it."
 	default:
 		why = "Terminals open only on your own runner, and no runner of yours with this project is connected."
 	}

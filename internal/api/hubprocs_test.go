@@ -52,7 +52,7 @@ func TestHubListsRunnerQuickActionsWithTheirPreset(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs, runnerAPI, remote := runnerSide(t, creds.OrgID)
-	rs.Procs, rs.HubCommands = runner.NewManager(rs.Hub), true
+	rs.Procs = runner.NewManager(rs.Hub)
 	client := &tunnel.Client{Creds: creds, Handler: runnerAPI, MinBackoff: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond}
 	go func() { _ = client.Run(ctx) }()
 	eventually(t, "the runner to come online", func() bool { r, _ := rh.Get(creds.ID); return r.Online })
@@ -162,8 +162,7 @@ func sessionOf(t *testing.T, s *Server, uid, org int64) store.Session {
 
 var sessionSeq atomic.Int64
 
-// A hub opens a terminal on a project's runner only when the runner takes
-// commands from the hub (-hub-commands), and only for the user who
+// A hub opens a terminal on a project's runner only for the user who
 // registered the runner: another member of the org gets neither a new one
 // nor the owner's. The terminal starts in the runner's checkout, whatever
 // the hub asks, and its socket carries keyboard input and resizes through
@@ -214,12 +213,6 @@ func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
 		return w
 	}
 
-	// Without -hub-commands: refused, naming the flag.
-	if w := start(owner.User, `{"kind":"pty"}`); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "-hub-commands") {
-		t.Fatalf("terminal without -hub-commands: %d %s", w.Code, w.Body)
-	}
-
-	rs.HubCommands = true
 	// Another member of the org: refused, by the hub and by the runner.
 	if w := start(other, `{"kind":"pty"}`); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "registered it") {
 		t.Fatalf("terminal for another member: %d %s", w.Code, w.Body)

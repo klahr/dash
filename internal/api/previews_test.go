@@ -182,7 +182,7 @@ func TestQRCode(t *testing.T) {
 
 // A runner's terminal preview, reached from the hub through the peer proxy
 // (/peer/{runner}/…): it is a shell, so like the runner's terminals it opens
-// only with -hub-commands and for the user who registered the runner; its
+// only for the user who registered the runner; its
 // socket carries keystrokes both ways, and its log comes back as text.
 func TestRunnerTerminalPreviewThroughTheHub(t *testing.T) {
 	parallel(t)
@@ -224,12 +224,8 @@ func TestRunnerTerminalPreviewThroughTheHub(t *testing.T) {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hub.mux().ServeHTTP(w, as(r)) })
 	start := "/peer/laptop/api/todos/" + td.ID + "/preview"
 
-	// Without -hub-commands the runner opens no shell for the hub.
-	if w := do(t, h, "POST", start, ""); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "-hub-commands") {
-		t.Fatalf("terminal preview without -hub-commands: %d %s", w.Code, w.Body)
-	}
-	// Nor for anyone but its owner.
-	rs.HubCommands, rs.HubUser = true, creds.UserID+1000
+	// The runner opens no shell for anyone but its owner.
+	rs.HubUser = creds.UserID + 1000
 	if w := do(t, h, "POST", start, ""); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "registered it") {
 		t.Fatalf("terminal preview for another user: %d %s", w.Code, w.Body)
 	}

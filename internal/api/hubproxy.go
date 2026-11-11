@@ -410,7 +410,7 @@ func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv
 }
 
 // terminalRunner is the online runner of p a terminal for c opens on: one
-// of c's own, one that said it opens terminals (-hub-commands) first; ""
+// of c's own, one that said it opens terminals first; ""
 // when none of them is c's.
 func (s *Server) terminalRunner(c Caller, p model.Project) string {
 	id := ""
