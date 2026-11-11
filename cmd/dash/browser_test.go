@@ -1118,7 +1118,9 @@ func TestBrowserCustomScan(t *testing.T) {
 		t.Fatalf("scans: %+v", res.Scans)
 	}
 
-	// Editing it opens Advanced only when something there is set.
+	// Editing it opens Advanced only when something there is set. The edit
+	// actions are in the card's details.
+	b.clickIn(".scan-card", "API error handling", ".scan-more")
 	b.clickIn(".scan-card", "API error handling", ".scan-actions .link")
 	b.waitJS("the editor, Advanced closed", `document.querySelector("#scan-sheet").open && !document.querySelector("#scan-advanced").open && document.querySelector("#scan-form [name=name]").readOnly`)
 }
