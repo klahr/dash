@@ -44,8 +44,9 @@ it runs as a shell command where the chat runs, as in Claude Code.
 
 Who may run them:
 
-- Only the runner's owner, the same rule as for the chat itself: a runner runs `!` commands, like
-  chat turns, only for the user who registered it, checked on the runner.
+- Only the runner's owner, the same rule as for the chat itself: a runner always takes `!` commands
+  from the hub, but, like chat turns, runs them only for the user who registered it, checked on
+  the runner.
 - Not in a **read-only chat**: a runner started with `-chat-tools readonly` runs no commands, so
   it refuses `!` commands too, and the composer says so (the message goes to Claude as text).
 - Not in the **general chat**, which has no project folder to run in.

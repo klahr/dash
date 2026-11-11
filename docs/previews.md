@@ -21,7 +21,7 @@ it is empty. `./.dash-bin` (git ignores it) is on `PATH` and in `$DASH_BIN`, so 
 leaves you at a prompt where `tool` is the task's build. Such a project needs no `run_command`.
 The preview is live at once, has no URL, and is attached to over the WebSocket in its
 `terminal_url` (`/ws/todos/<task>/preview`, the same protocol as other terminals; under
-`/peer/<runner>/` for a runner's tasks, which open it only with `-hub-commands` and for the
+`/peer/<runner>/` for a runner's tasks, which open it only for the
 runner's owner). It stops like a web preview, with keystrokes counting as traffic. If the command
 fails or the shell exits, it shows as crashed; `GET /api/todos/<task>/preview/log?lines=N` returns
 its last lines as plain text, for **Send back**.
@@ -36,7 +36,7 @@ what you selected in the terminal if you selected something.
 **Try** (in the sidebar, or the phone's menu, of a CLI project on a hub; `:try`) opens the same
 kind of terminal on the project rather than a task, to test it without one in review. It always
 runs on a runner, never on the hub: one that is connected, has the project linked and opens
-terminals for you (`-hub-commands`, and only for the runner's owner). With one such runner it is
+terminals for you (only for the runner's owner). With one such runner it is
 picked by itself; with several, pick one in the Try header; with none, Try is greyed out and says
 why.
 

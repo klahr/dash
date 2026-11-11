@@ -106,8 +106,8 @@ func (r Runner) Limit() int {
 type Reported struct {
 	Parallel int             `json:"parallel"`
 	Usage    *usage.Snapshot `json:"usage,omitempty"`
-	// Terminals: it opens terminals for its owner from the hub
-	// (-hub-commands).
+	// Terminals: it opens terminals for its owner from the hub (false from
+	// an older runner started without -hub-commands).
 	Terminals bool `json:"terminals"`
 	// ChatCommands: its chats run "!" commands for its owner (its chat
 	// isn't read-only).

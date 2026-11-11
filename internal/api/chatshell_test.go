@@ -263,7 +263,6 @@ func TestHubRunsChatShellOnTheUsersRunner(t *testing.T) {
 	if _, err := raw(f.runner).CreateProject(model.Project{ID: store.NewID(), Name: "web", Path: clone, DefaultBranch: "main", HubProjectID: hp.ID, HubCheckout: model.HubCloned}); err != nil {
 		t.Fatal(err)
 	}
-	f.runner.HubCommands = true
 	report := func(commands bool) {
 		b, _ := json.Marshal(map[string]any{"parallel": 1, "chat_commands": commands})
 		r := httptest.NewRequest("POST", "/runner/report", strings.NewReader(string(b)))
@@ -359,8 +358,8 @@ func TestHubRunsChatShellOnTheUsersRunner(t *testing.T) {
 	}
 }
 
-// A runner runs a "!" command the hub sends only with -hub-commands, only
-// for its owner, and only in a chat that runs commands.
+// A runner runs a "!" command the hub sends only for its owner, and only in
+// a chat that runs commands.
 func TestRunnerRunsChatShellOnlyForItsOwner(t *testing.T) {
 	s, h, _ := runnerServer(t)
 	s.HubUser, s.Chat = 42, &echoChat{}
@@ -387,12 +386,7 @@ func TestRunnerRunsChatShellOnlyForItsOwner(t *testing.T) {
 		_, res, errText := shellTurn(t, ws, map[string]any{"project": "hub-p", "hub": true}, []agent.ChatMessage{cmdMsg("!touch ran-" + u)}, nil)
 		return res, errText
 	}
-	// Without -hub-commands, not even for its owner.
-	if res, errText := run("42"); res != nil || !strings.Contains(errText, "-hub-commands") {
-		t.Errorf("without -hub-commands: %+v %q", res, errText)
-	}
-	s.HubCommands = true
-	// Nor in an API chat, which runs no commands.
+	// Not in an API chat, which runs no commands.
 	s.Chat = agent.NewChat()
 	if res, errText := run("42"); res != nil || !strings.Contains(errText, "read-only") {
 		t.Errorf("API chat: %+v %q", res, errText)

@@ -42,7 +42,6 @@ func remoteServer(t *testing.T) (h http.Handler, s *Server, home, work model.Pro
 	ps, _, work := boardServer(t)
 	ps.Peers = &peer.Hub{Self: "work"}
 	ps.Git = gitops.New(nil) // for update_project
-	ps.HubCommands = true    // update_project sets the test command
 	code, _, err := rh.NewCode(testOwner(t, s))
 	if err != nil {
 		t.Fatal(err)

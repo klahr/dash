@@ -390,11 +390,11 @@ func TestBrowserHistoryCommitPane(t *testing.T) {
 // A CLI project's terminal preview: open it on a task in review, type in
 // it, and send the task back with the terminal's transcript as the rework
 // notes. In a project of the runner's own, whose runner opens terminals for
-// the hub (-hub-commands): the preview runs there, reached through the hub.
+// the hub: the preview runs there, reached through the hub.
 func TestBrowserTerminalPreview(t *testing.T) {
 	endToEnd(t)
 	chrome := needChrome(t)
-	h := startRunnerHub(t, "-hub-commands")
+	h := startRunnerHub(t)
 	api := h.api
 	b := newBrowser(t, chrome)
 	b.signIn(h)

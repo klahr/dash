@@ -144,7 +144,7 @@ type runnerHub struct {
 	username, password string
 }
 
-// runnerFlags are added to the runner's command line, e.g. -hub-commands.
+// runnerFlags are added to the runner's command line.
 func startRunnerHub(t *testing.T, runnerFlags ...string) *runnerHub {
 	t.Helper()
 	gitBin, err := exec.LookPath("git")

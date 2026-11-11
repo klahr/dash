@@ -24,8 +24,8 @@ type Reporter struct {
 	Store    *store.Store
 	Usage    *usage.Tracker // optional
 	Parallel int            // the runner's -parallel
-	// Terminals: the runner opens terminals for its owner on the hub (it
-	// runs with -hub-commands).
+	// Terminals: the runner opens terminals for its owner on the hub
+	// (always, now; older runners only with -hub-commands).
 	Terminals bool
 	// ChatCommands: its chats run "!" commands for its owner.
 	ChatCommands bool

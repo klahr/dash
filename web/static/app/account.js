@@ -14,7 +14,7 @@ export async function loadMe() {
   state.me = me;
   const name = me.username;
   if (!name) return;
-  $("#foot-user").textContent = me.org ? `${name} · ${me.org.name}` : name;
+  $("#foot-user").textContent = name;
   $("#foot-avatar").textContent = [...name][0].toUpperCase();
   $("#foot-menu summary").title = `Account menu · ${name}${me.org ? ` in ${me.org.name}` : ""}`;
   const orgs = me.orgs || [];

@@ -115,7 +115,7 @@ func TestTryOnARunnerThroughTheHub(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs, runnerAPI, remote := runnerSide(t, creds.OrgID)
-	rs.Procs, rs.HubCommands, rs.HubUser = runner.NewManager(rs.Hub), true, creds.UserID
+	rs.Procs, rs.HubUser = runner.NewManager(rs.Hub), creds.UserID
 	t.Cleanup(rs.Procs.StopAll)
 	rs.Previews = preview.New(rs.Procs, rs.Hub, raw(rs), "")
 	rs.TryRoot = t.TempDir()
@@ -330,17 +330,17 @@ func TestTryOnARunnerThroughTheHub(t *testing.T) {
 }
 
 // Only the hub reaches a runner's try routes, for projects linked to it;
-// the terminal ones only for the runner's owner, with -hub-commands.
+// the terminal ones only for the runner's owner.
 func TestRunnerTryRoutesAreGuarded(t *testing.T) {
 	parallel(t)
 
 	s, h, _ := runnerSide(t, 7)
 	s.Procs = runner.NewManager(s.Hub)
 	s.Previews = preview.New(s.Procs, s.Hub, raw(s), "")
-	if w := send(h, "POST", "/api/hub/projects/hub-p1/try", `{}`); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "-hub-commands") {
-		t.Errorf("try without -hub-commands: %d %s", w.Code, w.Body)
+	if w := send(h, "POST", "/api/hub/projects/hub-p1/try", `{}`); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "who registered it") {
+		t.Errorf("try on a runner that doesn't know its owner: %d %s", w.Code, w.Body)
 	}
-	s.HubCommands, s.HubUser = true, 5
+	s.HubUser = 5
 	r := httptest.NewRequest("POST", "/api/hub/projects/hub-p1/try", strings.NewReader(`{}`))
 	r.Header.Set(tunnel.UserHeader, "5")
 	w := httptest.NewRecorder()

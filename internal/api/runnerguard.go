@@ -75,7 +75,7 @@ func init() {
 
 		// The project's own run/test/deploy commands; checked in hubGuard.
 		"GET /api/projects/{pid}/processes", "POST /api/projects/{pid}/processes", "DELETE /api/processes/{procid}",
-		"GET /ws/proc/{procid}", // terminals only with -hub-commands, for the owner (hubTerminal)
+		"GET /ws/proc/{procid}", // terminals only for the owner (hubTerminal)
 
 		// Terminal previews are terminals: checked in hubCheck.
 		"POST /api/todos/{tid}/preview", "DELETE /api/todos/{tid}/preview", "GET /api/todos/{tid}/preview/log",
@@ -123,8 +123,8 @@ func init() {
 
 // RunnerRoutes is what a runner serves to its hub over the tunnel: the
 // routes in hubRoutes, without a login (the tunnel is authenticated), and
-// nothing that runs a command the hub chose. With HubCommands set the hub may
-// also set a project's commands (run, test, deploy, setup).
+// a project's commands (run, test, deploy, setup) the hub sets; terminals and
+// "!" commands open only for the runner's owner.
 func (s *Server) RunnerRoutes() http.Handler {
 	mux := s.mux()
 	guard := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -142,21 +142,12 @@ func (s *Server) RunnerRoutes() http.Handler {
 	return logRequests(guard)
 }
 
-// errHubCommand is why the hub may not set or run a command.
-const errHubCommand = "this runner doesn't take commands from the hub; set the project's commands on the runner, or start it with -hub-commands"
-
-// errHubTerminal is why the hub may not open a terminal on this runner.
-const errHubTerminal = "this runner doesn't open terminals for the hub; start it with -hub-commands to allow its owner to"
-
 // hubTerminal reports whether the hub may open (or attach to) a terminal
-// on this runner for r: only with -hub-commands (a shell can do whatever a
-// deploy command can), and only for the user who registered the runner.
+// on this runner for r: only for the user who registered the runner (a
+// shell can do whatever a deploy command can).
 // It starts in the project's checkout or a task's worktree here, never a
 // folder the hub names (see startProcess).
 func (s *Server) hubTerminal(r *http.Request) error {
-	if !s.HubCommands {
-		return errors.New(errHubTerminal)
-	}
 	if s.HubUser == 0 {
 		// Registered with an older hub: it can't tell its owner from the
 		// org's other members.
@@ -173,35 +164,12 @@ func (s *Server) hubCheck(r *http.Request) error {
 	case "POST /api/projects":
 		var req struct {
 			Path string `json:"path"`
-			commandFields
 		}
 		if err := peekJSON(r, &req); err != nil {
 			return nil // the handler reports the bad body
 		}
 		if req.Path != "" && !within(s.ProjectRoot, store.CleanPath(req.Path)) {
 			return fmt.Errorf("the hub can only add projects inside %s on this runner", s.ProjectRoot)
-		}
-		if !s.HubCommands && req.any() {
-			return fmt.Errorf("%s", errHubCommand)
-		}
-	case "PATCH /api/projects/{pid}":
-		if s.HubCommands {
-			return nil
-		}
-		var req commandFields
-		if err := peekJSON(r, &req); err != nil {
-			return nil
-		}
-		c, err := s.caller(r)
-		if err != nil {
-			return nil // the handler refuses it
-		}
-		p, err := s.as(c).data.GetProject(segment(r, 2))
-		if err != nil {
-			return nil // the handler answers 404 and changes nothing
-		}
-		if req.changes(p) {
-			return fmt.Errorf("%s", errHubCommand)
 		}
 	case "POST /api/projects/{pid}/processes":
 		var req struct {
@@ -213,9 +181,6 @@ func (s *Server) hubCheck(r *http.Request) error {
 		}
 		if req.Kind == model.ProcPTY {
 			return s.hubTerminal(r)
-		}
-		if req.Command != "" && !s.HubCommands {
-			return fmt.Errorf("%s", errHubCommand)
 		}
 	case "GET /ws/proc/{procid}":
 		if p, err := s.Procs.Get(segment(r, 2)); err == nil && p.Kind == model.ProcPTY {
@@ -266,29 +231,6 @@ type commandFields struct {
 	// A terminal preview runs preview_command, or a shell without one.
 	Preview     *string `json:"preview_command"`
 	PreviewKind *string `json:"preview_kind"`
-}
-
-func (c commandFields) any() bool {
-	for _, v := range []*string{c.Run, c.Test, c.Deploy, c.Setup, c.Preview} {
-		if v != nil && strings.TrimSpace(*v) != "" {
-			return true
-		}
-	}
-	return c.PreviewKind != nil && *c.PreviewKind == model.PreviewTerminal
-}
-
-// changes reports whether c sets a command to something other than p has.
-// The settings form sends every field, so unchanged values must pass.
-func (c commandFields) changes(p model.Project) bool {
-	for _, x := range []struct {
-		v   *string
-		cur string
-	}{{c.Run, p.RunCommand}, {c.Test, p.TestCommand}, {c.Deploy, p.DeployCommand}, {c.Setup, p.SetupCommand}, {c.Preview, p.PreviewCommand}} {
-		if x.v != nil && strings.TrimSpace(*x.v) != strings.TrimSpace(x.cur) {
-			return true
-		}
-	}
-	return c.PreviewKind != nil && normPreviewKind(*c.PreviewKind) != normPreviewKind(p.PreviewKind)
 }
 
 // peekJSON decodes r's body into v and puts the body back for the handler.

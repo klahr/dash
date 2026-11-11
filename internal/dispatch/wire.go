@@ -77,9 +77,8 @@ type Link struct {
 	// times failing tests or merge conflicts go back to Claude on their own.
 	// Nil (older hubs) keeps the runner's setting.
 	MaxAutoFixes *int `json:"max_auto_fixes,omitempty"`
-	// The hub project's shell commands (setup, test, run, deploy). A
-	// runner takes them only when it was started with -hub-commands;
-	// otherwise its clone keeps the commands set on the runner.
+	// The hub project's shell commands (setup, test, run, deploy), which
+	// the runner's clone takes.
 	SetupCommand  string `json:"setup_command,omitempty"`
 	TestCommand   string `json:"test_command,omitempty"`
 	RunCommand    string `json:"run_command,omitempty"`
@@ -133,7 +132,7 @@ type Accepted struct {
 type Report struct {
 	Parallel int `json:"parallel"` // the runner's own -parallel
 	// Terminals: the runner opens terminals for its owner from the hub
-	// (it runs with -hub-commands).
+	// (always, now; older runners only with -hub-commands).
 	Terminals bool `json:"terminals,omitempty"`
 	// ChatCommands: its chats run "!" commands for its owner (its chat
 	// isn't read-only).

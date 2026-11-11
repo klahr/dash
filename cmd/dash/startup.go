@@ -109,7 +109,7 @@ type options struct {
 	removed, ignored                 []string // removed flags, and a runner's flags given to the hub
 	hubServer, regCode               string   // runner
 	offlineGrace                     time.Duration
-	hubCommands                      bool
+	hubCommands                      bool // -hub-commands was given: a no-op now
 	githubProtocol                   string
 }
 
@@ -204,13 +204,18 @@ func parseFlags(args []string, runnerMode bool) *options {
 		f.Usage = func() {
 			fmt.Fprintf(f.Output(), "usage: dash runner [flags]          run this computer as a runner of a hub\n"+
 				"       dash runner %s [-h]\n\nflags:\n", strings.Join(runnerctl.Commands, "|"))
-			f.PrintDefaults()
+			printFlags(f, func(name string) bool { return name == "hub-commands" })
 		}
 		f.StringVar(&o.hubServer, "server", "", "the hub's URL, e.g. https://dash.example.com (saved after registering)")
 		f.StringVar(&o.regCode, "code", "", "registration code from the hub's Runners page (only the first time, or to register again)")
 		f.DurationVar(&o.offlineGrace, "offline-grace", 10*time.Minute, "when the hub has been unreachable this long, stop running tasks and mark them interrupted (0 = never)")
 		f.StringVar(&o.githubProtocol, "github-protocol", "", "how this runner clones, fetches and pushes the hub's GitHub projects: ssh (git@github.com:…, with this computer's SSH keys) or https (needs a git credential helper, e.g. gh auth setup-git) (default $DASH_GITHUB_PROTOCOL, else ssh); a project's clone URL, when set, is used as it is")
-		f.BoolVar(&o.hubCommands, "hub-commands", false, "let the hub set the projects' run/test/deploy/setup commands and run ad-hoc commands, and open terminals for the runner's owner from the hub; off = only commands set on this computer run")
+		// Deprecated: a runner always takes commands from the hub. Still
+		// accepted (hidden from -h) so an old start command keeps working.
+		f.BoolFunc("hub-commands", "deprecated, no effect", func(string) error {
+			o.hubCommands = true
+			return nil
+		})
 	} else {
 		f.Usage = func() {
 			fmt.Fprintf(f.Output(), "usage: dash [flags]          run the hub, the dashboard (see dash runner -h for a runner's flags)\n"+
@@ -750,7 +755,6 @@ func (a *app) setupHub() {
 // it of this computer's tasks, pushes, processes and permission requests.
 func (a *app) setupRunner() {
 	o, st, events, ctx, apiSrv, cli, merges := a.o, a.st, a.events, a.ctx, a.apiSrv, a.cli, a.merges
-	apiSrv.HubCommands = o.hubCommands
 	var err error
 	if apiSrv.GitHubProtocol, err = gitops.ParseGitHubProtocol(o.githubProtocol); err != nil {
 		slog.Error("runner: -github-protocol", "err", err)
@@ -772,10 +776,10 @@ func (a *app) setupRunner() {
 		return tunnel.Board(ctx, creds, hubTodo, hubProject, body)
 	}
 	// The hub hears where its tasks are, and this computer's usage.
-	reporter := &dispatch.Reporter{Store: st, Usage: a.tracker, Parallel: o.parallel, Terminals: o.hubCommands, Claude: cli,
-		// As shellAllowed: the hub's "!" commands run only with -hub-commands,
+	reporter := &dispatch.Reporter{Store: st, Usage: a.tracker, Parallel: o.parallel, Terminals: true, Claude: cli,
+		// As shellAllowed: the hub's "!" commands run only for a known owner,
 		// in a chat that runs commands (agent.ReadOnlyChat).
-		ChatCommands: o.hubCommands && creds.UserID != 0 && o.chatBackend == "claude-code" && o.chatTools == agent.ChatShell,
+		ChatCommands: creds.UserID != 0 && o.chatBackend == "claude-code" && o.chatTools == agent.ChatShell,
 		Send: func(ctx context.Context, r dispatch.Report) error {
 			err := tunnel.Report(ctx, creds, r)
 			if errors.Is(err, tunnel.ErrRevoked) {

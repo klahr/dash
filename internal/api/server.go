@@ -110,9 +110,6 @@ type Server struct {
 	// tunnel.Board) to the hub's board: the board tools of the hub's tasks
 	// and of the chats the hub asks for act there, never on this Dash.
 	HubBoard func(ctx context.Context, hubTodo, hubProject string, body []byte) (*http.Response, error)
-	// HubCommands lets the hub set and run a project's commands when this
-	// Dash is a runner (see RunnerRoutes).
-	HubCommands bool
 	// GitHubProtocol is how this runner clones the hub's GitHub projects:
 	// gitops.ProtocolSSH ("" too) or gitops.ProtocolHTTPS (-github-protocol).
 	GitHubProtocol string
