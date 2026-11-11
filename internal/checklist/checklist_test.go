@@ -224,3 +224,68 @@ func TestPrompt(t *testing.T) {
 		}
 	}
 }
+
+func TestReorder(t *testing.T) {
+	items := Parse(nested).Items()
+	p, c1, c2, sib, last := items[0], items[1], items[2], items[3], items[4]
+
+	// Before: the parent goes with its continuation and nested items.
+	res, err := Apply(nested, []Op{{Op: "reorder", Ref: sib.Ref, Before: p.Ref}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Replace(nested, "* [ ] Parent item", "* [ ] Sibling\r\n* [ ] Parent item", 1)
+	want = strings.Replace(want, "child more\r\n* [ ] Sibling\r\n", "child more\r\n", 1)
+	if res.Content != want {
+		t.Fatalf("before:\n%q\nwant\n%q", res.Content, want)
+	}
+	now := Parse(res.Content).Items()
+	if res.Refs[sib.Ref] != now[0].Ref || res.Refs[p.Ref] != now[1].Ref || res.Refs[c2.Ref] != now[3].Ref {
+		t.Errorf("refs %v", res.Refs)
+	}
+
+	// After an item skips its nested items; the moved item takes its indentation.
+	res, err = Apply(nested, []Op{{Op: "reorder", Ref: c1.Ref, After: sib.Ref}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.Replace(strings.Replace(nested, "  * [X] Child one\r\n", "", 1), "* [ ] Sibling\r\n", "* [ ] Sibling\r\n* [X] Child one\r\n", 1); res.Content != want {
+		t.Fatalf("after:\n%q\nwant\n%q", res.Content, want)
+	}
+
+	// Into another section, nested items re-indented with it; the last
+	// line keeps having no line ending.
+	res, err = Apply(nested, []Op{{Op: "reorder", Ref: c2.Ref, Section: "Later"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.Replace(nested, "  * [ ] Child two\r\n        child more\r\n", "", 1) + "\r\n* [ ] Child two\r\n      child more"; res.Content != want {
+		t.Fatalf("section:\n%q\nwant\n%q", res.Content, want)
+	}
+
+	// Ops after a reorder still name items as they were read.
+	res, err = Apply(nested, []Op{
+		{Op: "reorder", Ref: last.Ref, Before: p.Ref},
+		{Op: "check", Ref: last.Ref, Checked: true},
+		{Op: "reorder", Ref: sib.Ref, Before: last.Ref},
+		{Op: "edit", Ref: p.Ref, Text: "Parent"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Parse(res.Content).Items()
+	if got[0].Text != "Sibling" || got[1].Text != "Last one" || !got[1].Checked || got[2].Text != "Parent" || len(got) != 5 {
+		t.Fatalf("chained:\n%s", res.Content)
+	}
+	if len(res.Summary) != 4 || res.Refs[p.Ref] != got[2].Ref {
+		t.Errorf("summary %v refs %v", res.Summary, res.Refs)
+	}
+
+	// Not into itself; not after it was deleted.
+	if _, err := Apply(nested, []Op{{Op: "reorder", Ref: p.Ref, Before: c2.Ref}}); err == nil {
+		t.Error("moved into its own nested items")
+	}
+	if _, err := Apply(nested, []Op{{Op: "delete", Ref: sib.Ref}, {Op: "reorder", Ref: sib.Ref, Before: p.Ref}}); !errors.Is(err, ErrStale) {
+		t.Errorf("deleted, then moved: %v", err)
+	}
+}

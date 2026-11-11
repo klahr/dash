@@ -388,13 +388,13 @@ type Options struct {
 var (
 	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues", "read_try_terminal", "read_checklist"}
 	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "stop_todo", "restart_todo", "update_todo", "create_release", "delete_todo",
-		"read_checklist", "add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "move_checklist_item_to_task",
+		"read_checklist", "add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "reorder_checklist_item", "move_checklist_item_to_task",
 		"list_issues", "report_issue", "read_try_terminal"}
 	// AskTools are board tools a chat never gets without asking: they publish
 	// something (a release tag pushed to origin, or a TODO.md change committed
 	// onto the default branch, which may be pushed to origin).
 	AskTools = []string{"create_release",
-		"add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "move_checklist_item_to_task"}
+		"add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "reorder_checklist_item", "move_checklist_item_to_task"}
 	// IssueToolNames are what a running task gets (IssueTools).
 	IssueToolNames = []string{"list_issues", "report_issue"}
 )
@@ -403,8 +403,8 @@ var (
 // queue_todo, stop_todo and restart_todo (when b is a Restarter),
 // update_todo, create_release and delete_todo; the checklist
 // tools on the project's TODO.md (read_checklist, add_checklist_item,
-// check_checklist_item, edit_checklist_item, delete_checklist_item and
-// move_checklist_item_to_task); the IssueTools; and read_try_terminal when
+// check_checklist_item, edit_checklist_item, delete_checklist_item,
+// reorder_checklist_item and move_checklist_item_to_task); the IssueTools; and read_try_terminal when
 // b reads Try terminals (TryReader).
 func Tools(b Board, o Options) []Tool {
 	tools := append(boardTools(b, o), IssueTools(b, o)...)

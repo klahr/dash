@@ -2488,7 +2488,7 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .cl-note { margin: 4px 0 10px; padding-left: 12px; border-left: 2px solid var(--line); color: var(--muted); font-size: 14px; white-space: pre-wrap; }
 .cl-list { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); box-shadow: 0 1px 2px rgb(0 0 0 / .25); }
 .cl-item { display: flex; align-items: flex-start; gap: 4px; padding: 0 4px 0 calc(var(--indent, 0) * 22px); border-radius: var(--r-s); position: relative; transition: background .15s; }
-.cl-item + .cl-item::before { content: ""; position: absolute; top: 0; left: calc(48px + var(--indent, 0) * 22px); right: 8px; border-top: 1px solid var(--line); }
+.cl-item + .cl-item::before { content: ""; position: absolute; top: 0; left: calc(68px + var(--indent, 0) * 22px); right: 8px; border-top: 1px solid var(--line); }
 .cl-item:hover { background: color-mix(in srgb, var(--raised) 60%, transparent); }
 .cl-item:focus-visible, .cl-item.cursor { outline: 2px solid var(--accent); outline-offset: -2px; }
 .cl-item.pending .cl-text::after { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 0 2px 8px; border-radius: 50%; background: var(--running); vertical-align: middle; animation: cl-pulse 1.2s ease-in-out infinite; }
@@ -2507,8 +2507,17 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .cl-actions { flex: none; display: flex; align-items: center; gap: 2px; padding: 6px 0; transition: opacity .15s; }
 /* With a mouse, a row's actions show when it is pointed at or has the keys. */
 @media (hover: hover) {
-  .cl-item:not(:hover, :focus-within, .cursor) .cl-actions { opacity: 0; }
+  .cl-item:not(:hover, :focus-within, .cursor) .cl-actions, .cl-item:not(:hover, :focus-within, .cursor) .cl-grip { opacity: 0; }
 }
+/* An item's grip drags it to another place in the list (app/checklist.js: clDragStart). */
+.cl-grip { flex: none; width: 20px; height: 44px; margin-right: -4px; padding: 0; display: grid; place-items: center; border: 0; background: none; color: var(--faint); cursor: grab; touch-action: none; transition: opacity .15s, color .15s; }
+.cl-grip:hover, .cl-grip:focus-visible { color: var(--text); }
+.cl-grip .ico { width: 16px; height: 16px; }
+.cl-item.dragging { opacity: .4; }
+.cl-item.drop-before::after, .cl-item.drop-after::after { content: ""; position: absolute; left: calc(var(--indent, 0) * 22px); right: 4px; height: 2px; border-radius: 1px; background: var(--accent); pointer-events: none; }
+.cl-item.drop-before::after { top: -1px; }
+.cl-item.drop-after::after { bottom: -1px; }
+.cl-section h3.drop-into { color: var(--accent); }
 .cl-move { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-s); overflow: hidden; }
 .cl-move button { min-height: 32px; padding: 0 10px; border: 0; background: var(--raised); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
 .cl-move button + button { border-left: 1px solid var(--line); padding: 0 8px; }

@@ -158,8 +158,8 @@ func TestBrowserMainFlows(t *testing.T) {
 }
 
 // The checklist (TODO.md) of a hub's project, whose checkout is on its
-// runner: create TODO.md from the empty state, add items, tick one and move
-// one to a draft task. Each change reaches origin's main as a commit, with
+// runner: create TODO.md from the empty state, add items, tick one, move
+// one to a draft task and drag one to the top. Each change reaches origin's main as a commit, with
 // no task for it.
 func TestBrowserChecklist(t *testing.T) {
 	chrome := needChrome(t)
@@ -220,6 +220,16 @@ func TestBrowserChecklist(t *testing.T) {
 	}, http.StatusOK, nil)
 	b.waitJS("the change made elsewhere", `[...document.querySelectorAll("#cl-body .cl-item")].some((e) => e.textContent.includes("Made elsewhere"))`)
 	b.waitJS("no Reload button", `!document.querySelector("#cl-reload")`)
+
+	// Drag an item by its grip onto the section's heading: to the top.
+	b.waitJS("the item to drag", markText("#cl-body .cl-item", "Made elsewhere"))
+	b.do("drag it to the top", chromedp.DragAndDrop(chromedp.CSS(`[data-e2e-click] .cl-grip`), chromedp.CSS(`#cl-body .cl-section > h3`)))
+	onOrigin("the item on top on origin", func(s string) bool { return strings.Contains(s, "- [ ] Made elsewhere\n- [x] First thing") })
+	b.waitJS("on top", `document.querySelector("#cl-body .cl-item:not(.pending)")?.textContent.includes("Made elsewhere")`)
+
+	// And with keys: gg to the first item, - moves it down a place.
+	b.do("move it down", chromedp.KeyEvent("gg-"))
+	onOrigin("the item moved down on origin", func(s string) bool { return strings.Contains(s, "- [x] First thing\n- [ ] Made elsewhere") })
 }
 
 // Split a large task: from the full task form, Claude (on the user's

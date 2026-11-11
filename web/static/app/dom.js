@@ -113,6 +113,7 @@ const ICONS = {
   monitor: "M3 5h18v11H3zM8 20h8M12 16v4",
   window: "M3 5h18v14H3zM3 9h18M6 7h.01M8.5 7h.01",
   more: "M5 12h.01M12 12h.01M19 12h.01",
+  grip: "M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01",
   arrow: "M5 19 19 5M10 5h9v9",
   circle: "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z",
   box: "M5 6h14v12H5z",

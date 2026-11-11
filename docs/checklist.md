@@ -25,6 +25,10 @@ their indentation, and anything else (paragraphs, quotes, code blocks) shows as 
 ## Changing it
 
 Tick a box, click an item's text to edit it, delete it, or add one at the end of a section.
+To reprioritise, drag an item by its grip (left of its checkbox) to another place: it lands in
+the gap you drop it in, indented like the item below it (or above it, at the end of a list), or at
+the top of a section when dropped on its heading. Its continuation lines and nested items move
+with it.
 Every change edits only the lines it touches: the rest of the file stays byte for byte (order,
 wrapping, blank lines, CRLF or LF line endings, a missing final newline). With no `TODO.md`,
 the view offers to create one; adding an item creates the file.
@@ -70,7 +74,8 @@ toast says the item is still in the file; nothing is created twice.
 ## Keys
 
 On the Checklist view: `j`/`k` move between items, `x` (or `Space`) checks or unchecks, `m`
-moves the item to a draft, `M` moves and queues it, `e` (or `Enter`) edits, `dd` deletes, `a`
+moves the item to a draft, `M` moves and queues it, `+`/`-` move it up or down a place (past
+its neighbour at its level, or into the section above or below), `e` (or `Enter`) edits, `dd` deletes, `a`
 focuses the "Add an item" field, `r` reads `TODO.md` again.
 
 ## MCP tools
@@ -85,6 +90,7 @@ checklist tools. They all take the usual `project` parameter (optional in a proj
 | `check_checklist_item(ref, checked?)` | Checks off (default) or unchecks an item |
 | `edit_checklist_item(ref, text, more?)` | Changes an item's text; `more` replaces its continuation lines |
 | `delete_checklist_item(ref)` | Removes an item with its continuation lines and nested items |
+| `reorder_checklist_item(ref, before?, after?, section?)` | Moves an item, with its continuation lines and nested items, just before or after another item (taking its indentation) or to the end of a section |
 | `move_checklist_item_to_task(ref, queue?, priority?, depends_on?)` | Creates a task from an item and removes it; a draft unless `queue` is true, which the chat sets only when you ask for the task to run |
 
 An item's `ref` is its line number and a hash of its text (`7:3f9a0c1b2d`). A ref from before

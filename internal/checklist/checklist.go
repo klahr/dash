@@ -11,11 +11,13 @@
 package checklist
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -272,13 +274,18 @@ func parseRef(ref string) (line int, hash string, ok bool) {
 // applied to; several ops in one Apply all refer to that same file.
 type Op struct {
 	// Op is "check" (Checked), "add" (Text, More, Section, Checked), "edit"
-	// (Text; More replaces the continuation lines when set) or "delete".
+	// (Text; More replaces the continuation lines when set), "delete" or
+	// "reorder" (to just before the item Before, just after the item After
+	// and its nested items, or else at the end of Section; with its nested
+	// items, indented as the item it lands next to).
 	Op      string  `json:"op"`
 	Ref     string  `json:"ref,omitempty"`
 	Checked bool    `json:"checked,omitempty"`
 	Text    string  `json:"text,omitempty"`
 	More    *string `json:"more,omitempty"`
 	Section string  `json:"section,omitempty"`
+	Before  string  `json:"before,omitempty"`
+	After   string  `json:"after,omitempty"`
 }
 
 // Result is a changed checklist.
@@ -313,8 +320,92 @@ func Short(s string, n int) string {
 	return s
 }
 
-// Apply makes ops to src.
+// Apply makes ops to src. A reorder is made to the file as the ops before it
+// left it, and the ops after it to the file as it left that: refs in ops
+// still name items as they were in src.
 func Apply(src string, ops []Op) (Result, error) {
+	if !slices.ContainsFunc(ops, func(o Op) bool { return o.Op == "reorder" }) {
+		return apply(src, ops)
+	}
+	total := Result{Content: src, Refs: map[string]string{}}
+	known := map[string]bool{}
+	for _, it := range Parse(src).Items() {
+		total.Refs[it.Ref], known[it.Ref] = it.Ref, true
+	}
+	ref := func(r string) (string, error) {
+		if r == "" || !known[r] {
+			return r, nil
+		}
+		if now, ok := total.Refs[r]; ok {
+			return now, nil
+		}
+		return "", fmt.Errorf("%w: item %s was removed", ErrStale, r)
+	}
+	for len(ops) > 0 {
+		n := 1
+		for ops[0].Op != "reorder" && n < len(ops) && ops[n].Op != "reorder" {
+			n++
+		}
+		seg := slices.Clone(ops[:n])
+		ops = ops[n:]
+		for i := range seg {
+			var err error
+			for _, r := range []*string{&seg[i].Ref, &seg[i].Before, &seg[i].After} {
+				if *r, err = ref(*r); err != nil {
+					return Result{}, err
+				}
+			}
+		}
+		res, err := apply(total.Content, seg)
+		if err != nil {
+			return Result{}, err
+		}
+		for orig, cur := range total.Refs {
+			if now, ok := res.Refs[cur]; ok {
+				total.Refs[orig] = now
+			} else {
+				delete(total.Refs, orig)
+			}
+		}
+		total.Content = res.Content
+		total.Summary = append(total.Summary, res.Summary...)
+	}
+	return total, nil
+}
+
+// outLine is a line written out, and the index of the line of the file it
+// was (-1: a new one).
+type outLine struct {
+	text string
+	from int
+}
+
+func fresh(ss []string) []outLine {
+	out := make([]outLine, len(ss))
+	for i, s := range ss {
+		out[i] = outLine{s, -1}
+	}
+	return out
+}
+
+// reindent shifts a line by delta columns.
+func reindent(s string, delta int) string {
+	i := 0
+	for delta < 0 && i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		if s[i] == '\t' {
+			delta += 4
+		} else {
+			delta++
+		}
+		i++
+	}
+	if delta > 0 {
+		return strings.Repeat(" ", delta) + s[i:]
+	}
+	return s[i:]
+}
+
+func apply(src string, ops []Op) (Result, error) {
 	lines := splitLines(src)
 	doc, kinds := parse(lines)
 	eol := "\n"
@@ -326,9 +417,9 @@ func Apply(src string, ops []Op) (Result, error) {
 		cur[i] = l.text
 	}
 	gone := make([]bool, len(lines))
-	after := map[int][]string{} // new lines after line i (-1: at the start)
-	var tail []string           // new lines at the end (new sections)
-	titled := len(lines) > 0    // a new file gets a "# TODO" title first
+	after := map[int][]outLine{} // new or moved lines after line i (-1: at the start)
+	var tail []string            // new lines at the end (new sections)
+	titled := len(lines) > 0     // a new file gets a "# TODO" title first
 	title := func() {
 		if !titled {
 			tail = append(tail, "# TODO", "")
@@ -336,6 +427,24 @@ func Apply(src string, ops []Op) (Result, error) {
 		}
 	}
 	var summary []string
+	// sectionEnd is where to put lines at the end of a section: after its
+	// last item, or else its last non-blank line (and then after a blank line).
+	sectionEnd := func(sec Section) (anchor int, sep bool) {
+		start, stop := sectionRange(doc, sec, len(lines))
+		anchor = start - 1
+		for j := stop - 1; j >= start; j-- {
+			if kinds[j] != kBlank {
+				anchor = j
+				break
+			}
+		}
+		for _, e := range sec.Entries {
+			if e.Item != nil {
+				anchor = max(e.Item.blockEnd, e.Item.end)
+			}
+		}
+		return anchor, anchor < 0 || (kinds[anchor] != kItem && kinds[anchor] != kCont && len(after[anchor]) == 0)
+	}
 
 	find := func(ref string) (*Item, error) {
 		it, err := doc.Item(ref)
@@ -389,7 +498,7 @@ func Apply(src string, ops []Op) (Result, error) {
 					ws := prefix[:indentBytes(prefix)]
 					in = ws + strings.Repeat(" ", len(prefix)-len(ws)+1)
 				}
-				after[it.end] = append(after[it.end], contLines(*more, in)...)
+				after[it.end] = append(after[it.end], fresh(contLines(*more, in))...)
 			}
 			summary = append(summary, "edit "+Short(text, 60))
 		case "delete":
@@ -438,24 +547,66 @@ func Apply(src string, ops []Op) (Result, error) {
 				tail = append(tail, add...)
 				continue
 			}
-			// After the section's last item, or else its last non-blank line.
-			start, stop := sectionRange(doc, sec, len(lines))
-			anchor := start - 1
-			for j := stop - 1; j >= start; j-- {
-				if kinds[j] != kBlank {
-					anchor = j
-					break
-				}
-			}
-			for _, e := range sec.Entries {
-				if e.Item != nil {
-					anchor = max(e.Item.blockEnd, e.Item.end)
-				}
-			}
-			if anchor < 0 || (kinds[anchor] != kItem && kinds[anchor] != kCont && len(after[anchor]) == 0) {
+			anchor, sep := sectionEnd(sec)
+			if sep {
 				add = append([]string{""}, add...)
 			}
-			after[anchor] = append(after[anchor], add...)
+			after[anchor] = append(after[anchor], fresh(add)...)
+		case "reorder":
+			it, err := find(op.Ref)
+			if err != nil {
+				return Result{}, err
+			}
+			var at, ind int // its lines go after line at, indented ind
+			var sep bool
+			var where string
+			switch {
+			case op.Before != "" || op.After != "":
+				to, err := find(op.Before + op.After)
+				if err != nil {
+					return Result{}, err
+				}
+				if op.Before != "" && op.After != "" {
+					return Result{}, errors.New("reorder takes before or after, not both")
+				}
+				if to.Line >= it.Line && to.Line-1 <= it.blockEnd {
+					return Result{}, errors.New("an item can't move next to itself or into its nested items")
+				}
+				at, ind, where = to.Line-2, to.Indent, "before "
+				if op.After != "" {
+					at, where = max(to.blockEnd, to.end), "after "
+				}
+				where += Short(to.Text, 40)
+			default:
+				sec, ok := section(doc, op.Section)
+				if !ok || sec.Line == -1 {
+					return Result{}, fmt.Errorf("no section %q", op.Section)
+				}
+				at, sep = sectionEnd(sec)
+				for _, e := range sec.Entries {
+					if e.Item != nil {
+						ind = e.Item.Indent
+						break
+					}
+				}
+				where = "to the end of " + cmp.Or(sec.Title, "the file")
+			}
+			var moved []outLine
+			if sep {
+				moved = append(moved, outLine{"", -1})
+			}
+			for j := it.Line - 1; j <= it.blockEnd; j++ {
+				if !gone[j] {
+					moved = append(moved, outLine{reindent(cur[j], ind-it.Indent), j})
+					gone[j] = true
+				}
+				for _, l := range after[j] {
+					moved = append(moved, outLine{reindent(l.text, ind-it.Indent), l.from})
+				}
+				delete(after, j)
+			}
+			after[at] = append(after[at], moved...)
+			summary = append(summary, "move "+Short(it.Text, 60)+" "+where)
 		default:
 			return Result{}, fmt.Errorf("unknown checklist op %q", op.Op)
 		}
@@ -464,9 +615,12 @@ func Apply(src string, ops []Op) (Result, error) {
 	// Write it out, keeping every untouched line as it was.
 	var out []line
 	newLine := make([]int, len(lines))
-	add := func(ss []string) {
-		for _, s := range ss {
-			out = append(out, line{s, eol})
+	add := func(ls []outLine) {
+		for _, l := range ls {
+			out = append(out, line{l.text, eol})
+			if l.from >= 0 {
+				newLine[l.from] = len(out)
+			}
 		}
 	}
 	add(after[-1])
@@ -477,7 +631,7 @@ func Apply(src string, ops []Op) (Result, error) {
 		}
 		add(after[i])
 	}
-	add(tail)
+	add(fresh(tail))
 	// Every line ends as it did; only the last one may lack a line ending,
 	// when the file's did.
 	final := len(lines) > 0 && lines[len(lines)-1].eol == ""
@@ -497,7 +651,7 @@ func Apply(src string, ops []Op) (Result, error) {
 		now[it.Line] = it.Ref
 	}
 	for _, it := range doc.Items() {
-		if !gone[it.Line-1] {
+		if newLine[it.Line-1] > 0 {
 			if ref, ok := now[newLine[it.Line-1]]; ok {
 				res.Refs[it.Ref] = ref
 			}

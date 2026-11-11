@@ -98,7 +98,7 @@ Dash's own chats (the general chat and each project's chat) get a smaller set of
 draft, queued or failed tasks, when you ask to remove one), `create_release`, `list_issues` and
 `report_issue`, and the checklist tools on the project's `TODO.md` (`read_checklist`,
 `add_checklist_item`, `check_checklist_item`, `edit_checklist_item`, `delete_checklist_item`,
-`move_checklist_item_to_task`; see [Checklist](checklist.md)). A read-only chat calls them without asking, except `create_release`, which it
+`reorder_checklist_item`, `move_checklist_item_to_task`; see [Checklist](checklist.md)). A read-only chat calls them without asking, except `create_release`, which it
 can't use; a shell chat asks for the ones that change something. They act as the user chatting,
 in the org they're working in.
 

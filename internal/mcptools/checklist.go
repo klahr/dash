@@ -63,7 +63,7 @@ type ChecklistMoved struct {
 }
 
 // ChecklistToolNames are the checklist tools; read_checklist only reads.
-var ChecklistToolNames = []string{"read_checklist", "add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "move_checklist_item_to_task"}
+var ChecklistToolNames = []string{"read_checklist", "add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "reorder_checklist_item", "move_checklist_item_to_task"}
 
 // stale adds what to do about a checklist that changed.
 func stale(err error) error {
@@ -191,6 +191,20 @@ func checklistTools(b Board, o Options, project func(Args) (model.Project, error
 					return nil, errors.New("ref is required")
 				}
 				return change(a, checklist.Op{Op: "delete", Ref: a.Str("ref")})
+			}},
+		{"reorder_checklist_item", "Move an item of the checklist (TODO.md) to another place in it, with its continuation lines and nested items, " +
+			"to reprioritise it: just before or just after another item (taking that item's indentation), or else to the end of a section.", []Param{pProject, pRef,
+			{"before", "string", "Ref of the item to put it just before.", false},
+			{"after", "string", "Ref of the item to put it just after (after that item's nested items).", false},
+			{"section", "string", "Title of the section to put it at the end of, when neither before nor after is given; default: the last section.", false}},
+			func(a Args) (any, error) {
+				if a.Str("ref") == "" {
+					return nil, errors.New("ref is required")
+				}
+				if a.Str("before") != "" && a.Str("after") != "" {
+					return nil, errors.New("give before or after, not both")
+				}
+				return change(a, checklist.Op{Op: "reorder", Ref: a.Str("ref"), Before: a.Str("before"), After: a.Str("after"), Section: a.Str("section")})
 			}},
 		{"move_checklist_item_to_task", moveDesc, []Param{pProject, pRef,
 			{"queue", "boolean", "Queue the task to run instead of keeping a draft; only when the user asks for it to run (default false).", false},

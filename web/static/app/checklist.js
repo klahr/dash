@@ -23,6 +23,7 @@ export const cl = {
   cursor: null,     // ref (or "tmp:n") of the item the keys act on
   editing: null,    // ref being edited
   menu: null,       // ref whose move menu is open
+  drag: null,       // the item being dragged by its grip: {ref, drop}
   stale: null,      // TODO.md changed elsewhere while there were unsaved changes: its new version (true: not known)
 };
 
@@ -74,7 +75,7 @@ function clCatchUp() {
 // queueOp records a change, shows it, and saves it after CL_DELAY.
 function queueOp(op) {
   const same = (o) => o.ref && o.ref === op.ref && o.op === op.op;
-  if (op.op === "add") {
+  if (op.op === "add" || op.op === "reorder") {
     cl.pending.push(op);
   } else if (op.tmp) {
     // A change to an item added but not saved yet changes its add.
@@ -110,7 +111,7 @@ export async function flushChecklist() {
     if (projectKey(state.project) !== cl.key) return;
     cl.doc = res.checklist;
     // Changes made while this one was saving refer to the old refs.
-    for (const o of cl.pending) if (o.ref) o.ref = res.refs?.[o.ref] || o.ref;
+    for (const o of cl.pending) for (const k of ["ref", "before", "after"]) if (o[k]) o[k] = res.refs?.[o[k]] || o[k];
     if (cl.cursor && res.refs?.[cl.cursor]) cl.cursor = res.refs[cl.cursor];
     if (cl.cursor?.startsWith("tmp:")) cl.cursor = null;
     if (res.task) toast(res.note || "", { head: `Task ${res.task.id} will commit TODO.md`, action: openTodo(res.task.id) });
@@ -136,12 +137,13 @@ export async function flushChecklist() {
 
 // The checklist as shown: what was read, with the pending changes on top.
 function clView() {
-  const checks = new Map(), edits = new Map(), gone = new Set(), adds = [];
+  const checks = new Map(), edits = new Map(), gone = new Set(), adds = [], moves = [];
   for (const o of cl.pending) {
     if (o.op === "check") checks.set(o.ref, o.checked);
     if (o.op === "edit") edits.set(o.ref, o);
     if (o.op === "delete") gone.add(o.ref);
     if (o.op === "add") adds.push(o);
+    if (o.op === "reorder") moves.push(o);
   }
   const sections = (cl.doc?.sections || []).map((s) => ({
     ...s,
@@ -153,6 +155,7 @@ function clView() {
       return { item: it };
     }),
   }));
+  for (const m of moves) clReorder(sections, m);
   for (const a of adds) {
     const title = (a.section || "").trim();
     let s = title ? sections.find((x) => x.title.toLowerCase() === title.toLowerCase()) : sections.at(-1);
@@ -161,6 +164,137 @@ function clView() {
   }
   return sections;
 }
+
+// clBlock finds an item in sections and the entries it spans: it and the
+// items nested under it.
+function clBlock(sections, ref) {
+  for (const s of sections) {
+    const i = s.entries.findIndex((e) => e.item?.ref === ref);
+    if (i < 0) continue;
+    let j = i + 1;
+    while (j < s.entries.length && s.entries[j].item && s.entries[j].item.indent > s.entries[i].item.indent) j++;
+    return { s, i, n: j - i };
+  }
+  return null;
+}
+
+// clReorder makes a reorder op to the sections on screen, as the server makes
+// it to TODO.md: the item and its nested items, indented as their new neighbour.
+function clReorder(sections, o) {
+  const from = clBlock(sections, o.ref);
+  if (!from) return;
+  const block = from.s.entries.slice(from.i, from.i + from.n);
+  if (block.some((e) => [o.before, o.after].includes(e.item.ref))) return;
+  from.s.entries.splice(from.i, from.n);
+  const to = clBlock(sections, o.before || o.after);
+  let s, at, indent = 0;
+  if (to) {
+    s = to.s;
+    at = o.before ? to.i : to.i + to.n;
+    indent = to.s.entries[to.i].item.indent || 0;
+  } else {
+    s = sections.find((x) => x.title && x.title.toLowerCase() === (o.section || "").toLowerCase());
+    if (!s) { from.s.entries.splice(from.i, 0, ...block); return; }
+    at = s.entries.length;
+    indent = s.entries.find((e) => e.item)?.item.indent || 0;
+  }
+  const d = indent - (block[0].item.indent || 0);
+  s.entries.splice(at, 0, ...block.map((e) => ({ item: { ...e.item, indent: Math.max(0, (e.item.indent || 0) + d), pending: true } })));
+}
+
+// clStep is the reorder op that moves an item one place up (-1) or down (1):
+// past its neighbour at its level, or else to the end of the section above or
+// the top of the one below.
+function clStep(it, d) {
+  const sections = clView();
+  const at = clBlock(sections, it.ref);
+  if (!at) return null;
+  const { s, i, n } = at, ind = it.indent || 0;
+  const items = s.entries.map((e, k) => ({ it: e.item, k })).filter((x) => x.it && !x.it.tmp);
+  if (d < 0) {
+    const prev = items.filter((x) => x.k < i && (x.it.indent || 0) <= ind).at(-1);
+    if (prev) return { op: "reorder", ref: it.ref, before: prev.it.ref };
+  } else {
+    const next = items.find((x) => x.k >= i + n && (x.it.indent || 0) <= ind);
+    if (next) return (next.it.indent || 0) < ind ? { op: "reorder", ref: it.ref, before: next.it.ref } : { op: "reorder", ref: it.ref, after: next.it.ref };
+  }
+  const shown = sections.filter((x) => x.title || x.entries.length);
+  const other = shown[shown.indexOf(s) + d];
+  if (!other) return null;
+  const its = other.entries.map((e) => e.item).filter((x) => x && !x.tmp);
+  if (d > 0 && its.length) return { op: "reorder", ref: it.ref, before: its[0].ref };
+  const top = its.filter((x) => (x.indent || 0) === Math.min(...its.map((y) => y.indent || 0))).at(-1);
+  if (top) return { op: "reorder", ref: it.ref, after: top.ref };
+  return other.title ? { op: "reorder", ref: it.ref, section: other.title } : null;
+}
+
+function clStepItem(it, d) {
+  const op = clStep(it, d);
+  if (!op) return;
+  cl.cursor = it.ref;
+  queueOp(op);
+  $(`#cl-body .cl-item[data-ref="${CSS.escape(it.ref)}"]`)?.scrollIntoView({ block: "nearest" });
+}
+
+// Dragging an item by its grip moves it, with its nested items, to the gap
+// it is dropped in (indented as the item below it, or above it at the end of
+// a list), or onto a section's heading: to the top of that section.
+function clDragStart(e, it) {
+  if (e.button > 0) return;
+  e.preventDefault();
+  e.currentTarget.setPointerCapture?.(e.pointerId);
+  cl.drag = { ref: it.ref, drop: null };
+  cl.cursor = it.ref;
+  $(`#cl-body .cl-item[data-ref="${CSS.escape(it.ref)}"]`)?.classList.add("dragging");
+  document.body.classList.add("is-dragging");
+}
+
+function clDropAt(x, y) {
+  const el = document.elementFromPoint(x, y);
+  const sections = clView();
+  const block = clBlock(sections, cl.drag.ref);
+  const mine = new Set(block ? block.s.entries.slice(block.i, block.i + block.n).map((e) => e.item.ref) : [cl.drag.ref]);
+  const head = el?.closest("#cl-body .cl-section > h3");
+  if (head) {
+    const s = sections.find((x) => x.title === head.dataset.title);
+    const first = s?.entries.find((e) => e.item && !e.item.tmp)?.item;
+    if (first) return mine.has(first.ref) ? null : { el: $(`#cl-body .cl-item[data-ref="${CSS.escape(first.ref)}"]`), pos: "before", op: { before: first.ref } };
+    return s?.title ? { el: head, pos: "into", op: { section: s.title } } : null;
+  }
+  const row = el?.closest("#cl-body .cl-item");
+  if (!row || row.dataset.ref.startsWith("tmp:") || mine.has(row.dataset.ref)) return null;
+  const r = row.getBoundingClientRect();
+  if (y < r.top + r.height / 2) return { el: row, pos: "before", op: { before: row.dataset.ref } };
+  let next = row.nextElementSibling;
+  while (next && mine.has(next.dataset.ref)) next = next.nextElementSibling;
+  if (next && !next.dataset.ref.startsWith("tmp:")) return { el: next, pos: "before", op: { before: next.dataset.ref } };
+  return { el: row, pos: "after", op: { after: row.dataset.ref } };
+}
+
+function clDragShow(drop) {
+  $$("#cl-body .drop-before, #cl-body .drop-after, #cl-body .drop-into").forEach((el) => el.classList.remove("drop-before", "drop-after", "drop-into"));
+  drop?.el?.classList.add(`drop-${drop.pos}`);
+}
+
+document.addEventListener("pointermove", (e) => {
+  if (!cl.drag) return;
+  cl.drag.drop = clDropAt(e.clientX, e.clientY);
+  clDragShow(cl.drag.drop);
+});
+document.addEventListener("pointerup", () => {
+  if (!cl.drag) return;
+  const { ref, drop } = cl.drag;
+  cl.drag = null;
+  document.body.classList.remove("is-dragging");
+  if (drop) queueOp({ op: "reorder", ref, ...drop.op });
+  else renderChecklist();
+});
+document.addEventListener("pointercancel", () => {
+  if (!cl.drag) return;
+  cl.drag = null;
+  document.body.classList.remove("is-dragging");
+  renderChecklist();
+});
 
 function renderChecklistState(msg) {
   const d = cl.doc;
@@ -202,7 +336,7 @@ function renderChecklist() {
     }
     const items = s.entries.filter((e) => e.item), n = items.filter((e) => e.item.checked).length;
     const count = items.length ? h("span", { class: `cl-section-count${n === items.length ? " complete" : ""}` }, `${n}/${items.length}`) : null;
-    return h("section", { class: `cl-section lvl-${s.level}` }, s.title ? h("h3", {}, h("span", {}, s.title), count) : null, ...kids);
+    return h("section", { class: `cl-section lvl-${s.level}` }, s.title ? h("h3", { "data-title": s.title }, h("span", {}, s.title), count) : null, ...kids);
   }));
   if (cl.editing) body.querySelector(".cl-edit textarea")?.focus();
 }
@@ -215,6 +349,10 @@ function clItem(it) {
     class: `cl-item${it.checked ? " done" : ""}${it.pending ? " pending" : ""}${cl.cursor === it.ref && keys.active ? " cursor" : ""}`,
     "data-ref": it.ref, tabindex: "-1", style: `--indent: ${Math.min(6, Math.round((it.indent || 0) / 2))}`,
   });
+  if (!it.tmp) {
+    row.append(h("button", { type: "button", class: "cl-grip", title: "Drag to reorder (+ moves it up, - down)", "aria-label": `Reorder ${label}`,
+      onpointerdown: (e) => clDragStart(e, it) }, ico("grip")));
+  } else row.append(h("span", { class: "cl-grip" }));
   const box = h("input", { type: "checkbox", checked: it.checked, "aria-label": `${it.checked ? "Uncheck" : "Check off"} ${label}`,
     onchange: (e) => { cl.cursor = it.ref; queueOp(clOp(it, { op: "check", checked: e.target.checked })); } });
   row.append(h("label", { class: "cl-check" }, box));
@@ -302,8 +440,8 @@ $("#cl-create").addEventListener("click", attempt(async () => {
 addEventListener("pagehide", () => { if (cl.pending.length) flushChecklist().catch(() => {}); });
 document.addEventListener("visibilitychange", () => { if (document.hidden && cl.pending.length) flushChecklist().catch(() => {}); });
 
-// Keys on the checklist view: j/k move, x toggles, m/M move, e edits, dd
-// deletes, a adds, r reads TODO.md again (it updates by itself; r is for
+// Keys on the checklist view: j/k move, x toggles, m/M move, +/- move the
+// item up or down, e edits, dd deletes, a adds, r reads TODO.md again (it updates by itself; r is for
 // edits made by hand to a TODO.md git doesn't track).
 function clMoveCursor(d, abs) {
   const refs = $$("#cl-body .cl-item").map((el) => el.dataset.ref);
@@ -337,5 +475,9 @@ export async function checklistKey(k, n, hadCount) {
       return moveChecklistItem(it, k === "M");
     case "e": case "Enter": cl.editing = it.ref; return renderChecklist();
     case "dd": return deleteChecklistItem(it);
+    case "+": case "-":
+      if (it.tmp) return flushChecklist();
+      for (let i = 0; i < n; i++) clStepItem(clView().flatMap((s) => s.entries).map((e) => e.item).find((x) => x?.ref === it.ref), k === "+" ? -1 : 1);
+      return;
   }
 }
