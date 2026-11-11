@@ -6,7 +6,7 @@ ultra-wide screens are filled, not letterboxed). Narrow or portrait screens (a l
 portrait TV, a phone) get a stacked layout that scrolls. Nothing on it needs a click.
 
 From top to bottom: whether the queue runs and how many runner slots are busy, the Claude
-usage of the 5-hour and 7-day windows (with a marker where the queue pauses), a clock; the
+usage of the 5-hour and 7-day windows (with the time left until each resets, e.g. "resets in 3d 4h"), a clock; the
 number of tasks in each stage; a card per running task (elapsed time, run, cost so far,
 lines changed, the tool call it is making); what needs a human (reviews oldest first, failed
 tasks, open issues; red when waiting too long); the runners; today's merges, spend and
