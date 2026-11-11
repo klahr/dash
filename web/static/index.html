@@ -197,9 +197,9 @@
 
       <!-- Issues: what is wrong with the project, triaged into tasks -->
       <section class="view" id="view-issues" aria-label="Issues">
-        <div class="issues">
+        <div class="page issues">
           <header class="cl-head">
-            <h2 class="cl-title issues-title">Issues</h2>
+            <h2 class="cl-title page-title">Issues</h2>
             <span class="cl-state" id="issue-state" aria-live="polite"></span>
           </header>
           <div class="cl-progress" id="issue-progress" hidden>
@@ -260,7 +260,10 @@
 
       <!-- Scans: preconfigured read-only reviews that feed the Issues list -->
       <section class="view" id="view-scans" aria-label="Scans">
-        <div class="scans">
+        <div class="page scans">
+          <header class="cl-head">
+            <h2 class="cl-title page-title">Scans</h2>
+          </header>
           <div class="scan-bar">
             <div class="scan-intro" id="scan-intro" hidden></div>
             <p class="hint warn runner-note" id="scan-runner-note" hidden></p>
@@ -349,7 +352,7 @@
            editing commit straight to the default branch (batched); moving an
            item makes a task of it. -->
       <section class="view" id="view-checklist" aria-label="Checklist">
-        <div class="checklist">
+        <div class="page checklist">
           <header class="cl-head">
             <h2 class="cl-title">TODO.md</h2>
             <span class="cl-state" id="cl-state" aria-live="polite"></span>

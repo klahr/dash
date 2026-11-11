@@ -1283,6 +1283,14 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; background: var(--raised); border: 1px solid var(--line); border-bottom-width: 2px; }
 .keys code { font: 12px var(--mono); color: var(--accent); margin-right: 6px; white-space: nowrap; }
 
+/* ---------- pages ----------
+   Checklist, Issues and Scans share one frame: a centred column, a .cl-head
+   with the page's title (.page-title; the checklist's is its file name, in
+   mono) and the same padding on every width. */
+.page { width: 100%; max-width: 860px; margin: 0 auto; padding: 12px 16px 24px; }
+.cl-title.page-title { font-family: var(--ui); font-size: 17px; }
+@media (max-width: 719px) { .page { padding: 8px 10px 24px; } }
+
 /* ---------- small helpers ---------- */
 .board-tools { position: sticky; top: var(--top-h); z-index: 10; display: flex; align-items: center; background: var(--bg); border-bottom: 1px solid var(--line); padding-right: 8px; }
 .board-tools .lanes { position: static; flex: 1; border: 0; min-width: 0; }
@@ -2201,8 +2209,6 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 /* ---------- issues ----------
    Laid out like the checklist (its .cl-head, .cl-progress, .cl-section,
    .cl-list, .cl-check and .cl-add): a section per group, rows in a card. */
-.issues { width: 100%; max-width: 860px; margin: 0 auto; padding: 12px 16px 24px; }
-.cl-title.issues-title { font-family: var(--ui); font-size: 17px; }
 .issues .cl-progress { margin-bottom: 12px; }
 /* Filters: pill-shaped selects; on a phone one row that scrolls sideways. */
 .issue-tools { display: flex; align-items: center; gap: 4px; margin: 0 0 4px; }
@@ -2324,7 +2330,6 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
   .issue-edit-row { grid-template-columns: 9rem 8rem 1fr 6rem; }
 }
 @media (max-width: 719px) {
-  .issues { padding: 8px 10px 24px; }
   /* Filters in one row that scrolls sideways, edge to edge. */
   .issue-filters { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-right: -10px; padding: 4px 10px 4px 0; scroll-padding-inline: 10px; }
   .issue-filters::-webkit-scrollbar { display: none; }
@@ -2344,7 +2349,6 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 }
 
 /* ---------- scans ---------- */
-.scans { max-width: 1100px; padding: 12px 16px 24px; }
 .scan-bar { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 12px; }
 .scan-create { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 12px; padding: 16px; border: 1px dashed var(--line); border-radius: var(--r-m); color: var(--muted); }
 .scan-create > div { flex: 1 1 280px; min-width: 0; }
@@ -2427,10 +2431,8 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .scan-answer pre { max-height: 320px; overflow: auto; margin: 6px 0 0; padding: 8px; white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: 12px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-s); }
 .scan-foot { margin-top: 4px; }
 .scan-history { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; }
-@media (min-width: 1024px) { .scans { padding: 16px 32px; } }
 @media (max-width: 899px) { .scan-more-label { display: none; } }
 @media (max-width: 639px) {
-  .scans { padding: 10px 10px 24px; }
   .scan-card { padding: 12px; }
   .scan-head { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name btns" "line line" "sched sched"; }
 }
@@ -2492,7 +2494,6 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .repo-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 
 /* ---- Checklist: the project's TODO.md as a task list ---- */
-.checklist { width: 100%; max-width: 860px; margin: 0 auto; padding: 12px 16px 24px; }
 .cl-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .cl-title { margin: 0; font: 600 15px/1.3 var(--mono); }
 .cl-state { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2566,7 +2567,6 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .cl-add select { flex: 0 1 180px; min-height: 44px; }
 .cl-add .btn { min-height: 44px; }
 @media (max-width: 719px) {
-  .checklist { padding: 8px 10px 24px; }
   .cl-move .cl-move-label { display: none; }
   .cl-item .cl-icon.cl-del { display: none; }
 }
