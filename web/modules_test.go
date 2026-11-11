@@ -34,13 +34,28 @@ func TestAppModules(t *testing.T) {
 			t.Errorf("sw.js SHELL is missing /%s", m)
 		}
 	}
+	// Follow relative imports from app.js: every file reached, in app/ or
+	// not, must exist and be in SHELL, or offline startup fails on it.
 	imp := regexp.MustCompile(`(?m)^import (?:[^"]* from )?"(\.[^"]+)";`)
-	for _, f := range append([]string{"app.js"}, mods...) {
+	seen := map[string]bool{"app.js": true}
+	queue := []string{"app.js"}
+	for len(queue) > 0 {
+		f := queue[0]
+		queue = queue[1:]
 		for _, m := range imp.FindAllStringSubmatch(read(f), -1) {
 			target := path.Join(path.Dir(f), m[1])
+			if seen[target] {
+				continue
+			}
+			seen[target] = true
 			if _, err := fs.Stat(Static, target); err != nil {
 				t.Errorf("%s imports %s, which doesn't exist", f, m[1])
+				continue
 			}
+			if !strings.Contains(sw, `"/`+target+`"`) {
+				t.Errorf("sw.js SHELL is missing /%s (imported by %s)", target, f)
+			}
+			queue = append(queue, target)
 		}
 	}
 }

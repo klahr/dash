@@ -2,7 +2,7 @@
 // always prefers the network, so an online app is never an old cached copy.
 // The page itself compares versions and offers a reload after an update.
 const CACHE = "dash-shell";
-const SHELL = ["/", "/style.css", "/app.js", "/pagekit.js", "/twofactor.js", "/editor.js", "/draw.js", "/groups.js", "/graphlayout.js", "/commitnav.js", "/runnerversion.js",
+const SHELL = ["/", "/style.css", "/app.js", "/pagekit.js", "/twofactor.js", "/editor.js", "/draw.js", "/groups.js", "/graphlayout.js", "/commitnav.js", "/runnerversion.js", "/activityclear.js",
   // app.js's modules (web/static/app/)
   "/app/account.js", "/app/accountsheet.js", "/app/actions.js", "/app/activity.js", "/app/api.js", "/app/attachments.js", "/app/backend.js", "/app/billing.js", "/app/board.js", "/app/branches.js", "/app/chat.js", "/app/chatpane.js", "/app/checklist.js", "/app/claudefiles.js", "/app/detail.js", "/app/dialogs.js", "/app/diffedit.js", "/app/dnd.js", "/app/dom.js", "/app/drawmode.js", "/app/events.js", "/app/files.js", "/app/history.js", "/app/hovercard.js", "/app/issues.js", "/app/nav.js", "/app/notifications.js", "/app/origin.js", "/app/palette.js", "/app/prefs.js", "/app/preview.js", "/app/projects.js", "/app/releases.js", "/app/review.js", "/app/runners.js", "/app/scans.js", "/app/settings.js", "/app/state.js", "/app/terminal.js", "/app/timeline.js", "/app/todoform.js", "/app/todos.js", "/app/tokens.js", "/app/try.js", "/app/updates.js", "/app/usage.js", "/app/viewport.js", "/app/vim.js", "/app/wallview.js", "/app/webhooks.js",
   "/vendor/codemirror.js", "/vendor/xterm/xterm.js", "/vendor/xterm/addon-fit.js", "/vendor/xterm/xterm.css", "/vendor/fonts/fonts.css", "/favicon.svg", "/manifest.webmanifest", "/img/icon-192.png"];
