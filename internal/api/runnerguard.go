@@ -36,6 +36,7 @@ func init() {
 		"DELETE /api/projects/{pid}",
 		"POST /api/projects/{pid}/push", "GET /api/projects/{pid}/unpushed", "GET /api/projects/{pid}/remote",
 		"POST /api/projects/{pid}/remote/fetch", "POST /api/projects/{pid}/remote/pull", "GET /api/projects/{pid}/graph", "GET /api/projects/{pid}/files",
+		"GET /api/projects/{pid}/claude-files",
 		"GET /api/projects/{pid}/commits/{sha}", "GET /api/projects/{pid}/commits/{sha}/diff",
 		"GET /api/projects/{pid}/file", "PUT /api/projects/{pid}/file", "POST /api/projects/{pid}/edits",
 		// The checklist (TODO.md), read and saved in the runner's checkout (checklist.go).

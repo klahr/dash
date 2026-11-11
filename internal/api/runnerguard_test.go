@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -365,5 +367,35 @@ func TestRunnerChatsInItsOwnProjectThroughTheHub(t *testing.T) {
 	}
 	if got := raw(s).ProjectChat(clone.ID); len(got) != n {
 		t.Errorf("the runner saved the hub's conversation: %+v", got)
+	}
+}
+
+func TestRunnerOffersClaudeFiles(t *testing.T) {
+	parallel(t)
+
+	_, h, p := runnerServer(t)
+	if w := hubCall(h, "GET", "/api/projects/"+p.ID+"/claude-files", ""); w.Code == http.StatusForbidden {
+		t.Fatalf("claude-files refused by the guard: %d %s", w.Code, w.Body)
+	}
+}
+
+// Every route the hub proxies to a runner (viaRunner, processViaRunner)
+// must be in hubRoutes, or the runner answers 403.
+func TestEveryProxiedRouteIsOnTheAllowlist(t *testing.T) {
+	parallel(t)
+
+	src, err := os.ReadFile("server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`mux\.HandleFunc\("([^"]+)",\s*s\.(?:viaRunner|processViaRunner)\(`)
+	m := re.FindAllStringSubmatch(string(src), -1)
+	if len(m) == 0 {
+		t.Fatal("found no proxied routes in server.go")
+	}
+	for _, g := range m {
+		if !hubRoutes[g[1]] {
+			t.Errorf("%s is proxied to runners but isn't in hubRoutes", g[1])
+		}
 	}
 }
