@@ -1066,3 +1066,59 @@ func TestBrowserSwipeLanes(t *testing.T) {
 	lane("merging")
 	b.waitJS("no slide-in", fmt.Sprintf(`window.e2eSlides === %d`, before))
 }
+
+// Create a custom scan from the Scans page: the card after the list opens
+// the editor with only a title and a prompt showing, Advanced closed, and a
+// scan saved without a name gets one made from its title.
+func TestBrowserCustomScan(t *testing.T) {
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	shot := func(name string) {
+		if dir := os.Getenv("DASH_TEST_SHOTS"); dir != "" {
+			buf, err := chromedp.Run(b.ctx, chromedp.FullScreenshot(90))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, name+".jpg"), buf, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	b.until("open the scans", `document.querySelector("#view-scans.active")`,
+		chromedp.Click(chromedp.CSS(`.nav > button[data-view=scans]`)))
+	b.waitJS("the create card after the list", `(() => {
+		const c = document.querySelector("#scan-create");
+		return !c.hidden && document.querySelector("#scan-list").children.length > 0 &&
+			c.previousElementSibling.id === "scan-list" && c.querySelector("#scan-new").textContent.includes("Create custom scan") &&
+			!document.querySelector(".scan-bar #scan-new");
+	})()`)
+	b.do("scroll to the card", chromedp.ScrollIntoView(chromedp.ID("scan-create")))
+	shot("scans")
+	b.until("open the editor", `document.querySelector("#scan-sheet").open`, chromedp.Click(chromedp.ID("scan-new")))
+	b.waitJS("only the essentials", `!document.querySelector("#scan-advanced").open && document.activeElement === document.querySelector("#scan-form [name=title]")`)
+	shot("editor")
+	b.do("write the scan",
+		chromedp.SendKeys(chromedp.CSS(`#scan-form [name=title]`), "API error handling"),
+		chromedp.SendKeys(chromedp.CSS(`#scan-form [name=prompt]`), "Find handlers that leak internal errors."))
+	b.until("save it", `!document.querySelector("#scan-sheet").open`, chromedp.Click(chromedp.ID("scan-save")))
+	b.waitJS("the new scan listed", `!!document.querySelector('.scan-card[data-scan="api-error-handling"]')`)
+	var res struct {
+		Scans []struct {
+			Name, Title, Kind, Scope, Source, Prompt string
+		} `json:"scans"`
+	}
+	h.api.must("GET", "/api/projects/"+h.project.ID+"/scans", nil, http.StatusOK, &res)
+	i := slices.IndexFunc(res.Scans, func(s struct{ Name, Title, Kind, Scope, Source, Prompt string }) bool {
+		return s.Name == "api-error-handling"
+	})
+	if i < 0 || res.Scans[i].Title != "API error handling" || res.Scans[i].Kind != "custom" || res.Scans[i].Scope != "repo" || res.Scans[i].Source != "dash" {
+		t.Fatalf("scans: %+v", res.Scans)
+	}
+
+	// Editing it opens Advanced only when something there is set.
+	b.clickIn(".scan-card", "API error handling", ".scan-actions .link")
+	b.waitJS("the editor, Advanced closed", `document.querySelector("#scan-sheet").open && !document.querySelector("#scan-advanced").open && document.querySelector("#scan-form [name=name]").readOnly`)
+}

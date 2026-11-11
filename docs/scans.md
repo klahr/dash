@@ -51,7 +51,7 @@ Scans come from three places, marked on each card:
 - **Repository:** markdown files in `.dash/scans/<name>.md`, versioned and shared with your team.
   Only a runner's own projects read them: on the hub, a project has the built-in scans and the
   Dash scans, since the hub has no checkout.
-- **Dash:** scans you write in the Scans section with "New scan", kept by Dash for this project
+- **Dash:** scans you write in the Scans section with "Create custom scan", kept by Dash for this project
   only. "Duplicate" on any scan starts a new Dash scan from its prompt and settings, and
   "Export to repo" on a Dash scan shows its `.dash/scans/<name>.md` file to copy and commit.
 

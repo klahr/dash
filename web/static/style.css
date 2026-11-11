@@ -2346,7 +2346,13 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 /* ---------- scans ---------- */
 .scans { max-width: 1100px; padding: 12px 16px 24px; }
 .scan-bar { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 12px; }
-.scan-bar #scan-new { margin-left: auto; flex: none; }
+.scan-create { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 12px; padding: 16px; border: 1px dashed var(--line); border-radius: var(--r-m); color: var(--muted); }
+.scan-create > div { flex: 1 1 280px; min-width: 0; }
+.scan-create p { margin: 0; font-size: 14px; }
+.scan-create .scan-create-title { color: var(--text); font-weight: 600; font-size: 15px; margin-bottom: 2px; }
+.scan-create .btn { flex: none; }
+.scan-form-lead { margin-top: 0; }
+.scan-advanced .scan-form-grid { margin-top: 4px; }
 .scan-intro { color: var(--muted); font-size: 14px; max-width: 70ch; }
 .scan-intro p { margin: 0; }
 .scan-intro summary { cursor: pointer; width: fit-content; font-size: 13px; padding: 4px 0; }

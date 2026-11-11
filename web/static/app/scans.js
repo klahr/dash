@@ -177,10 +177,10 @@ export function renderScans() {
   // overrides, approvals and sharing are explained where they come up.
   const more = h("details", {}, h("summary", {}, "Learn more"),
     h("p", {}, "Besides Dash's built-ins, scans can live in ", h("code", {}, `${scans.dir}/`),
-      " in the repository, shared with your team, or be written here with New scan. With the same name, a repository scan replaces the built-in and one written here replaces either."));
+      " in the repository, shared with your team, or be created here with Create custom scan. With the same name, a repository scan replaces the built-in and one written here replaces either."));
   more.open = !!intro.querySelector("details[open]"); // stays open across re-renders
   intro.replaceChildren(h("p", {}, "Scans read the code and add what they find to Issues. Run them now or on a schedule."), more);
-  $("#scan-new").hidden = !p || !scans.loaded;
+  $("#scan-create").hidden = !p || !scans.loaded;
   showRunnerNeeded($("#scan-runner-note"), scans.loaded ? p : null);
   const probs = $("#scan-problems");
   probs.hidden = !scans.problems.length;
@@ -313,12 +313,25 @@ function openScanEditor(s = null, edit = false) {
   f.schedule.value = (edit ? sch?.cron : sch?.default) || "";
   f.tools.value = (s?.tools || []).join("\n");
   f.prompt.value = s?.prompt || "";
-  $("#scan-sheet-title").textContent = edit ? `Edit ${s.title}` : s ? `Duplicate ${s.title}` : "New scan";
+  $("#scan-sheet-title").textContent = edit ? `Edit ${s.title}` : s ? `Duplicate ${s.title}` : "Create custom scan";
+  // Advanced starts closed unless the scan sets something there.
+  $("#scan-advanced").open = !!s && !!(s.kind !== "custom" || s.scope !== "repo" || s.path || s.model || s.effort || f.schedule.value || s.tools?.length);
   const from = $("#scan-form-from");
   from.hidden = !(s && !edit);
   if (s && !edit) from.textContent = `A new scan, kept in Dash, starting from ${s.source === "dash" ? "the Dash scan" : s.builtin ? "the built-in scan" : s.file} “${s.name}”.`;
   $("#scan-sheet").showModal();
-  (edit ? f.prompt : f.name).focus();
+  (edit ? f.prompt : f.title).focus();
+}
+
+// scanSlug makes a scan name from its title: "API error handling" →
+// "api-error-handling", unique among the scans listed.
+function scanSlug(title) {
+  const base = title.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 56).replace(/-+$/, "") || "scan";
+  const taken = new Set(scans.list.map((x) => x.name));
+  let name = base;
+  for (let i = 2; taken.has(name); i++) name = `${base}-${i}`;
+  return name;
 }
 
 $("#scan-new").addEventListener("click", () => openScanEditor());
@@ -327,7 +340,7 @@ $("#scan-form").addEventListener("submit", attempt(async (e) => {
   e.preventDefault(); // stays open if saving fails
   const f = e.target;
   const body = {
-    name: f.name.value.trim(), title: f.title.value.trim(), kind: f.kind.value, scope: f.scope.value,
+    name: f.name.value.trim() || scanSlug(f.title.value.trim()), title: f.title.value.trim(), kind: f.kind.value, scope: f.scope.value,
     path: f.path.value.trim(), model: f.model.value.trim(), effort: f.effort.value, schedule: f.schedule.value.trim(),
     tools: f.tools.value.split("\n").map((x) => x.trim()).filter(Boolean), prompt: f.prompt.value,
   };
