@@ -2475,7 +2475,13 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .cl-icon .ico { width: 16px; height: 16px; }
 .cl-edit { flex: 1; min-width: 0; padding: 6px 0; }
 .cl-edit textarea { width: 100%; min-height: 64px; font: inherit; }
-.cl-add { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+/* The add row stays pinned to the bottom of the view (above the phone nav) however long the list. */
+.cl-add {
+  display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap;
+  position: sticky; bottom: calc(var(--nav-h) + var(--safe-b)); z-index: 4;
+  padding: 10px 0; background: var(--bg); box-shadow: 0 -8px 12px -8px rgb(0 0 0 / .45);
+}
+@media (min-width: 1024px) { .cl-add { bottom: 0; } }
 .cl-add input { flex: 1 1 240px; min-height: 44px; }
 .cl-add select { flex: 0 1 180px; min-height: 44px; }
 .cl-add .btn { min-height: 44px; }
