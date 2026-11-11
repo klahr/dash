@@ -198,42 +198,43 @@
       <!-- Issues: what is wrong with the project, triaged into tasks -->
       <section class="view" id="view-issues" aria-label="Issues">
         <div class="issues">
-          <form class="issue-add" id="issue-add" hidden>
-            <select id="issue-add-type" aria-label="Type">
-              <option value="bug">Bug</option>
-              <option value="vuln">Vulnerability</option>
-              <option value="issue" selected>Issue</option>
-            </select>
-            <input id="issue-add-title" placeholder="Add an issue: what's wrong?" aria-label="New issue title" autocomplete="off" required>
-            <button class="btn primary" type="submit" data-icon="plus">Add</button>
-          </form>
+          <header class="cl-head">
+            <h2 class="cl-title issues-title">Issues</h2>
+            <span class="cl-state" id="issue-state" aria-live="polite"></span>
+          </header>
+          <div class="cl-progress" id="issue-progress" hidden>
+            <div class="cl-bar" aria-hidden="true"><span id="issue-bar-fill"></span></div>
+            <span class="cl-count" id="issue-done"></span>
+          </div>
           <div class="issue-tools" id="issue-tools" hidden>
-            <label class="issue-all" title="Select all shown open issues (ones without a task)"><input type="checkbox" id="issue-all"><span class="sr-only">Select all</span></label>
-            <select id="issue-f-type" aria-label="Type">
-              <option value="">Any type</option>
-              <option value="bug">Bugs</option>
-              <option value="vuln">Vulnerabilities</option>
-              <option value="issue">Other issues</option>
-            </select>
-            <select id="issue-f-severity" aria-label="Severity">
-              <option value="">Any severity</option>
-              <option value="critical">Critical</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-              <option value="info">Info</option>
-            </select>
-            <select id="issue-f-status" aria-label="Status">
-              <option value="active">Open &amp; task created</option>
-              <option value="open">Open</option>
-              <option value="task_created">Task created</option>
-              <option value="resolved">Resolved</option>
-              <option value="dismissed">Dismissed</option>
-              <option value="all">All</option>
-            </select>
-            <select id="issue-f-source" aria-label="Source"><option value="">Any source</option></select>
-            <select id="issue-f-kind" aria-label="Scan kind" hidden><option value="">Any scan kind</option></select>
-            <button class="issue-run-filter" type="button" id="issue-f-run" hidden title="Show all issues again"></button>
+            <label class="cl-check issue-pick issue-all" title="Select all shown open issues (ones without a task)"><input type="checkbox" id="issue-all"><span class="sr-only">Select all</span></label>
+            <div class="issue-filters">
+              <select id="issue-f-status" aria-label="Status">
+                <option value="active">Open &amp; in a task</option>
+                <option value="open">Open</option>
+                <option value="task_created">In a task</option>
+                <option value="resolved">Resolved</option>
+                <option value="dismissed">Dismissed</option>
+                <option value="all">All</option>
+              </select>
+              <select id="issue-f-type" aria-label="Type">
+                <option value="">Any type</option>
+                <option value="bug">Bugs</option>
+                <option value="vuln">Vulnerabilities</option>
+                <option value="issue">Other issues</option>
+              </select>
+              <select id="issue-f-severity" aria-label="Severity">
+                <option value="">Any severity</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+                <option value="info">Info</option>
+              </select>
+              <select id="issue-f-source" aria-label="Source"><option value="">Any source</option></select>
+              <select id="issue-f-kind" aria-label="Scan kind" hidden><option value="">Any scan kind</option></select>
+              <button class="issue-run-filter" type="button" id="issue-f-run" hidden title="Show all issues again"></button>
+            </div>
           </div>
           <div class="issue-bulk" id="issue-bulk" role="toolbar" aria-label="Selected issues" hidden>
             <span class="issue-count" id="issue-count"></span>
@@ -243,8 +244,17 @@
             <button class="btn small danger" type="button" id="issue-dismiss" data-icon="x">Dismiss</button>
             <button class="link" type="button" id="issue-clear">Clear</button>
           </div>
-          <ul class="issue-list" id="issue-list"></ul>
+          <div class="cl-body issue-list" id="issue-list"></div>
           <div class="empty" id="issue-empty"><p class="empty-title" id="issue-empty-title">No project</p><p id="issue-empty-text">Select a project to see its issues.</p></div>
+          <form class="cl-add issue-add" id="issue-add" hidden>
+            <input id="issue-add-title" placeholder="Add an issue: what's wrong?" aria-label="New issue title" autocomplete="off" required>
+            <select id="issue-add-type" aria-label="Type">
+              <option value="bug">Bug</option>
+              <option value="vuln">Vulnerability</option>
+              <option value="issue" selected>Issue</option>
+            </select>
+            <button class="btn primary" type="submit" data-icon="plus">Add</button>
+          </form>
         </div>
       </section>
 

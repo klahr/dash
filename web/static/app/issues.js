@@ -109,12 +109,12 @@ export function renderIssues() {
   const list = $("#issue-list");
   const shown = iss.list.filter(issueVisible);
   for (const id of iss.checked) if (!iss.list.some((i) => i.id === id && pickable(i))) iss.checked.delete(id);
-  // Grouped by where they stand; headings only when there is more than one group.
+  // Grouped by where they stand, each group a section like the checklist's.
   const groups = ISSUE_GROUPS.map((g) => ({ ...g, items: shown.filter((i) => issueGroup(i) === g.key) })).filter((g) => g.items.length);
-  list.replaceChildren(...groups.flatMap((g) => [
-    groups.length > 1 ? h("li", { class: `issue-group g-${g.key}`, title: g.hint }, h("span", {}, g.label), h("span", { class: "issue-group-n" }, g.items.length)) : null,
-    ...g.items.map(issueRow),
-  ].filter(Boolean)));
+  list.replaceChildren(...groups.map((g) => h("section", { class: `cl-section issue-section g-${g.key}` },
+    h("h3", { title: g.hint }, h("span", {}, g.label), h("span", { class: `cl-section-count${g.key === "closed" ? " complete" : ""}` }, g.items.length)),
+    h("ul", { class: "cl-list issue-items" }, ...g.items.map(issueRow)))));
+  renderIssueSummary();
   const empty = $("#issue-empty");
   empty.hidden = shown.length > 0;
   $("#issue-empty-title").textContent = !state.project ? "No project" : iss.list.length ? "No issues match" : "No issues";
@@ -148,6 +148,19 @@ export function renderIssues() {
   renderIssueBulk();
 }
 
+// renderIssueSummary fills the header and the bar: how many of all the
+// project's issues are closed (resolved or dismissed).
+function renderIssueSummary() {
+  const all = iss.list, n = (k) => all.filter((i) => issueGroup(i) === k).length;
+  const open = n("open"), task = n("task"), closed = n("closed");
+  $("#issue-state").textContent = !state.project || !all.length ? ""
+    : [open ? `${open} to triage` : "", task ? `${task} in a task` : ""].filter(Boolean).join(" · ") || "Nothing open";
+  $("#issue-progress").hidden = !all.length;
+  $("#issue-progress").classList.toggle("complete", !!all.length && closed === all.length);
+  $("#issue-bar-fill").style.width = `${all.length ? (closed / all.length) * 100 : 0}%`;
+  $("#issue-done").textContent = closed === all.length ? `All ${all.length} closed` : `${closed} of ${all.length} closed`;
+}
+
 // renderIssueBulk updates what depends on the checked issues only, so
 // ticking a box doesn't rebuild the list (and lose focus).
 function renderIssueBulk() {
@@ -178,22 +191,29 @@ function issueRow(i) {
   // An issue with a task shows what the task is doing where the checkbox
   // would be: it is being dealt with, not waiting to be picked.
   const running = lead && !lead.paused && (lead.status === "in_progress" || lead.status === "merging");
+  // A closed one shows how it ended: ticked when resolved, crossed out when dismissed.
+  const closed = i.status === "resolved" || i.status === "dismissed";
   const mark = i.status === "task_created"
     ? h("span", { class: `issue-mark${lead ? ` s-${lead.status}` : ""}`, title: lead ? `A task is on it: ${taskLabel(lead)}` : "A task is on it", role: "img", "aria-label": "In a task" },
       running ? h("span", { class: "act-spin", "aria-hidden": "true" }) : ico(lead?.status === "failed" ? "x" : "draft"))
-    : h("input", { type: "checkbox", class: "issue-check", checked: iss.checked.has(i.id), disabled: !pickable(i),
-      "aria-label": `Select ${i.title}`, title: pickable(i) ? "Select for a bulk action" : `${ISSUE_STATUSES[i.status]}; reopen it to triage`,
-      onchange: (e) => { e.target.checked ? iss.checked.add(i.id) : iss.checked.delete(i.id); renderIssueBulk(); } });
-  return h("li", { class: `issue status-${i.status}${lead?.status === "failed" && i.status === "task_created" ? " task-failed" : ""}${open ? " open" : ""}`, "data-id": i.id },
+    : closed
+      ? h("span", { class: `issue-mark issue-end end-${i.status}`, title: `${ISSUE_STATUSES[i.status]}; reopen it to triage`, role: "img", "aria-label": ISSUE_STATUSES[i.status] }, ico(i.status === "resolved" ? "check" : "x"))
+      : h("label", { class: "cl-check issue-pick", title: "Select for a bulk action" },
+        h("input", { type: "checkbox", class: "issue-check", checked: iss.checked.has(i.id),
+          "aria-label": `Select ${i.title}`,
+          onchange: (e) => { e.target.checked ? iss.checked.add(i.id) : iss.checked.delete(i.id); e.target.closest(".issue")?.classList.toggle("picked", e.target.checked); renderIssueBulk(); } }));
+  return h("li", { class: `issue status-${i.status}${lead?.status === "failed" && i.status === "task_created" ? " task-failed" : ""}${open ? " open" : ""}${iss.checked.has(i.id) ? " picked" : ""}`, "data-id": i.id },
     h("div", { class: "issue-row" },
       mark,
-      h("span", { class: `sev sev-${i.severity}`, title: `Severity: ${i.severity}` }, i.severity),
       h("button", { type: "button", class: "issue-main", "aria-expanded": String(open), onclick: toggle },
-        h("span", { class: `issue-type type-${i.type}` }, i.type === "vuln" ? "vuln" : i.type),
         h("span", { class: "issue-title" }, i.title),
-        issueLoc(i) ? h("span", { class: "issue-loc" }, issueLoc(i)) : null),
-      ...tasks,
-      i.status === "resolved" || i.status === "dismissed" ? h("span", { class: "issue-status" }, ISSUE_STATUSES[i.status]) : null),
+        h("span", { class: "issue-sub" },
+          h("span", { class: `sev sev-${i.severity}`, title: `Severity: ${i.severity}` }, i.severity),
+          h("span", { class: `issue-type type-${i.type}` }, ISSUE_TYPES[i.type] || i.type),
+          closed ? h("span", { class: "issue-status" }, ISSUE_STATUSES[i.status]) : null,
+          issueLoc(i) ? h("span", { class: "issue-loc" }, issueLoc(i)) : null),
+        h("span", { class: "issue-chev", "aria-hidden": "true" }, ico("down"))),
+      tasks.length ? h("span", { class: "issue-chips" }, ...tasks) : null),
     open ? (iss.editing === i.id ? issueEditor(i) : issueBody(i)) : null);
 }
 
@@ -325,7 +345,7 @@ for (const [key, id] of [["type", "#issue-f-type"], ["severity", "#issue-f-sever
 }
 $("#issue-all").addEventListener("change", (e) => {
   for (const i of iss.list.filter(issueVisible).filter(pickable)) e.target.checked ? iss.checked.add(i.id) : iss.checked.delete(i.id);
-  for (const box of $$("#issue-list .issue-check")) if (!box.disabled) box.checked = e.target.checked;
+  for (const box of $$("#issue-list .issue-check")) { box.checked = e.target.checked; box.closest(".issue")?.classList.toggle("picked", box.checked); }
   renderIssueBulk();
 });
 $("#issue-tasks").addEventListener("click", attempt(() => issueTasks([...iss.checked], false, $("#issue-queue").checked)));
