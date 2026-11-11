@@ -2347,7 +2347,10 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .scans { max-width: 1100px; padding: 12px 16px 24px; }
 .scan-bar { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 12px; }
 .scan-bar #scan-new { margin-left: auto; flex: none; }
-.scan-intro { margin: 0; color: var(--muted); font-size: 14px; max-width: 70ch; }
+.scan-intro { color: var(--muted); font-size: 14px; max-width: 70ch; }
+.scan-intro p { margin: 0; }
+.scan-intro summary { cursor: pointer; width: fit-content; font-size: 13px; padding: 4px 0; }
+.scan-intro details p { margin-top: 2px; }
 .scan-actions { display: flex; flex-wrap: wrap; gap: 0 14px; font-size: 13px; }
 .scan-actions .link { min-height: 32px; }
 .scan-actions .link.danger { color: var(--failed); }

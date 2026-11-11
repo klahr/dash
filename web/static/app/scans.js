@@ -173,9 +173,13 @@ export function renderScans() {
   const p = state.project;
   const intro = $("#scan-intro");
   intro.hidden = !p || !scans.loaded;
-  intro.replaceChildren(h("span", {}, "Dash's built-in scans, the ones in ", h("code", {}, `${scans.dir}/`),
-    " in this repository and the ones you write here with New scan. They read the code and add what they find to Issues. A repository scan replaces the built-in of the same name, and one written here replaces either. Extra tools and schedules a repository scan asks for apply once you approve them here; to share a scan with your team, add it to ",
-    h("code", {}, `${scans.dir}/`), " (Export to repo gives you the file)."));
+  // One line on what scans are; where they come from is one click away, and
+  // overrides, approvals and sharing are explained where they come up.
+  const more = h("details", {}, h("summary", {}, "Learn more"),
+    h("p", {}, "Besides Dash's built-ins, scans can live in ", h("code", {}, `${scans.dir}/`),
+      " in the repository, shared with your team, or be written here with New scan. With the same name, a repository scan replaces the built-in and one written here replaces either."));
+  more.open = !!intro.querySelector("details[open]"); // stays open across re-renders
+  intro.replaceChildren(h("p", {}, "Scans read the code and add what they find to Issues. Run them now or on a schedule."), more);
   $("#scan-new").hidden = !p || !scans.loaded;
   showRunnerNeeded($("#scan-runner-note"), scans.loaded ? p : null);
   const probs = $("#scan-problems");
