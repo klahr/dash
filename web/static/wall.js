@@ -49,12 +49,15 @@ function elapsed(ms) {
   return hrs ? hrs + ":" + mm + ":" + ss : mm + ":" + ss;
 }
 
-function resetLabel(iso) {
+function resetLabel(iso, now = new Date(Date.now() + skew)) {
   const d = new Date(iso);
   if (isNaN(d) || d.getFullYear() < 2000) return "";
-  const now = new Date();
-  if (d - now < 20 * 3600 * 1000) return "resets " + hhmm(d);
-  return "resets " + d.toLocaleDateString(undefined, { weekday: "short" });
+  const mins = Math.floor((d - now) / 60000);
+  if (mins < 1) return "resets now";
+  const days = Math.floor(mins / 1440), hrs = Math.floor((mins % 1440) / 60), m = mins % 60;
+  if (days) return "resets in " + days + "d" + (hrs ? " " + hrs + "h" : "");
+  if (hrs) return "resets in " + hrs + "h" + (m ? " " + m + "m" : "");
+  return "resets in " + m + "m";
 }
 
 const num = (n) => n.toLocaleString(undefined).replace(/,/g, " ");
@@ -62,6 +65,7 @@ const num = (n) => n.toLocaleString(undefined).replace(/,/g, " ");
 // ---- clock and timers, every second ----
 
 let skew = 0; // server time − local time, so timers agree with the server
+let metersAt = 0; // when the usage meters were last drawn
 
 function tick() {
   const now = new Date(Date.now() + skew);
@@ -69,6 +73,7 @@ function tick() {
   for (const el of document.querySelectorAll("[data-since]")) {
     el.textContent = elapsed(now - new Date(el.dataset.since));
   }
+  if (last && now - metersAt >= 60000) renderHeader(last);
 }
 
 // ---- rendering ----
@@ -93,9 +98,10 @@ function renderHeader(d) {
 
   const box = $("usage");
   box.replaceChildren();
+  metersAt = Date.now() + skew;
   const pauseAt = d.usage.pause_at > 0 && d.usage.pause_at < 1 ? d.usage.pause_at : 0;
   const want = [["five_hour", "Claude 5h"], ["seven_day", "Claude 7d"]];
-  for (const [i, [name, label]] of want.entries()) {
+  for (const [name, label] of want) {
     const w = (d.usage.windows || []).find((x) => x.name === name);
     if (!d.usage.known || !w) {
       box.append(h("div", { class: "meter" },
@@ -107,12 +113,10 @@ function renderHeader(d) {
     const pct = Math.round(w.utilization * 100);
     const color = pauseAt && w.utilization >= pauseAt ? "var(--bad)" : w.utilization >= 0.7 ? "var(--run)" : "var(--ok)";
     const bar = h("div", { class: "bar" }, h("i", { style: `width:${Math.min(100, pct)}%;background:${color}` }));
-    if (pauseAt) bar.append(h("span", { class: "mark", style: `left:calc(${pauseAt * 100}% - 1px)` }));
     box.append(h("div", { class: "meter" },
       h("div", { class: "lbl" }, h("span", {}, label), h("b", { class: "num" }, pct + "%")),
       bar,
-      h("div", { class: "lbl", style: "margin-top:4px" }, h("span", {}, resetLabel(w.resets_at)),
-        h("span", {}, pauseAt && i === 0 ? "pauses at " + Math.round(pauseAt * 100) + "%" : ""))));
+      h("div", { class: "lbl", style: "margin-top:4px" }, h("span", {}, resetLabel(w.resets_at)), h("span"))));
   }
 }
 
