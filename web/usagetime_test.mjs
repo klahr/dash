@@ -2,7 +2,7 @@
 // Run with `node --test web/`; groups_test.go runs them as part of `go test ./...`.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { HOUR, MIN, aheadOfPace, fmtDuration, paceMs, paceText, resetText } from "./static/usagetime.js";
+import { HOUR, MIN, aheadOfPace, fmtDuration, paceMs, paceStateText, paceText, resetText } from "./static/usagetime.js";
 
 test("durations use the largest two units", () => {
   assert.equal(fmtDuration(0), "<1m");
@@ -35,4 +35,13 @@ test("resets count down", () => {
   assert.equal(resetText("2026-11-11T14:15:00Z", now), "resets in 2h 15m");
   assert.equal(resetText("2026-11-14T18:00:00Z", now), "resets in 3d 6h");
   assert.equal(resetText("2026-11-11T12:00:20Z", now), "resets in <1m");
+});
+
+test("paceStateText says where the queue is on the weekly pace", () => {
+  assert.equal(paceStateText(null), null);
+  assert.equal(paceStateText({ follow: false, state: "" }), null);
+  assert.equal(paceStateText({ follow: true, state: "waiting", gap_s: 80 * 60 }), "Ahead of pace: waiting 1h 20m for the line to catch up");
+  assert.equal(paceStateText({ follow: true, state: "on_pace", slots: 1 }), "On pace: 1 task at once");
+  assert.equal(paceStateText({ follow: true, state: "catching_up", slots: 4 }), "Behind pace: catching up with 4 tasks at once");
+  assert.equal(paceStateText({ follow: true, state: "unknown" }), "Follows the pace once Claude reports weekly usage");
 });

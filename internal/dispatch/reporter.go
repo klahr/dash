@@ -255,6 +255,9 @@ func (r *Reporter) Build(now time.Time) Report {
 	if r.Usage != nil {
 		u := r.Usage.Snapshot()
 		rep.Usage = &u
+		if u.Pace.Slots > 0 {
+			rep.Parallel = u.Pace.Slots // more while catching up with the weekly pace
+		}
 	}
 	if r.Claude != nil {
 		c := r.Claude.Status()

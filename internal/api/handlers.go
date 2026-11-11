@@ -1553,6 +1553,28 @@ func (s *Server) pauseQueue(paused bool) http.HandlerFunc {
 	}
 }
 
+// putQueuePace changes the "Follow weekly pace" settings.
+func (s *Server) putQueuePace(w http.ResponseWriter, r *http.Request) {
+	if !s.adminOnly(w, r) {
+		return
+	}
+	var req usage.PaceSettings
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
+		return
+	}
+	if req.MaxParallel < 0 || req.MaxParallel > usage.MaxPaceParallel {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("max_parallel must be between 0 and %d", usage.MaxPaceParallel)})
+		return
+	}
+	if err := s.Usage.SetPace(req); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "save the pace settings: " + err.Error()})
+		return
+	}
+	s.Todos.Kick()
+	writeJSON(w, http.StatusOK, s.Usage.Snapshot())
+}
+
 // ---------------------------------------------------------------- utils
 
 func cleanList(xs []string) []string {

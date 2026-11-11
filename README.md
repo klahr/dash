@@ -119,6 +119,12 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 
 Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
+The queue pauses when a Claude usage window nears its limit (`-pause-at`, 90% by default). To spread
+the week's usage evenly instead, turn on **Follow weekly pace** in the usage sheet (click the usage
+meter): ahead of the pace line no new tasks start until the line catches up, and behind it more run at
+once (one more per 3 hours behind, up to a cap you set, twice `-parallel` by default). Running tasks
+are never stopped. The setting is kept in `usage.json` in the data directory.
+
 ## Optional setup
 
 - **Run it as a service** so it starts at boot: [`deploy/dash.service`](deploy/dash.service), explained in

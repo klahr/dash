@@ -113,6 +113,9 @@ func NewTodoEngine(e *TodoEngine) *TodoEngine {
 	if e.MaxParallel <= 0 {
 		e.MaxParallel = 1
 	}
+	if e.Usage != nil {
+		e.Usage.SetParallel(e.MaxParallel)
+	}
 	if e.TestTimeout <= 0 {
 		e.TestTimeout = 20 * time.Minute
 	}
@@ -123,6 +126,18 @@ func NewTodoEngine(e *TodoEngine) *TodoEngine {
 		e.minute = time.Minute
 	}
 	return e
+}
+
+// EffectiveParallel is how many tasks may run at once now: MaxParallel, or
+// more while the queue follows the weekly pace and is behind it (see
+// usage.Pace). MaxParallel itself never changes.
+func (e *TodoEngine) EffectiveParallel() int {
+	if e.Usage != nil {
+		if n := e.Usage.Snapshot().Pace.Slots; n > 0 {
+			return n
+		}
+	}
+	return e.MaxParallel
 }
 
 // Kick asks the dispatcher to look for work now (call after enqueueing).
@@ -156,13 +171,18 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 	sent := map[string]bool{} // tasks offered to runners this round
 	for {
 		local := true // a task may start here now
+		limit := e.MaxParallel
 		if e.Usage != nil {
-			if ok, _ := e.Usage.CanStart(); !ok {
+			s := e.Usage.Snapshot()
+			if s.Paused {
 				local = false
+			}
+			if s.Pace.Slots > 0 {
+				limit = s.Pace.Slots
 			}
 		}
 		e.mu.Lock()
-		free := e.MaxParallel - len(e.running)
+		free := limit - len(e.running)
 		e.mu.Unlock()
 		if free <= 0 {
 			local = false

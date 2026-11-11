@@ -84,7 +84,7 @@ func init() {
 		"GET /api/previews", "DELETE /api/previews", "GET /api/qr", "GET /preview/{tid}",
 
 		"GET /api/permissions", "POST /api/permissions/{id}", "GET /api/usage",
-		"POST /api/queue/pause", "POST /api/queue/resume",
+		"POST /api/queue/pause", "POST /api/queue/resume", "PUT /api/queue/pace",
 
 		"GET /ws/events",
 

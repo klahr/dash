@@ -503,6 +503,9 @@ func (a *app) buildServices() {
 	}
 
 	a.tracker = usage.New(events, o.pauseAt)
+	if err := a.tracker.Keep(filepath.Join(o.dataDir, "usage.json")); err != nil {
+		slog.Warn("read usage.json", "err", err)
+	}
 	// What looks changed about the installed Claude Code CLI: checked on a
 	// runner, shown in task logs and on the hub's Runners page.
 	a.cli = &claudecli.Monitor{Bin: o.claudeBin}

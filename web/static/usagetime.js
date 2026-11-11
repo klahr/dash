@@ -27,5 +27,18 @@ export function paceText(ms) {
   return `${fmtDuration(Math.abs(ms))} ${ms > 0 ? "ahead" : "behind"}`;
 }
 
+// The queue's place on the weekly pace (the snapshot's pace), in words, or
+// null when it isn't following it.
+export function paceStateText(p) {
+  if (!p || !p.follow) return null;
+  const n = (k) => `${k} task${k === 1 ? "" : "s"} at once`;
+  switch (p.state) {
+    case "waiting": return `Ahead of pace: waiting ${fmtDuration(p.gap_s * 1000)} for the line to catch up`;
+    case "on_pace": return `On pace: ${n(p.slots)}`;
+    case "catching_up": return `Behind pace: catching up with ${n(p.slots)}`;
+  }
+  return "Follows the pace once Claude reports weekly usage";
+}
+
 // "resets in 2h 15m".
 export const resetText = (resetsAt, now = Date.now()) => `resets in ${fmtDuration(new Date(resetsAt) - now)}`;

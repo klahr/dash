@@ -472,7 +472,7 @@ func (s *Server) wallRunners(d *wallData, todos []model.Todo, projects []model.P
 	if !s.hub() {
 		slots := 1
 		if s.Todos != nil {
-			slots = s.Todos.MaxParallel
+			slots = s.Todos.EffectiveParallel()
 		}
 		d.Runners = append(d.Runners, wallRunner{Name: "this computer", Online: true, Busy: d.Stages.Running, Slots: slots, Projects: len(projects)})
 		d.Queue.Slots, d.Queue.Busy = slots, d.Stages.Running

@@ -5,11 +5,14 @@ package usage
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -34,6 +37,8 @@ type Snapshot struct {
 	Paused      bool      `json:"paused"`       // the queue won't start new todos
 	Reason      string    `json:"reason,omitempty"`
 	Until       time.Time `json:"until,omitempty"` // automatic pause lifts at this time
+	Pacing      bool      `json:"pacing,omitempty"` // paused only to stay on the weekly pace
+	Pace        Pace      `json:"pace"`            // following the weekly pace (see pace.go)
 }
 
 type Tracker struct {
@@ -46,6 +51,8 @@ type Tracker struct {
 	windows map[string]Window
 	updated time.Time
 	now     func() time.Time
+	pace    Pace   // its setting, and its last evaluation (for hysteresis)
+	path    string // where the pace setting is kept (see Keep)
 }
 
 // New returns a tracker that pauses the queue once any window reaches
@@ -100,6 +107,64 @@ func (t *Tracker) SetManualPause(paused bool) {
 	t.publish()
 }
 
+// SetParallel tells the tracker how many tasks the queue runs at once on
+// pace (its MaxParallel).
+func (t *Tracker) SetParallel(n int) {
+	t.mu.Lock()
+	t.pace.Parallel = n
+	t.mu.Unlock()
+}
+
+// PaceSettings are the user's "Follow weekly pace" settings.
+type PaceSettings struct {
+	Follow      bool `json:"follow"`
+	MaxParallel int  `json:"max_parallel"` // most tasks at once when behind; 0 = twice the usual
+}
+
+// MaxPaceParallel bounds PaceSettings.MaxParallel.
+const MaxPaceParallel = 64
+
+// SetPace changes the pace settings and saves them (see Keep).
+func (t *Tracker) SetPace(ps PaceSettings) error {
+	if ps.MaxParallel < 0 || ps.MaxParallel > MaxPaceParallel {
+		return fmt.Errorf("max_parallel must be between 0 and %d", MaxPaceParallel)
+	}
+	t.mu.Lock()
+	t.pace.Follow, t.pace.MaxParallel = ps.Follow, ps.MaxParallel
+	if !ps.Follow {
+		t.pace.State = PaceOff
+	}
+	path := t.path
+	t.mu.Unlock()
+	var err error
+	if path != "" {
+		b, _ := json.Marshal(ps)
+		err = fsutil.WriteFileAtomic(path, b, 0o600)
+	}
+	t.publish()
+	return err
+}
+
+// Keep loads the pace settings from path and saves them there on SetPace.
+func (t *Tracker) Keep(path string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.path = path
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var ps PaceSettings
+	if err := json.Unmarshal(b, &ps); err != nil {
+		return err
+	}
+	t.pace.Follow, t.pace.MaxParallel = ps.Follow, min(max(ps.MaxParallel, 0), MaxPaceParallel)
+	return nil
+}
+
 // CanStart reports whether the queue may start another todo, and why not.
 func (t *Tracker) CanStart() (bool, string) {
 	s := t.Snapshot()
@@ -110,7 +175,7 @@ func (t *Tracker) Snapshot() Snapshot {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	now := t.now()
-	s := Snapshot{Known: t.known, Status: t.status, UpdatedAt: t.updated, PauseAt: t.pauseAt, ManualPause: t.manual}
+	s := Snapshot{Known: t.known, Status: t.status, UpdatedAt: t.updated, PauseAt: t.pauseAt, ManualPause: t.manual, Pace: t.pace}
 	for _, w := range t.windows {
 		s.Windows = append(s.Windows, w)
 	}
@@ -118,9 +183,10 @@ func (t *Tracker) Snapshot() Snapshot {
 
 	if t.manual {
 		s.Paused, s.Reason = true, "Paused by you"
-		return s
 	}
-	return s.Reevaluate(now)
+	s = s.Reevaluate(now)
+	t.pace = s.Pace // its state carries over to the next evaluation
+	return s
 }
 
 // Limited reports whether a window's status means Claude Code refuses work.
@@ -132,12 +198,20 @@ func Limited(status string) bool {
 
 // Reevaluate works out again, as of now, whether the windows pause the
 // queue: a snapshot reported earlier (say by a runner) may name windows that
-// have since reset. A manual pause is kept as it is.
+// have since reset. A manual pause is kept as it is. Pacing (see Pace)
+// starts from s.Pace's state, so its hysteresis carries over.
 func (s Snapshot) Reevaluate(now time.Time) Snapshot {
+	var week *Window
+	for i, w := range s.Windows {
+		if w.Name == WeekWindow && w.ResetsAt.After(now) {
+			week = &s.Windows[i]
+		}
+	}
+	s.Pace = s.Pace.next(week, now)
 	if s.ManualPause {
 		return s
 	}
-	s.Paused, s.Reason, s.Until = false, "", time.Time{}
+	s.Paused, s.Reason, s.Until, s.Pacing = false, "", time.Time{}, false
 	for _, w := range s.Windows {
 		if !w.ResetsAt.After(now) {
 			continue // window already reset; its numbers are stale
@@ -154,6 +228,11 @@ func (s Snapshot) Reevaluate(now time.Time) Snapshot {
 				s.Until = w.ResetsAt
 			}
 		}
+	}
+	// Ahead of the weekly pace: wait until the line catches up. The hard
+	// stops above win, as their pause lasts until a reset.
+	if !s.Paused && s.Pace.Waiting() {
+		s.Paused, s.Reason, s.Until, s.Pacing = true, s.Pace.Reason(), now.Add(s.Pace.Gap()).Truncate(time.Second), true
 	}
 	return s
 }

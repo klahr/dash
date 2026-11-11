@@ -38,6 +38,7 @@ func orgEndpoints() []endpoint {
 		{"GET", "/api/hub/repos", ""},
 		{"POST", "/api/queue/pause", ""},
 		{"POST", "/api/queue/resume", ""},
+		{"PUT", "/api/queue/pace", `{"follow":true}`},
 		{"GET", "/ws/events", ""},
 		{"GET", "/ws/chat", ""},
 	}

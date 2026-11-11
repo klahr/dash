@@ -398,6 +398,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/usage", s.getUsage)
 	mux.HandleFunc("POST /api/queue/pause", s.pauseQueue(true))
 	mux.HandleFunc("POST /api/queue/resume", s.pauseQueue(false))
+	mux.HandleFunc("PUT /api/queue/pace", s.putQueuePace)
 	// Claude Code connects here (bearer token per run, not the session cookie)
 	mux.HandleFunc("POST /mcp/permissions", s.Perms.ServeMCP)
 	mux.HandleFunc("GET /mcp/permissions", s.Perms.ServeMCP) // answers 405, as MCP clients expect

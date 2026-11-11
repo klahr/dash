@@ -634,6 +634,7 @@ func TestInstanceThingsAreForPlatformAdmins(t *testing.T) {
 	for _, c := range []struct{ method, path string }{
 		{"POST", "/api/queue/pause"},
 		{"POST", "/api/queue/resume"},
+		{"PUT", "/api/queue/pace"},
 		{"GET", "/peer/work/api/projects"},
 	} {
 		if w := do(t, o.c, c.method, c.path, ""); w.Code != http.StatusForbidden {

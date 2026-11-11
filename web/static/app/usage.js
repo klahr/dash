@@ -2,7 +2,7 @@ import { $, h, setLabel, timeLocale } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
-import { HOUR, aheadOfPace, paceMs, paceText, resetText } from "../usagetime.js";
+import { HOUR, aheadOfPace, paceMs, paceStateText, paceText, resetText } from "../usagetime.js";
 
 // ------------------------------------------------------------------ usage & queue
 export async function loadUsage() {
@@ -34,7 +34,9 @@ export function renderUsage() {
   const live = (u.windows || []).filter((w) => new Date(w.resets_at) > new Date());
   const top = live.reduce((a, w) => (!a || w.utilization > a.utilization ? w : a), null);
   const overPace = (w) => { const e = windowElapsed(w); return e !== null && w.utilization > e; };
-  pill.className = `usage-pill${u.paused ? " paused" : top && (top.utilization >= 0.7 || overPace(top)) ? " warn" : ""}`;
+  // Waiting only to stay on the weekly pace is the queue working as asked, not a stop.
+  const stopped = u.paused && !u.pacing;
+  pill.className = `usage-pill${stopped ? " paused" : u.pacing || (top && (top.utilization >= 0.7 || overPace(top))) ? " warn" : ""}`;
   pill.title = u.paused ? u.reason : top && overPace(top) ? "Claude subscription usage, ahead of pace" : "Claude subscription usage";
 
   const reason = u.paused
@@ -89,10 +91,10 @@ export function renderUsage() {
   };
   pill.replaceChildren(
     h("span", { class: "usage-pies" }, live.map(pie)),
-    h("span", { class: "usage-sum" }, u.paused ? "Queue paused" : top ? `${shortLabel(top.name)} ${Math.round(top.utilization * 100)}%${overPace(top) ? " ▲" : ""}` : "Usage"),
+    h("span", { class: "usage-sum" }, u.pacing ? "Pacing" : u.paused ? "Queue paused" : top ? `${shortLabel(top.name)} ${Math.round(top.utilization * 100)}%${overPace(top) ? " ▲" : ""}` : "Usage"),
     h("span", { class: "usage-detail" },
-      h("span", { class: "usage-head" }, h("span", {}, "Claude usage"), h("span", {}, u.paused ? "Paused" : "Queue running")),
-      u.paused ? h("span", { class: "usage-reason" }, reason) : null,
+      h("span", { class: "usage-head" }, h("span", {}, "Claude usage"), h("span", {}, u.pacing ? "Waiting for pace" : u.paused ? "Paused" : "Queue running")),
+      u.paused ? h("span", { class: `usage-reason${u.pacing ? " pacing" : ""}` }, reason) : null,
       live.map((w) => meter(w, true))));
 
   $("#usage-reason").textContent = reason;
@@ -100,9 +102,41 @@ export function renderUsage() {
   $("#usage-note").textContent = u.pause_at > 0 && u.pause_at < 1
     ? `The queue pauses automatically at ${Math.round(u.pause_at * 100)}% of any window.`
     : "The queue pauses automatically when a window's limit is reached.";
+  renderPace(u.pace);
   setLabel($("#queue-toggle"), u.manual_pause ? "play" : "pause", u.manual_pause ? "Resume queue" : "Pause queue");
   $("#queue-toggle").className = `btn ${u.manual_pause ? "primary" : ""}`;
 }
+
+// The "Follow weekly pace" settings and where the queue stands with them.
+function renderPace(p) {
+  const follow = !!p?.follow;
+  $("#pace-follow").checked = follow;
+  const text = paceStateText(p);
+  const st = $("#pace-state");
+  st.hidden = !text;
+  st.textContent = text || "";
+  st.className = `pace-state ${p?.state || ""}`;
+  $("#pace-max-row").hidden = !follow;
+  const max = $("#pace-max");
+  const base = Math.max(1, p?.parallel || 1);
+  max.min = String(base);
+  max.placeholder = String(2 * base);
+  if (document.activeElement !== max) max.value = p?.max_parallel ? String(p.max_parallel) : "";
+  max.title = `Usually ${base} at once; empty = ${2 * base}`;
+}
+
+const savePace = attempt(async () => {
+  try {
+    const v = $("#pace-max").value.trim();
+    const max = v === "" ? 0 : Math.round(Number(v));
+    if (!Number.isFinite(max) || max < 0 || max > 64) { toast("Enter a number from 1 to 64"); return; }
+    state.usage = await api("PUT", "/api/queue/pace", { follow: $("#pace-follow").checked, max_parallel: max });
+  } finally {
+    renderUsage(); // shows what was saved, or puts the controls back
+  }
+});
+$("#pace-follow").addEventListener("change", savePace);
+$("#pace-max").addEventListener("change", savePace);
 
 $("#usage-pill").addEventListener("click", () => { renderUsage(); $("#usage-sheet").showModal(); });
 $("#queue-toggle").addEventListener("click", attempt(async () => {

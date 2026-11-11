@@ -803,6 +803,12 @@
       <p class="hint" id="usage-reason"></p>
       <div class="meters" id="usage-meters"></div>
       <p class="hint" id="usage-note"></p>
+      <section class="pace-settings" aria-labelledby="pace-follow-label">
+        <label class="toggle"><input type="checkbox" id="pace-follow"><span id="pace-follow-label">Follow weekly pace</span></label>
+        <p class="hint" id="pace-help">Keeps weekly usage on the pace line: no new tasks while ahead of it, more at once while behind.</p>
+        <p class="pace-state" id="pace-state" hidden></p>
+        <label class="field inline" id="pace-max-row"><span>Most tasks at once when behind</span><input type="number" id="pace-max" min="1" max="64" step="1" inputmode="numeric"></label>
+      </section>
       <footer class="sheet-actions"><button class="btn" type="button" id="queue-toggle"></button></footer>
     </form>
   </dialog>
