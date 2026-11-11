@@ -10,6 +10,25 @@ import { showRunnerNeeded } from "./runners.js";
 import { formPriority } from "./dnd.js";
 
 // ------------------------------------------------------------------ new / edit todo
+// A task's title, instructions and options can be edited while it is a draft,
+// queued, or failed before it got a worktree (one with a worktree is reworked instead).
+export const editable = (t) => !!t && (t.status === "draft" || t.status === "queued" || (t.status === "failed" && !t.worktree));
+
+// updateTodo saves changes to a task: only the fields given are changed. The
+// board shows the result at once instead of waiting for the server's event.
+export async function updateTodo(t, changes) {
+  if ("title" in changes || "prompt" in changes) {
+    const after = { title: t.title, prompt: t.prompt, ...changes };
+    if (!after.title?.trim() && !after.prompt?.trim()) throw new Error("Add a title or instructions before saving.");
+  }
+  const saved = await api("PATCH", `/api/todos/${t.id}`, changes);
+  if (saved?.id && state.todos.has(saved.id)) {
+    state.todos.set(saved.id, saved);
+    renderBoard();
+  }
+  return saved;
+}
+
 export let editing = null;
 export let pickProject = false;
 // pick lets you choose the project, for todos made outside a project (the global chat).
@@ -187,12 +206,12 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
   const f = $("#todo-form");
   await todoAttach.settled();
   const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), priority: formPriority(f.priority.value), model: f.model.value, attachments: todoAttach.ids(), depends_on: depPicker.ids() };
-  if (!body.title && !body.prompt) throw new Error("Add a title or instructions before saving.");
   if (editing) {
-    await api("PATCH", `/api/todos/${editing.id}`, body);
+    await updateTodo(editing, body);
     if (action === "queue" && editing.status !== "queued") await api("POST", `/api/todos/${editing.id}/enqueue`);
     toast(action === "queue" ? "Saved and queued" : "Saved");
   } else {
+    if (!body.title && !body.prompt) throw new Error("Add a title or instructions before saving.");
     const p = (pickProject && state.projects.find((x) => projectKey(x) === f.project.value)) || state.project;
     // Attachments are uploaded to the current project's computer.
     if (body.attachments.length && p.prefix !== here()) throw new Error(`Attachments can't be sent to ${p.name} on ${p.machine}; remove them or pick a project on this computer.`);

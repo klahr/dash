@@ -1913,6 +1913,37 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .prompt-tools { display: flex; align-items: flex-start; gap: 8px; margin: -6px 0 8px; }
 .prompt-tools .draft-status { flex: 1; margin: 0; align-self: center; }
 
+/* ---- editing a task in its detail pane (desktop; app/inlineedit.js) ---- */
+.detail-titles h2.editable { cursor: text; border-radius: var(--r-s); margin: -2px -6px; padding: 2px 6px; }
+.detail-titles h2.editable:hover { background: var(--raised); }
+.detail-titles .title-input { font-size: 18px; font-weight: 700; line-height: 1.3; padding: 2px 6px; margin: -3px -7px; width: calc(100% + 14px); }
+.meta-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px; font-size: 13px; color: var(--muted); }
+.meta-ctl { display: inline-flex; align-items: center; gap: 6px; }
+.meta-edit .meta-input, .meta-edit .meta-select, .meta-btn {
+  min-height: 28px; height: 28px; padding: 0 8px; font-size: 13px; border-radius: var(--r-s);
+  background: var(--surface); border: 1px solid var(--line); color: var(--text);
+}
+.meta-edit .meta-input { width: 72px; }
+.meta-edit .meta-select { width: auto; }
+.meta-btn { cursor: pointer; }
+.meta-edit :is(.meta-input, .meta-select, .meta-btn):hover { border-color: var(--faint); }
+.meta-edit :is(.meta-input, .meta-select, .meta-btn):focus-visible { border-color: var(--accent); outline: none; }
+.meta-deps { position: relative; }
+.dep-pop {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; width: min(420px, 40vw); padding: 8px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); box-shadow: 0 12px 32px rgba(3, 6, 12, .5);
+}
+.dep-pop .hint { margin: 0 0 6px; }
+.dep-pop .dep-picker { max-height: 260px; }
+.prompt-text.editable .md { cursor: text; border-radius: var(--r-s); margin: -4px -6px; padding: 4px 6px; }
+.prompt-text.editable .md:hover { background: var(--raised); }
+.prompt-text.editable .edit-prompt { margin-left: 6px; }
+.prompt-edit { padding: 0 14px 14px; }
+.prompt-edit .md-editor .cm-editor { max-height: 60vh; }
+.prompt-edit .attach { margin-top: 8px; }
+.prompt-edit-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.prompt-edit-actions .hint { flex: 1; margin: 0; font-size: 12px; color: var(--faint); }
+
 /* ---- split a task: Claude's proposed parts ---- */
 .split-parts { list-style: none; margin: 12px -3px 4px; padding: 3px; display: flex; flex-direction: column; gap: 12px; max-height: min(60dvh, 640px); overflow-y: auto; }
 .split-part { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--raised); }

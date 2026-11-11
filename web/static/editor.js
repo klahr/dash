@@ -233,7 +233,7 @@ export function setInvisibles(on) {
 
 // In vim mode Esc leaves insert (or visual) mode; Esc in normal mode, with
 // nothing pending, still closes the dialog the way it always has.
-const vimNormal = (view) => {
+export const vimNormal = (view) => {
   const v = getCM(view)?.state.vim;
   if (!v || v.insertMode || v.visualMode) return false;
   const s = v.inputState;

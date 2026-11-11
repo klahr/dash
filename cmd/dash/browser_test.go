@@ -1129,3 +1129,78 @@ func TestBrowserCustomScan(t *testing.T) {
 	b.clickIn(".scan-card", "API error handling", ".scan-actions .link")
 	b.waitJS("the editor, Advanced closed", `document.querySelector("#scan-sheet").open && !document.querySelector("#scan-advanced").open && document.querySelector("#scan-form [name=name]").readOnly`)
 }
+
+// On a desktop a task is edited in its detail pane: the title in place,
+// the instructions in the Markdown editor with Ctrl+Enter / Esc, priority,
+// model and dependencies from the controls under the title. Esc never closes
+// the pane while a field is being edited. A phone keeps the task form.
+func TestBrowserInlineEdit(t *testing.T) {
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	api, pid := h.api, h.project.ID
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+
+	var base, task struct{ ID string }
+	api.must("POST", "/api/projects/"+pid+"/todos", map[string]any{"title": "Base", "prompt": "Lay the ground"}, http.StatusCreated, &base)
+	api.must("POST", "/api/projects/"+pid+"/todos", map[string]any{"title": "Rename me", "prompt": "Old instructions"}, http.StatusCreated, &task)
+	b.waitCard(task.ID, "draft")
+	b.openTask(task.ID)
+	b.waitJS("the editable pane", `document.querySelector("#d-title").classList.contains("editable") && !document.querySelector("#d-meta-edit").hidden &&
+		document.querySelector("#d-prompt-wrap").open && !!document.querySelector("#d-prompt .edit-prompt") &&
+		![...document.querySelectorAll("#d-actions .btn")].some((e) => e.textContent.trim() === "Edit")`)
+	var td struct {
+		Title, Prompt, Model string
+		Priority             *int
+		DependsOn            []string `json:"depends_on"`
+	}
+	get := func() { api.must("GET", "/api/todos/"+task.ID, nil, http.StatusOK, &td) }
+	paneOpen := `!document.querySelector("#detail").hidden`
+
+	// The title: Esc cancels (the pane stays), Enter saves.
+	b.until("edit the title", `!document.querySelector("#d-title-input").hidden`, chromedp.Click(chromedp.ID("d-title")))
+	b.do("type and cancel", chromedp.KeyEvent("Nope"), chromedp.KeyEvent(kb.Escape))
+	b.waitJS("the title back", paneOpen+` && document.querySelector("#d-title-input").hidden && document.querySelector("#d-title").textContent === "Rename me"`)
+	b.until("edit the title again", `!document.querySelector("#d-title-input").hidden`, chromedp.Click(chromedp.ID("d-title")))
+	b.do("type and save", chromedp.KeyEvent("Renamed\r"))
+	b.waitJS("the new title", `document.querySelector("#d-title-input").hidden && document.querySelector("#d-title").textContent === "Renamed"`)
+	if get(); td.Title != "Renamed" {
+		t.Fatalf("title after saving: %q", td.Title)
+	}
+
+	// The instructions: Esc cancels, Ctrl+Enter saves.
+	editor := `#d-prompt-edit .cm-content`
+	b.until("edit the instructions", `!document.querySelector("#d-prompt-edit").hidden`, chromedp.Click(chromedp.CSS(`#d-prompt .edit-prompt`)))
+	b.waitJS("the editor focused", `document.activeElement?.matches(`+fmt.Sprintf("%q", editor)+`)`)
+	b.do("type and cancel", chromedp.KeyEvent(" discarded"), chromedp.KeyEvent(kb.Escape))
+	b.waitJS("the instructions back", paneOpen+` && document.querySelector("#d-prompt-edit").hidden && document.querySelector("#d-prompt .md").textContent.trim() === "Old instructions"`)
+	b.until("click the instructions", `!document.querySelector("#d-prompt-edit").hidden`, chromedp.Click(chromedp.CSS(`#d-prompt .md`)))
+	b.waitJS("the editor focused", `document.activeElement?.matches(`+fmt.Sprintf("%q", editor)+`)`)
+	b.do("type and save", chromedp.KeyEvent(" and new ones"), chromedp.KeyEvent("\r", chromedp.KeyModifiers(chromedp.ModifierCtrl)))
+	b.waitJS("the saved instructions", paneOpen+` && document.querySelector("#d-prompt-edit").hidden && document.querySelector("#d-prompt .md").textContent.trim() === "Old instructions and new ones"`)
+	if get(); td.Prompt != "Old instructions and new ones" {
+		t.Fatalf("instructions after saving: %q", td.Prompt)
+	}
+
+	// Priority, model and dependencies save as they change.
+	b.do("set a priority", chromedp.Click(chromedp.CSS(`#d-meta-edit .meta-input`)), chromedp.KeyEvent("3\r"))
+	waitFor(t, nil, "the priority saved", func() bool { get(); return td.Priority != nil && *td.Priority == 3 })
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(() => {
+		const s = document.querySelector("#d-meta-edit .meta-select");
+		s.value = "haiku";
+		return s.dispatchEvent(new Event("change"));
+	})()`)); err != nil {
+		t.Fatalf("pick a model: %v", err)
+	}
+	waitFor(t, nil, "the model saved", func() bool { get(); return td.Model == "haiku" })
+	b.until("open the dependencies", `!document.querySelector("#d-meta-edit .dep-pop").hidden`, chromedp.Click(chromedp.CSS(`#d-meta-edit .meta-btn`)))
+	b.do("tick Base", chromedp.Click(chromedp.CSS(fmt.Sprintf(`#d-meta-edit .dep-pop input[value=%q]`, base.ID))))
+	waitFor(t, nil, "the dependency saved", func() bool { get(); return slices.Equal(td.DependsOn, []string{base.ID}) })
+	b.do("close the list", chromedp.KeyEvent(kb.Escape))
+	b.waitJS("the list closed, the pane open", paneOpen+` && !document.querySelector("#d-meta-edit .dep-pop:not([hidden])") && document.querySelector("#d-meta-edit .meta-btn").textContent === "Depends on 1 task"`)
+
+	// A phone keeps the task form.
+	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	b.waitJS("the Edit button, nothing in place", `[...document.querySelectorAll("#d-actions .btn")].some((e) => e.textContent.trim() === "Edit") &&
+		!document.querySelector("#d-title").classList.contains("editable") && document.querySelector("#d-meta-edit").hidden && !document.querySelector("#d-prompt .edit-prompt")`)
+}

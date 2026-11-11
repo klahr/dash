@@ -6,7 +6,8 @@ import { ask, attempt, copy, fail, leave, toast } from "./dialogs.js";
 import { attachThumb } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { approvable, depMeta, hasPriority, prChecksTitle, prReviewTag, prStatus, prTone, title, waitsOnGitHub } from "./branches.js";
-import { openTodoForm } from "./todos.js";
+import { editable, openTodoForm } from "./todos.js";
+import { editPrompt, endInline, inlineEdits, renderInline } from "./inlineedit.js";
 import { canPreview, hidePreview, previewButton, previewOf, pv, renderPreview, stopPreview } from "./preview.js";
 import { canRework, menu, renderPane, renderReworkBox, revertTodo, reviewTodo, reworkTodo } from "./drawmode.js";
 import { runnerName } from "./runners.js";
@@ -49,6 +50,7 @@ export async function openDetail(id) {
 }
 
 export function closeDetail() {
+  endInline();
   hidePreview();
   const id = state.detail;
   const wasOpen = id && !$("#detail").hidden;
@@ -69,6 +71,8 @@ export function closeDetail() {
 }
 $("#d-close").addEventListener("click", closeDetail);
 $("#scrim").addEventListener("click", closeDetail);
+// Inline editing (desktop) and the phone's task form differ: redraw on crossing the breakpoint.
+desktop.addEventListener("change", () => { if (state.detail) renderDetail(); });
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || !state.detail || document.querySelector("dialog[open]")) return;
   if (pv.todo && !desktop.matches) hidePreview(); // a phone's full-screen preview first
@@ -85,6 +89,7 @@ export async function loadDiff() {
   renderPane();
 }
 
+let promptFold = ""; // the task and fold state the prompt was last opened or folded for
 export function renderDetail() {
   const t = state.todos.get(state.detail);
   if (!t) return;
@@ -92,7 +97,7 @@ export function renderDetail() {
   $("#d-meta").replaceChildren(...[
     h("span", { class: `status s-${t.status}` }, STATUS_LABEL[t.status] || t.status),
     t.worktree ? h("span", { class: "branch" }, t.worktree.branch) : null,
-    hasPriority(t) ? h("span", {}, `Priority ${t.priority}`) : null,
+    hasPriority(t) && !inlineEdits(t) ? h("span", {}, `Priority ${t.priority}`) : null, // else an editable field below
     depMeta(t),
     t.runs ? h("span", {}, `${t.runs} ${t.runs === 1 ? "run" : "runs"}${t.cost_usd ? ` · ≈$${t.cost_usd.toFixed(2)}` : ""}`) : null,
     t.auto_fixes ? h("span", {}, `Fixed automatically ${t.auto_fixes}×`) : null,
@@ -111,9 +116,13 @@ export function renderDetail() {
   renderPerms();
   $("#d-prompt").replaceChildren(
     ib({ type: "button", class: "btn small copy-prompt", title: "Copy the raw markdown", onclick: attempt(() => copy(t.prompt, "Prompt copied")) }, "copy", "Copy"),
+    ...(inlineEdits(t) ? [ib({ type: "button", class: "btn small copy-prompt edit-prompt", title: "Edit the instructions here (or click them; e)", onclick: () => editPrompt() }, "edit", "Edit")] : []),
     h("div", { class: "md", innerHTML: renderMarkdown(t.prompt) }),
     ...(t.feedback?.length ? [h("ol", { class: "feedback-list" }, t.feedback.map((f) => h("li", { class: "md", innerHTML: renderMarkdown(f) })))] : []));
-  $("#d-prompt-wrap").open = !t.worktree;
+  // Folded once the task has a worktree (its timeline matters more), except
+  // where it is edited in place. Only on a change, so a fold by hand stays.
+  const fold = `${t.id}:${!t.worktree || inlineEdits(t)}`;
+  if (promptFold !== fold) { promptFold = fold; $("#d-prompt-wrap").open = !t.worktree || inlineEdits(t); }
   const why = t.error ? t.error + (t.resumable && t.runner ? ` — retry to continue on ${runnerName(t.runner)}, where its session is kept.` : "")
     : t.status === "queued" && t.waiting ? t.waiting : "";
   $("#d-error").hidden = !why;
@@ -123,19 +132,22 @@ export function renderDetail() {
   renderPane();
   renderPreview();
   renderReworkBox();
+  renderInline(t);
 }
 
 export function renderActions(t) {
   const post = (verb, body, msg) => attempt(async () => { await api("POST", `/api/todos/${t.id}/${verb}`, body); toast(msg); });
   const b = (icon, label, onclick, cls = "") => ib({ class: `btn ${cls}`, onclick }, icon, label);
   const rework = attempt(() => reworkTodo(t));
+  // On a desktop the task is edited in the pane itself (⋯ has the full form).
+  const edit = () => desktop.matches ? null : b("edit", "Edit", () => openTodoForm(t));
   const btns = [];
   switch (t.status) {
     case "draft":
-      btns.push(b("edit", "Edit", () => openTodoForm(t)), b("queue", "Add to queue", post("enqueue", null, "Added to queue"), "primary grow"));
+      btns.push(edit(), b("queue", "Add to queue", post("enqueue", null, "Added to queue"), "primary grow"));
       break;
     case "queued":
-      btns.push(b("edit", "Edit", () => openTodoForm(t)), b("inbox", "Move to drafts", post("cancel", null, "Moved to drafts"), "grow"));
+      btns.push(edit(), b("inbox", "Move to drafts", post("cancel", null, "Moved to drafts"), "grow"));
       if (t.paused) btns.push(b("play", "Resume", post("resume", null, "Resumed"), "primary grow"));
       break;
     case "in_progress":
@@ -166,7 +178,7 @@ export function renderActions(t) {
       if (t.pr) btns.push(h("a", { class: "btn primary grow", href: t.pr.url, target: "_blank", rel: "noopener" }, ico("external"), `Open pull request #${t.pr.number}`));
       break;
     case "failed":
-      btns.push(t.worktree ? b("redo", "Rework", rework) : b("edit", "Edit", () => openTodoForm(t)));
+      btns.push(t.worktree ? b("redo", "Rework", rework) : edit());
       btns.push(t.worktree && t.error?.startsWith("merge:")
         ? b("merge", "Retry merge", post("approve", null, "Merging again"), "review grow")
         : t.resumable && t.runner ? b("redo", `Continue on ${runnerName(t.runner)}`, post("enqueue", null, "Queued again"), "primary grow")
@@ -176,13 +188,14 @@ export function renderActions(t) {
       if (!t.revert) btns.push(b("undo", "Revert", attempt(() => revertTodo(t)), "grow"));
       break;
   }
-  $("#d-actions").replaceChildren(...btns);
+  $("#d-actions").replaceChildren(...btns.filter(Boolean));
 }
 
 $("#d-more").addEventListener("click", attempt(async () => {
   const t = state.todos.get(state.detail);
   if (!t) return;
   const choices = [];
+  if (desktop.matches && editable(t)) choices.push(["edit", "Edit in the full form", () => openTodoForm(t)]);
   // A task of a runner's own project has its worktree on that runner, reached
   // through it like the project; a hub task's is on the runner that ran it.
   const here = !t.runner && !!state.project?.prefix;

@@ -15,23 +15,29 @@ export const todoAttach = attachBox($("#todo-attach"), promptEditor.el, () => dr
 
 // The task form's "Depends on" picker: the project's unmerged tasks other
 // than the one being edited. Ticked tasks must be merged before it starts.
+// depOptions lists the tasks t can depend on as checkboxes (name "dep"),
+// those in ids ticked. Tasks already chosen stay listed (and kept) even once merged.
+export function depOptions(t, ids = []) {
+  const sel = new Set(ids);
+  return [...state.todos.values()]
+    .filter((x) => x.id !== t?.id && (x.status !== "merged" || sel.has(x.id)))
+    .sort(byPriority)
+    .map((x) => h("label", { class: `dep-option s-${x.status}` },
+      h("input", { type: "checkbox", name: "dep", value: x.id, checked: sel.has(x.id) }),
+      h("span", { class: "dep-title" }, title(x)),
+      h("span", { class: "dep-status" }, STATUS_LABEL[x.status] || x.status)));
+}
+
 export const depPicker = (() => {
   const field = $("#todo-deps-field"), list = $("#todo-deps");
   let self = null;
   const reset = (t, ids = []) => {
     self = t;
-    const sel = new Set(ids);
-    // Tasks already chosen stay listed (and kept) even once merged.
-    const cands = [...state.todos.values()]
-      .filter((x) => x.id !== t?.id && (x.status !== "merged" || sel.has(x.id)))
-      .sort(byPriority);
+    const opts = depOptions(t, ids);
     // The list is of the open project; a form picking another one can't use it.
     const usable = !pickProject || projectKey(state.project) === $("#todo-form").project.value;
-    field.hidden = !usable || !cands.length;
-    list.replaceChildren(...cands.map((x) => h("label", { class: `dep-option s-${x.status}` },
-      h("input", { type: "checkbox", name: "dep", value: x.id, checked: sel.has(x.id) }),
-      h("span", { class: "dep-title" }, title(x)),
-      h("span", { class: "dep-status" }, STATUS_LABEL[x.status] || x.status))));
+    field.hidden = !usable || !opts.length;
+    list.replaceChildren(...opts);
   };
   $("#todo-form").project.addEventListener("change", () => reset(self, []));
   return {

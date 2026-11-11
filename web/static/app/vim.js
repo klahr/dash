@@ -8,6 +8,7 @@ import { cleanup, loadProjects, openProjects, selectProject } from "./projects.j
 import { pushDone } from "./board.js";
 import { hasPriority, laneItems, renderBoard, title } from "./branches.js";
 import { openTodoForm } from "./todos.js";
+import { editTodo } from "./inlineedit.js";
 import { closeDetail } from "./detail.js";
 import { previewTodo } from "./preview.js";
 import { revertTodo, reworkTodo } from "./drawmode.js";
@@ -108,7 +109,7 @@ export async function todoKey(t, k) {
     case "gx":
       if (!t.pr) throw new Error("This task has no pull request.");
       return window.open(t.pr.url, "_blank", "noopener");
-    case "e": return openTodoForm(t);
+    case "e": return editTodo(t);
     case "+": return api("PATCH", `/api/todos/${t.id}`, { priority: hasPriority(t) ? t.priority - 1 : nextPriority(t) });
     case "-":
       if (!hasPriority(t)) throw new Error("This task has no priority to lower.");
