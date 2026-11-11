@@ -1006,22 +1006,45 @@
     </form>
   </dialog>
 
-  <!-- Preferences (this browser only) -->
-  <dialog class="sheet small" id="prefs-sheet" aria-labelledby="prefs-title">
+  <!-- Preferences (this browser only): a rail sheet like Add project, each group of
+       preferences down the rail with a line saying what it is, its controls beside it. -->
+  <dialog class="sheet rail-sheet" id="prefs-sheet" aria-labelledby="prefs-title">
     <form method="dialog" id="prefs-form">
-      <header class="sheet-head"><h2 id="prefs-title" tabindex="-1" autofocus>Preferences</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
-      <label class="toggle"><input type="checkbox" name="vim"><span>Vim keys in the task and file editors</span></label>
-      <label class="toggle"><input type="checkbox" name="invisibles"><span>Show invisible characters (spaces, tabs, trailing whitespace) in the editors</span></label>
-      <label class="toggle"><input type="checkbox" name="notify"><span>Notifications</span></label>
-      <p class="hint" id="push-hint" hidden>Reviews, failures, approvals and failing builds reach this device even with Dash closed. <button type="button" class="link inline" id="push-test">Send a test</button></p>
-      <label class="field"><span>Time format</span>
-        <select name="clock">
-          <option value="">Automatic (from the locale)</option>
-          <option value="24">24-hour (18:00)</option>
-          <option value="12">12-hour (6:00 PM)</option>
-        </select>
-      </label>
-      <p class="hint">These preferences only apply in this browser.</p>
+      <header class="sheet-head">
+        <div class="np-title">
+          <h2 id="prefs-title" tabindex="-1" autofocus>Preferences</h2>
+          <span class="prefs-scope">this browser only</span>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+      </header>
+      <div class="rail-layout">
+        <nav class="rail-nav" aria-label="Preference sections">
+          <div class="rail-group"><span class="rail-head">Preferences</span>
+            <button type="button" class="rail-item np-src" data-rail="editors"><span class="np-src-name">Editors</span><span class="np-src-desc">Task and file editors</span></button>
+            <button type="button" class="rail-item np-src" data-rail="notify"><span class="np-src-name">Notifications</span><span class="np-src-desc">Reviews, failures, approvals</span></button>
+            <button type="button" class="rail-item np-src" data-rail="clock"><span class="np-src-name">Time</span><span class="np-src-desc">How times are shown</span></button>
+          </div>
+        </nav>
+        <div class="rail-main">
+          <section class="rail-section" data-section="editors">
+            <label class="toggle"><input type="checkbox" name="vim"><span>Vim keys in the task and file editors</span></label>
+            <label class="toggle"><input type="checkbox" name="invisibles"><span>Show invisible characters (spaces, tabs, trailing whitespace) in the editors</span></label>
+          </section>
+          <section class="rail-section" data-section="notify">
+            <label class="toggle"><input type="checkbox" name="notify"><span>Notifications</span></label>
+            <p class="hint" id="push-hint" hidden>Reviews, failures, approvals and failing builds reach this device even with Dash closed. <button type="button" class="link inline" id="push-test">Send a test</button></p>
+          </section>
+          <section class="rail-section" data-section="clock">
+            <label class="field"><span>Time format</span>
+              <select name="clock">
+                <option value="">Automatic (from the locale)</option>
+                <option value="24">24-hour (18:00)</option>
+                <option value="12">12-hour (6:00 PM)</option>
+              </select>
+            </label>
+          </section>
+        </div>
+      </div>
     </form>
   </dialog>
 
