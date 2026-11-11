@@ -899,10 +899,16 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .np-step-error { color: var(--failed); font-size: 14px; overflow-wrap: anywhere; white-space: pre-wrap; }
 .np-step-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 @media (min-width: 760px) {
-  #new-project-sheet .rail-layout { grid-template-columns: 230px minmax(0, 1fr); }
+  :is(#new-project-sheet, #prefs-sheet) .rail-layout { grid-template-columns: 230px minmax(0, 1fr); }
   .np-src { min-height: 52px; padding-block: 6px; gap: 1px; white-space: normal; }
   .np-src-desc { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
   #new-project-sheet .sheet-actions .btn { flex: 0 1 auto; margin-left: auto; min-width: 200px; }
+}
+
+/* Preferences: the Add project rail sheet's look, shorter (a few controls a section). */
+.prefs-scope { color: var(--muted); font-size: 14px; }
+@media (min-width: 640px) {
+  #prefs-sheet.rail-sheet { height: min(480px, calc(88dvh - var(--kb-h, 0px))); }
 }
 
 /* ---------- quick add (FAB, n) ---------- */
