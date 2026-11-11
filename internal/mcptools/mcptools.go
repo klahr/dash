@@ -377,8 +377,10 @@ var (
 		"read_checklist", "add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "move_checklist_item_to_task",
 		"list_issues", "report_issue", "read_try_terminal"}
 	// AskTools are board tools a chat never gets without asking: they publish
-	// something (a release tag pushed to origin).
-	AskTools = []string{"create_release"}
+	// something (a release tag pushed to origin, or a TODO.md change committed
+	// onto the default branch, which may be pushed to origin).
+	AskTools = []string{"create_release",
+		"add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "move_checklist_item_to_task"}
 	// IssueToolNames are what a running task gets (IssueTools).
 	IssueToolNames = []string{"list_issues", "report_issue"}
 )
