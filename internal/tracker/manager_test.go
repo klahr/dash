@@ -795,3 +795,55 @@ func TestTestConnection(t *testing.T) {
 		t.Fatalf("unknown backend: %v", err)
 	}
 }
+
+// A project whose stored backend this Dash doesn't have (one removed from
+// it) is on Dash's own board: no worker on boot or reconfigure, no error,
+// and moving it to a board (or saving Dash's) drops its old card links.
+func TestUnknownBackendIsDashsBoard(t *testing.T) {
+	trackertest.Register(t, "fake")
+	e := newEnv(t)
+	p := e.project("old")
+	td := e.todo(p.ID, "linked")
+	ref := model.ExternalRef{Provider: "gone", ID: "c1"}
+	if err := e.st.PutTrackerConfig(tracker.ProjectConfig{ProjectID: p.ID, Backend: "gone", Credentials: map[string]string{"token": "t"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.PutTrackerLink(model.TrackerLink{TodoID: td.ID, ProjectID: p.ID, Ref: ref}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.SetExternalRef(td.ID, &ref); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &tracker.Manager{Store: e.st, PollEvery: time.Hour}
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Reconfigure(p.ID); err != nil {
+		t.Fatalf("reconfigure: %v", err)
+	}
+	if m.Running(p.ID) {
+		t.Fatal("a worker for an unknown backend")
+	}
+	if cfg, _ := e.st.TrackerConfig(p.ID); cfg.LastError != "" {
+		t.Fatalf("an unknown backend is no sync error: %q", cfg.LastError)
+	}
+	if cfg, known := tracker.Resolve(tracker.ProjectConfig{ProjectID: p.ID, Backend: "gone"}); known || !cfg.Native() || cfg.ProjectID != p.ID {
+		t.Fatalf("resolved %+v, known %v", cfg, known)
+	}
+
+	// Moving it to a board is a move from Dash's: asked about export, not
+	// confirm; its old links go.
+	_, err := e.m.Apply(context.Background(), p.ID, boardCfg("fake", "b1"), tracker.SwitchOptions{})
+	var need tracker.ErrNeedsDecision
+	if !errors.As(err, &need) || need.Need != "export" {
+		t.Fatalf("switch from an unknown backend: %v", err)
+	}
+	e.connect(p.ID, "fake", "b1", nil)
+	if got := e.get(td.ID); got.ExternalRef != nil {
+		t.Fatalf("the old card link stayed: %+v", got.ExternalRef)
+	}
+	if links, _ := e.st.TrackerLinks(p.ID); len(links) != 0 {
+		t.Fatalf("old links: %+v", links)
+	}
+}

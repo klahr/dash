@@ -146,7 +146,7 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 - [Scans](docs/scans.md): scheduled read-only reviews that fill a project's Issues
 - [Checklist](docs/checklist.md): tick off, add to and edit the repository's TODO.md (committed straight to the default branch), and move an item onto the board as a task
 - [Wall view](docs/wall.md): a read-only TV dashboard of an organization's work, with a sign-in-free link for the TV
-- [Task boards](docs/boards.md): keep a project's board in Dash or in an external tracker, synced both ways (the backend interface for Favro, Trello and Jira)
+- [Task boards](docs/boards.md): keep a project's board in Dash or in an external tracker, synced both ways (the backend interface for trackers such as Trello and Jira)
 - [Notifications](docs/notifications.md): push notifications to your browser or installed app, even while it's closed, and webhooks that send reviews, failures, merges, approvals and failing builds to Slack, ntfy or a signed JSON endpoint
 - [GitHub](docs/github.md): merge locally or review and merge through pull requests, work on another branch and open its pull request, auto-approve, revert, tag releases from History
 - [MCP and the claude.ai connector](docs/mcp.md)

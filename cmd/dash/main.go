@@ -27,7 +27,7 @@ import (
 	"github.com/klahr/dash/internal/orgdomain"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/runnerctl"
-	"github.com/klahr/dash/internal/store" // the Favro board backend
+	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
 )
 

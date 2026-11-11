@@ -48,7 +48,7 @@ function renderBoardForm() {
   const saved = cfg.backend || "dash";
   const same = name === saved;
   $("#board-backend-hint").textContent = native
-    ? (st.backends.length > 1 ? "Tasks are planned on Dash's board." : "Tasks are planned on Dash's board. External trackers (Favro first, then Trello and Jira) appear here as their backends are added.")
+    ? (st.backends.length > 1 ? "Tasks are planned on Dash's board." : "Tasks are planned on Dash's board. External trackers such as Trello and Jira appear here as their backends are added.")
     : `Tasks are planned in ${reg.label || name}: titles, descriptions, priority, dependencies, status and comments sync both ways. Runs, reviews, checks and costs stay in Dash.`;
   $("#board-external").hidden = native;
   const values = same && cfg.config ? cfg.config : {};
@@ -133,7 +133,7 @@ function boardFieldChanged(changed) {
   const walk = (n) => fields.filter((f) => f.dynamic && (f.depends_on || []).includes(n)).forEach((f) => { if (!todo.has(f.name)) { todo.add(f.name); walk(f.name); } });
   walk(changed);
   if (todo.size) loadBoardOptions(fields.map((f) => f.name).filter((n) => todo.has(n)));
-  if (changed === "widget_common_id") loadBoardColumns();
+  if (fields.find((f) => f.name === changed)?.columns) loadBoardColumns();
 }
 
 // Column names Dash looks for when it maps a board's columns by name.

@@ -12,7 +12,7 @@ const NativeTracker = "dash"
 // ExternalRef links a todo to the card, issue or ticket that stands for it
 // in its project's external tracker (see internal/tracker).
 type ExternalRef struct {
-	Provider string `json:"provider"`      // the backend's name, e.g. "favro"
+	Provider string `json:"provider"`      // the backend's name, e.g. "trello"
 	ID       string `json:"id"`            // the tracker's id for the card
 	URL      string `json:"url,omitempty"` // a link to it, for people
 }
