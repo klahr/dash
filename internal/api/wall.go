@@ -356,7 +356,7 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 			if t.WaitsOnGitHub() {
 				// Reviewed and merged on GitHub: listed only while a person
 				// has to act there, not while it is a draft, back with
-				// Claude, or waiting for its checks or Dash's merge.
+				// Claude, or waiting for its checks.
 				if t.PR.Waits == "" {
 					d.Stages.ReviewGitHub++
 					continue

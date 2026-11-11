@@ -25,8 +25,8 @@ person has to act on GitHub, and says what next to `PR #n`:
 | A draft (its checks still run, or Claude fixes failing ones) | No |
 | Changes requested (the review went back to Claude) | No |
 | Ready for review, not approved yet | **Awaiting review** |
-| Approved (or the project approves automatically), waiting for its checks or Dash's merge | No |
-| Approved and green, waiting for a person to merge it: GitHub refused Dash's merge (e.g. a second required review), or "Merge pull requests when checks pass" is off | **Merge on GitHub** |
+| Approved (or the project approves automatically), waiting for its checks | No |
+| Approved (or the project approves automatically) and green, waiting for a person to merge it (Dash never merges a pull request) | **Waiting to be merged on GitHub** |
 | A failing check no code change fixes (e.g. an unsigned CLA) | **Blocked on GitHub** |
 
 What a pull request waits for is what Dash last saw while following it; the wall makes no

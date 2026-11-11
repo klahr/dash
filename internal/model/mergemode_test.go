@@ -29,7 +29,4 @@ func TestDefaultMergeMode(t *testing.T) {
 	if (Project{RemoteURL: "https://gitlab.com/o/r.git"}).DefaultMergeMode(true) != MergeLocal {
 		t.Error("a GitLab project: merging")
 	}
-	if !(Project{}).MergesGreenPRs() {
-		t.Error("merging green pull requests is on by default")
-	}
 }
