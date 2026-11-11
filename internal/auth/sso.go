@@ -45,14 +45,24 @@ func (a *Auth) ssoRoutes(mux *http.ServeMux) {
 // broken Google setup can't lock everyone out). The address's domain is
 // enough here: it only ever takes a way in away.
 func (a *Auth) googleRequired(id *Identity) bool {
-	if id.Org == nil || id.Org.Role == store.RoleOwner {
+	if id.Org == nil {
 		return false
 	}
-	s, err := a.acc.OrgSSO(id.Org.ID)
+	return a.googleRequiredIn(id.User.Email, *id.Org)
+}
+
+// googleRequiredIn is googleRequired for the user with email in m, their
+// membership of an org: use it wherever credentials are issued for an org
+// other than the session's active one (API tokens, OAuth grants).
+func (a *Auth) googleRequiredIn(email string, m store.Membership) bool {
+	if m.Role == store.RoleOwner {
+		return false
+	}
+	s, err := a.acc.OrgSSO(m.ID)
 	if err != nil {
 		return false
 	}
-	return s.RequireGoogle && s.VerifiedDomain(emailDomain(id.User.Email))
+	return s.RequireGoogle && s.VerifiedDomain(emailDomain(email))
 }
 
 func (a *Auth) answerGoogleRequired(w http.ResponseWriter, r *http.Request, id *Identity, api bool) {

@@ -37,8 +37,16 @@ func (a *Auth) createToken(w http.ResponseWriter, r *http.Request, id *Identity)
 		return
 	}
 	// Check what can be checked before the password, so a typo doesn't burn a try.
-	if _, err := a.acc.Membership(id.User.ID, req.OrgID); err != nil {
+	m, err := a.acc.Membership(id.User.ID, req.OrgID)
+	if err != nil {
 		accountError(w, err)
+		return
+	}
+	// The org may take only Google sign-ins from them: then only a Google
+	// session makes tokens for it, whichever org the session is working in,
+	// or a password would outlive their removal in Google.
+	if id.Method != store.MethodGoogle && a.googleRequiredIn(id.User.Email, m) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "this organization requires signing in with Google to create tokens for it", "code": "google_required"})
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {

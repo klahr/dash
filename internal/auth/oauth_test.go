@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -493,5 +494,43 @@ func TestOAuthTokenNeedsMembership(t *testing.T) {
 	}
 	if w := callMCP(h, tok["access_token"].(string)); w.Code != http.StatusUnauthorized {
 		t.Fatalf("token of a removed member: %d", w.Code)
+	}
+}
+
+// An org that takes only Google sign-ins from someone gets no grant from
+// their password, chosen or not.
+func TestOAuthGoogleRequiredOrg(t *testing.T) {
+	t.Parallel()
+
+	a, _, h := newOAuthServer(t)
+	org, _ := a.acc.DefaultOrg()
+	admin, _ := a.acc.EnvUser()
+	dan := addUser(t, a, org.ID, "dan", store.RoleMember) // dan@example.com
+	if _, err := a.acc.AddSSODomain(org.ID, "example.com", "admin", admin.ID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := a.acc.OrgSSO(org.ID)
+	s.RequireGoogle = true
+	if err := a.acc.PutOrgSSO(s, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	side, err := a.acc.CreateOrg(dan, "Side")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := register(t, h, `{"redirect_uris":["`+callback+`"]}`)
+	allow := func(orgID int64) *httptest.ResponseRecorder {
+		v := authParams(c["client_id"].(string))
+		v.Set("username", "dan")
+		v.Set("password", "pw-dan-long")
+		v.Set("action", "allow")
+		v.Set("org_id", strconv.FormatInt(orgID, 10))
+		return form(h, "/authorize", v)
+	}
+	if w := allow(org.ID); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "requires signing in with Google") {
+		t.Fatalf("google-only org: %d %s", w.Code, w.Body)
+	}
+	if w := allow(side.ID); w.Code != http.StatusFound {
+		t.Fatalf("other org: %d %s", w.Code, w.Body)
 	}
 }

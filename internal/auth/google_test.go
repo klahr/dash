@@ -757,6 +757,24 @@ func TestGoogleRequired(t *testing.T) {
 	if w := g.get(members); w.Code != 200 {
 		t.Fatalf("google session: %d %s", w.Code, w.Body)
 	}
+	// A password session can't mint a token for the org from another org.
+	side, err := e.a.acc.CreateOrg(dan.ID, "Side")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := b.postJSON("https://"+gHost+"/api/auth/switch-org", fmt.Sprintf(`{"org_id":%d}`, side.ID)); w.Code != 200 {
+		t.Fatalf("switch-org: %d %s", w.Code, w.Body)
+	}
+	mint := func(b *gBrowser) *httptest.ResponseRecorder {
+		return b.postJSON("https://"+gHost+"/api/tokens", fmt.Sprintf(`{"name":"x","org_id":%d,"scopes":["read","write"],"password":"password1"}`, e.acme.ID))
+	}
+	if w := mint(b); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "google_required") {
+		t.Fatalf("password session token: %d %s", w.Code, w.Body)
+	}
+	// A Google session can.
+	if w := mint(g); w.Code != http.StatusCreated {
+		t.Fatalf("google session token: %d %s", w.Code, w.Body)
+	}
 	// Deprovisioning: the account out of the Workspace (no hd) can't come in.
 	wantReason(t, e.signIn(newGBrowser(t, e.h), "org="+e.acme.Slug, person{sub: "g-dan", email: "dan@acme.com"}), http.StatusForbidden, "domain_mismatch")
 	// Owners keep their password.

@@ -594,6 +594,19 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 		o.consent(w, code, q)
 		return
 	}
+	// This sign-in is a password: an org that takes only Google sign-ins
+	// from them gets no grant from it.
+	user, err := o.a.acc.User(uid)
+	if err != nil {
+		q.Error = "sign-in failed"
+		o.consent(w, http.StatusInternalServerError, q)
+		return
+	}
+	if o.a.googleRequiredIn(user.Email, org) {
+		q.Error = org.Name + " requires signing in with Google, so it can't be connected with a password."
+		o.consent(w, http.StatusForbidden, q)
+		return
+	}
 
 	code := randomToken()
 	o.mu.Lock()
