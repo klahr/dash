@@ -101,7 +101,7 @@
       <div class="menu" id="menu">
         <div class="menu-head">
           <span>Menu</span>
-          <button class="icon-btn" id="menu-close" type="button" aria-label="Close menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+          <button class="icon-btn" id="menu-close" type="button" aria-label="Close menu" data-icon="x"></button>
         </div>
         <div class="side-projects" role="group" aria-labelledby="side-projects-title">
           <h2 class="side-projects-head" id="side-projects-title">Projects</h2>
@@ -281,7 +281,7 @@
       <!-- Shell -->
       <section class="view" id="view-run" aria-label="Shell">
         <div class="term-wrap" id="term-wrap"><div id="term"></div></div>
-        <div class="empty shell-note" id="shell-note" hidden><p class="empty-title">No terminal here</p><p id="shell-note-text"></p></div>
+        <div class="empty" id="shell-note" hidden><p class="empty-title">No terminal here</p><p id="shell-note-text"></p></div>
       </section>
 
       <!-- Try: the project's CLI in a terminal on a runner, at main or a commit picked from history -->
@@ -418,7 +418,7 @@
         </div>
         <form class="composer" id="chat-form">
           <textarea name="q" rows="1" placeholder="Message Claude" aria-label="Message Claude"></textarea>
-          <button class="icon-btn primary" aria-label="Send" id="chat-send">
+          <button class="icon-btn primary" aria-label="Send">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 3.5 21 12 3.5 20.5 7 12Z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
           </button>
         </form>
@@ -429,7 +429,10 @@
         <section class="chat-panel" role="tabpanel" hidden>
           <p class="chat-cwd chat-cwd-bar" hidden></p>
           <div class="chat-log">
-            <p class="pane-empty chat-empty">Ask about this project. Claude runs in its main checkout and can read the code.</p>
+            <div class="empty chat-empty">
+              <p class="empty-title">Ask about this project</p>
+              <p>Claude runs in its main checkout and can read the code.</p>
+            </div>
           </div>
           <form class="composer">
             <textarea name="q" rows="1" placeholder="Ask about this project" aria-label="Ask Claude about this project"></textarea>
@@ -606,7 +609,7 @@
   <!-- Quick add (FAB, n): one field per task -->
   <dialog class="sheet" id="quick-sheet" aria-labelledby="quick-title">
     <form method="dialog" id="quick-form">
-      <header class="sheet-head"><h2 id="quick-title">New task</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <header class="sheet-head"><h2 id="quick-title">New task</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p class="hint warn runner-note" id="quick-runner-note" hidden></p>
       <div class="quick-rows" id="quick-rows"></div>
       <p class="hint quick-hint"><kbd>Enter</kbd> save · <kbd>Shift-Enter</kbd> another task · Claude names each task.</p>
@@ -624,7 +627,7 @@
   <!-- New / edit todo -->
   <dialog class="sheet" id="todo-sheet" aria-labelledby="todo-sheet-title">
     <form method="dialog" id="todo-form">
-      <header class="sheet-head"><h2 id="todo-sheet-title">New task</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <header class="sheet-head"><h2 id="todo-sheet-title">New task</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p class="hint warn runner-note" id="todo-runner-note" hidden></p>
       <label class="field" id="todo-project-field" hidden><span>Project</span><select name="project"></select></label>
       <label class="field"><span>Title <em>Claude names it if empty</em></span><input name="title" placeholder="Short name for the task" autocomplete="off"></label>
@@ -643,7 +646,7 @@
       <div class="field" id="todo-deps-field" hidden><span id="todo-deps-label">Depends on <em>starts once these are merged</em></span><div class="dep-picker" id="todo-deps" role="group" aria-labelledby="todo-deps-label"></div></div>
       <footer class="sheet-actions">
         <button class="btn shrink" type="button" id="todo-clear" data-icon="trash">Clear</button>
-        <button class="btn" value="draft" id="todo-save-draft" data-icon="draft">Save as draft</button>
+        <button class="btn" value="draft" data-icon="draft">Save as draft</button>
         <button class="btn primary" value="queue" data-icon="queue">Add to queue</button>
       </footer>
     </form>
@@ -652,7 +655,7 @@
   <!-- Split a large task: Claude's proposal, to edit and confirm (over the task form) -->
   <dialog class="sheet" id="split-sheet" aria-labelledby="split-title">
     <form method="dialog" id="split-form">
-      <header class="sheet-head"><h2 id="split-title">Split into tasks</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <header class="sheet-head"><h2 id="split-title">Split into tasks</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p class="hint" id="split-hint"></p>
       <ol class="split-parts" id="split-parts"></ol>
       <button class="link" type="button" id="split-add" data-icon="plus">Another task</button>
@@ -675,7 +678,7 @@
           <h2 id="new-project-title">Add project</h2>
           <label class="np-runner" id="new-project-runner"><span>on</span><select name="machine" aria-label="Runner"></select></label>
         </div>
-        <button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+        <button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button>
       </header>
       <div class="rail-layout">
         <nav class="rail-nav" id="new-project-nav" aria-label="Where the repository comes from">
@@ -691,7 +694,7 @@
         <div class="rail-main" id="new-project-main">
           <div id="new-project-fields">
             <section class="rail-section" data-section="gh">
-              <div class="gh-browser" id="new-project-gh">
+              <div class="gh-browser">
                 <input type="search" id="gh-filter" placeholder="Filter your repositories" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Filter repositories" aria-controls="gh-list">
                 <div class="gh-list" id="gh-list" role="listbox" aria-label="GitHub repositories" tabindex="-1"></div>
                 <p class="hint" id="gh-hint"></p>
@@ -706,13 +709,13 @@
               <label class="field"><span>Git remote</span><input name="remote_url" placeholder="https://github.com/owner/repo.git or git@host:owner/repo.git" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
             </section>
             <section class="rail-section" data-section="local">
-              <p class="hint np-lead" id="new-project-local-hint">A new git repository with a first commit, in <span id="new-project-local-where">the runner</span>'s projects folder. It has no remote and stays on that runner; deleting the project deletes its folder too.</p>
+              <p class="hint np-lead">A new git repository with a first commit, in <span id="new-project-local-where">the runner</span>'s projects folder. It has no remote and stays on that runner; deleting the project deletes its folder too.</p>
             </section>
-            <div class="np-common" id="new-project-common">
+            <div class="np-common">
               <p class="np-picked" id="new-project-picked" hidden></p>
               <label class="field" id="new-project-name-row"><span id="new-project-name-label">Name</span><input name="name" autocomplete="off" spellcheck="false"></label>
               <p class="hint" id="new-project-where"></p>
-              <details class="np-advanced" id="new-project-advanced">
+              <details class="np-advanced">
                 <summary>Advanced</summary>
                 <label class="field" id="new-project-clone-row"><span>Clone URL <em>optional, used as it is</em></span><input name="clone_url" placeholder="e.g. git@github-deploy:owner/repo.git" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
                 <p class="hint" id="new-project-clone-hint">Runners clone into <code>&lt;projects&gt;/&lt;org&gt;/&lt;repo&gt;</code>, or use a clone of the same repository already there; a folder holding anything else is left alone and the clone gets a <code>-2</code> suffix. GitHub repositories are cloned over SSH, or HTTPS on a runner started with <code>-github-protocol=https</code>. A clone URL replaces that (a URL only: credentials stay on the runner).</p>
@@ -726,7 +729,6 @@
           <div class="np-progress" id="new-project-progress" hidden>
             <h3 class="np-progress-title" id="new-project-progress-title" tabindex="-1"></h3>
             <ol class="np-steps" id="new-project-steps" aria-live="polite"></ol>
-            <div class="np-progress-actions" id="new-project-progress-actions"></div>
           </div>
         </div>
       </div>
@@ -739,7 +741,7 @@
   <!-- Scan editor: a custom scan kept in Dash -->
   <dialog class="sheet" id="scan-sheet" aria-labelledby="scan-sheet-title">
     <form method="dialog" id="scan-form">
-      <header class="sheet-head"><h2 id="scan-sheet-title">Create custom scan</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <header class="sheet-head"><h2 id="scan-sheet-title">Create custom scan</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p class="hint scan-form-lead">Describe what to look for in plain words. Dash runs it like the built-in scans: it reads the code and adds what it finds to Issues.</p>
       <p class="hint" id="scan-form-from" hidden></p>
       <label class="field"><span>Title</span><input name="title" required autocomplete="off" placeholder="e.g. API error handling"></label>
@@ -778,7 +780,7 @@
   <!-- Delete project: what to remove, confirmed with the password -->
   <dialog class="sheet small" id="delete-project-sheet" aria-labelledby="delete-project-title">
     <form method="dialog" id="delete-project">
-      <header class="sheet-head"><h2 id="delete-project-title">Delete project</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <header class="sheet-head"><h2 id="delete-project-title">Delete project</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p class="hint">Its tasks, chats and worktrees are removed from Dash. Tasks running or merging must finish first.</p>
       <fieldset class="field choice">
         <legend>Local clone</legend>
@@ -799,7 +801,7 @@
   <!-- Usage & queue -->
   <dialog class="sheet small" id="usage-sheet" aria-labelledby="usage-title">
     <form method="dialog">
-      <header class="sheet-head"><h2 id="usage-title" tabindex="-1" autofocus>Claude usage</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <header class="sheet-head"><h2 id="usage-title" tabindex="-1" autofocus>Claude usage</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></header>
       <p class="hint" id="usage-reason"></p>
       <div class="meters" id="usage-meters"></div>
       <p class="hint" id="usage-note"></p>
@@ -818,7 +820,7 @@
   <!-- GitHub Actions -->
   <dialog class="sheet" id="ci-sheet" aria-labelledby="ci-title">
     <form method="dialog">
-      <header class="sheet-head"><h2 id="ci-title" tabindex="-1" autofocus>Builds</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <header class="sheet-head"><h2 id="ci-title" tabindex="-1" autofocus>Builds</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></header>
       <p class="hint" id="ci-summary"></p>
       <div class="ci-release" id="ci-release" hidden></div>
       <ul class="runs" id="ci-runs"></ul>
@@ -833,7 +835,7 @@
   <!-- Tag a release from a commit in the History view -->
   <dialog class="sheet" id="release-sheet" aria-labelledby="release-title">
     <form method="dialog" id="release-form">
-      <header class="sheet-head"><h2 id="release-title" tabindex="-1" autofocus>Tag release</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <header class="sheet-head"><h2 id="release-title" tabindex="-1" autofocus>Tag release</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p class="hint" id="release-commit"></p>
       <p class="hint" id="release-loading">Fetching tags from origin…</p>
       <div id="release-body" hidden>
@@ -856,8 +858,8 @@
 
   <!-- Branch switcher: the branch tasks start from and land on, and its pull request -->
   <dialog class="sheet" id="branch-sheet" aria-labelledby="branch-title">
-    <form method="dialog" id="branch-form">
-      <header class="sheet-head"><h2 id="branch-title">Branch</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+    <form method="dialog">
+      <header class="sheet-head"><h2 id="branch-title">Branch</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p class="hint" id="branch-intro"></p>
       <div class="branch-current" id="branch-current" hidden></div>
       <label class="field"><span>Switch to <em>pick a branch, or type a new name to create it</em></span>
@@ -873,7 +875,7 @@
   <!-- Project settings -->
   <dialog class="sheet rail-sheet" id="settings-sheet" aria-labelledby="settings-title">
     <form method="dialog" id="settings-form">
-      <header class="sheet-head"><h2 id="settings-title">Project settings</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <header class="sheet-head"><h2 id="settings-title">Project settings</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <div class="rail-layout">
         <nav class="rail-nav" aria-label="Settings sections">
           <div class="rail-group"><span class="rail-head">Project</span>
@@ -1018,7 +1020,7 @@
   <!-- A notification webhook of the project (opened from project settings) -->
   <dialog class="sheet small" id="webhook-sheet" aria-labelledby="webhook-title">
     <form method="dialog" id="webhook-form">
-      <header class="sheet-head"><h2 id="webhook-title">Add webhook</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <header class="sheet-head"><h2 id="webhook-title">Add webhook</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <fieldset class="field choice">
         <legend>Format</legend>
         <label class="radio"><input type="radio" name="format" value="slack"><span>Slack <em>an incoming webhook URL from a Slack app</em></span></label>
@@ -1046,7 +1048,7 @@
        some sections are forms of their own. -->
   <dialog class="sheet rail-sheet" id="account-sheet" aria-labelledby="account-title">
     <div class="rail-body">
-      <form method="dialog" class="sheet-head"><h2 id="account-title" tabindex="-1" autofocus>Account</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></form>
+      <form method="dialog" class="sheet-head"><h2 id="account-title" tabindex="-1" autofocus>Account</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></form>
       <form method="dialog" id="prefs-form" hidden></form>
       <div class="rail-layout">
         <nav class="rail-nav" aria-label="Account sections">
@@ -1142,7 +1144,7 @@
               <h3 class="org-section">Open it here</h3>
               <div id="wall-link"></div>
               <h3 class="org-section">Links for TVs</h3>
-              <p class="hint" id="wall-tokens-hint">A TV shouldn't keep anyone's session. A TV link opens the wall of this organization, with the options above, without signing in, and nothing else. Anyone with the link sees the wall: treat it like a password.</p>
+              <p class="hint">A TV shouldn't keep anyone's session. A TV link opens the wall of this organization, with the options above, without signing in, and nothing else. Anyone with the link sees the wall: treat it like a password.</p>
               <ul class="runner-list" id="wall-tokens"></ul>
               <div class="org-invite token-new" id="wall-token-new">
                 <input type="text" id="wall-token-name" placeholder="Name, e.g. Office TV" autocomplete="off" maxlength="100" aria-label="TV link name">
@@ -1159,7 +1161,7 @@
   <!-- The active organization: members, roles and invitations -->
   <dialog class="sheet rail-sheet" id="org-sheet" aria-labelledby="org-title">
     <form method="dialog">
-      <header class="sheet-head"><h2 id="org-title" tabindex="-1" autofocus>Organization</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <header class="sheet-head"><h2 id="org-title" tabindex="-1" autofocus>Organization</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></header>
       <div class="rail-layout">
         <nav class="rail-nav" aria-label="Organization sections">
           <div class="rail-group"><span class="rail-head">People</span>
@@ -1224,11 +1226,11 @@
        overview, then one entry per runner down a rail (app/runners.js fills it), like Settings. -->
   <dialog class="sheet rail-sheet" id="runners-sheet" aria-labelledby="runners-title">
     <form method="dialog" id="runners-form">
-      <header class="sheet-head"><h2 id="runners-title" tabindex="-1" autofocus>Runners</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <header class="sheet-head"><h2 id="runners-title" tabindex="-1" autofocus>Runners</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <div class="rail-layout">
         <nav class="rail-nav" id="runners-nav" aria-label="Runners"></nav>
         <div class="rail-main" id="runners-main">
-          <section class="rail-section current" data-section="overview" id="runners-overview">
+          <section class="rail-section current" data-section="overview">
             <div class="runners-top">
               <div class="runners-stats" id="runners-stats" role="status"></div>
               <button class="btn primary small" id="runners-add" type="button" data-icon="plus">Add a runner</button>
@@ -1240,7 +1242,7 @@
             </details>
             <div id="runners-list"></div>
           </section>
-          <section class="rail-section" data-section="runner" id="runners-runner">
+          <section class="rail-section" data-section="runner">
             <div id="runner-detail"></div>
             <section id="runners-links" class="runner-repos" hidden aria-live="polite"></section>
             <section id="runners-repos" class="runner-repos" hidden aria-live="polite"></section>
@@ -1260,14 +1262,14 @@
       <label class="field"><span>Your password <em>to confirm</em></span><input type="password" name="password" required autocomplete="current-password"></label>
       <footer class="sheet-actions">
         <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
-        <button class="btn primary" value="ok" id="password-ok" data-icon="check">Confirm</button>
+        <button class="btn primary" value="ok" data-icon="check">Confirm</button>
       </footer>
     </form>
   </dialog>
 
   <!-- Generic question / confirmation -->
   <dialog class="sheet small" id="ask-sheet" aria-labelledby="ask-title">
-    <form method="dialog" id="ask-form">
+    <form method="dialog">
       <h2 id="ask-title" tabindex="-1" autofocus></h2>
       <p id="ask-body" class="hint"></p>
       <textarea id="ask-input" rows="4" hidden></textarea>
@@ -1282,7 +1284,7 @@
   <!-- Edit a file of a task in review: saving commits it on the task's branch -->
   <dialog class="sheet edit-sheet" id="diff-edit-sheet" aria-labelledby="diff-edit-title">
     <form method="dialog" id="diff-edit-form">
-      <header class="sheet-head"><h2 id="diff-edit-title">Edit file</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <header class="sheet-head"><h2 id="diff-edit-title">Edit file</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p class="hint" id="diff-edit-hint">Saving commits the change on the task's branch, so approving merges it with the rest.</p>
       <textarea class="file-text" id="diff-edit-text" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="File content"></textarea>
       <footer class="sheet-actions">
@@ -1307,7 +1309,7 @@
   <!-- Keyboard help (?) -->
   <dialog class="sheet" id="keys-sheet" aria-labelledby="keys-title">
     <form method="dialog">
-      <header class="sheet-head"><h2 id="keys-title" tabindex="-1" autofocus>Keyboard</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
+      <header class="sheet-head"><h2 id="keys-title" tabindex="-1" autofocus>Keyboard</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></header>
       <p class="hint">Vim-style. Typing in a field or the terminal is insert mode; Esc (Ctrl-] in the terminal) returns to normal mode.</p>
       <dl class="keys">
         <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with tasks · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
