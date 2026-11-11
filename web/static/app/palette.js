@@ -72,7 +72,7 @@ function paletteCommands() {
     ["Files", "code", go("files"), "gf", "browse edit source code tree editor"],
     ["Checklist (TODO.md)", "checks", go("checklist"), "gl", "todo.md checklist to-do list check off tick items"],
     ["Switch project", "repo", openProjects, "p", "projects"],
-    ["New project", "plus", () => openNewProject(), "", "create add local repository runner github"],
+    ["Add project", "plus", () => openNewProject(), "", "new create local repository runner github clone url"],
     p && ["Project settings", "settings", openSettings, ":settings", "configure commands"],
     p?.run_command && [serve.label || "Run", serve.icon || "play", () => startProc({ kind: "web", preset: "run" }), "R", `run web ${serve.icon || ""}`],
     p?.test_command && ["Run tests", "check", () => startProc({ kind: "task", preset: "test" }), "T", "test"],

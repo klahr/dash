@@ -156,8 +156,10 @@ export function ask({ title, body = "", input = false, value = "", placeholder =
 // sheet opened over it doesn't move it) and is the first again next time.
 // A section whose every child is hidden drops out of the rail. Arrow keys,
 // Home and End move along the rail; only the chosen entry is a tab stop, so
-// Tab goes on into its section. railLayouts.get(id).show(key) picks one.
+// Tab goes on into its section. railOf(id).show(key) picks one; the dialog
+// gets a "railchange" event (detail: the key) when the shown section changes.
 const railLayouts = new Map();
+export const railOf = (id) => railLayouts.get(id);
 function railLayout(dialog) {
   const nav = dialog.querySelector(".rail-nav");
   const main = dialog.querySelector(".rail-main");
@@ -192,6 +194,7 @@ function railLayout(dialog) {
     if (changed) main.scrollTop = 0;
     if (focus) b.focus();
     if (changed && dialog.open) b.scrollIntoView({ block: "nearest", inline: "nearest" }); // the strip on a narrow screen
+    if (changed) dialog.dispatchEvent(new CustomEvent("railchange", { detail: b.dataset.rail }));
   };
   const show = (key, opts) => { wanted = key; apply(opts); };
   nav.addEventListener("click", (e) => {

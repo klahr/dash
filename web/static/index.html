@@ -106,9 +106,9 @@
         <div class="side-projects" role="group" aria-labelledby="side-projects-title">
           <h2 class="side-projects-head" id="side-projects-title">Projects</h2>
           <ul class="side-project-list" id="side-project-list"></ul>
-          <button class="side-new-project" id="side-new-project" type="button" title="New project">
+          <button class="side-new-project" id="side-new-project" type="button" title="Add project">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
-            <span>New project</span>
+            <span>Add project</span>
           </button>
           <button class="side-runners" id="side-runners" type="button" hidden>
             <span class="side-runners-icon" aria-hidden="true"><span class="machine-dot"></span></span>
@@ -630,35 +630,75 @@
     </form>
   </dialog>
 
-  <!-- New project -->
-  <dialog class="sheet" id="new-project-sheet" aria-labelledby="new-project-title">
+  <!-- Add project: where the repository comes from down a rail (like Settings), only that
+       choice's fields beside it, and the linking's progress in their place once submitted
+       (app/projects.js). Every project is on a runner: a git remote its runners clone, or a
+       runner's local-only repository. -->
+  <dialog class="sheet rail-sheet" id="new-project-sheet" aria-labelledby="new-project-title">
     <form method="dialog" id="new-project">
-      <header class="sheet-head"><h2 id="new-project-title">New project</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
-      <!-- Every project is on a runner: a git remote its runners clone, or a runner's local-only repository. -->
-      <div class="segmented" role="tablist" id="new-project-hub-mode" aria-label="Where the repository comes from">
-        <button type="button" role="tab" data-mode="gh" aria-selected="true">Your GitHub repos</button>
-        <button type="button" role="tab" data-mode="create" aria-selected="false">New GitHub repo</button>
-        <button type="button" role="tab" data-mode="url" aria-selected="false">Remote URL</button>
-        <button type="button" role="tab" data-mode="local" aria-selected="false">Local only</button>
+      <header class="sheet-head">
+        <div class="np-title">
+          <h2 id="new-project-title">Add project</h2>
+          <label class="np-runner" id="new-project-runner"><span>on</span><select name="machine" aria-label="Runner"></select></label>
+        </div>
+        <button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+      </header>
+      <div class="rail-layout">
+        <nav class="rail-nav" id="new-project-nav" aria-label="Where the repository comes from">
+          <div class="rail-group"><span class="rail-head">Repository</span>
+            <button type="button" class="rail-item np-src" data-rail="gh"><span class="np-src-name">From GitHub</span><span class="np-src-desc">Pick one of your repositories</span></button>
+            <button type="button" class="rail-item np-src" data-rail="create"><span class="np-src-name">New GitHub repository</span><span class="np-src-desc">Create an empty one</span></button>
+            <button type="button" class="rail-item np-src" data-rail="url"><span class="np-src-name">From URL</span><span class="np-src-desc">Any git remote</span></button>
+          </div>
+          <div class="rail-group"><span class="rail-head">No remote</span>
+            <button type="button" class="rail-item np-src" data-rail="local"><span class="np-src-name">Local only</span><span class="np-src-desc">A throwaway repo on one runner</span></button>
+          </div>
+        </nav>
+        <div class="rail-main" id="new-project-main">
+          <div id="new-project-fields">
+            <section class="rail-section" data-section="gh">
+              <div class="gh-browser" id="new-project-gh">
+                <input type="search" id="gh-filter" placeholder="Filter your repositories" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Filter repositories" aria-controls="gh-list">
+                <div class="gh-list" id="gh-list" role="listbox" aria-label="GitHub repositories" tabindex="-1"></div>
+                <p class="hint" id="gh-hint"></p>
+              </div>
+            </section>
+            <section class="rail-section" data-section="create">
+              <label class="field"><span>Repository name</span><input name="github" placeholder="name, or owner/name for an organization" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
+              <label class="toggle"><input type="checkbox" name="github_public"><span>Public</span></label>
+              <p class="hint" id="new-project-github-hint"></p>
+            </section>
+            <section class="rail-section" data-section="url">
+              <label class="field"><span>Git remote</span><input name="remote_url" placeholder="https://github.com/owner/repo.git or git@host:owner/repo.git" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
+            </section>
+            <section class="rail-section" data-section="local">
+              <p class="hint np-lead" id="new-project-local-hint">A new git repository with a first commit, in <span id="new-project-local-where">the runner</span>'s projects folder. It has no remote and stays on that runner; deleting the project deletes its folder too.</p>
+            </section>
+            <div class="np-common" id="new-project-common">
+              <p class="np-picked" id="new-project-picked" hidden></p>
+              <label class="field" id="new-project-name-row"><span id="new-project-name-label">Name</span><input name="name" autocomplete="off" spellcheck="false"></label>
+              <p class="hint" id="new-project-where"></p>
+              <details class="np-advanced" id="new-project-advanced">
+                <summary>Advanced</summary>
+                <label class="field" id="new-project-clone-row"><span>Clone URL <em>optional, used as it is</em></span><input name="clone_url" placeholder="e.g. git@github-deploy:owner/repo.git" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
+                <p class="hint" id="new-project-clone-hint">Runners clone into <code>&lt;projects&gt;/&lt;org&gt;/&lt;repo&gt;</code>, or use a clone of the same repository already there; a folder holding anything else is left alone and the clone gets a <code>-2</code> suffix. GitHub repositories are cloned over SSH, or HTTPS on a runner started with <code>-github-protocol=https</code>. A clone URL replaces that (a URL only: credentials stay on the runner).</p>
+                <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" placeholder="npm run dev -- --port $PORT" spellcheck="false"></label>
+                <label class="field"><span>Test command</span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>
+                <label class="field"><span>Deploy command</span><input name="deploy_command" placeholder="./deploy.sh" spellcheck="false"></label>
+                <p class="hint">You can set or change the commands later in Project settings.</p>
+              </details>
+            </div>
+          </div>
+          <div class="np-progress" id="new-project-progress" hidden>
+            <h3 class="np-progress-title" id="new-project-progress-title" tabindex="-1"></h3>
+            <ol class="np-steps" id="new-project-steps" aria-live="polite"></ol>
+            <div class="np-progress-actions" id="new-project-progress-actions"></div>
+          </div>
+        </div>
       </div>
-      <label class="field"><span id="new-project-machine-label">Runner</span><select name="machine"></select></label>
-      <div class="gh-browser" id="new-project-gh" hidden>
-        <input type="search" id="gh-filter" placeholder="Filter by name or description" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Filter repositories" aria-controls="gh-list">
-        <div class="gh-list" id="gh-list" role="listbox" aria-label="GitHub repositories" tabindex="-1"></div>
-        <p class="hint" id="gh-hint"></p>
-      </div>
-      <label class="field" id="new-project-url-row" hidden><span>Git remote</span><input name="remote_url" placeholder="https://github.com/owner/repo.git or git@github.com:owner/repo.git" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
-      <label class="field"><span id="new-project-name-label">Name</span><input name="name" autocomplete="off" autofocus></label>
-      <label class="field" id="new-project-github-row" hidden><span>GitHub repository</span><input name="github" placeholder="name, or owner/name for an organization" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
-      <p class="hint" id="new-project-github-hint" hidden></p>
-      <p class="hint" id="new-project-local-hint" hidden>A new git repository with an initial commit, in a new folder named after the project in <span id="new-project-local-where">the runner</span>'s projects folder. No remote, no GitHub: for throwaway work, on this runner only. Deleting the project deletes its folder too.</p>
-      <label class="field" id="new-project-clone-row" hidden><span>Clone URL <em>optional</em></span><input name="clone_url" placeholder="e.g. git@github-deploy:owner/repo.git" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
-      <p class="hint" id="new-project-hub-hint">Each runner linked to the project clones it into its projects folder as <code>&lt;projects&gt;/&lt;repo&gt;</code>, or uses a clone of the same repository already there. A folder holding anything else is left alone (the clone becomes <code>&lt;repo&gt;-2</code>). Runners clone GitHub repositories over SSH, or HTTPS when started with <code>-github-protocol=https</code>; a clone URL, when given, is used as it is (a URL only: credentials stay on the runner).</p>
-      <label class="toggle" id="new-project-public-row" hidden><input type="checkbox" name="github_public"><span>Make the new repository public</span></label>
-      <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" placeholder="npm run dev -- --port $PORT" spellcheck="false"></label>
-      <label class="field"><span>Test command</span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>
-      <label class="field"><span>Deploy command</span><input name="deploy_command" placeholder="./deploy.sh" spellcheck="false"></label>
-      <button class="btn primary" data-icon="plus"><span id="new-project-submit">Add project</span></button>
+      <footer class="sheet-actions">
+        <button class="btn primary" id="new-project-go" data-icon="plus" disabled>Add project</button>
+      </footer>
     </form>
   </dialog>
 

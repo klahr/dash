@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// New project → Local only on the hub: the runner's owner gets a new
+// Add project → Local only on the hub: the runner's owner gets a new
 // repository on the runner (git init and an initial commit), with no
 // remote and no GitHub, as the runner's own project. A second one by the
 // same name is refused rather than taking over the folder, and deleting the

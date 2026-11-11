@@ -339,7 +339,6 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .segmented { display: inline-flex; padding: 3px; gap: 2px; border-radius: var(--r-m); background: var(--surface); border: 1px solid var(--line); margin-bottom: 12px; }
 .segmented button { min-height: 36px; padding: 0 14px; border-radius: 8px; color: var(--muted); font-weight: 600; }
 .segmented button[aria-selected="true"] { background: var(--raised); color: var(--text); }
-#new-project-hub-mode { flex-wrap: wrap; max-width: 100%; } /* four sources: wrap on phones */
 #d-diffstat { font-weight: 500; font-size: 13px; margin-left: 4px; }
 .plus { color: var(--merged); } .minus { color: var(--failed); }
 
@@ -743,7 +742,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .toggle input:checked::after { transform: translateX(18px); background: var(--accent2); }
 .hint { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
 
-/* The hub's GitHub repository browser (new project). */
+/* The hub's GitHub repository browser (Add project). */
 .gh-browser { margin: 12px 0; }
 .gh-list { margin-top: 8px; max-height: min(46vh, 420px); overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); }
 .gh-list:empty { display: none; }
@@ -832,6 +831,78 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
   .rail-item { width: 100%; padding: 0 12px; border-color: transparent; text-align: left; }
   .rail-item:hover { border-color: transparent; background: var(--raised); }
   .rail-main { padding: 6px 24px 24px; }
+}
+
+/* ---------- Add project (app/projects.js) ----------
+   A rail sheet: the source down the rail (each with a line saying what it is,
+   beside the pane only; the strip on a phone shows the names), its fields
+   beside it, and the runner beside the title when there is a choice. */
+.np-title { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 10px; min-width: 0; }
+.np-runner { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: 14px; }
+.np-runner[hidden] { display: none; }
+.np-runner select { width: auto; max-width: 52vw; min-height: 32px; padding: 0 8px; font-size: 14px; background: var(--raised); }
+.np-src { flex-direction: column; align-items: flex-start; justify-content: center; }
+.np-src-desc { display: none; }
+#new-project-main { display: flex; flex-direction: column; }
+#new-project-fields { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+#new-project-fields[hidden], .np-progress[hidden] { display: none; }
+#new-project-sheet .rail-section.current { padding-top: 14px; }
+#new-project-sheet .rail-section .toggle { min-height: 40px; }
+.np-lead { margin: 0; }
+.np-common { padding-top: 2px; }
+.np-common > .field:first-child, .np-common > .np-picked:first-child { margin-top: 12px; }
+#new-project-sheet .gh-browser { margin: 0; }
+#new-project-sheet .gh-list { height: clamp(180px, 34dvh, 330px); max-height: none; }
+#new-project-sheet .gh-list:empty { display: block; }
+#new-project-sheet #gh-hint { min-height: 1.4em; }
+.gh-note { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.gh-note.loading { flex-direction: row; align-items: center; }
+.gh-note .spinner { flex: none; }
+.gh-note-text { overflow-wrap: anywhere; }
+.gh-note-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.gh-note-actions .link { min-height: 32px; padding: 0; }
+.np-picked { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; padding: 8px 12px; border-radius: var(--r-m); font-size: 14px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.np-picked[hidden] { display: none; }
+.np-picked .gh-mark { margin: 0; }
+.np-picked > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-picked em { margin-left: auto; font-style: normal; font-size: 12px; color: var(--muted); }
+.np-advanced { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.np-advanced > summary { cursor: pointer; width: fit-content; min-height: 32px; display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--muted); list-style: none; }
+.np-advanced > summary::-webkit-details-marker { display: none; }
+.np-advanced > summary::before { content: "▸"; color: var(--faint); transition: transform .15s var(--ease); }
+.np-advanced[open] > summary::before { transform: rotate(90deg); }
+.np-advanced > summary:hover, .np-advanced[open] > summary { color: var(--text); }
+.np-advanced .hint { font-size: 13px; }
+/* While it is adding: the steps in the pane, the rail dimmed and out of reach. */
+.np-busy .rail-nav { opacity: .5; }
+.np-progress { padding-top: 14px; }
+.np-progress-title { margin: 0 0 14px; font-size: 16px; overflow-wrap: anywhere; }
+.np-progress-title:focus { outline: none; }
+.np-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.np-step { position: relative; display: flex; gap: 12px; padding: 0 0 18px; color: var(--faint); }
+.np-step:last-child { padding-bottom: 0; }
+/* the line from one step to the next */
+.np-step:not(:last-child)::before { content: ""; position: absolute; left: 11px; top: 26px; bottom: 2px; width: 2px; border-radius: 1px; background: var(--line); }
+.np-step.is-ok:not(:last-child)::before, .np-step.is-note:not(:last-child)::before { background: color-mix(in srgb, var(--merged) 55%, var(--line)); }
+.np-step-icon { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); background: var(--surface); }
+.np-step-icon .ico { width: 14px; height: 14px; }
+.np-step-icon .spinner { width: 16px; height: 16px; }
+.np-step.is-run .np-step-icon { border-color: transparent; }
+.np-step.is-ok .np-step-icon { border-color: var(--merged); background: var(--merged); color: var(--surface); }
+.np-step.is-note .np-step-icon { border-color: var(--merged); color: var(--merged); }
+.np-step.is-fail .np-step-icon { border-color: var(--failed); background: var(--failed); color: var(--surface); }
+.np-step-text { min-width: 0; display: flex; flex-direction: column; gap: 6px; padding-top: 2px; }
+.np-step-label { font-weight: 600; }
+.np-step:is(.is-run, .is-ok, .is-note, .is-fail) { color: var(--text); }
+.np-step.is-run .np-step-label::after { content: "…"; }
+.np-step-error { color: var(--failed); font-size: 14px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.np-step-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (min-width: 760px) {
+  #new-project-sheet .rail-layout { grid-template-columns: 230px minmax(0, 1fr); }
+  .np-src { min-height: 52px; padding-block: 6px; gap: 1px; white-space: normal; }
+  .np-src-desc { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
+  #new-project-sheet .sheet-actions .btn { flex: 0 1 auto; margin-left: auto; min-width: 200px; }
 }
 
 /* ---------- quick add (FAB, n) ---------- */
@@ -1125,7 +1196,6 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .project-list button:hover { background: var(--raised); }
 .project-list button[aria-current="true"] { background: var(--raised); box-shadow: inset 3px 0 0 var(--accent); }
 .project-list .path { font-family: var(--mono); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
-#new-project > .btn { width: 100%; margin-top: 4px; }
 
 /* ---------- usage ---------- */
 .usage-pill {

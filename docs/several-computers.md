@@ -19,13 +19,13 @@ Every project lives on runners, in one of two ways:
 - **A runner's own project**: a repository on one runner's disk, in its `-projects` directory. Its
   tasks, git and commands run on that runner only, and it shows in the dashboard under the
   runner's name. Make one with **Add projects from this computer…** on the runner's row of the
-  Runners page, or start a new one with **+ New project** → **Local only**. See [below](#projects-of-a-runners-own).
+  Runners page, or start a new one with **+ Add project** → **Local only**. See [below](#projects-of-a-runners-own).
 - **A shared project**: the hub's project, a git remote that one or more runners are linked to.
   Each linked runner keeps its own clone of the remote, in its organization's folder inside its
   projects folder (`<-projects>/<org>/<repo>`), any of them can run its tasks, and work lands on the remote. It shows in
   the dashboard under each runner it is linked to, with a small "shared" mark (two people). Make
-  one with **+ New project** (see [New project on the hub](#new-project-on-the-hub)): it is linked
-  to the runner picked as its **Runner**. Link more runners in its **Settings → Runners**, or pick
+  one with **+ Add project** (see [Add project on the hub](#add-project-on-the-hub)): it is linked
+  to the runner picked beside the dialog's title. Link more runners in its **Settings → Runners**, or pick
   the projects a runner builds from the runner's side, with **Projects…** on its row of the
   Runners page (see [A runner's projects](#a-runners-projects)).
   See [below](#shared-projects-tasks-on-runners).
@@ -33,20 +33,22 @@ Every project lives on runners, in one of two ways:
 A project that is only ever worked on from one computer is simplest as that runner's own; share
 it when several people's runners (or several of yours) should take its tasks.
 
-### New project on the hub
+### Add project on the hub
 
-The hub keeps no folders, so **+ New project** never asks for one. Pick the **Runner** the project
-is linked to first, then where the repository comes from:
+The hub keeps no folders, so **+ Add project** never asks for one. The dialog lists where the
+repository comes from down its side (across the top on a phone), and beside it only the fields for
+that choice. With more than one runner you may link projects to, pick it beside the title (yours
+are marked "(yours)"); with one, there is nothing to pick.
 
-- **Your GitHub repos**: the repositories of the GitHub account the runner's `gh` is signed in to,
+- **From GitHub** (the default): the repositories of the GitHub account the runner's `gh` is signed in to,
   and of the organizations that account belongs to (one `gh repo list` per owner). Each row shows
   the GitHub mark, `owner/name` and its description, and whether it is private, a fork or
   archived and when it was last updated, under a heading per owner (with their GitHub avatar). The
   filter box matches names and descriptions. A repository that is already one of the org's
   projects is marked and can't be picked again.
-- **New GitHub repo**: a name (or `owner/name` for an organization) creates an empty repository
-  with the runner's `gh`, private unless you tick **public**, and makes the project from it.
-- **Remote URL**: any `https://`, `ssh://` or `git@host:path` remote.
+- **New GitHub repository**: a name (or `owner/name` for an organization) creates an empty
+  repository with the runner's `gh`, private unless you tick **Public**, and makes the project from it.
+- **From URL**: any `https://`, `ssh://` or `git@host:path` remote.
 - **Local only**: no remote and no GitHub, for throwaway work. The runner makes a new repository
   in a new folder named after the project in its projects folder (in the org's folder there),
   with `git init` and an initial commit, and the project is that runner's own (not shared). Only
@@ -56,8 +58,21 @@ is linked to first, then where the repository comes from:
   the folder and share it as a new project.
 
 Listing and creating repositories use the runner owner's GitHub login, so only the runner's owner
-can use those two (anyone can paste a URL); the hub has no GitHub login of its own. The name
-defaults to the repository's.
+can use those two (anyone can paste a URL); the hub has no GitHub login of its own. The **Name**
+shows once there is a repository, filled in with the repository's (change it to show the project
+under another name; Local only needs one). **Advanced** holds the [clone URL](#how-a-runner-reaches-github)
+and the start server, test and deploy commands; the commands can be set later in Project settings
+too. The button says what it will do (**Add owner/repo**, **Create repository and add**, **Add
+project**, **Create local project**) and stays disabled until the choice has what it needs.
+
+Once you click it, the dialog shows the steps as they go: **Creating GitHub repository** (for a
+new one), **Adding project**, then the runner **cloning** it, which the hub has it do at once
+(as the Runners page does) so a remote it can't read says so right there. A step that fails
+shows why, with **Try again** (from that step: a repository already created isn't created
+twice) and **Change details**, back to the form as you left it; when only the clone failed, the
+project is there and **Open project** opens it. A clone taking longer than about 45 seconds carries
+on out of sight ("Clone started on …"), and an offline runner clones it when it is back. Done, the
+dialog closes on the new project.
 
 ### The Projects list
 
@@ -265,8 +280,8 @@ projects on a runner's **Projects…** screen (below). From then on:
 projects it is linked to ticked. It edits the same link as each project's **Settings → Runners**:
 a change on one screen shows up on the other right away, in every open browser.
 
-- **For the runner's owner** it lists the repositories of their GitHub login, as **+ New project →
-  Your GitHub repos** does (through the runner's `gh`, a heading per owner, with a filter), then
+- **For the runner's owner** it lists the repositories of their GitHub login, as **+ Add project →
+  From GitHub** does (through the runner's `gh`, a heading per owner, with a filter), then
   the org's other shared projects: those whose remote isn't one of those repositories (a remote
   URL, another account's repository).
 - **Ticking a repository that is already one of the org's shared projects** links the runner to
@@ -430,7 +445,7 @@ instead; private repositories then need a git credential helper on that computer
 `gh auth setup-git`, or a personal access token. The clone's origin is that URL, so fetches and
 pushes use the same protocol. Clones made before keep their origin.
 
-A project can instead have a **clone URL** (New project → Clone URL, or `clone_url` in the API),
+A project can instead have a **clone URL** (Add project → Advanced → Clone URL, or `clone_url` in the API),
 which every runner clones as it is: a remote that isn't GitHub's, or an SSH host alias for a deploy
 key (`git@github-deploy:owner/repo.git`). It is a URL only; credentials in it are refused, and stay
 on the runner.
@@ -441,7 +456,7 @@ Before cloning, the runner checks it can read the remote (`git ls-remote`, never
 An empty repository (just created on GitHub) passes; the runner gives it a first commit on the
 project's default branch, whatever the computer's `init.defaultBranch`, and pushes it.
 
-Creating a GitHub repository (New project → New GitHub repo) still uses the runner's `gh` login,
+Creating a GitHub repository (Add project → New GitHub repository) still uses the runner's `gh` login,
 whichever protocol it clones over.
 
 ### Where a runner keeps a shared project
