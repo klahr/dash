@@ -413,14 +413,19 @@ func (a *app) configureOrgDomain() {
 // isn't set.
 func (a *app) resolveProjectRoot() {
 	o := a.o
-	if o.projectRoot != "" {
-		return
+	if o.projectRoot == "" {
+		o.projectRoot = filepath.Join(o.home, "dash-projects")
+		if v := os.Getenv("DASH_PROJECTS"); v != "" {
+			o.projectRoot = store.CleanPath(v)
+		} else if c, err := tunnel.LoadCredentials(filepath.Join(o.dataDir, "runner.json")); o.runnerMode && err == nil && c.Projects != "" {
+			o.projectRoot = c.Projects // from `dash runner setup --projects`
+		}
 	}
-	o.projectRoot = filepath.Join(o.home, "dash-projects")
-	if v := os.Getenv("DASH_PROJECTS"); v != "" {
-		o.projectRoot = store.CleanPath(v)
-	} else if c, err := tunnel.LoadCredentials(filepath.Join(o.dataDir, "runner.json")); o.runnerMode && err == nil && c.Projects != "" {
-		o.projectRoot = c.Projects // from `dash runner setup --projects`
+	// A new runner lists its projects directory before anything is in it.
+	if o.runnerMode {
+		if err := os.MkdirAll(o.projectRoot, 0o755); err != nil {
+			slog.Warn("create the projects directory", "dir", o.projectRoot, "err", err)
+		}
 	}
 }
 
