@@ -994,91 +994,111 @@
     </form>
   </dialog>
 
-  <!-- The user's personal notification webhooks: every project of their org -->
-  <dialog class="sheet" id="me-webhooks-sheet" aria-labelledby="me-webhooks-title">
-    <form method="dialog">
-      <header class="sheet-head"><h2 id="me-webhooks-title" tabindex="-1" autofocus>My webhooks</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
-      <p class="hint" id="me-webhooks-intro">Your own notification webhooks: Slack, ntfy or your own service hear about every project of this organization, for as long as you are a member. Only you see them. A project's own webhooks are in its settings.</p>
-      <ul class="runner-list" id="me-webhooks"></ul>
-      <div id="me-webhook-secret" hidden></div>
-      <p class="hint" id="me-webhooks-hint" hidden></p>
-      <div><button class="btn small" type="button" id="me-webhook-add" data-icon="plus">Add webhook</button></div>
-    </form>
-  </dialog>
-
-  <!-- Preferences (this browser only) -->
-  <dialog class="sheet small" id="prefs-sheet" aria-labelledby="prefs-title">
-    <form method="dialog" id="prefs-form">
-      <header class="sheet-head"><h2 id="prefs-title" tabindex="-1" autofocus>Preferences</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
-      <label class="toggle"><input type="checkbox" name="vim"><span>Vim keys in the task and file editors</span></label>
-      <label class="toggle"><input type="checkbox" name="invisibles"><span>Show invisible characters (spaces, tabs, trailing whitespace) in the editors</span></label>
-      <label class="toggle"><input type="checkbox" name="notify"><span>Notifications</span></label>
-      <p class="hint" id="push-hint" hidden>Reviews, failures, approvals and failing builds reach this device even with Dash closed. <button type="button" class="link inline" id="push-test">Send a test</button></p>
-      <label class="field"><span>Time format</span>
-        <select name="clock">
-          <option value="">Automatic (from the locale)</option>
-          <option value="24">24-hour (18:00)</option>
-          <option value="12">12-hour (6:00 PM)</option>
-        </select>
-      </label>
-      <p class="hint">These preferences only apply in this browser.</p>
-    </form>
-  </dialog>
-
-  <!-- Connect Claude: guide to adding Dash as a claude.ai custom connector -->
-  <dialog class="sheet" id="connector-sheet" aria-labelledby="connector-title">
-    <form method="dialog">
-      <header class="sheet-head"><h2 id="connector-title" tabindex="-1" autofocus>Connect Claude</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
-      <p class="hint">Add Dash as a connector in claude.ai to use it from the Claude apps on any device. Claude can then list projects, create tasks, read diffs and approve work.</p>
-      <div id="connector-body"></div>
-    </form>
-  </dialog>
-
-  <!-- The user's credentials: API tokens, authorised OAuth clients, runners they registered -->
-  <dialog class="sheet" id="tokens-sheet" aria-labelledby="tokens-title">
-    <form method="dialog">
-      <header class="sheet-head"><h2 id="tokens-title" tabindex="-1" autofocus>Tokens &amp; apps</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
-      <p class="hint">Each of these acts as you, in one organization only. It stops working when you revoke it or leave that organization. Tokens can't manage members, invitations or tokens.</p>
-      <h3 class="org-section">Connected apps</h3>
-      <ul class="runner-list" id="tokens-oauth"></ul>
-      <h3 class="org-section">API tokens</h3>
-      <ul class="runner-list" id="tokens-api"></ul>
-      <div class="org-invite token-new">
-        <input type="text" id="token-name" placeholder="Name, e.g. CI" autocomplete="off" maxlength="100" aria-label="Token name">
-        <select id="token-org" aria-label="Organization"></select>
-        <select id="token-scope" aria-label="Access">
-          <option value="read">Read only</option>
-          <option value="write">Read and write</option>
-        </select>
-        <button class="btn primary" id="token-create" type="button" data-icon="plus">Create</button>
+  <!-- Account: the user's own settings down a rail, like Settings (app/accountsheet.js).
+       Each entry of the account menu opens it at its section. No form around it all:
+       some sections are forms of their own. -->
+  <dialog class="sheet rail-sheet" id="account-sheet" aria-labelledby="account-title">
+    <div class="rail-body">
+      <form method="dialog" class="sheet-head"><h2 id="account-title" tabindex="-1" autofocus>Account</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></form>
+      <div class="rail-layout">
+        <nav class="rail-nav" aria-label="Account sections">
+          <div class="rail-group"><span class="rail-head">You</span>
+            <button type="button" class="rail-item" data-rail="prefs">Preferences</button>
+            <button type="button" class="rail-item" data-rail="twofactor">Two-factor sign-in</button>
+            <button type="button" class="rail-item" data-rail="google">Google account</button>
+          </div>
+          <div class="rail-group"><span class="rail-head">Connections</span>
+            <button type="button" class="rail-item" data-rail="connector">Connect Claude</button>
+            <button type="button" class="rail-item" data-rail="tokens">Tokens &amp; apps</button>
+            <button type="button" class="rail-item" data-rail="webhooks">My webhooks</button>
+          </div>
+          <div class="rail-group"><span class="rail-head">Screens</span>
+            <button type="button" class="rail-item" data-rail="wall">Wall view</button>
+          </div>
+        </nav>
+        <div class="rail-main">
+          <!-- Preferences (this browser only) -->
+          <section class="rail-section" data-section="prefs">
+            <form method="dialog" id="prefs-form">
+              <label class="toggle"><input type="checkbox" name="vim"><span>Vim keys in the task and file editors</span></label>
+              <label class="toggle"><input type="checkbox" name="invisibles"><span>Show invisible characters (spaces, tabs, trailing whitespace) in the editors</span></label>
+              <label class="toggle"><input type="checkbox" name="notify"><span>Notifications</span></label>
+              <p class="hint" id="push-hint" hidden>Reviews, failures, approvals and failing builds reach this device even with Dash closed. <button type="button" class="link inline" id="push-test">Send a test</button></p>
+              <label class="field"><span>Time format</span>
+                <select name="clock">
+                  <option value="">Automatic (from the locale)</option>
+                  <option value="24">24-hour (18:00)</option>
+                  <option value="12">12-hour (6:00 PM)</option>
+                </select>
+              </label>
+              <p class="hint">These preferences only apply in this browser.</p>
+            </form>
+          </section>
+          <!-- Two-factor sign-in: set up, new recovery codes, turn off -->
+          <section class="rail-section" data-section="twofactor">
+            <div class="twofactor-body" id="twofactor-body"></div>
+          </section>
+          <!-- The Google account linked to this one: link, unlink (hidden when this Dash has no Google sign-in) -->
+          <section class="rail-section" data-section="google">
+            <div class="twofactor-body" id="google-body"></div>
+          </section>
+          <!-- Connect Claude: guide to adding Dash as a claude.ai custom connector -->
+          <section class="rail-section" data-section="connector">
+            <p class="hint">Add Dash as a connector in claude.ai to use it from the Claude apps on any device. Claude can then list projects, create tasks, read diffs and approve work.</p>
+            <div id="connector-body"></div>
+          </section>
+          <!-- The user's credentials: API tokens, authorised OAuth clients, runners they registered -->
+          <section class="rail-section" data-section="tokens">
+            <p class="hint">Each of these acts as you, in one organization only. It stops working when you revoke it or leave that organization. Tokens can't manage members, invitations or tokens.</p>
+            <h3 class="org-section">Connected apps</h3>
+            <ul class="runner-list" id="tokens-oauth"></ul>
+            <h3 class="org-section">API tokens</h3>
+            <ul class="runner-list" id="tokens-api"></ul>
+            <div class="org-invite token-new">
+              <input type="text" id="token-name" placeholder="Name, e.g. CI" autocomplete="off" maxlength="100" aria-label="Token name">
+              <select id="token-org" aria-label="Organization"></select>
+              <select id="token-scope" aria-label="Access">
+                <option value="read">Read only</option>
+                <option value="write">Read and write</option>
+              </select>
+              <button class="btn primary" id="token-create" type="button" data-icon="plus">Create</button>
+            </div>
+            <div id="token-secret" hidden></div>
+            <h3 class="org-section" id="tokens-runner-head">Runners you registered</h3>
+            <ul class="runner-list" id="tokens-runner"></ul>
+          </section>
+          <!-- The user's personal notification webhooks: every project of their org -->
+          <section class="rail-section" data-section="webhooks">
+            <p class="hint" id="me-webhooks-intro">Your own notification webhooks: Slack, ntfy or your own service hear about every project of this organization, for as long as you are a member. Only you see them. A project's own webhooks are in its settings.</p>
+            <ul class="runner-list" id="me-webhooks"></ul>
+            <div id="me-webhook-secret" hidden></div>
+            <p class="hint" id="me-webhooks-hint" hidden></p>
+            <div><button class="btn small" type="button" id="me-webhook-add" data-icon="plus">Add webhook</button></div>
+          </section>
+          <!-- The wall view (/wall): its options, and the links org admins make for TVs (hidden without an organization) -->
+          <section class="rail-section" data-section="wall">
+            <form method="dialog" id="wall-form">
+              <p class="hint">A read-only, full-screen dashboard of <span id="wall-org">the organization</span>'s work for a TV in the office. It refreshes by itself every few seconds.</p>
+              <h3 class="org-section">Show</h3>
+              <label class="field"><span>Projects</span>
+                <select name="project" id="wall-project"><option value="">All projects</option></select>
+              </label>
+              <label class="toggle"><input type="checkbox" name="privacy"><span>Privacy: hide task titles, prompts, issue titles, activity and costs (for screens visitors walk past)</span></label>
+              <h3 class="org-section">Open it here</h3>
+              <div id="wall-link"></div>
+              <h3 class="org-section">Links for TVs</h3>
+              <p class="hint" id="wall-tokens-hint">A TV shouldn't keep anyone's session. A TV link opens the wall of this organization, with the options above, without signing in, and nothing else. Anyone with the link sees the wall: treat it like a password.</p>
+              <ul class="runner-list" id="wall-tokens"></ul>
+              <div class="org-invite token-new" id="wall-token-new">
+                <input type="text" id="wall-token-name" placeholder="Name, e.g. Office TV" autocomplete="off" maxlength="100" aria-label="TV link name">
+                <button class="btn primary" id="wall-token-create" type="button" data-icon="plus">Create link</button>
+              </div>
+              <div id="wall-token-secret" hidden></div>
+            </form>
+          </section>
+        </div>
       </div>
-      <div id="token-secret" hidden></div>
-      <h3 class="org-section" id="tokens-runner-head">Runners you registered</h3>
-      <ul class="runner-list" id="tokens-runner"></ul>
-    </form>
-  </dialog>
-
-  <!-- The wall view (/wall): its options, and the links org admins make for TVs -->
-  <dialog class="sheet" id="wall-sheet" aria-labelledby="wall-title">
-    <form method="dialog" id="wall-form">
-      <header class="sheet-head"><h2 id="wall-title" tabindex="-1" autofocus>Wall view</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
-      <p class="hint">A read-only, full-screen dashboard of the organization's work for a TV in the office. It refreshes by itself every few seconds.</p>
-      <h3 class="org-section">Show</h3>
-      <label class="field"><span>Projects</span>
-        <select name="project" id="wall-project"><option value="">All projects</option></select>
-      </label>
-      <label class="toggle"><input type="checkbox" name="privacy"><span>Privacy: hide task titles, prompts, issue titles, activity and costs (for screens visitors walk past)</span></label>
-      <h3 class="org-section">Open it here</h3>
-      <div id="wall-link"></div>
-      <h3 class="org-section">Links for TVs</h3>
-      <p class="hint" id="wall-tokens-hint">A TV shouldn't keep anyone's session. A TV link opens the wall of this organization, with the options above, without signing in, and nothing else. Anyone with the link sees the wall: treat it like a password.</p>
-      <ul class="runner-list" id="wall-tokens"></ul>
-      <div class="org-invite token-new" id="wall-token-new">
-        <input type="text" id="wall-token-name" placeholder="Name, e.g. Office TV" autocomplete="off" maxlength="100" aria-label="TV link name">
-        <button class="btn primary" id="wall-token-create" type="button" data-icon="plus">Create link</button>
-      </div>
-      <div id="wall-token-secret" hidden></div>
-    </form>
+    </div>
   </dialog>
 
   <!-- The active organization: members, roles and invitations -->
@@ -1175,22 +1195,6 @@
         </div>
       </div>
     </form>
-  </dialog>
-
-  <!-- Two-factor sign-in: set up, new recovery codes, turn off -->
-  <dialog class="sheet" id="twofactor-sheet" aria-labelledby="twofactor-title">
-    <form method="dialog">
-      <header class="sheet-head"><h2 id="twofactor-title" tabindex="-1" autofocus>Two-factor sign-in</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
-    </form>
-    <div class="twofactor-body" id="twofactor-body"></div>
-  </dialog>
-
-  <!-- The Google account linked to this one: link, unlink -->
-  <dialog class="sheet" id="google-sheet" aria-labelledby="google-title">
-    <form method="dialog">
-      <header class="sheet-head"><h2 id="google-title" tabindex="-1" autofocus>Google account</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></header>
-    </form>
-    <div class="twofactor-body" id="google-body"></div>
   </dialog>
 
   <!-- Re-enter the password before a sensitive change -->

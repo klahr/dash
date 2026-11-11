@@ -6,6 +6,7 @@ import { toggleInvisibles, toggleVim } from "./diffedit.js";
 import { openConnector } from "./wallview.js";
 import { notifyOn, testPush, toggleNotifications } from "./notifications.js";
 import { renderUsage } from "./usage.js";
+import { accountSection, openAccount } from "./accountsheet.js";
 
 // ------------------------------------------------------------------ preferences (this browser only)
 export function syncPrefs() {
@@ -16,10 +17,8 @@ export function syncPrefs() {
   $("#push-hint").hidden = !(notifyOn() && state.pushOn);
   f.clock.value = clockPref();
 }
-export function openPrefs() {
-  syncPrefs();
-  $("#prefs-sheet").showModal();
-}
+export function openPrefs() { return openAccount("prefs"); }
+accountSection("prefs", syncPrefs);
 $("#prefs-form").vim.addEventListener("change", (e) => { if (e.target.checked !== vimOn()) toggleVim(); });
 $("#prefs-form").invisibles.addEventListener("change", (e) => { if (e.target.checked !== invisiblesOn()) toggleInvisibles(); });
 $("#prefs-form").clock.addEventListener("change", (e) => {

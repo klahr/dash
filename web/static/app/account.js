@@ -5,6 +5,7 @@ import { state } from "./state.js";
 import { copyBlock } from "./prefs.js";
 import { loadBilling, offerSubscription, renderOrgBilling } from "./billing.js";
 import { pushUnsubscribe } from "./notifications.js";
+import { accountSection, openAccount } from "./accountsheet.js";
 
 // ------------------------------------------------------------------ account & organizations
 export async function loadMe() {
@@ -31,6 +32,9 @@ export async function loadMe() {
   $("#org-open").hidden = !me.org;
   $("#wall-open").hidden = !me.org;
   $("#google-open").hidden = !me.google_available;
+  // Their sections in the Account sheet drop out of its rail with them.
+  $("#wall-form").hidden = !me.org;
+  $("#google-body").hidden = !me.google_available;
   // The queue pause is the whole Dash's, for platform admins.
   const admin = !!me.user?.is_platform_admin;
   $("#queue-toggle").hidden = !admin;
@@ -301,11 +305,8 @@ async function renderPlatformSSO(el) {
 }
 
 // ---- the Google account linked to this one
-export async function openGoogle() {
-  await renderGoogle();
-  const d = $("#google-sheet");
-  if (!d.open) d.showModal();
-}
+export function openGoogle() { return openAccount("google"); }
+accountSection("google", () => renderGoogle());
 
 async function renderGoogle() {
   const body = $("#google-body");
@@ -358,11 +359,8 @@ export async function setRequire2FA() {
 }
 
 // ---- two-factor sign-in (the shared steps are in twofactor.js)
-export async function openTwoFactor() {
-  await renderTwoFactor();
-  const d = $("#twofactor-sheet");
-  if (!d.open) d.showModal();
-}
+export function openTwoFactor() { return openAccount("twofactor"); }
+accountSection("twofactor", () => renderTwoFactor());
 
 async function renderTwoFactor() {
   const body = $("#twofactor-body");
