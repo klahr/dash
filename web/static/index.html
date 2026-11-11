@@ -346,6 +346,10 @@
             <h2 class="cl-title">TODO.md</h2>
             <span class="cl-state" id="cl-state" aria-live="polite"></span>
           </header>
+          <div class="cl-progress" id="cl-progress" hidden>
+            <div class="cl-bar" aria-hidden="true"><span id="cl-bar-fill"></span></div>
+            <span class="cl-count" id="cl-count"></span>
+          </div>
           <div class="cl-body" id="cl-body"></div>
           <form class="cl-add" id="cl-add" hidden>
             <input id="cl-add-text" placeholder="Add an item" autocomplete="off" aria-label="New item">
@@ -1000,10 +1004,15 @@
   <dialog class="sheet rail-sheet" id="account-sheet" aria-labelledby="account-title">
     <div class="rail-body">
       <form method="dialog" class="sheet-head"><h2 id="account-title" tabindex="-1" autofocus>Account</h2><button class="icon-btn" value="cancel" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></form>
+      <form method="dialog" id="prefs-form" hidden></form>
       <div class="rail-layout">
         <nav class="rail-nav" aria-label="Account sections">
+          <div class="rail-group"><span class="rail-head">This browser</span>
+            <button type="button" class="rail-item" data-rail="editors">Editors</button>
+            <button type="button" class="rail-item" data-rail="notify">Notifications</button>
+            <button type="button" class="rail-item" data-rail="clock">Time</button>
+          </div>
           <div class="rail-group"><span class="rail-head">You</span>
-            <button type="button" class="rail-item" data-rail="prefs">Preferences</button>
             <button type="button" class="rail-item" data-rail="twofactor">Two-factor sign-in</button>
             <button type="button" class="rail-item" data-rail="google">Google account</button>
           </div>
@@ -1017,22 +1026,25 @@
           </div>
         </nav>
         <div class="rail-main">
-          <!-- Preferences (this browser only) -->
-          <section class="rail-section" data-section="prefs">
-            <form method="dialog" id="prefs-form">
-              <label class="toggle"><input type="checkbox" name="vim"><span>Vim keys in the task and file editors</span></label>
-              <label class="toggle"><input type="checkbox" name="invisibles"><span>Show invisible characters (spaces, tabs, trailing whitespace) in the editors</span></label>
-              <label class="toggle"><input type="checkbox" name="notify"><span>Notifications</span></label>
-              <p class="hint" id="push-hint" hidden>Reviews, failures, approvals and failing builds reach this device even with Dash closed. <button type="button" class="link inline" id="push-test">Send a test</button></p>
-              <label class="field"><span>Time format</span>
-                <select name="clock">
-                  <option value="">Automatic (from the locale)</option>
-                  <option value="24">24-hour (18:00)</option>
-                  <option value="12">12-hour (6:00 PM)</option>
-                </select>
-              </label>
-              <p class="hint">These preferences only apply in this browser.</p>
-            </form>
+          <!-- Preferences (this browser only), a section per group. Their controls belong to
+               #prefs-form (the form attribute), which app/prefs.js reads. -->
+          <section class="rail-section" data-section="editors">
+            <label class="toggle"><input type="checkbox" name="vim" form="prefs-form"><span>Vim keys in the task and file editors</span></label>
+            <label class="toggle"><input type="checkbox" name="invisibles" form="prefs-form"><span>Show invisible characters (spaces, tabs, trailing whitespace) in the editors</span></label>
+            <p class="hint">Preferences only apply in this browser.</p>
+          </section>
+          <section class="rail-section" data-section="notify">
+            <label class="toggle"><input type="checkbox" name="notify" form="prefs-form"><span>Notifications</span></label>
+            <p class="hint" id="push-hint" hidden>Reviews, failures, approvals and failing builds reach this device even with Dash closed. <button type="button" class="link inline" id="push-test">Send a test</button></p>
+          </section>
+          <section class="rail-section" data-section="clock">
+            <label class="field"><span>Time format</span>
+              <select name="clock" form="prefs-form">
+                <option value="">Automatic (from the locale)</option>
+                <option value="24">24-hour (18:00)</option>
+                <option value="12">12-hour (6:00 PM)</option>
+              </select>
+            </label>
           </section>
           <!-- Two-factor sign-in: set up, new recovery codes, turn off -->
           <section class="rail-section" data-section="twofactor">

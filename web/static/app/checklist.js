@@ -181,6 +181,12 @@ function renderChecklist() {
   else { $("#cl-empty-title").textContent = "No TODO.md"; $("#cl-empty-text").textContent = "This project has no TODO.md at the root of its repository. Add a first item to create one."; $("#cl-create").hidden = false; }
   $("#cl-add").hidden = !exists;
   renderChecklistState();
+  const all = sections.flatMap((s) => s.entries.filter((e) => e.item).map((e) => e.item));
+  const done = all.filter((it) => it.checked).length;
+  $("#cl-progress").hidden = !all.length;
+  $("#cl-progress").classList.toggle("complete", !!all.length && done === all.length);
+  $("#cl-bar-fill").style.width = `${all.length ? (done / all.length) * 100 : 0}%`;
+  $("#cl-count").textContent = done === all.length ? `All ${all.length} done` : `${done} of ${all.length} done`;
   const sel = $("#cl-add-section"), keep = sel.value;
   sel.replaceChildren(...sections.filter((s) => s.title).map((s) => h("option", { value: s.title }, s.title)));
   sel.hidden = !sel.options.length;
@@ -194,7 +200,9 @@ function renderChecklist() {
       if (!list) { list = h("ul", { class: "cl-list" }); kids.push(list); }
       list.append(clItem(e.item));
     }
-    return h("section", { class: `cl-section lvl-${s.level}` }, s.title ? h("h3", {}, s.title) : null, ...kids);
+    const items = s.entries.filter((e) => e.item), n = items.filter((e) => e.item.checked).length;
+    const count = items.length ? h("span", { class: `cl-section-count${n === items.length ? " complete" : ""}` }, `${n}/${items.length}`) : null;
+    return h("section", { class: `cl-section lvl-${s.level}` }, s.title ? h("h3", {}, h("span", {}, s.title), count) : null, ...kids);
   }));
   if (cl.editing) body.querySelector(".cl-edit textarea")?.focus();
 }

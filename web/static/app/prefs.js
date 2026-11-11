@@ -17,8 +17,9 @@ export function syncPrefs() {
   $("#push-hint").hidden = !(notifyOn() && state.pushOn);
   f.clock.value = clockPref();
 }
-export function openPrefs() { return openAccount("prefs"); }
-accountSection("prefs", syncPrefs);
+// The preferences are the Account sheet's first sections (Editors, Notifications, Time).
+export function openPrefs() { return openAccount("editors"); }
+for (const key of ["editors", "notify", "clock"]) accountSection(key, syncPrefs);
 $("#prefs-form").vim.addEventListener("change", (e) => { if (e.target.checked !== vimOn()) toggleVim(); });
 $("#prefs-form").invisibles.addEventListener("change", (e) => { if (e.target.checked !== invisiblesOn()) toggleInvisibles(); });
 $("#prefs-form").clock.addEventListener("change", (e) => {
