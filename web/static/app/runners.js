@@ -10,6 +10,7 @@ import { shortLabel } from "./usage.js";
 import { openSettings } from "./settings.js";
 import { ensureShell, forgetShellRefusal } from "./terminal.js";
 import { loadTry } from "./try.js";
+import { isRelease, runnerOutdated as outdatedFor } from "../runnerversion.js";
 
 // ------------------------------------------------------------------ runners
 // The one-line installer and the version runners should run (from /api/runners).
@@ -24,7 +25,6 @@ const shq = (s) => {
   return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replaceAll("'", `'\\''`)}'`;
 };
 const installCmd = (args = "") => `curl -fsSL ${runnerInfo.hub}/runner/install.sh | sh${args ? ` -s -- ${args}` : ""}`;
-const isRelease = (v) => /^v\d+\.\d+\.\d+/.test(v || "");
 
 // Computers that run the org's tasks (`dash runner`), each with its owner's
 // Claude subscription. They connect out to this dashboard: no inbound
@@ -82,7 +82,7 @@ export function showRunnerNeeded(el, p) {
   el.textContent = why;
 }
 const runnerLimit = (r) => r.parallel || r.reported?.parallel || 1;
-const runnerOutdated = (r) => isRelease(runnerInfo.version) && !!r.version && r.version !== runnerInfo.version;
+const runnerOutdated = (r) => outdatedFor(runnerInfo.version, r.version);
 // runnerClaudeWarnings is what runner r found changed about its Claude Code CLI.
 const runnerClaudeWarnings = (r) => r.reported?.claude?.warnings || [];
 

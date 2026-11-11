@@ -14,7 +14,7 @@ func TestJS(t *testing.T) {
 	if err != nil {
 		t.Skip("node not installed")
 	}
-	out, err := exec.Command(node, "--test", "groups_test.mjs", "graphlayout_test.mjs", "commitnav_test.mjs", "activityclear_test.mjs").CombinedOutput()
+	out, err := exec.Command(node, "--test", "groups_test.mjs", "graphlayout_test.mjs", "commitnav_test.mjs", "activityclear_test.mjs", "runnerversion_test.mjs").CombinedOutput()
 	if err != nil {
 		t.Fatalf("node --test: %v\n%s", err, out)
 	}
