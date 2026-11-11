@@ -629,6 +629,15 @@ func TestGoogleExistingEmail(t *testing.T) {
 	if _, err := e.a.acc.IdentityBySubject("google", "g-bob"); err == nil {
 		t.Fatal("linked without the password")
 	}
+	// The token alone, handed to bob to use in his own browser, doesn't
+	// link: it's bound to the browser that completed the Google flow.
+	victim := newGBrowser(t, e.h)
+	if w := victim.postJSON("https://"+gHost+"/api/login", fmt.Sprintf(`{"username":"bob","password":"password1","link":%q}`, m[1])); strings.Contains(w.Body.String(), `"google_linked":true`) {
+		t.Fatal("linked from another browser")
+	}
+	if _, err := e.a.acc.IdentityBySubject("google", "g-bob"); err == nil {
+		t.Fatal("linked from another browser")
+	}
 	// Someone else's password doesn't redeem it.
 	e.register("mallory", "mallory@example.org", e.acme.ID, store.RoleMember)
 	if w := b.postJSON("https://"+gHost+"/api/login", fmt.Sprintf(`{"username":"mallory","password":"password1","link":%q}`, m[1])); strings.Contains(w.Body.String(), `"google_linked":true`) {

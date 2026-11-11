@@ -51,6 +51,12 @@ const (
 	googleCookiePrefix = "dash_google_" // + the flow's id: the browser that started it
 	googleCookiePath   = "/auth/google/"
 
+	// linkCookiePrefix + the pending link's id names the cookie that binds a
+	// pending link to the browser that completed the Google flow. Its path
+	// covers /api/login and /api/login/totp, where the link is redeemed.
+	linkCookiePrefix = "dash_glink_"
+	linkCookiePath   = "/api/login"
+
 	// reauthWindow is how recent a Google sign-in confirms what a password
 	// would, for an account without one.
 	reauthWindow = 10 * time.Minute
@@ -548,7 +554,13 @@ func (a *Auth) googleUser(w http.ResponseWriter, r *http.Request, f *oidcFlow, c
 			return store.User{}, nil, false, &flowError{Code: "failed", Err: err}
 		}
 		if has || !a.vouches(existing.ID, cl.HD) {
-			tok := a.newPendingLink(existing.ID, ident, f)
+			tok, nonce := a.newPendingLink(existing.ID, ident, f)
+			// Only this browser may redeem it: the token alone, handed to
+			// the account's owner, mustn't link someone else's Google.
+			http.SetCookie(w, &http.Cookie{
+				Name: linkCookie(tok), Value: nonce, Path: linkCookiePath, MaxAge: int(flowTTL.Seconds()),
+				HttpOnly: true, Secure: a.secureCookie(r), SameSite: http.SameSiteLaxMode,
+			})
 			a.audit(r, store.AuthEvent{OrgID: f.Org, UserID: existing.ID, Kind: "google.link_pending", Detail: identityDetail(cl)})
 			a.page(w, http.StatusOK, hostPageData{
 				Title: "Link your Google account",
@@ -695,13 +707,20 @@ func identityDetail(cl oidcClaims) string {
 // pendingLink is a Google identity waiting for its account's password.
 type pendingLink struct {
 	user    int64
+	binding string // sessionKey of the nonce in the originating browser's cookie
 	ident   store.Identity
 	org     int64
 	expires time.Time
 }
 
-func (a *Auth) newPendingLink(uid int64, ident store.Identity, f *oidcFlow) string {
-	tok := randomToken()
+// linkCookie is the name of the cookie binding the pending link tok to the
+// browser that completed its Google flow.
+func linkCookie(tok string) string { return linkCookiePrefix + sessionKey(tok)[:16] }
+
+// newPendingLink returns the link's token and the nonce the originating
+// browser must present (in its linkCookie) to redeem it.
+func (a *Auth) newPendingLink(uid int64, ident store.Identity, f *oidcFlow) (tok, nonce string) {
+	tok, nonce = randomToken(), randomToken()
 	now := a.now()
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -710,24 +729,33 @@ func (a *Auth) newPendingLink(uid int64, ident store.Identity, f *oidcFlow) stri
 			delete(a.links, k)
 		}
 	}
-	a.links[sessionKey(tok)] = &pendingLink{user: uid, ident: ident, org: f.Org, expires: now.Add(flowTTL)}
-	return tok
+	a.links[sessionKey(tok)] = &pendingLink{user: uid, binding: sessionKey(nonce), ident: ident, org: f.Org, expires: now.Add(flowTTL)}
+	return tok, nonce
 }
 
 // redeemLink links the identity waiting under tok to uid, who just signed
-// in with their password (and second factor). Another account's or an
-// expired link does nothing.
+// in with their password (and second factor), in the browser that completed
+// the Google flow. Another account's, another browser's or an expired link
+// does nothing.
 func (a *Auth) redeemLink(r *http.Request, tok string, uid int64) bool {
 	if tok == "" {
 		return false
 	}
+	c, err := r.Cookie(linkCookie(tok))
+	if err != nil || c.Value == "" {
+		return false
+	}
+	bound := sessionKey(c.Value)
 	a.mu.Lock()
 	l, ok := a.links[sessionKey(tok)]
-	if ok && l.user == uid {
+	if ok && (l.user != uid || !constantEqual(l.binding, bound)) {
+		ok = false
+	}
+	if ok {
 		delete(a.links, sessionKey(tok))
 	}
 	a.mu.Unlock()
-	if !ok || l.user != uid || a.now().After(l.expires) {
+	if !ok || a.now().After(l.expires) {
 		return false
 	}
 	l.ident.UserID = uid
