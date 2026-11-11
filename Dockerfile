@@ -11,7 +11,7 @@
 # (`dash runner`, installed natively on each computer).
 
 # Keep in step with the go line in go.mod (CI checks).
-ARG GO_VERSION=1.27.3
+ARG GO_VERSION=1.27.4
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
 WORKDIR /src

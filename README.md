@@ -5,7 +5,7 @@ merge them one at a time.
 
 ## Requirements
 
-- **Go 1.27.3 or newer** (see [`go.mod`](go.mod)), only to build from source
+- **Go 1.27.4 or newer** (see [`go.mod`](go.mod)), only to build from source
 - **At least one runner.** The hub (`dash`, the dashboard) runs nothing on its own computer: it
   signs people in and keeps the board, and every task, scan, chat, git command and project
   command runs on a runner (**`dash runner`**), with its owner's logins. The hub needs **no
