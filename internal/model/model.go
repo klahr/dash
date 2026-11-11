@@ -114,9 +114,9 @@ type Project struct {
 	// conflicts back to Claude on its own before asking a human.
 	MaxAutoFixes int `json:"max_auto_fixes"`
 	// MergeMode is how finished work lands: "pr" (push the branch and open
-	// a GitHub pull request as soon as Claude finishes; it is reviewed on
-	// GitHub and merged once approved there and its checks pass, see
-	// MergeGreenPRs; Dash marks the todo merged when the PR is) or "local"
+	// a GitHub pull request as soon as Claude finishes; it is reviewed and
+	// merged by a person on GitHub, never by Dash; Dash marks the todo
+	// merged when the PR is) or "local"
 	// (approved in Dash, then squashed
 	// onto the default branch, then push if AutoPush; on runners always
 	// pushed, see LandsOnOrigin). Unless the user chose (MergeModeSet), it
@@ -125,11 +125,6 @@ type Project struct {
 	// MergeModeSet records that a user changed MergeMode themselves, so
 	// the default (see store.DefaultMergeModes) leaves their choice alone.
 	MergeModeSet bool `json:"merge_mode_set,omitempty"`
-	// MergeGreenPRs squash-merges a task's pull request once GitHub finds
-	// it mergeable, its checks pass and it has an approving review on
-	// GitHub (or the project approves automatically, AutoApprove); nil
-	// means on. Off, it waits for someone to merge it on GitHub.
-	MergeGreenPRs *bool `json:"merge_green_prs,omitempty"`
 	// Limits for one Claude run; 0 means the default. Time spent waiting
 	// for a human to answer a permission prompt doesn't count.
 	MaxRunMinutes int `json:"max_run_minutes,omitempty"`
@@ -230,10 +225,6 @@ const (
 
 // UsesPR reports whether approved todos are landed through GitHub pull requests.
 func (p Project) UsesPR() bool { return p.MergeMode == MergePR }
-
-// MergesGreenPRs reports whether Dash merges a task's pull request itself
-// once its checks pass.
-func (p Project) MergesGreenPRs() bool { return p.MergeGreenPRs == nil || *p.MergeGreenPRs }
 
 // DefaultMergeMode is how p lands work when its user didn't choose: through
 // pull requests when its remote is on GitHub and gh can open them, else

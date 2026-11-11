@@ -185,7 +185,7 @@ func TestLinkingProjectsToRunners(t *testing.T) {
 	w := send(f.c, "PATCH", path, `{"runners":["`+f.ids["c-box"]+`"]}`)
 	var p model.Project
 	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &p) != nil || len(p.Runners) != 1 || !p.UsesPR() || p.AutoPush ||
-		p.LandsOnOrigin() || p.MergeModeSet || !p.MergesGreenPRs() {
+		p.LandsOnOrigin() || p.MergeModeSet {
 		t.Fatalf("member linking their runner: %d %s", w.Code, w.Body)
 	}
 	// The admin adds u's; c may keep the list as it is (with u-box in it).
@@ -196,9 +196,9 @@ func TestLinkingProjectsToRunners(t *testing.T) {
 		t.Errorf("member saving settings with runners linked: %d %s", w.Code, w.Body)
 	}
 	// Merging is an explicit choice, kept by upgrades; and pull requests
-	// can come back.
+	// can come back. A setting older dashboards still send is ignored.
 	w = send(f.c, "PATCH", path, `{"merge_mode":"local","merge_green_prs":false}`)
-	if json.Unmarshal(w.Body.Bytes(), &p) != nil || w.Code != http.StatusOK || p.UsesPR() || !p.MergeModeSet || !p.LandsOnOrigin() || p.MergesGreenPRs() {
+	if json.Unmarshal(w.Body.Bytes(), &p) != nil || w.Code != http.StatusOK || p.UsesPR() || !p.MergeModeSet || !p.LandsOnOrigin() {
 		t.Errorf("choosing to merge with runners linked: %d %s", w.Code, w.Body)
 	}
 	if names, _ := raw(f.s).DefaultMergeModes(true); slices.Contains(names, p.Name) {
@@ -286,30 +286,28 @@ func TestRunnerOnlyTakesWorkForLinkedProjects(t *testing.T) {
 	// runner without gh merges when pull requests are only the default.
 	gh := filepath.Join(t.TempDir(), "gh")
 	testbin.Write(t, gh, "#!/bin/sh\nexit 1\n")
-	off := false
 	for _, c := range []struct {
 		mode   string
 		chosen bool
 		hasGh  bool
-		green  *bool
 		wantPR bool
 	}{
-		{model.MergePR, false, true, nil, true},
-		{model.MergePR, false, false, nil, false},
-		{model.MergePR, true, false, &off, true},
-		{"", false, true, nil, false},
+		{model.MergePR, false, true, true},
+		{model.MergePR, false, false, false},
+		{model.MergePR, true, false, true},
+		{"", false, true, false},
 	} {
 		s.Git.GhBin = gh
 		if !c.hasGh {
 			s.Git.GhBin = filepath.Join(t.TempDir(), "no-gh")
 		}
 		body, _ := json.Marshal(dispatch.Link{Name: "Shared App", RemoteURL: remote, DefaultBranch: "main", OrgID: 7,
-			MergeMode: c.mode, MergeModeSet: c.chosen, MergeGreenPRs: c.green})
+			MergeMode: c.mode, MergeModeSet: c.chosen})
 		if w := send(h, "PUT", "/api/hub/projects/hub-p1", string(body)); w.Code != http.StatusOK {
 			t.Fatalf("linking with %+v: %d %s", c, w.Code, w.Body)
 		}
-		if got, _ := raw(s).GetProject(p.ID); got.UsesPR() != c.wantPR || got.MergesGreenPRs() != (c.green == nil) {
-			t.Errorf("hub's link %+v, the clone's merge mode %q, merging green PRs %v", c, got.MergeMode, got.MergesGreenPRs())
+		if got, _ := raw(s).GetProject(p.ID); got.UsesPR() != c.wantPR {
+			t.Errorf("hub's link %+v, the clone's merge mode %q", c, got.MergeMode)
 		}
 	}
 

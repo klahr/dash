@@ -45,13 +45,12 @@ In pull request mode the pull request is where a task is reviewed:
    aren't sent, and neither are comments in the pull request's conversation tab: to ask Claude
    for something, leave it in a review (a single comment on a line is a review too). You can
    still **Rework** from Dash as well; that also ends up on the same pull request.
-5. **Merging.** With **Merge pull requests when checks pass** (on by default), Dash squash-merges
-   the pull request once GitHub finds it mergeable, its checks pass and it has an **approving
-   review on GitHub** (from a person: an app's approval doesn't count; when the branch requires
-   reviews, GitHub's own verdict decides). A request for changes holds it until that reviewer
-   approves. Turn it off to merge on GitHub yourself. Either way, the task is marked merged
-   when the pull request is, and its branch is deleted. If GitHub refuses Dash's merge (a second
-   required review, say), the pull request stays open for you to merge there.
+5. **Merging.** Dash never merges a pull request itself: a person always merges it on GitHub.
+   Once its checks pass and it has an **approving review on GitHub** (from a person: an app's
+   approval doesn't count; when the branch requires reviews, GitHub's own verdict decides), the
+   card reads *Approved; waiting for you to merge on GitHub* and the wall lists it under "Needs a
+   human". A request for changes holds it until that reviewer approves. The task is marked merged
+   when the pull request is, and its branch is deleted.
 6. **Rejecting.** Closing the pull request on GitHub without merging rejects the task: it moves
    to *Failed*, saying so; **Rework** it to have Claude try again in a new pull request, or
    delete it. The other way round, rejecting the task in Dash, by deleting it or moving it back
@@ -59,13 +58,14 @@ In pull request mode the pull request is where a task is reviewed:
    and deletes its branch there.
 
 GitHub doesn't let you approve your own pull requests, and Dash opens them with the `gh` account
-of the computer running the task. If that is your account and nobody else reviews, either merge
-on GitHub yourself, or turn on **Approve tasks automatically** (below).
+of the computer running the task. If that is your account and nobody else reviews, merge it on
+GitHub yourself once its checks pass (turn on **Approve tasks automatically**, below, to have Dash
+treat it as approved: it then waits for your merge rather than for a review).
 
 Tasks that were already in Review without a pull request when Dash started opening them on
 finishing keep working: **Approve** opens their pull request, which is then reviewed on GitHub
 like the others. Pull requests opened by an approval in Dash before then are followed the same
-way: they now merge once approved on GitHub too.
+way: they move back to Review and wait for a person to merge them on GitHub too.
 
 ## Approve tasks automatically
 
@@ -74,10 +74,10 @@ With **Approve tasks automatically**:
 - **Merge it** mode: finished tasks whose tests pass go straight to the merge queue and the
   Review column is hidden; tasks with failing tests still wait there for you.
 - **Pull request** mode: pull requests don't wait for an approving review. Dash marks a task's
-  pull request ready for review once its checks pass, and (with **Merge pull requests when checks
-  pass** on) merges it then, as it did before reviews moved to GitHub. A review asking for
-  changes submitted before that still goes back to Claude and holds the merge until the reviewer
-  approves. The Review column shows the tasks whose pull requests are open.
+  pull request ready for review once its checks pass, and it then waits for a person to merge it
+  on GitHub: Dash never merges it. A review asking for changes still goes back to Claude and
+  holds it until the reviewer approves. The Review column shows the tasks whose pull requests are
+  open.
 
 Merged tasks can be reverted with one click (`u`).
 
