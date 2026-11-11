@@ -367,6 +367,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 
 /* ---------- chat ---------- */
 .chat-log { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 16px; display: flex; flex-direction: column; gap: 18px; }
+.chat-log > * { flex-shrink: 0; } /* overflow:hidden children (.msg.shell) would otherwise shrink to 0 in long chats */
 .chat-empty { margin: auto; padding: 24px; }
 .msg { max-width: 72ch; overflow-wrap: anywhere; }
 .msg.user { align-self: flex-end; background: var(--raised); padding: 10px 14px; border-radius: var(--r-l) var(--r-l) 4px var(--r-l); white-space: pre-wrap; }
