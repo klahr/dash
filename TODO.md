@@ -11,7 +11,7 @@ Most important first within each section.
 
 ## Features
 
-- [ ] Todos that wait for another todo to merge.
+- [x] Todos that wait for another todo to merge.
 - [ ] Run the same task twice and compare the attempts.
 
 ## Running it
