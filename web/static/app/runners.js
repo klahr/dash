@@ -310,7 +310,7 @@ function paintOverview(list) {
       ico("chevron-right")));
   };
   const group = (title, rs, showOwner) => rs.length ? [
-    title ? h("h3", { class: "org-section" }, title) : null,
+    title ? h("h3", { class: "section-head" }, title) : null,
     h("ul", { class: "runner-rows" }, ...rs.map((r) => row(r, showOwner))),
   ] : [];
   box.replaceChildren(...[
@@ -349,9 +349,9 @@ function paintRunner(r) {
     claudeWarns.length ? h("div", { class: "runner-update runner-claude-warn", role: "status" },
       h("p", { class: "hint warn" }, `Claude Code${claude.version ? ` ${claude.version}` : ""} on ${r.name} doesn't look the way Dash expects. Tasks may fail or miss usage limits; updating Dash may help:`),
       h("ul", {}, ...claudeWarns.map((w) => h("li", {}, w)))) : null,
-    usage ? h("h4", { class: "runner-sub" }, "Claude usage") : null,
+    usage ? h("h4", { class: "section-head" }, "Claude usage") : null,
     usage,
-    h("h4", { class: "runner-sub" }, "Projects"),
+    h("h4", { class: "section-head" }, "Projects"),
     h("div", { class: "runner-projects" },
       projects.length
         ? projects.map((p) => h("button", { class: "runner-project", type: "button", title: `Open ${p.name}`,
@@ -377,7 +377,7 @@ function paintRunner(r) {
   const setting = (title, hint, control, cls = "") => h("div", { class: `runner-setting ${cls}` },
     h("div", { class: "runner-setting-text" }, h("strong", {}, title), h("p", { class: "hint" }, hint)), control);
   fill($("#runner-manage"),
-    h("h4", { class: "runner-sub" }, "Settings"),
+    h("h4", { class: "section-head" }, "Settings"),
     setting("Tasks at once", `How many tasks the hub sends it at once. Empty: the runner's own setting (${r.reported?.parallel || 1}).`, parallel),
     setting(r.paused ? "Paused" : "Taking tasks",
       r.paused ? "It takes no new tasks until you resume it." : "Pausing lets it finish what it runs, then it takes no new tasks.",
@@ -759,7 +759,7 @@ export function welcomeScreen() {
       h("li", {}, h("strong", {}, "Add a runner. "), "Get a one-time code here, then paste the install command in a terminal on the other computer (Linux or macOS). It connects out to this dashboard: no open ports, VPN or sudo needed."),
       h("li", {}, h("strong", {}, "Create a project. "), "A project is a git repository. Link it to the runner in its settings."),
       h("li", {}, h("strong", {}, "Add tasks. "), "Each runs in its own worktree and comes back for review.")),
-    h("div", { class: "welcome-actions" },
+    h("div", { class: "empty-actions" },
       ib({ class: "btn primary", onclick: attempt(openAddRunner) }, "plus", "Add a runner"),
       ib({ class: "btn", onclick: openNewProject }, "plus", "Add project")),
   ];

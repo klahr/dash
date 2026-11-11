@@ -34,9 +34,9 @@ async function renderTokens() {
   const list = await api("GET", "/api/tokens", null, "");
   const row = (t) => {
     const what = { oauth: "Disconnect", runner: "Revoke", api: "Revoke" }[t.kind];
-    return h("li", { class: "runner-row" },
+    return h("li", { class: "item-row" },
       h("span", { class: "runner-name" }, t.name, t.kind === "api" ? h("code", { class: "hint" }, ` ${t.prefix}…`) : null),
-      h("span", { class: "runner-seen hint" }, tokenDetail(t)),
+      h("span", { class: "item-sub hint" }, tokenDetail(t)),
       h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
         const body = {
           oauth: "The app is signed out at once and has to be connected again to use Dash.",

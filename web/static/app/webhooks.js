@@ -60,10 +60,10 @@ async function loadMyWebhooks() {
 }
 
 function webhookStatus(w) {
-  if (!w.last_at) return h("span", { class: "runner-seen hint" }, "nothing sent yet");
+  if (!w.last_at) return h("span", { class: "item-sub hint" }, "nothing sent yet");
   const what = WEBHOOK_EVENTS[w.last_event] || w.last_event;
-  if (w.last_error) return h("span", { class: "runner-seen hint err-text", title: w.last_error }, `${what} failed ${agoText(w.last_at)}: ${w.last_error}`);
-  return h("span", { class: "runner-seen hint" }, `${what} delivered ${agoText(w.last_at)}`);
+  if (w.last_error) return h("span", { class: "item-sub hint err-text", title: w.last_error }, `${what} failed ${agoText(w.last_at)}: ${w.last_error}`);
+  return h("span", { class: "item-sub hint" }, `${what} delivered ${agoText(w.last_at)}`);
 }
 
 // webhookHistory is a webhook's recent deliveries, newest first, under its row.
@@ -106,7 +106,7 @@ function renderWebhooks(sc = hookScopes.project) {
   const rows = [];
   for (const w of sc.list) {
     const open = hooks.history.has(w.id);
-    rows.push(h("li", { class: "runner-row webhook-row" },
+    rows.push(h("li", { class: "item-row webhook-row" },
       h("input", { type: "checkbox", checked: w.enabled, title: w.enabled ? "On: click to pause" : "Paused: click to turn on", "aria-label": `${w.name || webhookHost(w.url)} on`,
         onchange: attempt(async (e) => done(await api("PATCH", `/api/webhooks/${w.id}`, { enabled: e.target.checked }))) }),
       h("span", { class: "runner-name" }, w.name || webhookHost(w.url), h("span", { class: "hint" }, ` · ${WEBHOOK_FORMATS[w.format] || w.format}${w.enabled ? "" : " · paused"}`)),

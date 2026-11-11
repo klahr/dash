@@ -528,7 +528,7 @@
           <button class="icon-btn" type="button" id="pv-stop" data-icon="stop" title="Stop the preview server" aria-label="Stop"></button>
           <button class="icon-btn" type="button" id="pv-close" data-icon="x" title="Hide the preview (it keeps running)" aria-label="Hide preview"></button>
         </div>
-        <div class="pv-stage" id="pv-stage">
+        <div class="pv-stage">
           <div class="pv-frame" id="pv-frame"><iframe id="pv-iframe" title="Live preview" hidden></iframe></div>
           <!-- Terminal preview (CLI projects): the preview's PTY in xterm.js -->
           <div class="pv-term" id="pv-term" hidden></div>
@@ -772,7 +772,7 @@
       </details>
       <footer class="sheet-actions">
         <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
-        <button class="btn primary" value="save" data-icon="check" id="scan-save">Save scan</button>
+        <button class="btn primary" value="save" data-icon="check">Save scan</button>
       </footer>
     </form>
   </dialog>
@@ -983,7 +983,7 @@
               </div>
               <p class="hint" id="board-status" hidden></p>
               <div id="board-webhook" hidden></div>
-              <ul class="runner-list" id="board-events"></ul>
+              <ul class="item-list" id="board-events"></ul>
             </fieldset>
             <p class="hint" id="settings-board-hint" hidden></p>
           </section>
@@ -1005,7 +1005,7 @@
           <section class="rail-section" data-section="webhooks">
             <fieldset class="field choice" id="settings-webhooks-field" hidden>
               <legend>Notification webhooks <em>tell Slack, ntfy or your own service when tasks are ready, fail or merge, Claude needs approval or the build fails</em></legend>
-              <ul class="runner-list" id="settings-webhooks"></ul>
+              <ul class="item-list" id="settings-webhooks"></ul>
               <div id="webhook-secret" hidden></div>
               <p class="hint" id="settings-webhooks-hint" hidden></p>
               <div><button class="btn small" type="button" id="webhook-add" data-icon="plus">Add webhook</button></div>
@@ -1107,10 +1107,10 @@
           <!-- The user's credentials: API tokens, authorised OAuth clients, runners they registered -->
           <section class="rail-section" data-section="tokens">
             <p class="hint">Each of these acts as you, in one organization only. It stops working when you revoke it or leave that organization. Tokens can't manage members, invitations or tokens.</p>
-            <h3 class="org-section">Connected apps</h3>
-            <ul class="runner-list" id="tokens-oauth"></ul>
-            <h3 class="org-section">API tokens</h3>
-            <ul class="runner-list" id="tokens-api"></ul>
+            <h3 class="section-head">Connected apps</h3>
+            <ul class="item-list" id="tokens-oauth"></ul>
+            <h3 class="section-head">API tokens</h3>
+            <ul class="item-list" id="tokens-api"></ul>
             <div class="org-invite token-new">
               <input type="text" id="token-name" placeholder="Name, e.g. CI" autocomplete="off" maxlength="100" aria-label="Token name">
               <select id="token-org" aria-label="Organization"></select>
@@ -1121,13 +1121,13 @@
               <button class="btn primary" id="token-create" type="button" data-icon="plus">Create</button>
             </div>
             <div id="token-secret" hidden></div>
-            <h3 class="org-section" id="tokens-runner-head">Runners you registered</h3>
-            <ul class="runner-list" id="tokens-runner"></ul>
+            <h3 class="section-head" id="tokens-runner-head">Runners you registered</h3>
+            <ul class="item-list" id="tokens-runner"></ul>
           </section>
           <!-- The user's personal notification webhooks: every project of their org -->
           <section class="rail-section" data-section="webhooks">
             <p class="hint" id="me-webhooks-intro">Your own notification webhooks: Slack, ntfy or your own service hear about every project of this organization, for as long as you are a member. Only you see them. A project's own webhooks are in its settings.</p>
-            <ul class="runner-list" id="me-webhooks"></ul>
+            <ul class="item-list" id="me-webhooks"></ul>
             <div id="me-webhook-secret" hidden></div>
             <p class="hint" id="me-webhooks-hint" hidden></p>
             <div><button class="btn small" type="button" id="me-webhook-add" data-icon="plus">Add webhook</button></div>
@@ -1136,16 +1136,16 @@
           <section class="rail-section" data-section="wall">
             <form method="dialog" id="wall-form">
               <p class="hint">A read-only, full-screen dashboard of <span id="wall-org">the organization</span>'s work for a TV in the office. It refreshes by itself every few seconds.</p>
-              <h3 class="org-section">Show</h3>
+              <h3 class="section-head">Show</h3>
               <label class="field"><span>Projects</span>
                 <select name="project" id="wall-project"><option value="">All projects</option></select>
               </label>
               <label class="toggle"><input type="checkbox" name="privacy"><span>Privacy: hide task titles, prompts, issue titles, activity and costs (for screens visitors walk past)</span></label>
-              <h3 class="org-section">Open it here</h3>
+              <h3 class="section-head">Open it here</h3>
               <div id="wall-link"></div>
-              <h3 class="org-section">Links for TVs</h3>
+              <h3 class="section-head">Links for TVs</h3>
               <p class="hint">A TV shouldn't keep anyone's session. A TV link opens the wall of this organization, with the options above, without signing in, and nothing else. Anyone with the link sees the wall: treat it like a password.</p>
-              <ul class="runner-list" id="wall-tokens"></ul>
+              <ul class="item-list" id="wall-tokens"></ul>
               <div class="org-invite token-new" id="wall-token-new">
                 <input type="text" id="wall-token-name" placeholder="Name, e.g. Office TV" autocomplete="off" maxlength="100" aria-label="TV link name">
                 <button class="btn primary" id="wall-token-create" type="button" data-icon="plus">Create link</button>
@@ -1176,9 +1176,9 @@
         <div class="rail-main">
           <section class="rail-section" data-section="members">
             <p class="hint" id="org-role"></p>
-            <ul class="runner-list org-members" id="org-members"></ul>
+            <ul class="item-list org-members" id="org-members"></ul>
             <div id="org-invite-area" hidden>
-              <h3 class="org-section">Invite someone</h3>
+              <h3 class="section-head">Invite someone</h3>
               <div class="org-invite">
                 <input type="email" id="org-invite-email" placeholder="name@example.com" autocomplete="off" aria-label="Email to invite">
                 <select id="org-invite-role" aria-label="Role">
@@ -1190,14 +1190,14 @@
               </div>
               <label class="org-require-2fa" id="org-invite-any-row" hidden><input type="checkbox" id="org-invite-any"> Let them join with any Google account, not just this address</label>
               <div id="org-invite-link" hidden></div>
-              <h3 class="org-section" id="org-pending-head">Pending invitations</h3>
-              <ul class="runner-list" id="org-pending"></ul>
+              <h3 class="section-head" id="org-pending-head">Pending invitations</h3>
+              <ul class="item-list" id="org-pending"></ul>
             </div>
           </section>
           <section class="rail-section" data-section="access">
             <label class="org-require-2fa" id="org-require-2fa-row" hidden><input type="checkbox" id="org-require-2fa"> Require two-factor sign-in of every member</label>
             <div id="org-address" hidden>
-              <h3 class="org-section">Address</h3>
+              <h3 class="section-head">Address</h3>
               <p class="hint" id="org-address-url"></p>
               <div class="org-invite" id="org-slug-row" hidden>
                 <input type="text" id="org-slug" autocomplete="off" spellcheck="false" autocapitalize="off" pattern="[a-z0-9](?:[a-z0-9-]{1,38})[a-z0-9]" minlength="3" maxlength="40" aria-label="Subdomain name" aria-describedby="org-slug-hint">

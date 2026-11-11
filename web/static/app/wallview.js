@@ -71,9 +71,9 @@ async function renderWallTokens() {
     return;
   }
   $("#wall-token-new").hidden = false;
-  $("#wall-tokens").replaceChildren(...(list.length ? list.map((t) => h("li", { class: "runner-row" },
+  $("#wall-tokens").replaceChildren(...(list.length ? list.map((t) => h("li", { class: "item-row" },
     h("span", { class: "runner-name" }, t.name, h("code", { class: "hint" }, ` ${t.prefix}…`)),
-    h("span", { class: "runner-seen hint" }, [t.last_used ? `used ${agoText(t.last_used)}` : "never used", `created ${new Date(t.created).toLocaleDateString()}`].join(" · ")),
+    h("span", { class: "item-sub hint" }, [t.last_used ? `used ${agoText(t.last_used)}` : "never used", `created ${new Date(t.created).toLocaleDateString()}`].join(" · ")),
     h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
       if (!await ask({ title: `Revoke ${t.name}?`, body: "Screens opened with this link stop updating and show that it was revoked.", ok: "Revoke", danger: true })) return;
       await api("DELETE", `/api/wall/tokens/${t.id}`, null, "");

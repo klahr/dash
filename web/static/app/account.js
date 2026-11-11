@@ -126,9 +126,9 @@ async function renderOrg() {
   const rows = org.members.map((m) => {
     const self = m.id === me.user.id;
     const canEdit = manage && RANK[m.role] <= RANK[mine];
-    return h("li", { class: "runner-row" },
+    return h("li", { class: "item-row" },
       h("span", { class: "runner-name" }, m.username, self ? h("span", { class: "hint" }, " (you)") : null),
-      h("span", { class: "runner-seen hint" }, m.email || "", manage || org.org.require_2fa ? h("span", { class: `tfa-tag${m.totp_enabled ? " on" : ""}`, title: m.totp_enabled ? "Signs in with two factors" : "No two-factor sign-in yet" }, m.totp_enabled ? "2FA" : "no 2FA") : null),
+      h("span", { class: "item-sub hint" }, m.email || "", manage || org.org.require_2fa ? h("span", { class: `tfa-tag${m.totp_enabled ? " on" : ""}`, title: m.totp_enabled ? "Signs in with two factors" : "No two-factor sign-in yet" }, m.totp_enabled ? "2FA" : "no 2FA") : null),
       canEdit ? roleSelect(m) : h("span", { class: "org-role-tag" }, ROLE_LABEL[m.role]),
       (canEdit && !self) ? h("button", { class: "btn small", type: "button", title: `End ${m.username}'s sessions in ${org.org.name}`, onclick: attempt(async () => {
         const pw = await askPassword(`Sign ${m.username} out everywhere?`,
@@ -152,9 +152,9 @@ async function renderOrg() {
   $("#org-invite-area").hidden = !manage || !!org.org.personal;
   if (manage) {
     for (const opt of $("#org-invite-role").options) opt.hidden = opt.disabled = RANK[opt.value] > RANK[mine];
-    const pending = (org.invitations || []).map((i) => h("li", { class: "runner-row" },
+    const pending = (org.invitations || []).map((i) => h("li", { class: "item-row" },
       h("span", { class: "runner-name" }, i.email),
-      h("span", { class: "runner-seen hint" }, `${ROLE_LABEL[i.role]} · expires ${new Date(i.expires).toLocaleDateString()}${i.invited_by ? ` · by ${i.invited_by}` : ""}`),
+      h("span", { class: "item-sub hint" }, `${ROLE_LABEL[i.role]} · expires ${new Date(i.expires).toLocaleDateString()}${i.invited_by ? ` · by ${i.invited_by}` : ""}`),
       h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
         await api("DELETE", `/api/orgs/${org.org.id}/invitations/${i.id}`, null, "");
         toast(`Invitation for ${i.email} revoked`);
@@ -210,9 +210,9 @@ async function renderOrgSSO(o, mine) {
     toast(d.verified ? `${d.domain} added and verified` : `${d.domain} added: it waits for verification`, { tone: "ok" });
     await renderOrgSSO(o, mine);
   });
-  const domains = (s.domains || []).map((d) => h("li", { class: "runner-row" },
+  const domains = (s.domains || []).map((d) => h("li", { class: "item-row" },
     h("span", { class: "runner-name" }, d.domain),
-    h("span", { class: `runner-seen hint ${d.verified ? "tag-ok" : "tag-wait"}` }, d.verified
+    h("span", { class: `item-sub hint ${d.verified ? "tag-ok" : "tag-wait"}` }, d.verified
       ? `Verified${d.how === "admin" ? " by a platform admin" : d.how === "google" ? " by an owner's Google sign-in" : ""}`
       : "Not verified yet: an owner signs in with Google with an account of this domain (Test below), or a platform admin approves it"),
     h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
@@ -226,7 +226,7 @@ async function renderOrgSSO(o, mine) {
   const cid = h("input", { type: "text", value: s.client_id || "", placeholder: "…apps.googleusercontent.com", autocomplete: "off", spellcheck: false, "aria-label": "Client ID" });
   const secret = h("input", { type: "password", placeholder: s.client_secret_set ? "Set (enter a new one to replace it)" : "Client secret", autocomplete: "new-password", "aria-label": "Client secret" });
   const client = owner ? [
-    h("h3", { class: "org-section" }, "Your own Google client (optional)"),
+    h("h3", { class: "section-head" }, "Your own Google client (optional)"),
     h("p", { class: "hint" }, "Create an OAuth client (Web application) in your Google Cloud project, with its consent screen set to Internal so only your Workspace can use it, and this redirect URI:"),
     copyBlock(s.redirect_uri, "Redirect URI copied"),
     h("div", { class: "org-invite" }, cid),
@@ -242,10 +242,10 @@ async function renderOrgSSO(o, mine) {
 
   fill(box,
     h("p", { class: "hint" }, status),
-    h("h3", { class: "org-section" }, "Google Workspace domains"),
-    h("ul", { class: "runner-list sso-domains" }, ...domains),
+    h("h3", { class: "section-head" }, "Google Workspace domains"),
+    h("ul", { class: "item-list sso-domains" }, ...domains),
     h("div", { class: "org-invite" }, domainInput, h("button", { class: "btn", type: "button", onclick: addDomain }, "Add domain")),
-    h("h3", { class: "org-section" }, "Joining and signing in"),
+    h("h3", { class: "section-head" }, "Joining and signing in"),
     check("Let people of verified domains join on their first Google sign-in", "auto_join",
       (on) => on ? "Let verified domains' people join?" : "Stop letting domains' people join?",
       (on) => on ? "They join with the role below. Others still need an invitation." : "Others need an invitation, as before."),
@@ -264,7 +264,7 @@ async function renderOrgSSO(o, mine) {
     s.available ? h("p", {}, h("a", { class: "btn", href: s.test_url }, "Test Google sign-in"),
       h("span", { class: "hint" }, " Signs in at Google to check the setup; it never signs anyone in here.")) : null,
     ...client,
-    events.length ? h("h3", { class: "org-section" }, "Recent sign-in activity") : null,
+    events.length ? h("h3", { class: "section-head" }, "Recent sign-in activity") : null,
     events.length ? h("ul", { class: "sso-events" }, ...events) : null,
     h("div", { id: "org-sso-admin" }));
   box.hidden = false;
@@ -276,8 +276,8 @@ async function renderPlatformSSO(el) {
   const s = await api("GET", "/api/admin/sso", null, "");
   const cid = h("input", { type: "text", value: s.client_id || "", placeholder: "Client ID", disabled: s.from_env, "aria-label": "Instance client ID" });
   const secret = h("input", { type: "password", placeholder: s.client_secret_set ? "Set" : "Client secret", disabled: s.from_env, autocomplete: "new-password", "aria-label": "Instance client secret" });
-  const pending = (s.pending_domains || []).map((d) => h("li", { class: "runner-row" },
-    h("span", { class: "runner-name" }, d.domain), h("span", { class: "runner-seen hint" }, d.org),
+  const pending = (s.pending_domains || []).map((d) => h("li", { class: "item-row" },
+    h("span", { class: "runner-name" }, d.domain), h("span", { class: "item-sub hint" }, d.org),
     h("button", { class: "btn small", type: "button", onclick: attempt(async () => {
       const pw = await askPassword(`Approve ${d.domain} for ${d.org}?`, "Only if you know the organization owns the domain: its Google accounts can then join it.");
       if (pw == null) return;
@@ -286,7 +286,7 @@ async function renderPlatformSSO(el) {
       await renderPlatformSSO(el);
     }) }, "Approve")));
   fill(el,
-    h("h3", { class: "org-section" }, "This Dash's Google client (platform admins)"),
+    h("h3", { class: "section-head" }, "This Dash's Google client (platform admins)"),
     h("p", { class: "hint" }, s.from_env ? "Set by DASH_GOOGLE_CLIENT_ID and DASH_GOOGLE_CLIENT_SECRET." : "Used by every organization without its own. Redirect URI:"),
     copyBlock(s.redirect_uri, "Redirect URI copied"),
     s.from_env ? null : h("div", { class: "org-invite" }, cid),
@@ -298,8 +298,8 @@ async function renderPlatformSSO(el) {
       await loadMe();
       await renderPlatformSSO(el);
     }) }, "Save")),
-    pending.length ? h("h3", { class: "org-section" }, "Domains waiting for approval") : null,
-    pending.length ? h("ul", { class: "runner-list" }, ...pending) : null);
+    pending.length ? h("h3", { class: "section-head" }, "Domains waiting for approval") : null,
+    pending.length ? h("ul", { class: "item-list" }, ...pending) : null);
 }
 
 // ---- the Google account linked to this one

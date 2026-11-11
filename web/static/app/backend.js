@@ -198,7 +198,7 @@ function renderBoardStatus() {
   el.textContent = bits.join(" ");
   el.classList.toggle("err-text", external && !!cfg.last_error);
   $("#board-events").replaceChildren(...(st.events || []).slice(0, 5).map((ev) =>
-    h("li", { class: "runner-row" }, h("span", { class: "runner-name" }, ev.text), h("span", { class: "runner-seen hint" }, agoText(ev.at)))));
+    h("li", { class: "item-row" }, h("span", { class: "runner-name" }, ev.text), h("span", { class: "item-sub hint" }, agoText(ev.at)))));
 }
 
 // boardBody is the form as the API takes it (partial: for loading choices,

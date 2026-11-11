@@ -13,7 +13,8 @@
     /* Same palette as the app (style.css :root), under the wall's short names. */
     color-scheme:dark;
     --bg:#101722; --panel:#172131; --raised:#1f2b3e; --line:#2a384d; --text:#e6ecf5; --dim:#8a9ab2; --faint:#8393ac;
-    --queue:#8aa4ff; --run:#f2b84b; --rev:#5ec8e5; --ok:#6fd39a; --bad:#ff7a7a; --merge:#c79bff;
+    --queue:#8aa4ff; --run:#f2b84b; --rev:#5ec8e5; --ok:#6fd39a; --bad:#ff7a7a;
+    --merge:var(--ok); /* merging is green on the board too (style.css .s-merging) */
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{background:var(--bg);overflow:hidden;height:100%;cursor:none}
@@ -24,6 +25,7 @@
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px 26px;min-height:0;overflow:hidden}
   h2{font-size:20px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:16px;display:flex;align-items:center;gap:12px}
   h2 .count{color:var(--text);letter-spacing:0;font-size:22px}
+  h2.sub{margin:0 0 6px}
   .empty{color:var(--faint);font-size:22px;padding:8px 0}
 
   /* header */
@@ -34,6 +36,7 @@
   .queue-state.paused{background:color-mix(in srgb,var(--bad) 14%,var(--panel));color:var(--bad)}
   .queue-state.idle{background:var(--raised);color:var(--dim)}
   .dot{width:14px;height:14px;border-radius:50%;background:currentColor;flex:none;display:inline-block}
+  .dot.run{color:var(--run)}
   .pulse{animation:pulse 1.6s ease-in-out infinite}
   @keyframes pulse{50%{opacity:.3}}
   .usage{display:flex;gap:28px;margin-left:auto}
@@ -154,7 +157,7 @@
 
   <main>
     <section class="panel">
-      <h2><span class="dot pulse" style="color:var(--run)"></span>Running now <span class="count num" id="running-count"></span></h2>
+      <h2><span class="dot pulse run"></span>Running now <span class="count num" id="running-count"></span></h2>
       <div class="running" id="running"></div>
     </section>
     <section class="panel">
@@ -169,7 +172,7 @@
       <div class="panel today">
         <h2>Today</h2>
         <div class="big" id="today"></div>
-        <h2 style="margin:0 0 6px">Merged per hour</h2>
+        <h2 class="sub">Merged per hour</h2>
         <svg class="spark" id="spark" viewBox="0 0 300 110" preserveAspectRatio="none"></svg>
         <div class="axis"><span id="spark-from"></span><span>now</span></div>
       </div>
