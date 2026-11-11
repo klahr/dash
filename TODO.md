@@ -22,7 +22,7 @@ Most important first within each section.
 
 - [x] Replace the hard-coded checkout path `%h/dev/github/klahr/dash` in `deploy/dash.service`
       (WorkingDirectory, ExecStart) with a neutral one, and update `docs/service.md` to match.
-- [ ] Replace the `dashhost.dev` example domain in `docs/deploy.md` with a reserved one (`example.dev`).
+- [x] Replace the `dashhost.dev` example domain in `docs/deploy.md` with a reserved one (`example.dev`).
 - [ ] Turn on GitHub security for the repo: secret scanning with push protection, Dependabot
       alerts and security updates, and private vulnerability reporting (the README links to advisories).
 - [ ] Protect `main`: require the CI and CLA checks to pass before merging.
