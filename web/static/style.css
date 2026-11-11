@@ -115,7 +115,7 @@ textarea { resize: vertical; line-height: 1.45; }
 @media (max-width: 1023px) { .brand-name { display: none; } }
 .project-picker { position: relative; flex: 1; min-width: 0; display: flex; }
 .project-switch {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; justify-content: flex-end;
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; justify-content: flex-start;
   min-height: 44px; padding: 0 6px; border-radius: var(--r-m); color: var(--text);
 }
 .project-switch:hover { background: var(--surface); }
@@ -1578,7 +1578,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .app:has(#view-board:not(.active)) .lane-chips { visibility: hidden; }
   .lane-chip { min-height: 32px; background: var(--bg); border-color: var(--line); }
   .lane-chip:hover { color: var(--text); background: var(--raised); }
-  .project-switch { justify-content: flex-start; min-height: 36px; }
+  .project-switch { min-height: 36px; }
   /* The brand already names the active project; the switch only shows its computer, if any. */
   .topbar:has(.brand.is-project) .project-switch .project-name { display: none; }
   .topbar:has(.brand.is-project) .project-switch:has(.project-branch:empty) { display: none; }
