@@ -241,6 +241,68 @@ func (sv *service) cancel(id string) (t model.Todo, accepted bool, err error) {
 	return t, false, err
 }
 
+// stopWait is how long stop waits for a canceled task to stop.
+const stopWait = 90 * time.Second
+
+// stop cancels a queued or running task and waits until it has stopped:
+// a running one is failed ("canceled") by its worker, or its runner's
+// report; a queued one goes back to draft.
+func (sv *service) stop(id string) (model.Todo, error) {
+	t, accepted, err := sv.cancel(id)
+	if err != nil || !accepted {
+		return t, err
+	}
+	for deadline := time.Now().Add(stopWait); ; time.Sleep(100 * time.Millisecond) {
+		t, err := sv.data.GetTodo(id)
+		if err != nil || t.Status != model.StatusInProgress {
+			return t, err
+		}
+		if time.Now().After(deadline) {
+			return t, fmt.Errorf("task %s was asked to stop but is still running after %s; check it with get_todo", id, stopWait)
+		}
+	}
+}
+
+// startOver drops a draft or failed task's worktree (on its runner, for a
+// hub's task), Claude session and notes for Claude, so its next run starts
+// from the default branch with the prompt alone.
+func (sv *service) startOver(ctx context.Context, id string) (model.Todo, error) {
+	t, err := sv.data.GetTodo(id)
+	if err != nil {
+		return t, err
+	}
+	if t.Status != model.StatusDraft && t.Status != model.StatusFailed {
+		return t, fmt.Errorf("%w: only a draft or failed task can start over", errBadRequest)
+	}
+	if t.Reviewing {
+		return t, store.ErrReviewing
+	}
+	if t.PR != nil && t.PR.State == "OPEN" {
+		return t, fmt.Errorf("%w: its pull request is still open; close it first, or queue it without starting over", errBadRequest)
+	}
+	if t.OnRunner() && sv.s.Dispatch != nil {
+		cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		sv.s.Dispatch.Forget(cctx, t)
+		cancel()
+	} else if t.Worktree != nil && !sv.s.hub() {
+		p, err := sv.data.GetProject(t.ProjectID)
+		if err != nil {
+			return t, err
+		}
+		if err := sv.s.Git.RemoveWorktree(ctx, p.ID, p.Path, *t.Worktree); err != nil {
+			return t, err
+		}
+	}
+	return sv.data.UpdateTodo(id, func(x *model.Todo) error {
+		x.Runner, x.RemoteID, x.Resumable = "", "", false
+		x.Worktree, x.SessionID, x.Feedback, x.FeedbackSent = nil, "", nil, 0
+		x.MergeMain, x.EditsApplied = false, false
+		x.Checks, x.DiffFiles, x.DiffAdd, x.DiffDel = nil, 0, 0, 0
+		x.AutoFixes, x.AutoMerge, x.SentBack = 0, false, ""
+		return nil
+	})
+}
+
 // editTodo applies u (and atts, when not nil) to a task, for PATCH
 // /api/todos/{tid} and the board chat's update_todo. The prompt and
 // attachments can only change while it is a draft, queued or failed.

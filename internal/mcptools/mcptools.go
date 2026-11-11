@@ -359,6 +359,20 @@ type Board interface {
 	MoveChecklistItem(projectID string, m ChecklistMove) (ChecklistMoved, error)
 }
 
+// Restarter is a Board that stops tasks and queues them again, for
+// stop_todo, restart_todo and queue_todo's fresh.
+type Restarter interface {
+	// StopTodo stops a queued or running task like the board's Cancel, and
+	// returns it once it has stopped: a running one failed ("canceled"), a
+	// queued one back in draft.
+	StopTodo(id string) (model.Todo, error)
+	// RequeueTodo queues a draft or failed task. It continues in its
+	// worktree and Claude session, with note (if any) as a new note for
+	// Claude; fresh drops them and the earlier notes first, so it starts
+	// over from the prompt.
+	RequeueTodo(id string, fresh bool, note string) (model.Todo, error)
+}
+
 // Options adapt the board tools to where they run.
 type Options struct {
 	// Project is used when a call names none (the project chat's project).
@@ -373,7 +387,7 @@ type Options struct {
 // Tool names the chat may call; ReadTools never change anything.
 var (
 	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues", "read_try_terminal", "read_checklist"}
-	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "update_todo", "create_release", "delete_todo",
+	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "stop_todo", "restart_todo", "update_todo", "create_release", "delete_todo",
 		"read_checklist", "add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "move_checklist_item_to_task",
 		"list_issues", "report_issue", "read_try_terminal"}
 	// AskTools are board tools a chat never gets without asking: they publish
@@ -386,7 +400,8 @@ var (
 )
 
 // Tools returns list_projects, list_todos, get_todo, create_todo,
-// queue_todo, update_todo, create_release and delete_todo; the checklist
+// queue_todo, stop_todo and restart_todo (when b is a Restarter),
+// update_todo, create_release and delete_todo; the checklist
 // tools on the project's TODO.md (read_checklist, add_checklist_item,
 // check_checklist_item, edit_checklist_item, delete_checklist_item and
 // move_checklist_item_to_task); the IssueTools; and read_try_terminal when
@@ -561,6 +576,14 @@ func boardTools(b Board, o Options) []Tool {
 		createDesc = "Create a task for Claude to work on. It stays a draft on the board unless draft is false."
 		draftDesc = "false queues it to run right away; only when the user asks for that (default true)."
 	}
+	queueDesc := "Queue a draft or failed task to run; only when the user asks to start, run or retry it. " +
+		"A failed task continues in its worktree and Claude session, like dragging its card from Review to Queued."
+	queueParams := []Param{PTodo}
+	restarter, _ := b.(Restarter)
+	if restarter != nil {
+		queueDesc = "Queue a draft or failed task to run; only when the user asks to start, run or retry it."
+		queueParams = append(queueParams, Param{"fresh", "boolean", freshDesc, false})
+	}
 	tools := []Tool{
 		{"list_projects", "List the projects on every computer in this Dash.", nil,
 			func(a Args) (any, error) {
@@ -646,7 +669,7 @@ func boardTools(b Board, o Options) []Tool {
 					DependsOn: a.List("depends_on"), Model: a.Str("model"),
 				})
 			}},
-		{"queue_todo", "Queue a draft task to run; only when the user asks to start or run it.", []Param{PTodo},
+		{"queue_todo", queueDesc, queueParams,
 			func(a Args) (any, error) {
 				if a.Str("todo") == "" {
 					return nil, errors.New("todo is required")
@@ -655,18 +678,24 @@ func boardTools(b Board, o Options) []Tool {
 				if err != nil {
 					return nil, err
 				}
-				if t.Status != model.StatusDraft {
-					return nil, fmt.Errorf("task %q is %s, not a draft; only drafts can be queued", t.ID, t.Status)
+				if t.Status != model.StatusDraft && t.Status != model.StatusFailed {
+					return nil, fmt.Errorf("task %q is %s; only draft and failed tasks can be queued", t.ID, t.Status)
 				}
-				if t, err = b.QueueTodo(t.ID); err != nil {
+				if a.Flag("fresh") {
+					t, err = restarter.RequeueTodo(t.ID, true, "")
+				} else {
+					t, err = b.QueueTodo(t.ID)
+				}
+				if err != nil {
 					return nil, err
 				}
-				return struct {
-					ID     string           `json:"id"`
-					Title  string           `json:"title"`
-					Status model.TodoStatus `json:"status"`
-				}{t.ID, t.Title, t.Status}, nil
+				return queued(t), nil
 			}},
+	}
+	if restarter != nil {
+		tools = append(tools, restartTools(b, restarter)...)
+	}
+	tools = append(tools, []Tool{
 		{"update_todo", "Change a task's title, prompt, priority, dependencies or model; only the given fields change. " +
 			"The prompt can only be changed while the task is a draft, queued or failed.", []Param{PTodo,
 			{"title", "string", "New short title.", false},
@@ -744,8 +773,89 @@ func boardTools(b Board, o Options) []Tool {
 				}
 				return fmt.Sprintf("Deleted task %s (%s).", t.ID, t.Title), nil
 			}},
-	}
+	}...)
 	return append(tools, checklistTools(b, o, project, pProject)...)
+}
+
+// freshDesc is the fresh parameter of queue_todo and restart_todo.
+const freshDesc = "true starts over: a new worktree from the default branch and a new Claude session, from the prompt alone, without earlier notes for Claude. " +
+	"false (the default) continues in the task's worktree and Claude session, " +
+	"like dragging the card from Review to Queued."
+
+// queued is what queue_todo and restart_todo answer.
+func queued(t model.Todo) any {
+	return struct {
+		ID     string           `json:"id"`
+		Title  string           `json:"title"`
+		Status model.TodoStatus `json:"status"`
+	}{t.ID, t.Title, t.Status}
+}
+
+// restartTools returns stop_todo and restart_todo.
+func restartTools(b Board, r Restarter) []Tool {
+	return []Tool{
+		{"stop_todo", "Stop a queued or running task, like Cancel on the board: a running one ends failed (\"canceled\"), keeping its worktree " +
+			"and Claude session; a queued one goes back to draft. Only when the user asks to stop or restart a task.", []Param{PTodo},
+			func(a Args) (any, error) {
+				if a.Str("todo") == "" {
+					return nil, errors.New("todo is required")
+				}
+				t, err := b.Todo(a.Str("todo"))
+				if err != nil {
+					return nil, err
+				}
+				if t.Status != model.StatusQueued && t.Status != model.StatusInProgress {
+					return nil, fmt.Errorf("task %q is %s; only queued or running tasks can be stopped", t.ID, t.Status)
+				}
+				if t, err = r.StopTodo(t.ID); err != nil {
+					return nil, err
+				}
+				return struct {
+					ID     string           `json:"id"`
+					Title  string           `json:"title"`
+					Status model.TodoStatus `json:"status"`
+					Error  string           `json:"error,omitempty"`
+				}{t.ID, t.Title, t.Status, t.Error}, nil
+			}},
+		{"restart_todo", "Run a running, queued or failed task again in one call: stop it if needed, change its prompt or title if given, and queue it. " +
+			"Only when the user asks to restart or rerun a task.", []Param{PTodo,
+			{"prompt", "string", "New task for Claude.", false},
+			{"title", "string", "New short title.", false},
+			{"fresh", "boolean", freshDesc + " Without fresh, a new prompt reaches Claude as a note in its session.", false}},
+			func(a Args) (any, error) {
+				if a.Str("todo") == "" {
+					return nil, errors.New("todo is required")
+				}
+				t, err := b.Todo(a.Str("todo"))
+				if err != nil {
+					return nil, err
+				}
+				switch t.Status {
+				case model.StatusInProgress, model.StatusQueued:
+					if t, err = r.StopTodo(t.ID); err != nil {
+						return nil, err
+					}
+				case model.StatusFailed:
+				default:
+					return nil, fmt.Errorf("task %q is %s; only running, queued or failed tasks can be restarted", t.ID, t.Status)
+				}
+				u := TodoUpdate{Title: a.OptStr("title"), Prompt: a.OptStr("prompt")}
+				if u.Title != nil || u.Prompt != nil {
+					if _, err := b.UpdateTodo(t.ID, u); err != nil {
+						return nil, err
+					}
+				}
+				fresh, note := a.Flag("fresh"), ""
+				if u.Prompt != nil && !fresh && (t.SessionID != "" || t.Runner != "") {
+					// A continued session never sees the prompt again.
+					note = "The task's instructions have changed. Follow these from now on:\n\n" + *u.Prompt
+				}
+				if t, err = r.RequeueTodo(t.ID, fresh, note); err != nil {
+					return nil, err
+				}
+				return queued(t), nil
+			}},
+	}
 }
 
 // FleetReadTools are the FleetTools that only look.

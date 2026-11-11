@@ -92,7 +92,8 @@ and enter `https://<machine>.<tailnet>.ts.net:8443/mcp` in claude.ai.
 
 Dash's own chats (the general chat and each project's chat) get a smaller set of task tools,
 `dash_board`: `list_projects`, `list_todos`, `get_todo`, `create_todo` (as a draft),
-`queue_todo` (a draft, when you ask for it to run), `update_todo` (title, prompt, priority, or
+`queue_todo` (a draft, or a failed task to retry, when you ask for it to run), `stop_todo` and
+`restart_todo` (see below), `update_todo` (title, prompt, priority, or
 `clear_priority` to unset it, or dependencies; the prompt only while the task is a draft, queued or failed), `delete_todo` (only
 draft, queued or failed tasks, when you ask to remove one), `create_release`, `list_issues` and
 `report_issue`, and the checklist tools on the project's `TODO.md` (`read_checklist`,
@@ -108,6 +109,24 @@ task the hub sent that runner. A chat acts as the runner's owner, in the runner'
 projects linked to that runner. So tasks and issues created there show up on the hub's board,
 under the hub's ids. If the hub can't be reached, the tool call fails; it never writes to the
 runner's own database instead.
+
+The chat stops and reruns tasks only when you ask it to:
+
+- `stop_todo(todo)` does what **Cancel** does on the board, for tasks on a runner too: a running
+  task ends failed ("canceled"), keeping its worktree and Claude session; a queued one goes back
+  to draft.
+- `queue_todo(todo, fresh?)` queues a draft or a failed task. Without `fresh`, a failed task
+  continues in its worktree and Claude session, like dragging its card from Review to Queued.
+  `fresh: true` starts over: its worktree (on the runner, for a hub's task), Claude session and
+  earlier notes for Claude are dropped, and the next run starts from the default branch with the
+  prompt alone. A task with
+  an open pull request can't start over.
+- `restart_todo(todo, prompt?, title?, fresh?)` does it in one call for a running, queued or
+  failed task: it stops the task, changes its prompt or title, and queues it. Without `fresh`, a
+  new prompt reaches Claude's continued session as a note.
+
+They follow the same rules as the board: the chat's user must belong to the task's org, and a
+read-only board (an unpaid org) refuses them.
 
 `create_release(project, version | bump, sha?, notes?)` tags a commit (default: the tip of
 origin's default branch) in the project's tag format and pushes the tag, like **Tag release…** in

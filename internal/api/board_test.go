@@ -1,23 +1,30 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"testing/fstest"
+	"time"
 
+	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/dispatch"
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/tunnel"
 )
 
 type events struct {
@@ -203,7 +210,7 @@ func TestBoardMCPCreateTodoDefaultsToChatProject(t *testing.T) {
 	}
 }
 
-func TestBoardMCPQueueTodoOnlyDrafts(t *testing.T) {
+func TestBoardMCPQueueTodo(t *testing.T) {
 	parallel(t)
 
 	s, _, p := boardServer(t)
@@ -232,24 +239,68 @@ func TestBoardMCPQueueTodoOnlyDrafts(t *testing.T) {
 
 	// Already queued: refused, not re-queued.
 	text, isErr = callResult(t, rpc(h, token, "tools/call", `{"name":"queue_todo","arguments":{"todo":"`+draft.ID+`"}}`))
-	if !isErr || !strings.Contains(text, "not a draft") {
+	if !isErr || !strings.Contains(text, "only draft and failed tasks") {
 		t.Errorf("queued again: %s", text)
 	}
-	failed, err := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "Broke"})
-	if err != nil {
-		t.Fatal(err)
+
+	// A failed task: retried in its session (like the drag from Review to
+	// Queued), or from scratch with fresh.
+	failed := withStatus(t, s, p.ID, model.StatusFailed)
+	if text, isErr := call(t, h, token, "queue_todo", `{"todo":"`+failed.ID+`"}`); isErr {
+		t.Fatalf("queue a failed task: %s", text)
 	}
-	for _, st := range []model.TodoStatus{model.StatusQueued, model.StatusInProgress, model.StatusFailed} {
-		if _, err := raw(s).SetStatus(failed.ID, st, ""); err != nil {
-			t.Fatal(err)
-		}
+	if td, _ := raw(s).GetTodo(failed.ID); td.Status != model.StatusQueued || td.SessionID != "s1" || td.Error != "" {
+		t.Errorf("retried %+v", td)
 	}
-	if text, isErr := callResult(t, rpc(h, token, "tools/call", `{"name":"queue_todo","arguments":{"todo":"`+failed.ID+`"}}`)); !isErr || !strings.Contains(text, "failed") {
-		t.Errorf("queued a failed task: %s", text)
+	failed = withStatus(t, s, p.ID, model.StatusFailed)
+	if text, isErr := call(t, h, token, "queue_todo", `{"todo":"`+failed.ID+`","fresh":true}`); isErr {
+		t.Fatalf("queue a failed task fresh: %s", text)
+	}
+	if td, _ := raw(s).GetTodo(failed.ID); td.Status != model.StatusQueued || td.SessionID != "" || td.FeedbackSent != 0 || len(td.Feedback) != 0 {
+		t.Errorf("started over %+v", td)
+	}
+
+	// In review, not failed: refused.
+	review := withStatus(t, s, p.ID, model.StatusReview)
+	if text, isErr := call(t, h, token, "queue_todo", `{"todo":"`+review.ID+`"}`); !isErr || !strings.Contains(text, "review") {
+		t.Errorf("queued a task in review: %s", text)
+	}
+	if td, _ := raw(s).GetTodo(review.ID); td.Status != model.StatusReview {
+		t.Errorf("task in review moved to %s", td.Status)
 	}
 	if text, isErr := callResult(t, rpc(h, token, "tools/call", `{"name":"queue_todo","arguments":{"todo":"nope"}}`)); !isErr {
 		t.Errorf("queued a missing task: %s", text)
 	}
+}
+
+// withStatus is a task of project pid that ran once (a Claude session, a
+// note Claude saw) and is now in status st.
+func withStatus(t *testing.T, s *Server, pid string, st model.TodoStatus) model.Todo {
+	t.Helper()
+	td, err := raw(s).CreateTodo(model.Todo{ProjectID: pid, Title: "Broke", Prompt: "do it"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := []model.TodoStatus{model.StatusQueued, model.StatusInProgress, st}
+	if st == model.StatusQueued {
+		path = path[:1]
+	}
+	for _, x := range path {
+		if _, err := raw(s).SetStatus(td.ID, x, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	td, err = raw(s).UpdateTodo(td.ID, func(x *model.Todo) error {
+		x.SessionID, x.Feedback, x.FeedbackSent = "s1", []string{"note"}, 1
+		if st == model.StatusFailed {
+			x.Error = "boom"
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return td
 }
 
 func TestBoardMCPGeneralChatNeedsProject(t *testing.T) {
@@ -448,5 +499,221 @@ func TestBoardMCPDeleteTodo(t *testing.T) {
 	}
 	if text, isErr := call(t, h, token, "delete_todo", `{"todo":"nope"}`); !isErr {
 		t.Errorf("deleted a missing task: %s", text)
+	}
+}
+
+// blockExec is Claude working until it is stopped; each run is sent on runs.
+type blockExec struct{ runs chan agent.ExecRequest }
+
+func (e blockExec) Run(ctx context.Context, req agent.ExecRequest, emit func(model.RunEvent)) (agent.ExecResult, error) {
+	e.runs <- req
+	<-ctx.Done()
+	return agent.ExecResult{SessionID: "s-" + req.Resume + "1"}, ctx.Err()
+}
+
+// The chat stops a running task the way Cancel does, then reruns it with a
+// new prompt: in its session, which gets the prompt as a note, or from
+// scratch in a new worktree with fresh.
+func TestBoardMCPStopAndRestartARunningTask(t *testing.T) {
+	parallel(t)
+
+	s, _, _ := boardServer(t)
+	s.Git = gitops.New(s.Hub)
+	repo := filepath.Join(t.TempDir(), "app")
+	if err := s.Git.InitRepo(context.Background(), "app", repo, "main"); err != nil {
+		t.Fatal(err)
+	}
+	p, err := raw(s).CreateProject(model.Project{Name: "app", Path: repo, DefaultBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs := make(chan agent.ExecRequest, 4)
+	s.Todos = queue.NewTodoEngine(&queue.TodoEngine{Store: raw(s), Git: s.Git, Exec: blockExec{runs}, Pub: s.Hub,
+		Log: &queue.TodoLog{Pub: s.Hub, Root: t.TempDir()}, WorktreeRoot: t.TempDir(), MaxParallel: 1})
+	ctx, cancel := context.WithCancel(context.Background())
+	go s.Todos.Run(ctx)
+	t.Cleanup(func() { cancel(); s.Todos.Wait(10 * time.Second) })
+	h := s.Routes()
+	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	defer release()
+
+	td, err := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "Page", Prompt: "add a page"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw(s).SetStatus(td.ID, model.StatusQueued, ""); err != nil {
+		t.Fatal(err)
+	}
+	s.Todos.Kick()
+	running := func() agent.ExecRequest {
+		t.Helper()
+		select {
+		case req := <-runs:
+			return req
+		case <-time.After(10 * time.Second):
+			t.Fatal("the task didn't start")
+		}
+		return agent.ExecRequest{}
+	}
+	first := running()
+
+	text, isErr := call(t, h, token, "stop_todo", `{"todo":"`+td.ID+`"}`)
+	if isErr || !strings.Contains(text, `"failed"`) || !strings.Contains(text, "canceled") {
+		t.Fatalf("stop_todo: %s", text)
+	}
+	got, _ := raw(s).GetTodo(td.ID)
+	if got.Worktree == nil || got.SessionID != "s-1" {
+		t.Fatalf("stopped task lost its work: %+v", got)
+	}
+
+	// Without fresh: the same session, which learns the new prompt.
+	if text, isErr := call(t, h, token, "restart_todo", `{"todo":"`+td.ID+`","prompt":"add an about page"}`); isErr {
+		t.Fatalf("restart_todo: %s", text)
+	}
+	again := running()
+	if again.Resume != "s-1" || !strings.Contains(again.Prompt, "add an about page") || again.Dir != first.Dir {
+		t.Errorf("continued run %+v", again)
+	}
+	if got, _ := raw(s).GetTodo(td.ID); got.Prompt != "add an about page" || got.Status != model.StatusInProgress {
+		t.Errorf("restarted %+v", got)
+	}
+
+	// fresh: stopped while running, then a new worktree and session.
+	if err := os.WriteFile(filepath.Join(first.Dir, "first.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if text, isErr := call(t, h, token, "restart_todo", `{"todo":"`+td.ID+`","prompt":"add a contact page","fresh":true}`); isErr {
+		t.Fatalf("restart_todo fresh: %s", text)
+	}
+	over := running()
+	if over.Resume != "" || !strings.Contains(over.Prompt, "add a contact page") || strings.Contains(over.Prompt, "about") {
+		t.Errorf("fresh run %+v", over)
+	}
+	if _, err := os.Stat(filepath.Join(over.Dir, "first.txt")); !os.IsNotExist(err) {
+		t.Errorf("fresh run reused the old worktree: %v", err)
+	}
+}
+
+// stop_todo and restart_todo refuse tasks that aren't running, queued or
+// (restart_todo) failed, and leave them as they are.
+func TestBoardMCPStopRestartRefusals(t *testing.T) {
+	parallel(t)
+
+	s, _, p := boardServer(t)
+	h := s.Routes()
+	token, release := s.Board.Register(chatCaller(t, s), p.ID)
+	defer release()
+	merged := withStatus(t, s, p.ID, model.StatusReview)
+	if _, err := raw(s).SetStatus(merged.ID, model.StatusMerged, ""); err != nil {
+		t.Fatal(err)
+	}
+	review := withStatus(t, s, p.ID, model.StatusReview)
+	failed := withStatus(t, s, p.ID, model.StatusFailed)
+	draft, _ := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "d"})
+	for _, c := range []struct{ tool, id, want string }{
+		{"stop_todo", merged.ID, "merged"},
+		{"stop_todo", review.ID, "review"},
+		{"stop_todo", failed.ID, "failed"},
+		{"restart_todo", merged.ID, "merged"},
+		{"restart_todo", review.ID, "review"},
+		{"restart_todo", draft.ID, "draft"},
+		{"stop_todo", "nope", "nope"},
+	} {
+		before, _ := raw(s).GetTodo(c.id)
+		if text, isErr := call(t, h, token, c.tool, `{"todo":"`+c.id+`","prompt":"x"}`); !isErr || !strings.Contains(text, c.want) {
+			t.Errorf("%s of a %s task: %s", c.tool, before.Status, text)
+		}
+		if after, _ := raw(s).GetTodo(c.id); after.Status != before.Status || after.Prompt != before.Prompt {
+			t.Errorf("%s changed a %s task: %+v", c.tool, before.Status, after)
+		}
+	}
+
+	// A queued task stops back into draft, like Cancel; restarting a failed
+	// one changes its prompt and queues it.
+	queued := withStatus(t, s, p.ID, model.StatusQueued)
+	if text, isErr := call(t, h, token, "stop_todo", `{"todo":"`+queued.ID+`"}`); isErr || !strings.Contains(text, `"draft"`) {
+		t.Errorf("stop a queued task: %s", text)
+	}
+	if text, isErr := call(t, h, token, "restart_todo", `{"todo":"`+failed.ID+`","prompt":"again","title":"Retry"}`); isErr {
+		t.Fatalf("restart a failed task: %s", text)
+	}
+	if got, _ := raw(s).GetTodo(failed.ID); got.Status != model.StatusQueued || got.Prompt != "again" || got.Title != "Retry" ||
+		got.SessionID != "s1" || len(got.Feedback) != 2 || !strings.Contains(got.Feedback[1], "again") {
+		t.Errorf("restarted %+v", got)
+	}
+}
+
+// hubFleet stands in for a hub's runners: a cancel is reported back as
+// the runner would, failed ("canceled").
+type hubFleet struct {
+	hub   *Server
+	mu    sync.Mutex
+	calls []string
+}
+
+func (f *hubFleet) Get(string) (tunnel.Runner, bool) { return tunnel.Runner{}, false }
+
+func (f *hubFleet) Call(_ context.Context, id, method, path string, in, out any) error {
+	f.mu.Lock()
+	f.calls = append(f.calls, method+" "+path)
+	f.mu.Unlock()
+	if tid, ok := strings.CutSuffix(strings.TrimPrefix(path, "/api/hub/tasks/"), "/cancel"); ok {
+		_, err := raw(f.hub).SetStatus(tid, model.StatusFailed, "canceled")
+		return err
+	}
+	return nil
+}
+
+// A chat the hub runs on a runner stops and restarts the hub's tasks on
+// their runners, through the hub's board.
+func TestRunnerChatStopsAndRestartsHubTasks(t *testing.T) {
+	parallel(t)
+
+	hub, runner, creds, linked, _ := hubWithRunner(t)
+	fleet := &hubFleet{hub: hub}
+	hub.Dispatch = &dispatch.Dispatcher{Store: raw(hub), Fleet: fleet}
+	h := runner.BoardMCP()
+	token, release := runner.Board.RegisterHub(chatCaller(t, runner), linked.ID)
+	defer release()
+
+	td := withStatus(t, hub, linked.ID, model.StatusInProgress)
+	if _, err := raw(hub).UpdateTodo(td.ID, func(x *model.Todo) error { x.Runner, x.RemoteID = creds.ID, "r1"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if text, isErr := call(t, h, token, "stop_todo", `{"todo":"`+td.ID+`"}`); isErr || !strings.Contains(text, "canceled") {
+		t.Fatalf("stop_todo: %s", text)
+	}
+	if got, _ := raw(hub).GetTodo(td.ID); got.Status != model.StatusFailed || got.Runner != creds.ID {
+		t.Errorf("stopped %+v", got)
+	}
+
+	// Retried on its runner, where its session is.
+	if text, isErr := call(t, h, token, "queue_todo", `{"todo":"`+td.ID+`"}`); isErr {
+		t.Fatalf("queue_todo: %s", text)
+	}
+	if got, _ := raw(hub).GetTodo(td.ID); got.Status != model.StatusQueued || got.Runner != creds.ID {
+		t.Errorf("retried %+v", got)
+	}
+
+	// Restarted fresh: the runner forgets its copy, and the task starts
+	// over wherever it is sent next.
+	if _, err := raw(hub).SetStatus(td.ID, model.StatusInProgress, ""); err != nil {
+		t.Fatal(err)
+	}
+	if text, isErr := call(t, h, token, "restart_todo", `{"todo":"`+td.ID+`","prompt":"v2","fresh":true}`); isErr {
+		t.Fatalf("restart_todo: %s", text)
+	}
+	got, _ := raw(hub).GetTodo(td.ID)
+	if got.Status != model.StatusQueued || got.Prompt != "v2" || got.Runner != "" || got.RemoteID != "" {
+		t.Errorf("restarted %+v", got)
+	}
+	fleet.mu.Lock()
+	defer fleet.mu.Unlock()
+	want := []string{"POST /api/hub/tasks/" + td.ID + "/cancel", "POST /api/hub/tasks/" + td.ID + "/cancel", "DELETE /api/hub/tasks/" + td.ID}
+	if strings.Join(fleet.calls, ",") != strings.Join(want, ",") {
+		t.Errorf("runner calls %v", fleet.calls)
+	}
+	if n := len(raw(runner).ListTodos("")); n != 0 {
+		t.Errorf("the runner's own board got %d tasks", n)
 	}
 }

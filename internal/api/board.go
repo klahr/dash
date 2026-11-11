@@ -353,6 +353,28 @@ func (b board) QueueTodo(id string) (model.Todo, error) {
 	return b.sv.enqueue(id)
 }
 
+func (b board) StopTodo(id string) (model.Todo, error) {
+	if err := b.sv.writable(); err != nil {
+		return model.Todo{}, err
+	}
+	return b.sv.stop(id)
+}
+
+func (b board) RequeueTodo(id string, fresh bool, note string) (model.Todo, error) {
+	if err := b.sv.writable(); err != nil {
+		return model.Todo{}, err
+	}
+	if fresh {
+		if _, err := b.sv.startOver(context.Background(), id); err != nil {
+			return model.Todo{}, err
+		}
+	}
+	if note != "" {
+		return b.sv.rework(id, note, nil)
+	}
+	return b.sv.enqueue(id)
+}
+
 func (b board) UpdateTodo(id string, u mcptools.TodoUpdate) (model.Todo, error) {
 	if err := b.sv.writable(); err != nil {
 		return model.Todo{}, err

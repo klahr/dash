@@ -531,6 +531,8 @@ func TestBoardMCPIsScoped(t *testing.T) {
 		{"create_todo", `{"project":"` + o.web.ID + `","title":"intruder"}`},
 		{"update_todo", `{"todo":"` + o.todo.ID + `","title":"mine"}`},
 		{"queue_todo", `{"todo":"` + o.todo.ID + `"}`},
+		{"stop_todo", `{"todo":"` + o.todo.ID + `"}`},
+		{"restart_todo", `{"todo":"` + o.todo.ID + `","prompt":"mine"}`},
 		{"delete_todo", `{"todo":"` + o.todo.ID + `"}`},
 		{"list_issues", `{"project":"` + o.web.ID + `"}`},
 		{"report_issue", `{"project":"` + o.web.ID + `","title":"intruder"}`},
