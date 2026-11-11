@@ -1,4 +1,4 @@
-import { $, h, ib, ico } from "./dom.js";
+import { $, fill, h, ib, ico } from "./dom.js";
 import { api } from "./api.js";
 import { art, ask, attempt, fail, reduceMotion, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -119,69 +119,90 @@ function runnerUsageMeters(r) {
 // The projects linked to runner r: their tasks run there.
 const runnerProjects = (r) => (state.projects || []).filter((p) => !p.prefix && p.runners?.includes(r.id));
 
-function runnerCard(r, { showOwner }) {
-  const st = runnerStatus(r);
-  const outdated = runnerOutdated(r);
-  const claude = r.reported?.claude;
-  const claudeWarns = runnerClaudeWarnings(r);
-  const patch = (body) => api("PATCH", `/api/runners/${encodeURIComponent(r.id)}`, body);
-  const projects = runnerProjects(r);
-  const controls = [];
-  if (r.can_manage) {
-    controls.push(h("label", { class: "runner-parallel", title: "How many tasks the hub sends it at once. Empty: the runner's own -parallel setting." }, "Tasks at once",
-      h("input", { type: "number", min: "0", max: "64", inputmode: "numeric", value: r.parallel ? String(r.parallel) : "",
-        placeholder: String(r.reported?.parallel || 1), "aria-label": `Tasks ${r.name} runs at once`,
-        onchange: attempt(async (e) => { await patch({ parallel: Number(e.target.value) || 0 }); await renderRunners(); }) })));
-  }
-  controls.push(h("span", { class: "runner-controls-gap" }));
-  controls.push(ib({ class: "btn small", type: "button",
-    title: r.can_manage ? `Pick the shared projects ${r.name} builds` : `The shared projects ${r.name} builds`,
-    onclick: attempt(() => showRunnerLinks(r)) }, "repo", "Projects…"));
-  if (r.mine) {
-    controls.push(ib({ class: "btn small", type: "button", disabled: !r.online,
-      title: r.online ? `Pick git repositories on ${r.name} to add as its projects` : `${r.name} is offline`,
-      onclick: attempt(() => showRunnerRepos(r)) }, "repo", "Add projects…"));
-  }
-  if (r.can_manage) {
-    controls.push(
-      ib({ class: "btn small", type: "button", onclick: attempt(async () => {
-        await patch({ paused: !r.paused });
-        toast(r.paused ? `${r.name} takes tasks again` : `${r.name} paused: it finishes what it runs and takes no new tasks`);
-        await renderRunners();
-      }) }, r.paused ? "play" : "pause", r.paused ? "Resume" : "Pause"),
-      ib({ class: "btn small danger", type: "button", title: `Disconnect ${r.name} and revoke its token`, onclick: attempt(async () => {
-        const ok = await ask({ title: `Revoke ${r.name}?`, body: "It's disconnected now, its token stops working and it's unlinked from every project. Tasks it is running fail and can be queued again on another runner. Run the install command with a new code to bring it back.", ok: "Revoke", danger: true });
-        if (!ok) return;
-        await api("DELETE", `/api/runners/${encodeURIComponent(r.id)}`);
-        toast(`${r.name} revoked`);
-        await refreshMachines();
-      }) }, "trash", "Revoke"));
-  }
-  return h("li", { class: `runner-card tone-${st.tone}` },
-    h("div", { class: "runner-card-head" },
-      h("span", { class: "runner-dot", "aria-hidden": "true" }),
-      h("span", { class: "runner-name" }, r.name),
-      r.version ? h("span", { class: `runner-version${outdated ? " warn" : ""}`, title: outdated ? `Out of date: the hub runs ${runnerInfo.version}` : "Dash version" }, r.version) : null,
-      claude ? h("span", { class: `runner-version${claudeWarns.length ? " warn" : ""}`,
-        title: claudeWarns.length ? "Claude Code version: its output or flags look different from what Dash expects" : "Claude Code version" },
-        `Claude ${claude.version || "?"}`) : null,
-      h("span", { class: "runner-state" }, st.text)),
-    h("div", { class: "runner-meta" },
-      showOwner && r.owner ? h("span", { class: "runner-owner" }, ico("users"), r.owner.username) : null,
-      runnerUsageMeters(r)),
-    h("div", { class: "runner-projects" },
-      projects.length
-        ? projects.map((p) => h("button", { class: "runner-project", type: "button", title: `Open ${p.name}`,
-          onclick: () => { $("#runners-sheet").close(); selectProject(p); } }, ico("repo"), p.name))
-        : h("span", { class: "hint" }, "No projects linked yet. Pick some with Projects…, or link one in its project settings", r.mine ? ", or add projects from this computer." : ".")),
-    outdated && r.mine ? h("div", { class: "runner-update" },
-      h("p", { class: "hint warn" }, `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run this on ${r.name} (it keeps its registration):`),
-      copyBlock(installCmd(), "Command copied", { pre: true })) : null,
-    claudeWarns.length ? h("div", { class: "runner-update runner-claude-warn", role: "status" },
-      h("p", { class: "hint warn" }, `Claude Code${claude.version ? ` ${claude.version}` : ""} on ${r.name} doesn't look the way Dash expects. Tasks may fail or miss usage limits; updating Dash may help:`),
-      h("ul", {}, ...claudeWarns.map((w) => h("li", {}, w)))) : null,
-    controls.length > 1 ? h("div", { class: "runner-controls" }, ...controls) : null);
+// What the sheet shows beside its rail: "overview", "add" (a new runner's
+// code) or a runner's id. Back to the overview each time it opens.
+let shown = "overview";
+const patchRunner = (r, body) => api("PATCH", `/api/runners/${encodeURIComponent(r.id)}`, body);
+// Yours first, then the others'; online before offline; by name.
+const byStatus = (a, b) => (b.online - a.online) || a.name.localeCompare(b.name);
+const runnerWarned = (r) => runnerOutdated(r) || runnerClaudeWarnings(r).length > 0;
+
+// selectRunner shows key ("overview", "add" or a runner's id) beside the rail.
+function selectRunner(key) {
+  if (key === shown) return;
+  closeRunnerPanels();
+  shown = key;
+  paintRunners();
+  $("#runners-main").scrollTop = 0;
+  $("#runners-nav .rail-item[aria-current]")?.scrollIntoView({ block: "nearest", inline: "nearest" }); // the strip on a narrow screen
 }
+// closeRunnerPanels puts away a runner's Projects and Add projects panels.
+function closeRunnerPanels() {
+  links.runner = null;
+  for (const id of ["#runners-links", "#runners-repos"]) { $(id).hidden = true; $(id).replaceChildren(); }
+}
+
+// paintRunners draws the sheet from state.runners: the rail, the overview
+// and the chosen runner. The rail keeps its focus across a redraw.
+function paintRunners() {
+  const list = state.runners;
+  if (shown !== "overview" && shown !== "add" && !list?.some((r) => r.id === shown)) { closeRunnerPanels(); shown = "overview"; }
+  if (shown === "add" && !$("#runners-code").hasChildNodes()) shown = "overview";
+  const nav = $("#runners-nav");
+  const navFocused = nav.contains(document.activeElement);
+  paintRunnerNav(list);
+  paintOverview(list);
+  const r = list?.find((x) => x.id === shown);
+  if (r) paintRunner(r);
+  const section = r ? "runner" : shown;
+  for (const s of $("#runners-main").children) s.classList.toggle("current", s.dataset.section === section);
+  if (navFocused) $("#runners-nav .rail-item[aria-current]")?.focus();
+}
+
+function paintRunnerNav(list) {
+  const item = (key, ...kids) => h("button", { type: "button", class: "rail-item", "data-rail": key,
+    "aria-current": key === shown ? "true" : null, tabIndex: key === shown ? 0 : -1 }, ...kids);
+  const runnerItem = (r) => {
+    const st = runnerStatus(r);
+    const b = item(r.id,
+      h("span", { class: "runner-dot", "aria-hidden": "true" }),
+      h("span", { class: "runner-rail-text" },
+        h("span", { class: "runner-rail-name" }, r.name),
+        h("span", { class: "runner-rail-state" }, st.text)),
+      runnerWarned(r) ? h("span", { class: "runner-rail-warn", title: "Needs attention" }, ico("alert")) : null);
+    b.classList.add("runner-rail", `tone-${st.tone}`);
+    b.title = `${r.name}: ${st.text}`;
+    return b;
+  };
+  const group = (head, ...items) => h("div", { class: "rail-group" }, head ? h("span", { class: "rail-head" }, head) : null, ...items);
+  if (!Array.isArray(list)) return $("#runners-nav").replaceChildren();
+  const mine = list.filter((r) => r.mine).sort(byStatus), others = list.filter((r) => !r.mine).sort(byStatus);
+  fill($("#runners-nav"),
+    group("", item("overview", "Overview")),
+    mine.length ? group("Yours", ...mine.map(runnerItem)) : null,
+    others.length ? group(mine.length ? "Others" : "Runners", ...others.map(runnerItem)) : null,
+    group("", item("add", ico("plus"), runnerAdd ? "Adding a runner…" : "Add a runner")));
+}
+$("#runners-nav").addEventListener("click", (e) => {
+  const b = e.target.closest(".rail-item");
+  if (!b) return;
+  if (b.dataset.rail === "add") attempt(openRunnerAdd)();
+  else selectRunner(b.dataset.rail);
+});
+// Arrow keys, Home and End move along the rail, as in Settings; only the
+// chosen entry is a tab stop. "Add a runner" isn't picked by passing it.
+$("#runners-nav").addEventListener("keydown", (e) => {
+  const items = [...$("#runners-nav").querySelectorAll(".rail-item")];
+  const i = items.indexOf(e.target);
+  if (i < 0) return;
+  const next = { ArrowDown: i + 1, ArrowRight: i + 1, ArrowUp: i - 1, ArrowLeft: i - 1, Home: 0, End: items.length - 1 }[e.key];
+  if (next === undefined) return;
+  e.preventDefault();
+  const b = items[(next + items.length) % items.length];
+  if (b.dataset.rail === "add" && !runnerAdd) { for (const x of items) x.tabIndex = x === b ? 0 : -1; b.focus(); return; }
+  selectRunner(b.dataset.rail);
+  $("#runners-nav .rail-item[aria-current]")?.focus();
+});
 
 function runnerStats(list) {
   const stat = (n, label, cls = "") => h("span", { class: `runner-stat ${cls}` }, h("strong", {}, String(n)), ` ${label}`);
@@ -199,46 +220,142 @@ function runnerStats(list) {
   ].filter(Boolean);
 }
 
-export async function renderRunners() {
-  const list = await loadRunners();
+// The overview: how the runners are doing, one line each to open it.
+function paintOverview(list) {
   const box = $("#runners-list");
+  $("#runners-add").hidden = list === null;
   if (list === null) {
     $("#runners-stats").replaceChildren();
-    $("#runners-add").hidden = true;
     box.replaceChildren(h("p", { class: "hint" }, "This Dash doesn't take runners."));
     return;
   }
-  // Yours first, then the others'; online before offline; by name.
-  const order = (a, b) => (b.online - a.online) || a.name.localeCompare(b.name);
-  const mine = list.filter((r) => r.mine).sort(order), others = list.filter((r) => !r.mine).sort(order);
+  $("#runners-stats").replaceChildren(...(list.length ? runnerStats(list) : []));
+  if (!list.length) {
+    $(".runners-about").open = true;
+    box.replaceChildren(h("div", { class: "runners-empty" },
+      ico("computer"),
+      h("p", { class: "empty-title" }, "No runners yet"),
+      h("p", { class: "hint" }, "Add a computer with git and Claude Code logged in: you get a one-line install command for its terminal (Linux or macOS).")));
+    return;
+  }
+  const mine = list.filter((r) => r.mine).sort(byStatus), others = list.filter((r) => !r.mine).sort(byStatus);
+  const row = (r, showOwner) => {
+    const st = runnerStatus(r);
+    const n = runnerProjects(r).length;
+    return h("li", {}, h("button", { type: "button", class: `runner-row-btn tone-${st.tone}`, onclick: () => selectRunner(r.id) },
+      h("span", { class: "runner-dot", "aria-hidden": "true" }),
+      h("span", { class: "runner-row-main" },
+        h("span", { class: "runner-name" }, r.name),
+        h("span", { class: "runner-row-sub" },
+          h("span", { class: "runner-state" }, st.text),
+          showOwner && r.owner ? h("span", { class: "runner-owner" }, ico("users"), r.owner.username) : null,
+          h("span", {}, n ? `${n} project${n === 1 ? "" : "s"}` : "No projects"),
+          runnerWarned(r) ? h("span", { class: "runner-row-warn" }, ico("alert"), runnerOutdated(r) ? "Out of date" : "Claude Code warning") : null)),
+      runnerUsageMeters(r),
+      ico("chevron-right")));
+  };
   const group = (title, rs, showOwner) => rs.length ? [
     title ? h("h3", { class: "org-section" }, title) : null,
-    h("ul", { class: "runner-cards" }, ...rs.map((r) => runnerCard(r, { showOwner }))),
+    h("ul", { class: "runner-rows" }, ...rs.map((r) => row(r, showOwner))),
   ] : [];
-  $("#runners-stats").replaceChildren(...(list.length ? runnerStats(list) : []));
-  if (!list.length) $(".runners-about").open = true;
-  box.replaceChildren(...(list.length ? [
+  box.replaceChildren(...[
     ...group(others.length ? "Yours" : "", mine, false),
     ...group(mine.length ? `Others in ${state.me?.org?.name || "the organization"}` : "", others, true),
-  ].filter(Boolean) : [h("div", { class: "runners-empty" },
-    ico("computer"),
-    h("p", { class: "empty-title" }, "No runners yet"),
-    h("p", { class: "hint" }, "Add a computer with git and Claude Code logged in: you get a one-line install command for its terminal (Linux or macOS)."))]));
-  if (runnerAdd) {
-    const added = list.find((r) => !runnerAdd.known.has(r.id));
-    const st = $("#runner-add-status");
-    if (st && added) {
-      st.classList.toggle("on", added.online);
-      st.replaceChildren(added.online ? `Connected ✓ ${added.name} is online.` : `${added.name} registered, connecting…`);
-      if (added.online) {
-        runnerAdd = null;
-        const close = $("#runner-add-close");
-        if (close) { close.textContent = "Done"; close.classList.add("primary"); }
-        $("#runners-add").hidden = false;
-        if (added.mine) showRunnerRepos(added).catch(fail);
-      }
-    }
+  ].filter(Boolean));
+}
+
+// paintRunner fills the chosen runner's page: its status, warnings, usage
+// and projects above its Projects panels, then what its owner can change.
+function paintRunner(r) {
+  const st = runnerStatus(r);
+  const outdated = runnerOutdated(r);
+  const claude = r.reported?.claude;
+  const claudeWarns = runnerClaudeWarnings(r);
+  const projects = runnerProjects(r);
+  const usage = runnerUsageMeters(r);
+  fill($("#runner-detail"),
+    h("div", { class: `runner-head tone-${st.tone}` },
+      h("span", { class: "runner-dot", "aria-hidden": "true" }),
+      h("h3", { class: "runner-title" }, r.name),
+      h("span", { class: "runner-state" }, st.text)),
+    h("div", { class: "runner-meta" },
+      r.owner && !r.mine ? h("span", { class: "runner-owner" }, ico("users"), r.owner.username) : null,
+      r.mine ? h("span", { class: "runner-owner" }, ico("users"), "Yours") : null,
+      r.version ? h("span", { class: `runner-version${outdated ? " warn" : ""}`, title: outdated ? `Out of date: the hub runs ${runnerInfo.version}` : "Dash version" }, `Dash ${r.version}`) : null,
+      claude ? h("span", { class: `runner-version${claudeWarns.length ? " warn" : ""}`,
+        title: claudeWarns.length ? "Claude Code version: its output or flags look different from what Dash expects" : "Claude Code version" },
+        `Claude ${claude.version || "?"}`) : null),
+    outdated && r.mine ? h("div", { class: "runner-update" },
+      h("p", { class: "hint warn" }, `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run this on ${r.name} (it keeps its registration):`),
+      copyBlock(installCmd(), "Command copied", { pre: true })) : null,
+    claudeWarns.length ? h("div", { class: "runner-update runner-claude-warn", role: "status" },
+      h("p", { class: "hint warn" }, `Claude Code${claude.version ? ` ${claude.version}` : ""} on ${r.name} doesn't look the way Dash expects. Tasks may fail or miss usage limits; updating Dash may help:`),
+      h("ul", {}, ...claudeWarns.map((w) => h("li", {}, w)))) : null,
+    usage ? h("h4", { class: "runner-sub" }, "Claude usage") : null,
+    usage,
+    h("h4", { class: "runner-sub" }, "Projects"),
+    h("div", { class: "runner-projects" },
+      projects.length
+        ? projects.map((p) => h("button", { class: "runner-project", type: "button", title: `Open ${p.name}`,
+          onclick: () => { $("#runners-sheet").close(); selectProject(p); } }, ico("repo"), p.name))
+        : h("span", { class: "hint" }, r.can_manage
+          ? ["No projects linked yet. Choose some below, or link one in its project settings", r.mine ? ", or add projects from this computer." : "."]
+          : "No projects linked yet.")),
+    h("div", { class: "runner-actions" },
+      ib({ class: "btn small", type: "button",
+        title: r.can_manage ? `Pick the shared projects ${r.name} builds` : `The shared projects ${r.name} builds`,
+        onclick: attempt(() => showRunnerLinks(r)) }, "repo", r.can_manage ? "Choose projects…" : "Shared projects…"),
+      r.mine ? ib({ class: "btn small", type: "button", disabled: !r.online,
+        title: r.online ? `Pick git repositories on ${r.name} to add as its projects` : `${r.name} is offline`,
+        onclick: attempt(() => showRunnerRepos(r)) }, "plus", "Add from this computer…") : null));
+
+  if (!r.can_manage) {
+    $("#runner-manage").replaceChildren(h("p", { class: "hint runner-manage-note" }, `Only ${r.owner?.username || "its owner"} or an admin can change ${r.name}.`));
+    return;
   }
+  const parallel = h("input", { type: "number", min: "0", max: "64", inputmode: "numeric", value: r.parallel ? String(r.parallel) : "",
+    placeholder: String(r.reported?.parallel || 1), "aria-label": `Tasks ${r.name} runs at once`,
+    onchange: attempt(async (e) => { await patchRunner(r, { parallel: Number(e.target.value) || 0 }); await renderRunners(); }) });
+  const setting = (title, hint, control, cls = "") => h("div", { class: `runner-setting ${cls}` },
+    h("div", { class: "runner-setting-text" }, h("strong", {}, title), h("p", { class: "hint" }, hint)), control);
+  fill($("#runner-manage"),
+    h("h4", { class: "runner-sub" }, "Settings"),
+    setting("Tasks at once", `How many tasks the hub sends it at once. Empty: the runner's own setting (${r.reported?.parallel || 1}).`, parallel),
+    setting(r.paused ? "Paused" : "Taking tasks",
+      r.paused ? "It takes no new tasks until you resume it." : "Pausing lets it finish what it runs, then it takes no new tasks.",
+      ib({ class: "btn small", type: "button", onclick: attempt(async () => {
+        await patchRunner(r, { paused: !r.paused });
+        toast(r.paused ? `${r.name} takes tasks again` : `${r.name} paused: it finishes what it runs and takes no new tasks`);
+        await renderRunners();
+      }) }, r.paused ? "play" : "pause", r.paused ? "Resume" : "Pause")),
+    setting("Revoke", "Disconnects it, stops its token and unlinks it from every project.",
+      ib({ class: "btn small danger", type: "button", title: `Disconnect ${r.name} and revoke its token`, onclick: attempt(async () => {
+        const ok = await ask({ title: `Revoke ${r.name}?`, body: "It's disconnected now, its token stops working and it's unlinked from every project. Tasks it is running fail and can be queued again on another runner. Run the install command with a new code to bring it back.", ok: "Revoke", danger: true });
+        if (!ok) return;
+        await api("DELETE", `/api/runners/${encodeURIComponent(r.id)}`);
+        toast(`${r.name} revoked`);
+        await refreshMachines();
+      }) }, "trash", "Revoke…"), "danger"));
+}
+
+export async function renderRunners() {
+  const list = await loadRunners();
+  let added = null;
+  if (runnerAdd && list) {
+    added = list.find((r) => !runnerAdd.known.has(r.id));
+    const st = $("#runner-add-status");
+    if (st && added && !added.online) st.replaceChildren(`${added.name} registered, connecting…`);
+    if (added?.online) {
+      // Connected: on to its page, where its projects are picked.
+      runnerAdd = null;
+      $("#runners-code").replaceChildren();
+      closeRunnerPanels();
+      shown = added.id;
+      toast(`Connected: ${added.name} is online`, { tone: "ok" });
+    } else added = null;
+  }
+  paintRunners();
+  if (added?.mine) showRunnerRepos(added).catch(fail);
 }
 
 // showRunnerRepos lists the git repositories runner r (the caller's own)
@@ -470,7 +587,7 @@ function renderRunnerLinks() {
   box.replaceChildren(
     h("h4", {}, `Projects ${r.name} builds`),
     h("p", { class: "hint" }, `Tick a project to link ${r.name} to it: it clones the repository into its projects folder and takes its tasks. Untick to unlink: the project and its tasks stay for the other runners.`),
-    r.mine ? h("p", { class: "hint warn" }, `Ticking a repository that isn't a project yet creates a shared project that everyone in ${org} sees and can link their runners to. For a repository only this computer works on, use Add projects… instead.`) : null,
+    r.mine ? h("p", { class: "hint warn" }, `Ticking a repository that isn't a project yet creates a shared project that everyone in ${org} sees and can link their runners to. For a repository only this computer works on, use Add from this computer… instead.`) : null,
     h("p", { class: "hint" }, ghNote),
     h("div", { class: "gh-filter-row" }, filter, all),
     h("div", { class: "gh-list", role: "group", "aria-label": `Projects ${r.name} builds` },
@@ -478,9 +595,9 @@ function renderRunnerLinks() {
     linksClose());
 }
 
+// addRunner gets a one-time code and shows how to install a runner with it,
+// beside the rail; renderRunners notices the runner it registers.
 async function addRunner() {
-  $("#runners-repos").hidden = true;
-  $("#runners-links").hidden = true;
   const before = await api("GET", "/api/runners");
   const { code, expires, hub } = await api("POST", "/api/runners/codes");
   if (hub) runnerInfo.hub = hub;
@@ -519,7 +636,7 @@ async function addRunner() {
   render();
   $("#runners-code").replaceChildren(
     h("div", { class: "runner-add-head" },
-      h("h4", {}, "Add a runner"),
+      h("h3", { class: "runner-title" }, "Add a runner"),
       h("div", { class: "segmented", role: "tablist", "aria-label": "How to install" }, tab("One line", oneLine, manual), tab("Manual", manual, oneLine))),
     oneLine, manual,
     h("details", { class: "runner-add-opts" },
@@ -530,27 +647,32 @@ async function addRunner() {
         h("label", { class: "field" }, h("span", {}, "Projects directory"), dir))),
     h("div", { class: "runner-add-foot" },
       h("p", { class: "runner-add-status", id: "runner-add-status", role: "status" }, "Waiting for the runner to connect…"),
-      h("button", { class: "btn small", id: "runner-add-close", type: "button", onclick: closeRunnerAdd }, "Cancel")),
-    h("p", { class: "hint" }, `The code works once, for ${mins} minutes, and makes the runner yours, in ${state.me?.org?.name || "this organization"}.`));
-  $("#runners-code").hidden = false;
-  $("#runners-add").hidden = true;
+      h("button", { class: "btn small", type: "button", onclick: closeRunnerAdd }, "Cancel")),
+    h("p", { class: "hint" }, `The code works once, for ${mins} minutes, and makes the runner yours, in ${state.me?.org?.name || "this organization"}. Once it connects, its page opens here.`));
+  closeRunnerPanels();
+  shown = "add";
+  paintRunners();
+  $("#runners-main").scrollTop = 0;
 }
-// closeRunnerAdd puts the "Add a runner" panel away (its unused code just expires).
+// openRunnerAdd shows the runner being added, or starts adding one.
+const openRunnerAdd = () => runnerAdd ? selectRunner("add") : addRunner();
+// closeRunnerAdd puts the "Add a runner" pane away (its unused code just expires).
 function closeRunnerAdd() {
   runnerAdd = null;
-  $("#runners-code").hidden = true;
   $("#runners-code").replaceChildren();
-  $("#runners-add").hidden = false;
+  if (shown === "add") selectRunner("overview");
+  else paintRunners();
 }
-$("#runners-add").addEventListener("click", attempt(addRunner));
+$("#runners-add").addEventListener("click", attempt(openRunnerAdd));
 
-// openRunners shows the organization's runners: what each is doing, and
-// adding, pausing, limiting and revoking them.
+// openRunners shows the organization's runners: an overview, and a page per
+// runner for its projects, pausing, limiting and revoking it.
 export async function openRunners() {
-  closeRunnerAdd();
-  $("#runners-repos").hidden = true;
-  links.runner = null;
-  $("#runners-links").hidden = true;
+  runnerAdd = null;
+  $("#runners-code").replaceChildren();
+  closeRunnerPanels();
+  shown = "overview";
+  $("#runners-main").scrollTop = 0;
   await renderRunners();
   const d = $("#runners-sheet");
   if (!d.open) d.showModal();

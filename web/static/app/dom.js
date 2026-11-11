@@ -98,6 +98,8 @@ const ICONS = {
   wand: "M4 20 15 9M13 7l4 4M17 3v4M15 5h4M7 4v2M6 5h2M19 15v2M18 16h2",
   split: "M3 12h6l4-6h8M9 12l4 6h8M18 3l3 3-3 3M18 15l3 3-3 3",
   right: "M5 12h14m-5-5 5 5-5 5",
+  "chevron-right": "m9 6 6 6-6 6",
+  alert: "M12 4 2.5 20h19zM12 10v4M12 17v.01",
   minimize: "M15 6l-6 6 6 6",
   clock: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
   spark: "M12 3v5M12 16v5M3 12h5M16 12h5M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6",

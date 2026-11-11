@@ -868,9 +868,31 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-name .paused-tag { margin-left: 6px; }
 .runner-parallel { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
 .runner-parallel input { width: 4.5em; min-height: 36px; padding: 0 8px; }
-/* Runners sheet: a status strip, then one card per runner. */
-#runners-sheet { max-width: 720px; }
-.runners-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+/* Runners sheet: a rail layout (.rail-sheet), like Settings. The rail lists an
+   overview, each runner with a status dot, and "Add a runner"; beside it the
+   overview, a runner's page or the new runner's install command. */
+:is(.runner-rail, .runner-row-btn, .runner-head) { --tone: var(--faint); }
+:is(.runner-rail, .runner-row-btn, .runner-head).tone-on { --tone: var(--merged); }
+:is(.runner-rail, .runner-row-btn, .runner-head):is(.tone-busy, .tone-paused) { --tone: var(--running); }
+:is(.runner-rail, .runner-row-btn, .runner-head) .runner-dot { background: var(--tone); }
+:is(.runner-row-btn, .runner-head):is(.tone-on, .tone-busy) .runner-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 22%, transparent); }
+/* A runner on the rail: its dot and name, and (beside the sections) what it does. */
+.rail-item.runner-rail { gap: 8px; max-width: 240px; }
+.runner-rail-text { min-width: 0; display: grid; }
+.runner-rail-name { overflow: hidden; text-overflow: ellipsis; }
+.runner-rail-state { display: none; }
+.runner-rail.tone-off .runner-rail-name { color: var(--muted); }
+.runner-rail-warn { flex: none; display: inline-flex; color: var(--running); }
+.runner-rail-warn .ico, .rail-item > .ico { width: 16px; height: 16px; flex: none; }
+.rail-item[data-rail="add"] { gap: 6px; }
+.rail-item[data-rail="add"]:not([aria-current]) { color: var(--accent); }
+@media (min-width: 760px) {
+  .rail-item.runner-rail { max-width: none; min-height: 48px; padding-block: 6px; }
+  .runner-rail-state { display: block; font-size: 12px; font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .runner-rail-warn { margin-left: auto; }
+  #runners-nav .rail-group:last-child { margin-top: auto; }
+}
+.runners-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .runners-stats { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .runner-stat { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; background: var(--raised); color: var(--muted); font-size: 13px; }
 .runner-stat strong { color: var(--text); font-variant-numeric: tabular-nums; }
@@ -886,56 +908,76 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runners-empty > .ico { width: 36px; height: 36px; color: var(--faint); margin-bottom: 6px; }
 .runners-empty .hint { max-width: 40ch; margin: 0; }
 #runners-list > .org-section:first-child { margin-top: 18px; }
-.runner-cards { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
-.runner-card { --tone: var(--faint); display: grid; gap: 8px; padding: 12px 14px; border-radius: var(--r-m); background: var(--raised); border: 1px solid var(--line); border-left: 3px solid var(--tone); }
-.runner-card.tone-on { --tone: var(--merged); }
-.runner-card.tone-busy { --tone: var(--running); }
-.runner-card.tone-paused { --tone: var(--running); }
-.runner-card.tone-off { --tone: var(--faint); }
-.runner-card .runner-dot { background: var(--tone); }
-.runner-card.tone-on .runner-dot, .runner-card.tone-busy .runner-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 22%, transparent); }
-.runner-card.tone-off .runner-name { color: var(--muted); }
-.runner-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.runner-card-head .runner-name { font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.runner-state { margin-left: auto; flex: none; font-size: 13px; font-weight: 600; color: var(--tone); text-align: right; }
-.runner-card.tone-off .runner-state { color: var(--muted); font-weight: 400; }
-.runner-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted); }
+/* The overview: one line per runner, opening its page. */
+.runner-rows { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+#runners-list > .runner-rows:first-child { margin-top: 16px; }
+.runner-row-btn {
+  width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 12px; text-align: left;
+  border-radius: var(--r-m); background: var(--raised); border: 1px solid var(--line); color: var(--text);
+  transition: border-color .15s, background-color .15s;
+}
+.runner-row-btn:hover { border-color: var(--faint); }
+.runner-row-btn > .ico { flex: none; width: 18px; height: 18px; color: var(--faint); }
+.runner-row-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.runner-row-main .runner-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runner-row-btn.tone-off .runner-name { color: var(--muted); }
+.runner-row-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; font-size: 13px; color: var(--muted); }
+.runner-row-sub .runner-state { color: var(--tone); font-weight: 600; }
+.runner-row-btn.tone-off .runner-row-sub .runner-state { color: var(--muted); font-weight: 400; }
+.runner-row-warn { display: inline-flex; align-items: center; gap: 4px; color: var(--running); }
+.runner-row-warn .ico { width: 14px; height: 14px; }
+.runner-row-btn .runner-usage { flex: none; flex-direction: column; gap: 4px; }
+@media (max-width: 560px) { .runner-row-btn .runner-usage { display: none; } }
+/* A runner's page. */
+.runner-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.runner-head .runner-dot { width: 10px; height: 10px; }
+.runner-title { margin: 0; font-size: 18px; letter-spacing: -.01em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runner-head .runner-state { margin-left: auto; flex: none; font-size: 13px; font-weight: 600; color: var(--tone); text-align: right; }
+.runner-head.tone-off .runner-state { color: var(--muted); font-weight: 400; }
+.runner-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 8px; font-size: 13px; color: var(--muted); }
 .runner-meta:empty { display: none; }
 .runner-owner { display: inline-flex; align-items: center; gap: 4px; }
 .runner-owner .ico { width: 14px; height: 14px; }
-.runner-usage { display: inline-flex; flex-wrap: wrap; gap: 4px 14px; }
+#runner-detail > .runner-update { margin-top: 12px; padding: 8px 10px; border-radius: var(--r-s); background: color-mix(in srgb, var(--running) 8%, transparent); }
+#runner-detail > .runner-update .hint:first-child { margin: 0; }
+.runner-sub { margin: 20px 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.runner-usage { display: inline-flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
 .runner-meter { --m: var(--merged); display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
 .runner-meter.mid { --m: var(--running); }
 .runner-meter.high { --m: var(--failed); }
 .runner-meter-bar { width: 64px; height: 6px; border-radius: 999px; background: var(--surface); overflow: hidden; }
+#runner-detail .runner-meter-bar { width: 120px; background: var(--raised); }
 .runner-meter-fill { display: block; height: 100%; border-radius: inherit; background: var(--m); }
 .runner-meter-pct { min-width: 3ch; color: var(--text); }
 .runner-projects { display: flex; flex-wrap: wrap; gap: 6px; }
 .runner-projects .hint { margin: 0; font-size: 13px; }
-.runner-project { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runner-project { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--raised); color: var(--text); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .runner-project:hover { border-color: var(--faint); }
 .runner-project .ico { width: 14px; height: 14px; flex: none; color: var(--muted); }
-.runner-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
-.runner-controls-gap { flex: 1; }
-.runner-card .runner-update { padding: 8px 10px; border-radius: var(--r-s); background: color-mix(in srgb, var(--running) 8%, transparent); }
-.runner-card .runner-update .hint { margin: 0; }
+.runner-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+/* What its owner or an admin can change: a row per setting, Revoke last. */
+.runner-setting { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
+.runner-setting:last-child { padding-bottom: 0; }
+.runner-setting-text { flex: 1; min-width: 0; }
+.runner-setting-text .hint { margin: 2px 0 0; font-size: 13px; }
+.runner-setting > input { width: 5.5em; flex: none; min-height: 36px; padding: 0 8px; }
+.runner-setting > .btn { flex: none; }
+.runner-setting.danger strong { color: var(--failed); }
+.runner-manage-note { margin-top: 20px; }
 .runner-claude-warn ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px; overflow-wrap: anywhere; }
-#runners-code, #runners-repos:not([hidden]), #runners-links:not([hidden]) { margin-top: 12px; }
+#runners-repos:not([hidden]), #runners-links:not([hidden]) { margin-top: 12px; }
 #runners-repos:not([hidden]), #runners-links:not([hidden]) { padding: 12px 14px; border-radius: var(--r-m); background: var(--raised); border: 1px solid var(--line); }
 #runners-repos h4, #runners-links h4 { margin: 0; font-size: 15px; }
 #runners-links .gh-repo { cursor: pointer; }
-#runners-links .gh-repo input { margin: 3px 0 0; flex: none; accent-color: var(--accent); }
+/* Undo the global input rule's width and padding, so a checkbox doesn't fill its row. */
+#runners-links .gh-repo input, #runners-repos .runner-pick input { margin: 3px 0 0; flex: none; width: 18px; height: 18px; padding: 0; accent-color: var(--accent); }
+#runners-repos .runner-pick input { margin: 0; }
 #runners-links .gh-repo:has(input:disabled) { cursor: not-allowed; }
 #runners-links .gh-filter-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 #runners-links .gh-filter-row input[type="search"] { flex: 1; }
 .runner-repos-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 40dvh; overflow-y: auto; }
 .runner-repos-actions { display: flex; gap: 8px; margin-top: 10px; }
 #settings-runners-manage { margin-top: 6px; }
-@media (max-width: 560px) {
-  .runner-card-head { flex-wrap: wrap; }
-  .runner-controls-gap { flex-basis: 100%; height: 0; }
-  .runner-controls .btn { flex: 1 1 auto; white-space: nowrap; }
-}
 .runner-pick { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .runner-pick .hint { margin: 0; }
 /* Project settings: one card per runner, like the merge-mode choices. */
@@ -999,15 +1041,12 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 }
 #webhook-secret { margin-top: 10px; }
 .runner-update .hint { margin: 4px 0 0; }
-/* "Add a runner": one card with the command, its options and whether it has connected yet. */
-#runners-code { margin-top: 12px; padding: 12px 14px; border-radius: var(--r-m); background: var(--raised); border: 1px solid var(--line); }
+/* "Add a runner": its pane beside the rail, with the command, its options and whether it has connected yet. */
 #runners-code .hint { margin: 6px 0 0; }
 #runners-code > div > p:first-child { margin: 12px 0 0; }
 .runner-add-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.runner-add-head h4 { margin: 0; font-size: 15px; }
-.runner-add-head .segmented { margin: 0; background: var(--bg); }
+.runner-add-head .segmented { margin: 0; }
 .runner-add-head .segmented button { min-height: 30px; padding: 0 12px; font-size: 13px; }
-.runner-add-head .segmented button[aria-selected="true"] { background: var(--surface); }
 #runners-code .steps { margin-top: 12px; }
 #runners-code .steps > li:last-child { margin-bottom: 0; }
 .runner-add-opts { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
