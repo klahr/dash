@@ -240,6 +240,30 @@ func (g *Git) AddWorktree(ctx context.Context, projectID, repo string, wt model.
 	return err
 }
 
+// RepairWorktrees runs git worktree repair in repo, a checkout just moved
+// to a new folder: each linked worktree's .git file then points to repo's
+// new place again. paths are worktrees that moved too (none if only repo did).
+func (g *Git) RepairWorktrees(ctx context.Context, projectID, repo string, paths ...string) error {
+	_, err := g.git(ctx, projectID, repo, append([]string{"worktree", "repair"}, paths...)...)
+	return err
+}
+
+// WorktreePaths are the folders of repo's linked worktrees (not repo's own),
+// as git has them.
+func (g *Git) WorktreePaths(ctx context.Context, projectID, repo string) ([]string, error) {
+	out, err := g.git(ctx, projectID, repo, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for i, line := range strings.Split(out, "\n") {
+		if p, ok := strings.CutPrefix(line, "worktree "); ok && i > 0 {
+			paths = append(paths, p)
+		}
+	}
+	return paths, nil
+}
+
 // RemoveWorktree deletes the worktree directory and its branch.
 func (g *Git) RemoveWorktree(ctx context.Context, projectID, repo string, wt model.Worktree) error {
 	if _, err := g.git(ctx, projectID, repo, "worktree", "remove", "--force", wt.Path); err != nil {

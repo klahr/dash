@@ -51,3 +51,19 @@ dash version        # or dash -version; dash-tui -version, dash-mcp -version
 A release prints its tag, e.g. `dash 1.2.0`; a build from source without the linker flag prints
 `dash dev`. Dash also logs the version at startup and returns it as `release` from
 `/api/version`.
+
+## Release notes
+
+Changes that need something from you, or that you will notice, when you upgrade. The full list
+of changes is in each GitHub release's changelog.
+
+### Next release
+
+- **Runner clones move to `<projects>/<org>/`.** A runner now keeps its clones of the hub's
+  projects in its organization's folder, `<-projects>/<org folder>/<repo>`, instead of straight in
+  `<-projects>/`. Clones the runner made itself move there on their own, on the runner's first
+  start after the upgrade or at the hub's next link of the project, worktrees and task branches
+  and all (the log says `runner: moved <old> → <new>`). A project with tasks running or merging,
+  or a preview or try session open, at that time moves later, once it is idle. Checkouts the
+  runner adopted, and old clones under `<-projects>/hub/`, stay where they are. See
+  [Where a runner keeps a shared project](several-computers.md#where-a-runner-keeps-a-shared-project).

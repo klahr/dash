@@ -21,8 +21,8 @@ Every project lives on runners, in one of two ways:
   runner's name. Make one with **Add projects from this computer…** on the runner's row of the
   Runners page, or start a new one with **+ New project** → **Local only**. See [below](#projects-of-a-runners-own).
 - **A shared project**: the hub's project, a git remote that one or more runners are linked to.
-  Each linked runner keeps its own clone of the remote, straight in its projects folder
-  (`<-projects>/<repo>`), any of them can run its tasks, and work lands on the remote. It shows in
+  Each linked runner keeps its own clone of the remote, in its organization's folder inside its
+  projects folder (`<-projects>/<org>/<repo>`), any of them can run its tasks, and work lands on the remote. It shows in
   the dashboard under each runner it is linked to, with a small "shared" mark (two people). Make
   one with **+ New project** (see [New project on the hub](#new-project-on-the-hub)): it is linked
   to the runner picked as its **Runner**. Link more runners in its **Settings → Runners**, or pick
@@ -448,28 +448,46 @@ whichever protocol it clones over.
 
 ### Where a runner keeps a shared project
 
-When a project is linked to it, a runner puts it straight in its projects folder, named after the
-remote: `https://github.com/klahr/dash.git` becomes `~/src/klahr/dash` for a runner started
-with `-projects ~/src/klahr`.
+When a project is linked to it, a runner puts it in the folder of the project's organization
+inside its projects folder, named after the remote: `https://github.com/klahr/dash.git` becomes
+`~/src/acme/dash` for a runner started with `-projects ~/src`, in the organization whose folder
+is `acme`. That is the same folder name the hub uses for the organization's projects (the
+organization's subdomain name when it was made; renaming the subdomain later doesn't change
+it). A hub from before this sends no folder name; the runner then uses `org-<id>`
+(`~/src/org-1/dash`). So the clones of different organizations never share a folder, nor share
+one with the runner's own projects, and everything inside `<-projects>/<org>/` is Dash's.
 
-- **A clone of the same repository is already there** (the remote compared without caring about
-  `https` or `ssh`, credentials or a trailing `.git`): the runner adopts it instead of cloning.
-  If it was one of the runner's own projects, that project becomes the shared one (unlinking
-  makes it the runner's own again).
+- **A clone of the same repository is already in the organization's folder** (the remote
+  compared without caring about `https` or `ssh`, credentials or a trailing `.git`): the runner
+  adopts it instead of cloning. If it was one of the runner's own projects, that project becomes
+  the shared one (unlinking makes it the runner's own again). A clone anywhere else, such as your
+  own checkout at `<-projects>/dash`, is never adopted: the runner makes a clone of its own.
 - **Something else is there** (another repository, a folder that isn't one, a file, a symlink, or
   a clone of the same remote already linked to another shared project): it is never touched; the
-  runner takes the next free name, `dash-2`, `dash-3`, …
+  runner takes the next free name in the organization's folder, `dash-2`, `dash-3`, … A
+  repository or a file where the organization's folder should be is in the way: linking says so,
+  and works once it is moved.
 - **Your own edits in an adopted clone**: tasks still work in worktrees, but landing one moves the
   checked-out branch of that folder. So while it has uncommitted changes to tracked files, a task
   you approved waits ("Waiting for you to commit or stash …") and lands once you commit or stash
   them; nothing is pushed meanwhile and your changes are never overwritten. Starting the project's
   run or test command there warns about them; its deploy command is refused until they are
   committed. Switching the working branch only makes branches; it doesn't touch the folder.
-- **Runners from before** cloned shared projects into `<-projects>/hub/<name>`. Those stay where
-  they are, with their worktrees, task branches and uncommitted work: on its first start after the
-  upgrade the runner marks them as the hub's once and from then on finds them by id. Only new
-  links go to `<-projects>/<repo>`. To move one, unlink it, move the folder, and link it again
-  (the runner adopts it at its new place).
+- **Clones from before, straight in `<-projects>/`** move into the organization's folder on
+  their own, with the release that brings this: on the runner's start, or at the hub's next link
+  of the project (before each task it sends, and whenever the hub shows its files, branches or
+  commands) if the runner didn't know the folder's name yet. The move renames the folder and runs
+  `git worktree repair`, so the tasks' worktrees, task branches and uncommitted work come along;
+  the hub then shows the new folder. Each move is logged, `runner: moved ~/src/dash →
+  ~/src/acme/dash`. A project with a task running or merging, or a preview, try session or command
+  running in it, moves later, once it is idle. If a move fails part way it is undone and the
+  project keeps working from its old folder (the log says why). Only clones the runner made
+  move: one it adopted may be your own checkout, and stays where it is.
+- **Runners from before that** cloned shared projects into `<-projects>/hub/<name>`. Those stay
+  where they are, with their worktrees, task branches and uncommitted work: on its first start
+  after the upgrade the runner marks them as the hub's once and from then on finds them by id. To
+  move one, unlink it, move the folder into `<-projects>/<org>/`, and link it again (the runner
+  adopts it at its new place).
 
 ## Projects of a runner's own
 

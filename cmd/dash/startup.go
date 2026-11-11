@@ -876,6 +876,9 @@ func (a *app) fixProjects() {
 		} else if len(names) > 0 {
 			slog.Info("the hub's projects under hub/ stay there, now found by id", "projects", names)
 		}
+		// The hub's clones Dash made in the projects root itself move into
+		// their org's folder, <projects>/<org>/, once they are idle.
+		a.apiSrv.MoveHubClones(ctx)
 	}
 
 	// Projects adopted with a default branch the repo doesn't have (e.g.

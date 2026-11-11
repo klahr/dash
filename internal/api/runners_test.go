@@ -242,8 +242,8 @@ func runnerSide(t *testing.T, hubOrg int64) (s *Server, h http.Handler, remote s
 }
 
 // A runner takes work only for projects its hub linked to it, of the org it
-// was registered for, cloned into its own projects root (<root>/<repo>,
-// named after the remote); it refuses
+// was registered for, cloned into the org's folder in its projects root
+// (<root>/<org folder>/<repo>, named after the remote); it refuses
 // anything else, and nobody but the hub reaches these routes.
 func TestRunnerOnlyTakesWorkForLinkedProjects(t *testing.T) {
 	serial(t) // turns gitops.AllowLocalRemotes off for a moment
@@ -275,7 +275,7 @@ func TestRunnerOnlyTakesWorkForLinkedProjects(t *testing.T) {
 		t.Fatalf("link: %d %s", w.Code, w.Body)
 	}
 	p, err := raw(s).GetProject(linked.ProjectID)
-	if err != nil || p.Path != filepath.Join(s.ProjectRoot, "remote") || p.MergeMode != model.MergeLocal ||
+	if err != nil || p.Path != filepath.Join(s.ProjectRoot, "org-7", "remote") || p.MergeMode != model.MergeLocal ||
 		!p.LandsOnOrigin() || p.HubProjectID != "hub-p1" || p.HubCheckout != model.HubCloned || linked.Path != p.Path || linked.Adopted {
 		t.Fatalf("linked project %+v %v", p, err)
 	}

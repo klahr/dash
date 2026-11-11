@@ -157,6 +157,11 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 		AutoApprove: &p.AutoApprove, MaxAutoFixes: &p.MaxAutoFixes,
 		SetupCommand: p.SetupCommand, TestCommand: p.TestCommand, RunCommand: p.RunCommand, DeployCommand: p.DeployCommand,
 		PreviewKind: p.PreviewKind, PreviewCommand: p.PreviewCommand}
+	if d.Store != nil {
+		if o, err := d.Store.Accounts().Org(p.OrgID); err == nil {
+			link.OrgFolder = o.ProjectFolder()
+		}
+	}
 	var out Linked
 	err := d.Fleet.Call(ctx, id, http.MethodPut, "/api/hub/projects/"+url.PathEscape(p.ID), link, &out)
 	return out, err

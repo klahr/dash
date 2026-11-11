@@ -35,8 +35,9 @@ import (
 
 // Link is PUT /api/hub/projects/{hub project id} on a runner: the hub
 // links one of its projects to the runner, which clones RemoteURL into
-// <its projects root>/<repo>, adopts a clone of RemoteURL already there, or
-// finds its checkout from an earlier link by the hub's project id.
+// <its projects root>/<org folder>/<repo>, adopts a clone of RemoteURL
+// already in that org folder, or finds its checkout from an earlier link by
+// the hub's project id.
 type Link struct {
 	Name      string `json:"name"`
 	RemoteURL string `json:"remote_url"`
@@ -48,6 +49,11 @@ type Link struct {
 	// it isn't DefaultBranch (the hub's branch switcher); "" means DefaultBranch.
 	WorkBranch string `json:"work_branch,omitempty"`
 	OrgID      int64  `json:"org_id"`
+	// OrgFolder is the org's folder name (store.Org.ProjectFolder), the
+	// same one the hub's own projects of the org go in: the runner keeps
+	// its clones of the org's projects in <projects root>/<OrgFolder>/.
+	// Older hubs don't send it; the runner then uses org-<OrgID>.
+	OrgFolder string `json:"org_folder,omitempty"`
 	// MergeMode is the hub project's model.Project.MergeMode: "" or "local"
 	// lands approved work by pushing it to the default branch, "pr" through
 	// a pull request.
@@ -91,7 +97,9 @@ type Linked struct {
 	// differ from the one the hub guessed when the project was made.
 	DefaultBranch string `json:"default_branch,omitempty"`
 	// Path is where the runner keeps its checkout: <its projects
-	// folder>/<repo> (or <repo>-2, … when that folder holds something else).
+	// folder>/<org folder>/<repo> (or <repo>-2, … when that folder holds
+	// something else). It is sent with every link, so it follows the
+	// runner's clone when the runner moves it (see api.MoveHubClones).
 	Path string `json:"path,omitempty"`
 	// Adopted is whether a clone of the remote was already there and the
 	// runner took it over instead of cloning.

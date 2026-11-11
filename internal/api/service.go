@@ -568,7 +568,7 @@ func (sv *service) projectsRoot() (string, error) {
 	if sv.c.Machine {
 		return sv.s.ProjectRoot, nil
 	}
-	org := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(sv.c.OrgFolder), "-"), "-")
+	org := store.FolderSlug(sv.c.OrgFolder)
 	if org == "" {
 		return "", fmt.Errorf("%w: your organization has no folder for projects", errBadRequest)
 	}

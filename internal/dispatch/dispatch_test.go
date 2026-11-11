@@ -655,3 +655,18 @@ func TestHubFollowsTheRunnersMerge(t *testing.T) {
 		t.Errorf("link of a pull request project: %+v", l)
 	}
 }
+
+// A link names the org's folder, the one the hub's own projects of the org
+// go in, so the runner clones into <projects>/<org folder>/.
+func TestLinkSendsTheOrgFolder(t *testing.T) {
+	fx := newFixture(t)
+	fx.fleet.set(runnerOf("r1", fx.orgB, true))
+	p := fx.project(t, fx.orgB, "r1")
+	if _, err := fx.d.Link(context.Background(), "r1", p); err != nil {
+		t.Fatal(err)
+	}
+	o, _ := fx.st.Accounts().Org(fx.orgB)
+	if len(fx.fleet.links) != 1 || fx.fleet.links[0].OrgFolder != o.ProjectFolder() || fx.fleet.links[0].OrgFolder != "beta" {
+		t.Errorf("links %+v, want folder %q", fx.fleet.links, o.ProjectFolder())
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -97,6 +98,24 @@ type Org struct {
 	// Folder is the org's folder under the projects root. Unlike the slug
 	// it never changes.
 	Folder string `json:"-"`
+}
+
+// ProjectFolder is the name of o's folder under a projects root: its
+// Folder (its slug, for an org loaded without one) made safe by FolderSlug.
+// The hub's own projects of o go there, and so do runners' clones of them.
+func (o Org) ProjectFolder() string {
+	if o.Folder != "" {
+		return FolderSlug(o.Folder)
+	}
+	return FolderSlug(o.Slug)
+}
+
+var folderSlugRe = regexp.MustCompile(`[^a-z0-9-]+`)
+
+// FolderSlug makes s a folder name for an org: lower-case letters, digits
+// and '-', not starting or ending with '-' ("" when nothing is left).
+func FolderSlug(s string) string {
+	return strings.Trim(folderSlugRe.ReplaceAllString(strings.ToLower(s), "-"), "-")
 }
 
 // Membership is one org a user belongs to and their role there.

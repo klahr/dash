@@ -47,7 +47,7 @@ func needGit(t *testing.T) {
 	}
 }
 
-// A clone of the same remote already in <projects>/<repo> is adopted, not
+// A clone of the same remote already in <projects>/<org>/<repo> is adopted, not
 // cloned again, and the user's uncommitted work in it stays as it was.
 func TestHubLinkAdoptsAnExistingClone(t *testing.T) {
 	parallel(t)
@@ -55,7 +55,7 @@ func TestHubLinkAdoptsAnExistingClone(t *testing.T) {
 	needGit(t)
 	s, h, remote := runnerSide(t, 7)
 	ctx := context.Background()
-	mine := filepath.Join(s.ProjectRoot, "remote")
+	mine := filepath.Join(s.ProjectRoot, "org-7", "remote")
 	if err := s.Git.Clone(ctx, "x", remote, mine); err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestHubLinkClonesWhenTheRequestGoesAway(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("link: %d %s", w.Code, w.Body)
 	}
-	path := filepath.Join(s.ProjectRoot, "remote")
+	path := filepath.Join(s.ProjectRoot, "org-7", "remote")
 	if gitIn(t, path, "rev-parse", "HEAD") != gitIn(t, remote, "rev-parse", "HEAD") {
 		t.Error("the clone isn't origin's")
 	}
@@ -119,7 +119,7 @@ func TestHubLinkAdoptsTheRunnersOwnProject(t *testing.T) {
 	needGit(t)
 	s, h, remote := runnerSide(t, 7)
 	ctx := context.Background()
-	mine := filepath.Join(s.ProjectRoot, "remote")
+	mine := filepath.Join(s.ProjectRoot, "org-7", "remote")
 	if err := s.Git.Clone(ctx, "x", remote, mine); err != nil {
 		t.Fatal(err)
 	}
@@ -152,22 +152,23 @@ func TestHubLinkNameClashes(t *testing.T) {
 	needGit(t)
 	s, h, remote := runnerSide(t, 7)
 	ctx := context.Background()
-	other := filepath.Join(s.ProjectRoot, "remote")
+	org := filepath.Join(s.ProjectRoot, "org-7")
+	other := filepath.Join(org, "remote")
 	gitClone(t, other, "main") // another repository (origin github.com/me/remote)
 	otherHead := gitIn(t, other, "rev-parse", "HEAD")
-	plain := filepath.Join(s.ProjectRoot, "remote-2")
+	plain := filepath.Join(org, "remote-2")
 	if err := os.MkdirAll(plain, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(plain, "notes.txt"), []byte("keep"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(t.TempDir(), filepath.Join(s.ProjectRoot, "remote-3")); err != nil {
+	if err := os.Symlink(t.TempDir(), filepath.Join(org, "remote-3")); err != nil {
 		t.Fatal(err)
 	}
 
 	code, linked := hubLinkAs(t, h, "hub-p1", remote)
-	want := filepath.Join(s.ProjectRoot, "remote-4")
+	want := filepath.Join(org, "remote-4")
 	if code != http.StatusCreated || linked.Path != want || linked.Adopted {
 		t.Fatalf("link: %d %+v", code, linked)
 	}
@@ -177,13 +178,13 @@ func TestHubLinkNameClashes(t *testing.T) {
 	if ents, _ := os.ReadDir(plain); len(ents) != 1 {
 		t.Errorf("the plain folder was touched: %v", ents)
 	}
-	if ents, _ := os.ReadDir(filepath.Join(s.ProjectRoot, "remote-3")); len(ents) != 0 {
+	if ents, _ := os.ReadDir(filepath.Join(org, "remote-3")); len(ents) != 0 {
 		t.Errorf("something was written through the symlink: %v", ents)
 	}
 
 	// Another of the hub's projects with the same remote gets its own clone.
 	code, second := hubLinkAs(t, h, "hub-p2", remote)
-	if code != http.StatusCreated || second.Path != filepath.Join(s.ProjectRoot, "remote-5") || second.Adopted {
+	if code != http.StatusCreated || second.Path != filepath.Join(org, "remote-5") || second.Adopted {
 		t.Fatalf("second link: %d %+v", code, second)
 	}
 	// Linking again finds each by its id.
@@ -215,13 +216,18 @@ func TestHubPlaceStaysInTheProjectsFolder(t *testing.T) {
 	s, _, _ := runnerSide(t, 7)
 	sv := s.as(ownerCaller(t, s))
 	for _, remote := range []string{"https://github.com/x/..git", "https://github.com/x/...git", "git@github.com:x/.git"} {
-		place, err := s.hubPlace(context.Background(), sv, "hp", "", remote)
-		if err != nil || filepath.Dir(place.Path) != filepath.Clean(s.ProjectRoot) {
+		place, err := s.hubPlace(context.Background(), sv, "hp", "org-7", "", remote)
+		if err != nil || filepath.Dir(place.Path) != filepath.Join(s.ProjectRoot, "org-7") {
 			t.Errorf("%s: %+v %v", remote, place, err)
 		}
 	}
+	for _, folder := range []string{"", "..", "a/b", "Org"} {
+		if place, err := s.hubPlace(context.Background(), sv, "hp", folder, "x", "https://github.com/x/y.git"); err == nil {
+			t.Errorf("placed in org folder %q: %+v", folder, place)
+		}
+	}
 	s.ProjectRoot = ""
-	if _, err := s.hubPlace(context.Background(), sv, "hp", "x", "https://github.com/x/y.git"); err == nil {
+	if _, err := s.hubPlace(context.Background(), sv, "hp", "org-7", "x", "https://github.com/x/y.git"); err == nil {
 		t.Error("placed without a projects folder")
 	}
 }
@@ -273,7 +279,7 @@ func TestHubLegacyClonesKeepWorking(t *testing.T) {
 	if code, linked := hubLinkAs(t, h, "hub-p1", remote); code != http.StatusOK || linked.ProjectID != legacy.ID {
 		t.Errorf("link: %d %+v", code, linked)
 	}
-	if _, err := os.Stat(filepath.Join(s.ProjectRoot, "remote")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(s.ProjectRoot, "org-7", "remote")); !os.IsNotExist(err) {
 		t.Errorf("cloned again: %v", err)
 	}
 	if !s.Git.HasBranch(ctx, "x", old, "dash/todo-1") {

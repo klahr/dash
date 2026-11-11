@@ -171,6 +171,12 @@ type Project struct {
 	// may also work in it by hand) or HubLegacy (cloned under
 	// <projects>/hub/ before hub projects were found by id).
 	HubCheckout string `json:"hub_checkout,omitempty"`
+	// HubOrgFolder is, on a runner, the folder under its projects root
+	// that its hub's clones of this project's org go in (dispatch.Link's
+	// OrgFolder, or org-<id> from older hubs), as of the hub's last link.
+	// A clone made before clones went there is moved into it once idle
+	// (see api.MoveHubClones).
+	HubOrgFolder string `json:"hub_org_folder,omitempty"`
 	// LocalOnly marks a runner's own project made as a new repository with
 	// no remote (the hub's New project → Local only), for throwaway work:
 	// deleting the project deletes its folder too.

@@ -30,10 +30,11 @@ import (
 // runner's tunnel, and the runner checks everything it is sent:
 //
 //   - a link names the hub's org the runner was registered for and a
-//     network git remote; the runner clones it into <projects root>/<repo>,
-//     a folder it picks itself (never a path the hub sends), or adopts a
-//     clone of the same remote already there; a folder holding anything
-//     else is never touched (the next free name, <repo>-2, … is used);
+//     network git remote; the runner clones it into <projects root>/<org
+//     folder>/<repo>, a folder it picks itself (never a path the hub sends;
+//     the org folder's name is made safe), or adopts a clone of the same
+//     remote already in that org folder; a folder holding anything else is
+//     never touched (the next free name, <repo>-2, … is used);
 //   - a task names a project linked that way, by the hub's id, which the
 //     runner keeps with its checkout; anything else is refused and logged;
 //   - the hub reaches only tasks it sent, by its own ids;
@@ -162,11 +163,12 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 			x.MaxAutoFixes = max(0, *req.MaxAutoFixes)
 		}
 	}
+	folder := hubOrgFolder(req)
 	if p, ok := sv.hubProject(hpid); ok {
 		want := p
 		commands(&want)
 		review(&want)
-		if p.TaskInstructions != req.TaskInstructions || p.MergeMode != mode || p.MergesGreenPRs() != greenOn(req.MergeGreenPRs) ||
+		if p.HubOrgFolder != folder || p.TaskInstructions != req.TaskInstructions || p.MergeMode != mode || p.MergesGreenPRs() != greenOn(req.MergeGreenPRs) ||
 			want.AutoApprove != p.AutoApprove || want.MaxAutoFixes != p.MaxAutoFixes ||
 			want.SetupCommand != p.SetupCommand || want.TestCommand != p.TestCommand || want.RunCommand != p.RunCommand || want.DeployCommand != p.DeployCommand ||
 			want.PreviewKind != p.PreviewKind || want.PreviewCommand != p.PreviewCommand {
@@ -174,6 +176,7 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 			var err error
 			if p, err = sv.data.UpdateProject(p.ID, func(x *model.Project) error {
 				x.TaskInstructions, x.MergeMode, x.MergeGreenPRs = req.TaskInstructions, mode, req.MergeGreenPRs
+				x.HubOrgFolder = folder
 				commands(x)
 				review(x)
 				return nil
@@ -182,6 +185,9 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		// A clone from before clones went in the org's folder moves there
+		// now, unless it is busy; the hub gets its new path either way.
+		p = s.moveHubClone(r.Context(), sv, p)
 		if err := s.followWorkBranch(r.Context(), sv, p, req.WorkBranch); err != nil {
 			writeErr(w, err)
 			return
@@ -216,7 +222,7 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch, Path: p.Path})
 		return
 	}
-	place, err := s.hubPlace(ctx, sv, hpid, req.Name, req.RemoteURL, cloneURL)
+	place, err := s.hubPlace(ctx, sv, hpid, folder, req.Name, req.RemoteURL, cloneURL)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -232,6 +238,10 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		// git's exit 128 ("could not read Username", "Permission denied").
 		if err := s.Git.CheckAccess(ctx, id, s.machineName(), cloneURL); err != nil {
 			writeErr(w, errors.Join(errBadRequest, err))
+			return
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			writeErr(w, err)
 			return
 		}
 		if err := s.Git.Clone(ctx, id, cloneURL, path); err != nil {
@@ -255,7 +265,7 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	link := func(x *model.Project) {
-		x.HubProjectID, x.HubCheckout = hpid, how
+		x.HubProjectID, x.HubCheckout, x.HubOrgFolder = hpid, how, folder
 		x.DefaultBranch, x.RemoteURL = branch, s.Git.RemoteURL(ctx, id, path)
 		x.TaskInstructions, x.MergeMode, x.MergeGreenPRs = req.TaskInstructions, mode, req.MergeGreenPRs
 		x.MergeModeSet = false
@@ -302,26 +312,59 @@ type hubPlacement struct {
 	Own   *model.Project // the runner's own project in that folder, to link
 }
 
-// hubPlace picks the folder for the hub's project hpid with remote: the
-// projects root's <repo> (the remote's last path part, else the project's
-// name), else the first of <repo>-2, <repo>-3, … that is free or holds a
-// clone of the same remote. A folder holding anything else (another
-// repository, files, a symlink, a clone already linked to another of the
-// hub's projects) is never used. The path is always a direct child of the
-// projects root; nothing the hub sends is a path. A clone whose origin is
-// one of also (the URL this runner clones) is of the same remote too.
-func (s *Server) hubPlace(ctx context.Context, sv *service, hpid, name, remote string, also ...string) (hubPlacement, error) {
+// hubOrgFolder is the folder under the projects root that the hub's
+// clones of req's org go in: the org's folder as the hub names it (the same
+// one its own projects of the org go in), else org-<id> from a hub too old
+// to send it. Never "": a new clone never goes in the bare root.
+func hubOrgFolder(req dispatch.Link) string {
+	if f := store.FolderSlug(req.OrgFolder); f != "" {
+		return f
+	}
+	return fmt.Sprintf("org-%d", req.OrgID)
+}
+
+// hubOrgDir is <projects root>/<folder>, where the hub's clones of an org
+// go. It needn't exist yet; when it does it must be a plain folder, not a
+// file, a symlink or a repository of its own.
+func (s *Server) hubOrgDir(folder string) (string, error) {
 	if s.ProjectRoot == "" {
-		return hubPlacement{}, fmt.Errorf("%w: this runner has no projects root (-projects)", errBadRequest)
+		return "", fmt.Errorf("%w: this runner has no projects root (-projects)", errBadRequest)
 	}
 	root := filepath.Clean(s.ProjectRoot)
-	base := folderName(gitops.RemoteRepo(remote))
-	if base == "" {
-		base = folderName(name)
+	dir := filepath.Join(root, folder)
+	if folder == "" || store.FolderSlug(folder) != folder || filepath.Dir(dir) != root {
+		return "", fmt.Errorf("%w: bad organization folder %q", errBadRequest, folder)
 	}
-	if base == "" {
-		base = "project"
+	fi, err := os.Lstat(dir)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return dir, nil
+	case err != nil:
+		return "", err
+	case !fi.IsDir() || isRepo(dir):
+		return "", fmt.Errorf("%w: %s is in the way of the folder for the organization's projects; move it", errBadRequest, dir)
 	}
+	return dir, nil
+}
+
+// hubPlace picks the folder for the hub's project hpid with remote, in
+// the org's folder <projects root>/<folder>/: its <repo> (the remote's
+// last path part, else the project's name), else the first of <repo>-2,
+// <repo>-3, … that is free or holds a clone of the same remote. A folder
+// holding anything else (another repository, files, a symlink, a clone
+// already linked to another of the hub's projects) is never used, and
+// nothing outside the org's folder is ever adopted (a checkout of the same
+// remote elsewhere in the projects root may be the user's own). The path is
+// always a direct child of the org's folder; nothing the hub sends is a
+// path. A clone whose origin is one of also (the URL this runner clones) is
+// of the same remote too.
+func (s *Server) hubPlace(ctx context.Context, sv *service, hpid, folder, name, remote string, also ...string) (hubPlacement, error) {
+	dir, err := s.hubOrgDir(folder)
+	if err != nil {
+		return hubPlacement{}, err
+	}
+	root := filepath.Clean(s.ProjectRoot)
+	base := hubBase(name, remote)
 	projects := map[string]model.Project{}
 	for _, p := range sv.data.ListProjects() {
 		projects[filepath.Clean(p.Path)] = p
@@ -331,8 +374,8 @@ func (s *Server) hubPlace(ctx context.Context, sv *service, hpid, name, remote s
 		if i > 1 {
 			folder = fmt.Sprintf("%s-%d", base, i)
 		}
-		path := filepath.Join(root, folder)
-		if !within(root, path) || path == root || filepath.Dir(path) != root {
+		path := filepath.Join(dir, folder)
+		if !within(root, path) || path == dir || filepath.Dir(path) != dir {
 			return hubPlacement{}, fmt.Errorf("%w: bad project name", errBadRequest)
 		}
 		own, isProject := projects[path]
@@ -354,7 +397,20 @@ func (s *Server) hubPlace(ctx context.Context, sv *service, hpid, name, remote s
 		}
 		return hubPlacement{Path: path, Adopt: true}, nil
 	}
-	return hubPlacement{}, fmt.Errorf("%w: no free folder for %s in %s (%s through %s-%d are taken)", errBadRequest, base, root, base, base, maxHubSuffix)
+	return hubPlacement{}, fmt.Errorf("%w: no free folder for %s in %s (%s through %s-%d are taken)", errBadRequest, base, dir, base, base, maxHubSuffix)
+}
+
+// hubBase is the folder name for a clone of remote (the hub's project
+// name): the repository's name, else the project's, else "project".
+func hubBase(name, remote string) string {
+	base := folderName(gitops.RemoteRepo(remote))
+	if base == "" {
+		base = folderName(name)
+	}
+	if base == "" {
+		base = "project"
+	}
+	return base
 }
 
 var folderRe = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
