@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/mcptools"
@@ -1497,26 +1498,98 @@ func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getUsage(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.usageFor(r))
+}
+
+// usageFor is the usage the dashboard shows r's caller. The hub doesn't run
+// Claude, so it has no usage of its own: it shows the caller's, as their
+// runner last reported it, and how the hub paces the caller's Claude
+// account.
+func (s *Server) usageFor(r *http.Request) usage.Snapshot {
 	var snap usage.Snapshot
 	if s.Usage != nil {
 		snap = s.Usage.Snapshot()
 	}
-	if s.hub() {
-		// This hub doesn't run Claude, so it has no usage of its own: show
-		// the caller's, as their runner last reported it.
-		if c, err := s.caller(r); err == nil {
-			if u := s.runnerUsage(c); u != nil {
-				ru := *u
-				ru.ManualPause = snap.ManualPause
-				if snap.ManualPause {
-					ru.Paused, ru.Reason, ru.Until = true, snap.Reason, time.Time{}
-				}
-				// The runner's verdict may be stale: its windows may have reset since.
-				snap = ru.Reevaluate(time.Now())
-			}
+	if !s.hub() {
+		return snap
+	}
+	c, err := s.caller(r)
+	if err != nil {
+		return snap
+	}
+	now := time.Now()
+	u := s.runnerUsage(c)
+	var pace *dispatch.GroupPace
+	acct := s.callerAccount(c)
+	if acct != "" && s.Dispatch != nil && s.Dispatch.Pacer != nil {
+		pace = s.Dispatch.Pacer.Account(acct)
+		if pace != nil && pace.Usage != nil && (u == nil || pace.Usage.UpdatedAt.After(u.UpdatedAt)) {
+			u = pace.Usage // the account's freshest figures
 		}
 	}
-	writeJSON(w, http.StatusOK, snap)
+	manual, reason := snap.ManualPause, snap.Reason
+	hubPace := usage.Pace{Hub: true, Account: acct}
+	if u != nil {
+		snap = *u
+	} else {
+		snap = usage.Snapshot{PauseAt: snap.PauseAt}
+	}
+	snap.ManualPause = manual
+	if manual {
+		snap.Paused, snap.Reason, snap.Until = true, reason, time.Time{}
+	}
+	if pace != nil {
+		hubPace = pace.Pace
+		hubPace.Runners = s.accountRunners(c, acct)
+	}
+	// The runner's verdict may be stale: its windows may have reset since.
+	return snap.WithPace(hubPace, now)
+}
+
+// callerAccount is the Claude account c's runners are logged in to (the
+// one an online runner reported last), or "".
+func (s *Server) callerAccount(c Caller) string {
+	var best *tunnel.Runner
+	for _, r := range s.claudeRunners(c) {
+		if r.Account() == "" {
+			continue
+		}
+		if best == nil || (r.Online && !best.Online) || (r.Online == best.Online && r.Reported.At.After(best.Reported.At)) {
+			best = &r
+		}
+	}
+	if best == nil {
+		return ""
+	}
+	return best.Account()
+}
+
+// accountRunners are the names of the runners in c's org logged in to
+// account (the hub paces them together, with any of other orgs').
+func (s *Server) accountRunners(c Caller, account string) []string {
+	var out []string
+	for _, r := range s.fleet().List() {
+		if r.OrgID() == c.Org && r.Account() == account {
+			out = append(out, r.Name)
+		}
+	}
+	return out
+}
+
+// canPaceAccount reports whether c may change how the hub paces the
+// runners on account: whoever may manage one of them in c's org (its
+// owner, an org admin).
+func (s *Server) canPaceAccount(c Caller, account string) bool {
+	fl := s.fleet()
+	if fl == nil || account == "" {
+		return false
+	}
+	for _, r := range fl.List() {
+		if r.Account() == account && s.canManageRunner(c, r) {
+			return true
+		}
+	}
+	return false
 }
 
 // runnerUsage is c's Claude usage as one of c's runners last reported it:
@@ -1553,14 +1626,29 @@ func (s *Server) pauseQueue(paused bool) http.HandlerFunc {
 	}
 }
 
-// putQueuePace changes the "Follow weekly pace" settings.
+// putQueuePace changes the "Follow weekly pace" settings. On the hub they
+// are a Claude account's (see dispatch.Pacer): the caller's own, or the one
+// they name, which the owner of a runner on it or an org admin may change.
+// Elsewhere they are this Dash's own, for platform admins.
 func (s *Server) putQueuePace(w http.ResponseWriter, r *http.Request) {
+	if s.hub() {
+		s.putAccountPace(w, r)
+		return
+	}
 	if !s.adminOnly(w, r) {
 		return
 	}
 	var req usage.PaceSettings
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
+		return
+	}
+	if s.Usage == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "this Dash doesn't track Claude usage"})
+		return
+	}
+	if s.Usage.Snapshot().Pace.Hub {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "the hub paces this runner, with the others on its Claude account: change it in the hub's dashboard"})
 		return
 	}
 	if req.MaxParallel < 0 || req.MaxParallel > usage.MaxPaceParallel {
@@ -1573,6 +1661,46 @@ func (s *Server) putQueuePace(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Todos.Kick()
 	writeJSON(w, http.StatusOK, s.Usage.Snapshot())
+}
+
+var errNoAccount = errors.New("none of your runners has said which Claude account it is logged in to yet: update Dash on it, and make sure claude is logged in there")
+
+func (s *Server) putAccountPace(w http.ResponseWriter, r *http.Request) {
+	c, ok := s.callerOr(w, r)
+	if !ok {
+		return
+	}
+	var req usage.PaceSettings
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
+		return
+	}
+	acct := strings.ToLower(strings.TrimSpace(req.Account))
+	if acct == "" {
+		acct = s.callerAccount(c)
+	}
+	if acct == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": errNoAccount.Error()})
+		return
+	}
+	if !s.canPaceAccount(c, acct) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only the owner of a runner logged in to that Claude account, or an admin of the organization, can change its pace"})
+		return
+	}
+	if !dispatch.ValidBoost(req.MaxBoost) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("max_boost must be between 1 and %g", usage.MaxBoostCap)})
+		return
+	}
+	if s.Dispatch == nil || s.Dispatch.Pacer == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "this hub doesn't pace its runners"})
+		return
+	}
+	if err := s.Dispatch.Pacer.Set(acct, usage.PaceSettings{Follow: req.Follow, MaxBoost: req.MaxBoost}); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "save the pace settings: " + err.Error()})
+		return
+	}
+	s.Todos.Kick()
+	writeJSON(w, http.StatusOK, s.usageFor(r))
 }
 
 // ---------------------------------------------------------------- utils

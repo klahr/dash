@@ -83,6 +83,23 @@ export function showRunnerNeeded(el, p) {
 }
 const runnerLimit = (r) => r.parallel || r.reported?.parallel || 1;
 const runnerOutdated = (r) => outdatedFor(runnerInfo.version, r.version);
+// runnerAccount is the Claude account runner r's claude is logged in to
+// (null: logged out, or an older runner that doesn't say). The hub paces
+// the runners on one account together.
+const runnerAccount = (r) => r.reported?.claude?.account || null;
+const planLabel = (s) => ({ max: "Max", pro: "Pro", team: "Team", enterprise: "Enterprise", free: "Free" })[s] || (s ? s[0].toUpperCase() + s.slice(1) : "");
+function accountChip(r) {
+  const a = runnerAccount(r);
+  if (!a) return null;
+  const plan = planLabel(a.subscription);
+  return h("span", { class: "runner-account", title: `Claude account${a.org_name ? ` · ${a.org_name}` : ""}. Runners on one account share its usage and are paced together.` },
+    ico("user"), h("span", { class: "runner-account-email" }, a.email), plan ? h("span", { class: "runner-plan" }, plan) : null);
+}
+// pacedWith are the other runners on r's Claude account.
+const pacedWith = (r) => {
+  const e = runnerAccount(r)?.email?.toLowerCase();
+  return e ? (state.runners || []).filter((x) => x.id !== r.id && runnerAccount(x)?.email?.toLowerCase() === e) : [];
+};
 // runnerClaudeWarnings is what runner r found changed about its Claude Code CLI.
 const runnerClaudeWarnings = (r) => r.reported?.claude?.warnings || [];
 
@@ -286,6 +303,7 @@ function paintOverview(list) {
         h("span", { class: "runner-row-sub" },
           h("span", { class: "runner-state" }, st.text),
           showOwner && r.owner ? h("span", { class: "runner-owner" }, ico("users"), r.owner.username) : null,
+          accountChip(r),
           h("span", {}, n ? `${n} project${n === 1 ? "" : "s"}` : "No projects"),
           runnerWarned(r) ? h("span", { class: "runner-row-warn" }, ico("alert"), runnerOutdated(r) ? "Out of date" : "Claude Code warning") : null)),
       runnerUsageMeters(r),
@@ -321,7 +339,10 @@ function paintRunner(r) {
       r.version ? h("span", { class: `runner-version${outdated ? " warn" : ""}`, title: outdated ? `Out of date: the hub runs ${runnerInfo.version}` : "Dash version" }, `Dash ${r.version}`) : null,
       claude ? h("span", { class: `runner-version${claudeWarns.length ? " warn" : ""}`,
         title: claudeWarns.length ? "Claude Code version: its output or flags look different from what Dash expects" : "Claude Code version" },
-        `Claude ${claude.version || "?"}`) : null),
+        `Claude ${claude.version || "?"}`) : null,
+      accountChip(r)),
+    pacedWith(r).length ? h("p", { class: "hint runner-paced-with" },
+      `Shares its Claude account with ${pacedWith(r).map((x) => x.name).join(", ")}: their usage is one budget, and following the weekly pace paces them together.`) : null,
     outdated && r.mine ? h("div", { class: "runner-update" },
       h("p", { class: "hint warn" }, `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run this on ${r.name} (it keeps its registration):`),
       copyBlock(installCmd(), "Command copied", { pre: true })) : null,

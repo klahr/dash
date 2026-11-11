@@ -52,6 +52,35 @@ type Pace struct {
 	// (> 0 ahead, < 0 behind).
 	GapS  int64 `json:"gap_s"`
 	Slots int   `json:"slots"` // tasks the queue may run at once now
+
+	// Hub: the hub paces this queue, with every runner logged in to the
+	// same Claude account as one budget (see dispatch.Pacer). A runner's
+	// own setting then steps aside: the hub decides what it sends.
+	Hub bool `json:"hub,omitempty"`
+	// Account is the Claude account the hub paces ("" for a runner that
+	// hasn't said which it is on: it is paced on its own).
+	Account string `json:"account,omitempty"`
+	// Runners are the runners paced together (names, on the hub).
+	Runners []string `json:"runners,omitempty"`
+	// MaxBoost caps the tasks at once while catching up, as a multiple of
+	// Parallel (hub; 0 = DefaultBoost).
+	MaxBoost float64 `json:"max_boost,omitempty"`
+}
+
+// Boost limits: the hub's pacing runs at most MaxBoost times an account's
+// usual parallelism while behind.
+const (
+	DefaultBoost = 2.0
+	MaxBoostCap  = 8.0
+)
+
+// BoostCap is the most tasks at once while catching up for parallel tasks
+// at once on pace, boosted at most boost times (0: DefaultBoost).
+func BoostCap(parallel int, boost float64) int {
+	if boost <= 0 {
+		boost = DefaultBoost
+	}
+	return max(parallel, int(float64(parallel)*min(boost, MaxBoostCap)))
 }
 
 // Cap is the most tasks at once while catching up.
@@ -69,6 +98,28 @@ func (p Pace) Gap() time.Duration { return time.Duration(p.GapS) * time.Second }
 // Waiting reports whether pacing holds new tasks back.
 func (p Pace) Waiting() bool { return p.Follow && p.State == PaceWaiting }
 
+// holds reports whether pacing holds this queue's new tasks back itself:
+// not when the hub paces it, as the hub then sends it none.
+func (p Pace) holds() bool { return p.Waiting() && !p.Hub }
+
+// Evaluate is p as of now, given the weekly window (nil: none known or
+// live). p's State and Slots are the previous evaluation's, for hysteresis.
+// The hub evaluates an account's pace with it.
+func (p Pace) Evaluate(week *Window, now time.Time) Pace {
+	p.Hub = false
+	return p.next(week, now)
+}
+
+// WeekOf is the live weekly window in windows, or nil.
+func WeekOf(windows []Window, now time.Time) *Window {
+	for i, w := range windows {
+		if w.Name == WeekWindow && w.ResetsAt.After(now) {
+			return &windows[i]
+		}
+	}
+	return nil
+}
+
 // Reason is why the queue waits, e.g. "Waiting 1h 20m to stay on pace".
 func (p Pace) Reason() string {
 	return "Waiting " + Duration(p.Gap()) + " to stay on pace"
@@ -85,6 +136,9 @@ func PaceGap(utilization float64, resetsAt, now time.Time, span time.Duration) t
 // next is p as of now, given the weekly window (nil: none known or live).
 // p's State and Slots are the previous evaluation's, for hysteresis.
 func (p Pace) next(week *Window, now time.Time) Pace {
+	if p.Hub {
+		return p // the hub evaluated it
+	}
 	base := max(p.Parallel, 0)
 	if !p.Follow {
 		p.State, p.GapS, p.Slots = PaceOff, 0, base

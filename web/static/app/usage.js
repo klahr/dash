@@ -108,15 +108,41 @@ export function renderUsage() {
 }
 
 // The "Follow weekly pace" settings and where the queue stands with them.
+// On a hub (p.hub) they are your Claude account's: the hub paces every
+// runner logged in to it as one budget, and caps catching up at a multiple
+// of their usual parallelism rather than a number of tasks.
 function renderPace(p) {
   const follow = !!p?.follow;
-  $("#pace-follow").checked = follow;
+  const hub = !!p?.hub;
+  const box = $("#pace-follow");
+  box.checked = follow;
+  box.disabled = hub && !p.account;
+  $("#pace-help").textContent = hub
+    ? "Paces every runner logged in to your Claude account as one budget: no new tasks while ahead of the pace line, more at once while behind."
+    : "Keeps weekly usage on the pace line: no new tasks while ahead of it, more at once while behind.";
+  const acct = $("#pace-account");
+  acct.hidden = !hub;
+  if (hub) {
+    const rs = p.runners || [];
+    acct.replaceChildren(...(p.account
+      ? [h("span", {}, "Claude account ", h("strong", {}, p.account)),
+        rs.length ? h("span", {}, `on ${rs.join(", ")}`) : null]
+      : [h("span", {}, "Your runners haven't said which Claude account they're logged in to. Update Dash on them to pace them here.")]));
+  }
   const text = paceStateText(p);
   const st = $("#pace-state");
   st.hidden = !text;
   st.textContent = text || "";
   st.className = `pace-state ${p?.state || ""}`;
-  $("#pace-max-row").hidden = !follow;
+  $("#pace-max-row").hidden = !follow || hub;
+  $("#pace-boost-row").hidden = !follow || !hub;
+  if (hub) {
+    const sel = $("#pace-boost");
+    const v = String(p.max_boost || 2);
+    if (![...sel.options].some((o) => o.value === v)) sel.append(h("option", { value: v }, `${v}× usual`));
+    sel.value = v;
+    return;
+  }
   const max = $("#pace-max");
   const base = Math.max(1, p?.parallel || 1);
   max.min = String(base);
@@ -127,6 +153,11 @@ function renderPace(p) {
 
 const savePace = attempt(async () => {
   try {
+    const p = state.usage?.pace;
+    if (p?.hub) {
+      state.usage = await api("PUT", "/api/queue/pace", { follow: $("#pace-follow").checked, max_boost: Number($("#pace-boost").value) || 0, account: p.account || "" });
+      return;
+    }
     const v = $("#pace-max").value.trim();
     const max = v === "" ? 0 : Math.round(Number(v));
     if (!Number.isFinite(max) || max < 0 || max > 64) { toast("Enter a number from 1 to 64"); return; }
@@ -137,6 +168,7 @@ const savePace = attempt(async () => {
 });
 $("#pace-follow").addEventListener("change", savePace);
 $("#pace-max").addEventListener("change", savePace);
+$("#pace-boost").addEventListener("change", savePace);
 
 $("#usage-pill").addEventListener("click", () => { renderUsage(); $("#usage-sheet").showModal(); });
 $("#queue-toggle").addEventListener("click", attempt(async () => {

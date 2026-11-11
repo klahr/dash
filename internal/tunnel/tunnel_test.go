@@ -661,3 +661,48 @@ func TestProxyNamesTheCheckedUserNotTheClaimedOne(t *testing.T) {
 		t.Errorf("websocket for nobody claiming 7 reached the runner as %q", got)
 	}
 }
+
+// A runner reports the Claude account it is on (bounded), and the hub may
+// answer its report; an older hub's 204 leaves the reply as it was.
+func TestReportCarriesTheAccountAndTheReply(t *testing.T) {
+	t.Parallel()
+
+	acc, owner := storetest.Accounts(t)
+	h := &Hub{Accounts: acc}
+	code, _, _ := h.NewCode(owner)
+	id, token, _, err := h.register(code, "work", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(h.ServeReport))
+	defer srv.Close()
+	creds := Credentials{Server: srv.URL, Token: token}
+	report := map[string]any{"parallel": 2, "claude": map[string]any{"version": "2.1.0",
+		"account": map[string]any{"email": " Ann@Example.com ", "org_id": "o-1", "subscription": strings.Repeat("x", 100)}}}
+
+	reply := map[string]any{"kept": true}
+	if err := ReportReply(context.Background(), creds, report, &reply); err != nil || !reply["kept"].(bool) {
+		t.Fatalf("204: %v %v", err, reply)
+	}
+	r, _ := h.Get(id)
+	if a := r.Reported.Claude.Account; a == nil || a.Email != "Ann@Example.com" || len(a.Subscription) != 40 || r.Account() != "ann@example.com" {
+		t.Fatalf("account %+v (%q)", a, r.Account())
+	}
+
+	h.ReportReply = func(rid string) any { return map[string]string{"for": rid} }
+	var got struct{ For string }
+	if err := ReportReply(context.Background(), creds, report, &got); err != nil || got.For != id {
+		t.Fatalf("reply: %v %+v", err, got)
+	}
+	if err := Report(context.Background(), creds, report); err != nil {
+		t.Fatalf("a runner that ignores the reply: %v", err)
+	}
+	// Logged out: no account.
+	report["claude"] = map[string]any{"version": "2.1.0"}
+	if err := Report(context.Background(), creds, report); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := h.Get(id); r.Account() != "" {
+		t.Fatalf("logged out, still %q", r.Account())
+	}
+}

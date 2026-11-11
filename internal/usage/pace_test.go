@@ -251,3 +251,65 @@ func TestPaceSettingsAreKept(t *testing.T) {
 		t.Fatalf("restored %+v", p)
 	}
 }
+
+// A runner its hub paces doesn't pace itself: the hub decides what it
+// sends, and the queue may run as many as the hub allows. Without a hub
+// that paces it (nil), it paces itself as before.
+func TestHubPaceReplacesLocalPacing(t *testing.T) {
+	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	tr, reset := pacedTracker(t, &now)
+	tr.Observe(weekly(0.5+float64(2*time.Hour)/float64(WeekSpan), reset)) // 2h ahead
+	if ok, _ := tr.CanStart(); ok {
+		t.Fatal("un-hubbed: ahead of the pace should wait")
+	}
+	// The hub says the account is ahead too: it sends nothing, so the runner
+	// doesn't hold back what it has.
+	if !tr.SetHubPace(&Pace{Follow: true, State: PaceWaiting, GapS: 7200, Slots: 2}) {
+		t.Fatal("hub pace: no change reported")
+	}
+	if s := tr.Snapshot(); s.Paused || s.Pacing || !s.Pace.Hub || s.Pace.State != PaceWaiting {
+		t.Fatalf("hub-paced, waiting: %+v", s)
+	}
+	// Catching up: the hub allows 5 here.
+	tr.SetHubPace(&Pace{Follow: true, State: PaceCatching, Slots: 5})
+	if s := tr.Snapshot(); s.Pace.Slots != 5 || s.Paused {
+		t.Fatalf("hub-paced, catching up: %+v", s.Pace)
+	}
+	// Fewer than its own parallel never lowers it.
+	tr.SetHubPace(&Pace{Slots: 1})
+	if s := tr.Snapshot(); s.Pace.Slots != 2 {
+		t.Fatalf("hub slots under parallel: %+v", s.Pace)
+	}
+	if tr.SetHubPace(&Pace{Slots: 1}) {
+		t.Error("the same pace again reported a change")
+	}
+	// The hard stops still stop it.
+	tr.SetManualPause(true)
+	if ok, why := tr.CanStart(); ok || why != "Paused by you" {
+		t.Fatalf("manual pause: %v %q", ok, why)
+	}
+	tr.SetManualPause(false)
+	// An older hub: the runner's own setting applies again, unchanged.
+	tr.SetHubPace(nil)
+	if ok, why := tr.CanStart(); ok || why != "Waiting 1h 59m to stay on pace" {
+		t.Fatalf("un-hubbed again: %v %q", ok, why)
+	}
+	if s := tr.Snapshot(); s.Pace.Hub || !s.Pace.Follow {
+		t.Fatalf("own setting: %+v", s.Pace)
+	}
+}
+
+// The hub's view of a runner's usage with the account's pace: waiting for
+// the line shows as a pause for pacing; a hard stop wins.
+func TestWithPace(t *testing.T) {
+	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	s := Snapshot{Known: true, PauseAt: 0.9, Windows: []Window{{Name: WeekWindow, Utilization: 0.6, ResetsAt: now.Add(WeekSpan / 2)}}}
+	w := s.WithPace(Pace{Follow: true, State: PaceWaiting, GapS: 3600}, now)
+	if !w.Paused || !w.Pacing || w.Reason != "Waiting 1h to stay on pace" || !w.Pace.Hub {
+		t.Fatalf("waiting: %+v", w)
+	}
+	s.Windows = append(s.Windows, Window{Name: "five_hour", Utilization: 0.95, ResetsAt: now.Add(time.Hour)})
+	if w := s.WithPace(Pace{Follow: true, State: PaceWaiting, GapS: 3600}, now); w.Pacing || w.Reason != "5-hour usage at 95%" {
+		t.Fatalf("hard stop: %+v", w)
+	}
+}

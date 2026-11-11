@@ -53,6 +53,7 @@ type Tracker struct {
 	now     func() time.Time
 	pace    Pace   // its setting, and its last evaluation (for hysteresis)
 	path    string // where the pace setting is kept (see Keep)
+	hub     *Pace  // how the hub paces this runner (nil: it paces itself)
 }
 
 // New returns a tracker that pauses the queue once any window reaches
@@ -115,10 +116,37 @@ func (t *Tracker) SetParallel(n int) {
 	t.mu.Unlock()
 }
 
+// SetHubPace tells the tracker how the hub paces this runner (see
+// Pace.Hub), as the hub answered its last report; nil: the hub doesn't
+// (an older hub), and the tracker paces the queue itself, as set with
+// SetPace. It reports whether that changed what the queue may run.
+func (t *Tracker) SetHubPace(p *Pace) bool {
+	t.mu.Lock()
+	prev := t.hub
+	if p != nil {
+		cp := *p
+		cp.Hub = true
+		p = &cp
+	}
+	t.hub = p
+	changed := (prev == nil) != (p == nil) || (p != nil && (prev.Slots != p.Slots || prev.State != p.State || prev.Follow != p.Follow))
+	t.mu.Unlock()
+	if changed {
+		t.publish()
+	}
+	return changed
+}
+
 // PaceSettings are the user's "Follow weekly pace" settings.
 type PaceSettings struct {
 	Follow      bool `json:"follow"`
 	MaxParallel int  `json:"max_parallel"` // most tasks at once when behind; 0 = twice the usual
+	// MaxBoost is the hub's cap for an account: most tasks at once when
+	// behind, as a multiple of its runners' usual (0 = DefaultBoost).
+	MaxBoost float64 `json:"max_boost,omitempty"`
+	// Account is the Claude account the hub's setting is for (optional:
+	// the caller's own).
+	Account string `json:"account,omitempty"`
 }
 
 // MaxPaceParallel bounds PaceSettings.MaxParallel.
@@ -175,7 +203,14 @@ func (t *Tracker) Snapshot() Snapshot {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	now := t.now()
-	s := Snapshot{Known: t.known, Status: t.status, UpdatedAt: t.updated, PauseAt: t.pauseAt, ManualPause: t.manual, Pace: t.pace}
+	pace := t.pace
+	if t.hub != nil {
+		// The hub decides; the queue may run as many as it sends.
+		pace = *t.hub
+		pace.Parallel = t.pace.Parallel
+		pace.Slots = max(pace.Slots, t.pace.Parallel)
+	}
+	s := Snapshot{Known: t.known, Status: t.status, UpdatedAt: t.updated, PauseAt: t.pauseAt, ManualPause: t.manual, Pace: pace}
 	for _, w := range t.windows {
 		s.Windows = append(s.Windows, w)
 	}
@@ -185,7 +220,9 @@ func (t *Tracker) Snapshot() Snapshot {
 		s.Paused, s.Reason = true, "Paused by you"
 	}
 	s = s.Reevaluate(now)
-	t.pace = s.Pace // its state carries over to the next evaluation
+	if t.hub == nil {
+		t.pace = s.Pace // its state carries over to the next evaluation
+	}
 	return s
 }
 
@@ -201,13 +238,7 @@ func Limited(status string) bool {
 // have since reset. A manual pause is kept as it is. Pacing (see Pace)
 // starts from s.Pace's state, so its hysteresis carries over.
 func (s Snapshot) Reevaluate(now time.Time) Snapshot {
-	var week *Window
-	for i, w := range s.Windows {
-		if w.Name == WeekWindow && w.ResetsAt.After(now) {
-			week = &s.Windows[i]
-		}
-	}
-	s.Pace = s.Pace.next(week, now)
+	s.Pace = s.Pace.next(WeekOf(s.Windows, now), now)
 	if s.ManualPause {
 		return s
 	}
@@ -231,8 +262,26 @@ func (s Snapshot) Reevaluate(now time.Time) Snapshot {
 	}
 	// Ahead of the weekly pace: wait until the line catches up. The hard
 	// stops above win, as their pause lasts until a reset.
-	if !s.Paused && s.Pace.Waiting() {
-		s.Paused, s.Reason, s.Until, s.Pacing = true, s.Pace.Reason(), now.Add(s.Pace.Gap()).Truncate(time.Second), true
+	if !s.Paused && s.Pace.holds() {
+		s = s.waitForPace(now)
+	}
+	return s
+}
+
+func (s Snapshot) waitForPace(now time.Time) Snapshot {
+	s.Paused, s.Reason, s.Until, s.Pacing = true, s.Pace.Reason(), now.Add(s.Pace.Gap()).Truncate(time.Second), true
+	return s
+}
+
+// WithPace is s, reevaluated as of now, with the hub's pace p of the
+// account it is for: waiting for the line, it says so (as a hard stop
+// isn't already).
+func (s Snapshot) WithPace(p Pace, now time.Time) Snapshot {
+	s.Pace = p
+	s.Pace.Hub = true
+	s = s.Reevaluate(now)
+	if !s.Paused && p.Waiting() {
+		s = s.waitForPace(now)
 	}
 	return s
 }

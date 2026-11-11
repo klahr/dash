@@ -255,8 +255,10 @@ func (r *Reporter) Build(now time.Time) Report {
 	if r.Usage != nil {
 		u := r.Usage.Snapshot()
 		rep.Usage = &u
-		if u.Pace.Slots > 0 {
-			rep.Parallel = u.Pace.Slots // more while catching up with the weekly pace
+		if u.Pace.Slots > 0 && !u.Pace.Hub {
+			// More while catching up with the weekly pace, as an older hub
+			// leaves the pacing to the runner. A hub that paces it knows.
+			rep.Parallel = u.Pace.Slots
 		}
 	}
 	if r.Claude != nil {

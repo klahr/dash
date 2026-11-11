@@ -56,6 +56,9 @@ type Dispatcher struct {
 	// Undo queues a task for Claude to undo merged task t by hand, as its
 	// runner couldn't revert it without conflicts in files (optional).
 	Undo func(t model.Todo, files []string)
+	// Pacer paces the runners per Claude account (optional: without it,
+	// each runner paces itself, as its own setting says).
+	Pacer *Pacer
 
 	mu     sync.Mutex
 	timers map[string]*time.Timer // runner id → its offline grace
@@ -114,10 +117,24 @@ func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo
 func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string) {
 	var cands []tunnel.Runner
 	var why []string
+	limits := map[string]int{} // runner id → how many tasks it may have at once now
+	limit := func(r tunnel.Runner) int {
+		if n, ok := limits[r.ID]; ok {
+			return n
+		}
+		return r.Limit()
+	}
 	for _, id := range p.Runners {
 		r, ok := d.Fleet.Get(id)
 		if !ok || r.OrgID() != p.OrgID {
 			continue // revoked, or (never) another org's
+		}
+		var pace GroupPace
+		if d.Pacer != nil && r.Online && !r.Paused {
+			pace = d.Pacer.For(r)
+			if n := pace.Slots[r.ID]; n > 0 {
+				limits[r.ID] = n
+			}
 		}
 		switch busy := d.Busy(r.ID); {
 		case !r.Online:
@@ -130,8 +147,13 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string
 				msg += " (" + r.Reported.Usage.Reason + ")"
 			}
 			why = append(why, msg)
-		case busy >= r.Limit():
-			why = append(why, fmt.Sprintf("%s is busy (%d of %d tasks)", r.Name, busy, r.Limit()))
+		case pace.Stop != "":
+			// Its account's: every runner on it waits.
+			why = append(why, r.Name+"'s Claude account is paused ("+pace.Stop+")")
+		case pace.Waiting():
+			why = append(why, r.Name+" is "+lowerFirst(pace.Pace.Reason()))
+		case busy >= limit(r):
+			why = append(why, fmt.Sprintf("%s is busy (%d of %d tasks)", r.Name, busy, limit(r)))
 		default:
 			cands = append(cands, r)
 		}
@@ -147,9 +169,30 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string
 		return &cands[i], ""
 	}
 	best := slices.MinFunc(cands, func(a, b tunnel.Runner) int {
-		return d.Busy(a.ID)*b.Limit() - d.Busy(b.ID)*a.Limit() // the least loaded, relative to its limit
+		return d.Busy(a.ID)*limit(b) - d.Busy(b.ID)*limit(a) // the least loaded, relative to its limit
 	})
 	return &best, ""
+}
+
+func lowerFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToLower(s[:1]) + s[1:]
+}
+
+// Reply is the hub's answer to runner id's report: how it paces it (nil
+// without a Pacer).
+func (d *Dispatcher) Reply(id string) any {
+	if d.Pacer == nil {
+		return nil
+	}
+	r, ok := d.Fleet.Get(id)
+	if !ok {
+		return nil
+	}
+	p := d.Pacer.For(r).RunnerPace(r)
+	return Reply{Pace: &p}
 }
 
 // Busy is how many tasks runner id is working on for the hub.

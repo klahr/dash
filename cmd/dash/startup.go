@@ -738,6 +738,13 @@ func (a *app) setupHub() {
 		todos.Kick()
 	}
 	runners.OnState, runners.OnRevoke, runners.OnReport = d.State, d.Revoked, d.Report
+	// "Follow weekly pace" is each Claude account's: the hub paces the
+	// runners on one account as one budget, and tells each how.
+	d.Pacer = &dispatch.Pacer{Runners: runners.ListBare}
+	if err := d.Pacer.Keep(filepath.Join(o.dataDir, "pace.json")); err != nil {
+		slog.Warn("read pace.json", "err", err)
+	}
+	runners.ReportReply = d.Reply
 	todos.Remote, apiSrv.Dispatch = d, d
 	// While the hub doesn't run Claude, scans run their Claude part on
 	// a runner linked to the project (the hub keeps the runs and issues).
@@ -785,9 +792,15 @@ func (a *app) setupRunner() {
 		// in a chat that runs commands (agent.ReadOnlyChat).
 		ChatCommands: creds.UserID != 0 && o.chatBackend == "claude-code" && o.chatTools == agent.ChatShell,
 		Send: func(ctx context.Context, r dispatch.Report) error {
-			err := tunnel.Report(ctx, creds, r)
+			var reply dispatch.Reply
+			err := tunnel.ReportReply(ctx, creds, r, &reply)
 			if errors.Is(err, tunnel.ErrRevoked) {
 				return dispatch.ErrStop
+			}
+			// The hub paces this runner with the others on its Claude
+			// account; an older hub doesn't say, and it paces itself.
+			if err == nil && a.tracker.SetHubPace(reply.Pace) {
+				a.todos.Kick()
 			}
 			return err
 		}}

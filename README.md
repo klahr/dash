@@ -122,8 +122,17 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 The queue pauses when a Claude usage window nears its limit (`-pause-at`, 90% by default). To spread
 the week's usage evenly instead, turn on **Follow weekly pace** in the usage sheet (click the usage
 meter): ahead of the pace line no new tasks start until the line catches up, and behind it more run at
-once (one more per 3 hours behind, up to a cap you set, twice `-parallel` by default). Running tasks
-are never stopped. The setting is kept in `usage.json` in the data directory.
+once (one more per 3 hours behind, up to a cap you set, twice the usual by default). Running tasks
+are never stopped.
+
+The setting belongs to a Claude account, since runners logged in to the same account share its
+limits. The hub groups runners by the account email each reports (the Runners page shows it, with
+the plan) and paces each group as one budget, using the freshest usage any of them reported: ahead
+of the line none of them gets new tasks; behind it, the extra tasks are spread over the group's
+runners, up to the boost you pick times their combined usual. The owner of a runner on the account
+or an org admin can change it; the hub keeps it in `pace.json`. A runner that doesn't report an
+account (an older Dash) is paced on its own, and a runner whose hub doesn't pace (an older hub)
+paces itself from its own setting in `usage.json`.
 
 ## Optional setup
 

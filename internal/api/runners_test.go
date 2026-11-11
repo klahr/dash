@@ -30,6 +30,7 @@ type fleetServer struct {
 	u, c, d, b http.Handler // h signed in as each
 	rh         *tunnel.Hub
 	ids        map[string]string // runner name → id
+	tokens     map[string]string // runner name → its token
 	web        model.Project     // Default's, a git repo with an origin
 	beta       store.Org
 }
@@ -51,14 +52,14 @@ func newFleetServer(t *testing.T) *fleetServer {
 	}
 	bID := member(t, s, beta.ID, "b", store.RoleMember)
 
-	f := &fleetServer{s: s, rh: rh, ids: map[string]string{}, beta: beta}
+	f := &fleetServer{s: s, rh: rh, ids: map[string]string{}, tokens: map[string]string{}, beta: beta}
 	for name, o := range map[string]model.Owner{"u-box": owner, "c-box": {User: cID, Org: owner.Org}, "b-box": {User: bID, Org: beta.ID}} {
 		code, _, err := rh.NewCode(o)
 		if err != nil {
 			t.Fatal(err)
 		}
-		id, _ := registerRunner(t, rh, code, name)
-		f.ids[name] = id
+		id, tok := registerRunner(t, rh, code, name)
+		f.ids[name], f.tokens[name] = id, tok
 	}
 
 	repo := filepath.Join(t.TempDir(), "web")

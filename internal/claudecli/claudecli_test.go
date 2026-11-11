@@ -213,3 +213,51 @@ func TestNewVersionForgetsOldRunWarnings(t *testing.T) {
 		t.Fatalf("after update: %+v", st)
 	}
 }
+
+func TestParseAuthStatus(t *testing.T) {
+	a := ParseAuthStatus([]byte(`{"loggedIn":true,"authMethod":"claude.ai","email":"ann@example.com","orgId":"o-1","orgName":"Ann's","subscriptionType":"max"}`))
+	if a == nil || *a != (Account{Email: "ann@example.com", OrgID: "o-1", OrgName: "Ann's", Subscription: "max"}) {
+		t.Fatalf("logged in: %+v", a)
+	}
+	for _, out := range []string{`{"loggedIn":false}`, `{"loggedIn":true,"authMethod":"api_key"}`, `not json`, ``} {
+		if a := ParseAuthStatus([]byte(out)); a != nil {
+			t.Errorf("%q: %+v", out, a)
+		}
+	}
+}
+
+// The account is checked with the CLI, and again between checks, so a
+// log-out or another account is noticed and reported.
+func TestCheckReportsTheAccount(t *testing.T) {
+	email := "ann@example.com"
+	run := func(_ context.Context, _ string, args ...string) (string, error) {
+		switch args[0] {
+		case "--version":
+			return "2.1.0 (Claude Code)", nil
+		case "auth":
+			if email == "" {
+				return `{"loggedIn":false}`, errExit1
+			}
+			return `{"loggedIn":true,"email":"` + email + `","subscriptionType":"pro"}`, nil
+		}
+		return "Error: Input must be provided", errExit1
+	}
+	m := &Monitor{run: run}
+	changes := 0
+	m.OnChange(func() { changes++ })
+	if st := m.Check(context.Background()); st.Account == nil || st.Account.Email != email || st.Account.Subscription != "pro" {
+		t.Fatalf("check: %+v", st.Account)
+	}
+	email = "bo@example.com"
+	if a := m.CheckAccount(context.Background()); a == nil || a.Email != email || m.Status().Account.Email != email {
+		t.Fatalf("switched: %+v", a)
+	}
+	email = ""
+	if a := m.CheckAccount(context.Background()); a != nil || m.Status().Account != nil {
+		t.Fatalf("logged out: %+v", a)
+	}
+	m.CheckAccount(context.Background()) // no change
+	if changes != 3 {
+		t.Errorf("OnChange %d times, want 3", changes)
+	}
+}

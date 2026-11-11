@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
@@ -225,6 +226,12 @@ func (c *Client) serveOnce(ctx context.Context) error {
 
 // Report posts a runner's report (see Hub.ServeReport) to the hub in creds.
 func Report(ctx context.Context, creds Credentials, report any) error {
+	return ReportReply(ctx, creds, report, nil)
+}
+
+// ReportReply is Report, decoding the hub's answer into reply (when the hub
+// gives one; an older hub answers 204 and reply is left as it is).
+func ReportReply(ctx context.Context, creds Credentials, report, reply any) error {
 	u, err := CheckServer(creds.Server)
 	if err != nil {
 		return err
@@ -254,6 +261,11 @@ func Report(ctx context.Context, creds Credentials, report any) error {
 			e.Error = res.Status
 		}
 		return fmt.Errorf("report to hub: %s", e.Error)
+	}
+	if reply != nil && res.StatusCode == http.StatusOK {
+		if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(reply); err != nil {
+			return fmt.Errorf("report to hub: its answer: %w", err)
+		}
 	}
 	return nil
 }

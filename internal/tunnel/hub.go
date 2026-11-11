@@ -161,6 +161,9 @@ type Hub struct {
 	OnRevoke func(runnerID string)
 	// OnReport handles a runner's POST /runner/report body (optional).
 	OnReport func(runnerID string, body []byte) error
+	// ReportReply is the hub's answer to a runner's report (optional; nil:
+	// none, 204). The hub tells a runner how it paces it (dispatch.Reply).
+	ReportReply func(runnerID string) any
 
 	now func() time.Time
 
@@ -440,6 +443,19 @@ func (h *Hub) List() []Runner {
 	return out
 }
 
+// ListBare is List without the runners' owners: cheap enough to call for
+// every task the hub dispatches (dispatch.Pacer).
+func (h *Hub) ListBare() []Runner {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]Runner, 0, len(h.runners))
+	for _, r := range h.runners {
+		_, online := h.live[r.ID]
+		out = append(out, h.viewLocked(r, online, nil))
+	}
+	return out
+}
+
 func (h *Hub) viewLocked(r *record, online bool, owner *store.RunnerOwner) Runner {
 	v := Runner{ID: r.ID, Name: r.Name, Online: online, Created: r.Created, LastSeen: r.LastSeen, Owner: owner,
 		Version: r.Version, Parallel: r.Parallel, Paused: r.Paused}
@@ -703,6 +719,12 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if h.ReportReply != nil {
+		if v := h.ReportReply(rec.ID); v != nil {
+			writeJSON(w, http.StatusOK, v)
+			return
+		}
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -725,7 +747,32 @@ func cleanClaude(c claudecli.Status) *claudecli.Status {
 		ws = nil
 	}
 	c.Warnings = ws
+	if a := c.Account; a != nil {
+		cp := claudecli.Account{Email: clip(strings.TrimSpace(a.Email), 254), OrgID: clip(a.OrgID, 100),
+			OrgName: clip(a.OrgName, 200), Subscription: clip(a.Subscription, 40)}
+		c.Account = &cp
+		if cp.Email == "" {
+			c.Account = nil
+		}
+	}
 	return &c
+}
+
+func clip(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
+}
+
+// Account is the Claude account the runner last reported its CLI logged in
+// to: its email, lowercased ("" when it hasn't said). Runners on one
+// account share its usage limits.
+func (r Runner) Account() string {
+	if r.Reported == nil || r.Reported.Claude == nil || r.Reported.Claude.Account == nil {
+		return ""
+	}
+	return strings.ToLower(r.Reported.Claude.Account.Email)
 }
 
 // claudeKey is what of a Claude status the runners list shows.
@@ -733,7 +780,11 @@ func claudeKey(c *claudecli.Status) string {
 	if c == nil {
 		return ""
 	}
-	return c.Version + "\x00" + strings.Join(c.Warnings, "\x00")
+	k := c.Version + "\x00" + strings.Join(c.Warnings, "\x00")
+	if a := c.Account; a != nil {
+		k += "\x01" + a.Email + "\x00" + a.OrgID + "\x00" + a.OrgName + "\x00" + a.Subscription
+	}
+	return k
 }
 
 // ErrOffline is returned by Call for a runner without a tunnel.

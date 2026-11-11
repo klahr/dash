@@ -806,8 +806,10 @@
       <section class="pace-settings" aria-labelledby="pace-follow-label">
         <label class="toggle"><input type="checkbox" id="pace-follow"><span id="pace-follow-label">Follow weekly pace</span></label>
         <p class="hint" id="pace-help">Keeps weekly usage on the pace line: no new tasks while ahead of it, more at once while behind.</p>
+        <p class="pace-account" id="pace-account" hidden></p>
         <p class="pace-state" id="pace-state" hidden></p>
         <label class="field inline" id="pace-max-row"><span>Most tasks at once when behind</span><input type="number" id="pace-max" min="1" max="64" step="1" inputmode="numeric"></label>
+        <label class="field inline" id="pace-boost-row" hidden><span>Most tasks at once when behind</span><select id="pace-boost"><option value="1.5">1.5× usual</option><option value="2">2× usual</option><option value="3">3× usual</option><option value="4">4× usual</option></select></label>
       </section>
       <footer class="sheet-actions"><button class="btn" type="button" id="queue-toggle"></button></footer>
     </form>
