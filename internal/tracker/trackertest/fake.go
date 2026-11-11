@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,8 +40,9 @@ type Provider struct {
 }
 
 type board struct {
-	cards map[string]*tracker.Item
-	order []string
+	cards   map[string]*tracker.Item
+	order   []string
+	columns []string // AddBoard's; none: the project's mapping's
 }
 
 var seq struct {
@@ -54,10 +56,11 @@ func Register(t interface{ Cleanup(func()) }, name string) *Provider {
 	p := &Provider{Name: name, boards: map[string]*board{}, tokens: map[string]string{}}
 	tracker.Register(tracker.Registration{
 		Name: name, Label: "Fake " + name,
-		New: p.New,
+		New:     p.New,
+		Options: p.options,
 		Fields: []tracker.Field{
-			{Name: "board", Label: "Board", Required: true},
 			{Name: "token", Label: "API token", Secret: true},
+			{Name: "board", Label: "Board", Required: true, Type: "select", Dynamic: true, DependsOn: []string{"token"}, Columns: true},
 		},
 		DefaultStatusMap: map[model.TodoStatus]string{
 			model.StatusDraft: "Backlog", model.StatusQueued: "Todo", model.StatusInProgress: "Doing",
@@ -71,6 +74,34 @@ func Register(t interface{ Cleanup(func()) }, name string) *Provider {
 	})
 	t.Cleanup(func() { tracker.Unregister(name) })
 	return p
+}
+
+// AddBoard sets up a board with its columns, which the backend then lists
+// (Columns), refusing backends without token when it isn't "".
+func (p *Provider) AddBoard(name, token string, columns ...string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.boardLocked(name).columns = append([]string(nil), columns...)
+	if token != "" {
+		p.tokens[name] = token
+	}
+}
+
+// options lists the boards a token may use, for the board dropdown.
+func (p *Provider) options(_ context.Context, _ tracker.ProjectConfig, creds tracker.Credentials, field string) ([]tracker.Option, error) {
+	if field != "board" {
+		return nil, tracker.ErrNoOptions
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := []tracker.Option{}
+	for name := range p.boards {
+		if want, ok := p.tokens[name]; !ok || want == creds["token"] {
+			out = append(out, tracker.Option{Value: name, Label: name})
+		}
+	}
+	slices.SortFunc(out, func(a, b tracker.Option) int { return strings.Compare(a.Value, b.Value) })
+	return out, nil
 }
 
 // RequireToken makes a board refuse backends without token.
@@ -267,7 +298,16 @@ func (b *Backend) Test(ctx context.Context) error {
 }
 
 func (b *Backend) Columns(ctx context.Context) ([]tracker.Column, error) {
+	b.p.mu.Lock()
+	cols := slices.Clone(b.p.boardLocked(b.board).columns)
+	b.p.mu.Unlock()
 	var out []tracker.Column
+	for _, c := range cols {
+		out = append(out, tracker.Column{ID: c, Name: c})
+	}
+	if len(out) > 0 {
+		return out, nil
+	}
 	for _, s := range model.Statuses {
 		if c := b.cfg.ColumnFor(s); c != "" && !slices.ContainsFunc(out, func(x tracker.Column) bool { return x.ID == c }) {
 			out = append(out, tracker.Column{ID: c, Name: c})

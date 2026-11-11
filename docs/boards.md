@@ -2,12 +2,14 @@
 
 Each project's task board has a **board backend**. By default it is Dash's
 own board (`dash`). A project can also be planned in an external tracker
-instead, such as Favro (first), Trello or Jira. Dash then keeps the tracker
-and its own tasks in sync, both ways. Set it in **Project settings → Board**.
+instead, such as Trello or Jira. Dash then keeps the tracker and its own
+tasks in sync, both ways. Set it in **Project settings → Board**.
 
-Besides Dash's own board, **Favro** ships: see [favro.md](favro.md) for how
-to set it up. This page describes the model and the interface the tracker
-backends are written against (`internal/tracker`).
+Only Dash's own board ships for now: external trackers appear in the
+settings as their backends are added. This page describes the model and the
+interface the tracker backends are written against (`internal/tracker`).
+A project whose stored backend this Dash doesn't have (one that was
+removed) is treated as being on Dash's own board, and the hub logs it.
 
 ## Per project
 
@@ -75,7 +77,7 @@ Each linked task has an `external_ref` (`provider`, `id`, `url`).
   review: keep them as rework notes, or send the task back to Claude with
   them (as the Rework button does).
 - **Webhooks.** A backend that registers its own webhook with the tracker
-  (Favro) does so when the project's worker starts, at
+  (`AutoWebhook`) does so when the project's worker starts, at
   `<public URL>/api/projects/{id}/tracker/webhook`, when Dash has a public
   URL (`-public-url`, i.e. hub setups). It removes it when the project
   leaves that board or is deleted. Without a public URL, Dash only polls.
@@ -101,7 +103,7 @@ choice is made.
     GET  /api/projects/{id}/tracker                 backend, sync status, backends to pick from, recent events
     PUT  /api/projects/{id}/tracker                 {backend, config, status_map, credentials, clear_credentials, export, confirm}
     POST /api/projects/{id}/tracker/test            try settings (or the saved ones) without saving; answers the tracker's columns
-    POST /api/projects/{id}/tracker/options?field=  a dropdown's choices (e.g. Favro's organizations), for unsaved settings
+    POST /api/projects/{id}/tracker/options?field=  a dropdown's choices (e.g. a tracker's organizations), for unsaved settings
     POST /api/projects/{id}/tracker/sync            sync now
     POST /api/projects/{id}/tracker/webhook-secret  new webhook secret, answered once
     POST /api/projects/{id}/tracker/webhook         the tracker's webhook (no session: the project's secret)
@@ -131,7 +133,7 @@ config and credentials:
 
 ```go
 tracker.Register(tracker.Registration{
-	Name: "favro", Label: "Favro",
+	Name: "acme", Label: "Acme Boards",
 	New:  func(cfg tracker.ProjectConfig, creds tracker.Credentials) (tracker.Backend, error) { … },
 	Fields: []tracker.Field{{Name: "collection", Label: "Collection"}, {Name: "token", Label: "API token", Secret: true}},
 	Board: func(cfg json.RawMessage) string { … }, // which board: changing it is a switch
@@ -155,5 +157,7 @@ tracker.Register(tracker.Registration{
   (priority) to Dash instead of reading their absence as a clear.
 - Settings fields can be dropdowns (`Type: "select"`), with fixed `Options`
   or `Dynamic` ones the registration's `Options` func lists (reloaded when
-  a field in `DependsOn` changes).
+  a field in `DependsOn` changes). Mark the field that picks the board
+  `Columns`, so the settings load its columns for the mapping when it
+  changes.
 - `internal/tracker/trackertest` is an in-memory provider to test against.

@@ -99,9 +99,20 @@ func (in trackerInput) config(saved model.TrackerConfig) (model.TrackerConfig, e
 	return next, nil
 }
 
+// trackerConfig is a project's board backend; one this Dash doesn't have
+// reads as Dash's own board (see tracker.Resolve).
+func trackerConfig(data *store.OrgStore, pid string) (model.TrackerConfig, error) {
+	cfg, err := data.TrackerConfig(pid)
+	if err != nil {
+		return cfg, err
+	}
+	cfg, _ = tracker.Resolve(cfg)
+	return cfg, nil
+}
+
 // trackerState is what the settings show of a project's backend.
 func (s *Server) trackerState(sv *service, pid string) (map[string]any, error) {
-	cfg, err := sv.data.TrackerConfig(pid)
+	cfg, err := trackerConfig(sv.data, pid)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +138,7 @@ func (s *Server) trackerState(sv *service, pid string) (map[string]any, error) {
 		"unlinked":     unlinked,
 		"webhook_path": tracker.WebhookPath(pid),
 		// Set when Dash has a public URL: backends that register their own
-		// webhooks (Favro) point them here.
+		// webhooks point them here.
 		"webhook_url": s.trackerWebhookURL(pid),
 		"events":      events,
 	}, nil
@@ -157,7 +168,7 @@ func (s *Server) putTracker(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	saved, err := sv.data.TrackerConfig(pid)
+	saved, err := trackerConfig(sv.data, pid)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -200,7 +211,7 @@ func (s *Server) testTracker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pid := r.PathValue("pid")
-	saved, err := sv.data.TrackerConfig(pid)
+	saved, err := trackerConfig(sv.data, pid)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -241,7 +252,7 @@ func (s *Server) trackerWebhookURL(pid string) string {
 }
 
 // trackerOptions answers the choices of a backend's dynamic settings field
-// (e.g. Favro's organizations, once the token is typed in) for the settings
+// (e.g. a tracker's organizations, once the token is typed in) for the settings
 // in the body merged into the saved ones, without saving them.
 func (s *Server) trackerOptions(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
@@ -249,7 +260,7 @@ func (s *Server) trackerOptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pid := r.PathValue("pid")
-	saved, err := sv.data.TrackerConfig(pid)
+	saved, err := trackerConfig(sv.data, pid)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -290,7 +301,7 @@ func (s *Server) syncTracker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pid := r.PathValue("pid")
-	if _, err := sv.data.TrackerConfig(pid); err != nil {
+	if _, err := trackerConfig(sv.data, pid); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -322,7 +333,7 @@ func (s *Server) rotateTrackerSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pid := r.PathValue("pid")
-	cfg, err := sv.data.TrackerConfig(pid)
+	cfg, err := trackerConfig(sv.data, pid)
 	if err != nil {
 		writeErr(w, err)
 		return

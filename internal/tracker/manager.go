@@ -89,6 +89,10 @@ func (m *Manager) Start(ctx context.Context) error {
 		return err
 	}
 	for _, cfg := range cfgs {
+		if _, known := Resolve(cfg); !known {
+			slog.Warn("board backend not available: the project uses Dash's own board", "project", cfg.ProjectID, "backend", cfg.Backend)
+			continue
+		}
 		if err := m.start(cfg); err != nil {
 			slog.Warn("board backend", "project", cfg.ProjectID, "backend", cfg.Backend, "err", err)
 			_ = m.Store.SetTrackerSync(cfg.ProjectID, m.now(), time.Time{}, err.Error())
@@ -188,6 +192,10 @@ func (m *Manager) Reconfigure(projectID string) error {
 	cfg, err := m.Store.TrackerConfig(projectID)
 	if err != nil {
 		return err
+	}
+	cfg, known := Resolve(cfg)
+	if !known {
+		slog.Warn("board backend not available: the project uses Dash's own board", "project", projectID)
 	}
 	if cfg.Native() {
 		return nil
@@ -366,6 +374,9 @@ func (m *Manager) Apply(ctx context.Context, projectID string, next ProjectConfi
 	if err != nil {
 		return next, err
 	}
+	// A backend this Dash doesn't have is Dash's own board already; its
+	// links to cards go with it.
+	old, known := Resolve(old)
 	next.ProjectID = projectID
 	if next.Backend == "" {
 		next.Backend = Native
@@ -414,7 +425,7 @@ func (m *Manager) Apply(ctx context.Context, projectID string, next ProjectConfi
 			m.unregister(be, old)
 		}
 	}
-	if switching && !old.Native() {
+	if switching && !old.Native() || !known {
 		if err := m.Store.UnlinkTracker(projectID); err != nil {
 			return next, err
 		}

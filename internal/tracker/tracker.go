@@ -1,6 +1,6 @@
 // Package tracker puts each project's task board behind a pluggable board
 // backend: Dash's own board ("dash", the default) or an external tracker
-// such as Favro, Trello or Jira.
+// such as Trello or Jira.
 //
 // # The per-project model
 //
@@ -101,7 +101,7 @@ type Comment struct {
 // instance (see Register), so an instance only ever sees its project's
 // board and credentials. Methods may be called from one goroutine at a time.
 type Backend interface {
-	// Name is the backend's registered name, e.g. "favro".
+	// Name is the backend's registered name, e.g. "trello".
 	Name() string
 	// List returns the cards in the project's board changed since then
 	// (zero: all of them). Returning more than asked is fine; the engine
@@ -170,6 +170,9 @@ type Field struct {
 	// changes.
 	Dynamic   bool     `json:"dynamic,omitempty"`
 	DependsOn []string `json:"depends_on,omitempty"`
+	// Columns: the field picks the board, so the settings load its
+	// columns (Test) for the status mapping when it changes.
+	Columns bool `json:"columns,omitempty"`
 }
 
 // Option is one choice of a select field.
@@ -304,6 +307,20 @@ func Backends() []Registration {
 
 // ErrUnknownBackend is returned for a backend name nobody registered.
 var ErrUnknownBackend = errors.New("unknown board backend")
+
+// Resolve is cfg as this Dash can use it. A backend nobody registered (one
+// a project was set to before Dash dropped it, say) reads as Dash's own
+// board, and known is false: the project runs no sync until it is set up
+// again.
+func Resolve(cfg ProjectConfig) (_ ProjectConfig, known bool) {
+	if cfg.Native() {
+		return cfg, true
+	}
+	if _, ok := Lookup(cfg.Backend); ok {
+		return cfg, true
+	}
+	return ProjectConfig{ProjectID: cfg.ProjectID, Backend: Native}, false
+}
 
 // New builds the backend cfg names for its project. Native projects have
 // no external backend: use NewNative.

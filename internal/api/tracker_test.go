@@ -167,3 +167,39 @@ func TestTrackerAPIOff(t *testing.T) {
 		t.Fatalf("get without a manager: %d %s", w.Code, w.Body)
 	}
 }
+
+// A project left on a backend this Dash doesn't have (one removed from it)
+// shows Dash's own board, and its test connection tries Dash's board rather
+// than refusing the unknown name.
+func TestTrackerAPIUnknownBackend(t *testing.T) {
+	parallel(t)
+
+	s, _, p := boardServer(t)
+	if err := raw(s).PutTrackerConfig(model.TrackerConfig{ProjectID: p.ID, Backend: "gone", Credentials: map[string]string{"token": "t"}}); err != nil {
+		t.Fatal(err)
+	}
+	m := &tracker.Manager{Store: raw(s), PollEvery: time.Hour}
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	s.Trackers = m
+	h := s.mux()
+	call := func(method, path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, asOwner(t, s, r))
+		return w
+	}
+	base := "/api/projects/" + p.ID + "/tracker"
+	var st struct {
+		Config  model.TrackerConfig `json:"config"`
+		Running bool                `json:"running"`
+	}
+	if w := call("GET", base, ""); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &st) != nil || st.Config.Backend != "dash" || st.Config.HasCredentials || st.Running {
+		t.Fatalf("get: %d %s", w.Code, w.Body)
+	}
+	if w := call("POST", base+"/test", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"ok":true`) {
+		t.Fatalf("test: %d %s", w.Code, w.Body)
+	}
+}

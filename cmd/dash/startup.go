@@ -44,7 +44,6 @@ import (
 	"github.com/klahr/dash/internal/scan"
 	"github.com/klahr/dash/internal/store"
 	boardsync "github.com/klahr/dash/internal/tracker"
-	"github.com/klahr/dash/internal/tracker/favro" // the Favro board backend
 	"github.com/klahr/dash/internal/tunnel"
 	"github.com/klahr/dash/internal/usage"
 	"github.com/klahr/dash/web"
@@ -698,11 +697,13 @@ func (a *app) setupHub() {
 	notifier.Start(ctx)
 	apiSrv.Notify = notifier
 
-	// Projects whose board is an external tracker (Favro…) are synced
-	// with it, one worker each; a runner's projects are its hub's.
-	// Only dash's own end-to-end tests set it: Favro's API at a fake.
-	if v := os.Getenv("DASH_TEST_FAVRO_URL"); v != "" {
-		favro.SetDefaultBaseURL(v)
+	// Projects whose board is an external tracker are synced with it, one
+	// worker each; a runner's projects are its hub's.
+	// Only dash's own end-to-end tests set it: a fake tracker to sync with.
+	if v := os.Getenv("DASH_TEST_TRACKER"); v != "" {
+		if err := registerTestTracker(v); err != nil {
+			fatal("test tracker", "err", err)
+		}
 	}
 	a.boards = &boardsync.Manager{Store: st, Kick: todos.Kick, PublicURL: o.publicURL}
 	a.storeEvents.chain(a.boards.Observe)
