@@ -364,7 +364,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if shell {
-			if err := s.shellAllowed(chatter); err != nil {
+			if err := s.shellAllowed(r, chatter); err != nil {
 				send(agent.ChatDelta{Kind: "error", ID: msg.ID, Text: err.Error()})
 				continue
 			}

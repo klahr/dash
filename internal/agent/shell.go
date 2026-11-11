@@ -39,15 +39,19 @@ const maxShellLive = 1 << 20
 // without a terminal.
 const ShellNoTTY = "Chat commands run without a terminal: interactive programs (vim, top, less, a password prompt, …) don't work here. Use the Shell view for those."
 
-// ReadOnlyChat reports whether chatter is a read-only chat (Read, Grep and
-// Glob only), which runs no commands, so no "!" commands either.
+// ReadOnlyChat reports whether chatter is a read-only chat, which runs no
+// commands, so no "!" commands either. Running them is opt-in: a chatter
+// that doesn't say it isn't read-only (a ReadOnly method) is.
 func ReadOnlyChat(chatter Chatter) bool {
 	ro, ok := chatter.(interface{ ReadOnly() bool })
-	return ok && ro.ReadOnly()
+	return !ok || ro.ReadOnly()
 }
 
 // ReadOnly reports whether the chat only reads files (ChatReadOnly).
 func (c ClaudeCodeChat) ReadOnly() bool { return !c.shell() }
+
+// ReadOnly: the API chat runs no tools, so no commands.
+func (*Chat) ReadOnly() bool { return true }
 
 // ShellCommand is the command of a chat message typed with a leading "!"
 // ("!ls -la" → "ls -la"), and whether it is one.

@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/klahr/dash/internal/agent"
+	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/tunnel"
@@ -17,9 +19,27 @@ import (
 // a task's chat runs a command the user typed with a leading "!" where
 // Claude would run, instead of asking Claude. On a hub that is always the
 // runner the chat runs on (runnerChat.Shell), never the hub; a runner runs
-// them only for its owner (forOwner) and not when its chat is read-only.
+// the hub's only with -hub-commands, for its owner (hubShell), and none when
+// its chat is read-only.
 
-var errReadOnlyShell = errors.New("this chat is read-only (-chat-tools readonly): it runs no commands, so ! commands are off too")
+var errReadOnlyShell = errors.New("this chat is read-only (-chat-tools readonly, or -chat api): it runs no commands, so ! commands are off too")
+
+// errHubShell is why the hub may not run a "!" command on this runner.
+const errHubShell = "this runner doesn't run ! commands for the hub; start it with -hub-commands to allow its owner to"
+
+// hubShell reports whether the hub may run a "!" command on this runner for
+// r: as for a terminal (hubTerminal), only with -hub-commands and only for
+// the user who registered the runner, since the command is the hub's to
+// choose.
+func (s *Server) hubShell(r *http.Request) error {
+	if !s.HubCommands {
+		return errors.New(errHubShell)
+	}
+	if s.HubUser == 0 {
+		return errors.New("this runner doesn't know who registered it, so it runs no ! commands for the hub; register it again with a new code")
+	}
+	return s.onlyForOwner(r, "runs ! commands")
+}
 
 // shellRequest is the command of a "shell" message's conversation: its last
 // message, typed with a leading "!".
@@ -37,14 +57,14 @@ func shellRequest(general bool, msgs []agent.ChatMessage) (string, error) {
 	return cmd, nil
 }
 
-// shellAllowed reports why chatter's chat can't run a "!" command, if it
-// can't. A chat on a runner is the runner's to allow (its owner only, and
-// not a read-only chat), and goes only to one that said it runs them (an
-// older runner wouldn't answer); the hub runs none itself.
-func (s *Server) shellAllowed(chatter agent.Chatter) error {
+// shellAllowed reports why chatter's chat can't run a "!" command for r, if
+// it can't. A chat on a runner is the runner's to allow (with -hub-commands,
+// its owner only, and not a read-only chat), and goes only to one that said
+// it runs them (an older runner wouldn't answer); the hub runs none itself.
+func (s *Server) shellAllowed(r *http.Request, chatter agent.Chatter) error {
 	if rc, ok := chatter.(runnerChat); ok {
 		if rc.runner.Reported == nil || !rc.runner.Reported.ChatCommands {
-			return fmt.Errorf("your runner %s doesn't run ! commands: its chat is read-only (-chat-tools readonly), or it is older than this hub (update it)", rc.runner.Name)
+			return fmt.Errorf("your runner %s doesn't run ! commands: it wasn't started with -hub-commands, its chat runs no commands (-chat api, or -chat-tools readonly), or it is older than this hub (update it)", rc.runner.Name)
 		}
 		return nil
 	}
@@ -53,6 +73,9 @@ func (s *Server) shellAllowed(chatter agent.Chatter) error {
 	}
 	if agent.ReadOnlyChat(chatter) {
 		return errReadOnlyShell
+	}
+	if auth.FromHub(r.Context()) {
+		return s.hubShell(r)
 	}
 	return nil
 }

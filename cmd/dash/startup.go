@@ -768,7 +768,9 @@ func (a *app) setupRunner() {
 	}
 	// The hub hears where its tasks are, and this computer's usage.
 	reporter := &dispatch.Reporter{Store: st, Usage: a.tracker, Parallel: o.parallel, Terminals: o.hubCommands, Claude: cli,
-		ChatCommands: !(o.chatBackend == "claude-code" && o.chatTools == agent.ChatReadOnly),
+		// As shellAllowed: the hub's "!" commands run only with -hub-commands,
+		// in a chat that runs commands (agent.ReadOnlyChat).
+		ChatCommands: o.hubCommands && creds.UserID != 0 && o.chatBackend == "claude-code" && o.chatTools == agent.ChatShell,
 		Send: func(ctx context.Context, r dispatch.Report) error {
 			err := tunnel.Report(ctx, creds, r)
 			if errors.Is(err, tunnel.ErrRevoked) {

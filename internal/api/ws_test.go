@@ -161,6 +161,9 @@ type echoChat struct {
 	ran   string
 }
 
+// ReadOnly: it stands in for a chat that runs commands ("!" ones too).
+func (c *echoChat) ReadOnly() bool { return false }
+
 func (c *echoChat) Stream(ctx context.Context, dir string, _ []agent.ChatMessage, emit func(agent.ChatDelta)) error {
 	c.calls.Add(1)
 	c.mu.Lock()

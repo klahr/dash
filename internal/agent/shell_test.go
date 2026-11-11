@@ -241,10 +241,10 @@ func TestTranscriptShowsShellCommands(t *testing.T) {
 }
 
 func TestReadOnlyChat(t *testing.T) {
-	if !ReadOnlyChat(ClaudeCodeChat{Tools: ChatReadOnly}) || !ReadOnlyChat(ClaudeCodeChat{}) {
+	if !ReadOnlyChat(ClaudeCodeChat{Tools: ChatReadOnly}) || !ReadOnlyChat(ClaudeCodeChat{}) || !ReadOnlyChat(&Chat{}) || !ReadOnlyChat(nil) {
 		t.Error("a read-only chat runs commands")
 	}
-	if ReadOnlyChat(ClaudeCodeChat{Tools: ChatShell}) || ReadOnlyChat(&Chat{}) {
+	if ReadOnlyChat(ClaudeCodeChat{Tools: ChatShell}) {
 		t.Error("a shell chat is read-only")
 	}
 }

@@ -242,6 +242,9 @@ connection, to the clone of one of the project's runners that is online:
   and only when it runs with `-hub-commands` (a shell can do whatever a deploy command can). The
   hub chooses neither the runner's folder nor whose terminal it is: the runner checks its owner
   itself. Without the flag, or for the org's other members, the Shell view says why;
+- `!` commands in a project's or a task's chat: likewise only with `-hub-commands`, for the user
+  who registered the runner, and only when its chat runs commands (`-chat-tools shell`; never
+  with `-chat api`);
 - GitHub Actions: the hub's **CI** view, the automatic investigation of a failing build, and
   **Retry** read and re-run the builds with `gh` on a runner;
 - **Clean up** cleans the runner's clone.
