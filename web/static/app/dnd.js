@@ -3,7 +3,7 @@ import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { EASE, ask, fail, leave, reduceMotion, toast } from "./dialogs.js";
 import { LANES, state } from "./state.js";
-import { hasPriority, laneItems, renderBoard } from "./branches.js";
+import { approvable, hasPriority, laneItems, renderBoard } from "./branches.js";
 import { hoverCard } from "./hovercard.js";
 
 // ------------------------------------------------------------------ drag & drop
@@ -22,8 +22,11 @@ function dropAction(t, lane) {
   const go = (verb, label) => ({ kind: "action", verb, label });
   if (lane === "queued" && ["draft", "failed"].includes(from)) return go("enqueue", "Added to queue");
   if (lane === "queued" && from === "review") return { kind: "rework" };
-  if (lane === "draft" && ["queued", "review", "failed"].includes(from)) return go("cancel", "Moved to drafts");
-  if (lane === "merging" && from === "review") return go("approve", "Approved — merging");
+  if (lane === "draft" && ["queued", "review", "failed"].includes(from)) {
+    return go("cancel", t.pr?.state === "OPEN" ? `Moved to drafts; pull request #${t.pr.number} closed` : "Moved to drafts");
+  }
+  // A task whose pull request is open is approved (and merged) on GitHub.
+  if (lane === "merging" && from === "review" && approvable(t)) return go("approve", "Approved — merging");
   return null;
 }
 

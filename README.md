@@ -109,11 +109,12 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    **Changes** tab. Not right? Click **Rework**, say what to change, and it goes back to Claude.
    For a small fix, click **Edit** on a changed file instead: saving commits your edit on the
    task's branch, so approving merges it with the rest.
-5. **Approve.** Click **Approve**. The task goes through *Merging* and ends up in *Done*. In a
-   GitHub project Dash opens a pull request and squash-merges it once GitHub's checks pass, so
-   CI runs before anything reaches the default branch; without GitHub (or if you pick **Merge
-   it**) it becomes one squashed commit on the default branch, pushed if you like. See
-   [GitHub](docs/github.md).
+5. **Approve.** Click **Approve**. The task goes through *Merging* and ends up in *Done*, as one
+   squashed commit on the default branch, pushed if you like. In a GitHub project (with pull
+   requests, the default) the review happens on GitHub instead: when Claude finishes, Dash opens
+   a pull request and the task waits in *Review* with it linked. Reviews asking for changes go
+   back to Claude, and Dash squash-merges the pull request once it is approved on GitHub and its
+   checks pass. See [GitHub](docs/github.md).
 
 Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
@@ -146,7 +147,7 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 - [Wall view](docs/wall.md): a read-only TV dashboard of an organization's work, with a sign-in-free link for the TV
 - [Task boards](docs/boards.md): keep a project's board in Dash or in an external tracker, synced both ways (the backend interface for Favro, Trello and Jira)
 - [Notifications](docs/notifications.md): push notifications to your browser or installed app, even while it's closed, and webhooks that send reviews, failures, merges, approvals and failing builds to Slack, ntfy or a signed JSON endpoint
-- [GitHub](docs/github.md): merge locally or open pull requests, work on another branch and open its pull request, auto-approve, revert, tag releases from History
+- [GitHub](docs/github.md): merge locally or review and merge through pull requests, work on another branch and open its pull request, auto-approve, revert, tag releases from History
 - [MCP and the claude.ai connector](docs/mcp.md)
 - [Several computers](docs/several-computers.md)
 - [Use Dash from your phone](docs/phone.md)

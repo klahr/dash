@@ -88,8 +88,12 @@ export function scrollBy(el, how, n) {
   else el.scrollBy({ top: delta * n });
 }
 
-// What Enter does to a task: approve one in review, enqueue a draft.
-export function enterKey(t) { return { review: "a", draft: "s" }[t.status]; }
+// What Enter does to a task: approve one in review (or open its pull
+// request, when it is reviewed on GitHub), enqueue a draft.
+export function enterKey(t) {
+  if (t.status === "review" && t.pr?.state === "OPEN" && !t.error) return "gx";
+  return { review: "a", draft: "s" }[t.status];
+}
 
 // Actions on a todo; shared by the board cursor and the open detail view.
 export async function todoKey(t, k) {

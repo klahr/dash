@@ -3,7 +3,9 @@ package gitops
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -30,6 +32,17 @@ func (g *Git) FindPR(ctx context.Context, projectID, dir, base, head string) (nu
 
 // OpenPR returns the open pull request for head, creating one if there is none.
 func (g *Git) OpenPR(ctx context.Context, projectID, dir, base, head, title, body string) (number int, url string, err error) {
+	return g.openPR(ctx, projectID, dir, base, head, title, body, false)
+}
+
+// OpenDraftPR is OpenPR, creating the pull request as a draft. Where GitHub
+// has no draft pull requests (a private repository on a free plan), it is
+// created ready for review instead.
+func (g *Git) OpenDraftPR(ctx context.Context, projectID, dir, base, head, title, body string) (number int, url string, err error) {
+	return g.openPR(ctx, projectID, dir, base, head, title, body, true)
+}
+
+func (g *Git) openPR(ctx context.Context, projectID, dir, base, head, title, body string, draft bool) (number int, url string, err error) {
 	out, err := g.gh(ctx, projectID, dir, "pr", "list", "--head", head, "--state", "open", "--json", "number,url")
 	if err != nil {
 		return 0, "", err
@@ -41,7 +54,16 @@ func (g *Git) OpenPR(ctx context.Context, projectID, dir, base, head, title, bod
 	if json.Unmarshal([]byte(jsonPart(out)), &existing) == nil && len(existing) > 0 {
 		return existing[0].Number, existing[0].URL, nil
 	}
-	out, err = g.gh(ctx, projectID, dir, "pr", "create", "--base", base, "--head", head, "--title", title, "--body", body)
+	args := []string{"pr", "create", "--base", base, "--head", head, "--title", title, "--body", body}
+	if draft {
+		out, err = g.gh(ctx, projectID, dir, append(args, "--draft")...)
+		var ce *CmdError
+		if errors.As(err, &ce) && strings.Contains(strings.ToLower(ce.Output), "draft") {
+			out, err = g.gh(ctx, projectID, dir, args...)
+		}
+	} else {
+		out, err = g.gh(ctx, projectID, dir, args...)
+	}
 	if err != nil {
 		return 0, "", err
 	}
@@ -60,6 +82,23 @@ func (g *Git) MergePR(ctx context.Context, projectID, dir string, number int, he
 	return err
 }
 
+// ReadyPR marks draft pull request number ready for review.
+func (g *Git) ReadyPR(ctx context.Context, projectID, dir string, number int) error {
+	_, err := g.gh(ctx, projectID, dir, "pr", "ready", strconv.Itoa(number))
+	return err
+}
+
+// ClosePR closes pull request number without merging it, saying why in a
+// comment (optional).
+func (g *Git) ClosePR(ctx context.Context, projectID, dir string, number int, comment string) error {
+	args := []string{"pr", "close", strconv.Itoa(number)}
+	if comment != "" {
+		args = append(args, "--comment", comment)
+	}
+	_, err := g.gh(ctx, projectID, dir, args...)
+	return err
+}
+
 // PRStatus is what Dash needs to know about a pull request.
 type PRStatus struct {
 	State       string `json:"state"`     // OPEN | MERGED | CLOSED
@@ -68,7 +107,81 @@ type PRStatus struct {
 	MergeCommit *struct {
 		Oid string `json:"oid"`
 	} `json:"mergeCommit"`
-	Checks []PRCheck `json:"statusCheckRollup"`
+	Checks  []PRCheck `json:"statusCheckRollup"`
+	IsDraft bool      `json:"isDraft"`
+	// ReviewDecision is GitHub's verdict when the base branch requires
+	// reviews: APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED, else "".
+	ReviewDecision string `json:"reviewDecision"`
+}
+
+// PRReview is a review submitted on a pull request (GitHub's REST shape).
+type PRReview struct {
+	ID          int64     `json:"id"`
+	User        GHUser    `json:"user"`
+	Body        string    `json:"body"`
+	State       string    `json:"state"` // APPROVED | CHANGES_REQUESTED | COMMENTED | DISMISSED | PENDING
+	SubmittedAt time.Time `json:"submitted_at"`
+	CommitID    string    `json:"commit_id"`
+	HTMLURL     string    `json:"html_url"`
+}
+
+// PRComment is a review comment on a line of a pull request's diff.
+type PRComment struct {
+	ID       int64  `json:"id"`
+	ReviewID int64  `json:"pull_request_review_id"`
+	User     GHUser `json:"user"`
+	Body     string `json:"body"`
+	Path     string `json:"path"`
+	Line     int    `json:"line"`
+	// OriginalLine is where it was made, for a comment on code changed since.
+	OriginalLine int    `json:"original_line"`
+	InReplyTo    int64  `json:"in_reply_to_id"`
+	HTMLURL      string `json:"html_url"`
+}
+
+// GHUser is a GitHub account as the REST API gives it.
+type GHUser struct {
+	Login string `json:"login"`
+	Type  string `json:"type"` // User | Bot | Organization
+}
+
+// Bot reports an app's account (GitHub Actions, Dependabot, a CI or CLA bot).
+func (u GHUser) Bot() bool { return u.Type == "Bot" || strings.HasSuffix(u.Login, "[bot]") }
+
+// PRReviews returns the reviews submitted on pull request number, oldest first.
+func (g *Git) PRReviews(ctx context.Context, projectID, dir string, number int) ([]PRReview, error) {
+	var out []PRReview
+	return out, g.ghPages(ctx, projectID, dir, fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/reviews", number), &out)
+}
+
+// PRComments returns the review comments on the lines of pull request
+// number, oldest first.
+func (g *Git) PRComments(ctx context.Context, projectID, dir string, number int) ([]PRComment, error) {
+	var out []PRComment
+	return out, g.ghPages(ctx, projectID, dir, fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments", number), &out)
+}
+
+// ghPages GETs every page of a REST list into out (a pointer to a slice).
+// gh fills in {owner}/{repo} from dir's remote and prints one JSON array per
+// page.
+func (g *Git) ghPages(ctx context.Context, projectID, dir, path string, out any) error {
+	raw, err := g.ghQuiet(ctx, projectID, dir, "api", "--paginate", path+"?per_page=100")
+	if err != nil {
+		return err
+	}
+	dec := json.NewDecoder(strings.NewReader(jsonPart(raw)))
+	var all []json.RawMessage
+	for {
+		var page []json.RawMessage
+		if err := dec.Decode(&page); err == io.EOF {
+			break
+		} else if err != nil {
+			return fmt.Errorf("gh api %s: %w", path, err)
+		}
+		all = append(all, page...)
+	}
+	b, _ := json.Marshal(all)
+	return json.Unmarshal(b, out)
 }
 
 // PRCheck is a check run (GitHub Actions etc.) or a commit status.
@@ -116,7 +229,7 @@ func (c PRCheck) Pending() bool {
 func (g *Git) PRStatus(ctx context.Context, projectID, dir string, number int) (PRStatus, error) {
 	var st PRStatus
 	out, err := g.ghQuiet(ctx, projectID, dir, "pr", "view", strconv.Itoa(number),
-		"--json", "state,mergeable,headRefOid,mergeCommit,statusCheckRollup")
+		"--json", "state,mergeable,headRefOid,mergeCommit,statusCheckRollup,isDraft,reviewDecision")
 	if err != nil {
 		return st, err
 	}

@@ -202,11 +202,14 @@ projects on a runner's **Projects…** screen (below). From then on:
   it is linked (see [Where a runner keeps a shared project](#where-a-runner-keeps-a-shared-project)),
   and keeps that clone. Work lands on the remote's default branch the same
   way it does without runners, but done by the runner. On GitHub that means a pull request (the
-  default): when you approve, the runner pushes the task's branch, opens one and squash-merges it
-  once GitHub finds it mergeable and its checks pass (your approval was the review; turn **Merge
-  pull requests when checks pass** off to merge on GitHub yourself). If GitHub refuses (a required
-  review, say), the pull request stays open for you to merge there. The hub marks the task merged
-  once the runner reports it; the hub never needs a checkout, nor `gh`, of its own.
+  default): when Claude finishes, the runner pushes the task's branch and opens one, and the task
+  waits in the hub's Review column while it is reviewed on GitHub. The runner follows it: failing
+  checks, conflicts and reviews asking for changes go back to Claude there, and it squash-merges
+  the pull request once it is approved on GitHub and its checks pass (turn **Merge pull requests
+  when checks pass** off to merge on GitHub yourself; see [GitHub](github.md#pull-requests)).
+  Deleting the task on the hub, or moving it back to drafts, closes its pull request. The hub
+  marks the task merged once the runner reports it; the hub never needs a checkout, nor `gh`, of
+  its own.
 - Pick **Merge it** (or use a remote that isn't on GitHub) and the runner squashes the task onto
   the default branch in its clone (one commit), runs the project's tests and pushes it, without
   waiting for GitHub's checks. Runners don't need `gh` for this: a runner without it merges this

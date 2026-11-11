@@ -213,15 +213,7 @@ func TestOpenPullRequestIsFollowedAfterSwitchingToLocal(t *testing.T) {
 	}
 	bin, _ := fakeGh(t, t.TempDir())
 	h.git.GhBin = bin
-	td := h.waitFor(h.add("pr").ID, model.StatusReview)
-	h.approve(td.ID)
-	deadline := time.Now().Add(10 * time.Second)
-	for x, _ := h.st.GetTodo(td.ID); x.PR == nil; x, _ = h.st.GetTodo(td.ID) {
-		if time.Now().After(deadline) {
-			t.Fatal("no PR opened")
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	td := waitPR(t, h, h.add("pr").ID, model.StatusReview, nil) // opened as it finished
 	before := gitRun(t, origin, "rev-parse", "main")
 
 	// The hub switches the project to merging; the task is merged again
@@ -229,13 +221,11 @@ func TestOpenPullRequestIsFollowedAfterSwitchingToLocal(t *testing.T) {
 	if _, err := h.st.UpdateProject(h.proj.ID, func(p *model.Project) error { p.MergeMode = model.MergeLocal; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.merges.Enqueue(model.MergeJob{TodoID: td.ID, ProjectID: h.proj.ID}); err != nil {
-		t.Fatal(err)
-	}
+	h.approve(td.ID)
 	time.Sleep(500 * time.Millisecond)
 	x, _ := h.st.GetTodo(td.ID)
-	if x.Status != model.StatusMerging || x.PR == nil || x.PR.State != "OPEN" {
-		t.Errorf("want it still merging through its pull request, got %s %+v", x.Status, x.PR)
+	if x.Status != model.StatusReview || x.PR == nil || x.PR.State != "OPEN" {
+		t.Errorf("want it still waiting on its pull request, got %s %+v", x.Status, x.PR)
 	}
 	if got := gitRun(t, origin, "rev-parse", "main"); got != before {
 		t.Errorf("origin's main moved to %s: landed besides its open pull request", got)

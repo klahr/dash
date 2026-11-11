@@ -1796,6 +1796,10 @@ dialog.file-over, .file-over { outline: 2px dashed color-mix(in srgb, var(--acce
 /* ---- pull requests, reverts, sync ---- */
 .pr-tag { font-size: 12px; font-weight: 600; color: var(--review); cursor: pointer; text-decoration: none; }
 .pr-tag:hover { text-decoration: underline; }
+/* Where a pull request's review on GitHub stands. */
+.pr-review { font-size: 12px; font-weight: 600; color: var(--muted); }
+.pr-review.approved { color: var(--merged); }
+.pr-review.changes_requested { color: var(--failed); }
 .todo-sub.pr-status.progress { font-family: inherit; font-size: inherit; }
 .todo-sub.pr-status.waiting { font-weight: 600; }
 .pr-status.progress { color: var(--running); }

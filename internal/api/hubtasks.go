@@ -593,7 +593,9 @@ func (s *Server) hubTaskAction(action string) http.HandlerFunc {
 			w.WriteHeader(http.StatusAccepted)
 		case "delete":
 			// The hub forgot it: stop it and keep it as the runner's own.
+			// Deleting it there rejected it: its pull request closes.
 			s.Todos.Cancel(t.ID)
+			s.rejectPR(t)
 			if _, err := sv.data.UpdateTodo(t.ID, func(x *model.Todo) error { x.HubTodoID = ""; return nil }); err != nil {
 				writeErr(w, err)
 				return

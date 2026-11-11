@@ -107,13 +107,17 @@ function syncMergeHint() {
   // On runners, merging is pushing: there's no separate push to turn on.
   $("#auto-push-row").hidden = pr || onRunners;
   $("#merge-green-row").hidden = !pr;
-  const who = onRunners ? "The runner" : "Dash";
+  const who = onRunners ? "the runner" : "Dash";
+  const auto = f.auto_approve.checked;
+  $("#auto-approve-hint").textContent = pr
+    ? "Pull requests whose checks pass are merged without waiting for an approving review on GitHub (with \"Merge pull requests when checks pass\" on). Reviews asking for changes still go back to Claude."
+    : "Finished tasks whose tests pass go straight to the merge queue instead of waiting for review, and the Review column is hidden while it's empty.";
   $("#merge-hint").textContent = !p.remote_url
     ? (pr ? "Connect a GitHub repository (Projects → Create GitHub repository) to open pull requests." : "")
-    : pr ? `${who} pushes the task's branch and opens a pull request against ${baseBranch(p)}. ${green
-      ? "Once GitHub's checks pass it merges it (squashed); failing checks and conflicts go back to Claude."
-      : "Failing checks and conflicts go back to Claude; merge it on GitHub, and Dash marks the task merged."}`
-    : onRunners ? `The runner squashes the task onto ${baseBranch(p)}, runs the tests and pushes it, without waiting for GitHub's checks. If someone pushed first, it merges again on top; conflicts and failing tests go back to Claude.`
+    : pr ? `When Claude finishes a task, ${who} pushes its branch and opens a draft pull request against ${baseBranch(p)}, marked ready for review once its checks pass. The task waits in Review while you review it on GitHub: failing checks, conflicts and reviews asking for changes go back to Claude, whose fixes are pushed to the same pull request. Closing it rejects the task. ${green
+      ? auto ? "Once its checks pass it is merged (squashed)." : "Once it is approved on GitHub and its checks pass it is merged (squashed)."
+      : "Merge it on GitHub, and Dash marks the task merged."}`
+    : onRunners ? `Approved tasks: the runner squashes the task onto ${baseBranch(p)}, runs the tests and pushes it, without waiting for GitHub's checks. If someone pushed first, it merges again on top; conflicts and failing tests go back to Claude.`
       : f.auto_push.checked ? `Before each merge Dash pulls ${baseBranch(p)} from GitHub, so pushes don't get rejected. GitHub's checks run only after it's pushed.` : "";
 }
 $("#settings-form").addEventListener("change", syncMergeHint);

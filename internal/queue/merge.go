@@ -339,9 +339,13 @@ func (m *MergeQueue) handle(ctx context.Context, it mergeItem) {
 			m.Log.Line(t, "✖ merge: "+err.Error())
 		}
 		var se *syncError
+		var pe *prError
 		if errors.As(err, &se) {
 			// The work is fine; GitHub isn't reachable or main diverged. Approve again once fixed.
 			_, _ = m.Store.SetStatus(job.TodoID, model.StatusReview, "Not merged, can't sync with GitHub: "+brief(err))
+		} else if errors.As(err, &pe) {
+			// The work is fine; GitHub (or gh) isn't. Approving tries again.
+			_, _ = m.Store.SetStatus(job.TodoID, model.StatusReview, "Couldn't open the pull request: "+brief(err)+". Approve to try again")
 		} else {
 			noteFailure(m.Store, job.TodoID, "merge: "+err.Error(), "")
 			_, _ = m.Store.SetStatus(job.TodoID, model.StatusFailed, "merge: "+err.Error())

@@ -17,6 +17,10 @@ import (
 //	  └──────cancel──────┴──────rework────────┼──────────────────┘  │approve
 //	                                          ▼                     ▼
 //	                                        Failed ◀──conflict── Merging ──▶ Merged
+//
+// In "pr" mode a finished task goes through Merging (its pull request is
+// opened) to Review, where it waits on GitHub: merged there it is Merged,
+// closed there Failed.
 type TodoStatus string
 
 const (
@@ -32,9 +36,9 @@ const (
 var transitions = map[TodoStatus][]TodoStatus{
 	StatusDraft:      {StatusQueued},
 	StatusQueued:     {StatusDraft, StatusInProgress},
-	StatusInProgress: {StatusReview, StatusFailed, StatusQueued, StatusMerging}, // → merging: auto-merge after a conflict fix
-	StatusReview:     {StatusMerging, StatusQueued, StatusDraft, StatusMerged},  // → merged: its PR was merged on GitHub
-	StatusMerging:    {StatusMerged, StatusFailed, StatusReview, StatusQueued},  // → queued: conflict sent back to Claude
+	StatusInProgress: {StatusReview, StatusFailed, StatusQueued, StatusMerging},              // → merging: auto-merge after a conflict fix
+	StatusReview:     {StatusMerging, StatusQueued, StatusDraft, StatusMerged, StatusFailed}, // → merged/failed: its PR was merged/closed on GitHub
+	StatusMerging:    {StatusMerged, StatusFailed, StatusReview, StatusQueued},               // → queued: conflict sent back to Claude
 	StatusFailed:     {StatusQueued, StatusDraft, StatusReview, StatusMerged, StatusMerging},
 	StatusMerged:     {},
 }
@@ -70,9 +74,11 @@ type Project struct {
 	// (a remote that isn't GitHub's, a deploy key's SSH alias). Empty, they
 	// clone RemoteURL, a GitHub repository over the runner's own
 	// -github-protocol. It is a URL only: never credentials.
-	CloneURL      string `json:"clone_url,omitempty"`
-	AutoPush      bool   `json:"auto_push"`                // push DefaultBranch after every merge
-	AutoApprove   bool   `json:"auto_approve"`             // finished todos whose tests pass skip review
+	CloneURL string `json:"clone_url,omitempty"`
+	AutoPush bool   `json:"auto_push"` // push DefaultBranch after every merge
+	// AutoApprove: finished todos whose tests pass skip review. In "pr"
+	// mode their pull requests merge without an approving review on GitHub.
+	AutoApprove   bool   `json:"auto_approve"`
 	RunCommand    string `json:"run_command,omitempty"`    // e.g. "npm run dev" — gets $PORT
 	TestCommand   string `json:"test_command,omitempty"`   // e.g. "go test ./..."
 	DeployCommand string `json:"deploy_command,omitempty"` // e.g. "./deploy.sh" or "adb install …"
@@ -107,9 +113,11 @@ type Project struct {
 	// MaxAutoFixes is how many times Dash sends failing tests or merge
 	// conflicts back to Claude on its own before asking a human.
 	MaxAutoFixes int `json:"max_auto_fixes"`
-	// MergeMode is how approved work lands: "pr" (push the branch and open
-	// a GitHub pull request, merged once its checks pass, see MergeGreenPRs;
-	// Dash marks the todo merged when the PR is merged) or "local" (squash
+	// MergeMode is how finished work lands: "pr" (push the branch and open
+	// a GitHub pull request as soon as Claude finishes; it is reviewed on
+	// GitHub and merged once approved there and its checks pass, see
+	// MergeGreenPRs; Dash marks the todo merged when the PR is) or "local"
+	// (approved in Dash, then squashed
 	// onto the default branch, then push if AutoPush; on runners always
 	// pushed, see LandsOnOrigin). Unless the user chose (MergeModeSet), it
 	// is DefaultMergeMode: pull requests for GitHub projects.
@@ -118,8 +126,9 @@ type Project struct {
 	// the default (see store.DefaultMergeModes) leaves their choice alone.
 	MergeModeSet bool `json:"merge_mode_set,omitempty"`
 	// MergeGreenPRs squash-merges a task's pull request once GitHub finds
-	// it mergeable and its checks pass (nil means on); off, it waits for
-	// someone to merge it on GitHub.
+	// it mergeable, its checks pass and it has an approving review on
+	// GitHub (or the project approves automatically, AutoApprove); nil
+	// means on. Off, it waits for someone to merge it on GitHub.
 	MergeGreenPRs *bool `json:"merge_green_prs,omitempty"`
 	// Limits for one Claude run; 0 means the default. Time spent waiting
 	// for a human to answer a permission prompt doesn't count.
@@ -544,10 +553,30 @@ type PullRequest struct {
 	// already sent back to Claude, so the same failure isn't sent twice.
 	HandledSHA string `json:"handled_sha,omitempty"`
 	// Checks are GitHub's checks on the head, and Status one line on what the
-	// merge waits for, both as last seen while the task was merging.
+	// merge waits for, both as last seen while Dash followed it.
 	Checks []PRCheck `json:"checks,omitempty"`
 	Status string    `json:"status,omitempty"`
+	// Draft is set while it is a draft: Dash opens a task's pull request as
+	// one and marks it ready for review once its checks pass.
+	Draft bool `json:"draft,omitempty"`
+	// Review is where its review on GitHub stands: PRApproved,
+	// PRChangesRequested or PRReviewPending.
+	Review string `json:"review,omitempty"`
+	// ReviewID is the newest GitHub review whose comments were sent back to
+	// Claude, so the same review isn't sent twice.
+	ReviewID int64 `json:"review_id,omitempty"`
 }
+
+// Where a pull request's review on GitHub stands (PullRequest.Review).
+const (
+	PRApproved         = "approved"
+	PRChangesRequested = "changes_requested"
+	PRReviewPending    = "pending"
+)
+
+// WaitsOnGitHub reports a task whose pull request is open on GitHub: it is
+// reviewed, and merged or closed, there rather than approved in Dash.
+func (t Todo) WaitsOnGitHub() bool { return t.PR != nil && t.PR.State == "OPEN" }
 
 // PRCheck is one GitHub check on a pull request's head.
 type PRCheck struct {

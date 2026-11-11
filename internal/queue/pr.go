@@ -1,7 +1,9 @@
 package queue
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -14,40 +16,86 @@ import (
 )
 
 // openPR is step 3 in "pr" mode: push the todo's branch and open (or update)
-// its pull request. The todo stays in Merging until PollPRs sees GitHub
-// merge it (Dash merges it itself once its checks pass, see mergePR).
+// its pull request, as a draft until its checks pass. The todo then waits in
+// Review, where the pull request is reviewed on GitHub, until PollPRs sees
+// it merged (Dash merges it itself once it is approved and its checks pass,
+// see mergePR) or closed.
 func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) error {
 	wt := *t.Worktree
-	if err := m.Git.PushBranch(ctx, p.ID, wt.Path, wt.Branch); err != nil {
-		return fmt.Errorf("push %s: %w", wt.Branch, err)
+	if t.WaitsOnGitHub() {
+		// Closed on GitHub while Claude worked on it: the task is rejected,
+		// rather than its work reopened in a new pull request.
+		if st, err := m.Git.PRStatus(ctx, p.ID, p.Path, t.PR.Number); err == nil && st.State != "OPEN" {
+			m.followPR(ctx, t, p, st)
+			return nil
+		}
 	}
-	n, url, err := m.Git.OpenPR(ctx, p.ID, wt.Path, p.Base(), wt.Branch, subject(t), prBody(t))
+	if err := m.Git.PushBranch(ctx, p.ID, wt.Path, wt.Branch); err != nil {
+		return &prError{fmt.Errorf("push %s: %w", wt.Branch, err)}
+	}
+	n, url, err := m.Git.OpenDraftPR(ctx, p.ID, wt.Path, p.Base(), wt.Branch, subject(t), prBody(t))
 	if err != nil {
-		return fmt.Errorf("open pull request: %w", err)
+		return &prError{fmt.Errorf("open pull request: %w", err)}
 	}
 	if _, err := m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
 		if x.Status != model.StatusMerging {
 			return nil // moved on while pushing (e.g. merged or closed on GitHub): keep what was seen
 		}
-		handled := ""
+		pr := model.PullRequest{Number: n, URL: url, State: "OPEN"}
 		if x.PR != nil && x.PR.Number == n {
-			handled = x.PR.HandledSHA
+			pr = *x.PR // the same pull request: keep what was handled and seen of it
+			pr.URL, pr.State = url, "OPEN"
 		}
-		x.PR = &model.PullRequest{Number: n, URL: url, State: "OPEN", HandledSHA: handled}
-		x.Error = ""
+		x.PR = &pr
+		x.Status, x.Error = model.StatusReview, "" // reviewed on GitHub now
 		return nil
 	}); err != nil {
 		return err
 	}
-	m.Log.Line(t, fmt.Sprintf("⇡ pushed %s; pull request #%d is open: %s", wt.Branch, n, url))
+	m.Log.Line(t, fmt.Sprintf("⇡ pushed %s; pull request #%d is open for review on GitHub: %s", wt.Branch, n, url))
 	return nil
 }
 
-// PollPRs follows open pull requests: merged ones are marked merged,
-// closed ones go back to review, and conflicts or failing checks are sent
-// back to Claude like a local merge conflict. Tasks that failed or went to
-// review with their pull request still open are followed too, so a merge or
-// close done by hand on GitHub is noticed.
+// RejectPR closes task t's open pull request on GitHub and deletes its
+// branch there: the task was rejected in Dash (deleted, or moved back to
+// drafts). It does nothing for a task without one.
+func (m *MergeQueue) RejectPR(ctx context.Context, t model.Todo) error {
+	if !t.WaitsOnGitHub() {
+		return nil
+	}
+	p, err := m.Store.GetProject(t.ProjectID)
+	if err != nil {
+		return err
+	}
+	p = p.For(t)
+	n := t.PR.Number
+	if err := m.Git.ClosePR(ctx, p.ID, p.Path, n, "Rejected in Dash."); err != nil {
+		return fmt.Errorf("close pull request #%d: %w", n, err)
+	}
+	if t.Worktree != nil {
+		m.Git.DeleteRemoteBranch(ctx, p.ID, p.Path, t.Worktree.Branch)
+	}
+	_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error { // gone already when it was deleted
+		if x.PR != nil && x.PR.Number == n {
+			x.PR.State = "CLOSED"
+		}
+		return nil
+	})
+	slog.Info("closed the pull request of a task rejected in Dash", "todo", t.ID, "pr", n)
+	return nil
+}
+
+// prError is a pull request that couldn't be pushed or opened: the task
+// waits in review, where approving it tries again.
+type prError struct{ error }
+
+func (e *prError) Unwrap() error { return e.error }
+
+// PollPRs follows open pull requests: merged ones are marked merged, closed
+// ones reject their task, and conflicts, failing checks and reviews asking
+// for changes are sent back to Claude. Tasks that failed with their pull
+// request still open are followed too, so a merge or close done by hand on
+// GitHub is noticed.
 func (m *MergeQueue) PollPRs(ctx context.Context) {
 	m.pollPRs(ctx, "")
 }
@@ -108,7 +156,7 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 		if st.MergeCommit != nil {
 			sha = st.MergeCommit.Oid
 		}
-		if t.Status == model.StatusMerging {
+		if t.Status == model.StatusMerging || t.Status == model.StatusReview {
 			m.pushed(p, p.Base(), sha) // merged by Dash (or by hand just now): origin's branch moved
 		}
 		m.landed(ctx, t, p, sha, fmt.Sprintf("✔ pull request #%d merged", n))
@@ -116,23 +164,51 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 			m.Git.DeleteRemoteBranch(ctx, p.ID, p.Path, t.Worktree.Branch)
 		}
 	case "CLOSED":
-		m.Log.Line(t, fmt.Sprintf("✖ pull request #%d was closed without merging", n))
+		// Closing the pull request on GitHub rejects the task.
+		why := fmt.Sprintf("Pull request #%d was closed on GitHub without merging, so the task was rejected. "+
+			"Rework it to have Claude try again in a new pull request, or delete it", n)
+		m.Log.Line(t, fmt.Sprintf("✖ pull request #%d was closed on GitHub without merging; task rejected", n))
+		noteFailure(m.Store, t.ID, why, "")
 		_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
-			x.Status, x.PR = model.StatusReview, nil
-			x.Error = fmt.Sprintf("Pull request #%d was closed without merging. Approve again to open a new one.", n)
+			if x.Status != model.StatusMerged {
+				x.Status, x.Error = model.StatusFailed, why
+			}
+			if x.PR != nil && x.PR.Number == n {
+				x.PR.State = "CLOSED"
+			}
 			return nil
 		})
 	case "OPEN":
-		if t.Status != model.StatusMerging || st.HeadRefOid == "" {
+		if st.HeadRefOid == "" || m.inQueue(t.ID) {
+			return // GitHub still working it out, or the branch is about to be pushed (again)
+		}
+		// Reviews asking for changes go back to Claude first: its fix is
+		// pushed to the same pull request, and checks run on that.
+		reviews, err := m.Git.PRReviews(ctx, p.ID, p.Path, n)
+		if err != nil {
+			slog.Warn("pull request reviews", "todo", t.ID, "pr", n, "err", err)
+		} else if t.PR.ReviewID == 0 && t.Status == model.StatusMerging {
+			// Approved in Dash before reviews were followed: what was said
+			// on it before isn't news.
+			m.seenReviews(t, reviews)
+		} else if m.reviewBack(ctx, t, p, reviews) {
 			return
 		}
+		if t.Status != model.StatusMerging && t.Status != model.StatusReview {
+			return // failed: only a merge, a close or a review changes that
+		}
+		review := reviewState(st.ReviewDecision, reviews)
 		// The head Dash already acted on: a fix pass that made no new commit
-		// pushed it again. Without this the task would wait in merging for a
-		// head that never changes.
+		// pushed it again. Without this the task would wait for a head that
+		// never changes.
 		handled := st.HeadRefOid == t.PR.HandledSHA
-		autoMerge := p.MergesGreenPRs()
+		line := func(code, other []gitops.PRCheck) string {
+			return prStatusLine(n, p.Base(), st, code, other, prWait{
+				autoMerge: p.MergesGreenPRs(), handled: handled, review: review, autoApprove: p.AutoApprove,
+			})
+		}
 		if st.Mergeable == "CONFLICTING" {
-			m.notePR(t, st, prStatusLine(n, p.Base(), st, nil, nil, autoMerge, handled))
+			m.notePR(t, st, line(nil, nil), review)
 			if handled {
 				m.stuck(ctx, t, st, model.StatusFailed, fmt.Sprintf("Pull request #%d still conflicts with %s after Claude's fix", n, p.Base()))
 				return
@@ -149,7 +225,7 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 		for _, c := range st.Checks {
 			if c.Pending() {
 				// act once every check has finished
-				m.notePR(t, st, prStatusLine(n, p.Base(), st, nil, nil, autoMerge, handled))
+				m.notePR(t, st, line(nil, nil), review)
 				return
 			}
 			if c.Failed() {
@@ -157,7 +233,10 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 			}
 		}
 		code, other := m.sortFailed(ctx, p, n, failed)
-		m.notePR(t, st, prStatusLine(n, p.Base(), st, code, other, autoMerge, handled))
+		if len(code) == 0 && st.IsDraft && m.ready(ctx, t, p) {
+			st.IsDraft = false // its checks pass: for a person to review now
+		}
+		m.notePR(t, st, line(code, other), review)
 		switch {
 		case len(code) > 0 && handled:
 			m.stuck(ctx, t, st, model.StatusFailed, fmt.Sprintf("Checks still fail on pull request #%d (%s) and Claude's fix made no new commit", n, labels(failed)))
@@ -167,32 +246,258 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 			_ = m.sendBack(t, p, m.checksNote(ctx, p, n, code, other), false, fmt.Sprintf("checks fail on pull request #%d", n))
 		case len(other) > 0:
 			// Not something to fix in the code (e.g. an unsigned CLA): say so
-			// and leave it to a person. PollPRs still follows the pull request.
-			m.stuck(ctx, t, st, model.StatusReview, fmt.Sprintf("Pull request #%d can't merge: %s fails, which isn't about the code. Fix it on GitHub (e.g. sign the CLA), then merge it there or approve again", n, labels(other)))
+			// and leave it to a person. PollPRs still follows the pull
+			// request, and carries on once the check passes.
+			m.blocked(t, fmt.Sprintf("%s%s fails, which isn't about the code. Fix it on GitHub (e.g. sign the CLA); Dash carries on once it passes", blockedPrefix(n), labels(other)))
 		default:
 			// Passing, or failing only checks that aren't required to merge.
+			m.blocked(t, "")
 			// A handled head here is one GitHub refused to merge: leave it.
-			if autoMerge && !handled {
+			// Merged only once approved on GitHub (or the project approves
+			// automatically), and only the head Claude's work is at: commits
+			// not pushed yet haven't been checked or reviewed.
+			approved := review == model.PRApproved || (p.AutoApprove && review != model.PRChangesRequested)
+			if p.MergesGreenPRs() && !handled && approved && m.pushedHead(ctx, t, st) {
 				m.mergePR(ctx, t, p, st)
 			}
 		}
 	}
 }
 
-// notePR keeps what GitHub last said about a merging task's pull request
-// on the task, for its card: the checks and what the merge waits for.
-func (m *MergeQueue) notePR(t model.Todo, st gitops.PRStatus, line string) {
+// pushedHead reports that GitHub has the task's latest commit as the pull
+// request's head.
+func (m *MergeQueue) pushedHead(ctx context.Context, t model.Todo, st gitops.PRStatus) bool {
+	if t.Worktree == nil {
+		return true
+	}
+	local, err := m.Git.Head(ctx, t.ProjectID, t.Worktree.Path, "HEAD")
+	return err == nil && local == st.HeadRefOid
+}
+
+// ready marks a task's draft pull request ready for review, and reports
+// whether it is.
+func (m *MergeQueue) ready(ctx context.Context, t model.Todo, p model.Project) bool {
+	if err := m.Git.ReadyPR(ctx, p.ID, p.Path, t.PR.Number); err != nil {
+		slog.Warn("mark pull request ready for review", "todo", t.ID, "pr", t.PR.Number, "err", err)
+		return false
+	}
+	m.Log.Line(t, fmt.Sprintf("✔ checks pass; pull request #%d is ready for review", t.PR.Number))
+	return true
+}
+
+func blockedPrefix(n int) string { return fmt.Sprintf("Pull request #%d can't merge: ", n) }
+
+// blocked says on a task waiting on GitHub why its pull request can't merge
+// (why "" clears it once that is over), moving a merging one to review.
+func (m *MergeQueue) blocked(t model.Todo, why string) {
+	if why == "" && !strings.HasPrefix(t.Error, blockedPrefix(t.PR.Number)) {
+		return
+	}
+	if t.Error == why && (why == "" || t.Status == model.StatusReview) {
+		return // said already
+	}
+	if why != "" {
+		m.Log.Line(t, "✖ "+why)
+	}
+	_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+		if x.Status != model.StatusMerging && x.Status != model.StatusReview {
+			return nil
+		}
+		x.Error = why
+		if why != "" {
+			x.Status = model.StatusReview
+		}
+		return nil
+	})
+}
+
+// notePR keeps what GitHub last said about a task's pull request on the
+// task, for its card: the checks, the review and what the merge waits for.
+func (m *MergeQueue) notePR(t model.Todo, st gitops.PRStatus, line, review string) {
 	checks := prChecks(st.Checks)
-	if t.PR.Status == line && slices.Equal(t.PR.Checks, checks) {
+	if t.PR.Status == line && slices.Equal(t.PR.Checks, checks) && t.PR.Draft == st.IsDraft && t.PR.Review == review {
 		return // unchanged: don't write (and broadcast) on every poll
 	}
 	_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
 		if x.PR == nil || x.PR.Number != t.PR.Number {
 			return nil
 		}
-		x.PR.Checks, x.PR.Status = checks, line
+		x.PR.Checks, x.PR.Status, x.PR.Draft, x.PR.Review = checks, line, st.IsDraft, review
 		return nil
 	})
+}
+
+// reviewState is where a pull request's review stands: GitHub's decision
+// when its base branch requires reviews, else the latest approval or
+// request for changes of each reviewer (apps' don't count).
+func reviewState(decision string, reviews []gitops.PRReview) string {
+	switch decision {
+	case "APPROVED":
+		return model.PRApproved
+	case "CHANGES_REQUESTED":
+		return model.PRChangesRequested
+	case "REVIEW_REQUIRED":
+		return model.PRReviewPending
+	}
+	latest := map[string]string{}
+	for _, r := range reviews {
+		if !r.User.Bot() && (r.State == "APPROVED" || r.State == "CHANGES_REQUESTED") {
+			latest[r.User.Login] = r.State
+		}
+	}
+	state := model.PRReviewPending
+	for _, s := range latest {
+		if s == "CHANGES_REQUESTED" {
+			return model.PRChangesRequested
+		}
+		state = model.PRApproved
+	}
+	return state
+}
+
+// seenReviews marks every review so far as handled.
+func (m *MergeQueue) seenReviews(t model.Todo, reviews []gitops.PRReview) {
+	var newest int64
+	for _, r := range reviews {
+		newest = max(newest, r.ID)
+	}
+	// 1 when there are none yet: seen, and every real review is newer.
+	newest = max(newest, 1)
+	_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+		if x.PR != nil && x.PR.Number == t.PR.Number && x.PR.ReviewID < newest {
+			x.PR.ReviewID = newest
+		}
+		return nil
+	})
+}
+
+// reviewBack sends the reviews submitted on a task's pull request since the
+// last ones sent (a request for changes, or comments) back to Claude, the way
+// a rework from Dash is, and reports whether it did. Claude's fix is pushed
+// to the same pull request. Approvals, and reviews by apps (CI, CLA or
+// coverage bots), aren't sent.
+func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Project, reviews []gitops.PRReview) bool {
+	n := t.PR.Number
+	var fresh []gitops.PRReview
+	var newest int64
+	for _, r := range reviews {
+		if r.ID <= t.PR.ReviewID || r.User.Bot() || (r.State != "CHANGES_REQUESTED" && r.State != "COMMENTED") {
+			continue
+		}
+		fresh = append(fresh, r)
+		newest = max(newest, r.ID)
+	}
+	if len(fresh) == 0 {
+		return false
+	}
+	var comments []gitops.PRComment
+	if cs, err := m.Git.PRComments(ctx, p.ID, p.Path, n); err != nil {
+		slog.Warn("pull request review comments", "todo", t.ID, "pr", n, "err", err)
+		return false // try again at the next poll rather than send half of it
+	} else {
+		comments = cs
+	}
+	note := reviewNote(n, fresh, comments)
+	if note == "" {
+		// Nothing written (e.g. an empty review): nothing for Claude.
+		m.seenReviews(t, fresh)
+		return false
+	}
+	who := reviewers(fresh)
+	why := fmt.Sprintf("review by %s on pull request #%d", who, n)
+	m.Log.Line(t, fmt.Sprintf("↻ %s asks for changes on pull request #%d; sending the review back to Claude", who, n))
+	_, err := m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+		switch x.Status {
+		case model.StatusReview, model.StatusMerging, model.StatusFailed:
+		default:
+			return errSkipUpdate // moved on meanwhile; the next poll sees it again
+		}
+		if x.PR == nil || x.PR.Number != n {
+			return errSkipUpdate
+		}
+		x.Feedback = append(x.Feedback, note)
+		x.PR.ReviewID = max(x.PR.ReviewID, newest)
+		x.Status, x.Error, x.SentBack = model.StatusQueued, "", why
+		// A person asked, as with a rework from Dash: a fresh budget for
+		// fixes, and the fix goes to the pull request, not to a merge.
+		x.AutoFixes, x.AutoMerge = 0, false
+		return nil
+	})
+	if err != nil {
+		return false
+	}
+	if m.Kick != nil {
+		m.Kick()
+	}
+	return true
+}
+
+var errSkipUpdate = errors.New("skip")
+
+func reviewers(rs []gitops.PRReview) string {
+	var names []string
+	for _, r := range rs {
+		if !slices.Contains(names, r.User.Login) {
+			names = append(names, r.User.Login)
+		}
+	}
+	return strings.Join(names, ", ")
+}
+
+// maxReviewText caps one review's or comment's text in Claude's note.
+const maxReviewText = 4000
+
+func clip(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > maxReviewText {
+		s = s[:maxReviewText] + "…"
+	}
+	return s
+}
+
+// reviewNote is what Claude is told of reviews rs on pull request n, with
+// their comments on lines of the diff (comments holds the pull request's
+// line comments; those of other reviews are left out). It is "" when they
+// say nothing.
+func reviewNote(n int, rs []gitops.PRReview, comments []gitops.PRComment) string {
+	var b strings.Builder
+	for _, r := range rs {
+		var lines []gitops.PRComment
+		for _, c := range comments {
+			if c.ReviewID == r.ID && !c.User.Bot() && strings.TrimSpace(c.Body) != "" {
+				lines = append(lines, c)
+			}
+		}
+		body := clip(r.Body)
+		if body == "" && len(lines) == 0 {
+			continue
+		}
+		verb := "commented"
+		if r.State == "CHANGES_REQUESTED" {
+			verb = "requested changes"
+		}
+		fmt.Fprintf(&b, "\n**%s** %s:\n", r.User.Login, verb)
+		if body != "" {
+			fmt.Fprintf(&b, "\n%s\n", quote(body))
+		}
+		for _, c := range lines {
+			where := c.Path
+			if l := cmp.Or(c.Line, c.OriginalLine); l > 0 {
+				where = fmt.Sprintf("%s:%d", c.Path, l)
+			}
+			reply := ""
+			if c.InReplyTo != 0 {
+				reply = " (in reply to an earlier comment)"
+			}
+			fmt.Fprintf(&b, "\nOn `%s`%s:\n%s\n", where, reply, quote(clip(c.Body)))
+		}
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return fmt.Sprintf("A reviewer left a review on pull request #%d:\n%s\n"+
+		"Address it: change the code where the reviewer is right. Where a comment needs no change, or you disagree, "+
+		"say why in your final message. Your commits are pushed to the same pull request.", n, b.String())
 }
 
 func prChecks(cs []gitops.PRCheck) []model.PRCheck {
@@ -213,13 +518,20 @@ func prChecks(cs []gitops.PRCheck) []model.PRCheck {
 	return out
 }
 
-// prStatusLine is what a merging card says about pull request n: what its
-// merge waits for. code and other are its failing checks, sorted as
-// sortFailed does; autoMerge is set when Dash merges it once it can, and
-// handled when Dash already acted on its head.
-func prStatusLine(n int, base string, st gitops.PRStatus, code, other []gitops.PRCheck, autoMerge, handled bool) string {
+// prWait is what, besides its checks, a pull request's merge waits for.
+type prWait struct {
+	autoMerge   bool   // Dash merges it once it can (model.Project.MergesGreenPRs)
+	handled     bool   // Dash already acted on its head
+	review      string // where its review on GitHub stands (model.PRApproved…)
+	autoApprove bool   // the project approves automatically: no review needed
+}
+
+// prStatusLine is what a card says about pull request n: what its merge
+// waits for. code and other are its failing checks, sorted as sortFailed
+// does.
+func prStatusLine(n int, base string, st gitops.PRStatus, code, other []gitops.PRCheck, w prWait) string {
 	if st.Mergeable == "CONFLICTING" {
-		if handled {
+		if w.handled {
 			return "Still conflicts with " + base + " after Claude's fix"
 		}
 		return "Conflicts with " + base + ", sent back to Claude"
@@ -244,7 +556,7 @@ func prStatusLine(n int, base string, st gitops.PRStatus, code, other []gitops.P
 		return "Checks"
 	}
 	switch {
-	case len(code) > 0 && handled:
+	case len(code) > 0 && w.handled:
 		return fmt.Sprintf("%s still failing after Claude's fix: %s", plural(code), labels(code))
 	case len(code) > 0:
 		return fmt.Sprintf("%s failed: %s, sent back to Claude", plural(code), labels(code))
@@ -254,10 +566,18 @@ func prStatusLine(n int, base string, st gitops.PRStatus, code, other []gitops.P
 			why[i] = blockedBy(c)
 		}
 		return "Blocked: " + strings.Join(why, ", ")
-	case !autoMerge || handled:
+	case w.handled:
+		return "Waiting for you to merge on GitHub" // GitHub refused Dash's merge
+	case w.review == model.PRChangesRequested:
+		return "Changes requested on GitHub; waiting for the reviewer to look again"
+	case w.autoMerge && (w.review == model.PRApproved || w.autoApprove):
+		return fmt.Sprintf("Merging PR #%d…", n)
+	case w.review == model.PRApproved:
+		return "Approved; waiting for you to merge on GitHub"
+	case w.autoApprove:
 		return "Waiting for you to merge on GitHub"
 	}
-	return fmt.Sprintf("Merging PR #%d…", n)
+	return "Waiting for a review on GitHub"
 }
 
 var (
@@ -277,7 +597,7 @@ func blockedBy(c gitops.PRCheck) string {
 	}
 }
 
-// stuck moves a merging task whose pull request can't go further without a
+// stuck moves a task waiting on GitHub whose pull request can't go further without a
 // person to status (failed or review), with why as its error. The pull
 // request stays open and followed, so merging or closing it on GitHub is
 // still noticed.
@@ -298,7 +618,7 @@ func (m *MergeQueue) stuck(ctx context.Context, t model.Todo, st gitops.PRStatus
 	}
 	m.Log.Line(t, "✖ "+why)
 	_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
-		if x.Status != model.StatusMerging {
+		if x.Status != model.StatusMerging && x.Status != model.StatusReview {
 			return nil
 		}
 		x.Status, x.Error = status, why
@@ -345,10 +665,9 @@ func labels(cs []gitops.PRCheck) string {
 }
 
 // mergePR squash-merges a task's pull request once GitHub finds it
-// mergeable and its checks pass (model.Project.MergesGreenPRs): approving
-// the task was the review, and the pull request is there so GitHub's checks
-// run before the work reaches the default branch. When GitHub refuses (e.g.
-// a required review), it stays open to be merged there.
+// mergeable, its checks pass and it is approved on GitHub (or the project
+// approves automatically; see model.Project.MergesGreenPRs). When GitHub
+// refuses (e.g. a second required review), it stays open to be merged there.
 func (m *MergeQueue) mergePR(ctx context.Context, t model.Todo, p model.Project, st gitops.PRStatus) {
 	if st.Mergeable != "MERGEABLE" {
 		return // UNKNOWN while GitHub works it out; the next poll tries again
@@ -416,5 +735,9 @@ func prBody(t model.Todo) string {
 	if t.Checks != nil && t.Checks.Passed {
 		body += fmt.Sprintf("\n\nTests pass locally (`%s`).", t.Checks.Command)
 	}
-	return body + "\n\n---\nOpened by Dash after review.\n\nDash-Todo: " + t.ID
+	if t.Summary != "" {
+		body += "\n\n**Claude:** " + t.Summary
+	}
+	return body + "\n\n---\nOpened by Dash when Claude finished the task. Review it here: a review asking for changes " +
+		"(or comments) goes back to Claude, whose fixes are pushed to this pull request.\n\nDash-Todo: " + t.ID
 }

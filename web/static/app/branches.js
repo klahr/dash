@@ -488,14 +488,14 @@ export function todoRow(t, li = -1, ri = -1) {
   let subClass = "todo-sub";
   if (t.summary && t.status === "merged") sub = t.summary;
   const fixing = t.sent_back && ["queued", "in_progress"].includes(t.status) ? t.sent_back : "";
-  if (fixing && t.status === "queued") sub = `Sent back from merge: ${fixing}`;
+  if (fixing && t.status === "queued") sub = `${/^review /.test(fixing) ? "Sent back from GitHub" : "Sent back from merge"}: ${fixing}`;
   if (t.status === "in_progress") { sub = state.lastLine.get(t.id) || "Working…"; subClass += " progress"; }
   // Tests or setup running, in any state (a manual test run on a task in review, the merge queue's tests).
   const act = state.activity.get(t.id);
   if (act && t.status !== "draft") { sub = activityNodes(act); subClass = "todo-sub progress activity"; }
   if (t.paused) sub = t.status === "in_progress" ? "Pausing…" : "Paused";
   if (t.waiting && t.status === "queued" && !t.paused) { sub = t.waiting; subClass = "todo-sub waiting-runner"; }
-  if (t.status === "merging" && t.pr?.state === "OPEN") { sub = prStatus(t.pr); subClass = `todo-sub pr-status ${prTone(sub)}`; }
+  if (waitsOnGitHub(t)) { sub = prStatus(t.pr); subClass = `todo-sub pr-status ${prTone(sub)}`; }
   if (t.error) { sub = t.error; subClass += " err"; }
   if (t.reviewing) { sub = "Claude is reviewing…"; subClass = "todo-sub progress"; }
   if (state.perms.some((p) => p.todo_id === t.id)) { sub = "Waiting for your approval"; subClass = "todo-sub waiting"; }
@@ -523,9 +523,10 @@ export function todoRow(t, li = -1, ri = -1) {
       t.runner && ["in_progress", "review", "merging", "failed"].includes(t.status) ? h("span", { class: "runner-tag", title: "Runs on this runner" }, runnerName(t.runner)) : null,
       t.reviewing ? h("span", { class: "reviewing-tag" }, "Reviewing") : null,
       t.pr && t.status !== "merged" ? prTag(t.pr) : null,
+      waitsOnGitHub(t) ? prReviewTag(t.pr) : null,
       t.revert ? h("span", { class: "revert-tag" }, "Reverted") : null,
       t.ci_run ? h("span", { class: "ci-tag" }, "Build fix") : null,
-      fixing ? h("span", { class: "sentback-tag", title: `Sent back from merge: ${fixing}` }, /conflict/.test(fixing) ? "Merge conflict" : "Failing checks") : null,
+      fixing ? h("span", { class: "sentback-tag", title: `Sent back: ${fixing}` }, /^review /.test(fixing) ? "Review comments" : /conflict/.test(fixing) ? "Merge conflict" : "Failing checks") : null,
       t.attachments?.length ? h("span", { class: "attach-tag", title: `${t.attachments.length} attached` }, clip(), String(t.attachments.length)) : null,
       t.diff_files && ["review", "merging", "merged", "failed"].includes(t.status)
         ? h("span", { class: "diffsize", title: `${t.diff_files} ${t.diff_files === 1 ? "file" : "files"} changed` },
@@ -533,22 +534,41 @@ export function todoRow(t, li = -1, ri = -1) {
         : null,
       t.status === "in_progress" && t.started_at ? h("span", { title: "Running for" }, ago(t.started_at)) : null,
       previewTag(t),
-      t.status === "review" && t.finished_at ? h("span", { title: "Waiting for review" }, ago(t.finished_at)) : null,
+      t.status === "review" && t.finished_at ? h("span", { title: waitsOnGitHub(t) ? "Waiting on GitHub since" : "Waiting for review" }, ago(t.finished_at)) : null,
       t.model ? h("span", { class: "model-tag", title: `Runs on ${t.model}` }, t.model) : null,
       hasPriority(t) ? h("span", { class: "prio-tag", title: `Priority ${t.priority} (lower runs first)` }, `P${t.priority}`) : null,
-      t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, reviewChip(t), approveChip(t)) : null,
+      t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, reviewChip(t), approvable(t) ? approveChip(t) : null) : null,
       t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null));
 }
 
-// What a merging task's pull request waits for, as the hub last saw it.
+// A task whose pull request is open on GitHub: it is reviewed, and merged
+// or closed, there (in pull request mode, from the moment Claude finishes it).
+export function waitsOnGitHub(t) {
+  return t.pr?.state === "OPEN" && ["review", "merging"].includes(t.status);
+}
+
+// Whether Approve applies: not to a task reviewed on GitHub, unless opening
+// or pushing its pull request failed (its error says so) and approving retries.
+export function approvable(t) {
+  return t.status === "review" && (!waitsOnGitHub(t) || !!t.error);
+}
+
+// What a task's pull request waits for, as Dash last saw it.
 export function prStatus(pr) {
   return pr.status || `Waiting for GitHub on PR #${pr.number}…`;
 }
 
 export function prTone(line) {
   if (/^(Blocked|Checks? (failed|still)|Still conflicts)/.test(line)) return "err";
-  if (/^Waiting for you/.test(line)) return "waiting";
+  if (/^(Waiting for (you|a review)|Approved|Changes requested)/.test(line)) return "waiting";
   return "progress";
+}
+
+// Where the review on GitHub stands, and whether it is still a draft.
+export function prReviewTag(pr) {
+  if (pr.draft) return h("span", { class: "pr-review draft", title: "A draft until its checks pass" }, "Draft");
+  const label = { approved: "Approved", changes_requested: "Changes requested", pending: "Awaiting review" }[pr.review];
+  return label ? h("span", { class: `pr-review ${pr.review}`, title: "Review on GitHub" }, label) : null;
 }
 
 // One line per check, for a tooltip.

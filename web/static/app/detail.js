@@ -5,7 +5,7 @@ import { api } from "./api.js";
 import { ask, attempt, copy, fail, leave, toast } from "./dialogs.js";
 import { attachThumb } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
-import { depMeta, hasPriority, prChecksTitle, prStatus, prTone, title } from "./branches.js";
+import { approvable, depMeta, hasPriority, prChecksTitle, prReviewTag, prStatus, prTone, title, waitsOnGitHub } from "./branches.js";
 import { openTodoForm } from "./todos.js";
 import { canPreview, hidePreview, previewButton, previewOf, pv, renderPreview, stopPreview } from "./preview.js";
 import { canRework, menu, renderPane, renderReworkBox, revertTodo, reviewTodo, reworkTodo } from "./drawmode.js";
@@ -97,7 +97,8 @@ export function renderDetail() {
     t.runs ? h("span", {}, `${t.runs} ${t.runs === 1 ? "run" : "runs"}${t.cost_usd ? ` · ≈$${t.cost_usd.toFixed(2)}` : ""}`) : null,
     t.auto_fixes ? h("span", {}, `Fixed automatically ${t.auto_fixes}×`) : null,
     t.pr ? h("a", { class: "pr-link", href: t.pr.url, target: "_blank", rel: "noopener" }, `Pull request #${t.pr.number}${t.pr.state === "OPEN" ? "" : ` · ${t.pr.state.toLowerCase()}`}`) : null,
-    t.pr && t.status === "merging" && t.pr.state === "OPEN" ? h("span", { class: `pr-status ${prTone(prStatus(t.pr))}`, title: prChecksTitle(t.pr) }, prStatus(t.pr)) : null,
+    waitsOnGitHub(t) ? prReviewTag(t.pr) : null,
+    waitsOnGitHub(t) ? h("span", { class: `pr-status ${prTone(prStatus(t.pr))}`, title: prChecksTitle(t.pr) }, prStatus(t.pr)) : null,
     t.merged_commit ? h("span", { class: "branch", title: t.merged_commit }, t.merged_commit.slice(0, 8)) : null,
     t.revert ? (t.revert.pr_url
       ? h("a", { class: "revert-tag", href: t.revert.pr_url, target: "_blank", rel: "noopener" }, "Revert pull request")
@@ -153,7 +154,13 @@ export function renderActions(t) {
       } else {
         btns.push(b("redo", "Rework", rework));
       }
-      btns.push(b("merge", "Approve", post("approve", null, "Approved — merging"), "review grow"));
+      if (approvable(t)) {
+        btns.push(b("merge", "Approve", post("approve", null, waitsOnGitHub(t) ? "Pushing the pull request again" : "Approved — merging"), "review grow"));
+      } else {
+        // Reviewed on GitHub: a review asking for changes comes back to Claude.
+        btns.push(h("a", { class: "btn primary grow", href: t.pr.url, target: "_blank", rel: "noopener", title: "Review, approve or close it on GitHub" },
+          ico("external"), `Review PR #${t.pr.number} on GitHub`));
+      }
       break;
     case "merging":
       if (t.pr) btns.push(h("a", { class: "btn primary grow", href: t.pr.url, target: "_blank", rel: "noopener" }, ico("external"), `Open pull request #${t.pr.number}`));
@@ -197,7 +204,8 @@ $("#d-more").addEventListener("click", attempt(async () => {
       choices.push(["copy", "Copy worktree path", () => copy(t.worktree.path, "Path copied")]);
     }
     choices.push(["trash", "Delete task", async () => {
-      if (await ask({ title: "Delete this task?", body: "Its worktree and branch are removed too. This can't be undone.", ok: "Delete", danger: true })) {
+      const pr = t.pr?.state === "OPEN" ? ` Its pull request #${t.pr.number} is closed on GitHub: the task is rejected.` : "";
+      if (await ask({ title: "Delete this task?", body: `Its worktree and branch are removed too.${pr} This can't be undone.`, ok: "Delete", danger: true })) {
         await api("DELETE", `/api/todos/${t.id}`);
         closeDetail();
         toast("Task deleted");

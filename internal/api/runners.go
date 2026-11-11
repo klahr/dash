@@ -240,6 +240,9 @@ func (sv *service) approveOnRunner(ctx context.Context, t model.Todo) (model.Tod
 	if t.Status != model.StatusReview && t.Status != model.StatusFailed {
 		return t, fmt.Errorf("%w: only tasks in review (or a failed merge) can be approved", errBadRequest)
 	}
+	if err := reviewedOnGitHub(t); err != nil {
+		return t, err
+	}
 	d, err := sv.runnerTask(t)
 	if err != nil {
 		return t, err

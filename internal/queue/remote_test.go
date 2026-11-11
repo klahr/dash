@@ -164,60 +164,121 @@ func TestRunTimeLimitStopsClaude(t *testing.T) {
 	}
 }
 
-// A fake gh: `pr list` finds nothing, `pr create` prints a URL, and
-// `pr view` prints whatever the test put in pr.json.
+// A fake gh: `pr list` finds nothing, `pr create` prints a URL, `pr view`
+// prints whatever the test put in pr.json, the REST calls for reviews and
+// review comments print reviews.json and comments.json (none when missing),
+// and `pr merge` fails unless the file merge-ok exists. Every call is
+// logged to calls.
 func fakeGh(t *testing.T, dir string) (bin, stateFile string) {
 	stateFile = filepath.Join(dir, "pr.json")
 	bin = filepath.Join(dir, "gh")
-	script := "#!/bin/sh\ncase \"$1 $2\" in\n" +
+	file := func(name string) string { return filepath.Join(dir, name) }
+	script := "#!/bin/sh\necho \"$*\" >> " + file("calls") + "\ncase \"$1 $2\" in\n" +
 		"\"pr list\") echo '[]' ;;\n" +
 		"\"pr create\") echo https://github.com/o/r/pull/7 ;;\n" +
 		"\"pr view\") cat " + stateFile + " ;;\n" +
+		"\"pr ready\"|\"pr close\") ;;\n" +
+		"\"pr merge\") [ -f " + file("merge-ok") + " ] || exit 1; echo '{\"state\":\"MERGED\"}' > " + stateFile + " ;;\n" +
+		"\"api \"*) case \"$*\" in\n" +
+		"  */reviews*) cat " + file("reviews.json") + " 2>/dev/null || echo '[]' ;;\n" +
+		"  */comments*) cat " + file("comments.json") + " 2>/dev/null || echo '[]' ;;\n" +
+		"  *) exit 1 ;;\n  esac ;;\n" +
 		"*) echo \"unexpected gh $*\" >&2; exit 1 ;;\nesac\n"
 	testbin.Write(t, bin, script)
 	return bin, stateFile
 }
 
-// With "Merge pull requests when checks pass" off, the pull request waits
-// for someone to merge it on GitHub, green or not.
-func TestPullRequestMode(t *testing.T) {
+// ghCalls is what the fake gh in dir was asked, one call a line.
+func ghCalls(t *testing.T, dir string) string {
+	b, _ := os.ReadFile(filepath.Join(dir, "calls"))
+	return string(b)
+}
+
+// openPRView is pr.json for an open pull request at head with checks (JSON).
+func openPRView(head, checks string) string {
+	return `{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"` + head + `","statusCheckRollup":[` + checks + `]}`
+}
+
+// prHarness is a project in pull request mode with the fake gh, whose
+// Claude writes file name in every run.
+func prHarness(t *testing.T, name string, p model.Project) (h *harness, dir string) {
+	p.Name = "p"
+	h = newHarness(t, &fakeExec{fn: writeFile("", name)}, p)
+	h.addOrigin(false, model.MergePR)
+	dir = t.TempDir()
+	bin, _ := fakeGh(t, dir)
+	h.git.GhBin = bin
+	write(t, dir, "pr.json", `{"state":"OPEN","mergeable":"UNKNOWN","headRefOid":"","statusCheckRollup":[]}`)
+	return h, dir
+}
+
+// When Claude finishes a task its branch is pushed and a draft pull
+// request opens at once: the task waits in Review, linked to it, with no
+// approval in Dash.
+func TestPullRequestOpensWhenTaskFinishes(t *testing.T) {
 	parallel(t)
 
-	h := newHarness(t, &fakeExec{fn: writeFile("", "pr.txt")}, model.Project{Name: "p"})
-	origin, _ := h.addOrigin(false, model.MergePR)
-	off := false
-	if _, err := h.st.UpdateProject(h.proj.ID, func(p *model.Project) error { p.MergeGreenPRs = &off; return nil }); err != nil {
-		t.Fatal(err)
-	}
-	bin, state := fakeGh(t, t.TempDir())
-	h.git.GhBin = bin
-	write(t, filepath.Dir(state), "pr.json", `{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"abc","statusCheckRollup":[]}`)
-
+	h, dir := prHarness(t, "pr.txt", model.Project{})
 	td := h.waitFor(h.add("via pr").ID, model.StatusReview)
-	h.approve(td.ID)
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		x, _ := h.st.GetTodo(td.ID)
-		if x.PR != nil {
-			if x.PR.Number != 7 || x.Status != model.StatusMerging {
-				t.Fatalf("want PR #7 while merging, got %+v status %s", x.PR, x.Status)
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("no PR opened (status %s, error %q)", x.Status, x.Error)
-		}
-		time.Sleep(50 * time.Millisecond)
+	if td.PR == nil || td.PR.Number != 7 || td.PR.State != "OPEN" || td.PR.URL != "https://github.com/o/r/pull/7" || td.Error != "" {
+		t.Fatalf("want PR #7 open in review, got %+v (error %q)", td.PR, td.Error)
 	}
-	if got := gitRun(t, origin, "rev-parse", td.Worktree.Branch); got == "" {
+	if calls := ghCalls(t, dir); !strings.Contains(calls, "pr create --base main --head "+td.Worktree.Branch) || !strings.Contains(calls, "--draft") {
+		t.Fatalf("want a draft pull request opened, gh calls:\n%s", calls)
+	}
+	origin := filepath.Join(filepath.Dir(h.proj.Path), "origin.git")
+	if got := gitRun(t, origin, "rev-parse", td.Worktree.Branch); got != gitRun(t, td.Worktree.Path, "rev-parse", "HEAD") {
 		t.Fatal("branch not pushed")
 	}
 	if gitRun(t, h.proj.Path, "log", "--oneline", "main") != gitRun(t, origin, "log", "--oneline", "main") {
 		t.Fatal("PR mode must not commit to main locally")
 	}
-	h.merges.PollPRs(context.Background()) // green, but left to GitHub (the fake gh fails a merge)
-	if x, _ := h.st.GetTodo(td.ID); x.Status != model.StatusMerging || x.PR.HandledSHA != "" {
-		t.Fatalf("a green pull request was acted on with merging when checks pass off: %s %+v", x.Status, x.PR)
+
+	// Approving it in Dash isn't the review: that happens on GitHub.
+	if err := reviewedElsewhere(h, td.ID); err == nil {
+		t.Fatal("a task in review with its pull request open shouldn't be approvable in Dash")
+	}
+
+	// Its checks pass: it is marked ready for review, and waits for one.
+	head := gitRun(t, td.Worktree.Path, "rev-parse", "HEAD")
+	write(t, dir, "pr.json", `{"state":"OPEN","mergeable":"MERGEABLE","isDraft":true,"headRefOid":"`+head+`","statusCheckRollup":[
+		{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}]}`)
+	h.merges.PollPRs(context.Background())
+	if calls := ghCalls(t, dir); !strings.Contains(calls, "pr ready 7") || strings.Contains(calls, "pr merge") {
+		t.Fatalf("want it marked ready and not merged, gh calls:\n%s", calls)
+	}
+	x, _ := h.st.GetTodo(td.ID)
+	if x.Status != model.StatusReview || x.PR.Draft || x.PR.Review != model.PRReviewPending || x.PR.Status != "Waiting for a review on GitHub" {
+		t.Fatalf("want it waiting for a review, got %s %+v", x.Status, *x.PR)
+	}
+}
+
+// reviewedElsewhere is the API's check before approving a task.
+func reviewedElsewhere(h *harness, id string) error {
+	t, _ := h.st.GetTodo(id)
+	if t.Status == model.StatusReview && t.WaitsOnGitHub() && t.Error == "" {
+		return errors.New("reviewed on GitHub")
+	}
+	return nil
+}
+
+// With "Merge pull requests when checks pass" off, the pull request waits
+// for someone to merge it on GitHub, approved and green or not.
+func TestPullRequestMode(t *testing.T) {
+	parallel(t)
+
+	off := false
+	h, dir := prHarness(t, "pr.txt", model.Project{MergeGreenPRs: &off})
+	td := h.waitFor(h.add("via pr").ID, model.StatusReview)
+	head := gitRun(t, td.Worktree.Path, "rev-parse", "HEAD")
+	write(t, dir, "merge-ok", "")
+	write(t, dir, "reviews.json", `[{"id":5,"user":{"login":"alice","type":"User"},"state":"APPROVED","body":""}]`)
+	write(t, dir, "pr.json", openPRView(head, ""))
+	h.merges.PollPRs(context.Background())
+	if x, _ := h.st.GetTodo(td.ID); x.Status != model.StatusReview || x.PR.HandledSHA != "" || strings.Contains(ghCalls(t, dir), "pr merge") {
+		t.Fatalf("an approved green pull request was merged with merging when checks pass off: %s %+v", x.Status, x.PR)
+	} else if x.PR.Status != "Approved; waiting for you to merge on GitHub" {
+		t.Fatalf("status line %q", x.PR.Status)
 	}
 
 	// GitHub merges it (here: someone merges the branch on origin).
@@ -227,7 +288,7 @@ func TestPullRequestMode(t *testing.T) {
 	gitRun(t, other, "commit", "-m", "Merge PR 7")
 	gitRun(t, other, "push", "origin", "main")
 	sha := gitRun(t, other, "rev-parse", "HEAD")
-	write(t, filepath.Dir(state), "pr.json", `{"state":"MERGED","mergeCommit":{"oid":"`+sha+`"}}`)
+	write(t, dir, "pr.json", `{"state":"MERGED","mergeCommit":{"oid":"`+sha+`"}}`)
 	h.merges.PollPRs(context.Background())
 
 	x := h.waitFor(td.ID, model.StatusMerged)
@@ -239,10 +300,10 @@ func TestPullRequestMode(t *testing.T) {
 	}
 }
 
-// A task's pull request is squash-merged once its checks pass, instead of
-// waiting for someone to merge it on GitHub: on a runner (a hub's task) and
+// A task's pull request is squash-merged once its checks pass and it has
+// an approving review on GitHub, not before: on a runner (a hub's task) and
 // on a Dash without runners alike.
-func TestGreenPullRequestIsMerged(t *testing.T) {
+func TestGreenPullRequestIsMergedOnceApproved(t *testing.T) {
 	parallel(t)
 
 	t.Run("runner", func(t *testing.T) { testGreenPullRequestIsMerged(t, "hub-p") })
@@ -250,39 +311,12 @@ func TestGreenPullRequestIsMerged(t *testing.T) {
 }
 
 func testGreenPullRequestIsMerged(t *testing.T, hubProject string) {
-	h := newHarness(t, &fakeExec{fn: writeFile("", "hub.txt")}, model.Project{Name: "p"})
-	h.addOrigin(false, model.MergePR)
-	if _, err := h.st.UpdateProject(h.proj.ID, func(p *model.Project) error { p.HubProjectID = hubProject; return nil }); err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	state := filepath.Join(dir, "pr.json")
-	merged := filepath.Join(dir, "merged")
-	bin := filepath.Join(dir, "gh")
-	script := "#!/bin/sh\ncase \"$1 $2\" in\n" +
-		"\"pr list\") echo '[]' ;;\n" +
-		"\"pr create\") echo https://github.com/o/r/pull/7 ;;\n" +
-		"\"pr view\") cat " + state + " ;;\n" +
-		"\"pr merge\") echo \"$*\" > " + merged + "; echo '{\"state\":\"MERGED\"}' > " + state + " ;;\n" +
-		"*) echo \"unexpected gh $*\" >&2; exit 1 ;;\nesac\n"
-	testbin.Write(t, filepath.Join(dir, "gh"), script)
-	h.git.GhBin = bin
-	write(t, dir, "pr.json", `{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"abc","statusCheckRollup":[
-		{"name":"build","status":"IN_PROGRESS"}]}`)
-
+	h, dir := prHarness(t, "hub.txt", model.Project{HubProjectID: hubProject})
+	write(t, dir, "merge-ok", "")
 	td := h.waitFor(h.add("on a runner").ID, model.StatusReview)
-	h.approve(td.ID)
-	deadline := time.Now().Add(10 * time.Second)
-	for x, _ := h.st.GetTodo(td.ID); x.PR == nil; x, _ = h.st.GetTodo(td.ID) {
-		if time.Now().After(deadline) {
-			t.Fatal("no PR opened")
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	head := gitRun(t, td.Worktree.Path, "rev-parse", "HEAD")
+	write(t, dir, "pr.json", openPRView(head, `{"name":"build","status":"IN_PROGRESS"}`))
 	h.merges.PollPRs(context.Background())
-	if _, err := os.Stat(merged); err == nil {
-		t.Fatal("merged before its checks finished")
-	}
 	// The card shows what the merge waits for.
 	x, _ := h.st.GetTodo(td.ID)
 	if x.PR.Status != "Waiting for checks: build (0/1 passed)" || len(x.PR.Checks) != 1 || x.PR.Checks[0] != (model.PRCheck{Name: "build", State: "pending"}) {
@@ -294,48 +328,181 @@ func testGreenPullRequestIsMerged(t *testing.T, hubProject string) {
 		t.Fatal("an unchanged pull request shouldn't update the task on every poll")
 	}
 
-	write(t, dir, "pr.json", `{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"abc","statusCheckRollup":[
-		{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}]}`)
+	// Green, but nobody approved it on GitHub yet (a bot's approval doesn't
+	// count): it waits.
+	write(t, dir, "reviews.json", `[{"id":3,"user":{"login":"ci-bot[bot]","type":"Bot"},"state":"APPROVED"}]`)
+	write(t, dir, "pr.json", openPRView(head, `{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}`))
+	h.merges.PollPRs(context.Background())
+	if x, _ := h.st.GetTodo(td.ID); x.Status != model.StatusReview || strings.Contains(ghCalls(t, dir), "pr merge") {
+		t.Fatalf("merged without an approving review: %s", x.Status)
+	} else if x.PR.Status != "Waiting for a review on GitHub" || x.PR.Review != model.PRReviewPending {
+		t.Fatalf("PR = %+v, want it waiting for a review", *x.PR)
+	}
+
+	// Approved on GitHub: Dash merges it.
+	write(t, dir, "reviews.json", `[{"id":3,"user":{"login":"ci-bot[bot]","type":"Bot"},"state":"APPROVED"},
+		{"id":4,"user":{"login":"alice","type":"User"},"state":"APPROVED","body":"LGTM"}]`)
 	h.merges.PollPRs(context.Background())
 	h.waitFor(td.ID, model.StatusMerged)
-	if b, _ := os.ReadFile(merged); !strings.Contains(string(b), "pr merge 7 --squash --match-head-commit abc") {
-		t.Fatalf("want the PR squash-merged at its head, got %q", b)
+	if calls := ghCalls(t, dir); !strings.Contains(calls, "pr merge 7 --squash --match-head-commit "+head) {
+		t.Fatalf("want the PR squash-merged at its head, got\n%s", calls)
+	}
+}
+
+// With "Approve tasks automatically" a green pull request is merged without
+// waiting for an approving review.
+func TestAutoApprovedPullRequestMergesWhenGreen(t *testing.T) {
+	parallel(t)
+
+	h, dir := prHarness(t, "auto.txt", model.Project{AutoApprove: true})
+	write(t, dir, "merge-ok", "")
+	td := h.waitFor(h.add("auto").ID, model.StatusReview)
+	if td.PR == nil {
+		t.Fatal("want a pull request opened, approved automatically or not")
+	}
+	write(t, dir, "pr.json", openPRView(gitRun(t, td.Worktree.Path, "rev-parse", "HEAD"), `{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}`))
+	h.merges.PollPRs(context.Background())
+	h.waitFor(td.ID, model.StatusMerged)
+}
+
+// A review asking for changes, with its comments on lines of the diff, goes
+// back to Claude like a rework; the fix is pushed to the same pull request
+// and the same review isn't sent twice. Bots' reviews aren't sent.
+func TestPullRequestReviewGoesBackToClaude(t *testing.T) {
+	parallel(t)
+
+	h, dir := prHarness(t, "review.txt", model.Project{MaxAutoFixes: 1})
+	td := h.waitFor(h.add("review").ID, model.StatusReview)
+	head := gitRun(t, td.Worktree.Path, "rev-parse", "HEAD")
+	write(t, dir, "pr.json", openPRView(head, `{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}`))
+	write(t, dir, "reviews.json", `[
+		{"id":10,"user":{"login":"linter[bot]","type":"Bot"},"state":"COMMENTED","body":"Coverage dropped"},
+		{"id":11,"user":{"login":"alice","type":"User"},"state":"CHANGES_REQUESTED","body":"Please rename the file."}]`)
+	write(t, dir, "comments.json", `[
+		{"id":1,"pull_request_review_id":11,"user":{"login":"alice","type":"User"},"path":"review.txt","line":1,"body":"Not a txt file"},
+		{"id":2,"pull_request_review_id":10,"user":{"login":"linter[bot]","type":"Bot"},"path":"review.txt","line":1,"body":"Uncovered"}]`)
+	h.merges.PollPRs(context.Background())
+
+	x := waitPR(t, h, td.ID, model.StatusReview, func(x model.Todo) bool { return x.Runs == 2 })
+	last := x.Feedback[len(x.Feedback)-1]
+	for _, want := range []string{"pull request #7", "alice", "requested changes", "Please rename the file.", "review.txt:1", "Not a txt file"} {
+		if !strings.Contains(last, want) {
+			t.Errorf("Claude's note lacks %q:\n%s", want, last)
+		}
+	}
+	if strings.Contains(last, "Coverage") || strings.Contains(last, "Uncovered") {
+		t.Errorf("a bot's review was sent to Claude:\n%s", last)
+	}
+	if x.PR.Number != 7 || x.PR.ReviewID != 11 || x.AutoFixes != 0 {
+		t.Fatalf("want the same pull request with review 11 handled and no auto-fix used, got %+v fixes %d", *x.PR, x.AutoFixes)
+	}
+	if !strings.Contains(x.SentBack, "alice") {
+		t.Errorf("sent back %q", x.SentBack)
+	}
+
+	// Still requesting changes until alice looks again: waits, not resent.
+	write(t, dir, "merge-ok", "")
+	write(t, dir, "pr.json", openPRView(gitRun(t, td.Worktree.Path, "rev-parse", "HEAD"), `{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}`))
+	h.merges.PollPRs(context.Background())
+	time.Sleep(200 * time.Millisecond)
+	if x, _ := h.st.GetTodo(td.ID); x.Runs != 2 || x.Status != model.StatusReview || x.PR.Review != model.PRChangesRequested {
+		t.Fatalf("want it waiting for alice, got %s runs %d review %q", x.Status, x.Runs, x.PR.Review)
+	}
+
+	// She approves: merged.
+	write(t, dir, "reviews.json", `[
+		{"id":11,"user":{"login":"alice","type":"User"},"state":"CHANGES_REQUESTED","body":"Please rename the file."},
+		{"id":12,"user":{"login":"alice","type":"User"},"state":"APPROVED","body":""}]`)
+	h.merges.PollPRs(context.Background())
+	h.waitFor(td.ID, model.StatusMerged)
+}
+
+// Closing the pull request on GitHub rejects the task.
+func TestPullRequestClosedOnGitHubRejectsTask(t *testing.T) {
+	parallel(t)
+
+	h, dir := prHarness(t, "closed.txt", model.Project{})
+	td := h.waitFor(h.add("closed").ID, model.StatusReview)
+	write(t, dir, "pr.json", `{"state":"CLOSED"}`)
+	h.merges.PollPRs(context.Background())
+	x := h.waitFor(td.ID, model.StatusFailed)
+	if !strings.Contains(x.Error, "closed on GitHub") || x.PR == nil || x.PR.State != "CLOSED" {
+		t.Fatalf("want it rejected, got error %q PR %+v", x.Error, x.PR)
+	}
+	// No longer followed.
+	h.merges.PollPRs(context.Background())
+	if y, _ := h.st.GetTodo(td.ID); y.Status != model.StatusFailed {
+		t.Fatalf("status %s", y.Status)
+	}
+}
+
+// Rejecting the task in Dash closes its pull request and deletes its branch
+// on GitHub.
+func TestRejectingTaskClosesPullRequest(t *testing.T) {
+	parallel(t)
+
+	h, dir := prHarness(t, "reject.txt", model.Project{})
+	td := h.waitFor(h.add("reject").ID, model.StatusReview)
+	origin := filepath.Join(filepath.Dir(h.proj.Path), "origin.git")
+	if gitRun(t, origin, "branch", "--list", td.Worktree.Branch) == "" {
+		t.Fatal("branch not pushed")
+	}
+	if err := h.merges.RejectPR(context.Background(), td); err != nil {
+		t.Fatal(err)
+	}
+	if calls := ghCalls(t, dir); !strings.Contains(calls, "pr close 7") {
+		t.Fatalf("want the pull request closed, gh calls:\n%s", calls)
+	}
+	if b := gitRun(t, origin, "branch", "--list", td.Worktree.Branch); b != "" {
+		t.Fatalf("branch %s still on origin", b)
+	}
+	if x, _ := h.st.GetTodo(td.ID); x.PR.State != "CLOSED" {
+		t.Fatalf("PR %+v", x.PR)
+	}
+	// A task without one: nothing to close.
+	if err := h.merges.RejectPR(context.Background(), model.Todo{ID: "x", ProjectID: h.proj.ID}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A task that went to review before pull requests opened on finishing (or
+// in a project switched to pull requests since) has none: approving it
+// opens one, which is then reviewed on GitHub like the others.
+func TestApprovingTaskWithoutPullRequestOpensOne(t *testing.T) {
+	parallel(t)
+
+	h := newHarness(t, &fakeExec{fn: writeFile("", "old.txt")}, model.Project{Name: "p"})
+	h.addOrigin(false, model.MergeLocal)
+	td := h.waitFor(h.add("old").ID, model.StatusReview)
+	if td.PR != nil {
+		t.Fatal("a pull request in local mode")
+	}
+	dir := t.TempDir()
+	bin, _ := fakeGh(t, dir)
+	h.git.GhBin = bin
+	if _, err := h.st.UpdateProject(h.proj.ID, func(p *model.Project) error { p.MergeMode = model.MergePR; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := reviewedElsewhere(h, td.ID); err != nil {
+		t.Fatal("a task in review without a pull request must stay approvable")
+	}
+	h.approve(td.ID)
+	x := waitPR(t, h, td.ID, model.StatusReview, nil)
+	if x.PR.Number != 7 || x.PR.State != "OPEN" {
+		t.Fatalf("PR %+v", x.PR)
 	}
 }
 
 func TestPullRequestFailingChecksGoBackToClaude(t *testing.T) {
 	parallel(t)
 
-	h := newHarness(t, &fakeExec{fn: writeFile("", "ci.txt")}, model.Project{Name: "p", MaxAutoFixes: 1})
-	h.addOrigin(false, model.MergePR)
-	bin, state := fakeGh(t, t.TempDir())
-	h.git.GhBin = bin
-	write(t, filepath.Dir(state), "pr.json", `{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"abc","statusCheckRollup":[
-		{"name":"build","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://example.com/x"}]}`)
-
+	h, dir := prHarness(t, "ci.txt", model.Project{MaxAutoFixes: 1})
 	td := h.waitFor(h.add("ci").ID, model.StatusReview)
-	h.approve(td.ID)
-	deadline := time.Now().Add(10 * time.Second)
-	for x, _ := h.st.GetTodo(td.ID); x.PR == nil; x, _ = h.st.GetTodo(td.ID) {
-		if time.Now().After(deadline) {
-			t.Fatal("no PR opened")
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	write(t, dir, "pr.json", openPRView("abc", `{"name":"build","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://example.com/x"}`))
 	h.merges.PollPRs(context.Background())
-	deadline = time.Now().Add(10 * time.Second)
-	for {
-		x, _ := h.st.GetTodo(td.ID)
-		if x.AutoFixes == 1 && x.Runs == 2 && x.Status == model.StatusMerging {
-			if last := x.Feedback[len(x.Feedback)-1]; !strings.Contains(last, "build") {
-				t.Fatalf("want the failing check in Claude's note, got %q", last)
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("want a fix run and back to merging, got status %s fixes %d runs %d", x.Status, x.AutoFixes, x.Runs)
-		}
-		time.Sleep(50 * time.Millisecond)
+	x := waitPR(t, h, td.ID, model.StatusReview, func(x model.Todo) bool { return x.AutoFixes == 1 && x.Runs == 2 })
+	if last := x.Feedback[len(x.Feedback)-1]; !strings.Contains(last, "build") {
+		t.Fatalf("want the failing check in Claude's note, got %q", last)
 	}
 	// Same head again: not sent twice.
 	h.merges.PollPRs(context.Background())
@@ -408,22 +575,17 @@ func TestPullRequestHandledHeadStillFailing(t *testing.T) {
 	parallel(t)
 
 	// Claude writes the same file every run: the fix pass changes nothing.
-	h := newHarness(t, &fakeExec{fn: writeFile("", "same.txt")}, model.Project{Name: "p", MaxAutoFixes: 2})
-	h.addOrigin(false, model.MergePR)
-	bin, state := fakeGh(t, t.TempDir())
-	h.git.GhBin = bin
-	write(t, filepath.Dir(state), "pr.json", `{"state":"OPEN","mergeable":"UNKNOWN","headRefOid":"","statusCheckRollup":[]}`)
-
-	td := h.waitFor(h.add("ci").ID, model.StatusReview)
-	h.approve(td.ID)
-	x := waitPR(t, h, td.ID, model.StatusMerging, nil)
+	h, dir := prHarness(t, "same.txt", model.Project{MaxAutoFixes: 2})
+	state := filepath.Join(dir, "pr.json")
+	x := waitPR(t, h, h.add("ci").ID, model.StatusReview, nil)
+	td := x
 	head := gitRun(t, x.Worktree.Path, "rev-parse", "HEAD")
 	failing := `{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"` + head + `","statusCheckRollup":[
 		{"name":"build","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://example.com/x"}]}`
 	write(t, filepath.Dir(state), "pr.json", failing)
 
 	h.merges.PollPRs(context.Background())
-	x = waitPR(t, h, td.ID, model.StatusMerging, func(x model.Todo) bool { return x.Runs == 2 })
+	x = waitPR(t, h, td.ID, model.StatusReview, func(x model.Todo) bool { return x.Runs == 2 })
 	// While the merge job pushes the branch again, GitHub's view is stale:
 	// polling then must not judge it.
 	for deadline := time.Now().Add(10 * time.Second); h.merges.inQueue(td.ID); time.Sleep(20 * time.Millisecond) {
@@ -462,15 +624,10 @@ func TestPullRequestHandledHeadStillFailing(t *testing.T) {
 func TestPullRequestCLAFailureGoesToReview(t *testing.T) {
 	parallel(t)
 
-	h := newHarness(t, &fakeExec{fn: writeFile("", "cla.txt")}, model.Project{Name: "p", MaxAutoFixes: 2})
-	h.addOrigin(false, model.MergePR)
-	bin, state := fakeGh(t, t.TempDir())
-	h.git.GhBin = bin
-	write(t, filepath.Dir(state), "pr.json", `{"state":"OPEN","mergeable":"UNKNOWN","headRefOid":"","statusCheckRollup":[]}`)
-
-	td := h.waitFor(h.add("cla").ID, model.StatusReview)
-	h.approve(td.ID)
-	x := waitPR(t, h, td.ID, model.StatusMerging, nil)
+	h, dir := prHarness(t, "cla.txt", model.Project{MaxAutoFixes: 2, AutoApprove: true})
+	state := filepath.Join(dir, "pr.json")
+	x := waitPR(t, h, h.add("cla").ID, model.StatusReview, nil)
+	td := x
 	head := gitRun(t, x.Worktree.Path, "rev-parse", "HEAD")
 	write(t, filepath.Dir(state), "pr.json", `{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"`+head+`","statusCheckRollup":[
 		{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"},
@@ -480,5 +637,19 @@ func TestPullRequestCLAFailureGoesToReview(t *testing.T) {
 	x = waitPR(t, h, td.ID, model.StatusReview, nil)
 	if x.Runs != 1 || x.AutoFixes != 0 || !strings.Contains(x.Error, "license/cla") {
 		t.Fatalf("want review naming the CLA check with no fix pass, got runs %d fixes %d error %q", x.Runs, x.AutoFixes, x.Error)
+	}
+	// Polling again doesn't say it again…
+	h.merges.PollPRs(context.Background())
+	if y, _ := h.st.GetTodo(td.ID); !y.UpdatedAt.Equal(x.UpdatedAt) {
+		t.Fatal("the same block was written again")
+	}
+	// …and once the CLA is signed it carries on (here: merged, as the
+	// project approves automatically).
+	write(t, dir, "merge-ok", "")
+	write(t, dir, "pr.json", openPRView(head, `{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"},
+		{"context":"license/cla","state":"SUCCESS"}`))
+	h.merges.PollPRs(context.Background())
+	if y := h.waitFor(td.ID, model.StatusMerged); y.Error != "" {
+		t.Fatalf("error %q left after merging", y.Error)
 	}
 }

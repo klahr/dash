@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -215,7 +216,8 @@ func (sv *service) enqueue(id string) (model.Todo, error) {
 }
 
 // cancel stops a running task (accepted=true: the worker marks it failed)
-// or moves a queued one back to draft.
+// or moves a queued one (or one in review) back to draft. A pull request a
+// task in review has open is closed: moving it back rejects it.
 func (sv *service) cancel(id string) (t model.Todo, accepted bool, err error) {
 	cur, err := sv.data.GetTodo(id)
 	if err != nil {
@@ -234,11 +236,41 @@ func (sv *service) cancel(id string) (t model.Todo, accepted bool, err error) {
 		}
 		return t, true, nil
 	}
+	if cur.OnRunner() && cur.WaitsOnGitHub() {
+		// Its runner moves it back to drafts too, closing its pull request.
+		d, err := sv.runnerTask(cur)
+		if err != nil {
+			return t, false, err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := d.Cancel(ctx, cur); err != nil {
+			return t, false, err
+		}
+	}
 	if sv.s.Todos.Cancel(id) {
 		return t, true, nil
 	}
 	t, err = sv.data.SetStatus(id, model.StatusDraft, "")
+	if err == nil && !cur.OnRunner() {
+		sv.s.rejectPR(cur) // back to drafts from review: rejected
+	}
 	return t, false, err
+}
+
+// rejectPR closes, in the background, the pull request a task rejected in
+// Dash has open on GitHub, and deletes its branch there.
+func (s *Server) rejectPR(t model.Todo) {
+	if !t.WaitsOnGitHub() || s.Merges == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := s.Merges.RejectPR(ctx, t); err != nil {
+			slog.Warn("close the pull request of a rejected task", "todo", t.ID, "err", err)
+		}
+	}()
 }
 
 // stopWait is how long stop waits for a canceled task to stop.
@@ -340,7 +372,8 @@ func (sv *service) editTodo(id string, u mcptools.TodoUpdate, atts *[]model.Atta
 }
 
 // removeTodo deletes a task and its worktree, unless it is running, merging
-// or being reviewed. For DELETE /api/todos/{tid} and the delete_todo tools.
+// or being reviewed. A pull request it has open is closed: deleting the task
+// rejects it. For DELETE /api/todos/{tid} and the delete_todo tools.
 func (sv *service) removeTodo(ctx context.Context, id string) error {
 	t, err := sv.data.GetTodo(id)
 	if err != nil {
@@ -357,9 +390,10 @@ func (sv *service) removeTodo(ctx context.Context, id string) error {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			sv.s.Dispatch.Forget(ctx, t)
+			sv.s.Dispatch.Forget(ctx, t) // the runner closes its pull request
 		}()
 	} else if t.Worktree != nil && t.Status != model.StatusMerged && !sv.s.hub() {
+		sv.s.rejectPR(t)
 		if p, err := sv.data.GetProject(t.ProjectID); err == nil {
 			_ = sv.s.Git.RemoveWorktree(ctx, p.ID, p.Path, *t.Worktree)
 		}
@@ -374,7 +408,22 @@ func (sv *service) removeTodo(ctx context.Context, id string) error {
 	return nil
 }
 
-// approve sends a task in review (or a failed merge) to the merge queue.
+// reviewedOnGitHub refuses to approve, in Dash, a task in review whose pull
+// request is open on GitHub: it is reviewed there, and merged once approved
+// there. One whose pull request couldn't be pushed (it says why) may be
+// approved to try again.
+func reviewedOnGitHub(t model.Todo) error {
+	if t.Status == model.StatusReview && t.WaitsOnGitHub() && t.Error == "" {
+		return fmt.Errorf("%w: pull request #%d is open on GitHub: review it there. A review asking for changes goes back to Claude; "+
+			"once it is approved and its checks pass it is merged (by Dash, with \"Merge pull requests when checks pass\" on)", errBadRequest, t.PR.Number)
+	}
+	return nil
+}
+
+// approve sends a task in review (or a failed merge) to the merge queue. In
+// pull request mode a task's pull request opens when Claude finishes it, so
+// approving only opens one for a task that has none (it went to review
+// before Dash opened pull requests on finishing, or its tests failed).
 func (sv *service) approve(id string) (model.Todo, error) {
 	cur, err := sv.data.GetTodo(id)
 	if err != nil {
@@ -389,6 +438,9 @@ func (sv *service) approve(id string) (model.Todo, error) {
 	t, err := sv.data.UpdateTodo(id, func(t *model.Todo) error {
 		if t.Status != model.StatusReview && t.Status != model.StatusFailed {
 			return fmt.Errorf("%w: only tasks in review (or a failed merge) can be approved", errBadRequest)
+		}
+		if err := reviewedOnGitHub(*t); err != nil {
+			return err
 		}
 		if t.Worktree == nil {
 			return fmt.Errorf("%w: this task has no work left to merge; retry it instead", errBadRequest)
