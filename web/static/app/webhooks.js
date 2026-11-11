@@ -2,6 +2,7 @@ import { $, h } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
+import { accountSection, openAccount } from "./accountsheet.js";
 import { copyBlock } from "./prefs.js";
 import { agoText } from "./branches.js";
 
@@ -49,14 +50,13 @@ export async function loadWebhooks(sc = hookScopes.project) {
   renderWebhooks(sc);
 }
 
-async function openMyWebhooks() {
+accountSection("webhooks", loadMyWebhooks);
+async function loadMyWebhooks() {
   const sc = hookScopes.personal;
   $(sc.secret).hidden = true;
   const org = state.me?.org?.name;
   $("#me-webhooks-intro").textContent = `Your own notification webhooks: Slack, ntfy or your own service hear about every project of ${org || "this organization"}, for as long as you are a member. Only you see them. A project's own webhooks are in its settings.`;
   await loadWebhooks(sc);
-  const d = $("#me-webhooks-sheet");
-  if (!d.open) d.showModal();
 }
 
 function webhookStatus(w) {
@@ -191,7 +191,7 @@ function syncWebhookForm() {
 $("#webhook-form").addEventListener("change", (e) => { if (e.target.name === "format") syncWebhookForm(); });
 $("#webhook-add").addEventListener("click", () => editWebhook(null, hookScopes.project));
 $("#me-webhook-add").addEventListener("click", () => editWebhook(null, hookScopes.personal));
-$("#me-webhooks-open").addEventListener("click", attempt(openMyWebhooks));
+$("#me-webhooks-open").addEventListener("click", attempt(() => openAccount("webhooks")));
 $("#webhook-sheet").addEventListener("close", attempt(async () => {
   if ($("#webhook-sheet").returnValue !== "save") return;
   const f = $("#webhook-form");

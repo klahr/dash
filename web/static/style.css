@@ -720,9 +720,9 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 }
 .sheet[open]::backdrop { background: rgba(4, 8, 15, .6); backdrop-filter: blur(2px); }
 @starting-style { .sheet[open]::backdrop { background: rgba(4, 8, 15, 0); backdrop-filter: blur(0); } }
-.sheet > form, .sheet > details { padding: 0 16px; }
+.sheet > form, .sheet > details, .sheet > .rail-body { padding: 0 16px; }
 /* #toasts may be appended after the form while the sheet is open (raiseToasts). */
-.sheet > :is(form, details):not(:has(~ :not(.toasts))) { padding-bottom: calc(16px + var(--safe-b)); }
+.sheet > :is(form, details, .rail-body):not(:has(~ :not(.toasts))) { padding-bottom: calc(16px + var(--safe-b)); }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
 .sheet h2:focus { outline: none; }
 .sheet h2 { font-size: 18px; margin: 8px 0; letter-spacing: -.01em; }
@@ -735,7 +735,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .field.inline input { width: 84px; }
 .field-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 12px 0 4px; }
 .toggle { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 600; cursor: pointer; }
-#prefs-form .toggle { display: flex; }
+#account-sheet .toggle:has([form="prefs-form"]) { display: flex; }
 .toggle input { appearance: none; flex: none; width: 42px; height: 24px; border-radius: 12px; background: var(--raised); border: 1px solid var(--line); position: relative; padding: 0; transition: background .15s; }
 .toggle input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform .15s var(--ease), background .15s; }
 .toggle input:checked { background: color-mix(in srgb, var(--accent2) 35%, var(--raised)); border-color: var(--accent2); }
@@ -791,10 +791,11 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
    only the section scrolls, with the header and Save always in view. */
 .sheet.rail-sheet { height: calc(92dvh - var(--kb-h, 0px)); }
 .sheet.rail-sheet[open] { display: flex; flex-direction: column; overflow: hidden; }
-.rail-sheet > form { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* .rail-body: a rail sheet with no form around it all (Account: some sections are forms). */
+.rail-sheet > :is(form, .rail-body) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .rail-sheet .sheet-head { flex: none; margin: 0 -16px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
-.rail-sheet .sheet-actions { flex: none; margin: 0 -16px; padding: 12px 16px 0; border-top: 1px solid var(--line); }
-.rail-sheet .sheet-actions:not(:has(> :not([hidden]))) { display: none; }
+.rail-sheet > * > .sheet-actions { flex: none; margin: 0 -16px; padding: 12px 16px 0; border-top: 1px solid var(--line); }
+.rail-sheet > * > .sheet-actions:not(:has(> :not([hidden]))) { display: none; }
 .rail-layout { --rail-r: 999px; flex: 1; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); margin: 0 -16px; }
 .rail-nav {
   position: relative; display: flex; gap: 6px; padding: 8px 16px; overflow-x: auto; overscroll-behavior-x: contain;
@@ -899,16 +900,10 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .np-step-error { color: var(--failed); font-size: 14px; overflow-wrap: anywhere; white-space: pre-wrap; }
 .np-step-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 @media (min-width: 760px) {
-  :is(#new-project-sheet, #prefs-sheet) .rail-layout { grid-template-columns: 230px minmax(0, 1fr); }
+  #new-project-sheet .rail-layout { grid-template-columns: 230px minmax(0, 1fr); }
   .np-src { min-height: 52px; padding-block: 6px; gap: 1px; white-space: normal; }
   .np-src-desc { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
   #new-project-sheet .sheet-actions .btn { flex: 0 1 auto; margin-left: auto; min-width: 200px; }
-}
-
-/* Preferences: the Add project rail sheet's look, shorter (a few controls a section). */
-.prefs-scope { color: var(--muted); font-size: 14px; }
-@media (min-width: 640px) {
-  #prefs-sheet.rail-sheet { height: min(480px, calc(88dvh - var(--kb-h, 0px))); }
 }
 
 /* ---------- quick add (FAB, n) ---------- */
@@ -2384,6 +2379,7 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .recovery-actions { display: flex; gap: 8px; margin-bottom: 8px; }
 .twofactor-body { padding: 0 16px calc(16px + var(--safe-b)); display: flex; flex-direction: column; gap: 8px; }
 .twofactor-body > .btn { align-self: flex-start; }
+#account-sheet .twofactor-body { padding: 0; }
 .twofactor-body p .ico { width: 16px; height: 16px; vertical-align: -3px; color: var(--done, var(--accent)); }
 .org-require-2fa { display: flex; align-items: center; justify-content: flex-start; gap: 8px; margin: 8px 0; font-size: 14px; cursor: pointer; }
 .org-require-2fa input { width: auto; min-height: 0; flex: none; margin: 0; }

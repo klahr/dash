@@ -2,6 +2,7 @@ import { $, h, ico } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
+import { accountSection, openAccount } from "./accountsheet.js";
 import { connectorSteps, copyBlock } from "./prefs.js";
 import { agoText } from "./branches.js";
 
@@ -24,7 +25,8 @@ function wallURL(secret = "") {
   return `${location.origin}/wall${s ? `?${s}` : ""}`;
 }
 
-async function openWall() {
+accountSection("wall", loadWall);
+async function loadWall() {
   if (!state.me?.org) throw new Error("You aren't in an organization.");
   const f = $("#wall-form");
   let saved = {};
@@ -36,11 +38,9 @@ async function openWall() {
   f.privacy.checked = !!saved.privacy;
   wall.secret = "";
   $("#wall-token-secret").hidden = true;
-  $("#wall-title").textContent = `Wall view · ${state.me.org.name}`;
+  $("#wall-org").textContent = state.me.org.name;
   renderWallLink();
   await renderWallTokens();
-  const d = $("#wall-sheet");
-  if (!d.open) d.showModal();
 }
 
 function renderWallLink() {
@@ -93,18 +93,18 @@ async function createWallToken() {
   await renderWallTokens();
 }
 
-$("#wall-open").addEventListener("click", attempt(openWall));
+$("#wall-open").addEventListener("click", attempt(() => openAccount("wall")));
 $("#wall-token-create").addEventListener("click", attempt(createWallToken));
 $("#wall-token-name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); attempt(createWallToken)(); } });
 $("#wall-form").addEventListener("change", () => {
   try { localStorage.setItem("dash.wall", JSON.stringify(wallOpts())); } catch {}
   renderWallLink();
 });
-$("#wall-sheet").addEventListener("close", () => { wall.secret = ""; $("#wall-token-secret").replaceChildren(); });
+$("#account-sheet").addEventListener("close", () => { wall.secret = ""; $("#wall-token-secret").replaceChildren(); });
 
-export async function openConnector() {
+export function openConnector() { return openAccount("connector"); }
+accountSection("connector", loadConnector);
+async function loadConnector() {
   const c = await api("GET", "/api/connector");
   $("#connector-body").replaceChildren(...connectorSteps(c));
-  const d = $("#connector-sheet");
-  if (!d.open) d.showModal();
 }

@@ -27,6 +27,7 @@ import "./app/detail.js";
 import "./app/preview.js";
 import "./app/drawmode.js";
 import "./app/diffedit.js";
+import "./app/accountsheet.js";
 import "./app/prefs.js";
 import "./app/runners.js";
 import "./app/account.js";

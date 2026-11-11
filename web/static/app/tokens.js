@@ -6,19 +6,20 @@ import { refreshMachines } from "./events.js";
 import { copyBlock } from "./prefs.js";
 import { askPassword } from "./account.js";
 import { agoText } from "./branches.js";
+import { accountSection, openAccount } from "./accountsheet.js";
 
 // ------------------------------------------------------------------ tokens & connected apps
 // Everything that signs in as the user without a browser session: API
 // tokens, OAuth clients (claude.ai connectors) they allowed, and runners
 // they registered. Each is pinned to one org.
-export async function openTokens() {
+export function openTokens() { return openAccount("tokens"); }
+accountSection("tokens", loadTokens);
+async function loadTokens() {
   $("#token-secret").hidden = true;
   const orgs = state.me?.orgs || [];
   $("#token-org").replaceChildren(...orgs.map((o) => h("option", { value: o.id, selected: o.id === state.me?.org?.id }, o.name)));
   $("#token-org").hidden = orgs.length < 2;
   await renderTokens();
-  const d = $("#tokens-sheet");
-  if (!d.open) d.showModal();
 }
 
 function tokenDetail(t) {
