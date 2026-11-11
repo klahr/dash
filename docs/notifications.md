@@ -38,7 +38,7 @@ deleted at the next push. Runners don't push; their hub does.
 Each project has its own webhooks: **Project settings → Notification webhooks → Add webhook**.
 The whole org shares them.
 
-You can also have **personal webhooks**: **account menu → My webhooks → Add webhook**. A
+You can also have **personal webhooks**: **account menu → Account → My webhooks → Add webhook**. A
 personal webhook gets the events of every project in the org you made it in, for as long as you
 are a member of that org. It is yours alone: other members, org admins included, don't see
 it. If a project's webhook and a personal one point to the same URL, each event is sent there

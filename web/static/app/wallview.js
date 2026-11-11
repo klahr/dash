@@ -93,7 +93,6 @@ async function createWallToken() {
   await renderWallTokens();
 }
 
-$("#wall-open").addEventListener("click", attempt(() => openAccount("wall")));
 $("#wall-token-create").addEventListener("click", attempt(createWallToken));
 $("#wall-token-name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); attempt(createWallToken)(); } });
 $("#wall-form").addEventListener("change", () => {

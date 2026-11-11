@@ -194,7 +194,7 @@ Its owner and the org's admins can:
 
 - **Pause** it: it finishes what it is running and gets no new tasks;
 - set **At once**, how many of the hub's tasks it runs at a time (0: its own `-parallel`);
-- **Revoke** it (there, or under **Tokens & apps**): it is disconnected at once, its token stops
+- **Revoke** it (there, or under **Account → Tokens & apps**): it is disconnected at once, its token stops
   working (the hub keeps only a hash of it) and it is unlinked from every project. Tasks it was
   running fail and can be queued again on another runner. The runner exits, saying so (its
   systemd service doesn't restart it; launchd retries every 30 s); to bring it back, run the

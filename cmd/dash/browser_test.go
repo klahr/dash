@@ -278,7 +278,8 @@ func TestBrowserPersonalWebhook(t *testing.T) {
 	b.signIn(h)
 
 	b.until("open the account menu", `document.querySelector("#foot-menu").open`, chromedp.Click(chromedp.CSS(`#foot-menu > summary`)))
-	b.until("open My webhooks", `document.querySelector("#account-sheet").open && document.querySelector("#account-sheet-section-webhooks").classList.contains("current")`, chromedp.Click(chromedp.ID("me-webhooks-open")))
+	b.until("open Account at Editors", `document.querySelector("#account-sheet").open && document.querySelector("#account-sheet-section-editors").classList.contains("current")`, chromedp.Click(chromedp.ID("account-open")))
+	b.until("pick My webhooks", `document.querySelector("#account-sheet-section-webhooks").classList.contains("current")`, chromedp.Click(chromedp.ID("account-sheet-rail-webhooks")))
 	b.waitJS("the empty list", `document.querySelector("#me-webhooks").textContent.includes("No webhooks yet")`)
 	b.until("add one", `document.querySelector("#webhook-sheet").open`, chromedp.Click(chromedp.ID("me-webhook-add")))
 	b.waitJS("the personal form", `document.querySelector("#webhook-title").textContent === "Add personal webhook"`)

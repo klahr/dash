@@ -529,7 +529,7 @@ computers. So:
   and the links in notification buttons, carry their own credential and aren't checked.
 
 - **Use a long random password** for `DASH_PASSWORD` (`openssl rand -base64 24`), and **turn on
-  two-factor sign-in** (account menu → Two-factor sign-in). Org owners can require it of every
+  two-factor sign-in** (account menu → Account → Two-factor sign-in). Org owners can require it of every
   member; see [Users and organizations](users.md#two-factor-sign-in).
 - **Lockout:** after 5 failed logins from one IP address within 15 minutes, that address is locked
   out until the 15 minutes pass. Failed sign-ins through the claude.ai connector and wrong

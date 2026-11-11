@@ -5,7 +5,7 @@ import { state } from "./state.js";
 import { copyBlock } from "./prefs.js";
 import { loadBilling, offerSubscription, renderOrgBilling } from "./billing.js";
 import { pushUnsubscribe } from "./notifications.js";
-import { accountSection, openAccount } from "./accountsheet.js";
+import { accountSection } from "./accountsheet.js";
 
 // ------------------------------------------------------------------ account & organizations
 export async function loadMe() {
@@ -30,9 +30,7 @@ export async function loadMe() {
     }, ico(o.id === me.org?.id ? "check" : "users"), o.name)),
   ]));
   $("#org-open").hidden = !me.org;
-  $("#wall-open").hidden = !me.org;
-  $("#google-open").hidden = !me.google_available;
-  // Their sections in the Account sheet drop out of its rail with them.
+  // The wall view and Google sections drop out of the Account sheet's rail.
   $("#wall-form").hidden = !me.org;
   $("#google-body").hidden = !me.google_available;
   // The queue pause is the whole Dash's, for platform admins.
@@ -305,7 +303,6 @@ async function renderPlatformSSO(el) {
 }
 
 // ---- the Google account linked to this one
-export function openGoogle() { return openAccount("google"); }
 accountSection("google", () => renderGoogle());
 
 async function renderGoogle() {
@@ -359,7 +356,6 @@ export async function setRequire2FA() {
 }
 
 // ---- two-factor sign-in (the shared steps are in twofactor.js)
-export function openTwoFactor() { return openAccount("twofactor"); }
 accountSection("twofactor", () => renderTwoFactor());
 
 async function renderTwoFactor() {

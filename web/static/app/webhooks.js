@@ -2,13 +2,13 @@ import { $, h } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
-import { accountSection, openAccount } from "./accountsheet.js";
+import { accountSection } from "./accountsheet.js";
 import { copyBlock } from "./prefs.js";
 import { agoText } from "./branches.js";
 
 // ------------------------------------------------------------------ notification webhooks
 // Outgoing webhooks: a project's, in its settings, and the user's personal
-// ones (every project of their org), from the account menu. They save as
+// ones (every project of their org), in the Account dialog. They save as
 // you go, not with the settings form. Each row can show its recent
 // deliveries.
 const WEBHOOK_EVENTS = {
@@ -191,7 +191,6 @@ function syncWebhookForm() {
 $("#webhook-form").addEventListener("change", (e) => { if (e.target.name === "format") syncWebhookForm(); });
 $("#webhook-add").addEventListener("click", () => editWebhook(null, hookScopes.project));
 $("#me-webhook-add").addEventListener("click", () => editWebhook(null, hookScopes.personal));
-$("#me-webhooks-open").addEventListener("click", attempt(() => openAccount("webhooks")));
 $("#webhook-sheet").addEventListener("close", attempt(async () => {
   if ($("#webhook-sheet").returnValue !== "save") return;
   const f = $("#webhook-form");

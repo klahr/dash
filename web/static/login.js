@@ -95,7 +95,7 @@ busyForm(totpForm, async () => {
     if (data.recovery_used) {
       const left = data.recovery_codes_left;
       totpForm.replaceChildren(
-        el("p", {}, `You signed in with a recovery code. ${left === 0 ? "You have none left" : `${left} left`}: make new ones under Two-factor sign-in in the account menu${left < 3 ? " now" : ""}.`),
+        el("p", {}, `You signed in with a recovery code. ${left === 0 ? "You have none left" : `${left} left`}: make new ones under Account → Two-factor sign-in in the account menu${left < 3 ? " now" : ""}.`),
         el("button", { class: "btn primary", type: "button", onclick: go }, "Continue"),
       );
       totpForm.querySelector("button").focus();

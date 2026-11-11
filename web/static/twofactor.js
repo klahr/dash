@@ -1,5 +1,5 @@
 // Setting up two-factor sign-in, shared by the login page (when an org
-// requires it) and the account menu: scan a QR code, confirm with a code,
+// requires it) and the Account dialog: scan a QR code, confirm with a code,
 // then save the recovery codes.
 // Needs pagekit.js.
 (() => {

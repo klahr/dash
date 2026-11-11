@@ -6,13 +6,12 @@ import { refreshMachines } from "./events.js";
 import { copyBlock } from "./prefs.js";
 import { askPassword } from "./account.js";
 import { agoText } from "./branches.js";
-import { accountSection, openAccount } from "./accountsheet.js";
+import { accountSection } from "./accountsheet.js";
 
 // ------------------------------------------------------------------ tokens & connected apps
 // Everything that signs in as the user without a browser session: API
 // tokens, OAuth clients (claude.ai connectors) they allowed, and runners
 // they registered. Each is pinned to one org.
-export function openTokens() { return openAccount("tokens"); }
 accountSection("tokens", loadTokens);
 async function loadTokens() {
   $("#token-secret").hidden = true;
@@ -55,7 +54,7 @@ async function renderTokens() {
     const rows = list.filter((t) => t.kind === kind).map(row);
     return rows.length ? rows : empty ? [h("li", { class: "hint" }, empty)] : [];
   };
-  $("#tokens-oauth").replaceChildren(...of("oauth", "No apps connected. See Connect Claude in the account menu."));
+  $("#tokens-oauth").replaceChildren(...of("oauth", "No apps connected. See Connect Claude."));
   $("#tokens-api").replaceChildren(...of("api", "No API tokens."));
   const runners = of("runner");
   $("#tokens-runner").replaceChildren(...runners);

@@ -64,7 +64,7 @@ exists, and five failed tries from an address lock it out for 15 minutes. Turn o
 
 ## Two-factor sign-in
 
-Anyone can turn on two-factor sign-in under **Two-factor sign-in** in the account menu:
+Anyone can turn on two-factor sign-in under **Two-factor sign-in** in the Account dialog (account menu → Account):
 scan the QR code with an authenticator app (1Password, Google Authenticator, Authy, …)
 and type the code it shows to confirm. Dash then shows ten **recovery codes**, once.
 Each works once in place of a code, for when the phone is lost; they're stored only as
@@ -119,7 +119,7 @@ they belong to other orgs they continue in one of those.
 ## Tokens
 
 Besides browser sessions, Dash signs in with tokens, all kept in one table, hashed, and listed
-under **Tokens & apps** in the account menu:
+under **Tokens & apps** in the Account dialog (account menu → Account):
 
 - **API tokens** you create there, for scripts and MCP clients: `Authorization: Bearer dash_…`
   on `/api/…` and `/mcp`. Creating one asks for your password; the token is shown once.
