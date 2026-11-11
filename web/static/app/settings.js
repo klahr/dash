@@ -32,7 +32,6 @@ export function openSettings() {
   f.auto_push.checked = !!p.auto_push;
   f.auto_approve.checked = !!p.auto_approve;
   f.merge_mode.value = p.merge_mode || "local";
-  f.merge_green_prs.checked = p.merge_green_prs !== false;
   f.investigate_ci.checked = p.investigate_ci !== false;
   f.tag_format.value = p.tag_format || "X.Y.Z";
   checkTagFormat();
@@ -103,20 +102,15 @@ function syncMergeHint() {
     : !p.remote_url ? "Runners clone the project's git remote: connect a GitHub repository first."
       : "Tasks, git, files and commands run only on these runners, each in its own clone. If all of them are offline, tasks wait in the queue.";
   const pr = f.merge_mode.value === "pr";
-  const green = f.merge_green_prs.checked;
   // On runners, merging is pushing: there's no separate push to turn on.
   $("#auto-push-row").hidden = pr || onRunners;
-  $("#merge-green-row").hidden = !pr;
   const who = onRunners ? "the runner" : "Dash";
-  const auto = f.auto_approve.checked;
   $("#auto-approve-hint").textContent = pr
-    ? "Pull requests whose checks pass are merged without waiting for an approving review on GitHub (with \"Merge pull requests when checks pass\" on). Reviews asking for changes still go back to Claude."
+    ? "Pull requests whose checks pass wait for you to merge them on GitHub, without waiting for an approving review first. Dash never merges a pull request itself. Reviews asking for changes still go back to Claude."
     : "Finished tasks whose tests pass go straight to the merge queue instead of waiting for review, and the Review column is hidden while it's empty.";
   $("#merge-hint").textContent = !p.remote_url
     ? (pr ? "Connect a GitHub repository (Projects → Create GitHub repository) to open pull requests." : "")
-    : pr ? `When Claude finishes a task, ${who} pushes its branch and opens a draft pull request against ${baseBranch(p)}, marked ready for review once its checks pass. The task waits in Review while you review it on GitHub: failing checks, conflicts and reviews asking for changes go back to Claude, whose fixes are pushed to the same pull request. Closing it rejects the task. ${green
-      ? auto ? "Once its checks pass it is merged (squashed)." : "Once it is approved on GitHub and its checks pass it is merged (squashed)."
-      : "Merge it on GitHub, and Dash marks the task merged."}`
+    : pr ? `When Claude finishes a task, ${who} pushes its branch and opens a draft pull request against ${baseBranch(p)}, marked ready for review once its checks pass. The task waits in Review while you review it on GitHub: failing checks, conflicts and reviews asking for changes go back to Claude, whose fixes are pushed to the same pull request. Closing it rejects the task. Dash never merges it: merge it on GitHub, and Dash marks the task merged.`
     : onRunners ? `Approved tasks: the runner squashes the task onto ${baseBranch(p)}, runs the tests and pushes it, without waiting for GitHub's checks. If someone pushed first, it merges again on top; conflicts and failing tests go back to Claude.`
       : f.auto_push.checked ? `Before each merge Dash pulls ${baseBranch(p)} from GitHub, so pushes don't get rejected. GitHub's checks run only after it's pushed.` : "";
 }
@@ -181,7 +175,6 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     auto_push: f.auto_push.checked,
     auto_approve: f.auto_approve.checked,
     merge_mode: f.merge_mode.value,
-    merge_green_prs: f.merge_green_prs.checked,
     investigate_ci: f.investigate_ci.checked,
     tag_format: f.tag_format.value.trim() || "X.Y.Z",
     max_run_minutes: Number(f.max_run_minutes.value) || 0,
@@ -275,7 +268,6 @@ function renderRepoInfo(p, res) {
   ];
   // Things that trip Dash up, from the repository's settings.
   const warnings = [
-    p.merge_mode === "pr" && !g.squash_merge && "Dash merges pull requests squashed, but squash merging is off for this repository: turn it on in GitHub's settings.",
     g.default_branch && p.default_branch && g.default_branch !== p.default_branch && `GitHub's default branch is ${g.default_branch}, but this project's is ${p.default_branch}.`,
     g.is_archived && "The repository is archived: it is read-only, so pushes fail.",
   ].filter(Boolean);

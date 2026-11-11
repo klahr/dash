@@ -18,9 +18,8 @@ import (
 
 // openPR is step 3 in "pr" mode: push the todo's branch and open (or update)
 // its pull request, as a draft until its checks pass. The todo then waits in
-// Review, where the pull request is reviewed on GitHub, until PollPRs sees
-// it merged (Dash merges it itself once it is approved and its checks pass,
-// see mergePR) or closed.
+// Review, where the pull request is reviewed and merged by a person on
+// GitHub (Dash never merges it), until PollPRs sees it merged or closed.
 func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) error {
 	wt := *t.Worktree
 	if t.WaitsOnGitHub() {
@@ -158,7 +157,7 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 			sha = st.MergeCommit.Oid
 		}
 		if t.Status == model.StatusMerging || t.Status == model.StatusReview {
-			m.pushed(p, p.Base(), sha) // merged by Dash (or by hand just now): origin's branch moved
+			m.pushed(p, p.Base(), sha) // merged on GitHub just now: origin's branch moved
 		}
 		m.landed(ctx, t, p, sha, fmt.Sprintf("✔ pull request #%d merged", n))
 		if t.Worktree != nil {
@@ -198,14 +197,26 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 		if t.Status != model.StatusMerging && t.Status != model.StatusReview {
 			return // failed: only a merge, a close or a review changes that
 		}
+		if t.Status == model.StatusMerging {
+			// Approved in Dash before reviews moved to GitHub: Dash doesn't
+			// merge it, so it waits in review for a person to merge it there.
+			if x, err := m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+				if x.Status == model.StatusMerging {
+					x.Status = model.StatusReview
+				}
+				return nil
+			}); err == nil {
+				t = x
+			}
+		}
 		review := reviewState(st.ReviewDecision, reviews)
 		// The head Dash already acted on: a fix pass that made no new commit
 		// pushed it again. Without this the task would wait for a head that
 		// never changes.
 		handled := st.HeadRefOid == t.PR.HandledSHA
-		w := prWait{autoMerge: p.MergesGreenPRs(), handled: handled, review: review, autoApprove: p.AutoApprove}
+		w := prWait{handled: handled, review: review, autoApprove: p.AutoApprove}
 		note := func(code, other []gitops.PRCheck) {
-			m.notePR(t, st, prStatusLine(n, p.Base(), st, code, other, w), prWaitsOn(st, code, other, w), review)
+			m.notePR(t, st, prStatusLine(p.Base(), st, code, other, w), prWaitsOn(st, code, other, w), review)
 		}
 		if st.Mergeable == "CONFLICTING" {
 			note(nil, nil)
@@ -250,28 +261,11 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 			// request, and carries on once the check passes.
 			m.blocked(t, fmt.Sprintf("%s%s fails, which isn't about the code. Fix it on GitHub (e.g. sign the CLA); Dash carries on once it passes", blockedPrefix(n), labels(other)))
 		default:
-			// Passing, or failing only checks that aren't required to merge.
+			// Passing, or failing only checks that aren't required to merge:
+			// a person merges it on GitHub.
 			m.blocked(t, "")
-			// A handled head here is one GitHub refused to merge: leave it.
-			// Merged only once approved on GitHub (or the project approves
-			// automatically), and only the head Claude's work is at: commits
-			// not pushed yet haven't been checked or reviewed.
-			approved := review == model.PRApproved || (p.AutoApprove && review != model.PRChangesRequested)
-			if p.MergesGreenPRs() && !handled && approved && m.pushedHead(ctx, t, st) {
-				m.mergePR(ctx, t, p, st)
-			}
 		}
 	}
-}
-
-// pushedHead reports that GitHub has the task's latest commit as the pull
-// request's head.
-func (m *MergeQueue) pushedHead(ctx context.Context, t model.Todo, st gitops.PRStatus) bool {
-	if t.Worktree == nil {
-		return true
-	}
-	local, err := m.Git.Head(ctx, t.ProjectID, t.Worktree.Path, "HEAD")
-	return err == nil && local == st.HeadRefOid
 }
 
 // ready marks a task's draft pull request ready for review, and reports
@@ -526,18 +520,18 @@ func prChecks(cs []gitops.PRCheck) []model.PRCheck {
 	return out
 }
 
-// prWait is what, besides its checks, a pull request's merge waits for.
+// prWait is what, besides its checks, a pull request's merge on GitHub
+// waits for.
 type prWait struct {
-	autoMerge   bool   // Dash merges it once it can (model.Project.MergesGreenPRs)
 	handled     bool   // Dash already acted on its head
 	review      string // where its review on GitHub stands (model.PRApproved…)
 	autoApprove bool   // the project approves automatically: no review needed
 }
 
-// prStatusLine is what a card says about pull request n: what its merge
+// prStatusLine is what a card says about a pull request: what its merge
 // waits for. code and other are its failing checks, sorted as sortFailed
 // does.
-func prStatusLine(n int, base string, st gitops.PRStatus, code, other []gitops.PRCheck, w prWait) string {
+func prStatusLine(base string, st gitops.PRStatus, code, other []gitops.PRCheck, w prWait) string {
 	if st.Mergeable == "CONFLICTING" {
 		if w.handled {
 			return "Still conflicts with " + base + " after Claude's fix"
@@ -574,12 +568,8 @@ func prStatusLine(n int, base string, st gitops.PRStatus, code, other []gitops.P
 			why[i] = blockedBy(c)
 		}
 		return "Blocked: " + strings.Join(why, ", ")
-	case w.handled:
-		return "Waiting for you to merge on GitHub" // GitHub refused Dash's merge
 	case w.review == model.PRChangesRequested:
 		return "Changes requested on GitHub; waiting for the reviewer to look again"
-	case w.autoMerge && (w.review == model.PRApproved || w.autoApprove):
-		return fmt.Sprintf("Merging PR #%d…", n)
 	case w.review == model.PRApproved:
 		return "Approved; waiting for you to merge on GitHub"
 	case w.autoApprove:
@@ -602,14 +592,10 @@ func prWaitsOn(st gitops.PRStatus, code, other []gitops.PRCheck, w prWait) strin
 		return "" // the checks first
 	case len(other) > 0:
 		return model.PRWaitBlocked
-	case w.handled && !pending:
-		return model.PRWaitMerge // GitHub refused Dash's merge
 	case w.review == model.PRChangesRequested:
 		return "" // the review went back to Claude
 	case !approved:
 		return model.PRWaitReview // a person can review while checks run
-	case w.autoMerge:
-		return "" // Dash merges it
 	}
 	return model.PRWaitMerge
 }
@@ -696,25 +682,6 @@ func labels(cs []gitops.PRCheck) string {
 		names[i] = c.Label()
 	}
 	return strings.Join(names, ", ")
-}
-
-// mergePR squash-merges a task's pull request once GitHub finds it
-// mergeable, its checks pass and it is approved on GitHub (or the project
-// approves automatically; see model.Project.MergesGreenPRs). When GitHub
-// refuses (e.g. a second required review), it stays open to be merged there.
-func (m *MergeQueue) mergePR(ctx context.Context, t model.Todo, p model.Project, st gitops.PRStatus) {
-	if st.Mergeable != "MERGEABLE" {
-		return // UNKNOWN while GitHub works it out; the next poll tries again
-	}
-	n := t.PR.Number
-	if err := m.Git.MergePR(ctx, p.ID, p.Path, n, st.HeadRefOid); err != nil {
-		m.handled(t, st.HeadRefOid, fmt.Sprintf("⚠ couldn't merge pull request #%d: %v; merge it on GitHub", n, err))
-		return
-	}
-	m.Log.Line(t, fmt.Sprintf("⇢ merging pull request #%d", n))
-	if st, err := m.Git.PRStatus(ctx, p.ID, p.Path, n); err == nil && st.State == "MERGED" {
-		m.followPR(ctx, t, p, st)
-	}
 }
 
 // handled remembers that the PR's current head was dealt with.

@@ -409,13 +409,12 @@ func (sv *service) removeTodo(ctx context.Context, id string) error {
 }
 
 // reviewedOnGitHub refuses to approve, in Dash, a task in review whose pull
-// request is open on GitHub: it is reviewed there, and merged once approved
-// there. One whose pull request couldn't be pushed (it says why) may be
+// request is open on GitHub: it is reviewed and merged there, by a person. One whose pull request couldn't be pushed (it says why) may be
 // approved to try again.
 func reviewedOnGitHub(t model.Todo) error {
 	if t.Status == model.StatusReview && t.WaitsOnGitHub() && t.Error == "" {
 		return fmt.Errorf("%w: pull request #%d is open on GitHub: review it there. A review asking for changes goes back to Claude; "+
-			"once it is approved and its checks pass it is merged (by Dash, with \"Merge pull requests when checks pass\" on)", errBadRequest, t.PR.Number)
+			"merge it there once it is approved and its checks pass", errBadRequest, t.PR.Number)
 	}
 	return nil
 }

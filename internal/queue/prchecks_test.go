@@ -38,7 +38,7 @@ func TestPRStatusLine(t *testing.T) {
 		return gitops.PRStatus{State: "OPEN", Mergeable: "MERGEABLE", HeadRefOid: "abc", Checks: cs}
 	}
 	cla := gitops.PRCheck{Context: "license/cla", State: "FAILURE"}
-	approved := prWait{autoMerge: true, review: model.PRApproved}
+	approved := prWait{review: model.PRApproved}
 	tests := []struct {
 		name        string
 		st          gitops.PRStatus
@@ -51,24 +51,22 @@ func TestPRStatusLine(t *testing.T) {
 		{"failed", open(done("Go", "FAILURE")), []gitops.PRCheck{done("Go", "FAILURE")}, nil, approved,
 			"Check failed: Go, sent back to Claude"},
 		{"failed again", open(done("Go", "FAILURE"), done("Lint", "FAILURE")), []gitops.PRCheck{done("Go", "FAILURE"), done("Lint", "FAILURE")}, nil,
-			prWait{autoMerge: true, handled: true}, "Checks still failing after Claude's fix: Go, Lint"},
-		{"merging", open(done("Go", "SUCCESS")), nil, nil, approved, "Merging PR #10…"},
-		{"no checks", open(), nil, nil, approved, "Merging PR #10…"},
-		{"auto approve", open(), nil, nil, prWait{autoMerge: true, autoApprove: true, review: model.PRReviewPending}, "Merging PR #10…"},
-		{"awaiting review", open(done("Go", "SUCCESS")), nil, nil, prWait{autoMerge: true, review: model.PRReviewPending}, "Waiting for a review on GitHub"},
-		{"changes requested", open(done("Go", "SUCCESS")), nil, nil, prWait{autoMerge: true, autoApprove: true, review: model.PRChangesRequested},
+			prWait{handled: true}, "Checks still failing after Claude's fix: Go, Lint"},
+		{"approved", open(done("Go", "SUCCESS")), nil, nil, approved, "Approved; waiting for you to merge on GitHub"},
+		{"no checks", open(), nil, nil, approved, "Approved; waiting for you to merge on GitHub"},
+		{"auto approve", open(), nil, nil, prWait{autoApprove: true, review: model.PRReviewPending}, "Waiting for you to merge on GitHub"},
+		{"awaiting review", open(done("Go", "SUCCESS")), nil, nil, prWait{review: model.PRReviewPending}, "Waiting for a review on GitHub"},
+		{"changes requested", open(done("Go", "SUCCESS")), nil, nil, prWait{autoApprove: true, review: model.PRChangesRequested},
 			"Changes requested on GitHub; waiting for the reviewer to look again"},
 		{"blocked", open(cla), nil, []gitops.PRCheck{cla}, approved, "Blocked: CLA not signed"},
 		{"blocked from base", open(done("assistant", "FAILURE")), nil, []gitops.PRCheck{done("assistant", "FAILURE")}, approved,
 			"Blocked: assistant failed (it runs from the base branch)"},
-		{"by hand, approved", open(done("Go", "SUCCESS")), nil, nil, prWait{review: model.PRApproved}, "Approved; waiting for you to merge on GitHub"},
-		{"by hand", open(done("Go", "SUCCESS")), nil, nil, prWait{review: model.PRReviewPending}, "Waiting for a review on GitHub"},
-		{"by hand, auto approve", open(done("Go", "SUCCESS")), nil, nil, prWait{autoApprove: true}, "Waiting for you to merge on GitHub"},
-		{"refused", open(done("Go", "SUCCESS")), nil, nil, prWait{autoMerge: true, handled: true, review: model.PRApproved}, "Waiting for you to merge on GitHub"},
+		{"handled, approved", open(done("Go", "SUCCESS")), nil, nil, prWait{handled: true, review: model.PRApproved}, "Approved; waiting for you to merge on GitHub"},
+		{"handled, awaiting review", open(done("Go", "SUCCESS")), nil, nil, prWait{handled: true, review: model.PRReviewPending}, "Waiting for a review on GitHub"},
 		{"conflict", gitops.PRStatus{State: "OPEN", Mergeable: "CONFLICTING"}, nil, nil, approved, "Conflicts with main, sent back to Claude"},
 	}
 	for _, tc := range tests {
-		if got := prStatusLine(10, "main", tc.st, tc.code, tc.other, tc.w); got != tc.want {
+		if got := prStatusLine("main", tc.st, tc.code, tc.other, tc.w); got != tc.want {
 			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
 		}
 	}
@@ -85,8 +83,7 @@ func TestPRWaitsOn(t *testing.T) {
 	open := func(draft bool, cs ...gitops.PRCheck) gitops.PRStatus {
 		return gitops.PRStatus{State: "OPEN", Mergeable: "MERGEABLE", HeadRefOid: "abc", IsDraft: draft, Checks: cs}
 	}
-	pending, approved, changes := prWait{autoMerge: true, review: model.PRReviewPending}, prWait{autoMerge: true, review: model.PRApproved},
-		prWait{autoMerge: true, review: model.PRChangesRequested}
+	pending, approved, changes := prWait{review: model.PRReviewPending}, prWait{review: model.PRApproved}, prWait{review: model.PRChangesRequested}
 	tests := []struct {
 		name        string
 		st          gitops.PRStatus
@@ -100,12 +97,10 @@ func TestPRWaitsOn(t *testing.T) {
 		{"awaiting review, checks rerun", open(false, running), nil, nil, pending, model.PRWaitReview},
 		{"changes requested", open(false, passed), nil, nil, changes, ""},
 		{"approved, checks running", open(false, running), nil, nil, approved, ""},
-		{"approved, Dash merges", open(false, passed), nil, nil, approved, ""},
-		{"auto approve", open(false, passed), nil, nil, prWait{autoMerge: true, autoApprove: true}, ""},
-		{"refused", open(false, passed), nil, nil, prWait{autoMerge: true, handled: true, review: model.PRApproved}, model.PRWaitMerge},
-		{"by hand, approved", open(false, passed), nil, nil, prWait{review: model.PRApproved}, model.PRWaitMerge},
-		{"by hand, approved, checks running", open(false, running), nil, nil, prWait{review: model.PRApproved}, ""},
-		{"by hand, auto approve", open(false, passed), nil, nil, prWait{autoApprove: true}, model.PRWaitMerge},
+		{"approved", open(false, passed), nil, nil, approved, model.PRWaitMerge},
+		{"handled, approved", open(false, passed), nil, nil, prWait{handled: true, review: model.PRApproved}, model.PRWaitMerge},
+		{"handled, awaiting review", open(false, passed), nil, nil, prWait{handled: true, review: model.PRReviewPending}, model.PRWaitReview},
+		{"auto approve", open(false, passed), nil, nil, prWait{autoApprove: true}, model.PRWaitMerge},
 		{"blocked", open(false, cla), nil, []gitops.PRCheck{cla}, approved, model.PRWaitBlocked},
 		{"conflict", gitops.PRStatus{State: "OPEN", Mergeable: "CONFLICTING"}, nil, nil, pending, ""},
 	}

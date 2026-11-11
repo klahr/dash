@@ -233,7 +233,7 @@ func (sv *service) runnerTask(t model.Todo) (*dispatch.Dispatcher, error) {
 }
 
 // approveOnRunner asks t's runner to land it: the runner opens a pull
-// request ("pr" mode) and merges it once its checks pass, or squashes it
+// request ("pr" mode), which a person merges on GitHub, or squashes it
 // onto the default branch, runs the checks and pushes it to origin
 // ("local"), then reports it merged.
 func (sv *service) approveOnRunner(ctx context.Context, t model.Todo) (model.Todo, error) {

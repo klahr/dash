@@ -369,7 +369,6 @@ type projectUpdate struct {
 	AutoPush       *bool     `json:"auto_push"`
 	AutoApprove    *bool     `json:"auto_approve"`
 	MergeMode      *string   `json:"merge_mode"`
-	MergeGreenPRs  *bool     `json:"merge_green_prs"`
 	InvestigateCI  *bool     `json:"investigate_ci"`
 	MaxRunMinutes  *int      `json:"max_run_minutes"`
 	MaxTurns       *int      `json:"max_turns"`
@@ -521,10 +520,6 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 		if req.InvestigateCI != nil {
 			v := *req.InvestigateCI
 			p.InvestigateCI = &v
-		}
-		if req.MergeGreenPRs != nil {
-			v := *req.MergeGreenPRs
-			p.MergeGreenPRs = &v
 		}
 		if req.MergeMode != nil {
 			if err := checkMergeMode(*req.MergeMode, p.RemoteURL); err != nil {

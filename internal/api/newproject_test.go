@@ -179,14 +179,14 @@ func TestDefaultMergeMode(t *testing.T) {
 		gitClone(t, filepath.Join(org, dir), "main")
 	}
 
-	if p := add(`{"existing":true,"path":` + jsonString(filepath.Join(org, "app")) + `}`); !p.UsesPR() || p.MergeModeSet || !p.MergesGreenPRs() {
-		t.Errorf("GitHub clone: %q set %v green %v", p.MergeMode, p.MergeModeSet, p.MergesGreenPRs())
+	if p := add(`{"existing":true,"path":` + jsonString(filepath.Join(org, "app")) + `}`); !p.UsesPR() || p.MergeModeSet {
+		t.Errorf("GitHub clone: %q set %v", p.MergeMode, p.MergeModeSet)
 	} else {
 		if p = patch(p, `{"name":"app","merge_mode":"pr"}`); !p.UsesPR() || p.MergeModeSet {
 			t.Errorf("saved unchanged: %q set %v", p.MergeMode, p.MergeModeSet)
 		}
-		if p = patch(p, `{"merge_mode":"local","merge_green_prs":false}`); p.UsesPR() || !p.MergeModeSet || p.MergesGreenPRs() {
-			t.Errorf("chose to merge: %q set %v green %v", p.MergeMode, p.MergeModeSet, p.MergesGreenPRs())
+		if p = patch(p, `{"merge_mode":"local","merge_green_prs":false}`); p.UsesPR() || !p.MergeModeSet {
+			t.Errorf("chose to merge: %q set %v", p.MergeMode, p.MergeModeSet)
 		}
 		if p = patch(p, `{"name":"app again"}`); p.UsesPR() {
 			t.Error("the default overrode the user's choice")
