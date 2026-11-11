@@ -36,9 +36,9 @@ type Snapshot struct {
 	ManualPause bool      `json:"manual_pause"` // paused by the user
 	Paused      bool      `json:"paused"`       // the queue won't start new todos
 	Reason      string    `json:"reason,omitempty"`
-	Until       time.Time `json:"until,omitempty"` // automatic pause lifts at this time
+	Until       time.Time `json:"until,omitempty"`  // automatic pause lifts at this time
 	Pacing      bool      `json:"pacing,omitempty"` // paused only to stay on the weekly pace
-	Pace        Pace      `json:"pace"`            // following the weekly pace (see pace.go)
+	Pace        Pace      `json:"pace"`             // following the weekly pace (see pace.go)
 }
 
 type Tracker struct {
