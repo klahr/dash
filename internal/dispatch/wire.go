@@ -193,6 +193,7 @@ type CheckoutState struct {
 	Behind       int    `json:"behind"`
 	Ahead        int    `json:"ahead,omitempty"`
 	Stuck        string `json:"stuck,omitempty"`
+	DashOwned    bool   `json:"dash_owned,omitempty"` // model.Checkout.DashOwned
 }
 
 // OriginMovedPath is POST on a runner: the hub tells it that another

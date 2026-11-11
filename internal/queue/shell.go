@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -30,7 +29,7 @@ func runShell(ctx context.Context, dir, command string, timeout time.Duration, e
 	}
 	cmd := exec.CommandContext(ctx, "bash", "-lc", command)
 	cmd.Dir = dir
-	cmd.Env = append(append(os.Environ(), "CI=1"), env...)
+	cmd.Env = append(localrun.Environ("CI=1"), env...)
 	localrun.Group(cmd, syscall.SIGKILL, 5*time.Second)
 
 	pr, pw := io.Pipe()

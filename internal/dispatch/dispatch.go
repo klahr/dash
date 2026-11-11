@@ -262,7 +262,8 @@ func (d *Dispatcher) setCheckouts(r tunnel.Runner, states []CheckoutState) {
 			continue
 		}
 		seen[p.ID] = true
-		c := model.Checkout{Runner: r.ID, RunnerName: r.Name, Branch: cs.Branch, Behind: cs.Behind, Ahead: cs.Ahead, Stuck: cs.Stuck, Since: now}
+		c := model.Checkout{Runner: r.ID, RunnerName: r.Name, Branch: cs.Branch, Behind: cs.Behind, Ahead: cs.Ahead, Stuck: cs.Stuck,
+			DashOwned: cs.DashOwned, Since: now}
 		byRunner := d.checkouts[p.ID]
 		if byRunner == nil {
 			byRunner = map[string]model.Checkout{}

@@ -719,7 +719,7 @@ func (s *Server) listCheckouts(w http.ResponseWriter, r *http.Request) {
 		out = s.Dispatch.Checkouts(p.ID)
 	case s.Merges != nil && s.Merges.Remote != nil:
 		if st := s.Merges.Remote.Status(p); st.Enabled && st.Behind > 0 {
-			out = append(out, model.Checkout{Branch: st.Branch, Behind: st.Behind, Ahead: st.Ahead, Stuck: st.Stuck})
+			out = append(out, model.Checkout{Branch: st.Branch, Behind: st.Behind, Ahead: st.Ahead, Stuck: st.Stuck, DashOwned: p.DashOwnsCheckout()})
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

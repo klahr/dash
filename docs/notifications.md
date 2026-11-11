@@ -101,8 +101,10 @@ address your phone can reach.
 `permission.needed` events also have `"permission": {"id", "tool"}`, and `build.failing`
 events have `"build": {"branch", "sha", "url"}` (`task` is the task investigating the failure,
 if there is one). `checkout.behind` events say in `message` which runners' checkouts of the
-project another runner's push left behind, and why (uncommitted changes, local commits): a
-clean checkout follows origin by itself. New webhooks don't subscribe to it; each runner's
+project another runner's push left behind, and why: for a clone the runner adopted, uncommitted
+changes or local commits; for one it made itself, which always follows origin (saving what is in
+the way on a `dash-backup/` branch first), why syncing failed. A clean checkout follows origin by
+itself. New webhooks don't subscribe to it; each runner's
 checkout notifies at most once every 6 hours. The headers `Dash-Event` and `Dash-Delivery` repeat the type and id; the id
 stays the same when a delivery is retried, so you can drop duplicates.
 

@@ -13,11 +13,24 @@ import (
 )
 
 // followHarness is a runner's clone of a hub's project with an origin, and
-// a second clone standing in for another runner.
+// a second clone standing in for another runner. The runner adopted the
+// clone (its owner may work in it too): it only ever fast-forwards.
 func followHarness(t *testing.T) (h *harness, r *RemoteSync, origin, other string) {
+	t.Helper()
+	return followHarnessAs(t, model.HubAdopted)
+}
+
+// followHarnessAs is followHarness with the clone come by as how
+// (model.Project.HubCheckout).
+func followHarnessAs(t *testing.T, how string) (h *harness, r *RemoteSync, origin, other string) {
 	t.Helper()
 	h = newHarness(t, &fakeExec{fn: writeFile("", "x.txt")}, model.Project{Name: "p"})
 	origin, other, _ = h.runnerProject()
+	p, err := h.st.UpdateProject(h.proj.ID, func(p *model.Project) error { p.HubCheckout = how; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.proj = p
 	// A tracked file to have uncommitted changes in.
 	write(t, h.proj.Path, "README", "hello\n")
 	gitRun(t, h.proj.Path, "add", "README")

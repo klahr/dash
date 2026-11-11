@@ -305,6 +305,15 @@ func (p Project) GuardsCheckout() bool { return p.LinkedFromHub() }
 // those, by their HubProjectID.
 func (p Project) LinkedFromHub() bool { return p.HubProjectID != "" && p.HubCheckout != "" }
 
+// DashOwnsCheckout reports whether nobody but Dash works in p's folder: a
+// runner's checkout of a hub's project that the runner cloned itself
+// (HubCloned, HubLegacy). Dash keeps it in step with origin whatever is in
+// the way, saving that first (see queue.RemoteSync); an adopted clone and
+// anyone's own project only move when nothing local is in the way.
+func (p Project) DashOwnsCheckout() bool {
+	return p.HubProjectID != "" && (p.HubCheckout == HubCloned || p.HubCheckout == HubLegacy)
+}
+
 // LandsOnOrigin reports whether a merge counts only once it is pushed: a
 // shared project in "local" mode squashes onto the default branch and
 // pushes it, and when origin moved meanwhile merges again on top of it.
@@ -782,6 +791,10 @@ type Checkout struct {
 	Ahead      int       `json:"ahead,omitempty"`
 	Stuck      string    `json:"stuck,omitempty"` // why it was left behind ("" = it may still fast-forward)
 	Since      time.Time `json:"since,omitzero"`  // when it was first reported behind
+	// DashOwned: the runner cloned it and keeps it in sync on its own
+	// (Project.DashOwnsCheckout), so there is nothing to pull by hand; Stuck
+	// is then a failure (no network, permissions).
+	DashOwned bool `json:"dash_owned,omitempty"`
 }
 
 // Event is the envelope for everything pushed over /ws/events.

@@ -99,7 +99,7 @@ func (g *Git) command(ctx context.Context, dir string, env []string, bin string,
 		return nil, err
 	}
 	cmd.Dir = dir
-	cmd.Env = append(append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1"), env...)
+	cmd.Env = append(localrun.Environ("GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1"), env...)
 	// When ctx ends, git is killed but a child it started (ssh) may keep the
 	// output pipe open; don't wait for it forever.
 	cmd.WaitDelay = 5 * time.Second

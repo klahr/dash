@@ -10,7 +10,7 @@ import (
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/passhash"
 	"github.com/klahr/dash/internal/store"
-	"github.com/klahr/dash/internal/testbin"
+	"github.com/klahr/dash/internal/testgit"
 )
 
 // TestMain makes password hashing cheap (nearly every test signs someone
@@ -18,10 +18,9 @@ import (
 // time) and lets runners link to local paths, the tests' remotes. Tests run
 // in parallel (see boardServer), so neither changes per test.
 func TestMain(m *testing.M) {
-	testbin.IsolateGit()
 	passhash.UseCheapParamsInTests()
 	gitops.AllowLocalRemotes = true
-	os.Exit(m.Run())
+	os.Exit(testgit.Run(m))
 }
 
 // raw is the whole store behind s, for tests that set up or inspect records

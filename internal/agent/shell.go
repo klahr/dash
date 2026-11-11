@@ -86,7 +86,7 @@ func RunShell(ctx context.Context, dir, command string, timeout time.Duration, e
 	}
 	cmd := exec.CommandContext(tctx, sh, "-c", command)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "TERM=dumb", "PAGER=cat", "GIT_PAGER=cat", "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = localrun.Environ("TERM=dumb", "PAGER=cat", "GIT_PAGER=cat", "GIT_TERMINAL_PROMPT=0")
 	// Its own process group, so stopping it stops what it started too.
 	// Don't wait over 2s on a background process that keeps the output open.
 	localrun.Group(cmd, syscall.SIGKILL, 2*time.Second)

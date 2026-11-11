@@ -59,7 +59,7 @@ func TestHubLinkSeedsEmptyRemote(t *testing.T) {
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	s, h, _ := runnerSide(t, 7)
 	bare := filepath.Join(t.TempDir(), "dash-infra.git")
-	if out, err := exec.Command("git", "init", "-q", "--bare", bare).CombinedOutput(); err != nil {
+	if out, err := exec.Command("git", "-C", filepath.Dir(bare), "init", "-q", "--bare", bare).CombinedOutput(); err != nil {
 		t.Fatalf("%v %s", err, out)
 	}
 	b, _ := json.Marshal(dispatch.Link{Name: "dash-infra", RemoteURL: "https://github.com/klahr/dash-infra.git", CloneURL: bare, DefaultBranch: "main", OrgID: 7})

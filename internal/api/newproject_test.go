@@ -96,7 +96,9 @@ func gitClone(t *testing.T, dir, branch string) {
 		{"-C", dir, "-c", "commit.gpgsign=false", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "first"},
 		{"-C", dir, "remote", "add", "origin", "https://github.com/me/" + filepath.Base(dir) + ".git"},
 	} {
-		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = os.TempDir()
+		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
 	}

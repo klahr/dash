@@ -36,9 +36,13 @@ export function renderRemote() {
 }
 $("#remote-pill").addEventListener("click", attempt(async () => { await loadRemote(true, true); toast("Fetching origin"); }));
 // Checkouts behind origin: when another runner pushes, the project's other
-// runners fetch at once and fast-forward a clean checkout; one with
-// uncommitted changes or local commits is left alone and listed here, with
-// a Pull button (fast-forward only; the runner refuses anything else).
+// runners fetch at once and bring their checkouts up to date. A clone a
+// runner made itself (dash_owned) always follows: whatever is in the way is
+// saved on a dash-backup/ branch first, so it is listed only when syncing
+// fails (no network, permissions), as a note. An adopted clone (or this
+// Dash's own project) with uncommitted changes or local commits is left
+// alone and listed with a Pull button (fast-forward only; the runner
+// refuses anything else).
 export async function loadCheckouts() {
   const p = state.project;
   if (!p?.remote_url) return;
@@ -47,11 +51,15 @@ export async function loadCheckouts() {
 }
 
 export function renderCheckouts() {
-  const box = $("#checkouts"), list = state.checkouts || [];
+  const box = $("#checkouts"), list = (state.checkouts || []).filter((c) => !c.dash_owned || c.stuck);
   box.hidden = !list.length;
   box.replaceChildren(...list.map((c) => {
     const where = c.runner_name || "This checkout";
     const n = `${c.behind} ${c.behind === 1 ? "commit" : "commits"}`;
+    if (c.dash_owned) {
+      return h("div", { class: "checkout-behind", title: `${where}: ${c.branch} is ${n} behind origin. Syncing failed: ${c.stuck}. It retries on its own.` },
+        h("span", {}, `${where}: can't sync with origin`, h("span", { class: "hint" }, c.stuck)));
+    }
     const why = c.stuck ? `Left alone: ${c.stuck}.` : "Catching up with origin…";
     return h("div", { class: "checkout-behind", title: `${where}: ${c.branch} is ${n} behind origin. ${why}` },
       h("span", {}, `${where}: ${n} behind origin`, h("span", { class: "hint" }, c.stuck || `catching up on ${c.branch}`)),

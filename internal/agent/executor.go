@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -83,7 +82,7 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 	}
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = req.Dir
-	cmd.Env = append(os.Environ(), req.Env...)
+	cmd.Env = localrun.Environ(req.Env...)
 	cmd.Stdin = strings.NewReader(req.Prompt)
 	// Own process group so cancel kills Claude and everything it spawned.
 	localrun.Group(cmd, syscall.SIGTERM, 10*time.Second)

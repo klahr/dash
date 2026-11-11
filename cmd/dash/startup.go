@@ -800,7 +800,7 @@ func (a *app) setupRunner() {
 		for _, rs := range merges.Remote.Behind() {
 			if p, err := st.GetProject(rs.ProjectID); err == nil && p.HubProjectID != "" {
 				out = append(out, dispatch.CheckoutState{HubProjectID: p.HubProjectID, Branch: rs.Branch,
-					Behind: rs.Behind, Ahead: rs.Ahead, Stuck: rs.Stuck})
+					Behind: rs.Behind, Ahead: rs.Ahead, Stuck: rs.Stuck, DashOwned: p.DashOwnsCheckout()})
 			}
 		}
 		return out

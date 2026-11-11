@@ -96,7 +96,7 @@ func localRemotes(t *testing.T) {
 func TestCheckAccessEmptyRepo(t *testing.T) {
 	localRemotes(t)
 	bare := filepath.Join(t.TempDir(), "empty.git")
-	if out, err := exec.Command("git", "init", "-q", "--bare", bare).CombinedOutput(); err != nil {
+	if out, err := exec.Command("git", "-C", filepath.Dir(bare), "init", "-q", "--bare", bare).CombinedOutput(); err != nil {
 		t.Fatalf("%v %s", err, out)
 	}
 	if err := New(nil).CheckAccess(context.Background(), "p", "r1", bare); err != nil {
@@ -127,7 +127,7 @@ func TestSeedEmptyCloneMakesProjectBranch(t *testing.T) {
 
 			ctx, g := context.Background(), New(nil)
 			bare := filepath.Join(t.TempDir(), "empty.git")
-			if out, err := exec.Command("git", "init", "-q", "--bare", bare).CombinedOutput(); err != nil {
+			if out, err := exec.Command("git", "-C", filepath.Dir(bare), "init", "-q", "--bare", bare).CombinedOutput(); err != nil {
 				t.Fatalf("%v %s", err, out)
 			}
 			clone := filepath.Join(t.TempDir(), "clone")

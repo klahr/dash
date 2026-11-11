@@ -223,6 +223,9 @@ func run(t *testing.T, dir string, env []string, name string, args ...string) st
 	t.Helper()
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	if dir == "" {
+		cmd.Dir = os.TempDir() // never the checkout the tests run in
+	}
 	cmd.Env = append(os.Environ(), env...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

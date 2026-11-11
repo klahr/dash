@@ -30,8 +30,10 @@ type RemoteStatus struct {
 	RetryAt time.Time `json:"retry_at,omitzero"`
 	Fetched time.Time `json:"fetched,omitzero"` // last successful fetch
 	// Stuck is why the project's checkout was left behind origin instead of
-	// fast-forwarded (uncommitted changes, local commits): see syncCheckout.
-	// "" while it isn't behind, or may still follow.
+	// brought up to it: for a clone Dash owns, a failure; for an adopted
+	// clone, what is in the way (uncommitted changes, local commits), for
+	// Pull or a person to sort out. See syncCheckout. "" while it isn't
+	// behind, or may still follow.
 	Stuck string `json:"stuck,omitempty"`
 }
 
@@ -44,11 +46,15 @@ type RemoteStatus struct {
 // lock per project, so two git fetches never race on a repo's lock files.
 //
 // A runner's clone of a hub's project (model.Project.HubProjectID) also
-// follows origin in its checkout: after each fetch, and at once when the hub
-// says another runner pushed (OriginMoved), a clean checkout strictly behind
-// origin is fast-forwarded; one with uncommitted changes or local commits is
-// left alone and reported behind (RemoteStatus.Stuck), for Pull or a person
-// to sort out. Task worktrees are never touched.
+// follows origin in its checkout: after each fetch, at once when the hub
+// says another runner pushed (OriginMoved), and before a new todo branches
+// off it, a clean checkout strictly behind origin is fast-forwarded. When
+// the runner made the clone itself (model.Project.DashOwnsCheckout) nobody
+// works in it, so nothing there holds it back: uncommitted changes or local
+// commits are saved on a dash-backup/ branch and the branch reset to
+// origin's. An adopted clone with those is left alone and reported behind
+// (RemoteStatus.Stuck), for Pull or a person to sort out. Task worktrees are
+// never touched (see syncCheckout).
 type RemoteSync struct {
 	Store *store.Store
 	Git   *gitops.Git
@@ -419,7 +425,12 @@ func (r *RemoteSync) FastForward(ctx context.Context, p model.Project) string {
 	} else if err := r.fetchLocked(ctx, p, true); err != nil {
 		note = "⚠ can't fetch origin (" + brief(err) + "); "
 	}
+	synced, backup := r.syncCheckout(ctx, p)
+	if backup != "" {
+		note += "saved what was in the way of origin's " + p.Base() + " on " + backup + "; "
+	}
 	moved, ahead, err := r.Git.FastForwardToOrigin(ctx, p.ID, p.Path, p.Base())
+	moved += synced
 	r.recount(ctx, p)
 	switch {
 	case errors.As(err, new(*gitops.ErrDirtyCheckout)):
@@ -509,26 +520,63 @@ func (r *RemoteSync) FetchAll(ctx context.Context) {
 
 // syncCheckout brings a following project's default branch (and its
 // checkout's files, when it is checked out) up to origin's, as of the last
-// fetch. The caller holds the project's lock. Only a clean, strictly behind
-// branch moves; with uncommitted changes, local commits or a diverged
-// history it stays as it is, and Stuck says why.
-func (r *RemoteSync) syncCheckout(ctx context.Context, p model.Project) {
+// fetch, and reports how many commits it gained. The caller holds the
+// project's lock. A clean branch strictly behind fast-forwards. In a clone
+// Dash owns, anything in the way (uncommitted changes, local commits, a
+// diverged history) is saved on a new branch, named in backup, and the
+// branch reset to origin's (see gitops.ResetToOrigin); elsewhere it stays
+// as it is. When it stays behind, Stuck says why. Projects that don't
+// follow origin are left alone.
+func (r *RemoteSync) syncCheckout(ctx context.Context, p model.Project) (moved int, backup string) {
 	if !follows(p) {
-		return
+		return 0, ""
+	}
+	owned := p.DashOwnsCheckout()
+	if owned {
+		r.repair(ctx, p)
 	}
 	ahead, behind, err := r.Git.AheadBehind(ctx, p.ID, p.Path, p.Base())
 	if err != nil || behind == 0 {
 		r.recount(ctx, p)
-		return
+		return 0, ""
 	}
-	stuck := r.whyNotForward(ctx, p, ahead)
-	if stuck == "" {
-		moved, _, err := r.Git.FastForwardToOrigin(ctx, p.ID, p.Path, p.Base())
+	stuck, reset := "", false
+	branch, dirty, err := r.Git.CheckoutState(ctx, p.ID, p.Path)
+	switch {
+	case err != nil:
+		stuck = "can't read the checkout: " + brief(err)
+	case ahead > 0 || branch == p.Base() && dirty:
+		if reset = owned; !reset {
+			stuck = r.whyNotForward(ctx, p, ahead)
+		}
+	default:
+		n, _, err := r.Git.FastForwardToOrigin(ctx, p.ID, p.Path, p.Base())
 		switch {
+		case errors.As(err, new(*gitops.ErrDirtyCheckout)) && owned:
+			reset = true // untracked files in the way
 		case err != nil:
 			stuck = brief(err)
-		case moved > 0:
-			slog.Info("fast-forwarded to origin", "project", p.Name, "branch", p.Base(), "commits", moved)
+		case n > 0:
+			moved = n
+			slog.Info("fast-forwarded to origin", "project", p.Name, "branch", p.Base(), "commits", n)
+		}
+	}
+	if reset {
+		b, err := r.Git.ResetToOrigin(ctx, p.ID, p.Path, p.Base(), "dash-backup/"+r.clock().Format("20060102-150405"))
+		if b.Branch != "" {
+			backup = b.Branch
+			slog.Warn("saved local work in a clone Dash owns before resetting it to origin", "project", p.Name,
+				"path", p.Path, "backup", b.Branch, "local_commits", b.Commits, "uncommitted", b.Dirty)
+		}
+		switch {
+		case err != nil:
+			stuck = "can't reset " + p.Base() + " to origin: " + brief(err)
+			if backup != "" {
+				stuck += " (what was in the way is saved on " + backup + ")"
+			}
+		default:
+			moved = behind
+			slog.Info("reset to origin", "project", p.Name, "branch", p.Base(), "commits", behind)
 		}
 	}
 	r.recount(ctx, p)
@@ -539,10 +587,24 @@ func (r *RemoteSync) syncCheckout(ctx context.Context, p model.Project) {
 			r.set(st)
 		}
 	}
+	return moved, backup
+}
+
+// repair puts right what keeps a clone Dash owns from syncing though
+// nothing in it is wrong: core.bare = true on a clone with a working tree
+// (see gitops.RepairBare).
+func (r *RemoteSync) repair(ctx context.Context, p model.Project) {
+	fixed, err := r.Git.RepairBare(ctx, p.ID, p.Path)
+	switch {
+	case err != nil:
+		slog.Warn("repair core.bare", "project", p.Name, "path", p.Path, "err", err)
+	case fixed:
+		slog.Warn("clone had core.bare = true though it has a working tree; set it back to false", "project", p.Name, "path", p.Path)
+	}
 }
 
 // whyNotForward is why p's branch, behind origin and with ahead commits of
-// its own, can't simply fast-forward ("" if it can).
+// its own, can't simply fast-forward ("" if it can): what Pull refuses.
 func (r *RemoteSync) whyNotForward(ctx context.Context, p model.Project, ahead int) string {
 	branch, dirty, err := r.Git.CheckoutState(ctx, p.ID, p.Path)
 	switch {

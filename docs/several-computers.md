@@ -221,16 +221,34 @@ projects on a runner's **Projects…** screen (below). From then on:
   works the same way: the runner adds the revert commit and pushes it.
 - Runners keep each other current. When a runner pushes the branch tasks land on (a merge, a
   revert, **Push**, a pull request it merged), it tells the hub, which tells the project's other
-  online runners right away, over the connection they already keep open. Each one fetches, and if
-  its clone's checkout is on that branch, clean and strictly behind, fast-forwards it. A checkout
-  with uncommitted changes or commits of its own is left alone; the project then shows "beta: 2
-  commits behind origin" in the sidebar, with a **Pull** button that fast-forwards only and says
-  why when it can't. Task worktrees are never touched, and running tasks stay on their runner.
-  Runners fetch again whenever they reconnect, and every 5 minutes even when nobody looks at the
-  project, so pushes made outside Dash (by hand, or a pull request merged on GitHub) show up too.
-  A webhook can be told when a checkout is left behind (`checkout.behind`, off unless you tick
-  it; at most once every 6 hours per runner). A GitHub push webhook on the hub could trigger the
-  same fan-out for outside pushes; it isn't there yet.
+  online runners right away, over the connection they already keep open. Each one fetches and
+  brings its clone's checkout up to origin; so does a runner before it starts a task there. Task
+  worktrees are never touched, and running tasks stay on their runner. Runners fetch again
+  whenever they reconnect, and every 5 minutes even when nobody looks at the project, so pushes
+  made outside Dash (by hand, or a pull request merged on GitHub) show up too. A GitHub push
+  webhook on the hub could trigger the same fan-out for outside pushes; it isn't there yet.
+  - **A clone the runner made** (it cloned the project into its projects folder) is Dash's: nobody
+    works in it, so it always follows origin, with no button to press. A clean checkout strictly
+    behind fast-forwards. If something is in the way (uncommitted changes, untracked files,
+    commits origin doesn't have), the runner saves it first on a new branch in that clone,
+    `dash-backup/<date>-<time>` (e.g. `dash-backup/20261111-105738`; uncommitted changes are one
+    commit on top of the local commits), logs the branch's name, and resets the checkout to
+    origin's branch. Nothing is lost: `git branch --list 'dash-backup/*'` in the clone lists the
+    backups, and they stay until you delete them. If the clone's config says `core.bare = true`
+    although it has its files (the folder then fails every git command with "this operation
+    must be run in a work tree"; a stray `git init` run with `GIT_DIR` pointing at one of its
+    worktrees does that), the runner sets it back to `false`, logs a warning naming the clone, and
+    syncs as usual. The sidebar shows such a clone only when syncing it fails for another reason
+    (it can't write the files, say), as "beta: can't sync with origin" with the reason, and the
+    backup branch if one was made; it retries on its own. A fetch that fails (offline, no access)
+    shows on the project's origin pill as usual.
+  - **An adopted clone** (it was already there, see below) may hold your own work, so it only
+    ever fast-forwards: on that branch, clean and strictly behind. With uncommitted changes or
+    commits of its own it is left alone; the project then shows "beta: 2 commits behind origin" in
+    the sidebar, with a **Pull** button that fast-forwards only and says why when it can't. A
+    webhook can be told when a checkout is left behind (`checkout.behind`, off unless you tick
+    it; at most once every 6 hours per runner); a clone the runner made that fails to sync tells it
+    too.
 - Projects whose users never chose how work lands follow the default when the hub upgrades or
   their settings change: pull requests on GitHub, merging otherwise. A choice you made stays.
   Tasks with a pull request already open are followed until it is merged or closed, whatever the

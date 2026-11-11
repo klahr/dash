@@ -63,9 +63,10 @@ func (d *drainHandler) drain() {
 }
 
 // When one runner pushes, the hub tells the project's other runners, which
-// fetch at once: a clean checkout follows origin, one with uncommitted
-// changes stays as it is and shows on the hub as behind, with a Pull that
-// refuses until it can fast-forward.
+// fetch at once: a clean checkout follows origin; so does a clone the runner
+// made with uncommitted changes, after saving them on a backup branch. An
+// adopted clone with uncommitted changes stays as it is and shows on the hub
+// as behind, with a Pull that refuses until it can fast-forward.
 func TestRunnersFollowEachOthersPushes(t *testing.T) {
 	parallel(t)
 
@@ -134,7 +135,8 @@ func TestRunnersFollowEachOthersPushes(t *testing.T) {
 				var out []dispatch.CheckoutState
 				for _, rs := range merges.Remote.Behind() {
 					if p, err := raw(s).GetProject(rs.ProjectID); err == nil {
-						out = append(out, dispatch.CheckoutState{HubProjectID: p.HubProjectID, Branch: rs.Branch, Behind: rs.Behind, Stuck: rs.Stuck})
+						out = append(out, dispatch.CheckoutState{HubProjectID: p.HubProjectID, Branch: rs.Branch, Behind: rs.Behind, Stuck: rs.Stuck,
+							DashOwned: p.DashOwnsCheckout()})
 					}
 				}
 				return out
@@ -194,19 +196,44 @@ func TestRunnersFollowEachOthersPushes(t *testing.T) {
 		return git(t, pb.Path, "rev-parse", "main") == tip && err == nil && len(d.Checkouts(p.ID)) == 0
 	})
 
-	// beta has uncommitted changes when alpha pushes again: left alone,
-	// and the hub shows it behind.
+	// beta, which cloned the project itself, has uncommitted changes when
+	// alpha pushes again: saved on a backup branch, and beta follows anyway.
+	if !pb.DashOwnsCheckout() {
+		t.Fatalf("beta's clone isn't Dash's: %+v", pb)
+	}
+	if err := os.WriteFile(filepath.Join(pb.Path, "README"), []byte("beta's edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commit(pa.Path, "two.txt")
+	if err := a.merges.PushDefault(ctx, pa); err != nil {
+		t.Fatal(err)
+	}
+	tip = git(t, origin, "rev-parse", "main")
+	eventually(t, "beta's clone to follow despite its edit", func() bool {
+		return git(t, pb.Path, "rev-parse", "main") == tip && git(t, pb.Path, "status", "--porcelain") == ""
+	})
+	saved := git(t, pb.Path, "for-each-ref", "--format=%(refname:short)", "refs/heads/dash-backup/")
+	if saved == "" || git(t, pb.Path, "show", saved+":README") != "beta's edit" {
+		t.Fatalf("beta's edit wasn't saved: backups %q", saved)
+	}
+	eventually(t, "the hub to see beta caught up, with nothing to pull", func() bool { return len(d.Checkouts(p.ID)) == 0 })
+
+	// Had beta adopted a clone that was already there, its owner's edit
+	// would hold it back: left alone, and the hub shows it behind.
+	if pb, err = raw(b.s).UpdateProject(pb.ID, func(x *model.Project) error { x.HubCheckout = model.HubAdopted; return nil }); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(pb.Path, "README"), []byte("beta's edit\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	before := git(t, pb.Path, "rev-parse", "main")
-	commit(pa.Path, "two.txt")
+	commit(pa.Path, "three.txt")
 	if err := a.merges.PushDefault(ctx, pa); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the hub to show beta behind", func() bool {
 		cs := d.Checkouts(p.ID)
-		return len(cs) == 1 && cs[0].Runner == b.id && cs[0].Behind == 1 && strings.Contains(cs[0].Stuck, "uncommitted")
+		return len(cs) == 1 && cs[0].Runner == b.id && cs[0].Behind == 1 && strings.Contains(cs[0].Stuck, "uncommitted") && !cs[0].DashOwned
 	})
 	if git(t, pb.Path, "rev-parse", "main") != before {
 		t.Fatal("beta's dirty checkout was moved")

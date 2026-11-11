@@ -16,17 +16,12 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
-	"github.com/klahr/dash/internal/testbin"
+	"github.com/klahr/dash/internal/testgit"
 )
 
-// TestMain keeps the developer's git config (commit signing) out of the tests.
-func TestMain(m *testing.M) {
-	testbin.IsolateGit()
-	os.Setenv("GIT_CONFIG_COUNT", "1")
-	os.Setenv("GIT_CONFIG_KEY_0", "commit.gpgsign")
-	os.Setenv("GIT_CONFIG_VALUE_0", "false")
-	os.Exit(m.Run())
-}
+// TestMain keeps the git the tests start off this computer's repositories
+// and settings (see testgit).
+func TestMain(m *testing.M) { os.Exit(testgit.Run(m)) }
 
 // fakeExec answers every run with answer(), after waiting for release if set.
 type fakeExec struct {
