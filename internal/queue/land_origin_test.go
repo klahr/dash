@@ -222,11 +222,7 @@ func TestOpenPullRequestIsFollowedAfterSwitchingToLocal(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.approve(td.ID)
-	time.Sleep(500 * time.Millisecond)
-	x, _ := h.st.GetTodo(td.ID)
-	if x.Status != model.StatusReview || x.PR == nil || x.PR.State != "OPEN" {
-		t.Errorf("want it still waiting on its pull request, got %s %+v", x.Status, x.PR)
-	}
+	waitPR(t, h, td.ID, model.StatusReview, func(x model.Todo) bool { return x.PR.State == "OPEN" })
 	if got := gitRun(t, origin, "rev-parse", "main"); got != before {
 		t.Errorf("origin's main moved to %s: landed besides its open pull request", got)
 	}
