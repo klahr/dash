@@ -722,7 +722,8 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .sheet[open]::backdrop { background: rgba(4, 8, 15, .6); backdrop-filter: blur(2px); }
 @starting-style { .sheet[open]::backdrop { background: rgba(4, 8, 15, 0); backdrop-filter: blur(0); } }
 .sheet > form, .sheet > details { padding: 0 16px; }
-.sheet > form:last-child, .sheet > details:last-child { padding-bottom: calc(16px + var(--safe-b)); }
+/* #toasts may be appended after the form while the sheet is open (raiseToasts). */
+.sheet > :is(form, details):not(:has(~ :not(.toasts))) { padding-bottom: calc(16px + var(--safe-b)); }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
 .sheet h2:focus { outline: none; }
 .sheet h2 { font-size: 18px; margin: 8px 0; letter-spacing: -.01em; }
