@@ -226,4 +226,6 @@ function railLayout(dialog) {
   railLayouts.set(dialog.id, rail);
   return rail;
 }
-for (const d of document.querySelectorAll("dialog.rail-sheet")) railLayout(d);
+// A sheet whose rail is built at run time (Runners: one entry per runner)
+// has none yet and wires its own.
+for (const d of document.querySelectorAll("dialog.rail-sheet")) if (d.querySelector(".rail-item")) railLayout(d);
