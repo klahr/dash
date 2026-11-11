@@ -53,7 +53,7 @@ require (
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/xo/terminfo v1.0.0 // indirect
-	github.com/yeqown/reedsolomon v1.0.0 // indirect
+	github.com/yeqown/reedsolomon v1.0.1-0.20260308105121-c5f4bc9af094 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.33.0 // indirect
 	go.opentelemetry.io/otel/metric v1.33.0 // indirect
