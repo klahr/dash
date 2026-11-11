@@ -1537,6 +1537,9 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .foot-version { padding: 6px 10px 2px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .account-menu .foot-menu-list { left: 0; right: 0; min-width: 0; }
 .top-menu { margin-left: 0; }
+/* An open top-bar menu drops below the bar, over the chat pane (z 46 where it
+   overlays): lift the bar above it while the menu is open. */
+.topbar:has(.top-menu[open]) { z-index: 47; }
 .top-menu .foot-menu-list { top: calc(100% + 4px); bottom: auto; }
 .project-picker-list { top: calc(100% + 4px); bottom: auto; left: 0; right: auto; min-width: 260px; max-width: 420px; max-height: min(70vh, 520px); overflow-y: auto; }
 .project-picker-list button { display: flex; justify-content: space-between; gap: 16px; flex: none; }
