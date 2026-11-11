@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
@@ -202,13 +203,12 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 		// pushed it again. Without this the task would wait for a head that
 		// never changes.
 		handled := st.HeadRefOid == t.PR.HandledSHA
-		line := func(code, other []gitops.PRCheck) string {
-			return prStatusLine(n, p.Base(), st, code, other, prWait{
-				autoMerge: p.MergesGreenPRs(), handled: handled, review: review, autoApprove: p.AutoApprove,
-			})
+		w := prWait{autoMerge: p.MergesGreenPRs(), handled: handled, review: review, autoApprove: p.AutoApprove}
+		note := func(code, other []gitops.PRCheck) {
+			m.notePR(t, st, prStatusLine(n, p.Base(), st, code, other, w), prWaitsOn(st, code, other, w), review)
 		}
 		if st.Mergeable == "CONFLICTING" {
-			m.notePR(t, st, line(nil, nil), review)
+			note(nil, nil)
 			if handled {
 				m.stuck(ctx, t, st, model.StatusFailed, fmt.Sprintf("Pull request #%d still conflicts with %s after Claude's fix", n, p.Base()))
 				return
@@ -225,7 +225,7 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 		for _, c := range st.Checks {
 			if c.Pending() {
 				// act once every check has finished
-				m.notePR(t, st, line(nil, nil), review)
+				note(nil, nil)
 				return
 			}
 			if c.Failed() {
@@ -236,7 +236,7 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 		if len(code) == 0 && st.IsDraft && m.ready(ctx, t, p) {
 			st.IsDraft = false // its checks pass: for a person to review now
 		}
-		m.notePR(t, st, line(code, other), review)
+		note(code, other)
 		switch {
 		case len(code) > 0 && handled:
 			m.stuck(ctx, t, st, model.StatusFailed, fmt.Sprintf("Checks still fail on pull request #%d (%s) and Claude's fix made no new commit", n, labels(failed)))
@@ -312,17 +312,25 @@ func (m *MergeQueue) blocked(t model.Todo, why string) {
 }
 
 // notePR keeps what GitHub last said about a task's pull request on the
-// task, for its card: the checks, the review and what the merge waits for.
-func (m *MergeQueue) notePR(t model.Todo, st gitops.PRStatus, line, review string) {
+// task, for its card: the checks, the review and what the merge waits for
+// (waits: what a person has to do, see prWaitsOn).
+func (m *MergeQueue) notePR(t model.Todo, st gitops.PRStatus, line, waits, review string) {
 	checks := prChecks(st.Checks)
-	if t.PR.Status == line && slices.Equal(t.PR.Checks, checks) && t.PR.Draft == st.IsDraft && t.PR.Review == review {
+	if t.PR.Status == line && slices.Equal(t.PR.Checks, checks) && t.PR.Draft == st.IsDraft && t.PR.Review == review && t.PR.Waits == waits {
 		return // unchanged: don't write (and broadcast) on every poll
 	}
+	now := time.Now()
 	_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
 		if x.PR == nil || x.PR.Number != t.PR.Number {
 			return nil
 		}
 		x.PR.Checks, x.PR.Status, x.PR.Draft, x.PR.Review = checks, line, st.IsDraft, review
+		if x.PR.Waits != waits || (waits != "" && x.PR.WaitsSince == nil) {
+			x.PR.Waits, x.PR.WaitsSince = waits, nil
+			if waits != "" {
+				x.PR.WaitsSince = &now
+			}
+		}
 		return nil
 	})
 }
@@ -578,6 +586,32 @@ func prStatusLine(n int, base string, st gitops.PRStatus, code, other []gitops.P
 		return "Waiting for you to merge on GitHub"
 	}
 	return "Waiting for a review on GitHub"
+}
+
+// prWaitsOn is what a person has to do for pull request st to go on
+// (model.PullRequest.Waits), "" while it waits on Dash, Claude or its
+// checks. It follows prStatusLine.
+func prWaitsOn(st gitops.PRStatus, code, other []gitops.PRCheck, w prWait) string {
+	if st.Mergeable == "CONFLICTING" || st.IsDraft || len(code) > 0 {
+		return "" // Claude fixes it, or its checks still run before it is ready
+	}
+	pending := slices.ContainsFunc(st.Checks, gitops.PRCheck.Pending)
+	approved := w.review == model.PRApproved || (w.autoApprove && w.review != model.PRChangesRequested)
+	switch {
+	case pending && (approved || w.review == model.PRChangesRequested):
+		return "" // the checks first
+	case len(other) > 0:
+		return model.PRWaitBlocked
+	case w.handled && !pending:
+		return model.PRWaitMerge // GitHub refused Dash's merge
+	case w.review == model.PRChangesRequested:
+		return "" // the review went back to Claude
+	case !approved:
+		return model.PRWaitReview // a person can review while checks run
+	case w.autoMerge:
+		return "" // Dash merges it
+	}
+	return model.PRWaitMerge
 }
 
 var (

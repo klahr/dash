@@ -125,7 +125,10 @@ function renderPipeline(d, now) {
       s.waiting_runner && s.waiting_runner + " waiting for a runner",
       s.paused && s.paused + " paused") || (s.queued ? "ready to start" : "nothing waiting")],
     ["Running", "var(--run)", s.running, s.running ? "avg " + longAge(s.running_avg_s * 1000) + " so far" : "idle"],
-    ["Review", "var(--rev)", s.review, s.review_oldest ? "oldest " + longAge(now - new Date(s.review_oldest)) : "all reviewed"],
+    ["Review", "var(--rev)", s.review, [
+      s.review_oldest ? "oldest " + longAge(now - new Date(s.review_oldest)) : s.review_github ? "" : "all reviewed",
+      s.review_github ? s.review_github + " on GitHub" : "",
+    ].filter(Boolean).join(" · ")],
     ["Merging", "var(--merge)", s.merging, s.merging_pr ? s.merging_pr + " waiting on PR checks" : s.merging ? "in the merge queue" : "—"],
     ["Merged today", "var(--ok)", s.merged_today, s.merged_today ? "+" + num(s.merged_add) + " / −" + num(s.merged_del) + " lines" : "none yet"],
     ["Failed", "var(--bad)", s.failed, s.failed ? (s.resumable ? s.resumable + " resumable" : "need a look") : "none"],
@@ -182,6 +185,9 @@ function renderRunning(d) {
   fit(list, list.parentElement, "running");
 }
 
+// What a pull request in Review waits for a person to do (wallNeed.waits).
+const PR_WAITS = { review: "Awaiting review", merge: "Merge on GitHub", blocked: "Blocked on GitHub" };
+
 function renderNeeds(d, now) {
   const items = d.needs.map((n) => {
     const since = now - new Date(n.since);
@@ -191,6 +197,7 @@ function renderNeeds(d, now) {
       if (n.tests === "passed") why.push("tests ✓");
       if (n.tests === "failed") why.push("tests ✗");
       if (n.pr) why.push("PR #" + n.pr);
+      if (PR_WAITS[n.waits]) why.push(PR_WAITS[n.waits]);
       return h("div", { class: "item" + (n.old ? " old" : ""), style: "--c:var(--rev)" }, h("i", { class: "bar2" }),
         h("div", {}, h("div", { class: "t" }, n.title), h("div", { class: "why" }, why.join(" · "))),
         h("div", { class: "age num" }, age(since)));
@@ -211,7 +218,7 @@ function renderNeeds(d, now) {
       h("div", {}, h("div", { class: "t" }, is.open + " open issue" + (is.open === 1 ? "" : "s")), h("div", { class: "why" }, why)),
       h("div", { class: "age num" }, sev[0] || "—")));
   }
-  const total = d.stages.review + d.stages.failed + (is.open ? 1 : 0);
+  const total = d.stages.review - d.stages.review_github + d.stages.failed + (is.open ? 1 : 0);
   $("needs-count").textContent = total;
   const list = $("needs");
   if (!items.length) {
