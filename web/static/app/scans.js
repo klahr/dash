@@ -20,7 +20,7 @@ export const SCAN_KINDS = {
   breaking_changes: "Breaking changes", maintainability: "Duplication & complexity", custom: "Custom",
 };
 const SCAN_SCOPES = { repo: "Whole repository", since_last_scan: "Changes since the last scan", since_main: "Branch vs. main", path: "One path" };
-export const scans = { list: [], problems: [], builtin: false, dir: ".dash/scans", loaded: false, history: new Map() };
+export const scans = { list: [], problems: [], builtin: false, dir: ".dash/scans", loaded: false, history: new Map(), open: new Set() };
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export async function loadScans() {
@@ -36,6 +36,7 @@ export async function loadScans() {
 export function resetScans() {
   Object.assign(scans, { list: [], problems: [], builtin: false, loaded: false });
   scans.history.clear();
+  scans.open.clear();
   renderScans();
 }
 
@@ -192,6 +193,45 @@ export function renderScans() {
 // scanSource says where a scan comes from, for its card.
 const scanSource = (s) => s.source === "dash" ? "written in Dash" : s.builtin ? "built-in" : h("code", {}, s.file);
 
+// scanKind is the kind badge, left out where the title already says it
+// (e.g. "Security scan", "Dependency audit") and for custom scans.
+function scanKind(s) {
+  const label = SCAN_KINDS[s.kind] || s.kind;
+  if (s.kind === "custom" || (s.title || "").toLowerCase().includes(label.slice(0, 4).toLowerCase())) return null;
+  return h("span", { class: `scan-kind kind-${s.kind}` }, label);
+}
+
+// scanToggle shows or hides a card's details.
+function scanToggle(s) {
+  const open = scans.open.has(s.name);
+  return ib({ type: "button", class: "btn small scan-more", "aria-expanded": String(open), "aria-controls": `scan-details-${s.name}`, title: open ? "Hide details" : "Details: settings, schedule, run reports and actions",
+    onclick: () => { if (open) scans.open.delete(s.name); else scans.open.add(s.name); renderScans(); } }, "more", h("span", { class: "scan-more-label" }, "Details"));
+}
+
+// scanLine is a card's one-line status: what the last run came to, or that
+// one is running or none has run.
+function scanLine(s) {
+  const r = s.last_run;
+  const text = (t) => h("span", { class: "scan-line-text" }, t);
+  if (!r) return h("div", { class: "scan-line" }, text("Never run"));
+  if (r.status === "running") return h("div", { class: "scan-line st-running" }, h("span", { class: "spinner", "aria-hidden": "true" }), text(r.activity ? `Running… ${r.activity}` : "Running…"));
+  const ago = agoText(r.started_at);
+  if (r.status === "failed") {
+    const err = (r.error || "").split("\n")[0];
+    return h("div", { class: "scan-line st-failed", title: r.error || null }, text(`Failed ${ago}${err ? ` · ${err}` : ""}`));
+  }
+  if (r.status !== "succeeded") {
+    const label = { skipped: "Skipped", canceled: "Canceled", interrupted: "Interrupted" }[r.status] || r.status;
+    return h("div", { class: "scan-line" }, text(r.status === "canceled" ? `${label} ${ago}` : `${label} ${ago} · ${scanSummary(r)}`));
+  }
+  if (!r.findings) return h("div", { class: "scan-line" }, text(`Last run ${ago} · No issues found`));
+  const { nw, urgent } = runResult(r);
+  const found = r.new_issues?.length || r.counts?.new || 0;
+  return h("div", { class: "scan-line" }, text(`Last run ${ago} ·${nw.open ? "" : ` ${found ? `${found} new, none open` : "No new issues"}`}`),
+    nw.open ? h("button", { type: "button", class: "link scan-count new", title: "Show them in Issues", onclick: () => showRunIssues(r, "new") }, plural(nw.open, "new issue")) : null,
+    urgent ? h("span", { class: "sev sev-high scan-urgent", title: "New or reopened issues of critical or high severity that are still open" }, `${urgent} urgent`) : null);
+}
+
 function scanCard(s) {
   if (s.shadowed_by) return shadowedScanCard(s);
   const sch = s.schedule;
@@ -207,40 +247,47 @@ function scanCard(s) {
   });
   const meta = [SCAN_SCOPES[s.scope] || s.scope, s.path && s.scope !== "path" ? `in ${s.path}` : s.path, s.model, s.effort && `${s.effort} effort`].filter(Boolean).join(" · ");
   const hist = scans.history.get(s.name);
+  const earlier = hist?.filter((r) => r.id !== s.last_run?.id && r.id !== s.last_report?.id);
+  const live = sch.enabled && sch.cron;
   return h("li", { class: `scan-card${running ? " running" : ""}`, "data-scan": s.name },
     h("div", { class: "scan-head" },
-      h("div", { class: "scan-id" },
-        h("div", { class: "scan-name" }, h("strong", {}, s.title), h("span", { class: `scan-kind kind-${s.kind}` }, SCAN_KINDS[s.kind] || s.kind)),
-        h("div", { class: "scan-meta" }, meta, " · ", scanSource(s)),
-        scanActions(s)),
-      running
-        ? ib({ type: "button", class: "btn small", onclick: attempt(() => api("POST", `/api/scan-runs/${running.id}/cancel`)) }, "stop", "Stop")
-        : ib({ type: "button", class: "btn small primary", onclick: attempt(async () => {
-            const run = await api("POST", `/api/projects/${state.project.id}/scans/${encodeURIComponent(s.name)}/run`);
-            s.running = run.id;
-            s.last_run = run;
-            renderScans();
-          }) }, "play", "Run now")),
-    h("div", { class: "scan-sched" },
-      h("label", { class: "scan-switch", title: sch.cron ? (sch.enabled ? "Turn the schedule off" : "Turn the schedule on") : "Set a schedule first" },
-        h("input", { type: "checkbox", role: "switch", checked: sch.enabled, disabled: !sch.cron, onchange: attempt((e) => patch(
-          // Turning on a repository schedule never approved approves the one shown.
-          e.target.checked && sch.requested && sch.cron === sch.requested ? { approve_schedule: sch.requested } : { enabled: e.target.checked })) }),
-        h("span", {}, "Scheduled")),
-      h("button", { type: "button", class: "link scan-cron", title: sch.cron ? `${sch.cron} — change` : "Set a schedule", onclick: editCron },
-        sch.cron ? describeCron(sch.cron) : "No schedule"),
-      sch.enabled && s.next_run ? h("span", { class: "scan-next", title: new Date(s.next_run).toLocaleString(timeLocale) }, `next ${until(s.next_run)}`) : null,
-      sch.custom ? h("button", { type: "button", class: "link scan-reset", title: `Back to the template's schedule${sch.default ? ` (${sch.default})` : ""}, off` , onclick: attempt(() => patch({ reset: true })) }, "Reset") : null,
-      !sch.enabled && sch.cron && s.builtin && !sch.custom ? h("span", { class: "scan-hint" }, "suggested; off until turned on") : null),
+      h("div", { class: "scan-name" }, h("strong", {}, s.title), scanKind(s)),
+      scanLine(s),
+      h("span", { class: `scan-when-sched${live ? " on" : ""}`, title: live ? `${sch.cron}${s.next_run ? `; next run ${until(s.next_run)}, ${new Date(s.next_run).toLocaleString(timeLocale)}` : ""}` : null },
+        ico("clock"), live ? describeCron(sch.cron) : "Not scheduled"),
+      h("div", { class: "scan-btns" },
+        running
+          ? ib({ type: "button", class: "btn small", onclick: attempt(() => api("POST", `/api/scan-runs/${running.id}/cancel`)) }, "stop", "Stop")
+          : ib({ type: "button", class: "btn small primary", onclick: attempt(async () => {
+              const run = await api("POST", `/api/projects/${state.project.id}/scans/${encodeURIComponent(s.name)}/run`);
+              s.running = run.id;
+              s.last_run = run;
+              renderScans();
+            }) }, "play", "Run now"),
+        scanToggle(s))),
     scanApprovals(s, patch),
-    s.last_run ? scanReport(s.last_run) : h("p", { class: "scan-never" }, "Never run."),
-    s.last_report && s.last_report.id !== s.last_run?.id ? scanReport(s.last_report, true) : null,
-    !s.last_run ? null : h("div", { class: "scan-foot" },
-      h("button", { type: "button", class: "link", "aria-expanded": String(!!hist), onclick: attempt(() => {
-        if (hist) { scans.history.delete(s.name); renderScans(); } else return loadScanHistory(s.name);
-      }) }, hist ? "Hide earlier runs" : "Earlier runs")),
-    hist ? h("ol", { class: "scan-history" }, ...hist.filter((r) => r.id !== s.last_run?.id && r.id !== s.last_report?.id).map((r) => h("li", {}, scanReport(r, true))),
-      hist.filter((r) => r.id !== s.last_run?.id && r.id !== s.last_report?.id).length ? null : h("li", { class: "scan-never" }, "No earlier runs.")) : null);
+    !scans.open.has(s.name) ? null : h("div", { class: "scan-details", id: `scan-details-${s.name}` },
+      h("div", { class: "scan-meta" }, meta, " · ", scanSource(s)),
+      scanActions(s),
+      h("div", { class: "scan-sched" },
+        h("label", { class: "scan-switch", title: sch.cron ? (sch.enabled ? "Turn the schedule off" : "Turn the schedule on") : "Set a schedule first" },
+          h("input", { type: "checkbox", role: "switch", checked: sch.enabled, disabled: !sch.cron, onchange: attempt((e) => patch(
+            // Turning on a repository schedule never approved approves the one shown.
+            e.target.checked && sch.requested && sch.cron === sch.requested ? { approve_schedule: sch.requested } : { enabled: e.target.checked })) }),
+          h("span", {}, "Scheduled")),
+        h("button", { type: "button", class: "link scan-cron", title: sch.cron ? `${sch.cron} — change` : "Set a schedule", onclick: editCron },
+          sch.cron ? describeCron(sch.cron) : "No schedule"),
+        sch.enabled && s.next_run ? h("span", { class: "scan-next", title: new Date(s.next_run).toLocaleString(timeLocale) }, `next ${until(s.next_run)}`) : null,
+        sch.custom ? h("button", { type: "button", class: "link scan-reset", title: `Back to the template's schedule${sch.default ? ` (${sch.default})` : ""}, off` , onclick: attempt(() => patch({ reset: true })) }, "Reset") : null,
+        !sch.enabled && sch.cron && s.builtin && !sch.custom ? h("span", { class: "scan-hint" }, "suggested; off until turned on") : null),
+      s.last_run ? scanReport(s.last_run, false, true) : null,
+      s.last_report && s.last_report.id !== s.last_run?.id ? scanReport(s.last_report, true) : null,
+      !s.last_run ? null : h("div", { class: "scan-foot" },
+        h("button", { type: "button", class: "link", "aria-expanded": String(!!hist), onclick: attempt(() => {
+          if (hist) { scans.history.delete(s.name); renderScans(); } else return loadScanHistory(s.name);
+        }) }, hist ? "Hide earlier runs" : "Earlier runs")),
+      hist ? h("ol", { class: "scan-history" }, ...earlier.map((r) => h("li", {}, scanReport(r, true))),
+        earlier.length ? null : h("li", { class: "scan-never" }, "No earlier runs.")) : null));
 }
 
 // shadowedScanCard is a repository scan that doesn't run because a scan
@@ -248,11 +295,13 @@ function scanCard(s) {
 function shadowedScanCard(s) {
   return h("li", { class: "scan-card shadowed", "data-scan": s.name },
     h("div", { class: "scan-head" },
-      h("div", { class: "scan-id" },
-        h("div", { class: "scan-name" }, h("strong", {}, s.title), h("span", { class: `scan-kind kind-${s.kind}` }, SCAN_KINDS[s.kind] || s.kind), h("span", { class: "scan-shadow-tag" }, "Replaced")),
-        h("div", { class: "scan-meta" }, scanSource(s)),
-        scanActions(s))),
-    h("p", { class: "scan-note" }, `Not used: the scan written in Dash called “${s.name}” runs instead. Delete that one to use this file again.`));
+      h("div", { class: "scan-name" }, h("strong", {}, s.title), scanKind(s), h("span", { class: "scan-shadow-tag" }, "Replaced")),
+      h("div", { class: "scan-line" }, `Not used: the scan written in Dash called “${s.name}” runs instead`),
+      h("div", { class: "scan-btns" }, scanToggle(s))),
+    !scans.open.has(s.name) ? null : h("div", { class: "scan-details", id: `scan-details-${s.name}` },
+      h("div", { class: "scan-meta" }, scanSource(s)),
+      scanActions(s),
+      h("p", { class: "scan-note" }, `Delete the scan written in Dash called “${s.name}” to use this file again.`)));
 }
 
 // scanActions edit, duplicate, export or delete a scan. Only scans written
@@ -408,7 +457,17 @@ function runIssueStatus(r, which) {
   return out;
 }
 
-function scanReport(r, compact = false) {
+// runResult reads what became of a run's new and reopened issues, with the
+// urgent ones still open and how many "Select all" would check.
+function runResult(r) {
+  const nw = runIssueStatus(r, "new"), ro = runIssueStatus(r, "reopened");
+  const tracked = iss.loaded && (r.new_issues?.length || r.reopened_issues?.length);
+  return { nw, ro, urgent: tracked ? nw.urgent + ro.urgent : r.urgent, selectable: tracked ? nw.open + ro.open : 0 };
+}
+
+// scanReport is a run's full report. For the run the card's status line
+// already sums up (lead), what that line says is left out.
+function scanReport(r, compact = false, lead = false) {
   const c = r.counts || {};
   const known = (c.known || 0) + (c.updated || 0);
   const icon = { running: null, succeeded: "check", failed: "x", skipped: "redo", canceled: "stop", interrupted: "reload" }[r.status];
@@ -426,16 +485,13 @@ function scanReport(r, compact = false) {
   if (r.status === "succeeded" && r.findings) {
     // The counts are what the run found; what has been done about its new
     // and reopened issues since is read from the issues as they are now.
-    const nw = runIssueStatus(r, "new"), ro = runIssueStatus(r, "reopened");
+    const { nw, ro, urgent, selectable } = runResult(r);
     const since = (k, text, title) => {
       const n = nw[k] + ro[k];
       return n ? h("button", { type: "button", class: "scan-count link muted", title, onclick: () => showRunIssues(r, nw[k] ? "new" : "reopened") }, `${n} ${text}`) : null;
     };
-    const urgent = iss.loaded && (r.new_issues?.length || r.reopened_issues?.length) ? nw.urgent + ro.urgent : r.urgent;
-    // What "Select all" would check: this run's issues that are still open (not in a task).
-    const selectable = iss.loaded && (r.new_issues?.length || r.reopened_issues?.length) ? nw.open + ro.open : 0;
     body = h("p", { class: "scan-counts" },
-      link(nw.open, "new", "new") || h("span", { class: "scan-count" }, "0 new"),
+      lead ? null : link(nw.open, "new", "new") || h("span", { class: "scan-count" }, "0 new"),
       known ? h("span", { class: "scan-count" }, `${known} already known`) : null,
       link(ro.open, "reopened", "reopened"),
       c.dismissed ? h("span", { class: "scan-count muted", title: "Found again, but you dismissed them; they stay dismissed" }, `${c.dismissed} dismissed`) : null,
@@ -443,9 +499,10 @@ function scanReport(r, compact = false) {
       since("fixed", "fixed", "New or reopened issues from this run that have been fixed since"),
       since("dismissed", "dismissed since", "New or reopened issues from this run that were dismissed since"),
       nw.gone + ro.gone ? h("span", { class: "scan-count muted", title: "New or reopened issues from this run that were deleted since" }, `${nw.gone + ro.gone} deleted`) : null,
-      urgent ? h("span", { class: "sev sev-high scan-urgent", title: "New or reopened issues of critical or high severity that are still open" }, `${urgent} urgent`) : null,
+      urgent && !lead ? h("span", { class: "sev sev-high scan-urgent", title: "New or reopened issues of critical or high severity that are still open" }, `${urgent} urgent`) : null,
       selectable ? ib({ type: "button", class: "btn small scan-select", title: "Open the new and reopened issues from this run that are still open, all selected, to create tasks for them or dismiss them", onclick: () => showRunIssues(r, "all", true) }, "checks", `Select all ${selectable}`) : null);
-  } else {
+    if (lead && !body.children.length) body = null;
+  } else if (!lead || r.status === "failed") {
     body = h("p", { class: `scan-msg${r.status === "failed" ? " error" : ""}` }, r.status === "running" ? h("span", { class: "spinner", "aria-hidden": "true" }) : null, scanSummary(r));
   }
   return h("div", { class: `scan-report st-${r.status}${compact ? " compact" : ""}` },

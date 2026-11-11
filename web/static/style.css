@@ -2371,13 +2371,25 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .scan-list:empty { display: none; }
 .scan-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); padding: 14px 16px; }
 .scan-card.running { border-color: color-mix(in srgb, var(--running) 50%, var(--line)); }
-.scan-head { display: flex; align-items: flex-start; gap: 12px; }
-.scan-id { flex: 1; min-width: 0; }
-.scan-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.scan-head { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "name sched btns" "line sched btns"; align-items: center; gap: 2px 16px; }
+.scan-name { grid-area: name; display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.scan-line { grid-area: line; display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 14px; color: var(--muted); white-space: nowrap; }
+.scan-line > * { flex: none; }
+.scan-line > .scan-line-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.scan-line.st-failed { color: var(--failed); }
+.scan-line.st-running { color: var(--text); }
+.scan-line .scan-count.new { min-height: 28px; padding: 0; }
+.scan-when-sched { grid-area: sched; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--faint); white-space: nowrap; }
+.scan-when-sched.on { color: var(--muted); }
+.scan-when-sched .ico { width: 14px; height: 14px; }
+.scan-btns { grid-area: btns; display: flex; gap: 8px; }
+.scan-btns .btn { min-height: 36px; padding: 0 12px; }
+.scan-more[aria-expanded="true"] { border-color: var(--faint); background: var(--surface); }
+.scan-details { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .scan-name strong { font-size: 16px; }
 .scan-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
 .scan-kind.kind-security, .scan-kind.kind-dependencies { color: var(--accent2); }
-.scan-meta { margin-top: 2px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.scan-meta { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .scan-sched { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 10px 0 0; font-size: 14px; }
 .scan-switch { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; }
 .scan-switch input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
@@ -2416,9 +2428,11 @@ select { font: inherit; color: var(--text); background: var(--bg); border: 1px s
 .scan-foot { margin-top: 4px; }
 .scan-history { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; }
 @media (min-width: 1024px) { .scans { padding: 16px 32px; } }
+@media (max-width: 899px) { .scan-more-label { display: none; } }
 @media (max-width: 639px) {
   .scans { padding: 10px 10px 24px; }
   .scan-card { padding: 12px; }
+  .scan-head { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name btns" "line line" "sched sched"; }
 }
 
 /* Two-factor sign-in (twofactor.js, login page and account menu) */
