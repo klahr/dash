@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/klahr/dash/internal/buildinfo"
 )
 
 var (
@@ -114,6 +116,7 @@ func (s *Server) static() http.Handler {
 				return
 			}
 			b = bytes.ReplaceAll(b, []byte("{{DASH_VERSION}}"), []byte(s.version()))
+			b = bytes.ReplaceAll(b, []byte("{{DASH_RELEASE}}"), []byte(buildinfo.Version))
 			b = bytes.ReplaceAll(b, []byte("{{DASH_TIME_LOCALE}}"), []byte(timeLocale()))
 			b = s.Brand.WithDefaults().Page(b)
 			// No ETag: the branding can change without the files changing.
