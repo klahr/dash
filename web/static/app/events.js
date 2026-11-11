@@ -7,6 +7,7 @@ import { grouped, loadProjects, projectWhere, renderSideProjects, selectProject 
 import { loadUnpushed } from "./board.js";
 import { renderBoard, title, updateLiveLine } from "./branches.js";
 import { trackActivity } from "./activity.js";
+import { activityAfterStatus } from "../activityclear.js";
 import { closeDetail, loadDiff, openDetail, openTodo, renderDetail } from "./detail.js";
 import { connectLog, connectTerm, loadPreviews, previewEvent, previewOf, pv } from "./preview.js";
 import { loadRunners, refreshRunnerLinks, renderRunners } from "./runners.js";
@@ -173,8 +174,11 @@ function onEvent(ev, m = { name: "" }) {
       {
         const prev = state.todos.get(ev.todo_id);
         state.todos.set(ev.todo_id, ev.data);
-        // Nothing runs for a task back in drafts or the queue, or merged: drop an activity whose end we missed.
-        if (["draft", "queued", "merged"].includes(ev.data.status)) state.activity.delete(ev.todo_id);
+        // Drop an activity whose end we missed: nothing runs for a task in drafts, the queue or merged, and Claude's command is over once the task is in review, failed or merging. Dash's own phases (tests) stay.
+        {
+          const cur = state.activity.get(ev.todo_id), keep = activityAfterStatus(cur, ev.data.status, prev?.status);
+          if (cur && !keep) state.activity.delete(ev.todo_id);
+        }
         renderBoard();
         if (state.view === "issues" && (prev?.status !== ev.data.status || prev?.paused !== ev.data.paused) && iss.list.some((i) => i.todo_ids?.includes(ev.todo_id))) renderIssues();
         if (state.detail === ev.todo_id) {
