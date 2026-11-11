@@ -2,7 +2,7 @@
 // `node --test web/`; groups_test.go runs them as part of `go test ./...`.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { projectGroups, uniqueProjects, projectRunnerNames, remoteRepo, projectSubtitle } from "./static/groups.js";
+import { projectGroups, uniqueProjects, projectRunnerNames, projectRunners, runnerBadge, runnersSummary, remoteRepo, projectSubtitle } from "./static/groups.js";
 
 const hub = { name: "hub", local: true, ok: true, prefix: "" };
 const runner = (name, ok) => ({ name, runner: true, ok, prefix: `/peer/${name}`, error: ok ? "" : "offline" });
@@ -20,52 +20,91 @@ const site = shared("p1", "site", ["r-alpha", "r-beta"]);
 const orphan = shared("p2", "orphan");
 const tools = own("p3", "tools", "alpha");
 const api = own("p4", "Api", "alpha");
-const projects = [site, orphan, tools, api];
+const notes = own("p5", "notes", "beta");
+const projects = [site, orphan, tools, api, notes];
 const groups = projectGroups({ machines, runners, projects });
-const byName = Object.fromEntries(groups.map((g) => [g.name, g]));
+const names = (gs) => gs.map((g) => [g.name, g.projects.map((p) => p.name)]);
 
-test("one heading per runner, alphabetically, then Needs a runner", () => {
-  assert.deepEqual(groups.map((g) => g.name), ["alpha", "beta", "idle", "Needs a runner"]);
-  assert.deepEqual(groups.map((g) => g.key), ["runner:alpha", "runner:beta", "runner:idle", "needs-runner"]);
+test("Shared first, then one On <runner> group per runner with local-only projects", () => {
+  assert.deepEqual(names(groups), [["Shared", ["orphan", "site"]], ["On alpha", ["Api", "tools"]], ["On beta", ["notes"]]]);
+  assert.deepEqual(groups.map((g) => g.key), ["shared", "on:alpha", "on:beta"]);
 });
 
-test("a shared project linked to two runners is under both, as the same project", () => {
-  assert.deepEqual(byName.alpha.projects.map((p) => p.name), ["Api", "site", "tools"]);
-  assert.deepEqual(byName.beta.projects.map((p) => p.name), ["site"]);
-  assert.equal(byName.alpha.projects[1], byName.beta.projects[0]);
-  // Stepping through the list (J/K) visits it once.
-  assert.deepEqual(uniqueProjects(groups).map((p) => p.name), ["Api", "site", "tools", "orphan"]);
+test("a shared project linked to two runners is listed once", () => {
+  const all = groups.flatMap((g) => g.projects);
+  assert.equal(all.filter((p) => p === site).length, 1);
+  assert.deepEqual(uniqueProjects(groups).map((p) => p.name), ["orphan", "site", "Api", "tools", "notes"]);
   assert.deepEqual(projectRunnerNames(site, runners), ["alpha", "beta"]);
 });
 
-test("a shared project linked to no runner is under Needs a runner", () => {
-  assert.ok(byName["Needs a runner"].needsRunner);
-  assert.deepEqual(byName["Needs a runner"].projects, [orphan]);
-  assert.ok(!groups.slice(0, -1).some((g) => g.projects.includes(orphan)));
+test("only shared projects: a single group (the list shows no headings)", () => {
+  const gs = projectGroups({ machines, runners, projects: [site, orphan] });
+  assert.equal(gs.length, 1);
+  assert.equal(gs[0].key, "shared");
+  assert.deepEqual(projectGroups({ machines, runners, projects: [] }), []);
 });
 
-test("an offline runner without projects is hidden, an online one shows", () => {
-  assert.equal(byName.gone, undefined);
-  assert.deepEqual(byName.idle.projects, []);
-  assert.equal(byName.idle.machine.ok, true);
+test("members who don't see the runners' computers still get the shared group", () => {
+  assert.deepEqual(names(projectGroups({ machines: [hub], runners, projects: [site] })), [["Shared", ["site"]]]);
 });
 
-test("an offline runner with projects shows, marked offline", () => {
-  const gs = projectGroups({ machines, runners, projects: [shared("p5", "docs", ["r-gone"])] });
-  const g = gs.find((x) => x.name === "gone");
-  assert.equal(g.machine.ok, false);
-  assert.equal(g.title, "offline");
-  assert.equal(gs.find((x) => x.needsRunner), undefined); // no empty Needs a runner group
+test("without runners (not a hub), one group per computer with projects", () => {
+  const gs = projectGroups({ machines: [hub, runner("alpha", true)], runners: null, projects: [shared("p6", "b"), shared("p7", "a")] });
+  assert.deepEqual(names(gs), [["On hub", ["a", "b"]]]);
 });
 
-test("members who don't see the runners' computers still get their org's runners", () => {
-  const gs = projectGroups({ machines: [hub], runners, projects: [site] });
-  assert.deepEqual(gs.map((g) => [g.name, g.machine.ok, g.projects.length]), [["alpha", true, 1], ["beta", true, 1], ["idle", true, 0]]);
+test("order doesn't change when runners go offline, are linked or unlinked", () => {
+  const order = (ms, rs, ps) => uniqueProjects(projectGroups({ machines: ms, runners: rs, projects: ps })).map((p) => p.id);
+  const before = order(machines, runners, projects);
+  const down = machines.map((m) => m.runner ? { ...m, ok: false } : m);
+  const off = runners.map((r) => ({ ...r, online: false }));
+  assert.deepEqual(order(down, off, projects), before);
+  const relinked = projects.map((p) => p === site ? { ...p, runners: ["r-gone"] } : p === orphan ? { ...p, runners: ["r-idle"] } : p);
+  assert.deepEqual(order(machines, runners, relinked), before);
 });
 
-test("without runners (not a hub), one group per computer", () => {
-  const gs = projectGroups({ machines: [hub], runners: null, projects: [shared("p6", "b"), shared("p7", "a")] });
-  assert.deepEqual(gs.map((g) => [g.name, g.projects.map((p) => p.name)]), [["hub", ["a", "b"]]]);
+test("runner badge: none when every linked runner is online", () => {
+  assert.equal(runnerBadge(site, { machines, runners }), null);
+  assert.equal(runnerBadge(tools, { machines, runners }), null);
+  assert.equal(runnerBadge(shared("p8", "solo", ["r-idle"]), { machines, runners }), null);
+});
+
+test("runner badge: needs a runner when none is linked", () => {
+  const b = runnerBadge(orphan, { machines, runners });
+  assert.equal(b.kind, "none");
+  assert.equal(b.label, "needs a runner");
+});
+
+test("runner badge: offline when no linked runner is online", () => {
+  assert.deepEqual(runnerBadge(shared("p9", "docs", ["r-gone"]), { machines, runners }),
+    { kind: "offline", label: "runner offline", title: "gone: offline" });
+  const off = machines.map((m) => m.name === "alpha" ? { ...m, ok: false } : m.name === "beta" ? { ...m, ok: false } : m);
+  const b = runnerBadge(site, { machines: off, runners });
+  assert.equal(b.kind, "offline");
+  assert.equal(b.label, "all runners offline");
+  assert.equal(b.title, "alpha: offline\nbeta: offline");
+});
+
+test("runner badge: partial when some linked runners are online; the tooltip lists them", () => {
+  const b = runnerBadge(shared("p10", "web", ["r-gone", "r-alpha"]), { machines, runners });
+  assert.deepEqual(b, { kind: "partial", label: "1/2 online", title: "alpha: online\ngone: offline" });
+});
+
+test("runner status comes from the org's runners when the computers aren't visible", () => {
+  assert.deepEqual(projectRunners(site, { machines: [hub], runners }), [{ name: "alpha", online: true }, { name: "beta", online: true }]);
+  assert.equal(runnerBadge(shared("p11", "x", ["r-gone"]), { machines: [hub], runners }).kind, "offline");
+});
+
+test("not a hub: no badges", () => {
+  assert.equal(runnerBadge(shared("p12", "a"), { machines: [hub], runners: null }), null);
+});
+
+test("runners summary: overall dot", () => {
+  assert.equal(runnersSummary({ machines, runners: null }), null);
+  assert.equal(runnersSummary({ machines, runners: [] }).kind, "empty");
+  assert.deepEqual(runnersSummary({ machines, runners }), { kind: "some", online: 3, total: 4, title: "3 of 4 runners online" });
+  assert.equal(runnersSummary({ machines: [hub], runners: runners.filter((r) => r.online) }).kind, "ok");
+  assert.equal(runnersSummary({ machines: [hub], runners: [runners[2]] }).kind, "down");
 });
 
 test("remoteRepo reads owner/repo from https, ssh and other hosts", () => {

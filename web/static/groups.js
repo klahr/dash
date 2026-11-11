@@ -1,63 +1,91 @@
 // The PROJECTS list's groups, kept free of the DOM so they can be tested
 // with Node (web/groups_test.mjs).
 //
-// On a hub there is one group per runner, holding every project that runner
-// has a clone of: its own projects and the hub's projects linked to it. A hub
-// project linked to several runners is in each of their groups (the same
-// object, so selecting it highlights every entry). Hub projects linked to no
-// runner go last, under "Needs a runner". A runner with no projects shows
-// only while it is online, so new projects can still be added to it.
-//
-// Elsewhere (a Dash that isn't a hub) there is one group per computer.
+// The list is a project picker: each project is in it once, by name, in a
+// place that doesn't move when runners come online, go offline, or are
+// linked or unlinked. On a hub the org's shared projects go under "Shared",
+// and a runner's own (local-only) projects under "On <runner>". Elsewhere (a
+// Dash that isn't a hub) there is one group per computer. Headings show only
+// when there is more than one group. Runners themselves live on the Runners
+// page; a project row only gets a badge (runnerBadge) when its runners need
+// attention.
 
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.name.localeCompare(b.name);
+const byStr = (a, b) => byName({ name: a }, { name: b });
 
 // isShared reports whether p is the hub's project rather than a runner's own:
 // hub projects are the ones not reached through a runner's /peer/ prefix.
 export const isShared = (p) => !!p && !p.prefix;
 
-// projectGroups returns [{ key, name, machine?, needsRunner?, title, projects }].
-// machines is GET /api/machines (with ok as loaded); runners is GET
-// /api/runners' list on a hub, or null; projects carry machine and prefix.
+// projectGroups returns [{ key, name, projects }], each project in exactly
+// one group. machines is GET /api/machines; runners is GET /api/runners'
+// list on a hub, or null; projects carry machine and prefix.
 export function projectGroups({ machines = [], runners = null, projects = [] }) {
+  const groups = [];
+  const on = (name, ps) => { if (ps.length) groups.push({ key: `on:${name}`, name: `On ${name}`, projects: [...ps].sort(byName) }); };
   if (!Array.isArray(runners)) {
-    return machines.map((m) => ({
-      key: `machine:${m.name}`, name: m.name, machine: m, title: m.ok ? "" : m.error || "unreachable",
-      projects: projects.filter((p) => p.machine === m.name).sort(byName),
-    }));
+    for (const m of machines) on(m.name, projects.filter((p) => p.machine === m.name));
+    return groups;
   }
   const shared = projects.filter(isShared);
-  // Platform admins see every runner in machines; everyone sees their
-  // org's in runners. Either may know a runner the other doesn't.
-  const names = [...new Set([...machines.filter((m) => m.runner).map((m) => m.name), ...runners.map((r) => r.name)])]
-    .sort((a, b) => byName({ name: a }, { name: b }));
-  const groups = [];
-  for (const name of names) {
-    const m = machines.find((x) => x.runner && x.name === name);
-    const r = runners.find((x) => x.name === name);
-    const ok = m ? !!m.ok : !!r?.online;
-    const own = projects.filter((p) => !isShared(p) && p.machine === name);
-    const linked = r ? shared.filter((p) => p.runners?.includes(r.id)) : [];
-    if (!ok && !own.length && !linked.length) continue;
-    groups.push({
-      key: `runner:${name}`, name, machine: { ...m, name, ok }, title: ok ? "" : m?.error || "offline",
-      projects: [...own, ...linked].sort(byName),
-    });
-  }
-  const placed = new Set(groups.flatMap((g) => g.projects));
-  const waiting = shared.filter((p) => !placed.has(p)).sort(byName);
-  if (waiting.length) {
-    groups.push({
-      key: "needs-runner", name: "Needs a runner", needsRunner: true,
-      title: "Shared projects no runner is linked to: link one in Project settings → Runners", projects: waiting,
-    });
-  }
+  if (shared.length) groups.push({ key: "shared", name: "Shared", projects: shared.sort(byName) });
+  const own = projects.filter((p) => !isShared(p));
+  for (const name of [...new Set(own.map((p) => p.machine))].sort(byStr)) on(name, own.filter((p) => p.machine === name));
   return groups;
 }
 
-// uniqueProjects lists the groups' projects once each, in list order (a
-// shared project shown under several runners counts once).
+// uniqueProjects lists the groups' projects in list order (J/K's order).
 export const uniqueProjects = (groups) => [...new Set(groups.flatMap((g) => g.projects))];
+
+// runnerOnline reports whether the runner called name is online: from its
+// computer's status when the user sees it (platform admins), else from the
+// org's runners list.
+function runnerOnline(name, machines, runners) {
+  const m = machines.find((x) => x.runner && x.name === name);
+  return m ? !!m.ok : !!runners?.find((x) => x.name === name)?.online;
+}
+
+// projectRunners lists the runners p has a clone on, by name, each with
+// whether it is online: a shared project's linked runners, else its own
+// runner (or computer).
+export function projectRunners(p, { machines = [], runners = null } = {}) {
+  if (!p) return [];
+  if (isShared(p) && Array.isArray(runners)) {
+    return runners.filter((r) => p.runners?.includes(r.id)).map((r) => r.name).sort(byStr)
+      .map((name) => ({ name, online: runnerOnline(name, machines, runners) }));
+  }
+  if (!p.machine) return [];
+  const m = machines.find((x) => x.name === p.machine);
+  return [{ name: p.machine, online: m ? !!m.ok : runnerOnline(p.machine, machines, runners) }];
+}
+
+// runnerBadge is a project row's runner badge, or null when every runner
+// it has is online: { kind, label, title }, kind one of "none" (no runner
+// linked), "offline" (none online) or "partial" (some online). title lists
+// the runners and their status, one per line.
+export function runnerBadge(p, ctx = {}) {
+  const rs = projectRunners(p, ctx);
+  if (!rs.length) {
+    if (!isShared(p) || !Array.isArray(ctx.runners)) return null;
+    return { kind: "none", label: "needs a runner", title: "No runner is linked to it: link one in Project settings → Runners" };
+  }
+  const up = rs.filter((r) => r.online).length;
+  if (up === rs.length) return null;
+  const title = rs.map((r) => `${r.name}: ${r.online ? "online" : "offline"}`).join("\n");
+  if (!up) return { kind: "offline", label: rs.length === 1 ? "runner offline" : "all runners offline", title };
+  return { kind: "partial", label: `${up}/${rs.length} online`, title };
+}
+
+// runnersSummary is the Runners entry's overall dot, or null where this
+// Dash takes no runners: { kind, online, total, title }, kind "ok" (all
+// online), "some" (some offline), "down" (none online) or "empty" (none yet).
+export function runnersSummary({ machines = [], runners = null } = {}) {
+  if (!Array.isArray(runners)) return null;
+  const total = runners.length, online = runners.filter((r) => runnerOnline(r.name, machines, runners)).length;
+  const kind = !total ? "empty" : online === total ? "ok" : online ? "some" : "down";
+  const title = !total ? "No runners yet" : `${online} of ${total} runner${total === 1 ? "" : "s"} online`;
+  return { kind, online, total, title };
+}
 
 // projectRunnerNames names the runners p has a clone on: its own runner, or
 // the runners a hub project is linked to (by name, in name order).

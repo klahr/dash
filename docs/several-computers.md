@@ -61,14 +61,25 @@ defaults to the repository's.
 
 ### The Projects list
 
-The dashboard's **Projects** list has one heading per runner, alphabetically, with every project
-that runner has a clone of under it: its own projects and the shared projects linked to it, by
-name. The dot before its name says whether the runner is online. A shared project linked to several
-runners is listed under each of them; they are all the same project (the same tasks), so picking
-any of its entries opens it and highlights them all, and <kbd>J</kbd>/<kbd>K</kbd> step over it
-once. A runner with no projects is listed while it is online, so you can add some to it, and left
-out while it is offline. Shared projects no runner is linked to come last, under **Needs a
-runner** (gone once every project has one).
+The dashboard's **Projects** list is a project picker: each project is listed once, however many
+runners it is linked to, by name. The org's shared projects come first, under **Shared**; a runner's
+own (local-only) projects follow under **On <runner>**, one heading per runner, alphabetically.
+With only one group (only shared projects, say) there are no headings at all. A project's place in
+the list doesn't change when its runners come online, go offline, or are linked or unlinked.
+
+The dot on a project's icon says Claude is working on it (yellow) or work waits for review (green).
+A project gets a badge only when its runners need attention:
+
+- **needs a runner**: no runner is linked to it (link one in Project settings → Runners);
+- **runner offline** / **all runners offline**: none of its linked runners is online;
+- **1/2 online** (and so on): some of its linked runners are offline.
+
+Hovering the badge lists its runners and whether each is online. No badge means every runner it is
+linked to is online.
+
+At the bottom of the list, **Runners** opens the Runners page (the same as account menu →
+Runners). Its dot sums up the org's runners: green when all are online, amber when some are
+offline, red when none is, grey when there are none yet.
 
 ## Add a runner
 
@@ -442,10 +453,11 @@ with `-projects ~/src/klahr`.
 ## Projects of a runner's own
 
 A runner's own projects (those in its `-projects` that aren't linked from the hub) show in the
-hub's dashboard for platform admins, under their runner's heading (with the shared projects linked
-to it), and their tasks, git and commands run on that computer. Notifications come from all of
-them. The hub has no heading of its own in the **Projects** list: its projects are the shared
-ones, listed under the runners linked to them (see [The Projects list](#the-projects-list)).
+hub's dashboard for platform admins, under **On <runner>**, and their tasks, git and commands run
+on that computer. Notifications come from all of them. The hub has no heading of its own in the
+**Projects** list: its projects are the shared ones, under **Shared** (see
+[The Projects list](#the-projects-list)). A runner's own projects can only be listed while it is
+online.
 
 ### Add projects from a runner's computer
 

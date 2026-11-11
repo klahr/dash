@@ -1476,11 +1476,9 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .side-machine { display: flex; align-items: center; gap: 8px; padding: 14px 10px 4px; font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--muted); }
 .side-machine:first-child { padding-top: 2px; }
 .side-machine-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-machine-count { flex: none; padding: 0 6px; border-radius: 999px; background: var(--raised); font-size: 11px; font-weight: 500; color: var(--faint); }
-.side-machine.needs-runner { color: var(--muted); }
-.side-project-list li.in-group { position: relative; margin-left: 14px; }
-.side-project-list li.in-group::before { content: ""; position: absolute; left: -1px; top: -1px; bottom: 0; width: 1px; background: var(--line); }
-.side-project-list li.in-group .side-project { padding-left: 10px; }
+.side-runners { display: flex; align-items: center; gap: 10px; flex: none; min-height: 36px; padding: 0 8px; border-radius: var(--r-m); color: var(--muted); font-size: 14px; text-align: left; }
+.side-runners:hover { background: var(--raised); color: var(--text); }
+.side-runners-icon { display: grid; place-items: center; width: 22px; height: 22px; }
 /* Project lists' two-line label: the name, and under it the owner/repo. */
 .project-label { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
 .project-sub { font-size: .85em; font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1508,7 +1506,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .side-bottom { padding-bottom: calc(var(--safe-b) + 12px); }
   .side-project-list { overflow: visible; }
   .side-project { min-height: 44px; font-size: 15px; }
-  .side-new-project { min-height: 44px; }
+  .side-new-project, .side-runners { min-height: 44px; }
   .quick-btn { min-height: 44px; }
   .foot-menu > summary { width: 44px; height: 44px; }
   .foot-menu.account-menu > summary { width: 100%; height: auto; min-height: 44px; }
@@ -1616,7 +1614,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .side-collapsed .nav > button > span:not(.badge),
   .side-collapsed .side-projects-head, .side-collapsed .side-project-text, .side-collapsed .side-project-branch, .side-collapsed .shared-mark,
   .side-collapsed .side-machine, .side-collapsed .machine-empty,
-  .side-collapsed .side-new-project span, .side-collapsed .quick-btn span,
+  .side-collapsed .side-new-project span, .side-collapsed .side-runners > span:not(.side-runners-icon), .side-collapsed .quick-btn span,
   .side-collapsed .usage-pill:not(#usage-pill), .side-collapsed .merge-status { display: none; }
   .side-collapsed #usage-pill { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; }
   .side-collapsed #usage-pill .usage-detail { display: none; }
@@ -1625,9 +1623,8 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .side-collapsed .nav .board-dot { top: 6px; left: auto; right: 6px; }
   .side-collapsed .side-project-list { display: flex; flex-direction: column; gap: 4px; }
   .side-collapsed .side-project-list li.current { box-shadow: none; background: none; }
-  .side-collapsed .side-project, .side-collapsed .side-project-list li.in-group .side-project { justify-content: center; padding: 0; min-height: 40px; }
-  .side-collapsed .side-project-list li.in-group { margin-left: 0; }
-  .side-collapsed .side-project-list li.in-group::before { display: none; }
+  .side-collapsed .side-project { justify-content: center; padding: 0; min-height: 40px; }
+  .side-collapsed .side-runners { justify-content: center; padding: 0; }
   .side-collapsed .side-project-icon { width: 32px; height: 32px; font-size: 13px; }
   .side-collapsed .side-project[aria-current="true"] .side-project-icon { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent); }
   .side-collapsed .side-new-project { justify-content: center; padding: 0; }
@@ -1875,7 +1872,10 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .machine-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
 .machine-dot.ok { background: var(--merged); }
 .machine-dot.down { background: var(--failed); }
+.machine-dot.some { background: var(--running); }
 .side-project-branch.warn { color: var(--running); }
+.project-branch.runner-badge { color: var(--running); font-family: inherit; }
+.runner-badge { cursor: help; }
 .machine-empty { color: var(--faint); font-size: 14px; padding: 4px 4px 4px 16px; }
 select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-m); min-height: 44px; padding: 0 12px; width: 100%; }
 

@@ -1,4 +1,4 @@
-import { projectGroups as groupProjects, isShared, projectRunnerNames, projectSubtitle, uniqueProjects } from "../groups.js";
+import { projectGroups as groupProjects, isShared, projectRunnerNames, projectSubtitle, runnerBadge as badgeFor, runnersSummary, uniqueProjects } from "../groups.js";
 import { $, $$, h, ico, setLabel } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api, deepLink, on } from "./api.js";
@@ -399,50 +399,61 @@ const projectLabel = (nameLine, sub, cls) =>
   h("span", { class: `project-label ${cls}` }, nameLine, sub ? h("span", { class: "project-sub" }, sub) : null);
 export const projectDot = (p) => (p.color ?h("span", { class: "project-dot", style: `--project: ${p.color}`, "aria-hidden": "true" }) : null);
 
-// Desktop sidebar / phone menu: every project, one click away. The current one
-// shows its branch; its settings and actions live in the top bar's project menu.
+// Desktop sidebar / phone menu: every project, once, one click away (see
+// groups.js for its order). The current one shows its branch; its settings
+// and actions live in the top bar's project menu. Runners show only as a
+// badge on a project whose runners need attention, and as the Runners entry
+// at the bottom.
 export function renderSideProjects() {
-  const item = (p, inGroup) => {
+  const item = (p) => {
     const cur = projectKey(state.project) === projectKey(p);
     const st = projectStatus(p);
     const stLabel = st === "running" ? "Claude is working" : st === "review" ? "Ready for review" : "";
     const icon = projectIcon(p);
     if (st) icon.append(h("span", { class: `side-project-status ${st}` }));
     const sub = projectSubtitle(p);
-    return h("li", { class: [cur && "current", inGroup && "in-group"].filter(Boolean).join(" ") },
+    const badge = runnerBadge(p);
+    return h("li", { class: cur ? "current" : "" },
       h("button", {
         type: "button", class: "side-project", title: [p.name, sub, p.path, stLabel].filter(Boolean).join("\n"), "aria-current": cur ? "true" : "false",
-        "aria-label": [p.name, sub, stLabel.toLowerCase()].filter(Boolean).join(", "),
+        "aria-label": [p.name, sub, stLabel.toLowerCase(), badge?.label].filter(Boolean).join(", "),
         onclick: attempt(async () => { await selectProject(p); setMenu(false); }),
       },
       icon,
       projectLabel(h("span", { class: "side-project-name" }, p.name), sub, "side-project-text"),
       sharedMark(p),
-      needsRunner(p) ? h("span", { class: "side-project-branch warn", title: "No runner is linked to it: link one in Project settings → Runners" }, "needs a runner")
-        : cur && baseBranch(p) ? h("span", { class: "side-project-branch" }, baseBranch(p)) : null));
+      badge ? badgeEl(badge, "side-project-branch") : cur && baseBranch(p) ? h("span", { class: "side-project-branch" }, baseBranch(p)) : null));
   };
-  // Grouped, each runner heads its projects, which hang from it on a guide line.
-  const items = !grouped() ? state.projects.map((p) => item(p)) : projectGroups().flatMap((g) => [
-    h("li", { class: `side-machine${g.needsRunner ? " needs-runner" : ""}`, title: groupTitle(g), "data-group": g.key }, groupHead(g)),
-    ...g.projects.map((p) => item(p, true)),
-  ]);
+  const items = withHeadings(projectGroups(), (g) => h("li", { class: "side-machine", "data-group": g.key }, groupHead(g)), item);
   $("#side-project-list").replaceChildren(...(items.length ? items : [h("li", { class: "machine-empty" }, "No projects yet")]));
+  renderSideRunners();
 }
 
 // projectGroups are the PROJECTS list's groups (see groups.js): on a hub,
-// one per runner with every project it has a clone of, then the shared
-// projects that need a runner. A shared project can be in several groups.
+// Shared and one per runner with local-only projects; elsewhere one per
+// computer. Each project is in one group.
 function projectGroups() { return groupProjects({ machines: state.machines || [], runners: state.runners ?? null, projects: state.projects || [] }); }
+// withHeadings lists the groups' items, under their headings only when
+// there is more than one group.
+const withHeadings = (groups, head, item) => groups.length > 1
+  ? groups.flatMap((g) => [head(g), ...g.projects.map(item)]) : groups.flatMap((g) => g.projects.map(item));
 // The list is grouped on a hub (by runner) or with several computers.
 export function grouped() { return isHub() || multi(); }
-// A group's heading: the runner's online dot, its name, and how many
-// projects it holds, so it reads as the owner of the projects under it.
-const groupHead = (g) => [
-  g.machine ? h("span", { class: `machine-dot ${g.machine.ok ? "ok" : "down"}`, "aria-hidden": "true" }) : null,
-  h("span", { class: "side-machine-name" }, g.name),
-  h("span", { class: "side-machine-count", "aria-label": `${g.projects.length} project${g.projects.length === 1 ? "" : "s"}` }, String(g.projects.length))];
-// A group heading's tooltip: why it is offline or what it holds.
-const groupTitle = (g) => [g.machine && `Projects on ${g.name}`, g.title].filter(Boolean).join("\n");
+const groupHead = (g) => [h("span", { class: "side-machine-name" }, g.name)];
+// runnerBadge is p's runner badge (see groups.js), or null when its runners are fine.
+const runnerBadge = (p) => badgeFor(p, { machines: state.machines || [], runners: state.runners ?? null });
+// badgeEl shows a runner badge; hovering it lists the runners and their status.
+const badgeEl = (b, cls) => h("span", { class: `${cls} warn runner-badge ${b.kind}`, title: b.title }, b.label);
+// The Runners entry at the bottom of the list: one dot for all the org's
+// runners, opening the Runners page. Only on a hub.
+function renderSideRunners() {
+  const btn = $("#side-runners"), s = runnersSummary({ machines: state.machines || [], runners: state.runners ?? null });
+  btn.hidden = !s;
+  if (!s) return;
+  btn.title = s.title;
+  btn.setAttribute("aria-label", `Runners: ${s.title.toLowerCase()}`);
+  $(".machine-dot", btn).className = `machine-dot ${s.kind}`;
+}
 // A quiet mark on the hub's shared projects, to tell them from a runner's own.
 export function sharedMark(p) {
   if (!isHub() || !isShared(p)) return null;
@@ -608,8 +619,7 @@ export function openProjects() {
 }
 // J/K: the next/previous project in sidebar order, wrapping around.
 export function stepProject(d) {
-  // A shared project listed under several runners is one stop.
-  const list = !grouped() ? state.projects : uniqueProjects(projectGroups());
+  const list = uniqueProjects(projectGroups());
   if (!list.length) return;
   const i = list.findIndex((p) => projectKey(p) === projectKey(state.project));
   return selectProject(list[(((i + d) % list.length) + list.length) % list.length]);
@@ -629,11 +639,9 @@ export function setPicker(open) {
       "aria-label": [p.name, sub, baseBranch(p)].filter(Boolean).join(", "),
       onclick: attempt(async () => { setPicker(false); if (!cur) await selectProject(p); }),
     }, projectLabel(h("span", { class: "project-name" }, projectDot(p), p.name, sharedMark(p)), sub, "picker-text"),
-    h("span", { class: "project-branch" }, baseBranch(p)));
+    runnerBadge(p) ? badgeEl(runnerBadge(p), "project-branch") : h("span", { class: "project-branch" }, baseBranch(p)));
   };
-  const items = !grouped() ? state.projects.map(item) : projectGroups().flatMap((g) => [
-    h("div", { class: `side-machine${g.needsRunner ? " needs-runner" : ""}`, title: groupTitle(g), "data-group": g.key }, groupHead(g)),
-    ...g.projects.map(item)]);
+  const items = withHeadings(projectGroups(), (g) => h("div", { class: "side-machine", "data-group": g.key }, groupHead(g)), item);
   list.replaceChildren(...(state.projects.length ? items : [h("div", { class: "machine-empty" }, "No projects yet")]),
     h("button", { type: "button", role: "menuitem", class: "picker-new", onclick: () => { setPicker(false); openNewProject(); } }, "+ New project"));
   ($("button[aria-current=true]", list) || $("button", list))?.focus();
@@ -658,6 +666,7 @@ $("#menu-close").addEventListener("click", () => { setMenu(false); $("#menu-open
 $("#menu-scrim").addEventListener("click", () => setMenu(false));
 desktop.addEventListener("change", () => { setMenu(false); $("#project-picker").hidden = true; renderProjectBranch(); });
 $("#side-new-project").addEventListener("click", () => openNewProject());
+$("#side-runners").addEventListener("click", attempt(async () => { setMenu(false); await openRunners(); }));
 $("#prefs-open").addEventListener("click", openPrefs);
 $("#connector-open").addEventListener("click", attempt(openConnector));
 $("#pm-settings").addEventListener("click", openSettings);
