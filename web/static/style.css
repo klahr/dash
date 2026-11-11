@@ -672,7 +672,8 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .commit-actions .menu-note { font-style: normal; font-size: 13px; color: var(--muted); }
 .commit-sha { font: 12px/20px var(--mono); color: var(--muted); padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-s); cursor: copy; }
 .commit-sha:hover { color: var(--text); border-color: var(--muted); }
-.commit-message { margin: 0 0 14px; padding: 12px 14px; font: 13px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: #c9d3e3; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); }
+.commit-message-wrap { margin: 0 0 14px; }
+.commit-message { margin: 0; padding: 12px 14px; font: 13px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: #c9d3e3; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); }
 .commit-facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0 0 18px; font-size: 13px; }
 .commit-facts dt { color: var(--muted); }
 .commit-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
@@ -685,6 +686,8 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .file-status.st-D { color: var(--failed); }
 .file-status:is(.st-R, .st-C) { color: var(--accent); }
 .diff-lines > .meta { padding: 8px 12px; white-space: normal; }
+/* The close button: Back on a phone, ✕ on a desktop. A phone shows the whole message (its pane scrolls). */
+#cd-close .cd-x, .commit-message-more { display: none; }
 .project-list button.menu-choice { flex-direction: row; align-items: center; gap: 10px; }
 .project-list button.menu-choice:disabled { opacity: .55; cursor: not-allowed; }
 .menu-choice .menu-note { font-style: normal; font-weight: 400; font-size: 13px; color: var(--muted); margin-left: auto; }
@@ -1827,7 +1830,59 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 
   .detail { left: auto; bottom: 0; width: min(760px, 58vw); border-left: 1px solid var(--line); box-shadow: -24px 0 48px rgba(3, 6, 12, .45); }
   /* The graph stays usable beside an open commit: it makes room for the pane. */
-  html:has(#commit-detail:not([hidden])) #view-history .graph { margin-right: min(760px, 58vw); }
+  /* The commit pane lies over the graph, leaving a sliver of it (SHAs and the
+     start of subjects) to click and to show where j/k are. */
+  .commit-detail { --cd-room: calc(100vw - var(--side-w)); width: calc(var(--cd-room) * .86); }
+  .chat-pinned.chat-open .commit-detail { --cd-room: calc(100vw - var(--side-w) - var(--chat-pane-w)); }
+  .commit-detail .detail-head { flex-direction: row-reverse; padding: 8px 8px 0 24px; border-bottom: 0; }
+  #cd-close .cd-back { display: none; }
+  #cd-close .cd-x { display: block; }
+  .commit-detail .detail-titles { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding-top: 6px; }
+  .commit-detail .detail-titles h2 { flex-basis: 100%; }
+  .commit-detail .detail-meta { margin-top: 0; }
+  .commit-detail .commit-actions { margin: 0 0 0 auto; }
+  /* Below the head: message and facts across, then the file list beside the diff, each scrolling on its own. */
+  .commit-detail .detail-body {
+    display: grid; grid-template-columns: clamp(240px, 28%, 380px) minmax(0, 1fr); grid-template-rows: auto auto auto auto minmax(0, 1fr);
+    overflow: hidden; padding: 0;
+  }
+  .commit-detail .detail-body > :is(#cd-error, #cd-message-wrap) { grid-column: 1 / -1; margin-inline: 24px; }
+  .commit-detail .detail-body > #cd-error { margin-top: 10px; margin-bottom: 0; }
+  .commit-detail .commit-message-wrap { margin-top: 10px; margin-bottom: 0; }
+  .commit-message-wrap.clamped .commit-message { max-height: calc(6 * 1.55em + 24px); overflow: hidden; -webkit-mask-image: linear-gradient(#000 65%, transparent); mask-image: linear-gradient(#000 65%, transparent); }
+  .commit-message-more { display: inline-flex; min-height: 28px; font-size: 13px; }
+  /* Opened in full, it still leaves the files their room. */
+  .commit-detail .commit-message { max-height: 40dvh; overflow-y: auto; }
+  .commit-detail .commit-facts { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 0; grid-column: 1 / -1; padding: 10px 24px 12px; border-bottom: 1px solid var(--line); }
+  .commit-detail .commit-facts dt::after { content: ":"; }
+  .commit-detail .commit-facts dd + dt { margin-left: 18px; }
+  .commit-detail .commit-files-head { grid-column: 1; grid-row: 4; margin: 0; padding: 12px 16px 8px; border-right: 1px solid var(--line); font-size: 13px; }
+  .commit-detail .commit-files { grid-column: 1; grid-row: 5; min-height: 0; overflow-y: auto; border-right: 1px solid var(--line); padding: 0 8px 24px; }
+  .commit-detail .commit-files > .pane-empty, .commit-detail .commit-files > .hint { padding: 12px 8px; }
+  .commit-diff { grid-column: 2; grid-row: 4 / 6; min-height: 0; overflow: auto; }
+  .commit-diff-head {
+    position: sticky; top: 0; left: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+    font: 13px var(--mono); background: var(--surface); border-bottom: 1px solid var(--line);
+  }
+  .commit-diff-head .path { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .commit-diff-head .counts { font-size: 12px; white-space: nowrap; }
+  .commit-diff .diff-lines { border-top: 0; overflow-x: visible; min-width: max-content; min-height: 100%; }
+  .commit-diff .diff-lines > .meta { position: sticky; left: 0; width: max-content; }
+  .commit-file-list { list-style: none; margin: 0; padding: 0; font: 12.5px/1.4 var(--mono); }
+  .commit-file-list:focus-within { outline: none; }
+  .commit-file-list li {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--r-s); cursor: pointer;
+    box-shadow: inset 2px 0 0 transparent;
+  }
+  .commit-file-list li:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .commit-file-list li[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+  .commit-file-list li:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* A long path gives up its directory first: the name is what tells files apart. */
+  .commit-file-list .path { flex: 1; min-width: 0; display: flex; white-space: nowrap; }
+  .commit-file-list .path > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
+  .commit-file-list .path > .dir { flex-shrink: 100; }
+  .commit-file-list .counts { flex: none; font-size: 11.5px; }
+  :is(.commit-file-list, .commit-diff-head) .dir { color: var(--faint); }
   .scrim { position: fixed; inset: 0; z-index: 35; background: rgba(4, 8, 15, .35); }
   .detail-body { --pad-t: 16px; --pad-x: 24px; padding: var(--pad-t) var(--pad-x) 32px; }
   .actionbar { padding: 12px 24px; }

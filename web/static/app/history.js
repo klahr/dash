@@ -86,10 +86,12 @@ export function githubURL(remote) {
 }
 
 // ------------------------------------------------------------------ commit pane
-// Selecting a History row shows that commit on the right (full screen on a
-// phone): its message, who made it, its parents and the files it changed,
-// each file's diff loaded when it is opened. The graph stays usable beside
-// it on a desktop; j/k move the selection and the pane follows.
+// Selecting a History row shows that commit (full screen on a phone): its
+// message, who made it, its parents and the files it changed. On a desktop
+// the pane lies over most of the graph, a sliver of which stays visible and
+// usable (j/k move the selection and the pane follows); the files are listed
+// beside the selected one's diff, and n/p (or ↓/↑ in the list) step through
+// them. On a phone each file is a fold whose diff loads when it is opened.
 const commitLoad = latestOnly();
 
 const commitAPI = (p, sha) => `/api/projects/${p.id}/commits/${sha}`;
@@ -98,7 +100,12 @@ const commitAPI = (p, sha) => `/api/projects/${p.id}/commits/${sha}`;
 function setCommitModal() {
   const on = !$("#commit-detail").hidden && !desktop.matches;
   detailBackground().forEach((el) => { el.inert = on; });
+  $("#cd-close").setAttribute("aria-label", desktop.matches ? "Close" : "Back");
 }
+
+// What Ctrl-d/u scroll with a commit open: the diff beside the file list on
+// a desktop, the whole pane on a phone.
+export const commitScroller = () => desktop.matches ? $("#cd-diff") : $("#cd-body");
 
 // selectCommit shows sha in the pane. wait debounces the request, for
 // keys held down; the pane's head shows the graph's row at once meanwhile.
@@ -110,10 +117,16 @@ async function selectCommit(sha, { wait = 0 } = {}) {
     const a = document.activeElement;
     cp.opener = a && a !== document.body ? a : null;
   }
+  // A file list that had focus gets it back once the next commit's files are in.
+  cp.listFocus = $("#cd-files").contains(document.activeElement);
   cp.sha = sha;
   cp.project = p.id;
   cp.detail = null;
   cp.error = "";
+  cp.file = null;
+  cp.texts = new Map();
+  cp.msgOpen = false;
+  delete $("#cd-diff").dataset.path;
   cp.diffs?.abort();
   cp.diffs = new AbortController();
   markSelectedCommit();
@@ -121,6 +134,7 @@ async function selectCommit(sha, { wait = 0 } = {}) {
   setCommitModal();
   renderCommit();
   $("#cd-body").scrollTop = 0;
+  $("#cd-diff").scrollTop = 0;
   const res = await commitLoad.run((signal) => api("GET", commitAPI(p, sha), undefined, undefined, { signal }), { wait })
     .catch((e) => ({ error: e }));
   if (res.stale || cp.sha !== sha || projectKey(state.project) !== projectKey(p)) return;
@@ -150,7 +164,7 @@ export function closeCommit() {
   (row || (opener?.isConnected ? opener : null))?.focus();
 }
 $("#cd-close").addEventListener("click", closeCommit);
-desktop.addEventListener("change", () => { if (cp.sha) setCommitModal(); });
+desktop.addEventListener("change", () => { if (cp.sha) { setCommitModal(); renderCommit(); } });
 
 function markSelectedCommit() {
   $$("#graph li.selected").forEach((li) => {
@@ -222,8 +236,7 @@ function renderCommit() {
   const d = cp.detail;
   $("#cd-error").hidden = !cp.error;
   $("#cd-error").textContent = cp.error;
-  $("#cd-message").hidden = !d?.body;
-  $("#cd-message").textContent = d?.body || "";
+  renderMessage(d?.body || "");
   const person = (x) => h("span", { title: x.email }, x.name, " ", h("span", { class: "commit-email" }, `<${x.email}>`));
   const when = (x) => h("time", { datetime: x.date, title: relTime(x.date) }, absTime(x.date));
   const parent = (sha) => h("button", { type: "button", class: "link inline commit-parent", title: `Show ${sha}`, onclick: () => selectCommit(sha).catch(fail) },
@@ -238,6 +251,8 @@ function renderCommit() {
   ] : []));
   const head = $("#cd-files-head");
   head.hidden = !d;
+  const wide = desktop.matches;
+  $("#cd-diff").hidden = !wide || !d?.files.length;
   if (!d) {
     fill($("#cd-files"), cp.error ? null : h("p", { class: "pane-empty" }, "Loading…"));
     return;
@@ -247,9 +262,32 @@ function renderCommit() {
     d.files.length ? h("span", { class: "counts" }, " ", h("span", { class: "plus" }, `+${add}`), " ", h("span", { class: "minus" }, `−${del}`)) : null);
   fill($("#cd-files"),
     !d.files.length ? h("p", { class: "pane-empty" }, d.parents.length > 1 ? "The merge brought no changes into this branch." : "No files changed.") : null,
-    ...d.files.map((f) => commitFile(f)),
+    d.files.length ? (wide ? fileList(d.files) : d.files.map((f) => commitFile(f))) : null,
     d.file_count > d.files.length ? h("p", { class: "hint" }, `And ${d.file_count - d.files.length} more files, not listed.`) : null);
+  if (!wide || !d.files.length) return;
+  // The first file is selected by default (or the one still selected, after a resize).
+  if (!d.files.some((f) => f.path === cp.file)) cp.file = d.files[0].path;
+  pickFile(cp.file, { focus: cp.listFocus && (!document.activeElement || document.activeElement === document.body) });
+  cp.listFocus = false;
 }
+
+// A long message shows its first lines until "Show all" (desktop only: the
+// phone's pane scrolls as a whole).
+const LONG_MSG_LINES = 6;
+function renderMessage(body) {
+  const wrap = $("#cd-message-wrap"), more = $("#cd-message-more");
+  wrap.hidden = !body;
+  $("#cd-message").textContent = body;
+  const long = body.split("\n").length > LONG_MSG_LINES || body.length > 480;
+  more.hidden = !long;
+  wrap.classList.toggle("clamped", long && !cp.msgOpen);
+  more.textContent = cp.msgOpen ? "Show less" : "Show all";
+  more.setAttribute("aria-expanded", String(!!cp.msgOpen));
+}
+$("#cd-message-more").addEventListener("click", () => {
+  cp.msgOpen = !cp.msgOpen;
+  renderMessage(cp.detail?.body || "");
+});
 
 const FILE_STATUS = { A: "Added", M: "Modified", D: "Deleted", R: "Renamed", C: "Copied", T: "Type changed" };
 
@@ -268,20 +306,117 @@ function commitFile(f) {
   body);
 }
 
-async function loadCommitFile(f, el) {
+// The rows of a file's diff, null if the commit changed meanwhile. A
+// commit's diffs are kept while it stays open, for stepping back to a file.
+async function diffNodes(f) {
+  if (f.binary) return [h("div", { class: "meta" }, "Binary file: no text diff.")];
   const p = state.project, sha = cp.sha, signal = cp.diffs.signal;
-  if (f.binary) return fill(el, h("div", { class: "meta" }, "Binary file: no text diff."));
-  fill(el, h("div", { class: "meta" }, "Loading…"));
-  let text;
-  try {
-    text = await api("GET", `${commitAPI(p, sha)}/diff?path=${encodeURIComponent(f.path)}`, undefined, undefined, { signal });
-  } catch (e) {
-    if (!signal.aborted && cp.sha === sha) fill(el, h("div", { class: "meta err-text" }, e.message));
-    return;
+  let text = cp.texts.get(f.path);
+  if (text == null) {
+    try {
+      text = await api("GET", `${commitAPI(p, sha)}/diff?path=${encodeURIComponent(f.path)}`, undefined, undefined, { signal });
+    } catch (e) {
+      return !signal.aborted && cp.sha === sha ? [h("div", { class: "meta err-text" }, e.message)] : null;
+    }
+    if (cp.sha !== sha) return null;
+    cp.texts.set(f.path, text);
   }
-  if (cp.sha !== sha) return;
   const cut = text.endsWith("[diff truncated]");
   const [file] = parseDiff(cut ? text.slice(0, -"[diff truncated]".length) : text);
-  fill(el, ...(file?.lines.some((l) => l.startsWith("@@")) ? diffLines(file) : [h("div", { class: "meta" }, "No text changes (only the file's name or mode).")]),
-    cut ? h("div", { class: "meta" }, "The diff is too large to show in full.") : null);
+  return [
+    ...(file?.lines.some((l) => l.startsWith("@@")) ? diffLines(file) : [h("div", { class: "meta" }, "No text changes (only the file's name or mode).")]),
+    cut ? h("div", { class: "meta" }, "The diff is too large to show in full.") : null,
+  ].filter(Boolean);
+}
+
+async function loadCommitFile(f, el) {
+  if (!f.binary) fill(el, h("div", { class: "meta" }, "Loading…"));
+  const nodes = await diffNodes(f);
+  if (nodes) fill(el, ...nodes);
+}
+
+// ------------------------------------------------------------------ desktop: file list beside the diff
+const fileId = (i) => `cd-file-${i}`;
+const fileCounts = (f) => h("span", { class: "counts" }, f.binary ? "binary" : [h("span", { class: "plus" }, `+${f.add}`), " ", h("span", { class: "minus" }, `−${f.del}`)]);
+const fileStatus = (f) => h("span", { class: `file-status st-${f.status}`, title: FILE_STATUS[f.status] || f.status }, f.status);
+
+// A path as its directory (dimmed) and its name, which is what tells files apart.
+function filePath(f) {
+  const split = (path) => {
+    const i = path.lastIndexOf("/");
+    return [h("span", { class: "dir" }, path.slice(0, i + 1)), h("span", { class: "name" }, path.slice(i + 1))];
+  };
+  return h("span", { class: "path", title: f.old_path ? `${f.old_path} → ${f.path}` : f.path },
+    ...(f.old_path ? [...split(f.old_path), h("span", { class: "dir" }, " → ")] : []), ...split(f.path));
+}
+
+function fileList(files) {
+  return h("ul", { class: "commit-file-list", role: "listbox", "aria-label": "Changed files", onkeydown: fileListKey },
+    ...files.map((f, i) => h("li", {
+      id: fileId(i), role: "option", tabindex: "-1", "aria-selected": "false", "data-path": f.path,
+      "aria-label": `${FILE_STATUS[f.status] || f.status} ${f.path}${f.binary ? ", binary" : `, ${f.add} added, ${f.del} removed`}`,
+      onclick: () => pickFile(f.path),
+    }, fileStatus(f), filePath(f), fileCounts(f))));
+}
+
+// ↓/↑ (Home/End) move through the list while it has focus; the rest of the
+// keys (j/k for commits, n/p, Esc) are the History view's (app/palette.js).
+function fileListKey(e) {
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  const by = { ArrowDown: 1, ArrowUp: -1, Home: -Infinity, End: Infinity }[e.key];
+  if (!by) return;
+  e.preventDefault();
+  e.stopPropagation();
+  stepCommitFile(by, { focus: true });
+}
+
+// stepCommitFile moves the selection n files on (back, if negative) and
+// tells whether the key was the commit pane's: it is while one is open on
+// a desktop, even with nothing (yet) to step to.
+export function stepCommitFile(n, { focus } = {}) {
+  if (!cp.sha || !desktop.matches || $("#commit-detail").hidden) return false;
+  const files = cp.detail?.files || [];
+  if (!files.length) return true;
+  const i = Math.max(0, files.findIndex((f) => f.path === cp.file));
+  const j = Math.max(0, Math.min(files.length - 1, i + n));
+  const inList = $("#cd-files").contains(document.activeElement);
+  pickFile(files[j].path, { focus: focus || inList });
+  return true;
+}
+
+// pickFile selects a file of the open commit and shows its diff.
+function pickFile(path, { focus = false } = {}) {
+  const files = cp.detail?.files || [];
+  const i = files.findIndex((f) => f.path === path);
+  if (i < 0) return;
+  cp.file = path;
+  const list = $("#cd-files .commit-file-list");
+  if (list) {
+    for (const li of list.children) {
+      const on = li.dataset.path === path;
+      li.setAttribute("aria-selected", String(on));
+      li.tabIndex = on ? 0 : -1;
+    }
+    list.setAttribute("aria-activedescendant", fileId(i));
+    const li = $(`#${fileId(i)}`);
+    li?.scrollIntoView({ block: "nearest" });
+    if (focus) li?.focus({ preventScroll: true });
+  }
+  if ($("#cd-diff").dataset.path !== path) showFileDiff(files[i]).catch(fail);
+}
+
+async function showFileDiff(f) {
+  const panel = $("#cd-diff");
+  const sha = cp.sha;
+  const body = h("div", { class: "diff-lines" });
+  panel.dataset.path = f.path;
+  fill(panel,
+    h("header", { class: "commit-diff-head" }, fileStatus(f), filePath(f), fileCounts(f)),
+    body);
+  panel.scrollTop = 0;
+  panel.scrollLeft = 0;
+  // A diff already loaded shows at once; a new one says so while it loads.
+  if (!f.binary && !cp.texts.has(f.path)) fill(body, h("div", { class: "meta" }, "Loading…"));
+  const nodes = await diffNodes(f);
+  if (nodes && cp.sha === sha && cp.file === f.path && body.isConnected) fill(body, ...nodes);
 }

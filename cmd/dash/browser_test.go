@@ -373,12 +373,17 @@ func TestBrowserHistoryCommitPane(t *testing.T) {
 	b.waitJS("its row selected", selected(0))
 	b.waitJS("its message and files", `document.querySelector("#cd-message").textContent === "A body line." && document.querySelector("#cd-files").textContent.includes("notes.txt")`)
 	b.waitJS("the actions in the head", `[...document.querySelectorAll("#cd-actions button")].map((e) => e.textContent).join("|").includes("Copy SHA")`)
-	b.clickText(`#cd-files details.diff-file > summary`, "notes.txt")
-	b.waitJS("the file's diff", `document.querySelector("#cd-files .diff-lines")?.textContent.includes("+hello history")`)
+	// On a desktop the files are listed beside the diff, the first one selected.
+	b.waitJS("the first file selected", `document.querySelector("#cd-files [role=option][aria-selected=true]")?.dataset.path === "notes.txt"`)
+	b.waitJS("the file's diff", `document.querySelector("#cd-diff .diff-lines")?.textContent.includes("+hello history")`)
+	// n steps through the files (just the one here) instead of opening the new-task sheet.
+	b.do("press n", chromedp.KeyEvent("n"))
+	b.waitJS("still the file, no sheet", `!document.querySelector("dialog[open]") && document.querySelector("#cd-files [aria-selected=true]")?.dataset.path === "notes.txt"`)
 
 	// j moves to the older commit (focus is on the row), k and ArrowDown back and forth.
 	b.do("press j", chromedp.KeyEvent("j"))
 	b.waitJS("the older commit shown", title("first")+` && document.querySelector("#cd-files").textContent.includes("README.md")`)
+	b.waitJS("its first file's diff", `document.querySelector("#cd-diff").dataset.path === "README.md" && document.querySelector("#cd-diff .diff-lines div")`)
 	b.waitJS("its row selected", selected(1))
 	b.do("press k", chromedp.KeyEvent("k"))
 	b.waitJS("the newer commit again", title("Add notes")+` && document.querySelector("#cd-files").textContent.includes("notes.txt")`)

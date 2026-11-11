@@ -561,11 +561,13 @@
         <button class="pv-fab" type="button" id="pv-fab" aria-label="Preview actions" data-icon="more"></button>
       </section>
     </aside>
-    <!-- A History commit: beside the graph on desktop (which stays usable: j/k move), full screen on mobile -->
+    <!-- A History commit: over most of the graph on desktop (a sliver stays visible; j/k move),
+         files listed beside the selected one's diff; full screen with folded files on mobile -->
     <aside class="detail commit-detail" id="commit-detail" hidden aria-labelledby="cd-title">
       <header class="detail-head">
         <button class="icon-btn" id="cd-close" type="button" aria-label="Back" title="Close (Esc)">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg class="cd-back" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg class="cd-x" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
         </button>
         <div class="detail-titles">
           <h2 id="cd-title"></h2>
@@ -575,10 +577,14 @@
       </header>
       <div class="detail-body" id="cd-body">
         <p class="error-note" id="cd-error" hidden></p>
-        <pre class="commit-message" id="cd-message" hidden></pre>
+        <div class="commit-message-wrap" id="cd-message-wrap" hidden>
+          <pre class="commit-message" id="cd-message"></pre>
+          <button class="link commit-message-more" id="cd-message-more" type="button" aria-controls="cd-message" hidden></button>
+        </div>
         <dl class="commit-facts" id="cd-facts"></dl>
         <h3 class="commit-files-head" id="cd-files-head" hidden></h3>
         <div class="commit-files" id="cd-files"></div>
+        <section class="commit-diff" id="cd-diff" hidden aria-live="polite"></section>
       </div>
     </aside>
     <div class="scrim" id="scrim" hidden></div>
@@ -1291,7 +1297,7 @@
         <dt>Approvals</dt><dd><kbd>y</kbd> allow · <kbd>A</kbd> always allow that tool for the task · <kbd>n</kbd> deny</dd>
         <dt>Task chat</dt><dd><kbd>h</kbd>/<kbd>l</kbd> to the Timeline tab · <kbd>i</kbd> type (side chat only; the agent won't see it)</dd>
         <dt>Chat</dt><dd><kbd>gc</kbd> open/close the chat pane · <kbd>Enter</kbd> send · <code>!command</code> runs a shell command in a project or task chat (no terminal; Claude sees it next turn) · <kbd>Esc</kbd> stop typing, again to close the overlay · <kbd>Ctrl-k</kbd> "Pin chat" keeps it beside the content</dd>
-        <dt>History</dt><dd><kbd>j</kbd>/<kbd>k</kbd> (or <kbd>↓</kbd>/<kbd>↑</kbd>) select the next/previous commit and show it · <kbd>gg</kbd>/<kbd>G</kbd> first/last · <kbd>Ctrl-d</kbd>/<kbd>u</kbd> scroll the commit · <kbd>q</kbd>/<kbd>Esc</kbd> close it</dd>
+        <dt>History</dt><dd><kbd>j</kbd>/<kbd>k</kbd> (or <kbd>↓</kbd>/<kbd>↑</kbd>) select the next/previous commit and show it · <kbd>gg</kbd>/<kbd>G</kbd> first/last · <kbd>n</kbd>/<kbd>p</kbd> (or <kbd>↓</kbd>/<kbd>↑</kbd> in the file list) next/previous changed file (desktop) · <kbd>Ctrl-d</kbd>/<kbd>u</kbd> scroll the commit · <kbd>q</kbd>/<kbd>Esc</kbd> close it</dd>
         <dt>Checklist</dt><dd><kbd>j</kbd>/<kbd>k</kbd> move between items · <kbd>x</kbd>/<kbd>Space</kbd> check or uncheck · <kbd>m</kbd> move to a draft task · <kbd>M</kbd> move &amp; queue · <kbd>+</kbd>/<kbd>-</kbd> move up or down · <kbd>e</kbd> edit · <kbd>dd</kbd> delete · <kbd>a</kbd> add an item · <kbd>r</kbd> read TODO.md again (it updates by itself; for hand edits to an untracked one) · changes are committed to TODO.md a moment after the last one</dd>
         <dt>Shell</dt><dd><kbd>i</kbd> type into terminal · <kbd>Ctrl-]</kbd> leave terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> new shell</dd>
         <dt>New task</dt><dd><kbd>Enter</kbd> save · <kbd>Shift-Enter</kbd> another task · <kbd>Backspace</kbd> in an empty field removes it · a pasted text stays one task · <kbd>Esc</kbd> close</dd>

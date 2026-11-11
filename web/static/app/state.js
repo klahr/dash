@@ -45,7 +45,8 @@ export const state = {
 export const DAY = 24 * 3600 * 1000;
 // The History graph as last drawn, and the commit its pane shows (see "commit pane").
 export const hist = { commits: [], byHash: new Map(), remote: "" };
-export const cp = { sha: null, project: null, detail: null, error: "", opener: null, diffs: null };
+// file: the path selected in the desktop file list; texts: the open commit's loaded diffs.
+export const cp = { sha: null, project: null, detail: null, error: "", opener: null, diffs: null, file: null, texts: new Map(), msgOpen: false, listFocus: false };
 
 function loadComments() {
   try { return JSON.parse(localStorage.getItem("dash.comments") || "{}"); } catch { return {}; }

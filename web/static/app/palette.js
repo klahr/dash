@@ -27,7 +27,7 @@ import { openSettings } from "./settings.js";
 import { chat, todoChat } from "./chat.js";
 import { pane, paneOverlays, projectChatFor, toggleChatPane, togglePin } from "./chatpane.js";
 import { attached, openShell, shellBlocked, startProc, techFor, term } from "./terminal.js";
-import { closeCommit, moveCommit } from "./history.js";
+import { closeCommit, commitScroller, moveCommit, stepCommitFile } from "./history.js";
 import { checklistKey } from "./checklist.js";
 import { BOUND, VIEWS, cursorTodo, enterKey, isTyping, keys, laneCount, laneSkipped, laneTodos, moveCursor, openCommandLine, openDialog, permKey, runCommand, scrollBy, scroller, setMode, stepLane, todoKey } from "./vim.js";
 
@@ -343,6 +343,9 @@ function sidebarKey(k, n, hadCount) {
 
 async function handleNormal(k, n, hadCount) {
   if (sidebarList(document.activeElement) && sidebarKey(k, n, hadCount) !== false) return;
+  // An open commit (desktop): n/p step through its files, before n (new
+  // task, deny) and p (projects) as global keys.
+  if ((k === "n" || k === "p") && state.view === "history" && !state.detail && stepCommitFile(k === "n" ? n : -n)) return;
   // Global keys.
   switch (k) {
     case ":": return openCommandLine();
@@ -449,7 +452,7 @@ async function handleNormal(k, n, hadCount) {
         case "G": return moveCommit(hadCount ? hashes[Math.min(n, hashes.length) - 1] : hashes.at(-1));
       }
       // With a commit open, the keys that scroll read it.
-      if (["ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b"].includes(k)) return scrollBy(cp.sha ? $("#cd-body") : scroller(), k, n);
+      if (["ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b"].includes(k)) return scrollBy(cp.sha ? commitScroller() : scroller(), k, n);
       return;
     }
     case "checklist":
