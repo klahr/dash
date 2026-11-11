@@ -536,9 +536,18 @@ func (a *Auth) googleUser(w http.ResponseWriter, r *http.Request, f *oidcFlow, c
 	switch {
 	case err == nil && !unverified:
 		// An account has the address. Its owner may not be whoever holds the
-		// Google account now: link only where an org of theirs vouches for
-		// the domain, else after their password.
-		if !a.vouches(existing.ID, cl.HD) {
+		// Google account now: whoever set its password may never have proven
+		// the address (an inviter can register an invitation to a colleague's
+		// address with a password of their own), so an account with a
+		// password links only after that password, whatever org vouches for
+		// the domain. Without one (a provider made it, from an address the
+		// provider proved), it links at once where an org of theirs vouches
+		// for the domain.
+		has, err := a.acc.HasPassword(existing.ID)
+		if err != nil {
+			return store.User{}, nil, false, &flowError{Code: "failed", Err: err}
+		}
+		if has || !a.vouches(existing.ID, cl.HD) {
 			tok := a.newPendingLink(existing.ID, ident, f)
 			a.audit(r, store.AuthEvent{OrgID: f.Org, UserID: existing.ID, Kind: "google.link_pending", Detail: identityDetail(cl)})
 			a.page(w, http.StatusOK, hostPageData{

@@ -600,6 +600,16 @@ func (e *gEnv) register(username, email string, org int64, role store.Role) stor
 	return u
 }
 
+// linkGoogle links who's Google account to u, as signing in with u's
+// password from the link page would.
+func (e *gEnv) linkGoogle(u store.User, who person) {
+	e.t.Helper()
+	id := store.Identity{UserID: u.ID, Provider: store.ProviderGoogle, Subject: who.sub, Email: who.email, HD: who.hd}
+	if err := e.a.acc.LinkIdentity(id, time.Now()); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
 var linkRe = regexp.MustCompile(`#google_link=([A-Za-z0-9_-]+)`)
 
 func TestGoogleExistingEmail(t *testing.T) {
@@ -637,12 +647,26 @@ func TestGoogleExistingEmail(t *testing.T) {
 		t.Fatal("linked Google doesn't sign in")
 	}
 
-	// With a domain an org of theirs verified, it links at once.
+	// Even with a domain an org of theirs verified, an account with a
+	// password needs it: whoever registered the invitation chose that
+	// password, and may not be the address's owner (an inviter who
+	// registered a colleague's invitation themselves).
 	carl := e.register("carl", "carl@acme.com", e.acme.ID, store.RoleMember)
 	b = newGBrowser(t, e.h)
-	e.signIn(b, "", person{sub: "g-carl", email: "carl@acme.com", hd: "acme.com"})
-	if id, err := e.a.acc.IdentityBySubject("google", "g-carl"); err != nil || id.UserID != carl.ID || !b.session(gHost) {
-		t.Fatalf("not auto-linked: %+v %v", id, err)
+	w = e.signIn(b, "", person{sub: "g-carl", email: "carl@acme.com", hd: "acme.com"})
+	m = linkRe.FindStringSubmatch(w.Body.String())
+	if m == nil || b.session(gHost) {
+		t.Fatalf("auto-linked to a password account by a verified domain: %d %s", w.Code, w.Body)
+	}
+	if _, err := e.a.acc.IdentityBySubject("google", "g-carl"); err == nil {
+		t.Fatal("linked without the password")
+	}
+	w = b.postJSON("https://"+gHost+"/api/login", fmt.Sprintf(`{"username":"carl","password":"password1","link":%q}`, m[1]))
+	if !strings.Contains(w.Body.String(), `"google_linked":true`) {
+		t.Fatalf("login with link: %s", w.Body)
+	}
+	if id, err := e.a.acc.IdentityBySubject("google", "g-carl"); err != nil || id.UserID != carl.ID {
+		t.Fatalf("not linked: %+v %v", id, err)
 	}
 	// Not with a domain only another org verified.
 	admin, _ := e.a.acc.EnvUser()
@@ -727,6 +751,7 @@ func TestGoogleRequired(t *testing.T) {
 		t.Fatalf("token: %d %s", w.Code, w.Body)
 	}
 	// A Google session works.
+	e.linkGoogle(dan, person{sub: "g-dan", email: "dan@acme.com", hd: "acme.com"})
 	g := newGBrowser(t, e.h)
 	e.signIn(g, "org="+e.acme.Slug, person{sub: "g-dan", email: "dan@acme.com", hd: "acme.com"})
 	if w := g.get(members); w.Code != 200 {
@@ -942,6 +967,7 @@ func TestGoogleThenTOTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	who := person{sub: "g-fay", email: "fay@acme.com", hd: "acme.com"}
+	e.linkGoogle(fay, who)
 	// Off (the default): Google alone signs in.
 	b := newGBrowser(t, e.h)
 	e.signIn(b, "org="+e.acme.Slug, who)
