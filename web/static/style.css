@@ -1419,7 +1419,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .foot-avatar:empty, .foot-user:empty { display: none; }
 .foot-user { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; }
 .foot-who { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
-.foot-version { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.foot-version { padding: 6px 10px 2px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .account-menu .foot-menu-list { left: 0; right: 0; min-width: 0; }
 .top-menu { margin-left: 0; }
 .top-menu .foot-menu-list { top: calc(100% + 4px); bottom: auto; }
@@ -1437,7 +1437,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 .merge-status:empty { display: none; }
 .merge-status { flex-basis: 100%; }
 .side-projects {
-  display: flex; flex-direction: column; flex: 1 1 auto; min-height: 120px; margin: 14px 0 4px; padding: 12px 0;
+  display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; margin: 14px 0 4px; padding: 12px 0;
   border-block: 1px solid var(--line);
 }
 .side-projects-head { margin: 0; padding: 0 10px 8px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
@@ -1584,7 +1584,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .topbar:has(.brand.is-project) .project-switch:has(.project-branch:empty) { display: none; }
   .project-switch[aria-expanded="true"] { background: var(--raised); }
   .sidebar {
-    grid-area: side; position: relative; display: flex; flex-direction: column; min-height: 0; overflow-y: auto;
+    grid-area: side; position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden;
     padding: 12px 12px 0; gap: 2px; background: var(--surface); border-right: 1px solid var(--line);
   }
   .nav { display: contents; }
