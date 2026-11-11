@@ -1412,7 +1412,8 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
 }
 .foot-avatar:empty, .foot-user:empty { display: none; }
 .foot-user { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; }
-.foot-version { flex: none; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.foot-who { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.foot-version { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .account-menu .foot-menu-list { left: 0; right: 0; min-width: 0; }
 .top-menu { margin-left: 0; }
 .top-menu .foot-menu-list { top: calc(100% + 4px); bottom: auto; }
@@ -1632,7 +1633,7 @@ kbd { font: 600 12px var(--mono); padding: 1px 6px; border-radius: 4px; backgrou
   .side-collapsed .nav-foot .foot-menu-list { right: auto; left: 0; min-width: 200px; }
   .side-collapsed .account-menu { flex: none; }
   .side-collapsed .foot-menu.account-menu > summary { justify-content: center; width: 44px; padding: 0; }
-  .side-collapsed .account-menu > summary svg, .side-collapsed .foot-user, .side-collapsed .foot-version { display: none; }
+  .side-collapsed .account-menu > summary svg, .side-collapsed .foot-who { display: none; }
 
   main { grid-area: main; padding: 0; overflow: hidden; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
   .view.active { flex: 1; min-height: 0; overflow-y: auto; }
