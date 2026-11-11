@@ -580,6 +580,12 @@ type PullRequest struct {
 	// ReviewID is the newest GitHub review whose comments were sent back to
 	// Claude, so the same review isn't sent twice.
 	ReviewID int64 `json:"review_id,omitempty"`
+	// Waits is what a person has to do on GitHub for it to go on (PRWaitReview,
+	// PRWaitMerge, PRWaitBlocked), "" while it waits on Dash, Claude or its
+	// checks instead; WaitsSince is when that started. Both as last seen
+	// while Dash followed it.
+	Waits      string     `json:"waits,omitempty"`
+	WaitsSince *time.Time `json:"waits_since,omitempty"`
 }
 
 // Where a pull request's review on GitHub stands (PullRequest.Review).
@@ -587,6 +593,13 @@ const (
 	PRApproved         = "approved"
 	PRChangesRequested = "changes_requested"
 	PRReviewPending    = "pending"
+)
+
+// What a person has to do for a pull request to go on (PullRequest.Waits).
+const (
+	PRWaitReview  = "review"  // ready for review, and nobody has approved it yet
+	PRWaitMerge   = "merge"   // approved and green, for a person to merge on GitHub
+	PRWaitBlocked = "blocked" // a failing check no code change fixes (e.g. an unsigned CLA)
 )
 
 // WaitsOnGitHub reports a task whose pull request is open on GitHub: it is

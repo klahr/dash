@@ -251,6 +251,9 @@ func TestPullRequestOpensWhenTaskFinishes(t *testing.T) {
 	if x.Status != model.StatusReview || x.PR.Draft || x.PR.Review != model.PRReviewPending || x.PR.Status != "Waiting for a review on GitHub" {
 		t.Fatalf("want it waiting for a review, got %s %+v", x.Status, *x.PR)
 	}
+	if x.PR.Waits != model.PRWaitReview || x.PR.WaitsSince == nil {
+		t.Fatalf("want it noted as waiting for a person's review since now, got %+v", *x.PR)
+	}
 }
 
 // reviewedElsewhere is the API's check before approving a task.
@@ -277,8 +280,8 @@ func TestPullRequestMode(t *testing.T) {
 	h.merges.PollPRs(context.Background())
 	if x, _ := h.st.GetTodo(td.ID); x.Status != model.StatusReview || x.PR.HandledSHA != "" || strings.Contains(ghCalls(t, dir), "pr merge") {
 		t.Fatalf("an approved green pull request was merged with merging when checks pass off: %s %+v", x.Status, x.PR)
-	} else if x.PR.Status != "Approved; waiting for you to merge on GitHub" {
-		t.Fatalf("status line %q", x.PR.Status)
+	} else if x.PR.Status != "Approved; waiting for you to merge on GitHub" || x.PR.Waits != model.PRWaitMerge || x.PR.WaitsSince == nil {
+		t.Fatalf("status line %q, waits %q", x.PR.Status, x.PR.Waits)
 	}
 
 	// GitHub merges it (here: someone merges the branch on origin).
@@ -321,6 +324,9 @@ func testGreenPullRequestIsMerged(t *testing.T, hubProject string) {
 	x, _ := h.st.GetTodo(td.ID)
 	if x.PR.Status != "Waiting for checks: build (0/1 passed)" || len(x.PR.Checks) != 1 || x.PR.Checks[0] != (model.PRCheck{Name: "build", State: "pending"}) {
 		t.Fatalf("PR = %+v, want the pending check kept on the task", *x.PR)
+	}
+	if x.PR.Waits != model.PRWaitReview || x.PR.WaitsSince == nil {
+		t.Fatalf("PR = %+v, want a ready one waiting for a review while its checks run", *x.PR)
 	}
 	updated := x.UpdatedAt
 	h.merges.PollPRs(context.Background())
