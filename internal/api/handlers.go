@@ -472,6 +472,15 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 			return cur, err
 		}
 	}
+	var gone []string
+	for _, r := range cur.Runners {
+		if !slices.Contains(runners, r) {
+			gone = append(gone, r)
+		}
+	}
+	if err := sv.checkUnlink(cur, gone); err != nil {
+		return cur, err
+	}
 	p, err := sv.data.UpdateProject(id, func(p *model.Project) error {
 		p.RemoteURL = remote
 		set(&p.Name, req.Name)
@@ -545,12 +554,6 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 	})
 	if err != nil {
 		return p, err
-	}
-	var gone []string
-	for _, r := range cur.Runners {
-		if !slices.Contains(runners, r) {
-			gone = append(gone, r)
-		}
 	}
 	if len(gone) > 0 && sv.s.Dispatch != nil {
 		go func() {

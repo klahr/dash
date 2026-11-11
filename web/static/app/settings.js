@@ -63,6 +63,7 @@ export const formSnapshot = (f) => new URLSearchParams(new FormData(f)).toString
 // runner pushes approved work to the default branch.
 function renderRunnerPicker(p) {
   const runners = !p.prefix && state.runners;
+  shownRunners = runnerKey(p.runners);
   $("#settings-runners-field").hidden = !runners?.length && !p.runners?.length;
   $("#settings-runners").replaceChildren(...(runners || []).map((r) => {
     const linked = (p.runners || []).includes(r.id);
@@ -74,6 +75,22 @@ function renderRunnerPicker(p) {
   }));
 }
 const pickedRunners = () => [...$("#settings-form").querySelectorAll('input[name="runner"]:checked')].map((x) => x.value);
+// shownRunners is the link the picker was last drawn with.
+let shownRunners = "";
+const runnerKey = (ids) => [...(ids || [])].sort().join(",");
+
+// syncSettingsRunners redraws the open settings' runner picker when the
+// project's runners changed elsewhere (a runner's Projects screen, another
+// browser), unless the picker was changed here and not saved yet.
+export function syncSettingsRunners() {
+  const p = state.project;
+  if (!$("#settings-sheet").open || !p || $("#settings-runners-field").hidden && !p.runners?.length) return;
+  if (runnerKey(p.runners) === shownRunners || runnerKey(pickedRunners()) !== shownRunners) return;
+  const f = $("#settings-form"), clean = formSnapshot(f) === settingsSnapshot;
+  renderRunnerPicker(p);
+  syncMergeHint();
+  if (clean) settingsSnapshot = formSnapshot(f);
+}
 
 function syncMergeHint() {
   const f = $("#settings-form");

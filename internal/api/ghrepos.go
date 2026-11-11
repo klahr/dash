@@ -31,10 +31,12 @@ type GitHubRepoList struct {
 }
 
 // GitHubRepoItem is a repository in the list; Linked names the hub's
-// project for it, if there is one already (only the hub fills it in).
+// project for it, if there is one already, and Project its id (only the
+// hub fills them in).
 type GitHubRepoItem struct {
 	gitops.GitHubListing
-	Linked string `json:"linked,omitempty"`
+	Linked  string `json:"linked,omitempty"`
+	Project string `json:"project,omitempty"`
 }
 
 // newGitHubRepo is POST …/github-repos: create Name (REPO, or OWNER/REPO
@@ -124,12 +126,12 @@ func (s *Server) runnerGitHubRepos(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// markLinked sets Linked on the repositories some project's remote is.
+// markLinked sets Linked and Project on the repositories some project's remote is.
 func markLinked(repos []GitHubRepoItem, projects []model.Project) {
 	for i := range repos {
 		for _, p := range projects {
 			if gitops.SameRemote(p.RemoteURL, repos[i].URL) || gitops.SameRemote(p.RemoteURL, "https://github.com/"+repos[i].NameWithOwner) {
-				repos[i].Linked = p.Name
+				repos[i].Linked, repos[i].Project = p.Name, p.ID
 				break
 			}
 		}

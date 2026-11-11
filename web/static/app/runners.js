@@ -3,7 +3,7 @@ import { api } from "./api.js";
 import { art, ask, attempt, fail, reduceMotion, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { refreshMachines } from "./events.js";
-import { isHub, loadProjects, needsRunner, openNewProject, renderSideProjects, selectProject } from "./projects.js";
+import { ghAvatar, isHub, loadProjects, needsRunner, openNewProject, renderSideProjects, selectProject } from "./projects.js";
 import { agoText, renderBoard } from "./branches.js";
 import { copyBlock } from "./prefs.js";
 import { shortLabel } from "./usage.js";
@@ -134,6 +134,9 @@ function runnerCard(r, { showOwner }) {
         onchange: attempt(async (e) => { await patch({ parallel: Number(e.target.value) || 0 }); await renderRunners(); }) })));
   }
   controls.push(h("span", { class: "runner-controls-gap" }));
+  controls.push(ib({ class: "btn small", type: "button",
+    title: r.can_manage ? `Pick the shared projects ${r.name} builds` : `The shared projects ${r.name} builds`,
+    onclick: attempt(() => showRunnerLinks(r)) }, "repo", "Projects…"));
   if (r.mine) {
     controls.push(ib({ class: "btn small", type: "button", disabled: !r.online,
       title: r.online ? `Pick git repositories on ${r.name} to add as its projects` : `${r.name} is offline`,
@@ -170,7 +173,7 @@ function runnerCard(r, { showOwner }) {
       projects.length
         ? projects.map((p) => h("button", { class: "runner-project", type: "button", title: `Open ${p.name}`,
           onclick: () => { $("#runners-sheet").close(); selectProject(p); } }, ico("repo"), p.name))
-        : h("span", { class: "hint" }, "No projects linked yet. Link one in its project settings", r.mine ? ", or add projects from this computer." : ".")),
+        : h("span", { class: "hint" }, "No projects linked yet. Pick some with Projects…, or link one in its project settings", r.mine ? ", or add projects from this computer." : ".")),
     outdated && r.mine ? h("div", { class: "runner-update" },
       h("p", { class: "hint warn" }, `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run this on ${r.name} (it keeps its registration):`),
       copyBlock(installCmd(), "Command copied", { pre: true })) : null,
@@ -242,6 +245,8 @@ export async function renderRunners() {
 // finds in its projects directory, to tick and add as its projects. The
 // runner looks; it reports only names, paths, remotes and branches.
 async function showRunnerRepos(r) {
+  links.runner = null;
+  $("#runners-links").hidden = true;
   const box = $("#runners-repos");
   const url = `/api/runners/${encodeURIComponent(r.id)}/repos`;
   box.hidden = false;
@@ -301,8 +306,181 @@ async function showRunnerRepos(r) {
     h("div", { class: "runner-repos-actions" }, addBtn, close));
 }
 
+// ---- A runner's Projects: which of the org's shared projects it builds,
+// picked from the runner's side. The same link as a project's Settings →
+// Runners: ticking links the runner (it clones the project now when it is
+// online), unticking unlinks it. A repository from its owner's GitHub that
+// isn't a project yet becomes a shared project, linked in the same step.
+const links = { runner: null, data: null, gh: null, ghError: "", busy: new Set(), q: "" };
+
+async function showRunnerLinks(r) {
+  $("#runners-repos").hidden = true;
+  const box = $("#runners-links");
+  Object.assign(links, { runner: r, data: null, gh: null, ghError: "", q: "" });
+  box.hidden = false;
+  box.replaceChildren(h("h4", {}, `Projects ${r.name} builds`), h("p", { class: "hint" }, "Loading the organization's projects…"));
+  box.scrollIntoView({ block: "nearest", behavior: reduceMotion.matches ? "auto" : "smooth" });
+  await Promise.all([refreshRunnerLinks(), r.mine && r.online ? loadLinkRepos(r) : null]);
+}
+
+// refreshRunnerLinks reloads the open Projects panel: a link changed here,
+// in a project's settings or in another browser (project.updated).
+export async function refreshRunnerLinks() {
+  const r = links.runner;
+  if (!r || $("#runners-links").hidden) return;
+  try {
+    const res = await api("GET", `/api/runners/${encodeURIComponent(r.id)}/links`);
+    if (links.runner !== r) return;
+    links.data = res;
+  } catch (e) {
+    if (links.runner !== r) return;
+    $("#runners-links").replaceChildren(h("h4", {}, `Projects ${r.name} builds`), h("p", { class: "hint warn" }, e.message || String(e)), linksClose());
+    return;
+  }
+  renderRunnerLinks();
+}
+
+async function loadLinkRepos(r) {
+  try {
+    links.gh = await api("GET", `/api/runners/${encodeURIComponent(r.id)}/github-repos`, null, "");
+  } catch (e) {
+    links.ghError = e.message || String(e);
+  }
+  if (links.runner === r) renderRunnerLinks();
+}
+
+const linksClose = () => h("div", { class: "runner-repos-actions" },
+  h("button", { class: "btn small", type: "button", onclick: () => { links.runner = null; $("#runners-links").hidden = true; $("#runners-links").replaceChildren(); } }, "Close"));
+
+// setLink links (on) or unlinks runner r and a project: an existing one
+// (pid), or a GitHub repository to make one from (repo).
+async function setLink(r, { pid, repo, name }, on) {
+  const key = pid || repo;
+  if (!on) {
+    const l = links.data?.projects.find((x) => x.id === pid);
+    if (l?.running) throw new Error(`${l.running} ${l.running === 1 ? "task" : "tasks"} of ${l.name} ${l.running === 1 ? "is" : "are"} running on ${r.name}: wait for ${l.running === 1 ? "it" : "them"} to finish (or cancel ${l.running === 1 ? "it" : "them"}) before unlinking it.`);
+    if (l?.worktrees && !await ask({ title: `Unlink ${l.name} from ${r.name}?`,
+      body: `${l.worktrees} ${l.worktrees === 1 ? "task has its worktree" : "tasks have their worktrees"} on ${r.name}. They stay there, but ${r.name} gets no more work for ${l.name}: queued again, they start afresh on another runner linked to it. The project and its tasks stay for everyone else.`,
+      ok: "Unlink", danger: true })) return;
+  }
+  links.busy.add(key);
+  renderRunnerLinks();
+  try {
+    if (!on) {
+      await api("DELETE", `/api/runners/${encodeURIComponent(r.id)}/links/${encodeURIComponent(pid)}`);
+      toast(`${r.name} no longer builds ${name}`);
+      return;
+    }
+    if (repo) toast(`Creating the shared project ${name} and linking ${r.name}…`);
+    else if (r.online) toast(`Linking ${name}; ${r.name} clones it…`);
+    const res = await api("POST", `/api/runners/${encodeURIComponent(r.id)}/links`, pid ? { project_id: pid } : { github: repo, name });
+    if (res.clone_error) toast(`${res.project.name} is linked, but ${res.clone_error}`, true);
+    else toast(`${res.created ? "Created the shared project" : "Linked"} ${res.project.name}; ${res.cloned ? `${r.name} has its clone` : `${r.name} clones it when it next gets work for it`}`, { tone: "ok" });
+  } finally {
+    links.busy.delete(key);
+    await loadProjects();
+    await refreshRunnerLinks();
+  }
+}
+
+function renderRunnerLinks() {
+  const r = links.runner, res = links.data;
+  if (!r || !res) return;
+  const box = $("#runners-links");
+  const can = res.runner.can_manage;
+  const org = state.me?.org?.name || "the organization";
+  const owner = r.owner?.username || "its owner";
+  const q = links.q.trim().toLowerCase();
+  const hit = (...xs) => !q || xs.some((x) => (x || "").toLowerCase().includes(q));
+  const byId = new Map(res.projects.map((p) => [p.id, p]));
+  const row = ({ key, checked, label, desc, meta, busy, disabled, onchange }) => {
+    const box = h("input", { type: "checkbox", checked, disabled: disabled || busy, "aria-label": label.textContent || label });
+    box.addEventListener("change", attempt(async () => {
+      try { await onchange(box.checked); } finally { box.checked = checked; }
+    }));
+    return h("label", { class: "gh-repo", "data-key": key, "aria-busy": busy ? "true" : null }, box,
+      h("span", { class: "gh-repo-text" }, label, desc ? h("span", { class: "gh-repo-desc" }, desc) : null,
+        h("span", { class: "gh-repo-meta" }, ...meta.filter(Boolean).map((t) => h("span", {}, t)))));
+  };
+  const linkMeta = (l) => [l.linked ? `${r.name} builds it` : null, l.running ? `${l.running} running there` : null,
+    l.worktrees ? `${l.worktrees} with a worktree there` : null];
+  const projectRow = (l, extra = {}) => row({ key: l.id, checked: l.linked, busy: links.busy.has(l.id), disabled: !can,
+    label: extra.label || h("span", { class: "gh-repo-title" }, h("strong", {}, l.name)),
+    desc: extra.desc ?? l.remote_url, meta: [...(extra.meta || []), `shared project: ${l.name}`, ...linkMeta(l)],
+    onchange: (on) => setLink(r, { pid: l.id, name: l.name }, on) });
+
+  const rows = [];
+  const seen = new Set();
+  // The owner's GitHub repositories, grouped by owner, as in New project.
+  if (links.gh) {
+    let ghOwner = null;
+    for (const x of links.gh.repos || []) {
+      const l = x.project && byId.get(x.project);
+      if (l) seen.add(l.id);
+      if (!hit(x.nameWithOwner, x.description, l?.name)) continue;
+      if (x.owner !== ghOwner) {
+        ghOwner = x.owner;
+        rows.push(h("div", { class: "gh-owner", role: "presentation" }, ghAvatar(ghOwner), h("span", {}, ghOwner), ghOwner === links.gh.user ? h("em", {}, "you") : null));
+      }
+      const label = h("span", { class: "gh-repo-title" }, h("span", { class: "gh-repo-owner" }, `${x.owner}/`), h("strong", {}, x.name));
+      const hints = [x.isPrivate && "private", x.isFork && "fork", x.isArchived && "archived", x.updatedAt && `updated ${agoText(x.updatedAt)}`];
+      rows.push(l ? projectRow(l, { label, desc: x.description || "", meta: hints })
+        : row({ key: x.nameWithOwner, checked: false, busy: links.busy.has(x.nameWithOwner), disabled: !can, label, desc: x.description || "",
+          meta: [...hints, "not a project yet: ticking it creates a shared project"],
+          onchange: (on) => on && setLink(r, { repo: x.nameWithOwner, name: x.name }, true) }));
+    }
+  }
+  // The org's other shared projects: not from this GitHub login (a remote
+  // URL, another account's repository), or all of them without the list.
+  const rest = res.projects.filter((l) => !seen.has(l.id) && hit(l.name, l.remote_url));
+  if (rest.length) {
+    rows.push(h("div", { class: "gh-owner", role: "presentation" }, h("span", {}, links.gh ? `Other shared projects in ${org}` : `Shared projects in ${org}`)));
+    rows.push(...rest.map((l) => projectRow(l)));
+  }
+
+  const unlinked = res.projects.filter((l) => !l.linked);
+  const all = can && unlinked.length ? h("button", { class: "btn small", type: "button", disabled: links.busy.size > 0,
+    title: `Link ${r.name} to every shared project of ${org}`,
+    onclick: attempt(async () => {
+      if (!await ask({ title: `Build all of ${org}'s projects on ${r.name}?`,
+        body: `${r.name} is linked to ${unlinked.length} more shared ${unlinked.length === 1 ? "project" : "projects"} (${unlinked.map((l) => l.name).join(", ")}) and clones them${r.online ? " now, one after another" : " when it next gets work for them"}. Their tasks may then run on it, with ${owner}'s Claude subscription.`,
+        ok: "Link all" })) return;
+      const out = await api("POST", `/api/runners/${encodeURIComponent(r.id)}/links/all`);
+      if (out.linked.length) toast(`${r.name} now builds ${out.linked.length} more ${out.linked.length === 1 ? "project" : "projects"}`, { tone: "ok" });
+      for (const f of out.failed) toast(`${f.project}: ${f.error}`, true);
+      await loadProjects();
+      await refreshRunnerLinks();
+    }) }, `Build all ${org}'s projects (${unlinked.length})`) : null;
+
+  const filter = h("input", { type: "search", placeholder: "Filter by name or description", value: links.q, autocomplete: "off", spellcheck: false, "aria-label": "Filter projects" });
+  filter.addEventListener("input", () => {
+    links.q = filter.value;
+    renderRunnerLinks();
+    const f = $("#runners-links input[type=search]");
+    f?.focus();
+    f?.setSelectionRange(f.value.length, f.value.length);
+  });
+
+  const ghNote = r.mine
+    ? (!r.online ? `${r.name} is offline, so its GitHub login can't list your repositories now; the org's shared projects are below.`
+      : links.ghError ? `${links.ghError} The org's shared projects are below.`
+        : !links.gh ? `Asking ${r.name}'s gh for your repositories…`
+          : `Your repositories from ${r.name}'s gh (signed in as ${links.gh.user}), and the org's other shared projects.`)
+    : `Only ${owner} can list repositories with ${r.name}'s GitHub login, and this dashboard has no GitHub login of its own, so new repositories aren't listed here: only ${org}'s existing shared projects.${can ? "" : ` Only ${owner} or an admin can change what ${r.name} builds.`}`;
+  box.replaceChildren(
+    h("h4", {}, `Projects ${r.name} builds`),
+    h("p", { class: "hint" }, `Tick a project to link ${r.name} to it: it clones the repository into its projects folder and takes its tasks. Untick to unlink: the project and its tasks stay for the other runners.`),
+    r.mine ? h("p", { class: "hint warn" }, `Ticking a repository that isn't a project yet creates a shared project that everyone in ${org} sees and can link their runners to. For a repository only this computer works on, use Add projects… instead.`) : null,
+    h("p", { class: "hint" }, ghNote),
+    h("div", { class: "gh-filter-row" }, filter, all),
+    h("div", { class: "gh-list", role: "group", "aria-label": `Projects ${r.name} builds` },
+      ...(rows.length ? rows : [h("div", { class: "gh-empty" }, q ? "No project matches." : `${org} has no shared projects yet.`)])),
+    linksClose());
+}
+
 async function addRunner() {
   $("#runners-repos").hidden = true;
+  $("#runners-links").hidden = true;
   const before = await api("GET", "/api/runners");
   const { code, expires, hub } = await api("POST", "/api/runners/codes");
   if (hub) runnerInfo.hub = hub;
@@ -371,6 +549,8 @@ $("#runners-add").addEventListener("click", attempt(addRunner));
 export async function openRunners() {
   closeRunnerAdd();
   $("#runners-repos").hidden = true;
+  links.runner = null;
+  $("#runners-links").hidden = true;
   await renderRunners();
   const d = $("#runners-sheet");
   if (!d.open) d.showModal();

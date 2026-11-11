@@ -159,6 +159,7 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 	mux.HandleFunc("POST /api/runners/{id}/projects", s.createRunnerProject)
 	mux.HandleFunc("GET /api/runners/{id}/github-repos", s.runnerGitHubRepos)
 	mux.HandleFunc("POST /api/runners/{id}/github-repos", s.createRunnerGitHubRepo)
+	s.runnerLinkRoutes(mux) // the runner's Projects screen (runnerlinks.go)
 	mux.HandleFunc("POST /runner/register", rh.ServeRegister)
 	mux.HandleFunc("GET /runner/connect", rh.ServeConnect)
 	mux.HandleFunc("POST /runner/report", rh.ServeReport)

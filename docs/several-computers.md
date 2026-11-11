@@ -25,7 +25,9 @@ Every project lives on runners, in one of two ways:
   (`<-projects>/<repo>`), any of them can run its tasks, and work lands on the remote. It shows in
   the dashboard under each runner it is linked to, with a small "shared" mark (two people). Make
   one with **+ New project** (see [New project on the hub](#new-project-on-the-hub)): it is linked
-  to the runner picked as its **Runner**. Link more runners in its **Settings → Runners**.
+  to the runner picked as its **Runner**. Link more runners in its **Settings → Runners**, or pick
+  the projects a runner builds from the runner's side, with **Projects…** on its row of the
+  Runners page (see [A runner's projects](#a-runners-projects)).
   See [below](#shared-projects-tasks-on-runners).
 
 A project that is only ever worked on from one computer is simplest as that runner's own; share
@@ -177,7 +179,8 @@ Runners registered with an older hub become the env account's.
 ## Shared projects: tasks on runners
 
 The hub coordinates; the runners do the work. In a shared project's **Settings → Runners**, tick
-the runners it is linked to (your own runners, or any of the org's if you're an admin). From then on:
+the runners it is linked to (your own runners, or any of the org's if you're an admin), or tick the
+projects on a runner's **Projects…** screen (below). From then on:
 
 - Each task goes to one of the project's runners that is online, not paused, below its limit and
   not held back by its owner's Claude usage, the least busy first. A task that ran before goes
@@ -223,6 +226,45 @@ the runners it is linked to (your own runners, or any of the org's if you're an 
   editor changes can't be sent to runners yet, and live previews are on the runner's own
   dashboard. A terminal in the task's worktree opens from the hub for the runner's owner when it
   runs with `-hub-commands` (see below).
+
+### A runner's projects
+
+**Projects…** on a runner's row of the Runners page lists what that runner can build, with the
+projects it is linked to ticked. It edits the same link as each project's **Settings → Runners**:
+a change on one screen shows up on the other right away, in every open browser.
+
+- **For the runner's owner** it lists the repositories of their GitHub login, as **+ New project →
+  Your GitHub repos** does (through the runner's `gh`, a heading per owner, with a filter), then
+  the org's other shared projects: those whose remote isn't one of those repositories (a remote
+  URL, another account's repository).
+- **Ticking a repository that is already one of the org's shared projects** links the runner to
+  it. If the runner is online it clones (or adopts) it at once, and a remote it can't read says
+  so right away, in the words its tasks would wait with ("runner laptop cannot access
+  owner/repo over ssh: git@github.com: Permission denied (publickey)"). The link stays either way,
+  as from Settings → Runners. An offline runner clones the project when it next gets work for it.
+- **Ticking a repository that isn't a project yet** creates the shared project (named after the
+  repository) and links the runner to it in the same step. The screen says so: such a project
+  is the org's, and everyone in the org sees it and can link their runners to it. For a
+  repository only this computer works on, use **Add projects from this computer…** instead (see
+  [below](#add-projects-from-a-runners-computer)).
+- **Unticking** unlinks the runner only: the project, its tasks and its other runners' links stay,
+  and the runner's clone stays on its disk as a project of its own. Unlinking is refused while
+  one of the project's tasks is running on that runner (Claude working on it, a review or a
+  merge): "1 task of web is running on laptop: wait for them to finish (or cancel them) before
+  unlinking it". This also applies in Settings → Runners. Tasks that have finished running
+  there (in review, failed, or waiting to continue) don't block it; the screen counts them and
+  asks first. Their worktrees stay on that computer, and when queued again they start afresh on
+  another runner linked to the project.
+- **Build all the org's projects** (for a new computer) links the runner to every shared project
+  it isn't linked to yet. An online runner then clones them one after another in the background.
+
+Linking follows the same rules as in Settings → Runners: you can link your own runners, and admins
+can link any runner in the org. On this screen the same people can unlink, because it changes
+what that runner builds. Anyone in the org can open the screen to see
+what a runner builds. Only the runner's owner can list GitHub repositories or create a project
+from one, because the list comes from their GitHub login and the hub has none of its own. When an
+admin opens someone else's runner, the screen shows only the org's existing shared projects and
+says why.
 
 ### Everything else about a shared project also runs on a runner
 

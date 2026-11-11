@@ -920,9 +920,14 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-card .runner-update { padding: 8px 10px; border-radius: var(--r-s); background: color-mix(in srgb, var(--running) 8%, transparent); }
 .runner-card .runner-update .hint { margin: 0; }
 .runner-claude-warn ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px; overflow-wrap: anywhere; }
-#runners-code, #runners-repos:not([hidden]) { margin-top: 12px; }
-#runners-repos:not([hidden]) { padding: 12px 14px; border-radius: var(--r-m); background: var(--raised); border: 1px solid var(--line); }
-#runners-repos h4 { margin: 0; font-size: 15px; }
+#runners-code, #runners-repos:not([hidden]), #runners-links:not([hidden]) { margin-top: 12px; }
+#runners-repos:not([hidden]), #runners-links:not([hidden]) { padding: 12px 14px; border-radius: var(--r-m); background: var(--raised); border: 1px solid var(--line); }
+#runners-repos h4, #runners-links h4 { margin: 0; font-size: 15px; }
+#runners-links .gh-repo { cursor: pointer; }
+#runners-links .gh-repo input { margin: 3px 0 0; flex: none; accent-color: var(--accent); }
+#runners-links .gh-repo:has(input:disabled) { cursor: not-allowed; }
+#runners-links .gh-filter-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+#runners-links .gh-filter-row input[type="search"] { flex: 1; }
 .runner-repos-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 40dvh; overflow-y: auto; }
 .runner-repos-actions { display: flex; gap: 8px; margin-top: 10px; }
 #settings-runners-manage { margin-top: 6px; }

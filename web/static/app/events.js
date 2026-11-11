@@ -9,7 +9,8 @@ import { renderBoard, title, updateLiveLine } from "./branches.js";
 import { trackActivity } from "./activity.js";
 import { closeDetail, loadDiff, openDetail, openTodo, renderDetail } from "./detail.js";
 import { connectLog, connectTerm, loadPreviews, previewEvent, previewOf, pv } from "./preview.js";
-import { loadRunners, renderRunners } from "./runners.js";
+import { loadRunners, refreshRunnerLinks, renderRunners } from "./runners.js";
+import { syncSettingsRunners } from "./settings.js";
 import { notify } from "./notifications.js";
 import { describePerm, renderPerms } from "./review.js";
 import { loadUsage, renderUsage } from "./usage.js";
@@ -160,7 +161,12 @@ function onEvent(ev, m = { name: "" }) {
       break;
     case "project.updated":
     case "project.deleted":
-      loadProjects().catch(fail);
+      // A runner linked or unlinked here, in another browser or on the
+      // runner's Projects screen shows on both sides.
+      loadProjects().then(async () => {
+        syncSettingsRunners();
+        if ($("#runners-sheet").open) { await renderRunners(); await refreshRunnerLinks(); }
+      }).catch(fail);
       break;
     case "todo.updated":
       if (!mine) break;
