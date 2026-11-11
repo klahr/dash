@@ -3,7 +3,7 @@ import { api } from "./api.js";
 import { art, ask, attempt, fail, reduceMotion, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { refreshMachines } from "./events.js";
-import { ghAvatar, isHub, loadProjects, needsRunner, openNewProject, renderSideProjects, selectProject } from "./projects.js";
+import { ghAvatar, isHub, loadProjects, needsRunner, openNewProject, renderSideProjects, selectProject, setMenu } from "./projects.js";
 import { agoText, renderBoard } from "./branches.js";
 import { copyBlock } from "./prefs.js";
 import { shortLabel } from "./usage.js";
@@ -114,6 +114,43 @@ function runnerUsageMeters(r) {
         h("span", { class: "runner-meter-bar", role: "meter", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct), "aria-label": `${shortLabel(w.name)} usage` }, bar),
         h("span", { class: "runner-meter-pct" }, `${pct}%`));
     }));
+}
+
+// The sidebar's Runners block (only on a hub): a row per runner with its
+// dot, name and tasks running of its slots, online ones first; past
+// sideRunnerRows the offline rest fold into one line. ⬆ marks a runner that
+// runs another Dash version than the hub; its tooltip has the update command.
+const sideRunnerRows = 6;
+export function renderSideRunners() {
+  const box = $("#side-runners"), list = state.runners;
+  box.hidden = !Array.isArray(list);
+  if (box.hidden) return;
+  const tone = (r) => !r.online ? "down" : r.paused ? "some" : "ok";
+  const row = (r) => {
+    const st = runnerStatus(r), outdated = runnerOutdated(r);
+    const count = !r.online ? "offline" : r.paused ? "paused" : `${r.running || 0}/${runnerLimit(r)}`;
+    const update = outdated ? `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run on ${r.name}:\n${installCmd()}` : "";
+    return h("li", {}, h("button", {
+      type: "button", class: "side-runner", title: [`${r.name}: ${st.text}`, update].filter(Boolean).join("\n"),
+      "aria-label": [r.name, count, outdated ? "update available" : ""].filter(Boolean).join(", "),
+      onclick: attempt(async () => { setMenu(false); await openRunners(r.id); }),
+    },
+    h("span", { class: "side-runner-icon", "aria-hidden": "true" }, h("span", { class: `machine-dot ${tone(r)}` }), outdated ? h("span", { class: "side-runner-badge" }, "⬆") : null),
+    h("span", { class: "side-runner-name" }, r.name),
+    outdated ? h("span", { class: "side-runner-update", "aria-hidden": "true" }, "⬆") : null,
+    h("span", { class: "side-runner-count" }, count)));
+  };
+  const sorted = [...list].sort(byStatus);
+  // Past the limit, only offline runners fold: online ones always show.
+  const cut = sorted.length > sideRunnerRows ? Math.max(sideRunnerRows - 1, sorted.filter((r) => r.online).length) : sorted.length;
+  const top = sorted.slice(0, cut), rest = sorted.slice(cut);
+  const manage = (label, title) => h("li", {}, h("button", { type: "button", class: "side-runner side-runner-more", title,
+    onclick: attempt(async () => { setMenu(false); await openRunners(); }) }, label));
+  $("#side-runner-list").replaceChildren(...[
+    ...(list.length ? top.map(row) : [h("li", { class: "machine-empty" }, "No runners yet")]),
+    rest.length ? manage(`+${rest.length} offline`, rest.map((r) => r.name).join("\n")) : null,
+    manage("Manage runners", "Open the Runners page"),
+  ].filter(Boolean));
 }
 
 // The projects linked to runner r: their tasks run there.
@@ -667,11 +704,12 @@ $("#runners-add").addEventListener("click", attempt(openRunnerAdd));
 
 // openRunners shows the organization's runners: an overview, and a page per
 // runner for its projects, pausing, limiting and revoking it.
-export async function openRunners() {
+// id, when given, opens that runner's page instead of the overview.
+export async function openRunners(id) {
   runnerAdd = null;
   $("#runners-code").replaceChildren();
   closeRunnerPanels();
-  shown = "overview";
+  shown = typeof id === "string" ? id : "overview";
   $("#runners-main").scrollTop = 0;
   await renderRunners();
   const d = $("#runners-sheet");

@@ -1,4 +1,4 @@
-import { projectGroups as groupProjects, isShared, projectRunnerNames, projectSubtitle, runnerBadge as badgeFor, runnersSummary, uniqueProjects } from "../groups.js";
+import { projectGroups as groupProjects, isShared, projectRunnerNames, projectSubtitle, runnerBadge as badgeFor, uniqueProjects } from "../groups.js";
 import { $, $$, h, ib, ico, setLabel } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api, deepLink, on } from "./api.js";
@@ -10,7 +10,7 @@ import { loadTodos, pushDone, renderPushMain } from "./board.js";
 import { agoText, renderBoard } from "./branches.js";
 import { closeDetail, openDetail } from "./detail.js";
 import { syncPrefs } from "./prefs.js";
-import { loadRunners, openRunners, startRunner } from "./runners.js";
+import { loadRunners, openRunners, renderSideRunners, startRunner } from "./runners.js";
 import { loadMe, openOrg, renameOrg, sendInvite, setRequire2FA } from "./account.js";
 import { loadBilling, newOrg } from "./billing.js";
 import { createToken } from "./tokens.js";
@@ -571,9 +571,9 @@ export const projectDot = (p) => (p.color ?h("span", { class: "project-dot", sty
 
 // Desktop sidebar / phone menu: every project, once, one click away (see
 // groups.js for its order). The current one shows its branch; its settings
-// and actions live in the top bar's project menu. Runners show only as a
-// badge on a project whose runners need attention, and as the Runners entry
-// at the bottom.
+// and actions live in the top bar's project menu. Runners show as a badge
+// on a project whose runners need attention, and in the Runners block below
+// the project buttons (runners.js).
 export function renderSideProjects() {
   const item = (p) => {
     const cur = projectKey(state.project) === projectKey(p);
@@ -614,16 +614,6 @@ const groupHead = (g) => [h("span", { class: "side-machine-name" }, g.name)];
 const runnerBadge = (p) => badgeFor(p, { machines: state.machines || [], runners: state.runners ?? null });
 // badgeEl shows a runner badge; hovering it lists the runners and their status.
 const badgeEl = (b, cls) => h("span", { class: `${cls} warn runner-badge ${b.kind}`, title: b.title }, b.label);
-// The Runners entry at the bottom of the list: one dot for all the org's
-// runners, opening the Runners page. Only on a hub.
-function renderSideRunners() {
-  const btn = $("#side-runners"), s = runnersSummary({ machines: state.machines || [], runners: state.runners ?? null });
-  btn.hidden = !s;
-  if (!s) return;
-  btn.title = s.title;
-  btn.setAttribute("aria-label", `Runners: ${s.title.toLowerCase()}`);
-  $(".machine-dot", btn).className = `machine-dot ${s.kind}`;
-}
 // A quiet mark on the hub's shared projects, to tell them from a runner's own.
 export function sharedMark(p) {
   if (!isHub() || !isShared(p)) return null;
@@ -836,7 +826,6 @@ $("#menu-close").addEventListener("click", () => { setMenu(false); $("#menu-open
 $("#menu-scrim").addEventListener("click", () => setMenu(false));
 desktop.addEventListener("change", () => { setMenu(false); $("#project-picker").hidden = true; renderProjectBranch(); });
 $("#side-new-project").addEventListener("click", () => openNewProject());
-$("#side-runners").addEventListener("click", attempt(async () => { setMenu(false); await openRunners(); }));
 $("#pm-settings").addEventListener("click", openSettings);
 $("#push-main").addEventListener("click", attempt(pushDone));
 $("#pm-cleanup").addEventListener("click", attempt(cleanup));

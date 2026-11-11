@@ -292,11 +292,21 @@ function trackActive(ev, m) {
   if (!p) return;
   const active = { ...p.active };
   const st = ev.type === "todo.updated" ? ev.data.status : null;
+  if ((active[ev.todo_id] === "in_progress") !== (st === "in_progress")) reloadRunnerCounts();
   if (st === "in_progress" || st === "review") active[ev.todo_id] = st;
   else delete active[ev.todo_id];
   if (projectStatus({ active }) === projectStatus(p)) { p.active = active; return; }
   p.active = active;
   renderSideProjects();
+}
+
+// A task started or stopped running: the runners' running counts changed.
+// Reloaded once a burst of changes settles.
+let runnerCountsTimer = 0;
+function reloadRunnerCounts() {
+  if (!Array.isArray(state.runners)) return;
+  clearTimeout(runnerCountsTimer);
+  runnerCountsTimer = setTimeout(() => ($("#runners-sheet").open ? renderRunners() : loadRunners()).catch(() => {}), 400);
 }
 
 // Yellow while Claude works on something, green when work waits for review.

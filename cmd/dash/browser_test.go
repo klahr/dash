@@ -41,6 +41,13 @@ func TestBrowserMainFlows(t *testing.T) {
 	b := newBrowser(t, chrome)
 	b.signIn(h)
 
+	// The sidebar lists the runner with its tasks running of its slots, and
+	// opens its page in the Runners sheet.
+	b.waitJS("the runner in the sidebar", `/^\d+\/\d+$/.test(document.querySelector("#side-runner-list .side-runner .side-runner-count")?.textContent || "")`)
+	b.until("open the runner's page", `document.querySelector("#runners-sheet").open && !!document.querySelector("#runners-main .current .runner-title")`,
+		chromedp.Click(chromedp.CSS(`#side-runner-list .side-runner:not(.side-runner-more)`)))
+	b.until("close the Runners sheet", `!document.querySelector("#runners-sheet").open`, chromedp.KeyEvent(kb.Escape))
+
 	// Create a task from the quick sheet, queued right away.
 	// The sheet's clicks retry until they take: under load a click can land
 	// while the page is still settling and miss. Each has its effect at once
