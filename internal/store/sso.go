@@ -443,9 +443,14 @@ func (a *Accounts) VerifySSODomain(orgID int64, domain, how string, by int64, no
 	})
 }
 
-// RemoveSSODomain drops orgID's claim of domain.
-func (a *Accounts) RemoveSSODomain(orgID int64, domain string) error {
-	res, err := a.db.Exec("DELETE FROM org_sso_domains WHERE org_id = ? AND domain = ?", orgID, strings.ToLower(strings.TrimSpace(domain)))
+// RemoveSSODomain drops orgID's claim of domain. Unless verifiedToo, only
+// a claim still waiting for verification goes (else ErrNotFound).
+func (a *Accounts) RemoveSSODomain(orgID int64, domain string, verifiedToo bool) error {
+	q := "DELETE FROM org_sso_domains WHERE org_id = ? AND domain = ?"
+	if !verifiedToo {
+		q += " AND verified = 0"
+	}
+	res, err := a.db.Exec(q, orgID, strings.ToLower(strings.TrimSpace(domain)))
 	if err != nil {
 		return err
 	}

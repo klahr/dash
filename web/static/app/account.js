@@ -214,10 +214,11 @@ async function renderOrgSSO(o, mine) {
       ? `Verified${d.how === "admin" ? " by a platform admin" : d.how === "google" ? " by an owner's Google sign-in" : ""}`
       : "Not verified yet: an owner signs in with Google with an account of this domain (Test below), or a platform admin approves it"),
     h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
-      if (!await ask({ title: `Remove ${d.domain}?`, body: "Its people can't join by it any more, nor are required to use Google.", ok: "Remove", danger: true })) return;
-      await api("DELETE", `/api/orgs/${o.id}/sso/domains/${encodeURIComponent(d.domain)}`, null, "");
+      const pw = await askPassword(`Remove ${d.domain}?`, "Its people can't join by it any more, nor are required to use Google.");
+      if (pw == null) return;
+      await api("DELETE", `/api/orgs/${o.id}/sso/domains/${encodeURIComponent(d.domain)}`, { password: pw }, "");
       await renderOrgSSO(o, mine);
-    }) }, "Remove")));
+    }), hidden: d.verified && !owner }, "Remove")));
 
   // The org's own client (owners)
   const cid = h("input", { type: "text", value: s.client_id || "", placeholder: "…apps.googleusercontent.com", autocomplete: "off", spellcheck: false, "aria-label": "Client ID" });

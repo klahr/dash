@@ -15,7 +15,7 @@ import (
 //	GET    /api/orgs/{oid}/sso                     admins: the org's Google sign-in settings
 //	PATCH  /api/orgs/{oid}/sso {…, password}       client (owners), auto-join, role, require Google, 2FA after Google
 //	POST   /api/orgs/{oid}/sso/domains {domain, password}
-//	DELETE /api/orgs/{oid}/sso/domains/{domain}
+//	DELETE /api/orgs/{oid}/sso/domains/{domain} {password} (verified: owners)
 //	POST   /api/orgs/{oid}/members/{uid}/sign-out {password}  admins: end a member's sessions in the org
 //	GET    /api/account/google                     the user's linked Google account
 //	DELETE /api/account/google {password}          unlink it (not if it's their only way in)
@@ -152,6 +152,7 @@ var (
 	errNeedDomain   = errors.New("verify a Google Workspace domain first: requiring Google applies to the people of the organization's domains")
 	errNeedGoogle   = errors.New("set up Google sign-in first (this Dash's client or your own)")
 	errOwnersOnly   = errors.New("only owners change the Google client, require Google or a second factor after it")
+	errOwnersDomain = errors.New("only owners remove a verified domain")
 	errBadClientID  = errors.New("that doesn't look like a Google OAuth client ID")
 	errAdminsOnly   = errors.New("only platform admins do that")
 	errEnvClient    = errors.New("this Dash's Google client is set by DASH_GOOGLE_CLIENT_ID and DASH_GOOGLE_CLIENT_SECRET: change it there")
@@ -321,13 +322,48 @@ func (a *Auth) addDomain(w http.ResponseWriter, r *http.Request, id *Identity) {
 	writeJSON(w, http.StatusCreated, d)
 }
 
+// removeDomain drops a domain claim. A verified domain is what makes
+// "require Google" (and the own client's hd restriction) apply, so only
+// owners remove one, like they alone switch those off; admins can still
+// withdraw claims that wait for verification. Either needs the password.
 func (a *Auth) removeDomain(w http.ResponseWriter, r *http.Request, id *Identity) {
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := decodeBody(w, r, &req); err != nil {
+		accountError(w, err)
+		return
+	}
 	m, ok := a.adminOf(w, r, id, store.RoleAdmin)
 	if !ok {
 		return
 	}
-	domain := r.PathValue("domain")
-	if err := a.acc.RemoveSSODomain(m.ID, domain); err != nil {
+	domain := strings.ToLower(strings.TrimSpace(r.PathValue("domain")))
+	s, err := a.acc.OrgSSO(m.ID)
+	if err != nil {
+		accountError(w, err)
+		return
+	}
+	found := false
+	for _, d := range s.Domains {
+		if d.Domain != domain {
+			continue
+		}
+		found = true
+		if d.Verified && m.Role != store.RoleOwner {
+			writeError(w, http.StatusForbidden, errOwnersDomain.Error())
+			return
+		}
+	}
+	if !found {
+		accountError(w, store.ErrNotFound)
+		return
+	}
+	if err := a.ConfirmPassword(r, req.Password); err != nil {
+		accountError(w, err)
+		return
+	}
+	if err := a.acc.RemoveSSODomain(m.ID, domain, m.Role == store.RoleOwner); err != nil {
 		accountError(w, err)
 		return
 	}

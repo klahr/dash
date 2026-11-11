@@ -970,6 +970,47 @@ func TestDomainClaims(t *testing.T) {
 	}
 }
 
+// Removing a verified domain switches "require Google" off for its people:
+// only owners do it, and like the other SSO changes it needs the password.
+func TestRemoveDomain(t *testing.T) {
+	t.Parallel()
+
+	e := newGEnv(t, false, false)
+	e.setSSO(func(s *store.OrgSSO) { s.RequireGoogle = true })
+	e.register("ada", "ada@example.org", e.acme.ID, store.RoleAdmin)
+	if _, err := e.a.acc.AddSSODomain(e.acme.ID, "pending.com", "", 0, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	url := func(d string) string {
+		return fmt.Sprintf("https://%s/api/orgs/%d/sso/domains/%s", gHost, e.acme.ID, d)
+	}
+	ada := newGBrowser(t, e.h)
+	ada.login("ada", "password1")
+	if w := ada.do("DELETE", url("acme.com"), `{"password":"password1"}`, "application/json"); w.Code != http.StatusForbidden {
+		t.Fatalf("admin removes verified: %d %s", w.Code, w.Body)
+	}
+	if w := ada.do("DELETE", url("pending.com"), `{"password":"wrong"}`, "application/json"); w.Code == http.StatusNoContent {
+		t.Fatal("removed with a wrong password")
+	}
+	if w := ada.do("DELETE", url("pending.com"), `{"password":"password1"}`, "application/json"); w.Code != http.StatusNoContent {
+		t.Fatalf("admin removes pending: %d %s", w.Code, w.Body)
+	}
+	owner := newGBrowser(t, e.h)
+	owner.login("admin", "s3cret")
+	if w := owner.do("DELETE", url("acme.com"), `{"password":"nope"}`, "application/json"); w.Code == http.StatusNoContent {
+		t.Fatal("owner removed without the password")
+	}
+	if s, _ := e.a.acc.OrgSSO(e.acme.ID); !s.VerifiedDomain("acme.com") {
+		t.Fatalf("gone too early: %+v", s.Domains)
+	}
+	if w := owner.do("DELETE", url("acme.com"), `{"password":"s3cret"}`, "application/json"); w.Code != http.StatusNoContent {
+		t.Fatalf("owner removes verified: %d %s", w.Code, w.Body)
+	}
+	if s, _ := e.a.acc.OrgSSO(e.acme.ID); len(s.Domains) != 0 {
+		t.Fatalf("left: %+v", s.Domains)
+	}
+}
+
 var totpTicketRe = regexp.MustCompile(`#google_totp=([A-Za-z0-9_-]+)`)
 
 func TestGoogleThenTOTP(t *testing.T) {
