@@ -78,6 +78,7 @@ type wallStage struct {
 	Running       int        `json:"running"`
 	RunningAvgS   int        `json:"running_avg_s"`
 	Review        int        `json:"review"`
+	ReviewGitHub  int        `json:"review_github"` // of Review: pull requests waiting on GitHub, Claude or checks, not a person
 	ReviewOldest  *time.Time `json:"review_oldest,omitempty"`
 	Merging       int        `json:"merging"`
 	MergingPR     int        `json:"merging_pr"` // waiting on a pull request's checks
@@ -115,6 +116,7 @@ type wallNeed struct {
 	Del     int       `json:"del,omitempty"`
 	Tests   string    `json:"tests,omitempty"` // passed | failed | ""
 	PR      int       `json:"pr,omitempty"`
+	Waits   string    `json:"waits,omitempty"` // what its pull request waits for a person to do: model.PRWaitReview…
 	Reason  string    `json:"reason,omitempty"`
 	Resume  bool      `json:"resumable,omitempty"`
 }
@@ -351,6 +353,18 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 			if t.FinishedAt != nil {
 				since = *t.FinishedAt
 			}
+			if t.WaitsOnGitHub() {
+				// Reviewed and merged on GitHub: listed only while a person
+				// has to act there, not while it is a draft, back with
+				// Claude, or waiting for its checks.
+				if t.PR.Waits == "" {
+					d.Stages.ReviewGitHub++
+					continue
+				}
+				if w := t.PR.WaitsSince; w != nil && w.After(since) {
+					since = *w
+				}
+			}
 			if d.Stages.ReviewOldest == nil || since.Before(*d.Stages.ReviewOldest) {
 				x := since
 				d.Stages.ReviewOldest = &x
@@ -362,6 +376,9 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 			}
 			if t.PR != nil {
 				n.PR = t.PR.Number
+				if t.WaitsOnGitHub() {
+					n.Waits = t.PR.Waits
+				}
 			}
 			d.Needs = append(d.Needs, n)
 		case model.StatusMerging:

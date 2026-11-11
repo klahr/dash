@@ -183,6 +183,69 @@ func TestWallAggregates(t *testing.T) {
 	}
 }
 
+// Review tasks with an open pull request are listed only while a person
+// has to act on GitHub; the Review stage still counts them all.
+func TestWallNeedsPRReviewState(t *testing.T) {
+	parallel(t)
+
+	s, web := wallServer(t)
+	h := loginAs(t, s.Routes(), "u", "p")
+
+	pr := func(title string, n int, waits string, since *time.Time, fn func(*model.PullRequest)) {
+		setTodo(t, s, web, func(x *model.Todo) {
+			x.Title, x.Status, x.FinishedAt = title, model.StatusReview, at(-3*time.Hour)
+			x.PR = &model.PullRequest{Number: n, State: "OPEN", Waits: waits, WaitsSince: since}
+			if fn != nil {
+				fn(x.PR)
+			}
+		})
+	}
+	pr("draft", 1, "", nil, func(p *model.PullRequest) { p.Draft, p.Status = true, "Waiting for checks: Go (0/1 passed)" })
+	pr("changes requested", 2, "", nil, func(p *model.PullRequest) { p.Review = model.PRChangesRequested })
+	pr("approved, checks running", 3, "", nil, func(p *model.PullRequest) { p.Review = model.PRApproved })
+	pr("awaiting review", 4, model.PRWaitReview, at(-10*time.Minute), func(p *model.PullRequest) { p.Review = model.PRReviewPending })
+	pr("refused merge", 5, model.PRWaitMerge, at(-2*time.Hour), func(p *model.PullRequest) { p.Review = model.PRApproved; p.HandledSHA = "abc" })
+	pr("not noted when", 6, model.PRWaitReview, nil, nil)
+	setTodo(t, s, web, func(x *model.Todo) {
+		x.Title, x.Status, x.FinishedAt = "no PR", model.StatusReview, at(-5*time.Minute)
+	})
+
+	d, code := getWallJSON(t, h, "/api/wall")
+	if code != http.StatusOK {
+		t.Fatalf("GET /api/wall: %d", code)
+	}
+	if d.Stages.Review != 7 || d.Stages.ReviewGitHub != 3 {
+		t.Errorf("stages %+v", d.Stages)
+	}
+	got := map[string]wallNeed{}
+	for _, n := range d.Needs {
+		got[n.Title] = n
+	}
+	if len(d.Needs) != 4 {
+		t.Errorf("needs %+v", d.Needs)
+	}
+	// Oldest first: by when the PR started waiting, else when Claude finished.
+	if len(d.Needs) == 4 && (d.Needs[0].Title != "not noted when" || d.Needs[1].Title != "refused merge" ||
+		d.Needs[2].Title != "awaiting review" || d.Needs[3].Title != "no PR") {
+		t.Errorf("order %+v", d.Needs)
+	}
+	if n := got["awaiting review"]; n.PR != 4 || n.Waits != model.PRWaitReview || n.Old || time.Since(n.Since) > time.Hour {
+		t.Errorf("awaiting review %+v", n)
+	}
+	if n := got["refused merge"]; n.PR != 5 || n.Waits != model.PRWaitMerge || !n.Old || time.Since(n.Since) > 3*time.Hour-time.Minute {
+		t.Errorf("refused merge %+v", n)
+	}
+	if n := got["not noted when"]; !n.Old || time.Since(n.Since) < 3*time.Hour-time.Minute {
+		t.Errorf("finish time fallback %+v", n)
+	}
+	if n := got["no PR"]; n.PR != 0 || n.Waits != "" || n.Old {
+		t.Errorf("no PR %+v", n)
+	}
+	if d.Stages.ReviewOldest == nil || time.Since(*d.Stages.ReviewOldest) < 3*time.Hour-time.Minute {
+		t.Errorf("oldest review %v", d.Stages.ReviewOldest)
+	}
+}
+
 func TestWallActivity(t *testing.T) {
 	parallel(t)
 

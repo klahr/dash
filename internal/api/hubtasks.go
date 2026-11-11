@@ -166,14 +166,14 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		want := p
 		commands(&want)
 		review(&want)
-		if p.HubOrgFolder != folder || p.TaskInstructions != req.TaskInstructions || p.MergeMode != mode || p.MergesGreenPRs() != greenOn(req.MergeGreenPRs) ||
+		if p.HubOrgFolder != folder || p.TaskInstructions != req.TaskInstructions || p.MergeMode != mode ||
 			want.AutoApprove != p.AutoApprove || want.MaxAutoFixes != p.MaxAutoFixes ||
 			want.SetupCommand != p.SetupCommand || want.TestCommand != p.TestCommand || want.RunCommand != p.RunCommand || want.DeployCommand != p.DeployCommand ||
 			want.PreviewKind != p.PreviewKind || want.PreviewCommand != p.PreviewCommand {
 			// The hub's project decides how its tasks land.
 			var err error
 			if p, err = sv.data.UpdateProject(p.ID, func(x *model.Project) error {
-				x.TaskInstructions, x.MergeMode, x.MergeGreenPRs = req.TaskInstructions, mode, req.MergeGreenPRs
+				x.TaskInstructions, x.MergeMode = req.TaskInstructions, mode
 				x.HubOrgFolder = folder
 				commands(x)
 				review(x)
@@ -265,7 +265,7 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 	link := func(x *model.Project) {
 		x.HubProjectID, x.HubCheckout, x.HubOrgFolder = hpid, how, folder
 		x.DefaultBranch, x.RemoteURL = branch, s.Git.RemoteURL(ctx, id, path)
-		x.TaskInstructions, x.MergeMode, x.MergeGreenPRs = req.TaskInstructions, mode, req.MergeGreenPRs
+		x.TaskInstructions, x.MergeMode = req.TaskInstructions, mode
 		x.MergeModeSet = false
 		commands(x)
 		review(x)
@@ -446,9 +446,6 @@ func LegacyHubClone(projectRoot string) func(model.Project) bool {
 		return projectRoot != "" && within(hub, p.Path) && filepath.Clean(p.Path) != hub
 	}
 }
-
-// greenOn is model.Project.MergesGreenPRs for a MergeGreenPRs setting.
-func greenOn(v *bool) bool { return model.Project{MergeGreenPRs: v}.MergesGreenPRs() }
 
 // hubUnlink handles DELETE /api/hub/projects/{hpid}: the runner takes no
 // more tasks for it. Its clone stays, as a project of the runner's own.

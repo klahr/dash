@@ -14,6 +14,31 @@ merges per hour; and a ticker of what happened lately.
 
 It refreshes every 5 seconds.
 
+## Pull requests under "Needs a human"
+
+In pull request mode a task stays in Review for as long as its pull request is open on
+GitHub (see [GitHub](github.md)). The wall lists it under "Needs a human" only while a
+person has to act on GitHub, and says what next to `PR #n`:
+
+| The pull request | Listed? |
+| --- | --- |
+| A draft (its checks still run, or Claude fixes failing ones) | No |
+| Changes requested (the review went back to Claude) | No |
+| Ready for review, not approved yet | **Awaiting review** |
+| Approved (or the project approves automatically), waiting for its checks | No |
+| Approved (or the project approves automatically) and green, waiting for a person to merge it (Dash never merges a pull request) | **Waiting to be merged on GitHub** |
+| A failing check no code change fixes (e.g. an unsigned CLA) | **Blocked on GitHub** |
+
+What a pull request waits for is what Dash last saw while following it; the wall makes no
+GitHub calls of its own. Its timer (red after an hour) runs from when the pull request
+started waiting for a person, or from when Claude last finished if that is later or wasn't
+recorded. Review tasks without a pull request (merge-it mode, or a pull request mode task
+whose tests failed before one was opened) are always listed, timed from when Claude
+finished.
+
+The Review count in the stages bar is every task in Review; "N on GitHub" says how many of
+them wait on GitHub, Claude or their checks rather than a person.
+
 ## Opening it
 
 Signed in, open `https://<your dash>/wall`: it shows your active organization, across all

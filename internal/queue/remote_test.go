@@ -167,7 +167,7 @@ func TestRunTimeLimitStopsClaude(t *testing.T) {
 // A fake gh: `pr list` finds nothing, `pr create` prints a URL, `pr view`
 // prints whatever the test put in pr.json, the REST calls for reviews and
 // review comments print reviews.json and comments.json (none when missing),
-// and `pr merge` fails unless the file merge-ok exists. Every call is
+// and `pr merge` fails: Dash never merges a pull request. Every call is
 // logged to calls.
 func fakeGh(t *testing.T, dir string) (bin, stateFile string) {
 	stateFile = filepath.Join(dir, "pr.json")
@@ -178,7 +178,6 @@ func fakeGh(t *testing.T, dir string) (bin, stateFile string) {
 		"\"pr create\") echo https://github.com/o/r/pull/7 ;;\n" +
 		"\"pr view\") cat " + stateFile + " ;;\n" +
 		"\"pr ready\"|\"pr close\") ;;\n" +
-		"\"pr merge\") [ -f " + file("merge-ok") + " ] || exit 1; echo '{\"state\":\"MERGED\"}' > " + stateFile + " ;;\n" +
 		"\"api \"*) case \"$*\" in\n" +
 		"  */reviews*) cat " + file("reviews.json") + " 2>/dev/null || echo '[]' ;;\n" +
 		"  */comments*) cat " + file("comments.json") + " 2>/dev/null || echo '[]' ;;\n" +
@@ -251,6 +250,9 @@ func TestPullRequestOpensWhenTaskFinishes(t *testing.T) {
 	if x.Status != model.StatusReview || x.PR.Draft || x.PR.Review != model.PRReviewPending || x.PR.Status != "Waiting for a review on GitHub" {
 		t.Fatalf("want it waiting for a review, got %s %+v", x.Status, *x.PR)
 	}
+	if x.PR.Waits != model.PRWaitReview || x.PR.WaitsSince == nil {
+		t.Fatalf("want it noted as waiting for a person's review since now, got %+v", *x.PR)
+	}
 }
 
 // reviewedElsewhere is the API's check before approving a task.
@@ -262,23 +264,21 @@ func reviewedElsewhere(h *harness, id string) error {
 	return nil
 }
 
-// With "Merge pull requests when checks pass" off, the pull request waits
-// for someone to merge it on GitHub, approved and green or not.
+// An approved, green pull request waits for someone to merge it on GitHub;
+// once they do, the task is merged.
 func TestPullRequestMode(t *testing.T) {
 	parallel(t)
 
-	off := false
-	h, dir := prHarness(t, "pr.txt", model.Project{MergeGreenPRs: &off})
+	h, dir := prHarness(t, "pr.txt", model.Project{})
 	td := h.waitFor(h.add("via pr").ID, model.StatusReview)
 	head := gitRun(t, td.Worktree.Path, "rev-parse", "HEAD")
-	write(t, dir, "merge-ok", "")
 	write(t, dir, "reviews.json", `[{"id":5,"user":{"login":"alice","type":"User"},"state":"APPROVED","body":""}]`)
 	write(t, dir, "pr.json", openPRView(head, ""))
 	h.merges.PollPRs(context.Background())
 	if x, _ := h.st.GetTodo(td.ID); x.Status != model.StatusReview || x.PR.HandledSHA != "" || strings.Contains(ghCalls(t, dir), "pr merge") {
-		t.Fatalf("an approved green pull request was merged with merging when checks pass off: %s %+v", x.Status, x.PR)
-	} else if x.PR.Status != "Approved; waiting for you to merge on GitHub" {
-		t.Fatalf("status line %q", x.PR.Status)
+		t.Fatalf("Dash merged an approved green pull request: %s %+v", x.Status, x.PR)
+	} else if x.PR.Status != "Approved; waiting for you to merge on GitHub" || x.PR.Waits != model.PRWaitMerge || x.PR.WaitsSince == nil {
+		t.Fatalf("status line %q, waits %q", x.PR.Status, x.PR.Waits)
 	}
 
 	// GitHub merges it (here: someone merges the branch on origin).
@@ -300,19 +300,18 @@ func TestPullRequestMode(t *testing.T) {
 	}
 }
 
-// A task's pull request is squash-merged once its checks pass and it has
-// an approving review on GitHub, not before: on a runner (a hub's task) and
-// on a Dash without runners alike.
-func TestGreenPullRequestIsMergedOnceApproved(t *testing.T) {
+// A task's green pull request waits for a review on GitHub, and once
+// approved there for a person to merge it: Dash never merges it, on a
+// runner (a hub's task) and on a Dash without runners alike.
+func TestApprovedPullRequestWaitsForAPerson(t *testing.T) {
 	parallel(t)
 
-	t.Run("runner", func(t *testing.T) { testGreenPullRequestIsMerged(t, "hub-p") })
-	t.Run("no runners", func(t *testing.T) { testGreenPullRequestIsMerged(t, "") })
+	t.Run("runner", func(t *testing.T) { testApprovedPullRequestWaits(t, "hub-p") })
+	t.Run("no runners", func(t *testing.T) { testApprovedPullRequestWaits(t, "") })
 }
 
-func testGreenPullRequestIsMerged(t *testing.T, hubProject string) {
+func testApprovedPullRequestWaits(t *testing.T, hubProject string) {
 	h, dir := prHarness(t, "hub.txt", model.Project{HubProjectID: hubProject})
-	write(t, dir, "merge-ok", "")
 	td := h.waitFor(h.add("on a runner").ID, model.StatusReview)
 	head := gitRun(t, td.Worktree.Path, "rev-parse", "HEAD")
 	write(t, dir, "pr.json", openPRView(head, `{"name":"build","status":"IN_PROGRESS"}`))
@@ -321,6 +320,9 @@ func testGreenPullRequestIsMerged(t *testing.T, hubProject string) {
 	x, _ := h.st.GetTodo(td.ID)
 	if x.PR.Status != "Waiting for checks: build (0/1 passed)" || len(x.PR.Checks) != 1 || x.PR.Checks[0] != (model.PRCheck{Name: "build", State: "pending"}) {
 		t.Fatalf("PR = %+v, want the pending check kept on the task", *x.PR)
+	}
+	if x.PR.Waits != model.PRWaitReview || x.PR.WaitsSince == nil {
+		t.Fatalf("PR = %+v, want a ready one waiting for a review while its checks run", *x.PR)
 	}
 	updated := x.UpdatedAt
 	h.merges.PollPRs(context.Background())
@@ -339,30 +341,58 @@ func testGreenPullRequestIsMerged(t *testing.T, hubProject string) {
 		t.Fatalf("PR = %+v, want it waiting for a review", *x.PR)
 	}
 
-	// Approved on GitHub: Dash merges it.
+	// Approved on GitHub: it waits for a person to merge it there.
 	write(t, dir, "reviews.json", `[{"id":3,"user":{"login":"ci-bot[bot]","type":"Bot"},"state":"APPROVED"},
 		{"id":4,"user":{"login":"alice","type":"User"},"state":"APPROVED","body":"LGTM"}]`)
 	h.merges.PollPRs(context.Background())
-	h.waitFor(td.ID, model.StatusMerged)
-	if calls := ghCalls(t, dir); !strings.Contains(calls, "pr merge 7 --squash --match-head-commit "+head) {
-		t.Fatalf("want the PR squash-merged at its head, got\n%s", calls)
+	if x, _ := h.st.GetTodo(td.ID); x.Status != model.StatusReview || strings.Contains(ghCalls(t, dir), "pr merge") {
+		t.Fatalf("Dash merged an approved pull request: %s", x.Status)
+	} else if x.PR.Status != "Approved; waiting for you to merge on GitHub" || x.PR.Waits != model.PRWaitMerge {
+		t.Fatalf("PR = %+v, want it waiting for a person to merge it", *x.PR)
 	}
 }
 
-// With "Approve tasks automatically" a green pull request is merged without
-// waiting for an approving review.
-func TestAutoApprovedPullRequestMergesWhenGreen(t *testing.T) {
+// With "Approve tasks automatically" a green pull request is marked ready
+// for review and waits for a person to merge it on GitHub, without waiting
+// for an approving review; Dash doesn't merge it.
+func TestAutoApprovedPullRequestIsNotMerged(t *testing.T) {
 	parallel(t)
 
 	h, dir := prHarness(t, "auto.txt", model.Project{AutoApprove: true})
-	write(t, dir, "merge-ok", "")
 	td := h.waitFor(h.add("auto").ID, model.StatusReview)
 	if td.PR == nil {
 		t.Fatal("want a pull request opened, approved automatically or not")
 	}
+	write(t, dir, "pr.json", `{"state":"OPEN","mergeable":"MERGEABLE","isDraft":true,"headRefOid":"`+gitRun(t, td.Worktree.Path, "rev-parse", "HEAD")+
+		`","statusCheckRollup":[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}]}`)
+	h.merges.PollPRs(context.Background())
+	calls := ghCalls(t, dir)
+	if !strings.Contains(calls, "pr ready 7") || strings.Contains(calls, "pr merge") {
+		t.Fatalf("want it marked ready and not merged, gh calls:\n%s", calls)
+	}
+	if x, _ := h.st.GetTodo(td.ID); x.Status != model.StatusReview || x.PR.Status != "Waiting for you to merge on GitHub" || x.PR.Waits != model.PRWaitMerge {
+		t.Fatalf("want it waiting for a person to merge it, got %s %+v", x.Status, *x.PR)
+	}
+}
+
+// A task approved in Dash before reviews moved to GitHub, still merging
+// with its pull request open, isn't merged by Dash either: it waits in
+// review for a person to merge it on GitHub.
+func TestMergingPullRequestWaitsForAPerson(t *testing.T) {
+	parallel(t)
+
+	h, dir := prHarness(t, "old.txt", model.Project{AutoApprove: true})
+	td := h.waitFor(h.add("old").ID, model.StatusReview)
+	if _, err := h.st.UpdateTodo(td.ID, func(x *model.Todo) error { x.Status = model.StatusMerging; return nil }); err != nil {
+		t.Fatal(err)
+	}
 	write(t, dir, "pr.json", openPRView(gitRun(t, td.Worktree.Path, "rev-parse", "HEAD"), `{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}`))
 	h.merges.PollPRs(context.Background())
-	h.waitFor(td.ID, model.StatusMerged)
+	if x, _ := h.st.GetTodo(td.ID); x.Status != model.StatusReview || strings.Contains(ghCalls(t, dir), "pr merge") {
+		t.Fatalf("want it back in review and not merged, got %s", x.Status)
+	} else if x.PR.Waits != model.PRWaitMerge {
+		t.Fatalf("PR = %+v, want it waiting for a person to merge it", *x.PR)
+	}
 }
 
 // A review asking for changes, with its comments on lines of the diff, goes
@@ -401,7 +431,6 @@ func TestPullRequestReviewGoesBackToClaude(t *testing.T) {
 	}
 
 	// Still requesting changes until alice looks again: waits, not resent.
-	write(t, dir, "merge-ok", "")
 	write(t, dir, "pr.json", openPRView(gitRun(t, td.Worktree.Path, "rev-parse", "HEAD"), `{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}`))
 	h.merges.PollPRs(context.Background())
 	time.Sleep(200 * time.Millisecond)
@@ -409,12 +438,14 @@ func TestPullRequestReviewGoesBackToClaude(t *testing.T) {
 		t.Fatalf("want it waiting for alice, got %s runs %d review %q", x.Status, x.Runs, x.PR.Review)
 	}
 
-	// She approves: merged.
+	// She approves: it waits for her to merge it on GitHub.
 	write(t, dir, "reviews.json", `[
 		{"id":11,"user":{"login":"alice","type":"User"},"state":"CHANGES_REQUESTED","body":"Please rename the file."},
 		{"id":12,"user":{"login":"alice","type":"User"},"state":"APPROVED","body":""}]`)
 	h.merges.PollPRs(context.Background())
-	h.waitFor(td.ID, model.StatusMerged)
+	if x, _ := h.st.GetTodo(td.ID); x.Status != model.StatusReview || x.PR.Waits != model.PRWaitMerge || strings.Contains(ghCalls(t, dir), "pr merge") {
+		t.Fatalf("want it approved and waiting to be merged, got %s %+v", x.Status, *x.PR)
+	}
 }
 
 // Closing the pull request on GitHub rejects the task.
@@ -643,13 +674,12 @@ func TestPullRequestCLAFailureGoesToReview(t *testing.T) {
 	if y, _ := h.st.GetTodo(td.ID); !y.UpdatedAt.Equal(x.UpdatedAt) {
 		t.Fatal("the same block was written again")
 	}
-	// …and once the CLA is signed it carries on (here: merged, as the
-	// project approves automatically).
-	write(t, dir, "merge-ok", "")
+	// …and once the CLA is signed it carries on (here: to be merged on
+	// GitHub, as the project approves automatically).
 	write(t, dir, "pr.json", openPRView(head, `{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"},
 		{"context":"license/cla","state":"SUCCESS"}`))
 	h.merges.PollPRs(context.Background())
-	if y := h.waitFor(td.ID, model.StatusMerged); y.Error != "" {
-		t.Fatalf("error %q left after merging", y.Error)
+	if y, _ := h.st.GetTodo(td.ID); y.Error != "" || y.Status != model.StatusReview || y.PR.Waits != model.PRWaitMerge {
+		t.Fatalf("want it waiting to be merged, got %s error %q PR %+v", y.Status, y.Error, *y.PR)
 	}
 }

@@ -75,13 +75,6 @@ func (g *Git) openPR(ctx context.Context, projectID, dir, base, head, title, bod
 	return n, m[0], nil
 }
 
-// MergePR squash-merges pull request number on GitHub, provided its head is
-// still head (so commits pushed meanwhile aren't merged unseen).
-func (g *Git) MergePR(ctx context.Context, projectID, dir string, number int, head string) error {
-	_, err := g.gh(ctx, projectID, dir, "pr", "merge", strconv.Itoa(number), "--squash", "--match-head-commit", head)
-	return err
-}
-
 // ReadyPR marks draft pull request number ready for review.
 func (g *Git) ReadyPR(ctx context.Context, projectID, dir string, number int) error {
 	_, err := g.gh(ctx, projectID, dir, "pr", "ready", strconv.Itoa(number))

@@ -114,8 +114,8 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    squashed commit on the default branch, pushed if you like. In a GitHub project (with pull
    requests, the default) the review happens on GitHub instead: when Claude finishes, Dash opens
    a pull request and the task waits in *Review* with it linked. Reviews asking for changes go
-   back to Claude, and Dash squash-merges the pull request once it is approved on GitHub and its
-   checks pass. See [GitHub](docs/github.md).
+   back to Claude; once it is approved and its checks pass, you merge it on GitHub (Dash never
+   merges a pull request itself). See [GitHub](docs/github.md).
 
 Queue as many tasks as you like: they run in parallel, each in its own worktree.
 

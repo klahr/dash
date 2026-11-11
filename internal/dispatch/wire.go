@@ -62,9 +62,6 @@ type Link struct {
 	// "pr" falls back to "local" on a runner without gh, so runners don't
 	// need gh unless someone asked for pull requests.
 	MergeModeSet bool `json:"merge_mode_set,omitempty"`
-	// MergeGreenPRs is the hub project's model.Project.MergeGreenPRs: the
-	// runner merges a task's pull request once its checks pass, unless false.
-	MergeGreenPRs *bool `json:"merge_green_prs,omitempty"`
 	// TaskInstructions are the hub project's extra instructions for Claude
 	// (model.Project.TaskInstructions). The link is sent before every task,
 	// so the runner's copy follows the hub's.
