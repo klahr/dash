@@ -3,6 +3,8 @@ package gitops
 import (
 	"os"
 	"testing"
+
+	"github.com/klahr/dash/internal/testbin"
 )
 
 // TestMain keeps the developer's git config from breaking test commits:
@@ -10,6 +12,7 @@ import (
 // GIT_CONFIG_* reaches every git the tests start. Set here once rather than
 // with t.Setenv, so the tests can run in parallel.
 func TestMain(m *testing.M) {
+	testbin.IsolateGit()
 	os.Setenv("GIT_CONFIG_COUNT", "1")
 	os.Setenv("GIT_CONFIG_KEY_0", "commit.gpgsign")
 	os.Setenv("GIT_CONFIG_VALUE_0", "false")

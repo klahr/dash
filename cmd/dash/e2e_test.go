@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/klahr/dash/internal/testbin"
 )
 
 // The end-to-end tests (hub*_test.go, browser_test.go) run dash's real
@@ -16,6 +18,7 @@ import (
 // free ports. `go test -short` skips them.
 
 func TestMain(m *testing.M) {
+	testbin.IsolateGit()
 	code := m.Run()
 	if bins.dir != "" {
 		_ = os.RemoveAll(bins.dir)
