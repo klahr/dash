@@ -134,3 +134,34 @@ git push origin main:cla-signatures
 ```
 
 The repository owner and bot accounts (`*[bot]`) are exempt.
+
+`main` is protected: a pull request can't be merged until the CI jobs (`Go`, `Web`,
+`GoReleaser config`, `Docker image`) and the `CLA` check pass, and `main` can't be force-pushed
+or deleted. Admins aren't held to it, so the owner can still push to `main` directly. To set
+it up again (on a fork, say):
+
+```sh
+gh api -X PUT repos/OWNER/REPO/branches/main/protection --input - <<'EOF'
+{
+  "required_status_checks": {
+    "strict": false,
+    "checks": [
+      {"context": "Go", "app_id": 15368},
+      {"context": "Web", "app_id": 15368},
+      {"context": "GoReleaser config", "app_id": 15368},
+      {"context": "Docker image", "app_id": 15368},
+      {"context": "CLA", "app_id": 15368}
+    ]
+  },
+  "enforce_admins": false,
+  "required_pull_request_reviews": null,
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}
+EOF
+```
+
+`app_id` 15368 is GitHub Actions, so only Actions can report these checks. If you rename a
+job in `ci.yml` or `cla.yml`, update the required checks to match, or every pull request will
+wait forever for a check that never comes.
