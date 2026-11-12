@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/klahr/dash/internal/tunnel"
 )
@@ -73,11 +74,16 @@ func TestLaunchdPlist(t *testing.T) {
 	}
 }
 
-// fakeManager records service manager calls.
+// fakeManager records service manager calls. For launchd it keeps whether
+// the job is loaded, like launchctl print would tell.
 type fakeManager struct {
 	calls  []string
 	linger string
 	fail   string // a call that fails
+
+	loaded         bool // the launchd job is loaded
+	unloading      int  // after bootout, print still finds the job this many times
+	busyBootstraps int  // this many bootstraps fail with EIO first
 }
 
 func (f *fakeManager) run(name string, args ...string) (string, error) {
@@ -87,6 +93,27 @@ func (f *fakeManager) run(name string, args ...string) (string, error) {
 		return "Failed to connect to bus", errors.New("exit status 1")
 	}
 	switch {
+	case strings.HasPrefix(c, "launchctl print"):
+		if f.loaded {
+			return "state = running", nil
+		}
+		if f.unloading > 0 {
+			f.unloading--
+			return "state = stopping", nil
+		}
+		return "Could not find service", errors.New("exit status 113")
+	case strings.HasPrefix(c, "launchctl bootout"):
+		f.loaded = false
+	case strings.HasPrefix(c, "launchctl bootstrap"):
+		if f.unloading > 0 || f.busyBootstraps > 0 {
+			f.busyBootstraps--
+			return "Bootstrap failed: 5: Input/output error", errors.New("exit status 5")
+		}
+		f.loaded = true
+	case strings.HasPrefix(c, "launchctl kickstart"):
+		if !f.loaded {
+			return "Could not find service", errors.New("exit status 113")
+		}
 	case strings.HasPrefix(c, "loginctl show-user"):
 		return "Linger=" + f.linger, nil
 	case strings.HasPrefix(c, "systemctl --user is-active"):
@@ -122,7 +149,7 @@ func TestServiceInstallIsIdempotent(t *testing.T) {
 			// Both runs (re)start it, so an updated binary is picked up.
 			var starts int
 			for _, c := range m.calls {
-				if c == "systemctl --user restart "+SystemdUnit || strings.HasPrefix(c, "launchctl bootstrap") {
+				if c == "systemctl --user restart "+SystemdUnit || strings.HasPrefix(c, "launchctl bootstrap") || strings.HasPrefix(c, "launchctl kickstart -k") {
 					starts++
 				}
 			}
@@ -153,6 +180,103 @@ func TestServiceInstallIsIdempotent(t *testing.T) {
 				t.Error("second uninstall removed something")
 			}
 		})
+	}
+}
+
+// countCalls counts the calls starting with prefix.
+func countCalls(calls []string, prefix string) int {
+	n := 0
+	for _, c := range calls {
+		if strings.HasPrefix(c, prefix) {
+			n++
+		}
+	}
+	return n
+}
+
+func TestLaunchdUpdateWithUnchangedPlistKickstarts(t *testing.T) {
+	m := &fakeManager{}
+	var slept time.Duration
+	s := &Service{Bin: "/opt/dash", Args: []string{"runner"}, Home: t.TempDir(), GOOS: "darwin", Run: m.run, Sleep: func(d time.Duration) { slept += d }}
+	if _, err := s.Install(); err != nil {
+		t.Fatal(err)
+	}
+	m.calls = nil
+	res, err := s.Install()
+	if err != nil || res.Changed {
+		t.Fatalf("update: %+v %v", res, err)
+	}
+	service := fmt.Sprintf("gui/%d/%s", os.Getuid(), LaunchdLabel)
+	want := []string{"launchctl print " + service, "launchctl kickstart -k " + service}
+	if !slices.Equal(m.calls, want) {
+		t.Errorf("calls %q, want %q", m.calls, want)
+	}
+	if slept != 0 {
+		t.Errorf("slept %v", slept)
+	}
+}
+
+func TestLaunchdUpdateWaitsForUnloadAndRetriesBootstrap(t *testing.T) {
+	m := &fakeManager{}
+	var sleeps []time.Duration
+	s := &Service{Bin: "/opt/dash", Args: []string{"runner"}, Home: t.TempDir(), GOOS: "darwin", Run: m.run, Sleep: func(d time.Duration) { sleeps = append(sleeps, d) }}
+	if _, err := s.Install(); err != nil {
+		t.Fatal(err)
+	}
+	// A new binary changes the plist; the old job takes a few polls to go
+	// away, and launchd still answers EIO to the first bootstraps after.
+	s.Bin = "/opt/dash2"
+	m.calls, m.unloading, m.busyBootstraps = nil, 3, 2
+	res, err := s.Install()
+	if err != nil || !res.Changed {
+		t.Fatalf("update: %+v %v (calls %q)", res, err, m.calls)
+	}
+	if !m.loaded {
+		t.Error("job not loaded after update")
+	}
+	if n := countCalls(m.calls, "launchctl kickstart"); n != 0 {
+		t.Errorf("kickstarted a changed plist: %q", m.calls)
+	}
+	if n := countCalls(m.calls, "launchctl bootout"); n != 1 {
+		t.Errorf("booted out %d times: %q", n, m.calls)
+	}
+	// print once to see it loaded, then until it is gone (3 busy + 1).
+	if n := countCalls(m.calls, "launchctl print"); n != 5 {
+		t.Errorf("printed %d times, want 5: %q", n, m.calls)
+	}
+	if n := countCalls(m.calls, "launchctl bootstrap"); n != 3 {
+		t.Errorf("bootstrapped %d times, want 3: %q", n, m.calls)
+	}
+	// bootout comes before any bootstrap.
+	if i, j := slices.IndexFunc(m.calls, func(c string) bool { return strings.HasPrefix(c, "launchctl bootout") }),
+		slices.IndexFunc(m.calls, func(c string) bool { return strings.HasPrefix(c, "launchctl bootstrap") }); i > j {
+		t.Errorf("bootstrap before bootout: %q", m.calls)
+	}
+	want := []time.Duration{launchdPollEvery, launchdPollEvery, launchdPollEvery, launchdBootstrapDelay, launchdBootstrapDelay}
+	if !slices.Equal(sleeps, want) {
+		t.Errorf("sleeps %v, want %v", sleeps, want)
+	}
+}
+
+func TestLaunchdBootstrapGivesUp(t *testing.T) {
+	m := &fakeManager{}
+	var slept time.Duration
+	s := &Service{Bin: "/opt/dash", Args: []string{"runner"}, Home: t.TempDir(), GOOS: "darwin", Run: m.run, Sleep: func(d time.Duration) { slept += d }}
+	if _, err := s.Install(); err != nil {
+		t.Fatal(err)
+	}
+	// The old job never goes away.
+	s.Bin = "/opt/dash2"
+	m.calls, m.unloading = nil, 1<<30
+	_, err := s.Install()
+	if err == nil || !strings.Contains(err.Error(), "Input/output error") || !strings.Contains(err.Error(), "launchctl bootout") {
+		t.Fatalf("want an informative EIO error, got %v", err)
+	}
+	if n := countCalls(m.calls, "launchctl bootstrap"); n != launchdBootstrapTries {
+		t.Errorf("bootstrapped %d times, want %d", n, launchdBootstrapTries)
+	}
+	if max := launchdUnloadTimeout + launchdBootstrapTries*launchdBootstrapDelay; slept > max {
+		t.Errorf("slept %v, more than %v", slept, max)
 	}
 }
 

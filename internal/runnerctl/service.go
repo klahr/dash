@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/klahr/dash/internal/fsutil"
 )
@@ -32,6 +33,26 @@ type Service struct {
 	Run func(name string, args ...string) (string, error)
 	// GOOS picks systemd (linux) or launchd (darwin); "" = runtime.GOOS.
 	GOOS string
+	// Sleep waits between launchctl polls and retries; nil = time.Sleep.
+	Sleep func(time.Duration)
+}
+
+// launchd timing: how often and how long Install waits for a booted-out job
+// to go away, and how often it retries a bootstrap that hit launchd while
+// the old job was still unloading.
+const (
+	launchdPollEvery      = 250 * time.Millisecond
+	launchdUnloadTimeout  = 15 * time.Second
+	launchdBootstrapTries = 5
+	launchdBootstrapDelay = time.Second
+)
+
+func (s *Service) sleep(d time.Duration) {
+	if s.Sleep != nil {
+		s.Sleep(d)
+		return
+	}
+	time.Sleep(d)
 }
 
 func (s *Service) goos() string {
@@ -185,13 +206,72 @@ func (s *Service) Install() (InstallResult, error) {
 			res.Hint = "The runner stops when you log out. To keep it running (and start it at boot), ask an admin to run: sudo loginctl enable-linger " + user
 		}
 	case "darwin":
-		target := s.launchdTarget()
-		_, _ = s.run("launchctl", "bootout", target+"/"+LaunchdLabel) // not loaded yet is fine
-		if out, err := s.run("launchctl", "bootstrap", target, file); err != nil {
-			return res, fmt.Errorf("launchctl bootstrap: %v %s", err, out)
+		if err := s.installLaunchd(file, res.Changed); err != nil {
+			return res, err
 		}
 	}
 	return res, nil
+}
+
+// installLaunchd (re)starts the LaunchAgent. An already loaded job whose
+// plist is unchanged is just restarted in place (kickstart -k), so it runs
+// the binary installed now. Otherwise the old job is booted out, Install
+// waits for launchd to finish unloading it (the runner may take a while to
+// stop its Claude processes), and the new plist is bootstrapped.
+func (s *Service) installLaunchd(file string, changed bool) error {
+	target := s.launchdTarget()
+	service := target + "/" + LaunchdLabel
+	loaded := s.launchdLoaded(service)
+	if loaded && !changed {
+		if _, err := s.run("launchctl", "kickstart", "-k", service); err == nil {
+			return nil
+		}
+		// Fall through to a full reload.
+	}
+	if loaded {
+		_, _ = s.run("launchctl", "bootout", service) // already gone is fine
+		for waited := time.Duration(0); waited < launchdUnloadTimeout && s.launchdLoaded(service); waited += launchdPollEvery {
+			s.sleep(launchdPollEvery)
+		}
+	}
+	var out string
+	var err error
+	for try := 1; try <= launchdBootstrapTries; try++ {
+		if out, err = s.run("launchctl", "bootstrap", target, file); err == nil {
+			return nil
+		}
+		if !launchdBusy(out, err) {
+			break
+		}
+		if try < launchdBootstrapTries {
+			s.sleep(launchdBootstrapDelay)
+		}
+	}
+	msg := fmt.Sprintf("launchctl bootstrap %s %s: %v %s", target, file, err, out)
+	if launchdBusy(out, err) {
+		msg += fmt.Sprintf(" (launchd still had the old %s loaded after %d tries; wait a few seconds and run the installer again, or run: launchctl bootout %s)", LaunchdLabel, launchdBootstrapTries, service)
+	}
+	return errors.New(msg)
+}
+
+// launchdLoaded says whether launchd knows the job.
+func (s *Service) launchdLoaded(service string) bool {
+	_, err := s.run("launchctl", "print", service)
+	return err == nil
+}
+
+// launchdBusy says whether a bootstrap failed with launchd's EIO (5), which
+// it returns while the job being replaced is still unloading.
+func launchdBusy(out string, err error) bool {
+	if err == nil {
+		return false
+	}
+	var ee *exec.ExitError
+	if errors.As(err, &ee) && ee.ExitCode() == 5 {
+		return true
+	}
+	text := err.Error() + " " + out
+	return strings.Contains(text, "exit status 5") || strings.Contains(text, "Input/output error")
 }
 
 func (s *Service) launchdTarget() string { return fmt.Sprintf("gui/%d", os.Getuid()) }
