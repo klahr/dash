@@ -96,11 +96,8 @@ func TestHubRunsNothingItself(t *testing.T) {
 	if err := os.MkdirAll(emptyBin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	addr := freeAddr(t)
-	hubLogs := startDash(t, dash, append(o.env, "PATH="+emptyBin, "DASH_USERNAME=admin", "DASH_PASSWORD=a-long-enough-password"),
-		"-addr", addr, "-data", filepath.Join(dir, "hub"), "-projects", filepath.Join(dir, "hub-projects"), "-env", filepath.Join(dir, "none.env"))
-	api := newClient(t, "http://"+addr)
-	waitFor(t, hubLogs, "the hub to start", func() bool { code, _ := api.try("GET", "/api/version", nil); return code != 0 })
+	hubLogs, _, api := startHub(t, dash, append(o.env, "PATH="+emptyBin, "DASH_USERNAME=admin", "DASH_PASSWORD=a-long-enough-password"),
+		"-data", filepath.Join(dir, "hub"), "-projects", filepath.Join(dir, "hub-projects"), "-env", filepath.Join(dir, "none.env"))
 	api.must("POST", "/api/login", map[string]string{"username": "admin", "password": "a-long-enough-password"}, http.StatusOK, nil)
 
 	// No project on the hub's disk.

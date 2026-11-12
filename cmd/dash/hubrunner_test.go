@@ -181,14 +181,11 @@ func startRunnerHub(t *testing.T, runnerFlags ...string) *runnerHub {
 	// The hub: default flags, no claude on its PATH.
 	h := &runnerHub{dash: dash, calls: calls, gitEnv: gitEnv, origin: bare, username: "admin", password: "a-long-enough-password"}
 	hubPath := pathWithout(t, "claude")
-	h.addr = freeAddr(t)
 	// A scan waiting for a runner asks again often, not every 5s.
-	h.hub = startDash(t, dash, append(gitEnv, "PATH="+hubPath, "DASH_USERNAME="+h.username, "DASH_PASSWORD="+h.password, "DASH_TEST_SCAN_WAIT_EVERY=200ms"),
-		"-addr", h.addr, "-data", filepath.Join(dir, "hub"), "-projects", filepath.Join(dir, "hub-projects"), "-env", filepath.Join(dir, "none.env"))
+	h.hub, h.addr, h.api = startHub(t, dash, append(gitEnv, "PATH="+hubPath, "DASH_USERNAME="+h.username, "DASH_PASSWORD="+h.password, "DASH_TEST_SCAN_WAIT_EVERY=200ms"),
+		"-data", filepath.Join(dir, "hub"), "-projects", filepath.Join(dir, "hub-projects"), "-env", filepath.Join(dir, "none.env"))
 	h.base = "http://" + h.addr
-	api := newClient(t, h.base)
-	h.api = api
-	waitFor(t, h.hub, "the hub to start", func() bool { code, _ := api.try("GET", "/api/version", nil); return code != 0 })
+	api := h.api
 	api.must("POST", "/api/login", map[string]string{"username": h.username, "password": h.password}, http.StatusOK, nil)
 
 	// A runner, registered with a code, with the fake claude.
@@ -300,6 +297,44 @@ func startDash(t *testing.T, bin string, env []string, args ...string) *proc {
 		}
 	})
 	return p
+}
+
+// startHub starts a hub (`dash -addr <free address> args...`) and waits
+// until it answers. freeAddr's port is free when it returns, but nothing
+// holds it until the hub binds it: another process (an outgoing
+// connection's ephemeral port, another test's server) may take it first,
+// and the hub then exits with "address already in use". startHub tries
+// again on another port then.
+func startHub(t *testing.T, bin string, env []string, args ...string) (*proc, string, *client) {
+	t.Helper()
+	const attempts = 5
+	for attempt := 1; ; attempt++ {
+		addr := freeAddr(t)
+		p := startDash(t, bin, env, append([]string{"-addr", addr}, args...)...)
+		api := newClient(t, "http://"+addr)
+		lostPort := func() bool { return attempt < attempts && strings.Contains(p.String(), "address already in use") }
+		waitFor(t, p, "the hub to start", func() bool {
+			if lostPort() {
+				return true
+			}
+			// Whatever took the port may answer too (or hang): ask only
+			// once this hub says it listens.
+			if !strings.Contains(p.String(), "dash listening") {
+				return false
+			}
+			code, _ := api.try("GET", "/api/version", nil)
+			return code != 0
+		})
+		if !lostPort() {
+			// A failed bind follows "dash listening" at once.
+			time.Sleep(200 * time.Millisecond)
+			if !lostPort() {
+				return p, addr, api
+			}
+		}
+		t.Logf("another process took %s before the hub bound it; trying another port", addr)
+		p.stop()
+	}
 }
 
 type syncBuffer struct {

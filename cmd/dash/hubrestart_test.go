@@ -62,9 +62,8 @@ func newFleet(t *testing.T) *fleet {
 	t.Cleanup(origin.Close)
 
 	hubPath := pathWithout(t, "claude")
-	f.addr = freeAddr(t)
 	f.hubEnv = append(gitEnv, "PATH="+hubPath, "DASH_USERNAME=admin", "DASH_PASSWORD=a-long-enough-password")
-	f.hubArgs = []string{"-addr", f.addr, "-data", filepath.Join(f.dir, "hub"), "-projects", filepath.Join(f.dir, "hub-projects"),
+	f.hubArgs = []string{"-data", filepath.Join(f.dir, "hub"), "-projects", filepath.Join(f.dir, "hub-projects"),
 		"-env", filepath.Join(f.dir, "none.env")}
 	f.startHub()
 
@@ -83,12 +82,18 @@ func newFleet(t *testing.T) *fleet {
 	return f
 }
 
-// startHub starts the hub (again) on the same data and signs in.
+// startHub starts the hub (again) on the same data and signs in: first on
+// a free address, then again on that one.
 func (f *fleet) startHub(extra ...string) {
 	f.t.Helper()
-	f.hub = startDash(f.t, f.dash, f.hubEnv, append(slicesClone(f.hubArgs), extra...)...)
-	f.api = newClient(f.t, "http://"+f.addr)
-	waitFor(f.t, f.hub, "the hub to start", func() bool { code, _ := f.api.try("GET", "/api/version", nil); return code != 0 })
+	args := append(slicesClone(f.hubArgs), extra...)
+	if f.addr == "" {
+		f.hub, f.addr, f.api = startHub(f.t, f.dash, f.hubEnv, args...)
+	} else {
+		f.hub = startDash(f.t, f.dash, f.hubEnv, append([]string{"-addr", f.addr}, args...)...)
+		f.api = newClient(f.t, "http://"+f.addr)
+		waitFor(f.t, f.hub, "the hub to start", func() bool { code, _ := f.api.try("GET", "/api/version", nil); return code != 0 })
+	}
 	f.api.must("POST", "/api/login", map[string]string{"username": "admin", "password": "a-long-enough-password"}, http.StatusOK, nil)
 }
 
