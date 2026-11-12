@@ -113,10 +113,40 @@ func (c Config) Footer() template.HTML {
 	return template.HTML(b.String())
 }
 
+// MissingLegal names what a hub that strangers sign up on should publish
+// but doesn't: the terms, the privacy policy, a contact address.
+func (c Config) MissingLegal() []string {
+	var out []string
+	for _, v := range []struct{ name, v string }{
+		{"terms (DASH_TERMS_URL)", c.TermsURL}, {"privacy policy (DASH_PRIVACY_URL)", c.PrivacyURL}, {"contact (DASH_CONTACT_EMAIL)", c.Contact},
+	} {
+		if strings.TrimSpace(v.v) == "" {
+			out = append(out, v.name)
+		}
+	}
+	return out
+}
+
+var signupNoteTmpl = template.Must(template.New("signup-note").Parse(
+	`{{if or .TermsURL .PrivacyURL}}<p class="signup-note">` +
+		`{{if .TermsURL}}By creating an account, you accept the <a href="{{.TermsURL}}" rel="noopener" target="_blank">terms of service</a>.{{end}}` +
+		`{{if and .TermsURL .PrivacyURL}} {{end}}` +
+		`{{if .PrivacyURL}}The <a href="{{.PrivacyURL}}" rel="noopener" target="_blank">privacy policy</a> says what we keep about you, and for how long.{{end}}` +
+		`</p>{{end}}`))
+
+// SignupNote is the line under the signup form that links the terms and
+// the privacy policy; empty when neither is set.
+func (c Config) SignupNote() template.HTML {
+	var b bytes.Buffer
+	_ = signupNoteTmpl.Execute(&b, c)
+	return template.HTML(b.String())
+}
+
 // Page stamps c into one of the frontend's HTML files: {{DASH_NAME}},
-// {{DASH_LOGO}} and <!--DASH_FOOTER-->.
+// {{DASH_LOGO}}, <!--DASH_SIGNUP_NOTE--> and <!--DASH_FOOTER-->.
 func (c Config) Page(b []byte) []byte {
 	b = bytes.ReplaceAll(b, []byte("{{DASH_NAME}}"), []byte(template.HTMLEscapeString(c.Name)))
 	b = bytes.ReplaceAll(b, []byte("{{DASH_LOGO}}"), []byte(template.HTMLEscapeString(c.LogoURL())))
+	b = bytes.ReplaceAll(b, []byte("<!--DASH_SIGNUP_NOTE-->"), []byte(c.SignupNote()))
 	return bytes.ReplaceAll(b, []byte("<!--DASH_FOOTER-->"), []byte(c.Footer()))
 }

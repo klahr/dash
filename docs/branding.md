@@ -15,8 +15,8 @@ footer.
 |-----------------------|------------------|--------------------------------------------------------------------------|
 | `DASH_BRAND_NAME`     | `-brand-name`    | the product name in page titles, the sign-in pages, emails, the installed app and authenticator apps (default `Dash`) |
 | `DASH_SOURCE_URL`     | `-source-url`    | the footer's **Source code** link (default `https://github.com/klahr/dash`) |
-| `DASH_TERMS_URL`      | `-terms-url`     | terms of service, linked in the footer when set                          |
-| `DASH_PRIVACY_URL`    | `-privacy-url`   | privacy policy, linked in the footer when set                            |
+| `DASH_TERMS_URL`      | `-terms-url`     | terms of service, linked in the footer and under the signup form when set |
+| `DASH_PRIVACY_URL`    | `-privacy-url`   | privacy policy, linked in the footer and under the signup form when set  |
 | `DASH_CONTACT_EMAIL`  | `-contact-email` | an address people can write to: a **Contact** link in the footer, and a line at the end of every email |
 | `DASH_LOGO`           | `-logo`          | an image file on the server (SVG, PNG, WebP, …) shown instead of Dash's mark next to the name |
 | `DASH_LANDING`        | `-landing`       | `1` shows the landing page at `/` to visitors who aren't signed in (off by default) |

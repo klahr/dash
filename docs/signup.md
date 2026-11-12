@@ -9,6 +9,10 @@ address instead. That needs Dash to send email, which also gives everyone
 Nothing here is on unless you configure it. Leave it alone and Dash behaves exactly as
 before.
 
+Before you open signup, publish terms of service, a privacy policy and a contact address,
+and link them: see [Your data, terms and privacy](privacy.md). Dash warns at every start
+while open signup is on without them.
+
 ## Email (SMTP)
 
 Dash sends its few emails (confirming an address, resetting a password) through an SMTP

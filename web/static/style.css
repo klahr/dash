@@ -1470,6 +1470,8 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .login-card .brand { justify-content: center; font-size: 26px; margin: 0 0 4px; }
 .login-card .brand img { width: 30px; height: 30px; border-radius: var(--r-s); }
 .login-card p { margin: 0 0 12px; text-align: center; color: var(--muted); }
+.login-card p.signup-note { margin: 12px 0 0; font-size: var(--fs-s); }
+.signup-note a { color: inherit; }
 .login-card .btn { width: 100%; margin-top: 4px; }
 .login-card a:not(.btn) { color: var(--accent); font-weight: 600; }
 .login-error { color: var(--failed); min-height: 1.5em; font-size: var(--fs-m); text-align: center; }

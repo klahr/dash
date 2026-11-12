@@ -1,8 +1,33 @@
-# Your data: export and account deletion
+# Your data, terms and privacy
 
-Everyone can download what Dash keeps about them and delete their own account. A platform admin
-can delete someone else's. This covers the rights of access, portability and erasure (GDPR
-articles 15, 17 and 20) on a hub with open signup.
+If people other than you sign up on your hub, publish three things before you open it:
+
+- **Terms of service:** who runs the hub, what it may be used for, what you promise and what
+  you don't, and how either side ends it.
+- **A privacy policy:** what you store about people, where, for how long, who else gets it,
+  and how they reach you to see or delete it. In the EU (GDPR) this is required.
+- **A contact address** people can write to.
+
+Dash doesn't write these for you: they depend on who you are, where you are and what you
+charge. Host them on your own site, then link them:
+
+```sh
+DASH_TERMS_URL=https://example.com/terms
+DASH_PRIVACY_URL=https://example.com/privacy
+DASH_CONTACT_EMAIL=help@example.com
+```
+
+Dash then links all three in every page's footer, the terms and privacy policy under the
+signup form ("By creating an account, you accept the terms of service …"), and the contact
+address at the end of every email (see [Branding](branding.md)). With
+[open signup](signup.md) on and any of the three missing, Dash logs `open signup on without
+terms, privacy policy or contact` at every start, naming what's missing.
+
+Everyone can download what Dash keeps about them and delete their own account, and a
+platform admin can delete someone else's. This covers the rights of access, portability and
+erasure (GDPR articles 15, 17 and 20). The end of this page lists what a Dash hub stores, for
+your privacy policy. It describes an unmodified Dash; add what your own setup adds (your
+reverse proxy's access logs, your host's backups, your mail provider).
 
 ## Download your data
 
@@ -83,3 +108,58 @@ restore.
 | `DELETE /api/admin/users/{uid} {password}` | platform admins: delete someone else's account |
 
 These need a browser session: with a token they answer 403.
+
+## What the hub stores, and where
+
+Everything is on the hub's own disk, in its data directory (`-data`, by default
+`~/.local/share/dash`): the database `dash.db` (SQLite) and the files next to it.
+
+| What                                    | Kept                                                                          |
+|-----------------------------------------|-------------------------------------------------------------------------------|
+| Account: email address, username, password hash (Argon2id), two-factor secret and hashed recovery codes, when it was created | until the account is deleted (see [Delete your account](#delete-your-account)) |
+| Unconfirmed signup                      | deleted 24 hours after its last confirmation link expires                     |
+| Confirmation and password reset links   | 24 hours and 1 hour                                                           |
+| Invitations (the invitee's email)       | 7 days                                                                        |
+| Sessions (a hash of the cookie; no IP address or browser) | 7 days                                                      |
+| API tokens and connected apps (hashed)  | until they expire or are revoked; a password change ends them                 |
+| Google sign-in link (Google's account id and email) | until it is unlinked                                              |
+| Sign-in events (Google sign-in, linking, single sign-on, signing members out), with the IP address | a year (`-auth-log-days`) |
+| Push subscriptions (the browser's push address and its user agent) | until notifications are turned off on that device  |
+| Webhooks (the URL), and their last 50 deliveries | until deleted                                                        |
+| Work: projects, tasks, chats, issues, scans, with who created them | until deleted; deleting a task deletes its chat and logs, deleting a project deletes its tasks |
+| Logs of Claude's runs (`logs/`)         | with their task; at most `-log-max-mb` (32 MB) a task                         |
+| Attachments and drawings (`uploads/`)   | with what uses them; unused ones are removed after a day                      |
+| Billing (with [Stripe](billing.md)): the Stripe customer and subscription ids, plan and period | while the org exists. Card, address and tax id stay at Stripe |
+| Backups (`dash backup`, `-backup-dir`)  | the last 7 by default (`-keep`). Copies made before an upgrade (`dash.db.pre-migration-*`) are kept until you delete them |
+
+Not stored in the database:
+
+- **IP addresses** for sign-in lockouts and signup rate limits are kept in memory only,
+  for the lockout's window (15 minutes) or the limit's (1 hour), and are gone when Dash
+  restarts. A lockout and a failed Google sign-in write the IP address to the server's log
+  (journald or the container's log), kept as long as that log keeps it.
+- **Code and repositories** aren't on the hub. They are on the runners, the users' own
+  computers, which run Claude Code with their owners' own Claude accounts.
+
+## Who else gets data
+
+- **Your email provider** (`DASH_SMTP_*`): the addresses Dash writes to, and the links.
+- **Stripe**, with billing on: the org's name and its owner's email address.
+- **Google**, with Google sign-in on.
+- **Browser push services** (Google, Mozilla, Apple), for push notifications: encrypted.
+- **Webhooks:** the addresses users add receive their tasks' events.
+- **Anthropic:** the hub never calls it. Runners send prompts, code and attachments to
+  Anthropic through Claude Code, under their owner's own Claude account and terms.
+
+Dash has no analytics or tracking, and loads no fonts or scripts from other sites.
+
+## Cookies
+
+| Cookie                 | What for                                     | Kept        |
+|------------------------|----------------------------------------------|-------------|
+| `dash_session`         | staying signed in                            | 7 days      |
+| `dash_google_…`, `dash_glink_…` | a Google sign-in in progress        | 10 minutes  |
+| `dash_preview`         | opening [live previews](previews.md)         | 12 hours    |
+
+All are needed for the service to work, so no cookie banner is needed for them. The app
+keeps its view settings (layout, collapsed panes) in the browser's local storage.

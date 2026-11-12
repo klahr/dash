@@ -650,6 +650,10 @@ func (a *app) configureServer() {
 			Host: envOr(o.smtpHost, "DASH_SMTP_HOST"), Port: o.smtpPort, Username: envOr(o.smtpUser, "DASH_SMTP_USERNAME"),
 			Password: os.Getenv("DASH_SMTP_PASSWORD"), From: envOr(o.smtpFrom, "DASH_SMTP_FROM"),
 		}, o.publicURL)
+		if missing := apiSrv.Brand.MissingLegal(); authn.SignupOpen() && len(missing) > 0 {
+			slog.Warn("open signup on without terms, privacy policy or contact: publish them before others sign up (docs/privacy.md)",
+				"missing", strings.Join(missing, ", "))
+		}
 	}
 	// An internet-facing Dash refuses weak credentials and unsafe settings
 	// (a runner without a listener of its own is reached only through its

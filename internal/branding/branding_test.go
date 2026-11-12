@@ -30,6 +30,35 @@ func TestCheck(t *testing.T) {
 	}
 }
 
+func TestSignupNote(t *testing.T) {
+	if n := (Config{}).WithDefaults().SignupNote(); n != "" {
+		t.Fatalf("note without terms or privacy: %q", n)
+	}
+	both := string(Config{TermsURL: "https://a.example/terms", PrivacyURL: "https://a.example/privacy"}.WithDefaults().SignupNote())
+	for _, want := range []string{`href="https://a.example/terms"`, `href="https://a.example/privacy"`, "you accept the", "privacy policy"} {
+		if !strings.Contains(both, want) {
+			t.Errorf("no %s in %s", want, both)
+		}
+	}
+	only := string(Config{PrivacyURL: "https://a.example/privacy"}.WithDefaults().SignupNote())
+	if strings.Contains(only, "accept") || !strings.Contains(only, "privacy policy") {
+		t.Fatal(only)
+	}
+	page := string(Config{TermsURL: "https://a.example/terms"}.WithDefaults().Page([]byte("<form><!--DASH_SIGNUP_NOTE--></form>")))
+	if !strings.Contains(page, `class="signup-note"`) {
+		t.Fatal(page)
+	}
+}
+
+func TestMissingLegal(t *testing.T) {
+	if m := (Config{}).MissingLegal(); len(m) != 3 {
+		t.Fatal(m)
+	}
+	if m := (Config{TermsURL: "https://a.example/t", PrivacyURL: "https://a.example/p", Contact: "a@b.example"}).MissingLegal(); len(m) != 0 {
+		t.Fatal(m)
+	}
+}
+
 func TestFooterEscapes(t *testing.T) {
 	f := string(Config{SourceURL: `https://x.example/"><script>`, Contact: "a@b.example"}.WithDefaults().Footer())
 	if strings.Contains(f, "<script>") || !strings.Contains(f, `href="mailto:a@b.example"`) {
