@@ -537,7 +537,7 @@ export function todoRow(t, li = -1, ri = -1) {
       t.status === "review" && t.finished_at ? h("span", { title: waitsOnGitHub(t) ? "Waiting on GitHub since" : "Waiting for review" }, ago(t.finished_at)) : null,
       t.model ? h("span", { class: "model-tag", title: `Runs on ${t.model}` }, t.model) : null,
       hasPriority(t) ? h("span", { class: "prio-tag", title: `Priority ${t.priority} (lower runs first)` }, `P${t.priority}`) : null,
-      t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, reviewChip(t), approvable(t) ? approveChip(t) : null) : null,
+      t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, reviewChip(t), askClaudeChip(t), approvable(t) ? approveChip(t) : null) : null,
       t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null));
 }
 
@@ -585,15 +585,36 @@ function prTag(pr) {
   }, `PR #${pr.number}`);
 }
 
+// You review it: on GitHub when it has a pull request, else in the task's diff,
+// where line comments, Rework and Approve are.
 function reviewChip(t) {
+  const stop = (e) => e.stopPropagation();
+  if (t.pr) {
+    return h("a", {
+      class: "review-chip", href: t.pr.url, target: "_blank", rel: "noopener",
+      title: `Review pull request #${t.pr.number} on GitHub`, onpointerdown: stop, onclick: stop,
+    }, ico("eye"), "Review");
+  }
   return h("button", {
-    type: "button", class: "review-chip", title: "Have Claude review the changes",
+    type: "button", class: "review-chip", title: "Open the diff to review it yourself",
+    onpointerdown: stop,
+    onclick: (e) => {
+      stop(e);
+      attempt(() => openDetail(t.id, { pane: "diff" }))();
+    },
+  }, ico("eye"), "Review");
+}
+
+// Claude reviews it (the task view's "Review with Claude").
+function askClaudeChip(t) {
+  return h("button", {
+    type: "button", class: "ask-claude-chip", title: "Have Claude review the changes",
     onpointerdown: (e) => e.stopPropagation(),
     onclick: (e) => {
       e.stopPropagation();
       attempt(async () => { await openDetail(t.id); reviewTodo(); })();
     },
-  }, ico("eye"), "Review");
+  }, ico("spark"), "Ask Claude");
 }
 
 // Opens the task with its live preview, starting the server if needed.

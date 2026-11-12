@@ -27,7 +27,8 @@ export const openTodo = (id) => ({ label: "Open", run: () => openDetail(id) });
 export const detailBackground = () => [".topbar", ".sidebar", ".nav", "main", "#chat-pane"].map((s) => $(s)).filter(Boolean);
 const setDetailModal = (on) => detailBackground().forEach((el) => { el.inert = on; });
 
-export async function openDetail(id) {
+// pane: "diff" opens it on the changes (the card's Review chip) instead of the timeline.
+export async function openDetail(id, { pane = "timeline" } = {}) {
   closeCommit();
   // Opening another task from inside the panel keeps the original opener.
   const a = document.activeElement;
@@ -37,13 +38,14 @@ export async function openDetail(id) {
   state.detail = id;
   // On a desktop the task's running preview opens beside it.
   if (desktop.matches && previewOf(id)) pv.todo = id;
-  state.pane = "timeline";
+  state.pane = pane;
   state.diff = "";
   state.diffOpen = new Set();
   $("#detail").hidden = false;
   $("#scrim").hidden = !desktop.matches;
   renderDetail();
   if (state.pane === "timeline") todoChat.input.focus();
+  else $("#d-diff")?.focus({ preventScroll: true });
   $$(".todo.selected").forEach((e) => e.classList.remove("selected"));
   $(`.todo[data-id="${id}"]`)?.classList.add("selected");
   await Promise.all([loadDiff(), loadTodoChat()]).catch(fail);

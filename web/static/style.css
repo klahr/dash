@@ -331,6 +331,12 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .act-spin { flex: none; display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--running) 30%, transparent); border-top-color: var(--running); animation: spin .8s linear infinite; vertical-align: -1px; }
 @media (prefers-reduced-motion: reduce) { .act-spin { animation-duration: 2.4s; } }
 .todo-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; color: var(--faint); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; padding-top: 2px; }
+/* Below desktop the side column sits beside the title; a card in review has four
+   action chips, too wide for that, so its side goes under the title (as on desktop). */
+@media (max-width: 1023.98px) {
+  .todo:has(.ask-claude-chip) > .todo-side { grid-column: 2 / -1; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 0; min-width: 0; }
+  .todo:has(.ask-claude-chip) > .todo-side .card-actions { margin-top: 0; }
+}
 .paused-tag { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
 
 .s-draft { --c: var(--faint); }
@@ -406,6 +412,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .diff-lines .del { background: color-mix(in srgb, var(--failed) 12%, transparent); color: var(--diff-del); }
 .diff-lines .hunk { color: var(--review); background: color-mix(in srgb, var(--review) 7%, transparent); padding-top: 2px; padding-bottom: 2px; }
 .pane-empty { color: var(--muted); padding: 24px 4px; }
+#d-diff:focus { outline: none; }
 .log { tab-size: 4; margin: 0; font: var(--fs-code)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--code-text); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); padding: 12px; min-height: 120px; }
 
 .actionbar {
@@ -2067,14 +2074,16 @@ dialog.file-over, .file-over { outline: 2px dashed color-mix(in srgb, var(--acce
 .pr-status.waiting { color: var(--review); }
 .pr-status.err { color: var(--failed); }
 .revert-tag { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
-.card-actions { display: flex; gap: 6px; margin-top: 4px; }
-.review-chip, .preview-chip, .approve-chip, .enqueue-chip {
+/* Wraps rather than overflowing a narrow card (four chips in Review). */
+.card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; min-width: 0; }
+.review-chip, .preview-chip, .approve-chip, .enqueue-chip, .ask-claude-chip {
   display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px;
   border-radius: var(--r-s); border: 1px solid var(--line); font-size: var(--fs-xs); font-weight: 600; line-height: 1;
   white-space: nowrap; cursor: pointer; user-select: none;
   transition: background-color .15s var(--ease), border-color .15s var(--ease), color .15s var(--ease);
 }
-.review-chip .ico, .preview-chip .ico, .approve-chip .ico, .enqueue-chip .ico { width: 14px; height: 14px; flex: none; }
+.review-chip .ico, .preview-chip .ico, .approve-chip .ico, .enqueue-chip .ico, .ask-claude-chip .ico { width: 14px; height: 14px; flex: none; }
+a.review-chip { text-decoration: none; }
 .review-chip { background: var(--raised); color: var(--text); }
 .review-chip .ico { color: var(--review); }
 .review-chip:hover { border-color: var(--review); background: color-mix(in srgb, var(--review) 10%, var(--raised)); }
@@ -2083,7 +2092,11 @@ dialog.file-over, .file-over { outline: 2px dashed color-mix(in srgb, var(--acce
 :is(.preview-chip, .enqueue-chip) { background: var(--raised); color: var(--text); }
 :is(.preview-chip, .enqueue-chip) .ico { color: var(--accent); }
 :is(.preview-chip, .enqueue-chip):hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--raised)); }
-.review-chip:active, .preview-chip:active, .approve-chip:active, .enqueue-chip:active { transform: translateY(1px); }
+/* Less prominent than Review: no fill, muted until hovered. */
+.ask-claude-chip { background: transparent; border-color: transparent; color: var(--muted); padding: 0 8px; }
+.ask-claude-chip .ico { color: currentColor; }
+.ask-claude-chip:hover { color: var(--text); border-color: var(--line); background: var(--raised); }
+.review-chip:active, .preview-chip:active, .approve-chip:active, .enqueue-chip:active, .ask-claude-chip:active { transform: translateY(1px); }
 .btn.reviewing { color: var(--running); cursor: default; }
 .btn.reviewing svg { animation: pulse-dot 1.4s ease-in-out infinite; }
 a.revert-tag { text-decoration: underline; }

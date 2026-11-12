@@ -107,8 +107,9 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    queue**; otherwise the task is saved as a draft to queue later from the *Drafts* column. The task moves to *Queued*, then *Running* as soon as Claude starts on it in
    its own worktree. Open the card to follow along; if Claude needs permission for something,
    Dash asks you.
-4. **Review.** When Claude is done the task lands in *Review*. Open it and read the diff on the
-   **Changes** tab. Not right? Click **Rework**, say what to change, and it goes back to Claude.
+4. **Review.** When Claude is done the task lands in *Review*. Click **Review** on the card (or
+   open it) and read the diff on the **Changes** tab; **Ask Claude** has Claude review it
+   first. Not right? Click **Rework**, say what to change, and it goes back to Claude.
    For a small fix, click **Edit** on a changed file instead: saving commits your edit on the
    task's branch, so approving merges it with the rest.
 5. **Approve.** Click **Approve**. The task goes through *Merging* and ends up in *Done*, as one
