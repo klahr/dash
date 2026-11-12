@@ -31,8 +31,10 @@ var ErrMergeQueueFull = errors.New("merge queue is full")
 //  1. merge the default branch into the todo's worktree. A conflict sends
 //     the todo back to Claude to resolve (auto-fix), then it returns here
 //     without another review.
-//  2. if that brought in new commits, run the tests again; failures go back
-//     to Claude the same way
+//  2. run the project's test command on the result, unless it already
+//     passed on exactly that commit (the review's run, when the default
+//     branch brought in nothing); failures go back to Claude the same way,
+//     so a red build never lands
 //  3. land it: squash the branch onto the default branch (one commit per
 //     todo) and push, or in "pr" mode push the branch and open a pull
 //     request, which PollPRs follows until GitHub merges it. In a project
@@ -410,18 +412,30 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 				return err
 			}
 
-			// 2. Re-test if the default branch moved since the todo's tests ran.
-			if changed && p.TestCommand != "" {
-				checks := runChecks(ctx, m.Log, t, p, wt.Path, "merge", m.TestTimeout)
-				if ctx.Err() != nil {
-					return ctx.Err() // tests cut off by a shutdown haven't failed
-				}
-				if t, err = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Checks = &checks; return nil }); err != nil {
+			// 2. Test what lands, unless the tests already passed on exactly
+			// this commit: a red build goes back to the todo, not onto the
+			// default branch.
+			if p.TestCommand != "" {
+				head, err := m.Git.Head(ctx, p.ID, wt.Path, "HEAD")
+				if err != nil {
 					return err
 				}
-				if !checks.Passed {
-					note := fmt.Sprintf("Your change was merged with the latest `%s`, and now the tests fail. %s", p.Base(), testNote(checks))
-					return m.sendBack(t, p, note, false, "tests fail after merging "+p.Base())
+				if !checksPassedOn(t.Checks, p.TestCommand, head) {
+					checks := runChecks(ctx, m.Git, m.Log, t, p, wt.Path, "merge", m.TestTimeout)
+					if ctx.Err() != nil {
+						return ctx.Err() // tests cut off by a shutdown haven't failed
+					}
+					if t, err = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Checks = &checks; return nil }); err != nil {
+						return err
+					}
+					if !checks.Passed {
+						if changed {
+							note := fmt.Sprintf("Your change was merged with the latest `%s`, and now the tests fail. %s", p.Base(), testNote(checks))
+							return m.sendBack(t, p, note, false, "tests fail after merging "+p.Base())
+						}
+						note := "Your change was approved, but the tests fail, so it wasn't merged. " + testNote(checks)
+						return m.sendBack(t, p, note, false, "tests fail; not merged")
+					}
 				}
 			}
 

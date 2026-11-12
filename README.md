@@ -95,7 +95,11 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    initial commit), with no remote and no GitHub; deleting that project deletes its folder too.
    Repositories already on a runner's disk are added with **Add projects from this computer…** on
    its row of the Runners page. A clone that has a favicon gets it as its project icon.
-   A *Test command* (e.g. `go test ./...`) is optional but lets Dash check Claude's work.
+   A *Test command* (e.g. `go test ./...`) is optional but lets Dash check Claude's work. It
+   runs when Claude finishes, and again in the task's worktree before Dash merges it, unless it
+   already passed on exactly that commit. A task whose tests fail there goes back to Claude
+   instead of onto the default branch. Make it run what your CI runs (formatting, linters,
+   tests), so a red build never reaches the default branch.
 2. **Add a task.** Click **New task** (or press <kbd>n</kbd>) and write what Claude should do,
    as you would in a chat; Claude names the task. <kbd>Enter</kbd> saves it, <kbd>Shift</kbd>+<kbd>Enter</kbd>
    adds a field for another task (a pasted multi-line text stays one task). **More options…**

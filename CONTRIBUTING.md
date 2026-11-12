@@ -52,6 +52,15 @@ for f in web/static/*.js; do node --check "$f"; done
 node --test web/*_test.mjs                  # also run by go test, when node is installed
 ```
 
+[`scripts/check.sh`](scripts/check.sh) runs gofmt, vet, staticcheck, the tests and
+`node --check` in one go. When you develop Dash with Dash, set it as the project's **Test
+command**: Dash then runs it in each task's worktree before merging, and sends a red build back
+to the task.
+
+```sh
+./scripts/check.sh
+```
+
 For a quick loop while you work, `go test -short ./...` skips the end-to-end tests in
 [`cmd/dash`](cmd/dash) (the `TestHub…` and `TestBrowser…` tests, which build dash and run a
 real hub and runner). Run the full suite, without `-short`, before you open a pull request; CI

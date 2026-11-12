@@ -1018,14 +1018,20 @@ func (e *TodoEngine) prepareWorktree(ctx context.Context, p model.Project, wt mo
 }
 
 func (e *TodoEngine) runChecks(ctx context.Context, t model.Todo, p model.Project, dir, stage string) model.Checks {
-	return runChecks(ctx, e.Log, t, p, dir, stage, e.TestTimeout)
+	return runChecks(ctx, e.Git, e.Log, t, p, dir, stage, e.TestTimeout)
 }
 
-func runChecks(ctx context.Context, l *TodoLog, t model.Todo, p model.Project, dir, stage string, timeout time.Duration) model.Checks {
+func runChecks(ctx context.Context, g *gitops.Git, l *TodoLog, t model.Todo, p model.Project, dir, stage string, timeout time.Duration) model.Checks {
 	l.Line(t, "▶ tests: "+p.TestCommand)
+	commit := checkedCommit(ctx, g, p.ID, dir)
 	start := time.Now()
 	code, tail, err := runShell(ctx, dir, p.TestCommand, timeout, nil, func(s string) { l.Line(t, "│ "+s) })
 	c := model.Checks{Command: p.TestCommand, ExitCode: code, Output: tail, Stage: stage, At: time.Now(), Duration: time.Since(start).Seconds()}
+	if commit != "" {
+		if after, herr := g.Head(ctx, p.ID, dir, "HEAD"); herr == nil && after == commit {
+			c.Commit = commit // nothing committed while they ran
+		}
+	}
 	if err != nil {
 		c.Output = strings.TrimSpace(tail + "\n" + err.Error())
 	}
@@ -1036,6 +1042,29 @@ func runChecks(ctx context.Context, l *TodoLog, t model.Todo, p model.Project, d
 		l.Line(t, fmt.Sprintf("✖ tests failed (exit %d, %.0fs)", code, c.Duration))
 	}
 	return c
+}
+
+// checkedCommit is the commit checked out in dir when it has no uncommitted
+// changes to tracked files, so checks run there test exactly that commit;
+// otherwise "".
+func checkedCommit(ctx context.Context, g *gitops.Git, projectID, dir string) string {
+	if g == nil {
+		return ""
+	}
+	if files, err := g.CheckoutChanges(ctx, projectID, dir); err != nil || len(files) > 0 {
+		return ""
+	}
+	head, err := g.Head(ctx, projectID, dir, "HEAD")
+	if err != nil {
+		return ""
+	}
+	return head
+}
+
+// checksPassedOn reports whether c passed on commit, so running them again
+// before landing it would test the same code.
+func checksPassedOn(c *model.Checks, command, commit string) bool {
+	return c != nil && c.Passed && c.Command == command && c.Commit != "" && c.Commit == commit
 }
 
 func testNote(c model.Checks) string {

@@ -543,9 +543,13 @@ type Checks struct {
 	Passed   bool      `json:"passed"`
 	ExitCode int       `json:"exit_code"`
 	Output   string    `json:"output"` // tail of combined stdout/stderr
-	Stage    string    `json:"stage"`  // "review" (before review) | "merge" (after merging the default branch)
+	Stage    string    `json:"stage"`  // "review" (before review) | "merge" (in the merge queue, before landing) | "manual"
 	At       time.Time `json:"at"`
 	Duration float64   `json:"duration_s"`
+	// Commit is the worktree's commit the checks ran on, when it had no
+	// uncommitted changes to tracked files ("" otherwise). The merge queue
+	// runs the checks again unless they passed on the commit it lands.
+	Commit string `json:"commit,omitempty"`
 }
 
 // Attachment is an uploaded file attached to a todo or a rework note.
