@@ -4,8 +4,6 @@ Most important first within each section.
 
 ## Next
 
-- [ ] Add a `CLAUDE.md` with the project rules: run `gofmt -l .`, `go vet ./...`, staticcheck and
-      `go test ./...` before finishing; follow the docs style and the two-pane UI pattern.
 
 
 ## Quality
