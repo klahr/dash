@@ -20,7 +20,7 @@
   html,body{background:var(--bg);overflow:hidden;height:100%;cursor:none}
   .tv{width:1920px;height:1080px;background:var(--bg);color:var(--text);position:absolute;left:0;top:0;transform-origin:0 0;
       font:500 22px/1.3 "Instrument Sans","Inter","Segoe UI",system-ui,sans-serif;
-      display:grid;grid-template-rows:96px 150px minmax(0,1fr) 64px;gap:20px;padding:28px 36px;overflow:hidden}
+      display:grid;grid-template-rows:96px 150px minmax(0,1fr);gap:20px;padding:28px 36px;overflow:hidden}
   .num{font-variant-numeric:tabular-nums}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px 26px;min-height:0;overflow:hidden}
   h2{font-size:20px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:16px;display:flex;align-items:center;gap:12px}
@@ -97,22 +97,8 @@
   .spark{width:100%;flex:1;min-height:40px;display:block}
   .axis{display:flex;justify-content:space-between;font-size:15px;color:var(--faint)}
 
-  /* ticker */
-  footer{display:flex;align-items:center;gap:20px;overflow:hidden;border-top:1px solid var(--line);padding-top:14px}
-  footer .lbl{font-size:16px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);flex:none}
-  .tickwrap{overflow:hidden;flex:1;min-width:0}
-  .ticker{display:inline-flex;gap:56px;white-space:nowrap;font-size:20px;color:var(--dim);will-change:transform}
-  .ticker.scroll{animation:scroll var(--dur,60s) linear infinite}
-  .ticker b{color:var(--text);font-weight:600}
-  .ticker .k-merged{color:var(--ok)} .ticker .k-started{color:var(--run)} .ticker .k-sent_back{color:var(--bad)}
-  .ticker .k-ci,.ticker .k-failed,.ticker .k-offline{color:var(--bad)} .ticker .k-review{color:var(--rev)}
-  @keyframes scroll{to{transform:translateX(-50%)}}
-  /* WCAG 2.2.2: hovering or focusing the ticker pauses it so an item can be read. */
-  .tickwrap:hover .ticker,.tickwrap:focus-within .ticker{animation-play-state:paused}
-  .tickwrap:focus-visible{outline:2px solid var(--text);outline-offset:4px}
   @media (prefers-reduced-motion: reduce){
-    .ticker.scroll,.pulse{animation:none}
-    .tickwrap{overflow-x:auto}
+    .pulse{animation:none}
   }
 
   .stale{position:absolute;right:36px;bottom:8px;font-size:15px;color:var(--bad);display:none}
@@ -179,10 +165,6 @@
     </section>
   </main>
 
-  <footer>
-    <span class="lbl">Latest</span>
-    <div class="tickwrap" tabindex="0" role="region" aria-label="Latest events (hover or focus to pause)"><div class="ticker" id="ticker"></div></div>
-  </footer>
   <div class="stale" id="stale">connection lost · retrying</div>
   <div class="error" id="error"></div>
 </div>

@@ -283,40 +283,6 @@ function renderToday(d) {
   $("spark-from").textContent = pad(from) + ":00";
 }
 
-const icons = { merged: "✓", started: "▶", sent_back: "↩", ci: "✗", review: "●", failed: "✗", offline: "⚠" };
-let lastTicker = "";
-const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
-reducedMotion.addEventListener("change", () => {
-  if (last) {
-    lastTicker = "";
-    renderTicker(last);
-  }
-});
-
-function renderTicker(d) {
-  const key = JSON.stringify(d.events);
-  if (key === lastTicker) return; // keep the scroll going smoothly
-  lastTicker = key;
-  const el = $("ticker");
-  const spans = (d.events.length ? d.events : [{ at: d.now, kind: "", text: "nothing has happened in the last 24 hours" }]).map((e) =>
-    h("span", {}, h("b", {}, hhmm(new Date(e.at))), " ", e.kind ? h("span", { class: "k-" + e.kind }, icons[e.kind] || "") : "", " ", e.text));
-  el.classList.remove("scroll");
-  el.replaceChildren(...spans);
-  // Scroll only when it doesn't fit; doubled so the loop is seamless. With
-  // reduced motion it stays still and the wrapper scrolls by hand instead.
-  requestAnimationFrame(() => {
-    if (!reducedMotion.matches && el.scrollWidth > el.parentElement.clientWidth) {
-      el.append(...spans.map((s) => {
-        const c = s.cloneNode(true);
-        c.setAttribute("aria-hidden", "true");
-        return c;
-      }));
-      el.style.setProperty("--dur", Math.max(30, el.scrollWidth / 2 / 80) + "s"); // ~80 px/s
-      el.classList.add("scroll");
-    }
-  });
-}
-
 let last = null; // the latest data, to lay out again on a resize
 
 function render(d) {
@@ -328,7 +294,6 @@ function render(d) {
   renderNeeds(d, now);
   renderRunners(d, now);
   renderToday(d);
-  renderTicker(d);
   tick();
   fitPage();
 }
@@ -426,11 +391,8 @@ addEventListener("resize", () => {
   resizing = requestAnimationFrame(() => {
     layout();
     // Lay the lists out again now, not at the next poll: how many cards fit
-    // and whether the ticker has to scroll both depend on the size.
-    if (last) {
-      lastTicker = "";
-      render(last);
-    }
+    // depends on the size.
+    if (last) render(last);
   });
 });
 

@@ -141,9 +141,6 @@ func TestWallAggregates(t *testing.T) {
 	if len(d.Runners) != 1 || d.Queue.Busy != 1 || d.Queue.Slots < 1 {
 		t.Errorf("runners %+v queue %+v", d.Runners, d.Queue)
 	}
-	if len(d.Events) == 0 || d.Events[0].Kind != "merged" {
-		t.Errorf("events %+v", d.Events)
-	}
 	body, _ := json.Marshal(d)
 	if strings.Contains(string(body), "their task") || strings.Contains(string(body), "secret prompt") {
 		t.Errorf("leaked: %s", body)

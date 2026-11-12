@@ -37,7 +37,6 @@ const (
 	wallReviewOld = time.Hour
 	wallFailedOld = 30 * time.Minute
 	wallMaxItems  = 20 // per list: a TV shows fewer anyway
-	wallMaxEvents = 30
 )
 
 type wallData struct {
@@ -54,7 +53,6 @@ type wallData struct {
 	Issues  wallIssues   `json:"issues"`
 	Runners []wallRunner `json:"runners"`
 	Today   wallToday    `json:"today"`
-	Events  []wallEvent  `json:"events"`
 }
 
 type wallQueue struct {
@@ -146,12 +144,6 @@ type wallToday struct {
 	Midnight time.Time `json:"midnight"`
 }
 
-type wallEvent struct {
-	At   time.Time `json:"at"`
-	Kind string    `json:"kind"` // merged | started | sent_back | ci | review | failed | offline
-	Text string    `json:"text"`
-}
-
 // wallCaller is who may see r's wall: a wall token's org (?token=), else
 // the session's. public is true for a public wall token: its wall is
 // always in public mode.
@@ -211,7 +203,7 @@ func (s *Server) getWall(w http.ResponseWriter, r *http.Request) {
 // wall sums up c's org's work as of now; privacy is public mode.
 func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wallData, error) {
 	data := s.Store.ForOrg(c.Org)
-	d := wallData{Now: now, Privacy: privacy, Running: []wallRun{}, Needs: []wallNeed{}, Runners: []wallRunner{}, Events: []wallEvent{},
+	d := wallData{Now: now, Privacy: privacy, Running: []wallRun{}, Needs: []wallNeed{}, Runners: []wallRunner{},
 		Issues: wallIssues{Severity: map[string]int{}, Top: []string{}}}
 	if o, err := s.Store.Accounts().Org(c.Org); err == nil {
 		d.Org = o.Name
@@ -448,7 +440,6 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 
 	s.wallRunners(&d, todos, projects, runners, runnerName)
 	s.wallQueue(&d, c, runners)
-	d.Events = wallEvents(todos, byProject, runners, title, runnerName, sentBack, now)
 	return d, nil
 }
 
@@ -568,55 +559,6 @@ func bestUsage(runners []tunnel.Runner) *usage.Snapshot {
 		return nil
 	}
 	return best.Reported.Usage
-}
-
-// wallEvents is the ticker: what happened lately, newest first, as told by
-// the tasks' own timestamps (Dash keeps no event history).
-func wallEvents(todos []model.Todo, byProject map[string]model.Project, runners []tunnel.Runner,
-	title func(model.Todo) string, runnerName, sentBack func(string) string, now time.Time) []wallEvent {
-	since := now.Add(-24 * time.Hour)
-	out := []wallEvent{}
-	add := func(at *time.Time, kind, text string) {
-		if at != nil && at.After(since) && !at.After(now.Add(time.Minute)) {
-			out = append(out, wallEvent{At: *at, Kind: kind, Text: text})
-		}
-	}
-	for _, t := range todos {
-		name := "“" + title(t) + "” · " + byProject[t.ProjectID].Name
-		switch t.Status {
-		case model.StatusMerged:
-			add(t.FinishedAt, "merged", "merged "+name)
-		case model.StatusReview:
-			add(t.FinishedAt, "review", "review ready "+name)
-		case model.StatusFailed:
-			add(t.FinishedAt, "failed", "failed "+name)
-		case model.StatusInProgress:
-			if t.SentBack != "" {
-				at := t.UpdatedAt
-				if t.StartedAt != nil {
-					at = *t.StartedAt
-				}
-				add(&at, "sent_back", "sent back "+name+": "+wallLine(sentBack(t.SentBack), 80))
-			} else {
-				add(t.StartedAt, "started", "started "+name+" on "+runnerName(t.Runner))
-			}
-		}
-		if t.CIRun != 0 {
-			at := t.CreatedAt
-			add(&at, "ci", fmt.Sprintf("CI failed on %s · run #%d → task queued", byProject[t.ProjectID].Name, t.CIRun))
-		}
-	}
-	for _, r := range runners {
-		if !r.Online && !r.LastSeen.IsZero() {
-			at := r.LastSeen
-			add(&at, "offline", runnerName(r.ID)+" went offline")
-		}
-	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
-	if len(out) > wallMaxEvents {
-		out = out[:wallMaxEvents]
-	}
-	return out
 }
 
 // wallAliases names xs for public mode: prefix plus a letter (A…Z, then

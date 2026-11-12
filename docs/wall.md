@@ -9,8 +9,8 @@ From top to bottom: whether the queue runs and how many runner slots are busy, t
 usage of the 5-hour and 7-day windows (with the time left until each resets, e.g. "resets in 3d 4h"), a clock; the
 number of tasks in each stage; a card per running task (elapsed time, run, cost so far,
 lines changed, the tool call it is making); what needs a human (reviews oldest first, failed
-tasks, open issues; red when waiting too long); the runners; today's merges, spend and
-merges per hour; and a ticker of what happened lately.
+tasks, open issues; red when waiting too long); the runners; and today's merges, spend and
+merges per hour.
 
 It refreshes every 5 seconds.
 
@@ -95,5 +95,4 @@ curl -b cookies.txt -X POST https://dash.example.com/api/wall/tokens -d '{"name"
 
 "Spend" is the cost of the tasks worked on today (Dash keeps cost per task, not per run).
 "First-try merges" are today's merges that took a single Claude run. Time from queue to
-merge isn't recorded, so it isn't shown. The activity line comes from the events this Dash
-saw since it started.
+merge isn't recorded, so it isn't shown.
