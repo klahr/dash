@@ -68,7 +68,9 @@ func TestCheckAccessFailsClearly(t *testing.T) {
 		"runner rg-klarre-runner cannot access klahr/dash-infra over ssh: ",
 		"Permission denied (publickey)",
 		"-o BatchMode=yes", // the user's GIT_SSH_COMMAND, in batch mode
-		"prompt=0",         // GIT_TERMINAL_PROMPT=0
+		"-o StrictHostKeyChecking=accept-new",
+		"prompt=0", // GIT_TERMINAL_PROMPT=0
+		"`ssh -T git@github.com`",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error %q lacks %q", msg, want)
@@ -77,11 +79,47 @@ func TestCheckAccessFailsClearly(t *testing.T) {
 	if strings.Contains(msg, "Please make sure") {
 		t.Errorf("error %q keeps ssh's boilerplate", msg)
 	}
+	if strings.Contains(msg, "ssh-keygen -R") {
+		t.Errorf("error %q gives the host key hint for a key GitHub refused", msg)
+	}
 
 	https := (&AccessError{Runner: "r1", Repo: "klahr/dash-infra", Protocol: ProtocolHTTPS,
 		Detail: "fatal: could not read Username for 'https://github.com': terminal prompts disabled"}).Error()
 	if !strings.HasPrefix(https, "runner r1 cannot access klahr/dash-infra over https: fatal: could not read Username") {
 		t.Errorf("https error = %q", https)
+	}
+}
+
+// ssh never prompts and trusts a host it has never seen, after the user's
+// own GIT_SSH_COMMAND when they set one.
+func TestBatchSSHEnv(t *testing.T) {
+	const opts = " -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+	for user, want := range map[string]string{
+		"":                       "ssh" + opts,
+		" ssh -i ~/.ssh/deploy ": "ssh -i ~/.ssh/deploy" + opts,
+	} {
+		t.Setenv("GIT_SSH_COMMAND", user)
+		if got := batchSSHEnv(); len(got) != 1 || got[0] != "GIT_SSH_COMMAND="+want {
+			t.Errorf("GIT_SSH_COMMAND=%q: batchSSHEnv() = %q, want %q", user, got, "GIT_SSH_COMMAND="+want)
+		}
+	}
+}
+
+// A github.com host key that doesn't match (an old one in known_hosts)
+// gets its own hint; other ssh failures keep the SSH key hint.
+func TestAccessErrorSSHHint(t *testing.T) {
+	for _, c := range []struct {
+		detail, want, notWant string
+	}{
+		{"@@@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @@@; Host key verification failed.; fatal: Could not read from remote repository.",
+			"`ssh-keygen -R github.com`, then run `ssh -T git@github.com`", "check this computer's SSH key"},
+		{"git@github.com: Permission denied (publickey).; fatal: Could not read from remote repository.",
+			"check this computer's SSH key with `ssh -T git@github.com`", "ssh-keygen"},
+	} {
+		msg := (&AccessError{Runner: "r1", Repo: "klahr/dash-infra", Protocol: ProtocolSSH, Detail: c.detail}).Error()
+		if !strings.Contains(msg, c.want) || !strings.Contains(msg, "-github-protocol=https") || strings.Contains(msg, c.notWant) {
+			t.Errorf("error %q: want %q and -github-protocol=https, not %q", msg, c.want, c.notWant)
+		}
 	}
 }
 

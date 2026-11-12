@@ -97,7 +97,11 @@ func (e *AccessError) Error() string {
 	}
 	switch e.Protocol {
 	case ProtocolSSH:
-		msg += " (check this computer's SSH key with `ssh -T git@github.com`, or start the runner with -github-protocol=https)"
+		if strings.Contains(e.Detail, "Host key verification failed") {
+			msg += " (the github.com host key in ~/.ssh/known_hosts doesn't match GitHub's, e.g. it predates GitHub's 2023 RSA key rotation: remove it with `ssh-keygen -R github.com`, then run `ssh -T git@github.com` to trust the current key, or start the runner with -github-protocol=https)"
+		} else {
+			msg += " (check this computer's SSH key with `ssh -T git@github.com`, or start the runner with -github-protocol=https)"
+		}
 	case ProtocolHTTPS:
 		msg += " (set up a credential helper, e.g. `gh auth setup-git`, or start the runner with -github-protocol=ssh)"
 	}
@@ -129,15 +133,17 @@ func (g *Git) CheckAccess(ctx context.Context, projectID, runner, remote string)
 	return &AccessError{Runner: runner, Repo: repo, Protocol: RemoteProtocol(remote), Detail: summarizeGitOutput(out)}
 }
 
-// batchSSHEnv makes ssh fail rather than ask (for a passphrase, a
-// password, or whether to trust a new host key): GIT_SSH_COMMAND with
-// -o BatchMode=yes, after the user's own GIT_SSH_COMMAND when they set one.
+// batchSSHEnv makes ssh fail rather than ask (for a passphrase or a
+// password), and trust a host it has never seen (accept-new) while still
+// rejecting a host whose key changed: GIT_SSH_COMMAND with -o BatchMode=yes
+// -o StrictHostKeyChecking=accept-new, after the user's own GIT_SSH_COMMAND
+// when they set one (ssh keeps an option's first value, so theirs win).
 func batchSSHEnv() []string {
 	ssh := strings.TrimSpace(os.Getenv("GIT_SSH_COMMAND"))
 	if ssh == "" {
 		ssh = "ssh"
 	}
-	return []string{"GIT_SSH_COMMAND=" + ssh + " -o BatchMode=yes"}
+	return []string{"GIT_SSH_COMMAND=" + ssh + " -o BatchMode=yes -o StrictHostKeyChecking=accept-new"}
 }
 
 // transportArgs allow git only network transports: no ext:: or fd::
