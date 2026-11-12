@@ -510,6 +510,33 @@ the message size, the runner that sent it, and the runners' public keys.
   every note again, sealed with that key, when it next catches up.
 - The secret scanner runs on the writing runner before a note is saved or sealed.
 
+#### Status and removing notes in the hub's UI
+
+Project settings → **Shared notes** shows counts only. The hub asks the project's online runners
+over their tunnels. Each runner reports how many live notes it has, their size, how many have
+expired but aren't purged yet, and when the latest write was. It also reports its per-writer
+counters, the project key it seals with (its random id and epoch), its own fingerprint, and the
+runners waiting for approval on it. The page says whether the online copies agree. If no runner of
+the project is online, it says so instead of showing numbers. Approving still happens on the runners
+(`dash runner notes approve`), after comparing fingerprints there.
+
+**Remove notes** sends a command, never a note. You can remove all notes, the notes last written by
+one of the project's tasks or runners, or the expired notes. Each online runner opens its own copy,
+applies the filter, and answers only how many notes it removed. The page asks before removing and
+shows each runner's count. The hub logs who sent which command.
+
+- "All notes" is one clear: everything last updated before the moment you asked. Notes written
+  later stay. The filters write a tombstone for each note that matched. Both kinds sync like any
+  delete, so a runner that was offline loses its copies when it catches up and doesn't send them
+  back. A runner offline during a filtered removal can still keep a note it edits again before it
+  catches up, because the later write wins. Expired notes are purged, as tidying does on every copy.
+- If none of the project's runners is online, the hub keeps the command (not any note) with the
+  project and shows it as waiting. It sends the command to the first of the project's runners that
+  connects. You can cancel it until then. That runner catches up first if its copy is stale.
+- A removal isn't signed by you, so a dishonest hub could send one. It could already drop the
+  runners' traffic, so this adds little. A runner only takes commands from its hub's tunnel, and only
+  for projects linked to it. The hub's proxy to runners (`/peer/…`) can't send them.
+
 ## Claude runs on each user's own runner
 
 The hub doesn't run Claude at all, and can't be made to: it keeps the board (the database) and

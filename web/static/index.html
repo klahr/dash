@@ -883,6 +883,7 @@
             <button type="button" class="rail-item" data-rail="repository">Repository</button>
             <button type="button" class="rail-item" data-rail="claude">Claude</button>
             <button type="button" class="rail-item" data-rail="runners">Runners</button>
+            <button type="button" class="rail-item" data-rail="notes">Shared notes</button>
             <button type="button" class="rail-item" data-rail="board">Board</button>
           </div>
           <div class="rail-group"><span class="rail-head">Delivery</span>
@@ -953,6 +954,26 @@
               <button class="link" type="button" id="settings-runners-manage" data-icon="computer">Manage runners…</button>
             </fieldset>
             <p class="hint" id="settings-runners-hint" hidden></p>
+          </section>
+          <section class="rail-section" data-section="notes">
+            <!-- Counts and removals only: the hub and this page never see a note. Its controls have no names: not part of the settings form. -->
+            <fieldset class="field choice" id="settings-notes-field" hidden>
+              <legend>Shared notes <em>what tasks on this project's runners leave for each other, sealed so only the runners can read them</em></legend>
+              <div id="settings-notes" aria-live="polite"></div>
+              <fieldset class="field choice" id="notes-remove-field">
+                <legend>Remove notes <em>each runner removes them from its own copy and says how many; runners offline now remove them when they catch up</em></legend>
+                <label class="field"><span>Which notes</span><select id="notes-remove-kind">
+                  <option value="expired">Expired notes</option>
+                  <option value="task">Written by a task</option>
+                  <option value="runner">Written by a runner</option>
+                  <option value="all">All notes of the project</option>
+                </select></label>
+                <label class="field" id="notes-remove-task-row" hidden><span>Task</span><select id="notes-remove-task"></select></label>
+                <label class="field" id="notes-remove-runner-row" hidden><span>Runner</span><select id="notes-remove-runner"></select></label>
+                <div><button class="btn small danger" type="button" id="notes-remove" data-icon="trash">Remove…</button></div>
+                <ul class="item-list" id="notes-remove-result" hidden></ul>
+              </fieldset>
+            </fieldset>
           </section>
           <section class="rail-section" data-section="board">
             <!-- The project's board backend. Saved with its own button, not the settings form: its inputs have no names. -->

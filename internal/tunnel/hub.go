@@ -1084,6 +1084,7 @@ func (h *Hub) Proxy(name string) (http.Handler, bool) {
 			// Only the hub's relay delivers shared notes: nobody reads or
 			// writes a runner's notes through the hub's API.
 			r.Out.Header.Del(notes.RelayHeader)
+			r.Out.Header.Del(notes.CommandHeader)
 			// The hub says it, for requests it checked (WithUser).
 			if uid, ok := userFrom(r.In.Context()); ok {
 				r.Out.Header.Set(UserHeader, strconv.FormatInt(uid, 10))

@@ -116,8 +116,9 @@ type Server struct {
 	// none, e.g. on the hub, which keeps no notes).
 	NotesPeer http.Handler
 	// Notes, on a runner, is its copy of its hub projects' shared notes,
-	// which the tasks it runs reach with the notes tools (/mcp/notes; nil:
-	// none, as on the hub or a Dash without one).
+	// which the tasks it runs reach with the notes tools (/mcp/notes), and
+	// which the hub's UI asks for counts and removals (notes.go; nil: none,
+	// as on the hub or a Dash without one).
 	Notes *notes.Service
 	// GitHubProtocol is how this runner clones the hub's GitHub projects:
 	// gitops.ProtocolAuto, gitops.ProtocolSSH ("" too, without the
@@ -140,6 +141,9 @@ type Server struct {
 	// (<data>/try; see try.go).
 	TryRoot string
 	tries   trySessions // on a hub: which runner each project's try session runs on
+	// notesDeliver: one runner at a time takes the pending removals of
+	// shared notes (notes.go).
+	notesDeliver sync.Mutex
 
 	reviewMu  sync.Mutex
 	reviewGen uint64
@@ -226,6 +230,10 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/projects/{pid}", s.getProject)
 	mux.HandleFunc("PATCH /api/projects/{pid}", s.updateProject)
 	mux.HandleFunc("DELETE /api/projects/{pid}", s.deleteProject)
+	// Shared notes of a hub's project: counts and removals, never a note (notes.go)
+	mux.HandleFunc("GET /api/projects/{pid}/notes", s.getNotes)
+	mux.HandleFunc("POST /api/projects/{pid}/notes/remove", s.removeNotes)
+	mux.HandleFunc("DELETE /api/projects/{pid}/notes/pending/{rid}", s.cancelNotesRemoval)
 	mux.HandleFunc("POST /api/projects/{pid}/push", s.viaRunner(s.pushProject))
 	mux.HandleFunc("GET /api/projects/{pid}/unpushed", s.viaRunner(s.unpushed))
 	mux.HandleFunc("GET /api/projects/{pid}/remote", s.viaRunner(s.remoteStatus(false)))

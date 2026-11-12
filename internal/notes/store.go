@@ -402,12 +402,21 @@ func (s *Store) tombstone(tx *sql.Tx, old Entry, task string, now time.Time) (En
 // every copy, as one write: a clear, kept like a tombstone for the
 // retention window. Notes written later stay.
 func (s *Store) Clear(before time.Time, task string, now time.Time) (Entry, error) {
+	e, _, err := s.clear(before, task, now)
+	return e, err
+}
+
+// clear is Clear, also counting the live notes it deleted.
+func (s *Store) clear(before time.Time, task string, now time.Time) (out Entry, removed int, err error) {
 	now = now.UTC()
 	if before.IsZero() || before.After(now) {
 		before = now
 	}
-	var out Entry
-	err := s.tx(func(tx *sql.Tx) error {
+	err = s.tx(func(tx *sql.Tx) error {
+		if err := tx.QueryRow(`SELECT count(*) FROM entries WHERE deleted = 0 AND (expires = 0 OR expires > ?) AND updated < ?`,
+			now.UnixNano(), before.UnixNano()).Scan(&removed); err != nil {
+			return err
+		}
 		clock, seq, err := s.stamp(tx)
 		if err != nil {
 			return err
@@ -419,7 +428,7 @@ func (s *Store) Clear(before time.Time, task string, now time.Time) (Entry, erro
 		}
 		return clearBefore(tx, out.Before)
 	})
-	return out, err
+	return
 }
 
 // clearBefore applies a clear: it remembers the latest one for good, and

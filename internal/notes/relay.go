@@ -26,7 +26,24 @@ const (
 	// proxy to runners (/peer/…) strips it, so nobody reaches a runner's
 	// notes through the hub's API.
 	RelayHeader = "X-Dash-Notes-Relay"
+	// CommandHeader marks the hub's own status requests and removals
+	// (admin.go) to a runner; its proxy strips it too.
+	CommandHeader = "X-Dash-Notes-Command"
+	// StatusPath and RemovePath are POST on a runner, from the hub over its
+	// tunnel: a Status of the project's copy, and a Removal (answered
+	// with RemoveResult).
+	StatusPath = "/api/hub/projects/{hpid}/notes/status"
+	RemovePath = "/api/hub/projects/{hpid}/notes/remove"
 )
+
+// RemoveResult is a runner's answer to a Removal: a count, nothing else.
+type RemoveResult struct {
+	Removed int `json:"removed"`
+}
+
+// StatusPathFor and RemovePathFor are StatusPath and RemovePath for project.
+func StatusPathFor(project string) string { return PeerPathFor(project) + "/status" }
+func RemovePathFor(project string) string { return PeerPathFor(project) + "/remove" }
 
 // Limits of the relay.
 const (

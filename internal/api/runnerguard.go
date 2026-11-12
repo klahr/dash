@@ -110,6 +110,9 @@ func init() {
 		// Shared notes from the project's other runners, relayed by the hub
 		// (notes.go); its proxy (/peer/…) can't reach them.
 		"POST " + notes.PeerPath,
+		// The hub's own asks of them: counts, and removals (notes.go);
+		// its proxy can't send those either.
+		"POST " + notes.StatusPath, "POST " + notes.RemovePath,
 
 		// Claude's short calls (titles, summaries, clean-up) for the
 		// runner's owner; checked in claude.go.

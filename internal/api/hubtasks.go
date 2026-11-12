@@ -63,6 +63,8 @@ func (s *Server) hubTaskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+dispatch.ScanPath, s.hubScan)
 	mux.HandleFunc("POST /api/hub/github/{hpid}", s.hubGitHub)
 	mux.HandleFunc("POST "+notes.PeerPath, s.notesFromPeers)
+	mux.HandleFunc("POST "+notes.StatusPath, s.hubNotesStatus)
+	mux.HandleFunc("POST "+notes.RemovePath, s.hubNotesRemove)
 	mux.HandleFunc("POST "+tunnel.UpdatePath, s.hubUpdate)
 }
 

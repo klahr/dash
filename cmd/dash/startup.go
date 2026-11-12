@@ -761,7 +761,12 @@ func (a *app) setupHub() {
 		todoLog.Line(t, "⚠ reverting on the runner conflicts with later work in "+strings.Join(files, ", ")+"; queued \""+nt.Title+"\" for Claude")
 		todos.Kick()
 	}
-	runners.OnState, runners.OnRevoke, runners.OnReport = d.State, d.Revoked, d.Report
+	runners.OnState, runners.OnRevoke, runners.OnReport = func(id string, online bool) {
+		d.State(id, online)
+		if online { // removals of shared notes asked while it was away
+			go apiSrv.NotesRunnerOnline(id)
+		}
+	}, d.Revoked, d.Report
 	// "Follow weekly pace" is each Claude account's: the hub paces the
 	// runners on one account as one budget, and tells each how.
 	d.Pacer = &dispatch.Pacer{Runners: runners.ListBare}

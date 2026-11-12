@@ -10,6 +10,7 @@ import { DEFAULT_REVIEW_PROMPT } from "./drawmode.js";
 import { loadClaudeFiles } from "./claudefiles.js";
 import { loadWebhooks } from "./webhooks.js";
 import { loadBoard } from "./backend.js";
+import { loadSharedNotes } from "./sharednotes.js";
 
 // ------------------------------------------------------------------ project settings
 export function openSettings() {
@@ -47,6 +48,7 @@ export function openSettings() {
   $("#webhook-secret").hidden = true;
   loadWebhooks().catch(fail);
   loadBoard().catch(fail);
+  loadSharedNotes().catch(fail);
   loadClaudeFiles().catch(fail);
   loadRepoInfo();
   settingsSnapshot = formSnapshot(f);

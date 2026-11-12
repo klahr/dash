@@ -43,6 +43,7 @@ import "./app/origin.js";
 import "./app/settings.js";
 import "./app/claudefiles.js";
 import "./app/webhooks.js";
+import "./app/sharednotes.js";
 import "./app/backend.js";
 import { chatRunner } from "./app/chat.js";
 import "./app/chatpane.js";

@@ -156,6 +156,10 @@ type Project struct {
 	// it onto the default branch there and pushing it to origin ("local");
 	// the hub never merges in a checkout of its own.
 	Runners []string `json:"runners,omitempty"`
+	// NotesPending are, on a hub, removals of the project's shared notes
+	// asked while none of its runners was online: the commands only, sent
+	// to the first runner of the project that connects.
+	NotesPending []NotesRemoval `json:"notes_pending,omitempty"`
 	// HubProjectID is set on a runner for its clone of a hub's project
 	// linked to it: the hub's id for that project. The runner takes tasks
 	// for linked projects only, found by this id (never by where they are).
@@ -180,6 +184,17 @@ type Project struct {
 	// Machine is the computer the project lives on; filled in by clients
 	// that show several computers in one dashboard, never stored.
 	Machine string `json:"machine,omitempty"`
+}
+
+// NotesRemoval is a removal of a hub project's shared notes asked in the
+// UI (notes.Removal, as the hub keeps it): what to remove, never a note.
+type NotesRemoval struct {
+	ID     string    `json:"id"`
+	Kind   string    `json:"kind"`             // notes.RemoveAll, …
+	Task   string    `json:"task,omitempty"`   // the hub's task id
+	Runner string    `json:"runner,omitempty"` // a runner id
+	Before time.Time `json:"before"`           // when it was asked
+	By     int64     `json:"by,omitempty"`     // the user who asked
 }
 
 // Base is the branch tasks start from and land on: WorkBranch when one is
