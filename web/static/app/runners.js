@@ -46,7 +46,9 @@ const updateCmds = () => [
 export async function loadRunners() {
   try {
     const res = await api("GET", "/api/runners");
-    state.runners = res.runners;
+    // By name, so every list of them (a project's settings too) keeps one
+    // order across refreshes.
+    state.runners = [...(res.runners || [])].sort(byName);
     Object.assign(runnerInfo, { hub: res.hub || location.origin, version: res.version || "", canUpdate: !!res.can_update });
   } catch {
     state.runners = null; // this Dash has no runners (it is one, say)
@@ -195,8 +197,13 @@ const runnerProjects = (r) => (state.projects || []).filter((p) => !p.prefix && 
 // code) or a runner's id. Back to the overview each time it opens.
 let shown = "overview";
 const patchRunner = (r, body) => api("PATCH", `/api/runners/${encodeURIComponent(r.id)}`, body);
-// Yours first, then the others'; online before offline; by name.
-const byStatus = (a, b) => (b.online - a.online) || a.name.localeCompare(b.name);
+// By name, regardless of case; runners with the same name by id, so they
+// don't swap places on each refresh.
+function byName(a, b) {
+  return a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true }) || a.name.localeCompare(b.name) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+// Online before offline; by name. (Callers split yours from the others'.)
+const byStatus = (a, b) => (!!b.online - !!a.online) || byName(a, b);
 const runnerWarned = (r) => runnerOutdated(r) || runnerClaudeWarnings(r).length > 0;
 
 // selectRunner shows key ("overview", "add" or a runner's id) beside the rail.

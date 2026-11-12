@@ -468,7 +468,17 @@ func (h *Hub) List() []Runner {
 		}
 		out = append(out, h.viewLocked(r, online, owner))
 	}
-	slices.SortFunc(out, func(a, b Runner) int { return strings.Compare(a.Name, b.Name) })
+	// h.runners is a map: break ties on the id, or runners of one name swap
+	// places from one call to the next.
+	slices.SortFunc(out, func(a, b Runner) int {
+		if c := strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)); c != 0 {
+			return c
+		}
+		if c := strings.Compare(a.Name, b.Name); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
 	return out
 }
 
