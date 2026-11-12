@@ -11,24 +11,26 @@ import (
 )
 
 // Shared notes (package notes) belong to the runners of a hub project. The
-// hub only relays them: it keeps no copy, reads none and shows none.
+// hub only relays them, sealed end to end: it holds no key, keeps no copy,
+// reads none and shows none. All it sees is ciphertext, the project, the
+// size and the runner that sent it, plus runners' public keys.
 
 // notesRelay handles POST /runner/notes on a hub: a runner's message for
 // its project's other runners, passed on unread to those online now.
 func (s *Server) notesRelay(rh *tunnel.Hub) http.Handler {
 	return &notes.Relay{
-		Route: func(r *http.Request, project string) ([]string, error) {
+		Route: func(r *http.Request, project string) ([]string, []string, error) {
 			x, ok := rh.Authenticate(r)
 			if !ok {
-				return nil, &notes.RelayError{Status: http.StatusUnauthorized, Msg: "unknown or revoked runner token"}
+				return nil, nil, &notes.RelayError{Status: http.StatusUnauthorized, Msg: "unknown or revoked runner token"}
 			}
 			org := x.OrgID()
 			if x.Owner == nil || org == 0 {
-				return nil, &notes.RelayError{Status: http.StatusForbidden, Msg: "this runner works for nobody"}
+				return nil, nil, &notes.RelayError{Status: http.StatusForbidden, Msg: "this runner works for nobody"}
 			}
 			p, err := s.Store.ForOrg(org).GetProject(project)
 			if o, ok := s.Store.ProjectOrg(project); !ok || o != org || err != nil || !slices.Contains(p.Runners, x.ID) {
-				return nil, &notes.RelayError{Status: http.StatusForbidden, Msg: "no such project linked to this runner"}
+				return nil, nil, &notes.RelayError{Status: http.StatusForbidden, Msg: "no such project linked to this runner"}
 			}
 			var peers []string
 			for _, id := range p.Runners {
@@ -39,7 +41,9 @@ func (s *Server) notesRelay(rh *tunnel.Hub) http.Handler {
 					peers = append(peers, id)
 				}
 			}
-			return peers, nil
+			// The members tell runners who left: those still holding the
+			// project's key then rotate it (notes.Service).
+			return peers, slices.Clone(p.Runners), nil
 		},
 		Forward: func(ctx context.Context, peer, project string, msg []byte) ([]byte, error) {
 			return rh.CallBytes(ctx, peer, notes.PeerPathFor(project), http.Header{notes.RelayHeader: {"1"}}, msg, notes.MaxReply)

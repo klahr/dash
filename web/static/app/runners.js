@@ -366,6 +366,17 @@ function paintRunner(r) {
         : h("span", { class: "hint" }, r.can_manage
           ? ["No projects linked yet. Choose some below, or link one in its project settings", r.mine ? ", or add projects from this computer." : "."]
           : "No projects linked yet.")),
+    // Shared notes are sealed with keys only runners hold. The hub shows
+    // the fingerprint a runner told it, but approving happens on the
+    // runners themselves, after comparing with what they show: the hub
+    // relays the keys and could swap in its own.
+    r.notes_fingerprint ? h("h4", { class: "section-head" }, "Shared notes key") : null,
+    r.notes_fingerprint ? h("div", { class: "runner-notes-key" },
+      h("p", { class: "hint" }, `Runners share a project's notes only with runners you approve on them, both ways. On ${r.name}, run `,
+        h("code", {}, "dash runner notes"), " and check it shows this fingerprint. Then, on each other runner of its projects, approve it:"),
+      h("p", {}, h("code", { class: "runner-fingerprint" }, r.notes_fingerprint)),
+      copyBlock(`dash runner notes approve ${r.notes_fingerprint}`, "Command copied", { pre: true }),
+      h("p", { class: "hint" }, "Compare with what the runners show, not only with this page: the hub relays the keys and can't vouch for them.")) : null,
     h("div", { class: "runner-actions" },
       ib({ class: "btn small", type: "button",
         title: r.can_manage ? `Pick the shared projects ${r.name} builds` : `The shared projects ${r.name} builds`,

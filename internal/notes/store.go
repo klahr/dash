@@ -58,7 +58,7 @@ func OpenStore(path, self string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(schema + keySchema); err != nil {
 		db.Close()
 		return nil, err
 	}

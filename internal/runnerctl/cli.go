@@ -15,14 +15,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/dash/internal/notes"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
 // Commands are the `dash runner <command>`s handled here; plain `dash
 // runner` (and `dash runner --server … --code …`) runs the runner itself.
-var Commands = []string{"setup", "install", "uninstall", "status", "update"}
+var Commands = []string{"setup", "install", "uninstall", "status", "update", "notes"}
 
-// CLI runs `dash runner setup|install|uninstall|status`. Zero fields
+// CLI runs `dash runner setup|install|uninstall|status|notes`. Zero fields
 // default to the real environment; tests set them.
 type CLI struct {
 	Version    string
@@ -96,6 +97,8 @@ func (c *CLI) Main(ctx context.Context, command string, args []string) int {
 		err = c.status(ctx, args)
 	case "update":
 		err = c.update(ctx, args)
+	case "notes":
+		err = c.notes(args)
 	default:
 		err = fmt.Errorf("unknown command %q (want one of %s)", command, strings.Join(Commands, ", "))
 	}
@@ -343,6 +346,9 @@ func (c *CLI) status(ctx context.Context, args []string) error {
 		if creds.Projects != "" {
 			fmt.Fprintf(w, "Projects:     %s\n", creds.Projects)
 		}
+	}
+	if id, err := notes.ReadIdentity(notes.IdentityPath(*data)); err == nil {
+		fmt.Fprintf(w, "Notes key:    %s (dash runner notes)\n", id.Fingerprint())
 	}
 	st, running := ReadState(StatePath(*data))
 	switch {

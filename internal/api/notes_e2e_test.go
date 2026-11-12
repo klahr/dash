@@ -30,6 +30,7 @@ import (
 // notesRunner is a runner with shared notes, connected to the hub.
 type notesRunner struct {
 	id     string
+	dir    string
 	notes  *notes.Service
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -38,7 +39,8 @@ type notesRunner struct {
 // Shared notes travel between a project's runners through the hub's relay,
 // over their tunnels: a runner offline during writes catches up when back,
 // runners not on the project get nothing, nobody reaches a runner's notes
-// through the hub's API, and the hub keeps no trace of them.
+// through the hub's API, and the hub keeps no trace of them. Runners share
+// a project's key only once the user approved each other's keys on them.
 func TestSharedNotesRelayThroughTheHub(t *testing.T) {
 	parallel(t)
 	hubDir := t.TempDir()
@@ -82,14 +84,20 @@ func TestSharedNotesRelayThroughTheHub(t *testing.T) {
 		wire := &notes.HubTransport{Post: func(ctx context.Context, p string, body []byte) ([]byte, error) {
 			return tunnel.Notes(ctx, creds, p, body)
 		}}
-		svc, err := notes.NewService(dir, creds.ID, wire, func(p string) bool { return p == project })
+		ident, err := notes.LoadIdentity(notes.IdentityPath(dir))
 		if err != nil {
 			t.Fatal(err)
 		}
+		svc, err := notes.NewService(filepath.Join(dir, "shared"), creds.ID, ident, wire, func(p string) bool { return p == project })
+		if err != nil {
+			t.Fatal(err)
+		}
+		svc.Name = creds.Name
 		s.NotesPeer = wire
 		ctx, cancel := context.WithCancel(context.Background())
-		x := &notesRunner{id: creds.ID, notes: svc, cancel: cancel, done: make(chan struct{})}
-		client := &tunnel.Client{Creds: creds, Handler: api, MinBackoff: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond}
+		x := &notesRunner{id: creds.ID, dir: dir, notes: svc, cancel: cancel, done: make(chan struct{})}
+		client := &tunnel.Client{Creds: creds, Handler: api, MinBackoff: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond,
+			NotesKey: ident.Public.String()}
 		wg.Add(1)
 		go func() { defer wg.Done(); defer close(x.done); _ = client.Run(ctx) }()
 		eventually(t, creds.Name+" to come online", func() bool { r, _ := rh.Get(creds.ID); return r.Online })
@@ -113,8 +121,31 @@ func TestSharedNotesRelayThroughTheHub(t *testing.T) {
 	outsider := start(cx, t.TempDir())
 	t.Cleanup(func() { stop(alpha); stop(beta); stop(outsider) })
 	gammaDir := t.TempDir() // gamma is offline for now
+	gammaID, err := notes.LoadIdentity(notes.IdentityPath(gammaDir))
+	if err != nil {
+		t.Fatal(err)
+	}
 
+	// The hub shows each runner's key fingerprint (public), the one its
+	// own `dash runner notes` shows.
+	if r, _ := rh.Get(ca.ID); r.NotesFingerprint != alpha.notes.Fingerprint() {
+		t.Fatalf("the hub shows alpha's fingerprint as %q, alpha %q", r.NotesFingerprint, alpha.notes.Fingerprint())
+	}
+	// The user approves the project's runners on each other, outsider not.
+	fps := map[string]string{alpha.dir: alpha.notes.Fingerprint(), beta.dir: beta.notes.Fingerprint(), gammaDir: gammaID.Fingerprint()}
+	for dir := range fps {
+		for other, fp := range fps {
+			if other != dir {
+				if _, err := notes.Approve(filepath.Join(dir, "shared"), fp, time.Now()); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
 	ctx := context.Background()
+	if err := alpha.notes.CatchUp(ctx, project); err != nil { // alpha and beta trade keys
+		t.Fatal(err)
+	}
 	const marker = "zq-marker-7f3a" // a word that is in the notes and nowhere else
 	e, err := alpha.notes.Put(ctx, project, notes.Draft{Key: "how to build", Body: "run make " + marker, Tags: []string{"build"}, AuthorTask: "t-1"})
 	if err != nil {
@@ -139,7 +170,7 @@ func TestSharedNotesRelayThroughTheHub(t *testing.T) {
 	// gamma comes online after the writes: it catches up, and what it
 	// wrote offline (before ever connecting) reaches the others.
 	gamma := func() *notesRunner {
-		svc, err := notes.NewService(gammaDir, cc.ID, &notes.HubTransport{Post: func(context.Context, string, []byte) ([]byte, error) {
+		svc, err := notes.NewService(filepath.Join(gammaDir, "shared"), cc.ID, gammaID, &notes.HubTransport{Post: func(context.Context, string, []byte) ([]byte, error) {
 			return nil, tunnel.ErrOffline
 		}}, nil)
 		if err != nil {
@@ -186,7 +217,7 @@ func TestSharedNotesRelayThroughTheHub(t *testing.T) {
 	}
 
 	// The hub kept nothing: no file of its data holds a word of the notes,
-	// and it has no notes store.
+	// and it has no notes store nor identity.
 	rh.Revoke(cx.ID) // flush the runners file once more
 	h.Store.(*store.Store).Close()
 	err = filepath.WalkDir(hubDir, func(path string, d fs.DirEntry, err error) error {
@@ -195,6 +226,9 @@ func TestSharedNotesRelayThroughTheHub(t *testing.T) {
 				t.Errorf("the hub has a shared notes folder: %s", path)
 			}
 			return err
+		}
+		if d.Name() == filepath.Base(notes.IdentityPath("")) {
+			t.Errorf("the hub has a shared notes identity: %s", path)
 		}
 		b, err := os.ReadFile(path)
 		if err != nil {

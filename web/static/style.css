@@ -1125,6 +1125,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-tag { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
 .todo-sub.waiting-runner { color: var(--running); }
 .runner-version { font: var(--fs-xs)/1.5 var(--mono); letter-spacing: 0; }
+.runner-fingerprint { font: var(--fs-m)/1.5 var(--mono); letter-spacing: .04em; user-select: all; }
 .runner-version.warn { border-color: var(--running); color: var(--running); }
 .runner-update { flex-basis: 100%; min-width: 0; }
 .webhook-row .item-sub { flex-basis: 100%; overflow-wrap: anywhere; }

@@ -125,6 +125,9 @@ type Client struct {
 	Previews PreviewDialer
 	// Version is this runner's Dash version, told to the hub on connect.
 	Version string
+	// NotesKey is this runner's shared notes public key (base64), told to
+	// the hub on connect so it can show its fingerprint. Optional.
+	NotesKey string
 	// OnPreviewURL is told, on every connect, where the hub serves this
 	// runner's previews (see PreviewHeader; "" if it doesn't). Optional.
 	OnPreviewURL func(template string)
@@ -187,6 +190,9 @@ func (c *Client) serveOnce(ctx context.Context) error {
 	hdr := http.Header{"Authorization": {"Bearer " + c.Creds.Token}}
 	if c.Version != "" {
 		hdr.Set(VersionHeader, c.Version)
+	}
+	if c.NotesKey != "" {
+		hdr.Set(NotesKeyHeader, c.NotesKey)
 	}
 	ws, res, err := c.dialer().DialContext(ctx, u.String(), hdr)
 	if err != nil {

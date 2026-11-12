@@ -267,39 +267,52 @@ type testNet struct {
 	hub     *httptest.Server
 	mu      sync.Mutex
 	runners map[string]*testRunner
-	relayed int // messages the hub passed on
+	relayed int      // messages the hub passed on
+	seen    [][]byte // every message and reply the hub passed on
+	// tamper, if set, is a lying hub: it may change what it forwards.
+	tamper func(peer string, msg []byte) []byte
 }
 
 type testRunner struct {
 	id     string
+	dir    string
 	srv    *httptest.Server
 	svc    *Service
 	online bool
+	member bool // on the project
 }
 
 func newNet(t *testing.T) *testNet {
 	n := &testNet{t: t, runners: map[string]*testRunner{}}
 	relay := &Relay{
-		Route: func(r *http.Request, project string) ([]string, error) {
+		Route: func(r *http.Request, project string) ([]string, []string, error) {
 			from := r.Header.Get("X-Test-Runner")
 			n.mu.Lock()
 			defer n.mu.Unlock()
-			if x := n.runners[from]; x == nil || !x.online {
-				return nil, &RelayError{Status: http.StatusUnauthorized, Msg: "who?"}
+			if x := n.runners[from]; x == nil || !x.online || !x.member {
+				return nil, nil, &RelayError{Status: http.StatusUnauthorized, Msg: "who?"}
 			}
-			var peers []string
+			var peers, members []string
 			for id, x := range n.runners {
-				if id != from && x.online {
+				if x.member {
+					members = append(members, id)
+				}
+				if id != from && x.online && x.member {
 					peers = append(peers, id)
 				}
 			}
 			slices.Sort(peers)
-			return peers, nil
+			slices.Sort(members)
+			return peers, members, nil
 		},
 		Forward: func(ctx context.Context, peer, project string, msg []byte) ([]byte, error) {
 			n.mu.Lock()
 			x := n.runners[peer]
 			n.relayed++
+			if n.tamper != nil {
+				msg = n.tamper(peer, msg)
+			}
+			n.seen = append(n.seen, msg)
 			n.mu.Unlock()
 			req, _ := http.NewRequestWithContext(ctx, "POST", x.srv.URL+PeerPathFor(project), bytes.NewReader(msg))
 			req.Header.Set(RelayHeader, "1")
@@ -312,6 +325,9 @@ func newNet(t *testing.T) *testNet {
 			if res.StatusCode != http.StatusOK {
 				return nil, fmt.Errorf("%s: %s", res.Status, b)
 			}
+			n.mu.Lock()
+			n.seen = append(n.seen, b)
+			n.mu.Unlock()
 			return b, err
 		},
 	}
@@ -322,7 +338,7 @@ func newNet(t *testing.T) *testNet {
 
 func (n *testNet) add(id string) *testRunner {
 	tr := &HubTransport{}
-	x := &testRunner{id: id, online: true}
+	x := &testRunner{id: id, online: true, member: true, dir: n.t.TempDir()}
 	tr.Post = func(ctx context.Context, project string, body []byte) ([]byte, error) {
 		n.mu.Lock()
 		on := x.online
@@ -347,10 +363,15 @@ func (n *testNet) add(id string) *testRunner {
 	mux.Handle("POST "+PeerPath, tr)
 	x.srv = httptest.NewServer(mux)
 	n.t.Cleanup(x.srv.Close)
-	svc, err := NewService(n.t.TempDir(), id, tr, func(p string) bool { return p == "p1" })
+	ident, err := LoadIdentity(filepath.Join(x.dir, "identity.json"))
 	if err != nil {
 		n.t.Fatal(err)
 	}
+	svc, err := NewService(filepath.Join(x.dir, "shared"), id, ident, tr, func(p string) bool { return p == "p1" })
+	if err != nil {
+		n.t.Fatal(err)
+	}
+	svc.Name = id
 	n.t.Cleanup(func() { svc.Close() })
 	x.svc = svc
 	n.mu.Lock()
@@ -363,6 +384,35 @@ func (n *testNet) setOnline(x *testRunner, on bool) {
 	n.mu.Lock()
 	x.online = on
 	n.mu.Unlock()
+}
+
+// approve approves y's key on x, as `dash runner notes approve` there.
+func approve(t *testing.T, x, y *testRunner) {
+	t.Helper()
+	if _, err := Approve(filepath.Join(x.dir, "shared"), y.svc.Fingerprint(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// pair has the user approve every runner's key on every other, and the
+// online ones trade keys.
+func (n *testNet) pair(xs ...*testRunner) {
+	n.t.Helper()
+	for _, x := range xs {
+		for _, y := range xs {
+			if x != y {
+				approve(n.t, x, y)
+			}
+		}
+	}
+	for _, x := range xs {
+		if x.online {
+			x.svc.Reconcile(context.Background(), []string{"p1"})
+			if err := x.svc.CatchUp(context.Background(), "p1"); err != nil {
+				n.t.Fatal(err)
+			}
+		}
+	}
 }
 
 func keys(t *testing.T, x *testRunner) []string {
@@ -398,6 +448,7 @@ func TestRelayWithARunnerOffline(t *testing.T) {
 	a, b, c := n.add("ra"), n.add("rb"), n.add("rc")
 	ctx := context.Background()
 	n.setOnline(c, false)
+	n.pair(a, b, c)
 
 	e, err := a.svc.Put(ctx, "p1", Draft{Key: "build", Body: "make all", AuthorTask: "t1"})
 	if err != nil {
@@ -457,6 +508,7 @@ func TestMissedWriteIsFetchedOnTheNextOne(t *testing.T) {
 	n := newNet(t)
 	a, b := n.add("ra"), n.add("rb")
 	ctx := context.Background()
+	n.pair(a, b)
 	n.setOnline(b, false)
 	a.svc.Put(ctx, "p1", Draft{Key: "one"})
 	n.setOnline(b, true)
@@ -472,6 +524,7 @@ func TestRefusals(t *testing.T) {
 	n := newNet(t)
 	a, b := n.add("ra"), n.add("rb")
 	ctx := context.Background()
+	n.pair(a, b)
 	if _, err := a.svc.Put(ctx, "p2", Draft{Key: "x"}); !errors.Is(err, ErrNoProject) {
 		t.Fatalf("project not kept here: %v", err)
 	}
@@ -505,7 +558,7 @@ func TestRelayIsStateless(t *testing.T) {
 	}
 	var got []byte
 	relay := &Relay{
-		Route: func(*http.Request, string) ([]string, error) { return []string{"x"}, nil },
+		Route: func(*http.Request, string) ([]string, []string, error) { return []string{"x"}, []string{"x", "y"}, nil },
 		Forward: func(_ context.Context, _, _ string, msg []byte) ([]byte, error) {
 			got = msg
 			return []byte{0xff, 0x00}, nil
@@ -518,8 +571,8 @@ func TestRelayIsStateless(t *testing.T) {
 		t.Fatalf("%d, forwarded %v", w.Code, got)
 	}
 	tr := &HubTransport{Post: func(context.Context, string, []byte) ([]byte, error) { return w.Body.Bytes(), nil }}
-	replies, err := tr.SendToPeers(context.Background(), "p1", opaque)
-	if err != nil || len(replies) != 1 || !bytes.Equal(replies[0], []byte{0xff, 0x00}) {
-		t.Fatalf("replies %v, %v", replies, err)
+	sent, err := tr.SendToPeers(context.Background(), "p1", opaque)
+	if err != nil || len(sent.Replies) != 1 || !bytes.Equal(sent.Replies[0], []byte{0xff, 0x00}) || !slices.Equal(sent.Members, []string{"x", "y"}) {
+		t.Fatalf("sent %+v, %v", sent, err)
 	}
 }

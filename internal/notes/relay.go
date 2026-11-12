@@ -47,6 +47,8 @@ type relayReply struct {
 	Peers   int      `json:"peers"`   // the project's other runners online
 	Reached int      `json:"reached"` // of those, how many took the message
 	Replies [][]byte `json:"replies,omitempty"`
+	// Members are all the project's runners, online or not (ids only).
+	Members []string `json:"members"`
 }
 
 // RelayError is a refusal by Relay.Route, with its HTTP status.
@@ -61,9 +63,10 @@ func (e *RelayError) Error() string { return e.Msg }
 // state at all (it has no fields but its two functions).
 type Relay struct {
 	// Route authenticates the runner posting r for project and names the
-	// runners its message goes to: the project's other runners online now.
-	// Return a *RelayError to refuse with a status.
-	Route func(r *http.Request, project string) (peers []string, err error)
+	// runners its message goes to: the project's other runners online now;
+	// and the project's members: all its runners. Return a *RelayError to
+	// refuse with a status.
+	Route func(r *http.Request, project string) (peers, members []string, err error)
 	// Forward posts msg to runner peer for project, and returns its reply.
 	Forward func(ctx context.Context, peer, project string, msg []byte) ([]byte, error)
 }
@@ -79,7 +82,7 @@ func (rl *Relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		relayJSON(w, http.StatusBadRequest, map[string]string{"error": "which project?"})
 		return
 	}
-	peers, err := rl.Route(r, project)
+	peers, members, err := rl.Route(r, project)
 	if err != nil {
 		status := http.StatusForbidden
 		if re, ok := errors.AsType[*RelayError](err); ok {
@@ -95,7 +98,7 @@ func (rl *Relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), maxRelayWait)
 	defer cancel()
-	out := relayReply{Peers: len(peers)}
+	out := relayReply{Peers: len(peers), Members: members}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	for _, p := range peers {
@@ -135,19 +138,19 @@ type HubTransport struct {
 }
 
 // SendToPeers implements Transport.
-func (t *HubTransport) SendToPeers(ctx context.Context, project string, msg []byte) ([][]byte, error) {
+func (t *HubTransport) SendToPeers(ctx context.Context, project string, msg []byte) (Sent, error) {
 	if len(msg) > MaxMessage {
-		return nil, ErrTooLarge
+		return Sent{}, ErrTooLarge
 	}
 	b, err := t.Post(ctx, project, msg)
 	if err != nil {
-		return nil, err
+		return Sent{}, err
 	}
 	var r relayReply
 	if err := json.Unmarshal(b, &r); err != nil {
-		return nil, err
+		return Sent{}, err
 	}
-	return r.Replies, nil
+	return Sent{Replies: r.Replies, Members: r.Members}, nil
 }
 
 // ReceiveFromPeers implements Transport.

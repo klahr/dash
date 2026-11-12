@@ -285,6 +285,7 @@ type app struct {
 	reporter                            *dispatch.Reporter // runner
 	update                              *selfUpdate        // runner
 	notes                               *notes.Service     // runner: its hub projects' shared notes
+	notesID                             *notes.Identity    // runner: its shared notes key pair
 	mcpURL, permURL                     string
 }
 
@@ -814,16 +815,41 @@ func (a *app) setupRunner() {
 	}
 	// Shared notes: this runner's copy of the notes of the hub's projects
 	// linked to it, synced with their other runners through the hub's
-	// relay. The hub keeps none, nor does a Dash without a hub.
+	// relay, sealed with keys only runners hold. The hub keeps none, nor
+	// does a Dash without a hub.
 	notesWire := &notes.HubTransport{Post: func(ctx context.Context, project string, body []byte) ([]byte, error) {
 		return tunnel.Notes(ctx, creds, project, body)
 	}}
-	if a.notes, err = notes.NewService(filepath.Join(o.dataDir, "shared"), creds.ID, notesWire, func(hpid string) bool {
+	if a.notesID, err = notes.LoadIdentity(notes.IdentityPath(o.dataDir)); err != nil {
+		fatal("shared notes key", "err", err)
+	}
+	if a.notes, err = notes.NewService(filepath.Join(o.dataDir, "shared"), creds.ID, a.notesID, notesWire, func(hpid string) bool {
 		return slices.Contains(linkedHubProjects(st), hpid)
 	}); err != nil {
 		fatal("shared notes", "err", err)
 	}
+	a.notes.Name = creds.Name
+	slog.Info("shared notes: this runner's key fingerprint (compare it on other runners; see dash runner notes)", "fingerprint", a.notesID.Fingerprint())
 	apiSrv.NotesPeer = notesWire
+	go func() {
+		// Act on what the user approves or revokes with `dash runner
+		// notes` soon after, and now and then trade keys and notes even
+		// with nothing written, so a runner that left the project loses
+		// the key (the others rotate) before anyone writes again.
+		tick, resync := time.NewTicker(3*time.Second), time.NewTicker(15*time.Minute)
+		defer tick.Stop()
+		defer resync.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				a.notes.Reconcile(ctx, linkedHubProjects(st))
+			case <-resync.C:
+				a.notes.CatchUpAll(ctx, linkedHubProjects(st))
+			}
+		}
+	}()
 	// The hub hears where its tasks are, and this computer's usage.
 	reporter := &dispatch.Reporter{Store: st, Usage: a.tracker, Parallel: o.parallel, Terminals: true, Claude: cli,
 		// As shellAllowed: the hub's "!" commands run only for a known owner,
@@ -1055,7 +1081,7 @@ func (a *app) connectHub(statePath string) bool {
 	}
 	creds := a.runnerCreds
 	client := &tunnel.Client{Creds: creds, Handler: a.apiSrv.RunnerRoutes(), OnState: onState, Version: buildinfo.Version,
-		Previews: a.previews, OnPreviewURL: func(t string) { a.previews.SetHub(t, creds.Name) }}
+		NotesKey: a.notesID.Public.String(), Previews: a.previews, OnPreviewURL: func(t string) { a.previews.SetHub(t, creds.Name) }}
 	if !a.o.addrSet {
 		if err := client.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("runner", "err", err)

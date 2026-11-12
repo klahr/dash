@@ -403,10 +403,10 @@ and `claude` can be uninstalled from the hub's computer.
 
 The runners linked to a shared project keep a shared notes space for it (package `internal/notes`).
 Each runner has a full copy in `<-data>/shared/<hub project id>.db`, so it reads its notes locally,
-even while the hub can't be reached. A runner saves a note locally first, then sends it to the hub.
-The hub passes it on unread to the project's other runners that are online and keeps nothing: no
-copy, no log of what it relayed, and no page or API that shows a note. Its proxy to runners
-(`/peer/…`) can't reach their notes either.
+even while the hub can't be reached. A runner saves a note locally first, then sends it to the hub,
+sealed with the project's key. The hub passes it on to the project's other runners that are online
+and keeps nothing: no copy, no log of what it relayed, and no page or API that shows a note. Its
+proxy to runners (`/peer/…`) can't reach their notes either.
 
 Each write gets a stamp (its runner and that runner's counter). Copies merge last-writer-wins per
 note, so every runner ends up with the same notes and concurrent writers never wait for each other.
@@ -416,6 +416,45 @@ holds at most 500. A note that looks like it holds a credential is refused on th
 it, before it is saved or sent.
 
 A Dash that runs tasks itself, without runners, has no shared notes.
+
+#### Encryption and approving runners
+
+Shared notes are encrypted end to end. Only runners hold keys. The hub, its web pages and browsers
+never get a project key or see a note in plain text: all the hub sees is ciphertext, the project,
+the message size, the runner that sent it, and the runners' public keys.
+
+- Each runner makes a key pair the first time it starts (`<-data>/notes-identity.json`, readable by
+  its user only, next to `runner.json`). It tells the hub its public key, and the hub shows its
+  fingerprint on the runner's page.
+- Each project has a random key that seals every note between its runners (NaCl secretbox). A
+  runner gives it to another runner by wrapping it for that runner's public key (NaCl box). The
+  wrapped copy travels through the hub like any other message.
+- A runner wraps its project keys only for runners whose fingerprint you approved **on it**, and
+  takes keys only from runners approved on it. Approve each pair of runners both ways. Compare the
+  fingerprint with what the other runner shows itself, not only with the hub's page: the hub relays
+  the keys and could swap in its own.
+
+  ```sh
+  dash runner notes                          # this runner's fingerprint, approved runners, runners waiting
+  dash runner notes approve ABCD-EFGH-JKLM-NPQR-STUV
+  dash runner notes revoke  ABCD-EFGH-JKLM-NPQR-STUV
+  ```
+
+  A runner whose key isn't approved yet shows under "Waiting for your approval", and its log says
+  so with the command to run. Notes written before two runners trade keys reach each other once
+  they do.
+- A runner pins the key it first sees for each runner id. If that runner later shows up with
+  another key, it is refused and the runner logs an error, and `dash runner notes` lists the change.
+  If the other runner really got a new key (its data folder was lost), approve the new fingerprint
+  after checking it on that runner.
+- When a runner leaves a project (unlinked, or revoked on the hub), the runners that remain notice
+  the next time they talk through the hub (when a note is written, and at least every 15 minutes).
+  They rotate to a new project key, wrap it for each other, and seal new notes with it. A message
+  sealed with an older key is refused. `dash runner notes revoke` rotates at once, even if the hub
+  still lists the runner. Revoke it on every runner that approved it. Runners keep their notes in
+  plain text in their own copy, so nothing has to be re-encrypted. A runner with the new key gets
+  every note again, sealed with that key, when it next catches up.
+- The secret scanner runs on the writing runner before a note is saved or sealed.
 
 ## Claude runs on each user's own runner
 

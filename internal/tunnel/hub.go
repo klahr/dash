@@ -71,6 +71,12 @@ type Runner struct {
 	// Owner registered the runner: its token acts as them, in their org.
 	Owner   *store.RunnerOwner `json:"owner,omitempty"`
 	Version string             `json:"version,omitempty"` // the Dash it last connected with, e.g. 1.2.0
+	// NotesKey is the public key the runner seals shared notes keys with,
+	// as it told the hub, and NotesFingerprint its short form. Shown so a
+	// user knows which fingerprint to look for; runners never take it from
+	// the hub (they pin what peers send, and the user approves it on them).
+	NotesKey         string `json:"notes_key,omitempty"`
+	NotesFingerprint string `json:"notes_fingerprint,omitempty"`
 	// Parallel is how many tasks the hub sends it at once (0: as many as
 	// the runner's own -parallel, which it reports). Paused: the hub sends
 	// it none.
@@ -138,6 +144,7 @@ type record struct {
 	Parallel  int       `json:"parallel,omitempty"`
 	Paused    bool      `json:"paused,omitempty"`
 	Version   string    `json:"version,omitempty"`
+	NotesKey  string    `json:"notes_key,omitempty"` // public: see Runner.NotesKey
 	// Its self-update (update.go).
 	AutoUpdate bool          `json:"auto_update,omitempty"`
 	Update     *Update       `json:"update,omitempty"`
@@ -480,7 +487,10 @@ func (h *Hub) ListBare() []Runner {
 
 func (h *Hub) viewLocked(r *record, online bool, owner *store.RunnerOwner) Runner {
 	v := Runner{ID: r.ID, Name: r.Name, Online: online, Created: r.Created, LastSeen: r.LastSeen, Owner: owner,
-		Version: r.Version, Parallel: r.Parallel, Paused: r.Paused, AutoUpdate: r.AutoUpdate}
+		Version: r.Version, Parallel: r.Parallel, Paused: r.Paused, AutoUpdate: r.AutoUpdate, NotesKey: r.NotesKey}
+	if k, err := notes.ParsePublicKey(r.NotesKey); err == nil {
+		v.NotesFingerprint = k.Fingerprint()
+	}
 	if r.Update != nil {
 		cp := *r.Update
 		v.Update = &cp
@@ -559,9 +569,10 @@ func (h *Hub) registeredLocked(id string) bool {
 	return slices.ContainsFunc(h.runners, func(x *record) bool { return x.ID == id })
 }
 
-// touch records that runner id (dis)connected, running version when
-// that's not "" (it connected: its update is settled, see connectedLocked).
-func (h *Hub) touch(id, version string) {
+// touch records that runner id (dis)connected, running version and with
+// shared notes key notesKey when those aren't "" (it connected: its update
+// is settled, see connectedLocked).
+func (h *Hub) touch(id, version, notesKey string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for _, r := range h.runners {
@@ -571,6 +582,9 @@ func (h *Hub) touch(id, version string) {
 				r.Version = version
 				h.connectedLocked(r, version)
 			}
+			if notesKey != "" {
+				r.NotesKey = notesKey
+			}
 		}
 	}
 	h.saveLocked()
@@ -578,6 +592,10 @@ func (h *Hub) touch(id, version string) {
 
 // VersionHeader carries the runner's Dash version when it connects.
 const VersionHeader = "X-Dash-Version"
+
+// NotesKeyHeader carries the runner's shared notes public key when it
+// connects (notes.PublicKey, base64).
+const NotesKeyHeader = "X-Dash-Notes-Key"
 
 var versionRe = regexp.MustCompile(`^[0-9A-Za-z.+_-]{1,64}$`)
 
@@ -676,7 +694,11 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 		old.Close() // the runner reconnected before we noticed the old link die
 	}
 	version := cleanVersion(r.Header.Get(VersionHeader))
-	h.touch(rec.ID, version)
+	var notesKey string
+	if k, err := notes.ParsePublicKey(r.Header.Get(NotesKeyHeader)); err == nil {
+		notesKey = k.String()
+	}
+	h.touch(rec.ID, version, notesKey)
 	slog.Info("runner connected", "name", rec.Name, "version", version)
 	h.changed()
 	if h.OnState != nil {
@@ -693,7 +715,7 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 	h.idle().CloseIdleConnections() // pooled streams of the dead tunnel
 	if current {
-		h.touch(rec.ID, "")
+		h.touch(rec.ID, "", "")
 		slog.Info("runner disconnected", "name", rec.Name)
 		h.changed()
 		if h.OnState != nil {
