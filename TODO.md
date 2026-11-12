@@ -13,8 +13,6 @@ Most important first within each section.
 ## Quality
 
 - [ ] Try PR mode and failed-build investigation against a real GitHub repository.
-- [ ] Consolidate the frontend: clean up `index.html` and `style.css`, remove duplicated and dead styles,
-      and make components, spacing and colours consistent across pages.
 - [ ] Run an accessibility scan of the web UI (labels, focus, contrast, keyboard) and fix the findings.
 
 ## Features
