@@ -349,19 +349,45 @@ func (s *Server) hubOrgDir(folder string) (string, error) {
 	return dir, nil
 }
 
-// hubPlace picks the folder for the hub's project hpid with remote, in
-// the org's folder <projects root>/<folder>/: its <repo> (the remote's
-// last path part, else the project's name), else the first of <repo>-2,
-// <repo>-3, … that is free or holds a clone of the same remote. A folder
-// holding anything else (another repository, files, a symlink, a clone
-// already linked to another of the hub's projects) is never used, and
-// nothing outside the org's folder is ever adopted (a checkout of the same
-// remote elsewhere in the projects root may be the user's own). The path is
-// always a direct child of the org's folder; nothing the hub sends is a
-// path. A clone whose origin is one of also (the URL this runner clones) is
-// of the same remote too.
-func (s *Server) hubPlace(ctx context.Context, sv *service, hpid, folder, name, remote string, also ...string) (hubPlacement, error) {
+// hubCloneDir is the folder a clone of remote goes in: the org's folder
+// (hubOrgDir), then the remote's owner (the GitHub user or organization),
+// <projects root>/<folder>/<owner>, when remote names one. Like the org's
+// folder it needn't exist yet, and when it does must be a plain folder.
+func (s *Server) hubCloneDir(folder, remote string) (string, error) {
 	dir, err := s.hubOrgDir(folder)
+	if err != nil {
+		return "", err
+	}
+	owner := folderName(gitops.RemoteOwner(remote))
+	if owner == "" {
+		return dir, nil
+	}
+	dir = filepath.Join(dir, owner)
+	fi, err := os.Lstat(dir)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return dir, nil
+	case err != nil:
+		return "", err
+	case !fi.IsDir() || isRepo(dir):
+		return "", fmt.Errorf("%w: %s is in the way of the folder for %s's projects; move it", errBadRequest, dir, owner)
+	}
+	return dir, nil
+}
+
+// hubPlace picks the folder for the hub's project hpid with remote, in
+// the org's folder for remote's owner, <projects root>/<folder>/<owner>/
+// (hubCloneDir): its <repo> (the remote's last path part, else the
+// project's name), else the first of <repo>-2, <repo>-3, … that is free or
+// holds a clone of the same remote. A folder holding anything else (another
+// repository, files, a symlink, a clone already linked to another of the
+// hub's projects) is never used, and nothing outside that folder is ever
+// adopted (a checkout of the same remote elsewhere in the projects root may
+// be the user's own). The path is always a direct child of that folder;
+// nothing the hub sends is a path. A clone whose origin is one of also (the
+// URL this runner clones) is of the same remote too.
+func (s *Server) hubPlace(ctx context.Context, sv *service, hpid, folder, name, remote string, also ...string) (hubPlacement, error) {
+	dir, err := s.hubCloneDir(folder, remote)
 	if err != nil {
 		return hubPlacement{}, err
 	}

@@ -217,8 +217,17 @@ func TestHubPlaceStaysInTheProjectsFolder(t *testing.T) {
 	sv := s.as(ownerCaller(t, s))
 	for _, remote := range []string{"https://github.com/x/..git", "https://github.com/x/...git", "git@github.com:x/.git"} {
 		place, err := s.hubPlace(context.Background(), sv, "hp", "org-7", "", remote)
-		if err != nil || filepath.Dir(place.Path) != filepath.Join(s.ProjectRoot, "org-7") {
+		if err != nil || filepath.Dir(place.Path) != filepath.Join(s.ProjectRoot, "org-7", "x") {
 			t.Errorf("%s: %+v %v", remote, place, err)
+		}
+	}
+	for remote, want := range map[string]string{
+		"https://github.com/klahr/dash.git": filepath.Join(s.ProjectRoot, "org-7", "klahr", "dash"),
+		"git@github.com:klahr/dash.git":     filepath.Join(s.ProjectRoot, "org-7", "klahr", "dash"),
+		"https://github.com/../dash.git":    filepath.Join(s.ProjectRoot, "org-7", "dash"),
+	} {
+		if place, err := s.hubPlace(context.Background(), sv, "hp", "org-7", "", remote); err != nil || place.Path != want {
+			t.Errorf("%s: %+v %v, want %s", remote, place, err, want)
 		}
 	}
 	for _, folder := range []string{"", "..", "a/b", "Org"} {

@@ -59,6 +59,10 @@ of changes is in each GitHub release's changelog.
 
 ### Next release
 
+- **Runner clones move to `<projects>/<org>/<owner>/`.** A runner's clones of the hub's projects
+  now go in a folder for the remote's owner (the GitHub user or organization) inside the
+  organization's folder, `<-projects>/<org folder>/<owner>/<repo>`. Clones the runner made
+  itself move there on their own, the same way as the move into the organization's folder below.
 - **Runner clones move to `<projects>/<org>/`.** A runner now keeps its clones of the hub's
   projects in its organization's folder, `<-projects>/<org folder>/<repo>`, instead of straight in
   `<-projects>/`. Clones the runner made itself move there on their own, on the runner's first

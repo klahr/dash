@@ -16,8 +16,9 @@ import (
 )
 
 // A runner keeps its clones of a hub's projects in the org's folder,
-// <projects root>/<org folder>/<repo> (see hubPlace). Clones made before
-// that, straight in the projects root, move there once: at the runner's
+// <projects root>/<org folder>/<owner>/<repo> (see hubPlace). Clones made
+// before that, straight in the projects root or in the org's folder without
+// the remote's owner, move there once: at the runner's
 // start (MoveHubClones) and at the hub's next link of the project, which
 // comes before every task it sends and with every look at the project's
 // files, branches or commands (hubLink). Only clones Dash made
@@ -76,7 +77,7 @@ func (s *Server) moveHubClone(ctx context.Context, sv *service, p model.Project)
 	if p.HubProjectID == "" || p.HubOrgFolder == "" || s.ProjectRoot == "" {
 		return p // not the hub's, or its org's folder not known yet
 	}
-	dir, err := s.hubOrgDir(p.HubOrgFolder)
+	dir, err := s.hubCloneDir(p.HubOrgFolder, p.RemoteURL)
 	if err != nil {
 		slog.Warn("runner: can't move the hub's clone into its org's folder", "project", p.Name, "path", p.Path, "err", err)
 		return p

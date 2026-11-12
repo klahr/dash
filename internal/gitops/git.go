@@ -780,6 +780,16 @@ func RepoName(remote string) string {
 	return host + "/" + m[3] + "/" + m[4]
 }
 
+// RemoteOwner is the OWNER (a GitHub user or organization) of an origin URL
+// of the form RepoName reads, or "" when it doesn't look like one.
+func RemoteOwner(remote string) string {
+	m := remoteRe.FindStringSubmatch(strings.TrimSpace(remote))
+	if m == nil {
+		return ""
+	}
+	return m[3]
+}
+
 // DeleteGitHubRepo deletes origin's repository on GitHub with gh. gh needs
 // the delete_repo scope (gh auth refresh -s delete_repo).
 func (g *Git) DeleteGitHubRepo(ctx context.Context, projectID, repo, remote string) error {

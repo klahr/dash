@@ -35,8 +35,8 @@ import (
 
 // Link is PUT /api/hub/projects/{hub project id} on a runner: the hub
 // links one of its projects to the runner, which clones RemoteURL into
-// <its projects root>/<org folder>/<repo>, adopts a clone of RemoteURL
-// already in that org folder, or finds its checkout from an earlier link by
+// <its projects root>/<org folder>/<owner>/<repo>, adopts a clone of RemoteURL
+// already in that folder, or finds its checkout from an earlier link by
 // the hub's project id.
 type Link struct {
 	Name      string `json:"name"`
@@ -93,7 +93,7 @@ type Linked struct {
 	// differ from the one the hub guessed when the project was made.
 	DefaultBranch string `json:"default_branch,omitempty"`
 	// Path is where the runner keeps its checkout: <its projects
-	// folder>/<org folder>/<repo> (or <repo>-2, … when that folder holds
+	// folder>/<org folder>/<owner>/<repo> (or <repo>-2, … when that folder holds
 	// something else). It is sent with every link, so it follows the
 	// runner's clone when the runner moves it (see api.MoveHubClones).
 	Path string `json:"path,omitempty"`

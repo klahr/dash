@@ -120,6 +120,40 @@ func oldClone(t *testing.T, s *Server, remote, hpid, name, how, folder string) (
 	return p, td
 }
 
+// A clone in the org's folder from before clones went in the remote
+// owner's folder moves into <org>/<owner>/.
+func TestMoveHubCloneIntoOwnerFolder(t *testing.T) {
+	parallel(t)
+
+	needGit(t)
+	s, _, remote := runnerSide(t, 7)
+	p, _ := oldClone(t, s, remote, "hub-p1", "remote", model.HubCloned, "acme")
+	org := filepath.Join(s.ProjectRoot, "acme")
+	if err := os.MkdirAll(org, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	inOrg := filepath.Join(org, "dash")
+	if err := os.Rename(p.Path, inOrg); err != nil {
+		t.Fatal(err)
+	}
+	p, err := raw(s).UpdateProject(p.ID, func(x *model.Project) error {
+		x.Path, x.RemoteURL = inOrg, "https://github.com/klahr/dash.git"
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.MoveHubClones(context.Background())
+	want := filepath.Join(org, "klahr", "dash")
+	if moved, _ := raw(s).GetProject(p.ID); moved.Path != want {
+		t.Fatalf("path %s, want %s", moved.Path, want)
+	}
+	s.MoveHubClones(context.Background())
+	if again, _ := raw(s).GetProject(p.ID); again.Path != want {
+		t.Errorf("second run: %s", again.Path)
+	}
+}
+
 // walkStatus takes the task id through statuses, in order.
 func walkStatus(t *testing.T, s *Server, id string, statuses ...model.TodoStatus) {
 	t.Helper()
