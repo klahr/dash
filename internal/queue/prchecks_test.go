@@ -179,7 +179,7 @@ func TestReviewNote(t *testing.T) {
 		{ID: 21, ReviewID: 2, User: alice, Path: "b.go", OriginalLine: 9, Body: "Still wrong", InReplyTo: 5},
 		{ID: 22, ReviewID: 9, User: alice, Path: "c.go", Line: 1, Body: "Another review's"},
 	}
-	note, items := reviewNote(4, rs, cs, 1)
+	note, items := reviewNote(4, rs, cs, nil, 1)
 	for _, want := range []string{"pull request #4", "**alice** requested changes", "[1]\n> Two things.\n> See below.",
 		"[2] On `a.go:3`", "> Use a constant", "**bob** commented", "[3] On `b.go:9` (in reply to an earlier comment)", "```dash-review"} {
 		if !strings.Contains(note, want) {
@@ -196,11 +196,55 @@ func TestReviewNote(t *testing.T) {
 		t.Errorf("items = %+v, want %+v", items, want)
 	}
 	// Numbering carries on after the items of a reply still owed.
-	if _, items := reviewNote(4, rs[:1], cs, 7); len(items) != 2 || items[0].Ref != 7 || items[1].Ref != 8 {
+	if _, items := reviewNote(4, rs[:1], cs, nil, 7); len(items) != 2 || items[0].Ref != 7 || items[1].Ref != 8 {
 		t.Errorf("items from 7 = %+v", items)
 	}
-	if got, items := reviewNote(4, []gitops.PRReview{{ID: 3, User: alice, State: "COMMENTED"}}, nil, 1); got != "" || items != nil {
+	if got, items := reviewNote(4, []gitops.PRReview{{ID: 3, User: alice, State: "COMMENTED"}}, nil, nil, 1); got != "" || items != nil {
 		t.Errorf("an empty review made a note: %q", got)
+	}
+
+	// Comments in the conversation tab join the same note.
+	talk := []gitops.IssueComment{{ID: 20, User: alice, Body: "@claude also\nupdate the docs"}}
+	note, items = reviewNote(4, rs, cs, talk, 1)
+	for _, want := range []string{"left a review and comments on pull request #4", "**alice** requested changes",
+		"**alice** commented on the pull request:\n\n[4]\n> @claude also\n> update the docs"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("note lacks %q:\n%s", want, note)
+		}
+	}
+	if len(items) != 4 || items[3] != (model.PRReplyItem{Ref: 4, Author: "alice"}) {
+		t.Errorf("a comment's item = %+v", items)
+	}
+	if note, items := reviewNote(4, nil, nil, talk, 1); !strings.Contains(note, "left comments on pull request #4") || len(items) != 1 {
+		t.Errorf("a note of comments only (items %+v):\n%s", items, note)
+	}
+}
+
+// Only a person's comment that mentions @claude or @dash asks Claude for
+// something; Dash's own comments and apps' never do.
+func TestAsksClaude(t *testing.T) {
+	parallel(t)
+
+	alice := gitops.GHUser{Login: "alice", Type: "User"}
+	for body, want := range map[string]bool{
+		"@claude please rename it":      true,
+		"Can you fix this, @Dash?":      true,
+		"(@claude) fix the typo":        true,
+		"looks good, merging later":     false,
+		"cc @claude-bot":                false,
+		"mail me@dash.dev":              false,
+		"   ":                           false,
+		"@claude closed\n\n" + dashMark: false,
+		replyComment(&model.PRReply{}, reviewReply{Summary: "Did what @claude was asked"}): false,
+		"see github.com/@claude/nothing": false,
+	} {
+		if got := asksClaude(gitops.IssueComment{User: alice, Body: body}); got != want {
+			t.Errorf("asksClaude(%q) = %v, want %v", body, got, want)
+		}
+	}
+	bot := gitops.GHUser{Login: "claude[bot]", Type: "Bot"}
+	if asksClaude(gitops.IssueComment{User: bot, Body: "@claude done"}) {
+		t.Error("an app's comment asked Claude")
 	}
 }
 

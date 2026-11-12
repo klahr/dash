@@ -166,12 +166,12 @@ func TestRunTimeLimitStopsClaude(t *testing.T) {
 
 // A fake gh: `pr list` finds nothing, `pr create` prints a URL, `pr view`
 // prints whatever the test put in pr.json, the REST calls for reviews and
-// review comments print reviews.json and comments.json (none when missing),
-// the GraphQL query for review threads prints threads.json, and `pr merge`
-// fails: Dash never merges a pull request. Comments, replies, review
-// requests and resolving threads succeed, unless the test made a file
-// "down": then they fail like an unreachable GitHub. Every call is logged
-// to calls.
+// review comments print reviews.json and comments.json, the one for the
+// conversation tab's comments issues.json (none when missing), the GraphQL
+// query for review threads prints threads.json, and `pr merge` fails: Dash
+// never merges a pull request. Comments, replies, review requests and
+// resolving threads succeed, unless the test made a file "down": then they
+// fail like an unreachable GitHub. Every call is logged to calls.
 func fakeGh(t *testing.T, dir string) (bin, stateFile string) {
 	stateFile = filepath.Join(dir, "pr.json")
 	bin = filepath.Join(dir, "gh")
@@ -186,6 +186,7 @@ func fakeGh(t *testing.T, dir string) (bin, stateFile string) {
 		"  *resolveReviewThread*|*\"-X POST\"*) [ ! -f " + file("down") + " ] ;;\n" +
 		"  *graphql*) cat " + file("threads.json") + " 2>/dev/null || echo '{}' ;;\n" +
 		"  */reviews*) cat " + file("reviews.json") + " 2>/dev/null || echo '[]' ;;\n" +
+		"  */issues/*) cat " + file("issues.json") + " 2>/dev/null || echo '[]' ;;\n" +
 		"  */comments*) cat " + file("comments.json") + " 2>/dev/null || echo '[]' ;;\n" +
 		"  *) exit 1 ;;\n  esac ;;\n" +
 		"*) echo \"unexpected gh $*\" >&2; exit 1 ;;\nesac\n"
@@ -456,6 +457,96 @@ func TestPullRequestReviewGoesBackToClaude(t *testing.T) {
 	h.merges.PollPRs(context.Background())
 	if x, _ := h.st.GetTodo(td.ID); x.Status != model.StatusReview || x.PR.Waits != model.PRWaitMerge || strings.Contains(ghCalls(t, dir), "pr merge") {
 		t.Fatalf("want it approved and waiting to be merged, got %s %+v", x.Status, *x.PR)
+	}
+}
+
+// Comments in the pull request's conversation tab that mention @claude or
+// @dash go back to Claude like a review: several at once in one note, with a
+// fresh fix budget, and each only once (the newest sent is kept on the task,
+// so a restart doesn't send them again). Apps', Dash's own, empty ones and
+// ones mentioning neither aren't sent.
+func TestPullRequestCommentGoesBackToClaude(t *testing.T) {
+	parallel(t)
+
+	h, dir := prHarness(t, "talk.txt", model.Project{MaxAutoFixes: 1})
+	td := h.waitFor(h.add("talk").ID, model.StatusReview)
+	if td.PR.CommentID != 1 {
+		t.Fatalf("want a new pull request's conversation followed from the start, got comment id %d", td.PR.CommentID)
+	}
+	if _, err := h.st.UpdateTodo(td.ID, func(x *model.Todo) error { x.AutoFixes = 1; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	head := gitRun(t, td.Worktree.Path, "rev-parse", "HEAD")
+	write(t, dir, "pr.json", openPRView(head, `{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}`))
+	write(t, dir, "issues.json", `[
+		{"id":30,"user":{"login":"alice","type":"User"},"body":"Merging after the release."},
+		{"id":31,"user":{"login":"claude[bot]","type":"Bot"},"body":"@claude Working on it"},
+		{"id":32,"user":{"login":"alice","type":"User"},"body":"@claude rename the file."},
+		{"id":33,"user":{"login":"bob","type":"User"},"body":"@dash and add a test"},
+		{"id":34,"user":{"login":"bob","type":"User"},"body":"  "},
+		{"id":35,"user":{"login":"me","type":"User"},"body":"@dash noted\n\n`+dashMark+`"}]`)
+	h.merges.PollPRs(context.Background())
+
+	x := waitPR(t, h, td.ID, model.StatusReview, func(x model.Todo) bool { return x.Runs == 2 })
+	if len(x.Feedback) != 1 {
+		t.Fatalf("want one note for the comments of one poll, got %d: %q", len(x.Feedback), x.Feedback)
+	}
+	note := x.Feedback[0]
+	for _, want := range []string{"pull request #7", "**alice** commented", "rename the file.", "**bob** commented", "add a test"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("Claude's note lacks %q:\n%s", want, note)
+		}
+	}
+	for _, not := range []string{"Merging after", "Working on it", "noted"} {
+		if strings.Contains(note, not) {
+			t.Errorf("Claude's note has %q:\n%s", not, note)
+		}
+	}
+	if x.PR.CommentID != 33 || x.AutoFixes != 0 || !strings.Contains(x.SentBack, "alice, bob") {
+		t.Fatalf("want comment 33 handled, the fix budget reset and alice and bob credited, got id %d fixes %d sent back %q", x.PR.CommentID, x.AutoFixes, x.SentBack)
+	}
+	// Answered on GitHub once the fix is pushed, as a review is.
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(ghCalls(t, dir), "pr comment 7") {
+		if time.Now().After(deadline) {
+			t.Fatalf("want Claude's summary posted for the comments, gh calls:\n%s", ghCalls(t, dir))
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// The same comments again (a later poll, or one after a restart): not resent.
+	write(t, dir, "pr.json", openPRView(gitRun(t, td.Worktree.Path, "rev-parse", "HEAD"), `{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}`))
+	h.merges.PollPRs(context.Background())
+	time.Sleep(200 * time.Millisecond)
+	if x, _ := h.st.GetTodo(td.ID); x.Runs != 2 || x.Status != model.StatusReview || len(x.Feedback) != 1 {
+		t.Fatalf("comments sent twice: %s runs %d feedback %d", x.Status, x.Runs, len(x.Feedback))
+	}
+}
+
+// A pull request opened before Dash followed its conversation tab doesn't
+// send the comments already there: only newer ones go to Claude.
+func TestPullRequestOlderCommentsAreNotSent(t *testing.T) {
+	parallel(t)
+
+	h, dir := prHarness(t, "old-talk.txt", model.Project{})
+	td := h.waitFor(h.add("old talk").ID, model.StatusReview)
+	if _, err := h.st.UpdateTodo(td.ID, func(x *model.Todo) error { x.PR.CommentID = 0; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	write(t, dir, "pr.json", openPRView(gitRun(t, td.Worktree.Path, "rev-parse", "HEAD"), `{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}`))
+	write(t, dir, "issues.json", `[{"id":40,"user":{"login":"alice","type":"User"},"body":"@claude an old request"}]`)
+	h.merges.PollPRs(context.Background())
+	time.Sleep(200 * time.Millisecond)
+	if x, _ := h.st.GetTodo(td.ID); x.Runs != 1 || len(x.Feedback) != 0 || x.PR.CommentID != 40 {
+		t.Fatalf("want the old comment marked seen and not sent, got runs %d feedback %q comment id %d", x.Runs, x.Feedback, x.PR.CommentID)
+	}
+
+	write(t, dir, "issues.json", `[{"id":40,"user":{"login":"alice","type":"User"},"body":"@claude an old request"},
+		{"id":41,"user":{"login":"alice","type":"User"},"body":"@claude a new one"}]`)
+	h.merges.PollPRs(context.Background())
+	x := waitPR(t, h, td.ID, model.StatusReview, func(x model.Todo) bool { return x.Runs == 2 })
+	if last := x.Feedback[len(x.Feedback)-1]; !strings.Contains(last, "a new one") || strings.Contains(last, "an old request") {
+		t.Fatalf("want only the new comment sent:\n%s", last)
 	}
 }
 

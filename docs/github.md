@@ -42,9 +42,19 @@ In pull request mode the pull request is where a task is reviewed:
    sends it to Claude the way a **Rework** from Dash is sent: the review's text and each comment
    with its file and line. Claude's fix is pushed to the same pull request, and the task returns
    to Review. Each review is sent once. Reviews by apps (CI, coverage or CLA bots) and approvals
-   aren't sent, and neither are comments in the pull request's conversation tab: to ask Claude
-   for something, leave it in a review (a single comment on a line is a review too). You can
-   still **Rework** from Dash as well; that also ends up on the same pull request.
+   aren't sent. You can still **Rework** from Dash as well; that also ends up on the same pull
+   request.
+
+   **Comments in the conversation tab** go back to Claude the same way, when they mention
+   `@claude` or `@dash` (e.g. "@claude also update the docs"). The rest are taken as talk between
+   people ("merging after the release", "cc @bob") and left alone: every comment sent starts a
+   new run of Claude and a new commit on the pull request, so asking for one is explicit. Comments
+   by apps (including the Claude GitHub app's), empty ones and Dash's own (its answers below) aren't sent. Each comment
+   is sent once, also after Dash restarts; comments and reviews that arrive between two polls go
+   to Claude together in one note, with the same fresh budget of automatic fixes as a review. If
+   the repository also runs the Claude GitHub Action, which answers `@claude` itself, mention
+   `@dash` instead. Comments already on a pull request opened before Dash followed the
+   conversation tab aren't sent; newer ones are.
 
    Dash then answers on GitHub, so you don't have to work out from the commits what happened:
 
@@ -57,10 +67,10 @@ In pull request mode the pull request is where a task is reviewed:
 
    If the fix fails instead (Claude stops, or the merge fails) and nothing new is pushed, Dash
    comments on the pull request saying why; rework the task in Dash, or leave another review, to
-   have Claude try again. Each review is answered once, also when Dash restarts in between. A
+   have Claude try again. Each review and comment is answered once, also when Dash restarts in between. A
    failure to post on GitHub doesn't fail the task: it is noted in the task's log.
 
-   To tell its answers apart, Dash numbers the review's text and each line comment in what it
+   To tell its answers apart, Dash numbers the review's text, each line comment and each conversation comment in what it
    sends Claude, and asks it to end its final message with a block answering each one:
 
    ````

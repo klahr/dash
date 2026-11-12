@@ -132,6 +132,15 @@ type PRComment struct {
 	HTMLURL      string `json:"html_url"`
 }
 
+// IssueComment is a comment in a pull request's conversation tab (GitHub's
+// issue comments), not on a line of its diff.
+type IssueComment struct {
+	ID      int64  `json:"id"`
+	User    GHUser `json:"user"`
+	Body    string `json:"body"`
+	HTMLURL string `json:"html_url"`
+}
+
 // GHUser is a GitHub account as the REST API gives it.
 type GHUser struct {
 	Login string `json:"login"`
@@ -152,6 +161,13 @@ func (g *Git) PRReviews(ctx context.Context, projectID, dir string, number int) 
 func (g *Git) PRComments(ctx context.Context, projectID, dir string, number int) ([]PRComment, error) {
 	var out []PRComment
 	return out, g.ghPages(ctx, projectID, dir, fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments", number), &out)
+}
+
+// PRIssueComments returns the comments in the conversation tab of pull
+// request number, oldest first.
+func (g *Git) PRIssueComments(ctx context.Context, projectID, dir string, number int) ([]IssueComment, error) {
+	var out []IssueComment
+	return out, g.ghPages(ctx, projectID, dir, fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments", number), &out)
 }
 
 // CommentPR posts body as a comment in pull request number's conversation.

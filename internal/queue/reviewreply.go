@@ -98,7 +98,9 @@ func (m *MergeQueue) takeReply(todoID string, n int) *model.PRReply {
 		if x.PR == nil || x.PR.Number != n || x.PR.Reply == nil {
 			return errSkipUpdate
 		}
-		if x.PR.Reply.ReviewID > x.PR.RepliedID {
+		// Comments it answers are sent once (PR.CommentID), and Reply is
+		// cleared here: claiming it is what posts it at most once.
+		if x.PR.Reply.ReviewID > x.PR.RepliedID || x.PR.Reply.CommentID > 0 {
 			c := *x.PR.Reply
 			r = &c
 			x.PR.RepliedID = c.ReviewID
@@ -215,7 +217,7 @@ func (m *MergeQueue) reviewFailed(ctx context.Context, todoID, why string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ghTimeout)
 	defer cancel()
 	body := fmt.Sprintf("Claude couldn't finish the changes asked for in the review%s, so nothing new was pushed:\n\n%s\n\n"+
-		"Rework the task in Dash, or leave another review here, to have Claude try again.", by(r), quote(clip(why)))
+		"Rework the task in Dash, or leave another review here, to have Claude try again.\n"+dashMark, by(r), quote(clip(why)))
 	if err := m.Git.CommentPR(ctx, p.ID, p.Path, n, body); err != nil {
 		slog.Warn("say on GitHub that a review fix failed", "todo", t.ID, "pr", n, "err", err)
 		m.Log.Line(t, fmt.Sprintf("⚠ couldn't say on pull request #%d that the fix failed: %s", n, brief(err)))
@@ -269,7 +271,7 @@ func replyComment(r *model.PRReply, reply reviewReply) string {
 	if len(not) > 0 {
 		b.WriteString("\n**Not changed**, where Claude disagreed:\n\n" + strings.Join(not, "\n") + "\n")
 	}
-	b.WriteString("\n<sub>Posted by Dash after pushing Claude's fix.</sub>")
+	b.WriteString("\n<sub>Posted by Dash after pushing Claude's fix.</sub>\n" + dashMark)
 	return b.String()
 }
 

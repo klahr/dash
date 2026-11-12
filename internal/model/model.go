@@ -571,6 +571,10 @@ type PullRequest struct {
 	// ReviewID is the newest GitHub review whose comments were sent back to
 	// Claude, so the same review isn't sent twice.
 	ReviewID int64 `json:"review_id,omitempty"`
+	// CommentID is the newest comment in its conversation tab that was sent
+	// back to Claude, or seen: 1 once followed with none sent yet, 0 for a
+	// pull request opened before Dash followed those comments.
+	CommentID int64 `json:"comment_id,omitempty"`
 	// Waits is what a person has to do on GitHub for it to go on (PRWaitReview,
 	// PRWaitMerge, PRWaitBlocked), "" while it waits on Dash, Claude or its
 	// checks instead; WaitsSince is when that started. Both as last seen
@@ -588,6 +592,8 @@ type PullRequest struct {
 // PRReply is what Dash answers on GitHub to reviews sent back to Claude.
 type PRReply struct {
 	ReviewID int64 `json:"review_id"` // the newest of the reviews sent
+	// CommentID is the newest of the conversation comments sent, 0 for none.
+	CommentID int64 `json:"comment_id,omitempty"`
 	// Reviewers are those who requested changes: asked to review again.
 	Reviewers []string `json:"reviewers,omitempty"`
 	// Items are what Claude was asked to answer, numbered as in its note.

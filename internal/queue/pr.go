@@ -43,7 +43,8 @@ func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) 
 			return nil // moved on while pushing (e.g. merged or closed on GitHub): keep what was seen
 		}
 		pushed = true
-		pr := model.PullRequest{Number: n, URL: url, State: "OPEN"}
+		// CommentID 1: its conversation is followed from the start.
+		pr := model.PullRequest{Number: n, URL: url, State: "OPEN", CommentID: 1}
 		if x.PR != nil && x.PR.Number == n {
 			pr = *x.PR // the same pull request: keep what was handled and seen of it
 			pr.URL, pr.State = url, "OPEN"
@@ -75,7 +76,7 @@ func (m *MergeQueue) RejectPR(ctx context.Context, t model.Todo) error {
 	}
 	p = p.For(t)
 	n := t.PR.Number
-	if err := m.Git.ClosePR(ctx, p.ID, p.Path, n, "Rejected in Dash."); err != nil {
+	if err := m.Git.ClosePR(ctx, p.ID, p.Path, n, "Rejected in Dash.\n\n"+dashMark); err != nil {
 		return fmt.Errorf("close pull request #%d: %w", n, err)
 	}
 	if t.Worktree != nil {
@@ -190,14 +191,18 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 		}
 		// Reviews asking for changes go back to Claude first: its fix is
 		// pushed to the same pull request, and checks run on that.
+		// So are comments in its conversation tab.
 		reviews, err := m.Git.PRReviews(ctx, p.ID, p.Path, n)
+		fresh := reviews
 		if err != nil {
 			slog.Warn("pull request reviews", "todo", t.ID, "pr", n, "err", err)
 		} else if t.PR.ReviewID == 0 && t.Status == model.StatusMerging {
 			// Approved in Dash before reviews were followed: what was said
 			// on it before isn't news.
 			m.seenReviews(t, reviews)
-		} else if m.reviewBack(ctx, t, p, reviews) {
+			fresh = nil
+		}
+		if m.reviewBack(ctx, t, p, fresh, m.conversation(ctx, t, p)) {
 			return
 		}
 		if t.Status != model.StatusMerging && t.Status != model.StatusReview {
@@ -379,12 +384,54 @@ func (m *MergeQueue) seenReviews(t model.Todo, reviews []gitops.PRReview) {
 	})
 }
 
+// dashMark ends the comments Dash itself leaves on a pull request, which
+// are never sent back to Claude (Dash comments with the gh account of the
+// person it works for).
+const dashMark = "<!-- dash -->"
+
+// mention matches a comment that asks Dash or Claude for something: "@dash"
+// or "@claude", as a whole handle (not "@claude-bot", nor in an email).
+var mention = regexp.MustCompile(`(?i)(?:^|[^\w@/.-])@(?:claude|dash)(?:[^\w-]|$)`)
+
+// conversation is the comments in a task's pull request's conversation tab,
+// nil when they can't be fetched, or on a pull request opened before Dash
+// followed them, whose comments so far are then marked seen.
+func (m *MergeQueue) conversation(ctx context.Context, t model.Todo, p model.Project) []gitops.IssueComment {
+	cs, err := m.Git.PRIssueComments(ctx, p.ID, p.Path, t.PR.Number)
+	if err != nil {
+		slog.Warn("pull request conversation", "todo", t.ID, "pr", t.PR.Number, "err", err)
+		return nil
+	}
+	if t.PR.CommentID == 0 {
+		var newest int64 = 1 // seen, and every real comment is newer
+		for _, c := range cs {
+			newest = max(newest, c.ID)
+		}
+		_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+			if x.PR != nil && x.PR.Number == t.PR.Number && x.PR.CommentID < newest {
+				x.PR.CommentID = newest
+			}
+			return nil
+		})
+		return nil
+	}
+	return cs
+}
+
+// asksClaude reports a conversation comment that is for Claude: written by
+// a person (not an app, nor Dash itself), saying something, and mentioning
+// @dash or @claude. Without a mention it is taken as talk between people.
+func asksClaude(c gitops.IssueComment) bool {
+	return !c.User.Bot() && !strings.Contains(c.Body, dashMark) && strings.TrimSpace(c.Body) != "" && mention.MatchString(c.Body)
+}
+
 // reviewBack sends the reviews submitted on a task's pull request since the
-// last ones sent (a request for changes, or comments) back to Claude, the way
-// a rework from Dash is, and reports whether it did. Claude's fix is pushed
-// to the same pull request. Approvals, and reviews by apps (CI, CLA or
-// coverage bots), aren't sent.
-func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Project, reviews []gitops.PRReview) bool {
+// last ones sent (a request for changes, or comments), and the comments in
+// its conversation tab asking for Claude since the last ones sent, back to
+// Claude in one note, the way a rework from Dash is, and reports whether it
+// did. Claude's fix is pushed to the same pull request. Approvals, and
+// reviews and comments by apps (CI, CLA or coverage bots), aren't sent.
+func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Project, reviews []gitops.PRReview, talk []gitops.IssueComment) bool {
 	n := t.PR.Number
 	var fresh []gitops.PRReview
 	var newest int64
@@ -395,14 +442,24 @@ func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Proje
 		fresh = append(fresh, r)
 		newest = max(newest, r.ID)
 	}
-	if len(fresh) == 0 {
+	var said []gitops.IssueComment
+	var newestComment int64
+	for _, c := range talk {
+		if c.ID > t.PR.CommentID && asksClaude(c) {
+			said = append(said, c)
+			newestComment = max(newestComment, c.ID)
+		}
+	}
+	if len(fresh) == 0 && len(said) == 0 {
 		return false
 	}
 	var comments []gitops.PRComment
-	if cs, err := m.Git.PRComments(ctx, p.ID, p.Path, n); err != nil {
-		slog.Warn("pull request review comments", "todo", t.ID, "pr", n, "err", err)
-		return false // try again at the next poll rather than send half of it
-	} else {
+	if len(fresh) > 0 {
+		cs, err := m.Git.PRComments(ctx, p.ID, p.Path, n)
+		if err != nil {
+			slog.Warn("pull request review comments", "todo", t.ID, "pr", n, "err", err)
+			return false // try again at the next poll rather than send half of it
+		}
 		comments = cs
 	}
 	// Items of a reply still owed (its fix not pushed yet) keep their numbers.
@@ -412,15 +469,19 @@ func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Proje
 			first = max(first, it.Ref+1)
 		}
 	}
-	note, items := reviewNote(n, fresh, comments, first)
+	note, items := reviewNote(n, fresh, comments, said, first)
 	if note == "" {
 		// Nothing written (e.g. an empty review): nothing for Claude.
 		m.seenReviews(t, fresh)
 		return false
 	}
-	who := reviewers(fresh)
-	why := fmt.Sprintf("review by %s on pull request #%d", who, n)
-	m.Log.Line(t, fmt.Sprintf("↻ %s asks for changes on pull request #%d; sending the review back to Claude", who, n))
+	who := reviewers(fresh, said)
+	what := "review"
+	if len(fresh) == 0 {
+		what = "comment"
+	}
+	why := fmt.Sprintf("%s by %s on pull request #%d", what, who, n)
+	m.Log.Line(t, fmt.Sprintf("↻ %s asks for changes on pull request #%d; sending the %s back to Claude", who, n, what))
 	_, err := m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
 		switch x.Status {
 		case model.StatusReview, model.StatusMerging, model.StatusFailed:
@@ -432,12 +493,14 @@ func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Proje
 		}
 		x.Feedback = append(x.Feedback, note)
 		x.PR.ReviewID = max(x.PR.ReviewID, newest)
+		x.PR.CommentID = max(x.PR.CommentID, newestComment)
 		// Answered on GitHub once the fix is pushed (or fails).
 		reply := model.PRReply{}
 		if x.PR.Reply != nil {
 			reply = *x.PR.Reply
 		}
 		reply.ReviewID, reply.Report = max(reply.ReviewID, newest), ""
+		reply.CommentID = max(reply.CommentID, newestComment)
 		reply.Items = append(slices.Clip(reply.Items), items...)
 		for _, r := range fresh {
 			if r.State == "CHANGES_REQUESTED" && !slices.Contains(reply.Reviewers, r.User.Login) {
@@ -462,12 +525,18 @@ func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Proje
 
 var errSkipUpdate = errors.New("skip")
 
-func reviewers(rs []gitops.PRReview) string {
+func reviewers(rs []gitops.PRReview, cs []gitops.IssueComment) string {
 	var names []string
-	for _, r := range rs {
-		if !slices.Contains(names, r.User.Login) {
-			names = append(names, r.User.Login)
+	add := func(login string) {
+		if !slices.Contains(names, login) {
+			names = append(names, login)
 		}
+	}
+	for _, r := range rs {
+		add(r.User.Login)
+	}
+	for _, c := range cs {
+		add(c.User.Login)
 	}
 	return strings.Join(names, ", ")
 }
@@ -485,11 +554,12 @@ func clip(s string) string {
 
 // reviewNote is what Claude is told of reviews rs on pull request n, with
 // their comments on lines of the diff (comments holds the pull request's
-// line comments; those of other reviews are left out), and the items it
-// numbers for Claude to answer one by one, from first on. The note is ""
-// when they say nothing.
-func reviewNote(n int, rs []gitops.PRReview, comments []gitops.PRComment, first int) (string, []model.PRReplyItem) {
+// line comments; those of other reviews are left out), and of comments talk
+// in its conversation tab, and the items it numbers for Claude to answer one
+// by one, from first on. The note is "" when they say nothing.
+func reviewNote(n int, rs []gitops.PRReview, comments []gitops.PRComment, talk []gitops.IssueComment, first int) (string, []model.PRReplyItem) {
 	var b strings.Builder
+	reviewed, commented := false, false
 	var items []model.PRReplyItem
 	ref := max(first, 1)
 	for _, r := range rs {
@@ -503,6 +573,7 @@ func reviewNote(n int, rs []gitops.PRReview, comments []gitops.PRComment, first 
 		if body == "" && len(lines) == 0 {
 			continue
 		}
+		reviewed = true
 		verb := "commented"
 		if r.State == "CHANGES_REQUESTED" {
 			verb = "requested changes"
@@ -529,10 +600,25 @@ func reviewNote(n int, rs []gitops.PRReview, comments []gitops.PRComment, first 
 			ref++
 		}
 	}
+	for _, c := range talk {
+		if body := clip(c.Body); body != "" {
+			commented = true
+			fmt.Fprintf(&b, "\n**%s** commented on the pull request:\n\n[%d]\n%s\n", c.User.Login, ref, quote(body))
+			items = append(items, model.PRReplyItem{Ref: ref, Author: c.User.Login})
+			ref++
+		}
+	}
 	if b.Len() == 0 {
 		return "", nil
 	}
-	return fmt.Sprintf("A reviewer left a review on pull request #%d:\n%s\n"+
+	left := "a review"
+	switch {
+	case commented && reviewed:
+		left = "a review and comments"
+	case commented:
+		left = "comments"
+	}
+	return fmt.Sprintf("A reviewer left %s on pull request #%d:\n%s\n"+
 		"Address it: change the code where the reviewer is right. Where a comment needs no change, or you disagree, "+
 		"don't change it; say why instead. Your commits are pushed to the same pull request, and Dash posts your "+
 		"final message there for the reviewer.\n\n"+
@@ -540,7 +626,7 @@ func reviewNote(n int, rs []gitops.PRReview, comments []gitops.PRComment, first 
 		"`%s` block answering every numbered item above, one line each: `addressed` and what you changed, or "+
 		"`disagreed` and why you didn't. For example:\n\n"+
 		"```%s\n[%d] addressed: renamed the file to notes.md\n[%d] disagreed: the constant is used once; inlining it reads better\n```",
-		n, b.String(), reviewBlock, reviewBlock, items[0].Ref, items[0].Ref+1), items
+		left, n, b.String(), reviewBlock, reviewBlock, items[0].Ref, items[0].Ref+1), items
 }
 
 func prChecks(cs []gitops.PRCheck) []model.PRCheck {
@@ -781,5 +867,5 @@ func prBody(t model.Todo) string {
 		body += "\n\n**Claude:** " + t.Summary
 	}
 	return body + "\n\n---\nOpened by Dash when Claude finished the task. Review it here: a review asking for changes " +
-		"(or comments) goes back to Claude, whose fixes are pushed to this pull request.\n\nDash-Todo: " + t.ID
+		"(or comments), or a comment mentioning @dash or @claude, goes back to Claude, whose fixes are pushed to this pull request.\n\nDash-Todo: " + t.ID
 }
