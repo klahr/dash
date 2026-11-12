@@ -1,16 +1,14 @@
 # Caddy in front of Dash, for a hub on a VPS (see docs/deploy.md). For the
 # Docker setup, see deploy/docker-compose.yml and deploy/caddy/ instead.
 #
-# Replace dash.example.com with your own name, point its DNS records at this
-# server (A/AAAA for dash.example.com, *.preview.dash.example.com and, with
-# org subdomains, *.dash.example.com), then:
+# Replace dash.example.com with your own name and you@example.com with your
+# own address (Let's Encrypt refuses example.com addresses), point the DNS
+# record for dash.example.com at this server, then:
 #
 #   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
-#   ./bin/dash -trust-proxy -public-url https://dash.example.com \
-#              -preview-domain preview.dash.example.com \
-#              -org-domain dash.example.com
 #
 # Dash stays on 127.0.0.1:7788 (its default); only Caddy listens on 80 and 443.
+# Start it with -trust-proxy and -public-url https://dash.example.com.
 
 {
 	# Let's Encrypt account e-mail, for expiry warnings.
@@ -23,31 +21,34 @@ dash.example.com {
 	reverse_proxy 127.0.0.1:7788
 }
 
-# Live previews, one subdomain per task. Let's Encrypt only issues wildcard
-# certificates through a DNS challenge, so this block needs a Caddy built with
-# your DNS provider's plugin, e.g.
+# The two blocks below are for live previews and org subdomains. They need
+# wildcard certificates, which Let's Encrypt only issues through a DNS
+# challenge, so they need Caddy with your DNS provider's module. A plain Caddy
+# refuses to start with them ("module not registered: dns.providers.cloudflare"),
+# so they are commented out. To use them (docs/deploy.md#certificates-for-previews):
 #
-#   xcaddy build --with github.com/caddy-dns/cloudflare
+#   sudo caddy add-package github.com/caddy-dns/cloudflare
+#   sudo systemctl edit caddy     # [Service] Environment=CF_API_TOKEN=<a token that can edit the zone>
 #
-# and an API token that can edit the zone (CF_API_TOKEN in Caddy's
-# environment). Without previews, delete this block and leave out
-# -preview-domain.
-*.preview.dash.example.com {
-	tls {
-		dns cloudflare {env.CF_API_TOKEN}
-	}
-	reverse_proxy 127.0.0.1:7788
-}
+# then uncomment the blocks you use, point their DNS records at this server,
+# reload Caddy and start Dash with -preview-domain and/or -org-domain.
 
-# Org subdomains (-org-domain), one per organization: acme.dash.example.com.
-# A wildcard certificate covers one level only, so this one doesn't cover the
-# previews above (and theirs doesn't cover this); each block gets its own,
-# through the same DNS challenge. Caddy sends the browser's Host on to Dash,
-# which tells the orgs apart by it. Without org subdomains, delete this block
-# and leave out -org-domain.
-*.dash.example.com {
-	tls {
-		dns cloudflare {env.CF_API_TOKEN}
-	}
-	reverse_proxy 127.0.0.1:7788
-}
+# Live previews, one subdomain per task (-preview-domain preview.dash.example.com).
+#*.preview.dash.example.com {
+#	tls {
+#		dns cloudflare {env.CF_API_TOKEN}
+#	}
+#	reverse_proxy 127.0.0.1:7788
+#}
+
+# Org subdomains (-org-domain dash.example.com), one per organization:
+# acme.dash.example.com. A wildcard certificate covers one level only, so this
+# one doesn't cover the previews above (and theirs doesn't cover this); each
+# block gets its own, through the same DNS challenge. Caddy sends the browser's
+# Host on to Dash, which tells the orgs apart by it.
+#*.dash.example.com {
+#	tls {
+#		dns cloudflare {env.CF_API_TOKEN}
+#	}
+#	reverse_proxy 127.0.0.1:7788
+#}

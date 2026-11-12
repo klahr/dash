@@ -21,11 +21,13 @@ merge them one at a time.
 ## Quick start
 
 Download a prebuilt release (Linux and macOS, amd64 and arm64; no Go needed; Windows builds
-are for [runners](docs/several-computers.md#windows-runners)). Pick the
-version and platform from the [releases page](https://github.com/klahr/dash/releases):
+are for [runners](docs/several-computers.md#windows-runners)). This takes the latest release;
+set `VERSION` to pin another from the [releases page](https://github.com/klahr/dash/releases):
 
 ```sh
-VERSION=1.2.0 OS=linux ARCH=amd64   # OS: linux or darwin, ARCH: amd64 or arm64
+OS=linux ARCH=amd64   # OS: linux or darwin, ARCH: amd64 or arm64
+VERSION=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/klahr/dash/releases/latest)
+VERSION=${VERSION##*/}
 curl -fLO "https://github.com/klahr/dash/releases/download/$VERSION/dash_${VERSION}_${OS}_${ARCH}.tar.gz"
 curl -fLO "https://github.com/klahr/dash/releases/download/$VERSION/checksums.txt"
 sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 --ignore-missing -c checksums.txt

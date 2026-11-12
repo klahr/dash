@@ -41,6 +41,8 @@ archives:
       - README.md
       - .env.example
       - deploy/dash.service
+      # A VPS behind Caddy (docs/deploy.md#a-vps-behind-caddy).
+      - deploy/Caddyfile
       # Run the hub with Docker (docs/deploy.md#run-the-hub-with-docker).
       - deploy/docker-compose.yml
       - deploy/docker-compose.dns.yml

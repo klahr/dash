@@ -20,39 +20,79 @@ before you start. To watch it in production, see [Monitoring](#monitoring).
 
 ## A VPS behind Caddy
 
-On the VPS, install Dash as usual (see the [README](../README.md)) and run it as a
-[service](service.md). The hub needs nothing else installed: no Claude Code, no API key, no `git`
-and no `gh`, since it runs nothing itself (see
-[Several computers](several-computers.md)). Its work runs on [runners](several-computers.md), and
-it needs at least one: `dash runner` on a computer with git and Claude Code logged in (and `gh`
-for pull requests). Then:
+The hub needs nothing installed besides Dash and Caddy: no Claude Code, no API key, no `git` and
+no `gh`, since it runs nothing itself. Its work runs on [runners](several-computers.md), and it
+needs at least one: `dash runner` on a computer with git and Claude Code logged in (and `gh` for
+pull requests).
 
 1. **DNS.** Point `dash.example.com` at the VPS (A and/or AAAA record). For
    [live previews](previews.md), also point `*.preview.dash.example.com` at it, and for
    [org subdomains](#org-subdomains) `*.dash.example.com`.
-2. **Caddy.** Install [Caddy](https://caddyserver.com/docs/install) and use
-   [`deploy/Caddyfile`](../deploy/Caddyfile) with your own names. Caddy gets the certificate for
-   `dash.example.com` from Let's Encrypt on its own and renews it.
-3. **Firewall.** Open only 80 and 443 (and SSH). Dash's port stays closed: it listens on
-   `127.0.0.1`, and `-trust-proxy` must only be used when the proxy is the only way in.
-4. **Start Dash** with the public address (on the service's `ExecStart` line, or as
-   `DASH_PUBLIC_URL` / `DASH_PREVIEW_DOMAIN` in its env file):
+2. **Firewall.** Open only SSH, 80 and 443. Dash's port stays closed: it listens on
+   `127.0.0.1`, and `-trust-proxy` must only be used when the proxy is the only way in. As root,
+   with `ufw` (Ubuntu, Debian):
 
    ```sh
-   ./bin/dash -trust-proxy -public-url https://dash.example.com \
-              -preview-domain preview.dash.example.com
+   ufw allow OpenSSH
+   ufw allow 80,443/tcp
+   ufw allow 443/udp     # HTTP/3
+   ufw enable
    ```
 
-   `-public-url` turns on the [claude.ai connector](mcp.md#claudeai-and-the-claude-app-custom-connector);
-   leave it out if you don't use one. Leave out `-preview-domain` if you don't use previews.
+   Your provider's firewall, if it has one, needs the same ports open.
+3. **Dash.** As an ordinary user (`dash` here; [Run Dash as a service](service.md) shows how
+   to make one), unpack the release in `~/dash` (see the [README](../README.md#quick-start)) and
+   run it as a [service](service.md). In its env file, `~/.config/dash/env`, set the public
+   address besides `DASH_USERNAME` and `DASH_PASSWORD` (16 or more random characters, e.g.
+   `openssl rand -base64 24`: an internet-facing hub refuses `change-me`):
+
+   ```sh
+   DASH_PUBLIC_URL=https://dash.example.com
+   ```
+
+   The unit already starts Dash with `-trust-proxy`. `DASH_PUBLIC_URL` turns on the
+   [claude.ai connector](mcp.md#claudeai-and-the-claude-app-custom-connector) and the links in
+   emails. Check it is up with `curl http://127.0.0.1:7788/healthz`.
+4. **Caddy.** Back as root (or with `sudo`), install [Caddy](https://caddyserver.com/docs/install)
+   (on Ubuntu and Debian from its apt repository, which also runs it as a service). Then use
+   [`deploy/Caddyfile`](../deploy/Caddyfile), which is in the release beside `dash.service`, with
+   your own name and email (Let's Encrypt refuses `example.com` addresses):
+
+   ```sh
+   DOMAIN=dash.example.com EMAIL=you@example.com   # put yours here
+   cp /home/dash/dash/deploy/Caddyfile /etc/caddy/Caddyfile
+   sed -i "s/dash\.example\.com/$DOMAIN/g; s/you@example\.com/$EMAIL/" /etc/caddy/Caddyfile
+   systemctl reload caddy
+   journalctl -u caddy -f     # wait for "certificate obtained successfully"
+   ```
+
+   Caddy gets the certificate for `dash.example.com` from Let's Encrypt on its own and renews it.
+   Open `https://dash.example.com`, sign in, and add a runner from the **Runners** page.
+
+For previews and org subdomains, see [Certificates for previews](#certificates-for-previews):
+the Caddyfile has their blocks commented out, since a plain Caddy refuses to start with them.
+Then add `DASH_PREVIEW_DOMAIN=preview.dash.example.com` and/or `DASH_ORG_DOMAIN=dash.example.com`
+to the env file and `systemctl --user restart dash`.
 
 ### Certificates for previews
 
 Each task's preview gets its own host, `<task>.preview.dash.example.com`, so previews need a
-wildcard certificate. Let's Encrypt only issues those through a **DNS challenge**: build Caddy with
-your DNS provider's plugin (`xcaddy build --with github.com/caddy-dns/cloudflare`, or the plugin
-for your provider from [caddy-dns](https://github.com/caddy-dns)) and give it an API token that
-can edit the zone. The `*.preview…` block in the Caddyfile does that.
+wildcard certificate. Let's Encrypt only issues those through a **DNS challenge**: Caddy needs your
+DNS provider's module (from [caddy-dns](https://github.com/caddy-dns)) and an API token that can
+edit the zone. As root, for Cloudflare:
+
+```sh
+caddy add-package github.com/caddy-dns/cloudflare
+mkdir -p /etc/systemd/system/caddy.service.d
+printf '[Service]\nEnvironment=CF_API_TOKEN=%s\n' 'your-token' > /etc/systemd/system/caddy.service.d/dns.conf
+chmod 600 /etc/systemd/system/caddy.service.d/dns.conf
+systemctl daemon-reload
+```
+
+Then uncomment the `*.preview…` block (and `*.dash…` for [org subdomains](#org-subdomains)) in
+`/etc/caddy/Caddyfile` and `systemctl restart caddy`. For another provider, change the module and
+the `dns cloudflare` lines. `caddy add-package` replaces the apt package's binary; run it again
+after Caddy upgrades.
 
 Caddy's **on-demand TLS** (one certificate per host, issued at the first request) avoids the DNS
 plugin, but Caddy requires an `ask` endpoint to approve each name, which Dash doesn't have, and
@@ -88,7 +128,8 @@ gets an address of its own, `acme.dash.example.com`:
    only, so it doesn't cover `<task>.preview.dash.example.com`: previews keep their own
    `*.preview.dash.example.com` certificate. Both need the DNS challenge
    ([above](#certificates-for-previews)); [`deploy/Caddyfile`](../deploy/Caddyfile) has a block for
-   each.
+   each, commented out until Caddy has the DNS module. In Docker, set `DASH_ORG_DOMAIN` as in
+   [Previews and org subdomains](#previews-and-org-subdomains-wildcard-certificates).
 3. **The proxy must pass the browser's `Host`** (Caddy does by default; with nginx, set
    `proxy_set_header Host $host;`), and Dash needs `-trust-proxy` and `-public-url`:
 
@@ -160,7 +201,17 @@ out to the hub over HTTPS, so they need no open ports, public address or Docker 
 1. **A server** with Docker and the compose plugin, ports **80** and **443** open (and SSH).
    Nothing else needs to be reachable: the hub's port 7788 isn't published, only Caddy reaches it,
    which is what makes `-trust-proxy` safe (the compose file says so with `-allow-unsafe=proxy-addr`,
-   see [below](#the-login-is-internet-facing)).
+   see [below](#the-login-is-internet-facing)). Install Docker with Docker's own script, which
+   brings the compose and buildx plugins:
+
+   ```sh
+   curl -fsSL https://get.docker.com | sh
+   ```
+
+   The distributions' own packages (`docker.io` on Ubuntu and Debian) come without them, so
+   `docker compose` is an unknown command, and building images (wildcard certificates, your own
+   image) fails. Docker publishes its ports past `ufw`, so the firewall rules from the
+   [Caddy section](#a-vps-behind-caddy) don't close 80 and 443 here; nothing else is published.
 2. **DNS records** pointing at the server (A and/or AAAA):
 
    | Record                         | For                                        |
@@ -169,18 +220,27 @@ out to the hub over HTTPS, so they need no open ports, public address or Docker 
    | `*.preview.dash.example.com`   | [live previews](previews.md) (optional)    |
    | `*.dash.example.com`           | [org subdomains](#org-subdomains) (optional) |
 
-3. **Configure:** get `deploy/` from the repository (or a release), then
+3. **Configure:** get `deploy/` from a release (the image needs no binary on the server, but the
+   archive has the compose files):
 
    ```sh
+   VERSION=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/klahr/dash/releases/latest)
+   VERSION=${VERSION##*/}
+   mkdir -p ~/dash && cd ~/dash
+   curl -fsSL "https://github.com/klahr/dash/releases/download/$VERSION/dash_${VERSION}_linux_amd64.tar.gz" | tar -xz deploy   # any platform's archive has the same deploy/
    cd deploy
    cp docker.env.example .env
+   chmod 600 .env
+   echo "DASH_VERSION=$VERSION" >> .env
    ```
 
-   and set at least `DASH_DOMAIN`, `ACME_EMAIL`, `DASH_USERNAME` and `DASH_PASSWORD` (16 or more
-   random characters, e.g. `openssl rand -base64 24`: the hub refuses to start with `change-me`).
-   `DASH_PUBLIC_URL` defaults to `https://$DASH_DOMAIN`. Every other setting from
-   [`.env.example`](../.env.example) (SMTP, signup, Stripe, branding) goes in the same file. Pin
-   `DASH_VERSION` to a release (e.g. `1.2.0`) rather than running `latest`.
+   (or `git clone https://github.com/klahr/dash.git` and `cd dash/deploy`). In `.env`, set at
+   least `DASH_DOMAIN`, `ACME_EMAIL` (not an `example.com` address: Let's Encrypt refuses those),
+   `DASH_USERNAME` and `DASH_PASSWORD` (16 or more random characters, e.g.
+   `openssl rand -base64 24`: the hub refuses to start with `change-me`). `DASH_PUBLIC_URL`
+   defaults to `https://$DASH_DOMAIN`. Every other setting from [`.env.example`](../.env.example)
+   (SMTP, signup, Stripe, branding) goes in the same file. `DASH_VERSION` pins the image to the
+   release, rather than `latest`.
 4. **Start:**
 
    ```sh

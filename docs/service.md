@@ -1,10 +1,32 @@
 # Run Dash as a service
 
-To keep Dash running in the background and start it at boot, run it as a systemd user service.
-The steps are at the top of [`deploy/dash.service`](../deploy/dash.service). In short: put your
-credentials in `~/.config/dash/env`, copy the unit to `~/.config/systemd/user/`, run
-`loginctl enable-linger "$USER"`, then `systemctl --user enable --now dash`. Read the logs with
-`journalctl --user -u dash -f`.
+To keep Dash running in the background and start it at boot, run it as a systemd user service,
+with [`deploy/dash.service`](../deploy/dash.service). From `~/dash` (the release unpacked there,
+or the repository built there, see the [README](../README.md#quick-start)):
+
+```sh
+mkdir -p ~/.config/dash && cp .env.example ~/.config/dash/env
+chmod 600 ~/.config/dash/env && ${EDITOR:-nano} ~/.config/dash/env   # DASH_USERNAME, DASH_PASSWORD, ...
+mkdir -p ~/.config/systemd/user && cp deploy/dash.service ~/.config/systemd/user/
+loginctl enable-linger "$USER"    # keep running after you log out
+systemctl --user daemon-reload
+systemctl --user enable --now dash
+journalctl --user -u dash -f      # the log
+```
+
+The unit starts Dash with `-trust-proxy`, for a hub behind a proxy on the same computer
+([Deploy the hub](deploy.md)).
+
+Run it as an ordinary user rather than root. On a fresh server, as root, make one and give it
+your SSH key:
+
+```sh
+adduser --disabled-password --gecos "" dash
+cp -r ~/.ssh /home/dash/ && chown -R dash:dash /home/dash/.ssh
+```
+
+Then log in as that user over SSH (`ssh dash@dash.example.com`) for the steps above. `su dash`
+isn't enough: it starts no user session, so `systemctl --user` can't connect.
 
 It's a *user* service, not a system one, so the files it keeps (its database and logs) are in
 your home directory. The hub runs nothing on its own computer: it needs no Claude Code, no `git`
@@ -15,7 +37,7 @@ releases and CI runs). [`dash runner install`](several-computers.md) keeps a run
 user service the same way; a runner runs `git` and `gh` as you, with your `PATH` and `gh auth`
 login.
 
-The unit assumes the repository is checked out at `~/dash`. If yours is
+The unit assumes Dash is in `~/dash`, with the binary at `~/dash/bin/dash`. If yours is
 elsewhere, edit `WorkingDirectory` and `ExecStart` in your copy of the unit. Extra flags
 (`-trust-proxy`, `-public-url`, `-name`, …) go on the `ExecStart` line; secrets stay in
 the env file.

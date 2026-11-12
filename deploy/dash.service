@@ -1,10 +1,12 @@
 # Dash's hub as a systemd *user* service. The hub runs no claude, git or gh
 # itself: tasks run on runners (dash runner, installed with dash runner install).
 #
-#   go build -o bin/dash ./cmd/dash
+# From ~/dash (a release unpacked there, or the repository, built with
+# `go build -o bin/dash ./cmd/dash`):
+#
 #   mkdir -p ~/.config/dash && cp .env.example ~/.config/dash/env
 #   chmod 600 ~/.config/dash/env && $EDITOR ~/.config/dash/env
-#   cp deploy/dash.service ~/.config/systemd/user/
+#   mkdir -p ~/.config/systemd/user && cp deploy/dash.service ~/.config/systemd/user/
 #   loginctl enable-linger "$USER"    # keep running after logout
 #   systemctl --user daemon-reload
 #   systemctl --user enable --now dash
