@@ -437,12 +437,21 @@ It refuses and logs anything else; the hub reaches only tasks it sent, by its ow
 
 ### How a runner reaches GitHub
 
-A runner clones a shared GitHub project over **SSH** by default (`git@github.com:owner/repo.git`,
-with the computer's SSH keys), whatever form the hub's remote has. Start it with
-`-github-protocol=https` (or `DASH_GITHUB_PROTOCOL=https`) to use `https://github.com/owner/repo.git`
-instead; private repositories then need a git credential helper on that computer, e.g.
-`gh auth setup-git`, or a personal access token. The clone's origin is that URL, so fetches and
-pushes use the same protocol. Clones made before keep their origin.
+By default (`-github-protocol=auto`) a runner clones a shared GitHub project over **SSH**
+(`git@github.com:owner/repo.git`, with the computer's SSH keys), whatever form the hub's remote has.
+When SSH can't read the repository (no key GitHub accepts, an unknown host key) and the GitHub CLI
+is installed and logged in (`gh auth login`), it clones over **HTTPS**
+(`https://github.com/owner/repo.git`) instead; when neither works the link fails with both reasons,
+e.g. "SSH: Host key verification failed; HTTPS: gh isn't logged in (run `gh auth login`)".
+`-github-protocol=ssh` or `-github-protocol=https` (or `DASH_GITHUB_PROTOCOL`) forces one, with no
+fallback. The clone's origin is the URL it was cloned from, so fetches and pushes use the same
+protocol. Clones made before keep their origin.
+
+Over HTTPS, Dash's own git commands (clone, fetch, push, in every worktree) get their credentials
+from gh: they run with `gh auth git-credential` as a credential helper for `https://github.com`,
+added through `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` after any the environment
+already has. Neither `gh auth setup-git` nor `~/.gitconfig` is needed or changed, and credential
+helpers the user configured are still asked first.
 
 A project can instead have a **clone URL** (Add project → Advanced → Clone URL, or `clone_url` in the API),
 which every runner clones as it is: a remote that isn't GitHub's, or an SSH host alias for a deploy

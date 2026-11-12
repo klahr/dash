@@ -100,10 +100,49 @@ func (g *Git) command(ctx context.Context, dir string, env []string, bin string,
 	}
 	cmd.Dir = dir
 	cmd.Env = append(localrun.Environ("GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1"), env...)
+	if tool == localrun.Git {
+		if gh, err := exec.LookPath(g.ghBin()); err == nil {
+			if abs, err := filepath.Abs(gh); err == nil {
+				cmd.Env = ghCredentialEnv(cmd.Env, abs)
+			}
+		}
+	}
 	// When ctx ends, git is killed but a child it started (ssh) may keep the
 	// output pipe open; don't wait for it forever.
 	cmd.WaitDelay = 5 * time.Second
 	return cmd, nil
+}
+
+// ghCredentialEnv adds gh (at the absolute path gh) as a credential helper
+// for https://github.com to env, for this git command only: neither
+// `gh auth setup-git` nor ~/.gitconfig is needed or touched. It is a
+// GIT_CONFIG_KEY_n/VALUE_n pair after env's own GIT_CONFIG_COUNT entries,
+// which it keeps; git reads these after its config files, so the user's own
+// helpers are still asked first. Clone, fetch and push (and gh's own git)
+// all run through command, so all get it.
+func ghCredentialEnv(env []string, gh string) []string {
+	n := 0
+	out := make([]string, 0, len(env)+3)
+	for _, kv := range env {
+		if v, ok := strings.CutPrefix(kv, "GIT_CONFIG_COUNT="); ok {
+			n = 0 // the last one is what git sees
+			if c, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && c > 0 {
+				n = c
+			}
+			continue // replaced below
+		}
+		out = append(out, kv)
+	}
+	return append(out,
+		"GIT_CONFIG_COUNT="+strconv.Itoa(n+1),
+		fmt.Sprintf("GIT_CONFIG_KEY_%d=credential.https://github.com.helper", n),
+		fmt.Sprintf("GIT_CONFIG_VALUE_%d=!%s auth git-credential", n, shellQuote(gh)),
+	)
+}
+
+// shellQuote quotes s for sh, which runs a "!…" credential helper.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // stripNUL drops NUL bytes from args: no program can receive one (exec fails

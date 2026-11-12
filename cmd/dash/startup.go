@@ -213,7 +213,7 @@ func parseFlags(args []string, runnerMode bool) *options {
 		f.StringVar(&o.hubServer, "server", "", "the hub's URL, e.g. https://dash.example.com (saved after registering)")
 		f.StringVar(&o.regCode, "code", "", "registration code from the hub's Runners page (only the first time, or to register again)")
 		f.DurationVar(&o.offlineGrace, "offline-grace", 10*time.Minute, "when the hub has been unreachable this long, stop running tasks and mark them interrupted (0 = never)")
-		f.StringVar(&o.githubProtocol, "github-protocol", "", "how this runner clones, fetches and pushes the hub's GitHub projects: ssh (git@github.com:…, with this computer's SSH keys) or https (needs a git credential helper, e.g. gh auth setup-git) (default $DASH_GITHUB_PROTOCOL, else ssh); a project's clone URL, when set, is used as it is")
+		f.StringVar(&o.githubProtocol, "github-protocol", "", "how this runner clones, fetches and pushes the hub's GitHub projects: auto (ssh, else https with gh's login when this computer's SSH can't read the repository), ssh (git@github.com:…, with this computer's SSH keys) or https (https://github.com/…, with gh's login or a git credential helper) (default $DASH_GITHUB_PROTOCOL, else auto); a project's clone URL, when set, is used as it is")
 		// Deprecated: a runner always takes commands from the hub. Still
 		// accepted (hidden from -h) so an old start command keeps working.
 		f.BoolFunc("hub-commands", "deprecated, no effect", func(string) error {

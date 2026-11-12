@@ -111,7 +111,8 @@ type Server struct {
 	// and of the chats the hub asks for act there, never on this Dash.
 	HubBoard func(ctx context.Context, hubTodo, hubProject string, body []byte) (*http.Response, error)
 	// GitHubProtocol is how this runner clones the hub's GitHub projects:
-	// gitops.ProtocolSSH ("" too) or gitops.ProtocolHTTPS (-github-protocol).
+	// gitops.ProtocolAuto, gitops.ProtocolSSH ("" too, without the
+	// fallback) or gitops.ProtocolHTTPS (-github-protocol).
 	GitHubProtocol string
 	Static         fs.FS  // frontend assets
 	PublicURL      string // -public-url: the hub's address runners are told (optional; else the request's)

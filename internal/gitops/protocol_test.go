@@ -11,7 +11,7 @@ import (
 )
 
 func TestParseGitHubProtocol(t *testing.T) {
-	for in, want := range map[string]string{"": ProtocolSSH, "ssh": ProtocolSSH, " HTTPS ": ProtocolHTTPS} {
+	for in, want := range map[string]string{"": ProtocolAuto, "auto": ProtocolAuto, " Auto ": ProtocolAuto, "ssh": ProtocolSSH, " HTTPS ": ProtocolHTTPS} {
 		if got, err := ParseGitHubProtocol(in); err != nil || got != want {
 			t.Errorf("ParseGitHubProtocol(%q) = %q, %v; want %q", in, got, err, want)
 		}
@@ -196,4 +196,139 @@ func TestSeedEmptyCloneMakesProjectBranch(t *testing.T) {
 			}
 		})
 	}
+}
+
+// With ProtocolAuto a GitHub repository is cloned over SSH when SSH can
+// read it, else over HTTPS when gh is logged in, else fails with both
+// reasons; ssh, https, a clone URL and other hosts get no fallback.
+func TestPickCloneRemote(t *testing.T) {
+	const (
+		remote = "https://github.com/klahr/dash-infra.git"
+		sshURL = "git@github.com:klahr/dash-infra.git"
+		https  = "https://github.com/klahr/dash-infra.git"
+	)
+	denied := func(u string) error {
+		return &AccessError{Repo: "klahr/dash-infra", Protocol: RemoteProtocol(u), Detail: "Host key verification failed."}
+	}
+	for _, c := range []struct {
+		name                    string
+		remote, override, proto string
+		sshOK, httpsOK, ghOK    bool
+		want, wantErr           string
+		wantChecked             []string
+		wantGhAsked             bool
+	}{
+		{name: "ssh works", remote: remote, proto: ProtocolAuto, sshOK: true, ghOK: true, want: sshURL, wantChecked: []string{sshURL}},
+		{name: "ssh fails, gh logged in", remote: remote, proto: ProtocolAuto, httpsOK: true, ghOK: true, want: https, wantChecked: []string{sshURL, https}, wantGhAsked: true},
+		{name: "ssh fails, gh logged out", remote: remote, proto: ProtocolAuto, httpsOK: true,
+			wantErr:     "runner laptop cannot access klahr/dash-infra over SSH or HTTPS: SSH: Host key verification failed.; HTTPS: gh isn't logged in (run `gh auth login`)",
+			wantChecked: []string{sshURL}, wantGhAsked: true},
+		{name: "both fail", remote: remote, proto: ProtocolAuto, ghOK: true,
+			wantErr: "SSH: Host key verification failed.; HTTPS: Host key verification failed.", wantChecked: []string{sshURL, https}, wantGhAsked: true},
+		{name: "ssh forced", remote: remote, proto: ProtocolSSH, httpsOK: true, ghOK: true, wantErr: "over ssh", wantChecked: []string{sshURL}},
+		{name: "https forced", remote: remote, proto: ProtocolHTTPS, httpsOK: true, want: https, wantChecked: []string{https}},
+		{name: "clone URL", remote: remote, override: "git@github-deploy:klahr/dash-infra.git", proto: ProtocolAuto, httpsOK: true, ghOK: true,
+			wantErr: "over ssh", wantChecked: []string{"git@github-deploy:klahr/dash-infra.git"}},
+		{name: "not GitHub", remote: "git@git.example.com:team/app.git", proto: ProtocolAuto, httpsOK: true, ghOK: true,
+			wantErr: "over ssh", wantChecked: []string{"git@git.example.com:team/app.git"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var checked []string
+			ghAsked := false
+			check := func(u string) error {
+				checked = append(checked, u)
+				if p := RemoteProtocol(u); (p == ProtocolSSH && c.sshOK) || (p == ProtocolHTTPS && c.httpsOK) {
+					return nil
+				}
+				return denied(u)
+			}
+			ghReady := func() error {
+				ghAsked = true
+				if c.ghOK {
+					return nil
+				}
+				return errors.New("gh isn't logged in (run `gh auth login`)")
+			}
+			got, err := pickCloneRemote(c.remote, c.override, c.proto, "laptop", check, ghReady)
+			if c.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+					t.Errorf("err = %v, want it to contain %q", err, c.wantErr)
+				}
+			} else if err != nil || got != c.want {
+				t.Errorf("got %q, %v; want %q", got, err, c.want)
+			}
+			if strings.Join(checked, " ") != strings.Join(c.wantChecked, " ") {
+				t.Errorf("checked %q, want %q", checked, c.wantChecked)
+			}
+			if ghAsked != c.wantGhAsked {
+				t.Errorf("asked gh: %v, want %v", ghAsked, c.wantGhAsked)
+			}
+		})
+	}
+	// A cancelled check is returned as it is, without trying HTTPS.
+	_, err := pickCloneRemote(remote, "", ProtocolAuto, "laptop",
+		func(string) error { return context.Canceled }, func() error { t.Error("gh asked"); return nil })
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("cancelled: %v", err)
+	}
+}
+
+// gh becomes git's credential helper for github.com after the environment's
+// own GIT_CONFIG_COUNT entries, and its path is quoted for sh.
+func TestGhCredentialEnv(t *testing.T) {
+	const helper = "credential.https://github.com.helper"
+	env := ghCredentialEnv([]string{"HOME=/h"}, "/usr/bin/gh")
+	want := []string{"HOME=/h", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=" + helper, "GIT_CONFIG_VALUE_0=!'/usr/bin/gh' auth git-credential"}
+	if strings.Join(env, "\n") != strings.Join(want, "\n") {
+		t.Errorf("env = %q, want %q", env, want)
+	}
+	env = ghCredentialEnv([]string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=a.b", "GIT_CONFIG_VALUE_0=1", "GIT_CONFIG_KEY_1=c.d", "GIT_CONFIG_VALUE_1=2", "PATH=/bin"}, "/opt/it's here/gh")
+	want = []string{"GIT_CONFIG_KEY_0=a.b", "GIT_CONFIG_VALUE_0=1", "GIT_CONFIG_KEY_1=c.d", "GIT_CONFIG_VALUE_1=2", "PATH=/bin",
+		"GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_2=" + helper, `GIT_CONFIG_VALUE_2=!'/opt/it'\''s here/gh' auth git-credential`}
+	if strings.Join(env, "\n") != strings.Join(want, "\n") {
+		t.Errorf("env = %q, want %q", env, want)
+	}
+	// A later GIT_CONFIG_COUNT wins, as for git; a bad one counts as none.
+	env = ghCredentialEnv([]string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_COUNT=junk"}, "/gh")
+	if got := strings.Join(env, " "); !strings.HasPrefix(got, "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=") {
+		t.Errorf("env = %q", env)
+	}
+}
+
+// Git really asks gh for github.com credentials, after a helper the user
+// configured, and the quoted path survives sh.
+func TestGhCredentialHelperRuns(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "with 'quote")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(dir, "calls")
+	gh := filepath.Join(dir, "gh")
+	if err := os.WriteFile(gh, []byte("#!/bin/sh\necho \"gh $*\" >> \""+log+"\"\necho username=x-access-token\necho password=from-gh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(dir, "gitconfig")
+	userHelper := "!f() { echo user-helper >> \"" + log + "\"; }; f"
+	if err := os.WriteFile(cfg, []byte("[credential]\n\thelper = "+strconvQuote(userHelper)+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	g := &Git{GhBin: gh}
+	out, err := g.runIn(context.Background(), false, nil, []byte("protocol=https\nhost=github.com\n\n"), "", t.TempDir(), "git", "credential", "fill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "password=from-gh") {
+		t.Errorf("credential fill = %q", out)
+	}
+	calls, _ := os.ReadFile(log)
+	if got := strings.TrimSpace(string(calls)); got != "user-helper\ngh auth git-credential get" {
+		t.Errorf("helpers ran %q", got)
+	}
+}
+
+// strconvQuote quotes s as a git config value.
+func strconvQuote(s string) string {
+	return `"` + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `"`, `\"`) + `"`
 }

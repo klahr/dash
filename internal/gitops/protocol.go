@@ -11,22 +11,28 @@ import (
 
 // The protocols a runner clones, fetches and pushes GitHub repositories
 // over (dash runner -github-protocol). SSH uses the computer's SSH keys
-// (ssh-agent, ~/.ssh); HTTPS needs a git credential helper for private
-// repositories (gh auth setup-git, or a personal access token).
+// (ssh-agent, ~/.ssh); HTTPS needs credentials for private repositories,
+// which Dash's own git commands get from gh when it is logged in (see
+// ghCredentialEnv), or from the user's git credential helper. Auto, the
+// default, tries SSH and falls back to HTTPS with gh's login (see
+// PickCloneRemote).
 const (
 	ProtocolSSH   = "ssh"
 	ProtocolHTTPS = "https"
+	ProtocolAuto  = "auto"
 )
 
-// ParseGitHubProtocol checks a -github-protocol value: "" is ProtocolSSH.
+// ParseGitHubProtocol checks a -github-protocol value: "" is ProtocolAuto.
 func ParseGitHubProtocol(s string) (string, error) {
 	switch p := strings.ToLower(strings.TrimSpace(s)); p {
-	case "", ProtocolSSH:
+	case "", ProtocolAuto:
+		return ProtocolAuto, nil
+	case ProtocolSSH:
 		return ProtocolSSH, nil
 	case ProtocolHTTPS:
 		return ProtocolHTTPS, nil
 	default:
-		return "", fmt.Errorf("unknown GitHub protocol %q: use ssh or https", s)
+		return "", fmt.Errorf("unknown GitHub protocol %q: use auto, ssh or https", s)
 	}
 }
 
@@ -41,8 +47,8 @@ func GitHubOwnerRepo(remote string) string {
 }
 
 // GitHubRemote is the URL of the GitHub repository OWNER/REPO over
-// protocol: git@github.com:OWNER/REPO.git for ProtocolSSH (and ""), else
-// https://github.com/OWNER/REPO.git.
+// protocol: https://github.com/OWNER/REPO.git for ProtocolHTTPS, else
+// (ProtocolSSH, ProtocolAuto, "") git@github.com:OWNER/REPO.git.
 func GitHubRemote(ownerRepo, protocol string) string {
 	ownerRepo = strings.TrimSuffix(strings.Trim(strings.TrimSpace(ownerRepo), "/"), ".git")
 	if protocol == ProtocolHTTPS {
@@ -53,7 +59,8 @@ func GitHubRemote(ownerRepo, protocol string) string {
 
 // CloneRemote is the URL a runner clones a project from: override (the
 // project's own remote URL) as it is when set; else remote, rebuilt for
-// protocol when it is a GitHub repository; else remote as it is.
+// protocol when it is a GitHub repository (over SSH for ProtocolAuto: see
+// PickCloneRemote for its fallback); else remote as it is.
 func CloneRemote(remote, override, protocol string) string {
 	if o := strings.TrimSpace(override); o != "" {
 		return o
@@ -103,9 +110,97 @@ func (e *AccessError) Error() string {
 			msg += " (check this computer's SSH key with `ssh -T git@github.com`, or start the runner with -github-protocol=https)"
 		}
 	case ProtocolHTTPS:
-		msg += " (set up a credential helper, e.g. `gh auth setup-git`, or start the runner with -github-protocol=ssh)"
+		msg += " (log in with `gh auth login`, or start the runner with -github-protocol=ssh)"
 	}
 	return msg
+}
+
+// AutoAccessError is a GitHub repository a runner with ProtocolAuto could
+// read neither over SSH nor over HTTPS with gh's login.
+type AutoAccessError struct {
+	Runner string // this computer's name
+	Repo   string // OWNER/REPO
+	SSH    string // why SSH failed
+	HTTPS  string // why HTTPS failed (gh missing or logged out, or git's output)
+}
+
+func (e *AutoAccessError) Error() string {
+	who := "this runner"
+	if e.Runner != "" {
+		who = "runner " + e.Runner
+	}
+	return fmt.Sprintf("%s cannot access %s over SSH or HTTPS: SSH: %s; HTTPS: %s"+
+		" (fix SSH, checking with `ssh -T git@github.com`, or install the GitHub CLI and run `gh auth login`)",
+		who, e.Repo, orUnknown(e.SSH), orUnknown(e.HTTPS))
+}
+
+func orUnknown(s string) string {
+	if s == "" {
+		return "failed"
+	}
+	return s
+}
+
+// PickCloneRemote is the URL a runner clones a project from, checked with
+// CheckAccess: CloneRemote's, except that for ProtocolAuto, a GitHub
+// remote and no override, a repository SSH can't read is cloned over HTTPS
+// when gh is installed and logged in (its login is then git's credentials:
+// see ghCredentialEnv). Reading neither way is an *AutoAccessError.
+func (g *Git) PickCloneRemote(ctx context.Context, projectID, runner, remote, override, protocol string) (string, error) {
+	return pickCloneRemote(remote, override, protocol, runner,
+		func(u string) error { return g.CheckAccess(ctx, projectID, runner, u) },
+		func() error { return g.GhLoggedIn(ctx) })
+}
+
+// pickCloneRemote is PickCloneRemote's decision: check tells whether a URL
+// can be read, ghReady whether gh can lend HTTPS its login.
+func pickCloneRemote(remote, override, protocol, runner string, check func(string) error, ghReady func() error) (string, error) {
+	u := CloneRemote(remote, override, protocol)
+	name := GitHubOwnerRepo(remote)
+	if protocol != ProtocolAuto || strings.TrimSpace(override) != "" || name == "" {
+		return u, check(u)
+	}
+	sshErr := check(u)
+	if sshErr == nil {
+		return u, nil
+	}
+	var ae *AccessError
+	if !errors.As(sshErr, &ae) {
+		return "", sshErr // cancelled, or a URL CheckRemote refuses
+	}
+	auto := &AutoAccessError{Runner: runner, Repo: name, SSH: ae.Detail}
+	if err := ghReady(); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return "", err
+		}
+		auto.HTTPS = err.Error()
+		return "", auto
+	}
+	https := GitHubRemote(name, ProtocolHTTPS)
+	httpsErr := check(https)
+	if httpsErr == nil {
+		return https, nil
+	}
+	if !errors.As(httpsErr, &ae) {
+		return "", httpsErr
+	}
+	auto.HTTPS = ae.Detail
+	return "", auto
+}
+
+// GhLoggedIn says why gh can't give git credentials for github.com: not
+// installed, or not logged in. Nil when it can.
+func (g *Git) GhLoggedIn(ctx context.Context) error {
+	if !g.HasGh() {
+		return errors.New("gh isn't installed (install the GitHub CLI and run `gh auth login`)")
+	}
+	if _, err := g.ghQuiet(ctx, "", "", "auth", "status", "--hostname", "github.com"); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return errors.New("gh isn't logged in (run `gh auth login`)")
+	}
+	return nil
 }
 
 // CheckAccess runs `git ls-remote` on remote (checked with CheckRemote)

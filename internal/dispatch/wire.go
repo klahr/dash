@@ -42,7 +42,7 @@ type Link struct {
 	Name      string `json:"name"`
 	RemoteURL string `json:"remote_url"`
 	// CloneURL is the hub project's model.Project.CloneURL: when set the
-	// runner clones it as it is, else RemoteURL over its -github-protocol.
+	// runner clones it as it is, else RemoteURL over its -github-protocol (auto: SSH, else HTTPS with gh).
 	CloneURL      string `json:"clone_url,omitempty"`
 	DefaultBranch string `json:"default_branch"`
 	// WorkBranch is the branch the hub's tasks start from and land on when

@@ -234,10 +234,14 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		how = model.HubCloned
 		// A remote this computer can't read says so, rather than with
 		// git's exit 128 ("could not read Username", "Permission denied").
-		if err := s.Git.CheckAccess(ctx, id, s.machineName(), cloneURL); err != nil {
+		// With -github-protocol=auto, a GitHub repository SSH can't read is
+		// cloned over HTTPS with gh's login; that URL is the clone's origin.
+		picked, err := s.Git.PickCloneRemote(ctx, id, s.machineName(), req.RemoteURL, req.CloneURL, s.GitHubProtocol)
+		if err != nil {
 			writeErr(w, errors.Join(errBadRequest, err))
 			return
 		}
+		cloneURL = picked
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			writeErr(w, err)
 			return
