@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +42,9 @@ type Service struct {
 	// Name is this runner's name, told to peers with its key (display
 	// only: the user approves the fingerprint).
 	Name string
+	// Policies gives a project's tidying policy (nil, or zero fields: the
+	// defaults). Its runners should agree on it.
+	Policies func(project string) Policy
 
 	mu       sync.Mutex
 	stores   map[string]*Store
@@ -113,8 +117,20 @@ func (s *Service) store(project string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	st.SetPolicy(s.policy(project))
+	if err := st.markOpened(s.now()); err != nil {
+		st.Close()
+		return nil, err
+	}
 	s.stores[project] = st
 	return st, nil
+}
+
+func (s *Service) policy(project string) Policy {
+	if s.Policies == nil {
+		return DefaultPolicy()
+	}
+	return s.Policies(project).orDefaults()
 }
 
 // Close closes every store.
@@ -141,12 +157,106 @@ func (s *Service) Put(ctx context.Context, project string, d Draft) (Entry, erro
 	if kind, found := secretscan.Has(d.Key + "\n" + d.Body + "\n" + strings.Join(d.Tags, "\n")); found {
 		return Entry{}, fmt.Errorf("%w (%s): leave it out, and say where to find it instead", ErrSecret, kind)
 	}
-	e, err := st.Write(d, s.now())
+	e, evicted, err := st.Put(d, s.now())
+	if err != nil {
+		return Entry{}, err
+	}
+	s.send(ctx, project, append(evicted, e))
+	return e, nil
+}
+
+// Confirm says note id of project is still good: it expires ttl from now
+// (0: the project's default TTL), on every copy.
+func (s *Service) Confirm(ctx context.Context, project, id, task string, ttl time.Duration) (Entry, error) {
+	st, err := s.store(project)
+	if err != nil {
+		return Entry{}, err
+	}
+	e, err := st.Confirm(id, task, ttl, s.now())
 	if err != nil {
 		return Entry{}, err
 	}
 	s.send(ctx, project, []Entry{e})
 	return e, nil
+}
+
+// Clear deletes every note of project last updated before before (zero:
+// now), on every copy.
+func (s *Service) Clear(ctx context.Context, project string, before time.Time, task string) error {
+	st, err := s.store(project)
+	if err != nil {
+		return err
+	}
+	e, err := st.Clear(before, task, s.now())
+	if err != nil {
+		return err
+	}
+	s.send(ctx, project, []Entry{e})
+	return nil
+}
+
+// Tidy tidies project's notes now (tidy.go): purges expired notes and old
+// tombstones, merges same-title notes, evicts past the caps, and sends
+// what it wrote to the other runners. It is what "remove expired" runs;
+// RunTidying runs it on its own.
+func (s *Service) Tidy(ctx context.Context, project string) (TidyReport, error) {
+	st, err := s.store(project)
+	if err != nil {
+		return TidyReport{}, err
+	}
+	st.SetPolicy(s.policy(project))
+	r, err := st.Tidy(s.now())
+	if err != nil {
+		return r, err
+	}
+	s.send(ctx, project, r.Writes)
+	return r, nil
+}
+
+// TidyAll tidies every project of projects this runner keeps notes for.
+func (s *Service) TidyAll(ctx context.Context, projects []string) {
+	for _, p := range projects {
+		if s.allowed != nil && !s.allowed(p) {
+			continue
+		}
+		r, err := s.Tidy(ctx, p)
+		switch {
+		case err != nil:
+			slog.Info("shared notes: tidying failed", "project", p, "err", err)
+		case r.Expired+r.Purged+r.Evicted+r.Merged > 0 || r.Vacuumed:
+			slog.Info("shared notes: tidied", "project", p, "expired", r.Expired, "purged", r.Purged,
+				"evicted", r.Evicted, "merged", r.Merged, "vacuumed", r.Vacuumed, "stale", r.Stale)
+		}
+	}
+}
+
+// TidyEvery is how often RunTidying tidies.
+const TidyEvery = time.Hour
+
+// RunTidying tidies projects' notes now and then every TidyEvery, until
+// ctx ends. Each runner does so on its own: no hub or task is involved.
+func (s *Service) RunTidying(ctx context.Context, projects func() []string) {
+	s.TidyAll(ctx, projects())
+	t := time.NewTicker(TidyEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.TidyAll(ctx, projects())
+		}
+	}
+}
+
+// settle merges same-title notes after taking peers' writes, and sends
+// the merge on.
+func (s *Service) settle(project string, st *Store) {
+	writes, err := st.Dedup(s.now())
+	if err != nil || len(writes) == 0 {
+		return
+	}
+	go s.send(context.Background(), project, writes)
 }
 
 // Delete deletes entry id of project's notes, everywhere.
@@ -223,6 +333,13 @@ func (s *Service) CatchUp(ctx context.Context, project string) error {
 	if err := s.tradeKeys(ctx, project, st); err != nil {
 		return err
 	}
+	if stale, err := st.Stale(s.now()); err != nil {
+		return err
+	} else if stale {
+		if done, err := s.resync(ctx, project, st); err != nil || done {
+			return err
+		}
+	}
 	v, err := st.Vector()
 	if err != nil {
 		return err
@@ -235,6 +352,11 @@ func (s *Service) CatchUp(ctx context.Context, project string) error {
 	if err != nil {
 		return err
 	}
+	// The hub answered: this copy is in touch with the project's runners.
+	// What they write while it is reaches it, or they catch up with it.
+	if err := st.MarkSynced(s.now()); err != nil {
+		return err
+	}
 	var theirs []Vector
 	for _, r := range sent.Replies {
 		plain, err := s.openEnvelope(st, r)
@@ -242,14 +364,15 @@ func (s *Service) CatchUp(ctx context.Context, project string) error {
 			continue // a peer sealing with a key we don't share (yet), or a newer runner
 		}
 		var a answer
-		if err := json.Unmarshal(plain, &a); err != nil {
-			continue
+		if err := json.Unmarshal(plain, &a); err != nil || a.Stale {
+			continue // a stale peer resyncs from us: don't send it what "it lacks"
 		}
 		if _, err := st.Merge(a.Entries, a.Vector); err != nil {
 			return err
 		}
 		theirs = append(theirs, a.Vector)
 	}
+	s.settle(project, st)
 	// What each peer lacks of ours, sent once to all of them.
 	lack := map[string]Entry{}
 	for _, pv := range theirs {
@@ -269,6 +392,56 @@ func (s *Service) CatchUp(ctx context.Context, project string) error {
 		s.send(ctx, project, out)
 	}
 	return nil
+}
+
+// resync replaces a stale copy of project's notes (one that hasn't synced
+// within the retention window) with its peers' copies, so that notes they
+// purged don't come back from it. Writes made here meanwhile are dropped
+// with the rest. done is false if a normal catch-up should follow: every
+// peer that answered is stale too (no copy is fresher; the first to catch
+// up becomes the one the others resync from), or there are no other
+// runners on the project. If no peer is reachable it stays stale and
+// returns an error.
+func (s *Service) resync(ctx context.Context, project string, st *Store) (done bool, err error) {
+	want, err := s.sealMessage(st, message{Kind: kindWant, Vector: Vector{}})
+	if err != nil {
+		return false, err
+	}
+	sent, err := s.post(ctx, project, want)
+	if err != nil {
+		return false, err
+	}
+	var fresh []answer
+	staleOnes := 0
+	for _, r := range sent.Replies {
+		plain, err := s.openEnvelope(st, r)
+		if err != nil || plain == nil {
+			continue
+		}
+		var a answer
+		if err := json.Unmarshal(plain, &a); err != nil {
+			continue
+		}
+		if a.Stale {
+			staleOnes++
+			continue
+		}
+		fresh = append(fresh, a)
+	}
+	alone := sent.Members != nil && !slices.ContainsFunc(sent.Members, func(m string) bool { return m != s.self })
+	switch {
+	case len(fresh) > 0:
+		n, err := st.replace(fresh, s.now())
+		if err != nil {
+			return false, err
+		}
+		slog.Warn("shared notes: this runner was away longer than the retention window; its copy was replaced by its peers'",
+			"project", project, "notes", n)
+		return true, nil
+	case staleOnes > 0 || alone:
+		return false, nil
+	}
+	return false, fmt.Errorf("%w (no other runner of the project is reachable now)", ErrStale)
 }
 
 // CatchUpAll catches up every project of projects this runner keeps notes
@@ -384,15 +557,26 @@ func (s *Service) handle(project string, st *Store, plain []byte) (any, error) {
 		if len(m.Entries) > 2*MaxEntries {
 			return nil, ErrTooLarge
 		}
-		_, gap, err := st.Apply(m.Entries)
+		applied, gap, err := st.Apply(m.Entries)
 		if err != nil {
 			return nil, err
 		}
 		if gap {
 			s.catchUpSoon(project)
 		}
+		if applied > 0 {
+			s.settle(project, st)
+		}
 		return nil, nil
 	case kindWant:
+		// A stale copy may hold notes the others purged: it offers none,
+		// and resyncs from them instead.
+		if stale, err := st.Stale(s.now()); err != nil {
+			return nil, err
+		} else if stale {
+			s.catchUpSoon(project)
+			return answer{Stale: true}, nil
+		}
 		es, v, err := st.Since(m.Vector, s.now())
 		if err != nil {
 			return nil, err

@@ -411,11 +411,42 @@ proxy to runners (`/peer/…`) can't reach their notes either.
 Each write gets a stamp (its runner and that runner's counter). Copies merge last-writer-wins per
 note, so every runner ends up with the same notes and concurrent writers never wait for each other.
 When a runner reconnects, it tells the others how far it has got with each writer. They send what it
-lacks, and it sends them what it wrote while it was away. A note is at most 8 KiB and a project
-holds at most 500. A note that looks like it holds a credential is refused on the runner that writes
-it, before it is saved or sent.
+lacks, and it sends them what it wrote while it was away. A note is at most 8 KiB; a bigger one is
+refused. A note that looks like it holds a credential is refused on the runner that writes it,
+before it is saved or sent.
 
 A Dash that runs tasks itself, without runners, has no shared notes.
+
+#### Tidying
+
+Each runner tidies its own copy when it starts and then about hourly (`notes.Service.RunTidying`).
+The hub and tasks play no part. `Service.Tidy` runs a tidy right away; this is what "remove expired"
+calls. Every rule uses only synced data (update times, expiries, titles, ids), never when a runner
+read a note. Anything a tidy changes is an ordinary write that syncs to the other runners, so the
+copies converge even when runners tidy at different moments.
+
+- **Expiry.** A note expires 30 days after its last write unless its writer sets another expiry or
+  marks it permanent. Confirming a note (`Confirm`) moves its expiry forward, on every copy.
+  Expired notes are purged.
+- **Caps.** A project holds at most 500 live notes and 1 MiB of them. A write that goes past a cap
+  doesn't fail. Instead, the notes updated longest ago are evicted, never permanent ones. Evicted
+  notes become tombstones. A write is refused only if permanent notes alone fill the project.
+- **One note per title.** Writing a title that already exists (ignoring case and surrounding
+  spaces) updates that note. If two runners create the same title before hearing of each other, the
+  note created first stays (ties go to the smaller id). It takes the newest content of the two and
+  stays permanent if either was. The other note becomes a tombstone.
+- **Clears.** A project-wide "delete everything updated before T" (`Clear`) is one synced tombstone.
+- **Retention.** Tombstones and clears are kept for 60 days, then purged. The database is compacted
+  (`VACUUM`) about once a day.
+
+A runner that hasn't caught up with the hub for longer than the retention window has a stale copy.
+Its copy could bring back notes the others deleted and have since purged. So it doesn't answer other
+runners' catch-ups and doesn't tidy by writing. On reconnect it discards its copy, including what it
+wrote while away, and takes a full copy from a peer. If every runner it reaches is stale too, the
+first one to catch up keeps its own copy and the others resync from it.
+
+The TTL, caps and retention window can be set per project (`Service.Policies`). Use the same values
+on all of a project's runners.
 
 #### Encryption and approving runners
 

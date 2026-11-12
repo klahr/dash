@@ -26,18 +26,65 @@ import (
 	"unicode/utf8"
 )
 
-// Limits on what a project's notes may hold.
+// Limits on what one note may hold, and the defaults of Policy.
 const (
-	MaxEntrySize = 8 << 10 // bytes of key, body and tags in one entry
-	MaxEntries   = 500     // live entries per project
+	MaxEntrySize = 8 << 10 // bytes of key, body and tags in one entry: a hard limit
+	MaxEntries   = 500     // live entries per project, by default
+	MaxBytes     = 1 << 20 // bytes of all live entries of a project, by default
 	MaxTags      = 16
 	MaxKeyLen    = 200
+
+	DefaultTTL       = 30 * 24 * time.Hour // a note's life unless its writer says otherwise
+	DefaultRetention = 60 * 24 * time.Hour // how long tombstones are kept
 )
+
+// Policy is how a project's notes are tidied. Every runner of a project
+// should use the same one; where they differ, the tidying they do still
+// converges (it is made of ordinary writes), the stricter runner winning.
+type Policy struct {
+	// TTL is how long a note lives after its last write or confirmation,
+	// unless its writer sets another expiry or makes it permanent.
+	TTL time.Duration
+	// MaxEntries and MaxBytes cap the project's live notes: past either,
+	// the notes updated longest ago are evicted, permanent ones never.
+	MaxEntries int
+	MaxBytes   int
+	// Retention is how long tombstones (deletes, evictions, clears) are
+	// kept before they are purged. A runner that has been away from the
+	// hub for longer discards its copy and resyncs it in full, so it can't
+	// bring back notes the others purged.
+	Retention time.Duration
+}
+
+// DefaultPolicy is the policy of a project nobody configured.
+func DefaultPolicy() Policy {
+	return Policy{TTL: DefaultTTL, MaxEntries: MaxEntries, MaxBytes: MaxBytes, Retention: DefaultRetention}
+}
+
+// orDefaults fills p's zero fields with the defaults.
+func (p Policy) orDefaults() Policy {
+	d := DefaultPolicy()
+	if p.TTL <= 0 {
+		p.TTL = d.TTL
+	}
+	if p.MaxEntries <= 0 {
+		p.MaxEntries = d.MaxEntries
+	}
+	if p.MaxBytes <= 0 {
+		p.MaxBytes = d.MaxBytes
+	}
+	if p.Retention <= 0 {
+		p.Retention = d.Retention
+	}
+	return p
+}
 
 // Errors a write can fail with.
 var (
 	ErrTooLarge   = fmt.Errorf("a shared note may hold at most %d bytes", MaxEntrySize)
-	ErrTooMany    = fmt.Errorf("this project already has %d shared notes; delete some first", MaxEntries)
+	ErrTooMany    = errors.New("this project's shared notes are full of permanent notes; delete some first")
+	ErrTitleTaken = errors.New("another shared note already has this title")
+	ErrStale      = errors.New("this runner's copy of the shared notes is too old: it waits for a full resync from another runner")
 	ErrNoKey      = errors.New("a shared note needs a key (its title)")
 	ErrNotFound   = errors.New("no such shared note")
 	ErrSecret     = errors.New("the note looks like it holds a secret")
@@ -58,8 +105,12 @@ type Entry struct {
 	AuthorTask string    `json:"author_task,omitempty"`
 	Created    time.Time `json:"created"`
 	Updated    time.Time `json:"updated"`
-	Expires    time.Time `json:"expires,omitzero"`  // zero: never
-	Deleted    bool      `json:"deleted,omitempty"` // a tombstone: the entry was deleted
+	Expires    time.Time `json:"expires,omitzero"`    // zero: never
+	Permanent  bool      `json:"permanent,omitempty"` // never expires nor is evicted
+	Deleted    bool      `json:"deleted,omitempty"`   // a tombstone: the entry was deleted
+	// Before, on a tombstone without a key, makes it a clear: every note
+	// of the project last updated before it is deleted.
+	Before time.Time `json:"before,omitzero"`
 
 	// The last write's version: Lamport clock, then its stamp.
 	Clock  uint64 `json:"clock"`
@@ -106,6 +157,10 @@ func (e Entry) check() error {
 		return ErrBadEntry
 	case !e.Deleted && strings.TrimSpace(e.Key) == "":
 		return ErrNoKey
+	case !e.Before.IsZero() && (!e.Deleted || e.Key != "" || e.Before.After(e.Updated)):
+		return ErrBadEntry // a clear is a keyless tombstone, of the past
+	case e.Permanent && !e.Expires.IsZero():
+		return ErrBadEntry
 	case len(e.Key) > MaxKeyLen || len(e.Tags) > MaxTags || e.size() > MaxEntrySize:
 		return ErrTooLarge
 	case !utf8.ValidString(e.Key) || !utf8.ValidString(e.Body) || !utf8.ValidString(e.AuthorTask) || len(e.AuthorTask) > 200:
@@ -123,14 +178,27 @@ func (e Entry) check() error {
 // that writer (or a later version of the entry it wrote).
 type Vector map[string]uint64
 
+// isClear reports whether e is a project-wide "everything before" tombstone.
+func (e Entry) isClear() bool { return !e.Before.IsZero() }
+
+// title is e's key as titles compare: a project has one note per title.
+func title(key string) string { return strings.ToLower(strings.TrimSpace(key)) }
+
 // Draft is a write asked of this runner.
 type Draft struct {
-	ID         string // "" makes a new entry; else the entry to replace
+	// ID is the entry to replace; "" writes the note titled Key: a new one,
+	// or the one that already has that title.
+	ID         string
 	Key        string
 	Body       string
 	Tags       []string
 	AuthorTask string
-	TTL        time.Duration // 0: no expiry
+	// The note's expiry: Permanent, else Expires, else TTL from now. With
+	// none set, a new note lives the project's default TTL, and a rewritten
+	// one keeps being permanent or lives the default TTL from now.
+	TTL       time.Duration
+	Expires   time.Time
+	Permanent bool
 }
 
 // cleanTags trims, drops empty and duplicate tags, keeping the order.

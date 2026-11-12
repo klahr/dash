@@ -60,6 +60,7 @@ func TestConcurrentWritesConverge(t *testing.T) {
 		written = append(written, nil)
 	}
 	ids := []string{}
+	titles := map[string]string{} // id → its title (one note per title)
 	for round := range 40 {
 		i := rng.IntN(len(stores))
 		s := stores[i]
@@ -70,7 +71,8 @@ func TestConcurrentWritesConverge(t *testing.T) {
 		case len(ids) > 0 && rng.IntN(4) == 0:
 			e, err = s.Delete(ids[rng.IntN(len(ids))], "t", now)
 		case len(ids) > 0 && rng.IntN(2) == 0:
-			e, err = s.Write(Draft{ID: ids[rng.IntN(len(ids))], Key: "k", Body: fmt.Sprint("v", round)}, now)
+			id := ids[rng.IntN(len(ids))]
+			e, err = s.Write(Draft{ID: id, Key: titles[id], Body: fmt.Sprint("v", round)}, now)
 		default:
 			e, err = s.Write(Draft{Key: fmt.Sprint("note ", round), Body: "b", Tags: []string{"x"}}, now)
 		}
@@ -82,6 +84,7 @@ func TestConcurrentWritesConverge(t *testing.T) {
 		}
 		if !slices.Contains(ids, e.ID) {
 			ids = append(ids, e.ID)
+			titles[e.ID] = e.Key
 		}
 		written[i] = append(written[i], e)
 		// Sometimes a write reaches some of the others at once.
@@ -208,12 +211,14 @@ func TestLimitsAndExpiry(t *testing.T) {
 		t.Fatalf("expired entry offered to a peer: %+v", es)
 	}
 	for i := range MaxEntries - 1 { // "soon gone" is still live at t0
-		if _, err := s.Write(Draft{Key: fmt.Sprint(i)}, t0); err != nil {
+		if _, err := s.Write(Draft{Key: fmt.Sprint(i)}, t0.Add(time.Duration(i+1)*time.Millisecond)); err != nil {
 			t.Fatalf("entry %d: %v", i, err)
 		}
 	}
-	if _, err := s.Write(Draft{Key: "one more"}, t0); !errors.Is(err, ErrTooMany) {
-		t.Fatalf("past the limit: %v", err)
+	// Past the cap, a write evicts the note updated longest ago instead
+	// of failing.
+	if _, evicted, err := s.Put(Draft{Key: "one more"}, t0.Add(time.Second)); err != nil || len(evicted) != 1 || evicted[0].ID != e.ID || !evicted[0].Deleted {
+		t.Fatalf("past the limit: evicted %+v, %v", evicted, err)
 	}
 	// Peers' entries that break the rules are skipped, the rest kept.
 	o := openStore(t, "rb")

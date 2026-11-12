@@ -831,6 +831,9 @@ func (a *app) setupRunner() {
 	a.notes.Name = creds.Name
 	slog.Info("shared notes: this runner's key fingerprint (compare it on other runners; see dash runner notes)", "fingerprint", a.notesID.Fingerprint())
 	apiSrv.NotesPeer = notesWire
+	// Tidy the notes now and about hourly (expiry, caps, one note per
+	// title, old tombstones): each runner on its own, no hub or task.
+	go a.notes.RunTidying(ctx, func() []string { return linkedHubProjects(st) })
 	go func() {
 		// Act on what the user approves or revokes with `dash runner
 		// notes` soon after, and now and then trade keys and notes even

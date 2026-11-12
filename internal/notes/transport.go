@@ -74,6 +74,9 @@ type message struct {
 type answer struct {
 	Entries []Entry `json:"entries,omitempty"`
 	Vector  Vector  `json:"vector"`
+	// Stale: the answering copy hasn't synced within the retention window
+	// and offers nothing (it resyncs in full itself).
+	Stale bool `json:"stale,omitempty"`
 }
 
 func encode(v any) []byte {
