@@ -443,6 +443,9 @@ func TestPullRequestReviewGoesBackToClaude(t *testing.T) {
 	}
 
 	// Still requesting changes until alice looks again: waits, not resent.
+	// The merge job that pushed the fix answers alice on GitHub after the
+	// task is back in review; a poll while it runs skips the task.
+	waitMergeJob(t, h, td.ID)
 	write(t, dir, "pr.json", openPRView(gitRun(t, td.Worktree.Path, "rev-parse", "HEAD"), `{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}`))
 	h.merges.PollPRs(context.Background())
 	time.Sleep(200 * time.Millisecond)
@@ -685,6 +688,17 @@ func TestCleanupRemovesOrphansAndStaleWorktrees(t *testing.T) {
 }
 
 // waitPR waits for todo id to have a pull request in status want.
+// waitMergeJob waits until task id has no job on the merge queue (e.g.
+// pushing a fix and answering its review), as polling skips it meanwhile.
+func waitMergeJob(t *testing.T, h *harness, id string) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); h.merges.inQueue(id); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the merge job never finished")
+		}
+	}
+}
+
 func waitPR(t *testing.T, h *harness, id string, want model.TodoStatus, ok func(model.Todo) bool) model.Todo {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -721,11 +735,7 @@ func TestPullRequestHandledHeadStillFailing(t *testing.T) {
 	x = waitPR(t, h, td.ID, model.StatusReview, func(x model.Todo) bool { return x.Runs == 2 })
 	// While the merge job pushes the branch again, GitHub's view is stale:
 	// polling then must not judge it.
-	for deadline := time.Now().Add(10 * time.Second); h.merges.inQueue(td.ID); time.Sleep(20 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatal("the merge job never finished")
-		}
-	}
+	waitMergeJob(t, h, td.ID)
 	if got := gitRun(t, x.Worktree.Path, "rev-parse", "HEAD"); got != head {
 		t.Fatalf("the fix pass was meant to make no commit, head moved %s → %s", head, got)
 	}
