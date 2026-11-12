@@ -831,6 +831,13 @@ func (a *app) setupRunner() {
 	a.notes.Name = creds.Name
 	slog.Info("shared notes: this runner's key fingerprint (compare it on other runners; see dash runner notes)", "fingerprint", a.notesID.Fingerprint())
 	apiSrv.NotesPeer = notesWire
+	// The tasks this runner runs for the hub read and write those notes
+	// (mcptools.NotesTools) on this copy.
+	apiSrv.Notes = a.notes
+	a.todos.Notes = func(t model.Todo) (int, bool) {
+		_, n, err := apiSrv.TaskNotes(t.ID)
+		return n, err == nil
+	}
 	// Tidy the notes now and about hourly (expiry, caps, one note per
 	// title, old tombstones): each runner on its own, no hub or task.
 	go a.notes.RunTidying(ctx, func() []string { return linkedHubProjects(st) })
@@ -937,7 +944,7 @@ func (a *app) wireOwners() {
 }
 
 // startMCPListener serves Dash's MCP servers to Claude Code (permission
-// prompts, the chat's task tools, the tasks' issue tools) on a
+// prompts, the chat's task tools, the tasks' issue and shared notes tools) on a
 // loopback-only plain-HTTP listener, whatever -addr and TLS are set to.
 func (a *app) startMCPListener() {
 	mcp := http.NewServeMux()
@@ -945,6 +952,7 @@ func (a *app) startMCPListener() {
 		mcp.HandleFunc("/mcp/permissions", a.perms.ServeMCP)
 	}
 	mcp.Handle("/mcp/dash", a.apiSrv.BoardMCP())
+	mcp.Handle("/mcp/notes", a.apiSrv.NotesMCP())
 	mcp.Handle("/mcp/scan-git", a.scans.GitTools)
 	var err error
 	if a.mcpURL, err = serveLoopback(a.ctx, mcp); err != nil {

@@ -101,3 +101,49 @@ func TestRunGetsTaskInstructions(t *testing.T) {
 		t.Fatalf("--append-system-prompt with nothing to say %q", got)
 	}
 }
+
+// A task whose project has shared notes here gets the notes tools on their
+// own server, and only a short pointer to them in the system prompt: the
+// count, never the notes. A project without gets neither.
+func TestRunGetsNotesTools(t *testing.T) {
+	parallel(t)
+
+	exe := &fakeExec{fn: func(_ int, req agent.ExecRequest) error {
+		write(t, req.Dir, "a.txt", req.Prompt)
+		return nil
+	}}
+	h := newHarness(t, exe, model.Project{Name: "p"})
+	h.engine.Board, h.engine.BoardURL = &mcptools.Tokens{}, "http://127.0.0.1:1"
+	h.engine.Owner = func(model.Todo) (model.Owner, error) { return model.Owner{User: 1, Org: 1}, nil }
+	has := true
+	h.engine.Notes = func(model.Todo) (int, bool) { return 12, has }
+	h.waitFor(h.add("work").ID, model.StatusReview)
+
+	args := exe.Calls()[0].ExtraArgs
+	var cfg struct{ MCPServers map[string]map[string]any }
+	if i := slices.Index(args, "--mcp-config"); i < 0 || json.Unmarshal([]byte(args[i+1]), &cfg) != nil {
+		t.Fatalf("--mcp-config in %v", args)
+	}
+	if s := cfg.MCPServers[mcptools.NotesServerName]; s == nil || s["url"] != "http://127.0.0.1:1/mcp/notes" {
+		t.Fatalf("notes server %v", cfg.MCPServers)
+	}
+	for _, name := range mcptools.NotesToolNames {
+		if !slices.Contains(args, "mcp__"+mcptools.NotesServerName+"__"+name) {
+			t.Errorf("%s not allowed: %v", name, args)
+		}
+	}
+	i := slices.Index(args, "--append-system-prompt")
+	if i < 0 || args[i+1] != issuesHint+"\n\n"+mcptools.NotesHint(12) {
+		t.Fatalf("system prompt %v", args)
+	}
+
+	has = false
+	h.waitFor(h.add("more").ID, model.StatusReview)
+	args = exe.Calls()[1].ExtraArgs
+	if i := slices.Index(args, "--append-system-prompt"); i < 0 || args[i+1] != issuesHint {
+		t.Fatalf("system prompt without notes %v", args)
+	}
+	if slices.Contains(args, "mcp__"+mcptools.NotesServerName+"__shared_list") {
+		t.Fatalf("notes tools without notes: %v", args)
+	}
+}

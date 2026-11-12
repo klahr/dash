@@ -417,6 +417,29 @@ before it is saved or sent.
 
 A Dash that runs tasks itself, without runners, has no shared notes.
 
+#### What tasks see
+
+A task that a runner runs for a shared project gets the notes tools on a second MCP server,
+`dash_notes`. The runner serves it at `/mcp/notes` on its loopback MCP listener, with the run's token:
+
+- `shared_list` lists title, tags, the task that last wrote the note, update time and expiry. It
+  can filter by tag or text.
+- `shared_read` shows a whole note.
+- `shared_write` creates a note, or updates the one with that title. It takes a title, body, tags,
+  and optionally `expires_in_days` or `permanent`.
+- `shared_delete` leaves a tombstone.
+- `shared_confirm` moves a note's expiry forward.
+
+Notes can be named by title or id. The tools act on the runner's own copy, so they answer at once.
+A write returns once it is saved locally, and the runner sends it to the other runners in the
+background. Writes are credited to the hub's task id. The size limits and the secret scanner apply,
+and a refused write says why.
+
+Unlike the board tools of a hub's task, which go to the hub, these never leave the runner. The task's
+system prompt gets only a short pointer: how many notes there are, which tools to use, and when to
+write, update, delete or confirm a note. It never gets the notes themselves, so prompts don't grow
+with them.
+
 #### Tidying
 
 Each runner tidies its own copy when it starts and then about hourly (`notes.Service.RunTidying`).

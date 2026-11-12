@@ -58,6 +58,11 @@ type TodoEngine struct {
 	// notices outside its task instead of fixing them on the wrong branch.
 	Board    *mcptools.Tokens
 	BoardURL string
+	// Notes, on a runner, says how many shared notes a task's project has,
+	// and false when it has none (not a hub's project linked here). Such a
+	// task's runs also get the notes tools (mcptools.NotesTools) on the
+	// same token, and a short pointer to them in the system prompt.
+	Notes func(model.Todo) (count int, ok bool)
 	// Owner is who a todo's runs act as: its user and org. The per-run
 	// tokens of the permission and board MCP servers carry it, and a run
 	// whose owner can't be found gets neither server.
@@ -718,6 +723,15 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 			req.ExtraArgs = append(req.ExtraArgs, "--allowedTools", "mcp__"+mcptools.ServerName+"__"+name)
 		}
 		system = append(system, issuesHint)
+		if e.Notes != nil {
+			if n, ok := e.Notes(*t); ok {
+				servers[mcptools.NotesServerName] = mcptools.NotesServerConfig(e.BoardURL, token)
+				for _, name := range mcptools.NotesToolNames {
+					req.ExtraArgs = append(req.ExtraArgs, "--allowedTools", "mcp__"+mcptools.NotesServerName+"__"+name)
+				}
+				system = append(system, mcptools.NotesHint(n))
+			}
+		}
 	}
 	if s := strings.TrimSpace(p.TaskInstructions); s != "" {
 		system = append(system, s)

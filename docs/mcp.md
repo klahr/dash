@@ -110,6 +110,11 @@ projects linked to that runner. So tasks and issues created there show up on the
 under the hub's ids. If the hub can't be reached, the tool call fails; it never writes to the
 runner's own database instead.
 
+A task on a runner also gets the project's shared notes tools (`shared_list`, `shared_read`,
+`shared_write`, `shared_delete`, `shared_confirm`). They are on a second server, `dash_notes`,
+which the runner serves itself from its local copy. See
+[Shared notes](several-computers.md#what-tasks-see).
+
 The chat stops and reruns tasks only when you ask it to:
 
 - `stop_todo(todo)` does what **Cancel** does on the board, for tasks on a runner too: a running

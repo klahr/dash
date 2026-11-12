@@ -161,7 +161,7 @@ func (s *Service) Put(ctx context.Context, project string, d Draft) (Entry, erro
 	if err != nil {
 		return Entry{}, err
 	}
-	s.send(ctx, project, append(evicted, e))
+	s.deliver(ctx, project, append(evicted, e))
 	return e, nil
 }
 
@@ -176,7 +176,7 @@ func (s *Service) Confirm(ctx context.Context, project, id, task string, ttl tim
 	if err != nil {
 		return Entry{}, err
 	}
-	s.send(ctx, project, []Entry{e})
+	s.deliver(ctx, project, []Entry{e})
 	return e, nil
 }
 
@@ -269,7 +269,7 @@ func (s *Service) Delete(ctx context.Context, project, id, task string) error {
 	if err != nil {
 		return err
 	}
-	s.send(ctx, project, []Entry{e})
+	s.deliver(ctx, project, []Entry{e})
 	return nil
 }
 
@@ -289,6 +289,24 @@ func (s *Service) List(project string, q Query) ([]Entry, error) {
 		return nil, err
 	}
 	return st.List(q, s.now())
+}
+
+type backgroundKey struct{}
+
+// InBackground makes the writes made with ctx (Put, Confirm, Delete)
+// return as soon as they are saved here: they are sent to the other runners
+// in the background, so a task's tool call never waits on the relay.
+func InBackground(ctx context.Context) context.Context {
+	return context.WithValue(ctx, backgroundKey{}, true)
+}
+
+// deliver sends entries now, or in the background for a ctx of InBackground.
+func (s *Service) deliver(ctx context.Context, project string, entries []Entry) {
+	if bg, _ := ctx.Value(backgroundKey{}).(bool); bg {
+		go s.send(context.WithoutCancel(ctx), project, entries)
+		return
+	}
+	s.send(ctx, project, entries)
 }
 
 // send tells the project's other runners of entries, sealed, best effort:

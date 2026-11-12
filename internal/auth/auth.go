@@ -772,6 +772,7 @@ var public = map[string]bool{
 	// by a per-run bearer token instead.
 	"/mcp/permissions": true,
 	"/mcp/dash":        true,
+	"/mcp/notes":       true,
 	// Runners: a registration code, or the runner's own token.
 	"/runner/register": true,
 	"/runner/connect":  true,

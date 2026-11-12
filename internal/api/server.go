@@ -30,6 +30,7 @@ import (
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/metrics"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/notes"
 	"github.com/klahr/dash/internal/notify"
 	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/perm"
@@ -114,6 +115,10 @@ type Server struct {
 	// relays from the project's other runners (notes.HubTransport; nil:
 	// none, e.g. on the hub, which keeps no notes).
 	NotesPeer http.Handler
+	// Notes, on a runner, is its copy of its hub projects' shared notes,
+	// which the tasks it runs reach with the notes tools (/mcp/notes; nil:
+	// none, as on the hub or a Dash without one).
+	Notes *notes.Service
 	// GitHubProtocol is how this runner clones the hub's GitHub projects:
 	// gitops.ProtocolAuto, gitops.ProtocolSSH ("" too, without the
 	// fallback) or gitops.ProtocolHTTPS (-github-protocol).
@@ -413,6 +418,8 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /mcp/permissions", s.Perms.ServeMCP) // answers 405, as MCP clients expect
 	mux.Handle("POST /mcp/dash", s.BoardMCP())
 	mux.Handle("GET /mcp/dash", s.BoardMCP())
+	mux.Handle("POST /mcp/notes", s.NotesMCP())
+	mux.Handle("GET /mcp/notes", s.NotesMCP())
 	// What the "Connect Claude" guide needs: is /mcp on, where, and who signed in.
 	mux.HandleFunc("GET /api/connector", s.connectorStatus)
 	if s.OAuth != nil {
