@@ -552,6 +552,8 @@ computers. So:
   reach Dash.
 - **Sessions** last 7 days. Changing the username or password signs out every browser and
   connector.
+- **The sign-in log** keeps IP addresses for a year, then deletes them. Change it with
+  `-auth-log-days` or `DASH_AUTH_LOG_DAYS` (`0` keeps them all). See [Your data](privacy.md).
 - For a second login, put Cloudflare Access (above) or your proxy's own authentication in front,
   keeping the connector's paths open if you use it.
 

@@ -1081,6 +1081,7 @@
           <div class="rail-group"><span class="rail-head">You</span>
             <button type="button" class="rail-item" data-rail="twofactor">Two-factor sign-in</button>
             <button type="button" class="rail-item" data-rail="google">Google account</button>
+            <button type="button" class="rail-item" data-rail="data">Your data</button>
           </div>
           <div class="rail-group"><span class="rail-head">Connections</span>
             <button type="button" class="rail-item" data-rail="connector">Connect Claude</button>
@@ -1119,6 +1120,16 @@
           <!-- The Google account linked to this one: link, unlink (hidden when this Dash has no Google sign-in) -->
           <section class="rail-section" data-section="google">
             <div class="twofactor-body" id="google-body"></div>
+          </section>
+          <!-- Your data: download it all as JSON, or delete the account (docs/privacy.md) -->
+          <section class="rail-section" data-section="data">
+            <h3 class="section-head">Download your data</h3>
+            <p class="hint">A JSON file of what this Dash keeps about you: your account, organizations, sign-ins, sessions, tokens, devices, webhooks, and the tasks and chat messages you wrote.</p>
+            <div><a class="btn small" id="account-export" href="/api/account/export" download data-icon="down">Download</a></div>
+            <h3 class="section-head">Delete your account</h3>
+            <p class="hint">Your account, sessions, tokens, devices, webhooks and your chats with Claude are deleted at once, and so is each organization only you are in. Tasks and messages you wrote in other organizations stay there, without your name. Runners you registered stop connecting.</p>
+            <p class="hint" id="account-delete-hint" hidden></p>
+            <div><button class="btn small danger" type="button" id="account-delete" data-icon="trash">Delete account…</button></div>
           </section>
           <!-- Connect Claude: guide to adding Dash as a claude.ai custom connector -->
           <section class="rail-section" data-section="connector">

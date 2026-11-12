@@ -942,6 +942,7 @@ func (a *Auth) audit(r *http.Request, e store.AuthEvent) {
 		e.IP = a.clientIP(r)
 	}
 	e.At = a.now()
+	a.pruneAudit(e.At)
 	slog.Info("auth event", "kind", e.Kind, "org", e.OrgID, "user", e.UserID, "detail", e.Detail)
 	if err := a.acc.Audit(e); err != nil {
 		slog.Error("audit log", "err", err)

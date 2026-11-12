@@ -145,7 +145,10 @@ async function renderOrg() {
         if (self) { location.reload(); return; }
         toast(`${m.username} removed`);
         await renderOrg();
-      }) }, self ? "Leave" : "Remove") : null);
+      }) }, self ? "Leave" : "Remove") : null,
+      (me.user?.is_platform_admin && !self) ? h("button", { class: "btn small danger", type: "button", title: `Platform admins: delete ${m.username}'s account on this Dash`, onclick: attempt(async () => {
+        if (await deleteUserAccount(m)) await renderOrg();
+      }) }, "Delete account") : null);
   });
   $("#org-members").replaceChildren(...rows);
   // A personal workspace is just its owner's: new orgs are for inviting people.
@@ -353,6 +356,45 @@ export async function setRequire2FA() {
   toast(on ? "Two-factor sign-in is now required" : "Two-factor sign-in is optional", { tone: "ok" });
   await loadMe();
   await renderOrg();
+}
+
+// ---- your data: download it, or delete the account
+accountSection("data", () => {
+  // The env account is made again on every start: deleting it would be undone.
+  const hint = $("#account-delete-hint");
+  hint.hidden = !state.me?.env_account;
+  hint.textContent = "This is the account DASH_USERNAME describes: Dash makes it again on every start, so it can't be deleted here.";
+  $("#account-delete").disabled = !!state.me?.env_account;
+});
+
+$("#account-delete").addEventListener("click", attempt(async () => {
+  const name = state.me?.username || "";
+  const typed = await ask({
+    title: "Delete your account?",
+    body: `This can't be undone. Download your data first if you want a copy. Type your username, ${name}, to go on.`,
+    input: true, placeholder: name, ok: "Delete account", danger: true,
+  });
+  if (typed == null) return;
+  if (typed !== name) throw new Error("That isn't your username: nothing was deleted.");
+  const pw = await askPassword("Confirm deleting your account", "Enter your password once more.");
+  if (pw == null) return;
+  await api("DELETE", "/api/account", { password: pw }, "");
+  await pushUnsubscribe().catch(() => {}); // the browser's own subscription; the server's is gone
+  location.replace("/login.html");
+}));
+
+// deleteUserAccount is a platform admin deleting m's account (Organization → members).
+async function deleteUserAccount(m) {
+  if (!await ask({
+    title: `Delete ${m.username}'s account?`,
+    body: `${m.username} is signed out everywhere and can't sign in again. Their account, tokens and devices are deleted, and so is each organization only they are in. What they wrote in other organizations stays, without their name. This can't be undone.`,
+    ok: "Delete account", danger: true,
+  })) return false;
+  const pw = await askPassword(`Confirm deleting ${m.username}'s account`);
+  if (pw == null) return false;
+  await api("DELETE", `/api/admin/users/${m.id}`, { password: pw }, "");
+  toast(`${m.username}'s account deleted`);
+  return true;
 }
 
 // ---- two-factor sign-in (the shared steps are in twofactor.js)

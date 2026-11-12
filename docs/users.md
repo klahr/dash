@@ -235,6 +235,9 @@ domain. **Sessions they already have last until they expire (7 days)**: end them
 on the member (or remove the member, which takes effect at once). Their API tokens keep working
 until revoked or the member is removed.
 
+To delete an account altogether, see [Your data](privacy.md): everyone can delete their own in
+**Account → Your data**, and platform admins can delete someone else's from the members list.
+
 ## API
 
 | Method and path                                   | What                                      |
@@ -265,6 +268,8 @@ until revoked or the member is removed.
 | `POST /api/orgs/{id}/members/{uid}/sign-out {password}` | admins: end a member's sessions in the org |
 | `GET /api/account/google`, `DELETE … {password}`  | your linked Google account; unlink        |
 | `GET /api/admin/sso`, `PUT /api/admin/sso/google`, `POST /api/admin/sso/domains/verify` | platform admins: the instance's client, approving domains |
+| `GET /api/account/export`, `DELETE /api/account {password}` | your data as JSON; delete your account ([privacy.md](privacy.md)) |
+| `DELETE /api/admin/users/{uid} {password}`        | platform admins: delete someone's account |
 
 With a token, `GET /api/me` shows the token and its org, and the routes that manage members,
 invitations, tokens, two-factor sign-in and orgs answer 403.

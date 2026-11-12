@@ -119,6 +119,11 @@ type Auth struct {
 	// Lockout limits failed sign-ins; set it before serving.
 	Lockout Lockout
 
+	// AuditRetention is how long the sign-in log keeps an entry (0:
+	// forever). Older ones are deleted as new ones are written.
+	AuditRetention time.Duration
+	auditPruned    time.Time // the last time they were (under mu)
+
 	oauth *OAuth // set by NewOAuth
 
 	// Brand names Dash in emails, the authenticator app and the connector

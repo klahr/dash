@@ -156,6 +156,27 @@ func envBool(name string) bool {
 	return false
 }
 
+// defaultAuthLogDays is how long the sign-in log keeps an entry without
+// -auth-log-days or DASH_AUTH_LOG_DAYS.
+const defaultAuthLogDays = 365
+
+// authLogDays is -auth-log-days (negative: not set), else
+// DASH_AUTH_LOG_DAYS, else defaultAuthLogDays. 0 keeps every entry.
+func authLogDays(flagVal int) (int, error) {
+	if flagVal >= 0 {
+		return flagVal, nil
+	}
+	v := os.Getenv("DASH_AUTH_LOG_DAYS")
+	if v == "" {
+		return defaultAuthLogDays, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("DASH_AUTH_LOG_DAYS: want a number of days, 0 or more, not %q", v)
+	}
+	return n, nil
+}
+
 // lockoutConfig is the sign-in lockout from the flags (negative or zero:
 // not set), else the environment, else the defaults.
 func lockoutConfig(perIP, global int, window time.Duration) (auth.Lockout, error) {

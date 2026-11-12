@@ -69,6 +69,7 @@ type options struct {
 	trustProxy                       bool
 	loginPerIP, loginGlobal          int
 	loginWindow                      time.Duration
+	authLogDays                      int
 	cleanupDays, logMaxMB            int
 	backupDir                        string
 	backupKeep                       int
@@ -127,6 +128,7 @@ func parseFlags(args []string, runnerMode bool) *options {
 	f.IntVar(&o.loginPerIP, "login-max-failures", -1, fmt.Sprintf("failed sign-ins from one address within -login-window before it is locked out until the window passes (default $DASH_LOGIN_MAX_FAILURES, else %d)", auth.DefaultLockout.PerIP))
 	f.IntVar(&o.loginGlobal, "login-global-failures", -1, fmt.Sprintf("failed sign-ins from all addresses together within -login-window before every new sign-in is refused until the window passes; signed-in sessions carry on; 0 = no global limit (default $DASH_LOGIN_GLOBAL_FAILURES, else %d)", auth.DefaultLockout.Global))
 	f.DurationVar(&o.loginWindow, "login-window", 0, fmt.Sprintf("the window failed sign-ins are counted in (default $DASH_LOGIN_WINDOW, else %s)", auth.DefaultLockout.Window))
+	f.IntVar(&o.authLogDays, "auth-log-days", -1, fmt.Sprintf("keep sign-in log entries (with IP addresses) this many days; 0 = keep them all (default $DASH_AUTH_LOG_DAYS, else %d)", defaultAuthLogDays))
 	f.IntVar(&o.cleanupDays, "cleanup-days", 14, "daily cleanup: remove worktrees of tasks that failed this many days ago, plus orphaned worktrees, branches, logs and uploads (0 = off)")
 	f.IntVar(&o.logMaxMB, "log-max-mb", 32, "cap each task's log files at this many MB: a longer log keeps its newest half (0 = no cap)")
 	f.StringVar(&o.backupDir, "backup-dir", "", "write a timestamped backup of the database (dash-<time>.db) to this directory every -backup-every; empty = off (or $DASH_BACKUP_DIR)")
@@ -404,6 +406,11 @@ func (a *app) openState() {
 	if a.authn.Lockout, err = lockoutConfig(o.loginPerIP, o.loginGlobal, o.loginWindow); err != nil {
 		fatal("sign-in lockout", "err", err)
 	}
+	days, err := authLogDays(o.authLogDays)
+	if err != nil {
+		fatal("sign-in log", "err", err)
+	}
+	a.authn.AuditRetention = time.Duration(days) * 24 * time.Hour
 	if err := a.authn.ImportSessions(filepath.Join(o.dataDir, "sessions.json")); err != nil {
 		slog.Warn("import sessions.json", "err", err)
 	}

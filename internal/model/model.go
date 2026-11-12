@@ -360,12 +360,19 @@ type Worktree struct {
 	BaseBranch string `json:"base_branch,omitempty"`
 }
 
+// DeletedUser is the CreatedBy of tasks and chat messages whose author's
+// account was deleted. It is no user's id, so such a task never runs as
+// anyone (a CreatedBy of 0 would act as the env account), and an id the
+// database hands to a later account never makes them its author.
+const DeletedUser int64 = -1
+
 // Todo is a unit of AI work.
 type Todo struct {
 	ID        string `json:"id"`
 	ProjectID string `json:"project_id"`
 	// CreatedBy is the user who created the task (0: Dash itself, from
-	// before users, or made on a runner by its hub). Its runs act as them.
+	// before users, or made on a runner by its hub; DeletedUser: an
+	// account that was deleted since). Its runs act as them.
 	CreatedBy int64  `json:"created_by,omitempty"`
 	Title     string `json:"title"`
 	Prompt    string `json:"prompt"`
@@ -760,7 +767,8 @@ type ChatMessage struct {
 	// At is when the message was sent, to place it in a task's timeline.
 	At *time.Time `json:"at,omitempty"`
 	// CreatedBy is the user who wrote a user message (0 for Claude's
-	// answers and messages from before users).
+	// answers and messages from before users; DeletedUser once their
+	// account is deleted).
 	CreatedBy int64 `json:"created_by,omitempty"`
 	// Usage is what Claude's answer took (assistant messages only).
 	Usage *ChatUsage `json:"usage,omitempty"`

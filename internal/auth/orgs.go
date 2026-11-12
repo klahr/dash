@@ -27,6 +27,7 @@ import (
 //	GET    /api/tokens                           the user's tokens and OAuth grants
 //	POST   /api/tokens {name, org_id, scopes, password}
 //	DELETE /api/tokens/{id}
+//	GET    /api/account/export, DELETE /api/account   the user's own data (see erasure.go)
 //	GET    /go/{slug}                            with org subdomains: hand the browser to the org's (see orghosts.go)
 //
 // two-factor sign-in (see twoFactorRoutes), and signup and password reset
@@ -58,6 +59,7 @@ func (a *Auth) Routes(mux *http.ServeMux) {
 	a.signupRoutes(mux)
 	a.googleRoutes(mux)
 	a.ssoRoutes(mux)
+	a.erasureRoutes(mux)
 	if a.Domains != nil {
 		mux.HandleFunc("GET /go/{slug}", a.goOrg)
 	}
@@ -100,7 +102,8 @@ func accountError(w http.ResponseWriter, err error) {
 		errors.Is(err, store.ErrTOTPEnabled), errors.Is(err, store.ErrTOTPRequired), errors.Is(err, store.ErrTOTPSelf),
 		errors.Is(err, store.ErrPersonalOrg), errors.Is(err, store.ErrSlugTaken),
 		errors.Is(err, store.ErrIdentityTaken), errors.Is(err, store.ErrIdentityLinked), errors.Is(err, store.ErrNoPassword),
-		errors.Is(err, store.ErrDomainTaken):
+		errors.Is(err, store.ErrDomainTaken), errors.Is(err, store.ErrAccountInUse), errors.Is(err, store.ErrEnvAccount),
+		errors.Is(err, store.ErrLastAdmin):
 		code = http.StatusConflict
 	case errors.Is(err, store.ErrBadRole), errors.Is(err, store.ErrBadEmail), errors.Is(err, store.ErrBadUsername),
 		errors.Is(err, store.ErrWeakPassword), errors.Is(err, store.ErrBadOrgName), errors.Is(err, errBadBody),
@@ -171,6 +174,9 @@ func (a *Auth) me(w http.ResponseWriter, r *http.Request) {
 		resp["has_password"] = has // without one, a recent Google sign-in confirms changes
 	}
 	resp["google_available"] = a.googleAvailable(id)
+	if env, err := a.acc.EnvUser(); err == nil {
+		resp["env_account"] = env.ID == id.User.ID // made again on every start: it can't be deleted
+	}
 	if id.Token != nil {
 		resp["token"] = id.Token // a token works in its own org only
 		resp["orgs"] = []*store.Membership{id.Org}
