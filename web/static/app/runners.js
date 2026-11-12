@@ -27,6 +27,17 @@ const shq = (s) => {
   return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replaceAll("'", `'\\''`)}'`;
 };
 const installCmd = (args = "") => `curl -fsSL ${runnerInfo.hub}/runner/install.sh | sh${args ? ` -s -- ${args}` : ""}`;
+// psq quotes s for PowerShell (a single-quoted string expands nothing).
+const psq = (s) => /^[\w%+=:./\\-]+$/.test(s) ? s : `'${s.replace(/['\u2018\u2019\u201a\u201b]/g, (q) => q + q)}'`;
+// installCmdWin is installCmd for Windows: the PowerShell installer, with
+// args as PowerShell parameters (-Code …).
+const installCmdWin = (args = "") => `& ([scriptblock]::Create((irm ${runnerInfo.hub}/runner/install.ps1)))${args ? ` ${args}` : ""}`;
+// updateCmds shows how to update a runner by hand, on either kind of computer.
+const updateCmds = () => [
+  copyBlock(installCmd(), "Command copied", { pre: true }),
+  h("p", { class: "hint" }, "On Windows, in PowerShell:"),
+  copyBlock(installCmdWin(), "Command copied", { pre: true }),
+];
 
 // Computers that run the org's tasks (`dash runner`), each with its owner's
 // Claude subscription. They connect out to this dashboard: no inbound
@@ -456,13 +467,13 @@ function runnerUpdate(r) {
       }) }, "up", `Update to ${runnerInfo.version}`),
       r.mine ? h("details", { class: "runner-update-manual" }, h("summary", {}, "Or update it by hand"),
         h("p", { class: "hint" }, `Run this on ${r.name} (it keeps its registration):`),
-        copyBlock(installCmd(), "Command copied", { pre: true })) : null);
+        ...updateCmds()) : null);
   }
   if (!r.mine) return failed;
   return h("div", { class: "runner-update" },
     failed,
     h("p", { class: "hint warn" }, `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run this on ${r.name} (it keeps its registration):`),
-    copyBlock(installCmd(), "Command copied", { pre: true }));
+    ...updateCmds());
 }
 
 export async function renderRunners() {
@@ -739,10 +750,16 @@ async function addRunner() {
     let args = `--code ${code}`;
     if (n) args += ` --name ${shq(n)}`;
     if (d) args += ` --projects ${shq(d)}`;
+    let psArgs = `-Code ${code}`;
+    if (n) psArgs += ` -Name ${psq(n)}`;
+    if (d) psArgs += ` -Projects ${psq(d)}`;
     oneLine.replaceChildren(
       h("p", {}, "On the other computer (Linux or macOS), paste this in a terminal:"),
       copyBlock(installCmd(args), "Command copied", { pre: true }),
-      h("p", { class: "hint" }, "It downloads Dash", isRelease(runnerInfo.version) ? ` ${runnerInfo.version}` : "", " to ", h("code", {}, "~/.local/bin"), ", checks git, claude and the connection to this hub, registers, and starts it as a background service. No sudo, no Go."));
+      h("p", { class: "hint" }, "It downloads Dash", isRelease(runnerInfo.version) ? ` ${runnerInfo.version}` : "", " to ", h("code", {}, "~/.local/bin"), ", checks git, claude and the connection to this hub, registers, and starts it as a background service. No sudo, no Go."),
+      h("p", {}, "On Windows, paste this in PowerShell:"),
+      copyBlock(installCmdWin(psArgs), "Command copied", { pre: true }),
+      h("p", { class: "hint" }, "It needs Git for Windows (", h("code", {}, "winget install Git.Git"), "): the runner runs commands with its bash. Dash goes to ", h("code", {}, "%LOCALAPPDATA%\\Programs\\dash"), " and runs as a scheduled task when you log in. No administrator rights needed. Terminals aren't available on Windows runners yet."));
     let flags = "";
     if (n) flags += ` --name ${shq(n)}`;
     if (d) flags += ` --projects ${shq(d)}`;
@@ -752,7 +769,7 @@ async function addRunner() {
       h("li", {}, h("strong", {}, "Register and run it:"), copyBlock(`dash runner --server ${runnerInfo.hub} --code ${code}${flags}`, "Command copied", { pre: true }),
         h("p", { class: "hint" }, "It keeps its token and reconnects by itself; later just run ", h("code", {}, "dash runner"), ".")),
       h("li", {}, h("strong", {}, "Optionally, keep it running in the background:"), copyBlock("dash runner install", "Command copied", { pre: true }),
-        h("p", { class: "hint" }, "A systemd user service on Linux, a LaunchAgent on macOS. ", h("code", {}, "dash runner status"), " shows how it's doing."))));
+        h("p", { class: "hint" }, "A systemd user service on Linux, a LaunchAgent on macOS, a scheduled task on Windows. ", h("code", {}, "dash runner status"), " shows how it's doing."))));
   };
   name.addEventListener("input", render);
   dir.addEventListener("input", render);

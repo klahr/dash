@@ -780,8 +780,9 @@ var public = map[string]bool{
 	"/runner/mcp/dash": true,
 	"/runner/notes":    true, // shared notes relay (package notes)
 	// The runner installer and the hub's version: nothing secret.
-	"/runner/install.sh": true,
-	"/runner/version":    true,
+	"/runner/install.sh":  true,
+	"/runner/install.ps1": true,
+	"/runner/version":     true,
 	// Stripe's events: signed with the webhook secret (billing).
 	"/api/billing/webhook": true,
 }

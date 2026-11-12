@@ -27,7 +27,7 @@ func runShell(ctx context.Context, dir, command string, timeout time.Duration, e
 	if err := localrun.Check("shell: " + command); err != nil {
 		return -1, "", err
 	}
-	cmd := exec.CommandContext(ctx, "bash", "-lc", command)
+	cmd := exec.CommandContext(ctx, localrun.Bash(), "-lc", command)
 	cmd.Dir = dir
 	cmd.Env = append(localrun.Environ("CI=1"), env...)
 	localrun.Group(cmd, syscall.SIGKILL, 5*time.Second)

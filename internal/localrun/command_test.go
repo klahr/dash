@@ -81,6 +81,7 @@ var execAllowed = map[string]string{
 	"internal/runnerctl/update.go":    "the downloaded dash's version check (runners updating themselves)",
 	"internal/tui/app.go":             "xdg-open/open (the TUI client)",
 	"internal/testbin/testbin.go":     "sh writing tests' stand-in executables (tests only)",
+	"cmd/dash/exec_windows.go":        "the updated dash, restarting `dash runner` in place (Windows; runners only)",
 }
 
 // TestNoDirectGitOrGh fails when code outside this package starts git or gh

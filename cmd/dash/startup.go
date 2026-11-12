@@ -74,6 +74,7 @@ type options struct {
 	backupKeep                       int
 	backupEvery                      time.Duration
 	logFormat, logLevel, metricsAddr string
+	logFile                          string
 	dataDir, projectRoot             string
 	parallel                         int
 	claudeBin, claudeArgs            string
@@ -133,6 +134,7 @@ func parseFlags(args []string, runnerMode bool) *options {
 	f.DurationVar(&o.backupEvery, "backup-every", 0, "how often to back up to -backup-dir (default $DASH_BACKUP_EVERY, else 24h)")
 	f.StringVar(&o.logFormat, "log-format", "", "log as text (key=value lines) or json (one object per line, for log shippers) (default $DASH_LOG_FORMAT, else text)")
 	f.StringVar(&o.logLevel, "log-level", "", "log debug, info, warn or error and above (default $DASH_LOG_LEVEL, else info)")
+	f.StringVar(&o.logFile, "log-file", "", "append the log to this file instead of standard error (kept under 10 MB: a larger one moves to <file>.1); on Windows the console window is hidden unless it is shared with a shell")
 	f.StringVar(&o.metricsAddr, "metrics-addr", "", "serve /metrics (Prometheus) and /healthz on this extra listener, e.g. 127.0.0.1:9090; only on loopback unless $DASH_METRICS_TOKEN is set (or $DASH_METRICS_ADDR; see docs/deploy.md#monitoring)")
 	defaultData, mode := runnerctl.HubData(o.home), runnerctl.ModeHub
 	if runnerMode {

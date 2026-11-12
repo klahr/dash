@@ -231,6 +231,8 @@ func (c *CLI) absPath(p string) (string, error) {
 	}
 	if rest, ok := strings.CutPrefix(p, "~/"); ok {
 		p = filepath.Join(c.Home, rest)
+	} else if rest, ok := strings.CutPrefix(p, "~"+string(filepath.Separator)); ok {
+		p = filepath.Join(c.Home, rest) // ~\x on Windows
 	}
 	return filepath.Abs(p)
 }
@@ -259,7 +261,7 @@ func (c *CLI) newService(data string) (*Service, error) {
 			extra = append(extra, filepath.Dir(p))
 		}
 	}
-	svc := &Service{Bin: bin, Args: args, Home: c.Home, Path: ServicePath(os.Getenv("PATH"), extra...)}
+	svc := &Service{Bin: bin, Args: args, Home: c.Home, Path: ServicePath(os.Getenv("PATH"), extra...), Data: data}
 	if c.Service != nil {
 		c.Service(svc)
 	}
@@ -295,7 +297,7 @@ func (c *CLI) installService(svc *Service) error {
 }
 
 func (c *CLI) install(args []string) error {
-	fs, data := c.flags("install", "Installs and starts the background service that runs dash runner\n(a systemd user unit on Linux, a LaunchAgent on macOS).")
+	fs, data := c.flags("install", "Installs and starts the background service that runs dash runner\n(a systemd user unit on Linux, a LaunchAgent on macOS, a scheduled task on Windows).")
 	if err := c.parse(fs, args, data); err != nil {
 		return err
 	}

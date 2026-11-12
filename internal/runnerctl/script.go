@@ -26,6 +26,11 @@ var scriptSrc string
 
 var scriptTmpl = template.Must(template.New("install.sh").Funcs(template.FuncMap{"sq": ShellQuote}).Parse(scriptSrc))
 
+//go:embed install.ps1.tmpl
+var psScriptSrc string
+
+var psScriptTmpl = template.Must(template.New("install.ps1").Funcs(template.FuncMap{"psq": PowerShellQuote}).Parse(psScriptSrc))
+
 // releaseRe matches the tags GoReleaser publishes, e.g. 1.2.0 or 1.2.0-rc.1
 // (and v1.2.0, the format of earlier releases).
 var releaseRe = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$`)
@@ -49,7 +54,13 @@ type ScriptParams struct {
 
 // Script renders the install script for p. The hub URL must be one a runner
 // may connect to (https, or http on loopback).
-func Script(p ScriptParams) ([]byte, error) {
+func Script(p ScriptParams) ([]byte, error) { return render(scriptTmpl, p) }
+
+// PowerShellScript renders the Windows install script (install.ps1) for p,
+// as Script does the one for Linux and macOS.
+func PowerShellScript(p ScriptParams) ([]byte, error) { return render(psScriptTmpl, p) }
+
+func render(tmpl *template.Template, p ScriptParams) ([]byte, error) {
 	u, err := tunnel.CheckServer(p.Hub)
 	if err != nil {
 		return nil, err
@@ -65,7 +76,7 @@ func Script(p ScriptParams) ([]byte, error) {
 		p.LatestAPI = LatestAPI
 	}
 	var b bytes.Buffer
-	if err := scriptTmpl.Execute(&b, p); err != nil {
+	if err := tmpl.Execute(&b, p); err != nil {
 		return nil, err
 	}
 	return b.Bytes(), nil
@@ -75,6 +86,27 @@ func Script(p ScriptParams) ([]byte, error) {
 // hub can't make a working one (e.g. it is reached over plain HTTP).
 func ErrorScript(msg string) []byte {
 	return []byte("#!/bin/sh\nprintf '%s\\n' " + ShellQuote("dash install: "+msg) + " >&2\nexit 1\n")
+}
+
+// PowerShellErrorScript is ErrorScript for PowerShell.
+func PowerShellErrorScript(msg string) []byte {
+	return []byte("throw " + PowerShellQuote("dash install: "+msg) + "\r\n")
+}
+
+// PowerShellQuote quotes s as a PowerShell string literal that expands
+// nothing. PowerShell also takes the typographic quotes as quotes: they are
+// doubled like '.
+func PowerShellQuote(s string) string {
+	var b strings.Builder
+	b.WriteByte('\'')
+	for _, r := range s {
+		if strings.ContainsRune("'\u2018\u2019\u201a\u201b", r) {
+			b.WriteRune(r)
+		}
+		b.WriteRune(r)
+	}
+	b.WriteByte('\'')
+	return b.String()
 }
 
 // ShellQuote quotes s as one POSIX shell word.
@@ -118,17 +150,27 @@ func HubURL(r *http.Request, publicURL string, secure, trustProxy bool) (string,
 // script was fetched from). It holds no secrets (the registration code is
 // passed to the script), so it needs no sign-in.
 func ScriptHandlerFor(hubURL func(*http.Request) (string, error), version string) http.HandlerFunc {
+	return scriptHandler(hubURL, version, "text/x-shellscript", Script, ErrorScript)
+}
+
+// PowerShellHandlerFor serves GET /runner/install.ps1, the Windows
+// installer, as ScriptHandlerFor serves install.sh.
+func PowerShellHandlerFor(hubURL func(*http.Request) (string, error), version string) http.HandlerFunc {
+	return scriptHandler(hubURL, version, "text/plain", PowerShellScript, PowerShellErrorScript)
+}
+
+func scriptHandler(hubURL func(*http.Request) (string, error), version, contentType string, script func(ScriptParams) ([]byte, error), failed func(string) []byte) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
+		w.Header().Set("Content-Type", contentType+"; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		hub, err := hubURL(r)
 		var b []byte
 		if err == nil {
-			b, err = Script(ScriptParams{Hub: hub, Version: ReleaseVersion(version)})
+			b, err = script(ScriptParams{Hub: hub, Version: ReleaseVersion(version)})
 		}
 		if err != nil {
-			b = ErrorScript("this hub can't serve a working installer (" + err.Error() +
+			b = failed("this hub can't serve a working installer (" + err.Error() +
 				"): runners need to reach the hub over HTTPS. Serve it over HTTPS or set -public-url (see docs/deploy.md).")
 		}
 		_, _ = w.Write(b)

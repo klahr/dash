@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -61,7 +62,8 @@ func ShellCommand(text string) (string, bool) {
 	return rest, ok && rest != ""
 }
 
-// RunShell runs command with the user's shell (sh if unset) in dir, without a
+// RunShell runs command with the user's shell (sh if unset; Git for
+// Windows' bash on Windows) in dir, without a
 // terminal or input, and stops it (with everything it started) after
 // timeout or when ctx ends. Its output goes to emit as "shell_output" deltas
 // as it comes; the result has it capped (CapShellOutput).
@@ -81,7 +83,10 @@ func RunShell(ctx context.Context, dir, command string, timeout time.Duration, e
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	sh := os.Getenv("SHELL")
-	if sh == "" || !strings.HasPrefix(sh, "/") {
+	switch {
+	case runtime.GOOS == "windows":
+		sh = localrun.Bash() // Git for Windows' ($SHELL, if set, is an MSYS path)
+	case sh == "" || !strings.HasPrefix(sh, "/"):
 		sh = "/bin/sh"
 	}
 	cmd := exec.CommandContext(tctx, sh, "-c", command)

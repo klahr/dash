@@ -14,7 +14,6 @@ import (
 	"os/exec"
 	"sort"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/creack/pty"
@@ -28,6 +27,10 @@ import (
 type Publisher interface{ Publish(model.Event) }
 
 var ErrNotFound = errors.New("process not found")
+
+// ErrNoTerminals is returned for a terminal on a runner whose system Dash
+// can't open pseudo-terminals on (Windows).
+var ErrNoTerminals = errors.New("terminals aren't supported on this runner's operating system yet")
 
 const scrollbackSize = 256 * 1024
 
@@ -174,10 +177,10 @@ func (m *Manager) StartTask(projectID, dir, command string, o ...Origin) (model.
 }
 
 func shell(dir, command string) *exec.Cmd {
-	cmd := exec.Command("bash", "-lc", command)
+	cmd := exec.Command(localrun.Bash(), "-lc", command)
 	cmd.Dir = dir
 	cmd.Env = os.Environ()
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	ownGroup(cmd)
 	return cmd
 }
 
@@ -227,13 +230,16 @@ func (m *Manager) startPTY(projectID, dir, command, script string, env []string,
 	if err := localrun.Check("terminal: " + command); err != nil {
 		return model.Process{}, err
 	}
-	cmd := exec.Command("bash", "-lc", script)
+	cmd := exec.Command(localrun.Bash(), "-lc", script)
 	cmd.Dir = dir
 	cmd.Env = append(append(os.Environ(), "TERM=xterm-256color"), env...)
 	if cols == 0 || rows == 0 {
 		cols, rows = 120, 32
 	}
 	tty, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: cols, Rows: rows})
+	if errors.Is(err, pty.ErrUnsupported) {
+		return model.Process{}, ErrNoTerminals
+	}
 	if err != nil {
 		return model.Process{}, err
 	}
@@ -311,7 +317,8 @@ func (m *Manager) wait(p *proc, r io.Closer) {
 	m.publish(p)
 }
 
-// Stop sends SIGTERM to the process group, then SIGKILL after a grace period.
+// Stop asks the process group to stop (SIGTERM; on Windows it is killed
+// at once), then kills it after a grace period.
 func (m *Manager) Stop(id string) error {
 	p, err := m.get(id)
 	if err != nil {
@@ -322,14 +329,25 @@ func (m *Manager) Stop(id string) error {
 		return nil // finished, or restored from a previous run: its PID may belong to something else now
 	}
 	pgid := info.PID
-	if err := syscall.Kill(-pgid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+	if err := terminateGroup(pgid); err != nil {
 		return err
 	}
 	go func() {
 		time.Sleep(5 * time.Second)
-		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		if p.snapshot().Running { // gone already: its id may be reused by now
+			killGroup(pgid)
+		}
 	}()
 	return nil
+}
+
+// HangUp sends SIGHUP to a running process's group, as closing its
+// terminal would: an interactive shell ignores SIGTERM. Nothing happens on
+// Windows, where Stop kills the tree anyway.
+func (m *Manager) HangUp(id string) {
+	if p, err := m.Get(id); err == nil && p.Running && p.PID > 0 {
+		hangUpGroup(p.PID)
+	}
 }
 
 // StopAll is called on shutdown.
@@ -342,7 +360,7 @@ func (m *Manager) StopAll() {
 	m.saveMu.Unlock()
 	for _, p := range m.List("") {
 		if p.Running {
-			_ = syscall.Kill(-p.PID, syscall.SIGKILL)
+			killGroup(p.PID)
 		}
 	}
 }

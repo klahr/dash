@@ -32,8 +32,16 @@ type Service struct {
 	// Run runs a service manager command (systemctl, launchctl, loginctl)
 	// and returns its combined output; nil = exec.
 	Run func(name string, args ...string) (string, error)
-	// GOOS picks systemd (linux) or launchd (darwin); "" = runtime.GOOS.
+	// GOOS picks systemd (linux), launchd (darwin) or Task Scheduler
+	// (windows); "" = runtime.GOOS.
 	GOOS string
+	// Data is the runner's data directory: on Windows, (re)installing stops
+	// the runner its state file names.
+	Data string
+	// User is who the Windows task runs as, DOMAIN\name ("" = this user).
+	User string
+	// Kill ends a process and what it started (nil: the real one).
+	Kill func(pid int) error
 	// Sleep waits between launchctl polls and retries; nil = time.Sleep.
 	Sleep func(time.Duration)
 }
@@ -78,18 +86,22 @@ func (s *Service) File() (string, error) {
 		return filepath.Join(s.Home, ".config", "systemd", "user", SystemdUnit), nil
 	case "darwin":
 		return filepath.Join(s.Home, "Library", "LaunchAgents", LaunchdLabel+".plist"), nil
+	case "windows":
+		return filepath.Join(s.windowsDir(), "dash-runner-task.xml"), nil
 	}
 	return "", fmt.Errorf("no background service on %s: run dash runner yourself", s.goos())
 }
 
-// Definition is the service file's content: a systemd user unit or a
-// launchd LaunchAgent.
+// Definition is the service file's content: a systemd user unit, a
+// launchd LaunchAgent or a Windows scheduled task.
 func (s *Service) Definition() ([]byte, error) {
 	switch s.goos() {
 	case "linux":
 		return SystemdUnitFile(s.Bin, s.Args, s.Path), nil
 	case "darwin":
 		return LaunchdPlist(s.Bin, s.Args, s.Path, filepath.Join(s.Home, "Library", "Logs", "dash-runner.log")), nil
+	case "windows":
+		return s.taskDefinition(), nil
 	}
 	_, err := s.File()
 	return nil, err
@@ -211,6 +223,10 @@ func (s *Service) Install() (InstallResult, error) {
 		if err := s.installLaunchd(file, res.Changed); err != nil {
 			return res, err
 		}
+	case "windows":
+		if err := s.installWindows(file); err != nil {
+			return res, err
+		}
 	}
 	return res, nil
 }
@@ -293,6 +309,8 @@ func (s *Service) Uninstall() (removed bool, err error) {
 		_, _ = s.run("systemctl", "--user", "disable", "--now", SystemdUnit)
 	case "darwin":
 		_, _ = s.run("launchctl", "bootout", s.launchdTarget()+"/"+LaunchdLabel)
+	case "windows":
+		s.uninstallWindows()
 	}
 	if err := os.Remove(file); err != nil {
 		return false, err
@@ -333,6 +351,8 @@ func (s *Service) State() string {
 			}
 		}
 		return state + " (" + file + "; logs: ~/Library/Logs/dash-runner.log)"
+	case "windows":
+		return s.windowsState(file)
 	}
 	return "unknown"
 }

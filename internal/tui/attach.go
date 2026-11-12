@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"sync/atomic"
-	"syscall"
 
 	"github.com/gorilla/websocket"
 	"github.com/muesli/cancelreader"
@@ -63,7 +62,7 @@ func (a *attachCmd) Run() error {
 	}
 	sendResize()
 	winch := make(chan os.Signal, 1)
-	signal.Notify(winch, syscall.SIGWINCH)
+	notifyResize(winch)
 	defer signal.Stop(winch)
 
 	// A cancelable reader, so our stdin goroutine doesn't swallow the first

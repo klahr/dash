@@ -7,9 +7,11 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
+	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
@@ -31,6 +33,8 @@ type Preflight struct {
 	// Output runs a command and returns its stdout.
 	Output func(ctx context.Context, name string, args ...string) ([]byte, error)
 	Client *http.Client
+	// GOOS and Bash stand in for the system's in tests ("" = the real ones).
+	GOOS, Bash string
 }
 
 func (p Preflight) lookPath(f string) (string, error) {
@@ -47,9 +51,39 @@ func (p Preflight) output(ctx context.Context, name string, args ...string) ([]b
 	return exec.CommandContext(ctx, name, args...).Output()
 }
 
-// Run checks everything for a runner of server that runs claudeBin.
+// Run checks everything for a runner of server that runs claudeBin (and,
+// on Windows, the bash that project commands run with).
 func (p Preflight) Run(ctx context.Context, server, claudeBin string) []Check {
-	return []Check{p.git(), p.claude(ctx, claudeBin), p.hub(ctx, server)}
+	checks := []Check{p.git()}
+	if p.goos() == "windows" {
+		checks = append(checks, p.bash())
+	}
+	return append(checks, p.claude(ctx, claudeBin), p.hub(ctx, server))
+}
+
+func (p Preflight) goos() string {
+	if p.GOOS != "" {
+		return p.GOOS
+	}
+	return runtime.GOOS
+}
+
+// bash checks for the bash project commands and Claude's tools run with on
+// Windows: Git for Windows' (localrun.Bash).
+func (p Preflight) bash() Check {
+	c := Check{Name: "bash"}
+	bash := p.Bash
+	if bash == "" {
+		bash = localrun.Bash()
+	}
+	path, err := p.lookPath(bash)
+	if err != nil {
+		c.Detail = "Git for Windows' bash not found"
+		c.Fix = "install Git for Windows (winget install Git.Git), or set DASH_BASH to a bash.exe"
+		return c
+	}
+	c.OK, c.Detail = true, path
+	return c
 }
 
 func (p Preflight) git() Check {
@@ -57,7 +91,7 @@ func (p Preflight) git() Check {
 	path, err := p.lookPath("git")
 	if err != nil {
 		c.Detail = "not found on PATH"
-		c.Fix = "install git (e.g. apt install git, or xcode-select --install on macOS)"
+		c.Fix = "install git (e.g. apt install git, xcode-select --install on macOS, or winget install Git.Git on Windows)"
 		return c
 	}
 	c.OK, c.Detail = true, path

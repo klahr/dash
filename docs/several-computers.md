@@ -100,7 +100,7 @@ offline, red when none is, grey when there are none yet.
 
 In the hub's dashboard, open the account menu → **Organization** → **Add a runner** (any member
 can, in a signed-in browser). It shows a one-time code (valid for 10 minutes) inside a command to
-paste on the other computer (Linux or macOS, amd64 or arm64). The code is bound to you and the
+paste on the other computer (Linux, macOS or [Windows](#windows-runners), amd64 or arm64). The code is bound to you and the
 organization you're working in: the runner will be yours, there, and run tasks with your Claude
 login.
 
@@ -126,7 +126,8 @@ That's all. The script, served by the hub (it holds no secrets, so it needs no s
    too, moves its registration to `~/.local/share/dash-runner` and starts afresh there.)
    Registering again from the same computer replaces its old registration, name included;
 4. installs and starts a background service: a systemd **user** unit (`dash-runner.service`) on
-   Linux, a LaunchAgent (`com.github.klahr.dash-runner`) on macOS. It reconnects by itself,
+   Linux, a LaunchAgent (`com.github.klahr.dash-runner`) on macOS, a scheduled task (`Dash runner`)
+   on Windows. It reconnects by itself,
    waiting longer between attempts while the hub is down (up to a minute). `--no-service` skips
    this and runs the runner in the terminal instead.
 
@@ -149,8 +150,9 @@ included):
 
 - under its background service it exits with status 4, and systemd (`Restart=on-failure`) or
   launchd (`KeepAlive`) starts the new binary;
-- started by hand (installed with `--no-service`), it replaces its own process with the new binary
-  (`exec`), in the same terminal.
+- started by hand (installed with `--no-service`), or on Windows, it replaces its own process with
+  the new binary (`exec`; on Windows it starts the new binary in the same window and waits for
+  it), in the same terminal.
 
 Maintenance mode is the hub's, so it survives the runner's reconnects and the hub's restarts. It
 ends when the runner connects running the hub's version, or when the update fails: the runner can't
@@ -190,7 +192,39 @@ dash runner uninstall   # stop and remove it; the registration is kept
 dash runner update      # install the hub's version (or --version X) and restart the service
 ```
 
-Logs: `journalctl --user -u dash-runner` on Linux, `~/Library/Logs/dash-runner.log` on macOS.
+Logs: `journalctl --user -u dash-runner` on Linux, `~/Library/Logs/dash-runner.log` on macOS,
+`%LOCALAPPDATA%\dash-runner\dash-runner.log` on Windows.
+
+### Windows runners
+
+A runner runs on Windows 10 or later (and Windows Server 2016 or later), amd64 or arm64. It
+needs [Git for Windows](https://gitforwindows.org) (`winget install Git.Git`), which Claude Code
+on Windows needs too: the runner runs project commands (setup, test, run, deploy) and a chat's
+`!` commands with its `bash.exe`, found next to `git` on the PATH (`DASH_BASH` names another). The dialog shows a
+PowerShell command next to the one for Linux and macOS:
+
+```powershell
+& ([scriptblock]::Create((irm https://dash.example.com/runner/install.ps1))) -Code ABCD-EFGH
+```
+
+It does what `install.sh` does, with PowerShell parameters (`-Name`, `-Projects`, `-Data`,
+`-Prefix`, `-NoService`, `-SkipChecks`), and needs no administrator rights:
+
+- `dash.exe` goes to `%LOCALAPPDATA%\Programs\dash`, which is added to your PATH;
+- the checks include bash;
+- the background service is a scheduled task, `Dash runner`, that starts the runner when you log
+  in (and again a minute after it crashes), with its console window hidden and its log in
+  `%LOCALAPPDATA%\dash-runner\dash-runner.log` (`-log-file`). It runs only while you are logged
+  in. `dash runner install`, `uninstall` and `status` manage it as on the other systems.
+
+Run the command again without `-Code` to update. Windows won't overwrite a running program, so
+an update renames the running `dash.exe` to `dash.exe.old` (removed by the next update) and puts
+the new one in its place. Stopping a task's processes stops their whole process tree
+(`taskkill /T`); there are no signals, so a stopped server gets no chance to shut down cleanly.
+
+Not yet on Windows: **terminals** (and terminal previews) need a pseudo-terminal Dash doesn't
+open on Windows yet; starting one says so. Everything else (tasks, chats, scans, servers and
+previews over HTTP, tests and deploys) works as on the other systems.
 
 ### Manually
 

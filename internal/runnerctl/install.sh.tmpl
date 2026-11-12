@@ -77,7 +77,8 @@ detect_platform() {
 	case "$(uname -s)" in
 	Linux) os=linux ;;
 	Darwin) os=darwin ;;
-	*) die "unsupported system $(uname -s): Dash runners run on Linux and macOS" ;;
+	MINGW* | MSYS* | CYGWIN*) die "on Windows, install with PowerShell instead: & ([scriptblock]::Create((irm $HUB/runner/install.ps1))) -Code <code>" ;;
+	*) die "unsupported system $(uname -s): Dash runners run on Linux, macOS and Windows" ;;
 	esac
 	case "$(uname -m)" in
 	x86_64 | amd64) arch=amd64 ;;

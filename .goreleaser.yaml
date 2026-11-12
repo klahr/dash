@@ -13,7 +13,7 @@ builds:
     binary: dash
     env:
       - CGO_ENABLED=0 # the SQLite driver is pure Go
-    goos: [linux, darwin]
+    goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     flags: [-trimpath]
     ldflags:
@@ -30,8 +30,12 @@ builds:
 
 archives:
   - formats: [tar.gz]
-    # dash_1.2.0_linux_amd64.tar.gz
+    # dash_1.2.0_linux_amd64.tar.gz; dash_1.2.0_windows_amd64.zip (with
+    # dash.exe: runnerctl.Asset and install.ps1.tmpl expect these names)
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
     files:
       - LICENSE
       - README.md

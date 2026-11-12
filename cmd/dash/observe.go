@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -70,4 +72,19 @@ func serveOps(ctx context.Context, addr string, h http.Handler) error {
 	}()
 	go func() { <-ctx.Done(); _ = srv.Close() }()
 	return nil
+}
+
+// maxLogFile is the size at which openLogFile moves a log aside.
+const maxLogFile = 10 << 20
+
+// openLogFile opens path for appending the log, first moving a log over
+// maxLogFile to path.1 (replacing the one there).
+func openLogFile(path string) (*os.File, error) {
+	if fi, err := os.Stat(path); err == nil && fi.Size() > maxLogFile {
+		_ = os.Rename(path, path+".1")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 }

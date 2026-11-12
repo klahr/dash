@@ -2,6 +2,7 @@ package runnerctl
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bufio"
 	"bytes"
 	"compress/gzip"
@@ -73,14 +74,14 @@ func (u Updater) Run(ctx context.Context) error {
 	}
 	// First whether the binary can be replaced at all: no download for nothing.
 	dir := filepath.Dir(u.Bin)
-	tmp, err := os.CreateTemp(dir, ".dash.new-*")
+	tmp, err := os.CreateTemp(dir, ".dash.new-*"+exeSuffix(u.GOOS))
 	if err != nil {
 		return fmt.Errorf("can't replace %s (installed by another user, e.g. root?): update it the way it was installed: %w", u.Bin, err)
 	}
 	defer os.Remove(tmp.Name()) // nothing left once renamed
 	defer tmp.Close()
 
-	asset := fmt.Sprintf("dash_%s_%s_%s.tar.gz", strings.TrimPrefix(u.Version, "v"), u.GOOS, u.GOARCH)
+	asset := Asset(u.Version, u.GOOS, u.GOARCH)
 	base := strings.TrimRight(u.Releases, "/") + "/download/" + u.Version + "/"
 	sums, err := u.get(ctx, base+"checksums.txt", 1<<20)
 	if err != nil {
@@ -98,7 +99,7 @@ func (u Updater) Run(ctx context.Context) error {
 	if got := hex.EncodeToString(sum[:]); got != want {
 		return fmt.Errorf("%w for %s (got %s, want %s): not installing it", ErrChecksum, asset, got, want)
 	}
-	if err := extractDash(archive, tmp); err != nil {
+	if err := extractDash(archive, u.GOOS, tmp); err != nil {
 		return fmt.Errorf("unpack %s: %w", asset, err)
 	}
 	if err := tmp.Chmod(0o755); err != nil {
@@ -127,7 +128,7 @@ func (u Updater) Run(ctx context.Context) error {
 		}
 	}
 	// Renamed over it, so a running dash is replaced whole.
-	if err := os.Rename(tmp.Name(), u.Bin); err != nil {
+	if err := replaceFile(tmp.Name(), u.Bin); err != nil {
 		if u.Data != "" {
 			os.Remove(TrialPath(u.Data))
 		}
@@ -190,8 +191,46 @@ func checksumFor(sums []byte, asset string) string {
 	return ""
 }
 
-// extractDash copies the dash binary out of a release's .tar.gz into w.
-func extractDash(archive []byte, w io.Writer) error {
+// Asset is the name of a release's archive for goos/goarch:
+// dash_1.2.0_linux_amd64.tar.gz, or a .zip for Windows.
+func Asset(version, goos, goarch string) string {
+	ext := ".tar.gz"
+	if goos == "windows" {
+		ext = ".zip"
+	}
+	return fmt.Sprintf("dash_%s_%s_%s%s", strings.TrimPrefix(version, "v"), goos, goarch, ext)
+}
+
+// exeSuffix is what executables end with on goos.
+func exeSuffix(goos string) string {
+	if goos == "windows" {
+		return ".exe"
+	}
+	return ""
+}
+
+// extractDash copies the dash binary out of a release's archive for goos
+// (a .tar.gz, or a .zip holding dash.exe for Windows) into w.
+func extractDash(archive []byte, goos string, w io.Writer) error {
+	name := "dash" + exeSuffix(goos)
+	if goos == "windows" {
+		zr, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+		if err != nil {
+			return err
+		}
+		for _, f := range zr.File {
+			if f.Mode().IsRegular() && path.Base(f.Name) == name {
+				r, err := f.Open()
+				if err != nil {
+					return err
+				}
+				defer r.Close()
+				_, err = io.Copy(w, io.LimitReader(r, maxArchive))
+				return err
+			}
+		}
+		return errors.New("it holds no " + name)
+	}
 	gz, err := gzip.NewReader(bytes.NewReader(archive))
 	if err != nil {
 		return err
@@ -205,11 +244,33 @@ func extractDash(archive []byte, w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if hd.Typeflag == tar.TypeReg && path.Base(hd.Name) == "dash" {
+		if hd.Typeflag == tar.TypeReg && path.Base(hd.Name) == name {
 			_, err := io.Copy(w, io.LimitReader(tr, maxArchive))
 			return err
 		}
 	}
+}
+
+// replaceFile renames src over dst. Windows won't replace a program that
+// is running (the runner's own binary), but lets it be renamed: there dst
+// is first moved aside to dst.old, removed by the next replacement.
+func replaceFile(src, dst string) error {
+	err := os.Rename(src, dst)
+	if err == nil || runtime.GOOS != "windows" {
+		return err
+	}
+	old := dst + ".old"
+	if os.Remove(old) != nil && exists(old) { // an older one still runs
+		old = fmt.Sprintf("%s.old-%d", dst, time.Now().UnixNano())
+	}
+	if os.Rename(dst, old) != nil {
+		return err
+	}
+	if err := os.Rename(src, dst); err != nil {
+		_ = os.Rename(old, dst)
+		return err
+	}
+	return nil
 }
 
 // backup makes prev a copy of bin: a hard link when it can.
@@ -324,7 +385,7 @@ func (t *Trial) Rollback() error {
 	if t.t.Prev == "" || t.t.Bin == "" {
 		return errors.New("the update's record names no previous binary")
 	}
-	if err := os.Rename(t.t.Prev, t.t.Bin); err != nil {
+	if err := replaceFile(t.t.Prev, t.t.Bin); err != nil {
 		return fmt.Errorf("put %s back: %w", t.t.Prev, err)
 	}
 	return nil
@@ -339,5 +400,7 @@ func UnderService() bool {
 	case "darwin":
 		return os.Getenv("XPC_SERVICE_NAME") == LaunchdLabel
 	}
+	// Windows: the scheduled task doesn't restart a runner that exited
+	// cleanly, so the runner restarts itself in place.
 	return false
 }

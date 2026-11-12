@@ -211,9 +211,10 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 	mux.HandleFunc("POST /runner/report", rh.ServeReport)
 	mux.HandleFunc("POST "+tunnel.BoardPath, s.runnerBoard(rh))
 	mux.Handle("POST "+notes.RelayPath, s.notesRelay(rh))
-	// The one-line installer, and the version it installs (no sign-in:
+	// The one-line installers (Linux and macOS; Windows), and the version it installs (no sign-in:
 	// neither holds a secret).
 	mux.HandleFunc("GET /runner/install.sh", runnerctl.ScriptHandlerFor(s.hubURL, buildinfo.Version))
+	mux.HandleFunc("GET /runner/install.ps1", runnerctl.PowerShellHandlerFor(s.hubURL, buildinfo.Version))
 	mux.HandleFunc("GET /runner/version", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"version": buildinfo.Version})
 	})

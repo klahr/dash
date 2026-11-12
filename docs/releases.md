@@ -1,8 +1,9 @@
 # Releases
 
-Every `X.Y.Z` tag (e.g. `1.2.0`, no `v`) pushed to GitHub builds Dash for Linux and macOS (amd64 and arm64) and attaches
+Every `X.Y.Z` tag (e.g. `1.2.0`, no `v`) pushed to GitHub builds Dash for Linux, macOS and Windows (amd64 and arm64) and attaches
 the archives to a [GitHub release](https://github.com/klahr/dash/releases), together with a
-`checksums.txt`. Each archive holds `dash`, `dash-tui` and `dash-mcp`, plus the license, the
+`checksums.txt`: a `.tar.gz` for Linux and macOS, a `.zip` for Windows (whose binaries end in
+`.exe`; Windows is for [runners](several-computers.md#windows-runners), not hubs). Each archive holds `dash`, `dash-tui` and `dash-mcp`, plus the license, the
 README, `.env.example` and `deploy/dash.service`. The builds are static (CGO off), so they run on
 a machine without Go.
 

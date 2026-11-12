@@ -1,0 +1,149 @@
+# Installs a Dash runner on Windows for the hub at {{.Hub}}, from its
+# GitHub release. In PowerShell:
+#
+#   & ([scriptblock]::Create((irm {{.Hub}}/runner/install.ps1))) -Code ABCD-EFGH
+#
+# Options:
+#   -Code CODE      registration code from the hub's Runners page (not needed
+#                   to update a computer that is registered already)
+#   -Name NAME      this computer's name in the dashboard (default: its host name)
+#   -Projects DIR   where the runner's projects live (default: ~\dash-projects)
+#   -Data DIR       the runner's data directory (default: ~\.local\share\dash-runner)
+#   -Prefix DIR     where dash.exe is installed (default: %LOCALAPPDATA%\Programs\dash)
+#   -NoService      don't install the scheduled task; run the runner in this
+#                   window instead
+#   -SkipChecks     register even if git, bash, claude or the hub look wrong
+#
+# Run it again without -Code to update Dash to the hub's version; the
+# registration is kept. It needs no administrator rights. The runner runs
+# project commands with Git for Windows' bash, so install Git for Windows
+# first (winget install Git.Git). See install.sh.tmpl for Linux and macOS.
+#
+# Everything is in Main, called on the last line, so a cut-off download runs
+# nothing.
+
+param(
+	[string]$Code = "",
+	[string]$Name = "",
+	[string]$Projects = "",
+	[string]$Data = "",
+	[string]$Prefix = "",
+	[switch]$NoService,
+	[switch]$SkipChecks
+)
+
+$Hub = {{psq .Hub}}
+$Version = {{psq .Version}}
+$Releases = {{psq .Releases}}
+$LatestApi = {{psq .LatestAPI}}
+
+function Fail([string]$msg) {
+	# throw, not exit: run as a script block, exit would close the window.
+	throw "dash install: $msg"
+}
+
+function Get-Platform {
+	$a = $env:PROCESSOR_ARCHITEW6432
+	if (-not $a) { $a = $env:PROCESSOR_ARCHITECTURE }
+	switch ($a) {
+		"AMD64" { return "amd64" }
+		"ARM64" { return "arm64" }
+		default { Fail "unsupported processor ${a}: Dash is built for amd64 and arm64" }
+	}
+}
+
+function Main {
+	$ErrorActionPreference = "Stop"
+	$ProgressPreference = "SilentlyContinue" # Invoke-WebRequest is slow with its progress bar
+	[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+	if (-not $Prefix) { $Prefix = Join-Path $env:LOCALAPPDATA "Programs\dash" }
+	$arch = Get-Platform
+
+	$tag = $Version
+	if (-not $tag) {
+		try { $tag = (Invoke-RestMethod -UseBasicParsing $LatestApi).tag_name } catch { }
+		if (-not $tag) { Fail "couldn't find the latest Dash release at $LatestApi" }
+	}
+	if ($tag -notmatch '^[A-Za-z0-9._+-]+$') { Fail "odd release name $tag" }
+
+	$bin = Join-Path $Prefix "dash.exe"
+	$current = ""
+	if (Test-Path -PathType Leaf $bin) {
+		try { $current = (& $bin version 2>$null | Out-String).Trim() } catch { }
+	}
+	if ($current -eq "dash $tag") {
+		Write-Host "Dash $tag is already installed in $bin."
+	} else {
+		$asset = "dash_$($tag -replace '^v', '')_windows_$arch.zip"
+		$tmp = Join-Path ([IO.Path]::GetTempPath()) ("dash-" + [Guid]::NewGuid().ToString("N"))
+		New-Item -ItemType Directory -Path $tmp | Out-Null
+		try {
+			Write-Host "Downloading Dash $tag for windows/$arch..."
+			try {
+				Invoke-WebRequest -UseBasicParsing -OutFile (Join-Path $tmp $asset) "$Releases/download/$tag/$asset"
+			} catch {
+				Fail "couldn't download $Releases/download/$tag/$asset (is there a $tag release for windows/${arch}?)"
+			}
+			try {
+				Invoke-WebRequest -UseBasicParsing -OutFile (Join-Path $tmp "checksums.txt") "$Releases/download/$tag/checksums.txt"
+			} catch {
+				Fail "couldn't download the checksums of Dash $tag"
+			}
+			$want = ""
+			foreach ($line in Get-Content (Join-Path $tmp "checksums.txt")) {
+				$f = -split $line
+				if ($f.Count -eq 2 -and ($f[1] -eq $asset -or $f[1] -eq "*$asset")) { $want = $f[0].ToLower() }
+			}
+			if (-not $want) { Fail "checksums.txt of Dash $tag lists no $asset" }
+			$got = (Get-FileHash -Algorithm SHA256 (Join-Path $tmp $asset)).Hash.ToLower()
+			if ($got -ne $want) { Fail "checksum mismatch for $asset (got $got, want $want): not installing it" }
+			$x = Join-Path $tmp "x"
+			try { Expand-Archive -Path (Join-Path $tmp $asset) -DestinationPath $x } catch { Fail "couldn't unpack $asset" }
+			if (-not (Test-Path -PathType Leaf (Join-Path $x "dash.exe"))) { Fail "$asset holds no dash.exe" }
+			try {
+				New-Item -ItemType Directory -Force -Path $Prefix | Out-Null
+				$new = Join-Path $Prefix ".dash.new.exe"
+				Copy-Item -Force (Join-Path $x "dash.exe") $new
+				# A running dash.exe can't be replaced, but it can be renamed.
+				if (Test-Path -PathType Leaf $bin) {
+					Remove-Item -Force -ErrorAction SilentlyContinue "$bin.old"
+					if (Test-Path "$bin.old") { Move-Item -Force $bin "$bin.old-$([DateTime]::Now.Ticks)" } else { Move-Item -Force $bin "$bin.old" }
+				}
+				Move-Item -Force $new $bin
+			} catch {
+				Fail "can't write $bin (pick another place with -Prefix): $_"
+			}
+		} finally {
+			Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $tmp
+		}
+		Write-Host "Installed Dash $tag in $bin."
+	}
+
+	# On the user's PATH, so dash runs by name in new terminals.
+	$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+	if (-not (($userPath -split ";") -contains $Prefix)) {
+		$newPath = if ($userPath) { "$userPath;$Prefix" } else { $Prefix }
+		[Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+		Write-Host "Added $Prefix to your PATH (new terminals see it)."
+	}
+	if (-not (($env:Path -split ";") -contains $Prefix)) { $env:Path = "$env:Path;$Prefix" }
+
+	$runArgs = @("runner", "setup", "--server", $Hub)
+	if ($Code) { $runArgs += @("--code", $Code) }
+	if ($Name) { $runArgs += @("--name", $Name) }
+	if ($Projects) { $runArgs += @("--projects", $Projects) }
+	if ($Data) { $runArgs += @("--data", $Data) }
+	if ($SkipChecks) { $runArgs += "--skip-checks" }
+	if ($NoService) { $runArgs += "--service=false" }
+	& $bin @runArgs
+	if ($LASTEXITCODE -ne 0) { Fail "dash runner setup failed (exit status $LASTEXITCODE)" }
+	if ($NoService) {
+		Write-Host "Starting the runner in this window (Ctrl-C stops it; start it again with: dash runner)."
+		$runArgs = @("runner")
+		if ($Data) { $runArgs += @("-data", $Data) }
+		& $bin @runArgs
+	}
+}
+
+Main

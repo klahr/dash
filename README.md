@@ -20,7 +20,8 @@ merge them one at a time.
 
 ## Quick start
 
-Download a prebuilt release (Linux and macOS, amd64 and arm64; no Go needed). Pick the
+Download a prebuilt release (Linux and macOS, amd64 and arm64; no Go needed; Windows builds
+are for [runners](docs/several-computers.md#windows-runners)). Pick the
 version and platform from the [releases page](https://github.com/klahr/dash/releases):
 
 ```sh

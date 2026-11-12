@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -67,7 +68,18 @@ func main() {
 
 	// The env file first: it may set the log format too.
 	envErr := auth.LoadDotEnv(o.envFile)
-	logger, err := newLogger(os.Stderr, envOr(o.logFormat, "DASH_LOG_FORMAT"), envOr(o.logLevel, "DASH_LOG_LEVEL"))
+	logOut := io.Writer(os.Stderr)
+	if o.logFile != "" {
+		f, err := openLogFile(o.logFile)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "dash:", err)
+			os.Exit(2)
+		}
+		defer f.Close()
+		logOut = f
+		hideConsole() // its window would show nothing
+	}
+	logger, err := newLogger(logOut, envOr(o.logFormat, "DASH_LOG_FORMAT"), envOr(o.logLevel, "DASH_LOG_LEVEL"))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dash:", err)
 		os.Exit(2)

@@ -2,10 +2,8 @@ package runnerctl
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/klahr/dash/internal/fsutil"
@@ -37,9 +35,4 @@ func ReadState(path string) (st State, ok bool) {
 		return st, false
 	}
 	return st, alive(st.PID)
-}
-
-func alive(pid int) bool {
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
 }

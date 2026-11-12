@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/klahr/dash/internal/buildinfo"
@@ -136,7 +135,7 @@ func restartRunner(bin string) {
 		os.Exit(runnerctl.ExitUpdated)
 	}
 	slog.Info("runner: restarting in place", "bin", bin)
-	err := syscall.Exec(bin, os.Args, os.Environ())
+	err := execSelf(bin)
 	slog.Error("runner: restart failed: start it again by hand", "bin", bin, "err", err)
 	os.Exit(runnerctl.ExitUpdated)
 }

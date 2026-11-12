@@ -13,7 +13,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/klahr/dash/internal/auth"
@@ -935,7 +934,7 @@ func (s *Server) openWorktree(t model.Todo) error {
 	}
 	args := append(strings.Fields(s.Editor), t.Worktree.Path)
 	cmd := exec.Command(args[0], args[1:]...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // outlives the request
+	localrun.Detach(cmd) // outlives the request
 	if err := cmd.Start(); err != nil {
 		return err
 	}

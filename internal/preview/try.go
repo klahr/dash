@@ -15,7 +15,6 @@ import (
 	"log/slog"
 	"net/url"
 	"sort"
-	"syscall"
 	"time"
 
 	"github.com/klahr/dash/internal/model"
@@ -184,9 +183,7 @@ func (m *Manager) stopEntry(e *entry, reason string) {
 	e.mu.Unlock()
 	// An interactive shell ignores SIGTERM: hang it up first, as closing
 	// its terminal would.
-	if p, err := m.Procs.Get(id); err == nil && p.Running && p.PID > 0 {
-		_ = syscall.Kill(-p.PID, syscall.SIGHUP)
-	}
+	m.Procs.HangUp(id)
 	if err := m.Procs.Stop(id); err != nil && !errors.Is(err, runner.ErrNotFound) {
 		slog.Warn("stop try session", "project", e.try.ProjectID, "err", err)
 	}

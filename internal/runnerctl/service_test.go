@@ -286,8 +286,8 @@ func TestServiceInstallWithoutSystemd(t *testing.T) {
 	if _, err := s.Install(); err == nil || !strings.Contains(err.Error(), "--no-service") {
 		t.Fatalf("want an error pointing at --no-service, got %v", err)
 	}
-	if _, err := (&Service{GOOS: "windows"}).Install(); err == nil {
-		t.Error("windows accepted")
+	if _, err := (&Service{GOOS: "plan9", Home: t.TempDir()}).Install(); err == nil {
+		t.Error("plan9 accepted")
 	}
 }
 
