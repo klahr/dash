@@ -17,6 +17,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/klahr/dash/internal/fsutil"
+	"github.com/klahr/dash/internal/notes"
 )
 
 // Credentials are what a runner keeps after registering with a hub.
@@ -311,4 +312,41 @@ func Board(ctx context.Context, creds Credentials, hubTodo, hubProject string, b
 		return nil, ErrRevoked
 	}
 	return res, nil
+}
+
+// Notes posts a shared notes message (package notes) for the hub's project
+// to the hub's relay, as the runner in creds, and returns the hub's answer.
+// The message is opaque here; it isn't logged.
+func Notes(ctx context.Context, creds Credentials, project string, msg []byte) ([]byte, error) {
+	u, err := CheckServer(creds.Server)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", u.String()+notes.RelayPath+"?project="+url.QueryEscape(project), bytes.NewReader(msg))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Authorization", "Bearer "+creds.Token)
+	res, err := (&http.Client{Timeout: 2 * time.Minute}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusUnauthorized {
+		return nil, ErrRevoked
+	}
+	b, err := io.ReadAll(io.LimitReader(res.Body, 64<<20))
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode != http.StatusOK {
+		var e struct{ Error string }
+		_ = json.Unmarshal(b, &e)
+		if e.Error == "" {
+			e.Error = res.Status
+		}
+		return nil, fmt.Errorf("the hub's notes relay: %s", e.Error)
+	}
+	return b, nil
 }

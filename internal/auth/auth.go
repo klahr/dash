@@ -777,6 +777,7 @@ var public = map[string]bool{
 	"/runner/connect":  true,
 	"/runner/report":   true,
 	"/runner/mcp/dash": true,
+	"/runner/notes":    true, // shared notes relay (package notes)
 	// The runner installer and the hub's version: nothing secret.
 	"/runner/install.sh": true,
 	"/runner/version":    true,

@@ -30,6 +30,7 @@ import (
 	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/notes"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/usage"
 )
@@ -867,6 +868,60 @@ func (h *Hub) Call(ctx context.Context, id, method, path string, in, out any) er
 	return nil
 }
 
+// CallBytes posts body, as it is, to path on runner id over its tunnel, with
+// hdr, and returns the answer's body (at most limit bytes). Nothing of the
+// body or the answer is read, kept or logged: it is the shared notes relay
+// (package notes).
+func (h *Hub) CallBytes(ctx context.Context, id, path string, hdr http.Header, body []byte, limit int64) ([]byte, error) {
+	h.mu.Lock()
+	var name string
+	for _, r := range h.runners {
+		if r.ID == id {
+			name = r.Name
+		}
+	}
+	_, online := h.live[id]
+	h.mu.Unlock()
+	if name == "" {
+		return nil, ErrUnknownName
+	}
+	if !online {
+		return nil, fmt.Errorf("%s: %w", name, ErrOffline)
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://"+name+runnerHostLabel+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	for k, vs := range hdr {
+		req.Header[k] = vs
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	res, err := (&http.Client{Transport: h.idle()}).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%s is unreachable", name)
+	}
+	defer res.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode >= 300 {
+		return nil, &CallError{Status: res.StatusCode, Msg: name + ": " + res.Status}
+	}
+	if int64(len(b)) > limit {
+		return nil, fmt.Errorf("%s: answer too large", name)
+	}
+	return b, nil
+}
+
+// Online reports whether runner id has a tunnel now.
+func (h *Hub) Online(id string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	_, ok := h.live[id]
+	return ok
+}
+
 // UserHeader names the hub's user a request to a runner is made for (see
 // WithUser). The runner runs Claude only for its owner: it compares this
 // with the user it was registered by. Proxy strips it from browsers'
@@ -975,6 +1030,9 @@ func (h *Hub) Proxy(name string) (http.Handler, bool) {
 			r.Out.Header.Del("Authorization")
 			r.Out.Header.Del("Proxy-Authorization")
 			r.Out.Header.Del(UserHeader) // a person doesn't say whom they are
+			// Only the hub's relay delivers shared notes: nobody reads or
+			// writes a runner's notes through the hub's API.
+			r.Out.Header.Del(notes.RelayHeader)
 			// The hub says it, for requests it checked (WithUser).
 			if uid, ok := userFrom(r.In.Context()); ok {
 				r.Out.Header.Set(UserHeader, strconv.FormatInt(uid, 10))

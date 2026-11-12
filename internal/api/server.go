@@ -110,6 +110,10 @@ type Server struct {
 	// tunnel.Board) to the hub's board: the board tools of the hub's tasks
 	// and of the chats the hub asks for act there, never on this Dash.
 	HubBoard func(ctx context.Context, hubTodo, hubProject string, body []byte) (*http.Response, error)
+	// NotesPeer, on a runner, takes the shared notes messages its hub
+	// relays from the project's other runners (notes.HubTransport; nil:
+	// none, e.g. on the hub, which keeps no notes).
+	NotesPeer http.Handler
 	// GitHubProtocol is how this runner clones the hub's GitHub projects:
 	// gitops.ProtocolAuto, gitops.ProtocolSSH ("" too, without the
 	// fallback) or gitops.ProtocolHTTPS (-github-protocol).

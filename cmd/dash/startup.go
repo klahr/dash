@@ -33,6 +33,7 @@ import (
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/metrics"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/notes"
 	"github.com/klahr/dash/internal/notify"
 	"github.com/klahr/dash/internal/orgdomain"
 	"github.com/klahr/dash/internal/peer"
@@ -282,6 +283,7 @@ type app struct {
 	boards                              *boardsync.Manager // hub
 	runnerCreds                         tunnel.Credentials // runner
 	reporter                            *dispatch.Reporter // runner
+	notes                               *notes.Service     // runner: its hub projects' shared notes
 	mcpURL, permURL                     string
 }
 
@@ -290,6 +292,11 @@ func start(o *options) {
 	a := &app{o: o}
 	a.openState()
 	defer a.st.Close()
+	defer func() {
+		if a.notes != nil {
+			a.notes.Close()
+		}
+	}()
 	a.configureOrgDomain()
 	a.resolveProjectRoot()
 	a.configureGoogle()
@@ -791,6 +798,18 @@ func (a *app) setupRunner() {
 	apiSrv.HubBoard = func(ctx context.Context, hubTodo, hubProject string, body []byte) (*http.Response, error) {
 		return tunnel.Board(ctx, creds, hubTodo, hubProject, body)
 	}
+	// Shared notes: this runner's copy of the notes of the hub's projects
+	// linked to it, synced with their other runners through the hub's
+	// relay. The hub keeps none, nor does a Dash without a hub.
+	notesWire := &notes.HubTransport{Post: func(ctx context.Context, project string, body []byte) ([]byte, error) {
+		return tunnel.Notes(ctx, creds, project, body)
+	}}
+	if a.notes, err = notes.NewService(filepath.Join(o.dataDir, "shared"), creds.ID, notesWire, func(hpid string) bool {
+		return slices.Contains(linkedHubProjects(st), hpid)
+	}); err != nil {
+		fatal("shared notes", "err", err)
+	}
+	apiSrv.NotesPeer = notesWire
 	// The hub hears where its tasks are, and this computer's usage.
 	reporter := &dispatch.Reporter{Store: st, Usage: a.tracker, Parallel: o.parallel, Terminals: true, Claude: cli,
 		// As shellAllowed: the hub's "!" commands run only for a known owner,
@@ -847,6 +866,17 @@ func (a *app) setupRunner() {
 		reporter.Nudge()
 	})
 	go cli.Run(ctx, time.Hour) // Claude Code updates itself
+}
+
+// linkedHubProjects are the ids of the hub's projects linked to this runner.
+func linkedHubProjects(st *store.Store) []string {
+	var out []string
+	for _, p := range st.ListProjects() {
+		if p.HubProjectID != "" && p.LinkedFromHub() {
+			out = append(out, p.HubProjectID)
+		}
+	}
+	return out
 }
 
 // wireOwners makes every per-run MCP token act as its task's (or chat's)
@@ -1004,6 +1034,8 @@ func (a *app) connectHub(statePath string) bool {
 			a.reporter.Nudge() // tell the hub what happened while it couldn't hear
 			// Catch up on what the other runners pushed meanwhile.
 			go a.merges.Remote.FetchAll(ctx)
+			// …and on the shared notes they wrote, telling them ours.
+			go a.notes.CatchUpAll(ctx, linkedHubProjects(a.st))
 		}
 	}
 	creds := a.runnerCreds

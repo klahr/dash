@@ -365,6 +365,24 @@ project:
 Once no project is left on the hub's disk, the hub's `-projects` directory can go, and `git`, `gh`
 and `claude` can be uninstalled from the hub's computer.
 
+### Shared notes between a project's runners
+
+The runners linked to a shared project keep a shared notes space for it (package `internal/notes`).
+Each runner has a full copy in `<-data>/shared/<hub project id>.db`, so it reads its notes locally,
+even while the hub can't be reached. A runner saves a note locally first, then sends it to the hub.
+The hub passes it on unread to the project's other runners that are online and keeps nothing: no
+copy, no log of what it relayed, and no page or API that shows a note. Its proxy to runners
+(`/peer/…`) can't reach their notes either.
+
+Each write gets a stamp (its runner and that runner's counter). Copies merge last-writer-wins per
+note, so every runner ends up with the same notes and concurrent writers never wait for each other.
+When a runner reconnects, it tells the others how far it has got with each writer. They send what it
+lacks, and it sends them what it wrote while it was away. A note is at most 8 KiB and a project
+holds at most 500. A note that looks like it holds a credential is refused on the runner that writes
+it, before it is saved or sent.
+
+A Dash that runs tasks itself, without runners, has no shared notes.
+
 ## Claude runs on each user's own runner
 
 The hub doesn't run Claude at all, and can't be made to: it keeps the board (the database) and

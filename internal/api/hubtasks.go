@@ -19,6 +19,7 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/notes"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/release"
 	"github.com/klahr/dash/internal/scan"
@@ -60,6 +61,7 @@ func (s *Server) hubTaskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+dispatch.PermissionPath, s.hubPermission)
 	mux.HandleFunc("GET "+dispatch.ScanPath, s.hubScan)
 	mux.HandleFunc("POST /api/hub/github/{hpid}", s.hubGitHub)
+	mux.HandleFunc("POST "+notes.PeerPath, s.notesFromPeers)
 }
 
 var errNotLinked = errors.New("that project isn't linked to this runner")
