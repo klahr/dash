@@ -37,10 +37,12 @@ func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) 
 	if err != nil {
 		return &prError{fmt.Errorf("open pull request: %w", err)}
 	}
+	pushed := false
 	if _, err := m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
 		if x.Status != model.StatusMerging {
 			return nil // moved on while pushing (e.g. merged or closed on GitHub): keep what was seen
 		}
+		pushed = true
 		pr := model.PullRequest{Number: n, URL: url, State: "OPEN"}
 		if x.PR != nil && x.PR.Number == n {
 			pr = *x.PR // the same pull request: keep what was handled and seen of it
@@ -53,6 +55,10 @@ func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) 
 		return err
 	}
 	m.Log.Line(t, fmt.Sprintf("⇡ pushed %s; pull request #%d is open for review on GitHub: %s", wt.Branch, n, url))
+	if x, err := m.Store.GetTodo(t.ID); pushed && err == nil && x.PR != nil && x.PR.Number == n {
+		// A review's fix: answer the reviewer there (never fails the task).
+		m.replyToReview(ctx, x, p)
+	}
 	return nil
 }
 
@@ -399,7 +405,14 @@ func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Proje
 	} else {
 		comments = cs
 	}
-	note := reviewNote(n, fresh, comments)
+	// Items of a reply still owed (its fix not pushed yet) keep their numbers.
+	first := 1
+	if t.PR.Reply != nil {
+		for _, it := range t.PR.Reply.Items {
+			first = max(first, it.Ref+1)
+		}
+	}
+	note, items := reviewNote(n, fresh, comments, first)
 	if note == "" {
 		// Nothing written (e.g. an empty review): nothing for Claude.
 		m.seenReviews(t, fresh)
@@ -419,6 +432,19 @@ func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Proje
 		}
 		x.Feedback = append(x.Feedback, note)
 		x.PR.ReviewID = max(x.PR.ReviewID, newest)
+		// Answered on GitHub once the fix is pushed (or fails).
+		reply := model.PRReply{}
+		if x.PR.Reply != nil {
+			reply = *x.PR.Reply
+		}
+		reply.ReviewID, reply.Report = max(reply.ReviewID, newest), ""
+		reply.Items = append(slices.Clip(reply.Items), items...)
+		for _, r := range fresh {
+			if r.State == "CHANGES_REQUESTED" && !slices.Contains(reply.Reviewers, r.User.Login) {
+				reply.Reviewers = append(reply.Reviewers, r.User.Login)
+			}
+		}
+		x.PR.Reply = &reply
 		x.Status, x.Error, x.SentBack = model.StatusQueued, "", why
 		// A person asked, as with a rework from Dash: a fresh budget for
 		// fixes, and the fix goes to the pull request, not to a merge.
@@ -459,10 +485,13 @@ func clip(s string) string {
 
 // reviewNote is what Claude is told of reviews rs on pull request n, with
 // their comments on lines of the diff (comments holds the pull request's
-// line comments; those of other reviews are left out). It is "" when they
-// say nothing.
-func reviewNote(n int, rs []gitops.PRReview, comments []gitops.PRComment) string {
+// line comments; those of other reviews are left out), and the items it
+// numbers for Claude to answer one by one, from first on. The note is ""
+// when they say nothing.
+func reviewNote(n int, rs []gitops.PRReview, comments []gitops.PRComment, first int) (string, []model.PRReplyItem) {
 	var b strings.Builder
+	var items []model.PRReplyItem
+	ref := max(first, 1)
 	for _, r := range rs {
 		var lines []gitops.PRComment
 		for _, c := range comments {
@@ -480,7 +509,9 @@ func reviewNote(n int, rs []gitops.PRReview, comments []gitops.PRComment) string
 		}
 		fmt.Fprintf(&b, "\n**%s** %s:\n", r.User.Login, verb)
 		if body != "" {
-			fmt.Fprintf(&b, "\n%s\n", quote(body))
+			fmt.Fprintf(&b, "\n[%d]\n%s\n", ref, quote(body))
+			items = append(items, model.PRReplyItem{Ref: ref, Author: r.User.Login})
+			ref++
 		}
 		for _, c := range lines {
 			where := c.Path
@@ -491,15 +522,25 @@ func reviewNote(n int, rs []gitops.PRReview, comments []gitops.PRComment) string
 			if c.InReplyTo != 0 {
 				reply = " (in reply to an earlier comment)"
 			}
-			fmt.Fprintf(&b, "\nOn `%s`%s:\n%s\n", where, reply, quote(clip(c.Body)))
+			fmt.Fprintf(&b, "\n[%d] On `%s`%s:\n%s\n", ref, where, reply, quote(clip(c.Body)))
+			// Replies go to the thread's first comment: GitHub takes no
+			// replies to replies.
+			items = append(items, model.PRReplyItem{Ref: ref, Author: c.User.Login, Thread: cmp.Or(c.InReplyTo, c.ID), Where: where})
+			ref++
 		}
 	}
 	if b.Len() == 0 {
-		return ""
+		return "", nil
 	}
 	return fmt.Sprintf("A reviewer left a review on pull request #%d:\n%s\n"+
 		"Address it: change the code where the reviewer is right. Where a comment needs no change, or you disagree, "+
-		"say why in your final message. Your commits are pushed to the same pull request.", n, b.String())
+		"don't change it; say why instead. Your commits are pushed to the same pull request, and Dash posts your "+
+		"final message there for the reviewer.\n\n"+
+		"End your final message with a short summary of what you changed, for the reviewer, followed by a "+
+		"`%s` block answering every numbered item above, one line each: `addressed` and what you changed, or "+
+		"`disagreed` and why you didn't. For example:\n\n"+
+		"```%s\n[%d] addressed: renamed the file to notes.md\n[%d] disagreed: the constant is used once; inlining it reads better\n```",
+		n, b.String(), reviewBlock, reviewBlock, items[0].Ref, items[0].Ref+1), items
 }
 
 func prChecks(cs []gitops.PRCheck) []model.PRCheck {

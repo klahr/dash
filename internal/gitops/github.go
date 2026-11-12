@@ -154,6 +154,94 @@ func (g *Git) PRComments(ctx context.Context, projectID, dir string, number int)
 	return out, g.ghPages(ctx, projectID, dir, fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments", number), &out)
 }
 
+// CommentPR posts body as a comment in pull request number's conversation.
+func (g *Git) CommentPR(ctx context.Context, projectID, dir string, number int, body string) error {
+	_, err := g.gh(ctx, projectID, dir, "pr", "comment", strconv.Itoa(number), "--body", body)
+	return err
+}
+
+// ReplyToReviewComment replies to the thread of line comment commentID (the
+// thread's first comment: GitHub doesn't take replies to replies) on pull
+// request number.
+func (g *Git) ReplyToReviewComment(ctx context.Context, projectID, dir string, number int, commentID int64, body string) error {
+	_, err := g.gh(ctx, projectID, dir, "api", "-X", "POST",
+		fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments/%d/replies", number, commentID), "-f", "body="+body)
+	return err
+}
+
+// RequestReview asks logins to review pull request number (again).
+func (g *Git) RequestReview(ctx context.Context, projectID, dir string, number int, logins []string) error {
+	if len(logins) == 0 {
+		return nil
+	}
+	args := []string{"api", "-X", "POST", fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/requested_reviewers", number)}
+	for _, l := range logins {
+		args = append(args, "-f", "reviewers[]="+l)
+	}
+	_, err := g.gh(ctx, projectID, dir, args...)
+	return err
+}
+
+// ReviewThread is a thread of line comments on a pull request.
+type ReviewThread struct {
+	ID       string // GraphQL node ID, for ResolveReviewThread
+	Resolved bool
+}
+
+const reviewThreadsQuery = `query($owner:String!,$repo:String!,$n:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$n){` +
+	`reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor}nodes{id isResolved comments(first:1){nodes{databaseId}}}}}}}`
+
+// ReviewThreads returns pull request number's review threads by the REST ID
+// of each thread's first comment.
+func (g *Git) ReviewThreads(ctx context.Context, projectID, dir string, number int) (map[int64]ReviewThread, error) {
+	out, err := g.ghQuiet(ctx, projectID, dir, "api", "graphql", "--paginate",
+		"-F", "owner={owner}", "-F", "repo={repo}", "-F", "n="+strconv.Itoa(number), "-f", "query="+reviewThreadsQuery)
+	if err != nil {
+		return nil, err
+	}
+	threads := map[int64]ReviewThread{}
+	dec := json.NewDecoder(strings.NewReader(jsonPart(out))) // one object per page
+	for {
+		var page struct {
+			Data struct {
+				Repository struct {
+					PullRequest struct {
+						ReviewThreads struct {
+							Nodes []struct {
+								ID         string `json:"id"`
+								IsResolved bool   `json:"isResolved"`
+								Comments   struct {
+									Nodes []struct {
+										DatabaseID int64 `json:"databaseId"`
+									} `json:"nodes"`
+								} `json:"comments"`
+							} `json:"nodes"`
+						} `json:"reviewThreads"`
+					} `json:"pullRequest"`
+				} `json:"repository"`
+			} `json:"data"`
+		}
+		if err := dec.Decode(&page); err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, fmt.Errorf("gh api graphql: %w", err)
+		}
+		for _, n := range page.Data.Repository.PullRequest.ReviewThreads.Nodes {
+			if len(n.Comments.Nodes) > 0 {
+				threads[n.Comments.Nodes[0].DatabaseID] = ReviewThread{ID: n.ID, Resolved: n.IsResolved}
+			}
+		}
+	}
+	return threads, nil
+}
+
+// ResolveReviewThread marks a review thread resolved.
+func (g *Git) ResolveReviewThread(ctx context.Context, projectID, dir, threadID string) error {
+	_, err := g.gh(ctx, projectID, dir, "api", "graphql",
+		"-f", "query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}", "-f", "id="+threadID)
+	return err
+}
+
 // ghPages GETs every page of a REST list into out (a pointer to a slice).
 // gh fills in {owner}/{repo} from dir's remote and prints one JSON array per
 // page.

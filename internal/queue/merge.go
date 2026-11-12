@@ -348,6 +348,7 @@ func (m *MergeQueue) handle(ctx context.Context, it mergeItem) {
 			_, _ = m.Store.SetStatus(job.TodoID, model.StatusReview, "Couldn't open the pull request: "+brief(err)+". Approve to try again")
 		} else {
 			noteFailure(m.Store, job.TodoID, "merge: "+err.Error(), "")
+			m.reviewFailed(ctx, job.TodoID, "merge: "+err.Error())
 			_, _ = m.Store.SetStatus(job.TodoID, model.StatusFailed, "merge: "+err.Error())
 		}
 	}

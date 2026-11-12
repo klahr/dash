@@ -167,8 +167,11 @@ func TestRunTimeLimitStopsClaude(t *testing.T) {
 // A fake gh: `pr list` finds nothing, `pr create` prints a URL, `pr view`
 // prints whatever the test put in pr.json, the REST calls for reviews and
 // review comments print reviews.json and comments.json (none when missing),
-// and `pr merge` fails: Dash never merges a pull request. Every call is
-// logged to calls.
+// the GraphQL query for review threads prints threads.json, and `pr merge`
+// fails: Dash never merges a pull request. Comments, replies, review
+// requests and resolving threads succeed, unless the test made a file
+// "down": then they fail like an unreachable GitHub. Every call is logged
+// to calls.
 func fakeGh(t *testing.T, dir string) (bin, stateFile string) {
 	stateFile = filepath.Join(dir, "pr.json")
 	bin = filepath.Join(dir, "gh")
@@ -178,7 +181,10 @@ func fakeGh(t *testing.T, dir string) (bin, stateFile string) {
 		"\"pr create\") echo https://github.com/o/r/pull/7 ;;\n" +
 		"\"pr view\") cat " + stateFile + " ;;\n" +
 		"\"pr ready\"|\"pr close\") ;;\n" +
+		"\"pr comment\") [ ! -f " + file("down") + " ] ;;\n" +
 		"\"api \"*) case \"$*\" in\n" +
+		"  *resolveReviewThread*|*\"-X POST\"*) [ ! -f " + file("down") + " ] ;;\n" +
+		"  *graphql*) cat " + file("threads.json") + " 2>/dev/null || echo '{}' ;;\n" +
 		"  */reviews*) cat " + file("reviews.json") + " 2>/dev/null || echo '[]' ;;\n" +
 		"  */comments*) cat " + file("comments.json") + " 2>/dev/null || echo '[]' ;;\n" +
 		"  *) exit 1 ;;\n  esac ;;\n" +
@@ -201,8 +207,13 @@ func openPRView(head, checks string) string {
 // prHarness is a project in pull request mode with the fake gh, whose
 // Claude writes file name in every run.
 func prHarness(t *testing.T, name string, p model.Project) (h *harness, dir string) {
+	return prHarnessWith(t, &fakeExec{fn: writeFile("", name)}, p)
+}
+
+// prHarnessWith is prHarness with Claude played by exe.
+func prHarnessWith(t *testing.T, exe agent.Executor, p model.Project) (h *harness, dir string) {
 	p.Name = "p"
-	h = newHarness(t, &fakeExec{fn: writeFile("", name)}, p)
+	h = newHarness(t, exe, p)
 	h.addOrigin(false, model.MergePR)
 	dir = t.TempDir()
 	bin, _ := fakeGh(t, dir)

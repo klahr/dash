@@ -577,6 +577,34 @@ type PullRequest struct {
 	// while Dash followed it.
 	Waits      string     `json:"waits,omitempty"`
 	WaitsSince *time.Time `json:"waits_since,omitempty"`
+	// Reply is the answer owed on GitHub to the reviews last sent back to
+	// Claude, until it is posted once Claude's fix is pushed (or the fix
+	// fails). RepliedID is the newest review answered, so a reply is never
+	// posted twice.
+	Reply     *PRReply `json:"reply,omitempty"`
+	RepliedID int64    `json:"replied_id,omitempty"`
+}
+
+// PRReply is what Dash answers on GitHub to reviews sent back to Claude.
+type PRReply struct {
+	ReviewID int64 `json:"review_id"` // the newest of the reviews sent
+	// Reviewers are those who requested changes: asked to review again.
+	Reviewers []string `json:"reviewers,omitempty"`
+	// Items are what Claude was asked to answer, numbered as in its note.
+	Items []PRReplyItem `json:"items,omitempty"`
+	// Report is Claude's final message on the fix.
+	Report string `json:"report,omitempty"`
+}
+
+// PRReplyItem is one review's text or one line comment, as numbered for
+// Claude.
+type PRReplyItem struct {
+	Ref    int    `json:"ref"`
+	Author string `json:"author,omitempty"`
+	// Thread is the REST ID of the first comment of a line comment's thread
+	// (0 for a review's text): replies go there.
+	Thread int64  `json:"thread,omitempty"`
+	Where  string `json:"where,omitempty"` // file:line of a line comment
 }
 
 // Where a pull request's review on GitHub stands (PullRequest.Review).

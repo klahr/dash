@@ -2,6 +2,7 @@ package gitops
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -65,5 +66,60 @@ esac
 `)
 	if _, _, err := g.OpenDraftPR(context.Background(), "p", t.TempDir(), "main", "dash/x", "T", "B"); err == nil {
 		t.Fatal("want the error")
+	}
+}
+
+// Review threads are read from every page of the GraphQL answer, by their
+// first comment; owner and repo are left for gh to fill in.
+func TestReviewThreads(t *testing.T) {
+	t.Parallel()
+
+	g := fakeGh(t, `case "$*" in
+*"-F owner={owner} -F repo={repo} -F n=5"*) ;;
+*) echo "bad args: $*" >&2; exit 1 ;;
+esac
+echo '{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"T1","isResolved":false,"comments":{"nodes":[{"databaseId":10}]}}]}}}}}'
+echo '{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"T2","isResolved":true,"comments":{"nodes":[{"databaseId":20}]}},{"id":"T3","comments":{"nodes":[]}}]}}}}}'
+`)
+	ts, err := g.ReviewThreads(context.Background(), "p", t.TempDir(), 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ts) != 2 || ts[10] != (ReviewThread{ID: "T1"}) || ts[20] != (ReviewThread{ID: "T2", Resolved: true}) {
+		t.Fatalf("threads = %+v", ts)
+	}
+}
+
+// Replies, review requests and resolving threads are the calls GitHub
+// expects.
+func TestReviewReplyCalls(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls")
+	g := fakeGh(t, `echo "$*" >> `+log+"\n")
+	ctx := context.Background()
+	if err := g.ReplyToReviewComment(ctx, "p", dir, 5, 10, "ok"); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.RequestReview(ctx, "p", dir, 5, []string{"alice", "bob"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.RequestReview(ctx, "p", dir, 5, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.ResolveReviewThread(ctx, "p", dir, "T1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.CommentPR(ctx, "p", dir, 5, "hi"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(log)
+	want := "api -X POST repos/{owner}/{repo}/pulls/5/comments/10/replies -f body=ok\n" +
+		"api -X POST repos/{owner}/{repo}/pulls/5/requested_reviewers -f reviewers[]=alice -f reviewers[]=bob\n" +
+		"api graphql -f query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}} -f id=T1\n" +
+		"pr comment 5 --body hi\n"
+	if string(b) != want {
+		t.Fatalf("calls:\n%s\nwant:\n%s", b, want)
 	}
 }

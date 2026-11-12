@@ -824,6 +824,12 @@ func clone(t model.Todo) model.Todo {
 	if t.PR != nil {
 		pr := *t.PR
 		pr.Checks = append([]model.PRCheck(nil), t.PR.Checks...)
+		if t.PR.Reply != nil {
+			r := *t.PR.Reply
+			r.Reviewers = append([]string(nil), r.Reviewers...)
+			r.Items = append([]model.PRReplyItem(nil), r.Items...)
+			pr.Reply = &r
+		}
 		cp.PR = &pr
 	}
 	if t.Revert != nil {

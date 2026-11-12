@@ -175,13 +175,13 @@ func TestReviewNote(t *testing.T) {
 		{ID: 2, User: gitops.GHUser{Login: "bob", Type: "User"}, State: "COMMENTED"},
 	}
 	cs := []gitops.PRComment{
-		{ReviewID: 1, User: alice, Path: "a.go", Line: 3, Body: "Use a constant"},
-		{ReviewID: 2, User: alice, Path: "b.go", OriginalLine: 9, Body: "Still wrong", InReplyTo: 5},
-		{ReviewID: 9, User: alice, Path: "c.go", Line: 1, Body: "Another review's"},
+		{ID: 20, ReviewID: 1, User: alice, Path: "a.go", Line: 3, Body: "Use a constant"},
+		{ID: 21, ReviewID: 2, User: alice, Path: "b.go", OriginalLine: 9, Body: "Still wrong", InReplyTo: 5},
+		{ID: 22, ReviewID: 9, User: alice, Path: "c.go", Line: 1, Body: "Another review's"},
 	}
-	note := reviewNote(4, rs, cs)
-	for _, want := range []string{"pull request #4", "**alice** requested changes", "> Two things.\n> See below.",
-		"On `a.go:3`", "> Use a constant", "**bob** commented", "On `b.go:9` (in reply to an earlier comment)"} {
+	note, items := reviewNote(4, rs, cs, 1)
+	for _, want := range []string{"pull request #4", "**alice** requested changes", "[1]\n> Two things.\n> See below.",
+		"[2] On `a.go:3`", "> Use a constant", "**bob** commented", "[3] On `b.go:9` (in reply to an earlier comment)", "```dash-review"} {
 		if !strings.Contains(note, want) {
 			t.Errorf("note lacks %q:\n%s", want, note)
 		}
@@ -189,7 +189,83 @@ func TestReviewNote(t *testing.T) {
 	if strings.Contains(note, "c.go") {
 		t.Errorf("another review's comment in the note:\n%s", note)
 	}
-	if got := reviewNote(4, []gitops.PRReview{{ID: 3, User: alice, State: "COMMENTED"}}, nil); got != "" {
+	// Numbered for Claude's answers; a reply goes to the thread's first comment.
+	want := []model.PRReplyItem{{Ref: 1, Author: "alice"}, {Ref: 2, Author: "alice", Thread: 20, Where: "a.go:3"},
+		{Ref: 3, Author: "alice", Thread: 5, Where: "b.go:9"}}
+	if !slices.Equal(items, want) {
+		t.Errorf("items = %+v, want %+v", items, want)
+	}
+	// Numbering carries on after the items of a reply still owed.
+	if _, items := reviewNote(4, rs[:1], cs, 7); len(items) != 2 || items[0].Ref != 7 || items[1].Ref != 8 {
+		t.Errorf("items from 7 = %+v", items)
+	}
+	if got, items := reviewNote(4, []gitops.PRReview{{ID: 3, User: alice, State: "COMMENTED"}}, nil, 1); got != "" || items != nil {
 		t.Errorf("an empty review made a note: %q", got)
+	}
+}
+
+// Claude's final message on a review fix: the summary, and its answer to
+// each numbered item from the dash-review block.
+func TestParseReviewReply(t *testing.T) {
+	parallel(t)
+
+	r := parseReviewReply("Renamed the file and kept the loop.\n\n```dash-review\n" +
+		"[1] addressed: renamed review.txt to review.md\n" +
+		"- [2] Disagreed — the loop is clearer than a map here;\n  a map would allocate.\n" +
+		"3. fixed\n" +
+		"garbage before any answer is ignored? no: it carries on [3]\n```\nThanks!")
+	if r.Summary != "Renamed the file and kept the loop.\n\nThanks!" {
+		t.Errorf("summary %q", r.Summary)
+	}
+	want := map[int]reviewAnswer{
+		1: {Addressed: true, Text: "renamed review.txt to review.md"},
+		2: {Text: "the loop is clearer than a map here; a map would allocate."},
+		3: {Addressed: true, Text: "garbage before any answer is ignored? no: it carries on [3]"},
+	}
+	if len(r.Answers) != len(want) {
+		t.Fatalf("answers = %+v", r.Answers)
+	}
+	for k, v := range want {
+		if r.Answers[k] != v {
+			t.Errorf("answer %d = %+v, want %+v", k, r.Answers[k], v)
+		}
+	}
+	// Without a block: all of it is the summary, and nothing is answered.
+	if r := parseReviewReply("  Done.  "); r.Summary != "Done." || len(r.Answers) != 0 {
+		t.Errorf("no block: %+v", r)
+	}
+	// The last block counts; an unclosed one runs to the end.
+	r = parseReviewReply("```dash-review\n[1] disagreed: old\n```\nThen:\n```dash-review\n[1] addressed: new")
+	if a := r.Answers[1]; !a.Addressed || a.Text != "new" || len(r.Answers) != 1 {
+		t.Errorf("last block: %+v", r.Answers)
+	}
+}
+
+// The summary comment lists what Claude didn't change and why; a thread
+// reply is resolved only when all its comments were addressed.
+func TestReplyComment(t *testing.T) {
+	parallel(t)
+
+	reply := &model.PRReply{Items: []model.PRReplyItem{{Ref: 1, Author: "alice"}, {Ref: 2, Author: "alice", Thread: 20, Where: "a.go:3"},
+		{Ref: 3, Author: "bob", Thread: 20, Where: "a.go:4"}}}
+	answers := map[int]reviewAnswer{1: {Addressed: true, Text: "done"}, 2: {Text: "used once"}, 3: {Addressed: true}}
+	c := replyComment(reply, reviewReply{Summary: "Fixed it.", Answers: answers})
+	for _, want := range []string{"review by alice, bob", "Fixed it.", "**Not changed**", "- `a.go:3` (alice): used once"} {
+		if !strings.Contains(c, want) {
+			t.Errorf("comment lacks %q:\n%s", want, c)
+		}
+	}
+	if strings.Contains(c, "a.go:4") {
+		t.Errorf("an addressed comment listed as not changed:\n%s", c)
+	}
+	body, all := threadReply(reply.Items[1:], answers)
+	if all || body != "**Claude:** Not changed: used once\n\nAddressed." {
+		t.Errorf("thread reply %q, all %v", body, all)
+	}
+	if body, all := threadReply(reply.Items[2:], answers); !all || body != "**Claude:** Addressed." {
+		t.Errorf("thread reply %q, all %v", body, all)
+	}
+	if body, _ := threadReply(reply.Items[1:], nil); body != "" {
+		t.Errorf("unanswered thread got a reply %q", body)
 	}
 }

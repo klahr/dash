@@ -45,6 +45,33 @@ In pull request mode the pull request is where a task is reviewed:
    aren't sent, and neither are comments in the pull request's conversation tab: to ask Claude
    for something, leave it in a review (a single comment on a line is a review too). You can
    still **Rework** from Dash as well; that also ends up on the same pull request.
+
+   Dash then answers on GitHub, so you don't have to work out from the commits what happened:
+
+   - **A comment with Claude's summary** of what it changed, listing each comment it disagreed
+     with and why it left the code as it is.
+   - **A reply in each line comment's thread**: *Addressed*, with what changed, or *Not
+     changed*, with why. Threads Claude addressed are resolved; those it pushed back on stay
+     open for you to answer.
+   - **A new review request** to whoever asked for changes.
+
+   If the fix fails instead (Claude stops, or the merge fails) and nothing new is pushed, Dash
+   comments on the pull request saying why; rework the task in Dash, or leave another review, to
+   have Claude try again. Each review is answered once, also when Dash restarts in between. A
+   failure to post on GitHub doesn't fail the task: it is noted in the task's log.
+
+   To tell its answers apart, Dash numbers the review's text and each line comment in what it
+   sends Claude, and asks it to end its final message with a block answering each one:
+
+   ````
+   ```dash-review
+   [1] addressed: renamed the file to notes.md
+   [2] disagreed: the constant is used once; inlining it reads better
+   ```
+   ````
+
+   The rest of the message is the summary. Without the block, Dash posts the summary and asks
+   for the review again, but doesn't reply in or resolve any thread.
 5. **Merging.** Dash never merges a pull request itself: a person always merges it on GitHub.
    Once its checks pass and it has an **approving review on GitHub** (from a person: an app's
    approval doesn't count; when the branch requires reviews, GitHub's own verdict decides), the

@@ -431,6 +431,11 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 		}
 		log("✖ " + msg)
 		noteFailure(e.Store, t.ID, msg, report)
+		if e.Merges != nil {
+			// A review's fix that failed: say so on the pull request, where
+			// the reviewer waits for it.
+			e.Merges.reviewFailed(ctx, t.ID, msg)
+		}
 		if _, err := e.Store.SetStatus(t.ID, model.StatusFailed, msg); err != nil {
 			slog.Error("set failed", "todo", t.ID, "err", err)
 		}
@@ -530,6 +535,8 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 		} else if report, err = e.runClaude(ctx, &t, p, wt, log); err != nil {
 			fail(err)
 			return
+		} else if t.PR != nil && t.PR.Reply != nil {
+			_ = update(func(x *model.Todo) { keepReviewReport(x, report) }) // posted on GitHub with the fix
 		}
 		if resolving {
 			markers, err := e.Git.LeftoverMarkers(ctx, p.ID, wt.Path)
