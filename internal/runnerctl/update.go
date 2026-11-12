@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/klahr/dash/internal/fsutil"
@@ -108,7 +109,7 @@ func (u Updater) Run(ctx context.Context) error {
 	}
 	// The new binary must run here (the right processor, not cut off).
 	vctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	out, err := exec.CommandContext(vctx, tmp.Name(), "version").Output()
+	out, err := runFresh(vctx, tmp.Name(), "version")
 	cancel()
 	if err != nil {
 		return fmt.Errorf("the downloaded Dash %s doesn't run here: %w", u.Version, err)
@@ -133,6 +134,25 @@ func (u Updater) Run(ctx context.Context) error {
 		return fmt.Errorf("can't replace %s: %w", u.Bin, err)
 	}
 	return nil
+}
+
+// runFresh runs a binary that was just written. On Linux its exec fails
+// with ETXTBSY ("text file busy") while any process still holds the file
+// open for writing, which includes a child forked elsewhere in this process
+// while the file was open: it keeps the inherited fd until its own exec
+// closes it. That window is short, so a busy file is tried again.
+func runFresh(ctx context.Context, name string, args ...string) ([]byte, error) {
+	for wait := 10 * time.Millisecond; ; wait *= 2 {
+		out, err := exec.CommandContext(ctx, name, args...).Output()
+		if !errors.Is(err, syscall.ETXTBSY) || wait > time.Second {
+			return out, err
+		}
+		select {
+		case <-ctx.Done():
+			return out, err
+		case <-time.After(wait):
+		}
+	}
 }
 
 func (u Updater) get(ctx context.Context, url string, limit int64) ([]byte, error) {
