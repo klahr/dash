@@ -52,6 +52,10 @@ type Service struct {
 	members  map[string][]string  // project → its runners, as the hub last said
 	pulled   map[string]time.Time // project → last catch-up for a key we lacked
 	closed   bool
+	// bg counts the goroutines Close waits for; stop ends them.
+	bg   sync.WaitGroup
+	stop context.Context
+	halt context.CancelFunc
 	// reconciled is the approvals' generation Reconcile last acted on.
 	reconciled int
 }
@@ -68,6 +72,7 @@ func NewService(dir, self string, id *Identity, t Transport, allowed func(projec
 	}
 	s := &Service{dir: dir, self: self, id: id, transport: t, allowed: allowed, stores: map[string]*Store{},
 		catching: map[string]bool{}, members: map[string][]string{}, pulled: map[string]time.Time{}}
+	s.stop, s.halt = context.WithCancel(context.Background())
 	tr, err := openTrust(dir, s.now)
 	if err != nil {
 		return nil, err
@@ -108,7 +113,7 @@ func (s *Service) store(project string) (*Store, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return nil, errors.New("shared notes are closed")
+		return nil, errClosed
 	}
 	if st, ok := s.stores[project]; ok {
 		return st, nil
@@ -136,8 +141,12 @@ func (s *Service) policy(project string) Policy {
 // Close closes every store.
 func (s *Service) Close() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.closed = true
+	s.mu.Unlock()
+	s.halt()
+	s.bg.Wait()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	var errs []error
 	for _, st := range s.stores {
 		errs = append(errs, st.Close())
@@ -249,6 +258,31 @@ func (s *Service) RunTidying(ctx context.Context, projects func() []string) {
 	}
 }
 
+var errClosed = errors.New("shared notes are closed")
+
+// enter counts work Close waits for, unless the service is closed; the
+// caller then calls s.bg.Done when it is done.
+func (s *Service) enter() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return false
+	}
+	s.bg.Add(1)
+	return true
+}
+
+// background runs f in a goroutine Close waits for.
+func (s *Service) background(f func()) {
+	if !s.enter() {
+		return
+	}
+	go func() {
+		defer s.bg.Done()
+		f()
+	}()
+}
+
 // settle merges same-title notes after taking peers' writes, and sends
 // the merge on.
 func (s *Service) settle(project string, st *Store) {
@@ -256,7 +290,7 @@ func (s *Service) settle(project string, st *Store) {
 	if err != nil || len(writes) == 0 {
 		return
 	}
-	go s.send(context.Background(), project, writes)
+	s.background(func() { s.send(context.Background(), project, writes) })
 }
 
 // Delete deletes entry id of project's notes, everywhere.
@@ -303,7 +337,7 @@ func InBackground(ctx context.Context) context.Context {
 // deliver sends entries now, or in the background for a ctx of InBackground.
 func (s *Service) deliver(ctx context.Context, project string, entries []Entry) {
 	if bg, _ := ctx.Value(backgroundKey{}).(bool); bg {
-		go s.send(context.WithoutCancel(ctx), project, entries)
+		s.background(func() { s.send(ctx, project, entries) })
 		return
 	}
 	s.send(ctx, project, entries)
@@ -321,6 +355,7 @@ func (s *Service) send(ctx context.Context, project string, entries []Entry) {
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sendTimeout)
 	defer cancel()
+	defer context.AfterFunc(s.stop, cancel)()
 	msg, err := s.sealMessage(st, message{Kind: kindEntries, Entries: entries})
 	if err != nil {
 		slog.Warn("shared notes: can't seal", "project", project, "err", err)
@@ -483,14 +518,16 @@ func (s *Service) catchUpSoon(project string) {
 		return
 	}
 	s.catching[project] = true
+	s.bg.Add(1)
 	s.mu.Unlock()
 	go func() {
+		defer s.bg.Done()
 		defer func() {
 			s.mu.Lock()
 			delete(s.catching, project)
 			s.mu.Unlock()
 		}()
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		ctx, cancel := context.WithTimeout(s.stop, time.Minute)
 		defer cancel()
 		if err := s.CatchUp(ctx, project); err != nil {
 			slog.Info("shared notes: catch-up failed", "project", project, "err", err)
@@ -517,6 +554,10 @@ func (s *Service) pullKeysSoon(project string) {
 // receive handles a message from another runner of project: key traffic,
 // and notes sealed with the project key. Anything unsealed is refused.
 func (s *Service) receive(ctx context.Context, project string, msg []byte) ([]byte, error) {
+	if !s.enter() {
+		return nil, errClosed
+	}
+	defer s.bg.Done()
 	st, err := s.store(project)
 	if err != nil {
 		return nil, err
