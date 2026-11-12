@@ -60,7 +60,7 @@ export function renderUsage() {
   const meter = (w, compact) => {
     const d = describe(w);
     const { pct, pace } = d;
-    const cls = w.utilization >= (u.pause_at || 1) ? "full" : w.utilization >= 0.7 ? "warn" : "";
+    const cls = w.utilization >= 1 ? "full" : w.utilization >= 0.7 ? "warn" : "";
     const fill = Math.min(100, pct);
     const pacing = d.gap === null ? null : paceText(d.gap);
     return h("div", {},
@@ -72,8 +72,7 @@ export function renderUsage() {
       h("div", { class: `meter ${cls}`, role: "meter", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100, "aria-label": windowLabel(w.name) },
         h("span", { style: `width:${fill}%` }),
         pace !== null && fill > pace ? h("b", { class: "over", style: `left:${pace}%;width:${fill - pace}%` }) : null,
-        pace !== null ? h("i", { class: "mark pace", style: `left:${pace}%`, title: `Pace: ${pace}% of the window elapsed, ${pct}% used (${pacing})` }) : null,
-        u.pause_at > 0 && u.pause_at < 1 ? h("i", { class: "mark", style: `left:${u.pause_at * 100}%`, title: "Queue pauses here" }) : null),
+        pace !== null ? h("i", { class: "mark pace", style: `left:${pace}%`, title: `Pace: ${pace}% of the window elapsed, ${pct}% used (${pacing})` }) : null),
       compact
         ? h("div", { class: `meter-pace${d.over ? " over" : ""}`, title: `${d.exact}. ${d.resetClock}.` },
           d.reset, pacing ? ` · ${pacing}` : null)
@@ -82,7 +81,7 @@ export function renderUsage() {
   const pie = (w) => {
     const d = describe(w);
     const { pct, pace } = d;
-    const cls = w.utilization >= (u.pause_at || 1) ? " full" : w.utilization >= 0.7 ? " warn" : "";
+    const cls = w.utilization >= 1 ? " full" : w.utilization >= 0.7 ? " warn" : "";
     const pacing = d.gap === null ? "" : ` · ${paceText(d.gap)}`;
     return h("span", { class: "pie-wrap", title: `${windowLabel(w.name)}: ${d.exact}${pacing} · ${d.reset} (${fmtTime(w.resets_at)})` },
       h("span", { class: `pie${cls}${pace !== null ? " paced" : ""}`, style: `--p:${Math.min(100, pct)};--e:${pace ?? 0}`, role: "img", "aria-label": `${windowLabel(w.name)} ${pct}%` },
@@ -99,9 +98,6 @@ export function renderUsage() {
 
   $("#usage-reason").textContent = reason;
   $("#usage-meters").replaceChildren(...live.map((w) => meter(w, false)));
-  $("#usage-note").textContent = u.pause_at > 0 && u.pause_at < 1
-    ? `The queue pauses automatically at ${Math.round(u.pause_at * 100)}% of any window.`
-    : "The queue pauses automatically when a window's limit is reached.";
   renderPace(u.pace);
   setLabel($("#queue-toggle"), u.manual_pause ? "play" : "pause", u.manual_pause ? "Resume queue" : "Pause queue");
   $("#queue-toggle").className = `btn ${u.manual_pause ? "primary" : ""}`;

@@ -66,7 +66,6 @@ type wallQueue struct {
 
 type wallUsage struct {
 	Known   bool           `json:"known"`
-	PauseAt float64        `json:"pause_at"`
 	Windows []usage.Window `json:"windows"`
 }
 
@@ -539,7 +538,7 @@ func (s *Server) wallQueue(d *wallData, c Caller, runners []tunnel.Runner) {
 			snap = ru.Reevaluate(time.Now())
 		}
 	}
-	d.Usage = wallUsage{Known: snap.Known, PauseAt: snap.PauseAt, Windows: snap.Windows}
+	d.Usage = wallUsage{Known: snap.Known, Windows: snap.Windows}
 	if d.Usage.Windows == nil {
 		d.Usage.Windows = []usage.Window{}
 	}

@@ -20,7 +20,7 @@ func info(status string, five, week float64, reset time.Time) json.RawMessage {
 
 func TestPauseRules(t *testing.T) {
 	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
-	tr := New(nil, 0.9)
+	tr := New(nil)
 	tr.now = func() time.Time { return now }
 
 	if ok, _ := tr.CanStart(); !ok {
@@ -30,9 +30,13 @@ func TestPauseRules(t *testing.T) {
 	if ok, _ := tr.CanStart(); !ok {
 		t.Fatal("50% should not block")
 	}
-	tr.Observe(info("allowed", 0.93, 0.2, now.Add(time.Hour)))
-	if ok, why := tr.CanStart(); ok || why != "5-hour usage at 93%" {
-		t.Fatalf("93%% should block, got ok=%v why=%q", ok, why)
+	tr.Observe(info("allowed", 0.99, 0.2, now.Add(time.Hour)))
+	if ok, why := tr.CanStart(); !ok {
+		t.Fatalf("99%% should not block, only a limit does, got %q", why)
+	}
+	tr.Observe(info("rejected", 1, 0.2, now.Add(time.Hour)))
+	if ok, why := tr.CanStart(); ok || why != "5-hour limit reached" {
+		t.Fatalf("limited should block, got %v %q", ok, why)
 	}
 	if s := tr.Snapshot(); !s.Until.Equal(now.Add(time.Hour).Truncate(time.Second)) {
 		t.Fatalf("pause should lift at reset, got %v", s.Until)
@@ -41,17 +45,13 @@ func TestPauseRules(t *testing.T) {
 	if ok, _ := tr.CanStart(); !ok {
 		t.Fatal("after reset the queue should run again")
 	}
-	tr.Observe(info("rejected", 1, 0.2, now.Add(time.Hour)))
-	if ok, why := tr.CanStart(); ok || why != "5-hour limit reached" {
-		t.Fatalf("limited should block, got %v %q", ok, why)
-	}
 }
 
-// allowed_warning is Claude Code's "getting close", not a limit: it pauses
-// only once utilization reaches pauseAt, like "allowed".
+// allowed_warning is Claude Code's "getting close", not a limit: it doesn't
+// pause, whatever the utilization.
 func TestWarningIsNotALimit(t *testing.T) {
 	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
-	tr := New(nil, 0.9)
+	tr := New(nil)
 	tr.now = func() time.Time { return now }
 	b, _ := json.Marshal(map[string]any{
 		"status": "allowed_warning", "rateLimitType": "seven_day", "resetsAt": now.Add(48 * time.Hour).Unix(),
@@ -65,17 +65,17 @@ func TestWarningIsNotALimit(t *testing.T) {
 		t.Fatalf("a weekly warning at 76%% should not block, got %q", why)
 	}
 	// The older single-window form, with its utilization.
-	tr = New(nil, 0.9)
+	tr = New(nil)
 	tr.now = func() time.Time { return now }
 	tr.Observe(json.RawMessage(`{"status":"allowed_warning","rateLimitType":"seven_day","utilization":0.95,"resetsAt":` +
 		fmt.Sprint(now.Add(48*time.Hour).Unix()) + `}`))
-	if ok, why := tr.CanStart(); ok || why != "Weekly usage at 95%" {
-		t.Fatalf("a weekly warning at 95%% should pause on usage, got ok=%v %q", ok, why)
+	if ok, why := tr.CanStart(); !ok {
+		t.Fatalf("a weekly warning at 95%% should not block, got %q", why)
 	}
 }
 
 func TestManualPause(t *testing.T) {
-	tr := New(nil, 0.9)
+	tr := New(nil)
 	tr.SetManualPause(true)
 	if ok, why := tr.CanStart(); ok || why != "Paused by you" {
 		t.Fatalf("manual pause: %v %q", ok, why)
@@ -89,7 +89,7 @@ func TestManualPause(t *testing.T) {
 // A warning is not a limit: Claude Code still runs, the queue keeps going.
 func TestWarningStatusDoesNotBlock(t *testing.T) {
 	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
-	tr := New(nil, 0.9)
+	tr := New(nil)
 	tr.now = func() time.Time { return now }
 	tr.Observe(json.RawMessage(`{"status":"allowed_warning","rateLimitType":"seven_day","resetsAt":` +
 		fmt.Sprint(now.Add(48*time.Hour).Unix()) + `}`))
@@ -101,7 +101,7 @@ func TestWarningStatusDoesNotBlock(t *testing.T) {
 // A snapshot reported earlier is worked out again once its window resets.
 func TestReevaluateStaleSnapshot(t *testing.T) {
 	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
-	tr := New(nil, 0.9)
+	tr := New(nil)
 	tr.now = func() time.Time { return now }
 	tr.Observe(info("allowed", 0.2, 0.2, now.Add(time.Hour)))
 	tr.Observe(json.RawMessage(`{"status":"rejected","rateLimitType":"seven_day","resetsAt":` +

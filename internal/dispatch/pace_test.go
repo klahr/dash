@@ -36,7 +36,7 @@ func onAccount(id string, org int64, email string, week float64, at time.Time) t
 	if email != "" {
 		c.Account = &claudecli.Account{Email: email, OrgID: "shared-org", Subscription: "max"}
 	}
-	r.Reported = &tunnel.Reported{Parallel: 2, Claude: c, At: at, Usage: &usage.Snapshot{Known: true, UpdatedAt: at, PauseAt: 0.9,
+	r.Reported = &tunnel.Reported{Parallel: 2, Claude: c, At: at, Usage: &usage.Snapshot{Known: true, UpdatedAt: at,
 		Windows: []usage.Window{{Name: usage.WeekWindow, Utilization: week, ResetsAt: at.Add(usage.WeekSpan / 2)}}}}
 	return r
 }
@@ -249,7 +249,7 @@ func TestPaceHardStopFromTheFreshestReport(t *testing.T) {
 	now := time.Now()
 	stale := onAccount("stale", fx.orgA, "ann@example.com", gap(-48*time.Hour), now.Add(-time.Hour))
 	fresh := onAccount("fresh", fx.orgA, "ann@example.com", gap(-48*time.Hour), now)
-	fresh.Reported.Usage.Windows = append(fresh.Reported.Usage.Windows, usage.Window{Name: "five_hour", Utilization: 0.95, ResetsAt: now.Add(time.Hour)})
+	fresh.Reported.Usage.Windows = append(fresh.Reported.Usage.Windows, usage.Window{Name: "five_hour", Utilization: 1, ResetsAt: now.Add(time.Hour), Status: "rejected"})
 	fx.fleet.set(stale)
 	fx.fleet.set(fresh)
 	if err := fx.d.Pacer.Set("ann@example.com", usage.PaceSettings{Follow: true}); err != nil {
@@ -258,7 +258,7 @@ func TestPaceHardStopFromTheFreshestReport(t *testing.T) {
 	p := fx.project(t, fx.orgA, "stale")
 	_, _, err := fx.d.Dispatch(context.Background(), p, fx.todo(t, p, nil))
 	var w *WaitError
-	if !errors.As(err, &w) || !strings.Contains(w.Reason, "stale's Claude account is paused (5-hour usage at 95%)") {
+	if !errors.As(err, &w) || !strings.Contains(w.Reason, "stale's Claude account is paused (5-hour limit reached)") {
 		t.Fatalf("err = %v, want the 5-hour stop", err)
 	}
 }
@@ -322,7 +322,7 @@ func TestReporterParallelWithHubPace(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
-	tr := usage.New(nil, 0.9)
+	tr := usage.New(nil)
 	tr.SetParallel(2)
 	if err := tr.SetPace(usage.PaceSettings{Follow: true}); err != nil {
 		t.Fatal(err)

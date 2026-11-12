@@ -352,11 +352,10 @@ func (c *Client) Decide(id, decision string) error {
 
 // Usage mirrors usage.Snapshot.
 type Usage struct {
-	Known       bool    `json:"known"`
-	PauseAt     float64 `json:"pause_at"`
-	ManualPause bool    `json:"manual_pause"`
-	Paused      bool    `json:"paused"`
-	Reason      string  `json:"reason"`
+	Known       bool   `json:"known"`
+	ManualPause bool   `json:"manual_pause"`
+	Paused      bool   `json:"paused"`
+	Reason      string `json:"reason"`
 	Windows     []struct {
 		Name        string    `json:"name"`
 		Utilization float64   `json:"utilization"`

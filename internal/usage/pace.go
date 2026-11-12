@@ -9,7 +9,7 @@ import (
 // usage close to the pace line the usage meters draw, 0% at the start of the
 // weekly window rising evenly to 100% at its reset. Ahead of the line it
 // starts no new tasks (running ones finish); behind it, it runs more at once
-// to catch up. Only the weekly window paces; the 5-hour window, PauseAt and
+// to catch up. Only the weekly window paces; the 5-hour window's limit and
 // a manual pause stop the queue as before.
 
 const (

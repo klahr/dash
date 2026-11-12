@@ -50,7 +50,7 @@ type GroupPace struct {
 	// now (runner id → count).
 	Slots map[string]int `json:"runner_slots"`
 	// Stop is why none of them may start a task now, whatever the pace: the
-	// account's freshest usage has a window at its limit or pause-at.
+	// account's freshest usage has a window at its limit.
 	Stop string `json:"stop,omitempty"`
 	// Usage is the account's freshest usage report (nil: none yet).
 	Usage *usage.Snapshot `json:"-"`

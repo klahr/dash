@@ -80,7 +80,7 @@ type options struct {
 	chatBackend, chatTools           string
 	chatAllow                        []string
 	chatCommandTimeout               time.Duration
-	pauseAt                          float64
+	pauseAt                          bool // -pause-at was given: a no-op now
 	askPerms                         bool
 	editor                           string
 	autoTitles                       bool
@@ -154,7 +154,12 @@ func parseFlags(args []string, runnerMode bool) *options {
 		return nil
 	})
 	f.DurationVar(&o.chatCommandTimeout, "chat-command-timeout", agent.DefaultShellTimeout, "how long a command run from a chat with a leading ! may run before it is stopped")
-	f.Float64Var(&o.pauseAt, "pause-at", 0.9, "pause the task queue when a subscription usage window reaches this fraction (0 = only when limited)")
+	// Removed: the queue pauses only when a window's limit is reached. Still
+	// accepted (hidden from -h) so an old start command keeps working.
+	f.Func("pause-at", "removed, no effect", func(string) error {
+		o.pauseAt = true
+		return nil
+	})
 	f.BoolVar(&o.askPerms, "permission-prompts", true, "send Claude's permission requests to the UI instead of denying them")
 	f.StringVar(&o.editor, "editor", os.Getenv("DASH_EDITOR"), "command that opens a worktree on this machine, e.g. \"code\" (or $DASH_EDITOR)")
 	f.BoolVar(&o.autoTitles, "auto-titles", true, "name tasks created without a title and summarise finished ones (a short claude call with -title-model)")
@@ -203,7 +208,7 @@ func parseFlags(args []string, runnerMode bool) *options {
 		f.Usage = func() {
 			fmt.Fprintf(f.Output(), "usage: dash runner [flags]          run this computer as a runner of a hub\n"+
 				"       dash runner %s [-h]\n\nflags:\n", strings.Join(runnerctl.Commands, "|"))
-			printFlags(f, func(name string) bool { return name == "hub-commands" })
+			printFlags(f, func(name string) bool { return name == "hub-commands" || name == "pause-at" })
 		}
 		f.StringVar(&o.hubServer, "server", "", "the hub's URL, e.g. https://dash.example.com (saved after registering)")
 		f.StringVar(&o.regCode, "code", "", "registration code from the hub's Runners page (only the first time, or to register again)")
@@ -220,7 +225,7 @@ func parseFlags(args []string, runnerMode bool) *options {
 			fmt.Fprintf(f.Output(), "usage: dash [flags]          run the hub, the dashboard (see dash runner -h for a runner's flags)\n"+
 				"       dash version|healthcheck|backup|reset-2fa\n\nflags:\n")
 			printFlags(f, func(name string) bool {
-				return slices.Contains(runnerFlags, name) || slices.Contains(removedFlags, name)
+				return slices.Contains(runnerFlags, name) || slices.Contains(removedFlags, name) || name == "pause-at"
 			})
 		}
 	}
@@ -502,7 +507,7 @@ func (a *app) buildServices() {
 		slog.Info("live previews", "hosts", "<task>."+a.previews.Domain)
 	}
 
-	a.tracker = usage.New(events, o.pauseAt)
+	a.tracker = usage.New(events)
 	if err := a.tracker.Keep(filepath.Join(o.dataDir, "usage.json")); err != nil {
 		slog.Warn("read usage.json", "err", err)
 	}

@@ -80,6 +80,9 @@ func main() {
 	if o.hubCommands {
 		slog.Info("-hub-commands is no longer needed: a runner always takes commands from the hub. Remove it from the start command")
 	}
+	if o.pauseAt {
+		slog.Info("-pause-at is gone and ignored: the queue pauses only when a usage window's limit is reached. Remove it from the start command")
+	}
 	for _, name := range o.ignored {
 		slog.Warn("-" + name + " is a flag of dash runner, ignored by the hub, which runs no tasks, Claude or commands itself. Remove it from the hub's start command (pass it to dash runner)")
 	}
@@ -112,7 +115,7 @@ func warnUnlinked(ps []model.Project) {
 // runners (`dash runner`) do: the hub accepts them, with a warning, and
 // ignores them (they are left out of its -h).
 var runnerFlags = []string{"projects", "parallel", "claude", "claude-args", "sign-commits", "chat", "chat-tools", "chat-allow",
-	"pause-at", "permission-prompts", "editor", "title-model", "cleanup-days"}
+	"permission-prompts", "editor", "title-model", "cleanup-days"}
 
 // printFlags is fs.PrintDefaults without the flags hide picks.
 func printFlags(fs *flag.FlagSet, hide func(name string) bool) {

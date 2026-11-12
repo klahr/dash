@@ -11,7 +11,7 @@ import (
 // Following the weekly pace changes the engine's effective parallelism,
 // never MaxParallel; off, it is MaxParallel.
 func TestEffectiveParallelFollowsPace(t *testing.T) {
-	tr := usage.New(nil, 0.9)
+	tr := usage.New(nil)
 	e := NewTodoEngine(&TodoEngine{Usage: tr, MaxParallel: 2})
 	// Half the week elapsed, a fifth used: far behind.
 	raw, _ := json.Marshal(map[string]any{"status": "allowed", "unifiedWindows": map[string]any{

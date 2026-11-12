@@ -114,7 +114,7 @@ func TestRunnerPaceIsLocal(t *testing.T) {
 	parallel(t)
 
 	s, h, _ := runnerSide(t, 0)
-	s.Usage = usage.New(nil, 0.9)
+	s.Usage = usage.New(nil)
 	if w := send(h, "PUT", "/api/queue/pace", `{"follow":true}`); w.Code != http.StatusOK {
 		t.Fatalf("local pace: %d %s", w.Code, w.Body)
 	}

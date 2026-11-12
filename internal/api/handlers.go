@@ -1532,7 +1532,7 @@ func (s *Server) usageFor(r *http.Request) usage.Snapshot {
 	if u != nil {
 		snap = *u
 	} else {
-		snap = usage.Snapshot{PauseAt: snap.PauseAt}
+		snap = usage.Snapshot{}
 	}
 	snap.ManualPause = manual
 	if manual {

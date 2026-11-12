@@ -32,7 +32,6 @@ type Snapshot struct {
 	Status      string    `json:"status"`
 	Windows     []Window  `json:"windows"`
 	UpdatedAt   time.Time `json:"updated_at"`
-	PauseAt     float64   `json:"pause_at"`     // utilization at which the queue pauses
 	ManualPause bool      `json:"manual_pause"` // paused by the user
 	Paused      bool      `json:"paused"`       // the queue won't start new todos
 	Reason      string    `json:"reason,omitempty"`
@@ -44,7 +43,6 @@ type Snapshot struct {
 type Tracker struct {
 	mu      sync.Mutex
 	pub     Publisher
-	pauseAt float64
 	manual  bool
 	known   bool
 	status  string
@@ -56,11 +54,10 @@ type Tracker struct {
 	hub     *Pace  // how the hub paces this runner (nil: it paces itself)
 }
 
-// New returns a tracker that pauses the queue once any window reaches
-// pauseAt (e.g. 0.9). pauseAt <= 0 or >= 1 only pauses when Claude Code
-// reports a window as limited.
-func New(pub Publisher, pauseAt float64) *Tracker {
-	return &Tracker{pub: pub, pauseAt: pauseAt, windows: map[string]Window{}, now: time.Now}
+// New returns a tracker that pauses the queue while Claude Code reports a
+// window as limited.
+func New(pub Publisher) *Tracker {
+	return &Tracker{pub: pub, windows: map[string]Window{}, now: time.Now}
 }
 
 type rawInfo struct {
@@ -210,7 +207,7 @@ func (t *Tracker) Snapshot() Snapshot {
 		pace.Parallel = t.pace.Parallel
 		pace.Slots = max(pace.Slots, t.pace.Parallel)
 	}
-	s := Snapshot{Known: t.known, Status: t.status, UpdatedAt: t.updated, PauseAt: t.pauseAt, ManualPause: t.manual, Pace: pace}
+	s := Snapshot{Known: t.known, Status: t.status, UpdatedAt: t.updated, ManualPause: t.manual, Pace: pace}
 	for _, w := range t.windows {
 		s.Windows = append(s.Windows, w)
 	}
@@ -247,14 +244,8 @@ func (s Snapshot) Reevaluate(now time.Time) Snapshot {
 		if !w.ResetsAt.After(now) {
 			continue // window already reset; its numbers are stale
 		}
-		limited := Limited(w.Status)
-		high := s.PauseAt > 0 && s.PauseAt < 1 && w.Utilization >= s.PauseAt
-		if limited || high {
-			s.Paused = true
-			s.Reason = fmt.Sprintf("%s usage at %.0f%%", label(w.Name), w.Utilization*100)
-			if limited {
-				s.Reason = label(w.Name) + " limit reached"
-			}
+		if Limited(w.Status) {
+			s.Paused, s.Reason = true, label(w.Name)+" limit reached"
 			if w.ResetsAt.After(s.Until) {
 				s.Until = w.ResetsAt
 			}

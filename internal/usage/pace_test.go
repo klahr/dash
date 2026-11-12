@@ -2,6 +2,7 @@ package usage
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ func weekly(week float64, reset time.Time) json.RawMessage {
 // started at start (so it resets at start + 7 days).
 func pacedTracker(t *testing.T, now *time.Time) (*Tracker, time.Time) {
 	t.Helper()
-	tr := New(nil, 0.9)
+	tr := New(nil)
 	tr.now = func() time.Time { return *now }
 	tr.SetParallel(2)
 	if err := tr.SetPace(PaceSettings{Follow: true}); err != nil {
@@ -179,7 +180,7 @@ func TestPaceHysteresis(t *testing.T) {
 // With the setting off (the default), pacing changes nothing.
 func TestPaceOffIsUnchanged(t *testing.T) {
 	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
-	tr := New(nil, 0.9)
+	tr := New(nil)
 	tr.now = func() time.Time { return now }
 	tr.SetParallel(2)
 	reset := now.Add(WeekSpan / 2)
@@ -190,10 +191,11 @@ func TestPaceOffIsUnchanged(t *testing.T) {
 			t.Fatalf("week %.0f%%: paused=%v reason=%q pace=%+v", week*100, s.Paused, s.Reason, s.Pace)
 		}
 	}
-	// PaceAt still pauses as before.
-	tr.Observe(weekly(0.95, reset))
-	if ok, why := tr.CanStart(); ok || why != "Weekly usage at 95%" {
-		t.Fatalf("pause-at: ok=%v why=%q", ok, why)
+	// A limit still pauses as before.
+	tr.Observe(json.RawMessage(`{"status":"rejected","unifiedWindows":{"seven_day":{"utilization":1,"resetsAt":` +
+		fmt.Sprint(reset.Unix()) + `,"status":"rejected"}}}`))
+	if ok, why := tr.CanStart(); ok || why != "Weekly limit reached" {
+		t.Fatalf("limit: ok=%v why=%q", ok, why)
 	}
 }
 
@@ -201,9 +203,9 @@ func TestPaceOffIsUnchanged(t *testing.T) {
 func TestPaceHardStopsWin(t *testing.T) {
 	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
 	tr, _ := pacedTracker(t, &now)
-	// 5-hour window over pause-at; weekly far behind.
-	tr.Observe(info("allowed", 0.95, 0.1, now.Add(time.Hour))) // week resets in 97h: ~42% elapsed
-	if ok, why := tr.CanStart(); ok || why != "5-hour usage at 95%" {
+	// 5-hour window at its limit; weekly far behind.
+	tr.Observe(info("rejected", 1, 0.1, now.Add(time.Hour))) // week resets in 97h: ~42% elapsed
+	if ok, why := tr.CanStart(); ok || why != "5-hour limit reached" {
 		t.Fatalf("the 5-hour window should still stop: ok=%v why=%q", ok, why)
 	}
 	tr.Observe(info("allowed", 0.1, 0.1, now.Add(time.Hour)))
@@ -233,7 +235,7 @@ func TestPaceReevaluateKeepsHysteresis(t *testing.T) {
 
 func TestPaceSettingsAreKept(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "usage.json")
-	tr := New(nil, 0.9)
+	tr := New(nil)
 	if err := tr.Keep(path); err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +245,7 @@ func TestPaceSettingsAreKept(t *testing.T) {
 	if err := tr.SetPace(PaceSettings{MaxParallel: -1}); err == nil {
 		t.Fatal("a negative cap should be refused")
 	}
-	again := New(nil, 0.9)
+	again := New(nil)
 	if err := again.Keep(path); err != nil {
 		t.Fatal(err)
 	}
@@ -303,13 +305,13 @@ func TestHubPaceReplacesLocalPacing(t *testing.T) {
 // the line shows as a pause for pacing; a hard stop wins.
 func TestWithPace(t *testing.T) {
 	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
-	s := Snapshot{Known: true, PauseAt: 0.9, Windows: []Window{{Name: WeekWindow, Utilization: 0.6, ResetsAt: now.Add(WeekSpan / 2)}}}
+	s := Snapshot{Known: true, Windows: []Window{{Name: WeekWindow, Utilization: 0.6, ResetsAt: now.Add(WeekSpan / 2)}}}
 	w := s.WithPace(Pace{Follow: true, State: PaceWaiting, GapS: 3600}, now)
 	if !w.Paused || !w.Pacing || w.Reason != "Waiting 1h to stay on pace" || !w.Pace.Hub {
 		t.Fatalf("waiting: %+v", w)
 	}
-	s.Windows = append(s.Windows, Window{Name: "five_hour", Utilization: 0.95, ResetsAt: now.Add(time.Hour)})
-	if w := s.WithPace(Pace{Follow: true, State: PaceWaiting, GapS: 3600}, now); w.Pacing || w.Reason != "5-hour usage at 95%" {
+	s.Windows = append(s.Windows, Window{Name: "five_hour", Utilization: 1, ResetsAt: now.Add(time.Hour), Status: "rejected"})
+	if w := s.WithPace(Pace{Follow: true, State: PaceWaiting, GapS: 3600}, now); w.Pacing || w.Reason != "5-hour limit reached" {
 		t.Fatalf("hard stop: %+v", w)
 	}
 }

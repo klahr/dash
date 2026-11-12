@@ -99,7 +99,6 @@ function renderHeader(d) {
   const box = $("usage");
   box.replaceChildren();
   metersAt = Date.now() + skew;
-  const pauseAt = d.usage.pause_at > 0 && d.usage.pause_at < 1 ? d.usage.pause_at : 0;
   const want = [["five_hour", "Claude 5h"], ["seven_day", "Claude 7d"]];
   for (const [name, label] of want) {
     const w = (d.usage.windows || []).find((x) => x.name === name);
@@ -111,7 +110,7 @@ function renderHeader(d) {
       continue;
     }
     const pct = Math.round(w.utilization * 100);
-    const color = pauseAt && w.utilization >= pauseAt ? "var(--bad)" : w.utilization >= 0.7 ? "var(--run)" : "var(--ok)";
+    const color = w.utilization >= 1 ? "var(--bad)" : w.utilization >= 0.7 ? "var(--run)" : "var(--ok)";
     const bar = h("div", { class: "bar" }, h("i", { style: `width:${Math.min(100, pct)}%;background:${color}` }));
     box.append(h("div", { class: "meter" },
       h("div", { class: "lbl" }, h("span", {}, label), h("b", { class: "num" }, pct + "%")),
