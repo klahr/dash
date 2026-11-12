@@ -130,7 +130,7 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string
 			continue // revoked, or (never) another org's
 		}
 		var pace GroupPace
-		if d.Pacer != nil && r.Online && !r.Paused {
+		if d.Pacer != nil && active(r) {
 			pace = d.Pacer.For(r)
 			if n := pace.Slots[r.ID]; n > 0 {
 				limits[r.ID] = n
@@ -139,6 +139,8 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string
 		switch busy := d.Busy(r.ID); {
 		case !r.Online:
 			why = append(why, r.Name+" is offline")
+		case r.Update != nil:
+			why = append(why, r.Name+" is updating")
 		case r.Paused:
 			why = append(why, r.Name+" is paused")
 		case r.Reported != nil && r.Reported.Usage != nil && r.Reported.Usage.Paused:
@@ -199,6 +201,18 @@ func (d *Dispatcher) Reply(id string) any {
 func (d *Dispatcher) Busy(id string) int {
 	n := 0
 	for _, t := range d.Store.ListTodos("", model.StatusInProgress) {
+		if t.Runner == id {
+			n++
+		}
+	}
+	return n
+}
+
+// Working is how many of the hub's tasks runner id is running or merging:
+// it updates itself only at 0 (tunnel.Hub.RunUpdates).
+func (d *Dispatcher) Working(id string) int {
+	n := 0
+	for _, t := range d.Store.ListTodos("", model.StatusInProgress, model.StatusMerging) {
 		if t.Runner == id {
 			n++
 		}

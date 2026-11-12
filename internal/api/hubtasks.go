@@ -24,6 +24,7 @@ import (
 	"github.com/klahr/dash/internal/release"
 	"github.com/klahr/dash/internal/scan"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/tunnel"
 )
 
 // The routes below are a runner's side of dispatch: its hub links projects
@@ -62,6 +63,38 @@ func (s *Server) hubTaskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+dispatch.ScanPath, s.hubScan)
 	mux.HandleFunc("POST /api/hub/github/{hpid}", s.hubGitHub)
 	mux.HandleFunc("POST "+notes.PeerPath, s.notesFromPeers)
+	mux.HandleFunc("POST "+tunnel.UpdatePath, s.hubUpdate)
+}
+
+// hubUpdate updates this runner to the release its hub names, once none
+// of the hub's tasks runs or merges here (409 until then), then restarts
+// it (see SelfUpdate). A failed update leaves the old binary in place.
+func (s *Server) hubUpdate(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.fromHub(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Version string `json:"version"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if s.SelfUpdate == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "this runner can't update itself"})
+		return
+	}
+	if n := len(sv.data.ListTodos("", model.StatusInProgress, model.StatusMerging)); n > 0 {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": fmt.Sprintf("%d tasks are still running", n)})
+		return
+	}
+	if err := s.SelfUpdate(r.Context(), req.Version); err != nil {
+		slog.Error("runner: update", "version", req.Version, "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"version": req.Version})
 }
 
 var errNotLinked = errors.New("that project isn't linked to this runner")

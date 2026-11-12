@@ -138,7 +138,40 @@ and an admin can turn it on with `sudo loginctl enable-linger <you>`.
 
 ### Update a runner
 
-Run the command again **without** `--code`:
+On the Runners page, an out-of-date runner has an **Update to …** button for its owner and the
+organization's admins. The runner goes into maintenance mode: the hub sends it no new tasks or
+scans (they wait, saying "*name* is updating", or go to the project's other runners), and the
+tasks it is running finish. Its page shows "Waiting for N tasks to finish…" until then; the update
+can be cancelled until it starts. Then the hub tells the runner to update: it downloads the hub's
+release from GitHub, checks it against the release's `checksums.txt`, keeps its binary as
+`dash.prev` and puts the new one in its place, and restarts on it with the same flags (`--data`
+included):
+
+- under its background service it exits with status 4, and systemd (`Restart=on-failure`) or
+  launchd (`KeepAlive`) starts the new binary;
+- started by hand (installed with `--no-service`), it replaces its own process with the new binary
+  (`exec`), in the same terminal.
+
+Maintenance mode is the hub's, so it survives the runner's reconnects and the hub's restarts. It
+ends when the runner connects running the hub's version, or when the update fails: the runner can't
+write its binary (installed by root into `/usr/local/bin`, say: update it the way it was
+installed), the download or its checksum is wrong (the old binary stays), or the runner comes back
+on its old version. The Runners page then shows why. The runner's own Pause is separate and stays
+as it was.
+
+A just-updated runner tries the new version: if it doesn't connect to the hub within two minutes,
+or keeps crashing on start (three starts without connecting), it puts `dash.prev` back and
+restarts on it, and the hub reports the update failed.
+
+**Updates itself** (the runner's settings, off by default) starts the same update by itself
+whenever the runner connects running another version than the hub's, e.g. after the hub is
+upgraded. It doesn't retry a release whose update failed or was cancelled.
+
+A hub built from source has no release to update to: there is no button, and nothing updates
+itself. `dash runner update [--version X]` on the runner's computer does the same download, checks
+and swap by hand (default: the hub's version), then restarts the service.
+
+The install command works too. Run it again **without** `--code`:
 
 ```sh
 curl -fsSL https://dash.example.com/runner/install.sh | sh
@@ -154,6 +187,7 @@ differ from the hub's, with this command to copy.
 dash runner status      # registration, hub, connection, service
 dash runner install     # (re)install and start the background service
 dash runner uninstall   # stop and remove it; the registration is kept
+dash runner update      # install the hub's version (or --version X) and restart the service
 ```
 
 Logs: `journalctl --user -u dash-runner` on Linux, `~/Library/Logs/dash-runner.log` on macOS.

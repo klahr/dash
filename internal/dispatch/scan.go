@@ -107,6 +107,8 @@ func (d *Dispatcher) scanRunner(p model.Project) (r *tunnel.Runner, why string, 
 		switch {
 		case !x.Online:
 			reasons = append(reasons, x.Name+" is offline")
+		case x.Update != nil:
+			reasons = append(reasons, x.Name+" is updating")
 		case x.Paused:
 			reasons = append(reasons, x.Name+" is paused")
 		default:

@@ -2,10 +2,12 @@ package runnerctl
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +20,7 @@ import (
 
 // Commands are the `dash runner <command>`s handled here; plain `dash
 // runner` (and `dash runner --server … --code …`) runs the runner itself.
-var Commands = []string{"setup", "install", "uninstall", "status"}
+var Commands = []string{"setup", "install", "uninstall", "status", "update"}
 
 // CLI runs `dash runner setup|install|uninstall|status`. Zero fields
 // default to the real environment; tests set them.
@@ -32,6 +34,12 @@ type CLI struct {
 	Executable func() (string, error)
 	// Service adjusts the service a command manages (tests: a fake Run).
 	Service func(*Service)
+	// Updater adjusts the update `dash runner update` makes (tests: a fake
+	// release server).
+	Updater func(*Updater)
+	// HubVersion asks the hub at server which version it runs (nil: GET
+	// <server>/runner/version).
+	HubVersion func(ctx context.Context, server string) (string, error)
 }
 
 func (c *CLI) defaults() {
@@ -86,6 +94,8 @@ func (c *CLI) Main(ctx context.Context, command string, args []string) int {
 		err = c.uninstall(args)
 	case "status":
 		err = c.status(ctx, args)
+	case "update":
+		err = c.update(ctx, args)
 	default:
 		err = fmt.Errorf("unknown command %q (want one of %s)", command, strings.Join(Commands, ", "))
 	}
@@ -352,6 +362,88 @@ func (c *CLI) status(ctx context.Context, args []string) error {
 	}
 	fmt.Fprintf(w, "Service:      %s\n", svc.State())
 	return nil
+}
+
+// update replaces this dash binary with the hub's release (or --version)
+// and restarts the background service on it.
+func (c *CLI) update(ctx context.Context, args []string) error {
+	fs, data := c.flags("update", "Downloads the hub's Dash release (or --version), checks it against the release's\nchecksums, keeps this binary as dash.prev and puts the new one in its place.\nThen it restarts the background service on it.")
+	version := fs.String("version", "", "the release to install (default: the hub's version)")
+	restart := fs.Bool("restart", true, "restart the background service, if installed, on the new binary")
+	if err := c.parse(fs, args, data); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected %q", fs.Arg(0))
+	}
+	if *version == "" {
+		creds, err := tunnel.LoadCredentials(c.credsPath(*data))
+		if err != nil {
+			return errors.New("not registered with a hub: pass --version")
+		}
+		get := c.HubVersion
+		if get == nil {
+			get = HubVersion
+		}
+		v, err := get(ctx, creds.Server)
+		if err != nil {
+			return fmt.Errorf("ask %s for its version: %w", creds.Server, err)
+		}
+		if *version = ReleaseVersion(v); *version == "" {
+			return fmt.Errorf("the hub runs %s, a build from source with no release to install: pass --version", v)
+		}
+	}
+	if SameVersion(*version, c.Version) {
+		fmt.Fprintf(c.Out, "Dash %s is installed already.\n", c.Version)
+		return nil
+	}
+	bin, err := c.Executable()
+	if err != nil {
+		return fmt.Errorf("find the dash binary: %w", err)
+	}
+	u := Updater{Version: *version, Bin: bin, Data: *data, Current: c.Version}
+	if c.Updater != nil {
+		c.Updater(&u)
+	}
+	fmt.Fprintf(c.Out, "Downloading Dash %s...\n", *version)
+	if err := u.Run(ctx); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.Out, "Installed Dash %s in %s (the previous one is %s.prev).\n", *version, bin, bin)
+	if !*restart {
+		return nil
+	}
+	svc, err := c.newService(*data)
+	if err != nil {
+		return err
+	}
+	if st := svc.State(); st == "not installed" || strings.HasPrefix(st, "unsupported") {
+		fmt.Fprintln(c.Out, "Restart the runner to run it (no background service is installed).")
+		return nil
+	}
+	return c.installService(svc)
+}
+
+// HubVersion asks the hub at server which Dash version it runs.
+func HubVersion(ctx context.Context, server string) (string, error) {
+	u, err := tunnel.CheckServer(server)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String()+"/runner/version", nil)
+	if err != nil {
+		return "", err
+	}
+	res, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	var out struct{ Version string }
+	if res.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(res.Body, 1<<16)).Decode(&out) != nil || out.Version == "" {
+		return "", fmt.Errorf("unexpected answer: %s", res.Status)
+	}
+	return out.Version, nil
 }
 
 func since(t time.Time) string {

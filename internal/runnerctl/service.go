@@ -20,6 +20,7 @@ const (
 	SystemdUnit  = "dash-runner.service"
 	LaunchdLabel = "com.github.klahr.dash-runner"
 	ExitRevoked  = 3 // `dash runner` exits with this when the hub revoked it: don't restart
+	ExitUpdated  = 4 // `dash runner` exits with this after updating its binary: restart it on the new one
 )
 
 // Service is how `dash runner` is started in the background.
@@ -125,6 +126,7 @@ func SystemdUnitFile(bin string, args []string, path string) []byte {
 	b.WriteString("ExecStart=" + strings.Join(words, " ") + "\n")
 	b.WriteString("Restart=on-failure\nRestartSec=10\n")
 	fmt.Fprintf(&b, "# A revoked runner exits %d: it needs a new code, not a restart.\nRestartPreventExitStatus=%d\n", ExitRevoked, ExitRevoked)
+	fmt.Fprintf(&b, "# An updated runner exits %d: Restart=on-failure starts the new binary.\n", ExitUpdated)
 	b.WriteString("\n[Install]\nWantedBy=default.target\n")
 	return b.Bytes()
 }

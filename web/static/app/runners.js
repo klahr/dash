@@ -14,7 +14,9 @@ import { isRelease, runnerOutdated as outdatedFor } from "../runnerversion.js";
 
 // ------------------------------------------------------------------ runners
 // The one-line installer and the version runners should run (from /api/runners).
-const runnerInfo = { hub: location.origin, version: "" };
+// canUpdate: runners can update themselves to the hub's release (not from a
+// hub built from source).
+const runnerInfo = { hub: location.origin, version: "", canUpdate: false };
 // The "Add a runner" in progress: the runners there were before its code,
 // so the one that registers with it can be told apart.
 let runnerAdd = null;
@@ -34,7 +36,7 @@ export async function loadRunners() {
   try {
     const res = await api("GET", "/api/runners");
     state.runners = res.runners;
-    Object.assign(runnerInfo, { hub: res.hub || location.origin, version: res.version || "" });
+    Object.assign(runnerInfo, { hub: res.hub || location.origin, version: res.version || "", canUpdate: !!res.can_update });
   } catch {
     state.runners = null; // this Dash has no runners (it is one, say)
   }
@@ -107,10 +109,15 @@ const runnerClaudeWarnings = (r) => r.reported?.claude?.warnings || [];
 // (on, busy, paused, off) for the dot and the card's accent.
 function runnerStatus(r) {
   const n = (k) => `${k} task${k === 1 ? "" : "s"}`;
+  // Updating (maintenance mode): it takes no new tasks, apart from its pause.
+  const u = r.update;
+  if (u?.phase === "updating") return { tone: "paused", text: `Updating to ${u.target}…` };
+  if (u && !r.online) return { tone: "off", text: `Offline · updates to ${u.target} when back` };
+  if (u) return { tone: "paused", text: r.running ? `Waiting for ${n(r.running)} to finish…` : "Updating soon…" };
   if (!r.online) return { tone: "off", text: r.last_seen ? `Offline · seen ${agoText(r.last_seen)}` : "Never connected" };
   if (r.paused) return { tone: "paused", text: r.running ? `Paused · finishing ${n(r.running)}` : "Paused" };
-  const u = r.reported?.usage;
-  if (u?.known && u.paused) return { tone: "paused", text: `Waiting on Claude limits${u.reason ? ` (${u.reason})` : ""}` };
+  const usage = r.reported?.usage;
+  if (usage?.known && usage.paused) return { tone: "paused", text: `Waiting on Claude limits${usage.reason ? ` (${usage.reason})` : ""}` };
   if (r.running) return { tone: "busy", text: `Running ${r.running} of ${runnerLimit(r)}` };
   return { tone: "on", text: `Idle · up to ${runnerLimit(r)} at once` };
 }
@@ -142,10 +149,10 @@ export function renderSideRunners() {
   const box = $("#side-runners"), list = state.runners;
   box.hidden = !Array.isArray(list);
   if (box.hidden) return;
-  const tone = (r) => !r.online ? "down" : r.paused ? "some" : "ok";
+  const tone = (r) => !r.online ? "down" : r.paused || r.update ? "some" : "ok";
   const row = (r) => {
     const st = runnerStatus(r), outdated = runnerOutdated(r);
-    const count = !r.online ? "offline" : r.paused ? "paused" : `${r.running || 0}/${runnerLimit(r)}`;
+    const count = !r.online ? "offline" : r.update ? "updating" : r.paused ? "paused" : `${r.running || 0}/${runnerLimit(r)}`;
     const update = outdated ? `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run on ${r.name}:\n${installCmd()}` : "";
     return h("li", {}, h("button", {
       type: "button", class: "side-runner", title: [`${r.name}: ${st.text}`, update].filter(Boolean).join("\n"),
@@ -263,12 +270,14 @@ function runnerStats(list) {
   const online = list.filter((r) => r.online).length;
   const running = list.reduce((s, r) => s + (r.running || 0), 0);
   const paused = list.filter((r) => r.paused).length;
-  const outdated = list.filter(runnerOutdated).length;
+  const updating = list.filter((r) => r.update).length;
+  const outdated = list.filter((r) => runnerOutdated(r) && !r.update).length;
   const claudeWarn = list.filter((r) => runnerClaudeWarnings(r).length).length;
   return [
     stat(online, `of ${list.length} online`, online ? "on" : "off"),
     stat(running, running === 1 ? "task running" : "tasks running", running ? "busy" : ""),
     paused ? stat(paused, "paused", "paused") : null,
+    updating ? stat(updating, "updating", "paused") : null,
     outdated ? stat(outdated, "out of date", "paused") : null,
     claudeWarn ? stat(claudeWarn, "with Claude Code warnings", "paused") : null,
   ].filter(Boolean);
@@ -343,9 +352,7 @@ function paintRunner(r) {
       accountChip(r)),
     pacedWith(r).length ? h("p", { class: "hint runner-paced-with" },
       `Shares its Claude account with ${pacedWith(r).map((x) => x.name).join(", ")}: their usage is one budget, and following the weekly pace paces them together.`) : null,
-    outdated && r.mine ? h("div", { class: "runner-update" },
-      h("p", { class: "hint warn" }, `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run this on ${r.name} (it keeps its registration):`),
-      copyBlock(installCmd(), "Command copied", { pre: true })) : null,
+    runnerUpdate(r),
     claudeWarns.length ? h("div", { class: "runner-update runner-claude-warn", role: "status" },
       h("p", { class: "hint warn" }, `Claude Code${claude.version ? ` ${claude.version}` : ""} on ${r.name} doesn't look the way Dash expects. Tasks may fail or miss usage limits; updating Dash may help:`),
       h("ul", {}, ...claudeWarns.map((w) => h("li", {}, w)))) : null,
@@ -386,6 +393,14 @@ function paintRunner(r) {
         toast(r.paused ? `${r.name} takes tasks again` : `${r.name} paused: it finishes what it runs and takes no new tasks`);
         await renderRunners();
       }) }, r.paused ? "play" : "pause", r.paused ? "Resume" : "Pause")),
+    runnerInfo.canUpdate ? setting(r.auto_update ? "Updates itself" : "Updated by hand",
+      r.auto_update ? "When it runs another version than the hub's, it finishes its tasks, then updates to the hub's version."
+        : "Turn on to update it to the hub's version by itself, after its running tasks finish.",
+      ib({ class: "btn small", type: "button", "aria-pressed": String(!!r.auto_update), onclick: attempt(async () => {
+        await patchRunner(r, { auto_update: !r.auto_update });
+        toast(r.auto_update ? `${r.name} is updated by hand now` : `${r.name} updates itself to the hub's version`);
+        await renderRunners();
+      }) }, "reload", r.auto_update ? "Turn off" : "Turn on")) : null,
     setting("Revoke", "Disconnects it, stops its token and unlinks it from every project.",
       ib({ class: "btn small danger", type: "button", title: `Disconnect ${r.name} and revoke its token`, onclick: attempt(async () => {
         const ok = await ask({ title: `Revoke ${r.name}?`, body: "It's disconnected now, its token stops working and it's unlinked from every project. Tasks it is running fail and can be queued again on another runner. Run the install command with a new code to bring it back.", ok: "Revoke", danger: true });
@@ -394,6 +409,49 @@ function paintRunner(r) {
         toast(`${r.name} revoked`);
         await refreshMachines();
       }) }, "trash", "Revoke…"), "danger"));
+}
+
+// runnerUpdate is runner r's update: its progress, why the last one failed,
+// or, out of date, an Update button for its owner and the org's admins (a
+// hub built from source has no release to update to: its owner gets the
+// install command instead).
+function runnerUpdate(r) {
+  const u = r.update;
+  const path = `/api/runners/${encodeURIComponent(r.id)}/update`;
+  if (u) {
+    const waiting = u.phase === "waiting";
+    const text = !waiting ? `Updating to ${u.target}: ${r.name} downloads it, then restarts on it.`
+      : !r.online ? `Updates to ${u.target} once it is back online and its tasks are done.`
+      : r.running ? `Waiting for ${r.running} task${r.running === 1 ? "" : "s"} to finish, then it updates to ${u.target}. It takes no new tasks meanwhile.`
+      : `Updating to ${u.target} in a moment.`;
+    return h("div", { class: "runner-update", role: "status" },
+      h("p", { class: "hint" }, `${u.auto ? "Auto-update: " : ""}${text}`),
+      waiting && r.can_manage ? ib({ class: "btn small", type: "button", onclick: attempt(async () => {
+        await api("DELETE", path);
+        toast(`${r.name}'s update cancelled: it takes tasks again`);
+        await renderRunners();
+      }) }, "x", "Cancel update") : null);
+  }
+  const failed = r.update_error ? h("p", { class: "hint warn" }, `The last update failed: ${r.update_error}`) : null;
+  if (!runnerOutdated(r)) return failed ? h("div", { class: "runner-update", role: "status" }, failed) : null;
+  if (runnerInfo.canUpdate && r.can_manage) {
+    return h("div", { class: "runner-update" },
+      failed,
+      h("p", { class: "hint warn" }, `Runs ${r.version}, the hub runs ${runnerInfo.version}. Updating lets it finish its running tasks first; it takes no new ones meanwhile.`),
+      ib({ class: "btn small", type: "button", onclick: attempt(async () => {
+        await api("POST", path);
+        toast(`${r.name} updates to ${runnerInfo.version} once its tasks are done`);
+        await renderRunners();
+      }) }, "up", `Update to ${runnerInfo.version}`),
+      r.mine ? h("details", { class: "runner-update-manual" }, h("summary", {}, "Or update it by hand"),
+        h("p", { class: "hint" }, `Run this on ${r.name} (it keeps its registration):`),
+        copyBlock(installCmd(), "Command copied", { pre: true })) : null);
+  }
+  if (!r.mine) return failed;
+  return h("div", { class: "runner-update" },
+    failed,
+    h("p", { class: "hint warn" }, `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run this on ${r.name} (it keeps its registration):`),
+    copyBlock(installCmd(), "Command copied", { pre: true }));
 }
 
 export async function renderRunners() {

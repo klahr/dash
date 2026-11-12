@@ -90,7 +90,9 @@ func main() {
 		fatal("read env file", "path", o.envFile, "err", envErr)
 	}
 	o.resolveEnv()
-	start(o)
+	if u := start(o); u != nil && u.restarting() {
+		restartRunner(u.bin) // updated: on the new binary
+	}
 }
 
 // shutdownWait is how long Dash waits, on the way out, for its running tasks

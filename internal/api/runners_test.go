@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -167,6 +168,116 @@ func TestRunnerOwnersAndAdminsManageRunners(t *testing.T) {
 	}
 	if _, ok := f.rh.Get(f.ids["c-box"]); ok {
 		t.Error("c-box is still registered")
+	}
+}
+
+// Only a runner's owner and the org's admins update it, turn its
+// auto-update on and cancel an update waiting for its tasks; other
+// members can't, and other orgs don't see it. A hub built from source has
+// no release to update to.
+func TestRunnerUpdatesAreForOwnersAndAdmins(t *testing.T) {
+	parallel(t)
+
+	f := newFleetServer(t)
+	update := func(h http.Handler, method, name string) *httptest.ResponseRecorder {
+		return send(h, method, "/api/runners/"+f.ids[name]+"/update", "")
+	}
+	updating := func(name string) bool { r, _ := f.rh.Get(f.ids[name]); return r.Update != nil }
+
+	if w := update(f.u, "POST", "u-box"); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "from source") {
+		t.Errorf("update from a hub built from source: %d %s", w.Code, w.Body)
+	}
+	if got := runnerNames(t, send(f.u, "GET", "/api/runners", "")); got["u-box"].AutoUpdate {
+		t.Error("auto-update on by default")
+	}
+	if w := send(f.u, "GET", "/api/runners", ""); !strings.Contains(w.Body.String(), `"can_update":false`) {
+		t.Errorf("list from a hub built from source: %s", w.Body)
+	}
+	f.rh.Release = "1.3.0"
+
+	// A member can't update or cancel someone else's runner; another org can't see it.
+	for _, method := range []string{"POST", "DELETE"} {
+		if w := update(f.c, method, "u-box"); w.Code != http.StatusForbidden {
+			t.Errorf("member %s on someone else's runner: %d %s", method, w.Code, w.Body)
+		}
+		if w := update(f.b, method, "u-box"); w.Code != http.StatusNotFound {
+			t.Errorf("%s on another org's runner: %d %s", method, w.Code, w.Body)
+		}
+	}
+	if w := send(f.c, "PATCH", "/api/runners/"+f.ids["u-box"], `{"auto_update":true}`); w.Code != http.StatusForbidden {
+		t.Errorf("member turning on someone else's auto-update: %d", w.Code)
+	}
+	if updating("u-box") {
+		t.Fatal("u-box is updating")
+	}
+
+	// The owner updates their runner; an admin cancels it while it waits.
+	w := update(f.c, "POST", "c-box")
+	var v runnerView
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &v) != nil || v.Update == nil || v.Update.Phase != tunnel.UpdateWaiting || v.Update.Target != "1.3.0" {
+		t.Fatalf("owner updating their runner: %d %s", w.Code, w.Body)
+	}
+	if w := update(f.d, "DELETE", "c-box"); w.Code != http.StatusOK || updating("c-box") {
+		t.Errorf("admin cancelling the update: %d %s", w.Code, w.Body)
+	}
+	if w := update(f.d, "DELETE", "c-box"); w.Code != http.StatusConflict {
+		t.Errorf("cancelling no update: %d %s", w.Code, w.Body)
+	}
+	// An admin updates a member's runner, the owner cancels it.
+	if w := update(f.d, "POST", "c-box"); w.Code != http.StatusOK || !updating("c-box") {
+		t.Errorf("admin updating a member's runner: %d %s", w.Code, w.Body)
+	}
+	if w := update(f.c, "DELETE", "c-box"); w.Code != http.StatusOK || updating("c-box") {
+		t.Errorf("owner cancelling: %d %s", w.Code, w.Body)
+	}
+	// Auto-update: the owner's setting.
+	w = send(f.u, "PATCH", "/api/runners/"+f.ids["u-box"], `{"auto_update":true}`)
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &v) != nil || !v.AutoUpdate {
+		t.Errorf("owner turning on auto-update: %d %s", w.Code, w.Body)
+	}
+}
+
+// The hub's update reaches only a runner whose hub's tasks are done; the
+// route answers nobody but the hub.
+func TestRunnerUpdatesOnlyWhenIdleAndOnlyForTheHub(t *testing.T) {
+	parallel(t)
+
+	s, h, _ := runnerSide(t, 7)
+	var asked []string
+	s.SelfUpdate = func(_ context.Context, v string) error { asked = append(asked, v); return nil }
+	p, err := raw(s).CreateProject(model.Project{Name: "p", Path: t.TempDir(), HubProjectID: "hub-p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	td, err := raw(s).CreateTodo(model.Todo{ProjectID: p.ID, Title: "t", Prompt: "x"})
+	setStatus := func(st model.TodoStatus) {
+		t.Helper()
+		if _, err := raw(s).SetStatus(td.ID, st, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	setStatus(model.StatusQueued)
+	setStatus(model.StatusInProgress)
+	if w := send(h, "POST", tunnel.UpdatePath, `{"version":"1.3.0"}`); w.Code != http.StatusConflict || len(asked) != 0 {
+		t.Fatalf("update while a task runs: %d %s", w.Code, w.Body)
+	}
+	setStatus(model.StatusReview)
+	if w := send(h, "POST", tunnel.UpdatePath, `{"version":"1.3.0"}`); w.Code != http.StatusOK || len(asked) != 1 || asked[0] != "1.3.0" {
+		t.Fatalf("update when idle: %d %s %v", w.Code, w.Body, asked)
+	}
+	s.SelfUpdate = func(context.Context, string) error { return errors.New("checksum mismatch") }
+	if w := send(h, "POST", tunnel.UpdatePath, `{"version":"1.3.0"}`); w.Code != http.StatusInternalServerError || !strings.Contains(w.Body.String(), "checksum mismatch") {
+		t.Errorf("failed update: %d %s", w.Code, w.Body)
+	}
+
+	r := asOwner(t, s, httptest.NewRequest("POST", tunnel.UpdatePath, strings.NewReader(`{"version":"1.3.0"}`)))
+	rec := httptest.NewRecorder()
+	s.mux().ServeHTTP(rec, r)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("update route for a user: %d %s", rec.Code, rec.Body)
 	}
 }
 

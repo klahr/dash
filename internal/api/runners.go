@@ -101,7 +101,9 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 		}
 		// hub and version: for the command that updates an outdated runner.
 		hubURL, _ := s.hubURL(r)
-		writeJSON(w, http.StatusOK, map[string]any{"runners": out, "hub": hubURL, "version": buildinfo.Version})
+		// can_update: runners can update themselves to the hub's release (not
+		// for a hub built from source).
+		writeJSON(w, http.StatusOK, map[string]any{"runners": out, "hub": hubURL, "version": buildinfo.Version, "can_update": rh.Release != ""})
 	})
 	// A code registers a runner as the caller's, in their active org; only
 	// a signed-in browser makes one (not an API token).
@@ -131,8 +133,9 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 	})))
 	mux.HandleFunc("PATCH /api/runners/{id}", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Parallel *int  `json:"parallel"`
-			Paused   *bool `json:"paused"`
+			Parallel   *int  `json:"parallel"`
+			Paused     *bool `json:"paused"`
+			AutoUpdate *bool `json:"auto_update"`
 		}
 		c, x, ok := s.managedRunner(w, r)
 		if !ok {
@@ -150,7 +153,49 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 			writeErr(w, err)
 			return
 		}
+		if req.AutoUpdate != nil {
+			if err := rh.SetAutoUpdate(x.ID, *req.AutoUpdate); err != nil {
+				writeErr(w, err)
+				return
+			}
+		}
 		s.Todos.Kick()
+		x, _ = rh.Get(x.ID)
+		writeJSON(w, http.StatusOK, s.view(c, x))
+	})
+	// Updating a runner to the hub's release: it takes no new tasks, finishes
+	// its running ones, then updates itself and restarts (tunnel/update.go).
+	// While it waits for its tasks, the update can be cancelled.
+	mux.HandleFunc("POST /api/runners/{id}/update", func(w http.ResponseWriter, r *http.Request) {
+		c, x, ok := s.managedRunner(w, r)
+		if !ok {
+			return
+		}
+		switch err := rh.StartUpdate(x.ID); {
+		case errors.Is(err, tunnel.ErrNoRelease), errors.Is(err, tunnel.ErrUpToDate):
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		case err != nil:
+			writeErr(w, err)
+			return
+		}
+		x, _ = rh.Get(x.ID)
+		writeJSON(w, http.StatusOK, s.view(c, x))
+	})
+	mux.HandleFunc("DELETE /api/runners/{id}/update", func(w http.ResponseWriter, r *http.Request) {
+		c, x, ok := s.managedRunner(w, r)
+		if !ok {
+			return
+		}
+		switch err := rh.CancelUpdate(x.ID); {
+		case errors.Is(err, tunnel.ErrNoUpdate), errors.Is(err, tunnel.ErrUpdating):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		case err != nil:
+			writeErr(w, err)
+			return
+		}
+		s.Todos.Kick() // it takes tasks again
 		x, _ = rh.Get(x.ID)
 		writeJSON(w, http.StatusOK, s.view(c, x))
 	})

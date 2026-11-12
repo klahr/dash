@@ -16,6 +16,7 @@ import (
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/notes"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/tunnel"
 )
 
 // hubRoutes are the routes a hub may call on a runner (`dash runner`): the
@@ -121,6 +122,8 @@ func init() {
 		// The runner owner's GitHub repositories, through its gh, for the
 		// hub's new-project form; checked in ghrepos.go.
 		"GET /api/hub/github-repos", "POST /api/hub/github-repos",
+		// The hub updates the runner to its release; checked in hubtasks.go.
+		"POST " + tunnel.UpdatePath,
 	} {
 		hubRoutes[p] = true
 	}

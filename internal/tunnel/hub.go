@@ -76,6 +76,13 @@ type Runner struct {
 	// it none.
 	Parallel int  `json:"parallel"`
 	Paused   bool `json:"paused"`
+	// AutoUpdate: the hub updates it when it connects running another
+	// version than the hub's release. Update is its update in progress
+	// (nil: none): it is in maintenance mode, taking no new tasks, apart
+	// from Paused. UpdateError is why its last update failed (update.go).
+	AutoUpdate  bool    `json:"auto_update"`
+	Update      *Update `json:"update,omitempty"`
+	UpdateError string  `json:"update_error,omitempty"`
 	// Reported is what the runner last told the hub about itself: its own
 	// limit and its owner's Claude subscription usage (nil until it has).
 	Reported *Reported `json:"reported,omitempty"`
@@ -131,6 +138,10 @@ type record struct {
 	Parallel  int       `json:"parallel,omitempty"`
 	Paused    bool      `json:"paused,omitempty"`
 	Version   string    `json:"version,omitempty"`
+	// Its self-update (update.go).
+	AutoUpdate bool          `json:"auto_update,omitempty"`
+	Update     *Update       `json:"update,omitempty"`
+	LastUpdate *UpdateResult `json:"last_update,omitempty"`
 }
 
 // regCode is a registration code, made by Owner: the runner registered with
@@ -165,6 +176,9 @@ type Hub struct {
 	// ReportReply is the hub's answer to a runner's report (optional; nil:
 	// none, 204). The hub tells a runner how it paces it (dispatch.Reply).
 	ReportReply func(runnerID string) any
+	// Release is the release runners update to: the hub's own version (""
+	// for a build from source: runners aren't updated). See update.go.
+	Release string
 
 	now func() time.Time
 
@@ -225,6 +239,13 @@ func (h *Hub) Keep(path string) error {
 			slog.Warn("runner must register again: no account to own its token", "name", r.Name, "err", err)
 		}
 		r.TokenHash, moved = "", true
+	}
+	// An update the hub was telling a runner about when it stopped: the
+	// runner either restarts on the new version or is asked again.
+	for _, r := range h.runners {
+		if r.Update != nil && r.Update.Phase == UpdateUpdating {
+			r.Update.Phase = UpdateWaiting
+		}
 	}
 	if moved {
 		h.saveLocked()
@@ -459,7 +480,14 @@ func (h *Hub) ListBare() []Runner {
 
 func (h *Hub) viewLocked(r *record, online bool, owner *store.RunnerOwner) Runner {
 	v := Runner{ID: r.ID, Name: r.Name, Online: online, Created: r.Created, LastSeen: r.LastSeen, Owner: owner,
-		Version: r.Version, Parallel: r.Parallel, Paused: r.Paused}
+		Version: r.Version, Parallel: r.Parallel, Paused: r.Paused, AutoUpdate: r.AutoUpdate}
+	if r.Update != nil {
+		cp := *r.Update
+		v.Update = &cp
+	}
+	if r.LastUpdate != nil {
+		v.UpdateError = r.LastUpdate.Error
+	}
 	if rep := h.reported[r.ID]; rep != nil {
 		cp := *rep
 		v.Reported = &cp
@@ -532,7 +560,7 @@ func (h *Hub) registeredLocked(id string) bool {
 }
 
 // touch records that runner id (dis)connected, running version when
-// that's not "".
+// that's not "" (it connected: its update is settled, see connectedLocked).
 func (h *Hub) touch(id, version string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -541,6 +569,7 @@ func (h *Hub) touch(id, version string) {
 			r.LastSeen = h.clock()
 			if version != "" {
 				r.Version = version
+				h.connectedLocked(r, version)
 			}
 		}
 	}

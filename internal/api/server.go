@@ -118,8 +118,12 @@ type Server struct {
 	// gitops.ProtocolAuto, gitops.ProtocolSSH ("" too, without the
 	// fallback) or gitops.ProtocolHTTPS (-github-protocol).
 	GitHubProtocol string
-	Static         fs.FS  // frontend assets
-	PublicURL      string // -public-url: the hub's address runners are told (optional; else the request's)
+	// SelfUpdate, on a runner, installs Dash release version in place of
+	// this binary and restarts on it once the hub has its answer (nil: it
+	// can't update itself).
+	SelfUpdate func(ctx context.Context, version string) error
+	Static     fs.FS  // frontend assets
+	PublicURL  string // -public-url: the hub's address runners are told (optional; else the request's)
 	// MetricsToken, if set, serves /metrics on this listener to callers
 	// with it as their bearer token (empty: /metrics isn't served here).
 	MetricsToken string

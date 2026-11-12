@@ -16,7 +16,11 @@
 #   --skip-checks    register even if git, claude or the hub look wrong
 #
 # Run it again without --code to update Dash to the hub's version; the
-# registration is kept. It never uses sudo.
+# registration is kept. It never uses sudo. (An installed runner also
+# updates itself: `dash runner update`, or the Update button on the hub,
+# do the same download, checksum check and swap in Go, see
+# internal/runnerctl/update.go. This script still downloads the first
+# binary, and updates those too old to have that command.)
 #
 # Everything is in main, called on the last line, so a cut-off download runs
 # nothing.

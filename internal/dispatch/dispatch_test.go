@@ -237,6 +237,53 @@ func TestDispatchRespectsEachRunnersLimits(t *testing.T) {
 	}
 }
 
+// A runner updating itself (maintenance mode) takes no new tasks or scans,
+// whatever its own pause says, and the task says why; another runner of
+// the project takes it. Its running tasks count until they finish.
+func TestDispatchSkipsRunnersInMaintenance(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t)
+	r := runnerOf("laptop", fx.orgA, true)
+	r.Update = &tunnel.Update{Target: "1.3.0", Phase: tunnel.UpdateWaiting}
+	fx.fleet.set(r)
+	p := fx.project(t, fx.orgA, "laptop")
+	running := fx.todo(t, p, func(x *model.Todo) { x.Status, x.Runner = model.StatusInProgress, "laptop" })
+	_, _, err := fx.d.Dispatch(context.Background(), p, fx.todo(t, p, nil))
+	var w *WaitError
+	if !errors.As(err, &w) || !strings.Contains(w.Reason, "laptop is updating") {
+		t.Fatalf("err = %v, want a wait saying laptop is updating", err)
+	}
+	if got := fx.fleet.callsTo("laptop"); len(got) != 0 {
+		t.Errorf("a runner in maintenance was sent work: %q", got)
+	}
+	if _, why, _ := fx.d.scanRunner(p); !strings.Contains(why, "laptop is updating") {
+		t.Errorf("scan: %q, want laptop is updating", why)
+	}
+	// Paused too: it still says it is updating (the pause is the user's, and stays).
+	r.Paused = true
+	fx.fleet.set(r)
+	if _, _, err := fx.d.Dispatch(context.Background(), p, fx.todo(t, p, nil)); err == nil || !strings.Contains(err.Error(), "laptop is updating") {
+		t.Errorf("paused and updating: %v", err)
+	}
+	if n := fx.d.Working("laptop"); n != 1 {
+		t.Errorf("working on %d tasks, want %d (%s)", n, 1, running.ID)
+	}
+
+	desk := runnerOf("desk", fx.orgA, true)
+	fx.fleet.set(desk)
+	p2 := fx.project(t, fx.orgA, "laptop", "desk")
+	if rid, _, err := fx.d.Dispatch(context.Background(), p2, fx.todo(t, p2, nil)); err != nil || rid != "desk" {
+		t.Errorf("dispatch = %q %v, want desk", rid, err)
+	}
+	// Updated: it takes tasks again.
+	r.Update, r.Paused = nil, false
+	fx.fleet.set(r)
+	if rid, _, err := fx.d.Dispatch(context.Background(), p, fx.todo(t, p, nil)); err != nil || rid != "laptop" {
+		t.Errorf("after the update: %q %v", rid, err)
+	}
+}
+
 // The least loaded runner gets new work; a task that ran before goes back
 // to the runner that has its session.
 func TestDispatchPrefersTheRunnerWithTheSession(t *testing.T) {

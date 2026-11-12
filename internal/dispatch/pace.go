@@ -192,8 +192,9 @@ func (p *Pacer) Account(account string) *GroupPace {
 	return &g
 }
 
-// active reports whether the hub may send r tasks at all.
-func active(r tunnel.Runner) bool { return r.Online && !r.Paused }
+// active reports whether the hub may send r tasks at all (not while it
+// is updating, see tunnel.Update).
+func active(r tunnel.Runner) bool { return r.Online && !r.Paused && r.Update == nil }
 
 // Evaluate paces group, runners on one account (or one runner on none).
 func (p *Pacer) Evaluate(group []tunnel.Runner) GroupPace {

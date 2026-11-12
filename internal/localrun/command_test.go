@@ -78,6 +78,7 @@ var execAllowed = map[string]string{
 	"internal/claudecli/claudecli.go": "claude --version probe (runners only)",
 	"internal/runnerctl/preflight.go": "claude auth status (`dash runner` setup)",
 	"internal/runnerctl/service.go":   "systemctl/launchctl (`dash runner` setup)",
+	"internal/runnerctl/update.go":    "the downloaded dash's version check (runners updating themselves)",
 	"internal/tui/app.go":             "xdg-open/open (the TUI client)",
 	"internal/testbin/testbin.go":     "sh writing tests' stand-in executables (tests only)",
 }

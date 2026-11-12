@@ -283,13 +283,19 @@ type app struct {
 	boards                              *boardsync.Manager // hub
 	runnerCreds                         tunnel.Credentials // runner
 	reporter                            *dispatch.Reporter // runner
+	update                              *selfUpdate        // runner
 	notes                               *notes.Service     // runner: its hub projects' shared notes
 	mcpURL, permURL                     string
 }
 
-// start starts Dash with the options and serves until it is stopped.
-func start(o *options) {
+// start starts Dash with the options and serves until it is stopped. A
+// runner returns its selfUpdate, which says whether it stopped to restart
+// on an updated binary.
+func start(o *options) *selfUpdate {
 	a := &app{o: o}
+	if o.runnerMode {
+		a.update = newSelfUpdate(o.dataDir) // first: a binary that crashes on start is put back
+	}
 	a.openState()
 	defer a.st.Close()
 	defer func() {
@@ -304,7 +310,9 @@ func start(o *options) {
 
 	a.ctx, a.stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer a.stop()
-	if !o.runnerMode {
+	if o.runnerMode {
+		a.update.watch(a.stop)
+	} else {
 		// The hub runs nothing on its own computer: no Claude, git, gh,
 		// project commands or terminals, and no working trees. Every way to
 		// run one in this process refuses (localrun), behind the API
@@ -348,10 +356,11 @@ func start(o *options) {
 		statePath := runnerctl.StatePath(o.dataDir)
 		defer os.Remove(statePath)
 		if !a.connectHub(statePath) {
-			return // the tunnel ended
+			return a.update // the tunnel ended
 		}
 	}
 	a.serve()
+	return a.update
 }
 
 // openState claims the data directory and opens the store, the accounts and
@@ -730,7 +739,9 @@ func (a *app) setupHub() {
 		slog.Info("notification webhooks may not reach private addresses (-webhook-private=on allows them)")
 	}
 
-	runners := &tunnel.Hub{Pub: events, Taken: apiSrv.Peers.Taken, PreviewURL: a.previews.URLTemplate, Accounts: st.Accounts()}
+	// Runners update themselves to the hub's release (none from source).
+	runners := &tunnel.Hub{Pub: events, Taken: apiSrv.Peers.Taken, PreviewURL: a.previews.URLTemplate, Accounts: st.Accounts(),
+		Release: runnerctl.ReleaseVersion(buildinfo.Version)}
 	apiSrv.Peers.Runners = runners
 	a.previews.Remote = runners // runners' previews, served here
 	if err := runners.Keep(filepath.Join(o.dataDir, "runners.json")); err != nil {
@@ -772,6 +783,8 @@ func (a *app) setupHub() {
 	slog.Info("this hub runs nothing itself: tasks, scans, chats, git and project commands run on runners. Start `dash runner` on a computer with git and Claude Code (account menu → Runners → Add a runner)")
 	warnUnlinked(st.ListProjects())
 	d.Start()
+	// Runners in maintenance update once the hub's tasks on them are done.
+	go runners.RunUpdates(ctx, 5*time.Second, d.Working)
 }
 
 // setupRunner registers with the hub (or reads the registration) and tells
@@ -794,6 +807,7 @@ func (a *app) setupRunner() {
 	apiSrv.HubUser, apiSrv.Small, apiSrv.Refiner, apiSrv.Splitter = creds.UserID, a.small, a.small, a.small
 	apiSrv.ChatDir = filepath.Join(o.dataDir, "chat")
 	apiSrv.ChatCommandTimeout = o.chatCommandTimeout
+	apiSrv.SelfUpdate = a.update.Update // when the hub asks
 	// The board tools of the hub's tasks and chats act on the hub's board.
 	apiSrv.HubBoard = func(ctx context.Context, hubTodo, hubProject string, body []byte) (*http.Response, error) {
 		return tunnel.Board(ctx, creds, hubTodo, hubProject, body)
@@ -1031,7 +1045,8 @@ func (a *app) connectHub(statePath string) bool {
 	onState := func(connected bool) {
 		watch(connected)
 		if connected {
-			a.reporter.Nudge() // tell the hub what happened while it couldn't hear
+			a.update.connected() // an updated binary passed its trial
+			a.reporter.Nudge()   // tell the hub what happened while it couldn't hear
 			// Catch up on what the other runners pushed meanwhile.
 			go a.merges.Remote.FetchAll(ctx)
 			// …and on the shared notes they wrote, telling them ours.
