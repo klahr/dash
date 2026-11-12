@@ -11,10 +11,12 @@ import (
 // (so through the hub, which sees only public keys and wrapped keys):
 //
 //   - A runner says hello: its id, identity key and the ids of the project
-//     keys it holds. Each peer pins that key (trust.see) and, if the user
-//     approved it there, wraps the keys the runner lacks for it. The peer
-//     answers with its own hello, so the runner wraps for it in turn.
-//   - A runner takes wrapped keys only from peers approved on it. Keys of
+//     keys it holds, with its root certificate and the root revocations it
+//     knows (enroll.go). Each peer pins that key (trust.see) and, if it
+//     trusts it (approved there, or certified by its root), wraps the keys
+//     the runner lacks for it. The peer answers with its own hello, so the
+//     runner wraps for it in turn.
+//   - A runner takes wrapped keys only from peers it trusts. Keys of
 //     a later epoch replace its own; keys of the same epoch join them (two
 //     runners that each made a first key end up with both, and seal with
 //     the same one).
@@ -84,7 +86,9 @@ func (s *Service) hello(st *Store) (hello, error) {
 	if err != nil {
 		return hello{}, err
 	}
-	h := hello{Runner: s.self, Name: s.Name, Key: s.id.Public}
+	id := s.ident()
+	h := hello{Runner: s.self, Name: s.Name, Key: id.Public}
+	h.Cert, h.Revocations = s.trust.introduce(s.self, id.Public)
 	for _, k := range keys {
 		h.Have = append(h.Have, k.ID)
 	}
@@ -97,13 +101,14 @@ func (s *Service) meet(project string, st *Store, h hello) (wrapped, bool) {
 	if h.Runner == s.self || h.Runner == "" || len(h.Have) > 16 {
 		return wrapped{}, false
 	}
-	if err := s.trust.see(h.Runner, h.Name, h.Key); err != nil {
+	// Revocations first: they may be of this very key.
+	s.trust.learn(h.Revocations)
+	if err := s.trust.see(h.Runner, h.Name, h.Key, h.Cert); err != nil {
 		return wrapped{}, false // logged loudly by see
 	}
-	if !s.trust.trusted(h.Key) {
+	if !s.trust.trusted(h.Runner, h.Key) {
 		if s.trust.ask(h.Runner, h.Name, h.Key, project) {
-			slog.Warn("shared notes: a runner wants to share this project's notes, but its key isn't approved here. "+
-				"Run `dash runner notes` on it: if it shows the same fingerprint, approve it here with: dash runner notes approve "+h.Key.Fingerprint(),
+			slog.Warn("shared notes: a runner wants to share this project's notes, but it isn't trusted here: "+s.trust.why(h.Runner, h.Key),
 				"project", project, "runner", h.Runner, "name", h.Name, "fingerprint", h.Key.Fingerprint(), "this runner", s.Fingerprint())
 		}
 		return wrapped{}, false
@@ -125,14 +130,14 @@ func (s *Service) meet(project string, st *Store, h hello) (wrapped, bool) {
 // as a holder.
 func (s *Service) wrapFor(project string, st *Store, runner string, keys []projectKey) (wrapped, bool) {
 	key, ok := s.trust.pinned(runner)
-	if !ok || !s.trust.trusted(key) {
+	if !ok || !s.trust.trusted(runner, key) {
 		return wrapped{}, false
 	}
 	holders, err := st.Holders()
 	if err != nil {
 		return wrapped{}, false
 	}
-	w, err := s.id.wrap(s.self, runner, key, keyset{Project: project, Keys: keys, Holders: holders})
+	w, err := s.ident().wrap(s.self, runner, key, keyset{Project: project, Keys: keys, Holders: holders})
 	if err != nil {
 		return wrapped{}, false
 	}
@@ -149,26 +154,26 @@ func (s *Service) wrapFor(project string, st *Store, runner string, keys []proje
 // takeWraps takes the keys wrapped for this runner in ws, from peers
 // approved here, and reports whether one is new.
 func (s *Service) takeWraps(project string, st *Store, ws []wrapped) (added bool) {
+	id := s.ident()
 	for _, w := range ws {
-		if w.To != s.self || w.ToKey != s.id.Public || w.From == s.self {
+		if w.To != s.self || w.ToKey != id.Public || w.From == s.self {
 			continue
 		}
-		if err := s.trust.see(w.From, "", w.FromKey); err != nil {
+		if err := s.trust.see(w.From, "", w.FromKey, nil); err != nil {
 			continue // logged loudly by see
 		}
 		if m := s.membersOf(project); m != nil && !slices.Contains(m, w.From) {
 			slog.Warn("shared notes: refused a project key from a runner no longer on the project", "project", project, "runner", w.From)
 			continue
 		}
-		if !s.trust.trusted(w.FromKey) {
+		if !s.trust.trusted(w.From, w.FromKey) {
 			if s.trust.ask(w.From, "", w.FromKey, project) {
-				slog.Warn("shared notes: refused a project key from a runner whose key isn't approved here. "+
-					"Run `dash runner notes` on it: if it shows the same fingerprint, approve it here with: dash runner notes approve "+w.FromKey.Fingerprint(),
+				slog.Warn("shared notes: refused a project key from a runner that isn't trusted here: "+s.trust.why(w.From, w.FromKey),
 					"project", project, "runner", w.From, "fingerprint", w.FromKey.Fingerprint(), "this runner", s.Fingerprint())
 			}
 			continue
 		}
-		ks, err := s.id.unwrap(s.self, project, w)
+		ks, err := id.unwrap(s.self, project, w)
 		if err != nil {
 			slog.Warn("shared notes: a wrapped key doesn't open", "project", project, "from", w.From, "err", err)
 			continue
@@ -253,18 +258,22 @@ func (s *Service) rotateIfLeft(project string, st *Store, gone []string) (bool, 
 	return true, nil
 }
 
-// Reconcile acts on what the user approved or revoked here (dash runner
-// notes) since it last looked, for projects: it trades keys with peers
-// just approved, and rotates the key of every project a revoked runner
-// held, giving the new one to the approved peers that remain. The runner
-// calls it every few seconds; it does nothing when nothing changed.
+// Reconcile acts on what the user approved, revoked or enrolled here (dash
+// runner notes) since it last looked, and on root revocations peers
+// passed on, for projects: it trades keys with peers just trusted, rotates
+// the key of every project a revoked runner held, giving the new one to
+// the trusted peers that remain, and after a new enrollment, identity or
+// revocation says hello to every project's peers, so they hear of it. The
+// runner calls it every few seconds; it does nothing when nothing changed.
 func (s *Service) Reconcile(ctx context.Context, projects []string) {
+	newID := s.reloadIdentity()
 	gen := s.trust.reload()
+	news := s.trust.takeNews() || newID
 	s.mu.Lock()
 	seen := s.reconciled
 	s.reconciled = gen
 	s.mu.Unlock()
-	if gen == seen {
+	if gen == seen && !news {
 		return // the first run always looks: reconciled starts at 0, gen at 1
 	}
 	// All revoked runners, not only the newly revoked: one revoked while
@@ -285,7 +294,7 @@ func (s *Service) Reconcile(ctx context.Context, projects []string) {
 			slog.Warn("shared notes: rotate", "project", p, "err", err)
 			continue
 		}
-		if rotated || slices.ContainsFunc(approved, func(x Pending) bool { return x.Project == p }) {
+		if rotated || news || slices.ContainsFunc(approved, func(x Pending) bool { return x.Project == p }) {
 			if err := s.CatchUp(ctx, p); err != nil {
 				slog.Info("shared notes: catch-up failed", "project", p, "err", err)
 			}

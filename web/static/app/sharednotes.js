@@ -66,10 +66,15 @@ function renderSharedNotes() {
       : "The online runners' copies differ for now. They catch up with each other on the next write, and at least every 15 minutes."));
   }
   out.push(h("ul", { class: "item-list" }, ...v.runners.map((r) => runnerRow(r, current))));
+  // Runners enrolled under different root keys don't trust each other.
+  const roots = new Set(online.map((r) => r.status.root).filter(Boolean));
+  if (roots.size > 1) {
+    out.push(h("p", { class: "hint warn" }, "The online runners are enrolled under different root keys, so they don't trust each other by certificate. Enroll them all with the same key (", h("code", {}, "dash runner notes enroll --key <path>"), "), or approve them by hand."));
+  }
   const waiting = waitingRows(v.runners);
   if (waiting.length) {
     out.push(h("h4", { class: "section-head" }, "Waiting for approval"),
-      h("p", { class: "hint" }, "These runners asked for the project's key. Approve one on the runner named, after checking its fingerprint matches the one ", h("code", {}, "dash runner notes"), " shows on the runner itself. This page can't vouch for it: the hub relays the keys."),
+      h("p", { class: "hint" }, "These runners asked for the project's key. Enroll them under the same root key (", h("code", {}, "dash runner notes enroll --key <path>"), " on each), or approve one on the runner named, after checking its fingerprint matches the one ", h("code", {}, "dash runner notes"), " shows on the runner itself. This page can't vouch for it: the hub relays the keys, and shows the enrollment as the runners report it."),
       h("ul", { class: "item-list" }, ...waiting));
   }
   if (v.pending.length) {
@@ -104,7 +109,19 @@ function runnerRow(r, current) {
     h("span", { class: `runner-dot ${r.online ? "on" : ""}`, "aria-hidden": "true" }),
     h("span", { class: "runner-name" }, r.name),
     fp ? h("code", { class: "runner-fingerprint", title: "This runner's key fingerprint" }, fp) : null,
-    line, key);
+    line, key, st ? enrollmentLine(st) : null);
+}
+
+// enrollmentLine is the root key a runner says it is enrolled under (as
+// it reports it: the hub only relays this).
+function enrollmentLine(st) {
+  if (!st.root) {
+    return h("span", { class: "item-sub hint" }, "not enrolled with a root key: trusts the runners approved on it");
+  }
+  return h("span", { class: `item-sub hint${st.certified ? "" : " warn"}` },
+    "enrolled under root key ",
+    h("code", { title: "The root key's fingerprint, as ssh-keygen -l prints it" }, st.root),
+    st.certified ? "" : ", but its certificate is for an older key: enroll it again");
 }
 
 // waitingRows are the runners waiting for approval, on the runner that
@@ -114,6 +131,15 @@ function waitingRows(runners) {
   for (const r of runners) {
     for (const w of r.status?.waiting || []) {
       const who = runners.find((x) => x.id === w.runner)?.name || w.name || w.runner;
+      if (w.other_root) {
+        rows.push(h("li", { class: "item-row" },
+          h("span", { class: "runner-name" }, who),
+          h("span", { class: "hint" }, ` waits on ${r.name} · asked ${agoText(w.at)}`),
+          h("code", { class: "runner-fingerprint" }, w.fingerprint),
+          h("span", { class: "item-sub hint warn" }, "enrolled under a different root key ", h("code", {}, w.other_root),
+            r.status.root ? ` than ${r.name} (${r.status.root}): enroll both with the same key.` : `, and ${r.name} isn't enrolled: enroll it with that key.`)));
+        continue;
+      }
       rows.push(h("li", { class: "item-row" },
         h("span", { class: "runner-name" }, who),
         h("span", { class: "hint" }, ` waits on ${r.name} · asked ${agoText(w.at)}`),

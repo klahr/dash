@@ -248,6 +248,16 @@ func TestScriptInstallsAndRegisters(t *testing.T) {
 	if want := "[runner][setup][--server][http://127.0.0.1:7788][--skip-checks][--service=false]\n[runner]\n"; r.err != nil || r.log != want {
 		t.Errorf("--no-service called %s (%v), want %s\n%s", r.log, r.err, want, r.out)
 	}
+	// --notes-key goes to setup as a path only (the script never opens the
+	// key: this one doesn't even exist), with --no-service too.
+	r = runScript(t, f, "v1.2.3", home, "--notes-key", "/keys/my key", "--no-service")
+	if want := "[runner][setup][--server][http://127.0.0.1:7788][--notes-key][/keys/my key][--service=false]\n[runner]\n"; r.err != nil || r.log != want {
+		t.Errorf("--notes-key called %s (%v), want %s\n%s", r.log, r.err, want, r.out)
+	}
+	r = runScript(t, f, "v1.2.3", home, "--notes-key=~/k")
+	if want := "[runner][setup][--server][http://127.0.0.1:7788][--notes-key][~/k]\n"; r.err != nil || r.log != want {
+		t.Errorf("--notes-key= called %s (%v), want %s\n%s", r.log, r.err, want, r.out)
+	}
 }
 
 func TestScriptInstallsTheLatestReleaseForADevHub(t *testing.T) {

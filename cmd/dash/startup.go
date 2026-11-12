@@ -836,6 +836,7 @@ func (a *app) setupRunner() {
 		fatal("shared notes", "err", err)
 	}
 	a.notes.Name = creds.Name
+	a.notes.IdentityFile = notes.IdentityPath(o.dataDir) // dash runner notes rotate
 	slog.Info("shared notes: this runner's key fingerprint (compare it on other runners; see dash runner notes)", "fingerprint", a.notesID.Fingerprint())
 	apiSrv.NotesPeer = notesWire
 	// The tasks this runner runs for the hub read and write those notes
@@ -1099,7 +1100,7 @@ func (a *app) connectHub(statePath string) bool {
 	}
 	creds := a.runnerCreds
 	client := &tunnel.Client{Creds: creds, Handler: a.apiSrv.RunnerRoutes(), OnState: onState, Version: buildinfo.Version,
-		NotesKey: a.notesID.Public.String(), Previews: a.previews, OnPreviewURL: func(t string) { a.previews.SetHub(t, creds.Name) }}
+		NotesKeyOf: func() string { return a.notes.Public().String() }, Previews: a.previews, OnPreviewURL: func(t string) { a.previews.SetHub(t, creds.Name) }}
 	if !a.o.addrSet {
 		if err := client.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("runner", "err", err)

@@ -328,7 +328,7 @@ func TestHubCantSlipInItsOwnKey(t *testing.T) {
 	// A runner that really got a new key is taken once the user approves
 	// the new fingerprint on a.
 	approve(t, a, &testRunner{svc: &Service{id: hub}})
-	if err := a.svc.trust.see("rb", "rb", hub.Public); err != nil {
+	if err := a.svc.trust.see("rb", "rb", hub.Public, nil); err != nil {
 		t.Fatalf("an approved new key is still refused: %v", err)
 	}
 }

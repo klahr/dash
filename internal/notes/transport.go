@@ -54,6 +54,11 @@ type hello struct {
 	Name   string    `json:"name,omitempty"`
 	Key    PublicKey `json:"key"`
 	Have   []string  `json:"have,omitempty"` // ids of its project keys
+	// Cert is the root's certificate for its key, if it is enrolled
+	// (enroll.go), and Revocations the root revocations it knows: a peer
+	// keeps those its own root signed, and passes them on.
+	Cert        *Cert        `json:"cert,omitempty"`
+	Revocations []Revocation `json:"revocations,omitempty"`
 }
 
 // Message kinds.

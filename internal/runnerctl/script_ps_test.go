@@ -37,6 +37,8 @@ func TestPowerShellScriptRendering(t *testing.T) {
 		"$LatestApi = '" + LatestAPI + "'\n",
 		"irm https://dash.example.com/runner/install.ps1",
 		`_windows_$arch.zip`,
+		"[string]$NotesKey = \"\",",
+		`if ($NotesKey) { $runArgs += @("--notes-key", $NotesKey) }`,
 		"\nMain\n",
 	} {
 		if !strings.Contains(s, want) {
@@ -47,6 +49,13 @@ func TestPowerShellScriptRendering(t *testing.T) {
 	for _, l := range strings.Split(s, "\n") {
 		if code := strings.TrimSpace(l); !strings.HasPrefix(code, "#") && exitRe.MatchString(code) {
 			t.Errorf("install.ps1 exits instead of throwing: %s", l)
+		}
+	}
+	// The script passes the key's path on and never opens the key itself.
+	for _, l := range strings.Split(s, "\n") {
+		if code := strings.TrimSpace(l); !strings.HasPrefix(code, "#") && strings.Contains(code, "$NotesKey") &&
+			regexp.MustCompile(`(?i)Get-Content|ReadAll|Test-Path|Copy-Item|Get-Item`).MatchString(code) {
+			t.Errorf("install.ps1 touches the notes key: %s", l)
 		}
 	}
 	if _, err := PowerShellScript(ScriptParams{Hub: "http://dash.example.com"}); err == nil {

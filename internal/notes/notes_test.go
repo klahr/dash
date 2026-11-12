@@ -285,7 +285,11 @@ type testRunner struct {
 	svc    *Service
 	online bool
 	member bool // on the project
+	// projects are the projects it is on (add: p1).
+	projects []string
 }
+
+func (x *testRunner) on(project string) bool { return x.member && slices.Contains(x.projects, project) }
 
 func newNet(t *testing.T) *testNet {
 	n := &testNet{t: t, runners: map[string]*testRunner{}}
@@ -294,15 +298,15 @@ func newNet(t *testing.T) *testNet {
 			from := r.Header.Get("X-Test-Runner")
 			n.mu.Lock()
 			defer n.mu.Unlock()
-			if x := n.runners[from]; x == nil || !x.online || !x.member {
+			if x := n.runners[from]; x == nil || !x.online || !x.on(project) {
 				return nil, nil, &RelayError{Status: http.StatusUnauthorized, Msg: "who?"}
 			}
 			var peers, members []string
 			for id, x := range n.runners {
-				if x.member {
+				if x.on(project) {
 					members = append(members, id)
 				}
-				if id != from && x.online && x.member {
+				if id != from && x.online && x.on(project) {
 					peers = append(peers, id)
 				}
 			}
@@ -341,9 +345,23 @@ func newNet(t *testing.T) *testNet {
 	return n
 }
 
-func (n *testNet) add(id string) *testRunner {
+func (n *testNet) add(id string) *testRunner { return n.addIn(id, "p1") }
+
+// addIn adds runner id on projects.
+func (n *testNet) addIn(id string, projects ...string) *testRunner {
+	return n.start(&testRunner{id: id, online: true, member: true, dir: n.t.TempDir(), projects: projects})
+}
+
+// restart stops x and starts it again from its files, as a new process.
+func (n *testNet) restart(x *testRunner) *testRunner {
+	x.srv.Close()
+	x.svc.Close()
+	return n.start(&testRunner{id: x.id, online: x.online, member: x.member, dir: x.dir, projects: x.projects})
+}
+
+func (n *testNet) start(x *testRunner) *testRunner {
+	id := x.id
 	tr := &HubTransport{}
-	x := &testRunner{id: id, online: true, member: true, dir: n.t.TempDir()}
 	tr.Post = func(ctx context.Context, project string, body []byte) ([]byte, error) {
 		n.mu.Lock()
 		on := x.online
@@ -372,11 +390,12 @@ func (n *testNet) add(id string) *testRunner {
 	if err != nil {
 		n.t.Fatal(err)
 	}
-	svc, err := NewService(filepath.Join(x.dir, "shared"), id, ident, tr, func(p string) bool { return p == "p1" })
+	svc, err := NewService(filepath.Join(x.dir, "shared"), id, ident, tr, func(p string) bool { return slices.Contains(x.projects, p) })
 	if err != nil {
 		n.t.Fatal(err)
 	}
 	svc.Name = id
+	svc.IdentityFile = filepath.Join(x.dir, "identity.json")
 	n.t.Cleanup(func() { svc.Close() })
 	x.svc = svc
 	n.mu.Lock()

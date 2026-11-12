@@ -13,6 +13,11 @@
 #   -NoService      don't install the scheduled task; run the runner in this
 #                   window instead
 #   -SkipChecks     register even if git, bash, claude or the hub look wrong
+#   -NotesKey PATH  enroll the runner for shared notes with this root key (an
+#                   ed25519 SSH key, see `dash runner notes keygen`). This
+#                   script never opens the key: it passes the path to
+#                   `dash runner setup`, which asks for its passphrase in the
+#                   console.
 #
 # Run it again without -Code to update Dash to the hub's version; the
 # registration is kept. It needs no administrator rights. The runner runs
@@ -28,6 +33,7 @@ param(
 	[string]$Projects = "",
 	[string]$Data = "",
 	[string]$Prefix = "",
+	[string]$NotesKey = "",
 	[switch]$NoService,
 	[switch]$SkipChecks
 )
@@ -134,6 +140,7 @@ function Main {
 	if ($Name) { $runArgs += @("--name", $Name) }
 	if ($Projects) { $runArgs += @("--projects", $Projects) }
 	if ($Data) { $runArgs += @("--data", $Data) }
+	if ($NotesKey) { $runArgs += @("--notes-key", $NotesKey) }
 	if ($SkipChecks) { $runArgs += "--skip-checks" }
 	if ($NoService) { $runArgs += "--service=false" }
 	& $bin @runArgs

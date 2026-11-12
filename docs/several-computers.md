@@ -131,6 +131,10 @@ That's all. The script, served by the hub (it holds no secrets, so it needs no s
    waiting longer between attempts while the hub is down (up to a minute). `--no-service` skips
    this and runs the runner in the terminal instead.
 
+With `--notes-key ~/.ssh/dash_notes` (`-NotesKey` on Windows), setup also enrolls the runner for
+[shared notes](#enrolling-runners-with-your-root-key) with your root key, so it trusts your other
+runners without approvals. The command shown in the dialog doesn't include it: add it yourself.
+
 The dialog says **Connected ✓** when the runner comes online, then lists the git repositories it
 finds in its projects directory to add as [its own projects](#projects-of-a-runners-own).
 
@@ -505,11 +509,12 @@ first one to catch up keeps its own copy and the others resync from it.
 The TTL, caps and retention window can be set per project (`Service.Policies`). Use the same values
 on all of a project's runners.
 
-#### Encryption and approving runners
+#### Encryption and trusting runners
 
 Shared notes are encrypted end to end. Only runners hold keys. The hub, its web pages and browsers
 never get a project key or see a note in plain text: all the hub sees is ciphertext, the project,
-the message size, the runner that sent it, and the runners' public keys.
+the message size, the runner that sent it, and the runners' public keys, certificates and
+revocations.
 
 - Each runner makes a key pair the first time it starts (`<-data>/notes-identity.json`, readable by
   its user only, next to `runner.json`). It tells the hub its public key, and the hub shows its
@@ -517,42 +522,144 @@ the message size, the runner that sent it, and the runners' public keys.
 - Each project has a random key that seals every note between its runners (NaCl secretbox). A
   runner gives it to another runner by wrapping it for that runner's public key (NaCl box). The
   wrapped copy travels through the hub like any other message.
-- A runner wraps its project keys only for runners whose fingerprint you approved **on it**, and
-  takes keys only from runners approved on it. Approve each pair of runners both ways. Compare the
-  fingerprint with what the other runner shows itself, not only with the hub's page: the hub relays
-  the keys and could swap in its own.
+- A runner wraps its project keys only for runners it trusts, and takes keys only from them. It
+  trusts a runner when both are **enrolled with the same root key** of yours, or when you
+  **approved** that runner's fingerprint on it. The hub relays the keys and could swap in its own,
+  so it never decides: it can't sign a certificate or approve anything.
+
+##### Enrolling runners with your root key
+
+The root key is an ed25519 SSH key that only you hold. Enrolling a runner with it signs a
+certificate saying "this runner's notes key is K" (an SSHSIG signature, as `ssh-keygen -Y sign`
+makes, namespace `dash-notes-enroll-v1`). Every runner enrolled with the same root key trusts
+every other one: no approvals and no fingerprints to compare, however many runners you add.
+
+Make the key once, with a passphrase, on the computer you trust most (your laptop, say). Either
+command works; `keygen` needs no runner and no hub:
+
+```sh
+dash runner notes keygen                     # ~/.ssh/dash_notes and ~/.ssh/dash_notes.pub, asks for a passphrase twice
+ssh-keygen -t ed25519 -f ~/.ssh/dash_notes   # the same, with OpenSSH's own tool
+```
+
+`keygen` never replaces an existing key: a new root key orphans every runner enrolled with the
+old one. Back the key up. Without it you can't enroll more runners under that root or revoke one,
+and the only way out is a new key and `enroll --force` on every runner.
+
+Three runners, say `laptop`, `desktop` and `buildbox`:
+
+1. Make the key on `laptop`: `dash runner notes keygen`.
+2. Copy `~/.ssh/dash_notes` to each other computer for the time it takes to enroll (`scp`, a USB
+   stick), or log in to them with `ssh -A` and keep the key in your laptop's ssh-agent
+   (`ssh-add ~/.ssh/dash_notes`; then `--key` can name the `.pub` file).
+3. Install each runner with the key:
+
+   ```sh
+   curl -fsSL https://dash.example.com/runner/install.sh | sh -s -- --code ABCD-EFGH --notes-key ~/.ssh/dash_notes
+   ```
+
+   On Windows: `& ([scriptblock]::Create((irm https://dash.example.com/runner/install.ps1))) -Code ABCD-EFGH -NotesKey $HOME\.ssh\dash_notes`.
+   The scripts never open the key: they pass the path to `dash runner setup`, which asks for the
+   passphrase on the terminal (not on stdin, which is the piped script) and enrolls the runner
+   before starting it. This works with `--no-service` too.
+4. That's it. The runners trade project keys with each other within seconds.
+
+A runner that is installed already is enrolled with:
+
+```sh
+dash runner notes enroll --key ~/.ssh/dash_notes
+```
+
+The running runner picks the enrollment up within seconds; no restart. Only the public half of
+the root key and the certificate are kept, in `<-data>/shared/enrollment.json`. The private key
+is read only while `enroll`, `rotate` or `revoke --key` sign with it (or used through ssh-agent),
+and is never stored by the runner or sent to the hub. **Delete it from each runner after
+enrolling**, unless that is the computer you keep it on. Keep in mind that installing with the
+key on the computer trusts the hub at that moment: the hub serves the install script and picks the
+binary that reads your key. If that worries you, install first, check the binary, then enroll.
+
+Only ed25519 keys are taken; RSA, ECDSA, PGP and other keys are refused with an error that says
+which type it is. A runner enrolled under another root key before isn't moved to a new one
+without `--force`, which drops all trust the old root's certificates gave (approvals stay) and
+makes the runner rotate the project keys those runners held.
+
+##### Approving runners by hand
+
+Runners that aren't enrolled, or are enrolled under different root keys, can still trust each
+other by fingerprint, as before. Approve each pair of runners both ways, after comparing the
+fingerprint with what the other runner shows itself, not only with the hub's page:
+
+```sh
+dash runner notes                          # this runner's key, its root key, every runner and how it trusts it
+dash runner notes approve ABCD-EFGH-JKLM-NPQR-STUV
+dash runner notes revoke  ABCD-EFGH-JKLM-NPQR-STUV
+```
+
+Enrolled and approved runners mix: an enrolled runner trusts the runners enrolled under its root
+and the ones approved on it. A runner that isn't trusted yet shows under "Waiting" in
+`dash runner notes`, and its log says what to do. If it is enrolled under a different root key,
+it says so (with that key's `SHA256:` fingerprint) instead of asking you to approve it. Notes
+written before two runners trade keys reach each other once they do.
+
+A runner pins the key it first sees for each runner id. If that runner later shows up with another
+key, it is refused and logged as an error, and `dash runner notes` lists the change, unless the new
+key comes with a certificate from this runner's root (the normal case after `rotate`). If a
+runner that isn't enrolled really got a new key (its data folder was lost), approve the new
+fingerprint after checking it on that runner.
+
+##### Removing a computer
+
+- **Unlink it, or revoke it, on the hub.** The runners that remain notice the next time they talk
+  through the hub (when a note is written, and at least every 15 minutes). They rotate to a new
+  project key, wrap it for each other, and seal new notes with it, so the hub can't hand the old
+  key back to the computer. A message sealed with an older key is refused.
+- **A computer you no longer trust** (lost, stolen, compromised): revoke its notes key with the
+  root key, from a runner enrolled under it that can read the key (or reach it in ssh-agent):
 
   ```sh
-  dash runner notes                          # this runner's fingerprint, approved runners, runners waiting
-  dash runner notes approve ABCD-EFGH-JKLM-NPQR-STUV
-  dash runner notes revoke  ABCD-EFGH-JKLM-NPQR-STUV
+  dash runner notes revoke --key ~/.ssh/dash_notes ABCD-EFGH-JKLM-NPQR-STUV
   ```
 
-  A runner whose key isn't approved yet shows under "Waiting for your approval", and its log says
-  so with the command to run. Notes written before two runners trade keys reach each other once
-  they do.
-- A runner pins the key it first sees for each runner id. If that runner later shows up with
-  another key, it is refused and the runner logs an error, and `dash runner notes` lists the change.
-  If the other runner really got a new key (its data folder was lost), approve the new fingerprint
-  after checking it on that runner.
-- When a runner leaves a project (unlinked, or revoked on the hub), the runners that remain notice
-  the next time they talk through the hub (when a note is written, and at least every 15 minutes).
-  They rotate to a new project key, wrap it for each other, and seal new notes with it. A message
-  sealed with an older key is refused. `dash runner notes revoke` rotates at once, even if the hub
-  still lists the runner. Revoke it on every runner that approved it. Runners keep their notes in
-  plain text in their own copy, so nothing has to be re-encrypted. A runner with the new key gets
-  every note again, sealed with that key, when it next catches up.
-- The secret scanner runs on the writing runner before a note is saved or sealed.
+  The revocation is signed with the root key (namespace `dash-notes-revoke-v1`). That runner
+  rotates at once, and every runner enrolled under the same root takes the revocation from the
+  hellos it trades, passes it on in its own, in every project, so it reaches runners that share no
+  project with the one you revoked on, and rotates the keys the revoked runner held. A revocation
+  beats any certificate and lasts: that notes key is never trusted again, and `approve` refuses it
+  unless you pass `--force`. Only revocations signed by the root count, so a compromised runner
+  can't revoke honest ones. The hub can hold a revocation back but can't forge one; to be sure,
+  also run the plain `revoke` on each runner.
+- **A plain `dash runner notes revoke <fingerprint>`** (no `--key`) affects only the runner you run
+  it on. It rotates at once there, even if the hub still lists the revoked runner.
+
+Runners keep their notes in plain text in their own copy, so nothing has to be re-encrypted. A
+runner with the new key gets every note again, sealed with that key, when it next catches up.
+
+##### Rotating a runner's key
+
+```sh
+dash runner notes rotate --key ~/.ssh/dash_notes
+```
+
+gives the runner a new notes key pair and enrolls the new key in the same step (without `--key`
+it uses the root key if ssh-agent holds it). The running runner switches to it within seconds
+and says hello to its peers, which take the new key because its certificate is valid, and wrap the
+project keys for it. A runner whose key was revoked with the root key must rotate and be enrolled
+again; its old key stays revoked. Without enrollment, approve the new fingerprint on the other
+runners.
+
+The secret scanner runs on the writing runner before a note is saved or sealed.
 
 #### Status and removing notes in the hub's UI
 
 Project settings → **Shared notes** shows counts only. The hub asks the project's online runners
 over their tunnels. Each runner reports how many live notes it has, their size, how many have
 expired but aren't purged yet, and when the latest write was. It also reports its per-writer
-counters, the project key it seals with (its random id and epoch), its own fingerprint, and the
-runners waiting for approval on it. The page says whether the online copies agree. If no runner of
-the project is online, it says so instead of showing numbers. Approving still happens on the runners
-(`dash runner notes approve`), after comparing fingerprints there.
+counters, the project key it seals with (its random id and epoch), its own fingerprint, the root
+key it is enrolled under (its `SHA256:` fingerprint, or none), and the runners waiting for approval
+on it, saying which are enrolled under a different root key. The page says whether the online
+copies agree, and warns when online runners have different root keys. If no runner of the project
+is online, it says so instead of showing numbers. The page only relays what the runners report;
+enrolling and approving happen on the runners themselves.
 
 **Remove notes** sends a command, never a note. You can remove all notes, the notes last written by
 one of the project's tasks or runners, or the expired notes. Each online runner opens its own copy,

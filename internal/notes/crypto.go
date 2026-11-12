@@ -183,7 +183,19 @@ func LoadIdentity(path string) (*Identity, error) {
 	if err == nil || !errors.Is(err, os.ErrNotExist) {
 		return id, err
 	}
-	if id, err = NewIdentity(); err != nil {
+	return newIdentityAt(path)
+}
+
+// RotateIdentity replaces the identity at path with a new one, and returns
+// it. The file is replaced whole (a reader sees the old or the new); the
+// running runner switches to it (Service.IdentityFile).
+func RotateIdentity(path string) (*Identity, error) {
+	return newIdentityAt(path)
+}
+
+func newIdentityAt(path string) (*Identity, error) {
+	id, err := NewIdentity()
+	if err != nil {
 		return nil, err
 	}
 	b, _ := json.MarshalIndent(identityFile{Public: id.Public, Private: id.private[:], Created: time.Now().UTC()}, "", "  ")

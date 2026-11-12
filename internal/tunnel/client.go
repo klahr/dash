@@ -128,6 +128,9 @@ type Client struct {
 	// NotesKey is this runner's shared notes public key (base64), told to
 	// the hub on connect so it can show its fingerprint. Optional.
 	NotesKey string
+	// NotesKeyOf, if set, gives NotesKey on every connect instead (the key
+	// changes when the user rotates it).
+	NotesKeyOf func() string
 	// OnPreviewURL is told, on every connect, where the hub serves this
 	// runner's previews (see PreviewHeader; "" if it doesn't). Optional.
 	OnPreviewURL func(template string)
@@ -191,8 +194,12 @@ func (c *Client) serveOnce(ctx context.Context) error {
 	if c.Version != "" {
 		hdr.Set(VersionHeader, c.Version)
 	}
-	if c.NotesKey != "" {
-		hdr.Set(NotesKeyHeader, c.NotesKey)
+	notesKey := c.NotesKey
+	if c.NotesKeyOf != nil {
+		notesKey = c.NotesKeyOf()
+	}
+	if notesKey != "" {
+		hdr.Set(NotesKeyHeader, notesKey)
 	}
 	ws, res, err := c.dialer().DialContext(ctx, u.String(), hdr)
 	if err != nil {

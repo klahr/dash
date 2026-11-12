@@ -32,6 +32,11 @@ type Status struct {
 	Holders  []string `json:"holders,omitempty"`
 	// Fingerprint is this runner's own key fingerprint.
 	Fingerprint string `json:"fingerprint"`
+	// Root is the fingerprint (SHA256:…) of the root key this runner is
+	// enrolled under ("": none), and Certified whether its certificate is
+	// for its current key.
+	Root      string `json:"root,omitempty"`
+	Certified bool   `json:"certified,omitempty"`
 	// Waiting are the runners of the project whose key the user hasn't
 	// approved on this runner yet.
 	Waiting []Waiting `json:"waiting,omitempty"`
@@ -43,6 +48,8 @@ type Waiting struct {
 	Name        string    `json:"name,omitempty"`
 	Fingerprint string    `json:"fingerprint"`
 	At          time.Time `json:"at"`
+	// OtherRoot: it is enrolled under this root key, not this runner's.
+	OtherRoot string `json:"other_root,omitempty"`
 }
 
 // Status is this runner's copy of project's notes, counted.
@@ -56,6 +63,7 @@ func (s *Service) Status(project string) (Status, error) {
 		return out, err
 	}
 	out.Fingerprint = s.Fingerprint()
+	out.Root, out.Certified = s.trust.enrollment(s.self, s.Public())
 	out.Waiting = s.trust.waiting(project)
 	return out, nil
 }
@@ -99,14 +107,20 @@ func (s *Store) status(now time.Time) (out Status, err error) {
 	return
 }
 
-// waiting is the runners waiting for approval here on project.
+// waiting is the runners waiting for approval here on project (not those
+// trusted since, say by a certificate).
 func (t *trust) waiting(project string) []Waiting {
+	t.reload()
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	var out []Waiting
 	for _, p := range t.peers.Pending {
+		pin, ok := t.peers.Pins[p.Runner]
+		if ok && pin.Fingerprint == p.Fingerprint && t.standingLocked(p.Runner, pin.Key).Trusted() {
+			continue
+		}
 		if p.Project == project {
-			out = append(out, Waiting{Runner: p.Runner, Name: p.Name, Fingerprint: p.Fingerprint, At: p.At})
+			out = append(out, Waiting{Runner: p.Runner, Name: p.Name, Fingerprint: p.Fingerprint, At: p.At, OtherRoot: p.OtherRoot})
 		}
 	}
 	return out

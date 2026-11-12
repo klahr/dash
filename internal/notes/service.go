@@ -45,6 +45,10 @@ type Service struct {
 	// Policies gives a project's tidying policy (nil, or zero fields: the
 	// defaults). Its runners should agree on it.
 	Policies func(project string) Policy
+	// IdentityFile is where the identity was read from ("": not watched).
+	// Reconcile switches to the identity there when it changes (dash
+	// runner notes rotate).
+	IdentityFile string
 
 	mu       sync.Mutex
 	stores   map[string]*Store
@@ -58,6 +62,8 @@ type Service struct {
 	halt context.CancelFunc
 	// reconciled is the approvals' generation Reconcile last acted on.
 	reconciled int
+	// idStamp is IdentityFile's size and time when last read.
+	idStamp string
 }
 
 // NewService keeps runner self's notes in dir (e.g. <data>/shared), one
@@ -83,7 +89,49 @@ func NewService(dir, self string, id *Identity, t Transport, allowed func(projec
 }
 
 // Fingerprint is this runner's key fingerprint, for the user to compare.
-func (s *Service) Fingerprint() string { return s.id.Fingerprint() }
+func (s *Service) Fingerprint() string { return s.ident().Fingerprint() }
+
+// Public is this runner's notes public key, as it is now.
+func (s *Service) Public() PublicKey { return s.ident().Public }
+
+// ident is this runner's identity, as it is now.
+func (s *Service) ident() *Identity {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.id
+}
+
+// reloadIdentity switches to the identity in IdentityFile if it changed
+// there (dash runner notes rotate), and reports whether it did.
+func (s *Service) reloadIdentity() bool {
+	if s.IdentityFile == "" {
+		return false
+	}
+	stamp := fileStamp(s.IdentityFile)
+	s.mu.Lock()
+	same := s.idStamp == stamp
+	s.idStamp = stamp
+	s.mu.Unlock()
+	if same {
+		return false
+	}
+	id, err := ReadIdentity(s.IdentityFile)
+	if err != nil {
+		slog.Warn("shared notes: can't read the new identity; keeping the old one", "err", err)
+		return false
+	}
+	s.mu.Lock()
+	old := s.id
+	changed := old.Public != id.Public
+	if changed {
+		s.id = id
+	}
+	s.mu.Unlock()
+	if changed {
+		slog.Warn("shared notes: this runner has a new key (dash runner notes rotate)", "old", old.Fingerprint(), "new", id.Fingerprint())
+	}
+	return changed
+}
 
 func (s *Service) now() time.Time {
 	if s.Now != nil {

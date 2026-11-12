@@ -14,6 +14,11 @@
 #   --no-service     don't install a background service; run the runner in
 #                    this terminal instead
 #   --skip-checks    register even if git, claude or the hub look wrong
+#   --notes-key PATH enroll the runner for shared notes with this root key
+#                    (an ed25519 SSH key, see `dash runner notes keygen`).
+#                    This script never opens the key: it passes the path to
+#                    `dash runner setup`, which asks for its passphrase on
+#                    the terminal.
 #
 # Run it again without --code to update Dash to the hub's version; the
 # registration is kept. It never uses sudo. (An installed runner also
@@ -47,6 +52,8 @@ Installs a Dash runner: curl -fsSL <hub>/runner/install.sh | sh -s -- [options]
   --prefix DIR     where dash is installed (default: ~/.local/bin)
   --no-service     run the runner in this terminal instead of as a background service
   --skip-checks    register even if git, claude or the hub look wrong
+  --notes-key PATH enroll the runner for shared notes with this root key (an ed25519
+                   SSH key; dash asks for its passphrase on the terminal)
 USAGE
 }
 
@@ -92,10 +99,10 @@ detect_platform() {
 }
 
 main() {
-	code="" name="" projects="" data="" prefix="" service=1 checks=1
+	code="" name="" projects="" data="" prefix="" notes_key="" service=1 checks=1
 	while [ $# -gt 0 ]; do
 		case "$1" in
-		--code | --name | --projects | --data | --prefix)
+		--code | --name | --projects | --data | --prefix | --notes-key)
 			[ $# -ge 2 ] || die "$1 needs a value"
 			case "$1" in
 			--code) code=$2 ;;
@@ -103,6 +110,7 @@ main() {
 			--projects) projects=$2 ;;
 			--data) data=$2 ;;
 			--prefix) prefix=$2 ;;
+			--notes-key) notes_key=$2 ;;
 			esac
 			shift 2
 			;;
@@ -111,6 +119,7 @@ main() {
 		--projects=*) projects=${1#*=}; shift ;;
 		--data=*) data=${1#*=}; shift ;;
 		--prefix=*) prefix=${1#*=}; shift ;;
+		--notes-key=*) notes_key=${1#*=}; shift ;;
 		--no-service) service=0; shift ;;
 		--skip-checks) checks=0; shift ;;
 		-h | --help) usage; exit 0 ;;
@@ -172,6 +181,7 @@ main() {
 	[ -z "$name" ] || set -- "$@" --name "$name"
 	[ -z "$projects" ] || set -- "$@" --projects "$projects"
 	[ -z "$data" ] || set -- "$@" --data "$data"
+	[ -z "$notes_key" ] || set -- "$@" --notes-key "$notes_key"
 	[ "$checks" = 1 ] || set -- "$@" --skip-checks
 	[ "$service" = 1 ] || set -- "$@" --service=false
 	"$bin" "$@" || exit $?
