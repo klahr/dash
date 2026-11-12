@@ -317,7 +317,7 @@ func TestBrowserPersonalWebhook(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("no test delivery")
 	}
-	b.waitJS("its status", `document.querySelector("#me-webhooks .runner-seen")?.textContent.includes("Test delivered")`)
+	b.waitJS("its status", `document.querySelector("#me-webhooks .item-sub")?.textContent.includes("Test delivered")`)
 	b.waitJS("the History button", markText("#me-webhooks .webhook-actions button", "History"))
 	b.do("open its history", chromedp.Click(chromedp.CSS(`[data-e2e-click]`)))
 	b.waitJS("the test delivery in it", `[...document.querySelectorAll("#me-webhooks .webhook-history li")].some((e) => e.textContent.includes("Test") && e.textContent.includes("HTTP 200"))`)
@@ -1108,7 +1108,7 @@ func TestBrowserCustomScan(t *testing.T) {
 	b.do("write the scan",
 		chromedp.SendKeys(chromedp.CSS(`#scan-form [name=title]`), "API error handling"),
 		chromedp.SendKeys(chromedp.CSS(`#scan-form [name=prompt]`), "Find handlers that leak internal errors."))
-	b.until("save it", `!document.querySelector("#scan-sheet").open`, chromedp.Click(chromedp.ID("scan-save")))
+	b.until("save it", `!document.querySelector("#scan-sheet").open`, chromedp.Click(chromedp.CSS(`#scan-form button[value=save]`)))
 	b.waitJS("the new scan listed", `!!document.querySelector('.scan-card[data-scan="api-error-handling"]')`)
 	var res struct {
 		Scans []struct {
