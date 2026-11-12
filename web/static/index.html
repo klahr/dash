@@ -271,7 +271,7 @@
           <ul class="scan-problems" id="scan-problems" hidden></ul>
           <ul class="scan-list" id="scan-list"></ul>
           <div class="scan-create" id="scan-create" hidden>
-            <div><p class="scan-create-title">Need something else?</p><p class="scan-create-text">Describe what to look for; Dash runs it like the built-in scans and adds what it finds to Issues.</p></div>
+            <div><p class="scan-create-title">Need something else?</p><p>Describe what to look for; Dash runs it like the built-in scans and adds what it finds to Issues.</p></div>
             <button class="btn" type="button" id="scan-new" data-icon="plus" title="Describe what to look for; Dash runs it like the built-in scans">Create custom scan</button>
           </div>
           <div class="empty" id="scan-empty"><p class="empty-title">No project</p><p>Select a project to see its scans.</p></div>
@@ -538,7 +538,7 @@
           <div class="draw-wait" id="draw-wait" hidden><span class="spinner big" aria-hidden="true"></span>Taking a snapshot…</div>
         </div>
         <div class="draw-bar" id="draw-bar" role="toolbar" aria-label="Draw" hidden>
-          <div class="segmented draw-tools" role="group" aria-label="Tool">
+          <div class="segmented" role="group" aria-label="Tool">
             <button type="button" data-tool="pen" data-icon="edit" title="Pen (P) · Shift for a straight line" aria-label="Pen"></button>
             <button type="button" data-tool="arrow" data-icon="arrow" title="Arrow (A) · Shift for 45° steps" aria-label="Arrow"></button>
             <button type="button" data-tool="circle" data-icon="circle" title="Circle (O) · Shift for a perfect circle" aria-label="Circle"></button>
@@ -683,12 +683,12 @@
       <div class="rail-layout">
         <nav class="rail-nav" id="new-project-nav" aria-label="Where the repository comes from">
           <div class="rail-group"><span class="rail-head">Repository</span>
-            <button type="button" class="rail-item np-src" data-rail="gh"><span class="np-src-name">From GitHub</span><span class="np-src-desc">Pick one of your repositories</span></button>
-            <button type="button" class="rail-item np-src" data-rail="create"><span class="np-src-name">New GitHub repository</span><span class="np-src-desc">Create an empty one</span></button>
-            <button type="button" class="rail-item np-src" data-rail="url"><span class="np-src-name">From URL</span><span class="np-src-desc">Any git remote</span></button>
+            <button type="button" class="rail-item np-src" data-rail="gh"><span>From GitHub</span><span class="np-src-desc">Pick one of your repositories</span></button>
+            <button type="button" class="rail-item np-src" data-rail="create"><span>New GitHub repository</span><span class="np-src-desc">Create an empty one</span></button>
+            <button type="button" class="rail-item np-src" data-rail="url"><span>From URL</span><span class="np-src-desc">Any git remote</span></button>
           </div>
           <div class="rail-group"><span class="rail-head">No remote</span>
-            <button type="button" class="rail-item np-src" data-rail="local"><span class="np-src-name">Local only</span><span class="np-src-desc">A throwaway repo on one runner</span></button>
+            <button type="button" class="rail-item np-src" data-rail="local"><span>Local only</span><span class="np-src-desc">A throwaway repo on one runner</span></button>
           </div>
         </nav>
         <div class="rail-main" id="new-project-main">
@@ -804,7 +804,7 @@
       <header class="sheet-head"><h2 id="usage-title" tabindex="-1" autofocus>Claude usage</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></header>
       <p class="hint" id="usage-reason"></p>
       <div class="meters" id="usage-meters"></div>
-      <p class="hint" id="usage-note">The queue pauses automatically when a window's limit is reached.</p>
+      <p class="hint">The queue pauses automatically when a window's limit is reached.</p>
       <section class="pace-settings" aria-labelledby="pace-follow-label">
         <label class="toggle"><input type="checkbox" id="pace-follow"><span id="pace-follow-label">Follow weekly pace</span></label>
         <p class="hint" id="pace-help">Keeps weekly usage on the pace line: no new tasks while ahead of it, more at once while behind.</p>
@@ -1132,7 +1132,7 @@
             <ul class="item-list" id="tokens-oauth"></ul>
             <h3 class="section-head">API tokens</h3>
             <ul class="item-list" id="tokens-api"></ul>
-            <div class="org-invite token-new">
+            <div class="org-invite">
               <input type="text" id="token-name" placeholder="Name, e.g. CI" autocomplete="off" maxlength="100" aria-label="Token name">
               <select id="token-org" aria-label="Organization"></select>
               <select id="token-scope" aria-label="Access">
@@ -1167,7 +1167,7 @@
               <h3 class="section-head">Links for TVs</h3>
               <p class="hint">A TV shouldn't keep anyone's session. A TV link opens the wall of this organization, with the options above, without signing in, and nothing else. Anyone with the link sees the wall: treat it like a password.</p>
               <ul class="item-list" id="wall-tokens"></ul>
-              <div class="org-invite token-new" id="wall-token-new">
+              <div class="org-invite" id="wall-token-new">
                 <input type="text" id="wall-token-name" placeholder="Name, e.g. Office TV" autocomplete="off" maxlength="100" aria-label="TV link name">
                 <button class="btn primary" id="wall-token-create" type="button" data-icon="plus">Create link</button>
               </div>
