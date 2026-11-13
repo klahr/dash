@@ -101,6 +101,44 @@
   .spark{width:100%;flex:1;min-height:40px;display:block}
   .axis{display:flex;justify-content:space-between;font-size:15px;color:var(--faint)}
 
+  /* Motion (wall.js "motion"): each animation is short and runs once, when
+     the data changes, so a quiet wall draws no frames at all. */
+  .running,.attn,#runners{position:relative}
+  .card,.item{--hl:var(--c,var(--run))}
+  .queue-state{transition:background-color .6s ease,color .6s ease}
+  .ghost{position:absolute;margin:0;z-index:1;pointer-events:none}
+  .ghost.ok{--hl:var(--ok)}
+  .ghost.bad{--hl:var(--bad)}
+  .outcome{position:absolute;right:20px;top:50%;translate:0 -50%;padding:6px 18px;border-radius:999px;font-size:22px;font-weight:600;white-space:nowrap;
+           color:var(--hl);background:color-mix(in srgb,var(--hl) 16%,var(--raised));box-shadow:0 0 0 1px color-mix(in srgb,var(--hl) 45%,transparent)}
+  @media (prefers-reduced-motion: no-preference){
+    .appear{animation:wall-in .6s cubic-bezier(.2,.7,.2,1) var(--d,0s) backwards}
+    .enter{outline:2px solid transparent;outline-offset:-1px;
+           animation:wall-in .6s cubic-bezier(.2,.7,.2,1) var(--d,0s) backwards,wall-glow 2.2s ease-out var(--d,0s) backwards}
+    .ghost{animation:wall-out .35s cubic-bezier(.3,0,.2,1) forwards}
+    .ghost.held{animation:wall-tint .35s ease-out forwards,wall-out .35s cubic-bezier(.3,0,.2,1) .9s forwards}
+    .ghost.held .right{animation:wall-fade .3s ease-out reverse forwards}
+    .outcome{animation:wall-badge .45s cubic-bezier(.2,.9,.3,1.2) .1s backwards}
+    .roll-up{animation:wall-up .55s cubic-bezier(.2,.7,.2,1)}
+    .roll-down{animation:wall-down .55s cubic-bezier(.2,.7,.2,1)}
+    .stage.bump{animation:wall-flash 1.8s ease-out}
+    .fresh{animation:wall-fade .7s ease-out}
+    .slots i.pop{animation:wall-pop .5s cubic-bezier(.3,1.5,.5,1)}
+    .slots i.drop{animation:wall-drop 1s ease-out}
+    .spark rect{transform-box:fill-box;transform-origin:50% 100%}
+  }
+  @keyframes wall-in{from{opacity:0;transform:translateY(14px) scale(.98)}}
+  @keyframes wall-glow{0%,25%{outline-color:color-mix(in srgb,var(--hl) 80%,transparent)}}
+  @keyframes wall-out{to{opacity:0;transform:translateX(28px) scale(.97)}}
+  @keyframes wall-tint{to{border-color:var(--hl);background:color-mix(in srgb,var(--hl) 10%,var(--raised))}}
+  @keyframes wall-badge{from{opacity:0;scale:.8}}
+  @keyframes wall-up{from{opacity:0;transform:translateY(.35em)}}
+  @keyframes wall-down{from{opacity:0;transform:translateY(-.35em)}}
+  @keyframes wall-flash{from{background:color-mix(in srgb,var(--c) 22%,var(--panel))}}
+  @keyframes wall-fade{from{opacity:0}}
+  @keyframes wall-pop{from{transform:scale(.2);opacity:0}}
+  @keyframes wall-drop{from{background:var(--run)}}
+
   .stale{position:absolute;right:36px;bottom:8px;font-size:15px;color:var(--bad);display:none}
   .stale.on{display:block}
   .error{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:36px;color:var(--dim);background:var(--bg)}

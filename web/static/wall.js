@@ -88,6 +88,105 @@ function changed(panel, model) {
   return true;
 }
 
+// ---- motion ----
+//
+// Things move only when the data does: a card that arrives slides in, one
+// that goes slides out while the rest glide into place, a number that changes
+// rolls. Every animation is short and finite, so once it ends the page draws
+// nothing until the next change (an endless one would keep Chrome drawing
+// frames, see .pulse in wall.html).
+
+const calm = matchMedia("(prefers-reduced-motion: reduce)");
+const EASE = "cubic-bezier(.2,.7,.2,1)";
+const HOLD = 900; // how long a finished task's card shows how it ended before it goes (wall.html .ghost.held)
+let first = true; // the first draw fades the panels in instead
+let quiet = false; // drawing again after a resize: nothing moves
+const moving = () => !quiet && !calm.matches;
+
+// shown holds what the panels last showed that their animations compare
+// with: the stage counts, the today tiles, the hours' bars, each runner's
+// busy slots.
+const shown = { stages: null, today: {}, hours: {}, busy: {} };
+
+// snapshot records where a list's cards are now, by their data-key.
+function snapshot(list) {
+  const m = new Map();
+  for (const el of list.children) {
+    if (el.dataset.key) m.set(el.dataset.key, { el, key: el.dataset.key, r: el.getBoundingClientRect() });
+  }
+  return m;
+}
+
+// appear fades els in one after another (the first draw).
+function appear(els, step = 60) {
+  if (calm.matches) return;
+  els.forEach((el, i) => {
+    el.classList.add("appear");
+    el.style.setProperty("--d", Math.min(i, 8) * step + "ms");
+  });
+}
+
+// morph animates list from before (its snapshot) to its new children: new
+// cards slide in, cards that stay glide from where they were, and cards that
+// went leave as ghosts over the list. outcome(key, ghost) may dress a ghost
+// and say to hold it a moment first. It returns how long the list waits
+// before its cards move, so a panel can time its own changes after it.
+function morph(list, before, { delay = 0, outcome } = {}) {
+  const kids = [...list.children];
+  if (first) {
+    appear(kids);
+    return 0;
+  }
+  if (!moving()) return 0;
+  // Reads.
+  const box = list.getBoundingClientRect();
+  const stay = [], fresh = [];
+  for (const el of kids) {
+    const old = el.dataset.key && before.get(el.dataset.key);
+    if (old) {
+      before.delete(el.dataset.key);
+      stay.push([el, (old.r.top - el.getBoundingClientRect().top) / zoom]);
+    } else if (el.dataset.key || el.classList.contains("empty")) {
+      fresh.push(el);
+    }
+  }
+  const gone = [...before.values()].filter((o) => o.r.height);
+  // Writes.
+  let hold = false;
+  for (const { el, key, r } of gone) {
+    el.classList.remove("appear", "enter");
+    el.classList.add("ghost");
+    el.style.left = (r.left - box.left) / zoom + "px";
+    el.style.top = (r.top - box.top) / zoom + "px";
+    el.style.width = r.width / zoom + "px";
+    if (outcome && outcome(key, el)) {
+      el.classList.add("held");
+      hold = true;
+    }
+    list.append(el);
+  }
+  // The others move once the ghosts have mostly faded (wall.html .ghost).
+  const wait = delay + (gone.length ? (hold ? HOLD : 0) + 180 : 0);
+  for (const { el } of gone) setTimeout(() => el.remove(), wait + 700);
+  for (const [el, dy] of stay) {
+    if (Math.abs(dy) < 0.5) continue;
+    el.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }],
+      { duration: 600, delay: wait, easing: EASE, fill: "backwards" });
+  }
+  fresh.forEach((el, i) => {
+    el.classList.add(el.dataset.key ? "enter" : "appear");
+    el.style.setProperty("--d", wait + Math.min(i, 5) * 80 + "ms");
+  });
+  return hold ? wait : 0;
+}
+
+// roll makes el's new number roll in, up if it grew and down if it shrank.
+function roll(el, was, now) {
+  if (was === undefined || was === now || !moving() || first) return false;
+  el.classList.add(parseFloat(String(now).replace(/[^\d.-]/g, "")) < parseFloat(String(was).replace(/[^\d.-]/g, "")) ? "roll-down" : "roll-up");
+  return true;
+}
+
 // ---- clock and timers, every second ----
 
 let skew = 0; // server time − local time, so timers agree with the server
@@ -182,13 +281,21 @@ function renderPipeline(d, now) {
     ["Failed", "var(--bad)", s.failed, s.failed ? (s.resumable ? s.resumable + " resumable" : "need a look") : "none"],
   ];
   if (!changed("pipeline", stages)) return false;
-  $("pipeline").replaceChildren(...stages.map(([k, c, v, sub]) =>
-    h("div", { class: "stage", style: `--c:${c}` },
-      h("div", { class: "k" }, k),
-      h("div", { class: "v num" + (v ? "" : " zero") }, v),
-      h("div", { class: "s" }, sub))));
+  const was = shown.stages || [];
+  shown.stages = stages.map((s) => s[2]);
+  const tiles = stages.map(([k, c, v, sub], i) => {
+    const n = h("div", { class: "v num" + (v ? "" : " zero") }, v);
+    const tile = h("div", { class: "stage", style: `--c:${c}` },
+      h("div", { class: "k" }, k), n, h("div", { class: "s" }, sub));
+    // A stage whose count moved rolls the number and lights up a moment.
+    if (roll(n, was[i], v)) tile.classList.add("bump");
+    return tile;
+  });
+  $("pipeline").replaceChildren(...tiles);
+  if (first) appear(tiles, 50);
   return true;
 }
+
 
 // fit hides a list's last children so its panel doesn't overflow, and says
 // how many it hid. It lays the panel out once: it reads where every child
@@ -225,9 +332,22 @@ function renderRunning(d) {
   $("running-dot").classList.toggle("pulse", d.running.length > 0);
   if (!changed("running", [d.running, d.privacy, d.queue.paused])) return false;
   const list = $("running");
+  const before = snapshot(list);
+  // A task that stopped running shows how it ended for a moment as it goes:
+  // in Review, failed, or merged.
+  const ended = new Map(d.needs.map((n) => [n.id, n.kind]));
+  const outcome = (id, ghost) => {
+    const kind = ended.get(id);
+    const [cls, text] = kind === "review" ? ["ok", "✓ Ready for review"] : kind === "failed" ? ["bad", "✕ Failed"] : landed ? ["ok", "✓ Done"] : [];
+    if (!cls) return false;
+    ghost.classList.add(cls);
+    ghost.append(h("div", { class: "outcome" }, text));
+    return true;
+  };
   if (!d.running.length) {
     timers = [];
     list.replaceChildren(h("div", { class: "empty" }, d.queue.paused ? "Nothing running: the queue is paused." : "Nothing running right now."));
+    handoff = morph(list, before, { outcome });
     return true;
   }
   const next = [];
@@ -240,17 +360,23 @@ function renderRunning(d) {
       clock.textContent = "";
       next.push({ el: clock, since: new Date(r.started_at).getTime() });
     }
-    return h("div", { class: "card" },
+    const diff = changes
+      ? h("div", { class: "diff num" }, h("span", { class: "add" }, "+" + num(r.add)), " ", h("span", { class: "del" }, "−" + num(r.del)),
+        r.files ? " · " + r.files + " file" + (r.files === 1 ? "" : "s") : "")
+      : h("div", { class: "diff num", style: "color:var(--faint)" }, "no changes yet");
+    const live = r.activity && h("div", { class: "live" }, r.activity);
+    // In a card that stays, what changed fades in: the latest activity, the diff.
+    const old = !first && moving() && before.get(r.id)?.el;
+    if (old) {
+      if (live && old.querySelector(".live")?.textContent !== r.activity) live.classList.add("fresh");
+      if (old.querySelector(".diff")?.textContent !== diff.textContent) diff.classList.add("fresh");
+    }
+    return h("div", { class: "card", "data-key": r.id },
       h("div", {},
         h("div", { class: "t" }, r.title, r.sent_back && h("span", { class: "tag" }, "sent back: " + r.sent_back)),
         h("div", { class: "meta" }, meta.map((m) => h("span", {}, m)))),
-      h("div", { class: "right" },
-        clock,
-        changes
-          ? h("div", { class: "diff num" }, h("span", { class: "add" }, "+" + num(r.add)), " ", h("span", { class: "del" }, "−" + num(r.del)),
-            r.files ? " · " + r.files + " file" + (r.files === 1 ? "" : "s") : "")
-          : h("div", { class: "diff num", style: "color:var(--faint)" }, "no changes yet")),
-      r.activity && h("div", { class: "live" }, r.activity));
+      h("div", { class: "right" }, clock, diff),
+      live);
   }));
   // Fill the timers in before the panel is laid out, so they're measured
   // with their text.
@@ -258,6 +384,7 @@ function renderRunning(d) {
   for (const t of next) t.el.textContent = elapsed(now - t.since);
   fit(list, list.parentElement, "running");
   timers = next.filter((t) => t.el.isConnected);
+  handoff = morph(list, before, { outcome });
   return true;
 }
 
@@ -265,7 +392,7 @@ function renderRunning(d) {
 const PR_WAITS = { review: "Awaiting review", merge: "Waiting to be merged on GitHub", blocked: "Blocked on GitHub" };
 
 function renderNeeds(d, now) {
-  // The model: each row's color, title, why and age, as shown.
+  // The model: each row's key, color, title, why and age, as shown.
   const rows = d.needs.map((n) => {
     const since = now - new Date(n.since);
     if (n.kind === "review") {
@@ -275,33 +402,41 @@ function renderNeeds(d, now) {
       if (n.tests === "failed") why.push("tests ✗");
       if (n.pr) why.push("PR #" + n.pr);
       if (PR_WAITS[n.waits]) why.push(PR_WAITS[n.waits]);
-      return [!!n.old, "var(--rev)", n.title, why.join(" · "), age(since)];
+      return ["review:" + n.id, !!n.old, "var(--rev)", n.title, why.join(" · "), age(since)];
     }
     const why = ["Failed", n.project];
     if (!d.privacy) why.push(n.reason || "no reason given");
     if (n.resumable) why.push("resumable");
-    return [!!n.old, "var(--bad)", n.title, why.join(" · "), age(since)];
+    return ["failed:" + n.id, !!n.old, "var(--bad)", n.title, why.join(" · "), age(since)];
   });
   const is = d.issues;
   if (is.open) {
     const sev = ["critical", "high", "medium", "low", "info"].filter((k) => is.severity[k]).map((k) => is.severity[k] + " " + k);
     const why = is.top.length ? is.top.join(" · ") : sev.join(" · ");
     const urgent = (is.severity.critical || 0) + (is.severity.high || 0) > 0;
-    rows.push([false, urgent ? "var(--bad)" : "var(--queue)", is.open + " open issue" + (is.open === 1 ? "" : "s"), why, sev[0] || "—"]);
+    rows.push(["issues", false, urgent ? "var(--bad)" : "var(--queue)", is.open + " open issue" + (is.open === 1 ? "" : "s"), why, sev[0] || "—"]);
   }
   const total = d.stages.review - d.stages.review_github + d.stages.failed + (is.open ? 1 : 0);
   setText($("needs-count"), String(total));
   if (!changed("needs", rows)) return false;
   const list = $("needs");
+  const before = snapshot(list);
+  // A row for a task that just finished running arrives as its card goes.
   if (!rows.length) {
     list.replaceChildren(h("div", { class: "empty" }, "Nothing waiting for a human. ✓"));
-    return true;
+  } else {
+    list.replaceChildren(...rows.map(([key, old, c, t, why, ago]) => {
+      const row = h("div", { class: "item" + (old ? " old" : ""), style: "--c:" + c, "data-key": key }, h("i", { class: "bar2" }),
+        h("div", {}, h("div", { class: "t" }, t), h("div", { class: "why" }, why)),
+        h("div", { class: "age num" }, ago));
+      // The issues row stays as their count changes: roll it.
+      const was = before.get(key)?.el.querySelector(".t")?.textContent;
+      if (key === "issues") roll(row.querySelector(".t"), was, t);
+      return row;
+    }));
+    fit(list, list.parentElement, "waiting");
   }
-  list.replaceChildren(...rows.map(([old, c, t, why, ago]) =>
-    h("div", { class: "item" + (old ? " old" : ""), style: "--c:" + c }, h("i", { class: "bar2" }),
-      h("div", {}, h("div", { class: "t" }, t), h("div", { class: "why" }, why)),
-      h("div", { class: "age num" }, ago))));
-  fit(list, list.parentElement, "waiting");
+  morph(list, before, { delay: handoff });
   return true;
 }
 
@@ -319,19 +454,29 @@ function renderRunners(d, now) {
   });
   if (!changed("runners", rows)) return false;
   const box = $("runners");
+  const before = snapshot(box);
+  const was = shown.busy;
+  shown.busy = Object.fromEntries(rows.map((r) => [r[0], r[3]]));
   if (!rows.length) {
     box.replaceChildren(h("div", { class: "empty" }, "No runners registered."));
+    morph(box, before);
     return true;
   }
+  const motion = !first && moving();
   box.replaceChildren(...rows.map(([name, online, paused, busy, n, sub]) => {
+    // A slot that just took a task pops in; one that just freed fades out.
+    const prev = motion && name in was ? was[name] : busy;
     const slots = h("div", { class: "slots" });
-    for (let i = 0; i < n; i++) slots.append(h("i", { class: i < busy ? "on" : "" }));
-    return h("div", { class: "runner" },
+    for (let i = 0; i < n; i++) {
+      slots.append(h("i", { class: (i < busy ? "on" : "") + (i < busy && i >= prev ? " pop" : i >= busy && i < prev ? " drop" : "") }));
+    }
+    return h("div", { class: "runner", "data-key": name },
       h("span", { class: "dot", style: `color:${online ? (paused ? "var(--run)" : "var(--ok)") : "var(--bad)"}` }),
       h("div", {}, h("div", { class: "n" + (online ? "" : " off") }, name), h("div", { class: "h" + (online ? "" : " off") }, sub)),
       slots);
   }));
   fit(box, box.parentElement, "runners");
+  morph(box, before);
   return true;
 }
 
@@ -342,23 +487,48 @@ function renderToday(d) {
   if (t.spend_usd != null) tiles.push(["Spend", money(t.spend_usd)]);
   if (t.first_try != null) tiles.push(["First-try merges", Math.round(t.first_try * 100) + "%"]);
   tiles.push(["Lines landed", "+" + num(d.stages.merged_add)]);
-  $("today").replaceChildren(...tiles.slice(0, 4).map(([k, v]) => h("div", {}, k, h("b", { class: "num" }, v))));
+  const was = shown.today;
+  shown.today = Object.fromEntries(tiles);
+  const cells = tiles.slice(0, 4).map(([k, v]) => {
+    const b = h("b", { class: "num" }, v);
+    roll(b, was[k], v);
+    return h("div", {}, k, b);
+  });
+  $("today").replaceChildren(...cells);
+  if (first) appear(cells);
 
   // Merges per hour: from 08:00 (or the first merge, if earlier) to now.
   let from = Math.min(8, t.hour);
-  const first = t.per_hour.findIndex((v) => v > 0);
-  if (first >= 0 && first < from) from = first;
+  const early = t.per_hour.findIndex((v) => v > 0);
+  if (early >= 0 && early < from) from = early;
   const hours = t.per_hour.slice(from, t.hour + 1);
   const max = Math.max(1, ...hours);
   const slot = 300 / Math.max(hours.length, 1), w = Math.max(4, slot * 0.72);
+  // A bar grows from its old height (or from nothing, on the first draw).
+  const grew = [];
+  const heights = {};
   $("spark").replaceChildren(...hours.map((v, i) => {
     const hgt = v ? Math.max(6, (v / max) * 104) : 3;
-    return svg("rect", { x: (i * slot + (slot - w) / 2).toFixed(1), y: (110 - hgt).toFixed(1), width: w.toFixed(1), height: hgt.toFixed(1), rx: 3,
+    const bar = svg("rect", { x: (i * slot + (slot - w) / 2).toFixed(1), y: (110 - hgt).toFixed(1), width: w.toFixed(1), height: hgt.toFixed(1), rx: 3,
       style: "fill:var(" + (v ? "--ok" : "--line") + ")", opacity: i === hours.length - 1 ? 1 : 0.55 });
+    const hour = from + i;
+    heights[hour] = hgt;
+    const old = first ? 0 : shown.hours[hour];
+    if (old !== undefined && Math.abs(old - hgt) > 0.5) grew.push([bar, old / hgt, first ? i * 30 : 0]);
+    return bar;
   }));
+  shown.hours = heights;
+  if ((first && !calm.matches) || moving()) {
+    for (const [bar, s, delay] of grew) {
+      bar.animate([{ transform: `scaleY(${s})` }, { transform: "none" }], { duration: 700, delay, easing: EASE, fill: "backwards" });
+    }
+  }
   setText($("spark-from"), pad(from) + ":00");
   return true;
 }
+
+let landed = false; // a task merged since the last draw (renderPanels)
+let handoff = 0; // how long the running list holds a finished card this draw, so a new Needs row waits for it
 
 let last = null; // the latest data, to draw again each minute and on a resize
 
@@ -367,10 +537,17 @@ function renderPanels(d) {
   last = d;
   const now = new Date(Date.now() + skew);
   renderHeader(d);
+  // Whether a task merged (or went to merge) since the last draw, for the
+  // running cards' "Done".
+  const merges = d.stages.merged_today + d.stages.merging;
+  landed = shown.merges !== undefined && merges > shown.merges;
+  shown.merges = merges;
+  handoff = 0;
   // Each runs, so each panel is checked; any rebuilt one may change the
   // stacked page's height.
   const grew = [renderPipeline(d, now), renderRunning(d), renderNeeds(d, now), renderRunners(d, now), renderToday(d)];
   if (grew.some(Boolean)) fitPage();
+  first = false;
 }
 
 function render(d) {
@@ -486,7 +663,9 @@ addEventListener("resize", () => {
     // depends on the size.
     if (last) {
       drawn = {};
+      quiet = true;
       render(last);
+      quiet = false;
     }
   });
 });

@@ -12,7 +12,10 @@ lines changed, the tool call it is making); what needs a human (reviews oldest f
 tasks, open issues; red when waiting too long); the runners; and today's merges, spend and
 merges per hour.
 
-It refreshes every 5 seconds.
+It refreshes every 5 seconds. Changes are animated: a new task's card slides in, a finished
+one shows how it ended ("Ready for review", "Failed", "Done") before it leaves, and counts
+roll to their new values. Nothing moves while nothing changes. A screen set to reduce motion
+gets no animations.
 
 ## Pull requests under "Needs a human"
 
