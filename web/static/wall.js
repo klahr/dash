@@ -60,7 +60,8 @@ function resetLabel(iso, now = new Date(Date.now() + skew)) {
   return "resets in " + m + "m";
 }
 
-const num = (n) => n.toLocaleString(undefined).replace(/,/g, " ");
+// Counts the API leaves out when 0 (omitempty) arrive as undefined: show them as 0.
+const num = (n) => (n || 0).toLocaleString(undefined).replace(/,/g, " ");
 
 // ---- updating in place ----
 //
