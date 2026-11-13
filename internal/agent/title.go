@@ -64,6 +64,122 @@ func (t Titler) Refine(ctx context.Context, prompt string) (string, error) {
 	return cleanRefined(out)
 }
 
+// Suggest guesses the short message the user is likely to send next in a
+// chat, from the end of the conversation (see SuggestTranscript), as Claude
+// Code's CLI does. It is something the user would say ("Run the tests"),
+// not Claude offering more help. "" when there is no clear next step.
+func (t Titler) Suggest(ctx context.Context, transcript string) (string, error) {
+	if strings.TrimSpace(transcript) == "" {
+		return "", nil
+	}
+	out, err := t.ask(ctx, suggestSystem, suggestPrompt+transcript, maxTranscript+len(suggestPrompt))
+	if err != nil {
+		return "", err
+	}
+	return CleanSuggestion(out), nil
+}
+
+const suggestSystem = "You predict the next message a developer will type to their AI coding assistant. " +
+	"Reply with only that message, or NONE."
+
+const suggestPrompt = "Below is the end of a conversation between a developer (User) and Claude, an AI coding " +
+	"assistant, in a project dashboard where chats can become coding tasks. Write the short message " +
+	"(at most 12 words) the developer is most likely to send next, in their own voice: an instruction " +
+	"or question to Claude, such as \"Create a task for it\", \"Run the tests\" or \"Yes, do that\". " +
+	"It must be what the developer would say, never Claude offering help, a summary, or thanks. " +
+	"If Claude asked a yes/no question, answer it as the developer would. " +
+	"If there is no clear next step, reply NONE.\n\nConversation:\n"
+
+// maxTranscript is how much of a conversation Suggest reads, in bytes.
+const maxTranscript = 6000
+
+// maxSuggestMessages is how many of a conversation's last messages Suggest reads.
+const maxSuggestMessages = 6
+
+// maxSuggestEach is how much of one message Suggest reads, in bytes: a
+// question's start, and a reply's end, where its offers and questions are.
+const maxSuggestEach = 1500
+
+// SuggestTranscript writes the last messages of a conversation for Suggest:
+// "User: …" and "Claude: …" blocks, oldest first, each one cut down, the
+// whole at most maxTranscript bytes (older messages dropped first).
+func SuggestTranscript(history []ChatMessage) string {
+	if len(history) > maxSuggestMessages {
+		history = history[len(history)-maxSuggestMessages:]
+	}
+	var blocks []string
+	size := 0
+	for _, m := range slices.Backward(history) {
+		text := strings.TrimSpace(m.Content)
+		if m.Shell != nil {
+			text = strings.TrimSpace(ShellText(m))
+		}
+		if text == "" {
+			continue
+		}
+		who := "User"
+		if m.Role == "assistant" {
+			who = "Claude"
+			text = cutStart(text, maxSuggestEach)
+		} else {
+			text = cutEnd(text, maxSuggestEach)
+		}
+		b := who + ": " + text
+		if size+len(b) > maxTranscript {
+			break
+		}
+		size += len(b) + 2
+		blocks = append(blocks, b)
+	}
+	slices.Reverse(blocks)
+	return strings.Join(blocks, "\n\n")
+}
+
+// cutEnd keeps s's first n bytes (whole runes), marking the cut.
+func cutEnd(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return strings.ToValidUTF8(s[:n], "") + " …"
+}
+
+// cutStart keeps s's last n bytes (whole runes), marking the cut.
+func cutStart(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return "… " + strings.ToValidUTF8(s[len(s)-n:], "")
+}
+
+// maxSuggestion is how long a suggestion may be, in bytes.
+const maxSuggestion = 120
+
+// CleanSuggestion reads Suggest's reply: its first line, without quotes,
+// Markdown or a "User:" label. "" for NONE, a reply too long to be a short
+// message, or one that is Claude talking rather than the user.
+func CleanSuggestion(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	s = strings.TrimSpace(strings.Trim(s, "\"'`*#>“”‘’ "))
+	for _, label := range []string{"User:", "Developer:", "You:", "Next message:", "Suggestion:"} {
+		if len(s) >= len(label) && strings.EqualFold(s[:len(label)], label) {
+			s = strings.TrimSpace(strings.Trim(s[len(label):], "\"'`*“”‘’ "))
+		}
+	}
+	if s == "" || len(s) > maxSuggestion || strings.EqualFold(strings.Trim(s, ".!"), "none") {
+		return ""
+	}
+	low := strings.ToLower(s)
+	for _, p := range []string{"claude:", "i can ", "i'll ", "i will ", "let me ", "would you like", "do you want", "shall i ", "want me to"} {
+		if strings.HasPrefix(low, p) {
+			return ""
+		}
+	}
+	return s
+}
+
 // Part is one of the todos a large task is split into.
 type Part struct {
 	Title  string `json:"title"`

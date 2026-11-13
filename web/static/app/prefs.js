@@ -1,5 +1,5 @@
 import { invisiblesOn, vimOn } from "../editor.js";
-import { $, applyClockPref, clockPref, h, ico } from "./dom.js";
+import { $, applyClockPref, chatSuggestOn, clockPref, h, ico } from "./dom.js";
 import * as store from "./store.js";
 import { attempt, copy } from "./dialogs.js";
 import { state } from "./state.js";
@@ -17,16 +17,22 @@ export function syncPrefs() {
   f.notify.checked = notifyOn();
   $("#push-hint").hidden = !(notifyOn() && state.pushOn);
   f.clock.value = clockPref();
+  f.chatSuggest.checked = chatSuggestOn();
 }
-// The preferences are the Account sheet's first sections (Editors, Notifications, Time).
+// The preferences are the Account sheet's first sections (Editors, Notifications, Time, Chat).
 export function openPrefs() { return openAccount("editors"); }
-for (const key of ["editors", "notify", "clock"]) accountSection(key, syncPrefs);
+for (const key of ["editors", "notify", "clock", "chat"]) accountSection(key, syncPrefs);
 $("#prefs-form").vim.addEventListener("change", (e) => { if (e.target.checked !== vimOn()) toggleVim(); });
 $("#prefs-form").invisibles.addEventListener("change", (e) => { if (e.target.checked !== invisiblesOn()) toggleInvisibles(); });
 $("#prefs-form").clock.addEventListener("change", (e) => {
   store.set("dash.clock", e.target.value || null);
   applyClockPref();
   renderUsage();
+});
+$("#prefs-form").chatSuggest.addEventListener("change", (e) => {
+  store.setFlag("dash.chatSuggest", e.target.checked);
+  // Turned off: the chats drop a suggestion they show.
+  document.dispatchEvent(new Event("dash:chatsuggest"));
 });
 $("#push-test").addEventListener("click", attempt(testPush));
 // Asking for permission needs this change event's user gesture.

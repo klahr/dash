@@ -43,6 +43,7 @@ import (
 //	server → {"kind":"permission_decided","id":"<id>","text":"allow"|"deny"|"timeout"}
 //	server → {"kind":"shell_output","id":"<id>","text":"<output so far>"}
 //	server → {"kind":"shell_done","id":"<id>","shell":{"command","output","exit_code",…}}
+//	server → {"kind":"suggestion","text":"<the user's likely next message>"} after "done"
 //
 // The client owns the conversation history and sends it in full each turn.
 // Each completed turn is saved, and GET /api/chat returns it after a restart.
@@ -71,6 +72,13 @@ import (
 // the directory Claude would run in, on the same runner, and its last
 // message, with the command's result added, is saved like a turn. "cancel"
 // stops it; its "id" comes back on its deltas.
+//
+// With "suggest": true on a "send", once Claude's reply is done and saved, a
+// short call to the small model (see agent.Titler.Suggest) guesses what the
+// user will say next, sent as a "suggestion" after "done" (nothing when it
+// has no guess, fails or no runner is online). It runs where the turn's
+// short calls run (this Dash, or the caller's runner on a hub), and is
+// dropped when another message arrives first. Without it, no call is made.
 func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -206,7 +214,23 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		}
 		var stopped atomic.Bool
 		stopTurn = func() { stopped.Store(true) }
-		turnDone = s.runClaudeTurn(turnCtx, sv.c, ct, &stopped, send, saveIfNewest)
+		// suggestNext guesses the user's next message once the reply is
+		// saved. A runner answering its hub leaves that to the hub, which
+		// asks it as a short call. The turn's context ends with the next
+		// message: a late guess is dropped.
+		var suggestNext func([]agent.ChatMessage)
+		if msg.Suggest && !ct.forHub {
+			suggestNext = func(answered []agent.ChatMessage) {
+				go sendSuggestion(turnCtx, sv, answered, func(text string) {
+					turnMu.Lock()
+					defer turnMu.Unlock()
+					if turnSeq == seq && turnCtx.Err() == nil {
+						send(agent.ChatDelta{Kind: "suggestion", Text: text})
+					}
+				})
+			}
+		}
+		turnDone = s.runClaudeTurn(turnCtx, sv.c, ct, &stopped, send, saveIfNewest, suggestNext)
 	}
 }
 
@@ -218,9 +242,10 @@ type chatRequest struct {
 	Messages []agent.ChatMessage `json:"messages"`
 	ID       string              `json:"id"`
 	Decision string              `json:"decision"`
-	Review   bool                `json:"review"` // with "todo": the turn reviews it, locking its status
-	Runner   string              `json:"runner"` // chat on a hub that doesn't run Claude: which of the caller's runners
-	Mode     string              `json:"mode"`   // a hub's project chat on its runner: the hub project's permission mode
+	Review   bool                `json:"review"`  // with "todo": the turn reviews it, locking its status
+	Runner   string              `json:"runner"`  // chat on a hub that doesn't run Claude: which of the caller's runners
+	Mode     string              `json:"mode"`    // a hub's project chat on its runner: the hub project's permission mode
+	Suggest  bool                `json:"suggest"` // guess the user's next message once the reply is done
 	// Hub marks a hub's own chat on its runner (runnerChat): Project
 	// and Todo are the hub's ids, not the runner's.
 	Hub bool `json:"hub"`
@@ -465,7 +490,9 @@ func runShellTurn(ctx context.Context, sh chatShell, history []agent.ChatMessage
 // runClaudeTurn streams ct's reply to the client and saves the
 // conversation: when the reply is done, or with what it said so far when
 // the user stopped it. The channel closes when it has finished saving.
-func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stopped *atomic.Bool, send func(agent.ChatDelta), saveIfNewest func([]agent.ChatMessage)) <-chan struct{} {
+// suggestNext, if set, is given the saved conversation of a reply that is
+// done (see sendSuggestion).
+func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stopped *atomic.Bool, send func(agent.ChatDelta), saveIfNewest func([]agent.ChatMessage), suggestNext func([]agent.ChatMessage)) <-chan struct{} {
 	history := ct.history
 	if ct.general {
 		if err := ct.save(history); err != nil {
@@ -483,7 +510,8 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 		var reply strings.Builder
 		var usage *model.ChatUsage
 		saved := false
-		started := time.Now() // places the reply right after its question in a task's timeline
+		var turn []agent.ChatMessage // the conversation with its new reply, once saved
+		started := time.Now()        // places the reply right after its question in a task's timeline
 		answered := func() []agent.ChatMessage {
 			return append(history[:len(history):len(history)], agent.ChatMessage{Role: "assistant", Content: reply.String(), At: &started, Usage: usage})
 		}
@@ -499,7 +527,8 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 			}
 			if d.Kind == "done" && reply.Len() > 0 {
 				// Save before telling the client, so a reload right after sees it.
-				if err := ct.save(answered()); err != nil {
+				turn = answered()
+				if err := ct.save(turn); err != nil {
 					slog.Error("save chat", "err", err)
 				}
 				saved = true
@@ -521,6 +550,9 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 			slog.Warn("chat", "err", err)
 			send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 		}
+		if suggestNext != nil && saved && err == nil && ctx.Err() == nil {
+			suggestNext(turn)
+		}
 		// A turn that ended without an answer (rather than being cut short)
 		// isn't resumed: take its question back out, as the client does.
 		if ct.general && !saved && ctx.Err() == nil && len(history) > 0 {
@@ -530,6 +562,19 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 		}
 	}()
 	return done
+}
+
+// suggestionTimeout gives up on a chat suggestion: by then the user is typing.
+const suggestionTimeout = 45 * time.Second
+
+// sendSuggestion guesses the user's next message after turn and passes it
+// to deliver, unless there is none.
+func sendSuggestion(ctx context.Context, sv *service, turn []agent.ChatMessage, deliver func(string)) {
+	ctx, cancel := context.WithTimeout(ctx, suggestionTimeout)
+	defer cancel()
+	if text := sv.suggest(ctx, turn); text != "" {
+		deliver(text)
+	}
 }
 
 // beginReview marks a todo in review as being reviewed by a chat turn, which

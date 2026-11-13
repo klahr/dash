@@ -39,6 +39,7 @@ type SmallClaude interface {
 	Summary(ctx context.Context, report string) (string, error)
 	Refine(ctx context.Context, prompt string) (string, error)
 	Split(ctx context.Context, prompt string) ([]agent.Part, error)
+	Suggest(ctx context.Context, transcript string) (string, error)
 }
 
 // errNoClaudeRunner is why the hub can't run something on the caller's runner.
@@ -83,8 +84,8 @@ func (s *Server) claudeRunner(c Caller, want string) (tunnel.Runner, error) {
 	return tunnel.Runner{}, errNoClaudeRunner
 }
 
-// smallCall runs one of Claude's short calls (kind: title, summary or
-// refine) for sv's caller on their runner.
+// smallCall runs one of Claude's short calls (kind: title, summary, refine
+// or suggest) for sv's caller on their runner.
 func (sv *service) smallCall(ctx context.Context, kind, text string) (string, error) {
 	r, err := sv.s.claudeRunner(sv.c, "")
 	if err != nil {
@@ -156,6 +157,32 @@ func (sv *service) refine(ctx context.Context, prompt string) (string, error) {
 }
 
 var errNoRefiner = errors.New("cleaning up instructions is not available")
+
+// suggest guesses the user's next message after a chat turn (turn: the
+// conversation with its new reply), here or on the caller's runner, for the
+// composer's placeholder. "" when there is no clear next step, or no runner
+// of theirs online, or the call fails: the composer keeps its usual one.
+func (sv *service) suggest(ctx context.Context, turn []agent.ChatMessage) string {
+	transcript := agent.SuggestTranscript(turn)
+	if transcript == "" {
+		return ""
+	}
+	var out string
+	var err error
+	if !sv.s.hub() {
+		if sv.s.Small == nil {
+			return ""
+		}
+		out, err = sv.s.Small.Suggest(ctx, transcript)
+	} else {
+		out, err = sv.smallCall(ctx, "suggest", transcript)
+	}
+	if err != nil {
+		slog.Debug("chat suggestion", "err", err)
+		return ""
+	}
+	return agent.CleanSuggestion(out)
+}
 
 // split proposes how to break a large task into todos, here or on the
 // caller's runner.
@@ -360,6 +387,8 @@ func (s *Server) hubClaude(w http.ResponseWriter, r *http.Request) {
 		call = s.Small.Summary
 	case "refine":
 		call = s.Small.Refine
+	case "suggest":
+		call = s.Small.Suggest
 	default:
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such call"})
 		return
@@ -369,6 +398,7 @@ func (s *Server) hubClaude(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	// A suggestion may be "": nothing to suggest.
 	writeJSON(w, http.StatusOK, map[string]string{"text": out})
 }
 

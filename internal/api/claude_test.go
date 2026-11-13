@@ -27,17 +27,20 @@ type fakeSmall struct {
 	where string
 	mu    sync.Mutex
 	calls []string
+	texts []string // what each call was given
 }
 
 func (f *fakeSmall) call(kind, text string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, kind)
+	f.texts = append(f.texts, text)
 	return kind + " from " + f.where, nil
 }
 func (f *fakeSmall) Title(_ context.Context, p string) (string, error)   { return f.call("title", p) }
 func (f *fakeSmall) Summary(_ context.Context, r string) (string, error) { return f.call("summary", r) }
 func (f *fakeSmall) Refine(_ context.Context, p string) (string, error)  { return f.call("refine", p) }
+func (f *fakeSmall) Suggest(_ context.Context, t string) (string, error) { return f.call("suggest", t) }
 
 // Split proposes two good parts and some a runner mustn't pass on: one
 // without instructions and dependencies on itself and later parts.

@@ -86,7 +86,7 @@ function paletteCommands() {
     state.usage && [state.usage.paused ? "Resume the queue" : "Pause the queue", state.usage.paused ? "play" : "pause", () => runCommand(state.usage.paused ? "resume" : "pause"), "", "queue"],
     ["Permission requests", "eye", () => runCommand("perms"), ":perms", "approvals allow deny"],
     state.runners && ["Runners", "computer", openRunners, ":runners", "computers machines dash runner add install revoke"],
-    ["Preferences", "prefs", openPrefs, ":prefs", "preferences vim invisibles whitespace notifications browser"],
+    ["Preferences", "prefs", openPrefs, ":prefs", "preferences vim invisibles whitespace notifications browser chat suggestions"],
     ["Connect Claude", "plug", openConnector, ":connector", "claude.ai connector mcp mobile app remote oauth"],
     [notifyLabel(), notifyOn() ? "bell-off" : "bell", toggleNotifications, ":notify", "notifications"],
     [vimOn() ? "Turn off vim keys in the editor" : "Turn on vim keys in the editor", "code", toggleVim, ":vim", "vim keybindings prompt editor"],

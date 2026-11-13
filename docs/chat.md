@@ -10,6 +10,22 @@ runs on one of your own runners, with its Claude login (see
 In the composer, <kbd>Enter</kbd> sends, messages written while Claude answers are queued, `/clear`
 starts a new conversation and `/help` lists these.
 
+## Suggested next message
+
+After each reply, Dash guesses what you'll say next ("Run the tests", "Create a task for it") and
+shows it greyed out in the empty message box, as Claude Code's CLI does.
+
+- <kbd>Enter</kbd> or **Send** sends the suggestion as it is.
+- <kbd>Tab</kbd> puts it in the box, so you can edit it before sending.
+- Typing, sending or a new reply clears it. No suggestion shows when there's no clear next step.
+
+The guess is a short call to Haiku with the last few messages, on the same Claude login as the
+chat (on a hub, your own runner). If it fails or no runner of yours is online, the box keeps its
+usual placeholder.
+
+To turn it off, open **Account → Chat** and clear **Suggest what to say next**. It's on by default
+and applies to this browser only. When it's off, no call is made.
+
 ## Shell commands with `!`
 
 In a project chat or a task chat, a message starting with `!` isn't sent to Claude: the rest of

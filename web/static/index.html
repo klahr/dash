@@ -1083,6 +1083,7 @@
             <button type="button" class="rail-item" data-rail="editors">Editors</button>
             <button type="button" class="rail-item" data-rail="notify">Notifications</button>
             <button type="button" class="rail-item" data-rail="clock">Time</button>
+            <button type="button" class="rail-item" data-rail="chat">Chat</button>
           </div>
           <div class="rail-group"><span class="rail-head">You</span>
             <button type="button" class="rail-item" data-rail="twofactor">Two-factor sign-in</button>
@@ -1118,6 +1119,10 @@
                 <option value="12">12-hour (6:00 PM)</option>
               </select>
             </label>
+          </section>
+          <section class="rail-section" data-section="chat">
+            <label class="toggle"><input type="checkbox" name="chatSuggest" form="prefs-form"><span>Suggest what to say next</span></label>
+            <p class="hint">After each reply, Claude's small model (Haiku) guesses your next message and shows it greyed out in the empty message box. <kbd>Enter</kbd> or Send sends it as it is; <kbd>Tab</kbd> puts it in the box to edit. Each guess is a short call on the same Claude login as the chat. Off: no call is made.</p>
           </section>
           <!-- Two-factor sign-in: set up, new recovery codes, turn off -->
           <section class="rail-section" data-section="twofactor">

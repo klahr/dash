@@ -1,5 +1,5 @@
 import { renderMarkdown } from "../editor.js";
-import { $, entering, h, ib } from "./dom.js";
+import { $, chatSuggestOn, entering, h, ib } from "./dom.js";
 import * as store from "./store.js";
 import { wsURL } from "./viewport.js";
 import { api, here, on } from "./api.js";
@@ -51,6 +51,11 @@ function usageLine(u) {
 // conversation's messages among other nodes. With shell (project and task
 // chats), a message starting with "!" runs as a shell command where the
 // chat runs instead of going to Claude (see shellRunner).
+//
+// After a reply, the server may suggest the user's next message (with the
+// Account → Chat preference on): it shows as the empty composer's
+// placeholder, Send (or Enter) sends it as it is, and Tab puts it in the
+// composer to edit. Typing, sending or a new turn clears it.
 //
 // Its parts (chatQueue, shellRunner, chatStreamHandler) share c: the chat's
 // state and the helpers they call one another through.
@@ -118,6 +123,17 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   form.prepend(attachRow);
   const att = c.att = attachBox(attachRow, input, () => c.busyButton(), { zone: form.parentElement, compact: true, prefix: prefixOf });
 
+  // The suggested next message, while the composer is empty.
+  const placeholder = input.placeholder, placeholderTitle = input.title;
+  c.suggestion = "";
+  const suggest = c.suggest = (text = "") => {
+    c.suggestion = text;
+    input.placeholder = text || placeholder;
+    input.title = text ? (matchMedia("(pointer: coarse)").matches ? "Send sends this suggestion" : "Enter sends this suggestion; Tab puts it in the box to edit") : placeholderTitle;
+    form.classList.toggle("suggesting", !!text);
+  };
+  document.addEventListener("dash:chatsuggest", () => { if (!chatSuggestOn()) suggest(); });
+
   const queue = chatQueue(c);
   const sh = shellRunner(c);
   c.runShell = sh.run;
@@ -136,6 +152,12 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
         // Nobody sees its approval requests any more.
         if (d.kind === "permission") ws.send(JSON.stringify({ type: "permission", id: d.id, decision: "deny" }));
         if (d.kind === "done" || d.kind === "error" || d.kind === "shell_done") { ws.close(); if (d.kind !== "error") saved(ws.fields); }
+        return;
+      }
+      if (d.kind === "suggestion") {
+        // Only for an idle, empty composer: a late one (a new turn started, or
+        // the user is writing) is dropped.
+        if (!c.current && !composing() && chatSuggestOn() && d.text) suggest(d.text);
         return;
       }
       if (d.kind === "cwd" && cwd) { cwd.hidden = false; cwd.textContent = cwd.title = `Runs in ${d.text}`; }
@@ -195,6 +217,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   // is left to finish on its own socket.
   function reset(saved = []) {
     if (c.current) { c.ws = null; finish(); }
+    suggest();
     c.history = [...saved];
     const nodes = merge(saved.map((m) => m.role === "user" ? user(m) : assistant(m)), saved);
     empty.hidden = nodes.length > 0;
@@ -229,11 +252,12 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     c.current ? c.current.el.replaceWith(el) : log.append(el);
     toEnd(true);
     c.current = { el, thinking, reply, content: "", seg: "", tools: new Map(), target: { prefix, ...fields }, at: new Date().toISOString() };
+    suggest();
     c.busyButton();
     onState();
     const ws = c.socket(prefix);
     ws.fields = fields;
-    const go = () => ws.send(JSON.stringify({ type: "send", ...fields, messages: c.history }));
+    const go = () => ws.send(JSON.stringify({ type: "send", ...fields, ...(chatSuggestOn() && { suggest: true }), messages: c.history }));
     ws.readyState === 1 ? go() : ws.addEventListener("open", go, { once: true });
   }
 
@@ -241,18 +265,21 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   // with "/" (a path, say) is sent as a message.
   const commands = {
     clear: async () => { await clear(); reset(); },
-    help: () => toast(`/clear starts a new conversation. /help shows this.${shell ? " !command runs a shell command where the chat runs (no terminal); Claude sees it and its output next turn." : ""} Messages sent while Claude answers are queued and go once it's done; Up in an empty composer edits the last one.`, { head: "Chat commands" }),
+    help: () => toast(`/clear starts a new conversation. /help shows this.${shell ? " !command runs a shell command where the chat runs (no terminal); Claude sees it and its output next turn." : ""} Messages sent while Claude answers are queued and go once it's done; Up in an empty composer edits the last one. A suggested next message shows greyed out in the empty composer: Enter sends it, Tab puts it there to edit.`, { head: "Chat commands" }),
   };
   commands.new = commands.reset = commands.clear;
 
   const autoGrow = c.autoGrow = () => { input.style.height = "auto"; input.style.height = `${input.scrollHeight}px`; shellMode(); };
-  input.addEventListener("input", () => { autoGrow(); if (c.current) c.busyButton(); });
+  input.addEventListener("input", () => { autoGrow(); if (c.suggestion) suggest(); if (c.current) c.busyButton(); });
   form.addEventListener("submit", attempt(async (e) => {
     e.preventDefault();
     // With nothing written, only a press of the button stops a reply: Enter in the text field doesn't.
     if (c.current && !composing()) return e.submitter === sendBtn ? stop() : undefined;
     await att.settled();
-    const q = input.value.trim(), files = att.items();
+    const files = att.items();
+    // An empty composer sends the suggested message, if there is one.
+    const q = input.value.trim() || (!files.length && !c.current ? c.suggestion : "");
+    suggest();
     if (!q && !files.length) return;
     const cmd = /^\/(\w+)$/.exec(q)?.[1].toLowerCase();
     input.value = "";
@@ -265,6 +292,16 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     send(q, files);
   }));
   input.addEventListener("keydown", (e) => {
+    // Tab in an empty composer puts the suggested message in it to edit;
+    // otherwise Tab moves the focus as usual.
+    if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && c.suggestion && !composing()) {
+      e.preventDefault();
+      input.value = c.suggestion;
+      suggest();
+      autoGrow();
+      input.setSelectionRange(input.value.length, input.value.length);
+      return;
+    }
     // Up in an empty composer takes the last queued message back to edit.
     if (e.key === "ArrowUp" && !input.value && c.queue.length) {
       e.preventDefault();
@@ -307,6 +344,7 @@ function chatQueue(c) {
   // edit puts the messages back in the composer, ahead of what's in it already.
   const toComposer = (msgs) => {
     if (!msgs.length) return;
+    c.suggest();
     input.value = [...msgs.map((m) => m.q), input.value.trim()].filter(Boolean).join("\n\n");
     att.reset([...msgs.flatMap((m) => m.files), ...att.items()]);
     c.autoGrow();
@@ -459,6 +497,7 @@ function shellRunner(c) {
   }
   // run runs q ("!command") where the chat runs.
   function run(q) {
+    c.suggest();
     c.empty.hidden = true;
     const m = { role: "user", content: q, at: new Date().toISOString() };
     c.history.push(m);

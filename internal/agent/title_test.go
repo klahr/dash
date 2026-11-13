@@ -112,3 +112,85 @@ func TestSplitReal(t *testing.T) {
 		t.Logf("%d. %s (after %v)\n%s", i+1, p.Title, p.After, p.Prompt)
 	}
 }
+
+func TestCleanSuggestion(t *testing.T) {
+	for in, want := range map[string]string{
+		"Run the tests\n":                        "Run the tests",
+		"\"Create a task for it\"":               "Create a task for it",
+		"**Yes, do that**\nBecause Claude asked": "Yes, do that",
+		"User: Merge it":                         "Merge it",
+		"you: \"Ship it\"":                       "Ship it",
+		"NONE":                                   "",
+		"none.":                                  "",
+		"  \n":                                   "",
+		"I can also add tests if you'd like.":    "",
+		"Would you like me to open a task?":      "",
+		"Let me know if anything else comes up":  "",
+		"Claude: Sure, here it is":               "",
+		strings.Repeat("word ", 40):              "",
+	} {
+		if got := CleanSuggestion(in); got != want {
+			t.Errorf("CleanSuggestion(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestSuggestTranscript(t *testing.T) {
+	var h []ChatMessage
+	for i := range 10 {
+		h = append(h, ChatMessage{Role: "user", Content: fmt.Sprintf("question %d", i)}, ChatMessage{Role: "assistant", Content: fmt.Sprintf("answer %d", i)})
+	}
+	got := SuggestTranscript(h)
+	want := "User: question 7\n\nClaude: answer 7\n\nUser: question 8\n\nClaude: answer 8\n\nUser: question 9\n\nClaude: answer 9"
+	if got != want {
+		t.Errorf("SuggestTranscript:\n got %q\nwant %q", got, want)
+	}
+
+	// A long reply keeps its end (where its questions are), a long question its start.
+	long := []ChatMessage{
+		{Role: "user", Content: "START " + strings.Repeat("q", 5000) + " END"},
+		{Role: "assistant", Content: "START " + strings.Repeat("a", 5000) + " Shall I add a test?"},
+	}
+	got = SuggestTranscript(long)
+	if !strings.Contains(got, "User: START") || strings.Contains(got, "q END") ||
+		!strings.HasSuffix(got, "Shall I add a test?") || strings.Contains(got, "Claude: START") {
+		t.Errorf("long messages weren't cut as expected: %q…%q", got[:40], got[len(got)-40:])
+	}
+	if len(got) > maxTranscript {
+		t.Errorf("transcript is %d bytes, over %d", len(got), maxTranscript)
+	}
+	if SuggestTranscript(nil) != "" {
+		t.Error("an empty conversation has a transcript")
+	}
+}
+
+// Suggest runs the small model on the conversation with the prompt that
+// asks for the user's next message, and reads its reply.
+func TestSuggestAsksHaiku(t *testing.T) {
+	dir := t.TempDir()
+	bin := dir + "/claude"
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + dir + "/args\ncat > " + dir + "/stdin\nprintf '%s' \"$REPLY\"\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	transcript := SuggestTranscript([]ChatMessage{{Role: "user", Content: "Why does login fail?"}, {Role: "assistant", Content: "The cookie lacks Secure. Want me to fix it?"}})
+	for reply, want := range map[string]string{"\"Yes, fix it\"\n": "Yes, fix it", "NONE": ""} {
+		t.Setenv("REPLY", reply)
+		got, err := Titler{Bin: bin}.Suggest(context.Background(), transcript)
+		if err != nil || got != want {
+			t.Errorf("reply %q: Suggest = %q, %v; want %q", reply, got, err, want)
+		}
+	}
+	args, _ := os.ReadFile(dir + "/args")
+	if !strings.Contains(string(args), "--model\nhaiku\n") || !strings.Contains(string(args), "predict the next message a developer") {
+		t.Errorf("claude ran with %q", args)
+	}
+	stdin, _ := os.ReadFile(dir + "/stdin")
+	if !strings.Contains(string(stdin), "never Claude offering help") || !strings.HasSuffix(string(stdin), transcript) {
+		t.Errorf("claude was asked %q", stdin)
+	}
+	// Nothing to go on: no call.
+	if got, err := (Titler{Bin: dir + "/missing"}).Suggest(context.Background(), " "); got != "" || err != nil {
+		t.Errorf("Suggest of an empty transcript = %q, %v", got, err)
+	}
+}
