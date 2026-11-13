@@ -175,12 +175,14 @@ func (e *TodoEngine) Run(ctx context.Context) {
 func (e *TodoEngine) dispatch(ctx context.Context) {
 	sent := map[string]bool{} // tasks offered to runners this round
 	for {
-		local := true // a task may start here now
+		local := true   // a task may start here now
+		forced := false // a task with StartNow may: the queue only waits for the pace
 		limit := e.MaxParallel
 		if e.Usage != nil {
 			s := e.Usage.Snapshot()
 			if s.Paused {
 				local = false
+				forced = s.PaceOnly()
 			}
 			if s.Pace.Slots > 0 {
 				limit = s.Pace.Slots
@@ -190,7 +192,7 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 		free := limit - len(e.running)
 		e.mu.Unlock()
 		if free <= 0 {
-			local = false
+			local, forced = false, false
 		}
 		var next *model.Todo
 		var all []model.Todo // loaded only when a queued todo has dependencies
@@ -229,7 +231,7 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 				}
 				continue
 			}
-			if !local {
+			if !local && !(forced && q.StartNow) {
 				continue
 			}
 			next = &q
@@ -238,10 +240,13 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 		if next == nil {
 			return
 		}
-		t, err := e.Store.SetStatus(next.ID, model.StatusInProgress, "")
+		t, err := e.Store.SetStatus(next.ID, model.StatusInProgress, "") // uses StartNow up
 		if err != nil {
 			slog.Error("dispatch", "todo", next.ID, "err", err)
 			return
+		}
+		if !local {
+			e.Log.Line(t, "▶ "+StartedNowNote)
 		}
 		wctx, cancel := context.WithCancel(ctx)
 		e.mu.Lock()
@@ -264,6 +269,33 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 			e.work(wctx, t)
 		}()
 	}
+}
+
+// StartedNowNote is the task log's line for a run started with Start now.
+const StartedNowNote = "started now, despite the weekly pace: this run counts toward usage, so the queue may wait a little longer for the pace afterwards"
+
+// ErrNotQueued is StartNow's error for a todo that isn't queued.
+var ErrNotQueued = errors.New("only a queued task can start now; queue it first")
+
+// MarkStartNow lets queued todo x start while the queue waits for the
+// weekly pace (see model.Todo.StartNow); a paused todo is resumed too.
+// It is an update for store.Store.UpdateTodo; kick the engine afterwards.
+func MarkStartNow(x *model.Todo) error {
+	if x.Status != model.StatusQueued {
+		return fmt.Errorf("task %q is %s: %w", x.ID, x.Status, ErrNotQueued)
+	}
+	x.StartNow, x.Paused = true, false
+	return nil
+}
+
+// StartNow marks queued todo id to start now (MarkStartNow) and kicks the
+// dispatcher.
+func (e *TodoEngine) StartNow(id string) (model.Todo, error) {
+	t, err := e.Store.UpdateTodo(id, MarkStartNow)
+	if err == nil {
+		e.Kick()
+	}
+	return t, err
 }
 
 // wait records why queued todo t isn't starting, if that changed.
@@ -292,6 +324,7 @@ func (e *TodoEngine) sendToRunner(ctx context.Context, p model.Project, t model.
 	_, err = e.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
 		now := time.Now()
 		x.Status, x.Error, x.Waiting, x.Paused, x.Resumable = model.StatusInProgress, "", "", false, false
+		x.StartedNow, x.StartNow = x.StartNow, false // Start now is used up by this run
 		x.StartedAt, x.FinishedAt = &now, nil
 		if x.Runner != runnerID {
 			x.Worktree, x.Checks, x.PR = nil, nil, nil // a fresh start on another runner

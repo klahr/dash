@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/usage"
 )
 
 // API calls the REST API of the Dash a client logged in to (the hub). Paths
@@ -28,7 +29,7 @@ type Computer interface {
 	Todos(projectID string) ([]model.Todo, error)
 	CreateTodo(projectID string, t NewTodo) (model.Todo, error)
 	Todo(id string) (model.Todo, error)
-	// Act moves a task: verb is enqueue, cancel, approve or rework (with
+	// Act moves a task: verb is enqueue, start-now, cancel, approve or rework (with
 	// feedback).
 	Act(id, verb, feedback string) error
 	UpdateTodo(id string, u TodoUpdate) (model.Todo, error)
@@ -223,6 +224,27 @@ func (f Fleet) Action(id, verb, feedback string) (model.Todo, error) {
 
 func (f Fleet) QueueTodo(id string) (model.Todo, error) { return f.Action(id, "enqueue", "") }
 
+// StartNow lets a queued task start despite the weekly pace, on its computer.
+func (f Fleet) StartNow(id string) (model.Todo, error) { return f.Action(id, "start-now", "") }
+
+// PaceWaiter is a Computer that tells whether a queued task waits for the
+// weekly pace (see StartNower).
+type PaceWaiter interface {
+	PaceWait(t model.Todo) string
+}
+
+// PaceWait is why queued task t waits for the weekly pace on its computer, or "".
+func (f Fleet) PaceWait(t model.Todo) string {
+	_, c, err := f.todo(t.ID)
+	if err != nil {
+		return ""
+	}
+	if pw, ok := c.(PaceWaiter); ok {
+		return pw.PaceWait(t)
+	}
+	return ""
+}
+
 func (f Fleet) UpdateTodo(id string, u TodoUpdate) (model.Todo, error) {
 	_, c, err := f.todo(id)
 	if err != nil {
@@ -344,6 +366,20 @@ func (c RESTComputer) Act(id, verb, feedback string) error {
 		body = map[string]any{"feedback": feedback}
 	}
 	return c.API.Call("POST", c.Prefix+"/api/todos/"+url.PathEscape(id)+"/"+verb, body, nil)
+}
+
+// PaceWait is the computer's pace reason (GET /api/usage) when its queue
+// waits only for the weekly pace and t is a queued task the pace holds
+// back, or "".
+func (c RESTComputer) PaceWait(t model.Todo) string {
+	if t.Status != model.StatusQueued || t.Paused || t.StartNow {
+		return ""
+	}
+	var u usage.Snapshot
+	if c.API.Call("GET", c.Prefix+"/api/usage", nil, &u) != nil || !u.PaceOnly() {
+		return ""
+	}
+	return u.Reason
 }
 
 // UpdateTodo sends the given fields to the task's PATCH /api/todos/{id}.

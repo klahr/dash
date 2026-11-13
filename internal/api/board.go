@@ -375,6 +375,17 @@ func (b board) RequeueTodo(id string, fresh bool, note string) (model.Todo, erro
 	return b.sv.enqueue(id)
 }
 
+// StartNow lets a queued task start despite the weekly pace.
+func (b board) StartNow(id string) (model.Todo, error) {
+	if err := b.sv.writable(); err != nil {
+		return model.Todo{}, err
+	}
+	return b.sv.startNow(id)
+}
+
+// PaceWait is why queued task t waits for the weekly pace, or "".
+func (b board) PaceWait(t model.Todo) string { return b.sv.paceWait(t) }
+
 func (b board) UpdateTodo(id string, u mcptools.TodoUpdate) (model.Todo, error) {
 	if err := b.sv.writable(); err != nil {
 		return model.Todo{}, err
@@ -460,6 +471,8 @@ func (c localComputer) Act(id, verb, feedback string) error {
 	switch verb {
 	case "enqueue":
 		_, err = c.sv.enqueue(id)
+	case "start-now":
+		_, err = c.sv.startNow(id)
 	case "cancel":
 		_, _, err = c.sv.cancel(id)
 	case "approve":

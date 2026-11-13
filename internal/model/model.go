@@ -412,6 +412,12 @@ type Todo struct {
 	// todo stops Claude and requeues it paused, keeping its worktree and
 	// session so resuming continues where it stopped.
 	Paused bool `json:"paused,omitempty"`
+	// StartNow lets a queued todo start while the queue waits for the
+	// weekly pace (only for the pace: a usage limit, a paused queue, its
+	// dependencies and the free lanes still hold it back). It is used up
+	// when the run starts, which sets StartedNow for that run.
+	StartNow   bool `json:"start_now,omitempty"`
+	StartedNow bool `json:"started_now,omitempty"`
 	// Reviewing is set while Claude reviews the todo from its chat; its
 	// status can't change until the review finishes.
 	Reviewing bool `json:"reviewing,omitempty"`

@@ -8,7 +8,7 @@ import { loadUnpushed } from "./board.js";
 import { renderBoard, title, updateLiveLine } from "./branches.js";
 import { trackActivity } from "./activity.js";
 import { activityAfterStatus } from "../activityclear.js";
-import { closeDetail, loadDiff, openDetail, openTodo, renderDetail } from "./detail.js";
+import { closeDetail, loadDiff, openDetail, openTodo, renderActions, renderDetail } from "./detail.js";
 import { connectLog, connectTerm, loadPreviews, previewEvent, previewOf, pv } from "./preview.js";
 import { loadRunners, refreshRunnerLinks, renderRunners } from "./runners.js";
 import { syncSettingsRunners } from "./settings.js";
@@ -257,8 +257,8 @@ function onEvent(ev, m = { name: "" }) {
       if (!sameMachine) break;
       // On a hub that doesn't run Claude the usage shown is your runner's,
       // which only GET /api/usage gives.
-      if (chatRunner.info?.local === false) loadUsage().catch(() => {});
-      else { state.usage = ev.data; renderUsage(); }
+      if (chatRunner.info?.local === false) loadUsage().then(paceChanged, () => {});
+      else { state.usage = ev.data; renderUsage(); paceChanged(); }
       break;
     case "ci.updated":
       if (!mine) break;
@@ -338,3 +338,10 @@ function elsewhere(ev, m) {
 }
 
 export function projectKey(p) { return p ? `${p.machine}/${p.id}` : ""; }
+
+// paceChanged redraws an open queued task's actions: Start now stands out
+// while the queue waits for the weekly pace.
+function paceChanged() {
+  const t = state.detail && state.todos.get(state.detail);
+  if (t?.status === "queued") renderActions(t);
+}

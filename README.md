@@ -144,6 +144,15 @@ or an org admin can change it; the hub keeps it in `pace.json`. A runner that do
 account (an older Dash) is paced on its own, and a runner whose hub doesn't pace (an older hub)
 paces itself from its own setting in `usage.json`.
 
+**Start now.** To run one queued task while the queue waits for the pace, open it and click
+**Start now** (or **⋯ → Start now, despite the weekly pace**). It starts as soon as a lane is
+free; pacing goes on for the other tasks. Only the
+pace is skipped: a usage limit, a paused queue and unmerged dependencies still hold it back. The
+task's detail says it starts now, and once it runs, that the run counts toward usage, so the queue
+may wait a little longer afterwards. Start now is used up by that run: later runs (a rework, a
+retry) follow the pace again. The API is `POST /api/todos/{id}/start-now`; a chat can do it with
+`queue_todo` and `start_now: true` (see [MCP](docs/mcp.md#the-chats-task-tools)).
+
 ## Optional setup
 
 - **Run it as a service** so it starts at boot: [`deploy/dash.service`](deploy/dash.service), explained in

@@ -121,6 +121,11 @@ type Task struct {
 	// Disk are the runner's disk thresholds as the hub has them now: the
 	// runner doesn't start the task with less free than they allow.
 	Disk *disk.Settings `json:"disk,omitempty"`
+	// StartNow: the user asked to start the task now, despite the weekly
+	// pace, and the hub may have picked this runner although its queue
+	// waits for the pace. The runner's queue lets it start then too (an
+	// older runner keeps it queued until the pace allows).
+	StartNow bool `json:"start_now,omitempty"`
 }
 
 // Accepted is the runner's answer to Task.

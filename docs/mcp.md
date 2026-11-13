@@ -92,7 +92,8 @@ and enter `https://<machine>.<tailnet>.ts.net:8443/mcp` in claude.ai.
 
 Dash's own chats (the general chat and each project's chat) get a smaller set of task tools,
 `dash_board`: `list_projects`, `list_todos`, `get_todo`, `create_todo` (as a draft),
-`queue_todo` (a draft, or a failed task to retry, when you ask for it to run), `stop_todo` and
+`queue_todo` (a draft, or a failed task to retry, when you ask for it to run; with `start_now`
+also a queued task, when you ask to start it now despite the weekly pace), `stop_todo` and
 `restart_todo` (see below), `update_todo` (title, prompt, priority, or
 `clear_priority` to unset it, or dependencies; the prompt only while the task is a draft, queued or failed), `delete_todo` (only
 draft, queued or failed tasks, when you ask to remove one), `create_release`, `list_issues` and
@@ -120,12 +121,22 @@ The chat stops and reruns tasks only when you ask it to:
 - `stop_todo(todo)` does what **Cancel** does on the board, for tasks on a runner too: a running
   task ends failed ("canceled"), keeping its worktree and Claude session; a queued one goes back
   to draft.
-- `queue_todo(todo, fresh?)` queues a draft or a failed task. Without `fresh`, a failed task
+- `queue_todo(todo, fresh?, start_now?)` queues a draft or a failed task. Without `fresh`, a failed task
   continues in its worktree and Claude session, like dragging its card from Review to Queued.
   `fresh: true` starts over: its worktree (on the runner, for a hub's task), Claude session and
   earlier notes for Claude are dropped, and the next run starts from the default branch with the
   prompt alone. A task with
   an open pull request can't start over.
+- With `start_now: true`, `queue_todo` also takes a task that is already queued, and starts it
+  now even though the queue waits for the weekly pace, like **Start now** on the task (see
+  [Your first task](../README.md#your-first-task)). Other tasks keep following the pace;
+  a usage limit, a paused queue, unmerged dependencies or no free lane still hold the task back.
+  For a project on runners, the hub sends it to a runner that waits only for the pace.
+  `dash-mcp` and the connector's `queue_todo` take `start_now` too.
+- `get_todo` shows `start_now` once it is set. A queued task that waits for the pace has
+  `"waiting": "pace"` and `pace_reason` (say "Waiting 1h 20m to stay on pace"); `list_todos`
+  marks such tasks `"waiting": "pace"` too. So the chat can tell you why a task hasn't started and
+  offer to start it now.
 - `restart_todo(todo, prompt?, title?, fresh?)` does it in one call for a running, queued or
   failed task: it stops the task, changes its prompt or title, and queues it. Without `fresh`, a
   new prompt reaches Claude's continued session as a note.

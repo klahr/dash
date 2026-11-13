@@ -105,7 +105,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo
 	}
 	ds := r.Disk
 	task := Task{HubTodoID: t.ID, HubProjectID: p.ID, Title: t.Title, Prompt: t.Prompt, Model: t.Model, Feedback: t.Feedback,
-		Fresh: t.Runner != r.ID, Disk: &ds}
+		Fresh: t.Runner != r.ID, Disk: &ds, StartNow: t.StartNow}
 	var acc Accepted
 	if err := d.Fleet.Call(ctx, r.ID, http.MethodPost, "/api/hub/tasks", task, &acc); err != nil {
 		reason := "waiting for a runner: " + err.Error()
@@ -159,7 +159,7 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string
 			why = append(why, r.Name+" is updating")
 		case r.Paused:
 			why = append(why, r.Name+" is paused")
-		case r.Reported != nil && r.Reported.Usage != nil && r.Reported.Usage.Paused:
+		case r.Reported != nil && r.Reported.Usage != nil && r.Reported.Usage.Paused && !(t.StartNow && r.Reported.Usage.PaceOnly()):
 			msg := r.Name + " has paused its queue"
 			if r.Reported.Usage.Reason != "" {
 				msg += " (" + r.Reported.Usage.Reason + ")"
@@ -171,7 +171,7 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string
 		case pace.Stop != "":
 			// Its account's: every runner on it waits.
 			why = append(why, r.Name+"'s Claude account is paused ("+pace.Stop+")")
-		case pace.Waiting():
+		case pace.Waiting() && !t.StartNow: // Start now: only the pace holds it back
 			why = append(why, r.Name+" is "+lowerFirst(pace.Pace.Reason()))
 		case busy >= limit(r):
 			why = append(why, fmt.Sprintf("%s is busy (%d of %d tasks)", r.Name, busy, limit(r)))
@@ -193,6 +193,23 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string
 		return d.Busy(a.ID)*limit(b) - d.Busy(b.ID)*limit(a) // the least loaded, relative to its limit
 	})
 	return &best, "", ""
+}
+
+// PaceWait is why queued task t of p waits for the weekly pace (the
+// runners' reasons), or "" when the pace isn't what holds it back: no
+// runner takes it now, and one would if the user started it now (see
+// model.Todo.StartNow). t's own StartNow doesn't count.
+func (d *Dispatcher) PaceWait(p model.Project, t model.Todo) string {
+	t.StartNow = false
+	r, reason, _ := d.pick(p, t)
+	if r != nil {
+		return ""
+	}
+	t.StartNow = true
+	if r, _, _ := d.pick(p, t); r == nil {
+		return ""
+	}
+	return reason
 }
 
 // tooFull says why runner r, below its minimum free disk space, doesn't

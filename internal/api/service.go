@@ -14,6 +14,7 @@ import (
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/runner"
 	"github.com/klahr/dash/internal/store"
 )
@@ -213,6 +214,40 @@ func (sv *service) enqueue(id string) (model.Todo, error) {
 		sv.s.Todos.Kick()
 	}
 	return t, err
+}
+
+// startNow lets queued task id start while the queue waits for the weekly
+// pace (see queue.TodoEngine.StartNow).
+func (sv *service) startNow(id string) (model.Todo, error) {
+	t, err := sv.data.UpdateTodo(id, queue.MarkStartNow)
+	if err == nil {
+		sv.s.Todos.Kick()
+	}
+	return t, err
+}
+
+// paceWait is why queued task t waits for the weekly pace, or "" when the
+// pace isn't what holds it back: here, the queue's pace; on the hub, its
+// project's runners' (see dispatch.Dispatcher.PaceWait).
+func (sv *service) paceWait(t model.Todo) string {
+	s := sv.s
+	if t.Status != model.StatusQueued || t.Paused || t.StartNow {
+		return ""
+	}
+	if s.hub() {
+		p, err := sv.data.GetProject(t.ProjectID)
+		if err != nil || s.Dispatch == nil || !p.OnRunners() {
+			return ""
+		}
+		return s.Dispatch.PaceWait(p, t)
+	}
+	if s.Usage == nil {
+		return ""
+	}
+	if u := s.Usage.Snapshot(); u.PaceOnly() {
+		return u.Reason
+	}
+	return ""
 }
 
 // cancel stops a running task (accepted=true: the worker marks it failed)

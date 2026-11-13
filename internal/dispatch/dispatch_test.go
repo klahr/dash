@@ -23,6 +23,7 @@ type fakeFleet struct {
 	runners map[string]tunnel.Runner
 	calls   []string // "runner METHOD path"
 	links   []Link   // the links sent
+	tasks   []Task   // the tasks sent
 }
 
 func (f *fakeFleet) Get(id string) (tunnel.Runner, bool) {
@@ -50,6 +51,9 @@ func (f *fakeFleet) Call(_ context.Context, id, method, path string, in, out any
 	f.calls = append(f.calls, id+" "+method+" "+path)
 	if l, ok := in.(Link); ok {
 		f.links = append(f.links, l)
+	}
+	if t, ok := in.(Task); ok {
+		f.tasks = append(f.tasks, t)
 	}
 	f.mu.Unlock()
 	if !ok {

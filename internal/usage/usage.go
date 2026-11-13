@@ -264,6 +264,14 @@ func (s Snapshot) waitForPace(now time.Time) Snapshot {
 	return s
 }
 
+// PaceOnly reports whether s pauses the queue only to stay on the weekly
+// pace: no usage limit is reached and nobody paused it. A queued task the
+// user asked to start now (model.Todo.StartNow) may start then. A snapshot
+// from an older runner, without Pacing, never is.
+func (s Snapshot) PaceOnly() bool {
+	return s.Paused && s.Pacing && !s.ManualPause
+}
+
 // WithPace is s, reevaluated as of now, with the hub's pace p of the
 // account it is for: waiting for the line, it says so (as a hard stop
 // isn't already).

@@ -1032,6 +1032,21 @@ func (s *Server) enqueueTodo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
+// startNowTodo lets a queued task start while the queue waits for the
+// weekly pace (POST /api/todos/{tid}/start-now).
+func (s *Server) startNowTodo(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	t, err := sv.startNow(r.PathValue("tid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
+}
+
 func (s *Server) cancelTodo(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {

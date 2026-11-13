@@ -333,8 +333,9 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
   .todo:has(.ask-claude-chip) > .todo-side .card-actions { margin-top: 0; }
 }
 .paused-tag { color: var(--muted); }
+.start-now-tag { color: var(--running); } /* the task skips the wait for the weekly pace */
 /* A card's small word tags (paused, reviewing, a PR, CI, checks, a revert): one size; each sets its colour. */
-:is(.paused-tag, .reviewing-tag, .runner-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag) { font-size: var(--fs-xs); font-weight: 600; }
+:is(.paused-tag, .start-now-tag, .reviewing-tag, .runner-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag) { font-size: var(--fs-xs); font-weight: 600; }
 
 .s-draft { --c: var(--faint); }
 .s-queued { --c: var(--accent); }

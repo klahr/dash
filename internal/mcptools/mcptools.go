@@ -373,6 +373,20 @@ type Restarter interface {
 	RequeueTodo(id string, fresh bool, note string) (model.Todo, error)
 }
 
+// StartNower is a Board that can start a queued task while the queue waits
+// for the weekly pace, for queue_todo's start_now, and tell whether a
+// queued task waits for the pace, for get_todo and list_todos.
+type StartNower interface {
+	// StartNow lets a queued task start despite the weekly pace (it sets
+	// model.Todo.StartNow). A usage limit, a paused queue, unmerged
+	// dependencies and the free lanes still hold it back.
+	StartNow(id string) (model.Todo, error)
+	// PaceWait is why queued task t waits for the weekly pace (e.g.
+	// "Waiting 1h 20m to stay on pace"), or "" when the pace isn't what
+	// holds it back.
+	PaceWait(t model.Todo) string
+}
+
 // Options adapt the board tools to where they run.
 type Options struct {
 	// Project is used when a call names none (the project chat's project).
@@ -584,6 +598,18 @@ func boardTools(b Board, o Options) []Tool {
 		queueDesc = "Queue a draft or failed task to run; only when the user asks to start, run or retry it."
 		queueParams = append(queueParams, Param{"fresh", "boolean", freshDesc, false})
 	}
+	starter, _ := b.(StartNower)
+	if starter != nil {
+		queueDesc += " With start_now it also takes a task that is already queued."
+		queueParams = append(queueParams, Param{"start_now", "boolean", startNowDesc, false})
+	}
+	// paceWait is why queued task t waits for the weekly pace, or "".
+	paceWait := func(t model.Todo) string {
+		if starter == nil || t.Status != model.StatusQueued {
+			return ""
+		}
+		return starter.PaceWait(t)
+	}
 	tools := []Tool{
 		{"list_projects", "List the projects on every computer in this Dash.", nil,
 			func(a Args) (any, error) {
@@ -627,8 +653,13 @@ func boardTools(b Board, o Options) []Tool {
 					DependsOn []string         `json:"depends_on,omitempty"`
 					WaitingOn []string         `json:"waiting_on,omitempty"` // dependencies not merged yet
 					Error     string           `json:"error,omitempty"`
+					StartNow  bool             `json:"start_now,omitempty"`
+					Waiting   string           `json:"waiting,omitempty"` // "pace": it waits for the weekly pace
 				}
 				out := []row{}
+				// The pace holds back every task of a project alike, so it is
+				// asked once.
+				pace, paceKnown := "", false
 				for _, t := range ts {
 					if st := a.Str("status"); st != "" && string(t.Status) != st {
 						continue
@@ -637,16 +668,41 @@ func boardTools(b Board, o Options) []Tool {
 					for _, d := range t.Blockers(ts) {
 						waiting = append(waiting, d.ID)
 					}
-					out = append(out, row{t.ID, t.Title, t.Status, t.Priority, t.DependsOn, waiting, t.Error})
+					r := row{t.ID, t.Title, t.Status, t.Priority, t.DependsOn, waiting, t.Error, t.StartNow, ""}
+					if t.Status == model.StatusQueued && !t.Paused && !t.StartNow && len(waiting) == 0 {
+						if !paceKnown {
+							pace, paceKnown = paceWait(t), true
+						}
+						if pace != "" {
+							r.Waiting = "pace"
+						}
+					}
+					out = append(out, r)
 				}
 				return out, nil
 			}},
-		{"get_todo", "Show a task: prompt, status, dependencies (depends_on), feedback, test results, diff size, pull request, and each Claude run's kind, tokens, turns and cost (run_stats).", []Param{PTodo},
+		{"get_todo", "Show a task: prompt, status, dependencies (depends_on), feedback, test results, diff size, pull request, and each Claude run's kind, tokens, turns and cost (run_stats). " +
+			"A queued task that waits for the weekly pace has waiting \"pace\" and pace_reason; start_now is set once the user asked to start it now.", []Param{PTodo},
 			func(a Args) (any, error) {
 				if a.Str("todo") == "" {
 					return nil, errors.New("todo is required")
 				}
-				return b.Todo(a.Str("todo"))
+				t, err := b.Todo(a.Str("todo"))
+				if err != nil {
+					return nil, err
+				}
+				why := ""
+				if !t.Paused && !t.StartNow {
+					why = paceWait(t)
+				}
+				if why == "" {
+					return t, nil
+				}
+				return struct {
+					model.Todo
+					Waiting    string `json:"waiting"`     // "pace", in place of the task's own reason
+					PaceReason string `json:"pace_reason"` // e.g. "Waiting 1h 20m to stay on pace"
+				}{t, "pace", why}, nil
 			}},
 		{"create_todo", createDesc, []Param{pProject,
 			{"prompt", "string", "The task for Claude (the title alone is enough for small tasks).", false},
@@ -678,16 +734,33 @@ func boardTools(b Board, o Options) []Tool {
 				if err != nil {
 					return nil, err
 				}
-				if t.Status != model.StatusDraft && t.Status != model.StatusFailed {
+				now := a.Flag("start_now") && starter != nil
+				switch {
+				case now && t.Status == model.StatusQueued:
+					// Already queued: only Start now.
+				case t.Status != model.StatusDraft && t.Status != model.StatusFailed:
+					if now {
+						return nil, fmt.Errorf("task %q is %s; only draft, failed and queued tasks can start now", t.ID, t.Status)
+					}
 					return nil, fmt.Errorf("task %q is %s; only draft and failed tasks can be queued", t.ID, t.Status)
-				}
-				if a.Flag("fresh") {
+				case a.Flag("fresh") && restarter != nil:
 					t, err = restarter.RequeueTodo(t.ID, true, "")
-				} else {
+				default:
 					t, err = b.QueueTodo(t.ID)
 				}
 				if err != nil {
 					return nil, err
+				}
+				if now {
+					st, err := starter.StartNow(t.ID)
+					if err != nil {
+						// Just queued, it may have started already.
+						if cur, gerr := b.Todo(t.ID); gerr == nil && cur.Status == model.StatusInProgress {
+							return queued(cur), nil
+						}
+						return nil, err
+					}
+					t = st
 				}
 				return queued(t), nil
 			}},
@@ -782,13 +855,19 @@ const freshDesc = "true starts over: a new worktree from the default branch and 
 	"false (the default) continues in the task's worktree and Claude session, " +
 	"like dragging the card from Review to Queued."
 
+// startNowDesc is queue_todo's start_now parameter.
+const startNowDesc = "true starts the task now even though the queue waits for the weekly pace (get_todo shows waiting \"pace\"); " +
+	"it also takes a task that is already queued. Only when the user asks to start this task now or despite the pace: " +
+	"it doesn't turn pacing off for other tasks, and a usage limit, a paused queue, unmerged dependencies or no free lane still hold it back."
+
 // queued is what queue_todo and restart_todo answer.
 func queued(t model.Todo) any {
 	return struct {
-		ID     string           `json:"id"`
-		Title  string           `json:"title"`
-		Status model.TodoStatus `json:"status"`
-	}{t.ID, t.Title, t.Status}
+		ID       string           `json:"id"`
+		Title    string           `json:"title"`
+		Status   model.TodoStatus `json:"status"`
+		StartNow bool             `json:"start_now,omitempty"`
+	}{t.ID, t.Title, t.Status, t.StartNow}
 }
 
 // restartTools returns stop_todo and restart_todo.

@@ -569,8 +569,11 @@ func (s *Store) SetStatus(id string, to model.TodoStatus, errMsg string) (model.
 	return s.UpdateTodo(id, func(t *model.Todo) error {
 		t.Status = to
 		t.Error = errMsg
+		if to == model.StatusInProgress {
+			t.StartedNow = t.StartNow // Start now is used up by this run
+		}
 		if to != model.StatusQueued {
-			t.Paused, t.Waiting = false, ""
+			t.Paused, t.Waiting, t.StartNow = false, "", false
 		}
 		now := time.Now()
 		switch to {

@@ -277,6 +277,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("PATCH /api/todos/{tid}", s.updateTodo)
 	mux.HandleFunc("DELETE /api/todos/{tid}", s.deleteTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/enqueue", s.enqueueTodo)
+	mux.HandleFunc("POST /api/todos/{tid}/start-now", s.startNowTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/cancel", s.cancelTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/pause", s.pauseTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/resume", s.resumeTodo)
@@ -549,7 +550,7 @@ func writeErr(w http.ResponseWriter, err error) {
 		code = http.StatusNotFound
 	case errors.As(err, &inv), errors.As(err, &invIssue), errors.Is(err, store.ErrReviewing):
 		code = http.StatusConflict
-	case errors.As(err, new(*queue.PullRefused)):
+	case errors.As(err, new(*queue.PullRefused)), errors.Is(err, queue.ErrNotQueued):
 		code = http.StatusConflict
 	case errors.Is(err, queue.ErrMergeQueueFull), errors.Is(err, errScansOff), errors.Is(err, errTrackersOff),
 		errors.Is(err, errPushOff), errors.Is(err, errNotifyOff):
