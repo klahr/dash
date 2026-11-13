@@ -419,6 +419,42 @@ func TestReenrollUnderAnotherRoot(t *testing.T) {
 	}
 }
 
+// Revoking with a root key needs this runner enrolled under that key: an
+// unenrolled runner and a wrong key are refused, and nothing is stored.
+func TestRevokeWithRootRefusals(t *testing.T) {
+	root, other := newRoot(t), newRoot(t)
+	ident := mustIdentity(t)
+	fp := mustIdentity(t).Fingerprint()
+	now := time.Now()
+
+	if _, err := RevokeWithRoot(t.TempDir(), root, fp, now); !errors.Is(err, ErrNotEnrolled) {
+		t.Fatalf("unenrolled runner: %v, want ErrNotEnrolled", err)
+	}
+
+	dir := t.TempDir()
+	if _, err := Enroll(dir, root, "ra", ident.Public, false, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RevokeWithRoot(dir, other, fp, now); !errors.Is(err, ErrOtherRoot) {
+		t.Fatalf("wrong root key: %v, want ErrOtherRoot", err)
+	}
+	a, err := ReadApprovals(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a.RootRevocations) != 0 {
+		t.Fatalf("a refused revocation was stored: %v", a.RootRevocations)
+	}
+
+	// The right root key still works on the same runner.
+	if _, err := RevokeWithRoot(dir, root, fp, now); err != nil {
+		t.Fatal(err)
+	}
+	if a, err = ReadApprovals(dir); err != nil || len(a.RootRevocations) != 1 {
+		t.Fatalf("revocation with the root key: %v, %v", a.RootRevocations, err)
+	}
+}
+
 // Signatures are SSHSIG: ssh-keygen checks ours, and ours check its.
 func TestSSHSIGMatchesSSHKeygen(t *testing.T) {
 	if _, err := exec.LookPath("ssh-keygen"); err != nil {
