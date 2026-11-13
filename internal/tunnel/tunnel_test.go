@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	mrand "math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -226,6 +228,40 @@ func TestSameComputerRegistersAgain(t *testing.T) {
 	}
 	if _, ok := th.authenticate(again.Token); !ok {
 		t.Fatal("new token doesn't work")
+	}
+}
+
+// List sorts by name ignoring case, then by exact name, then by id, so runners
+// of one name keep their places from one call to the next.
+func TestListSortsByNameThenID(t *testing.T) {
+	t.Parallel()
+
+	th := newTestHub(t)
+	beta := th.register(t, "beta")
+	// register lower-cases names and refuses a taken one; a runners file
+	// written before that can still hold these (Keep loads it as it is).
+	th.mu.Lock()
+	th.runners = append(th.runners,
+		&record{ID: "same-2", Name: "same"},
+		&record{ID: "a-lower", Name: "alpha"},
+		&record{ID: "same-1", Name: "same"},
+		&record{ID: "a-upper", Name: "Alpha"},
+	)
+	th.mu.Unlock()
+
+	want := []string{"Alpha/a-upper", "alpha/a-lower", "beta/" + beta.ID, "same/same-1", "same/same-2"}
+	rng := mrand.New(mrand.NewPCG(1, 2))
+	for i := range 20 {
+		th.mu.Lock()
+		rng.Shuffle(len(th.runners), func(a, b int) { th.runners[a], th.runners[b] = th.runners[b], th.runners[a] })
+		th.mu.Unlock()
+		var got []string
+		for _, r := range th.List() {
+			got = append(got, r.Name+"/"+r.ID)
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("call %d: List() = %v, want %v", i, got, want)
+		}
 	}
 }
 
