@@ -1981,6 +1981,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 }
 .meta-edit .meta-input { width: 72px; }
 .meta-edit .meta-select { width: auto; }
+.meta-edit .meta-buildon { max-width: 260px; text-overflow: ellipsis; }
 .meta-btn { cursor: pointer; }
 .meta-edit :is(.meta-input, .meta-select, .meta-btn):hover { border-color: var(--faint); }
 .meta-edit :is(.meta-input, .meta-select, .meta-btn):focus-visible { border-color: var(--accent); outline: none; }

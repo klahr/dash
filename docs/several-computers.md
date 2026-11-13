@@ -282,7 +282,9 @@ projects on a runner's **Projects…** screen (below). From then on:
 
 - Each task goes to one of the project's runners that is online, not paused, below its limit and
   not held back by its owner's Claude usage, the least busy first. A task that ran before goes
-  back to the runner that has its worktree and Claude session.
+  back to the runner that has its worktree and Claude session. A task that builds on an earlier
+  one (**Build on**) goes to the runner that ran the earlier one, when it can take it; on another
+  runner it starts a fresh Claude session with the full task.
 - If none can take it, the task stays queued and its card says why ("no runner online: laptop is
   offline", "waiting for a runner: laptop is busy (3 of 3 tasks)"). It starts as soon as one can.
 - The project needs a git remote: each runner clones it into its projects folder the first time

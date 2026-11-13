@@ -133,7 +133,8 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 full form. The new task's first run continues that task's Claude session (as a fork; the earlier
 session stays as it was), so Claude doesn't explore the code again. The list shows the project's
 recently merged or failed tasks. A task that builds on an unfinished one waits in *Queued* until
-it is merged or failed. The task's detail shows **Builds on #id title**. If the earlier session
+it is merged or failed. The task's detail shows **Builds on #id title**; on a wide screen, change it
+there under **Build on** while the task is a draft, queued or failed. If the earlier session
 isn't on the computer that runs the task (it ran on another runner, or the session was
 deleted), the task starts a fresh session with its full prompt, and its log says so. On a hub,
 Dash sends the task to the runner that ran the earlier one when it can.

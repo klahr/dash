@@ -6,15 +6,15 @@ import { attachBox } from "./attachments.js";
 import { state } from "./state.js";
 import { title } from "./branches.js";
 import { editable, openTodoForm, updateTodo } from "./todos.js";
-import { depOptions, draft, promptEditor, setModelField, todoAttach } from "./todoform.js";
+import { buildOnOptions, depOptions, draft, promptEditor, setModelField, todoAttach } from "./todoform.js";
 import { formPriority } from "./dnd.js";
 import { openDetail, renderDetail } from "./detail.js";
 
 // ------------------------------------------------------------------ inline editing (desktop)
 // On a desktop the open task is edited in its detail pane: click the title to
 // rename it, the instructions to edit them in the Markdown editor the task form
-// uses, and priority, model and dependencies are controls under the title that
-// save at once. Phones keep the task form (#todo-sheet); so does a new task,
+// uses, and priority, model, dependencies and the task it builds on are
+// controls under the title that save at once. Phones keep the task form (#todo-sheet); so does a new task,
 // and "Edit in the full form" in ⋯ (clean up, split).
 export const inlineEdits = (t) => desktop.matches && editable(t);
 
@@ -256,6 +256,14 @@ function renderMeta(t) {
       btn.textContent = ids.length ? `Depends on ${plural(ids.length, "task")}` : "No dependencies";
     }, (t) => { const sel = new Set(t.depends_on || []); $$("input[name=dep]", pop).forEach((i) => { i.checked = sel.has(i.value); }); }));
     kids.push(wrap);
+  }
+
+  const bopts = buildOnOptions(t, t.builds_on || "");
+  if (bopts) {
+    const base = h("select", { class: "meta-select meta-buildon", "aria-label": "Build on", title: "A finished task whose Claude session this task's first run continues" }, bopts);
+    base.value = t.builds_on || "";
+    base.addEventListener("change", save((t) => updateTodo(t, { builds_on: base.value }), (t) => { base.value = t.builds_on || ""; }));
+    kids.push(h("label", { class: "meta-ctl" }, h("span", {}, "Build on"), base));
   }
   metaBox.replaceChildren(...kids);
 }

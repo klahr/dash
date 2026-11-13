@@ -50,25 +50,33 @@ export const depPicker = (() => {
 // the project whose Claude session the task's first run continues. The most
 // recently finished come first; the one chosen stays listed whatever it is.
 const FINISHED = new Set(["merged", "failed"]);
+const finishedAt = (x) => new Date(x.finished_at || x.updated_at || 0).getTime();
+// buildOnOptions lists the tasks t can build on as <option>s, id (the one
+// chosen) included; null when there is none to pick from.
+export function buildOnOptions(t, id = "") {
+  const cur = id ? state.todos.get(id) : null;
+  const recent = [...state.todos.values()]
+    .filter((x) => x.id !== t?.id && x.id !== id && FINISHED.has(x.status))
+    .sort((a, b) => finishedAt(b) - finishedAt(a))
+    .slice(0, 20);
+  if (!recent.length && !id) return null;
+  const opt = (x) => h("option", { value: x.id }, `#${x.id} ${title(x)} · ${STATUS_LABEL[x.status] || x.status}`);
+  return [
+    h("option", { value: "" }, "Nothing: start fresh"),
+    ...(cur ? [opt(cur)] : id ? [h("option", { value: id }, `#${id}`)] : []),
+    ...recent.map(opt)];
+}
+
 export const buildOnPicker = (() => {
   const field = $("#todo-buildon-field"), sel = $("#todo-form").builds_on;
   let self = null;
-  const when = (x) => new Date(x.finished_at || x.updated_at || 0).getTime();
   const reset = (t, id = "") => {
     self = t;
-    const cur = id ? state.todos.get(id) : null;
-    const recent = [...state.todos.values()]
-      .filter((x) => x.id !== t?.id && x.id !== id && FINISHED.has(x.status))
-      .sort((a, b) => when(b) - when(a))
-      .slice(0, 20);
-    const opt = (x) => h("option", { value: x.id }, `#${x.id} ${title(x)} · ${STATUS_LABEL[x.status] || x.status}`);
-    sel.replaceChildren(
-      h("option", { value: "" }, "Nothing: start fresh"),
-      ...(cur ? [opt(cur)] : id ? [h("option", { value: id }, `#${id}`)] : []),
-      ...recent.map(opt));
+    const opts = buildOnOptions(t, id);
+    sel.replaceChildren(...(opts || []));
     sel.value = id || "";
     const usable = !pickProject || projectKey(state.project) === $("#todo-form").project.value;
-    field.hidden = !usable || (!recent.length && !id);
+    field.hidden = !usable || !opts;
   };
   $("#todo-form").project.addEventListener("change", () => reset(self, ""));
   return { reset, value: () => field.hidden ? "" : sel.value };

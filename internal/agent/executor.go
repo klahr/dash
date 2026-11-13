@@ -89,6 +89,8 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 		// Claude Code finds the session wherever it was started (sessions
 		// are kept per working directory, and the task building on another
 		// runs in a worktree of its own); a fork is saved under this one.
+		// (Checked with Claude Code 2.1.322; where it isn't found, Run
+		// reports ResumeFailed and the caller starts fresh.)
 		args = append(args, "--resume", req.Resume)
 		if req.ForkSession {
 			args = append(args, "--fork-session")

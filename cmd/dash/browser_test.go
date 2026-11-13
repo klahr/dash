@@ -1248,3 +1248,91 @@ func TestBrowserRunnerDiskWarning(t *testing.T) {
 	h.api.must("PATCH", path, map[string]any{"disk": map[string]any{"warn_percent": 0.01, "warn_gb": 0.001, "min_free_gb": 0.01}}, http.StatusOK, nil)
 	b.waitJS("the banner gone", `document.querySelector("#disk-banner").hidden`)
 }
+
+// Build on: a merged task is listed under Build on in the full task form;
+// the task saved with it waits on nothing and shows "Builds on #id title"
+// in its detail. On a wide screen and a phone's.
+func TestBrowserBuildOn(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	api, pid := h.api, h.project.ID
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	shot := func(name string) {
+		if dir := os.Getenv("DASH_TEST_SHOTS"); dir != "" {
+			buf, err := chromedp.Run(b.ctx, chromedp.FullScreenshot(90))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, name+".jpg"), buf, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	var base struct{ ID string }
+	api.must("POST", "/api/projects/"+pid+"/todos", map[string]any{"title": "Lay the ground", "prompt": "add a done file", "enqueue": true}, http.StatusCreated, &base)
+	waitStatus(t, api, "/api/todos/"+base.ID, "review", nil)
+	api.must("POST", "/api/todos/"+base.ID+"/approve", nil, http.StatusAccepted, nil)
+	waitStatus(t, api, "/api/todos/"+base.ID, "merged", nil)
+
+	for _, size := range []struct {
+		name string
+		vp   chromedp.Action[chromedp.Void]
+	}{
+		{"wide", chromedp.EmulateViewport(1280, 900)},
+		{"phone", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch)},
+	} {
+		b.do("a "+size.name+" screen", size.vp)
+		b.until("open the new task sheet", `document.querySelector("#quick-sheet").open`, chromedp.Click(chromedp.ID("new-todo")))
+		b.do("write the task", chromedp.SendKeys(chromedp.CSS(`#quick-sheet[open] #quick-rows .quick-row`), "Follow up "+size.name))
+		b.waitJS("the task written", `document.querySelector("#quick-rows .quick-row").value === "Follow up `+size.name+`"`)
+		b.until("open the full form", `document.querySelector("#todo-sheet").open`, chromedp.Click(chromedp.ID("quick-more")))
+		b.waitJS("Build on lists the merged task", fmt.Sprintf(`(() => {
+			const f = document.querySelector("#todo-buildon-field"), s = document.querySelector("#todo-form").builds_on;
+			return !f.hidden && f.getBoundingClientRect().width > 0 && s.options[0].value === "" &&
+				[...s.options].some((o) => o.value === %q && o.textContent.includes("Lay the ground"));
+		})()`, base.ID))
+		if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](fmt.Sprintf(`(() => {
+			const s = document.querySelector("#todo-form").builds_on;
+			s.value = %q;
+			s.scrollIntoView();
+			return s.dispatchEvent(new Event("change"));
+		})()`, base.ID))); err != nil {
+			b.fail("pick the task to build on", err)
+		}
+		shot("buildon-form-" + size.name)
+		b.until("save the draft", `!document.querySelector("#todo-sheet").open`, chromedp.Click(chromedp.CSS(`#todo-form button[value=draft]`)))
+		id := waitTodo(t, api, pid, "Follow up "+size.name)
+		var td struct {
+			BuildsOn string `json:"builds_on"`
+		}
+		api.must("GET", "/api/todos/"+id, nil, http.StatusOK, &td)
+		if td.BuildsOn != base.ID {
+			t.Fatalf("%s: builds_on %q, want %q", size.name, td.BuildsOn, base.ID)
+		}
+		b.openTask(id)
+		b.waitJS("Builds on in the detail", fmt.Sprintf(`[...document.querySelectorAll("#detail .deps")].some((e) =>
+			e.textContent === "Builds on #%s Lay the ground" && e.getBoundingClientRect().width > 0)`, base.ID))
+		shot("buildon-detail-" + size.name)
+		if size.name == "wide" {
+			// Edited in place: Build on among the controls under the title.
+			b.waitJS("the inline Build on", fmt.Sprintf(`document.querySelector("#d-meta-edit .meta-buildon")?.value === %q`, base.ID))
+			if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(() => {
+				const s = document.querySelector("#d-meta-edit .meta-buildon");
+				s.value = "";
+				return s.dispatchEvent(new Event("change"));
+			})()`)); err != nil {
+				b.fail("build on nothing", err)
+			}
+			waitFor(t, nil, "builds_on cleared", func() bool {
+				td.BuildsOn = "" // omitted when empty
+				api.must("GET", "/api/todos/"+id, nil, http.StatusOK, &td)
+				return td.BuildsOn == ""
+			})
+			b.waitJS("no Builds on line", `![...document.querySelectorAll("#detail .deps")].some((e) => e.textContent.startsWith("Builds on"))`)
+		}
+		b.until("close the task", `document.querySelector("#detail").hidden`, chromedp.KeyEvent(kb.Escape))
+	}
+}
