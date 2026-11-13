@@ -83,6 +83,9 @@ type Manager struct {
 	// and may be captured from (with org subdomains, the todo's org's);
 	// "" falls back to Dash's origin as last seen.
 	OriginFor func(todoID string) string
+	// PublicURL, if set (-public-url), is Dash's own origin; otherwise it is
+	// learnt from the UI's requests, on hosts the preview domain is under.
+	PublicURL string
 	// Remote reaches previews running on runners (the hub's side, remote.go).
 	// Their hosts are <todo>-<runner>.<domain>. Optional.
 	Remote Remote

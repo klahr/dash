@@ -532,6 +532,7 @@ func (a *app) buildServices() {
 	}
 	a.previews = preview.New(a.procs, events, st, o.previewDomain)
 	a.previews.TrustProxy, a.previews.Secure, a.previews.IdleAfter = o.trustProxy, a.authn.Secure, o.previewIdle
+	a.previews.PublicURL = o.publicURL
 	a.storeEvents.chain(a.previews.Observe) // a task leaving review stops its preview
 	if a.previews.Domain != "" {
 		slog.Info("live previews", "hosts", "<task>."+a.previews.Domain)

@@ -104,7 +104,9 @@ previews need a domain.
 ## What the proxy does
 
 - Previews need a Dash login. A browser without one is sent to Dash to log in (an open Dash tab
-  is enough), then gets a cookie for that one preview host. Dash's own session cookie is never
+  is enough), then gets a cookie for that one preview host. Dash's address for this is
+  `-public-url` when set, else the address you open Dash on, but only on a host the preview domain
+  is under (`dash.example.com` for `preview.dash.example.com`). Dash's own session cookie is never
   forwarded to the app, and pages served from a preview can't make changes through Dash's API.
 - The app sees requests as if they came to `http://localhost:<port>` (dev servers often only allow
   that host), with `X-Forwarded-Host` and `X-Forwarded-Proto` set to the preview's address.
@@ -112,8 +114,8 @@ previews need a domain.
   are removed so the app can be shown in Dash's pane.
 - For [Draw](draw.md), it adds one script to the app's HTML pages, `/__dash/capture.js` (served by
   the proxy itself; [modern-screenshot](https://github.com/qq15725/modern-screenshot), MIT). It
-  only answers Dash's page (Dash's own origin, or the host the preview domain is under, e.g.
-  `dash.example.com` for `preview.dash.example.com`), with a picture of the page, its address, and
+  only answers Dash's page (exactly Dash's own origin, or `https://` on the host the preview domain
+  is under, e.g. `https://dash.example.com` for `preview.dash.example.com`), with a picture of the page, its address, and
   which element is under the points Dash asks about. To let it run, a page's CSP gets the script's
   nonce (or `'self'`), `data:`/`blob:` images and same-origin fetches, and loses Trusted Types.
   Compressed pages are passed on uncompressed. A CSP set in a `<meta>` tag isn't changed, so such

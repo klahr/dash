@@ -3,13 +3,10 @@
 // scroll position) to a PNG and send it back; and, for the marks drawn on it,
 // say which element is under each point. It does nothing else.
 // The proxy serves this file with `ms` (modern-screenshot) and `CFG`
-// ({ origins, hosts }: who may ask) in scope.
+// ({ origins }: who may ask, exact origins with scheme and port) in scope.
 if (window.parent !== window && !window.__dashCapture) {
   window.__dashCapture = true;
-  const allowed = (origin) => {
-    if (CFG.origins.includes(origin)) return true;
-    try { return CFG.hosts.includes(new URL(origin).hostname); } catch { return false; }
-  };
+  const allowed = (origin) => CFG.origins.includes(origin);
   // The first colour that isn't transparent, as the page's backdrop (a
   // page's body background normally paints the whole viewport).
   const backdrop = () => {

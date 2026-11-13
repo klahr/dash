@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -27,27 +28,27 @@ var screenshotJS string // modern-screenshot 4.7.0 (MIT, see capture/modern-scre
 //go:embed capture/capture.js
 var captureJS string
 
-// parentOrigins says who may ask for a capture: Dash's own origin as last
-// seen, and any origin on the host the preview domain hangs off (dash.example.com
-// for preview.dash.example.com), which is where docs/previews.md puts Dash.
-func (m *Manager) parentOrigins(label string) (origins, hosts []string) {
-	origins = []string{}
-	hosts = []string{}
-	if o := m.dashOrigin(); o != "" {
-		origins = append(origins, o)
+// parentOrigins says who may ask for a capture, as exact origins (scheme,
+// host and port): Dash's own origin, the todo's org's, and https on the host
+// the preview domain hangs off (dash.example.com for preview.dash.example.com),
+// which is where docs/previews.md puts Dash.
+func (m *Manager) parentOrigins(label string) []string {
+	origins := []string{}
+	add := func(o string) {
+		if o != "" && !slices.Contains(origins, o) {
+			origins = append(origins, o)
+		}
 	}
-	if o := m.originFor(label); o != "" && o != m.dashOrigin() {
-		origins = append(origins, o) // the todo's org's subdomain
+	add(m.dashOrigin())
+	add(m.originFor(label)) // the todo's org's subdomain
+	if p := m.parentHost(); p != "" {
+		add("https://" + p)
 	}
-	if _, rest, ok := strings.Cut(m.Domain, "."); ok && strings.Contains(rest, ".") {
-		hosts = append(hosts, rest)
-	}
-	return origins, hosts
+	return origins
 }
 
 func (m *Manager) serveCapture(w http.ResponseWriter, label string) {
-	origins, hosts := m.parentOrigins(label)
-	cfg, _ := json.Marshal(map[string][]string{"origins": origins, "hosts": hosts})
+	cfg, _ := json.Marshal(map[string][]string{"origins": m.parentOrigins(label)})
 	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")

@@ -115,13 +115,16 @@ func (m *Manager) secure(r *http.Request) bool {
 
 // SetOrigin records the origin Dash's UI is served from, as r reached it:
 // unauthenticated preview requests are sent there to sign in, and previews
-// are served with its scheme and port.
+// are served with its scheme and port. The Host comes from the client, so
+// it is only taken when it is one the preview domain hangs off (dash.example.com
+// for preview.dash.example.com), where docs/previews.md puts Dash; with
+// PublicURL set, requests are not looked at at all.
 func (m *Manager) SetOrigin(r *http.Request) {
-	if m == nil {
+	if m == nil || m.PublicURL != "" {
 		return
 	}
 	h := m.reqHost(r)
-	if _, ok := m.label(m.host(r)); ok || h == "" {
+	if h == "" || !m.dashHost(m.host(r)) {
 		return
 	}
 	scheme := "http"
@@ -131,9 +134,27 @@ func (m *Manager) SetOrigin(r *http.Request) {
 	m.origin.Store(scheme + "://" + h)
 }
 
-// dashOrigin is Dash's own origin: as last seen, else guessed from a preview
-// domain of the form "preview.<dash host>".
+// dashHost reports whether host (lowercase, no port) may be Dash's own: the
+// preview domain is a subdomain of it, and it isn't a bare TLD.
+func (m *Manager) dashHost(host string) bool {
+	return host != "" && strings.Contains(host, ".") && strings.HasSuffix(m.Domain, "."+host)
+}
+
+// parentHost is the host the preview domain hangs off ("dash.example.com"
+// for "preview.dash.example.com"), or "" when that would be a bare TLD.
+func (m *Manager) parentHost() string {
+	if _, rest, ok := strings.Cut(m.Domain, "."); ok && strings.Contains(rest, ".") {
+		return rest
+	}
+	return ""
+}
+
+// dashOrigin is Dash's own origin: PublicURL when set, else as last seen,
+// else guessed from a preview domain of the form "preview.<dash host>".
 func (m *Manager) dashOrigin() string {
+	if m.PublicURL != "" {
+		return strings.TrimRight(m.PublicURL, "/")
+	}
 	if o, _ := m.origin.Load().(string); o != "" {
 		return o
 	}

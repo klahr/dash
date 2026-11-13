@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -109,19 +110,51 @@ func TestParentOrigins(t *testing.T) {
 
 	m, _, _ := setup(t, "preview.dash.example.com")
 	m.SetOrigin(httptest.NewRequest("GET", "http://dash.example.com:7788/api/previews", nil))
-	o, h := m.parentOrigins("")
-	if len(o) != 1 || o[0] != "http://dash.example.com:7788" || len(h) != 1 || h[0] != "dash.example.com" {
-		t.Fatalf("origins %v hosts %v", o, h)
+	o := m.parentOrigins("")
+	if !slices.Equal(o, []string{"http://dash.example.com:7788", "https://dash.example.com"}) {
+		t.Fatalf("origins %v", o)
 	}
 	// Never a bare TLD.
 	m2, _, _ := setup(t, "preview.com")
-	if _, h := m2.parentOrigins(""); len(h) != 0 {
-		t.Fatalf("hosts for preview.com: %v", h)
+	if o := m2.parentOrigins(""); len(o) != 0 {
+		t.Fatalf("origins for preview.com: %v", o)
 	}
 	w := httptest.NewRecorder()
 	m.serveCapture(w, "")
 	js := w.Body.String()
-	if !strings.Contains(js, `var CFG = {"hosts":["dash.example.com"],"origins":["http://dash.example.com:7788"]}`) || !strings.Contains(js, "dash:capture") || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/javascript") {
+	if !strings.Contains(js, `var CFG = {"origins":["http://dash.example.com:7788","https://dash.example.com"]}`) || !strings.Contains(js, "dash:capture") || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/javascript") {
 		t.Fatalf("capture.js: %s…", js[:200])
+	}
+}
+
+// The origin previews sign in at comes from the client's Host only when it
+// is a host the preview domain is under; -public-url overrides it.
+func TestSetOriginHost(t *testing.T) {
+	t.Parallel()
+
+	m, _, _ := setup(t, "preview.dash.example.com")
+	for _, h := range []string{"evil.example", "dash.example.com.evil.example", "abc123.preview.dash.example.com", "com"} {
+		m.SetOrigin(httptest.NewRequest("GET", "http://"+h+"/api/previews", nil))
+	}
+	if o := m.dashOrigin(); o != "https://dash.example.com" {
+		t.Fatalf("spoofed Host taken: %q", o)
+	}
+	m.TrustProxy = true
+	r := httptest.NewRequest("GET", "http://dash.example.com/api/previews", nil)
+	r.Header.Set("X-Forwarded-Host", "evil.example")
+	m.SetOrigin(r)
+	if o := m.dashOrigin(); o != "https://dash.example.com" {
+		t.Fatalf("spoofed X-Forwarded-Host taken: %q", o)
+	}
+	m.SetOrigin(httptest.NewRequest("GET", "http://dash.example.com:7788/api/previews", nil))
+	if o := m.dashOrigin(); o != "http://dash.example.com:7788" {
+		t.Fatalf("Dash's own host: %q", o)
+	}
+
+	p, _, _ := setup(t, "preview.dash.example.com")
+	p.PublicURL = "https://dash.example.com/"
+	p.SetOrigin(httptest.NewRequest("GET", "http://dash.example.com:7788/api/previews", nil))
+	if o := p.dashOrigin(); o != "https://dash.example.com" {
+		t.Fatalf("with PublicURL: %q", o)
 	}
 }
