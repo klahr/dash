@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/tunnel"
 	"github.com/klahr/dash/internal/usage"
@@ -61,6 +62,9 @@ type Reply struct {
 	// Pace is how the hub paces the runner: Slots is how many of the hub's
 	// tasks it may have at once now. The runner doesn't pace itself.
 	Pace *usage.Pace `json:"pace,omitempty"`
+	// Disk are the runner's disk thresholds and Go build cache limit, as set
+	// on the hub (Runners → the runner → Disk).
+	Disk *disk.Settings `json:"disk,omitempty"`
 }
 
 func (p *Pacer) clock() time.Time {

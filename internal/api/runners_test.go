@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
@@ -422,6 +423,16 @@ func TestRunnerOnlyTakesWorkForLinkedProjects(t *testing.T) {
 			t.Errorf("hub's link %+v, the clone's merge mode %q", c, got.MergeMode)
 		}
 	}
+
+	// Too full: the task isn't started, and the hub hears why.
+	s.DiskRoom = func(*disk.Settings) error { return errors.New("runner box has only 1.2 GB free") }
+	if w := task("hub-p1", "hub-t1"); w.Code != http.StatusInsufficientStorage || !strings.Contains(w.Body.String(), "1.2 GB free") {
+		t.Fatalf("task on a full runner: %d %s", w.Code, w.Body)
+	}
+	if len(raw(s).ListTodos("")) != 0 {
+		t.Fatal("a full runner took the task anyway")
+	}
+	s.DiskRoom = func(*disk.Settings) error { return nil }
 
 	w = task("hub-p1", "hub-t1")
 	var acc dispatch.Accepted

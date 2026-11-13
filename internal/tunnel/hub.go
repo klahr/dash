@@ -28,6 +28,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/klahr/dash/internal/claudecli"
+	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/notes"
@@ -95,6 +96,13 @@ type Runner struct {
 	// Running is how many of the hub's tasks it is working on (filled in by
 	// the API).
 	Running int `json:"running"`
+	// Disk are its disk thresholds and Go build cache limit (zero values:
+	// the defaults; see disk.Settings). DiskLow says, when it last reported
+	// less free space than they allow, how much it has left ("" when it has
+	// enough), and DiskFull that it is below the minimum to start a task.
+	Disk     disk.Settings `json:"disk"`
+	DiskLow  string        `json:"disk_low,omitempty"`
+	DiskFull bool          `json:"disk_full,omitempty"`
 }
 
 // OrgID is the org the runner works for (0: nobody's; it gets no work).
@@ -129,7 +137,10 @@ type Reported struct {
 	// Claude is its Claude Code CLI: version and warnings (nil until a
 	// runner that knows to report it has).
 	Claude *claudecli.Status `json:"claude,omitempty"`
-	At     time.Time         `json:"at"`
+	// Disk is its free disk space, the largest folders in its cache folder
+	// when that is low, and its Go build cache (nil from an older runner).
+	Disk *disk.Status `json:"disk,omitempty"`
+	At   time.Time    `json:"at"`
 }
 
 // record is a runner in runners.json. Its token is in the token table
@@ -149,6 +160,8 @@ type record struct {
 	AutoUpdate bool          `json:"auto_update,omitempty"`
 	Update     *Update       `json:"update,omitempty"`
 	LastUpdate *UpdateResult `json:"last_update,omitempty"`
+	// Disk: its disk thresholds (Runner.Disk).
+	Disk disk.Settings `json:"disk,omitzero"`
 }
 
 // regCode is a registration code, made by Owner: the runner registered with
@@ -508,11 +521,48 @@ func (h *Hub) viewLocked(r *record, online bool, owner *store.RunnerOwner) Runne
 	if r.LastUpdate != nil {
 		v.UpdateError = r.LastUpdate.Error
 	}
+	v.Disk = r.Disk
 	if rep := h.reported[r.ID]; rep != nil {
 		cp := *rep
 		v.Reported = &cp
+		v.DiskLow, v.DiskFull = diskState(r.Name, r.Disk, rep.Disk)
 	}
 	return v
+}
+
+// diskState is what runner name's last disk report st says under its
+// settings s: a warning when its free space is low ("" when it isn't), and
+// whether it has too little to start a task.
+func diskState(name string, s disk.Settings, st *disk.Status) (low string, full bool) {
+	if st == nil {
+		return "", false
+	}
+	v, isLow := s.Low(*st)
+	if !isLow {
+		return "", false
+	}
+	_, full = s.TooFull(*st)
+	where := "the disk of its " + v.Label + " folder"
+	if v.Label == "projects" {
+		where = "the disk of its projects"
+	}
+	return fmt.Sprintf("%s has only %s free of %s on %s", name, disk.Size(v.Free), disk.Size(v.Total), where), full
+}
+
+// SetDisk changes runner id's disk thresholds and Go build cache limit;
+// the runner gets them with the hub's answer to its next report.
+func (h *Hub) SetDisk(id string, s disk.Settings) error {
+	h.mu.Lock()
+	i := slices.IndexFunc(h.runners, func(r *record) bool { return r.ID == id })
+	if i < 0 {
+		h.mu.Unlock()
+		return ErrUnknownName
+	}
+	h.runners[i].Disk = s.Clean()
+	h.saveLocked()
+	h.mu.Unlock()
+	h.changed()
+	return nil
 }
 
 // Get returns the runner with id.
@@ -756,6 +806,7 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 		Terminals    bool              `json:"terminals"`
 		ChatCommands bool              `json:"chat_commands"`
 		Claude       *claudecli.Status `json:"claude"`
+		Disk         *disk.Status      `json:"disk"`
 	}
 	if err := json.Unmarshal(body, &self); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
@@ -769,10 +820,20 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 	if self.Claude != nil {
 		self.Claude = cleanClaude(*self.Claude)
 	}
-	h.reported[rec.ID] = &Reported{Parallel: self.Parallel, Usage: self.Usage, Terminals: self.Terminals, ChatCommands: self.ChatCommands, Claude: self.Claude, At: h.clock()}
+	if self.Disk != nil {
+		self.Disk = cleanDisk(*self.Disk)
+	}
+	h.reported[rec.ID] = &Reported{Parallel: self.Parallel, Usage: self.Usage, Terminals: self.Terminals, ChatCommands: self.ChatCommands, Claude: self.Claude,
+		Disk: self.Disk, At: h.clock()}
+	var diskChanged bool
+	if prev != nil {
+		pl, pf := diskState(rec.Name, rec.Disk, prev.Disk)
+		nl, nf := diskState(rec.Name, rec.Disk, self.Disk)
+		diskChanged = (pl == "") != (nl == "") || pf != nf || diskKey(prev.Disk) != diskKey(self.Disk)
+	}
 	h.mu.Unlock()
 	if prev == nil || prev.Parallel != self.Parallel || prev.Terminals != self.Terminals || prev.ChatCommands != self.ChatCommands || paused(prev.Usage) != paused(self.Usage) ||
-		claudeKey(prev.Claude) != claudeKey(self.Claude) {
+		claudeKey(prev.Claude) != claudeKey(self.Claude) || diskChanged {
 		h.changed()
 	}
 	if h.OnReport != nil {
@@ -791,6 +852,52 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func paused(u *usage.Snapshot) bool { return u != nil && u.Paused }
+
+// cleanDisk bounds what a runner reports about its disks.
+func cleanDisk(st disk.Status) *disk.Status {
+	if len(st.Volumes) > 4 {
+		st.Volumes = st.Volumes[:4]
+	}
+	vs := make([]disk.Volume, 0, len(st.Volumes))
+	for _, v := range st.Volumes {
+		if v.Label != "projects" && v.Label != "worktrees" && v.Label != "cache" {
+			continue
+		}
+		v.Path = clip(v.Path, 500)
+		v.Free = min(v.Free, v.Total)
+		vs = append(vs, v)
+	}
+	st.Volumes = vs
+	if len(st.Largest) > 5 {
+		st.Largest = st.Largest[:5]
+	}
+	for i := range st.Largest {
+		st.Largest[i].Path = clip(st.Largest[i].Path, 500)
+	}
+	if c := st.GoCache; c != nil {
+		cp := *c
+		cp.Path, cp.Trimmed, cp.Error = clip(cp.Path, 500), clip(cp.Trimmed, 40), clip(cp.Error, 500)
+		st.GoCache = &cp
+	}
+	return &st
+}
+
+// diskKey is what of a disk report the runners list shows apart from the
+// numbers, which change on every report: a new trim, or a new list of the
+// largest folders, refreshes it.
+func diskKey(st *disk.Status) string {
+	if st == nil {
+		return ""
+	}
+	k := ""
+	for _, f := range st.Largest {
+		k += f.Path + "\x00"
+	}
+	if st.GoCache != nil {
+		k += "|" + st.GoCache.Trimmed + "|" + st.GoCache.Error
+	}
+	return k
+}
 
 // cleanClaude bounds what a runner reports about its Claude Code CLI.
 func cleanClaude(c claudecli.Status) *claudecli.Status {

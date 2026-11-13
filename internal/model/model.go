@@ -842,6 +842,7 @@ const (
 	EvRemote         EventType = "remote.updated"     // how the default branch compares with origin's, after a fetch
 	EvChecklist      EventType = "checklist.updated"  // the project's TODO.md changed (on the default branch, or in the checkout when git doesn't track it)
 	EvCheckouts      EventType = "checkouts.updated"  // a hub's project: the runners whose checkout is behind origin; Data is []Checkout
+	EvRunnerDisk     EventType = "runner.disk"        // a hub's runner's free disk space fell below its threshold, or is back above it; Data is RunnerDisk
 	EvPreview        EventType = "preview.updated"    // a todo's live preview started, came up, crashed or stopped
 	EvIssueUpdated   EventType = "issue.updated"      // an issue was added or changed; Data is the Issue
 	EvIssueDeleted   EventType = "issue.deleted"      // Data is {"id": …}
@@ -849,6 +850,20 @@ const (
 	EvScanSettings   EventType = "scan.settings"      // a scan's schedule was turned on/off or edited; Data is the ScanSetting
 	EvScanTemplate   EventType = "scan.template"      // a Dash scan template was created, edited or deleted; Data is {"name": …, "deleted": bool}
 )
+
+// RunnerDisk is a runner's disk space crossing its low-space threshold.
+type RunnerDisk struct {
+	RunnerID   string `json:"runner_id"`
+	RunnerName string `json:"runner_name"`
+	OrgID      int64  `json:"-"`
+	// Low: it fell below the threshold (false: it is back above it).
+	Low bool `json:"low"`
+	// Message says how much is left and what takes the most space.
+	Message string `json:"message,omitempty"`
+	// Projects are the hub's projects linked to the runner: their webhooks
+	// are told.
+	Projects []string `json:"projects,omitempty"`
+}
 
 // Checkout is a runner's main checkout of a hub's project that is behind
 // origin: another runner (or anyone) pushed, and the runner couldn't, or

@@ -25,6 +25,7 @@ import (
 	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/ci"
 	"github.com/klahr/dash/internal/claudecli"
+	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
@@ -879,8 +880,28 @@ func (a *app) setupRunner() {
 			}
 		}
 	}()
+	// This computer's disk space: the hub hears of it with every report,
+	// warns when it runs low, and a runner too full starts no task. The
+	// thresholds, and the opt-in Go build cache limit, come from the hub.
+	cacheDir, _ := os.UserCacheDir()
+	procs := a.procs
+	disks := &disk.Monitor{
+		Name: creds.Name,
+		Targets: []disk.Target{{Label: "projects", Path: o.projectRoot},
+			{Label: "worktrees", Path: a.merges.WorktreeRoot}, {Label: "cache", Path: cacheDir}},
+		CacheDir: cacheDir,
+		// Not under a running build: a task running or merging (its checks),
+		// or a test or deploy command.
+		Busy: func() bool {
+			if len(st.ListTodos("", model.StatusInProgress, model.StatusMerging)) > 0 {
+				return true
+			}
+			return slices.ContainsFunc(procs.List(""), func(p model.Process) bool { return p.Running && p.Kind == model.ProcTask })
+		},
+	}
+	apiSrv.DiskRoom = disks.CanStart
 	// The hub hears where its tasks are, and this computer's usage.
-	reporter := &dispatch.Reporter{Store: st, Usage: a.tracker, Parallel: o.parallel, Terminals: true, Claude: cli,
+	reporter := &dispatch.Reporter{Store: st, Usage: a.tracker, Parallel: o.parallel, Terminals: true, Claude: cli, Disk: disks.Status,
 		// As shellAllowed: the hub's "!" commands run only for a known owner,
 		// in a chat that runs commands (agent.ReadOnlyChat).
 		ChatCommands: creds.UserID != 0 && o.chatBackend == "claude-code" && o.chatTools == agent.ChatShell,
@@ -895,8 +916,13 @@ func (a *app) setupRunner() {
 			if err == nil && a.tracker.SetHubPace(reply.Pace) {
 				a.todos.Kick()
 			}
+			if err == nil && reply.Disk != nil {
+				disks.SetSettings(*reply.Disk)
+			}
 			return err
 		}}
+	disks.Changed = reporter.Nudge
+	go disks.Run(ctx)
 	a.reporter = reporter
 	a.storeEvents.chain(reporter.Observe)
 	// Claude's progress on the hub's tasks goes to the hub's board too.

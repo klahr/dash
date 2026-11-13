@@ -1204,3 +1204,47 @@ func TestBrowserInlineEdit(t *testing.T) {
 	b.waitJS("the Edit button, nothing in place", `[...document.querySelectorAll("#d-actions .btn")].some((e) => e.textContent.trim() === "Edit") &&
 		!document.querySelector("#d-title").classList.contains("editable") && document.querySelector("#d-meta-edit").hidden && !document.querySelector("#d-prompt .edit-prompt")`)
 }
+
+// A runner low on disk space: with thresholds that make its real disk
+// "low", the board shows the banner, and the runner's page in Runners its
+// Disk section with the warning and the thresholds to change; set back to
+// the defaults, the warning goes. On a wide screen and a phone's.
+func TestBrowserRunnerDiskWarning(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	path := "/api/runners/" + h.runnerID
+	for deadline := time.Now().Add(60 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+		var list struct {
+			Runners []struct {
+				Reported *struct {
+					Disk *struct{ Volumes []json.RawMessage } `json:"disk"`
+				} `json:"reported"`
+			} `json:"runners"`
+		}
+		h.api.must("GET", "/api/runners", nil, http.StatusOK, &list)
+		if len(list.Runners) == 1 && list.Runners[0].Reported != nil && list.Runners[0].Reported.Disk != nil && len(list.Runners[0].Reported.Disk.Volumes) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the runner didn't report its disk space")
+		}
+	}
+	h.api.must("PATCH", path, map[string]any{"disk": map[string]any{"warn_percent": 99, "warn_gb": 100000, "min_free_gb": 0.01}}, http.StatusOK, nil)
+	b.waitJS("the banner on the board", `!document.querySelector("#disk-banner").hidden && document.querySelector("#disk-banner").textContent.includes("free of")`)
+	b.until("open the runner from the banner", `document.querySelector("#runners-sheet").open && !!document.querySelector("#runners-main .current .runner-disk-warn")`,
+		chromedp.Click(chromedp.CSS(`#disk-banner button`)))
+	b.waitJS("its thresholds", `document.querySelector("#runner-detail .runner-disk-settings input[aria-label^='Warn below percent']")?.value === "99"`)
+	b.waitJS("the rail marks it", `document.querySelector("#runners-nav .runner-rail-warn")?.title === "Disk nearly full"`)
+	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	b.waitJS("no sideways scrolling", `document.querySelector("#runners-main").scrollWidth <= document.querySelector("#runners-main").clientWidth + 1`)
+	b.until("close the Runners sheet", `!document.querySelector("#runners-sheet").open`, chromedp.KeyEvent(kb.Escape))
+	// Too full to start a task: the banner says so.
+	h.api.must("PATCH", path, map[string]any{"disk": map[string]any{"min_free_gb": 100000}}, http.StatusOK, nil)
+	b.waitJS("the banner says full", `document.querySelector("#disk-banner").classList.contains("full") && document.querySelector("#disk-banner").textContent.includes("starts no tasks")`)
+
+	h.api.must("PATCH", path, map[string]any{"disk": map[string]any{"warn_percent": 0.01, "warn_gb": 0.001, "min_free_gb": 0.01}}, http.StatusOK, nil)
+	b.waitJS("the banner gone", `document.querySelector("#disk-banner").hidden`)
+}

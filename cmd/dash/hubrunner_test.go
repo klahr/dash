@@ -211,9 +211,18 @@ func startRunnerHub(t *testing.T, runnerFlags ...string) *runnerHub {
 		}
 		return h.runnerID != ""
 	})
+	lowDiskMinimum(t, api, h.runnerID)
 	// A project shared with it: the hub keeps none on its own disk.
 	api.must("POST", "/api/projects", map[string]any{"name": "app", "remote_url": remote, "runners": []string{h.runnerID}}, http.StatusCreated, &h.project)
 	return h
+}
+
+// lowDiskMinimum lets runner id start tasks with little disk space free:
+// test runners work in the temporary folder, which may be a small tmpfs
+// with less free than the 2 GB a runner needs by default.
+func lowDiskMinimum(t *testing.T, api *client, id string) {
+	t.Helper()
+	api.must("PATCH", "/api/runners/"+id, map[string]any{"disk": map[string]any{"min_free_gb": 0.01}}, http.StatusOK, nil)
 }
 
 func run(t *testing.T, dir string, env []string, name string, args ...string) string {

@@ -76,6 +76,7 @@ var execAllowed = map[string]string{
 	"internal/agent/chat_cli.go":      "claude (agent's guard)",
 	"internal/agent/shell.go":         "the user's shell for a chat's ! commands (localrun.Check)",
 	"internal/claudecli/claudecli.go": "claude --version probe (runners only)",
+	"internal/disk/monitor.go":        "go env GOCACHE and go clean -cache (localrun.Check; runners only)",
 	"internal/runnerctl/preflight.go": "claude auth status (`dash runner` setup)",
 	"internal/runnerctl/service.go":   "systemctl/launchctl (`dash runner` setup)",
 	"internal/runnerctl/update.go":    "the downloaded dash's version check (runners updating themselves)",

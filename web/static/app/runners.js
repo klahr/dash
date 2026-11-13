@@ -57,6 +57,7 @@ export async function loadRunners() {
   if (state.view === "run") ensureShell();
   if (state.project) loadTry().catch(() => {}); // which runners Try may use changed
   $("#runners-open").hidden = state.runners === null;
+  renderDiskBanner();
   // The board waits for the runners, and shows the welcome screen until there's one.
   // The projects list groups by runner, so it changes with them too.
   if (state.projectsLoaded) { renderBoard(); renderSideProjects(); }
@@ -118,6 +119,82 @@ const pacedWith = (r) => {
 // runnerClaudeWarnings is what runner r found changed about its Claude Code CLI.
 const runnerClaudeWarnings = (r) => r.reported?.claude?.warnings || [];
 
+// Disk space. The runner reports its free space with its heartbeat; the hub
+// works out under the runner's thresholds (r.disk) whether it is low
+// (r.disk_low, the warning) and too full to start a task (r.disk_full).
+const GiB = 2 ** 30;
+const sizeText = (n) => n >= 100 * GiB ? `${Math.round(n / GiB)} GB` : n >= GiB ? `${(n / GiB).toFixed(1)} GB`
+  : n >= 2 ** 20 ? `${Math.round(n / 2 ** 20)} MB` : `${Math.round(n / 1024)} KB`;
+const diskDefaults = { warn_percent: 10, warn_gb: 10, min_free_gb: 2 };
+const minFreeText = (r) => `${r.disk?.min_free_gb || diskDefaults.min_free_gb} GB`;
+const diskWarning = (r) => r.disk_low ? `${r.disk_low}.${r.disk_full ? ` It starts no tasks until it has ${minFreeText(r)} free.` : ""}` : "";
+const volumeLabels = { projects: "Projects", worktrees: "Task worktrees", cache: "Cache folder" };
+
+// diskSettings are runner r's disk thresholds, for its owner and the org's
+// admins: empty is the default (for the Go build cache trim: off).
+function diskSettings(r) {
+  const input = (key, label, { max = 100000, placeholder = String(diskDefaults[key] ?? "") } = {}) =>
+    h("input", { type: "number", min: "0", max: String(max), step: "any", inputmode: "decimal", value: r.disk?.[key] ? String(r.disk[key]) : "",
+      placeholder, "aria-label": `${label} (${r.name})`,
+      onchange: attempt(async (e) => { await patchRunner(r, { disk: { ...r.disk, [key]: Number(e.target.value) || 0 } }); await renderRunners(); }) });
+  const unit = (el, text) => h("span", { class: "runner-setting-unit" }, el, h("span", { "aria-hidden": "true" }, text));
+  const setting = (title, hint, control) => h("div", { class: "runner-setting" },
+    h("div", { class: "runner-setting-text" }, h("strong", {}, title), h("p", { class: "hint" }, hint)), control);
+  return h("div", { class: "runner-disk-settings" },
+    setting("Warn below", "Warns here and on the board, and notifies once, when a disk has less free than the smaller of these. Empty: 10% or 10 GB.",
+      h("span", { class: "runner-setting-pair" }, unit(input("warn_percent", "Warn below percent free", { max: 99 }), "%"), "or",
+        unit(input("warn_gb", "Warn below GB free"), "GB"))),
+    setting("Start no task below", "A task waits, its log saying why, instead of failing halfway with a write error. Empty: 2 GB.",
+      unit(input("min_free_gb", "Start no task below GB free"), "GB")),
+    setting("Trim the Go build cache above", "Runs go clean -cache once the cache is bigger than this: about once a day, and when space runs low, while no task builds. Nothing else is deleted. Empty: off.",
+      unit(input("trim_go_cache_gb", "Trim the Go build cache above GB", { placeholder: "Off" }), "GB")));
+}
+
+// renderDiskBanner says on the board, for everyone in the org, which
+// runners are nearly out of disk space, until they have enough again.
+export function renderDiskBanner() {
+  const el = $("#disk-banner");
+  if (!el) return;
+  const low = (state.runners || []).filter((r) => r.disk_low);
+  el.hidden = !low.length;
+  el.classList.toggle("full", low.some((r) => r.disk_full));
+  if (!low.length) return el.replaceChildren();
+  el.replaceChildren(...low.map((r) => h("span", {},
+    h("strong", {}, r.disk_full ? "Runner disk full: " : "Runner disk nearly full: "), diskWarning(r), " ",
+    h("button", { type: "button", class: "link inline", onclick: attempt(() => openRunners(r.id)) }, "See what uses it"))));
+}
+
+// runnerDisk is runner r's Disk section: free space per disk, the warning
+// with the largest folders in its cache folder, and its Go build cache.
+function runnerDisk(r) {
+  const d = r.reported?.disk;
+  if (!d?.volumes?.length) return null; // an older runner, or one that can't measure
+  const meter = (v) => {
+    const used = v.total ? Math.round((1 - v.free / v.total) * 100) : 0;
+    const bar = h("span", { class: "runner-meter-fill" });
+    bar.style.width = `${Math.min(100, Math.max(0, used))}%`;
+    const low = r.disk_low && v.free === Math.min(...d.volumes.map((x) => x.free));
+    return h("div", { class: `runner-disk-vol runner-meter${low ? " high" : used >= 80 ? " mid" : ""}`, title: v.path },
+      h("span", { class: "runner-disk-label" }, volumeLabels[v.label] || v.label),
+      h("span", { class: "runner-meter-bar", role: "meter", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(used),
+        "aria-label": `${volumeLabels[v.label] || v.label} disk used` }, bar),
+      h("span", { class: "runner-disk-free" }, `${sizeText(v.free)} free of ${sizeText(v.total)}`));
+  };
+  const gc = d.go_cache;
+  return h("div", { class: "runner-disk" },
+    ...d.volumes.map(meter),
+    r.disk_low ? h("div", { class: "runner-update runner-disk-warn", role: "status" },
+      h("p", { class: "hint warn" }, diskWarning(r)),
+      d.largest?.length ? h("p", { class: "hint" }, "Largest folders in its cache folder:") : null,
+      d.largest?.length ? h("ul", { class: "runner-disk-largest" }, ...d.largest.map((f) =>
+        h("li", {}, h("code", {}, f.path), h("span", {}, sizeText(f.size))))) : null,
+      h("p", { class: "hint" }, "Dash deletes nothing there on its own. To empty the Go build cache by hand, run this on ", r.name, ":"),
+      copyBlock("go clean -cache", "Command copied", { pre: true })) : null,
+    gc?.path ? h("p", { class: "hint runner-disk-go" }, "Go build cache: ", h("strong", {}, sizeText(gc.size || 0)), " in ", h("code", {}, gc.path),
+      gc.trimmed ? `. Trimmed ${agoText(gc.trimmed)}${gc.freed ? `, freeing ${sizeText(gc.freed)}` : ""}.` : ".") : null,
+    gc?.error ? h("p", { class: "hint warn" }, gc.error) : null);
+}
+
 // runnerStatus is what runner r is doing, in a few words, and its tone
 // (on, busy, paused, off) for the dot and the card's accent.
 function runnerStatus(r) {
@@ -167,13 +244,15 @@ export function renderSideRunners() {
     const st = runnerStatus(r), outdated = runnerOutdated(r);
     const count = !r.online ? "offline" : r.update ? "updating" : r.paused ? "paused" : `${r.running || 0}/${runnerLimit(r)}`;
     const update = outdated ? `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run on ${r.name}:\n${installCmd()}` : "";
+    const diskWarn = diskWarning(r);
     return h("li", {}, h("button", {
-      type: "button", class: "side-runner", title: [`${r.name}: ${st.text}`, update].filter(Boolean).join("\n"),
-      "aria-label": [r.name, count, outdated ? "update available" : ""].filter(Boolean).join(", "),
+      type: "button", class: "side-runner", title: [`${r.name}: ${st.text}`, diskWarn, update].filter(Boolean).join("\n"),
+      "aria-label": [r.name, count, diskWarn ? "disk nearly full" : "", outdated ? "update available" : ""].filter(Boolean).join(", "),
       onclick: attempt(async () => { setMenu(false); await openRunners(r.id); }),
     },
     h("span", { class: "side-runner-icon", "aria-hidden": "true" }, h("span", { class: `machine-dot ${tone(r)}` }), outdated ? h("span", { class: "side-runner-badge" }, "⬆") : null),
     h("span", { class: "side-runner-name" }, r.name),
+    diskWarn ? h("span", { class: "side-runner-disk", "aria-hidden": "true" }, ico("alert")) : null,
     outdated ? h("span", { class: "side-runner-update", "aria-hidden": "true" }, "⬆") : null,
     h("span", { class: "side-runner-count" }, count)));
   };
@@ -204,7 +283,8 @@ function byName(a, b) {
 }
 // Online before offline; by name. (Callers split yours from the others'.)
 const byStatus = (a, b) => (!!b.online - !!a.online) || byName(a, b);
-const runnerWarned = (r) => runnerOutdated(r) || runnerClaudeWarnings(r).length > 0;
+const runnerWarned = (r) => !!r.disk_low || runnerOutdated(r) || runnerClaudeWarnings(r).length > 0;
+const runnerWarnText = (r) => r.disk_low ? (r.disk_full ? "Disk full" : "Disk nearly full") : runnerOutdated(r) ? "Out of date" : "Claude Code warning";
 
 // selectRunner shows key ("overview", "add" or a runner's id) beside the rail.
 function selectRunner(key) {
@@ -248,7 +328,7 @@ function paintRunnerNav(list) {
       h("span", { class: "runner-rail-text" },
         h("span", { class: "runner-rail-name" }, r.name),
         h("span", { class: "runner-rail-state" }, st.text)),
-      runnerWarned(r) ? h("span", { class: "runner-rail-warn", title: "Needs attention" }, ico("alert")) : null);
+      runnerWarned(r) ? h("span", { class: "runner-rail-warn", title: runnerWarnText(r) }, ico("alert")) : null);
     b.classList.add("runner-rail", `tone-${st.tone}`);
     b.title = `${r.name}: ${st.text}`;
     return b;
@@ -291,6 +371,7 @@ function runnerStats(list) {
   const updating = list.filter((r) => r.update).length;
   const outdated = list.filter((r) => runnerOutdated(r) && !r.update).length;
   const claudeWarn = list.filter((r) => runnerClaudeWarnings(r).length).length;
+  const diskLow = list.filter((r) => r.disk_low).length;
   return [
     stat(online, `of ${list.length} online`, online ? "on" : "off"),
     stat(running, running === 1 ? "task running" : "tasks running", running ? "busy" : ""),
@@ -298,6 +379,7 @@ function runnerStats(list) {
     updating ? stat(updating, "updating", "paused") : null,
     outdated ? stat(outdated, "out of date", "paused") : null,
     claudeWarn ? stat(claudeWarn, "with Claude Code warnings", "paused") : null,
+    diskLow ? stat(diskLow, "low on disk space", "off") : null,
   ].filter(Boolean);
 }
 
@@ -332,7 +414,7 @@ function paintOverview(list) {
           showOwner && r.owner ? h("span", { class: "runner-owner" }, ico("users"), r.owner.username) : null,
           accountChip(r),
           h("span", {}, n ? `${n} project${n === 1 ? "" : "s"}` : "No projects"),
-          runnerWarned(r) ? h("span", { class: "runner-row-warn" }, ico("alert"), runnerOutdated(r) ? "Out of date" : "Claude Code warning") : null)),
+          runnerWarned(r) ? h("span", { class: "runner-row-warn" }, ico("alert"), runnerWarnText(r)) : null)),
       runnerUsageMeters(r),
       ico("chevron-right")));
   };
@@ -376,6 +458,9 @@ function paintRunner(r) {
       h("ul", {}, ...claudeWarns.map((w) => h("li", {}, w)))) : null,
     usage ? h("h4", { class: "section-head" }, "Claude usage") : null,
     usage,
+    r.reported?.disk?.volumes?.length || r.can_manage ? h("h4", { class: "section-head" }, "Disk") : null,
+    runnerDisk(r),
+    r.can_manage ? diskSettings(r) : null,
     h("h4", { class: "section-head" }, "Projects"),
     h("div", { class: "runner-projects" },
       projects.length

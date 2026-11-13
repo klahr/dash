@@ -17,6 +17,7 @@ const WEBHOOK_EVENTS = {
   "task.merged": "Merged",
   "permission.needed": "Claude needs approval",
   "build.failing": "Build failing",
+  "runner.disk": "Runner disk nearly full",
   "checkout.behind": "Checkout left behind origin",
   "webhook.test": "Test",
 };

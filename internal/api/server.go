@@ -23,6 +23,7 @@ import (
 	"github.com/klahr/dash/internal/branding"
 	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/ci"
+	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
@@ -128,8 +129,12 @@ type Server struct {
 	// this binary and restarts on it once the hub has its answer (nil: it
 	// can't update itself).
 	SelfUpdate func(ctx context.Context, version string) error
-	Static     fs.FS  // frontend assets
-	PublicURL  string // -public-url: the hub's address runners are told (optional; else the request's)
+	// DiskRoom, on a runner, is nil when it has the disk space to start a
+	// task under the hub's thresholds s (nil: the runner's last ones), or
+	// why it hasn't (disk.Monitor.CanStart; nil: not checked).
+	DiskRoom  func(s *disk.Settings) error
+	Static    fs.FS  // frontend assets
+	PublicURL string // -public-url: the hub's address runners are told (optional; else the request's)
 	// MetricsToken, if set, serves /metrics on this listener to callers
 	// with it as their bearer token (empty: /metrics isn't served here).
 	MetricsToken string

@@ -11,6 +11,7 @@ import (
 
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/buildinfo"
+	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/notes"
@@ -133,9 +134,10 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 	})))
 	mux.HandleFunc("PATCH /api/runners/{id}", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Parallel   *int  `json:"parallel"`
-			Paused     *bool `json:"paused"`
-			AutoUpdate *bool `json:"auto_update"`
+			Parallel   *int           `json:"parallel"`
+			Paused     *bool          `json:"paused"`
+			AutoUpdate *bool          `json:"auto_update"`
+			Disk       *disk.Settings `json:"disk"`
 		}
 		c, x, ok := s.managedRunner(w, r)
 		if !ok {
@@ -155,6 +157,12 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 		}
 		if req.AutoUpdate != nil {
 			if err := rh.SetAutoUpdate(x.ID, *req.AutoUpdate); err != nil {
+				writeErr(w, err)
+				return
+			}
+		}
+		if req.Disk != nil {
+			if err := rh.SetDisk(x.ID, *req.Disk); err != nil {
 				writeErr(w, err)
 				return
 			}

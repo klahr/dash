@@ -875,6 +875,47 @@ runner reports the prompts of the hub's tasks to the hub, so they appear in the 
 (and its notifications), and the hub sends your answer back to the runner. While the runner is
 offline, its prompts aren't listed on the hub; they show again when it reconnects.
 
+## Disk space on a runner
+
+Every task builds and tests in its own worktree, and the build caches that fills can grow until
+the disk is full. Go's cache (`~/.cache/go-build`) never trims itself on a schedule. Each runner
+reports its free disk space to the hub with its heartbeat: the disk of its projects folder, and
+those of its task worktrees and its cache folder if they are on other disks.
+
+See it in **Runners → the runner → Disk**.
+
+When a disk has less free than the smaller of 10% of its size and 10 GB:
+
+- **Runners** marks the runner, and the board shows a banner to everyone in the organization
+  until there is space again.
+- The hub notifies once (push notifications and the `runner.disk` webhook event of the runner's
+  projects), not on every heartbeat. It notifies again only after the runner had enough space,
+  and at most every 6 hours per runner.
+- The runner's page lists the five largest folders in its cache folder, with their sizes, so you
+  can see what uses the space.
+
+Below 2 GB free, the runner starts no task. The task waits, and its log says why, for example
+"runner box has only 1.2 GB free".
+
+The runner's owner and the organization's admins change these thresholds under **Disk**:
+**Warn below** (percent and GB) and **Start no task below** (GB). Leave a field empty for the
+default.
+
+### Trim the Go build cache
+
+**Trim the Go build cache above** (GB) is off by default. When you set it, the runner checks the
+size of `go env GOCACHE` once a day and when space runs low, and runs `go clean -cache` when it is
+bigger than the limit. It waits until no task, check or test command is running on the runner, so
+it doesn't break a build. Dash deletes nothing else on its own.
+
+To free space by hand, run this on the runner:
+
+```sh
+go clean -cache
+```
+
+Then check the other large folders the runner's page lists.
+
 ## When a runner goes offline
 
 Its projects disappear from the dashboard until it's back; requests for it fail at once with

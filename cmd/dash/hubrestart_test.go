@@ -76,6 +76,7 @@ func newFleet(t *testing.T) *fleet {
 		"-name", "laptop", "-env", filepath.Join(f.dir, "none.env")}
 	f.runner = startDash(t, f.dash, f.runEnv, append(f.runnerArgs, "--server", "http://"+f.addr, "--code", code.Code)...)
 	f.waitOnline(true)
+	lowDiskMinimum(t, f.api, f.runnerID)
 
 	var p struct{ ID string }
 	f.api.must("POST", "/api/projects", map[string]any{"name": "app", "remote_url": origin.URL + "/app.git", "runners": []string{f.runnerID}},

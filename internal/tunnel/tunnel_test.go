@@ -18,6 +18,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store/storetest"
 )
@@ -704,5 +705,49 @@ func TestReportCarriesTheAccountAndTheReply(t *testing.T) {
 	}
 	if r, _ := h.Get(id); r.Account() != "" {
 		t.Fatalf("logged out, still %q", r.Account())
+	}
+}
+
+// A runner reports its free disk space; the hub works out under the
+// runner's thresholds whether it is low or too full to start a task.
+func TestReportCarriesDiskSpace(t *testing.T) {
+	t.Parallel()
+
+	acc, owner := storetest.Accounts(t)
+	h := &Hub{Accounts: acc}
+	code, _, _ := h.NewCode(owner)
+	id, token, _, err := h.register(code, "work", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(h.ServeReport))
+	defer srv.Close()
+	creds := Credentials{Server: srv.URL, Token: token}
+	send := func(free uint64) Runner {
+		t.Helper()
+		rep := map[string]any{"parallel": 1, "disk": disk.Status{Volumes: []disk.Volume{
+			{Label: "projects", Path: "/home/u/dash-projects", Free: free, Total: 500 * disk.GB},
+			{Label: "bogus", Path: "/x", Free: 0, Total: 1},
+		}}}
+		if err := Report(context.Background(), creds, rep); err != nil {
+			t.Fatal(err)
+		}
+		r, _ := h.Get(id)
+		return r
+	}
+	if r := send(100 * disk.GB); r.DiskLow != "" || r.DiskFull || len(r.Reported.Disk.Volumes) != 1 {
+		t.Fatalf("100 GB free: %q %v %+v", r.DiskLow, r.DiskFull, r.Reported.Disk)
+	}
+	if r := send(5 * disk.GB); r.DiskLow != "work has only 5.0 GB free of 500 GB on the disk of its projects" || r.DiskFull {
+		t.Fatalf("5 GB free: %q %v", r.DiskLow, r.DiskFull)
+	}
+	if r := send(disk.GB); !r.DiskFull {
+		t.Fatal("1 GB free is below the 2 GB to start a task")
+	}
+	if err := h.SetDisk(id, disk.Settings{WarnGB: 0.5, MinFreeGB: 0.5, TrimGoCacheGB: 40}); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := h.Get(id); r.DiskLow != "" || r.DiskFull || r.Disk.TrimGoCacheGB != 40 {
+		t.Fatalf("with lower thresholds: %q %v %+v", r.DiskLow, r.DiskFull, r.Disk)
 	}
 }

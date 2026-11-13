@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/claudecli"
+	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/usage"
@@ -117,6 +118,9 @@ type Task struct {
 	// (sent back for rework, or interrupted) continues in its worktree and
 	// Claude session.
 	Fresh bool `json:"fresh,omitempty"`
+	// Disk are the runner's disk thresholds as the hub has them now: the
+	// runner doesn't start the task with less free than they allow.
+	Disk *disk.Settings `json:"disk,omitempty"`
 }
 
 // Accepted is the runner's answer to Task.
@@ -138,7 +142,12 @@ type Report struct {
 	// Claude is the runner's Claude Code CLI: its version and what looks
 	// changed about it (nil from a runner older than this field).
 	Claude *claudecli.Status `json:"claude,omitempty"`
-	Tasks  []TaskState       `json:"tasks,omitempty"`
+	// Disk is the free space where the runner keeps its projects (and its
+	// cache folder, when that is on another disk), the largest folders in
+	// that cache folder when space is low, and its Go build cache (nil
+	// from a runner older than this field).
+	Disk  *disk.Status `json:"disk,omitempty"`
+	Tasks []TaskState  `json:"tasks,omitempty"`
 	// Procs are the hub's projects whose processes (run/test/deploy
 	// commands, terminals) on the runner changed since the last report: the
 	// hub tells their dashboards to list them again.

@@ -619,6 +619,15 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: hub_todo_id is required", errBadRequest))
 		return
 	}
+	// Too full to build: the task waits on the hub, its log saying why,
+	// rather than failing halfway with a write error.
+	if s.DiskRoom != nil {
+		if err := s.DiskRoom(req.Disk); err != nil {
+			slog.Warn("runner: not starting a task: disk nearly full", "task", req.HubTodoID, "err", err)
+			writeJSON(w, http.StatusInsufficientStorage, map[string]string{"error": err.Error()})
+			return
+		}
+	}
 	if cur, ok := sv.hubTodo(req.HubTodoID); ok && (req.Fresh || cur.ProjectID != p.ID) {
 		// Start over: the old copy goes, with its worktree.
 		if err := sv.removeTodo(r.Context(), cur.ID); err != nil {

@@ -75,6 +75,7 @@ func registerRunner(t *testing.T, api *client, dash, fake, dir, name string, env
 		}
 		return id != ""
 	})
+	lowDiskMinimum(t, api, id)
 	return runner, id, args
 }
 

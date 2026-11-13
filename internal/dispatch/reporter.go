@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/claudecli"
+	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/store"
@@ -31,6 +32,9 @@ type Reporter struct {
 	ChatCommands bool
 	// Claude reports the runner's Claude Code CLI (optional).
 	Claude *claudecli.Monitor
+	// Disk measures the runner's free disk space for every report
+	// (disk.Monitor.Status; optional).
+	Disk func() disk.Status
 	// Send posts the report (tunnel.Report with the runner's credentials).
 	Send func(ctx context.Context, r Report) error
 	// Every is the heartbeat (default 30s).
@@ -264,6 +268,10 @@ func (r *Reporter) Build(now time.Time) Report {
 	if r.Claude != nil {
 		c := r.Claude.Status()
 		rep.Claude = &c
+	}
+	if r.Disk != nil {
+		d := r.Disk()
+		rep.Disk = &d
 	}
 	live := r.takeLive()
 	rep.Pushes = r.takePushes()

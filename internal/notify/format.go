@@ -23,6 +23,8 @@ type Notification struct {
 	Task       *TaskRef          `json:"task,omitempty"`
 	Permission *PermissionRef    `json:"permission,omitempty"`
 	Build      *BuildRef         `json:"build,omitempty"`
+	// Runner is the runner a runner.disk event is about.
+	Runner *RunnerRef `json:"runner,omitempty"`
 	// Message is a one-line human summary (the error of a failed task, …).
 	Message string `json:"message,omitempty"`
 }
@@ -42,6 +44,11 @@ type TaskRef struct {
 type PermissionRef struct {
 	ID   string `json:"id"`
 	Tool string `json:"tool"`
+}
+
+type RunnerRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type BuildRef struct {
@@ -68,6 +75,7 @@ var looks = map[model.NotifyEvent]struct {
 	model.NotifyPermission: {"Claude needs your approval", ":raising_hand:", "raising_hand", true},
 	model.NotifyBuild:      {"Build failing", ":rotating_light:", "rotating_light", false},
 	model.NotifyBehind:     {"Checkout behind origin", ":arrow_down:", "arrow_down", false},
+	model.NotifyDisk:       {"Disk nearly full", ":floppy_disk:", "floppy_disk", true},
 	model.NotifyTest:       {"Test notification", ":wave:", "wave", false},
 }
 
@@ -96,6 +104,9 @@ func (n Notification) URL() string {
 func (n Notification) subject() string {
 	if n.Task != nil && n.Task.Title != "" {
 		return n.Task.Title
+	}
+	if n.Runner != nil {
+		return "runner " + n.Runner.Name
 	}
 	return n.Project.Name
 }

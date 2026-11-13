@@ -1067,6 +1067,29 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-setting > .btn { flex: none; }
 .runner-setting.danger strong { color: var(--failed); }
 .runner-manage-note { margin-top: 20px; }
+/* A runner's disks: a meter per disk, the low-space warning, the Go build cache; and its thresholds. */
+.runner-disk { display: grid; gap: 6px; font-size: var(--fs-s); color: var(--muted); }
+.runner-disk-vol { display: flex; flex-wrap: wrap; }
+.runner-disk-label { min-width: 9em; color: var(--text); }
+.runner-disk-free { color: var(--text); }
+.runner-disk .runner-disk-warn { margin-top: 6px; padding: 8px 10px; border-radius: var(--r-s); background: color-mix(in srgb, var(--failed) 8%, transparent); }
+.runner-disk-warn .hint { margin: 4px 0 0; }
+.runner-disk-warn .hint:first-child { margin: 0; }
+.runner-disk-largest { margin: 4px 0 0; padding-left: 18px; overflow-wrap: anywhere; }
+.runner-disk-largest li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; }
+.runner-disk-largest span { font-variant-numeric: tabular-nums; color: var(--text); }
+.runner-disk-go { margin: 0; overflow-wrap: anywhere; }
+.runner-disk-settings { margin-top: 10px; }
+.runner-disk-settings .runner-setting:last-child { padding-bottom: 12px; }
+.runner-setting-pair { display: inline-flex; align-items: center; gap: 6px; flex: none; color: var(--muted); font-size: var(--fs-s); }
+.runner-setting-unit { display: inline-flex; align-items: center; gap: 4px; flex: none; color: var(--muted); font-size: var(--fs-s); }
+.runner-setting-unit > input { width: 5.5em; min-height: 36px; padding: 0 8px; }
+@media (max-width: 560px) { .runner-setting:has(.runner-setting-pair) { flex-direction: column; align-items: flex-start; gap: 8px; } }
+/* The board's banner: nearly full in the warning colour, full (no task starts) in red. */
+.sync-warn.disk-warn.full { border-left-color: var(--failed); background: color-mix(in srgb, var(--failed) 10%, transparent); }
+.sync-warn.disk-warn.full strong { color: var(--failed); }
+.side-runner-disk { flex: none; display: inline-flex; color: var(--failed); }
+.side-runner-disk .ico { width: 13px; height: 13px; }
 .runner-claude-warn ul { margin: 4px 0 0; padding-left: 18px; font-size: var(--fs-s); overflow-wrap: anywhere; }
 /* A runner's repositories to add, or projects to link: a raised box with a list of choice cards (.choice-card, below). */
 .runner-repos { margin-top: 12px; padding: 12px 14px; border-radius: var(--r-m); background: var(--raised); border: 1px solid var(--line); }

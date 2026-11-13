@@ -16,6 +16,7 @@ also pushes these to the browser, so they arrive while Dash is closed:
   system shows them (they work for 15 minutes, until the request is answered, or until Dash
   restarts)
 - GitHub Actions starts failing on the default branch
+- a runner's disk is nearly full ([Disk space on a runner](several-computers.md#disk-space-on-a-runner))
 
 Tapping a notification opens the task. **Send a test**, under the switch, pushes one right away.
 On an iPhone or iPad, add Dash to the home screen first ([phone.md](phone.md)) and turn
@@ -59,6 +60,7 @@ and how long, and the error if it failed. Deleting a webhook deletes its history
 | `task.merged`       | a task's work landed                                         |
 | `permission.needed` | Claude waits for you to approve a tool                       |
 | `build.failing`     | GitHub Actions starts failing on the default branch          |
+| `runner.disk`       | a runner linked to the project is nearly out of disk space   |
 | `checkout.behind`   | a runner's checkout was left behind origin (off by default)  |
 | `webhook.test`      | the Send test button (always sent, whatever is ticked)       |
 
@@ -105,7 +107,10 @@ project another runner's push left behind, and why: for a clone the runner adopt
 changes or local commits; for one it made itself, which always follows origin (saving what is in
 the way on a `dash-backup/` branch first), why syncing failed. A clean checkout follows origin by
 itself. New webhooks don't subscribe to it; each runner's
-checkout notifies at most once every 6 hours. The headers `Dash-Event` and `Dash-Delivery` repeat the type and id; the id
+checkout notifies at most once every 6 hours. `runner.disk` events have `"runner": {"id", "name"}`
+and say in `message` how much space is left and which folders take the most; they go to the
+webhooks of every project linked to the runner (each URL once), at most once every 6 hours per
+runner. The headers `Dash-Event` and `Dash-Delivery` repeat the type and id; the id
 stays the same when a delivery is retried, so you can drop duplicates.
 
 #### Verifying the signature

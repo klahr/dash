@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/checklist"
+	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
@@ -73,6 +74,9 @@ type Dispatcher struct {
 	// answered are requests the hub answered lately: a report the runner
 	// built before the answer reached it doesn't bring them back.
 	answered map[string]time.Time
+
+	diskMu  sync.Mutex
+	diskLow map[string]bool // runner id → its disk space is low
 }
 
 // answeredFor is how long the hub ignores a request it answered.
@@ -87,18 +91,29 @@ func (e *WaitError) Error() string { return e.Reason }
 // the runner's id and its id for the task. A *WaitError means none can take
 // it now.
 func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo) (runnerID, remoteID string, err error) {
-	r, reason := d.pick(p, t)
+	r, reason, full := d.pick(p, t)
 	if r == nil {
+		// The task log says why a runner that is too full doesn't start
+		// it, once per reason, rather than the task failing halfway.
+		if full != "" && d.Note != nil && reason != t.Waiting {
+			d.Note(t, "⏸ "+full)
+		}
 		return "", "", &WaitError{Reason: reason}
 	}
 	if err := d.link(ctx, *r, p); err != nil {
 		return "", "", &WaitError{Reason: "waiting for a runner: " + err.Error()}
 	}
+	ds := r.Disk
 	task := Task{HubTodoID: t.ID, HubProjectID: p.ID, Title: t.Title, Prompt: t.Prompt, Model: t.Model, Feedback: t.Feedback,
-		Fresh: t.Runner != r.ID}
+		Fresh: t.Runner != r.ID, Disk: &ds}
 	var acc Accepted
 	if err := d.Fleet.Call(ctx, r.ID, http.MethodPost, "/api/hub/tasks", task, &acc); err != nil {
-		return "", "", &WaitError{Reason: "waiting for a runner: " + err.Error()}
+		reason := "waiting for a runner: " + err.Error()
+		var ce *tunnel.CallError
+		if errors.As(err, &ce) && ce.Status == http.StatusInsufficientStorage && d.Note != nil && reason != t.Waiting {
+			d.Note(t, "⏸ "+err.Error()) // it filled up since its last report
+		}
+		return "", "", &WaitError{Reason: reason}
 	}
 	if acc.ID == "" {
 		return "", "", &WaitError{Reason: "waiting for a runner: " + r.Name + " didn't take the task"}
@@ -113,10 +128,11 @@ func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo
 	return r.ID, acc.ID, nil
 }
 
-// pick chooses the runner for t among p's, or says why there is none.
-func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string) {
+// pick chooses the runner for t among p's, or says why there is none (and,
+// in full, why runners with too little disk space don't start it).
+func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string, string) {
 	var cands []tunnel.Runner
-	var why []string
+	var why, full []string
 	limits := map[string]int{} // runner id → how many tasks it may have at once now
 	limit := func(r tunnel.Runner) int {
 		if n, ok := limits[r.ID]; ok {
@@ -149,6 +165,9 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string
 				msg += " (" + r.Reported.Usage.Reason + ")"
 			}
 			why = append(why, msg)
+		case r.DiskFull:
+			msg := tooFull(r)
+			why, full = append(why, msg), append(full, msg)
 		case pace.Stop != "":
 			// Its account's: every runner on it waits.
 			why = append(why, r.Name+"'s Claude account is paused ("+pace.Stop+")")
@@ -162,18 +181,29 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string
 	}
 	if len(cands) == 0 {
 		if len(why) == 0 {
-			return nil, "no runner: the runners linked to this project were revoked; link another in the project's settings"
+			return nil, "no runner: the runners linked to this project were revoked; link another in the project's settings", ""
 		}
-		return nil, waitReason(why)
+		return nil, waitReason(why), strings.Join(full, "; ")
 	}
 	// The runner that has the task's worktree and session continues it.
 	if i := slices.IndexFunc(cands, func(r tunnel.Runner) bool { return r.ID == t.Runner }); i >= 0 {
-		return &cands[i], ""
+		return &cands[i], "", ""
 	}
 	best := slices.MinFunc(cands, func(a, b tunnel.Runner) int {
 		return d.Busy(a.ID)*limit(b) - d.Busy(b.ID)*limit(a) // the least loaded, relative to its limit
 	})
-	return &best, ""
+	return &best, "", ""
+}
+
+// tooFull says why runner r, below its minimum free disk space, doesn't
+// start a task: "runner X has only 1.2 GB free …".
+func tooFull(r tunnel.Runner) string {
+	if r.Reported != nil && r.Reported.Disk != nil {
+		if v, ok := r.Disk.TooFull(*r.Reported.Disk); ok {
+			return disk.FullMessage(r.Name, v, r.Disk.MinFree())
+		}
+	}
+	return "runner " + r.Name + " is low on disk space"
 }
 
 func lowerFirst(s string) string {
@@ -183,18 +213,20 @@ func lowerFirst(s string) string {
 	return strings.ToLower(s[:1]) + s[1:]
 }
 
-// Reply is the hub's answer to runner id's report: how it paces it (nil
-// without a Pacer).
+// Reply is the hub's answer to runner id's report: how it paces it
+// (without a Pacer: it paces itself), and its disk settings.
 func (d *Dispatcher) Reply(id string) any {
-	if d.Pacer == nil {
-		return nil
-	}
 	r, ok := d.Fleet.Get(id)
 	if !ok {
 		return nil
 	}
-	p := d.Pacer.For(r).RunnerPace(r)
-	return Reply{Pace: &p}
+	s := r.Disk
+	reply := Reply{Disk: &s}
+	if d.Pacer != nil {
+		p := d.Pacer.For(r).RunnerPace(r)
+		reply.Pace = &p
+	}
+	return reply
 }
 
 // Busy is how many tasks runner id is working on for the hub.
@@ -249,6 +281,11 @@ func (d *Dispatcher) Report(id string, body []byte) error {
 		d.projectEvent(r, pid, model.EvChecklist, map[string]string{"path": checklist.Name})
 	}
 	d.setPermissions(r, rep.Permissions)
+	if rep.Disk != nil {
+		if fresh, ok := d.Fleet.Get(id); ok {
+			d.checkDisk(fresh)
+		}
+	}
 	if d.Kick != nil {
 		d.Kick() // a slot may have come free, or the usage limit lifted
 	}
@@ -628,6 +665,7 @@ func (d *Dispatcher) Revoked(id string) {
 		delete(d.timers, id)
 	}
 	d.mu.Unlock()
+	d.forgetDisk(id)
 	for _, p := range d.Store.ListProjects() {
 		if !slices.Contains(p.Runners, id) {
 			continue
@@ -925,4 +963,65 @@ func (d *Dispatcher) Unlink(ctx context.Context, projectID string, runners []str
 			slog.Info("unlink project on runner", "runner", id, "project", projectID, "err", err)
 		}
 	}
+}
+
+// checkDisk tells (model.EvRunnerDisk, which notifies) when runner r's
+// free disk space falls below its threshold, once, and again when it is
+// back above it, not on every report.
+func (d *Dispatcher) checkDisk(r tunnel.Runner) {
+	low := r.DiskLow != ""
+	d.diskMu.Lock()
+	if d.diskLow == nil {
+		d.diskLow = map[string]bool{}
+	}
+	was := d.diskLow[r.ID]
+	d.diskLow[r.ID] = low
+	d.diskMu.Unlock()
+	if was == low || d.Pub == nil {
+		return
+	}
+	ev := model.RunnerDisk{RunnerID: r.ID, RunnerName: r.Name, OrgID: r.OrgID(), Low: low}
+	if low {
+		ev.Message = diskMessage(r)
+		slog.Warn("runner: disk space low", "runner", r.Name, "message", ev.Message)
+	} else {
+		slog.Info("runner: disk space ok again", "runner", r.Name)
+	}
+	for _, p := range d.Store.ListProjects() {
+		if p.OrgID == r.OrgID() && slices.Contains(p.Runners, r.ID) {
+			ev.Projects = append(ev.Projects, p.ID)
+		}
+	}
+	d.Pub.Publish(model.Event{Type: model.EvRunnerDisk, OrgID: r.OrgID(), Data: ev, Time: time.Now()})
+}
+
+// diskMessage is the low-space warning of runner r: how much it has left,
+// and what in its cache folder takes the most.
+func diskMessage(r tunnel.Runner) string {
+	msg := r.DiskLow
+	if r.DiskFull {
+		msg += "; it starts no tasks until it has " + disk.Size(r.Disk.MinFree())
+	}
+	if r.Reported == nil || r.Reported.Disk == nil {
+		return msg
+	}
+	st := r.Reported.Disk
+	if len(st.Largest) > 0 {
+		var fs []string
+		for _, f := range st.Largest {
+			fs = append(fs, f.Path+" ("+disk.Size(f.Size)+")")
+		}
+		msg += ". Largest cache folders: " + strings.Join(fs, ", ")
+	}
+	if c := st.GoCache; c != nil && c.Size > 0 && !slices.ContainsFunc(st.Largest, func(f disk.Folder) bool { return f.Path == c.Path }) {
+		msg += ". Go build cache: " + disk.Size(c.Size) + " (go clean -cache empties it)"
+	}
+	return msg
+}
+
+// forgetDisk forgets runner id's disk state (it was revoked).
+func (d *Dispatcher) forgetDisk(id string) {
+	d.diskMu.Lock()
+	delete(d.diskLow, id)
+	d.diskMu.Unlock()
 }

@@ -46,7 +46,9 @@ const (
 	// DefaultBehindEvery limits checkout.behind: a checkout that keeps
 	// getting stuck and unstuck notifies at most this often.
 	DefaultBehindEvery = 6 * time.Hour
-	queueSize          = 1024
+	// DefaultDiskEvery limits runner.disk the same way, per runner.
+	DefaultDiskEvery = 6 * time.Hour
+	queueSize        = 1024
 )
 
 // Notifier turns hub events into webhook deliveries. Set its fields, then
@@ -78,12 +80,18 @@ type Notifier struct {
 	// BehindEvery is how often, at most, one runner's checkout of a
 	// project being left behind origin notifies (DefaultBehindEvery).
 	BehindEvery time.Duration
+	// DiskEvery is how often, at most, one runner's disk running low
+	// notifies (DefaultDiskEvery).
+	DiskEvery time.Duration
 
 	// Seen by the run loop only.
 	status map[string]model.TodoStatus // todo id → last status
 	ci     map[string]string           // project id → last build state
 	stuck  map[[2]string]bool          // {project, runner} → its checkout is left behind
 	told   map[[2]string]time.Time     // {project, runner} → when that last notified
+	// diskLow: runner id → its disk is low; diskTold: when that last notified.
+	diskLow  map[string]bool
+	diskTold map[string]time.Time
 
 	wg sync.WaitGroup
 }
@@ -94,6 +102,7 @@ func (n *Notifier) init() {
 		n.status = map[string]model.TodoStatus{}
 		n.ci = map[string]string{}
 		n.stuck, n.told = map[[2]string]bool{}, map[[2]string]time.Time{}
+		n.diskLow, n.diskTold = map[string]bool{}, map[string]time.Time{}
 		n.client = newClient(n.timeout(), n.AllowPrivate)
 	})
 }
@@ -131,7 +140,7 @@ func (n *Notifier) now() time.Time {
 // loop, and dropped with a warning if it falls far behind.
 func (n *Notifier) Observe(ev model.Event) {
 	switch ev.Type {
-	case model.EvTodoUpdated, model.EvTodoDeleted, model.EvPermission, model.EvCI, model.EvCheckouts:
+	case model.EvTodoUpdated, model.EvTodoDeleted, model.EvPermission, model.EvCI, model.EvCheckouts, model.EvRunnerDisk:
 	default:
 		return
 	}
@@ -176,15 +185,28 @@ const evFlush model.EventType = "notify.flush"
 // personal ones. A URL gets it once, though a project's and someone's
 // personal webhook both go there.
 func (n *Notifier) handle(ctx context.Context, ev model.Event) {
+	if ev.Type == model.EvRunnerDisk {
+		n.runnerDisk(ctx, ev)
+		return
+	}
 	note, ok := n.classify(ev)
 	if !ok {
 		return
 	}
 	n.push(ctx, note)
-	hooks, err := n.Store.WebhooksFor(note.Project.ID)
-	if err != nil {
-		slog.Error("notifications: list webhooks", "project", note.Project.ID, "err", err)
-		return
+	n.toWebhooks(ctx, note, []string{note.Project.ID})
+}
+
+// toWebhooks sends note to the webhooks of the projects pids, each URL once.
+func (n *Notifier) toWebhooks(ctx context.Context, note Notification, pids []string) {
+	var hooks []model.Webhook
+	for _, pid := range pids {
+		hs, err := n.Store.WebhooksFor(pid)
+		if err != nil {
+			slog.Error("notifications: list webhooks", "project", pid, "err", err)
+			continue
+		}
+		hooks = append(hooks, hs...)
 	}
 	sent := map[string]bool{}
 	for _, w := range hooks {
@@ -198,6 +220,43 @@ func (n *Notifier) handle(ctx context.Context, ev model.Event) {
 			_ = n.deliver(ctx, w, note, n.attempts())
 		}(w)
 	}
+}
+
+// runnerDisk notifies, once per crossing, that a runner's free disk space
+// fell below its threshold: the webhooks of the projects linked to it and
+// the browsers of its org's members. A runner that keeps crossing it
+// notifies at most every DiskEvery (and once after the hub restarts).
+func (n *Notifier) runnerDisk(ctx context.Context, ev model.Event) {
+	rd, ok := ev.Data.(model.RunnerDisk)
+	if !ok {
+		return
+	}
+	if !rd.Low {
+		delete(n.diskLow, rd.RunnerID)
+		return
+	}
+	if n.diskLow[rd.RunnerID] {
+		return // told already
+	}
+	n.diskLow[rd.RunnerID] = true
+	every := n.DiskEvery
+	if every <= 0 {
+		every = DefaultDiskEvery
+	}
+	now := n.now()
+	if at, ok := n.diskTold[rd.RunnerID]; ok && now.Sub(at) < every {
+		return
+	}
+	n.diskTold[rd.RunnerID] = now
+	note := Notification{ID: newEventID(), Type: model.NotifyDisk, Time: now.UTC().Truncate(time.Second),
+		Runner: &RunnerRef{ID: rd.RunnerID, Name: rd.RunnerName}, Message: rd.Message}
+	if len(rd.Projects) > 0 {
+		if p, err := n.Store.GetProject(rd.Projects[0]); err == nil {
+			note.Project = ProjectRef{ID: p.ID, Name: p.Name}
+		}
+	}
+	n.pushOrg(ctx, note, rd.OrgID)
+	n.toWebhooks(ctx, note, rd.Projects)
 }
 
 // classify reports whether ev is a moment to notify of, as the web app

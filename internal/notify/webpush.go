@@ -37,7 +37,7 @@ import (
 // can it send in Dash's name.
 
 // PushEvents are the events pushed to browsers.
-var PushEvents = []model.NotifyEvent{model.NotifyReview, model.NotifyFailed, model.NotifyPermission, model.NotifyBuild}
+var PushEvents = []model.NotifyEvent{model.NotifyReview, model.NotifyFailed, model.NotifyPermission, model.NotifyBuild, model.NotifyDisk}
 
 // PushStore is what Web Push reads and writes: the browsers subscribed to
 // a project's org.
@@ -240,7 +240,7 @@ func pushPayload(n Notification, actions []PushAction) PushPayload {
 	}
 	p.Body = strings.Join(body, "\n")
 	q := url.Values{}
-	if n.Project.ID != "" {
+	if n.Project.ID != "" && n.Type != model.NotifyDisk {
 		q.Set("project", n.Project.ID)
 	}
 	switch {
@@ -249,6 +249,8 @@ func pushPayload(n Notification, actions []PushAction) PushPayload {
 		p.Tag = "dash-" + n.Task.ID
 	case n.Type == model.NotifyBuild:
 		p.Tag = "dash-build-" + n.Project.ID
+	case n.Type == model.NotifyDisk && n.Runner != nil:
+		p.Tag = "dash-disk-" + n.Runner.ID
 	default:
 		p.Tag = "dash-" + n.ID
 	}
@@ -339,11 +341,19 @@ func (n *Notifier) PushEnabled() bool { return n != nil && n.Push != nil && n.VA
 // push sends note to the browsers subscribed to its project's org, if it
 // is one of PushEvents.
 func (n *Notifier) push(ctx context.Context, note Notification) {
-	if !n.PushEnabled() || !slices.Contains(PushEvents, note.Type) {
+	if !n.PushEnabled() {
 		return
 	}
 	org, ok := n.Push.ProjectOrg(note.Project.ID)
 	if !ok {
+		return
+	}
+	n.pushOrg(ctx, note, org)
+}
+
+// pushOrg pushes note to the browsers of org's members.
+func (n *Notifier) pushOrg(ctx context.Context, note Notification, org int64) {
+	if !n.PushEnabled() || !slices.Contains(PushEvents, note.Type) || org == 0 {
 		return
 	}
 	subs, err := n.Push.PushSubscriptionsForOrg(org)
