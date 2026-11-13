@@ -669,6 +669,9 @@ func TestPullRequestFailingChecksGoBackToClaude(t *testing.T) {
 
 	h, dir := prHarness(t, "ci.txt", model.Project{MaxAutoFixes: 1})
 	td := h.waitFor(h.add("ci").ID, model.StatusReview)
+	// The task is in review as soon as its pull request opens, before the
+	// merge job that opened it ends; polling skips it until then.
+	waitMergeJob(t, h, td.ID)
 	write(t, dir, "pr.json", openPRView("abc", `{"name":"build","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://example.com/x"}`))
 	h.merges.PollPRs(context.Background())
 	x := waitPR(t, h, td.ID, model.StatusReview, func(x model.Todo) bool { return x.AutoFixes == 1 && x.Runs == 2 })
