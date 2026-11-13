@@ -32,6 +32,7 @@ const (
 	chatMain    = "main"
 	chatTodo    = "todo"
 	chatProject = "project"
+	chatGoal    = "goal" // a goal's coordinator conversation, owner_id the goal's id
 )
 
 func openDB(path string) (*sql.DB, error) {
@@ -137,7 +138,7 @@ func migrate(db *sql.DB, backup func(from, to int) error) error {
 	return nil
 }
 
-var dataTables = []string{"projects", "todos", "issues", "scan_runs", "scan_settings", "scan_templates", "chat_messages"}
+var dataTables = []string{"projects", "todos", "issues", "scan_runs", "scan_settings", "scan_templates", "chat_messages", "goals"}
 
 func dbEmpty(db *sql.DB) (bool, error) {
 	for _, t := range dataTables {
@@ -252,6 +253,8 @@ func load(db *sql.DB) (snapshot, error) {
 		ScanSettings:  map[string]*model.ScanSetting{},
 		ScanTemplates: map[string]*model.ScanTemplate{},
 		MainChats:     map[string][]model.ChatMessage{},
+		Goals:         map[string]*model.Goal{},
+		GoalChats:     map[string][]model.ChatMessage{},
 	}
 	// The column, not the JSON, says which org a project is in.
 	if err := loadRows(db, "SELECT data, COALESCE(org_id, 0) FROM projects", func(p *model.Project, org int64) {
@@ -264,6 +267,9 @@ func load(db *sql.DB) (snapshot, error) {
 		return data, err
 	}
 	if err := loadRows(db, "SELECT data FROM issues", func(is *model.Issue, _ int64) { data.Issues[is.ID] = is }); err != nil {
+		return data, err
+	}
+	if err := loadRows(db, "SELECT data FROM goals", func(g *model.Goal, _ int64) { data.Goals[g.ID] = g }); err != nil {
 		return data, err
 	}
 	if err := loadRows(db, "SELECT data FROM scan_runs", func(r *model.ScanRun, _ int64) { data.ScanRuns[r.ID] = r }); err != nil {
@@ -301,6 +307,8 @@ func load(db *sql.DB) (snapshot, error) {
 			data.TodoChats[owner] = append(data.TodoChats[owner], m)
 		case chatProject:
 			data.ProjectChats[owner] = append(data.ProjectChats[owner], m)
+		case chatGoal:
+			data.GoalChats[owner] = append(data.GoalChats[owner], m)
 		}
 	}
 	return data, rows.Err()
@@ -387,6 +395,12 @@ func putTodo(tx *sql.Tx, t *model.Todo) error {
 	return put(tx, "INSERT INTO todos (id, project_id, org_id, data) VALUES (?, ?, "+projectOrg+", ?)"+
 		" ON CONFLICT (id) DO UPDATE SET project_id = excluded.project_id, org_id = excluded.org_id, data = excluded.data",
 		t, t.ID, t.ProjectID, t.ProjectID)
+}
+
+func putGoal(tx *sql.Tx, g *model.Goal) error {
+	return put(tx, "INSERT INTO goals (id, project_id, org_id, data) VALUES (?, ?, "+projectOrg+", ?)"+
+		" ON CONFLICT (id) DO UPDATE SET project_id = excluded.project_id, org_id = excluded.org_id, data = excluded.data",
+		g, g.ID, g.ProjectID, g.ProjectID)
 }
 
 func putIssue(tx *sql.Tx, is *model.Issue) error {

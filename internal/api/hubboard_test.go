@@ -162,3 +162,42 @@ func TestRunnerHubBoardUnreachable(t *testing.T) {
 		t.Errorf("the runner's own board got %d tasks", n-before)
 	}
 }
+
+// A coordinator turn the hub runs on a runner gets the hub goal's tools: its
+// tasks are made on the hub, for that goal; a goal of another project is
+// refused.
+func TestRunnerCoordinatorActsOnTheHubsGoal(t *testing.T) {
+	parallel(t)
+
+	hub, runner, _, linked, unlinked := hubWithRunner(t)
+	h := runner.BoardMCP()
+	g, err := raw(hub).CreateGoal(model.Goal{ProjectID: linked.ID, Owner: testOwner(t, hub).User, Title: "Faster search", Mode: model.GoalQueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, release := runner.Board.RegisterHubGoal(chatCaller(t, runner), linked.ID, g.ID)
+	defer release()
+	if text, isErr := call(t, h, token, "get_goal", `{}`); isErr || !strings.Contains(text, "Faster search") {
+		t.Fatalf("get_goal: %s", text)
+	}
+	if text, isErr := call(t, h, token, "create_todo", `{"title":"Index","prompt":"Add an index"}`); isErr {
+		t.Fatalf("create_todo: %s", text)
+	}
+	got := raw(hub).ListTodos(linked.ID)
+	if len(got) != 1 || got[0].GoalID != g.ID || got[0].Status != model.StatusQueued {
+		t.Fatalf("hub's tasks: %+v", got)
+	}
+	if n := len(raw(runner).ListTodos("")); n != 0 {
+		t.Errorf("the runner's own board got %d tasks", n)
+	}
+
+	other, err := raw(hub).CreateGoal(model.Goal{ProjectID: unlinked.ID, Owner: testOwner(t, hub).User, Title: "Elsewhere"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrong, release2 := runner.Board.RegisterHubGoal(chatCaller(t, runner), linked.ID, other.ID)
+	defer release2()
+	if w := rpc(h, wrong, "tools/list", `{}`); w.Code != http.StatusForbidden {
+		t.Errorf("a goal of another project: %d %s", w.Code, w.Body)
+	}
+}

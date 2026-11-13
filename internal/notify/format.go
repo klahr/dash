@@ -25,6 +25,8 @@ type Notification struct {
 	Build      *BuildRef         `json:"build,omitempty"`
 	// Runner is the runner a runner.disk event is about.
 	Runner *RunnerRef `json:"runner,omitempty"`
+	// Goal is the goal a goal.attention event is about.
+	Goal *GoalRef `json:"goal,omitempty"`
 	// Message is a one-line human summary (the error of a failed task, …).
 	Message string `json:"message,omitempty"`
 }
@@ -44,6 +46,13 @@ type TaskRef struct {
 type PermissionRef struct {
 	ID   string `json:"id"`
 	Tool string `json:"tool"`
+}
+
+type GoalRef struct {
+	ID     string           `json:"id"`
+	Title  string           `json:"title"`
+	Status model.GoalStatus `json:"status"`
+	URL    string           `json:"url,omitempty"` // the goal in Dash
 }
 
 type RunnerRef struct {
@@ -73,6 +82,7 @@ var looks = map[model.NotifyEvent]struct {
 	model.NotifyFailed:     {"Failed", ":x:", "x", true},
 	model.NotifyMerged:     {"Merged", ":white_check_mark:", "white_check_mark", false},
 	model.NotifyPermission: {"Claude needs your approval", ":raising_hand:", "raising_hand", true},
+	model.NotifyGoal:       {"Goal", ":dart:", "dart", false},
 	model.NotifyBuild:      {"Build failing", ":rotating_light:", "rotating_light", false},
 	model.NotifyBehind:     {"Checkout behind origin", ":arrow_down:", "arrow_down", false},
 	model.NotifyDisk:       {"Disk nearly full", ":floppy_disk:", "floppy_disk", true},
@@ -82,16 +92,29 @@ var looks = map[model.NotifyEvent]struct {
 // Head is the event's short heading, e.g. "Ready for review".
 func (n Notification) Head() string {
 	h := looks[n.Type].head
+	if n.Type == model.NotifyGoal && n.Goal != nil {
+		h = goalHeads[n.Goal.Status]
+	}
 	if n.Type == model.NotifyBuild && n.Build != nil && n.Build.Branch != "" {
 		h += " on " + n.Build.Branch
 	}
 	return h
 }
 
-// URL is where the notification links to: the task, else the build.
+// goalHeads head a goal.attention notification by the goal's status.
+var goalHeads = map[model.GoalStatus]string{
+	model.GoalWaiting:     "Goal waits for you",
+	model.GoalDone:        "Goal done",
+	model.GoalOutOfBudget: "Goal out of budget",
+}
+
+// URL is where the notification links to: the task, else the goal, else the build.
 func (n Notification) URL() string {
 	if n.Task != nil && n.Task.URL != "" {
 		return n.Task.URL
+	}
+	if n.Goal != nil && n.Goal.URL != "" {
+		return n.Goal.URL
 	}
 	if n.Build != nil {
 		return n.Build.URL
@@ -107,6 +130,9 @@ func (n Notification) subject() string {
 	}
 	if n.Runner != nil {
 		return "runner " + n.Runner.Name
+	}
+	if n.Goal != nil && n.Goal.Title != "" {
+		return n.Goal.Title
 	}
 	return n.Project.Name
 }
@@ -176,7 +202,7 @@ func slackText(n Notification) string {
 	} else {
 		b.WriteString(subj)
 	}
-	if n.Task != nil && n.Project.Name != "" {
+	if (n.Task != nil || n.Goal != nil) && n.Project.Name != "" {
 		fmt.Fprintf(&b, " in _%s_", slackEscape(n.Project.Name))
 	}
 	if n.Message != "" {

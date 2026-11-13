@@ -163,6 +163,10 @@ type Server struct {
 	generalTurns map[string]int // general chat turns running, by "<org>:<user>"
 
 	muxOnce sync.Once
+
+	// goalEngine runs the goals' coordinators (goalcoord.go), made once.
+	goalsOnce  sync.Once
+	goalEngine *goalEngine
 	// following counts the fetches "origin moved" news started (tests wait).
 	following sync.WaitGroup
 	muxv      *http.ServeMux
@@ -312,6 +316,9 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/projects/{pid}/issues/dismiss", s.dismissIssues)
 	mux.HandleFunc("PATCH /api/issues/{iid}", s.updateIssue)
 	mux.HandleFunc("DELETE /api/issues/{iid}", s.deleteIssue)
+
+	// Goals: a coordinator plans and dispatches tasks towards each
+	s.goalRoutes(mux)
 
 	// Scans: preconfigured read-only reviews that file their findings as issues
 	mux.HandleFunc("GET /api/projects/{pid}/scans", s.listScans)

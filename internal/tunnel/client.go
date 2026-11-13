@@ -294,7 +294,18 @@ const BoardPath = "/runner/mcp/dash"
 const (
 	BoardTodoHeader    = "X-Dash-Hub-Todo"
 	BoardProjectHeader = "X-Dash-Hub-Project"
+	// BoardGoalHeader names, with BoardProjectHeader, the hub's goal whose
+	// coordinator a chat runs for: its calls get that goal's tools.
+	BoardGoalHeader = "X-Dash-Hub-Goal"
 )
+
+type boardGoalKey struct{}
+
+// WithBoardGoal makes Board calls made with ctx name hubGoal, the hub's
+// goal whose coordinator the run is.
+func WithBoardGoal(ctx context.Context, hubGoal string) context.Context {
+	return context.WithValue(ctx, boardGoalKey{}, hubGoal)
+}
 
 // Board posts body, an MCP request of a run of the hub's task hubTodo
 // (or, without one, of a chat in the hub's project hubProject), to the hub
@@ -315,6 +326,9 @@ func Board(ctx context.Context, creds Credentials, hubTodo, hubProject string, b
 		req.Header.Set(BoardTodoHeader, hubTodo)
 	} else if hubProject != "" {
 		req.Header.Set(BoardProjectHeader, hubProject)
+		if g, _ := ctx.Value(boardGoalKey{}).(string); g != "" {
+			req.Header.Set(BoardGoalHeader, g)
+		}
 	}
 	res, err := (&http.Client{Timeout: 2 * time.Minute}).Do(req)
 	if err != nil {

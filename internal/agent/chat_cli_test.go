@@ -24,7 +24,7 @@ func flag(args []string, name string) (string, bool) {
 
 func TestChatArgsReadOnly(t *testing.T) {
 	for _, c := range []ClaudeCodeChat{{}, {Tools: ChatReadOnly, AllowedTools: []string{"Bash(ls *)"}}} {
-		args := c.args("", nil)
+		args := c.args("", nil, false)
 		if tools, _ := flag(args, "--tools"); tools != "Read,Grep,Glob" {
 			t.Errorf("%q: --tools %q", c.Tools, tools)
 		}
@@ -47,7 +47,7 @@ func TestChatArgsShell(t *testing.T) {
 	servers := map[string]any{perm.ServerName: perm.ServerConfig("http://127.0.0.1:1", "tok")}
 	b, _ := json.Marshal(map[string]any{"mcpServers": servers})
 	cfg := string(b)
-	args := c.args("/repo", servers)
+	args := c.args("/repo", servers, false)
 	// Same access as `claude` in a terminal: all tools, the user's settings and MCP servers.
 	for _, f := range []string{"--tools", "--strict-mcp-config", "--setting-sources"} {
 		if _, ok := flag(args, f); ok {
@@ -75,7 +75,7 @@ func TestChatArgsShell(t *testing.T) {
 	}
 
 	// Without a prompt server, nothing is wired up to ask.
-	if _, ok := flag(c.args("", nil), "--permission-prompt-tool"); ok {
+	if _, ok := flag(c.args("", nil, false), "--permission-prompt-tool"); ok {
 		t.Error("--permission-prompt-tool without --mcp-config")
 	}
 	if _, ok := flag(args, "--permission-mode"); ok {
@@ -84,14 +84,14 @@ func TestChatArgsShell(t *testing.T) {
 
 	// A permission mode keeps the prompt tool for what it doesn't approve.
 	c.PermissionMode = "auto"
-	args = c.args("/repo", servers)
+	args = c.args("/repo", servers, false)
 	if m, _ := flag(args, "--permission-mode"); m != "auto" {
 		t.Errorf("--permission-mode %q", m)
 	}
 	if got, _ := flag(args, "--permission-prompt-tool"); got != perm.PromptTool {
 		t.Errorf("--permission-prompt-tool %q", got)
 	}
-	if _, ok := flag((ClaudeCodeChat{PermissionMode: "auto"}).args("", nil), "--permission-mode"); ok {
+	if _, ok := flag((ClaudeCodeChat{PermissionMode: "auto"}).args("", nil, false), "--permission-mode"); ok {
 		t.Error("read-only chat should not pass --permission-mode")
 	}
 }
@@ -110,7 +110,7 @@ func TestChatArgsBoard(t *testing.T) {
 		}
 		return out
 	}
-	ro := ClaudeCodeChat{Tools: ChatReadOnly, AllowedTools: []string{"Bash(ls *)"}}.args("", map[string]any{mcptools.ServerName: board})
+	ro := ClaudeCodeChat{Tools: ChatReadOnly, AllowedTools: []string{"Bash(ls *)"}}.args("", map[string]any{mcptools.ServerName: board}, false)
 	if cfg, _ := flag(ro, "--mcp-config"); !strings.Contains(cfg, `"`+mcptools.ServerName+`"`) || !strings.Contains(cfg, "/mcp/dash") {
 		t.Errorf("readonly --mcp-config %q", cfg)
 	}
@@ -129,7 +129,7 @@ func TestChatArgsBoard(t *testing.T) {
 	}
 
 	sh := ClaudeCodeChat{Tools: ChatShell, AllowedTools: []string{"Read"}}.args("", map[string]any{
-		mcptools.ServerName: board, perm.ServerName: perm.ServerConfig("http://127.0.0.1:1", "p")})
+		mcptools.ServerName: board, perm.ServerName: perm.ServerConfig("http://127.0.0.1:1", "p")}, false)
 	var cfg struct{ MCPServers map[string]any }
 	raw, _ := flag(sh, "--mcp-config")
 	if err := json.Unmarshal([]byte(raw), &cfg); err != nil || len(cfg.MCPServers) != 2 {
@@ -141,6 +141,33 @@ func TestChatArgsBoard(t *testing.T) {
 	}
 	if got, _ := flag(sh, "--permission-prompt-tool"); got != perm.PromptTool {
 		t.Errorf("--permission-prompt-tool %q", got)
+	}
+}
+
+// A goal's coordinator only reads the code, with its own system prompt, and
+// may call its goal's tools without asking.
+func TestCoordinatorArgs(t *testing.T) {
+	board := mcptools.ServerConfig("http://127.0.0.1:1", "b")
+	args := ClaudeCodeChat{Tools: ChatReadOnly}.args("/repo", map[string]any{mcptools.ServerName: board}, true)
+	if got, _ := flag(args, "--system-prompt"); got != CoordinatorSystem {
+		t.Errorf("--system-prompt %q", got)
+	}
+	if got, _ := flag(args, "--tools"); got != "Read,Grep,Glob" {
+		t.Errorf("--tools %q", got)
+	}
+	var allowed []string
+	for i, a := range args {
+		if a == "--allowedTools" {
+			allowed = append(allowed, args[i+1])
+		}
+	}
+	for _, tool := range []string{"propose_plan", "send_back", "finish_goal", "create_todo"} {
+		if !slices.Contains(allowed, "mcp__dash_board__"+tool) {
+			t.Errorf("%s not allowed: %v", tool, allowed)
+		}
+	}
+	if !strings.Contains(CoordinatorSystem, "never approve or merge") {
+		t.Error("the coordinator isn't told it never approves or merges")
 	}
 }
 

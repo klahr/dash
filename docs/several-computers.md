@@ -706,6 +706,10 @@ Where each kind of Claude work runs:
   runner that ran it). Shell commands typed in them with a leading `!` run there too, in the same
   folder, never on the hub: see [Chat](chat.md#shell-commands-with-).
 
+- **Goals' coordinators**: a [goal](goals.md)'s wake-ups run on its owner's runner linked to the
+  project, read-only in its clone; its chat on yours. With none online the goal's events wait,
+  and its log says so. What the coordinator does with its tools happens on the hub's board.
+
 - **General chat**: runs on one of your runners, in a scratch folder (`<-data>/chat` on that
   computer), not in any project. The chat's header says which runner it runs on; with several
   online you pick one there, and with none online it says so. The hub keeps the conversation, as

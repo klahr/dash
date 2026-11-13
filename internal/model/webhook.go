@@ -21,16 +21,17 @@ const (
 	NotifyBuild      NotifyEvent = "build.failing"     // GitHub Actions started failing on the default branch
 	NotifyBehind     NotifyEvent = "checkout.behind"   // a runner's checkout was left behind origin (local changes or commits)
 	NotifyDisk       NotifyEvent = "runner.disk"       // a runner's free disk space fell below its threshold
+	NotifyGoal       NotifyEvent = "goal.attention"    // a goal waits for the user, is done or ran out of budget
 	NotifyTest       NotifyEvent = "webhook.test"      // the settings' "Send test" button
 )
 
 // NotifyEvents are the events a webhook can subscribe to, in display order.
 // NotifyBehind is never on unless chosen (see DefaultNotifyEvents).
-var NotifyEvents = []NotifyEvent{NotifyReview, NotifyFailed, NotifyMerged, NotifyPermission, NotifyBuild, NotifyDisk, NotifyBehind}
+var NotifyEvents = []NotifyEvent{NotifyReview, NotifyFailed, NotifyMerged, NotifyPermission, NotifyGoal, NotifyBuild, NotifyDisk, NotifyBehind}
 
 // DefaultNotifyEvents are a new webhook's events: all but NotifyBehind,
 // which only matters to whoever sits at a runner, so it is opt-in.
-var DefaultNotifyEvents = []NotifyEvent{NotifyReview, NotifyFailed, NotifyMerged, NotifyPermission, NotifyBuild, NotifyDisk}
+var DefaultNotifyEvents = []NotifyEvent{NotifyReview, NotifyFailed, NotifyMerged, NotifyPermission, NotifyGoal, NotifyBuild, NotifyDisk}
 
 // Webhook formats: how a delivery is shaped for the receiving service.
 const (

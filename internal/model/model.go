@@ -391,6 +391,12 @@ type Todo struct {
 	// explored, instead of exploring the code again. Like DependsOn, it
 	// waits queued until that task is finished (see Finished).
 	BuildsOn string `json:"builds_on,omitempty"`
+	// GoalID is the goal whose coordinator made the task (empty: none).
+	// Its events (entered review, failed, merged) wake that coordinator.
+	GoalID string `json:"goal_id,omitempty"`
+	// GoalNote is the coordinator's short review note on the task's
+	// changes, for the Changes tab (empty: none).
+	GoalNote *GoalNote `json:"goal_note,omitempty"`
 	// Model is the Claude model the task runs on (claude --model): an alias
 	// such as "opus", "sonnet" or "haiku", or a full model id. Empty: Dash's
 	// default (-claude-args, else Claude Code's own default).
@@ -587,6 +593,13 @@ func (t Todo) BlockersIn(byID map[string]Todo) []Todo {
 		}
 	}
 	return out
+}
+
+// GoalNote is a goal coordinator's review note on a task's changes.
+type GoalNote struct {
+	Goal string    `json:"goal"` // the goal's id
+	Text string    `json:"text"`
+	At   time.Time `json:"at"`
 }
 
 // Checks is the outcome of running the project's test command in a worktree.
@@ -914,6 +927,7 @@ const (
 	EvScanSettings   EventType = "scan.settings"      // a scan's schedule was turned on/off or edited; Data is the ScanSetting
 	EvClaudeStatus   EventType = "claude.status"      // Claude's status page changed (internal/claudestatus); Data is its Status
 	EvScanTemplate   EventType = "scan.template"      // a Dash scan template was created, edited or deleted; Data is {"name": …, "deleted": bool}
+	EvGoalUpdated    EventType = "goal.updated"       // a goal was created or changed; Data is the Goal (without its log)
 )
 
 // RunnerDisk is a runner's disk space crossing its low-space threshold.

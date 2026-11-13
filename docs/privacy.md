@@ -79,8 +79,8 @@ This happens at once:
   codes, push subscriptions and personal webhooks. Every browser and connector is signed out.
 - Your general chats with Claude are deleted.
 - Each organization you are the only member of is deleted, your personal workspace too.
-- Tasks and messages you wrote in other organizations stay there, without your name. Those tasks
-  can't run again.
+- Tasks, goals and messages you wrote in other organizations stay there, without your name.
+  Those tasks can't run again, and those goals' coordinators can't run.
 - The sign-in log keeps that something happened, without your account, IP address or details.
 - Runners you registered stop connecting.
 
@@ -149,7 +149,7 @@ Everything is on the hub's own disk, in its data directory (`-data`, by default
 | Sign-in events (Google sign-in, linking, single sign-on, signing members out), with the IP address | a year (`-auth-log-days`) |
 | Push subscriptions (the browser's push address and its user agent) | until notifications are turned off on that device  |
 | Webhooks (the URL), and their last 50 deliveries | until deleted                                                        |
-| Work: projects, tasks, chats, issues, scans, with who created them | until deleted; deleting a task deletes its chat and logs, deleting a project deletes its tasks |
+| Work: projects, tasks, goals, chats, issues, scans, with who created them | until deleted; deleting a task deletes its chat and logs, deleting a project deletes its tasks and goals |
 | Logs of Claude's runs (`logs/`)         | with their task; at most `-log-max-mb` (32 MB) a task                         |
 | Attachments and drawings (`uploads/`)   | with what uses them; unused ones are removed after a day                      |
 | Billing (with [Stripe](billing.md)): the Stripe customer and subscription ids, plan and period | while the org exists. Card, address and tax id stay at Stripe |

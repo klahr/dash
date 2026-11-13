@@ -261,6 +261,9 @@ func (a Args) FlagOr(k string, def bool) bool {
 	return def
 }
 
+// ObjectArray is the Param type of an array of JSON objects.
+const ObjectArray = "array<object>"
+
 type Param struct {
 	Name, Type, Desc string
 	Required         bool
@@ -277,8 +280,11 @@ func (t Tool) schema() map[string]any {
 	required := []string{}
 	for _, p := range t.Params {
 		prop := map[string]any{"type": p.Type, "description": p.Desc}
-		if p.Type == "array" {
+		switch p.Type {
+		case "array":
 			prop["items"] = map[string]string{"type": "string"}
+		case ObjectArray:
+			prop["type"], prop["items"] = "array", map[string]string{"type": "object"}
 		}
 		props[p.Name] = prop
 		if p.Required {
@@ -990,9 +996,28 @@ type Scope struct {
 	// and task.
 	Hub                 bool
 	HubProject, HubTodo string
+	// Goal is the goal whose coordinator the run is (in Project): its
+	// tools are GoalTools, for that goal only. HubGoal is the hub's id of
+	// it, for a Hub scope.
+	Goal, HubGoal string
 }
 
 type callerKey struct{}
+
+type goalKey struct{}
+
+// WithGoal makes chat turns run with ctx a coordinator of goalID: their
+// Dash tools are that goal's (GoalTools). On a runner running its hub's
+// chat, goalID is the hub's id of the goal.
+func WithGoal(ctx context.Context, goalID string) context.Context {
+	return context.WithValue(ctx, goalKey{}, goalID)
+}
+
+// GoalFrom is the goal WithGoal put in ctx ("" for none).
+func GoalFrom(ctx context.Context) string {
+	g, _ := ctx.Value(goalKey{}).(string)
+	return g
+}
 
 type hubKey struct{}
 
@@ -1028,6 +1053,18 @@ func CallerFrom(ctx context.Context) (Caller, bool) {
 // project for the tools ("" for none). Call release when the run ends.
 func (t *Tokens) Register(c Caller, projectID string) (token string, release func()) {
 	return t.register(Scope{Org: c.Org, User: c.User, Project: projectID})
+}
+
+// RegisterGoal issues a token for one turn of goalID's coordinator, acting
+// as c in projectID: its tools are GoalTools. Call release when the run ends.
+func (t *Tokens) RegisterGoal(c Caller, projectID, goalID string) (token string, release func()) {
+	return t.register(Scope{Org: c.Org, User: c.User, Project: projectID, Goal: goalID})
+}
+
+// RegisterHubGoal is RegisterHub for a turn of the hub's goal hubGoal's
+// coordinator: the hub serves it that goal's tools.
+func (t *Tokens) RegisterHubGoal(c Caller, hubProject, hubGoal string) (token string, release func()) {
+	return t.register(Scope{Org: c.Org, User: c.User, Hub: true, HubProject: hubProject, HubGoal: hubGoal})
 }
 
 // RegisterTask issues a token for one run of a task, acting as c (the
@@ -1125,9 +1162,19 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, sc Scope) {
 		Instructions: "The tasks on the Dash board. Each runs Claude Code in its own git worktree once queued.",
 		Tools:        Tools(board, Options{Project: sc.Project, Draft: true}),
 	}
-	if sc.Todo != "" {
+	switch {
+	case sc.Todo != "":
 		srv.Instructions = "The project's Issues list: known bugs, vulnerabilities and other problems the user triages into tasks."
 		srv.Tools = IssueTools(board, Options{Project: sc.Project, Todo: sc.Todo})
+	case sc.Goal != "":
+		gb, ok := board.(GoalBoard)
+		if !ok {
+			http.Error(w, "this Dash has no goals", http.StatusForbidden)
+			return
+		}
+		srv.Instructions = GoalInstructions
+		// create_todo queues by default: the goal's board keeps drafts in "ask" mode.
+		srv.Tools = GoalTools(gb, Options{Project: sc.Project})
 	}
 	srv.ServeHTTP(w, r)
 }

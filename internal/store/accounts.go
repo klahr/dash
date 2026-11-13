@@ -324,7 +324,7 @@ func (a *Accounts) syncEnvUser(username, password string, now time.Time) error {
 	})
 }
 
-var orgTables = []string{"projects", "todos", "issues", "scan_runs", "scan_settings", "scan_templates", "chat_messages"}
+var orgTables = []string{"projects", "todos", "issues", "scan_runs", "scan_settings", "scan_templates", "chat_messages", "goals"}
 
 // assignRecords puts records that have no org (those from before orgs) in
 // the default org, choosing the oldest org as default if none is set.

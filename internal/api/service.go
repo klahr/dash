@@ -28,6 +28,11 @@ type Data interface {
 	ForOrg(org int64) *store.OrgStore
 	ProjectOrg(projectID string) (int64, bool)
 	TodoOrg(todoID string) (int64, bool)
+	// GoalOrg, ListGoals and GoalTodos serve the goals' coordinators, a
+	// background engine (goalcoord.go): every org's goals.
+	GoalOrg(goalID string) (int64, bool)
+	ListGoals(projectID string) []model.Goal
+	GoalTodos(g model.Goal) []model.Todo
 	Accounts() *store.Accounts
 }
 

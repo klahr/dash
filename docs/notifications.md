@@ -15,6 +15,7 @@ also pushes these to the browser, so they arrive while Dash is closed:
 - Claude waits for you to approve a tool, with **Approve** and **Deny** buttons where the
   system shows them (they work for 15 minutes, until the request is answered, or until Dash
   restarts)
+- a [goal](goals.md) waits for you, is done or ran out of budget
 - GitHub Actions starts failing on the default branch
 - a runner's disk is nearly full ([Disk space on a runner](several-computers.md#disk-space-on-a-runner))
 
@@ -59,6 +60,7 @@ and how long, and the error if it failed. Deleting a webhook deletes its history
 | `task.failed`       | a task failed                                                |
 | `task.merged`       | a task's work landed                                         |
 | `permission.needed` | Claude waits for you to approve a tool                       |
+| `goal.attention`    | a [goal](goals.md) waits for you, is done or out of budget   |
 | `build.failing`     | GitHub Actions starts failing on the default branch          |
 | `runner.disk`       | a runner linked to the project is nearly out of disk space   |
 | `checkout.behind`   | a runner's checkout was left behind origin (off by default)  |
@@ -100,7 +102,9 @@ address your phone can reach.
 }
 ```
 
-`permission.needed` events also have `"permission": {"id", "tool"}`, and `build.failing`
+`goal.attention` events have `"goal": {"id", "title", "status", "url"}` instead of `task`, and say
+in `message` what the goal waits for, or why it ended; existing webhooks don't get them until you
+tick the event. `permission.needed` events also have `"permission": {"id", "tool"}`, and `build.failing`
 events have `"build": {"branch", "sha", "url"}` (`task` is the task investigating the failure,
 if there is one). `checkout.behind` events say in `message` which runners' checkouts of the
 project another runner's push left behind, and why: for a clone the runner adopted, uncommitted

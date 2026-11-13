@@ -154,3 +154,25 @@ dashboard, and `update_project` sets `tag_format`.
 
 `dash-mcp` and the connector have `update_todo` too. Their `delete_todo` deletes a task in any
 status except running or merging.
+
+## A goal's coordinator
+
+A [goal](goals.md)'s coordinator gets its own set of `dash_board` tools, for its goal only:
+
+- the board tools `list_todos`, `get_todo`, `create_todo`, `queue_todo`, `stop_todo`,
+  `restart_todo`, `update_todo`, `delete_todo`, `read_checklist`, `list_issues` and
+  `report_issue`, in the goal's project only. Those that change a task only change the goal's
+  own tasks. Tasks it creates get the goal's id and count against its budget; in "ask" mode they
+  stay drafts and `queue_todo` is refused.
+- `get_goal`: the goal, its tasks and the latest entries of its log
+- `propose_plan(tasks, why)`: the plan, as `{title, prompt, after, model}` objects (`after`: the
+  indexes of earlier tasks it needs merged first)
+- `send_back(todo, notes)`: a task in review or failed goes back to Claude with notes
+- `post_review_note(todo, note)`: a short note for the task's Changes tab
+- `add_log(text, why, todo)`, `ask_user(question)`, `finish_goal(summary)`
+- `get_diff(todo)` and `get_log(todo)`
+
+It has no tool to approve or merge a task, tag a release, change the checklist or start a task
+despite the weekly pace. On a runner, a coordinator turn the hub runs gets the hub goal's tools:
+the runner passes the goal's id to the hub with its calls (`X-Dash-Hub-Goal`), and the hub checks
+that the goal is in the project linked to that runner.

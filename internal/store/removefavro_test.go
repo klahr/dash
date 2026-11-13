@@ -67,8 +67,10 @@ func TestMigrateRemoveFavro(t *testing.T) {
 		t.Fatalf("migration 18 is %s", ms[17].name)
 	}
 	// Undo the later migrations' schema changes so they can run again.
-	if _, err := db.Exec("ALTER TABLE org_sso_domains DROP COLUMN token"); err != nil {
-		t.Fatal(err)
+	for _, undo := range []string{"ALTER TABLE org_sso_domains DROP COLUMN token", "DROP TABLE goals"} {
+		if _, err := db.Exec(undo); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := db.Exec("DROP TABLE claude_status"); err != nil {
 		t.Fatal(err)

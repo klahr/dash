@@ -81,6 +81,10 @@ type snapshot struct {
 	// ScanTemplates are the custom scans users wrote in Dash, keyed by
 	// "<project id>/<scan name>".
 	ScanTemplates map[string]*model.ScanTemplate `json:"scan_templates,omitempty"`
+	// Goals are the projects' goals, keyed by goal id, and GoalChats their
+	// coordinators' conversations.
+	Goals     map[string]*model.Goal         `json:"-"`
+	GoalChats map[string][]model.ChatMessage `json:"-"`
 }
 
 type Store struct {
@@ -165,6 +169,13 @@ func open(db *sql.DB, path string, pub Publisher) (*Store, error) {
 		// Merging todos stay merging: their jobs are lost with the old
 		// process, but MergeQueue.Resume queues them again.
 	}
+	var goals []*model.Goal
+	for _, g := range s.data.Goals {
+		if g.Running { // its coordinator's turn died with the old process
+			g.Running = false
+			goals = append(goals, g)
+		}
+	}
 	var runs []*model.ScanRun
 	for _, r := range s.data.ScanRuns {
 		if r.Status == model.ScanRunning { // the agent died with the old process (a crash or kill -9)
@@ -187,6 +198,11 @@ func open(db *sql.DB, path string, pub Publisher) (*Store, error) {
 		}
 		for _, r := range runs {
 			if err := putScanRun(tx, r); err != nil {
+				return err
+			}
+		}
+		for _, g := range goals {
+			if err := putGoal(tx, g); err != nil {
 				return err
 			}
 		}
@@ -397,6 +413,14 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 			delete(s.data.ScanTemplates, k)
 		}
 	}
+	var goals []string
+	for gid, g := range s.data.Goals {
+		if g.ProjectID == id {
+			goals = append(goals, gid)
+			delete(s.data.Goals, gid)
+			delete(s.data.GoalChats, gid)
+		}
+	}
 	delete(s.data.Projects, id)
 	delete(s.data.ProjectChats, id)
 	err := s.writeLocked(func(tx *sql.Tx) error {
@@ -405,8 +429,13 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 				return err
 			}
 		}
+		for _, gid := range goals {
+			if err := setChat(tx, chatGoal, gid, org, nil); err != nil {
+				return err
+			}
+		}
 		for _, table := range []string{"todos", "issues", "scan_runs", "scan_settings", "scan_templates", "webhooks",
-			"tracker_projects", "tracker_links", "project_events"} {
+			"tracker_projects", "tracker_links", "project_events", "goals"} {
 			if _, err := tx.Exec("DELETE FROM "+table+" WHERE project_id = ?", id); err != nil {
 				return err
 			}
@@ -872,6 +901,10 @@ func clone(t model.Todo) model.Todo {
 	if t.ExternalRef != nil {
 		r := *t.ExternalRef
 		cp.ExternalRef = &r
+	}
+	if t.GoalNote != nil {
+		n := *t.GoalNote
+		cp.GoalNote = &n
 	}
 	return cp
 }

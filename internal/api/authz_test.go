@@ -25,6 +25,7 @@ func orgEndpoints() []endpoint {
 	return []endpoint{
 		{"GET", "/api/projects", ""},
 		{"POST", "/api/projects", `{"name":"intruder"}`},
+		{"GET", "/api/goals", ""},
 		{"GET", "/api/previews", ""},
 		{"DELETE", "/api/previews", ""},
 		{"GET", "/api/permissions", ""},

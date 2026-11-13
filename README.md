@@ -129,6 +129,11 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 
 Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
+**Goals.** For something bigger than one task, make a [goal](docs/goals.md): a coordinator
+(Claude) plans the tasks, dispatches them, and reviews each one as it enters review, fails or is
+merged, sending work back with notes. It never approves or merges: you do. By default its plan
+waits for you to accept it.
+
 **Follow-up tasks.** To continue where a finished task left off, pick it under **Build on** in the
 full form. The new task's first run continues that task's Claude session (as a fork; the earlier
 session stays as it was), so Claude doesn't explore the code again. The list shows the project's
@@ -180,6 +185,7 @@ retry) follow the pace again. The API is `POST /api/todos/{id}/start-now`; a cha
 ## Reference
 
 - [Chat](docs/chat.md): the general, project and task chats, and running shell commands from them with `!`
+- [Goals](docs/goals.md): a coordinator that plans, dispatches and reviews a goal's tasks, within a budget, and never merges
 - [Users and organizations](docs/users.md): accounts, roles, invitations, two-factor sign-in
 - [Your data, terms and privacy](docs/privacy.md): download what Dash keeps about you, delete your account, what to publish before strangers sign up (with starter terms and a privacy policy the hub can serve), and what a hub stores
 - [Open signup and email](docs/signup.md): self-service accounts, personal workspaces, password reset (off by default)

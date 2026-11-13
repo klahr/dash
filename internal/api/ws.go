@@ -190,6 +190,10 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			// The hub's chat: its tools act on the hub's board.
 			turnCtx = mcptools.ForHub(turnCtx, msg.Project)
 		}
+		if ct.goal != "" {
+			// A goal's coordinator: read-only, with its goal's tools.
+			turnCtx = agent.AsCoordinator(mcptools.WithGoal(turnCtx, ct.goal))
+		}
 		// From here this turn's conversation is the newest: a stopped turn
 		// still saving finishes first, a later one skips its save.
 		turnMu.Lock()
@@ -250,10 +254,13 @@ type chatRequest struct {
 	// Hub marks a hub's own chat on its runner (runnerChat): Project
 	// and Todo are the hub's ids, not the runner's.
 	Hub bool `json:"hub"`
+	// Goal is the goal whose coordinator the chat talks to (see
+	// resolveGoalChat); on a runner, with Hub, the hub's id of it.
+	Goal string `json:"goal"`
 }
 
-// general reports whether m is for the general chat, not a project's or a task's.
-func (m chatRequest) general() bool { return m.Project == "" && m.Todo == "" }
+// general reports whether m is for the general chat, not a project's, a task's or a goal's.
+func (m chatRequest) general() bool { return m.Project == "" && m.Todo == "" && m.Goal == "" }
 
 // chatSetup is what one "send" or "shell" message runs: on which chatter,
 // where and with which permission mode, and how its conversation is saved.
@@ -268,6 +275,7 @@ type chatSetup struct {
 	endReview       func() // ends a task review the turn began
 	general         bool   // the general chat
 	forHub          bool   // this runner's owner's chat, asked through the hub
+	goal            string // the goal whose coordinator the turn is (the hub's id, with forHub)
 }
 
 // resolveChatTurn works out where msg's turn runs and how it is saved: on
@@ -322,6 +330,18 @@ func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *servi
 			return msg.Mode
 		}
 		return mode
+	}
+	if msg.Goal != "" && !ct.forHub && !ownViaHub {
+		return s.resolveGoalChat(sv, msg, shell, relay)
+	}
+	if msg.Goal != "" {
+		if !ct.forHub || msg.Project == "" || msg.Todo != "" {
+			return ct, errors.New("a goal's chat runs in the hub's project")
+		}
+		if shell {
+			return ct, fmt.Errorf("%w: commands don't run in a goal's chat", errBadRequest)
+		}
+		ct.goal = msg.Goal
 	}
 	var runnerDiff, runnerBranch string // a hub task's changes, as this runner has them
 	switch {
@@ -451,6 +471,74 @@ func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *servi
 }
 
 var errChatUnavailable = errors.New("chat is not available on this Dash")
+
+// resolveGoalChat sets up a turn of the chat with msg.Goal's coordinator:
+// the goal's conversation continued with the user's latest message (the
+// client's history is only the display; the goal keeps the conversation,
+// which its wake-ups add to as well), run as the coordinator, read-only,
+// with the goal's tools, as the caller. Turns of one goal take turns with
+// its wake-ups. A message to a coordinator waiting on a question answers it.
+func (s *Server) resolveGoalChat(sv *service, msg chatRequest, shell bool, relay *chatRelay) (chatSetup, error) {
+	ct := chatSetup{endReview: func() {}}
+	if shell {
+		return ct, fmt.Errorf("%w: commands don't run in a goal's chat", errBadRequest)
+	}
+	g, err := sv.data.GetGoal(msg.Goal)
+	if err != nil {
+		return ct, err
+	}
+	if (msg.Project != "" && msg.Project != g.ProjectID) || msg.Todo != "" {
+		return ct, fmt.Errorf("%w: a goal's chat is about the goal only", errBadRequest)
+	}
+	if n := len(msg.Messages); n == 0 || msg.Messages[n-1].Role != "user" {
+		return ct, fmt.Errorf("%w: send the message to the coordinator last", errBadRequest)
+	}
+	p, err := sv.data.GetProject(g.ProjectID)
+	if err != nil {
+		return ct, err
+	}
+	chatter, dir, err := s.coordinatorChatter(sv, p, g, msg.Runner, relay)
+	if err == nil {
+		if _, remote := chatter.(runnerChat); remote {
+			err = noAttachments(msg.Messages[len(msg.Messages)-1:])
+		}
+	}
+	if err != nil {
+		return ct, err
+	}
+	ct.chatter = goalLocked{chatter, s.goals().lock(g.ID)}
+	ct.dir, ct.pid, ct.goal = dir, p.ID, g.ID
+	stored, _ := sv.data.GoalChat(g.ID)
+	asked := sv.chatAttachments(msg.Messages[len(msg.Messages)-1:])[0]
+	if asked.At == nil {
+		asked.At = ptr(now())
+	}
+	asked.CreatedBy = sv.c.User
+	ct.history = append(slices.Clip(stored), asked)
+	ct.prompt = withAttachments(s.coordinatorPrompt(sv, g, stored, asked))
+	known := len(stored)
+	ct.save = func(msgs []agent.ChatMessage) error {
+		if len(msgs) <= known {
+			return nil
+		}
+		err := sv.data.AppendGoalChat(g.ID, msgs[known:]...)
+		s.goals().answered(sv.data, g.ID)
+		return err
+	}
+	return ct, nil
+}
+
+// goalLocked runs a chatter's turns under a goal's turn lock.
+type goalLocked struct {
+	agent.Chatter
+	mu *sync.Mutex
+}
+
+func (c goalLocked) Stream(ctx context.Context, dir string, history []agent.ChatMessage, emit func(agent.ChatDelta)) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Chatter.Stream(ctx, dir, history, emit)
+}
 
 // taskWorktree is where a chat about t reads its files: t's worktree while
 // it has one that isn't merged ("" otherwise), with its branch; and, for a

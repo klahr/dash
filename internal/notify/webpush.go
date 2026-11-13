@@ -37,7 +37,7 @@ import (
 // can it send in Dash's name.
 
 // PushEvents are the events pushed to browsers.
-var PushEvents = []model.NotifyEvent{model.NotifyReview, model.NotifyFailed, model.NotifyPermission, model.NotifyBuild, model.NotifyDisk}
+var PushEvents = []model.NotifyEvent{model.NotifyReview, model.NotifyFailed, model.NotifyPermission, model.NotifyGoal, model.NotifyBuild, model.NotifyDisk}
 
 // PushStore is what Web Push reads and writes: the browsers subscribed to
 // a project's org.
@@ -232,7 +232,7 @@ type PushPayload struct {
 func pushPayload(n Notification, actions []PushAction) PushPayload {
 	p := PushPayload{Type: n.Type, Title: n.Head() + ": " + oneLine(n.subject(), 120), URL: "/", Actions: actions}
 	var body []string
-	if n.Task != nil && n.Project.Name != "" {
+	if (n.Task != nil || n.Goal != nil) && n.Project.Name != "" {
 		body = append(body, n.Project.Name)
 	}
 	if n.Message != "" {
@@ -247,6 +247,9 @@ func pushPayload(n Notification, actions []PushAction) PushPayload {
 	case n.Task != nil && n.Task.ID != "" && n.Type != model.NotifyTest:
 		q.Set("task", n.Task.ID)
 		p.Tag = "dash-" + n.Task.ID
+	case n.Type == model.NotifyGoal && n.Goal != nil:
+		q.Set("goal", n.Goal.ID)
+		p.Tag = "dash-goal-" + n.Goal.ID
 	case n.Type == model.NotifyBuild:
 		p.Tag = "dash-build-" + n.Project.ID
 	case n.Type == model.NotifyDisk && n.Runner != nil:

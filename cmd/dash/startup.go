@@ -1095,6 +1095,9 @@ func (a *app) startWorkers() {
 	go a.todos.Run(ctx)
 	a.merges.Resume()
 	go a.merges.Run(ctx) // one merge worker per project
+	// Goals' coordinators wake on their tasks' events.
+	a.storeEvents.chain(a.apiSrv.ObserveGoals)
+	a.apiSrv.StartGoals(ctx)
 }
 
 // configureChat picks the chat backend. The chat runs on runners only: the

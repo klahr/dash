@@ -1144,6 +1144,12 @@ func (s *Server) todoEvents(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, err)
 			return
 		}
+		if t.GoalID != "" {
+			if merged, ok := s.withGoalTimeline(t.ID, b); ok {
+				writeJSON(w, http.StatusOK, merged)
+				return
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(b)
 		return
@@ -1154,6 +1160,24 @@ func (s *Server) todoEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, evs)
+}
+
+// withGoalTimeline adds to a runner's events of task id (its JSON, b) what
+// the task's goal coordinator did to it, which the hub notes in its own log
+// (see goalTimeline), in time order. ok is false when b can't be read.
+func (s *Server) withGoalTimeline(id string, b []byte) ([]model.RunEvent, bool) {
+	var evs []model.RunEvent
+	if json.Unmarshal(b, &evs) != nil {
+		return nil, false
+	}
+	local, _ := s.Todos.Log.Events(id)
+	for _, ev := range local {
+		if ev.Kind == "status" && strings.HasPrefix(ev.Text, model.GoalTimeline) {
+			evs = append(evs, ev)
+		}
+	}
+	slices.SortStableFunc(evs, func(a, b model.RunEvent) int { return a.At.Compare(b.At) })
+	return nonNil(evs), true
 }
 
 func (s *Server) approveTodo(w http.ResponseWriter, r *http.Request) {

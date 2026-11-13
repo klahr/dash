@@ -48,6 +48,13 @@ func (s *Server) boardHandler() *mcptools.Handler {
 		if !s.Member(model.Owner{User: c.User, Org: c.Org}) {
 			return nil, errors.New("this run's user no longer belongs to its organization")
 		}
+		if sc.Goal != "" {
+			g, err := s.Store.ForOrg(sc.Org).GetGoal(sc.Goal)
+			if err != nil || (sc.Project != "" && g.ProjectID != sc.Project) {
+				return nil, errors.New("the goal is gone")
+			}
+			return goalBoard{b: board{s.as(c)}, goal: g.ID}, nil
+		}
 		return board{s.as(c)}, nil
 	}}
 }
@@ -83,7 +90,11 @@ func (s *Server) toHubBoard(w http.ResponseWriter, r *http.Request, sc mcptools.
 		http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
 		return true
 	}
-	res, err := s.HubBoard(r.Context(), hubTodo, hubProject, body)
+	ctx := r.Context()
+	if sc.Hub && sc.HubGoal != "" {
+		ctx = tunnel.WithBoardGoal(ctx, sc.HubGoal) // the hub serves that goal's tools
+	}
+	res, err := s.HubBoard(ctx, hubTodo, hubProject, body)
 	if err != nil {
 		http.Error(w, "the hub's board can't be reached: "+err.Error(), http.StatusBadGateway)
 		return true
@@ -116,7 +127,7 @@ func (s *Server) runnerBoard(rh *tunnel.Hub) http.HandlerFunc {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "this runner works for nobody"})
 			return
 		}
-		sc, err := s.runnerScope(x, r.Header.Get(tunnel.BoardTodoHeader), r.Header.Get(tunnel.BoardProjectHeader))
+		sc, err := s.runnerScope(x, r.Header.Get(tunnel.BoardTodoHeader), r.Header.Get(tunnel.BoardProjectHeader), r.Header.Get(tunnel.BoardGoalHeader))
 		if err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 			return
@@ -126,8 +137,9 @@ func (s *Server) runnerBoard(rh *tunnel.Hub) http.HandlerFunc {
 }
 
 // runnerScope is what a board call from runner x for the hub's task
-// hubTodo, or else for a chat in hubProject, may reach.
-func (s *Server) runnerScope(x tunnel.Runner, hubTodo, hubProject string) (mcptools.Scope, error) {
+// hubTodo, or else for a chat in hubProject, may reach; with hubGoal, a
+// chat of that goal's coordinator, which gets the goal's tools.
+func (s *Server) runnerScope(x tunnel.Runner, hubTodo, hubProject, hubGoal string) (mcptools.Scope, error) {
 	org := x.OrgID()
 	if hubTodo != "" {
 		t, err := s.Store.ForOrg(org).GetTodo(hubTodo)
@@ -146,7 +158,15 @@ func (s *Server) runnerScope(x tunnel.Runner, hubTodo, hubProject string) (mcpto
 			return mcptools.Scope{}, errors.New("no such project linked to this runner")
 		}
 	}
-	return mcptools.Scope{Org: org, User: x.Owner.UserID, Project: hubProject}, nil
+	sc := mcptools.Scope{Org: org, User: x.Owner.UserID, Project: hubProject}
+	if hubGoal != "" {
+		g, err := s.Store.ForOrg(org).GetGoal(hubGoal)
+		if err != nil || hubProject == "" || g.ProjectID != hubProject {
+			return mcptools.Scope{}, errors.New("no such goal in that project")
+		}
+		sc.Goal = g.ID
+	}
+	return sc, nil
 }
 
 // Member reports whether owner's user still belongs to owner's org.

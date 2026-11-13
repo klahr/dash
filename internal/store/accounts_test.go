@@ -99,6 +99,9 @@ func TestMigrateToAccounts(t *testing.T) {
 	}
 	want := fmt.Sprint(org.ID)
 	for table, byOrg := range orgsOf(t, s) {
+		if table == "goals" {
+			continue // came after accounts: a version-2 database has none
+		}
 		if len(byOrg) != 1 || byOrg[want] != 1 {
 			t.Errorf("%s: rows by org %v, want 1 in %s", table, byOrg, want)
 		}

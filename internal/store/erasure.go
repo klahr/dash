@@ -204,6 +204,7 @@ func deleteEmptyOrg(tx *sql.Tx, orgID int64) error {
 func forgetUser(tx *sql.Tx, uid int64) error {
 	for _, q := range []string{
 		`UPDATE todos SET data = json_set(data, '$.created_by', ?2) WHERE json_extract(data, '$.created_by') = ?1`,
+		`UPDATE goals SET data = json_set(data, '$.owner', ?2) WHERE json_extract(data, '$.owner') = ?1`,
 		`UPDATE chat_messages SET data = json_set(data, '$.created_by', ?2) WHERE kind != 'main' AND json_extract(data, '$.created_by') = ?1`,
 		`DELETE FROM chat_messages WHERE kind = 'main' AND owner_id LIKE '%:' || ?1`,
 		`UPDATE project_events SET user_id = 0 WHERE user_id = ?1`,
@@ -462,6 +463,9 @@ func (s *Store) authoredBy(uid int64) ([]ExportTask, []ExportMessage) {
 	}
 	for id, chat := range s.data.ProjectChats {
 		add("project", id, 0, chat)
+	}
+	for id, chat := range s.data.GoalChats {
+		add("goal", id, 0, chat)
 	}
 	slices.SortFunc(tasks, func(a, b ExportTask) int { return a.Created.Compare(b.Created) })
 	slices.SortStableFunc(msgs, func(a, b ExportMessage) int {

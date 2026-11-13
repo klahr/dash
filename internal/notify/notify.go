@@ -38,6 +38,11 @@ type Store interface {
 	RecordWebhookDelivery(d model.WebhookDelivery) error
 }
 
+// goalLister is a Store that has goals, whose statuses Start remembers.
+type goalLister interface {
+	ListGoals(projectID string) []model.Goal
+}
+
 // Defaults.
 const (
 	DefaultTimeout  = 10 * time.Second
@@ -86,6 +91,7 @@ type Notifier struct {
 
 	// Seen by the run loop only.
 	status map[string]model.TodoStatus // todo id → last status
+	goals  map[string]model.GoalStatus // goal id → last status
 	ci     map[string]string           // project id → last build state
 	stuck  map[[2]string]bool          // {project, runner} → its checkout is left behind
 	told   map[[2]string]time.Time     // {project, runner} → when that last notified
@@ -100,6 +106,7 @@ func (n *Notifier) init() {
 	n.once.Do(func() {
 		n.queue = make(chan model.Event, queueSize)
 		n.status = map[string]model.TodoStatus{}
+		n.goals = map[string]model.GoalStatus{}
 		n.ci = map[string]string{}
 		n.stuck, n.told = map[[2]string]bool{}, map[[2]string]time.Time{}
 		n.diskLow, n.diskTold = map[string]bool{}, map[string]time.Time{}
@@ -140,7 +147,7 @@ func (n *Notifier) now() time.Time {
 // loop, and dropped with a warning if it falls far behind.
 func (n *Notifier) Observe(ev model.Event) {
 	switch ev.Type {
-	case model.EvTodoUpdated, model.EvTodoDeleted, model.EvPermission, model.EvCI, model.EvCheckouts, model.EvRunnerDisk:
+	case model.EvTodoUpdated, model.EvTodoDeleted, model.EvPermission, model.EvCI, model.EvCheckouts, model.EvRunnerDisk, model.EvGoalUpdated:
 	default:
 		return
 	}
@@ -159,6 +166,11 @@ func (n *Notifier) Start(ctx context.Context) {
 	n.init()
 	for _, t := range n.Store.ListTodos("") {
 		n.status[t.ID] = t.Status
+	}
+	if gs, ok := n.Store.(goalLister); ok {
+		for _, g := range gs.ListGoals("") {
+			n.goals[g.ID] = g.Status
+		}
 	}
 	go func() {
 		for {
@@ -187,6 +199,10 @@ const evFlush model.EventType = "notify.flush"
 func (n *Notifier) handle(ctx context.Context, ev model.Event) {
 	if ev.Type == model.EvRunnerDisk {
 		n.runnerDisk(ctx, ev)
+		return
+	}
+	if ev.Type == model.EvGoalUpdated {
+		n.goal(ctx, ev)
 		return
 	}
 	note, ok := n.classify(ev)
@@ -257,6 +273,33 @@ func (n *Notifier) runnerDisk(ctx context.Context, ev model.Event) {
 	}
 	n.pushOrg(ctx, note, rd.OrgID)
 	n.toWebhooks(ctx, note, rd.Projects)
+}
+
+// goal notifies that a goal started waiting for its user, is done or ran
+// out of budget: each time its status changes to one of those.
+func (n *Notifier) goal(ctx context.Context, ev model.Event) {
+	g, ok := ev.Data.(model.Goal)
+	if !ok {
+		return
+	}
+	prev, known := n.goals[g.ID]
+	n.goals[g.ID] = g.Status
+	if !known || prev == g.Status {
+		return // a new goal is first seen planning
+	}
+	switch g.Status {
+	case model.GoalWaiting, model.GoalDone, model.GoalOutOfBudget:
+	default:
+		return
+	}
+	note, ok := n.build(model.NotifyGoal, g.ProjectID, "")
+	if !ok {
+		return
+	}
+	note.Goal = &GoalRef{ID: g.ID, Title: g.Title, Status: g.Status, URL: n.goalURL(g.ProjectID, g.ID)}
+	note.Message = g.Note
+	n.push(ctx, note)
+	n.toWebhooks(ctx, note, []string{g.ProjectID})
 }
 
 // classify reports whether ev is a moment to notify of, as the web app
@@ -411,6 +454,15 @@ func (n *Notifier) origin(projectID string) string {
 		return ""
 	}
 	return strings.TrimRight(n.Origin(projectID), "/")
+}
+
+// goalURL opens the goal in Dash's web app.
+func (n *Notifier) goalURL(projectID, goalID string) string {
+	o := n.origin(projectID)
+	if o == "" {
+		return ""
+	}
+	return o + "/?" + url.Values{"project": {projectID}, "goal": {goalID}}.Encode()
 }
 
 // taskURL opens the task in Dash's web app.

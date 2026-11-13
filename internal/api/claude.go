@@ -442,6 +442,7 @@ type runnerChat struct {
 	project string
 	todo    string
 	mode    string
+	goal    string // the hub's goal whose coordinator the turn is (in project)
 }
 
 func (c runnerChat) Stream(ctx context.Context, _ string, history []agent.ChatMessage, emit func(agent.ChatDelta)) error {
@@ -463,6 +464,9 @@ func (c runnerChat) Stream(ctx context.Context, _ string, history []agent.ChatMe
 	}
 	if c.todo != "" {
 		req["todo"] = c.todo
+	}
+	if c.goal != "" {
+		req["goal"] = c.goal
 	}
 	if err := conn.WriteJSON(req); err != nil {
 		return fmt.Errorf("%s: %w", c.runner.Name, err)

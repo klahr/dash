@@ -86,9 +86,36 @@ func WithProject(ctx context.Context, projectID string) context.Context {
 	return context.WithValue(ctx, projectKey{}, projectID)
 }
 
+type coordinatorKey struct{}
+
+// AsCoordinator makes chat turns run with ctx a goal's coordinator: read-only
+// (Read, Grep, Glob, whatever the chat's mode), with the coordinator's
+// system prompt. Its Dash tools are the goal's (see mcptools.WithGoal).
+func AsCoordinator(ctx context.Context) context.Context {
+	return context.WithValue(ctx, coordinatorKey{}, true)
+}
+
+func coordinatorFrom(ctx context.Context) bool {
+	b, _ := ctx.Value(coordinatorKey{}).(bool)
+	return b
+}
+
 func (c ClaudeCodeChat) shell() bool { return c.Tools == ChatShell }
 
-func (c ClaudeCodeChat) system(dir string) string {
+// CoordinatorSystem is a goal coordinator's system prompt.
+const CoordinatorSystem = "You are the coordinator of a goal in Dash, an AI-native development environment where each task runs Claude Code " +
+	"in its own git worktree, and a person reviews and merges what it did. You run in the project's checkout and can read the code with Read, Grep and Glob; " +
+	"you cannot edit files or run commands. You plan the work towards the goal and dispatch it as tasks with the " + mcptools.ServerName + " tools, " +
+	"and when a task of the goal enters review, fails or is merged you are woken to look at it. You never approve or merge a task: the user does. " +
+	"On a wake-up, read the task's diff (get_diff) or log (get_log), then do what the goal needs: send it back with notes (send_back) when it isn't right, " +
+	"post a short review note for the user (post_review_note) when it is ready for them, add a follow-up (create_todo), or drop or rework planned tasks " +
+	"(delete_todo, update_todo). Keep within the goal's budget. Record every decision with add_log, saying what and why. " +
+	"When everything the goal needs is merged, call finish_goal; when you can't go on without the user, call ask_user. Keep your replies short."
+
+func (c ClaudeCodeChat) system(dir string, coordinator bool) string {
+	if coordinator {
+		return CoordinatorSystem
+	}
 	where := " You run in the user's home directory"
 	if dir != "" {
 		where = " You run in the project's checkout"
@@ -126,11 +153,11 @@ func (c ClaudeCodeChat) system(dir string) string {
 // mode, the permission prompt (perm.ServerName). Shell mode gets what
 // `claude` has in a terminal: every tool, the user's settings, hooks and MCP
 // servers.
-func (c ClaudeCodeChat) args(dir string, servers map[string]any) []string {
+func (c ClaudeCodeChat) args(dir string, servers map[string]any, coordinator bool) []string {
 	args := []string{
 		"-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
 		"--no-session-persistence",
-		"--system-prompt", c.system(dir),
+		"--system-prompt", c.system(dir, coordinator),
 	}
 	if !c.shell() {
 		args = append(args,
@@ -151,6 +178,9 @@ func (c ClaudeCodeChat) args(dir string, servers map[string]any) []string {
 		}
 		// shell mode asks for AskTools; read-only mode has no one to ask, so it can't.
 		allow = slices.DeleteFunc(slices.Clone(allow), func(t string) bool { return slices.Contains(mcptools.AskTools, t) })
+		if coordinator {
+			allow = append(allow, mcptools.GoalToolNames...) // the goal's server has no others
+		}
 		args = append(args, mcptools.AllowedToolArgs(mcptools.ServerName, allow...)...)
 	}
 	if c.shell() {
@@ -181,6 +211,10 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 	if mode, ok := ctx.Value(permissionModeKey{}).(string); ok {
 		c.PermissionMode = mode
 	}
+	coordinator := coordinatorFrom(ctx)
+	if coordinator {
+		c.Tools = ChatReadOnly // a coordinator only reads the code; its tasks change it
+	}
 	servers := map[string]any{}
 	// The tools and permission prompts act as the user the turn runs for, in
 	// their org; a turn without one (no signed-in user) gets neither.
@@ -189,9 +223,16 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 		pid, _ := ctx.Value(projectKey{}).(string)
 		var token string
 		var release func()
-		if hp, ok := mcptools.HubFrom(ctx); ok {
+		goal := mcptools.GoalFrom(ctx)
+		hp, hub := mcptools.HubFrom(ctx)
+		switch {
+		case hub && goal != "":
+			token, release = c.Board.RegisterHubGoal(caller, hp, goal)
+		case hub:
 			token, release = c.Board.RegisterHub(caller, hp) // a turn for this runner's hub uses the hub's board
-		} else {
+		case goal != "":
+			token, release = c.Board.RegisterGoal(caller, pid, goal)
+		default:
 			token, release = c.Board.Register(caller, pid)
 		}
 		defer release()
@@ -202,7 +243,7 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 		defer release()
 		servers[perm.ServerName] = perm.ServerConfig(c.PermURL, token)
 	}
-	cmd := exec.CommandContext(ctx, bin, c.args(dir, servers)...)
+	cmd := exec.CommandContext(ctx, bin, c.args(dir, servers, coordinator)...)
 	if servers[perm.ServerName] != nil {
 		// Claude waits on the MCP tool while the user decides; don't let it time out first.
 		cmd.Env = append(os.Environ(), "MCP_TOOL_TIMEOUT=3600000")

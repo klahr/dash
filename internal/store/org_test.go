@@ -169,6 +169,8 @@ func TestRowsCarryTheirProjectsOrg(t *testing.T) {
 	_, _ = o.SaveScanTemplate(model.ScanTemplate{ProjectID: p.ID, Name: "n"}, true)
 	_ = o.SetTodoChat(td.ID, []model.ChatMessage{{Role: "user", Content: "x"}})
 	_ = o.SetChat(u.ID, []model.ChatMessage{{Role: "user", Content: "x"}})
+	g, _ := o.CreateGoal(model.Goal{ProjectID: p.ID, Title: "g"})
+	_ = o.AppendGoalChat(g.ID, model.ChatMessage{Role: "user", Content: "x"})
 	for table, byOrg := range orgsOf(t, s) {
 		if len(byOrg) != 1 || byOrg[itoa(other.ID)] == 0 {
 			t.Errorf("%s: rows by org %v, want all in %d", table, byOrg, other.ID)

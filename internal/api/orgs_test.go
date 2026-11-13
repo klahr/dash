@@ -40,6 +40,7 @@ type twoOrgs struct {
 	perm    string // the waiting permission prompt's id
 	upload  model.Attachment
 	hook    model.Webhook
+	goal    model.Goal // planned, its plan waiting for the user
 	beta    store.Org
 	bUser   store.User
 	cUser   store.User
@@ -125,6 +126,18 @@ func newTwoOrgs(t *testing.T) *twoOrgs {
 	if err != nil {
 		t.Fatal(err)
 	}
+	goal, err := st.CreateGoal(model.Goal{ProjectID: web.ID, Owner: owner.User.ID, Title: "secret goal", Mode: model.GoalAsk})
+	if err != nil {
+		t.Fatal(err)
+	}
+	goal, err = st.UpdateGoal(goal.ID, func(g *model.Goal) error {
+		g.Status, g.WaitingFor = model.GoalWaiting, model.GoalWaitPlan
+		g.Plan = []model.GoalPlanItem{{Title: "secret plan", Prompt: "do it"}}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.Previews.Start(td, web); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +146,7 @@ func newTwoOrgs(t *testing.T) *twoOrgs {
 		t.Fatal(err)
 	}
 
-	o := &twoOrgs{s: s, h: s.Routes(), web: web, todo: td, issue: is, run: run, proc: proc, hook: hook, beta: beta, bUser: bUser, cUser: cUser}
+	o := &twoOrgs{s: s, h: s.Routes(), web: web, todo: td, issue: is, run: run, proc: proc, hook: hook, goal: goal, beta: beta, bUser: bUser, cUser: cUser}
 	o.a = loggedIn(t, o.h)
 	o.b = loginAs(t, o.h, "b", "b-password")
 	o.c = loginAs(t, o.h, "c", "c-password")
@@ -222,6 +235,12 @@ func (o *twoOrgs) untouched(t *testing.T, after string) {
 	if hooks, _ := st.ListWebhooks(o.web.ID); len(hooks) != 1 {
 		t.Fatalf("after %s: %d webhooks in the project", after, len(hooks))
 	}
+	if g, err := st.GetGoal(o.goal.ID); err != nil || g.Title != o.goal.Title || g.Status != model.GoalWaiting || len(g.Plan) != 1 || len(g.Log) != 0 {
+		t.Fatalf("after %s: goal changed: %+v %v", after, g, err)
+	}
+	if n := len(st.ListGoals(o.web.ID)); n != 1 {
+		t.Fatalf("after %s: %d goals in the project", after, n)
+	}
 }
 
 // endpoint is one API call.
@@ -292,6 +311,18 @@ func (o *twoOrgs) recordEndpoints() []endpoint {
 		{"POST", "/api/projects/" + pid + "/tracker/options?field=board", `{"backend":"dash"}`},
 		{"POST", "/api/projects/" + pid + "/tracker/sync", ""},
 		{"POST", "/api/projects/" + pid + "/tracker/webhook-secret", ""},
+
+		{"GET", "/api/projects/" + pid + "/goals", ""},
+		{"POST", "/api/goals", `{"project":"` + pid + `","title":"intruder"}`},
+		{"GET", "/api/goals/" + o.goal.ID, ""},
+		{"PATCH", "/api/goals/" + o.goal.ID, `{"title":"mine"}`},
+		{"POST", "/api/goals/" + o.goal.ID + "/pause", ""},
+		{"POST", "/api/goals/" + o.goal.ID + "/resume", ""},
+		{"POST", "/api/goals/" + o.goal.ID + "/stop", ""},
+		{"GET", "/api/goals/" + o.goal.ID + "/log", ""},
+		{"GET", "/api/goals/" + o.goal.ID + "/chat", ""},
+		{"POST", "/api/goals/" + o.goal.ID + "/plan/accept", `{"queue":true}`},
+		{"POST", "/api/goals/" + o.goal.ID + "/plan/reject", `{"feedback":"no"}`},
 
 		{"GET", "/api/todos/" + tid, ""},
 		{"PATCH", "/api/todos/" + tid, `{"title":"mine"}`},
