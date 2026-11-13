@@ -36,10 +36,6 @@ const MaxShellOutput = 32_000
 // only the result (capped as above) is sent.
 const maxShellLive = 1 << 20
 
-// ShellNoTTY is the hint added when a command fails or times out: it ran
-// without a terminal.
-const ShellNoTTY = "Chat commands run without a terminal: interactive programs (vim, top, less, a password prompt, …) don't work here. Use the Shell view for those."
-
 // ReadOnlyChat reports whether chatter is a read-only chat, which runs no
 // commands, so no "!" commands either. Running them is opt-in: a chatter
 // that doesn't say it isn't read-only (a ReadOnly method) is.

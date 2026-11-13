@@ -83,35 +83,6 @@ func (s *Server) addIssue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, code, map[string]any{"issue": is, "result": res})
 }
 
-// addIssues upserts a batch of issues by fingerprint, e.g. a scan's
-// findings, and answers how many were new, updated, already known or
-// dismissed.
-func (s *Server) addIssues(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		Source string       `json:"source"` // e.g. "scan:gosec", for issues without their own
-		Issues []issueInput `json:"issues"`
-	}
-	if err := decode(r, &req); err != nil {
-		writeErr(w, err)
-		return
-	}
-	pid := r.PathValue("pid")
-	in := make([]model.Issue, len(req.Issues))
-	for i, x := range req.Issues {
-		in[i] = x.issue(pid)
-	}
-	counts, err := sv.data.UpsertIssues(pid, req.Source, in)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, counts)
-}
-
 func (s *Server) updateIssue(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {

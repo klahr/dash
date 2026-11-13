@@ -272,7 +272,6 @@ func (s *Server) buildMux() *http.ServeMux {
 	// Todos & queues
 	mux.HandleFunc("GET /api/projects/{pid}/todos", s.listTodos)
 	mux.HandleFunc("POST /api/projects/{pid}/todos", s.createTodo)
-	mux.HandleFunc("GET /api/projects/{pid}/queues", s.getQueues)
 	mux.HandleFunc("GET /api/todos/{tid}", s.getTodo)
 	mux.HandleFunc("PATCH /api/todos/{tid}", s.updateTodo)
 	mux.HandleFunc("DELETE /api/todos/{tid}", s.deleteTodo)
@@ -304,7 +303,6 @@ func (s *Server) buildMux() *http.ServeMux {
 	// Issues: known bugs, vulnerabilities and other problems, triaged into tasks
 	mux.HandleFunc("GET /api/projects/{pid}/issues", s.listIssues)
 	mux.HandleFunc("POST /api/projects/{pid}/issues", s.addIssue)
-	mux.HandleFunc("POST /api/projects/{pid}/issues/batch", s.addIssues)
 	mux.HandleFunc("POST /api/projects/{pid}/issues/tasks", s.issueTasks)
 	mux.HandleFunc("POST /api/projects/{pid}/issues/dismiss", s.dismissIssues)
 	mux.HandleFunc("PATCH /api/issues/{iid}", s.updateIssue)

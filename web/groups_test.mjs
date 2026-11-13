@@ -2,7 +2,7 @@
 // `node --test web/`; groups_test.go runs them as part of `go test ./...`.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { projectGroups, uniqueProjects, projectRunnerNames, projectRunners, runnerBadge, runnersSummary, remoteRepo, projectSubtitle } from "./static/groups.js";
+import { projectGroups, uniqueProjects, projectRunnerNames, projectRunners, runnerBadge, remoteRepo, projectSubtitle } from "./static/groups.js";
 
 const hub = { name: "hub", local: true, ok: true, prefix: "" };
 const runner = (name, ok) => ({ name, runner: true, ok, prefix: `/peer/${name}`, error: ok ? "" : "offline" });
@@ -97,14 +97,6 @@ test("runner status comes from the org's runners when the computers aren't visib
 
 test("not a hub: no badges", () => {
   assert.equal(runnerBadge(shared("p12", "a"), { machines: [hub], runners: null }), null);
-});
-
-test("runners summary: overall dot", () => {
-  assert.equal(runnersSummary({ machines, runners: null }), null);
-  assert.equal(runnersSummary({ machines, runners: [] }).kind, "empty");
-  assert.deepEqual(runnersSummary({ machines, runners }), { kind: "some", online: 3, total: 4, title: "3 of 4 runners online" });
-  assert.equal(runnersSummary({ machines: [hub], runners: runners.filter((r) => r.online) }).kind, "ok");
-  assert.equal(runnersSummary({ machines: [hub], runners: [runners[2]] }).kind, "down");
 });
 
 test("remoteRepo reads owner/repo from https, ssh and other hosts", () => {

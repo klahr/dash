@@ -155,9 +155,6 @@ func (a *Auth) googleRedirectURI(r *http.Request) string {
 	return scheme + "://" + a.reqHost(r) + GoogleCallbackPath
 }
 
-// GoogleRedirectURI is the redirect URI to register with Google.
-func (a *Auth) GoogleRedirectURI(r *http.Request) string { return a.googleRedirectURI(r) }
-
 func (a *Auth) googleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+GoogleStartPath, a.googleStart)
 	mux.HandleFunc("POST "+GoogleStartPath, a.googleStart)

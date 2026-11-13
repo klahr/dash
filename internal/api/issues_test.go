@@ -148,13 +148,14 @@ func TestIssueTriageIntoTasks(t *testing.T) {
 	if w := do(t, h, "POST", base, `{"title":""}`); w.Code != http.StatusBadRequest {
 		t.Fatalf("no title: %d %s", w.Code, w.Body)
 	}
-	w := do(t, h, "POST", base+"/batch", `{"source":"scan:lint","issues":[
-		{"title":"Unchecked error","type":"bug","severity":"low","file":"a.go","line":3,"details":"err ignored","fix":"handle it"},
-		{"title":"Unchecked error","type":"bug","severity":"low","file":"b.go","line":8},
-		{"title":"Debug endpoint exposed","type":"vuln","severity":"critical","file":"srv.go"}]}`)
-	var counts model.UpsertCounts
-	if err := json.Unmarshal(w.Body.Bytes(), &counts); err != nil || counts != (model.UpsertCounts{New: 3}) {
-		t.Fatalf("batch: %d %s", w.Code, w.Body)
+	for _, in := range []string{
+		`{"title":"Unchecked error","type":"bug","severity":"low","file":"a.go","line":3,"details":"err ignored","fix":"handle it"}`,
+		`{"title":"Unchecked error","type":"bug","severity":"low","file":"b.go","line":8}`,
+		`{"title":"Debug endpoint exposed","type":"vuln","severity":"critical","file":"srv.go"}`,
+	} {
+		if w := do(t, h, "POST", base, in); w.Code != http.StatusCreated {
+			t.Fatalf("add %s: %d %s", in, w.Code, w.Body)
+		}
 	}
 	if w := do(t, h, "POST", base, `{"title":"Typo in README"}`); w.Code != http.StatusCreated {
 		t.Fatalf("quick add: %d %s", w.Code, w.Body)
@@ -175,7 +176,7 @@ func TestIssueTriageIntoTasks(t *testing.T) {
 	a, b := byTitle("Unchecked error", "a.go"), byTitle("Unchecked error", "b.go")
 
 	// One task for both instances of the pattern.
-	w = do(t, h, "POST", base+"/tasks", `{"ids":["`+a.ID+`","`+b.ID+`"],"combine":true}`)
+	w := do(t, h, "POST", base+"/tasks", `{"ids":["`+a.ID+`","`+b.ID+`"],"combine":true}`)
 	var todos []model.Todo
 	if err := json.Unmarshal(w.Body.Bytes(), &todos); err != nil || len(todos) != 1 {
 		t.Fatalf("combine: %d %s", w.Code, w.Body)

@@ -97,13 +97,6 @@ func (s *Store) SetPolicy(p Policy) {
 	s.mu.Unlock()
 }
 
-// Policy is how the store tidies itself.
-func (s *Store) Policy() Policy {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.policy
-}
-
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
 

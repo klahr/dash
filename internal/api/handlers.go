@@ -1291,27 +1291,6 @@ func (s *Server) investigateCI(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, t)
 }
 
-// getQueues is a project's tasks by queue. The merge queue is shared by
-// every org, so merge_pending counts only this org's tasks waiting in it.
-func (s *Server) getQueues(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
-	if !ok {
-		return
-	}
-	pid := r.PathValue("pid")
-	if _, err := sv.data.GetProject(pid); err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"todo":          nonNil(sv.data.ListTodos(pid, model.StatusQueued)),
-		"in_progress":   nonNil(sv.data.ListTodos(pid, model.StatusInProgress)),
-		"review":        nonNil(sv.data.ListTodos(pid, model.StatusReview)),
-		"merge":         nonNil(sv.data.ListTodos(pid, model.StatusMerging)),
-		"merge_pending": len(sv.data.ListTodos("", model.StatusMerging)),
-	})
-}
-
 // ---------------------------------------------------------------- processes
 
 func (s *Server) listProcesses(w http.ResponseWriter, r *http.Request) {

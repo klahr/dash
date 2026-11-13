@@ -3,3 +3,4 @@ bin/
 dist/
 /dash
 /dash-tui
+/cmd/*/dash

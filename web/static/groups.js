@@ -76,17 +76,6 @@ export function runnerBadge(p, ctx = {}) {
   return { kind: "partial", label: `${up}/${rs.length} online`, title };
 }
 
-// runnersSummary is the Runners entry's overall dot, or null where this
-// Dash takes no runners: { kind, online, total, title }, kind "ok" (all
-// online), "some" (some offline), "down" (none online) or "empty" (none yet).
-export function runnersSummary({ machines = [], runners = null } = {}) {
-  if (!Array.isArray(runners)) return null;
-  const total = runners.length, online = runners.filter((r) => runnerOnline(r.name, machines, runners)).length;
-  const kind = !total ? "empty" : online === total ? "ok" : online ? "some" : "down";
-  const title = !total ? "No runners yet" : `${online} of ${total} runner${total === 1 ? "" : "s"} online`;
-  return { kind, online, total, title };
-}
-
 // projectRunnerNames names the runners p has a clone on: its own runner, or
 // the runners a hub project is linked to (by name, in name order).
 export function projectRunnerNames(p, runners) {

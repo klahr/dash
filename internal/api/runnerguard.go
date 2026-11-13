@@ -49,7 +49,7 @@ func init() {
 		// What GitHub says about the repository, for the project settings (repoinfo.go).
 		"GET /api/projects/{pid}/repo-info",
 
-		"GET /api/projects/{pid}/todos", "POST /api/projects/{pid}/todos", "GET /api/projects/{pid}/queues",
+		"GET /api/projects/{pid}/todos", "POST /api/projects/{pid}/todos",
 		"GET /api/todos/{tid}", "PATCH /api/todos/{tid}", "DELETE /api/todos/{tid}",
 		"POST /api/todos/{tid}/enqueue", "POST /api/todos/{tid}/start-now", "POST /api/todos/{tid}/cancel", "POST /api/todos/{tid}/pause",
 		"POST /api/todos/{tid}/resume", "GET /api/todos/{tid}/diff", "GET /api/todos/{tid}/log",
@@ -59,7 +59,7 @@ func init() {
 		// Editing a task's changes in review (todofile.go).
 		"GET /api/todos/{tid}/file", "PUT /api/todos/{tid}/file",
 
-		"GET /api/projects/{pid}/issues", "POST /api/projects/{pid}/issues", "POST /api/projects/{pid}/issues/batch",
+		"GET /api/projects/{pid}/issues", "POST /api/projects/{pid}/issues",
 		"POST /api/projects/{pid}/issues/tasks", "POST /api/projects/{pid}/issues/dismiss",
 		"PATCH /api/issues/{iid}", "DELETE /api/issues/{iid}",
 
