@@ -62,25 +62,59 @@ function resetLabel(iso, now = new Date(Date.now() + skew)) {
 
 const num = (n) => n.toLocaleString(undefined).replace(/,/g, " ");
 
+// ---- updating in place ----
+//
+// The wall runs for days on a TV, so it touches the DOM as little as it can:
+// a poll whose data hasn't changed draws nothing, a panel is rebuilt only
+// when what it shows has changed, and text is written only when it differs.
+
+// setText writes el's text if it differs, and says whether it did.
+function setText(el, s) {
+  if (el.textContent === s) return false;
+  el.textContent = s;
+  return true;
+}
+
+// drawn holds what each panel last showed (its model as JSON), so render can
+// skip the panels that would come out the same.
+let drawn = {};
+
+// changed says whether panel's model differs from what it shows now, and
+// remembers it if so.
+function changed(panel, model) {
+  const k = JSON.stringify(model);
+  if (drawn[panel] === k) return false;
+  drawn[panel] = k;
+  return true;
+}
+
 // ---- clock and timers, every second ----
 
 let skew = 0; // server time − local time, so timers agree with the server
-let metersAt = 0; // when the usage meters were last drawn
+let timers = []; // the running tasks' timers: {el, since}, from renderRunning
+let minute = ""; // the clock's text, which changes once a minute
 
 function tick() {
-  const now = new Date(Date.now() + skew);
-  $("clock").textContent = hhmm(now);
-  for (const el of document.querySelectorAll("[data-since]")) {
-    el.textContent = elapsed(now - new Date(el.dataset.since));
-  }
-  if (last && now - metersAt >= 60000) renderHeader(last);
+  const now = Date.now() + skew;
+  for (const t of timers) setText(t.el, elapsed(now - t.since));
+  document.documentElement.classList.toggle("blink"); // the pulsing dots (wall.html)
+  const clock = hhmm(new Date(now));
+  if (clock === minute) return;
+  minute = clock;
+  $("clock").textContent = clock;
+  // Ages ("48 min") and the meters' "resets in" are to the minute: draw the
+  // panels again, which only rebuilds those whose text moved.
+  if (last) renderPanels(last);
 }
 
 // ---- rendering ----
 
+const USAGE = [["five_hour", "Claude 5h"], ["seven_day", "Claude 7d"]];
+let meters = null; // the header's meters, built once: [{num, bar, fill, sub}]
+
 function renderHeader(d) {
   const scope = d.project ? d.project : "all projects";
-  $("scope").textContent = (d.org ? d.org + " · " : "") + scope + (d.privacy ? " · public view" : "");
+  setText($("scope"), (d.org ? d.org + " · " : "") + scope + (d.privacy ? " · public view" : ""));
 
   const q = $("queue");
   const busy = d.queue.busy, slots = d.queue.slots;
@@ -92,31 +126,42 @@ function renderHeader(d) {
     cls = busy > 0 ? "" : "idle";
     text = (busy > 0 ? "Queue running" : "Queue idle") + " · " + busy + " of " + slots + " slot" + (slots === 1 ? "" : "s") + " busy";
   }
-  q.className = "queue-state " + cls;
+  const qcls = "queue-state " + cls;
+  if (q.className !== qcls) q.className = qcls;
   q.querySelector(".dot").classList.toggle("pulse", !d.queue.paused && busy > 0);
-  $("queue-text").textContent = text.length > 70 ? text.slice(0, 69) + "…" : text;
+  setText($("queue-text"), text.length > 70 ? text.slice(0, 69) + "…" : text);
 
-  const box = $("usage");
-  box.replaceChildren();
-  metersAt = Date.now() + skew;
-  const want = [["five_hour", "Claude 5h"], ["seven_day", "Claude 7d"]];
-  for (const [name, label] of want) {
+  // The meters are built once and updated in place, so the bar's width
+  // transition runs only when its value moves.
+  if (!meters) {
+    meters = USAGE.map(([, label]) => {
+      const m = { num: h("b", { class: "num" }), fill: h("i"), sub: h("span") };
+      m.bar = h("div", { class: "bar" });
+      $("usage").append(h("div", { class: "meter" },
+        h("div", { class: "lbl" }, h("span", {}, label), m.num),
+        m.bar,
+        h("div", { class: "lbl", style: "margin-top:4px" }, m.sub, h("span"))));
+      return m;
+    });
+  }
+  USAGE.forEach(([name], i) => {
+    const m = meters[i];
     const w = (d.usage.windows || []).find((x) => x.name === name);
     if (!d.usage.known || !w) {
-      box.append(h("div", { class: "meter" },
-        h("div", { class: "lbl" }, h("span", {}, label), h("b", { class: "num" }, "—")),
-        h("div", { class: "bar" }),
-        h("div", { class: "lbl", style: "margin-top:4px" }, h("span", {}, "no report yet"), h("span"))));
-      continue;
+      setText(m.num, "—");
+      setText(m.sub, "no report yet");
+      if (m.fill.parentNode) m.fill.remove();
+      return;
     }
     const pct = Math.round(w.utilization * 100);
     const color = w.utilization >= 1 ? "var(--bad)" : w.utilization >= 0.7 ? "var(--run)" : "var(--ok)";
-    const bar = h("div", { class: "bar" }, h("i", { style: `width:${Math.min(100, pct)}%;background:${color}` }));
-    box.append(h("div", { class: "meter" },
-      h("div", { class: "lbl" }, h("span", {}, label), h("b", { class: "num" }, pct + "%")),
-      bar,
-      h("div", { class: "lbl", style: "margin-top:4px" }, h("span", {}, resetLabel(w.resets_at)), h("span"))));
-  }
+    setText(m.num, pct + "%");
+    setText(m.sub, resetLabel(w.resets_at));
+    const width = Math.min(100, pct) + "%";
+    if (m.fill.style.width !== width) m.fill.style.width = width;
+    if (m.fill.style.background !== color) m.fill.style.background = color;
+    if (!m.fill.parentNode) m.bar.append(m.fill);
+  });
 }
 
 function renderPipeline(d, now) {
@@ -136,63 +181,92 @@ function renderPipeline(d, now) {
     ["Merged today", "var(--ok)", s.merged_today, s.merged_today ? "+" + num(s.merged_add) + " / −" + num(s.merged_del) + " lines" : "none yet"],
     ["Failed", "var(--bad)", s.failed, s.failed ? (s.resumable ? s.resumable + " resumable" : "need a look") : "none"],
   ];
+  if (!changed("pipeline", stages)) return false;
   $("pipeline").replaceChildren(...stages.map(([k, c, v, sub]) =>
     h("div", { class: "stage", style: `--c:${c}` },
       h("div", { class: "k" }, k),
       h("div", { class: "v num" + (v ? "" : " zero") }, v),
       h("div", { class: "s" }, sub))));
+  return true;
 }
 
-// fit hides a list's last children until its panel stops overflowing, and
-// says how many it hid.
+// fit hides a list's last children so its panel doesn't overflow, and says
+// how many it hid. It lays the panel out once: it reads where every child
+// ends, works out how many fit (with the "+ n more" note, if some don't),
+// and only then changes the list.
 function fit(list, panel, noun) {
   const kids = [...list.children];
-  let hidden = 0;
-  while (kids.length - hidden > 1 && panel.scrollHeight > panel.clientHeight + 1) {
-    kids[kids.length - 1 - hidden].remove();
-    hidden++;
+  if (kids.length < 2) return;
+  const note = h("div", { class: "more" }, "+ " + kids.length + " more " + noun);
+  list.append(note);
+  // Reads, all from one layout. Rects are scaled by the canvas's zoom.
+  const box = panel.getBoundingClientRect();
+  const z = box.height / panel.offsetHeight || 1;
+  const cs = getComputedStyle(panel);
+  // A child fits if it ends above this line: where the panel would start to
+  // scroll (scrollHeight > clientHeight + 1) once the padding is added.
+  const limit = box.top + (panel.clientTop + panel.clientHeight + 1 - parseFloat(cs.paddingBottom)) * z;
+  const ends = kids.map((k) => k.getBoundingClientRect().bottom);
+  const nr = note.getBoundingClientRect();
+  const noteRoom = nr.bottom - ends[ends.length - 1]; // the gap above the note and the note
+  // Writes.
+  if (ends[ends.length - 1] <= limit) {
+    note.remove();
+    return;
   }
-  if (hidden) {
-    list.append(h("div", { class: "more" }, "+ " + hidden + " more " + noun));
-    // the note itself may push one more out
-    if (panel.scrollHeight > panel.clientHeight + 1 && list.children.length > 2) {
-      list.children[list.children.length - 2].remove();
-      list.lastChild.textContent = "+ " + (hidden + 1) + " more " + noun;
-    }
-  }
+  let keep = 1; // always show one, as before
+  while (keep < kids.length && ends[keep] + noteRoom <= limit) keep++;
+  for (let i = keep; i < kids.length; i++) kids[i].remove();
+  note.textContent = "+ " + (kids.length - keep) + " more " + noun;
 }
 
 function renderRunning(d) {
-  $("running-count").textContent = d.running.length;
+  setText($("running-count"), String(d.running.length));
+  $("running-dot").classList.toggle("pulse", d.running.length > 0);
+  if (!changed("running", [d.running, d.privacy, d.queue.paused])) return false;
   const list = $("running");
   if (!d.running.length) {
+    timers = [];
     list.replaceChildren(h("div", { class: "empty" }, d.queue.paused ? "Nothing running: the queue is paused." : "Nothing running right now."));
-    return;
+    return true;
   }
+  const next = [];
   list.replaceChildren(...d.running.map((r) => {
     const meta = [r.project, d.privacy ? r.runner : "runner " + r.runner, "run " + r.run];
     if (r.cost_usd != null) meta.push(money(r.cost_usd));
-    const changed = r.add || r.del;
+    const changes = r.add || r.del;
+    const clock = h("div", { class: "elapsed num" }, "—");
+    if (r.started_at) {
+      clock.textContent = "";
+      next.push({ el: clock, since: new Date(r.started_at).getTime() });
+    }
     return h("div", { class: "card" },
       h("div", {},
         h("div", { class: "t" }, r.title, r.sent_back && h("span", { class: "tag" }, "sent back: " + r.sent_back)),
         h("div", { class: "meta" }, meta.map((m) => h("span", {}, m)))),
       h("div", { class: "right" },
-        h("div", { class: "elapsed num", "data-since": r.started_at || "" }, r.started_at ? "" : "—"),
-        changed
+        clock,
+        changes
           ? h("div", { class: "diff num" }, h("span", { class: "add" }, "+" + num(r.add)), " ", h("span", { class: "del" }, "−" + num(r.del)),
             r.files ? " · " + r.files + " file" + (r.files === 1 ? "" : "s") : "")
           : h("div", { class: "diff num", style: "color:var(--faint)" }, "no changes yet")),
       r.activity && h("div", { class: "live" }, r.activity));
   }));
+  // Fill the timers in before the panel is laid out, so they're measured
+  // with their text.
+  const now = Date.now() + skew;
+  for (const t of next) t.el.textContent = elapsed(now - t.since);
   fit(list, list.parentElement, "running");
+  timers = next.filter((t) => t.el.isConnected);
+  return true;
 }
 
 // What a pull request in Review waits for a person to do (wallNeed.waits).
 const PR_WAITS = { review: "Awaiting review", merge: "Waiting to be merged on GitHub", blocked: "Blocked on GitHub" };
 
 function renderNeeds(d, now) {
-  const items = d.needs.map((n) => {
+  // The model: each row's color, title, why and age, as shown.
+  const rows = d.needs.map((n) => {
     const since = now - new Date(n.since);
     if (n.kind === "review") {
       const why = ["Review", n.project];
@@ -201,48 +275,39 @@ function renderNeeds(d, now) {
       if (n.tests === "failed") why.push("tests ✗");
       if (n.pr) why.push("PR #" + n.pr);
       if (PR_WAITS[n.waits]) why.push(PR_WAITS[n.waits]);
-      return h("div", { class: "item" + (n.old ? " old" : ""), style: "--c:var(--rev)" }, h("i", { class: "bar2" }),
-        h("div", {}, h("div", { class: "t" }, n.title), h("div", { class: "why" }, why.join(" · "))),
-        h("div", { class: "age num" }, age(since)));
+      return [!!n.old, "var(--rev)", n.title, why.join(" · "), age(since)];
     }
     const why = ["Failed", n.project];
     if (!d.privacy) why.push(n.reason || "no reason given");
     if (n.resumable) why.push("resumable");
-    return h("div", { class: "item" + (n.old ? " old" : ""), style: "--c:var(--bad)" }, h("i", { class: "bar2" }),
-      h("div", {}, h("div", { class: "t" }, n.title), h("div", { class: "why" }, why.join(" · "))),
-      h("div", { class: "age num" }, age(since)));
+    return [!!n.old, "var(--bad)", n.title, why.join(" · "), age(since)];
   });
   const is = d.issues;
   if (is.open) {
     const sev = ["critical", "high", "medium", "low", "info"].filter((k) => is.severity[k]).map((k) => is.severity[k] + " " + k);
     const why = is.top.length ? is.top.join(" · ") : sev.join(" · ");
     const urgent = (is.severity.critical || 0) + (is.severity.high || 0) > 0;
-    items.push(h("div", { class: "item", style: `--c:${urgent ? "var(--bad)" : "var(--queue)"}` }, h("i", { class: "bar2" }),
-      h("div", {}, h("div", { class: "t" }, is.open + " open issue" + (is.open === 1 ? "" : "s")), h("div", { class: "why" }, why)),
-      h("div", { class: "age num" }, sev[0] || "—")));
+    rows.push([false, urgent ? "var(--bad)" : "var(--queue)", is.open + " open issue" + (is.open === 1 ? "" : "s"), why, sev[0] || "—"]);
   }
   const total = d.stages.review - d.stages.review_github + d.stages.failed + (is.open ? 1 : 0);
-  $("needs-count").textContent = total;
+  setText($("needs-count"), String(total));
+  if (!changed("needs", rows)) return false;
   const list = $("needs");
-  if (!items.length) {
+  if (!rows.length) {
     list.replaceChildren(h("div", { class: "empty" }, "Nothing waiting for a human. ✓"));
-    return;
+    return true;
   }
-  list.replaceChildren(...items);
+  list.replaceChildren(...rows.map(([old, c, t, why, ago]) =>
+    h("div", { class: "item" + (old ? " old" : ""), style: "--c:" + c }, h("i", { class: "bar2" }),
+      h("div", {}, h("div", { class: "t" }, t), h("div", { class: "why" }, why)),
+      h("div", { class: "age num" }, ago))));
   fit(list, list.parentElement, "waiting");
+  return true;
 }
 
 function renderRunners(d, now) {
-  $("runners-count").textContent = d.runners.length;
-  const box = $("runners");
-  if (!d.runners.length) {
-    box.replaceChildren(h("div", { class: "empty" }, "No runners registered."));
-    return;
-  }
-  box.replaceChildren(...d.runners.map((r) => {
-    const slots = h("div", { class: "slots" });
-    const n = Math.min(Math.max(r.slots, r.busy), 12);
-    for (let i = 0; i < n; i++) slots.append(h("i", { class: i < r.busy ? "on" : "" }));
+  setText($("runners-count"), String(d.runners.length));
+  const rows = d.runners.map((r) => {
     let sub;
     if (!r.online) {
       sub = "offline" + (r.last_seen ? " " + age(now - new Date(r.last_seen)) : "") +
@@ -250,16 +315,29 @@ function renderRunners(d, now) {
     } else {
       sub = (r.paused ? "paused · " : "") + r.projects + " project" + (r.projects === 1 ? "" : "s") + " · " + r.busy + "/" + r.slots + " busy";
     }
+    return [r.name, !!r.online, !!r.paused, r.busy, Math.min(Math.max(r.slots, r.busy), 12), sub];
+  });
+  if (!changed("runners", rows)) return false;
+  const box = $("runners");
+  if (!rows.length) {
+    box.replaceChildren(h("div", { class: "empty" }, "No runners registered."));
+    return true;
+  }
+  box.replaceChildren(...rows.map(([name, online, paused, busy, n, sub]) => {
+    const slots = h("div", { class: "slots" });
+    for (let i = 0; i < n; i++) slots.append(h("i", { class: i < busy ? "on" : "" }));
     return h("div", { class: "runner" },
-      h("span", { class: "dot", style: `color:${r.online ? (r.paused ? "var(--run)" : "var(--ok)") : "var(--bad)"}` }),
-      h("div", {}, h("div", { class: "n" + (r.online ? "" : " off") }, r.name), h("div", { class: "h" + (r.online ? "" : " off") }, sub)),
+      h("span", { class: "dot", style: `color:${online ? (paused ? "var(--run)" : "var(--ok)") : "var(--bad)"}` }),
+      h("div", {}, h("div", { class: "n" + (online ? "" : " off") }, name), h("div", { class: "h" + (online ? "" : " off") }, sub)),
       slots);
   }));
   fit(box, box.parentElement, "runners");
+  return true;
 }
 
 function renderToday(d) {
   const t = d.today;
+  if (!changed("today", [t, d.stages.merged_add])) return false;
   const tiles = [["Merged", String(t.merged)]];
   if (t.spend_usd != null) tiles.push(["Spend", money(t.spend_usd)]);
   if (t.first_try != null) tiles.push(["First-try merges", Math.round(t.first_try * 100) + "%"]);
@@ -272,30 +350,32 @@ function renderToday(d) {
   if (first >= 0 && first < from) from = first;
   const hours = t.per_hour.slice(from, t.hour + 1);
   const max = Math.max(1, ...hours);
-  const sp = $("spark");
-  sp.replaceChildren();
   const slot = 300 / Math.max(hours.length, 1), w = Math.max(4, slot * 0.72);
-  hours.forEach((v, i) => {
+  $("spark").replaceChildren(...hours.map((v, i) => {
     const hgt = v ? Math.max(6, (v / max) * 104) : 3;
-    sp.append(svg("rect", { x: (i * slot + (slot - w) / 2).toFixed(1), y: (110 - hgt).toFixed(1), width: w.toFixed(1), height: hgt.toFixed(1), rx: 3,
-      style: "fill:var(" + (v ? "--ok" : "--line") + ")", opacity: i === hours.length - 1 ? 1 : 0.55 }));
-  });
-  $("spark-from").textContent = pad(from) + ":00";
+    return svg("rect", { x: (i * slot + (slot - w) / 2).toFixed(1), y: (110 - hgt).toFixed(1), width: w.toFixed(1), height: hgt.toFixed(1), rx: 3,
+      style: "fill:var(" + (v ? "--ok" : "--line") + ")", opacity: i === hours.length - 1 ? 1 : 0.55 });
+  }));
+  setText($("spark-from"), pad(from) + ":00");
+  return true;
 }
 
-let last = null; // the latest data, to lay out again on a resize
+let last = null; // the latest data, to draw again each minute and on a resize
+
+// renderPanels draws d, rebuilding only the panels whose text changed.
+function renderPanels(d) {
+  last = d;
+  const now = new Date(Date.now() + skew);
+  renderHeader(d);
+  // Each runs, so each panel is checked; any rebuilt one may change the
+  // stacked page's height.
+  const grew = [renderPipeline(d, now), renderRunning(d), renderNeeds(d, now), renderRunners(d, now), renderToday(d)];
+  if (grew.some(Boolean)) fitPage();
+}
 
 function render(d) {
-  last = d;
-  const now = new Date(d.now);
-  renderHeader(d);
-  renderPipeline(d, now);
-  renderRunning(d);
-  renderNeeds(d, now);
-  renderRunners(d, now);
-  renderToday(d);
+  renderPanels(d);
   tick();
-  fitPage();
 }
 
 // ---- polling ----
@@ -309,10 +389,13 @@ function apiURL() {
 
 let failures = 0;
 let timer = 0, inflight = false;
+let seen = ""; // the last response, without its "now", to skip drawing the same data again
 
 function schedule(ms) {
   clearTimeout(timer);
-  timer = setTimeout(poll, ms);
+  timer = 0;
+  // A hidden page doesn't poll; it polls at once when it's shown again.
+  if (!document.hidden) timer = setTimeout(poll, ms);
 }
 
 async function poll() {
@@ -328,9 +411,17 @@ async function poll() {
       next = 60000;
     } else {
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
-      const d = await res.json();
+      const text = await res.text();
+      const d = JSON.parse(text);
       skew = new Date(d.now) - Date.now();
-      render(d);
+      // The server puts "now" first; everything after it is the data.
+      const same = text.replace(/^\{"now":"[^"]*",?/, "{");
+      if (same !== seen || !last) {
+        seen = same;
+        render(d);
+      } else {
+        tick();
+      }
       failures = 0;
       $("error").classList.remove("on");
       $("stale").classList.remove("on");
@@ -382,7 +473,8 @@ function layout() {
 // fitPage gives the scaled canvas a scroll area in the stacked layout (a
 // transform doesn't change the space an element takes up).
 function fitPage() {
-  document.body.style.height = narrow ? Math.ceil($("tv").offsetHeight * zoom) + "px" : "";
+  const height = narrow ? Math.ceil($("tv").offsetHeight * zoom) + "px" : "";
+  if (document.body.style.height !== height) document.body.style.height = height;
 }
 
 let resizing = 0;
@@ -392,18 +484,35 @@ addEventListener("resize", () => {
     layout();
     // Lay the lists out again now, not at the next poll: how many cards fit
     // depends on the size.
-    if (last) render(last);
+    if (last) {
+      drawn = {};
+      render(last);
+    }
   });
 });
 
-// A hidden tab's timers are throttled; catch up as soon as it's shown.
+// The clock and timers tick only while the page is shown.
+let ticking = 0;
+function startTicking() {
+  if (!ticking) ticking = setInterval(tick, 1000);
+  tick();
+}
+
+// A hidden page neither polls nor ticks; it catches up as soon as it's shown.
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") poll();
+  if (document.hidden) {
+    clearInterval(ticking);
+    ticking = 0;
+    clearTimeout(timer);
+    return;
+  }
+  startTicking();
+  poll();
 });
 
 layout();
-tick();
-setInterval(tick, 1000);
+if (document.hidden) tick();
+else startTicking();
 poll();
 // A TV runs for days: reload now and then to pick up a new Dash version.
 setTimeout(() => location.reload(), 6 * 3600 * 1000);
