@@ -23,6 +23,7 @@ import (
 	"github.com/klahr/dash/internal/branding"
 	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/ci"
+	"github.com/klahr/dash/internal/claudestatus"
 	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
@@ -102,7 +103,10 @@ type Server struct {
 	// Notify sends events to the projects' outgoing webhooks (nil: off,
 	// as on a runner, whose hub notifies).
 	Notify *notify.Notifier
-	Peers  *peer.Hub // other computers shown in this dashboard: runners
+	// ClaudeStatus keeps Claude's status page's incidents (nil: off, as on
+	// a runner; see claudestatus.go).
+	ClaudeStatus *claudestatus.Service
+	Peers        *peer.Hub // other computers shown in this dashboard: runners
 	// Dispatch sends tasks of projects linked to runners to them (a hub's;
 	// optional).
 	Dispatch *dispatch.Dispatcher
@@ -384,6 +388,9 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/webhooks/{wid}/deliveries", s.webhookDeliveries)
 	mux.HandleFunc("GET /api/me/webhooks", s.listPersonalWebhooks)
 	mux.HandleFunc("POST /api/me/webhooks", s.createPersonalWebhook)
+	// Claude's status page: its webhook (public, the token is its
+	// credential), the status for everyone, the settings for platform admins
+	s.claudeStatusRoutes(mux)
 	// Web Push to this browser (the installed app, while it's closed)
 	mux.HandleFunc("GET /api/push", s.pushInfo)
 	mux.HandleFunc("PUT /api/push/subscription", s.subscribePush)

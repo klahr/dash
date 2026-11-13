@@ -27,6 +27,7 @@ import { iss, onIssueEvent, renderIssues } from "./issues.js";
 import { loadScans, onScanRun, scanFinished, scans } from "./scans.js";
 import { clChanged } from "./checklist.js";
 import { checkForUpdate } from "./updates.js";
+import { loadClaudeStatus, onClaudeStatus } from "./claudestatus.js";
 
 // ------------------------------------------------------------------ live events
 // One live connection per computer, so notifications arrive from all of them.
@@ -48,6 +49,7 @@ function connectEvents(m) {
     if (m.local) {
       checkForUpdate(); // a reconnect often means Dash restarted, maybe updated
       loadChat().catch(() => {});
+      loadClaudeStatus().catch(() => {}); // what the page posted while this was away
     }
     // Dash restarted (a deploy of Dash itself does): its runners kept their processes.
     loadProjects().then(() => loadProcs()).catch(fail);
@@ -262,6 +264,9 @@ function onEvent(ev, m = { name: "" }) {
       // which only GET /api/usage gives.
       if (chatRunner.info?.local === false) loadUsage().then(paceChanged, () => {});
       else { state.usage = ev.data; renderUsage(); paceChanged(); }
+      break;
+    case "claude.status":
+      if (m.local) onClaudeStatus(ev.data);
       break;
     case "ci.updated":
       if (!mine) break;

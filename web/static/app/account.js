@@ -36,6 +36,8 @@ export async function loadMe() {
   // The queue pause is the whole Dash's, for platform admins.
   const admin = !!me.user?.is_platform_admin;
   $("#queue-toggle").hidden = !admin;
+  // Following Claude's status page is set up by platform admins.
+  $("#account-rail-dash").hidden = $("#claude-status-admin").hidden = !admin;
   if (!me.org) {
     await ask({
       title: "No organization",

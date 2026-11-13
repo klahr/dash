@@ -912,6 +912,7 @@ const (
 	EvIssueDeleted   EventType = "issue.deleted"      // Data is {"id": …}
 	EvScanRun        EventType = "scan.run"           // a scan started, progressed or finished; Data is the ScanRun
 	EvScanSettings   EventType = "scan.settings"      // a scan's schedule was turned on/off or edited; Data is the ScanSetting
+	EvClaudeStatus   EventType = "claude.status"      // Claude's status page changed (internal/claudestatus); Data is its Status
 	EvScanTemplate   EventType = "scan.template"      // a Dash scan template was created, edited or deleted; Data is {"name": …, "deleted": bool}
 )
 

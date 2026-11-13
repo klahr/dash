@@ -70,6 +70,9 @@ func TestMigrateRemoveFavro(t *testing.T) {
 	if _, err := db.Exec("ALTER TABLE org_sso_domains DROP COLUMN token"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec("DROP TABLE claude_status"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec("PRAGMA user_version = 17"); err != nil {
 		t.Fatal(err)
 	}

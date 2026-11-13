@@ -25,6 +25,7 @@ import (
 	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/ci"
 	"github.com/klahr/dash/internal/claudecli"
+	"github.com/klahr/dash/internal/claudestatus"
 	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
@@ -740,6 +741,13 @@ func (a *app) setupHub() {
 	events.Observe = notifier.Observe
 	notifier.Start(ctx)
 	apiSrv.Notify = notifier
+
+	// Claude's status page (status.claude.com): its webhooks, and reading
+	// its API when a platform admin turns polling on.
+	apiSrv.ClaudeStatus = &claudestatus.Service{Store: st, Publish: func(s claudestatus.Status) {
+		events.Publish(model.Event{Type: model.EvClaudeStatus, Data: s})
+	}}
+	go apiSrv.ClaudeStatus.Run(ctx)
 
 	// Projects whose board is an external tracker are synced with it, one
 	// worker each; a runner's projects are its hub's.

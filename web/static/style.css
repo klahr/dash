@@ -1682,7 +1682,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .shared-mark .ico { width: 13px; height: 13px; }
 .project-name .shared-mark { margin-left: 6px; vertical-align: -1px; }
 .menu-btn { position: relative; margin-left: -10px; }
-.app:has(.ci-pill.ci-failing:not([hidden]), .usage-pill.paused:not([hidden])) .menu-btn::after {
+.app:has(.ci-pill.ci-failing:not([hidden]), .usage-pill.paused:not([hidden]), .claude-pill.claude-bad:not([hidden])) .menu-btn::after {
   content: ""; position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%;
   background: var(--failed); box-shadow: 0 0 0 2px var(--bg);
 }
@@ -2116,6 +2116,29 @@ a.revert-tag { text-decoration: underline; }
 .ci-pill.ci-running { --c: var(--running); }
 .ci-pill.ci-running::before { animation: pulse-dot 1.4s ease-in-out infinite; }
 @keyframes pulse-dot { 50% { opacity: .35; } }
+/* ---- Claude's status (status.claude.com) ---- */
+.claude-pill { --c: var(--running); order: 5; margin-top: 8px; }
+.claude-pill.claude-bad { --c: var(--failed); border-color: color-mix(in srgb, var(--failed) 50%, var(--line)); color: var(--failed); }
+.claude-pill::before { animation: pulse-dot 1.4s ease-in-out infinite; }
+.claude-summary { --c: var(--muted); display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; margin: 0; padding: 10px 12px; border-left: 3px solid var(--c); border-radius: 0 var(--r-s) var(--r-s) 0; background: color-mix(in srgb, var(--c) 10%, transparent); }
+.claude-summary strong { color: var(--c); }
+.claude-components, .claude-incidents { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.claude-components li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 12px; border: 1px solid var(--line); border-radius: var(--r-m); font-size: var(--fs-s); }
+.claude-component-status { color: var(--c); font-weight: 600; }
+.claude-incident { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-m); }
+.claude-incident > details > summary { display: grid; gap: 4px; cursor: pointer; }
+.claude-incident > details[open] > summary { margin-bottom: 8px; }
+.claude-incident-name { font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+a.claude-incident-name:hover { text-decoration: underline; }
+.claude-incident-meta { font-size: var(--fs-s); color: var(--muted); }
+.claude-impact { color: var(--c); font-weight: 600; }
+.claude-resolved { font-size: var(--fs-xs); }
+.claude-updates { list-style: none; margin: 4px 0 0; padding: 0 0 0 12px; border-left: 2px solid var(--line); display: grid; gap: 8px; }
+.claude-update-head { font-size: var(--fs-s); color: var(--muted); }
+.claude-update-head strong { color: var(--text); }
+.claude-update-body { margin: 2px 0 0; font-size: var(--fs-s); white-space: pre-line; overflow-wrap: anywhere; }
+/* Tones last: they override the boxes' own colour. */
+.claude-ok { --c: var(--merged); } .claude-warn { --c: var(--running); } .claude-bad { --c: var(--failed); } .claude-muted { --c: var(--muted); }
 /* ---- origin ahead/behind (background fetch) ---- */
 .remote-pill { --c: var(--running); }
 .remote-pill.remote-error { --c: var(--muted); color: var(--muted); font-weight: 400; }

@@ -152,6 +152,8 @@
           <ul class="side-runner-list" id="side-runner-list"></ul>
         </div>
         <button class="usage-pill ci-pill" id="ci-pill" hidden aria-haspopup="dialog" title="GitHub Actions on the default branch"></button>
+        <!-- Claude's status page (status.claude.com): shown while something is wrong, when a platform admin turned it on. -->
+        <button class="usage-pill claude-pill" id="claude-pill" type="button" hidden aria-haspopup="dialog" title="Claude's status"></button>
         <!-- Claude usage and the account: always at the bottom of the sidebar / drawer. -->
         <div class="side-bottom">
         <button class="usage-pill" id="usage-pill" hidden aria-haspopup="dialog" title="Claude usage"></button>
@@ -838,6 +840,19 @@
     </form>
   </dialog>
 
+  <!-- Claude's status: incidents from status.claude.com (app/claudestatus.js) -->
+  <dialog class="sheet" id="claude-status-sheet" aria-labelledby="claude-status-title">
+    <form method="dialog">
+      <header class="sheet-head"><h2 id="claude-status-title" tabindex="-1" autofocus>Claude status</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></header>
+      <p class="claude-summary" id="claude-status-summary"></p>
+      <div id="claude-status-body"></div>
+      <footer class="sheet-actions">
+        <a class="btn" id="claude-status-page" href="#" target="_blank" rel="noopener" data-icon="external">Status page</a>
+        <button class="btn" type="button" id="claude-status-sync" hidden data-icon="redo">Check now</button>
+      </footer>
+    </form>
+  </dialog>
+
   <!-- Tag a release from a commit in the History view -->
   <dialog class="sheet" id="release-sheet" aria-labelledby="release-title">
     <form method="dialog" id="release-form">
@@ -1098,6 +1113,9 @@
           <div class="rail-group"><span class="rail-head">Screens</span>
             <button type="button" class="rail-item" data-rail="wall">Wall view</button>
           </div>
+          <div class="rail-group" id="account-rail-dash" hidden><span class="rail-head">This Dash</span>
+            <button type="button" class="rail-item" data-rail="claudestatus">Claude status</button>
+          </div>
         </nav>
         <div class="rail-main">
           <!-- Preferences (this browser only), a section per group. Their controls belong to
@@ -1174,6 +1192,14 @@
             <div id="me-webhook-secret" hidden></div>
             <p class="hint" id="me-webhooks-hint" hidden></p>
             <div><button class="btn small" type="button" id="me-webhook-add" data-icon="plus">Add webhook</button></div>
+          </section>
+          <!-- Platform admins: follow Claude's status page (status.claude.com) with its webhooks (app/claudestatus.js) -->
+          <section class="rail-section" data-section="claudestatus">
+            <div id="claude-status-admin" hidden>
+              <p class="hint">Follow Claude's status page. Everyone in every organization of this Dash then sees Claude's incidents beside the board, as they happen.</p>
+              <label class="toggle"><input type="checkbox" id="claude-status-on"><span>Show Claude's status</span></label>
+              <div id="claude-status-config"></div>
+            </div>
           </section>
           <!-- The wall view (/wall): its options, and the links org admins make for TVs (hidden without an organization) -->
           <section class="rail-section" data-section="wall">

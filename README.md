@@ -192,6 +192,7 @@ retry) follow the pace again. The API is `POST /api/todos/{id}/start-now`; a cha
 - [Checklist](docs/checklist.md): tick off, add to and edit the repository's TODO.md (committed straight to the default branch), and move an item onto the board as a task
 - [Wall view](docs/wall.md): a read-only TV dashboard of an organization's work, with a sign-in-free link for the TV
 - [Task boards](docs/boards.md): keep a project's board in Dash or in an external tracker, synced both ways (the backend interface for trackers such as Trello and Jira)
+- [Claude status](docs/claude-status.md): follow status.claude.com with its webhooks, and see Claude's incidents beside the board
 - [Notifications](docs/notifications.md): push notifications to your browser or installed app, even while it's closed, and webhooks that send reviews, failures, merges, approvals, failing builds and runners low on disk space to Slack, ntfy or a signed JSON endpoint
 - [GitHub](docs/github.md): merge locally or review and merge through pull requests, work on another branch and open its pull request, auto-approve, revert, tag releases from History
 - [MCP and the claude.ai connector](docs/mcp.md)

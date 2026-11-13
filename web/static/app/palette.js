@@ -23,6 +23,7 @@ import { openConnector } from "./wallview.js";
 import { notifyOn, toggleNotifications } from "./notifications.js";
 import { renderUsage } from "./usage.js";
 import { openCI } from "./actions.js";
+import { openClaudeStatus } from "./claudestatus.js";
 import { openSettings } from "./settings.js";
 import { chat, todoChat } from "./chat.js";
 import { pane, paneOverlays, projectChatFor, toggleChatPane, togglePin } from "./chatpane.js";
@@ -82,6 +83,7 @@ function paletteCommands() {
     p && ["Clean up", "trash", cleanup, ":cleanup", "worktrees branches"],
     p && ["Delete project…", "trash", openDeleteProject, "", "remove repo clone github"],
     ["Builds", "checks", openCI, ":ci", "ci github actions"],
+    (state.claudeStatus?.enabled || state.me?.user?.is_platform_admin) && ["Claude status", "spark", openClaudeStatus, "", "status.claude.com incidents outage down degraded webhook"],
     ["Claude usage", "clock", () => { renderUsage(); $("#usage-sheet").showModal(); }, ":usage", "limits"],
     state.usage && [state.usage.paused ? "Resume the queue" : "Pause the queue", state.usage.paused ? "play" : "pause", () => runCommand(state.usage.paused ? "resume" : "pause"), "", "queue"],
     ["Permission requests", "eye", () => runCommand("perms"), ":perms", "approvals allow deny"],
