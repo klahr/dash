@@ -402,6 +402,13 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 // updateProject changes a project's settings, for PATCH /api/projects/{pid}
 // and the update_project tool.
 func (sv *service) updateProject(ctx context.Context, id string, req projectUpdate) (model.Project, error) {
+	if req.Name != nil {
+		// The name shown in the project lists; the folder keeps its name.
+		*req.Name = strings.TrimSpace(*req.Name)
+		if *req.Name == "" {
+			return model.Project{}, fmt.Errorf("%w: name is required", errBadRequest)
+		}
+	}
 	if req.ChatMode != nil {
 		switch *req.ChatMode {
 		case "", model.ChatModeAuto, model.ChatModeAcceptEdits:

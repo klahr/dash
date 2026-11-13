@@ -16,6 +16,7 @@ import { loadSharedNotes } from "./sharednotes.js";
 export function openSettings() {
   const p = state.project;
   const f = $("#settings-form");
+  f.elements.name.value = p.name || "";
   f.test_command.value = p.test_command || "";
   f.max_auto_fixes.value = p.max_auto_fixes ?? 2;
   f.setup_command.value = p.setup_command || "";
@@ -162,6 +163,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
   const f = $("#settings-form");
   const old = state.project;
   const saved = await api("PATCH", `/api/projects/${old.id}`, {
+    name: f.elements.name.value.trim() || old.name,
     test_command: f.test_command.value.trim(),
     max_auto_fixes: Math.max(0, Number(f.max_auto_fixes.value) || 0),
     setup_command: f.setup_command.value.trim(),
@@ -185,7 +187,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     icon: f.icon.value,
     ...($("#settings-runners-field").hidden ? {} : { runners: pickedRunners() }),
   });
-  // Keep the client-only fields, and the list entry in step for its color and icon.
+  // Keep the client-only fields, and the list entry in step for its name, color and icon.
   state.project = { ...saved, machine: old.machine, prefix: old.prefix };
   state.projects = state.projects.map((x) => (x === old ? state.project : x));
   renderProjectHeader();

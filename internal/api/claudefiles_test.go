@@ -158,6 +158,25 @@ func TestTaskInstructionsSetting(t *testing.T) {
 	}
 }
 
+// A project can be renamed in its settings: trimmed, never empty, and its
+// folder stays where it is.
+func TestRenameProject(t *testing.T) {
+	parallel(t)
+
+	s, _, p := boardServer(t)
+	s.Git = gitops.New(nil)
+	h := loggedIn(t, s.Routes())
+	if w := do(t, h, "PATCH", "/api/projects/"+p.ID, `{"name":"  My app  "}`); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"name":"My app"`) {
+		t.Fatalf("rename: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, h, "PATCH", "/api/projects/"+p.ID, `{"name":"   "}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("empty name: %d %s", w.Code, w.Body)
+	}
+	if got, _ := raw(s).GetProject(p.ID); got.Name != "My app" || got.Path != p.Path {
+		t.Fatalf("stored %q at %q, want \"My app\" at %q", got.Name, got.Path, p.Path)
+	}
+}
+
 // A runner's copy of a hub project follows the hub's task instructions,
 // which the hub sends with the link before every task.
 func TestRunnerFollowsTaskInstructions(t *testing.T) {
