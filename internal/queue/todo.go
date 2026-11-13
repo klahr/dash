@@ -106,6 +106,11 @@ type Remote interface {
 	Dispatch(ctx context.Context, p model.Project, t model.Todo) (runnerID, remoteID string, err error)
 }
 
+// ErrSettled is a Remote's error for a task it didn't send because the
+// runner had finished it already (merged it while the hub had it queued):
+// the Remote recorded where it stands, and it isn't sent again.
+var ErrSettled = errors.New("the runner had finished the task already")
+
 // NoRunnerLinked is the Waiting reason of a hub's task whose project no
 // runner is linked to.
 const NoRunnerLinked = "no runner: the hub doesn't run tasks itself; link the project to a runner in its settings (start one with `dash runner` on a computer with git and Claude Code)"
@@ -317,6 +322,9 @@ func (e *TodoEngine) sendToRunner(ctx context.Context, p model.Project, t model.
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	runnerID, remoteID, err := e.Remote.Dispatch(cctx, p, t)
 	cancel()
+	if errors.Is(err, ErrSettled) {
+		return
+	}
 	if err != nil {
 		e.wait(t, err.Error())
 		return

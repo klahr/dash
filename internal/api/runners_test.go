@@ -529,3 +529,60 @@ func registerRunner(t *testing.T, rh *tunnel.Hub, code, name string) (id, token 
 	}
 	return res.ID, res.Token
 }
+
+// Sent a task it has merged already (the hub had it queued, having missed
+// the runner's news), the runner doesn't start it again but says where it
+// stands; an older hub gets the error it knows. Sent back to rejoin a run
+// that finished meanwhile, it doesn't start that one again either; sent
+// back for rework, it does.
+func TestRunnerAnswersATaskItFinishedAlready(t *testing.T) {
+	serial(t)
+	s, h, remote := runnerSide(t, 7)
+	b, _ := json.Marshal(dispatch.Link{Name: "Shared App", RemoteURL: remote, DefaultBranch: "main", OrgID: 7})
+	if w := send(h, "PUT", "/api/hub/projects/hub-p1", string(b)); w.Code != http.StatusCreated {
+		t.Fatalf("link: %d %s", w.Code, w.Body)
+	}
+	send1 := func(task dispatch.Task) (*httptest.ResponseRecorder, dispatch.Accepted) {
+		task.HubProjectID, task.Title, task.Prompt = "hub-p1", "t", "do it"
+		b, _ := json.Marshal(task)
+		w := send(h, "POST", "/api/hub/tasks", string(b))
+		var acc dispatch.Accepted
+		_ = json.Unmarshal(w.Body.Bytes(), &acc)
+		return w, acc
+	}
+	set := func(id string, fn func(*model.Todo)) {
+		t.Helper()
+		if _, err := raw(s).UpdateTodo(id, func(x *model.Todo) error { fn(x); return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+
+	_, acc := send1(dispatch.Task{HubTodoID: "hub-t1"})
+	set(acc.ID, func(x *model.Todo) { x.Status, x.MergedCommit = model.StatusMerged, sha })
+	if w, _ := send1(dispatch.Task{HubTodoID: "hub-t1"}); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), dispatch.AlreadyMerged) {
+		t.Errorf("merged task to an older hub: %d %s", w.Code, w.Body)
+	}
+	w, got := send1(dispatch.Task{HubTodoID: "hub-t1", TakesDone: true})
+	if w.Code != http.StatusOK || got.ID != acc.ID || got.Done == nil || got.Done.Status != model.StatusMerged ||
+		got.Done.MergedCommit != sha || got.Done.HubTodoID != "hub-t1" {
+		t.Fatalf("merged task: %d %s", w.Code, w.Body)
+	}
+
+	_, acc = send1(dispatch.Task{HubTodoID: "hub-t2"})
+	set(acc.ID, func(x *model.Todo) { x.Status, x.Summary = model.StatusReview, "did it" })
+	w, got = send1(dispatch.Task{HubTodoID: "hub-t2", TakesDone: true, Rejoin: true})
+	if w.Code != http.StatusOK || got.Done == nil || got.Done.Status != model.StatusReview || got.Done.Summary != "did it" {
+		t.Fatalf("rejoining a task in review: %d %s", w.Code, w.Body)
+	}
+	if td, _ := raw(s).GetTodo(acc.ID); td.Status != model.StatusReview {
+		t.Errorf("rejoining moved the task to %s", td.Status)
+	}
+	w, got = send1(dispatch.Task{HubTodoID: "hub-t2", TakesDone: true, Feedback: []string{"one more thing"}})
+	if w.Code != http.StatusOK || got.Done != nil || !got.Resumed {
+		t.Fatalf("sent back for rework: %d %s", w.Code, w.Body)
+	}
+	if td, _ := raw(s).GetTodo(acc.ID); td.Status != model.StatusQueued {
+		t.Errorf("sent back for rework: %s", td.Status)
+	}
+}

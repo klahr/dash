@@ -24,6 +24,9 @@ type fakeFleet struct {
 	calls   []string // "runner METHOD path"
 	links   []Link   // the links sent
 	tasks   []Task   // the tasks sent
+	// answer, if set, is how a runner answers a task sent to it (instead
+	// of taking it).
+	answer func(runner string, t Task, a *Accepted) error
 }
 
 func (f *fakeFleet) Get(id string) (tunnel.Runner, bool) {
@@ -64,6 +67,12 @@ func (f *fakeFleet) Call(_ context.Context, id, method, path string, in, out any
 	}
 	if t, ok := in.(Task); ok {
 		if a, ok := out.(*Accepted); ok {
+			f.mu.Lock()
+			answer := f.answer
+			f.mu.Unlock()
+			if answer != nil {
+				return answer(id, t, a)
+			}
 			a.ID = "remote-" + t.HubTodoID
 		}
 	}

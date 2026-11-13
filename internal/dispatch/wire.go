@@ -130,13 +130,31 @@ type Task struct {
 	// waits for the pace. The runner's queue lets it start then too (an
 	// older runner keeps it queued until the pace allows).
 	StartNow bool `json:"start_now,omitempty"`
+	// Rejoin: the hub sends the task back because the runner said it was
+	// still running it (see model.Todo.Rejoin). If the runner finished it
+	// meanwhile (review, merging, merged, failed or canceled), it doesn't
+	// start it again but answers with Accepted.Done.
+	Rejoin bool `json:"rejoin,omitempty"`
+	// TakesDone: the hub understands Accepted.Done. An older hub, which
+	// would take that answer for "started", gets the error instead.
+	TakesDone bool `json:"takes_done,omitempty"`
 }
 
 // Accepted is the runner's answer to Task.
 type Accepted struct {
 	ID      string `json:"id"`      // the runner's todo id
 	Resumed bool   `json:"resumed"` // it continues the runner's earlier run
+	// Done: the runner didn't start the task, as it has merged it already
+	// (or is merging it, or, for a Task.Rejoin, finished it otherwise);
+	// this is where the task stands there. Older runners (and any runner,
+	// to a hub without Task.TakesDone) answer a merged task with a 400
+	// error ending in AlreadyMerged instead.
+	Done *TaskState `json:"done,omitempty"`
 }
+
+// AlreadyMerged ends an older runner's error (400 Bad Request) for a task
+// the hub sent again after the runner merged it.
+const AlreadyMerged = "this task was already merged"
 
 // Report is POST /runner/report: a runner's news for its hub.
 type Report struct {

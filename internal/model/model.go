@@ -36,10 +36,10 @@ const (
 
 var transitions = map[TodoStatus][]TodoStatus{
 	StatusDraft:      {StatusQueued},
-	StatusQueued:     {StatusDraft, StatusInProgress},
-	StatusInProgress: {StatusReview, StatusFailed, StatusQueued, StatusMerging},              // → merging: auto-merge after a conflict fix
-	StatusReview:     {StatusMerging, StatusQueued, StatusDraft, StatusMerged, StatusFailed}, // → merged/failed: its PR was merged/closed on GitHub
-	StatusMerging:    {StatusMerged, StatusFailed, StatusReview, StatusQueued},               // → queued: conflict sent back to Claude
+	StatusQueued:     {StatusDraft, StatusInProgress, StatusReview, StatusMerging, StatusMerged, StatusFailed}, // → review…failed: a hub's task its runner finished while the hub had it queued
+	StatusInProgress: {StatusReview, StatusFailed, StatusQueued, StatusMerging},                                // → merging: auto-merge after a conflict fix
+	StatusReview:     {StatusMerging, StatusQueued, StatusDraft, StatusMerged, StatusFailed},                   // → merged/failed: its PR was merged/closed on GitHub
+	StatusMerging:    {StatusMerged, StatusFailed, StatusReview, StatusQueued},                                 // → queued: conflict sent back to Claude
 	StatusFailed:     {StatusQueued, StatusDraft, StatusReview, StatusMerged, StatusMerging},
 	StatusMerged:     {},
 }
@@ -477,6 +477,11 @@ type Todo struct {
 	// Resumable: a todo that failed on a runner still has its worktree and
 	// Claude session there, so queueing it again continues where it was.
 	Resumable bool `json:"resumable,omitempty"`
+	// Rejoin: a hub's queued todo whose runner said it is still running it
+	// (back after the hub had lost touch with it). It waits only to be sent
+	// back to that runner, and that runner's news that it reached review,
+	// merging, merged or failed still counts. Cleared when it leaves Queued.
+	Rejoin bool `json:"rejoin,omitempty"`
 	// HubTodoID is set on a runner for a todo its hub sent: the hub's id
 	// for it. HubNotes counts the hub's feedback notes already added.
 	HubTodoID string `json:"hub_todo_id,omitempty"`

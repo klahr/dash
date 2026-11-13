@@ -17,6 +17,9 @@ type fakeRemote struct {
 	mu   sync.Mutex
 	err  error // what Dispatch answers; nil: runner "laptop" takes it
 	sent []string
+	// settle, if set, runs before Dispatch answers err (as the dispatcher
+	// records a task its runner finished already).
+	settle func(id string)
 }
 
 func (f *fakeRemote) Dispatch(_ context.Context, p model.Project, t model.Todo) (string, string, error) {
@@ -24,6 +27,9 @@ func (f *fakeRemote) Dispatch(_ context.Context, p model.Project, t model.Todo) 
 	defer f.mu.Unlock()
 	f.sent = append(f.sent, t.ID)
 	if f.err != nil {
+		if f.settle != nil {
+			f.settle(t.ID)
+		}
 		return "", "", f.err
 	}
 	return "laptop", "remote-" + t.ID, nil
@@ -189,5 +195,32 @@ func TestHeldOrgTasksWait(t *testing.T) {
 	e.dispatch(context.Background())
 	if got, _ := st.GetTodo(a.ID); got.Status != model.StatusInProgress || got.Waiting != "" {
 		t.Errorf("once paid: %s %q", got.Status, got.Waiting)
+	}
+}
+
+// A task the runner had finished already (the Remote recorded it, say as
+// merged, and answered ErrSettled) gets no Waiting reason and isn't sent
+// again.
+func TestSettledTaskIsNotSentAgain(t *testing.T) {
+	parallel(t)
+
+	e, st, rem, _ := remoteEngine(t)
+	shared, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", Runners: []string{"laptop"}})
+	td := queued(t, st, shared)
+	rem.err = ErrSettled
+	rem.settle = func(id string) {
+		if _, err := st.SetStatus(id, model.StatusMerged, ""); err != nil {
+			t.Error(err)
+		}
+	}
+
+	e.dispatch(context.Background())
+	e.dispatch(context.Background())
+	got, _ := st.GetTodo(td.ID)
+	if got.Status != model.StatusMerged || got.Waiting != "" {
+		t.Fatalf("settled task: %+v", got)
+	}
+	if len(rem.sent) != 1 {
+		t.Errorf("sent %d times, want 1", len(rem.sent))
 	}
 }

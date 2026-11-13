@@ -636,9 +636,16 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if cur, ok := sv.hubTodo(req.HubTodoID); ok {
+		var done *dispatch.TaskState // finished here: not started again
 		t, err := sv.data.UpdateTodo(cur.ID, func(x *model.Todo) error {
-			if x.Status == model.StatusMerged {
-				return fmt.Errorf("%w: this task was already merged", errBadRequest)
+			done = nil
+			if x.Status == model.StatusMerged && !req.TakesDone {
+				return fmt.Errorf("%w: %s", errBadRequest, dispatch.AlreadyMerged)
+			}
+			if finished(x.Status, req.Rejoin) {
+				s := dispatch.StateOf(*x)
+				done = &s
+				return errSkipUpdate
 			}
 			x.Model = req.Model // the hub's task may have changed model since
 			if n := len(req.Feedback); n > x.HubNotes {
@@ -655,6 +662,11 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 			}
 			return nil
 		})
+		if done != nil {
+			slog.Info("runner: the hub sent a task finished here; told it where it stands", "task", req.HubTodoID, "status", done.Status)
+			writeJSON(w, http.StatusOK, dispatch.Accepted{ID: cur.ID, Resumed: true, Done: done})
+			return
+		}
 		if err != nil {
 			writeErr(w, err)
 			return
@@ -681,6 +693,24 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Todos.Kick()
 	writeJSON(w, http.StatusCreated, dispatch.Accepted{ID: t.ID})
+}
+
+// errSkipUpdate leaves a todo as it is (see hubTask).
+var errSkipUpdate = errors.New("nothing to change")
+
+// finished reports whether a hub's task in status s here is done with, so
+// the hub sending it again doesn't start it: merged or merging, or, when
+// the hub only sends it back to rejoin a run (dispatch.Task.Rejoin), also
+// in review, failed or canceled. Otherwise the hub sends a task in review
+// or failed back to Claude.
+func finished(s model.TodoStatus, rejoin bool) bool {
+	switch s {
+	case model.StatusMerged, model.StatusMerging:
+		return true
+	case model.StatusReview, model.StatusFailed, model.StatusDraft:
+		return rejoin
+	}
+	return false
 }
 
 // hubTaskAction handles what the hub does to a task it sent.

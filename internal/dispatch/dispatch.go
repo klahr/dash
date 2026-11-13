@@ -20,6 +20,7 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
+	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
 )
@@ -111,7 +112,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo
 	}
 	ds := r.Disk
 	task := Task{HubTodoID: t.ID, HubProjectID: p.ID, Title: t.Title, Prompt: t.Prompt, Model: t.Model, Feedback: t.Feedback,
-		Fresh: t.Runner != r.ID, Disk: &ds, StartNow: t.StartNow}
+		Fresh: t.Runner != r.ID, Disk: &ds, StartNow: t.StartNow, Rejoin: t.Rejoin && t.Runner == r.ID, TakesDone: true}
 	if parent != nil {
 		task.BuildsOn = parent.ID
 		if t.Runner == "" && parent.Runner != r.ID && d.Note != nil {
@@ -126,6 +127,13 @@ func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo
 	if err := d.Fleet.Call(ctx, r.ID, http.MethodPost, "/api/hub/tasks", task, &acc); err != nil {
 		reason := "waiting for a runner: " + err.Error()
 		var ce *tunnel.CallError
+		if errors.As(err, &ce) && ce.Status == http.StatusBadRequest && strings.HasSuffix(ce.Msg, AlreadyMerged) && !task.Fresh {
+			// An older runner: it merged the task while the hub had it
+			// queued. It doesn't say the commit; its next report may.
+			ts := StateOf(t) // the hub's own news of it, as the runner says nothing more
+			ts.HubTodoID, ts.ID, ts.Status, ts.Error = t.ID, t.RemoteID, model.StatusMerged, ""
+			return "", "", d.settle(*r, t, ts)
+		}
 		if errors.As(err, &ce) && ce.Status == http.StatusInsufficientStorage && d.Note != nil && reason != t.Waiting {
 			d.Note(t, "⏸ "+err.Error()) // it filled up since its last report
 		}
@@ -133,6 +141,14 @@ func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo
 	}
 	if acc.ID == "" {
 		return "", "", &WaitError{Reason: "waiting for a runner: " + r.Name + " didn't take the task"}
+	}
+	if acc.Done != nil && !task.Fresh {
+		ts := *acc.Done
+		ts.HubTodoID = t.ID
+		if ts.ID == "" {
+			ts.ID = acc.ID
+		}
+		return "", "", d.settle(*r, t, ts)
 	}
 	if d.Note != nil {
 		verb := "sent to runner "
@@ -516,11 +532,19 @@ func safeLinks(ts *TaskState) {
 	}
 }
 
+// apply applies runner r's report about one of the hub's tasks.
 func (d *Dispatcher) apply(r tunnel.Runner, ts TaskState) {
+	_ = d.applyTask(r, ts, false)
+}
+
+// applyTask applies ts, what runner r says of a hub's task, and returns
+// nil if the task changed. answer: ts is r's answer to the hub sending it
+// the task again (see settle), not a report that may be stale.
+func (d *Dispatcher) applyTask(r tunnel.Runner, ts TaskState, answer bool) error {
 	safeLinks(&ts)
 	p, err := d.Store.GetProject(projectOf(d.Store, ts.HubTodoID))
 	if err != nil || p.OrgID != r.OrgID() {
-		return
+		return errSkip
 	}
 	to := hubStatus(ts.Status)
 	var ours model.Todo // the task, if it is this runner's
@@ -544,10 +568,15 @@ func (d *Dispatcher) apply(r tunnel.Runner, ts TaskState) {
 		ours = *x
 		switch x.Status {
 		case model.StatusQueued, model.StatusDraft:
-			if !adopt {
+			switch {
+			case adopt:
+				adopted = true
+			case x.Status == model.StatusQueued && finishedThere(ts.Status, x.Rejoin || answer):
+				// Its runner finished it while the hub had it queued to send
+				// back (it lost touch with the runner for a moment).
+			default:
 				return errSkip // waiting to be sent (again)
 			}
-			adopted = true
 		case model.StatusMerged:
 			// Done; only a revert (or its conflict) may follow.
 			if ts.Status != model.StatusMerged {
@@ -601,7 +630,9 @@ func (d *Dispatcher) apply(r tunnel.Runner, ts TaskState) {
 		}
 		x.Error, x.Resumable = "", false
 		if to == model.StatusQueued {
-			x.Resumable = true
+			x.Resumable, x.Rejoin = true, true
+		} else {
+			x.Waiting = "" // e.g. finished on the runner while queued here
 		}
 		if to == model.StatusReview {
 			x.Error = ts.Error // e.g. why an approved task wasn't merged after all
@@ -638,6 +669,51 @@ func (d *Dispatcher) apply(r tunnel.Runner, ts TaskState) {
 			d.Undo(t, ts.RevertConflict)
 		}
 	}
+	return err
+}
+
+// finishedThere reports whether a runner's news that a task the hub has
+// queued is in status s (the runner's) moves it on: merged always (it is
+// final, and the runner has it), and review, merging, failed or canceled
+// when trusted, i.e. the hub queued it only to send it back to the runner
+// that kept running it (model.Todo.Rejoin), or the runner says so in
+// answer to the hub sending it. Otherwise it is old news about a task sent
+// back to Claude or queued again on the hub.
+func finishedThere(s model.TodoStatus, trusted bool) bool {
+	switch s {
+	case model.StatusMerged:
+		return true
+	case model.StatusReview, model.StatusMerging, model.StatusFailed, model.StatusDraft:
+		return trusted
+	}
+	return false
+}
+
+// settle records ts, runner r's answer to the hub sending it queued task t
+// again: it has finished t already (merged it, most often). It returns
+// queue.ErrSettled once the task moved on, so it isn't sent again.
+func (d *Dispatcher) settle(r tunnel.Runner, t model.Todo, ts TaskState) error {
+	if err := d.applyTask(r, ts, true); err != nil {
+		slog.Warn("record a task its runner finished", "runner", r.Name, "todo", t.ID, "status", ts.Status, "err", err)
+		return &WaitError{Reason: "waiting for a runner: " + r.Name + " has this task " + string(ts.Status) + " already, which the hub couldn't record"}
+	}
+	if d.Note != nil {
+		line := "✔ " + r.Name + " had this task " + string(hubStatus(ts.Status)) + " already"
+		if ts.Status == model.StatusMerged && ts.MergedCommit != "" {
+			line += " (commit " + shortSHA(ts.MergedCommit) + ")"
+		}
+		if nt, err := d.Store.GetTodo(t.ID); err == nil {
+			d.Note(nt, line)
+		}
+	}
+	return queue.ErrSettled
+}
+
+func shortSHA(s string) string {
+	if len(s) > 12 {
+		return s[:12]
+	}
+	return s
 }
 
 // publishOutput streams what task t printed on its runner to the hub's

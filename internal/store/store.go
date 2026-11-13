@@ -572,6 +572,9 @@ func (s *Store) UpdateTodo(id string, fn func(*model.Todo) error) (model.Todo, e
 			return *t, err
 		}
 	}
+	if cp.Status != model.StatusQueued {
+		cp.Rejoin = false // only a queued todo waits to rejoin its runner
+	}
 	cp.ID, cp.ProjectID, cp.UpdatedAt = t.ID, t.ProjectID, time.Now()
 	s.data.Todos[id] = &cp
 	var resolved []model.Issue

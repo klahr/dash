@@ -388,7 +388,8 @@ whether the hub runs as a [service](service.md) or in [Docker](#run-the-hub-with
   "interrupted: <runner> went offline mid-task", so none look busy forever. They can be resumed:
   queue them again and they continue on that runner, with their worktree and Claude session.
   If the runner comes back on its own and says it kept working, the hub puts the task back on
-  it, with nothing lost.
+  it, with nothing lost. If the runner finished or merged the task meanwhile, the board shows
+  that.
 - **Merging tasks** (approved, being landed by their runner) work the same way. Past the grace
   they fail with "… while merging; approve it again once it is back", and never stay `merging`
   forever. A runner that finished the merge meanwhile still reports it, and the task becomes

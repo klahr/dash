@@ -743,7 +743,9 @@ If a runner disconnects while running a task (the lid closes, the Wi-Fi drops), 
 `-runner-grace` (default 2 minutes) for it to come back. After that the task fails, "interrupted:
 laptop went offline mid-task", and its **Continue on laptop** button queues it again: the runner
 picks up its worktree and Claude session where it stopped. If the runner kept going meanwhile (a
-short outage), it says so when it reconnects and the task carries on. A runner that can't reach
+short outage), it says so when it reconnects and the task carries on. If the task reached review,
+or was merged, before the hub sent it back, the board follows: a merged task shows as merged, with
+its commit, and isn't sent again. A runner that can't reach
 the hub for its `-offline-grace` stops its tasks itself (below).
 
 ### What a runner accepts from the hub
