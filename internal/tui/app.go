@@ -738,7 +738,17 @@ func (a *App) rebuildCols() {
 		}
 	}
 	for _, col := range a.cols {
-		sort.Slice(col, func(i, j int) bool { return model.QueueBefore(col[i], col[j]) })
+		// Ties (same priority and creation time) fall back to the ID, so cards
+		// keep their places across rebuilds instead of following map order.
+		sort.Slice(col, func(i, j int) bool {
+			if model.QueueBefore(col[i], col[j]) {
+				return true
+			}
+			if model.QueueBefore(col[j], col[i]) {
+				return false
+			}
+			return col[i].ID < col[j].ID
+		})
 	}
 	a.row = clamp(a.row, 0, len(a.cols[a.col])-1)
 }
