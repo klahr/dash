@@ -56,6 +56,11 @@ In pull request mode the pull request is where a task is reviewed:
    `@dash` instead. Comments already on a pull request opened before Dash followed the
    conversation tab aren't sent; newer ones are.
 
+   Only reviews and comments by people who can push to the repository go to Claude: its owner,
+   members of its organization and collaborators. On a public repository anyone can comment,
+   and Claude runs with the shell allowed, so everyone else's are skipped. The task's log says
+   whose were skipped. An approval counts only from these people too.
+
    Dash then answers on GitHub, so you don't have to work out from the commits what happened:
 
    - **A comment with Claude's summary** of what it changed, listing each comment it disagreed

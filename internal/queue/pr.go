@@ -354,7 +354,7 @@ func reviewState(decision string, reviews []gitops.PRReview) string {
 	}
 	latest := map[string]string{}
 	for _, r := range reviews {
-		if !r.User.Bot() && (r.State == "APPROVED" || r.State == "CHANGES_REQUESTED") {
+		if !r.User.Bot() && gitops.Trusted(r.Association) && (r.State == "APPROVED" || r.State == "CHANGES_REQUESTED") {
 			latest[r.User.Login] = r.State
 		}
 	}
@@ -421,6 +421,7 @@ func (m *MergeQueue) conversation(ctx context.Context, t model.Todo, p model.Pro
 // asksClaude reports a conversation comment that is for Claude: written by
 // a person (not an app, nor Dash itself), saying something, and mentioning
 // @dash or @claude. Without a mention it is taken as talk between people.
+// Who wrote it is checked apart, with gitops.Trusted.
 func asksClaude(c gitops.IssueComment) bool {
 	return !c.User.Bot() && !strings.Contains(c.Body, dashMark) && strings.TrimSpace(c.Body) != "" && mention.MatchString(c.Body)
 }
@@ -431,26 +432,53 @@ func asksClaude(c gitops.IssueComment) bool {
 // Claude in one note, the way a rework from Dash is, and reports whether it
 // did. Claude's fix is pushed to the same pull request. Approvals, and
 // reviews and comments by apps (CI, CLA or coverage bots), aren't sent.
+// Nor is anything by someone who can't push to the repository (on a public
+// one, anyone on GitHub can comment): Claude runs with the shell allowed, so
+// their words would be commands run on this computer. Those are noted on the
+// task once and skipped.
 func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Project, reviews []gitops.PRReview, talk []gitops.IssueComment) bool {
 	n := t.PR.Number
 	var fresh []gitops.PRReview
-	var newest int64
+	var newest, skippedReview int64
+	var outsiders []string
+	outsider := func(login string) {
+		if !slices.Contains(outsiders, login) {
+			outsiders = append(outsiders, login)
+		}
+	}
 	for _, r := range reviews {
 		if r.ID <= t.PR.ReviewID || r.User.Bot() || (r.State != "CHANGES_REQUESTED" && r.State != "COMMENTED") {
+			continue
+		}
+		if !gitops.Trusted(r.Association) {
+			outsider(r.User.Login)
+			skippedReview = max(skippedReview, r.ID)
 			continue
 		}
 		fresh = append(fresh, r)
 		newest = max(newest, r.ID)
 	}
 	var said []gitops.IssueComment
-	var newestComment int64
+	var newestComment, skippedComment int64
 	for _, c := range talk {
-		if c.ID > t.PR.CommentID && asksClaude(c) {
-			said = append(said, c)
-			newestComment = max(newestComment, c.ID)
+		if c.ID <= t.PR.CommentID || !asksClaude(c) {
+			continue
 		}
+		if !gitops.Trusted(c.Association) {
+			outsider(c.User.Login)
+			skippedComment = max(skippedComment, c.ID)
+			continue
+		}
+		said = append(said, c)
+		newestComment = max(newestComment, c.ID)
+	}
+	if len(outsiders) > 0 {
+		m.Log.Line(t, fmt.Sprintf("⊘ not sent to Claude: review or comment on pull request #%d by %s, who can't push to the repository", n, strings.Join(outsiders, ", ")))
 	}
 	if len(fresh) == 0 && len(said) == 0 {
+		if len(outsiders) > 0 {
+			m.seenFeedback(t, skippedReview, skippedComment)
+		}
 		return false
 	}
 	var comments []gitops.PRComment
@@ -492,8 +520,8 @@ func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Proje
 			return errSkipUpdate
 		}
 		x.Feedback = append(x.Feedback, note)
-		x.PR.ReviewID = max(x.PR.ReviewID, newest)
-		x.PR.CommentID = max(x.PR.CommentID, newestComment)
+		x.PR.ReviewID = max(x.PR.ReviewID, newest, skippedReview)
+		x.PR.CommentID = max(x.PR.CommentID, newestComment, skippedComment)
 		// Answered on GitHub once the fix is pushed (or fails).
 		reply := model.PRReply{}
 		if x.PR.Reply != nil {
@@ -524,6 +552,19 @@ func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Proje
 }
 
 var errSkipUpdate = errors.New("skip")
+
+// seenFeedback marks the reviews up to reviewID and the conversation
+// comments up to commentID on a task's pull request as handled.
+func (m *MergeQueue) seenFeedback(t model.Todo, reviewID, commentID int64) {
+	_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+		if x.PR == nil || x.PR.Number != t.PR.Number {
+			return errSkipUpdate
+		}
+		x.PR.ReviewID = max(x.PR.ReviewID, reviewID)
+		x.PR.CommentID = max(x.PR.CommentID, commentID)
+		return nil
+	})
+}
 
 func reviewers(rs []gitops.PRReview, cs []gitops.IssueComment) string {
 	var names []string
@@ -565,7 +606,7 @@ func reviewNote(n int, rs []gitops.PRReview, comments []gitops.PRComment, talk [
 	for _, r := range rs {
 		var lines []gitops.PRComment
 		for _, c := range comments {
-			if c.ReviewID == r.ID && !c.User.Bot() && strings.TrimSpace(c.Body) != "" {
+			if c.ReviewID == r.ID && !c.User.Bot() && gitops.Trusted(c.Association) && strings.TrimSpace(c.Body) != "" {
 				lines = append(lines, c)
 			}
 		}

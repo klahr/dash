@@ -116,6 +116,7 @@ type PRReview struct {
 	SubmittedAt time.Time `json:"submitted_at"`
 	CommitID    string    `json:"commit_id"`
 	HTMLURL     string    `json:"html_url"`
+	Association string    `json:"author_association"`
 }
 
 // PRComment is a review comment on a line of a pull request's diff.
@@ -130,15 +131,30 @@ type PRComment struct {
 	OriginalLine int    `json:"original_line"`
 	InReplyTo    int64  `json:"in_reply_to_id"`
 	HTMLURL      string `json:"html_url"`
+	Association  string `json:"author_association"`
 }
 
 // IssueComment is a comment in a pull request's conversation tab (GitHub's
 // issue comments), not on a line of its diff.
 type IssueComment struct {
-	ID      int64  `json:"id"`
-	User    GHUser `json:"user"`
-	Body    string `json:"body"`
-	HTMLURL string `json:"html_url"`
+	ID          int64  `json:"id"`
+	User        GHUser `json:"user"`
+	Body        string `json:"body"`
+	HTMLURL     string `json:"html_url"`
+	Association string `json:"author_association"`
+}
+
+// Trusted reports an author_association of someone who can push to the
+// repository: its owner, a member of the organization owning it, or a
+// collaborator. Anyone else on GitHub can comment on a public repository's
+// pull requests, so what they write must never reach Claude, which runs
+// with the shell allowed.
+func Trusted(association string) bool {
+	switch association {
+	case "OWNER", "MEMBER", "COLLABORATOR":
+		return true
+	}
+	return false
 }
 
 // GHUser is a GitHub account as the REST API gives it.

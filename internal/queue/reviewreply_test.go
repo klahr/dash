@@ -21,10 +21,10 @@ const claudeAnswer = "Renamed the file; kept the loop.\n\n```dash-review\n" +
 // for changes, with two line comments, each the start of a thread.
 func reviewForClaude(t *testing.T, dir, head string) {
 	write(t, dir, "pr.json", openPRView(head, `{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}`))
-	write(t, dir, "reviews.json", `[{"id":11,"user":{"login":"alice","type":"User"},"state":"CHANGES_REQUESTED","body":"Please rename the file."}]`)
+	write(t, dir, "reviews.json", `[{"id":11,"user":{"login":"alice","type":"User"},"author_association":"COLLABORATOR","state":"CHANGES_REQUESTED","body":"Please rename the file."}]`)
 	write(t, dir, "comments.json", `[
-		{"id":1,"pull_request_review_id":11,"user":{"login":"alice","type":"User"},"path":"review.txt","line":1,"body":"Not a txt file"},
-		{"id":2,"pull_request_review_id":11,"user":{"login":"alice","type":"User"},"path":"review.txt","line":2,"body":"Use a map"}]`)
+		{"id":1,"pull_request_review_id":11,"user":{"login":"alice","type":"User"},"author_association":"COLLABORATOR","path":"review.txt","line":1,"body":"Not a txt file"},
+		{"id":2,"pull_request_review_id":11,"user":{"login":"alice","type":"User"},"author_association":"COLLABORATOR","path":"review.txt","line":2,"body":"Use a map"}]`)
 	write(t, dir, "threads.json", `{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false},"nodes":[
 		{"id":"T1","isResolved":false,"comments":{"nodes":[{"databaseId":1}]}},
 		{"id":"T2","isResolved":false,"comments":{"nodes":[{"databaseId":2}]}}]}}}}}`)
