@@ -367,6 +367,107 @@ func TestRootRevocationPropagates(t *testing.T) {
 	}
 }
 
+// A hello's revocations are read up to maxHelloRevocations, and sent up
+// to as many; a runner keeps the newest maxRevocations it learned, the
+// same before and after a restart. Those revoked on the runner itself are
+// always kept.
+func TestRootRevocationLimits(t *testing.T) {
+	dir := t.TempDir()
+	root := newRoot(t)
+	self := mustIdentity(t)
+	if _, err := Enroll(dir, root, "self", self.Public, false, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().Add(-time.Hour)
+	here, err := RevokeWithRoot(dir, root, mustIdentity(t).Fingerprint(), start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr, err := openTrust(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Revocations in the order they are learned, each newer than the last.
+	revs := func(n int, from time.Time) []Revocation {
+		t.Helper()
+		out := make([]Revocation, n)
+		for i := range out {
+			r, err := IssueRevocation(root, mustIdentity(t).Fingerprint(), from.Add(time.Duration(i)*time.Second))
+			if err != nil {
+				t.Fatal(err)
+			}
+			out[i] = r
+		}
+		return out
+	}
+	revoked := func(tr *trust, fp string) bool {
+		tr.mu.Lock()
+		defer tr.mu.Unlock()
+		_, ok := tr.state.RootRevoked(fp)
+		return ok
+	}
+
+	// One hello with more than a hello carries: only the first 256 count.
+	first := revs(300, start.Add(time.Second))
+	if !tr.learn(first) {
+		t.Fatal("nothing learned")
+	}
+	if got := len(tr.peers.Revocations); got != maxHelloRevocations {
+		t.Fatalf("learned %d of a hello, want %d", got, maxHelloRevocations)
+	}
+	for i, r := range first {
+		if revoked(tr, r.Fingerprint) != (i < maxHelloRevocations) {
+			t.Fatalf("revocation %d: revoked %v", i, i < maxHelloRevocations)
+		}
+	}
+	if _, sent := tr.introduce("self", self.Public); len(sent) != maxHelloRevocations {
+		t.Fatalf("a hello sends %d revocations, want %d", len(sent), maxHelloRevocations)
+	}
+
+	// More than a runner keeps, in hellos of 256: the oldest learned go.
+	learned := first[:maxHelloRevocations]
+	more := revs(5*maxHelloRevocations, start.Add(time.Hour/2))
+	for b := range slices.Chunk(more, maxHelloRevocations) {
+		if !tr.learn(b) {
+			t.Fatal("nothing learned")
+		}
+	}
+	learned = append(learned, more...) // 1536
+	kept, gone := learned[len(learned)-maxRevocations:], learned[:len(learned)-maxRevocations]
+	check := func(when string, tr *trust) {
+		t.Helper()
+		if !slices.EqualFunc(tr.peers.Revocations, kept, func(a, b Revocation) bool { return a.Fingerprint == b.Fingerprint }) {
+			t.Fatalf("%s: kept %d revocations, not the newest %d", when, len(tr.peers.Revocations), maxRevocations)
+		}
+		for _, r := range kept {
+			if !revoked(tr, r.Fingerprint) {
+				t.Fatalf("%s: a kept revocation isn't in force", when)
+			}
+		}
+		for _, r := range gone {
+			if revoked(tr, r.Fingerprint) {
+				t.Fatalf("%s: a dropped revocation is still in force", when)
+			}
+		}
+		if !revoked(tr, here.Fingerprint) {
+			t.Fatalf("%s: the revocation made here was dropped", when)
+		}
+	}
+	check("running", tr)
+	p, err := ReadPeers(dir)
+	if err != nil || len(p.Revocations) != maxRevocations {
+		t.Fatalf("peers file: %d revocations, %v", len(p.Revocations), err)
+	}
+	re, err := openTrust(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check("after a restart", re)
+	if _, sent := re.introduce("self", self.Public); len(sent) != maxHelloRevocations || sent[0].Fingerprint != kept[len(kept)-1].Fingerprint {
+		t.Fatalf("a hello sends %d revocations, not the newest %d", len(sent), maxHelloRevocations)
+	}
+}
+
 // Enrolling under another root needs --force, and drops what the old
 // root's certificates trusted; manual approvals stay.
 func TestReenrollUnderAnotherRoot(t *testing.T) {

@@ -458,7 +458,11 @@ func (t *trust) learn(rs []Revocation) bool {
 		return false
 	}
 	if n := len(t.peers.Revocations); n > maxRevocations {
-		t.peers.Revocations = t.peers.Revocations[n-maxRevocations:]
+		// Keep the newest learned; forget the oldest here too, so that what
+		// this runner trusts doesn't change when it restarts. The root
+		// revocations made on this runner (approvals) are always kept.
+		t.peers.Revocations = slices.Clone(t.peers.Revocations[n-maxRevocations:])
+		t.restateLocked()
 	}
 	slog.Warn("shared notes: runner keys were revoked with the root key; they are never trusted again", "fingerprints", added)
 	t.saveLocked()
