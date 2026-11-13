@@ -21,18 +21,28 @@ var (
 	cErr     = lipgloss.Color("1")
 	cDim     = lipgloss.Color("8")
 
-	styleDim     = lipgloss.NewStyle().Foreground(cDim)
-	styleOK      = lipgloss.NewStyle().Foreground(cOK)
-	styleErr     = lipgloss.NewStyle().Foreground(cErr)
-	styleWarn    = lipgloss.NewStyle().Foreground(cWarn)
-	styleAccent  = lipgloss.NewStyle().Foreground(cAccent)
-	styleBold    = lipgloss.NewStyle().Bold(true)
-	styleTabOn   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(cAccent).Padding(0, 1)
-	styleTabOff  = lipgloss.NewStyle().Foreground(cDim).Padding(0, 1)
-	styleSel     = lipgloss.NewStyle().Reverse(true)
-	styleBox     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cAccent).Padding(0, 1)
-	styleModeN   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(cAccent).Padding(0, 1)
-	styleModeI   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(cOK).Padding(0, 1)
+	styleDim    = lipgloss.NewStyle().Foreground(cDim)
+	styleOK     = lipgloss.NewStyle().Foreground(cOK)
+	styleErr    = lipgloss.NewStyle().Foreground(cErr)
+	styleWarn   = lipgloss.NewStyle().Foreground(cWarn)
+	styleAccent = lipgloss.NewStyle().Foreground(cAccent)
+	styleBold   = lipgloss.NewStyle().Bold(true)
+	styleTabOn  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(cAccent).Padding(0, 1)
+	styleTabOff = lipgloss.NewStyle().Foreground(cDim).Padding(0, 1)
+	styleSel    = lipgloss.NewStyle().Reverse(true)
+	styleBox    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cAccent).Padding(0, 1)
+	styleModeN  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(cAccent).Padding(0, 1)
+	styleModeI  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(cOK).Padding(0, 1)
+	// goalColors are the colours goal tags take, one per goal (goalStyle).
+	goalColors = []lipgloss.Style{
+		lipgloss.NewStyle().Foreground(lipgloss.Color("5")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("6")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("13")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("14")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("12")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("10")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
+	}
 	statusColors = map[model.TodoStatus]lipgloss.Style{
 		model.StatusInProgress: styleWarn,
 		model.StatusReview:     styleAccent,
@@ -92,6 +102,9 @@ func (a *App) renderHeader() string {
 	right := ""
 	if a.query != "" {
 		right += styleWarn.Render("/"+a.query) + styleDim.Render(" (:noh)  ")
+	}
+	if a.goal != "" {
+		right += goalStyle(a.goal).Render("◆ "+ansi.Truncate(a.goalName(a.goal), 24, "…")) + styleDim.Render(" (:goal)  ")
 	}
 	if a.proj != nil {
 		where := a.proj.Base()
@@ -201,7 +214,7 @@ func (a *App) hints() string {
 	}
 	switch a.tab {
 	case tabBoard:
-		return "hjkl move · Enter open · o new · s queue · a approve · r rework · / search · T retest · Y duplicate · gt next tab"
+		return "hjkl move · Enter open · o new · s queue · a approve · r rework · / search · gf goal filter · T retest · gt next tab"
 	case tabChat:
 		return "i type · j/k scroll · t make last answer a task · x stop · :clear"
 	case tabProcs:
@@ -330,7 +343,11 @@ func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
 	if len(meta) > 0 && !a.waiting(t.ID) {
 		sub = strings.Join(meta, " · ") + " · " + sub
 	}
-	sub = ansi.Truncate(sub, w-2, "…")
+	tag := ""
+	if t.GoalID != "" {
+		tag = "◆ " + ansi.Truncate(a.goalName(t.GoalID), max(4, (w-4)/2), "…")
+	}
+	sub = ansi.Truncate(sub, max(0, w-2-lipgloss.Width(tag)-1), "…")
 	st, ok := statusColors[t.Status]
 	if !ok {
 		st = styleDim
@@ -344,6 +361,9 @@ func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
 		st = styleErr
 	}
 	l2 := "   " + st.Render(ansi.Strip(sub))
+	if tag != "" {
+		l2 = "   " + goalStyle(t.GoalID).Render(tag) + " " + st.Render(ansi.Strip(sub))
+	}
 	if sel {
 		l1 = styleSel.Render("   " + name + strings.Repeat(" ", max(0, w-3-lipgloss.Width(name))))
 	}
@@ -389,6 +409,9 @@ func (a *App) renderDetail() string {
 	}
 	head := styleBold.Render(title(t)) + "  " + st.Render(string(t.Status))
 	var meta []string
+	if t.GoalID != "" {
+		meta = append(meta, goalStyle(t.GoalID).Render("◆ goal "+a.goalName(t.GoalID)))
+	}
 	if t.Priority != nil {
 		meta = append(meta, fmt.Sprintf("priority %d", *t.Priority))
 	}
@@ -724,6 +747,7 @@ var helpText = styleBox.Render(strings.Join([]string{
 	styleAccent.Render("Task") + "          Enter open · o new · e edit · s queue · x cancel · z pause · a approve · r rework",
 	"              dd delete · +/- (K/J) priority · _ clear priority · t try in worktree · ! shell in worktree",
 	styleAccent.Render("More") + "          / search · n/N next/prev match · :noh clear · T rerun tests · Y duplicate · E open in editor · :copy [path|prompt]",
+	"              gf show only the selected task's goal (again: every task) · :goal <name> filter by goal · :goal clear",
 	"              u revert a merged task · gx copy its pull request link · :cleanup remove stale worktrees",
 	"              :ci build status · :fix ask Claude to fix the failing build · Tab completes : commands",
 	styleAccent.Render("Detail") + "        Tab/h/l cycle log → diff → tests · R reload · q back",
@@ -741,4 +765,14 @@ func formPriority(p *int) string {
 		return "no priority (+/- to set)"
 	}
 	return fmt.Sprintf("priority %d (+/- · _ clears)", *p)
+}
+
+// goalStyle is goal id's colour: the same for a goal every time, and
+// different goals mostly different.
+func goalStyle(id string) lipgloss.Style {
+	var h uint32 = 2166136261 // FNV-1a
+	for i := 0; i < len(id); i++ {
+		h = (h ^ uint32(id[i])) * 16777619
+	}
+	return goalColors[h%uint32(len(goalColors))]
 }

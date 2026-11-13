@@ -20,6 +20,7 @@ import { loadCheckouts, renderCheckouts, renderRemote } from "./origin.js";
 import { chatRunner, loadChat, todoChat } from "./chat.js";
 import { loadTodoChat } from "./chatpane.js";
 import { addWorkerEvent } from "./timeline.js";
+import { onGoalEvent } from "./goals.js";
 import { attach, attached, termWS } from "./terminal.js";
 import { loadProcs } from "./try.js";
 import { refreshGraph } from "./history.js";
@@ -206,6 +207,9 @@ function onEvent(ev, m = { name: "" }) {
         }
         if (prev && !prev.pr && ev.data.pr) toast(title(ev.data), { tone: "pr", head: `Pull request #${ev.data.pr.number} opened`, action: { label: "View", run: () => window.open(ev.data.pr.url, "_blank", "noopener") } });
       }
+      break;
+    case "goal.updated":
+      if (mine) onGoalEvent(ev);
       break;
     case "issue.updated":
     case "issue.deleted":

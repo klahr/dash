@@ -18,6 +18,23 @@ Each goal belongs to one project and has:
 Tasks the coordinator makes carry the goal's id (`goal_id`). Their timeline says what it did to
 them, e.g. "By coordinator · goal Faster search: sent this task back with notes".
 
+## On the board
+
+A goal's tasks are ordinary cards in the usual lanes. Each one has a chip with the goal's name,
+in a colour of its own that stays the same for that goal.
+
+- Tap a card's goal chip to show only that goal's tasks. The chip at the top of the board names
+  the goal; tap it to show every task again.
+- The task's timeline shows what the coordinator did in the goal's colour.
+- The review count and the tab title still count every task, filtered or not.
+
+In `dash-tui`, a task in a goal shows `◆ <goal>` under its title, and the task's detail names
+the goal. To show only one goal's tasks:
+
+- `gf` on a task filters to its goal; `gf` again shows every task.
+- `:goal <name>` filters to the goal with that name (or the start of it); `:goal` shows every
+  task again.
+
 ## How a goal runs
 
 1. **Planning.** When you make a goal, the coordinator reads the code and proposes a plan:

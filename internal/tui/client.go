@@ -176,6 +176,11 @@ func (c *Client) Todos(pid string) (ts []model.Todo, err error) {
 	return ts, c.do("GET", "/api/projects/"+pid+"/todos", nil, &ts)
 }
 
+// Goals lists project pid's goals (without their logs).
+func (c *Client) Goals(pid string) (gs []model.Goal, err error) {
+	return gs, c.do("GET", "/api/projects/"+pid+"/goals", nil, &gs)
+}
+
 type NewTodo struct {
 	Title    string `json:"title"`
 	Prompt   string `json:"prompt"`

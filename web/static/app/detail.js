@@ -6,6 +6,7 @@ import { ask, attempt, copy, fail, leave, toast } from "./dialogs.js";
 import { attachThumb } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { approvable, buildsOnMeta, depMeta, hasPriority, prChecksTitle, prReviewTag, prStatus, prTone, title, waitsOnGitHub } from "./branches.js";
+import { goalChip } from "./goals.js";
 import { editable, openTodoForm } from "./todos.js";
 import { editPrompt, endInline, inlineEdits, renderInline } from "./inlineedit.js";
 import { canPreview, hidePreview, previewButton, previewOf, pv, renderPreview, stopPreview } from "./preview.js";
@@ -100,6 +101,7 @@ export function renderDetail() {
   $("#d-meta").replaceChildren(...[
     h("span", { class: `status s-${t.status}` }, STATUS_LABEL[t.status] || t.status),
     t.worktree ? h("span", { class: "branch" }, t.worktree.branch) : null,
+    goalChip(t),
     hasPriority(t) && !inlineEdits(t) ? h("span", {}, `Priority ${t.priority}`) : null, // else an editable field below
     depMeta(t),
     buildsOnMeta(t),

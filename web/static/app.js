@@ -52,6 +52,7 @@ import "./app/backend.js";
 import { chatRunner } from "./app/chat.js";
 import "./app/chatpane.js";
 import "./app/timeline.js";
+import "./app/goals.js";
 import "./app/terminal.js";
 import "./app/try.js";
 import "./app/history.js";

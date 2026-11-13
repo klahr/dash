@@ -121,9 +121,11 @@ type App struct {
 
 	pickRow int
 
-	query   string // board search (/)
-	showOld bool   // show merged todos older than a day
-	Bell    bool   // ring the terminal bell for reviews, failures and approvals
+	query   string                // board search (/)
+	goals   map[string]model.Goal // the project's goals, by id
+	goal    string                // board filter: only this goal's tasks ("" for all)
+	showOld bool                  // show merged todos older than a day
+	Bell    bool                  // ring the terminal bell for reviews, failures and approvals
 	ci      *CIStatus
 
 	perms   []PermRequest // pending permission requests for this project
@@ -155,7 +157,7 @@ func NewApp(c *Client, project string) *App {
 	a := &App{
 		c: c, ctx: ctx, stop: cancel, startPj: project, seenElsewhere: map[string]model.TodoStatus{},
 		links: map[string]bool{}, streaming: map[string]bool{},
-		todos: map[string]model.Todo{}, lastLine: map[string]string{}, dText: map[string]string{},
+		todos: map[string]model.Todo{}, goals: map[string]model.Goal{}, lastLine: map[string]string{}, dText: map[string]string{},
 		dKind: "log",
 	}
 
@@ -198,6 +200,11 @@ type (
 	procsMsg struct {
 		pid string
 		ps  []model.Process
+		err error
+	}
+	goalsMsg struct {
+		pid string
+		gs  []model.Goal
 		err error
 	}
 	textMsg struct {
@@ -292,6 +299,14 @@ func (a *App) loadTodos() tea.Cmd {
 	}
 	pid := a.proj.ID
 	return func() tea.Msg { ts, err := a.c.Todos(pid); return todosMsg{pid, ts, err} }
+}
+
+func (a *App) loadGoals() tea.Cmd {
+	if a.proj == nil {
+		return nil
+	}
+	pid := a.proj.ID
+	return func() tea.Msg { gs, err := a.c.Goals(pid); return goalsMsg{pid, gs, err} }
 }
 
 func (a *App) loadProcs() tea.Cmd {
@@ -439,6 +454,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case goalsMsg:
+		// A Dash from before goals has no such list: its tasks have none.
+		if msg.err == nil && a.proj != nil && msg.pid == a.proj.ID {
+			a.goals = map[string]model.Goal{}
+			for _, g := range msg.gs {
+				a.goals[g.ID] = g
+			}
+		}
+		return a, nil
+
 	case procsMsg:
 		if msg.err == nil && a.proj != nil && msg.pid == a.proj.ID {
 			a.procs = msg.ps
@@ -465,7 +490,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.links[msg.machine] = msg.ok
 		a.connected = a.links[a.machine()]
 		if msg.ok && !was && msg.machine == a.machine() {
-			return a, tea.Batch(a.loadProjects(), a.loadTodos(), a.loadProcs(), a.loadPerms(), a.loadUsage())
+			return a, tea.Batch(a.loadProjects(), a.loadTodos(), a.loadGoals(), a.loadProcs(), a.loadPerms(), a.loadUsage())
 		}
 		if msg.err != nil && errors.Is(msg.err, ErrUnauthorized) {
 			a.setFlash("login rejected by server — check DASH_USERNAME / DASH_PASSWORD", true)
@@ -614,10 +639,14 @@ func (a *App) selectProject(i int) tea.Cmd {
 	a.overlay = ovNone
 	a.perms = nil
 	a.ci = nil
-	return tea.Batch(a.loadTodos(), a.loadProcs(), a.loadPerms(), a.loadCI(false, false), a.loadUsage())
+	a.goals, a.goal = map[string]model.Goal{}, ""
+	return tea.Batch(a.loadTodos(), a.loadGoals(), a.loadProcs(), a.loadPerms(), a.loadCI(false, false), a.loadUsage())
 }
 
 func (a *App) matches(t model.Todo) bool {
+	if a.goal != "" && t.GoalID != a.goal {
+		return false
+	}
 	return a.query == "" || strings.Contains(strings.ToLower(t.Title+" "+t.Prompt), strings.ToLower(a.query))
 }
 
@@ -638,6 +667,60 @@ func (a *App) hiddenOld() int {
 		}
 	}
 	return n
+}
+
+// goalName is goal id's title, or its id while the goals aren't loaded.
+func (a *App) goalName(id string) string {
+	if g, ok := a.goals[id]; ok && g.Title != "" {
+		return g.Title
+	}
+	return id
+}
+
+// goalNamed finds the project's goal whose title is name, or starts with it
+// (case aside), or whose id is name.
+func (a *App) goalNamed(name string) (model.Goal, bool) {
+	name = strings.ToLower(name)
+	var prefix []model.Goal
+	for _, g := range a.goals {
+		t := strings.ToLower(g.Title)
+		if t == name || g.ID == name {
+			return g, true
+		}
+		if strings.HasPrefix(t, name) {
+			prefix = append(prefix, g)
+		}
+	}
+	if len(prefix) == 1 {
+		return prefix[0], true
+	}
+	return model.Goal{}, false
+}
+
+// selectedGoal is the goal of the selected task ("" for none).
+func (a *App) selectedGoal() string {
+	t, ok := a.selected()
+	if !ok {
+		return ""
+	}
+	return t.GoalID
+}
+
+// filterGoal shows only goal id's tasks on the board; "" (or the goal
+// already shown) shows every task again.
+func (a *App) filterGoal(id string) {
+	switch {
+	case id != "" && id != a.goal:
+		a.goal = id
+		a.setFlash("only goal "+a.goalName(id)+" (gf or :goal shows every task)", false)
+	case a.goal != "":
+		a.goal = ""
+		a.setFlash("showing every task", false)
+	default:
+		a.setFlash("select a task in a goal (gf), or :goal <name>", true)
+		return
+	}
+	a.rebuildCols()
 }
 
 func (a *App) rebuildCols() {
@@ -695,6 +778,11 @@ func (a *App) handleEvent(ev wireEvent) tea.Cmd {
 		}
 		if a.overlay == ovDetail && a.dID == t.ID && prev.Status != t.Status && t.Status == model.StatusReview {
 			return a.loadText(t.ID, "diff")
+		}
+	case model.EvGoalUpdated:
+		var g model.Goal
+		if mine && json.Unmarshal(ev.Data, &g) == nil && g.ID != "" {
+			a.goals[g.ID] = g
 		}
 	case model.EvTodoDeleted:
 		if mine {
@@ -961,6 +1049,8 @@ func (a *App) normalKey(s string) tea.Cmd {
 			a.overlay = ovNone
 		case "dd":
 			return a.deleteSelected()
+		case "gf":
+			a.filterGoal(a.selectedGoal())
 		case "gx":
 			t, ok := a.selected()
 			if !ok || t.PR == nil {
@@ -1741,6 +1831,16 @@ func (a *App) runCommand(line string) tea.Cmd {
 			summary, err := a.c.Cleanup(pid)
 			return resultMsg{ok: summary, err: err}
 		}
+	case "goal":
+		if arg == "" {
+			a.filterGoal("")
+			return nil
+		}
+		if g, ok := a.goalNamed(arg); ok {
+			a.filterGoal(g.ID)
+		} else {
+			a.setFlash("E: no goal matching "+arg, true)
+		}
 	case "noh", "nohlsearch":
 		a.query = ""
 		a.rebuildCols()
@@ -1792,7 +1892,7 @@ func (a *App) runCommand(line string) tea.Cmd {
 		a.chat, a.chatHist, a.chatOff = nil, nil, 0
 		return a.action("chat cleared", a.c.ClearChat)
 	case "e", "e!", "refresh":
-		return tea.Batch(a.loadProjects(), a.loadTodos(), a.loadProcs())
+		return tea.Batch(a.loadProjects(), a.loadTodos(), a.loadGoals(), a.loadProcs())
 	default:
 		a.setFlash("E492: Not an editor command: "+line, true)
 	}

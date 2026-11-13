@@ -11,7 +11,7 @@ import (
 // trailing space means the command takes an argument.
 var commands = []string{
 	"project ", "push", "task ", "todo ", "new ", "board", "chat", "procs",
-	"ci", "fix", "cleanup", "pause", "resume", "perms", "copy path", "copy prompt", "copy",
+	"goal ", "ci", "fix", "cleanup", "pause", "resume", "perms", "copy path", "copy prompt", "copy",
 	"run ", "newproject ", "addclone ", "noh", "old", "clear", "refresh", "help", "q",
 }
 
@@ -25,6 +25,9 @@ func (a *App) commandSuggestions() []string {
 		} else {
 			out = append(out, "project "+p.Name)
 		}
+	}
+	for _, g := range a.goals {
+		out = append(out, "goal "+g.Title)
 	}
 	return out
 }

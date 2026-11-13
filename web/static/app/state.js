@@ -24,6 +24,8 @@ export const state = {
   projectsLoaded: false, // the board's empty states wait for the first project list
   project: null,
   todos: new Map(),
+  goals: new Map(),   // the project's goals by id, for their tasks' chips
+  goalFilter: null,   // the board shows only this goal's tasks (null: every task)
   lastLine: new Map(),
   activity: new Map(), // todo id → what it is busy with right now (see trackActivity)
   lane: null,         // mobile: selected lane key

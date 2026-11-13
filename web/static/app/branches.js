@@ -21,6 +21,7 @@ import { hoverCard } from "./hovercard.js";
 import { loadChecklist } from "./checklist.js";
 import { keys, laneHidden, todoKey } from "./vim.js";
 import { desktop } from "./viewport.js";
+import { goalChip, renderGoalFilter } from "./goals.js";
 
 // ------------------------------------------------------------------ branches
 // The open switcher's GET /branches answer, for the project it was opened on.
@@ -155,10 +156,13 @@ export const byPriority = (a, b) => (hasPriority(b) - hasPriority(a)) || (a.prio
 
 const isOld = (t) => t.status === "merged" && Date.now() - new Date(t.finished_at || t.updated_at) > DAY;
 
-export function laneItems() {
+// laneItems is the board's tasks by lane, as shown: only the goal filtered
+// to, if any (all: every task, as the review count and priorities need).
+export function laneItems(all = false) {
   const out = Object.fromEntries(LANES.map((l) => [l.key, []]));
   for (const t of state.todos.values()) {
     if (!state.showOld && isOld(t)) continue;
+    if (!all && state.goalFilter && t.goal_id !== state.goalFilter) continue;
     const lane = LANES.find((l) => l.statuses.includes(t.status));
     if (lane) out[lane.key].push(t);
   }
@@ -213,6 +217,7 @@ function renderBoardNow() {
     $("#lane-tabs").replaceChildren();
     $("#lane-chips").replaceChildren();
     $("#new-todo").hidden = true;
+    $("#goal-filter").hidden = true;
     // Until the projects and runners are in, don't flash a welcome, a board
     // or "create your first project" that one of the others then replaces.
     empty.hidden = !state.projectsLoaded || state.runners === undefined;
@@ -233,6 +238,7 @@ function renderBoardNow() {
   empty.hidden = true;
   $("#new-todo").hidden = false;
   renderRunnerBanner();
+  renderGoalFilter();
 
   // A task just added may already have moved on (a queued task picked up at
   // once is Running): follow it rather than show its old lane empty.
@@ -276,11 +282,13 @@ function renderBoardNow() {
       l.key === "draft" ? enqueueAllBtn(items.draft) : null,
       l.key === "done" ? oldToggle() : null,
       l.key === "done" ? clearDoneBtn() : null))));
-  updateNeedsYou(items);
+  // What needs you counts every task, whatever the board is filtered to.
+  const every = state.goalFilter ? laneItems(true) : items;
+  updateNeedsYou(every);
 
   $(".lane-tab[aria-selected=true]")?.scrollIntoView({ block: "nearest", inline: "nearest" });
 
-  const review = items.review.length + state.perms.length;
+  const review = every.review.length + state.perms.length;
   const badge = $("#review-badge");
   if (String(review) !== badge.textContent && review && !reduceMotion.matches) {
     badge.animate([{ transform: "scale(1.35)" }, { transform: "scale(1)" }], { duration: 260, easing: EASE });
@@ -528,7 +536,8 @@ export function todoRow(t, li = -1, ri = -1) {
     h("span", { class: "node", "aria-hidden": "true" }),
     h("span", { class: "todo-main" },
       h("button", { type: "button", class: "todo-open" }, h("span", { class: "todo-title" }, title(t))),
-      h("span", { class: subClass }, sub)),
+      h("span", { class: subClass }, sub),
+      goalChip(t)),
     h("span", { class: "todo-side" },
       checkTag,
       t.paused ? h("span", { class: "paused-tag" }, "Paused") : null,

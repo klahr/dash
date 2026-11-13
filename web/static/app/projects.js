@@ -8,6 +8,7 @@ import { state } from "./state.js";
 import { showView } from "./nav.js";
 import { baseBranch, eventFor, latest, multi, projectKey, projectStatus, refreshLive } from "./events.js";
 import { loadTodos, pushDone, renderPushMain } from "./board.js";
+import { loadGoals } from "./goals.js";
 import { renderBoard } from "./branches.js";
 import { ghMark, ghRepoHints, ghRepoLabel, ghRepoRows } from "./github.js";
 import { closeDetail, openDetail } from "./detail.js";
@@ -62,6 +63,8 @@ export async function loadProjects() {
 export async function selectProject(p) {
   state.project = p;
   state.todos = new Map();
+  state.goals = new Map();
+  state.goalFilter = null;
   state.unpushed = 0;
   state.unpushedTodos = null;
   state.lane = null;
@@ -86,7 +89,7 @@ export async function selectProject(p) {
   resetScans();
   loadTry().catch(() => {});
   if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); renderFileTree(); renderFile(); loadChecklist().catch(fail); return; }
-  await Promise.all([loadIssues(), loadTodos(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles(), state.view === "checklist" && loadChecklist(), state.view === "scans" && loadScans()]);
+  await Promise.all([loadIssues(), loadTodos(), loadGoals(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles(), state.view === "checklist" && loadChecklist(), state.view === "scans" && loadScans()]);
 }
 
 async function loadPerms() {

@@ -249,7 +249,7 @@ export function formPriority(v) {
 // right after the prioritised cards, where a task given a priority goes.
 export function nextPriority(t) {
   const lane = LANES.find((l) => l.statuses.includes(t.status));
-  const ps = (lane ? laneItems()[lane.key] : []).filter((x) => x.id !== t.id && hasPriority(x)).map((x) => x.priority);
+  const ps = (lane ? laneItems(true)[lane.key] : []).filter((x) => x.id !== t.id && hasPriority(x)).map((x) => x.priority);
   return ps.length ? Math.max(...ps) + 1 : 0;
 }
 

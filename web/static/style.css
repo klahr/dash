@@ -318,6 +318,32 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 }
 .todo-sub.progress { font-family: var(--mono); font-size: var(--fs-xs); -webkit-line-clamp: 1; color: var(--running); }
 .todo-sub.err { color: var(--failed); }
+/* A goal's chip (app/goals.js): the goal's name in a colour of its own (--goal-h, a hue
+   from its id). On a card it filters the board to the goal; at the top it clears that. */
+.goal-chip, .tl-coord { --goal: hsl(var(--goal-h, 230) 80% 74%); }
+.goal-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 24px; margin-top: 6px; padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--goal) 45%, transparent); border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--goal) 12%, transparent); color: var(--goal);
+  font-size: var(--fs-xs); font-weight: 600; line-height: 1.2; cursor: pointer;
+  transition: background-color .15s var(--ease), border-color .15s var(--ease);
+}
+.goal-chip:hover, .goal-chip[aria-pressed=true] { background: color-mix(in srgb, var(--goal) 22%, transparent); border-color: var(--goal); }
+.goal-chip:active { transform: translateY(1px); }
+.goal-chip .goal-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.goal-chip .ico { width: 14px; height: 14px; flex: none; }
+.goal-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--goal); }
+@media (pointer: coarse) { .goal-chip { min-height: 32px; padding: 0 12px; } }
+#d-meta .goal-chip { margin-top: 0; }
+/* The board's goal filter: shows the goal its tasks are filtered to, and clears it. */
+.goal-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 8px var(--pad-x); border-bottom: 1px solid var(--line); color: var(--muted); font-size: var(--fs-s); }
+.goal-filter[hidden] { display: none; }
+.goal-filter .goal-chip { margin-top: 0; min-width: 0; }
+/* A goal coordinator's note on a task's timeline. */
+.tl-coord { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 8px 12px; border-left: 3px solid var(--goal); border-radius: var(--r-s); background: color-mix(in srgb, var(--goal) 8%, var(--surface)); font-size: var(--fs-s); color: var(--text); }
+.tl-coord b { color: var(--goal); }
+.tl-coord .goal-dot { align-self: center; }
+.tl-coord .act-time { margin-left: auto; flex: none; color: var(--faint); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
 /* What a task is busy with: spinner, label, elapsed time, latest output line. */
 .todo-sub.activity { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .todo-sub.activity .act-label { font-family: var(--ui); font-weight: 600; font-size: var(--fs-s); }

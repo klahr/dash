@@ -4,6 +4,7 @@ import { attempt, copy } from "./dialogs.js";
 import { state } from "./state.js";
 import { duration } from "./activity.js";
 import { toolCall, toolResult, toolSettled } from "./chat.js";
+import { goalHue, goalName } from "./goals.js";
 
 // ------------------------------------------------------------------ task timeline
 // The task chat's log is the task's timeline: the worker's runs (labelled
@@ -46,6 +47,24 @@ function endPhase(e) {
   return !!res;
 }
 
+
+// What a goal's coordinator did to the task, as Dash notes it on the task's
+// log: "By coordinator · goal <title>: <what>".
+const COORD = "By coordinator · goal ";
+
+// coordNote is such a note, set apart from Dash's own: the goal's name in
+// its colour, then what the coordinator did.
+function coordNote(e) {
+  const t = state.todos.get(worker.id), rest = e.text.slice(COORD.length);
+  // The note names the goal as it was called then: split at its title when
+  // it still is, else at the first colon.
+  const was = t?.goal_id && rest.startsWith(`${goalName(t.goal_id)}: `) ? goalName(t.goal_id) : rest.split(": ")[0];
+  const what = rest.slice(was.length).replace(/^: /, "");
+  return h("p", { class: "tl-coord", style: t?.goal_id ? `--goal-h: ${goalHue(t.goal_id)}` : null },
+    h("span", { class: "goal-dot", "aria-hidden": "true" }),
+    h("span", {}, "By coordinator · goal ", h("b", {}, was), what ? `: ${what}` : ""),
+    h("span", { class: "act-time" }, clockTime(e.at)));
+}
 
 // timeline merges a saved chat's message nodes with the worker's events.
 export function timeline(nodes, saved) {
@@ -114,6 +133,7 @@ function workerNode(parent, e) {
         return;
       }
       if (worker.phase && endPhase(e)) return; // the phase's own result line
+      if (text.startsWith(COORD)) { worker.cur = null; parent.append(enter(coordNote(e))); return; }
       let cur = last("notes");
       if (!cur) { cur = worker.cur = { kind: "notes", el: h("pre", { class: "log tl-log" }) }; parent.append(cur.el); }
       cur.el.append(`${new Date(e.at).toLocaleTimeString(timeLocale)} ${e.text}\n`);
