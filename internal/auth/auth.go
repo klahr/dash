@@ -921,7 +921,7 @@ func (a *Auth) serveSession(w http.ResponseWriter, r *http.Request, id *Identity
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "you aren't a member of any organization", "code": "no_org"})
 		return
 	}
-	if id.Org != nil && id.Method != store.MethodGoogle && !orgFree(r.URL.Path) && a.googleRequired(id) {
+	if !orgFree(r.URL.Path) && a.googleRefusesIdentity(id) {
 		a.answerGoogleRequired(w, r, id, api)
 		return
 	}

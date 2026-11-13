@@ -797,6 +797,59 @@ func TestGoogleRequired(t *testing.T) {
 	}
 }
 
+// A member Acme's Workspace removed can't get back in with a personal
+// Google account: not by linking one, nor with one linked before.
+func TestGoogleRequiredPersonalAccount(t *testing.T) {
+	t.Parallel()
+
+	e := newGEnv(t, false, false)
+	e.setSSO(func(s *store.OrgSSO) { s.RequireGoogle = true })
+	dan := e.register("dan", "dan@acme.com", e.acme.ID, store.RoleMember)
+	e.linkGoogle(dan, person{sub: "g-dan", email: "dan@acme.com", hd: "acme.com"})
+	side, err := e.a.acc.CreateOrg(dan.ID, "Side")
+	if err != nil {
+		t.Fatal(err)
+	}
+	members := fmt.Sprintf("https://%s/api/orgs/%d/members", gHost, e.acme.ID)
+	switchTo := func(b *gBrowser, org int64) {
+		t.Helper()
+		if w := b.postJSON("https://"+gHost+"/api/auth/switch-org", fmt.Sprintf(`{"org_id":%d}`, org)); w.Code != 200 {
+			t.Fatalf("switch-org: %d %s", w.Code, w.Body)
+		}
+	}
+
+	// With his password, from his own org: unlink the work account, link a
+	// personal one.
+	b := newGBrowser(t, e.h)
+	b.login("dan", "password1")
+	switchTo(b, side.ID)
+	if w := b.do("DELETE", "https://"+gHost+"/api/account/google", `{"password":"password1"}`, "application/json"); w.Code != http.StatusNoContent {
+		t.Fatalf("unlink: %d %s", w.Code, w.Body)
+	}
+	personal := person{sub: "g-dan-personal", email: "dan.private@gmail.com"}
+	wantReason(t, e.signIn(b, "purpose=link", personal), http.StatusForbidden, "domain_mismatch")
+	if _, err := e.a.acc.IdentityBySubject("google", personal.sub); err == nil {
+		t.Fatal("linked a personal account an org's Require Google refuses")
+	}
+
+	// One linked anyway (before Acme required Google): its sessions are
+	// Google sessions, but not of Acme's domain.
+	e.linkGoogle(dan, personal)
+	g := newGBrowser(t, e.h)
+	e.signIn(g, "", personal)
+	if !g.session(gHost) {
+		t.Fatal("personal Google doesn't sign in")
+	}
+	switchTo(g, e.acme.ID)
+	if w := g.get(members); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "google_required") {
+		t.Fatalf("personal Google session in Acme: %d %s", w.Code, w.Body)
+	}
+	switchTo(g, side.ID)
+	if w := g.postJSON("https://"+gHost+"/api/tokens", fmt.Sprintf(`{"name":"x","org_id":%d,"scopes":["read"],"password":"password1"}`, e.acme.ID)); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "google_required") {
+		t.Fatalf("personal Google session token: %d %s", w.Code, w.Body)
+	}
+}
+
 func TestGoogleTestModeNeverSignsIn(t *testing.T) {
 	t.Parallel()
 

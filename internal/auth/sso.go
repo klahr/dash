@@ -44,30 +44,71 @@ func (a *Auth) ssoRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/sso/domains/verify", a.sessionOnly(a.adminVerifyDomain))
 }
 
-// googleRequired reports whether id's org takes only Google sign-ins from
-// them: it requires Google, their address is in one of its verified
-// domains, and they aren't an owner (owners keep their password, so a
-// broken Google setup can't lock everyone out). The address's domain is
-// enough here: it only ever takes a way in away.
-func (a *Auth) googleRequired(id *Identity) bool {
-	if id.Org == nil {
-		return false
-	}
-	return a.googleRequiredIn(id.User.Email, *id.Org)
+// googleRequiredIn reports whether the org of m, the membership of the user
+// with email, takes only Google sign-ins from them: it requires Google,
+// their address is in one of its verified domains, and they aren't an owner
+// (owners keep their password, so a broken Google setup can't lock everyone
+// out). The address's domain is enough here: it only ever takes a way in
+// away.
+func (a *Auth) googleRequiredIn(email string, m store.Membership) bool {
+	_, ok := a.requiringGoogle(email, m)
+	return ok
 }
 
-// googleRequiredIn is googleRequired for the user with email in m, their
-// membership of an org: use it wherever credentials are issued for an org
-// other than the session's active one (API tokens, OAuth grants).
-func (a *Auth) googleRequiredIn(email string, m store.Membership) bool {
+func (a *Auth) requiringGoogle(email string, m store.Membership) (store.OrgSSO, bool) {
 	if m.Role == store.RoleOwner {
-		return false
+		return store.OrgSSO{}, false
 	}
 	s, err := a.acc.OrgSSO(m.ID)
 	if err != nil {
+		return store.OrgSSO{}, false
+	}
+	return s, s.RequireGoogle && s.VerifiedDomain(emailDomain(email))
+}
+
+// googleRefuses reports whether the org of m, user's membership, refuses a
+// session signed in by method: it requires Google of them (googleRequiredIn)
+// and the session wasn't signed in with a Google account of one of the
+// org's verified domains. Any Google account isn't enough: a member
+// suspended in the org's Workspace could sign in with a personal one. The
+// account checked is the one linked to theirs, which Google sign-in signs
+// them in with; it changes only by linking another, which Google proves,
+// and unlinking it leaves a Google session nothing to pass with.
+func (a *Auth) googleRefuses(user store.User, method string, m store.Membership) bool {
+	s, required := a.requiringGoogle(user.Email, m)
+	if !required {
 		return false
 	}
-	return s.RequireGoogle && s.VerifiedDomain(emailDomain(email))
+	if method != store.MethodGoogle {
+		return true
+	}
+	ident, err := a.acc.UserIdentity(user.ID, store.ProviderGoogle)
+	return err != nil || !s.VerifiedDomain(ident.HD)
+}
+
+// googleRefusesIdentity is googleRefuses for id's session in its org.
+func (a *Auth) googleRefusesIdentity(id *Identity) bool {
+	return id.Org != nil && a.googleRefuses(id.User, id.Method, *id.Org)
+}
+
+// googleLinkRefused is the org that requires Google of uid and doesn't take
+// hd, a Google account's hosted domain, as one of its verified domains, if
+// any: linking that account would give uid Google sessions that org refuses.
+func (a *Auth) googleLinkRefused(uid int64, hd string) (store.Membership, bool) {
+	u, err := a.acc.User(uid)
+	if err != nil {
+		return store.Membership{}, true // fail closed
+	}
+	ms, err := a.acc.Memberships(uid)
+	if err != nil {
+		return store.Membership{}, true
+	}
+	for _, m := range ms {
+		if s, required := a.requiringGoogle(u.Email, m); required && !s.VerifiedDomain(hd) {
+			return m, true
+		}
+	}
+	return store.Membership{}, false
 }
 
 func (a *Auth) answerGoogleRequired(w http.ResponseWriter, r *http.Request, id *Identity, api bool) {

@@ -570,6 +570,9 @@ func (a *Auth) googleUser(w http.ResponseWriter, r *http.Request, f *oidcFlow, c
 			})
 			return store.User{}, nil, false, nil
 		}
+		if _, refused := a.googleLinkRefused(existing.ID, cl.HD); refused {
+			return store.User{}, nil, false, failFlow("domain_mismatch", "link hd %q", cl.HD)
+		}
 		ident.UserID = existing.ID
 		if err := a.acc.LinkIdentity(ident, now); err != nil {
 			return store.User{}, nil, false, linkError(err)
@@ -758,6 +761,10 @@ func (a *Auth) redeemLink(r *http.Request, tok string, uid int64) bool {
 	if !ok || a.now().After(l.expires) {
 		return false
 	}
+	if _, refused := a.googleLinkRefused(uid, l.ident.HD); refused {
+		slog.Warn("google sign-in: link after password: outside a domain an org requires", "user", uid, "hd", l.ident.HD)
+		return false
+	}
 	l.ident.UserID = uid
 	if err := a.acc.LinkIdentity(l.ident, a.now()); err != nil {
 		slog.Warn("google sign-in: link after password", "user", uid, "err", err)
@@ -769,6 +776,12 @@ func (a *Auth) redeemLink(r *http.Request, tok string, uid int64) bool {
 
 // googleLinked links cl to the signed-in user who started f.
 func (a *Auth) googleLinked(w http.ResponseWriter, r *http.Request, f *oidcFlow, cl oidcClaims) {
+	// An org that requires Google of them takes only its domains' accounts:
+	// linking another would be a way back in once Google removes them.
+	if m, refused := a.googleLinkRefused(f.User, cl.HD); refused {
+		a.flowFailed(w, r, f, &cl, failFlow("domain_mismatch", "link hd %q, required by org %d", cl.HD, m.ID))
+		return
+	}
 	ident := store.Identity{UserID: f.User, Provider: store.ProviderGoogle, Subject: cl.Subject, Email: cl.Email, HD: cl.HD}
 	if err := a.acc.LinkIdentity(ident, a.now()); err != nil {
 		a.flowFailed(w, r, f, &cl, linkError(err))

@@ -200,7 +200,9 @@ Under **Organization → Google sign-in**:
   *first* Google sign-in, as member (or admin; never owner). Someone an admin removes doesn't come
   back by signing in again. Off, they need an invitation as before.
 - **Require Google sign-in**: members whose address is in a verified domain can't use the org with
-  a password session; they're asked to sign in with Google. Owners keep their password, so a broken
+  a password session, or with a Google account outside the verified domains (a personal Gmail);
+  they're asked to sign in with their work Google account, and can't link another one. Owners keep
+  their password, so a broken
   Google setup can't lock everyone out. API tokens and runners are unaffected.
 - **Also ask for the two-factor code after Google** (off by default): members with two-factor
   sign-in enter their code after Google too. An org that requires two-factor sign-in always asks.
