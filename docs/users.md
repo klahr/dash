@@ -224,6 +224,7 @@ Google accounts are matched on Google's stable account id (`sub`), not the email
 - **Account → Google account** links or unlinks Google. An account made by signing in with Google
   has no password: it can't unlink until it chooses one (*Forgot password?*), and where Dash asks
   for the password before a change, a Google sign-in within the last 10 minutes confirms instead.
+  Choosing a password from a reset link unlinks Google; link it again afterwards.
 - Failed Google sign-ins count towards the sign-in lockout, and answer with a page naming the reason
   (never Google's raw error).
 

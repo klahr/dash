@@ -305,6 +305,13 @@ func (a *Accounts) CheckResetToken(tok string, now time.Time) error {
 // ResetPassword sets the password of the account a reset link was sent to,
 // and signs out its sessions, API tokens and connectors, as a password change
 // does. Two-factor sign-in stays on.
+//
+// It also unlinks the account's Google (and other provider) sign-ins. The
+// link is the first proof some accounts get that their owner holds the
+// address: one registered through an invitation got an address the inviter
+// typed, and whoever registered it could have linked their own Google
+// account, which would otherwise outlast the owner taking it over. The owner
+// links theirs again from Account.
 func (a *Accounts) ResetPassword(tok, password string, now time.Time) (User, error) {
 	if len(password) < MinPassword {
 		return User{}, ErrWeakPassword
@@ -327,6 +334,9 @@ func (a *Accounts) ResetPassword(tok, password string, now time.Time) (User, err
 			return err
 		}
 		if _, err := tx.Exec("DELETE FROM sessions WHERE user_id = ?", uid); err != nil {
+			return err
+		}
+		if _, err := tx.Exec("DELETE FROM user_identities WHERE user_id = ?", uid); err != nil {
 			return err
 		}
 		if _, err := tx.Exec("DELETE FROM email_tokens WHERE user_id = ? AND purpose = 'reset'", uid); err != nil {

@@ -21,7 +21,7 @@ const ProviderGoogle = "google"
 var (
 	ErrIdentityTaken  = errors.New("that Google account is linked to another account")
 	ErrIdentityLinked = errors.New("your account is linked to a Google account already; unlink it first")
-	ErrNoPassword     = errors.New("your account has no password yet: choose one with “Forgot password?” on the sign-in page before unlinking Google, or you couldn't sign in")
+	ErrNoPassword     = errors.New("your account has no password yet: choose one with “Forgot password?” on the sign-in page (which unlinks Google), or you couldn't sign in")
 	ErrBadDomain      = errors.New("that doesn't look like a domain name, e.g. example.com")
 	ErrDomainTaken    = errors.New("another organization has that domain already")
 	ErrBadJoinRole    = errors.New("people who join by their domain are members or admins, never owners")

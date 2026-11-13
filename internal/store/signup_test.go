@@ -126,6 +126,43 @@ func TestResetTokenExpires(t *testing.T) {
 	}
 }
 
+// An inviter can register an invitation to a colleague's address and link
+// their own Google account to it. When the colleague takes the account over
+// with a reset link, that Google sign-in goes with the old password.
+func TestResetPasswordUnlinksIdentities(t *testing.T) {
+	t.Parallel()
+
+	_, a := openAccounts(t)
+	now := time.Now()
+	a.Bootstrap("admin", "s3cret")
+	admin, _ := a.EnvUser()
+	org, _ := a.DefaultOrg()
+	inv, _, err := a.Invite(admin.ID, org.ID, "vic@example.com", RoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _, err := a.RegisterWithInvitation(inv, "vic", "attacker-password") // the inviter
+	if err != nil || u.Email != "vic@example.com" {
+		t.Fatalf("register: %+v %v", u, err)
+	}
+	if err := a.LinkIdentity(Identity{UserID: u.ID, Provider: ProviderGoogle, Subject: "attacker", Email: "attacker@example.dev"}, now); err != nil {
+		t.Fatal(err)
+	}
+	_, tok, ok, err := a.RequestPasswordReset("vic@example.com", now) // the owner
+	if !ok || err != nil {
+		t.Fatalf("request: %v %v", ok, err)
+	}
+	if _, err := a.ResetPassword(tok, "owner-password", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.IdentityBySubject(ProviderGoogle, "attacker"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("identity after reset: %v", err)
+	}
+	if _, err := a.UserIdentity(u.ID, ProviderGoogle); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("user identity after reset: %v", err)
+	}
+}
+
 // Signing up for someone else's address leaves no password the signer knows:
 // the address's owner chooses it from the link.
 func TestSignUpBeforeOwnerCantTakeOver(t *testing.T) {
