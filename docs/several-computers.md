@@ -165,6 +165,11 @@ installed), the download or its checksum is wrong (the old binary stays), or the
 on its old version. The Runners page then shows why. The runner's own Pause is separate and stays
 as it was.
 
+Back on the new version, the runner keeps its place in its Claude account's weekly pace: while the
+account waits for the pace line, the runner waits too. If the hub restarted as well and doesn't
+know the runner's account yet, tasks wait, saying "*name* is starting up", until the runner has
+checked which Claude account it is on.
+
 A just-updated runner tries the new version: if it doesn't connect to the hub within two minutes,
 or keeps crashing on start (three starts without connecting), it puts `dash.prev` back and
 restarts on it, and the hub reports the update failed.

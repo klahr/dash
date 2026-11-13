@@ -145,6 +145,36 @@ func TestPaceAheadHoldsTheWholeAccount(t *testing.T) {
 	}
 }
 
+// A runner that just started and hasn't asked Claude Code which account it
+// is on gets no task until it has (the hub can't tell whether its account
+// waits for the pace). An older runner, which never says, isn't held.
+func TestStartingRunnerWaits(t *testing.T) {
+	t.Parallel()
+
+	fx := pacedFixture(t)
+	r := runnerOf("new", fx.orgA, true)
+	r.Reported = &tunnel.Reported{Parallel: 1, Claude: &claudecli.Status{}, Usage: &usage.Snapshot{}}
+	fx.fleet.set(r)
+	p := fx.project(t, fx.orgA, "new")
+	_, _, err := fx.d.Dispatch(context.Background(), p, fx.todo(t, p, nil))
+	var w *WaitError
+	if !errors.As(err, &w) || !strings.Contains(w.Reason, "new is starting up") {
+		t.Fatalf("err = %v, want it waiting while it starts", err)
+	}
+	r.Reported.Claude = &claudecli.Status{Version: "2.1.0", CheckedAt: time.Now()}
+	fx.fleet.set(r)
+	if _, _, err := fx.d.Dispatch(context.Background(), p, fx.todo(t, p, nil)); err != nil {
+		t.Fatalf("checked: %v", err)
+	}
+	old := runnerOf("old", fx.orgA, true)
+	old.Reported = &tunnel.Reported{Parallel: 1}
+	fx.fleet.set(old)
+	q := fx.project(t, fx.orgA, "old")
+	if _, _, err := fx.d.Dispatch(context.Background(), q, fx.todo(t, q, nil)); err != nil {
+		t.Fatalf("an older runner: %v", err)
+	}
+}
+
 // startN dispatches tasks of p until one waits, and returns how many each
 // runner got.
 func (fx *fixture) startN(t *testing.T, p model.Project, n int) map[string]int {

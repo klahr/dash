@@ -818,6 +818,7 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 	if self.Disk != nil {
 		self.Disk = cleanDisk(*self.Disk)
 	}
+	self.Claude, self.Usage = carryOver(prev, self.Claude, self.Usage, h.clock())
 	h.reported[rec.ID] = &Reported{Parallel: self.Parallel, Usage: self.Usage, Terminals: self.Terminals, ChatCommands: self.ChatCommands, Claude: self.Claude,
 		Disk: self.Disk, At: h.clock()}
 	var diskChanged bool
@@ -847,6 +848,29 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func paused(u *usage.Snapshot) bool { return u != nil && u.Paused }
+
+// carryOver keeps what a runner's earlier report (prev) knew and its new
+// one (claude, u) doesn't know yet: a runner that just restarted (after an
+// update, say) reports before it has asked Claude Code which account it is
+// on, and before Claude Code has told it the usage. Without them the hub
+// would pace it alone, with no weekly pace, and send it tasks while its
+// account waits for the pace line.
+func carryOver(prev *Reported, claude *claudecli.Status, u *usage.Snapshot, now time.Time) (*claudecli.Status, *usage.Snapshot) {
+	if prev == nil {
+		return claude, u
+	}
+	if claude != nil && claude.CheckedAt.IsZero() && prev.Claude != nil && !prev.Claude.CheckedAt.IsZero() {
+		claude = prev.Claude // not checked since it started
+	}
+	if u != nil && !u.Known && prev.Usage != nil && prev.Usage.Known {
+		m := *u
+		m.Known, m.Status, m.UpdatedAt = true, prev.Usage.Status, prev.Usage.UpdatedAt
+		m.Windows = slices.Clone(prev.Usage.Windows)
+		m = m.Reevaluate(now)
+		u = &m
+	}
+	return claude, u
+}
 
 // cleanDisk bounds what a runner reports about its disks.
 func cleanDisk(st disk.Status) *disk.Status {

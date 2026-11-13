@@ -744,6 +744,56 @@ func TestReportCarriesTheAccountAndTheReply(t *testing.T) {
 	}
 }
 
+// A runner that just restarted (after an update, say) reports before it
+// knows its Claude account and usage: the hub keeps what it knew, so the
+// runner stays paced with its account. Once it has checked, its news wins.
+func TestReportAfterRestartKeepsAccountAndUsage(t *testing.T) {
+	t.Parallel()
+
+	acc, owner := storetest.Accounts(t)
+	h := &Hub{Accounts: acc}
+	code, _, _ := h.NewCode(owner)
+	id, token, _, err := h.register(code, "work", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(h.ServeReport))
+	defer srv.Close()
+	creds := Credentials{Server: srv.URL, Token: token}
+	checked := time.Now().Add(-time.Hour)
+	resets := time.Now().Add(3 * 24 * time.Hour)
+	before := map[string]any{"parallel": 1,
+		"claude": map[string]any{"version": "2.1.0", "checked_at": checked, "account": map[string]any{"email": "ann@example.com"}},
+		"usage": map[string]any{"known": true, "updated_at": checked,
+			"windows": []map[string]any{{"name": "seven_day", "utilization": 0.9, "resets_at": resets}}}}
+	if err := Report(context.Background(), creds, before); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted := map[string]any{"parallel": 1, "claude": map[string]any{}, "usage": map[string]any{"known": false, "manual_pause": true, "paused": true}}
+	if err := Report(context.Background(), creds, restarted); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := h.Get(id)
+	if r.Account() != "ann@example.com" {
+		t.Errorf("account after restart: %q", r.Account())
+	}
+	if u := r.Reported.Usage; u == nil || !u.Known || len(u.Windows) != 1 || u.Windows[0].Utilization != 0.9 || !u.ManualPause || !u.Paused {
+		t.Errorf("usage after restart: %+v", u)
+	}
+
+	// Checked since: logged out, and Claude Code's figures are fresh.
+	after := map[string]any{"parallel": 1, "claude": map[string]any{"version": "2.1.0", "checked_at": time.Now()},
+		"usage": map[string]any{"known": true, "updated_at": time.Now()}}
+	if err := Report(context.Background(), creds, after); err != nil {
+		t.Fatal(err)
+	}
+	r, _ = h.Get(id)
+	if r.Account() != "" || len(r.Reported.Usage.Windows) != 0 {
+		t.Errorf("after checking: account %q, usage %+v", r.Account(), r.Reported.Usage)
+	}
+}
+
 // A runner reports its free disk space; the hub works out under the
 // runner's thresholds whether it is low or too full to start a task.
 func TestReportCarriesDiskSpace(t *testing.T) {

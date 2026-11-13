@@ -193,6 +193,10 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 			why = append(why, r.Name+" is updating")
 		case r.Paused:
 			why = append(why, r.Name+" is paused")
+		case starting(r):
+			// Its account, and so its pace, isn't known yet: it reports them
+			// in a moment.
+			why = append(why, r.Name+" is starting up")
 		case r.Reported != nil && r.Reported.Usage != nil && r.Reported.Usage.Paused && !(t.StartNow && r.Reported.Usage.PaceOnly()):
 			msg := r.Name + " has paused its queue"
 			if r.Reported.Usage.Reason != "" {
@@ -249,6 +253,19 @@ func (d *Dispatcher) PaceWait(p model.Project, t model.Todo) string {
 		return ""
 	}
 	return reason
+}
+
+// starting reports whether runner r just started and hasn't yet asked
+// Claude Code which account it is on, so the hub can't pace it with its
+// account (and the hub has no earlier report of it to go by: see
+// tunnel.Hub.ServeReport). An older runner, which doesn't report Claude
+// Code at all, never is.
+func starting(r tunnel.Runner) bool {
+	if r.Reported == nil || r.Reported.Claude == nil {
+		return false
+	}
+	c := r.Reported.Claude
+	return c.CheckedAt.IsZero() && c.Version == "" && c.Account == nil
 }
 
 // tooFull says why runner r, below its minimum free disk space, doesn't
