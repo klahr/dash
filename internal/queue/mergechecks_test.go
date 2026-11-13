@@ -1,7 +1,9 @@
 package queue
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -137,5 +139,84 @@ func TestGreenChecksOnTheSameCommitAreNotRunAgain(t *testing.T) {
 	}
 	if n := testRuns(t, h, td.ID); n != 1 {
 		t.Errorf("tests ran %d times, want 1", n)
+	}
+}
+
+// commitOnMain commits file straight onto the project's main branch, as
+// someone else's change landing while a task waits in review.
+func (h *harness) commitOnMain(file, content string) {
+	h.t.Helper()
+	write(h.t, h.proj.Path, file, content)
+	gitIn(h.t, h.proj.Path, "add", file)
+	gitIn(h.t, h.proj.Path, "commit", "-qm", "add "+file)
+}
+
+// A task whose tests pass on their own but fail once merged with a newer main
+// goes back to Claude, told it's the merge with main that broke them; main
+// doesn't get the change until a fixed run lands.
+func TestTestsFailingAfterMainMovedGoBackToClaude(t *testing.T) {
+	parallel(t)
+
+	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
+		write(t, req.Dir, "a.txt", "pass\n")
+		if n >= 2 { // the fix: drop what main brought in
+			if err := os.Remove(filepath.Join(req.Dir, "b.txt")); err != nil {
+				t.Error(err)
+			}
+		}
+		return nil
+	}}
+	h := newHarness(t, exe, model.Project{Name: "p", TestCommand: "grep -qx pass a.txt && ! test -e b.txt", MaxAutoFixes: 1})
+	td := h.waitFor(h.add("make a").ID, model.StatusReview)
+	if td.Checks == nil || !td.Checks.Passed {
+		t.Fatalf("want passing checks in review, got %+v", td.Checks)
+	}
+
+	h.commitOnMain("b.txt", "from main\n")
+	h.approveFresh(td.ID)
+	td = h.waitFor(td.ID, model.StatusMerged)
+	if td.Runs != 2 {
+		t.Errorf("want Claude to run a second time to fix the merge, ran %d times", td.Runs)
+	}
+	if !strings.Contains(td.SentBack, "after merging main") {
+		t.Errorf("sent back = %q", td.SentBack)
+	}
+	if fb := strings.Join(td.Feedback, "\n"); !strings.Contains(fb, "merged with the latest `main`, and now the tests fail") {
+		t.Errorf("Claude should be told the merge with main broke the tests, feedback:\n%s", fb)
+	}
+	if got := h.onMain("a.txt"); got != "pass\n" {
+		t.Errorf("main has a.txt %q, want the fixed version", got)
+	}
+}
+
+// Without automatic fixes left, tests that fail only after merging a newer
+// main fail the task, and the change stays off main.
+func TestTestsFailingAfterMainMovedWithoutFixesLeftNeverLand(t *testing.T) {
+	parallel(t)
+
+	exe := &fakeExec{fn: func(n int, req agent.ExecRequest) error {
+		write(t, req.Dir, "a.txt", "pass\n")
+		return nil
+	}}
+	h := newHarness(t, exe, model.Project{Name: "p", TestCommand: "grep -qx pass a.txt && ! test -e b.txt"})
+	td := h.waitFor(h.add("make a").ID, model.StatusReview)
+	if td.Checks == nil || !td.Checks.Passed {
+		t.Fatalf("want passing checks in review, got %+v", td.Checks)
+	}
+
+	h.commitOnMain("b.txt", "from main\n")
+	h.approveFresh(td.ID)
+	td = h.waitFor(td.ID, model.StatusFailed)
+	if !strings.Contains(td.Error, "tests fail after merging main") {
+		t.Errorf("error = %q", td.Error)
+	}
+	if td.Checks == nil || td.Checks.Stage != "merge" || td.Checks.Passed {
+		t.Errorf("want the merge's failing checks, got %+v", td.Checks)
+	}
+	if fb := strings.Join(td.Feedback, "\n"); !strings.Contains(fb, "merged with the latest `main`") {
+		t.Errorf("feedback:\n%s", fb)
+	}
+	if got := h.onMain("a.txt"); got != "" {
+		t.Errorf("a build red after merging main landed: a.txt = %q", got)
 	}
 }
