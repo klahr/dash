@@ -223,7 +223,7 @@ func (g *Git) CheckAccess(ctx context.Context, projectID, runner, remote string)
 	}
 	repo := GitHubOwnerRepo(remote)
 	if repo == "" {
-		repo = redactURL(remote)
+		repo = RedactRemote(remote)
 	}
 	return &AccessError{Runner: runner, Repo: repo, Protocol: RemoteProtocol(remote), Detail: summarizeGitOutput(out)}
 }
@@ -274,13 +274,16 @@ func summarizeGitOutput(out string) string {
 	return s
 }
 
-// redactURL drops a password from remote, should someone have put one in.
-func redactURL(remote string) string {
-	if u, err := url.Parse(remote); err == nil && u.User != nil {
-		if _, ok := u.User.Password(); ok {
-			u.User = url.UserPassword(u.User.Username(), "xxxxx")
-			return u.String()
-		}
+// RedactRemote drops the user info of a URL remote (an https token, given
+// as the user name or the password, or any password); scp-style remotes
+// (git@host:path) carry no secret and stay as they are.
+func RedactRemote(remote string) string {
+	u, err := url.Parse(remote)
+	if err != nil || u.Scheme == "" || u.Host == "" || u.User == nil {
+		return remote
 	}
-	return remote
+	if _, secret := u.User.Password(); secret || u.Scheme == "http" || u.Scheme == "https" {
+		u.User = nil
+	}
+	return u.String()
 }

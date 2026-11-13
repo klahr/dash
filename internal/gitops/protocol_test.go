@@ -332,3 +332,19 @@ func TestGhCredentialHelperRuns(t *testing.T) {
 func strconvQuote(s string) string {
 	return `"` + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `"`, `\"`) + `"`
 }
+
+func TestRedactRemote(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://glpat-secret@gitlab.example.com/o/r.git": "https://gitlab.example.com/o/r.git",
+		"https://user:secret@gitlab.example.com/o/r.git":  "https://gitlab.example.com/o/r.git",
+		"http://token@example.com/o/r.git":                "http://example.com/o/r.git",
+		"ssh://git:secret@example.com/o/r.git":            "ssh://example.com/o/r.git",
+		"ssh://git@example.com/o/r.git":                   "ssh://git@example.com/o/r.git",
+		"git@example.com:o/r.git":                         "git@example.com:o/r.git",
+		"https://example.com/o/r.git":                     "https://example.com/o/r.git",
+	} {
+		if got := RedactRemote(in); got != want {
+			t.Errorf("RedactRemote(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -9,13 +9,13 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/release"
 	"github.com/klahr/dash/internal/store"
@@ -146,23 +146,10 @@ func repoOrigin(dir string) string {
 			if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
 				v = v[1 : len(v)-1]
 			}
-			return redactRemote(v)
+			return gitops.RedactRemote(v)
 		}
 	}
 	return ""
-}
-
-// redactRemote drops the user info of a URL remote (an https token or
-// password); scp-style remotes (git@host:path) carry no secret and stay.
-func redactRemote(remote string) string {
-	u, err := url.Parse(remote)
-	if err != nil || u.Scheme == "" || u.Host == "" || u.User == nil {
-		return remote
-	}
-	if _, secret := u.User.Password(); secret || u.Scheme == "http" || u.Scheme == "https" {
-		u.User = nil
-	}
-	return u.String()
 }
 
 // ownRepos is findRepos for this Dash: its projects directory, without
