@@ -48,6 +48,8 @@ archives:
       - deploy/docker-compose.dns.yml
       - deploy/docker.env.example
       - deploy/caddy/*
+      # Terms of service and privacy policy to fill in (docs/privacy.md).
+      - deploy/legal/*
 
 checksum:
   name_template: checksums.txt

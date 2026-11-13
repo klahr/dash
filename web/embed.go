@@ -17,3 +17,9 @@ var Static, _ = fs.Sub(embedded, "static")
 //
 //go:embed landing.html
 var Landing string
+
+// Legal is the page around the hub's own terms of service and privacy
+// policy (DASH_TERMS_FILE, DASH_PRIVACY_FILE), an html/template.
+//
+//go:embed legal.html
+var Legal string

@@ -190,3 +190,55 @@ func TestPagesLoadNothingFromOtherSites(t *testing.T) {
 		}
 	}
 }
+
+// The hub serves its own terms and privacy policy from files, without a
+// session, in a page with the brand and the footer; edits show at once.
+func TestLegalPagesFromFiles(t *testing.T) {
+	parallel(t)
+
+	dir := t.TempDir()
+	terms, privacy := filepath.Join(dir, "terms.html"), filepath.Join(dir, "privacy.html")
+	for f, body := range map[string]string{terms: "<h1>Terms of service</h1><p>Be kind.</p>", privacy: "<h1>Privacy policy</h1><p>We keep little.</p>"} {
+		if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, h := brandedServer(t, branding.Config{Name: "Acme Agents", TermsFile: terms, PrivacyFile: privacy})
+	for path, want := range map[string]string{branding.TermsPath: "Be kind.", branding.PrivacyPath: "We keep little."} {
+		w := get(t, h, path)
+		if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "text/html; charset=utf-8" {
+			t.Fatalf("%s without a session: %d %q", path, w.Code, w.Header().Get("Content-Type"))
+		}
+		body := w.Body.String()
+		for _, s := range []string{want, "Acme Agents", `class="site-footer"`, `href="/terms"`, `href="/privacy"`} {
+			if !strings.Contains(body, s) {
+				t.Errorf("%s lacks %q", path, s)
+			}
+		}
+		if strings.Contains(body, "<script") {
+			t.Errorf("%s has a script", path)
+		}
+	}
+	// The sign-in page links them under the signup form and in the footer.
+	login := get(t, h, "/login.html").Body.String()
+	if !strings.Contains(login, `class="signup-note"`) || !strings.Contains(login, `href="/terms" rel="noopener">Terms</a>`) {
+		t.Errorf("sign-in page doesn't link the hub's own terms:\n%s", login)
+	}
+	if err := os.WriteFile(terms, []byte("<p>Be kinder.</p>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if body := get(t, h, branding.TermsPath).Body.String(); !strings.Contains(body, "Be kinder.") {
+		t.Error("an edit to the terms file doesn't show")
+	}
+}
+
+func TestLegalPagesOffByDefault(t *testing.T) {
+	parallel(t)
+
+	_, h := brandedServer(t, branding.Config{TermsURL: "https://acme.example/terms"})
+	for _, path := range []string{branding.TermsPath, branding.PrivacyPath} {
+		if w := get(t, h, path); w.Code != http.StatusNotFound {
+			t.Errorf("%s without a file: %d", path, w.Code)
+		}
+	}
+}

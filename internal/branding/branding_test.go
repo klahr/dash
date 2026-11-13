@@ -1,6 +1,8 @@
 package branding
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -63,5 +65,28 @@ func TestFooterEscapes(t *testing.T) {
 	f := string(Config{SourceURL: `https://x.example/"><script>`, Contact: "a@b.example"}.WithDefaults().Footer())
 	if strings.Contains(f, "<script>") || !strings.Contains(f, `href="mailto:a@b.example"`) {
 		t.Fatal(f)
+	}
+}
+
+func TestLegalFiles(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "terms.html")
+	if err := os.WriteFile(f, []byte("<p>x</p>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := Config{TermsFile: f, PrivacyFile: f}.WithDefaults()
+	if c.TermsURL != TermsPath || c.PrivacyURL != PrivacyPath {
+		t.Fatalf("files should link the hub's own pages: %q %q", c.TermsURL, c.PrivacyURL)
+	}
+	if err := c.Check(); err != nil {
+		t.Fatal(err)
+	}
+	if m := c.MissingLegal(); len(m) != 1 {
+		t.Fatal(m) // only the contact
+	}
+	if err := (Config{TermsFile: f, TermsURL: "https://a.example/terms"}).WithDefaults().Check(); err == nil || !strings.Contains(err.Error(), "not both") {
+		t.Errorf("a URL and a file: %v", err)
+	}
+	if err := (Config{PrivacyFile: filepath.Join(t.TempDir(), "nope.html")}).WithDefaults().Check(); err == nil || !strings.Contains(err.Error(), "privacy file") {
+		t.Errorf("a missing file: %v", err)
 	}
 }

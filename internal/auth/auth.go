@@ -838,7 +838,7 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			}
 		}
 		// Static artwork (login page images, icons) is public too.
-		if publicPath(r.URL.Path) || publicAsset(r.URL.Path) || a.oauth.public(r.URL.Path) || r.URL.Path == branding.LogoPath || wallToken(r) {
+		if publicPath(r.URL.Path) || publicAsset(r.URL.Path) || a.oauth.public(r.URL.Path) || branding.PublicPath(r.URL.Path) || wallToken(r) {
 			next.ServeHTTP(w, r)
 			return
 		}

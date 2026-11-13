@@ -3,8 +3,10 @@ package api
 import (
 	"bytes"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -13,7 +15,10 @@ import (
 	"github.com/klahr/dash/web"
 )
 
-var landingPage = template.Must(template.New("landing").Parse(web.Landing))
+var (
+	landingPage = template.Must(template.New("landing").Parse(web.Landing))
+	legalPage   = template.Must(template.New("legal").Parse(web.Legal))
+)
 
 // landingData is what the landing page shows.
 type landingData struct {
@@ -63,4 +68,39 @@ func (s *Server) logo(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-cache")
 	http.ServeFile(w, r, s.Brand.Logo)
+}
+
+// legal serves one of the hub's own legal pages (branding.TermsPath,
+// branding.PrivacyPath): the HTML file the operator wrote, in a page with
+// the brand and the footer, or 404 without one. The file is read on every
+// request, so an edit shows without a restart.
+func (s *Server) legal(title string, file func(branding.Config) string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		b := s.Brand.WithDefaults()
+		path := file(b)
+		if path == "" {
+			http.NotFound(w, r)
+			return
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			slog.Error("legal page", "page", title, "err", err)
+			http.Error(w, "this page can't be read right now", http.StatusInternalServerError)
+			return
+		}
+		var buf bytes.Buffer
+		if err := legalPage.Execute(&buf, struct {
+			branding.Config
+			Title  string
+			Logo   string
+			Body   template.HTML // the operator's own file, trusted like the binary's flags
+			Footer template.HTML
+		}{b, title, b.LogoURL(), template.HTML(body), b.Footer()}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		http.ServeContent(w, r, "legal.html", time.Time{}, bytes.NewReader(buf.Bytes()))
+	}
 }

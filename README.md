@@ -162,7 +162,7 @@ paces itself from its own setting in `usage.json`.
 
 - [Chat](docs/chat.md): the general, project and task chats, and running shell commands from them with `!`
 - [Users and organizations](docs/users.md): accounts, roles, invitations, two-factor sign-in
-- [Your data, terms and privacy](docs/privacy.md): download what Dash keeps about you, delete your account, what to publish before strangers sign up, and what a hub stores, for your privacy policy
+- [Your data, terms and privacy](docs/privacy.md): download what Dash keeps about you, delete your account, what to publish before strangers sign up (with starter terms and a privacy policy the hub can serve), and what a hub stores
 - [Open signup and email](docs/signup.md): self-service accounts, personal workspaces, password reset (off by default)
 - [Billing](docs/billing.md): per-seat Stripe subscriptions for organizations of two or more (off by default)
 - [Branding and the landing page](docs/branding.md): product name, terms and privacy links, logo, the AGPL source link, an optional landing page

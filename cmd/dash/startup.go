@@ -105,6 +105,7 @@ type options struct {
 	billingGrace                     time.Duration
 	brandName, sourceURL             string
 	termsURL, privacyURL             string
+	termsFile, privacyFile           string
 	contactEmail, logo               string
 	landing                          bool
 	teamPrice, pricingURL            string
@@ -196,6 +197,8 @@ func parseFlags(args []string, runnerMode bool) *options {
 	f.StringVar(&o.sourceURL, "source-url", "", "the \"Source code\" link in every page's footer, for the AGPL (default the upstream repository; or $DASH_SOURCE_URL)")
 	f.StringVar(&o.termsURL, "terms-url", "", "terms of service, linked in the footer (or $DASH_TERMS_URL)")
 	f.StringVar(&o.privacyURL, "privacy-url", "", "privacy policy, linked in the footer (or $DASH_PRIVACY_URL)")
+	f.StringVar(&o.termsFile, "terms-file", "", "an HTML file with your terms of service, served at /terms and linked in the footer (or $DASH_TERMS_FILE)")
+	f.StringVar(&o.privacyFile, "privacy-file", "", "an HTML file with your privacy policy, served at /privacy and linked in the footer (or $DASH_PRIVACY_FILE)")
 	f.StringVar(&o.contactEmail, "contact-email", "", "address people can write to, in the footer and emails (or $DASH_CONTACT_EMAIL)")
 	f.StringVar(&o.logo, "logo", "", "image file shown instead of Dash's mark on the pages (or $DASH_LOGO)")
 	f.BoolVar(&o.landing, "landing", false, "show a landing page at / to visitors who aren't signed in, instead of the sign-in page (or DASH_LANDING=1)")
@@ -621,6 +624,7 @@ func (a *app) buildServices() {
 		Brand: branding.Config{
 			Name: envOr(o.brandName, "DASH_BRAND_NAME"), SourceURL: envOr(o.sourceURL, "DASH_SOURCE_URL"),
 			TermsURL: envOr(o.termsURL, "DASH_TERMS_URL"), PrivacyURL: envOr(o.privacyURL, "DASH_PRIVACY_URL"),
+			TermsFile: envOr(o.termsFile, "DASH_TERMS_FILE"), PrivacyFile: envOr(o.privacyFile, "DASH_PRIVACY_FILE"),
 			Contact: envOr(o.contactEmail, "DASH_CONTACT_EMAIL"), Logo: envOr(o.logo, "DASH_LOGO"),
 			Landing: o.landing || envBool("DASH_LANDING"), TeamPrice: envOr(o.teamPrice, "DASH_TEAM_PRICE"),
 			PricingURL: envOr(o.pricingURL, "DASH_PRICING_URL"),

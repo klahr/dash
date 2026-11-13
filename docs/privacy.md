@@ -8,8 +8,31 @@ If people other than you sign up on your hub, publish three things before you op
   and how they reach you to see or delete it. In the EU (GDPR) this is required.
 - **A contact address** people can write to.
 
-Dash doesn't write these for you: they depend on who you are, where you are and what you
-charge. Host them on your own site, then link them:
+They depend on who you are, where you are and what you charge, so Dash can't write them
+for you. It ships a starting point for each: [`deploy/legal/terms.html`](../deploy/legal/terms.html)
+and [`deploy/legal/privacy.html`](../deploy/legal/privacy.html). The privacy policy already
+lists what an unmodified hub stores, why, and for how long (the tables at the end of this
+page). Replace every `[bracketed]` part, delete what you don't use, add what your own setup
+adds, and have someone who knows your jurisdiction read them.
+
+Let the hub serve them itself, at `/terms` and `/privacy`, without signing in:
+
+```sh
+cp deploy/legal/terms.html deploy/legal/privacy.html /etc/dash/   # then edit them there
+```
+
+```sh
+DASH_TERMS_FILE=/etc/dash/terms.html
+DASH_PRIVACY_FILE=/etc/dash/privacy.html
+DASH_CONTACT_EMAIL=help@example.com
+```
+
+The files are HTML without `<html>` or `<body>`: Dash puts them in a page with your name, logo
+and footer. It reads them on every request, so an edit shows without a restart. Scripts in them
+don't run. With Docker, copy them into the data volume and point at `/data/terms.html` and
+`/data/privacy.html` (see `deploy/docker.env.example`).
+
+Or host them on your own site and link them:
 
 ```sh
 DASH_TERMS_URL=https://example.com/terms
@@ -17,7 +40,7 @@ DASH_PRIVACY_URL=https://example.com/privacy
 DASH_CONTACT_EMAIL=help@example.com
 ```
 
-Dash then links all three in every page's footer, the terms and privacy policy under the
+Set a URL or a file for each, not both. Dash then links all three in every page's footer, the terms and privacy policy under the
 signup form ("By creating an account, you accept the terms of service …"), and the contact
 address at the end of every email (see [Branding](branding.md)). With
 [open signup](signup.md) on and any of the three missing, Dash logs `open signup on without

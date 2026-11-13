@@ -29,6 +29,10 @@ type Config struct {
 	PrivacyURL string // privacy policy (optional)
 	Contact    string // an email address people can write to (optional)
 	Logo       string // a file on disk shown instead of the built-in mark (optional)
+	// TermsFile and PrivacyFile are HTML files on the server that Dash
+	// serves itself at TermsPath and PrivacyPath, instead of linking
+	// TermsURL and PrivacyURL elsewhere (optional).
+	TermsFile, PrivacyFile string
 
 	Landing    bool   // show the landing page at / to visitors who aren't signed in
 	TeamPrice  string // the team plan's price as shown, e.g. "€8 per seat / month" (optional)
@@ -37,8 +41,14 @@ type Config struct {
 
 // WithDefaults fills in what's empty and trims the rest.
 func (c Config) WithDefaults() Config {
-	for _, p := range []*string{&c.Name, &c.SourceURL, &c.TermsURL, &c.PrivacyURL, &c.Contact, &c.Logo, &c.TeamPrice, &c.PricingURL} {
+	for _, p := range []*string{&c.Name, &c.SourceURL, &c.TermsURL, &c.PrivacyURL, &c.TermsFile, &c.PrivacyFile, &c.Contact, &c.Logo, &c.TeamPrice, &c.PricingURL} {
 		*p = strings.TrimSpace(*p)
+	}
+	if c.TermsFile != "" && c.TermsURL == "" {
+		c.TermsURL = TermsPath
+	}
+	if c.PrivacyFile != "" && c.PrivacyURL == "" {
+		c.PrivacyURL = PrivacyPath
 	}
 	if c.Name == "" {
 		c.Name = DefaultName
@@ -53,10 +63,15 @@ func (c Config) WithDefaults() Config {
 // http(s), a contact that isn't an address, a logo that can't be read.
 func (c Config) Check() error {
 	var errs []error
-	for _, u := range []struct{ name, v string }{
-		{"source URL", c.SourceURL}, {"terms URL", c.TermsURL}, {"privacy URL", c.PrivacyURL}, {"pricing URL", c.PricingURL},
+	for _, u := range []struct{ name, v, file, path string }{
+		{"source URL", c.SourceURL, "", ""}, {"terms URL", c.TermsURL, c.TermsFile, TermsPath},
+		{"privacy URL", c.PrivacyURL, c.PrivacyFile, PrivacyPath}, {"pricing URL", c.PricingURL, "", ""},
 	} {
-		if u.v == "" {
+		if u.file != "" && u.v != u.path {
+			errs = append(errs, fmt.Errorf("%s %q: set the URL or the file, not both", u.name, u.v))
+			continue
+		}
+		if u.v == "" || u.file != "" {
 			continue
 		}
 		p, err := url.Parse(u.v)
@@ -69,11 +84,14 @@ func (c Config) Check() error {
 			errs = append(errs, fmt.Errorf("contact email %q: want a bare address like help@example.com", c.Contact))
 		}
 	}
-	if c.Logo != "" {
-		if st, err := os.Stat(c.Logo); err != nil {
-			errs = append(errs, fmt.Errorf("logo: %w", err))
+	for _, f := range []struct{ name, path string }{{"logo", c.Logo}, {"terms file", c.TermsFile}, {"privacy file", c.PrivacyFile}} {
+		if f.path == "" {
+			continue
+		}
+		if st, err := os.Stat(f.path); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", f.name, err))
 		} else if st.IsDir() {
-			errs = append(errs, fmt.Errorf("logo %q is a directory", c.Logo))
+			errs = append(errs, fmt.Errorf("%s %q is a directory", f.name, f.path))
 		}
 	}
 	return errors.Join(errs...)
@@ -89,6 +107,19 @@ func (c Config) LogoURL() string {
 
 // LogoPath serves the configured logo (public, like the login page).
 const LogoPath = "/brand/logo"
+
+// TermsPath and PrivacyPath serve TermsFile and PrivacyFile (public: people
+// read them before they sign up).
+const (
+	TermsPath   = "/terms"
+	PrivacyPath = "/privacy"
+)
+
+// PublicPath reports whether path is one of the branding's own pages,
+// served without signing in: the logo, the terms, the privacy policy.
+func PublicPath(path string) bool {
+	return path == LogoPath || path == TermsPath || path == PrivacyPath
+}
 
 // MailFooter closes Dash's emails: who sent it, and where to write.
 func (c Config) MailFooter() string {
@@ -118,7 +149,7 @@ func (c Config) Footer() template.HTML {
 func (c Config) MissingLegal() []string {
 	var out []string
 	for _, v := range []struct{ name, v string }{
-		{"terms (DASH_TERMS_URL)", c.TermsURL}, {"privacy policy (DASH_PRIVACY_URL)", c.PrivacyURL}, {"contact (DASH_CONTACT_EMAIL)", c.Contact},
+		{"terms (DASH_TERMS_URL or DASH_TERMS_FILE)", c.TermsURL}, {"privacy policy (DASH_PRIVACY_URL or DASH_PRIVACY_FILE)", c.PrivacyURL}, {"contact (DASH_CONTACT_EMAIL)", c.Contact},
 	} {
 		if strings.TrimSpace(v.v) == "" {
 			out = append(out, v.name)

@@ -1,0 +1,95 @@
+<!--
+  A starting point for your hub's privacy policy, served at /privacy with
+  DASH_PRIVACY_FILE (docs/privacy.md). It describes an unmodified Dash hub.
+  Replace every [bracketed] part, delete what you don't use (Stripe, Google
+  sign-in, ...), and add what your own setup adds: your host, your reverse
+  proxy's access logs, off-site backups, your mail provider.
+  This is not legal advice: have someone who knows your jurisdiction read it.
+-->
+<h1>Privacy policy</h1>
+<p>Last updated: [date]</p>
+
+<p>This policy says what [service name] (“the service”, at [https://dash.example.com]) keeps about
+you, why, where, for how long, who else gets it, and what you can do about it.</p>
+
+<h2>Who we are</h2>
+<p>The service is run by [legal name of the person or company], [postal address], [company
+registration number, if any]. We decide what is done with your data (we are its “controller”
+under the GDPR). Write to us at <a href="mailto:[help@example.com]">[help@example.com]</a>
+about anything in this policy.</p>
+
+<h2>What we keep, and why</h2>
+<table>
+<thead><tr><th>What</th><th>Why</th><th>Legal basis (GDPR art. 6)</th><th>How long</th></tr></thead>
+<tbody>
+<tr><td>Your account: email address, username, password hash, two-factor secret and hashed recovery codes, when it was made</td>
+    <td>to give you an account and let you sign in</td><td>contract (1b)</td><td>until you delete your account</td></tr>
+<tr><td>A signup that was never confirmed</td><td>to finish signing you up</td><td>contract (1b)</td><td>about 48 hours</td></tr>
+<tr><td>Confirmation and password reset links</td><td>to check your email address and reset your password</td><td>contract (1b)</td><td>24 hours and 1 hour</td></tr>
+<tr><td>Invitations: the invitee's email address</td><td>to let someone join an organization</td><td>legitimate interest (1f) of the organization that invites</td><td>7 days</td></tr>
+<tr><td>Sessions: a hash of the sign-in cookie (no IP address or browser)</td><td>to keep you signed in</td><td>contract (1b)</td><td>7 days</td></tr>
+<tr><td>API tokens and connected apps (hashed)</td><td>to let your tools act for you</td><td>contract (1b)</td><td>until they expire or you revoke them</td></tr>
+<tr><td>Your linked Google account: its id and email address</td><td>to sign in with Google</td><td>contract (1b)</td><td>until you unlink it</td></tr>
+<tr><td>The sign-in log: Google sign-ins, linking accounts, settings changed, members signed out, with the IP address</td>
+    <td>to keep accounts safe and investigate abuse</td><td>legitimate interest (1f): security</td><td>[1 year]</td></tr>
+<tr><td>IP addresses for sign-in lockouts and signup limits</td><td>to stop password guessing and spam</td><td>legitimate interest (1f): security</td><td>in memory only, 15 minutes to 1 hour</td></tr>
+<tr><td>Push notification subscriptions (the browser's push address and its user agent)</td><td>to send you the notifications you turned on</td><td>consent (1a)</td><td>until you turn them off on that device</td></tr>
+<tr><td>Webhooks you add (the URL) and their last 50 deliveries</td><td>to send your tasks' events where you asked</td><td>contract (1b)</td><td>until you delete them</td></tr>
+<tr><td>Your work: projects, tasks, chats, issues, attachments, drawings, the logs of Claude's runs, with who made them</td>
+    <td>this is the service</td><td>contract (1b)</td><td>until you or your organization delete them</td></tr>
+<tr><td>Billing: the Stripe customer and subscription ids, the plan and its period</td><td>to charge for paid plans</td><td>contract (1b); legal obligation (1c) for accounting</td><td>while the organization exists; invoices at Stripe for [as long as accounting law requires]</td></tr>
+<tr><td>Backups of all of the above</td><td>to recover from a failure</td><td>legitimate interest (1f)</td><td>[7 days]: what you delete is gone from backups after that</td></tr>
+</tbody>
+</table>
+<p>You don't have to give us any of this, but without an email address and a password (or a Google
+account) we can't give you an account.</p>
+<p>We make no decisions about you by automated means alone, and we don't use your data for
+advertising or profiling.</p>
+
+<h2>Where it is</h2>
+<p>Everything above is on our own server at [hosting provider], in [country]. Your code is not:
+it stays on the computers you run tasks on.</p>
+
+<h2>Who else gets it</h2>
+<ul>
+<li><strong>[Mail provider]</strong> sends our emails: it gets your address and the email.</li>
+<li><strong>Stripe</strong>, if your organization pays for a plan: your organization's name and its
+owner's email address. Stripe keeps the card, billing address and tax id; see
+<a href="https://stripe.com/privacy">Stripe's privacy policy</a>.</li>
+<li><strong>Google</strong>, if you sign in with Google.</li>
+<li><strong>Your browser's push service</strong> (Google, Mozilla or Apple), if you turn on push
+notifications. What it carries is encrypted.</li>
+<li><strong>The webhooks you add</strong> get your tasks' events.</li>
+<li><strong>Anthropic</strong>: the service itself never sends your data to Anthropic. The computers
+you run tasks on send prompts and code to Anthropic through Claude Code, under your own Claude
+account and Anthropic's terms.</li>
+</ul>
+<p>[If any of these are outside the EU/EEA, say so and on what basis, e.g. “Stripe and Google are in
+the United States and certified under the EU–US Data Privacy Framework.”]</p>
+<p>We don't sell your data. We use no analytics or tracking, and our pages load nothing from other
+sites.</p>
+
+<h2>Cookies</h2>
+<p>We use only the cookies the service needs to work: <code>dash_session</code> keeps you signed in (7
+days), <code>dash_google_…</code> and <code>dash_glink_…</code> hold a Google sign-in in progress (10
+minutes), and <code>dash_preview</code> opens live previews (12 hours). The app keeps its view
+settings in your browser's local storage.</p>
+
+<h2>Your rights</h2>
+<p>You can:</p>
+<ul>
+<li><strong>Get a copy</strong> of what we keep about you, in a file you can take elsewhere: <strong>Account → Your data → Download</strong>.</li>
+<li><strong>Delete your account</strong>: <strong>Account → Your data → Delete account…</strong>. Tasks and
+messages you wrote in other people's organizations stay there, without your name.</li>
+<li>Ask us to <strong>correct</strong> your email address or username.</li>
+<li>Ask us to <strong>restrict</strong> or <strong>object to</strong> what we do with your data, and
+withdraw consent you gave (turn notifications off), at any time.</li>
+<li><strong>Complain</strong> to a data protection authority, e.g. [the one where you live, or ours:
+name and website].</li>
+</ul>
+<p>Write to <a href="mailto:[help@example.com]">[help@example.com]</a> for anything you can't do
+yourself. We answer within a month.</p>
+
+<h2>Changes</h2>
+<p>When we change this policy we update the date above, and tell you by email before a change that
+matters takes effect.</p>

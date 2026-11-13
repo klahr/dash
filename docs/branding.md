@@ -17,6 +17,8 @@ footer.
 | `DASH_SOURCE_URL`     | `-source-url`    | the footer's **Source code** link (default `https://github.com/klahr/dash`) |
 | `DASH_TERMS_URL`      | `-terms-url`     | terms of service, linked in the footer and under the signup form when set |
 | `DASH_PRIVACY_URL`    | `-privacy-url`   | privacy policy, linked in the footer and under the signup form when set  |
+| `DASH_TERMS_FILE`     | `-terms-file`    | instead of `DASH_TERMS_URL`: an HTML file on the server, served at `/terms` (see [Your data, terms and privacy](privacy.md)) |
+| `DASH_PRIVACY_FILE`   | `-privacy-file`  | instead of `DASH_PRIVACY_URL`: an HTML file on the server, served at `/privacy` |
 | `DASH_CONTACT_EMAIL`  | `-contact-email` | an address people can write to: a **Contact** link in the footer, and a line at the end of every email |
 | `DASH_LOGO`           | `-logo`          | an image file on the server (SVG, PNG, WebP, …) shown instead of Dash's mark next to the name |
 | `DASH_LANDING`        | `-landing`       | `1` shows the landing page at `/` to visitors who aren't signed in (off by default) |
@@ -24,8 +26,8 @@ footer.
 | `DASH_PRICING_URL`    | `-pricing-url`   | where the landing page's **see pricing** links to when there's no price  |
 
 URLs must be `http(s)://…` and the contact a bare address (`help@example.com`). Dash
-refuses to start with a value that would make a broken link, or a logo it can't read, and
-says which.
+refuses to start with a value that would make a broken link, or a logo, terms or privacy
+file it can't read, and says which.
 
 The logo is served at `/brand/logo` without signing in, like the sign-in page's other
 images. The browser's tab icon stays Dash's `favicon.svg`.
