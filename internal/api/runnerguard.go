@@ -40,6 +40,7 @@ func init() {
 		"POST /api/projects/{pid}/remote/fetch", "POST /api/projects/{pid}/remote/pull", "GET /api/projects/{pid}/graph", "GET /api/projects/{pid}/files",
 		"GET /api/projects/{pid}/claude-files",
 		"GET /api/projects/{pid}/commits/{sha}", "GET /api/projects/{pid}/commits/{sha}/diff",
+		"GET /api/projects/{pid}/commits/{sha}/image",
 		"GET /api/projects/{pid}/file", "PUT /api/projects/{pid}/file", "POST /api/projects/{pid}/edits",
 		// The checklist (TODO.md), read and saved in the runner's checkout (checklist.go).
 		"GET /api/projects/{pid}/checklist", "POST /api/projects/{pid}/checklist", "POST /api/projects/{pid}/checklist/move",
@@ -53,6 +54,7 @@ func init() {
 		"GET /api/todos/{tid}", "PATCH /api/todos/{tid}", "DELETE /api/todos/{tid}",
 		"POST /api/todos/{tid}/enqueue", "POST /api/todos/{tid}/start-now", "POST /api/todos/{tid}/cancel", "POST /api/todos/{tid}/pause",
 		"POST /api/todos/{tid}/resume", "GET /api/todos/{tid}/diff", "GET /api/todos/{tid}/log",
+		"GET /api/todos/{tid}/image", // images in its diff (diffimage.go)
 		"GET /api/todos/{tid}/events", "POST /api/todos/{tid}/approve", "POST /api/todos/{tid}/rework",
 		"POST /api/todos/{tid}/test", "POST /api/todos/{tid}/duplicate", "POST /api/todos/{tid}/open",
 		"POST /api/todos/{tid}/revert",
@@ -97,7 +99,7 @@ func init() {
 		"DELETE /api/hub/tasks/{htid}", "POST /api/hub/tasks/{htid}/approve", "POST /api/hub/tasks/{htid}/cancel",
 		"POST /api/hub/tasks/{htid}/revert", "POST /api/hub/tasks/{htid}/test", "POST /api/hub/tasks/{htid}/open",
 		"GET /api/hub/tasks/{htid}/diff", "GET /api/hub/tasks/{htid}/log", "GET /api/hub/tasks/{htid}/events",
-		"GET /api/hub/tasks/{htid}/file", "PUT /api/hub/tasks/{htid}/file",
+		"GET /api/hub/tasks/{htid}/file", "PUT /api/hub/tasks/{htid}/file", "GET /api/hub/tasks/{htid}/image",
 		"POST " + dispatch.PermissionPath, // the hub's board answers its task's permission request
 		// The Claude part of the hub's scans of linked projects; checked in hubtasks.go.
 		"GET /ws/hub/scan",

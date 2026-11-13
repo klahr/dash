@@ -435,6 +435,24 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .diff-lines .add { background: color-mix(in srgb, var(--merged) 12%, transparent); color: var(--diff-add); }
 .diff-lines .del { background: color-mix(in srgb, var(--failed) 12%, transparent); color: var(--diff-del); }
 .diff-lines .hunk { color: var(--review); background: color-mix(in srgb, var(--review) 7%, transparent); padding-top: 2px; padding-bottom: 2px; }
+/* A changed image: before and after side by side, stacked when narrow. */
+.diff-images, .diff-lines .diff-images {
+  display: flex; flex-wrap: wrap; gap: 12px; padding: 12px; min-width: 0; white-space: normal;
+  border-top: 1px solid var(--line); background: var(--bg);
+}
+.diff-lines .diff-images { border-top: 0; }
+.diff-image { flex: 1 1 240px; min-width: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.diff-image figcaption { font-size: var(--fs-xs); color: var(--muted); }
+.diff-image.old figcaption { color: var(--diff-del); }
+.diff-image.new figcaption { color: var(--diff-add); }
+.diff-image-size { color: var(--muted); font-family: var(--mono); }
+.diff-image a {
+  display: flex; align-items: center; justify-content: center; min-height: 64px; padding: 8px;
+  border: 1px solid var(--line); border-radius: var(--r-m);
+  /* A checkerboard, so transparent parts show as such. */
+  background: repeating-conic-gradient(color-mix(in srgb, var(--line) 60%, transparent) 0 25%, transparent 0 50%) 0 0 / 16px 16px;
+}
+.diff-image img { display: block; max-width: 100%; max-height: 60vh; object-fit: contain; }
 .pane-empty { color: var(--muted); padding: 24px 4px; }
 #d-diff:focus { outline: none; }
 .log { tab-size: 4; margin: 0; font: var(--fs-code)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--code-text); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); padding: 12px; min-height: 120px; }

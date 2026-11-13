@@ -7,7 +7,7 @@ import { copy, fail, leave } from "./dialogs.js";
 import { cp, hist, state } from "./state.js";
 import { baseBranch, projectKey } from "./events.js";
 import { detailBackground } from "./detail.js";
-import { diffLines, parseDiff } from "./drawmode.js";
+import { diffImages, diffLines, isDiffImage, parseDiff } from "./drawmode.js";
 import { openRelease } from "./releases.js";
 
 // ------------------------------------------------------------------ history
@@ -308,6 +308,10 @@ function commitFile(f) {
 // The rows of a file's diff, null if the commit changed meanwhile. A
 // commit's diffs are kept while it stays open, for stepping back to a file.
 async function diffNodes(f) {
+  if (f.binary && (isDiffImage(f.path) || isDiffImage(f.old_path))) {
+    const url = (side, path) => `${commitAPI(state.project, cp.sha)}/image?side=${side}&path=${encodeURIComponent(path)}`;
+    return [diffImages(f.status === "A" ? null : f.old_path || f.path, f.status === "D" ? null : f.path, url)];
+  }
   if (f.binary) return [h("div", { class: "meta" }, "Binary file: no text diff.")];
   const p = state.project, sha = cp.sha, signal = cp.diffs.signal;
   let text = cp.texts.get(f.path);

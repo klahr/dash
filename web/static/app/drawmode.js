@@ -3,7 +3,7 @@ import { renderMarkdown } from "../editor.js";
 import { $, $$, dateTimeText, h, ib, ico, plural } from "./dom.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
-import { api, here } from "./api.js";
+import { api, here, on } from "./api.js";
 import { ask, attempt, fail, toast } from "./dialogs.js";
 import { attachThumb, uploadFile } from "./attachments.js";
 import { saveComments, state } from "./state.js";
@@ -543,10 +543,13 @@ export function parseDiff(text) {
     if (line.startsWith("diff --git")) {
       const path = line.replace(/^diff --git a\/(.*) b\/.*$/, "$1");
       // to: the path after the change (a rename's new name).
-      cur = { path, to: line.replace(/^diff --git a\/.* b\/(.*)$/, "$1") || path, lines: [], add: 0, del: 0, deleted: false, binary: false };
+      cur = { path, to: line.replace(/^diff --git a\/.* b\/(.*)$/, "$1") || path, lines: [], add: 0, del: 0, deleted: false, added: false, binary: false };
       files.push(cur);
     } else if (cur) {
       if (line.startsWith("deleted file")) cur.deleted = true;
+      if (line.startsWith("new file")) cur.added = true;
+      const idx = /^index ([0-9a-f]+)\.\.([0-9a-f]+)/.exec(line);
+      if (idx) cur.blobs = [idx[1], idx[2]]; // which image each side is, for the browser's cache
       if (line.startsWith("Binary files ")) cur.binary = true;
       if (/^(index |new file|deleted file|similarity|rename |old mode|new mode|--- |\+\+\+ )/.test(line)) continue;
       if (line.startsWith("+")) cur.add++;
@@ -589,15 +592,41 @@ function renderDiff(text) {
     class: "diff-file", open: state.diffOpen.has(f.path) || commented.has(f.path),
     ontoggle: (e) => state.diffOpen[e.target.open ? "add" : "delete"](f.path),
   },
-    h("summary", {}, h("span", { class: "path" }, f.path), h("span", { class: "counts" }, h("span", { class: "plus" }, `+${f.add}`), " ", h("span", { class: "minus" }, `−${f.del}`)),
+    h("summary", {}, h("span", { class: "path" }, f.path), h("span", { class: "counts" }, f.binary ? "binary" : [h("span", { class: "plus" }, `+${f.add}`), " ", h("span", { class: "minus" }, `−${f.del}`)]),
       editable && !f.deleted && !f.binary ? ib({
         type: "button", class: "btn small diff-edit", title: `Edit ${f.to} before approving`, "aria-label": `Edit ${f.to}`,
         onclick: (e) => { e.preventDefault(); e.stopPropagation(); openDiffEdit(t.id, f.to).catch(fail); },
       }, "edit", "Edit") : null),
-    h("div", { class: "diff-lines" }, diffLines(f, {
-      comments: commentsFor(state.detail).filter((c) => c.file === f.path),
-      commentable: ["review", "failed"].includes(state.todos.get(state.detail)?.status),
-    })))));
+    f.binary && (isDiffImage(f.path) || isDiffImage(f.to))
+      ? diffImages(f.added ? null : f.path, f.deleted ? null : f.to,
+        (side, path) => `/api/todos/${t.id}/image?side=${side}&path=${encodeURIComponent(path)}&v=${f.blobs?.[side === "old" ? 0 : 1] || ""}`)
+      : h("div", { class: "diff-lines" }, diffLines(f, {
+        comments: commentsFor(state.detail).filter((c) => c.file === f.path),
+        commentable: ["review", "failed"].includes(state.todos.get(state.detail)?.status),
+      })))));
+}
+
+// Images a diff shows instead of "Binary files … differ" (the server's
+// diffImageTypes).
+export const isDiffImage = (path) => /\.(png|jpe?g|gif|webp|svg)$/i.test(path || "");
+
+// A changed image as it was and as it is: before and after are the paths
+// on each side (null where the file didn't exist), url(side, path) where
+// the server serves each.
+export function diffImages(before, after, url) {
+  const side = (label, side, path) => {
+    const src = on(here(), url(side, path));
+    const img = h("img", { src, alt: `${label}: ${path}`, loading: "lazy", decoding: "async" });
+    const size = h("span", { class: "diff-image-size" });
+    img.addEventListener("load", () => { size.textContent = `${img.naturalWidth} × ${img.naturalHeight}`; }, { once: true });
+    img.addEventListener("error", () => img.closest("a")?.replaceWith(h("p", { class: "hint" }, "This image can't be shown.")), { once: true });
+    return h("figure", { class: `diff-image ${side}` },
+      h("figcaption", {}, label, " ", size),
+      h("a", { href: src, target: "_blank", rel: "noopener", title: "Open the image" }, img));
+  };
+  return h("div", { class: "diff-images" },
+    before ? side(after ? "Before" : "Deleted", "old", before) : null,
+    after ? side(before ? "After" : "Added", "new", after) : null);
 }
 
 // Rows for one file, numbered like the new file (removed lines use old numbers),
