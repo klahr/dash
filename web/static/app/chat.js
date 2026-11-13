@@ -55,7 +55,8 @@ function usageLine(u) {
 // After a reply, the server may suggest the user's next message (with the
 // Account → Chat preference on): it shows as the empty composer's
 // placeholder, Send (or Enter) sends it as it is, and Tab puts it in the
-// composer to edit. Typing, sending or a new turn clears it.
+// composer to edit. Writing hides it and emptying the composer again brings
+// it back; sending, a new turn or a new suggestion drops it.
 //
 // Its parts (chatQueue, shellRunner, chatStreamHandler) share c: the chat's
 // state and the helpers they call one another through.
@@ -121,16 +122,22 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   // Images and files dropped onto the chat or pasted into its text field.
   const attachRow = h("div", { class: "attach", hidden: true });
   form.prepend(attachRow);
-  const att = c.att = attachBox(attachRow, input, () => c.busyButton(), { zone: form.parentElement, compact: true, prefix: prefixOf });
+  const att = c.att = attachBox(attachRow, input, () => { c.busyButton(); showSuggestion(); }, { zone: form.parentElement, compact: true, prefix: prefixOf });
 
-  // The suggested next message, while the composer is empty.
+  // The suggested next message. It stays pending while the composer has
+  // something in it, and shows (as the placeholder) whenever it's empty.
   const placeholder = input.placeholder, placeholderTitle = input.title;
   c.suggestion = "";
+  const suggestionShown = () => !!c.suggestion && !input.value && !att.items().length;
+  const showSuggestion = () => {
+    const on = suggestionShown();
+    input.placeholder = on ? c.suggestion : placeholder;
+    input.title = on ? (matchMedia("(pointer: coarse)").matches ? "Send sends this suggestion" : "Enter sends this suggestion; Tab puts it in the box to edit") : placeholderTitle;
+    form.classList.toggle("suggesting", on);
+  };
   const suggest = c.suggest = (text = "") => {
     c.suggestion = text;
-    input.placeholder = text || placeholder;
-    input.title = text ? (matchMedia("(pointer: coarse)").matches ? "Send sends this suggestion" : "Enter sends this suggestion; Tab puts it in the box to edit") : placeholderTitle;
-    form.classList.toggle("suggesting", !!text);
+    showSuggestion();
   };
   document.addEventListener("dash:chatsuggest", () => { if (!chatSuggestOn()) suggest(); });
 
@@ -275,16 +282,17 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     input.style.height = "auto";
     input.style.height = `${input.scrollHeight + input.offsetHeight - input.clientHeight}px`;
     shellMode();
+    showSuggestion();
   };
-  input.addEventListener("input", () => { autoGrow(); if (c.suggestion) suggest(); if (c.current) c.busyButton(); });
+  input.addEventListener("input", () => { autoGrow(); if (c.current) c.busyButton(); });
   form.addEventListener("submit", attempt(async (e) => {
     e.preventDefault();
     // With nothing written, only a press of the button stops a reply: Enter in the text field doesn't.
     if (c.current && !composing()) return e.submitter === sendBtn ? stop() : undefined;
     await att.settled();
     const files = att.items();
-    // An empty composer sends the suggested message, if there is one.
-    const q = input.value.trim() || (!files.length && !c.current ? c.suggestion : "");
+    // An empty composer sends the suggested message, if it shows.
+    const q = input.value.trim() || (!c.current && suggestionShown() ? c.suggestion : "");
     suggest();
     if (!q && !files.length) return;
     const cmd = /^\/(\w+)$/.exec(q)?.[1].toLowerCase();
@@ -300,10 +308,10 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   input.addEventListener("keydown", (e) => {
     // Tab in an empty composer puts the suggested message in it to edit;
     // otherwise Tab moves the focus as usual.
-    if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && c.suggestion && !composing()) {
+    if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && suggestionShown()) {
       e.preventDefault();
+      // It stays pending: emptying the composer shows it again.
       input.value = c.suggestion;
-      suggest();
       autoGrow();
       input.setSelectionRange(input.value.length, input.value.length);
       return;

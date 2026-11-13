@@ -17,7 +17,8 @@ shows it greyed out in the empty message box, as Claude Code's CLI does.
 
 - <kbd>Enter</kbd> or **Send** sends the suggestion as it is.
 - <kbd>Tab</kbd> puts it in the box, so you can edit it before sending.
-- Typing, sending or a new reply clears it. No suggestion shows when there's no clear next step.
+- Typing hides it. Erase what you wrote and it shows again.
+- Sending or a new reply clears it. No suggestion shows when there's no clear next step.
 
 The guess is a short call to Haiku with the last few messages, on the same Claude login as the
 chat (on a hub, your own runner). If it fails or no runner of yours is online, the box keeps its
