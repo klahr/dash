@@ -126,7 +126,7 @@ func (w *Watcher) refreshRelease(ctx context.Context, p model.Project) *Release 
 			return &rel
 		}
 		var mine []gitops.Run
-		for _, r := range runs {
+		for _, r := range trusted(runs) {
 			if r.SHA == rel.SHA {
 				mine = append(mine, r)
 			}
