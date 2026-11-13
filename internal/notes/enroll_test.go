@@ -401,6 +401,22 @@ func TestReenrollUnderAnotherRoot(t *testing.T) {
 	if s := standing(a, "rc", c.svc.Public()); s != Approved || !shareKey(t, a, c, "p1") {
 		t.Fatalf("the manual approval of c didn't stay: %q", s)
 	}
+
+	// Enrolling again under the same root (after rotate --key, say) keeps
+	// Dropped, so the keys b may still hold keep being rotated.
+	if _, err := Enroll(shared(a), other, "ra", a.svc.Public(), false, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	re, err := ReadEnrollment(shared(a))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(re.Dropped, []string{"rb"}) {
+		t.Fatalf("re-enrolling under the same root: dropped %v", re.Dropped)
+	}
+	if r := a.svc.trust.revokedRunners(); !slices.Contains(r, "rb") {
+		t.Fatalf("revoked runners %v, want rb among them", r)
+	}
 }
 
 // Signatures are SSHSIG: ssh-keygen checks ours, and ours check its.
