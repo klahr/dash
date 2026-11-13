@@ -269,7 +269,13 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   };
   commands.new = commands.reset = commands.clear;
 
-  const autoGrow = c.autoGrow = () => { input.style.height = "auto"; input.style.height = `${input.scrollHeight}px`; shellMode(); };
+  // The box is border-box, so the height takes the border on top of scrollHeight;
+  // without it the text overflows by the border's width and a scrollbar shows.
+  const autoGrow = c.autoGrow = () => {
+    input.style.height = "auto";
+    input.style.height = `${input.scrollHeight + input.offsetHeight - input.clientHeight}px`;
+    shellMode();
+  };
   input.addEventListener("input", () => { autoGrow(); if (c.suggestion) suggest(); if (c.current) c.busyButton(); });
   form.addEventListener("submit", attempt(async (e) => {
     e.preventDefault();
