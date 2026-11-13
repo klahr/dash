@@ -308,8 +308,5 @@ export async function loadProcs() {
 
 export function renderProcs() {
   renderQuick();
-  const running = state.procs.filter((p) => p.running).length;
-  $("#proc-badge").hidden = !running;
-  $("#proc-badge").textContent = running;
   ensureShell();
 }
