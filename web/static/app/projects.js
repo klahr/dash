@@ -8,7 +8,6 @@ import { state } from "./state.js";
 import { showView } from "./nav.js";
 import { baseBranch, eventFor, latest, multi, projectKey, projectStatus, refreshLive } from "./events.js";
 import { loadTodos, pushDone, renderPushMain } from "./board.js";
-import { loadGoals } from "./goals.js";
 import { renderBoard } from "./branches.js";
 import { ghMark, ghRepoHints, ghRepoLabel, ghRepoRows } from "./github.js";
 import { closeDetail, openDetail } from "./detail.js";
@@ -32,6 +31,7 @@ import { loadFiles, renderFile, renderFileTree } from "./files.js";
 import { loadIssues, resetIssues } from "./issues.js";
 import { loadScans, resetScans } from "./scans.js";
 import { loadChecklist } from "./checklist.js";
+import { loadGoals, resetGoals, showGoal } from "./goals.js";
 
 // ------------------------------------------------------------------ projects
 export async function loadProjects() {
@@ -57,6 +57,7 @@ export async function loadProjects() {
   else { state.project = next; renderProjectHeader(); if (first && !next) renderBoard(); }
   renderProjectList();
   if (link?.task && next?.id === link.project) { showView("board"); openDetail(link.task).catch(() => {}); }
+  else if (link?.goal && next?.id === link.project) showGoal(link.goal).catch(() => {});
 }
 
 
@@ -87,6 +88,7 @@ export async function selectProject(p) {
   renderChatPane();
   resetIssues();
   resetScans();
+  resetGoals();
   loadTry().catch(() => {});
   if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); renderFileTree(); renderFile(); loadChecklist().catch(fail); return; }
   await Promise.all([loadIssues(), loadTodos(), loadGoals(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles(), state.view === "checklist" && loadChecklist(), state.view === "scans" && loadScans()]);

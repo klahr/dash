@@ -1,7 +1,7 @@
 import { drafts, mdEditor } from "../editor.js";
-import { $, $$, h, ib } from "./dom.js";
+import { $, $$, h, ib, plural } from "./dom.js";
 import { api, here } from "./api.js";
-import { attempt, busy, toast } from "./dialogs.js";
+import { ask, attempt, busy, toast } from "./dialogs.js";
 import { attachBox } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { projectKey } from "./events.js";
@@ -182,6 +182,8 @@ export const split = {
   list: $("#split-parts"),
   parts: [],          // { title, prompt, after: Set of parts, id once created }
   splittable: (t) => !t || t.status === "draft" || t.status === "queued",
+  goal: null,         // the goal whose coordinator's plan the sheet shows (openGoalPlan)
+  project: null,      // that goal's project
 };
 $("#todo-split").addEventListener("click", attempt(async () => {
   const f = $("#todo-form");
@@ -202,13 +204,34 @@ $("#todo-split").addEventListener("click", attempt(async () => {
   }
 }));
 
+// planParts are a proposed plan's items as the sheet's parts: an item's
+// after (indexes of earlier items) become references to those parts.
+function planParts(items) {
+  const made = (items || []).map((p) => ({ title: p.title || "", prompt: p.prompt || "", model: p.model || "", after: new Set() }));
+  (items || []).forEach((p, i) => (p.after || []).forEach((j) => { if (j >= 0 && j < i) made[i].after.add(made[j]); }));
+  return made;
+}
+
+// openGoalPlan shows the coordinator's plan for goal g (of project p) in
+// the sheet, to edit (dependencies too) and save as drafts or queue. It is
+// accepted as edited: the coordinator learns what changed.
+export function openGoalPlan(g, p) {
+  split.goal = g;
+  split.project = p;
+  openSplit(planParts(g.plan));
+}
+
 function openSplit(parts) {
   split.parts = parts;
   const one = parts.length === 1;
-  $("#split-hint").textContent = (one
-    ? "Claude thinks this is small enough for one task. Add more below if you still want to split it."
-    : `Claude proposes ${parts.length} tasks. Edit, remove or add tasks; nothing is saved until you do.`)
-    + (editing ? ` They replace “${title(editing)}”.` : "");
+  const g = split.goal;
+  $("#split-hint").textContent = g
+    ? `The coordinator proposes ${plural(parts.length, "task")} for “${g.title}”. Edit, remove or add tasks and set which ones each waits for; nothing is made until you save.`
+    : (one
+      ? "Claude thinks this is small enough for one task. Add more below if you still want to split it."
+      : `Claude proposes ${parts.length} tasks. Edit, remove or add tasks; nothing is saved until you do.`)
+      + (editing ? ` They replace “${title(editing)}”.` : "");
+  $("#split-replan").hidden = !g;
   renderSplit();
   split.sheet.returnValue = "";
   split.sheet.showModal();
@@ -217,11 +240,21 @@ function openSplit(parts) {
 
 function renderSplit() {
   const parts = split.parts;
+  const focus = document.activeElement?.closest?.(".split-dep") && [$$(".split-part", split.list).indexOf(document.activeElement.closest(".split-part")), document.activeElement.textContent];
   const num = (p) => parts.indexOf(p) + 1;
   split.list.replaceChildren(...parts.map((p, i) => {
     const titleIn = h("input", { class: "split-title", value: p.title, readOnly: !!p.id, placeholder: "Claude names it if empty", autocomplete: "off", "aria-label": `Title of task ${i + 1}`, oninput: () => { p.title = titleIn.value; } });
     const promptIn = h("textarea", { class: "split-prompt", rows: 4, readOnly: !!p.id, placeholder: "Instructions for Claude", "aria-label": `Instructions for task ${i + 1}`, oninput: () => { p.prompt = promptIn.value; } });
     promptIn.value = p.prompt;
+    // The earlier tasks this one waits for: a toggle each (it starts once they are merged).
+    const earlier = parts.slice(0, i);
+    const deps = !p.id && earlier.length ? h("div", { class: "split-deps", role: "group", "aria-label": `Task ${i + 1} starts after` },
+      h("span", { class: "hint" }, "After"),
+      ...earlier.map((x) => h("button", {
+        type: "button", class: "split-dep", "aria-pressed": String(p.after.has(x)),
+        title: `${p.after.has(x) ? "Starts after" : "Doesn't wait for"} task ${num(x)}${x.title ? `: ${x.title}` : ""}`,
+        onclick: () => { p.after.has(x) ? p.after.delete(x) : p.after.add(x); renderSplit(); },
+      }, String(num(x))))) : null;
     const after = [...p.after].map(num).sort((a, b) => a - b);
     return h("li", { class: `split-part${p.id ? " saved" : ""}` },
       h("div", { class: "split-head" },
@@ -230,13 +263,14 @@ function renderSplit() {
         p.id ? h("span", { class: "split-saved" }, "Saved") :
           ib({ type: "button", class: "icon-btn", "aria-label": `Remove task ${i + 1}`, title: "Remove this task", onclick: () => removeSplitPart(p) }, "x")),
       promptIn,
-      after.length ? h("p", { class: "hint split-after" }, `Builds on ${after.length > 1 ? "tasks" : "task"} ${after.join(", ")}`) : null);
+      deps || (after.length ? h("p", { class: "hint split-after" }, `Builds on ${after.length > 1 ? "tasks" : "task"} ${after.join(", ")}`) : null));
   }));
+  if (focus) $$(".split-dep", $$(".split-part", split.list)[focus[0]]).find((b) => b.textContent === focus[1])?.focus();
   const n = parts.filter((p) => !p.id).length;
   const what = n === 1 ? "task" : `${n} tasks`;
   $("#split-draft-label").textContent = n === 1 ? "Save as draft" : `Save ${n} drafts`;
   $("#split-queue-label").textContent = `Queue ${what}`;
-  $("#split-order-row").hidden = !parts.some((p) => p.after.size);
+  $("#split-order-row").hidden = !!split.goal || !parts.some((p) => p.after.size);
 }
 
 function removeSplitPart(p) {
@@ -283,6 +317,7 @@ async function saveSplit(parts, p, enqueue) {
 // saved ones marked, and saving again makes the rest.
 split.sheet.addEventListener("close", attempt(async () => {
   const action = split.sheet.returnValue;
+  if (split.goal) return acceptGoalPlan(action);
   if (action !== "draft" && action !== "queue") return;
   const parts = split.parts;
   for (const p of parts) { p.title = p.title.trim(); p.prompt = p.prompt.trim(); }
@@ -301,6 +336,38 @@ split.sheet.addEventListener("close", attempt(async () => {
   const other = projectKey(project) !== projectKey(state.project);
   toast(`${enqueue ? `Queued ${n} task${n > 1 ? "s" : ""}` : `Saved ${n} draft${n > 1 ? "s" : ""}`}${replaced ? ` in place of “${title(replaced)}”` : ""}${other ? ` in ${project.name}` : ""}`);
   if (!other) showNewTasks(enqueue ? "queued" : "draft", parts.map((x) => x.id));
+}));
+// acceptGoalPlan saves the goal's plan as the sheet has it: its tasks are
+// made as drafts, or queued. If that fails the sheet opens again.
+async function acceptGoalPlan(action) {
+  const g = split.goal, p = split.project || state.project;
+  if (action !== "draft" && action !== "queue") { split.goal = split.project = null; return; }
+  const parts = split.parts;
+  for (const x of parts) { x.title = x.title.trim(); x.prompt = x.prompt.trim(); }
+  const reopen = () => { renderSplit(); split.sheet.showModal(); };
+  if (!parts.length) { reopen(); throw new Error("Add a task to save, or ask the coordinator to plan again."); }
+  if (parts.some((x) => !x.prompt && !x.title)) { reopen(); throw new Error("Each task needs instructions; remove the empty ones."); }
+  const plan = parts.map((x) => ({ title: x.title, prompt: x.prompt || x.title, model: x.model || "", after: [...x.after].map((y) => parts.indexOf(y)).filter((j) => j >= 0).sort((a, b) => a - b) }));
+  const queue = action === "queue";
+  let res;
+  try {
+    res = await api("POST", `/api/goals/${g.id}/plan/accept`, { plan, queue }, p?.prefix || "");
+  } catch (e) { reopen(); throw e; }
+  split.goal = split.project = null;
+  const ids = (res.created || []).map((t) => t.id);
+  toast(`${queue ? `Queued ${plural(plan.length, "task")}` : `Saved ${plural(plan.length, "draft")}`} for “${g.title}”`, { tone: "ok", icon: "target" });
+  if (projectKey(p) === projectKey(state.project) && ids.length) showNewTasks(queue ? "queued" : "draft", ids);
+}
+
+// Plan again: the coordinator is told what to change and proposes another plan.
+$("#split-replan").addEventListener("click", attempt(async () => {
+  const g = split.goal, p = split.project || state.project;
+  if (!g) return;
+  const feedback = await ask({ title: "Plan again", body: "Tell the coordinator what to change. It plans again; the goal is planning until its new plan is in.", input: true, placeholder: "Fewer, larger tasks; leave the API alone…", ok: "Plan again" });
+  if (feedback === null) return;
+  await api("POST", `/api/goals/${g.id}/plan/reject`, { feedback }, p?.prefix || "");
+  split.sheet.close("replan");
+  toast("The coordinator plans again", { icon: "target" });
 }));
 $("#todo-form").addEventListener("input", () => draft.changed());
 $("#todo-form").addEventListener("change", () => draft.changed());

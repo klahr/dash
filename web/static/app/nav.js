@@ -12,6 +12,7 @@ import { loadFiles } from "./files.js";
 import { loadIssues } from "./issues.js";
 import { loadScans } from "./scans.js";
 import { cl, flushChecklist, loadChecklist } from "./checklist.js";
+import { closeGoal, loadGoals } from "./goals.js";
 
 // ------------------------------------------------------------------ navigation
 export function showView(name) {
@@ -31,6 +32,8 @@ function applyView(name) {
   if (name === "run") requestAnimationFrame(() => { fitTerm(); ensureShell(); });
   if (name === "history") loadGraph().catch(fail);
   else closeCommit();
+  if (name === "goals" && state.project) loadGoals().catch(fail);
+  else closeGoal();
   if (name === "files" && state.project) loadFiles().catch(fail); // at startup the project (and the files code below) isn't ready yet
   if (name === "checklist" && state.project) loadChecklist().catch(fail);
   else if (state.project && typeof cl !== "undefined" && cl.pending.length) flushChecklist().catch(fail); // leaving it saves at once

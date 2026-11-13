@@ -18,6 +18,46 @@ Each goal belongs to one project and has:
 Tasks the coordinator makes carry the goal's id (`goal_id`). Their timeline says what it did to
 them, e.g. "By coordinator · goal Faster search: sent this task back with notes".
 
+## Start a goal
+
+1. Open **New task** (the **+** button) or the full task form, and pick **New goal…** (next to
+   **Split…** in the form). What you typed is carried over.
+2. Say what to get done. Add a budget if you want one: **Max tasks**, **Weekly %**, or both.
+   Leave them empty for no limit.
+3. Pick **Ask me before queuing** (the default) or **Queue on its own**, then **Start goal**.
+
+The goal opens on the **Goals** page, *planning*. In ask mode its first plan opens in the
+**Split into tasks** sheet once the coordinator has one. Edit the tasks, remove or add some, and
+set which earlier tasks each one waits for (the numbers after **After**). Then save them as
+drafts (**Save 3 drafts**) or queue them (**Queue 3 tasks**). **Plan again…** tells the
+coordinator what to change instead. If you close the sheet, **Review plan** on the goal opens it
+again.
+
+## The Goals page
+
+**Goals** is in the sidebar, next to **History** and **Checklist** (in the menu on a phone;
+`go` on the keyboard). Each goal shows how many of its tasks are merged ("4 of 7 merged") and
+its status. Goals waiting for you come first.
+
+Pick a goal to open it beside the list (full screen with **Back** on a phone). `Esc` closes it;
+`j` and `k` open the next and previous goal. It shows:
+
+- **Plan**: the goal's tasks in dependency order, with their status. Pick one to open it. A plan
+  waiting for you is listed below them as *Proposed*.
+- **Budget**: the tasks made of **Max tasks**, the weekly share used, and the tokens and cost
+  of its tasks so far.
+- **Log**: what the coordinator did and why, newest first.
+
+Its buttons: **Review plan** (a plan waits), **Queue drafts** (its drafts wait), **Talk to
+coordinator**, **Pause**, **Resume**, **Edit goal** and **Stop**. **Talk to coordinator** opens the
+goal's chat as a tab in the chat pane; answer its questions there.
+
+On a goal task's **Changes** tab, the coordinator's review note shows above the diff. It only
+advises: **Approve** and **Merge** stay yours.
+
+Goals waiting for you count in the **Board** badge, the **Goals** badge and the tab title, and
+you get a notification (see [notifications](notifications.md)).
+
 ## On the board
 
 A goal's tasks are ordinary cards in the usual lanes. Each one has a chip with the goal's name,

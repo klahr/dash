@@ -2,7 +2,7 @@ import { $, $$, h, ib, ico } from "./dom.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
 import { api } from "./api.js";
-import { attempt, fail, toast } from "./dialogs.js";
+import { attempt, copy, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { chatPage, renderNavActive } from "./nav.js";
 import { baseBranch, projectKey } from "./events.js";
@@ -24,7 +24,10 @@ const wide = matchMedia("(min-width: 1280px)");
 const CHAT_MIN_W = 280;
 export const pane = (() => {
   // projectTabs: the chats added with + in each project, by projectKey.
-  const base = { open: false, pinned: false, width: null, tab: null, projectTabs: {} };
+  // goalTabs: the goals' coordinator chats opened with Talk to coordinator ({key, id, pk, title}).
+  const base = { open: false, pinned: false, width: null, tab: null, projectTabs: {}, goalTabs: [] };
+  const goalTabList = (v) => (Array.isArray(v) ? v : []).filter((t) => t && typeof t.id === "string" && typeof t.pk === "string" && t.key === `goal:${t.pk}/${t.id}`)
+    .map((t) => ({ key: t.key, id: t.id, pk: t.pk, title: String(t.title || "Goal") }));
   // Only well-formed tab lists survive: stored data may be stale or from an older version.
   const tabLists = (v) => Object.fromEntries(Object.entries(v && typeof v === "object" && !Array.isArray(v) ? v : {})
     .map(([k, list]) => [k, Array.isArray(list) ? [...new Set(list.filter((t) => typeof t === "string" && t && t !== k))] : []])
@@ -34,7 +37,7 @@ export const pane = (() => {
     if (s && typeof s === "object") {
       // The old shared tab list ("tabs") is dropped, not carried over.
       const { tabs, ...rest } = s;
-      return { ...base, ...rest, tab: typeof s.tab === "string" ? s.tab : null, projectTabs: tabLists(s.projectTabs) };
+      return { ...base, ...rest, tab: typeof s.tab === "string" ? s.tab : null, projectTabs: tabLists(s.projectTabs), goalTabs: goalTabList(s.goalTabs) };
     }
   } catch {}
   // Carry over the board chat's settings: it pushed the board aside, like pinned.
@@ -84,6 +87,75 @@ async function loadProjectChat(p) {
   if (!pc.chat.history.length && !pc.chat.busy) pc.chat.reset(saved);
 }
 
+// ------------------------------------------------------------------ goal chats
+// A goal's chat talks to its coordinator: the same conversation its
+// wake-ups add to (docs/goals.md). Opened with Talk to coordinator, a tab
+// each, kept until closed, whichever project is selected. It runs no
+// commands and can't be cleared: the conversation is the coordinator's memory.
+const goalChats = new Map(); // tab key → { panel, chat, loaded, tab }
+const isGoalTab = (key) => typeof key === "string" && key.startsWith("goal:");
+const goalTab = (key) => pane.goalTabs.find((t) => t.key === key) || null;
+function goalChatFor(t) {
+  if (goalChats.has(t.key)) return goalChats.get(t.key);
+  const panel = $("#project-chat-tpl").content.firstElementChild.cloneNode(true);
+  panel.dataset.chat = t.key;
+  panel.querySelector(".empty-title").textContent = "Talk to the coordinator";
+  panel.querySelector(".chat-empty p:last-child").textContent = "It sees the goal, its plan and its tasks, and remembers what it did. It can change the goal's tasks, never approve or merge them.";
+  const q = panel.querySelector("textarea");
+  q.placeholder = "Message the coordinator";
+  q.setAttribute("aria-label", "Message the goal's coordinator");
+  $("#chat-pane").append(panel);
+  const gc = { panel, loaded: false, tab: t };
+  const proj = () => projectByKey(gc.tab.pk);
+  gc.chat = makeChat({
+    log: panel.querySelector(".chat-log"), empty: panel.querySelector(".chat-empty"), form: panel.querySelector("form"),
+    target: () => ({ prefix: proj()?.prefix || "", project: proj()?.id || "", goal: gc.tab.id }),
+    clear: async () => { throw new Error("A goal's conversation can't be cleared: it is what its coordinator remembers."); },
+    cwd: panel.querySelector(".chat-cwd"),
+    saved: () => { if (!gc.chat.busy) { gc.loaded = false; loadGoalChat(gc).catch(fail); } },
+    actions: (answer) => h("div", { class: "msg-actions" }, ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy")),
+    onState: paneChatState(t.key, () => gc.chat),
+  });
+  goalChats.set(t.key, gc);
+  return gc;
+}
+async function loadGoalChat(gc) {
+  if (gc.loaded || gc.chat.busy) return;
+  const p = projectByKey(gc.tab.pk);
+  if (!p) return;
+  gc.loaded = true;
+  const saved = await api("GET", `/api/goals/${gc.tab.id}/chat`, null, p.prefix || "");
+  if (!gc.chat.busy) gc.chat.reset(saved);
+}
+// openGoalChat opens the chat with goal g's coordinator (g in project p).
+export function openGoalChat(g, p) {
+  const pk = projectKey(p), key = `goal:${pk}/${g.id}`;
+  const t = goalTab(key);
+  if (t) t.title = g.title;
+  else pane.goalTabs = [...pane.goalTabs, { key, id: g.id, pk, title: g.title }];
+  chatDismissed.delete(key);
+  toggleChatPane(true, key);
+}
+function closeGoalTab(key) {
+  pane.goalTabs = pane.goalTabs.filter((t) => t.key !== key);
+  if (goalChats.get(key)?.chat.busy) chatDismissed.add(key);
+  if (chatUnread.delete(key)) saveChatUnread();
+  if (pane.tab === key) pane.tab = "project";
+  savePane();
+  renderChatPane();
+}
+// goalChatEvent: a goal changed (a wake-up may have added to its
+// conversation); its chat, when loaded and idle, reads it again.
+export function goalChatEvent(g, m) {
+  for (const gc of goalChats.values()) {
+    if (gc.tab.id !== g?.id || projectByKey(gc.tab.pk)?.machine !== m.name || gc.chat.busy) continue;
+    if (g.title && gc.tab.title !== g.title) { gc.tab.title = g.title; savePane(); renderChatPane(); }
+    if (!gc.loaded || g.running) continue; // read once its turn is over
+    gc.loaded = false;
+    if (viewingChat(gc.tab.key)) loadGoalChat(gc).catch(() => {});
+  }
+}
+
 // Tabs are This project, General, then the chats added with + in the selected
 // project (each project has its own), then other projects' chats with a reply
 // in flight or unread, until it has been seen ("passing" tabs).
@@ -98,7 +170,7 @@ function keptTabs() {
   passingProject = cur;
   const busy = (k) => !!projectChats.get(k)?.chat.busy;
   for (const k of [...projectChats.keys(), ...chatUnread]) {
-    if (k !== "general" && k !== cur && !added.includes(k) && !chatDismissed.has(k) && (busy(k) || chatUnread.has(k))) passingTabs.add(k);
+    if (k !== "general" && !isGoalTab(k) && k !== cur && !added.includes(k) && !chatDismissed.has(k) && (busy(k) || chatUnread.has(k))) passingTabs.add(k);
   }
   for (const k of passingTabs) {
     if (k === cur || added.includes(k) || chatDismissed.has(k) || (!busy(k) && !chatUnread.has(k) && (pane.tab !== k || moved))) passingTabs.delete(k);
@@ -128,16 +200,18 @@ function closeChatTab(key) {
 function paneTab() {
   const t = pane.tab;
   if (t === "general") return t;
+  if (isGoalTab(t) && goalTab(t)) return t;
   if (t === "project" || (t && t === projectKey(state.project))) return "project";
   if (t && keptTabs().some((p) => projectKey(p) === t)) return t;
   // Unset, or a kept chat whose project is gone (or isn't loaded yet).
   return state.project ? "project" : "general";
 }
-const tabProject = (tab) => (tab === "general" ? null : tab === "project" ? state.project : projectByKey(tab));
+const tabProject = (tab) => (tab === "general" || isGoalTab(tab) ? null : tab === "project" ? state.project : projectByKey(tab));
 // The controller of the visible tab, if it has one.
 export function activeChat() {
   const tab = paneTab();
   if (tab === "general") return chat;
+  if (isGoalTab(tab)) return goalChatFor(goalTab(tab)).chat;
   const p = tabProject(tab);
   return p ? projectChatFor(p).chat : null;
 }
@@ -172,6 +246,9 @@ export function renderChatPane() {
     ...keptTabs().map((p) => h("div", { class: "chat-pane-tab" },
       tabBtn(projectKey(p), p.name, [projectIcon(p)], grouped() ? `${p.name} · ${projectWhere(p)}` : p.name),
       ib({ type: "button", class: "icon-btn chat-tab-close", "aria-label": `Close the ${p.name} chat`, title: "Close this tab", onclick: () => closeChatTab(projectKey(p)) }, "x"))),
+    ...pane.goalTabs.map((t) => h("div", { class: "chat-pane-tab" },
+      tabBtn(t.key, t.title, [ico("target")], `Coordinator of the goal ${t.title}`),
+      ib({ type: "button", class: "icon-btn chat-tab-close", "aria-label": `Close the chat with the coordinator of ${t.title}`, title: "Close this tab", onclick: () => closeGoalTab(t.key) }, "x"))),
   );
   // + adds another project's chat as a tab, in this project only.
   $("#chat-tab-add").hidden = !state.project;
@@ -186,7 +263,11 @@ export function renderChatPane() {
   show($("#chat-noproject"), tab === "project" && !state.project);
   if (cur && pane.open) projectChatFor(cur);
   for (const [key, pc] of projectChats) show(pc.panel, !!cur && key === projectKey(cur));
-  $("#pc-clear").disabled = !activeChat();
+  const gt = isGoalTab(tab) ? goalTab(tab) : null;
+  if (gt && pane.open) goalChatFor(gt);
+  for (const [key, gc] of goalChats) show(gc.panel, key === tab);
+  if (gt && pane.open) loadGoalChat(goalChats.get(tab)).catch((e) => toast(`Couldn't load the coordinator's conversation: ${e.message}`, true));
+  $("#pc-clear").disabled = !activeChat() || !!gt;
   renderTryBack();
   if (cur && pane.open) loadProjectChat(cur).catch((e) => toast(`Couldn't load the project chat: ${e.message}`, true));
   markChatSeen();
@@ -248,6 +329,7 @@ $("#chat-tab-picker").addEventListener("keydown", (e) => {
 // The chat key of a tab: "general", or the projectKey of its project.
 function tabChatKey(tab) {
   if (tab === "general") return "general";
+  if (isGoalTab(tab)) return tab;
   const p = tabProject(tab);
   return p ? projectKey(p) : null;
 }
@@ -331,10 +413,10 @@ $("#nav-chat").addEventListener("click", () => { if (!pane.open) toggleChatPane(
 // on a permission request ("!"), is streaming an answer (a breathing dot), or has
 // a reply you haven't read (a green dot), in that order.
 export function renderChatBadge() {
-  const chats = [chat, ...[...projectChats.values()].map((pc) => pc.chat)];
+  const chats = [chat, ...[...projectChats.values(), ...goalChats.values()].map((pc) => pc.chat)];
   const waiting = chats.some((c) => c.waiting), busy = chats.some((c) => c.busy);
   // Only chats that still have a tab count: a closed tab's reply can't be read.
-  const tabs = new Set(["general", state.project && projectKey(state.project), ...keptTabs().map(projectKey)]);
+  const tabs = new Set(["general", state.project && projectKey(state.project), ...keptTabs().map(projectKey), ...pane.goalTabs.map((t) => t.key)]);
   const unread = [...chatUnread].some((k) => tabs.has(k));
   const kind = waiting ? "perm" : busy ? "busy" : unread ? "unread" : "";
   const says = { perm: "Claude needs approval", busy: "Claude is answering", unread: "new reply" }[kind];

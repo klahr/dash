@@ -1,5 +1,6 @@
 import { COLORS, drawSurface } from "../draw.js";
-import { $, $$, h, ib, ico, plural } from "./dom.js";
+import { renderMarkdown } from "../editor.js";
+import { $, $$, dateTimeText, h, ib, ico, plural } from "./dom.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
 import { api, here } from "./api.js";
@@ -8,7 +9,7 @@ import { attachThumb, uploadFile } from "./attachments.js";
 import { saveComments, state } from "./state.js";
 import { baseBranch, multi, projectKey } from "./events.js";
 import { selectProject } from "./projects.js";
-import { title } from "./branches.js";
+import { agoText, title } from "./branches.js";
 import { renderActions } from "./detail.js";
 import { PV_LABEL, hidePreview, isTermPreview, previewOf, previewTodo, pv, renderPreview } from "./preview.js";
 import { canEditDiff, openDiffEdit } from "./diffedit.js";
@@ -556,6 +557,20 @@ export function parseDiff(text) {
   return files;
 }
 
+// The goal coordinator's review note on the task's changes, above them,
+// styled like Claude's review in the chat (Ask Claude). It only advises:
+// Approve and Merge stay yours.
+function goalNote(t) {
+  const n = t?.goal_note;
+  if (!n?.text) return null;
+  const g = state.goals.get(n.goal);
+  return h("div", { class: "msg assistant goal-review" },
+    h("div", { class: "msg-from" }, ico("target"), `Coordinator${g ? ` · goal ${g.title}` : ""}`,
+      n.at ? h("time", { datetime: n.at, title: dateTimeText(n.at) }, ` · ${agoText(n.at)}`) : null),
+    h("div", { class: "reply", innerHTML: renderMarkdown(n.text) }),
+    h("p", { class: "hint goal-review-hint" }, "The coordinator's review. Approving and merging stay yours."));
+}
+
 function renderDiff(text) {
   const files = parseDiff(text);
   const add = files.reduce((n, f) => n + f.add, 0);
@@ -565,12 +580,12 @@ function renderDiff(text) {
   if (!files.length) {
     const t = state.todos.get(state.detail);
     const msg = text.startsWith("error:") ? text : t?.worktree ? "No changes compared to the default branch." : "Changes appear here once Claude has worked on this task.";
-    $("#d-diff").replaceChildren(h("p", { class: "pane-empty" }, msg));
+    $("#d-diff").replaceChildren(...[goalNote(t), h("p", { class: "pane-empty" }, msg)].filter(Boolean));
     return;
   }
   const commented = new Set(commentsFor(state.detail).map((c) => c.file));
   const t = state.todos.get(state.detail), editable = canEditDiff(t);
-  $("#d-diff").replaceChildren(...files.map((f) => h("details", {
+  $("#d-diff").replaceChildren(...[goalNote(t)].filter(Boolean), ...files.map((f) => h("details", {
     class: "diff-file", open: state.diffOpen.has(f.path) || commented.has(f.path),
     ontoggle: (e) => state.diffOpen[e.target.open ? "add" : "delete"](f.path),
   },

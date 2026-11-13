@@ -12,7 +12,7 @@ import { closeDetail, loadDiff, openDetail, openTodo, renderActions, renderDetai
 import { connectLog, connectTerm, loadPreviews, previewEvent, previewOf, pv } from "./preview.js";
 import { loadRunners, refreshRunnerLinks, renderRunners } from "./runners.js";
 import { syncSettingsRunners } from "./settings.js";
-import { notify } from "./notifications.js";
+import { notify, notifyGoal } from "./notifications.js";
 import { describePerm, renderPerms } from "./review.js";
 import { loadUsage, renderUsage } from "./usage.js";
 import { releaseNews, renderCI } from "./actions.js";
@@ -20,7 +20,7 @@ import { loadCheckouts, renderCheckouts, renderRemote } from "./origin.js";
 import { chatRunner, loadChat, todoChat } from "./chat.js";
 import { loadTodoChat } from "./chatpane.js";
 import { addWorkerEvent } from "./timeline.js";
-import { onGoalEvent } from "./goals.js";
+import { renderPane } from "./drawmode.js";
 import { attach, attached, termWS } from "./terminal.js";
 import { loadProcs } from "./try.js";
 import { refreshGraph } from "./history.js";
@@ -29,6 +29,8 @@ import { loadScans, onScanRun, scanFinished, scans } from "./scans.js";
 import { clChanged } from "./checklist.js";
 import { checkForUpdate } from "./updates.js";
 import { loadClaudeStatus, onClaudeStatus } from "./claudestatus.js";
+import { goalTaskChanged, onGoalEvent, showGoal } from "./goals.js";
+import { goalChatEvent } from "./chatpane.js";
 
 // ------------------------------------------------------------------ live events
 // One live connection per computer, so notifications arrive from all of them.
@@ -186,10 +188,12 @@ function onEvent(ev, m = { name: "" }) {
           if (cur && !keep) state.activity.delete(ev.todo_id);
         }
         renderBoard();
+        if (ev.data.goal_id && prev?.status !== ev.data.status) goalTaskChanged(ev.data);
         if (state.view === "issues" && (prev?.status !== ev.data.status || prev?.paused !== ev.data.paused) && iss.list.some((i) => i.todo_ids?.includes(ev.todo_id))) renderIssues();
         if (state.detail === ev.todo_id) {
           renderDetail();
           if (prev?.status !== ev.data.status && ev.data.worktree) loadDiff();
+          else if (prev?.goal_note?.at !== ev.data.goal_note?.at) renderPane(); // the coordinator's review note
           // Dash explains the failure in the chat.
           if (prev && prev.status !== ev.data.status && ev.data.status === "failed" && !todoChat.busy) loadTodoChat().catch(fail);
         } else if (prev?.status !== ev.data.status && waitsFor(state.todos.get(state.detail), ev.todo_id)) {
@@ -209,6 +213,7 @@ function onEvent(ev, m = { name: "" }) {
       }
       break;
     case "goal.updated":
+      goalChatEvent(ev.data, m); // a wake-up added to the coordinator's conversation
       if (mine) onGoalEvent(ev);
       break;
     case "issue.updated":
@@ -343,10 +348,26 @@ function elsewhere(ev, m) {
     if (ev.data.status === "failed") notify("Failed", ev.data, `${where}: ${ev.data.error || ""}`);
   }
   if (ev.type === "scan.run" && ev.data.trigger !== "manual") scanFinished(ev.data, p, where);
+  if (ev.type === "goal.updated") goalElsewhere(ev.data, p, m, where);
   if (ev.type === "permission.updated" && !ev.data.decision) {
     toast(`${describePerm(ev.data).title} · ${where}`, { tone: "approval", head: "Claude needs your approval", action: p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.data.todo_id); } } : null });
     notify(`Claude wants to ${describePerm(ev.data).title}`, { title: where, prompt: "" }, describePerm(ev.data).detail);
   }
+}
+
+// A goal in another project now waits for you (or ended): say so, with a
+// way to go there.
+function goalElsewhere(g, p, m, where) {
+  if (!g?.id) return;
+  const key = `${m.name}/goal/${g.id}`;
+  const prev = seen.get(key);
+  seen.set(key, g.status);
+  if (!prev || prev === g.status) return;
+  const head = { waiting_for_you: "Goal waits for you", done: "Goal done", out_of_budget: "Goal out of budget" }[g.status];
+  if (!head) return;
+  const go = p ? { label: "Go", run: async () => { await selectProject(p); await showGoal(g.id); } } : null;
+  toast(`${g.title} · ${where}`, { tone: g.status === "out_of_budget" ? "error" : g.status === "done" ? "ok" : "review", head, icon: "target", action: go });
+  notifyGoal(head, g, where, p);
 }
 
 export function projectKey(p) { return p ? `${p.machine}/${p.id}` : ""; }

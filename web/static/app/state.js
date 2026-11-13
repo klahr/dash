@@ -37,6 +37,7 @@ export const state = {
   procs: [],
   previews: new Map(), // "machine/todo id" → live preview, on every computer
   perms: [],           // pending permission requests for this project
+  goalOpen: null,      // id of the goal open in its pane
   pushOn: false,       // this browser gets the hub's Web Push notifications
   usage: null,
   view: "board",

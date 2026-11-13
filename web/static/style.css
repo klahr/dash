@@ -750,7 +750,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .file-status.st-D { color: var(--failed); }
 .file-status:is(.st-R, .st-C) { color: var(--accent); }
 /* The close button: Back on a phone, ✕ on a desktop. A phone shows the whole message (its pane scrolls). */
-#cd-close .cd-x, .commit-message-more { display: none; }
+#cd-close .cd-x, #gd-close .cd-x, .commit-message-more { display: none; }
 .project-list button.menu-choice { flex-direction: row; align-items: center; gap: 10px; }
 .project-list button.menu-choice:disabled { opacity: .55; cursor: not-allowed; }
 .menu-choice .menu-note { font-style: normal; font-weight: 400; font-size: var(--fs-s); color: var(--muted); margin-left: auto; }
@@ -1744,7 +1744,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 
   /* Bottom nav: Board · Chat · Issues · Shell · Files. Scans and History are in the
      menu drawer (.menu-views); the Chat tab replaces the top bar's chat button. */
-  .nav > button:is([data-view="scans"], [data-view="history"], [data-view="checklist"]), #pc-open { display: none; }
+  .nav > button:is([data-view="scans"], [data-view="history"], [data-view="goals"], [data-view="checklist"]), #pc-open { display: none; }
   /* Open issues nobody has dealt with yet: a dot on the Issues icon (the count is in its title). */
   .nav #issue-badge {
     top: 10px; left: calc(50% + 8px); min-width: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%;
@@ -1916,13 +1916,20 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
      start of subjects) to click and to show where j/k are. */
   .commit-detail { --cd-room: calc(100vw - var(--side-w)); width: calc(var(--cd-room) * .86); }
   .chat-pinned.chat-open .commit-detail { --cd-room: calc(100vw - var(--side-w) - var(--chat-pane-w)); }
-  .commit-detail .detail-head { flex-direction: row-reverse; padding: 8px 8px 0 24px; border-bottom: 0; }
-  #cd-close .cd-back { display: none; }
-  #cd-close .cd-x { display: block; }
-  .commit-detail .detail-titles { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding-top: 6px; }
-  .commit-detail .detail-titles h2 { flex-basis: 100%; }
-  .commit-detail .detail-meta { margin-top: 0; }
+  /* A goal's pane lies beside the Goals list (app/goals.js), headed like the commit pane. */
+  .goal-detail { width: min(820px, calc((100vw - var(--side-w)) * .62)); }
+  .chat-pinned.chat-open .goal-detail { width: min(820px, calc((100vw - var(--side-w) - var(--chat-pane-w)) * .62)); }
+  /* With a goal open, the list moves over to stay beside it. */
+  .app:has(#goal-detail:not([hidden])) .page.goals { margin-left: 0; max-width: min(860px, calc(100% - min(820px, 62%))); }
+  :is(.commit-detail, .goal-detail) .detail-head { flex-direction: row-reverse; padding: 8px 8px 0 24px; border-bottom: 0; }
+  :is(#cd-close, #gd-close) .cd-back { display: none; }
+  :is(#cd-close, #gd-close) .cd-x { display: block; }
+  :is(.commit-detail, .goal-detail) .detail-titles { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding-top: 6px; }
+  :is(.commit-detail, .goal-detail) .detail-titles h2 { flex-basis: 100%; }
+  :is(.commit-detail, .goal-detail) .detail-meta { margin-top: 0; }
   .commit-detail .commit-actions { margin: 0 0 0 auto; }
+  .goal-detail .detail-head { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+  .goal-detail .detail-body { padding: var(--sp-4) 24px var(--sp-6); }
   /* Below the head: message and facts across, then the file list beside the diff, each scrolling on its own. */
   .commit-detail .detail-body {
     display: grid; grid-template-columns: clamp(240px, 28%, 380px) minmax(0, 1fr); grid-template-rows: auto auto auto auto minmax(0, 1fr);
@@ -2768,3 +2775,85 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .shell-tag b { color: var(--text); margin-right: 4px; }
 .composer.shell-mode .shell-tag b { color: var(--accent); font-family: var(--mono); }
 .composer.shell-mode textarea { font-family: var(--mono); border-color: var(--accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+
+/* ---------- goals ----------
+   The Goals page (a .page like Issues): a goal per row with its progress
+   (.cl-progress) and status; one opens in #goal-detail, beside the list on a
+   desktop (laid out there with the commit pane) and full screen on a phone. */
+.goals .cl-head .goal-new { margin-left: auto; }
+.goal-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.goal-list:empty { display: none; }
+.goal-open {
+  display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px 14px; text-align: left;
+  border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); transition: border-color .15s, background-color .15s;
+}
+.goal-open:hover { border-color: var(--faint); }
+.goal.selected .goal-open { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); box-shadow: inset 3px 0 0 var(--accent); }
+.goal-row { display: flex; align-items: baseline; gap: 10px; }
+.goal-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.goal-progress { margin: 0; }
+.goal-wait { font-size: var(--fs-s); color: var(--review); }
+.goal-status { flex: none; font-size: var(--fs-s); }
+.goal-status .act-spin { margin-right: -2px; }
+.g-planning { --c: var(--accent); }
+.g-working { --c: var(--running); }
+.g-waiting_for_you { --c: var(--review); }
+.g-paused { --c: var(--faint); }
+.g-done { --c: var(--merged); }
+.g-out_of_budget { --c: var(--failed); }
+
+.goal-detail { z-index: 34; } /* under a task opened from its plan, and the task's scrim */
+.goal-actions .btn { min-height: 32px; }
+.goal-section { margin: 0 0 20px; }
+.goal-section .commit-files-head { margin-bottom: 8px; }
+/* The note and the review note speak for the coordinator: a chat reply's look, in a card. */
+.msg:is(.goal-note, .goal-review) { margin: 0 0 14px; padding: 10px 14px; border: 1px solid var(--line); border-left: 3px solid var(--c, var(--accent)); border-radius: var(--r-m); background: var(--surface); }
+:is(.goal-note, .goal-review) .msg-from { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; color: var(--c, var(--accent)); font-size: var(--fs-s); font-weight: 600; }
+.goal-review .msg-from .ico { width: 14px; height: 14px; }
+.goal-review .msg-from time { color: var(--faint); font-weight: 400; }
+.goal-review-hint { margin: 6px 0 0; font-size: var(--fs-xs); }
+#d-diff > .goal-review { margin: 0 0 12px; }
+
+.goal-plan { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.goal-task { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.goal-task-open { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; margin: -2px 0; text-align: left; border-radius: var(--r-s); }
+button.goal-task-open:hover { background: var(--raised); }
+.goal-task-title { font-weight: 500; overflow-wrap: anywhere; }
+.goal-task-sub { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: var(--fs-xs); color: var(--muted); }
+.goal-task-sub .status { font-weight: 600; }
+.goal-task.s-merged .goal-task-title { color: var(--muted); }
+.goal-task.proposed { opacity: .75; }
+.goal-task.proposed .split-num { border: 1px dashed var(--line); background: transparent; }
+
+.goal-budget { display: grid; gap: 10px; }
+.goal-meter { display: grid; grid-template-columns: 7.5em 1fr; align-items: center; gap: 12px; font-size: var(--fs-s); }
+.goal-meter .cl-progress { margin: 0; }
+.goal-meter > .cl-count { justify-self: start; }
+.goal-meter-label { color: var(--muted); }
+.goal-meter .cl-progress.over .cl-bar span { background: var(--failed); }
+
+.goal-log { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.goal-log-entry { display: flex; flex-direction: column; gap: 2px; padding: 8px 0 8px 12px; border-left: 2px solid var(--line); font-size: var(--fs-s); }
+.goal-log-entry.k-user { border-left-color: var(--accent); }
+.goal-log-entry.k-plan { border-left-color: var(--review); }
+.goal-log-entry.k-action { border-left-color: var(--running); }
+.goal-log-entry.k-status { border-left-color: var(--failed); }
+.goal-log-head { display: flex; align-items: center; gap: 8px; color: var(--faint); font-size: var(--fs-xs); }
+.goal-log-kind { font-weight: 600; color: var(--muted); }
+.goal-log-head .link { min-height: 0; font-size: var(--fs-xs); font-family: var(--mono); }
+.goal-log-text { overflow-wrap: anywhere; }
+.goal-log-why { color: var(--muted); overflow-wrap: anywhere; }
+
+/* The plan sheet (#split-sheet): which earlier tasks a task waits for, a toggle each. */
+.split-tools { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
+.split-deps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.split-deps .hint { margin: 0 2px 0 0; font-size: var(--fs-s); }
+.split-dep {
+  min-width: 30px; min-height: 28px; padding: 0 8px; border-radius: var(--r-pill); border: 1px solid var(--line);
+  background: var(--surface); color: var(--muted); font-size: var(--fs-s); font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.split-dep:hover { border-color: var(--faint); color: var(--text); }
+.split-dep[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface)); color: var(--accent); }
+.choice legend em { font-style: normal; font-weight: 400; color: var(--faint); }
+@media (max-width: 1023px) { .split-dep { min-height: 36px; min-width: 36px; } }
+:is(.goal-note, .goal-review) .reply :is(p, ul, ol):last-child { margin-bottom: 0; }

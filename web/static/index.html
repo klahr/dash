@@ -87,6 +87,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M7 9c0 4 10 2 10 7M7 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="16" r="2"/></svg>
         <span>History</span>
       </button>
+      <button data-view="goals" title="Goals (go)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18M12 7.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 1 0 0-9M12 11.5v1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span>Goals</span><span class="badge" id="goal-badge" hidden></span>
+      </button>
       <button data-view="files" title="Files (gf)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         <span>Files</span>
@@ -120,6 +124,10 @@
           <button class="menu-view" data-view="history" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M7 9c0 4 10 2 10 7M7 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="16" r="2"/></svg>
             <span>History</span>
+          </button>
+          <button class="menu-view" data-view="goals" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18M12 7.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 1 0 0-9M12 11.5v1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            <span>Goals</span><span class="badge" id="menu-goal-badge" hidden></span>
           </button>
           <button class="menu-view" data-view="checklist" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5l1.5 1.5L8 5.5M4 12.5l1.5 1.5L8 11.5M4.5 18.5h3M11 7h9M11 13h9M11 19h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -330,6 +338,20 @@
       <section class="view" id="view-history" aria-label="History">
         <ol class="graph" id="graph"></ol>
         <div class="empty" id="graph-empty"><p class="empty-title">No history</p><p id="graph-empty-text">Select a project to see its main branch.</p></div>
+      </section>
+
+      <!-- Goals: the project's goals, each worked towards by a coordinator; a goal opens in
+           #goal-detail beside the list (app/goals.js) -->
+      <section class="view" id="view-goals" aria-label="Goals">
+        <div class="page goals">
+          <header class="cl-head">
+            <h2 class="cl-title page-title">Goals</h2>
+            <span class="cl-state" id="goal-state" aria-live="polite"></span>
+            <button class="btn small goal-new" type="button" id="goal-new" data-icon="plus" title="Claude plans the tasks for something bigger than one task">New goal…</button>
+          </header>
+          <ul class="goal-list" id="goal-list"></ul>
+          <div class="empty" id="goal-empty"><p class="empty-title" id="goal-empty-title">No goals yet</p><p id="goal-empty-text">A goal is something bigger than one task. Say what you want done: a coordinator reads the code, plans the tasks and reviews what each one did. Approving and merging stay yours.</p></div>
+        </div>
       </section>
 
       <!-- Files: browse the default branch; saving an edit queues it as a task -->
@@ -611,6 +633,41 @@
         <section class="commit-diff" id="cd-diff" hidden aria-live="polite"></section>
       </div>
     </aside>
+    <!-- A goal: beside the Goals list on desktop, full screen with Back on a phone (like a
+         History commit). Plan, Log and Budget, and what you can do with it. -->
+    <aside class="detail goal-detail" id="goal-detail" hidden aria-labelledby="gd-title">
+      <header class="detail-head">
+        <button class="icon-btn" id="gd-close" type="button" aria-label="Back" title="Close (Esc)">
+          <svg class="cd-back" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg class="cd-x" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+        </button>
+        <div class="detail-titles">
+          <h2 id="gd-title"></h2>
+          <div class="detail-meta" id="gd-meta"></div>
+          <div class="commit-actions goal-actions" id="gd-actions"></div>
+        </div>
+      </header>
+      <div class="detail-body" id="gd-body">
+        <p class="error-note" id="gd-error" hidden></p>
+        <div class="goal-note" id="gd-note" hidden></div>
+        <details class="prompt" id="gd-desc-wrap">
+          <summary>What to get done</summary>
+          <div class="prompt-text md" id="gd-desc"></div>
+        </details>
+        <section class="goal-section" aria-labelledby="gd-plan-head">
+          <h3 class="commit-files-head" id="gd-plan-head">Plan</h3>
+          <ol class="goal-plan" id="gd-plan"></ol>
+        </section>
+        <section class="goal-section" aria-labelledby="gd-budget-head">
+          <h3 class="commit-files-head" id="gd-budget-head">Budget</h3>
+          <div class="goal-budget" id="gd-budget"></div>
+        </section>
+        <section class="goal-section" aria-labelledby="gd-log-head">
+          <h3 class="commit-files-head" id="gd-log-head">Log</h3>
+          <ol class="goal-log" id="gd-log"></ol>
+        </section>
+      </div>
+    </aside>
     <div class="scrim" id="scrim" hidden></div>
   </div>
 
@@ -623,6 +680,7 @@
       <p class="hint quick-hint"><kbd>Enter</kbd> save · <kbd>Shift-Enter</kbd> another task · Claude names each task.</p>
       <div class="quick-tools">
         <button class="link" type="button" id="quick-another" data-icon="plus">Another task</button>
+        <button class="link" type="button" id="quick-goal" data-icon="target" title="Something bigger than one task: Claude plans the tasks and reviews them">New goal…</button>
         <button class="link" type="button" id="quick-more" data-icon="edit">More options…</button>
       </div>
       <footer class="sheet-actions quick-foot">
@@ -644,6 +702,7 @@
         <div class="draft-status" id="todo-draft" aria-live="polite"></div>
         <button class="btn small attach-btn" type="button" id="todo-refine" data-icon="wand" title="Rewrite the instructions without the chatter, e.g. after pasting a chat answer">Clean up</button>
         <button class="btn small attach-btn" type="button" id="todo-split" data-icon="split" title="Claude proposes smaller tasks to do this in; you edit and confirm them">Split…</button>
+        <button class="btn small attach-btn" type="button" id="todo-goal" data-icon="target" title="Make this a goal: a coordinator plans the tasks, dispatches them and reviews what each one did">New goal…</button>
       </div>
       <div class="attach" id="todo-attach" data-attach></div>
       <div class="field-row">
@@ -667,11 +726,41 @@
       <header class="sheet-head"><h2 id="split-title">Split into tasks</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p class="hint" id="split-hint"></p>
       <ol class="split-parts" id="split-parts"></ol>
-      <button class="link" type="button" id="split-add" data-icon="plus">Another task</button>
+      <div class="split-tools">
+        <button class="link" type="button" id="split-add" data-icon="plus">Another task</button>
+        <button class="link" type="button" id="split-replan" data-icon="redo" hidden title="Tell the coordinator what to change; it plans again">Plan again…</button>
+      </div>
       <label class="toggle" id="split-order-row"><input type="checkbox" id="split-order" checked><span>Start each one after the tasks it builds on</span></label>
       <footer class="sheet-actions">
         <button class="btn" value="draft" data-icon="draft"><span id="split-draft-label">Save as drafts</span></button>
         <button class="btn primary" value="queue" data-icon="queue"><span id="split-queue-label">Add to queue</span></button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- New goal / Edit goal: what to get done, a budget and whether its tasks wait for you (app/goals.js) -->
+  <dialog class="sheet small" id="goal-sheet" aria-labelledby="goal-sheet-title">
+    <form method="dialog" id="goal-form">
+      <header class="sheet-head"><h2 id="goal-sheet-title">New goal</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
+      <p class="hint" id="goal-sheet-hint">A coordinator reads the code and plans the tasks, then reviews what each one did. Approving and merging stay yours.</p>
+      <label class="field"><span>Title <em>named from what to get done if empty</em></span><input name="title" placeholder="Faster search" autocomplete="off" maxlength="200"></label>
+      <label class="field"><span>What to get done</span><textarea name="description" rows="5" placeholder="Search answers in under 100 ms, without dropping results." required></textarea></label>
+      <fieldset class="field choice">
+        <legend>Budget <em>empty for no limit</em></legend>
+        <div class="field-row">
+          <label class="field inline"><span>Max tasks</span><input type="number" name="max_tasks" min="0" max="1000" step="1" placeholder="None" inputmode="numeric"></label>
+          <label class="field inline"><span>Weekly %</span><input type="number" name="weekly_share" min="0" max="100" step="1" placeholder="None" inputmode="numeric"></label>
+        </div>
+        <p class="hint">Max tasks is the most tasks the coordinator may make. Weekly % is the share of the weekly usage window its tasks may use.</p>
+      </fieldset>
+      <fieldset class="field choice">
+        <legend>Its tasks</legend>
+        <label class="radio"><input type="radio" name="mode" value="ask" checked><span>Ask me before queuing <em>the plan and new tasks wait for you as drafts</em></span></label>
+        <label class="radio"><input type="radio" name="mode" value="queue"><span>Queue on its own <em>the plan and follow-ups are queued right away</em></span></label>
+      </fieldset>
+      <footer class="sheet-actions">
+        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
+        <button class="btn primary" value="save" data-icon="target" id="goal-save">Start goal</button>
       </footer>
     </form>
   </dialog>
@@ -1385,7 +1474,7 @@
       <p class="hint">Vim-style. Typing in a field or the terminal is insert mode; Esc (Ctrl-] in the terminal) returns to normal mode.</p>
       <dl class="keys">
         <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with tasks · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
-        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gi</kbd>/<kbd>gS</kbd>/<kbd>gs</kbd>/<kbd>gh</kbd>/<kbd>gf</kbd>/<kbd>gl</kbd> Board/Issues/Scans/Shell/History/Files/Checklist · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> projects, again for sections (toggles), <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>J</kbd>/<kbd>K</kbd> next/previous project · <kbd>c</kbd> project chat · <kbd>[</kbd> collapse sidebar · <kbd>Ctrl-k</kbd> search projects, tasks and commands, <kbd>/</kbd> just tasks · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
+        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gi</kbd>/<kbd>gS</kbd>/<kbd>gs</kbd>/<kbd>gh</kbd>/<kbd>go</kbd>/<kbd>gf</kbd>/<kbd>gl</kbd> Board/Issues/Scans/Shell/History/Goals/Files/Checklist · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> projects, again for sections (toggles), <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Tab</kbd> other list, <kbd>Esc</kbd> back) · <kbd>J</kbd>/<kbd>K</kbd> next/previous project · <kbd>c</kbd> project chat · <kbd>[</kbd> collapse sidebar · <kbd>Ctrl-k</kbd> search projects, tasks and commands, <kbd>/</kbd> just tasks · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
         <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review, or open its pull request when it is reviewed on GitHub; enqueue a draft; <kbd>Space</kbd> opens) · <kbd>n</kbd> (or <kbd>a</kbd>) new task · <kbd>N</kbd> new task with all options · <kbd>e</kbd> edit (on a desktop, in the open task's pane: <kbd>Ctrl-Enter</kbd>/<kbd>Ctrl-s</kbd> save, <kbd>Esc</kbd> cancels) · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>_</kbd> clear priority · <kbd>t</kbd> live preview (<kbd>D</kbd> draws on it: <kbd>p</kbd>/<kbd>a</kbd>/<kbd>o</kbd>/<kbd>b</kbd>/<kbd>c</kbd> pen/arrow/circle/box/crop, <kbd>1</kbd>–<kbd>3</kbd> colour, <kbd>x</kbd> exact capture (desktop Chrome), <kbd>Ctrl-z</kbd> undo, <kbd>Enter</kbd> add to review, <kbd>Esc</kbd> done) · <kbd>!</kbd> shell in worktree</dd>
         <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> timeline ↔ changes · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
         <dt>More</dt><dd><kbd>T</kbd> run tests again · <kbd>Y</kbd> duplicate · <kbd>E</kbd> open worktree in editor · <kbd>u</kbd> revert a merged task · <kbd>O</kbd> open its pull request · click a diff line (or Tab to its <kbd>+</kbd> button and press Enter) to comment · paste or drop images into a task</dd>
@@ -1393,6 +1482,7 @@
         <dt>Task chat</dt><dd><kbd>h</kbd>/<kbd>l</kbd> to the Timeline tab · <kbd>i</kbd> type (side chat only; the agent won't see it)</dd>
         <dt>Chat</dt><dd><kbd>gc</kbd> open/close the chat pane · <kbd>Enter</kbd> send · <code>!command</code> runs a shell command in a project or task chat (no terminal; Claude sees it next turn) · <kbd>Esc</kbd> stop typing, again to close the overlay · <kbd>Ctrl-k</kbd> "Pin chat" keeps it beside the content</dd>
         <dt>History</dt><dd><kbd>j</kbd>/<kbd>k</kbd> (or <kbd>↓</kbd>/<kbd>↑</kbd>) select the next/previous commit and show it · <kbd>gg</kbd>/<kbd>G</kbd> first/last · <kbd>n</kbd>/<kbd>p</kbd> (or <kbd>↓</kbd>/<kbd>↑</kbd> in the file list) next/previous changed file (desktop) · <kbd>Ctrl-d</kbd>/<kbd>u</kbd> scroll the commit · <kbd>q</kbd>/<kbd>Esc</kbd> close it</dd>
+        <dt>Goals</dt><dd><kbd>j</kbd>/<kbd>k</kbd> (or <kbd>↓</kbd>/<kbd>↑</kbd>) open the next/previous goal · <kbd>q</kbd>/<kbd>Esc</kbd> close it</dd>
         <dt>Checklist</dt><dd><kbd>j</kbd>/<kbd>k</kbd> move between items · <kbd>x</kbd>/<kbd>Space</kbd> check or uncheck · <kbd>m</kbd> move to a draft task · <kbd>M</kbd> move &amp; queue · <kbd>+</kbd>/<kbd>-</kbd> move up or down · <kbd>e</kbd> edit · <kbd>dd</kbd> delete · <kbd>a</kbd> add an item · <kbd>r</kbd> read TODO.md again (it updates by itself; for hand edits to an untracked one) · changes are committed to TODO.md a moment after the last one</dd>
         <dt>Shell</dt><dd><kbd>i</kbd> type into terminal · <kbd>Ctrl-]</kbd> leave terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> new shell</dd>
         <dt>New task</dt><dd><kbd>Enter</kbd> save · <kbd>Shift-Enter</kbd> another task · <kbd>Backspace</kbd> in an empty field removes it · a pasted text stays one task · <kbd>Esc</kbd> close</dd>

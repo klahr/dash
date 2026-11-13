@@ -9,6 +9,7 @@ import { grouped, projectWhere } from "./projects.js";
 import { renderBoard } from "./branches.js";
 import { showRunnerNeeded } from "./runners.js";
 import { formPriority } from "./dnd.js";
+import { openGoalSheet } from "./goals.js";
 
 // ------------------------------------------------------------------ new / edit todo
 // A task's title, instructions and options can be edited while it is a draft,
@@ -48,6 +49,7 @@ export function openTodoForm(t = null, { pick = false } = {}) {
   showRunnerNeeded($("#todo-runner-note"), state.project);
   $("#todo-clear").hidden = !!t;
   $("#todo-split").hidden = !split.splittable(t);
+  $("#todo-goal").hidden = !!t; // a goal is new work, not an edit of a task
   if (t) {
     f.title.value = t.title;
     f.prompt.value = t.prompt;
@@ -194,10 +196,23 @@ quick.rows.addEventListener("focusin", (e) => { if (e.target.matches(".quick-row
 $("#quick-form").addEventListener("submit", (e) => { e.preventDefault(); if (e.submitter?.value === "cancel") return quick.sheet.close(); attempt(submitQuick)(); });
 $("#quick-another").addEventListener("click", () => quickAddRow(quickFields().at(-1)));
 $("#quick-more").addEventListener("click", quickMore);
+// New goal…: what was typed becomes what the goal is to get done.
+$("#quick-goal").addEventListener("click", attempt(() => {
+  const text = quickTexts().join("\n\n");
+  quick.sheet.close("goal");
+  openGoalSheet({ description: text });
+}));
+$("#todo-goal").addEventListener("click", attempt(() => {
+  const f = $("#todo-form");
+  const title = f.title.value.trim(), description = f.prompt.value.trim();
+  $("#todo-sheet").close("goal");
+  openGoalSheet({ title, description });
+}));
 
 $("#todo-sheet").addEventListener("close", attempt(async () => {
   const action = $("#todo-sheet").returnValue;
   if (action === "split") return draft.done(); // saved as the split's tasks
+  if (action === "goal") return draft.close(); // kept, in case the goal isn't made
   if (action !== "draft" && action !== "queue") {
     const kept = draft.has(draftKey(editing));
     draft.close();

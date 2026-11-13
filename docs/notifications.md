@@ -19,7 +19,7 @@ also pushes these to the browser, so they arrive while Dash is closed:
 - GitHub Actions starts failing on the default branch
 - a runner's disk is nearly full ([Disk space on a runner](several-computers.md#disk-space-on-a-runner))
 
-Tapping a notification opens the task. **Send a test**, under the switch, pushes one right away.
+Tapping a notification opens the task, or the goal on the **Goals** page. **Send a test**, under the switch, pushes one right away.
 On an iPhone or iPad, add Dash to the home screen first ([phone.md](phone.md)) and turn
 notifications on in the installed app: Safari tabs can't get pushes there.
 

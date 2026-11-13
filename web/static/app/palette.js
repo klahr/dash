@@ -29,6 +29,7 @@ import { chat, todoChat } from "./chat.js";
 import { pane, paneOverlays, projectChatFor, toggleChatPane, togglePin } from "./chatpane.js";
 import { attached, openShell, shellBlocked, startProc, techFor, term } from "./terminal.js";
 import { closeCommit, commitScroller, moveCommit, stepCommitFile } from "./history.js";
+import { closeGoal, gp, openGoalSheet, stepGoal } from "./goals.js";
 import { checklistKey } from "./checklist.js";
 import { BOUND, VIEWS, cursorTodo, enterKey, isTyping, keys, laneCount, laneSkipped, laneTodos, moveCursor, openCommandLine, openDialog, permKey, runCommand, scrollBy, scroller, setMode, stepLane, todoKey } from "./vim.js";
 
@@ -63,6 +64,7 @@ function paletteCommands() {
   return [
     p && ["New task", "plus", () => openQuickAdd(), "n", "add create todo quick"],
     p && ["New task with all options", "plus", () => openTodoForm(), "N", "add create todo full form title priority dependencies attachments"],
+    p && ["New goal", "target", () => openGoalSheet(), "", "goal coordinator plan bigger project objective"],
     ["Board", "flag", go("board"), "gb", "view lanes"],
     ["Issues", "bug", go("issues"), "gi", "bugs vulnerabilities problems triage scan"],
     ["Scans", "scan", go("scans"), "gS", "scan security review dependency audit schedule cron"],
@@ -70,6 +72,7 @@ function paletteCommands() {
     [pane.pinned ? "Unpin chat" : "Pin chat", "pin", togglePin, ":pin", "pin unpin chat overlay dock"],
     ["Shell", "terminal", go("run"), "gs", "run terminal processes view"],
     ["History", "log", go("history"), "gh", "git graph tree commits view"],
+    ["Goals", "target", go("goals"), "go", "goal coordinator plan progress budget"],
     ["Files", "code", go("files"), "gf", "browse edit source code tree editor"],
     ["Checklist (TODO.md)", "checks", go("checklist"), "gl", "todo.md checklist to-do list check off tick items"],
     ["Switch project", "repo", openProjects, "p", "projects"],
@@ -359,6 +362,7 @@ async function handleNormal(k, n, hadCount) {
     case "c": return toggleChatPane(true, "project");
     case "gs": return showView("run");
     case "gh": return showView("history");
+    case "go": return showView("goals");
     case "gf": return showView("files");
     case "gl": return showView("checklist");
     case "gi": return showView("issues");
@@ -372,6 +376,7 @@ async function handleNormal(k, n, hadCount) {
       if (k === "Escape" && pane.open && paneOverlays()) return toggleChatPane(false);
       if (state.detail) return closeDetail();
       if (cp.sha) return closeCommit();
+      if (gp.open) return closeGoal();
       return;
     case "y": case "A":
       if (await permKey(k) === false) toast("No permission request waiting");
@@ -457,6 +462,13 @@ async function handleNormal(k, n, hadCount) {
       if (["ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b"].includes(k)) return scrollBy(cp.sha ? commitScroller() : scroller(), k, n);
       return;
     }
+    case "goals":
+      switch (k) {
+        case "j": case "ArrowDown": return stepGoal(n);
+        case "k": case "ArrowUp": return stepGoal(-n);
+      }
+      if (["ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b"].includes(k)) return scrollBy(gp.open ? $("#gd-body") : scroller(), k, n);
+      return;
     case "checklist":
       return checklistKey(k, n, hadCount);
   }

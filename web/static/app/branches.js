@@ -21,7 +21,7 @@ import { hoverCard } from "./hovercard.js";
 import { loadChecklist } from "./checklist.js";
 import { keys, laneHidden, todoKey } from "./vim.js";
 import { desktop } from "./viewport.js";
-import { goalChip, renderGoalFilter } from "./goals.js";
+import { goalChip, renderGoalFilter, waitingGoals } from "./goals.js";
 
 // ------------------------------------------------------------------ branches
 // The open switcher's GET /branches answer, for the project it was opened on.
@@ -288,13 +288,16 @@ function renderBoardNow() {
 
   $(".lane-tab[aria-selected=true]")?.scrollIntoView({ block: "nearest", inline: "nearest" });
 
-  const review = every.review.length + state.perms.length;
+  const goals = waitingGoals().length;
+  const review = every.review.length + state.perms.length + goals;
   const badge = $("#review-badge");
   if (String(review) !== badge.textContent && review && !reduceMotion.matches) {
     badge.animate([{ transform: "scale(1.35)" }, { transform: "scale(1)" }], { duration: 260, easing: EASE });
   }
   badge.hidden = !review;
   badge.textContent = review;
+  badge.title = [every.review.length && `${every.review.length} to review`, state.perms.length && `${state.perms.length} waiting for approval`,
+    goals && `${goals} goal${goals > 1 ? "s" : ""} waiting for you`].filter(Boolean).join(" · ");
   renderBoardDot(review);
 }
 

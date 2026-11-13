@@ -6,6 +6,8 @@ import { showView } from "./nav.js";
 import { renderProjectList, selectProject } from "./projects.js";
 import { title } from "./branches.js";
 import { openDetail } from "./detail.js";
+import { projectKey } from "./events.js";
+import { showGoal, waitingGoals } from "./goals.js";
 
 // ------------------------------------------------------------------ notifications & tab title
 export const notifyOn = () => store.flag("dash.notify");
@@ -17,6 +19,22 @@ export function notify(what, t, detail = "", pushed = false) {
   if (pushed && state.pushOn) return;
   const n = new Notification(`${what}: ${title(t)}`, { body: detail || "", tag: `dash-${t.id}`, silent: false });
   n.onclick = () => { window.focus(); showView("board"); openDetail(t.id); n.close(); };
+}
+// notifyGoal tells you about a goal (in project p, else the current one)
+// that waits for you, is done or out of budget. The hub pushes these too.
+export function notifyGoal(what, g, detail = "", p = null) {
+  if (!notifyOn() || !("Notification" in window) || Notification.permission !== "granted") return;
+  if (document.visibilityState === "visible" && document.hasFocus()) return;
+  if (state.pushOn) return;
+  const n = new Notification(`${what}: ${g.title}`, { body: detail || "", tag: `dash-goal-${g.id}`, silent: false });
+  n.onclick = () => {
+    window.focus();
+    n.close();
+    (async () => {
+      if (p && projectKey(p) !== projectKey(state.project)) await selectProject(p);
+      await showGoal(g.id);
+    })().catch(fail);
+  };
 }
 export async function toggleNotifications() {
   if (!("Notification" in window)) throw new Error("This browser doesn't support notifications.");
@@ -89,12 +107,14 @@ if ("serviceWorker" in navigator) {
     (async () => {
       if (p && p.id !== state.project?.id) await selectProject(p);
       if (q.get("task") && p) { showView("board"); await openDetail(q.get("task")); }
+      else if (q.get("goal") && p) await showGoal(q.get("goal"));
     })().catch(fail);
   });
 }
-// Tab title shows how many things wait for you: reviews + permission requests.
+// Tab title shows how many things wait for you: reviews, permission requests
+// and goals waiting for you.
 export function updateNeedsYou(items) {
-  state.needsYou = (items?.review?.length || 0) + state.perms.length;
+  state.needsYou = (items?.review?.length || 0) + state.perms.length + waitingGoals().length;
   renderTitle();
 }
 export function renderTitle() {

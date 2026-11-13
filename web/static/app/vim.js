@@ -28,10 +28,10 @@ import { clearPriority, nextPriority } from "./dnd.js";
 // ------------------------------------------------------------------ vim keys
 // Normal mode is the default; typing in a field or the terminal is insert
 // mode. Esc (Ctrl-] in the terminal) returns to normal mode.
-export const VIEWS = ["board", "issues", "scans", "run", "history", "files", "checklist"];
+export const VIEWS = ["board", "issues", "scans", "run", "history", "goals", "files", "checklist"];
 export const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
-export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gi|gS|gc|gs|gh|gf|gl|m|M|G|F|u|p|c|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gi|gS|gc|gs|gh|go|gf|gl|m|M|G|F|u|p|c|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 export const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 export const openDialog = () => document.querySelector("dialog[open]");
 

@@ -132,7 +132,8 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 **Goals.** For something bigger than one task, make a [goal](docs/goals.md): a coordinator
 (Claude) plans the tasks, dispatches them, and reviews each one as it enters review, fails or is
 merged, sending work back with notes. It never approves or merges: you do. By default its plan
-waits for you to accept it.
+waits for you to accept it. Start one with **New goal…** in the task form or the **New task**
+sheet, and follow it on the **Goals** page.
 
 **Follow-up tasks.** To continue where a finished task left off, pick it under **Build on** in the
 full form. The new task's first run continues that task's Claude session (as a fork; the earlier
