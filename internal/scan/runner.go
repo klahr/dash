@@ -460,7 +460,8 @@ func Record(st *store.Store, run model.ScanRun, issues []model.Issue) (model.Sca
 		return run, err
 	}
 	run.Findings, run.Counts = len(issues), counts
-	run.NewIssues, run.ReopenedIssues, run.Urgent = nil, nil, 0
+	run.NewIssues, run.ReopenedIssues = nil, nil
+	run.Critical, run.High, run.Urgent = 0, 0, 0
 	for _, o := range outcomes {
 		switch o.Result {
 		case model.UpsertNew:
@@ -470,10 +471,14 @@ func Record(st *store.Store, run model.ScanRun, issues []model.Issue) (model.Sca
 		default:
 			continue
 		}
-		if o.Issue.Severity == model.SevCritical || o.Issue.Severity == model.SevHigh {
-			run.Urgent++
+		switch o.Issue.Severity {
+		case model.SevCritical:
+			run.Critical++
+		case model.SevHigh:
+			run.High++
 		}
 	}
+	run.Urgent = run.Critical + run.High
 	return run, nil
 }
 

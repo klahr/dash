@@ -122,8 +122,11 @@ type ScanRun struct {
 	// or brought back, for "show me what's new".
 	NewIssues      []string `json:"new_issues,omitempty"`
 	ReopenedIssues []string `json:"reopened_issues,omitempty"`
-	// Urgent counts new and reopened issues of critical or high severity.
-	Urgent int `json:"urgent,omitempty"`
+	// Critical and High count new and reopened issues of that severity;
+	// Urgent is their sum (runs from before the split only have Urgent).
+	Critical int `json:"critical,omitempty"`
+	High     int `json:"high,omitempty"`
+	Urgent   int `json:"urgent,omitempty"`
 }
 
 // ScanSetting is what a user changed about a scan in the UI: its schedule,

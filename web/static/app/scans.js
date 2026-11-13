@@ -225,11 +225,11 @@ function scanLine(s) {
     return h("div", { class: "scan-line" }, text(r.status === "canceled" ? `${label} ${ago}` : `${label} ${ago} · ${scanSummary(r)}`));
   }
   if (!r.findings) return h("div", { class: "scan-line" }, text(`Last run ${ago} · No issues found`));
-  const { nw, urgent } = runResult(r);
+  const { nw, badge } = runResult(r);
   const found = r.new_issues?.length || r.counts?.new || 0;
   return h("div", { class: "scan-line" }, text(`Last run ${ago} ·${nw.open ? "" : ` ${found ? `${found} new, none open` : "No new issues"}`}`),
     nw.open ? h("button", { type: "button", class: "link scan-count new", title: "Show them in Issues", onclick: () => showRunIssues(r, "new") }, plural(nw.open, "new issue")) : null,
-    urgent ? h("span", { class: "sev sev-high scan-urgent", title: "New or reopened issues of critical or high severity that are still open" }, `${urgent} urgent`) : null);
+    badge);
 }
 
 function scanCard(s) {
@@ -443,14 +443,14 @@ function scanApprovals(s, patch) {
 // deleted. Without the project's issues loaded, everything counts as open.
 function runIssueStatus(r, which) {
   const ids = (which === "reopened" ? r.reopened_issues : r.new_issues) || [];
-  const out = { open: 0, task: 0, fixed: 0, dismissed: 0, gone: 0, urgent: 0 };
+  const out = { open: 0, task: 0, fixed: 0, dismissed: 0, gone: 0, critical: 0, high: 0 };
   for (const id of ids) {
     if (!iss.loaded) { out.open++; continue; }
     const i = iss.list.find((x) => x.id === id);
     if (!i) { out.gone++; continue; }
     const k = { open: "open", task_created: "task", resolved: "fixed", dismissed: "dismissed" }[i.status] || "open";
     out[k]++;
-    if (triageable(i) && (i.severity === "critical" || i.severity === "high")) out.urgent++;
+    if (triageable(i) && (i.severity === "critical" || i.severity === "high")) out[i.severity]++;
   }
   // Runs from before the ids were kept: trust the counts.
   if (!ids.length) out.open = which === "reopened" ? r.counts?.reopened || 0 : r.counts?.new || 0;
@@ -458,11 +458,24 @@ function runIssueStatus(r, which) {
 }
 
 // runResult reads what became of a run's new and reopened issues, with the
-// urgent ones still open and how many "Select all" would check.
+// critical and high ones still open (as a badge, or null) and how many
+// "Select all" would check.
 function runResult(r) {
   const nw = runIssueStatus(r, "new"), ro = runIssueStatus(r, "reopened");
   const tracked = iss.loaded && (r.new_issues?.length || r.reopened_issues?.length);
-  return { nw, ro, urgent: tracked ? nw.urgent + ro.urgent : r.urgent, selectable: tracked ? nw.open + ro.open : 0 };
+  const sev = tracked ? { critical: nw.critical + ro.critical, high: nw.high + ro.high } : { critical: r.critical || 0, high: r.high || 0 };
+  return { nw, ro, badge: severityBadge(sev, tracked ? 0 : r.urgent || 0), selectable: tracked ? nw.open + ro.open : 0 };
+}
+
+// severityBadge names a run's new or reopened critical and high issues by
+// their severity: "1 critical · 2 high". Runs from before the split only
+// kept their sum (urgent).
+function severityBadge({ critical, high }, urgent) {
+  const parts = [critical ? `${critical} critical` : null, high ? `${high} high` : null].filter(Boolean);
+  const text = parts.length ? parts.join(" · ") : urgent ? `${urgent} critical or high` : null;
+  if (!text) return null;
+  const title = parts.length ? `New or reopened ${critical && high ? "critical and high" : critical ? "critical" : "high"} issues from this run that are still open` : "New or reopened critical or high issues from this run that are still open";
+  return h("span", { class: "sev sev-high scan-urgent", title }, text);
 }
 
 // scanReport is a run's full report. For the run the card's status line
@@ -485,7 +498,7 @@ function scanReport(r, compact = false, lead = false) {
   if (r.status === "succeeded" && r.findings) {
     // The counts are what the run found; what has been done about its new
     // and reopened issues since is read from the issues as they are now.
-    const { nw, ro, urgent, selectable } = runResult(r);
+    const { nw, ro, badge, selectable } = runResult(r);
     const since = (k, text, title) => {
       const n = nw[k] + ro[k];
       return n ? h("button", { type: "button", class: "scan-count link muted", title, onclick: () => showRunIssues(r, nw[k] ? "new" : "reopened") }, `${n} ${text}`) : null;
@@ -499,7 +512,7 @@ function scanReport(r, compact = false, lead = false) {
       since("fixed", "fixed", "New or reopened issues from this run that have been fixed since"),
       since("dismissed", "dismissed since", "New or reopened issues from this run that were dismissed since"),
       nw.gone + ro.gone ? h("span", { class: "scan-count muted", title: "New or reopened issues from this run that were deleted since" }, `${nw.gone + ro.gone} deleted`) : null,
-      urgent && !lead ? h("span", { class: "sev sev-high scan-urgent", title: "New or reopened issues of critical or high severity that are still open" }, `${urgent} urgent`) : null,
+      lead ? null : badge,
       selectable ? ib({ type: "button", class: "btn small scan-select", title: "Open the new and reopened issues from this run that are still open, all selected, to create tasks for them or dismiss them", onclick: () => showRunIssues(r, "all", true) }, "checks", `Select all ${selectable}`) : null);
     if (lead && !body.children.length) body = null;
   } else if (!lead || r.status === "failed") {

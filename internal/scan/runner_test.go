@@ -169,7 +169,7 @@ func TestRunRecordsFindings(t *testing.T) {
 	if r.Status != model.ScanSucceeded || r.Error != "" {
 		t.Fatalf("run: %+v", r)
 	}
-	if r.Counts != (model.UpsertCounts{New: 2}) || r.Findings != 2 || r.Invalid != 1 || len(r.NewIssues) != 2 || r.Urgent != 1 {
+	if r.Counts != (model.UpsertCounts{New: 2}) || r.Findings != 2 || r.Invalid != 1 || len(r.NewIssues) != 2 || r.Urgent != 1 || r.High != 1 || r.Critical != 0 {
 		t.Fatalf("counts: %+v", r)
 	}
 	if r.Commit == "" || r.FinishedAt == nil || r.CostUSD != 0.12 || r.Turns != 3 {
@@ -386,12 +386,12 @@ func TestRecordCounts(t *testing.T) {
 		{Title: "B", Type: model.IssueBug, Severity: model.SevLow, File: "b.go", Rule: "b"},
 	}
 	out, err := Record(fx.st, run, in)
-	if err != nil || out.Counts != (model.UpsertCounts{New: 2}) || out.Urgent != 1 || len(out.NewIssues) != 2 {
+	if err != nil || out.Counts != (model.UpsertCounts{New: 2}) || out.Urgent != 1 || out.Critical != 1 || out.High != 0 || len(out.NewIssues) != 2 {
 		t.Fatalf("first: %+v %v", out, err)
 	}
 	in[1].Severity = model.SevHigh
 	out, err = Record(fx.st, run, in)
-	if err != nil || out.Counts != (model.UpsertCounts{Known: 1, Updated: 1}) || out.Urgent != 0 || out.NewIssues != nil {
+	if err != nil || out.Counts != (model.UpsertCounts{Known: 1, Updated: 1}) || out.Urgent != 0 || out.Critical != 0 || out.High != 0 || out.NewIssues != nil {
 		t.Fatalf("second: %+v %v", out, err)
 	}
 	for _, is := range fx.st.ListIssues(fx.p.ID) {

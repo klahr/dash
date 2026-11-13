@@ -142,7 +142,8 @@ Look for vulnerabilities in {{path}} …
   project's runners is online the run waits, showing "no runner online", and goes ahead as soon as
   one connects; a project with no runner linked can't be scanned. `-scan-timeout` is the hub's.
 - **Reports.** Each run shows what it found, e.g. "2 new, 3 already known, 1 reopened". The
-  numbers link to those issues. A scheduled run that finds new critical or high issues sends a
+  numbers link to those issues. A red badge counts the run's new or reopened critical and high
+  issues that are still open, e.g. "1 critical · 2 high". A scheduled run that finds new critical or high issues sends a
   notification.
 
 ## API
