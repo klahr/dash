@@ -95,7 +95,7 @@ func TestChatSuggestsNextMessage(t *testing.T) {
 	small.mu.Lock()
 	transcript := small.texts[len(small.texts)-1]
 	small.mu.Unlock()
-	if transcript != "User: Why does login fail?\n\nClaude: hi" {
+	if transcript != "User: Why does login fail?\n\nClaude (latest message): hi" {
 		t.Errorf("the small model was given %q", transcript)
 	}
 }
@@ -173,5 +173,56 @@ func TestHubAsksTheUsersRunnerForSuggestions(t *testing.T) {
 	defer f.small.mu.Unlock()
 	if !strings.HasPrefix(f.small.texts[len(f.small.texts)-1], "User: what's up?") {
 		t.Errorf("the runner was given %q", f.small.texts)
+	}
+}
+
+// toolChat answers after calling tools: create_todo and queue_todo work,
+// add_checklist_item fails, list_todos only reads.
+type toolChat struct{ echoChat }
+
+func (c *toolChat) Stream(_ context.Context, _ string, _ []agent.ChatMessage, emit func(agent.ChatDelta)) error {
+	for i, tool := range []string{"mcp__dash_board__list_todos", "mcp__dash_board__create_todo", "mcp__dash_board__queue_todo", "mcp__dash_board__add_checklist_item"} {
+		id := string(rune('a' + i))
+		emit(agent.ChatDelta{Kind: "tool_use", ID: id, Tool: tool})
+		emit(agent.ChatDelta{Kind: "tool_result", ID: id, IsError: strings.HasSuffix(tool, "checklist_item")})
+	}
+	emit(agent.ChatDelta{Kind: "text", Text: "Done, it will run shortly."})
+	emit(agent.ChatDelta{Kind: "done"})
+	return nil
+}
+
+// askTaskSmall suggests what a task that was just queued makes pointless.
+type askTaskSmall struct{ fakeSmall }
+
+func (f *askTaskSmall) Suggest(ctx context.Context, t string) (string, error) {
+	_, _ = f.fakeSmall.Suggest(ctx, t)
+	return "Create a task for it", nil
+}
+
+// What a reply did with its tools is noted in the transcript, and a
+// suggestion asking for it again isn't sent.
+func TestChatSuggestionKnowsWhatWasDone(t *testing.T) {
+	s, _, p := boardServer(t)
+	small := &askTaskSmall{fakeSmall{where: "here"}}
+	s.Small, s.Chat = small, &toolChat{}
+	conn := chatSocket(t, s)
+	ask := []map[string]string{{"role": "user", "content": "The export is slow"}}
+	if err := conn.WriteJSON(map[string]any{"type": "send", "project": p.ID, "suggest": true, "messages": ask}); err != nil {
+		t.Fatal(err)
+	}
+	got := readTurn(t, conn, time.Second)
+	if slices.Contains(kindsOf(got), "suggestion") {
+		t.Errorf("a suggestion asking for the queued task again was sent: %+v", got)
+	}
+	if n := small.count("suggest"); n != 1 {
+		t.Fatalf("the small model was asked %d times", n)
+	}
+	small.mu.Lock()
+	transcript := small.texts[len(small.texts)-1]
+	small.mu.Unlock()
+	want := "User: The export is slow\n\nClaude (latest message): Done, it will run shortly.\n" +
+		"Already done in Claude's latest message: created a task; queued a task."
+	if transcript != want {
+		t.Errorf("the small model was given %q, want %q", transcript, want)
 	}
 }

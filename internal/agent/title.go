@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/klahr/dash/internal/localrun"
 )
@@ -66,8 +68,9 @@ func (t Titler) Refine(ctx context.Context, prompt string) (string, error) {
 
 // Suggest guesses the short message the user is likely to send next in a
 // chat, from the end of the conversation (see SuggestTranscript), as Claude
-// Code's CLI does. It is something the user would say ("Run the tests"),
-// not Claude offering more help. "" when there is no clear next step.
+// Code's CLI does. It is something the user would say in reply to Claude's
+// latest message, not Claude offering more help. "" when no reply clearly
+// fits. Callers that have the conversation also run FitSuggestion on it.
 func (t Titler) Suggest(ctx context.Context, transcript string) (string, error) {
 	if strings.TrimSpace(transcript) == "" {
 		return "", nil
@@ -79,16 +82,28 @@ func (t Titler) Suggest(ctx context.Context, transcript string) (string, error) 
 	return CleanSuggestion(out), nil
 }
 
-const suggestSystem = "You predict the next message a developer will type to their AI coding assistant. " +
-	"Reply with only that message, or NONE."
+const suggestSystem = "You predict the reply a developer will type next to their AI coding assistant, " +
+	"right after the assistant's latest message. Reply with only that message, or NONE when no reply clearly fits."
 
 const suggestPrompt = "Below is the end of a conversation between a developer (User) and Claude, an AI coding " +
-	"assistant, in a project dashboard where chats can become coding tasks. Write the short message " +
-	"(at most 12 words) the developer is most likely to send next, in their own voice: an instruction " +
-	"or question to Claude, such as \"Create a task for it\", \"Run the tests\" or \"Yes, do that\". " +
-	"It must be what the developer would say, never Claude offering help, a summary, or thanks. " +
-	"If Claude asked a yes/no question, answer it as the developer would. " +
-	"If there is no clear next step, reply NONE.\n\nConversation:\n"
+	"assistant, in a project dashboard where chats can become coding tasks. The block marked " +
+	"\"Claude (latest message)\" is what Claude just said; a line starting \"Already done in Claude's latest " +
+	"message:\" lists actions Claude already took with its tools.\n\n" +
+	"Write the short reply (at most 12 words) the developer would most likely send next, in their own voice. " +
+	"It must answer or follow from Claude's latest message:\n" +
+	"- If Claude asked a question, answer it.\n" +
+	"- If Claude offered to do something, accept it or turn it down.\n" +
+	"- If Claude already did something (created or queued a task, added a checklist item, ran the tests, " +
+	"made an edit), never ask for it again.\n" +
+	"- Never repeat or rephrase the developer's own last message, and never ask for anything the " +
+	"conversation shows is already done.\n" +
+	"- Write in the same language as the developer's messages.\n" +
+	"- It is what the developer says to Claude, never Claude offering help, a summary, or thanks.\n\n" +
+	"Reply NONE when you aren't confident, for example when Claude's latest message is a finished answer " +
+	"with no question or offer in it. No suggestion is better than one that doesn't fit.\n\n" +
+	"For the style only (short, direct, imperative or a plain answer), not as phrases to pick from: " +
+	"after \"Should I also update the docs?\" a reply might be \"Yes, update them too\"; after " +
+	"\"I can split this into two tasks if you like\" it might be \"No, keep it as one\".\n\nConversation:\n"
 
 // maxTranscript is how much of a conversation Suggest reads, in bytes.
 const maxTranscript = 6000
@@ -100,16 +115,26 @@ const maxSuggestMessages = 6
 // question's start, and a reply's end, where its offers and questions are.
 const maxSuggestEach = 1500
 
+// latestLabel marks Claude's reply that the suggestion answers.
+const latestLabel = "Claude (latest message): "
+
+// doneLabel starts the note on what Claude's latest reply did with its tools.
+const doneLabel = "Already done in Claude's latest message: "
+
 // SuggestTranscript writes the last messages of a conversation for Suggest:
 // "User: …" and "Claude: …" blocks, oldest first, each one cut down, the
-// whole at most maxTranscript bytes (older messages dropped first).
-func SuggestTranscript(history []ChatMessage) string {
+// whole at most maxTranscript bytes (older messages dropped first). The last
+// reply, when the conversation ends with one, is "Claude (latest message):"
+// and keeps its end; done (see ActionNote) are what it did with its tools,
+// noted after it.
+func SuggestTranscript(history []ChatMessage, done ...string) string {
 	if len(history) > maxSuggestMessages {
 		history = history[len(history)-maxSuggestMessages:]
 	}
 	var blocks []string
 	size := 0
-	for _, m := range slices.Backward(history) {
+	latest := len(history) > 0 && history[len(history)-1].Role == "assistant"
+	for i, m := range slices.Backward(history) {
 		text := strings.TrimSpace(m.Content)
 		if m.Shell != nil {
 			text = strings.TrimSpace(ShellText(m))
@@ -117,14 +142,20 @@ func SuggestTranscript(history []ChatMessage) string {
 		if text == "" {
 			continue
 		}
-		who := "User"
+		who := "User: "
 		if m.Role == "assistant" {
-			who = "Claude"
+			who = "Claude: "
 			text = cutStart(text, maxSuggestEach)
 		} else {
 			text = cutEnd(text, maxSuggestEach)
 		}
-		b := who + ": " + text
+		b := who + text
+		if latest && i == len(history)-1 {
+			b = latestLabel + text
+			if len(done) > 0 {
+				b += "\n" + doneLabel + strings.Join(done, "; ") + "."
+			}
+		}
 		if size+len(b) > maxTranscript {
 			break
 		}
@@ -133,6 +164,42 @@ func SuggestTranscript(history []ChatMessage) string {
 	}
 	slices.Reverse(blocks)
 	return strings.Join(blocks, "\n\n")
+}
+
+// ActionNote names what a chat tool call did, for SuggestTranscript: tool
+// is its name, as Claude Code reports it ("mcp__dash_board__queue_todo" or
+// "Edit"). "" for a tool that only reads or isn't known.
+func ActionNote(tool string) string {
+	if strings.HasPrefix(tool, "mcp__") {
+		if i := strings.LastIndex(tool, "__"); i >= 0 {
+			tool = tool[i+2:]
+		}
+	}
+	return actionNotes[tool]
+}
+
+var actionNotes = map[string]string{
+	"create_todo":                 "created a task",
+	"queue_todo":                  "queued a task",
+	"enqueue_todo":                "queued a task",
+	"restart_todo":                "restarted a task",
+	"rework_todo":                 "sent a task back for rework",
+	"stop_todo":                   "stopped a task",
+	"update_todo":                 "changed a task",
+	"cancel_todo":                 "cancelled a task",
+	"delete_todo":                 "deleted a task",
+	"create_release":              "created a release",
+	"report_issue":                "reported an issue",
+	"add_checklist_item":          "added a checklist item",
+	"check_checklist_item":        "checked off a checklist item",
+	"edit_checklist_item":         "edited a checklist item",
+	"delete_checklist_item":       "deleted a checklist item",
+	"move_checklist_item_to_task": "created a task from a checklist item",
+	"Edit":                        "edited files",
+	"MultiEdit":                   "edited files",
+	"Write":                       "edited files",
+	"NotebookEdit":                "edited files",
+	"Bash":                        "ran commands",
 }
 
 // cutEnd keeps s's first n bytes (whole runes), marking the cut.
@@ -179,6 +246,62 @@ func CleanSuggestion(s string) string {
 	}
 	return s
 }
+
+// FitSuggestion checks a cleaned suggestion (see CleanSuggestion) against
+// the conversation it follows (history, and done: what Claude's latest
+// reply did with its tools, see ActionNote). "" when it repeats the user's
+// last message (ignoring case and punctuation), or asks for a task or a
+// checklist item that the latest reply says is already created or queued.
+func FitSuggestion(s string, history []ChatMessage, done []string) string {
+	if s == "" {
+		return ""
+	}
+	norm := normalizeMessage(s)
+	if norm == "" {
+		return ""
+	}
+	var reply string
+	for i, m := range slices.Backward(history) {
+		if m.Role == "user" {
+			if normalizeMessage(m.Content) == norm {
+				return ""
+			}
+			break
+		}
+		if i == len(history)-1 {
+			reply = m.Content
+		}
+	}
+	notes := strings.Join(done, "; ")
+	queued := strings.Contains(notes, "queued a task") || queuedTask.MatchString(reply)
+	created := queued || strings.Contains(notes, "created a task") || createdTask.MatchString(reply)
+	listed := strings.Contains(notes, "added a checklist item") || addedItem.MatchString(reply)
+	low := strings.ToLower(s)
+	if created && asksTask.MatchString(low) || queued && asksQueue.MatchString(low) || listed && asksItem.MatchString(low) {
+		return ""
+	}
+	return s
+}
+
+// normalizeMessage is s in lower case, its words only, for comparing two
+// messages.
+func normalizeMessage(s string) string {
+	return strings.Join(strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}), " ")
+}
+
+var (
+	// Claude saying it created, queued or added something ("I've queued a
+	// task for this", "Task created", "It's queued").
+	queuedTask  = regexp.MustCompile(`(?i)\b(?:i'?ve|i have|i|it'?s|it is|it has|that'?s|and|task is|is now|has been|have been|now|just)\s+(?:been\s+|just\s+|now\s+)*queued\b|(?:^|[.!\n]\s*)queued\b|\btask (?:is |has been )?queued\b`)
+	createdTask = regexp.MustCompile(`(?i)\b(?:i'?ve|i have|i|just|now)\s+(?:just\s+|now\s+)?(?:created|drafted|filed|added|opened|made)\b[^.!?\n]{0,40}\b(?:task|todo|draft)s?\b|(?:^|[.!\n]\s*)(?:created|drafted)\s+(?:a|the|it|task|draft)\b|\b(?:task|draft) (?:is |has been )?created\b`)
+	addedItem   = regexp.MustCompile(`(?i)\b(?:i'?ve|i have|i|just|now)\s+(?:just\s+)?added\b[^.!?\n]{0,60}\b(?:checklist|to-?do list|todo\.md)\b`)
+	// The user asking for a task, for it to be queued, or for a checklist item.
+	asksTask  = regexp.MustCompile(`\b(?:create|make|add|open|file|draft|turn|put)\b[^.!?]{0,30}\b(?:task|todo|ticket)s?\b`)
+	asksQueue = regexp.MustCompile(`\bqueue\b`)
+	asksItem  = regexp.MustCompile(`\b(?:add|put|write)\b[^.!?]{0,40}\b(?:checklist|to-?do list|todo\.md)\b`)
+)
 
 // Part is one of the todos a large task is split into.
 type Part struct {

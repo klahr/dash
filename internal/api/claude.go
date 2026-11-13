@@ -159,11 +159,12 @@ func (sv *service) refine(ctx context.Context, prompt string) (string, error) {
 var errNoRefiner = errors.New("cleaning up instructions is not available")
 
 // suggest guesses the user's next message after a chat turn (turn: the
-// conversation with its new reply), here or on the caller's runner, for the
-// composer's placeholder. "" when there is no clear next step, or no runner
-// of theirs online, or the call fails: the composer keeps its usual one.
-func (sv *service) suggest(ctx context.Context, turn []agent.ChatMessage) string {
-	transcript := agent.SuggestTranscript(turn)
+// conversation with its new reply; done: what the reply did with its tools,
+// see agent.ActionNote), here or on the caller's runner, for the composer's
+// placeholder. "" when no reply clearly fits, or no runner of theirs is
+// online, or the call fails: the composer keeps its usual one.
+func (sv *service) suggest(ctx context.Context, turn []agent.ChatMessage, done []string) string {
+	transcript := agent.SuggestTranscript(turn, done...)
 	if transcript == "" {
 		return ""
 	}
@@ -181,7 +182,7 @@ func (sv *service) suggest(ctx context.Context, turn []agent.ChatMessage) string
 		slog.Debug("chat suggestion", "err", err)
 		return ""
 	}
-	return agent.CleanSuggestion(out)
+	return agent.FitSuggestion(agent.CleanSuggestion(out), turn, done)
 }
 
 // split proposes how to break a large task into todos, here or on the

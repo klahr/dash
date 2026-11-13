@@ -12,13 +12,16 @@ starts a new conversation and `/help` lists these.
 
 ## Suggested next message
 
-After each reply, Dash guesses what you'll say next ("Run the tests", "Create a task for it") and
-shows it greyed out in the empty message box, as Claude Code's CLI does.
+After each reply, Dash guesses what you'll say next and shows it greyed out in the empty message
+box, as Claude Code's CLI does. The guess answers Claude's last message: if Claude asked a question,
+it answers it; if Claude offered something, it accepts or turns it down. It never repeats your last
+message or asks for something Claude already did, such as a task it just created or queued.
 
 - <kbd>Enter</kbd> or **Send** sends the suggestion as it is.
 - <kbd>Tab</kbd> puts it in the box, so you can edit it before sending.
 - Typing hides it. Erase what you wrote and it shows again.
-- Sending or a new reply clears it. No suggestion shows when there's no clear next step.
+- Sending or a new reply clears it. No suggestion shows when no reply clearly fits, for example
+  after a finished answer with no question or offer.
 
 The guess is a short call to Haiku with the last few messages, on the same Claude login as the
 chat (on a hub, your own runner). If it fails or no runner of yours is online, the box keeps its

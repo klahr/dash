@@ -141,7 +141,7 @@ func TestSuggestTranscript(t *testing.T) {
 		h = append(h, ChatMessage{Role: "user", Content: fmt.Sprintf("question %d", i)}, ChatMessage{Role: "assistant", Content: fmt.Sprintf("answer %d", i)})
 	}
 	got := SuggestTranscript(h)
-	want := "User: question 7\n\nClaude: answer 7\n\nUser: question 8\n\nClaude: answer 8\n\nUser: question 9\n\nClaude: answer 9"
+	want := "User: question 7\n\nClaude: answer 7\n\nUser: question 8\n\nClaude: answer 8\n\nUser: question 9\n\nClaude (latest message): answer 9"
 	if got != want {
 		t.Errorf("SuggestTranscript:\n got %q\nwant %q", got, want)
 	}
@@ -182,15 +182,112 @@ func TestSuggestAsksHaiku(t *testing.T) {
 		}
 	}
 	args, _ := os.ReadFile(dir + "/args")
-	if !strings.Contains(string(args), "--model\nhaiku\n") || !strings.Contains(string(args), "predict the next message a developer") {
+	if !strings.Contains(string(args), "--model\nhaiku\n") || !strings.Contains(string(args), "predict the reply a developer") {
 		t.Errorf("claude ran with %q", args)
 	}
 	stdin, _ := os.ReadFile(dir + "/stdin")
-	if !strings.Contains(string(stdin), "never Claude offering help") || !strings.HasSuffix(string(stdin), transcript) {
+	if !strings.Contains(string(stdin), "never Claude offering help") || !strings.Contains(string(stdin), "never ask for it again") || !strings.HasSuffix(string(stdin), transcript) {
 		t.Errorf("claude was asked %q", stdin)
 	}
 	// Nothing to go on: no call.
 	if got, err := (Titler{Bin: dir + "/missing"}).Suggest(context.Background(), " "); got != "" || err != nil {
 		t.Errorf("Suggest of an empty transcript = %q, %v", got, err)
+	}
+}
+
+func TestSuggestTranscriptMarks(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		history []ChatMessage
+		done    []string
+		want    string
+	}{
+		{"latest reply marked",
+			[]ChatMessage{{Role: "user", Content: "Why does login fail?"}, {Role: "assistant", Content: "The cookie lacks Secure."}},
+			nil,
+			"User: Why does login fail?\n\nClaude (latest message): The cookie lacks Secure."},
+		{"actions noted after the latest reply",
+			[]ChatMessage{{Role: "user", Content: "Make a task to fix it"}, {Role: "assistant", Content: "I've queued a task for this."}},
+			[]string{"created a task", "queued a task"},
+			"User: Make a task to fix it\n\nClaude (latest message): I've queued a task for this.\n" +
+				"Already done in Claude's latest message: created a task; queued a task."},
+		{"only the last reply is the latest",
+			[]ChatMessage{{Role: "assistant", Content: "Hi"}, {Role: "user", Content: "Fix it"}, {Role: "assistant", Content: "Done."}},
+			nil,
+			"Claude: Hi\n\nUser: Fix it\n\nClaude (latest message): Done."},
+		{"ending on the user: no latest reply, no note",
+			[]ChatMessage{{Role: "assistant", Content: "Hi"}, {Role: "user", Content: "Fix it"}},
+			[]string{"edited files"},
+			"Claude: Hi\n\nUser: Fix it"},
+		{"an empty last reply is skipped",
+			[]ChatMessage{{Role: "user", Content: "Fix it"}, {Role: "assistant", Content: "  "}},
+			nil,
+			"User: Fix it"},
+	} {
+		if got := SuggestTranscript(c.history, c.done...); got != c.want {
+			t.Errorf("%s:\n got %q\nwant %q", c.name, got, c.want)
+		}
+	}
+
+	// A long latest reply keeps its end, and the note, within the limit.
+	long := []ChatMessage{
+		{Role: "user", Content: strings.Repeat("q", 5000)},
+		{Role: "assistant", Content: strings.Repeat("a", 5000) + " Shall I queue it?"},
+	}
+	got := SuggestTranscript(long, "created a task")
+	if !strings.Contains(got, "Claude (latest message): … ") || !strings.HasSuffix(got, "Shall I queue it?\nAlready done in Claude's latest message: created a task.") {
+		t.Errorf("long latest reply: %q", got[len(got)-80:])
+	}
+	if len(got) > maxTranscript {
+		t.Errorf("transcript is %d bytes, over %d", len(got), maxTranscript)
+	}
+}
+
+func TestActionNote(t *testing.T) {
+	for tool, want := range map[string]string{
+		"mcp__dash_board__create_todo":        "created a task",
+		"mcp__dash_board__queue_todo":         "queued a task",
+		"mcp__dash_board__add_checklist_item": "added a checklist item",
+		"Edit":                                "edited files",
+		"mcp__dash_board__list_todos":         "",
+		"Read":                                "",
+		"":                                    "",
+	} {
+		if got := ActionNote(tool); got != want {
+			t.Errorf("ActionNote(%q) = %q, want %q", tool, got, want)
+		}
+	}
+}
+
+func TestFitSuggestion(t *testing.T) {
+	ask := func(user, reply string) []ChatMessage {
+		return []ChatMessage{{Role: "user", Content: user}, {Role: "assistant", Content: reply}}
+	}
+	for _, c := range []struct {
+		name       string
+		suggestion string
+		history    []ChatMessage
+		done       []string
+		want       string
+	}{
+		{"fits", "Yes, fix it", ask("Why does login fail?", "The cookie lacks Secure. Want me to fix it?"), nil, "Yes, fix it"},
+		{"repeats the user", "Fix the login bug", ask("fix the login bug!", "Done: the cookie now has Secure."), nil, ""},
+		{"repeats the user, other punctuation", "Run the tests.", ask("Run   the TESTS", "All 42 pass."), nil, ""},
+		{"only the last user message counts", "Run the tests",
+			[]ChatMessage{{Role: "user", Content: "Run the tests"}, {Role: "assistant", Content: "3 fail."}, {Role: "user", Content: "Fix them"}, {Role: "assistant", Content: "Fixed. Run them again?"}},
+			nil, "Run the tests"},
+		{"task queued, said in the reply", "Create a task for it", ask("The export is slow", "I've queued a task for this."), nil, ""},
+		{"task queued, by its tools", "Create a task for it", ask("The export is slow", "Done, it'll run shortly."), []string{"created a task", "queued a task"}, ""},
+		{"task queued: queue it again", "Queue it", ask("Make a task for it", "Task created and queued."), nil, ""},
+		{"task created as a draft: queueing it fits", "Queue it", ask("Make a task for it", "I've created a draft task for this."), []string{"created a task"}, "Queue it"},
+		{"task created: another one", "Make it a task", ask("Make a task for it", "I created the task."), nil, ""},
+		{"checklist item added", "Add it to the checklist", ask("Note that down", "I've added it to the checklist."), []string{"added a checklist item"}, ""},
+		{"nothing done: a task fits", "Create a task for it", ask("The export is slow", "It reads every row twice. Want a task to fix it?"), nil, "Create a task for it"},
+		{"empty", "", ask("Hi", "Hello"), nil, ""},
+		{"only punctuation", "?!", ask("Hi", "Hello"), nil, ""},
+	} {
+		if got := FitSuggestion(c.suggestion, c.history, c.done); got != c.want {
+			t.Errorf("%s: FitSuggestion(%q) = %q, want %q", c.name, c.suggestion, got, c.want)
+		}
 	}
 }
