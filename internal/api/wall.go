@@ -308,7 +308,7 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 	for _, t := range todos {
 		p := byProject[t.ProjectID]
 		if (today(t.StartedAt) || today(t.FinishedAt)) && t.Status != model.StatusDraft {
-			spend += t.CostUSD // its whole cost: Dash doesn't keep cost per run
+			spend += todaysCost(t, today)
 		}
 		switch t.Status {
 		case model.StatusQueued:
@@ -682,4 +682,19 @@ func (s *Server) wallTokenRoutes(mux *http.ServeMux) {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})))
+}
+
+// todaysCost is what a task's runs that started today cost. A task from
+// before Dash kept a record of each run counts its whole cost.
+func todaysCost(t model.Todo, today func(*time.Time) bool) float64 {
+	if len(t.RunStats) == 0 {
+		return t.CostUSD
+	}
+	var c float64
+	for _, r := range t.RunStats {
+		if today(&r.At) {
+			c += r.CostUSD
+		}
+	}
+	return c
 }

@@ -234,6 +234,7 @@ type TaskState struct {
 	DiffDel   int                `json:"diff_del,omitempty"`
 	CostUSD   float64            `json:"cost_usd,omitempty"`
 	Runs      int                `json:"runs,omitempty"`
+	RunStats  []model.TodoRun    `json:"run_stats,omitempty"`
 	Checks    *model.Checks      `json:"checks,omitempty"`
 	PR        *model.PullRequest `json:"pr,omitempty"`
 	// MergedCommit is the commit that landed the task on origin's default
@@ -256,7 +257,7 @@ type TaskState struct {
 func StateOf(t model.Todo) TaskState {
 	s := TaskState{
 		HubTodoID: t.HubTodoID, ID: t.ID, Status: t.Status, Paused: t.Paused, Error: t.Error, Summary: t.Summary,
-		DiffFiles: t.DiffFiles, DiffAdd: t.DiffAdd, DiffDel: t.DiffDel, CostUSD: t.CostUSD, Runs: t.Runs,
+		DiffFiles: t.DiffFiles, DiffAdd: t.DiffAdd, DiffDel: t.DiffDel, CostUSD: t.CostUSD, Runs: t.Runs, RunStats: t.RunStats,
 		Checks: t.Checks, PR: t.PR, MergedCommit: t.MergedCommit, Revert: t.Revert, RevertConflict: t.RevertConflict,
 		Session: t.Worktree != nil && t.SessionID != "", UpdatedAt: t.UpdatedAt,
 	}

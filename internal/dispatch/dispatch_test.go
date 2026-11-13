@@ -368,7 +368,8 @@ func TestReportsOnlyChangeTheRunnersOwnTasks(t *testing.T) {
 	fx.fleet.set(runnerOf("beta-box", fx.orgB, true))
 	p := fx.project(t, fx.orgA, "laptop", "desk")
 	td := fx.todo(t, p, func(x *model.Todo) { x.Status, x.Runner, x.RemoteID = model.StatusInProgress, "laptop", "r1" })
-	done := TaskState{HubTodoID: td.ID, ID: "r1", Status: model.StatusReview, Summary: "did it", Branch: "dash/todo-r1", DiffFiles: 3}
+	done := TaskState{HubTodoID: td.ID, ID: "r1", Status: model.StatusReview, Summary: "did it", Branch: "dash/todo-r1", DiffFiles: 3,
+		Runs: 1, RunStats: []model.TodoRun{{Kind: model.RunFirst, ChatUsage: model.ChatUsage{InputTokens: 5}, Turns: 2}}}
 
 	report(t, fx.d, "desk", done)
 	report(t, fx.d, "beta-box", done)
@@ -387,7 +388,8 @@ func TestReportsOnlyChangeTheRunnersOwnTasks(t *testing.T) {
 	report(t, fx.d, "laptop", done)
 	got := fx.get(t, td.ID)
 	if got.Status != model.StatusReview || got.Summary != "did it" || got.DiffFiles != 3 || got.Worktree == nil ||
-		got.Worktree.Branch != "dash/todo-r1" || got.Worktree.Path != "" {
+		got.Worktree.Branch != "dash/todo-r1" || got.Worktree.Path != "" ||
+		len(got.RunStats) != 1 || got.RunStats[0].InputTokens != 5 || got.RunStats[0].Turns != 2 {
 		t.Fatalf("after its runner's report: %+v", got)
 	}
 
@@ -451,8 +453,8 @@ func TestStateOf(t *testing.T) {
 	t.Parallel()
 
 	s := StateOf(model.Todo{ID: "x", HubTodoID: "h", Status: model.StatusFailed, SessionID: "s",
-		Worktree: &model.Worktree{Branch: "dash/todo-x"}})
-	if !s.Session || s.Branch != "dash/todo-x" || s.HubTodoID != "h" {
+		Worktree: &model.Worktree{Branch: "dash/todo-x"}, RunStats: []model.TodoRun{{Kind: model.RunFirst}}})
+	if !s.Session || s.Branch != "dash/todo-x" || s.HubTodoID != "h" || len(s.RunStats) != 1 {
 		t.Errorf("%+v", s)
 	}
 	if StateOf(model.Todo{SessionID: "s"}).Session {

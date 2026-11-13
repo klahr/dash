@@ -79,6 +79,8 @@ func TestWallAggregates(t *testing.T) {
 	setTodo(t, s, web, func(x *model.Todo) {
 		x.Title, x.Status, x.StartedAt, x.Runs, x.CostUSD, x.DiffAdd, x.DiffDel = "Building it", model.StatusInProgress, at(-10*time.Minute), 2, 1.5, 20, 3
 		x.SentBack = "conflicts with main in secret/a.go"
+		// Only today's run counts towards today's spend.
+		x.RunStats = []model.TodoRun{{At: *at(-49 * time.Hour), Kind: model.RunFirst, CostUSD: 1}, {At: *at(-10 * time.Minute), Kind: model.RunNotes, CostUSD: 0.5}}
 	})
 	setTodo(t, s, web, func(x *model.Todo) {
 		x.Title, x.Status, x.FinishedAt, x.Checks = "old review", model.StatusReview, at(-3*time.Hour), &model.Checks{Passed: true}
@@ -135,7 +137,7 @@ func TestWallAggregates(t *testing.T) {
 	if d.Issues.Open != 1 || d.Issues.Severity["high"] != 1 || len(d.Issues.Top) != 1 {
 		t.Errorf("issues %+v", d.Issues)
 	}
-	if d.Today.Merged != 1 || d.Today.FirstTry == nil || *d.Today.FirstTry != 1 || d.Today.SpendUSD == nil || *d.Today.SpendUSD != 3.5 {
+	if d.Today.Merged != 1 || d.Today.FirstTry == nil || *d.Today.FirstTry != 1 || d.Today.SpendUSD == nil || *d.Today.SpendUSD != 2.5 {
 		t.Errorf("today %+v", d.Today)
 	}
 	if len(d.Runners) != 1 || d.Queue.Busy != 1 || d.Queue.Slots < 1 {

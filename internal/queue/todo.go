@@ -659,18 +659,24 @@ const issuesHint = "If you notice a bug, vulnerability or other problem in this 
 	"(title, type, severity, file and line, details, suggested fix) so the user can triage it, then carry on with your task."
 
 // runClaude runs Claude once, resuming the todo's session when it has one,
-// and records the session, cost and which notes Claude has now seen. It
-// returns Claude's final message.
+// and records the session, cost, the run's tokens (RunStats) and which notes
+// Claude has now seen. It returns Claude's final message.
 func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Project, wt model.Worktree, log func(string)) (string, error) {
 	req := agent.ExecRequest{Dir: wt.Path}
 	unsent := t.Feedback[min(t.FeedbackSent, len(t.Feedback)):]
+	stat := model.TodoRun{Kind: model.RunFirst}
 	switch {
 	case t.SessionID != "" && len(unsent) > 0:
 		req.Resume, req.Prompt = t.SessionID, agent.ContinuePrompt(unsent)
+		stat.Kind = model.RunNotes
 	case t.SessionID != "":
 		req.Resume, req.Prompt = t.SessionID, agent.ContinuePrompt([]string{"You were interrupted. Continue where you left off and finish the task."})
+		stat.Kind = model.RunInterrupted
 	default:
 		req.Prompt = agent.BuildPrompt(*t)
+		if t.Runs > 0 {
+			stat.Kind = model.RunRetry
+		}
 	}
 	if req.Resume != "" {
 		log("▶ resuming Claude session " + req.Resume)
@@ -691,6 +697,7 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	if m, err := model.CleanModel(t.Model); err != nil {
 		log("⚠ " + err.Error() + "; running on the default model")
 	} else if m != "" {
+		stat.Model = m
 		// After -claude-args, so it wins over a --model there.
 		req.ExtraArgs = append(req.ExtraArgs, "--model", m)
 		log("model: " + m)
@@ -752,13 +759,19 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	var overTime atomic.Bool
 	go e.watchdog(runCtx, t.ID, limit, func() { overTime.Store(true); stop() })
 
+	stat.At = time.Now()
 	res, err := e.Exec.Run(runCtx, req, emit)
 	if res.ResumeFailed && req.Resume != "" && runCtx.Err() == nil {
 		log("↻ the previous Claude session is gone; starting a fresh one with the full task")
 		emit(model.RunEvent{Kind: "run_start", Text: "Started over with the full task"})
 		req.Resume, req.Prompt = "", agent.BuildPrompt(*t)
+		stat.Kind = model.RunRetry
 		res, err = e.Exec.Run(runCtx, req, emit)
 	}
+	if res.Model != "" {
+		stat.Model = res.Model
+	}
+	stat.ChatUsage, stat.Turns, stat.CostUSD = res.Usage, res.Turns, res.CostUSD
 	switch {
 	case overTime.Load() && ctx.Err() == nil:
 		err = fmt.Errorf("stopped: Claude worked longer than the %d-minute limit; rework it to let Claude continue, or raise the limit in the project settings", p.RunMinutes())
@@ -776,6 +789,7 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 		}
 		x.CostUSD += res.CostUSD
 		x.Runs++
+		x.RunStats = append(x.RunStats, stat)
 		x.FeedbackSent = len(x.Feedback)
 		return nil
 	})

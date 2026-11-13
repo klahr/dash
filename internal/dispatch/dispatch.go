@@ -549,6 +549,7 @@ func (d *Dispatcher) apply(r tunnel.Runner, ts TaskState) {
 		before := *x
 		x.Status = to
 		x.Summary, x.CostUSD, x.Runs, x.Checks, x.PR = ts.Summary, ts.CostUSD, ts.Runs, ts.Checks, ts.PR
+		x.RunStats = ts.RunStats
 		x.DiffFiles, x.DiffAdd, x.DiffDel = ts.DiffFiles, ts.DiffAdd, ts.DiffDel
 		x.RemoteID = ts.ID
 		if to == model.StatusMerged {

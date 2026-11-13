@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,12 +35,36 @@ func (f *fakeExec) Run(ctx context.Context, req agent.ExecRequest, emit func(mod
 	f.calls = append(f.calls, req)
 	n := len(f.calls)
 	f.mu.Unlock()
-	res := agent.ExecResult{SessionID: "sess-" + filepath.Base(req.Dir), CostUSD: 0.01, Turns: 1, Stop: "success", Result: f.result}
+	res := agent.ExecResult{SessionID: "sess-" + filepath.Base(req.Dir), CostUSD: 0.01, Turns: 1, Stop: "success", Result: f.result,
+		Model: "claude-test", Usage: model.ChatUsage{InputTokens: 10, OutputTokens: 20, CacheReadTokens: 900, CacheCreationTokens: 90}}
 	if f.block {
 		<-ctx.Done()
 		return res, ctx.Err()
 	}
 	return res, f.fn(n, req)
+}
+
+// runKinds lists the kinds of a todo's run records, comma-separated.
+func runKinds(td model.Todo) string {
+	var ks []string
+	for _, r := range td.RunStats {
+		ks = append(ks, r.Kind)
+	}
+	return strings.Join(ks, ",")
+}
+
+// lostSessionExec is a Claude Code that no longer has the session it is
+// asked to resume.
+type lostSessionExec struct{ fakeExec }
+
+func (l *lostSessionExec) Run(ctx context.Context, req agent.ExecRequest, emit func(model.RunEvent)) (agent.ExecResult, error) {
+	if req.Resume != "" {
+		l.mu.Lock()
+		l.calls = append(l.calls, req)
+		l.mu.Unlock()
+		return agent.ExecResult{ResumeFailed: true}, errors.New("no conversation found")
+	}
+	return l.fakeExec.Run(ctx, req, emit)
 }
 
 func (f *fakeExec) Calls() []agent.ExecRequest {
@@ -220,6 +245,16 @@ func TestFailingTestsGoBackToClaudeWithResume(t *testing.T) {
 	}
 	if !strings.Contains(calls[1].Prompt, "grep -qx pass a.txt") || strings.Contains(calls[1].Prompt, "do make a") {
 		t.Fatalf("resumed prompt should carry only the test failure, got:\n%s", calls[1].Prompt)
+	}
+	// Each run is recorded with its kind and tokens.
+	if got := runKinds(td); got != "first,notes" {
+		t.Fatalf("run kinds = %s, want first,notes", got)
+	}
+	for _, r := range td.RunStats {
+		if r.Model != "claude-test" || r.InputTokens != 10 || r.OutputTokens != 20 || r.CacheReadTokens != 900 ||
+			r.CacheCreationTokens != 90 || r.Turns != 1 || r.CostUSD != 0.01 || r.At.IsZero() {
+			t.Fatalf("run record: %+v", r)
+		}
 	}
 
 	// The timeline marks each run's boundaries and shows the notes sent to Claude.
@@ -539,6 +574,9 @@ func TestPauseRequeuesAndResumeContinuesTheSession(t *testing.T) {
 	if calls := exe.Calls(); len(calls) != 2 || calls[1].Resume != "sess-paused" {
 		t.Fatalf("resume should continue the paused session, got %+v", calls)
 	}
+	if got := runKinds(td); got != "first,interrupted" {
+		t.Fatalf("run kinds = %s, want first,interrupted", got)
+	}
 	if td.Paused {
 		t.Fatal("paused flag should be cleared")
 	}
@@ -678,5 +716,29 @@ func TestHubLinkedProjectAutoApproves(t *testing.T) {
 	log, _ := h.engine.Log.Read(td.ID)
 	if !strings.Contains(string(log), "approved automatically") || strings.Contains(string(log), "ready for review") {
 		t.Errorf("want the task approved automatically, log:\n%s", log)
+	}
+}
+
+// TestLostSessionIsRecordedAsRetry: when the session to resume is gone,
+// the fresh run with the full prompt is recorded as a retry.
+func TestLostSessionIsRecordedAsRetry(t *testing.T) {
+	parallel(t)
+
+	exe := &lostSessionExec{fakeExec{fn: func(n int, req agent.ExecRequest) error {
+		if n == 1 {
+			write(t, req.Dir, "a.txt", "broken\n")
+		} else {
+			write(t, req.Dir, "a.txt", "pass\n")
+		}
+		return nil
+	}}}
+	h := newHarness(t, exe, model.Project{Name: "p", TestCommand: "grep -qx pass a.txt", MaxAutoFixes: 2})
+	td := h.add("make a")
+	td = h.waitFor(td.ID, model.StatusReview)
+	if calls := exe.Calls(); len(calls) != 3 || calls[1].Resume == "" || calls[2].Resume != "" {
+		t.Fatalf("want a run, a failed resume and a fresh run, got %+v", calls)
+	}
+	if got := runKinds(td); got != "first,retry" {
+		t.Fatalf("run kinds = %s, want first,retry", got)
 	}
 }

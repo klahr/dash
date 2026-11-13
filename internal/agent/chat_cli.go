@@ -249,13 +249,8 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 			Result        string          `json:"result"`
 			RateLimitInfo json.RawMessage `json:"rate_limit_info"`
 			DurationMS    int64           `json:"duration_ms"`
-			Usage         *struct {
-				InputTokens              int64 `json:"input_tokens"`
-				OutputTokens             int64 `json:"output_tokens"`
-				CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
-				CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
-			} `json:"usage"`
-			Event struct {
+			Usage         *cliUsage       `json:"usage"`
+			Event         struct {
 				Type         string `json:"type"`
 				ContentBlock struct {
 					Type string `json:"type"`
@@ -317,11 +312,9 @@ func (c ClaudeCodeChat) Stream(ctx context.Context, dir string, history []ChatMe
 			if ev.IsError {
 				resultErr = fmt.Errorf("claude: %s", ev.Result)
 			}
-			usage = &model.ChatUsage{DurationMS: ev.DurationMS}
-			if u := ev.Usage; u != nil {
-				usage.InputTokens, usage.OutputTokens = u.InputTokens, u.OutputTokens
-				usage.CacheReadTokens, usage.CacheCreationTokens = u.CacheReadInputTokens, u.CacheCreationInputTokens
-			}
+			u := ev.Usage.chatUsage()
+			u.DurationMS = ev.DurationMS
+			usage = &u
 		}
 	})
 	if err := cmd.Wait(); err != nil {

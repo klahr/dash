@@ -133,3 +133,29 @@ func TestRunLogsClaudeCodeOutputChanges(t *testing.T) {
 		t.Fatalf("next run: %v", w)
 	}
 }
+
+// TestRunReadsUsage: the run's tokens come from the result event's usage
+// block and its model from the init event.
+func TestRunReadsUsage(t *testing.T) {
+	sample, err := os.ReadFile("../claudecli/testdata/2.1.319-tool.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := ClaudeCode{Bin: fakeClaude(t, string(sample))}
+	res, err := c.Run(context.Background(), ExecRequest{Dir: t.TempDir(), Prompt: "hi"}, func(model.RunEvent) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := model.ChatUsage{InputTokens: 4, OutputTokens: 82, CacheReadTokens: 6148, CacheCreationTokens: 2905}
+	got := res.Usage
+	got.DurationMS = 0
+	if got != want {
+		t.Errorf("usage = %+v, want %+v", got, want)
+	}
+	if res.Usage.DurationMS == 0 {
+		t.Error("want the run's duration from the result event")
+	}
+	if res.Model != "claude-haiku-5-5" {
+		t.Errorf("model = %q", res.Model)
+	}
+}

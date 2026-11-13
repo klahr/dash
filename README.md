@@ -116,6 +116,8 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 4. **Review.** When Claude is done the task lands in *Review*. Click **Review** on the card (or
    open it) and read the diff on the **Changes** tab; **Ask Claude** has Claude review it
    first. Not right? Click **Rework**, say what to change, and it goes back to Claude.
+   **Token use** lists each Claude run on the task: its tokens (and how many were cached),
+   turns and cost.
    For a small fix, click **Edit** on a changed file instead: saving commits your edit on the
    task's branch, so approving merges it with the rest.
 5. **Approve.** Click **Approve**. The task goes through *Merging* and ends up in *Done*, as one

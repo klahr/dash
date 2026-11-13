@@ -33,6 +33,10 @@ type ExecResult struct {
 	SessionID string
 	CostUSD   float64
 	Turns     int
+	// Model is the model Claude Code reported when the session started.
+	Model string
+	// Usage is the run's tokens (and duration) from the result event.
+	Usage model.ChatUsage
 	// ResumeFailed is set when Resume named a session Claude Code no longer
 	// has; the caller should retry with a full prompt.
 	ResumeFailed bool
@@ -134,8 +138,14 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 				c.OnRateLimit(ev.RateLimitInfo)
 			}
 			return
+		case "system":
+			if ev.Subtype == "init" && ev.Model != "" {
+				res.Model = ev.Model
+			}
 		case "result":
 			res.CostUSD, res.Turns, res.Stop, res.Result = ev.Cost, ev.NumTurns, ev.Subtype, ev.Result
+			res.Usage = ev.Usage.chatUsage()
+			res.Usage.DurationMS = ev.DurationMS
 			if ev.IsError || ev.Subtype != "success" {
 				resultErr = fmt.Errorf("claude reported %s: %s", ev.Subtype, strings.TrimSpace(ev.Result))
 			}
@@ -233,6 +243,9 @@ type streamEvent struct {
 	Result        string          `json:"result"`
 	Cost          float64         `json:"total_cost_usd"`
 	NumTurns      int             `json:"num_turns"`
+	DurationMS    int64           `json:"duration_ms"`
+	Model         string          `json:"model"` // system init
+	Usage         *cliUsage       `json:"usage"` // result
 	RateLimitInfo json.RawMessage `json:"rate_limit_info"`
 	Message       struct {
 		Content []contentBlock `json:"content"`

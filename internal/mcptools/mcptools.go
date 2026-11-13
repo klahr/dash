@@ -641,7 +641,7 @@ func boardTools(b Board, o Options) []Tool {
 				}
 				return out, nil
 			}},
-		{"get_todo", "Show a task: prompt, status, dependencies (depends_on), feedback, test results, diff size, pull request.", []Param{PTodo},
+		{"get_todo", "Show a task: prompt, status, dependencies (depends_on), feedback, test results, diff size, pull request, and each Claude run's kind, tokens, turns and cost (run_stats).", []Param{PTodo},
 			func(a Args) (any, error) {
 				if a.Str("todo") == "" {
 					return nil, errors.New("todo is required")

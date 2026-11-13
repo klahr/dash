@@ -13,6 +13,7 @@ import { canRework, menu, renderPane, renderReworkBox, revertTodo, reviewTodo, r
 import { runnerName } from "./runners.js";
 import { commentsFor, renderChecks, renderPerms, sendComments } from "./review.js";
 import { todoChat } from "./chat.js";
+import { renderRunStats } from "./runstats.js";
 import { loadTodoChat } from "./chatpane.js";
 import { shellBlocked, startProc } from "./terminal.js";
 import { closeCommit } from "./history.js";
@@ -115,6 +116,7 @@ export function renderDetail() {
   gallery.hidden = !t.attachments?.length;
   gallery.replaceChildren(...(t.attachments || []).map((a) => attachThumb(a)));
   renderChecks(t);
+  renderRunStats(t);
   renderPerms();
   $("#d-prompt").replaceChildren(
     ib({ type: "button", class: "btn small copy-prompt", title: "Copy the raw markdown", onclick: attempt(() => copy(t.prompt, "Prompt copied")) }, "copy", "Copy"),

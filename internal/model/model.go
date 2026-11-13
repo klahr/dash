@@ -421,6 +421,9 @@ type Todo struct {
 	DiffDel   int     `json:"diff_del,omitempty"`
 	CostUSD   float64 `json:"cost_usd,omitempty"` // API-equivalent cost reported by Claude Code
 	Runs      int     `json:"runs,omitempty"`
+	// RunStats has one record per Claude run, oldest first: its kind,
+	// tokens, turns and cost. Tasks from before it was kept have none.
+	RunStats []TodoRun `json:"run_stats,omitempty"`
 	// Summary is one sentence on what Claude did, from its latest run.
 	Summary string `json:"summary,omitempty"`
 	// Attachments are files (usually screenshots) given to Claude with the task.
@@ -805,6 +808,25 @@ type ChatUsage struct {
 	// ThinkingMS is the time spent in thinking blocks; DurationMS the whole answer.
 	ThinkingMS int64 `json:"thinking_ms,omitempty"`
 	DurationMS int64 `json:"duration_ms,omitempty"`
+}
+
+// Kinds of a task's Claude run (TodoRun.Kind).
+const (
+	RunFirst       = "first"       // the task's first run, with the full prompt
+	RunNotes       = "notes"       // its session resumed with new notes (rework, failing tests)
+	RunInterrupted = "interrupted" // its session resumed after an interruption
+	RunRetry       = "retry"       // a fresh session with the full prompt on a task that ran before: its session was lost
+)
+
+// TodoRun is one Claude run on a task: when it started, what kind of run it
+// was, the model, and the tokens (ChatUsage, flattened), turns and cost it took.
+type TodoRun struct {
+	At    time.Time `json:"at"`
+	Kind  string    `json:"kind"`
+	Model string    `json:"model,omitempty"`
+	ChatUsage
+	Turns   int     `json:"turns,omitempty"`
+	CostUSD float64 `json:"cost_usd,omitempty"`
 }
 
 // RunEvent is one step of a todo's worker: a Claude run's text, tool calls

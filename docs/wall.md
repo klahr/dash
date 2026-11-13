@@ -93,6 +93,7 @@ curl -b cookies.txt -X POST https://dash.example.com/api/wall/tokens -d '{"name"
 
 ## What it doesn't show yet
 
-"Spend" is the cost of the tasks worked on today (Dash keeps cost per task, not per run).
+"Spend" is the cost of the Claude runs started today. Tasks from before Dash kept a record of
+each run count their whole cost.
 "First-try merges" are today's merges that took a single Claude run. Time from queue to
 merge isn't recorded, so it isn't shown.

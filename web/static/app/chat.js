@@ -13,11 +13,11 @@ import { canRework, reworkTodo, takeReviewNext } from "./drawmode.js";
 import { describePerm } from "./review.js";
 import { loadTodoChat, renderChatBadge, renderChatDots, renderChatPane, viewingChat } from "./chatpane.js";
 import { timeline } from "./timeline.js";
+import { fmtTokens } from "./runstats.js";
 
 // ------------------------------------------------------------------ chat
 // usageLine shows what an answer took: tokens in and out, time spent
 // thinking and in all. Null for answers saved before Dash recorded it.
-const fmtTokens = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}k` : String(n);
 const fmtSecs = (ms) => {
   const s = Math.round(ms / 1000);
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
