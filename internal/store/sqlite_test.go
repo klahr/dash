@@ -234,7 +234,7 @@ func TestRoundTripEveryRecord(t *testing.T) {
 	if _, err := s.LinkIssues([]string{is.ID}, a.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.UpsertIssues(p.ID, "scan:x", []model.Issue{{Title: "Other", Type: model.IssueBug}}); err != nil {
+	if _, _, err := s.UpsertIssueBatch(p.ID, "scan:x", []model.Issue{{Title: "Other", Type: model.IssueBug}}); err != nil {
 		t.Fatal(err)
 	}
 	dropped, _, _ := s.UpsertIssue(model.Issue{ProjectID: p.ID, Title: "Drop me", Type: model.IssueBug})

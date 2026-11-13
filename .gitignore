@@ -1,6 +1,5 @@
 bin/
 .env
 dist/
-/dash
-/dash-tui
-/cmd/*/dash
+dash
+dash-tui

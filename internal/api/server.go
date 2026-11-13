@@ -269,7 +269,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/projects/{pid}/checklist/move", s.moveChecklist)
 	mux.HandleFunc("POST /api/projects/{pid}/edits", s.saveEdit)
 
-	// Todos & queues
+	// Todos
 	mux.HandleFunc("GET /api/projects/{pid}/todos", s.listTodos)
 	mux.HandleFunc("POST /api/projects/{pid}/todos", s.createTodo)
 	mux.HandleFunc("GET /api/todos/{tid}", s.getTodo)

@@ -39,22 +39,16 @@ func (s *Store) UpsertIssue(in model.Issue) (model.Issue, model.UpsertResult, er
 	return is, r, nil
 }
 
-// UpsertIssues adds a batch of issues to a project (e.g. a scan's findings)
-// with UpsertIssue's rules, saving once, and counts the outcomes. Issues
-// without a Source get source.
-func (s *Store) UpsertIssues(projectID, source string, in []model.Issue) (model.UpsertCounts, error) {
-	counts, _, err := s.UpsertIssueBatch(projectID, source, in)
-	return counts, err
-}
-
 // UpsertOutcome is what UpsertIssueBatch did with one issue.
 type UpsertOutcome struct {
 	Issue  model.Issue
 	Result model.UpsertResult
 }
 
-// UpsertIssueBatch is UpsertIssues that also reports each issue's outcome,
-// in order. The batch is all or nothing: if one issue is invalid, none is
+// UpsertIssueBatch adds a batch of issues to a project (e.g. a scan's
+// findings) with UpsertIssue's rules, saving once, and counts the outcomes
+// and reports each issue's outcome, in order. Issues without a Source get
+// source. The batch is all or nothing: if one issue is invalid, none is
 // added.
 func (s *Store) UpsertIssueBatch(projectID, source string, in []model.Issue) (model.UpsertCounts, []UpsertOutcome, error) {
 	s.mu.Lock()

@@ -94,8 +94,6 @@ func TestForOrgIsolates(t *testing.T) {
 	notFound("GetIssue", err)
 	_, _, err = b.UpsertIssue(model.Issue{ProjectID: pa.ID, Title: "x"})
 	notFound("UpsertIssue", err)
-	_, err = b.UpsertIssues(pa.ID, "", []model.Issue{{Title: "x"}})
-	notFound("UpsertIssues", err)
 	_, err = b.UpdateIssue(is.ID, func(*model.Issue) error { return nil })
 	notFound("UpdateIssue", err)
 	_, err = b.SetIssueStatus(is.ID, model.IssueDismissed, "")

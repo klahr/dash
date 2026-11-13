@@ -238,13 +238,6 @@ func (o *OrgStore) UpsertIssue(in model.Issue) (model.Issue, model.UpsertResult,
 	return o.s.UpsertIssue(in)
 }
 
-func (o *OrgStore) UpsertIssues(projectID, source string, in []model.Issue) (model.UpsertCounts, error) {
-	if !o.ownsProject(projectID) {
-		return model.UpsertCounts{}, ErrNotFound
-	}
-	return o.s.UpsertIssues(projectID, source, in)
-}
-
 func (o *OrgStore) UpdateIssue(id string, fn func(*model.Issue) error) (model.Issue, error) {
 	if !o.ownsIssue(id) {
 		return model.Issue{}, ErrNotFound

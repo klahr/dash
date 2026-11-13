@@ -179,7 +179,7 @@ func TestDismissedIssueStaysDismissed(t *testing.T) {
 	if got.Status != model.IssueDismissed || got.DismissReason != "test fixture only" || got.Severity != model.SevMedium {
 		t.Fatalf("dismissed issue changed: %+v", got)
 	}
-	counts, err := s.UpsertIssues(p.ID, "scan:gosec", []model.Issue{in, {Title: "Hardcoded key", Type: model.IssueVuln, File: "cfg.go"}})
+	counts, _, err := s.UpsertIssueBatch(p.ID, "scan:gosec", []model.Issue{in, {Title: "Hardcoded key", Type: model.IssueVuln, File: "cfg.go"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestResolvedIssueReopensWhenReportedAgain(t *testing.T) {
 	if b.ID != a.ID || b.Status != model.IssueOpen {
 		t.Fatalf("not reopened: %+v", b)
 	}
-	counts, err := s.UpsertIssues(p.ID, "scan:x", []model.Issue{in})
+	counts, _, err := s.UpsertIssueBatch(p.ID, "scan:x", []model.Issue{in})
 	if err != nil {
 		t.Fatal(err)
 	}
