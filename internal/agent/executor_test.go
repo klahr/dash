@@ -134,6 +134,51 @@ func TestRunLogsClaudeCodeOutputChanges(t *testing.T) {
 	}
 }
 
+func TestRunForksAResumedSession(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	script := "#!/bin/sh\ncat >/dev/null\necho \"$@\" >'" + dir + "/args'\n" +
+		`echo '{"type":"result","subtype":"success","is_error":false,"session_id":"new","num_turns":1,"total_cost_usd":0,"result":"ok"}'` + "\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	args := func(req ExecRequest) string {
+		t.Helper()
+		req.Dir, req.Prompt = t.TempDir(), "hi"
+		res, err := ClaudeCode{Bin: bin}.Run(context.Background(), req, func(model.RunEvent) {})
+		if err != nil || res.SessionID != "new" {
+			t.Fatalf("run: %v, session %q", err, res.SessionID)
+		}
+		b, err := os.ReadFile(filepath.Join(dir, "args"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	if a := args(ExecRequest{Resume: "old", ForkSession: true}); !strings.Contains(a, "--resume old --fork-session") {
+		t.Fatalf("a fork resumes the old session as a new one: %s", a)
+	}
+	if a := args(ExecRequest{Resume: "old"}); !strings.Contains(a, "--resume old") || strings.Contains(a, "--fork-session") {
+		t.Fatalf("a plain resume continues the session itself: %s", a)
+	}
+	if a := args(ExecRequest{ForkSession: true}); strings.Contains(a, "--fork-session") || strings.Contains(a, "--resume") {
+		t.Fatalf("nothing to fork without a session: %s", a)
+	}
+}
+
+func TestFollowUpPromptClosesTheEarlierTask(t *testing.T) {
+	child := model.Todo{Title: "Next", Prompt: "do the next thing"}
+	merged := FollowUpPrompt(child, model.Todo{Title: "First", Status: model.StatusMerged})
+	if !strings.Contains(merged, `"First"`) || !strings.Contains(merged, "and merged") || !strings.Contains(merged, "new, separate follow-up task") ||
+		!strings.HasSuffix(merged, BuildPrompt(child)) {
+		t.Fatalf("merged parent:\n%s", merged)
+	}
+	failed := FollowUpPrompt(child, model.Todo{Prompt: "look into it", Status: model.StatusFailed})
+	if !strings.Contains(failed, `"look into it"`) || !strings.Contains(failed, "not merged") {
+		t.Fatalf("unmerged parent:\n%s", failed)
+	}
+}
+
 // TestRunReadsUsage: the run's tokens come from the result event's usage
 // block and its model from the init event.
 func TestRunReadsUsage(t *testing.T) {

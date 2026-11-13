@@ -334,3 +334,35 @@ func TestCheckoutWarning(t *testing.T) {
 		t.Errorf("the runner's own project: %q %v", w, err)
 	}
 }
+
+// A task the hub says builds on another builds on the runner's copy of
+// it, when it ran there; otherwise it starts fresh.
+func TestHubTaskBuildsOnTheRunnersCopy(t *testing.T) {
+	parallel(t)
+
+	needGit(t)
+	s, h, remote := runnerSide(t, 7)
+	if code, _ := hubLinkAs(t, h, "hub-p1", remote); code != http.StatusCreated {
+		t.Fatalf("link: %d", code)
+	}
+	for _, task := range []dispatch.Task{
+		{HubTodoID: "t1", HubProjectID: "hub-p1", Title: "first", Prompt: "p"},
+		{HubTodoID: "t2", HubProjectID: "hub-p1", Title: "second", Prompt: "p", BuildsOn: "t1"},
+		{HubTodoID: "t3", HubProjectID: "hub-p1", Title: "third", Prompt: "p", BuildsOn: "elsewhere"},
+	} {
+		b, _ := json.Marshal(task)
+		if w := send(h, "POST", "/api/hub/tasks", string(b)); w.Code != http.StatusCreated {
+			t.Fatalf("task %s: %d %s", task.HubTodoID, w.Code, w.Body)
+		}
+	}
+	byHub := map[string]model.Todo{}
+	for _, x := range raw(s).ListTodos("") {
+		byHub[x.HubTodoID] = x
+	}
+	if got := byHub["t2"].BuildsOn; got == "" || got != byHub["t1"].ID {
+		t.Errorf("t2 builds on %q, want the runner's t1 %q", got, byHub["t1"].ID)
+	}
+	if got := byHub["t3"].BuildsOn; got != "" {
+		t.Errorf("t3 builds on %q, want nothing", got)
+	}
+}

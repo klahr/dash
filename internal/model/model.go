@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -384,6 +385,12 @@ type Todo struct {
 	// merged before this one starts: its worktree branches from the default
 	// branch then, so it builds on their code. Until then it waits queued.
 	DependsOn []string `json:"depends_on"`
+	// BuildsOn is the id of an earlier task in the same project this one
+	// follows up: its first run forks that task's Claude session (claude
+	// --resume --fork-session), so Claude starts out knowing what it
+	// explored, instead of exploring the code again. Like DependsOn, it
+	// waits queued until that task is finished (see Finished).
+	BuildsOn string `json:"builds_on,omitempty"`
 	// Model is the Claude model the task runs on (claude --model): an alias
 	// such as "opus", "sonnet" or "haiku", or a full model id. Empty: Dash's
 	// default (-claude-args, else Claude Code's own default).
@@ -396,9 +403,12 @@ type Todo struct {
 	Feedback     []string `json:"feedback,omitempty"`
 	FeedbackSent int      `json:"feedback_sent,omitempty"`
 	// SessionID is Claude Code's session for this todo; later runs resume it.
-	SessionID string  `json:"session_id,omitempty"`
-	Checks    *Checks `json:"checks,omitempty"` // latest test run
-	AutoFixes int     `json:"auto_fixes,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	// LastSessionID is the latest SessionID, kept when cleanup or a fresh
+	// start clears SessionID, so a later task can still build on it.
+	LastSessionID string  `json:"last_session_id,omitempty"`
+	Checks        *Checks `json:"checks,omitempty"` // latest test run
+	AutoFixes     int     `json:"auto_fixes,omitempty"`
 	// MergeMain asks the next run to merge the default branch into the
 	// worktree first (set when a merge conflicted). AutoMerge sends the todo
 	// straight back to the merge queue once it is fixed and tests pass,
@@ -521,10 +531,31 @@ func QueueBefore(a, b Todo) bool {
 	return a.CreatedAt.Before(b.CreatedAt)
 }
 
-// Blockers returns the todos among all that t depends on and that aren't
-// merged yet, in t.DependsOn order. Ids not in all (deleted) don't block.
+// Finished reports whether a task is done with for good: merged, or failed
+// (a task building on it may start then; see BuildsOn).
+func (t Todo) Finished() bool { return t.Status == StatusMerged || t.Status == StatusFailed }
+
+// LatestSession is the task's Claude session to build on: its current one,
+// else the last it had.
+func (t Todo) LatestSession() string {
+	if t.SessionID != "" {
+		return t.SessionID
+	}
+	return t.LastSessionID
+}
+
+// waitsOn reports whether t has anything to wait for: dependencies, or a
+// task it builds on. On a runner, a task from the hub never waits for the
+// one it builds on: the hub already did.
+func (t Todo) waitsOn() bool {
+	return len(t.DependsOn) > 0 || (t.BuildsOn != "" && t.HubTodoID == "")
+}
+
+// Blockers returns the todos among all that t waits for: those it depends
+// on that aren't merged yet, in t.DependsOn order, then the one it builds
+// on while that isn't finished. Ids not in all (deleted) don't block.
 func (t Todo) Blockers(all []Todo) []Todo {
-	if len(t.DependsOn) == 0 {
+	if !t.waitsOn() {
 		return nil
 	}
 	return t.BlockersIn(TodosByID(all))
@@ -541,12 +572,17 @@ func TodosByID(all []Todo) map[string]Todo {
 
 // BlockersIn is Blockers with the todos already indexed by TodosByID.
 func (t Todo) BlockersIn(byID map[string]Todo) []Todo {
-	if len(t.DependsOn) == 0 {
+	if !t.waitsOn() {
 		return nil
 	}
 	var out []Todo
 	for _, id := range t.DependsOn {
 		if d, ok := byID[id]; ok && d.Status != StatusMerged {
+			out = append(out, d)
+		}
+	}
+	if t.BuildsOn != "" && t.HubTodoID == "" && !slices.Contains(t.DependsOn, t.BuildsOn) {
+		if d, ok := byID[t.BuildsOn]; ok && !d.Finished() {
 			out = append(out, d)
 		}
 	}

@@ -445,22 +445,25 @@ function isPushed(t) {
 }
 
 // depWait tells what a queued todo is waiting for: its dependencies that
-// aren't merged yet, and those of them that failed or are drafts, which
+// aren't merged yet and the task it builds on while that isn't finished
+// (merged or failed), and those of them that failed or are drafts, which
 // hold it back until someone acts. Null when nothing holds it back.
 function depWait(t) {
-  if (t.status !== "queued" || !t.depends_on?.length) return null;
-  const deps = t.depends_on.map((id) => state.todos.get(id)).filter((d) => d && d.status !== "merged");
+  if (t.status !== "queued" || (!t.depends_on?.length && !t.builds_on)) return null;
+  const deps = (t.depends_on || []).map((id) => state.todos.get(id)).filter((d) => d && d.status !== "merged");
+  const base = t.builds_on && !t.depends_on?.includes(t.builds_on) ? state.todos.get(t.builds_on) : null;
+  if (base && base.status !== "merged" && base.status !== "failed") deps.push(base);
   if (!deps.length) return null;
   return { deps, stuck: deps.filter((d) => d.status === "failed" || d.status === "draft") };
 }
 
-// A dependency's title that opens it.
-function depLink(d) {
+// A dependency's title (or label) that opens it.
+function depLink(d, label = title(d)) {
   return h("button", {
     type: "button", class: "dep-link", title: `Open “${title(d)}”`,
     onpointerdown: (e) => e.stopPropagation(),
     onclick: (e) => { e.stopPropagation(); openDetail(d.id); },
-  }, title(d));
+  }, label);
 }
 
 // "⏳ waiting for A, B +2", or "blocked: A failed" when a dependency is stuck.
@@ -471,6 +474,14 @@ function depLine({ deps, stuck }, max = 2) {
   ];
   if (stuck.length) return ["blocked: ", ...list(stuck, (d) => d.status === "draft" ? "is a draft" : "failed")];
   return ["⏳ waiting for ", ...list(deps)];
+}
+
+// The detail view's line about the task t builds on: "Builds on #id title".
+export function buildsOnMeta(t) {
+  if (!t.builds_on) return null;
+  const d = state.todos.get(t.builds_on);
+  return h("span", { class: "deps", title: "Its first run continues that task's Claude session" },
+    "Builds on ", d ? depLink(d, `#${d.id} ${title(d)}`) : `#${t.builds_on}`);
 }
 
 // The detail view's line about dependencies.

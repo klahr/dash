@@ -663,11 +663,17 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, dispatch.Accepted{ID: t.ID, Resumed: true})
 		return
 	}
+	// The task it builds on is this runner's copy of the hub's, if it ran
+	// here; otherwise it starts fresh.
+	var buildsOn string
+	if parent, ok := sv.hubTodo(req.BuildsOn); ok && parent.ProjectID == p.ID {
+		buildsOn = parent.ID
+	}
 	// Queued from the start: a report caught between creating a draft and
 	// queueing it would tell the hub the task was canceled here.
 	t, err := sv.data.CreateQueuedTodo(model.Todo{
 		ProjectID: p.ID, Title: req.Title, Prompt: req.Prompt, Model: req.Model, Feedback: req.Feedback,
-		HubTodoID: req.HubTodoID, HubNotes: len(req.Feedback), StartNow: req.StartNow,
+		HubTodoID: req.HubTodoID, HubNotes: len(req.Feedback), StartNow: req.StartNow, BuildsOn: buildsOn,
 	})
 	if err != nil {
 		writeErr(w, err)

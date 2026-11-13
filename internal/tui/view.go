@@ -350,20 +350,15 @@ func (a *App) renderCard(t model.Todo, w int, sel bool) []string {
 	return []string{l1, ansi.Truncate(l2, w+1, ""), ""}
 }
 
-// depWait describes why a queued todo waits for its dependencies: "⏳
+// depWait describes why a queued todo waits for its dependencies (or the
+// task it builds on): "⏳
 // waiting for <titles>", or "blocked: <title> failed" when a dependency
 // failed or went back to draft (bad). Empty when nothing holds it back.
 func (a *App) depWait(t model.Todo) (text string, bad bool) {
-	if t.Status != model.StatusQueued || len(t.DependsOn) == 0 {
+	if t.Status != model.StatusQueued {
 		return "", false
 	}
-	all := make([]model.Todo, 0, len(t.DependsOn))
-	for _, id := range t.DependsOn {
-		if d, ok := a.todos[id]; ok {
-			all = append(all, d)
-		}
-	}
-	bl := t.Blockers(all)
+	bl := t.BlockersIn(a.todos)
 	if len(bl) == 0 {
 		return "", false
 	}

@@ -91,7 +91,13 @@ func (e *WaitError) Error() string { return e.Reason }
 // the runner's id and its id for the task. A *WaitError means none can take
 // it now.
 func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo) (runnerID, remoteID string, err error) {
-	r, reason, full := d.pick(p, t)
+	var parent *model.Todo // the task t builds on, when it has one
+	if t.BuildsOn != "" && d.Store != nil {
+		if x, err := d.Store.GetTodo(t.BuildsOn); err == nil {
+			parent = &x
+		}
+	}
+	r, reason, full := d.pick(p, t, parent)
 	if r == nil {
 		// The task log says why a runner that is too full doesn't start
 		// it, once per reason, rather than the task failing halfway.
@@ -106,6 +112,16 @@ func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo
 	ds := r.Disk
 	task := Task{HubTodoID: t.ID, HubProjectID: p.ID, Title: t.Title, Prompt: t.Prompt, Model: t.Model, Feedback: t.Feedback,
 		Fresh: t.Runner != r.ID, Disk: &ds, StartNow: t.StartNow}
+	if parent != nil {
+		task.BuildsOn = parent.ID
+		if t.Runner == "" && parent.Runner != r.ID && d.Note != nil {
+			why := "ran on another runner, which can't take this one now"
+			if parent.Runner == "" {
+				why = "has no Claude session on a runner"
+			}
+			d.Note(t, "⚠ the task this builds on "+why+": this one starts a fresh Claude session with the full task")
+		}
+	}
 	var acc Accepted
 	if err := d.Fleet.Call(ctx, r.ID, http.MethodPost, "/api/hub/tasks", task, &acc); err != nil {
 		reason := "waiting for a runner: " + err.Error()
@@ -129,8 +145,10 @@ func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo
 }
 
 // pick chooses the runner for t among p's, or says why there is none (and,
-// in full, why runners with too little disk space don't start it).
-func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string, string) {
+// in full, why runners with too little disk space don't start it). parent
+// is the task t builds on (nil: none): a task starting out prefers the
+// runner that has its Claude session.
+func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*tunnel.Runner, string, string) {
 	var cands []tunnel.Runner
 	var why, full []string
 	limits := map[string]int{} // runner id → how many tasks it may have at once now
@@ -189,6 +207,11 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string
 	if i := slices.IndexFunc(cands, func(r tunnel.Runner) bool { return r.ID == t.Runner }); i >= 0 {
 		return &cands[i], "", ""
 	}
+	if t.Runner == "" && parent != nil && parent.Runner != "" {
+		if i := slices.IndexFunc(cands, func(r tunnel.Runner) bool { return r.ID == parent.Runner }); i >= 0 {
+			return &cands[i], "", ""
+		}
+	}
 	best := slices.MinFunc(cands, func(a, b tunnel.Runner) int {
 		return d.Busy(a.ID)*limit(b) - d.Busy(b.ID)*limit(a) // the least loaded, relative to its limit
 	})
@@ -201,12 +224,12 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo) (*tunnel.Runner, string
 // model.Todo.StartNow). t's own StartNow doesn't count.
 func (d *Dispatcher) PaceWait(p model.Project, t model.Todo) string {
 	t.StartNow = false
-	r, reason, _ := d.pick(p, t)
+	r, reason, _ := d.pick(p, t, nil)
 	if r != nil {
 		return ""
 	}
 	t.StartNow = true
-	if r, _, _ := d.pick(p, t); r == nil {
+	if r, _, _ := d.pick(p, t, nil); r == nil {
 		return ""
 	}
 	return reason

@@ -649,6 +649,7 @@
       </div>
       <p class="hint">Prioritised tasks run first, lower numbers before higher. Leave it empty for none: those run after them, oldest first. Pick Opus for hard tasks and Sonnet or Haiku for small ones; Default uses Dash's configured model.</p>
       <div class="field" id="todo-deps-field" hidden><span id="todo-deps-label">Depends on <em>starts once these are merged</em></span><div class="dep-picker" id="todo-deps" role="group" aria-labelledby="todo-deps-label"></div></div>
+      <label class="field" id="todo-buildon-field" hidden title="The first run continues that task's Claude session, so Claude doesn't explore the code again"><span>Build on <em>continues a finished task's Claude session</em></span><select name="builds_on"></select></label>
       <footer class="sheet-actions">
         <button class="btn shrink" type="button" id="todo-clear" data-icon="trash">Clear</button>
         <button class="btn" value="draft" data-icon="draft">Save as draft</button>

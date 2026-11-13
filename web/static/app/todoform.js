@@ -46,6 +46,34 @@ export const depPicker = (() => {
   };
 })();
 
+// The task form's "Build on" choice: a finished task (merged or failed) of
+// the project whose Claude session the task's first run continues. The most
+// recently finished come first; the one chosen stays listed whatever it is.
+const FINISHED = new Set(["merged", "failed"]);
+export const buildOnPicker = (() => {
+  const field = $("#todo-buildon-field"), sel = $("#todo-form").builds_on;
+  let self = null;
+  const when = (x) => new Date(x.finished_at || x.updated_at || 0).getTime();
+  const reset = (t, id = "") => {
+    self = t;
+    const cur = id ? state.todos.get(id) : null;
+    const recent = [...state.todos.values()]
+      .filter((x) => x.id !== t?.id && x.id !== id && FINISHED.has(x.status))
+      .sort((a, b) => when(b) - when(a))
+      .slice(0, 20);
+    const opt = (x) => h("option", { value: x.id }, `#${x.id} ${title(x)} · ${STATUS_LABEL[x.status] || x.status}`);
+    sel.replaceChildren(
+      h("option", { value: "" }, "Nothing: start fresh"),
+      ...(cur ? [opt(cur)] : id ? [h("option", { value: id }, `#${id}`)] : []),
+      ...recent.map(opt));
+    sel.value = id || "";
+    const usable = !pickProject || projectKey(state.project) === $("#todo-form").project.value;
+    field.hidden = !usable || (!recent.length && !id);
+  };
+  $("#todo-form").project.addEventListener("change", () => reset(self, ""));
+  return { reset, value: () => field.hidden ? "" : sel.value };
+})();
+
 // setModelField selects a task's model in the form, adding an option for a
 // model id that isn't one of the aliases (set through the API or MCP).
 export function setModelField(f, m) {
@@ -61,7 +89,7 @@ export const draftKey = (t) => `${projectKey(state.project)}/${t?.id || "new"}`;
 export const draft = drafts({
   read() {
     const f = $("#todo-form");
-    return { title: f.title.value, prompt: f.prompt.value, priority: f.priority.value, model: f.model.value, attachments: todoAttach.items(), depends_on: depPicker.ids() };
+    return { title: f.title.value, prompt: f.prompt.value, priority: f.priority.value, model: f.model.value, attachments: todoAttach.items(), depends_on: depPicker.ids(), builds_on: buildOnPicker.value() };
   },
   write(d) {
     const f = $("#todo-form");
@@ -71,6 +99,7 @@ export const draft = drafts({
     setModelField(f, d.model ?? editing?.model ?? "");
     todoAttach.reset(d.attachments || []);
     depPicker.reset(editing, d.depends_on ?? editing?.depends_on ?? []); // drafts from before dependencies have none
+    buildOnPicker.reset(editing, d.builds_on ?? editing?.builds_on ?? "");
     promptEditor.render();
   },
   onStatus(st, at) {
@@ -95,6 +124,7 @@ function discardDraft() {
   setModelField(f, t?.model || "");
   todoAttach.reset(t?.attachments || []);
   depPicker.reset(t, t?.depends_on || []);
+  buildOnPicker.reset(t, t?.builds_on || "");
   promptEditor.render();
   draft.open(draftKey(t));
   toast("Draft discarded");
@@ -107,6 +137,7 @@ $("#todo-clear").addEventListener("click", () => {
   f.project.value = project;
   todoAttach.reset([]);
   depPicker.reset(null, []);
+  buildOnPicker.reset(null, "");
   promptEditor.render();
   draft.open(draftKey(null));
   f.title.focus();
@@ -134,7 +165,8 @@ $("#todo-refine").addEventListener("click", attempt(async () => {
 }));
 // Split asks Claude how to break a large task into smaller ones and shows
 // them in a sheet over the form to edit, drop or add to. Saving them makes
-// one task each, with the form's priority, model, files and dependencies;
+// one task each, with the form's priority, model, files, dependencies and
+// the task they build on;
 // a part Claude says builds on earlier ones starts after they are merged.
 // The form's task itself isn't saved (an edited one is replaced).
 export const split = {
@@ -228,7 +260,7 @@ async function saveSplit(parts, p, enqueue) {
   await todoAttach.settled();
   const attachments = todoAttach.ids();
   if (attachments.length && p.prefix !== here()) throw new Error(`Attachments can't be sent to ${p.name} on ${p.machine}; remove them or pick a project on this computer.`);
-  const common = { priority: formPriority(f.priority.value), model: f.model.value, attachments };
+  const common = { priority: formPriority(f.priority.value), model: f.model.value, attachments, builds_on: buildOnPicker.value() };
   const deps = depPicker.ids();
   const order = $("#split-order").checked;
   for (const part of left) {

@@ -467,6 +467,7 @@ func (s *Store) createTodo(t model.Todo, status model.TodoStatus) (model.Todo, e
 	t.CreatedAt = time.Now()
 	t.UpdatedAt = t.CreatedAt
 	t.DependsOn = cleanIDs(t.DependsOn)
+	t.BuildsOn = strings.TrimSpace(t.BuildsOn)
 	if err := s.checkDepsLocked(t); err != nil {
 		return t, err
 	}
@@ -534,8 +535,9 @@ func (s *Store) UpdateTodo(id string, fn func(*model.Todo) error) (model.Todo, e
 	if cp.Status != t.Status && !model.CanTransition(t.Status, cp.Status) {
 		return *t, model.ErrInvalidTransition{From: t.Status, To: cp.Status}
 	}
-	if !slices.Equal(cp.DependsOn, t.DependsOn) {
+	if !slices.Equal(cp.DependsOn, t.DependsOn) || cp.BuildsOn != t.BuildsOn {
 		cp.DependsOn = cleanIDs(cp.DependsOn)
+		cp.BuildsOn = strings.TrimSpace(cp.BuildsOn)
 		cp.ID, cp.ProjectID = t.ID, t.ProjectID
 		if err := s.checkDepsLocked(cp); err != nil {
 			return *t, err
@@ -596,12 +598,18 @@ func (s *Store) DeleteTodo(id string) (model.Todo, error) {
 	delete(s.data.Todos, id)
 	delete(s.data.TodoChats, id)
 	unlinked := s.unlinkIssuesLocked(id)
-	// Forget the deleted todo in the dependencies of others.
+	// Forget the deleted todo in the dependencies of others, and in those
+	// building on it (they start fresh, with their full prompt).
 	var changed []*model.Todo
 	for oid, o := range s.data.Todos {
-		if i := slices.Index(o.DependsOn, id); i >= 0 {
+		if i := slices.Index(o.DependsOn, id); i >= 0 || o.BuildsOn == id {
 			cp := clone(*o)
-			cp.DependsOn = slices.Delete(cp.DependsOn, i, i+1)
+			if i >= 0 {
+				cp.DependsOn = slices.Delete(cp.DependsOn, i, i+1)
+			}
+			if cp.BuildsOn == id {
+				cp.BuildsOn = ""
+			}
 			cp.UpdatedAt = time.Now()
 			s.data.Todos[oid] = &cp
 			changed = append(changed, &cp)
@@ -632,9 +640,22 @@ func (s *Store) DeleteTodo(id string) (model.Todo, error) {
 	return *t, nil
 }
 
-// checkDepsLocked validates t.DependsOn against the stored todos: each must
-// exist in t's project, not be t, and not (transitively) depend on t.
+// checkDepsLocked validates t.DependsOn and t.BuildsOn against the stored
+// todos: each must exist in t's project, not be t, and not (transitively)
+// wait for t.
 func (s *Store) checkDepsLocked(t model.Todo) error {
+	if id := t.BuildsOn; id != "" {
+		if id == t.ID {
+			return fmt.Errorf("%w: a task can't build on itself", ErrBadDependency)
+		}
+		d, ok := s.data.Todos[id]
+		if !ok {
+			return fmt.Errorf("%w: no task %q to build on", ErrBadDependency, id)
+		}
+		if d.ProjectID != t.ProjectID {
+			return fmt.Errorf("%w: task %q, to build on, is in another project", ErrBadDependency, id)
+		}
+	}
 	for _, id := range t.DependsOn {
 		if id == t.ID {
 			return fmt.Errorf("%w: a task can't depend on itself", ErrBadDependency)
@@ -659,7 +680,7 @@ func (s *Store) checkDepsLocked(t model.Todo) error {
 		}
 		seen[id] = true
 		if d, ok := s.data.Todos[id]; ok {
-			for _, n := range d.DependsOn {
+			for _, n := range waitsFor(*d) {
 				if reaches(n) {
 					return true
 				}
@@ -667,16 +688,25 @@ func (s *Store) checkDepsLocked(t model.Todo) error {
 		}
 		return false
 	}
-	for _, id := range t.DependsOn {
+	for _, id := range waitsFor(t) {
 		if reaches(id) {
 			title := s.data.Todos[id].Title
 			if title == "" {
 				title = id
 			}
-			return fmt.Errorf("%w: %q already depends on this task, which would make a cycle", ErrBadDependency, title)
+			return fmt.Errorf("%w: %q already waits for this task, which would make a cycle", ErrBadDependency, title)
 		}
 	}
 	return nil
+}
+
+// waitsFor is the ids of the todos t waits for: its dependencies and the
+// one it builds on.
+func waitsFor(t model.Todo) []string {
+	if t.BuildsOn == "" {
+		return t.DependsOn
+	}
+	return append(slices.Clip(t.DependsOn), t.BuildsOn)
 }
 
 // cleanIDs trims ids and drops empty ones and duplicates.

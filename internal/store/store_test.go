@@ -244,6 +244,44 @@ func TestDependsOnValidationAndDelete(t *testing.T) {
 	}
 }
 
+func TestBuildsOnValidationAndDelete(t *testing.T) {
+	t.Parallel()
+
+	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _ := s.CreateProject(model.Project{Name: "p"})
+	q, _ := s.CreateProject(model.Project{Name: "q"})
+	a, _ := s.CreateTodo(model.Todo{ProjectID: p.ID, Title: "a"})
+	elsewhere, _ := s.CreateTodo(model.Todo{ProjectID: q.ID, Title: "x"})
+	for name, id := range map[string]string{"unknown": "nope", "other project": elsewhere.ID} {
+		if _, err := s.CreateTodo(model.Todo{ProjectID: p.ID, Title: name, BuildsOn: id}); !errors.Is(err, ErrBadDependency) {
+			t.Errorf("%s: got %v, want ErrBadDependency", name, err)
+		}
+	}
+	if _, err := s.UpdateTodo(a.ID, func(x *model.Todo) error { x.BuildsOn = a.ID; return nil }); !errors.Is(err, ErrBadDependency) {
+		t.Errorf("self: got %v, want ErrBadDependency", err)
+	}
+	b, err := s.CreateTodo(model.Todo{ProjectID: p.ID, Title: "b", BuildsOn: " " + a.ID})
+	if err != nil || b.BuildsOn != a.ID {
+		t.Fatalf("got %q, %v", b.BuildsOn, err)
+	}
+	// a can't build on or depend on b, which waits for a.
+	if _, err := s.UpdateTodo(a.ID, func(x *model.Todo) error { x.BuildsOn = b.ID; return nil }); !errors.Is(err, ErrBadDependency) {
+		t.Errorf("build-on cycle: got %v, want ErrBadDependency", err)
+	}
+	if _, err := s.UpdateTodo(a.ID, func(x *model.Todo) error { x.DependsOn = []string{b.ID}; return nil }); !errors.Is(err, ErrBadDependency) {
+		t.Errorf("mixed cycle: got %v, want ErrBadDependency", err)
+	}
+	if _, err := s.DeleteTodo(a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ = s.GetTodo(b.ID); b.BuildsOn != "" {
+		t.Fatalf("deleting a forgets it: %q", b.BuildsOn)
+	}
+}
+
 func TestOldStateWithoutDependsOnLoads(t *testing.T) {
 	t.Parallel()
 

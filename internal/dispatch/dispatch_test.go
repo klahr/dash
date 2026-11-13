@@ -309,6 +309,26 @@ func TestDispatchPrefersTheRunnerWithTheSession(t *testing.T) {
 	}
 }
 
+// A task building on another goes to the runner that has the other's
+// Claude session, even a busier one, and says which task it builds on.
+func TestDispatchPrefersTheRunnerOfTheTaskBuiltOn(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t)
+	fx.fleet.set(runnerOf("a", fx.orgA, true))
+	fx.fleet.set(runnerOf("b", fx.orgA, true))
+	p := fx.project(t, fx.orgA, "a", "b")
+	parent := fx.todo(t, p, func(x *model.Todo) { x.Status, x.Runner = model.StatusInProgress, "a" })
+
+	child := fx.todo(t, p, func(x *model.Todo) { x.BuildsOn = parent.ID })
+	if rid, _, _ := fx.d.Dispatch(context.Background(), p, child); rid != "a" {
+		t.Errorf("the follow-up went to %q, want a", rid)
+	}
+	if n := len(fx.fleet.tasks); n != 1 || fx.fleet.tasks[0].BuildsOn != parent.ID {
+		t.Errorf("tasks sent: %+v", fx.fleet.tasks)
+	}
+}
+
 // A runner that stays offline past the grace has its running tasks failed,
 // ready to continue; one back in time keeps them.
 func TestOfflineRunnerFailsItsTasksCleanly(t *testing.T) {

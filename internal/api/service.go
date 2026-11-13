@@ -386,6 +386,10 @@ func (sv *service) editTodo(id string, u mcptools.TodoUpdate, atts *[]model.Atta
 		if (u.Prompt != nil || atts != nil) && !editable {
 			return fmt.Errorf("%w: instructions can only be edited while draft, queued or failed", errBadRequest)
 		}
+		if u.BuildsOn != nil && *u.BuildsOn != t.BuildsOn && !editable {
+			return fmt.Errorf("%w: the task to build on can only be changed while draft, queued or failed", errBadRequest)
+		}
+		set(&t.BuildsOn, u.BuildsOn) // validated by the store
 		set(&t.Attachments, atts)
 		set(&t.Title, u.Title)
 		set(&t.Prompt, u.Prompt)

@@ -21,11 +21,14 @@ import (
 
 // ExecRequest is one Claude run inside a worktree.
 type ExecRequest struct {
-	Dir       string
-	Prompt    string
-	Resume    string   // Claude Code session to continue, if any
-	ExtraArgs []string // per-run flags, e.g. the permission prompt tool
-	Env       []string
+	Dir    string
+	Prompt string
+	Resume string // Claude Code session to continue, if any
+	// ForkSession continues Resume in a new session (--fork-session),
+	// leaving Resume's own untouched: a task building on another's.
+	ForkSession bool
+	ExtraArgs   []string // per-run flags, e.g. the permission prompt tool
+	Env         []string
 }
 
 // ExecResult describes a finished run.
@@ -82,7 +85,13 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 	args := append([]string{"-p", "--output-format", "stream-json", "--verbose"}, c.Args...)
 	args = append(args, req.ExtraArgs...)
 	if req.Resume != "" {
+		// Claude Code finds the session wherever it was started (sessions
+		// are kept per working directory, and the task building on another
+		// runs in a worktree of its own); a fork is saved under this one.
 		args = append(args, "--resume", req.Resume)
+		if req.ForkSession {
+			args = append(args, "--fork-session")
+		}
 	}
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = req.Dir
@@ -192,6 +201,32 @@ func BuildPrompt(t model.Todo) string {
 		}
 	}
 	b.WriteString(rules)
+	return b.String()
+}
+
+// FollowUpPrompt is the first prompt of task t when it builds on an earlier
+// task, parent, whose Claude session it continues as a fork: it closes the
+// earlier task and gives the new one in full (BuildPrompt).
+func FollowUpPrompt(t, parent model.Todo) string {
+	var b strings.Builder
+	name := parent.Title
+	if name == "" {
+		name = firstLine(parent.Prompt)
+	}
+	fmt.Fprintf(&b, "The task above (%q) is finished", name)
+	switch {
+	case parent.Status == model.StatusMerged && parent.Revert != nil:
+		b.WriteString(": its changes were merged and later reverted, so they are not in the default branch.")
+	case parent.Status == model.StatusMerged:
+		b.WriteString(" and merged: its changes are in the default branch.")
+	default:
+		b.WriteString(", but it was not merged: its changes are not in the default branch.")
+	}
+	b.WriteString(" What follows is a new, separate follow-up task. It runs in a new working tree " +
+		"(the current directory, not the one you worked in before), branched from the default branch. " +
+		"Use what you learned about the code, but read files again before you change them: " +
+		"paths and contents from the earlier task may differ here.\n\n")
+	b.WriteString(BuildPrompt(t))
 	return b.String()
 }
 

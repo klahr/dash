@@ -195,7 +195,7 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 			local, forced = false, false
 		}
 		var next *model.Todo
-		var all []model.Todo // loaded only when a queued todo has dependencies
+		var all []model.Todo // loaded only when a queued todo has dependencies or builds on a task
 		for _, q := range e.Store.ListTodos("", model.StatusQueued) {
 			if q.Paused || sent[q.ID] {
 				continue
@@ -203,12 +203,12 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 			if q.MergeMain && e.conflictBusy(q.ProjectID) {
 				continue // waits until the conflict being fixed has landed
 			}
-			if len(q.DependsOn) > 0 {
+			if len(q.DependsOn) > 0 || q.BuildsOn != "" {
 				if all == nil {
 					all = e.Store.ListTodos("")
 				}
 				if len(q.Blockers(all)) > 0 {
-					continue // waits until its dependencies are merged
+					continue // waits until its dependencies are merged and the task it builds on is finished
 				}
 			}
 			p, err := e.Store.GetProject(q.ProjectID)
@@ -707,15 +707,23 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 		stat.Kind = model.RunInterrupted
 	default:
 		req.Prompt = agent.BuildPrompt(*t)
+		if parent, ok := e.buildsOn(*t, log); ok {
+			// A follow-up: continue the earlier task's session in a fork of
+			// it, so that session stays as it is.
+			req.Resume, req.ForkSession, req.Prompt = parent.LatestSession(), true, agent.FollowUpPrompt(*t, parent)
+			log(fmt.Sprintf("▶ building on %q: continuing its Claude session %s in a new one", taskName(parent), req.Resume))
+		}
 		if t.Runs > 0 {
 			stat.Kind = model.RunRetry
 		}
 	}
-	if req.Resume != "" {
+	if req.Resume != "" && !req.ForkSession {
 		log("▶ resuming Claude session " + req.Resume)
 	}
 	emit := func(ev model.RunEvent) { e.Log.Event(*t, ev) }
 	switch {
+	case req.ForkSession:
+		emit(model.RunEvent{Kind: "run_start", Text: "Started from an earlier task's session"})
 	case len(unsent) > 0 && req.Resume != "":
 		emit(model.RunEvent{Kind: "run_start", Text: "Rework"})
 	case req.Resume != "":
@@ -795,9 +803,13 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	stat.At = time.Now()
 	res, err := e.Exec.Run(runCtx, req, emit)
 	if res.ResumeFailed && req.Resume != "" && runCtx.Err() == nil {
-		log("↻ the previous Claude session is gone; starting a fresh one with the full task")
+		if req.ForkSession {
+			log("↻ the Claude session of the task this builds on isn't on this computer (it ran on another runner, or the session was deleted); starting a fresh one with the full task")
+		} else {
+			log("↻ the previous Claude session is gone; starting a fresh one with the full task")
+		}
 		emit(model.RunEvent{Kind: "run_start", Text: "Started over with the full task"})
-		req.Resume, req.Prompt = "", agent.BuildPrompt(*t)
+		req.Resume, req.ForkSession, req.Prompt = "", false, agent.BuildPrompt(*t)
 		stat.Kind = model.RunRetry
 		res, err = e.Exec.Run(runCtx, req, emit)
 	}
@@ -818,7 +830,7 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	}
 	nt, uerr := e.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
 		if res.SessionID != "" {
-			x.SessionID = res.SessionID
+			x.SessionID, x.LastSessionID = res.SessionID, res.SessionID
 		}
 		x.CostUSD += res.CostUSD
 		x.Runs++
@@ -833,6 +845,33 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 		e.summarize(t.ID, res.Result)
 	}
 	return strings.TrimSpace(res.Result), err
+}
+
+// buildsOn is the task t builds on, when t should start from its Claude
+// session: t has no session of its own yet and the earlier task has one.
+// Otherwise t starts fresh with the full prompt, and log says why.
+func (e *TodoEngine) buildsOn(t model.Todo, log func(string)) (model.Todo, bool) {
+	if t.BuildsOn == "" || t.SessionID != "" {
+		return model.Todo{}, false
+	}
+	parent, err := e.Store.GetTodo(t.BuildsOn)
+	switch {
+	case err != nil:
+		log("⚠ the task this builds on is gone; starting a fresh Claude session with the full task")
+		return model.Todo{}, false
+	case parent.LatestSession() == "":
+		log(fmt.Sprintf("⚠ %q, which this task builds on, has no Claude session; starting a fresh one with the full task", taskName(parent)))
+		return model.Todo{}, false
+	}
+	return parent, true
+}
+
+// taskName is how a log line names task t.
+func taskName(t model.Todo) string {
+	if t.Title != "" {
+		return t.Title
+	}
+	return firstLine(t.Prompt)
 }
 
 // noteFailure explains in the todo's chat why it failed, quoting Claude's

@@ -105,7 +105,7 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 2. **Add a task.** Click **New task** (or press <kbd>n</kbd>) and write what Claude should do,
    as you would in a chat; Claude names the task. <kbd>Enter</kbd> saves it, <kbd>Shift</kbd>+<kbd>Enter</kbd>
    adds a field for another task (a pasted multi-line text stays one task). **More options…**
-   (or <kbd>Shift</kbd>+<kbd>N</kbd>) opens the full form, with a title, priority, dependencies and
+   (or <kbd>Shift</kbd>+<kbd>N</kbd>) opens the full form, with a title, priority, dependencies, the task it builds on and
    attachments. For a large task, **Split…** there has Claude propose smaller tasks that can each
    be reviewed and merged on their own; edit, remove or add to them, then save them all, each
    one waiting for the tasks it builds on.
@@ -128,6 +128,15 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    merges a pull request itself). See [GitHub](docs/github.md).
 
 Queue as many tasks as you like: they run in parallel, each in its own worktree.
+
+**Follow-up tasks.** To continue where a finished task left off, pick it under **Build on** in the
+full form. The new task's first run continues that task's Claude session (as a fork; the earlier
+session stays as it was), so Claude doesn't explore the code again. The list shows the project's
+recently merged or failed tasks. A task that builds on an unfinished one waits in *Queued* until
+it is merged or failed. The task's detail shows **Builds on #id title**. If the earlier session
+isn't on the computer that runs the task (it ran on another runner, or the session was
+deleted), the task starts a fresh session with its full prompt, and its log says so. On a hub,
+Dash sends the task to the runner that ran the earlier one when it can.
 
 The queue pauses when a Claude usage window reaches its limit. To spread
 the week's usage evenly instead, turn on **Follow weekly pace** in the usage sheet (click the usage

@@ -122,6 +122,9 @@ export async function refreshMachines() {
   else await loadRunners();
 }
 
+// waitsFor reports whether task t depends on, or builds on, task id.
+function waitsFor(t, id) { return !!t && (t.depends_on?.includes(id) || t.builds_on === id); }
+
 export function multi() { return (state.machines || []).length > 1; }
 // The branch a project's tasks start from and land on: the one picked in the branch switcher,
 // else its default branch.
@@ -186,7 +189,7 @@ function onEvent(ev, m = { name: "" }) {
           if (prev?.status !== ev.data.status && ev.data.worktree) loadDiff();
           // Dash explains the failure in the chat.
           if (prev && prev.status !== ev.data.status && ev.data.status === "failed" && !todoChat.busy) loadTodoChat().catch(fail);
-        } else if (prev?.status !== ev.data.status && state.todos.get(state.detail)?.depends_on?.includes(ev.todo_id)) {
+        } else if (prev?.status !== ev.data.status && waitsFor(state.todos.get(state.detail), ev.todo_id)) {
           renderDetail(); // the open task's "waiting for" line
         }
         if (prev && prev.status !== ev.data.status) {

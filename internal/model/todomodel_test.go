@@ -18,3 +18,19 @@ func TestCleanModel(t *testing.T) {
 		}
 	}
 }
+
+func TestBlockersWaitForTheTaskBuiltOnUntilItIsFinished(t *testing.T) {
+	for st, blocks := range map[TodoStatus]bool{StatusDraft: true, StatusReview: true, StatusMerging: true, StatusMerged: false, StatusFailed: false} {
+		all := []Todo{{ID: "p", Status: st}}
+		if got := len(Todo{BuildsOn: "p"}.Blockers(all)) > 0; got != blocks {
+			t.Errorf("%s: blocks %v, want %v", st, got, blocks)
+		}
+		// On a runner, the hub already waited.
+		if len(Todo{BuildsOn: "p", HubTodoID: "h"}.Blockers(all)) > 0 {
+			t.Errorf("%s: a hub's task waits on its runner", st)
+		}
+	}
+	if b := (Todo{BuildsOn: "p", DependsOn: []string{"p"}}).Blockers([]Todo{{ID: "p", Status: StatusReview}}); len(b) != 1 {
+		t.Errorf("listed once: %v", b)
+	}
+}

@@ -111,6 +111,10 @@ type Task struct {
 	Prompt       string `json:"prompt"`
 	// Model is the task's claude --model (empty: the runner's default).
 	Model string `json:"model,omitempty"`
+	// BuildsOn is the hub's id of the task this one builds on: the runner
+	// continues that task's Claude session if it ran there (otherwise the
+	// task starts fresh).
+	BuildsOn string `json:"builds_on,omitempty"`
 	// Feedback is all of the hub's notes for Claude (rework requests); the
 	// runner adds those it doesn't have yet.
 	Feedback []string `json:"feedback,omitempty"`
