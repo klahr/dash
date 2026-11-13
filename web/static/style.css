@@ -2188,6 +2188,19 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .claude-update-head { font-size: var(--fs-s); color: var(--muted); }
 .claude-update-head strong { color: var(--text); }
 .claude-update-body { margin: 2px 0 0; font-size: var(--fs-s); white-space: pre-line; overflow-wrap: anywhere; }
+/* What doesn't count (components a platform admin didn't choose), folded away. */
+.claude-ignored { margin-top: 20px; }
+.claude-ignored > summary { cursor: pointer; }
+.claude-ignored > summary .section-head { display: inline; margin: 0; }
+.claude-ignored > .hint { margin: 6px 0 8px; }
+.claude-ignored .claude-components, .claude-ignored .claude-incidents { opacity: .75; }
+.claude-ignored .claude-incidents { margin-top: 6px; }
+.claude-ignored-tag { margin-left: 6px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-pill); font-size: var(--fs-xs); }
+/* Account → Claude status → Components */
+.claude-watch { display: grid; gap: 2px; }
+.claude-watch .runner-pick { min-height: 40px; cursor: pointer; }
+.claude-watch .runner-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.claude-watch .hint { flex: none; color: var(--c); font-size: var(--fs-s); }
 /* Tones last: they override the boxes' own colour. */
 .claude-ok { --c: var(--merged); } .claude-warn { --c: var(--running); } .claude-bad { --c: var(--failed); } .claude-muted { --c: var(--muted); }
 /* ---- origin ahead/behind (background fetch) ---- */

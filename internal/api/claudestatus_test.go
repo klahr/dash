@@ -80,6 +80,41 @@ func TestClaudeStatusAPI(t *testing.T) {
 		t.Fatal("the status shows the webhook's token")
 	}
 
+	// Only platform admins choose the components that count.
+	if w := call(&member, "PUT", "/api/admin/claude-status", `{"components":["Cowork"]}`); w.Code != http.StatusForbidden {
+		t.Fatalf("member chooses components: %d", w.Code)
+	}
+	if w := call(nil, "PUT", "/api/admin/claude-status", `{"components":["Cowork"]}`); w.Code != http.StatusUnauthorized {
+		t.Fatalf("components without a session: %d", w.Code)
+	}
+	var adm struct {
+		Components []struct {
+			Name    string `json:"name"`
+			Watched bool   `json:"watched"`
+		} `json:"components"`
+		DefaultWatch bool `json:"default_watch"`
+	}
+	w = call(&admin, "GET", "/api/admin/claude-status", "")
+	_ = json.Unmarshal(w.Body.Bytes(), &adm)
+	if w.Code != 200 || !adm.DefaultWatch || len(adm.Components) != len(claudestatus.DefaultComponents) {
+		t.Fatalf("default components: %d %s", w.Code, w.Body)
+	}
+	// The incident above names no component: it counts whatever is chosen.
+	w = call(&admin, "PUT", "/api/admin/claude-status", `{"components":["Cowork"]}`)
+	adm.Components, adm.DefaultWatch = nil, true
+	_ = json.Unmarshal(w.Body.Bytes(), &adm)
+	if w.Code != 200 || adm.DefaultWatch || len(adm.Components) != 1 || adm.Components[0].Name != "Cowork" || !adm.Components[0].Watched {
+		t.Fatalf("choose components: %d %s", w.Code, w.Body)
+	}
+	if w := call(&admin, "PUT", "/api/admin/claude-status", `{"components":["`+strings.Repeat("x", 300)+`"]}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("too long a name: %d", w.Code)
+	}
+	w = call(&admin, "PUT", "/api/admin/claude-status", `{"default_components":true}`)
+	_ = json.Unmarshal(w.Body.Bytes(), &adm)
+	if w.Code != 200 || !adm.DefaultWatch {
+		t.Fatalf("back to defaults: %d %s", w.Code, w.Body)
+	}
+
 	// A new URL: the old one stops working.
 	w = call(&admin, "POST", "/api/admin/claude-status/rotate", "")
 	if w.Code != 200 {

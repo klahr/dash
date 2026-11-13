@@ -15,7 +15,7 @@ import (
 //	POST /api/claude-status/webhook/{token}  the status page's webhooks (public: the token is the credential)
 //	GET  /api/claude-status                  everyone signed in: the status, active and recent incidents
 //	GET  /api/admin/claude-status            platform admins: the settings, the webhook URL, recent deliveries
-//	PUT  /api/admin/claude-status            platform admins: {enabled, page_url, poll}
+//	PUT  /api/admin/claude-status            platform admins: {enabled, page_url, poll, components, default_components}
 //	POST /api/admin/claude-status/rotate     platform admins: a new webhook URL
 //	POST /api/admin/claude-status/sync       platform admins: read the page's API now
 func (s *Server) claudeStatusRoutes(mux *http.ServeMux) {
@@ -115,13 +115,18 @@ func (s *Server) putClaudeStatusAdmin(w http.ResponseWriter, r *http.Request) {
 		Enabled *bool   `json:"enabled"`
 		PageURL *string `json:"page_url"`
 		Poll    *bool   `json:"poll"`
+		// Components that count, by id or name; default_components goes
+		// back to the defaults.
+		Components        *[]string `json:"components"`
+		DefaultComponents bool      `json:"default_components"`
 	}
 	if err := decode(r, &in); err != nil {
 		writeErr(w, errors.Join(errBadRequest, err))
 		return
 	}
-	a, err := s.ClaudeStatus.Configure(in.Enabled, in.PageURL, in.Poll)
-	if errors.Is(err, claudestatus.ErrBadPage) {
+	a, err := s.ClaudeStatus.Configure(claudestatus.Change{Enabled: in.Enabled, PageURL: in.PageURL, Poll: in.Poll,
+		Watch: in.Components, DefaultWatch: in.DefaultComponents})
+	if errors.Is(err, claudestatus.ErrBadPage) || errors.Is(err, claudestatus.ErrBadWatch) {
 		err = errors.Join(errBadRequest, err)
 	}
 	if err != nil {

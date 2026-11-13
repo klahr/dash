@@ -47,6 +47,17 @@ var (
 	ErrBadPayload = errors.New("not a status page webhook")
 	// ErrBadPage: the page address isn't an http(s) URL.
 	ErrBadPage = errors.New("the status page address must be an http or https URL")
+	// ErrBadWatch: the chosen components are too many or too long.
+	ErrBadWatch = errors.New("too many components, or a name too long")
+)
+
+// DefaultComponents count until a platform admin chooses: the parts of
+// Claude that Dash's tasks use. Matched by name (see defaultWatched).
+var DefaultComponents = []string{"Claude Code", "Claude API (api.anthropic.com)", "claude.ai"}
+
+const (
+	maxWatch     = 200
+	maxWatchName = 200
 )
 
 // Store keeps the service's document (store.Store does).
@@ -66,6 +77,16 @@ type Settings struct {
 	PageURL string `json:"page_url,omitempty"`
 	// Poll reads the page's API every PollEvery as well.
 	Poll bool `json:"poll"`
+	// Watch are the components that count for the pill and the notices; nil
+	// (never chosen) counts DefaultComponents.
+	Watch *[]Watch `json:"watch,omitempty"`
+}
+
+// Watch is a component the admin chose: by its id, and by its name too, for
+// a page whose ids changed or a component not heard of yet.
+type Watch struct {
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
 }
 
 // Update is one post on an incident.
@@ -92,6 +113,9 @@ type Incident struct {
 	Resolved   time.Time `json:"resolved,omitzero"`
 	Components []string  `json:"components,omitempty"` // names of the components it affects
 	Updates    []Update  `json:"updates,omitempty"`    // newest first
+	// Ignored (in a Status only): it affects only components that don't
+	// count.
+	Ignored bool `json:"ignored,omitempty"`
 }
 
 // Active reports whether the incident is still going on.
@@ -110,6 +134,8 @@ type Component struct {
 	Name    string    `json:"name"`
 	Status  string    `json:"status"` // operational, degraded_performance, partial_outage, major_outage, under_maintenance
 	Updated time.Time `json:"updated,omitzero"`
+	// Ignored (in a Status only): the admin didn't choose it.
+	Ignored bool `json:"ignored,omitempty"`
 }
 
 // Delivery is one webhook or read of the page the admin sees.
@@ -135,16 +161,20 @@ type document struct {
 // Status is what every signed-in user sees.
 type Status struct {
 	Enabled bool `json:"enabled"`
-	// Indicator: none (all fine), minor, major, critical or maintenance;
-	// "" before anything was heard.
-	Indicator   string `json:"indicator"`
+	// Indicator is the page's own, over every component: none (all fine),
+	// minor, major, critical or maintenance; "" before anything was heard.
+	Indicator string `json:"indicator"`
+	// Level is the same scale over only what counts: the chosen components
+	// that aren't operational, and the active incidents that affect one of
+	// them or name no component.
+	Level       string `json:"level"`
 	Description string `json:"description,omitempty"`
 	PageURL     string `json:"page_url,omitempty"`
 	// Active are the incidents going on, Recent those resolved in the last
-	// week (newest first).
+	// week (newest first). Those that don't count are marked Ignored.
 	Active []Incident `json:"active"`
 	Recent []Incident `json:"recent"`
-	// Components are those not operational.
+	// Components are those not operational, those not chosen marked Ignored.
 	Components []Component `json:"components"`
 	Updated    time.Time   `json:"updated,omitzero"`
 }
@@ -156,6 +186,19 @@ type Admin struct {
 	LastWebhook time.Time  `json:"last_webhook,omitzero"`
 	LastSync    time.Time  `json:"last_sync,omitzero"`
 	Deliveries  []Delivery `json:"deliveries"`
+	// Components are the page's, with whether each counts, and then the
+	// chosen (or default) ones not heard of yet.
+	Components []AdminComponent `json:"components"`
+	// DefaultWatch: nothing was chosen, DefaultComponents count.
+	DefaultWatch bool `json:"default_watch"`
+}
+
+// AdminComponent is a component, for choosing which count.
+type AdminComponent struct {
+	ID      string `json:"id,omitempty"`
+	Name    string `json:"name"`
+	Status  string `json:"status,omitempty"` // "" if not heard of yet
+	Watched bool   `json:"watched"`
 }
 
 // Service keeps Claude's status.
@@ -228,20 +271,160 @@ func (d *document) status(now time.Time) Status {
 		return st
 	}
 	st.Indicator, st.Description, st.Updated = d.Indicator, d.Description, d.Updated
+	st.Level = "none"
+	worse := func(l string) {
+		if rank[l] > rank[st.Level] {
+			st.Level = l
+		}
+	}
 	for _, i := range d.Incidents {
+		i.Ignored = !d.counts(i)
 		switch {
 		case i.Active():
 			st.Active = append(st.Active, i)
+			if !i.Ignored {
+				worse(i.Impact)
+			}
 		case now.Sub(i.Resolved) < recentResolved || (i.Resolved.IsZero() && now.Sub(i.Updated) < recentResolved):
 			st.Recent = append(st.Recent, i)
 		}
 	}
 	for _, c := range d.Components {
 		if c.Status != "" && c.Status != "operational" {
+			c.Ignored = !d.watched(c.ID, c.Name)
 			st.Components = append(st.Components, c)
+			if !c.Ignored {
+				worse(componentLevel(c.Status))
+			}
 		}
 	}
 	return st
+}
+
+// normName is a component's name for matching: lower case, single spaces.
+func normName(n string) string { return strings.Join(strings.Fields(strings.ToLower(n)), " ") }
+
+// defaultKey is which of DefaultComponents a component of this name is
+// ("claude code", "claude api" or "claude.ai"), or "": the name alone or
+// with something after it ("Claude API (api.anthropic.com)").
+func defaultKey(name string) string {
+	n := normName(name)
+	for _, base := range []string{"claude code", "claude api", "claude.ai"} {
+		if n == base || strings.HasPrefix(n, base+" ") {
+			return base
+		}
+	}
+	if strings.Contains(n, "api.anthropic.com") {
+		return "claude api"
+	}
+	return ""
+}
+
+func defaultWatched(name string) bool { return defaultKey(name) != "" }
+
+// watched reports whether the component (id or name may be "") counts.
+func (d *document) watched(id, name string) bool {
+	if name == "" && id != "" {
+		for _, c := range d.Components {
+			if c.ID == id {
+				name = c.Name
+			}
+		}
+	}
+	if d.Settings.Watch == nil {
+		return defaultWatched(name)
+	}
+	n := normName(name)
+	for _, w := range *d.Settings.Watch {
+		if (id != "" && w.ID == id) || (n != "" && normName(w.Name) == n) {
+			return true
+		}
+	}
+	return false
+}
+
+// watchedName reports whether the component of this name counts; an
+// incident names its components, without their ids.
+func (d *document) watchedName(name string) bool {
+	n, id := normName(name), ""
+	for _, c := range d.Components {
+		if normName(c.Name) == n {
+			id = c.ID
+			break
+		}
+	}
+	return d.watched(id, name)
+}
+
+// counts reports whether an incident counts: it affects a chosen component,
+// or names none (a general outage).
+func (d *document) counts(i Incident) bool {
+	return len(i.Components) == 0 || slices.ContainsFunc(i.Components, d.watchedName)
+}
+
+// watch turns the admin's choice (ids or names) into what is kept.
+func (d *document) watch(keys []string) ([]Watch, error) {
+	if len(keys) > maxWatch {
+		return nil, ErrBadWatch
+	}
+	out := []Watch{}
+	have := func(w Watch) bool {
+		return slices.ContainsFunc(out, func(o Watch) bool {
+			return (w.ID != "" && o.ID == w.ID) || normName(o.Name) == normName(w.Name)
+		})
+	}
+	for _, k := range keys {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		if len(k) > maxWatchName {
+			return nil, ErrBadWatch
+		}
+		w := Watch{Name: k}
+		if i := slices.IndexFunc(d.Components, func(c Component) bool { return c.ID == k }); i >= 0 {
+			w = Watch{ID: k, Name: d.Components[i].Name}
+		} else if i := slices.IndexFunc(d.Components, func(c Component) bool { return normName(c.Name) == normName(k) }); i >= 0 {
+			w = Watch{ID: d.Components[i].ID, Name: d.Components[i].Name}
+		} else if d.Settings.Watch != nil {
+			// Chosen before, and not heard of since: keep it as it was.
+			if i := slices.IndexFunc(*d.Settings.Watch, func(o Watch) bool { return o.ID == k || normName(o.Name) == normName(k) }); i >= 0 {
+				w = (*d.Settings.Watch)[i]
+			}
+		}
+		if !have(w) {
+			out = append(out, w)
+		}
+	}
+	return out, nil
+}
+
+// adminComponents are the page's components with whether each counts, then
+// the chosen ones not heard of (yet).
+func (d *document) adminComponents() []AdminComponent {
+	out := []AdminComponent{}
+	for _, c := range d.Components {
+		out = append(out, AdminComponent{ID: c.ID, Name: c.Name, Status: c.Status, Watched: d.watched(c.ID, c.Name)})
+	}
+	seen := func(id, name string) bool {
+		return slices.ContainsFunc(d.Components, func(c Component) bool {
+			return (id != "" && c.ID == id) || normName(c.Name) == normName(name)
+		})
+	}
+	if d.Settings.Watch == nil {
+		for _, n := range DefaultComponents {
+			if !slices.ContainsFunc(d.Components, func(c Component) bool { return defaultKey(c.Name) == defaultKey(n) }) {
+				out = append(out, AdminComponent{Name: n, Watched: true})
+			}
+		}
+		return out
+	}
+	for _, w := range *d.Settings.Watch {
+		if !seen(w.ID, w.Name) {
+			out = append(out, AdminComponent{ID: w.ID, Name: w.Name, Watched: true})
+		}
+	}
+	return out
 }
 
 // Status is Claude's status as last heard.
@@ -268,24 +451,49 @@ func (s *Service) admin() Admin {
 	a := Admin{Settings: s.doc.Settings, LastWebhook: s.doc.LastWebhook, LastSync: s.doc.LastSync,
 		Deliveries: append([]Delivery{}, s.doc.Deliveries...)}
 	a.PageURL = s.doc.pageURL()
+	a.Components, a.DefaultWatch = s.doc.adminComponents(), s.doc.Settings.Watch == nil
 	if a.Token != "" {
 		a.WebhookPath = WebhookPrefix + a.Token
 	}
 	return a
 }
 
-// Configure changes the settings; a nil field is left as it is. Turning it
-// on the first time makes the webhook's token.
-func (s *Service) Configure(enabled *bool, pageURL *string, poll *bool) (Admin, error) {
+// Change is a change to the settings; a nil field is left as it is.
+type Change struct {
+	Enabled *bool
+	PageURL *string
+	Poll    *bool
+	// Watch are the components that count, by id or name.
+	Watch *[]string
+	// DefaultWatch goes back to DefaultComponents (Watch is then ignored).
+	DefaultWatch bool
+}
+
+// Configure changes the settings. Turning it on the first time makes the
+// webhook's token.
+func (s *Service) Configure(ch Change) (Admin, error) {
+	enabled, pageURL, poll := ch.Enabled, ch.PageURL, ch.Poll
 	s.mu.Lock()
 	if err := s.load(); err != nil {
 		s.mu.Unlock()
 		return Admin{}, err
 	}
 	old := s.doc.Settings
+	switch {
+	case ch.DefaultWatch:
+		s.doc.Settings.Watch = nil
+	case ch.Watch != nil:
+		w, err := s.doc.watch(*ch.Watch)
+		if err != nil {
+			s.mu.Unlock()
+			return Admin{}, err
+		}
+		s.doc.Settings.Watch = &w
+	}
 	if pageURL != nil {
 		p, err := cleanPage(*pageURL)
 		if err != nil {
+			s.doc.Settings = old
 			s.mu.Unlock()
 			return Admin{}, err
 		}
@@ -552,7 +760,6 @@ func (s *Service) putComponent(c Component) {
 // derived is the page's indicator worked out from the incidents and
 // components, for a webhook without the page's own.
 func (d *document) derived() (indicator, description string) {
-	rank := map[string]int{"none": 0, "maintenance": 1, "minor": 2, "major": 3, "critical": 4}
 	indicator = "none"
 	for _, i := range d.Incidents {
 		if i.Active() && rank[i.Impact] > rank[indicator] {
@@ -560,18 +767,7 @@ func (d *document) derived() (indicator, description string) {
 		}
 	}
 	for _, c := range d.Components {
-		var ind string
-		switch c.Status {
-		case "degraded_performance":
-			ind = "minor"
-		case "partial_outage":
-			ind = "major"
-		case "major_outage":
-			ind = "critical"
-		case "under_maintenance":
-			ind = "maintenance"
-		}
-		if rank[ind] > rank[indicator] {
+		if ind := componentLevel(c.Status); rank[ind] > rank[indicator] {
 			indicator = ind
 		}
 	}
@@ -580,6 +776,24 @@ func (d *document) derived() (indicator, description string) {
 		"major": "Partial System Outage", "critical": "Major System Outage",
 	}[indicator]
 	return indicator, description
+}
+
+// rank orders the indicator's levels, worst last.
+var rank = map[string]int{"none": 0, "maintenance": 1, "minor": 2, "major": 3, "critical": 4}
+
+// componentLevel is the indicator's level for a component's status.
+func componentLevel(status string) string {
+	switch status {
+	case "degraded_performance":
+		return "minor"
+	case "partial_outage":
+		return "major"
+	case "major_outage":
+		return "critical"
+	case "under_maintenance":
+		return "maintenance"
+	}
+	return "none"
 }
 
 func (s *Service) prune(now time.Time) {

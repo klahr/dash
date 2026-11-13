@@ -24,6 +24,11 @@ const COMPONENT = {
 };
 const label = (map, k) => map[k] || (k || "").replaceAll("_", " ");
 const isAdmin = () => !!state.me?.user?.is_platform_admin;
+// What counts: the components a platform admin chose (Account → Claude
+// status → Components) and the incidents that affect one or name none. The
+// hub marks the rest ignored.
+const counted = (xs) => (xs || []).filter((x) => !x.ignored);
+const ignoredOf = (xs) => (xs || []).filter((x) => x.ignored);
 
 export async function loadClaudeStatus() {
   state.claudeStatus = await api("GET", "/api/claude-status", null, "");
@@ -37,32 +42,37 @@ export function onClaudeStatus(st) {
   state.claudeStatus = st;
   renderClaudeStatus();
   if (!before?.enabled || !st?.enabled) return;
+  // Only incidents that count; one that starts counting when an admin
+  // changes the components isn't news.
   const was = new Set((before.active || []).map((i) => i.id));
   const now = new Set((st.active || []).map((i) => i.id));
   const details = { label: "Details", run: openClaudeStatus };
-  for (const i of st.active || []) {
+  for (const i of counted(st.active)) {
     if (!was.has(i.id)) toast(i.updates?.[0]?.body || "", { tone: "error", head: `Claude: ${i.name}`, action: details });
   }
-  for (const i of before.active || []) {
+  for (const i of counted(before.active)) {
     if (!now.has(i.id)) toast(i.name, { tone: "ok", head: "Claude incident resolved", action: details });
   }
 }
 
-const troubled = (st) => !!st?.enabled && ((st.indicator && st.indicator !== "none") || st.active?.length > 0 || st.components?.length > 0);
+// The page's own indicator covers every component, so it doesn't turn the
+// pill on by itself: only what counts does.
+const troubled = (st) => !!st?.enabled && (counted(st.active).length > 0 || counted(st.components).length > 0);
 
 export function renderClaudeStatus() {
   const st = state.claudeStatus;
   const pill = $("#claude-pill");
   pill.hidden = !troubled(st);
   if (!pill.hidden) {
-    const tone = TONE[st.indicator] || (st.active.length ? "warn" : "ok");
-    const text = st.active.length === 1 ? `Claude: ${label(IMPACT, st.active[0].impact).toLowerCase()} incident`
-      : st.active.length ? `Claude: ${plural(st.active.length, "incident")}`
-      : st.indicator && st.indicator !== "none" ? `Claude: ${label(INDICATOR, st.indicator).toLowerCase()}`
-      : `Claude: ${plural(st.components.length, "component")} affected`;
+    const active = counted(st.active), comps = counted(st.components);
+    const tone = (st.level && st.level !== "none" && TONE[st.level]) || "warn";
+    const text = active.length === 1 ? `Claude: ${label(IMPACT, active[0].impact).toLowerCase()} incident`
+      : active.length ? `Claude: ${plural(active.length, "incident")}`
+      : comps.length === 1 ? `Claude: ${comps[0].name} ${label(COMPONENT, comps[0].status).toLowerCase()}`
+      : `Claude: ${plural(comps.length, "component")} affected`;
     pill.className = `usage-pill claude-pill claude-${tone}`;
     pill.textContent = text;
-    pill.title = `${st.description || label(INDICATOR, st.indicator)} (status.claude.com)`;
+    pill.title = `${[...active.map((i) => i.name), ...comps.map((c) => c.name)].join(", ")} (status.claude.com)`;
   }
   if ($("#claude-status-sheet").open) renderSheet();
 }
@@ -80,7 +90,8 @@ function incidentHead(i) {
     h("span", { class: "claude-incident-meta" },
       h("span", { class: `claude-impact claude-${TONE[i.impact] || "warn"}` }, label(IMPACT, i.impact)),
       ` ${label(STATUS, i.status)}`,
-      i.components?.length ? ` · ${i.components.join(", ")}` : ""),
+      i.components?.length ? ` · ${i.components.join(", ")}` : "",
+      i.ignored ? h("span", { class: "claude-ignored-tag" }, "Not counted") : null),
   ];
 }
 
@@ -97,18 +108,33 @@ function renderSheet() {
     return;
   }
   const tone = TONE[st.indicator] || "muted";
-  summary.className = `claude-summary claude-${tone}`;
-  fill(summary, h("strong", {}, st.description || label(INDICATOR, st.indicator) || "Nothing heard yet"),
-    st.updated ? h("span", { class: "hint" }, ` · updated ${agoText(st.updated)}`) : null);
+  const active = counted(st.active), comps = counted(st.components);
+  const ignActive = ignoredOf(st.active), ignComps = ignoredOf(st.components);
+  // The page's own words cover every component: say so when none of it counts.
+  const onlyIgnored = !troubled(st) && st.indicator && st.indicator !== "none";
+  summary.className = `claude-summary claude-${onlyIgnored ? "ok" : tone}`;
+  fill(summary, h("strong", {}, onlyIgnored ? "Nothing Dash watches is affected"
+    : st.description || label(INDICATOR, st.indicator) || "Nothing heard yet"),
+  onlyIgnored ? h("span", { class: "hint" }, ` · the page says ${st.description || label(INDICATOR, st.indicator)}`) : null,
+  st.updated ? h("span", { class: "hint" }, ` · updated ${agoText(st.updated)}`) : null);
+  const compList = (cs) => h("ul", { class: "claude-components" }, ...cs.map((c) =>
+    h("li", { class: `claude-${c.status === "major_outage" || c.status === "partial_outage" ? "bad" : "warn"}` },
+      h("span", {}, c.name), h("span", { class: "claude-component-status" }, label(COMPONENT, c.status)))));
+  const incidentList = (is) => h("ul", { class: "claude-incidents" }, ...is.map((i) =>
+    h("li", { class: "claude-incident" }, ...incidentHead(i), updateList(i))));
+  const ignored = ignActive.length + ignComps.length;
   fill($("#claude-status-body"),
-    st.components.length ? h("h3", { class: "section-head" }, "Affected components") : null,
-    st.components.length ? h("ul", { class: "claude-components" }, ...st.components.map((c) =>
-      h("li", { class: `claude-${c.status === "major_outage" || c.status === "partial_outage" ? "bad" : "warn"}` },
-        h("span", {}, c.name), h("span", { class: "claude-component-status" }, label(COMPONENT, c.status))))) : null,
+    comps.length ? h("h3", { class: "section-head" }, "Affected components") : null,
+    comps.length ? compList(comps) : null,
     h("h3", { class: "section-head" }, "Active incidents"),
-    st.active.length ? h("ul", { class: "claude-incidents" }, ...st.active.map((i) =>
-      h("li", { class: "claude-incident" }, ...incidentHead(i), updateList(i))))
-      : h("p", { class: "hint" }, "None right now."),
+    active.length ? incidentList(active) : h("p", { class: "hint" }, "None right now."),
+    // What doesn't count, folded away: why the pill is off.
+    ignored ? h("details", { class: "claude-ignored" },
+      h("summary", {}, h("span", { class: "section-head" }, `Not counted (${ignored})`)),
+      h("p", { class: "hint" }, isAdmin() ? "These affect only components Dash doesn't watch. Choose them in Account → Claude status → Components."
+        : "These affect only components Dash doesn't watch, so the Claude pill stays off for them."),
+      ignComps.length ? compList(ignComps) : null,
+      ignActive.length ? incidentList(ignActive) : null) : null,
     h("h3", { class: "section-head" }, "Resolved this week"),
     st.recent.length ? h("ul", { class: "claude-incidents" }, ...st.recent.map((i) =>
       h("li", { class: "claude-incident resolved" }, h("details", {},
@@ -202,6 +228,7 @@ function renderAdmin(a) {
     h("h3", { class: "section-head" }, "Without webhooks"),
     h("label", { class: "toggle" }, poll, h("span", {}, "Also check the status page every 5 minutes")),
     h("p", { class: "hint" }, "For a Dash the status page can't reach: behind a firewall, or without a public address."),
+    ...componentPicker(a),
     h("h3", { class: "section-head" }, "Status page"),
     h("div", { class: "org-invite" }, page, h("button", { class: "btn", type: "button", onclick: attempt(async () => {
       await save({ page_url: page.value.trim() });
@@ -211,4 +238,38 @@ function renderAdmin(a) {
     h("h3", { class: "section-head" }, "Recently heard"),
     deliveries.length ? h("ul", { class: "item-list" }, ...deliveries)
       : h("p", { class: "hint" }, "Nothing yet."));
+}
+
+// Components: which of the page's components count for the pill and the
+// notices. Each change is saved at once.
+function componentPicker(a) {
+  const comps = a.components || [];
+  const boxes = comps.map((c) => h("input", { type: "checkbox", value: c.id || c.name, checked: c.watched }));
+  const list = h("div", { class: "claude-watch" }, ...comps.map((c, k) => h("label", { class: "runner-pick" },
+    boxes[k],
+    h("span", { class: "runner-name" }, c.name),
+    h("span", { class: `hint claude-${c.status && c.status !== "operational" ? (c.status === "major_outage" || c.status === "partial_outage" ? "bad" : "warn") : "muted"}` },
+      c.status ? label(COMPONENT, c.status) : "Not heard of yet"))));
+  list.addEventListener("change", attempt(async (e) => {
+    boxes.forEach((b) => { b.disabled = true; });
+    try {
+      await save({ components: boxes.filter((b) => b.checked).map((b) => b.value) });
+    } catch (err) {
+      e.target.checked = !e.target.checked;
+      boxes.forEach((b) => { b.disabled = false; });
+      throw err;
+    }
+    toast("Saved", { tone: "ok" });
+  }));
+  return [
+    h("h3", { class: "section-head" }, "Components"),
+    h("p", { class: "hint" }, "The Claude pill and the notices count only these components, the incidents that affect them, and incidents that name no component. The rest still show under Not counted in the status."),
+    comps.length ? list : h("p", { class: "hint" }, "No components yet. Check now reads them from the status page."),
+    !comps.some((c) => c.status) ? h("p", { class: "hint" }, "Check now lists all the page's components.") : null,
+    a.default_watch ? h("p", { class: "hint" }, "Defaults: Claude Code, the Claude API and claude.ai.")
+      : h("div", { class: "billing-actions" }, h("button", { class: "btn small", type: "button", onclick: attempt(async () => {
+        await save({ default_components: true });
+        toast("Back to the default components", { tone: "ok" });
+      }) }, "Use the defaults")),
+  ];
 }

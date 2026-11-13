@@ -3,8 +3,10 @@ package claudestatus
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 )
@@ -21,7 +23,7 @@ func newService(t *testing.T) (*Service, *[]Status) {
 	var got []Status
 	s := &Service{Store: &memStore{}, Now: func() time.Time { return t0 }, Publish: func(st Status) { got = append(got, st) }}
 	on := true
-	a, err := s.Configure(&on, nil, nil)
+	a, err := s.Configure(Change{Enabled: &on})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +137,7 @@ func TestOffAndRotate(t *testing.T) {
 		t.Errorf("old token: %v", err)
 	}
 	off := false
-	if _, err := s.Configure(&off, nil, nil); err != nil {
+	if _, err := s.Configure(Change{Enabled: &off}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Webhook(a.Token, []byte(incidentHook)); !errors.Is(err, ErrRefused) {
@@ -145,7 +147,7 @@ func TestOffAndRotate(t *testing.T) {
 		t.Errorf("off shows %+v", st)
 	}
 	bad := "ftp://example.com"
-	if _, err := s.Configure(nil, &bad, nil); !errors.Is(err, ErrBadPage) {
+	if _, err := s.Configure(Change{PageURL: &bad}); !errors.Is(err, ErrBadPage) {
 		t.Errorf("bad page: %v", err)
 	}
 }
@@ -169,7 +171,7 @@ func TestSync(t *testing.T) {
 	defer srv.Close()
 	s, pub := newService(t)
 	page := srv.URL
-	if _, err := s.Configure(nil, &page, nil); err != nil {
+	if _, err := s.Configure(Change{PageURL: &page}); err != nil {
 		t.Fatal(err)
 	}
 	n := len(*pub)
@@ -191,5 +193,171 @@ func TestSync(t *testing.T) {
 	}
 	if len(s.doc.Incidents) != 2 {
 		t.Errorf("kept %d incidents, want the old one dropped", len(s.doc.Incidents))
+	}
+}
+
+// filterDoc is a page with components that matter to Dash and some that
+// don't, all in trouble, and incidents on each kind.
+func filterDoc() document {
+	return document{
+		Settings:  Settings{Enabled: true},
+		Indicator: "critical",
+		Components: []Component{
+			{ID: "c-code", Name: "Claude Code", Status: "degraded_performance"},
+			{ID: "c-api", Name: "Claude API (api.anthropic.com)", Status: "operational"},
+			{ID: "c-web", Name: "claude.ai", Status: "operational"},
+			{ID: "c-gov", Name: "Claude for Government", Status: "major_outage"},
+			{ID: "c-cowork", Name: "Cowork", Status: "partial_outage"},
+		},
+		Incidents: []Incident{
+			{ID: "api", Name: "API errors", Status: "investigating", Impact: "major", Components: []string{"Claude API (api.anthropic.com)", "Cowork"}},
+			{ID: "gov", Name: "Gov outage", Status: "investigating", Impact: "critical", Components: []string{"Claude for Government"}},
+			{ID: "all", Name: "Everything is slow", Status: "identified", Impact: "minor"},
+			{ID: "m365", Name: "M365 connector", Status: "resolved", Impact: "minor", Components: []string{"Microsoft 365 connector"}, Resolved: t0.Add(-time.Hour)},
+		},
+	}
+}
+
+func ignored[T any](items []T, key func(T) (string, bool)) map[string]bool {
+	m := map[string]bool{}
+	for _, x := range items {
+		k, ign := key(x)
+		m[k] = ign
+	}
+	return m
+}
+
+func incidentsIgnored(st Status) map[string]bool {
+	return ignored(append(append([]Incident{}, st.Active...), st.Recent...), func(i Incident) (string, bool) { return i.ID, i.Ignored })
+}
+
+func componentsIgnored(st Status) map[string]bool {
+	return ignored(st.Components, func(c Component) (string, bool) { return c.Name, c.Ignored })
+}
+
+func TestFilterDefaults(t *testing.T) {
+	d := filterDoc()
+	st := d.status(t0)
+	if want := map[string]bool{"Claude Code": false, "Claude for Government": true, "Cowork": true}; !maps.Equal(componentsIgnored(st), want) {
+		t.Errorf("components: %v, want %v", componentsIgnored(st), want)
+	}
+	// The API incident names a default component; the general one names none.
+	if want := map[string]bool{"api": false, "gov": true, "all": false, "m365": true}; !maps.Equal(incidentsIgnored(st), want) {
+		t.Errorf("incidents: %v, want %v", incidentsIgnored(st), want)
+	}
+	// The page's indicator is kept, but the level is over what counts only:
+	// the major API incident, not the critical Gov one.
+	if st.Indicator != "critical" || st.Level != "major" {
+		t.Errorf("indicator %q, level %q", st.Indicator, st.Level)
+	}
+
+	// Before the first read of the page, the defaults match by name alone.
+	d.Components = nil
+	st = d.status(t0)
+	if want := map[string]bool{"api": false, "gov": true, "all": false, "m365": true}; !maps.Equal(incidentsIgnored(st), want) {
+		t.Errorf("incidents before the components were heard: %v", incidentsIgnored(st))
+	}
+	for _, n := range []string{"Claude Code", "claude code", "Claude API", "claude.ai", "Claude  API (api.anthropic.com)", "Anthropic API (api.anthropic.com)"} {
+		if !d.watchedName(n) {
+			t.Errorf("%q isn't a default", n)
+		}
+	}
+	for _, n := range []string{"Claude for Government", "Cowork", "claude.ai.example", "platform.claude.com", "Claude Coder"} {
+		if d.watchedName(n) {
+			t.Errorf("%q is a default", n)
+		}
+	}
+
+	// Only ignored things in trouble: the pill's level is none.
+	d = filterDoc()
+	d.Incidents = d.Incidents[1:2]
+	d.Components[0].Status = "operational"
+	if st := d.status(t0); st.Level != "none" || st.Indicator != "critical" {
+		t.Errorf("level %q with only ignored trouble", st.Level)
+	}
+}
+
+func TestFilterChosen(t *testing.T) {
+	d := filterDoc()
+	// Chosen by id, and by name for one not heard of yet.
+	w, err := d.watch([]string{"c-gov", "Microsoft 365 connector", " ", "c-gov"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []Watch{{ID: "c-gov", Name: "Claude for Government"}, {Name: "Microsoft 365 connector"}}; !slices.Equal(w, want) {
+		t.Fatalf("watch %+v", w)
+	}
+	d.Settings.Watch = &w
+	st := d.status(t0)
+	if want := map[string]bool{"Claude Code": true, "Claude for Government": false, "Cowork": true}; !maps.Equal(componentsIgnored(st), want) {
+		t.Errorf("components: %v", componentsIgnored(st))
+	}
+	if want := map[string]bool{"api": true, "gov": false, "all": false, "m365": false}; !maps.Equal(incidentsIgnored(st), want) {
+		t.Errorf("incidents: %v", incidentsIgnored(st))
+	}
+	if st.Level != "critical" {
+		t.Errorf("level %q", st.Level)
+	}
+
+	// Renamed on the page: its id still matches.
+	d.Components[3].Name = "Claude Gov"
+	d.Incidents[1].Components = []string{"Claude Gov"}
+	if st := d.status(t0); componentsIgnored(st)["Claude Gov"] || incidentsIgnored(st)["gov"] {
+		t.Errorf("renamed component lost: %v %v", componentsIgnored(st), incidentsIgnored(st))
+	}
+
+	// Nothing chosen: only incidents that name no component count.
+	d.Settings.Watch = &[]Watch{}
+	st = d.status(t0)
+	if want := map[string]bool{"api": true, "gov": true, "all": false, "m365": true}; !maps.Equal(incidentsIgnored(st), want) {
+		t.Errorf("incidents with none chosen: %v", incidentsIgnored(st))
+	}
+	if st.Level != "minor" {
+		t.Errorf("level %q", st.Level)
+	}
+
+	if _, err := d.watch(make([]string, maxWatch+1)); !errors.Is(err, ErrBadWatch) {
+		t.Errorf("too many: %v", err)
+	}
+}
+
+func TestConfigureWatch(t *testing.T) {
+	s, pub := newService(t)
+	// Before the page was read, the admin sees the defaults, checked.
+	a, _ := s.Admin()
+	if !a.DefaultWatch || len(a.Components) != len(DefaultComponents) || !a.Components[0].Watched {
+		t.Fatalf("defaults: %+v", a)
+	}
+	s.doc.Components = filterDoc().Components
+	a, _ = s.Admin()
+	if len(a.Components) != 5 {
+		t.Fatalf("components: %+v", a.Components)
+	}
+	for _, c := range a.Components {
+		if want := c.ID == "c-code" || c.ID == "c-api" || c.ID == "c-web"; c.Watched != want {
+			t.Errorf("%s watched %v", c.Name, c.Watched)
+		}
+	}
+
+	n := len(*pub)
+	keys := []string{"c-cowork", "Something new"}
+	a, err := s.Configure(Change{Watch: &keys})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.DefaultWatch || len(a.Components) != 6 || !a.Components[4].Watched || a.Components[0].Watched || a.Components[5].Name != "Something new" {
+		t.Errorf("chosen: %+v", a.Components)
+	}
+	if len(*pub) != n+1 {
+		t.Error("the change wasn't published")
+	}
+	again := &Service{Store: s.Store}
+	if a, _ := again.Admin(); a.Watch == nil || len(*a.Watch) != 2 {
+		t.Errorf("not saved: %+v", a.Watch)
+	}
+
+	a, _ = s.Configure(Change{DefaultWatch: true, Watch: &keys})
+	if !a.DefaultWatch || !a.Components[0].Watched || a.Components[4].Watched {
+		t.Errorf("back to defaults: %+v", a.Components)
 	}
 }
