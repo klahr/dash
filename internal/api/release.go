@@ -468,9 +468,14 @@ func (b board) CreateRelease(projectID string, r mcptools.NewRelease) (mcptools.
 }
 
 // releaseOnRunner tags a release of the hub's project p on a runner linked
-// to it, which makes and pushes the tag in its clone.
+// to it, which makes and pushes the tag in its clone. The hub checks the
+// caller's rights itself: the runner sees the hub as a Machine, which it
+// trusts to have done so.
 func (sv *service) releaseOnRunner(ctx context.Context, p model.Project, r mcptools.NewRelease) (mcptools.Release, error) {
 	var out mcptools.Release
+	if err := sv.canRelease(); err != nil {
+		return out, err
+	}
 	run, rpid, err := sv.projectRunner(ctx, p, "")
 	if err != nil {
 		return out, err

@@ -1,14 +1,19 @@
 package api
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/klahr/dash/internal/gitops"
+	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/peer"
+	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
@@ -90,5 +95,54 @@ func TestForwardedServesSVGInlineButSandboxed(t *testing.T) {
 	}
 	if h.Get("Content-Security-Policy") != tunnel.RunnerCSP || h.Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatalf("not sandboxed: %v", h)
+	}
+}
+
+// On a hub, only the org's owners and admins tag releases: the runner sees
+// the hub as a Machine and trusts it, so the hub checks before forwarding
+// POST /tags or the create_release tool, and gives GET /release its own
+// verdict on can_tag.
+func TestHubChecksWhoMayTagReleases(t *testing.T) {
+	parallel(t)
+
+	s, _, p := boardServer(t)
+	s.Git = gitops.New(nil)
+	s.Peers = &peer.Hub{Self: "hub", Runners: &tunnel.Hub{Accounts: s.Auth.Accounts()}}
+	owner := testOwner(t, s)
+	mid := member(t, s, owner.Org, "m", store.RoleMember)
+	m := loginAs(t, s.Routes(), "m", "long-enough-m")
+
+	// p has no runner: a forwarded request would say so (503). A member is
+	// refused before that.
+	if w := send(m, "POST", "/api/projects/"+p.ID+"/tags", `{"version":"9.9.9","sha":"abc"}`); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "owners and admins") {
+		t.Errorf("member's POST /tags: %d %s", w.Code, w.Body)
+	}
+	w := httptest.NewRecorder()
+	s.mux().ServeHTTP(w, asOwner(t, s, httptest.NewRequest("POST", "/api/projects/"+p.ID+"/tags", strings.NewReader(`{"version":"9.9.9"}`))))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("owner's POST /tags goes to a runner: %d %s", w.Code, w.Body)
+	}
+
+	// The create_release tool, in a member's chat.
+	b := board{s.as(Caller{User: mid, Org: owner.Org})}
+	if _, err := b.CreateRelease(p.ID, mcptools.NewRelease{Version: "9.9.9"}); !errors.Is(err, errForbidden) {
+		t.Errorf("member's create_release: %v", err)
+	}
+	if _, err := (board{s.as(ownerCaller(t, s))}).CreateRelease(p.ID, mcptools.NewRelease{Version: "9.9.9"}); errors.Is(err, errForbidden) || err == nil {
+		t.Errorf("owner's create_release: %v", err)
+	}
+}
+
+// The runner's release info says the hub may tag; the hub says whether the
+// user may.
+func TestHubCanTagOverridesTheRunners(t *testing.T) {
+	runner := []byte(`{"sha":"abc","can_tag":true}`)
+	if got := hubCanTag(runner, nil); string(got) != string(runner) {
+		t.Errorf("allowed: %s", got)
+	}
+	var info releaseInfo
+	got := hubCanTag(runner, fmt.Errorf("%w: only the organization's owners and admins can tag releases", errForbidden))
+	if err := json.Unmarshal(got, &info); err != nil || info.CanTag || info.SHA != "abc" || info.CantTag != "only the organization's owners and admins can tag releases" {
+		t.Errorf("denied: %s", got)
 	}
 }

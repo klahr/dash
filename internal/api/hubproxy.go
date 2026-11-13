@@ -143,6 +143,29 @@ func (s *Server) viaRunner(h http.HandlerFunc) http.HandlerFunc {
 			s.pullOnRunner(w, r, sv, p)
 		case "GET /api/projects/{pid}/repo-info":
 			s.repoInfoOnRunner(w, r, sv, p)
+		case "POST /api/projects/{pid}/tags":
+			// The runner trusts the hub (a Machine caller) to have checked
+			// who may tag: check it here, before forwarding.
+			if err := sv.canRelease(); err != nil {
+				writeErr(w, err)
+				return
+			}
+			res, err := sv.forward(r, p, "", nil)
+			if err != nil {
+				writeErr(w, err)
+				return
+			}
+			res.write(w)
+		case "GET /api/projects/{pid}/release":
+			res, err := sv.forward(r, p, "", nil)
+			if err != nil {
+				writeErr(w, err)
+				return
+			}
+			if res.ok() {
+				res.body = hubCanTag(res.body, sv.canRelease())
+			}
+			res.write(w)
 		default:
 			res, err := sv.forward(r, p, "", nil)
 			if err != nil {
@@ -152,6 +175,25 @@ func (s *Server) viaRunner(h http.HandlerFunc) http.HandlerFunc {
 			res.write(w)
 		}
 	}
+}
+
+// hubCanTag gives a runner's release info (body) the hub's verdict on
+// whether the caller may tag: the runner judged the hub, not the user. When
+// the hub allows it, the runner's other reasons (not pushed yet) stand.
+func hubCanTag(body []byte, denied error) []byte {
+	if denied == nil {
+		return body
+	}
+	var info map[string]any
+	if json.Unmarshal(body, &info) != nil {
+		return body
+	}
+	info["can_tag"] = false
+	info["cant_tag"] = strings.TrimPrefix(denied.Error(), errForbidden.Error()+": ")
+	if b, err := json.Marshal(info); err == nil {
+		return b
+	}
+	return body
 }
 
 // forwarded is a runner's answer to a forwarded request, with the runner's
