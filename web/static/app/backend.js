@@ -1,4 +1,4 @@
-import { $, h } from "./dom.js";
+import { $, h, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -186,7 +186,7 @@ function renderBoardStatus() {
     bits.push(st.running ? `Synced with ${boardLabel(cfg.backend)}.` : `Not syncing with ${boardLabel(cfg.backend)}.`);
     if (cfg.last_sync_at) bits.push(cfg.last_error ? `Last sync ${agoText(cfg.last_sync_at)} failed: ${cfg.last_error}` : `Last sync ${agoText(cfg.last_sync_at)}.`);
     else bits.push("Not synced yet.");
-    bits.push(`${st.linked} task${st.linked === 1 ? "" : "s"} linked to cards${st.unlinked ? `, ${st.unlinked} Dash-only` : ""}.`);
+    bits.push(`${plural(st.linked, "task")} linked to cards${st.unlinked ? `, ${st.unlinked} Dash-only` : ""}.`);
     if (boardReg(cfg.backend)?.auto_webhook) {
       bits.push(st.webhook_url
         ? `Dash registers its webhook on the board itself (${st.webhook_url}), so changes arrive at once.`

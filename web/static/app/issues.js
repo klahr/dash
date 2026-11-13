@@ -1,5 +1,5 @@
 import { renderMarkdown } from "../editor.js";
-import { $, $$, h, ib, ico } from "./dom.js";
+import { $, $$, h, ib, ico, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { STATUS_LABEL, state } from "./state.js";
@@ -101,7 +101,7 @@ function renderIssueBadge() {
   const b = $("#issue-badge");
   b.hidden = !n;
   b.textContent = n;
-  b.title = `${n} open issue${n === 1 ? "" : "s"}`;
+  b.title = plural(n, "open issue");
 }
 
 export function renderIssues() {

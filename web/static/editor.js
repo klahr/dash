@@ -9,6 +9,7 @@ import {
   history, historyKeymap, defaultKeymap, insertNewline, syntaxHighlighting, HighlightStyle, LanguageDescription, bracketMatching, tags as t,
   markdown, languages, vim, getCM,
 } from "./vendor/codemirror.js";
+import * as store from "./app/store.js";
 
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
@@ -216,18 +217,18 @@ const theme = EditorView.theme({
 const VIM_KEY = "dash.vim";
 const editors = new Set();
 const vimKeys = () => [vim({ status: true }), drawSelection()];
-export const vimOn = () => { try { return localStorage.getItem(VIM_KEY) === "1"; } catch { return false; } };
+export const vimOn = () => store.flag(VIM_KEY);
 export function setVim(on) {
-  try { localStorage.setItem(VIM_KEY, on ? "1" : "0"); } catch {}
+  store.setFlag(VIM_KEY, on);
   for (const e of editors) e.setVim(on);
 }
 
 // Showing invisible characters is a setting of this browser too, off by default.
 const INVISIBLES_KEY = "dash.invisibles";
 const invisibleChars = () => [highlightWhitespace(), highlightTrailingWhitespace(), highlightSpecialChars()];
-export const invisiblesOn = () => { try { return localStorage.getItem(INVISIBLES_KEY) === "1"; } catch { return false; } };
+export const invisiblesOn = () => store.flag(INVISIBLES_KEY);
 export function setInvisibles(on) {
-  try { localStorage.setItem(INVISIBLES_KEY, on ? "1" : "0"); } catch {}
+  store.setFlag(INVISIBLES_KEY, on);
   for (const e of editors) e.setInvisibles(on);
 }
 
@@ -489,10 +490,10 @@ export function codeEditor(textarea) {
 // ---- drafts
 
 const PREFIX = "dash.draft.";
-const store = {
-  get(k) { try { return JSON.parse(localStorage.getItem(PREFIX + k)); } catch { return null; } },
-  set(k, v) { try { localStorage.setItem(PREFIX + k, JSON.stringify(v)); return true; } catch { return false; } },
-  del(k) { try { localStorage.removeItem(PREFIX + k); } catch {} },
+const draftStore = {
+  get: (k) => store.getJSON(PREFIX + k),
+  set: (k, v) => store.setJSON(PREFIX + k, v),
+  del: (k) => store.remove(PREFIX + k),
 };
 
 // drafts keeps the open form saved under a key while it is being edited.
@@ -505,8 +506,8 @@ export function drafts({ read, write, onStatus }) {
     timer = null;
     if (!key) return;
     const now = snapshot();
-    if (now === base) { store.del(key); return; } // back to what's saved on the server
-    if (store.set(key, { ...JSON.parse(now), at: Date.now() })) onStatus("saved");
+    if (now === base) { draftStore.del(key); return; } // back to what's saved on the server
+    if (draftStore.set(key, { ...JSON.parse(now), at: Date.now() })) onStatus("saved");
   };
   addEventListener("pagehide", save);
   document.addEventListener("visibilitychange", () => { if (document.hidden) save(); });
@@ -515,19 +516,19 @@ export function drafts({ read, write, onStatus }) {
     open(k) {
       key = k;
       base = snapshot();
-      const d = store.get(k);
+      const d = draftStore.get(k);
       if (!d) { onStatus(""); return null; }
       write(d);
-      if (snapshot() === base) { store.del(k); onStatus(""); return null; }
+      if (snapshot() === base) { draftStore.del(k); onStatus(""); return null; }
       onStatus("restored", d.at);
       return d;
     },
     changed() { clearTimeout(timer); timer = setTimeout(save, 300); onStatus("typing"); },
     flush: save,
     // done forgets the draft (after a successful save); close keeps it.
-    done() { clearTimeout(timer); if (key) store.del(key); key = null; },
+    done() { clearTimeout(timer); if (key) draftStore.del(key); key = null; },
     close() { save(); key = null; },
-    discard() { if (key) store.del(key); },
-    has: (k) => !!store.get(k),
+    discard() { if (key) draftStore.del(key); },
+    has: (k) => !!draftStore.get(k),
   };
 }

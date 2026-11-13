@@ -142,17 +142,15 @@ func (a *Accounts) freeSlug(tx *sql.Tx, base string, orgID int64, now time.Time)
 // true: the org's Slug is its current one). Unknown slugs are ErrNotFound.
 func (a *Accounts) OrgBySlug(slug string, now time.Time) (o Org, moved bool, err error) {
 	slug = strings.ToLower(slug)
-	err = a.db.QueryRow(`SELECT id, name, slug, require_2fa, personal_user_id IS NOT NULL, COALESCE(folder, slug)
-		FROM organizations WHERE slug = ?`, slug).Scan(&o.ID, &o.Name, &o.Slug, &o.Require2FA, &o.Personal, &o.Folder)
+	o, err = scanOrg(a.db.QueryRow(orgCols+" WHERE o.slug = ?", slug))
 	if err == nil {
 		return o, false, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return o, false, err
 	}
-	err = a.db.QueryRow(`SELECT o.id, o.name, o.slug, o.require_2fa, o.personal_user_id IS NOT NULL, COALESCE(o.folder, o.slug)
-		FROM org_slug_redirects r JOIN organizations o ON o.id = r.org_id WHERE r.slug = ? AND r.expires_at > ?`, slug, now.Unix()).
-		Scan(&o.ID, &o.Name, &o.Slug, &o.Require2FA, &o.Personal, &o.Folder)
+	o, err = scanOrg(a.db.QueryRow(`SELECT `+orgFields+`
+		FROM org_slug_redirects r JOIN organizations o ON o.id = r.org_id WHERE r.slug = ? AND r.expires_at > ?`, slug, now.Unix()))
 	if errors.Is(err, sql.ErrNoRows) {
 		return o, false, ErrNotFound
 	}
@@ -161,9 +159,7 @@ func (a *Accounts) OrgBySlug(slug string, now time.Time) (o Org, moved bool, err
 
 // Org is the org with id.
 func (a *Accounts) Org(id int64) (Org, error) {
-	var o Org
-	err := a.db.QueryRow(`SELECT id, name, slug, require_2fa, personal_user_id IS NOT NULL, COALESCE(folder, slug)
-		FROM organizations WHERE id = ?`, id).Scan(&o.ID, &o.Name, &o.Slug, &o.Require2FA, &o.Personal, &o.Folder)
+	o, err := scanOrg(a.db.QueryRow(orgCols+" WHERE o.id = ?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return o, ErrNotFound
 	}

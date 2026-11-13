@@ -76,8 +76,6 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
-var slugRe = regexp.MustCompile(`[^a-z0-9-]+`)
-
 var colorRe = regexp.MustCompile(`^#[0-9a-f]{6}$`)
 
 // projectRequest is the body of POST /api/projects.
@@ -1634,8 +1632,8 @@ func (s *Server) putQueuePace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req usage.PaceSettings
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
 		return
 	}
 	if s.Usage == nil {
@@ -1666,8 +1664,8 @@ func (s *Server) putAccountPace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req usage.PaceSettings
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
 		return
 	}
 	acct := strings.ToLower(strings.TrimSpace(req.Account))

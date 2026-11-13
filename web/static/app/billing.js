@@ -1,4 +1,4 @@
-import { $, fill, h } from "./dom.js";
+import { $, dateText, fill, h, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -18,7 +18,6 @@ export async function loadBilling() {
 }
 document.addEventListener("dash:billing-read-only", () => loadBilling().catch(() => {}));
 
-const billingDate = (s) => new Date(s).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
 async function startCheckout() {
   const r = await api("POST", `/api/orgs/${state.me.org.id}/billing/checkout`, null, "");
@@ -48,7 +47,7 @@ function renderBillingBanner() {
     pastDue ? "The last payment failed" : `${state.me.org.name} needs a subscription`;
   let text = b.read_only ?
     "Organizations with two or more members need an active subscription. Everything is still here and can be read; tasks start again once it is active." :
-    `Organizations with two or more members are billed per member. Until ${billingDate(b.grace_until)} the board works as usual; after that it becomes read-only.`;
+    `Organizations with two or more members are billed per member. Until ${dateText(b.grace_until)} the board works as usual; after that it becomes read-only.`;
   if (pastDue && b.has_account) text += " Update the card in the billing portal.";
   if (!b.can_manage) text += " Ask an owner of the organization to subscribe.";
   el.classList.toggle("read-only", !!b.read_only);
@@ -61,14 +60,13 @@ function renderBillingBanner() {
 export function renderOrgBilling(b) {
   $("#org-billing").hidden = !b?.enabled || !b.can_manage;
   if ($("#org-billing").hidden) return;
-  const seats = (n) => `${n} seat${n === 1 ? "" : "s"}`;
-  const lines = [];
+    const lines = [];
   switch (b.status) {
     case "active":
-      lines.push(`Subscribed · ${seats(b.seats)} · ${b.cancel_at_period_end ? "ends" : "renews"} ${b.period_end ? billingDate(b.period_end) : ""}`);
+      lines.push(`Subscribed · ${plural(b.seats, "seat")} · ${b.cancel_at_period_end ? "ends" : "renews"} ${b.period_end ? dateText(b.period_end) : ""}`);
       break;
     case "trialing":
-      lines.push(`Trial · ${seats(b.seats)}${b.trial_end ? ` · until ${billingDate(b.trial_end)}` : ""}${b.cancel_at_period_end ? " · then ends" : ""}`);
+      lines.push(`Trial · ${plural(b.seats, "seat")}${b.trial_end ? ` · until ${dateText(b.trial_end)}` : ""}${b.cancel_at_period_end ? " · then ends" : ""}`);
       break;
     case "past_due": case "unpaid":
       lines.push("The last payment failed. Update the card in the billing portal.");
@@ -81,7 +79,7 @@ export function renderOrgBilling(b) {
       "Personal workspaces and organizations with one member are free. Inviting a second member needs a subscription, billed per member.");
   } else if (b.required) {
     lines.push(b.read_only ? "The board is read-only until the subscription is active. Nothing has been deleted." :
-      `Needed by ${billingDate(b.grace_until)}: after that the board becomes read-only.`);
+      `Needed by ${dateText(b.grace_until)}: after that the board becomes read-only.`);
   } else {
     lines.push("Seats follow the members: adding or removing someone updates the subscription, prorated.");
   }

@@ -1,4 +1,5 @@
-import { $, $$, h, ib, ico } from "./dom.js";
+import { $, $$, h, ib, ico, plural } from "./dom.js";
+import * as store from "./store.js";
 import { api } from "./api.js";
 import { EASE, art, ask, attempt, busy, reduceMotion, toast } from "./dialogs.js";
 import { clip } from "./attachments.js";
@@ -67,7 +68,7 @@ function renderBranches() {
   box.hidden = !off;
   if (off) {
     const parts = [];
-    if (res) parts.push(res.ahead ? `${res.ahead} ${res.ahead === 1 ? "commit" : "commits"} ahead of ${def}` : `nothing ${def} doesn't have yet`);
+    if (res) parts.push(res.ahead ? `${plural(res.ahead, "commit")} ahead of ${def}` : `nothing ${def} doesn't have yet`);
     if (res?.behind) parts.push(`${res.behind} behind`);
     let action;
     if (res?.pr) {
@@ -373,7 +374,7 @@ $("#board").addEventListener("touchend", (e) => {
 
 function toggleCollapsed(key) {
   if (!state.collapsed.delete(key)) state.collapsed.add(key);
-  try { localStorage.setItem("dash.collapsed", JSON.stringify([...state.collapsed])); } catch {}
+  store.setJSON("dash.collapsed", [...state.collapsed]);
   renderBoard();
 }
 
@@ -381,7 +382,7 @@ function oldToggle() {
   const hidden = [...state.todos.values()].filter(isOld).length;
   if (!hidden && !state.showOld) return null;
   return ib({ class: "link older", onclick: () => { state.showOld = !state.showOld; renderBoard(); } }, state.showOld ? "up" : "down",
-    state.showOld ? "Hide merged tasks older than a day" : `Show ${hidden} older merged ${hidden === 1 ? "task" : "tasks"}`);
+    state.showOld ? "Hide merged tasks older than a day" : `Show ${plural(hidden, "older merged task")}`);
 }
 
 // Queues every visible draft, in board order, so they keep their relative priority.
@@ -397,7 +398,7 @@ async function enqueueAll(drafts) {
     try { await api("POST", `/api/todos/${t.id}/enqueue`); } catch { bad++; }
   }
   const n = drafts.length - bad;
-  toast(bad ? `Queued ${n}, ${bad} failed` : `Queued ${n} ${n === 1 ? "task" : "tasks"}`);
+  toast(bad ? `Queued ${n}, ${bad} failed` : `Queued ${plural(n, "task")}`);
 }
 
 // Failed tasks wait in Review to be retried, reworked or deleted, so Clear Done leaves them.
@@ -413,14 +414,14 @@ async function clearDone() {
   if (!list.length) return;
   const unpushed = list.filter((t) => t.status === "merged" && state.unpushedTodos?.has(t.id)).length;
   const n = list.length;
-  if (!await ask({ title: unpushed ? `Not all done tasks are pushed — clear ${n} anyway?` : `Clear ${n} done ${n === 1 ? "task" : "tasks"}?`,
+  if (!await ask({ title: unpushed ? `Not all done tasks are pushed — clear ${n} anyway?` : `Clear ${plural(n, "done task")}?`,
     body: "Deletes every merged task in this project. This can't be undone." +
       (unpushed ? ` ${unpushed} merged ${unpushed === 1 ? "task hasn't" : "tasks haven't"} been pushed yet. Their changes are not discarded: the commits stay on the local default branch and can still be pushed.` : ""),
     ok: "Clear", danger: true })) return;
   const res = await Promise.allSettled(list.map((t) => api("DELETE", `/api/todos/${t.id}`)));
   if (list.some((t) => t.id === state.detail)) closeDetail();
   const bad = res.filter((r) => r.status === "rejected").length;
-  toast(bad ? `Cleared ${n - bad}, ${bad} failed` : `Cleared ${n} ${n === 1 ? "task" : "tasks"}`);
+  toast(bad ? `Cleared ${n - bad}, ${bad} failed` : `Cleared ${plural(n, "task")}`);
 }
 
 // "2m", "3h", "4d"
@@ -540,7 +541,7 @@ export function todoRow(t, li = -1, ri = -1) {
       fixing ? h("span", { class: "sentback-tag", title: `Sent back: ${fixing}` }, /^review /.test(fixing) ? "Review comments" : /conflict/.test(fixing) ? "Merge conflict" : "Failing checks") : null,
       t.attachments?.length ? h("span", { class: "attach-tag", title: `${t.attachments.length} attached` }, clip(), String(t.attachments.length)) : null,
       t.diff_files && ["review", "merging", "merged", "failed"].includes(t.status)
-        ? h("span", { class: "diffsize", title: `${t.diff_files} ${t.diff_files === 1 ? "file" : "files"} changed` },
+        ? h("span", { class: "diffsize", title: `${plural(t.diff_files, "file")} changed` },
           h("span", { class: "plus" }, `+${t.diff_add || 0}`), " ", h("span", { class: "minus" }, `−${t.diff_del || 0}`))
         : null,
       t.status === "in_progress" && t.started_at ? h("span", { title: "Running for" }, ago(t.started_at)) : null,

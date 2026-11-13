@@ -323,14 +323,14 @@ func Resolve(cfg ProjectConfig) (_ ProjectConfig, known bool) {
 }
 
 // New builds the backend cfg names for its project. Native projects have
-// no external backend: use NewNative.
+// no backend: their board is the store.
 func New(cfg ProjectConfig) (Backend, error) {
 	r, ok := Lookup(cfg.Backend)
 	if !ok {
 		return nil, fmt.Errorf("%w %q", ErrUnknownBackend, cfg.Backend)
 	}
 	if r.Native {
-		return nil, errors.New("tracker: the native backend is built with NewNative")
+		return nil, errors.New("tracker: a native project has no backend; its board is the store")
 	}
 	return r.New(cfg, cfg.Credentials)
 }

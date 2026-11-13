@@ -139,10 +139,7 @@ func (c ClaudeCodeChat) args(dir string, servers map[string]any) []string {
 			"--setting-sources", "", // nor their settings/hooks
 		)
 	}
-	if len(servers) > 0 {
-		cfg, _ := json.Marshal(map[string]any{"mcpServers": servers})
-		args = append(args, "--mcp-config", string(cfg))
-	}
+	args = append(args, mcptools.ConfigArgs(servers)...)
 	if servers[mcptools.ServerName] != nil {
 		// Readonly has no one to ask, so creating tasks is allowed outright there;
 		// shell mode asks for create_todo and queue_todo like for any other tool.
@@ -152,12 +149,9 @@ func (c ClaudeCodeChat) args(dir string, servers map[string]any) []string {
 		if !c.shell() {
 			allow = mcptools.BoardTools
 		}
-		for _, t := range allow {
-			if slices.Contains(mcptools.AskTools, t) {
-				continue // shell mode asks; read-only mode has no one to ask, so it can't
-			}
-			args = append(args, "--allowedTools", "mcp__"+mcptools.ServerName+"__"+t)
-		}
+		// shell mode asks for AskTools; read-only mode has no one to ask, so it can't.
+		allow = slices.DeleteFunc(slices.Clone(allow), func(t string) bool { return slices.Contains(mcptools.AskTools, t) })
+		args = append(args, mcptools.AllowedToolArgs(mcptools.ServerName, allow...)...)
 	}
 	if c.shell() {
 		if servers[perm.ServerName] != nil {

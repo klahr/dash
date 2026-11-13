@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -30,9 +29,11 @@ import (
 	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/fsutil"
+	"github.com/klahr/dash/internal/httpjson"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/notes"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 	"github.com/klahr/dash/internal/usage"
 )
 
@@ -376,7 +377,7 @@ func (h *Hub) register(code, name, prev string) (id, token string, owner model.O
 	}
 	owner = h.codes[i].Owner
 	h.codes = slices.Delete(h.codes, i, i+1) // single use
-	id = randomString(9)
+	id = rand.Text()
 	token, _, err = h.Accounts.CreateToken(store.NewToken{
 		Kind: store.TokenRunner, Name: "Runner " + name, UserID: owner.User, OrgID: owner.Org, RunnerID: id,
 	}, now)
@@ -391,12 +392,6 @@ func (h *Hub) register(code, name, prev string) (id, token string, owner model.O
 	h.saveLocked()
 	go h.changed()
 	return id, token, owner, nil
-}
-
-func randomString(n int) string {
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 // authenticate finds the runner a token belongs to. The token stops
@@ -680,23 +675,23 @@ func (h *Hub) ServeRegister(w http.ResponseWriter, r *http.Request) {
 		Previous string `json:"previous,omitempty"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
+		httpjson.Error(w, http.StatusBadRequest, "bad request")
 		return
 	}
 	id, token, owner, err := h.register(req.Code, req.Name, req.Previous)
 	switch {
 	case errors.Is(err, ErrTooManyBad):
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+		httpjson.Error(w, http.StatusTooManyRequests, err.Error())
 	case errors.Is(err, ErrBadCode):
 		time.Sleep(300 * time.Millisecond)
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		httpjson.Error(w, http.StatusForbidden, err.Error())
 	case errors.Is(err, ErrNameTaken), errors.Is(err, ErrNameHub):
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		httpjson.Error(w, http.StatusConflict, err.Error())
 	case err != nil:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		httpjson.Error(w, http.StatusBadRequest, err.Error())
 	default:
 		slog.Info("runner registered", "name", strings.ToLower(strings.TrimSpace(req.Name)), "id", id)
-		writeJSON(w, http.StatusOK, map[string]any{"id": id, "name": strings.ToLower(strings.TrimSpace(req.Name)), "token": token, "org_id": owner.Org, "user_id": owner.User})
+		httpjson.Write(w, http.StatusOK, map[string]any{"id": id, "name": strings.ToLower(strings.TrimSpace(req.Name)), "token": token, "org_id": owner.Org, "user_id": owner.User})
 	}
 }
 
@@ -715,7 +710,7 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 	tok, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	rec, ok := h.authenticate(tok)
 	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unknown or revoked runner token"})
+		httpjson.Error(w, http.StatusUnauthorized, "unknown or revoked runner token")
 		return
 	}
 	switch r.URL.Query().Get("channel") {
@@ -724,7 +719,7 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 		h.servePreviewConnect(w, r, rec)
 		return
 	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown channel"})
+		httpjson.Error(w, http.StatusBadRequest, "unknown channel")
 		return
 	}
 	var hdr http.Header
@@ -792,12 +787,12 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 	tok, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	rec, ok := h.authenticate(tok)
 	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unknown or revoked runner token"})
+		httpjson.Error(w, http.StatusUnauthorized, "unknown or revoked runner token")
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4<<20))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
+		httpjson.Error(w, http.StatusBadRequest, "bad request")
 		return
 	}
 	var self struct {
@@ -809,7 +804,7 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 		Disk         *disk.Status      `json:"disk"`
 	}
 	if err := json.Unmarshal(body, &self); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
+		httpjson.Error(w, http.StatusBadRequest, "bad request")
 		return
 	}
 	h.mu.Lock()
@@ -838,13 +833,13 @@ func (h *Hub) ServeReport(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.OnReport != nil {
 		if err := h.OnReport(rec.ID, body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			httpjson.Error(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
 	if h.ReportReply != nil {
 		if v := h.ReportReply(rec.ID); v != nil {
-			writeJSON(w, http.StatusOK, v)
+			httpjson.Write(w, http.StatusOK, v)
 			return
 		}
 	}
@@ -863,7 +858,7 @@ func cleanDisk(st disk.Status) *disk.Status {
 		if v.Label != "projects" && v.Label != "worktrees" && v.Label != "cache" {
 			continue
 		}
-		v.Path = clip(v.Path, 500)
+		v.Path = textutil.Clip(v.Path, 500)
 		v.Free = min(v.Free, v.Total)
 		vs = append(vs, v)
 	}
@@ -872,11 +867,11 @@ func cleanDisk(st disk.Status) *disk.Status {
 		st.Largest = st.Largest[:5]
 	}
 	for i := range st.Largest {
-		st.Largest[i].Path = clip(st.Largest[i].Path, 500)
+		st.Largest[i].Path = textutil.Clip(st.Largest[i].Path, 500)
 	}
 	if c := st.GoCache; c != nil {
 		cp := *c
-		cp.Path, cp.Trimmed, cp.Error = clip(cp.Path, 500), clip(cp.Trimmed, 40), clip(cp.Error, 500)
+		cp.Path, cp.Trimmed, cp.Error = textutil.Clip(cp.Path, 500), textutil.Clip(cp.Trimmed, 40), textutil.Clip(cp.Error, 500)
 		st.GoCache = &cp
 	}
 	return &st
@@ -907,31 +902,21 @@ func cleanClaude(c claudecli.Status) *claudecli.Status {
 	}
 	ws := make([]string, 0, len(c.Warnings))
 	for _, w := range c.Warnings {
-		if len(w) > 500 {
-			w = w[:500] + "…"
-		}
-		ws = append(ws, w)
+		ws = append(ws, textutil.Clip(w, 500))
 	}
 	if len(ws) == 0 {
 		ws = nil
 	}
 	c.Warnings = ws
 	if a := c.Account; a != nil {
-		cp := claudecli.Account{Email: clip(strings.TrimSpace(a.Email), 254), OrgID: clip(a.OrgID, 100),
-			OrgName: clip(a.OrgName, 200), Subscription: clip(a.Subscription, 40)}
+		cp := claudecli.Account{Email: textutil.Clip(strings.TrimSpace(a.Email), 254), OrgID: textutil.Clip(a.OrgID, 100),
+			OrgName: textutil.Clip(a.OrgName, 200), Subscription: textutil.Clip(a.Subscription, 40)}
 		c.Account = &cp
 		if cp.Email == "" {
 			c.Account = nil
 		}
 	}
 	return &c
-}
-
-func clip(s string, n int) string {
-	if len(s) > n {
-		return s[:n]
-	}
-	return s
 }
 
 // Account is the Claude account the runner last reported its CLI logged in
@@ -1221,16 +1206,10 @@ func (h *Hub) Proxy(name string) (http.Handler, bool) {
 			if h.session(name) == nil {
 				msg = name + " is offline"
 			}
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": msg})
+			httpjson.Error(w, http.StatusBadGateway, msg)
 		},
 		FlushInterval: -1,
 	}, true
-}
-
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
 }
 
 // Authenticate is the runner whose token r carries (Authorization: Bearer).

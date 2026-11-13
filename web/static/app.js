@@ -9,6 +9,7 @@
 // loads should be in those four or be function declarations (hoisted), not
 // other modules' constants. In event handlers, anything may be used.
 
+import "./app/store.js";
 import { $ } from "./app/dom.js";
 import { desktop } from "./app/viewport.js";
 import "./app/api.js";
@@ -18,6 +19,7 @@ import "./app/todoform.js";
 import { state } from "./app/state.js";
 import "./app/nav.js";
 import { connectAll } from "./app/events.js";
+import "./app/github.js";
 import "./app/projects.js";
 import "./app/board.js";
 import { renderBoard } from "./app/branches.js";

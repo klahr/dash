@@ -2,7 +2,6 @@ package scan
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,8 +11,10 @@ import (
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/localrun"
+	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // A scan run has two parts: the bookkeeping (the run, its log, the issues
@@ -194,8 +195,7 @@ func (r *Runner) Work(ctx context.Context, p model.Project, job Job, h Hooks) (O
 	if r.GitTools != nil && r.GitURL != "" {
 		token, release := r.GitTools.Register(dir)
 		defer release()
-		cfg, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{GitServerName: GitServerConfig(r.GitURL, token)}})
-		extra = append(extra, "--mcp-config", string(cfg))
+		extra = append(extra, mcptools.ConfigArgs(map[string]any{GitServerName: GitServerConfig(r.GitURL, token)})...)
 	}
 	emit := h.Event
 	if emit == nil {
@@ -229,7 +229,7 @@ func (r *Runner) runRemote(ctx context.Context, p model.Project, job Job, h Hook
 		if w.Reason != waiting {
 			waiting = w.Reason
 			h.log("⏸ " + w.Reason)
-			_, _ = r.Store.UpdateScanRun(job.RunID, true, func(x *model.ScanRun) { x.Activity = clip(oneLine(w.Reason), 160) })
+			_, _ = r.Store.UpdateScanRun(job.RunID, true, func(x *model.ScanRun) { x.Activity = textutil.Clip(oneLine(w.Reason), 160) })
 		}
 		select {
 		case <-ctx.Done():

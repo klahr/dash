@@ -1,5 +1,5 @@
 import { mdEditor, vimNormal, vimOn } from "../editor.js";
-import { $, $$, h } from "./dom.js";
+import { $, $$, h, plural } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { attempt, busy, toast } from "./dialogs.js";
 import { attachBox } from "./attachments.js";
@@ -238,7 +238,7 @@ function renderMeta(t) {
   if (opts.length) {
     const n = (t.depends_on || []).length;
     const btn = h("button", { type: "button", class: "meta-btn", "aria-haspopup": "true", "aria-expanded": "false", title: "Tasks that must be merged before this one starts" },
-      n ? `Depends on ${n} ${n === 1 ? "task" : "tasks"}` : "No dependencies");
+      n ? `Depends on ${plural(n, "task")}` : "No dependencies");
     const pop = h("div", { class: "dep-pop", hidden: true, role: "group", "aria-label": "Depends on" },
       h("p", { class: "hint" }, "Starts once these are merged"),
       h("div", { class: "dep-picker" }, opts));
@@ -253,7 +253,7 @@ function renderMeta(t) {
     pop.addEventListener("change", save(async (t) => {
       const ids = $$("input[name=dep]:checked", pop).map((i) => i.value);
       await updateTodo(t, { depends_on: ids });
-      btn.textContent = ids.length ? `Depends on ${ids.length} ${ids.length === 1 ? "task" : "tasks"}` : "No dependencies";
+      btn.textContent = ids.length ? `Depends on ${plural(ids.length, "task")}` : "No dependencies";
     }, (t) => { const sel = new Set(t.depends_on || []); $$("input[name=dep]", pop).forEach((i) => { i.checked = sel.has(i.value); }); }));
     kids.push(wrap);
   }

@@ -367,8 +367,7 @@ func (a *Accounts) EnsurePersonalOrg(uid int64) (Org, error) {
 }
 
 func (a *Accounts) ensurePersonalOrg(tx *sql.Tx, u User, now time.Time) (Org, error) {
-	o := Org{Personal: true}
-	err := tx.QueryRow("SELECT id, name, slug, COALESCE(folder, slug) FROM organizations WHERE personal_user_id = ?", u.ID).Scan(&o.ID, &o.Name, &o.Slug, &o.Folder)
+	o, err := scanOrg(tx.QueryRow(orgCols+" WHERE o.personal_user_id = ?", u.ID))
 	if err == nil {
 		return o, nil
 	}

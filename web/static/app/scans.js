@@ -1,4 +1,4 @@
-import { $, $$, h, ib, ico, timeLocale } from "./dom.js";
+import { $, $$, dateTimeText, h, ib, ico, plural } from "./dom.js";
 import { api, here, on } from "./api.js";
 import { ask, attempt, copy, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -21,7 +21,6 @@ export const SCAN_KINDS = {
 };
 const SCAN_SCOPES = { repo: "Whole repository", since_last_scan: "Changes since the last scan", since_main: "Branch vs. main", path: "One path" };
 export const scans = { list: [], problems: [], builtin: false, dir: ".dash/scans", loaded: false, history: new Map(), open: new Set() };
-const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export async function loadScans() {
   const p = state.project;
@@ -253,7 +252,7 @@ function scanCard(s) {
     h("div", { class: "scan-head" },
       h("div", { class: "scan-name" }, h("strong", {}, s.title), scanKind(s)),
       scanLine(s),
-      h("span", { class: `scan-when-sched${live ? " on" : ""}`, title: live ? `${sch.cron}${s.next_run ? `; next run ${until(s.next_run)}, ${new Date(s.next_run).toLocaleString(timeLocale)}` : ""}` : null },
+      h("span", { class: `scan-when-sched${live ? " on" : ""}`, title: live ? `${sch.cron}${s.next_run ? `; next run ${until(s.next_run)}, ${dateTimeText(s.next_run)}` : ""}` : null },
         ico("clock"), live ? describeCron(sch.cron) : "Not scheduled"),
       h("div", { class: "scan-btns" },
         running
@@ -277,7 +276,7 @@ function scanCard(s) {
           h("span", {}, "Scheduled")),
         h("button", { type: "button", class: "link scan-cron", title: sch.cron ? `${sch.cron} — change` : "Set a schedule", onclick: editCron },
           sch.cron ? describeCron(sch.cron) : "No schedule"),
-        sch.enabled && s.next_run ? h("span", { class: "scan-next", title: new Date(s.next_run).toLocaleString(timeLocale) }, `next ${until(s.next_run)}`) : null,
+        sch.enabled && s.next_run ? h("span", { class: "scan-next", title: dateTimeText(s.next_run) }, `next ${until(s.next_run)}`) : null,
         sch.custom ? h("button", { type: "button", class: "link scan-reset", title: `Back to the template's schedule${sch.default ? ` (${sch.default})` : ""}, off` , onclick: attempt(() => patch({ reset: true })) }, "Reset") : null,
         !sch.enabled && sch.cron && s.builtin && !sch.custom ? h("span", { class: "scan-hint" }, "suggested; off until turned on") : null),
       s.last_run ? scanReport(s.last_run, false, true) : null,

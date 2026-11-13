@@ -1,4 +1,4 @@
-import { $, h } from "./dom.js";
+import { $, h, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -20,7 +20,6 @@ const KINDS = {
 const notes = { view: null };
 
 const size = (n) => n < 1024 ? `${n} B` : n < 1 << 20 ? `${Math.round(n / 1024)} KiB` : `${(n / (1 << 20)).toFixed(1)} MiB`;
-const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const sameVector = (a = {}, b = {}) => {
   const ka = Object.keys(a), kb = Object.keys(b);
   return ka.length === kb.length && ka.every((k) => a[k] === b[k]);

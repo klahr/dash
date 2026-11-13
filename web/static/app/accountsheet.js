@@ -1,4 +1,5 @@
 import { $ } from "./dom.js";
+import * as store from "./store.js";
 import { attempt, railOf } from "./dialogs.js";
 
 // ------------------------------------------------------------------ the Account sheet
@@ -13,8 +14,8 @@ export function accountSection(key, load) { loaders.set(key, load); }
 
 const sheet = $("#account-sheet");
 const LAST = "dash.accountSection";
-const lastSection = () => { try { return localStorage.getItem(LAST) || "editors"; } catch { return "editors"; } };
-const remember = (key) => { try { localStorage.setItem(LAST, key); } catch {} };
+const lastSection = () => store.get(LAST, "editors");
+const remember = (key) => store.set(LAST, key);
 let opening = false;
 
 // openAccount shows the sheet at section key (the last one shown, without

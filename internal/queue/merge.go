@@ -15,6 +15,7 @@ import (
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 var ErrMergeQueueFull = errors.New("merge queue is full")
@@ -867,10 +868,7 @@ func commitMessage(t model.Todo) string {
 	if subject == "" {
 		subject = firstLine(t.Prompt)
 	}
-	body := strings.TrimSpace(t.Prompt)
-	if len(body) > 2000 {
-		body = body[:2000] + "…"
-	}
+	body := textutil.Clip(strings.TrimSpace(t.Prompt), 2000)
 	return fmt.Sprintf("%s\n\n%s\n\nDash-Todo: %s", subject, body, t.ID)
 }
 

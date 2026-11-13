@@ -1,4 +1,4 @@
-import { $, h } from "./dom.js";
+import { $, dateText, h } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, fail, toast } from "./dialogs.js";
 import { uploadFile } from "./attachments.js";
@@ -214,7 +214,6 @@ async function loadRepoInfo() {
 }
 
 const LICENSE_NAMES = { other: "Other (GitHub couldn't tell which)" };
-const fmtDate = (iso) => new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 const fmtSize = (kb) => (kb >= 1024 * 1024 ? `${(kb / 1024 / 1024).toFixed(1)} GB` : kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`);
 // ext links to an outside web page; anything but an absolute http(s) URL
 // (javascript:, data:, a path on Dash itself, …) is shown as plain text, since
@@ -248,7 +247,7 @@ function renderRepoInfo(p, res) {
   const facts = [
     row("License", g.license ? (LICENSE_NAMES[g.license.key] || g.license.name || g.license.key) : h("span", { class: "hint" }, "None found")),
     row("Latest release", rel
-      ? [ext(rel.url, rel.tag), rel.name && rel.name !== rel.tag ? ` “${rel.name}”` : "", isSet(rel.published_at) ? h("span", { class: "hint" }, ` · ${fmtDate(rel.published_at)}`) : null]
+      ? [ext(rel.url, rel.tag), rel.name && rel.name !== rel.tag ? ` “${rel.name}”` : "", isSet(rel.published_at) ? h("span", { class: "hint" }, ` · ${dateText(rel.published_at)}`) : null]
       : h("span", { class: "hint" }, "No GitHub release")),
     res.latest_tag && res.latest_tag !== rel?.tag ? row("Latest tag", h("code", {}, res.latest_tag), h("span", { class: "hint" }, " in this clone")) : null,
     g.default_branch ? row("Default branch", h("code", {}, g.default_branch)) : null,
@@ -257,7 +256,7 @@ function renderRepoInfo(p, res) {
     row("Activity", `★ ${g.stars} · ${g.forks} forks · ${g.watchers} watching`),
     row("Open", ext(`${g.url}/issues`, `${g.open_issues} issues`), " · ", ext(`${g.url}/pulls`, `${g.open_prs} pull requests`)),
     isSet(g.pushed_at) ? row("Last push", agoText(g.pushed_at)) : null,
-    isSet(g.created_at) ? row("Created", fmtDate(g.created_at)) : null,
+    isSet(g.created_at) ? row("Created", dateText(g.created_at)) : null,
     g.disk_kb ? row("Size", fmtSize(g.disk_kb)) : null,
     g.viewer_permission ? row("Your access", g.viewer_permission.toLowerCase()) : null,
   ];

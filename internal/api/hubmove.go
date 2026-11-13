@@ -45,7 +45,7 @@ func (s *Server) MoveHubClones(ctx context.Context) {
 		slog.Warn("runner: moving the hub's clones into their org's folder", "err", err)
 		return
 	}
-	sv := s.as(Caller{Org: org.ID, OrgFolder: folderOf(org), PlatformAdmin: true, Machine: true})
+	sv := s.as(Caller{Org: org.ID, OrgFolder: org.ProjectFolder(), PlatformAdmin: true, Machine: true})
 	for _, p := range sv.data.ListProjects() {
 		if p.HubProjectID != "" {
 			s.moveHubClone(ctx, sv, p)

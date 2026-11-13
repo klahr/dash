@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -10,7 +9,6 @@ import (
 	"fmt"
 	"html/template"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,6 +19,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/branding"
+	"github.com/klahr/dash/internal/netutil"
 	"github.com/klahr/dash/internal/store"
 )
 
@@ -80,7 +79,7 @@ type consentTicket struct {
 func NewOAuth(a *Auth, publicURL string) (*OAuth, error) {
 	u, err := url.Parse(strings.TrimRight(publicURL, "/"))
 	if err != nil || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" ||
-		!(u.Scheme == "https" || u.Scheme == "http" && loopback(u.Hostname())) {
+		!(u.Scheme == "https" || u.Scheme == "http" && netutil.LoopbackHost(u.Hostname())) {
 		return nil, fmt.Errorf("public URL %q: want https://host[:port] with no path", publicURL)
 	}
 	o := &OAuth{
@@ -91,11 +90,6 @@ func NewOAuth(a *Auth, publicURL string) (*OAuth, error) {
 	}
 	a.oauth = o
 	return o, nil
-}
-
-func loopback(host string) bool {
-	ip := net.ParseIP(host)
-	return host == "localhost" || ip != nil && ip.IsLoopback()
 }
 
 // Resource is the URL of the MCP endpoint the tokens are for.
@@ -266,18 +260,12 @@ func oauthErr(w http.ResponseWriter, code int, kind, desc string) {
 	writeJSON(w, code, map[string]string{"error": kind, "error_description": desc})
 }
 
-func randomToken() string {
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
-}
-
 func (o *OAuth) allowedRedirect(raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil || u.Fragment != "" || u.Host == "" {
 		return false
 	}
-	return slices.Contains(o.RedirectURIs, raw) || u.Scheme == "http" && loopback(u.Hostname())
+	return slices.Contains(o.RedirectURIs, raw) || u.Scheme == "http" && netutil.LoopbackHost(u.Hostname())
 }
 
 func (o *OAuth) register(w http.ResponseWriter, r *http.Request) {
@@ -331,9 +319,9 @@ func (o *OAuth) register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	secret := ""
-	c := store.OAuthClient{ID: randomToken(), Name: req.ClientName, RedirectURIs: req.RedirectURIs, AuthMethod: req.AuthMethod, Created: o.a.now()}
+	c := store.OAuthClient{ID: randomString(32), Name: req.ClientName, RedirectURIs: req.RedirectURIs, AuthMethod: req.AuthMethod, Created: o.a.now()}
 	if req.AuthMethod != "none" {
-		secret = randomToken()
+		secret = randomString(32)
 		c.SecretHash = sessionKey(secret)
 	}
 	if err := o.a.acc.CreateOAuthClient(c, maxClients, o.a.now()); errors.Is(err, store.ErrTooManyClients) {
@@ -608,7 +596,7 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code := randomToken()
+	code := randomString(32)
 	o.mu.Lock()
 	now := o.a.now()
 	for k, c := range o.codes {
@@ -624,7 +612,7 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 
 // newTicket makes the ticket for uid's second step of q.
 func (o *OAuth) newTicket(uid int64, q authRequest) string {
-	t := randomToken()
+	t := randomString(32)
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	now := o.a.now()

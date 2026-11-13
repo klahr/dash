@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/klahr/dash/internal/httpjson"
 )
 
 // updatingRunner stands in for a runner's side of an update: it records
@@ -32,7 +34,7 @@ func (u *updatingRunner) handler() http.Handler {
 		if st == 0 {
 			st = http.StatusOK
 		}
-		writeJSON(w, st, map[string]string{"error": "checksum mismatch for dash_1.3.0_linux_amd64.tar.gz"})
+		httpjson.Error(w, st, "checksum mismatch for dash_1.3.0_linux_amd64.tar.gz")
 	})
 	return mux
 }
@@ -219,7 +221,7 @@ func TestFailedUpdateLeavesMaintenanceWithTheError(t *testing.T) {
 func (th testHub) hubCallsFail(t *testing.T, creds Credentials, status int) {
 	t.Helper()
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, status, map[string]string{"error": "a runner doesn't offer this to the hub"})
+		httpjson.Error(w, status, "a runner doesn't offer this to the hub")
 	})
 	stop := th.connectAs(t, creds, "1.2.0", h)
 	defer stop()

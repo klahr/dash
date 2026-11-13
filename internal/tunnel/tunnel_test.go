@@ -722,7 +722,7 @@ func TestReportCarriesTheAccountAndTheReply(t *testing.T) {
 		t.Fatalf("204: %v %v", err, reply)
 	}
 	r, _ := h.Get(id)
-	if a := r.Reported.Claude.Account; a == nil || a.Email != "Ann@Example.com" || len(a.Subscription) != 40 || r.Account() != "ann@example.com" {
+	if a := r.Reported.Claude.Account; a == nil || a.Email != "Ann@Example.com" || a.Subscription != strings.Repeat("x", 40)+"…" || r.Account() != "ann@example.com" {
 		t.Fatalf("account %+v (%q)", a, r.Account())
 	}
 

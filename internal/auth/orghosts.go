@@ -512,11 +512,8 @@ func (a *Auth) takeHandoff(tok, slug string) (handoff, error) {
 	return h, nil
 }
 
-func newFamily() string {
-	b := make([]byte, 18)
-	_, _ = rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
-}
+// newFamily is a new session family's id.
+func newFamily() string { return randomString(18) }
 
 // orgHosts is what /api/me says about org subdomains: where the base domain
 // is, and the subdomain of the org the request works in.

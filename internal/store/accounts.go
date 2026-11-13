@@ -360,9 +360,8 @@ func (a *Accounts) assignRecords() error {
 
 // DefaultOrg is the org records are assigned to for now.
 func (a *Accounts) DefaultOrg() (Org, error) {
-	var o Org
-	err := a.db.QueryRow(`SELECT o.id, o.name, o.slug, COALESCE(o.folder, o.slug) FROM instance i JOIN organizations o ON o.id = i.default_org_id
-		WHERE i.id = 1`).Scan(&o.ID, &o.Name, &o.Slug, &o.Folder)
+	o, err := scanOrg(a.db.QueryRow(`SELECT ` + orgFields + ` FROM instance i JOIN organizations o ON o.id = i.default_org_id
+		WHERE i.id = 1`))
 	if errors.Is(err, sql.ErrNoRows) {
 		return o, ErrNotFound
 	}
@@ -372,6 +371,21 @@ func (a *Accounts) DefaultOrg() (Org, error) {
 // EnvUser is the account DASH_USERNAME describes, if any.
 func (a *Accounts) EnvUser() (User, error) {
 	return scanUser(a.db.QueryRow(userCols + " WHERE env_managed = 1"))
+}
+
+// orgFields are the organizations columns (as o) scanOrg reads, in its order.
+const orgFields = "o.id, o.name, o.slug, o.require_2fa, o.personal_user_id IS NOT NULL, COALESCE(o.folder, o.slug)"
+
+// orgCols selects orgFields; append a WHERE clause.
+const orgCols = "SELECT " + orgFields + " FROM organizations o"
+
+// scanOrg reads a row selected by orgCols (or orgFields followed by columns
+// scanned into extra). Unlike scanUser it returns sql.ErrNoRows as it is:
+// callers map a missing row to their own error.
+func scanOrg(sc interface{ Scan(...any) error }, extra ...any) (Org, error) {
+	var o Org
+	err := sc.Scan(append([]any{&o.ID, &o.Name, &o.Slug, &o.Require2FA, &o.Personal, &o.Folder}, extra...)...)
+	return o, err
 }
 
 // ---- users and passwords ----
@@ -512,12 +526,6 @@ func (a *Accounts) Session(key string, now time.Time) (Session, error) {
 	return s, nil
 }
 
-// DeleteSession signs a session out.
-func (a *Accounts) DeleteSession(key string) error {
-	_, err := a.db.Exec("DELETE FROM sessions WHERE key = ?", key)
-	return err
-}
-
 // EnsureSessionFamily gives the session under key family unless it has
 // one, and returns the one it has.
 func (a *Accounts) EnsureSessionFamily(key, family string) (string, error) {
@@ -557,7 +565,7 @@ func (a *Accounts) SwitchOrg(key string, uid, orgID int64) (Membership, error) {
 
 // Memberships lists the orgs uid belongs to, oldest membership first.
 func (a *Accounts) Memberships(uid int64) ([]Membership, error) {
-	rows, err := a.db.Query(`SELECT o.id, o.name, o.slug, o.require_2fa, o.personal_user_id IS NOT NULL, COALESCE(o.folder, o.slug), m.role FROM org_memberships m
+	rows, err := a.db.Query(`SELECT `+orgFields+`, m.role FROM org_memberships m
 		JOIN organizations o ON o.id = m.org_id WHERE m.user_id = ? ORDER BY m.created_at, o.id`, uid)
 	if err != nil {
 		return nil, err
@@ -566,7 +574,8 @@ func (a *Accounts) Memberships(uid int64) ([]Membership, error) {
 	out := []Membership{}
 	for rows.Next() {
 		var m Membership
-		if err := rows.Scan(&m.ID, &m.Name, &m.Slug, &m.Require2FA, &m.Personal, &m.Folder, &m.Role); err != nil {
+		var err error
+		if m.Org, err = scanOrg(rows, &m.Role); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -585,9 +594,10 @@ type querier interface {
 
 func membership(q querier, uid, orgID int64) (Membership, error) {
 	var m Membership
-	err := q.QueryRow(`SELECT o.id, o.name, o.slug, o.require_2fa, o.personal_user_id IS NOT NULL, COALESCE(o.folder, o.slug), m.role FROM org_memberships m
+	var err error
+	m.Org, err = scanOrg(q.QueryRow(`SELECT `+orgFields+`, m.role FROM org_memberships m
 		JOIN organizations o ON o.id = m.org_id
-		WHERE m.user_id = ? AND m.org_id = ?`, uid, orgID).Scan(&m.ID, &m.Name, &m.Slug, &m.Require2FA, &m.Personal, &m.Folder, &m.Role)
+		WHERE m.user_id = ? AND m.org_id = ?`, uid, orgID), &m.Role)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m, ErrNotMember
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/klahr/dash/internal/claudecli"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // ExecRequest is one Claude run inside a worktree.
@@ -211,7 +212,7 @@ func FollowUpPrompt(t, parent model.Todo) string {
 	var b strings.Builder
 	name := parent.Title
 	if name == "" {
-		name = firstLine(parent.Prompt)
+		name = textutil.FirstLine(parent.Prompt)
 	}
 	fmt.Fprintf(&b, "The task above (%q) is finished", name)
 	switch {
@@ -358,31 +359,15 @@ func toolLine(tool string, input json.RawMessage) string {
 	}
 	_ = json.Unmarshal(input, &in)
 	if tool == "Bash" && in.Command != "" {
-		return "$ " + truncate(firstLine(in.Command), 200)
+		return "$ " + textutil.Summary(in.Command, 200)
 	}
 	for _, s := range []string{in.Command, in.FilePath, in.Pattern, in.Path, in.URL, in.Query} {
 		if s != "" {
-			return fmt.Sprintf("🔧 %s %s", tool, truncate(firstLine(s), 200))
+			return fmt.Sprintf("🔧 %s %s", tool, textutil.Summary(s, 200))
 		}
 	}
 	if s := strings.TrimSpace(string(input)); s == "" || s == "{}" || s == "null" {
 		return "🔧 " + tool
 	}
-	return fmt.Sprintf("🔧 %s %s", tool, truncate(string(input), 200))
-}
-
-// firstLine is s up to its first newline, with "…" when more follows.
-func firstLine(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i] + " …"
-	}
-	return s
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return fmt.Sprintf("🔧 %s %s", tool, textutil.Clip(string(input), 200))
 }

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/branding"
+	"github.com/klahr/dash/internal/httpjson"
 	"github.com/klahr/dash/internal/mail"
 	"github.com/klahr/dash/internal/metrics"
 	"github.com/klahr/dash/internal/model"
@@ -676,15 +677,10 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeError(w http.ResponseWriter, code int, msg string) {
-	writeJSON(w, code, map[string]string{"error": msg})
-}
+var (
+	writeJSON  = httpjson.Write
+	writeError = httpjson.Error
+)
 
 // Login handles POST /api/login {"username","password"}; username may also
 // be the account's email. Without two-factor sign-in it starts a session and

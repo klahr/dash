@@ -97,11 +97,6 @@ func (s *Store) PushSubscription(user int64, endpoint string) (model.PushSubscri
 	return p, err
 }
 
-// ListPushSubscriptions returns a user's subscriptions, oldest first.
-func (s *Store) ListPushSubscriptions(user int64) ([]model.PushSubscription, error) {
-	return s.queryPush("SELECT "+pushCols+" FROM push_subscriptions WHERE user_id = ? ORDER BY created_at, id", user)
-}
-
 // PushSubscriptionsForOrg returns the subscriptions made in org by its
 // members (someone who left the org keeps theirs, unused, until they
 // rejoin or unsubscribe).

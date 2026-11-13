@@ -8,9 +8,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // Finding is one problem as the scan agent reports it. Location can be given
@@ -184,10 +184,10 @@ const (
 // inside it can be made relative.
 func (f Finding) Validate(defType model.IssueType, root string) (model.Issue, error) {
 	is := model.Issue{
-		Title:   clip(oneLine(f.Title), maxTitle),
-		Details: clip(strings.TrimSpace(f.Details), maxText),
-		Fix:     clip(strings.TrimSpace(firstOf(f.Fix, f.SuggestedFix)), maxText),
-		Rule:    clip(strings.TrimSpace(firstOf(f.Fingerprint, f.FingerprintHint, f.Rule)), maxRule),
+		Title:   textutil.Clip(oneLine(f.Title), maxTitle),
+		Details: textutil.Clip(strings.TrimSpace(f.Details), maxText),
+		Fix:     textutil.Clip(strings.TrimSpace(firstOf(f.Fix, f.SuggestedFix)), maxText),
+		Rule:    textutil.Clip(strings.TrimSpace(firstOf(f.Fingerprint, f.FingerprintHint, f.Rule)), maxRule),
 	}
 	if is.Title == "" {
 		return is, fmt.Errorf("finding without a title")
@@ -329,17 +329,6 @@ func firstOf(xs ...string) string {
 }
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
-
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	s = s[:n]
-	for !utf8.ValidString(s) {
-		s = s[:len(s)-1]
-	}
-	return s + "…"
-}
 
 // Issues validates findings into issues for the template's source. Invalid
 // findings are left out and described in errs; two findings that are the

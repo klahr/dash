@@ -1,5 +1,5 @@
 import { renderMarkdown } from "../editor.js";
-import { $, $$, h, ib, ico } from "./dom.js";
+import { $, $$, h, ib, ico, plural } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { ask, attempt, copy, fail, leave, toast } from "./dialogs.js";
@@ -103,7 +103,7 @@ export function renderDetail() {
     hasPriority(t) && !inlineEdits(t) ? h("span", {}, `Priority ${t.priority}`) : null, // else an editable field below
     depMeta(t),
     buildsOnMeta(t),
-    t.runs ? h("span", {}, `${t.runs} ${t.runs === 1 ? "run" : "runs"}${t.cost_usd ? ` · ≈$${t.cost_usd.toFixed(2)}` : ""}`) : null,
+    t.runs ? h("span", {}, `${plural(t.runs, "run")}${t.cost_usd ? ` · ≈$${t.cost_usd.toFixed(2)}` : ""}`) : null,
     t.auto_fixes ? h("span", {}, `Fixed automatically ${t.auto_fixes}×`) : null,
     t.status === "queued" && t.start_now ? h("span", { class: "start-now-tag", title: "It starts as soon as a lane is free, while the queue waits for the weekly pace. A usage limit or a paused queue still holds it back." }, "Starts now, despite the pace") : null,
     t.status === "in_progress" && t.started_now ? h("span", { class: "start-now-tag", title: "This run counts toward usage, so the queue may wait a little longer for the pace afterwards." }, "Started now, despite the pace") : null,
@@ -170,7 +170,7 @@ export function renderActions(t) {
       // Preview · Rework · Approve (Claude's review is on the card and in ⋯)
       if (canPreview(t)) btns.push(previewButton(t));
       if (commentsFor(t.id).length) {
-        btns.push(b("send", `Send ${commentsFor(t.id).length} ${commentsFor(t.id).length === 1 ? "comment" : "comments"}`, attempt(() => sendComments(t)), "primary"));
+        btns.push(b("send", `Send ${plural(commentsFor(t.id).length, "comment")}`, attempt(() => sendComments(t)), "primary"));
       } else {
         btns.push(b("redo", "Rework", rework));
       }

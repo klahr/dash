@@ -1,4 +1,5 @@
 import { $, $$, h } from "./dom.js";
+import * as store from "./store.js";
 import { api, here } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { buildOnPicker, depPicker, draft, draftKey, promptEditor, setModelField, split, todoAttach } from "./todoform.js";
@@ -78,7 +79,7 @@ const quick = {
   rows: $("#quick-rows"),
   queue: $("#quick-queue"),
 };
-try { quick.queue.checked = localStorage.getItem("dash.quickQueue") === "1"; } catch {}
+quick.queue.checked = store.flag("dash.quickQueue");
 
 function quickRow(text = "") {
   const ta = h("textarea", {
@@ -185,7 +186,7 @@ quick.rows.addEventListener("keydown", (e) => {
   }
 });
 quick.queue.addEventListener("change", () => {
-  try { localStorage.setItem("dash.quickQueue", quick.queue.checked ? "1" : "0"); } catch {}
+  store.setFlag("dash.quickQueue", quick.queue.checked);
   updateQuickLabel();
   (quick.last?.isConnected ? quick.last : quickFields().at(-1))?.focus(); // keep typing
 });

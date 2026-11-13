@@ -1,13 +1,13 @@
 package billing
 
 import (
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/httpjson"
 	"github.com/klahr/dash/internal/store"
 )
 
@@ -118,12 +118,7 @@ func (s *Service) answerURL(w http.ResponseWriter, m store.Membership, url strin
 	}
 }
 
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeError(w http.ResponseWriter, code int, msg string) {
-	writeJSON(w, code, map[string]string{"error": msg})
-}
+var (
+	writeJSON  = httpjson.Write
+	writeError = httpjson.Error
+)

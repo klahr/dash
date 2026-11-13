@@ -3,11 +3,12 @@ package main
 import (
 	"fmt"
 	"log/slog"
-	"net"
 	"net/url"
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/klahr/dash/internal/netutil"
 )
 
 // The startup checks of an internet-facing Dash (-public-url or
@@ -66,7 +67,7 @@ func (e exposure) problems() []problem {
 		out = append(out, problem{checkPassword, msg})
 	}
 	if e.PublicURL != "" {
-		if u, err := url.Parse(e.PublicURL); err != nil || u.Host == "" || !strings.EqualFold(u.Scheme, "https") && !loopbackHost(u.Hostname()) {
+		if u, err := url.Parse(e.PublicURL); err != nil || u.Host == "" || !strings.EqualFold(u.Scheme, "https") && !netutil.LoopbackHost(u.Hostname()) {
 			out = append(out, problem{checkPublicURL, fmt.Sprintf("-public-url %q isn't an https:// URL: passwords and session cookies would cross the internet unencrypted", e.PublicURL)})
 		}
 	}
@@ -109,14 +110,6 @@ func distinct(s string) int {
 		seen[r] = true
 	}
 	return len(seen)
-}
-
-func loopbackHost(h string) bool {
-	if strings.EqualFold(h, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(h)
-	return ip != nil && ip.IsLoopback()
 }
 
 // parseAllowUnsafe reads -allow-unsafe: check names, or "all".

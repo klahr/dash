@@ -720,7 +720,7 @@ func linkCookie(tok string) string { return linkCookiePrefix + sessionKey(tok)[:
 // newPendingLink returns the link's token and the nonce the originating
 // browser must present (in its linkCookie) to redeem it.
 func (a *Auth) newPendingLink(uid int64, ident store.Identity, f *oidcFlow) (tok, nonce string) {
-	tok, nonce = randomToken(), randomToken()
+	tok, nonce = randomString(32), randomString(32)
 	now := a.now()
 	a.mu.Lock()
 	defer a.mu.Unlock()

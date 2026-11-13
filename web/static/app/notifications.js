@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import * as store from "./store.js";
 import { fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { showView } from "./nav.js";
@@ -7,7 +8,7 @@ import { title } from "./branches.js";
 import { openDetail } from "./detail.js";
 
 // ------------------------------------------------------------------ notifications & tab title
-export const notifyOn = () => { try { return localStorage.getItem("dash.notify") === "1"; } catch { return false; } };
+export const notifyOn = () => store.flag("dash.notify");
 // pushed: a notification the hub also pushes to this browser (Web Push),
 // which shows it even with Dash closed; the page leaves those to the push.
 export function notify(what, t, detail = "", pushed = false) {
@@ -20,13 +21,13 @@ export function notify(what, t, detail = "", pushed = false) {
 export async function toggleNotifications() {
   if (!("Notification" in window)) throw new Error("This browser doesn't support notifications.");
   if (notifyOn()) {
-    try { localStorage.setItem("dash.notify", "0"); } catch {}
+    store.setFlag("dash.notify", false);
     await pushUnsubscribe().catch(() => {});
     toast("Notifications off");
   } else {
     const perm = await Notification.requestPermission();
     if (perm !== "granted") throw new Error("Notifications are blocked for this site in your browser settings.");
-    try { localStorage.setItem("dash.notify", "1"); } catch {}
+    store.setFlag("dash.notify", true);
     let pushed = false;
     try { pushed = await pushSubscribe(); } catch (e) { console.warn("web push", e); }
     toast(pushed

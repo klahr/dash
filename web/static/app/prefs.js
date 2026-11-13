@@ -1,5 +1,6 @@
 import { invisiblesOn, vimOn } from "../editor.js";
 import { $, applyClockPref, clockPref, h, ico } from "./dom.js";
+import * as store from "./store.js";
 import { attempt, copy } from "./dialogs.js";
 import { state } from "./state.js";
 import { toggleInvisibles, toggleVim } from "./diffedit.js";
@@ -23,7 +24,7 @@ for (const key of ["editors", "notify", "clock"]) accountSection(key, syncPrefs)
 $("#prefs-form").vim.addEventListener("change", (e) => { if (e.target.checked !== vimOn()) toggleVim(); });
 $("#prefs-form").invisibles.addEventListener("change", (e) => { if (e.target.checked !== invisiblesOn()) toggleInvisibles(); });
 $("#prefs-form").clock.addEventListener("change", (e) => {
-  try { e.target.value ? localStorage.setItem("dash.clock", e.target.value) : localStorage.removeItem("dash.clock"); } catch {}
+  store.set("dash.clock", e.target.value || null);
   applyClockPref();
   renderUsage();
 });

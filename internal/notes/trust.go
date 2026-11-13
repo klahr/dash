@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/fsutil"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // Which runners get a project's key is the user's call, made on the runners
@@ -376,7 +377,7 @@ func (t *trust) see(runner, name string, key PublicKey, cert *Cert) error {
 	if runner == "" || key.IsZero() {
 		return ErrBadEntry
 	}
-	name = clip(name, 64)
+	name = textutil.Clip(name, 64)
 	t.reload()
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -511,7 +512,7 @@ func (t *trust) pinned(runner string) (PublicKey, bool) {
 // ask records that runner (with key, not trusted here) wants project's
 // key or offers its own, and reports whether that is news.
 func (t *trust) ask(runner, name string, key PublicKey, project string) bool {
-	p := Pending{Runner: runner, Name: clip(name, 64), Fingerprint: key.Fingerprint(), Project: project, At: t.now().UTC()}
+	p := Pending{Runner: runner, Name: textutil.Clip(name, 64), Fingerprint: key.Fingerprint(), Project: project, At: t.now().UTC()}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if pin, ok := t.peers.Pins[runner]; ok && pin.Key == key {
@@ -555,11 +556,4 @@ func (t *trust) approvedPending() []Pending {
 		t.saveLocked()
 	}
 	return out
-}
-
-func clip(s string, n int) string {
-	if len(s) > n {
-		return s[:n]
-	}
-	return s
 }

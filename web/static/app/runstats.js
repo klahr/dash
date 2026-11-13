@@ -1,4 +1,4 @@
-import { $, h } from "./dom.js";
+import { $, dateTimeText, h, plural } from "./dom.js";
 
 // ------------------------------------------------------------------ run stats
 // The tokens each Claude run on a task took, one line per run and a total,
@@ -15,7 +15,7 @@ function runParts(r) {
   const input = (r.input_tokens || 0) + cached + (r.cache_creation_tokens || 0);
   const parts = [`${fmtTokens(input)} in${input && cached ? ` (${Math.round(100 * cached / input)}% cached)` : ""}`,
     `${fmtTokens(r.output_tokens || 0)} out`];
-  if (r.turns) parts.push(`${r.turns} ${r.turns === 1 ? "turn" : "turns"}`);
+  if (r.turns) parts.push(plural(r.turns, "turn"));
   parts.push(`$${(r.cost_usd || 0).toFixed(2)}`);
   return parts;
 }
@@ -35,10 +35,10 @@ export function renderRunStats(t) {
   const runs = t.run_stats || [];
   box.hidden = !runs.length;
   if (!runs.length) return;
-  $("#d-runs-meta").textContent = [`${runs.length} ${runs.length === 1 ? "run" : "runs"}`, ...runParts(total(runs))].join(" · ");
+  $("#d-runs-meta").textContent = [plural(runs.length, "run"), ...runParts(total(runs))].join(" · ");
   const first = (t.runs || runs.length) - runs.length; // runs from before Dash kept records
   $("#d-runs-list").replaceChildren(
-    ...runs.map((r, i) => h("li", { title: [r.at && new Date(r.at).toLocaleString(), r.model].filter(Boolean).join(" · ") },
+    ...runs.map((r, i) => h("li", { title: [r.at && dateTimeText(r.at), r.model].filter(Boolean).join(" · ") },
       h("span", { class: "run-name" }, `Run ${first + i + 1}`),
       h("span", { class: "run-kind" }, KIND[r.kind] || r.kind),
       runNums(r))),

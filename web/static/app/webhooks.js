@@ -1,4 +1,4 @@
-import { $, h } from "./dom.js";
+import { $, dateTimeText, h } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -77,7 +77,7 @@ function webhookHistory(w, sc) {
       const about = [sc.personal || !d.project_id || d.project_id !== state.project?.id ? d.project : "", d.subject].filter(Boolean).join(" · ");
       const result = [d.error ? "failed" : "delivered", d.status ? `HTTP ${d.status}` : "", d.attempts > 1 ? `${d.attempts} tries` : "", `${d.duration_ms} ms`].filter(Boolean).join(" · ");
       return h("li", {},
-        h("time", { class: "wh-when", datetime: d.at, title: new Date(d.at).toLocaleString() }, agoText(d.at)),
+        h("time", { class: "wh-when", datetime: d.at, title: dateTimeText(d.at) }, agoText(d.at)),
         h("span", { class: "wh-what" }, WEBHOOK_EVENTS[d.event] || d.event, about ? h("span", { class: "hint" }, ` · ${about}`) : null),
         h("span", { class: `wh-result ${d.error ? "err-text" : "hint"}` }, result),
         d.error ? h("span", { class: "wh-error hint err-text" }, d.error) : null);

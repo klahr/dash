@@ -1,3 +1,5 @@
+import * as store from "./store.js";
+
 
 // ------------------------------------------------------------------ state
 export const LANES = [
@@ -40,7 +42,7 @@ export const state = {
   unpushed: 0,         // commits on the default branch origin doesn't have
   unpushedTodos: null, // ids of merged todos origin doesn't have yet (null until known)
   comments: loadComments(), // todo id → [{file, line, side, code, text}] (diff review notes)
-  collapsed: new Set((() => { try { return JSON.parse(localStorage.getItem("dash.collapsed") || "[]"); } catch { return []; } })()), // desktop: minimized lane keys
+  collapsed: new Set(arrayOf(store.getJSON("dash.collapsed"))), // desktop: minimized lane keys
 };
 export const DAY = 24 * 3600 * 1000;
 // The History graph as last drawn, and the commit its pane shows (see "commit pane").
@@ -48,9 +50,11 @@ export const hist = { commits: [], byHash: new Map(), remote: "" };
 // file: the path selected in the desktop file list; texts: the open commit's loaded diffs.
 export const cp = { sha: null, project: null, detail: null, error: "", opener: null, diffs: null, file: null, texts: new Map(), msgOpen: false, listFocus: false };
 
+// arrayOf keeps stored data that isn't a list (stale or tampered) from breaking startup.
+function arrayOf(v) { return Array.isArray(v) ? v : []; }
 function loadComments() {
-  try { return JSON.parse(localStorage.getItem("dash.comments") || "{}"); } catch { return {}; }
+  return store.getJSON("dash.comments", {});
 }
 export function saveComments() {
-  try { localStorage.setItem("dash.comments", JSON.stringify(state.comments)); } catch {}
+  store.setJSON("dash.comments", state.comments);
 }

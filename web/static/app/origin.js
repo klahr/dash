@@ -1,4 +1,4 @@
-import { $, h, timeLocale } from "./dom.js";
+import { $, clockTime, h, plural } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -18,18 +18,17 @@ export async function loadRemote(fetch, force) {
 
 export function renderRemote() {
   const st = state.remote, pill = $("#remote-pill");
-  const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
   pill.hidden = !(st?.enabled && (st.behind || st.ahead || st.error));
   if (pill.hidden) return;
   const b = st.branch;
-  const parts = [st.behind && `origin is ${n(st.behind, "commit", "commits")} ahead`, st.ahead && `local is ${n(st.ahead, "commit", "commits")} ahead`].filter(Boolean);
+  const parts = [st.behind && `origin is ${plural(st.behind, "commit")} ahead`, st.ahead && `local is ${plural(st.ahead, "commit")} ahead`].filter(Boolean);
   pill.classList.toggle("remote-error", !!st.error);
   pill.textContent = st.error ? "Can't reach origin" : st.behind && st.ahead ? `${b}: ↓${st.behind} ↑${st.ahead}` : st.behind ? `origin/${b} +${st.behind}` : `${b} +${st.ahead} unpushed`;
   pill.title = [
     parts.length ? `${b}: ${parts.join(", ")}.` : "",
     st.behind && !st.ahead ? "New tasks start from origin's version." : "",
     st.behind && st.ahead ? "The next merge reconciles them." : "",
-    st.error ? `Last fetch failed: ${st.error}. Retrying ${st.retry_at ? `at ${new Date(st.retry_at).toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit" })}` : "soon"}.` : "",
+    st.error ? `Last fetch failed: ${st.error}. Retrying ${st.retry_at ? `at ${clockTime(st.retry_at)}` : "soon"}.` : "",
     st.fetched ? `Fetched ${agoText(st.fetched)}. Click to fetch now.` : "Click to fetch now.",
   ].filter(Boolean).join(" ");
   pill.setAttribute("aria-label", pill.title);
@@ -55,7 +54,7 @@ export function renderCheckouts() {
   box.hidden = !list.length;
   box.replaceChildren(...list.map((c) => {
     const where = c.runner_name || "This checkout";
-    const n = `${c.behind} ${c.behind === 1 ? "commit" : "commits"}`;
+    const n = plural(c.behind, "commit");
     if (c.dash_owned) {
       return h("div", { class: "checkout-behind", title: `${where}: ${c.branch} is ${n} behind origin. Syncing failed: ${c.stuck}. It retries on its own.` },
         h("span", {}, `${where}: can't sync with origin`, h("span", { class: "hint" }, c.stuck)));
@@ -69,7 +68,7 @@ export function renderCheckouts() {
           const q = c.runner ? `?runner=${encodeURIComponent(c.runner)}` : "";
           try {
             const res = await api("POST", `/api/projects/${state.project.id}/remote/pull${q}`);
-            toast(res?.moved ? `Pulled ${res.moved} ${res.moved === 1 ? "commit" : "commits"} into ${where === "This checkout" ? "the checkout" : where}` : "Already up to date");
+            toast(res?.moved ? `Pulled ${plural(res.moved, "commit")} into ${where === "This checkout" ? "the checkout" : where}` : "Already up to date");
           } finally {
             loadCheckouts().catch(() => {});
           }

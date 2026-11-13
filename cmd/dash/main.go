@@ -25,6 +25,7 @@ import (
 	"github.com/klahr/dash/internal/buildinfo"
 	"github.com/klahr/dash/internal/mail"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/netutil"
 	"github.com/klahr/dash/internal/orgdomain"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/runnerctl"
@@ -462,16 +463,11 @@ func serveLoopback(ctx context.Context, h http.Handler) (string, error) {
 	return "http://" + ln.Addr().String(), nil
 }
 
+// isLoopback reports whether the listen address addr (host:port) is on a
+// loopback host.
 func isLoopback(addr string) bool {
 	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return false
-	}
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return err == nil && netutil.LoopbackHost(host)
 }
 
 // resetTwoFactor is `dash reset-2fa [-data dir] <username or email>`: it

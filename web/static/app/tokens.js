@@ -1,4 +1,4 @@
-import { $, h } from "./dom.js";
+import { $, dateText, h } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -25,8 +25,8 @@ function tokenDetail(t) {
   const parts = [t.org.name];
   if (t.kind !== "runner") parts.push(t.scopes.includes("write") ? "read and write" : "read only");
   parts.push(t.last_used ? `used ${agoText(t.last_used)}` : "never used");
-  if (t.kind === "oauth" && t.expires) parts.push(`signed in until ${new Date(t.expires).toLocaleDateString()} unless used`);
-  else parts.push(`created ${new Date(t.created).toLocaleDateString()}`);
+  if (t.kind === "oauth" && t.expires) parts.push(`signed in until ${dateText(t.expires)} unless used`);
+  else parts.push(`created ${dateText(t.created)}`);
   return parts.join(" · ");
 }
 

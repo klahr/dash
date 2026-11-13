@@ -1,3 +1,4 @@
+import * as store from "./store.js";
 
 // ------------------------------------------------------------------ viewport & on-screen keyboard
 export const wsURL = (path) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
@@ -117,9 +118,9 @@ if (vv) {
   });
 
   const flag = new URLSearchParams(location.search).get("debug");
-  if (flag === "kb") localStorage.setItem("dash.debugKb", "1");
-  else if (flag === "off") localStorage.removeItem("dash.debugKb");
-  if (localStorage.getItem("dash.debugKb")) {
+  if (flag === "kb") store.setFlag("dash.debugKb", true);
+  else if (flag === "off") store.remove("dash.debugKb");
+  if (store.flag("dash.debugKb")) {
     const box = document.createElement("pre");
     box.className = "kb-debug";
     const probe = document.createElement("div");

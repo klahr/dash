@@ -1,4 +1,5 @@
 import { $, $$, h, ib, ico } from "./dom.js";
+import * as store from "./store.js";
 import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { attempt, fail, toast } from "./dialogs.js";
@@ -22,7 +23,6 @@ import { fuzzyScore } from "./palette.js";
 const wide = matchMedia("(min-width: 1280px)");
 const CHAT_MIN_W = 280;
 export const pane = (() => {
-  const get = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
   // projectTabs: the chats added with + in each project, by projectKey.
   const base = { open: false, pinned: false, width: null, tab: null, projectTabs: {} };
   // Only well-formed tab lists survive: stored data may be stale or from an older version.
@@ -30,7 +30,7 @@ export const pane = (() => {
     .map(([k, list]) => [k, Array.isArray(list) ? [...new Set(list.filter((t) => typeof t === "string" && t && t !== k))] : []])
     .filter(([, list]) => list.length));
   try {
-    const s = JSON.parse(get("dash.chatPane"));
+    const s = store.getJSON("dash.chatPane");
     if (s && typeof s === "object") {
       // The old shared tab list ("tabs") is dropped, not carried over.
       const { tabs, ...rest } = s;
@@ -38,14 +38,12 @@ export const pane = (() => {
     }
   } catch {}
   // Carry over the board chat's settings: it pushed the board aside, like pinned.
-  const old = get("dash.boardChat");
-  return { ...base, open: old === "1", pinned: old != null, width: Number(get("dash.boardChatW")) || null, tab: old === "1" ? "project" : null };
+  const old = store.get("dash.boardChat");
+  return { ...base, open: old === "1", pinned: old != null, width: Number(store.get("dash.boardChatW")) || null, tab: old === "1" ? "project" : null };
 })();
 function savePane() {
-  try {
-    localStorage.setItem("dash.chatPane", JSON.stringify(pane));
-    ["dash.boardChat", "dash.chatTabs", "dash.boardChatW"].forEach((k) => localStorage.removeItem(k));
-  } catch {}
+  store.setJSON("dash.chatPane", pane);
+  ["dash.boardChat", "dash.chatTabs", "dash.boardChatW"].forEach(store.remove);
 }
 savePane();
 export const paneOverlays = () => !pane.pinned || !wide.matches;

@@ -62,9 +62,6 @@ type ChecklistMoved struct {
 	Saved   *ChecklistSaved `json:"saved,omitempty"`
 }
 
-// ChecklistToolNames are the checklist tools; read_checklist only reads.
-var ChecklistToolNames = []string{"read_checklist", "add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "reorder_checklist_item", "move_checklist_item_to_task"}
-
 // stale adds what to do about a checklist that changed.
 func stale(err error) error {
 	if err != nil && (errors.Is(err, checklist.ErrStale) || strings.Contains(err.Error(), "since it was read") || strings.Contains(err.Error(), "changed on")) {

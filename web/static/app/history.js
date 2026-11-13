@@ -1,6 +1,6 @@
 import { graphLayout } from "../graphlayout.js";
 import { latestOnly } from "../commitnav.js";
-import { $, $$, fill, h, ib, ico, timeLocale } from "./dom.js";
+import { $, $$, dateTimeText, fill, h, ib, ico, plural } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api } from "./api.js";
 import { copy, fail, leave } from "./dialogs.js";
@@ -195,7 +195,6 @@ function relTime(iso) {
   }
   return relFmt.format(Math.round(s), "second");
 }
-const absTime = (iso) => new Date(iso).toLocaleString(timeLocale, { dateStyle: "medium", timeStyle: "short" });
 
 // The commit as a release, Tag release… and Copy SHA know it.
 function commitRef() {
@@ -238,7 +237,7 @@ function renderCommit() {
   $("#cd-error").textContent = cp.error;
   renderMessage(d?.body || "");
   const person = (x) => h("span", { title: x.email }, x.name, " ", h("span", { class: "commit-email" }, `<${x.email}>`));
-  const when = (x) => h("time", { datetime: x.date, title: relTime(x.date) }, absTime(x.date));
+  const when = (x) => h("time", { datetime: x.date, title: relTime(x.date) }, dateTimeText(x.date));
   const parent = (sha) => h("button", { type: "button", class: "link inline commit-parent", title: `Show ${sha}`, onclick: () => selectCommit(sha).catch(fail) },
     hist.byHash.get(sha)?.short || sha.slice(0, 7));
   const sameCommitter = d && d.committer.name === d.author.name && d.committer.email === d.author.email;
@@ -258,7 +257,7 @@ function renderCommit() {
     return;
   }
   const add = d.files.reduce((n, f) => n + f.add, 0), del = d.files.reduce((n, f) => n + f.del, 0);
-  fill(head, `${d.file_count} ${d.file_count === 1 ? "file" : "files"} changed`,
+  fill(head, `${plural(d.file_count, "file")} changed`,
     d.files.length ? h("span", { class: "counts" }, " ", h("span", { class: "plus" }, `+${add}`), " ", h("span", { class: "minus" }, `−${del}`)) : null);
   fill($("#cd-files"),
     !d.files.length ? h("p", { class: "pane-empty" }, d.parents.length > 1 ? "The merge brought no changes into this branch." : "No files changed.") : null,

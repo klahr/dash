@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/agent"
+	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -73,7 +74,7 @@ func (l *TodoLog) Event(t model.Todo, ev model.RunEvent) {
 }
 
 func trimmedNote(max int64) string {
-	return fmt.Sprintf("✂ earlier output trimmed: this log keeps about its newest %s", humanBytes(max/2))
+	return fmt.Sprintf("✂ earlier output trimmed: this log keeps about its newest %s", disk.Size(uint64(max/2)))
 }
 
 // capFile cuts a file larger than max to its newest max/2 bytes, from the

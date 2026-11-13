@@ -1,4 +1,5 @@
 import { $, $$, fill, h, ib, ico } from "./dom.js";
+import * as store from "./store.js";
 import { desktop, wsURL } from "./viewport.js";
 import { api, on } from "./api.js";
 import { attempt, copy, toast } from "./dialogs.js";
@@ -20,7 +21,7 @@ export const pv = {
   log: "",
   shown: null,  // process the iframe was loaded for
   crashed: null, // process whose crash already opened the log
-  width: (() => { try { return localStorage.getItem("dash.pvWidth") || "full"; } catch { return "full"; } })(),
+  width: store.get("dash.pvWidth", "full"),
 };
 const pvKey = (machine, id) => `${machine || ""}/${id}`;
 export const previewOf = (id) => state.previews.get(pvKey(state.project?.machine, id)) || null;
@@ -400,7 +401,7 @@ function openQR(url, prefix = "") {
 
 $$(".pv-widths button").forEach((b) => b.addEventListener("click", () => {
   pv.width = b.dataset.width;
-  try { localStorage.setItem("dash.pvWidth", pv.width); } catch {}
+  store.set("dash.pvWidth", pv.width);
   renderPreview();
 }));
 $("#pv-reload").addEventListener("click", reloadPreview);

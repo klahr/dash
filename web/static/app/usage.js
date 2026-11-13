@@ -1,4 +1,4 @@
-import { $, h, setLabel, timeLocale } from "./dom.js";
+import { $, clockTime, h, setLabel, timeLocale } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -15,7 +15,7 @@ export const shortLabel = (n) => ({ five_hour: "5h", seven_day: "7d", seven_day_
 const fmtTime = (iso) => {
   const d = new Date(iso);
   const sameDay = d.toDateString() === new Date().toDateString();
-  return sameDay ? d.toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit" }) : d.toLocaleString(timeLocale, { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  return sameDay ? clockTime(d) : d.toLocaleString(timeLocale, { weekday: "short", hour: "2-digit", minute: "2-digit" });
 };
 const windowHours = { five_hour: 5, seven_day: 168, seven_day_opus: 168 };
 // Share of the window elapsed since its last reset (0..1), or null for an unknown window length.

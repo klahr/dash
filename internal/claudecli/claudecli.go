@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/localrun"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // Status is what Dash knows about the installed Claude Code CLI.
@@ -299,13 +300,4 @@ func runCLI(ctx context.Context, bin string, args ...string) (string, error) {
 	return strings.TrimSpace(out.String()), err
 }
 
-func oneLine(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i] + " …"
-	}
-	if len(s) > 200 {
-		s = s[:200] + "…"
-	}
-	return s
-}
+func oneLine(s string) string { return textutil.Summary(s, 200) }

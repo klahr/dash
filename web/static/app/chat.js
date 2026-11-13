@@ -1,5 +1,6 @@
 import { renderMarkdown } from "../editor.js";
 import { $, entering, h, ib } from "./dom.js";
+import * as store from "./store.js";
 import { wsURL } from "./viewport.js";
 import { api, here, on } from "./api.js";
 import { ask, attempt, busy, copy, fail, toast } from "./dialogs.js";
@@ -610,8 +611,8 @@ export const chatActions = (pick, key) => (answer) => h("div", { class: "msg-act
 // when none is online. (A runner's own dashboard answers itself: no bar.)
 export const chatRunner = {
   info: null, // GET /api/claude: {local, runners: [{id, name, online}]}
-  get picked() { try { return localStorage.getItem("dash.chatRunner") || ""; } catch { return ""; } },
-  set picked(id) { try { localStorage.setItem("dash.chatRunner", id); } catch {} },
+  get picked() { return store.get("dash.chatRunner", ""); },
+  set picked(id) { store.set("dash.chatRunner", id); },
   // The runner the next turn asks for ("" = the hub picks the first online).
   choice() {
     const rs = this.info?.runners || [];
@@ -650,11 +651,10 @@ chatRunner.load().catch(() => {}); // an older Dash without /api/claude: the bar
 
 // Pane chats with a reply nobody has looked at yet, by chat key ("general" or a
 // projectKey). Kept in localStorage so a reload still shows them.
-export const chatUnread = (() => {
-  try { return new Set(JSON.parse(localStorage.getItem("dash.chatUnread")) || []); } catch { return new Set(); }
-})();
+const savedUnread = store.getJSON("dash.chatUnread", []);
+export const chatUnread = new Set(Array.isArray(savedUnread) ? savedUnread : []);
 export function saveChatUnread() {
-  try { localStorage.setItem("dash.chatUnread", JSON.stringify([...chatUnread])); } catch {}
+  store.setJSON("dash.chatUnread", [...chatUnread]);
 }
 // Another project's chats whose tab you closed while a reply streamed: the
 // reply doesn't bring the tab back (until you talk in that chat again).

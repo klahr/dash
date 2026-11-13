@@ -63,7 +63,7 @@ func (n ServiceNotes) Confirm(id string, ttl time.Duration) (notes.Entry, error)
 // how many there are and the tools to use, never their contents, so the
 // prompt doesn't grow with the notes.
 func NotesHint(count int) string {
-	tool := func(name string) string { return "mcp__" + NotesServerName + "__" + name }
+	tool := func(name string) string { return ToolName(NotesServerName, name) }
 	have := fmt.Sprintf("This project has %d shared notes", count)
 	switch count {
 	case 0:

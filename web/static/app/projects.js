@@ -1,5 +1,6 @@
 import { projectGroups as groupProjects, isShared, projectRunnerNames, projectSubtitle, runnerBadge as badgeFor, uniqueProjects } from "../groups.js";
-import { $, $$, h, ib, ico, setLabel } from "./dom.js";
+import { $, $$, h, ib, ico, plural, setLabel } from "./dom.js";
+import * as store from "./store.js";
 import { desktop } from "./viewport.js";
 import { api, deepLink, on } from "./api.js";
 import { attempt, busy, fail, railOf, reduceMotion, toast } from "./dialogs.js";
@@ -7,7 +8,8 @@ import { state } from "./state.js";
 import { showView } from "./nav.js";
 import { baseBranch, eventFor, latest, multi, projectKey, projectStatus, refreshLive } from "./events.js";
 import { loadTodos, pushDone, renderPushMain } from "./board.js";
-import { agoText, renderBoard } from "./branches.js";
+import { renderBoard } from "./branches.js";
+import { ghMark, ghRepoHints, ghRepoLabel, ghRepoRows } from "./github.js";
 import { closeDetail, openDetail } from "./detail.js";
 import { syncPrefs } from "./prefs.js";
 import { loadRunners, openRunners, renderSideRunners, startRunner } from "./runners.js";
@@ -46,7 +48,7 @@ export async function loadProjects() {
   state.projects = lists.flat();
   const first = !state.projectsLoaded;
   state.projectsLoaded = true;
-  const saved = (() => { try { return localStorage.getItem("dash.project"); } catch { return null; } })();
+  const saved = store.get("dash.project");
   const link = first ? deepLink : null;
   const want = (link?.project && state.projects.some((p) => p.id === link.project) ? link.project : null) || projectKey(state.project) || saved;
   const next = state.projects.find((p) => projectKey(p) === want || p.id === want) || state.projects[0] || null;
@@ -66,7 +68,7 @@ export async function selectProject(p) {
   state.follow = null;
   closeDetail();
   closeCommit();
-  try { if (p) localStorage.setItem("dash.project", projectKey(p)); } catch {}
+  if (p) store.set("dash.project", projectKey(p));
   renderProjectHeader();
   refreshLive();
   loadUsage().catch(() => {});
@@ -271,21 +273,6 @@ $("#new-project").addEventListener("keydown", (e) => {
   if (!$("#new-project-go").disabled) $("#new-project-go").click();
 });
 
-// The GitHub mark (github.com/logos), inline: no request for an icon.
-const GH_MARK = "M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.69 5.4-5.25 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z";
-export const ghMark = (cls = "gh-mark") => {
-  const t = document.createElement("template");
-  t.innerHTML = `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${GH_MARK}" fill="currentColor"/></svg>`;
-  return t.content.firstChild;
-};
-// An owner's avatar from GitHub, or the mark when it doesn't load.
-export const ghAvatar = (owner) => {
-  const img = h("img", { class: "gh-avatar", alt: "", width: 20, height: 20, loading: "lazy", referrerPolicy: "no-referrer",
-    src: `https://github.com/${encodeURIComponent(owner)}.png?size=40` });
-  img.addEventListener("error", () => img.replaceWith(ghMark("gh-avatar gh-mark")), { once: true });
-  return img;
-};
-
 // loadGitHubRepos lists the user's repositories with the picked runner's
 // gh (once per runner while the page is open).
 async function loadGitHubRepos(refresh = false) {
@@ -321,23 +308,13 @@ async function loadGitHubRepos(refresh = false) {
 
 // renderGitHubRepos shows the cached list, filtered, grouped by owner. A
 // repository that already has a project is marked and can't be picked.
-const GH_SHOWN = 200;
 function renderGitHubRepos() {
   const r = sheetRunner(), res = r && ghState.cache.get(r.id);
   if (!res) return;
-  const q = $("#gh-filter").value.trim().toLowerCase();
   const all = res.repos || [];
-  const hits = all.filter((x) => !q || x.nameWithOwner.toLowerCase().includes(q) || (x.description || "").toLowerCase().includes(q));
-  const rows = [];
-  let owner = null;
-  for (const x of hits.slice(0, GH_SHOWN)) {
-    if (x.owner !== owner) {
-      owner = x.owner;
-      rows.push(h("div", { class: "gh-owner", role: "presentation" }, ghAvatar(owner), h("span", {}, owner), owner === res.user ? h("em", {}, "you") : null));
-    }
+  const { rows, more } = ghRepoRows(all, { q: $("#gh-filter").value.trim().toLowerCase(), user: res.user, row: (x) => {
     const picked = ghState.pick?.nameWithOwner === x.nameWithOwner;
-    const hints = [x.isPrivate && "private", x.isFork && "fork", x.isArchived && "archived", x.updatedAt && `updated ${agoText(x.updatedAt)}`].filter(Boolean);
-    rows.push(h("button", {
+    return h("button", {
       type: "button", class: `gh-repo${x.linked ? " linked" : ""}`, role: "option", "aria-selected": String(picked), "aria-disabled": x.linked ? "true" : null,
       title: x.linked ? `Already the project ${x.linked}` : x.url || x.nameWithOwner,
       onclick: (e) => {
@@ -351,14 +328,13 @@ function renderGitHubRepos() {
     },
     ghMark(),
     h("span", { class: "gh-repo-text" },
-      h("span", { class: "gh-repo-title" }, h("span", { class: "gh-repo-owner" }, `${x.owner}/`), h("strong", {}, x.name)),
+      ghRepoLabel(x),
       x.description ? h("span", { class: "gh-repo-desc" }, x.description) : null,
-      h("span", { class: "gh-repo-meta" }, ...hints.map((t) => h("span", {}, t)), x.linked ? h("span", { class: "gh-linked" }, `project: ${x.linked}`) : null))));
-  }
+      h("span", { class: "gh-repo-meta" }, ...ghRepoHints(x).map((t) => h("span", {}, t)), x.linked ? h("span", { class: "gh-linked" }, `project: ${x.linked}`) : null)));
+  } });
   $("#gh-list").replaceChildren(...(rows.length ? rows : [h("div", { class: "gh-empty" }, all.length ? "No repository matches." : "No repositories on GitHub yet: create one instead.")]));
-  const more = hits.length - GH_SHOWN;
   $("#gh-hint").replaceChildren(more > 0 ? `${more} more; type to narrow the list. `
-    : all.length ? `${all.length} ${all.length === 1 ? "repository" : "repositories"} from ${r.name}'s gh, signed in as ${res.user}. ` : "",
+    : all.length ? `${plural(all.length, "repository", "repositories")} from ${r.name}'s gh, signed in as ${res.user}. ` : "",
   h("button", { type: "button", class: "link inline", onclick: () => loadGitHubRepos(true).catch(fail) }, "Refresh"));
 }
 $("#gh-filter").addEventListener("input", renderGitHubRepos);
@@ -707,7 +683,7 @@ const menuBackground = () => [...[".topbar", "main", "#chat-pane"].map((s) => $(
   ...$$(".nav > *").filter((el) => el.id !== "menu" && el.id !== "menu-scrim")];
 export function setSideCollapsed(on) {
   $(".app").classList.toggle("side-collapsed", on);
-  try { localStorage.setItem("dash.sideCollapsed", on ? "1" : "0"); } catch {}
+  store.setFlag("dash.sideCollapsed", on);
   syncMenuBtn();
 }
 export function setMenu(open) {
@@ -730,7 +706,7 @@ export function setMenu(open) {
   }
   syncMenuBtn();
 }
-try { $(".app").classList.toggle("side-collapsed", localStorage.getItem("dash.sideCollapsed") === "1"); } catch {}
+$(".app").classList.toggle("side-collapsed", store.flag("dash.sideCollapsed"));
 
 // Desktop: drag the sidebar's right edge to resize it, like the chat pane. The
 // width survives collapsing; CSS also caps it at 40vw so main stays usable.
@@ -739,9 +715,9 @@ function setSideWidth(w, save = true) {
   w = w == null ? null : Math.min(SIDE_MAX_W, Math.max(SIDE_MIN_W, Math.round(w)));
   if (w) $(".app").style.setProperty("--side-w-set", `${w}px`);
   else $(".app").style.removeProperty("--side-w-set");
-  if (save) try { w ? localStorage.setItem("dash.sideW", String(w)) : localStorage.removeItem("dash.sideW"); } catch {}
+  if (save) store.set("dash.sideW", w || null);
 }
-try { setSideWidth(Number(localStorage.getItem("dash.sideW")) || null, false); } catch {}
+setSideWidth(Number(store.get("dash.sideW")) || null, false);
 {
   const handle = $("#side-resize"), panel = $(".sidebar");
   handle.addEventListener("pointerdown", (e) => {

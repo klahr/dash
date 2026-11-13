@@ -1,5 +1,6 @@
 import { COLORS, drawSurface } from "../draw.js";
-import { $, $$, h, ib, ico } from "./dom.js";
+import { $, $$, h, ib, ico, plural } from "./dom.js";
+import * as store from "./store.js";
 import { desktop } from "./viewport.js";
 import { api, here } from "./api.js";
 import { ask, attempt, fail, toast } from "./dialogs.js";
@@ -66,8 +67,8 @@ const exactCapture = {
   // preferCurrentTab and Region Capture (cropTo) are Chromium's, on desktop:
   // not on phones (iOS has no screen capture at all), Firefox or Safari.
   supported: () => !!navigator.mediaDevices?.getDisplayMedia && "CropTarget" in window && !!window.BrowserCaptureMediaStreamTrack?.prototype.cropTo && desktop.matches,
-  get on() { try { return localStorage.getItem("dash.drawExact") === "1"; } catch { return false; } },
-  set on(v) { try { localStorage.setItem("dash.drawExact", v ? "1" : ""); } catch {} },
+  get on() { return store.flag("dash.drawExact"); },
+  set on(v) { store.setFlag("dash.drawExact", v); },
 };
 
 // grabTab captures one frame of this tab, cropped to frame, as a picture of
@@ -324,7 +325,7 @@ export function renderReworkBox() {
   box.replaceChildren(
     h("div", { class: "rework-head" },
       h("strong", {}, "Rework notes"),
-      h("span", { class: "hint" }, `${n} ${n === 1 ? "picture" : "pictures"} from the preview`),
+      h("span", { class: "hint" }, `${plural(n, "picture")} from the preview`),
       h("span", { class: "pv-spacer" }),
       ib({ class: "link", type: "button", onclick: discard, title: "Throw these pictures and notes away" }, "x", "Discard")),
     h("div", { class: "attach" }, entry.items.map((a) => attachThumb(a, () => {
@@ -388,7 +389,7 @@ export function renderPreviewsBtn() {
   const crashed = list.filter((p) => p.state === "crashed").length;
   $("#previews-label").replaceChildren(h("span", { class: "pv-word" }, "Previews "), `(${list.length})`,
     crashed ? h("span", { class: "pv-warn" }, " · crashed") : "");
-  btn.title = `${list.length} running ${list.length === 1 ? "preview" : "previews"}` +
+  btn.title = plural(list.length, "running preview") +
     (crashed ? `, ${crashed} crashed` : "");
 }
 
@@ -435,7 +436,7 @@ async function stopAllPreviews() {
   let n = 0;
   for (const prefix of prefixes) n += (await api("DELETE", "/api/previews", null, prefix)).stopped || 0;
   hidePreview();
-  toast(`Stopped ${n} ${n === 1 ? "preview" : "previews"}`);
+  toast(`Stopped ${plural(n, "preview")}`);
 }
 
 // The task chat already gives Claude the task's instructions and diff, and runs

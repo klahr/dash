@@ -4,7 +4,6 @@ package queue
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -23,6 +22,7 @@ import (
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 	"github.com/klahr/dash/internal/usage"
 )
 
@@ -442,126 +442,29 @@ func (e *TodoEngine) shuttingDown() bool {
 }
 
 func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
-	log := func(s string) { e.Log.Line(t, s) }
-	var report string // Claude's final message from its latest run
-	fail := func(err error) {
-		if e.shuttingDown() {
-			// Dash is stopping, not the user: leave the todo in progress so
-			// it is requeued (and its worktree reused) on the next start.
-			log("■ interrupted by shutdown; will resume on restart")
-			return
-		}
-		if ctx.Err() != nil {
-			if cur, err := e.Store.GetTodo(t.ID); err == nil && cur.Paused {
-				log("⏸ paused")
-				if _, err := e.Store.SetStatus(t.ID, model.StatusQueued, ""); err != nil {
-					slog.Error("set paused", "todo", t.ID, "err", err)
-				}
-				return
-			}
-		}
-		msg := err.Error()
-		if errors.Is(err, context.Canceled) {
-			msg = "canceled"
-		}
-		if why := e.interruption(t.ID); why != "" && ctx.Err() != nil {
-			msg = "interrupted: " + why
-		}
-		log("✖ " + msg)
-		noteFailure(e.Store, t.ID, msg, report)
-		if e.Merges != nil {
-			// A review's fix that failed: say so on the pull request, where
-			// the reviewer waits for it.
-			e.Merges.reviewFailed(ctx, t.ID, msg)
-		}
-		if _, err := e.Store.SetStatus(t.ID, model.StatusFailed, msg); err != nil {
-			slog.Error("set failed", "todo", t.ID, "err", err)
-		}
-	}
-	update := func(fn func(*model.Todo)) error {
-		nt, err := e.Store.UpdateTodo(t.ID, func(x *model.Todo) error { fn(x); return nil })
-		if err == nil {
-			t = nt
-		}
-		return err
-	}
-	addNote := func(note string) error {
-		return update(func(x *model.Todo) { x.Feedback = append(x.Feedback, note) })
-	}
-
+	r := &todoRun{e: e, ctx: ctx, t: t}
 	p, err := e.Store.GetProject(t.ProjectID)
 	if err != nil {
-		fail(err)
+		r.fail(err)
 		return
 	}
+	r.p = p
 
 	// 1. Worktree.
-	if t.Worktree == nil {
-		// Start from what's on origin when local is merely behind it (a push
-		// from another machine); never blocks the start, never rebases.
-		if e.Merges != nil && e.Merges.Remote != nil {
-			if note := e.Merges.Remote.FastForward(ctx, p); note != "" {
-				log(note)
-			}
-		}
-		base, err := e.Git.Head(ctx, p.ID, p.Path, p.Base())
-		if err != nil {
-			fail(err)
-			return
-		}
-		name := "todo-" + t.ID
-		wt := model.Worktree{Name: name, Path: filepath.Join(e.WorktreeRoot, p.ID, name), Branch: "dash/" + name, BaseCommit: base, BaseBranch: p.Base()}
-		if err := update(func(x *model.Todo) { x.Worktree = &wt }); err != nil {
-			fail(err)
-			return
-		}
+	if err := r.ensureWorktree(); err != nil {
+		r.fail(err)
+		return
 	}
-	wt := *t.Worktree
-	p = p.For(t) // the branch it started from, even if the project has switched since
-	if _, err := os.Stat(wt.Path); err != nil {
-		if err := e.Git.AddWorktree(ctx, p.ID, p.Path, wt); err != nil {
-			fail(err)
-			return
-		}
-		log(fmt.Sprintf("▶ new worktree %s (%s)", wt.Path, wt.Branch))
-		if err := e.prepareWorktree(ctx, p, wt, log); err != nil {
-			fail(err)
-			return
-		}
-	} else {
-		log(fmt.Sprintf("▶ reusing worktree %s", wt.Path))
-	}
-
 	// 2. Bring in the default branch after a merge conflict.
-	resolving := false
-	if t.MergeMain {
-		files, err := e.Git.StartMerge(ctx, p.ID, wt.Path, p.Base())
-		if err != nil {
-			fail(fmt.Errorf("merge %s into worktree: %w", p.Base(), err))
-			return
-		}
-		if len(files) > 0 {
-			resolving = true
-			log("⚠ conflicts with " + p.Base() + ": " + strings.Join(files, ", "))
-			if err := addNote(conflictNote(p.Base(), files)); err != nil {
-				fail(err)
-				return
-			}
-		} else if _, err := e.Git.CommitAll(ctx, p.ID, wt.Path, "Merge "+p.Base()+" into "+wt.Branch); err != nil {
-			fail(err)
-			return
-		}
-		if err := update(func(x *model.Todo) { x.MergeMain = false }); err != nil {
-			fail(err)
-			return
-		}
+	if err := r.mergeBaseIn(); err != nil {
+		r.fail(err)
+		return
 	}
-
 	// Edits saved in the web editor take the place of Claude's first run.
-	editing := len(t.Edits) > 0 && !t.EditsApplied
+	editing := len(r.t.Edits) > 0 && !r.t.EditsApplied
 	if editing {
-		if err := e.applyEdits(ctx, t, p, wt, log); err != nil {
-			fail(err)
+		if err := e.applyEdits(ctx, r.t, r.p, r.wt, r.log); err != nil {
+			r.fail(err)
 			return
 		}
 	}
@@ -570,80 +473,311 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 	for {
 		if editing {
 			editing = false
-		} else if report, err = e.runClaude(ctx, &t, p, wt, log); err != nil {
-			fail(err)
-			return
-		} else if t.PR != nil && t.PR.Reply != nil {
-			_ = update(func(x *model.Todo) { keepReviewReport(x, report) }) // posted on GitHub with the fix
-		}
-		if resolving {
-			markers, err := e.Git.LeftoverMarkers(ctx, p.ID, wt.Path)
-			if err != nil {
-				fail(err)
-				return
-			}
-			if markers != "" {
-				if t.AutoFixes >= p.MaxAutoFixes {
-					fail(errors.New("conflict markers remain after Claude's attempt"))
-					return
-				}
-				_ = update(func(x *model.Todo) { x.AutoFixes++ })
-				_ = addNote("Some conflict markers are still in the code:\n```\n" + markers + "\n```\nResolve them all.")
-				continue
-			}
-			resolving = false
-		}
-		msg := t.Title
-		if msg == "" {
-			msg = firstLine(t.Prompt)
-		}
-		if _, err := e.Git.CommitAll(ctx, p.ID, wt.Path, "dash: "+msg); err != nil {
-			fail(err)
+		} else if err := r.runClaude(); err != nil {
+			r.fail(err)
 			return
 		}
-		if head, err := e.Git.Head(ctx, p.ID, wt.Path, "HEAD"); err != nil {
-			fail(err)
-			return
-		} else if head == wt.BaseCommit && len(t.Edits) > 0 && !t.EditsApplied {
-			fail(errors.New("the saved edit doesn't change the file"))
+		next, err := r.commitAndCheck()
+		if err != nil {
+			r.fail(err)
 			return
 		}
-		if len(t.Edits) > 0 && !t.EditsApplied {
-			_ = update(func(x *model.Todo) { x.EditsApplied = true })
-		}
-		files, add, del, derr := e.Git.DiffStat(ctx, p.ID, wt.Path, p.Base())
-		if derr == nil {
-			_ = update(func(x *model.Todo) { x.DiffFiles, x.DiffAdd, x.DiffDel = files, add, del })
-		}
-		if derr == nil && files == 0 {
-			// An answer, an investigation or "it already works": nothing to
-			// test or merge, but not a failure. Review it; approving closes it.
-			log("✔ finished without changing any files; ready for review")
-			noteNoChanges(e.Store, t.ID, report)
-			if _, err := e.Store.SetStatus(t.ID, model.StatusReview, ""); err != nil {
-				slog.Error("set review", "todo", t.ID, "err", err)
-			}
+		if next == stepDone {
 			return
 		}
-
-		if p.TestCommand == "" {
+		if next == stepHandOff {
 			break
 		}
-		checks := e.runChecks(ctx, t, p, wt.Path, "review")
-		_ = update(func(x *model.Todo) { x.Checks = &checks })
-		if ctx.Err() != nil {
-			fail(ctx.Err())
-			return
-		}
-		if checks.Passed || t.AutoFixes >= p.MaxAutoFixes {
-			break
-		}
-		log(fmt.Sprintf("↻ tests failed; sending the output back to Claude (fix %d of %d)", t.AutoFixes+1, p.MaxAutoFixes))
-		_ = update(func(x *model.Todo) { x.AutoFixes++ })
-		_ = addNote(testNote(checks))
 	}
 
 	// 5. Hand off.
+	r.handOff()
+}
+
+// todoRun is one run of TodoEngine.work on task t: the task as last saved,
+// its project and worktree, and Claude's latest report.
+type todoRun struct {
+	e      *TodoEngine
+	ctx    context.Context
+	t      model.Todo
+	p      model.Project
+	wt     model.Worktree
+	report string // Claude's final message from its latest run
+	// resolving is set while Claude resolves conflicts with the default
+	// branch: its work isn't committed while markers remain.
+	resolving bool
+}
+
+func (r *todoRun) log(s string) { r.e.Log.Line(r.t, s) }
+
+// update changes the task in the store and keeps the result.
+func (r *todoRun) update(fn func(*model.Todo)) error {
+	nt, err := r.e.Store.UpdateTodo(r.t.ID, func(x *model.Todo) error { fn(x); return nil })
+	if err == nil {
+		r.t = nt
+	}
+	return err
+}
+
+// addNote adds a note for Claude's next run.
+func (r *todoRun) addNote(note string) error {
+	return r.update(func(x *model.Todo) { x.Feedback = append(x.Feedback, note) })
+}
+
+// fail ends the run with err: the task fails, unless Dash is shutting down
+// (it resumes on restart) or the user paused it (it is queued again).
+func (r *todoRun) fail(err error) {
+	e, t := r.e, r.t
+	if e.shuttingDown() {
+		// Dash is stopping, not the user: leave the todo in progress so
+		// it is requeued (and its worktree reused) on the next start.
+		r.log("■ interrupted by shutdown; will resume on restart")
+		return
+	}
+	if r.ctx.Err() != nil {
+		if cur, err := e.Store.GetTodo(t.ID); err == nil && cur.Paused {
+			r.log("⏸ paused")
+			if _, err := e.Store.SetStatus(t.ID, model.StatusQueued, ""); err != nil {
+				slog.Error("set paused", "todo", t.ID, "err", err)
+			}
+			return
+		}
+	}
+	msg := err.Error()
+	if errors.Is(err, context.Canceled) {
+		msg = "canceled"
+	}
+	if why := e.interruption(t.ID); why != "" && r.ctx.Err() != nil {
+		msg = "interrupted: " + why
+	}
+	r.log("✖ " + msg)
+	noteFailure(e.Store, t.ID, msg, r.report)
+	if e.Merges != nil {
+		// A review's fix that failed: say so on the pull request, where
+		// the reviewer waits for it.
+		e.Merges.reviewFailed(r.ctx, t.ID, msg)
+	}
+	if _, err := e.Store.SetStatus(t.ID, model.StatusFailed, msg); err != nil {
+		slog.Error("set failed", "todo", t.ID, "err", err)
+	}
+}
+
+// ensureWorktree gives the task its worktree: the one it has, or a new one
+// on a new branch from the project's base, set up with prepareWorktree.
+func (r *todoRun) ensureWorktree() error {
+	e, ctx := r.e, r.ctx
+	if r.t.Worktree == nil {
+		p := r.p
+		// Start from what's on origin when local is merely behind it (a push
+		// from another machine); never blocks the start, never rebases.
+		if e.Merges != nil && e.Merges.Remote != nil {
+			if note := e.Merges.Remote.FastForward(ctx, p); note != "" {
+				r.log(note)
+			}
+		}
+		base, err := e.Git.Head(ctx, p.ID, p.Path, p.Base())
+		if err != nil {
+			return err
+		}
+		name := "todo-" + r.t.ID
+		wt := model.Worktree{Name: name, Path: filepath.Join(e.WorktreeRoot, p.ID, name), Branch: "dash/" + name, BaseCommit: base, BaseBranch: p.Base()}
+		if err := r.update(func(x *model.Todo) { x.Worktree = &wt }); err != nil {
+			return err
+		}
+	}
+	r.wt = *r.t.Worktree
+	r.p = r.p.For(r.t) // the branch it started from, even if the project has switched since
+	p, wt := r.p, r.wt
+	if _, err := os.Stat(wt.Path); err == nil {
+		r.log(fmt.Sprintf("▶ reusing worktree %s", wt.Path))
+		return nil
+	}
+	if err := e.Git.AddWorktree(ctx, p.ID, p.Path, wt); err != nil {
+		return err
+	}
+	r.log(fmt.Sprintf("▶ new worktree %s (%s)", wt.Path, wt.Branch))
+	return e.prepareWorktree(ctx, p, wt, r.log)
+}
+
+// mergeBaseIn merges the default branch into the worktree when the task
+// asks for it (after a merge conflict). Conflicts are left for Claude, with
+// a note, and set resolving.
+func (r *todoRun) mergeBaseIn() error {
+	if !r.t.MergeMain {
+		return nil
+	}
+	e, ctx, p, wt := r.e, r.ctx, r.p, r.wt
+	files, err := e.Git.StartMerge(ctx, p.ID, wt.Path, p.Base())
+	if err != nil {
+		return fmt.Errorf("merge %s into worktree: %w", p.Base(), err)
+	}
+	if len(files) > 0 {
+		r.resolving = true
+		r.log("⚠ conflicts with " + p.Base() + ": " + strings.Join(files, ", "))
+		if err := r.addNote(conflictNote(p.Base(), files)); err != nil {
+			return err
+		}
+	} else if _, err := e.Git.CommitAll(ctx, p.ID, wt.Path, "Merge "+p.Base()+" into "+wt.Branch); err != nil {
+		return err
+	}
+	return r.update(func(x *model.Todo) { x.MergeMain = false })
+}
+
+// claudeArgs adds to req the arguments of a Claude run on task t: limits,
+// model, attachments, Dash's MCP servers and the extra system prompt. It
+// sets stat's model. release ends the MCP servers' tokens: call it once the
+// run is over.
+func (e *TodoEngine) claudeArgs(req *agent.ExecRequest, stat *model.TodoRun, t model.Todo, p model.Project, log func(string)) (release func()) {
+	var releases []func()
+	req.ExtraArgs = append(req.ExtraArgs, "--max-turns", strconv.Itoa(p.TurnLimit()))
+	if m, err := model.CleanModel(t.Model); err != nil {
+		log("⚠ " + err.Error() + "; running on the default model")
+	} else if m != "" {
+		stat.Model = m
+		// After -claude-args, so it wins over a --model there.
+		req.ExtraArgs = append(req.ExtraArgs, "--model", m)
+		log("model: " + m)
+	}
+	for _, dir := range attachmentDirs(t.Attachments) {
+		req.ExtraArgs = append(req.ExtraArgs, "--add-dir", dir)
+	}
+	servers := map[string]any{}
+	var system []string // appended to Claude's system prompt
+	owner, ownerErr := model.Owner{}, errors.New("no owner resolver")
+	if e.Owner != nil {
+		owner, ownerErr = e.Owner(t)
+	}
+	if ownerErr != nil && (e.Perms != nil || e.Board != nil) {
+		slog.Warn("task runs without Dash's MCP servers: no user and org to act as", "todo", t.ID, "err", ownerErr)
+	}
+	if e.Perms != nil && e.BaseURL != "" && ownerErr == nil {
+		token, release := e.Perms.Register(owner, t.ID, t.ProjectID)
+		releases = append(releases, release)
+		servers[perm.ServerName] = perm.ServerConfig(e.BaseURL, token)
+		req.ExtraArgs = append(req.ExtraArgs, "--permission-prompt-tool", perm.PromptTool)
+		// Claude waits on the MCP tool while a human decides; don't let it time out first.
+		req.Env = []string{"MCP_TOOL_TIMEOUT=3600000"}
+	}
+	if e.Board != nil && e.BoardURL != "" && ownerErr == nil {
+		token, release := e.Board.RegisterTask(owner, t.ProjectID, t.ID)
+		releases = append(releases, release)
+		servers[mcptools.ServerName] = mcptools.ServerConfig(e.BoardURL, token)
+		req.ExtraArgs = append(req.ExtraArgs, mcptools.AllowedToolArgs(mcptools.ServerName, mcptools.IssueToolNames...)...)
+		system = append(system, issuesHint)
+		if e.Notes != nil {
+			if n, ok := e.Notes(t); ok {
+				servers[mcptools.NotesServerName] = mcptools.NotesServerConfig(e.BoardURL, token)
+				req.ExtraArgs = append(req.ExtraArgs, mcptools.AllowedToolArgs(mcptools.NotesServerName, mcptools.NotesToolNames...)...)
+				system = append(system, mcptools.NotesHint(n))
+			}
+		}
+	}
+	if s := strings.TrimSpace(p.TaskInstructions); s != "" {
+		system = append(system, s)
+	}
+	if len(system) > 0 {
+		req.ExtraArgs = append(req.ExtraArgs, "--append-system-prompt", strings.Join(system, "\n\n"))
+	}
+	req.ExtraArgs = append(req.ExtraArgs, mcptools.ConfigArgs(servers)...)
+	return func() {
+		for _, r := range releases {
+			r()
+		}
+	}
+}
+
+// runClaude runs Claude once on the task and keeps its report.
+func (r *todoRun) runClaude() error {
+	report, err := r.e.runClaude(r.ctx, &r.t, r.p, r.wt, r.log)
+	if err != nil {
+		return err
+	}
+	r.report = report
+	if r.t.PR != nil && r.t.PR.Reply != nil {
+		_ = r.update(func(x *model.Todo) { keepReviewReport(x, report) }) // posted on GitHub with the fix
+	}
+	return nil
+}
+
+// step is what follows commitAndCheck.
+type step int
+
+const (
+	stepAgain   step = iota // Claude runs again, with a note on what to fix
+	stepHandOff             // the work is ready: hand it off
+	stepDone                // the task is finished here (nothing changed)
+)
+
+// commitAndCheck commits Claude's work and runs the project's tests on it.
+func (r *todoRun) commitAndCheck() (step, error) {
+	e, ctx, p, wt := r.e, r.ctx, r.p, r.wt
+	if r.resolving {
+		markers, err := e.Git.LeftoverMarkers(ctx, p.ID, wt.Path)
+		if err != nil {
+			return 0, err
+		}
+		if markers != "" {
+			if r.t.AutoFixes >= p.MaxAutoFixes {
+				return 0, errors.New("conflict markers remain after Claude's attempt")
+			}
+			_ = r.update(func(x *model.Todo) { x.AutoFixes++ })
+			_ = r.addNote("Some conflict markers are still in the code:\n```\n" + markers + "\n```\nResolve them all.")
+			return stepAgain, nil
+		}
+		r.resolving = false
+	}
+	msg := r.t.Title
+	if msg == "" {
+		msg = firstLine(r.t.Prompt)
+	}
+	if _, err := e.Git.CommitAll(ctx, p.ID, wt.Path, "dash: "+msg); err != nil {
+		return 0, err
+	}
+	editsPending := len(r.t.Edits) > 0 && !r.t.EditsApplied
+	if head, err := e.Git.Head(ctx, p.ID, wt.Path, "HEAD"); err != nil {
+		return 0, err
+	} else if head == wt.BaseCommit && editsPending {
+		return 0, errors.New("the saved edit doesn't change the file")
+	}
+	if editsPending {
+		_ = r.update(func(x *model.Todo) { x.EditsApplied = true })
+	}
+	files, add, del, derr := e.Git.DiffStat(ctx, p.ID, wt.Path, p.Base())
+	if derr == nil {
+		_ = r.update(func(x *model.Todo) { x.DiffFiles, x.DiffAdd, x.DiffDel = files, add, del })
+	}
+	if derr == nil && files == 0 {
+		// An answer, an investigation or "it already works": nothing to
+		// test or merge, but not a failure. Review it; approving closes it.
+		r.log("✔ finished without changing any files; ready for review")
+		noteNoChanges(e.Store, r.t.ID, r.report)
+		if _, err := e.Store.SetStatus(r.t.ID, model.StatusReview, ""); err != nil {
+			slog.Error("set review", "todo", r.t.ID, "err", err)
+		}
+		return stepDone, nil
+	}
+
+	if p.TestCommand == "" {
+		return stepHandOff, nil
+	}
+	checks := e.runChecks(ctx, r.t, p, wt.Path, "review")
+	_ = r.update(func(x *model.Todo) { x.Checks = &checks })
+	if ctx.Err() != nil {
+		return 0, ctx.Err()
+	}
+	if checks.Passed || r.t.AutoFixes >= p.MaxAutoFixes {
+		return stepHandOff, nil
+	}
+	r.log(fmt.Sprintf("↻ tests failed; sending the output back to Claude (fix %d of %d)", r.t.AutoFixes+1, p.MaxAutoFixes))
+	_ = r.update(func(x *model.Todo) { x.AutoFixes++ })
+	_ = r.addNote(testNote(checks))
+	return stepAgain, nil
+}
+
+// handOff sends finished work on: to the merge queue (approved or
+// auto-approved), to its pull request, or to Review.
+func (r *todoRun) handOff() {
+	e, t, p := r.e, r.t, r.p
 	passed := t.Checks == nil || t.Checks.Passed
 	// In "pr" mode the review happens on GitHub: finished work goes straight
 	// to its pull request, opened now (or pushed to, after a fix). Work
@@ -653,16 +787,16 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 	if (t.AutoMerge || p.AutoApprove || toPR) && (passed || toPR) && e.Merges != nil {
 		switch {
 		case toPR && t.WaitsOnGitHub():
-			log(fmt.Sprintf("✔ done; pushing to pull request #%d", t.PR.Number))
+			r.log(fmt.Sprintf("✔ done; pushing to pull request #%d", t.PR.Number))
 		case t.AutoMerge:
-			log("✔ fixed; back to the merge queue (already approved)")
+			r.log("✔ fixed; back to the merge queue (already approved)")
 		case toPR:
-			log("✔ finished; opening a pull request for review on GitHub")
+			r.log("✔ finished; opening a pull request for review on GitHub")
 		default:
-			log("✔ approved automatically; to the merge queue")
+			r.log("✔ approved automatically; to the merge queue")
 		}
 		if !t.AutoMerge {
-			_ = update(func(x *model.Todo) { x.AutoFixes = 0 }) // like approving: a fresh budget for merge conflicts
+			_ = r.update(func(x *model.Todo) { x.AutoFixes = 0 }) // like approving: a fresh budget for merge conflicts
 		}
 		// Counted as queued before it is merging, so a pull request poll in
 		// between doesn't take it for one waiting on GitHub.
@@ -677,9 +811,9 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 		}
 	}
 	if passed {
-		log("✔ ready for review")
+		r.log("✔ ready for review")
 	} else {
-		log("✖ ready for review, but tests fail")
+		r.log("✖ ready for review, but tests fail")
 	}
 	if _, err := e.Store.SetStatus(t.ID, model.StatusReview, ""); err != nil {
 		slog.Error("set review", "todo", t.ID, "err", err)
@@ -734,63 +868,8 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	for _, n := range unsent {
 		emit(model.RunEvent{Kind: "prompt", Text: n})
 	}
-	req.ExtraArgs = append(req.ExtraArgs, "--max-turns", strconv.Itoa(p.TurnLimit()))
-	if m, err := model.CleanModel(t.Model); err != nil {
-		log("⚠ " + err.Error() + "; running on the default model")
-	} else if m != "" {
-		stat.Model = m
-		// After -claude-args, so it wins over a --model there.
-		req.ExtraArgs = append(req.ExtraArgs, "--model", m)
-		log("model: " + m)
-	}
-	for _, dir := range attachmentDirs(t.Attachments) {
-		req.ExtraArgs = append(req.ExtraArgs, "--add-dir", dir)
-	}
-	servers := map[string]any{}
-	var system []string // appended to Claude's system prompt
-	owner, ownerErr := model.Owner{}, errors.New("no owner resolver")
-	if e.Owner != nil {
-		owner, ownerErr = e.Owner(*t)
-	}
-	if ownerErr != nil && (e.Perms != nil || e.Board != nil) {
-		slog.Warn("task runs without Dash's MCP servers: no user and org to act as", "todo", t.ID, "err", ownerErr)
-	}
-	if e.Perms != nil && e.BaseURL != "" && ownerErr == nil {
-		token, release := e.Perms.Register(owner, t.ID, t.ProjectID)
-		defer release()
-		servers[perm.ServerName] = perm.ServerConfig(e.BaseURL, token)
-		req.ExtraArgs = append(req.ExtraArgs, "--permission-prompt-tool", perm.PromptTool)
-		// Claude waits on the MCP tool while a human decides; don't let it time out first.
-		req.Env = []string{"MCP_TOOL_TIMEOUT=3600000"}
-	}
-	if e.Board != nil && e.BoardURL != "" && ownerErr == nil {
-		token, release := e.Board.RegisterTask(owner, t.ProjectID, t.ID)
-		defer release()
-		servers[mcptools.ServerName] = mcptools.ServerConfig(e.BoardURL, token)
-		for _, name := range mcptools.IssueToolNames {
-			req.ExtraArgs = append(req.ExtraArgs, "--allowedTools", "mcp__"+mcptools.ServerName+"__"+name)
-		}
-		system = append(system, issuesHint)
-		if e.Notes != nil {
-			if n, ok := e.Notes(*t); ok {
-				servers[mcptools.NotesServerName] = mcptools.NotesServerConfig(e.BoardURL, token)
-				for _, name := range mcptools.NotesToolNames {
-					req.ExtraArgs = append(req.ExtraArgs, "--allowedTools", "mcp__"+mcptools.NotesServerName+"__"+name)
-				}
-				system = append(system, mcptools.NotesHint(n))
-			}
-		}
-	}
-	if s := strings.TrimSpace(p.TaskInstructions); s != "" {
-		system = append(system, s)
-	}
-	if len(system) > 0 {
-		req.ExtraArgs = append(req.ExtraArgs, "--append-system-prompt", strings.Join(system, "\n\n"))
-	}
-	if len(servers) > 0 {
-		cfg, _ := json.Marshal(map[string]any{"mcpServers": servers})
-		req.ExtraArgs = append(req.ExtraArgs, "--mcp-config", string(cfg))
-	}
+	release := e.claudeArgs(&req, &stat, *t, p, log)
+	defer release()
 
 	// Stop runaway runs: a time limit that doesn't count time spent waiting
 	// for a human to answer a permission prompt, and a turn limit.
@@ -1184,16 +1263,8 @@ func copyPath(src, dst string) error {
 	return os.WriteFile(dst, b, info.Mode().Perm())
 }
 
-func firstLine(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
-	}
-	if len(s) > 72 {
-		s = s[:72]
-	}
-	return s
-}
+// firstLine is s's first line, cut to 72 bytes: a commit subject.
+func firstLine(s string) string { return textutil.Clip(textutil.FirstLine(s), 72) }
 
 func lastLine(s string) string {
 	s = strings.TrimSpace(s)

@@ -1,4 +1,5 @@
-import { $, h, ico } from "./dom.js";
+import { $, dateText, h, ico } from "./dom.js";
+import * as store from "./store.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -29,8 +30,7 @@ accountSection("wall", loadWall);
 async function loadWall() {
   if (!state.me?.org) throw new Error("You aren't in an organization.");
   const f = $("#wall-form");
-  let saved = {};
-  try { saved = JSON.parse(localStorage.getItem("dash.wall") || "{}"); } catch {}
+  const saved = store.getJSON("dash.wall", {});
   const projects = await api("GET", "/api/projects", null, "").catch(() => []);
   $("#wall-project").replaceChildren(h("option", { value: "" }, "All projects"),
     ...projects.map((p) => h("option", { value: p.name }, p.name)));
@@ -73,7 +73,7 @@ async function renderWallTokens() {
   $("#wall-token-new").hidden = false;
   $("#wall-tokens").replaceChildren(...(list.length ? list.map((t) => h("li", { class: "item-row" },
     h("span", { class: "runner-name" }, t.name, h("code", { class: "hint" }, ` ${t.prefix}…`)),
-    h("span", { class: "item-sub hint" }, [t.last_used ? `used ${agoText(t.last_used)}` : "never used", `created ${new Date(t.created).toLocaleDateString()}`].join(" · ")),
+    h("span", { class: "item-sub hint" }, [t.last_used ? `used ${agoText(t.last_used)}` : "never used", `created ${dateText(t.created)}`].join(" · ")),
     h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
       if (!await ask({ title: `Revoke ${t.name}?`, body: "Screens opened with this link stop updating and show that it was revoked.", ok: "Revoke", danger: true })) return;
       await api("DELETE", `/api/wall/tokens/${t.id}`, null, "");
@@ -96,7 +96,7 @@ async function createWallToken() {
 $("#wall-token-create").addEventListener("click", attempt(createWallToken));
 $("#wall-token-name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); attempt(createWallToken)(); } });
 $("#wall-form").addEventListener("change", () => {
-  try { localStorage.setItem("dash.wall", JSON.stringify(wallOpts())); } catch {}
+  store.setJSON("dash.wall", wallOpts());
   renderWallLink();
 });
 $("#account-sheet").addEventListener("close", () => { wall.secret = ""; $("#wall-token-secret").replaceChildren(); });

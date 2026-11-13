@@ -1,3 +1,4 @@
+import * as store from "./store.js";
 
 // ------------------------------------------------------------------ DOM helpers, icons & clock format
 
@@ -11,7 +12,7 @@ const serverTimeLocale = (() => {
   try { return l && Intl.DateTimeFormat.supportedLocalesOf(l).length ? [l] : []; } catch { return []; }
 })();
 // The "Time format" preference: "24", "12" or "" (the locale decides).
-export const clockPref = () => { try { return localStorage.getItem("dash.clock") || ""; } catch { return ""; } };
+export const clockPref = () => store.get("dash.clock", "");
 // timeLocale is what clock times are formatted with: the server's locale,
 // with the hour cycle the preference asks for.
 export let timeLocale = serverTimeLocale;
@@ -24,6 +25,13 @@ export function applyClockPref() {
   } catch { timeLocale = serverTimeLocale; }
 }
 applyClockPref();
+// Times and dates as the UI shows them. All use timeLocale, so they follow
+// the server's locale and the "Time format" setting.
+export const clockTime = (iso) => new Date(iso).toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit" });
+export const dateText = (iso) => new Date(iso).toLocaleDateString(timeLocale, { year: "numeric", month: "short", day: "numeric" });
+export const dateTimeText = (iso) => new Date(iso).toLocaleString(timeLocale, { dateStyle: "medium", timeStyle: "short" });
+// plural counts a noun: "1 task", "3 tasks"; many is for nouns that don't just add an s.
+export const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 export const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 export const h = (tag, props = {}, ...kids) => {
   const el = document.createElement(tag);

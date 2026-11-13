@@ -1,4 +1,4 @@
-import { $, h, ib } from "./dom.js";
+import { $, h, ib, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { saveComments, state } from "./state.js";
@@ -52,7 +52,7 @@ function commentFeedback(list, extra) {
 
 export async function sendComments(t) {
   const list = commentsFor(t.id);
-  const extra = await ask({ title: `Send ${list.length} ${list.length === 1 ? "comment" : "comments"} to Claude`, body: "Claude continues in the same worktree and addresses each comment.", input: true, placeholder: "Anything else? (optional)", ok: "Send for rework" });
+  const extra = await ask({ title: `Send ${plural(list.length, "comment")} to Claude`, body: "Claude continues in the same worktree and addresses each comment.", input: true, placeholder: "Anything else? (optional)", ok: "Send for rework" });
   if (extra === null) return;
   await api("POST", `/api/todos/${t.id}/rework`, { feedback: commentFeedback(list, extra) });
   delete state.comments[t.id];

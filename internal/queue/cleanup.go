@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/model"
 
 	"github.com/klahr/dash/internal/localrun"
@@ -45,7 +46,7 @@ func (r CleanupReport) String() string {
 			parts = append(parts, fmt.Sprintf("%d %s", x.n, plural))
 		}
 	}
-	return fmt.Sprintf("removed %s (%s)", strings.Join(parts, ", "), humanBytes(r.Bytes))
+	return fmt.Sprintf("removed %s (%s)", strings.Join(parts, ", "), disk.Size(uint64(r.Bytes)))
 }
 
 // Cleanup tidies one project on its merge worker (it touches the main
@@ -213,18 +214,6 @@ func dirSize(path string) int64 {
 		return nil
 	})
 	return n
-}
-
-func humanBytes(n int64) string {
-	switch {
-	case n >= 1<<30:
-		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
-	case n >= 1<<20:
-		return fmt.Sprintf("%.0f MB", float64(n)/(1<<20))
-	case n >= 1<<10:
-		return fmt.Sprintf("%.0f KB", float64(n)/(1<<10))
-	}
-	return fmt.Sprintf("%d bytes", n)
 }
 
 func humanDuration(d time.Duration) string {

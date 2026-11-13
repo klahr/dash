@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // The protocols a runner clones, fetches and pushes GitHub repositories
@@ -267,11 +269,7 @@ func summarizeGitOutput(out string) string {
 		}
 		keep = append(keep, l)
 	}
-	s := strings.Join(keep, "; ")
-	if len(s) > maxDetail {
-		s = s[:maxDetail] + "…"
-	}
-	return s
+	return textutil.Clip(strings.Join(keep, "; "), maxDetail)
 }
 
 // RedactRemote drops the user info of a URL remote (an https token, given

@@ -1,4 +1,5 @@
 import { $, $$ } from "./dom.js";
+import * as store from "./store.js";
 import { desktop } from "./viewport.js";
 import { fail, reduceMotion } from "./dialogs.js";
 import { state } from "./state.js";
@@ -24,7 +25,7 @@ export function showView(name) {
 
 function applyView(name) {
   state.view = name;
-  try { localStorage.setItem("dash.view", name); } catch {}
+  store.set("dash.view", name);
   renderNavActive();
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
   if (name === "run") requestAnimationFrame(() => { fitTerm(); ensureShell(); });
@@ -62,6 +63,6 @@ $$(".nav > button[data-view], .menu-views [data-view]").forEach((b) => b.addEven
   showView(b.dataset.view);
 }));
 {
-  const saved = (() => { try { return localStorage.getItem("dash.view"); } catch { return null; } })();
+  const saved = store.get("dash.view");
   if (saved && $(`.nav > button[data-view="${saved}"]`)) applyView(saved);
 }

@@ -1,4 +1,4 @@
-import { $, ib } from "./dom.js";
+import { $, ib, plural } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -57,7 +57,7 @@ export function renderPushMain() {
   const btn = $("#push-main");
   btn.hidden = !p?.remote_url || landsOnGitHub(p);
   if (btn.hidden) return;
-  const label = n ? `Push ${n} ${n === 1 ? "commit" : "commits"} to ${baseBranch(p)}` : `${baseBranch(p)} is up to date with GitHub`;
+  const label = n ? `Push ${plural(n, "commit")} to ${baseBranch(p)}` : `${baseBranch(p)} is up to date with GitHub`;
   btn.disabled = !n;
   btn.title = label;
   btn.setAttribute("aria-label", label);
@@ -69,5 +69,5 @@ export function pushBar() {
   const n = state.unpushed;
   if (!n) return null;
   return ib({ type: "button", class: "btn primary push-done", onclick: attempt(pushDone) }, "push",
-    `Push ${n} ${n === 1 ? "commit" : "commits"} to ${baseBranch(state.project)}`);
+    `Push ${plural(n, "commit")} to ${baseBranch(state.project)}`);
 }

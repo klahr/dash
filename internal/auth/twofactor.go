@@ -72,7 +72,7 @@ func twoFactorFree(path string) bool {
 
 // newTicketFor keeps t, waiting for its second factor, and returns its token.
 func (a *Auth) newTicketFor(t *loginTicket) string {
-	tok := randomToken()
+	tok := randomString(32)
 	now := a.now()
 	a.mu.Lock()
 	defer a.mu.Unlock()

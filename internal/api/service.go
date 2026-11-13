@@ -60,24 +60,16 @@ func (s *Server) caller(r *http.Request) (Caller, error) {
 		if id.Org == nil {
 			return Caller{}, errNoOrg
 		}
-		return Caller{User: id.User.ID, Org: id.Org.ID, OrgFolder: folderOf(id.Org.Org), PlatformAdmin: id.User.PlatformAdmin}, nil
+		return Caller{User: id.User.ID, Org: id.Org.ID, OrgFolder: id.Org.ProjectFolder(), PlatformAdmin: id.User.PlatformAdmin}, nil
 	}
 	if auth.FromMachine(r.Context()) && s.Store != nil {
 		org, err := s.Store.Accounts().DefaultOrg()
 		if err != nil {
 			return Caller{}, fmt.Errorf("this Dash has no default organization: %w", err)
 		}
-		return Caller{Org: org.ID, OrgFolder: folderOf(org), PlatformAdmin: true, Machine: true}, nil
+		return Caller{Org: org.ID, OrgFolder: org.ProjectFolder(), PlatformAdmin: true, Machine: true}, nil
 	}
 	return Caller{}, errLogin
-}
-
-// folderOf is o's project folder (its slug, for an org loaded without one).
-func folderOf(o store.Org) string {
-	if o.Folder != "" {
-		return o.Folder
-	}
-	return o.Slug
 }
 
 // service is the API as one caller may use it: their org's records, and
@@ -620,7 +612,7 @@ func (sv *service) projectsRoot() (string, error) {
 // (a hub adding a project on its runner) keeps to the projects root, which
 // the runner guard checks.
 func (sv *service) projectPath(name, path string) (string, error) {
-	slug := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(name), "-"), "-")
+	slug := store.FolderSlug(name)
 	root, err := sv.projectsRoot()
 	if err != nil {
 		return "", err

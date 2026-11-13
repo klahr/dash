@@ -1,5 +1,5 @@
 import { renderMarkdown } from "../editor.js";
-import { $, entering, h, ib, timeLocale } from "./dom.js";
+import { $, clockTime, entering, h, ib, plural, timeLocale } from "./dom.js";
 import { attempt, copy } from "./dialogs.js";
 import { state } from "./state.js";
 import { duration } from "./activity.js";
@@ -46,7 +46,6 @@ function endPhase(e) {
   return !!res;
 }
 
-const clock = (iso) => new Date(iso).toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit" });
 
 // timeline merges a saved chat's message nodes with the worker's events.
 export function timeline(nodes, saved) {
@@ -84,12 +83,12 @@ function workerNode(parent, e) {
   const divider = (text, cls = "") => { worker.cur = null; parent.append(h("div", { class: `tl-divider ${cls}`, role: "separator" }, h("span", {}, text))); };
   switch (e.kind) {
     case "run_start":
-      return divider(`Agent · ${e.text || "Started"} · ${clock(e.at)}`, "agent");
+      return divider(`Agent · ${e.text || "Started"} · ${clockTime(e.at)}`, "agent");
     case "run_end":
       // Whatever didn't report its end stopped with the run.
       endPhase(e);
       for (const t of worker.tools.values()) toolSettled(t);
-      divider(`Agent ${e.is_error ? "stopped" : "finished"} · ${clock(e.at)}`, e.is_error ? "agent error" : "agent");
+      divider(`Agent ${e.is_error ? "stopped" : "finished"} · ${clockTime(e.at)}`, e.is_error ? "agent error" : "agent");
       if (e.is_error && e.text) parent.append(h("p", { class: "tl-error" }, e.text));
       return;
     case "prompt":
@@ -150,7 +149,7 @@ function workerNode(parent, e) {
     case "result":
       cur.el.append(e.is_error
         ? h("p", { class: "tl-error" }, e.text)
-        : h("p", { class: "agent-meta" }, `${e.turns} ${e.turns === 1 ? "turn" : "turns"}${e.cost_usd ? ` · ≈$${e.cost_usd.toFixed(2)}` : ""}`));
+        : h("p", { class: "agent-meta" }, `${plural(e.turns, "turn")}${e.cost_usd ? ` · ≈$${e.cost_usd.toFixed(2)}` : ""}`));
       worker.cur = null;
       break;
   }

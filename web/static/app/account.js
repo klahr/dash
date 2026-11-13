@@ -1,4 +1,4 @@
-import { $, fill, h, ico } from "./dom.js";
+import { $, dateText, dateTimeText, fill, h, ico, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -101,7 +101,7 @@ async function renderOrg() {
   if (org.url) {
     const old = Object.entries(org.slug_redirects || {});
     $("#org-address-url").replaceChildren(h("a", { href: org.url + "/" }, org.url.replace(/^https?:\/\//, "")),
-      ...old.map(([s, until]) => h("span", {}, ` · ${s} leads here until ${new Date(until).toLocaleDateString()}`)));
+      ...old.map(([s, until]) => h("span", {}, ` · ${s} leads here until ${dateText(until)}`)));
     $("#org-slug-row").hidden = $("#org-slug-hint").hidden = mine !== "owner";
     $("#org-slug").value = org.org.slug;
   }
@@ -135,7 +135,7 @@ async function renderOrg() {
           `Their sessions in ${org.org.name} end at once; they can sign in again. To keep someone out, remove them (and in Google Workspace).`);
         if (pw == null) return;
         const r = await api("POST", `/api/orgs/${org.org.id}/members/${m.id}/sign-out`, { password: pw }, "");
-        toast(`${m.username} signed out (${r.sessions} session${r.sessions === 1 ? "" : "s"})`, { tone: "ok" });
+        toast(`${m.username} signed out (${plural(r.sessions, "session")})`, { tone: "ok" });
       }) }, "Sign out") : null,
       (canEdit || self) ? h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
         const pw = await askPassword(self ? `Leave ${org.org.name}?` : `Remove ${m.username}?`,
@@ -157,7 +157,7 @@ async function renderOrg() {
     for (const opt of $("#org-invite-role").options) opt.hidden = opt.disabled = RANK[opt.value] > RANK[mine];
     const pending = (org.invitations || []).map((i) => h("li", { class: "item-row" },
       h("span", { class: "runner-name" }, i.email),
-      h("span", { class: "item-sub hint" }, `${ROLE_LABEL[i.role]} · expires ${new Date(i.expires).toLocaleDateString()}${i.invited_by ? ` · by ${i.invited_by}` : ""}`),
+      h("span", { class: "item-sub hint" }, `${ROLE_LABEL[i.role]} · expires ${dateText(i.expires)}${i.invited_by ? ` · by ${i.invited_by}` : ""}`),
       h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
         await api("DELETE", `/api/orgs/${org.org.id}/invitations/${i.id}`, null, "");
         toast(`Invitation for ${i.email} revoked`);
@@ -248,7 +248,7 @@ async function renderOrgSSO(o, mine) {
   ] : [];
 
   const events = (s.events || []).slice(0, 20).map((e) => h("li", {},
-    h("span", { class: "hint" }, new Date(e.at).toLocaleString(), " · "), e.user || e.actor || "", " ", SSO_EVENTS[e.kind] || e.kind,
+    h("span", { class: "hint" }, dateTimeText(e.at), " · "), e.user || e.actor || "", " ", SSO_EVENTS[e.kind] || e.kind,
     e.detail ? h("span", { class: "hint" }, ` · ${e.detail}`) : null));
 
   fill(box,
@@ -426,7 +426,7 @@ async function renderTwoFactor() {
   const left = st.recovery_codes_left;
   body.replaceChildren(
     h("p", {}, ico("check"), " On. Signing in asks for a code from your authenticator app."),
-    h("p", { class: `hint${left < 3 ? " warn" : ""}` }, `${left} recovery code${left === 1 ? "" : "s"} left.`),
+    h("p", { class: `hint${left < 3 ? " warn" : ""}` }, `${plural(left, "recovery code")} left.`),
     h("div", { class: "sheet-actions" },
       h("button", { class: "btn", type: "button", onclick: attempt(async () => {
         const pw = await askPassword("Make new recovery codes?", "The codes you have now stop working.");

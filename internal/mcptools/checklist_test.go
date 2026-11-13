@@ -93,12 +93,26 @@ func call(t *testing.T, tools []Tool, name string, args string) (string, error) 
 	return "", nil
 }
 
+// checklistToolNames are the names of the checklist tools, taken from their
+// definitions; read_checklist, which only reads, comes first.
+func checklistToolNames(t *testing.T) []string {
+	t.Helper()
+	var names []string
+	for _, tl := range checklistTools(&listBoard{}, Options{}, func(Args) (model.Project, error) { return model.Project{}, nil }, Param{}) {
+		names = append(names, tl.Name)
+	}
+	if len(names) == 0 || names[0] != "read_checklist" {
+		t.Fatalf("checklist tools: %v", names)
+	}
+	return names
+}
+
 const todoMD = "# TODO\n\nMost important first.\n\n## Next\n\n- [ ] Ship it\n      soon\n- [x] Write it\n"
 
 func TestChecklistTools(t *testing.T) {
 	b := &listBoard{content: todoMD}
 	tools := Tools(b, Options{Project: "web", Draft: true})
-	for _, name := range ChecklistToolNames {
+	for _, name := range checklistToolNames(t) {
 		if !slices.Contains(BoardTools, name) {
 			t.Errorf("%s isn't in BoardTools", name)
 		}
@@ -205,7 +219,7 @@ func TestChecklistToolsReadOnly(t *testing.T) {
 		"fleet": ReadOnly(FleetTools(Fleet{Computers: func() ([]Machine, error) { return nil, nil }}), FleetReadTools, errRO),
 	} {
 		ref := checklist.Parse(b.content).Items()[0].Ref
-		for _, tool := range ChecklistToolNames[1:] {
+		for _, tool := range checklistToolNames(t)[1:] {
 			if _, err := call(t, tools, tool, `{"project":"web","ref":"`+ref+`","text":"x"}`); !errors.Is(err, errRO) {
 				t.Errorf("%s %s: %v", name, tool, err)
 			}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // openPR is step 3 in "pr" mode: push the todo's branch and open (or update)
@@ -585,13 +586,7 @@ func reviewers(rs []gitops.PRReview, cs []gitops.IssueComment) string {
 // maxReviewText caps one review's or comment's text in Claude's note.
 const maxReviewText = 4000
 
-func clip(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) > maxReviewText {
-		s = s[:maxReviewText] + "…"
-	}
-	return s
-}
+func clip(s string) string { return textutil.Clip(strings.TrimSpace(s), maxReviewText) }
 
 // reviewNote is what Claude is told of reviews rs on pull request n, with
 // their comments on lines of the diff (comments holds the pull request's
@@ -897,10 +892,7 @@ func subject(t model.Todo) string {
 }
 
 func prBody(t model.Todo) string {
-	body := strings.TrimSpace(t.Prompt)
-	if len(body) > 4000 {
-		body = body[:4000] + "…"
-	}
+	body := textutil.Clip(strings.TrimSpace(t.Prompt), 4000)
 	if t.Checks != nil && t.Checks.Passed {
 		body += fmt.Sprintf("\n\nTests pass locally (`%s`).", t.Checks.Command)
 	}

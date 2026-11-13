@@ -17,6 +17,7 @@ import (
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // ErrRunning is returned when a scan is started while it is already running.
@@ -405,7 +406,7 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 			if e.Kind == "tool_use" {
 				act = "Using " + e.Tool
 			}
-			_, _ = r.Store.UpdateScanRun(run.ID, false, func(x *model.ScanRun) { x.Activity = clip(oneLine(act), 120) })
+			_, _ = r.Store.UpdateScanRun(run.ID, false, func(x *model.ScanRun) { x.Activity = textutil.Clip(oneLine(act), 120) })
 		},
 	}
 	var out Outcome
@@ -429,7 +430,7 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 	}
 	found, err := ParseFindings(out.Result)
 	if err != nil {
-		run, _ = r.Store.UpdateScanRun(run.ID, false, func(x *model.ScanRun) { x.Answer = clip(out.Result, maxAnswer) })
+		run, _ = r.Store.UpdateScanRun(run.ID, false, func(x *model.ScanRun) { x.Answer = textutil.Clip(out.Result, maxAnswer) })
 		fail(err)
 		return
 	}

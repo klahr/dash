@@ -35,7 +35,7 @@ var GitToolNames = []string{"git_diff", "git_log", "git_show", "git_blame"}
 func gitAllowed() []string {
 	out := make([]string, len(GitToolNames))
 	for i, n := range GitToolNames {
-		out[i] = "mcp__" + GitServerName + "__" + n
+		out[i] = mcptools.ToolName(GitServerName, n)
 	}
 	return out
 }

@@ -58,9 +58,6 @@ func TestPushSubscriptions(t *testing.T) {
 	if subs, _ := s.PushSubscriptionsForOrg(other.ID); len(subs) != 2 {
 		t.Fatalf("other org: %+v", subs)
 	}
-	if subs, _ := s.ListPushSubscriptions(u.ID); len(subs) != 2 {
-		t.Fatalf("user's: %+v", subs)
-	}
 
 	// Someone no longer in the org gets none of its pushes.
 	if _, err := s.db.Exec("DELETE FROM org_memberships WHERE user_id = ? AND org_id = ?", u.ID, other.ID); err != nil {

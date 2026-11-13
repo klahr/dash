@@ -26,6 +26,7 @@ import (
 	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/gitops"
+	"github.com/klahr/dash/internal/httpjson"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/mcptools"
@@ -524,11 +525,7 @@ func (s *Server) generalBusy(c Caller) bool {
 
 // ---- helpers ----
 
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
-}
+var writeJSON = httpjson.Write
 
 // writeText answers with plain text.
 func writeText(w http.ResponseWriter, s string) {

@@ -695,3 +695,9 @@ func (w *worker) importCard(_ context.Context, it Item) error {
 	}
 	return w.save(l)
 }
+
+// PromptEditable reports whether a todo's prompt may change in status s:
+// while it is a draft, queued or failed (the board's rule).
+func PromptEditable(s model.TodoStatus) bool {
+	return s == model.StatusDraft || s == model.StatusQueued || s == model.StatusFailed
+}

@@ -226,6 +226,8 @@ func failFlow(code string, format string, args ...any) *flowError {
 	return &flowError{Code: code, Err: fmt.Errorf(format, args...)}
 }
 
+// randomString is n random bytes, base64url-encoded: the package's tokens,
+// codes, nonces and session families.
 func randomString(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
