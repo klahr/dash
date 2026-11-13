@@ -34,8 +34,15 @@ import (
 )
 
 const (
-	CookieName = "dash_session"
-	sessionTTL = 7 * 24 * time.Hour
+	// CookieName is the session cookie over HTTPS. The __Host- prefix makes
+	// browsers refuse one set with a Domain, or from another host: code on a
+	// preview (<label>.preview.<Dash's host>) can't plant its own session
+	// for Dash's host (cookie tossing), signing someone into its account.
+	CookieName = "__Host-dash_session"
+	// PlainCookieName is the session cookie over plain HTTP, where browsers
+	// don't take __Host- cookies.
+	PlainCookieName = "dash_session"
+	sessionTTL      = 7 * 24 * time.Hour
 
 	// The default Lockout.
 	maxFailures    = 5                // per client IP …
@@ -307,8 +314,8 @@ func scopeFor(r *http.Request) string {
 
 // session returns the identity of r's session cookie, if valid.
 func (a *Auth) session(r *http.Request) (*Identity, bool) {
-	c, err := r.Cookie(CookieName)
-	if err != nil || c.Value == "" {
+	c, ok := a.sessionCookie(r)
+	if !ok {
 		return nil, false
 	}
 	key := sessionKey(c.Value)
@@ -320,6 +327,32 @@ func (a *Auth) session(r *http.Request) (*Identity, bool) {
 		return nil, false
 	}
 	return &Identity{Session: s, key: key}, true
+}
+
+// cookieName is the session cookie's name on r's answer: CookieName when
+// cookies are Secure, else PlainCookieName.
+func (a *Auth) cookieName(r *http.Request) string {
+	if a.secureCookie(r) {
+		return CookieName
+	}
+	return PlainCookieName
+}
+
+// sessionCookie returns r's session cookie. More than one is refused: a
+// second one was planted by another host under Dash's domain (a preview),
+// and the browser may well send it first.
+func (a *Auth) sessionCookie(r *http.Request) (*http.Cookie, bool) {
+	cs := r.CookiesNamed(a.cookieName(r))
+	if len(cs) != 1 || cs[0].Value == "" {
+		return nil, false
+	}
+	return cs[0], true
+}
+
+// clearSessionCookie signs this browser out of the session cookie.
+func (a *Auth) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{Name: a.cookieName(r), Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+		Secure: a.secureCookie(r), SameSite: http.SameSiteStrictMode})
 }
 
 // startSession signs uid in on this browser with their password.
@@ -350,7 +383,7 @@ func (a *Auth) startSessionVia(w http.ResponseWriter, r *http.Request, uid, org 
 	// would also go to every org's subdomain and to *.preview hosts, where
 	// anyone's code runs.
 	http.SetCookie(w, &http.Cookie{
-		Name:     CookieName,
+		Name:     a.cookieName(r),
 		Value:    tok,
 		Path:     "/",
 		MaxAge:   int(sessionTTL.Seconds()),
@@ -710,11 +743,10 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 // browser was handed to. A form post (the org picker's) goes on to the
 // sign-in page.
 func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(CookieName); err == nil {
+	if c, ok := a.sessionCookie(r); ok {
 		_ = a.acc.DeleteSessionFamily(sessionKey(c.Value))
 	}
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
-		Secure: a.secureCookie(r), SameSite: http.SameSiteStrictMode})
+	a.clearSessionCookie(w, r)
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
 		http.Redirect(w, r, "/login.html", http.StatusSeeOther)
 		return

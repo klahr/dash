@@ -108,6 +108,9 @@ previews need a domain.
   `-public-url` when set, else the address you open Dash on, but only on a host the preview domain
   is under (`dash.example.com` for `preview.dash.example.com`). Dash's own session cookie is never
   forwarded to the app, and pages served from a preview can't make changes through Dash's API.
+  A cookie the app sets with a `Domain` loses it, so it stays on the preview's host. Over HTTPS
+  Dash's session cookie is `__Host-dash_session`, which a preview's page can't set for Dash, and
+  Dash refuses a request that carries two session cookies.
 - The app sees requests as if they came to `http://localhost:<port>` (dev servers often only allow
   that host), with `X-Forwarded-Host` and `X-Forwarded-Proto` set to the preview's address.
   Redirects to `localhost:<port>` are rewritten, and `X-Frame-Options` and CSP `frame-ancestors`

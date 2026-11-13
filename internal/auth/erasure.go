@@ -43,8 +43,7 @@ func (a *Auth) deleteOwnAccount(w http.ResponseWriter, r *http.Request, id *Iden
 	if !a.deleteUser(w, r, id.User.ID, 0) {
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
-		Secure: a.secureCookie(r), SameSite: http.SameSiteStrictMode})
+	a.clearSessionCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 

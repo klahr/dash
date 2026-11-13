@@ -68,7 +68,7 @@ func passwordStep(t *testing.T, h http.Handler, ip, username, password string) s
 		t.Fatalf("password step: %d %s", w.Code, w.Body)
 	}
 	for _, k := range w.Result().Cookies() {
-		if k.Name == CookieName {
+		if k.Name == PlainCookieName {
 			t.Fatal("a session before the second factor")
 		}
 	}

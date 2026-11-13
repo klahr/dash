@@ -149,7 +149,7 @@ func TestProxyAuthAndLifecycle(t *testing.T) {
 	if cookie.Name != cookieName || !cookie.HttpOnly {
 		t.Fatalf("cookie: %+v", cookie)
 	}
-	w = do("GET", "http://abc123.preview.dash.test/index.html", map[string]string{"Cookie": cookie.String() + "; dash_session=secret"})
+	w = do("GET", "http://abc123.preview.dash.test/index.html", map[string]string{"Cookie": cookie.String() + "; dash_session=secret; __Host-dash_session=secret"})
 	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != "hello" {
 		t.Fatalf("proxied: %d %q", w.Code, w.Body)
 	}
@@ -256,5 +256,32 @@ func TestProxyWebSocket(t *testing.T) {
 	}
 	if e.seen.Load() == 0 {
 		t.Fatal("WebSocket traffic didn't count as activity")
+	}
+}
+
+// A preview's Set-Cookie with a Domain would reach Dash's host (the parent
+// domain): the proxy makes it host-only.
+func TestHostOnlyCookies(t *testing.T) {
+	t.Parallel()
+
+	h := http.Header{}
+	h.Add("Set-Cookie", "dash_session=planted; Domain=dash.example.com; Path=/api")
+	h.Add("Set-Cookie", "theme=dark; Path=/; HttpOnly")
+	h.Add("Set-Cookie", "=bad")
+	hostOnlyCookies(h)
+	got := h.Values("Set-Cookie")
+	if len(got) != 2 {
+		t.Fatalf("Set-Cookie = %q, want 2", got)
+	}
+	for _, v := range got {
+		if strings.Contains(strings.ToLower(v), "domain") {
+			t.Errorf("cookie kept its Domain: %s", v)
+		}
+	}
+	if !strings.HasPrefix(got[0], "dash_session=planted") || !strings.Contains(got[0], "Path=/api") {
+		t.Errorf("first cookie = %q", got[0])
+	}
+	if got[1] != "theme=dark; Path=/; HttpOnly" {
+		t.Errorf("untouched cookie = %q", got[1])
 	}
 }

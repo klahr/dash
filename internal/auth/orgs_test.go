@@ -48,7 +48,7 @@ func (c *client) do(method, path, body string) *httptest.ResponseRecorder {
 	}
 	w := do(c.h, method, path, body, cookies...)
 	for _, k := range w.Result().Cookies() {
-		if k.Name == CookieName {
+		if k.Name == PlainCookieName {
 			c.c = k
 		}
 	}

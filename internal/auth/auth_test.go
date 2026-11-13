@@ -88,7 +88,7 @@ func do(h http.Handler, method, path, body string, cookies ...*http.Cookie) *htt
 func sessionCookie(t *testing.T, w *httptest.ResponseRecorder) *http.Cookie {
 	t.Helper()
 	for _, c := range w.Result().Cookies() {
-		if c.Name == CookieName {
+		if c.Name == PlainCookieName || c.Name == CookieName {
 			return c
 		}
 	}
@@ -318,8 +318,8 @@ func TestTrustProxy(t *testing.T) {
 		t.Fatal("forwarded headers must be ignored unless TrustProxy is set")
 	}
 	a.TrustProxy = true
-	if c := sessionCookie(t, login("https", "")); !c.Secure {
-		t.Fatal("want a Secure cookie behind an HTTPS proxy")
+	if c := sessionCookie(t, login("https", "")); !c.Secure || c.Name != CookieName {
+		t.Fatalf("want a Secure %s cookie behind an HTTPS proxy, got %s", CookieName, c)
 	}
 	r := httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "127.0.0.1:5555"
@@ -376,7 +376,7 @@ func TestImportLegacySessions(t *testing.T) {
 	if err := a.ImportSessions(write(stale.legacy)); err != nil {
 		t.Fatal(err)
 	}
-	c := &http.Cookie{Name: CookieName, Value: "old-cookie"}
+	c := &http.Cookie{Name: PlainCookieName, Value: "old-cookie"}
 	if w := do(serve(a), "GET", "/api/projects", "", c); w.Code != http.StatusUnauthorized {
 		t.Fatalf("session of other credentials: want 401, got %d", w.Code)
 	}

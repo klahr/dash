@@ -77,6 +77,45 @@ func TestPublicSecureCookie(t *testing.T) {
 	}
 }
 
+// A preview under Dash's host can set cookies for Dash's domain. Over HTTPS
+// the session cookie is __Host- (which browsers refuse to take from another
+// host or with a Domain), so a planted plain dash_session is ignored, and a
+// request with two session cookies is refused rather than taking the first.
+func TestPlantedSessionCookieRefused(t *testing.T) {
+	t.Parallel()
+
+	_, h := newServer(t)
+	const base = "https://dash.example.com"
+	w := do(h, "POST", base+"/api/login", `{"username":"admin","password":"s3cret"}`)
+	mine := sessionCookie(t, w)
+	if mine.Name != CookieName || !mine.Secure || mine.Path != "/" {
+		t.Fatalf("session cookie over HTTPS = %s, want a Secure %s on /", mine, CookieName)
+	}
+	planted := &http.Cookie{Name: PlainCookieName, Value: mine.Value}
+	if w := do(h, "GET", base+"/api/me", "", planted); w.Code != http.StatusUnauthorized {
+		t.Errorf("plain %s over HTTPS: want 401, got %d", PlainCookieName, w.Code)
+	}
+	if w := do(h, "GET", base+"/api/me", "", mine); w.Code != http.StatusOK {
+		t.Fatalf("own session: want 200, got %d", w.Code)
+	}
+	second := &http.Cookie{Name: CookieName, Value: "attackers-session"}
+	if w := do(h, "GET", base+"/api/me", "", mine, second); w.Code != http.StatusUnauthorized {
+		t.Errorf("two session cookies: want 401, got %d", w.Code)
+	}
+	if w := do(h, "GET", base+"/api/me", "", second, mine); w.Code != http.StatusUnauthorized {
+		t.Errorf("two session cookies, planted first: want 401, got %d", w.Code)
+	}
+
+	// Plain HTTP has no __Host- cookies; two are still refused.
+	plain := sessionCookie(t, do(h, "POST", "/api/login", `{"username":"admin","password":"s3cret"}`))
+	if plain.Name != PlainCookieName {
+		t.Fatalf("session cookie over HTTP = %s, want %s", plain.Name, PlainCookieName)
+	}
+	if w := do(h, "GET", "/api/me", "", &http.Cookie{Name: PlainCookieName, Value: "x"}, plain); w.Code != http.StatusUnauthorized {
+		t.Errorf("two plain session cookies: want 401, got %d", w.Code)
+	}
+}
+
 // Without org subdomains, too, a page of another origin can't use the
 // session cookie to change anything: SameSite lets it through from a
 // sibling subdomain or another port of the same host.

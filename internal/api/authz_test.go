@@ -108,7 +108,7 @@ func TestSignedOutRequestsAreRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	stale := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.AddCookie(&http.Cookie{Name: auth.CookieName, Value: "not-a-session"})
+		r.AddCookie(&http.Cookie{Name: auth.PlainCookieName, Value: "not-a-session"})
 		o.h.ServeHTTP(w, r)
 	})
 	who := []struct {

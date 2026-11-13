@@ -176,6 +176,11 @@ subdomain with a token that is signed, good for one minute and for that user, or
 and works once; the subdomain turns it into a session of its own. Signing out on any host signs
 out the base domain and every org subdomain that browser was handed to.
 
+Over HTTPS the session cookie is `__Host-dash_session`: browsers refuse such a cookie from
+another host or with a `Domain`, so a preview's page can't sign you into another account. Over
+plain HTTP it is `dash_session`. Upgrading from a Dash that used `dash_session` over HTTPS signs
+everyone out once.
+
 On every host, requests that change something (and WebSockets) must come from a page on the same
 host (`Origin`): an org's pages can't drive another org's API, and previews can't drive any.
 Pages may only be framed by their own host (`frame-ancestors 'self'`).

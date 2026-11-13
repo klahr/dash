@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/localpath"
 )
 
@@ -293,7 +294,7 @@ func (m *Manager) proxy(addr string, port int, origin string, transport http.Rou
 			// Dash's own cookies are none of the app's business.
 			var keep []string
 			for _, c := range pr.In.Cookies() {
-				if c.Name != cookieName && c.Name != "dash_session" {
+				if c.Name != cookieName && c.Name != auth.CookieName && c.Name != auth.PlainCookieName {
 					keep = append(keep, c.Name+"="+c.Value)
 				}
 			}
@@ -312,6 +313,7 @@ func (m *Manager) proxy(addr string, port int, origin string, transport http.Rou
 			}
 		},
 		ModifyResponse: func(res *http.Response) error {
+			hostOnlyCookies(res.Header)
 			// It's shown in Dash's iframe.
 			res.Header.Del("X-Frame-Options")
 			if csp := res.Header.Get("Content-Security-Policy"); csp != "" {
@@ -331,6 +333,37 @@ func (m *Manager) proxy(addr string, port int, origin string, transport http.Rou
 			m.remoteError(w, err) // "not answering", unless a runner said why
 		},
 		FlushInterval: -1, // server-sent events (some dev servers' reload channel)
+	}
+}
+
+// hostOnlyCookies drops the Domain of the cookies the app sets, so they stay
+// on the preview's host: with one, the app's cookies would go to Dash's host
+// (the parent domain) and its other previews. (Script on the page can still
+// set such cookies; Dash's session cookie is __Host-, which they can't touch.)
+func hostOnlyCookies(h http.Header) {
+	sets := h.Values("Set-Cookie")
+	changed := false
+	for i, v := range sets {
+		c, err := http.ParseSetCookie(v)
+		if err != nil {
+			sets[i] = "" // dropped: a header Go can't read can't be made safe
+			changed = true
+			continue
+		}
+		if c.Domain != "" {
+			c.Domain = ""
+			sets[i] = c.String()
+			changed = true
+		}
+	}
+	if !changed {
+		return
+	}
+	h.Del("Set-Cookie")
+	for _, v := range sets {
+		if v != "" {
+			h.Add("Set-Cookie", v)
+		}
 	}
 }
 
