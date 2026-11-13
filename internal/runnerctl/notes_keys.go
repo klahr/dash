@@ -9,7 +9,8 @@ package runnerctl
 import (
 	"bufio"
 	"bytes"
-	"crypto/dsa" //nolint:staticcheck // only to name the key type in an error
+	//lint:ignore SA1019 only to name the key type in an error
+	"crypto/dsa"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -111,6 +112,7 @@ func sshTypeName(t string) string {
 		return "RSA"
 	case strings.HasPrefix(t, "ecdsa-"):
 		return "ECDSA"
+	//lint:ignore SA1019 only to name the key type in an error
 	case t == ssh.KeyAlgoDSA:
 		return "DSA"
 	case strings.HasPrefix(t, "sk-"):
