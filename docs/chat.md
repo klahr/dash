@@ -10,6 +10,10 @@ runs on one of your own runners, with its Claude login (see
 In the composer, <kbd>Enter</kbd> sends, messages written while Claude answers are queued, `/clear`
 starts a new conversation and `/help` lists these.
 
+<kbd>Up</kbd> on the first line of the message box shows the message you sent before it, as a
+shell's history does; <kbd>Down</kbd> on the last line goes forward again, back to what you were
+writing. Typing stops the stepping, so an edited message stays as you left it.
+
 ## Suggested next message
 
 After each reply, Dash guesses what you'll say next and shows it greyed out in the empty message

@@ -225,6 +225,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   function reset(saved = []) {
     if (c.current) { c.ws = null; finish(); }
     suggest();
+    recall.end();
     c.history = [...saved];
     const nodes = merge(saved.map((m) => m.role === "user" ? user(m) : assistant(m)), saved);
     empty.hidden = nodes.length > 0;
@@ -272,7 +273,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   // with "/" (a path, say) is sent as a message.
   const commands = {
     clear: async () => { await clear(); reset(); },
-    help: () => toast(`/clear starts a new conversation. /help shows this.${shell ? " !command runs a shell command where the chat runs (no terminal); Claude sees it and its output next turn." : ""} Messages sent while Claude answers are queued and go once it's done; Up in an empty composer edits the last one. A suggested next message shows greyed out in the empty composer: Enter sends it, Tab puts it there to edit.`, { head: "Chat commands" }),
+    help: () => toast(`/clear starts a new conversation. /help shows this.${shell ? " !command runs a shell command where the chat runs (no terminal); Claude sees it and its output next turn." : ""} Messages sent while Claude answers are queued and go once it's done; Up in an empty composer edits the last one; otherwise Up and Down step through the messages sent before. A suggested next message shows greyed out in the empty composer: Enter sends it, Tab puts it there to edit.`, { head: "Chat commands" }),
   };
   commands.new = commands.reset = commands.clear;
 
@@ -284,7 +285,35 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     shellMode();
     showSuggestion();
   };
-  input.addEventListener("input", () => { autoGrow(); if (c.current) c.busyButton(); });
+  // recall steps through the messages sent in this conversation, as a shell's
+  // history does: Up on the composer's first line shows the one before, Down on
+  // its last line the one after, and past the newest what was being written.
+  // Typing ends the browsing, so an edited message isn't lost to a later Down.
+  const recall = {
+    pos: null, list: [], draft: "",
+    end() { recall.pos = null; },
+    step(dir) {
+      const v = input.value, a = input.selectionStart, b = input.selectionEnd;
+      if (dir < 0 ? v.lastIndexOf("\n", a - 1) >= 0 : v.indexOf("\n", b) >= 0) return false;
+      if (recall.pos === null) {
+        if (dir > 0) return false;
+        recall.list = c.history.filter((m) => m.role === "user" && m.content?.trim()).map((m) => m.content)
+          .filter((q, i, all) => q !== all[i - 1]);
+        if (!recall.list.length) return false;
+        recall.draft = v;
+        recall.pos = recall.list.length;
+      }
+      const next = recall.pos + dir;
+      if (next < 0) return false;
+      input.value = next >= recall.list.length ? recall.draft : recall.list[next];
+      recall.pos = next >= recall.list.length ? null : next;
+      autoGrow();
+      input.setSelectionRange(input.value.length, input.value.length);
+      c.busyButton();
+      return true;
+    },
+  };
+  input.addEventListener("input", () => { recall.end(); autoGrow(); if (c.current) c.busyButton(); });
   form.addEventListener("submit", attempt(async (e) => {
     e.preventDefault();
     // With nothing written, only a press of the button stops a reply: Enter in the text field doesn't.
@@ -296,6 +325,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     suggest();
     if (!q && !files.length) return;
     const cmd = /^\/(\w+)$/.exec(q)?.[1].toLowerCase();
+    recall.end();
     input.value = "";
     autoGrow();
     if (!files.length && Object.hasOwn(commands, cmd)) return commands[cmd]();
@@ -320,6 +350,11 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     if (e.key === "ArrowUp" && !input.value && c.queue.length) {
       e.preventDefault();
       return queue.unqueue(c.queue.at(-1), true);
+    }
+    // Up on the first line and Down on the last step through the messages sent before.
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && recall.step(e.key === "ArrowUp" ? -1 : 1)) {
+      e.preventDefault();
+      return;
     }
     // Enter sends on devices with a hardware keyboard; on touch keyboards Enter adds a line.
     if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) {
