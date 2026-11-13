@@ -94,6 +94,8 @@ h2{font-size:clamp(28px,3.8vw,40px);line-height:1.12;letter-spacing:-.025em;font
 .box{background:linear-gradient(180deg,var(--surface),rgba(21,30,44,.5));border:1px solid var(--line);border-radius:var(--r);padding:24px}
 .box h3{margin:0 0 8px;font-size:17px;letter-spacing:-.01em}
 .box p{margin:0;color:var(--muted);font-size:15px}
+.box p b{color:var(--text);font-weight:600}
+.box code{font:600 14px var(--mono);color:var(--text);background:var(--raised);border:1px solid var(--line2);border-radius:5px;padding:0 5px}
 .icon{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;background:var(--raised);border:1px solid var(--line2);margin-bottom:16px;color:var(--accent)}
 .icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .features{grid-template-columns:repeat(3,minmax(0,1fr));gap:0;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
@@ -117,6 +119,14 @@ pre .p{color:var(--merged);user-select:none}
 .selfhost{display:flex;gap:32px;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:36px}
 .selfhost h2{margin-bottom:10px}
 .selfhost p{margin:0;color:var(--muted);max-width:40em}
+
+/* Goals: text above a wide screenshot */
+.goals-head{align-items:end;margin-bottom:40px}
+.goals-head .sub{margin-bottom:0}
+.wide{max-width:1120px;margin:0 auto}
+.note{color:var(--muted);font-size:15px;margin:20px 0 0;max-width:46em}
+.wall-shot{margin:40px auto 0;max-width:960px}
+.wall-shot figcaption{padding:12px 16px;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center}
 
 .site-footer{padding:32px 0 calc(32px + env(safe-area-inset-bottom));border-top:1px solid var(--line);color:var(--faint);font-size:14px;text-align:center}
 .site-footer a{color:var(--muted)}
@@ -146,7 +156,7 @@ pre .p{color:var(--merged);user-select:none}
 <header class="top">
   <div class="wrap">
     <a class="brand" href="/"><img src="{{.Logo}}" alt="" width="28" height="28"><span>{{.Name}}</span></a>
-    <nav class="nav" aria-label="Sections"><a href="#how">How it works</a><a href="#runners">Runners</a><a href="#pricing">Pricing</a></nav>
+    <nav class="nav" aria-label="Sections"><a href="#how">How it works</a><a href="#goals">Goals</a><a href="#runners">Runners</a><a href="#pricing">Pricing</a></nav>
     <a class="btn login" href="/login.html">Log in</a>
     {{if .Signup}}<a class="btn primary" href="/login.html#signup">Sign up</a>{{end}}
   </div>
@@ -157,7 +167,7 @@ pre .p{color:var(--merged);user-select:none}
     <div class="wrap">
       <div class="eyebrow"><i></i>For Claude Code</div>
       <h1>A board for your <em>Claude Code agents.</em></h1>
-      <p class="lede">{{.Name}} turns Claude Code into a work queue. Write tasks, let agents work through them in parallel, each in its own git worktree, then review the diff, try the change live and merge. From your desk or your phone.</p>
+      <p class="lede">{{.Name}} turns Claude Code into a work queue. Write tasks, or hand a bigger goal to a coordinator that plans them. Agents work through them in parallel, each in its own git worktree on your own computers. You review the diff, try the change live and merge. From your desk or your phone.</p>
       <div class="cta">
         {{if .Signup}}<a class="btn primary lg" href="/login.html#signup">Sign up</a>
         <a class="btn lg" href="/login.html">Log in</a>{{else}}<a class="btn primary lg" href="/login.html">Log in</a>
@@ -169,7 +179,7 @@ pre .p{color:var(--merged);user-select:none}
       <div class="window">
         <figure class="shot">
           <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>{{.Name}} · acme-shop</span></div>
-          <picture><source media="(max-width:640px)" srcset="/img/landing/board-crop.webp" width="1100" height="671"><img src="/img/landing/board.webp" width="2400" height="1429" alt="The {{.Name}} board for a project: tasks in Drafts, Queued, Running, Review and Done columns, two of them running and two waiting for review."></picture>
+          <picture><source media="(max-width:640px)" srcset="/img/landing/board-crop.webp" width="1100" height="670"><img src="/img/landing/board.webp" width="2400" height="1429" alt="The {{.Name}} board for the acme-shop project: two drafts, three queued tasks, three running, three ready for review and four done, some tagged with their goal. The sidebar shows the runner busy with 3 of 3 tasks and the Claude usage meters for the 5-hour and 7-day windows."></picture>
         </figure>
       </div>
     </div>
@@ -182,19 +192,37 @@ pre .p{color:var(--merged);user-select:none}
         <h2 id="how-h">You write the tasks. Claude does them. You decide what lands.</h2>
         <p class="sub">Every task gets its own branch and worktree, so agents never step on each other, and nothing reaches your main branch without your approval.</p>
         <ol class="steps">
-          <li><span class="dot" style="--c:var(--accent)"><i></i></span><div><b>Queue tasks</b><p>Describe what you want as you would in a chat. Queue as many as you like; they run in parallel, in priority order.</p></div></li>
-          <li><span class="dot" style="--c:var(--running)"><i></i></span><div><b>Claude works in a worktree</b><p>Follow along live, answer permission prompts, and let your test command check the work before it reaches you.</p></div></li>
+          <li><span class="dot" style="--c:var(--accent)"><i></i></span><div><b>Queue tasks</b><p>Describe what you want as you would in a chat. Queue as many as you like; they run in parallel, in priority order. A follow-up can continue an earlier task&#39;s Claude session.</p></div></li>
+          <li><span class="dot" style="--c:var(--running)"><i></i></span><div><b>Claude works in a worktree</b><p>Follow along live and answer permission prompts. When Claude is done, your test command checks the work before it reaches you.</p></div></li>
           <li><span class="dot" style="--c:var(--review)"><i></i></span><div><b>Review the diff</b><p>Read the changes, open a live preview of the app, or send it back with a note. Rework continues the same Claude session.</p></div></li>
-          <li><span class="dot" style="--c:var(--merged)"><i></i></span><div><b>Approve and merge</b><p>Approved work lands one task at a time: a squashed commit on your default branch, or a GitHub pull request.</p></div></li>
+          <li><span class="dot" style="--c:var(--merged)"><i></i></span><div><b>Approve and merge</b><p>Approved work lands one task at a time, as a squashed commit on your default branch once its tests pass again. Or each task becomes a GitHub pull request, reviewed and merged on GitHub by a person.</p></div></li>
         </ol>
       </div>
-      <figure class="shot"><img src="/img/landing/review.webp" width="1140" height="1500" loading="lazy" decoding="async" alt="A task ready for review: tests pass, three changed files and the diff of one of them, with Rework and Approve buttons."></figure>
+      <figure class="shot"><img src="/img/landing/review.webp" width="1140" height="1500" loading="lazy" decoding="async" alt="The task &quot;Add discount codes at checkout&quot; ready for review in the detail pane: tests pass, the token use of its one run, and the diff of src/checkout.js, with Rework and Approve buttons."></figure>
+    </div>
+  </section>
+
+  <section id="goals" aria-labelledby="goals-h">
+    <div class="wrap">
+      <div class="split goals-head">
+        <div>
+          <p class="kicker">Goals</p>
+          <h2 id="goals-h">Hand over something bigger than one task.</h2>
+          <p class="sub">Say what you want done, such as &quot;checkout in under 2 seconds&quot;. A coordinator (Claude) reads the code, plans the tasks, dispatches them and reviews each one. It never approves or merges: that stays yours.</p>
+        </div>
+        <ul class="ticks">
+          <li><strong>You approve the plan.</strong> By default it waits for you: edit it, ask for another, or queue it.</li>
+          <li><strong>It stays in budget:</strong> the most tasks it may make, and a share of the week&#39;s Claude usage.</li>
+          <li><strong>It wakes when a task changes</strong>, in review, failed or merged, and can send work back with notes. Its log says what it did and why.</li>
+        </ul>
+      </div>
+      <figure class="shot wide"><picture><source media="(max-width:640px)" srcset="/img/landing/goals-crop.webp" width="1100" height="1341"><img src="/img/landing/goals.webp" width="2400" height="1429" loading="lazy" decoding="async" alt="The Goals page: three goals, one waiting for you, one working and one done. The goal &quot;Checkout in under 2 seconds&quot; is open beside the list with its plan of four tasks (merged, ready for review, running and queued), its budget of tasks and weekly share, and the coordinator&#39;s log."></picture></figure>
     </div>
   </section>
 
   <section aria-labelledby="phone-h">
     <div class="wrap split flip">
-      <div class="phone"><img src="/img/landing/phone.webp" width="780" height="1280" loading="lazy" decoding="async" alt="{{.Name}} on a phone: the Review column with Review and Approve buttons on each task."></div>
+      <div class="phone"><img src="/img/landing/phone.webp" width="780" height="1280" loading="lazy" decoding="async" alt="{{.Name}} on a phone: the Review lane with three tasks, each with Review, Ask Claude and Approve buttons."></div>
       <div>
         <p class="kicker">Anywhere</p>
         <h2 id="phone-h">Keep the work moving from your phone.</h2>
@@ -202,7 +230,7 @@ pre .p{color:var(--merged);user-select:none}
         <ul class="ticks">
           <li><strong>Review and approve</strong> diffs, test results and live previews.</li>
           <li><strong>Answer Claude</strong> when it asks for permission, so a run doesn't stall.</li>
-          <li><strong>Chat with Claude</strong> about a project, or turn an issue into a task.</li>
+          <li><strong>Get notified</strong> with push notifications in the browser or the installed app, or webhooks to Slack and ntfy.</li>
         </ul>
       </div>
     </div>
@@ -212,7 +240,7 @@ pre .p{color:var(--merged);user-select:none}
     <div class="wrap">
       <p class="kicker">Runners</p>
       <h2 id="runners-h">Your machine, your Claude subscription, no open ports</h2>
-      <p class="sub">{{.Name}} is the board. The work happens on computers you choose, called runners: your laptop, a desktop at home, a build server.</p>
+      <p class="sub">{{.Name}} is the board. The work happens on computers you choose, called runners: your laptop, a desktop at home, a build server. They run on Linux, macOS and Windows.</p>
       <div class="grid">
         <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div><h3>Your machine</h3><p>Tasks run where your code already is, with your tools, your repositories and your git credentials. Code doesn't leave the runner unless you push it.</p></div>
         <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg></div><h3>Your Claude subscription</h3><p>Runners use the Claude Code you've already logged in to. No API keys to hand over and no second bill for the model.</p></div>
@@ -220,6 +248,7 @@ pre .p{color:var(--merged);user-select:none}
       </div>
       <pre><span class="dim"># on the computer that should run tasks, with the command from the Runners page</span>
 <span class="p">$ </span>curl -fsSL {{.Origin}}/runner/install.sh | sh -s -- --code …</pre>
+      <p class="note">Runners can update themselves when the hub is upgraded, and warn you before their disk fills up. Tasks on a project&#39;s runners share notes with each other, encrypted end to end.</p>
     </div>
   </section>
 
@@ -229,13 +258,17 @@ pre .p{color:var(--merged);user-select:none}
       <h2 id="more-h">The rest of the loop</h2>
       <p class="sub">The things around the code that make running many agents at once practical.</p>
       <div class="grid features">
-        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></div><h3>Live previews</h3><p>Each task's app runs on its own address, so you can click through a change before you approve it.</p></div>
-        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg></div><h3>Tests before review</h3><p>Your test command runs on every result. Failures and merge conflicts go back to Claude to fix first.</p></div>
-        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 4-6 3-11 4.5"/></svg></div><h3>Merge queue or pull requests</h3><p>Merge locally, one squashed commit at a time, or open a GitHub pull request per task.</p></div>
-        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.5-4.5"/></svg></div><h3>Scans and issues</h3><p>Scheduled read-only reviews fill a project's issue list. Turn any issue into a task with one click.</p></div>
-        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><h3>Use it from Claude</h3><p>An MCP server, and a custom connector for claude.ai and the Claude app, to create and follow tasks from a conversation.</p></div>
-        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.8c1.6.8 2.6 2.6 3 5.2"/></svg></div><h3>Teams</h3><p>Shared organizations and boards, roles, invitations and two-factor sign-in.</p></div>
+        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></div><h3>Live previews</h3><p>Each task&#39;s app runs on its own address. Click through a change, draw on it, and send the marked-up picture back to Claude as rework notes.</p></div>
+        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg></div><h3>Tests before merge</h3><p>Your test command checks every result, and runs again in the task&#39;s worktree before it merges. A red build goes back to Claude, not onto your main branch.</p></div>
+        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 4-6 3-11 4.5"/></svg></div><h3>Merge queue or pull requests</h3><p>Merge locally, one squashed commit at a time, or open a pull request per task. Claude fixes what GitHub reviewers ask for and replies in their threads; a person merges.</p></div>
+        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><h3>Chat</h3><p>A general chat, one per project and one per task, with a suggested next reply. Start a message with <code>!</code> to run a shell command in the project or the task&#39;s worktree.</p></div>
+        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-6"/></svg></div><h3>Usage pacing</h3><p>Meters show each Claude usage window and the time until it resets. Follow the weekly pace per Claude account, or <b>Start now</b> for a task that can&#39;t wait. Each run shows its tokens.</p></div>
+        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/></svg></div><h3>Wall view</h3><p>A full-screen dashboard for the office TV: what runs, what needs a person and today&#39;s merges. A TV opens it with a link, without signing in.</p></div>
+        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/></svg></div><h3>Checklist</h3><p>The repository&#39;s TODO.md as a list to tick off, edit and reorder. Move an item onto the board as a task.</p></div>
+        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.5-4.5"/></svg></div><h3>Scans and issues</h3><p>Scheduled read-only reviews fill a project&#39;s issue list. Turn any issue into a task with one click.</p></div>
+        <div class="box"><div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.4 5.4L20 8l-4.2 3.9L17 18l-5-3-5 3 1.2-6.1L4 8l5.6-.6z"/></svg></div><h3>Use it from Claude</h3><p>An MCP server, and a custom connector for claude.ai and the Claude app, to create and follow tasks from a conversation.</p></div>
       </div>
+      <figure class="shot wall-shot"><img src="/img/landing/wall.webp" width="1920" height="1080" loading="lazy" decoding="async" alt="The wall view on a TV: the queue running with 3 of 3 slots busy, Claude usage for 5 hours and 7 days, counts for each stage, three running tasks with their timers and current commands, three tasks that need a human, the runner, and today&#39;s merges and spend."><figcaption>The wall view, for a TV in the office.</figcaption></figure>
     </div>
   </section>
 
@@ -247,12 +280,12 @@ pre .p{color:var(--merged);user-select:none}
         <div class="plan">
           <h3>Individuals</h3>
           <div class="price">Free</div>
-          <ul><li>Your own workspace</li><li>Unlimited projects and tasks</li><li>Runners on your own computers</li></ul>
+          <ul><li>Your own workspace, or an organization with one member</li><li>Unlimited projects, tasks and goals</li><li>Runners on your own computers</li></ul>
         </div>
         <div class="plan team">
           <h3>Teams</h3>
           {{if .TeamPrice}}<div class="price">{{.TeamPrice}}</div>{{else}}<div class="price text">Per seat · {{if .PricingURL}}<a href="{{.PricingURL}}">see pricing</a>{{else if .Contact}}<a href="mailto:{{.Contact}}">see pricing</a>{{else}}see pricing{{end}}</div>{{end}}
-          <ul><li>Shared organizations and boards</li><li>Roles, invitations and two-factor sign-in</li><li>Runners per member or per project</li></ul>
+          <ul><li>Organizations with two or more members</li><li>Roles, invitations, and two-factor sign-in owners can require</li><li>Sign-in with Google Workspace, which owners can require too</li></ul>
         </div>
       </div>
     </div>

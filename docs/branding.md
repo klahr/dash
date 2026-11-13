@@ -52,12 +52,14 @@ before; every other page still asks for a session. Self-hosters who leave it off
 straight to the sign-in page.
 
 It says what Dash is and how a task goes from queued to merged, with screenshots of the
-board, a task in review and the phone layout; how runners work (your machine, your Claude
-subscription, no open ports), what else is included, the pricing, and that the software is free to host yourself under the AGPL, with a
-link to `DASH_SOURCE_URL`. Its buttons are **Log in**, and **Sign up** when
+board, a task in review, the **Goals** page, the phone layout and the wall view; what goals
+are; how runners work (your machine, your Claude subscription, no open ports, on Linux, macOS
+and Windows), what else is included, the pricing, and that the software is free to host
+yourself under the AGPL, with a link to `DASH_SOURCE_URL`. Its buttons are **Log in**, and **Sign up** when
 [open signup](signup.md) is on (it opens the sign-in page's signup form).
 
-The pricing shows individuals as free, and teams as per seat: with `DASH_TEAM_PRICE` that
+The pricing shows individuals (and organizations with one member) as free, and teams of two or
+more as per seat, as [billing](billing.md) charges them: with `DASH_TEAM_PRICE` that
 string, otherwise "see pricing", linked to `DASH_PRICING_URL` (or to the contact address,
 or plain text if neither is set). Dash doesn't bill anyone; these are words on a page.
 

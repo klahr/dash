@@ -48,7 +48,7 @@ func TestLandingOn(t *testing.T) {
 	}
 	body := w.Body.String()
 	for _, want := range []string{
-		"<title>Acme Agents: ", "no open ports", "€8 per seat / month", "AGPL",
+		"<title>Acme Agents: ", "no open ports", `id="goals"`, "€8 per seat / month", "AGPL",
 		`href="` + branding.DefaultSourceURL + `"`, "Source code on GitHub",
 		`href="https://acme.example/terms"`, `href="https://acme.example/privacy"`, `href="/login.html"`,
 	} {
@@ -70,7 +70,7 @@ func TestLandingOn(t *testing.T) {
 		t.Errorf("landing page may be cached: %q", w.Header().Get("Cache-Control"))
 	}
 	// Its screenshots are public, like the page.
-	for _, img := range []string{"board.webp", "board-crop.webp", "review.webp", "phone.webp"} {
+	for _, img := range []string{"board.webp", "board-crop.webp", "review.webp", "goals.webp", "goals-crop.webp", "wall.webp", "phone.webp"} {
 		if !strings.Contains(body, `/img/landing/`+img) {
 			t.Errorf("landing page doesn't show %s", img)
 		}
