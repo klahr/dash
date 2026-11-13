@@ -15,10 +15,10 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/muesli/cancelreader v0.2.2
 	github.com/yeqown/go-qrcode/v2 v2.3.0
+	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2
 	golang.org/x/oauth2 v0.38.0
 	golang.org/x/term v0.47.0
-	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.62.0
 )
 

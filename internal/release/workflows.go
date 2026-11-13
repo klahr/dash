@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // WorkflowTrigger is a GitHub Actions workflow that runs when certain tags
