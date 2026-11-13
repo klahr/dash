@@ -249,7 +249,7 @@ func TestBrowserSplitTask(t *testing.T) {
 	b.waitJS("the instructions carried over", `document.querySelector("#todo-form").prompt.value === "Add accounts"`)
 	b.until("split it", `document.querySelector("#split-sheet").open`, chromedp.Click(chromedp.CSS(`#todo-split:not(:disabled)`)))
 	b.waitJS("Claude's two tasks", `document.querySelectorAll("#split-parts .split-part").length === 2 &&
-		document.querySelector("#split-parts .split-part:nth-child(2) .split-after")?.textContent === "Builds on task 1"`)
+		[...document.querySelectorAll("#split-parts .split-part:nth-child(2) .split-dep[aria-pressed=true]")].map((e) => e.textContent).join() === "1"`)
 	b.do("edit the first title", chromedp.SendKeys(chromedp.CSS(`#split-parts .split-part:first-child .split-title`), " first"))
 	b.waitJS("the title edited", `document.querySelector("#split-parts .split-title").value === "Add the users table first"`)
 	b.do("add a task", chromedp.Click(chromedp.ID("split-add")))
