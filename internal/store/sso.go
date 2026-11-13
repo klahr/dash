@@ -1,7 +1,9 @@
 package store
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"strconv"
 	"strings"
@@ -289,9 +291,24 @@ type SSODomain struct {
 	OrgName    string    `json:"org,omitempty"`
 	Domain     string    `json:"domain"`
 	Verified   bool      `json:"verified"`
-	How        string    `json:"how,omitempty"` // "google": an owner's Google sign-in; "admin": a platform admin
+	How        string    `json:"how,omitempty"` // "dns": the TXT record; "admin": a platform admin; "google": an owner's Google sign-in (no longer accepted)
 	Created    time.Time `json:"created"`
 	VerifiedAt time.Time `json:"verified_at,omitzero"`
+	// Token is what the domain's TXT record holds to prove the claim (see
+	// TXTRecord). Only the claiming org's admins see it.
+	Token string `json:"token,omitempty"`
+}
+
+// DomainTXTPrefix starts the TXT record that proves a domain claim.
+const DomainTXTPrefix = "dash-domain-verification="
+
+// TXTRecord is the TXT record d's domain publishes to prove the claim.
+func (d SSODomain) TXTRecord() string { return DomainTXTPrefix + d.Token }
+
+func newDomainToken() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // VerifiedDomain reports whether d is one of the verified domains.
@@ -334,7 +351,7 @@ func (a *Accounts) PutOrgSSO(s OrgSSO, now time.Time) error {
 }
 
 func (a *Accounts) domains(where string, args ...any) ([]SSODomain, error) {
-	rows, err := a.db.Query(`SELECT d.org_id, o.name, d.domain, d.verified, d.how, d.created_at, COALESCE(d.verified_at, 0)
+	rows, err := a.db.Query(`SELECT d.org_id, o.name, d.domain, d.verified, d.how, d.created_at, COALESCE(d.verified_at, 0), d.token
 		FROM org_sso_domains d JOIN organizations o ON o.id = d.org_id `+where+` ORDER BY d.domain`, args...)
 	if err != nil {
 		return nil, err
@@ -344,7 +361,7 @@ func (a *Accounts) domains(where string, args ...any) ([]SSODomain, error) {
 	for rows.Next() {
 		var d SSODomain
 		var created, verified int64
-		if err := rows.Scan(&d.OrgID, &d.OrgName, &d.Domain, &d.Verified, &d.How, &created, &verified); err != nil {
+		if err := rows.Scan(&d.OrgID, &d.OrgName, &d.Domain, &d.Verified, &d.How, &created, &verified, &d.Token); err != nil {
 			return nil, err
 		}
 		d.Created = time.Unix(created, 0).UTC()
@@ -371,9 +388,9 @@ func CleanDomain(d string) (string, error) {
 	return d, nil
 }
 
-// AddSSODomain claims domain for orgID, verified (how: "google" or
-// "admin", by uid) or not (how ""). A domain another org has verified is
-// ErrDomainTaken.
+// AddSSODomain claims domain for orgID, verified (how: "dns" or "admin",
+// by uid) or not (how ""). A new claim gets a random token for its TXT
+// record. A domain another org has verified is ErrDomainTaken.
 func (a *Accounts) AddSSODomain(orgID int64, domain, how string, by int64, now time.Time) (SSODomain, error) {
 	domain, err := CleanDomain(domain)
 	if err != nil {
@@ -388,8 +405,8 @@ func (a *Accounts) AddSSODomain(orgID int64, domain, how string, by int64, now t
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if _, err := tx.Exec(`INSERT INTO org_sso_domains (org_id, domain, created_at) VALUES (?, ?, ?)
-			ON CONFLICT (org_id, domain) DO NOTHING`, orgID, domain, now.Unix()); err != nil {
+		if _, err := tx.Exec(`INSERT INTO org_sso_domains (org_id, domain, created_at, token) VALUES (?, ?, ?, ?)
+			ON CONFLICT (org_id, domain) DO NOTHING`, orgID, domain, now.Unix(), newDomainToken()); err != nil {
 			return err
 		}
 		if how == "" {
@@ -427,7 +444,7 @@ func verifyDomain(tx *sql.Tx, orgID int64, domain, how string, by int64, now tim
 	return err
 }
 
-// VerifySSODomain verifies orgID's claim of domain (how: "google" or
+// VerifySSODomain verifies orgID's claim of domain (how: "dns" or
 // "admin", by uid). An unknown claim is ErrNotFound.
 func (a *Accounts) VerifySSODomain(orgID int64, domain, how string, by int64, now time.Time) error {
 	return inTx(a.db, func(tx *sql.Tx) error {

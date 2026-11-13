@@ -1,11 +1,14 @@
 package auth
 
 import (
+	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/klahr/dash/internal/store"
 )
@@ -15,6 +18,7 @@ import (
 //	GET    /api/orgs/{oid}/sso                     admins: the org's Google sign-in settings
 //	PATCH  /api/orgs/{oid}/sso {…, password}       client (owners), auto-join, role, require Google, 2FA after Google
 //	POST   /api/orgs/{oid}/sso/domains {domain, password}
+//	POST   /api/orgs/{oid}/sso/domains/{domain}/check  admins: verify a claim by its DNS TXT record
 //	DELETE /api/orgs/{oid}/sso/domains/{domain} {password} (verified: owners)
 //	POST   /api/orgs/{oid}/members/{uid}/sign-out {password}  admins: end a member's sessions in the org
 //	GET    /api/account/google                     the user's linked Google account
@@ -30,6 +34,7 @@ func (a *Auth) ssoRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/orgs/{oid}/sso", a.sessionOnly(a.orgSSO))
 	mux.HandleFunc("PATCH /api/orgs/{oid}/sso", a.sessionOnly(a.updateOrgSSO))
 	mux.HandleFunc("POST /api/orgs/{oid}/sso/domains", a.sessionOnly(a.addDomain))
+	mux.HandleFunc("POST /api/orgs/{oid}/sso/domains/{domain}/check", a.sessionOnly(a.checkDomain))
 	mux.HandleFunc("DELETE /api/orgs/{oid}/sso/domains/{domain}", a.sessionOnly(a.removeDomain))
 	mux.HandleFunc("POST /api/orgs/{oid}/members/{uid}/sign-out", a.sessionOnly(a.signOutMember))
 	mux.HandleFunc("GET /api/account/google", a.sessionOnly(a.accountGoogle))
@@ -274,9 +279,11 @@ func onOff(b bool) string {
 	return "off"
 }
 
-// addDomain claims a domain for the org. It is verified at once when the
-// owner adding it signs in with Google with that hosted domain, or a
-// platform admin adds it; otherwise it waits for either.
+// addDomain claims a domain for the org. It is verified at once when a
+// platform admin adds it; otherwise it waits for its DNS TXT record (see
+// checkDomain) or a platform admin's approval. A Google account with that
+// hosted domain is no proof: any employee has one, not only the people who
+// run the domain.
 func (a *Auth) addDomain(w http.ResponseWriter, r *http.Request, id *Identity) {
 	var req struct {
 		Domain   string `json:"domain"`
@@ -304,9 +311,7 @@ func (a *Auth) addDomain(w http.ResponseWriter, r *http.Request, id *Identity) {
 		return
 	}
 	how := ""
-	if ident, err := a.acc.UserIdentity(id.User.ID, store.ProviderGoogle); err == nil && m.Role == store.RoleOwner && strings.EqualFold(ident.HD, domain) {
-		how = "google"
-	} else if id.User.PlatformAdmin {
+	if id.User.PlatformAdmin {
 		how = "admin"
 	}
 	d, err := a.acc.AddSSODomain(m.ID, domain, how, id.User.ID, a.now())
@@ -320,6 +325,74 @@ func (a *Auth) addDomain(w http.ResponseWriter, r *http.Request, id *Identity) {
 	}
 	a.audit(r, store.AuthEvent{OrgID: m.ID, Actor: id.User.ID, Kind: "sso.domain.added", Detail: detail})
 	writeJSON(w, http.StatusCreated, d)
+}
+
+// errNoTXT says the domain doesn't publish the claim's TXT record (yet).
+type errNoTXT struct{ domain, record string }
+
+func (e errNoTXT) Error() string {
+	return "no TXT record " + e.record + " on " + e.domain + " yet: add it at your DNS provider, wait for it to show, then check again"
+}
+
+// checkDomain verifies the org's claim of a domain when the domain's DNS
+// has a TXT record with the claim's token: only who runs the domain can
+// put it there.
+func (a *Auth) checkDomain(w http.ResponseWriter, r *http.Request, id *Identity) {
+	m, ok := a.adminOf(w, r, id, store.RoleAdmin)
+	if !ok {
+		return
+	}
+	domain := strings.ToLower(strings.TrimSpace(r.PathValue("domain")))
+	s, err := a.acc.OrgSSO(m.ID)
+	if err != nil {
+		accountError(w, err)
+		return
+	}
+	var claim *store.SSODomain
+	for i := range s.Domains {
+		if s.Domains[i].Domain == domain {
+			claim = &s.Domains[i]
+		}
+	}
+	if claim == nil {
+		accountError(w, store.ErrNotFound)
+		return
+	}
+	if claim.Verified {
+		writeJSON(w, http.StatusOK, claim)
+		return
+	}
+	if claim.Token == "" || !a.hasTXT(r.Context(), domain, claim.TXTRecord()) {
+		writeError(w, http.StatusUnprocessableEntity, errNoTXT{domain, claim.TXTRecord()}.Error())
+		return
+	}
+	if err := a.acc.VerifySSODomain(m.ID, domain, "dns", id.User.ID, a.now()); err != nil {
+		accountError(w, err)
+		return
+	}
+	a.audit(r, store.AuthEvent{OrgID: m.ID, Actor: id.User.ID, Kind: "sso.domain.verified", Detail: domain + " by its DNS TXT record"})
+	claim.Verified, claim.How, claim.VerifiedAt = true, "dns", a.now().UTC()
+	writeJSON(w, http.StatusOK, claim)
+}
+
+// hasTXT reports whether domain publishes the TXT record want.
+func (a *Auth) hasTXT(ctx context.Context, domain, want string) bool {
+	lookup := a.lookupTXT
+	if lookup == nil {
+		lookup = net.DefaultResolver.LookupTXT
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	recs, err := lookup(ctx, domain)
+	if err != nil {
+		return false
+	}
+	for _, rec := range recs {
+		if strings.TrimSpace(rec) == want {
+			return true
+		}
+	}
+	return false
 }
 
 // removeDomain drops a domain claim. A verified domain is what makes

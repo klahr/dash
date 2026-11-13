@@ -190,10 +190,12 @@ have to be entered again.
 Under **Organization → Google sign-in**:
 
 - **Google Workspace domains**, e.g. `example.com` (several allowed). A domain counts once it's
-  verified: an *owner* signs in with Google with an account of that Workspace (adding the domain
-  after linking one, or the **Test Google sign-in** button), or a platform admin approves it. A
-  verified domain belongs to one organization only. Dash trusts Google's `hd` (hosted domain)
-  claim, never the address's domain alone; consumer `gmail.com` accounts have none.
+  verified. After you add it, Dash shows a TXT record like
+  `dash-domain-verification=…`. Add it to the domain's DNS, then press **Check DNS**. A platform
+  admin can also approve a domain. Signing in with a Google account of the Workspace doesn't
+  verify it: every employee has one. A verified domain belongs to one organization only. For
+  sign-ins Dash trusts Google's `hd` (hosted domain) claim, never the address's domain alone;
+  consumer `gmail.com` accounts have none.
 - **Auto-join**: someone whose Google account is in a verified domain joins the org on their
   *first* Google sign-in, as member (or admin; never owner). Someone an admin removes doesn't come
   back by signing in again. Off, they need an invitation as before.
@@ -266,6 +268,7 @@ To delete an account altogether, see [Your data](privacy.md): everyone can delet
 | `GET /api/auth/google?org=`                       | whether the sign-in page offers Google    |
 | `GET /api/orgs/{id}/sso`, `PATCH … {client_id, client_secret, auto_join, join_role, require_google, google_2fa, password}` | an org's Google sign-in settings |
 | `POST /api/orgs/{id}/sso/domains {domain, password}`, `DELETE …/{domain}` | its Workspace domains |
+| `POST /api/orgs/{id}/sso/domains/{domain}/check`  | admins: verify a domain by its DNS TXT record |
 | `POST /api/orgs/{id}/members/{uid}/sign-out {password}` | admins: end a member's sessions in the org |
 | `GET /api/account/google`, `DELETE … {password}`  | your linked Google account; unlink        |
 | `GET /api/admin/sso`, `PUT /api/admin/sso/google`, `POST /api/admin/sso/domains/verify` | platform admins: the instance's client, approving domains |

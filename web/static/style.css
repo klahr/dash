@@ -1521,6 +1521,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .google-btn svg { width: 18px; height: 18px; flex: none; }
 .sso-domains .tag-ok { color: var(--merged); }
 .sso-domains .tag-wait { color: var(--muted); }
+.sso-domains .domain-txt { flex-basis: 100%; min-width: 0; }
 .sso-events { font-size: var(--fs-s); max-height: 14em; overflow: auto; }
 
 /* Source code (AGPL), terms, privacy, contact: the end of every page. */

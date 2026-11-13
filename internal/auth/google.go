@@ -775,37 +775,8 @@ func (a *Auth) googleLinked(w http.ResponseWriter, r *http.Request, f *oidcFlow,
 		return
 	}
 	a.audit(r, store.AuthEvent{OrgID: f.Org, UserID: f.User, Actor: f.User, Kind: "google.linked", Detail: identityDetail(cl)})
-	a.proveDomains(r, f.User, cl)
 	a.page(w, http.StatusOK, hostPageData{Title: "Google account linked",
 		Text: "You can sign in with Google as " + cl.Email + " from now on.", Link: safeNext(f.Next), LinkText: "Continue"})
-}
-
-// proveDomains verifies the claims of cl's hosted domain by orgs uid owns:
-// an owner's own Google account with that hd proves the org has it.
-func (a *Auth) proveDomains(r *http.Request, uid int64, cl oidcClaims) {
-	if cl.HD == "" {
-		return
-	}
-	ms, err := a.acc.Memberships(uid)
-	if err != nil {
-		return
-	}
-	for _, m := range ms {
-		if m.Role != store.RoleOwner {
-			continue
-		}
-		s, err := a.acc.OrgSSO(m.ID)
-		if err != nil {
-			continue
-		}
-		for _, d := range s.Domains {
-			if !d.Verified && strings.EqualFold(d.Domain, cl.HD) {
-				if err := a.acc.VerifySSODomain(m.ID, d.Domain, "google", uid, a.now()); err == nil {
-					a.audit(r, store.AuthEvent{OrgID: m.ID, UserID: uid, Actor: uid, Kind: "sso.domain.verified", Detail: d.Domain + " by an owner's Google sign-in"})
-				}
-			}
-		}
-	}
 }
 
 // ---- testing ----
@@ -816,9 +787,6 @@ func (a *Auth) googleTested(w http.ResponseWriter, r *http.Request, f *oidcFlow,
 	if err != nil {
 		a.flowFailed(w, r, f, &cl, &flowError{Code: "not_configured", Err: err})
 		return
-	}
-	if m, err := a.acc.Membership(f.User, f.Org); err == nil && m.Role == store.RoleOwner {
-		a.proveDomains(r, f.User, cl)
 	}
 	s, _ := a.acc.OrgSSO(f.Org)
 	client := "this Dash's Google client"

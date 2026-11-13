@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -966,15 +967,46 @@ func TestDomainClaims(t *testing.T) {
 	if _, err := e.a.acc.AddSSODomain(other.ID, "acme.com", "admin", admin.ID, time.Now()); err != store.ErrDomainTaken {
 		t.Fatalf("verified twice: %v", err)
 	}
-	// An unverified claim, proved by an owner's Google sign-in with that hd.
+	// An unverified claim. An owner's Google account with that hd is no
+	// proof: any employee of the Workspace has one.
 	d, err := e.a.acc.AddSSODomain(other.ID, "other.com", "", 0, time.Now())
-	if err != nil || d.Verified {
+	if err != nil || d.Verified || d.Token == "" {
 		t.Fatalf("claim: %+v %v", d, err)
 	}
 	b := newGBrowser(t, e.h)
 	b.login("admin", "s3cret")
 	e.signIn(b, "purpose=test&org="+other.Slug, person{sub: "g-adm", email: "boss@other.com", hd: "other.com"})
-	if s, _ := e.a.acc.OrgSSO(other.ID); !s.VerifiedDomain("other.com") {
+	if s, _ := e.a.acc.OrgSSO(other.ID); s.VerifiedDomain("other.com") {
+		t.Fatalf("verified by an owner's hd: %+v", s.Domains)
+	}
+
+	// The DNS TXT record proves it: not another org's token, nor none.
+	txt := map[string][]string{}
+	e.a.lookupTXT = func(_ context.Context, name string) ([]string, error) { return txt[name], nil }
+	check := func(who *gBrowser, domain string) *httptest.ResponseRecorder {
+		return who.postJSON(fmt.Sprintf("https://%s/api/orgs/%d/sso/domains/%s/check", gHost, other.ID, domain), `{}`)
+	}
+	if w := check(b, "other.com"); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), d.TXTRecord()) {
+		t.Fatalf("no record: %d %s", w.Code, w.Body)
+	}
+	txt["other.com"] = []string{"v=spf1 -all", store.DomainTXTPrefix + "someone-elses"}
+	if w := check(b, "other.com"); w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("wrong token: %d %s", w.Code, w.Body)
+	}
+	if w := check(b, "nope.com"); w.Code != http.StatusNotFound {
+		t.Fatalf("unclaimed: %d %s", w.Code, w.Body)
+	}
+	txt["other.com"] = append(txt["other.com"], d.TXTRecord())
+	e.register("mo", "mo@example.org", other.ID, store.RoleMember)
+	mo := newGBrowser(t, e.h)
+	mo.login("mo", "password1")
+	if w := check(mo, "other.com"); w.Code != http.StatusForbidden {
+		t.Fatalf("member checks: %d %s", w.Code, w.Body)
+	}
+	if w := check(b, "other.com"); w.Code != http.StatusOK {
+		t.Fatalf("check: %d %s", w.Code, w.Body)
+	}
+	if s, _ := e.a.acc.OrgSSO(other.ID); !s.VerifiedDomain("other.com") || s.Domains[0].How != "dns" {
 		t.Fatalf("not proved: %+v", s.Domains)
 	}
 }

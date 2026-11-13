@@ -216,14 +216,22 @@ async function renderOrgSSO(o, mine) {
   const domains = (s.domains || []).map((d) => h("li", { class: "item-row" },
     h("span", { class: "runner-name" }, d.domain),
     h("span", { class: `item-sub hint ${d.verified ? "tag-ok" : "tag-wait"}` }, d.verified
-      ? `Verified${d.how === "admin" ? " by a platform admin" : d.how === "google" ? " by an owner's Google sign-in" : ""}`
-      : "Not verified yet: an owner signs in with Google with an account of this domain (Test below), or a platform admin approves it"),
+      ? `Verified${d.how === "admin" ? " by a platform admin" : d.how === "dns" ? " by its DNS record" : d.how === "google" ? " by an owner's Google sign-in" : ""}`
+      : "Not verified yet: add the TXT record below to its DNS, or a platform admin approves it"),
+    !d.verified && d.token ? h("button", { class: "btn small", type: "button", onclick: attempt(async () => {
+      await api("POST", `/api/orgs/${o.id}/sso/domains/${encodeURIComponent(d.domain)}/check`, {}, "");
+      toast(`${d.domain} verified`, { tone: "ok" });
+      await renderOrgSSO(o, mine);
+    }) }, "Check DNS") : null,
     h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
       const pw = await askPassword(`Remove ${d.domain}?`, "Its people can't join by it any more, nor are required to use Google.");
       if (pw == null) return;
       await api("DELETE", `/api/orgs/${o.id}/sso/domains/${encodeURIComponent(d.domain)}`, { password: pw }, "");
       await renderOrgSSO(o, mine);
-    }), hidden: d.verified && !owner }, "Remove")));
+    }), hidden: d.verified && !owner }, "Remove"),
+    !d.verified && d.token ? h("div", { class: "domain-txt" },
+      h("p", { class: "hint" }, `Add this TXT record to ${d.domain} at your DNS provider, then Check DNS. It can take a while to show.`),
+      copyBlock(`dash-domain-verification=${d.token}`, "TXT record copied")) : null));
 
   // The org's own client (owners)
   const cid = h("input", { type: "text", value: s.client_id || "", placeholder: "…apps.googleusercontent.com", autocomplete: "off", spellcheck: false, "aria-label": "Client ID" });

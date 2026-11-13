@@ -102,6 +102,9 @@ type Auth struct {
 	recheck   time.Duration    // how often an open WebSocket re-checks its session
 	legacy    string           // the single account's hash in sessions.json / oauth.json, before users
 
+	// lookupTXT looks up DNS TXT records (tests); nil: the system resolver.
+	lookupTXT func(ctx context.Context, name string) ([]string, error)
+
 	// TrustProxy honours X-Forwarded-For and X-Forwarded-Proto from a
 	// reverse proxy (Caddy, nginx, a Cloudflare Tunnel, Tailscale Serve) that
 	// terminates TLS.

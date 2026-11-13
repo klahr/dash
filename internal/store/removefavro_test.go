@@ -66,6 +66,10 @@ func TestMigrateRemoveFavro(t *testing.T) {
 	if ms[17].name != "0018_remove_favro.sql" {
 		t.Fatalf("migration 18 is %s", ms[17].name)
 	}
+	// Undo the later migrations' schema changes so they can run again.
+	if _, err := db.Exec("ALTER TABLE org_sso_domains DROP COLUMN token"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec("PRAGMA user_version = 17"); err != nil {
 		t.Fatal(err)
 	}
