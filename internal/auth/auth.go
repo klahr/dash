@@ -934,9 +934,7 @@ func (a *Auth) serveSession(w http.ResponseWriter, r *http.Request, id *Identity
 		a.picker(w, r, id)
 		return
 	}
-	if strings.HasPrefix(r.URL.Path, "/ws/") {
-		w = &watchedConn{ResponseWriter: w, a: a, r: r, id: id}
-	}
+	w = a.watch(w, r, id)
 	next.ServeHTTP(w, r)
 }
 
@@ -964,22 +962,44 @@ func (a *Auth) serveToken(w http.ResponseWriter, r *http.Request, tok string, ap
 		return
 	}
 	r = r.WithContext(withIdentity(r.Context(), id))
-	if strings.HasPrefix(r.URL.Path, "/ws/") {
-		w = &watchedConn{ResponseWriter: w, a: a, r: r, id: id}
-	}
+	w = a.watch(w, r, id)
 	next.ServeHTTP(w, r)
 }
 
+// watch wraps w in a watchedConn when r opens a WebSocket: one of this
+// Dash's (/ws/…) or, for platform admins, a runner's (/peer/{name}/ws/…),
+// which also needs its user to stay a platform admin.
+func (a *Auth) watch(w http.ResponseWriter, r *http.Request, id *Identity) http.ResponseWriter {
+	if strings.HasPrefix(r.URL.Path, "/ws/") {
+		return &watchedConn{ResponseWriter: w, a: a, r: r, id: id}
+	}
+	if isPeerSocket(r.URL.Path) {
+		return &watchedConn{ResponseWriter: w, a: a, r: r, id: id, admin: true}
+	}
+	return w
+}
+
+// isPeerSocket reports whether path is /peer/{name}/ws/….
+func isPeerSocket(path string) bool {
+	rest, ok := strings.CutPrefix(path, "/peer/")
+	if !ok {
+		return false
+	}
+	_, rest, ok = strings.Cut(rest, "/")
+	return ok && strings.HasPrefix(rest, "ws/")
+}
+
 // stillValid reports whether the session or token behind id still exists,
-// its user still belongs to the org they connected in, and (for a session)
-// no org requires a second factor they lack.
-func (a *Auth) stillValid(id *Identity) bool {
+// its user still belongs to the org they connected in, (for a session) no
+// org requires a second factor they lack, and, when admin is set, they are
+// still a platform admin.
+func (a *Auth) stillValid(id *Identity, admin bool) bool {
 	if id.Token != nil {
-		_, _, err := a.acc.AuthenticateHash(id.key, a.now(), id.Token.Kind)
-		return err == nil
+		_, s, err := a.acc.AuthenticateHash(id.key, a.now(), id.Token.Kind)
+		return err == nil && (!admin || s.User.PlatformAdmin)
 	}
 	s, err := a.acc.Session(id.key, a.now())
-	if err != nil || s.Needs2FA {
+	if err != nil || s.Needs2FA || admin && !s.User.PlatformAdmin {
 		return false
 	}
 	if id.Org == nil {
@@ -993,9 +1013,10 @@ func (a *Auth) stillValid(id *Identity) bool {
 // stops being valid.
 type watchedConn struct {
 	http.ResponseWriter
-	a  *Auth
-	r  *http.Request
-	id *Identity
+	a     *Auth
+	r     *http.Request
+	id    *Identity
+	admin bool // the socket also needs a platform admin (a runner's, over /peer)
 }
 
 func (w *watchedConn) Unwrap() http.ResponseWriter { return w.ResponseWriter }
@@ -1013,7 +1034,7 @@ func (w *watchedConn) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 			case <-w.r.Context().Done(): // the handler returned
 				return
 			case <-t.C:
-				if !w.a.stillValid(w.id) {
+				if !w.a.stillValid(w.id, w.admin) {
 					conn.Close()
 					return
 				}

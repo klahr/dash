@@ -2,11 +2,13 @@ package auth
 
 import (
 	"bufio"
+	"database/sql"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -346,9 +348,61 @@ func TestWebSocketClosedOnRemoval(t *testing.T) {
 	a.recheck = 20 * time.Millisecond
 	def, _ := a.acc.DefaultOrg()
 	uid := addUser(t, a, def.ID, "lee", store.RoleMember)
+	h := socketServer(t, a, "/ws/events")
+	lee := signIn(t, h, "lee", "pw-lee-long")
+	br := openSocket(t, h, lee, "/ws/events")
+
+	if err := a.acc.RemoveMember(mustEnv(t, a), def.ID, uid); err != nil {
+		t.Fatal(err)
+	}
+	wantClosed(t, br)
+}
+
+// A runner's socket, which only platform admins may open over /peer, is
+// closed soon after its user stops being a platform admin or signs out.
+func TestPeerSocketClosedWhenNoLongerAdmin(t *testing.T) {
+	t.Parallel()
+
+	t.Run("demoted", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "dash.db")
+		a := openAuth(t, path, "admin", "s3cret")
+		a.recheck = 20 * time.Millisecond
+		h := socketServer(t, a, "/peer/laptop/ws/events")
+		br := openSocket(t, h, signIn(t, h, "admin", "s3cret"), "/peer/laptop/ws/events")
+
+		db, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		if _, err := db.Exec("UPDATE users SET is_platform_admin = 0"); err != nil {
+			t.Fatal(err)
+		}
+		wantClosed(t, br)
+	})
+	t.Run("signed out", func(t *testing.T) {
+		t.Parallel()
+		a := newAuth(t, "admin", "s3cret")
+		a.recheck = 20 * time.Millisecond
+		h := socketServer(t, a, "/peer/laptop/ws/events")
+		admin := signIn(t, h, "admin", "s3cret")
+		br := openSocket(t, h, admin, "/peer/laptop/ws/events")
+
+		if w := admin.do("POST", "/api/logout", ""); w.Code >= 300 {
+			t.Fatalf("logout: %d %s", w.Code, w.Body)
+		}
+		wantClosed(t, br)
+	})
+}
+
+// socketServer is a's middleware in front of a WebSocket-like handler at
+// path that keeps its connection open until it's closed.
+func socketServer(t *testing.T, a *Auth, path string) http.Handler {
+	t.Helper()
 	mux := http.NewServeMux()
 	a.Routes(mux)
-	mux.HandleFunc("/ws/events", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 		conn, rw, err := http.NewResponseController(w).Hijack()
 		if err != nil {
 			t.Error(err)
@@ -359,30 +413,37 @@ func TestWebSocketClosedOnRemoval(t *testing.T) {
 		rw.Flush()
 		io.Copy(io.Discard, conn) // until it's closed
 	})
-	srv := httptest.NewServer(a.Middleware(mux))
-	defer srv.Close()
+	return a.Middleware(mux)
+}
 
-	lee := signIn(t, a.Middleware(mux), "lee", "pw-lee-long")
-	req, _ := http.NewRequest("GET", srv.URL+"/ws/events", nil)
-	req.AddCookie(lee.c)
+// openSocket opens path on h as c and returns the upgraded connection's
+// reader.
+func openSocket(t *testing.T, h http.Handler, c *client, path string) *bufio.Reader {
+	t.Helper()
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	req, _ := http.NewRequest("GET", srv.URL+path, nil)
+	req.AddCookie(c.c)
 	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	t.Cleanup(func() { conn.Close() })
 	if err := req.Write(conn); err != nil {
 		t.Fatal(err)
 	}
 	br := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(br, req)
 	if err != nil || resp.StatusCode != http.StatusSwitchingProtocols {
-		t.Fatalf("upgrade: %v %v", resp, err)
-	}
-
-	if err := a.acc.RemoveMember(mustEnv(t, a), def.ID, uid); err != nil {
-		t.Fatal(err)
+		t.Fatalf("upgrade %s: %v %v", path, resp, err)
 	}
 	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	return br
+}
+
+// wantClosed fails t unless the server closes br's connection.
+func wantClosed(t *testing.T, br *bufio.Reader) {
+	t.Helper()
 	if _, err := br.ReadByte(); err != io.EOF {
 		t.Fatalf("want the connection closed, got %v", err)
 	}
