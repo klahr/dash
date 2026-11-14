@@ -38,3 +38,18 @@ func Summary(s string, n int) string {
 	}
 	return Clip(line, n)
 }
+
+// OneLine is s with its runs of whitespace, newlines included, collapsed to
+// single spaces, clipped so that it, with "…" added when anything was cut,
+// is at most n characters long.
+func OneLine(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	if n < 1 {
+		return ""
+	}
+	r := []rune(s)
+	return strings.TrimSpace(string(r[:n-1])) + "…"
+}

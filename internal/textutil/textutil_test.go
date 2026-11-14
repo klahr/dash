@@ -50,3 +50,23 @@ func TestSummary(t *testing.T) {
 		t.Errorf("Summary = %q", got)
 	}
 }
+
+func TestOneLine(t *testing.T) {
+	for _, c := range []struct {
+		s    string
+		n    int
+		want string
+	}{
+		{"", 5, ""},
+		{"  one \n two\t three ", 20, "one two three"},
+		{"abcdef", 6, "abcdef"},
+		{"abcdef", 5, "abcd…"},
+		{"ab cdef", 4, "ab…"},
+		{"åäöåäö", 4, "åäö…"},
+		{"abc", 0, ""},
+	} {
+		if got := OneLine(c.s, c.n); got != c.want {
+			t.Errorf("OneLine(%q, %d) = %q, want %q", c.s, c.n, got, c.want)
+		}
+	}
+}

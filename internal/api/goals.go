@@ -11,6 +11,7 @@ import (
 
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // Goals: a long-lived aim in one project, worked towards by a coordinator
@@ -514,7 +515,7 @@ func (sv *service) messageGoal(id, text string) (model.Goal, error) {
 				g.PausedFrom = model.GoalWorking
 			}
 		}
-		g.AddLog(model.GoalLogEntry{Kind: model.GoalLogUser, Text: "You wrote to the coordinator: " + oneLine(text, 300)})
+		g.AddLog(model.GoalLogEntry{Kind: model.GoalLogUser, Text: "You wrote to the coordinator: " + textutil.OneLine(text, 300)})
 		return nil
 	})
 	if err != nil {
@@ -905,7 +906,7 @@ func (gb goalBoard) SendBack(id, notes string) (model.Todo, error) {
 	if t, err = sv.rework(id, notes, nil); err != nil {
 		return t, err
 	}
-	gb.did(g, t, "sent this task back with notes", "Sent task "+t.ID+" back: "+oneLine(notes, 300))
+	gb.did(g, t, "sent this task back with notes", "Sent task "+t.ID+" back: "+textutil.OneLine(notes, 300))
 	return t, nil
 }
 
@@ -921,7 +922,7 @@ func (gb goalBoard) ReviewNote(id, note string) (model.Todo, error) {
 	if err != nil {
 		return t, err
 	}
-	gb.did(g, t, "posted a review note", "Posted a review note on task "+t.ID+": "+oneLine(note, 300))
+	gb.did(g, t, "posted a review note", "Posted a review note on task "+t.ID+": "+textutil.OneLine(note, 300))
 	return t, nil
 }
 

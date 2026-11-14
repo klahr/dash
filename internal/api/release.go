@@ -17,6 +17,7 @@ import (
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/release"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // Releases: a release is an annotated tag, named in the project's tag format
@@ -214,23 +215,15 @@ func (sv *service) releaseNotes(ctx context.Context, p model.Project, prev, sha 
 	for _, e := range es {
 		title := strings.TrimSpace(e.t.Title)
 		if title == "" {
-			title = firstLine(e.t.Prompt)
+			title = textutil.FirstLine(e.t.Prompt)
 		}
 		b.WriteString("- " + title)
 		if s := strings.TrimSpace(e.t.Summary); s != "" {
-			b.WriteString(" — " + firstLine(s))
+			b.WriteString(" — " + textutil.FirstLine(s))
 		}
 		b.WriteString("\n")
 	}
 	return strings.TrimSpace(b.String())
-}
-
-func firstLine(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
-	}
-	return s
 }
 
 // briefGit is the gist of a git failure (its last line of output).

@@ -14,6 +14,7 @@ import (
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/queue"
+	"github.com/klahr/dash/internal/textutil"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
@@ -147,7 +148,7 @@ func (sv *service) changeChecklist(ctx context.Context, p model.Project, ch mcpt
 	case p.UsesPR() || sv.s.Merges == nil:
 		// Pull request mode: nothing is committed straight onto the default
 		// branch, so a task commits it and opens the pull request.
-		t, err := sv.queueEdit(ctx, p, checklist.Name, cur.Version, res.Content, checklist.Short(firstLine(msg), 120))
+		t, err := sv.queueEdit(ctx, p, checklist.Name, cur.Version, res.Content, checklist.Short(textutil.FirstLine(msg), 120))
 		if err != nil {
 			return out, err
 		}

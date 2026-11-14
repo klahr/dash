@@ -20,6 +20,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // Name is the file the checklist lives in, at the repository root.
@@ -312,13 +314,7 @@ func (r Result) Message() string {
 }
 
 // Short shortens an item's text for a commit message or a title.
-func Short(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if r := []rune(s); len(r) > n {
-		return strings.TrimSpace(string(r[:n-1])) + "…"
-	}
-	return s
-}
+func Short(s string, n int) string { return textutil.OneLine(s, n) }
 
 // Apply makes ops to src. A reorder is made to the file as the ops before it
 // left it, and the ops after it to the file as it left that: refs in ops

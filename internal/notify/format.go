@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // Notification is one event to tell webhooks about, before it is shaped
@@ -243,12 +244,5 @@ func ntfyActions(as []ntfyAction) string {
 	return strings.Join(parts, "; ")
 }
 
-// oneLine is s's first line, cut to max runes.
-func oneLine(s string, max int) string {
-	s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
-	s = strings.TrimSpace(s)
-	if r := []rune(s); len(r) > max {
-		s = string(r[:max-1]) + "…"
-	}
-	return s
-}
+// oneLine is s's first line, clipped to max characters.
+func oneLine(s string, max int) string { return textutil.OneLine(textutil.FirstLine(s), max) }

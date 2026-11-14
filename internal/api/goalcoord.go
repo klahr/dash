@@ -13,6 +13,7 @@ import (
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 	"github.com/klahr/dash/internal/usage"
 )
 
@@ -225,7 +226,7 @@ func wakeText(w model.GoalWake) string {
 		return name + " entered review."
 	case model.StatusFailed:
 		if w.Note != "" {
-			return name + " failed: " + oneLine(w.Note, 300)
+			return name + " failed: " + textutil.OneLine(w.Note, 300)
 		}
 		return name + " failed."
 	case model.StatusMerged:
@@ -343,7 +344,7 @@ func (e *goalEngine) turn(id string) bool {
 		case timedOut:
 			g.AddLog(model.GoalLogEntry{Kind: model.GoalLogStatus, Text: "The coordinator's turn took too long and was stopped."})
 		case ctx.Err() == nil:
-			g.AddLog(model.GoalLogEntry{Kind: model.GoalLogStatus, Text: "The coordinator couldn't run: " + oneLine(err.Error(), 300)})
+			g.AddLog(model.GoalLogEntry{Kind: model.GoalLogStatus, Text: "The coordinator couldn't run: " + textutil.OneLine(err.Error(), 300)})
 		}
 		return nil
 	})
@@ -578,7 +579,7 @@ func (s *Server) goalContext(sv *service, g model.Goal) string {
 		}
 		fmt.Fprintf(&b, ">%s", taskName(t))
 		if t.Error != "" {
-			fmt.Fprintf(&b, " (error: %s)", oneLine(t.Error, 200))
+			fmt.Fprintf(&b, " (error: %s)", textutil.OneLine(t.Error, 200))
 		}
 		b.WriteString("</task>\n")
 	}
@@ -590,7 +591,7 @@ func (s *Server) goalContext(sv *service, g model.Goal) string {
 	if len(log) > 0 {
 		b.WriteString("<recent_log>\n")
 		for _, l := range log {
-			fmt.Fprintf(&b, "%s %s: %s\n", l.At.Format(time.DateTime), l.Kind, oneLine(l.Text, 300))
+			fmt.Fprintf(&b, "%s %s: %s\n", l.At.Format(time.DateTime), l.Kind, textutil.OneLine(l.Text, 300))
 		}
 		b.WriteString("</recent_log>\n")
 	}
@@ -650,13 +651,4 @@ func (s *Server) weekWindow(p model.Project) *usage.Window {
 		}
 	}
 	return nil
-}
-
-// oneLine is s on one line, cut at max runes.
-func oneLine(s string, max int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if r := []rune(s); len(r) > max {
-		return string(r[:max]) + "…"
-	}
-	return s
 }

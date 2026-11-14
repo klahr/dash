@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // GoalStatus is where a goal's coordinator stands.
@@ -251,10 +253,7 @@ func CleanPlan(items []GoalPlanItem) ([]GoalPlanItem, error) {
 func firstLine(s string, max int) string {
 	for l := range strings.SplitSeq(s, "\n") {
 		if l = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(l), "#>*-+ ")); l != "" {
-			if r := []rune(l); len(r) > max {
-				return string(r[:max]) + "…"
-			}
-			return l
+			return textutil.OneLine(l, max)
 		}
 	}
 	return ""
