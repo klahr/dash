@@ -174,7 +174,7 @@ func (c *slotConn) Close() error {
 }
 
 // servePreviewConnect keeps a runner's preview connection until it closes.
-func (h *Hub) servePreviewConnect(w http.ResponseWriter, r *http.Request, rec record) {
+func (h *Hub) servePreviewConnect(w http.ResponseWriter, r *http.Request, rec record, hash string) {
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -195,6 +195,7 @@ func (h *Hub) servePreviewConnect(w http.ResponseWriter, r *http.Request, rec re
 	if old != nil {
 		old.s.Close()
 	}
+	go h.watch(link.s, hash)
 	<-link.s.Done()
 	h.mu.Lock()
 	if h.previews[rec.ID] == link {

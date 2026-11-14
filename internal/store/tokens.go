@@ -318,10 +318,14 @@ type RunnerOwner struct {
 	Org      Org    `json:"org"`
 }
 
-// RunnerOwners maps runner ids to their owners.
+// RunnerOwners maps runner ids to their owners. A runner whose owner is no
+// longer a member of its token's org has no owner, and so no org: it gets
+// none of that org's work.
 func (a *Accounts) RunnerOwners() (map[string]RunnerOwner, error) {
 	rows, err := a.db.Query(`SELECT t.runner_id, u.id, u.username, o.id, o.name, o.slug FROM tokens t
-		JOIN users u ON u.id = t.user_id JOIN organizations o ON o.id = t.org_id WHERE t.kind = 'runner'`)
+		JOIN users u ON u.id = t.user_id JOIN organizations o ON o.id = t.org_id
+		JOIN org_memberships m ON m.user_id = t.user_id AND m.org_id = t.org_id
+		WHERE t.kind = 'runner'`)
 	if err != nil {
 		return nil, err
 	}

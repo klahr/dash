@@ -118,7 +118,8 @@ is what grants access, send it only to the person you're inviting. A
 When you belong to more than one org, the account menu lets you switch between them
 (`POST /api/auth/switch-org`). Membership is checked on every request: someone removed
 from an org loses access at once (open live connections close within seconds), and if
-they belong to other orgs they continue in one of those.
+they belong to other orgs they continue in one of those. Their runners in that org get no
+more of its work, and their tunnels close within seconds.
 
 ## Tokens
 

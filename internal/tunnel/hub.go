@@ -202,6 +202,10 @@ type Hub struct {
 	Release string
 
 	now func() time.Time
+	// recheck is how often an open tunnel checks its token again (0:
+	// defaultRecheck), so a runner whose token stopped working (its owner
+	// left the org, say) loses its tunnel without waiting to reconnect.
+	recheck time.Duration
 
 	mu       sync.Mutex
 	path     string
@@ -412,6 +416,37 @@ func (h *Hub) authenticate(token string) (record, bool) {
 		}
 	}
 	return record{}, false
+}
+
+// defaultRecheck is how often an open tunnel checks its token again.
+const defaultRecheck = 15 * time.Second
+
+// watch closes s once the runner token whose hash is hash stops working:
+// it is revoked or expires, or its owner is no longer a member of its org
+// (Accounts.AuthenticateHash). It returns when s closes.
+func (h *Hub) watch(s *Session, hash string) {
+	every := h.recheck
+	if every <= 0 {
+		every = defaultRecheck
+	}
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-s.Done():
+			return
+		case <-t.C:
+		}
+		_, _, err := h.Accounts.AuthenticateHash(hash, h.clock(), store.TokenRunner)
+		switch {
+		case errors.Is(err, store.ErrTokenInvalid):
+			slog.Info("runner token no longer valid: closing its tunnel")
+			s.Close()
+			return
+		case err != nil:
+			slog.Error("recheck runner token", "err", err) // keep the tunnel: try again next tick
+		}
+	}
 }
 
 // Revoke deletes a runner: its token stops working and its tunnel is closed.
@@ -713,10 +748,11 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 		httpjson.Error(w, http.StatusUnauthorized, "unknown or revoked runner token")
 		return
 	}
+	hash := store.TokenHash(tok)
 	switch r.URL.Query().Get("channel") {
 	case "":
 	case previewChannel:
-		h.servePreviewConnect(w, r, rec)
+		h.servePreviewConnect(w, r, rec, hash)
 		return
 	default:
 		httpjson.Error(w, http.StatusBadRequest, "unknown channel")
@@ -748,6 +784,7 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 	if old != nil {
 		old.Close() // the runner reconnected before we noticed the old link die
 	}
+	go h.watch(sess, hash)
 	version := cleanVersion(r.Header.Get(VersionHeader))
 	var notesKey string
 	if k, err := notes.ParsePublicKey(r.Header.Get(NotesKeyHeader)); err == nil {

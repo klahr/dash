@@ -22,6 +22,7 @@ import (
 
 	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/store/storetest"
 )
 
@@ -512,6 +513,53 @@ func TestRevokedRunnerIsCutOffAndStops(t *testing.T) {
 	}
 	if code, _ := get(t, th.srv.URL+"/peer/work/api/me"); code != http.StatusNotFound {
 		t.Fatalf("revoked runner still reachable: %d", code)
+	}
+}
+
+// A runner whose owner leaves the org (or is removed) is out of the org at
+// once, and loses its open tunnel at the next recheck.
+func TestRunnerOfRemovedMemberIsCutOff(t *testing.T) {
+	t.Parallel()
+
+	th := newTestHub(t)
+	th.recheck = 20 * time.Millisecond
+	tok, _, err := th.Accounts.Invite(th.owner.User, th.owner.Org, "alice@example.com", store.RoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice, _, err := th.Accounts.RegisterWithInvitation(tok, "alice", "alice-s3cret-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, _ := th.NewCode(model.Owner{User: alice.ID, Org: th.owner.Org})
+	creds, err := Register(context.Background(), th.srv.URL, code, "laptop", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	states, done := startRunner(t, creds)
+	states.want(t, true)
+	th.waitOnline(t, "laptop")
+	if r, _ := th.Get(creds.ID); r.OrgID() != th.owner.Org {
+		t.Fatalf("runner's org %d, want %d", r.OrgID(), th.owner.Org)
+	}
+
+	if err := th.Accounts.RemoveMember(th.owner.User, th.owner.Org, alice.ID); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := th.Get(creds.ID); r.OrgID() != 0 || r.Owner != nil {
+		t.Fatalf("runner of a removed member still in org %d (owner %+v)", r.OrgID(), r.Owner)
+	}
+	states.want(t, false)
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrRevoked) {
+			t.Fatalf("runner stopped with %v, want ErrRevoked", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("runner of a removed member kept its tunnel")
+	}
+	if r, _ := th.Get(creds.ID); r.Online {
+		t.Fatal("runner of a removed member still online")
 	}
 }
 
