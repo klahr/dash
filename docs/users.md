@@ -25,7 +25,8 @@ it:
 - **Live updates**: the dashboard only receives events of its org's projects.
 - **The general chat** is your own: each user has one per org, which nobody else sees. On a
   hub with several users it runs on your own runner, with your Claude login (see
-  [several computers](several-computers.md#claude-runs-on-each-users-own-runner)).
+  [several computers](several-computers.md#claude-runs-on-each-users-own-runner)). Leaving
+  the org, or being removed from it, deletes yours.
 - **Project chats** are your own too: each member has one per project, which nobody else sees,
   owners and admins included (see [Chat](chat.md#your-own-project-chats)). Leaving the org, or
   being removed from it, deletes yours.

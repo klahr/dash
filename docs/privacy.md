@@ -150,7 +150,7 @@ Everything is on the hub's own disk, in its data directory (`-data`, by default
 | Push subscriptions (the browser's push address and its user agent) | until notifications are turned off on that device  |
 | Webhooks (the URL), and their last 50 deliveries | until deleted                                                        |
 | Work: projects, tasks, goals, chats, issues, scans, with who created them | until deleted; deleting a task deletes its chat and logs, deleting a project deletes its tasks, goals and chats |
-| Your general chats and project chats: private to you, not visible to other members or to the organization's owners and admins | until you clear them, leave the organization (its project chats) or delete your account |
+| Your general chats and project chats: private to you, not visible to other members or to the organization's owners and admins | until you clear them, leave or are removed from the organization, or delete your account |
 | Logs of Claude's runs (`logs/`)         | with their task; at most `-log-max-mb` (32 MB) a task                         |
 | Attachments and drawings (`uploads/`)   | with what uses them; unused ones are removed after a day                      |
 | Billing (with [Stripe](billing.md)): the Stripe customer and subscription ids, plan and period | while the org exists. Card, address and tax id stay at Stripe |

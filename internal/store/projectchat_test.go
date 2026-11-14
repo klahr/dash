@@ -180,3 +180,55 @@ func TestSharedProjectChatsDropped(t *testing.T) {
 		t.Fatalf("user's chat: %+v", c)
 	}
 }
+
+// A member's general chat in an org goes with them leaving it, from memory
+// and from the database; the other members' stay.
+func TestGeneralChatGoesWithMember(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "dash.db")
+	s, err := Open(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { s.Close() }()
+	acc := s.Accounts()
+	if err := acc.Bootstrap("admin", "s3cret-pass"); err != nil {
+		t.Fatal(err)
+	}
+	admin, _ := acc.EnvUser()
+	def, _ := acc.DefaultOrg()
+	ann := addMember(t, acc, admin.ID, def.ID, "ann", RoleMember)
+	bob := addMember(t, acc, admin.ID, def.ID, "bob", RoleMember)
+	for _, u := range []int64{ann, bob} {
+		if err := s.SetChat(def.ID, u, []model.ChatMessage{{Role: "user", Content: "hi", CreatedBy: u}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := acc.RemoveMember(admin.ID, def.ID, bob); err != nil {
+		t.Fatal(err)
+	}
+	check := func(s *Store) {
+		t.Helper()
+		if n := len(s.Chat(def.ID, bob)); n != 0 {
+			t.Fatalf("bob's general chat has %d messages after he left", n)
+		}
+		if n := len(s.Chat(def.ID, ann)); n != 1 {
+			t.Fatalf("ann's general chat has %d messages, want 1", n)
+		}
+		var n int
+		if err := s.db.QueryRow("SELECT COUNT(*) FROM chat_messages WHERE kind = 'main'").Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Fatalf("%d general chat messages in the database, want ann's", n)
+		}
+	}
+	check(s)
+	s.Close()
+	if s, err = Open(path, nil); err != nil {
+		t.Fatal(err)
+	}
+	check(s)
+}
