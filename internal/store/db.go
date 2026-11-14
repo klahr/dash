@@ -222,11 +222,6 @@ func importLegacy(db *sql.DB, legacy string) error {
 				return err
 			}
 		}
-		for id, msgs := range data.ProjectChats {
-			if err := setChat(tx, chatProject, id, 0, msgs); err != nil {
-				return err
-			}
-		}
 		return nil
 	})
 	if err != nil {

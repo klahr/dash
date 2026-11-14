@@ -576,6 +576,62 @@ func TestBrowserChatTabs(t *testing.T) {
 	tabs("This project,General")
 }
 
+// A user's project chat is the same in each of their browsers: here one wide
+// and one phone-sized, signed in as the same user. While a reply streams on
+// one, the other says Claude is answering there; it shows the reply once it
+// is done, and a message sent from either shows on both. Clearing it on one
+// clears it on the other.
+func TestBrowserProjectChatOnTwoDevices(t *testing.T) {
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	wide, phone := newBrowser(t, chrome), newBrowser(t, chrome)
+	wide.signIn(h)
+	phone.signIn(h)
+	phone.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	wide.until("open the chat", `!document.querySelector("#chat-pane").hidden`, chromedp.Click(chromedp.ID("pc-open")))
+	phone.until("open the chat", `!document.querySelector("#chat-pane").hidden`, chromedp.Click(chromedp.ID("nav-chat")))
+	const panel = `#chat-pane .chat-panel[data-chat]:not([hidden])`
+	has := func(texts ...string) string {
+		var out []string
+		for _, s := range texts {
+			out = append(out, fmt.Sprintf(`document.querySelector(%q)?.textContent.includes(%q)`, panel, s))
+		}
+		return strings.Join(out, " && ")
+	}
+	replies := fmt.Sprintf(`document.querySelectorAll(%q).length`, panel+" .msg.assistant:not(.pending)")
+	remote := fmt.Sprintf(`document.querySelector(%q)`, panel+" .chat-remote")
+	for _, b := range []*browser{wide, phone} {
+		b.waitJS("the project's chat, empty", `!!document.querySelector("`+panel+` .chat-empty:not([hidden])")`)
+	}
+
+	hold := h.calls + ".chat-hold"
+	if err := os.WriteFile(hold, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(hold) })
+	wide.do("ask on the laptop", chromedp.SendKeys(chromedp.CSS(panel+` textarea`), "Hi from the laptop\r"))
+	wide.waitJS("the reply streaming", has("Hello from the runner"))
+	wide.waitJS("no busy note where it runs", remote+`.hidden`)
+	phone.waitJS("the phone says Claude is answering", `!`+remote+`.hidden`)
+	if err := os.Remove(hold); err != nil {
+		t.Fatal(err)
+	}
+	phone.waitJS("the reply on the phone", has("Hi from the laptop", "Hello from the runner")+` && `+replies+` === 1 && `+remote+`.hidden`)
+
+	// The phone asks next (a touch keyboard's Enter adds a line: Send sends);
+	// the laptop follows.
+	phone.do("write on the phone", chromedp.SendKeys(chromedp.CSS(panel+` textarea`), "And from the phone"))
+	phone.waitJS("written", `document.querySelector("`+panel+` textarea").value === "And from the phone"`)
+	phone.until("send from the phone", has("And from the phone"), chromedp.Click(chromedp.CSS(panel+` form button.primary`)))
+	phone.waitJS("the phone's reply", replies+` === 2`)
+	wide.waitJS("the phone's turn on the laptop", has("Hi from the laptop", "And from the phone")+` && `+replies+` === 2`)
+
+	// Cleared on the laptop: on the phone too.
+	wide.do("clear on the laptop", chromedp.SendKeys(chromedp.CSS(panel+` textarea`), "/clear\r"))
+	wide.waitJS("cleared", `!(`+has("Hi from the laptop")+`)`)
+	phone.waitJS("cleared on the phone", `!(`+has("Hi from the laptop")+`) && !!document.querySelector("`+panel+` .chat-empty:not([hidden])")`)
+}
+
 // needChrome is the Chrome to test with, or skips the test (see
 // TestBrowserMainFlows).
 func needChrome(t *testing.T) string {

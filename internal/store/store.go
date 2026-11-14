@@ -64,8 +64,10 @@ type snapshot struct {
 	// TodoChats are conversations about one todo, keyed by todo id. Kept
 	// apart from Todo so they aren't broadcast with every todo update.
 	TodoChats map[string][]model.ChatMessage `json:"todo_chats,omitempty"`
-	// ProjectChats are conversations about one project, keyed by project id.
-	ProjectChats map[string][]model.ChatMessage `json:"project_chats,omitempty"`
+	// ProjectChats are each user's own conversations about one project,
+	// keyed by projectChatOwner. A state.json's shared project chats
+	// (project_chats) aren't imported.
+	ProjectChats map[string][]model.ChatMessage `json:"-"`
 	// Issues are each project's known bugs, vulnerabilities and other
 	// problems, keyed by issue id.
 	Issues map[string]*model.Issue `json:"issues,omitempty"`
@@ -422,7 +424,11 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 		}
 	}
 	delete(s.data.Projects, id)
-	delete(s.data.ProjectChats, id)
+	for owner := range s.data.ProjectChats {
+		if strings.HasPrefix(owner, id+":") {
+			delete(s.data.ProjectChats, owner)
+		}
+	}
 	err := s.writeLocked(func(tx *sql.Tx) error {
 		for _, t := range todos {
 			if err := setChat(tx, chatTodo, t.ID, org, nil); err != nil {
@@ -440,7 +446,7 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 				return err
 			}
 		}
-		if err := setChat(tx, chatProject, id, org, nil); err != nil {
+		if _, err := tx.Exec("DELETE FROM chat_messages WHERE kind = ? AND substr(owner_id, 1, length(?2) + 1) = ?2 || ':'", chatProject, id); err != nil {
 			return err
 		}
 		return deleteRow(tx, "projects", id)
@@ -844,31 +850,94 @@ func (s *Store) AppendTodoChat(todoID string, msg model.ChatMessage) error {
 	return s.writeLocked(func(tx *sql.Tx) error { return putChatMessage(tx, chatTodo, todoID, org, seq, msg) })
 }
 
-func (s *Store) ProjectChat(projectID string) []model.ChatMessage {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return append([]model.ChatMessage{}, s.data.ProjectChats[projectID]...)
+// projectChatOwner is the owner_id of user's chat about a project.
+func projectChatOwner(projectID string, user int64) string {
+	return fmt.Sprintf("%s:%d", projectID, user)
 }
 
-// SetProjectChat replaces the conversation about a project (nil clears it).
-func (s *Store) SetProjectChat(projectID string, msgs []model.ChatMessage) error {
+// ProjectChat is user's own chat about a project. Each member of the
+// project's org has their own; nobody else can read it.
+func (s *Store) ProjectChat(projectID string, user int64) []model.ChatMessage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]model.ChatMessage{}, s.data.ProjectChats[projectChatOwner(projectID, user)]...)
+}
+
+// AppendProjectChat adds msgs to the end of user's chat about a project. It
+// never takes a message out: a turn saves what it added, after whatever
+// another of the user's devices saved meanwhile.
+func (s *Store) AppendProjectChat(projectID string, user int64, msgs ...model.ChatMessage) error {
+	if len(msgs) == 0 {
+		return nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, ok := s.data.Projects[projectID]
 	if !ok {
 		return ErrNotFound
 	}
-	org := p.OrgID
-	prev := s.data.ProjectChats[projectID]
-	if len(msgs) == 0 {
-		delete(s.data.ProjectChats, projectID)
-	} else {
-		if s.data.ProjectChats == nil {
-			s.data.ProjectChats = map[string][]model.ChatMessage{}
-		}
-		s.data.ProjectChats[projectID] = append([]model.ChatMessage(nil), msgs...)
+	owner := projectChatOwner(projectID, user)
+	if s.data.ProjectChats == nil {
+		s.data.ProjectChats = map[string][]model.ChatMessage{}
 	}
-	return s.writeLocked(func(tx *sql.Tx) error { return updateChat(tx, chatProject, projectID, org, prev, msgs) })
+	start := len(s.data.ProjectChats[owner])
+	s.data.ProjectChats[owner] = append(s.data.ProjectChats[owner], msgs...)
+	err := s.writeLocked(func(tx *sql.Tx) error {
+		for i, m := range msgs {
+			if err := putChatMessage(tx, chatProject, owner, p.OrgID, start+i, m); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err == nil {
+		s.projectChatChangedLocked(p, user)
+	}
+	return err
+}
+
+// ClearProjectChat deletes user's chat about a project; other users' stay.
+func (s *Store) ClearProjectChat(projectID string, user int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.data.Projects[projectID]
+	if !ok {
+		return ErrNotFound
+	}
+	owner := projectChatOwner(projectID, user)
+	delete(s.data.ProjectChats, owner)
+	err := s.writeLocked(func(tx *sql.Tx) error { return setChat(tx, chatProject, owner, p.OrgID, nil) })
+	if err == nil {
+		s.projectChatChangedLocked(p, user)
+	}
+	return err
+}
+
+// projectChatChangedLocked tells user's open dashboards that their chat
+// about p changed (EvProjectChat), and nobody else. The caller holds the lock.
+func (s *Store) projectChatChangedLocked(p *model.Project, user int64) {
+	if s.pub != nil && user != 0 {
+		s.pub.Publish(model.Event{Type: model.EvProjectChat, ProjectID: p.ID, Time: time.Now(), OrgID: orgOrNone(p.OrgID), UserID: user})
+	}
+}
+
+// orgOrNone is org, or -1 for a record without one (see emitTo).
+func orgOrNone(org int64) int64 {
+	if org == 0 {
+		return -1
+	}
+	return org
+}
+
+// ProjectChats are every user's chats about every project, in no order (for cleanup).
+func (s *Store) ProjectChats() [][]model.ChatMessage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([][]model.ChatMessage, 0, len(s.data.ProjectChats))
+	for _, msgs := range s.data.ProjectChats {
+		out = append(out, append([]model.ChatMessage(nil), msgs...))
+	}
+	return out
 }
 
 // clone copies a todo deeply enough that changing the copy (including the

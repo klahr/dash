@@ -377,7 +377,7 @@ func TestHubRunsProjectChatOnTheUsersLinkedRunner(t *testing.T) {
 		t.Errorf("ran in %q, want the runner's clone %q", got, clone)
 	}
 	eventually(t, "the hub to save the project chat", func() bool {
-		got := raw(f.hub).ProjectChat(hp.ID)
+		got := raw(f.hub).ProjectChat(hp.ID, f.creds.UserID)
 		return len(got) == 2 && got[1].Content == "hi"
 	})
 

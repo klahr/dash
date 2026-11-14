@@ -161,6 +161,7 @@ type Server struct {
 
 	turnsMu      sync.Mutex
 	generalTurns map[string]int // general chat turns running, by "<org>:<user>"
+	projectTurns map[string]int // project chat turns running, by "<org>:<user>:<project>"
 
 	muxOnce sync.Once
 
@@ -356,15 +357,21 @@ func (s *Server) buildMux() *http.ServeMux {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	// A project's chat is each user's own: nobody else, admins included,
+	// reads or clears it.
 	mux.HandleFunc("GET /api/projects/{pid}/chat", func(w http.ResponseWriter, r *http.Request) {
 		sv, ok := s.service(w, r)
 		if !ok {
 			return
 		}
-		msgs, err := sv.data.ProjectChat(r.PathValue("pid"))
+		pid, user := r.PathValue("pid"), chatUser(r, sv.c)
+		msgs, err := sv.data.ProjectChat(pid, user)
 		if err != nil {
 			writeErr(w, err)
 			return
+		}
+		if s.projectChatBusy(sv.c.Org, user, pid) {
+			w.Header().Set("X-Chat-Busy", "1")
 		}
 		writeJSON(w, http.StatusOK, msgs)
 	})
@@ -373,7 +380,7 @@ func (s *Server) buildMux() *http.ServeMux {
 		if !ok {
 			return
 		}
-		if err := sv.data.SetProjectChat(r.PathValue("pid"), nil); err != nil {
+		if err := sv.data.ClearProjectChat(r.PathValue("pid"), chatUser(r, sv.c)); err != nil {
 			writeErr(w, err)
 			return
 		}
@@ -512,7 +519,7 @@ func (s *Server) eventsWS(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.Hub.ServeWS(w, r, hub.Subscriber{Org: c.Org, All: c.Machine})
+	s.Hub.ServeWS(w, r, hub.Subscriber{Org: c.Org, User: c.User, All: c.Machine})
 }
 
 // chatKey names a user's general chat in their org.
@@ -537,6 +544,48 @@ func (s *Server) generalBusy(c Caller) bool {
 	s.turnsMu.Lock()
 	defer s.turnsMu.Unlock()
 	return s.generalTurns[chatKey(c)] > 0
+}
+
+// projectChatKey names user's own chat about project pid in org.
+func projectChatKey(org, user int64, pid string) string {
+	return fmt.Sprintf("%d:%d:%s", org, user, pid)
+}
+
+// projectTurn counts a turn of user's chat about project pid in org as
+// running (delta 1) or finished (-1), and tells that user's dashboards
+// whether the chat is busy (model.EvProjectChat), so their other devices
+// show it and load the reply once it's done.
+func (s *Server) projectTurn(org, user int64, pid string, delta int) {
+	s.turnsMu.Lock()
+	if s.projectTurns == nil {
+		s.projectTurns = map[string]int{}
+	}
+	k := projectChatKey(org, user, pid)
+	if s.projectTurns[k] += delta; s.projectTurns[k] <= 0 {
+		delete(s.projectTurns, k)
+	}
+	busy := s.projectTurns[k] > 0
+	s.turnsMu.Unlock()
+	if s.Hub != nil && user != 0 {
+		s.Hub.Publish(model.Event{Type: model.EvProjectChat, ProjectID: pid, OrgID: org, UserID: user, Data: map[string]bool{"busy": busy}})
+	}
+}
+
+// projectChatBusy reports whether a turn of user's chat about project pid
+// in org is running.
+func (s *Server) projectChatBusy(org, user int64, pid string) bool {
+	s.turnsMu.Lock()
+	defer s.turnsMu.Unlock()
+	return s.projectTurns[projectChatKey(org, user, pid)] > 0
+}
+
+// chatUser is whose own chats r reads and writes: its caller's, or, when
+// this runner's hub asks, those of the hub's user it asks for.
+func chatUser(r *http.Request, c Caller) int64 {
+	if c.User == 0 && auth.FromHub(r.Context()) {
+		return hubUser(r)
+	}
+	return c.User
 }
 
 // ---- helpers ----

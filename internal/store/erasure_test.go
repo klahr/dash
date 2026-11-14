@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -54,6 +55,12 @@ func TestDeleteUser(t *testing.T) {
 	if err := s.SetChat(def.ID, admin.ID, []model.ChatMessage{{Role: "user", Content: "admin's own", CreatedBy: admin.ID}}); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.AppendProjectChat(p.ID, ann, model.ChatMessage{Role: "user", Content: "ann's project question", CreatedBy: ann}, model.ChatMessage{Role: "assistant", Content: "reply"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AppendProjectChat(p.ID, admin.ID, model.ChatMessage{Role: "user", Content: "admin's project question", CreatedBy: admin.ID}); err != nil {
+		t.Fatal(err)
+	}
 	for _, e := range []AuthEvent{
 		{OrgID: def.ID, UserID: ann, Actor: ann, Kind: "google.linked", Detail: "ann@example.com", IP: "192.0.2.7"},
 		{OrgID: def.ID, UserID: admin.ID, Actor: ann, Kind: "member.signed_out", Detail: "admin", IP: "192.0.2.7"},
@@ -71,8 +78,12 @@ func TestDeleteUser(t *testing.T) {
 	if x.Account.Username != "ann" || len(x.Organizations) != 2 || len(x.Tokens) != 1 || len(x.Tasks) != 1 || x.Tasks[0].Title != "Ann's task" {
 		t.Fatalf("export: %+v", x)
 	}
-	if len(x.Messages) != 2 || len(x.AuthEvents) != 2 || x.AuthEvents[0].IP != "192.0.2.7" {
+	if len(x.Messages) != 3 || len(x.AuthEvents) != 2 || x.AuthEvents[0].IP != "192.0.2.7" {
 		t.Fatalf("export messages %+v, log %+v", x.Messages, x.AuthEvents)
+	}
+	if i := slices.IndexFunc(x.Messages, func(m ExportMessage) bool { return m.Conversation == "project" }); i < 0 ||
+		x.Messages[i].Content != "ann's project question" || x.Messages[i].Of != p.ID || x.Messages[i].OrgID != def.ID {
+		t.Fatalf("export lacks ann's project chat: %+v", x.Messages)
 	}
 
 	// Not the env account.
@@ -116,17 +127,24 @@ func TestDeleteUser(t *testing.T) {
 		if c := s.Chat(def.ID, admin.ID); len(c) != 1 {
 			t.Fatalf("admin's general chat: %+v", c)
 		}
+		if c := s.ProjectChat(p.ID, ann); len(c) != 0 {
+			t.Fatalf("ann's project chat stayed: %+v", c)
+		}
+		if c := s.ProjectChat(p.ID, admin.ID); len(c) != 1 || c[0].CreatedBy != admin.ID {
+			t.Fatalf("admin's project chat: %+v", c)
+		}
 	}
 	check(s)
 	var n int
 	for q, want := range map[string]int{
-		"SELECT COUNT(*) FROM organizations WHERE id = " + itoa(personal.ID):                             0,
-		"SELECT COUNT(*) FROM tokens":                                                                    0,
-		"SELECT COUNT(*) FROM auth_events WHERE user_id IS NULL AND ip = '' AND detail = ''":             1,
-		"SELECT COUNT(*) FROM auth_events WHERE actor_id IS NULL AND ip = '' AND detail = 'admin'":       1,
-		"SELECT COUNT(*) FROM auth_events WHERE ip != '' OR user_id = " + itoa(ann):                      0,
-		"SELECT COUNT(*) FROM org_memberships WHERE user_id = " + itoa(ann):                              0,
-		"SELECT COUNT(*) FROM chat_messages WHERE kind = 'main' AND owner_id LIKE '%:" + itoa(ann) + "'": 0,
+		"SELECT COUNT(*) FROM organizations WHERE id = " + itoa(personal.ID):                                        0,
+		"SELECT COUNT(*) FROM tokens":                                                                               0,
+		"SELECT COUNT(*) FROM auth_events WHERE user_id IS NULL AND ip = '' AND detail = ''":                        1,
+		"SELECT COUNT(*) FROM auth_events WHERE actor_id IS NULL AND ip = '' AND detail = 'admin'":                  1,
+		"SELECT COUNT(*) FROM auth_events WHERE ip != '' OR user_id = " + itoa(ann):                                 0,
+		"SELECT COUNT(*) FROM org_memberships WHERE user_id = " + itoa(ann):                                         0,
+		"SELECT COUNT(*) FROM chat_messages WHERE kind = 'main' AND owner_id LIKE '%:" + itoa(ann) + "'":            0,
+		"SELECT COUNT(*) FROM chat_messages WHERE kind = 'project' AND owner_id = '" + p.ID + ":" + itoa(ann) + "'": 0,
 	} {
 		if err := s.db.QueryRow(q).Scan(&n); err != nil || n != want {
 			t.Errorf("%s: %d, want %d (%v)", q, n, want, err)

@@ -30,7 +30,7 @@ import { clChanged } from "./checklist.js";
 import { checkForUpdate } from "./updates.js";
 import { loadClaudeStatus, onClaudeStatus } from "./claudestatus.js";
 import { goalTaskChanged, onGoalEvent, showGoal } from "./goals.js";
-import { goalChatEvent } from "./chatpane.js";
+import { goalChatEvent, projectChatEvent } from "./chatpane.js";
 
 // ------------------------------------------------------------------ live events
 // One live connection per computer, so notifications arrive from all of them.
@@ -211,6 +211,9 @@ function onEvent(ev, m = { name: "" }) {
         }
         if (prev && !prev.pr && ev.data.pr) toast(title(ev.data), { tone: "pr", head: `Pull request #${ev.data.pr.number} opened`, action: { label: "View", run: () => window.open(ev.data.pr.url, "_blank", "noopener") } });
       }
+      break;
+    case "project.chat":
+      projectChatEvent(ev, m); // the user's own chat, changed on this device or another
       break;
     case "goal.updated":
       goalChatEvent(ev.data, m); // a wake-up added to the coordinator's conversation

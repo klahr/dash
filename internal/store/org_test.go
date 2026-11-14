@@ -61,7 +61,7 @@ func TestForOrgIsolates(t *testing.T) {
 	}
 	msgs := []model.ChatMessage{{Role: "user", Content: "hi", CreatedBy: u.ID}}
 	_ = a.SetTodoChat(td.ID, msgs)
-	_ = a.SetProjectChat(pa.ID, msgs)
+	_ = a.AppendProjectChat(pa.ID, u.ID, msgs...)
 	_ = a.SetChat(u.ID, msgs)
 
 	notFound := func(what string, err error) {
@@ -87,9 +87,10 @@ func TestForOrgIsolates(t *testing.T) {
 	_, err = b.TodoChat(td.ID)
 	notFound("TodoChat", err)
 	notFound("SetTodoChat", b.SetTodoChat(td.ID, nil))
-	_, err = b.ProjectChat(pa.ID)
+	_, err = b.ProjectChat(pa.ID, u.ID)
 	notFound("ProjectChat", err)
-	notFound("SetProjectChat", b.SetProjectChat(pa.ID, nil))
+	notFound("AppendProjectChat", b.AppendProjectChat(pa.ID, u.ID, msgs...))
+	notFound("ClearProjectChat", b.ClearProjectChat(pa.ID, u.ID))
 	_, err = b.GetIssue(is.ID)
 	notFound("GetIssue", err)
 	_, _, err = b.UpsertIssue(model.Issue{ProjectID: pa.ID, Title: "x"})

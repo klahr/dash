@@ -526,6 +526,8 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .perm-status { color: var(--muted); font-weight: 600; }
 .chat-cwd { color: var(--muted); font: var(--fs-xs) var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
 .chat-cwd-bar { padding: 6px 16px; border-bottom: 1px solid var(--line); }
+/* A project chat's turn running in another of the user's windows or devices. */
+.chat-remote { display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 16px; color: var(--muted); font-size: var(--fs-xs); border-top: 1px solid var(--line); }
 /* The general chat's runner, on a hub that doesn't run Claude itself */
 .chat-runner { display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: var(--fs-s); }
 .chat-runner-dot { background: var(--muted); }

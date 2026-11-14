@@ -703,15 +703,31 @@ func (a *Accounts) SetRole(actor, orgID, target int64, role Role) error {
 }
 
 // RemoveMember takes target out of orgID, as actor (who may be target,
-// leaving). Their sessions in that org move on at their next request.
+// leaving), with their own chats about the org's projects. Their sessions
+// in that org move on at their next request.
 func (a *Accounts) RemoveMember(actor, orgID, target int64) error {
-	return inTx(a.db, func(tx *sql.Tx) error {
+	a.s.mu.Lock()
+	defer a.s.mu.Unlock()
+	err := inTx(a.db, func(tx *sql.Tx) error {
 		if err := changeMember(tx, actor, orgID, target, ""); err != nil {
 			return err
 		}
-		_, err := tx.Exec("DELETE FROM org_memberships WHERE user_id = ? AND org_id = ?", target, orgID)
+		if _, err := tx.Exec("DELETE FROM org_memberships WHERE user_id = ? AND org_id = ?", target, orgID); err != nil {
+			return err
+		}
+		_, err := tx.Exec("DELETE FROM chat_messages WHERE kind = ? AND org_id = ? AND owner_id LIKE '%:' || ?", chatProject, orgID, target)
 		return err
 	})
+	if err != nil {
+		return err
+	}
+	suffix := fmt.Sprintf(":%d", target)
+	for owner := range a.s.data.ProjectChats {
+		if pid, ok := strings.CutSuffix(owner, suffix); ok && a.s.projectOrgLocked(pid) == orgID {
+			delete(a.s.data.ProjectChats, owner)
+		}
+	}
+	return nil
 }
 
 // ---- invitations ----

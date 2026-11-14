@@ -116,7 +116,7 @@ func newTwoOrgs(t *testing.T) *twoOrgs {
 	if err := st.SetTodoChat(td.ID, secret); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetProjectChat(web.ID, secret); err != nil {
+	if err := st.AppendProjectChat(web.ID, owner.User.ID, secret...); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetChat(owner.Org.ID, owner.User.ID, secret); err != nil {
@@ -211,7 +211,7 @@ func (o *twoOrgs) untouched(t *testing.T, after string) {
 	if n := len(st.ListIssues(o.web.ID)); n != 1 {
 		t.Fatalf("after %s: %d issues in the project", after, n)
 	}
-	if len(st.TodoChat(o.todo.ID)) != 2 || len(st.ProjectChat(o.web.ID)) != 2 {
+	if len(st.TodoChat(o.todo.ID)) != 2 || len(st.ProjectChat(o.web.ID, ownerSession(t, o.s).User.ID)) != 2 {
 		t.Fatalf("after %s: chats changed", after)
 	}
 	if len(st.ScanTemplates(o.web.ID)) != 0 {

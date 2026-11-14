@@ -7,6 +7,18 @@ changes). Each conversation is saved, so it survives reloads and restarts. On a 
 runs on one of your own runners, with its Claude login (see
 [Several computers](several-computers.md#claude-runs-on-each-users-own-runner)).
 
+## Your own project chats
+
+Each member has their own chat about each project. Other members don't see it, and neither do
+the organization's owners and admins. `/clear` clears only yours.
+
+Your project chat is the same on each of your devices and browser windows:
+
+- What one device sends and Claude's reply show on the others when the reply is done. While
+  Claude answers, the others say **Claude is answering on another of your devices…**.
+- A message sent from a window that hasn't caught up yet isn't sent: the chat reloads, and your
+  message goes back in the box to send again. A window that is behind never removes messages.
+
 In the composer, <kbd>Enter</kbd> sends, messages written while Claude answers are queued, `/clear`
 starts a new conversation and `/help` lists these.
 

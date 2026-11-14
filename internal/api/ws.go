@@ -45,8 +45,18 @@ import (
 //	server → {"kind":"shell_output","id":"<id>","text":"<output so far>"}
 //	server → {"kind":"shell_done","id":"<id>","shell":{"command","output","exit_code",…}}
 //	server → {"kind":"suggestion","text":"<the user's likely next message>"} after "done"
+//	server → {"kind":"stale","text":"…"} a project chat's turn from an out-of-date copy, refused
 //
-// The client owns the conversation history and sends it in full each turn.
+// The client sends the conversation in full each turn, with "base": how many
+// of its messages are saved. A project chat is the user's own, kept by the
+// server: the turn continues the saved conversation with the messages after
+// base, and saves only what it adds, after whatever the user's other devices
+// saved meanwhile. A "base" that isn't the saved conversation's length (or
+// messages that differ from it) is refused with "stale", so the client
+// reloads (GET /api/projects/{id}/chat); a stale copy never removes
+// messages. Saving or clearing it tells the user's dashboards
+// (model.EvProjectChat), as do its turns beginning and ending; meanwhile GET
+// sets X-Chat-Busy.
 // Each completed turn is saved, and GET /api/chat returns it after a restart.
 // The global chat also saves the question as soon as it arrives, so a turn cut
 // short by a restart can be sent again; GET /api/chat sets X-Chat-Busy while
@@ -58,7 +68,7 @@ import (
 // {"kind":"runner","text":"<name>"}. A runner runs the global chat only for
 // its owner, asked through the hub, and doesn't save it (the hub does).
 // With "project", Claude runs in that project's main checkout and the turn is
-// saved to GET /api/projects/{id}/chat. On a hub that doesn't run Claude, or
+// saved to the caller's own GET /api/projects/{id}/chat. On a hub that doesn't run Claude, or
 // for a project whose tasks run on runners, it runs instead on the caller's
 // runner linked to the project (announced with {"kind":"runner"}), in that
 // runner's clone and with the hub project's permission mode; the hub saves it.
@@ -166,6 +176,10 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		ct, err := s.resolveChatTurn(ctx, r, sv, msg, shell, relay)
+		if errors.Is(err, errStaleChat) {
+			send(agent.ChatDelta{Kind: "stale", ID: msg.ID, Text: err.Error()})
+			continue
+		}
 		if err != nil {
 			send(agent.ChatDelta{Kind: "error", Text: err.Error()})
 			continue
@@ -214,7 +228,7 @@ func (s *Server) chatWS(w http.ResponseWriter, r *http.Request) {
 		if shell {
 			stopTurn = func() {}
 			sh := chatShell{chatter: ct.chatter, dir: ct.dir, command: command, id: msg.ID, timeout: s.ChatCommandTimeout, send: send}
-			turnDone = runShellTurn(turnCtx, sh, ct.history, saveIfNewest)
+			turnDone = runShellTurn(turnCtx, sh, ct.history, ct.running, saveIfNewest)
 			continue
 		}
 		var stopped atomic.Bool
@@ -257,6 +271,11 @@ type chatRequest struct {
 	// Goal is the goal whose coordinator the chat talks to (see
 	// resolveGoalChat); on a runner, with Hub, the hub's id of it.
 	Goal string `json:"goal"`
+	// Base, in a project's chat, is how many messages of the saved
+	// conversation Messages starts with; the rest are new. A client whose
+	// copy is out of date (Base isn't what is saved) is told "stale" and
+	// reloads. Without it, the last message is the only new one.
+	Base *int `json:"base"`
 }
 
 // general reports whether m is for the general chat, not a project's, a task's or a goal's.
@@ -276,6 +295,9 @@ type chatSetup struct {
 	general         bool   // the general chat
 	forHub          bool   // this runner's owner's chat, asked through the hub
 	goal            string // the goal whose coordinator the turn is (the hub's id, with forHub)
+	// running, if set, is told when the turn starts (1) and ends (-1): a
+	// project chat is busy meanwhile.
+	running func(delta int)
 }
 
 // resolveChatTurn works out where msg's turn runs and how it is saved: on
@@ -389,10 +411,36 @@ func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *servi
 			return ct, err
 		}
 		ct.dir, ct.mode, ct.pid = p.Path, ownMode(p.ChatPermissionMode), p.ID
-		ct.save = func(msgs []agent.ChatMessage) error {
-			prev, _ := sv.data.ProjectChat(p.ID)
-			return sv.data.SetProjectChat(p.ID, authored(prev, msgs, user))
+		// The server keeps the conversation: the turn continues the saved
+		// one with what the client added, and saves only what it adds.
+		stored, err := sv.data.ProjectChat(p.ID, user)
+		if err != nil {
+			return ct, err
 		}
+		added, err := projectChatAdded(stored, msg)
+		if err != nil {
+			return ct, err
+		}
+		for i := range added {
+			added[i].CreatedBy = user
+		}
+		ct.history = append(slices.Clip(stored), sv.chatAttachments(added)...)
+		known := len(stored)
+		ct.save = func(msgs []agent.ChatMessage) error {
+			if len(msgs) <= known {
+				return nil
+			}
+			for i := range msgs[known:] {
+				if msgs[known+i].Role != "user" {
+					msgs[known+i].CreatedBy = 0
+				}
+			}
+			err := sv.data.AppendProjectChat(p.ID, user, msgs[known:]...)
+			known = len(msgs)
+			return err
+		}
+		org, pid := sv.c.Org, p.ID
+		ct.running = func(delta int) { s.projectTurn(org, user, pid, delta) }
 		if s.projectChatOnRunner(p) {
 			// Claude runs on the caller's runner, in its clone of the project.
 			x, err := s.projectChatRunner(sv.c, p, msg.Runner)
@@ -405,7 +453,9 @@ func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *servi
 			// Else this Dash runs Claude itself and the chat stays here.
 		}
 	}
-	ct.history = sv.chatAttachments(msg.Messages)
+	if ct.history == nil {
+		ct.history = sv.chatAttachments(msg.Messages)
+	}
 	ct.prompt = withAttachments(agent.WithShellText(ct.history))
 	if ct.forHub && msg.Todo != "" {
 		ct.prompt = withRunnerChanges(runnerBranch, runnerDiff, ct.prompt)
@@ -471,6 +521,31 @@ func (s *Server) resolveChatTurn(ctx context.Context, r *http.Request, sv *servi
 }
 
 var errChatUnavailable = errors.New("chat is not available on this Dash")
+
+// errStaleChat refuses a turn sent from an out-of-date copy of a project's
+// chat (another device of the user's added to it or cleared it since): the
+// client reloads the chat before sending again.
+var errStaleChat = errors.New("this chat changed on another device: it has been reloaded, send your message again")
+
+// projectChatAdded is what msg adds to stored, the user's saved chat about
+// a project: the messages after the msg.Base it was written on. A copy that
+// isn't stored (shorter, longer or different) is stale: saving from it could
+// take out messages another device added.
+func projectChatAdded(stored []agent.ChatMessage, msg chatRequest) ([]agent.ChatMessage, error) {
+	base := len(msg.Messages) - 1
+	if msg.Base != nil {
+		base = *msg.Base
+	}
+	if base != len(stored) || base < 0 || base >= len(msg.Messages) {
+		return nil, errStaleChat
+	}
+	for i, m := range stored {
+		if c := msg.Messages[i]; c.Role != m.Role || c.Content != m.Content {
+			return nil, errStaleChat
+		}
+	}
+	return append([]agent.ChatMessage(nil), msg.Messages[base:]...), nil
+}
 
 // resolveGoalChat sets up a turn of the chat with msg.Goal's coordinator:
 // the goal's conversation continued with the user's latest message (the
@@ -562,10 +637,16 @@ func (s *Server) taskWorktree(ctx context.Context, p model.Project, t model.Todo
 // runShellTurn runs sh, a "!" command, and saves the conversation with its
 // result (unless a newer turn already has it) before the client hears it
 // ended, so a reload has it. The channel closes when it has.
-func runShellTurn(ctx context.Context, sh chatShell, history []agent.ChatMessage, saveIfNewest func([]agent.ChatMessage)) <-chan struct{} {
+func runShellTurn(ctx context.Context, sh chatShell, history []agent.ChatMessage, running func(int), saveIfNewest func([]agent.ChatMessage)) <-chan struct{} {
 	done := make(chan struct{})
+	if running != nil {
+		running(1)
+	}
 	go func() {
 		defer close(done)
+		if running != nil {
+			defer running(-1)
+		}
 		turn, ok := sh.run(ctx, history)
 		if !ok {
 			return
@@ -589,9 +670,18 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 		}
 	}
 	done := make(chan struct{})
+	// ended marks the turn over: once its reply is saved (before the client
+	// hears it's done, so the user's other devices don't show it running
+	// after it has finished), or when it ends without one.
+	ended := func() {}
+	if ct.running != nil {
+		ct.running(1)
+		ended = sync.OnceFunc(func() { ct.running(-1) })
+	}
 	go func() {
 		defer close(done)
 		defer ct.endReview()
+		defer ended()
 		if ct.general && !ct.forHub {
 			s.generalTurn(c, 1)
 			defer s.generalTurn(c, -1)
@@ -634,6 +724,7 @@ func (s *Server) runClaudeTurn(ctx context.Context, c Caller, ct chatSetup, stop
 					slog.Error("save chat", "err", err)
 				}
 				saved = true
+				ended()
 			}
 			send(d)
 		})

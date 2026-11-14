@@ -146,7 +146,9 @@ func TestImportStateJSON(t *testing.T) {
 		sameJSON(t, "scan template", tpl, want.ScanTemplates["p1/deps"])
 		sameJSON(t, "chat", s.data.MainChats[""], want.Chat)
 		sameJSON(t, "todo chat", s.TodoChat("t1"), want.TodoChats["t1"])
-		sameJSON(t, "project chat", s.ProjectChat("p2"), want.ProjectChats["p2"])
+		if len(s.data.ProjectChats) != 0 {
+			t.Errorf("imported the shared project chats: %v", s.data.ProjectChats)
+		}
 	}
 	check(s)
 
@@ -224,7 +226,7 @@ func TestRoundTripEveryRecord(t *testing.T) {
 	if err := s.AppendTodoChat(a.ID, chat[1]); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetProjectChat(p.ID, chat); err != nil {
+	if err := s.AppendProjectChat(p.ID, 1, chat...); err != nil {
 		t.Fatal(err)
 	}
 	is, _, err := s.UpsertIssue(model.Issue{ProjectID: p.ID, Title: "Leak", Type: model.IssueBug, File: "a.go"})
@@ -268,7 +270,7 @@ func TestRoundTripEveryRecord(t *testing.T) {
 	// Things in the deleted project go with it.
 	gt, _ := s.CreateTodo(model.Todo{ProjectID: gone.ID, Title: "g"})
 	_ = s.SetTodoChat(gt.ID, chat)
-	_ = s.SetProjectChat(gone.ID, chat)
+	_ = s.AppendProjectChat(gone.ID, 1, chat...)
 	_, _, _ = s.UpsertIssue(model.Issue{ProjectID: gone.ID, Title: "g", Type: model.IssueBug})
 	_, _ = s.CreateScanRun(model.ScanRun{ProjectID: gone.ID, Scan: "x", Status: model.ScanSucceeded})
 	_, _ = s.SetScanSetting(gone.ID, "x", func(st *model.ScanSetting) {})
@@ -283,7 +285,7 @@ func TestRoundTripEveryRecord(t *testing.T) {
 		Issues                                    []model.Issue
 		Runs                                      []model.ScanRun
 		Chat, TodoChat, ProjectChat, GoneTodoChat []model.ChatMessage
-	}{s.ListProjects(), s.ListTodos(""), s.ListIssues(""), s.ListScanRuns(p.ID, ""), s.Chat(1, 1), s.TodoChat(a.ID), s.ProjectChat(p.ID), s.TodoChat(gt.ID)}
+	}{s.ListProjects(), s.ListTodos(""), s.ListIssues(""), s.ListScanRuns(p.ID, ""), s.Chat(1, 1), s.TodoChat(a.ID), s.ProjectChat(p.ID, 1), s.TodoChat(gt.ID)}
 	if len(before.Projects) != 1 || len(before.Todos) != 2 || len(before.Issues) != 2 || len(before.Runs) != 1 {
 		t.Fatalf("unexpected state before reopen: %+v", before)
 	}
@@ -295,7 +297,7 @@ func TestRoundTripEveryRecord(t *testing.T) {
 	sameJSON(t, "scan runs", s.ListScanRuns(p.ID, ""), before.Runs)
 	sameJSON(t, "chat", s.Chat(1, 1), chat)
 	sameJSON(t, "todo chat", s.TodoChat(a.ID), chat)
-	sameJSON(t, "project chat", s.ProjectChat(p.ID), chat)
+	sameJSON(t, "project chat", s.ProjectChat(p.ID, 1), chat)
 	got, ok := s.ScanSetting(p.ID, "x")
 	if !ok {
 		t.Fatal("scan setting lost")

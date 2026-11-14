@@ -305,7 +305,7 @@ func TestRunnerChatsInItsOwnProjectThroughTheHub(t *testing.T) {
 	if dir, _ := seen.seen(); dir != p.Path {
 		t.Errorf("ran in %q, want the project's folder %q", dir, p.Path)
 	}
-	got := raw(s).ProjectChat(p.ID)
+	got := raw(s).ProjectChat(p.ID, 42)
 	if len(got) != 2 || got[0].CreatedBy != 42 || got[1].Content != "hi" {
 		t.Fatalf("saved project chat: %+v", got)
 	}
@@ -358,14 +358,14 @@ func TestRunnerChatsInItsOwnProjectThroughTheHub(t *testing.T) {
 	if kinds, texts := runnerChatTurn(t, srv, "42", map[string]any{"project": clone.ID}); kinds[len(kinds)-1] != "error" {
 		t.Fatalf("chat in a hub clone by the runner's id: %v %q", kinds, texts)
 	}
-	n := len(raw(s).ProjectChat(clone.ID))
+	n := len(raw(s).ProjectChat(clone.ID, 42))
 	if kinds, texts := runnerChatTurn(t, srv, "42", map[string]any{"project": "hp1", "hub": true, "mode": model.ChatModeAcceptEdits}); kinds[len(kinds)-1] != "done" {
 		t.Fatalf("hub chat in its linked project: %v %q", kinds, texts)
 	}
 	if dir, _ := seen.seen(); dir != clone.Path {
 		t.Errorf("hub chat ran in %q, want the clone %q", dir, clone.Path)
 	}
-	if got := raw(s).ProjectChat(clone.ID); len(got) != n {
+	if got := raw(s).ProjectChat(clone.ID, 42); len(got) != n {
 		t.Errorf("the runner saved the hub's conversation: %+v", got)
 	}
 }

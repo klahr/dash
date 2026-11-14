@@ -190,18 +190,28 @@ func (o *OrgStore) SetTodoChat(todoID string, msgs []model.ChatMessage) error {
 	return o.s.SetTodoChat(todoID, msgs)
 }
 
-func (o *OrgStore) ProjectChat(projectID string) ([]model.ChatMessage, error) {
+// ProjectChat is user's own chat about a project in the org.
+func (o *OrgStore) ProjectChat(projectID string, user int64) ([]model.ChatMessage, error) {
 	if !o.ownsProject(projectID) {
 		return nil, ErrNotFound
 	}
-	return o.s.ProjectChat(projectID), nil
+	return o.s.ProjectChat(projectID, user), nil
 }
 
-func (o *OrgStore) SetProjectChat(projectID string, msgs []model.ChatMessage) error {
+// AppendProjectChat adds msgs to user's own chat about a project in the org.
+func (o *OrgStore) AppendProjectChat(projectID string, user int64, msgs ...model.ChatMessage) error {
 	if !o.ownsProject(projectID) {
 		return ErrNotFound
 	}
-	return o.s.SetProjectChat(projectID, msgs)
+	return o.s.AppendProjectChat(projectID, user, msgs...)
+}
+
+// ClearProjectChat deletes user's own chat about a project in the org.
+func (o *OrgStore) ClearProjectChat(projectID string, user int64) error {
+	if !o.ownsProject(projectID) {
+		return ErrNotFound
+	}
+	return o.s.ClearProjectChat(projectID, user)
 }
 
 // ---- issues ----

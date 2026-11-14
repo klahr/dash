@@ -1,7 +1,7 @@
 import { $, $$, h, ib, ico } from "./dom.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
-import { api } from "./api.js";
+import { api, on } from "./api.js";
 import { attempt, copy, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { chatPage, renderNavActive } from "./nav.js";
@@ -61,16 +61,34 @@ export function projectChatFor(p) {
   const panel = $("#project-chat-tpl").content.firstElementChild.cloneNode(true);
   panel.dataset.chat = key;
   $("#chat-pane").append(panel);
-  const pc = { panel, loaded: false };
+  // remote: says Claude is answering in another of the user's windows or
+  // devices (the chat is theirs alone, the same on each); its reply loads
+  // when it's done.
+  const remote = h("p", { class: "chat-remote", role: "status", hidden: true },
+    h("span", { class: "act-spin", "aria-hidden": "true" }), " Claude is answering on another of your devices…");
+  panel.querySelector("form").before(remote);
+  const pc = { panel, loaded: false, remote, remoteBusy: false, dirty: false, seq: 0, proj };
+  const paneState = paneChatState(key, () => pc.chat);
+  let wasBusy = false;
   pc.chat = makeChat({
     log: panel.querySelector(".chat-log"), empty: panel.querySelector(".chat-empty"), form: panel.querySelector("form"),
     target: () => ({ prefix: proj().prefix || "", project: proj().id }),
     clear: () => api("DELETE", `/api/projects/${proj().id}/chat`, null, proj().prefix || ""),
     cwd: panel.querySelector(".chat-cwd"),
     // A turn left streaming when the chat was cleared is saved when it finishes.
-    saved: () => { if (!pc.chat.busy) { pc.loaded = false; loadProjectChat(proj()).catch(fail); } },
+    saved: () => { if (!pc.chat.busy) loadProjectChat(proj(), true).catch(fail); },
+    // Sent from an out-of-date copy: the server's is the one to show.
+    stale: () => loadProjectChat(proj(), true).catch(fail),
     actions: chatActions(false, key),
-    onState: paneChatState(key, () => pc.chat),
+    // Changes saved from elsewhere during a turn here load once it ends.
+    onState: () => {
+      paneState();
+      // The busy chat was (most likely) this turn: its end may come after the reply.
+      if (wasBusy && !pc.chat.busy) pc.remoteBusy = false;
+      wasBusy = pc.chat.busy;
+      renderRemote(pc);
+      if (!pc.chat.busy && pc.dirty) loadProjectChat(proj(), true).catch(() => {});
+    },
     shell: true,
   });
   // Talking in a chat again wants its reply, even if its tab was closed mid-reply.
@@ -78,13 +96,43 @@ export function projectChatFor(p) {
   projectChats.set(key, pc);
   return pc;
 }
-// The server saves every finished turn; load it once, when the chat is first shown.
-async function loadProjectChat(p) {
+const renderRemote = (pc) => { pc.remote.hidden = !pc.remoteBusy || pc.chat.busy; };
+// sameChat reports whether a conversation shown (history) is the one saved.
+const sameChat = (history, saved) => history.length === saved.length &&
+  history.every((m, i) => m.role === saved[i].role && (m.content || "") === (saved[i].content || ""));
+// The server keeps each user's own project chat, the same on each of their
+// devices: it is loaded when first shown, and again (force) when it changed
+// elsewhere, unless a turn is running here. A conversation that is already
+// the one shown isn't drawn again, so a turn's tool calls stay.
+async function loadProjectChat(p, force = false) {
   const pc = projectChatFor(p);
-  if (pc.loaded || pc.chat.busy) return;
+  if ((pc.loaded && !force) || pc.chat.busy) return;
   pc.loaded = true;
-  const saved = await api("GET", `/api/projects/${p.id}/chat`, null, p.prefix || "");
-  if (!pc.chat.history.length && !pc.chat.busy) pc.chat.reset(saved);
+  pc.dirty = false;
+  const seq = ++pc.seq;
+  const res = await fetch(on(p.prefix || "", `/api/projects/${p.id}/chat`));
+  const saved = await res.json().catch(() => null);
+  if (!res.ok) {
+    pc.loaded = false;
+    throw new Error(saved?.error || res.statusText);
+  }
+  if (seq !== pc.seq) return; // a newer load is on its way
+  pc.remoteBusy = !!res.headers.get("X-Chat-Busy");
+  if (pc.chat.busy) pc.dirty = true; // a turn began meanwhile: load when it ends
+  else if (!sameChat(pc.chat.history, saved || [])) pc.chat.reset(saved || []);
+  renderRemote(pc);
+}
+// projectChatEvent: the user's own chat about ev's project (on computer m)
+// was saved or cleared, or a turn of it began or ended (ev.data.busy), on
+// this device or another. A chat loaded here follows it.
+export function projectChatEvent(ev, m) {
+  const pc = projectChats.get(`${m.name}/${ev.project_id}`);
+  if (!pc?.loaded) return; // read when it's first shown
+  if (typeof ev.data?.busy === "boolean") pc.remoteBusy = ev.data.busy;
+  renderRemote(pc);
+  if (ev.data?.busy) return; // nothing saved yet: the reply loads when it's done
+  if (pc.chat.busy) pc.dirty = true;
+  else loadProjectChat(pc.proj(), true).catch(() => {});
 }
 
 // ------------------------------------------------------------------ goal chats

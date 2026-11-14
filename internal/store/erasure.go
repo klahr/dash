@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,7 +59,7 @@ func subscribed(status string) bool {
 
 // DeleteUser deletes the account uid and everything that is only theirs:
 // sessions, tokens, linked identities, push subscriptions, personal
-// webhooks, recovery codes, their general chats, and each org they are the
+// webhooks, recovery codes, their general and project chats, and each org they are the
 // only member of (their personal workspace). What they made in orgs that
 // remain stays, without them: their tasks' and messages' author becomes
 // model.DeletedUser, and the sign-in log keeps its entries about them
@@ -199,14 +200,14 @@ func deleteEmptyOrg(tx *sql.Tx, orgID int64) error {
 }
 
 // forgetUser takes uid out of what stays after their account: records
-// keep their content with model.DeletedUser as author, their general chats
-// go, and log entries lose their id and what identifies them.
+// keep their content with model.DeletedUser as author, their own general
+// and project chats go, and log entries lose their id and what identifies them.
 func forgetUser(tx *sql.Tx, uid int64) error {
 	for _, q := range []string{
 		`UPDATE todos SET data = json_set(data, '$.created_by', ?2) WHERE json_extract(data, '$.created_by') = ?1`,
 		`UPDATE goals SET data = json_set(data, '$.owner', ?2) WHERE json_extract(data, '$.owner') = ?1`,
 		`UPDATE chat_messages SET data = json_set(data, '$.created_by', ?2) WHERE kind != 'main' AND json_extract(data, '$.created_by') = ?1`,
-		`DELETE FROM chat_messages WHERE kind = 'main' AND owner_id LIKE '%:' || ?1`,
+		`DELETE FROM chat_messages WHERE kind IN ('main', 'project') AND owner_id LIKE '%:' || ?1`,
 		`UPDATE project_events SET user_id = 0 WHERE user_id = ?1`,
 		// About them: who, the address and the details (an email address,
 		// say) go; that it happened stays in the org's log.
@@ -461,8 +462,17 @@ func (s *Store) authoredBy(uid int64) ([]ExportTask, []ExportMessage) {
 	for id, chat := range s.data.TodoChats {
 		add("task", id, 0, chat)
 	}
-	for id, chat := range s.data.ProjectChats {
-		add("project", id, 0, chat)
+	for owner, chat := range s.data.ProjectChats {
+		// Their own chats, as for the general chat: what they asked.
+		id, user, ok := strings.Cut(owner, ":")
+		if !ok || user != strconv.FormatInt(uid, 10) {
+			continue
+		}
+		for _, m := range chat {
+			if m.Role == "user" {
+				msgs = append(msgs, ExportMessage{Conversation: "project", Of: id, OrgID: s.projectOrgLocked(id), Content: m.Content, At: m.At})
+			}
+		}
 	}
 	for id, chat := range s.data.GoalChats {
 		add("goal", id, 0, chat)

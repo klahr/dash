@@ -48,7 +48,7 @@ func shellTurn(t *testing.T, conn *websocket.Conn, fields map[string]any, msgs [
 				t.Errorf("shell_done for %q", d.ID)
 			}
 			return deltas, d.Shell, ""
-		case "error":
+		case "error", "stale":
 			return deltas, nil, d.Text
 		}
 	}
@@ -80,7 +80,7 @@ func TestProjectChatRunsShellCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	prev := []agent.ChatMessage{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}
-	if err := raw(s).SetProjectChat(p.ID, prev); err != nil {
+	if err := raw(s).AppendProjectChat(p.ID, ownerSession(t, s).User.ID, prev...); err != nil {
 		t.Fatal(err)
 	}
 	conn := chatSocket(t, s)
@@ -104,7 +104,7 @@ func TestProjectChatRunsShellCommand(t *testing.T) {
 	if chat.calls.Load() != 0 {
 		t.Error("the command was sent to Claude")
 	}
-	got := raw(s).ProjectChat(p.ID)
+	got := raw(s).ProjectChat(p.ID, ownerSession(t, s).User.ID)
 	if len(got) != 3 || got[2].Shell == nil || got[2].Shell.ExitCode != 2 || got[2].Content != "!pwd; ls; echo broken >&2; exit 2" || got[2].At == nil || got[2].CreatedBy == 0 {
 		t.Fatalf("saved %+v", got)
 	}
@@ -188,7 +188,7 @@ func TestChatShellStop(t *testing.T) {
 	if time.Since(start) > 10*time.Second {
 		t.Errorf("took %s to stop", time.Since(start))
 	}
-	got := raw(s).ProjectChat(p.ID)
+	got := raw(s).ProjectChat(p.ID, ownerSession(t, s).User.ID)
 	if len(got) != 1 || got[0].Shell == nil || got[0].Shell.Error != "stopped" {
 		t.Fatalf("saved %+v", got)
 	}
@@ -238,7 +238,7 @@ func TestChatShellRefused(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "ran")); err == nil {
 		t.Error("a refused command ran")
 	}
-	if got := raw(s).ProjectChat(p.ID); len(got) != 0 {
+	if got := raw(s).ProjectChat(p.ID, ownerSession(t, s).User.ID); len(got) != 0 {
 		t.Errorf("saved %+v", got)
 	}
 }
@@ -318,12 +318,17 @@ func TestHubRunsChatShellOnTheUsersRunner(t *testing.T) {
 		t.Errorf("cwd %q", cwd)
 	}
 	eventually(t, "the hub to save the command", func() bool {
-		got := raw(f.hub).ProjectChat(hp.ID)
+		got := raw(f.hub).ProjectChat(hp.ID, f.creds.UserID)
 		return len(got) == 1 && got[0].Shell != nil && got[0].Shell.Runner == "laptop"
 	})
 
+	// The chat continues the saved conversation.
+	saved := func(m agent.ChatMessage) []agent.ChatMessage {
+		return append(raw(f.hub).ProjectChat(hp.ID, f.creds.UserID), m)
+	}
+
 	// Stop reaches the runner; what it printed comes back.
-	_, res, errText = shellTurn(t, conn, map[string]any{"project": hp.ID}, []agent.ChatMessage{cmdMsg("!echo started; sleep 60")}, func(out string) {
+	_, res, errText = shellTurn(t, conn, map[string]any{"project": hp.ID}, saved(cmdMsg("!echo started; sleep 60")), func(out string) {
 		if strings.Contains(out, "started") {
 			_ = conn.WriteJSON(map[string]any{"type": "cancel"})
 		}
@@ -343,7 +348,7 @@ func TestHubRunsChatShellOnTheUsersRunner(t *testing.T) {
 	// A read-only chat on the runner refuses it, even when the hub still
 	// thinks otherwise; once it reports so, the hub refuses it itself.
 	f.runner.Chat = agent.ClaudeCodeChat{Tools: agent.ChatReadOnly}
-	if _, _, errText := shellTurn(t, conn, map[string]any{"project": hp.ID}, []agent.ChatMessage{cmdMsg("!touch ran")}, nil); !strings.Contains(errText, "read-only") {
+	if _, _, errText := shellTurn(t, conn, map[string]any{"project": hp.ID}, saved(cmdMsg("!touch ran")), nil); !strings.Contains(errText, "read-only") {
 		t.Errorf("read-only runner chat: %q", errText)
 	}
 	if _, err := os.Stat(filepath.Join(clone, "ran")); err == nil {
@@ -353,7 +358,7 @@ func TestHubRunsChatShellOnTheUsersRunner(t *testing.T) {
 	if got := info(); !strings.Contains(got, `"commands":false`) {
 		t.Errorf("/api/claude after a read-only report: %s", got)
 	}
-	if _, _, errText := shellTurn(t, conn, map[string]any{"project": hp.ID}, []agent.ChatMessage{cmdMsg("!touch ran")}, nil); !strings.Contains(errText, "doesn't run ! commands") {
+	if _, _, errText := shellTurn(t, conn, map[string]any{"project": hp.ID}, saved(cmdMsg("!touch ran")), nil); !strings.Contains(errText, "doesn't run ! commands") {
 		t.Errorf("after a read-only report: %q", errText)
 	}
 }

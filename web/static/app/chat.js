@@ -44,8 +44,11 @@ function usageLine(u) {
 // makeChat drives one conversation UI: a log, its empty state and a composer.
 // target() names where it runs ({prefix, ...fields sent with each turn});
 // clear() deletes its saved conversation.
-// The client owns the history and sends it in full each turn; the server saves
-// every finished turn. With resume, a turn cut off by a lost connection (Dash
+// The client sends the history in full each turn, with base: how many of its
+// messages the server has saved (all but the new one); the server saves every
+// finished turn. A project chat's server keeps the conversation itself and
+// refuses a turn from an out-of-date copy ("stale": another device added to it
+// or cleared it): the message goes back in the composer and stale() reloads. With resume, a turn cut off by a lost connection (Dash
 // restarting, say) is sent again once Dash is back. labels ({user, assistant})
 // head each message with who it's from; merge(nodes, saved) places a saved
 // conversation's messages among other nodes. With shell (project and task
@@ -60,7 +63,7 @@ function usageLine(u) {
 //
 // Its parts (chatQueue, shellRunner, chatStreamHandler) share c: the chat's
 // state and the helpers they call one another through.
-export function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {}, shell = false }) {
+export function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, stale = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {}, shell = false }) {
   // waiting: ids of the permission requests the current turn waits on an answer to.
   // queue: messages written while a reply streams ({q, files}), sent together
   // as one message once it's done.
@@ -161,6 +164,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
         if (d.kind === "done" || d.kind === "error" || d.kind === "shell_done") { ws.close(); if (d.kind !== "error") saved(ws.fields); }
         return;
       }
+      if (d.kind === "stale") return staleTurn(d.text);
       if (d.kind === "suggestion") {
         // Only for an idle, empty composer: a late one (a new turn started, or
         // the user is writing) is dropped.
@@ -237,9 +241,27 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     empty.hidden = true;
     const m = { role: "user", content: q, at: new Date().toISOString(), ...(attachments.length ? { attachments } : {}) };
     c.history.push(m);
-    log.append(entering(user(m)));
+    log.append(c.lastUser = entering(user(m)));
     turn(target());
   };
+
+  // staleTurn takes back a turn the server refused because this copy of the
+  // conversation is out of date: its message goes back in the composer (with
+  // what's queued) and the chat reloads.
+  function staleTurn(text) {
+    const cur = c.current;
+    if (!cur) return;
+    const m = c.history.at(-1);
+    if (m?.role === "user") {
+      c.history.pop();
+      c.queue.unshift({ q: m.content || "", files: m.attachments || [] });
+    }
+    cur.el.remove();
+    if (!cur.shell) c.lastUser?.remove();
+    finish();
+    toast(text, { head: "Chat reloaded" });
+    stale();
+  }
 
   // stop ends the reply streaming now. What it said so far stays (the server
   // saves it too); a reply with nothing in it yet takes its question back out.
@@ -265,7 +287,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     onState();
     const ws = c.socket(prefix);
     ws.fields = fields;
-    const go = () => ws.send(JSON.stringify({ type: "send", ...fields, ...(chatSuggestOn() && { suggest: true }), messages: c.history }));
+    const go = () => ws.send(JSON.stringify({ type: "send", ...fields, ...(chatSuggestOn() && { suggest: true }), base: c.history.length - 1, messages: c.history }));
     ws.readyState === 1 ? go() : ws.addEventListener("open", go, { once: true });
   }
 
@@ -561,7 +583,7 @@ function shellRunner(c) {
     delete fields.review; // a command reviews nothing
     const ws = c.socket(prefix);
     ws.fields = fields;
-    const go = () => ws.send(JSON.stringify({ type: "shell", id, ...fields, messages: c.history }));
+    const go = () => ws.send(JSON.stringify({ type: "shell", id, ...fields, base: c.history.length - 1, messages: c.history }));
     ws.readyState === 1 ? go() : ws.addEventListener("open", go, { once: true });
   }
   // The live output is capped: the saved result keeps its start and end.

@@ -12,7 +12,7 @@ import (
 	"github.com/klahr/dash/internal/agent"
 )
 
-// readTurn reads conn's deltas up to "done" (or "error"), then, with wait,
+// readTurn reads conn's deltas up to "done" (or "error", "stale"), then, with wait,
 // up to a suggestion within wait after it. A read that times out leaves
 // conn unusable.
 func readTurn(t *testing.T, conn *websocket.Conn, wait time.Duration) []agent.ChatDelta {
@@ -29,7 +29,7 @@ func readTurn(t *testing.T, conn *websocket.Conn, wait time.Duration) []agent.Ch
 			t.Fatal(err)
 		}
 		out = append(out, d)
-		if !ended && (d.Kind == "done" || d.Kind == "error") {
+		if !ended && (d.Kind == "done" || d.Kind == "error" || d.Kind == "stale") {
 			if wait == 0 {
 				return out
 			}
@@ -83,6 +83,10 @@ func TestChatSuggestsNextMessage(t *testing.T) {
 		t.Errorf("suggest off: the small model was asked %d times", n)
 	}
 
+	// The same question again, in a new conversation.
+	if err := raw(s).ClearProjectChat(p.ID, ownerSession(t, s).User.ID); err != nil {
+		t.Fatal(err)
+	}
 	on := chatSocket(t, s)
 	if err := on.WriteJSON(map[string]any{"type": "send", "project": p.ID, "suggest": true, "messages": ask}); err != nil {
 		t.Fatal(err)

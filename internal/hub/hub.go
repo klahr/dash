@@ -60,10 +60,13 @@ type client struct {
 
 // Subscriber is who a dashboard connection is for: the org whose events it
 // receives, or every org's (All: another Dash, e.g. the hub of this runner,
-// which filters for its own users).
+// which filters for its own users). User is the signed-in user: an event
+// for one user only (model.Event.UserID) goes to their connections in its
+// org and to nobody else, not even All.
 type Subscriber struct {
-	Org int64
-	All bool
+	Org  int64
+	User int64
+	All  bool
 }
 
 type Hub struct {
@@ -103,6 +106,9 @@ func (h *Hub) Publish(ev model.Event) {
 		}
 		if scoped && !c.sub.All && c.sub.Org != org {
 			continue // another org's event (org 0: nobody's that we know)
+		}
+		if ev.UserID != 0 && (c.sub.All || c.sub.User != ev.UserID) {
+			continue // someone else's (their own chat, say)
 		}
 		select {
 		case c.send <- ev:
