@@ -40,6 +40,9 @@ type SmallClaude interface {
 	Refine(ctx context.Context, prompt string) (string, error)
 	Split(ctx context.Context, prompt string) ([]agent.Part, error)
 	Suggest(ctx context.Context, transcript string) (string, error)
+	// Plan runs one round of a project plan's interview (agent.PlanInput in,
+	// the interviewer's JSON out).
+	Plan(ctx context.Context, input string) (string, error)
 }
 
 // errNoClaudeRunner is why the hub can't run something on the caller's runner.
@@ -354,7 +357,8 @@ func hubUser(r *http.Request) int64 {
 
 // hubClaude handles POST /api/hub/claude/{kind}: one of Claude's short
 // calls for this runner's owner, {"text"} in and out ({"parts"} out for a
-// split).
+// split). A plan's interview round is one too: the hub keeps the plan and
+// reads the reply.
 func (s *Server) hubClaude(w http.ResponseWriter, r *http.Request) {
 	if err := s.forOwner(r); err != nil {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
@@ -390,6 +394,8 @@ func (s *Server) hubClaude(w http.ResponseWriter, r *http.Request) {
 		call = s.Small.Refine
 	case "suggest":
 		call = s.Small.Suggest
+	case "plan":
+		call = s.Small.Plan
 	default:
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such call"})
 		return

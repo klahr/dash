@@ -96,7 +96,9 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    **Local only**: the runner starts a new repository in its projects folder (`git init` and an
    initial commit), with no remote and no GitHub; deleting that project deletes its folder too.
    Repositories already on a runner's disk are added with **Add projects from this computer…** on
-   its row of the Runners page. A clone that has a favicon gets it as its project icon.
+   its row of the Runners page. Only have an idea? Pick **Plan a new project**: Claude interviews
+   you, writes a brief, and Dash starts the project and a goal from it
+   ([Plan a new project](docs/plan-project.md)). A clone that has a favicon gets it as its project icon.
    A *Test command* (e.g. `go test ./...`) is optional but lets Dash check Claude's work. It
    runs when Claude finishes, and again in the task's worktree before Dash merges it, unless it
    already passed on exactly that commit. A task whose tests fail there goes back to Claude
@@ -188,6 +190,7 @@ retry) follow the pace again. The API is `POST /api/todos/{id}/start-now`; a cha
 
 - [Chat](docs/chat.md): the general, project and task chats, and running shell commands from them with `!`
 - [Goals](docs/goals.md): a coordinator that plans, dispatches and reviews a goal's tasks, within a budget, and never merges
+- [Plan a new project](docs/plan-project.md): Claude interviews you about an idea, writes a brief, and Dash starts the project and a goal from it
 - [Users and organizations](docs/users.md): accounts, roles, invitations, two-factor sign-in
 - [Your data, terms and privacy](docs/privacy.md): download what Dash keeps about you, delete your account, what to publish before strangers sign up (with starter terms and a privacy policy the hub can serve), and what a hub stores
 - [Open signup and email](docs/signup.md): self-service accounts, personal workspaces, password reset (off by default)

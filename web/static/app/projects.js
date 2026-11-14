@@ -31,7 +31,8 @@ import { loadFiles, renderFile, renderFileTree } from "./files.js";
 import { loadIssues, resetIssues } from "./issues.js";
 import { loadScans, resetScans } from "./scans.js";
 import { loadChecklist } from "./checklist.js";
-import { loadGoals, resetGoals, showGoal } from "./goals.js";
+import { gp, loadGoals, resetGoals, showGoal } from "./goals.js";
+import { planner } from "./planner.js";
 
 // ------------------------------------------------------------------ projects
 export async function loadProjects() {
@@ -176,6 +177,12 @@ export function openNewProject() {
   focusSource();
 }
 
+// openPlanner opens the Add project sheet on Plan a new project.
+export function openPlanner() {
+  openNewProject();
+  if ($(`#${SHEET}`).open && !np.run) railOf(SHEET)?.show("plan", { focus: true });
+}
+
 // ---- Add project: on a runner, never on the hub. A shared project is a git
 // remote its runners clone: the repository comes from the user's GitHub
 // repositories (listed with the picked runner's gh), a new one (created with
@@ -188,7 +195,7 @@ export function openNewProject() {
 // The sheet's rail picks the source (railLayout); beside it only that
 // source's fields, then the name and a collapsed Advanced section. Once
 // submitted, the pane shows the steps ticking off (startAdd).
-const SHEET = "new-project-sheet";
+export const SHEET = "new-project-sheet";
 const hubMode = () => railOf(SHEET)?.current || "gh";
 const ghState = { cache: new Map(), pick: null, loading: "" };
 // np is the sheet's own state: the name it filled in itself (replaced as the
@@ -203,8 +210,9 @@ function sheetRunner() {
 const fromURL = (u) => (u || "").trim().replace(/\/+$/, "").replace(/\.git$/, "").split(/[/:]/).pop() || "";
 
 // focusSource puts the focus where the chosen source starts: the filter, or its first field.
-function focusSource() {
+export function focusSource() {
   const mode = hubMode(), f = $("#new-project");
+  if (mode === "plan") return planner.focus();
   ({ gh: $("#gh-filter"), create: f.github, url: f.remote_url, local: f.name }[mode])?.focus();
 }
 
@@ -214,19 +222,55 @@ function setHubMode(mode) {
   $("#new-project-clone-row").hidden = mode === "local";
   $("#new-project-clone-hint").hidden = mode === "local";
   syncHubMode();
+  planner.shown(mode === "plan");
   if (mode === "gh") loadGitHubRepos().catch(fail);
+}
+
+// ---- for a plan: while one is open in the planner, the sources pick its
+// repository. The name is filled in from the plan, the button says "Use for
+// the plan", and the plan's Launch step adds the project with startAdd.
+
+// planSource shows source mode for the open plan, its fields filled in
+// from the plan's name where they are empty.
+export function planSource(mode, name) {
+  const f = $("#new-project");
+  const slug = name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  if (mode === "create" && !f.github.value.trim()) f.github.value = slug;
+  if (!f.name.value.trim() || f.name.value === np.nameAuto) { f.name.value = name.trim(); np.nameAuto = ""; }
+  railOf(SHEET).show(mode);
+  syncHubMode();
+  focusSource();
+}
+
+// planRepo describes the repository the sheet has picked for the plan, or
+// says why it can't be used (as newProjectReady does).
+export function planRepo() {
+  const f = $("#new-project"), mode = hubMode(), r = sheetRunner();
+  const { ready, why } = newProjectReady();
+  const what = {
+    gh: ghState.pick ? `From GitHub: ${ghState.pick.nameWithOwner}` : "",
+    create: `New ${f.github_public.checked ? "public" : "private"} GitHub repository ${f.github.value.trim()}`,
+    url: `From ${f.remote_url.value.trim()}`,
+    local: "Local only, no remote",
+  }[mode] || "";
+  return { mode, ready: ready && !!what, why, what, runner: r?.name || "", name: f.name.value.trim() };
 }
 $(`#${SHEET}`).addEventListener("railchange", (e) => { if (e.currentTarget.open) setHubMode(e.detail); });
 
 // newProjectReady says whether the chosen source has what it needs, and if
 // not, what blocks it (shown under the fields; a missing field just keeps
 // the button disabled).
-function newProjectReady() {
-  const f = $("#new-project"), mode = hubMode(), r = sheetRunner();
+function newProjectReady(mode = hubMode()) {
+  const f = $("#new-project"), r = sheetRunner();
   if (!r) return { ready: false, why: noRunnerOnline };
   if (!r.mine && (mode === "create" || mode === "local")) {
     return { ready: false, why: mode === "create" ? `Only ${r.name}'s owner can create repositories with its GitHub login. Pick one of your runners, or add it from a URL.`
       : `Only ${r.name}'s owner can make local-only projects on it. Pick one of your runners.` };
+  }
+  // A plan's goal starts on the new project: on a hub, a runner's local-only
+  // project can only be reached by those who see the runner's own dashboard.
+  if (planner.open() && mode === "local" && !state.machines?.some((m) => m.name === r.name && m.prefix)) {
+    return { ready: false, why: `A local-only project on ${r.name} can't be opened from this dashboard, so the plan couldn't start its goal there. Pick a GitHub repository or a URL.` };
   }
   const has = { gh: !!ghState.pick, create: !!f.github.value.trim(), url: !!f.remote_url.value.trim(), local: !!f.name.value.trim() }[mode];
   return { ready: has, why: "" };
@@ -257,13 +301,20 @@ function syncHubMode() {
   $("#new-project-github-hint").textContent = `An empty ${f.github_public.checked ? "public" : "private"} repository, created with ${where}'s GitHub login.`;
   $("#new-project-github-hint").hidden = !!why;
   $("#new-project-local-where").textContent = r?.name || "the runner";
-  setLabel($("#new-project-go"), "plus", {
+  const forPlan = planner.open() && mode !== "plan";
+  setLabel($("#new-project-go"), forPlan ? "right" : "plus", forPlan ? "Use for the plan" : {
     gh: ghState.pick ? `Add ${ghState.pick.nameWithOwner}` : "Pick a repository",
     create: "Create repository and add",
     url: "Add project",
     local: "Create local project",
-  }[mode]);
+  }[mode] || "Add project");
   $("#new-project-go").disabled = !ready || !!np.run;
+  const note = $("#new-project-plan-note");
+  note.hidden = !forPlan;
+  if (forPlan) {
+    note.replaceChildren(ico("spark"), h("span", {}, "The repository for the plan ", h("strong", {}, planner.title())),
+      h("button", { type: "button", class: "link inline", onclick: () => planner.backTo("repo") }, "Back to the plan"));
+  }
 }
 for (const el of ["remote_url", "github", "name"]) {
   const input = $("#new-project")[el];
@@ -274,6 +325,7 @@ $("#new-project").github_public.addEventListener("change", syncHubMode);
 // which a plain Enter would press, is Close). Enter in the filter picks a repository.
 $("#new-project").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || e.isComposing || e.target.localName !== "input" || e.target.type === "checkbox" || e.target.id === "gh-filter") return;
+  if (e.target.closest(".rail-section[data-section=plan]")) return; // the planner's own (planner.js)
   e.preventDefault();
   if (!$("#new-project-go").disabled) $("#new-project-go").click();
 });
@@ -356,13 +408,16 @@ $("#gh-filter").addEventListener("keydown", (e) => {
 const CLONE_WAIT_MS = 45000; // then the clone carries on out of sight
 const STEP_ICONS = { ok: "check", fail: "x", note: "clock" };
 
-// startAdd reads the sheet and starts adding the project it describes.
-function startAdd() {
-  const f = $("#new-project"), r = sheetRunner(), mode = hubMode();
-  if (np.run || !r || !newProjectReady().ready) return;
+// startAdd reads the sheet and starts adding the project it describes (false
+// when it can't: the source isn't filled in, or a run is under way). With a plan (from the planner's Launch: the plan, its source and what
+// GET /api/plans/{id}/launch gave), the source is the one picked for it,
+// and the steps go on to commit the brief and start the goal (planSteps).
+export function startAdd(plan = null) {
+  const f = $("#new-project"), r = sheetRunner(), mode = plan?.mode || hubMode();
+  if (np.run || !r || !newProjectReady(mode).ready) return false;
   const body = Object.fromEntries(new FormData(f));
   const commands = { run_command: body.run_command, test_command: body.test_command, deploy_command: body.deploy_command };
-  const run = { mode, r, name: (body.name || "").trim(), remote: "", project: null, made: null, done: false, steps: [] };
+  const run = { mode, r, name: (body.name || "").trim(), remote: "", project: null, made: null, done: false, steps: [], plan };
   const id = encodeURIComponent(r.id);
   const step = (label, fn) => run.steps.push({ label, fn, state: "wait", detail: "", actions: null });
   if (mode === "local") {
@@ -415,10 +470,43 @@ function startAdd() {
       s.label = res ? `${r.name} is offline: it clones the project when it is back` : `Clone started on ${r.name}`;
     });
   }
+  if (plan) planSteps(run, step);
   np.run = run;
+  if (plan) railOf(SHEET).show(mode);
   showProgress(true);
   $("#new-project-progress-title").focus(); // the button that had it is gone
   runAdd(run);
+  return true;
+}
+
+// planSteps adds a plan's steps after the project's: BRIEF.md and CLAUDE.md
+// committed on its default branch (when that can't be done, the goal is
+// asked to add them first), then the goal started from the brief, and the
+// plan marked launched.
+function planSteps(run, step) {
+  const { plan, launch } = run.plan;
+  run.title = `Launching ${plan.name || run.name || "the plan"}`;
+  // Where the project is: the hub's, or a runner's own local-only one.
+  const where = () => run.mode === "local" ? (state.machines || []).find((m) => m.name === run.r.name)?.prefix || "" : "";
+  step("Committing BRIEF.md and CLAUDE.md", async (s) => {
+    try {
+      const res = await api("POST", `/api/projects/${encodeURIComponent(run.project.id)}/brief`, { brief: launch.brief, claude_md: launch.claude_md }, where());
+      run.committed = true;
+      s.label = res.committed.length ? `Committed ${res.committed.join(" and ")}` : "BRIEF.md and CLAUDE.md were there already: kept them";
+    } catch (e) {
+      run.committed = false;
+      s.state = "note";
+      s.label = `Couldn't commit BRIEF.md and CLAUDE.md (${e.message || e}): the goal adds them first`;
+    }
+  });
+  step("Starting the goal", async (s) => {
+    run.goal ||= await api("POST", "/api/goals", {
+      project: run.project.id, title: launch.goal.title, mode: "ask",
+      description: run.committed ? launch.goal.description : launch.goal.description_no_files,
+    }, where());
+    await api("POST", `/api/plans/${encodeURIComponent(plan.id)}/launched`, { project_id: run.project.id, goal_id: run.goal.id }, "");
+    s.label = `Started the goal ${run.goal.title}`;
+  });
 }
 
 // runAdd does run's steps from the first not done yet: from the start, or
@@ -454,7 +542,10 @@ function failActions(run) {
   const again = ib({ type: "button", class: "btn small primary", onclick: () => runAdd(run) }, "reload", "Try again");
   const back = run.project
     ? ib({ type: "button", class: "btn small", onclick: () => finishAdd(run).catch(fail) }, "right", "Open project")
-    : ib({ type: "button", class: "btn small", onclick: () => { np.run = null; showProgress(false); syncHubMode(); focusSource(); } }, "edit", "Change details");
+    : ib({ type: "button", class: "btn small", onclick: () => {
+      np.run = null; showProgress(false); syncHubMode();
+      if (run.plan) planner.backTo("launch"); else focusSource();
+    } }, "edit", run.plan ? "Back to the plan" : "Change details");
   return [again, back];
 }
 
@@ -476,12 +567,29 @@ async function finishAdd(run) {
   ghState.pick = null;
   if (d.open) d.close();
   showProgress(false);
+  if (run.plan) return finishPlan(run, made);
   const clone = run.steps.at(-1);
   const name = run.project.name;
   // Only platform admins see runners' own projects in this dashboard.
   toast(mode === "local" ? (made ? `Created ${name} on ${r.name}, local only` : `Created ${name} on ${r.name}, local only: open it from ${r.name}'s own dashboard`)
     : `${mode === "create" ? "Created" : "Added"} ${name}; ${clone.state === "ok" ? `cloned on ${r.name}` : clone.state === "fail" ? `${r.name} couldn't clone it yet` : `${r.name} clones it into its projects folder`}`,
   { tone: clone.state === "fail" ? "info" : "ok" });
+}
+
+// finishPlan goes to the launched plan's goal, whose coordinator is reading
+// the brief, and leaves the planner ready for the next plan.
+async function finishPlan(run, made) {
+  planner.launched();
+  const g = run.goal;
+  if (!made || !g) {
+    toast(`Launched ${run.project.name}: open it from ${run.r.name}'s own dashboard`, { tone: "ok" });
+    return;
+  }
+  gp.project = made;
+  if (!state.goals.has(g.id)) state.goals.set(g.id, { ...g, log: undefined });
+  gp.planFor.add(g.id);
+  toast("The coordinator reads the brief; its plan of the first tasks opens here for you to check", { tone: "ok", head: `Launched ${made.name}`, icon: "rocket" });
+  await showGoal(g.id);
 }
 
 // showProgress swaps the fields for the steps (or back), with the source,
@@ -836,5 +944,8 @@ for (const menu of $$(".foot-menu")) {
 $("#new-project").addEventListener("submit", (e) => {
   if (e.submitter?.value === "cancel") return;
   e.preventDefault();
-  startAdd();
+  // With a plan open, a source picks the plan's repository.
+  if (planner.open() && hubMode() !== "plan") planner.useRepo(planRepo());
+  else if (hubMode() !== "plan") startAdd();
 });
+$(`#${SHEET}`).addEventListener("close", () => { if (!np.run) planner.closed(); });

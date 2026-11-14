@@ -110,6 +110,7 @@ const ICONS = {
   split: "M3 12h6l4-6h8M9 12l4 6h8M18 3l3 3-3 3M18 15l3 3-3 3",
   target: "M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18M12 7.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 1 0 0-9M12 11.5v1",
   right: "M5 12h14m-5-5 5 5-5 5",
+  left: "M19 12H5m5-5-5 5 5 5",
   "chevron-right": "m9 6 6 6-6 6",
   alert: "M12 4 2.5 20h19zM12 10v4M12 17v.01",
   minimize: "M15 6l-6 6 6 6",

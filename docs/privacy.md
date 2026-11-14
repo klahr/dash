@@ -63,6 +63,7 @@ Open **Account → Your data** and click **Download**. You get a JSON file with:
 - browsers that get your push notifications, and your personal webhooks
 - the sign-in log entries about you, with their IP addresses
 - the tasks you created and the chat messages you wrote, in your own general and project chats too
+- your [project plans](plan-project.md), drafts and launched ones
 
 Secrets are left out: password and token hashes, the authenticator secret, push keys and webhook
 secrets. With a session, the same file is at `GET /api/account/export`.
@@ -77,7 +78,7 @@ This happens at once:
 
 - Your account goes, with its sessions, tokens, connected apps, linked Google account, recovery
   codes, push subscriptions and personal webhooks. Every browser and connector is signed out.
-- Your general chats and your project chats with Claude are deleted.
+- Your general chats and your project chats with Claude are deleted, and your project plans.
 - Each organization you are the only member of is deleted, your personal workspace too.
 - Tasks, goals and messages you wrote in other organizations stay there, without your name.
   Those tasks can't run again, and those goals' coordinators can't run.
@@ -151,6 +152,7 @@ Everything is on the hub's own disk, in its data directory (`-data`, by default
 | Webhooks (the URL), and their last 50 deliveries | until deleted                                                        |
 | Work: projects, tasks, goals, chats, issues, scans, with who created them | until deleted; deleting a task deletes its chat and logs, deleting a project deletes its tasks, goals and chats |
 | Your general chats and project chats: private to you, not visible to other members or to the organization's owners and admins | until you clear them, leave or are removed from the organization, or delete your account |
+| Your [project plans](plan-project.md) (the idea, the interview and the brief): private to you, like your chats | until you delete them, leave or are removed from the organization, or delete your account |
 | Logs of Claude's runs (`logs/`)         | with their task; at most `-log-max-mb` (32 MB) a task                         |
 | Attachments and drawings (`uploads/`)   | with what uses them; unused ones are removed after a day                      |
 | Billing (with [Stripe](billing.md)): the Stripe customer and subscription ids, plan and period | while the org exists. Card, address and tax id stay at Stripe |

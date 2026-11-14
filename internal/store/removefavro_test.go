@@ -72,6 +72,9 @@ func TestMigrateRemoveFavro(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if _, err := db.Exec("DROP TABLE plans"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec("DROP TABLE claude_status"); err != nil {
 		t.Fatal(err)
 	}

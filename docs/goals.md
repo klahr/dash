@@ -20,6 +20,9 @@ them, e.g. "By coordinator · goal Faster search: sent this task back with notes
 
 ## Start a goal
 
+To start a new project and its first goal from an idea, use [Plan a new project](plan-project.md)
+instead.
+
 1. Open **New task** (the **+** button) or the full task form, and pick **New goal…** (next to
    **Split…** in the form). What you typed is carried over.
 2. Say what to get done. Add a budget if you want one: **Max tasks**, **Weekly %**, or both.

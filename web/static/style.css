@@ -985,6 +985,160 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
   #new-project-sheet .sheet-actions .btn { flex: 0 1 auto; margin-left: auto; min-width: 200px; }
 }
 
+/* ---------- Plan a new project (app/planner.js) ----------
+   The Add project sheet's first section: a stepper across the top (a compact
+   "Step 2 of 5 · Interview" line on a phone), then one step's pane. The
+   interview shows the brief beside the questions on a wide screen and as a
+   tab on a narrow one. The sheet widens while it is shown. */
+.np-plan-note { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin: 12px 0 0; font-size: var(--fs-m); color: var(--muted); }
+.np-plan-note .ico { width: 16px; height: 16px; color: var(--accent2); }
+.np-plan-note strong { color: var(--text); font-weight: 600; }
+.np-plan-note .link { min-height: 32px; margin-left: auto; }
+.plan-new { margin-top: 16px; }
+.plan-drafts-head { margin: 24px 0 8px; font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.plan-drafts { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); }
+.plan-drafts:empty { display: none; }
+.plan-draft { display: flex; align-items: center; gap: 4px; padding-right: 4px; border-bottom: 1px solid var(--line); }
+.plan-draft:last-child { border-bottom: 0; }
+.plan-draft-open { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; text-align: left; color: var(--text); border-radius: var(--r-m); }
+.plan-draft-open:hover { background: var(--raised); }
+.plan-draft-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-draft-meta { font-size: var(--fs-xs); color: var(--muted); }
+
+/* The sources' name and Advanced are theirs, not the planner's. */
+#new-project-sheet[data-mode="plan"] .np-common { display: none; }
+/* The step bar stays in view as the step scrolls under it. */
+.plan-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px 12px; margin: -14px calc(-1 * var(--sp-4)) 12px; padding: 8px var(--sp-4); background: var(--surface); border-bottom: 1px solid var(--line); }
+.plan-all { flex: none; min-height: 36px; padding: 0; font-size: var(--fs-m); }
+.plan-stepper { display: none; }
+.plan-stepper-compact { flex: 1; margin: 0; text-align: right; font-size: var(--fs-m); font-weight: 600; color: var(--muted); }
+@media (min-width: 640px) {
+  .plan-bar { position: static; flex-direction: column; align-items: stretch; margin: -4px 0 12px; padding: 0; border: 0; }
+  .plan-all { align-self: flex-start; }
+  .plan-stepper-compact { display: none; }
+  .plan-stepper { display: flex; list-style: none; margin: 0; padding: 0; counter-reset: none; }
+  .plan-st { flex: 1; position: relative; min-width: 0; }
+  /* the line from one step to the next */
+  .plan-st:not(:last-child)::after { content: ""; position: absolute; top: 17px; left: calc(50% + 18px); right: calc(-50% + 18px); height: 2px; border-radius: 1px; background: var(--line); }
+  .plan-st.is-done:not(:last-child)::after { background: color-mix(in srgb, var(--merged) 55%, var(--line)); }
+  .plan-st button { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 2px; border-radius: var(--r-m); color: var(--muted); font-size: var(--fs-s); font-weight: 600; }
+  .plan-st button:not(:disabled):hover { color: var(--text); }
+  .plan-st button:disabled { cursor: default; }
+  .plan-st-mark { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line); background: var(--surface); font-variant-numeric: tabular-nums; }
+  .plan-st-mark .ico { width: 14px; height: 14px; }
+  .plan-st-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .plan-st.is-done .plan-st-mark { border-color: var(--merged); background: var(--merged); color: var(--surface); }
+  .plan-st.is-done button { color: var(--text); }
+  .plan-st.is-current .plan-st-mark { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+  .plan-st.is-current button { color: var(--text); }
+  .plan-st.is-later button { opacity: .55; }
+}
+
+/* Topics: done, open or skipped, and those asked about now. */
+.plan-topics { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.plan-topic { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-pill); font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+.plan-topic .ico { width: 13px; height: 13px; }
+.plan-topic.is-done { color: var(--text); border-color: color-mix(in srgb, var(--merged) 45%, var(--line)); }
+.plan-topic.is-done .ico { color: var(--merged); }
+.plan-topic.is-skipped { color: var(--faint); border-style: dashed; }
+.plan-topic.is-asking { color: var(--text); background: var(--raised); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+
+.plan-tabs { margin-bottom: 12px; }
+.plan-split[data-view="talk"] .plan-live, .plan-split[data-view="brief"] .plan-talk { display: none; }
+.plan-talk { display: flex; flex-direction: column; gap: 14px; }
+.plan-live-head { margin: 0 0 10px; font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.plan-brief-md { font-size: var(--fs-m); }
+.plan-brief-md .plan-open-mark { padding-left: 8px; border-left: 2px solid var(--running); }
+.plan-brief-md .plan-open-mark em:first-child { color: var(--running); font-style: normal; font-weight: 600; }
+@media (min-width: 1000px) {
+  .plan-tabs { display: none; }
+  .plan-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 38%); gap: 20px; align-items: start; }
+  .plan-split[data-view] :is(.plan-live, .plan-talk) { display: flex; }
+  .plan-live { position: sticky; top: 0; flex-direction: column; max-height: calc(100dvh - 300px); overflow-y: auto; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); }
+}
+
+/* The conversation: earlier rounds as questions and answers, the latest as cards. */
+.plan-talk .msg { max-width: none; }
+.plan-qa { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; font-size: var(--fs-m); }
+.plan-qa li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 6px 10px; border-radius: var(--r-s); background: var(--surface); }
+.plan-qa-q { color: var(--muted); }
+.plan-qa-a { font-weight: 600; }
+.plan-qa-a.is-skipped { font-weight: 400; color: var(--faint); font-style: italic; }
+.plan-qa-tag { font-size: var(--fs-2xs); color: var(--accent2); }
+.plan-round { display: flex; flex-direction: column; gap: 10px; }
+.plan-all-defaults { align-self: flex-start; min-height: 32px; font-size: var(--fs-m); }
+.plan-q-card { margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); min-width: 0; }
+.plan-q-card.is-missing { border-color: color-mix(in srgb, var(--running) 50%, var(--line)); }
+.plan-q-card.is-answered { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.plan-q-card:disabled { opacity: .6; }
+/* Floated, the legend sits inside the card instead of on its border. */
+.plan-q-text { float: left; width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 0; margin-bottom: 10px; font-weight: 600; }
+.plan-q-text + * { clear: both; }
+.plan-q-text > span:last-child { flex-basis: 100%; }
+.plan-q-topic { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.plan-q-missing { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); font-weight: 600; color: var(--running); }
+.plan-q-missing .ico { width: 13px; height: 13px; }
+.plan-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.plan-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--raised); color: var(--text); font-size: var(--fs-m); text-align: left; transition: background .15s, border-color .15s; }
+.plan-chip .ico { width: 14px; height: 14px; color: var(--accent2); }
+.plan-chip:hover { border-color: var(--faint); }
+.plan-chip[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 18%, var(--raised)); border-color: var(--accent); }
+.plan-chip.plan-skip { background: none; color: var(--muted); border-style: dashed; }
+.plan-chip.plan-skip[aria-pressed="true"] { color: var(--text); border-style: solid; border-color: var(--faint); background: var(--raised); }
+.plan-own { width: 100%; }
+.plan-compose { display: flex; gap: 8px; align-items: flex-end; }
+.plan-say { flex: 1; resize: vertical; min-height: 44px; }
+.plan-compose .btn { flex: none; }
+.plan-compose-hint { margin: -4px 0 0; font-size: var(--fs-xs); }
+@media (hover: none) { .plan-compose-hint { display: none; } }
+.plan-error { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 10px 12px; border-radius: var(--r-m); border: 1px solid color-mix(in srgb, var(--failed) 45%, var(--line)); color: var(--failed); font-size: var(--fs-m); }
+.plan-error > span { flex: 1; min-width: 12em; overflow-wrap: anywhere; }
+.plan-error .ico { flex: none; width: 18px; height: 18px; }
+.plan-start { padding: 12px 0; }
+
+/* The brief: the verdict, the Markdown to edit (or read), and what is open. */
+.plan-verdict { display: flex; gap: 10px; padding: 12px 14px; margin-bottom: 14px; border-radius: var(--r-m); border: 1px solid var(--line); background: var(--surface); font-size: var(--fs-m); }
+.plan-verdict > .ico { flex: none; width: 20px; height: 20px; margin-top: 1px; }
+.plan-verdict.is-ready { border-color: color-mix(in srgb, var(--merged) 45%, var(--line)); }
+.plan-verdict.is-ready > .ico { color: var(--merged); }
+.plan-verdict.is-not > .ico { color: var(--running); }
+.plan-verdict p { margin: 4px 0 0; color: var(--muted); }
+.plan-verdict .link { min-height: 32px; padding: 0; margin-top: 4px; }
+.plan-can-wait { margin-top: 6px; color: var(--muted); }
+.plan-can-wait ul { margin: 2px 0 0; padding-left: 1.3em; }
+.plan-brief-head { display: flex; align-items: center; gap: 12px; }
+.plan-brief-head .segmented { margin-bottom: 8px; }
+.plan-saved { margin: 0 0 8px auto; font-size: var(--fs-xs); }
+.plan-brief-edit { width: 100%; min-height: clamp(220px, 44dvh, 520px); resize: vertical; font: var(--fs-s)/1.5 var(--mono); }
+.plan-brief-preview { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); }
+.plan-open h3 { margin: 16px 0 6px; font-size: var(--fs-m); }
+.plan-open ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: var(--fs-m); }
+.plan-open li { display: flex; gap: 8px; align-items: flex-start; }
+.plan-open .ico { flex: none; width: 15px; height: 15px; margin-top: 2px; color: var(--running); }
+
+/* The repository: the sheet's sources, as the rail describes them. */
+.plan-sources { display: grid; gap: 8px; margin-top: 12px; }
+@media (min-width: 640px) { .plan-sources { grid-template-columns: 1fr 1fr; } }
+.plan-source { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; text-align: left; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); color: var(--text); }
+.plan-source:hover { border-color: var(--faint); background: var(--raised); }
+.plan-source.is-picked { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.plan-source-name { font-weight: 600; }
+.plan-source-desc { font-size: var(--fs-s); color: var(--muted); }
+#plan-repo .ico { width: 16px; height: 16px; flex: none; color: var(--muted); }
+
+/* Launch: what it makes, then the files to look at. */
+.plan-summary { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 0 0 12px; font-size: var(--fs-m); }
+.plan-summary dt { color: var(--muted); font-weight: 600; }
+.plan-summary dd { margin: 0; overflow-wrap: anywhere; }
+.plan-pane .np-advanced .md { margin-top: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); }
+
+/* Wider while a plan is open, its repository's source included, so the sheet doesn't jump. */
+@media (min-width: 640px) { #new-project-sheet:is([data-mode="plan"], .np-planning) { height: min(860px, calc(92dvh - var(--kb-h, 0px))); } }
+@media (min-width: 760px) {
+  #new-project-sheet:is([data-mode="plan"], .np-planning) { max-width: 1180px; }
+  #new-project-sheet .sheet-actions #plan-back { margin: 0 auto 0 0; min-width: 0; }
+}
+
 /* ---------- quick add (FAB, n) ---------- */
 .quick-rows { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 0; }
 /* One line per task; a multi-line paste grows the field (app/todos.js sizes it). */

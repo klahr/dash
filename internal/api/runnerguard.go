@@ -44,6 +44,8 @@ func init() {
 		"GET /api/projects/{pid}/file", "PUT /api/projects/{pid}/file", "POST /api/projects/{pid}/edits",
 		// The checklist (TODO.md), read and saved in the runner's checkout (checklist.go).
 		"GET /api/projects/{pid}/checklist", "POST /api/projects/{pid}/checklist", "POST /api/projects/{pid}/checklist/move",
+		// A planned project's BRIEF.md and CLAUDE.md, committed in the runner's clone (plans.go).
+		"POST /api/projects/{pid}/brief",
 		"GET /api/projects/{pid}/branches", "PUT /api/projects/{pid}/branch", "POST /api/projects/{pid}/branch/pr",
 		// Release tags: made and pushed on the runner, in its clone (release.go).
 		"GET /api/projects/{pid}/release", "POST /api/projects/{pid}/tags", "GET /api/projects/{pid}/tag-format",

@@ -153,7 +153,8 @@ export function ask({ title, body = "", input = false, value = "", placeholder =
 // railLayout wires a sheet's .rail-layout: its sections down a rail and the
 // chosen one beside them; on a narrow screen the rail is a strip across the
 // top. The chosen section stays while the sheet is open (a re-render or a
-// sheet opened over it doesn't move it) and is the first again next time.
+// sheet opened over it doesn't move it) and is the first again next time
+// (or the one marked data-rail-first).
 // A section whose every child is hidden drops out of the rail. Arrow keys,
 // Home and End move along the rail; only the chosen entry is a tab stop, so
 // Tab goes on into its section. railOf(id).show(key) picks one; the dialog
@@ -171,7 +172,8 @@ function railLayout(dialog) {
     b.setAttribute("aria-controls", s.id);
     s.setAttribute("aria-labelledby", b.id);
   }
-  const first = items[0].dataset.rail;
+  // The section shown first: the rail's first, or the one marked data-rail-first.
+  const first = (items.find((b) => b.hasAttribute("data-rail-first")) || items[0]).dataset.rail;
   let wanted = first, shown = null;
   const refresh = () => {
     for (const [b, s] of sectionOf) {

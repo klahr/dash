@@ -42,6 +42,14 @@ func (f *fakeSmall) Summary(_ context.Context, r string) (string, error) { retur
 func (f *fakeSmall) Refine(_ context.Context, p string) (string, error)  { return f.call("refine", p) }
 func (f *fakeSmall) Suggest(_ context.Context, t string) (string, error) { return f.call("suggest", t) }
 
+// Plan answers an interview round with one question, the brief saying
+// where it ran.
+func (f *fakeSmall) Plan(_ context.Context, in string) (string, error) {
+	_, err := f.call("plan", in)
+	return `{"note":"","questions":[{"id":"q1","topic":"users","text":"Who uses it?","default":"Just me"}],` +
+		`"topics":[{"id":"users","status":"open"}],"brief":"# Plan from ` + f.where + `","open_questions":[],"verdict":{"ready":false}}`, err
+}
+
 // Split proposes two good parts and some a runner mustn't pass on: one
 // without instructions and dependencies on itself and later parts.
 func (f *fakeSmall) Split(_ context.Context, p string) ([]agent.Part, error) {

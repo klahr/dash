@@ -780,8 +780,11 @@
       </header>
       <div class="rail-layout">
         <nav class="rail-nav" id="new-project-nav" aria-label="Where the repository comes from">
+          <div class="rail-group"><span class="rail-head">Start from an idea</span>
+            <button type="button" class="rail-item np-src" data-rail="plan"><span>Plan a new project</span><span class="np-src-desc">Describe an idea, Claude helps you shape it</span></button>
+          </div>
           <div class="rail-group"><span class="rail-head">Repository</span>
-            <button type="button" class="rail-item np-src" data-rail="gh"><span>From GitHub</span><span class="np-src-desc">Pick one of your repositories</span></button>
+            <button type="button" class="rail-item np-src" data-rail="gh" data-rail-first><span>From GitHub</span><span class="np-src-desc">Pick one of your repositories</span></button>
             <button type="button" class="rail-item np-src" data-rail="create"><span>New GitHub repository</span><span class="np-src-desc">Create an empty one</span></button>
             <button type="button" class="rail-item np-src" data-rail="url"><span>From URL</span><span class="np-src-desc">Any git remote</span></button>
           </div>
@@ -791,6 +794,66 @@
         </nav>
         <div class="rail-main" id="new-project-main">
           <div id="new-project-fields">
+            <!-- Plan a new project (app/planner.js): an idea, Claude's interview, the brief,
+                 then one of the sources below for the repository, and Launch. -->
+            <section class="rail-section" data-section="plan">
+              <div class="plan-home" id="plan-home">
+                <p class="hint np-lead">Describe an idea in a sentence or two. Claude asks about the decisions you haven't made yet, a few at a time, each with a suggested answer, and writes a project brief as you go. Then Dash creates the project, commits the brief and starts a goal from it.</p>
+                <button type="button" class="btn primary plan-new" id="plan-new" data-icon="spark">New plan</button>
+                <h3 class="plan-drafts-head" id="plan-drafts-head" hidden>Drafts</h3>
+                <ul class="plan-drafts" id="plan-drafts"></ul>
+              </div>
+              <div class="plan-work" id="plan-work" hidden>
+                <div class="plan-bar">
+                  <button type="button" class="link plan-all" id="plan-all" data-icon="left">All plans</button>
+                  <ol class="plan-stepper" id="plan-stepper" aria-label="Plan steps"></ol>
+                  <p class="plan-stepper-compact" id="plan-stepper-compact" aria-hidden="true"></p>
+                </div>
+                <div class="plan-pane" data-step="idea">
+                  <label class="field"><span>Your idea</span><textarea id="plan-idea" rows="4" maxlength="2000" placeholder="e.g. A web app where my climbing club logs routes and sees who climbed what."></textarea></label>
+                  <label class="field"><span>Project name <em>optional</em></span><input id="plan-name" maxlength="100" autocomplete="off" spellcheck="false" placeholder="e.g. cragbook"></label>
+                  <p class="hint" id="plan-where"></p>
+                </div>
+                <div class="plan-pane" data-step="interview">
+                  <ul class="plan-topics" id="plan-topics" aria-label="Topics"></ul>
+                  <div class="segmented plan-tabs" role="tablist" aria-label="Show">
+                    <button type="button" role="tab" data-view="talk" aria-selected="true">Questions</button>
+                    <button type="button" role="tab" data-view="brief" aria-selected="false">Brief</button>
+                  </div>
+                  <div class="plan-split" id="plan-split" data-view="talk">
+                    <div class="plan-talk" id="plan-talk" aria-live="polite"></div>
+                    <aside class="plan-live" aria-label="Brief so far">
+                      <h3 class="plan-live-head">Brief so far</h3>
+                      <div class="md plan-brief-md" id="plan-live"></div>
+                    </aside>
+                  </div>
+                </div>
+                <div class="plan-pane" data-step="brief">
+                  <div class="plan-verdict" id="plan-verdict"></div>
+                  <div class="plan-brief-head">
+                    <div class="segmented" role="tablist" aria-label="Brief">
+                      <button type="button" role="tab" data-brief="edit" aria-selected="true">Edit</button>
+                      <button type="button" role="tab" data-brief="preview" aria-selected="false">Preview</button>
+                    </div>
+                    <span class="plan-saved hint" id="plan-saved" aria-live="polite"></span>
+                  </div>
+                  <textarea class="plan-brief-edit" id="plan-brief" spellcheck="true" aria-label="Brief (Markdown)"></textarea>
+                  <div class="md plan-brief-md plan-brief-preview" id="plan-brief-preview" hidden></div>
+                  <div class="plan-open" id="plan-open"></div>
+                </div>
+                <div class="plan-pane" data-step="repo">
+                  <p class="hint np-lead">Where does the repository come from? Pick a source, fill it in, and come back with <strong>Use for the plan</strong>.</p>
+                  <div class="plan-sources" id="plan-sources"></div>
+                  <p class="np-picked" id="plan-repo" hidden></p>
+                </div>
+                <div class="plan-pane" data-step="launch">
+                  <dl class="plan-summary" id="plan-summary"></dl>
+                  <p class="hint">Launch adds the project, commits <code>BRIEF.md</code> and a starter <code>CLAUDE.md</code>, and starts a goal from the brief: its coordinator reads them and proposes the first tasks for you to check.</p>
+                  <details class="np-advanced"><summary>BRIEF.md</summary><div class="md plan-brief-md" id="plan-launch-brief"></div></details>
+                  <details class="np-advanced"><summary>CLAUDE.md</summary><div class="md plan-brief-md" id="plan-launch-claude"></div></details>
+                </div>
+              </div>
+            </section>
             <section class="rail-section" data-section="gh">
               <div class="gh-browser">
                 <input type="search" id="gh-filter" placeholder="Filter your repositories" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Filter repositories" aria-controls="gh-list">
@@ -810,6 +873,7 @@
               <p class="hint np-lead">A new git repository with a first commit, in <span id="new-project-local-where">the runner</span>'s projects folder. It has no remote and stays on that runner; deleting the project deletes its folder too.</p>
             </section>
             <div class="np-common">
+              <p class="np-plan-note" id="new-project-plan-note" hidden></p>
               <p class="np-picked" id="new-project-picked" hidden></p>
               <label class="field" id="new-project-name-row"><span id="new-project-name-label">Name</span><input name="name" autocomplete="off" spellcheck="false"></label>
               <p class="hint" id="new-project-where"></p>
@@ -831,6 +895,8 @@
         </div>
       </div>
       <footer class="sheet-actions">
+        <button type="button" class="btn" id="plan-back" data-icon="left" hidden>Back</button>
+        <button type="button" class="btn primary" id="plan-next" hidden>Next</button>
         <button class="btn primary" id="new-project-go" data-icon="plus" disabled>Add project</button>
       </footer>
     </form>

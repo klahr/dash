@@ -322,6 +322,8 @@ func (s *Server) buildMux() *http.ServeMux {
 
 	// Goals: a coordinator plans and dispatches tasks towards each
 	s.goalRoutes(mux)
+	// Plans: a new project planned with Claude, launched as a project and a goal
+	s.planRoutes(mux)
 
 	// Scans: preconfigured read-only reviews that file their findings as issues
 	mux.HandleFunc("GET /api/projects/{pid}/scans", s.listScans)

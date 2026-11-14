@@ -40,6 +40,9 @@ repository comes from down its side (across the top on a phone), and beside it o
 that choice. With more than one runner you may link projects to, pick it beside the title (yours
 are marked "(yours)"); with one, there is nothing to pick.
 
+- **Plan a new project** (at the top): start from an idea instead. Claude interviews you and
+  writes a brief, then one of the sources below makes the repository. See
+  [Plan a new project](plan-project.md).
 - **From GitHub** (the default): the repositories of the GitHub account the runner's `gh` is signed in to,
   and of the organizations that account belongs to (one `gh repo list` per owner). Each row shows
   the GitHub mark, `owner/name` and its description, and whether it is private, a fork or

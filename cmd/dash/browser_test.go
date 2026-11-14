@@ -1392,3 +1392,66 @@ func TestBrowserBuildOn(t *testing.T) {
 		b.until("close the task", `document.querySelector("#detail").hidden`, chromedp.KeyEvent(kb.Escape))
 	}
 }
+
+// Plan a new project: an idea, Claude's interview (one question, answered
+// with its suggestion), the brief, a new repository from a URL picked with
+// "Use for the plan", and Launch, which adds the project, commits BRIEF.md
+// and CLAUDE.md to it and opens the goal it started.
+func TestBrowserPlanProject(t *testing.T) {
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	// An empty repository on the same origin for the planned project.
+	plan := filepath.Join(filepath.Dir(h.origin), "plan.git")
+	run(t, "", h.gitEnv, "git", "init", "-q", "--bare", "-b", "main", plan)
+	run(t, plan, h.gitEnv, "git", "config", "http.receivepack", "true")
+	var app struct {
+		RemoteURL string `json:"remote_url"`
+	}
+	h.api.must("GET", "/api/projects/"+h.project.ID, nil, http.StatusOK, &app)
+	remote := strings.TrimSuffix(app.RemoteURL, "app.git") + "plan.git"
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+
+	b.until("open Add project", `document.querySelector("#new-project-sheet").open`, chromedp.Click(chromedp.ID("side-new-project")))
+	b.until("choose Plan a new project", `!document.querySelector("#plan-home").hidden`, chromedp.Click(chromedp.CSS(`#new-project-nav [data-rail=plan]`)))
+	b.until("start a plan", `!document.querySelector("#plan-work").hidden`, chromedp.Click(chromedp.ID("plan-new")))
+	b.do("describe the idea",
+		chromedp.SendKeys(chromedp.ID("plan-idea"), "A recipe box for my family"),
+		chromedp.SendKeys(chromedp.ID("plan-name"), "recipes"))
+	b.until("start the interview", `document.querySelector(".plan-q-card")`, chromedp.Click(chromedp.CSS(`#plan-next:not(:disabled)`)))
+	b.waitJS("the question, flagged as not mentioned, with the brief beside it", `document.querySelector(".plan-q-card.is-missing") &&
+		document.querySelector("#plan-live h1")?.textContent === "Fake plan" && document.querySelector("#plan-live .plan-open-mark") &&
+		document.querySelector(".plan-st.is-current")?.textContent.includes("Interview") &&
+		document.querySelector(".plan-topic.is-done")?.textContent.includes("Users")`)
+	b.clickIn(".plan-q-card .plan-chip", "Single user", "span")
+	b.waitJS("the suggestion picked", `document.querySelector(".plan-q-card .plan-chip[aria-pressed=true]")?.textContent.includes("Single user")`)
+	b.until("send the answer", `document.querySelector("#plan-talk .plan-qa-a")?.textContent === "Single user"`,
+		chromedp.Click(chromedp.CSS(`.plan-compose .btn.primary:not(:disabled)`)))
+	b.until("review the brief", `document.querySelector("#plan-verdict.is-ready")`, chromedp.Click(chromedp.CSS(`#plan-next:not(:disabled)`)))
+	b.waitJS("the brief to edit", `document.querySelector("#plan-brief").value.includes("Single user.")`)
+	b.until("choose the repository", `document.querySelector(".plan-source")`, chromedp.Click(chromedp.CSS(`#plan-next:not(:disabled)`)))
+	b.clickIn(".plan-source", "From URL", ".plan-source-name")
+	b.waitJS("the URL source, for the plan", `document.querySelector("#new-project-nav [data-rail=url]").getAttribute("aria-current") === "true" &&
+		!document.querySelector("#new-project-plan-note").hidden && document.querySelector("#new-project").name.value === "recipes"`)
+	b.do("paste the remote", chromedp.SendKeys(chromedp.CSS(`#new-project input[name=remote_url]`), remote))
+	b.until("use it for the plan", `!document.querySelector('.plan-pane[data-step="launch"]').hidden && document.querySelector("#plan-summary")?.textContent.includes("plan.git")`,
+		chromedp.Click(chromedp.CSS(`#new-project-go:not(:disabled)`)))
+	b.waitJS("the launch summary", `document.querySelector("#plan-summary").textContent.includes("Build the first version of recipes") &&
+		document.querySelector("#plan-launch-claude").textContent.includes("Go.")`)
+	b.until("launch", `!document.querySelector("#new-project-sheet").open || document.querySelector(".np-step.is-run, .np-step.is-ok")`,
+		chromedp.Click(chromedp.CSS(`#plan-next:not(:disabled)`)))
+	b.waitJS("the goal it started, open", `!document.querySelector("#new-project-sheet").open && document.querySelector("#project-name")?.textContent === "recipes" &&
+		!document.querySelector("#goal-detail").hidden && document.querySelector("#goal-detail").textContent.includes("Build the first version of recipes")`)
+
+	if got := run(t, plan, h.gitEnv, "git", "show", "main:BRIEF.md"); !strings.Contains(got, "Single user.") {
+		t.Errorf("BRIEF.md on main: %q", got)
+	}
+	if got := run(t, plan, h.gitEnv, "git", "show", "main:CLAUDE.md"); !strings.Contains(got, "# recipes: rules for Claude") {
+		t.Errorf("CLAUDE.md on main: %q", got)
+	}
+	var drafts []json.RawMessage
+	h.api.must("GET", "/api/plans", nil, http.StatusOK, &drafts)
+	if len(drafts) != 0 {
+		t.Errorf("drafts after launching: %s", drafts)
+	}
+}

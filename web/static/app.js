@@ -21,6 +21,7 @@ import "./app/nav.js";
 import { connectAll } from "./app/events.js";
 import "./app/github.js";
 import "./app/projects.js";
+import "./app/planner.js";
 import "./app/board.js";
 import { renderBoard } from "./app/branches.js";
 import "./app/activity.js";

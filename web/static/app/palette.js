@@ -8,7 +8,7 @@ import { draft, promptEditor } from "./todoform.js";
 import { LANES, STATUS_LABEL, cp, hist, state } from "./state.js";
 import { showView } from "./nav.js";
 import { baseBranch, projectKey } from "./events.js";
-import { cleanup, grouped, loadProjects, menuOpen, notifyLabel, openDeleteProject, openNewProject, openProjects, projectWhere, selectProject, setMenu, setPicker, setSideCollapsed, sideCollapsed, stepProject } from "./projects.js";
+import { cleanup, grouped, loadProjects, menuOpen, notifyLabel, openDeleteProject, openNewProject, openPlanner, openProjects, projectWhere, selectProject, setMenu, setPicker, setSideCollapsed, sideCollapsed, stepProject } from "./projects.js";
 import { pushDone } from "./board.js";
 import { byPriority, title } from "./branches.js";
 import { openQuickAdd, openTodoForm } from "./todos.js";
@@ -77,6 +77,7 @@ function paletteCommands() {
     ["Checklist (TODO.md)", "checks", go("checklist"), "gl", "todo.md checklist to-do list check off tick items"],
     ["Switch project", "repo", openProjects, "p", "projects"],
     ["Add project", "plus", () => openNewProject(), "", "new create local repository runner github clone url"],
+    ["Plan a new project", "spark", () => openPlanner(), "", "idea brief interview plan new project goal"],
     p && ["Project settings", "settings", openSettings, ":settings", "configure commands"],
     p?.run_command && [serve.label || "Run", serve.icon || "play", () => startProc({ kind: "web", preset: "run" }), "R", `run web ${serve.icon || ""}`],
     p?.test_command && ["Run tests", "check", () => startProc({ kind: "task", preset: "test" }), "T", "test"],

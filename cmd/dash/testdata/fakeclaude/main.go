@@ -54,6 +54,22 @@ func main() {
 	}
 	switch kind {
 	case "small":
+		// A plan's interviewer: one question with a suggested answer, and a
+		// brief; once that is answered, no more questions and the brief is
+		// ready.
+		if i := slices.Index(args, "--system-prompt"); i >= 0 && i+1 < len(args) && strings.Contains(args[i+1], "project brief") {
+			if strings.Contains(string(stdin), "Start the interview") {
+				fmt.Println(`{"note": "You didn't mention login: single user or accounts?", "questions": [{"id": "r1q1", "topic": "auth", ` +
+					`"text": "Single user or accounts?", "default": "Single user", "options": ["Single user", "Accounts"], "missing": true}], ` +
+					`"topics": [{"id": "users", "status": "done"}], "brief": "# Fake plan\nA thing.\n## Auth & accounts\n_Open:_ login", ` +
+					`"open_questions": ["Login?"], "verdict": {"ready": false, "summary": "Login is open."}}`)
+				return
+			}
+			fmt.Println(`{"note": "That's enough to start.", "questions": [], "topics": [{"id": "auth", "status": "done"}], ` +
+				`"brief": "# Fake plan\nA thing.\n## Auth & accounts\nSingle user.\n## Platform & stack\nGo.", ` +
+				`"open_questions": [], "verdict": {"ready": true, "summary": "Enough to start.", "can_wait": ["Hosting"]}}`)
+			return
+		}
 		// A split's system prompt asks for JSON: two tasks, the second
 		// building on the first.
 		if i := slices.Index(args, "--system-prompt"); i >= 0 && i+1 < len(args) && strings.Contains(args[i+1], "JSON") {

@@ -59,8 +59,9 @@ func subscribed(status string) bool {
 
 // DeleteUser deletes the account uid and everything that is only theirs:
 // sessions, tokens, linked identities, push subscriptions, personal
-// webhooks, recovery codes, their general and project chats, and each org they are the
-// only member of (their personal workspace). What they made in orgs that
+// webhooks, recovery codes, their general and project chats, their project
+// plans, and each org they are the only member of (their personal
+// workspace). What they made in orgs that
 // remain stays, without them: their tasks' and messages' author becomes
 // model.DeletedUser, and the sign-in log keeps its entries about them
 // without their id, address or details.
@@ -255,6 +256,7 @@ type AccountExport struct {
 	Tokens        []Token            `json:"tokens"`
 	Push          []ExportPush       `json:"push_subscriptions"`
 	Webhooks      []ExportWebhook    `json:"personal_webhooks"`
+	Plans         []ExportPlan       `json:"project_plans"`
 	AuthEvents    []AuthEvent        `json:"sign_in_log"`
 	Tasks         []ExportTask       `json:"tasks"`
 	Messages      []ExportMessage    `json:"chat_messages"`
@@ -295,6 +297,12 @@ type ExportWebhook struct {
 	Format  string          `json:"format"`
 	Events  json.RawMessage `json:"events"`
 	Created time.Time       `json:"created"`
+}
+
+// ExportPlan is one of the user's project plans, as the planner keeps it.
+type ExportPlan struct {
+	OrgID int64           `json:"org_id"`
+	Plan  json.RawMessage `json:"plan"`
 }
 
 type ExportTask struct {
@@ -410,6 +418,20 @@ func (a *Accounts) ExportUser(uid int64, now time.Time) (AccountExport, error) {
 			w.Events = json.RawMessage("[]")
 		}
 		x.Webhooks = append(x.Webhooks, w)
+		return err
+	}); err != nil {
+		return x, err
+	}
+	x.Plans = []ExportPlan{}
+	if err := each(`SELECT org_id, data FROM plans WHERE user_id = ? ORDER BY updated_at`, func(r *sql.Rows) error {
+		var p ExportPlan
+		var data string
+		err := r.Scan(&p.OrgID, &data)
+		p.Plan = json.RawMessage(data)
+		if !json.Valid(p.Plan) {
+			p.Plan = json.RawMessage("{}")
+		}
+		x.Plans = append(x.Plans, p)
 		return err
 	}); err != nil {
 		return x, err

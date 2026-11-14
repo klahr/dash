@@ -703,8 +703,8 @@ func (a *Accounts) SetRole(actor, orgID, target int64, role Role) error {
 }
 
 // RemoveMember takes target out of orgID, as actor (who may be target,
-// leaving), with their general chat in the org and their own chats about
-// the org's projects. Their sessions in that org move on at their next
+// leaving), with their general chat in the org, their own chats about
+// the org's projects and their plans there. Their sessions in that org move on at their next
 // request.
 func (a *Accounts) RemoveMember(actor, orgID, target int64) error {
 	a.s.mu.Lock()
@@ -717,6 +717,9 @@ func (a *Accounts) RemoveMember(actor, orgID, target int64) error {
 			return err
 		}
 		if _, err := tx.Exec("DELETE FROM chat_messages WHERE kind = ? AND owner_id = ?", chatMain, mainChatOwner(orgID, target)); err != nil {
+			return err
+		}
+		if _, err := tx.Exec("DELETE FROM plans WHERE org_id = ? AND user_id = ?", orgID, target); err != nil {
 			return err
 		}
 		_, err := tx.Exec("DELETE FROM chat_messages WHERE kind = ? AND org_id = ? AND owner_id LIKE '%:' || ?", chatProject, orgID, target)
