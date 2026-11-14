@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -52,7 +54,7 @@ func TestHubListsRunnerQuickActionsWithTheirPreset(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs, runnerAPI, remote := runnerSide(t, creds.OrgID)
-	rs.Procs = runner.NewManager(rs.Hub)
+	rs.Procs, rs.HubUser = runner.NewManager(rs.Hub), creds.UserID // an own command is the owner's, as a terminal is
 	client := &tunnel.Client{Creds: creds, Handler: runnerAPI, MinBackoff: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond}
 	go func() { _ = client.Run(ctx) }()
 	eventually(t, "the runner to come online", func() bool { r, _ := rh.Get(creds.ID); return r.Online })
@@ -217,6 +219,29 @@ func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
 	if w := start(other, `{"kind":"pty"}`); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "registered it") {
 		t.Fatalf("terminal for another member: %d %s", w.Code, w.Body)
 	}
+	// Nor a command they name, of any kind: it is a shell's.
+	marker := filepath.Join(t.TempDir(), "ran")
+	for _, kind := range []string{"task", "web", ""} {
+		if w := start(other, `{"kind":"`+kind+`","command":"touch `+marker+`"}`); w.Code != http.StatusForbidden {
+			t.Fatalf("command (%q) for another member: %d %s", kind, w.Code, w.Body)
+		}
+	}
+	// Nor can they make one of the project's own commands run one.
+	patch := func(uid int64, body string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		hub.mux().ServeHTTP(w, as(uid)(httptest.NewRequest("PATCH", "/api/projects/"+p.ID, strings.NewReader(body))))
+		return w
+	}
+	if w := patch(other, `{"deploy_command":"touch `+marker+`"}`); w.Code != http.StatusForbidden {
+		t.Fatalf("deploy command set by another member: %d %s", w.Code, w.Body)
+	}
+	if w := patch(other, `{"deploy_command":"","color":"#3a7bd5"}`); w.Code != http.StatusOK {
+		t.Fatalf("other settings, commands unchanged, by another member: %d %s", w.Code, w.Body)
+	}
+	time.Sleep(200 * time.Millisecond) // a command that got through would have run by now
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("another member's command ran on the owner's runner")
+	}
 
 	// The owner: in the runner's checkout, not a folder the hub names.
 	w := start(owner.User, `{"kind":"pty","command":"bash --norc --noprofile","dir":"/etc","cols":80,"rows":24}`)
@@ -288,4 +313,17 @@ func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
 	}
 	defer ws.Close()
 	read(ws, "hub-42\r\n")
+
+	// Stopping it: the owner's too.
+	stop := func(uid int64) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		hub.mux().ServeHTTP(w, as(uid)(httptest.NewRequest("DELETE", "/api/processes/"+proc.ID, nil)))
+		return w
+	}
+	if w := stop(other); w.Code != http.StatusForbidden {
+		t.Fatalf("another member stopping the owner's terminal: %d %s", w.Code, w.Body)
+	}
+	if w := stop(owner.User); w.Code >= 300 {
+		t.Fatalf("the owner stopping their terminal: %d %s", w.Code, w.Body)
+	}
 }

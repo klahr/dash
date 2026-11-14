@@ -401,8 +401,9 @@ connection, to the clone of one of the project's runners that is online:
   requests from the working branch, release tags (**Tag release…** and the `create_release` tool);
 - the file browser and the `CLAUDE.md` and settings files;
 - the project's commands: **Run**, **Test** and **Deploy**, also in a task's worktree (they run on
-  that task's runner). The runner always takes the shared project's commands from the hub (set
-  in its settings on the hub), each time the project is linked;
+  that task's runner), for any member of the org. The runner always takes the shared project's
+  commands from the hub (set in its settings on the hub), each time the project is linked. Only an
+  org admin, or the owner of every runner linked to the project, can change those commands;
 - the **Shell** view and **Open shell in this worktree** on a task: a terminal on the runner, in
   the project's checkout there or the task's worktree, only for the user who registered the runner
   (a shell can do whatever a deploy command can). The hub chooses neither the runner's folder nor
@@ -873,8 +874,9 @@ The runner does the looking, and only:
 A runner only does the dashboard's normal work on its own projects: tasks, reviews, merges,
 issues, scans, chats about a project or task, CI, previews and permission prompts. It refuses:
 
-- terminals for anyone but its owner (it always takes the hub's project commands and ad-hoc
-  commands, and opens terminals for its owner);
+- terminals, and any command other than the project's own **Run**, **Test** and **Deploy**, for
+  anyone but its owner (it always takes the hub's project commands, and opens terminals and runs
+  other commands for its owner). Stopping a terminal is its owner's too;
 - adding a project outside its `-projects` directory;
 - the general chat and Claude's short calls (titles, summaries, clean-up, split) for anyone but its owner
   (see [above](#claude-runs-on-each-users-own-runner));

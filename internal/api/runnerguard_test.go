@@ -138,6 +138,10 @@ func TestRunnerOpensTerminalsForItsOwnerOnly(t *testing.T) {
 		if w := as(user, "POST", procs, `{"kind":"pty"}`); w.Code != http.StatusForbidden {
 			t.Fatalf("terminal for user %q: %d %s", user, w.Code, w.Body)
 		}
+		// A command the hub names is a shell's too.
+		if w := as(user, "POST", procs, `{"kind":"task","command":"true"}`); w.Code != http.StatusForbidden {
+			t.Fatalf("command for user %q: %d %s", user, w.Code, w.Body)
+		}
 	}
 	w := as("42", "POST", procs, `{"kind":"pty","command":"sleep 30","dir":"/etc","path":"/etc"}`)
 	if w.Code != http.StatusCreated {
@@ -166,6 +170,14 @@ func TestRunnerOpensTerminalsForItsOwnerOnly(t *testing.T) {
 		if err == nil {
 			ws.Close()
 		}
+	}
+
+	// Stopping it: the owner only.
+	if w := as("7", "DELETE", "/api/processes/"+proc.ID, ""); w.Code != http.StatusForbidden {
+		t.Fatalf("another user stopping the owner's terminal: %d %s", w.Code, w.Body)
+	}
+	if w := as("42", "DELETE", "/api/processes/"+proc.ID, ""); w.Code >= 300 {
+		t.Fatalf("the owner stopping their terminal: %d %s", w.Code, w.Body)
 	}
 }
 

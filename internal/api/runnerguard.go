@@ -78,7 +78,8 @@ func init() {
 
 		"POST /api/uploads", "GET /api/uploads/{id}/{name}",
 
-		// The project's own run/test/deploy commands; checked in hubGuard.
+		// The project's own run/test/deploy commands (presets); terminals and
+		// commands the hub names only for the owner (hubCheck).
 		"GET /api/projects/{pid}/processes", "POST /api/projects/{pid}/processes", "DELETE /api/processes/{procid}",
 		"GET /ws/proc/{procid}", // terminals only for the owner (hubTerminal)
 
@@ -136,8 +137,9 @@ func init() {
 
 // RunnerRoutes is what a runner serves to its hub over the tunnel: the
 // routes in hubRoutes, without a login (the tunnel is authenticated), and
-// a project's commands (run, test, deploy, setup) the hub sets; terminals and
-// "!" commands open only for the runner's owner.
+// a project's commands (run, test, deploy, setup) the hub sets; terminals,
+// "!" commands and any other command the hub names run only for the
+// runner's owner.
 func (s *Server) RunnerRoutes() http.Handler {
 	mux := s.mux()
 	guard := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -192,10 +194,13 @@ func (s *Server) hubCheck(r *http.Request) error {
 		if err := peekJSON(r, &req); err != nil {
 			return nil
 		}
-		if req.Kind == model.ProcPTY {
+		// A command the hub names, not one of the project's own (preset),
+		// is a shell's: its owner's alone, as a terminal is.
+		if req.Kind == model.ProcPTY || req.Command != "" {
 			return s.hubTerminal(r)
 		}
-	case "GET /ws/proc/{procid}":
+	case "GET /ws/proc/{procid}", "DELETE /api/processes/{procid}":
+		// Attaching to a terminal, or stopping one, is its owner's.
 		if p, err := s.Procs.Get(segment(r, 2)); err == nil && p.Kind == model.ProcPTY {
 			return s.hubTerminal(r)
 		}

@@ -390,8 +390,9 @@ func (s *Server) listProcessesOnRunners(w http.ResponseWriter, r *http.Request, 
 // startProcessOnRunner starts one of p's commands on a runner: with todo_id,
 // on the task's runner, in its worktree there. Terminals and commands the
 // hub makes up are the runner's to allow (see hubCheck); neither ever runs
-// on the hub. A terminal opens only on a runner of the caller's own (the
-// runner checks it too, from tunnel.UserHeader).
+// on the hub. A terminal, or a command the caller names, runs only on a
+// runner of the caller's own (the runner checks it too, from
+// tunnel.UserHeader); the project's presets run for any member.
 func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv *service, p model.Project) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
@@ -403,7 +404,10 @@ func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv
 		writeErr(w, errors.Join(errBadRequest, err))
 		return
 	}
-	pty := req["kind"] == string(model.ProcPTY)
+	// A terminal, or a command the caller names rather than one of the
+	// project's own (a preset): a shell's, so the runner's owner's alone.
+	cmd, _ := req["command"].(string)
+	pty := req["kind"] == string(model.ProcPTY) || cmd != ""
 	prefer := ""
 	if tid, _ := req["todo_id"].(string); tid != "" {
 		t, err := sv.data.GetTodo(tid)

@@ -399,6 +399,34 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
+// checkCommandChange refuses, on the hub, a change to the commands Dash
+// runs in a shell on the project's runners (run, test, deploy, setup,
+// preview) unless the caller is an org admin or owns every runner they
+// would run on: they run as that runner's owner, on its computer, and a
+// shell there is its owner's alone (see hubTerminal). Sending a command
+// unchanged is fine, as the settings form does.
+func (sv *service) checkCommandChange(cur model.Project, req projectUpdate, runners []string) error {
+	if !sv.s.hub() || len(runners) == 0 || sv.s.orgAdmin(sv.c) {
+		return nil
+	}
+	changed := func(v *string, was string) bool { return v != nil && strings.TrimSpace(*v) != strings.TrimSpace(was) }
+	if !changed(req.RunCommand, cur.RunCommand) && !changed(req.TestCommand, cur.TestCommand) &&
+		!changed(req.DeployCommand, cur.DeployCommand) && !changed(req.SetupCommand, cur.SetupCommand) &&
+		!changed(req.PreviewCommand, cur.PreviewCommand) {
+		return nil
+	}
+	for _, id := range runners {
+		run, ok := sv.s.orgRunner(sv.c, id)
+		if !ok {
+			continue // not in the org any more: it runs nothing of this project
+		}
+		if run.Owner == nil || run.Owner.UserID != sv.c.User {
+			return fmt.Errorf("%w: only an org admin, or the owner of every runner linked to the project, can change its commands (they run on %s as the user who registered it)", errForbidden, run.Name)
+		}
+	}
+	return nil
+}
+
 // updateProject changes a project's settings, for PATCH /api/projects/{pid}
 // and the update_project tool.
 func (sv *service) updateProject(ctx context.Context, id string, req projectUpdate) (model.Project, error) {
@@ -475,6 +503,9 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 		if runners, err = sv.linkRunners(withRemote, *req.Runners); err != nil {
 			return cur, err
 		}
+	}
+	if err := sv.checkCommandChange(cur, req, runners); err != nil {
+		return cur, err
 	}
 	var gone []string
 	for _, r := range cur.Runners {
