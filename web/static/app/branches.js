@@ -18,6 +18,7 @@ import { loadGraph } from "./history.js";
 import { loadFiles } from "./files.js";
 import { drag } from "./dnd.js";
 import { hoverCard } from "./hovercard.js";
+import { tokenTag } from "./runstats.js";
 import { loadChecklist } from "./checklist.js";
 import { keys, laneHidden, todoKey } from "./vim.js";
 import { desktop } from "./viewport.js";
@@ -556,6 +557,7 @@ export function todoRow(t, li = -1, ri = -1) {
         ? h("span", { class: "diffsize", title: `${plural(t.diff_files, "file")} changed` },
           h("span", { class: "plus" }, `+${t.diff_add || 0}`), " ", h("span", { class: "minus" }, `−${t.diff_del || 0}`))
         : null,
+      ["review", "merging", "merged", "failed"].includes(t.status) ? tokenTag(t) : null,
       t.status === "in_progress" && t.started_at ? h("span", { title: "Running for" }, ago(t.started_at)) : null,
       previewTag(t),
       t.status === "review" && t.finished_at ? h("span", { title: waitsOnGitHub(t) ? "Waiting on GitHub since" : "Waiting for review" }, ago(t.finished_at)) : null,

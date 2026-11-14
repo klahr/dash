@@ -30,6 +30,18 @@ function total(runs) {
   return sum;
 }
 
+// tokenTag is a short tag with all the tokens t's runs took ("1.4M tokens"),
+// its title the breakdown; null when t has no run records.
+export function tokenTag(t) {
+  const runs = t.run_stats || [];
+  if (!runs.length) return null;
+  const sum = total(runs);
+  const all = sum.input_tokens + sum.cache_read_tokens + sum.cache_creation_tokens + sum.output_tokens;
+  if (!all) return null;
+  return h("span", { class: "token-tag", title: `Tokens: ${runParts(sum).join(" · ")} (${plural(runs.length, "run")})` },
+    `${fmtTokens(all)} tokens`);
+}
+
 export function renderRunStats(t) {
   const box = $("#d-runs");
   const runs = t.run_stats || [];

@@ -1403,7 +1403,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 /* ---------- small helpers ---------- */
 .board-tools { position: sticky; top: var(--top-h); z-index: 10; display: flex; align-items: center; background: var(--bg); border-bottom: 1px solid var(--line); padding-right: 8px; }
 .board-tools .lanes { position: static; flex: 1; border: 0; min-width: 0; }
-.diffsize { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.diffsize, .token-tag { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .push-done { display: block; width: calc(100% - 32px); margin: 8px 16px; }
 .older { display: flex; margin: 4px 16px 16px 52px; min-height: 36px; font-size: var(--fs-m); }
 .msg-actions { display: flex; gap: 14px; margin-top: 6px; }
