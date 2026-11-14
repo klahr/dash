@@ -30,25 +30,17 @@ func (s *Server) goalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/goals/{gid}/log", s.goalLog)
 	mux.HandleFunc("POST /api/goals/{gid}/plan/accept", s.acceptGoalPlan)
 	mux.HandleFunc("POST /api/goals/{gid}/plan/reject", s.rejectGoalPlan)
+	mux.HandleFunc("POST /api/goals/{gid}/message", s.messageGoal)
 	mux.HandleFunc("GET /api/goals/{gid}/chat", s.goalChat)
 }
 
-// goalTask is one of a goal's tasks, as goal answers list it.
-type goalTask struct {
-	ID     string           `json:"id"`
-	Title  string           `json:"title"`
-	Status model.TodoStatus `json:"status"`
-}
-
-// goalView is a goal as the API answers it: without its log (GET …/log has
-// it) unless asked, with its tasks and how much of its budget they used.
-type goalView struct {
-	model.Goal
-	Tasks []goalTask `json:"tasks"`
-	// WeeklyUsed is the goal's estimated share of the weekly window, in
-	// percent, when it has a weekly share and the window is known.
-	WeeklyUsed *float64 `json:"weekly_used,omitempty"`
-}
+// goalTask and goalView are a goal's tasks and the goal as the API answers
+// it: without its log (GET …/log has it) unless asked, with its tasks and
+// how much of its budget they used. The goal tools answer the same.
+type (
+	goalTask = mcptools.GoalTask
+	goalView = mcptools.GoalView
+)
 
 func (sv *service) goalView(g model.Goal, withLog bool) goalView {
 	v := goalView{Goal: g, Tasks: []goalTask{}}
@@ -56,7 +48,7 @@ func (sv *service) goalView(g model.Goal, withLog bool) goalView {
 		v.Log = nil
 	}
 	for _, t := range sv.data.GoalTodos(g) {
-		v.Tasks = append(v.Tasks, goalTask{t.ID, t.Title, t.Status})
+		v.Tasks = append(v.Tasks, goalTask{ID: t.ID, Title: t.Title, Status: t.Status})
 	}
 	if g.Budget.WeeklyShare > 0 {
 		if used, ok := sv.s.goalWeekUsed(sv, g); ok {
@@ -202,11 +194,21 @@ func (s *Server) updateGoal(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if err := sv.writable(); err != nil {
+	g, err := sv.updateGoal(g.ID, req)
+	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	g, err := sv.data.UpdateGoal(g.ID, func(g *model.Goal) error {
+	writeJSON(w, http.StatusOK, sv.goalView(g, true))
+}
+
+// updateGoal changes a goal's title, description, budget or mode (the
+// fields of req that are set), noting it in the goal's log.
+func (sv *service) updateGoal(id string, req goalRequest) (model.Goal, error) {
+	if err := sv.writable(); err != nil {
+		return model.Goal{}, err
+	}
+	g, err := sv.data.UpdateGoal(id, func(g *model.Goal) error {
 		var changed []string
 		if req.Title != nil && strings.TrimSpace(*req.Title) != g.Title {
 			changed = append(changed, "title")
@@ -233,12 +235,10 @@ func (s *Server) updateGoal(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
-		writeErr(w, err)
-		return
+		return g, err
 	}
 	sv.s.goals().refresh(g.ID) // a new mode or budget may change what it waits for
-	g, _ = sv.data.GetGoal(g.ID)
-	writeJSON(w, http.StatusOK, sv.goalView(g, true))
+	return sv.data.GetGoal(g.ID)
 }
 
 // goalAction handles POST /api/goals/{gid}/pause, /resume and /stop.
@@ -248,25 +248,29 @@ func (s *Server) goalAction(action string) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if err := sv.writable(); err != nil {
-			writeErr(w, err)
-			return
-		}
-		var err error
-		switch action {
-		case "pause":
-			g, err = sv.pauseGoal(g.ID)
-		case "resume":
-			g, err = sv.resumeGoal(g.ID)
-		case "stop":
-			g, err = sv.stopGoal(g.ID)
-		}
+		g, err := sv.goalAction(g.ID, action)
 		if err != nil {
 			writeErr(w, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, sv.goalView(g, true))
 	}
+}
+
+// goalAction pauses, resumes or stops goal id.
+func (sv *service) goalAction(id, action string) (model.Goal, error) {
+	if err := sv.writable(); err != nil {
+		return model.Goal{}, err
+	}
+	switch action {
+	case "pause":
+		return sv.pauseGoal(id)
+	case "resume":
+		return sv.resumeGoal(id)
+	case "stop":
+		return sv.stopGoal(id)
+	}
+	return model.Goal{}, fmt.Errorf("%w: unknown goal action %q (pause, resume or stop)", errBadRequest, action)
 }
 
 // pauseGoal holds a goal: task events are kept for when it resumes, and a
@@ -421,15 +425,25 @@ func (s *Server) rejectGoalPlan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	if err := sv.writable(); err != nil {
+	g, err := sv.rejectPlan(g.ID, req.Feedback)
+	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	g, err := sv.data.UpdateGoal(g.ID, func(g *model.Goal) error {
+	writeJSON(w, http.StatusOK, sv.goalView(g, true))
+}
+
+// rejectPlan drops the plan goal id waits for the user on, and wakes its
+// coordinator with feedback to propose another.
+func (sv *service) rejectPlan(id, feedback string) (model.Goal, error) {
+	if err := sv.writable(); err != nil {
+		return model.Goal{}, err
+	}
+	g, err := sv.data.UpdateGoal(id, func(g *model.Goal) error {
 		if len(g.Plan) == 0 || g.WaitingFor != model.GoalWaitPlan {
 			return fmt.Errorf("%w: the goal has no plan waiting for you", errBadRequest)
 		}
-		fb := strings.TrimSpace(req.Feedback)
+		fb := strings.TrimSpace(feedback)
 		g.Plan, g.WaitingFor, g.Note, g.Status = nil, "", "", model.GoalPlanning
 		g.Pending = append(g.Pending, model.GoalWake{Event: model.GoalWakeReplan, Note: fb, At: now()})
 		text := "You rejected the plan."
@@ -440,11 +454,75 @@ func (s *Server) rejectGoalPlan(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
+		return g, err
+	}
+	sv.s.goals().kick(g.ID)
+	return g, nil
+}
+
+// messageGoal handles POST /api/goals/{gid}/message: a message for the
+// goal's coordinator from outside its chat (the MCP tools'
+// message_goal). It answers a question the coordinator waits on.
+func (s *Server) messageGoal(w http.ResponseWriter, r *http.Request) {
+	sv, g, ok := s.goal(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Text string `json:"text"`
+	}
+	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
-	s.goals().kick(g.ID)
+	g, err := sv.messageGoal(g.ID, req.Text)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, sv.goalView(g, true))
+}
+
+// maxGoalMessage bounds a message to a coordinator.
+const maxGoalMessage = 20_000
+
+// messageGoal wakes goal id's coordinator with text from the caller. A
+// question it waits on counts as answered; a paused goal (or one out of
+// budget) keeps the message for when it resumes.
+func (sv *service) messageGoal(id, text string) (model.Goal, error) {
+	if err := sv.writable(); err != nil {
+		return model.Goal{}, err
+	}
+	text = strings.TrimSpace(text)
+	switch {
+	case text == "":
+		return model.Goal{}, fmt.Errorf("%w: the message is empty", errBadRequest)
+	case len(text) > maxGoalMessage:
+		return model.Goal{}, fmt.Errorf("%w: the message is longer than %d characters", errBadRequest, maxGoalMessage)
+	}
+	g, err := sv.data.UpdateGoal(id, func(g *model.Goal) error {
+		if g.Status == model.GoalDone {
+			return fmt.Errorf("%w: the goal is done", errBadRequest)
+		}
+		g.Pending = append(g.Pending, model.GoalWake{Event: model.GoalWakeMessage, Note: text, At: now()})
+		if g.WaitingFor == model.GoalWaitQuestion { // answered
+			g.WaitingFor, g.Note = "", ""
+			switch {
+			case g.Status == model.GoalWaiting:
+				g.Status = model.GoalWorking
+			case g.Status == model.GoalPaused && g.PausedFrom == model.GoalWaiting:
+				g.PausedFrom = model.GoalWorking
+			}
+		}
+		g.AddLog(model.GoalLogEntry{Kind: model.GoalLogUser, Text: "You wrote to the coordinator: " + oneLine(text, 300)})
+		return nil
+	})
+	if err != nil {
+		return g, err
+	}
+	sv.s.goals().refresh(g.ID)
+	sv.s.goals().kick(g.ID)
+	return sv.data.GetGoal(g.ID)
 }
 
 // createPlanTasks makes plan's tasks for g, as sv's caller: drafts, or
@@ -899,4 +977,84 @@ func (gb goalBoard) Log(id string) (string, error) {
 		return "", err
 	}
 	return gb.sv().log(id)
+}
+
+// ---- the user's goal tools (mcptools.GoalManager) on the board ----
+
+func (b board) Goals(projectID string) ([]mcptools.GoalView, error) {
+	if projectID != "" {
+		if _, err := b.sv.data.GetProject(projectID); err != nil {
+			return nil, fmt.Errorf("no project %q (see list_projects)", projectID)
+		}
+	}
+	out := []mcptools.GoalView{}
+	for _, g := range b.sv.data.ListGoals(projectID) {
+		out = append(out, b.sv.goalView(g, false))
+	}
+	return out, nil
+}
+
+func (b board) GetGoal(id string) (mcptools.GoalView, error) {
+	g, err := b.sv.data.GetGoal(id)
+	if err != nil {
+		return mcptools.GoalView{}, fmt.Errorf("no goal %q (see list_goals)", id)
+	}
+	return b.sv.goalView(g, true), nil
+}
+
+// view is g as the goal tools answer it, or err.
+func (b board) view(g model.Goal, err error) (mcptools.GoalView, error) {
+	if err != nil {
+		return mcptools.GoalView{}, err
+	}
+	return b.sv.goalView(g, true), nil
+}
+
+func (b board) CreateGoal(ng mcptools.NewGoal) (mcptools.GoalView, error) {
+	return b.view(b.sv.createGoal(goalRequest{Project: ng.Project, Title: &ng.Title, Description: &ng.Description,
+		Mode: &ng.Mode, Budget: &ng.Budget}))
+}
+
+func (b board) UpdateGoal(id string, c mcptools.GoalChange) (mcptools.GoalView, error) {
+	if _, err := b.GetGoal(id); err != nil {
+		return mcptools.GoalView{}, err
+	}
+	return b.view(b.sv.updateGoal(id, goalRequest{Title: c.Title, Description: c.Description, Mode: c.Mode, Budget: c.Budget}))
+}
+
+func (b board) GoalAction(id, action string) (mcptools.GoalView, error) {
+	if _, err := b.GetGoal(id); err != nil {
+		return mcptools.GoalView{}, err
+	}
+	return b.view(b.sv.goalAction(id, action))
+}
+
+func (b board) AcceptGoalPlan(id string, plan []model.GoalPlanItem, queue bool) (mcptools.GoalView, []model.Todo, error) {
+	if err := b.sv.writable(); err != nil {
+		return mcptools.GoalView{}, nil, err
+	}
+	g, err := b.sv.data.GetGoal(id)
+	if err != nil {
+		return mcptools.GoalView{}, nil, fmt.Errorf("no goal %q (see list_goals)", id)
+	}
+	made, err := b.sv.acceptPlan(g, plan, queue)
+	if err != nil {
+		return mcptools.GoalView{}, made, err
+	}
+	v, err := b.view(b.sv.data.GetGoal(id))
+	return v, made, err
+}
+
+func (b board) RejectGoalPlan(id, feedback string) (mcptools.GoalView, error) {
+	if _, err := b.GetGoal(id); err != nil {
+		return mcptools.GoalView{}, err
+	}
+	return b.view(b.sv.rejectPlan(id, feedback))
+}
+
+func (b board) MessageGoal(id, text string) (mcptools.GoalView, error) {
+	if _, err := b.GetGoal(id); err != nil {
+		return mcptools.GoalView{}, err
+	}
+	return b.view(b.sv.messageGoal(id, text))
 }

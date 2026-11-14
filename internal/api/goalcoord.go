@@ -216,6 +216,8 @@ func wakeText(w model.GoalWake) string {
 			return "The user rejected the plan, saying: " + w.Note + "\nPropose a new plan with propose_plan."
 		}
 		return "The user rejected the plan. Propose a new one with propose_plan."
+	case model.GoalWakeMessage:
+		return "The user wrote to you: " + w.Note
 	}
 	name := fmt.Sprintf("Task %s (%q)", w.Todo, w.Title)
 	switch model.TodoStatus(w.Event) {

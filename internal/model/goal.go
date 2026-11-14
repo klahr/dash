@@ -131,8 +131,9 @@ type GoalWake struct {
 
 // Wake-ups that aren't task events.
 const (
-	GoalWakeStart  = "start"  // the goal was made: read the code and propose a plan
-	GoalWakeReplan = "replan" // the user rejected the plan
+	GoalWakeStart   = "start"   // the goal was made: read the code and propose a plan
+	GoalWakeReplan  = "replan"  // the user rejected the plan
+	GoalWakeMessage = "message" // the user sent the coordinator a message (Note) outside its chat
 )
 
 // Kinds of a goal's log entries.

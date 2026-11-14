@@ -97,7 +97,7 @@ In **ask before queuing** mode, follow-ups the coordinator adds are drafts for y
 can still send a task back with notes: that task was already queued by you.
 
 If the coordinator needs a decision, it asks: the goal waits for you, with the question as its
-note. Answer in the goal's chat.
+note. Answer in the goal's chat, or with `message_goal` from Claude (see below).
 
 ## Pause, resume, edit, stop
 
@@ -138,6 +138,17 @@ same conversation its wake-ups add to. Send it over the chat WebSocket (`/ws/cha
 set to the goal's id; only your latest message counts, the goal keeps the rest.
 `GET /api/goals/{id}/chat` returns the conversation. `!` commands don't run in a goal's chat.
 
+`POST /api/goals/{id}/message` (and the `message_goal` tool) sends a message without waiting for
+the answer: the coordinator is woken with it, like by a task event, and acts on it. It answers
+a question the goal waits on. A paused goal, or one out of budget, gets it when it resumes.
+
+## From Claude
+
+`dash-mcp`, the claude.ai connector and Dash's chats have goal tools too: `list_goals`,
+`get_goal`, `create_goal`, `update_goal`, `pause_goal`, `resume_goal`, `stop_goal`,
+`accept_goal_plan`, `reject_goal_plan` and `message_goal`. See
+[MCP](mcp.md#goals).
+
 ## API
 
 | Call | What it does |
@@ -153,6 +164,7 @@ set to the goal's id; only your latest message counts, the goal keeps the rest.
 | `GET /api/goals/{id}/log` | its log |
 | `POST /api/goals/{id}/plan/accept` | accept the waiting plan: `{"plan": [edited items], "queue": true}`, both optional |
 | `POST /api/goals/{id}/plan/reject` | reject it: `{"feedback": "…"}` |
+| `POST /api/goals/{id}/message` | wake the coordinator with a message: `{"text": "…"}` |
 | `GET /api/goals/{id}/chat` | the coordinator's conversation |
 
 `mode` is `ask` (ask before queuing) or `queue` (queue on its own). Changes to a goal are

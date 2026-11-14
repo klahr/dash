@@ -100,7 +100,8 @@ also a queued task, when you ask to start it now despite the weekly pace), `stop
 draft, queued or failed tasks, when you ask to remove one), `create_release`, `list_issues` and
 `report_issue`, and the checklist tools on the project's `TODO.md` (`read_checklist`,
 `add_checklist_item`, `check_checklist_item`, `edit_checklist_item`, `delete_checklist_item`,
-`reorder_checklist_item`, `move_checklist_item_to_task`; see [Checklist](checklist.md)). A read-only chat calls them without asking, except `create_release`, which it
+`reorder_checklist_item`, `move_checklist_item_to_task`; see [Checklist](checklist.md)), and the
+[goal tools](#goals). A read-only chat calls them without asking, except `create_release`, which it
 can't use; a shell chat asks for the ones that change something. They act as the user chatting,
 in the org they're working in.
 
@@ -154,6 +155,29 @@ dashboard, and `update_project` sets `tag_format`.
 
 `dash-mcp` and the connector have `update_todo` too. Their `delete_todo` deletes a task in any
 status except running or merging.
+
+## Goals
+
+`dash-mcp`, the connector and the chats' `dash_board` manage [goals](goals.md) as you would on
+the **Goals** page:
+
+- `list_goals(project?, status?)`: goals with their status, what they wait for and how many of
+  their tasks are merged. In a project chat it lists that project's; `project: "*"` lists all.
+- `get_goal(goal, log?)`: the goal, the plan waiting for you, its tasks, its budget and what it
+  used, and the latest `log` entries of its log (default 20).
+- `create_goal(project, title?, description?, mode?, max_tasks?, weekly_share?)`: start a goal.
+  `mode` is `ask` (the default) or `queue`.
+- `update_goal(goal, title?, description?, mode?, max_tasks?, weekly_share?)`: only the given
+  ones change.
+- `pause_goal`, `resume_goal` and `stop_goal(goal)`.
+- `accept_goal_plan(goal, queue?, tasks?)`: the waiting plan becomes drafts, or queued tasks
+  with `queue`. `tasks` is your edit of the plan, as `{title, prompt, after, model}` objects.
+- `reject_goal_plan(goal, feedback?)`: the coordinator plans again.
+- `message_goal(goal, text)`: wake the coordinator with a message, such as the answer to its
+  question. It doesn't wait for the coordinator's answer: see `get_goal`'s log.
+
+A read-only connector (`scope=read`) can only use `list_goals` and `get_goal`. A shell chat asks
+before it uses the others.
 
 ## A goal's coordinator
 

@@ -414,10 +414,11 @@ type Options struct {
 
 // Tool names the chat may call; ReadTools never change anything.
 var (
-	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues", "read_try_terminal", "read_checklist"}
+	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues", "read_try_terminal", "read_checklist", "list_goals", "get_goal"}
 	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "stop_todo", "restart_todo", "update_todo", "create_release", "delete_todo",
 		"read_checklist", "add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "reorder_checklist_item", "move_checklist_item_to_task",
-		"list_issues", "report_issue", "read_try_terminal"}
+		"list_issues", "report_issue", "read_try_terminal",
+		"list_goals", "get_goal", "create_goal", "update_goal", "pause_goal", "resume_goal", "stop_goal", "accept_goal_plan", "reject_goal_plan", "message_goal"}
 	// AskTools are board tools a chat never gets without asking: they publish
 	// something (a release tag pushed to origin, or a TODO.md change committed
 	// onto the default branch, which may be pushed to origin).
@@ -432,12 +433,15 @@ var (
 // update_todo, create_release and delete_todo; the checklist
 // tools on the project's TODO.md (read_checklist, add_checklist_item,
 // check_checklist_item, edit_checklist_item, delete_checklist_item,
-// reorder_checklist_item and move_checklist_item_to_task); the IssueTools; and read_try_terminal when
-// b reads Try terminals (TryReader).
+// reorder_checklist_item and move_checklist_item_to_task); the IssueTools; read_try_terminal when
+// b reads Try terminals (TryReader); and the goal tools when b manages goals (GoalManager).
 func Tools(b Board, o Options) []Tool {
 	tools := append(boardTools(b, o), IssueTools(b, o)...)
 	if tr, ok := b.(TryReader); ok {
 		tools = append(tools, TryTool(b, tr, o))
+	}
+	if gm, ok := b.(GoalManager); ok {
+		tools = append(tools, GoalManagerTools(b, gm, o)...)
 	}
 	return tools
 }
@@ -956,7 +960,7 @@ func restartTools(b Board, r Restarter) []Tool {
 }
 
 // FleetReadTools are the FleetTools that only look.
-var FleetReadTools = []string{"list_projects", "list_todos", "get_todo", "list_issues", "get_diff", "get_log", "get_project", "read_checklist"}
+var FleetReadTools = []string{"list_projects", "list_todos", "get_todo", "list_issues", "get_diff", "get_log", "get_project", "read_checklist", "list_goals", "get_goal"}
 
 // ReadOnly returns tools with those not in read made to fail with err: a
 // read-only caller still sees every tool, and learns why one doesn't work.
