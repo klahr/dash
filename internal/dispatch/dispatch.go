@@ -568,12 +568,8 @@ func (d *Dispatcher) applyTask(r tunnel.Runner, ts TaskState, answer bool) error
 	undo := false       // its revert conflicted just now
 	adopted := false    // taken by the runner before the hub recorded it
 	nt, err := d.Store.UpdateTodo(ts.HubTodoID, func(x *model.Todo) error {
-		// A task the runner took but the hub never recorded as sent (the hub
-		// stopped between the two) is the runner's: sending it again would
-		// run it twice, on another runner or from scratch on this one.
-		adopt := x.Status == model.StatusQueued && x.Runner == "" && x.RemoteID == "" &&
-			to == model.StatusInProgress && slices.Contains(p.Runners, r.ID)
-		adopted = false
+		adopt := adopts(x, p, r, to)
+		adopted, undo = false, false
 		if adopt {
 			now := time.Now()
 			x.Runner, x.Waiting, x.Paused = r.ID, "", false
@@ -595,27 +591,9 @@ func (d *Dispatcher) applyTask(r tunnel.Runner, ts TaskState, answer bool) error
 				return errSkip // waiting to be sent (again)
 			}
 		case model.StatusMerged:
-			// Done; only a revert (or its conflict) may follow.
-			if ts.Status != model.StatusMerged {
-				return errSkip
-			}
-			before := *x
-			if x.MergedCommit == "" {
-				x.MergedCommit = ts.MergedCommit
-			}
-			if ts.Revert != nil {
-				x.Revert, x.RevertConflict, x.Error = ts.Revert, nil, ""
-			}
-			if len(ts.RevertConflict) > 0 && len(x.RevertConflict) == 0 {
-				x.RevertConflict, undo = ts.RevertConflict, true
-			}
-			if ts.Error != "" && ts.Revert == nil && !undo && len(x.RevertConflict) == 0 {
-				x.Error = ts.Error // e.g. "Revert failed: …"
-			}
-			if reflect.DeepEqual(before, *x) {
-				return errSkip
-			}
-			return nil
+			var err error
+			undo, err = applyMerged(x, ts)
+			return err
 		case model.StatusFailed:
 			// Back from the dead only if the hub, not the runner, failed it:
 			// the runner kept going while it was out of reach.
@@ -623,50 +601,12 @@ func (d *Dispatcher) applyTask(r tunnel.Runner, ts TaskState, answer bool) error
 				return errSkip
 			}
 		}
-		if x.Status != to && !model.CanTransition(x.Status, to) {
-			if to != model.StatusInProgress || !model.CanTransition(x.Status, model.StatusQueued) {
-				return errSkip
-			}
-			// Running again on the runner (back after an interruption, or
-			// sent back to Claude there): queued here, the hub sends it to
-			// the same runner, which answers that it is on it.
-			to = model.StatusQueued
+		next, ok := nextStatus(*x, to)
+		if !ok {
+			return errSkip
 		}
 		before := *x
-		x.Status = to
-		x.Summary, x.CostUSD, x.Runs, x.Checks, x.PR = ts.Summary, ts.CostUSD, ts.Runs, ts.Checks, ts.PR
-		x.RunStats = ts.RunStats
-		x.DiffFiles, x.DiffAdd, x.DiffDel = ts.DiffFiles, ts.DiffAdd, ts.DiffDel
-		x.RemoteID = ts.ID
-		if to == model.StatusMerged {
-			x.MergedCommit = ts.MergedCommit
-		}
-		if ts.Branch != "" {
-			name := ts.Branch[strings.LastIndex(ts.Branch, "/")+1:]
-			x.Worktree = &model.Worktree{Name: name, Branch: ts.Branch} // no Path: the files are on the runner
-		}
-		x.Error, x.Resumable = "", false
-		if to == model.StatusQueued {
-			x.Resumable, x.Rejoin = true, true
-		} else {
-			x.Waiting = "" // e.g. finished on the runner while queued here
-		}
-		if to == model.StatusReview {
-			x.Error = ts.Error // e.g. why an approved task wasn't merged after all
-		}
-		if to == model.StatusFailed {
-			x.Error, x.Resumable = ts.Error, ts.Session
-			if ts.Status == model.StatusDraft {
-				x.Error = "canceled on " + r.Name
-			}
-		}
-		if before.Status != x.Status {
-			now := time.Now()
-			switch to {
-			case model.StatusReview, model.StatusFailed, model.StatusMerged:
-				x.FinishedAt = &now
-			}
-		}
+		copyReport(x, ts, next, r.Name)
 		if reflect.DeepEqual(before, *x) {
 			return errSkip
 		}
@@ -687,6 +627,96 @@ func (d *Dispatcher) applyTask(r tunnel.Runner, ts TaskState, answer bool) error
 		}
 	}
 	return err
+}
+
+// adopts reports whether runner r, saying task x is now in status to (the
+// hub's), takes it over: a task the runner took but the hub never recorded
+// as sent (the hub stopped between the two) is the runner's, as sending it
+// again would run it twice, on another runner or from scratch on this one.
+func adopts(x *model.Todo, p model.Project, r tunnel.Runner, to model.TodoStatus) bool {
+	return x.Status == model.StatusQueued && x.Runner == "" && x.RemoteID == "" &&
+		to == model.StatusInProgress && slices.Contains(p.Runners, r.ID)
+}
+
+// applyMerged applies ts to x, a merged task: it is done, and only a revert
+// (or its conflict) may follow. undo: the revert conflicted just now. It
+// returns errSkip if x didn't change.
+func applyMerged(x *model.Todo, ts TaskState) (undo bool, err error) {
+	if ts.Status != model.StatusMerged {
+		return false, errSkip
+	}
+	before := *x
+	if x.MergedCommit == "" {
+		x.MergedCommit = ts.MergedCommit
+	}
+	if ts.Revert != nil {
+		x.Revert, x.RevertConflict, x.Error = ts.Revert, nil, ""
+	}
+	if len(ts.RevertConflict) > 0 && len(x.RevertConflict) == 0 {
+		x.RevertConflict, undo = ts.RevertConflict, true
+	}
+	if ts.Error != "" && ts.Revert == nil && !undo && len(x.RevertConflict) == 0 {
+		x.Error = ts.Error // e.g. "Revert failed: …"
+	}
+	if reflect.DeepEqual(before, *x) {
+		return undo, errSkip
+	}
+	return undo, nil
+}
+
+// nextStatus returns the status task x moves to when its runner reports
+// status to (the hub's), and false if it can't move there.
+func nextStatus(x model.Todo, to model.TodoStatus) (model.TodoStatus, bool) {
+	if x.Status == to || model.CanTransition(x.Status, to) {
+		return to, true
+	}
+	if to == model.StatusInProgress && model.CanTransition(x.Status, model.StatusQueued) {
+		// Running again on the runner (back after an interruption, or sent
+		// back to Claude there): queued here, the hub sends it to the same
+		// runner, which answers that it is on it.
+		return model.StatusQueued, true
+	}
+	return "", false
+}
+
+// copyReport moves x to status to and copies onto it what its runner,
+// runnerName, reports in ts.
+func copyReport(x *model.Todo, ts TaskState, to model.TodoStatus, runnerName string) {
+	from := x.Status
+	x.Status = to
+	x.Summary, x.CostUSD, x.Runs, x.Checks, x.PR = ts.Summary, ts.CostUSD, ts.Runs, ts.Checks, ts.PR
+	x.RunStats = ts.RunStats
+	x.DiffFiles, x.DiffAdd, x.DiffDel = ts.DiffFiles, ts.DiffAdd, ts.DiffDel
+	x.RemoteID = ts.ID
+	if to == model.StatusMerged {
+		x.MergedCommit = ts.MergedCommit
+	}
+	if ts.Branch != "" {
+		name := ts.Branch[strings.LastIndex(ts.Branch, "/")+1:]
+		x.Worktree = &model.Worktree{Name: name, Branch: ts.Branch} // no Path: the files are on the runner
+	}
+	x.Error, x.Resumable = "", false
+	if to == model.StatusQueued {
+		x.Resumable, x.Rejoin = true, true
+	} else {
+		x.Waiting = "" // e.g. finished on the runner while queued here
+	}
+	switch to {
+	case model.StatusReview:
+		x.Error = ts.Error // e.g. why an approved task wasn't merged after all
+	case model.StatusFailed:
+		x.Error, x.Resumable = ts.Error, ts.Session
+		if ts.Status == model.StatusDraft {
+			x.Error = "canceled on " + runnerName
+		}
+	}
+	if from != to {
+		switch to {
+		case model.StatusReview, model.StatusFailed, model.StatusMerged:
+			now := time.Now()
+			x.FinishedAt = &now
+		}
+	}
 }
 
 // finishedThere reports whether a runner's news that a task the hub has
