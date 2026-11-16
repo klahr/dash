@@ -15,7 +15,6 @@ Most important first within each section.
 
 ## Running it
 
-- [ ] Optional sandbox for Claude's runs (container or user with limited rights).
 
 ## Go live
 
