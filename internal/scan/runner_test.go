@@ -410,6 +410,12 @@ func TestRunToolsNeedApproval(t *testing.T) {
 		t.Helper()
 		req := fx.exec.reqs[len(fx.exec.reqs)-1]
 		dir = req.Dir
+		// The run removed its worktree, but Confine resolves the dir's
+		// symlinks (/var -> /private/var on macOS) as the runner did while
+		// it existed: bring it back so the expected rules match.
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
 		for i, a := range req.ExtraArgs {
 			if a == "--allowedTools" {
 				return req.ExtraArgs[i+1]
