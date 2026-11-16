@@ -1031,7 +1031,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
   .plan-st.is-done button { color: var(--text); }
   .plan-st.is-current .plan-st-mark { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
   .plan-st.is-current button { color: var(--text); }
-  .plan-st.is-later button { opacity: .55; }
+  .plan-st.is-later button:disabled { opacity: .55; } /* inactive: exempt from contrast */
 }
 
 /* Topics: done, open or skipped, and those asked about now. */
@@ -2223,7 +2223,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 /* ---- split a task: Claude's proposed parts ---- */
 .split-parts { list-style: none; margin: 12px -3px 4px; padding: 3px; display: flex; flex-direction: column; gap: 12px; max-height: min(60dvh, 640px); overflow-y: auto; }
 .split-part { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--raised); }
-.split-part.saved { opacity: .6; }
+.split-part.saved { background: transparent; } /* not opacity: its text keeps 4.5:1 */
 .split-head { display: flex; align-items: center; gap: 8px; }
 .split-num { flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--surface); color: var(--muted); font-size: var(--fs-s); font-weight: 650; }
 .split-title { flex: 1; min-width: 0; font-weight: 600; }
@@ -2361,7 +2361,6 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .claude-ignored > summary { cursor: pointer; }
 .claude-ignored > summary .section-head { display: inline; margin: 0; }
 .claude-ignored > .hint { margin: 6px 0 8px; }
-.claude-ignored .claude-components, .claude-ignored .claude-incidents { opacity: .75; }
 .claude-ignored .claude-incidents { margin-top: 6px; }
 .claude-ignored-tag { margin-left: 6px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-pill); font-size: var(--fs-xs); }
 /* Account → Claude status → Components */
@@ -2745,7 +2744,7 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .scan-actions { display: flex; flex-wrap: wrap; gap: 0 14px; font-size: var(--fs-s); }
 .scan-actions .link { min-height: 32px; }
 .scan-actions .link.danger { color: var(--failed); }
-.scan-card.shadowed { opacity: .75; border-style: dashed; }
+.scan-card.shadowed { background: transparent; border-style: dashed; } /* not opacity: its text keeps 4.5:1 */
 .scan-shadow-tag { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .04em; color: var(--failed); }
 .scan-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 14px; }
 .scan-form-grid .field { margin: 8px 0; }
@@ -3021,7 +3020,7 @@ button.goal-task-open:hover { background: var(--raised); }
 .goal-task-sub { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: var(--fs-xs); color: var(--muted); }
 .goal-task-sub .status { font-weight: 600; }
 .goal-task.s-merged .goal-task-title { color: var(--muted); }
-.goal-task.proposed { opacity: .75; }
+.goal-task.proposed .goal-task-title { color: var(--muted); } /* not opacity: its text keeps 4.5:1 */
 .goal-task.proposed .split-num { border: 1px dashed var(--line); background: transparent; }
 
 .goal-budget { display: grid; gap: 10px; }

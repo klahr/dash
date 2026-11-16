@@ -68,8 +68,8 @@ export function renderGraph(res) {
       h("span", { class: "graph-lane" },
         graphLines(up, width, false), graphLines(down, width, true),
         h("span", { class: dot, style: `--x:${col * LANE_W + LANE_W / 2}px;--c:var(--lane-${color})` })),
-      h("span", { class: "graph-commit", role: "button", tabindex: "0", "aria-controls": "commit-detail", "aria-current": selected ? "true" : null, "aria-label": `Commit ${c.short}: ${c.subject}`, onclick: open, onkeydown: open },
-        h("code", { class: "graph-sha" }, c.short),
+      h("span", { class: "graph-commit", role: "button", tabindex: "0", "aria-controls": "commit-detail", "aria-current": selected ? "true" : null, onclick: open, onkeydown: open },
+        h("span", { class: "sr-only" }, "Commit "), h("code", { class: "graph-sha" }, c.short),
         ...(c.refs || []).map(graphRef),
         h("span", { class: "graph-subject" }, c.subject),
         h("span", { class: "graph-meta" }, `${c.author} · ${c.when}`)));

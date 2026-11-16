@@ -339,6 +339,7 @@ async function loadGitHubRepos(refresh = false) {
   // A message in the list's place, with a way on: from a URL, or trying again.
   const note = (msg, { retry = false, loading = false } = {}) => {
     hint.textContent = "";
+    ghListbox(false);
     $("#gh-list").replaceChildren(h("div", { class: `gh-empty gh-note${loading ? " loading" : ""}`, role: loading ? "status" : retry ? "alert" : null },
       loading ? h("span", { class: "spinner", "aria-hidden": "true" }) : null,
       h("span", { class: "gh-note-text" }, msg),
@@ -363,6 +364,11 @@ async function loadGitHubRepos(refresh = false) {
   if (sheetRunner()?.id === r.id && hubMode() === "gh") renderGitHubRepos();
 }
 
+// The list is a listbox only while it holds repositories: a message in its
+// place, with its own buttons, isn't an option.
+function ghListbox(on) {
+  $("#gh-list").setAttribute("role", on ? "listbox" : "group");
+}
 // renderGitHubRepos shows the cached list, filtered, grouped by owner. A
 // repository that already has a project is marked and can't be picked.
 function renderGitHubRepos() {
@@ -389,6 +395,7 @@ function renderGitHubRepos() {
       x.description ? h("span", { class: "gh-repo-desc" }, x.description) : null,
       h("span", { class: "gh-repo-meta" }, ...ghRepoHints(x).map((t) => h("span", {}, t)), x.linked ? h("span", { class: "gh-linked" }, `project: ${x.linked}`) : null)));
   } });
+  ghListbox(rows.some((r) => r.getAttribute("role") === "option"));
   $("#gh-list").replaceChildren(...(rows.length ? rows : [h("div", { class: "gh-empty" }, all.length ? "No repository matches." : "No repositories on GitHub yet: create one instead.")]));
   $("#gh-hint").replaceChildren(more > 0 ? `${more} more; type to narrow the list. `
     : all.length ? `${plural(all.length, "repository", "repositories")} from ${r.name}'s gh, signed in as ${res.user}. ` : "",
@@ -650,6 +657,8 @@ function renderBrand() {
   const p = state.project, brand = $(".brand");
   brand.querySelector(".brand-icon, #brand-logo").replaceWith(p ? projectIcon(p, h("span", { class: "side-project-icon brand-icon", "aria-hidden": "true" })) : dashBrand.logo);
   $("#brand-name").textContent = p ? p.name : dashBrand.name;
+  // Its name starts with the text it shows (WCAG's label in name).
+  brand.setAttribute("aria-label", p ? `${p.name}, ${dashBrand.name} home` : `${dashBrand.name} home`);
   brand.classList.toggle("is-project", !!p);
 }
 // A project list's two-line label: the name line, and under it, smaller and
@@ -675,13 +684,13 @@ export function renderSideProjects() {
     return h("li", { class: cur ? "current" : "" },
       h("button", {
         type: "button", class: "side-project", title: [p.name, sub, p.path, stLabel].filter(Boolean).join("\n"), "aria-current": cur ? "true" : "false",
-        "aria-label": [p.name, sub, stLabel.toLowerCase(), badge?.label].filter(Boolean).join(", "),
         onclick: attempt(async () => { await selectProject(p); setMenu(false); }),
       },
       icon,
       projectLabel(h("span", { class: "side-project-name" }, p.name), sub, "side-project-text"),
       sharedMark(p),
-      badge ? badgeEl(badge, "side-project-branch") : cur && baseBranch(p) ? h("span", { class: "side-project-branch" }, baseBranch(p)) : null),
+      badge ? badgeEl(badge, "side-project-branch") : cur && baseBranch(p) ? h("span", { class: "side-project-branch" }, baseBranch(p)) : null,
+      stLabel ? h("span", { class: "sr-only" }, `, ${stLabel.toLowerCase()}`) : null),
       cur ? ciBuilding : null);
   };
   const items = withHeadings(projectGroups(), (g) => h("li", { class: "side-machine", "data-group": g.key }, groupHead(g)), item);
@@ -830,6 +839,12 @@ function setSideWidth(w, save = true) {
   if (w) $(".app").style.setProperty("--side-w-set", `${w}px`);
   else $(".app").style.removeProperty("--side-w-set");
   if (save) store.set("dash.sideW", w || null);
+  sideResizeValue();
+}
+// A focusable separator tells screen readers where it is: the sidebar's width.
+function sideResizeValue() {
+  const w = Math.round($(".sidebar").getBoundingClientRect().width);
+  if (w) $("#side-resize").setAttribute("aria-valuenow", w);
 }
 setSideWidth(Number(store.get("dash.sideW")) || null, false);
 {
@@ -851,6 +866,7 @@ setSideWidth(Number(store.get("dash.sideW")) || null, false);
     handle.addEventListener("pointercancel", up, { once: true });
   });
   handle.addEventListener("dblclick", () => setSideWidth(null));
+  handle.addEventListener("focus", sideResizeValue);
   handle.addEventListener("keydown", (e) => {
     const step = e.shiftKey ? 64 : 16;
     const d = e.key === "ArrowRight" ? step : e.key === "ArrowLeft" ? -step : 0;

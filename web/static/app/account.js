@@ -18,6 +18,7 @@ export async function loadMe() {
   $("#foot-user").textContent = name;
   $("#foot-avatar").textContent = [...name][0].toUpperCase();
   $("#foot-menu summary").title = `Account menu · ${name}${me.org ? ` in ${me.org.name}` : ""}`;
+  $("#foot-menu summary").setAttribute("aria-label", `${name}, account menu`);
   const orgs = me.orgs || [];
   const sw = $("#org-switch");
   sw.hidden = orgs.length < 2;

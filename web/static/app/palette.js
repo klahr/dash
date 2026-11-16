@@ -252,14 +252,10 @@ document.addEventListener("keydown", (e) => {
     k = `ctrl+${k}`;
   }
   if (k === "Shift" || k === "Control") return;
-  // Tab moves between the sections and projects lists; elsewhere it stays native.
-  if (k === "Tab" && sidebarList(target)) {
-    e.preventDefault();
-    keys.count = 0; keys.pending = "";
-    sidebarList(target) === SECTIONS ? openProjects() : openSections();
-    setMode();
-    return;
-  }
+  // Tab stays native, in the sidebar too: switching between the sections and
+  // projects lists on Tab trapped keyboard users there (WCAG 2.1.2), and hid
+  // the other sections from Tab. o switches between the lists instead.
+  if (k === "Tab") return;
   // Keyboard users activating a focused control keep the browser's behaviour
   // (except sections, which also close the open todo and leave the list).
   // Enter on a focused Review card approves it, like its Approve chip;

@@ -494,6 +494,12 @@ function setChatWidth(w, save = true) {
   if (pane.width) $(".app").style.setProperty("--chat-w", `${pane.width}px`);
   else $(".app").style.removeProperty("--chat-w");
   if (save) savePane();
+  chatResizeValue();
+}
+// A focusable separator tells screen readers where it is: the pane's width.
+function chatResizeValue() {
+  const w = Math.round($("#chat-pane").getBoundingClientRect().width);
+  if (w) $("#pc-resize").setAttribute("aria-valuenow", w);
 }
 {
   const handle = $("#pc-resize"), panel = $("#chat-pane");
@@ -514,6 +520,7 @@ function setChatWidth(w, save = true) {
     handle.addEventListener("pointercancel", up, { once: true });
   });
   handle.addEventListener("dblclick", () => setChatWidth(null));
+  handle.addEventListener("focus", chatResizeValue);
   handle.addEventListener("keydown", (e) => {
     const step = e.shiftKey ? 64 : 16;
     const d = e.key === "ArrowLeft" ? step : e.key === "ArrowRight" ? -step : 0;

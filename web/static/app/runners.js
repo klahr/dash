@@ -248,14 +248,14 @@ export function renderSideRunners() {
     const diskWarn = diskWarning(r);
     return h("li", {}, h("button", {
       type: "button", class: "side-runner", title: [`${r.name}: ${st.text}`, diskWarn, update].filter(Boolean).join("\n"),
-      "aria-label": [r.name, count, diskWarn ? "disk nearly full" : "", outdated ? "update available" : ""].filter(Boolean).join(", "),
       onclick: attempt(async () => { setMenu(false); await openRunners(r.id); }),
     },
     h("span", { class: "side-runner-icon", "aria-hidden": "true" }, h("span", { class: `machine-dot ${tone(r)}` }), outdated ? h("span", { class: "side-runner-badge" }, "⬆") : null),
     h("span", { class: "side-runner-name" }, r.name),
     diskWarn ? h("span", { class: "side-runner-disk", "aria-hidden": "true" }, ico("alert")) : null,
     outdated ? h("span", { class: "side-runner-update", "aria-hidden": "true" }, "⬆") : null,
-    h("span", { class: "side-runner-count" }, count)));
+    h("span", { class: "side-runner-count" }, count),
+    diskWarn || outdated ? h("span", { class: "sr-only" }, (diskWarn ? ", disk nearly full" : "") + (outdated ? ", update available" : "")) : null));
   };
   const sorted = [...list].sort(byStatus);
   // Past the limit, only offline runners fold: online ones always show.
