@@ -597,7 +597,7 @@ func TestCheckServer(t *testing.T) {
 	}
 }
 
-func TestHubRecordsTheRunnersVersion(t *testing.T) {
+func TestHubRecordsTheRunnersVersionAndPlatform(t *testing.T) {
 	t.Parallel()
 
 	th := newTestHub(t)
@@ -605,23 +605,31 @@ func TestHubRecordsTheRunnersVersion(t *testing.T) {
 	states := &stateLog{ch: make(chan bool, 16)}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	cl := &Client{Creds: creds, Handler: runnerAPI(), OnState: states.on, Version: "v1.2.3"}
+	cl := &Client{Creds: creds, Handler: runnerAPI(), OnState: states.on, Version: "v1.2.3", Platform: "windows/arm64"}
 	go func() { _ = cl.Run(ctx); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })
 	states.want(t, true)
 	th.waitOnline(t, "work")
 	for deadline := time.Now().Add(5 * time.Second); ; {
 		l := th.List()
-		if len(l) == 1 && l[0].Version == "v1.2.3" {
+		if len(l) == 1 && l[0].Version == "v1.2.3" && l[0].OS == "windows" && l[0].Arch == "arm64" {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("runners %+v, want version v1.2.3", l)
+			t.Fatalf("runners %+v, want version v1.2.3 on windows/arm64", l)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
 	if got := cleanVersion("v1 <script>"); got != "" {
 		t.Fatalf("junk version kept: %q", got)
+	}
+	for _, junk := range []string{"", "linux", "linux/", "/amd64", "Linux/amd64", "linux/amd64/x", "<b>/amd64"} {
+		if got := parsePlatform(junk); got != (platform{}) {
+			t.Fatalf("junk platform %q kept: %+v", junk, got)
+		}
+	}
+	if got := parsePlatform("darwin/arm64"); got != (platform{"darwin", "arm64"}) {
+		t.Fatalf("parsePlatform(darwin/arm64) = %+v", got)
 	}
 }
 

@@ -1191,7 +1191,9 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 @media (min-width: 760px) {
   .rail-item.runner-rail { max-width: none; min-height: 48px; padding-block: 6px; }
   .runner-rail-state { display: block; font-size: var(--fs-xs); font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .runner-rail-os { margin-left: auto; }
   .runner-rail-warn { margin-left: auto; }
+  .runner-rail-os + .runner-rail-warn { margin-left: 0; }
   #runners-nav .rail-group:last-child { margin-top: auto; }
 }
 .runners-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -1237,6 +1239,10 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-meta:empty { display: none; }
 .runner-owner { display: inline-flex; align-items: center; gap: 4px; }
 .runner-owner .ico { width: 14px; height: 14px; }
+/* A runner's operating system: its logo (devicon, TECH_ICONS) and name. */
+.runner-os { display: inline-flex; align-items: center; gap: 4px; }
+.runner-os .ico, .runner-rail-os .ico, .side-runner-os .ico { width: 14px; height: 14px; }
+.runner-rail-os, .side-runner-os { flex: none; display: inline-flex; color: var(--muted); }
 .runner-account { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; }
 .runner-account .ico { flex: none; width: 14px; height: 14px; }
 .runner-account-email { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

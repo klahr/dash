@@ -263,8 +263,9 @@ listen on a port of its own unless you pass `-addr` (then it also needs `DASH_US
 A runner belongs to whoever made its code, in the org they were working in: its token is one of
 their [tokens](users.md#tokens), pinned to that org, and stops working if they leave it. The
 Organization page lists the org's runners (other orgs never see them) as online or offline, with
-when each was last seen, whose it is, the Dash version it runs, how many tasks it is running and
-its owner's Claude usage. It also shows the runner's Claude Code version. If Claude Code changes in a
+when each was last seen, whose it is, its operating system (macOS, Linux or Windows, with its
+logo), the Dash version it runs, how many tasks it is running and its owner's Claude usage. A
+runner shows its operating system once it has connected with this version of Dash. It also shows the runner's Claude Code version. If Claude Code changes in a
 way Dash relies on, the runner shows a warning, and so does the log of each task it runs. The runner
 checks the version and whether `claude -p` still accepts `--output-format stream-json` and
 `--permission-prompt-tool` when it starts and every hour. On every run, it checks that the

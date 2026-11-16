@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -125,6 +126,9 @@ type Client struct {
 	Previews PreviewDialer
 	// Version is this runner's Dash version, told to the hub on connect.
 	Version string
+	// Platform is this runner's "os/arch", told to the hub on connect so the
+	// Runners page can show it ("": runtime.GOOS/runtime.GOARCH).
+	Platform string
 	// NotesKey is this runner's shared notes public key (base64), told to
 	// the hub on connect so it can show its fingerprint. Optional.
 	NotesKey string
@@ -201,6 +205,11 @@ func (c *Client) serveOnce(ctx context.Context) error {
 	if notesKey != "" {
 		hdr.Set(NotesKeyHeader, notesKey)
 	}
+	platform := c.Platform
+	if platform == "" {
+		platform = runtime.GOOS + "/" + runtime.GOARCH
+	}
+	hdr.Set(PlatformHeader, platform)
 	ws, res, err := c.dialer().DialContext(ctx, u.String(), hdr)
 	if err != nil {
 		if res != nil && res.StatusCode == http.StatusUnauthorized {

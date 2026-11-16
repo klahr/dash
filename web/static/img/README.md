@@ -33,4 +33,4 @@ demo.sh starts a hub and a runner in /tmp/landing-demo with a stand-in for Claud
 lane and three goals (seed.mjs). The project's remote is `https://git.example.com/acme/acme-shop.git`,
 which the demo's own git settings map to a local server (gitserve). No database is kept.
 
-The technology logos on the Run and Deploy buttons (TECH_ICONS in ../app/dom.js) are inlined from devicon (https://github.com/devicons/devicon), MIT License, Copyright (c) 2015 konpa.
+The technology logos on the Run and Deploy buttons and the runners' operating systems (TECH_ICONS in ../app/dom.js) are inlined from devicon (https://github.com/devicons/devicon), MIT License, Copyright (c) 2015 konpa.

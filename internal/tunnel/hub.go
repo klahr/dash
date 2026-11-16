@@ -73,6 +73,10 @@ type Runner struct {
 	// Owner registered the runner: its token acts as them, in their org.
 	Owner   *store.RunnerOwner `json:"owner,omitempty"`
 	Version string             `json:"version,omitempty"` // the Dash it last connected with, e.g. 1.2.0
+	// OS and Arch are the GOOS and GOARCH it last connected with, e.g.
+	// "darwin" and "arm64" ("" from a runner too old to say).
+	OS   string `json:"os,omitempty"`
+	Arch string `json:"arch,omitempty"`
 	// NotesKey is the public key the runner seals shared notes keys with,
 	// as it told the hub, and NotesFingerprint its short form. Shown so a
 	// user knows which fingerprint to look for; runners never take it from
@@ -156,6 +160,8 @@ type record struct {
 	Parallel  int       `json:"parallel,omitempty"`
 	Paused    bool      `json:"paused,omitempty"`
 	Version   string    `json:"version,omitempty"`
+	OS        string    `json:"os,omitempty"`        // see Runner.OS
+	Arch      string    `json:"arch,omitempty"`      // see Runner.Arch
 	NotesKey  string    `json:"notes_key,omitempty"` // public: see Runner.NotesKey
 	// Its self-update (update.go).
 	AutoUpdate bool          `json:"auto_update,omitempty"`
@@ -540,7 +546,7 @@ func (h *Hub) ListBare() []Runner {
 
 func (h *Hub) viewLocked(r *record, online bool, owner *store.RunnerOwner) Runner {
 	v := Runner{ID: r.ID, Name: r.Name, Online: online, Created: r.Created, LastSeen: r.LastSeen, Owner: owner,
-		Version: r.Version, Parallel: r.Parallel, Paused: r.Paused, AutoUpdate: r.AutoUpdate, NotesKey: r.NotesKey}
+		Version: r.Version, OS: r.OS, Arch: r.Arch, Parallel: r.Parallel, Paused: r.Paused, AutoUpdate: r.AutoUpdate, NotesKey: r.NotesKey}
 	if k, err := notes.ParsePublicKey(r.NotesKey); err == nil {
 		v.NotesFingerprint = k.Fingerprint()
 	}
@@ -659,10 +665,10 @@ func (h *Hub) registeredLocked(id string) bool {
 	return slices.ContainsFunc(h.runners, func(x *record) bool { return x.ID == id })
 }
 
-// touch records that runner id (dis)connected, running version and with
-// shared notes key notesKey when those aren't "" (it connected: its update
-// is settled, see connectedLocked).
-func (h *Hub) touch(id, version, notesKey string) {
+// touch records that runner id (dis)connected, running version, on platform
+// (os and arch) and with shared notes key notesKey when those aren't "" (it
+// connected: its update is settled, see connectedLocked).
+func (h *Hub) touch(id, version string, plat platform, notesKey string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for _, r := range h.runners {
@@ -671,6 +677,9 @@ func (h *Hub) touch(id, version, notesKey string) {
 			if version != "" {
 				r.Version = version
 				h.connectedLocked(r, version)
+			}
+			if plat.os != "" {
+				r.OS, r.Arch = plat.os, plat.arch
 			}
 			if notesKey != "" {
 				r.NotesKey = notesKey
@@ -682,6 +691,25 @@ func (h *Hub) touch(id, version, notesKey string) {
 
 // VersionHeader carries the runner's Dash version when it connects.
 const VersionHeader = "X-Dash-Version"
+
+// PlatformHeader carries the runner's "os/arch" (GOOS/GOARCH, e.g.
+// "darwin/arm64") when it connects.
+const PlatformHeader = "X-Dash-Platform"
+
+// platform is a runner's GOOS and GOARCH.
+type platform struct{ os, arch string }
+
+var platformPartRe = regexp.MustCompile(`^[a-z0-9]{1,16}$`)
+
+// parsePlatform is the "os/arch" a runner sent, or the zero platform if it
+// sent none or junk.
+func parsePlatform(v string) platform {
+	goos, goarch, ok := strings.Cut(v, "/")
+	if !ok || !platformPartRe.MatchString(goos) || !platformPartRe.MatchString(goarch) {
+		return platform{}
+	}
+	return platform{goos, goarch}
+}
 
 // NotesKeyHeader carries the runner's shared notes public key when it
 // connects (notes.PublicKey, base64).
@@ -790,8 +818,9 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 	if k, err := notes.ParsePublicKey(r.Header.Get(NotesKeyHeader)); err == nil {
 		notesKey = k.String()
 	}
-	h.touch(rec.ID, version, notesKey)
-	slog.Info("runner connected", "name", rec.Name, "version", version)
+	plat := parsePlatform(r.Header.Get(PlatformHeader))
+	h.touch(rec.ID, version, plat, notesKey)
+	slog.Info("runner connected", "name", rec.Name, "version", version, "os", plat.os, "arch", plat.arch)
 	h.changed()
 	if h.OnState != nil {
 		h.OnState(rec.ID, true)
@@ -807,7 +836,7 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 	h.idle().CloseIdleConnections() // pooled streams of the dead tunnel
 	if current {
-		h.touch(rec.ID, "", "")
+		h.touch(rec.ID, "", platform{}, "")
 		slog.Info("runner disconnected", "name", rec.Name)
 		h.changed()
 		if h.OnState != nil {

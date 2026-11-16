@@ -66,6 +66,26 @@ export async function loadRunners() {
 }
 export const runnerName = (id) => state.runners?.find((r) => r.id === id)?.name || "its runner";
 
+// runnerOS is the operating system r last connected from: its name, logo
+// (TECH_ICONS; null for one without) and label with the architecture, or
+// null when r hasn't said (it runs a Dash from before it did).
+const osNames = { darwin: ["macOS", "apple"], linux: ["Linux", "linux"], windows: ["Windows", "windows11"] };
+export function runnerOS(r) {
+  if (!r.os) return null;
+  const [name, icon] = osNames[r.os] || [r.os, null];
+  return { name, icon, label: r.arch ? `${name} (${r.arch})` : name };
+}
+// osLogo is r's OS logo with its label as tooltip and for screen readers.
+const osLogo = (r, cls) => {
+  const os = runnerOS(r);
+  return os?.icon ? h("span", { class: cls, role: "img", title: os.label, "aria-label": os.label }, ico(os.icon)) : null;
+};
+// osChip is r's OS logo and name, for its lines of details.
+const osChip = (r) => {
+  const os = runnerOS(r);
+  return os ? h("span", { class: "runner-os", title: `Operating system: ${os.label}` }, os.icon ? ico(os.icon) : null, os.label) : null;
+};
+
 // The hub never runs Claude: tasks and scans of p run only on a runner
 // linked to it. runnerNeeded says why they would wait now, or "" (also on a
 // Dash without runners of its own, a runner, and for another computer's project).
@@ -247,11 +267,12 @@ export function renderSideRunners() {
     const update = outdated ? `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run on ${r.name}:\n${installCmd()}` : "";
     const diskWarn = diskWarning(r);
     return h("li", {}, h("button", {
-      type: "button", class: "side-runner", title: [`${r.name}: ${st.text}`, diskWarn, update].filter(Boolean).join("\n"),
+      type: "button", class: "side-runner", title: [`${r.name}: ${st.text}`, runnerOS(r)?.label, diskWarn, update].filter(Boolean).join("\n"),
       onclick: attempt(async () => { setMenu(false); await openRunners(r.id); }),
     },
     h("span", { class: "side-runner-icon", "aria-hidden": "true" }, h("span", { class: `machine-dot ${tone(r)}` }), outdated ? h("span", { class: "side-runner-badge" }, "⬆") : null),
     h("span", { class: "side-runner-name" }, r.name),
+    osLogo(r, "side-runner-os"),
     diskWarn ? h("span", { class: "side-runner-disk", "aria-hidden": "true" }, ico("alert")) : null,
     outdated ? h("span", { class: "side-runner-update", "aria-hidden": "true" }, "⬆") : null,
     h("span", { class: "side-runner-count" }, count),
@@ -329,9 +350,10 @@ function paintRunnerNav(list) {
       h("span", { class: "runner-rail-text" },
         h("span", { class: "runner-rail-name" }, r.name),
         h("span", { class: "runner-rail-state" }, st.text)),
+      osLogo(r, "runner-rail-os"),
       runnerWarned(r) ? h("span", { class: "runner-rail-warn", title: runnerWarnText(r) }, ico("alert")) : null);
     b.classList.add("runner-rail", `tone-${st.tone}`);
-    b.title = `${r.name}: ${st.text}`;
+    b.title = [`${r.name}: ${st.text}`, runnerOS(r)?.label].filter(Boolean).join("\n");
     return b;
   };
   const group = (head, ...items) => h("div", { class: "rail-group" }, head ? h("span", { class: "rail-head" }, head) : null, ...items);
@@ -412,6 +434,7 @@ function paintOverview(list) {
         h("span", { class: "runner-name" }, r.name),
         h("span", { class: "runner-row-sub" },
           h("span", { class: "runner-state" }, st.text),
+          osChip(r),
           showOwner && r.owner ? h("span", { class: "runner-owner" }, ico("users"), r.owner.username) : null,
           accountChip(r),
           h("span", {}, n ? plural(n, "project") : "No projects"),
@@ -446,6 +469,7 @@ function paintRunner(r) {
     h("div", { class: "runner-meta" },
       r.owner && !r.mine ? h("span", { class: "runner-owner" }, ico("users"), r.owner.username) : null,
       r.mine ? h("span", { class: "runner-owner" }, ico("users"), "Yours") : null,
+      osChip(r),
       r.version ? h("span", { class: `runner-version${outdated ? " warn" : ""}`, title: outdated ? `Out of date: the hub runs ${runnerInfo.version}` : "Dash version" }, `Dash ${r.version}`) : null,
       claude ? h("span", { class: `runner-version${claudeWarns.length ? " warn" : ""}`,
         title: claudeWarns.length ? "Claude Code version: its output or flags look different from what Dash expects" : "Claude Code version" },
