@@ -14,6 +14,7 @@ import (
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/fsutil"
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/queue"
@@ -487,7 +488,7 @@ func (sv *service) removeTodo(ctx context.Context, id string) error {
 func reviewedOnGitHub(t model.Todo) error {
 	if t.Status == model.StatusReview && t.WaitsOnGitHub() && t.Error == "" {
 		return fmt.Errorf("%w: pull request #%d is open on GitHub: review it there. A review asking for changes goes back to Claude; "+
-			"merge it there once it is approved and its checks pass", errBadRequest, t.PR.Number)
+			"merge it there, or with Merge pull request in Dash, once it is approved and its checks pass", errBadRequest, t.PR.Number)
 	}
 	return nil
 }
@@ -528,6 +529,45 @@ func (sv *service) approve(id string) (model.Todo, error) {
 		return t, err
 	}
 	return t, nil
+}
+
+// mergePR merges task t's open pull request on GitHub, with method
+// ("" for the project's merge method, else the repository's default). Whoever
+// may approve the task may merge it; GitHub decides whether the pull request
+// may be merged (branch protection is never bypassed). It runs with the gh
+// account of the computer that follows the pull request: this one, or for a
+// hub's task the runner that ran it.
+func (sv *service) mergePR(ctx context.Context, t model.Todo, method string) (queue.Merged, error) {
+	if method != "" && !gitops.ValidMergeMethod(method) {
+		return queue.Merged{}, fmt.Errorf("%w: method must be \"squash\", \"merge\" or \"rebase\"", errBadRequest)
+	}
+	if !t.WaitsOnGitHub() {
+		return queue.Merged{}, fmt.Errorf("%w: this task has no open pull request to merge", errBadRequest)
+	}
+	switch t.Status {
+	case model.StatusReview, model.StatusMerging, model.StatusFailed:
+	default:
+		return queue.Merged{}, fmt.Errorf("%w: only a task in review (or failed) with its pull request open can be merged", errBadRequest)
+	}
+	if t.OnRunner() {
+		if method == "" {
+			if p, err := sv.data.GetProject(t.ProjectID); err == nil {
+				method = p.MergeMethod
+			}
+		}
+		var res queue.Merged
+		err := sv.onRunner(ctx, t, func(ctx context.Context) error { return sv.s.Dispatch.MergePR(ctx, t, method, &res) })
+		return res, err
+	}
+	if sv.s.hub() {
+		return queue.Merged{}, errNotRunYet
+	}
+	if sv.s.Merges == nil {
+		return queue.Merged{}, fmt.Errorf("%w: this Dash doesn't follow pull requests", errBadRequest)
+	}
+	cctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	return sv.s.Merges.MergePR(cctx, t, method)
 }
 
 // revert undoes a merged task on its project's merge worker (or its runner's);

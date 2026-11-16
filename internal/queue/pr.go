@@ -19,8 +19,9 @@ import (
 
 // openPR is step 3 in "pr" mode: push the todo's branch and open (or update)
 // its pull request, as a draft until its checks pass. The todo then waits in
-// Review, where the pull request is reviewed and merged by a person on
-// GitHub (Dash never merges it), until pollPRs sees it merged or closed.
+// Review, where the pull request is reviewed on GitHub and merged by a
+// person (on GitHub, or with MergePR from Dash; Dash never merges it on its
+// own), until pollPRs sees it merged or closed.
 func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) error {
 	wt := *t.Worktree
 	if t.WaitsOnGitHub() {
@@ -91,6 +92,110 @@ func (m *MergeQueue) RejectPR(ctx context.Context, t model.Todo) error {
 	})
 	slog.Info("closed the pull request of a task rejected in Dash", "todo", t.ID, "pr", n)
 	return nil
+}
+
+// MergeRefused is GitHub refusing to merge a task's pull request (a
+// conflict, a failing required check, a missing review…): Reason is
+// GitHub's message. The task is left as it is.
+type MergeRefused struct{ Reason string }
+
+func (e *MergeRefused) Error() string { return e.Reason }
+
+// Merged is what MergePR did: merged the pull request, or added it to the
+// base branch's merge queue (Queued). As is the GitHub login it was done
+// as ("" when gh can't say).
+type Merged struct {
+	Number int    `json:"number"`
+	Method string `json:"method"`
+	Queued bool   `json:"queued,omitempty"`
+	As     string `json:"as,omitempty"`
+}
+
+// MergePR merges task t's open pull request on GitHub, as a person asked in
+// Dash, with method (gitops.MergeSquash…; "" is the project's, else the
+// repository's default) and the gh account signed in on this computer.
+// GitHub decides whether it may: branch protection is never bypassed. Once
+// merged the task is followed at once on the project's merge worker, so it
+// becomes merged (notifications, dependants, the checklist) without
+// waiting for the next poll; a pull request added to a merge queue is
+// followed as before until GitHub merges it.
+func (m *MergeQueue) MergePR(ctx context.Context, t model.Todo, method string) (Merged, error) {
+	if !t.WaitsOnGitHub() {
+		return Merged{}, &MergeRefused{Reason: "this task has no open pull request to merge"}
+	}
+	p, err := m.Store.GetProject(t.ProjectID)
+	if err != nil {
+		return Merged{}, err
+	}
+	p = p.For(t)
+	n := t.PR.Number
+	method = cmp.Or(method, p.MergeMethod)
+	if method == "" {
+		if method, err = m.Git.DefaultMergeMethod(ctx, p.ID, p.Path); err != nil {
+			return Merged{}, &MergeRefused{Reason: "can't tell how the repository merges pull requests: " + ghMessage(err)}
+		}
+	}
+	queued, err := m.Git.MergePR(ctx, p.ID, p.Path, n, method)
+	if err != nil {
+		var ce *gitops.CmdError
+		if errors.As(err, &ce) {
+			m.Log.Line(t, fmt.Sprintf("✖ GitHub didn't merge pull request #%d: %s", n, ghMessage(err)))
+			return Merged{}, &MergeRefused{Reason: fmt.Sprintf("GitHub didn't merge pull request #%d: %s", n, ghMessage(err))}
+		}
+		return Merged{}, err
+	}
+	as, _ := m.Git.GitHubLogin(ctx)
+	who := ""
+	if as != "" {
+		who = " as " + as
+	}
+	res := Merged{Number: n, Method: method, Queued: queued, As: as}
+	if queued {
+		m.Log.Line(t, fmt.Sprintf("⇢ pull request #%d queued to merge on GitHub from Dash%s", n, who))
+		return res, nil
+	}
+	m.Log.Line(t, fmt.Sprintf("⇣ pull request #%d merged on GitHub from Dash%s (%s)", n, who, method))
+	// Follow it now rather than at the next poll, on the project's worker
+	// like a poll (a merge lands after the merges in hand). Not waited for:
+	// it syncs the remote, which can take a while.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		_ = m.Do(ctx, p.ID, func(c context.Context) { m.followNow(c, t.ID) })
+	}()
+	return res, nil
+}
+
+// followNow follows task id's pull request once, if it is still open in
+// Dash.
+func (m *MergeQueue) followNow(ctx context.Context, id string) {
+	t, err := m.Store.GetTodo(id)
+	if err != nil || !t.WaitsOnGitHub() {
+		return
+	}
+	p, err := m.Store.GetProject(t.ProjectID)
+	if err != nil {
+		return
+	}
+	p = p.For(t)
+	st, err := m.Git.PRStatus(ctx, p.ID, p.Path, t.PR.Number)
+	if err != nil {
+		slog.Warn("pull request status after merging it", "todo", t.ID, "pr", t.PR.Number, "err", err)
+		return
+	}
+	m.followPR(ctx, t, p, st)
+}
+
+// ghMessage is what gh said about a failure: its output (GitHub's message)
+// rather than the command line.
+func ghMessage(err error) string {
+	var ce *gitops.CmdError
+	if errors.As(err, &ce) {
+		if msg := strings.TrimSpace(ce.Output); msg != "" {
+			return textutil.Clip(msg, 1000)
+		}
+	}
+	return err.Error()
 }
 
 // prError is a pull request that couldn't be pushed or opened: the task
@@ -207,7 +312,7 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 		}
 		if t.Status == model.StatusMerging {
 			// Approved in Dash before reviews moved to GitHub: Dash doesn't
-			// merge it, so it waits in review for a person to merge it there.
+			// merge it on its own, so it waits in review for a person to.
 			if x, err := m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
 				if x.Status == model.StatusMerging {
 					x.Status = model.StatusReview
@@ -270,7 +375,7 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 			m.blocked(t, fmt.Sprintf("%s%s fails, which isn't about the code. Fix it on GitHub (e.g. sign the CLA); Dash carries on once it passes", blockedPrefix(n), labels(other)))
 		default:
 			// Passing, or failing only checks that aren't required to merge:
-			// a person merges it on GitHub.
+			// a person merges it (on GitHub, or from Dash).
 			m.blocked(t, "")
 		}
 	}

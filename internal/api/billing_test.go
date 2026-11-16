@@ -91,6 +91,7 @@ func TestUnpaidOrgIsReadOnly(t *testing.T) {
 	for _, c := range []struct{ method, path, body string }{
 		{"PATCH", "/api/todos/" + td.ID, `{"title":"changed"}`},
 		{"POST", "/api/todos/" + td.ID + "/enqueue", ``},
+		{"POST", "/api/todos/" + td.ID + "/merge-pr", ``},
 		{"DELETE", "/api/todos/" + td.ID, ``},
 		{"PATCH", "/api/projects/" + p.ID, `{"name":"renamed"}`},
 	} {

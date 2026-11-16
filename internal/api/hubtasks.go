@@ -53,6 +53,7 @@ func (s *Server) hubTaskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/approve", s.hubTaskAction("approve"))
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/cancel", s.hubTaskAction("cancel"))
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/revert", s.hubTaskAction("revert"))
+	mux.HandleFunc("POST /api/hub/tasks/{htid}/merge-pr", s.hubTaskAction("merge-pr"))
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/test", s.hubTaskAction("test"))
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/open", s.hubTaskAction("open"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/diff", s.hubTaskAction("diff"))
@@ -735,6 +736,20 @@ func (s *Server) hubTaskAction(action string) http.HandlerFunc {
 				return
 			}
 			writeJSON(w, http.StatusAccepted, dispatch.StateOf(t))
+		case "merge-pr":
+			// The hub checked who may merge; the merge runs with this
+			// runner's gh, in its clone.
+			var req dispatch.MergePR
+			if err := decodeOptional(r, &req); err != nil {
+				writeErr(w, err)
+				return
+			}
+			res, err := sv.mergePR(r.Context(), t, req.Method)
+			if err != nil {
+				writeErr(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, res)
 		case "revert":
 			if err := sv.revert(r.Context(), t); err != nil {
 				writeErr(w, err)

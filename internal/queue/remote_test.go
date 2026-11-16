@@ -168,8 +168,10 @@ func TestRunTimeLimitStopsClaude(t *testing.T) {
 // prints whatever the test put in pr.json, the REST calls for reviews and
 // review comments print reviews.json and comments.json, the one for the
 // conversation tab's comments issues.json (none when missing), the GraphQL
-// query for review threads prints threads.json, and `pr merge` fails: Dash
-// never merges a pull request. Comments, replies, review requests and
+// query for review threads prints threads.json, and `pr merge` fails with
+// GitHub's refusal unless the test wrote merged.json, which it then makes
+// pr.json (a person merged it from Dash). `repo view` says the repository
+// squashes, and `api user` that gh is signed in as octocat. Comments, replies, review requests and
 // resolving threads succeed, unless the test made a file "down": then they
 // fail like an unreachable GitHub. Every call is logged to calls.
 func fakeGh(t *testing.T, dir string) (bin, stateFile string) {
@@ -181,8 +183,12 @@ func fakeGh(t *testing.T, dir string) (bin, stateFile string) {
 		"\"pr create\") echo https://github.com/o/r/pull/7 ;;\n" +
 		"\"pr view\") cat " + stateFile + " ;;\n" +
 		"\"pr ready\"|\"pr close\") ;;\n" +
+		"\"pr merge\") if [ -f " + file("merged.json") + " ]; then cp " + file("merged.json") + " " + stateFile + "; " +
+		"else echo 'X Pull request o/r#7 is not mergeable: the base branch policy prohibits the merge.' >&2; exit 1; fi ;;\n" +
+		"\"repo view\") echo '{\"viewerDefaultMergeMethod\":\"SQUASH\",\"squashMergeAllowed\":true,\"mergeCommitAllowed\":true}' ;;\n" +
 		"\"pr comment\") [ ! -f " + file("down") + " ] ;;\n" +
 		"\"api \"*) case \"$*\" in\n" +
+		"  \"api user\"*) echo octocat ;;\n" +
 		"  *resolveReviewThread*|*\"-X POST\"*) [ ! -f " + file("down") + " ] ;;\n" +
 		"  *graphql*) cat " + file("threads.json") + " 2>/dev/null || echo '{}' ;;\n" +
 		"  */reviews*) cat " + file("reviews.json") + " 2>/dev/null || echo '[]' ;;\n" +
@@ -309,6 +315,66 @@ func TestPullRequestMode(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(h.proj.Path, "pr.txt")); err != nil {
 		t.Fatal("local main should catch up with the merged PR")
+	}
+}
+
+// A person merges a task's approved, green pull request from Dash: GitHub
+// refusing it leaves the task as it was, with GitHub's message; once
+// merged, the task is marked merged at once, without waiting for a poll.
+func TestMergePullRequestFromDash(t *testing.T) {
+	parallel(t)
+
+	h, dir := prHarness(t, "merge.txt", model.Project{})
+	td := h.waitFor(h.add("merge it").ID, model.StatusReview)
+	head := gitRun(t, td.Worktree.Path, "rev-parse", "HEAD")
+	write(t, dir, "reviews.json", `[{"id":5,"user":{"login":"alice","type":"User"},"author_association":"COLLABORATOR","state":"APPROVED","body":""}]`)
+	write(t, dir, "pr.json", openPRView(head, `{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}`))
+	h.merges.pollPRs(context.Background(), "")
+	td, _ = h.st.GetTodo(td.ID)
+	if td.PR.Waits != model.PRWaitMerge {
+		t.Fatalf("want it ready to merge, got %+v", *td.PR)
+	}
+
+	// GitHub refuses (branch protection): its message, and nothing changes.
+	_, err := h.merges.MergePR(context.Background(), td, "")
+	var refused *MergeRefused
+	if !errors.As(err, &refused) || !strings.Contains(refused.Reason, "base branch policy prohibits the merge") {
+		t.Fatalf("want GitHub's refusal, got %v", err)
+	}
+	if x, _ := h.st.GetTodo(td.ID); x.Status != model.StatusReview || x.PR.State != "OPEN" || x.Error != "" {
+		t.Fatalf("a refused merge changed the task: %s %q %+v", x.Status, x.Error, *x.PR)
+	}
+
+	// GitHub merges it (here: the branch merged on origin, as GitHub would).
+	other := filepath.Join(filepath.Dir(h.proj.Path), "other")
+	gitRun(t, other, "fetch", "origin")
+	gitRun(t, other, "merge", "--squash", "origin/"+td.Worktree.Branch)
+	gitRun(t, other, "commit", "-m", "Merge PR 7")
+	gitRun(t, other, "push", "origin", "main")
+	sha := gitRun(t, other, "rev-parse", "HEAD")
+	write(t, dir, "merged.json", `{"state":"MERGED","mergeCommit":{"oid":"`+sha+`"}}`)
+	res, err := h.merges.MergePR(context.Background(), td, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res != (Merged{Number: 7, Method: "squash", As: "octocat"}) {
+		t.Fatalf("result %+v", res)
+	}
+	calls := ghCalls(t, dir)
+	if !strings.Contains(calls, "pr merge 7 --squash") || strings.Contains(calls, "--admin") || strings.Contains(calls, "--delete-branch") {
+		t.Fatalf("gh calls:\n%s", calls)
+	}
+	x := h.waitFor(td.ID, model.StatusMerged)
+	if x.MergedCommit != sha || x.PR.State != "MERGED" {
+		t.Fatalf("want merged at %s, got %s (%+v)", sha, x.MergedCommit, x.PR)
+	}
+	if log, _ := h.engine.Log.Read(td.ID); !strings.Contains(log, "merged on GitHub from Dash as octocat") {
+		t.Fatalf("log doesn't say who merged it:\n%s", log)
+	}
+
+	// A task without an open pull request has nothing to merge.
+	if _, err := h.merges.MergePR(context.Background(), x, ""); !errors.As(err, &refused) {
+		t.Fatalf("merging a merged task: %v", err)
 	}
 }
 

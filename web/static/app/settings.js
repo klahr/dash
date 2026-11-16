@@ -34,6 +34,7 @@ export function openSettings() {
   f.auto_push.checked = !!p.auto_push;
   f.auto_approve.checked = !!p.auto_approve;
   f.merge_mode.value = p.merge_mode || "local";
+  f.merge_method.value = p.merge_method || "";
   f.investigate_ci.checked = p.investigate_ci !== false;
   f.tag_format.value = p.tag_format || "X.Y.Z";
   checkTagFormat();
@@ -107,13 +108,14 @@ function syncMergeHint() {
   const pr = f.merge_mode.value === "pr";
   // On runners, merging is pushing: there's no separate push to turn on.
   $("#auto-push-row").hidden = pr || onRunners;
+  $("#merge-method-row").hidden = !pr;
   const who = onRunners ? "the runner" : "Dash";
   $("#auto-approve-hint").textContent = pr
-    ? "Pull requests whose checks pass wait for you to merge them on GitHub, without waiting for an approving review first. Dash never merges a pull request itself. Reviews asking for changes still go back to Claude."
+    ? "Pull requests whose checks pass wait for you to merge them, on GitHub or with Merge pull request in Dash, without waiting for an approving review first. Dash never merges a pull request on its own. Reviews asking for changes still go back to Claude."
     : "Finished tasks whose tests pass go straight to the merge queue instead of waiting for review, and the Review column is hidden while it's empty.";
   $("#merge-hint").textContent = !p.remote_url
     ? (pr ? "Connect a GitHub repository (Projects → Create GitHub repository) to open pull requests." : "")
-    : pr ? `When Claude finishes a task, ${who} pushes its branch and opens a draft pull request against ${baseBranch(p)}, marked ready for review once its checks pass. The task waits in Review while you review it on GitHub: failing checks, conflicts and reviews asking for changes go back to Claude, whose fixes are pushed to the same pull request. Closing it rejects the task. Dash never merges it: merge it on GitHub, and Dash marks the task merged.`
+    : pr ? `When Claude finishes a task, ${who} pushes its branch and opens a draft pull request against ${baseBranch(p)}, marked ready for review once its checks pass. The task waits in Review while you review it on GitHub: failing checks, conflicts and reviews asking for changes go back to Claude, whose fixes are pushed to the same pull request. Closing it rejects the task. Once it is approved and green, merge it on GitHub or with Merge pull request on the task (done with the gh account signed in on ${onRunners ? "the runner that ran it" : "this computer"}); Dash then marks the task merged. Dash never merges it on its own.`
     : onRunners ? `Approved tasks: the runner squashes the task onto ${baseBranch(p)}, runs the tests and pushes it, without waiting for GitHub's checks. If someone pushed first, it merges again on top; conflicts and failing tests go back to Claude.`
       : f.auto_push.checked ? `Before each merge Dash pulls ${baseBranch(p)} from GitHub, so pushes don't get rejected. GitHub's checks run only after it's pushed.` : "";
 }
@@ -179,6 +181,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     auto_push: f.auto_push.checked,
     auto_approve: f.auto_approve.checked,
     merge_mode: f.merge_mode.value,
+    merge_method: f.merge_method.value,
     investigate_ci: f.investigate_ci.checked,
     tag_format: f.tag_format.value.trim() || "X.Y.Z",
     max_run_minutes: Number(f.max_run_minutes.value) || 0,

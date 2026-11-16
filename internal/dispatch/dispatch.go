@@ -1073,6 +1073,13 @@ func (d *Dispatcher) Revert(ctx context.Context, t model.Todo) error {
 	return d.Fleet.Call(ctx, t.Runner, http.MethodPost, taskPath(t, "/revert"), struct{}{}, nil)
 }
 
+// MergePR asks t's runner to merge t's pull request on GitHub with
+// method ("" for the runner's default) and its own gh account; out gets
+// what it did (queue.Merged).
+func (d *Dispatcher) MergePR(ctx context.Context, t model.Todo, method string, out any) error {
+	return d.Fleet.Call(ctx, t.Runner, http.MethodPost, taskPath(t, "/merge-pr"), MergePR{Method: method}, out)
+}
+
 // Test asks t's runner to run the project's tests again in t's worktree.
 func (d *Dispatcher) Test(ctx context.Context, t model.Todo) error {
 	return d.Fleet.Call(ctx, t.Runner, http.MethodPost, taskPath(t, "/test"), struct{}{}, nil)

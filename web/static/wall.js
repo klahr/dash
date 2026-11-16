@@ -390,7 +390,7 @@ function renderRunning(d) {
 }
 
 // What a pull request in Review waits for a person to do (wallNeed.waits).
-const PR_WAITS = { review: "Awaiting review", merge: "Waiting to be merged on GitHub", blocked: "Blocked on GitHub" };
+const PR_WAITS = { review: "Awaiting review", merge: "Waiting to be merged", blocked: "Blocked on GitHub" };
 
 function renderNeeds(d, now) {
   // The model: each row's key, color, title, why and age, as shown.

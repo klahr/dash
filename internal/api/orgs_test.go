@@ -340,6 +340,7 @@ func (o *twoOrgs) recordEndpoints() []endpoint {
 		{"POST", "/api/todos/" + tid + "/duplicate", ""},
 		{"POST", "/api/todos/" + tid + "/open", ""},
 		{"POST", "/api/todos/" + tid + "/revert", ""},
+		{"POST", "/api/todos/" + tid + "/merge-pr", ""},
 		{"GET", "/api/todos/" + tid + "/chat", ""},
 		{"DELETE", "/api/todos/" + tid + "/chat", ""},
 		{"POST", "/api/todos/" + tid + "/preview", ""},

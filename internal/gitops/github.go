@@ -92,6 +92,90 @@ func (g *Git) ClosePR(ctx context.Context, projectID, dir string, number int, co
 	return err
 }
 
+// How a pull request is merged (model.Project.MergeMethod, gh pr merge's
+// flags).
+const (
+	MergeSquash = "squash"
+	MergeCommit = "merge"
+	MergeRebase = "rebase"
+)
+
+// ValidMergeMethod reports a method gh pr merge takes ("" is not one).
+func ValidMergeMethod(m string) bool {
+	return m == MergeSquash || m == MergeCommit || m == MergeRebase
+}
+
+// MergePR merges pull request number with method (MergeSquash,
+// MergeCommit or MergeRebase), with the gh account signed in here. It
+// never passes --admin, so branch protection always applies, nor
+// --delete-branch (Dash deletes the branch on GitHub once it sees the
+// merge). When the base branch merges through a merge queue the pull
+// request is added to it instead (gh pr merge --auto), and queued is true.
+// A pull request GitHub won't merge (a conflict, a failing required check,
+// a missing review) is a *CmdError with GitHub's message.
+func (g *Git) MergePR(ctx context.Context, projectID, dir string, number int, method string) (queued bool, err error) {
+	if !ValidMergeMethod(method) {
+		return false, fmt.Errorf("unknown merge method %q", method)
+	}
+	args := []string{"pr", "merge", strconv.Itoa(number), "--" + method}
+	out, err := g.gh(ctx, projectID, dir, args...)
+	var ce *CmdError
+	if errors.As(err, &ce) && mentionsMergeQueue(ce.Output) {
+		// Older gh: a branch with a merge queue takes the pull request
+		// only through --auto.
+		out, err = g.gh(ctx, projectID, dir, append(args, "--auto")...)
+		if err == nil {
+			return true, nil
+		}
+	}
+	if err != nil {
+		return false, err
+	}
+	return mentionsMergeQueue(out), nil
+}
+
+func mentionsMergeQueue(s string) bool { return strings.Contains(strings.ToLower(s), "merge queue") }
+
+// DefaultMergeMethod is how the repository of the checkout in dir merges
+// pull requests when the project doesn't say: the signed-in user's default
+// on GitHub (the method last used there) when the repository allows it,
+// else the first it allows of squash, merge commit and rebase.
+func (g *Git) DefaultMergeMethod(ctx context.Context, projectID, dir string) (string, error) {
+	out, err := g.ghQuiet(ctx, projectID, dir, "repo", "view", "--json", "viewerDefaultMergeMethod,squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed")
+	if err != nil {
+		return "", err
+	}
+	return parseMergeMethod(out)
+}
+
+func parseMergeMethod(out string) (string, error) {
+	var r struct {
+		Default string `json:"viewerDefaultMergeMethod"` // MERGE | SQUASH | REBASE
+		Squash  bool   `json:"squashMergeAllowed"`
+		Merge   bool   `json:"mergeCommitAllowed"`
+		Rebase  bool   `json:"rebaseMergeAllowed"`
+	}
+	if err := json.Unmarshal([]byte(jsonPart(strings.TrimSpace(out))), &r); err != nil {
+		return "", fmt.Errorf("gh repo view: %w", err)
+	}
+	allowed := map[string]bool{MergeSquash: r.Squash, MergeCommit: r.Merge, MergeRebase: r.Rebase}
+	if d := strings.ToLower(r.Default); allowed[d] {
+		return d, nil
+	}
+	for _, m := range []string{MergeSquash, MergeCommit, MergeRebase} {
+		if allowed[m] {
+			return m, nil
+		}
+	}
+	return "", errors.New("the repository allows no merge method")
+}
+
+// GitHubLogin is the login of the gh account signed in here.
+func (g *Git) GitHubLogin(ctx context.Context) (string, error) {
+	out, err := g.ghQuiet(ctx, "", "", "api", "user", "--jq", ".login")
+	return strings.TrimSpace(out), err
+}
+
 // PRStatus is what Dash needs to know about a pull request.
 type PRStatus struct {
 	State       string `json:"state"`     // OPEN | MERGED | CLOSED

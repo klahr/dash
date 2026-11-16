@@ -564,7 +564,7 @@ export function todoRow(t, li = -1, ri = -1) {
       t.model ? h("span", { class: "model-tag", title: `Runs on ${t.model}` }, t.model) : null,
       t.run_on ? runOnTag(t.run_on) : null,
       hasPriority(t) ? h("span", { class: "prio-tag", title: `Priority ${t.priority} (lower runs first)` }, `P${t.priority}`) : null,
-      t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, reviewChip(t), askClaudeChip(t), approvable(t) ? approveChip(t) : null) : null,
+      t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, reviewChip(t), askClaudeChip(t), approvable(t) ? approveChip(t) : canMergePR(t) ? mergeChip(t) : null) : null,
       t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null));
 }
 
@@ -584,6 +584,43 @@ export function waitsOnGitHub(t) {
 // or pushing its pull request failed (its error says so) and approving retries.
 export function approvable(t) {
   return t.status === "review" && (!waitsOnGitHub(t) || !!t.error);
+}
+
+// Whether Merge pull request applies: its pull request is open and ready
+// to merge (approved and green, or approved automatically), or green and
+// only waiting for an approval, which GitHub may not require. GitHub
+// decides; when it refuses, its message is shown and nothing changes.
+export function canMergePR(t) {
+  return t.status === "review" && waitsOnGitHub(t) && !t.error && !t.pr.draft
+    && ["merge", "review"].includes(t.pr.waits) && (t.pr.checks || []).every((c) => c.state === "passed");
+}
+
+const MERGE_METHODS = { squash: "squash and merge", merge: "a merge commit", rebase: "rebase and merge" };
+
+// mergePR asks, then merges task t's pull request on GitHub, with the gh
+// account of the computer that follows it (t's runner, or this Dash's).
+export async function mergePR(t) {
+  const method = state.project?.merge_method;
+  const how = MERGE_METHODS[method] ? `with ${MERGE_METHODS[method]}` : "with the repository's default merge method";
+  const where = t.runner ? `the runner ${runnerName(t.runner)}, which follows it` : "the computer running Dash";
+  const ok = await ask({
+    title: `Merge pull request #${t.pr.number}?`,
+    body: `Merges "${title(t)}" into ${baseBranch(state.project) || "the default branch"} on GitHub ${how}. `
+      + `It is done as the GitHub account gh is signed in with on ${where}. Branch protection applies: if GitHub can't merge it yet, it says why and nothing changes.`,
+    ok: "Merge pull request",
+  });
+  if (!ok) return;
+  const res = await api("POST", `/api/todos/${t.id}/merge-pr`);
+  const as = res?.as ? ` as ${res.as}` : "";
+  toast(res?.queued ? `Queued to merge${as}` : `Pull request #${t.pr.number} merged${as}`, { tone: "ok", icon: "merge" });
+}
+
+function mergeChip(t) {
+  return h("button", {
+    type: "button", class: "approve-chip", title: `Merge pull request #${t.pr.number} on GitHub`,
+    onpointerdown: (e) => e.stopPropagation(),
+    onclick: (e) => { e.stopPropagation(); attempt(() => mergePR(t))(); },
+  }, ico("merge"), "Merge");
 }
 
 // What a task's pull request waits for, as Dash last saw it.

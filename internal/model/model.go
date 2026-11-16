@@ -115,9 +115,9 @@ type Project struct {
 	// conflicts back to Claude on its own before asking a human.
 	MaxAutoFixes int `json:"max_auto_fixes"`
 	// MergeMode is how finished work lands: "pr" (push the branch and open
-	// a GitHub pull request as soon as Claude finishes; it is reviewed and
-	// merged by a person on GitHub, never by Dash; Dash marks the todo
-	// merged when the PR is) or "local"
+	// a GitHub pull request as soon as Claude finishes; it is reviewed on
+	// GitHub and merged by a person, there or with Merge pull request in
+	// Dash; Dash marks the todo merged when the PR is) or "local"
 	// (approved in Dash, then squashed
 	// onto the default branch, then push if AutoPush; on runners always
 	// pushed, see LandsOnOrigin). Unless the user chose (MergeModeSet), it
@@ -126,6 +126,10 @@ type Project struct {
 	// MergeModeSet records that a user changed MergeMode themselves, so
 	// the default (see store.DefaultMergeModes) leaves their choice alone.
 	MergeModeSet bool `json:"merge_mode_set,omitempty"`
+	// MergeMethod is how Merge pull request in Dash merges a task's pull
+	// request on GitHub: "squash", "merge" (a merge commit) or "rebase";
+	// "" uses the repository's default (gitops.DefaultMergeMethod).
+	MergeMethod string `json:"merge_method,omitempty"`
 	// Limits for one Claude run; 0 means the default. Time spent waiting
 	// for a human to answer a permission prompt doesn't count.
 	MaxRunMinutes int `json:"max_run_minutes,omitempty"`
@@ -716,7 +720,7 @@ const (
 // What a person has to do for a pull request to go on (PullRequest.Waits).
 const (
 	PRWaitReview  = "review"  // ready for review, and nobody has approved it yet
-	PRWaitMerge   = "merge"   // approved and green, for a person to merge on GitHub
+	PRWaitMerge   = "merge"   // approved and green, for a person to merge (on GitHub or from Dash)
 	PRWaitBlocked = "blocked" // a failing check no code change fixes (e.g. an unsigned CLA)
 )
 

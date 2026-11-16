@@ -294,6 +294,13 @@ func StateOf(t model.Todo) TaskState {
 	return s
 }
 
+// MergePR is POST /api/hub/tasks/{id}/merge-pr on a runner: merge the
+// task's pull request on GitHub with Method (the hub project's
+// model.Project.MergeMethod; "" for the repository's default).
+type MergePR struct {
+	Method string `json:"method,omitempty"`
+}
+
 // GitHubCall is POST /api/hub/github/{hub project id} on a runner: the
 // hub, which has no gh and no clone, reads (or re-runs) the project's
 // GitHub Actions builds with gh in the runner's clone. Op is one of the

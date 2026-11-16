@@ -303,6 +303,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/todos/{tid}/duplicate", s.duplicateTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/open", s.openTodo)
 	mux.HandleFunc("POST /api/todos/{tid}/revert", s.revertTodo)
+	mux.HandleFunc("POST /api/todos/{tid}/merge-pr", s.mergePRTodo)
 	mux.HandleFunc("POST /api/refine", s.refinePrompt)
 	mux.HandleFunc("POST /api/split", s.splitPrompt)
 	mux.HandleFunc("GET /api/claude", s.claudeInfo)
@@ -611,7 +612,7 @@ func writeErr(w http.ResponseWriter, err error) {
 		code = http.StatusNotFound
 	case errors.As(err, &inv), errors.As(err, &invIssue), errors.Is(err, store.ErrReviewing):
 		code = http.StatusConflict
-	case errors.As(err, new(*queue.PullRefused)), errors.Is(err, queue.ErrNotQueued):
+	case errors.As(err, new(*queue.PullRefused)), errors.As(err, new(*queue.MergeRefused)), errors.Is(err, queue.ErrNotQueued):
 		code = http.StatusConflict
 	case errors.Is(err, queue.ErrMergeQueueFull), errors.Is(err, errScansOff), errors.Is(err, errTrackersOff),
 		errors.Is(err, errPushOff), errors.Is(err, errNotifyOff):
@@ -708,6 +709,21 @@ const maxBody = 1 << 20
 func decode(r *http.Request, v any) error {
 	r.Body = http.MaxBytesReader(nil, r.Body, maxBody)
 	if err := decodeJSON(r.Body, v); err != nil {
+		return errors.Join(errBadRequest, err)
+	}
+	return nil
+}
+
+// decodeOptional is decode for a body that may be left out (empty).
+func decodeOptional(r *http.Request, v any) error {
+	b, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxBody))
+	if err != nil {
+		return errors.Join(errBadRequest, err)
+	}
+	if len(bytes.TrimSpace(b)) == 0 {
+		return nil
+	}
+	if err := decodeJSON(bytes.NewReader(b), v); err != nil {
 		return errors.Join(errBadRequest, err)
 	}
 	return nil

@@ -5,7 +5,7 @@ import { api } from "./api.js";
 import { ask, attempt, copy, fail, leave, toast } from "./dialogs.js";
 import { attachThumb } from "./attachments.js";
 import { STATUS_LABEL, state } from "./state.js";
-import { approvable, buildsOnMeta, depMeta, hasPriority, prChecksTitle, prReviewTag, prStatus, prTone, title, waitsOnGitHub } from "./branches.js";
+import { approvable, buildsOnMeta, canMergePR, mergePR, depMeta, hasPriority, prChecksTitle, prReviewTag, prStatus, prTone, title, waitsOnGitHub } from "./branches.js";
 import { goalChip } from "./goals.js";
 import { editable, openTodoForm } from "./todos.js";
 import { editPrompt, endInline, inlineEdits, renderInline } from "./inlineedit.js";
@@ -178,6 +178,9 @@ export function renderActions(t) {
       }
       if (approvable(t)) {
         btns.push(b("merge", "Approve", post("approve", null, waitsOnGitHub(t) ? "Pushing the pull request again" : "Approved — merging"), "review grow"));
+      } else if (canMergePR(t)) {
+        btns.push(h("a", { class: "btn", href: t.pr.url, target: "_blank", rel: "noopener", title: `Open pull request #${t.pr.number} on GitHub` }, ico("external"), "GitHub"));
+        btns.push(b("merge", "Merge pull request", attempt(() => mergePR(t)), "review grow"));
       } else {
         // Reviewed on GitHub: a review asking for changes comes back to Claude.
         btns.push(h("a", { class: "btn primary grow", href: t.pr.url, target: "_blank", rel: "noopener", title: "Review, approve or close it on GitHub" },

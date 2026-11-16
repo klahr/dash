@@ -367,6 +367,7 @@ type projectUpdate struct {
 	AutoPush       *bool     `json:"auto_push"`
 	AutoApprove    *bool     `json:"auto_approve"`
 	MergeMode      *string   `json:"merge_mode"`
+	MergeMethod    *string   `json:"merge_method"`
 	InvestigateCI  *bool     `json:"investigate_ci"`
 	MaxRunMinutes  *int      `json:"max_run_minutes"`
 	MaxTurns       *int      `json:"max_turns"`
@@ -597,6 +598,12 @@ func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runn
 		if err := applyMergeMode(p, *req.MergeMode); err != nil {
 			return err
 		}
+	}
+	if req.MergeMethod != nil {
+		if m := *req.MergeMethod; m != "" && !gitops.ValidMergeMethod(m) {
+			return fmt.Errorf("%w: merge_method must be \"squash\", \"merge\", \"rebase\" or \"\" (the repository's default)", errBadRequest)
+		}
+		p.MergeMethod = *req.MergeMethod
 	}
 	p.Runners = runners
 	if !p.MergeModeSet && p.HubProjectID == "" {
@@ -1292,6 +1299,29 @@ func (s *Server) reworkTodo(w http.ResponseWriter, r *http.Request) {
 
 // revertTodo undoes a merged todo on its project's merge worker; the todo updates
 // when it's done (or an "Undo:" todo appears if Claude has to do it by hand).
+// mergePRTodo merges a task's pull request on GitHub (POST
+// /api/todos/{tid}/merge-pr, body {"method": "squash"|"merge"|"rebase"}
+// or none for the project's method): see service.mergePR.
+func (s *Server) mergePRTodo(w http.ResponseWriter, r *http.Request) {
+	sv, t, ok := s.todo(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Method string `json:"method"`
+	}
+	if err := decodeOptional(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	res, err := sv.mergePR(r.Context(), t, req.Method)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 func (s *Server) revertTodo(w http.ResponseWriter, r *http.Request) {
 	sv, t, ok := s.todo(w, r)
 	if !ok {
