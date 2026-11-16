@@ -92,11 +92,12 @@ and enter `https://<machine>.<tailnet>.ts.net:8443/mcp` in claude.ai.
 
 Dash's own chats (the general chat and each project's chat) get a smaller set of task tools,
 `dash_board`: `list_projects`, `list_todos`, `get_todo`, `create_todo` (as a draft; `builds_on`
-makes it a follow-up of a finished task, continuing that task's Claude session),
+makes it a follow-up of a finished task, continuing that task's Claude session; on a hub, `run_on`
+sends it only to that one of the project's runners),
 `queue_todo` (a draft, or a failed task to retry, when you ask for it to run; with `start_now`
 also a queued task, when you ask to start it now despite the weekly pace), `stop_todo` and
 `restart_todo` (see below), `update_todo` (title, prompt, priority, or
-`clear_priority` to unset it, dependencies, or `builds_on`; the prompt and `builds_on` only while the task is a draft, queued or failed), `delete_todo` (only
+`clear_priority` to unset it, dependencies, `builds_on` or `run_on`; the prompt, `builds_on` and `run_on` only while the task is a draft, queued or failed), `delete_todo` (only
 draft, queued or failed tasks, when you ask to remove one), `create_release`, `list_issues` and
 `report_issue`, and the checklist tools on the project's `TODO.md` (`read_checklist`,
 `add_checklist_item`, `check_checklist_item`, `edit_checklist_item`, `delete_checklist_item`,

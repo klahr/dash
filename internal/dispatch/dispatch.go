@@ -174,7 +174,15 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 		}
 		return r.Limit()
 	}
-	for _, id := range p.Runners {
+	ids := p.Runners
+	if t.RunOn != "" {
+		// The task was set to run on one runner: only that one may take it.
+		if !slices.Contains(p.Runners, t.RunOn) {
+			return nil, "no runner: the runner this task is set to run on is no longer linked to this project; pick another in the task", ""
+		}
+		ids = []string{t.RunOn}
+	}
+	for _, id := range ids {
 		r, ok := d.Fleet.Get(id)
 		if !ok || r.OrgID() != p.OrgID {
 			continue // revoked, or (never) another org's
@@ -218,6 +226,9 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 		}
 	}
 	if len(cands) == 0 {
+		if len(why) == 0 && t.RunOn != "" {
+			return nil, "no runner: the runner this task is set to run on was revoked; pick another in the task", ""
+		}
 		if len(why) == 0 {
 			return nil, "no runner: the runners linked to this project were revoked; link another in the project's settings", ""
 		}

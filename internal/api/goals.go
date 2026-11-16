@@ -726,7 +726,7 @@ func (gb goalBoard) CreateTodo(projectID string, nt mcptools.NewTodo) (model.Tod
 	}
 	t, err := sv.addTodo(model.Todo{
 		ProjectID: g.ProjectID, Title: nt.Title, Prompt: nt.Prompt, Priority: nt.Priority,
-		DependsOn: nt.DependsOn, BuildsOn: nt.BuildsOn, Model: nt.Model, GoalID: g.ID,
+		DependsOn: nt.DependsOn, BuildsOn: nt.BuildsOn, Model: nt.Model, RunOn: nt.RunOn, GoalID: g.ID,
 	}, enqueue)
 	if err != nil {
 		return t, err

@@ -2,7 +2,7 @@ import { $, $$, h } from "./dom.js";
 import * as store from "./store.js";
 import { api, here } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
-import { buildOnPicker, depPicker, draft, draftKey, promptEditor, setModelField, split, todoAttach } from "./todoform.js";
+import { buildOnPicker, depPicker, runOnPicker, draft, draftKey, promptEditor, setModelField, split, todoAttach } from "./todoform.js";
 import { state } from "./state.js";
 import { projectKey } from "./events.js";
 import { grouped, projectWhere } from "./projects.js";
@@ -59,6 +59,7 @@ export function openTodoForm(t = null, { pick = false } = {}) {
   todoAttach.reset(t?.attachments || []);
   depPicker.reset(t, t?.depends_on || []);
   buildOnPicker.reset(t, t?.builds_on || "");
+  runOnPicker.reset(t, t?.run_on || "");
   promptEditor.render();
   draft.open(draftKey(t));
   $("#todo-sheet").returnValue = ""; // Esc keeps the previous close's value
@@ -222,7 +223,7 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
   draft.flush(); // if saving fails below, the draft is still there
   const f = $("#todo-form");
   await todoAttach.settled();
-  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), priority: formPriority(f.priority.value), model: f.model.value, attachments: todoAttach.ids(), depends_on: depPicker.ids(), builds_on: buildOnPicker.value() };
+  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), priority: formPriority(f.priority.value), model: f.model.value, attachments: todoAttach.ids(), depends_on: depPicker.ids(), builds_on: buildOnPicker.value(), run_on: runOnPicker.value() };
   if (editing) {
     await updateTodo(editing, body);
     if (action === "queue" && editing.status !== "queued") await api("POST", `/api/todos/${editing.id}/enqueue`);

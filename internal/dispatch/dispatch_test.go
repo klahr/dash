@@ -318,6 +318,42 @@ func TestDispatchPrefersTheRunnerWithTheSession(t *testing.T) {
 	}
 }
 
+// A task set to run on one runner goes only there, even when it is the
+// busier one or another has its session, and waits while it can't take it.
+func TestDispatchSendsATaskOnlyToTheRunnerItIsSetToRunOn(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t)
+	a := runnerOf("a", fx.orgA, true)
+	a.Parallel = 1
+	fx.fleet.set(a)
+	fx.fleet.set(runnerOf("b", fx.orgA, true))
+	p := fx.project(t, fx.orgA, "a", "b")
+
+	pinned := fx.todo(t, p, func(x *model.Todo) { x.RunOn = "a" })
+	if rid, _, err := fx.d.Dispatch(context.Background(), p, pinned); err != nil || rid != "a" {
+		t.Fatalf("dispatch = %q %v, want a", rid, err)
+	}
+	fx.todo(t, p, func(x *model.Todo) { x.Status, x.Runner = model.StatusInProgress, "a" })
+	moved := fx.todo(t, p, func(x *model.Todo) { x.RunOn, x.Runner, x.RemoteID, x.Resumable = "a", "b", "r1", true })
+	_, _, err := fx.d.Dispatch(context.Background(), p, moved)
+	var w *WaitError
+	if !errors.As(err, &w) || !strings.Contains(w.Reason, "a is busy") || strings.Contains(w.Reason, "b ") {
+		t.Fatalf("err = %v, want a wait for a only", err)
+	}
+
+	// A runner no longer linked to the project: it waits, and says so.
+	gone := fx.todo(t, p, func(x *model.Todo) { x.RunOn = "c" })
+	if _, _, err := fx.d.Dispatch(context.Background(), p, gone); !errors.As(err, &w) || !strings.Contains(w.Reason, "no longer linked") {
+		t.Fatalf("err = %v, want a wait saying the runner is no longer linked", err)
+	}
+	// A revoked one too.
+	fx.fleet.remove("a")
+	if _, _, err := fx.d.Dispatch(context.Background(), p, pinned); !errors.As(err, &w) || !strings.Contains(w.Reason, "revoked") {
+		t.Fatalf("err = %v, want a wait saying the runner was revoked", err)
+	}
+}
+
 // A task building on another goes to the runner that has the other's
 // Claude session, even a busier one, and says which task it builds on.
 func TestDispatchPrefersTheRunnerOfTheTaskBuiltOn(t *testing.T) {

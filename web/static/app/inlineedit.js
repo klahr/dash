@@ -6,14 +6,14 @@ import { attachBox } from "./attachments.js";
 import { state } from "./state.js";
 import { title } from "./branches.js";
 import { editable, openTodoForm, updateTodo } from "./todos.js";
-import { buildOnOptions, depOptions, draft, promptEditor, setModelField, todoAttach } from "./todoform.js";
+import { buildOnOptions, depOptions, draft, promptEditor, runOnOptions, setModelField, todoAttach } from "./todoform.js";
 import { formPriority } from "./dnd.js";
 import { openDetail, renderDetail } from "./detail.js";
 
 // ------------------------------------------------------------------ inline editing (desktop)
 // On a desktop the open task is edited in its detail pane: click the title to
 // rename it, the instructions to edit them in the Markdown editor the task form
-// uses, and priority, model, dependencies and the task it builds on are
+// uses, and priority, model, runner, dependencies and the task it builds on are
 // controls under the title that save at once. Phones keep the task form (#todo-sheet); so does a new task,
 // and "Edit in the full form" in ⋯ (clean up, split).
 export const inlineEdits = (t) => desktop.matches && editable(t);
@@ -233,6 +233,14 @@ function renderMeta(t) {
     h("label", { class: "meta-ctl" }, h("span", {}, "Priority"), prio),
     h("label", { class: "meta-ctl" }, h("span", {}, "Model"), model),
   ];
+
+  const runOn = runOnOptions(state.project, t.run_on || "");
+  if (runOn) {
+    const sel = h("select", { class: "meta-select", "aria-label": "Runner", title: "The runner the task runs on; it waits queued while that one is offline or busy" }, runOn);
+    sel.value = t.run_on || "";
+    sel.addEventListener("change", save((t) => updateTodo(t, { run_on: sel.value }), (t) => { sel.value = t.run_on || ""; }));
+    kids.push(h("label", { class: "meta-ctl" }, h("span", {}, "Runner"), sel));
+  }
 
   const opts = depOptions(t, t.depends_on || []);
   if (opts.length) {

@@ -293,6 +293,11 @@ projects on a runner's **Projects…** screen (below). From then on:
   back to the runner that has its worktree and Claude session. A task that builds on an earlier
   one (**Build on**) goes to the runner that ran the earlier one, when it can take it; on another
   runner it starts a fresh Claude session with the full task.
+- To run a task on one runner only, pick it under **Runner** in the task form (or in the task's
+  pane on a wide screen). The field shows when the project has more than one runner. The task
+  then waits queued while that runner is offline or busy, and never goes to another one. Pick
+  **Any** to let any runner take it again. You can change it while the task is a draft, queued
+  or failed.
 - If none can take it, the task stays queued and its card says why ("no runner online: laptop is
   offline", "waiting for a runner: laptop is busy (3 of 3 tasks)"). It starts as soon as one can.
 - The project needs a git remote: each runner clones it into its projects folder the first time

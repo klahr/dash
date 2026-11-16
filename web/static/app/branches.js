@@ -562,9 +562,16 @@ export function todoRow(t, li = -1, ri = -1) {
       previewTag(t),
       t.status === "review" && t.finished_at ? h("span", { title: waitsOnGitHub(t) ? "Waiting on GitHub since" : "Waiting for review" }, ago(t.finished_at)) : null,
       t.model ? h("span", { class: "model-tag", title: `Runs on ${t.model}` }, t.model) : null,
+      t.run_on ? runOnTag(t.run_on) : null,
       hasPriority(t) ? h("span", { class: "prio-tag", title: `Priority ${t.priority} (lower runs first)` }, `P${t.priority}`) : null,
       t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, reviewChip(t), askClaudeChip(t), approvable(t) ? approveChip(t) : null) : null,
       t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null));
+}
+
+// runOnTag names the runner a task is set to run on, on its card.
+function runOnTag(id) {
+  const name = state.runners?.find((r) => r.id === id)?.name || id;
+  return h("span", { class: "model-tag", title: `Runs only on runner ${name}` }, name);
 }
 
 // A task whose pull request is open on GitHub: it is reviewed, and merged

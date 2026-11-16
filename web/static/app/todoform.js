@@ -82,6 +82,37 @@ export const buildOnPicker = (() => {
   return { reset, value: () => field.hidden ? "" : sel.value };
 })();
 
+// The task form's "Runner" choice, on a hub: the one of the project's
+// runners the task must run on, or any of them. It is shown when the project
+// has more than one runner, or the task already has one set.
+// runOnOptions lists the runners of p as <option>s, id (the one chosen)
+// included; null when there is nothing to choose.
+export function runOnOptions(p, id = "") {
+  const ids = p && !p.prefix && Array.isArray(state.runners) ? p.runners || [] : [];
+  if (ids.length < 2 && !id) return null;
+  const name = (x) => state.runners?.find((r) => r.id === x)?.name || x;
+  return [
+    h("option", { value: "" }, "Any: the least busy"),
+    ...(id && !ids.includes(id) ? [h("option", { value: id }, `${name(id)} (no longer linked)`)] : []),
+    ...ids.map((x) => h("option", { value: x }, name(x)))];
+}
+
+export const runOnPicker = (() => {
+  const field = $("#todo-runon-field"), sel = $("#todo-form").run_on;
+  let self = null;
+  const reset = (t, id = "") => {
+    self = t;
+    const usable = !pickProject || projectKey(state.project) === $("#todo-form").project.value;
+    const opts = usable ? runOnOptions(state.project, id) : null;
+    sel.replaceChildren(...(opts || []));
+    sel.value = id || "";
+    field.hidden = !opts;
+  };
+  $("#todo-form").project.addEventListener("change", () => reset(self, ""));
+  // undefined (left out of the request) while hidden: the task's runner stays.
+  return { reset, value: () => field.hidden ? undefined : sel.value };
+})();
+
 // setModelField selects a task's model in the form, adding an option for a
 // model id that isn't one of the aliases (set through the API or MCP).
 export function setModelField(f, m) {
@@ -97,7 +128,7 @@ export const draftKey = (t) => `${projectKey(state.project)}/${t?.id || "new"}`;
 export const draft = drafts({
   read() {
     const f = $("#todo-form");
-    return { title: f.title.value, prompt: f.prompt.value, priority: f.priority.value, model: f.model.value, attachments: todoAttach.items(), depends_on: depPicker.ids(), builds_on: buildOnPicker.value() };
+    return { title: f.title.value, prompt: f.prompt.value, priority: f.priority.value, model: f.model.value, attachments: todoAttach.items(), depends_on: depPicker.ids(), builds_on: buildOnPicker.value(), run_on: runOnPicker.value() };
   },
   write(d) {
     const f = $("#todo-form");
@@ -108,6 +139,7 @@ export const draft = drafts({
     todoAttach.reset(d.attachments || []);
     depPicker.reset(editing, d.depends_on ?? editing?.depends_on ?? []); // drafts from before dependencies have none
     buildOnPicker.reset(editing, d.builds_on ?? editing?.builds_on ?? "");
+    runOnPicker.reset(editing, d.run_on ?? editing?.run_on ?? "");
     promptEditor.render();
   },
   onStatus(st, at) {
@@ -133,6 +165,7 @@ function discardDraft() {
   todoAttach.reset(t?.attachments || []);
   depPicker.reset(t, t?.depends_on || []);
   buildOnPicker.reset(t, t?.builds_on || "");
+  runOnPicker.reset(t, t?.run_on || "");
   promptEditor.render();
   draft.open(draftKey(t));
   toast("Draft discarded");
@@ -146,6 +179,7 @@ $("#todo-clear").addEventListener("click", () => {
   todoAttach.reset([]);
   depPicker.reset(null, []);
   buildOnPicker.reset(null, "");
+  runOnPicker.reset(null, "");
   promptEditor.render();
   draft.open(draftKey(null));
   f.title.focus();
@@ -302,7 +336,7 @@ async function saveSplit(parts, p, enqueue) {
   await todoAttach.settled();
   const attachments = todoAttach.ids();
   if (attachments.length && p.prefix !== here()) throw new Error(`Attachments can't be sent to ${p.name} on ${p.machine}; remove them or pick a project on this computer.`);
-  const common = { priority: formPriority(f.priority.value), model: f.model.value, attachments, builds_on: buildOnPicker.value() };
+  const common = { priority: formPriority(f.priority.value), model: f.model.value, attachments, builds_on: buildOnPicker.value(), run_on: runOnPicker.value() };
   const deps = depPicker.ids();
   const order = $("#split-order").checked;
   for (const part of left) {

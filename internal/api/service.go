@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -170,6 +171,9 @@ func (sv *service) addTodo(t model.Todo, enqueue bool) (model.Todo, error) {
 		return t, fmt.Errorf("%w: %v", errBadRequest, err)
 	}
 	t.Model = m
+	if t.RunOn, err = sv.runOn(t.ProjectID, t.RunOn); err != nil {
+		return t, err
+	}
 	if err := sv.sendable(t.ProjectID, len(t.Attachments) > 0 || len(t.Edits) > 0); err != nil {
 		return t, err
 	}
@@ -185,6 +189,23 @@ func (sv *service) addTodo(t model.Todo, enqueue bool) (model.Todo, error) {
 		sv.autoTitle(t.ID, t.Prompt)
 	}
 	return t, nil
+}
+
+// runOn checks id, the runner a task of project pid is set to run on: ""
+// (any of its runners) or one of the project's runners. It returns it trimmed.
+func (sv *service) runOn(pid, id string) (string, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return "", nil
+	}
+	p, err := sv.data.GetProject(pid)
+	if err != nil {
+		return "", err
+	}
+	if !slices.Contains(p.Runners, id) {
+		return "", fmt.Errorf("%w: runner %q is not one of this project's runners", errBadRequest, id)
+	}
+	return id, nil
 }
 
 // autoTitle names a todo in the background; a title typed meanwhile wins.
@@ -379,6 +400,17 @@ func (sv *service) editTodo(id string, u mcptools.TodoUpdate, atts *[]model.Atta
 		}
 		u.Model = &m
 	}
+	if u.RunOn != nil {
+		cur, err := sv.data.GetTodo(id)
+		if err != nil {
+			return cur, err
+		}
+		r, err := sv.runOn(cur.ProjectID, *u.RunOn)
+		if err != nil {
+			return cur, err
+		}
+		u.RunOn = &r
+	}
 	t, err := sv.data.UpdateTodo(id, func(t *model.Todo) error {
 		editable := t.Status == model.StatusDraft || t.Status == model.StatusQueued || t.Status == model.StatusFailed
 		if (u.Prompt != nil || atts != nil) && !editable {
@@ -387,6 +419,10 @@ func (sv *service) editTodo(id string, u mcptools.TodoUpdate, atts *[]model.Atta
 		if u.BuildsOn != nil && *u.BuildsOn != t.BuildsOn && !editable {
 			return fmt.Errorf("%w: the task to build on can only be changed while draft, queued or failed", errBadRequest)
 		}
+		if u.RunOn != nil && *u.RunOn != t.RunOn && !editable {
+			return fmt.Errorf("%w: the runner can only be changed while draft, queued or failed", errBadRequest)
+		}
+		set(&t.RunOn, u.RunOn)
 		set(&t.BuildsOn, u.BuildsOn) // validated by the store
 		set(&t.Attachments, atts)
 		set(&t.Title, u.Title)

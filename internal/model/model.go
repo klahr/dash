@@ -471,6 +471,10 @@ type Todo struct {
 	// runner's, as it reports them; Worktree.Path is empty, the files being on the runner.
 	Runner   string `json:"runner,omitempty"`
 	RemoteID string `json:"remote_id,omitempty"`
+	// RunOn is, on a hub, the id of the one runner of the project the task
+	// must run on (empty: any of them, the least busy). It waits queued
+	// while that runner can't take it.
+	RunOn string `json:"run_on,omitempty"`
 	// Waiting is why a queued todo isn't starting, e.g. all of its
 	// project's runners are offline.
 	Waiting string `json:"waiting,omitempty"`
