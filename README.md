@@ -210,6 +210,7 @@ retry) follow the pace again. The API is `POST /api/todos/{id}/start-now`; a cha
 - [Several computers](docs/several-computers.md)
 - [Use Dash from your phone](docs/phone.md)
 - [Run as a service](docs/service.md)
+- [Sandbox Claude's runs](docs/sandbox.md): run Claude's tasks and scans in a container or as a user with fewer rights
 - [Releases](docs/releases.md): prebuilt binaries, `dash version`, cutting a release
 
 All flags: `./bin/dash -h`.

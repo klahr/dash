@@ -166,6 +166,36 @@ func TestRunForksAResumedSession(t *testing.T) {
 	}
 }
 
+// TestRunInSandbox: with a sandbox, Dash starts it with its own
+// arguments, then claude and claude's, in the worktree, and tells it
+// which worktree that is.
+func TestRunInSandbox(t *testing.T) {
+	dir := t.TempDir()
+	wrap := filepath.Join(dir, "sandbox")
+	script := "#!/bin/sh\necho \"$PWD|$DASH_WORKTREE|$@\" >'" + dir + "/seen'\nshift\nexec \"$@\"\n"
+	if err := os.WriteFile(wrap, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := fakeClaude(t, `{"type":"result","subtype":"success","is_error":false,"session_id":"s","num_turns":1,"total_cost_usd":0,"result":"ok"}`+"\n")
+	wt, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := ClaudeCode{Bin: bin, Args: []string{"--model", "x"}, Sandbox: []string{wrap, "--as"}}
+	res, err := c.Run(context.Background(), ExecRequest{Dir: wt, Prompt: "hi"}, func(model.RunEvent) {})
+	if err != nil || res.SessionID != "s" {
+		t.Fatalf("run: %v, session %q", err, res.SessionID)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "seen"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := wt + "|" + wt + "|--as " + bin + " -p --output-format stream-json --verbose --model x"
+	if got := strings.TrimSpace(string(b)); got != want {
+		t.Fatalf("sandbox saw\n%s\nwant\n%s", got, want)
+	}
+}
+
 func TestFollowUpPromptClosesTheEarlierTask(t *testing.T) {
 	child := model.Todo{Title: "Next", Prompt: "do the next thing"}
 	merged := FollowUpPrompt(child, model.Todo{Title: "First", Status: model.StatusMerged})

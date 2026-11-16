@@ -81,6 +81,7 @@ type options struct {
 	dataDir, projectRoot             string
 	parallel                         int
 	claudeBin, claudeArgs            string
+	claudeSandbox                    string
 	signCommits                      bool
 	chatBackend, chatTools           string
 	chatAllow                        []string
@@ -152,6 +153,8 @@ func parseFlags(args []string, runnerMode bool) *options {
 	f.StringVar(&o.claudeBin, "claude", "claude", "Claude Code binary used to execute tasks")
 	f.StringVar(&o.claudeArgs, "claude-args", "--permission-mode acceptEdits --allowedTools Bash",
 		"extra flags for `claude -p` (space separated), e.g. --allowedTools / --model")
+	f.StringVar(&o.claudeSandbox, "claude-sandbox", "",
+		"a command (space separated) that runs Claude for tasks and scans, given claude and its flags, e.g. a script that runs it as a user with fewer rights or in a container (default $DASH_CLAUDE_SANDBOX; see docs/sandbox.md)")
 	f.BoolVar(&o.signCommits, "sign-commits", false, "GPG/SSH-sign commits Dash makes (needs a non-interactive signing agent)")
 	f.StringVar(&o.chatBackend, "chat", "claude-code",
 		"chat backend: claude-code (uses the claude CLI login, e.g. a subscription) or api (Anthropic API key)")
@@ -259,7 +262,12 @@ func (o *options) resolveEnv() {
 	o.orgDomain = envOr(o.orgDomain, "DASH_ORG_DOMAIN")
 	o.metricsAddr = envOr(o.metricsAddr, "DASH_METRICS_ADDR")
 	o.githubProtocol = envOr(o.githubProtocol, "DASH_GITHUB_PROTOCOL")
+	o.claudeSandbox = envOr(o.claudeSandbox, "DASH_CLAUDE_SANDBOX")
 }
+
+// sandbox is the command that runs Claude for tasks and scans
+// (-claude-sandbox), or nil to run it directly.
+func (o *options) sandbox() []string { return strings.Fields(o.claudeSandbox) }
 
 // app is a running hub or runner: what the startup phases make and wire up.
 type app struct {
@@ -557,10 +565,13 @@ func (a *app) buildServices() {
 	if o.cleanupDays > 0 {
 		a.merges.CleanupAfter, a.merges.CleanupEvery = time.Duration(o.cleanupDays)*24*time.Hour, 24*time.Hour
 	}
+	if sb := o.sandbox(); len(sb) > 0 && o.runnerMode {
+		slog.Info("Claude runs tasks and scans in a sandbox", "command", strings.Join(sb, " "))
+	}
 	a.todos = queue.NewTodoEngine(&queue.TodoEngine{
 		Store:        st,
 		Git:          a.git,
-		Exec:         agent.ClaudeCode{Bin: o.claudeBin, Args: strings.Fields(o.claudeArgs), OnRateLimit: a.tracker.Observe, CLI: a.cli},
+		Exec:         agent.ClaudeCode{Bin: o.claudeBin, Args: strings.Fields(o.claudeArgs), Sandbox: o.sandbox(), OnRateLimit: a.tracker.Observe, CLI: a.cli},
 		Pub:          events,
 		Log:          a.todoLog,
 		Merges:       a.merges,
@@ -585,7 +596,7 @@ func (a *app) buildServices() {
 	// claude flags (read-only tools), not -claude-args.
 	a.scans = &scan.Runner{
 		Store: st, Git: a.git, Context: ctx,
-		Exec:       agent.ClaudeCode{Bin: o.claudeBin, OnRateLimit: a.tracker.Observe, CLI: a.cli},
+		Exec:       agent.ClaudeCode{Bin: o.claudeBin, Sandbox: o.sandbox(), OnRateLimit: a.tracker.Observe, CLI: a.cli},
 		Root:       filepath.Join(o.dataDir, "scans"),
 		RunTimeout: o.scanTimeout,
 		GitTools:   &scan.GitMCP{},

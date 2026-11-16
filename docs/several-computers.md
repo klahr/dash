@@ -255,7 +255,7 @@ Without the script (or to build from source), the dialog's **Manual** tab has th
    own service around `dash runner`, see [Run as a service](service.md)).
 
 A runner takes the same flags as `dash`, and its own: the flags about running work (`-projects`,
-`-parallel`, `-claude`, `-claude-args`, `-chat`, `-editor`, …) only matter to a runner; the hub
+`-parallel`, `-claude`, `-claude-args`, `-claude-sandbox`, `-chat`, `-editor`, …) only matter to a runner; the hub
 accepts them, logs a warning that it ignores them, and leaves them out of `dash -h`. It doesn't
 listen on a port of its own unless you pass `-addr` (then it also needs `DASH_USERNAME` and
 `DASH_PASSWORD`, like a normal Dash).
@@ -888,7 +888,8 @@ issues, scans, chats about a project or task, CI, previews and permission prompt
 - listing the repositories in its projects directory, or adding them, for anyone but its owner
   (see [above](#add-projects-from-a-runners-computer)).
 
-Claude still runs tasks with the runner's `-claude-args` and asks for permission as usual; the
+Claude still runs tasks with the runner's `-claude-args` (and in its [sandbox](sandbox.md), if
+it has one) and asks for permission as usual; the
 runner reports the prompts of the hub's tasks to the hub, so they appear in the hub's dashboard
 (and its notifications), and the hub sends your answer back to the runner. While the runner is
 offline, its prompts aren't listed on the hub; they show again when it reconnects.

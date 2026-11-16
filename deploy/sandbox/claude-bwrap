@@ -1,0 +1,82 @@
+#!/bin/sh
+# Runs Claude Code for a Dash runner in a bubblewrap container (Linux, no
+# root needed): the system is read-only, your home folder is empty, and only
+# the task's worktree (plus what you list in DASH_SANDBOX_BIND) can be
+# written. Claude still reaches the network: the Claude API, Dash's MCP
+# servers and package registries. See docs/sandbox.md.
+#
+#   dash runner -claude-sandbox /path/to/claude-bwrap
+#
+# Dash starts it in the worktree with claude and its flags as arguments.
+#
+# DASH_SANDBOX_BIND   folders Claude may write as well, space separated,
+#                     e.g. "$HOME/.cache $HOME/go" (build caches)
+# DASH_SANDBOX_RO     folders Claude may read, space separated
+set -eu
+
+command -v bwrap >/dev/null || { echo "claude-bwrap: bubblewrap (bwrap) is not installed" >&2; exit 127; }
+[ $# -gt 0 ] || { echo "claude-bwrap: no command to run" >&2; exit 2; }
+
+wt=${DASH_WORKTREE:-$PWD}
+claude=$(command -v "$1") || { echo "claude-bwrap: $1 not found" >&2; exit 127; }
+shift
+
+set -- "$claude" "$@"
+args=$(mktemp)
+trap 'rm -f "$args"' EXIT
+# bwrap's options go in a file, one per line, read with --args, so paths
+# with spaces stay whole.
+opt() { for a; do printf '%s\0' "$a" >>"$args"; done; }
+ro() { [ -e "$1" ] && opt --ro-bind "$1" "$1" || true; }
+rw() { [ -e "$1" ] && opt --bind "$1" "$1" || true; }
+
+opt --die-with-parent --unshare-pid --unshare-ipc --unshare-uts
+opt --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp
+# /run holds sockets that give away more than files: Docker's, the user's
+# ssh and gpg agents. Keep only DNS.
+opt --tmpfs /run
+ro /run/systemd/resolve
+opt --tmpfs "$HOME"
+
+# Claude Code: its binary, settings and login.
+real=$(readlink -f "$claude")
+ro "$(dirname "$real")"
+ro "$(dirname "$claude")"
+ro "$HOME/.local/share/claude"
+rw "$HOME/.claude"
+rw "$HOME/.claude.json"
+ro "$HOME/.gitconfig"
+ro "$HOME/.config/git"
+
+# The worktree. Its git metadata lives in the main clone's .git: that
+# stays read-only, except this worktree's own part (index, HEAD), so
+# Claude can't move the project's branches.
+rw "$wt"
+if common=$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+	ro "$common"
+	gitdir=$(git -C "$wt" rev-parse --absolute-git-dir)
+	rw "$gitdir"
+fi
+
+# A task's attachments (--add-dir).
+prev=
+for a; do
+	[ "$prev" = --add-dir ] && ro "$a"
+	prev=$a
+done
+
+for d in ${DASH_SANDBOX_RO:-}; do ro "$d"; done
+for d in ${DASH_SANDBOX_BIND:-}; do rw "$d"; done
+
+opt --chdir "$wt"
+# Credentials Claude has no use for: Dash's own, tokens and passwords
+# (but not Claude's login), agent sockets.
+for v in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p'); do
+	case $v in
+	ANTHROPIC_* | CLAUDE_* | DASH_WORKTREE) ;;
+	DASH_* | *TOKEN* | *PASSWORD* | *SECRET* | SSH_AUTH_SOCK | GPG_AGENT_INFO | DBUS_SESSION_BUS_ADDRESS)
+		opt --unsetenv "$v" ;;
+	esac
+done
+
+exec bwrap --args 3 "$@" 3<"$args"

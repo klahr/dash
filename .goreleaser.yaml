@@ -50,6 +50,8 @@ archives:
       - deploy/caddy/*
       # Terms of service and privacy policy to fill in (docs/privacy.md).
       - deploy/legal/*
+      # Sandboxes for Claude's runs (docs/sandbox.md).
+      - deploy/sandbox/*
 
 checksum:
   name_template: checksums.txt

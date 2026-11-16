@@ -1,0 +1,23 @@
+#!/bin/sh
+# Runs Claude Code for a Dash runner as another, less trusted user (with
+# sudo), so it can't read your SSH keys, gh login or other projects. Set
+# that user up first: see docs/sandbox.md.
+#
+#   dash runner -claude-sandbox /path/to/claude-as-user
+#
+# Dash starts it in the worktree with claude and its flags as arguments.
+# Claude runs from the sandbox user's PATH, with its own Claude Code login.
+#
+# DASH_SANDBOX_USER   the user to run Claude as (default dash-claude)
+set -eu
+
+user=${DASH_SANDBOX_USER:-dash-claude}
+wt=${DASH_WORKTREE:-$PWD}
+[ $# -gt 0 ] || { echo "claude-as-user: no command to run" >&2; exit 2; }
+
+# sudo clears the environment: hand over what Claude needs. umask 002
+# leaves what Claude writes writable by your group, so Dash can commit
+# and remove it.
+exec sudo -n -H -u "$user" -- env \
+	${MCP_TOOL_TIMEOUT:+MCP_TOOL_TIMEOUT=$MCP_TOOL_TIMEOUT} DASH_WORKTREE="$wt" \
+	/bin/sh -lc 'umask 002 && cd "$DASH_WORKTREE" && exec "$@"' claude-as-user "$@"

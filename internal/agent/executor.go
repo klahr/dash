@@ -63,6 +63,13 @@ type Executor interface {
 type ClaudeCode struct {
 	Bin  string   // default "claude"
 	Args []string // extra flags, e.g. permission mode / allowed tools
+	// Sandbox, if set, is a command that runs Claude for Dash: Dash
+	// starts Sandbox[0] with the rest of Sandbox, then Bin and its
+	// arguments, in the worktree, e.g. a script that runs them as a user
+	// with fewer rights or in a container (-claude-sandbox, see
+	// docs/sandbox.md). The run's environment is passed to it, with
+	// DASH_WORKTREE naming the worktree.
+	Sandbox []string
 	// OnRateLimit receives the rate_limit_info of every rate_limit_event.
 	OnRateLimit func(json.RawMessage)
 	// CLI collects what looks changed about the Claude Code CLI; the run's
@@ -96,9 +103,16 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 			args = append(args, "--fork-session")
 		}
 	}
-	cmd := exec.CommandContext(ctx, bin, args...)
+	name := bin
+	if len(c.Sandbox) > 0 {
+		name, args = c.Sandbox[0], append(append(c.Sandbox[1:len(c.Sandbox):len(c.Sandbox)], bin), args...)
+	}
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = req.Dir
 	cmd.Env = localrun.Environ(req.Env...)
+	if len(c.Sandbox) > 0 {
+		cmd.Env = append(cmd.Env, "DASH_WORKTREE="+req.Dir)
+	}
 	cmd.Stdin = strings.NewReader(req.Prompt)
 	// Own process group so cancel kills Claude and everything it spawned.
 	localrun.Group(cmd, syscall.SIGTERM, 10*time.Second)
@@ -112,7 +126,7 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 		return ExecResult{}, err
 	}
 	if err := cmd.Start(); err != nil {
-		return ExecResult{}, fmt.Errorf("start %s: %w", bin, err)
+		return ExecResult{}, fmt.Errorf("start %s: %w", name, err)
 	}
 
 	var res ExecResult
