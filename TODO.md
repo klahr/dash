@@ -13,7 +13,6 @@ Most important first within each section.
 
 ## Features
 
-- [x] Todos that wait for another todo to merge.
 
 ## Running it
 
