@@ -116,6 +116,9 @@ type Incident struct {
 	// Ignored (in a Status only): it affects only components that don't
 	// count.
 	Ignored bool `json:"ignored,omitempty"`
+	// Counted (in a Status only) are the names in Components that count,
+	// which the pill counts as affected services.
+	Counted []string `json:"counted,omitempty"`
 }
 
 // Active reports whether the incident is still going on.
@@ -279,6 +282,12 @@ func (d *document) status(now time.Time) Status {
 	}
 	for _, i := range d.Incidents {
 		i.Ignored = !d.counts(i)
+		i.Counted = nil
+		for _, n := range i.Components {
+			if d.watchedName(n) {
+				i.Counted = append(i.Counted, n)
+			}
+		}
 		switch {
 		case i.Active():
 			st.Active = append(st.Active, i)

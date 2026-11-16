@@ -54,9 +54,11 @@ The page's overall status covers every component, so it doesn't turn the pill on
 ## What people see
 
 - **The Claude pill** in the sidebar (in the menu on a phone) shows while something that
-  counts is wrong, for example "Claude: major incident". It is red for partial and major
-  outages, and amber for minor ones and maintenance.
-- **Click the pill** to see the affected components, the active incidents with each update,
+  counts is wrong. It counts the affected services that count, from the components and the
+  incidents, each once: for example "Claude: 3 services affected", or "Claude: Claude Code
+  degraded performance" for one. An incident that names no service shows as "Claude: major
+  incident". It is red for partial and major outages, and amber for minor ones and maintenance.
+- **Click the pill** to see the affected services, the active incidents with each update,
   and the incidents resolved in the last week. What doesn't count is folded under **Not
   counted**, so it is clear why the pill is off. **Status page** opens status.claude.com.
 - **A notice** pops up when an incident that counts starts and when it is resolved.

@@ -1,4 +1,5 @@
-import { $, dateTimeText, fill, h, ico, plural } from "./dom.js";
+import { $, dateTimeText, fill, h, ico } from "./dom.js";
+import { COMPONENT, IMPACT, affectedServices, claudePillText, label } from "../claudepill.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -13,16 +14,10 @@ import { agoText } from "./branches.js";
 // Always the hub's (this Dash's), whichever project is open.
 const INDICATOR = { none: "All systems operational", minor: "Minor outage", major: "Partial outage", critical: "Major outage", maintenance: "Maintenance" };
 const TONE = { none: "ok", minor: "warn", maintenance: "warn", major: "bad", critical: "bad" };
-const IMPACT = { none: "No impact", minor: "Minor", major: "Major", critical: "Critical", maintenance: "Maintenance" };
 const STATUS = {
   investigating: "Investigating", identified: "Identified", monitoring: "Monitoring", resolved: "Resolved", postmortem: "Postmortem",
   scheduled: "Scheduled", in_progress: "In progress", verifying: "Verifying", completed: "Completed",
 };
-const COMPONENT = {
-  operational: "Operational", degraded_performance: "Degraded performance", partial_outage: "Partial outage",
-  major_outage: "Major outage", under_maintenance: "Under maintenance",
-};
-const label = (map, k) => map[k] || (k || "").replaceAll("_", " ");
 const isAdmin = () => !!state.me?.user?.is_platform_admin;
 // What counts: the components a platform admin chose (Account → Claude
 // status → Components) and the incidents that affect one or name none. The
@@ -66,12 +61,8 @@ export function renderClaudeStatus() {
   if (!pill.hidden) {
     const active = counted(st.active), comps = counted(st.components);
     const tone = (st.level && st.level !== "none" && TONE[st.level]) || "warn";
-    const text = active.length === 1 ? `Claude: ${label(IMPACT, active[0].impact).toLowerCase()} incident`
-      : active.length ? `Claude: ${plural(active.length, "incident")}`
-      : comps.length === 1 ? `Claude: ${comps[0].name} ${label(COMPONENT, comps[0].status).toLowerCase()}`
-      : `Claude: ${plural(comps.length, "component")} affected`;
     pill.className = `usage-pill claude-pill claude-${tone}`;
-    pill.textContent = text;
+    pill.textContent = claudePillText(active, comps);
     pill.title = `${[...active.map((i) => i.name), ...comps.map((c) => c.name)].join(", ")} (status.claude.com)`;
   }
   if ($("#claude-status-sheet").open) renderSheet();
@@ -117,15 +108,19 @@ function renderSheet() {
     : st.description || label(INDICATOR, st.indicator) || "Nothing heard yet"),
   onlyIgnored ? h("span", { class: "hint" }, ` · the page says ${st.description || label(INDICATOR, st.indicator)}`) : null,
   st.updated ? h("span", { class: "hint" }, ` · updated ${agoText(st.updated)}`) : null);
+  // A service an incident names, without a status of its own, shows the
+  // incident's impact.
   const compList = (cs) => h("ul", { class: "claude-components" }, ...cs.map((c) =>
-    h("li", { class: `claude-${c.status === "major_outage" || c.status === "partial_outage" ? "bad" : "warn"}` },
-      h("span", {}, c.name), h("span", { class: "claude-component-status" }, label(COMPONENT, c.status)))));
+    h("li", { class: `claude-${c.status ? (c.status === "major_outage" || c.status === "partial_outage" ? "bad" : "warn") : TONE[c.impact] === "bad" ? "bad" : "warn"}` },
+      h("span", {}, c.name), h("span", { class: "claude-component-status" },
+        c.status ? label(COMPONENT, c.status) : `${label(IMPACT, c.impact)} incident`))));
+  const services = affectedServices(active, comps);
   const incidentList = (is) => h("ul", { class: "claude-incidents" }, ...is.map((i) =>
     h("li", { class: "claude-incident" }, ...incidentHead(i), updateList(i))));
   const ignored = ignActive.length + ignComps.length;
   fill($("#claude-status-body"),
-    comps.length ? h("h3", { class: "section-head" }, "Affected components") : null,
-    comps.length ? compList(comps) : null,
+    services.length ? h("h3", { class: "section-head" }, "Affected services") : null,
+    services.length ? compList(services) : null,
     h("h3", { class: "section-head" }, "Active incidents"),
     active.length ? incidentList(active) : h("p", { class: "hint" }, "None right now."),
     // What doesn't count, folded away: why the pill is off.

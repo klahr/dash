@@ -245,6 +245,18 @@ func TestFilterDefaults(t *testing.T) {
 	if want := map[string]bool{"api": false, "gov": true, "all": false, "m365": true}; !maps.Equal(incidentsIgnored(st), want) {
 		t.Errorf("incidents: %v, want %v", incidentsIgnored(st), want)
 	}
+	// Each incident names the components of its that count, operational or
+	// not: the pill counts them as affected services.
+	counted := map[string][]string{}
+	for _, i := range st.Active {
+		counted[i.ID] = i.Counted
+	}
+	if want := []string{"Claude API (api.anthropic.com)"}; !slices.Equal(counted["api"], want) {
+		t.Errorf("api counts %v, want %v", counted["api"], want)
+	}
+	if counted["gov"] != nil || counted["all"] != nil {
+		t.Errorf("counted: %v", counted)
+	}
 	// The page's indicator is kept, but the level is over what counts only:
 	// the major API incident, not the critical Gov one.
 	if st.Indicator != "critical" || st.Level != "major" {
