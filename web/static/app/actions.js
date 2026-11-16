@@ -41,20 +41,33 @@ export function releaseNews(prev, rel) {
   else if (rel.state === "no_build") toast("No workflow started for it: check the tag format in the project settings.", { tone: "info", icon: "tag", head: `Pushed ${rel.tag}`, action: view });
 }
 
+// A running build shows as a pulsing ring on the current project's row in the
+// sidebar (renderSideProjects places it); it opens the builds sheet.
+export const ciBuilding = h("button", { type: "button", class: "side-ci-build", "aria-haspopup": "dialog", hidden: true });
+ciBuilding.addEventListener("click", attempt(openCI));
+
 export function renderCI() {
   const st = state.ci;
   const pill = $("#ci-pill");
   const rel = st?.release;
-  const show = !!(state.project?.remote_url && st && st.state !== "unknown" && st.state !== "none") || st?.state === "failing" || releaseShown(rel);
-  pill.hidden = !show;
-  if (st) {
-    const [cls, label] = releaseShown(rel)
-      ? [rel.state === "building" ? "running" : "failing", rel.state === "building" ? `Building ${rel.tag}` : `Release ${rel.tag} failed`]
-      : [st.state, CI_LABEL[st.state]];
-    pill.className = `usage-pill ci-pill ci-${cls}`;
+  // The project has builds to show: the Builds menu entry opens them.
+  const has = !!(state.project?.remote_url && st && st.state !== "unknown" && st.state !== "none") || st?.state === "failing" || releaseShown(rel);
+  $("#pm-builds").hidden = !has;
+  // Only failures get the chip; a running build is the ring, a passing one nothing.
+  const relFailed = releaseShown(rel) && rel.state === "failed";
+  const failing = has && (relFailed || st?.state === "failing");
+  pill.hidden = !failing;
+  if (failing) {
+    const label = relFailed ? `Release ${rel.tag} failed` : CI_LABEL.failing;
+    pill.className = "usage-pill ci-pill ci-failing";
     pill.textContent = label;
     pill.title = label;
   }
+  const building = has && rel?.state === "building" ? `Building ${rel.tag}`
+    : has && st?.state === "running" ? `Build running on ${st.branch || "the default branch"}` : "";
+  ciBuilding.hidden = !building;
+  ciBuilding.title = building;
+  ciBuilding.setAttribute("aria-label", building);
   if (!st) return;
   $("#ci-release").hidden = !rel;
   if (rel) {
@@ -87,6 +100,7 @@ export async function openCI() {
   $("#ci-sheet").showModal();
 }
 $("#ci-pill").addEventListener("click", attempt(openCI));
+$("#pm-builds").addEventListener("click", attempt(openCI));
 $("#ci-refresh").addEventListener("click", attempt(async () => {
   state.ci = await api("POST", `/api/projects/${state.project.id}/ci/refresh`);
   renderCI();

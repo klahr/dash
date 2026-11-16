@@ -20,7 +20,7 @@ import { openAccount } from "./accountsheet.js";
 import { notifyOn, renderTitle } from "./notifications.js";
 import { renderPerms } from "./review.js";
 import { loadUsage } from "./usage.js";
-import { loadCI, renderCI } from "./actions.js";
+import { ciBuilding, loadCI, renderCI } from "./actions.js";
 import { loadCheckouts, loadRemote, renderCheckouts, renderRemote } from "./origin.js";
 import { openSettings } from "./settings.js";
 import { renderChatPane } from "./chatpane.js";
@@ -681,7 +681,8 @@ export function renderSideProjects() {
       icon,
       projectLabel(h("span", { class: "side-project-name" }, p.name), sub, "side-project-text"),
       sharedMark(p),
-      badge ? badgeEl(badge, "side-project-branch") : cur && baseBranch(p) ? h("span", { class: "side-project-branch" }, baseBranch(p)) : null));
+      badge ? badgeEl(badge, "side-project-branch") : cur && baseBranch(p) ? h("span", { class: "side-project-branch" }, baseBranch(p)) : null),
+      cur ? ciBuilding : null);
   };
   const items = withHeadings(projectGroups(), (g) => h("li", { class: "side-machine", "data-group": g.key }, groupHead(g)), item);
   $("#side-project-list").replaceChildren(...(items.length ? items : [h("li", { class: "machine-empty" }, "No projects yet")]));

@@ -1851,6 +1851,15 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .side-project-name, .side-project-branch { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-project-branch { flex: 0 1 auto; max-width: 45%; padding: 1px 6px; border-radius: var(--r-s); background: var(--bg); font-family: var(--mono); font-size: var(--fs-2xs); font-weight: 400; color: var(--muted); }
 .side-project-list li.current { background: var(--raised); }
+/* A build running on GitHub: a hollow ring that pulses outward, beside the
+   current project (the icon's filled dot is Claude's status). Static with reduced motion. */
+.side-ci-build { flex: none; position: relative; display: grid; place-items: center; width: 28px; align-self: stretch; margin-left: -4px; border-radius: var(--r-m); }
+.side-ci-build[hidden] { display: none; }
+.side-ci-build::before, .side-ci-build::after { content: ""; grid-area: 1 / 1; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--running); box-sizing: border-box; }
+.side-ci-build::after { animation: ci-ring 1.6s ease-out infinite; }
+.side-ci-build:hover { background: color-mix(in srgb, var(--running) 14%, transparent); }
+@keyframes ci-ring { from { transform: scale(1); opacity: .8; } to { transform: scale(2.2); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .side-ci-build::after { display: none; } }
 .side-project[aria-current="true"] { color: var(--text); font-weight: 600; cursor: default; }
 .side-project[aria-current="true"]:hover { background: none; }
 .side-new-project { display: flex; align-items: center; gap: 10px; flex: none; min-height: 36px; margin-top: 4px; padding: 0 8px; border-radius: var(--r-m); color: var(--muted); font-size: var(--fs-m); text-align: left; }
@@ -1900,6 +1909,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .side-bottom { padding-bottom: calc(var(--safe-b) + 12px); }
   .side-project-list { overflow: visible; }
   .side-project { min-height: 44px; font-size: var(--fs-body); }
+  .side-ci-build { width: 40px; }
   .side-new-project, .side-runner { min-height: 44px; }
   .quick-btn { min-height: 44px; }
   .foot-menu > summary { width: 44px; height: 44px; }
@@ -2020,6 +2030,8 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .side-collapsed .side-runner { justify-content: center; padding: 0; }
   .side-collapsed .side-runner-badge { display: block; }
   .side-collapsed .side-project-icon { width: 32px; height: 32px; font-size: var(--fs-s); }
+  .side-collapsed .side-project-list li.current { position: relative; }
+  .side-collapsed .side-ci-build { position: absolute; right: 2px; bottom: 0; width: 18px; height: 18px; margin: 0; }
   .side-collapsed .side-project[aria-current="true"] .side-project-icon { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent); }
   .side-collapsed .side-new-project { justify-content: center; padding: 0; }
   .side-collapsed .side-new-project svg { width: 26px; height: 26px; padding: 5px; }

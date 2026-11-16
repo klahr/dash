@@ -49,6 +49,7 @@
         <summary class="icon-btn" aria-label="Project menu" title="Project menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5h.01M12 12h.01M12 19h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
         <div class="foot-menu-list">
           <button id="pm-branch" type="button" data-icon="branch">Switch branch…</button>
+          <button id="pm-builds" type="button" data-icon="checks" aria-haspopup="dialog" title="GitHub Actions on the default branch" hidden>Builds</button>
           <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
           <button id="pm-cleanup" type="button" data-icon="trash" title="Remove leftover worktrees, branches, logs and uploads">Clean up</button>
           <button id="pm-delete" type="button" data-icon="trash" class="danger">Delete project…</button>
@@ -159,6 +160,7 @@
           <h2 class="side-projects-head" id="side-runners-title">Runners</h2>
           <ul class="side-runner-list" id="side-runner-list"></ul>
         </div>
+        <!-- Only a failing build or release shows here; a running one is a ring on the project's row (renderCI). -->
         <button class="usage-pill ci-pill" id="ci-pill" hidden aria-haspopup="dialog" title="GitHub Actions on the default branch"></button>
         <!-- Claude's status page (status.claude.com): shown while something is wrong, when a platform admin turned it on. -->
         <button class="usage-pill claude-pill" id="claude-pill" type="button" hidden aria-haspopup="dialog" title="Claude's status"></button>
