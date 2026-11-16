@@ -8,7 +8,6 @@ Most important first within each section.
 
 ## Quality
 
-- [ ] Run an accessibility scan of the web UI (labels, focus, contrast, keyboard) and fix the findings.
 
 ## Features
 
