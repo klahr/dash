@@ -8,7 +8,6 @@ Most important first within each section.
 
 ## Quality
 
-- [ ] Try PR mode and failed-build investigation against a real GitHub repository.
 - [ ] Run an accessibility scan of the web UI (labels, focus, contrast, keyboard) and fix the findings.
 
 ## Features
