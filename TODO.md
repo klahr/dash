@@ -20,7 +20,6 @@ Most important first within each section.
 
 ## Go live
 
-- [x] Replace the `dashhost.dev` example domain in `docs/deploy.md` with a reserved one (`example.dev`).
 - [ ] Turn on GitHub security for the repo: secret scanning with push protection, Dependabot
       alerts and security updates, and private vulnerability reporting (the README links to advisories).
 - [ ] Production hub: 2FA on the admin account, scheduled `dash backup` with one restore
