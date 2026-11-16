@@ -22,10 +22,19 @@ type OrgBilling struct {
 	TrialUsed         bool
 	UnpaidSince       time.Time // zero: paid, or nothing to pay
 	EventAt           int64     // created time of the last subscription event applied
+
+	// A platform admin's override (migrations/0025_billing_free.sql): the
+	// org needs no subscription while FreeForever, or before FreeUntil.
+	FreeForever bool
+	FreeUntil   time.Time // zero: no date
+	FreeNote    string    // why, for admins
+	FreeSetBy   string    // the admin's username
+	FreeSetAt   time.Time
 }
 
 const orgBillingCols = `SELECT org_id, customer_id, subscription_id, subscription_item_id, status, quantity,
-	period_end, trial_end, cancel_at_period_end, trial_used, unpaid_since, event_at FROM org_billing`
+	period_end, trial_end, cancel_at_period_end, trial_used, unpaid_since, event_at,
+	free_forever, free_until, free_note, free_set_by, free_set_at FROM org_billing`
 
 func unixOrZero(s int64) time.Time {
 	if s <= 0 {
@@ -43,9 +52,10 @@ func zeroOrUnix(t time.Time) int64 {
 
 func orgBilling(q querier, org int64) (OrgBilling, error) {
 	b := OrgBilling{OrgID: org}
-	var period, trial, unpaid int64
+	var period, trial, unpaid, freeUntil, freeSetAt int64
 	err := q.QueryRow(orgBillingCols+" WHERE org_id = ?", org).Scan(&b.OrgID, &b.CustomerID, &b.SubscriptionID, &b.ItemID,
-		&b.Status, &b.Quantity, &period, &trial, &b.CancelAtPeriodEnd, &b.TrialUsed, &unpaid, &b.EventAt)
+		&b.Status, &b.Quantity, &period, &trial, &b.CancelAtPeriodEnd, &b.TrialUsed, &unpaid, &b.EventAt,
+		&b.FreeForever, &freeUntil, &b.FreeNote, &b.FreeSetBy, &freeSetAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return OrgBilling{OrgID: org}, nil
 	}
@@ -53,6 +63,7 @@ func orgBilling(q querier, org int64) (OrgBilling, error) {
 		return b, err
 	}
 	b.PeriodEnd, b.TrialEnd, b.UnpaidSince = unixOrZero(period), unixOrZero(trial), unixOrZero(unpaid)
+	b.FreeUntil, b.FreeSetAt = unixOrZero(freeUntil), unixOrZero(freeSetAt)
 	return b, nil
 }
 
@@ -82,15 +93,18 @@ func (a *Accounts) UpdateOrgBilling(org int64, fn func(*OrgBilling) error) (OrgB
 		}
 		b.OrgID = org
 		_, err = tx.Exec(`INSERT INTO org_billing (org_id, customer_id, subscription_id, subscription_item_id, status, quantity,
-				period_end, trial_end, cancel_at_period_end, trial_used, unpaid_since, event_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				period_end, trial_end, cancel_at_period_end, trial_used, unpaid_since, event_at,
+				free_forever, free_until, free_note, free_set_by, free_set_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (org_id) DO UPDATE SET customer_id = excluded.customer_id, subscription_id = excluded.subscription_id,
 				subscription_item_id = excluded.subscription_item_id, status = excluded.status, quantity = excluded.quantity,
 				period_end = excluded.period_end, trial_end = excluded.trial_end, cancel_at_period_end = excluded.cancel_at_period_end,
 				trial_used = excluded.trial_used, unpaid_since = excluded.unpaid_since, event_at = excluded.event_at,
-				updated_at = excluded.updated_at`,
+				free_forever = excluded.free_forever, free_until = excluded.free_until, free_note = excluded.free_note,
+				free_set_by = excluded.free_set_by, free_set_at = excluded.free_set_at, updated_at = excluded.updated_at`,
 			org, b.CustomerID, b.SubscriptionID, b.ItemID, b.Status, b.Quantity, zeroOrUnix(b.PeriodEnd), zeroOrUnix(b.TrialEnd),
-			b.CancelAtPeriodEnd, b.TrialUsed, zeroOrUnix(b.UnpaidSince), b.EventAt, time.Now().Unix())
+			b.CancelAtPeriodEnd, b.TrialUsed, zeroOrUnix(b.UnpaidSince), b.EventAt,
+			b.FreeForever, zeroOrUnix(b.FreeUntil), b.FreeNote, b.FreeSetBy, zeroOrUnix(b.FreeSetAt), time.Now().Unix())
 		return err
 	})
 	return b, err

@@ -12,6 +12,8 @@ limits, no billing page and no banners, and behaves exactly as before.
   subscription. Its quantity is the number of members ("seats"); pending invitations don't
   count.
 - The instance's own **Default** organization (the `DASH_USERNAME` account's) is never billed.
+- A platform admin can make any organization free, forever or until a date (see
+  [Free organizations](#free-organizations)).
 
 Prices and currencies live in Stripe, not in Dash: Dash only knows the id of a recurring
 per-seat price, and Stripe's Checkout and invoices show the amount.
@@ -71,6 +73,31 @@ Use test-mode keys (`sk_test_…`) and the Stripe CLI to try it out:
   working, or that the board is read-only. Owners get the buttons; other members are asked to
   talk to an owner.
 
+## Free organizations
+
+A **platform admin** can make an organization free, forever or until a date: a partner, a
+pilot, your own team. While it holds, the organization needs no subscription, whatever its
+number of members: no banner, no read-only board, no prompt to subscribe when someone invites.
+
+1. Switch to the organization. For one you aren't a member of, use the
+   [API](#api) instead.
+2. Open **Organization → Billing**. Platform admins see **Free override (platform admins)**
+   there.
+3. Pick **Free forever**, or **Free until** and the last free day. Add a note on why if you
+   like: only platform admins see it, with who set the override and when.
+4. Click **Make free**. **Clear** ends it.
+
+Members and owners see "Free forever" or "Free until <date>" in **Organization → Billing**
+instead of the subscribe button.
+
+When a date passes, or you clear the override, the usual rule applies again. If the
+organization then needs a subscription, it gets a full grace period from that moment: an
+earlier, unpaid grace period doesn't count.
+
+An override doesn't touch Stripe. A subscription the organization has carries on and is billed
+as before, and its seats keep following the members. If the owner doesn't want to pay while
+the organization is free, they cancel it in **Manage billing**.
+
 ## Seats
 
 Seats follow the members. When someone accepts an invitation (with an account they have, or a
@@ -118,18 +145,30 @@ Stripe account can sell other things too.
 
 For each organization Dash keeps, in SQLite (`org_billing`): the Stripe customer and
 subscription ids, the subscription's status, seats, period and trial end, whether it cancels
-at the period end, whether the org has had its trial, and since when it has been unpaid.
+at the period end, whether the org has had its trial, since when it has been unpaid, and a
+platform admin's free override.
 
 ## API
 
 | Method and path                              | Who            | What                                     |
 |----------------------------------------------|----------------|------------------------------------------|
-| `GET /api/orgs/{id}/billing`                 | members        | the state: `enabled`, `free`, `required`, `status`, `read_only`, `grace_until`, `seats`, `period_end`, `trial_end`, `can_subscribe`, `can_manage`, … |
+| `GET /api/orgs/{id}/billing`                 | members        | the state: `enabled`, `free`, `free_forever`, `free_until`, `required`, `status`, `read_only`, `grace_until`, `seats`, `period_end`, `trial_end`, `can_subscribe`, `can_manage`, … |
 | `POST /api/orgs/{id}/billing/checkout`       | owners         | `{url}` of a Stripe Checkout session     |
 | `POST /api/orgs/{id}/billing/portal`         | owners         | `{url}` of a customer portal session     |
 | `POST /api/billing/webhook`                  | Stripe         | events, signed                           |
+| `GET /api/admin/orgs/{id}/billing`           | platform admins | the override (`free_forever`, `free_until`, `note`, `set_by`, `set_at`, `active`) and the `state` |
+| `PUT /api/admin/orgs/{id}/billing`           | platform admins | `{free_forever}` or `{free_until}` (RFC 3339, in the future), with an optional `note` |
+| `DELETE /api/admin/orgs/{id}/billing`        | platform admins | clear the override                       |
 
-They need a browser session; API tokens get `403`. With billing off, `GET` answers
+They need a browser session; API tokens get `403`, and so does anyone but a platform admin on
+`/api/admin/…`, owners of the organization included. For example, signed in as a platform
+admin (with the browser's session cookie):
+
+```sh
+curl -X PUT https://dash.example.com/api/admin/orgs/42/billing \
+  -H 'Content-Type: application/json' -b '__Host-dash_session=…' \
+  -d '{"free_until": "2027-01-01T00:00:00Z", "note": "pilot"}'
+``` With billing off, `GET` answers
 `{"enabled": false}` and the others `404`. `POST /api/orgs/{id}/invitations` adds
 `"billing": {"subscription_needed": true, …}` to its answer when the org would need a
 subscription it doesn't have.

@@ -11,12 +11,15 @@ import (
 // accountPaths are the API paths that still change things in an org whose
 // board is read-only for want of a subscription: signing in and out, the
 // account, the org's members and invitations (removing members down to one
-// makes it free again), tokens, and billing itself.
+// makes it free again), tokens, billing itself, and platform admins' routes.
 var accountPaths = []string{
 	"/api/login", "/api/logout", "/api/auth/", "/api/account/", "/api/orgs", "/api/invitations/",
 	"/api/tokens", "/api/signup", "/api/password/", "/api/billing/",
 	// Answering Claude's permission prompts only lets work already running end.
 	"/api/permissions/",
+	// Platform admins' settings are the whole Dash's, not an org's board
+	// (and include making an org free).
+	"/api/admin/",
 }
 
 func accountPath(p string) bool {

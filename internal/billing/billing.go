@@ -133,12 +133,16 @@ func live(st string) bool {
 type State struct {
 	Enabled bool `json:"enabled"`
 	// Free: the org needs no subscription (a personal workspace, one
-	// member, or the instance's own org).
-	Free     bool   `json:"free"`
-	Members  int    `json:"members"`
-	Required bool   `json:"required"` // it needs a subscription and has none that's paid for
-	Status   string `json:"status,omitempty"`
-	ReadOnly bool   `json:"read_only"`
+	// member, the instance's own org, or a platform admin's override).
+	Free bool `json:"free"`
+	// FreeForever and FreeUntil: a platform admin made the org free, for
+	// good or until then. Only set while the override holds.
+	FreeForever bool       `json:"free_forever,omitempty"`
+	FreeUntil   *time.Time `json:"free_until,omitempty"`
+	Members     int        `json:"members"`
+	Required    bool       `json:"required"` // it needs a subscription and has none that's paid for
+	Status      string     `json:"status,omitempty"`
+	ReadOnly    bool       `json:"read_only"`
 	// GraceUntil is when the board becomes read-only if nothing is paid.
 	GraceUntil        *time.Time `json:"grace_until,omitempty"`
 	PeriodEnd         *time.Time `json:"period_end,omitempty"`
@@ -166,6 +170,12 @@ func (s *Service) exempt(org int64) bool {
 	return err == nil && d.ID == org
 }
 
+// freeByOverride reports whether a platform admin's override makes b's org
+// free at now.
+func freeByOverride(b store.OrgBilling, now time.Time) bool {
+	return b.FreeForever || now.Before(b.FreeUntil)
+}
+
 // State is org's billing now. It also starts (or ends) the grace period of
 // an org that needs a subscription it doesn't have.
 func (s *Service) State(org int64) (State, error) {
@@ -184,9 +194,11 @@ func (s *Service) State(org int64) (State, error) {
 	if err != nil {
 		return State{}, err
 	}
+	now := s.now()
+	override := freeByOverride(b, now)
 	st := State{
 		Enabled: true, Members: members, Status: b.Status,
-		Free:      personal || members < 2 || s.exempt(org),
+		Free:      personal || members < 2 || s.exempt(org) || override,
 		PeriodEnd: timePtr(b.PeriodEnd), TrialEnd: timePtr(b.TrialEnd), CancelAtPeriodEnd: b.CancelAtPeriodEnd,
 		CanSubscribe: !live(b.Status), HasAccount: b.CustomerID != "",
 	}
@@ -196,12 +208,20 @@ func (s *Service) State(org int64) (State, error) {
 	if !b.TrialUsed {
 		st.TrialDays = s.cfg.TrialDays
 	}
+	if override {
+		st.FreeForever = b.FreeForever
+		if !b.FreeForever {
+			st.FreeUntil = timePtr(b.FreeUntil)
+		}
+	}
 	st.Required = !st.Free && !good(b.Status)
-	now := s.now()
+	// The grace period counts from when the org came to need a
+	// subscription: never from before an admin's override ended.
+	stale := func(x store.OrgBilling) bool { return x.UnpaidSince.IsZero() || x.UnpaidSince.Before(x.FreeUntil) }
 	switch {
-	case st.Required && b.UnpaidSince.IsZero():
+	case st.Required && stale(b):
 		b, err = s.acc.UpdateOrgBilling(org, func(x *store.OrgBilling) error {
-			if x.UnpaidSince.IsZero() {
+			if stale(*x) {
 				x.UnpaidSince = now.UTC().Truncate(time.Second)
 			}
 			return nil
@@ -255,7 +275,7 @@ func (s *Service) InviteNotice(org int64) any {
 		return nil
 	}
 	st, err := s.State(org)
-	if err != nil || s.exempt(org) || good(st.Status) {
+	if err != nil || s.exempt(org) || good(st.Status) || st.FreeForever || st.FreeUntil != nil {
 		return nil
 	}
 	if p, _ := s.acc.ForOrg(org).Personal(); p {
@@ -395,4 +415,98 @@ func (s *Service) Portal(ctx context.Context, org int64) (string, error) {
 		return "", ErrNoCustomer
 	}
 	return s.stripe.CreatePortalSession(ctx, b.CustomerID, s.cfg.PublicURL+"/?billing=portal")
+}
+
+// ErrFreeOverride is a free override that can't be set as asked.
+var ErrFreeOverride = errors.New("make the organization free either forever or until a date in the future")
+
+// Override is a platform admin's billing override of an org, as admins see
+// it.
+type Override struct {
+	OrgID   int64  `json:"org_id"`
+	OrgName string `json:"org_name"`
+	// Active: the override makes the org free now.
+	Active      bool       `json:"active"`
+	FreeForever bool       `json:"free_forever"`
+	FreeUntil   *time.Time `json:"free_until,omitempty"`
+	Note        string     `json:"note,omitempty"`
+	SetBy       string     `json:"set_by,omitempty"`
+	SetAt       *time.Time `json:"set_at,omitempty"`
+}
+
+// maxNote is how long an override's note may be, in bytes.
+const maxNote = 500
+
+// Override is org's billing override.
+func (s *Service) Override(org int64) (Override, error) {
+	name, err := s.acc.OrgName(org)
+	if err != nil {
+		return Override{}, err
+	}
+	b, err := s.acc.OrgBilling(org)
+	if err != nil {
+		return Override{}, err
+	}
+	return Override{
+		OrgID: org, OrgName: name, Active: freeByOverride(b, s.now()),
+		FreeForever: b.FreeForever, FreeUntil: timePtr(b.FreeUntil),
+		Note: b.FreeNote, SetBy: b.FreeSetBy, SetAt: timePtr(b.FreeSetAt),
+	}, nil
+}
+
+// SetFree makes org free forever, or until until (which must be in the
+// future), whatever its members; by is the admin who does it. A
+// subscription it has is left alone: its owners cancel it in the portal if
+// they want, and its seats keep following the members.
+func (s *Service) SetFree(org int64, forever bool, until time.Time, note, by string) (Override, error) {
+	now := s.now()
+	note = strings.TrimSpace(note)
+	if forever == !until.IsZero() || !forever && !now.Before(until) || len(note) > maxNote {
+		return Override{}, ErrFreeOverride
+	}
+	if forever {
+		until = time.Time{}
+	}
+	if _, err := s.acc.UpdateOrgBilling(org, func(x *store.OrgBilling) error {
+		x.FreeForever, x.FreeUntil, x.FreeNote = forever, until.UTC().Truncate(time.Second), note
+		if !x.FreeUntil.IsZero() && !now.Before(x.FreeUntil) {
+			return ErrFreeOverride // under a second away
+		}
+		x.FreeSetBy, x.FreeSetAt = by, now.UTC().Truncate(time.Second)
+		x.UnpaidSince = time.Time{} // free now: a grace period starts afresh after
+		return nil
+	}); err != nil {
+		return Override{}, err
+	}
+	s.changed(org)
+	slog.Info("billing: org made free", "org", org, "forever", forever, "until", until, "by", by)
+	return s.Override(org)
+}
+
+// ClearFree ends org's override: the usual rule applies again, and an org
+// that then needs a subscription gets a full grace period from now.
+func (s *Service) ClearFree(org int64, by string) (Override, error) {
+	if _, err := s.acc.UpdateOrgBilling(org, func(x *store.OrgBilling) error {
+		if freeByOverride(*x, s.now()) {
+			x.UnpaidSince = time.Time{}
+		}
+		x.FreeForever, x.FreeUntil, x.FreeNote, x.FreeSetBy, x.FreeSetAt = false, time.Time{}, "", "", time.Time{}
+		return nil
+	}); err != nil {
+		return Override{}, err
+	}
+	s.changed(org)
+	slog.Info("billing: org's free override cleared", "org", org, "by", by)
+	return s.Override(org)
+}
+
+// changed brings org's grace period in line and tells OnChange: its tasks
+// may start now.
+func (s *Service) changed(org int64) {
+	if _, err := s.State(org); err != nil {
+		slog.Error("billing state", "org", org, "err", err)
+	}
+	if s.OnChange != nil {
+		s.OnChange(org)
+	}
 }

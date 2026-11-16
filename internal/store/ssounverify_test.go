@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -42,6 +43,7 @@ func TestMigrateUnverifiesGoogleDomains(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	undoBillingFree(t, db)
 	if _, err := db.Exec("PRAGMA user_version = 23"); err != nil {
 		t.Fatal(err)
 	}
@@ -58,6 +60,17 @@ func TestMigrateUnverifiesGoogleDomains(t *testing.T) {
 	for _, d := range []string{"dns.example.com", "admin.example.com"} {
 		if o, err := a.DomainOrg(d); err != nil || o.OrgID != org.ID {
 			t.Fatalf("%s: %+v %v", d, o, err)
+		}
+	}
+}
+
+// undoBillingFree undoes migration 0025, for tests that run the migrations
+// after an earlier one again.
+func undoBillingFree(t *testing.T, db *sql.DB) {
+	t.Helper()
+	for _, col := range []string{"free_forever", "free_until", "free_note", "free_set_by", "free_set_at"} {
+		if _, err := db.Exec("ALTER TABLE org_billing DROP COLUMN " + col); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

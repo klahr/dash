@@ -32,7 +32,7 @@ async function openBillingPortal() {
 function billingButtons(b) {
   if (!b?.can_manage) return [];
   return [
-    b.can_subscribe ? h("button", { class: "btn small primary", type: "button", onclick: attempt(startCheckout) },
+    b.can_subscribe && !freeText(b) ? h("button", { class: "btn small primary", type: "button", onclick: attempt(startCheckout) },
       b.trial_days ? `Start ${b.trial_days}-day trial` : "Subscribe") : null,
     b.has_account ? h("button", { class: "btn small", type: "button", onclick: attempt(openBillingPortal) }, "Manage billing") : null,
   ].filter(Boolean);
@@ -56,11 +56,36 @@ function renderBillingBanner() {
   el.hidden = false;
 }
 
-// renderOrgBilling fills the Billing section of the org sheet (owners only).
+// freeText is a platform admin's override as members see it, or "".
+const freeText = (b) => b?.free_forever ? "Free forever" : b?.free_until ? `Free until ${dateText(b.free_until)}` : "";
+
+// renderOrgBilling fills the Billing section of the org sheet: owners see
+// the subscription, members a free override, platform admins the override's
+// controls.
 export function renderOrgBilling(b) {
-  $("#org-billing").hidden = !b?.enabled || !b.can_manage;
+  const admin = !!state.me?.user?.is_platform_admin;
+  const free = freeText(b);
+  $("#org-billing").hidden = !b?.enabled || !(b.can_manage || free || admin);
   if ($("#org-billing").hidden) return;
-    const lines = [];
+  const body = $("#org-billing-body");
+  if (!b.can_manage) {
+    body.replaceChildren(...(free ? [h("p", { class: "hint" }, `${free}: a platform admin waived the subscription for this organization.`)] : []),
+      h("div", { id: "org-billing-admin" }));
+  } else {
+    body.replaceChildren(...ownerBillingLines(b, free).map((l) => h("p", { class: "hint" }, l)),
+      h("div", { class: "billing-actions" }, ...billingButtons(b)), h("div", { id: "org-billing-admin" }));
+  }
+  if (admin) renderFreeOverride($("#org-billing-admin")).catch((err) => toast(err.message, true));
+}
+
+function ownerBillingLines(b, free) {
+  const lines = [];
+  if (free) {
+    lines.push(`${free}: a platform admin waived the subscription for this organization, whatever its members.`);
+    if (b.seats) lines.push("The subscription carries on as before: cancel it in the billing portal if you don't need it.");
+    else if (b.free_until) lines.push(`After that, organizations with two or more members need a subscription, billed per member.`);
+    return lines;
+  }
   switch (b.status) {
     case "active":
       lines.push(`Subscribed · ${plural(b.seats, "seat")} · ${b.cancel_at_period_end ? "ends" : "renews"} ${b.period_end ? dateText(b.period_end) : ""}`);
@@ -83,15 +108,72 @@ export function renderOrgBilling(b) {
   } else {
     lines.push("Seats follow the members: adding or removing someone updates the subscription, prorated.");
   }
-  $("#org-billing-body").replaceChildren(...lines.map((l) => h("p", { class: "hint" }, l)),
-    h("div", { class: "billing-actions" }, ...billingButtons(b)));
+  return lines;
+}
+
+// localDay is t's day here, as a date input's value.
+const localDay = (t) => {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+// renderFreeOverride: platform admins make the org free, forever or until
+// the end of a day, or clear it.
+async function renderFreeOverride(el) {
+  const org = state.me.org;
+  const path = `/api/admin/orgs/${org.id}/billing`;
+  const o = await api("GET", path, null, "");
+  const kind = h("select", { "aria-label": "How long the organization is free" },
+    h("option", { value: "until", selected: !o.free_forever }, "Free until"),
+    h("option", { value: "forever", selected: o.free_forever }, "Free forever"));
+  const tomorrow = localDay(Date.now() + 864e5);
+  const day = h("input", { type: "date", min: localDay(Date.now()), value: o.free_until ? localDay(o.free_until) : tomorrow, "aria-label": "Last free day" });
+  const note = h("input", { type: "text", value: o.note || "", maxlength: "500", placeholder: "Why (only platform admins see it)", "aria-label": "Note" });
+  const sync = () => { day.hidden = kind.value === "forever"; };
+  kind.addEventListener("change", sync);
+  sync();
+  const done = async (msg) => {
+    toast(msg, { tone: "ok" });
+    renderOrgBilling(await loadBilling()); // and the board's banner
+  };
+  const save = attempt(async () => {
+    const body = { note: note.value };
+    if (kind.value === "forever") body.free_forever = true;
+    else {
+      if (!day.value) throw new Error("Pick the last free day.");
+      body.free_until = new Date(`${day.value}T23:59:59`).toISOString(); // the end of that day, here
+    }
+    const r = await api("PUT", path, body, "");
+    await done(`${org.name} is ${freeText(r.state).toLowerCase() || "free"}`);
+  });
+  const clear = attempt(async () => {
+    const ok = await ask({ title: `Clear ${org.name}'s free override?`,
+      body: "The usual rule applies again: with two or more members it needs a subscription, after a full grace period from now.", ok: "Clear" });
+    if (!ok) return;
+    await api("DELETE", path, null, "");
+    await done("Free override cleared");
+  });
+  let status = "Not set: the usual rule applies.";
+  if (o.free_forever || o.free_until) {
+    status = o.active ? (o.free_forever ? "Free forever" : `Free until ${dateText(o.free_until)}`) : `Ended ${dateText(o.free_until)}`;
+    if (o.set_by) status += ` · set by ${o.set_by}${o.set_at ? ` on ${dateText(o.set_at)}` : ""}`;
+    if (o.note) status += ` · ${o.note}`;
+  }
+  el.replaceChildren(
+    h("h3", { class: "section-head" }, "Free override (platform admins)"),
+    h("p", { class: "hint" }, status),
+    h("p", { class: "hint" }, "The organization needs no subscription while it holds, whatever its members. A subscription it has isn't touched."),
+    h("div", { class: "org-invite" }, kind, day, note),
+    h("div", { class: "billing-actions" },
+      h("button", { class: "btn small primary", type: "button", onclick: save }, o.active ? "Update" : "Make free"),
+      (o.free_forever || o.free_until) ? h("button", { class: "btn small danger", type: "button", onclick: clear }, "Clear") : null));
 }
 
 // offerSubscription follows an invitation that will make the org need a
 // subscription: owners can start it straight away.
 export async function offerSubscription(notice) {
   const b = await loadBilling();
-  if (!b?.enabled || !b.required && !b.free) return;
+  if (!b?.enabled || !b.required && !b.free || b.free_forever || b.free_until) return;
   if (!b.can_manage) {
     toast("Once they join, an owner needs to subscribe: organizations with two or more members are billed per member.", { tone: "info" });
     return;

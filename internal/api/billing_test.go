@@ -170,3 +170,87 @@ func TestNoBillingNoLimits(t *testing.T) {
 		t.Fatalf("create: %d %s", w.Code, w.Body)
 	}
 }
+
+// A platform admin's free override lifts the read-only board and the hold
+// on tasks of an org past its grace period; its members can't set one.
+func TestFreeOverrideLiftsTheGate(t *testing.T) {
+	parallel(t)
+
+	s, _, _ := boardServer(t)
+	st := raw(s)
+	acc := st.Accounts()
+	owner := ownerSession(t, s)
+	team, err := acc.CreateOrg(owner.User.ID, "Team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := acc.Invite(owner.User.ID, team.ID, "m@example.com", store.RoleOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := acc.RegisterWithInvitation(tok, "m", "m-password"); err != nil {
+		t.Fatal(err)
+	}
+	p, err := st.CreateProject(model.Project{Name: "teamweb", OrgID: team.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	b := billing.New(acc, stripeStub{}, billing.Config{SecretKey: "sk_test", WebhookSecret: "whsec_x", PriceID: "price_x",
+		TrialDays: 14, PublicURL: "https://dash.test"})
+	b.SetClock(func() time.Time { return now })
+	s.Billing = b
+	h := s.Routes()
+	a := loggedIn(t, h) // the instance's platform admin
+	do(t, a, "POST", "/api/auth/switch-org", fmt.Sprintf(`{"org_id":%d}`, team.ID))
+	b.State(team.ID) // starts the grace period
+	now = now.Add(billing.DefaultGrace + time.Hour)
+	newTodo := `{"title":"new","prompt":"y"}`
+	if w := do(t, a, "POST", "/api/projects/"+p.ID+"/todos", newTodo); w.Code != http.StatusPaymentRequired {
+		t.Fatalf("create when unpaid: %d %s", w.Code, w.Body)
+	}
+
+	// Another owner of the org, not a platform admin, can't make it free.
+	mh := loginAs(t, h, "m", "m-password")
+	do(t, mh, "POST", "/api/auth/switch-org", fmt.Sprintf(`{"org_id":%d}`, team.ID))
+	path := fmt.Sprintf("/api/admin/orgs/%d/billing", team.ID)
+	for _, m := range []string{"GET", "PUT", "DELETE"} {
+		if w := do(t, mh, m, path, `{"free_forever":true}`); w.Code != http.StatusForbidden {
+			t.Errorf("%s by an owner who isn't a platform admin: %d %s", m, w.Code, w.Body)
+		}
+	}
+	if b.Hold(team.ID) == "" {
+		t.Fatal("tasks of an unpaid org aren't held")
+	}
+
+	// The platform admin can, even from inside the read-only org.
+	until := now.Add(30 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	if w := do(t, a, "PUT", path, `{"free_until":"`+until+`"}`); w.Code != http.StatusOK {
+		t.Fatalf("set free until: %d %s", w.Code, w.Body)
+	}
+	now = now.Add(10 * 24 * time.Hour)
+	if w := do(t, a, "POST", "/api/projects/"+p.ID+"/todos", newTodo); w.Code != http.StatusCreated {
+		t.Fatalf("create while free: %d %s", w.Code, w.Body)
+	}
+	if why := b.Hold(team.ID); why != "" {
+		t.Fatalf("tasks held while free: %s", why)
+	}
+	if w := do(t, mh, "GET", fmt.Sprintf("/api/orgs/%d/billing", team.ID), ""); !strings.Contains(w.Body.String(), `"free_until"`) {
+		t.Errorf("member's billing state: %d %s", w.Code, w.Body)
+	}
+
+	// Cleared: a fresh grace period, then read-only again.
+	if w := do(t, a, "DELETE", path, ""); w.Code != http.StatusOK {
+		t.Fatalf("clear: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, a, "POST", "/api/projects/"+p.ID+"/todos", newTodo); w.Code != http.StatusCreated {
+		t.Fatalf("create in the new grace period: %d %s", w.Code, w.Body)
+	}
+	now = now.Add(billing.DefaultGrace)
+	if w := do(t, a, "POST", "/api/projects/"+p.ID+"/todos", newTodo); w.Code != http.StatusPaymentRequired {
+		t.Fatalf("create after the new grace period: %d %s", w.Code, w.Body)
+	}
+	if b.Hold(team.ID) == "" {
+		t.Fatal("tasks not held after the new grace period")
+	}
+}
