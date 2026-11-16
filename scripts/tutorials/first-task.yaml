@@ -1,0 +1,76 @@
+# Your first task on the board: create a task, queue it, watch it run,
+# read the diff and merge it. About a minute. See README.md for the format.
+title: Your first task on the board
+next: "Goals: let Claude plan the work"
+seed: first-task   # seed.mjs's scene: two tasks done, two drafts
+
+steps:
+  - say: >
+      This is Dash. Every task in a project lives on this board, and moves
+      from left to right: drafts, the queue, running, review, and done.
+    do:
+      - hover: "#board .col[data-lane=draft] h2, #board [data-lane=draft]"
+      - pause: 1.5
+      - hover: "#board [data-lane=done]"
+
+  - say: >
+      Press New task, and describe the change you want in plain words, the
+      way you would ask a colleague.
+    do:
+      - click: "#new-todo"
+      - type: Tell shoppers how much more they need to spend for free shipping.
+        into: "#quick-rows .quick-row"
+        cps: 28
+
+  - say: Save it as a draft. Claude reads it and gives the task a short name.
+    do:
+      - click: "#quick-form button[value=add]"
+      - wait: "#board .todo.s-draft"
+        text: Free-shipping
+
+  - say: When it looks right, press Enqueue. The first free runner picks it up.
+    do:
+      - click: .enqueue-chip
+        in: "#board .todo"
+        text: Free-shipping
+      - wait: "#board .todo.s-in_progress, #board .todo.s-queued"
+        text: Free-shipping
+
+  - say: >
+      Open the task to follow along. Every file Claude reads, every edit and
+      every test run shows up in its timeline.
+    do:
+      - click: .todo-open
+        in: "#board .todo"
+        text: Free-shipping
+
+  - say: >
+      Claude works in a git worktree of its own, so your main branch stays
+      untouched until you approve.
+    do:
+      - wait: "#board .todo.s-review"
+        text: Free-shipping
+        timeout: 120
+
+  - say: Ready for review, and the tests pass. Open Changes to read the diff.
+    do:
+      - click: ".pane-tabs button[data-pane=diff]"
+      - click: "#d-diff details.diff-file summary"
+        text: checkout.js
+      - pause: 1
+
+  - say: Looks good. Approve it, and Dash merges it into main as one commit.
+    do:
+      - click: .detail button.review
+        text: Approve
+      - wait: "#board .todo.s-merged"
+        text: Free-shipping
+        timeout: 60
+
+  - say: >
+      That's your first task: from an idea to merged code, without leaving
+      the board.
+    do:
+      - click: "#d-close"
+      - hover: "#board .todo.s-merged"
+        text: Free-shipping

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dash tutorial: intro</title>
+<link rel="stylesheet" href="/web/static/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/brand/vars.css">
+<link rel="stylesheet" href="brand.css">
+<style>
+/* The intro, 4.7 s: the logo builds itself, a light sweeps across it, the
+   wordmark slides out from behind it, the video's title rises in under
+   them, and everything moves out. Only the title changes between videos. */
+.lockup { position: absolute; left: 50%; top: 41%; display: flex; align-items: center; gap: 44px; transform: translate(-50%, -50%); }
+.lockup .logo { width: 220px; height: 220px; flex: none; z-index: 1; } /* the wordmark comes out from behind it */
+.wordmark { position: relative; }
+.halo { width: 900px; height: 900px; left: 50%; top: 41%; margin: -450px 0 0 -450px; }
+.wordmark { font-size: 168px; font-weight: 700; letter-spacing: -.035em; line-height: 1; overflow: hidden; padding: 0 .06em .08em 0; }
+.wordmark span { display: block; }
+.under { position: absolute; left: 192px; right: 192px; top: 63%; text-align: center; }
+.eyebrow { font-size: 26px; font-weight: 600; letter-spacing: .28em; text-transform: uppercase; color: var(--accent); }
+.title { margin-top: 18px; font-size: 68px; font-weight: 600; line-height: 1.12; letter-spacing: -.01em; color: var(--text); text-wrap: balance; }
+
+body.go .halo { animation: halo 2.6s var(--out) .4s both; }
+body.go .logo { animation: shift .8s var(--move) 1.7s both; }
+body.go .wordmark span { animation: reveal .8s var(--out) 1.85s both; }
+body.go .eyebrow { animation: rise .7s var(--out) 2.3s both; }
+body.go .title .l { animation: rise .6s var(--out) calc(2450ms + var(--i) * 24ms) both; }
+body.go .lockup, body.go .under { animation: leave .7s var(--in) 3.95s both; }
+body.go .halo-out { animation: leave .7s var(--in) 3.95s both; }
+
+/* The logo starts in the middle (shifted by --shift, measured by the
+   script) and moves left as the wordmark comes out from behind it. */
+@keyframes shift { from { transform: translateX(var(--shift)); } to { transform: none; } }
+@keyframes reveal { from { transform: translateX(-105%); opacity: 0; } 30% { opacity: 1; } to { transform: none; opacity: 1; } }
+@keyframes halo { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: .9; } }
+@keyframes leave { from { opacity: 1; filter: blur(0); } to { opacity: 0; filter: blur(10px); translate: 0 -24px; scale: .97; } }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div class="stage">
+  <div class="halo-out"><div class="halo"></div></div>
+  <div class="lockup">
+    <div class="logo"></div>
+    <div class="wordmark"><span>Dash</span></div>
+  </div>
+  <div class="under">
+    <div class="eyebrow" id="eyebrow"></div>
+    <div class="title" id="title"></div>
+  </div>
+</div>
+<script type="module">
+import { start, text, words } from './brand.js';
+start({
+  duration: 4.7,
+  setup() {
+    document.getElementById('eyebrow').textContent = text('series', 'Dash tutorials');
+    words(document.getElementById('title'), text('title', 'Your first task on the board'));
+    // How far right the logo starts: to the middle of the lockup.
+    const lockup = document.querySelector('.lockup'), logo = document.querySelector('.lockup .logo');
+    const l = lockup.getBoundingClientRect(), g = logo.getBoundingClientRect();
+    lockup.style.setProperty('--shift', `${l.left + l.width / 2 - (g.left + g.width / 2)}px`);
+  },
+});
+</script>
+</body>
+</html>

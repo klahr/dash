@@ -3,6 +3,7 @@
 # root: a hub, one runner with a stand-in for Claude Code (fakeclaude.mjs),
 # and the acme-shop project with tasks in every lane and a goal. Everything
 # lives in $DEMO_DIR (default /tmp/landing-demo), which is wiped first.
+# SEED_SCENE picks seed.mjs's starting state (default landing).
 # Needs go, git and node. Sign in at http://127.0.0.1:7791 as demo /
 # demo-password-for-shots; stop it with: kill $(cat $DEMO_DIR/pids)
 set -eu
@@ -55,5 +56,5 @@ runner=$(curl -sf -b cj $hub/api/runners | sed 's/.*"runners":\[{"id":"\([^"]*\)
 # A small /tmp would warn of low disk space on every page.
 curl -sf -b cj -X PATCH $hub/api/runners/$runner -d '{"disk":{"min_free_gb":0.1,"warn_percent":1,"warn_gb":0.2}}' > /dev/null
 project=$(curl -sf -b cj -X POST $hub/api/projects -d "{\"name\":\"acme-shop\",\"remote_url\":\"https://git.example.com/acme/acme-shop.git\",\"runners\":[\"$runner\"],\"test_command\":\"node --test\",\"run_command\":\"node src/server.js\",\"merge_mode\":\"local\"}" | sed 's/^{"id":"\([^"]*\)".*/\1/')
-node "$here/seed.mjs" $hub "$project"
+node "$here/seed.mjs" $hub "$project" "${SEED_SCENE:-landing}"
 echo "demo Dash at $hub (project $project)"

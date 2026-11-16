@@ -4,10 +4,9 @@
 // make.sh turns them into the WebP files in web/static/img/landing/.
 //
 //   CHROME=/path/to/chrome-headless-shell node shoot.mjs <out dir> [shot …]
-import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { launch, signIn as signInAt, sleep } from './cdp.mjs';
 
 const base = process.env.DASH_URL || 'http://127.0.0.1:7791';
 const user = process.env.DASH_USERNAME || 'demo';
@@ -18,69 +17,13 @@ if (!outDir || !process.env.CHROME) {
   process.exit(2);
 }
 mkdirSync(outDir, { recursive: true });
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Chrome, and one page in it.
-const port = 9300 + Math.floor(Math.random() * 500);
-const chrome = spawn(process.env.CHROME, [
-  `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'shots-'))}`,
-  '--hide-scrollbars', '--force-color-profile=srgb', '--font-render-hinting=none', '--no-first-run', 'about:blank',
-], { stdio: 'ignore' });
-let version;
-for (let i = 0; i < 50 && !version; i++) {
-  await sleep(200);
-  version = await fetch(`http://127.0.0.1:${port}/json/version`).then((r) => r.json()).catch(() => null);
-}
-const target = (await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json())).find((t) => t.type === 'page');
-const ws = new WebSocket(target.webSocketDebuggerUrl);
-await new Promise((r) => ws.addEventListener('open', r, { once: true }));
-let nextId = 0;
-const pending = new Map();
-ws.addEventListener('message', (e) => {
-  const m = JSON.parse(e.data);
-  if (m.method === 'Runtime.exceptionThrown') {
-    const d = m.params.exceptionDetails;
-    console.error('page error:', d.exception?.description || d.text);
-  }
-  if (m.id && pending.has(m.id)) {
-    const { resolve, reject } = pending.get(m.id);
-    pending.delete(m.id);
-    if (m.error) reject(new Error(JSON.stringify(m.error)));
-    else resolve(m.result);
-  }
-});
-const send = (method, params = {}) => new Promise((resolve, reject) => {
-  const id = ++nextId;
-  pending.set(id, { resolve, reject });
-  ws.send(JSON.stringify({ id, method, params }));
-});
-await send('Page.enable');
-await send('Runtime.enable');
-
-async function js(expr) {
-  const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
-  if (r.exceptionDetails) throw new Error(`${expr}: ${r.exceptionDetails.exception?.description || r.exceptionDetails.text}`);
-  return r.result.value;
-}
-async function wait(what, expr, secs = 20) {
-  for (let i = 0; i < secs * 10; i++) {
-    if (await js(`!!(${expr})`).catch(() => false)) return;
-    await sleep(100);
-  }
-  throw new Error(`timed out waiting for ${what}`);
-}
-async function viewport(width, height, scale, mobile = false) {
-  await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: scale, mobile });
-  await send('Emulation.setTouchEmulationEnabled', { enabled: mobile });
-}
-async function go(path) {
-  await send('Page.navigate', { url: base + path });
-  await sleep(500);
-  await wait('the page', 'document.readyState === "complete"');
-}
+const page = await launch();
+const { js, wait, viewport } = page;
+const go = (path) => page.go(base + path);
 async function shot(name) {
   await sleep(700); // let animations settle
-  const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  const { data } = await page.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   writeFileSync(join(outDir, `${name}.png`), Buffer.from(data, 'base64'));
   console.log(`${name}.png`);
 }
@@ -94,13 +37,7 @@ const cardOf = (title) => `[...document.querySelectorAll('#board .todo')].find((
 
 async function signIn() {
   await viewport(1680, 1000, 2);
-  await go('/login.html');
-  await js(`(() => {
-    const f = document.querySelector('#login');
-    f.username.value = ${JSON.stringify(user)}; f.password.value = ${JSON.stringify(pass)};
-    f.querySelector('button.btn.primary').click();
-  })()`);
-  await wait('the board', `document.querySelector('#board .todo')`);
+  await signInAt(page, base, user, pass);
 }
 
 const shots = {
@@ -169,6 +106,5 @@ try {
     await fn();
   }
 } finally {
-  ws.close();
-  chrome.kill();
+  page.close();
 }

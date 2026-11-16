@@ -216,6 +216,38 @@ export function cached(fn, ttlMs) {
       edit('src/views/product.html', '<img src="{{image}}"', '<img loading="lazy" decoding="async" src="{{image}}"');
     },
   },
+  {
+    // The task scripts/tutorials/first-task.yaml adds: it works slowly, so
+    // the video can show it running.
+    key: /free shipping/i, slow: true, title: 'Free-shipping hint in the cart', short: 'Cart says how far free shipping is',
+    summary: 'The cart now says how much more is needed for free shipping, e.g. "Add €21.00 more for free shipping", and the tests cover it.',
+    run() {
+      edit('src/checkout.js', 'const FREE_SHIPPING_FROM = 5000;\n', `const FREE_SHIPPING_FROM = 5000;
+
+// freeShippingHint tells the customer how far the cart is from free
+// shipping, or returns '' once it ships free.
+export function freeShippingHint(cart) {
+  const missing = FREE_SHIPPING_FROM - subtotal(cart);
+  return missing > 0 ? \`Add \${formatPrice(missing)} more for free shipping\` : '';
+}
+`);
+      edit('src/checkout.js', "import { chargeCard } from './payments.js';\n",
+        "import { chargeCard } from './payments.js';\nimport { formatPrice } from './format.js';\n");
+      write('test/shipping.test.js', `import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createCart, addItem } from '../src/cart.js';
+import { freeShippingHint } from '../src/checkout.js';
+
+test('the hint says how much is missing', () => {
+  assert.equal(freeShippingHint(addItem(createCart(), 'TEE-02')), 'Add €21.00 more for free shipping');
+});
+
+test('no hint once shipping is free', () => {
+  assert.equal(freeShippingHint(addItem(createCart(), 'TEE-02', 2)), '');
+});
+`);
+    },
+  },
   { key: /wishlist/i, hold: true, steps: [['Read', { file_path: 'src/cart.js' }], ['Grep', { pattern: 'customerId', path: 'src' }], ['Write', { file_path: 'src/wishlist.js' }], ['Bash', { command: 'node --test test/wishlist.test.js' }]] },
   { key: /order history/i, hold: true, steps: [['Read', { file_path: 'src/orders.js' }], ['Edit', { file_path: 'src/orders.js' }], ['Bash', { command: 'node --test' }]] },
   { key: /inline the critical css/i, hold: true, steps: [['Read', { file_path: 'src/views/layout.html' }], ['Bash', { command: 'npx lighthouse http://localhost:4100 --only-categories=performance --quiet' }]] },
@@ -240,11 +272,19 @@ async function task() {
     result('Done.', 0.3, 9);
     return;
   }
+  // A slow task takes a few seconds per step, so its run can be watched.
+  const pause = () => sleep(t.slow ? 2000 : 0);
   say('I\'ll read the relevant code, make the change and run the tests.');
+  await pause();
   tool('Read', { file_path: 'src/checkout.js' }, '…');
+  await pause();
   tool('Grep', { pattern: 'total\\(', path: 'src' }, 'src/cart.js\nsrc/checkout.js');
+  await pause();
   t.run();
+  if (t.slow) tool('Edit', { file_path: 'src/checkout.js' }, 'ok');
+  await pause();
   tool('Bash', { command: 'node --test' }, '# tests 9\n# pass 9\n# fail 0');
+  await pause();
   say(t.summary);
   result(t.summary);
 }
@@ -313,7 +353,9 @@ async function chat() {
 }
 
 // A short call: a title, or the summary of a finished task's report.
-const small = () => console.log(tasks.find((t) => t.summary && stdin.includes(t.summary.slice(0, 40)))?.short || 'Demo task');
+// A task with a title of its own is named by its prompt.
+const small = () => console.log(tasks.find((t) => t.summary && stdin.includes(t.summary.slice(0, 40)))?.short
+  || tasks.find((t) => t.title && t.key.test(stdin))?.title || 'Demo task');
 
 try {
   if (has('text')) small();

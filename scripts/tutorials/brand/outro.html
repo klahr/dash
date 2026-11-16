@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dash tutorial: outro</title>
+<link rel="stylesheet" href="/web/static/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/brand/vars.css">
+<link rel="stylesheet" href="brand.css">
+<style>
+/* The outro, 5.5 s (and a still hold the renderer adds): the logo comes
+   back with the end card. Everything sits in the top-left, inside the
+   title-safe area, and settles by about 2.2 s; the background slows to a
+   stop by 3.2 s. The right side and the bottom stay clear for YouTube's
+   end-screen elements. */
+.card { position: absolute; left: 192px; top: 150px; width: 860px; }
+.brandline { display: flex; align-items: center; gap: 26px; }
+.brandline .logo { width: 116px; height: 116px; flex: none; }
+.brandline .name { font-size: 76px; font-weight: 700; letter-spacing: -.03em; }
+.card > :not(.halo) { position: relative; }
+.halo { width: 640px; height: 640px; left: -180px; top: -260px; }
+.thanks { margin-top: 58px; font-size: 92px; font-weight: 700; line-height: 1.05; letter-spacing: -.025em; }
+.next { margin-top: 44px; display: flex; flex-direction: column; gap: 10px; }
+.next .label { font-size: 24px; font-weight: 600; letter-spacing: .26em; text-transform: uppercase; color: var(--accent); }
+.next .what { font-size: 44px; font-weight: 600; line-height: 1.15; color: var(--text); text-wrap: balance; }
+.link {
+  margin-top: 54px; display: inline-flex; align-items: center; gap: 16px; padding: 18px 30px 18px 24px;
+  border-radius: 999px; font-size: 34px; font-weight: 600; color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.link .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--merged); box-shadow: 0 0 18px var(--merged); }
+
+/* Faster than the intro: the logo builds in a second. */
+body.go .logo .tile { animation-duration: .6s; }
+body.go .logo .stem { animation-delay: .2s; animation-duration: .7s; }
+body.go .logo .top { animation-delay: .15s; }
+body.go .logo .ring { animation-delay: .55s; }
+body.go .logo .head { animation-delay: .7s; }
+body.go .logo .glow { animation-delay: .7s; }
+body.go .logo .sweep::before { animation-delay: 1.9s; }
+body.go .halo { animation: halo 2s var(--out) .2s both; }
+body.go .name { animation: slide .7s var(--out) .45s both; }
+body.go .thanks .l { animation: rise .6s var(--out) calc(700ms + var(--i) * 22ms) both; }
+body.go .next .label { animation: rise .6s var(--out) 1.25s both; }
+body.go .next .what { animation: rise .7s var(--out) 1.4s both; }
+body.go .link { animation: rise .7s var(--out) 1.6s both; }
+@keyframes slide { from { transform: translateX(-40px); opacity: 0; clip-path: inset(0 100% 0 0); } to { transform: none; opacity: 1; clip-path: inset(0 0 0 0); } }
+@keyframes halo { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: .8; } }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div class="stage">
+  <div class="card">
+    <div class="halo"></div>
+    <div class="brandline"><div class="logo"></div><div class="name">Dash</div></div>
+    <div class="thanks" id="thanks"></div>
+    <div class="next" id="next">
+      <div class="label">Up next</div>
+      <div class="what" id="next-what"></div>
+    </div>
+    <div class="link"><span class="dot"></span><span id="link"></span></div>
+  </div>
+</div>
+<script type="module">
+import { start, text, words } from './brand.js';
+start({
+  duration: 5.5,
+  stillAt: 3.2,
+  setup() {
+    words(document.getElementById('thanks'), text('thanks', 'Thanks for watching'));
+    const next = text('next');
+    if (next) document.getElementById('next-what').textContent = next;
+    else document.getElementById('next').remove();
+    // The link without its scheme reads better on screen.
+    document.getElementById('link').textContent = text('link', 'https://dash.example.com').replace(/^https?:\/\//, '');
+  },
+});
+</script>
+</body>
+</html>

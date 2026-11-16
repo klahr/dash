@@ -32,7 +32,7 @@ fi
 
 if command -v node >/dev/null 2>&1; then
 	echo "== node --check"
-	for f in web/static/*.js web/static/app/*.js; do
+	for f in web/static/*.js web/static/app/*.js scripts/landing-shots/*.mjs scripts/tutorials/*.mjs scripts/tutorials/lib/*.mjs; do
 		node --check "$f"
 	done
 fi
