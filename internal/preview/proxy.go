@@ -124,8 +124,8 @@ func (m *Manager) SetOrigin(r *http.Request) {
 	if m == nil || m.PublicURL != "" {
 		return
 	}
-	h := m.reqHost(r)
-	if h == "" || !m.dashHost(m.host(r)) {
+	h, ok := m.originHost(m.reqHost(r))
+	if !ok {
 		return
 	}
 	scheme := "http"
@@ -133,6 +133,29 @@ func (m *Manager) SetOrigin(r *http.Request) {
 		scheme = "https"
 	}
 	m.origin.Store(scheme + "://" + h)
+}
+
+// originHost checks a Host (or X-Forwarded-Host) value for SetOrigin and
+// rebuilds it as host[:port] from its checked parts: the host must be one
+// dashHost accepts, and the port, if any, a number from 1 to 65535. Nothing
+// else from the header (userinfo, a path) can reach the stored origin.
+func (m *Manager) originHost(h string) (string, bool) {
+	host, port, err := net.SplitHostPort(h)
+	if err != nil {
+		host, port = h, ""
+	}
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	if !m.dashHost(host) {
+		return "", false
+	}
+	if port == "" {
+		return host, true
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 || strconv.Itoa(n) != port {
+		return "", false
+	}
+	return net.JoinHostPort(host, port), true
 }
 
 // dashHost reports whether host (lowercase, no port) may be Dash's own: the

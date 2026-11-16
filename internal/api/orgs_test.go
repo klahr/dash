@@ -348,7 +348,6 @@ func (o *twoOrgs) recordEndpoints() []endpoint {
 
 		{"PATCH", "/api/issues/" + iid, `{"status":"dismissed"}`},
 		{"DELETE", "/api/issues/" + iid, ""},
-		{"GET", "/api/scan-runs/" + rid, ""},
 		{"GET", "/api/scan-runs/" + rid + "/log", ""},
 		{"POST", "/api/scan-runs/" + rid + "/cancel", ""},
 

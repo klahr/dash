@@ -16,6 +16,7 @@ import (
 
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/dispatch"
+	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
@@ -441,7 +442,7 @@ func (s *Server) hubPlace(ctx context.Context, sv *service, hpid, folder, name, 
 			folder = fmt.Sprintf("%s-%d", base, i)
 		}
 		path := filepath.Join(dir, folder)
-		if !within(root, path) || path == dir || filepath.Dir(path) != dir {
+		if !fsutil.Within(root, path) || path == dir || filepath.Dir(path) != dir {
 			return hubPlacement{}, fmt.Errorf("%w: bad project name", errBadRequest)
 		}
 		own, isProject := projects[path]
@@ -511,7 +512,7 @@ func (s *Server) hubBranch(ctx context.Context, id, path, want string) string {
 func LegacyHubClone(projectRoot string) func(model.Project) bool {
 	hub := filepath.Join(projectRoot, "hub")
 	return func(p model.Project) bool {
-		return projectRoot != "" && within(hub, p.Path) && filepath.Clean(p.Path) != hub
+		return projectRoot != "" && fsutil.Within(hub, p.Path) && filepath.Clean(p.Path) != hub
 	}
 }
 

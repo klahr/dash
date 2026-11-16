@@ -20,7 +20,7 @@ import (
 // openPR is step 3 in "pr" mode: push the todo's branch and open (or update)
 // its pull request, as a draft until its checks pass. The todo then waits in
 // Review, where the pull request is reviewed and merged by a person on
-// GitHub (Dash never merges it), until PollPRs sees it merged or closed.
+// GitHub (Dash never merges it), until pollPRs sees it merged or closed.
 func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) error {
 	wt := *t.Worktree
 	if t.WaitsOnGitHub() {
@@ -99,15 +99,6 @@ type prError struct{ error }
 
 func (e *prError) Unwrap() error { return e.error }
 
-// PollPRs follows open pull requests: merged ones are marked merged, closed
-// ones reject their task, and conflicts, failing checks and reviews asking
-// for changes are sent back to Claude. Tasks that failed with their pull
-// request still open are followed too, so a merge or close done by hand on
-// GitHub is noticed.
-func (m *MergeQueue) PollPRs(ctx context.Context) {
-	m.pollPRs(ctx, "")
-}
-
 // schedulePRPolls queues, on the worker of every project with an open pull
 // request, a poll of that project's pull requests (unless one is queued
 // already), so a merged one lands after the project's merges in hand and a
@@ -133,7 +124,12 @@ func (m *MergeQueue) openPRs() []model.Todo {
 	return out
 }
 
-// pollPRs follows the open pull requests of project projectID ("" for all).
+// pollPRs follows the open pull requests of project projectID ("" for
+// all): merged ones are marked merged, closed ones reject their task, and
+// conflicts, failing checks and reviews asking for changes are sent back to
+// Claude. Tasks that failed with their pull request still open are followed
+// too, so a merge or close done by hand on GitHub is noticed.
+// schedulePRPolls runs it per project.
 func (m *MergeQueue) pollPRs(ctx context.Context, projectID string) {
 	for _, t := range m.openPRs() {
 		if projectID != "" && t.ProjectID != projectID {
@@ -269,7 +265,7 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 			_ = m.sendBack(t, p, m.checksNote(ctx, p, n, code, other), false, fmt.Sprintf("checks fail on pull request #%d", n))
 		case len(other) > 0:
 			// Not something to fix in the code (e.g. an unsigned CLA): say so
-			// and leave it to a person. PollPRs still follows the pull
+			// and leave it to a person. pollPRs still follows the pull
 			// request, and carries on once the check passes.
 			m.blocked(t, fmt.Sprintf("%s%s fails, which isn't about the code. Fix it on GitHub (e.g. sign the CLA); Dash carries on once it passes", blockedPrefix(n), labels(other)))
 		default:

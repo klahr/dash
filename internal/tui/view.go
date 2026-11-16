@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -428,7 +429,7 @@ func (a *App) renderDetail() string {
 		meta = append(meta, fmt.Sprintf("PR #%d %s (gx copies the link)", t.PR.Number, strings.ToLower(t.PR.State)))
 	}
 	if t.MergedCommit != "" {
-		meta = append(meta, "commit "+t.MergedCommit[:min(8, len(t.MergedCommit))])
+		meta = append(meta, "commit "+gitops.ShortSHA(t.MergedCommit))
 	}
 	if t.Revert != nil {
 		meta = append(meta, "reverted")

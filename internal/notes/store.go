@@ -228,17 +228,11 @@ func (s *Store) stamp(tx *sql.Tx) (clock, seq uint64, err error) {
 	return
 }
 
-// Write saves d as this runner's write: a new entry, or a new version of
+// Put saves d as this runner's write: a new entry, or a new version of
 // d.ID or of the note titled d.Key. It doesn't scan for secrets;
-// Service.Put does. Notes it evicted to make room are synced too: a
-// catch-up carries them.
-func (s *Store) Write(d Draft, now time.Time) (Entry, error) {
-	e, _, err := s.Put(d, now)
-	return e, err
-}
-
-// Put is Write, also returning the tombstones of the notes it evicted to
-// keep the project under its caps, to send with it.
+// Service.Put does. It also returns the tombstones of the notes it evicted
+// to keep the project under its caps, to send with it (a catch-up carries
+// them too).
 func (s *Store) Put(d Draft, now time.Time) (e Entry, evicted []Entry, err error) {
 	now = now.UTC()
 	err = s.tx(func(tx *sql.Tx) error {

@@ -333,7 +333,6 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("PUT /api/projects/{pid}/scans/{name}", s.editScan)
 	mux.HandleFunc("DELETE /api/projects/{pid}/scans/{name}", s.deleteScan)
 	mux.HandleFunc("GET /api/projects/{pid}/scan-runs", s.listScanRuns)
-	mux.HandleFunc("GET /api/scan-runs/{rid}", s.getScanRun)
 	mux.HandleFunc("GET /api/scan-runs/{rid}/log", s.scanRunLog)
 	mux.HandleFunc("POST /api/scan-runs/{rid}/cancel", s.cancelScanRun)
 	mux.HandleFunc("GET /api/todos/{tid}/chat", func(w http.ResponseWriter, r *http.Request) {
@@ -702,10 +701,31 @@ func (s *Server) confirmThenForward(w http.ResponseWriter, r *http.Request) {
 	s.Peers.ServeHTTP(w, r)
 }
 
+// maxBody is the largest JSON request body decode (and the runner's
+// guard, peekJSON) reads.
+const maxBody = 1 << 20
+
 func decode(r *http.Request, v any) error {
-	r.Body = http.MaxBytesReader(nil, r.Body, 1<<20)
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+	r.Body = http.MaxBytesReader(nil, r.Body, maxBody)
+	if err := decodeJSON(r.Body, v); err != nil {
 		return errors.Join(errBadRequest, err)
+	}
+	return nil
+}
+
+// decodeJSON decodes the one JSON value in rd into v and refuses anything
+// after it but white space. decode and peekJSON both use it, so a body the
+// runner's guard checks is the body the handler acts on.
+func decodeJSON(rd io.Reader, v any) error {
+	dec := json.NewDecoder(rd)
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		if err == nil {
+			err = errors.New("unexpected data after the JSON value")
+		}
+		return err
 	}
 	return nil
 }

@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/klahr/dash/internal/checklist"
+	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -77,7 +78,7 @@ func (s *Server) localPath(ctx context.Context, p model.Project, name string) (s
 	if err != nil {
 		return "", err
 	}
-	if rel, err := filepath.Rel(root, full); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if !fsutil.Within(root, full) {
 		return "", fmt.Errorf("%w: %s points outside the project", errBadRequest, name)
 	}
 	return full, nil

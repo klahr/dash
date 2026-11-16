@@ -146,6 +146,16 @@ func TestSetOriginHost(t *testing.T) {
 	if o := m.dashOrigin(); o != "https://dash.example.com" {
 		t.Fatalf("spoofed X-Forwarded-Host taken: %q", o)
 	}
+	// The port is checked too: anything but a number would let the
+	// header add userinfo ("dash.example.com:@evil.example") or a path.
+	for _, h := range []string{"dash.example.com:@evil.example", "dash.example.com:80@evil.example", "dash.example.com:/x", "dash.example.com:0", "dash.example.com:99999", "dash.example.com:+80"} {
+		r := httptest.NewRequest("GET", "http://dash.example.com/api/previews", nil)
+		r.Header.Set("X-Forwarded-Host", h)
+		m.SetOrigin(r)
+		if o := m.dashOrigin(); o != "https://dash.example.com" {
+			t.Fatalf("X-Forwarded-Host %q taken: %q", h, o)
+		}
+	}
 	m.SetOrigin(httptest.NewRequest("GET", "http://dash.example.com:7788/api/previews", nil))
 	if o := m.dashOrigin(); o != "http://dash.example.com:7788" {
 		t.Fatalf("Dash's own host: %q", o)

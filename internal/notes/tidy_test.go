@@ -90,15 +90,15 @@ func TestTidyingConverges(t *testing.T) {
 		if i%2 == 1 {
 			w = b
 		}
-		if _, err := w.Write(d, at(i)); err != nil {
+		if _, err := save(w, d, at(i)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// The same title, created on both before they heard of each other.
-	a.Write(Draft{Key: "Build", Body: "from a"}, at(20))
-	b.Write(Draft{Key: "build ", Body: "from b"}, at(21))
+	save(a, Draft{Key: "Build", Body: "from a"}, at(20))
+	save(b, Draft{Key: "build ", Body: "from b"}, at(21))
 	// A note deleted long ago: its tombstone goes past the retention window.
-	old, _ := a.Write(Draft{Key: "old"}, t0.Add(-90*day))
+	old, _ := save(a, Draft{Key: "old"}, t0.Add(-90*day))
 	a.Delete(old.ID, "", t0.Add(-70*day))
 	syncAll(t, a, b, at(30))
 	sameCopies(t, a, b)
@@ -131,12 +131,12 @@ func TestEvictionOrderAndPermanentNotes(t *testing.T) {
 	s := openStore(t, "ra")
 	s.SetPolicy(Policy{MaxEntries: 4, MaxBytes: 1000})
 	at := func(i int) time.Time { return t0.Add(time.Duration(i) * time.Minute) }
-	perm, _ := s.Write(Draft{Key: "perm", Permanent: true}, at(0)) // the oldest
-	n1, _ := s.Write(Draft{Key: "n1"}, at(1))
-	n2, _ := s.Write(Draft{Key: "n2"}, at(2))
-	n3, _ := s.Write(Draft{Key: "n3"}, at(3))
+	perm, _ := save(s, Draft{Key: "perm", Permanent: true}, at(0)) // the oldest
+	n1, _ := save(s, Draft{Key: "n1"}, at(1))
+	n2, _ := save(s, Draft{Key: "n2"}, at(2))
+	n3, _ := save(s, Draft{Key: "n3"}, at(3))
 	// n1 is rewritten: now n2 is the one updated longest ago.
-	if _, err := s.Write(Draft{ID: n1.ID, Key: "n1", Body: "again"}, at(4)); err != nil {
+	if _, err := save(s, Draft{ID: n1.ID, Key: "n1", Body: "again"}, at(4)); err != nil {
 		t.Fatal(err)
 	}
 	_, ev, err := s.Put(Draft{Key: "n4"}, at(5))
@@ -159,19 +159,19 @@ func TestEvictionOrderAndPermanentNotes(t *testing.T) {
 	}
 	// Only permanent notes left, and no room: the write is refused.
 	s.SetPolicy(Policy{MaxEntries: 2})
-	if _, err := s.Write(Draft{Key: "big", Body: "small now", Permanent: true}, at(7)); err != nil {
+	if _, err := save(s, Draft{Key: "big", Body: "small now", Permanent: true}, at(7)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Write(Draft{Key: "third"}, at(8)); !errors.Is(err, ErrTooMany) {
+	if _, err := save(s, Draft{Key: "third"}, at(8)); !errors.Is(err, ErrTooMany) {
 		t.Fatalf("full of permanent notes: %v", err)
 	}
-	if _, err := s.Write(Draft{Key: "huge", Body: strings.Repeat("x", MaxEntrySize)}, at(9)); !errors.Is(err, ErrTooLarge) {
+	if _, err := save(s, Draft{Key: "huge", Body: strings.Repeat("x", MaxEntrySize)}, at(9)); !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("over the entry limit: %v", err)
 	}
 	// Tidying evicts too, when peers' writes took the copy past a cap.
 	o := openStore(t, "rb")
 	for i := range 5 {
-		if _, err := o.Write(Draft{Key: fmt.Sprint("p", i)}, at(10+i)); err != nil {
+		if _, err := save(o, Draft{Key: fmt.Sprint("p", i)}, at(10+i)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -190,20 +190,20 @@ func TestEvictionOrderAndPermanentNotes(t *testing.T) {
 // created first, holding the newest content; the other a tombstone.
 func TestSameTitleConverges(t *testing.T) {
 	a, b := openStore(t, "ra"), openStore(t, "rb")
-	e1, _ := a.Write(Draft{Key: "Deploy", Body: "v1"}, t0)
-	e2, err := a.Write(Draft{Key: " deploy", Body: "v2", Tags: []string{"ops"}}, t0.Add(time.Minute))
+	e1, _ := save(a, Draft{Key: "Deploy", Body: "v1"}, t0)
+	e2, err := save(a, Draft{Key: " deploy", Body: "v2", Tags: []string{"ops"}}, t0.Add(time.Minute))
 	if err != nil || e2.ID != e1.ID || e2.Created != e1.Created {
 		t.Fatalf("a write by title made a new note: %+v, %v", e2, err)
 	}
-	other, _ := a.Write(Draft{Key: "Other"}, t0)
-	if _, err := a.Write(Draft{ID: other.ID, Key: "DEPLOY"}, t0); !errors.Is(err, ErrTitleTaken) {
+	other, _ := save(a, Draft{Key: "Other"}, t0)
+	if _, err := save(a, Draft{ID: other.ID, Key: "DEPLOY"}, t0); !errors.Is(err, ErrTitleTaken) {
 		t.Fatalf("renaming onto a taken title: %v", err)
 	}
 
 	// b creates "deploy" too, later, without having heard of a's.
-	eb, _ := b.Write(Draft{Key: "deploy", Body: "from b", Permanent: true}, t0.Add(2*time.Minute))
+	eb, _ := save(b, Draft{Key: "deploy", Body: "from b", Permanent: true}, t0.Add(2*time.Minute))
 	// a updates its own once more, after b did (by wall clock).
-	ea, _ := a.Write(Draft{ID: e1.ID, Key: "Deploy", Body: "from a, latest"}, t0.Add(3*time.Minute))
+	ea, _ := save(a, Draft{ID: e1.ID, Key: "Deploy", Body: "from a, latest"}, t0.Add(3*time.Minute))
 	syncAll(t, a, b, t0.Add(4*time.Minute))
 	// Both merge at once, each on its own.
 	wa, err := a.Dedup(t0.Add(5 * time.Minute))
@@ -397,8 +397,8 @@ func TestAllStaleBreakTheTie(t *testing.T) {
 // purged at the end of the retention window.
 func TestClearIsRespected(t *testing.T) {
 	a, b := openStore(t, "ra"), openStore(t, "rb")
-	n1, _ := a.Write(Draft{Key: "n1", Permanent: true}, t0)
-	n2, _ := a.Write(Draft{Key: "n2", Permanent: true}, t0.Add(time.Hour))
+	n1, _ := save(a, Draft{Key: "n1", Permanent: true}, t0)
+	n2, _ := save(a, Draft{Key: "n2", Permanent: true}, t0.Add(time.Hour))
 	cl, err := a.Clear(t0.Add(30*time.Minute), "ui", t0.Add(2*time.Hour))
 	if err != nil {
 		t.Fatal(err)
@@ -438,7 +438,7 @@ func TestMigration(t *testing.T) {
 	if err := migrate(path); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Write(Draft{Key: "k", Permanent: true}, t0); err != nil {
+	if _, err := save(s, Draft{Key: "k", Permanent: true}, t0); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/agent"
+	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
@@ -1146,7 +1147,7 @@ func createFile(root, dst, content string) error {
 	if err != nil {
 		return err
 	}
-	if rel, err := filepath.Rel(realRoot, dir); err != nil || !filepath.IsLocal(rel) && rel != "." {
+	if !fsutil.Within(realRoot, dir) {
 		return errors.New("its folder is outside the working tree")
 	}
 	f, err := os.OpenFile(filepath.Join(dir, filepath.Base(dst)), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)

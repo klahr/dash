@@ -313,9 +313,6 @@ func (r Result) Message() string {
 	return subject
 }
 
-// Short shortens an item's text for a commit message or a title.
-func Short(s string, n int) string { return textutil.OneLine(s, n) }
-
 // Apply makes ops to src. A reorder is made to the file as the ops before it
 // left it, and the ops after it to the file as it left that: refs in ops
 // still name items as they were in src.
@@ -469,9 +466,9 @@ func apply(src string, ops []Op) (Result, error) {
 			}
 			cur[it.Line-1] = l[:it.box] + c + l[it.box+1:]
 			if op.Checked {
-				summary = append(summary, "check off "+Short(it.Text, 60))
+				summary = append(summary, "check off "+textutil.OneLine(it.Text, 60))
 			} else {
-				summary = append(summary, "uncheck "+Short(it.Text, 60))
+				summary = append(summary, "uncheck "+textutil.OneLine(it.Text, 60))
 			}
 		case "edit":
 			it, err := find(op.Ref)
@@ -496,7 +493,7 @@ func apply(src string, ops []Op) (Result, error) {
 				}
 				after[it.end] = append(after[it.end], fresh(contLines(*more, in))...)
 			}
-			summary = append(summary, "edit "+Short(text, 60))
+			summary = append(summary, "edit "+textutil.OneLine(text, 60))
 		case "delete":
 			it, err := find(op.Ref)
 			if err != nil {
@@ -505,7 +502,7 @@ func apply(src string, ops []Op) (Result, error) {
 			for j := it.Line - 1; j <= it.blockEnd; j++ {
 				gone[j] = true
 			}
-			summary = append(summary, "remove "+Short(it.Text, 60))
+			summary = append(summary, "remove "+textutil.OneLine(it.Text, 60))
 		case "add":
 			text, more := splitText(op.Text, op.More)
 			if text == "" {
@@ -523,7 +520,7 @@ func apply(src string, ops []Op) (Result, error) {
 			if more != nil {
 				add = append(add, contLines(*more, strings.Repeat(" ", len(marker)+len(box)+2))...)
 			}
-			summary = append(summary, "add "+Short(text, 60))
+			summary = append(summary, "add "+textutil.OneLine(text, 60))
 			sec, ok := section(doc, op.Section)
 			switch {
 			case !ok:
@@ -572,7 +569,7 @@ func apply(src string, ops []Op) (Result, error) {
 				if op.After != "" {
 					at, where = max(to.blockEnd, to.end), "after "
 				}
-				where += Short(to.Text, 40)
+				where += textutil.OneLine(to.Text, 40)
 			default:
 				sec, ok := section(doc, op.Section)
 				if !ok || sec.Line == -1 {
@@ -602,7 +599,7 @@ func apply(src string, ops []Op) (Result, error) {
 				delete(after, j)
 			}
 			after[at] = append(after[at], moved...)
-			summary = append(summary, "move "+Short(it.Text, 60)+" "+where)
+			summary = append(summary, "move "+textutil.OneLine(it.Text, 60)+" "+where)
 		default:
 			return Result{}, fmt.Errorf("unknown checklist op %q", op.Op)
 		}

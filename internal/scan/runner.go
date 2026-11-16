@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/agent"
+	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
@@ -659,10 +660,7 @@ func DenyReads(dir string, secrets []string) []string {
 		}
 	}
 	paths = append(paths, secrets...)
-	inside := func(parent string) bool {
-		rel, err := filepath.Rel(parent, dir)
-		return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-	}
+	inside := func(parent string) bool { return fsutil.Within(parent, dir) }
 	var deny []string
 	add := func(p string, tree bool) {
 		for _, tool := range fileTools {
@@ -709,7 +707,7 @@ func BuildPrompt(t Template, tg target, known []model.Issue) string {
 	if tg.incremental {
 		fmt.Fprintf(&b, "Only look at what changed in %s between commit %s and HEAD (the git_diff tool with from %s). "+
 			"Report problems in the changed code, or that the change causes elsewhere; read other code only for context.\n",
-			where, short(tg.since), tg.since)
+			where, gitops.ShortSHA(tg.since), tg.since)
 		if len(tg.files) > 0 {
 			b.WriteString("\nChanged files:\n")
 			for i, f := range tg.files {
@@ -765,12 +763,5 @@ End your final message with your findings as one JSON code block, and nothing af
 - "fingerprint" names the problem so that it stays the same when the code moves or you word the title differently, e.g. "sql-injection:UserStore.Find" or "missing-auth:/api/admin". Two findings of the same problem in one file share it.
 - Report each problem once. If you find nothing, answer {"findings": []}.
 `
-
-func short(sha string) string {
-	if len(sha) > 10 {
-		return sha[:10]
-	}
-	return sha
-}
 
 func scanKey(projectID, scan string) string { return projectID + "/" + scan }

@@ -148,7 +148,7 @@ func (sv *service) changeChecklist(ctx context.Context, p model.Project, ch mcpt
 	case p.UsesPR() || sv.s.Merges == nil:
 		// Pull request mode: nothing is committed straight onto the default
 		// branch, so a task commits it and opens the pull request.
-		t, err := sv.queueEdit(ctx, p, checklist.Name, cur.Version, res.Content, checklist.Short(textutil.FirstLine(msg), 120))
+		t, err := sv.queueEdit(ctx, p, checklist.Name, cur.Version, res.Content, textutil.OneLine(textutil.FirstLine(msg), 120))
 		if err != nil {
 			return out, err
 		}
@@ -200,7 +200,7 @@ func (sv *service) moveChecklistItem(ctx context.Context, p model.Project, m mcp
 		return mcptools.ChecklistMoved{}, fmt.Errorf("%w: %w", errBadRequest, err)
 	}
 	t, err := sv.addTodo(model.Todo{
-		ProjectID: p.ID, Title: checklist.Short(it.Text, 200), Prompt: checklist.Prompt(cur.Content, *it),
+		ProjectID: p.ID, Title: textutil.OneLine(it.Text, 200), Prompt: checklist.Prompt(cur.Content, *it),
 		Priority: m.Priority, DependsOn: m.DependsOn,
 	}, m.Queue)
 	if err != nil {
@@ -213,7 +213,7 @@ func (sv *service) moveChecklistItem(ctx context.Context, p model.Project, m mcp
 	saved, err := sv.changeChecklist(ctx, p, mcptools.ChecklistChange{
 		Version: &cur.Version,
 		Ops:     []checklist.Op{{Op: "delete", Ref: m.Ref}},
-		Message: fmt.Sprintf("%s: move %s to task %s", checklist.Name, checklist.Short(it.Text, 60), t.ID),
+		Message: fmt.Sprintf("%s: move %s to task %s", checklist.Name, textutil.OneLine(it.Text, 60), t.ID),
 	})
 	if err != nil {
 		out.Error = err.Error()

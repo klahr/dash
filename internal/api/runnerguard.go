@@ -2,17 +2,16 @@ package api
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strings"
 
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/dispatch"
+	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/notes"
 	"github.com/klahr/dash/internal/store"
@@ -68,7 +67,7 @@ func init() {
 		"PATCH /api/issues/{iid}", "DELETE /api/issues/{iid}",
 
 		"GET /api/projects/{pid}/scans", "POST /api/projects/{pid}/scans/{name}/run", "PATCH /api/projects/{pid}/scans/{name}",
-		"GET /api/projects/{pid}/scan-runs", "GET /api/scan-runs/{rid}", "GET /api/scan-runs/{rid}/log",
+		"GET /api/projects/{pid}/scan-runs", "GET /api/scan-runs/{rid}/log",
 		"POST /api/scan-runs/{rid}/cancel",
 
 		"GET /api/todos/{tid}/chat", "DELETE /api/todos/{tid}/chat", "GET /api/projects/{pid}/chat",
@@ -183,9 +182,11 @@ func (s *Server) hubCheck(r *http.Request) error {
 			Path string `json:"path"`
 		}
 		if err := peekJSON(r, &req); err != nil {
-			return nil // the handler reports the bad body
+			// Fail closed: a body this can't read is one the handler
+			// refuses too, so nothing is lost by refusing it here.
+			return fmt.Errorf("bad request body: %w", err)
 		}
-		if req.Path != "" && !within(s.ProjectRoot, store.CleanPath(req.Path)) {
+		if req.Path != "" && !fsutil.Within(s.ProjectRoot, store.CleanPath(req.Path)) {
 			return fmt.Errorf("the hub can only add projects inside %s on this runner", s.ProjectRoot)
 		}
 	case "POST /api/projects/{pid}/processes":
@@ -194,7 +195,7 @@ func (s *Server) hubCheck(r *http.Request) error {
 			Command string            `json:"command"`
 		}
 		if err := peekJSON(r, &req); err != nil {
-			return nil
+			return fmt.Errorf("bad request body: %w", err)
 		}
 		// A command the hub names, not one of the project's own (preset),
 		// is a shell's: its owner's alone, as a terminal is.
@@ -253,25 +254,22 @@ type commandFields struct {
 	PreviewKind *string `json:"preview_kind"`
 }
 
-// peekJSON decodes r's body into v and puts the body back for the handler.
+// peekJSON decodes r's body into v exactly as the handler's decode will,
+// and puts the body back for the handler. A body decode would refuse is an
+// error here too, so the guard and the handler never read it differently.
 func peekJSON(r *http.Request, v any) error {
-	if r.Body == nil {
-		return nil
+	var b []byte
+	if r.Body != nil {
+		var err error
+		b, err = io.ReadAll(io.LimitReader(r.Body, maxBody+1))
+		r.Body.Close()
+		r.Body = io.NopCloser(bytes.NewReader(b))
+		if err != nil {
+			return err
+		}
 	}
-	b, err := io.ReadAll(io.LimitReader(r.Body, 1<<20+1))
-	r.Body.Close()
-	r.Body = io.NopCloser(bytes.NewReader(b))
-	if err != nil {
-		return err
+	if len(b) > maxBody {
+		return errors.New("the request body is too large")
 	}
-	return json.Unmarshal(b, v)
-}
-
-// within reports whether path is root or inside it.
-func within(root, path string) bool {
-	if root == "" {
-		return false
-	}
-	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+	return decodeJSON(bytes.NewReader(b), v)
 }

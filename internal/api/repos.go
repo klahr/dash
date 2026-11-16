@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/release"
@@ -60,7 +61,7 @@ func findRepos(root, skipTop string, have func(abs string) bool) ([]LocalRepo, e
 			return
 		}
 		rel, err := filepath.Rel(root, abs)
-		if err != nil || !within(root, abs) || rel == "." {
+		if err != nil || !fsutil.Within(root, abs) || rel == "." {
 			return
 		}
 		repo := LocalRepo{Name: filepath.Base(abs), Path: filepath.ToSlash(rel)}
@@ -313,7 +314,7 @@ func (s *Server) hubAddRepos(w http.ResponseWriter, r *http.Request) {
 		}
 		delete(listed, rel) // the same path twice adds it once
 		path := filepath.Join(s.ProjectRoot, filepath.FromSlash(x.Path))
-		if !within(s.ProjectRoot, path) {
+		if !fsutil.Within(s.ProjectRoot, path) {
 			out.Failed = append(out.Failed, RepoFailure{rel, "outside the projects directory"})
 			continue
 		}

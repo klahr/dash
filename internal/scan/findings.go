@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/textutil"
 )
@@ -277,9 +278,12 @@ func repoPath(p, root string) (string, error) {
 		if root == "" {
 			return "", fmt.Errorf("absolute path %q", p)
 		}
-		rel, err := filepath.Rel(root, p)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		if !fsutil.Within(root, p) {
 			return "", fmt.Errorf("path %q is outside the repository", p)
+		}
+		rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(p))
+		if err != nil {
+			return "", err
 		}
 		p = rel
 	}

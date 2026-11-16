@@ -68,7 +68,7 @@ func TestHubWithoutClaudeRunsItsWorkOnARunner(t *testing.T) {
 	api.must("POST", "/api/projects/"+p.ID+"/scans/"+name+"/run", nil, http.StatusAccepted, &sr)
 	var scanRun struct{ Status, Error, Activity string }
 	waitFor(t, runner, "the scan to finish", func() bool {
-		api.must("GET", "/api/scan-runs/"+sr.ID, nil, http.StatusOK, &scanRun)
+		api.scanRun(p.ID, sr.ID, &scanRun)
 		return scanRun.Status != "running"
 	})
 	if scanRun.Status != "succeeded" {
@@ -106,7 +106,7 @@ func TestHubWithoutClaudeRunsItsWorkOnARunner(t *testing.T) {
 	}
 	api.must("POST", "/api/projects/"+p.ID+"/scans/"+name+"/run", nil, http.StatusAccepted, &sr)
 	waitFor(t, hubLogs, "the scan to wait for a runner", func() bool {
-		api.must("GET", "/api/scan-runs/"+sr.ID, nil, http.StatusOK, &scanRun)
+		api.scanRun(p.ID, sr.ID, &scanRun)
 		return scanRun.Status == "running" && strings.Contains(scanRun.Activity, "no runner online")
 	})
 
@@ -114,7 +114,7 @@ func TestHubWithoutClaudeRunsItsWorkOnARunner(t *testing.T) {
 	runner = startDash(t, dash, runnerEnv, runnerArgs...)
 	waitFor(t, runner, "the waiting task and scan to run on the runner", func() bool {
 		api.must("GET", "/api/todos/"+next.ID, nil, http.StatusOK, &waiting)
-		api.must("GET", "/api/scan-runs/"+sr.ID, nil, http.StatusOK, &scanRun)
+		api.scanRun(p.ID, sr.ID, &scanRun)
 		return waiting.Status == "review" && scanRun.Status != "running"
 	})
 	if scanRun.Status != "succeeded" && scanRun.Status != "skipped" {
@@ -475,6 +475,24 @@ func (c *client) must(method, path string, body any, want int, out any) {
 			c.t.Fatalf("%s %s: %v: %s", method, path, err, b)
 		}
 	}
+}
+
+// scanRun reads scan run id of project pid into out, from the project's
+// list of runs (the UI's way to see one).
+func (c *client) scanRun(pid, id string, out any) {
+	c.t.Helper()
+	var runs []json.RawMessage
+	c.must("GET", "/api/projects/"+pid+"/scan-runs", nil, http.StatusOK, &runs)
+	for _, raw := range runs {
+		var r struct{ ID string }
+		if json.Unmarshal(raw, &r) == nil && r.ID == id {
+			if err := json.Unmarshal(raw, out); err != nil {
+				c.t.Fatal(err)
+			}
+			return
+		}
+	}
+	c.t.Fatalf("scan run %s isn't in project %s's runs", id, pid)
 }
 
 func (c *client) hasIssue(pid, title string) bool {

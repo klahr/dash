@@ -378,7 +378,7 @@ func (w *Watcher) fixPrompt(ctx context.Context, p model.Project, failed []gitop
 		if r.Branch != "" && r.Branch != p.DefaultBranch {
 			ref = fmt.Sprintf(" for `%s` (a release tag)", r.Branch)
 		}
-		fmt.Fprintf(&b, "- %s (%s) on commit %s%s \"%s\": %s\n", r.Workflow, r.Conclusion, short(r.SHA), ref, r.Title, r.URL)
+		fmt.Fprintf(&b, "- %s (%s) on commit %s%s \"%s\": %s\n", r.Workflow, r.Conclusion, gitops.ShortSHA(r.SHA), ref, r.Title, r.URL)
 	}
 	for i, r := range failed {
 		if i == 2 {
@@ -447,13 +447,6 @@ func fence(text string) string {
 	}
 	f := strings.Repeat("`", n)
 	return f + "\n" + text + "\n" + f
-}
-
-func short(sha string) string {
-	if len(sha) > 8 {
-		return sha[:8]
-	}
-	return sha
 }
 
 func briefErr(err error) string {

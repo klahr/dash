@@ -142,6 +142,16 @@ func TestRunnerOpensTerminalsForItsOwnerOnly(t *testing.T) {
 		if w := as(user, "POST", procs, `{"kind":"task","command":"true"}`); w.Code != http.StatusForbidden {
 			t.Fatalf("command for user %q: %d %s", user, w.Code, w.Body)
 		}
+		// Data after the JSON value must not slip past the check: the
+		// guard reads the body as the handler does, and fails closed.
+		for _, body := range []string{`{"kind":"task","command":"true"} x`, `{"kind":"pty"} x`, `{"kind":"pty"}{}`, `not json`} {
+			if w := as(user, "POST", procs, body); w.Code != http.StatusForbidden {
+				t.Fatalf("body %q for user %q: %d %s", body, user, w.Code, w.Body)
+			}
+		}
+	}
+	if w := as("7", "POST", "/api/projects", `{"name":"x","path":"/etc"} x`); w.Code != http.StatusForbidden {
+		t.Fatalf("adopting /etc with trailing data: %d %s", w.Code, w.Body)
 	}
 	w := as("42", "POST", procs, `{"kind":"pty","command":"sleep 30","dir":"/etc","path":"/etc"}`)
 	if w.Code != http.StatusCreated {

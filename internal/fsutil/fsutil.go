@@ -4,6 +4,7 @@ package fsutil
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // WriteFileAtomic writes b to path so readers see either the old content
@@ -26,4 +27,15 @@ func WriteFileAtomic(path string, b []byte, perm os.FileMode) error {
 		return err
 	}
 	return nil
+}
+
+// Within reports whether path is root or inside it, comparing the cleaned
+// paths lexically (it doesn't resolve symlinks: do that first when it
+// matters). An empty root contains nothing.
+func Within(root, path string) bool {
+	if root == "" {
+		return false
+	}
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }

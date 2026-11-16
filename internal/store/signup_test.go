@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/passhash"
 )
 
@@ -128,11 +129,12 @@ func TestResetTokenExpires(t *testing.T) {
 
 // An inviter can register an invitation to a colleague's address and link
 // their own Google account to it. When the colleague takes the account over
-// with a reset link, that Google sign-in goes with the old password.
+// with a reset link, that Google sign-in goes with the old password, and so
+// do the personal webhook and push subscription the inviter set up.
 func TestResetPasswordUnlinksIdentities(t *testing.T) {
 	t.Parallel()
 
-	_, a := openAccounts(t)
+	s, a := openAccounts(t)
 	now := time.Now()
 	a.Bootstrap("admin", "s3cret")
 	admin, _ := a.EnvUser()
@@ -148,6 +150,15 @@ func TestResetPasswordUnlinksIdentities(t *testing.T) {
 	if err := a.LinkIdentity(Identity{UserID: u.ID, Provider: ProviderGoogle, Subject: "attacker", Email: "attacker@example.dev"}, now); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.CreateWebhook(model.Webhook{UserID: u.ID, OrgID: org.ID, Name: "mine", URL: "https://attacker.example.dev/hook", Format: model.WebhookJSON, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SavePushSubscription(model.PushSubscription{UserID: u.ID, OrgID: org.ID, Endpoint: "https://push.example.dev/attacker", P256dh: "k", Auth: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	if hooks, _ := s.ListPersonalWebhooks(u.ID, org.ID); len(hooks) != 1 {
+		t.Fatalf("webhooks before reset: %+v", hooks)
+	}
 	_, tok, ok, err := a.RequestPasswordReset("vic@example.com", now) // the owner
 	if !ok || err != nil {
 		t.Fatalf("request: %v %v", ok, err)
@@ -160,6 +171,12 @@ func TestResetPasswordUnlinksIdentities(t *testing.T) {
 	}
 	if _, err := a.UserIdentity(u.ID, ProviderGoogle); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("user identity after reset: %v", err)
+	}
+	if hooks, err := s.ListPersonalWebhooks(u.ID, org.ID); err != nil || len(hooks) != 0 {
+		t.Fatalf("personal webhooks after reset: %+v %v", hooks, err)
+	}
+	if _, err := s.PushSubscription(u.ID, "https://push.example.dev/attacker"); err == nil {
+		t.Fatal("push subscription after reset")
 	}
 }
 

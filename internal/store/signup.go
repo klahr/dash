@@ -310,8 +310,9 @@ func (a *Accounts) CheckResetToken(tok string, now time.Time) error {
 // link is the first proof some accounts get that their owner holds the
 // address: one registered through an invitation got an address the inviter
 // typed, and whoever registered it could have linked their own Google
-// account, which would otherwise outlast the owner taking it over. The owner
-// links theirs again from Account.
+// account, which would otherwise outlast the owner taking it over. For the
+// same reason it removes the account's personal webhooks and push
+// subscriptions. The owner sets up their own again.
 func (a *Accounts) ResetPassword(tok, password string, now time.Time) (User, error) {
 	if len(password) < MinPassword {
 		return User{}, ErrWeakPassword
@@ -336,8 +337,17 @@ func (a *Accounts) ResetPassword(tok, password string, now time.Time) (User, err
 		if _, err := tx.Exec("DELETE FROM sessions WHERE user_id = ?", uid); err != nil {
 			return err
 		}
-		if _, err := tx.Exec("DELETE FROM user_identities WHERE user_id = ?", uid); err != nil {
-			return err
+		// The same goes for where the account's notifications go: its
+		// personal webhooks (which get every event of its orgs' projects)
+		// and its browsers' push subscriptions.
+		for _, q := range []string{
+			"DELETE FROM user_identities WHERE user_id = ?",
+			"DELETE FROM webhooks WHERE user_id = ? AND project_id = ''",
+			"DELETE FROM push_subscriptions WHERE user_id = ?",
+		} {
+			if _, err := tx.Exec(q, uid); err != nil {
+				return err
+			}
 		}
 		if _, err := tx.Exec("DELETE FROM email_tokens WHERE user_id = ? AND purpose = 'reset'", uid); err != nil {
 			return err

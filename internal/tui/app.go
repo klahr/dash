@@ -20,6 +20,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/klahr/dash/internal/agent"
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -379,14 +380,12 @@ func ciSummary(st CIStatus) string {
 		}
 		parts = append(parts, r.Workflow+" "+mark)
 	}
-	s := fmt.Sprintf("build %s at %s: %s", st.State, short(st.SHA), strings.Join(parts, " · "))
+	s := fmt.Sprintf("build %s at %s: %s", st.State, gitops.ShortSHA(st.SHA), strings.Join(parts, " · "))
 	if st.State == "failing" && st.TodoID == "" {
 		s += "  (:fix asks Claude to fix it)"
 	}
 	return s
 }
-
-func short(sha string) string { return sha[:min(8, len(sha))] }
 
 func (a *App) loadUsage() tea.Cmd {
 	return func() tea.Msg { u, err := a.c.Usage(); return usageMsg{u, err} }

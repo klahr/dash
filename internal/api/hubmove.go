@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -82,7 +83,7 @@ func (s *Server) moveHubClone(ctx context.Context, sv *service, p model.Project)
 		slog.Warn("runner: can't move the hub's clone into its org's folder", "project", p.Name, "path", p.Path, "err", err)
 		return p
 	}
-	if within(dir, p.Path) && filepath.Clean(p.Path) != dir {
+	if fsutil.Within(dir, p.Path) && filepath.Clean(p.Path) != dir {
 		return p // in place
 	}
 	if p.HubCheckout != model.HubCloned {
@@ -159,7 +160,7 @@ func (s *Server) moveClone(ctx context.Context, sv *service, p model.Project, di
 	}
 	// Worktrees (the tasks' are elsewhere, but a stored one may be inside
 	// the checkout) whose folders move with it.
-	inside := func(path string) bool { return path != "" && within(from, path) && filepath.Clean(path) != from }
+	inside := func(path string) bool { return path != "" && fsutil.Within(from, path) && filepath.Clean(path) != from }
 	movedPath := func(path string) string {
 		rel, _ := filepath.Rel(from, filepath.Clean(path))
 		return filepath.Join(to, rel)
@@ -217,7 +218,7 @@ func (s *Server) moveClone(ctx context.Context, sv *service, p model.Project, di
 	restore := func(cause error) error {
 		for _, id := range fixed {
 			_, _ = sv.data.UpdateTodo(id, func(t *model.Todo) error {
-				if t.Worktree != nil && within(to, t.Worktree.Path) {
+				if t.Worktree != nil && fsutil.Within(to, t.Worktree.Path) {
 					rel, _ := filepath.Rel(to, t.Worktree.Path)
 					t.Worktree.Path = filepath.Join(from, rel)
 				}

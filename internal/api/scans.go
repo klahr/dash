@@ -357,19 +357,6 @@ func (s *Server) listScanRuns(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sv.data.ListScanRuns(pid, r.URL.Query().Get("scan")))
 }
 
-func (s *Server) getScanRun(w http.ResponseWriter, r *http.Request) {
-	sv, ok := s.service(w, r)
-	if !ok {
-		return
-	}
-	run, err := sv.data.GetScanRun(r.PathValue("rid"))
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, run)
-}
-
 func (s *Server) scanRunLog(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {

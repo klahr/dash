@@ -12,6 +12,7 @@ import (
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/auth"
+	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/queue"
@@ -632,7 +633,7 @@ func (sv *service) projectPath(name, path string) (string, error) {
 	if sv.c.PlatformAdmin {
 		return path, nil
 	}
-	if sv.s.ProjectRoot == "" || !within(root, path) || filepath.Clean(path) == filepath.Clean(root) {
+	if sv.s.ProjectRoot == "" || !fsutil.Within(root, path) || filepath.Clean(path) == filepath.Clean(root) {
 		return "", fmt.Errorf("%w: projects in your organization go in a folder inside %s", errBadRequest, root)
 	}
 	return path, nil

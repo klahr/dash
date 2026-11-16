@@ -30,6 +30,13 @@ func openStore(t *testing.T, self string) *Store {
 	return s
 }
 
+// save saves d in s, as Service.Put does without the secret scan, and
+// drops the tombstones of the notes it evicted.
+func save(s *Store, d Draft, now time.Time) (Entry, error) {
+	e, _, err := s.Put(d, now)
+	return e, err
+}
+
 func dump(t *testing.T, s *Store) []Entry {
 	t.Helper()
 	es, err := s.all()
@@ -72,9 +79,9 @@ func TestConcurrentWritesConverge(t *testing.T) {
 			e, err = s.Delete(ids[rng.IntN(len(ids))], "t", now)
 		case len(ids) > 0 && rng.IntN(2) == 0:
 			id := ids[rng.IntN(len(ids))]
-			e, err = s.Write(Draft{ID: id, Key: titles[id], Body: fmt.Sprint("v", round)}, now)
+			e, err = save(s, Draft{ID: id, Key: titles[id], Body: fmt.Sprint("v", round)}, now)
 		default:
-			e, err = s.Write(Draft{Key: fmt.Sprint("note ", round), Body: "b", Tags: []string{"x"}}, now)
+			e, err = save(s, Draft{Key: fmt.Sprint("note ", round), Body: "b", Tags: []string{"x"}}, now)
 		}
 		if errors.Is(err, ErrNotFound) {
 			continue // deleted here already
@@ -118,15 +125,15 @@ func TestConcurrentWritesConverge(t *testing.T) {
 // both keep the same winner. A write made after seeing another wins over it.
 func TestLastWriterWins(t *testing.T) {
 	a, b := openStore(t, "ra"), openStore(t, "rb")
-	e, err := a.Write(Draft{Key: "build", Body: "make"}, t0)
+	e, err := save(a, Draft{Key: "build", Body: "make"}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := b.Apply([]Entry{e}); err != nil {
 		t.Fatal(err)
 	}
-	ea, _ := a.Write(Draft{ID: e.ID, Key: "build", Body: "from a"}, t0.Add(time.Second))
-	eb, _ := b.Write(Draft{ID: e.ID, Key: "build", Body: "from b"}, t0.Add(time.Second))
+	ea, _ := save(a, Draft{ID: e.ID, Key: "build", Body: "from a"}, t0.Add(time.Second))
+	eb, _ := save(b, Draft{ID: e.ID, Key: "build", Body: "from b"}, t0.Add(time.Second))
 	a.Apply([]Entry{eb})
 	b.Apply([]Entry{ea})
 	ga, _ := a.Get(e.ID, t0)
@@ -135,7 +142,7 @@ func TestLastWriterWins(t *testing.T) {
 		t.Fatalf("a has %q, b has %q", ga.Body, gb.Body)
 	}
 	// a, having seen b's write, writes again: its clock is past b's.
-	ea2, _ := a.Write(Draft{ID: e.ID, Key: "build", Body: "a again"}, t0.Add(2*time.Second))
+	ea2, _ := save(a, Draft{ID: e.ID, Key: "build", Body: "a again"}, t0.Add(2*time.Second))
 	b.Apply([]Entry{ea2})
 	if gb, _ := b.Get(e.ID, t0); gb.Body != "a again" {
 		t.Fatalf("b has %q after a's later write", gb.Body)
@@ -161,8 +168,8 @@ func TestLastWriterWins(t *testing.T) {
 // doesn't move past it, so a catch-up asks for it again.
 func TestGapsHoldTheVectorBack(t *testing.T) {
 	a, b := openStore(t, "ra"), openStore(t, "rb")
-	e1, _ := a.Write(Draft{Key: "one"}, t0)
-	e2, _ := a.Write(Draft{Key: "two"}, t0)
+	e1, _ := save(a, Draft{Key: "one"}, t0)
+	e2, _ := save(a, Draft{Key: "two"}, t0)
 	if _, gap, _ := b.Apply([]Entry{e2}); !gap {
 		t.Fatal("no gap reported")
 	}
@@ -188,13 +195,13 @@ func TestGapsHoldTheVectorBack(t *testing.T) {
 
 func TestLimitsAndExpiry(t *testing.T) {
 	s := openStore(t, "ra")
-	if _, err := s.Write(Draft{Key: "big", Body: strings.Repeat("x", MaxEntrySize)}, t0); !errors.Is(err, ErrTooLarge) {
+	if _, err := save(s, Draft{Key: "big", Body: strings.Repeat("x", MaxEntrySize)}, t0); !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("oversized entry: %v", err)
 	}
-	if _, err := s.Write(Draft{Key: "  "}, t0); !errors.Is(err, ErrNoKey) {
+	if _, err := save(s, Draft{Key: "  "}, t0); !errors.Is(err, ErrNoKey) {
 		t.Fatalf("entry without key: %v", err)
 	}
-	e, err := s.Write(Draft{Key: "soon gone", TTL: time.Hour}, t0)
+	e, err := save(s, Draft{Key: "soon gone", TTL: time.Hour}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +218,7 @@ func TestLimitsAndExpiry(t *testing.T) {
 		t.Fatalf("expired entry offered to a peer: %+v", es)
 	}
 	for i := range MaxEntries - 1 { // "soon gone" is still live at t0
-		if _, err := s.Write(Draft{Key: fmt.Sprint(i)}, t0.Add(time.Duration(i+1)*time.Millisecond)); err != nil {
+		if _, err := save(s, Draft{Key: fmt.Sprint(i)}, t0.Add(time.Duration(i+1)*time.Millisecond)); err != nil {
 			t.Fatalf("entry %d: %v", i, err)
 		}
 	}
@@ -231,8 +238,8 @@ func TestLimitsAndExpiry(t *testing.T) {
 
 func TestListFilters(t *testing.T) {
 	s := openStore(t, "ra")
-	s.Write(Draft{Key: "Build", Body: "run make", Tags: []string{"ci", " ci ", ""}}, t0)
-	s.Write(Draft{Key: "Deploy", Body: "fly deploy", Tags: []string{"ops"}}, t0.Add(time.Second))
+	save(s, Draft{Key: "Build", Body: "run make", Tags: []string{"ci", " ci ", ""}}, t0)
+	save(s, Draft{Key: "Deploy", Body: "fly deploy", Tags: []string{"ops"}}, t0.Add(time.Second))
 	if es, _ := s.List(Query{Tag: "ci"}, t0); len(es) != 1 || es[0].Key != "Build" || !reflect.DeepEqual(es[0].Tags, []string{"ci"}) {
 		t.Fatalf("by tag: %+v", es)
 	}
@@ -248,13 +255,13 @@ func TestListFilters(t *testing.T) {
 // catch-up tells it how far it had got.
 func TestLostDatabaseDoesNotReuseCounters(t *testing.T) {
 	a, b := openStore(t, "ra"), openStore(t, "rb")
-	e, _ := a.Write(Draft{Key: "first"}, t0)
+	e, _ := save(a, Draft{Key: "first"}, t0)
 	b.Apply([]Entry{e})
 	a2 := openStore(t, "ra") // a, from scratch
 	vb, _ := a2.Vector()
 	es, v, _ := b.Since(vb, t0)
 	a2.Merge(es, v)
-	e2, err := a2.Write(Draft{Key: "second"}, t0)
+	e2, err := save(a2, Draft{Key: "second"}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}

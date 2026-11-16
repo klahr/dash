@@ -38,7 +38,7 @@ var ErrMergeQueueFull = errors.New("merge queue is full")
 //     so a red build never lands
 //  3. land it: squash the branch onto the default branch (one commit per
 //     todo) and push, or in "pr" mode push the branch and open a pull
-//     request, which PollPRs follows until GitHub merges it. In a project
+//     request, which pollPRs follows until GitHub merges it. In a project
 //     shared through origin (a runner's clone of its hub's project) the
 //     squash is pushed before the default branch moves, and the todo is
 //     merged only once origin has it; when origin moved meanwhile, steps

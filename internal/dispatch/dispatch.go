@@ -747,20 +747,13 @@ func (d *Dispatcher) settle(r tunnel.Runner, t model.Todo, ts TaskState) error {
 	if d.Note != nil {
 		line := "✔ " + r.Name + " had this task " + string(hubStatus(ts.Status)) + " already"
 		if ts.Status == model.StatusMerged && ts.MergedCommit != "" {
-			line += " (commit " + shortSHA(ts.MergedCommit) + ")"
+			line += " (commit " + gitops.ShortSHA(ts.MergedCommit) + ")"
 		}
 		if nt, err := d.Store.GetTodo(t.ID); err == nil {
 			d.Note(nt, line)
 		}
 	}
 	return queue.ErrSettled
-}
-
-func shortSHA(s string) string {
-	if len(s) > 12 {
-		return s[:12]
-	}
-	return s
 }
 
 // publishOutput streams what task t printed on its runner to the hub's

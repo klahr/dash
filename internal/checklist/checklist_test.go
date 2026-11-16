@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // A snapshot of the repository's own TODO.md: the live one changes as
@@ -74,7 +76,7 @@ func TestToggleChangesOneCharacter(t *testing.T) {
 	if len(diff) != 1 || res.Content[diff[0]] != 'x' || src[diff[0]] != ' ' {
 		t.Fatalf("changed bytes at %v", diff)
 	}
-	if res.Message() != "TODO.md: check off "+Short(it.Text, 60) {
+	if res.Message() != "TODO.md: check off "+textutil.OneLine(it.Text, 60) {
 		t.Errorf("message %q", res.Message())
 	}
 	// And back.

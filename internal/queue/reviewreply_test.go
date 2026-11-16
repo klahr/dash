@@ -41,7 +41,7 @@ func TestReviewFixIsAnsweredOnGitHub(t *testing.T) {
 	h, dir := prHarnessWith(t, exe, model.Project{MaxAutoFixes: 1})
 	td := h.waitFor(h.add("review").ID, model.StatusReview)
 	reviewForClaude(t, dir, gitRun(t, td.Worktree.Path, "rev-parse", "HEAD"))
-	h.merges.PollPRs(context.Background())
+	h.merges.pollPRs(context.Background(), "")
 
 	x := waitPR(t, h, td.ID, model.StatusReview, func(x model.Todo) bool { return x.Runs == 2 && x.PR.RepliedID == 11 })
 	waitLog(t, h, td.ID, "💬 replied to the review on pull request #7: answered 2 comment thread(s), resolved 1, left 1 open; asked alice to review again")
@@ -71,7 +71,7 @@ func TestReviewFixIsAnsweredOnGitHub(t *testing.T) {
 	}
 
 	// Polled again, and after a restart: nothing posted twice.
-	h.merges.PollPRs(context.Background())
+	h.merges.pollPRs(context.Background(), "")
 	m2 := &MergeQueue{Store: h.st, Git: h.git, Log: h.log}
 	t2, _ := h.st.GetTodo(td.ID)
 	m2.replyToReview(context.Background(), t2, h.proj)
@@ -105,7 +105,7 @@ func TestReviewReplyFailureDoesntFailTask(t *testing.T) {
 	td := h.waitFor(h.add("review").ID, model.StatusReview)
 	reviewForClaude(t, dir, gitRun(t, td.Worktree.Path, "rev-parse", "HEAD"))
 	write(t, dir, "down", "")
-	h.merges.PollPRs(context.Background())
+	h.merges.pollPRs(context.Background(), "")
 
 	x := waitPR(t, h, td.ID, model.StatusReview, func(x model.Todo) bool { return x.Runs == 2 && x.PR.RepliedID == 11 })
 	waitLog(t, h, td.ID, "💬 replied to the review on pull request #7")
@@ -151,7 +151,7 @@ func TestFailedReviewFixIsSaidOnGitHub(t *testing.T) {
 	td := h.waitFor(h.add("review").ID, model.StatusReview)
 	head := gitRun(t, td.Worktree.Path, "rev-parse", "HEAD")
 	reviewForClaude(t, dir, head)
-	h.merges.PollPRs(context.Background())
+	h.merges.pollPRs(context.Background(), "")
 
 	x := waitPR(t, h, td.ID, model.StatusFailed, func(x model.Todo) bool { return x.PR.RepliedID == 11 })
 	calls := ghCalls(t, dir)

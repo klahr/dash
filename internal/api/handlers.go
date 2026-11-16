@@ -430,72 +430,14 @@ func (sv *service) checkCommandChange(cur model.Project, req projectUpdate, runn
 // updateProject changes a project's settings, for PATCH /api/projects/{pid}
 // and the update_project tool.
 func (sv *service) updateProject(ctx context.Context, id string, req projectUpdate) (model.Project, error) {
-	if req.Name != nil {
-		// The name shown in the project lists; the folder keeps its name.
-		*req.Name = strings.TrimSpace(*req.Name)
-		if *req.Name == "" {
-			return model.Project{}, fmt.Errorf("%w: name is required", errBadRequest)
-		}
-	}
-	if req.ChatMode != nil {
-		switch *req.ChatMode {
-		case "", model.ChatModeAuto, model.ChatModeAcceptEdits:
-		default:
-			return model.Project{}, fmt.Errorf("%w: chat_permission_mode must be \"\", %q or %q", errBadRequest, model.ChatModeAuto, model.ChatModeAcceptEdits)
-		}
-	}
-	if req.PreviewKind != nil {
-		k, err := checkPreviewKind(*req.PreviewKind)
-		if err != nil {
-			return model.Project{}, err
-		}
-		req.PreviewKind = &k
-	}
-	if req.Instructions != nil && len(*req.Instructions) > maxTaskInstructions {
-		return model.Project{}, fmt.Errorf("%w: task_instructions is longer than %d KiB", errBadRequest, maxTaskInstructions>>10)
-	}
-	if req.Color != nil {
-		*req.Color = strings.ToLower(strings.TrimSpace(*req.Color))
-		if *req.Color != "" && !colorRe.MatchString(*req.Color) {
-			return model.Project{}, fmt.Errorf("%w: color must look like #3a7bd5", errBadRequest)
-		}
-	}
-	if req.Icon != nil && *req.Icon != "" {
-		uid, name, _ := strings.Cut(*req.Icon, "/")
-		if a, err := sv.findUpload(uid); err != nil || a.Name != name || !strings.HasPrefix(a.Type, "image/") {
-			return model.Project{}, fmt.Errorf("%w: icon must be an uploaded image", errBadRequest)
-		}
-	}
-	if req.TagFormat != nil {
-		f, err := sv.s.checkTagFormat(ctx, strings.TrimSpace(*req.TagFormat))
-		if err != nil {
-			return model.Project{}, err
-		}
-		*req.TagFormat = f.String()
-	}
-	if req.CloneURL != nil {
-		if !sv.s.hub() {
-			return model.Project{}, fmt.Errorf("%w: clone_url is a hub's project's setting", errBadRequest)
-		}
-		u, err := checkCloneURL(*req.CloneURL)
-		if err != nil {
-			return model.Project{}, err
-		}
-		req.CloneURL = &u
+	if err := sv.normalizeProjectUpdate(ctx, &req); err != nil {
+		return model.Project{}, err
 	}
 	cur, err := sv.data.GetProject(id)
 	if err != nil {
 		return cur, err
 	}
-	remote, gh := cur.RemoteURL, false
-	if !sv.s.hub() {
-		// Pick up an origin added since (the hub has no checkout to look in).
-		remote = sv.s.Git.RemoteURL(ctx, cur.ID, cur.Path)
-		if remote == "" && cur.OnRunners() {
-			remote = cur.RemoteURL // the checkout may be gone; the runners have theirs
-		}
-		gh = sv.s.Git.HasGh()
-	}
+	remote, gh := sv.currentRemote(ctx, cur)
 	runners := cur.Runners
 	if req.Runners != nil {
 		withRemote := cur
@@ -517,71 +459,7 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 		return cur, err
 	}
 	p, err := sv.data.UpdateProject(id, func(p *model.Project) error {
-		p.RemoteURL = remote
-		set(&p.Name, req.Name)
-		set(&p.RunCommand, req.RunCommand)
-		set(&p.TestCommand, req.TestCommand)
-		set(&p.DeployCommand, req.DeployCommand)
-		set(&p.SetupCommand, req.SetupCommand)
-		set(&p.PreviewKind, req.PreviewKind)
-		if req.PreviewCommand != nil {
-			p.PreviewCommand = strings.TrimSpace(*req.PreviewCommand)
-		}
-		set(&p.AutoPush, req.AutoPush)
-		set(&p.AutoApprove, req.AutoApprove)
-		set(&p.Color, req.Color)
-		set(&p.Icon, req.Icon)
-		set(&p.ChatPermissionMode, req.ChatMode)
-		set(&p.ReviewPrompt, req.ReviewPrompt)
-		if req.Instructions != nil {
-			p.TaskInstructions = strings.TrimSpace(*req.Instructions)
-		}
-		set(&p.TagFormat, req.TagFormat)
-		set(&p.CloneURL, req.CloneURL)
-		if req.CopyFiles != nil {
-			p.CopyFiles = cleanList(*req.CopyFiles)
-		}
-		if req.AllowedTools != nil {
-			p.AllowedTools = cleanList(*req.AllowedTools)
-		}
-		if req.MaxAutoFixes != nil {
-			p.MaxAutoFixes = max(0, *req.MaxAutoFixes)
-		}
-		if req.MaxRunMinutes != nil {
-			p.MaxRunMinutes = max(0, *req.MaxRunMinutes)
-		}
-		if req.MaxTurns != nil {
-			p.MaxTurns = max(0, *req.MaxTurns)
-		}
-		if req.InvestigateCI != nil {
-			v := *req.InvestigateCI
-			p.InvestigateCI = &v
-		}
-		if req.MergeMode != nil {
-			if err := checkMergeMode(*req.MergeMode, p.RemoteURL); err != nil {
-				return err
-			}
-			mode := *req.MergeMode
-			if mode == "" {
-				mode = model.MergeLocal
-			}
-			if cur := p.MergeMode; mode != cur && (cur != "" || mode != model.MergeLocal) {
-				p.MergeModeSet = true // the user's choice, kept from now on
-			}
-			p.MergeMode = mode
-		}
-		p.Runners = runners
-		if !p.MergeModeSet && p.HubProjectID == "" {
-			// The default follows the remote and the runners; a runner's
-			// clone lands the way its hub says.
-			p.MergeMode = p.DefaultMergeMode(gh)
-		}
-		if len(runners) > 0 {
-			// The runners push to origin themselves (see
-			// model.Project.LandsOnOrigin); the hub doesn't push.
-			p.AutoPush = false
-		}
-		return nil
+		return applyProjectUpdate(p, req, remote, runners, gh)
 	})
 	if err != nil {
 		return p, err
@@ -597,6 +475,157 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 		sv.s.Todos.Kick() // queued tasks may go elsewhere now
 	}
 	return p, nil
+}
+
+// normalizeProjectUpdate checks the fields of req that need it and puts
+// them in their stored form (trimmed, lower case, canonical).
+func (sv *service) normalizeProjectUpdate(ctx context.Context, req *projectUpdate) error {
+	if req.Name != nil {
+		// The name shown in the project lists; the folder keeps its name.
+		*req.Name = strings.TrimSpace(*req.Name)
+		if *req.Name == "" {
+			return fmt.Errorf("%w: name is required", errBadRequest)
+		}
+	}
+	if req.ChatMode != nil {
+		switch *req.ChatMode {
+		case "", model.ChatModeAuto, model.ChatModeAcceptEdits:
+		default:
+			return fmt.Errorf("%w: chat_permission_mode must be \"\", %q or %q", errBadRequest, model.ChatModeAuto, model.ChatModeAcceptEdits)
+		}
+	}
+	if req.PreviewKind != nil {
+		k, err := checkPreviewKind(*req.PreviewKind)
+		if err != nil {
+			return err
+		}
+		req.PreviewKind = &k
+	}
+	if req.Instructions != nil && len(*req.Instructions) > maxTaskInstructions {
+		return fmt.Errorf("%w: task_instructions is longer than %d KiB", errBadRequest, maxTaskInstructions>>10)
+	}
+	if req.Color != nil {
+		*req.Color = strings.ToLower(strings.TrimSpace(*req.Color))
+		if *req.Color != "" && !colorRe.MatchString(*req.Color) {
+			return fmt.Errorf("%w: color must look like #3a7bd5", errBadRequest)
+		}
+	}
+	if req.Icon != nil && *req.Icon != "" {
+		uid, name, _ := strings.Cut(*req.Icon, "/")
+		if a, err := sv.findUpload(uid); err != nil || a.Name != name || !strings.HasPrefix(a.Type, "image/") {
+			return fmt.Errorf("%w: icon must be an uploaded image", errBadRequest)
+		}
+	}
+	if req.TagFormat != nil {
+		f, err := sv.s.checkTagFormat(ctx, strings.TrimSpace(*req.TagFormat))
+		if err != nil {
+			return err
+		}
+		*req.TagFormat = f.String()
+	}
+	if req.CloneURL != nil {
+		if !sv.s.hub() {
+			return fmt.Errorf("%w: clone_url is a hub's project's setting", errBadRequest)
+		}
+		u, err := checkCloneURL(*req.CloneURL)
+		if err != nil {
+			return err
+		}
+		req.CloneURL = &u
+	}
+	return nil
+}
+
+// currentRemote is cur's origin as it is now, and whether gh is here. The
+// hub has no checkout to look in, so it keeps the stored one (and no gh).
+func (sv *service) currentRemote(ctx context.Context, cur model.Project) (remote string, gh bool) {
+	if sv.s.hub() {
+		return cur.RemoteURL, false
+	}
+	// Pick up an origin added since.
+	remote = sv.s.Git.RemoteURL(ctx, cur.ID, cur.Path)
+	if remote == "" && cur.OnRunners() {
+		remote = cur.RemoteURL // the checkout may be gone; the runners have theirs
+	}
+	return remote, sv.s.Git.HasGh()
+}
+
+// applyProjectUpdate sets p's fields from req (already normalized), with
+// its origin remote, its runners and whether gh is here.
+func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runners []string, gh bool) error {
+	p.RemoteURL = remote
+	set(&p.Name, req.Name)
+	set(&p.RunCommand, req.RunCommand)
+	set(&p.TestCommand, req.TestCommand)
+	set(&p.DeployCommand, req.DeployCommand)
+	set(&p.SetupCommand, req.SetupCommand)
+	set(&p.PreviewKind, req.PreviewKind)
+	if req.PreviewCommand != nil {
+		p.PreviewCommand = strings.TrimSpace(*req.PreviewCommand)
+	}
+	set(&p.AutoPush, req.AutoPush)
+	set(&p.AutoApprove, req.AutoApprove)
+	set(&p.Color, req.Color)
+	set(&p.Icon, req.Icon)
+	set(&p.ChatPermissionMode, req.ChatMode)
+	set(&p.ReviewPrompt, req.ReviewPrompt)
+	if req.Instructions != nil {
+		p.TaskInstructions = strings.TrimSpace(*req.Instructions)
+	}
+	set(&p.TagFormat, req.TagFormat)
+	set(&p.CloneURL, req.CloneURL)
+	if req.CopyFiles != nil {
+		p.CopyFiles = cleanList(*req.CopyFiles)
+	}
+	if req.AllowedTools != nil {
+		p.AllowedTools = cleanList(*req.AllowedTools)
+	}
+	if req.MaxAutoFixes != nil {
+		p.MaxAutoFixes = max(0, *req.MaxAutoFixes)
+	}
+	if req.MaxRunMinutes != nil {
+		p.MaxRunMinutes = max(0, *req.MaxRunMinutes)
+	}
+	if req.MaxTurns != nil {
+		p.MaxTurns = max(0, *req.MaxTurns)
+	}
+	if req.InvestigateCI != nil {
+		v := *req.InvestigateCI
+		p.InvestigateCI = &v
+	}
+	if req.MergeMode != nil {
+		if err := applyMergeMode(p, *req.MergeMode); err != nil {
+			return err
+		}
+	}
+	p.Runners = runners
+	if !p.MergeModeSet && p.HubProjectID == "" {
+		// The default follows the remote and the runners; a runner's
+		// clone lands the way its hub says.
+		p.MergeMode = p.DefaultMergeMode(gh)
+	}
+	if len(runners) > 0 {
+		// The runners push to origin themselves (see
+		// model.Project.LandsOnOrigin); the hub doesn't push.
+		p.AutoPush = false
+	}
+	return nil
+}
+
+// applyMergeMode sets the merge mode the user chose ("" is local) on p,
+// marking it as their choice when it differs from what p had.
+func applyMergeMode(p *model.Project, mode string) error {
+	if err := checkMergeMode(mode, p.RemoteURL); err != nil {
+		return err
+	}
+	if mode == "" {
+		mode = model.MergeLocal
+	}
+	if cur := p.MergeMode; mode != cur && (cur != "" || mode != model.MergeLocal) {
+		p.MergeModeSet = true // the user's choice, kept from now on
+	}
+	p.MergeMode = mode
+	return nil
 }
 
 func checkMergeMode(mode, remote string) error {

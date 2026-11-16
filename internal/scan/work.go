@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/agent"
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
@@ -165,7 +166,7 @@ func (r *Runner) Work(ctx context.Context, p model.Project, job Job, h Hooks) (O
 		return out, err
 	}
 	if err := r.Git.AddDetachedWorktree(ctx, p.ID, p.Path, dir, tg.commit); err != nil {
-		return out, fmt.Errorf("check out %s: %w", short(tg.commit), err)
+		return out, fmt.Errorf("check out %s: %w", gitops.ShortSHA(tg.commit), err)
 	}
 	defer r.Git.RemoveDetachedWorktree(context.WithoutCancel(ctx), p.ID, p.Path, dir)
 

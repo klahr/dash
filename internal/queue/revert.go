@@ -86,7 +86,7 @@ func (m *MergeQueue) revert(ctx context.Context, job model.MergeJob) {
 			case err != nil:
 				fail(err)
 			default:
-				m.reverted(t, &model.Revert{Commit: rsha, At: time.Now()}, "↶ reverted in "+short(rsha)+" and pushed")
+				m.reverted(t, &model.Revert{Commit: rsha, At: time.Now()}, "↶ reverted in "+gitops.ShortSHA(rsha)+" and pushed")
 			}
 			return
 		}
@@ -116,7 +116,7 @@ func (m *MergeQueue) revert(ctx context.Context, job model.MergeJob) {
 	if p.AutoPush && p.RemoteURL != "" {
 		m.pushDefault(ctx, p, t)
 	}
-	m.reverted(t, &model.Revert{Commit: rsha, At: time.Now()}, "↶ reverted in "+short(rsha))
+	m.reverted(t, &model.Revert{Commit: rsha, At: time.Now()}, "↶ reverted in "+gitops.ShortSHA(rsha))
 }
 
 func (m *MergeQueue) revertPR(ctx context.Context, t model.Todo, p model.Project, sha, msg string, fail func(error)) {
@@ -187,7 +187,7 @@ func UndoTodo(st *store.Store, t model.Todo, sha string, files []string) (model.
 	prompt := fmt.Sprintf("Undo the change an earlier task made, which landed as commit %s (\"%s\"). "+
 		"`git revert` conflicts because later work changed the same code (%s), so do it by hand: remove that "+
 		"change's behaviour while keeping everything added since working. Run `git show %s` to see the "+
-		"change.\n\nThe earlier task was:\n\n%s", short(sha), subject(t), strings.Join(files, ", "), sha, quote(t.Prompt))
+		"change.\n\nThe earlier task was:\n\n%s", gitops.ShortSHA(sha), subject(t), strings.Join(files, ", "), sha, quote(t.Prompt))
 	nt, err := st.CreateTodo(model.Todo{ProjectID: t.ProjectID, CreatedBy: t.CreatedBy, Title: "Undo: " + subject(t), Prompt: prompt})
 	if err == nil {
 		nt, err = st.SetStatus(nt.ID, model.StatusQueued, "")
@@ -200,13 +200,6 @@ func UndoTodo(st *store.Store, t model.Todo, sha string, files []string) (model.
 		return nil
 	})
 	return nt, nil
-}
-
-func short(sha string) string {
-	if len(sha) > 8 {
-		return sha[:8]
-	}
-	return sha
 }
 
 func quote(s string) string {
