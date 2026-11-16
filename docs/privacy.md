@@ -141,7 +141,7 @@ Everything is on the hub's own disk, in its data directory (`-data`, by default
 | What                                    | Kept                                                                          |
 |-----------------------------------------|-------------------------------------------------------------------------------|
 | Account: email address, username, password hash (Argon2id), two-factor secret and hashed recovery codes, when it was created | until the account is deleted (see [Delete your account](#delete-your-account)) |
-| Unconfirmed signup                      | deleted 24 hours after its last confirmation link expires                     |
+| Unconfirmed signup                      | deleted once its last confirmation link has expired, when the next person signs up |
 | Confirmation and password reset links   | 24 hours and 1 hour                                                           |
 | Invitations (the invitee's email)       | 7 days                                                                        |
 | Sessions (a hash of the cookie; no IP address or browser) | 7 days                                                      |
@@ -156,7 +156,7 @@ Everything is on the hub's own disk, in its data directory (`-data`, by default
 | Logs of Claude's runs (`logs/`)         | with their task; at most `-log-max-mb` (32 MB) a task                         |
 | Attachments and drawings (`uploads/`)   | with what uses them; unused ones are removed after a day                      |
 | Billing (with [Stripe](billing.md)): the Stripe customer and subscription ids, plan and period | while the org exists. Card, address and tax id stay at Stripe |
-| Backups (`dash backup`, `-backup-dir`)  | the last 7 by default (`-keep`). Copies made before an upgrade (`dash.db.pre-migration-*`) are kept until you delete them |
+| Backups (`dash backup`, `-backup-dir`)  | scheduled ones in `-backup-dir`: the last 7 by default (`-backup-keep`, `DASH_BACKUP_KEEP`); `dash backup` keeps all unless given `-keep`. Copies made before an upgrade (`dash.db.pre-migration-*`) are kept until you delete them |
 
 Not stored in the database:
 

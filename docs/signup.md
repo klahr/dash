@@ -143,5 +143,6 @@ sign-ins.
 | `POST /api/password/forgot {email}`         | a reset link; always `202`                            |
 | `POST /api/password/reset {token, password}` | set the new password                                 |
 
-With signup off, the signup routes answer 404, and so does `/api/password/forgot` without
-email.
+With signup off, `POST /api/signup` and `POST /api/signup/resend` answer 404. `GET /api/signup`
+says `open: false`, and confirmation links still work for accounts made while signup was open.
+`/api/password/forgot` answers 404 without email.

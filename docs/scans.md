@@ -66,15 +66,23 @@ A repository file:
 
 ```markdown
 ---
-name: security            # default: the file name
-kind: security            # see Kinds below; sets the default issue type
-scope: since_last_scan    # repo | since_last_scan | since_main | path
-path: internal            # optional: limit the scan to a directory
-model: opus               # optional: claude --model
-effort: high              # optional: claude --effort
-schedule: 0 6 * * *       # optional cron expression (this computer's time zone)
-tools: Read, Grep, Glob   # optional, needs approval in Dash; default: read-only tools and Dash's git diff/log/show/blame tools
-requires_files: *.html, src/**/*.{ts,tsx}   # optional: only run if the repository has such a file
+# name: default is the file name
+name: security
+# kind: see Kinds below; sets the default issue type
+kind: security
+# scope: repo | since_last_scan | since_main | path
+scope: since_last_scan
+# path: optional, limits the scan to a directory
+path: internal
+# model, effort: optional, claude --model and --effort
+model: opus
+effort: high
+# schedule: optional cron expression (this computer's time zone)
+schedule: 0 6 * * *
+# tools: optional, needs approval in Dash; default: read-only tools and Dash's git diff/log/show/blame tools
+tools: Read, Grep, Glob
+# requires_files: optional, only run if the repository has such a file
+requires_files: *.html, src/**/*.{ts,tsx}
 ---
 Look for vulnerabilities in {{path}} …
 ```

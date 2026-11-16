@@ -102,8 +102,8 @@ draft, queued or failed tasks, when you ask to remove one), `create_release`, `l
 `report_issue`, and the checklist tools on the project's `TODO.md` (`read_checklist`,
 `add_checklist_item`, `check_checklist_item`, `edit_checklist_item`, `delete_checklist_item`,
 `reorder_checklist_item`, `move_checklist_item_to_task`; see [Checklist](checklist.md)), and the
-[goal tools](#goals). A read-only chat calls them without asking, except `create_release`, which it
-can't use; a shell chat asks for the ones that change something. They act as the user chatting,
+[goal tools](#goals). A read-only chat calls them without asking, except `create_release` and the
+checklist tools that change `TODO.md` (all of them but `read_checklist`), which it can't use; a shell chat asks for the ones that change something. They act as the user chatting,
 in the org they're working in.
 
 When a hub runs a chat or a task on a runner, these tools act on the hub's board, not the

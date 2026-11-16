@@ -609,8 +609,11 @@ computers. So:
   global limit off) and `-login-window` (15m), or `DASH_LOGIN_MAX_FAILURES`,
   `DASH_LOGIN_GLOBAL_FAILURES` and `DASH_LOGIN_WINDOW`.
 - **Lockouts are logged** as `level=WARN msg="sign-in lockout: too many failed attempts" ip=…`
-  (once per address and window; the global one without `ip`), so fail2ban or similar can ban
-  the address at the firewall or proxy, e.g. with
+  (once per address and window). The global lockout logs
+  `msg="sign-in lockout: too many failed attempts from all addresses; new sign-ins are refused"`
+  and a two-factor lockout logs `msg="sign-in lockout: too many wrong two-factor codes" user=…`.
+  With the per-address line, fail2ban or similar can ban the address at the firewall or proxy,
+  e.g. with
   `failregex = msg="sign-in lockout: too many failed attempts" ip=<HOST>`.
 - **`-trust-proxy` is what makes the lockout per client.** Without it every request seems to come
   from the proxy, so one guesser locks everyone out. With it, Dash takes the client from the last
