@@ -231,10 +231,17 @@ $("#plan-next").addEventListener("click", attempt(async (e) => {
 // ---- 1. the idea
 
 let whereText = null;
+// ideaFor is the plan the idea's fields were filled in from: they are filled
+// in again only for another plan (or the same one saved), so a render while
+// the user types (the drafts arriving, say) keeps what they typed.
+let ideaFor = null;
 function renderIdea() {
   const f = { idea: $("#plan-idea"), name: $("#plan-name") };
-  if (document.activeElement !== f.idea) f.idea.value = pl.cur.idea;
-  if (document.activeElement !== f.name) f.name.value = pl.cur.name;
+  if (ideaFor !== pl.cur) {
+    f.idea.value = pl.cur.idea;
+    f.name.value = pl.cur.name;
+    ideaFor = pl.cur;
+  }
   if (whereText === null) {
     whereText = "";
     // Like the other Claude calls without a project: the first of the user's runners online.
