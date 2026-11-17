@@ -2,8 +2,10 @@ package mcptools
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/usage"
@@ -175,5 +177,53 @@ func TestFleetStartNow(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(api.calls, "; "), "enqueue") {
 		t.Errorf("an already queued task was queued again: %v", api.calls)
+	}
+}
+
+func TestListTodosLeavesOutOldMergedTasks(t *testing.T) {
+	now := time.Now()
+	old, recent := now.Add(-30*24*time.Hour), now.Add(-time.Hour)
+	b := todosBoard{todos: []model.Todo{
+		{ID: "old", Status: model.StatusMerged, UpdatedAt: old},
+		{ID: "new", Status: model.StatusMerged, UpdatedAt: recent},
+		{ID: "dep", Status: model.StatusReview, UpdatedAt: old},
+		{ID: "t", Status: model.StatusQueued, DependsOn: []string{"old", "dep"}, UpdatedAt: recent},
+	}}
+	tools := Tools(b, Options{Project: "p"})
+	ids := func(args string) string {
+		t.Helper()
+		out, err := runTool(t, tools, "list_todos", args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(out)
+		var rows []struct {
+			ID        string   `json:"id"`
+			WaitingOn []string `json:"waiting_on"`
+		}
+		if err := json.Unmarshal(raw, &rows); err != nil {
+			t.Fatal(err)
+		}
+		var s []string
+		for _, r := range rows {
+			s = append(s, r.ID+fmt.Sprint(r.WaitingOn))
+		}
+		return strings.Join(s, " ")
+	}
+	if got := ids(`{}`); got != "new[] dep[] t[dep]" {
+		t.Errorf("default: %s", got)
+	}
+	if got := ids(`{"status":"merged"}`); got != "old[] new[]" {
+		t.Errorf("merged: %s", got)
+	}
+	since := now.Add(-2 * time.Hour).Format(time.RFC3339)
+	if got := ids(`{"since":"` + since + `"}`); got != "new[] t[dep]" {
+		t.Errorf("since: %s", got)
+	}
+	if got := ids(`{"since":"2000-01-01","limit":2}`); got != "old[] new[]" {
+		t.Errorf("limit: %s", got)
+	}
+	if _, err := runTool(t, tools, "list_todos", `{"since":"yesterday"}`); err == nil {
+		t.Error("since yesterday: no error")
 	}
 }

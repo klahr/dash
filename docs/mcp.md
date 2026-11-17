@@ -91,7 +91,9 @@ and enter `https://<machine>.<tailnet>.ts.net:8443/mcp` in claude.ai.
 ## The chat's task tools
 
 Dash's own chats (the general chat and each project's chat) get a smaller set of task tools,
-`dash_board`: `list_projects`, `list_todos`, `get_todo`, `create_todo` (as a draft; `builds_on`
+`dash_board`: `list_projects`, `list_todos` (with `status`, `since` and `limit`; tasks merged
+more than 14 days ago are left out unless you ask for `status` merged or a `since` date),
+`get_todo`, `create_todo` (as a draft; `builds_on`
 makes it a follow-up of a finished task, continuing that task's Claude session; on a hub, `run_on`
 sends it only to that one of the project's runners),
 `queue_todo` (a draft, or a failed task to retry, when you ask for it to run; with `start_now`

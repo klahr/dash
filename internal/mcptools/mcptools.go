@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/runtoken"
@@ -653,17 +654,39 @@ func boardTools(b Board, o Options) []Tool {
 				}
 				return out, nil
 			}},
-		{"list_todos", "List a project's tasks (id, title, status), optionally filtered by status.", []Param{pProject,
-			{"status", "string", "Only this status: draft, queued, in_progress, review, merging, merged or failed.", false}},
+		{"list_todos", "List a project's tasks (id, title, status), optionally filtered by status. " +
+			"Tasks merged more than 14 days ago are left out unless status is merged or since is given.", []Param{pProject,
+			{"status", "string", "Only this status: draft, queued, in_progress, review, merging, merged or failed.", false},
+			{"since", "string", "Only tasks changed on or after this date (2006-01-02 or an RFC 3339 time).", false},
+			{"limit", "integer", "At most this many tasks.", false}},
 			func(a Args) (any, error) {
 				p, err := project(a)
 				if err != nil {
 					return nil, err
 				}
+				var since time.Time
+				if s := a.Str("since"); s != "" {
+					if since, err = parseSince(s); err != nil {
+						return nil, err
+					}
+				}
+				limit := a.Num("limit", 0)
+				if limit < 0 {
+					return nil, errors.New("limit must not be negative")
+				}
 				ts, err := b.Todos(p.ID)
 				if err != nil {
 					return nil, err
 				}
+				status := a.Str("status")
+				// Old merged tasks are history: by default they stay out of
+				// the list, so it doesn't grow with every task ever made.
+				var oldMerged time.Time
+				if status == "" && since.IsZero() {
+					oldMerged = time.Now().Add(-listMergedFor)
+				}
+				// Indexed once: Blockers would index all of ts for each task.
+				byID := model.TodosByID(ts)
 				type row struct {
 					ID        string           `json:"id"`
 					Title     string           `json:"title"`
@@ -681,11 +704,20 @@ func boardTools(b Board, o Options) []Tool {
 				// asked once.
 				pace, paceKnown := "", false
 				for _, t := range ts {
-					if st := a.Str("status"); st != "" && string(t.Status) != st {
+					if limit > 0 && len(out) >= limit {
+						break
+					}
+					if status != "" && string(t.Status) != status {
+						continue
+					}
+					if !since.IsZero() && t.UpdatedAt.Before(since) {
+						continue
+					}
+					if !oldMerged.IsZero() && t.Status == model.StatusMerged && t.UpdatedAt.Before(oldMerged) {
 						continue
 					}
 					var waiting []string
-					for _, d := range t.Blockers(ts) {
+					for _, d := range t.BlockersIn(byID) {
 						waiting = append(waiting, d.ID)
 					}
 					r := row{t.ID, t.Title, t.Status, t.Priority, t.DependsOn, t.BuildsOn, waiting, t.Error, t.StartNow, ""}
@@ -1177,4 +1209,20 @@ func ServerConfig(baseURL, token string) map[string]any {
 		"url":     strings.TrimRight(baseURL, "/") + "/mcp/dash",
 		"headers": map[string]string{"Authorization": "Bearer " + token},
 	}
+}
+
+// listMergedFor is how long list_todos keeps listing a merged task by
+// default, counted from its last change (its merge).
+const listMergedFor = 14 * 24 * time.Hour
+
+// parseSince reads list_todos' since: a date (in local time) or an RFC 3339
+// time.
+func parseSince(s string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	if t, err := time.ParseInLocation(time.DateOnly, s, time.Local); err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("since %q is not a date (2006-01-02) or an RFC 3339 time", s)
 }
