@@ -1,7 +1,7 @@
 import { renderMarkdown } from "../editor.js";
 import { $, $$, h, ib, ico, plural } from "./dom.js";
 import { api } from "./api.js";
-import { ask, attempt, toast } from "./dialogs.js";
+import { ask, attempt, busy, toast } from "./dialogs.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { projectKey } from "./events.js";
 import { showView } from "./nav.js";
@@ -43,6 +43,7 @@ export const iss = {
   checked: new Set(), // ids picked for a bulk action
   expanded: new Set(),
   editing: null,      // id of the issue whose fields are being edited
+  grouping: false,    // Claude is grouping the checked issues
   filter: { type: "", severity: "", status: "active", source: "", kind: "", run: null }, // kind: the scan kind that filed it; run: { id, ids, label } from a scan report
 };
 
@@ -174,6 +175,7 @@ function renderIssueBulk() {
   $("#issue-bulk").hidden = !iss.checked.size;
   $("#issue-count").textContent = `${iss.checked.size} selected`;
   $("#issue-combine").disabled = iss.checked.size < 2;
+  if (!iss.grouping) $("#issue-group").disabled = iss.checked.size < 2;
 }
 
 function issueRow(i) {
@@ -259,7 +261,7 @@ function issueBody(i) {
     i.fix ? h("div", { class: "issue-fix" }, h("h4", {}, "Suggested fix"), h("div", { class: "issue-md", innerHTML: renderMarkdown(i.fix) })) : null,
     h("div", { class: "issue-actions" },
       act("Edit", "edit", () => { iss.editing = i.id; renderIssues(); }),
-      triageable(i) ? act(i.status === "task_created" ? "Create another task" : "Create task", "plus", () => issueTasks([i.id], false, false)) : null,
+      triageable(i) ? act(i.status === "task_created" ? "Create another task" : "Create task", "plus", () => issueTasks([i.id], "each", false)) : null,
       triageable(i) ? act("Dismiss", "x", () => dismissIssues([i.id])) : null,
       i.status === "open" ? act("Mark resolved", "check", () => patch({ status: "resolved" })) : null,
       !triageable(i) ? act("Reopen", "undo", () => patch({ status: "open" })) : null,
@@ -301,8 +303,11 @@ function issueEditor(i) {
   return form;
 }
 
-async function issueTasks(ids, combine, enqueue) {
-  const todos = await api("POST", `/api/projects/${state.project.id}/issues/tasks`, { ids, combine, enqueue });
+// issueTasks creates tasks for issues ids: how is "each" (one per issue),
+// "one" (one for them all) or "group" (Claude groups similar ones and
+// names each group's task).
+async function issueTasks(ids, how, enqueue) {
+  const todos = await api("POST", `/api/projects/${state.project.id}/issues/tasks`, { ids, combine: how === "one", group: how === "group", enqueue });
   for (const id of ids) iss.checked.delete(id);
   for (const t of todos) state.todos.set(t.id, t);
   renderIssues();
@@ -348,7 +353,17 @@ $("#issue-all").addEventListener("change", (e) => {
   for (const box of $$("#issue-list .issue-check")) { box.checked = e.target.checked; box.closest(".issue")?.classList.toggle("picked", box.checked); }
   renderIssueBulk();
 });
-$("#issue-tasks").addEventListener("click", attempt(() => issueTasks([...iss.checked], false, $("#issue-queue").checked)));
-$("#issue-combine").addEventListener("click", attempt(() => issueTasks([...iss.checked], true, $("#issue-queue").checked)));
+$("#issue-tasks").addEventListener("click", attempt(() => issueTasks([...iss.checked], "each", $("#issue-queue").checked)));
+$("#issue-combine").addEventListener("click", attempt(() => issueTasks([...iss.checked], "one", $("#issue-queue").checked)));
+// Grouping asks Claude, which takes a while: the button says so meanwhile.
+$("#issue-group").addEventListener("click", attempt(async (e) => {
+  iss.grouping = true;
+  try {
+    await busy(e.currentTarget, () => issueTasks([...iss.checked], "group", $("#issue-queue").checked), { label: "Grouping…" });
+  } finally {
+    iss.grouping = false;
+    renderIssueBulk();
+  }
+}));
 $("#issue-dismiss").addEventListener("click", attempt(() => dismissIssues([...iss.checked])));
 $("#issue-clear").addEventListener("click", () => { iss.checked.clear(); renderIssues(); });

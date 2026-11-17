@@ -1,13 +1,17 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
 	"strings"
 
+	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/tunnel"
 )
 
 // issueInput is an issue as clients send it.
@@ -164,8 +168,9 @@ func (s *Server) dismissIssues(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// issueTasks creates tasks for issues: one each, or one for them all
-// (combine). They are drafts unless enqueue is set.
+// issueTasks creates tasks for issues: one each, one for them all
+// (combine), or one for each group of similar ones, named for what it
+// fixes (group; Claude groups them). They are drafts unless enqueue is set.
 func (s *Server) issueTasks(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
@@ -174,13 +179,24 @@ func (s *Server) issueTasks(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		IDs     []string `json:"ids"`
 		Combine bool     `json:"combine"`
+		Group   bool     `json:"group"`
 		Enqueue bool     `json:"enqueue"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
 		return
 	}
-	todos, err := sv.tasksForIssues(r.PathValue("pid"), req.IDs, req.Combine, req.Enqueue)
+	how := issuesEach
+	if req.Combine {
+		how = issuesCombined
+	} else if req.Group {
+		how = issuesGrouped
+	}
+	todos, err := sv.tasksForIssues(r.Context(), r.PathValue("pid"), req.IDs, how, req.Enqueue)
+	if len(todos) == 0 && (errors.Is(err, errNoGrouper) || errors.Is(err, errNoClaudeRunner) || errors.Is(err, tunnel.ErrOffline)) {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		return
+	}
 	if err != nil && len(todos) == 0 {
 		writeErr(w, err)
 		return
@@ -188,9 +204,21 @@ func (s *Server) issueTasks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, nonNil(todos))
 }
 
+// issuesHow is how tasksForIssues splits issues into tasks.
+type issuesHow int
+
+const (
+	issuesEach     issuesHow = iota // a task for each
+	issuesCombined                  // one task for them all
+	issuesGrouped                   // a task for each group of similar ones
+)
+
+// maxGroupIssues is how many issues may be grouped at once.
+const maxGroupIssues = 100
+
 // tasksForIssues creates the tasks issueTasks describes and links each issue
 // to its task. It returns the tasks created, with an error if one failed.
-func (sv *service) tasksForIssues(pid string, ids []string, combine, enqueue bool) ([]model.Todo, error) {
+func (sv *service) tasksForIssues(ctx context.Context, pid string, ids []string, how issuesHow, enqueue bool) ([]model.Todo, error) {
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("%w: no issues given", errBadRequest)
 	}
@@ -205,22 +233,36 @@ func (sv *service) tasksForIssues(pid string, ids []string, combine, enqueue boo
 		}
 		issues = append(issues, is)
 	}
-	groups := [][]model.Issue{issues}
-	if !combine {
-		groups = nil
+	var groups []issueBatch
+	switch {
+	case how == issuesCombined:
+		groups = []issueBatch{{issues: issues}}
+	case how == issuesGrouped && len(issues) > 1:
+		if len(issues) > maxGroupIssues {
+			return nil, fmt.Errorf("%w: group at most %d issues at once", errBadRequest, maxGroupIssues)
+		}
+		gs, err := sv.group(ctx, issueListing(issues))
+		if err != nil {
+			return nil, err
+		}
+		groups = fitGroups(gs, issues)
+	default:
 		for _, is := range issues {
-			groups = append(groups, []model.Issue{is})
+			groups = append(groups, issueBatch{issues: []model.Issue{is}})
 		}
 	}
 	var out []model.Todo
 	for _, g := range groups {
-		title, prompt := model.TaskFromIssues(g)
+		title, prompt := model.TaskFromIssues(g.issues)
+		if g.title != "" {
+			title = g.title
+		}
 		t, err := sv.data.CreateTodo(model.Todo{ProjectID: pid, CreatedBy: sv.c.User, Title: title, Prompt: prompt})
 		if err != nil {
 			return out, err
 		}
-		gids := make([]string, len(g))
-		for i, is := range g {
+		gids := make([]string, len(g.issues))
+		for i, is := range g.issues {
 			gids[i] = is.ID
 		}
 		if _, err := sv.data.LinkIssues(gids, t.ID); err != nil {
@@ -235,4 +277,89 @@ func (sv *service) tasksForIssues(pid string, ids []string, combine, enqueue boo
 		out = append(out, t)
 	}
 	return out, nil
+}
+
+// An issueBatch is issues one task fixes, with that task's title ("": made
+// from the issues).
+type issueBatch struct {
+	title  string
+	issues []model.Issue
+}
+
+// maxListedDetails is how much of an issue's details issueListing gives,
+// in runes.
+const maxListedDetails = 300
+
+// issueListing numbers issues for Claude to group (see agent.Titler.Group):
+// what each is and where, and the start of its details.
+func issueListing(issues []model.Issue) string {
+	var b strings.Builder
+	for n, is := range issues {
+		fmt.Fprintf(&b, "%d. [%s %s] %s", n+1, is.Severity, is.Type, oneLine(is.Title, 200))
+		var about []string
+		if loc := is.Location(); loc != "" {
+			about = append(about, "at "+loc)
+		}
+		if is.Rule != "" {
+			about = append(about, "rule "+is.Rule)
+		}
+		if is.ScanKind != "" {
+			about = append(about, "from a "+is.ScanKind+" scan")
+		}
+		if len(about) > 0 {
+			fmt.Fprintf(&b, " (%s)", strings.Join(about, ", "))
+		}
+		b.WriteByte('\n')
+		if d := oneLine(is.Details, maxListedDetails); d != "" {
+			fmt.Fprintf(&b, "   %s\n", d)
+		}
+	}
+	return b.String()
+}
+
+// oneLine is s on one line, cut to at most n runes.
+func oneLine(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > n {
+		s = string(r[:n]) + "…"
+	}
+	return s
+}
+
+// fitGroups turns Claude's groups of issues into batches: an issue named
+// twice stays in the first group that names it, numbers past the end are
+// dropped, and an issue no group names gets a task of its own. A group of
+// one keeps the issue's own title. Batches go most severe first.
+func fitGroups(gs []agent.IssueGroup, issues []model.Issue) []issueBatch {
+	placed := make([]bool, len(issues))
+	var out []issueBatch
+	for _, g := range gs {
+		var b issueBatch
+		for _, i := range g.Issues {
+			if i >= 0 && i < len(issues) && !placed[i] {
+				placed[i] = true
+				b.issues = append(b.issues, issues[i])
+			}
+		}
+		if len(b.issues) > 1 {
+			b.title = strings.TrimSpace(g.Title)
+		}
+		if len(b.issues) > 0 {
+			out = append(out, b)
+		}
+	}
+	for i, is := range issues {
+		if !placed[i] {
+			out = append(out, issueBatch{issues: []model.Issue{is}})
+		}
+	}
+	worst := func(b issueBatch) int {
+		r := 99
+		for _, is := range b.issues {
+			r = min(r, is.Severity.Rank())
+		}
+		return r
+	}
+	slices.SortStableFunc(out, func(a, b issueBatch) int { return worst(a) - worst(b) })
+	return out
 }

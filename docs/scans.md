@@ -149,6 +149,12 @@ Look for vulnerabilities in {{path}} …
   out in its clone and runs Claude there, and the hub records the findings. While none of the
   project's runners is online the run waits, showing "no runner online", and goes ahead as soon as
   one connects; a project with no runner linked can't be scanned. `-scan-timeout` is the hub's.
+- **Tasks from issues.** Check issues in **Issues** and pick how to turn them into tasks:
+  **Create tasks** makes one task per issue, **Create one task** one task for them all, and
+  **Create grouped** has Claude put similar issues together (same pattern, rule, file or
+  feature) and name each group's task for what it fixes. An issue unlike the others gets a task
+  of its own. Grouping runs on one of your runners, as splitting a task does, and takes up to 100
+  issues at a time. Tick **Create & queue** to queue the tasks instead of keeping drafts.
 - **Reports.** Each run shows what it found, e.g. "2 new, 3 already known, 1 reopened". The
   numbers link to those issues. A red badge counts the run's new or reopened critical and high
   issues that are still open, e.g. "1 critical · 2 high". A scheduled run that finds new critical or high issues sends a
@@ -167,5 +173,8 @@ Look for vulnerabilities in {{path}} …
 - `GET /api/projects/{pid}/issues?kind=<kind>&type=<type>` lists the issues a kind of scan filed
   (aliases work; an unknown kind is a 400), optionally of one type (`bug`, `vuln`, `issue`). The
   MCP `list_issues` tool takes the same `kind`.
+- `POST /api/projects/{pid}/issues/tasks` creates tasks for issues: `{"ids": [], "combine",
+  "group", "enqueue"}`. `combine` makes one task for them all; `group` one for each group of
+  similar ones (503 if no runner of yours is online).
 - `PATCH /api/projects/{pid}/scans/{name}` changes any scan's schedule and approvals, and
   `POST …/scans/{name}/run` runs it.

@@ -226,3 +226,64 @@ func TestIssueTriageIntoTasks(t *testing.T) {
 		t.Fatalf("create & queue: %d %s", w.Code, w.Body)
 	}
 }
+
+// Grouping issues creates a task for each group Claude proposes, named as
+// it says; an issue it leaves out, or puts in a group of one, gets a task of
+// its own with the issue's title, and the most severe group comes first.
+func TestIssuesGroupedIntoTasks(t *testing.T) {
+	parallel(t)
+
+	s, _, p := boardServer(t)
+	small := &fakeSmall{where: "here"}
+	s.Small = small
+	h := loggedIn(t, s.Routes())
+	base := "/api/projects/" + p.ID + "/issues"
+	var ids []string
+	for _, in := range []string{
+		`{"title":"Unchecked error","type":"bug","severity":"low","file":"a.go","line":3,"details":"err ignored"}`,
+		`{"title":"Debug endpoint exposed","type":"vuln","severity":"critical","file":"srv.go"}`,
+		`{"title":"Unchecked close","type":"bug","severity":"medium","file":"b.go","line":8}`,
+	} {
+		w := do(t, h, "POST", base, in)
+		var out struct{ Issue model.Issue }
+		if w.Code != http.StatusCreated || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+			t.Fatalf("add %s: %d %s", in, w.Code, w.Body)
+		}
+		ids = append(ids, `"`+out.Issue.ID+`"`)
+	}
+	w := do(t, h, "POST", base+"/tasks", `{"group":true,"ids":[`+strings.Join(ids, ",")+`]}`)
+	var todos []model.Todo
+	if w.Code != http.StatusCreated || json.Unmarshal(w.Body.Bytes(), &todos) != nil || len(todos) != 2 {
+		t.Fatalf("grouped: %d %s", w.Code, w.Body)
+	}
+	if todos[0].Title != "Fix: Debug endpoint exposed" || todos[1].Title != "group from here" {
+		t.Fatalf("titles %q, %q", todos[0].Title, todos[1].Title)
+	}
+	for _, want := range []string{"Unchecked error", "Unchecked close", "a.go:3", "b.go:8"} {
+		if !strings.Contains(todos[1].Prompt, want) {
+			t.Errorf("grouped prompt lacks %q:\n%s", want, todos[1].Prompt)
+		}
+	}
+	// Claude was shown each issue, numbered, with where it is.
+	if len(small.texts) != 1 {
+		t.Fatalf("calls %v", small.calls)
+	}
+	for _, want := range []string{"1. [low bug] Unchecked error (at a.go:3)", "   err ignored", "2. [critical vuln] Debug endpoint exposed (at srv.go)", "3. [medium bug]"} {
+		if !strings.Contains(small.texts[0], want) {
+			t.Errorf("listing lacks %q:\n%s", want, small.texts[0])
+		}
+	}
+	for _, is := range raw(s).ListIssues(p.ID) {
+		if is.Status != model.IssueTaskCreated {
+			t.Errorf("issue %q is %s", is.Title, is.Status)
+		}
+	}
+
+	// Without Claude here, grouping says so and creates nothing.
+	s.Small = nil
+	q := raw(s).ListIssues(p.ID)
+	w = do(t, h, "POST", base+"/tasks", `{"group":true,"ids":["`+q[0].ID+`","`+q[1].ID+`"]}`)
+	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "needs Claude") {
+		t.Fatalf("no Claude: %d %s", w.Code, w.Body)
+	}
+}

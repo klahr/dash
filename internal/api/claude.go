@@ -39,6 +39,9 @@ type SmallClaude interface {
 	Summary(ctx context.Context, report string) (string, error)
 	Refine(ctx context.Context, prompt string) (string, error)
 	Split(ctx context.Context, prompt string) ([]agent.Part, error)
+	// Group sorts a numbered listing of issues into groups, each fixed by
+	// one task (see agent.Titler.Group).
+	Group(ctx context.Context, issues string) ([]agent.IssueGroup, error)
 	Suggest(ctx context.Context, transcript string) (string, error)
 	// Plan runs one round of a project plan's interview (agent.PlanInput in,
 	// the interviewer's JSON out).
@@ -237,6 +240,34 @@ func checkParts(parts []agent.Part, from string) ([]agent.Part, error) {
 
 var errNoSplitter = errors.New("splitting a task is not available")
 
+// group sorts a numbered listing of issues into groups of similar ones,
+// each to be fixed by one task, here or on the caller's runner.
+func (sv *service) group(ctx context.Context, listing string) ([]agent.IssueGroup, error) {
+	if !sv.s.hub() {
+		if sv.s.Small == nil {
+			return nil, errNoGrouper
+		}
+		return sv.s.Small.Group(ctx, listing)
+	}
+	r, err := sv.s.claudeRunner(sv.c, "")
+	if err != nil {
+		return nil, err
+	}
+	var out struct {
+		Groups []agent.IssueGroup `json:"groups"`
+	}
+	ctx = tunnel.WithUser(ctx, sv.c.User)
+	if err := sv.s.fleet().Call(ctx, r.ID, http.MethodPost, "/api/hub/claude/group", map[string]string{"text": listing}, &out); err != nil {
+		return nil, err
+	}
+	if len(out.Groups) == 0 {
+		return nil, fmt.Errorf("%s proposed no groups", r.Name)
+	}
+	return out.Groups, nil
+}
+
+var errNoGrouper = errors.New("grouping issues needs Claude, which this Dash doesn't run: create a task for each, or one for them all")
+
 // claudeInfo handles GET /api/claude: where the caller's chat runs, for the
 // chat's header. local: this Dash runs it; else on one of runners.
 func (s *Server) claudeInfo(w http.ResponseWriter, r *http.Request) {
@@ -357,8 +388,8 @@ func hubUser(r *http.Request) int64 {
 
 // hubClaude handles POST /api/hub/claude/{kind}: one of Claude's short
 // calls for this runner's owner, {"text"} in and out ({"parts"} out for a
-// split). A plan's interview round is one too: the hub keeps the plan and
-// reads the reply.
+// split, {"groups"} for grouping issues). A plan's interview round is one
+// too: the hub keeps the plan and reads the reply.
 func (s *Server) hubClaude(w http.ResponseWriter, r *http.Request) {
 	if err := s.forOwner(r); err != nil {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
@@ -373,6 +404,15 @@ func (s *Server) hubClaude(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Small == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "this runner doesn't run Claude's short calls"})
+		return
+	}
+	if r.PathValue("kind") == "group" {
+		groups, err := s.Small.Group(r.Context(), req.Text)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"groups": groups})
 		return
 	}
 	if r.PathValue("kind") == "split" {

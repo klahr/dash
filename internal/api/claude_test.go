@@ -60,6 +60,14 @@ func (f *fakeSmall) Split(_ context.Context, p string) ([]agent.Part, error) {
 		{Title: "Second half", Prompt: "Do the second half.", After: []int{0, 0, -1, 5}},
 	}, err
 }
+
+// Group puts the first and third issues together, names a number past the
+// end and the first again, and leaves the second out.
+func (f *fakeSmall) Group(_ context.Context, issues string) ([]agent.IssueGroup, error) {
+	title, err := f.call("group", issues)
+	return []agent.IssueGroup{{Title: title, Issues: []int{0, 2, 9}}, {Title: "Again", Issues: []int{0}}}, err
+}
+
 func (f *fakeSmall) n() int { f.mu.Lock(); defer f.mu.Unlock(); return len(f.calls) }
 
 // noChat fails the test if the hub runs a chat turn itself.
@@ -75,6 +83,7 @@ func (c noChat) Stream(context.Context, string, []agent.ChatMessage, func(agent.
 type claudeFleet struct {
 	hub, runner      *Server
 	hubSmall, small  *fakeSmall
+	project          model.Project // a project on the hub
 	creds            tunnel.Credentials
 	rh               *tunnel.Hub
 	owner, other     http.Handler // the hub's routes, signed in as each
@@ -85,8 +94,8 @@ type claudeFleet struct {
 func newClaudeFleet(t *testing.T) *claudeFleet {
 	t.Helper()
 	f := &claudeFleet{hubSmall: &fakeSmall{where: "hub"}, small: &fakeSmall{where: "runner"}}
-	hub, _, _ := boardServer(t)
-	f.hub = hub
+	hub, _, p := boardServer(t)
+	f.hub, f.project = hub, p
 	f.rh = &tunnel.Hub{Accounts: hub.Auth.Accounts()}
 	hub.Peers = &peer.Hub{Self: "hub", Runners: f.rh}
 	hub.Titler, hub.Refiner, hub.Chat = f.hubSmall, f.hubSmall, noChat{t}
@@ -133,6 +142,26 @@ func newClaudeFleet(t *testing.T) *claudeFleet {
 	}
 	eventually(t, "the runner to come online", func() bool { r, _ := f.rh.Get(f.creds.ID); return r.Online })
 	return f
+}
+
+// groupIssues adds two issues to the hub's project and asks as h for
+// tasks for them, grouped, expecting code; it returns the tasks made.
+func (f *claudeFleet) groupIssues(t *testing.T, h http.Handler, code int) []model.Todo {
+	t.Helper()
+	var ids []string
+	for _, title := range []string{"Unchecked error", "Unescaped input", "Another unchecked error"} {
+		is, _, err := raw(f.hub).UpsertIssue(model.Issue{ProjectID: f.project.ID, Title: title + " (" + http.StatusText(code) + ")"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, `"`+is.ID+`"`)
+	}
+	w := send(h, "POST", "/api/projects/"+f.project.ID+"/issues/tasks", `{"group":true,"ids":[`+strings.Join(ids, ",")+`]}`)
+	var todos []model.Todo
+	if w.Code != code || (code == http.StatusCreated && json.Unmarshal(w.Body.Bytes(), &todos) != nil) {
+		t.Fatalf("grouped tasks: %d %s", w.Code, w.Body)
+	}
+	return todos
 }
 
 func (f *claudeFleet) split(h http.Handler) *httptest.ResponseRecorder {
@@ -212,6 +241,9 @@ func TestHubRunsClaudeOnTheUsersOwnRunner(t *testing.T) {
 	if want := []agent.Part{{Title: "split from runner", Prompt: "Do the first half."}, {Title: "Second half", Prompt: "Do the second half.", After: []int{0}}}; !reflect.DeepEqual(split.Parts, want) {
 		t.Errorf("owner's split: %+v, want %+v", split.Parts, want)
 	}
+	if todos := f.groupIssues(t, f.owner, http.StatusCreated); len(todos) != 2 || todos[0].Title != "group from runner" {
+		t.Fatalf("owner's grouped tasks: %+v", todos)
+	}
 	if title := f.newTask(t, f.owner, "Add a dark mode\n\nwith a toggle"); title != "title from runner" {
 		t.Errorf("owner's task title %q", title)
 	}
@@ -243,6 +275,7 @@ func TestHubRunsClaudeOnTheUsersOwnRunner(t *testing.T) {
 	if w := f.split(f.other); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "no runner of yours") {
 		t.Fatalf("other user's split: %d %s", w.Code, w.Body)
 	}
+	f.groupIssues(t, f.other, http.StatusServiceUnavailable)
 	if title := f.newTask(t, f.other, "## Fix the login form\nIt breaks on Safari"); title != "Fix the login form" {
 		t.Errorf("other user's task title %q, want the first line", title)
 	}
