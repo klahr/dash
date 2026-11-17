@@ -51,16 +51,27 @@ its log says why.
 Install bubblewrap (`sudo apt install bubblewrap`, `sudo pacman -S bubblewrap`,
 `sudo dnf install bubblewrap`). Inside the container:
 
-- the system is read-only, and your home folder is empty except for Claude Code itself, its
-  settings and login (`~/.claude`, `~/.claude.json`) and your git config;
-- the task's worktree can be written. The project's `.git` can only be read, except the
-  worktree's own index, so Claude can't move branches or commit;
+- the system is read-only, and your home folder is empty except for Claude Code itself and your
+  git config;
+- Claude Code uses a config folder of its own, `~/.local/share/dash-runner/claude-sandbox`
+  (set `DASH_SANDBOX_CLAUDE` for another). Your `settings.json`, `CLAUDE.md`, rules, agents,
+  commands and skills are there to read, and your login is shared. Your own `~/.claude` and
+  `~/.claude.json` are out of reach, so a task can't add hooks or MCP servers that your own
+  Claude would run;
+- the task's worktree can be written. Its `.git` file and the project's `.git` can only be read,
+  so Claude can't move branches, commit, or point git at a config of its own;
 - the task's attachments can be read;
 - `/run` is empty (no Docker socket, no ssh or gpg agent), and Dash's own variables and anything
   named like a token, password or secret are removed from the environment. Claude's
   (`ANTHROPIC_*`, `CLAUDE_*`) stay;
 - the network is the same as yours: Claude reaches its API, Dash's MCP servers on the runner,
   and package registries.
+
+To give the sandbox a login of its own instead of yours, log in to its folder once:
+
+```sh
+CLAUDE_CONFIG_DIR=~/.local/share/dash-runner/claude-sandbox claude   # log in, then /exit
+```
 
 A build that keeps caches in your home folder (Go, npm, Cargo) starts with an empty one on each
 run. Let it keep them by listing the folders Claude may write in `DASH_SANDBOX_BIND`, and
@@ -127,3 +138,8 @@ way. Unlike the container, this user can write anywhere in the projects folder.
   sandbox. Review the changes before merging.
 - Commands in a project's **Project settings** (setup, tests, previews) run as you, outside the
   sandbox.
+- Dash's own git commands (commit, rebase, merge) run as you, without git hooks or an fsmonitor.
+  Dash refuses to run git in a worktree whose `.git` no longer points to the project's `.git`,
+  and fails a sandboxed run that changed it.
+- The sandbox's Claude config folder is kept from run to run, so one run can change it for the
+  next (MCP servers in its `.claude.json`). Your own Claude config is never changed.

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/runtoken"
@@ -272,7 +273,11 @@ const maxGitOutput = 256 << 10
 func gitOutput(dir string, args []string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	cmd, err := localrun.Command(ctx, localrun.Git, "git", append([]string{"--no-pager", "-c", "color.ui=false"}, args...)...)
+	if err := gitops.CheckGitDir(dir); err != nil {
+		return "", err
+	}
+	pre := append([]string{"--no-pager", "-c", "color.ui=false"}, gitops.SafeConfigArgs()...)
+	cmd, err := localrun.Command(ctx, localrun.Git, "git", append(pre, args...)...)
 	if err != nil {
 		return "", err
 	}

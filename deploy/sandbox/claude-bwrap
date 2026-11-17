@@ -12,6 +12,8 @@
 # DASH_SANDBOX_BIND   folders Claude may write as well, space separated,
 #                     e.g. "$HOME/.cache $HOME/go" (build caches)
 # DASH_SANDBOX_RO     folders Claude may read, space separated
+# DASH_SANDBOX_CLAUDE Claude Code's config folder in the sandbox (default
+#                     ~/.local/share/dash-runner/claude-sandbox)
 set -eu
 
 command -v bwrap >/dev/null || { echo "claude-bwrap: bubblewrap (bwrap) is not installed" >&2; exit 127; }
@@ -38,24 +40,45 @@ opt --tmpfs /run
 ro /run/systemd/resolve
 opt --tmpfs "$HOME"
 
-# Claude Code: its binary, settings and login.
+# Claude Code: its binary, and a config folder of its own. Your
+# ~/.claude and ~/.claude.json stay out: hooks and MCP servers written
+# there run in your own Claude, outside the sandbox. Your settings,
+# CLAUDE.md, rules, agents, commands and skills can be read; the login is
+# shared (and kept fresh) unless the sandbox has one of its own.
 real=$(readlink -f "$claude")
 ro "$(dirname "$real")"
 ro "$(dirname "$claude")"
 ro "$HOME/.local/share/claude"
-rw "$HOME/.claude"
-rw "$HOME/.claude.json"
+mine=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
+cfg=${DASH_SANDBOX_CLAUDE:-$HOME/.local/share/dash-runner/claude-sandbox}
+(umask 077 && mkdir -p "$cfg")
+rw "$cfg"
+for f in CLAUDE.md rules agents commands skills; do
+	[ -e "$mine/$f" ] && opt --ro-bind "$mine/$f" "$cfg/$f" || true
+done
+# settings.json is read-only even when you have none (an empty one, from
+# fd 4), so a run can't leave hooks there for the next.
+if [ -f "$mine/settings.json" ]; then
+	opt --ro-bind "$mine/settings.json" "$cfg/settings.json"
+else
+	opt --ro-bind-data 4 "$cfg/settings.json"
+fi
+if [ ! -s "$cfg/.credentials.json" ] && [ -f "$mine/.credentials.json" ]; then
+	opt --bind "$mine/.credentials.json" "$cfg/.credentials.json"
+fi
+opt --setenv CLAUDE_CONFIG_DIR "$cfg"
 ro "$HOME/.gitconfig"
 ro "$HOME/.config/git"
 
-# The worktree. Its git metadata lives in the main clone's .git: that
-# stays read-only, except this worktree's own part (index, HEAD), so
-# Claude can't move the project's branches.
+# The worktree. Its git metadata stays read-only: the worktree's .git
+# file, the main clone's .git and this worktree's part of it. Dash runs
+# git there after Claude, outside the sandbox, so Claude must not choose
+# its config or hooks. Dash commits; Claude doesn't have to.
 rw "$wt"
+ro "$wt/.git"
 if common=$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
 	ro "$common"
-	gitdir=$(git -C "$wt" rev-parse --absolute-git-dir)
-	rw "$gitdir"
+	ro "$(git -C "$wt" rev-parse --absolute-git-dir)"
 fi
 
 # A task's attachments (--add-dir).
@@ -79,4 +102,6 @@ for v in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p'); do
 	esac
 done
 
-exec bwrap --args 3 "$@" 3<"$args"
+exec bwrap --args 3 "$@" 3<"$args" 4<<'EOF'
+{}
+EOF

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/claudecli"
+	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/textutil"
@@ -110,8 +111,10 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = req.Dir
 	cmd.Env = localrun.Environ(req.Env...)
+	var gitState string
 	if len(c.Sandbox) > 0 {
 		cmd.Env = append(cmd.Env, "DASH_WORKTREE="+req.Dir)
+		gitState = gitops.GitDirState(req.Dir)
 	}
 	cmd.Stdin = strings.NewReader(req.Prompt)
 	// Own process group so cancel kills Claude and everything it spawned.
@@ -181,7 +184,14 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 		}
 	})
 	<-stderrDone
-	if err := cmd.Wait(); err != nil {
+	waitErr := cmd.Wait()
+	// Dash runs git in the worktree next, outside the sandbox: a run that
+	// pointed .git (or its commondir) elsewhere would choose the config,
+	// and so the commands, that git runs then.
+	if len(c.Sandbox) > 0 && gitops.GitDirState(req.Dir) != gitState {
+		return res, fmt.Errorf("claude changed the worktree's git metadata (.git, commondir or config.worktree): Dash won't run git there")
+	}
+	if err := waitErr; err != nil {
 		if ctx.Err() != nil {
 			return res, ctx.Err()
 		}

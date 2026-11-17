@@ -94,12 +94,17 @@ func (g *Git) command(ctx context.Context, dir string, env []string, bin string,
 	if bin == g.ghBin() {
 		tool = localrun.Gh
 	}
+	if err := CheckGitDir(dir); err != nil {
+		return nil, err
+	}
 	cmd, err := localrun.Command(ctx, tool, bin, stripNUL(args)...)
 	if err != nil {
 		return nil, err
 	}
 	cmd.Dir = dir
 	cmd.Env = append(localrun.Environ("GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1"), env...)
+	// gh runs git too (pr create, checkout): both get safeConfig.
+	cmd.Env = gitConfigEnv(cmd.Env, safeConfig...)
 	if tool == localrun.Git {
 		if gh, err := exec.LookPath(g.ghBin()); err == nil {
 			if abs, err := filepath.Abs(gh); err == nil {
@@ -115,29 +120,37 @@ func (g *Git) command(ctx context.Context, dir string, env []string, bin string,
 
 // ghCredentialEnv adds gh (at the absolute path gh) as a credential helper
 // for https://github.com to env, for this git command only: neither
-// `gh auth setup-git` nor ~/.gitconfig is needed or touched. It is a
-// GIT_CONFIG_KEY_n/VALUE_n pair after env's own GIT_CONFIG_COUNT entries,
-// which it keeps; git reads these after its config files, so the user's own
-// helpers are still asked first. Clone, fetch and push (and gh's own git)
-// all run through command, so all get it.
+// `gh auth setup-git` nor ~/.gitconfig is needed or touched. git reads it
+// after its config files, so the user's own helpers are still asked first.
+// Clone, fetch and push (and gh's own git) all run through command, so all
+// get it.
 func ghCredentialEnv(env []string, gh string) []string {
+	return gitConfigEnv(env, "credential.https://github.com.helper", "!"+shellQuote(gh)+" auth git-credential")
+}
+
+// gitConfigEnv adds config to env as GIT_CONFIG_KEY_n/VALUE_n pairs (kv is
+// key, value, key, value…) after env's own GIT_CONFIG_COUNT entries, which
+// it keeps. git treats these like -c options.
+func gitConfigEnv(env []string, kv ...string) []string {
 	n := 0
-	out := make([]string, 0, len(env)+3)
-	for _, kv := range env {
-		if v, ok := strings.CutPrefix(kv, "GIT_CONFIG_COUNT="); ok {
+	out := make([]string, 0, len(env)+1+len(kv))
+	for _, e := range env {
+		if v, ok := strings.CutPrefix(e, "GIT_CONFIG_COUNT="); ok {
 			n = 0 // the last one is what git sees
 			if c, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && c > 0 {
 				n = c
 			}
 			continue // replaced below
 		}
-		out = append(out, kv)
+		out = append(out, e)
 	}
-	return append(out,
-		"GIT_CONFIG_COUNT="+strconv.Itoa(n+1),
-		fmt.Sprintf("GIT_CONFIG_KEY_%d=credential.https://github.com.helper", n),
-		fmt.Sprintf("GIT_CONFIG_VALUE_%d=!%s auth git-credential", n, shellQuote(gh)),
-	)
+	out = append(out, "GIT_CONFIG_COUNT="+strconv.Itoa(n+len(kv)/2))
+	for i := 0; i+1 < len(kv); i += 2 {
+		out = append(out,
+			fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", n+i/2, kv[i]),
+			fmt.Sprintf("GIT_CONFIG_VALUE_%d=%s", n+i/2, kv[i+1]))
+	}
+	return out
 }
 
 // shellQuote quotes s for sh, which runs a "!…" credential helper.
