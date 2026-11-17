@@ -2421,6 +2421,29 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .radio em { display: block; font-style: normal; font-weight: 400; color: var(--muted); font-size: var(--fs-m); }
 #settings-form .field-row { flex-wrap: wrap; justify-content: flex-start; }
 
+/* ---- Account → Notifications (app/notifysettings.js) ---- */
+.notify-form { max-width: 640px; }
+.notify-form .field.choice { margin: 16px 0 4px; }
+.notify-form .toggle { display: flex; min-height: 40px; }
+.notify-freq { display: flex; flex-wrap: wrap; gap: 4px 20px; margin-top: 4px; }
+.notify-freq .radio { margin-bottom: 0; align-items: center; min-height: 40px; }
+.notify-freq .radio > input { margin-top: 0; }
+.notify-on[hidden] { display: none; }
+.notify-when { display: flex; flex-wrap: wrap; gap: 0 16px; }
+.notify-when .field { margin: 8px 0 0; }
+.notify-when select, .notify-when input { min-width: 9em; }
+.notify-picks { display: flex; flex-direction: column; margin: 0 0 4px 28px; }
+.notify-picks[hidden] { display: none; }
+.notify-issues { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.notify-issues .toggle { display: inline-flex; }
+.notify-sev { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: var(--fs-m); }
+.notify-sev select { width: auto; }
+.notify-push { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0 16px; }
+.notify-dest-hook em, .notify-form .toggle em { font-style: normal; font-weight: 400; color: var(--muted); }
+.toggle input:disabled + span { opacity: .55; cursor: not-allowed; }
+#notify-hooks .item-row { gap: 2px 10px; }
+#notify-hooks .item-row > .item-sub { flex: 1 1 100%; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .toast-bar { display: none; }

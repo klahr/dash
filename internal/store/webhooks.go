@@ -186,16 +186,25 @@ func (s *Store) RotateWebhookSecret(id string) (string, error) {
 	return secret, nil
 }
 
-// DeleteWebhook removes a webhook.
+// DeleteWebhook removes a webhook, and a personal one from its owner's
+// summary destinations.
 func (s *Store) DeleteWebhook(id string) error {
-	res, err := s.db.Exec("DELETE FROM webhooks WHERE id = ?", id)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return inTx(s.db, func(tx *sql.Tx) error {
+		w, err := scanWebhook(tx.QueryRow("SELECT "+webhookCols+" FROM webhooks WHERE id = ?", id))
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec("DELETE FROM webhooks WHERE id = ?", id); err != nil {
+			return err
+		}
+		if w.Personal() {
+			return dropSummaryWebhook(tx, w.UserID, w.OrgID, id)
+		}
+		return nil
+	})
 }
 
 // WebhookHistory is how many deliveries each webhook's history keeps.

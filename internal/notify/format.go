@@ -17,17 +17,22 @@ import (
 // Notification is one event to tell webhooks about, before it is shaped
 // for a format.
 type Notification struct {
-	ID         string            `json:"id"`
-	Type       model.NotifyEvent `json:"type"`
-	Time       time.Time         `json:"timestamp"`
-	Project    ProjectRef        `json:"project"`
-	Task       *TaskRef          `json:"task,omitempty"`
-	Permission *PermissionRef    `json:"permission,omitempty"`
-	Build      *BuildRef         `json:"build,omitempty"`
+	ID   string            `json:"id"`
+	Type model.NotifyEvent `json:"type"`
+	Time time.Time         `json:"timestamp"`
+	// Project is what the event is about; none for a summary.
+	Project    ProjectRef     `json:"project,omitzero"`
+	Task       *TaskRef       `json:"task,omitempty"`
+	Permission *PermissionRef `json:"permission,omitempty"`
+	Build      *BuildRef      `json:"build,omitempty"`
 	// Runner is the runner a runner.disk event is about.
 	Runner *RunnerRef `json:"runner,omitempty"`
 	// Goal is the goal a goal.attention event is about.
 	Goal *GoalRef `json:"goal,omitempty"`
+	// Issue is the issue an issue.new event is about.
+	Issue *IssueRef `json:"issue,omitempty"`
+	// Summary is a summary event's content.
+	Summary *Summary `json:"summary,omitempty"`
 	// Message is a one-line human summary (the error of a failed task, …).
 	Message string `json:"message,omitempty"`
 }
@@ -54,6 +59,13 @@ type GoalRef struct {
 	Title  string           `json:"title"`
 	Status model.GoalStatus `json:"status"`
 	URL    string           `json:"url,omitempty"` // the goal in Dash
+}
+
+type IssueRef struct {
+	ID       string         `json:"id"`
+	Title    string         `json:"title"`
+	Severity model.Severity `json:"severity"`
+	URL      string         `json:"url,omitempty"` // the issue in Dash
 }
 
 type RunnerRef struct {
@@ -87,6 +99,8 @@ var looks = map[model.NotifyEvent]struct {
 	model.NotifyBuild:      {"Build failing", ":rotating_light:", "rotating_light", false},
 	model.NotifyBehind:     {"Checkout behind origin", ":arrow_down:", "arrow_down", false},
 	model.NotifyDisk:       {"Disk nearly full", ":floppy_disk:", "floppy_disk", true},
+	model.NotifyIssue:      {"New issue", ":beetle:", "beetle", false},
+	model.NotifySummary:    {"Summary", ":newspaper:", "newspaper", false},
 	model.NotifyTest:       {"Test notification", ":wave:", "wave", false},
 }
 
@@ -95,6 +109,9 @@ func (n Notification) Head() string {
 	h := looks[n.Type].head
 	if n.Type == model.NotifyGoal && n.Goal != nil {
 		h = goalHeads[n.Goal.Status]
+	}
+	if n.Type == model.NotifyIssue && n.Issue != nil && n.Issue.Severity != "" {
+		h += " (" + string(n.Issue.Severity) + ")"
 	}
 	if n.Type == model.NotifyBuild && n.Build != nil && n.Build.Branch != "" {
 		h += " on " + n.Build.Branch
@@ -117,6 +134,12 @@ func (n Notification) URL() string {
 	if n.Goal != nil && n.Goal.URL != "" {
 		return n.Goal.URL
 	}
+	if n.Issue != nil && n.Issue.URL != "" {
+		return n.Issue.URL
+	}
+	if n.Summary != nil && n.Summary.URL != "" {
+		return n.Summary.URL
+	}
 	if n.Build != nil {
 		return n.Build.URL
 	}
@@ -134,6 +157,9 @@ func (n Notification) subject() string {
 	}
 	if n.Goal != nil && n.Goal.Title != "" {
 		return n.Goal.Title
+	}
+	if n.Issue != nil && n.Issue.Title != "" {
+		return n.Issue.Title
 	}
 	return n.Project.Name
 }
@@ -154,12 +180,21 @@ func request(ctx context.Context, w model.Webhook, n Notification, now time.Time
 		hdr.Set("Dash-Delivery", n.ID)
 		hdr.Set(SignatureHeaderName, Sign(body, w.Secret, now))
 	case model.WebhookSlack:
-		body, _ = json.Marshal(map[string]string{"text": slackText(n)})
+		text := slackText(n)
+		if n.Summary != nil {
+			text = slackSummary(*n.Summary)
+		}
+		body, _ = json.Marshal(map[string]string{"text": text})
 		hdr.Set("Content-Type", "application/json")
 	case model.WebhookNtfy:
 		body = []byte(ntfyMessage(n))
 		hdr.Set("Content-Type", "text/plain; charset=utf-8")
-		hdr.Set("Title", headerText(n.Head()+" · "+n.Project.Name))
+		title := n.Head() + " · " + n.Project.Name
+		if n.Summary != nil {
+			body = []byte(ntfySummary(*n.Summary))
+			title = "Dash summary: " + n.Summary.CountText()
+		}
+		hdr.Set("Title", headerText(title))
 		if looks[n.Type].high {
 			hdr.Set("Priority", "high")
 		} else {
@@ -203,7 +238,7 @@ func slackText(n Notification) string {
 	} else {
 		b.WriteString(subj)
 	}
-	if (n.Task != nil || n.Goal != nil) && n.Project.Name != "" {
+	if (n.Task != nil || n.Goal != nil || n.Issue != nil) && n.Project.Name != "" {
 		fmt.Fprintf(&b, " in _%s_", slackEscape(n.Project.Name))
 	}
 	if n.Message != "" {

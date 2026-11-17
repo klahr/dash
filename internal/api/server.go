@@ -103,6 +103,9 @@ type Server struct {
 	// Notify sends events to the projects' outgoing webhooks (nil: off,
 	// as on a runner, whose hub notifies).
 	Notify *notify.Notifier
+	// Summaries sends users' daily or weekly summaries (nil: off, e.g. on
+	// a runner, whose hub sends them).
+	Summaries *notify.Summaries
 	// ClaudeStatus keeps Claude's status page's incidents (nil: off, as on
 	// a runner; see claudestatus.go).
 	ClaudeStatus *claudestatus.Service
@@ -406,6 +409,12 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/webhooks/{wid}/deliveries", s.webhookDeliveries)
 	mux.HandleFunc("GET /api/me/webhooks", s.listPersonalWebhooks)
 	mux.HandleFunc("POST /api/me/webhooks", s.createPersonalWebhook)
+	// The caller's notification settings: summary and pushes
+	mux.HandleFunc("GET /api/me/notifications", s.getNotifySettings)
+	mux.HandleFunc("PUT /api/me/notifications", s.putNotifySettings)
+	mux.HandleFunc("POST /api/me/notifications/test-summary", s.testSummary)
+	mux.HandleFunc("GET "+notify.UnsubscribePath+"{token}", s.unsubscribeSummary) // public: see auth.publicPath
+	mux.HandleFunc("POST "+notify.UnsubscribePath+"{token}", s.unsubscribeSummary)
 	// Claude's status page: its webhook (public, the token is its
 	// credential), the status for everyone, the settings for platform admins
 	s.claudeStatusRoutes(mux)

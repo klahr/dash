@@ -11,10 +11,12 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -276,5 +278,58 @@ func TestPushRefusesPlainHTTP(t *testing.T) {
 	b := newBrowser(t)
 	if _, err := pushRequest(context.Background(), vapid, b.sub("http://push.example.com/x"), "mailto:x@example.com", []byte("{}"), time.Minute, false, t0); err == nil {
 		t.Fatal("pushed over http")
+	}
+}
+
+// prefStore is a pushStore whose users chose which events push to them.
+type prefStore struct {
+	*pushStore
+	prefs map[int64][]model.NotifyEvent
+}
+
+func (p prefStore) PushEventsFor(user, _ int64) ([]model.NotifyEvent, error) {
+	if evs, ok := p.prefs[user]; ok {
+		return evs, nil
+	}
+	return model.DefaultPush, nil
+}
+
+// Each user gets the pushes they chose: the defaults (no new issues) until
+// they choose.
+func TestPushPerUserChoice(t *testing.T) {
+	b := newBrowser(t)
+	var mu sync.Mutex
+	got := map[string][]model.NotifyEvent{} // endpoint path → pushed events
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var p PushPayload
+		_ = json.Unmarshal(b.decrypt(t, body), &p)
+		mu.Lock()
+		got[r.URL.Path] = append(got[r.URL.Path], p.Type)
+		mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	key, _ := NewVAPIDPrivateKey()
+	vapid, _ := ParseVAPIDKey(key)
+	def, picky := b.sub(srv.URL+"/default"), b.sub(srv.URL+"/picky")
+	picky.ID, picky.UserID = "ps2", 8
+	ps := prefStore{&pushStore{subs: []model.PushSubscription{def, picky}}, map[int64][]model.NotifyEvent{8: {model.NotifyFailed, model.NotifyIssue}}}
+	n, fs, _ := setup(t)
+	n.Push, n.VAPID, n.client = ps, vapid, srv.Client()
+
+	status(fs, n, model.StatusReview, "")
+	status(fs, n, model.StatusFailed, "boom")
+	n.Observe(model.Event{Type: model.EvIssueUpdated, ProjectID: "p1",
+		Data: model.Issue{ID: "i1", ProjectID: "p1", Title: "Leak", Severity: model.SevHigh, Source: "scan:security"}})
+	settle(n)
+	mu.Lock()
+	defer mu.Unlock()
+	for path, want := range map[string]string{"/default": "task.failed task.review", "/picky": "issue.new task.failed"} {
+		evs := got[path]
+		slices.Sort(evs) // pushes race
+		if s := fmt.Sprint(evs); s != "["+want+"]" {
+			t.Errorf("%s got %s, want [%s]", path, s, want)
+		}
 	}
 }

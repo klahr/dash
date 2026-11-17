@@ -1,14 +1,29 @@
 # Notifications
 
 Dash can tell you when something needs you, not just in the open browser tab: by **push
-notifications** to your browser or installed app, and by **webhooks** to other services.
+notifications** to your browser or installed app, by **webhooks** to other services, and by a
+daily or weekly **summary** by email or webhook.
+
+## Your notification settings
+
+**Account → Notifications** holds your own settings in the organization you are in. Dash keeps
+them for you, so they apply on every device. There you choose:
+
+- the [summary](#summary): off, daily or weekly, when, of which projects, where it goes and what
+  is in it
+- which events [push](#push-notifications) to your browsers
+- your [personal webhooks](#notification-webhooks), listed with their events and last delivery.
+  Add or change them in **My webhooks**. A webhook gets each event the moment it happens.
+
+Each organization you are in has its own settings.
 
 ## Push notifications
 
-Turn on **Preferences → Notifications** in each browser that should notify you. While Dash is
-open in the background, the page notifies you itself; where the browser supports Web Push
+Turn on **Account → Browser notifications** in each browser that should notify you. While Dash
+is open in the background, the page notifies you itself; where the browser supports Web Push
 (Chrome, Edge, Firefox, Safari on macOS, and the installed app on iOS 16.4 or later), the hub
-also pushes these to the browser, so they arrive while Dash is closed:
+also pushes these to the browser, so they arrive while Dash is closed. Choose which under
+**Account → Notifications → Push**:
 
 - a task is ready for review
 - a task failed
@@ -18,8 +33,10 @@ also pushes these to the browser, so they arrive while Dash is closed:
 - a [goal](goals.md) waits for you, is done or ran out of budget
 - GitHub Actions starts failing on the default branch
 - a runner's disk is nearly full ([Disk space on a runner](several-computers.md#disk-space-on-a-runner))
+- a scan or Claude finds a new issue (off until you tick it)
 
-Tapping a notification opens the task, or the goal on the **Goals** page. **Send a test**, under the switch, pushes one right away.
+Tapping a notification opens the task, the goal on the **Goals** page, or the issue on the
+**Issues** page. **Send a test**, under the switch, pushes one right away.
 On an iPhone or iPad, add Dash to the home screen first ([phone.md](phone.md)) and turn
 notifications on in the installed app: Safari tabs can't get pushes there.
 
@@ -61,10 +78,12 @@ and how long, and the error if it failed. Deleting a webhook deletes its history
 | `task.merged`       | a task's work landed                                         |
 | `permission.needed` | Claude waits for you to approve a tool                       |
 | `goal.attention`    | a [goal](goals.md) waits for you, is done or out of budget   |
+| `issue.new`         | a [scan](scans.md) or Claude (`report_issue`) finds a new issue (off by default) |
 | `build.failing`     | GitHub Actions starts failing on the default branch          |
 | `runner.disk`       | a runner linked to the project is nearly out of disk space   |
 | `checkout.behind`   | a runner's checkout was left behind origin (off by default)  |
 | `webhook.test`      | the Send test button (always sent, whatever is ticked)       |
+| `summary`           | your [summary](#summary), to the webhooks you chose for it    |
 
 These are the moments the web app notifies you of. Links point back to the task in Dash
 (`/?project=<id>&task=<id>`); set `-public-url` (or `DASH_PUBLIC_URL`) so they use the address
@@ -102,6 +121,10 @@ address your phone can reach.
 }
 ```
 
+`issue.new` events have `"issue": {"id", "title", "severity", "url"}` instead of `task`, and
+the issue's file in `message`. They fire once per issue: an issue reported again (the same
+type, file and rule or title) doesn't fire, nor does one you add by hand. Existing webhooks
+don't get them until you tick the event; neither do new ones.
 `goal.attention` events have `"goal": {"id", "title", "status", "url"}` instead of `task`, and say
 in `message` what the goal waits for, or why it ended; existing webhooks don't get them until you
 tick the event. `permission.needed` events also have `"permission": {"id", "tool"}`, and `build.failing`
@@ -148,7 +171,82 @@ so internal services aren't reachable through a webhook. An invite-only self-hos
 `-webhook-private=on|off` (or `DASH_WEBHOOK_PRIVATE`) overrides the default; `on` on an internet-facing Dash logs an
 `UNSAFE` warning at every start.
 
-### API
+## Summary
+
+A summary tells you, in one message, what happened since the last one. Set it up in
+**Account → Notifications**:
+
+- **Summary**: off (the default), daily or weekly, and the time to send it. The time is in your
+  time zone, which Dash takes from your browser when you save, and stays at that time when the
+  clocks change.
+- **Projects**: all of the organization's projects (new ones too), or the ones you pick.
+- **Send it to**: email, one or more of your personal webhooks, or both. Pick at least one.
+  Email goes to your account's address, shown beside it; it is greyed out when this Dash has no
+  [SMTP](signup.md#email-smtp) set up.
+- **What goes in it**: new issues (from the severity you choose up), tasks ready for review,
+  failed tasks, merged tasks, your goals waiting for you, and failing builds.
+
+**Send the summary now** saves the page and sends what happened since the last summary to
+each destination right away, and says how each went.
+
+Nothing to report sends nothing. A summary covers the time since the last one, so after a
+restart nothing is sent twice or left out. It only covers projects of organizations you are
+still a member of. If one destination fails, the others still get it; a webhook's failure
+shows in its **History**. Deleting a webhook takes it off the summary's destinations, and a
+paused webhook gets no summary.
+
+Summaries are sent by the hub, never by runners.
+
+### By email
+
+One plain-text email, grouped by project, with a link to each item. At the end, **Stop these
+summaries** turns the summary off without signing in; mail apps that offer an unsubscribe
+button use the same link (`List-Unsubscribe`).
+
+### By webhook
+
+A webhook chosen as a destination gets the `summary` event, whatever events it has ticked. It
+is signed, retried and recorded like every other delivery.
+
+**Slack**: one message, with the counts and a short line per item, grouped by project. A long
+summary stops after 40 items (or about 3,500 characters) with "and N more" and a link to Dash.
+
+**ntfy**: the counts as the title, the items as the body, cut the same way. Tapping it opens Dash.
+
+**JSON**:
+
+```json
+{
+  "id": "evt_7a1b…",
+  "type": "summary",
+  "timestamp": "2026-11-18T07:00:00Z",
+  "created": 1794985200,
+  "message": "Summary: 2 new issues, 1 failed",
+  "summary": {
+    "period_start": "2026-11-17T07:00:00Z",
+    "period_end": "2026-11-18T07:00:00Z",
+    "url": "https://dash.example.com/",
+    "projects": [
+      {
+        "id": "a1b2c3d4e5f6",
+        "name": "shop",
+        "url": "https://dash.example.com/?project=a1b2c3d4e5f6",
+        "items": [
+          { "kind": "issue", "title": "SQL injection in search", "severity": "high",
+            "url": "https://dash.example.com/?issue=9f8e7d6c5b4a&project=a1b2c3d4e5f6", "at": "2026-11-17T15:02:11Z" },
+          { "kind": "failed", "title": "Fix checkout rounding",
+            "url": "https://dash.example.com/?project=a1b2c3d4e5f6&task=0f9e8d7c6b5a", "at": "2026-11-17T16:40:00Z" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+An item's `kind` is `issue`, `review`, `failed`, `merged`, `goal` or `build`. A summary has no
+`project`.
+
+## API
 
 | Request                              | What                                                        |
 | ------------------------------------ | ----------------------------------------------------------- |
@@ -161,8 +259,12 @@ so internal services aren't reachable through a webhook. An invite-only self-hos
 | `POST /api/webhooks/{id}/rotate`     | a new signing secret                                        |
 | `POST /api/webhooks/{id}/test`       | send a test notification now                                |
 | `GET /api/webhooks/{id}/deliveries`  | its last 50 deliveries, newest first                        |
+| `GET /api/me/notifications`          | your notification settings in your active org               |
+| `PUT /api/me/notifications`          | change them; fields left out keep their value               |
+| `POST /api/me/notifications/test-summary` | send your summary now, to the destinations you chose   |
 
-Personal webhooks need a person: a signed-in session or one of your API tokens.
+Personal webhooks and notification settings need a person: a signed-in session or one of
+your API tokens.
 
 Runners (`dash runner`) send no notifications. Their hub sends them for the tasks it gives
 the runners.

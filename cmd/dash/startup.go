@@ -188,7 +188,7 @@ func parseFlags(args []string, runnerMode bool) *options {
 	f.BoolVar(&o.scanSchedules, "scan-schedules", true, "run scans (.dash/scans) on their schedules; off = only when started by hand")
 	f.StringVar(&o.envFile, "env", ".env", "file with DASH_USERNAME / DASH_PASSWORD (real env vars take precedence)")
 	f.BoolVar(&o.signup, "signup", false, "open signup: anyone may create an account with their email address (needs SMTP and -public-url; see docs/signup.md; or DASH_SIGNUP=1)")
-	f.StringVar(&o.smtpHost, "smtp-host", "", "SMTP server for signup and password-reset emails (or $DASH_SMTP_HOST)")
+	f.StringVar(&o.smtpHost, "smtp-host", "", "SMTP server for signup, password-reset and summary emails (or $DASH_SMTP_HOST)")
 	f.IntVar(&o.smtpPort, "smtp-port", 0, "SMTP port: 587 (STARTTLS) or 465 (TLS) (default $DASH_SMTP_PORT, else 587)")
 	f.StringVar(&o.smtpUser, "smtp-user", "", "SMTP username, with $DASH_SMTP_PASSWORD (or $DASH_SMTP_USERNAME)")
 	f.StringVar(&o.smtpFrom, "smtp-from", "", "From address of Dash's emails, e.g. \"Dash <dash@example.com>\" (or $DASH_SMTP_FROM)")
@@ -769,6 +769,16 @@ func (a *app) setupHub() {
 	events.Observe = notifier.Observe
 	notifier.Start(ctx)
 	apiSrv.Notify = notifier
+	// Users' daily or weekly summaries, by email (when SMTP is set up)
+	// and to their personal webhooks: sent from here, never by runners.
+	if key, err := st.NotifyKey(notify.NewSummaryKey); err != nil {
+		slog.Warn("summaries off: key", "err", err)
+	} else if k, err := notify.ParseSummaryKey(key); err != nil {
+		slog.Warn("summaries off: key", "err", err)
+	} else {
+		apiSrv.Summaries = &notify.Summaries{Store: st, Notifier: notifier, Mail: authn.Mailer(), Key: k}
+		go apiSrv.Summaries.Run(ctx)
+	}
 
 	// Claude's status page (status.claude.com): its webhooks, and reading
 	// its API when a platform admin turns polling on.

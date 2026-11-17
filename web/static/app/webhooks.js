@@ -11,18 +11,22 @@ import { agoText } from "./branches.js";
 // ones (every project of their org), in the Account dialog. They save as
 // you go, not with the settings form. Each row can show its recent
 // deliveries.
-const WEBHOOK_EVENTS = {
+export const WEBHOOK_EVENTS = {
   "task.review": "Ready for review",
   "task.failed": "Failed",
   "task.merged": "Merged",
   "permission.needed": "Claude needs approval",
   "goal.attention": "Goal needs you, done or out of budget",
+  "issue.new": "New issue (from a scan or Claude)",
   "build.failing": "Build failing",
   "runner.disk": "Runner disk nearly full",
   "checkout.behind": "Checkout left behind origin",
   "webhook.test": "Test",
+  "summary": "Summary",
 };
-const WEBHOOK_FORMATS = { json: "JSON", slack: "Slack", ntfy: "ntfy" };
+// Opt-in events: a new webhook doesn't send them until ticked.
+const OPT_IN = ["checkout.behind", "issue.new"];
+export const WEBHOOK_FORMATS = { json: "JSON", slack: "Slack", ntfy: "ntfy" };
 // A scope is one list of webhooks: where it shows, and where it's read and added.
 const hookScopes = {
   project: { list: [], info: null, el: "#settings-webhooks", hint: "#settings-webhooks-hint", secret: "#webhook-secret",
@@ -61,7 +65,7 @@ async function loadMyWebhooks() {
   await loadWebhooks(sc);
 }
 
-function webhookStatus(w) {
+export function webhookStatus(w) {
   if (!w.last_at) return h("span", { class: "item-sub hint" }, "nothing sent yet");
   const what = WEBHOOK_EVENTS[w.last_event] || w.last_event;
   if (w.last_error) return h("span", { class: "item-sub hint err-text", title: w.last_error }, `${what} failed ${agoText(w.last_at)}: ${w.last_error}`);
@@ -166,8 +170,9 @@ function editWebhook(w = null, sc = hookScopes.project) {
   f.token_clear.checked = false;
   f.enabled.checked = w ? w.enabled : true;
   // A runner's checkout left behind origin is opt-in: it matters to whoever sits at that runner.
-  const on = new Set(w ? w.events : Object.keys(WEBHOOK_EVENTS).filter((e) => e !== "checkout.behind"));
-  $("#webhook-events").replaceChildren(...(sc.info?.events || Object.keys(WEBHOOK_EVENTS).filter((e) => e !== "webhook.test")).map((e) =>
+  // So are new issues: a scan can find many at once.
+  const on = new Set(w ? w.events : Object.keys(WEBHOOK_EVENTS).filter((e) => !OPT_IN.includes(e)));
+  $("#webhook-events").replaceChildren(...(sc.info?.events || Object.keys(WEBHOOK_EVENTS).filter((e) => e !== "webhook.test" && e !== "summary")).map((e) =>
     h("label", { class: "toggle" }, h("input", { type: "checkbox", name: "event", value: e, checked: on.has(e) }), h("span", {}, WEBHOOK_EVENTS[e] || e))));
   syncWebhookForm();
   $("#webhook-sheet").returnValue = "";

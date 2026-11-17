@@ -9,14 +9,16 @@ import { state } from "./state.js";
 const HUB_ONLY = /^\/api\/(login|logout|me|machines|version|chat|connector|runners|auth|orgs|invitations|push)\b/;
 export const here = () => state.project?.prefix || "";
 
-// Links from notifications open a task, /?project=<id>&task=<id>, or a goal, /?project=<id>&goal=<id>.
+// Links from notifications open a task, /?project=<id>&task=<id>, a goal, /?project=<id>&goal=<id>,
+// or an issue, /?project=<id>&issue=<id>.
 export const deepLink = (() => {
   const q = new URLSearchParams(location.search);
-  const link = { project: q.get("project"), task: q.get("task"), goal: q.get("goal") };
+  const link = { project: q.get("project"), task: q.get("task"), goal: q.get("goal"), issue: q.get("issue") };
   if (!link.project) return null;
   q.delete("project");
   q.delete("task");
   q.delete("goal");
+  q.delete("issue");
   history.replaceState(null, "", location.pathname + (q.size ? `?${q}` : "") + location.hash);
   return link;
 })();

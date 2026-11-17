@@ -47,6 +47,7 @@ import "./app/origin.js";
 import "./app/settings.js";
 import "./app/claudefiles.js";
 import "./app/webhooks.js";
+import "./app/notifysettings.js";
 import "./app/claudestatus.js";
 import "./app/sharednotes.js";
 import "./app/backend.js";

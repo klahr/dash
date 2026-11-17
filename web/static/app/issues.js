@@ -63,6 +63,20 @@ export async function loadIssues() {
   if (state.view === "scans") renderScans();
 }
 
+// showIssue opens the Issues page at issue id, expanded (a link from a
+// notification). The filters are cleared so it shows whatever its status.
+export async function showIssue(id) {
+  showView("issues");
+  if (!iss.loaded) await loadIssues();
+  if (!iss.list.some((i) => i.id === id)) return;
+  iss.filter = { type: "", severity: "", status: "all", source: "", kind: "", run: null };
+  iss.expanded.add(id);
+  renderIssues();
+  const el = $(`#issue-list .issue[data-id="${id}"]`);
+  el?.scrollIntoView({ block: "center" });
+  el?.querySelector(".issue-main")?.focus();
+}
+
 export function resetIssues() {
   iss.filter.run = null;
   iss.list = [];

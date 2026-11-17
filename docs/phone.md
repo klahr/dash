@@ -15,8 +15,8 @@ Or without a proxy, with a certificate of your own:
 
 Dash can be installed as an app from the browser menu ("Install" or "Add to Home Screen"). It
 checks for updates and offers a reload, so an installed copy never goes stale. Turn on
-**Preferences → Notifications** in the installed app and it notifies you of reviews, failures,
-approvals and failing builds while it's closed ([push notifications](notifications.md#push-notifications)).
+**Account → Browser notifications** in the installed app and it notifies you of reviews, failures,
+approvals and failing builds while it's closed (choose which in **Account → Notifications**) ([push notifications](notifications.md#push-notifications)).
 
 To use Dash from the Claude mobile apps instead, see
 [the custom connector](mcp.md#claudeai-and-the-claude-app-custom-connector).

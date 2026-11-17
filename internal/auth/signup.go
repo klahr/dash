@@ -56,6 +56,14 @@ func (a *Auth) SetMail(sender mail.Sender, baseURL string) {
 // address confirmations open signup relies on.
 func (a *Auth) MailOn() bool { return a.mail != nil && a.baseURL != "" }
 
+// Mailer is the sender Dash's emails go through, nil when email is off.
+func (a *Auth) Mailer() mail.Sender {
+	if !a.MailOn() {
+		return nil
+	}
+	return a.mail
+}
+
 // EnableSignup opens self-service registration. It needs SetMail first.
 func (a *Auth) EnableSignup() error {
 	if a.mail == nil || a.baseURL == "" {

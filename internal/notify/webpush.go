@@ -36,8 +36,9 @@ import (
 // service (Google's, Mozilla's, Apple's) sees neither what it carries nor
 // can it send in Dash's name.
 
-// PushEvents are the events pushed to browsers.
-var PushEvents = []model.NotifyEvent{model.NotifyReview, model.NotifyFailed, model.NotifyPermission, model.NotifyGoal, model.NotifyBuild, model.NotifyDisk}
+// PushEvents are the events that can be pushed to browsers; each user
+// chooses theirs (Account → Notifications), model.DefaultPush until then.
+var PushEvents = model.PushChoices
 
 // PushStore is what Web Push reads and writes: the browsers subscribed to
 // a project's org.
@@ -47,6 +48,30 @@ type PushStore interface {
 	PushSubscriptionsForOrg(org int64) ([]model.PushSubscription, error)
 	DeletePushSubscription(id string) error
 	RecordPushDelivery(id string, at time.Time, errMsg string) error
+}
+
+// pushPrefs is a PushStore that knows which events each user wants pushed
+// (without it, everyone gets model.DefaultPush).
+type pushPrefs interface {
+	PushEventsFor(user, org int64) ([]model.NotifyEvent, error)
+}
+
+// wantsPush reports whether user wants ev pushed in org. want caches the
+// answers for one notification.
+func (n *Notifier) wantsPush(want map[int64][]model.NotifyEvent, user, org int64, ev model.NotifyEvent) bool {
+	evs, ok := want[user]
+	if !ok {
+		evs = model.DefaultPush
+		if pp, isPP := n.Push.(pushPrefs); isPP {
+			var err error
+			if evs, err = pp.PushEventsFor(user, org); err != nil {
+				slog.Error("notifications: push settings", "user", user, "err", err)
+				evs = model.DefaultPush
+			}
+		}
+		want[user] = evs
+	}
+	return slices.Contains(evs, ev)
 }
 
 // ErrPushGone is what a push to a subscription the browser dropped (404,
@@ -232,7 +257,7 @@ type PushPayload struct {
 func pushPayload(n Notification, actions []PushAction) PushPayload {
 	p := PushPayload{Type: n.Type, Title: n.Head() + ": " + oneLine(n.subject(), 120), URL: "/", Actions: actions}
 	var body []string
-	if (n.Task != nil || n.Goal != nil) && n.Project.Name != "" {
+	if (n.Task != nil || n.Goal != nil || n.Issue != nil) && n.Project.Name != "" {
 		body = append(body, n.Project.Name)
 	}
 	if n.Message != "" {
@@ -250,6 +275,9 @@ func pushPayload(n Notification, actions []PushAction) PushPayload {
 	case n.Type == model.NotifyGoal && n.Goal != nil:
 		q.Set("goal", n.Goal.ID)
 		p.Tag = "dash-goal-" + n.Goal.ID
+	case n.Type == model.NotifyIssue && n.Issue != nil:
+		q.Set("issue", n.Issue.ID)
+		p.Tag = "dash-issue-" + n.Issue.ID
 	case n.Type == model.NotifyBuild:
 		p.Tag = "dash-build-" + n.Project.ID
 	case n.Type == model.NotifyDisk && n.Runner != nil:
@@ -387,7 +415,11 @@ func (n *Notifier) pushOrg(ctx context.Context, note Notification, org int64) {
 		return
 	}
 	urgent := looks[note.Type].high
+	want := map[int64][]model.NotifyEvent{}
 	for _, s := range subs {
+		if !n.wantsPush(want, s.UserID, org, note.Type) {
+			continue
+		}
 		n.wg.Add(1)
 		go func(s model.PushSubscription) {
 			defer n.wg.Done()

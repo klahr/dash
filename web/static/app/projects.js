@@ -28,7 +28,7 @@ import { renderQuick } from "./terminal.js";
 import { loadProcs, loadTry, renderProcs } from "./try.js";
 import { closeCommit, loadGraph, renderGraph } from "./history.js";
 import { loadFiles, renderFile, renderFileTree } from "./files.js";
-import { loadIssues, resetIssues } from "./issues.js";
+import { loadIssues, resetIssues, showIssue } from "./issues.js";
 import { loadScans, resetScans } from "./scans.js";
 import { loadChecklist } from "./checklist.js";
 import { gp, loadGoals, resetGoals, showGoal } from "./goals.js";
@@ -59,6 +59,7 @@ export async function loadProjects() {
   renderProjectList();
   if (link?.task && next?.id === link.project) { showView("board"); openDetail(link.task).catch(() => {}); }
   else if (link?.goal && next?.id === link.project) showGoal(link.goal).catch(() => {});
+  else if (link?.issue && next?.id === link.project) showIssue(link.issue).catch(() => {});
 }
 
 

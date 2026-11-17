@@ -759,9 +759,13 @@ func (a *Auth) Logout(w http.ResponseWriter, r *http.Request) {
 // ntfy notifications, whose signed token in the path is the credential.
 const notifyActionPrefix = "/api/notify/permission/"
 
+// notifyUnsubscribePrefix is notify.UnsubscribePath: the unsubscribe links
+// of summary emails, whose signed token in the path is the credential.
+const notifyUnsubscribePrefix = "/api/notify/unsubscribe/"
+
 // publicPath reports whether path is served without signing in.
 func publicPath(path string) bool {
-	return public[path] || strings.HasPrefix(path, notifyActionPrefix) || TrackerWebhookPath(path) ||
+	return public[path] || strings.HasPrefix(path, notifyActionPrefix) || strings.HasPrefix(path, notifyUnsubscribePrefix) || TrackerWebhookPath(path) ||
 		strings.HasPrefix(path, claudeStatusPrefix)
 }
 

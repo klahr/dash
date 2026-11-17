@@ -43,6 +43,17 @@ type goalLister interface {
 	ListGoals(projectID string) []model.Goal
 }
 
+// issueLister is a Store that has issues: Start remembers them, so only
+// issues made from then on are new.
+type issueLister interface {
+	ListIssues(projectID string) []model.Issue
+}
+
+// activityRecorder is a Store that keeps what the summaries tell about.
+type activityRecorder interface {
+	RecordActivity(a model.Activity) error
+}
+
 // Defaults.
 const (
 	DefaultTimeout  = 10 * time.Second
@@ -93,6 +104,7 @@ type Notifier struct {
 	status map[string]model.TodoStatus // todo id → last status
 	goals  map[string]model.GoalStatus // goal id → last status
 	ci     map[string]string           // project id → last build state
+	issues map[string]bool             // issue ids known (one per fingerprint and project)
 	stuck  map[[2]string]bool          // {project, runner} → its checkout is left behind
 	told   map[[2]string]time.Time     // {project, runner} → when that last notified
 	// diskLow: runner id → its disk is low; diskTold: when that last notified.
@@ -108,6 +120,7 @@ func (n *Notifier) init() {
 		n.status = map[string]model.TodoStatus{}
 		n.goals = map[string]model.GoalStatus{}
 		n.ci = map[string]string{}
+		n.issues = map[string]bool{}
 		n.stuck, n.told = map[[2]string]bool{}, map[[2]string]time.Time{}
 		n.diskLow, n.diskTold = map[string]bool{}, map[string]time.Time{}
 		n.client = newClient(n.timeout(), n.AllowPrivate)
@@ -147,7 +160,8 @@ func (n *Notifier) now() time.Time {
 // loop, and dropped with a warning if it falls far behind.
 func (n *Notifier) Observe(ev model.Event) {
 	switch ev.Type {
-	case model.EvTodoUpdated, model.EvTodoDeleted, model.EvPermission, model.EvCI, model.EvCheckouts, model.EvRunnerDisk, model.EvGoalUpdated:
+	case model.EvTodoUpdated, model.EvTodoDeleted, model.EvPermission, model.EvCI, model.EvCheckouts, model.EvRunnerDisk, model.EvGoalUpdated,
+		model.EvIssueUpdated:
 	default:
 		return
 	}
@@ -170,6 +184,11 @@ func (n *Notifier) Start(ctx context.Context) {
 	if gs, ok := n.Store.(goalLister); ok {
 		for _, g := range gs.ListGoals("") {
 			n.goals[g.ID] = g.Status
+		}
+	}
+	if is, ok := n.Store.(issueLister); ok {
+		for _, i := range is.ListIssues("") {
+			n.issues[i.ID] = true
 		}
 	}
 	go func() {
@@ -205,10 +224,15 @@ func (n *Notifier) handle(ctx context.Context, ev model.Event) {
 		n.goal(ctx, ev)
 		return
 	}
+	if ev.Type == model.EvIssueUpdated {
+		n.issue(ctx, ev)
+		return
+	}
 	note, ok := n.classify(ev)
 	if !ok {
 		return
 	}
+	n.record(note, 0)
 	n.push(ctx, note)
 	n.toWebhooks(ctx, note, []string{note.Project.ID})
 }
@@ -298,8 +322,79 @@ func (n *Notifier) goal(ctx context.Context, ev model.Event) {
 	}
 	note.Goal = &GoalRef{ID: g.ID, Title: g.Title, Status: g.Status, URL: n.goalURL(g.ProjectID, g.ID)}
 	note.Message = g.Note
+	n.record(note, g.Owner)
 	n.push(ctx, note)
 	n.toWebhooks(ctx, note, []string{g.ProjectID})
+}
+
+// issue notifies of an issue a scan or Claude (report_issue) reported for
+// the first time: one the store hadn't got with that fingerprint, so a
+// known issue seen again (updated, reopened) doesn't notify, nor does one
+// added by hand.
+func (n *Notifier) issue(ctx context.Context, ev model.Event) {
+	is, ok := ev.Data.(model.Issue)
+	if !ok || is.ID == "" {
+		return
+	}
+	if n.issues[is.ID] {
+		return
+	}
+	n.issues[is.ID] = true
+	if is.Source == "" || is.Source == "manual" {
+		return
+	}
+	note, ok := n.build(model.NotifyIssue, is.ProjectID, "")
+	if !ok {
+		return
+	}
+	note.Issue = &IssueRef{ID: is.ID, Title: is.Title, Severity: is.Severity, URL: n.issueURL(is.ProjectID, is.ID)}
+	if loc := is.Location(); loc != "" {
+		note.Message = loc
+	}
+	n.record(note, 0)
+	n.push(ctx, note)
+	n.toWebhooks(ctx, note, []string{is.ProjectID})
+}
+
+// record keeps note for the summaries, if it is something they tell
+// about. user is who it is for (a goal's owner; 0: everyone).
+func (n *Notifier) record(note Notification, user int64) {
+	rec, ok := n.Store.(activityRecorder)
+	if !ok {
+		return
+	}
+	a := model.Activity{ProjectID: note.Project.ID, At: note.Time, User: user}
+	switch note.Type {
+	case model.NotifyIssue:
+		a.Kind, a.Ref, a.Title, a.URL, a.Severity = model.SummaryIssue, note.Issue.ID, note.Issue.Title, note.Issue.URL, note.Issue.Severity
+	case model.NotifyReview, model.NotifyFailed, model.NotifyMerged:
+		if note.Task == nil {
+			return
+		}
+		a.Kind = map[model.NotifyEvent]string{model.NotifyReview: model.SummaryReview, model.NotifyFailed: model.SummaryFailed, model.NotifyMerged: model.SummaryMerged}[note.Type]
+		a.Ref, a.Title, a.URL = note.Task.ID, note.Task.Title, note.Task.URL
+	case model.NotifyGoal:
+		if note.Goal == nil || note.Goal.Status != model.GoalWaiting {
+			return
+		}
+		a.Kind, a.Ref, a.Title, a.URL = model.SummaryGoal, note.Goal.ID, note.Goal.Title, note.Goal.URL
+	case model.NotifyBuild:
+		a.Kind, a.Title = model.SummaryBuild, "Build failing"
+		if note.Build != nil {
+			a.Ref, a.URL = note.Build.SHA, note.Build.URL
+			if note.Build.Branch != "" {
+				a.Title += " on " + note.Build.Branch
+			}
+		}
+	default:
+		return
+	}
+	if a.ProjectID == "" {
+		return
+	}
+	if err := rec.RecordActivity(a); err != nil {
+		slog.Error("notifications: record activity", "project", a.ProjectID, "kind", a.Kind, "err", err)
+	}
 }
 
 // classify reports whether ev is a moment to notify of, as the web app
@@ -465,6 +560,15 @@ func (n *Notifier) goalURL(projectID, goalID string) string {
 	return o + "/?" + url.Values{"project": {projectID}, "goal": {goalID}}.Encode()
 }
 
+// issueURL opens the issue on the project's Issues page.
+func (n *Notifier) issueURL(projectID, issueID string) string {
+	o := n.origin(projectID)
+	if o == "" {
+		return ""
+	}
+	return o + "/?" + url.Values{"project": {projectID}, "issue": {issueID}}.Encode()
+}
+
 // taskURL opens the task in Dash's web app.
 func (n *Notifier) taskURL(projectID, todoID string) string {
 	o := n.origin(projectID)
@@ -524,6 +628,12 @@ func (n *Notifier) deliver(ctx context.Context, w model.Webhook, note Notificati
 		ProjectID: note.Project.ID, Project: note.Project.Name}
 	if note.Task != nil && note.Type != model.NotifyTest {
 		d.Subject = note.Task.Title
+	}
+	if note.Issue != nil {
+		d.Subject = note.Issue.Title
+	}
+	if note.Summary != nil {
+		d.Subject = note.Message
 	}
 	start := time.Now()
 	err := n.retry(ctx, attempts, func() error {

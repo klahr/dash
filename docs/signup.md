@@ -15,7 +15,8 @@ while open signup is on without them.
 
 ## Email (SMTP)
 
-Dash sends its few emails (confirming an address, resetting a password) through an SMTP
+Dash sends its few emails (confirming an address, resetting a password, and the
+[daily or weekly summaries](notifications.md#summary) people turn on) through an SMTP
 server you already have: your mail provider's submission server, or a transactional email
 service. Set, in `.env` or the environment of the service:
 
@@ -28,7 +29,10 @@ service. Set, in `.env` or the environment of the service:
 | `DASH_SMTP_FROM`      | `-smtp-from`  | the sender, e.g. `Dash <dash@example.com>`                      |
 | `DASH_PUBLIC_URL`     | `-public-url` | the address people open Dash at, e.g. `https://dash.example.com` |
 
-The links in the emails always point at `DASH_PUBLIC_URL`, never at whatever host a request
+Without SMTP, summaries still go to webhooks; **Account → Notifications** says email summaries
+are unavailable.
+
+The links in the emails always point at `DASH_PUBLIC_URL` (with org subdomains, the org's own), never at whatever host a request
 claims to be for, so nobody can get a reset link pointing at their own site. Setting
 `DASH_PUBLIC_URL` also turns on the [remote MCP endpoint](mcp.md) for claude.ai connectors.
 

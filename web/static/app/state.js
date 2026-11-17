@@ -39,6 +39,7 @@ export const state = {
   perms: [],           // pending permission requests for this project
   goalOpen: null,      // id of the goal open in its pane
   pushOn: false,       // this browser gets the hub's Web Push notifications
+  pushEvents: null,    // Set of the events the user wants pushed (Account → Notifications); null: all
   usage: null,
   view: "board",
   showOld: false,      // show merged todos older than a day

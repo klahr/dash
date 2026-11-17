@@ -256,6 +256,7 @@ type AccountExport struct {
 	Tokens        []Token            `json:"tokens"`
 	Push          []ExportPush       `json:"push_subscriptions"`
 	Webhooks      []ExportWebhook    `json:"personal_webhooks"`
+	Notifications []ExportNotify     `json:"notification_settings"`
 	Plans         []ExportPlan       `json:"project_plans"`
 	AuthEvents    []AuthEvent        `json:"sign_in_log"`
 	Tasks         []ExportTask       `json:"tasks"`
@@ -288,6 +289,13 @@ type ExportPush struct {
 	UserAgent string    `json:"user_agent,omitempty"`
 	Created   time.Time `json:"created"`
 	LastAt    time.Time `json:"last_delivery,omitzero"`
+}
+
+// ExportNotify is the user's notification settings in one org.
+type ExportNotify struct {
+	OrgID    int64           `json:"org_id"`
+	Settings json.RawMessage `json:"settings"`
+	LastSent time.Time       `json:"last_summary,omitzero"`
 }
 
 type ExportWebhook struct {
@@ -418,6 +426,21 @@ func (a *Accounts) ExportUser(uid int64, now time.Time) (AccountExport, error) {
 			w.Events = json.RawMessage("[]")
 		}
 		x.Webhooks = append(x.Webhooks, w)
+		return err
+	}); err != nil {
+		return x, err
+	}
+	x.Notifications = []ExportNotify{}
+	if err := each(`SELECT org_id, settings, last_sent FROM notify_settings WHERE user_id = ? ORDER BY org_id`, func(r *sql.Rows) error {
+		var n ExportNotify
+		var raw string
+		var sent int64
+		err := r.Scan(&n.OrgID, &raw, &sent)
+		n.Settings, n.LastSent = json.RawMessage(raw), unixOrZero(sent)
+		if !json.Valid(n.Settings) {
+			n.Settings = json.RawMessage("{}")
+		}
+		x.Notifications = append(x.Notifications, n)
 		return err
 	}); err != nil {
 		return x, err

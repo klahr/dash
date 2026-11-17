@@ -200,8 +200,8 @@ function onEvent(ev, m = { name: "" }) {
           renderDetail(); // the open task's "waiting for" line
         }
         if (prev && prev.status !== ev.data.status) {
-          if (ev.data.status === "review") { toast(title(ev.data), { tone: "review", head: "Ready for review", action: openTodo(ev.todo_id) }); notify("Ready for review", ev.data, "", !here()); }
-          if (ev.data.status === "failed") { toast(title(ev.data), { tone: "error", head: "Failed", action: openTodo(ev.todo_id) }); notify("Failed", ev.data, ev.data.error, !here()); }
+          if (ev.data.status === "review") { toast(title(ev.data), { tone: "review", head: "Ready for review", action: openTodo(ev.todo_id) }); notify("Ready for review", ev.data, "", !here(), "task.review"); }
+          if (ev.data.status === "failed") { toast(title(ev.data), { tone: "error", head: "Failed", action: openTodo(ev.todo_id) }); notify("Failed", ev.data, ev.data.error, !here(), "task.failed"); }
           if (ev.data.status === "merged") { toast(title(ev.data), { tone: "ok", head: "Merged", icon: "merge" }); notify("Merged", ev.data); loadUnpushed().catch(fail); }
         }
         if (prev && prev.revert?.commit !== ev.data.revert?.commit) loadUnpushed().catch(fail);
@@ -266,7 +266,7 @@ function onEvent(ev, m = { name: "" }) {
         state.perms.push(ev.data);
         const t = state.todos.get(ev.data.todo_id);
         toast(t ? `${describePerm(ev.data).title} · ${title(t)}` : describePerm(ev.data).title, { tone: "approval", head: "Claude needs your approval", action: t ? { label: "Review", run: () => openDetail(t.id) } : null });
-        if (t) notify(`Claude wants to ${describePerm(ev.data).title}`, t, describePerm(ev.data).detail, !here());
+        if (t) notify(`Claude wants to ${describePerm(ev.data).title}`, t, describePerm(ev.data).detail, !here(), "permission.needed");
       }
       renderPerms();
       break;
@@ -284,7 +284,7 @@ function onEvent(ev, m = { name: "" }) {
       if (!mine) break;
       if (state.ci?.state && state.ci.state !== "failing" && ev.data.state === "failing") {
         toast(ev.data.todo_id ? "Claude is on it" : "", { tone: "error", head: `Build failing on ${ev.data.branch}`, action: ev.data.todo_id ? openTodo(ev.data.todo_id) : null });
-        notify(`Build failing on ${ev.data.branch}`, { title: state.project.name, prompt: "" }, "", !here());
+        notify(`Build failing on ${ev.data.branch}`, { title: state.project.name, prompt: "" }, "", !here(), "build.failing");
       }
       if (state.ci?.state === "failing" && ev.data.state === "passing") toast("", { tone: "ok", head: `Build passing again on ${ev.data.branch}` });
       releaseNews(state.ci?.release, ev.data.release);
@@ -347,14 +347,14 @@ function elsewhere(ev, m) {
     seen.set(key, ev.data.status);
     if (!prev || prev === ev.data.status) return;
     const go = p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.todo_id); } } : null;
-    if (ev.data.status === "review") { toast(`${title(ev.data)} · ${where}`, { tone: "review", head: "Ready for review", action: go }); notify("Ready for review", ev.data, where); }
-    if (ev.data.status === "failed") notify("Failed", ev.data, `${where}: ${ev.data.error || ""}`);
+    if (ev.data.status === "review") { toast(`${title(ev.data)} · ${where}`, { tone: "review", head: "Ready for review", action: go }); notify("Ready for review", ev.data, where, false, "task.review"); }
+    if (ev.data.status === "failed") notify("Failed", ev.data, `${where}: ${ev.data.error || ""}`, false, "task.failed");
   }
   if (ev.type === "scan.run" && ev.data.trigger !== "manual") scanFinished(ev.data, p, where);
   if (ev.type === "goal.updated") goalElsewhere(ev.data, p, m, where);
   if (ev.type === "permission.updated" && !ev.data.decision) {
     toast(`${describePerm(ev.data).title} · ${where}`, { tone: "approval", head: "Claude needs your approval", action: p ? { label: "Go", run: async () => { await selectProject(p); await openDetail(ev.data.todo_id); } } : null });
-    notify(`Claude wants to ${describePerm(ev.data).title}`, { title: where, prompt: "" }, describePerm(ev.data).detail);
+    notify(`Claude wants to ${describePerm(ev.data).title}`, { title: where, prompt: "" }, describePerm(ev.data).detail, false, "permission.needed");
   }
 }
 

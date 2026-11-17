@@ -1,5 +1,6 @@
 // Package mail sends Dash's few emails (confirming an address after signing
-// up, resetting a password) through an SMTP server the operator configures.
+// up, resetting a password, the users' notification summaries) through an
+// SMTP server the operator configures.
 package mail
 
 import (
@@ -13,6 +14,7 @@ import (
 	"net"
 	"net/mail"
 	"net/smtp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +25,8 @@ type Message struct {
 	To      string
 	Subject string
 	Body    string
+	// Headers are extra headers (e.g. List-Unsubscribe), ASCII only.
+	Headers map[string]string
 }
 
 // Sender sends messages. SMTP is the real one; tests use their own.
@@ -158,6 +162,14 @@ func Compose(from string, m Message, now time.Time) ([]byte, error) {
 			return nil, errHeader
 		}
 	}
+	extra := make([]string, 0, len(m.Headers))
+	for k, v := range m.Headers {
+		if k == "" || strings.ContainsAny(k, "\r\n: ") || strings.ContainsAny(v, "\r\n") {
+			return nil, errHeader
+		}
+		extra = append(extra, k+": "+v+"\r\n")
+	}
+	sort.Strings(extra)
 	f, err := mail.ParseAddress(from)
 	if err != nil {
 		return nil, err
@@ -179,6 +191,9 @@ func Compose(from string, m Message, now time.Time) ([]byte, error) {
 	b.WriteString("Date: " + now.Format(time.RFC1123Z) + "\r\n")
 	b.WriteString("Message-ID: <" + hex.EncodeToString(id) + "@" + domain + ">\r\n")
 	b.WriteString("Auto-Submitted: auto-generated\r\n")
+	for _, h := range extra {
+		b.WriteString(h)
+	}
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
 	b.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")

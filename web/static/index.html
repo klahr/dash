@@ -1264,11 +1264,12 @@
         <nav class="rail-nav" aria-label="Account sections">
           <div class="rail-group"><span class="rail-head">This browser</span>
             <button type="button" class="rail-item" data-rail="editors">Editors</button>
-            <button type="button" class="rail-item" data-rail="notify">Notifications</button>
+            <button type="button" class="rail-item" data-rail="notify">Browser notifications</button>
             <button type="button" class="rail-item" data-rail="clock">Time</button>
             <button type="button" class="rail-item" data-rail="chat">Chat</button>
           </div>
           <div class="rail-group"><span class="rail-head">You</span>
+            <button type="button" class="rail-item" data-rail="notifications">Notifications</button>
             <button type="button" class="rail-item" data-rail="twofactor">Two-factor sign-in</button>
             <button type="button" class="rail-item" data-rail="google">Google account</button>
             <button type="button" class="rail-item" data-rail="data">Your data</button>
@@ -1294,8 +1295,8 @@
             <p class="hint">Preferences only apply in this browser.</p>
           </section>
           <section class="rail-section" data-section="notify">
-            <label class="toggle"><input type="checkbox" name="notify" form="prefs-form"><span>Notifications</span></label>
-            <p class="hint" id="push-hint" hidden>Reviews, failures, approvals and failing builds reach this device even with Dash closed. <button type="button" class="link inline" id="push-test">Send a test</button></p>
+            <label class="toggle"><input type="checkbox" name="notify" form="prefs-form"><span>Notifications in this browser</span></label>
+            <p class="hint" id="push-hint" hidden>The events you chose in <button type="button" class="link inline" data-account="notifications">Notifications</button> reach this device even with Dash closed. <button type="button" class="link inline" id="push-test">Send a test</button></p>
           </section>
           <section class="rail-section" data-section="clock">
             <label class="field"><span>Time format</span>
@@ -1309,6 +1310,74 @@
           <section class="rail-section" data-section="chat">
             <label class="toggle"><input type="checkbox" name="chatSuggest" form="prefs-form"><span>Suggest what to say next</span></label>
             <p class="hint">After each reply, Claude's small model (Haiku) guesses your next message and shows it greyed out in the empty message box. <kbd>Enter</kbd> or Send sends it as it is; <kbd>Tab</kbd> puts it in the box to edit. Each guess is a short call on the same Claude login as the chat. Off: no call is made.</p>
+          </section>
+          <!-- The user's notifications in this org, kept by the hub (app/notifysettings.js): the summary
+               (when, which projects, where it goes, what's in it), which events push, and their webhooks -->
+          <section class="rail-section" data-section="notifications">
+            <form id="notify-form" class="notify-form" novalidate>
+              <p class="hint" id="notify-intro">Kept for you in this organization, on every device.</p>
+              <p class="hint err-text" id="notify-off" hidden></p>
+              <h3 class="section-head">Summary</h3>
+              <p class="hint">What happened since the last summary, in one message. Nothing to report sends nothing.</p>
+              <fieldset class="field choice notify-freq">
+                <legend class="sr-only">Summary</legend>
+                <label class="radio"><input type="radio" name="summary" value="off"><span>Off</span></label>
+                <label class="radio"><input type="radio" name="summary" value="daily"><span>Daily</span></label>
+                <label class="radio"><input type="radio" name="summary" value="weekly"><span>Weekly</span></label>
+              </fieldset>
+              <div class="notify-on" id="notify-on">
+                <div class="notify-when">
+                  <label class="field" id="notify-weekday-row"><span>On</span>
+                    <select name="weekday">
+                      <option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option>
+                      <option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option>
+                    </select>
+                  </label>
+                  <label class="field"><span>At</span><input type="time" name="time" required step="300"></label>
+                </div>
+                <p class="hint" id="notify-tz"></p>
+                <fieldset class="field choice">
+                  <legend>Projects</legend>
+                  <label class="radio"><input type="radio" name="scope" value="all"><span>All projects <em>new ones too</em></span></label>
+                  <label class="radio"><input type="radio" name="scope" value="some"><span>Only the ones I pick</span></label>
+                  <div class="notify-picks" id="notify-projects"></div>
+                </fieldset>
+                <fieldset class="field choice">
+                  <legend>Send it to</legend>
+                  <label class="toggle" id="notify-email-row"><input type="checkbox" name="email"><span>Email <em id="notify-email"></em></span></label>
+                  <p class="hint" id="notify-email-note" hidden></p>
+                  <div id="notify-dests"></div>
+                </fieldset>
+                <fieldset class="field choice">
+                  <legend>What goes in it</legend>
+                  <div class="notify-issues">
+                    <label class="toggle"><input type="checkbox" name="issues"><span>New issues</span></label>
+                    <label class="notify-sev"><span>from</span>
+                      <select name="min_severity" aria-label="Lowest severity of new issues">
+                        <option value="critical">critical</option><option value="high">high</option><option value="medium">medium</option>
+                        <option value="low">low</option><option value="info">info</option>
+                      </select><span>up</span>
+                    </label>
+                  </div>
+                  <label class="toggle"><input type="checkbox" name="review"><span>Tasks ready for review</span></label>
+                  <label class="toggle"><input type="checkbox" name="failed"><span>Failed tasks</span></label>
+                  <label class="toggle"><input type="checkbox" name="merged"><span>Merged tasks</span></label>
+                  <label class="toggle"><input type="checkbox" name="goals"><span>Your goals waiting for you</span></label>
+                  <label class="toggle"><input type="checkbox" name="builds"><span>Failing builds</span></label>
+                </fieldset>
+              </div>
+              <p class="hint" id="notify-state"></p>
+              <h3 class="section-head">Push</h3>
+              <p class="hint" id="notify-push-hint">These reach your browsers and the installed app, even with Dash closed. Turn them on in each browser under <button type="button" class="link inline" data-account="notify">Browser notifications</button>.</p>
+              <div class="notify-push" id="notify-push"></div>
+              <div class="board-actions">
+                <button class="btn small primary" type="submit" id="notify-save" data-icon="check">Save</button>
+                <button class="btn small" type="button" id="notify-test">Send the summary now</button>
+              </div>
+              <h3 class="section-head">Instant webhooks</h3>
+              <p class="hint">To hear about each event the moment it happens, in Slack, ntfy or your own service, use a webhook. You add and change them in <button type="button" class="link inline" data-account="webhooks">My webhooks</button>; tick one under <em>Send it to</em> above to get the summary there too.</p>
+              <ul class="item-list" id="notify-hooks"></ul>
+            </form>
           </section>
           <!-- Two-factor sign-in: set up, new recovery codes, turn off -->
           <section class="rail-section" data-section="twofactor">
