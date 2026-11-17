@@ -42,7 +42,8 @@ sender; most want its domain verified (SPF/DKIM) first, or the emails end up in 
 
 On start, Dash logs `email on: password reset by email` once email works, or
 `email is off` with the reason (a missing variable, an address it can't parse, no public
-URL). Delivery errors are logged as `send email`, without the link.
+URL). Delivery errors are logged as `send email`, without the link, and failed summary emails as
+`summary email failed`.
 
 ## Turning signup on
 

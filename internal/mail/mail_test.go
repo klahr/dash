@@ -43,6 +43,20 @@ func TestCompose(t *testing.T) {
 	if _, err := Compose("dash@example.com", Message{To: "ann@example.com", Subject: "x\r\nBcc: eve@example.com"}, time.Now()); err == nil {
 		t.Fatal("header injection")
 	}
+
+	// Extra headers, e.g. a summary's unsubscribe link, go in the header.
+	b, err = Compose("dash@example.com", Message{To: "ann@example.com", Subject: "Summary", Body: "hi",
+		Headers: map[string]string{"List-Unsubscribe": "<https://dash.example.com/u/x>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"}}, time.Unix(0, 0))
+	head, _, _ := strings.Cut(string(b), "\r\n\r\n")
+	if err != nil || !strings.Contains(head, "\r\nList-Unsubscribe: <https://dash.example.com/u/x>\r\n") ||
+		!strings.Contains(head, "\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n") {
+		t.Fatalf("headers %v:\n%s", err, b)
+	}
+	for _, bad := range []map[string]string{{"X-A": "v\r\nBcc: eve@example.com"}, {"X-A\r\nBcc": "v"}, {"X A": "v"}} {
+		if _, err := Compose("dash@example.com", Message{To: "ann@example.com", Subject: "x", Headers: bad}, time.Now()); err == nil {
+			t.Fatalf("header injection with %q", bad)
+		}
+	}
 }
 
 // fakeSMTP accepts one message on a local port and returns what it got.

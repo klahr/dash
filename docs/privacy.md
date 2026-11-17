@@ -60,7 +60,7 @@ Open **Account → Your data** and click **Download**. You get a JSON file with:
 - your organizations and roles
 - linked Google accounts
 - your sessions, tokens, connected apps and runners
-- browsers that get your push notifications, and your personal webhooks
+- browsers that get your push notifications, your personal webhooks and your [notification settings](notifications.md#your-notification-settings)
 - the sign-in log entries about you, with their IP addresses
 - the tasks you created and the chat messages you wrote, in your own general and project chats too
 - your [project plans](plan-project.md), drafts and launched ones
@@ -77,7 +77,7 @@ your password. An account that signs in with Google confirms with a Google sign-
 This happens at once:
 
 - Your account goes, with its sessions, tokens, connected apps, linked Google account, recovery
-  codes, push subscriptions and personal webhooks. Every browser and connector is signed out.
+  codes, push subscriptions, personal webhooks and notification settings. Every browser and connector is signed out.
 - Your general chats and your project chats with Claude are deleted, and your project plans.
 - Each organization you are the only member of is deleted, your personal workspace too.
 - Tasks, goals and messages you wrote in other organizations stay there, without your name.

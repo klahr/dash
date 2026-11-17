@@ -392,9 +392,6 @@ func (n *Notifier) pushOrg(ctx context.Context, note Notification, org int64) {
 		slog.Error("notifications: list push subscriptions", "org", org, "err", err)
 		return
 	}
-	if len(subs) == 0 {
-		return
-	}
 	var actions []PushAction
 	ttl := 24 * time.Hour
 	if note.Type == model.NotifyPermission && note.Permission != nil {

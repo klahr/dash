@@ -20,6 +20,7 @@ import { openPrefs } from "./prefs.js";
 import { openRunners } from "./runners.js";
 import { logout } from "./account.js";
 import { openConnector } from "./wallview.js";
+import { openAccount } from "./accountsheet.js";
 import { notifyOn, toggleNotifications } from "./notifications.js";
 import { renderUsage } from "./usage.js";
 import { openCI } from "./actions.js";
@@ -93,6 +94,7 @@ function paletteCommands() {
     ["Permission requests", "eye", () => runCommand("perms"), ":perms", "approvals allow deny"],
     state.runners && ["Runners", "computer", openRunners, ":runners", "computers machines dash runner add install revoke"],
     ["Preferences", "prefs", openPrefs, ":prefs", "preferences vim invisibles whitespace notifications browser chat suggestions"],
+    ["Notification settings", "bell", () => openAccount("notifications"), "", "notifications summary daily weekly digest email push webhooks issues"],
     ["Connect Claude", "plug", openConnector, ":connector", "claude.ai connector mcp mobile app remote oauth"],
     [notifyLabel(), notifyOn() ? "bell-off" : "bell", toggleNotifications, ":notify", "notifications"],
     [vimOn() ? "Turn off vim keys in the editor" : "Turn on vim keys in the editor", "code", toggleVim, ":vim", "vim keybindings prompt editor"],

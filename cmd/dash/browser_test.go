@@ -332,6 +332,94 @@ func TestBrowserPersonalWebhook(t *testing.T) {
 	}
 }
 
+// Account → Notifications, wide and on a phone: without SMTP the email
+// summary is greyed out; a daily summary to a personal webhook saves, in the
+// browser's time zone, and Send the summary now delivers it there.
+func TestBrowserNotificationSettings(t *testing.T) {
+	chrome := needChrome(t)
+	got := make(chan string, 10)
+	recv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got <- r.Header.Get("Dash-Event")
+	}))
+	t.Cleanup(recv.Close)
+	h := startRunnerHub(t)
+	var hook struct {
+		Webhook struct{ ID string } `json:"webhook"`
+	}
+	h.api.must("POST", "/api/me/webhooks", map[string]any{"url": recv.URL, "format": "json", "name": "My receiver", "events": []string{}}, http.StatusCreated, &hook)
+	shot := func(b *browser, name string) {
+		if dir := os.Getenv("DASH_TEST_SHOTS"); dir != "" {
+			buf, err := chromedp.Run(b.ctx, chromedp.FullScreenshot(90))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, name+".jpg"), buf, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	open := func(b *browser) {
+		b.until("open the account menu", `document.querySelector("#foot-menu").open || document.querySelector("#account-sheet").open`,
+			chromedp.Click(chromedp.CSS(`#foot-menu > summary`)))
+		b.until("open Account", `document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.ID("account-open")))
+		b.until("pick Notifications", `document.querySelector("#account-sheet-section-notifications").classList.contains("current")`,
+			chromedp.Click(chromedp.ID("account-sheet-rail-notifications")))
+		b.waitJS("the settings", `document.querySelector("#notify-dests").textContent.includes("My receiver")`)
+	}
+
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	open(b)
+	b.waitJS("email greyed out", `document.querySelector("#notify-form").email.disabled && !document.querySelector("#notify-email-note").hidden`)
+	b.waitJS("the instant webhooks", `document.querySelector("#notify-hooks").textContent.includes("summary only")`)
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(() => {
+		const f = document.querySelector("#notify-form");
+		f.summary.value = "daily";
+		f.time.value = "07:45";
+		f.dispatchEvent(new Event("change"));
+		f.querySelector('input[name=dest]').click();
+		f.querySelector('input[name=push][value="issue.new"]').click();
+		return true;
+	})()`)); err != nil {
+		b.fail("choose a daily summary to the webhook", err)
+	}
+	shot(b, "notifications-wide")
+	b.do("save", chromedp.Click(chromedp.ID("notify-save")))
+	b.waitJS("the next summary shown", `document.querySelector("#notify-state").textContent.includes("Next summary")`)
+	var view struct {
+		Settings struct {
+			Summary, Time string
+			TimeZone      string   `json:"time_zone"`
+			Webhooks      []string `json:"webhooks"`
+			Push          []string `json:"push"`
+		} `json:"settings"`
+	}
+	h.api.must("GET", "/api/me/notifications", nil, http.StatusOK, &view)
+	if s := view.Settings; s.Summary != "daily" || s.Time != "07:45" || s.TimeZone == "" || len(s.Webhooks) != 1 || s.Webhooks[0] != hook.Webhook.ID ||
+		!slices.Contains(s.Push, "issue.new") {
+		t.Fatalf("saved %+v", s)
+	}
+	b.do("send a summary now", chromedp.Click(chromedp.ID("notify-test")))
+	select {
+	case ev := <-got:
+		if ev != "summary" {
+			t.Fatalf("received %q", ev)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("no summary delivered")
+	}
+	b.waitJS("how it went", `[...document.querySelectorAll(".toast")].some((t) => t.textContent.includes("Summary sent"))`)
+
+	// On a phone: the rail is a strip across the top, the section fits.
+	phone := newBrowser(t, chrome)
+	phone.signIn(h)
+	phone.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	open(phone)
+	phone.waitJS("no sideways scrolling", `document.querySelector("#account-sheet-section-notifications").scrollWidth <= document.querySelector("#account-sheet-section-notifications").clientWidth + 1`)
+	phone.waitJS("the saved summary", `document.querySelector("#notify-form").summary.value === "daily"`)
+	shot(phone, "notifications-phone")
+}
+
 // The History view's commit pane, on a project whose clone is on a runner:
 // select a commit, open a changed file's diff, move with j/k and the arrow
 // keys, follow a parent link and close the pane with Esc.
