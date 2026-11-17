@@ -15,11 +15,12 @@ func terminalProject(command string) model.Project {
 	return model.Project{ID: "p1", PreviewKind: model.PreviewTerminal, PreviewCommand: command}
 }
 
-// readUntil reads sess's output until it contains want.
+// readUntil reads sess's output until it contains want. The deadline is
+// generous: under a full test run a shell can take seconds to start.
 func readUntil(t *testing.T, sess *runner.Session, want string) string {
 	t.Helper()
 	out := string(sess.Scrollback)
-	timeout := time.After(10 * time.Second)
+	timeout := time.After(30 * time.Second)
 	for !strings.Contains(out, want) {
 		select {
 		case b, ok := <-sess.Output:
@@ -78,7 +79,10 @@ func TestTerminalPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sess.Detach()
-	readUntil(t, sess, "built")
+	// Wait for the shell's prompt, so the input below reaches a shell that is ready for it.
+	if out := readUntil(t, sess, "$ "); !strings.Contains(out, "built") {
+		t.Fatalf("no build output before the prompt:\n%s", out)
+	}
 	if err := sess.Write([]byte("tool; echo \"bin=$DASH_BIN\"; echo sum-$((40+2))\r")); err != nil {
 		t.Fatal(err)
 	}

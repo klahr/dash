@@ -25,11 +25,12 @@ import (
 	"github.com/klahr/dash/internal/tunnel"
 )
 
-// readWS reads ws's terminal output until it contains want.
+// readWS reads ws's terminal output until it contains want. The deadline is
+// generous: under a full test run a shell can take seconds to start.
 func readWS(t *testing.T, ws *websocket.Conn, want string) string {
 	t.Helper()
 	var out strings.Builder
-	_ = ws.SetReadDeadline(time.Now().Add(10 * time.Second))
+	_ = ws.SetReadDeadline(time.Now().Add(30 * time.Second))
 	for !strings.Contains(out.String(), want) {
 		_, b, err := ws.ReadMessage()
 		if err != nil {
@@ -38,6 +39,16 @@ func readWS(t *testing.T, ws *websocket.Conn, want string) string {
 		out.Write(b)
 	}
 	return out.String()
+}
+
+// readPrompt reads ws's terminal output until the shell shows its prompt, so
+// input typed next reaches a shell that is ready for it, and checks the
+// output on the way had marker in it.
+func readPrompt(t *testing.T, ws *websocket.Conn, marker string) {
+	t.Helper()
+	if out := readWS(t, ws, "$ "); !strings.Contains(out, marker) {
+		t.Fatalf("no %q before the prompt:\n%s", marker, out)
+	}
 }
 
 // reviewTodo is a task of project pid in review, with a worktree.
@@ -109,7 +120,7 @@ func TestTerminalPreviewWithoutRunCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ws.Close()
-	readWS(t, ws, "ready-42")
+	readPrompt(t, ws, "ready-42")
 	if err := ws.WriteJSON(map[string]any{"type": "input", "data": "echo typed-$((1+1))\r"}); err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +258,7 @@ func TestRunnerTerminalPreviewThroughTheHub(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ws.Close()
-	readWS(t, ws, "on-the-runner")
+	readPrompt(t, ws, "on-the-runner")
 	if err := ws.WriteJSON(map[string]any{"type": "input", "data": "echo via-hub-$((40+2))\r"}); err != nil {
 		t.Fatal(err)
 	}

@@ -228,7 +228,7 @@ func TestTryOnARunnerThroughTheHub(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	readWS(t, ws, "built-")
+	readPrompt(t, ws, "built-")
 	if err := ws.WriteJSON(map[string]any{"type": "input", "data": "tool\r"}); err != nil {
 		t.Fatal(err)
 	}
@@ -278,6 +278,7 @@ func TestTryOnARunnerThroughTheHub(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	readPrompt(t, ws, "built-")
 	if err := ws.WriteJSON(map[string]any{"type": "input", "data": "tool\r"}); err != nil {
 		t.Fatal(err)
 	}
