@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/klahr/dash/internal/testbin"
@@ -121,5 +122,49 @@ func TestReviewReplyCalls(t *testing.T) {
 		"pr comment 5 --body hi\n"
 	if string(b) != want {
 		t.Fatalf("calls:\n%s\nwant:\n%s", b, want)
+	}
+}
+
+// PRStatuses asks about every pull request in one GraphQL query and reads
+// each one's checks; one GitHub didn't return, or with more checks than
+// one page, is left for PRStatus.
+func TestPRStatuses(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	g := fakeGh(t, `echo "$*" >> `+filepath.Join(dir, "calls")+`
+cat <<'JSON'
+{"data":{"repository":{
+ "p7":{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"abc","isDraft":true,"reviewDecision":null,"updatedAt":"2026-11-17T10:00:00Z","mergeCommit":null,
+  "commits":{"nodes":[{"commit":{"statusCheckRollup":{"contexts":{"pageInfo":{"hasNextPage":false},"nodes":[
+   {"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://example.com/1"},
+   {"__typename":"StatusContext","context":"ci/legacy","state":"PENDING","targetUrl":"https://example.com/2"}]}}}}]}},
+ "p8":{"state":"MERGED","mergeable":"UNKNOWN","headRefOid":"def","isDraft":false,"reviewDecision":"APPROVED","updatedAt":"2026-11-17T11:00:00Z","mergeCommit":{"oid":"m1"},
+  "commits":{"nodes":[{"commit":{"statusCheckRollup":null}}]}},
+ "p9":{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"ghi","updatedAt":"x",
+  "commits":{"nodes":[{"commit":{"statusCheckRollup":{"contexts":{"pageInfo":{"hasNextPage":true},"nodes":[]}}}}]}},
+ "p10":null}},
+ "errors":[{"message":"Could not resolve to a PullRequest with the number of 10."}]}
+JSON
+exit 1
+`)
+	sts := g.PRStatuses(context.Background(), "p", t.TempDir(), []int{7, 8, 9, 10})
+	if len(sts) != 2 {
+		t.Fatalf("want #7 and #8 only, got %+v", sts)
+	}
+	s7 := sts[7]
+	if s7.State != "OPEN" || s7.HeadRefOid != "abc" || !s7.IsDraft || s7.UpdatedAt != "2026-11-17T10:00:00Z" || len(s7.Checks) != 2 ||
+		!s7.Checks[0].Failed() || !s7.Checks[1].Pending() || s7.Checks[1].Label() != "ci/legacy" || s7.Checks[0].URL() != "https://example.com/1" {
+		t.Fatalf("#7 = %+v", s7)
+	}
+	if s8 := sts[8]; s8.State != "MERGED" || s8.MergeCommit == nil || s8.MergeCommit.Oid != "m1" || s8.ReviewDecision != "APPROVED" || s8.Checks != nil {
+		t.Fatalf("#8 = %+v", s8)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "calls"))
+	if calls := strings.Count(string(b), "api graphql"); calls != 1 {
+		t.Fatalf("want one query, got %d:\n%s", calls, b)
+	}
+	if !strings.Contains(string(b), "p7:pullRequest(number:7){...f}") || !strings.Contains(string(b), "p10:pullRequest(number:10){...f}") {
+		t.Fatalf("want every pull request asked for, got %s", b)
 	}
 }

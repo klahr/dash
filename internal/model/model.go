@@ -678,6 +678,10 @@ type PullRequest struct {
 	// back to Claude, or seen: 1 once followed with none sent yet, 0 for a
 	// pull request opened before Dash followed those comments.
 	CommentID int64 `json:"comment_id,omitempty"`
+	// UpdatedAt is GitHub's updatedAt of the pull request when its reviews
+	// and comments were last read whole: until it changes there is nothing
+	// new to read.
+	UpdatedAt string `json:"updated_at,omitempty"`
 	// Waits is what a person has to do on GitHub for it to go on (PRWaitReview,
 	// PRWaitMerge, PRWaitBlocked), "" while it waits on Dash, Claude or its
 	// checks instead; WaitsSince is when that started. Both as last seen

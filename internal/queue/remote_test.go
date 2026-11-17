@@ -899,3 +899,62 @@ func TestPullRequestCLAFailureGoesToReview(t *testing.T) {
 		t.Fatalf("want it waiting to be merged, got %s error %q PR %+v", y.Status, y.Error, *y.PR)
 	}
 }
+
+// A poll asks GitHub for the pull requests' state in one query, and reads
+// their reviews and comments only when GitHub's updatedAt moved since they
+// were last read.
+func TestPullRequestReviewsReadOnlyWhenUpdated(t *testing.T) {
+	parallel(t)
+
+	h, dir := prHarness(t, "upd.txt", model.Project{})
+	td := h.waitFor(h.add("updated").ID, model.StatusReview)
+	head := gitRun(t, td.Worktree.Path, "rev-parse", "HEAD")
+	view := func(at string) string {
+		return `{"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"` + head + `","updatedAt":"` + at + `","statusCheckRollup":[]}`
+	}
+	count := func(s string) int { return strings.Count(ghCalls(t, dir), s) }
+	write(t, dir, "pr.json", view("2026-11-17T10:00:00Z"))
+	h.merges.pollPRs(context.Background(), "")
+	reviews, talk := count("/reviews"), count("/issues/")
+	if reviews == 0 || talk == 0 || count("api graphql") == 0 {
+		t.Fatalf("want the state asked in one query, then reviews and comments read, gh calls:\n%s", ghCalls(t, dir))
+	}
+	if x, _ := h.st.GetTodo(td.ID); x.PR.UpdatedAt != "2026-11-17T10:00:00Z" {
+		t.Fatalf("want updatedAt remembered, got %+v", *x.PR)
+	}
+
+	// Nothing changed on GitHub: neither is read again.
+	h.merges.pollPRs(context.Background(), "")
+	if count("/reviews") != reviews || count("/issues/") != talk {
+		t.Fatalf("reviews or comments read again with nothing changed, gh calls:\n%s", ghCalls(t, dir))
+	}
+
+	// A review asks for changes, which moves updatedAt: it is read and sent.
+	write(t, dir, "reviews.json", `[{"id":9,"user":{"login":"alice","type":"User"},"author_association":"COLLABORATOR","state":"CHANGES_REQUESTED","body":"rename it"}]`)
+	write(t, dir, "pr.json", view("2026-11-17T10:05:00Z"))
+	h.merges.pollPRs(context.Background(), "")
+	if count("/reviews") != reviews+1 {
+		t.Fatalf("want the reviews read once more, gh calls:\n%s", ghCalls(t, dir))
+	}
+	if x, _ := h.st.GetTodo(td.ID); x.PR.ReviewID != 9 || len(x.Feedback) == 0 || !strings.Contains(x.Feedback[len(x.Feedback)-1], "rename it") {
+		t.Fatalf("want the review sent back to Claude, got %+v", x)
+	}
+}
+
+// Timed polls follow a failed task's pull request only every
+// failedPollEvery polls; other tasks' every time.
+func TestFailedPullRequestsPolledLessOften(t *testing.T) {
+	m := &MergeQueue{PRPoll: time.Minute}
+	failed := model.Todo{ID: "f", Status: model.StatusFailed}
+	review := model.Todo{ID: "r", Status: model.StatusReview}
+	now := time.Now()
+	if !m.failedDue(failed, now) || m.failedDue(failed, now.Add(time.Minute)) || m.failedDue(failed, now.Add(9*time.Minute)) {
+		t.Fatal("want a failed task followed once, then not for ten polls")
+	}
+	if !m.failedDue(failed, now.Add(10*time.Minute)) {
+		t.Fatal("want a failed task followed again after ten polls")
+	}
+	if !m.failedDue(review, now) || !m.failedDue(review, now.Add(time.Second)) {
+		t.Fatal("want a task in review followed at every poll")
+	}
+}

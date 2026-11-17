@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -190,6 +191,9 @@ type PRStatus struct {
 	// ReviewDecision is GitHub's verdict when the base branch requires
 	// reviews: APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED, else "".
 	ReviewDecision string `json:"reviewDecision"`
+	// UpdatedAt is when anything on it last changed (a push, a review, a
+	// comment…), as GitHub says it.
+	UpdatedAt string `json:"updatedAt,omitempty"`
 }
 
 // PRReview is a review submitted on a pull request (GitHub's REST shape).
@@ -427,7 +431,7 @@ func (c PRCheck) Pending() bool {
 func (g *Git) PRStatus(ctx context.Context, projectID, dir string, number int) (PRStatus, error) {
 	var st PRStatus
 	out, err := g.ghQuiet(ctx, projectID, dir, "pr", "view", strconv.Itoa(number),
-		"--json", "state,mergeable,headRefOid,mergeCommit,statusCheckRollup,isDraft,reviewDecision")
+		"--json", "state,mergeable,headRefOid,mergeCommit,statusCheckRollup,isDraft,reviewDecision,updatedAt")
 	if err != nil {
 		return st, err
 	}
@@ -435,6 +439,89 @@ func (g *Git) PRStatus(ctx context.Context, projectID, dir string, number int) (
 		return st, fmt.Errorf("gh pr view: %w", err)
 	}
 	return st, nil
+}
+
+// prBatch is how many pull requests one PRStatuses query asks about.
+const prBatch = 25
+
+// prStatusFields is what PRStatuses asks of each pull request: PRStatus's
+// fields, with the checks of its head commit as gh pr view's
+// statusCheckRollup has them.
+const prStatusFields = `fragment f on PullRequest{state mergeable headRefOid isDraft reviewDecision updatedAt mergeCommit{oid} ` +
+	`commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){pageInfo{hasNextPage}nodes{__typename ` +
+	`...on CheckRun{name status conclusion detailsUrl}...on StatusContext{context state targetUrl}}}}}}}}`
+
+// PRStatuses returns the status of each of pull requests numbers in one
+// GraphQL query per 25 of them, rather than a gh pr view each, with
+// UpdatedAt set. A pull request it couldn't get whole (a query that failed,
+// one GitHub didn't return, more than 100 checks) is missing from the map:
+// ask PRStatus for it.
+func (g *Git) PRStatuses(ctx context.Context, projectID, dir string, numbers []int) map[int]PRStatus {
+	out := map[int]PRStatus{}
+	for chunk := range slices.Chunk(numbers, prBatch) {
+		var q strings.Builder
+		q.WriteString("query($owner:String!,$repo:String!){repository(owner:$owner,name:$repo){")
+		for _, n := range chunk {
+			fmt.Fprintf(&q, "p%d:pullRequest(number:%d){...f}", n, n)
+		}
+		q.WriteString("}}" + prStatusFields)
+		raw, err := g.ghQuiet(ctx, projectID, dir, "api", "graphql",
+			"-F", "owner={owner}", "-F", "repo={repo}", "-f", "query="+q.String())
+		if err != nil && !strings.Contains(raw, `"data"`) {
+			continue // no answer at all: PRStatus for each
+		}
+		// An error with data (e.g. a pull request that doesn't exist) still
+		// gives the others.
+		for n, st := range parsePRStatuses(raw) {
+			out[n] = st
+		}
+	}
+	return out
+}
+
+// parsePRStatuses reads PRStatuses' GraphQL answer, by pull request number.
+func parsePRStatuses(raw string) map[int]PRStatus {
+	var resp struct {
+		Data struct {
+			Repository map[string]*struct {
+				PRStatus
+				Commits struct {
+					Nodes []struct {
+						Commit struct {
+							Rollup *struct {
+								Contexts struct {
+									PageInfo struct {
+										HasNextPage bool `json:"hasNextPage"`
+									} `json:"pageInfo"`
+									Nodes []PRCheck `json:"nodes"`
+								} `json:"contexts"`
+							} `json:"statusCheckRollup"`
+						} `json:"commit"`
+					} `json:"nodes"`
+				} `json:"commits"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+	if json.Unmarshal([]byte(jsonPart(raw)), &resp) != nil {
+		return nil
+	}
+	out := map[int]PRStatus{}
+	for alias, pr := range resp.Data.Repository {
+		n, err := strconv.Atoi(strings.TrimPrefix(alias, "p"))
+		if err != nil || pr == nil || pr.State == "" {
+			continue
+		}
+		st := pr.PRStatus
+		st.Checks = nil
+		if c := pr.Commits.Nodes; len(c) > 0 && c[0].Commit.Rollup != nil {
+			if c[0].Commit.Rollup.Contexts.PageInfo.HasNextPage {
+				continue // more checks than one page: PRStatus gets them all
+			}
+			st.Checks = c[0].Commit.Rollup.Contexts.Nodes
+		}
+		out[n] = st
+	}
+	return out
 }
 
 // RequiredChecks returns the names of the checks the base branch requires

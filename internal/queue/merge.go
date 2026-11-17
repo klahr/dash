@@ -93,6 +93,9 @@ type MergeQueue struct {
 	stopped bool             // Run returned: no new workers start
 	filesMu sync.Mutex       // cleanupFiles, which looks at every project
 	waiting sync.Map         // todo ID → a goroutine watching for its files to be committed
+	// failedPolled is when timed polls last followed a failed task's pull
+	// request: todo ID → time.Time (see failedDue).
+	failedPolled sync.Map
 
 	queuedMu sync.Mutex
 	queued   map[string]int // todo ID → its merge jobs queued or running

@@ -213,7 +213,7 @@ func (m *MergeQueue) schedulePRPolls() {
 	for _, t := range m.openPRs() {
 		if pid := t.ProjectID; !seen[pid] {
 			seen[pid] = true
-			m.later(pid, func(l *lane) *atomic.Bool { return &l.polling }, func(c context.Context) { m.pollPRs(c, pid) })
+			m.later(pid, func(l *lane) *atomic.Bool { return &l.polling }, func(c context.Context) { m.pollOpenPRs(c, pid, true) })
 		}
 	}
 }
@@ -236,22 +236,81 @@ func (m *MergeQueue) openPRs() []model.Todo {
 // too, so a merge or close done by hand on GitHub is noticed.
 // schedulePRPolls runs it per project.
 func (m *MergeQueue) pollPRs(ctx context.Context, projectID string) {
+	m.pollOpenPRs(ctx, projectID, false)
+}
+
+// failedPollEvery is how many PR polls apart the pull requests of failed
+// tasks are followed: only a merge, a close or a review on GitHub changes
+// those, so they needn't cost GitHub calls every minute.
+const failedPollEvery = 10
+
+// pollOpenPRs is pollPRs. It asks GitHub for the state of a project's pull
+// requests in one query (see gitops.PRStatuses), and reads their reviews
+// and comments only when GitHub says they changed (see followPR). With
+// spaceFailed (the timed polls), failed tasks' pull requests are followed
+// only every failedPollEvery polls.
+func (m *MergeQueue) pollOpenPRs(ctx context.Context, projectID string, spaceFailed bool) {
+	type group struct {
+		project model.Project
+		todos   []model.Todo
+	}
+	var order []string
+	groups := map[string]*group{}
+	now := time.Now()
 	for _, t := range m.openPRs() {
 		if projectID != "" && t.ProjectID != projectID {
 			continue
 		}
-		p, err := m.Store.GetProject(t.ProjectID)
-		if err != nil {
+		if spaceFailed && !m.failedDue(t, now) {
 			continue
 		}
-		p = p.For(t)
-		st, err := m.Git.PRStatus(ctx, p.ID, p.Path, t.PR.Number)
-		if err != nil {
-			slog.Warn("pull request status", "todo", t.ID, "pr", t.PR.Number, "err", err)
-			continue
+		g := groups[t.ProjectID]
+		if g == nil {
+			p, err := m.Store.GetProject(t.ProjectID)
+			if err != nil {
+				continue
+			}
+			g = &group{project: p}
+			groups[t.ProjectID] = g
+			order = append(order, t.ProjectID)
 		}
-		m.followPR(ctx, t, p, st)
+		g.todos = append(g.todos, t)
 	}
+	for _, pid := range order {
+		g := groups[pid]
+		numbers := make([]int, len(g.todos))
+		for i, t := range g.todos {
+			numbers[i] = t.PR.Number
+		}
+		sts := m.Git.PRStatuses(ctx, g.project.ID, g.project.Path, numbers)
+		for _, t := range g.todos {
+			p := g.project.For(t)
+			st, ok := sts[t.PR.Number]
+			if !ok {
+				var err error
+				if st, err = m.Git.PRStatus(ctx, p.ID, p.Path, t.PR.Number); err != nil {
+					slog.Warn("pull request status", "todo", t.ID, "pr", t.PR.Number, "err", err)
+					continue
+				}
+			}
+			m.followPR(ctx, t, p, st)
+		}
+	}
+}
+
+// failedDue reports whether task t's pull request is to be followed by
+// this timed poll: always, unless the task failed and was followed less
+// than failedPollEvery polls ago.
+func (m *MergeQueue) failedDue(t model.Todo, now time.Time) bool {
+	if t.Status != model.StatusFailed {
+		m.failedPolled.Delete(t.ID)
+		return true
+	}
+	if last, ok := m.failedPolled.Load(t.ID); ok && now.Sub(last.(time.Time)) < failedPollEvery*m.PRPoll-m.PRPoll/2 {
+		return false
+	}
+	m.failedPolled.Store(t.ID, now)
+	return true
 }
 
 func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project, st gitops.PRStatus) {
@@ -293,19 +352,31 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 		}
 		// Reviews asking for changes go back to Claude first: its fix is
 		// pushed to the same pull request, and checks run on that.
-		// So are comments in its conversation tab.
-		reviews, err := m.Git.PRReviews(ctx, p.ID, p.Path, n)
-		fresh := reviews
-		if err != nil {
-			slog.Warn("pull request reviews", "todo", t.ID, "pr", n, "err", err)
-		} else if t.PR.ReviewID == 0 && t.Status == model.StatusMerging {
-			// Approved in Dash before reviews were followed: what was said
-			// on it before isn't news.
-			m.seenReviews(t, reviews)
-			fresh = nil
-		}
-		if m.reviewBack(ctx, t, p, fresh, m.conversation(ctx, t, p)) {
-			return
+		// So are comments in its conversation tab. Both are read only when
+		// GitHub says the pull request changed since they were last read
+		// whole (a review or a comment changes its updatedAt).
+		var reviews []gitops.PRReview
+		read := st.UpdatedAt == "" || st.UpdatedAt != t.PR.UpdatedAt
+		if read {
+			var err error
+			reviews, err = m.Git.PRReviews(ctx, p.ID, p.Path, n)
+			fresh := reviews
+			if err != nil {
+				slog.Warn("pull request reviews", "todo", t.ID, "pr", n, "err", err)
+			} else if t.PR.ReviewID == 0 && t.Status == model.StatusMerging {
+				// Approved in Dash before reviews were followed: what was said
+				// on it before isn't news.
+				m.seenReviews(t, reviews)
+				fresh = nil
+			}
+			talk, talkOK := m.conversation(ctx, t, p)
+			sent, ok := m.reviewBack(ctx, t, p, fresh, talk)
+			if sent {
+				return
+			}
+			if ok && talkOK && err == nil && st.UpdatedAt != "" {
+				m.seenUpdate(t, st.UpdatedAt)
+			}
 		}
 		if t.Status != model.StatusMerging && t.Status != model.StatusReview {
 			return // failed: only a merge, a close or a review changes that
@@ -323,6 +394,9 @@ func (m *MergeQueue) followPR(ctx context.Context, t model.Todo, p model.Project
 			}
 		}
 		review := reviewState(st.ReviewDecision, reviews)
+		if !read && st.ReviewDecision == "" {
+			review = cmp.Or(t.PR.Review, review) // its reviews haven't changed since
+		}
 		// The head Dash already acted on: a fix pass that made no new commit
 		// pushed it again. Without this the task would wait for a head that
 		// never changes.
@@ -470,6 +544,21 @@ func reviewState(decision string, reviews []gitops.PRReview) string {
 	return state
 }
 
+// seenUpdate remembers that task t's pull request's reviews and comments
+// were read whole at GitHub's updatedAt.
+func (m *MergeQueue) seenUpdate(t model.Todo, updatedAt string) {
+	if t.PR.UpdatedAt == updatedAt {
+		return
+	}
+	_, _ = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+		if x.PR == nil || x.PR.Number != t.PR.Number {
+			return errSkipUpdate
+		}
+		x.PR.UpdatedAt = updatedAt
+		return nil
+	})
+}
+
 // seenReviews marks every review so far as handled.
 func (m *MergeQueue) seenReviews(t model.Todo, reviews []gitops.PRReview) {
 	var newest int64
@@ -496,13 +585,13 @@ const dashMark = "<!-- dash -->"
 var mention = regexp.MustCompile(`(?i)(?:^|[^\w@/.-])@(?:claude|dash)(?:[^\w-]|$)`)
 
 // conversation is the comments in a task's pull request's conversation tab,
-// nil when they can't be fetched, or on a pull request opened before Dash
-// followed them, whose comments so far are then marked seen.
-func (m *MergeQueue) conversation(ctx context.Context, t model.Todo, p model.Project) []gitops.IssueComment {
+// nil when they can't be fetched (ok false), or on a pull request opened
+// before Dash followed them, whose comments so far are then marked seen.
+func (m *MergeQueue) conversation(ctx context.Context, t model.Todo, p model.Project) (_ []gitops.IssueComment, ok bool) {
 	cs, err := m.Git.PRIssueComments(ctx, p.ID, p.Path, t.PR.Number)
 	if err != nil {
 		slog.Warn("pull request conversation", "todo", t.ID, "pr", t.PR.Number, "err", err)
-		return nil
+		return nil, false
 	}
 	if t.PR.CommentID == 0 {
 		var newest int64 = 1 // seen, and every real comment is newer
@@ -515,9 +604,9 @@ func (m *MergeQueue) conversation(ctx context.Context, t model.Todo, p model.Pro
 			}
 			return nil
 		})
-		return nil
+		return nil, true
 	}
-	return cs
+	return cs, true
 }
 
 // asksClaude reports a conversation comment that is for Claude: written by
@@ -532,13 +621,14 @@ func asksClaude(c gitops.IssueComment) bool {
 // last ones sent (a request for changes, or comments), and the comments in
 // its conversation tab asking for Claude since the last ones sent, back to
 // Claude in one note, the way a rework from Dash is, and reports whether it
-// did. Claude's fix is pushed to the same pull request. Approvals, and
+// did (sent). ok is false when it has to look at them again at the next
+// poll (a fetch failed, or the task moved on meanwhile). Claude's fix is pushed to the same pull request. Approvals, and
 // reviews and comments by apps (CI, CLA or coverage bots), aren't sent.
 // Nor is anything by someone who can't push to the repository (on a public
 // one, anyone on GitHub can comment): Claude runs with the shell allowed, so
 // their words would be commands run on this computer. Those are noted on the
 // task once and skipped.
-func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Project, reviews []gitops.PRReview, talk []gitops.IssueComment) bool {
+func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Project, reviews []gitops.PRReview, talk []gitops.IssueComment) (sent, ok bool) {
 	n := t.PR.Number
 	var fresh []gitops.PRReview
 	var newest, skippedReview int64
@@ -581,14 +671,14 @@ func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Proje
 		if len(outsiders) > 0 {
 			m.seenFeedback(t, skippedReview, skippedComment)
 		}
-		return false
+		return false, true
 	}
 	var comments []gitops.PRComment
 	if len(fresh) > 0 {
 		cs, err := m.Git.PRComments(ctx, p.ID, p.Path, n)
 		if err != nil {
 			slog.Warn("pull request review comments", "todo", t.ID, "pr", n, "err", err)
-			return false // try again at the next poll rather than send half of it
+			return false, false // try again at the next poll rather than send half of it
 		}
 		comments = cs
 	}
@@ -603,7 +693,7 @@ func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Proje
 	if note == "" {
 		// Nothing written (e.g. an empty review): nothing for Claude.
 		m.seenReviews(t, fresh)
-		return false
+		return false, true
 	}
 	who := reviewers(fresh, said)
 	what := "review"
@@ -645,12 +735,12 @@ func (m *MergeQueue) reviewBack(ctx context.Context, t model.Todo, p model.Proje
 		return nil
 	})
 	if err != nil {
-		return false
+		return false, false
 	}
 	if m.Kick != nil {
 		m.Kick()
 	}
-	return true
+	return true, true
 }
 
 var errSkipUpdate = errors.New("skip")
