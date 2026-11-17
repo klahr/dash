@@ -38,7 +38,7 @@ func pacedEngine(t *testing.T) (*TodoEngine, *store.Store, *usage.Tracker, model
 	e.runCtx = ctx
 	t.Cleanup(func() {
 		cancel()
-		e.Wait(10 * time.Second)
+		e.Wait(waitTimeout)
 	})
 	p, err := st.CreateProject(model.Project{Name: "p", Path: filepath.Join(t.TempDir(), "missing"), DefaultBranch: "main"})
 	if err != nil {
@@ -94,7 +94,7 @@ func TestStartNowStartsPastThePace(t *testing.T) {
 	}
 
 	// Started again later (a retry), it follows the pace like any other.
-	e.Wait(10 * time.Second)
+	e.Wait(waitTimeout)
 	waitStatus(t, st, forced.ID, model.StatusFailed)
 	if _, err := st.SetStatus(forced.ID, model.StatusQueued, ""); err != nil {
 		t.Fatal(err)
@@ -107,7 +107,7 @@ func TestStartNowStartsPastThePace(t *testing.T) {
 
 func waitStatus(t *testing.T, st *store.Store, id string, want model.TodoStatus) {
 	t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+	for deadline := time.Now().Add(waitTimeout); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 		if got, _ := st.GetTodo(id); got.Status == want {
 			return
 		}

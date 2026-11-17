@@ -36,7 +36,7 @@ func TestHubCheckoutWithUncommittedChangesWaits(t *testing.T) {
 	before := gitRun(t, origin, "rev-parse", "main")
 	h.approve(td.ID)
 
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitTimeout)
 	for x, _ := h.st.GetTodo(td.ID); !strings.Contains(x.Error, "commit or stash"); x, _ = h.st.GetTodo(td.ID) {
 		if time.Now().After(deadline) {
 			t.Fatalf("never waited: %s %q", x.Status, x.Error)

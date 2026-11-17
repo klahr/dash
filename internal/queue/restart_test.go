@@ -48,7 +48,7 @@ func TestMergeCutOffByShutdownResumesAtTheNextStart(t *testing.T) {
 	sh("echo b > b.txt && git add b.txt && git -c commit.gpgsign=false commit -qm b") // main moves: the merge tests again
 	moved := headOf(t, h, "main")
 	h.approve(td.ID)
-	for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+	for deadline := time.Now().Add(waitTimeout); ; time.Sleep(20 * time.Millisecond) {
 		if _, err := os.Stat(started); err == nil {
 			break
 		}
@@ -88,7 +88,7 @@ func TestMergeCutOffByShutdownResumesAtTheNextStart(t *testing.T) {
 	go func() { defer wg.Done(); mq.Run(ctx) }()
 	t.Cleanup(func() { cancel(); wg.Wait() })
 	mq.Resume()
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(waitTimeout)
 	for got, _ = h.st.GetTodo(td.ID); got.Status == model.StatusMerging && time.Now().Before(deadline); got, _ = h.st.GetTodo(td.ID) {
 		time.Sleep(50 * time.Millisecond)
 	}

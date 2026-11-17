@@ -126,7 +126,7 @@ func newHarness(t *testing.T, exe agent.Executor, p model.Project) *harness {
 	stop := sync.OnceFunc(func() {
 		cancel()
 		wg.Wait()
-		if !e.Wait(10*time.Second) || !mq.Wait(10*time.Second) {
+		if !e.Wait(waitTimeout) || !mq.Wait(waitTimeout) {
 			t.Error("the task engine or merge queue didn't stop")
 		}
 	})
@@ -149,7 +149,7 @@ func (h *harness) add(title string) model.Todo {
 
 func (h *harness) waitFor(id string, want model.TodoStatus) model.Todo {
 	h.t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(waitTimeout)
 	for time.Now().Before(deadline) {
 		td, err := h.st.GetTodo(id)
 		if err == nil && td.Status == want {
@@ -280,7 +280,7 @@ func TestFailingTestsGoBackToClaudeWithResume(t *testing.T) {
 	if err := h.engine.RunTests(td.ID); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitTimeout)
 	for time.Now().Before(deadline) {
 		if x, _ := h.st.GetTodo(td.ID); x.Checks != nil && x.Checks.Stage == "manual" {
 			if x.Checks.Passed || x.Runs != 2 {
@@ -635,7 +635,7 @@ func TestInterruptFailsRunningTodosAndTheyCanBeQueuedAgain(t *testing.T) {
 	h := newHarness(t, exe, model.Project{Name: "p"})
 	td := h.add("make a")
 	h.waitFor(td.ID, model.StatusInProgress)
-	for deadline := time.Now().Add(10 * time.Second); len(exe.Calls()) == 0; time.Sleep(10 * time.Millisecond) {
+	for deadline := time.Now().Add(waitTimeout); len(exe.Calls()) == 0; time.Sleep(10 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatal("claude never started")
 		}
@@ -656,7 +656,7 @@ func TestInterruptFailsRunningTodosAndTheyCanBeQueuedAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.engine.Kick()
-	for deadline := time.Now().Add(10 * time.Second); len(exe.Calls()) < 2; time.Sleep(10 * time.Millisecond) {
+	for deadline := time.Now().Add(waitTimeout); len(exe.Calls()) < 2; time.Sleep(10 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatal("requeued todo never ran")
 		}

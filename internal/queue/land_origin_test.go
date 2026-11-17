@@ -82,7 +82,7 @@ func TestRunnerLandsHubTaskOnOriginWithoutPR(t *testing.T) {
 	if err := h.merges.Enqueue(model.MergeJob{TodoID: td.ID, ProjectID: h.proj.ID, Revert: true}); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitTimeout)
 	for x, _ := h.st.GetTodo(td.ID); x.Revert == nil; x, _ = h.st.GetTodo(td.ID) {
 		if time.Now().After(deadline) {
 			log, _ := h.engine.Log.Read(td.ID)

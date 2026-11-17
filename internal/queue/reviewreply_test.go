@@ -123,7 +123,7 @@ func TestReviewReplyFailureDoesntFailTask(t *testing.T) {
 // waitLog waits for task id's log to say want.
 func waitLog(t *testing.T, h *harness, id, want string) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitTimeout)
 	for {
 		log, _ := h.engine.Log.Read(id)
 		if strings.Contains(log, want) {

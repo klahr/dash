@@ -45,7 +45,7 @@ func TestMergeWaitsForUncommittedChangesToItsFiles(t *testing.T) {
 	write(t, h.proj.Path, "a.txt", "mine\n")
 	h.approve(td.ID)
 
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitTimeout)
 	for {
 		cur, _ := h.st.GetTodo(td.ID)
 		if cur.Status == model.StatusMerging && strings.Contains(cur.Error, "a.txt") {

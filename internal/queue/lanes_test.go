@@ -25,12 +25,12 @@ func TestEachProjectHasItsOwnMergeWorker(t *testing.T) {
 	defer func() { cancel(); wg.Wait() }()
 	select {
 	case <-started:
-	case <-time.After(5 * time.Second):
+	case <-time.After(waitTimeout):
 		t.Fatal("project a's job never started")
 	}
 
 	// Project b's job runs while a's is still in hand.
-	dctx, dcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	dctx, dcancel := context.WithTimeout(context.Background(), waitTimeout)
 	defer dcancel()
 	ran := false
 	if err := mq.Do(dctx, "b", func(context.Context) { ran = true }); err != nil || !ran {
@@ -51,11 +51,11 @@ func TestEachProjectHasItsOwnMergeWorker(t *testing.T) {
 	close(slow)
 	select {
 	case <-second:
-	case <-time.After(5 * time.Second):
+	case <-time.After(waitTimeout):
 		t.Fatal("project a's second job never ran")
 	}
 	cancel()
-	if !mq.Wait(5 * time.Second) {
+	if !mq.Wait(waitTimeout) {
 		t.Fatal("the workers didn't stop")
 	}
 }
