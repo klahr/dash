@@ -326,7 +326,24 @@ func start(o *options) *selfUpdate {
 	a.configureGoogle()
 	a.configureOAuthTLS()
 
-	a.ctx, a.stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	stopOn := []os.Signal{os.Interrupt, syscall.SIGTERM}
+	if runnerctl.Supervised {
+		// Its console has no window, so no one presses Ctrl+C in it: a
+		// Ctrl+C is a program it started sending one to the whole console
+		// (GenerateConsoleCtrlEvent to group 0). Not a reason to stop. The
+		// supervisor is stopped with the process tree, without signals.
+		// Caught, not ignored: Windows ends a process whose Go handler
+		// passes the event on.
+		ignored := make(chan os.Signal, 1)
+		signal.Notify(ignored, os.Interrupt)
+		go func() {
+			for range ignored {
+				slog.Warn("runner: ignored a Ctrl+C sent to its console by a program it started")
+			}
+		}()
+		stopOn = stopOn[1:]
+	}
+	a.ctx, a.stop = signal.NotifyContext(context.Background(), stopOn...)
 	defer a.stop()
 	if o.runnerMode {
 		a.update.watch(a.stop)

@@ -401,6 +401,16 @@ func UnderService() bool {
 		return os.Getenv("XPC_SERVICE_NAME") == LaunchdLabel
 	}
 	// Windows: the scheduled task doesn't restart a runner that exited
-	// cleanly, so the runner restarts itself in place.
-	return false
+	// cleanly, but the supervisor it starts does. Started another way, the
+	// runner restarts itself in place.
+	return Supervised
 }
+
+// SupervisedEnv is set on a runner started by the Windows supervisor (see
+// cmd/dash), which starts it again whenever it exits.
+const SupervisedEnv = "DASH_RUNNER_SUPERVISED"
+
+// Supervised reports whether this runner was started by the Windows
+// supervisor. main reads SupervisedEnv into it, and clears the variable so
+// the programs the runner starts don't inherit it.
+var Supervised bool

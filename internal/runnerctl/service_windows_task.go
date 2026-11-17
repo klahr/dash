@@ -62,8 +62,10 @@ func windowsArg(s string) string {
 
 // TaskXML is a Task Scheduler definition that runs bin args for userID
 // (DOMAIN\name) when they log on, in their session, and starts it again
-// a minute after a failure. args should log to a file (-log-file): the
-// runner hides its console window when it does.
+// a minute after it fails to start. args should log to a file (-log-file):
+// started so, dash supervises the runner instead of running it (see
+// cmd/dash/supervise.go), with no console window, and starts it again when
+// it exits.
 func TaskXML(bin string, args []string, userID, workDir string) []byte {
 	words := make([]string, len(args))
 	for i, a := range args {
@@ -118,8 +120,8 @@ func (s *Service) taskDefinition() []byte {
 	return TaskXML(s.Bin, args, s.windowsUser(), s.Home)
 }
 
-// stopWindowsRunner ends the task and the runner it started (which may
-// have restarted itself in place after an update, outside the task).
+// stopWindowsRunner ends the task (its supervisor first, so it doesn't start
+// the runner again) and the runner it started.
 func (s *Service) stopWindowsRunner() {
 	_, _ = s.run("schtasks", "/End", "/TN", WindowsTask) // not running is fine
 	if s.Data == "" {

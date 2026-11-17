@@ -155,11 +155,11 @@ release from GitHub, checks it against the release's `checksums.txt`, keeps its 
 `dash.prev` and puts the new one in its place, and restarts on it with the same flags (`--data`
 included):
 
-- under its background service it exits with status 4, and systemd (`Restart=on-failure`) or
-  launchd (`KeepAlive`) starts the new binary;
-- started by hand (installed with `--no-service`), or on Windows, it replaces its own process with
-  the new binary (`exec`; on Windows it starts the new binary in the same window and waits for
-  it), in the same terminal.
+- under its background service it exits with status 4, and systemd (`Restart=on-failure`),
+  launchd (`KeepAlive`) or, on Windows, the scheduled task's supervisor starts the new binary;
+- started by hand (installed with `--no-service`), it replaces its own process with the new
+  binary (`exec`; on Windows it starts the new binary in the same window and waits for it), in
+  the same terminal.
 
 Maintenance mode is the hub's, so it survives the runner's reconnects and the hub's restarts. It
 ends when the runner connects running the hub's version, or when the update fails: the runner can't
@@ -225,9 +225,16 @@ It does what `install.sh` does, with PowerShell parameters (`-Name`, `-Projects`
 - `dash.exe` goes to `%LOCALAPPDATA%\Programs\dash`, which is added to your PATH;
 - the checks include bash;
 - the background service is a scheduled task, `Dash runner`, that starts the runner when you log
-  in (and again a minute after it crashes), with its console window hidden and its log in
-  `%LOCALAPPDATA%\dash-runner\dash-runner.log` (`-log-file`). It runs only while you are logged
-  in. `dash runner install`, `uninstall` and `status` manage it as on the other systems.
+  in, with its log in `%LOCALAPPDATA%\dash-runner\dash-runner.log` (`-log-file`). The task
+  starts a small supervisor, which starts the runner with no console window (so Claude Code, git
+  and bash open none either) and starts it again whenever it stops: at once after an update,
+  otherwise after 5 seconds, waiting longer (up to 5 minutes) while it keeps stopping. The log
+  says why it stopped, with a crash's error. A window may flash at logon while the supervisor
+  starts. It runs only while you are logged in. `dash runner install`, `uninstall` and `status`
+  manage it as on the other systems.
+
+It is a scheduled task, not a Windows service, so it needs no administrator rights: a service
+needs them to install, and your password to run as you.
 
 Run the command again without `-Code` to update. Windows won't overwrite a running program, so
 an update renames the running `dash.exe` to `dash.exe.old` (removed by the next update) and puts

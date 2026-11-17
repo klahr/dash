@@ -51,6 +51,8 @@ func main() {
 		os.Exit(resetTwoFactor(args[1:]))
 	}
 	runnerMode := len(args) > 0 && args[0] == "runner"
+	runnerctl.Supervised = runnerMode && os.Getenv(runnerctl.SupervisedEnv) != ""
+	os.Unsetenv(runnerctl.SupervisedEnv) // not for the programs the runner starts
 	if runnerMode {
 		args = args[1:]
 		// dash runner setup|install|uninstall|status
@@ -70,6 +72,9 @@ func main() {
 	// The env file first: it may set the log format too.
 	envErr := auth.LoadDotEnv(o.envFile)
 	logOut := io.Writer(os.Stderr)
+	if runnerMode && o.logFile != "" {
+		superviseRunner(o.logFile) // on Windows, from its scheduled task: never returns
+	}
 	if o.logFile != "" {
 		f, err := openLogFile(o.logFile)
 		if err != nil {
