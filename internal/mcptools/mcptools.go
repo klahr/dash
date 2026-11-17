@@ -6,8 +6,6 @@ package mcptools
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,9 +13,9 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/runtoken"
 )
 
 // ServerName is the chat's name for the Dash tools server; distinct from a
@@ -988,8 +986,7 @@ var PTodo = Param{"todo", "string", "Task id.", true}
 
 // Tokens holds the bearer tokens of running chat turns.
 type Tokens struct {
-	mu sync.Mutex
-	m  map[string]Scope
+	m runtoken.Map[Scope]
 }
 
 // Scope is what a token's tools serve and for whom.
@@ -1092,30 +1089,14 @@ func (t *Tokens) RegisterHub(c Caller, hubProject string) (token string, release
 }
 
 func (t *Tokens) register(sc Scope) (token string, release func()) {
-	buf := make([]byte, 24)
-	_, _ = rand.Read(buf)
-	token = hex.EncodeToString(buf)
-	t.mu.Lock()
-	if t.m == nil {
-		t.m = map[string]Scope{}
-	}
-	t.m[token] = sc
-	t.mu.Unlock()
-	return token, func() {
-		t.mu.Lock()
-		delete(t.m, token)
-		t.mu.Unlock()
-	}
+	return t.m.Register(sc)
 }
 
 func (t *Tokens) lookup(token string) (sc Scope, ok bool) {
 	if t == nil {
 		return sc, false
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	sc, ok = t.m[token]
-	return
+	return t.m.Lookup(token)
 }
 
 // Handler serves POST /mcp/dash for the chat's Claude Code runs.

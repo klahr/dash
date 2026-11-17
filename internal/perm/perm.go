@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/runtoken"
 )
 
 const (
@@ -73,8 +74,9 @@ type Broker struct {
 	// whose owner doesn't is refused (optional: without it, any valid owner).
 	Member func(model.Owner) bool
 
+	tokens runtoken.Map[run]
+
 	mu      sync.Mutex
-	tokens  map[string]run
 	pending map[string]*pending
 	always  map[string]map[string]bool // todoID → tool → allowed
 }
@@ -82,7 +84,7 @@ type Broker struct {
 func NewBroker(pub Publisher) *Broker {
 	return &Broker{
 		pub: pub, Timeout: 50 * time.Minute,
-		tokens: map[string]run{}, pending: map[string]*pending{}, always: map[string]map[string]bool{},
+		pending: map[string]*pending{}, always: map[string]map[string]bool{},
 	}
 }
 
@@ -90,15 +92,10 @@ func NewBroker(pub Publisher) *Broker {
 // owner: the todo's user and org. Call release when the run ends; it also
 // denies anything still pending for that run.
 func (b *Broker) Register(owner model.Owner, todoID, projectID string) (token string, release func()) {
-	buf := make([]byte, 24)
-	_, _ = rand.Read(buf)
-	token = hex.EncodeToString(buf)
-	b.mu.Lock()
-	b.tokens[token] = run{owner: owner, todoID: todoID, projectID: projectID}
-	b.mu.Unlock()
+	token, forget := b.tokens.Register(run{owner: owner, todoID: todoID, projectID: projectID})
 	return token, func() {
+		forget()
 		b.mu.Lock()
-		delete(b.tokens, token)
 		var stale []string
 		for id, p := range b.pending {
 			if p.req.TodoID == todoID {
@@ -116,17 +113,7 @@ func (b *Broker) Register(owner model.Owner, todoID, projectID string) (token st
 // whose permission requests are answered by ask. They don't show up in
 // Pending. Call release when the run ends.
 func (b *Broker) RegisterFunc(owner model.Owner, ask AskFunc) (token string, release func()) {
-	buf := make([]byte, 24)
-	_, _ = rand.Read(buf)
-	token = hex.EncodeToString(buf)
-	b.mu.Lock()
-	b.tokens[token] = run{owner: owner, ask: ask}
-	b.mu.Unlock()
-	return token, func() {
-		b.mu.Lock()
-		delete(b.tokens, token)
-		b.mu.Unlock()
-	}
+	return b.tokens.Register(run{owner: owner, ask: ask})
 }
 
 // Forget drops "always allow" grants for a todo (call when it is merged or deleted).
@@ -271,9 +258,7 @@ func (b *Broker) ServeMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	b.mu.Lock()
-	rn, ok := b.tokens[token]
-	b.mu.Unlock()
+	rn, ok := b.tokens.Lookup(token)
 	// Every run acts as a user in an org, and only while they belong to it.
 	ok = ok && rn.owner.Valid() && (b.Member == nil || b.Member(rn.owner))
 	if !ok {

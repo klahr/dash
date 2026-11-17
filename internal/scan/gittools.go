@@ -3,8 +3,6 @@ package scan
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"net/http"
 	"os"
@@ -12,11 +10,11 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/mcptools"
+	"github.com/klahr/dash/internal/runtoken"
 )
 
 // A scan reads git history through these MCP tools, not Bash: a Bash rule
@@ -43,27 +41,13 @@ func gitAllowed() []string {
 // GitMCP serves the git tools to running scans (POST), each authenticated
 // by a token that maps to its throwaway checkout.
 type GitMCP struct {
-	mu sync.Mutex
-	m  map[string]string // token → checkout
+	tokens runtoken.Map[string] // token → checkout
 }
 
 // Register issues a token for a scan of the checkout in dir. Call release
 // when the run ends.
 func (g *GitMCP) Register(dir string) (token string, release func()) {
-	buf := make([]byte, 24)
-	_, _ = rand.Read(buf)
-	token = hex.EncodeToString(buf)
-	g.mu.Lock()
-	if g.m == nil {
-		g.m = map[string]string{}
-	}
-	g.m[token] = dir
-	g.mu.Unlock()
-	return token, func() {
-		g.mu.Lock()
-		delete(g.m, token)
-		g.mu.Unlock()
-	}
+	return g.tokens.Register(dir)
 }
 
 func (g *GitMCP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -75,9 +59,7 @@ func (g *GitMCP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	var dir string
 	if ok && token != "" {
-		g.mu.Lock()
-		dir, ok = g.m[token]
-		g.mu.Unlock()
+		dir, ok = g.tokens.Lookup(token)
 	}
 	if !ok {
 		http.Error(w, "unknown or expired token", http.StatusUnauthorized)
