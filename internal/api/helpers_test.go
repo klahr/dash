@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/klahr/dash/internal/auth"
 	"github.com/klahr/dash/internal/gitops"
@@ -22,6 +23,13 @@ func TestMain(m *testing.M) {
 	gitops.AllowLocalRemotes = true
 	os.Exit(testgit.Run(m))
 }
+
+// waitTimeout bounds a test's wait for background work (a merge job, a
+// fake gh call, a runner's report). Alone that work takes well under a
+// second, but under a full `go test ./...` on a busy machine (macOS
+// especially) it has taken over 10 seconds, so the bound is generous: a
+// passing test never waits for it.
+const waitTimeout = 60 * time.Second
 
 // raw is the whole store behind s, for tests that set up or inspect records
 // across orgs.

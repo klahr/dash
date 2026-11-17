@@ -76,7 +76,7 @@ func ownerDo(t *testing.T, s *Server, method, path string) *httptest.ResponseRec
 // waitCalls waits for gh to have been called with want.
 func waitCalls(t *testing.T, calls, want string) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitTimeout)
 	for {
 		b, _ := os.ReadFile(calls)
 		if strings.Contains(string(b), want) {
@@ -135,7 +135,7 @@ func TestRejectingTaskInDashClosesPullRequest(t *testing.T) {
 		t.Fatalf("cancel: %d %s", w.Code, w.Body)
 	}
 	waitCalls(t, calls, "pr close 8")
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitTimeout)
 	for x, _ := raw(s).GetTodo(back.ID); x.Status != model.StatusDraft || x.PR.State != "CLOSED"; x, _ = raw(s).GetTodo(back.ID) {
 		if time.Now().After(deadline) {
 			t.Fatalf("want a draft with its pull request closed, got %s %+v", x.Status, x.PR)

@@ -129,7 +129,7 @@ func TestRevertMergedTodo(t *testing.T) {
 	if err := h.merges.Enqueue(model.MergeJob{TodoID: td.ID, ProjectID: h.proj.ID, Revert: true}); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitTimeout)
 	for {
 		x, _ := h.st.GetTodo(td.ID)
 		if x.Revert != nil {
@@ -575,7 +575,7 @@ func TestPullRequestCommentGoesBackToClaude(t *testing.T) {
 		t.Fatalf("want comment 33 handled, the fix budget reset and alice and bob credited, got id %d fixes %d sent back %q", x.PR.CommentID, x.AutoFixes, x.SentBack)
 	}
 	// Answered on GitHub once the fix is pushed, as a review is.
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitTimeout)
 	for !strings.Contains(ghCalls(t, dir), "pr comment 7") {
 		if time.Now().After(deadline) {
 			t.Fatalf("want Claude's summary posted for the comments, gh calls:\n%s", ghCalls(t, dir))
@@ -796,7 +796,7 @@ func TestCleanupRemovesOrphansAndStaleWorktrees(t *testing.T) {
 // pushing a fix and answering its review), as polling skips it meanwhile.
 func waitMergeJob(t *testing.T, h *harness, id string) {
 	t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); h.merges.inQueue(id); time.Sleep(20 * time.Millisecond) {
+	for deadline := time.Now().Add(waitTimeout); h.merges.inQueue(id); time.Sleep(20 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatal("the merge job never finished")
 		}
@@ -805,7 +805,7 @@ func waitMergeJob(t *testing.T, h *harness, id string) {
 
 func waitPR(t *testing.T, h *harness, id string, want model.TodoStatus, ok func(model.Todo) bool) model.Todo {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitTimeout)
 	for {
 		x, _ := h.st.GetTodo(id)
 		if x.PR != nil && x.Status == want && (ok == nil || ok(x)) {
