@@ -6,6 +6,7 @@ import { copyBlock } from "./prefs.js";
 import { loadBilling, offerSubscription, renderOrgBilling } from "./billing.js";
 import { pushUnsubscribe } from "./notifications.js";
 import { accountSection } from "./accountsheet.js";
+import { avatar, showOwnAvatar } from "./avatar.js";
 
 // ------------------------------------------------------------------ account & organizations
 export async function loadMe() {
@@ -16,7 +17,7 @@ export async function loadMe() {
   const name = me.username;
   if (!name) return;
   $("#foot-user").textContent = name;
-  $("#foot-avatar").textContent = [...name][0].toUpperCase();
+  showOwnAvatar();
   $("#foot-menu summary").title = `Account menu · ${name}${me.org ? ` in ${me.org.name}` : ""}`;
   $("#foot-menu summary").setAttribute("aria-label", `${name}, account menu`);
   const orgs = me.orgs || [];
@@ -130,6 +131,7 @@ async function renderOrg() {
     const self = m.id === me.user.id;
     const canEdit = manage && RANK[m.role] <= RANK[mine];
     return h("li", { class: "item-row" },
+      avatar(m, "member-avatar"),
       h("span", { class: "runner-name" }, m.username, self ? h("span", { class: "hint" }, " (you)") : null),
       h("span", { class: "item-sub hint" }, m.email || "", manage || org.org.require_2fa ? h("span", { class: `tfa-tag${m.totp_enabled ? " on" : ""}`, title: m.totp_enabled ? "Signs in with two factors" : "No two-factor sign-in yet" }, m.totp_enabled ? "2FA" : "no 2FA") : null),
       canEdit ? roleSelect(m) : h("span", { class: "org-role-tag" }, ROLE_LABEL[m.role]),

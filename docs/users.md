@@ -113,6 +113,15 @@ once and for 7 days, and inviting the same address again replaces it. Because th
 is what grants access, send it only to the person you're inviting. A
 [personal workspace](signup.md#personal-workspaces) can't invite anyone.
 
+## Profile picture
+
+Open **Account → Profile picture** and click **Choose picture…**. Dash crops the picture to a square
+in the middle and makes it small before saving it. It shows in the account menu and in the
+members list of **Organization**. Only members of your organizations see it. **Remove** goes back
+to your initial.
+
+Dash takes PNG, JPEG, GIF and WebP pictures, up to 1 MB once made small.
+
 ## Several orgs
 
 When you belong to more than one org, the account menu lets you switch between them
@@ -281,6 +290,8 @@ To delete an account altogether, see [Your data](privacy.md): everyone can delet
 | `GET /api/admin/sso`, `PUT /api/admin/sso/google`, `POST /api/admin/sso/domains/verify` | platform admins: the instance's client, approving domains |
 | `GET /api/account/export`, `DELETE /api/account {password}` | your data as JSON; delete your account ([privacy.md](privacy.md)) |
 | `DELETE /api/admin/users/{uid} {password}`        | platform admins: delete someone's account |
+| `PUT /api/account/avatar` (the image as the body), `DELETE …` | set or remove your profile picture |
+| `GET /api/users/{uid}/avatar`                     | a picture: yours, or a member's of your org. `avatar` in `/api/me` and the members list is its version (`0`: none) |
 
 With a token, `GET /api/me` shows the token and its org, and the routes that manage members,
 invitations, tokens, two-factor sign-in and orgs answer 403.

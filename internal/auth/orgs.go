@@ -28,6 +28,7 @@ import (
 //	POST   /api/tokens {name, org_id, scopes, password}
 //	DELETE /api/tokens/{id}
 //	GET    /api/account/export, DELETE /api/account   the user's own data (see erasure.go)
+//	PUT    /api/account/avatar, …                profile pictures (see avatar.go)
 //	GET    /go/{slug}                            with org subdomains: hand the browser to the org's (see orghosts.go)
 //
 // two-factor sign-in (see twoFactorRoutes), and signup and password reset
@@ -60,6 +61,7 @@ func (a *Auth) Routes(mux *http.ServeMux) {
 	a.googleRoutes(mux)
 	a.ssoRoutes(mux)
 	a.erasureRoutes(mux)
+	a.avatarRoutes(mux)
 	if a.Domains != nil {
 		mux.HandleFunc("GET /go/{slug}", a.goOrg)
 	}
@@ -110,7 +112,7 @@ func accountError(w http.ResponseWriter, err error) {
 		errors.Is(err, store.ErrNoOrg), errors.Is(err, store.ErrBadScopes), errors.Is(err, store.ErrBadTokenName),
 		errors.Is(err, store.ErrTOTPNotSetUp), errors.Is(err, store.ErrNoPendingTOTP), errors.Is(err, store.ErrEmailLink),
 		errors.Is(err, store.ErrBadSlug), errors.Is(err, store.ErrSlugReserved),
-		errors.Is(err, store.ErrBadDomain), errors.Is(err, store.ErrBadJoinRole):
+		errors.Is(err, store.ErrBadDomain), errors.Is(err, store.ErrBadJoinRole), errors.Is(err, store.ErrBadAvatar):
 		code = http.StatusBadRequest
 	case errors.Is(err, ErrReauthGoogle):
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "reauth_google"})

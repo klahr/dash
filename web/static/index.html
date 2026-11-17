@@ -1286,6 +1286,7 @@
             <button type="button" class="rail-item" data-rail="chat">Chat</button>
           </div>
           <div class="rail-group"><span class="rail-head">You</span>
+            <button type="button" class="rail-item" data-rail="picture">Profile picture</button>
             <button type="button" class="rail-item" data-rail="notifications">Notifications</button>
             <button type="button" class="rail-item" data-rail="twofactor">Two-factor sign-in</button>
             <button type="button" class="rail-item" data-rail="google">Google account</button>
@@ -1327,6 +1328,16 @@
           <section class="rail-section" data-section="chat">
             <label class="toggle"><input type="checkbox" name="chatSuggest" form="prefs-form"><span>Suggest what to say next</span></label>
             <p class="hint">After each reply, Claude's small model (Haiku) guesses your next message and shows it greyed out in the empty message box. <kbd>Enter</kbd> or Send sends it as it is; <kbd>Tab</kbd> puts it in the box to edit. Each guess is a short call on the same Claude login as the chat. Off: no call is made.</p>
+          </section>
+          <!-- The user's profile picture (app/avatar.js): shown in the account menu and members lists -->
+          <section class="rail-section" data-section="picture">
+            <div class="avatar-row">
+              <span class="avatar avatar-large" id="avatar-preview" aria-hidden="true"></span>
+              <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+              <button class="btn small" type="button" id="avatar-pick" data-icon="up">Choose picture…</button>
+              <button class="btn small" type="button" id="avatar-clear">Remove</button>
+            </div>
+            <p class="hint">Shown in the account menu and to the members of your organizations. Dash crops it to a square and makes it small before saving it.</p>
           </section>
           <!-- The user's notifications in this org, kept by the hub (app/notifysettings.js): the summary
                (when, which projects, where it goes, what's in it), which events push, and their webhooks -->

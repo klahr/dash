@@ -6,6 +6,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -249,6 +250,8 @@ type AccountExport struct {
 		HasPassword     bool      `json:"has_password"`
 		Created         time.Time `json:"created"`
 		PasswordChanged time.Time `json:"password_changed"`
+		// ProfilePicture is their picture as a data: URL.
+		ProfilePicture string `json:"profile_picture,omitempty"`
 	} `json:"account"`
 	Organizations []ExportMembership `json:"organizations"`
 	Identities    []ExportIdentity   `json:"linked_accounts"`
@@ -347,6 +350,11 @@ func (a *Accounts) ExportUser(uid int64, now time.Time) (AccountExport, error) {
 		return x, err
 	}
 	acc.Created, acc.PasswordChanged = time.Unix(created, 0).UTC(), time.Unix(0, changed).UTC()
+	if data, ct, _, err := a.Avatar(uid); err == nil {
+		acc.ProfilePicture = "data:" + ct + ";base64," + base64.StdEncoding.EncodeToString(data)
+	} else if !errors.Is(err, ErrNotFound) {
+		return x, err
+	}
 
 	each := func(q string, scan func(*sql.Rows) error) error {
 		rows, err := a.db.Query(q, uid)

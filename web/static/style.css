@@ -1832,6 +1832,15 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   font-size: var(--fs-xs); font-weight: 700; line-height: 1; color: var(--text); background: color-mix(in srgb, var(--accent) 30%, var(--raised));
 }
 .foot-avatar:empty, .foot-user:empty { display: none; }
+/* Profile pictures (app/avatar.js): a round picture, or the initial without one. */
+.avatar {
+  flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; overflow: hidden;
+  font-size: var(--fs-2xs); font-weight: 700; line-height: 1; color: var(--text); background: color-mix(in srgb, var(--accent) 30%, var(--raised));
+}
+.avatar-large { width: 72px; height: 72px; font-size: 28px; }
+.avatar:has(img), .foot-avatar:has(img) { background: none; overflow: hidden; }
+.avatar img, .foot-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.avatar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .foot-user { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; }
 .foot-who { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
 .foot-version { padding: 6px 10px 2px; color: var(--muted); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -56,7 +56,7 @@ reverse proxy's access logs, your host's backups, your mail provider).
 
 Open **Account → Your data** and click **Download**. You get a JSON file with:
 
-- your account: username, email address, when it was made, whether two-factor sign-in is on
+- your account: username, email address, when it was made, whether two-factor sign-in is on, your profile picture
 - your organizations and roles
 - linked Google accounts
 - your sessions, tokens, connected apps and runners
@@ -76,7 +76,7 @@ your password. An account that signs in with Google confirms with a Google sign-
 
 This happens at once:
 
-- Your account goes, with its sessions, tokens, connected apps, linked Google account, recovery
+- Your account goes, with its profile picture, sessions, tokens, connected apps, linked Google account, recovery
   codes, push subscriptions, personal webhooks and notification settings. Every browser and connector is signed out.
 - Your general chats and your project chats with Claude are deleted, and your project plans.
 - Each organization you are the only member of is deleted, your personal workspace too.
@@ -140,7 +140,7 @@ Everything is on the hub's own disk, in its data directory (`-data`, by default
 
 | What                                    | Kept                                                                          |
 |-----------------------------------------|-------------------------------------------------------------------------------|
-| Account: email address, username, password hash (Argon2id), two-factor secret and hashed recovery codes, when it was created | until the account is deleted (see [Delete your account](#delete-your-account)) |
+| Account: email address, username, password hash (Argon2id), two-factor secret and hashed recovery codes, profile picture, when it was created | until the account is deleted (see [Delete your account](#delete-your-account)) |
 | Unconfirmed signup                      | deleted once its last confirmation link has expired, when the next person signs up |
 | Confirmation and password reset links   | 24 hours and 1 hour                                                           |
 | Invitations (the invitee's email)       | 7 days                                                                        |

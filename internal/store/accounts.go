@@ -84,6 +84,9 @@ type User struct {
 	Email         string `json:"email,omitempty"`
 	PlatformAdmin bool   `json:"is_platform_admin"`
 	TOTP          bool   `json:"totp_enabled"` // signs in with a code from an authenticator app too
+	// Avatar is the version of their profile picture (0: none), for its
+	// URL: /api/users/{id}/avatar?v={avatar}.
+	Avatar int64 `json:"avatar,omitempty"`
 }
 
 type Org struct {
@@ -391,7 +394,7 @@ func scanOrg(sc interface{ Scan(...any) error }, extra ...any) (Org, error) {
 // ---- users and passwords ----
 
 // userFields are the users columns scanUser reads, in its order.
-const userFields = "id, username, COALESCE(email, ''), is_platform_admin, totp_secret IS NOT NULL"
+const userFields = "id, username, COALESCE(email, ''), is_platform_admin, totp_secret IS NOT NULL, avatar_at"
 
 // userCols selects userFields; append a WHERE clause.
 const userCols = "SELECT " + userFields + " FROM users"
@@ -400,7 +403,7 @@ const userCols = "SELECT " + userFields + " FROM users"
 // columns scanned into extra). No row is ErrNotFound.
 func scanUser(sc interface{ Scan(...any) error }, extra ...any) (User, error) {
 	var u User
-	err := sc.Scan(append([]any{&u.ID, &u.Username, &u.Email, &u.PlatformAdmin, &u.TOTP}, extra...)...)
+	err := sc.Scan(append([]any{&u.ID, &u.Username, &u.Email, &u.PlatformAdmin, &u.TOTP, &u.Avatar}, extra...)...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrNotFound
 	}
@@ -481,12 +484,12 @@ func (a *Accounts) Session(key string, now time.Time) (Session, error) {
 	var orgID sql.NullInt64
 	var name, slug, folder, role, family sql.NullString
 	var require2FA, personal, required sql.NullBool
-	err := a.db.QueryRow(`SELECT u.id, u.username, COALESCE(u.email, ''), u.is_platform_admin, u.totp_secret IS NOT NULL,
+	err := a.db.QueryRow(`SELECT u.id, u.username, COALESCE(u.email, ''), u.is_platform_admin, u.totp_secret IS NOT NULL, u.avatar_at,
 			s.expires_at, s.active_org_id, o.id, o.name, o.slug, COALESCE(o.folder, o.slug), o.require_2fa, o.personal_user_id IS NOT NULL, m.role, s.family, s.method, s.auth_at, `+requires2FA+`
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		LEFT JOIN org_memberships m ON m.user_id = s.user_id AND m.org_id = s.active_org_id
 		LEFT JOIN organizations o ON o.id = m.org_id
-		WHERE s.key = ?`, key).Scan(&s.User.ID, &s.User.Username, &s.User.Email, &s.User.PlatformAdmin, &s.User.TOTP,
+		WHERE s.key = ?`, key).Scan(&s.User.ID, &s.User.Username, &s.User.Email, &s.User.PlatformAdmin, &s.User.TOTP, &s.User.Avatar,
 		&expires, &active, &orgID, &name, &slug, &folder, &require2FA, &personal, &role, &family, &s.Method, &authAt, &required)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s, ErrNotFound
@@ -638,7 +641,7 @@ func (a *Accounts) createOrg(tx *sql.Tx, uid int64, name string, now time.Time) 
 
 // Members lists an org's members, owners first.
 func (a *Accounts) Members(orgID int64) ([]Member, error) {
-	rows, err := a.db.Query(`SELECT u.id, u.username, COALESCE(u.email, ''), u.is_platform_admin, u.totp_secret IS NOT NULL, m.role, m.created_at
+	rows, err := a.db.Query(`SELECT u.id, u.username, COALESCE(u.email, ''), u.is_platform_admin, u.totp_secret IS NOT NULL, u.avatar_at, m.role, m.created_at
 		FROM org_memberships m JOIN users u ON u.id = m.user_id WHERE m.org_id = ?
 		ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.username`, orgID)
 	if err != nil {
@@ -649,7 +652,7 @@ func (a *Accounts) Members(orgID int64) ([]Member, error) {
 	for rows.Next() {
 		var m Member
 		var joined int64
-		if err := rows.Scan(&m.ID, &m.Username, &m.Email, &m.PlatformAdmin, &m.TOTP, &m.Role, &joined); err != nil {
+		if err := rows.Scan(&m.ID, &m.Username, &m.Email, &m.PlatformAdmin, &m.TOTP, &m.Avatar, &m.Role, &joined); err != nil {
 			return nil, err
 		}
 		m.Joined = time.Unix(joined, 0).UTC()
