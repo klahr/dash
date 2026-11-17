@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"sort"
 	"time"
+
+	"github.com/klahr/dash/internal/metrics"
 )
 
 // BackupPrefix and BackupSuffix frame the names of timestamped backups:
@@ -144,6 +146,7 @@ func PruneBackups(dir string, keep int) ([]string, error) {
 func ScheduleBackups(ctx context.Context, src, dir string, every time.Duration, keep int) {
 	wait := time.Duration(0)
 	if last, ok := newestBackup(dir); ok {
+		metrics.SetLastBackup(last)
 		wait = max(0, time.Until(last.Add(every)))
 	}
 	t := time.NewTimer(wait)
@@ -154,13 +157,22 @@ func ScheduleBackups(ctx context.Context, src, dir string, every time.Duration, 
 			return
 		case <-t.C:
 		}
-		dest, err := BackupTo(ctx, src, dir, keep, time.Now())
+		now := time.Now()
+		dest, err := BackupTo(ctx, src, dir, keep, now)
 		switch {
 		case dest == "":
+			if ctx.Err() != nil {
+				return // shutting down, not a failed backup
+			}
+			metrics.Backups.Inc("failed")
 			slog.Error("backup failed", "dir", dir, "err", err)
 		case err != nil:
+			metrics.Backups.Inc("ok")
+			metrics.SetLastBackup(now)
 			slog.Warn("backup written, but pruning failed", "path", dest, "err", err)
 		default:
+			metrics.Backups.Inc("ok")
+			metrics.SetLastBackup(now)
 			slog.Info("backup written", "path", dest)
 		}
 		t.Reset(every)

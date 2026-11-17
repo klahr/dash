@@ -62,8 +62,10 @@ DASH_BACKUP_EVERY=24h
 a consistent copy of the database, `dash-<UTC time>.db`, every day, and removes older ones beyond
 the newest 7. The first is written at start unless one younger than the interval is already
 there, so restarts don't push older backups out. `journalctl --user -u dash` shows
-`backup written` for each, or why one failed. Point it at another disk, or copy the directory
-off the computer, to survive losing this one.
+`backup written` for each, or why one failed, and the
+[metrics](deploy.md#metrics) count them (`dash_backups_total`,
+`dash_backup_last_success_seconds`) so you can alert on a missed one. Point it at another disk,
+or copy the directory off the computer, to survive losing this one.
 
 **A backup now**, while Dash runs:
 

@@ -18,6 +18,14 @@ a hub needs at least one. See [Several computers](several-computers.md).
 **The first two put Dash's login on the internet.** Read [The login](#the-login-is-internet-facing)
 before you start. To watch it in production, see [Monitoring](#monitoring).
 
+Before you go live, on the production hub:
+
+1. **Turn on two-factor sign-in** for the admin account: account menu → **Account** →
+   **Two-factor sign-in**. Keep the recovery codes off the server.
+2. **Schedule backups** with `DASH_BACKUP_DIR` and copy them off the server
+   ([Back up and restore](#back-up-and-restore)). Then **test a restore** once.
+3. **Alert** on `/healthz` and on the metrics, backups included ([Monitoring](#monitoring)).
+
 ## A VPS behind Caddy
 
 The hub needs nothing installed besides Dash and Caddy: no Claude Code, no API key, no `git` and
@@ -349,6 +357,25 @@ one from a newer version is refused, so restore with the version that took it or
 Files copied into the volume with `docker compose cp` may be owned by root; Dash runs as user
 65532. If it can't write its data after a restore, fix the owner:
 `docker run --rm --volumes-from dash-dash-1 alpine chown -R 65532:65532 /data`.
+
+**Test a restore** before you need one, without touching the live hub: start a second hub on a
+copy of a backup, on a port only you can reach, and check it. Use the live hub's
+`DASH_USERNAME` and `DASH_PASSWORD` (the password is written into the copy at start). Don't point
+a runner at it, and stop it when you're done.
+
+```sh
+mkdir /tmp/dash-drill
+cp /srv/backups/dash/dash-20260131T030000Z.db /tmp/dash-drill/dash.db
+sudo chown -R 65532:65532 /tmp/dash-drill
+docker run --rm -d --name dash-drill -p 127.0.0.1:7799:7788 -v /tmp/dash-drill:/data \
+  -e DASH_USERNAME -e DASH_PASSWORD ghcr.io/klahr/dash
+curl http://127.0.0.1:7799/healthz      # {"status":"ok",…}
+```
+
+Open it through an SSH tunnel (`ssh -L 7799:127.0.0.1:7799 you@dash.example.com`, then
+`http://127.0.0.1:7799`), sign in and check your projects and recent tasks are there. Then
+`docker stop dash-drill` and `sudo rm -r /tmp/dash-drill`. On a native install it's the same with
+`bin/dash -addr 127.0.0.1:7799 -data /tmp/dash-drill`.
 
 ### Build the image yourself
 
@@ -685,6 +712,8 @@ scrape_configs:
 | `dash_signin_lockouts_total{scope}` | counter | sign-in lockouts as they start: `ip` (one address), `global` (all addresses), `2fa` (one account's codes) |
 | `dash_webhook_deliveries_total{result}` | counter | notification webhook deliveries after retries: `ok` or `failed` |
 | `dash_push_deliveries_total{result}` | counter | Web Push deliveries to browsers after retries: `ok`, `failed` or `gone` (the browser dropped the subscription) |
+| `dash_backups_total{result}` | counter | scheduled backups (`-backup-dir`) since the hub started: `ok` or `failed` |
+| `dash_backup_last_success_seconds` | gauge | when the newest scheduled backup was written (Unix time); only with `-backup-dir` |
 | `dash_build_info{version}` | gauge | always 1, with the running version |
 | `dash_start_time_seconds` | gauge | when the hub started (Unix time) |
 | `dash_goroutines` | gauge | goroutines running now |
@@ -713,7 +742,44 @@ groups:
         expr: increase(dash_signin_lockouts_total{scope="global"}[15m]) > 0
       - alert: DashWebhooksFailing
         expr: increase(dash_webhook_deliveries_total{result="failed"}[1h]) > 10
+      - alert: DashBackupFailed
+        expr: increase(dash_backups_total{result="failed"}[1d]) > 0
+      - alert: DashBackupStale # daily backups; raise it with DASH_BACKUP_EVERY
+        expr: time() - dash_backup_last_success_seconds > 26 * 3600
+      - alert: DashBackupMissing
+        expr: absent(dash_backup_last_success_seconds)
+        for: 1h
 ```
+
+`DashDown` only says Prometheus can't scrape. To alert on `/healthz` itself, from outside, probe it
+with the [blackbox exporter](https://github.com/prometheus/blackbox_exporter) (its default
+`http_2xx` module) and alert when the probe fails:
+
+```yaml
+# prometheus.yml
+  - job_name: dash-health
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets: [https://dash.example.com/healthz]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115   # the blackbox exporter
+```
+
+```yaml
+      - alert: DashUnhealthy
+        expr: probe_success{job="dash-health"} == 0
+        for: 5m
+```
+
+Without Prometheus, any uptime service that checks for a `200` from
+`https://dash.example.com/healthz` does the same job.
 
 A runner serves the same metrics with `-metrics-addr` (its own tasks, no runner counts).
 

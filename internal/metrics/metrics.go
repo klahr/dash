@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 // Default is the registry Dash's packages count into and /metrics serves.
@@ -46,7 +48,29 @@ var (
 	HTTPDuration = Default.Histogram("dash_http_request_duration_seconds",
 		"Time to answer HTTP requests, by method and route pattern.",
 		[]float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}, "method", "route")
+	// Backups counts scheduled backups (-backup-dir) by result: "ok" or
+	// "failed".
+	Backups = Default.Counter("dash_backups_total",
+		"Scheduled backups taken since the hub started, by result (ok, failed).", "result")
 )
+
+// lastBackup is when the newest scheduled backup was written, in Unix
+// seconds; 0 until one is known.
+var lastBackup atomic.Int64
+
+func init() {
+	Default.Gauge("dash_backup_last_success_seconds",
+		"When the newest scheduled backup was written, in seconds since the Unix epoch.",
+		func() []Sample {
+			if v := lastBackup.Load(); v > 0 {
+				return []Sample{{Value: float64(v)}}
+			}
+			return nil // no scheduled backups (yet)
+		})
+}
+
+// SetLastBackup records when the newest scheduled backup was written.
+func SetLastBackup(t time.Time) { lastBackup.Store(t.Unix()) }
 
 // Sample is one value of a gauge, with its label values in the order the
 // gauge's labels were given.

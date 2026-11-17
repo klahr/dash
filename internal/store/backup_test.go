@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/klahr/dash/internal/metrics"
 	"github.com/klahr/dash/internal/model"
 )
 
@@ -143,5 +145,55 @@ func TestPruneBackupsLeavesOtherFiles(t *testing.T) {
 	}
 	if removed, _ := PruneBackups(dir, 0); len(removed) != 1 {
 		t.Errorf("keep 0 removed %v", removed)
+	}
+}
+
+// A scheduled backup counts in dash_backups_total and sets
+// dash_backup_last_success_seconds; a failed one counts as failed.
+func TestScheduleBackupsMetrics(t *testing.T) {
+	// Not parallel: it reads the process-wide metrics.
+	dir := t.TempDir()
+	src := filepath.Join(dir, "dash.db")
+	s, err := Open(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	ok, failed := metrics.Backups.Value("ok"), metrics.Backups.Value("failed")
+	backups := filepath.Join(dir, "backups")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); ScheduleBackups(ctx, src, backups, time.Hour, 3) }()
+	deadline := time.Now().Add(10 * time.Second)
+	for metrics.Backups.Value("ok") == ok && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if got := metrics.Backups.Value("ok"); got != ok+1 {
+		t.Fatalf("ok backups = %v, want %v", got, ok+1)
+	}
+	var out strings.Builder
+	metrics.Default.Write(&out)
+	if !strings.Contains(out.String(), "\ndash_backup_last_success_seconds ") {
+		t.Errorf("no dash_backup_last_success_seconds in:\n%s", out.String())
+	}
+
+	// A source that isn't a database fails.
+	ctx, cancel = context.WithCancel(context.Background())
+	done = make(chan struct{})
+	go func() {
+		defer close(done)
+		ScheduleBackups(ctx, filepath.Join(dir, "missing.db"), t.TempDir(), time.Hour, 3)
+	}()
+	deadline = time.Now().Add(10 * time.Second)
+	for metrics.Backups.Value("failed") == failed && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if got := metrics.Backups.Value("failed"); got != failed+1 {
+		t.Errorf("failed backups = %v, want %v", got, failed+1)
 	}
 }
