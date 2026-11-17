@@ -137,6 +137,13 @@ func TestFleetRemembersWhereThingsLive(t *testing.T) {
 	if err != nil || tt.ID != "tb" {
 		t.Fatalf("Todo = %v, %v", tt, err)
 	}
+	// The search returns as soon as b has the task; a's lookup may still be on
+	// its way. Wait for it, so the counts below don't depend on scheduling.
+	for deadline := time.Now().Add(5 * time.Second); a.n("todo") == 0; time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("a was never asked for the task")
+		}
+	}
 	f.PaceWait(tt)
 	if _, err := f.Text("tb", "diff", 0, false); err != nil {
 		t.Fatal(err)
