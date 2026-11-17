@@ -234,3 +234,24 @@ func TestRunReadsUsage(t *testing.T) {
 		t.Errorf("model = %q", res.Model)
 	}
 }
+
+// A line over the limit is skipped and the rest still read, so the writer
+// never blocks on a full pipe.
+func TestPumpLinesSkipsLongLines(t *testing.T) {
+	long := strings.Repeat("x", 200*1024) // over the 64 KB read buffer too
+	in := "a\r\n\n" + long + "\nb\n" + strings.Repeat("y", 10) + "\nlast"
+	var got []string
+	skipped := pumpLinesMax(strings.NewReader(in), 100*1024, func(l string) { got = append(got, l) })
+	if skipped != 1 {
+		t.Errorf("skipped = %d, want 1", skipped)
+	}
+	want := []string{"a", "", "b", "yyyyyyyyyy", "last"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("lines = %q, want %q", got, want)
+	}
+	// A line just at the limit is kept.
+	got = nil
+	if n := pumpLinesMax(strings.NewReader(long+"\n"), len(long), func(l string) { got = append(got, l) }); n != 0 || len(got) != 1 {
+		t.Errorf("line at the limit: skipped %d, got %d lines", n, len(got))
+	}
+}

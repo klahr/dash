@@ -4,6 +4,7 @@ package agent
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -140,16 +141,19 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 	stderrDone := make(chan struct{})
 	go func() {
 		defer close(stderrDone)
-		pumpLines(stderr, func(l string) {
+		n := pumpLines(stderr, func(l string) {
 			if strings.Contains(l, "No conversation found with session ID") {
 				res.ResumeFailed = true
 			}
 			emit(model.RunEvent{Kind: "status", Text: "stderr: " + l})
 		})
+		if n > 0 {
+			emit(model.RunEvent{Kind: "status", Text: skippedLines(n, "stderr")})
+		}
 	}()
 
 	var resultErr error
-	pumpLines(stdout, func(l string) {
+	skipped := pumpLines(stdout, func(l string) {
 		for _, w := range check.Line(l) {
 			emit(cliWarning(w))
 		}
@@ -183,6 +187,9 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 			emit(e)
 		}
 	})
+	if skipped > 0 {
+		emit(model.RunEvent{Kind: "status", Text: skippedLines(skipped, "output")})
+	}
 	<-stderrDone
 	waitErr := cmd.Wait()
 	// Dash runs git in the worktree next, outside the sandbox: a run that
@@ -289,11 +296,50 @@ var slashCommand = regexp.MustCompile(`^/[A-Za-z][\w:-]*(\s|$)`)
 const rules = "\n\nWork only inside the current directory. Do not run git commit, create branches or " +
 	"change git history; Dash commits your changes for review when you finish."
 
-func pumpLines(r io.Reader, fn func(string)) {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 64*1024), 16*1024*1024)
-	for sc.Scan() {
-		fn(sc.Text())
+// maxLine is the longest output line pumpLines passes on.
+const maxLine = 16 * 1024 * 1024
+
+// skippedLines tells that pumpLines skipped n lines of Claude's stream.
+func skippedLines(n int, stream string) string {
+	return fmt.Sprintf("skipped %d %s line(s) over %d MB", n, stream, maxLine>>20)
+}
+
+// pumpLines calls fn with each line read from r, without its line ending,
+// until r ends. A line longer than maxLine is skipped, not passed on, and
+// reading goes on after it: r is always read to the end, so the process
+// writing it never blocks on a full pipe. It returns how many lines it skipped.
+func pumpLines(r io.Reader, fn func(string)) (skipped int) {
+	return pumpLinesMax(r, maxLine, fn)
+}
+
+func pumpLinesMax(r io.Reader, max int, fn func(string)) (skipped int) {
+	br := bufio.NewReaderSize(r, 64*1024)
+	var line []byte
+	tooLong := false
+	for {
+		chunk, err := br.ReadSlice('\n')
+		if !tooLong {
+			if len(line)+len(chunk) > max+1 { // +1: the newline doesn't count
+				tooLong, line = true, line[:0]
+			} else {
+				line = append(line, chunk...)
+			}
+		}
+		if err == bufio.ErrBufferFull {
+			continue // the line goes on
+		}
+		switch {
+		case tooLong:
+			skipped++
+		case err == nil || len(line) > 0: // a last line without a newline counts too
+			line = bytes.TrimSuffix(line, []byte("\n"))
+			line = bytes.TrimSuffix(line, []byte("\r"))
+			fn(string(line))
+		}
+		line, tooLong = line[:0], false
+		if err != nil {
+			return skipped
+		}
 	}
 }
 
