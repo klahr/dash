@@ -151,3 +151,46 @@ func TestTodoLogUncapped(t *testing.T) {
 		t.Errorf("%d events, want all 200", len(evs))
 	}
 }
+
+// Todos logging side by side each keep whole events under the cap, and the
+// cap still holds when a log was written before the TodoLog was made (a
+// restart).
+func TestTodoLogParallel(t *testing.T) {
+	parallel(t)
+
+	root := t.TempDir()
+	old := &TodoLog{Pub: &recordPub{}, Root: root}
+	for i := range 100 {
+		old.Event(model.Todo{ID: "t0"}, model.RunEvent{Kind: "text", Text: fmt.Sprintf("old %03d %s", i, strings.Repeat("x", 40))})
+	}
+	l := &TodoLog{Pub: &recordPub{}, Root: root, MaxBytes: 4096}
+	var wg sync.WaitGroup
+	for w := range 8 {
+		wg.Go(func() {
+			td := model.Todo{ID: fmt.Sprintf("t%d", w%4)}
+			for i := range 100 {
+				l.Event(td, model.RunEvent{Kind: "text", Text: fmt.Sprintf("w%d %d", w, i)})
+			}
+		})
+	}
+	wg.Wait()
+	for i := range 4 {
+		id := fmt.Sprintf("t%d", i)
+		info, err := os.Stat(l.eventsPath(id))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Size() > l.MaxBytes {
+			t.Errorf("%s: %d bytes, over the cap", id, info.Size())
+		}
+		evs, _ := l.Events(id)
+		if len(evs) < 10 || !strings.Contains(evs[0].Text, "trimmed") {
+			t.Fatalf("%s was not trimmed: %d events", id, len(evs))
+		}
+		for _, e := range evs[1:] {
+			if e.Kind != "text" || !strings.HasPrefix(e.Text, "w") {
+				t.Errorf("%s: a cut or stray event: %+v", id, e)
+			}
+		}
+	}
+}
