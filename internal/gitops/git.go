@@ -1018,9 +1018,10 @@ func (g *Git) ReadBlob(ctx context.Context, projectID, repo, blob string, max in
 }
 
 // Unpushed counts the commits on branch that origin doesn't have, as of the
-// last fetch or push (every commit if branch was never pushed).
+// last fetch or push. If branch was never pushed, that is its commits no
+// remote-tracking branch has (every commit when there are none).
 func (g *Git) Unpushed(ctx context.Context, projectID, repo, branch string) (int, error) {
-	out, err := g.run(ctx, false, projectID, repo, "git", "rev-list", "--count", g.unpushedRange(ctx, projectID, repo, branch))
+	out, err := g.run(ctx, false, projectID, repo, "git", append([]string{"rev-list", "--count"}, g.unpushedRange(ctx, projectID, repo, branch)...)...)
 	if err != nil {
 		return 0, err
 	}
@@ -1030,7 +1031,10 @@ func (g *Git) Unpushed(ctx context.Context, projectID, repo, branch string) (int
 // UnpushedTodos lists the todos (by their "Dash-Todo: <id>" trailer) whose
 // commits on branch origin doesn't have yet.
 func (g *Git) UnpushedTodos(ctx context.Context, projectID, repo, branch string) ([]string, error) {
-	out, err := g.run(ctx, false, projectID, repo, "git", "log", "--format=%B", g.unpushedRange(ctx, projectID, repo, branch), "--")
+	// Only the commits that name a todo: a never-pushed branch's range can
+	// be its whole history.
+	args := append([]string{"log", "--format=%B", "--grep=^Dash-Todo: "}, g.unpushedRange(ctx, projectID, repo, branch)...)
+	out, err := g.run(ctx, false, projectID, repo, "git", append(args, "--")...)
 	if err != nil {
 		return nil, err
 	}
@@ -1043,11 +1047,15 @@ func (g *Git) UnpushedTodos(ctx context.Context, projectID, repo, branch string)
 	return ids, nil
 }
 
-func (g *Git) unpushedRange(ctx context.Context, projectID, repo, branch string) string {
+// unpushedRange is the rev-list arguments for branch's commits origin
+// doesn't have: those past origin/<branch>, or, with no such branch, those
+// no remote-tracking branch has, so the walk stops where branch forked
+// from what was pushed rather than at the root.
+func (g *Git) unpushedRange(ctx context.Context, projectID, repo, branch string) []string {
 	if _, err := g.run(ctx, false, projectID, repo, "git", "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch); err == nil {
-		return "origin/" + branch + ".." + branch
+		return []string{"origin/" + branch + ".." + branch}
 	}
-	return branch
+	return []string{branch, "--not", "--remotes"}
 }
 
 // Commit resolves ref to a commit id.

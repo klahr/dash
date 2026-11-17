@@ -180,11 +180,33 @@ func (s *Server) workflowHint(ctx context.Context, p model.Project, f release.Fo
 // releaseNotes lists the Dash tasks merged between the previous tag and sha
 // (title, and Claude's summary), oldest first.
 func (sv *service) releaseNotes(ctx context.Context, p model.Project, prev, sha string) string {
-	from := ""
+	var merged []model.Todo
+	for _, t := range sv.data.ListTodos(p.ID, model.StatusMerged) {
+		if t.Revert == nil {
+			merged = append(merged, t)
+		}
+	}
+	if len(merged) == 0 {
+		return ""
+	}
+	from, since := "", time.Time{}
 	if prev != "" {
 		from = "refs/tags/" + prev
+	} else {
+		// No previous tag: rather than read the whole history, stop at the
+		// oldest merged task, whose commit can't be older than the task (a
+		// day's slack for clocks that disagree).
+		since = merged[0].CreatedAt
+		for _, t := range merged {
+			if t.CreatedAt.Before(since) {
+				since = t.CreatedAt
+			}
+		}
+		if !since.IsZero() {
+			since = since.Add(-24 * time.Hour)
+		}
 	}
-	commits, err := sv.s.Git.CommitsBetween(ctx, p.ID, p.Path, from, sha)
+	commits, err := sv.s.Git.CommitsBetween(ctx, p.ID, p.Path, from, sha, since)
 	if err != nil {
 		return ""
 	}
@@ -200,10 +222,7 @@ func (sv *service) releaseNotes(ctx context.Context, p model.Project, prev, sha 
 		t  model.Todo
 	}
 	var es []entry
-	for _, t := range sv.data.ListTodos(p.ID, model.StatusMerged) {
-		if t.Revert != nil {
-			continue
-		}
+	for _, t := range merged {
 		if i, ok := named[t.ID]; ok {
 			es = append(es, entry{i, t})
 		} else if t.MergedCommit != "" && inRange[t.MergedCommit] {

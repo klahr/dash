@@ -113,13 +113,19 @@ type RangeCommit struct {
 }
 
 // CommitsBetween lists the commits reachable from to but not from from
-// (every commit up to to when from is ""), newest first.
-func (g *Git) CommitsBetween(ctx context.Context, projectID, repo, from, to string) ([]RangeCommit, error) {
+// (every commit up to to when from is ""), newest first. A non-zero since
+// leaves out commits committed before it, so git stops walking history
+// there instead of reading all of it.
+func (g *Git) CommitsBetween(ctx context.Context, projectID, repo, from, to string, since time.Time) ([]RangeCommit, error) {
 	rng := to
 	if from != "" {
 		rng = from + ".." + to
 	}
-	out, err := g.run(ctx, false, projectID, repo, "git", "log", "--format=%H%x1f%B%x1e", rng, "--")
+	args := []string{"log", "--format=%H%x1f%B%x1e"}
+	if !since.IsZero() {
+		args = append(args, "--since="+strconv.FormatInt(since.Unix(), 10))
+	}
+	out, err := g.run(ctx, false, projectID, repo, "git", append(args, rng, "--")...)
 	if err != nil {
 		return nil, err
 	}

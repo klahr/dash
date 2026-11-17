@@ -193,7 +193,7 @@ func (s *Server) branchPR(w http.ResponseWriter, r *http.Request) {
 // aren't on the default branch yet.
 func (s *Server) branchPRBody(ctx context.Context, sv *service, p model.Project) string {
 	var b strings.Builder
-	commits, _ := s.Git.CommitsBetween(ctx, p.ID, p.Path, "refs/heads/"+p.DefaultBranch, "refs/heads/"+p.Base())
+	commits, _ := s.Git.CommitsBetween(ctx, p.ID, p.Path, "refs/heads/"+p.DefaultBranch, "refs/heads/"+p.Base(), time.Time{})
 	for _, c := range commits {
 		for _, id := range c.Todos {
 			if t, err := sv.data.GetTodo(id); err == nil {
