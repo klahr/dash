@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -66,6 +67,15 @@ func setTodo(t *testing.T, s *Server, p model.Project, fn func(*model.Todo)) mod
 
 func at(d time.Duration) *time.Time { x := time.Now().Add(d); return &x }
 
+// middayTZ is a ?tz= value (as getTimezoneOffset() gives it) for a zone where
+// it is now about midday, so tasks a few hours old fall on the wall's "today"
+// whatever the time of day the test runs.
+func middayTZ() string {
+	u := time.Now().UTC()
+	east := 12*60 - (u.Hour()*60 + u.Minute()) // minutes east of UTC, within ±12h
+	return strconv.Itoa(-east)
+}
+
 func TestWallAggregates(t *testing.T) {
 	parallel(t)
 
@@ -112,9 +122,12 @@ func TestWallAggregates(t *testing.T) {
 		x.Title, x.Status, x.StartedAt = "their task", model.StatusInProgress, at(-time.Minute)
 	})
 
-	d, code := getWallJSON(t, h, "/api/wall")
+	d, code := getWallJSON(t, h, "/api/wall?tz="+middayTZ())
 	if code != http.StatusOK {
 		t.Fatalf("GET /api/wall: %d", code)
+	}
+	if d.Today.Hour != 12 {
+		t.Errorf("tz: the wall's hour is %d, not 12", d.Today.Hour)
 	}
 	st := d.Stages
 	if st.Queued != 3 || st.Blocked != 1 || st.WaitingRunner != 1 {
