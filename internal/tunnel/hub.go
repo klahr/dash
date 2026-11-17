@@ -678,12 +678,11 @@ func (h *Hub) registeredLocked(id string) bool {
 	return slices.ContainsFunc(h.runners, func(x *record) bool { return x.ID == id })
 }
 
-// touch records that runner id (dis)connected, running version, on platform
-// (os and arch) and with shared notes key notesKey when those aren't "" (it
-// connected: its update is settled, see connectedLocked).
-func (h *Hub) touch(id, version string, plat platform, notesKey string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+// touchLocked records that runner id (dis)connected, running version, on
+// platform (os and arch) and with shared notes key notesKey when those
+// aren't "" (it connected: its update is settled, see connectedLocked).
+// h.mu must be held.
+func (h *Hub) touchLocked(id, version string, plat platform, notesKey string) {
 	for _, r := range h.runners {
 		if r.ID == id {
 			r.LastSeen = h.clock()
@@ -810,6 +809,12 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess := NewSession(ws, true) // the hub opens the streams
+	version := cleanVersion(r.Header.Get(VersionHeader))
+	var notesKey string
+	if k, err := notes.ParsePublicKey(r.Header.Get(NotesKeyHeader)); err == nil {
+		notesKey = k.String()
+	}
+	plat := parsePlatform(r.Header.Get(PlatformHeader))
 	h.mu.Lock()
 	if !h.registeredLocked(rec.ID) {
 		h.mu.Unlock() // revoked while upgrading
@@ -821,18 +826,14 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	old := h.live[rec.ID]
 	h.live[rec.ID] = sess
+	// In the same lock: nobody sees it online with the last link's version
+	// or an unsettled update.
+	h.touchLocked(rec.ID, version, plat, notesKey)
 	h.mu.Unlock()
 	if old != nil {
 		old.Close() // the runner reconnected before we noticed the old link die
 	}
 	go h.watch(sess, hash)
-	version := cleanVersion(r.Header.Get(VersionHeader))
-	var notesKey string
-	if k, err := notes.ParsePublicKey(r.Header.Get(NotesKeyHeader)); err == nil {
-		notesKey = k.String()
-	}
-	plat := parsePlatform(r.Header.Get(PlatformHeader))
-	h.touch(rec.ID, version, plat, notesKey)
 	slog.Info("runner connected", "name", rec.Name, "version", version, "os", plat.os, "arch", plat.arch)
 	h.changed()
 	if h.OnState != nil {
@@ -845,11 +846,11 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 	current := h.live[rec.ID] == sess
 	if current {
 		delete(h.live, rec.ID)
+		h.touchLocked(rec.ID, "", platform{}, "")
 	}
 	h.mu.Unlock()
 	h.idle().CloseIdleConnections() // pooled streams of the dead tunnel
 	if current {
-		h.touch(rec.ID, "", platform{}, "")
 		slog.Info("runner disconnected", "name", rec.Name)
 		h.changed()
 		if h.OnState != nil {

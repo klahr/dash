@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -28,13 +29,23 @@ func (u *updatingRunner) handler() http.Handler {
 		var req struct{ Version string }
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		u.mu.Lock()
-		u.asked = append(u.asked, req.Version)
 		st := u.status
 		u.mu.Unlock()
 		if st == 0 {
 			st = http.StatusOK
 		}
-		httpjson.Error(w, st, "checksum mismatch for dash_1.3.0_linux_amd64.tar.gz")
+		// The whole answer goes out before the call is counted, so a test
+		// that stops the runner once it was told doesn't cut the answer
+		// off (the hub would take that for a dropped tunnel, and retry).
+		body, _ := json.Marshal(map[string]string{"error": "checksum mismatch for dash_1.3.0_linux_amd64.tar.gz"})
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		w.WriteHeader(st)
+		_, _ = w.Write(body)
+		http.NewResponseController(w).Flush()
+		u.mu.Lock()
+		u.asked = append(u.asked, req.Version)
+		u.mu.Unlock()
 	})
 	return mux
 }
