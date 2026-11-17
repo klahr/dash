@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/usage"
@@ -60,6 +62,34 @@ type Fleet struct {
 	API API
 	// Computers, if set, lists the computers instead of asking API.
 	Computers func() ([]Machine, error)
+
+	// cache remembers the computers and where projects and tasks live, so
+	// one tool call doesn't ask every computer again. FleetTools sets it; a
+	// Fleet without one asks every time.
+	cache *fleetCache
+}
+
+// fleetTTL is how long the cached computer and project lists are used.
+const fleetTTL = 15 * time.Second
+
+// fleetCache is what a Fleet remembers between calls. Where a task or
+// project lives doesn't change, so that is kept by computer name; the
+// computers themselves (who is reachable) are asked again after fleetTTL.
+type fleetCache struct {
+	mu         sync.Mutex
+	now        func() time.Time // for tests; time.Now if nil
+	machines   []Machine
+	machinesAt time.Time
+	projects   []model.Project // tagged with their computer (Machine)
+	projectsAt time.Time
+	todoOn     map[string]string // task id → computer name
+}
+
+func (c *fleetCache) time() time.Time {
+	if c.now != nil {
+		return c.now()
+	}
+	return time.Now()
 }
 
 // FleetInstructions describe the FleetTools to the model.
@@ -74,9 +104,35 @@ type machine struct {
 	Error  string `json:"error"`
 }
 
+// machines lists the computers, from the cache while it is fresh.
 func (f Fleet) machines() ([]Machine, error) {
+	if c := f.cache; c != nil {
+		c.mu.Lock()
+		ms, at := c.machines, c.machinesAt
+		c.mu.Unlock()
+		if ms != nil && c.time().Sub(at) < fleetTTL {
+			return ms, nil
+		}
+	}
+	ms, err := f.listMachines()
+	if err != nil {
+		return nil, err
+	}
+	if c := f.cache; c != nil {
+		c.mu.Lock()
+		c.machines, c.machinesAt = ms, c.time()
+		c.mu.Unlock()
+	}
+	return ms, nil
+}
+
+func (f Fleet) listMachines() ([]Machine, error) {
 	if f.Computers != nil {
-		return f.Computers()
+		ms, err := f.Computers()
+		if ms == nil && err == nil {
+			ms = []Machine{}
+		}
+		return ms, err
 	}
 	var ms []machine
 	if err := f.API.Call("GET", "/api/machines", nil, &ms); err != nil {
@@ -92,36 +148,68 @@ func (f Fleet) machines() ([]Machine, error) {
 	return out, nil
 }
 
+// board is the reachable computer named name, or nil.
+func board(ms []Machine, name string) Computer {
+	for _, m := range ms {
+		if m.Name == name && m.OK {
+			return m.Board
+		}
+	}
+	return nil
+}
+
 // projects lists every reachable computer's projects, tagged with the
-// computer's name, and the computer each lives on.
+// computer's name, and the computer each lives on. It asks the computers
+// in parallel.
 func (f Fleet) projects() (ps []model.Project, on map[string]Computer, unreachable []string, err error) {
 	ms, err := f.machines()
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	type answer struct {
+		ps  []model.Project
+		err error
+	}
+	answers := make([]answer, len(ms))
+	var wg sync.WaitGroup
+	for i, m := range ms {
+		if !m.OK || m.Board == nil {
+			continue
+		}
+		wg.Add(1)
+		go func(i int, b Computer) {
+			defer wg.Done()
+			answers[i].ps, answers[i].err = b.Projects()
+		}(i, m.Board)
+	}
+	wg.Wait()
 	on = map[string]Computer{}
-	for _, m := range ms {
-		var mps []model.Project
-		if m.OK && m.Board != nil {
-			mps, err = m.Board.Projects()
-			if errors.Is(err, ErrUnauthorized) {
-				return nil, nil, nil, err
-			}
-			if err != nil {
-				m.OK, m.Error = false, err.Error()
-			}
-		} else {
+	ps = []model.Project{}
+	for i, m := range ms {
+		a := answers[i]
+		if errors.Is(a.err, ErrUnauthorized) {
+			return nil, nil, nil, a.err
+		}
+		if m.Board == nil {
 			m.OK = false
+		}
+		if a.err != nil {
+			m.OK, m.Error = false, a.err.Error()
 		}
 		if !m.OK {
 			unreachable = append(unreachable, m.Name+": "+m.Error)
 			continue
 		}
-		for _, p := range mps {
+		for _, p := range a.ps {
 			p.Machine = m.Name
 			on[p.ID] = m.Board
 			ps = append(ps, p)
 		}
+	}
+	if c := f.cache; c != nil {
+		c.mu.Lock()
+		c.projects, c.projectsAt = ps, c.time()
+		c.mu.Unlock()
 	}
 	return ps, on, unreachable, nil
 }
@@ -131,28 +219,58 @@ func (f Fleet) Projects() ([]model.Project, []string, error) {
 	return ps, unreachable, err
 }
 
-// project finds a project by id or name on any computer.
+// findProject is the project ref names (by id or name) in ps.
+func findProject(ps []model.Project, ref string) (model.Project, bool) {
+	for _, p := range ps {
+		if p.ID == ref || strings.EqualFold(p.Name, ref) {
+			return p, true
+		}
+	}
+	return model.Project{}, false
+}
+
+// project finds a project by id or name on any computer, freshly asked.
 func (f Fleet) project(ref string) (model.Project, Computer, error) {
 	ps, on, _, err := f.projects()
 	if err != nil {
 		return model.Project{}, nil, err
 	}
-	for _, p := range ps {
-		if p.ID == ref || strings.EqualFold(p.Name, ref) {
-			return p, on[p.ID], nil
-		}
+	if p, ok := findProject(ps, ref); ok {
+		return p, on[p.ID], nil
 	}
 	return model.Project{}, nil, fmt.Errorf("no project %q (see list_projects)", ref)
 }
 
+// projectOn is the project ref names and its computer, for a call to that
+// computer: from the cached project list while it is fresh, else asked.
+func (f Fleet) projectOn(ref string) (model.Project, Computer, error) {
+	if c := f.cache; c != nil {
+		c.mu.Lock()
+		ps, at := c.projects, c.projectsAt
+		c.mu.Unlock()
+		if ps != nil && c.time().Sub(at) < fleetTTL {
+			if p, ok := findProject(ps, ref); ok {
+				if ms, err := f.machines(); err == nil {
+					if b := board(ms, p.Machine); b != nil {
+						return p, b, nil
+					}
+				}
+			}
+		}
+	}
+	return f.project(ref)
+}
+
+// Project finds a project by id or name, from the cached list while it is
+// fresh: the board tools use it to find a project for a call by its id.
 func (f Fleet) Project(ref string) (model.Project, error) {
-	p, _, err := f.project(ref)
+	p, _, err := f.projectOn(ref)
 	return p, err
 }
 
 // UpdateProject changes a project's settings on its computer.
 func (f Fleet) UpdateProject(ref string, changes map[string]any) (model.Project, error) {
-	p, c, err := f.project(ref)
+	p, c, err := f.projectOn(ref)
 	if err != nil {
 		return model.Project{}, err
 	}
@@ -161,26 +279,55 @@ func (f Fleet) UpdateProject(ref string, changes map[string]any) (model.Project,
 		return model.Project{}, err
 	}
 	out.Machine = p.Machine
+	if f.cache != nil { // a renamed project is found by its new name
+		f.cache.mu.Lock()
+		f.cache.projects = nil
+		f.cache.mu.Unlock()
+	}
 	return out, nil
 }
 
 func (f Fleet) Todos(projectID string) ([]model.Todo, error) {
-	p, c, err := f.project(projectID)
+	p, c, err := f.projectOn(projectID)
 	if err != nil {
 		return nil, err
 	}
-	return c.Todos(p.ID)
+	ts, err := c.Todos(p.ID)
+	for _, t := range ts {
+		f.remember(t.ID, p.Machine)
+	}
+	return ts, err
 }
 
 func (f Fleet) CreateTodo(projectID string, t NewTodo) (model.Todo, error) {
-	p, c, err := f.project(projectID)
+	p, c, err := f.projectOn(projectID)
 	if err != nil {
 		return model.Todo{}, err
 	}
-	return c.CreateTodo(p.ID, t)
+	out, err := c.CreateTodo(p.ID, t)
+	if err == nil {
+		f.remember(out.ID, p.Machine)
+	}
+	return out, err
 }
 
-// todo finds a task on whichever computer has it, and that computer.
+// remember notes that task id lives on the computer named machine.
+func (f Fleet) remember(id, machine string) {
+	c := f.cache
+	if c == nil || id == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.todoOn == nil {
+		c.todoOn = map[string]string{}
+	}
+	c.todoOn[id] = machine
+}
+
+// todo finds a task on whichever computer has it, and that computer. It
+// asks the computer the task was last seen on, else every computer in
+// parallel.
 func (f Fleet) todo(id string) (model.Todo, Computer, error) {
 	if id == "" {
 		return model.Todo{}, nil, errors.New("todo is required")
@@ -189,19 +336,75 @@ func (f Fleet) todo(id string) (model.Todo, Computer, error) {
 	if err != nil {
 		return model.Todo{}, nil, err
 	}
+	if name, ok := f.seenOn(id); ok {
+		if b := board(ms, name); b != nil {
+			t, err := b.Todo(id)
+			if err == nil {
+				return t, b, nil
+			}
+			if errors.Is(err, ErrUnauthorized) {
+				return model.Todo{}, nil, err
+			}
+		}
+	}
+	type answer struct {
+		m   Machine
+		t   model.Todo
+		err error
+	}
+	answers := make(chan answer, len(ms)) // buffered: no goroutine waits once one is found
+	asked := 0
 	for _, m := range ms {
 		if !m.OK || m.Board == nil {
 			continue
 		}
-		t, err := m.Board.Todo(id)
-		if err == nil {
-			return t, m.Board, nil
+		asked++
+		go func(m Machine) {
+			t, err := m.Board.Todo(id)
+			answers <- answer{m, t, err}
+		}(m)
+	}
+	var unauthorized error
+	for range asked {
+		a := <-answers
+		if a.err == nil {
+			f.remember(id, a.m.Name)
+			return a.t, a.m.Board, nil
 		}
-		if errors.Is(err, ErrUnauthorized) {
-			return model.Todo{}, nil, err
+		if errors.Is(a.err, ErrUnauthorized) {
+			unauthorized = a.err
 		}
 	}
+	if unauthorized != nil {
+		return model.Todo{}, nil, unauthorized
+	}
 	return model.Todo{}, nil, fmt.Errorf("no task %q", id)
+}
+
+// seenOn is the computer task id was last seen on.
+func (f Fleet) seenOn(id string) (string, bool) {
+	c := f.cache
+	if c == nil {
+		return "", false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	name, ok := c.todoOn[id]
+	return name, ok
+}
+
+// todoOn is the computer task id lives on, for a call to it: the one it was
+// last seen on, without asking it, else found by todo.
+func (f Fleet) todoOn(id string) (Computer, error) {
+	if name, ok := f.seenOn(id); ok {
+		if ms, err := f.machines(); err == nil {
+			if b := board(ms, name); b != nil {
+				return b, nil
+			}
+		}
+	}
+	_, c, err := f.todo(id)
+	return c, err
 }
 
 func (f Fleet) Todo(id string) (model.Todo, error) {
@@ -212,7 +415,7 @@ func (f Fleet) Todo(id string) (model.Todo, error) {
 // Action moves a task (enqueue, cancel, approve, rework) and returns it
 // afterwards.
 func (f Fleet) Action(id, verb, feedback string) (model.Todo, error) {
-	_, c, err := f.todo(id)
+	c, err := f.todoOn(id)
 	if err != nil {
 		return model.Todo{}, err
 	}
@@ -235,7 +438,7 @@ type PaceWaiter interface {
 
 // PaceWait is why queued task t waits for the weekly pace on its computer, or "".
 func (f Fleet) PaceWait(t model.Todo) string {
-	_, c, err := f.todo(t.ID)
+	c, err := f.todoOn(t.ID)
 	if err != nil {
 		return ""
 	}
@@ -246,7 +449,7 @@ func (f Fleet) PaceWait(t model.Todo) string {
 }
 
 func (f Fleet) UpdateTodo(id string, u TodoUpdate) (model.Todo, error) {
-	_, c, err := f.todo(id)
+	c, err := f.todoOn(id)
 	if err != nil {
 		return model.Todo{}, err
 	}
@@ -254,7 +457,7 @@ func (f Fleet) UpdateTodo(id string, u TodoUpdate) (model.Todo, error) {
 }
 
 func (f Fleet) DeleteTodo(id string) error {
-	_, c, err := f.todo(id)
+	c, err := f.todoOn(id)
 	if err != nil {
 		return err
 	}
@@ -262,7 +465,7 @@ func (f Fleet) DeleteTodo(id string) error {
 }
 
 func (f Fleet) Issues(projectID string) ([]model.Issue, error) {
-	p, c, err := f.project(projectID)
+	p, c, err := f.projectOn(projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +473,7 @@ func (f Fleet) Issues(projectID string) ([]model.Issue, error) {
 }
 
 func (f Fleet) ReportIssue(projectID string, is model.Issue) (model.Issue, model.UpsertResult, error) {
-	p, c, err := f.project(projectID)
+	p, c, err := f.projectOn(projectID)
 	if err != nil {
 		return model.Issue{}, "", err
 	}
@@ -278,7 +481,7 @@ func (f Fleet) ReportIssue(projectID string, is model.Issue) (model.Issue, model
 }
 
 func (f Fleet) CreateRelease(projectID string, r NewRelease) (Release, error) {
-	p, c, err := f.project(projectID)
+	p, c, err := f.projectOn(projectID)
 	if err != nil {
 		return Release{}, err
 	}
@@ -286,7 +489,7 @@ func (f Fleet) CreateRelease(projectID string, r NewRelease) (Release, error) {
 }
 
 func (f Fleet) ReadChecklist(projectID string) (Checklist, error) {
-	p, c, err := f.project(projectID)
+	p, c, err := f.projectOn(projectID)
 	if err != nil {
 		return Checklist{}, err
 	}
@@ -294,7 +497,7 @@ func (f Fleet) ReadChecklist(projectID string) (Checklist, error) {
 }
 
 func (f Fleet) ChangeChecklist(projectID string, ch ChecklistChange) (ChecklistSaved, error) {
-	p, c, err := f.project(projectID)
+	p, c, err := f.projectOn(projectID)
 	if err != nil {
 		return ChecklistSaved{}, err
 	}
@@ -302,16 +505,20 @@ func (f Fleet) ChangeChecklist(projectID string, ch ChecklistChange) (ChecklistS
 }
 
 func (f Fleet) MoveChecklistItem(projectID string, m ChecklistMove) (ChecklistMoved, error) {
-	p, c, err := f.project(projectID)
+	p, c, err := f.projectOn(projectID)
 	if err != nil {
 		return ChecklistMoved{}, err
 	}
-	return c.MoveChecklistItem(p.ID, m)
+	out, err := c.MoveChecklistItem(p.ID, m)
+	if err == nil {
+		f.remember(out.Task.ID, p.Machine)
+	}
+	return out, err
 }
 
 // Text returns a task's diff or log, cut to max characters (from the end if tail).
 func (f Fleet) Text(id, kind string, max int, tail bool) (string, error) {
-	_, c, err := f.todo(id)
+	c, err := f.todoOn(id)
 	if err != nil {
 		return "", err
 	}
@@ -469,6 +676,9 @@ func (c RESTComputer) Text(id, kind string) (string, error) {
 // running or merging, replaces the board's draft/queued/failed-only one: here
 // the user is driving, not the board chat.
 func FleetTools(f Fleet) []Tool {
+	if f.cache == nil {
+		f.cache = &fleetCache{}
+	}
 	review := ReviewTools(f)
 	names := map[string]bool{}
 	for _, t := range review {
@@ -514,7 +724,10 @@ func ProjectTools(f Fleet) []Tool {
 	pProject := Param{"project", "string", "Project name or id (see list_projects).", true}
 	return []Tool{
 		{"get_project", "Show a project's settings.", []Param{pProject},
-			func(a Args) (any, error) { return f.Project(a.Str("project")) }},
+			func(a Args) (any, error) { // asked afresh: settings change elsewhere too
+				p, _, err := f.project(a.Str("project"))
+				return p, err
+			}},
 		{"update_project", "Change a project's settings; only the given ones change. Returns the project afterwards.",
 			append([]Param{pProject}, ProjectSettings...),
 			func(a Args) (any, error) {
