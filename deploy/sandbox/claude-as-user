@@ -14,10 +14,38 @@ set -eu
 user=${DASH_SANDBOX_USER:-dash-claude}
 wt=${DASH_WORKTREE:-$PWD}
 [ $# -gt 0 ] || { echo "claude-as-user: no command to run" >&2; exit 2; }
+die() { echo "claude-as-user: $*" >&2; exit 1; }
+me=$(id -u)
+# nogw takes your group's write access away from what of these is yours.
+nogw() { for f; do if [ -O "$f" ] && [ ! -L "$f" ]; then chmod g-w "$f"; fi; done; }
 
-# sudo clears the environment: hand over what Claude needs. umask 002
-# leaves what Claude writes writable by your group, so Dash can commit
-# and remove it.
+# Git runs as you in the project's .git: its config and hooks are programs
+# you run. The sandbox user must not be able to write any of it, nor the
+# folders that hold it (or it could swap in a .git of its own).
+common=$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir) ||
+	die "$wt is not a git worktree"
+repo=$(dirname "$common")
+[ "$(basename "$common")" = .git ] || repo=$common
+[ -z "$(find "$common" ! -user "$me" -print -quit)" ] ||
+	die "$common has files that aren't yours; run: sudo chown -R $(id -un) '$common'"
+for v in "$(git config --file "$common/config" --get core.sharedRepository || true)" \
+	"$(git config --global --get core.sharedRepository || true)"; do
+	case $v in
+	'' | false | umask | 0 | no | off) ;;
+	*) die "core.sharedRepository is $v: run git config --global --unset core.sharedRepository (and the same in $repo)" ;;
+	esac
+done
+find "$common" ! -type l -perm -g+w -exec chmod g-w {} +
+nogw "$repo" "$(dirname "$repo")" "$wt/.git"
+
+# The worktree's files are the sandbox user's to write (but not its .git
+# file): your group may write them, folders keep the group (setgid) and
+# Claude writes with umask 002, so Dash can still commit and remove what
+# Claude made.
+find "$wt" -path "$wt/.git" -prune -o -user "$me" -type d -exec chmod g+rwxs {} + \
+	-o -user "$me" -type f -exec chmod g+rw {} +
+
+# sudo clears the environment: hand over what Claude needs.
 exec sudo -n -H -u "$user" -- env \
 	${MCP_TOOL_TIMEOUT:+MCP_TOOL_TIMEOUT=$MCP_TOOL_TIMEOUT} DASH_WORKTREE="$wt" \
 	/bin/sh -lc 'umask 002 && cd "$DASH_WORKTREE" && exec "$@"' claude-as-user "$@"

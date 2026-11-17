@@ -551,6 +551,14 @@ func (a *app) buildServices() {
 	o, st, events, ctx := a.o, a.st, a.events, a.ctx
 	a.git = gitops.New(events)
 	a.git.SignCommits = o.signCommits
+	// Claude writes in these worktrees, perhaps as another user: Dash's git
+	// there takes the git folder from the project's repository, not from
+	// the worktree's .git file.
+	a.git.WorktreeRoots = []string{filepath.Join(o.dataDir, "worktrees"), filepath.Join(o.dataDir, "scans", "worktrees")}
+	a.git.RepoOf = func(id string) (string, bool) {
+		p, err := st.GetProject(id)
+		return p.Path, err == nil
+	}
 	a.procEvents = &teePublisher{Publisher: events}
 	a.procs = runner.NewManager(a.procEvents)
 	if err := a.procs.Keep(filepath.Join(o.dataDir, "processes.json")); err != nil {
@@ -616,7 +624,7 @@ func (a *app) buildServices() {
 		Exec:       agent.ClaudeCode{Bin: o.claudeBin, Sandbox: o.sandbox(), OnRateLimit: a.tracker.Observe, CLI: a.cli},
 		Root:       filepath.Join(o.dataDir, "scans"),
 		RunTimeout: o.scanTimeout,
-		GitTools:   &scan.GitMCP{},
+		GitTools:   &scan.GitMCP{Pin: a.git.PinnedEnv},
 	}
 	// How often a scan waiting for a runner asks again (default 5s): only
 	// dash's own end-to-end tests set it, so they don't wait seconds for it.

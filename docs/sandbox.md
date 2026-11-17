@@ -86,8 +86,10 @@ Environment="DASH_SANDBOX_BIND=%h/.cache %h/go"
 ## Another user
 
 Claude runs as a user of its own (`dash-claude` here; set `DASH_SANDBOX_USER` for another
-name), with its own Claude Code login. It shares a group with you, so you can both write the
-worktrees. Make the user and let yourself run commands as it without a password:
+name), with its own Claude Code login. It shares a group with you, so it can write the files in
+a task's worktree, but not the projects' `.git` folders: git runs as you there, and a config or
+hook that Claude could write would run as you too. Make the user and let yourself run commands
+as it without a password:
 
 ```sh
 sudo useradd --create-home --shell /bin/bash dash-claude
@@ -103,32 +105,41 @@ sudo -iu dash-claude
 curl -fsSL https://claude.ai/install.sh | bash
 claude        # log in, then /exit
 git config --global safe.directory '*'
-git config --global core.sharedRepository group
 exit
 ```
 
-Give your group the projects and Dash's worktrees, and keep what git and the runner make there
-group-writable:
+Let your group reach the projects, Dash's worktrees and the task's attachments, and read them,
+but not write them:
 
 ```sh
-git config --global core.sharedRepository group
 chmod g+x ~ ~/.local ~/.local/share ~/.local/share/dash-runner
-chmod -R g+rwX ~/dash-projects ~/.local/share/dash-runner/worktrees
-chmod -R g+rX ~/.local/share/dash-runner/uploads
-find ~/dash-projects ~/.local/share/dash-runner/worktrees -type d -exec chmod g+s {} +
+chmod -R g+rX,g-w ~/dash-projects ~/.local/share/dash-runner/worktrees ~/.local/share/dash-runner/uploads
 ```
 
-Then turn it on as above, with `UMask=0002` in the drop-in as well:
+Don't set `core.sharedRepository`, `UMask=0002` or `safe.directory '*'` for yourself: they
+would make the `.git` folders writable by the group again, or let your git trust a `.git` that
+Claude made. If an earlier setup set them, remove them:
+
+```sh
+git config --global --unset core.sharedRepository
+systemctl --user edit dash-runner   # delete a UMask=0002 line
+```
+
+Then turn it on as above:
 
 ```ini
 [Service]
-UMask=0002
 Environment=DASH_CLAUDE_SANDBOX=%h/.local/bin/claude-as-user
 ```
 
+Before each run the script gives your group write access to the worktree's files (not its
+`.git` file), and takes it away from the project's `.git` folder and the folders that hold it.
+It refuses to run if `core.sharedRepository` is set or the `.git` folder has files that aren't
+yours.
+
 Claude can then read only what your group, or everyone, can read. SSH keys, the `gh` login and
 Claude's own login are yours alone (mode 600); check other secrets in your home folder the same
-way. Unlike the container, this user can write anywhere in the projects folder.
+way. Unlike the container, this user can read every project in the projects folder.
 
 ## Limits
 
@@ -139,7 +150,8 @@ way. Unlike the container, this user can write anywhere in the projects folder.
 - Commands in a project's **Project settings** (setup, tests, previews) run as you, outside the
   sandbox.
 - Dash's own git commands (commit, rebase, merge) run as you, without git hooks or an fsmonitor.
-  Dash refuses to run git in a worktree whose `.git` no longer points to the project's `.git`,
-  and fails a sandboxed run that changed it.
+  In a worktree they use the worktree's folder in the project's `.git`, never the folder the
+  worktree's `.git` file names. Dash refuses to run git in a worktree whose `.git` no longer
+  points to the project's `.git`, and fails a sandboxed run that changed it.
 - The sandbox's Claude config folder is kept from run to run, so one run can change it for the
   next (MCP servers in its `.claude.json`). Your own Claude config is never changed.

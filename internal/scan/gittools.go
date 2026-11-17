@@ -42,6 +42,10 @@ func gitAllowed() []string {
 // GitMCP serves the git tools to running scans (POST), each authenticated
 // by a token that maps to its throwaway checkout.
 type GitMCP struct {
+	// Pin, if set, is the GIT_DIR and GIT_WORK_TREE for git in a checkout
+	// (gitops' PinnedEnv): the scan's Claude can rewrite the checkout's .git
+	// file while these tools run git as the runner's user.
+	Pin    func(dir string) ([]string, error)
 	tokens runtoken.Map[string] // token → checkout
 }
 
@@ -66,10 +70,18 @@ func (g *GitMCP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown or expired token", http.StatusUnauthorized)
 		return
 	}
+	var env []string
+	if g.Pin != nil {
+		var err error
+		if env, err = g.Pin(dir); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 	srv := &mcptools.Server{
 		Name:         GitServerName,
 		Instructions: "Read-only git for the scan's checkout: diffs, history, commits and blame.",
-		Tools:        GitTools(dir),
+		Tools:        gitTools(dir, env),
 	}
 	srv.ServeHTTP(w, r)
 }
@@ -86,7 +98,10 @@ func GitServerConfig(url, token string) map[string]any {
 
 // GitTools are git_diff, git_log, git_show and git_blame on the repository
 // checked out in dir.
-func GitTools(dir string) []mcptools.Tool {
+func GitTools(dir string) []mcptools.Tool { return gitTools(dir, nil) }
+
+// gitTools is GitTools with env added to git's environment.
+func gitTools(dir string, env []string) []mcptools.Tool {
 	pathsParam := mcptools.Param{Name: "paths", Type: "array", Desc: "Limit to these files or directories (relative to the repository root)."}
 	return []mcptools.Tool{
 		{
@@ -114,7 +129,7 @@ func GitTools(dir string) []mcptools.Tool {
 				if a.Flag("stat") {
 					args = append(args, "--stat")
 				}
-				return runGit(dir, args, revs, paths)
+				return runGit(dir, env, args, revs, paths)
 			},
 		},
 		{
@@ -148,7 +163,7 @@ func GitTools(dir string) []mcptools.Tool {
 				if a.Flag("stat") {
 					args = append(args, "--stat")
 				}
-				return runGit(dir, args, revs, paths)
+				return runGit(dir, env, args, revs, paths)
 			},
 		},
 		{
@@ -175,7 +190,7 @@ func GitTools(dir string) []mcptools.Tool {
 				if a.Flag("stat") {
 					args = append(args, "--stat")
 				}
-				return runGit(dir, args, revs, paths)
+				return runGit(dir, env, args, revs, paths)
 			},
 		},
 		{
@@ -214,7 +229,7 @@ func GitTools(dir string) []mcptools.Tool {
 				}
 				// blame takes no "--" after --end-of-options: rev, then the file.
 				args = append(args, "--end-of-options", revs[0], paths[0])
-				return gitOutput(dir, args)
+				return gitOutput(dir, env, args)
 			},
 		},
 	}
@@ -259,18 +274,18 @@ func pathspecs(paths []string) ([]string, error) {
 
 // runGit runs git args, then the revisions after --end-of-options (so
 // none is read as an option), then the paths after --.
-func runGit(dir string, args, revs, paths []string) (string, error) {
+func runGit(dir string, env, args, revs, paths []string) (string, error) {
 	args = append(args, "--end-of-options")
 	args = append(args, revs...)
 	args = append(args, "--")
 	args = append(args, paths...)
-	return gitOutput(dir, args)
+	return gitOutput(dir, env, args)
 }
 
 // maxGitOutput bounds what one call returns.
 const maxGitOutput = 256 << 10
 
-func gitOutput(dir string, args []string) (string, error) {
+func gitOutput(dir string, env, args []string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	if err := gitops.CheckGitDir(dir); err != nil {
@@ -282,7 +297,7 @@ func gitOutput(dir string, args []string) (string, error) {
 		return "", err
 	}
 	cmd.Dir = dir
-	cmd.Env = append(gitEnv(), "GIT_TERMINAL_PROMPT=0", "GIT_PAGER=cat", "PAGER=cat", "GIT_OPTIONAL_LOCKS=0")
+	cmd.Env = append(append(gitEnv(), "GIT_TERMINAL_PROMPT=0", "GIT_PAGER=cat", "PAGER=cat", "GIT_OPTIONAL_LOCKS=0"), env...)
 	cmd.WaitDelay = 5 * time.Second
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &limited{b: &out, n: maxGitOutput + 1}, &limited{b: &errb, n: 8 << 10}

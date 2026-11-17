@@ -30,6 +30,12 @@ type Git struct {
 	// prompt, so signing would hang until it times out.
 	SignCommits bool
 	GhBin       string // GitHub CLI; default "gh"
+	// WorktreeRoots hold Dash's worktrees, as <root>/<project>/<name>, and
+	// RepoOf finds a project's repository: git and gh in such a worktree
+	// run with its git folder pinned (see PinnedEnv), not the one its .git
+	// file names, which Claude could have rewritten.
+	WorktreeRoots []string
+	RepoOf        func(projectID string) (repo string, ok bool)
 }
 
 func New(pub Publisher) *Git { return &Git{pub: pub} }
@@ -105,6 +111,13 @@ func (g *Git) command(ctx context.Context, dir string, env []string, bin string,
 	cmd.Env = append(localrun.Environ("GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1"), env...)
 	// gh runs git too (pr create, checkout): both get safeConfig.
 	cmd.Env = gitConfigEnv(cmd.Env, safeConfig...)
+	if dir != "" {
+		pin, err := g.PinnedEnv(dir)
+		if err != nil {
+			return nil, err
+		}
+		cmd.Env = append(cmd.Env, pin...) // last, so they win
+	}
 	if tool == localrun.Git {
 		if gh, err := exec.LookPath(g.ghBin()); err == nil {
 			if abs, err := filepath.Abs(gh); err == nil {
