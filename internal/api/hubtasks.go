@@ -201,6 +201,13 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 			x.MaxAutoFixes = max(0, *req.MaxAutoFixes)
 		}
 	}
+	// The link finishes even when the hub's request goes away (the browser
+	// that asked reloads, say): a clone killed half way leaves a folder with
+	// origin set but no valid HEAD, which hubPlace would then adopt on every
+	// later link, and fail on. Every step runs under ctx, waiting for another
+	// link of the same project included, never under r.Context().
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), hubLinkTimeout)
+	defer cancel()
 	folder := hubOrgFolder(req)
 	if p, ok := sv.hubProject(hpid); ok {
 		want := p
@@ -225,8 +232,8 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		}
 		// A clone from before clones went in the org's folder moves there
 		// now, unless it is busy; the hub gets its new path either way.
-		p = s.moveHubClone(r.Context(), sv, p)
-		if err := s.followWorkBranch(r.Context(), sv, p, req.WorkBranch); err != nil {
+		p = s.moveHubClone(ctx, sv, p)
+		if err := s.followWorkBranch(ctx, sv, p, req.WorkBranch); err != nil {
 			writeErr(w, err)
 			return
 		}
@@ -248,12 +255,6 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: this runner has no projects root (-projects)", errBadRequest))
 		return
 	}
-	// The link finishes even when the hub's request goes away (the browser
-	// that asked reloads, say): a clone killed half way leaves a folder with
-	// origin set but no valid HEAD, which hubPlace would then adopt on every
-	// later link, and fail on.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), hubLinkTimeout)
-	defer cancel()
 	// The folder is picked and reserved under hubLinks; the clone and the
 	// rest run without it, so one large clone doesn't hold up other links.
 	var place hubPlacement
@@ -269,8 +270,8 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 			select {
 			case <-done:
 				continue
-			case <-r.Context().Done():
-				writeErr(w, r.Context().Err())
+			case <-ctx.Done():
+				writeErr(w, ctx.Err())
 				return
 			}
 		}
