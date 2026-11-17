@@ -2342,7 +2342,9 @@ a.revert-tag { text-decoration: underline; }
 .ci-pill.ci-running::before { animation: pulse-dot 1.4s ease-in-out infinite; }
 @keyframes pulse-dot { 50% { opacity: .35; } }
 /* ---- Claude's status (status.claude.com) ---- */
-.claude-pill { --c: var(--running); order: 5; margin-top: 8px; }
+.claude-pill { --c: var(--running); order: 5; margin-top: 8px; max-width: 100%; min-width: 0; overflow: hidden; }
+.claude-pill::before { flex: none; }
+.claude-pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .claude-pill.claude-bad { --c: var(--failed); border-color: color-mix(in srgb, var(--failed) 50%, var(--line)); color: var(--failed); }
 .claude-pill::before { animation: pulse-dot 1.4s ease-in-out infinite; }
 .claude-summary { --c: var(--muted); display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; margin: 0; padding: 10px 12px; border-left: 3px solid var(--c); border-radius: 0 var(--r-s) var(--r-s) 0; background: color-mix(in srgb, var(--c) 10%, transparent); }

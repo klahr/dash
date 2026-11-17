@@ -63,7 +63,11 @@ export function renderClaudeStatus() {
     // Red only when something the sheet shows red counts; else yellow.
     const tone = claudePillTone(active, comps);
     pill.className = `usage-pill claude-pill claude-${tone}`;
-    pill.textContent = claudePillText(active, comps);
+    // In a span so a long text ends in "…" inside the pill, beside its dot.
+    const text = document.createElement("span");
+    text.className = "claude-pill-text";
+    text.textContent = claudePillText(active, comps);
+    pill.replaceChildren(text);
     pill.title = `${[...active.map((i) => i.name), ...comps.map((c) => c.name)].join(", ")} (status.claude.com)`;
   }
   if ($("#claude-status-sheet").open) renderSheet();
