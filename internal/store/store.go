@@ -531,6 +531,22 @@ func (s *Store) ListTodos(projectID string, statuses ...model.TodoStatus) []mode
 	return s.listTodos(func(p string) bool { return projectID == "" || p == projectID }, statuses...)
 }
 
+// RunnerLoad counts the todos in one of statuses by the runner they are on
+// (runner id → count; todos on no runner are left out). It walks the todos
+// once without copying or sorting them, so the dispatcher can weigh runners
+// cheaply however many todos the store holds.
+func (s *Store) RunnerLoad(statuses ...model.TodoStatus) map[string]int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[string]int{}
+	for _, t := range s.data.Todos {
+		if t.Runner != "" && slices.Contains(statuses, t.Status) {
+			out[t.Runner]++
+		}
+	}
+	return out
+}
+
 // listTodos is ListTodos for the todos whose project keep accepts: it
 // filters before copying and sorting, so a narrow list stays cheap however
 // many todos the store holds.

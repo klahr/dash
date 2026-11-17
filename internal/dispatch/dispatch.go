@@ -174,6 +174,7 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 		}
 		return r.Limit()
 	}
+	load := d.loads() // runner id → tasks in progress, counted once for this pick
 	ids := p.Runners
 	if t.RunOn != "" {
 		// The task was set to run on one runner: only that one may take it.
@@ -194,7 +195,7 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 				limits[r.ID] = n
 			}
 		}
-		switch busy := d.Busy(r.ID); {
+		switch busy := load[r.ID]; {
 		case !r.Online:
 			why = append(why, r.Name+" is offline")
 		case r.Update != nil:
@@ -244,7 +245,7 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 		}
 	}
 	best := slices.MinFunc(cands, func(a, b tunnel.Runner) int {
-		return d.Busy(a.ID)*limit(b) - d.Busy(b.ID)*limit(a) // the least loaded, relative to its limit
+		return load[a.ID]*limit(b) - load[b.ID]*limit(a) // the least loaded, relative to its limit
 	})
 	return &best, "", ""
 }
@@ -315,25 +316,19 @@ func (d *Dispatcher) Reply(id string) any {
 
 // Busy is how many tasks runner id is working on for the hub.
 func (d *Dispatcher) Busy(id string) int {
-	n := 0
-	for _, t := range d.Store.ListTodos("", model.StatusInProgress) {
-		if t.Runner == id {
-			n++
-		}
-	}
-	return n
+	return d.loads()[id]
+}
+
+// loads is Busy for every runner at once (runner id → tasks in progress):
+// one walk of the store, for code that weighs several runners.
+func (d *Dispatcher) loads() map[string]int {
+	return d.Store.RunnerLoad(model.StatusInProgress)
 }
 
 // Working is how many of the hub's tasks runner id is running or merging:
 // it updates itself only at 0 (tunnel.Hub.RunUpdates).
 func (d *Dispatcher) Working(id string) int {
-	n := 0
-	for _, t := range d.Store.ListTodos("", model.StatusInProgress, model.StatusMerging) {
-		if t.Runner == id {
-			n++
-		}
-	}
-	return n
+	return d.Store.RunnerLoad(model.StatusInProgress, model.StatusMerging)[id]
 }
 
 var errSkip = errors.New("nothing to change")

@@ -118,9 +118,10 @@ func (d *Dispatcher) scanRunner(p model.Project) (r *tunnel.Runner, why string, 
 	if len(cands) == 0 {
 		return nil, waitReason(reasons), linked
 	}
+	load := d.loads()
 	best := cands[0]
 	for _, c := range cands[1:] {
-		if d.Busy(c.ID) < d.Busy(best.ID) {
+		if load[c.ID] < load[best.ID] {
 			best = c
 		}
 	}
