@@ -256,7 +256,7 @@ func (g *Git) CommitFileDiff(ctx context.Context, projectID, repo, sha, path str
 	}
 	// Literal pathspecs: a "*" or ":" in a file's name is just a character.
 	args := append([]string{"--literal-pathspecs", "diff-tree", "-p", "-M", "--no-commit-id", "--no-color", "--no-ext-diff", "--no-textconv"}, diffBase(full, parents)...)
-	return g.run(ctx, false, projectID, repo, "git", append(append(args, "--"), paths...)...)
+	return g.runPatch(ctx, false, projectID, repo, append(append(args, "--"), paths...)...)
 }
 
 // ErrNoFileChange is a path the commit didn't change.

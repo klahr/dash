@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -66,8 +67,56 @@ func (g *Git) runEnv(ctx context.Context, publish bool, env []string, projectID,
 	return g.runIn(ctx, publish, env, nil, projectID, dir, bin, args...)
 }
 
-// runIn is runEnv with stdin (nil for none) fed to the command.
+// MaxOutput is the most output (stdout and stderr together) Dash keeps from
+// one git or gh command; a command that prints more fails with
+// ErrOutputTooLarge rather than filling memory.
+const MaxOutput = 64 << 20
+
+// MaxPatch is the most of a patch (Diff, Show, CommitFileDiff) Dash keeps:
+// a longer one is cut there and ends with a line saying so. A task that
+// touches lockfiles or generated code can make a patch of hundreds of MB,
+// which no browser shows and every view would hold in memory.
+const MaxPatch = 4 << 20
+
+// ErrOutputTooLarge is a command that printed more than MaxOutput.
+var ErrOutputTooLarge = errors.New("command output too large")
+
+// errOutputLimit stops copying a command's output once its limit is reached;
+// the pipe then closes and the command ends.
+var errOutputLimit = errors.New("output limit reached")
+
+// limitedBuffer keeps the first max bytes written to it.
+type limitedBuffer struct {
+	buf  bytes.Buffer
+	max  int
+	full bool // more than max was written
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if room := b.max - b.buf.Len(); len(p) > room {
+		b.buf.Write(p[:max(room, 0)])
+		b.full = true
+		return max(room, 0), errOutputLimit
+	}
+	return b.buf.Write(p)
+}
+
+// runIn is runEnv with stdin (nil for none) fed to the command. Its output is
+// limited to MaxOutput.
 func (g *Git) runIn(ctx context.Context, publish bool, env []string, stdin []byte, projectID, dir, bin string, args ...string) (string, error) {
+	return g.runLimited(ctx, publish, env, stdin, MaxOutput, false, projectID, dir, bin, args...)
+}
+
+// runPatch runs git for a patch: its output is cut at MaxPatch, with a line
+// saying so at the end, instead of failing.
+func (g *Git) runPatch(ctx context.Context, publish bool, projectID, dir string, args ...string) (string, error) {
+	return g.runLimited(ctx, publish, nil, nil, MaxPatch, true, projectID, dir, "git", args...)
+}
+
+// runLimited runs a command keeping at most limit bytes of its output. Past
+// that, the command is stopped and, with cut, the output so far is returned
+// with a closing note; without it, the run fails with ErrOutputTooLarge.
+func (g *Git) runLimited(ctx context.Context, publish bool, env []string, stdin []byte, limit int, cut bool, projectID, dir, bin string, args ...string) (string, error) {
 	start := time.Now()
 	args = stripNUL(args)
 	cmd, err := g.command(ctx, dir, env, bin, args...)
@@ -77,19 +126,33 @@ func (g *Git) runIn(ctx context.Context, publish bool, env []string, stdin []byt
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
-	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &out
+	out := &limitedBuffer{max: limit}
+	cmd.Stdout, cmd.Stderr = out, out
 	err = cmd.Run()
+	if out.full {
+		// The command was stopped because its output was cut, not because
+		// of what it did.
+		err = nil
+		if !cut {
+			err = fmt.Errorf("%s %s: %w (over %d MiB)", bin, strings.Join(args, " "), ErrOutputTooLarge, limit>>20)
+		}
+	}
 	if g.pub != nil && publish {
 		g.pub.Publish(model.Event{Type: model.EvGitOp, ProjectID: projectID, Time: time.Now(), Data: map[string]any{
 			"cmd": bin + " " + strings.Join(args, " "), "dir": dir, "ok": err == nil,
 			"ms": time.Since(start).Milliseconds(),
 		}})
 	}
-	if err != nil {
-		return out.String(), &CmdError{Args: append([]string{bin}, args...), Output: out.String(), Err: err}
+	switch {
+	case out.full && !cut:
+		return "", err // not the output: it's cut, and an error message would carry all of it
+	case out.full:
+		return strings.TrimRight(out.buf.String(), "\n") + fmt.Sprintf("\n\n[… cut here: the rest is over %d MiB and isn't shown]", limit>>20), nil
+	case err != nil:
+		s := out.buf.String()
+		return s, &CmdError{Args: append([]string{bin}, args...), Output: s, Err: err}
 	}
-	return strings.TrimSpace(out.String()), nil
+	return strings.TrimSpace(out.buf.String()), nil
 }
 
 // command prepares bin (git or gh) to run in dir with env added: no prompts,
@@ -358,14 +421,15 @@ func (g *Git) CommitAll(ctx context.Context, projectID, dir, msg string) (bool, 
 	return err == nil, err
 }
 
-// Diff returns the patch a branch introduces relative to its merge base with base.
+// Diff returns the patch a branch introduces relative to its merge base with
+// base, cut at MaxPatch (the --stat summary at its top still lists every file).
 func (g *Git) Diff(ctx context.Context, projectID, repo, base, branch string) (string, error) {
-	return g.git(ctx, projectID, repo, "diff", "--stat", "--patch", base+"..."+branch)
+	return g.runPatch(ctx, true, projectID, repo, "diff", "--stat", "--patch", base+"..."+branch)
 }
 
-// Show returns the patch a single commit introduced.
+// Show returns the patch a single commit introduced, cut at MaxPatch.
 func (g *Git) Show(ctx context.Context, projectID, repo, sha string) (string, error) {
-	return g.git(ctx, projectID, repo, "show", "--stat", "--patch", "--format=", sha)
+	return g.runPatch(ctx, true, projectID, repo, "show", "--stat", "--patch", "--format=", sha)
 }
 
 // ErrConflict is returned when merging hits conflicts.
