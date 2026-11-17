@@ -129,6 +129,19 @@ func (r Runner) Limit() int {
 	return 1
 }
 
+// SlotsNow is how many tasks the runner may have at once now: its Limit,
+// or more while the hub's pacing boosts it to catch up with the weekly
+// pace, as its last report says.
+func (r Runner) SlotsNow() int {
+	n := r.Limit()
+	if r.Reported != nil && r.Reported.Usage != nil {
+		if p := r.Reported.Usage.Pace; p.State == usage.PaceCatching && p.Slots > n {
+			n = p.Slots
+		}
+	}
+	return n
+}
+
 // Reported is a runner's report on itself.
 type Reported struct {
 	Parallel int             `json:"parallel"`

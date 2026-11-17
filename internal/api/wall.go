@@ -58,8 +58,9 @@ type wallData struct {
 type wallQueue struct {
 	Paused bool   `json:"paused"`
 	Reason string `json:"reason,omitempty"`
-	Busy   int    `json:"busy"`  // tasks running
-	Slots  int    `json:"slots"` // tasks that can run at once, on the runners online
+	Busy   int    `json:"busy"`            // tasks running
+	Slots  int    `json:"slots"`           // tasks that can run at once, on the runners online
+	Boost  int    `json:"boost,omitempty"` // of Slots, the extra ones while catching up with the weekly pace
 }
 
 type wallUsage struct {
@@ -130,6 +131,7 @@ type wallRunner struct {
 	Paused   bool       `json:"paused,omitempty"`
 	Busy     int        `json:"busy"`
 	Slots    int        `json:"slots"`
+	Boost    int        `json:"boost,omitempty"` // of Slots, the extra ones while catching up with the weekly pace
 	Projects int        `json:"projects"`
 	Waiting  int        `json:"waiting"` // queued tasks that only it could take
 	LastSeen *time.Time `json:"last_seen,omitempty"`
@@ -460,16 +462,19 @@ func startOf(r wallRun) time.Time {
 // wallRunners fills in the runners (or this computer) and how busy they are.
 func (s *Server) wallRunners(d *wallData, todos []model.Todo, projects []model.Project, runners []tunnel.Runner, name func(string) string) {
 	if !s.hub() {
-		slots := 1
+		slots, usual := 1, 1
 		if s.Todos != nil {
-			slots = s.Todos.EffectiveParallel()
+			slots, usual = s.Todos.EffectiveParallel(), s.Todos.MaxParallel
 		}
-		d.Runners = append(d.Runners, wallRunner{Name: "this computer", Online: true, Busy: d.Stages.Running, Slots: slots, Projects: len(projects)})
-		d.Queue.Slots, d.Queue.Busy = slots, d.Stages.Running
+		busy := d.Stages.Running
+		wr := wallRunner{Name: "this computer", Online: true, Busy: busy, Slots: max(slots, busy), Boost: max(slots-usual, 0), Projects: len(projects)}
+		d.Runners = append(d.Runners, wr)
+		d.Queue.Slots, d.Queue.Busy, d.Queue.Boost = wr.Slots, busy, wr.Boost
 		return
 	}
 	for _, r := range runners {
-		wr := wallRunner{Name: name(r.ID), Online: r.Online, Paused: r.Paused, Slots: r.Limit()}
+		wr := wallRunner{Name: name(r.ID), Online: r.Online, Paused: r.Paused, Slots: r.SlotsNow()}
+		wr.Boost = wr.Slots - r.Limit()
 		if !r.LastSeen.IsZero() {
 			ls := r.LastSeen
 			wr.LastSeen = &ls
@@ -489,12 +494,17 @@ func (s *Server) wallRunners(d *wallData, todos []model.Todo, projects []model.P
 				wr.Waiting++
 			}
 		}
+		// A task that started under a boost that has since ended still
+		// runs: never show more tasks busy than slots.
+		wr.Slots = max(wr.Slots, wr.Busy)
 		if r.Online && !r.Paused {
 			d.Queue.Slots += wr.Slots
+			d.Queue.Boost += wr.Boost
 		}
 		d.Runners = append(d.Runners, wr)
 	}
 	d.Queue.Busy = d.Stages.Running
+	d.Queue.Slots = max(d.Queue.Slots, d.Queue.Busy)
 	sort.SliceStable(d.Runners, func(i, j int) bool {
 		if d.Runners[i].Online != d.Runners[j].Online {
 			return d.Runners[i].Online

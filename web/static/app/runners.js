@@ -119,6 +119,17 @@ export function showRunnerNeeded(el, p) {
   el.textContent = why;
 }
 const runnerLimit = (r) => r.parallel || r.reported?.parallel || 1;
+// runnerBoost is how many more tasks than its limit runner r may run at once
+// now, while the hub's pacing catches up with the weekly pace (0: none).
+const runnerBoost = (r) => {
+  const p = r.reported?.usage?.pace;
+  return p?.state === "catching_up" ? Math.max((p.slots || 0) - runnerLimit(r), 0) : 0;
+};
+// runnerSlots is how many tasks r may run at once now: its limit and any
+// boost, and never fewer than it runs (a task started under a boost that
+// has since ended still runs).
+const runnerSlots = (r) => Math.max(runnerLimit(r) + runnerBoost(r), r.running || 0);
+const boostNote = (r) => runnerBoost(r) ? ` (+${runnerBoost(r)} catching up with the weekly pace)` : "";
 const runnerOutdated = (r) => outdatedFor(runnerInfo.version, r.version);
 // runnerAccount is the Claude account runner r's claude is logged in to
 // (null: logged out, or an older runner that doesn't say). The hub paces
@@ -229,8 +240,8 @@ function runnerStatus(r) {
   if (r.paused) return { tone: "paused", text: r.running ? `Paused · finishing ${n(r.running)}` : "Paused" };
   const usage = r.reported?.usage;
   if (usage?.known && usage.paused) return { tone: "paused", text: `Waiting on Claude limits${usage.reason ? ` (${usage.reason})` : ""}` };
-  if (r.running) return { tone: "busy", text: `Running ${r.running} of ${runnerLimit(r)}` };
-  return { tone: "on", text: `Idle · up to ${runnerLimit(r)} at once` };
+  if (r.running) return { tone: "busy", text: `Running ${r.running} of ${runnerSlots(r)}${boostNote(r)}` };
+  return { tone: "on", text: `Idle · up to ${runnerSlots(r)} at once${boostNote(r)}` };
 }
 
 // runnerUsageMeters shows how much of its owner's Claude subscription
@@ -263,7 +274,7 @@ export function renderSideRunners() {
   const tone = (r) => !r.online ? "down" : r.paused || r.update ? "some" : "ok";
   const row = (r) => {
     const st = runnerStatus(r), outdated = runnerOutdated(r);
-    const count = !r.online ? "offline" : r.update ? "updating" : r.paused ? "paused" : `${r.running || 0}/${runnerLimit(r)}`;
+    const count = !r.online ? "offline" : r.update ? "updating" : r.paused ? "paused" : `${r.running || 0}/${runnerSlots(r)}${runnerBoost(r) ? "⇡" : ""}`;
     const update = outdated ? `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run on ${r.name}:\n${installCmd()}` : "";
     const diskWarn = diskWarning(r);
     return h("li", {}, h("button", {

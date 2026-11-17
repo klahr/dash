@@ -224,7 +224,8 @@ function renderHeader(d) {
     text = "Queue paused" + (d.queue.reason ? " · " + d.queue.reason : "");
   } else {
     cls = busy > 0 ? "" : "idle";
-    text = (busy > 0 ? "Queue running" : "Queue idle") + " · " + busy + " of " + slots + " slot" + (slots === 1 ? "" : "s") + " busy";
+    text = (busy > 0 ? "Queue running" : "Queue idle") + " · " + busy + " of " + slots + " slot" + (slots === 1 ? "" : "s") + " busy" +
+      (d.queue.boost > 0 ? " · +" + d.queue.boost + " catching up" : "");
   }
   const qcls = "queue-state " + cls;
   if (q.className !== qcls) q.className = qcls;
@@ -449,7 +450,8 @@ function renderRunners(d, now) {
       sub = "offline" + (r.last_seen ? " " + age(now - new Date(r.last_seen)) : "") +
         (r.waiting ? " · " + r.waiting + " task" + (r.waiting === 1 ? "" : "s") + " waiting" : "");
     } else {
-      sub = (r.paused ? "paused · " : "") + r.projects + " project" + (r.projects === 1 ? "" : "s") + " · " + r.busy + "/" + r.slots + " busy";
+      sub = (r.paused ? "paused · " : "") + r.projects + " project" + (r.projects === 1 ? "" : "s") + " · " + r.busy + "/" + r.slots + " busy" +
+        (r.boost > 0 ? " (+" + r.boost + " catching up)" : "");
     }
     return [r.name, !!r.online, !!r.paused, r.busy, Math.min(Math.max(r.slots, r.busy), 12), sub];
   });
