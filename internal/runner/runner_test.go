@@ -143,3 +143,70 @@ func TestKeepRestoresLastRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestExitedRunsAreForgotten(t *testing.T) {
+	t.Parallel()
+
+	m := NewManager(nopPub{})
+	dir := t.TempDir()
+	finish := func(command string) model.Process {
+		t.Helper()
+		p, err := m.StartTask("proj", dir, command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, err := m.Attach(p.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range s.Output {
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if got, err := m.Get(p.ID); err != nil || !got.Running {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		time.Sleep(50 * time.Millisecond) // wait() prunes after closing subscribers
+		return p
+	}
+	first := finish("echo one")
+	other := finish("echo other")
+	second := finish("echo one")
+	if _, err := m.Get(first.ID); err != ErrNotFound {
+		t.Fatalf("older run of the same command kept: %v", err)
+	}
+	for _, p := range []model.Process{other, second} {
+		if _, err := m.Get(p.ID); err != nil {
+			t.Fatalf("latest run %q forgotten: %v", p.Command, err)
+		}
+	}
+	if n := len(m.List("proj")); n != 2 {
+		t.Fatalf("want 2 processes, got %d", n)
+	}
+}
+
+func TestAppendScrollbackStaysBounded(t *testing.T) {
+	t.Parallel()
+
+	var buf []byte
+	chunk := bytes.Repeat([]byte("x"), 32*1024-1)
+	for i := 0; i < 100; i++ {
+		chunk[len(chunk)-1] = byte('a' + i%26)
+		buf = appendScrollback(buf, chunk)
+	}
+	if len(buf) != scrollbackSize {
+		t.Fatalf("len %d, want %d", len(buf), scrollbackSize)
+	}
+	if cap(buf) > scrollbackSize*3/2 {
+		t.Fatalf("cap %d grew past the scrollback", cap(buf))
+	}
+	if want := byte('a' + 99%26); buf[len(buf)-1] != want {
+		t.Fatalf("last byte %q, want %q", buf[len(buf)-1], want)
+	}
+	big := bytes.Repeat([]byte("y"), scrollbackSize+10)
+	if got := appendScrollback(buf, big); len(got) != scrollbackSize || got[0] != 'y' {
+		t.Fatalf("oversized chunk: len %d", len(got))
+	}
+}

@@ -98,30 +98,81 @@ func (m *Manager) save() {
 
 func (m *Manager) write() {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
 	if m.store == "" {
+		m.mu.RUnlock()
 		return
 	}
-	latest := map[[4]string]savedProc{}
+	// Pick the latest run per key by its info alone, then copy only those
+	// runs' scrollback; encode and write once the lock is released.
+	type pick struct {
+		p    *proc
+		info model.Process
+	}
+	latest := map[[4]string]pick{}
 	for _, p := range m.procs {
-		p.mu.Lock()
-		s := savedProc{Info: p.info, Scrollback: append([]byte(nil), p.buf...)}
-		p.mu.Unlock()
-		if s.Info.Kind == model.ProcPTY {
+		info := p.snapshot()
+		if info.Kind == model.ProcPTY {
 			continue
 		}
-		k := [4]string{s.Info.ProjectID, string(s.Info.Kind), s.Info.Command, s.Info.Dir}
-		if cur, ok := latest[k]; !ok || s.Info.StartedAt.After(cur.Info.StartedAt) {
-			latest[k] = s
+		k := [4]string{info.ProjectID, string(info.Kind), info.Command, info.Dir}
+		if cur, ok := latest[k]; !ok || info.StartedAt.After(cur.info.StartedAt) {
+			latest[k] = pick{p, info}
 		}
 	}
+	path := m.store
+	m.mu.RUnlock()
 	out := make([]savedProc, 0, len(latest))
-	for _, s := range latest {
-		out = append(out, s)
+	for _, l := range latest {
+		l.p.mu.Lock()
+		out = append(out, savedProc{Info: l.p.info, Scrollback: append([]byte(nil), l.p.buf...)})
+		l.p.mu.Unlock()
 	}
 	b, _ := json.Marshal(out)
-	if err := fsutil.WriteFileAtomic(m.store, b, 0o600); err != nil {
+	if err := fsutil.WriteFileAtomic(path, b, 0o600); err != nil {
 		slog.Warn("save processes", "err", err)
+	}
+}
+
+// runKey groups runs of the same thing: a process that has exited is
+// forgotten once a newer run of its key has exited too. A quick action
+// (Preset, Main) is its own thing even when its command matches another's.
+type runKey struct {
+	project, kind, command, dir, todo, preset string
+	main                                      bool
+}
+
+func pruneKey(i model.Process) runKey {
+	return runKey{i.ProjectID, string(i.Kind), i.Command, i.Dir, i.TodoID, i.Preset, i.Main}
+}
+
+// prune forgets exited processes other than the newest exited one of each
+// pruneKey, so a long-running runner doesn't keep every terminal, preview
+// and test run it ever started (each with up to scrollbackSize of output).
+// A session still attached to a forgotten process keeps working.
+func (m *Manager) prune() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	type kept struct {
+		id      string
+		started time.Time
+	}
+	newest := map[runKey]kept{}
+	for id, p := range m.procs {
+		info := p.snapshot()
+		if info.Running {
+			continue
+		}
+		k := pruneKey(info)
+		cur, ok := newest[k]
+		switch {
+		case !ok:
+			newest[k] = kept{id, info.StartedAt}
+		case info.StartedAt.After(cur.started):
+			delete(m.procs, cur.id)
+			newest[k] = kept{id, info.StartedAt}
+		default:
+			delete(m.procs, id)
+		}
 	}
 }
 
@@ -274,10 +325,7 @@ func (m *Manager) pump(p *proc, r io.Reader) {
 		if n > 0 {
 			chunk := append([]byte(nil), b[:n]...)
 			p.mu.Lock()
-			p.buf = append(p.buf, chunk...)
-			if len(p.buf) > scrollbackSize {
-				p.buf = p.buf[len(p.buf)-scrollbackSize:]
-			}
+			p.buf = appendScrollback(p.buf, chunk)
 			for ch := range p.subs {
 				select {
 				case ch <- chunk:
@@ -290,6 +338,19 @@ func (m *Manager) pump(p *proc, r io.Reader) {
 			return
 		}
 	}
+}
+
+// appendScrollback appends chunk to buf, dropping the oldest output beyond
+// scrollbackSize. It shifts buf in place rather than reslicing its tail, so
+// the backing array stays about scrollbackSize instead of growing past it.
+func appendScrollback(buf, chunk []byte) []byte {
+	if len(chunk) >= scrollbackSize {
+		return append(buf[:0], chunk[len(chunk)-scrollbackSize:]...)
+	}
+	if over := len(buf) + len(chunk) - scrollbackSize; over > 0 {
+		buf = buf[:copy(buf, buf[over:])]
+	}
+	return append(buf, chunk...)
 }
 
 func (m *Manager) wait(p *proc, r io.Closer) {
@@ -314,6 +375,7 @@ func (m *Manager) wait(p *proc, r io.Closer) {
 	if p.tty == nil {
 		m.save()
 	}
+	m.prune()
 	m.publish(p)
 }
 
