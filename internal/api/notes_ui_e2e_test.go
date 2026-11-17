@@ -54,7 +54,7 @@ func TestSharedNotesStatusAndRemovalThroughTheHub(t *testing.T) {
 		return creds
 	}
 	ca, cb := register("alpha"), register("beta")
-	p, err := raw(hub).CreateProject(model.Project{Name: "web", OrgID: owner.Org, RunsOn: []string{"self-hosted"}})
+	p, err := raw(hub).CreateProject(model.Project{Name: "web", OrgID: owner.Org, RunsOn: []string{"any"}})
 	if err != nil {
 		t.Fatal(err)
 	}

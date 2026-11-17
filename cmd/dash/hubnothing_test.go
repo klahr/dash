@@ -123,7 +123,7 @@ func TestHubRunsNothingItself(t *testing.T) {
 		RemoteURL string   `json:"remote_url"`
 		RunsOn    []string `json:"runs_on"`
 	}
-	api.must("POST", "/api/projects", map[string]any{"name": "app", "remote_url": o.remote, "runs_on": []string{"self-hosted"},
+	api.must("POST", "/api/projects", map[string]any{"name": "app", "remote_url": o.remote, "runs_on": []string{"any"},
 		"test_command": "test -f done-by-runner.txt && echo tests-ran-on-the-runner"}, http.StatusCreated, &p)
 	if len(p.RunsOn) != 1 || p.RemoteURL != o.remote {
 		t.Fatalf("shared project: %+v", p)

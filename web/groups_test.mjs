@@ -16,10 +16,10 @@ const own = (id, name, machine) => ({ id, name, machine, prefix: `/peer/${machin
 
 const machines = [hub, runner("beta", true), runner("alpha", true), runner("gone", false), runner("idle", true)];
 const runners = [
-  { id: "r-alpha", name: "alpha", online: true, default_labels: ["self-hosted", "Linux", "X64"], labels: [] },
-  { id: "r-beta", name: "beta", online: true, default_labels: ["self-hosted", "macOS", "ARM64"], labels: [] },
-  { id: "r-gone", name: "gone", online: false, default_labels: ["self-hosted"], labels: [] },
-  { id: "r-idle", name: "idle", online: true, default_labels: ["self-hosted"], labels: [] },
+  { id: "r-alpha", name: "alpha", online: true, default_labels: ["Linux", "X64"], labels: [] },
+  { id: "r-beta", name: "beta", online: true, default_labels: ["macOS", "ARM64"], labels: [] },
+  { id: "r-gone", name: "gone", online: false, default_labels: [], labels: [] },
+  { id: "r-idle", name: "idle", online: true, default_labels: [], labels: [] },
 ];
 const site = shared("p1", "site", ["r-alpha", "r-beta"]);
 const orphan = shared("p2", "orphan");
@@ -64,7 +64,7 @@ test("order doesn't change when runners go offline, or projects run on other lab
   const down = machines.map((m) => m.runner ? { ...m, ok: false } : m);
   const off = runners.map((r) => ({ ...r, online: false }));
   assert.deepEqual(order(down, off, projects), before);
-  const relinked = projects.map((p) => p === site ? { ...p, runs_on: ["nothing"] } : p === orphan ? { ...p, runs_on: ["self-hosted"] } : p);
+  const relinked = projects.map((p) => p === site ? { ...p, runs_on: ["nothing"] } : p === orphan ? { ...p, runs_on: ["any"] } : p);
   assert.deepEqual(order(machines, runners, relinked), before);
 });
 
@@ -137,7 +137,12 @@ test("projectSubtitle: owner/repo, else the folder unless it is the name", () =>
 
 test("a runner works on a project when it has every label it runs on, whatever their case", () => {
   const alpha = runners[0];
-  assert.equal(servesProject(alpha, { runs_on: ["self-hosted"] }), true);
+  assert.equal(servesProject(alpha, { runs_on: ["any"] }), true);
+  assert.equal(servesProject(alpha, { runs_on: ["Any", "linux"] }), true);
+  assert.equal(servesProject(runners[3], { runs_on: ["any"] }), true); // no labels at all
+  assert.equal(servesProject({ name: "old" }, { runs_on: ["any"] }), true);
+  assert.equal(servesProject(alpha, { runs_on: ["self-hosted"] }), false);
+  assert.deepEqual(missingLabels(alpha, { runs_on: ["any", "gpu"] }), ["gpu"]);
   assert.equal(servesProject(alpha, { runs_on: ["linux", "x64"] }), true);
   assert.equal(servesProject(alpha, { runs_on: ["Linux", "gpu"] }), false);
   assert.deepEqual(missingLabels(alpha, { runs_on: ["Linux", "gpu"] }), ["gpu"]);

@@ -129,7 +129,7 @@ func TestRunnersAreScopedToTheirOrg(t *testing.T) {
 		t.Fatal("u-box was revoked from another org")
 	}
 	// A project never runs on another org's runner, whatever its labels.
-	if w := send(f.u, "PATCH", "/api/projects/"+f.web.ID, `{"runs_on":["self-hosted"]}`); w.Code != http.StatusOK {
+	if w := send(f.u, "PATCH", "/api/projects/"+f.web.ID, `{"runs_on":["any"]}`); w.Code != http.StatusOK {
 		t.Fatalf("running on every runner: %d %s", w.Code, w.Body)
 	}
 	p, _ := raw(f.s).GetProject(f.web.ID)
@@ -306,7 +306,7 @@ func TestProjectsRunOnLabels(t *testing.T) {
 	label(f.u, "u-box", `["gpu"]`)
 	label(f.c, "c-box", `["mine"," mine ","MINE"]`) // tidied to one
 	label(f.b, "b-box", `["gpu","mine"]`)           // another org's: never counts
-	if r, _ := f.rh.Get(f.ids["c-box"]); !slices.Equal(r.Labels, []string{"mine"}) || !slices.Equal(r.DefaultLabels, []string{"self-hosted"}) {
+	if r, _ := f.rh.Get(f.ids["c-box"]); !slices.Equal(r.Labels, []string{"mine"}) || len(r.DefaultLabels) != 0 {
 		t.Errorf("c-box's labels: %v and %v", r.Labels, r.DefaultLabels)
 	}
 	if w := send(f.c, "PATCH", "/api/runners/"+f.ids["u-box"], `{"labels":["x"]}`); w.Code != http.StatusForbidden {
@@ -314,6 +314,10 @@ func TestProjectsRunOnLabels(t *testing.T) {
 	}
 	if w := send(f.c, "PATCH", "/api/runners/"+f.ids["c-box"], `{"labels":["no spaces"]}`); w.Code != http.StatusBadRequest {
 		t.Errorf("a label with a space: %d %s", w.Code, w.Body)
+	}
+	// Every runner matches "any": none can be given it.
+	if w := send(f.c, "PATCH", "/api/runners/"+f.ids["c-box"], `{"labels":["mine","Any"]}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "any") {
+		t.Errorf("the label any on a runner: %d %s", w.Code, w.Body)
 	}
 	serving := func() []string {
 		t.Helper()
@@ -326,7 +330,7 @@ func TestProjectsRunOnLabels(t *testing.T) {
 	}
 
 	path := "/api/projects/" + f.web.ID
-	for _, l := range []string{`["gpu"]`, `["self-hosted"]`} {
+	for _, l := range []string{`["gpu"]`, `["any"]`} {
 		if w := send(f.c, "PATCH", path, `{"runs_on":`+l+`}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "only they") {
 			t.Errorf("member sending work to someone else's runner with %s: %d %s", l, w.Code, w.Body)
 		}
@@ -341,13 +345,13 @@ func TestProjectsRunOnLabels(t *testing.T) {
 		t.Errorf("runners of the project on mine: %v", got)
 	}
 	// The admin runs it on every runner; c may then keep the labels as they are.
-	if w := send(f.d, "PATCH", path, `{"runs_on":["self-hosted"]}`); w.Code != http.StatusOK {
+	if w := send(f.d, "PATCH", path, `{"runs_on":["any"]}`); w.Code != http.StatusOK {
 		t.Errorf("admin running it on every runner: %d %s", w.Code, w.Body)
 	}
 	if got := serving(); !slices.Equal(got, []string{"c-box", "u-box"}) {
-		t.Errorf("runners of the project on self-hosted: %v", got)
+		t.Errorf("runners of the project on any: %v", got)
 	}
-	if w := send(f.c, "PATCH", path, `{"name":"renamed","merge_mode":"pr","runs_on":["self-hosted"]}`); w.Code != http.StatusOK {
+	if w := send(f.c, "PATCH", path, `{"name":"renamed","merge_mode":"pr","runs_on":["any"]}`); w.Code != http.StatusOK {
 		t.Errorf("member saving settings with the labels as they are: %d %s", w.Code, w.Body)
 	}
 	// Merging is an explicit choice, kept by upgrades; and pull requests
@@ -371,7 +375,7 @@ func TestProjectsRunOnLabels(t *testing.T) {
 
 	// A project without a remote can't run on runners.
 	other, _ := raw(f.s).CreateProject(model.Project{Name: "no-remote", Path: t.TempDir(), OrgID: f.web.OrgID})
-	if w := send(f.u, "PATCH", "/api/projects/"+other.ID, `{"runs_on":["self-hosted"]}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "remote") {
+	if w := send(f.u, "PATCH", "/api/projects/"+other.ID, `{"runs_on":["any"]}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "remote") {
 		t.Errorf("a project without a remote on runners: %d %s", w.Code, w.Body)
 	}
 

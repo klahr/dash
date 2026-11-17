@@ -650,10 +650,10 @@ func (h *Hub) SetDisk(id string, s disk.Settings) error {
 }
 
 // SetLabels replaces runner id's own labels (see Runner.Labels) with
-// labels, checked and tidied (model.CleanLabels); one of its default
+// labels, checked and tidied (model.CleanRunnerLabels); one of its default
 // labels isn't kept twice.
 func (h *Hub) SetLabels(id string, labels []string) error {
-	labels, err := model.CleanLabels(labels)
+	labels, err := model.CleanRunnerLabels(labels)
 	if err != nil {
 		return err
 	}
@@ -688,6 +688,32 @@ func (h *Hub) AddLabel(ids []string, label string) {
 	h.saveLocked()
 	h.mu.Unlock()
 	h.changed()
+}
+
+// RemoveLabel takes label (without case) from every runner's own labels
+// and returns the names of those that had it. For moving runners off a
+// label the hub no longer uses (dispatch.MigrateRunnerLinks).
+func (h *Hub) RemoveLabel(label string) []string {
+	var names []string
+	h.mu.Lock()
+	for _, r := range h.runners {
+		if !model.HasLabel(r.Labels, label) {
+			continue
+		}
+		r.Labels = slices.DeleteFunc(r.Labels, func(l string) bool { return strings.EqualFold(l, label) })
+		if len(r.Labels) == 0 {
+			r.Labels = nil
+		}
+		names = append(names, r.Name)
+	}
+	if len(names) > 0 {
+		h.saveLocked()
+	}
+	h.mu.Unlock()
+	if len(names) > 0 {
+		h.changed()
+	}
+	return names
 }
 
 // Get returns the runner with id.

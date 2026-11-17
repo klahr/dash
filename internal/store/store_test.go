@@ -324,8 +324,8 @@ func TestDefaultMergeModes(t *testing.T) {
 	const gh = "https://github.com/acme/web.git"
 	plain := mk("plain", model.Project{RemoteURL: gh})
 	ssh := mk("ssh", model.Project{RemoteURL: "git@github.com:acme/api.git", MergeMode: model.MergeLocal})
-	runners := mk("runners", model.Project{RemoteURL: gh, MergeMode: model.MergeLocal, RunsOn: []string{"self-hosted"}})
-	forced := mk("forced", model.Project{RemoteURL: gh, MergeMode: model.MergePR, RunsOn: []string{"self-hosted"}})
+	runners := mk("runners", model.Project{RemoteURL: gh, MergeMode: model.MergeLocal, RunsOn: []string{"any"}})
+	forced := mk("forced", model.Project{RemoteURL: gh, MergeMode: model.MergePR, RunsOn: []string{"any"}})
 	chosen := mk("chosen", model.Project{RemoteURL: gh, MergeMode: model.MergeLocal, MergeModeSet: true})
 	chosenPR := mk("chosen pr", model.Project{RemoteURL: "https://gitlab.com/acme/x.git", MergeMode: model.MergePR, MergeModeSet: true})
 	gitlab := mk("gitlab", model.Project{RemoteURL: "https://gitlab.com/acme/x.git", MergeMode: model.MergePR})

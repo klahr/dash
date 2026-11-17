@@ -31,7 +31,7 @@ func hubWithRunner(t *testing.T) (hub, runner *Server, creds tunnel.Credentials,
 	if creds, err = tunnel.Register(context.Background(), srv.URL, code, "laptop", ""); err != nil {
 		t.Fatal(err)
 	}
-	if linked, err = raw(hub).CreateProject(model.Project{Name: "shared", OrgID: owner.Org, RunsOn: []string{"self-hosted"}}); err != nil {
+	if linked, err = raw(hub).CreateProject(model.Project{Name: "shared", OrgID: owner.Org, RunsOn: []string{"any"}}); err != nil {
 		t.Fatal(err)
 	}
 	if unlinked, err = raw(hub).CreateProject(model.Project{Name: "elsewhere", OrgID: owner.Org}); err != nil {

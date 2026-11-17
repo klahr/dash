@@ -253,7 +253,7 @@ func asOwnerHandler(t *testing.T, s *Server) http.Handler {
 func TestHubRunsChatShellOnTheUsersRunner(t *testing.T) {
 	f := newClaudeFleet(t)
 	hp := project(t, f.hub, "web")
-	if _, err := raw(f.hub).UpdateProject(hp.ID, func(p *model.Project) error { p.RunsOn = []string{"self-hosted"}; return nil }); err != nil {
+	if _, err := raw(f.hub).UpdateProject(hp.ID, func(p *model.Project) error { p.RunsOn = []string{"any"}; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	clone := filepath.Join(f.runner.ProjectRoot, "web")

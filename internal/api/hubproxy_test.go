@@ -42,11 +42,11 @@ func TestHubForwardsOrRefusesWorkingTreeRoutes(t *testing.T) {
 	// A shared project runs on any runner of the org unless it says.
 	var made model.Project
 	if w := call("POST", "/api/projects", `{"name":"x","remote_url":"https://example.com/x.git"}`); w.Code != http.StatusCreated ||
-		json.Unmarshal(w.Body.Bytes(), &made) != nil || !slices.Equal(made.RunsOn, []string{"self-hosted"}) {
+		json.Unmarshal(w.Body.Bytes(), &made) != nil || !slices.Equal(made.RunsOn, []string{"any"}) {
 		t.Errorf("POST /api/projects with a remote only: %d %s", w.Code, w.Body)
 	}
 	// A shared project's merge mode is checked like a local one's.
-	if w := call("POST", "/api/projects", `{"name":"x","remote_url":"https://example.com/x.git","runs_on":["self-hosted"],"merge_mode":"squash"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "merge_mode must be") {
+	if w := call("POST", "/api/projects", `{"name":"x","remote_url":"https://example.com/x.git","runs_on":["any"],"merge_mode":"squash"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "merge_mode must be") {
 		t.Errorf("POST /api/projects with a bad merge_mode: %d %s", w.Code, w.Body)
 	}
 
@@ -71,7 +71,7 @@ func TestHubForwardsOrRefusesWorkingTreeRoutes(t *testing.T) {
 	registerRunner(t, rh, code, "laptop")
 	s.Dispatch = nil // projectRunner needs a dispatcher to link: none online either way
 	if _, err := raw(s).UpdateProject(p.ID, func(x *model.Project) error {
-		x.RunsOn, x.RemoteURL = []string{"self-hosted"}, "https://example.com/web.git"
+		x.RunsOn, x.RemoteURL = []string{"any"}, "https://example.com/web.git"
 		return nil
 	}); err != nil {
 		t.Fatal(err)

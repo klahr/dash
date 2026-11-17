@@ -34,24 +34,30 @@ export function projectGroups({ machines = [], runners = null, projects = [] }) 
   return groups;
 }
 
-// runnerLabels are every label runner r has: its default ones ("self-hosted",
-// its system and architecture), then those it was given.
-export const runnerLabels = (r) => [...(r?.default_labels || ["self-hosted"]), ...(r?.labels || [])];
+// LABEL_ANY is the label every runner matches without having it: a project
+// that runs on it alone runs on any runner of its org (model.LabelAny).
+export const LABEL_ANY = "any";
+const isAny = (l) => String(l).toLowerCase() === LABEL_ANY;
+
+// runnerLabels are every label runner r has: its default ones (its system
+// and architecture; none for a runner too old to say), then those it was
+// given. Never "any", which every runner matches anyway.
+export const runnerLabels = (r) => [...(r?.default_labels || []), ...(r?.labels || [])];
 
 // servesProject reports whether runner r works on hub project p: it has every
-// label p runs on (p.runs_on), whatever their case, as on GitHub. A project
-// that runs on no labels runs on no runner.
+// label p runs on (p.runs_on), whatever their case, as on GitHub; every
+// runner matches "any". A project that runs on no labels runs on no runner.
 export function servesProject(r, p) {
   const want = p?.runs_on || [];
   if (!r || !want.length) return false;
   const have = new Set(runnerLabels(r).map((l) => l.toLowerCase()));
-  return want.every((l) => have.has(String(l).toLowerCase()));
+  return want.every((l) => isAny(l) || have.has(String(l).toLowerCase()));
 }
 
-// missingLabels are the labels p runs on that runner r lacks.
+// missingLabels are the labels p runs on that runner r lacks (never "any").
 export function missingLabels(r, p) {
   const have = new Set(runnerLabels(r).map((l) => l.toLowerCase()));
-  return (p?.runs_on || []).filter((l) => !have.has(String(l).toLowerCase()));
+  return (p?.runs_on || []).filter((l) => !isAny(l) && !have.has(String(l).toLowerCase()));
 }
 
 // parseLabels reads labels typed in one box, split by commas or spaces.

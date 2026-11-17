@@ -213,7 +213,7 @@ func startRunnerHub(t *testing.T, runnerFlags ...string) *runnerHub {
 	})
 	lowDiskMinimum(t, api, h.runnerID)
 	// A project shared with it: the hub keeps none on its own disk.
-	api.must("POST", "/api/projects", map[string]any{"name": "app", "remote_url": remote, "runs_on": []string{"self-hosted"}}, http.StatusCreated, &h.project)
+	api.must("POST", "/api/projects", map[string]any{"name": "app", "remote_url": remote, "runs_on": []string{"any"}}, http.StatusCreated, &h.project)
 	return h
 }
 

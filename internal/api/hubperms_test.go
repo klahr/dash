@@ -47,7 +47,7 @@ func TestHubAnswersPermissionRequestsOfTasksOnRunners(t *testing.T) {
 	eventually(t, "the runner to come online", func() bool { r, _ := rh.Get(creds.ID); return r.Online })
 
 	p, err := raw(hub).CreateProject(model.Project{Name: "shared", OrgID: owner.Org, RemoteURL: remote, DefaultBranch: "main",
-		MergeMode: model.MergePR, RunsOn: []string{"self-hosted"}})
+		MergeMode: model.MergePR, RunsOn: []string{"any"}})
 	if err != nil {
 		t.Fatal(err)
 	}

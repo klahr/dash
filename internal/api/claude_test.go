@@ -396,7 +396,7 @@ func TestHubRunsProjectChatOnTheUsersLinkedRunner(t *testing.T) {
 	}
 
 	if _, err := raw(f.hub).UpdateProject(hp.ID, func(p *model.Project) error {
-		p.RunsOn, p.ChatPermissionMode = []string{"self-hosted"}, model.ChatModeAcceptEdits
+		p.RunsOn, p.ChatPermissionMode = []string{"any"}, model.ChatModeAcceptEdits
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -463,7 +463,7 @@ func TestHubRunsTaskChatOnTheTasksRunner(t *testing.T) {
 	seen := &seenChat{}
 	f.runner.Chat = seen
 	hp := project(t, f.hub, "web")
-	if _, err := raw(f.hub).UpdateProject(hp.ID, func(p *model.Project) error { p.RunsOn = []string{"self-hosted"}; return nil }); err != nil {
+	if _, err := raw(f.hub).UpdateProject(hp.ID, func(p *model.Project) error { p.RunsOn = []string{"any"}; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	ht, err := raw(f.hub).CreateTodo(model.Todo{ID: store.NewID(), ProjectID: hp.ID, Title: "Dark mode", Prompt: "Add a dark mode",

@@ -12,7 +12,7 @@ import { openSettings, syncSettingsRunners } from "./settings.js";
 import { ensureShell, forgetShellRefusal } from "./terminal.js";
 import { loadTry } from "./try.js";
 import { isRelease, runnerOutdated as outdatedFor } from "../runnerversion.js";
-import { parseLabels, runnerLabels, servesProject } from "../groups.js";
+import { LABEL_ANY, parseLabels, runnerLabels, servesProject } from "../groups.js";
 
 // ------------------------------------------------------------------ runners
 // The one-line installer and the version runners should run (from /api/runners).
@@ -500,9 +500,10 @@ function paintRunner(r) {
     runnerDisk(r),
     r.can_manage ? diskSettings(r) : null,
     h("h4", { class: "section-head" }, "Labels"),
-    h("div", { class: "runner-labels" }, ...runnerLabels(r).map((l, i) =>
+    runnerLabels(r).length ? h("div", { class: "runner-labels" }, ...runnerLabels(r).map((l, i) =>
       h("span", { class: `runner-label${i < (r.default_labels || []).length ? " default" : ""}`,
-        title: i < (r.default_labels || []).length ? "Every runner has this one" : "Given to it" }, l))),
+        title: i < (r.default_labels || []).length ? "Its system or architecture" : "Given to it" }, l)))
+      : h("p", { class: "hint" }, `None: it builds only the projects that run on ${LABEL_ANY}.`),
     h("h4", { class: "section-head" }, "Projects"),
     h("div", { class: "runner-projects" },
       projects.length
@@ -554,7 +555,7 @@ function paintRunner(r) {
     }) });
   fill($("#runner-manage"),
     h("h4", { class: "section-head" }, "Settings"),
-    setting("Labels", `It builds the projects that run on labels it has. Besides ${(r.default_labels || ["self-hosted"]).join(", ")}, which it has anyway, give it labels of its own, separated by commas.`, labels, "runner-labels-setting"),
+    setting("Labels", `It builds the projects that run on labels it has, and those that run on ${LABEL_ANY}. ${r.default_labels?.length ? `Besides ${r.default_labels.join(", ")}, which it has anyway, give` : "Give"} it labels of its own, separated by commas.`, labels, "runner-labels-setting"),
     setting("Tasks at once", `How many tasks the hub sends it at once. Empty: the runner's own setting (${r.reported?.parallel || 1}).`, parallel),
     setting(r.paused ? "Paused" : "Taking tasks",
       r.paused ? "It takes no new tasks until you resume it." : "Pausing lets it finish what it runs, then it takes no new tasks.",
@@ -715,7 +716,7 @@ async function showRunnerRepos(r) {
 // runs on and whether the runner has them; its owner or an admin gives it
 // a project's missing labels in one click. A repository from its owner's
 // GitHub that isn't a project yet becomes a shared project, on the runner's
-// own labels (or self-hosted, any runner, when it has none).
+// own labels (or any, any runner, when it has none).
 const links = { runner: null, data: null, gh: null, ghError: "", busy: new Set(), q: "" };
 
 async function showRunnerLinks(r) {
@@ -812,8 +813,8 @@ function renderRunnerLinks() {
   });
   $("#runners-links").replaceChildren(
     h("h4", {}, `Projects ${r.name} builds`),
-    h("p", { class: "hint" }, `${r.name} builds the projects that run on labels it has (${runnerLabels(res.runner).join(", ")}): it clones each into its projects folder and takes its tasks. Change its labels below, or a project's in Project settings → Runners.`),
-    r.mine ? h("p", { class: "hint warn" }, `Creating a project from a repository makes a shared project that everyone in ${org} sees. It runs on ${r.name}'s own labels${r.labels?.length ? ` (${r.labels.join(", ")})` : ", or on self-hosted (any runner) while it has none"}. For a repository only this computer works on, use Add from this computer… instead.`) : null,
+    h("p", { class: "hint" }, `${r.name} builds the projects that run on labels it has${runnerLabels(res.runner).length ? ` (${runnerLabels(res.runner).join(", ")})` : ""}, and those that run on ${LABEL_ANY}: it clones each into its projects folder and takes its tasks. Change its labels below, or a project's in Project settings → Runners.`),
+    r.mine ? h("p", { class: "hint warn" }, `Creating a project from a repository makes a shared project that everyone in ${org} sees. It runs on ${r.name}'s own labels${r.labels?.length ? ` (${r.labels.join(", ")})` : ", or on ${LABEL_ANY} (any runner) while it has none"}. For a repository only this computer works on, use Add from this computer… instead.`) : null,
     h("p", { class: "hint" }, ghNoteText(r, res, org, owner)),
     h("div", { class: "gh-filter-row" }, filter),
     list,

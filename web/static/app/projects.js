@@ -1,4 +1,4 @@
-import { projectGroups as groupProjects, isShared, parseLabels, projectRunnerNames, projectSubtitle, runnerBadge as badgeFor, servesProject, uniqueProjects } from "../groups.js";
+import { projectGroups as groupProjects, isShared, LABEL_ANY, parseLabels, projectRunnerNames, projectSubtitle, runnerBadge as badgeFor, servesProject, uniqueProjects } from "../groups.js";
 import { $, $$, h, ib, ico, plural, setLabel } from "./dom.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
@@ -188,7 +188,7 @@ export function openPlanner() {
 // remote its runners clone: the repository comes from the user's GitHub
 // repositories (listed with the picked runner's gh), a new one (created with
 // that gh), or a pasted URL. It runs on runner labels (Advanced; by default
-// the picked runner's own, or self-hosted), and the picked runner, when it
+// the picked runner's own, or any), and the picked runner, when it
 // has them, clones it into its projects folder now, or adopts a clone of the
 // same remote already there.
 // A local-only project is the runner's own: a new repository in its projects
@@ -206,9 +206,9 @@ const ghState = { cache: new Map(), pick: null, loading: "" };
 // it created (so trying again doesn't create it twice), and the run under way.
 const np = { nameAuto: "", runsOnAuto: "", created: null, run: null };
 // defaultRunsOn is what a project added with runner r runs on: r's own
-// labels, so it runs where its owner set them up, or self-hosted (any runner)
-// while it has none.
-const defaultRunsOn = (r) => r?.labels?.length ? r.labels : ["self-hosted"];
+// labels, so it runs where its owner set them up, or "any" (any runner) while
+// it has none.
+const defaultRunsOn = (r) => r?.labels?.length ? r.labels : [LABEL_ANY];
 // The runner picked in the sheet, from state.runners.
 function sheetRunner() {
   const name = $("#new-project").machine.value;

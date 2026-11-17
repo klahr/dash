@@ -883,8 +883,8 @@
               <p class="hint" id="new-project-where"></p>
               <details class="np-advanced">
                 <summary>Advanced</summary>
-                <label class="field" id="new-project-runs-on-row"><span>Runs on <em>runner labels, as in GitHub's runs-on</em></span><input name="runs_on" placeholder="self-hosted" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
-                <p class="hint" id="new-project-runs-on-hint">Its tasks run on the runners that have every one of these labels, separated by commas: <code>self-hosted</code> is any runner. It starts as the picked runner's own labels, if it has any.</p>
+                <label class="field" id="new-project-runs-on-row"><span>Runs on <em>runner labels, as in GitHub's runs-on</em></span><input name="runs_on" placeholder="any" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
+                <p class="hint" id="new-project-runs-on-hint">Its tasks run on the runners that have every one of these labels, separated by commas: <code>any</code> is any runner. It starts as the picked runner's own labels, if it has any.</p>
                 <label class="field" id="new-project-clone-row"><span>Clone URL <em>optional, used as it is</em></span><input name="clone_url" placeholder="e.g. git@github-deploy:owner/repo.git" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
                 <p class="hint" id="new-project-clone-hint">Runners clone into <code>&lt;projects&gt;/&lt;org&gt;/&lt;repo&gt;</code>, or use a clone of the same repository already there; a folder holding anything else is left alone and the clone gets a <code>-2</code> suffix. GitHub repositories are cloned over SSH, or over HTTPS with the runner's <code>gh</code> login when its SSH can't read them (<code>-github-protocol</code> forces one). A clone URL replaces that (a URL only: credentials stay on the runner).</p>
                 <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" placeholder="npm run dev -- --port $PORT" spellcheck="false"></label>
@@ -1135,8 +1135,8 @@
           <section class="rail-section" data-section="runners">
             <fieldset class="field choice" id="settings-runners-field" hidden>
               <legend>Runs on <em>runner labels: the project's tasks run on runners that have every one of them</em></legend>
-              <input id="settings-runs-on" name="runs_on" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="self-hosted" aria-describedby="settings-runs-on-help">
-              <p class="hint" id="settings-runs-on-help">Separate labels with commas, as in GitHub's <code>runs-on</code>. Every runner has <code>self-hosted</code>, its system (<code>Linux</code>, <code>macOS</code>, <code>Windows</code>) and its architecture (<code>X64</code>, <code>ARM64</code>); give runners labels of their own on their page in Runners.</p>
+              <input id="settings-runs-on" name="runs_on" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="any" aria-describedby="settings-runs-on-help">
+              <p class="hint" id="settings-runs-on-help">Separate labels with commas, as in GitHub's <code>runs-on</code>. <code>any</code> is any runner. Every runner has its system (<code>Linux</code>, <code>macOS</code>, <code>Windows</code>) and its architecture (<code>X64</code>, <code>ARM64</code>); give runners labels of their own on their page in Runners.</p>
               <div id="settings-runners" aria-live="polite"></div>
               <button class="link" type="button" id="settings-runners-manage" data-icon="computer">Manage runners…</button>
             </fieldset>

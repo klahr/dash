@@ -111,7 +111,7 @@ func TestHubWithoutClaudeNeverRunsIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, body = call("POST", "/api/projects", map[string]any{"name": "app", "remote_url": "https://example.com/app.git", "runs_on": []string{"self-hosted"}})
+	code, body = call("POST", "/api/projects", map[string]any{"name": "app", "remote_url": "https://example.com/app.git", "runs_on": []string{"any"}})
 	var p struct{ ID string }
 	if code != http.StatusCreated && code != http.StatusOK || json.Unmarshal([]byte(body), &p) != nil || p.ID == "" {
 		t.Fatalf("create project: %d %s", code, body)

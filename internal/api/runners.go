@@ -305,7 +305,7 @@ func (sv *service) checkRunsOn(p model.Project, labels []string) ([]string, erro
 // working on may have a task running on it (checkUnlink). It returns those
 // projects, which the runner must be told it left (unlinkLater).
 func (sv *service) checkRelabel(x tunnel.Runner, labels []string) ([]model.Project, error) {
-	clean, err := model.CleanLabels(labels)
+	clean, err := model.CleanRunnerLabels(labels)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errBadRequest, err)
 	}

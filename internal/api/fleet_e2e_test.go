@@ -79,7 +79,7 @@ func TestHubDispatchesToARunnerEndToEnd(t *testing.T) {
 
 	// A project of the hub linked to it, and a task
 	p, err := raw(hub).CreateProject(model.Project{Name: "shared", OrgID: owner.Org, RemoteURL: remote, DefaultBranch: "main",
-		MergeMode: model.MergePR, RunsOn: []string{"self-hosted"}})
+		MergeMode: model.MergePR, RunsOn: []string{"any"}})
 	if err != nil {
 		t.Fatal(err)
 	}

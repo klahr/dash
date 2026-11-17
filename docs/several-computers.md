@@ -22,7 +22,7 @@ Every project lives on runners, in one of two ways:
   Runners page, or start a new one with **+ Add project** → **Local only**. See [below](#projects-of-a-runners-own).
 - **A shared project**: the hub's project, a git remote that runs on runner labels. It never names
   runners: the org's runners that have every label it runs on work on it, as a GitHub Actions job's
-  `runs-on` picks self-hosted runners (see [Runner labels](#runner-labels)). Each of them keeps its
+  `runs-on` picks runners (see [Runner labels](#runner-labels)). Each of them keeps its
   own clone of the remote, in its organization's folder inside its projects folder
   (`<-projects>/<org>/<owner>/<repo>`), any of them can run its tasks, and work lands on the remote.
   It shows in the dashboard with a small "shared" mark (two people). Make one with **+ Add
@@ -40,8 +40,8 @@ repository comes from down its side (across the top on a phone), and beside it o
 that choice. With more than one runner you may add projects with, pick it beside the title (yours
 are marked "(yours)"); with one, there is nothing to pick. The picked runner lists your GitHub
 repositories and clones the new project. The project runs on the labels under **Advanced → Runs
-on**: by default the picked runner's own labels, or `self-hosted` (any runner of the org) while it
-has none.
+on**: by default the picked runner's own labels, or `any` (any runner of the org) while it has
+none.
 
 - **Plan a new project** (at the top): start from an idea instead. Claude interviews you and
   writes a brief, then one of the sources below makes the repository. See
@@ -376,15 +376,14 @@ that have the labels it runs on ([Runner labels](#runner-labels)). From then on:
 Projects don't name the runners they run on. As on GitHub Actions, a project runs on **labels**,
 and a runner works on every project of its org whose labels it all has:
 
-- Every runner has the labels `self-hosted`, its system (`Linux`, `macOS` or `Windows`) and its
-  architecture (`X64`, `ARM64`, `ARM` or `X86`). A runner from before Dash reported its system has
-  `self-hosted` only.
+- Every runner has the labels of its system (`Linux`, `macOS` or `Windows`) and its architecture
+  (`X64`, `ARM64`, `ARM` or `X86`). A runner from before Dash reported its system has none.
 - Its owner or an org admin gives it labels of its own on its page in Runners, under
   **Settings → Labels**, separated by commas: `gpu, big-disk`. A label is letters, digits and
-  `- _ . : + /`, up to 64 characters.
+  `- _ . : + /`, up to 64 characters. `any` can't be a runner's label.
 - A project runs on the labels in its **Settings → Runners → Runs on**, separated by commas. A
-  runner works on it when it has every one of them, whatever their case: `self-hosted` is any
-  runner of the org, `macOS, ARM64` is Apple silicon Macs, `gpu` is the runners you labelled so.
+  runner works on it when it has every one of them, whatever their case: `any` is any runner of the
+  org, `macOS, ARM64` is Apple silicon Macs, `gpu` is the runners you labelled so.
   Below the field the org's runners show whether they have them, as you type. A project with no
   labels runs on no runner, and says it **needs a runner**.
 
@@ -400,14 +399,18 @@ project's runners.
 A runner's tasks run on its owner's computer, with their Claude subscription. So a member can set a
 project's labels only so that it runs on their own runners, besides those it already ran on; an
 admin can send it to any runner of the org. When the labels would also send work to someone
-else's runner, saving says so: "laptop is ana's runner and has the labels self-hosted: only they or
+else's runner, saving says so: "laptop is ana's runner and has the labels gpu: only they or
 an admin of the organization can send work to it". Give your own runners a label of their own and
 use it. A runner of another org never works on a project, whatever its labels.
 
 A hub from before labels moves its projects to them when it starts: a project that was linked to
-every runner of its org runs on `self-hosted`; any other gets a label of its own,
+every runner of its org runs on `any`; any other gets a label of its own,
 `project-<name>`, which the runners it was linked to are given. Each logs the move ("project now
 runs on runner labels").
+
+Runners used to have the label `self-hosted`. A hub from before `any` drops it when it starts: a
+project that ran on `self-hosted` alone runs on `any`, one that ran on other labels as well keeps
+only those, and a runner that was given `self-hosted` by hand loses it.
 
 ### A runner's projects
 
@@ -422,7 +425,7 @@ shows up on the other right away, in every open browser.
   project → From GitHub** does (through the runner's `gh`, a heading per owner, with a filter),
   then the org's other shared projects.
 - **Create project** on a repository that isn't a project yet makes the shared project (named after
-  the repository), on the runner's own labels (or `self-hosted` while it has none). If the runner is
+  the repository), on the runner's own labels (or `any` while it has none). If the runner is
   online and has them, it clones (or adopts) it at once, and a remote it can't read says so right
   away, in the words its tasks would wait with ("runner laptop cannot access owner/repo over ssh:
   git@github.com: Permission denied (publickey)"). The project stays either way. Such a project is
@@ -475,7 +478,7 @@ startup it logs a warning for each project that runs on no runner labels (`proje
 the dashboard marks them **needs a runner**. Their work waits until you do one of these, per
 project:
 
-1. **Run it on runner labels** (Project settings → Runners → Runs on, e.g. `self-hosted`), if it
+1. **Run it on runner labels** (Project settings → Runners → Runs on, e.g. `any`), if it
    has a git remote: the runners with them clone the remote and the project carries on as a shared
    project. A project without a remote can't run on runners: push it somewhere first (e.g. create the GitHub repository from the folder on disk with
    `gh repo create --source . --push`), then set up the project again as below.

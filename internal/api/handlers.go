@@ -108,8 +108,8 @@ type projectRequest struct {
 	LocalOnly bool `json:"local_only"`
 	// On the hub only, which keeps no projects on its own disk: a
 	// shared project is the remote (RemoteURL, or GitHub's OWNER/REPO)
-	// and the runner labels it runs on (empty: "self-hosted", any runner
-	// of the org); the runners with them clone it.
+	// and the runner labels it runs on (empty: "any", any runner of
+	// the org); the runners with them clone it.
 	RemoteURL string   `json:"remote_url"`
 	RunsOn    []string `json:"runs_on"`
 	// CloneURL is the URL the runners clone as it is (see
@@ -236,7 +236,7 @@ func (sv *service) createHubProject(req projectRequest) (model.Project, error) {
 	base := model.Project{ID: store.NewID(), OrgID: sv.c.Org, RemoteURL: remote, CloneURL: cloneURL}
 	runsOn := req.RunsOn
 	if len(runsOn) == 0 {
-		runsOn = []string{model.LabelSelfHosted}
+		runsOn = []string{model.LabelAny}
 	}
 	if base.RunsOn, err = sv.checkRunsOn(base, runsOn); err != nil {
 		return model.Project{}, err

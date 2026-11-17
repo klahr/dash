@@ -43,7 +43,7 @@ type runnerLink struct {
 // runner works on, to clone now (as Add project does once it made it), or a
 // GitHub repository (OWNER/REPO) to make a shared project from, unless it
 // is one already, and the labels it runs on (default: the runner's own
-// labels, or "self-hosted" when it has none).
+// labels, or "any" when it has none).
 type linkRequest struct {
 	ProjectID string   `json:"project_id"`
 	GitHub    string   `json:"github"`
@@ -155,7 +155,7 @@ func (s *Server) linkToRunner(w http.ResponseWriter, r *http.Request) {
 
 // linkGitHubRepo is the org's project for the GitHub repository ownerRepo,
 // or makes it, to run on runsOn: by default x's own labels, so that it runs
-// on the runners its owner gave them, or "self-hosted" (any of the org's
+// on the runners its owner gave them, or "any" (any of the org's
 // runners) when x has none (see checkRunsOn). Only x's owner adds
 // repositories: they come from their GitHub login's list.
 func (sv *service) linkGitHubRepo(x tunnel.Runner, ownerRepo, name string, runsOn []string) (model.Project, bool, error) {

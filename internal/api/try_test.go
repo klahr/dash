@@ -132,7 +132,7 @@ func TestTryOnARunnerThroughTheHub(t *testing.T) {
 
 	v1 := commitTool(t, remote, "v1")
 	p, err := raw(hub).CreateProject(model.Project{Name: "cli", OrgID: owner.Org, RemoteURL: remote, DefaultBranch: "main",
-		RunsOn: []string{"self-hosted"}, PreviewKind: model.PreviewTerminal,
+		RunsOn: []string{"any"}, PreviewKind: model.PreviewTerminal,
 		PreviewCommand: `cp tool.sh "$DASH_BIN/tool"; echo built-$(git rev-parse --short HEAD); exec bash --norc --noprofile`})
 	if err != nil {
 		t.Fatal(err)

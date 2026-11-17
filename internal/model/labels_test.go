@@ -6,18 +6,18 @@ import (
 	"testing"
 )
 
-// Every runner has GitHub's default labels for a self-hosted runner: its
-// system and architecture in GitHub's spelling.
+// Every runner has its system and architecture as labels, in GitHub's
+// spelling, and nothing else by default.
 func TestDefaultRunnerLabels(t *testing.T) {
 	for _, c := range []struct {
 		goos, goarch string
 		want         []string
 	}{
-		{"linux", "amd64", []string{"self-hosted", "Linux", "X64"}},
-		{"darwin", "arm64", []string{"self-hosted", "macOS", "ARM64"}},
-		{"windows", "386", []string{"self-hosted", "Windows", "X86"}},
-		{"linux", "arm", []string{"self-hosted", "Linux", "ARM"}},
-		{"", "", []string{"self-hosted"}}, // a runner too old to say
+		{"linux", "amd64", []string{"Linux", "X64"}},
+		{"darwin", "arm64", []string{"macOS", "ARM64"}},
+		{"windows", "386", []string{"Windows", "X86"}},
+		{"linux", "arm", []string{"Linux", "ARM"}},
+		{"", "", []string{}}, // a runner too old to say
 	} {
 		if got := DefaultRunnerLabels(c.goos, c.goarch); !slices.Equal(got, c.want) {
 			t.Errorf("%s/%s: %v, want %v", c.goos, c.goarch, got, c.want)
@@ -48,17 +48,33 @@ func TestCleanLabels(t *testing.T) {
 	if _, err := CleanLabels(many); err == nil {
 		t.Error("too many labels were accepted")
 	}
+	// A project may run on "any"; a runner can't be given it.
+	if got, err := CleanLabels([]string{"any"}); err != nil || !slices.Equal(got, []string{"any"}) {
+		t.Errorf("CleanLabels(any) = %v, %v", got, err)
+	}
+	if got, err := CleanRunnerLabels([]string{" gpu ", "GPU"}); err != nil || !slices.Equal(got, []string{"gpu"}) {
+		t.Errorf("CleanRunnerLabels = %v, %v", got, err)
+	}
+	for _, bad := range [][]string{{"any"}, {"gpu", "ANY"}, {"two words"}} {
+		if _, err := CleanRunnerLabels(bad); err == nil {
+			t.Errorf("runner labels %q were accepted", bad)
+		}
+	}
 }
 
 // A runner works on a project when it has every label the project runs on,
-// whatever their case; a project on no labels runs on no runner.
+// whatever their case; every runner matches "any", even one without labels;
+// a project on no labels runs on no runner.
 func TestLabelsMatch(t *testing.T) {
-	have := []string{"self-hosted", "macOS", "ARM64", "gpu"}
+	have := []string{"macOS", "ARM64", "gpu"}
 	for _, c := range []struct {
 		want []string
 		ok   bool
 	}{
-		{[]string{"self-hosted"}, true},
+		{[]string{"any"}, true},
+		{[]string{"Any", "gpu"}, true},
+		{[]string{"any", "Linux"}, false},
+		{[]string{"self-hosted"}, false},
 		{[]string{"macos", "arm64"}, true},
 		{[]string{"gpu", "Linux"}, false},
 		{nil, false},
@@ -67,10 +83,13 @@ func TestLabelsMatch(t *testing.T) {
 			t.Errorf("LabelsMatch(%v) = %v", c.want, got)
 		}
 	}
-	if got := MissingLabels(have, []string{"GPU", "Linux", "X64"}); !slices.Equal(got, []string{"Linux", "X64"}) {
+	if !LabelsMatch(nil, []string{"any"}) || !LabelsMatch([]string{}, []string{"ANY"}) {
+		t.Error("a runner without labels doesn't match any")
+	}
+	if got := MissingLabels(have, []string{"GPU", "any", "Linux", "X64"}); !slices.Equal(got, []string{"Linux", "X64"}) {
 		t.Errorf("MissingLabels = %v", got)
 	}
-	if !(Project{RunsOn: []string{"self-hosted"}}).OnRunners() || (Project{}).OnRunners() {
+	if !(Project{RunsOn: []string{"any"}}).OnRunners() || (Project{}).OnRunners() {
 		t.Error("OnRunners doesn't follow RunsOn")
 	}
 }

@@ -97,7 +97,7 @@ func TestRunnerScreenShowsProjectsByLabel(t *testing.T) {
 }
 
 // Picking a GitHub repository that is no project yet makes the shared
-// project in one step, on the runner's own labels (or "self-hosted" when it
+// project in one step, on the runner's own labels (or "any" when it
 // has none); one that is a project already is that project. Only the
 // runner's owner adds repositories (theirs, from its gh), and a member only
 // on labels no one else's runner has.
@@ -256,7 +256,7 @@ func TestRunnerScreenReportsCloneErrors(t *testing.T) {
 		t.Errorf("clone error %q, want %q", res.CloneError, want)
 	}
 	// The project stands: its work says why it waits.
-	if got, _ := raw(hub).GetProject(res.Project.ID); !slices.Equal(got.RunsOn, []string{"self-hosted"}) {
+	if got, _ := raw(hub).GetProject(res.Project.ID); !slices.Equal(got.RunsOn, []string{"any"}) {
 		t.Errorf("runs on %v", got.RunsOn)
 	}
 }
