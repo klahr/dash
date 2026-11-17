@@ -64,7 +64,7 @@ func newTwoOrgs(t *testing.T) *twoOrgs {
 		t.Fatal(err)
 	}
 	invite := func(org int64, name string) store.User {
-		tok, _, err := acc.Invite(owner.User.ID, org, name+"@example.com", store.RoleMember)
+		tok, _, err := acc.InviteWith(owner.User.ID, org, name+"@example.com", store.RoleMember, true)
 		if err != nil {
 			t.Fatal(err)
 		}

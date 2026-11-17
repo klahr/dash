@@ -47,7 +47,7 @@ func TestUnpaidOrgIsReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok, _, err := acc.Invite(owner.User.ID, team.ID, "m@example.com", store.RoleMember)
+	tok, _, err := acc.InviteWith(owner.User.ID, team.ID, "m@example.com", store.RoleMember, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestFreeOverrideLiftsTheGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok, _, err := acc.Invite(owner.User.ID, team.ID, "m@example.com", store.RoleOwner)
+	tok, _, err := acc.InviteWith(owner.User.ID, team.ID, "m@example.com", store.RoleOwner, true)
 	if err != nil {
 		t.Fatal(err)
 	}

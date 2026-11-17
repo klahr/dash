@@ -590,7 +590,7 @@ func TestGoogleRemovedMemberStaysOut(t *testing.T) {
 func (e *gEnv) register(username, email string, org int64, role store.Role) store.User {
 	e.t.Helper()
 	admin, _ := e.a.acc.EnvUser()
-	tok, _, err := e.a.acc.Invite(admin.ID, org, email, role)
+	tok, _, err := e.a.acc.InviteWith(admin.ID, org, email, role, true)
 	if err != nil {
 		e.t.Fatal(err)
 	}

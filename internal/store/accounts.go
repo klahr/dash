@@ -743,16 +743,12 @@ func (a *Accounts) RemoveMember(actor, orgID, target int64) error {
 // InvitationTTL is how long an invitation link works.
 const InvitationTTL = 7 * 24 * time.Hour
 
-// Invite invites email to orgID with role, as actor (an admin or owner, who
-// can't grant more than their own role), and returns the link's token. It
-// doesn't look at whether email has an account. Inviting the same address
-// again replaces the earlier invitation, whose link stops working.
-func (a *Accounts) Invite(actor, orgID int64, email string, role Role) (string, Invitation, error) {
-	return a.InviteWith(actor, orgID, email, role, true)
-}
-
-// InviteWith is Invite, saying whether a Google sign-in accepting it may
-// be another address than email (see Invitation.AnyEmail).
+// InviteWith invites email to orgID with role, as actor (an admin or owner,
+// who can't grant more than their own role), and returns the link's token.
+// anyEmail says whether a Google sign-in accepting it may be another address
+// than email (see Invitation.AnyEmail). It doesn't look at whether email has
+// an account. Inviting the same address again replaces the earlier
+// invitation, whose link stops working.
 func (a *Accounts) InviteWith(actor, orgID int64, email string, role Role, anyEmail bool) (string, Invitation, error) {
 	var inv Invitation
 	email, err := cleanEmail(email)

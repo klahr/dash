@@ -90,7 +90,7 @@ func TestTokenIsPinnedToItsOrg(t *testing.T) {
 // addMember invites name into org and has them accept.
 func addMember(t *testing.T, acc *Accounts, inviter, org int64, name string, role Role) int64 {
 	t.Helper()
-	tok, _, err := acc.Invite(inviter, org, name+"@example.com", role)
+	tok, _, err := acc.InviteWith(inviter, org, name+"@example.com", role, true)
 	if err != nil {
 		t.Fatal(err)
 	}

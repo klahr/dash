@@ -120,7 +120,7 @@ func (f *fixture) join(org int64) int64 {
 	f.t.Helper()
 	f.member++
 	name := fmt.Sprintf("m%d", f.member)
-	tok, _, err := f.acc.Invite(f.owner, org, name+"@example.com", store.RoleMember)
+	tok, _, err := f.acc.InviteWith(f.owner, org, name+"@example.com", store.RoleMember, true)
 	if err != nil {
 		f.t.Fatal(err)
 	}

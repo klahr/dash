@@ -523,7 +523,7 @@ func TestRunnerOfRemovedMemberIsCutOff(t *testing.T) {
 
 	th := newTestHub(t)
 	th.recheck = 20 * time.Millisecond
-	tok, _, err := th.Accounts.Invite(th.owner.User, th.owner.Org, "alice@example.com", store.RoleMember)
+	tok, _, err := th.Accounts.InviteWith(th.owner.User, th.owner.Org, "alice@example.com", store.RoleMember, true)
 	if err != nil {
 		t.Fatal(err)
 	}

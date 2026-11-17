@@ -24,7 +24,7 @@ func addUser(t *testing.T, a *Auth, orgID int64, name string, role store.Role) i
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok, _, err := a.acc.Invite(env.ID, orgID, name+"@example.com", role)
+	tok, _, err := a.acc.InviteWith(env.ID, orgID, name+"@example.com", role, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestInvitationDoesNotRevealAccounts(t *testing.T) {
 
 	// Registering with the link of an address that has an account still
 	// works, just without the address.
-	tok, _, _ := a.acc.Invite(mustEnv(t, a), org.ID, "known@example.com", store.RoleMember)
+	tok, _, _ := a.acc.InviteWith(mustEnv(t, a), org.ID, "known@example.com", store.RoleMember, true)
 	w := do(h, "POST", "/api/invitations/register", `{"token":"`+tok+`","username":"second","password":"long-enough"}`)
 	if w.Code != http.StatusCreated || strings.Contains(w.Body.String(), "known@example.com") {
 		t.Fatalf("register: %d %s", w.Code, w.Body)
@@ -301,7 +301,7 @@ func TestSwitchOrgAndRemovalTakesEffectAtOnce(t *testing.T) {
 	def, _ := a.acc.DefaultOrg()
 	second, _ := a.acc.CreateOrg(mustEnv(t, a), "Second")
 	uid := addUser(t, a, def.ID, "kim", store.RoleMember)
-	tok, _, _ := a.acc.Invite(mustEnv(t, a), second.ID, "kim@example.com", store.RoleAdmin)
+	tok, _, _ := a.acc.InviteWith(mustEnv(t, a), second.ID, "kim@example.com", store.RoleAdmin, true)
 	if _, err := a.acc.AcceptInvitation(tok, uid); err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +475,7 @@ func TestMembershipChangesReachBilling(t *testing.T) {
 		t.Fatalf("register: %d %s", w.Code, w.Body)
 	}
 	other, _ := a.acc.CreateOrg(mustEnv(t, a), "Other")
-	tok, _, err := a.acc.Invite(mustEnv(t, a), other.ID, "nia@example.com", store.RoleMember)
+	tok, _, err := a.acc.InviteWith(mustEnv(t, a), other.ID, "nia@example.com", store.RoleMember, true)
 	if err != nil {
 		t.Fatal(err)
 	}

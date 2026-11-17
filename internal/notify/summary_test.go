@@ -98,7 +98,7 @@ func summaryEnv(t *testing.T) *sumEnv {
 	admin, _ := acc.EnvUser()
 	def, _ := acc.DefaultOrg()
 	e.admin, e.org = admin.ID, def.ID
-	tok, _, err := acc.Invite(admin.ID, def.ID, "ana@example.com", store.RoleMember)
+	tok, _, err := acc.InviteWith(admin.ID, def.ID, "ana@example.com", store.RoleMember, true)
 	if err != nil {
 		t.Fatal(err)
 	}

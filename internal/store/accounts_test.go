@@ -278,7 +278,7 @@ func TestInvitationsExpire(t *testing.T) {
 	acc.Bootstrap("admin", "s3cret")
 	u, _ := acc.EnvUser()
 	org, _ := acc.DefaultOrg()
-	tok, inv, err := acc.Invite(u.ID, org.ID, "x@example.com", RoleMember)
+	tok, inv, err := acc.InviteWith(u.ID, org.ID, "x@example.com", RoleMember, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +291,7 @@ func TestInvitationsExpire(t *testing.T) {
 	if _, _, err := acc.RegisterWithInvitation(tok, "late", "long-enough"); !errors.Is(err, ErrInvitation) {
 		t.Fatalf("register with an expired invitation: %v", err)
 	}
-	if _, _, err := acc.Invite(u.ID, org.ID, "not an email", RoleMember); !errors.Is(err, ErrBadEmail) {
+	if _, _, err := acc.InviteWith(u.ID, org.ID, "not an email", RoleMember, true); !errors.Is(err, ErrBadEmail) {
 		t.Fatalf("bad email: %v", err)
 	}
 }

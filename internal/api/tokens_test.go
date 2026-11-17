@@ -20,7 +20,7 @@ func member(t *testing.T, s *Server, org int64, name string, role store.Role) in
 	t.Helper()
 	acc := s.Auth.Accounts()
 	env, _ := acc.EnvUser()
-	tok, _, err := acc.Invite(env.ID, org, name+"@example.com", role)
+	tok, _, err := acc.InviteWith(env.ID, org, name+"@example.com", role, true)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -70,7 +70,7 @@ func TestSetOrgSlug(t *testing.T) {
 		}
 	}
 	// Only owners rename.
-	tok, _, _ := acc.Invite(u.ID, acme.ID, "m@example.com", RoleAdmin)
+	tok, _, _ := acc.InviteWith(u.ID, acme.ID, "m@example.com", RoleAdmin, true)
 	m, _, err := acc.RegisterWithInvitation(tok, "m", "pw-m-long-enough")
 	if err != nil {
 		t.Fatal(err)

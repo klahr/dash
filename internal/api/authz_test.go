@@ -80,7 +80,7 @@ func (o *twoOrgs) token(t *testing.T, uid, org int64, scopes []string) string {
 func (o *twoOrgs) join(t *testing.T, uid, org int64, email string) {
 	t.Helper()
 	acc := o.s.Auth.Accounts()
-	tok, _, err := acc.Invite(ownerSession(t, o.s).User.ID, org, email, store.RoleMember)
+	tok, _, err := acc.InviteWith(ownerSession(t, o.s).User.ID, org, email, store.RoleMember, true)
 	if err != nil {
 		t.Fatal(err)
 	}

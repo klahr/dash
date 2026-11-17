@@ -139,7 +139,7 @@ func TestResetPasswordUnlinksIdentities(t *testing.T) {
 	a.Bootstrap("admin", "s3cret")
 	admin, _ := a.EnvUser()
 	org, _ := a.DefaultOrg()
-	inv, _, err := a.Invite(admin.ID, org.ID, "vic@example.com", RoleMember)
+	inv, _, err := a.InviteWith(admin.ID, org.ID, "vic@example.com", RoleMember, true)
 	if err != nil {
 		t.Fatal(err)
 	}
