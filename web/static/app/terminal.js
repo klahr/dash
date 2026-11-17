@@ -1,4 +1,4 @@
-import { $, $$, ico } from "./dom.js";
+import { $, $$, h, ico } from "./dom.js";
 import { wsURL } from "./viewport.js";
 import { api, here, on } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
@@ -9,6 +9,7 @@ import { servesProject } from "../groups.js";
 import { closeDetail } from "./detail.js";
 import { loadProcs, renderProcs, renderTryButton } from "./try.js";
 import { setMode } from "./vim.js";
+import * as store from "./store.js";
 
 // ------------------------------------------------------------------ run: processes & terminal
 // The Shell view's and the terminal preview's look.
@@ -22,6 +23,8 @@ term.loadAddon(fit);
 term.open($("#term"));
 export let termWS = null;
 export let attached = null;
+let attachedProc = null; // the process attached, as started or listed, and its project
+let attachedIn = null;
 
 const sendSize = () => termWS?.readyState === 1 && termWS.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
 export function fitTerm() { if (state.view === "run") { try { fit.fit(); sendSize(); } catch {} } }
@@ -37,6 +40,9 @@ export function attach(p) {
   renderShellNote();
   termWS?.close();
   attached = p.id;
+  attachedProc = p;
+  attachedIn = state.project?.id;
+  renderShellHead();
   term.reset();
   // Piped (non-PTY) output has bare \n with no tty driver to add the \r.
   term.options.convertEol = p.kind !== "pty";
@@ -93,11 +99,104 @@ export function openShell(req = {}, runnerID = "") {
   return startProc({ kind: "pty", ...req });
 }
 
+// ---- the Shell view's header: where the shell runs, and on a hub the runner a new one opens on
+
+// The runner a process runs on: the hub names it in the processes it lists.
+const procRunner = (x) => x?.runner_id || state.runners?.find((r) => r.name === x?.runner)?.id || "";
+
+// shellRunners are the runners of project p a shell may open on, on a hub (none
+// elsewhere): the caller's own online ones that open terminals (eligible), and
+// the project's others with why not (offline, not yours, update needed).
+export function shellRunners(p = state.project) {
+  if (!p || p.prefix || !isHub()) return { eligible: [], others: [] };
+  const eligible = [], others = [];
+  for (const r of state.runners.filter((r) => servesProject(r, p))) {
+    const why = !r.mine ? "not yours" : !r.online ? "offline" : r.reported && !r.reported.terminals ? "update needed" : "";
+    (why ? others : eligible).push(why ? { ...r, why } : r);
+  }
+  return { eligible, others };
+}
+
+// The runner picked for p's shell (remembered per project), while it is still
+// eligible; "" lets the hub choose (its default: one of yours that opens terminals).
+const pickKey = (pid) => `dash.shellRunner.${pid}`;
+function shellPick(p = state.project) {
+  const id = p && store.get(pickKey(p.id), "");
+  return id && shellRunners(p).eligible.some((r) => r.id === id) ? id : "";
+}
+
+// shortDir shortens a folder for the header: the home folder as ~, and only
+// the first and last parts of a long path (~/…/dash).
+export function shortDir(d) {
+  if (!d) return "";
+  const sep = d.includes("/") ? "/" : "\\";
+  const home = sep === "/" ? /^\/(home|Users)\/[^/]+(?=\/|$)/ : /^[A-Za-z]:\\Users\\[^\\]+(?=\\|$)/;
+  const parts = d.replace(home, "~").split(sep);
+  return parts.length > 3 ? [parts[0], "…", parts.at(-1)].join(sep) : parts.join(sep);
+}
+
+function renderShellHead() {
+  const p = state.project;
+  const cur = (attached && state.procs.find((x) => x.id === attached)) || (attachedIn === p?.id ? attachedProc : null);
+  const hub = !!p && !p.prefix && isHub();
+  const { eligible, others } = shellRunners(p);
+  const menu = hub && eligible.length > 1;
+  const curID = procRunner(cur);
+  const sel = $("#shell-runner");
+  if (menu) {
+    const opts = [...eligible];
+    if (curID && !opts.some((r) => r.id === curID) && cur?.runner) opts.push({ id: curID, name: cur.runner });
+    sel.replaceChildren(...opts.map((r) => h("option", { value: r.id }, r.name)),
+      ...others.map((r) => h("option", { value: r.id, disabled: true }, `${r.name} (${r.why})`)));
+    sel.value = curID || shellPick(p) || eligible[0].id;
+  }
+  $("#shell-runner-wrap").hidden = !menu;
+  const name = menu ? "" : cur?.runner || (hub ? eligible[0]?.name || "" : p?.prefix ? "" : "This computer");
+  $("#shell-runner-name").textContent = name;
+  const dir = cur?.dir || "";
+  $("#shell-dir").textContent = shortDir(dir);
+  $("#shell-dir").title = dir;
+  $("#shell-sep").hidden = !dir || !(menu || name);
+  $("#shell-head").hidden = !p || !(menu || name || dir);
+}
+
+// Picking a runner opens a shell there (or shows the one already open there);
+// the shell before keeps running.
+$("#shell-runner").addEventListener("change", attempt(async (e) => {
+  const p = state.project, id = e.target.value;
+  if (!p || !id) return;
+  store.set(pickKey(p.id), id);
+  forgetShellRefusal();
+  const pty = latestShell(id);
+  if (pty) return attach(pty);
+  renderShellHead();
+  await openShellOn(id);
+}));
+
+// The latest running shell in the project's checkout, on runner id when given.
+function latestShell(id = "") {
+  return state.procs.filter((x) => x.kind === "pty" && x.running && inMain(x) && (!id || procRunner(x) === id))
+    .reduce((a, b) => (!a || b.started_at > a.started_at ? b : a), null);
+}
+
+// openShellOn opens the Shell view's terminal, on runner id when given, or
+// says why the runner refused (once, until the runners or the project change).
+function openShellOn(id = "") {
+  const pid = state.project.id;
+  opening = true;
+  return startProc({ kind: "pty", ...(id ? { runner_id: id } : {}) })
+    .catch((e) => {
+      shellRefused = { pid, id, msg: e.message || String(e) };
+      if (state.project?.id === pid) renderShellNote(shellRefused.msg);
+    })
+    .finally(() => { opening = false; });
+}
+
 // The Shell view is only a terminal: show the project's running shell, or open one.
 // When the runner refuses, say why once instead of asking again with every update
 // (until the runners or the project change).
 let opening = false;
-let shellRefused = null; // { pid, msg }
+let shellRefused = null; // { pid, id, msg }
 export function forgetShellRefusal() { shellRefused = null; }
 function renderShellNote(msg) {
   $("#shell-note").hidden = !msg;
@@ -106,22 +205,20 @@ function renderShellNote(msg) {
 }
 export function ensureShell() {
   if (state.view !== "run" || !state.project || opening) return;
-  if (attached && state.procs.some((p) => p.id === attached)) return renderShellNote();
+  renderShellHead();
+  // The runner picked for this project's shell: a shell elsewhere isn't kept
+  // in view (it keeps running), though another process's output is.
+  const want = shellPick();
+  const cur = attached && state.procs.find((p) => p.id === attached);
+  if (cur && (cur.kind !== "pty" || !want || procRunner(cur) === want)) return renderShellNote();
   const blocked = shellBlocked(); // another member's shell is theirs: the runner won't attach it either
-  const pty = !blocked && state.procs.filter((p) => p.kind === "pty" && p.running && inMain(p))
-    .reduce((a, b) => (!a || b.started_at > a.started_at ? b : a), null);
+  const pty = !blocked && latestShell(want);
   if (pty) { renderShellNote(); return attach(pty); }
   const pid = state.project.id;
-  const why = blocked || (shellRefused?.pid === pid ? shellRefused.msg : "");
+  const why = blocked || (shellRefused?.pid === pid && shellRefused.id === want ? shellRefused.msg : "");
   renderShellNote(why);
   if (why) return;
-  opening = true;
-  startProc({ kind: "pty" })
-    .catch((e) => {
-      shellRefused = { pid, msg: e.message || String(e) };
-      if (state.project?.id === pid) renderShellNote(shellRefused.msg);
-    })
-    .finally(() => { opening = false; });
+  openShellOn(want);
 }
 
 const runPreset = attempt(async (e) => {

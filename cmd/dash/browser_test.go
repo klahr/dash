@@ -1547,3 +1547,68 @@ func TestBrowserPlanProject(t *testing.T) {
 		t.Errorf("drafts after launching: %s", drafts)
 	}
 }
+
+// The Shell view's header says where the shell runs: with one runner of
+// the user's, its name as text (no menu of one) and the shell's folder,
+// shortened. With a second runner it is a menu: picking the other opens a
+// shell there and leaves the first running, and the next visit opens on
+// the runner picked. Also on a phone's screen.
+func TestBrowserShellHeader(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	openShell := func() {
+		b.until("open the Shell view", `document.querySelector("#view-run.active")`, chromedp.Click(chromedp.CSS(`.nav > button[data-view=run]`)))
+	}
+
+	openShell()
+	b.waitJS("the shell's header", `!document.querySelector("#shell-head").hidden && document.querySelector("#shell-runner-name").textContent === "laptop" && document.querySelector("#shell-dir").textContent.endsWith("/app")`)
+	b.waitJS("no menu of one runner", `document.querySelector("#shell-runner-wrap").hidden`)
+	b.waitJS("the terminal below it", `!document.querySelector("#term-wrap").hidden && !!document.querySelector("#term .xterm")`)
+
+	// A second runner of the user's: the runner is a menu of both.
+	dir := t.TempDir()
+	var code struct{ Code string }
+	h.api.must("POST", "/api/runners/codes", map[string]any{}, http.StatusOK, &code)
+	desk := startDash(t, h.dash, h.runnerEnv, "runner", "-data", filepath.Join(dir, "data"), "-projects", filepath.Join(dir, "projects"),
+		"-name", "desk", "-env", filepath.Join(dir, "none.env"), "--server", h.base, "--code", code.Code)
+	deskID := ""
+	waitFor(t, desk, "the second runner to come online", func() bool {
+		var rs struct {
+			Runners []struct {
+				ID, Name string
+				Online   bool
+			}
+		}
+		h.api.must("GET", "/api/runners", nil, http.StatusOK, &rs)
+		for _, r := range rs.Runners {
+			if r.Name == "desk" && r.Online {
+				deskID = r.ID
+			}
+		}
+		return deskID != ""
+	})
+	b.waitJS("the runner menu", `!document.querySelector("#shell-runner-wrap").hidden && [...document.querySelector("#shell-runner").options].map((o) => o.textContent).join() === "desk,laptop" && document.querySelector("#shell-runner").value === `+fmt.Sprintf("%q", h.runnerID))
+
+	// Pick desk: a shell opens there; laptop's keeps running.
+	pick := fmt.Sprintf(`(() => { const s = document.querySelector("#shell-runner"); s.value = %q; return s.dispatchEvent(new Event("change")); })()`, deskID)
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](pick)); err != nil {
+		b.fail("pick desk", err)
+	}
+	b.waitJS("a shell on desk", `document.querySelector("#shell-runner").value === `+fmt.Sprintf("%q", deskID)+` && document.querySelector("#shell-dir").title.startsWith(`+fmt.Sprintf("%q", dir)+`)`)
+	running := func(runner string) string {
+		return fmt.Sprintf(`fetch("/api/projects/%s/processes").then((r) => r.json()).then((l) => l.some((p) => p.kind === "pty" && p.running && p.runner === %q))`, h.project.ID, runner)
+	}
+	b.waitJS("laptop's shell still running", running("laptop"))
+	b.waitJS("desk's shell running", running("desk"))
+
+	// The next visit opens on desk, also on a phone.
+	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	b.do("reload", chromedp.Reload())
+	b.waitJS("the board", `document.querySelector("#project-name")?.textContent === "app"`)
+	openShell()
+	b.waitJS("desk's shell again", `document.querySelector("#shell-runner").value === `+fmt.Sprintf("%q", deskID)+` && document.querySelector("#shell-dir").title.startsWith(`+fmt.Sprintf("%q", dir)+`)`)
+	b.waitJS("the header fits the phone", `document.querySelector("#shell-head").getBoundingClientRect().right <= 390`)
+}

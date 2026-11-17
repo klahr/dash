@@ -640,7 +640,12 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .tl-phase.stopped .phase-mark { color: var(--muted); }
 
 /* ---------- run ---------- */
-#view-run.active { display: flex; height: var(--view-h); background: var(--term-bg); }
+#view-run.active { display: flex; flex-direction: column; height: var(--view-h); background: var(--term-bg); }
+.shell-body { display: flex; flex: 1; min-height: 0; }
+.shell-head .try-where { flex: 1 1 auto; font-size: var(--fs-s); }
+.shell-runner-name { flex: none; font-weight: 600; white-space: nowrap; }
+.shell-sep { color: var(--muted); }
+.shell-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-family: var(--mono); font-size: var(--fs-xs); }
 .term-wrap { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 #shell-note { align-self: center; } /* the Shell view's empty state; .shell-note is a chat block (below) */
 

@@ -454,7 +454,14 @@ connection, to the clone of one of the project's runners that is online:
   the project's checkout there or the task's worktree, only for the user who registered the runner
   (a shell can do whatever a deploy command can). The hub chooses neither the runner's folder nor
   whose terminal it is: the runner checks its owner itself. For the org's other members, or on a
-  runner older than the hub, the Shell view says why;
+  runner older than the hub, the Shell view says why.
+  The header of the **Shell** view shows where the shell runs: the runner and its folder, such as
+  `laptop · ~/…/dash`. When more than one of your runners with the project is online, the runner is
+  a menu. Pick another runner to open a shell there; the shell you had keeps running, and picking
+  its runner again shows it. The menu also lists the project's other runners, greyed out, with why
+  not: **offline**, **not yours** or **update needed**. The browser remembers the runner you picked
+  for each project. Until you pick one, or when yours is no longer online, the hub chooses one of
+  your online runners with the project, one that opens terminals first;
 - `!` commands in a project's or a task's chat: likewise only for the user who registered the
   runner, and only when its chat runs commands (`-chat-tools shell`; never with `-chat api`);
 - GitHub Actions: the hub's **CI** view, the automatic investigation of a failing build, and

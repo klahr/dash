@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -243,6 +244,16 @@ func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
 		t.Fatal("another member's command ran on the owner's runner")
 	}
 
+	// A runner they pick: another member can't pick the owner's, and an id
+	// that isn't one of the project's runners is refused.
+	pick := `{"kind":"pty","runner_id":"` + creds.ID + `"}`
+	if w := start(other, pick); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "registered it") {
+		t.Fatalf("another member picking the owner's runner: %d %s", w.Code, w.Body)
+	}
+	if w := start(owner.User, `{"kind":"pty","runner_id":"nope"}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("terminal on a runner that isn't the project's: %d %s", w.Code, w.Body)
+	}
+
 	// The owner: in the runner's checkout, not a folder the hub names.
 	w := start(owner.User, `{"kind":"pty","command":"bash --norc --noprofile","dir":"/etc","cols":80,"rows":24}`)
 	if w.Code != http.StatusCreated {
@@ -261,6 +272,20 @@ func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
 	}
 	if checkout == "" || proc.Dir != checkout || !proc.Main || !strings.HasPrefix(proc.ID, creds.ID+"~") {
 		t.Fatalf("terminal: %+v (checkout %q)", proc, checkout)
+	}
+
+	// On the runner they picked, beside the first: a new terminal, and the
+	// first one keeps running. Its process names its runner.
+	w = start(owner.User, pick)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("terminal on the picked runner: %d %s", w.Code, w.Body)
+	}
+	var picked map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &picked); err != nil {
+		t.Fatal(err)
+	}
+	if id, _ := picked["id"].(string); id == proc.ID || !strings.HasPrefix(id, creds.ID+"~") || picked["runner_id"] != creds.ID || picked["runner"] != "laptop" {
+		t.Fatalf("terminal on the picked runner: %v", picked)
 	}
 
 	// Its socket through the hub, as the owner and as another member.
@@ -325,5 +350,38 @@ func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
 	}
 	if w := stop(owner.User); w.Code >= 300 {
 		t.Fatalf("the owner stopping their terminal: %d %s", w.Code, w.Body)
+	}
+}
+
+// A terminal opens on the runner the caller picks only when it is one of
+// theirs that works on the project and is online.
+func TestShellRunnerPick(t *testing.T) {
+	parallel(t)
+
+	me := Caller{User: 1, Org: 10}
+	own := &store.RunnerOwner{UserID: 1, Org: store.Org{ID: 10}}
+	other := &store.RunnerOwner{UserID: 2, Org: store.Org{ID: 10}}
+	runners := []tunnel.Runner{
+		{ID: "mine", Name: "laptop", Online: true, Owner: own},
+		{ID: "off", Name: "desk", Online: false, Owner: own},
+		{ID: "theirs", Name: "theirs", Online: true, Owner: other},
+	}
+	if id, err := shellRunner(runners, me, "mine"); err != nil || id != "mine" {
+		t.Errorf("own online runner: %q %v", id, err)
+	}
+	for _, c := range []struct {
+		id   string
+		want error
+	}{
+		{"off", errNoRunnerOnline},
+		{"theirs", errForbidden},
+		{"elsewhere", errBadRequest}, // not one of the project's runners
+	} {
+		if _, err := shellRunner(runners, me, c.id); !errors.Is(err, c.want) {
+			t.Errorf("%s: %v, want %v", c.id, err, c.want)
+		}
+	}
+	if _, err := shellRunner(runners, Caller{Org: 10, Machine: true}, "mine"); !errors.Is(err, errForbidden) {
+		t.Errorf("a caller with no user: %v", err)
 	}
 }

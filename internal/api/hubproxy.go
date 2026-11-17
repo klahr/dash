@@ -378,7 +378,7 @@ func rewriteProcs(body []byte, run tunnel.Runner, todos map[string]string) []byt
 		if tid, ok := p["todo_id"].(string); ok && tid != "" {
 			p["todo_id"] = todos[tid]
 		}
-		p["runner"] = run.Name
+		p["runner"], p["runner_id"] = run.Name, run.ID
 	}
 	var list []map[string]any
 	if json.Unmarshal(body, &list) == nil {
@@ -467,6 +467,21 @@ func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv
 			return
 		}
 	}
+	if rid, _ := req["runner_id"].(string); rid != "" {
+		// The runner the caller picked for a terminal (the Shell view's
+		// runner menu): one of theirs that works on p.
+		delete(req, "runner_id")
+		if body, err = json.Marshal(req); err != nil {
+			writeErr(w, err)
+			return
+		}
+		if pty && prefer == "" {
+			if prefer, err = shellRunner(s.projectRunners(p), sv.c, rid); err != nil {
+				writeErr(w, err)
+				return
+			}
+		}
+	}
 	if pty && prefer == "" {
 		prefer = s.terminalRunner(sv.c, p)
 	}
@@ -476,7 +491,11 @@ func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv
 		return
 	}
 	if prefer != "" && run.ID != prefer {
-		writeErr(w, fmt.Errorf("%w (the task's worktree is on its runner, which is offline)", errNoRunnerOnline))
+		why := "the task's worktree is on its runner, which is offline"
+		if req["todo_id"] == nil {
+			why = "the runner picked for it is offline"
+		}
+		writeErr(w, fmt.Errorf("%w (%s)", errNoRunnerOnline, why))
 		return
 	}
 	if pty {
@@ -514,6 +533,25 @@ func (s *Server) terminalRunner(c Caller, p model.Project) string {
 		}
 	}
 	return id
+}
+
+// shellRunner is the runner id a terminal opens on when the caller picked
+// one: of runners (p's, see projectRunners), one c registered. Another
+// member's runner is refused (the runner would refuse it too), as is one
+// that doesn't work on p; an offline one is the caller's to pick again.
+func shellRunner(runners []tunnel.Runner, c Caller, id string) (string, error) {
+	i := slices.IndexFunc(runners, func(r tunnel.Runner) bool { return r.ID == id })
+	if i < 0 {
+		return "", fmt.Errorf("%w: that runner doesn't work on this project", errBadRequest)
+	}
+	run := runners[i]
+	if err := ownsRunner(c, run); err != nil {
+		return "", fmt.Errorf("%w: %w", errForbidden, err)
+	}
+	if !run.Online {
+		return "", fmt.Errorf("%w (%s is offline)", errNoRunnerOnline, run.Name)
+	}
+	return run.ID, nil
 }
 
 // ownsRunner reports whether c registered run: only its owner gets a
