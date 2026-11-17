@@ -35,3 +35,19 @@ export function claudePillText(active, comps) {
   if (active.length === 1) return `Claude: ${label(IMPACT, active[0].impact).toLowerCase()} incident`;
   return `Claude: ${active.length} incidents`;
 }
+
+// serviceTone is an affected service's colour in the sheet: bad (red) for
+// a partial or major outage, or an incident of major or critical impact;
+// warn (yellow) otherwise.
+export function serviceTone(s) {
+  if (s.status) return s.status === "major_outage" || s.status === "partial_outage" ? "bad" : "warn";
+  return s.impact === "major" || s.impact === "critical" ? "bad" : "warn";
+}
+
+// claudePillTone is the pill's colour, as the sheet shows what counts: red
+// when at least one affected service is red, or when an incident that names
+// no service is major or critical; yellow otherwise.
+export function claudePillTone(active, comps) {
+  if (affectedServices(active, comps).some((s) => serviceTone(s) === "bad")) return "bad";
+  return active.some((i) => !i.counted?.length && serviceTone({ impact: i.impact }) === "bad") ? "bad" : "warn";
+}

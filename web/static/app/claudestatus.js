@@ -1,5 +1,5 @@
 import { $, dateTimeText, fill, h, ico } from "./dom.js";
-import { COMPONENT, IMPACT, affectedServices, claudePillText, label } from "../claudepill.js";
+import { COMPONENT, IMPACT, affectedServices, claudePillText, claudePillTone, label, serviceTone } from "../claudepill.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -60,7 +60,8 @@ export function renderClaudeStatus() {
   pill.hidden = !troubled(st);
   if (!pill.hidden) {
     const active = counted(st.active), comps = counted(st.components);
-    const tone = (st.level && st.level !== "none" && TONE[st.level]) || "warn";
+    // Red only when something the sheet shows red counts; else yellow.
+    const tone = claudePillTone(active, comps);
     pill.className = `usage-pill claude-pill claude-${tone}`;
     pill.textContent = claudePillText(active, comps);
     pill.title = `${[...active.map((i) => i.name), ...comps.map((c) => c.name)].join(", ")} (status.claude.com)`;
@@ -111,7 +112,7 @@ function renderSheet() {
   // A service an incident names, without a status of its own, shows the
   // incident's impact.
   const compList = (cs) => h("ul", { class: "claude-components" }, ...cs.map((c) =>
-    h("li", { class: `claude-${c.status ? (c.status === "major_outage" || c.status === "partial_outage" ? "bad" : "warn") : TONE[c.impact] === "bad" ? "bad" : "warn"}` },
+    h("li", { class: `claude-${serviceTone(c)}` },
       h("span", {}, c.name), h("span", { class: "claude-component-status" },
         c.status ? label(COMPONENT, c.status) : `${label(IMPACT, c.impact)} incident`))));
   const services = affectedServices(active, comps);

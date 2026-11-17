@@ -1,7 +1,7 @@
 // Tests for the Claude pill's words (web/static/claudepill.js).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { affectedServices, claudePillText } from "./static/claudepill.js";
+import { affectedServices, claudePillText, claudePillTone, serviceTone } from "./static/claudepill.js";
 
 const code = { name: "Claude Code", status: "degraded_performance" };
 const web = { name: "claude.ai", status: "partial_outage" };
@@ -40,4 +40,18 @@ test("incidents that name no service fall back to the incidents", () => {
 
 test("several components with no incidents", () => {
   assert.equal(claudePillText([], [code, web]), "Claude: 2 services affected");
+});
+
+test("the pill is red only when something the sheet shows red counts", () => {
+  // A major incident on Claude Code, whose own status is only degraded:
+  // the sheet shows Claude Code yellow, so is the pill.
+  const major = { impact: "major", counted: ["Claude Code"] };
+  assert.equal(claudePillTone([major], [code]), "warn");
+  assert.equal(serviceTone(affectedServices([major], [code])[0]), "warn");
+  assert.equal(claudePillTone([{ impact: "minor", counted: ["Claude Code"] }], [code]), "warn");
+  assert.equal(claudePillTone([], [code, web]), "bad");
+  assert.equal(claudePillTone([{ impact: "major", counted: ["Claude API"] }], [code]), "bad");
+  // Incidents that name no service go by their impact.
+  assert.equal(claudePillTone([{ impact: "critical" }], []), "bad");
+  assert.equal(claudePillTone([{ impact: "minor" }], [code]), "warn");
 });
