@@ -108,11 +108,16 @@ draft, queued or failed tasks, when you ask to remove one), `create_release`, `l
 checklist tools that change `TODO.md` (all of them but `read_checklist`), which it can't use; a shell chat asks for the ones that change something. They act as the user chatting,
 in the org they're working in.
 
+A project's chat and a task's run reach their own project only: `list_projects` lists just that
+project, and a call that names another project, or a task or goal in one, fails as if it didn't
+exist. Only the general chat reaches every project in the org. A task's shared notes are its
+project's, and a goal's coordinator works in the goal's project only.
+
 When a hub runs a chat or a task on a runner, these tools act on the hub's board, not the
 runner's: the runner passes each call to the hub (`POST /runner/mcp/dash`, with its runner
 token), and the hub decides who it acts as. A task's run acts as the task's owner, and only for a
-task the hub sent that runner. A chat acts as the runner's owner, in the runner's org, and only in
-projects linked to that runner. So tasks and issues created there show up on the hub's board,
+task the hub sent that runner, in that task's project. A chat acts as the runner's owner, in the
+runner's org: a project's chat only in its project, which must be linked to that runner. So tasks and issues created there show up on the hub's board,
 under the hub's ids. If the hub can't be reached, the tool call fails; it never writes to the
 runner's own database instead.
 

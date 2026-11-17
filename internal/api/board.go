@@ -24,7 +24,9 @@ import (
 // BoardMCP serves the chat's Dash tools (POST /mcp/dash), authenticated by
 // the per-run tokens in s.Board. Every run acts as a user in an org: a
 // chat's user in their active org, a task's creator in the task's org. Its
-// tools only reach that org, and stop working once the user leaves it.
+// tools only reach that org, and stop working once the user leaves it. A
+// run in a project (a task, a project chat) only reaches that project
+// (projectBoard); only the general chat reaches the org's other projects.
 //
 // On a runner, the runs of its hub's work (the hub's tasks, the chats the
 // hub asks for) get the hub's board instead: their calls go to the hub
@@ -41,9 +43,15 @@ func (s *Server) boardHandler() *mcptools.Handler {
 	return &mcptools.Handler{Tokens: s.Board, Board: func(sc mcptools.Scope) (mcptools.Board, error) {
 		c := Caller{Org: sc.Org, User: sc.User}
 		if sc.Todo != "" {
-			if org, ok := s.Store.TodoOrg(sc.Todo); !ok || org != sc.Org {
+			org, ok := s.Store.TodoOrg(sc.Todo)
+			if !ok || org != sc.Org {
 				return nil, errors.New("the task is gone")
 			}
+			t, err := s.Store.ForOrg(org).GetTodo(sc.Todo)
+			if err != nil || (sc.Project != "" && t.ProjectID != sc.Project) {
+				return nil, errors.New("the task is gone")
+			}
+			sc.Project = t.ProjectID // a task's run works in its own project only
 		}
 		if !s.Member(model.Owner{User: c.User, Org: c.Org}) {
 			return nil, errors.New("this run's user no longer belongs to its organization")
@@ -54,6 +62,15 @@ func (s *Server) boardHandler() *mcptools.Handler {
 				return nil, errors.New("the goal is gone")
 			}
 			return goalBoard{b: board{s.as(c)}, goal: g.ID}, nil
+		}
+		if sc.Project != "" {
+			// A run in a project (a task, a project chat) sees that project
+			// only, never the org's other projects.
+			pb := projectBoard{b: board{s.as(c)}, project: sc.Project}
+			if _, err := pb.own(); err != nil {
+				return nil, err
+			}
+			return pb, nil
 		}
 		return board{s.as(c)}, nil
 	}}

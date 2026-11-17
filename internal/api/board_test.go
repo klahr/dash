@@ -192,19 +192,23 @@ func TestBoardMCPCreateTodoDefaultsToChatProject(t *testing.T) {
 		t.Errorf("event %+v", last)
 	}
 
-	// Queued only when asked; another project by name.
-	text, isErr = callResult(t, rpc(h, token, "tools/call", `{"name":"create_todo","arguments":{"title":"Run it","draft":false,"project":"other"}}`))
+	// Queued only when asked.
+	text, isErr = callResult(t, rpc(h, token, "tools/call", `{"name":"create_todo","arguments":{"title":"Run it","draft":false,"project":"web"}}`))
 	if isErr {
 		t.Fatal(text)
 	}
 	if err := json.Unmarshal([]byte(text), &created); err != nil {
 		t.Fatal(err)
 	}
-	if created.ProjectID == p.ID || created.Status != model.StatusQueued {
+	if created.ProjectID != p.ID || created.Status != model.StatusQueued {
 		t.Errorf("created %+v", created)
 	}
+	// Another project is out of a project chat's reach.
+	if text, isErr = callResult(t, rpc(h, token, "tools/call", `{"name":"create_todo","arguments":{"title":"Elsewhere","project":"other"}}`)); !isErr {
+		t.Errorf("create_todo in another project: %s", text)
+	}
 
-	text, _ = callResult(t, rpc(h, token, "tools/call", `{"name":"list_todos","arguments":{}}`))
+	text, _ = callResult(t, rpc(h, token, "tools/call", `{"name":"list_todos","arguments":{"status":"draft"}}`))
 	if !strings.Contains(text, "Fix login") || strings.Contains(text, "Run it") {
 		t.Errorf("list_todos %s", text)
 	}
