@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/runtoken"
 )
@@ -238,18 +239,6 @@ func (b *Broker) ask(ctx context.Context, rn run, tool string, input json.RawMes
 
 // ---- MCP over streamable HTTP (JSON responses only) ----
 
-type rpcRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
-}
-
-type rpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
 // ServeMCP handles POST /mcp/permissions. Auth is the per-run bearer token.
 func (b *Broker) ServeMCP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -257,102 +246,61 @@ func (b *Broker) ServeMCP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "this MCP server only accepts POST", http.StatusMethodNotAllowed)
 		return
 	}
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	rn, ok := b.tokens.Lookup(token)
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	var rn run
+	if ok && token != "" {
+		rn, ok = b.tokens.Lookup(token)
+	}
 	// Every run acts as a user in an org, and only while they belong to it.
 	ok = ok && rn.owner.Valid() && (b.Member == nil || b.Member(rn.owner))
 	if !ok {
 		http.Error(w, "unknown or expired token", http.StatusUnauthorized)
 		return
 	}
-	var req rpcRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&req); err != nil {
-		writeRPC(w, nil, nil, &rpcError{-32700, "parse error"})
-		return
-	}
-	if len(req.ID) == 0 { // notification (e.g. notifications/initialized)
-		w.WriteHeader(http.StatusAccepted)
-		return
-	}
-
-	switch req.Method {
-	case "initialize":
-		var p struct {
-			ProtocolVersion string `json:"protocolVersion"`
-		}
-		_ = json.Unmarshal(req.Params, &p)
-		if p.ProtocolVersion == "" {
-			p.ProtocolVersion = "2025-06-18"
-		}
-		writeRPC(w, req.ID, map[string]any{
-			"protocolVersion": p.ProtocolVersion,
-			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]string{"name": ServerName, "version": "1"},
-		}, nil)
-	case "ping":
-		writeRPC(w, req.ID, map[string]any{}, nil)
-	case "tools/list":
-		writeRPC(w, req.ID, map[string]any{"tools": []any{map[string]any{
-			"name":        ToolName,
-			"description": "Ask the Dash user whether a tool call may run.",
-			"inputSchema": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"tool_name":   map[string]string{"type": "string"},
-					"input":       map[string]string{"type": "object"},
-					"tool_use_id": map[string]string{"type": "string"},
-				},
-				"required": []string{"tool_name", "input"},
-			},
-		}}}, nil)
-	case "tools/call":
-		var p struct {
-			Name      string `json:"name"`
-			Arguments struct {
-				ToolName string          `json:"tool_name"`
-				Input    json.RawMessage `json:"input"`
-			} `json:"arguments"`
-		}
-		if err := json.Unmarshal(req.Params, &p); err != nil || p.Name != ToolName {
-			writeRPC(w, req.ID, nil, &rpcError{-32602, "unknown tool"})
-			return
-		}
-		input := p.Arguments.Input
-		if len(input) == 0 {
-			input = json.RawMessage("{}")
-		}
-		var res Request
-		if rn.ask != nil {
-			allow, msg := rn.ask(r.Context(), p.Arguments.ToolName, input)
-			res.Decision, res.Message = "deny", msg
-			if allow {
-				res.Decision = "allow"
+	srv := &mcptools.Server{Name: ServerName, Tools: []mcptools.Tool{{
+		Name: ToolName,
+		Desc: "Ask the Dash user whether a tool call may run.",
+		Params: []mcptools.Param{
+			{Name: "tool_name", Type: "string", Desc: "The tool Claude wants to call.", Required: true},
+			{Name: "input", Type: "object", Desc: "The tool call's input.", Required: true},
+			{Name: "tool_use_id", Type: "string", Desc: "The tool call's id."},
+		},
+		Run: func(a mcptools.Args) (any, error) {
+			input := json.RawMessage("{}")
+			if a["input"] != nil {
+				raw, err := json.Marshal(a["input"])
+				if err != nil {
+					return nil, err
+				}
+				input = raw
 			}
-		} else {
-			res = b.ask(r.Context(), rn, p.Arguments.ToolName, input)
-		}
-		answer := map[string]any{"behavior": "deny", "message": res.Message}
-		if res.Decision == "allow" {
-			answer = map[string]any{"behavior": "allow", "updatedInput": input}
-		} else if res.Message == "" {
-			answer["message"] = "The user denied this action."
-		}
-		text, _ := json.Marshal(answer)
-		writeRPC(w, req.ID, map[string]any{"content": []any{map[string]string{"type": "text", "text": string(text)}}}, nil)
-	default:
-		writeRPC(w, req.ID, nil, &rpcError{-32601, "method not found"})
-	}
+			return b.answer(r.Context(), rn, a.Str("tool_name"), input), nil
+		},
+	}}}
+	srv.ServeHTTP(w, r)
 }
 
-func writeRPC(w http.ResponseWriter, id json.RawMessage, result any, rerr *rpcError) {
-	w.Header().Set("Content-Type", "application/json")
-	resp := map[string]any{"jsonrpc": "2.0", "id": id}
-	if rerr != nil {
-		resp["error"] = rerr
+// answer decides one tool call for rn and returns the permission prompt
+// tool's reply text for Claude Code.
+func (b *Broker) answer(ctx context.Context, rn run, tool string, input json.RawMessage) string {
+	var res Request
+	if rn.ask != nil {
+		allow, msg := rn.ask(ctx, tool, input)
+		res.Decision, res.Message = "deny", msg
+		if allow {
+			res.Decision = "allow"
+		}
 	} else {
-		resp["result"] = result
+		res = b.ask(ctx, rn, tool, input)
 	}
-	_ = json.NewEncoder(w).Encode(resp)
+	reply := map[string]any{"behavior": "deny", "message": res.Message}
+	if res.Decision == "allow" {
+		reply = map[string]any{"behavior": "allow", "updatedInput": input}
+	} else if res.Message == "" {
+		reply["message"] = "The user denied this action."
+	}
+	text, _ := json.Marshal(reply)
+	return string(text)
 }
 
 // ServerConfig is the --mcp-config entry for the permission server at baseURL.
