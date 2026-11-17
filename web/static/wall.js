@@ -182,10 +182,16 @@ function morph(list, before, { delay = 0, outcome } = {}) {
 }
 
 // roll makes el's new number roll in, up if it grew and down if it shrank.
+// was and now are numbers, or text holding one number ("$1.20", "−3 400").
 function roll(el, was, now) {
   if (was === undefined || was === now || !moving() || first) return false;
-  el.classList.add(parseFloat(String(now).replace(/[^\d.-]/g, "")) < parseFloat(String(was).replace(/[^\d.-]/g, "")) ? "roll-down" : "roll-up");
+  el.classList.add(rollValue(now) < rollValue(was) ? "roll-down" : "roll-up");
   return true;
+}
+
+function rollValue(v) {
+  if (typeof v === "number") return v;
+  return parseFloat(String(v).replace(/−/g, "-").replace(/[^\d.-]/g, ""));
 }
 
 // ---- clock and timers, every second ----
@@ -485,16 +491,31 @@ function renderRunners(d, now) {
 
 function renderToday(d) {
   const t = d.today;
-  if (!changed("today", [t, d.stages.merged_add])) return false;
-  const tiles = [["Merged", String(t.merged)]];
-  if (t.spend_usd != null) tiles.push(["Spend", money(t.spend_usd)]);
-  if (t.first_try != null) tiles.push(["First-try merges", Math.round(t.first_try * 100) + "%"]);
-  tiles.push(["Lines landed", "+" + num(d.stages.merged_add)]);
+  const add = d.stages.merged_add || 0, del = d.stages.merged_del || 0;
+  if (!changed("today", [t, add, del])) return false;
+  // Each tile: its label, what it shows, and the number roll() compares.
+  const tiles = [["Merged", String(t.merged), t.merged]];
+  if (t.spend_usd != null) tiles.push(["Spend", money(t.spend_usd), t.spend_usd]);
+  if (t.first_try != null) {
+    const pct = Math.round(t.first_try * 100);
+    tiles.push(["First-try merges", pct + "%", pct]);
+  }
+  // Lines landed: the net change is the big number, the lines added and
+  // removed beside it. Net removed lines (a refactoring) aren't bad news, so
+  // they get an accent colour, not --bad.
+  // A long net number is set smaller so the split still fits beside it.
+  const net = add - del;
+  const netText = (net > 0 ? "+" : net < 0 ? "−" : "") + num(Math.abs(net));
+  const netClass = ["net", net > 0 ? "add" : net < 0 ? "cut" : "", netText.length > 7 ? "longer" : netText.length > 6 ? "long" : ""];
+  tiles.push(["Lines landed", [
+    h("span", { class: netClass.filter(Boolean).join(" ") }, netText),
+    h("small", { class: "split" }, h("span", {}, "+" + num(add)), h("span", {}, "−" + num(del))),
+  ], net]);
   const was = shown.today;
-  shown.today = Object.fromEntries(tiles);
-  const cells = tiles.slice(0, 4).map(([k, v]) => {
-    const b = h("b", { class: "num" }, v);
-    roll(b, was[k], v);
+  shown.today = Object.fromEntries(tiles.map(([k, , n]) => [k, n]));
+  const cells = tiles.slice(0, 4).map(([k, v, n]) => {
+    const b = h("b", { class: Array.isArray(v) ? "num lines" : "num" }, v);
+    roll(b, was[k], n);
     return h("div", {}, k, b);
   });
   $("today").replaceChildren(...cells);

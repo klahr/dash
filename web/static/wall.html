@@ -95,9 +95,19 @@
   .off{color:var(--bad)}
 
   .today{display:flex;flex-direction:column}
-  .today .big{display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;margin-bottom:14px}
+  .today .big{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px 20px;margin-bottom:14px}
   .today .big div{font-size:16px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
   .today .big b{display:block;font-size:36px;color:var(--text);letter-spacing:0;text-transform:none}
+  /* Lines landed: the net change, with the lines added and removed stacked
+     small beside it, within the number's line so the tile keeps its height. */
+  .today .big b.lines{display:flex;align-items:center;gap:8px;height:1.3em;min-width:0}
+  .today .net{flex:none;white-space:nowrap}
+  .today .net.long{font-size:28px}
+  .today .net.longer{font-size:23px}
+  .today .net.add{color:var(--ok)}
+  .today .net.cut{color:var(--rev)}
+  .today .split{display:flex;flex-direction:column;font-size:14px;font-weight:500;line-height:1.2;color:var(--dim);min-width:0;overflow:hidden}
+  .today .split span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .spark{width:100%;flex:1;min-height:40px;display:block}
   .axis{display:flex;justify-content:space-between;font-size:15px;color:var(--faint)}
 
