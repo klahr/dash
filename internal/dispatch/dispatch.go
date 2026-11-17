@@ -684,11 +684,20 @@ func (d *Dispatcher) applyTask(r tunnel.Runner, ts TaskState, answer bool) error
 			}
 		}
 		next, ok := nextStatus(*x, to)
+		if x.Status == model.StatusInProgress && x.Paused && to == model.StatusFailed {
+			// Paused on the hub, so its runner stopped it (keeping its
+			// worktree and Claude session): it waits here, queued and
+			// paused; resumed, it is sent again and continues there.
+			next, ok = model.StatusQueued, true
+		}
 		if !ok {
 			return errSkip
 		}
 		before := *x
 		copyReport(x, ts, next, r.Name)
+		if next == model.StatusQueued && x.Paused {
+			x.Rejoin = false // the runner stopped it: it isn't still running there
+		}
 		if reflect.DeepEqual(before, *x) {
 			return errSkip
 		}

@@ -8,7 +8,7 @@ import { draft, promptEditor } from "./todoform.js";
 import { LANES, STATUS_LABEL, cp, hist, state } from "./state.js";
 import { showView } from "./nav.js";
 import { baseBranch, projectKey } from "./events.js";
-import { cleanup, grouped, loadProjects, menuOpen, notifyLabel, openDeleteProject, openNewProject, openPlanner, openProjects, projectWhere, selectProject, setMenu, setPicker, setSideCollapsed, sideCollapsed, stepProject } from "./projects.js";
+import { cleanup, grouped, loadProjects, menuOpen, notifyLabel, openDeleteProject, openNewProject, openPlanner, openProjects, projectWhere, selectProject, setMenu, setPicker, setSideCollapsed, sideCollapsed, stepProject, toggleProjectPause } from "./projects.js";
 import { pushDone } from "./board.js";
 import { byPriority, title } from "./branches.js";
 import { openQuickAdd, openTodoForm } from "./todos.js";
@@ -85,6 +85,7 @@ function paletteCommands() {
     p?.deploy_command && [deploy.label || "Deploy", deploy.icon || "rocket", () => startProc({ kind: "task", preset: "deploy" }), "D", `release ship ${deploy.icon || ""}`],
     p && !shellBlocked(p) && ["Open a shell", "terminal", () => openShell(), "!", "terminal pty"],
     p && state.unpushed > 0 && ["Push merged work", "push", pushDone, ":push", "git"],
+    p && [p.paused ? "Resume project" : "Pause project", p.paused ? "play" : "pause", toggleProjectPause, "", "pause stop hold tasks"],
     p && ["Clean up", "trash", cleanup, ":cleanup", "worktrees branches"],
     p && ["Delete project…", "trash", openDeleteProject, "", "remove repo clone github"],
     ["Builds", "checks", openCI, ":ci", "ci github actions"],

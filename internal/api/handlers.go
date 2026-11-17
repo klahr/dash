@@ -1139,11 +1139,16 @@ func (s *Server) cancelTodo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) pauseTodo(w http.ResponseWriter, r *http.Request) {
-	_, _, ok := s.todo(w, r)
+	sv, cur, ok := s.todo(w, r)
 	if !ok {
 		return
 	}
-	t, err := s.Todos.Pause(r.PathValue("tid"))
+	t, err := s.Todos.Pause(cur.ID)
+	if errors.Is(err, queue.ErrOnRunner) {
+		if err = sv.pauseOnRunner(r.Context(), cur); err == nil {
+			t, err = sv.data.GetTodo(cur.ID)
+		}
+	}
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -1162,6 +1167,35 @@ func (s *Server) resumeTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, t)
+}
+
+// pauseProject pauses a project: none of its tasks starts, and its queued
+// and running ones, here or on runners, are paused. missed counts the
+// running ones that couldn't be (a runner out of reach): they carry on.
+func (s *Server) pauseProject(w http.ResponseWriter, r *http.Request) {
+	sv, p, ok := s.project(w, r)
+	if !ok {
+		return
+	}
+	p, missed, err := s.Todos.PauseProject(p.ID, func(t model.Todo) error { return sv.pauseOnRunner(r.Context(), t) })
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"project": p, "missed": missed})
+}
+
+func (s *Server) resumeProject(w http.ResponseWriter, r *http.Request) {
+	_, p, ok := s.project(w, r)
+	if !ok {
+		return
+	}
+	p, err := s.Todos.ResumeProject(p.ID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
 }
 
 func (s *Server) todoDiff(w http.ResponseWriter, r *http.Request) {

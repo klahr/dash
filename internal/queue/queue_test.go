@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -740,5 +741,59 @@ func TestLostSessionIsRecordedAsRetry(t *testing.T) {
 	}
 	if got := runKinds(td); got != "first,retry" {
 		t.Fatalf("run kinds = %s, want first,retry", got)
+	}
+}
+
+// Pausing a project pauses its running and queued tasks and holds back new
+// ones; resuming it lets them go on, the running one in its own session,
+// but leaves a task paused on its own paused.
+func TestPauseProjectPausesItsTasksUntilResumed(t *testing.T) {
+	parallel(t)
+
+	exe := &pauseExec{started: make(chan struct{}), fakeExec: fakeExec{fn: func(n int, req agent.ExecRequest) error {
+		write(t, req.Dir, "f"+strconv.Itoa(n)+".txt", "done\n")
+		return nil
+	}}}
+	h := newHarness(t, exe, model.Project{Name: "p"})
+	own, err := h.st.CreateTodo(model.Todo{ProjectID: h.proj.ID, Title: "own", Prompt: "do own"})
+	if err == nil {
+		own, err = h.st.UpdateTodo(own.ID, func(x *model.Todo) error { x.Status, x.Paused = model.StatusQueued, true; return nil })
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := h.add("run")
+	<-exe.started
+
+	p, missed, err := h.engine.PauseProject(h.proj.ID, nil)
+	if err != nil || missed != 0 || !p.Paused {
+		t.Fatalf("pause project: paused %v, missed %d, err %v", p.Paused, missed, err)
+	}
+	run = h.waitFor(run.ID, model.StatusQueued)
+	if !run.Paused || run.SessionID != "sess-paused" {
+		t.Fatalf("the running task: paused %v, session %q", run.Paused, run.SessionID)
+	}
+	later := h.add("later")
+	time.Sleep(300 * time.Millisecond)
+	if got, _ := h.st.GetTodo(later.ID); got.Status != model.StatusQueued || got.Waiting != ProjectPausedNote {
+		t.Fatalf("a task queued while the project is paused: %s, waiting %q", got.Status, got.Waiting)
+	}
+	if n := len(exe.Calls()); n != 1 {
+		t.Fatalf("nothing may run while the project is paused; got %d runs", n)
+	}
+
+	if _, err := h.engine.ResumeProject(h.proj.ID); err != nil {
+		t.Fatal(err)
+	}
+	run = h.waitFor(run.ID, model.StatusReview)
+	h.waitFor(later.ID, model.StatusReview)
+	if got := runKinds(run); got != "first,interrupted" {
+		t.Errorf("the paused run should continue its session: run kinds %s", got)
+	}
+	if got, _ := h.st.GetTodo(own.ID); got.Status != model.StatusQueued || !got.Paused {
+		t.Errorf("a task paused on its own: %s, paused %v; want it still paused", got.Status, got.Paused)
+	}
+	if p, _ := h.st.GetProject(h.proj.ID); p.Paused || len(p.PausedTodos) != 0 {
+		t.Errorf("after resume: project paused %v, paused todos %v", p.Paused, p.PausedTodos)
 	}
 }

@@ -134,12 +134,42 @@ export function renderProjectHeader() {
   $("#project-menu").hidden = !p;
   renderPushMain();
   renderQuick();
+  renderPaused(p);
   const warn = $("#sync-warn");
   warn.hidden = !p?.sync_error;
   if (p?.sync_error) {
     warn.replaceChildren(h("strong", {}, `Can't sync ${baseBranch(p)} with GitHub`), h("span", {}, p.sync_error),
       h("span", { class: "hint" }, `Fix it in ${p.path}; Dash retries on the next merge.`));
   }
+}
+
+// A paused project says so above the board, and its menu offers Resume.
+function renderPaused(p) {
+  const pm = $("#pm-pause");
+  setLabel(pm, p?.paused ? "play" : "pause", p?.paused ? "Resume project" : "Pause project");
+  pm.title = p?.paused ? "Let the project's tasks run again" : "Pause every task of the project; none starts until you resume it";
+  const el = $("#paused-banner");
+  el.hidden = !p?.paused;
+  if (p?.paused) {
+    el.replaceChildren(h("strong", {}, "Project paused"),
+      h("span", {}, "Its running tasks are paused, keeping their work, and no task starts. "),
+      h("button", { type: "button", class: "btn small", onclick: attempt(toggleProjectPause) }, "Resume project"));
+  }
+}
+
+// toggleProjectPause pauses the open project (every queued and running task
+// waits, keeping its worktree and Claude session) or resumes it.
+export async function toggleProjectPause() {
+  const p = state.project;
+  if (!p) throw new Error("Select a project first (p).");
+  if (p.paused) {
+    await api("POST", `/api/projects/${p.id}/resume`);
+    toast("Project resumed");
+    return;
+  }
+  const res = await api("POST", `/api/projects/${p.id}/pause`);
+  if (res.missed) toast(`Project paused, but ${plural(res.missed, "task")} on a runner out of reach ${res.missed === 1 ? "keeps" : "keep"} running`, { tone: "paused", ms: 9000 });
+  else toast("Project paused");
 }
 
 export function renderProjectList() {
@@ -954,6 +984,7 @@ desktop.addEventListener("change", () => { setMenu(false); $("#project-picker").
 $("#side-new-project").addEventListener("click", () => openNewProject());
 $("#pm-settings").addEventListener("click", openSettings);
 $("#push-main").addEventListener("click", attempt(pushDone));
+$("#pm-pause").addEventListener("click", attempt(toggleProjectPause));
 $("#pm-cleanup").addEventListener("click", attempt(cleanup));
 $("#pm-delete").addEventListener("click", attempt(openDeleteProject));
 // The account menu shows who is logged in, the org they work in and the

@@ -153,6 +153,12 @@ type Project struct {
 	// and patch version, anything else is kept, e.g. "vX.Y.Z". Empty means
 	// "X.Y.Z" (see internal/release).
 	TagFormat string `json:"tag_format,omitempty"`
+	// Paused holds the project's tasks back: none starts while it is set,
+	// and pausing stops the ones running here (see queue.PauseProject).
+	// PausedTodos are the tasks the pause paused, which resuming the
+	// project resumes; a task paused on its own stays paused.
+	Paused      bool     `json:"paused,omitempty"`
+	PausedTodos []string `json:"paused_todos,omitempty"`
 
 	// RunsOn are, on a hub, the runner labels (see labels.go) this
 	// project's tasks run on: they go to the runners (`dash runner`) of its

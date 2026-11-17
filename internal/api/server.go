@@ -250,6 +250,8 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/projects/{pid}", s.getProject)
 	mux.HandleFunc("PATCH /api/projects/{pid}", s.updateProject)
 	mux.HandleFunc("DELETE /api/projects/{pid}", s.deleteProject)
+	mux.HandleFunc("POST /api/projects/{pid}/pause", s.pauseProject)
+	mux.HandleFunc("POST /api/projects/{pid}/resume", s.resumeProject)
 	// Shared notes of a hub's project: counts and removals, never a note (notes.go)
 	mux.HandleFunc("GET /api/projects/{pid}/notes", s.getNotes)
 	mux.HandleFunc("POST /api/projects/{pid}/notes/remove", s.removeNotes)

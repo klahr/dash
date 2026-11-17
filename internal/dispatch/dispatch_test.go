@@ -836,3 +836,31 @@ func TestLinkSendsTheOrgFolder(t *testing.T) {
 		t.Errorf("links %+v, want folder %q", fx.fleet.links, o.ProjectFolder())
 	}
 }
+
+// A task paused on the hub while it ran on a runner is stopped there; the
+// runner's report of it canceled queues it again on the hub, still paused,
+// to continue on a runner once resumed, instead of failing it.
+func TestAPausedTasksStopIsQueuedAgainPaused(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t)
+	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
+	p := fx.project(t, fx.orgA, "laptop")
+	td := fx.todo(t, p, func(x *model.Todo) {
+		x.Status, x.Runner, x.RemoteID, x.Paused = model.StatusInProgress, "laptop", "r1", true
+	})
+
+	report(t, fx.d, "laptop", TaskState{HubTodoID: td.ID, ID: "r1", Status: model.StatusFailed, Error: "canceled", Session: true})
+	got := fx.get(t, td.ID)
+	if got.Status != model.StatusQueued || !got.Paused || got.Rejoin || !got.Resumable || got.Error != "" {
+		t.Fatalf("after the runner stopped a paused task: status %s paused %v rejoin %v resumable %v error %q",
+			got.Status, got.Paused, got.Rejoin, got.Resumable, got.Error)
+	}
+
+	// Not paused, the same report fails it.
+	other := fx.todo(t, p, func(x *model.Todo) { x.Status, x.Runner, x.RemoteID = model.StatusInProgress, "laptop", "r2" })
+	report(t, fx.d, "laptop", TaskState{HubTodoID: other.ID, ID: "r2", Status: model.StatusFailed, Error: "canceled"})
+	if got := fx.get(t, other.ID); got.Status != model.StatusFailed {
+		t.Errorf("a canceled task that wasn't paused: %s, want failed", got.Status)
+	}
+}

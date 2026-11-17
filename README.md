@@ -174,6 +174,14 @@ may wait a little longer afterwards. Start now is used up by that run: later run
 retry) follow the pace again. The API is `POST /api/todos/{id}/start-now`; a chat can do it with
 `queue_todo` and `start_now: true` (see [MCP](docs/mcp.md#the-chats-task-tools)).
 
+**Pause a project.** To hold all of a project's work, choose **⋯ → Pause project** in the top bar.
+Its running tasks stop and go back to *Queued*, paused, keeping their worktree and Claude session;
+on a hub, their runners stop them. Its queued tasks are paused too, and no task of the project
+starts, including new ones, until you choose **⋯ → Resume project** (or **Resume project** in the
+banner above the board). Resuming continues each task in its session. A task you paused on its own
+before stays paused. A task on a runner that can't be reached keeps running, and Dash says so. The
+API is `POST /api/projects/{id}/pause` and `POST /api/projects/{id}/resume`.
+
 ## Optional setup
 
 - **Run it as a service** so it starts at boot: [`deploy/dash.service`](deploy/dash.service), explained in

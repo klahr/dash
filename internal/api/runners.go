@@ -348,6 +348,38 @@ func (sv *service) runnerTask(t model.Todo) (*dispatch.Dispatcher, error) {
 	return sv.s.Dispatch, nil
 }
 
+// pauseOnRunner pauses t, which runs on a runner: the hub marks it paused
+// and has the runner stop it. Once the runner reports it stopped, the hub
+// queues it again, still paused (see dispatch.Dispatcher's applyTask);
+// resumed, it goes back to a runner, which continues its Claude session.
+func (sv *service) pauseOnRunner(ctx context.Context, t model.Todo) error {
+	d, err := sv.runnerTask(t)
+	if err != nil {
+		return err
+	}
+	if _, err := sv.data.UpdateTodo(t.ID, func(x *model.Todo) error {
+		if x.Status != model.StatusInProgress || !x.OnRunner() {
+			return model.ErrInvalidTransition{From: x.Status, To: "paused"}
+		}
+		x.Paused = true
+		return nil
+	}); err != nil {
+		return err
+	}
+	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := d.Cancel(cctx, t); err != nil {
+		_, _ = sv.data.UpdateTodo(t.ID, func(x *model.Todo) error {
+			if x.Status == model.StatusInProgress {
+				x.Paused = false
+			}
+			return nil
+		})
+		return err
+	}
+	return nil
+}
+
 // approveOnRunner asks t's runner to land it: the runner opens a pull
 // request ("pr" mode), which a person merges on GitHub, or squashes it
 // onto the default branch, runs the checks and pushes it to origin

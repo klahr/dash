@@ -161,7 +161,7 @@ export function renderActions(t) {
       else if (canStartNow(t) && pacing(t)) btns.push(startNowButton(t, post));
       break;
     case "in_progress":
-      if (!t.paused && !t.runner) btns.push(b("pause", "Pause", post("pause", null, "Pausing")));
+      if (!t.paused) btns.push(b("pause", "Pause", post("pause", null, "Pausing")));
       btns.push(b("stop", "Stop", post("cancel", null, "Stopping"), "danger grow"));
       break;
     case "review":

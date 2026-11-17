@@ -231,6 +231,10 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 			if err != nil {
 				continue
 			}
+			if p.Paused {
+				e.wait(q, ProjectPausedNote)
+				continue
+			}
 			if e.Hold != nil {
 				if why := e.Hold(p.OrgID); why != "" {
 					e.wait(q, why)
@@ -501,6 +505,72 @@ func (e *TodoEngine) Resume(todoID string) (model.Todo, error) {
 		e.Kick()
 	}
 	return t, err
+}
+
+// ProjectPausedNote is why a queued task of a paused project waits.
+const ProjectPausedNote = "the project is paused"
+
+// PauseProject pauses project projectID: no task of it starts until
+// ResumeProject, and each of its queued or running tasks is paused (a
+// running one is stopped and queued again, its worktree and Claude session
+// kept). A task running on a runner is paused with onRunner, which asks
+// the runner to stop it; with no onRunner, or when it fails, the task
+// carries on and missed counts it.
+func (e *TodoEngine) PauseProject(projectID string, onRunner func(model.Todo) error) (p model.Project, missed int, err error) {
+	if p, err = e.Store.UpdateProject(projectID, func(x *model.Project) error { x.Paused = true; return nil }); err != nil {
+		return p, 0, err
+	}
+	var paused []string
+	for _, t := range e.Store.ListTodos(projectID, model.StatusQueued, model.StatusInProgress) {
+		if t.Paused {
+			continue // paused on its own: it stays paused when the project resumes
+		}
+		_, err := e.Pause(t.ID)
+		if errors.Is(err, ErrOnRunner) {
+			if onRunner == nil || onRunner(t) != nil {
+				missed++
+				continue
+			}
+			err = nil
+		}
+		if err == nil { // else it moved on (finished, say) since it was listed
+			paused = append(paused, t.ID)
+		}
+	}
+	p, err = e.Store.UpdateProject(projectID, func(x *model.Project) error {
+		x.PausedTodos = append(x.PausedTodos, paused...)
+		return nil
+	})
+	return p, missed, err
+}
+
+// ResumeProject lifts PauseProject: the tasks it paused are resumed, and
+// the project's tasks start again.
+func (e *TodoEngine) ResumeProject(projectID string) (model.Project, error) {
+	var ids []string
+	p, err := e.Store.UpdateProject(projectID, func(x *model.Project) error {
+		ids, x.Paused, x.PausedTodos = x.PausedTodos, false, nil
+		return nil
+	})
+	if err != nil {
+		return p, err
+	}
+	for _, id := range ids {
+		_, _ = e.Store.UpdateTodo(id, func(x *model.Todo) error {
+			x.Paused = false
+			if x.Waiting == ProjectPausedNote {
+				x.Waiting = ""
+			}
+			return nil
+		})
+	}
+	for _, t := range e.Store.ListTodos(projectID, model.StatusQueued) {
+		if t.Waiting == ProjectPausedNote {
+			e.wait(t, "")
+		}
+	}
+	e.Kick()
+	return p, nil
 }
 
 func (e *TodoEngine) shuttingDown() bool {

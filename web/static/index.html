@@ -50,6 +50,7 @@
         <div class="foot-menu-list">
           <button id="pm-branch" type="button" data-icon="branch">Switch branch…</button>
           <button id="pm-builds" type="button" data-icon="checks" aria-haspopup="dialog" title="GitHub Actions on the default branch" hidden>Builds</button>
+          <button id="pm-pause" type="button" data-icon="pause" title="Pause every task of the project; none starts until you resume it">Pause project</button>
           <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
           <button id="pm-cleanup" type="button" data-icon="trash" title="Remove leftover worktrees, branches, logs and uploads">Clean up</button>
           <button id="pm-delete" type="button" data-icon="trash" class="danger">Delete project…</button>
@@ -199,6 +200,7 @@
         <div class="sync-warn billing-warn" id="billing-banner" role="status" hidden></div>
         <div class="sync-warn disk-warn" id="disk-banner" role="alert" hidden></div>
         <div class="sync-warn" id="sync-warn" role="alert" hidden></div>
+        <div class="sync-warn paused-warn" id="paused-banner" role="status" hidden></div>
         <div class="sync-warn" id="runner-banner" role="status" hidden></div>
         <div class="perm-list" id="perm-banner" hidden></div>
         <div class="board" id="board"></div>
