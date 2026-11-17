@@ -80,6 +80,7 @@ func TestBoardMCPStartNow(t *testing.T) {
 type pacedRunner struct{ r tunnel.Runner }
 
 func (f pacedRunner) Get(id string) (tunnel.Runner, bool) { return f.r, id == f.r.ID }
+func (f pacedRunner) List() []tunnel.Runner               { return []tunnel.Runner{f.r} }
 func (f pacedRunner) Call(context.Context, string, string, string, any, any) error {
 	return nil
 }

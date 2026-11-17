@@ -491,7 +491,7 @@ $("#d-to-agent").addEventListener("click", attempt(async () => {
 export async function revertTodo(t) {
   if (t.status !== "merged" || t.revert) throw new Error("Only merged tasks can be reverted.");
   const pr = state.project?.merge_mode === "pr";
-  const pushes = state.project?.auto_push || !!state.project?.runners?.length;
+  const pushes = state.project?.auto_push || !!state.project?.runs_on?.length;
   const ok = await ask({
     title: `Revert "${title(t)}"?`,
     body: pr ? `Opens a pull request that undoes this change on ${baseBranch(state.project)}.`

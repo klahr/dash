@@ -71,7 +71,7 @@ func TestRunnerProjectTasksGoToTheirRunners(t *testing.T) {
 	parallel(t)
 
 	e, st, rem, exe := remoteEngine(t)
-	shared, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", Runners: []string{"laptop"}})
+	shared, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", RunsOn: []string{"self-hosted"}})
 	a, b := queued(t, st, shared), queued(t, st, shared) // more than MaxParallel
 
 	e.dispatch(context.Background())
@@ -97,7 +97,7 @@ func TestRunnerProjectTasksWaitWhileRunnersAreOffline(t *testing.T) {
 
 	e, st, rem, _ := remoteEngine(t)
 	rem.err = errors.New("waiting for a runner: laptop is offline")
-	shared, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", Runners: []string{"laptop"}})
+	shared, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", RunsOn: []string{"self-hosted"}})
 	td := queued(t, st, shared)
 
 	e.dispatch(context.Background())
@@ -135,7 +135,7 @@ func TestPauseRefusesRunnerTasks(t *testing.T) {
 	parallel(t)
 
 	e, st, _, _ := remoteEngine(t)
-	shared, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", Runners: []string{"laptop"}})
+	shared, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", RunsOn: []string{"self-hosted"}})
 	td := queued(t, st, shared)
 	e.dispatch(context.Background())
 	if _, err := e.Pause(td.ID); !errors.Is(err, ErrOnRunner) {
@@ -177,8 +177,8 @@ func TestHeldOrgTasksWait(t *testing.T) {
 		}
 		return ""
 	}
-	unpaid, _ := st.CreateProject(model.Project{Name: "unpaid", OrgID: 7, RemoteURL: "https://x/y", Runners: []string{"laptop"}})
-	paid, _ := st.CreateProject(model.Project{Name: "paid", OrgID: 8, RemoteURL: "https://x/z", Runners: []string{"laptop"}})
+	unpaid, _ := st.CreateProject(model.Project{Name: "unpaid", OrgID: 7, RemoteURL: "https://x/y", RunsOn: []string{"self-hosted"}})
+	paid, _ := st.CreateProject(model.Project{Name: "paid", OrgID: 8, RemoteURL: "https://x/z", RunsOn: []string{"self-hosted"}})
 	a, b := queued(t, st, unpaid), queued(t, st, paid)
 
 	e.dispatch(context.Background())
@@ -206,7 +206,7 @@ func TestSettledTaskIsNotSentAgain(t *testing.T) {
 	parallel(t)
 
 	e, st, rem, _ := remoteEngine(t)
-	shared, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", Runners: []string{"laptop"}})
+	shared, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", RunsOn: []string{"self-hosted"}})
 	td := queued(t, st, shared)
 	rem.err = ErrSettled
 	rem.settle = func(id string) {
@@ -260,8 +260,8 @@ func TestSlowRunnerDoesntHoldUpOthers(t *testing.T) {
 	parallel(t)
 
 	e, st, _, _ := remoteEngine(t)
-	slow, _ := st.CreateProject(model.Project{Name: "slow", RemoteURL: "https://x/slow", Runners: []string{"slow"}})
-	fast, _ := st.CreateProject(model.Project{Name: "fast", RemoteURL: "https://x/fast", Runners: []string{"fast"}})
+	slow, _ := st.CreateProject(model.Project{Name: "slow", RemoteURL: "https://x/slow", RunsOn: []string{"self-hosted"}})
+	fast, _ := st.CreateProject(model.Project{Name: "fast", RemoteURL: "https://x/fast", RunsOn: []string{"self-hosted"}})
 	rem := &claimRemote{slowProject: slow.ID, release: make(chan struct{})}
 	e.Remote = rem
 	s1, s2, f := queued(t, st, slow), queued(t, st, slow), queued(t, st, fast)

@@ -80,7 +80,7 @@ and how long, and the error if it failed. Deleting a webhook deletes its history
 | `goal.attention`    | a [goal](goals.md) waits for you, is done or out of budget   |
 | `issue.new`         | a [scan](scans.md) or Claude (`report_issue`) finds a new issue (off by default) |
 | `build.failing`     | GitHub Actions starts failing on the default branch          |
-| `runner.disk`       | a runner linked to the project is nearly out of disk space   |
+| `runner.disk`       | a runner that works on the project is nearly out of disk space |
 | `checkout.behind`   | a runner's checkout was left behind origin (off by default)  |
 | `webhook.test`      | the Send test button (always sent, whatever is ticked)       |
 | `summary`           | your [summary](#summary), to the webhooks you chose for it    |
@@ -136,7 +136,7 @@ the way on a `dash-backup/` branch first), why syncing failed. A clean checkout 
 itself. New webhooks don't subscribe to it; each runner's
 checkout notifies at most once every 6 hours. `runner.disk` events have `"runner": {"id", "name"}`
 and say in `message` how much space is left and which folders take the most; they go to the
-webhooks of every project linked to the runner (each URL once), at most once every 6 hours per
+webhooks of every project the runner works on (each URL once), at most once every 6 hours per
 runner. The headers `Dash-Event` and `Dash-Delivery` repeat the type and id; the id
 stays the same when a delivery is retried, so you can drop duplicates.
 

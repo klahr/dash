@@ -98,7 +98,7 @@ function localMdWarning(p) {
         loadClaudeFiles().catch(fail);
       }) }, "Add to copy_files"));
   }
-  box.append(h("p", { class: "hint warn" }, p.runners?.length
+  box.append(h("p", { class: "hint warn" }, p.runs_on?.length
     ? "This project's tasks run on runners, which never get this file: put what they need in CLAUDE.md or the extra instructions below."
     : "Runners never get this file, even when it is copied."));
   return box;

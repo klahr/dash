@@ -103,7 +103,7 @@ func TestHubMergesPullRequestOnRunner(t *testing.T) {
 	eventually(t, "the runner to come online", func() bool { r, _ := rh.Get(creds.ID); return r.Online })
 
 	p, err := raw(hub).CreateProject(model.Project{Name: "shared", OrgID: owner.Org, RemoteURL: origin, DefaultBranch: "main",
-		Runners: []string{creds.ID}, MergeMode: model.MergePR, MergeModeSet: true, MergeMethod: "rebase"})
+		RunsOn: []string{"self-hosted"}, MergeMode: model.MergePR, MergeModeSet: true, MergeMethod: "rebase"})
 	if err != nil {
 		t.Fatal(err)
 	}

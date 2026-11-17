@@ -38,10 +38,11 @@ import (
 var errNoRunnerOnline = errors.New("No runner is online for this project. Start one with `dash runner`.")
 
 // errNoRunnerLinked is why the hub can't do the work of a project no
-// runner is linked to (one made on the hub before it ran nothing itself).
+// runner works on: none has the labels it runs on (or it runs on none, as
+// one made on the hub before it ran nothing itself).
 //
 //lint:ignore ST1005 shown to the user verbatim as a sentence
-var errNoRunnerLinked = errors.New("No runner is linked to this project: link one in Project settings → Runners (start one with `dash runner`).")
+var errNoRunnerLinked = errors.New("No runner has the labels this project runs on: give one those labels in Runners, or change them in Project settings → Runners (start a runner with `dash runner`).")
 
 // projectRunner picks the runner that does p's work for the hub: one of
 // p's runners, online, in p's org; prefer if it is one of them. It links p
@@ -49,7 +50,7 @@ var errNoRunnerLinked = errors.New("No runner is linked to this project: link on
 func (sv *service) projectRunner(ctx context.Context, p model.Project, prefer string) (tunnel.Runner, string, error) {
 	cands := sv.s.onlineRunners(p)
 	if len(cands) == 0 {
-		if len(p.Runners) == 0 {
+		if len(sv.s.projectRunners(p)) == 0 {
 			return tunnel.Runner{}, "", errNoRunnerLinked
 		}
 		return tunnel.Runner{}, "", errNoRunnerOnline
@@ -66,17 +67,31 @@ func (sv *service) projectRunner(ctx context.Context, p model.Project, prefer st
 
 // onlineRunners are p's runners that are online, in p's org.
 func (s *Server) onlineRunners(p model.Project) []tunnel.Runner {
-	fleet := s.fleet()
-	if fleet == nil || s.Dispatch == nil {
+	if s.Dispatch == nil {
 		return nil
 	}
 	var out []tunnel.Runner
-	for _, id := range p.Runners {
-		if r, ok := fleet.Get(id); ok && r.Online && r.OrgID() == p.OrgID {
+	for _, r := range s.projectRunners(p) {
+		if r.Online {
 			out = append(out, r)
 		}
 	}
 	return out
+}
+
+// projectRunners are the runners that work on p, online or not: those of
+// p's org with every label p runs on (tunnel.Runner.Serves).
+func (s *Server) projectRunners(p model.Project) []tunnel.Runner {
+	fleet := s.fleet()
+	if fleet == nil {
+		return nil
+	}
+	return tunnel.Serving(fleet.List(), p)
+}
+
+// servesProject reports whether runner id works on p.
+func (s *Server) servesProject(p model.Project, id string) bool {
+	return slices.ContainsFunc(s.projectRunners(p), func(r tunnel.Runner) bool { return r.ID == id })
 }
 
 // linkOn links p to runner r and returns r's project id for it. When r's
@@ -652,8 +667,8 @@ func (s *Server) pullOnRunner(w http.ResponseWriter, r *http.Request, sv *servic
 		return
 	}
 	if !slices.ContainsFunc(online, func(x tunnel.Runner) bool { return x.ID == id }) {
-		if !slices.Contains(p.Runners, id) {
-			writeErr(w, fmt.Errorf("%w: that runner isn't linked to %s", errBadRequest, p.Name))
+		if !s.servesProject(p, id) {
+			writeErr(w, fmt.Errorf("%w: that runner doesn't work on %s (it lacks the labels it runs on)", errBadRequest, p.Name))
 			return
 		}
 		writeErr(w, errNoRunnerOnline)

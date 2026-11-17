@@ -160,7 +160,7 @@ func TestRunnersFollowEachOthersPushes(t *testing.T) {
 	a, b := connect("alpha"), connect("beta")
 
 	p, err := raw(hub).CreateProject(model.Project{Name: "shared", OrgID: owner.Org, RemoteURL: origin, DefaultBranch: "main",
-		MergeMode: model.MergeLocal, MergeModeSet: true, Runners: []string{a.id, b.id}})
+		MergeMode: model.MergeLocal, MergeModeSet: true, RunsOn: []string{"self-hosted"}})
 	if err != nil {
 		t.Fatal(err)
 	}

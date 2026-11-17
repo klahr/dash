@@ -11,6 +11,7 @@ import { loadClaudeFiles } from "./claudefiles.js";
 import { loadWebhooks } from "./webhooks.js";
 import { loadBoard } from "./backend.js";
 import { loadSharedNotes } from "./sharednotes.js";
+import { missingLabels, parseLabels, servesProject } from "../groups.js";
 
 // ------------------------------------------------------------------ project settings
 export function openSettings() {
@@ -61,34 +62,50 @@ export let settingsSnapshot = "";
 // markSettingsSaved takes the form as it is now as saved (opening a Claude file won't ask to save it first).
 export function markSettingsSaved(f) { settingsSnapshot = formSnapshot(f); }
 export const formSnapshot = (f) => new URLSearchParams(new FormData(f)).toString();
-// The runners a project of this hub can be linked to: the org's. A member
-// links their own; admins any. Linked, its tasks run only there and the
-// runner pushes approved work to the default branch.
+// A project of this hub runs on runner labels, never on runners it names:
+// its tasks go to the org's runners that have every label (as GitHub's
+// runs-on). The field takes the labels; below it, the org's runners show
+// whether they would work on it, live as the labels are typed. A member may
+// only pick labels that send work to their own runners; admins any (the hub
+// says so when saving).
 function renderRunnerPicker(p) {
-  const runners = !p.prefix && state.runners;
-  shownRunners = runnerKey(p.runners);
-  $("#settings-runners-field").hidden = !runners?.length && !p.runners?.length;
-  $("#settings-runners").replaceChildren(...(runners || []).map((r) => {
-    const linked = (p.runners || []).includes(r.id);
-    return h("label", { class: "runner-pick" },
-      h("input", { type: "checkbox", name: "runner", value: r.id, checked: linked, disabled: !linked && !r.can_manage }),
+  const hub = !p.prefix && Array.isArray(state.runners);
+  $("#settings-runners-field").hidden = !hub && !p.runs_on?.length;
+  shownRunsOn = labelKey(p.runs_on);
+  $("#settings-runs-on").value = (p.runs_on || []).join(", ");
+  renderRunsOnPreview();
+}
+
+// renderRunsOnPreview lists the org's runners as the typed labels would
+// have it: those that would work on the project first.
+function renderRunsOnPreview() {
+  const want = { runs_on: typedRunsOn() };
+  const rs = [...(state.runners || [])].map((r) => ({ r, ok: servesProject(r, want) })).sort((a, b) => b.ok - a.ok);
+  $("#settings-runners").replaceChildren(...rs.map(({ r, ok }) => {
+    const missing = missingLabels(r, want);
+    return h("div", { class: `runner-pick ${ok ? "on" : ""}` },
       h("span", { class: `runner-dot ${r.online ? "on" : ""}`, "aria-hidden": "true" }),
       h("span", { class: "runner-name" }, r.name),
-      h("span", { class: "hint" }, `${r.mine ? "yours" : r.owner?.username || ""}${!linked && !r.can_manage ? " · only its owner or an admin can link it" : ""}`));
+      h("span", { class: "hint" }, ok ? `works on it · ${r.mine ? "yours" : r.owner?.username || ""}`
+        : want.runs_on.length ? `lacks ${missing.join(", ")}` : "no labels: runs nothing"));
   }));
 }
-const pickedRunners = () => [...$("#settings-form").querySelectorAll('input[name="runner"]:checked')].map((x) => x.value);
-// shownRunners is the link the picker was last drawn with.
-let shownRunners = "";
-const runnerKey = (ids) => [...(ids || [])].sort().join(",");
+const typedRunsOn = () => parseLabels($("#settings-runs-on").value);
+// shownRunsOn is the project's labels as the field was last drawn with.
+let shownRunsOn = "";
+const labelKey = (ls) => [...(ls || [])].map((l) => l.toLowerCase()).sort().join(",");
 
-// syncSettingsRunners redraws the open settings' runner picker when the
-// project's runners changed elsewhere (a runner's Projects screen, another
-// browser), unless the picker was changed here and not saved yet.
+// syncSettingsRunners redraws the open settings' labels when the project's
+// changed elsewhere (another browser), unless they were changed here and not
+// saved yet, and its runner list when the runners changed (their labels,
+// say).
 export function syncSettingsRunners() {
   const p = state.project;
-  if (!$("#settings-sheet").open || !p || $("#settings-runners-field").hidden && !p.runners?.length) return;
-  if (runnerKey(p.runners) === shownRunners || runnerKey(pickedRunners()) !== shownRunners) return;
+  if (!$("#settings-sheet").open || !p) return;
+  if (labelKey(p.runs_on) === shownRunsOn || labelKey(typedRunsOn()) !== shownRunsOn) {
+    renderRunsOnPreview();
+    return;
+  }
   const f = $("#settings-form"), clean = formSnapshot(f) === settingsSnapshot;
   renderRunnerPicker(p);
   syncMergeHint();
@@ -98,13 +115,15 @@ export function syncSettingsRunners() {
 function syncMergeHint() {
   const f = $("#settings-form");
   const p = state.project;
-  const onRunners = !$("#settings-runners-field").hidden && pickedRunners().length > 0;
+  const onRunners = !$("#settings-runners-field").hidden && typedRunsOn().length > 0;
   const hint = $("#settings-runners-hint");
   hint.hidden = $("#settings-runners-field").hidden;
+  const n = (state.runners || []).filter((r) => servesProject(r, { runs_on: typedRunsOn() })).length;
   hint.textContent = !onRunners
-    ? "Not linked: tasks, git history, files and commands wait until you link a runner (this dashboard runs nothing itself)."
+    ? "No labels: tasks, git history, files and commands wait until it runs on labels a runner has (this dashboard runs nothing itself)."
     : !p.remote_url ? "Runners clone the project's git remote: connect a GitHub repository first."
-      : "Tasks, git, files and commands run only on these runners, each in its own clone. If all of them are offline, tasks wait in the queue.";
+      : !n ? "No runner has all these labels yet: tasks wait until one does. Give a runner labels on its page in Runners."
+        : "Tasks, git, files and commands run only on runners with all these labels, each in its own clone. If all of them are offline, tasks wait in the queue.";
   const pr = f.merge_mode.value === "pr";
   // On runners, merging is pushing: there's no separate push to turn on.
   $("#auto-push-row").hidden = pr || onRunners;
@@ -120,6 +139,7 @@ function syncMergeHint() {
       : f.auto_push.checked ? `Before each merge Dash pulls ${baseBranch(p)} from GitHub, so pushes don't get rejected. GitHub's checks run only after it's pushed.` : "";
 }
 $("#settings-form").addEventListener("change", syncMergeHint);
+$("#settings-runs-on").addEventListener("input", () => { renderRunsOnPreview(); syncMergeHint(); });
 
 // The tag format is checked as it is typed: placeholders, a valid git tag,
 // and whether the repository's release workflows run for its tags.
@@ -188,7 +208,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     max_turns: Number(f.max_turns.value) || 0,
     color: f.use_color.checked ? f.color.value : "",
     icon: f.icon.value,
-    ...($("#settings-runners-field").hidden ? {} : { runners: pickedRunners() }),
+    ...($("#settings-runners-field").hidden ? {} : { runs_on: typedRunsOn() }),
   });
   // Keep the client-only fields, and the list entry in step for its name, color and icon.
   state.project = { ...saved, machine: old.machine, prefix: old.prefix };

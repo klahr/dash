@@ -8,6 +8,7 @@ import { projectKey } from "./events.js";
 import { agoText, byPriority, title } from "./branches.js";
 import { editing, pickProject, showNewTasks } from "./todos.js";
 import { formPriority } from "./dnd.js";
+import { servesProject } from "../groups.js";
 
 // ------------------------------------------------------------------ the task form
 export const promptEditor = mdEditor($("#todo-form").prompt);
@@ -88,12 +89,12 @@ export const buildOnPicker = (() => {
 // runOnOptions lists the runners of p as <option>s, id (the one chosen)
 // included; null when there is nothing to choose.
 export function runOnOptions(p, id = "") {
-  const ids = p && !p.prefix && Array.isArray(state.runners) ? p.runners || [] : [];
+  const ids = p && !p.prefix && Array.isArray(state.runners) ? state.runners.filter((r) => servesProject(r, p)).map((r) => r.id) : [];
   if (ids.length < 2 && !id) return null;
   const name = (x) => state.runners?.find((r) => r.id === x)?.name || x;
   return [
     h("option", { value: "" }, "Any: the least busy"),
-    ...(id && !ids.includes(id) ? [h("option", { value: id }, `${name(id)} (no longer linked)`)] : []),
+    ...(id && !ids.includes(id) ? [h("option", { value: id }, `${name(id)} (lacks the project's labels)`)] : []),
     ...ids.map((x) => h("option", { value: x }, name(x)))];
 }
 

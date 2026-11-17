@@ -117,7 +117,7 @@ When a hub runs a chat or a task on a runner, these tools act on the hub's board
 runner's: the runner passes each call to the hub (`POST /runner/mcp/dash`, with its runner
 token), and the hub decides who it acts as. A task's run acts as the task's owner, and only for a
 task the hub sent that runner, in that task's project. A chat acts as the runner's owner, in the
-runner's org: a project's chat only in its project, which must be linked to that runner. So tasks and issues created there show up on the hub's board,
+runner's org: a project's chat only in its project, which that runner must work on (have its labels). So tasks and issues created there show up on the hub's board,
 under the hub's ids. If the hub can't be reached, the tool call fails; it never writes to the
 runner's own database instead.
 
@@ -207,4 +207,4 @@ A [goal](goals.md)'s coordinator gets its own set of `dash_board` tools, for its
 It has no tool to approve or merge a task, tag a release, change the checklist or start a task
 despite the weekly pace. On a runner, a coordinator turn the hub runs gets the hub goal's tools:
 the runner passes the goal's id to the hub with its calls (`X-Dash-Hub-Goal`), and the hub checks
-that the goal is in the project linked to that runner.
+that the goal is in a project that runner works on.

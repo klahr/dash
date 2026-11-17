@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -21,9 +23,10 @@ import (
 type fakeFleet struct {
 	mu      sync.Mutex
 	runners map[string]tunnel.Runner
-	calls   []string // "runner METHOD path"
-	links   []Link   // the links sent
-	tasks   []Task   // the tasks sent
+	labels  map[string][]string // runner id → labels given on top of its own (see fixture.project)
+	calls   []string            // "runner METHOD path"
+	links   []Link              // the links sent
+	tasks   []Task              // the tasks sent
 	// answer, if set, is how a runner answers a task sent to it (instead
 	// of taking it).
 	answer func(runner string, t Task, a *Accepted) error
@@ -33,7 +36,38 @@ func (f *fakeFleet) Get(id string) (tunnel.Runner, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	r, ok := f.runners[id]
-	return r, ok
+	return f.labelled(r), ok
+}
+
+// List is the runners, by id (the hub's are in a set order too).
+func (f *fakeFleet) List() []tunnel.Runner {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]tunnel.Runner, 0, len(f.runners))
+	for _, r := range f.runners {
+		out = append(out, f.labelled(r))
+	}
+	slices.SortFunc(out, func(a, b tunnel.Runner) int { return strings.Compare(a.ID, b.ID) })
+	return out
+}
+
+func (f *fakeFleet) labelled(r tunnel.Runner) tunnel.Runner {
+	if l := f.labels[r.ID]; len(l) > 0 {
+		r.Labels = append(slices.Clone(r.Labels), l...)
+	}
+	return r
+}
+
+// label gives runners ids label, whatever they are set to later.
+func (f *fakeFleet) label(label string, ids ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.labels == nil {
+		f.labels = map[string][]string{}
+	}
+	for _, id := range ids {
+		f.labels[id] = append(f.labels[id], label)
+	}
 }
 
 func (f *fakeFleet) set(r tunnel.Runner) {
@@ -107,6 +141,8 @@ type fixture struct {
 	d     *Dispatcher
 	orgA  int64
 	orgB  int64
+	// labels counts the labels project gave out.
+	labels int
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -130,13 +166,18 @@ func newFixture(t *testing.T) *fixture {
 	return &fixture{st: st, fleet: f, d: &Dispatcher{Store: st, Fleet: f, Grace: 30 * time.Millisecond}, orgA: a.ID, orgB: b.ID}
 }
 
+// project makes a project of org that runs on a label of its own, which
+// runners are given: those of org work on it, and no other.
 func (fx *fixture) project(t *testing.T, org int64, runners ...string) model.Project {
 	t.Helper()
+	fx.labels++
+	label := fmt.Sprintf("project-%d", fx.labels)
 	p, err := fx.st.CreateProject(model.Project{Name: "web", OrgID: org, RemoteURL: "https://github.com/x/web", DefaultBranch: "main",
-		MergeMode: model.MergePR, Runners: runners})
+		MergeMode: model.MergePR, RunsOn: []string{label}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	fx.fleet.label(label, runners...)
 	return p
 }
 
@@ -209,12 +250,12 @@ func TestDispatchWaitsWhileRunnersAreOffline(t *testing.T) {
 		t.Errorf("offline runners were called: %q", fx.fleet.calls)
 	}
 
-	// Revoked runners leave nothing to wait for.
+	// Revoked runners leave nothing to wait for but a runner with the labels.
 	fx.fleet.remove("laptop")
 	fx.fleet.remove("desk")
 	_, _, err = fx.d.Dispatch(context.Background(), p, fx.todo(t, p, nil))
-	if !errors.As(err, &w) || !strings.Contains(w.Reason, "revoked") {
-		t.Fatalf("err = %v, want a wait saying the runners were revoked", err)
+	if !errors.As(err, &w) || !strings.Contains(w.Reason, "no runner has the labels this project runs on") {
+		t.Fatalf("err = %v, want a wait saying no runner has the project's labels", err)
 	}
 }
 
@@ -347,10 +388,11 @@ func TestDispatchSendsATaskOnlyToTheRunnerItIsSetToRunOn(t *testing.T) {
 		t.Fatalf("err = %v, want a wait for a only", err)
 	}
 
-	// A runner no longer linked to the project: it waits, and says so.
+	// A runner without the project's labels (any more): it waits, and says so.
+	fx.fleet.set(runnerOf("c", fx.orgA, true))
 	gone := fx.todo(t, p, func(x *model.Todo) { x.RunOn = "c" })
-	if _, _, err := fx.d.Dispatch(context.Background(), p, gone); !errors.As(err, &w) || !strings.Contains(w.Reason, "no longer linked") {
-		t.Fatalf("err = %v, want a wait saying the runner is no longer linked", err)
+	if _, _, err := fx.d.Dispatch(context.Background(), p, gone); !errors.As(err, &w) || !strings.Contains(w.Reason, "no longer has the labels") {
+		t.Fatalf("err = %v, want a wait saying the runner lacks the labels", err)
 	}
 	// A revoked one too.
 	fx.fleet.remove("a")
@@ -492,8 +534,8 @@ func TestRevokedRunnerIsUnlinkedAndItsTasksFail(t *testing.T) {
 	fx.fleet.remove("laptop")
 	fx.d.Revoked("laptop")
 
-	if got, _ := fx.st.GetProject(p.ID); len(got.Runners) != 1 || got.Runners[0] != "desk" {
-		t.Errorf("runners after revoking laptop: %v", got.Runners)
+	if got := tunnel.Serving(fx.fleet.List(), p); len(got) != 1 || got[0].ID != "desk" {
+		t.Errorf("runners after revoking laptop: %v", got)
 	}
 	got := fx.get(t, td.ID)
 	if got.Status != model.StatusFailed || got.Resumable || got.Runner != "" || !strings.Contains(got.Error, "revoked") {
@@ -706,10 +748,11 @@ func TestHubFollowsTheRunnersMerge(t *testing.T) {
 	fx := newFixture(t)
 	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
 	p, err := fx.st.CreateProject(model.Project{Name: "web", OrgID: fx.orgA, RemoteURL: "https://github.com/x/web",
-		DefaultBranch: "main", Runners: []string{"laptop"}})
+		DefaultBranch: "main", RunsOn: []string{"web"}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	fx.fleet.label("web", "laptop")
 	var undone []string
 	fx.d.Undo = func(t model.Todo, files []string) { undone = append(undone, t.ID+":"+strings.Join(files, ",")) }
 

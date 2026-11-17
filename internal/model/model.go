@@ -154,13 +154,19 @@ type Project struct {
 	// "X.Y.Z" (see internal/release).
 	TagFormat string `json:"tag_format,omitempty"`
 
-	// Runners are the ids of the runners (`dash runner`) this project's
-	// tasks are sent to, on a hub. A project with runners needs a git
-	// remote: each runner keeps its own clone and lands approved work
-	// through a pull request ("pr", the default on GitHub), or by squashing
-	// it onto the default branch there and pushing it to origin ("local");
-	// the hub never merges in a checkout of its own.
-	Runners []string `json:"runners,omitempty"`
+	// RunsOn are, on a hub, the runner labels (see labels.go) this
+	// project's tasks run on: they go to the runners (`dash runner`) of its
+	// org that have every one of them, never to runners named here. Empty:
+	// it runs on no runner. A project on runners needs a git remote: each
+	// runner keeps its own clone and lands approved work through a pull
+	// request ("pr", the default on GitHub), or by squashing it onto the
+	// default branch there and pushing it to origin ("local"); the hub
+	// never merges in a checkout of its own.
+	RunsOn []string `json:"runs_on,omitempty"`
+	// LegacyRunners are the ids of the runners a hub's project was linked
+	// to before projects ran on labels; the hub turns them into labels when
+	// it starts (dispatch.MigrateRunnerLinks) and clears them.
+	LegacyRunners []string `json:"runners,omitempty"`
 	// NotesPending are, on a hub, removals of the project's shared notes
 	// asked while none of its runners was online: the commands only, sent
 	// to the first runner of the project that connects.
@@ -225,8 +231,8 @@ func (p Project) For(t Todo) Project {
 }
 
 // OnRunners reports whether the project's tasks run on runners rather than
-// on this Dash.
-func (p Project) OnRunners() bool { return len(p.Runners) > 0 }
+// on this Dash: it runs on runner labels.
+func (p Project) OnRunners() bool { return len(p.RunsOn) > 0 }
 
 // InvestigatesCI reports whether failed builds get a todo automatically.
 func (p Project) InvestigatesCI() bool { return p.InvestigateCI == nil || *p.InvestigateCI }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -33,13 +34,19 @@ func TestHubForwardsOrRefusesWorkingTreeRoutes(t *testing.T) {
 		return w
 	}
 
-	for _, body := range []string{`{"name":"x"}`, `{"name":"x","path":"/tmp/x","existing":true}`, `{"name":"x","remote_url":"https://example.com/x.git"}`} {
+	for _, body := range []string{`{"name":"x"}`, `{"name":"x","path":"/tmp/x","existing":true}`} {
 		if w := call("POST", "/api/projects", body); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "keeps no projects") {
 			t.Errorf("POST /api/projects %s: %d %s", body, w.Code, w.Body)
 		}
 	}
+	// A shared project runs on any runner of the org unless it says.
+	var made model.Project
+	if w := call("POST", "/api/projects", `{"name":"x","remote_url":"https://example.com/x.git"}`); w.Code != http.StatusCreated ||
+		json.Unmarshal(w.Body.Bytes(), &made) != nil || !slices.Equal(made.RunsOn, []string{"self-hosted"}) {
+		t.Errorf("POST /api/projects with a remote only: %d %s", w.Code, w.Body)
+	}
 	// A shared project's merge mode is checked like a local one's.
-	if w := call("POST", "/api/projects", `{"name":"x","remote_url":"https://example.com/x.git","runners":["r1"],"merge_mode":"squash"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "merge_mode must be") {
+	if w := call("POST", "/api/projects", `{"name":"x","remote_url":"https://example.com/x.git","runs_on":["self-hosted"],"merge_mode":"squash"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "merge_mode must be") {
 		t.Errorf("POST /api/projects with a bad merge_mode: %d %s", w.Code, w.Body)
 	}
 
@@ -50,7 +57,7 @@ func TestHubForwardsOrRefusesWorkingTreeRoutes(t *testing.T) {
 		{"PUT", "/branch", `{"branch":"dev"}`}, {"POST", "/cleanup", ""},
 	} {
 		w := call(rt.method, "/api/projects/"+p.ID+rt.path, rt.body)
-		if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "No runner is linked to this project") {
+		if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "No runner has the labels this project runs on") {
 			t.Errorf("%s %s: %d %s", rt.method, rt.path, w.Code, w.Body)
 		}
 	}
@@ -61,10 +68,10 @@ func TestHubForwardsOrRefusesWorkingTreeRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, _ := registerRunner(t, rh, code, "laptop")
+	registerRunner(t, rh, code, "laptop")
 	s.Dispatch = nil // projectRunner needs a dispatcher to link: none online either way
 	if _, err := raw(s).UpdateProject(p.ID, func(x *model.Project) error {
-		x.Runners, x.RemoteURL = []string{id}, "https://example.com/web.git"
+		x.RunsOn, x.RemoteURL = []string{"self-hosted"}, "https://example.com/web.git"
 		return nil
 	}); err != nil {
 		t.Fatal(err)

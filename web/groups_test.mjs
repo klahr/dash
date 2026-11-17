@@ -2,19 +2,24 @@
 // `node --test web/`; groups_test.go runs them as part of `go test ./...`.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { projectGroups, uniqueProjects, projectRunnerNames, projectRunners, runnerBadge, remoteRepo, projectSubtitle } from "./static/groups.js";
+import { projectGroups, uniqueProjects, projectRunnerNames, projectRunners, runnerBadge, remoteRepo, projectSubtitle, servesProject, missingLabels, parseLabels } from "./static/groups.js";
 
 const hub = { name: "hub", local: true, ok: true, prefix: "" };
 const runner = (name, ok) => ({ name, runner: true, ok, prefix: `/peer/${name}`, error: ok ? "" : "offline" });
-const shared = (id, name, runners = []) => ({ id, name, machine: "hub", prefix: "", runners });
+// shared is a hub project that runs on a label of its own ("p-<id>"), which
+// the runners with ids are given.
+const shared = (id, name, ids = []) => {
+  for (const rid of ids) runners.find((r) => r.id === rid).labels.push(`p-${id}`);
+  return { id, name, machine: "hub", prefix: "", runs_on: [`p-${id}`] };
+};
 const own = (id, name, machine) => ({ id, name, machine, prefix: `/peer/${machine}` });
 
 const machines = [hub, runner("beta", true), runner("alpha", true), runner("gone", false), runner("idle", true)];
 const runners = [
-  { id: "r-alpha", name: "alpha", online: true },
-  { id: "r-beta", name: "beta", online: true },
-  { id: "r-gone", name: "gone", online: false },
-  { id: "r-idle", name: "idle", online: true },
+  { id: "r-alpha", name: "alpha", online: true, default_labels: ["self-hosted", "Linux", "X64"], labels: [] },
+  { id: "r-beta", name: "beta", online: true, default_labels: ["self-hosted", "macOS", "ARM64"], labels: [] },
+  { id: "r-gone", name: "gone", online: false, default_labels: ["self-hosted"], labels: [] },
+  { id: "r-idle", name: "idle", online: true, default_labels: ["self-hosted"], labels: [] },
 ];
 const site = shared("p1", "site", ["r-alpha", "r-beta"]);
 const orphan = shared("p2", "orphan");
@@ -53,13 +58,13 @@ test("without runners (not a hub), one group per computer with projects", () => 
   assert.deepEqual(names(gs), [["On hub", ["a", "b"]]]);
 });
 
-test("order doesn't change when runners go offline, are linked or unlinked", () => {
+test("order doesn't change when runners go offline, or projects run on other labels", () => {
   const order = (ms, rs, ps) => uniqueProjects(projectGroups({ machines: ms, runners: rs, projects: ps })).map((p) => p.id);
   const before = order(machines, runners, projects);
   const down = machines.map((m) => m.runner ? { ...m, ok: false } : m);
   const off = runners.map((r) => ({ ...r, online: false }));
   assert.deepEqual(order(down, off, projects), before);
-  const relinked = projects.map((p) => p === site ? { ...p, runners: ["r-gone"] } : p === orphan ? { ...p, runners: ["r-idle"] } : p);
+  const relinked = projects.map((p) => p === site ? { ...p, runs_on: ["nothing"] } : p === orphan ? { ...p, runs_on: ["self-hosted"] } : p);
   assert.deepEqual(order(machines, runners, relinked), before);
 });
 
@@ -128,4 +133,15 @@ test("projectSubtitle: owner/repo, else the folder unless it is the name", () =>
   assert.equal(projectSubtitle({ name: "Dash", remote_url: "/srv/git/tools.git", path: "/x/dash" }), "tools");
   assert.equal(projectSubtitle({ name: "Dash" }), "");
   assert.equal(projectSubtitle(null), "");
+});
+
+test("a runner works on a project when it has every label it runs on, whatever their case", () => {
+  const alpha = runners[0];
+  assert.equal(servesProject(alpha, { runs_on: ["self-hosted"] }), true);
+  assert.equal(servesProject(alpha, { runs_on: ["linux", "x64"] }), true);
+  assert.equal(servesProject(alpha, { runs_on: ["Linux", "gpu"] }), false);
+  assert.deepEqual(missingLabels(alpha, { runs_on: ["Linux", "gpu"] }), ["gpu"]);
+  assert.equal(servesProject(alpha, { runs_on: [] }), false);
+  assert.equal(servesProject(alpha, {}), false);
+  assert.deepEqual(parseLabels(" gpu, big-disk  gpu,,"), ["gpu", "big-disk"]);
 });

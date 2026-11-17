@@ -666,7 +666,7 @@ func (s *Server) weekWindow(p model.Project) *usage.Window {
 		return usage.WeekOf(s.Usage.Snapshot().Windows, t)
 	}
 	for _, r := range s.fleet().List() {
-		if !slices.Contains(p.Runners, r.ID) || r.Reported == nil || r.Reported.Usage == nil || !r.Reported.Usage.Known {
+		if !r.Serves(p) || r.Reported == nil || r.Reported.Usage == nil || !r.Reported.Usage.Known {
 			continue
 		}
 		if w := usage.WeekOf(r.Reported.Usage.Windows, t); w != nil {

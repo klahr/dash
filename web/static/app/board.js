@@ -26,7 +26,7 @@ export async function loadTodos() {
 
 // landsOnGitHub: approved work reaches GitHub as it merges, with nothing
 // left to push from here: through pull requests, or pushed by the runners.
-export const landsOnGitHub = (p) => p.merge_mode === "pr" || !!p.runners?.length;
+export const landsOnGitHub = (p) => p.merge_mode === "pr" || !!p.runs_on?.length;
 
 export async function loadUnpushed() {
   const p = state.project;

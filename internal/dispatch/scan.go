@@ -27,8 +27,8 @@ type wsFleet interface {
 
 // Scan runs a scan's Claude work on one of p's runners online, which
 // checks the commit out in its clone of p (implementing scan.Remote). A
-// *scan.WaitError says none can take it now; p not linked to any runner
-// is an error: it never will.
+// *scan.WaitError says none can take it now; p on labels no runner has is
+// an error: it never will.
 func (d *Dispatcher) Scan(ctx context.Context, p model.Project, job scan.Job, h scan.Hooks) (scan.Outcome, error) {
 	fl, ok := d.Fleet.(wsFleet)
 	if !ok {
@@ -36,7 +36,7 @@ func (d *Dispatcher) Scan(ctx context.Context, p model.Project, job scan.Job, h 
 	}
 	r, why, linked := d.scanRunner(p)
 	if !linked {
-		return scan.Outcome{}, fmt.Errorf("no runner works on %s: this hub runs Claude only on runners; link one to it in Project settings → Runners", p.Name)
+		return scan.Outcome{}, fmt.Errorf("no runner works on %s: this hub runs Claude only on runners; give one the labels it runs on, or change them in Project settings → Runners", p.Name)
 	}
 	if r == nil {
 		return scan.Outcome{}, &scan.WaitError{Reason: why}
@@ -104,11 +104,7 @@ func (d *Dispatcher) Scan(ctx context.Context, p model.Project, job scan.Job, h 
 func (d *Dispatcher) scanRunner(p model.Project) (r *tunnel.Runner, why string, linked bool) {
 	var cands []tunnel.Runner
 	var reasons []string
-	for _, id := range p.Runners {
-		x, ok := d.Fleet.Get(id)
-		if !ok || x.OrgID() != p.OrgID {
-			continue
-		}
+	for _, x := range tunnel.Serving(d.Fleet.List(), p) {
 		linked = true
 		switch {
 		case !x.Online:

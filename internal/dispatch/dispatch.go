@@ -28,6 +28,7 @@ import (
 // Fleet is the hub's runners (a *tunnel.Hub).
 type Fleet interface {
 	Get(id string) (tunnel.Runner, bool)
+	List() []tunnel.Runner
 	Call(ctx context.Context, id, method, path string, in, out any) error
 }
 
@@ -256,19 +257,19 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 		return r.Limit()
 	}
 	load := d.claimedLoads() // runner id → tasks in progress or being sent to it, counted once for this pick
-	ids := p.Runners
+	runners := tunnel.Serving(d.Fleet.List(), p)
 	if t.RunOn != "" {
 		// The task was set to run on one runner: only that one may take it.
-		if !slices.Contains(p.Runners, t.RunOn) {
-			return nil, "no runner: the runner this task is set to run on is no longer linked to this project; pick another in the task", ""
+		i := slices.IndexFunc(runners, func(r tunnel.Runner) bool { return r.ID == t.RunOn })
+		if i < 0 {
+			if _, ok := d.Fleet.Get(t.RunOn); !ok {
+				return nil, "no runner: the runner this task is set to run on was revoked; pick another in the task", ""
+			}
+			return nil, "no runner: the runner this task is set to run on no longer has the labels this project runs on; pick another in the task", ""
 		}
-		ids = []string{t.RunOn}
+		runners = runners[i : i+1]
 	}
-	for _, id := range ids {
-		r, ok := d.Fleet.Get(id)
-		if !ok || r.OrgID() != p.OrgID {
-			continue // revoked, or (never) another org's
-		}
+	for _, r := range runners {
 		var pace GroupPace
 		if d.Pacer != nil && active(r) {
 			pace = d.Pacer.For(r)
@@ -308,11 +309,8 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 		}
 	}
 	if len(cands) == 0 {
-		if len(why) == 0 && t.RunOn != "" {
-			return nil, "no runner: the runner this task is set to run on was revoked; pick another in the task", ""
-		}
 		if len(why) == 0 {
-			return nil, "no runner: the runners linked to this project were revoked; link another in the project's settings", ""
+			return nil, "no runner: no runner has the labels this project runs on (" + strings.Join(p.RunsOn, ", ") + "); give one those labels, or change them in the project's settings", ""
 		}
 		return nil, waitReason(why), strings.Join(full, "; ")
 	}
@@ -461,7 +459,7 @@ func (d *Dispatcher) pushed(r tunnel.Runner, push Push) {
 		return
 	}
 	p, err := d.Store.GetProject(push.HubProjectID)
-	if err != nil || p.OrgID != r.OrgID() || !slices.Contains(p.Runners, r.ID) {
+	if err != nil || !r.Serves(p) {
 		return
 	}
 	key := [2]string{p.ID, push.Branch}
@@ -477,14 +475,11 @@ func (d *Dispatcher) pushed(r tunnel.Runner, push Push) {
 	d.originMu.Unlock()
 	msg := OriginMoved{Branch: push.Branch, SHA: push.SHA}
 	path := strings.Replace(OriginMovedPath, "{hpid}", url.PathEscape(p.ID), 1)
-	for _, id := range p.Runners {
-		if id == r.ID {
-			continue // it knows
+	for _, o := range tunnel.Serving(d.Fleet.List(), p) {
+		if o.ID == r.ID || !o.Online {
+			continue // it knows; an offline runner fetches when it comes back
 		}
-		o, ok := d.Fleet.Get(id)
-		if !ok || !o.Online || o.OrgID() != p.OrgID {
-			continue // an offline runner fetches when it comes back
-		}
+		id := o.ID
 		d.fanouts.Add(1)
 		go func() {
 			defer d.fanouts.Done()
@@ -512,7 +507,7 @@ func (d *Dispatcher) setCheckouts(r tunnel.Runner, states []CheckoutState) {
 			continue
 		}
 		p, err := d.Store.GetProject(cs.HubProjectID)
-		if err != nil || p.OrgID != r.OrgID() || !slices.Contains(p.Runners, r.ID) {
+		if err != nil || !r.Serves(p) {
 			continue
 		}
 		seen[p.ID] = true
@@ -598,7 +593,7 @@ func (d *Dispatcher) projectEvent(r tunnel.Runner, pid string, t model.EventType
 		return
 	}
 	p, err := d.Store.GetProject(pid)
-	if err != nil || p.OrgID != r.OrgID() || !slices.Contains(p.Runners, r.ID) {
+	if err != nil || !r.Serves(p) {
 		return
 	}
 	d.Pub.Publish(model.Event{Type: t, ProjectID: p.ID, Data: data, Time: time.Now()})
@@ -722,7 +717,7 @@ func (d *Dispatcher) applyTask(r tunnel.Runner, ts TaskState, answer bool) error
 // again would run it twice, on another runner or from scratch on this one.
 func adopts(x *model.Todo, p model.Project, r tunnel.Runner, to model.TodoStatus) bool {
 	return x.Status == model.StatusQueued && x.Runner == "" && x.RemoteID == "" &&
-		to == model.StatusInProgress && slices.Contains(p.Runners, r.ID)
+		to == model.StatusInProgress && r.Serves(p)
 }
 
 // applyMerged applies ts to x, a merged task: it is done, and only a revert
@@ -903,8 +898,8 @@ func (d *Dispatcher) State(id string, online bool) {
 	}
 }
 
-// Revoked is told when runner id is revoked: it is unlinked from every
-// project and its running tasks fail.
+// Revoked is told when runner id is revoked: it is gone from the fleet, so
+// it works on no project any more, and its running tasks fail.
 func (d *Dispatcher) Revoked(id string) {
 	d.mu.Lock()
 	if t := d.timers[id]; t != nil {
@@ -914,18 +909,6 @@ func (d *Dispatcher) Revoked(id string) {
 	d.mu.Unlock()
 	d.forgetDisk(id)
 	d.links.forget(id, "")
-	for _, p := range d.Store.ListProjects() {
-		if !slices.Contains(p.Runners, id) {
-			continue
-		}
-		_, err := d.Store.UpdateProject(p.ID, func(x *model.Project) error {
-			x.Runners = slices.DeleteFunc(slices.Clone(x.Runners), func(r string) bool { return r == id })
-			return nil
-		})
-		if err != nil {
-			slog.Error("unlink revoked runner", "project", p.ID, "err", err)
-		}
-	}
 	d.interrupt(id, "its runner was revoked", false)
 	d.forgetCheckouts(id)
 	d.setPermissions(tunnel.Runner{ID: id}, nil)
@@ -1244,7 +1227,7 @@ func (d *Dispatcher) checkDisk(r tunnel.Runner) {
 		slog.Info("runner: disk space ok again", "runner", r.Name)
 	}
 	for _, p := range d.Store.ListProjects() {
-		if p.OrgID == r.OrgID() && slices.Contains(p.Runners, r.ID) {
+		if r.Serves(p) {
 			ev.Projects = append(ev.Projects, p.ID)
 		}
 	}

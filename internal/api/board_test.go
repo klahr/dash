@@ -656,6 +656,7 @@ type hubFleet struct {
 }
 
 func (f *hubFleet) Get(string) (tunnel.Runner, bool) { return tunnel.Runner{}, false }
+func (f *hubFleet) List() []tunnel.Runner            { return nil }
 
 func (f *hubFleet) Call(_ context.Context, id, method, path string, in, out any) error {
 	f.mu.Lock()

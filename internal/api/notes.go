@@ -39,21 +39,19 @@ func (s *Server) notesRelay(rh *tunnel.Hub) http.Handler {
 				return nil, nil, &notes.RelayError{Status: http.StatusForbidden, Msg: "this runner works for nobody"}
 			}
 			p, err := s.Store.ForOrg(org).GetProject(project)
-			if o, ok := s.Store.ProjectOrg(project); !ok || o != org || err != nil || !slices.Contains(p.Runners, x.ID) {
+			if o, ok := s.Store.ProjectOrg(project); !ok || o != org || err != nil || !x.Serves(p) {
 				return nil, nil, &notes.RelayError{Status: http.StatusForbidden, Msg: "no such project linked to this runner"}
 			}
-			var peers []string
-			for _, id := range p.Runners {
-				if id == x.ID || !rh.Online(id) {
-					continue
-				}
-				if y, ok := rh.Get(id); ok && y.OrgID() == org {
-					peers = append(peers, id)
+			var peers, members []string
+			for _, y := range tunnel.Serving(rh.List(), p) {
+				members = append(members, y.ID)
+				if y.ID != x.ID && y.Online {
+					peers = append(peers, y.ID)
 				}
 			}
 			// The members tell runners who left: those still holding the
 			// project's key then rotate it (notes.Service).
-			return peers, slices.Clone(p.Runners), nil
+			return peers, members, nil
 		},
 		Forward: func(ctx context.Context, peer, project string, msg []byte) ([]byte, error) {
 			return rh.CallBytes(ctx, peer, notes.PeerPathFor(project), http.Header{notes.RelayHeader: {"1"}}, msg, notes.MaxReply)
@@ -113,13 +111,7 @@ type notesRemoved struct {
 
 // notesRunners are p's runners (of p's org), online or not.
 func (s *Server) notesRunners(p model.Project) []tunnel.Runner {
-	var out []tunnel.Runner
-	for _, id := range p.Runners {
-		if x, ok := s.fleet().Get(id); ok && x.OrgID() == p.OrgID {
-			out = append(out, x)
-		}
-	}
-	return out
+	return s.projectRunners(p)
 }
 
 // notesCall posts in to a runner's notes command path for its hub project,
@@ -175,7 +167,7 @@ func (s *Server) getNotes(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 	if len(runs) == 0 {
-		v.Why = "No runner is linked to this project: link one in Project settings → Runners."
+		v.Why = "No runner has the labels this project runs on: give one those labels in Runners, or change them in Project settings → Runners."
 	}
 	writeJSON(w, http.StatusOK, v)
 }
@@ -217,7 +209,7 @@ func (s *Server) removeNotes(w http.ResponseWriter, r *http.Request) {
 		}
 		rm.Task = t.ID
 	case notes.RemoveRunner:
-		if !slices.Contains(p.Runners, req.Runner) {
+		if !s.servesProject(p, req.Runner) {
 			writeErr(w, fmt.Errorf("%w: pick one of this project's runners", errBadRequest))
 			return
 		}
@@ -323,7 +315,7 @@ func (s *Server) NotesRunnerOnline(id string) {
 	}
 	org := s.Store.ForOrg(x.OrgID())
 	for _, p := range org.ListProjects() {
-		if len(p.NotesPending) == 0 || !slices.Contains(p.Runners, id) {
+		if len(p.NotesPending) == 0 || !x.Serves(p) {
 			continue
 		}
 		for _, rm := range p.NotesPending {

@@ -78,13 +78,13 @@ type tryRunner struct {
 }
 
 // tryRunners are the runners p's try session may run on for c: online,
-// linked to p (p.Runners), in p's org, opening terminals for the hub (an
+// working on p (tunnel.Runner.Serves), opening terminals for the hub (an
 // older runner may not) and registered by c (terminals open only for a runner's
 // owner). When there is none, why says so in a sentence for the UI.
 func tryRunners(fleet []tunnel.Runner, p model.Project, c Caller) (out []tryRunner, why string) {
 	linked, online, terms := 0, 0, 0
 	for _, r := range fleet {
-		if !slices.Contains(p.Runners, r.ID) || r.OrgID() != p.OrgID {
+		if !r.Serves(p) {
 			continue
 		}
 		linked++
@@ -104,7 +104,7 @@ func tryRunners(fleet []tunnel.Runner, p model.Project, c Caller) (out []tryRunn
 	switch {
 	case len(out) > 0:
 	case linked == 0:
-		why = "No runner is linked to this project: link one in Project settings → Runners."
+		why = "No runner has the labels this project runs on: give one those labels in Runners, or change them in Project settings → Runners."
 	case online == 0:
 		why = "No runner with this project is connected."
 	case terms == 0:
@@ -205,7 +205,7 @@ func (s *Server) trySession(ctx context.Context, c Caller, p model.Project) (*mo
 		return nil, nil
 	}
 	run, ok := s.fleet().Get(id)
-	if !ok || !run.Online || !slices.Contains(p.Runners, id) {
+	if !ok || !run.Online || !run.Serves(p) {
 		s.tries.set(p.ID, "")
 		return nil, nil
 	}

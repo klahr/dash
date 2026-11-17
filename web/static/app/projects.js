@@ -1,4 +1,4 @@
-import { projectGroups as groupProjects, isShared, projectRunnerNames, projectSubtitle, runnerBadge as badgeFor, uniqueProjects } from "../groups.js";
+import { projectGroups as groupProjects, isShared, parseLabels, projectRunnerNames, projectSubtitle, runnerBadge as badgeFor, servesProject, uniqueProjects } from "../groups.js";
 import { $, $$, h, ib, ico, plural, setLabel } from "./dom.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
@@ -163,7 +163,7 @@ export function openNewProject() {
   const runners = projectRunners();
   if (!runners.length) {
     fail(new Error(!state.runners.length ? `A runner is required: this dashboard keeps no projects itself. To add one, ${startRunner}.`
-      : state.runners.some((r) => r.online) ? "None of the online runners is yours, and only a runner's owner or an admin of the organization can link projects to it. Start your own with `dash runner`."
+      : state.runners.some((r) => r.online) ? "None of the online runners is yours, and only a runner's owner or an admin of the organization can send projects' work to it. Start your own with `dash runner`."
         : noRunnerOnline));
     return;
   }
@@ -187,8 +187,10 @@ export function openPlanner() {
 // ---- Add project: on a runner, never on the hub. A shared project is a git
 // remote its runners clone: the repository comes from the user's GitHub
 // repositories (listed with the picked runner's gh), a new one (created with
-// that gh), or a pasted URL, and the runner it is linked to clones it into
-// its projects folder, or adopts a clone of the same remote already there.
+// that gh), or a pasted URL. It runs on runner labels (Advanced; by default
+// the picked runner's own, or self-hosted), and the picked runner, when it
+// has them, clones it into its projects folder now, or adopts a clone of the
+// same remote already there.
 // A local-only project is the runner's own: a new repository in its projects
 // folder (git init and an initial commit), with no remote, for throwaway
 // work; deleting it deletes that folder too.
@@ -202,7 +204,11 @@ const ghState = { cache: new Map(), pick: null, loading: "" };
 // np is the sheet's own state: the name it filled in itself (replaced as the
 // repository changes, until the user types their own), the GitHub repository
 // it created (so trying again doesn't create it twice), and the run under way.
-const np = { nameAuto: "", created: null, run: null };
+const np = { nameAuto: "", runsOnAuto: "", created: null, run: null };
+// defaultRunsOn is what a project added with runner r runs on: r's own
+// labels, so it runs where its owner set them up, or self-hosted (any runner)
+// while it has none.
+const defaultRunsOn = (r) => r?.labels?.length ? r.labels : ["self-hosted"];
 // The runner picked in the sheet, from state.runners.
 function sheetRunner() {
   const name = $("#new-project").machine.value;
@@ -286,6 +292,8 @@ function syncHubMode() {
   const repo = { gh: ghState.pick?.nameWithOwner, create: f.github.value.trim(), url: f.remote_url.value.trim() }[mode] || "";
   const suggested = mode === "gh" ? ghState.pick?.name || "" : mode === "local" ? "" : fromURL(repo);
   if (f.name.value === np.nameAuto) f.name.value = np.nameAuto = suggested;
+  if (f.runs_on.value === np.runsOnAuto) f.runs_on.value = np.runsOnAuto = defaultRunsOn(r).join(", ");
+  $("#new-project-runs-on-row").hidden = $("#new-project-runs-on-hint").hidden = mode === "local";
   $("#new-project-name-row").hidden = mode !== "local" && !repo;
   $("#new-project-name-label").replaceChildren(...(mode === "local" ? ["Name"] : ["Name ", h("em", {}, "optional, how Dash shows it")]));
   f.name.placeholder = mode === "local" ? "e.g. sandbox" : suggested;
@@ -297,7 +305,10 @@ function syncHubMode() {
   const { ready, why } = newProjectReady();
   const hint = $("#new-project-where");
   hint.classList.toggle("warn", !!why);
-  hint.textContent = why || (mode === "local" ? "" : `${where} clones it into its projects folder.`);
+  const runsOn = parseLabels(f.runs_on.value);
+  hint.textContent = why || (mode === "local" ? "" : servesProject(r, { runs_on: runsOn })
+    ? `${where} clones it into its projects folder. It runs on runners with ${runsOn.join(", ")} (Advanced).`
+    : `It runs on runners with ${runsOn.join(", ") || "no labels"} (Advanced), which ${where} lacks: one of them clones it when it first gets work.`);
   hint.hidden = !hint.textContent || (mode === "gh" && !r?.mine);
   $("#new-project-github-hint").textContent = `An empty ${f.github_public.checked ? "public" : "private"} repository, created with ${where}'s GitHub login.`;
   $("#new-project-github-hint").hidden = !!why;
@@ -458,11 +469,18 @@ export function startAdd(plan = null) {
       });
     }
     step("Adding project", async (s) => {
-      run.project = await api("POST", "/api/projects", { name: run.name, remote_url: run.remote, clone_url: (body.clone_url || "").trim(), runners: [r.id], ...commands }, "");
+      const runsOn = parseLabels(body.runs_on);
+      run.project = await api("POST", "/api/projects", { name: run.name, remote_url: run.remote, clone_url: (body.clone_url || "").trim(),
+        runs_on: runsOn.length ? runsOn : defaultRunsOn(r), ...commands }, "");
       np.created = null;
       s.label = `Added ${run.project.name}`;
     });
     step(`${r.name} cloning`, async (s) => {
+      if (!servesProject(r, run.project)) {
+        s.state = "note";
+        s.label = `${r.name} lacks the labels ${run.project.name} runs on: a runner with them clones it when it first gets work`;
+        return;
+      }
       const call = api("POST", `/api/runners/${id}/links`, { project_id: run.project.id }, "");
       call.catch(() => {});
       let res;
@@ -571,7 +589,7 @@ async function finishAdd(run) {
   if (!reduceMotion.matches && d.open) await new Promise((ok) => setTimeout(ok, 500)); // a moment to see it all ticked
   np.run = null;
   f.reset();
-  np.nameAuto = "";
+  np.nameAuto = np.runsOnAuto = "";
   ghState.pick = null;
   if (d.open) d.close();
   showProgress(false);
@@ -728,9 +746,10 @@ export function projectWhere(p) {
   return names.length ? names.join(", ") : "needs a runner";
 }
 
-// needsRunner reports whether p is a hub project no runner is linked to
-// (made on the hub before it stopped running anything itself).
-export const needsRunner = (p) => isHub() && !!p && !p.prefix && !p.runners?.length;
+// needsRunner reports whether p is a hub project that runs on no runner
+// labels (made on the hub before it stopped running anything itself), or on
+// labels no runner has: its settings are where to change them.
+export const needsRunner = (p) => isHub() && !!p && !p.prefix && !(state.runners || []).some((r) => servesProject(r, p));
 
 export async function cleanup() {
   const p = state.project;

@@ -115,7 +115,7 @@ func TestHubTaskOnRunnerLandsOnOriginWithoutPR(t *testing.T) {
 
 	// The hub's project, linked to the runner; nobody chose a merge mode.
 	p, err := raw(hub).CreateProject(model.Project{Name: "shared", OrgID: owner.Org, RemoteURL: origin, DefaultBranch: "main",
-		Runners: []string{creds.ID}})
+		RunsOn: []string{"self-hosted"}})
 	if err != nil {
 		t.Fatal(err)
 	}

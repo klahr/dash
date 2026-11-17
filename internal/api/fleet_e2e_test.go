@@ -79,7 +79,7 @@ func TestHubDispatchesToARunnerEndToEnd(t *testing.T) {
 
 	// A project of the hub linked to it, and a task
 	p, err := raw(hub).CreateProject(model.Project{Name: "shared", OrgID: owner.Org, RemoteURL: remote, DefaultBranch: "main",
-		MergeMode: model.MergePR, Runners: []string{creds.ID}})
+		MergeMode: model.MergePR, RunsOn: []string{"self-hosted"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,8 +233,8 @@ func TestHubDispatchesToARunnerEndToEnd(t *testing.T) {
 	if err := rh.Revoke(creds.ID); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := raw(hub).GetProject(p.ID); len(got.Runners) != 0 {
-		t.Errorf("revoked runner still linked: %v", got.Runners)
+	if got := tunnel.Serving(rh.List(), p); len(got) != 0 {
+		t.Errorf("revoked runner still works on the project: %v", got)
 	}
 	if err := tunnel.Report(ctx, creds, dispatch.Report{}); !errors.Is(err, tunnel.ErrRevoked) {
 		t.Errorf("report with a revoked token: %v", err)

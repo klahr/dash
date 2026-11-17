@@ -148,7 +148,7 @@ Look for vulnerabilities in {{path}} …
   sends each run's Claude part to one of the project's runners: it checks origin's default branch
   out in its clone and runs Claude there, and the hub records the findings. While none of the
   project's runners is online the run waits, showing "no runner online", and goes ahead as soon as
-  one connects; a project with no runner linked can't be scanned. `-scan-timeout` is the hub's.
+  one connects; a project no runner has the labels of can't be scanned. `-scan-timeout` is the hub's.
 - **Tasks from issues.** Check issues in **Issues** and pick how to turn them into tasks:
   **Create tasks** makes one task per issue, **Create one task** one task for them all, and
   **Create grouped** has Claude put similar issues together (same pattern, rule, file or

@@ -34,7 +34,8 @@ func TestTryRunnerEligibility(t *testing.T) {
 	own := &store.RunnerOwner{UserID: 1, Org: store.Org{ID: 10}}
 	other := &store.RunnerOwner{UserID: 2, Org: store.Org{ID: 10}}
 	terms := &tunnel.Reported{Terminals: true}
-	p := model.Project{ID: "p", OrgID: 10, Runners: []string{"ok", "off", "noterm", "notmine", "wrongorg"}}
+	// Each runner has a label of its own (its id) and "web", but spare.
+	p := model.Project{ID: "p", OrgID: 10, RunsOn: []string{"web"}}
 	fleet := []tunnel.Runner{
 		{ID: "ok", Name: "laptop", Online: true, Owner: own, Reported: terms},
 		{ID: "off", Name: "desk", Online: false, Owner: own, Reported: terms},
@@ -42,6 +43,12 @@ func TestTryRunnerEligibility(t *testing.T) {
 		{ID: "notmine", Name: "theirs", Online: true, Owner: other, Reported: terms},
 		{ID: "wrongorg", Name: "elsewhere", Online: true, Owner: &store.RunnerOwner{UserID: 1, Org: store.Org{ID: 11}}, Reported: terms},
 		{ID: "unlinked", Name: "spare", Online: true, Owner: own, Reported: terms},
+	}
+	for i := range fleet {
+		fleet[i].Labels = []string{fleet[i].ID}
+		if fleet[i].ID != "unlinked" {
+			fleet[i].Labels = append(fleet[i].Labels, "web")
+		}
 	}
 	got, why := tryRunners(fleet, p, me)
 	if len(got) != 1 || got[0].ID != "ok" || got[0].Name != "laptop" || why != "" {
@@ -57,16 +64,16 @@ func TestTryRunnerEligibility(t *testing.T) {
 	for _, c := range []struct {
 		name   string
 		fleet  []tunnel.Runner
-		linked []string
+		runsOn []string
 		want   string
 	}{
-		{"nothing linked", fleet, nil, "No runner is linked"},
-		{"linked runner offline", fleet, []string{"off"}, "is connected"},
-		{"no terminals", fleet, []string{"off", "noterm"}, "allows terminals"},
+		{"no runner has the labels", fleet, []string{"gpu"}, "No runner has the labels"},
+		{"its runner offline", fleet, []string{"off"}, "is connected"},
+		{"no terminals", fleet[1:3], []string{"web"}, "allows terminals"},
 		{"another member's", fleet, []string{"notmine"}, "your own runner"},
 	} {
 		q := p
-		q.Runners = c.linked
+		q.RunsOn = c.runsOn
 		got, why := tryRunners(c.fleet, q, me)
 		if len(got) != 0 || !strings.Contains(why, c.want) {
 			t.Errorf("%s: %+v %q, want %q", c.name, got, why, c.want)
@@ -125,7 +132,7 @@ func TestTryOnARunnerThroughTheHub(t *testing.T) {
 
 	v1 := commitTool(t, remote, "v1")
 	p, err := raw(hub).CreateProject(model.Project{Name: "cli", OrgID: owner.Org, RemoteURL: remote, DefaultBranch: "main",
-		Runners: []string{creds.ID}, PreviewKind: model.PreviewTerminal,
+		RunsOn: []string{"self-hosted"}, PreviewKind: model.PreviewTerminal,
 		PreviewCommand: `cp tool.sh "$DASH_BIN/tool"; echo built-$(git rev-parse --short HEAD); exec bash --norc --noprofile`})
 	if err != nil {
 		t.Fatal(err)

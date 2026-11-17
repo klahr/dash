@@ -16,7 +16,7 @@ func TestDispatchOrderPrioritisedFirstThenFIFO(t *testing.T) {
 	parallel(t)
 
 	e, st, rem, _ := remoteEngine(t)
-	p, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", Runners: []string{"laptop"}})
+	p, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", RunsOn: []string{"self-hosted"}})
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	ids := map[string]string{}
 	for i, c := range []struct {

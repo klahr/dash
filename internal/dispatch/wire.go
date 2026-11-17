@@ -3,7 +3,7 @@
 // what its runner reports.
 //
 // The hub coordinates: it stores the projects and their tasks, picks a
-// runner for each queued task (one that is linked to its project, in the
+// runner for each queued task (one with the labels its project runs on, in the
 // project's org, online, not paused, not at its usage limit and below its
 // parallel limit) and sends it there over the runner's tunnel. The runner
 // runs the task in its own clone of the project's git remote, with its

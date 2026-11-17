@@ -8,10 +8,11 @@ import { agoText, renderBoard } from "./branches.js";
 import { ghRepoHints, ghRepoLabel, ghRepoRows } from "./github.js";
 import { copyBlock } from "./prefs.js";
 import { shortLabel } from "./usage.js";
-import { openSettings } from "./settings.js";
+import { openSettings, syncSettingsRunners } from "./settings.js";
 import { ensureShell, forgetShellRefusal } from "./terminal.js";
 import { loadTry } from "./try.js";
 import { isRelease, runnerOutdated as outdatedFor } from "../runnerversion.js";
+import { parseLabels, runnerLabels, servesProject } from "../groups.js";
 
 // ------------------------------------------------------------------ runners
 // The one-line installer and the version runners should run (from /api/runners).
@@ -42,8 +43,8 @@ const updateCmds = () => [
 
 // Computers that run the org's tasks (`dash runner`), each with its owner's
 // Claude subscription. They connect out to this dashboard: no inbound
-// access, VPN or shared secret needed on their side. Projects are linked to
-// them in their settings; the hub sends those tasks only to them.
+// access, VPN or shared secret needed on their side. Projects run on runner
+// labels; the hub sends their tasks only to runners with those labels.
 export async function loadRunners() {
   try {
     const res = await api("GET", "/api/runners");
@@ -54,6 +55,7 @@ export async function loadRunners() {
   } catch {
     state.runners = null; // this Dash has no runners (it is one, say)
   }
+  syncSettingsRunners(); // the open settings show which runners have the project's labels
   forgetShellRefusal(); // a runner came or went, or now opens terminals: try again
   if (state.view === "run") ensureShell();
   if (state.project) loadTry().catch(() => {}); // which runners Try may use changed
@@ -86,21 +88,21 @@ const osChip = (r) => {
   return os ? h("span", { class: "runner-os", title: `Operating system: ${os.label}` }, os.icon ? ico(os.icon) : null, os.label) : null;
 };
 
-// The hub never runs Claude: tasks and scans of p run only on a runner
-// linked to it. runnerNeeded says why they would wait now, or "" (also on a
+// The hub never runs Claude: tasks and scans of p run only on a runner with
+// the labels it runs on. runnerNeeded says why they would wait now, or "" (also on a
 // Dash without runners of its own, a runner, and for another computer's project).
 export const startRunner = "start `dash runner` on a computer with git and Claude Code (account menu → Runners → Add a runner)";
 function runnerNeeded(p) {
   if (!p || p.prefix || !Array.isArray(state.runners)) return "";
   if (!state.runners.length) return `A runner is required: this dashboard doesn't run Claude itself. To add one, ${startRunner}.`;
-  const linked = state.runners.filter((r) => p.runners?.includes(r.id));
-  if (!linked.length) return `${p.name} needs a runner: no runner is linked to it, so its tasks, scans, git history, files and commands wait until you link one in Project settings → Runners. This dashboard runs nothing itself.`;
+  const linked = state.runners.filter((r) => servesProject(r, p));
+  if (!linked.length) return `${p.name} needs a runner: ${p.runs_on?.length ? `no runner has the labels it runs on (${p.runs_on.join(", ")})` : "it runs on no runner labels"}, so its tasks, scans, git history, files and commands wait until one does. Give a runner those labels in Runners, or change them in Project settings → Runners. This dashboard runs nothing itself.`;
   if (!linked.some((r) => r.online)) return `No runner is online for this project. Start one with \`dash runner\`. Until then its tasks and scans wait, and its git history, files and commands can't be shown.`;
   return "";
 }
 // renderRunnerBanner says above the board when the open project's git,
-// files and commands can't be reached (no runner linked, or none online),
-// with a way to link one.
+// files and commands can't be reached (no runner with its labels, or none
+// online), with a way to change them.
 export function renderRunnerBanner() {
   const el = $("#runner-banner");
   const p = state.project;
@@ -108,7 +110,7 @@ export function renderRunnerBanner() {
   el.hidden = !why;
   if (!why) return el.replaceChildren();
   el.replaceChildren(why, " ", needsRunner(p)
-    ? h("button", { type: "button", class: "link inline", onclick: () => { openSettings(); $("#settings-runners-field")?.scrollIntoView({ block: "center" }); } }, "Link a runner")
+    ? h("button", { type: "button", class: "link inline", onclick: () => { openSettings(); $("#settings-runners-field")?.scrollIntoView({ block: "center" }); } }, "Change its labels")
     : h("button", { type: "button", class: "link inline", onclick: attempt(() => openRunners()) }, "Runners"));
 }
 
@@ -302,8 +304,8 @@ export function renderSideRunners() {
   ].filter(Boolean));
 }
 
-// The projects linked to runner r: their tasks run there.
-const runnerProjects = (r) => (state.projects || []).filter((p) => !p.prefix && p.runners?.includes(r.id));
+// The projects runner r builds (it has the labels they run on): their tasks run there.
+const runnerProjects = (r) => (state.projects || []).filter((p) => !p.prefix && servesProject(r, p));
 
 // What the sheet shows beside its rail: "overview", "add" (a new runner's
 // code) or a runner's id. Back to the overview each time it opens.
@@ -497,14 +499,18 @@ function paintRunner(r) {
     r.reported?.disk?.volumes?.length || r.can_manage ? h("h4", { class: "section-head" }, "Disk") : null,
     runnerDisk(r),
     r.can_manage ? diskSettings(r) : null,
+    h("h4", { class: "section-head" }, "Labels"),
+    h("div", { class: "runner-labels" }, ...runnerLabels(r).map((l, i) =>
+      h("span", { class: `runner-label${i < (r.default_labels || []).length ? " default" : ""}`,
+        title: i < (r.default_labels || []).length ? "Every runner has this one" : "Given to it" }, l))),
     h("h4", { class: "section-head" }, "Projects"),
     h("div", { class: "runner-projects" },
       projects.length
         ? projects.map((p) => h("button", { class: "runner-project", type: "button", title: `Open ${p.name}`,
           onclick: () => { $("#runners-sheet").close(); selectProject(p); } }, ico("repo"), p.name))
         : h("span", { class: "hint" }, r.can_manage
-          ? ["No projects linked yet. Choose some below, or link one in its project settings", r.mine ? ", or add projects from this computer." : "."]
-          : "No projects linked yet.")),
+          ? ["No project runs on its labels yet. Give it a project's labels in its settings below or in Shared projects…, or change a project's in its settings", r.mine ? ", or add projects from this computer." : "."]
+          : "No project runs on its labels yet.")),
     // Shared notes are sealed with keys only runners hold. The hub shows
     // the fingerprint a runner told it, but approving happens on the
     // runners themselves, after comparing with what they show: the hub
@@ -518,8 +524,8 @@ function paintRunner(r) {
       h("p", { class: "hint" }, "Compare with what the runners show, not only with this page: the hub relays the keys and can't vouch for them.")) : null,
     h("div", { class: "runner-actions" },
       ib({ class: "btn small", type: "button",
-        title: r.can_manage ? `Pick the shared projects ${r.name} builds` : `The shared projects ${r.name} builds`,
-        onclick: attempt(() => showRunnerLinks(r)) }, "repo", r.can_manage ? "Choose projects…" : "Shared projects…"),
+        title: `The shared projects ${r.name} builds, and the labels they run on`,
+        onclick: attempt(() => showRunnerLinks(r)) }, "repo", "Shared projects…"),
       r.mine ? ib({ class: "btn small", type: "button", disabled: !r.online,
         title: r.online ? `Pick git repositories on ${r.name} to add as its projects` : `${r.name} is offline`,
         onclick: attempt(() => showRunnerRepos(r)) }, "plus", "Add from this computer…") : null));
@@ -533,8 +539,22 @@ function paintRunner(r) {
     onchange: attempt(async (e) => { await patchRunner(r, { parallel: Number(e.target.value) || 0 }); await renderRunners(); }) });
   const setting = (title, hint, control, cls = "") => h("div", { class: `runner-setting ${cls}` },
     h("div", { class: "runner-setting-text" }, h("strong", {}, title), h("p", { class: "hint" }, hint)), control);
+  const labels = h("input", { type: "text", value: (r.labels || []).join(", "), placeholder: "gpu, big-disk", autocomplete: "off", autocapitalize: "off", spellcheck: false,
+    class: "runner-labels-input", "aria-label": `${r.name}'s own labels`,
+    onchange: attempt(async (e) => {
+      try {
+        await patchRunner(r, { labels: parseLabels(e.target.value) });
+      } catch (err) {
+        e.target.value = (r.labels || []).join(", ");
+        throw err;
+      }
+      toast(`${r.name}'s labels saved`);
+      await loadProjects();
+      await renderRunners();
+    }) });
   fill($("#runner-manage"),
     h("h4", { class: "section-head" }, "Settings"),
+    setting("Labels", `It builds the projects that run on labels it has. Besides ${(r.default_labels || ["self-hosted"]).join(", ")}, which it has anyway, give it labels of its own, separated by commas.`, labels, "runner-labels-setting"),
     setting("Tasks at once", `How many tasks the hub sends it at once. Empty: the runner's own setting (${r.reported?.parallel || 1}).`, parallel),
     setting(r.paused ? "Paused" : "Taking tasks",
       r.paused ? "It takes no new tasks until you resume it." : "Pausing lets it finish what it runs, then it takes no new tasks.",
@@ -551,9 +571,9 @@ function paintRunner(r) {
         toast(r.auto_update ? `${r.name} is updated by hand now` : `${r.name} updates itself to the hub's version`);
         await renderRunners();
       }) }, "reload", r.auto_update ? "Turn off" : "Turn on")) : null,
-    setting("Revoke", "Disconnects it, stops its token and unlinks it from every project.",
+    setting("Revoke", "Disconnects it and stops its token: it builds no project any more.",
       ib({ class: "btn small danger", type: "button", title: `Disconnect ${r.name} and revoke its token`, onclick: attempt(async () => {
-        const ok = await ask({ title: `Revoke ${r.name}?`, body: "It's disconnected now, its token stops working and it's unlinked from every project. Tasks it is running fail and can be queued again on another runner. Run the install command with a new code to bring it back.", ok: "Revoke", danger: true });
+        const ok = await ask({ title: `Revoke ${r.name}?`, body: "It's disconnected now, its token stops working and it builds no project any more. Tasks it is running fail and can be queued again on another runner. Run the install command with a new code to bring it back.", ok: "Revoke", danger: true });
         if (!ok) return;
         await api("DELETE", `/api/runners/${encodeURIComponent(r.id)}`);
         toast(`${r.name} revoked`);
@@ -689,11 +709,13 @@ async function showRunnerRepos(r) {
     h("div", { class: "runner-repos-actions" }, addBtn, close));
 }
 
-// ---- A runner's Projects: which of the org's shared projects it builds,
-// picked from the runner's side. The same link as a project's Settings →
-// Runners: ticking links the runner (it clones the project now when it is
-// online), unticking unlinks it. A repository from its owner's GitHub that
-// isn't a project yet becomes a shared project, linked in the same step.
+// ---- A runner's Projects: which of the org's shared projects it builds.
+// Projects never name runners: a runner builds the projects that run on
+// labels it has. This panel shows each shared project with the labels it
+// runs on and whether the runner has them; its owner or an admin gives it
+// a project's missing labels in one click. A repository from its owner's
+// GitHub that isn't a project yet becomes a shared project, on the runner's
+// own labels (or self-hosted, any runner, when it has none).
 const links = { runner: null, data: null, gh: null, ghError: "", busy: new Set(), q: "" };
 
 async function showRunnerLinks(r) {
@@ -706,7 +728,7 @@ async function showRunnerLinks(r) {
   await Promise.all([refreshRunnerLinks(), r.mine && r.online ? loadLinkRepos(r) : null]);
 }
 
-// refreshRunnerLinks reloads the open Projects panel: a link changed here,
+// refreshRunnerLinks reloads the open Projects panel: labels changed here,
 // in a project's settings or in another browser (project.updated).
 export async function refreshRunnerLinks() {
   const r = links.runner;
@@ -735,58 +757,65 @@ async function loadLinkRepos(r) {
 const linksClose = () => h("div", { class: "runner-repos-actions" },
   h("button", { class: "btn small", type: "button", onclick: () => { links.runner = null; $("#runners-links").hidden = true; $("#runners-links").replaceChildren(); } }, "Close"));
 
-// setLink links (on) or unlinks runner r and a project: an existing one
-// (pid), or a GitHub repository to make one from (repo).
-async function setLink(r, { pid, repo, name }, on) {
-  const key = pid || repo;
-  if (!on) {
-    const l = links.data?.projects.find((x) => x.id === pid);
-    if (l?.running) throw new Error(`${plural(l.running, "task")} of ${l.name} ${l.running === 1 ? "is" : "are"} running on ${r.name}: wait for ${l.running === 1 ? "it" : "them"} to finish (or cancel ${l.running === 1 ? "it" : "them"}) before unlinking it.`);
-    if (l?.worktrees && !await ask({ title: `Unlink ${l.name} from ${r.name}?`,
-      body: `${plural(l.worktrees, "task has its worktree", "tasks have their worktrees")} on ${r.name}. They stay there, but ${r.name} gets no more work for ${l.name}: queued again, they start afresh on another runner linked to it. The project and its tasks stay for everyone else.`,
-      ok: "Unlink", danger: true })) return;
-  }
+// withBusy marks key busy while fn runs, then reloads the projects and the panel.
+async function withBusy(key, fn) {
   links.busy.add(key);
   renderRunnerLinks();
   try {
-    if (!on) {
-      await api("DELETE", `/api/runners/${encodeURIComponent(r.id)}/links/${encodeURIComponent(pid)}`);
-      toast(`${r.name} no longer builds ${name}`);
-      return;
-    }
-    if (repo) toast(`Creating the shared project ${name} and linking ${r.name}…`);
-    else if (r.online) toast(`Linking ${name}; ${r.name} clones it…`);
-    const res = await api("POST", `/api/runners/${encodeURIComponent(r.id)}/links`, pid ? { project_id: pid } : { github: repo, name });
-    if (res.clone_error) toast(`${res.project.name} is linked, but ${res.clone_error}`, true);
-    else toast(`${res.created ? "Created the shared project" : "Linked"} ${res.project.name}; ${res.cloned ? `${r.name} has its clone` : `${r.name} clones it when it next gets work for it`}`, { tone: "ok" });
+    await fn();
   } finally {
     links.busy.delete(key);
     await loadProjects();
+    await loadRunners();
     await refreshRunnerLinks();
   }
 }
 
-// renderRunnerLinks draws the projects runner links.runner builds: its
-// owner's GitHub repositories (as in Add project) and the org's other
-// shared projects, each with a tick box. Typing in the filter redraws only
-// the list, so the field keeps its focus and caret.
+// giveLabels gives runner r the labels project l runs on that it lacks, so
+// it builds l (and any other project on those labels).
+async function giveLabels(r, l) {
+  const owner = r.owner?.username || "its owner";
+  if (!await ask({ title: `Give ${r.name} ${plural(l.missing.length, "label")}?`,
+    body: `${r.name} gets ${l.missing.join(", ")}, and so builds ${l.name} and every other project of the organization that runs on its labels. Their tasks run on it, with ${owner}'s Claude subscription.`,
+    ok: "Add labels" })) return;
+  await withBusy(l.id, async () => {
+    await patchRunner(r, { labels: [...(r.labels || []), ...l.missing] });
+    toast(`${r.name} now builds ${l.name}`, { tone: "ok" });
+  });
+}
+
+// createFromRepo makes a shared project of a GitHub repository, from runner r.
+async function createFromRepo(r, repo, name) {
+  await withBusy(repo, async () => {
+    toast(`Creating the shared project ${name}…`);
+    const res = await api("POST", `/api/runners/${encodeURIComponent(r.id)}/links`, { github: repo, name });
+    const on = `runs on ${res.project.runs_on.join(", ")}`;
+    if (res.clone_error) toast(`${res.project.name} ${on}, but ${res.clone_error}`, true);
+    else toast(`${res.created ? "Created the shared project" : "Found"} ${res.project.name}, which ${on}${res.cloned ? `; ${r.name} has its clone` : ""}`, { tone: "ok" });
+  });
+}
+
+// renderRunnerLinks draws the projects runner links.runner builds or could:
+// its owner's GitHub repositories (as in Add project) and the org's other
+// shared projects. Typing in the filter redraws only the list, so the field
+// keeps its focus and caret.
 function renderRunnerLinks() {
   const r = links.runner, res = links.data;
   if (!r || !res) return;
   const org = state.me?.org?.name || "the organization";
   const owner = r.owner?.username || "its owner";
   const filter = h("input", { type: "search", placeholder: "Filter by name or description", value: links.q, autocomplete: "off", spellcheck: false, "aria-label": "Filter projects" });
-  const list = h("div", { class: "gh-list", role: "group", "aria-label": `Projects ${r.name} builds` }, ...runnerLinkRows(r, res, org));
+  const list = h("div", { class: "gh-list", role: "list", "aria-label": `Projects ${r.name} builds` }, ...runnerLinkRows(r, res, org));
   filter.addEventListener("input", () => {
     links.q = filter.value;
     list.replaceChildren(...runnerLinkRows(r, res, org));
   });
   $("#runners-links").replaceChildren(
     h("h4", {}, `Projects ${r.name} builds`),
-    h("p", { class: "hint" }, `Tick a project to link ${r.name} to it: it clones the repository into its projects folder and takes its tasks. Untick to unlink: the project and its tasks stay for the other runners.`),
-    r.mine ? h("p", { class: "hint warn" }, `Ticking a repository that isn't a project yet creates a shared project that everyone in ${org} sees and can link their runners to. For a repository only this computer works on, use Add from this computer… instead.`) : null,
+    h("p", { class: "hint" }, `${r.name} builds the projects that run on labels it has (${runnerLabels(res.runner).join(", ")}): it clones each into its projects folder and takes its tasks. Change its labels below, or a project's in Project settings → Runners.`),
+    r.mine ? h("p", { class: "hint warn" }, `Creating a project from a repository makes a shared project that everyone in ${org} sees. It runs on ${r.name}'s own labels${r.labels?.length ? ` (${r.labels.join(", ")})` : ", or on self-hosted (any runner) while it has none"}. For a repository only this computer works on, use Add from this computer… instead.`) : null,
     h("p", { class: "hint" }, ghNoteText(r, res, org, owner)),
-    h("div", { class: "gh-filter-row" }, filter, linkAllButton(r, res, org, owner)),
+    h("div", { class: "gh-filter-row" }, filter),
     list,
     linksClose());
 }
@@ -797,21 +826,18 @@ function runnerLinkRows(r, res, org) {
   const q = links.q.trim().toLowerCase();
   const byId = new Map(res.projects.map((p) => [p.id, p]));
   const projectOf = (x) => x.project && byId.get(x.project);
-  const row = ({ key, checked, label, desc, meta, busy, disabled, onchange }) => {
-    const box = h("input", { type: "checkbox", checked, disabled: disabled || busy, "aria-label": label.textContent || label });
-    box.addEventListener("change", attempt(async () => {
-      try { await onchange(box.checked); } finally { box.checked = checked; }
-    }));
-    return h("label", { class: "gh-repo", "data-key": key, "aria-busy": busy ? "true" : null }, box,
-      h("span", { class: "gh-repo-text" }, label, desc ? h("span", { class: "gh-repo-desc" }, desc) : null,
-        h("span", { class: "gh-repo-meta" }, ...meta.filter(Boolean).map((t) => h("span", {}, t)))));
-  };
-  const linkMeta = (l) => [l.linked ? `${r.name} builds it` : null, l.running ? `${l.running} running there` : null,
-    l.worktrees ? `${l.worktrees} with a worktree there` : null];
-  const projectRow = (l, extra = {}) => row({ key: l.id, checked: l.linked, busy: links.busy.has(l.id), disabled: !can,
+  const row = ({ key, label, desc, meta, action }) => h("div", { class: "gh-repo", role: "listitem", "data-key": key, "aria-busy": links.busy.has(key) ? "true" : null },
+    h("span", { class: "gh-repo-text" }, label, desc ? h("span", { class: "gh-repo-desc" }, desc) : null,
+      h("span", { class: "gh-repo-meta" }, ...meta.filter(Boolean).map((t) => h("span", {}, t)))),
+    action || null);
+  const linkMeta = (l) => [l.runs_on.length ? `runs on ${l.runs_on.join(", ")}` : "runs on no labels",
+    l.linked ? `${r.name} builds it` : l.runs_on.length ? `${r.name} lacks ${l.missing.join(", ")}` : null,
+    l.running ? `${l.running} running there` : null, l.worktrees ? `${l.worktrees} with a worktree there` : null];
+  const projectRow = (l, extra = {}) => row({ key: l.id,
     label: extra.label || h("span", { class: "gh-repo-title" }, h("strong", {}, l.name)),
     desc: extra.desc ?? l.remote_url, meta: [...(extra.meta || []), `shared project: ${l.name}`, ...linkMeta(l)],
-    onchange: (on) => setLink(r, { pid: l.id, name: l.name }, on) });
+    action: can && !l.linked && l.missing?.length ? h("button", { class: "btn small", type: "button", disabled: links.busy.has(l.id),
+      title: `Give ${r.name} ${l.missing.join(", ")}`, onclick: attempt(() => giveLabels(r, l)) }, "Add labels") : null });
 
   const rows = [];
   // The owner's GitHub repositories, grouped by owner, as in Add project.
@@ -820,17 +846,19 @@ function runnerLinkRows(r, res, org) {
     const gh = ghRepoRows(repos, { q, user: links.gh.user, also: (x) => [projectOf(x)?.name], row: (x) => {
       const l = projectOf(x), label = ghRepoLabel(x), hints = ghRepoHints(x);
       return l ? projectRow(l, { label, desc: x.description || "", meta: hints })
-        : row({ key: x.nameWithOwner, checked: false, busy: links.busy.has(x.nameWithOwner), disabled: !can, label, desc: x.description || "",
-          meta: [...hints, "not a project yet: ticking it creates a shared project"],
-          onchange: (on) => on && setLink(r, { repo: x.nameWithOwner, name: x.name }, true) });
+        : row({ key: x.nameWithOwner, label, desc: x.description || "", meta: [...hints, "not a project yet"],
+          action: can ? h("button", { class: "btn small", type: "button", disabled: links.busy.has(x.nameWithOwner),
+            onclick: attempt(() => createFromRepo(r, x.nameWithOwner, x.name)) }, "Create project") : null });
     } });
     rows.push(...gh.rows);
     if (gh.more) rows.push(h("div", { class: "gh-empty" }, `${gh.more} more; type to narrow the list.`));
   }
   // The org's other shared projects: not from this GitHub login (a remote
   // URL, another account's repository), or all of them without the list.
+  // Those it builds first.
   const seen = new Set(repos.map((x) => projectOf(x)?.id).filter(Boolean));
-  const rest = res.projects.filter((l) => !seen.has(l.id) && (!q || [l.name, l.remote_url].some((s) => (s || "").toLowerCase().includes(q))));
+  const rest = res.projects.filter((l) => !seen.has(l.id) && (!q || [l.name, l.remote_url].some((s) => (s || "").toLowerCase().includes(q))))
+    .sort((a, b) => b.linked - a.linked);
   if (rest.length) {
     rows.push(h("div", { class: "gh-owner", role: "presentation" }, h("span", {}, links.gh ? `Other shared projects in ${org}` : `Shared projects in ${org}`)));
     rows.push(...rest.map((l) => projectRow(l)));
@@ -838,28 +866,10 @@ function runnerLinkRows(r, res, org) {
   return rows.length ? rows : [h("div", { class: "gh-empty" }, q ? "No project matches." : `${org} has no shared projects yet.`)];
 }
 
-// linkAllButton links runner r to every shared project it doesn't build yet.
-function linkAllButton(r, res, org, owner) {
-  const unlinked = res.projects.filter((l) => !l.linked);
-  if (!res.runner.can_manage || !unlinked.length) return null;
-  return h("button", { class: "btn small", type: "button", disabled: links.busy.size > 0,
-    title: `Link ${r.name} to every shared project of ${org}`,
-    onclick: attempt(async () => {
-      if (!await ask({ title: `Build all of ${org}'s projects on ${r.name}?`,
-        body: `${r.name} is linked to ${plural(unlinked.length, "more shared project")} (${unlinked.map((l) => l.name).join(", ")}) and clones them${r.online ? " now, one after another" : " when it next gets work for them"}. Their tasks may then run on it, with ${owner}'s Claude subscription.`,
-        ok: "Link all" })) return;
-      const out = await api("POST", `/api/runners/${encodeURIComponent(r.id)}/links/all`);
-      if (out.linked.length) toast(`${r.name} now builds ${plural(out.linked.length, "more project")}`, { tone: "ok" });
-      for (const f of out.failed) toast(`${f.project}: ${f.error}`, true);
-      await loadProjects();
-      await refreshRunnerLinks();
-    }) }, `Build all ${org}'s projects (${unlinked.length})`);
-}
-
 // ghNoteText says where the list's repositories come from, or why there are none.
 function ghNoteText(r, res, org, owner) {
   if (!r.mine) {
-    return `Only ${owner} can list repositories with ${r.name}'s GitHub login, and this dashboard has no GitHub login of its own, so new repositories aren't listed here: only ${org}'s existing shared projects.${res.runner.can_manage ? "" : ` Only ${owner} or an admin can change what ${r.name} builds.`}`;
+    return `Only ${owner} can list repositories with ${r.name}'s GitHub login, and this dashboard has no GitHub login of its own, so new repositories aren't listed here: only ${org}'s existing shared projects.${res.runner.can_manage ? "" : ` Only ${owner} or an admin can change ${r.name}'s labels.`}`;
   }
   if (!r.online) return `${r.name} is offline, so its GitHub login can't list your repositories now; the org's shared projects are below.`;
   if (links.ghError) return `${links.ghError} The org's shared projects are below.`;

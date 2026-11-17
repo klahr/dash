@@ -5,6 +5,7 @@ import { attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { showView } from "./nav.js";
 import { isHub } from "./projects.js";
+import { servesProject } from "../groups.js";
 import { closeDetail } from "./detail.js";
 import { loadProcs, renderProcs, renderTryButton } from "./try.js";
 import { setMode } from "./vim.js";
@@ -72,12 +73,12 @@ export async function startProc(req, show = true) {
 // opens terminals (an older one may not). "" when one may (or the runner hasn't said: it answers itself).
 export function shellBlocked(p = state.project, runnerID = "") {
   if (!p || p.prefix || !isHub()) return "";
-  const online = state.runners.filter((r) => r.online && (runnerID ? r.id === runnerID : p.runners?.includes(r.id)));
+  const online = state.runners.filter((r) => r.online && (runnerID ? r.id === runnerID : servesProject(r, p)));
   if (!online.length) return "";
   const mine = online.filter((r) => r.mine);
   if (!mine.length) {
     const names = online.map((r) => r.name).join(", ");
-    return `Terminals open only on your own runner, and ${names} ${online.length > 1 ? "belong" : "belongs"} to another member. Its owner can open one, or link a runner of yours to ${p.name}.`;
+    return `Terminals open only on your own runner, and ${names} ${online.length > 1 ? "belong" : "belongs"} to another member. Its owner can open one, or give a runner of yours the labels ${p.name} runs on.`;
   }
   if (mine.every((r) => r.reported && !r.reported.terminals)) {
     return `${mine.map((r) => r.name).join(", ")} doesn't open terminals for the hub: it is older than this hub, update it.`;

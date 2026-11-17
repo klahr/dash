@@ -21,16 +21,19 @@ import (
 )
 
 // A hub's runners (`dash runner`) belong to the user who registered them,
-// in the org they were working in. Everyone in that org sees them; members
-// link projects to their own runners, admins to any of the org's (a
-// runner's tasks use its owner's Claude subscription). The owner and the
-// org's admins pause, limit and revoke it. Other orgs never see it.
+// in the org they were working in. Everyone in that org sees them. Projects
+// don't name runners: a project runs on runner labels, and works goes to
+// the org's runners that have them (model.LabelsMatch). The owner and the
+// org's admins label, pause, limit and revoke a runner. Members may only
+// set a project's labels so that it runs on their own runners, admins on
+// any of the org's (a runner's tasks use its owner's Claude subscription;
+// see checkRunsOn). Other orgs never see a runner.
 
 // runnerView is a runner as the org settings page shows it.
 type runnerView struct {
 	tunnel.Runner
 	Mine      bool `json:"mine"`       // the caller registered it
-	CanManage bool `json:"can_manage"` // the caller may pause, limit, revoke and link it
+	CanManage bool `json:"can_manage"` // the caller may label, pause, limit and revoke it
 }
 
 func (s *Server) fleet() *tunnel.Hub {
@@ -57,7 +60,8 @@ func (s *Server) orgAdmin(c Caller) bool {
 	return err == nil && m.Role.AtLeast(store.RoleAdmin)
 }
 
-// canManageRunner reports whether c may pause, limit, revoke and link r:
+// canManageRunner reports whether c may label, pause, limit and revoke r,
+// and send a project's work to it:
 // its owner or an admin of its org.
 func (s *Server) canManageRunner(c Caller, r tunnel.Runner) bool {
 	if r.OrgID() != c.Org || r.Owner == nil {
@@ -138,6 +142,7 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 			Paused     *bool          `json:"paused"`
 			AutoUpdate *bool          `json:"auto_update"`
 			Disk       *disk.Settings `json:"disk"`
+			Labels     *[]string      `json:"labels"`
 		}
 		c, x, ok := s.managedRunner(w, r)
 		if !ok {
@@ -150,6 +155,14 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 		if req.Parallel != nil && (*req.Parallel < 0 || *req.Parallel > 64) {
 			writeErr(w, fmt.Errorf("%w: parallel is 0 (the runner's own limit) to 64", errBadRequest))
 			return
+		}
+		var gone []model.Project
+		if req.Labels != nil {
+			var err error
+			if gone, err = s.as(c).checkRelabel(x, *req.Labels); err != nil {
+				writeErr(w, err)
+				return
+			}
 		}
 		if err := rh.Configure(x.ID, req.Parallel, req.Paused); err != nil {
 			writeErr(w, err)
@@ -166,6 +179,13 @@ func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
 				writeErr(w, err)
 				return
 			}
+		}
+		if req.Labels != nil {
+			if err := rh.SetLabels(x.ID, *req.Labels); err != nil {
+				writeErr(w, errors.Join(errBadRequest, err))
+				return
+			}
+			s.unlinkLater(gone, []string{x.ID})
 		}
 		s.Todos.Kick()
 		x, _ = rh.Get(x.ID)
@@ -254,29 +274,69 @@ func (s *Server) managedRunner(w http.ResponseWriter, r *http.Request) (Caller, 
 	return s.runnerFor(w, r, s.canManageRunner, "only the runner's owner or an admin of the organization can do that")
 }
 
-// linkRunners checks a project's new runner list for c: every runner in
-// c's org (and p's), the newly added ones c's own or c an org admin, and p
-// with a git remote. It returns the list cleaned up.
-func (sv *service) linkRunners(p model.Project, ids []string) ([]string, error) {
-	var out []string
-	for _, id := range ids {
-		id = strings.TrimSpace(id)
-		if id == "" || slices.Contains(out, id) {
+// checkRunsOn checks a project's new runner labels for c and returns them
+// tidied (model.CleanLabels): p needs a git remote to run on runners, and
+// every runner the labels newly send p's work to must be c's own, or c an
+// admin of the org. A runner's tasks run on its owner's computer and use
+// their Claude subscription, so a member can't send work to another's
+// runner by picking labels it has.
+func (sv *service) checkRunsOn(p model.Project, labels []string) ([]string, error) {
+	labels, err := model.CleanLabels(labels)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	if len(labels) > 0 && p.RemoteURL == "" {
+		return nil, fmt.Errorf("%w: a project that runs on runners needs a git remote (each runner clones it); connect one first", errBadRequest)
+	}
+	before := sv.s.projectRunners(p)
+	np := p
+	np.RunsOn = labels
+	for _, r := range sv.s.projectRunners(np) {
+		if slices.ContainsFunc(before, func(b tunnel.Runner) bool { return b.ID == r.ID }) || sv.s.canManageRunner(sv.c, r) {
 			continue
 		}
-		r, ok := sv.s.orgRunner(sv.c, id)
-		if !ok || r.OrgID() != p.OrgID {
-			return nil, fmt.Errorf("%w: %s", errBadRequest, errNoRunner)
-		}
-		if !slices.Contains(p.Runners, id) && !sv.s.canManageRunner(sv.c, r) {
-			return nil, fmt.Errorf("%w: %s is %s's runner: only they or an admin of the organization can link it", errBadRequest, r.Name, r.Owner.Username)
-		}
-		out = append(out, id)
+		return nil, fmt.Errorf("%w: %s is %s's runner and has the labels %s: only they or an admin of the organization can send work to it. "+
+			"Pick labels it lacks (give your own runners a label of their own in Runners), or ask them", errBadRequest, r.Name, r.Owner.Username, strings.Join(labels, ", "))
 	}
-	if len(out) > 0 && p.RemoteURL == "" {
-		return nil, fmt.Errorf("%w: a project shared with runners needs a git remote (each runner clones it); connect one first", errBadRequest)
+	return labels, nil
+}
+
+// checkRelabel checks giving runner x the labels: no project it stops
+// working on may have a task running on it (checkUnlink). It returns those
+// projects, which the runner must be told it left (unlinkLater).
+func (sv *service) checkRelabel(x tunnel.Runner, labels []string) ([]model.Project, error) {
+	clean, err := model.CleanLabels(labels)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", errBadRequest, err)
 	}
-	return out, nil
+	y := x
+	y.Labels = clean
+	var gone []model.Project
+	for _, p := range sv.data.ListProjects() {
+		if x.Serves(p) && !y.Serves(p) {
+			if err := sv.checkUnlink(p, []string{x.ID}); err != nil {
+				return nil, err
+			}
+			gone = append(gone, p)
+		}
+	}
+	return gone, nil
+}
+
+// unlinkLater tells runners ids, in the background, that they no longer
+// work on projects (dispatch.Dispatcher.Unlink): each keeps its clone as a
+// project of its own.
+func (s *Server) unlinkLater(projects []model.Project, ids []string) {
+	if len(projects) == 0 || len(ids) == 0 || s.Dispatch == nil {
+		return
+	}
+	go func() {
+		for _, p := range projects {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			s.Dispatch.Unlink(ctx, p.ID, ids)
+			cancel()
+		}
+	}()
 }
 
 // runnerTask returns the dispatcher for t, a task on a runner, or an

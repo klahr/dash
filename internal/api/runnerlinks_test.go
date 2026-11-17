@@ -44,87 +44,110 @@ func linkResultOf(t *testing.T, w *httptest.ResponseRecorder, code int) linkResu
 	return res
 }
 
-// From a runner's Projects screen its owner, or an admin, links it to one of
-// the org's shared projects: the same link as the project's Settings →
-// Runners, so the project shows it there. Others may look, not change it;
-// another org's runner doesn't exist.
-func TestRunnerScreenLinksSharedProjects(t *testing.T) {
+// patchLabels gives runner id labels (a JSON list) as h, and returns the
+// answer.
+func patchLabels(h http.Handler, id, labels string) *httptest.ResponseRecorder {
+	return send(h, "PATCH", "/api/runners/"+id, `{"labels":`+labels+`}`)
+}
+
+// A runner's Projects screen shows the org's shared projects it works on:
+// those that run on labels it has. Labelling it, its owner or an admin
+// changes which; others may look, not label it; another org's runner
+// doesn't exist.
+func TestRunnerScreenShowsProjectsByLabel(t *testing.T) {
 	parallel(t)
 
 	f := newFleetServer(t)
 	c, u := f.ids["c-box"], f.ids["u-box"]
-	body := `{"project_id":"` + f.web.ID + `"}`
-	if w := send(f.c, "POST", "/api/runners/"+u+"/links", body); w.Code != http.StatusForbidden {
-		t.Errorf("member linking someone else's runner: %d %s", w.Code, w.Body)
+	if _, err := raw(f.s).UpdateProject(f.web.ID, func(p *model.Project) error { p.RunsOn = []string{"gpu"}; return nil }); err != nil {
+		t.Fatal(err)
 	}
-	if w := send(f.b, "POST", "/api/runners/"+u+"/links", body); w.Code != http.StatusNotFound {
-		t.Errorf("another org linking: %d %s", w.Code, w.Body)
+	if can, got := runnerLinksOf(t, f.c, u); can || got["shared"].Linked || got["shared"].GitHub != "x/web" ||
+		!slices.Equal(got["shared"].RunsOn, []string{"gpu"}) || !slices.Equal(got["shared"].Missing, []string{"gpu"}) {
+		t.Errorf("member looking at u-box: can manage %v, %+v", can, got)
+	}
+	if w := patchLabels(f.c, u, `["gpu"]`); w.Code != http.StatusForbidden {
+		t.Errorf("member labelling someone else's runner: %d %s", w.Code, w.Body)
 	}
 	if w := send(f.b, "GET", "/api/runners/"+u+"/links", ""); w.Code != http.StatusNotFound {
 		t.Errorf("another org looking: %d %s", w.Code, w.Body)
 	}
-	if can, got := runnerLinksOf(t, f.c, u); can || got["shared"].Linked || got["shared"].GitHub != "x/web" {
-		t.Errorf("member looking at u-box: can manage %v, %+v", can, got)
+	if w := patchLabels(f.b, u, `["gpu"]`); w.Code != http.StatusNotFound {
+		t.Errorf("another org labelling: %d %s", w.Code, w.Body)
 	}
 
-	res := linkResultOf(t, send(f.c, "POST", "/api/runners/"+c+"/links", body), http.StatusOK)
-	if res.Created || res.Cloned || res.CloneError != "" || !slices.Equal(res.Project.Runners, []string{c}) || res.Project.AutoPush {
-		t.Errorf("member linking their runner: %+v", res)
+	if w := patchLabels(f.c, c, `["GPU"]`); w.Code != http.StatusOK {
+		t.Fatalf("member labelling their runner: %d %s", w.Code, w.Body)
 	}
-	if can, got := runnerLinksOf(t, f.c, c); !can || !got["shared"].Linked {
-		t.Errorf("c-box's links: %v %+v", can, got)
+	if can, got := runnerLinksOf(t, f.c, c); !can || !got["shared"].Linked || len(got["shared"].Missing) != 0 {
+		t.Errorf("c-box's projects: %v %+v", can, got)
 	}
-	// The project's settings see the same link.
+	// The project's labels didn't change: no project names its runners.
 	var p model.Project
-	if w := send(f.u, "GET", "/api/projects/"+f.web.ID, ""); json.Unmarshal(w.Body.Bytes(), &p) != nil || !slices.Equal(p.Runners, []string{c}) {
-		t.Errorf("the project's runners: %s", w.Body)
+	if w := send(f.u, "GET", "/api/projects/"+f.web.ID, ""); json.Unmarshal(w.Body.Bytes(), &p) != nil || !slices.Equal(p.RunsOn, []string{"gpu"}) {
+		t.Errorf("the project: %s", w.Body)
 	}
-	// Linking again changes nothing; an admin links someone else's runner.
-	linkResultOf(t, send(f.c, "POST", "/api/runners/"+c+"/links", body), http.StatusOK)
-	res = linkResultOf(t, send(f.d, "POST", "/api/runners/"+u+"/links", body), http.StatusOK)
-	if !slices.Equal(res.Project.Runners, []string{c, u}) {
-		t.Errorf("admin linking u-box: %v", res.Project.Runners)
+	// An admin labels someone else's runner.
+	if w := patchLabels(f.d, u, `["gpu"]`); w.Code != http.StatusOK {
+		t.Errorf("admin labelling u-box: %d %s", w.Code, w.Body)
 	}
-	if w := send(f.c, "POST", "/api/runners/"+c+"/links", `{"project_id":"nope"}`); w.Code != http.StatusNotFound {
-		t.Errorf("no such project: %d %s", w.Code, w.Body)
-	}
-	if w := send(f.c, "POST", "/api/runners/"+c+"/links", `{}`); w.Code != http.StatusBadRequest {
-		t.Errorf("nothing to link: %d %s", w.Code, w.Body)
+	if _, got := runnerLinksOf(t, f.u, u); !got["shared"].Linked {
+		t.Errorf("u-box's projects: %+v", got)
 	}
 }
 
-// Ticking a GitHub repository that is no project yet makes the shared
-// project, linked to the runner, in one step; one that is a project already
-// is linked instead. Only the runner's owner adds repositories (theirs, from
-// its gh); an admin only links existing projects.
-func TestRunnerScreenCreatesAndLinks(t *testing.T) {
+// Picking a GitHub repository that is no project yet makes the shared
+// project in one step, on the runner's own labels (or "self-hosted" when it
+// has none); one that is a project already is that project. Only the
+// runner's owner adds repositories (theirs, from its gh), and a member only
+// on labels no one else's runner has.
+func TestRunnerScreenCreatesProjects(t *testing.T) {
 	parallel(t)
 
 	f := newFleetServer(t)
 	c := f.ids["c-box"]
 	before := len(raw(f.s).ForOrg(f.web.OrgID).ListProjects())
+	// With no labels of its own, c-box's project would run on u's runner too.
+	if w := send(f.c, "POST", "/api/runners/"+c+"/links", `{"github":"x/new"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "only they") {
+		t.Fatalf("member making a project that runs on every runner: %d %s", w.Code, w.Body)
+	}
+	if w := patchLabels(f.c, c, `["c-only"]`); w.Code != http.StatusOK {
+		t.Fatal(w.Body)
+	}
 	res := linkResultOf(t, send(f.c, "POST", "/api/runners/"+c+"/links", `{"github":"x/new"}`), http.StatusCreated)
 	if !res.Created || res.Project.Name != "new" || res.Project.RemoteURL != "https://github.com/x/new.git" ||
-		!slices.Equal(res.Project.Runners, []string{c}) || res.Project.OrgID != f.web.OrgID {
-		t.Fatalf("creating and linking: %+v", res)
+		!slices.Equal(res.Project.RunsOn, []string{"c-only"}) || res.Project.OrgID != f.web.OrgID || res.Project.AutoPush {
+		t.Fatalf("creating: %+v", res)
 	}
+	made := res.Project
 	if _, got := runnerLinksOf(t, f.u, c); !got["new"].Linked {
-		t.Errorf("the new project isn't linked: %+v", got)
+		t.Errorf("c-box doesn't work on the new project: %+v", got)
 	}
 	// The same repository, in another form, is that project.
 	res = linkResultOf(t, send(f.c, "POST", "/api/runners/"+c+"/links", `{"github":"x/web.git"}`), http.StatusOK)
-	if res.Created || res.Project.ID != f.web.ID || !slices.Equal(res.Project.Runners, []string{c}) {
-		t.Errorf("linking an existing project by its repository: %+v", res)
+	if res.Created || res.Project.ID != f.web.ID {
+		t.Errorf("an existing project by its repository: %+v", res)
 	}
 	if n := len(raw(f.s).ForOrg(f.web.OrgID).ListProjects()); n != before+1 {
 		t.Errorf("%d projects, want %d", n, before+1)
 	}
-	// The admin can't add new repositories to c's runner, only link projects.
+	if w := send(f.c, "POST", "/api/runners/"+c+"/links", `{}`); w.Code != http.StatusBadRequest {
+		t.Errorf("nothing to add: %d %s", w.Code, w.Body)
+	}
+	// An existing project is cloned only on a runner that works on it.
+	if _, err := raw(f.s).UpdateProject(f.web.ID, func(p *model.Project) error { p.RunsOn = []string{"gpu"}; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if w := send(f.c, "POST", "/api/runners/"+c+"/links", `{"project_id":"`+f.web.ID+`"}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "lacks the labels gpu") {
+		t.Errorf("cloning a project on a runner without its labels: %d %s", w.Code, w.Body)
+	}
+	linkResultOf(t, send(f.c, "POST", "/api/runners/"+c+"/links", `{"project_id":"`+made.ID+`"}`), http.StatusOK)
+	if w := send(f.c, "POST", "/api/runners/"+c+"/links", `{"project_id":"nope"}`); w.Code != http.StatusNotFound {
+		t.Errorf("no such project: %d %s", w.Code, w.Body)
+	}
+	// The admin can't add new repositories to c's runner.
 	if w := send(f.d, "POST", "/api/runners/"+c+"/links", `{"github":"x/other"}`); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "owner") {
 		t.Errorf("admin adding a repository to c-box: %d %s", w.Code, w.Body)
-	}
-	if w := send(f.d, "POST", "/api/runners/"+f.ids["u-box"]+"/links", `{"github":"x/new"}`); w.Code != http.StatusOK {
-		t.Errorf("admin linking u-box to an existing one: %d %s", w.Code, w.Body)
 	}
 	// Nor list them: the hub has no GitHub login, the owner's runner does.
 	if w := send(f.d, "GET", "/api/runners/"+c+"/github-repos", ""); w.Code != http.StatusForbidden {
@@ -132,15 +155,22 @@ func TestRunnerScreenCreatesAndLinks(t *testing.T) {
 	}
 }
 
-// Unticking unlinks the runner only: the project, its tasks and the other
-// runners' links stay. It waits while a task of the project is running on
-// the runner, from either screen; tasks done there don't hold it.
-func TestRunnerScreenUnlinks(t *testing.T) {
+// A runner whose labels, or a project whose labels, change so that the
+// runner no longer works on the project leaves it: the project, its tasks
+// and its other runners stay. The change waits while a task of the project
+// is running on the runner, from either side; tasks done there don't hold
+// it.
+func TestRelabellingWaitsForRunningTasks(t *testing.T) {
 	parallel(t)
 
 	f := newFleetServer(t)
 	c, u := f.ids["c-box"], f.ids["u-box"]
-	if _, err := raw(f.s).UpdateProject(f.web.ID, func(p *model.Project) error { p.Runners = []string{c, u}; return nil }); err != nil {
+	for _, id := range []string{c, u} {
+		if w := patchLabels(f.d, id, `["web"]`); w.Code != http.StatusOK {
+			t.Fatal(w.Body)
+		}
+	}
+	if _, err := raw(f.s).UpdateProject(f.web.ID, func(p *model.Project) error { p.RunsOn = []string{"web"}; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	td, _ := raw(f.s).CreateTodo(model.Todo{ProjectID: f.web.ID, Title: "work", Prompt: "x"})
@@ -156,66 +186,36 @@ func TestRunnerScreenUnlinks(t *testing.T) {
 	if _, got := runnerLinksOf(t, f.c, c); got["shared"].Running != 1 {
 		t.Errorf("running %+v", got["shared"])
 	}
-	path := "/api/runners/" + c + "/links/" + f.web.ID
-	if w := send(f.c, "DELETE", path, ""); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "1 task of shared is running on c-box") {
-		t.Errorf("unlinking with a task running there: %d %s", w.Code, w.Body)
+	if w := patchLabels(f.c, c, `[]`); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "1 task of shared is running on c-box") {
+		t.Errorf("unlabelling with a task running there: %d %s", w.Code, w.Body)
 	}
-	if w := send(f.d, "PATCH", "/api/projects/"+f.web.ID, `{"runners":["`+u+`"]}`); w.Code != http.StatusConflict {
-		t.Errorf("unlinking in the settings with a task running there: %d %s", w.Code, w.Body)
+	if w := send(f.d, "PATCH", "/api/projects/"+f.web.ID, `{"runs_on":["web","gpu"]}`); w.Code != http.StatusConflict {
+		t.Errorf("relabelling the project with a task running there: %d %s", w.Code, w.Body)
 	}
-	if w := send(f.c, "DELETE", "/api/runners/"+u+"/links/"+f.web.ID, ""); w.Code != http.StatusForbidden {
-		t.Errorf("member unlinking someone else's runner: %d %s", w.Code, w.Body)
+	// Labels that keep it on the project are fine.
+	if w := patchLabels(f.c, c, `["web","extra"]`); w.Code != http.StatusOK {
+		t.Errorf("adding a label: %d %s", w.Code, w.Body)
 	}
 
 	set(model.StatusReview)
 	if _, got := runnerLinksOf(t, f.c, c); got["shared"].Running != 0 || got["shared"].Worktrees != 1 {
 		t.Errorf("in review %+v", got["shared"])
 	}
-	w := send(f.c, "DELETE", path, "")
-	var p model.Project
-	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &p) != nil || !slices.Equal(p.Runners, []string{u}) {
-		t.Fatalf("unlinking: %d %s", w.Code, w.Body)
+	if w := patchLabels(f.c, c, `[]`); w.Code != http.StatusOK {
+		t.Fatalf("unlabelling: %d %s", w.Code, w.Body)
+	}
+	if _, got := runnerLinksOf(t, f.c, c); got["shared"].Linked {
+		t.Errorf("c-box still works on the project: %+v", got["shared"])
+	}
+	if _, got := runnerLinksOf(t, f.c, u); !got["shared"].Linked {
+		t.Errorf("u-box left the project too: %+v", got["shared"])
 	}
 	if got, err := raw(f.s).GetTodo(td.ID); err != nil || got.Status != model.StatusReview {
-		t.Errorf("the task after unlinking: %+v %v", got, err)
-	}
-	if w := send(f.c, "DELETE", path, ""); w.Code != http.StatusOK {
-		t.Errorf("unlinking again: %d %s", w.Code, w.Body)
+		t.Errorf("the task after unlabelling: %+v %v", got, err)
 	}
 }
 
-// "Build all the org's projects" links a runner to every shared project
-// it isn't linked to yet, GitHub's or not; a project without a remote
-// can't be shared and is left out.
-func TestRunnerScreenBuildsAll(t *testing.T) {
-	parallel(t)
-
-	f := newFleetServer(t)
-	org := f.web.OrgID
-	other, _ := raw(f.s).CreateProject(model.Project{Name: "infra", OrgID: org, DefaultBranch: "main", RemoteURL: "https://git.example.com/ops/infra.git"})
-	if _, err := raw(f.s).CreateProject(model.Project{Name: "legacy", Path: t.TempDir(), OrgID: org}); err != nil {
-		t.Fatal(err)
-	}
-	c := f.ids["c-box"]
-	if w := send(f.c, "POST", "/api/runners/"+f.ids["u-box"]+"/links/all", ""); w.Code != http.StatusForbidden {
-		t.Errorf("member on someone else's runner: %d %s", w.Code, w.Body)
-	}
-	linkResultOf(t, send(f.c, "POST", "/api/runners/"+c+"/links", `{"project_id":"`+other.ID+`"}`), http.StatusOK)
-	w := send(f.c, "POST", "/api/runners/"+c+"/links/all", "")
-	var out struct {
-		Linked []string `json:"linked"`
-		Failed []any    `json:"failed"`
-	}
-	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &out) != nil || !slices.Equal(out.Linked, []string{"shared"}) || len(out.Failed) != 0 {
-		t.Fatalf("build all: %d %s", w.Code, w.Body)
-	}
-	_, got := runnerLinksOf(t, f.c, c)
-	if !got["shared"].Linked || !got["infra"].Linked || len(got) != 2 {
-		t.Errorf("after building all: %+v", got)
-	}
-}
-
-// Linked from the runner's screen, an online runner clones the project at
+// Added from the runner's screen, an online runner clones the project at
 // once, and a remote it can't read says why, in the same words as the
 // project's work would ("runner … cannot access … Permission denied").
 func TestRunnerScreenReportsCloneErrors(t *testing.T) {
@@ -249,18 +249,14 @@ func TestRunnerScreenReportsCloneErrors(t *testing.T) {
 	go func() { _ = client.Run(ctx) }()
 	eventually(t, "the runner to come online", func() bool { r, _ := rh.Get(creds.ID); return r.Online })
 
-	p, err := raw(hub).CreateProject(model.Project{Name: "dash-infra", OrgID: owner.Org, RemoteURL: "https://github.com/klahr/dash-infra.git", DefaultBranch: "main"})
-	if err != nil {
-		t.Fatal(err)
-	}
 	w := httptest.NewRecorder()
-	hub.mux().ServeHTTP(w, asOwner(t, hub, httptest.NewRequest("POST", "/api/runners/"+creds.ID+"/links", strings.NewReader(`{"project_id":"`+p.ID+`"}`))))
-	res := linkResultOf(t, w, http.StatusOK)
+	hub.mux().ServeHTTP(w, asOwner(t, hub, httptest.NewRequest("POST", "/api/runners/"+creds.ID+"/links", strings.NewReader(`{"github":"klahr/dash-infra"}`))))
+	res := linkResultOf(t, w, http.StatusCreated)
 	if want := "runner laptop cannot access klahr/dash-infra over ssh: git@github.com: Permission denied (publickey)"; res.Cloned || !strings.Contains(res.CloneError, want) {
 		t.Errorf("clone error %q, want %q", res.CloneError, want)
 	}
-	// The link stands, as from the settings: the project's work says why it waits.
-	if got, _ := raw(hub).GetProject(p.ID); !slices.Equal(got.Runners, []string{creds.ID}) {
-		t.Errorf("runners %v", got.Runners)
+	// The project stands: its work says why it waits.
+	if got, _ := raw(hub).GetProject(res.Project.ID); !slices.Equal(got.RunsOn, []string{"self-hosted"}) {
+		t.Errorf("runs on %v", got.RunsOn)
 	}
 }

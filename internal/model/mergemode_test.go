@@ -22,7 +22,7 @@ func TestDefaultMergeMode(t *testing.T) {
 	if gh.DefaultMergeMode(true) != MergePR || gh.DefaultMergeMode(false) != MergeLocal {
 		t.Error("a GitHub project: pull requests with gh, merging without")
 	}
-	gh.Runners = []string{"r"}
+	gh.RunsOn = []string{"self-hosted"}
 	if gh.DefaultMergeMode(false) != MergePR {
 		t.Error("a GitHub project on runners: pull requests whether the hub has gh or not")
 	}

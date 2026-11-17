@@ -112,7 +112,13 @@ func TestSharedNotesRelayThroughTheHub(t *testing.T) {
 	t.Cleanup(func() { wg.Wait() })
 
 	ca, cb, cc, cx := register("alpha"), register("beta"), register("gamma"), register("outsider")
-	p, err := st.CreateProject(model.Project{Name: "web", OrgID: owner.Org, Runners: []string{ca.ID, cb.ID, cc.ID}})
+	// The outsider, of the same org, lacks the label the project runs on.
+	for _, c := range []tunnel.Credentials{ca, cb, cc} {
+		if err := rh.SetLabels(c.ID, []string{"web"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p, err := st.CreateProject(model.Project{Name: "web", OrgID: owner.Org, RunsOn: []string{"web"}})
 	if err != nil {
 		t.Fatal(err)
 	}

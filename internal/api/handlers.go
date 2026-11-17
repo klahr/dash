@@ -108,9 +108,10 @@ type projectRequest struct {
 	LocalOnly bool `json:"local_only"`
 	// On the hub only, which keeps no projects on its own disk: a
 	// shared project is the remote (RemoteURL, or GitHub's OWNER/REPO)
-	// and the runners it is linked to, which clone it.
+	// and the runner labels it runs on (empty: "self-hosted", any runner
+	// of the org); the runners with them clone it.
 	RemoteURL string   `json:"remote_url"`
-	Runners   []string `json:"runners"`
+	RunsOn    []string `json:"runs_on"`
 	// CloneURL is the URL the runners clone as it is (see
 	// model.Project.CloneURL); empty, they pick it from RemoteURL.
 	CloneURL string `json:"clone_url"`
@@ -213,13 +214,13 @@ func newProjectFromRequest(req projectRequest, base model.Project, gh bool) (mod
 }
 
 // createHubProject creates a project on the hub, which keeps none on its
-// own disk: the remote and the runners that clone it.
+// own disk: the remote and the labels of the runners that clone it.
 func (sv *service) createHubProject(req projectRequest) (model.Project, error) {
 	remote := strings.TrimSpace(req.RemoteURL)
 	if gh := strings.Trim(strings.TrimSpace(req.GitHub), "/"); remote == "" && strings.Count(gh, "/") == 1 {
 		remote = "https://github.com/" + strings.TrimSuffix(gh, ".git") + ".git"
 	}
-	if req.Path != "" || req.Existing || remote == "" || len(req.Runners) == 0 {
+	if req.Path != "" || req.Existing || remote == "" {
 		return model.Project{}, errHubHasNoProjects
 	}
 	if err := gitops.CheckRemote(remote); err != nil {
@@ -233,7 +234,11 @@ func (sv *service) createHubProject(req projectRequest) (model.Project, error) {
 		return model.Project{}, fmt.Errorf("%w: name is required", errBadRequest)
 	}
 	base := model.Project{ID: store.NewID(), OrgID: sv.c.Org, RemoteURL: remote, CloneURL: cloneURL}
-	if base.Runners, err = sv.linkRunners(base, req.Runners); err != nil {
+	runsOn := req.RunsOn
+	if len(runsOn) == 0 {
+		runsOn = []string{model.LabelSelfHosted}
+	}
+	if base.RunsOn, err = sv.checkRunsOn(base, runsOn); err != nil {
 		return model.Project{}, err
 	}
 	np, err := newProjectFromRequest(req, base, false)
@@ -377,9 +382,9 @@ type projectUpdate struct {
 	// CloneURL is the hub's project's model.Project.CloneURL ("" clears
 	// it). Runners that cloned the project already keep their origin.
 	CloneURL *string `json:"clone_url"`
-	// Runners links the project to these runners (ids; replaces the list,
-	// [] unlinks them all).
-	Runners *[]string `json:"runners"`
+	// RunsOn are the runner labels the project runs on (replaces them; []
+	// runs it on no runner). See model.Project.RunsOn.
+	RunsOn *[]string `json:"runs_on"`
 }
 
 func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
@@ -406,7 +411,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 // would run on: they run as that runner's owner, on its computer, and a
 // shell there is its owner's alone (see hubTerminal). Sending a command
 // unchanged is fine, as the settings form does.
-func (sv *service) checkCommandChange(cur model.Project, req projectUpdate, runners []string) error {
+func (sv *service) checkCommandChange(cur model.Project, req projectUpdate, runners []tunnel.Runner) error {
 	if !sv.s.hub() || len(runners) == 0 || sv.s.orgAdmin(sv.c) {
 		return nil
 	}
@@ -416,13 +421,9 @@ func (sv *service) checkCommandChange(cur model.Project, req projectUpdate, runn
 		!changed(req.PreviewCommand, cur.PreviewCommand) {
 		return nil
 	}
-	for _, id := range runners {
-		run, ok := sv.s.orgRunner(sv.c, id)
-		if !ok {
-			continue // not in the org any more: it runs nothing of this project
-		}
+	for _, run := range runners {
 		if run.Owner == nil || run.Owner.UserID != sv.c.User {
-			return fmt.Errorf("%w: only an org admin, or the owner of every runner linked to the project, can change its commands (they run on %s as the user who registered it)", errForbidden, run.Name)
+			return fmt.Errorf("%w: only an org admin, or the owner of every runner the project runs on, can change its commands (they run on %s as the user who registered it)", errForbidden, run.Name)
 		}
 	}
 	return nil
@@ -439,40 +440,37 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 		return cur, err
 	}
 	remote, gh := sv.currentRemote(ctx, cur)
-	runners := cur.Runners
-	if req.Runners != nil {
+	runsOn := cur.RunsOn
+	if req.RunsOn != nil {
 		withRemote := cur
 		withRemote.RemoteURL = remote
-		if runners, err = sv.linkRunners(withRemote, *req.Runners); err != nil {
+		if runsOn, err = sv.checkRunsOn(withRemote, *req.RunsOn); err != nil {
 			return cur, err
 		}
 	}
+	next := cur
+	next.RunsOn = runsOn
+	runners := sv.s.projectRunners(next)
 	if err := sv.checkCommandChange(cur, req, runners); err != nil {
 		return cur, err
 	}
 	var gone []string
-	for _, r := range cur.Runners {
-		if !slices.Contains(runners, r) {
-			gone = append(gone, r)
+	for _, r := range sv.s.projectRunners(cur) {
+		if !slices.ContainsFunc(runners, func(x tunnel.Runner) bool { return x.ID == r.ID }) {
+			gone = append(gone, r.ID)
 		}
 	}
 	if err := sv.checkUnlink(cur, gone); err != nil {
 		return cur, err
 	}
 	p, err := sv.data.UpdateProject(id, func(p *model.Project) error {
-		return applyProjectUpdate(p, req, remote, runners, gh)
+		return applyProjectUpdate(p, req, remote, runsOn, gh)
 	})
 	if err != nil {
 		return p, err
 	}
-	if len(gone) > 0 && sv.s.Dispatch != nil {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			sv.s.Dispatch.Unlink(ctx, p.ID, gone)
-		}()
-	}
-	if req.Runners != nil {
+	sv.s.unlinkLater([]model.Project{p}, gone)
+	if req.RunsOn != nil {
 		sv.s.Todos.Kick() // queued tasks may go elsewhere now
 	}
 	return p, nil
@@ -552,8 +550,8 @@ func (sv *service) currentRemote(ctx context.Context, cur model.Project) (remote
 }
 
 // applyProjectUpdate sets p's fields from req (already normalized), with
-// its origin remote, its runners and whether gh is here.
-func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runners []string, gh bool) error {
+// its origin remote, the runner labels it runs on and whether gh is here.
+func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runsOn []string, gh bool) error {
 	p.RemoteURL = remote
 	set(&p.Name, req.Name)
 	set(&p.RunCommand, req.RunCommand)
@@ -605,13 +603,13 @@ func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runn
 		}
 		p.MergeMethod = *req.MergeMethod
 	}
-	p.Runners = runners
+	p.RunsOn = runsOn
 	if !p.MergeModeSet && p.HubProjectID == "" {
 		// The default follows the remote and the runners; a runner's
 		// clone lands the way its hub says.
 		p.MergeMode = p.DefaultMergeMode(gh)
 	}
-	if len(runners) > 0 {
+	if len(runsOn) > 0 {
 		// The runners push to origin themselves (see
 		// model.Project.LandsOnOrigin); the hub doesn't push.
 		p.AutoPush = false
@@ -1340,7 +1338,7 @@ var errNotRunYet = fmt.Errorf("%w: this task hasn't run on a runner yet", errBad
 
 // errHubHasNoProjects is why the hub refuses a project on its own disk.
 var errHubHasNoProjects = fmt.Errorf("%w: the hub keeps no projects on its own computer. Create or add the project on a runner "+
-	"(pick the runner as its computer), or share a repository by giving its remote_url (or github OWNER/REPO) and the runners to link it to", errBadRequest)
+	"(pick the runner as its computer), or share a repository by giving its remote_url (or github OWNER/REPO) and the runner labels it runs on (runs_on)", errBadRequest)
 
 func (s *Server) cleanupProject(w http.ResponseWriter, r *http.Request) {
 	_, _, ok := s.project(w, r)

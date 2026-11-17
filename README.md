@@ -75,11 +75,13 @@ too, the runner keeps its data apart from the hub's (`~/.local/share/dash-runner
 ```
 
 Projects live on runners. A **runner's own project** is a repository on that runner's disk; a
-**shared project** is a git remote linked to one or more runners, each of which clones it, and any
-of them can run its tasks (**Add project** on the hub: pick one of your GitHub repositories,
-create one, or paste a remote URL; each runner clones it into its projects folder, or adopts a
-clone of it already there; link more runners in its settings, **Runners**). See
-[Two kinds of projects](docs/several-computers.md#two-kinds-of-projects). A hub that kept projects
+**shared project** is a git remote that runs on runner labels, as a GitHub Actions job's `runs-on`
+does: every runner of the org with those labels clones it, and any of them can run its tasks
+(**Add project** on the hub: pick one of your GitHub repositories, create one, or paste a remote
+URL; each runner clones it into its projects folder, or adopts a clone of it already there). Set a
+project's labels in its settings, **Runners**, and a runner's on its page in Runners. See
+[Two kinds of projects](docs/several-computers.md#two-kinds-of-projects) and
+[Runner labels](docs/several-computers.md#runner-labels). A hub that kept projects
 of its own before this: see
 [Moving projects off the hub](docs/several-computers.md#moving-projects-off-the-hub).
 

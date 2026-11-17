@@ -825,6 +825,8 @@ func (a *app) setupHub() {
 	if err := runners.Keep(filepath.Join(o.dataDir, "runners.json")); err != nil {
 		slog.Warn("read runners", "err", err)
 	}
+	// Projects that named their runners run on labels now.
+	dispatch.MigrateRunnerLinks(st, runners)
 	// Tasks of projects linked to runners go to them; the hub only
 	// coordinates.
 	todoLog := a.todoLog

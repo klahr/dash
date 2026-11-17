@@ -1273,6 +1273,16 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-setting > input { width: 5.5em; flex: none; min-height: 36px; padding: 0 8px; }
 .runner-setting > .btn { flex: none; }
 .runner-setting.danger strong { color: var(--failed); }
+/* A runner's labels: chips (the ones every runner has muted), and the field for its own,
+   which wraps under its text on a phone. */
+.runner-labels { display: flex; flex-wrap: wrap; gap: 6px; }
+.runner-label { font: var(--fs-xs)/1.6 var(--mono); padding: 1px 8px; border: 1px solid var(--line); border-radius: 999px; overflow-wrap: anywhere; }
+.runner-label.default { color: var(--muted); border-style: dashed; }
+.runner-setting > input.runner-labels-input { width: 14em; font-family: var(--mono); }
+@media (max-width: 600px) {
+  .runner-labels-setting { flex-wrap: wrap; }
+  .runner-setting > input.runner-labels-input { width: 100%; }
+}
 .runner-manage-note { margin-top: 20px; }
 /* A runner's disks: a meter per disk, the low-space warning, the Go build cache; and its thresholds. */
 .runner-disk { display: grid; gap: 6px; font-size: var(--fs-s); color: var(--muted); }
@@ -1328,10 +1338,13 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 #runners-repos .runner-repos-list .runner-pick { background: var(--surface); }
 #runners-repos .runner-repos-list .runner-pick:has(input:checked) { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
 #runners-repos .runner-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Project settings: one card per runner. */
-#settings-runners { display: grid; gap: 8px; }
-#settings-runners .runner-pick { align-items: center; }
-#settings-runners .runner-pick:has(input:disabled) { opacity: .6; }
+/* Project settings: the labels it runs on, then one card per runner of the org, those with
+   every label first and tinted (a preview: runners aren't picked). */
+#settings-runs-on { width: 100%; font-family: var(--mono); }
+#settings-runners { display: grid; gap: 8px; margin-top: 10px; }
+#settings-runners .runner-pick { align-items: center; cursor: default; }
+#settings-runners .runner-pick.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+#settings-runners .runner-pick:not(.on) { opacity: .7; }
 #settings-runners .runner-pick .runner-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #settings-runners .runner-pick .hint { flex: 1; min-width: 0; margin: 0; text-align: right; font-size: var(--fs-s); overflow-wrap: anywhere; }
 #settings-runners-hint { margin-top: 8px; }

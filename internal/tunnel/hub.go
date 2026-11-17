@@ -77,6 +77,12 @@ type Runner struct {
 	// "darwin" and "arm64" ("" from a runner too old to say).
 	OS   string `json:"os,omitempty"`
 	Arch string `json:"arch,omitempty"`
+	// Labels are the labels its owner or an org admin gave it, and
+	// DefaultLabels those it has anyway (model.DefaultRunnerLabels, from OS
+	// and Arch). It works on the projects of its org that run on labels it
+	// has (Serves).
+	Labels        []string `json:"labels"`
+	DefaultLabels []string `json:"default_labels"`
 	// NotesKey is the public key the runner seals shared notes keys with,
 	// as it told the hub, and NotesFingerprint its short form. Shown so a
 	// user knows which fingerprint to look for; runners never take it from
@@ -116,6 +122,30 @@ func (r Runner) OrgID() int64 {
 		return 0
 	}
 	return r.Owner.Org.ID
+}
+
+// AllLabels are every label the runner has: its default ones (from its OS
+// and Arch), then its own.
+func (r Runner) AllLabels() []string {
+	return append(model.DefaultRunnerLabels(r.OS, r.Arch), r.Labels...)
+}
+
+// Serves reports whether the runner works on hub project p: it is in p's
+// org and has every label p runs on (model.LabelsMatch). A runner of
+// nobody's (its owner unknown) serves no project.
+func (r Runner) Serves(p model.Project) bool {
+	return r.OrgID() != 0 && r.OrgID() == p.OrgID && model.LabelsMatch(r.AllLabels(), p.RunsOn)
+}
+
+// Serving are the runners in list that work on p (Runner.Serves).
+func Serving(list []Runner, p model.Project) []Runner {
+	var out []Runner
+	for _, r := range list {
+		if r.Serves(p) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // Limit is how many of the hub's tasks the runner takes at once.
@@ -176,6 +206,7 @@ type record struct {
 	OS        string    `json:"os,omitempty"`        // see Runner.OS
 	Arch      string    `json:"arch,omitempty"`      // see Runner.Arch
 	NotesKey  string    `json:"notes_key,omitempty"` // public: see Runner.NotesKey
+	Labels    []string  `json:"labels,omitempty"`    // see Runner.Labels
 	// Its self-update (update.go).
 	AutoUpdate bool          `json:"auto_update,omitempty"`
 	Update     *Update       `json:"update,omitempty"`
@@ -559,7 +590,11 @@ func (h *Hub) ListBare() []Runner {
 
 func (h *Hub) viewLocked(r *record, online bool, owner *store.RunnerOwner) Runner {
 	v := Runner{ID: r.ID, Name: r.Name, Online: online, Created: r.Created, LastSeen: r.LastSeen, Owner: owner,
-		Version: r.Version, OS: r.OS, Arch: r.Arch, Parallel: r.Parallel, Paused: r.Paused, AutoUpdate: r.AutoUpdate, NotesKey: r.NotesKey}
+		Version: r.Version, OS: r.OS, Arch: r.Arch, Parallel: r.Parallel, Paused: r.Paused, AutoUpdate: r.AutoUpdate, NotesKey: r.NotesKey,
+		Labels: slices.Clone(r.Labels), DefaultLabels: model.DefaultRunnerLabels(r.OS, r.Arch)}
+	if v.Labels == nil {
+		v.Labels = []string{}
+	}
 	if k, err := notes.ParsePublicKey(r.NotesKey); err == nil {
 		v.NotesFingerprint = k.Fingerprint()
 	}
@@ -612,6 +647,47 @@ func (h *Hub) SetDisk(id string, s disk.Settings) error {
 	h.mu.Unlock()
 	h.changed()
 	return nil
+}
+
+// SetLabels replaces runner id's own labels (see Runner.Labels) with
+// labels, checked and tidied (model.CleanLabels); one of its default
+// labels isn't kept twice.
+func (h *Hub) SetLabels(id string, labels []string) error {
+	labels, err := model.CleanLabels(labels)
+	if err != nil {
+		return err
+	}
+	h.mu.Lock()
+	i := slices.IndexFunc(h.runners, func(r *record) bool { return r.ID == id })
+	if i < 0 {
+		h.mu.Unlock()
+		return ErrUnknownName
+	}
+	r := h.runners[i]
+	defaults := model.DefaultRunnerLabels(r.OS, r.Arch)
+	r.Labels = slices.DeleteFunc(labels, func(l string) bool { return model.HasLabel(defaults, l) })
+	if len(r.Labels) == 0 {
+		r.Labels = nil
+	}
+	h.saveLocked()
+	h.mu.Unlock()
+	h.changed()
+	return nil
+}
+
+// AddLabel gives each of runners ids label, unless it has it already (as
+// one of its own or default labels). For moving projects linked to runners
+// onto labels (dispatch.MigrateRunnerLinks).
+func (h *Hub) AddLabel(ids []string, label string) {
+	h.mu.Lock()
+	for _, r := range h.runners {
+		if slices.Contains(ids, r.ID) && !model.HasLabel(append(model.DefaultRunnerLabels(r.OS, r.Arch), r.Labels...), label) {
+			r.Labels = append(r.Labels, label)
+		}
+	}
+	h.saveLocked()
+	h.mu.Unlock()
+	h.changed()
 }
 
 // Get returns the runner with id.

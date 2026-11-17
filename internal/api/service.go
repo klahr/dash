@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -203,8 +202,8 @@ func (sv *service) runOn(pid, id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !slices.Contains(p.Runners, id) {
-		return "", fmt.Errorf("%w: runner %q is not one of this project's runners", errBadRequest, id)
+	if !sv.s.servesProject(p, id) {
+		return "", fmt.Errorf("%w: runner %q is not one of this project's runners (it lacks the labels the project runs on)", errBadRequest, id)
 	}
 	return id, nil
 }

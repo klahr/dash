@@ -79,7 +79,7 @@ func newFleet(t *testing.T) *fleet {
 	lowDiskMinimum(t, f.api, f.runnerID)
 
 	var p struct{ ID string }
-	f.api.must("POST", "/api/projects", map[string]any{"name": "app", "remote_url": origin.URL + "/app.git", "runners": []string{f.runnerID}},
+	f.api.must("POST", "/api/projects", map[string]any{"name": "app", "remote_url": origin.URL + "/app.git", "runs_on": []string{"self-hosted"}},
 		http.StatusCreated, &p)
 	f.project = p.ID
 	return f

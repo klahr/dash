@@ -20,15 +20,15 @@ Every project lives on runners, in one of two ways:
   tasks, git and commands run on that runner only, and it shows in the dashboard under the
   runner's name. Make one with **Add projects from this computer…** on the runner's row of the
   Runners page, or start a new one with **+ Add project** → **Local only**. See [below](#projects-of-a-runners-own).
-- **A shared project**: the hub's project, a git remote that one or more runners are linked to.
-  Each linked runner keeps its own clone of the remote, in its organization's folder inside its
-  projects folder (`<-projects>/<org>/<owner>/<repo>`), any of them can run its tasks, and work lands on the remote. It shows in
-  the dashboard under each runner it is linked to, with a small "shared" mark (two people). Make
-  one with **+ Add project** (see [Add project on the hub](#add-project-on-the-hub)): it is linked
-  to the runner picked beside the dialog's title. Link more runners in its **Settings → Runners**, or pick
-  the projects a runner builds from the runner's side, with **Projects…** on its row of the
-  Runners page (see [A runner's projects](#a-runners-projects)).
-  See [below](#shared-projects-tasks-on-runners).
+- **A shared project**: the hub's project, a git remote that runs on runner labels. It never names
+  runners: the org's runners that have every label it runs on work on it, as a GitHub Actions job's
+  `runs-on` picks self-hosted runners (see [Runner labels](#runner-labels)). Each of them keeps its
+  own clone of the remote, in its organization's folder inside its projects folder
+  (`<-projects>/<org>/<owner>/<repo>`), any of them can run its tasks, and work lands on the remote.
+  It shows in the dashboard with a small "shared" mark (two people). Make one with **+ Add
+  project** (see [Add project on the hub](#add-project-on-the-hub)). Change its labels in its
+  **Settings → Runners**, or a runner's labels on its page in Runners (see
+  [A runner's projects](#a-runners-projects)). See [below](#shared-projects-tasks-on-runners).
 
 A project that is only ever worked on from one computer is simplest as that runner's own; share
 it when several people's runners (or several of yours) should take its tasks.
@@ -37,8 +37,11 @@ it when several people's runners (or several of yours) should take its tasks.
 
 The hub keeps no folders, so **+ Add project** never asks for one. The dialog lists where the
 repository comes from down its side (across the top on a phone), and beside it only the fields for
-that choice. With more than one runner you may link projects to, pick it beside the title (yours
-are marked "(yours)"); with one, there is nothing to pick.
+that choice. With more than one runner you may add projects with, pick it beside the title (yours
+are marked "(yours)"); with one, there is nothing to pick. The picked runner lists your GitHub
+repositories and clones the new project. The project runs on the labels under **Advanced → Runs
+on**: by default the picked runner's own labels, or `self-hosted` (any runner of the org) while it
+has none.
 
 - **Plan a new project** (at the top): start from an idea instead. Claude interviews you and
   writes a brief, then one of the sources below makes the repository. See
@@ -80,20 +83,21 @@ dialog closes on the new project.
 ### The Projects list
 
 The dashboard's **Projects** list is a project picker: each project is listed once, however many
-runners it is linked to, by name. The org's shared projects come first, under **Shared**; a runner's
+runners work on it, by name. The org's shared projects come first, under **Shared**; a runner's
 own (local-only) projects follow under **On <runner>**, one heading per runner, alphabetically.
 With only one group (only shared projects, say) there are no headings at all. A project's place in
-the list doesn't change when its runners come online, go offline, or are linked or unlinked.
+the list doesn't change when its runners come online, go offline, or gain or lose its labels.
 
 The dot on a project's icon says Claude is working on it (yellow) or work waits for review (green).
 A project gets a badge only when its runners need attention:
 
-- **needs a runner**: no runner is linked to it (link one in Project settings → Runners);
-- **runner offline** / **all runners offline**: none of its linked runners is online;
-- **1/2 online** (and so on): some of its linked runners are offline.
+- **needs a runner**: no runner has the labels it runs on (give one those labels, or change them in
+  Project settings → Runners);
+- **runner offline** / **all runners offline**: none of its runners is online;
+- **1/2 online** (and so on): some of its runners are offline.
 
-Hovering the badge lists its runners and whether each is online. No badge means every runner it is
-linked to is online.
+Hovering the badge lists its runners and whether each is online. No badge means every runner that
+works on it is online.
 
 At the bottom of the list, **Runners** opens the Runners page (the same as account menu →
 Runners). Its dot sums up the org's runners: green when all are online, amber when some are
@@ -283,7 +287,7 @@ Its owner and the org's admins can:
 - **Pause** it: it finishes what it is running and gets no new tasks;
 - set **At once**, how many of the hub's tasks it runs at a time (0: its own `-parallel`);
 - **Revoke** it (there, or under **Account → Tokens & apps**): it is disconnected at once, its token stops
-  working (the hub keeps only a hash of it) and it is unlinked from every project. Tasks it was
+  working (the hub keeps only a hash of it) and it works on no project any more. Tasks it was
   running fail and can be queued again on another runner. The runner exits, saying so (its
   systemd service doesn't restart it; launchd retries every 30 s); to bring it back, run the
   install command with a new code (revoking frees its name for that).
@@ -292,9 +296,8 @@ Runners registered with an older hub become the env account's.
 
 ## Shared projects: tasks on runners
 
-The hub coordinates; the runners do the work. In a shared project's **Settings → Runners**, tick
-the runners it is linked to (your own runners, or any of the org's if you're an admin), or tick the
-projects on a runner's **Projects…** screen (below). From then on:
+The hub coordinates; the runners do the work. A shared project's tasks run on the org's runners
+that have the labels it runs on ([Runner labels](#runner-labels)). From then on:
 
 - Each task goes to one of the project's runners that is online, not paused, below its limit and
   not held back by its owner's Claude usage, the least busy first. A task that ran before goes
@@ -309,7 +312,7 @@ projects on a runner's **Projects…** screen (below). From then on:
 - If none can take it, the task stays queued and its card says why ("no runner online: laptop is
   offline", "waiting for a runner: laptop is busy (3 of 3 tasks)"). It starts as soon as one can.
 - The project needs a git remote: each runner clones it into its projects folder the first time
-  it is linked (see [Where a runner keeps a shared project](#where-a-runner-keeps-a-shared-project)),
+  it works on it (see [Where a runner keeps a shared project](#where-a-runner-keeps-a-shared-project)),
   and keeps that clone. Work lands on the remote's default branch the same
   way it does without runners, but done by the runner. On GitHub that means a pull request (the
   default): when Claude finishes, the runner pushes the task's branch and opens one, and the task
@@ -368,44 +371,68 @@ projects on a runner's **Projects…** screen (below). From then on:
   dashboard. A terminal in the task's worktree opens from the hub for the runner's owner (see
   below).
 
+### Runner labels
+
+Projects don't name the runners they run on. As on GitHub Actions, a project runs on **labels**,
+and a runner works on every project of its org whose labels it all has:
+
+- Every runner has the labels `self-hosted`, its system (`Linux`, `macOS` or `Windows`) and its
+  architecture (`X64`, `ARM64`, `ARM` or `X86`). A runner from before Dash reported its system has
+  `self-hosted` only.
+- Its owner or an org admin gives it labels of its own on its page in Runners, under
+  **Settings → Labels**, separated by commas: `gpu, big-disk`. A label is letters, digits and
+  `- _ . : + /`, up to 64 characters.
+- A project runs on the labels in its **Settings → Runners → Runs on**, separated by commas. A
+  runner works on it when it has every one of them, whatever their case: `self-hosted` is any
+  runner of the org, `macOS, ARM64` is Apple silicon Macs, `gpu` is the runners you labelled so.
+  Below the field the org's runners show whether they have them, as you type. A project with no
+  labels runs on no runner, and says it **needs a runner**.
+
+So adding a computer means giving it the right labels: it then takes the work of every project on
+them, with no project to change. Taking a label off a runner, or changing a project's labels, makes
+runners leave the project: each keeps its clone on its disk as a project of its own. Either change
+is refused while one of the project's tasks is running on a runner it would leave (Claude working
+on it, a review or a merge): "1 task of web is running on laptop: wait for them to finish (or
+cancel them) before changing the labels". Tasks that finished running there (in review, failed, or
+waiting to continue) keep their worktrees there; queued again, they start afresh on another of the
+project's runners.
+
+A runner's tasks run on its owner's computer, with their Claude subscription. So a member can set a
+project's labels only so that it runs on their own runners, besides those it already ran on; an
+admin can send it to any runner of the org. When the labels would also send work to someone
+else's runner, saving says so: "laptop is ana's runner and has the labels self-hosted: only they or
+an admin of the organization can send work to it". Give your own runners a label of their own and
+use it. A runner of another org never works on a project, whatever its labels.
+
+A hub from before labels moves its projects to them when it starts: a project that was linked to
+every runner of its org runs on `self-hosted`; any other gets a label of its own,
+`project-<name>`, which the runners it was linked to are given. Each logs the move ("project now
+runs on runner labels").
+
 ### A runner's projects
 
-**Projects…** on a runner's row of the Runners page lists what that runner can build, with the
-projects it is linked to ticked. It edits the same link as each project's **Settings → Runners**:
-a change on one screen shows up on the other right away, in every open browser.
+A runner's page in Runners shows its labels and the projects it builds. **Shared projects…** lists
+the org's shared projects, each with the labels it runs on and whether the runner has them; it is
+the same as each project's **Settings → Runners**, from the runner's side, and a change on one
+shows up on the other right away, in every open browser.
 
-- **For the runner's owner** it lists the repositories of their GitHub login, as **+ Add project →
-  From GitHub** does (through the runner's `gh`, a heading per owner, with a filter), then
-  the org's other shared projects: those whose remote isn't one of those repositories (a remote
-  URL, another account's repository).
-- **Ticking a repository that is already one of the org's shared projects** links the runner to
-  it. If the runner is online it clones (or adopts) it at once, and a remote it can't read says
-  so right away, in the words its tasks would wait with ("runner laptop cannot access
-  owner/repo over ssh: git@github.com: Permission denied (publickey)"). The link stays either way,
-  as from Settings → Runners. An offline runner clones the project when it next gets work for it.
-- **Ticking a repository that isn't a project yet** creates the shared project (named after the
-  repository) and links the runner to it in the same step. The screen says so: such a project
-  is the org's, and everyone in the org sees it and can link their runners to it. For a
-  repository only this computer works on, use **Add projects from this computer…** instead (see
-  [below](#add-projects-from-a-runners-computer)).
-- **Unticking** unlinks the runner only: the project, its tasks and its other runners' links stay,
-  and the runner's clone stays on its disk as a project of its own. Unlinking is refused while
-  one of the project's tasks is running on that runner (Claude working on it, a review or a
-  merge): "1 task of web is running on laptop: wait for them to finish (or cancel them) before
-  unlinking it". This also applies in Settings → Runners. Tasks that have finished running
-  there (in review, failed, or waiting to continue) don't block it; the screen counts them and
-  asks first. Their worktrees stay on that computer, and when queued again they start afresh on
-  another runner linked to the project.
-- **Build all the org's projects** (for a new computer) links the runner to every shared project
-  it isn't linked to yet. An online runner then clones them one after another in the background.
+- **Add labels** on a project the runner doesn't build gives the runner the labels it lacks (for
+  its owner or an admin). It then builds that project, and every other one on those labels.
+- **For the runner's owner** it also lists the repositories of their GitHub login, as **+ Add
+  project → From GitHub** does (through the runner's `gh`, a heading per owner, with a filter),
+  then the org's other shared projects.
+- **Create project** on a repository that isn't a project yet makes the shared project (named after
+  the repository), on the runner's own labels (or `self-hosted` while it has none). If the runner is
+  online and has them, it clones (or adopts) it at once, and a remote it can't read says so right
+  away, in the words its tasks would wait with ("runner laptop cannot access owner/repo over ssh:
+  git@github.com: Permission denied (publickey)"). The project stays either way. Such a project is
+  the org's: everyone in the org sees it. For a repository only this computer works on, use **Add
+  projects from this computer…** instead (see [below](#add-projects-from-a-runners-computer)).
 
-Linking follows the same rules as in Settings → Runners: you can link your own runners, and admins
-can link any runner in the org. On this screen the same people can unlink, because it changes
-what that runner builds. Anyone in the org can open the screen to see
-what a runner builds. Only the runner's owner can list GitHub repositories or create a project
-from one, because the list comes from their GitHub login and the hub has none of its own. When an
-admin opens someone else's runner, the screen shows only the org's existing shared projects and
-says why.
+Anyone in the org can open the screen to see what a runner builds. Only the runner's owner can list
+GitHub repositories or create a project from one, because the list comes from their GitHub login
+and the hub has none of its own. When an admin opens someone else's runner, the screen shows only
+the org's existing shared projects and says why.
 
 ### Everything else about a shared project also runs on a runner
 
@@ -418,8 +445,8 @@ connection, to the clone of one of the project's runners that is online:
 - the file browser and the `CLAUDE.md` and settings files;
 - the project's commands: **Run**, **Test** and **Deploy**, also in a task's worktree (they run on
   that task's runner), for any member of the org. The runner always takes the shared project's
-  commands from the hub (set in its settings on the hub), each time the project is linked. Only an
-  org admin, or the owner of every runner linked to the project, can change those commands;
+  commands from the hub (set in its settings on the hub), each time it takes the project up. Only an
+  org admin, or the owner of every runner the project runs on, can change those commands;
 - the **Shell** view and **Open shell in this worktree** on a task: a terminal on the runner, in
   the project's checkout there or the task's worktree, only for the user who registered the runner
   (a shell can do whatever a deploy command can). The hub chooses neither the runner's folder nor
@@ -433,24 +460,24 @@ connection, to the clone of one of the project's runners that is online:
 
 When none of the project's runners is online these fail at once with "No runner is online for this
 project. Start one with `dash runner`." (the dashboard also says so above the board); nothing falls
-back to the hub. A project no runner is linked to says it **needs a runner**, with a **Link a
-runner** button.
+back to the hub. A project no runner has the labels of says it **needs a runner**, with a **Change
+its labels** button.
 
-The hub never runs tasks itself: a task of a project not linked to a runner waits, saying a runner
-must be linked. (`-hub-tasks` is gone; an old start command that still passes it starts, logs a
+The hub never runs tasks itself: a task of a project no runner has the labels of waits, saying
+which labels it runs on. (`-hub-tasks` is gone; an old start command that still passes it starts, logs a
 warning and ignores it.)
 
 ### Moving projects off the hub
 
 A hub from before this kept projects of its own, in its own `-projects` directory. They are kept,
 with their tasks, issues and history on the board, and the hub deletes nothing on disk; at
-startup it logs a warning for each project no runner is linked to (`project needs a runner`), and
+startup it logs a warning for each project that runs on no runner labels (`project needs a runner`), and
 the dashboard marks them **needs a runner**. Their work waits until you do one of these, per
 project:
 
-1. **Link it to a runner** (Project settings → Runners), if it has a git remote: the runner clones
-   the remote and the project carries on as a shared project. A project without a remote can't be
-   linked: push it somewhere first (e.g. create the GitHub repository from the folder on disk with
+1. **Run it on runner labels** (Project settings → Runners → Runs on, e.g. `self-hosted`), if it
+   has a git remote: the runners with them clone the remote and the project carries on as a shared
+   project. A project without a remote can't run on runners: push it somewhere first (e.g. create the GitHub repository from the folder on disk with
    `gh repo create --source . --push`), then set up the project again as below.
 2. **Remove it from the hub and add it on a runner**: delete the project in its settings (on the
    hub this only forgets it; its folder stays on disk), move or clone the repository into a
@@ -463,7 +490,7 @@ and `claude` can be uninstalled from the hub's computer.
 
 ### Shared notes between a project's runners
 
-The runners linked to a shared project keep a shared notes space for it (package `internal/notes`).
+The runners that work on a shared project keep a shared notes space for it (package `internal/notes`).
 Each runner has a full copy in `<-data>/shared/<hub project id>.db`, so it reads its notes locally,
 even while the hub can't be reached. A runner saves a note locally first, then sends it to the hub,
 sealed with the project's key. The hub passes it on to the project's other runners that are online
@@ -633,7 +660,7 @@ fingerprint after checking it on that runner.
 
 ##### Removing a computer
 
-- **Unlink it, or revoke it, on the hub.** The runners that remain notice the next time they talk
+- **Take the project's labels off it, or revoke it, on the hub.** The runners that remain notice the next time they talk
   through the hub (when a note is written, and at least every 15 minutes). They rotate to a new
   project key, wrap it for each other, and seal new notes with it, so the hub can't hand the old
   key back to the computer. A message sealed with an older key is refused.
@@ -717,18 +744,18 @@ tools (issues it reports, tasks it creates) goes straight to the hub's.
 Where each kind of Claude work runs:
 
 - **Tasks**: on one of the project's runners (see [above](#shared-projects-tasks-on-runners)).
-  A task of a project with no runner linked waits, saying a runner must be linked.
+  A task of a project no runner has the labels of waits, saying which labels it runs on.
 - **Scans**: on one of the project's runners online, in a throwaway checkout of its clone at
   origin's default branch. The hub keeps the runs, their logs and the issues they file; the run's
   log says which runner it ran on. With the project's runners all offline a run waits, showing
-  "no runner online: laptop is offline", and starts when one comes back; a project with no runner
-  linked can't be scanned. Repository scans (`.dash/scans/`) are used only by a runner's own
+  "no runner online: laptop is offline", and starts when one comes back; a project no runner has the
+  labels of can't be scanned. Repository scans (`.dash/scans/`) are used only by a runner's own
   projects; hub projects use built-in and Dash scans.
-- **Project and task chats**: on one of your runners linked to the project (a task's chat on the
+- **Project and task chats**: on one of your runners that works on the project (a task's chat on the
   runner that ran it). Shell commands typed in them with a leading `!` run there too, in the same
   folder, never on the hub: see [Chat](chat.md#shell-commands-with-).
 
-- **Goals' coordinators**: a [goal](goals.md)'s wake-ups run on its owner's runner linked to the
+- **Goals' coordinators**: a [goal](goals.md)'s wake-ups run on its owner's runner that works on the
   project, read-only in its clone; its chat on yours. With none online the goal's events wait,
   and its log says so. What the coordinator does with its tools happens on the hub's board.
 
@@ -812,7 +839,7 @@ whichever protocol it clones over.
 
 ### Where a runner keeps a shared project
 
-When a project is linked to it, a runner puts it in the folder of the project's organization
+When it starts working on a project, a runner puts it in the folder of the project's organization
 inside its projects folder, in a folder for the remote's owner (the GitHub user or organization),
 named after the remote: `https://github.com/klahr/dash.git` becomes `~/src/acme/klahr/dash` for a
 runner started with `-projects ~/src`, in the organization whose folder is `acme`. A remote
@@ -825,7 +852,7 @@ one with the runner's own projects, and everything inside `<-projects>/<org>/` i
 - **A clone of the same repository is already in the owner's folder** (the remote
   compared without caring about `https` or `ssh`, credentials or a trailing `.git`): the runner
   adopts it instead of cloning. If it was one of the runner's own projects, that project becomes
-  the shared one (unlinking makes it the runner's own again). A clone anywhere else, such as your
+  the shared one (leaving the project, when it loses its labels, makes it the runner's own again). A clone anywhere else, such as your
   own checkout at `<-projects>/dash`, is never adopted: the runner makes a clone of its own.
 - **Something else is there** (another repository, a folder that isn't one, a file, a symlink, or
   a clone of the same remote already linked to another shared project): it is never touched; the
@@ -851,8 +878,8 @@ one with the runner's own projects, and everything inside `<-projects>/<org>/` i
 - **Runners from before that** cloned shared projects into `<-projects>/hub/<name>`. Those stay
   where they are, with their worktrees, task branches and uncommitted work: on its first start
   after the upgrade the runner marks them as the hub's once and from then on finds them by id. To
-  move one, unlink it, move the folder into `<-projects>/<org>/`, and link it again (the runner
-  adopts it at its new place).
+  move one, take its labels off the runner, move the folder into `<-projects>/<org>/`, and give
+  them back (the runner adopts it at its new place).
 
 ## Projects of a runner's own
 

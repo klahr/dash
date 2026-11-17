@@ -73,7 +73,7 @@ type TodoEngine struct {
 	MaxParallel  int
 	// Remote, on the hub (its dispatch.Dispatcher), sends every task to one
 	// of its project's runners: the hub runs none itself, and the tasks of
-	// a project no runner is linked to wait for one (NoRunnerLinked). Nil
+	// a project that runs on no runner labels wait for them (NoRunnerLinked). Nil
 	// on a runner, which runs the tasks it is given here, at most
 	// MaxParallel at a time.
 	Remote Remote
@@ -122,9 +122,9 @@ type Claimer interface {
 // the Remote recorded where it stands, and it isn't sent again.
 var ErrSettled = errors.New("the runner had finished the task already")
 
-// NoRunnerLinked is the Waiting reason of a hub's task whose project no
-// runner is linked to.
-const NoRunnerLinked = "no runner: the hub doesn't run tasks itself; link the project to a runner in its settings (start one with `dash runner` on a computer with git and Claude Code)"
+// NoRunnerLinked is the Waiting reason of a hub's task whose project runs
+// on no runner labels.
+const NoRunnerLinked = "no runner: the hub doesn't run tasks itself; set the runner labels the project runs on in its settings (start a runner with `dash runner` on a computer with git and Claude Code)"
 
 // NewTodoEngine finishes initialising e; call Run in a goroutine afterwards.
 func NewTodoEngine(e *TodoEngine) *TodoEngine {

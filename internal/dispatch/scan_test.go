@@ -30,8 +30,8 @@ func TestScanPicksALinkedRunnerOrWaits(t *testing.T) {
 	var w *scan.WaitError
 
 	_, err := fx.d.Scan(ctx, fx.project(t, fx.orgA), scan.Job{}, scan.Hooks{})
-	if err == nil || errors.As(err, &w) || !strings.Contains(err.Error(), "link one") {
-		t.Fatalf("unlinked: %v, want an error saying to link a runner", err)
+	if err == nil || errors.As(err, &w) || !strings.Contains(err.Error(), "labels it runs on") {
+		t.Fatalf("unlinked: %v, want an error saying to label a runner", err)
 	}
 
 	fx.fleet.set(runnerOf("laptop", fx.orgA, false))

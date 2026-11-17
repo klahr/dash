@@ -60,7 +60,7 @@ func TestHubListsRunnerQuickActionsWithTheirPreset(t *testing.T) {
 	eventually(t, "the runner to come online", func() bool { r, _ := rh.Get(creds.ID); return r.Online })
 
 	p, err := raw(hub).CreateProject(model.Project{Name: "shared", OrgID: owner.Org, Path: "/hub/has/its/own/path",
-		RemoteURL: remote, DefaultBranch: "main", MergeMode: model.MergePR, Runners: []string{creds.ID},
+		RemoteURL: remote, DefaultBranch: "main", MergeMode: model.MergePR, RunsOn: []string{"self-hosted"},
 		TestCommand: "true", DeployCommand: "exit 3"})
 	if err != nil {
 		t.Fatal(err)
@@ -201,7 +201,7 @@ func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
 	eventually(t, "the runner to come online", func() bool { r, _ := rh.Get(creds.ID); return r.Online })
 
 	p, err := raw(hub).CreateProject(model.Project{Name: "shared", OrgID: owner.Org, Path: "/hub/has/its/own/path",
-		RemoteURL: remote, DefaultBranch: "main", MergeMode: model.MergePR, Runners: []string{creds.ID}})
+		RemoteURL: remote, DefaultBranch: "main", MergeMode: model.MergePR, RunsOn: []string{"self-hosted"}})
 	if err != nil {
 		t.Fatal(err)
 	}

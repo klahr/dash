@@ -128,9 +128,13 @@ func TestRunnersAreScopedToTheirOrg(t *testing.T) {
 	if _, ok := f.rh.Get(f.ids["u-box"]); !ok {
 		t.Fatal("u-box was revoked from another org")
 	}
-	// Linking another org's runner to a project is refused too.
-	if w := send(f.u, "PATCH", "/api/projects/"+f.web.ID, `{"runners":["`+f.ids["b-box"]+`"]}`); w.Code != http.StatusBadRequest {
-		t.Errorf("linking Beta's runner: %d %s", w.Code, w.Body)
+	// A project never runs on another org's runner, whatever its labels.
+	if w := send(f.u, "PATCH", "/api/projects/"+f.web.ID, `{"runs_on":["self-hosted"]}`); w.Code != http.StatusOK {
+		t.Fatalf("running on every runner: %d %s", w.Code, w.Body)
+	}
+	p, _ := raw(f.s).GetProject(f.web.ID)
+	if b, _ := f.rh.Get(f.ids["b-box"]); b.Serves(p) {
+		t.Error("Beta's runner works on Default's project")
 	}
 }
 
@@ -282,44 +286,82 @@ func TestRunnerUpdatesOnlyWhenIdleAndOnlyForTheHub(t *testing.T) {
 	}
 }
 
-// Linking: in the org, your own runner (or any as an admin), only with a
-// git remote. A GitHub project's work lands through pull requests unless
-// its user chose otherwise (the runners open them; the hub needs no gh),
-// and choosing to merge sticks.
-func TestLinkingProjectsToRunners(t *testing.T) {
+// A project runs on labels, never on runners it names. Setting them is
+// anyone's who edits the project, with a git remote, so long as every
+// runner they newly send its work to is their own (or they are an admin):
+// a runner of another org never counts. A GitHub project's work lands
+// through pull requests unless its user chose otherwise (the runners open
+// them; the hub needs no gh), and choosing to merge sticks.
+func TestProjectsRunOnLabels(t *testing.T) {
 	parallel(t)
 
 	f := newFleetServer(t)
 	f.s.Git.GhBin = filepath.Join(t.TempDir(), "no-gh") // the hub has no gh
+	label := func(h http.Handler, runner, body string) {
+		t.Helper()
+		if w := send(h, "PATCH", "/api/runners/"+f.ids[runner], `{"labels":`+body+`}`); w.Code != http.StatusOK {
+			t.Fatalf("labelling %s: %d %s", runner, w.Code, w.Body)
+		}
+	}
+	label(f.u, "u-box", `["gpu"]`)
+	label(f.c, "c-box", `["mine"," mine ","MINE"]`) // tidied to one
+	label(f.b, "b-box", `["gpu","mine"]`)           // another org's: never counts
+	if r, _ := f.rh.Get(f.ids["c-box"]); !slices.Equal(r.Labels, []string{"mine"}) || !slices.Equal(r.DefaultLabels, []string{"self-hosted"}) {
+		t.Errorf("c-box's labels: %v and %v", r.Labels, r.DefaultLabels)
+	}
+	if w := send(f.c, "PATCH", "/api/runners/"+f.ids["u-box"], `{"labels":["x"]}`); w.Code != http.StatusForbidden {
+		t.Errorf("member labelling someone else's runner: %d %s", w.Code, w.Body)
+	}
+	if w := send(f.c, "PATCH", "/api/runners/"+f.ids["c-box"], `{"labels":["no spaces"]}`); w.Code != http.StatusBadRequest {
+		t.Errorf("a label with a space: %d %s", w.Code, w.Body)
+	}
+	serving := func() []string {
+		t.Helper()
+		p, _ := raw(f.s).GetProject(f.web.ID)
+		var out []string
+		for _, r := range tunnel.Serving(f.rh.List(), p) {
+			out = append(out, r.Name)
+		}
+		return out
+	}
+
 	path := "/api/projects/" + f.web.ID
-	if w := send(f.c, "PATCH", path, `{"runners":["`+f.ids["u-box"]+`"]}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "only they") {
-		t.Errorf("member linking someone else's runner: %d %s", w.Code, w.Body)
+	for _, l := range []string{`["gpu"]`, `["self-hosted"]`} {
+		if w := send(f.c, "PATCH", path, `{"runs_on":`+l+`}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "only they") {
+			t.Errorf("member sending work to someone else's runner with %s: %d %s", l, w.Code, w.Body)
+		}
 	}
-	w := send(f.c, "PATCH", path, `{"runners":["`+f.ids["c-box"]+`"]}`)
+	w := send(f.c, "PATCH", path, `{"runs_on":["Mine"]}`)
 	var p model.Project
-	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &p) != nil || len(p.Runners) != 1 || !p.UsesPR() || p.AutoPush ||
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &p) != nil || !slices.Equal(p.RunsOn, []string{"Mine"}) || !p.UsesPR() || p.AutoPush ||
 		p.LandsOnOrigin() || p.MergeModeSet {
-		t.Fatalf("member linking their runner: %d %s", w.Code, w.Body)
+		t.Fatalf("member running it on their runner's label: %d %s", w.Code, w.Body)
 	}
-	// The admin adds u's; c may keep the list as it is (with u-box in it).
-	if w := send(f.d, "PATCH", path, `{"runners":["`+f.ids["c-box"]+`","`+f.ids["u-box"]+`"]}`); w.Code != http.StatusOK {
-		t.Errorf("admin linking u's runner: %d %s", w.Code, w.Body)
+	if got := serving(); !slices.Equal(got, []string{"c-box"}) {
+		t.Errorf("runners of the project on mine: %v", got)
 	}
-	if w := send(f.c, "PATCH", path, `{"name":"renamed","merge_mode":"pr","runners":["`+f.ids["c-box"]+`","`+f.ids["u-box"]+`"]}`); w.Code != http.StatusOK {
-		t.Errorf("member saving settings with runners linked: %d %s", w.Code, w.Body)
+	// The admin runs it on every runner; c may then keep the labels as they are.
+	if w := send(f.d, "PATCH", path, `{"runs_on":["self-hosted"]}`); w.Code != http.StatusOK {
+		t.Errorf("admin running it on every runner: %d %s", w.Code, w.Body)
+	}
+	if got := serving(); !slices.Equal(got, []string{"c-box", "u-box"}) {
+		t.Errorf("runners of the project on self-hosted: %v", got)
+	}
+	if w := send(f.c, "PATCH", path, `{"name":"renamed","merge_mode":"pr","runs_on":["self-hosted"]}`); w.Code != http.StatusOK {
+		t.Errorf("member saving settings with the labels as they are: %d %s", w.Code, w.Body)
 	}
 	// Merging is an explicit choice, kept by upgrades; and pull requests
 	// can come back. A setting older dashboards still send is ignored.
 	w = send(f.c, "PATCH", path, `{"merge_mode":"local","merge_green_prs":false}`)
 	if json.Unmarshal(w.Body.Bytes(), &p) != nil || w.Code != http.StatusOK || p.UsesPR() || !p.MergeModeSet || !p.LandsOnOrigin() {
-		t.Errorf("choosing to merge with runners linked: %d %s", w.Code, w.Body)
+		t.Errorf("choosing to merge on runners: %d %s", w.Code, w.Body)
 	}
 	if names, _ := raw(f.s).DefaultMergeModes(true); slices.Contains(names, p.Name) {
 		t.Errorf("the upgrade switched a project whose user chose to merge: %v", names)
 	}
 	w = send(f.c, "PATCH", path, `{"merge_mode":"pr"}`)
 	if json.Unmarshal(w.Body.Bytes(), &p) != nil || w.Code != http.StatusOK || !p.UsesPR() {
-		t.Errorf("pull requests again with runners linked: %d %s", w.Code, w.Body)
+		t.Errorf("pull requests again on runners: %d %s", w.Code, w.Body)
 	}
 	// Attachments can't follow a task to a runner.
 	if _, err := (&service{s: f.s, c: ownerCaller(t, f.s), data: raw(f.s).ForOrg(f.web.OrgID)}).addTodo(model.Todo{
@@ -327,15 +369,18 @@ func TestLinkingProjectsToRunners(t *testing.T) {
 		t.Error("a task with attachments was added to a project on runners")
 	}
 
-	// A project without a remote can't be shared.
+	// A project without a remote can't run on runners.
 	other, _ := raw(f.s).CreateProject(model.Project{Name: "no-remote", Path: t.TempDir(), OrgID: f.web.OrgID})
-	if w := send(f.u, "PATCH", "/api/projects/"+other.ID, `{"runners":["`+f.ids["u-box"]+`"]}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "remote") {
-		t.Errorf("linking a project without a remote: %d %s", w.Code, w.Body)
+	if w := send(f.u, "PATCH", "/api/projects/"+other.ID, `{"runs_on":["self-hosted"]}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "remote") {
+		t.Errorf("a project without a remote on runners: %d %s", w.Code, w.Body)
 	}
 
-	// Unlinking all of them is anyone's who can edit the project.
-	if w := send(f.c, "PATCH", path, `{"runners":[]}`); w.Code != http.StatusOK {
-		t.Errorf("unlinking: %d %s", w.Code, w.Body)
+	// Running it on no runner is anyone's who can edit the project.
+	if w := send(f.c, "PATCH", path, `{"runs_on":[]}`); w.Code != http.StatusOK {
+		t.Errorf("running it on no runner: %d %s", w.Code, w.Body)
+	}
+	if got := serving(); len(got) != 0 {
+		t.Errorf("runners of a project on no labels: %v", got)
 	}
 }
 

@@ -35,7 +35,7 @@ what you selected in the terminal if you selected something.
 
 **Try** (in the sidebar, or the phone's menu, of a CLI project on a hub; `:try`) opens the same
 kind of terminal on the project rather than a task, to test it without one in review. It always
-runs on a runner, never on the hub: one that is connected, has the project linked and opens
+runs on a runner, never on the hub: one that is connected, has the labels the project runs on and opens
 terminals for you (only for the runner's owner). With one such runner it is
 picked by itself; with several, pick one in the Try header; with none, Try is greyed out and says
 why.

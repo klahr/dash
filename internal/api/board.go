@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"time"
 
@@ -171,8 +170,8 @@ func (s *Server) runnerScope(x tunnel.Runner, hubTodo, hubProject, hubGoal strin
 	}
 	if hubProject != "" {
 		p, err := s.Store.ForOrg(org).GetProject(hubProject)
-		if o, ok := s.Store.ProjectOrg(hubProject); !ok || o != org || err != nil || !slices.Contains(p.Runners, x.ID) {
-			return mcptools.Scope{}, errors.New("no such project linked to this runner")
+		if o, ok := s.Store.ProjectOrg(hubProject); !ok || o != org || err != nil || !x.Serves(p) {
+			return mcptools.Scope{}, errors.New("no such project on this runner")
 		}
 	}
 	sc := mcptools.Scope{Org: org, User: x.Owner.UserID, Project: hubProject}

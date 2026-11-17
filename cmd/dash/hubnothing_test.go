@@ -117,15 +117,15 @@ func TestHubRunsNothingItself(t *testing.T) {
 	runnerEnv := append(o.env, "FAKECLAUDE_LOG="+calls, "PATH="+filepath.Dir(fake)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	runner, runnerID, runnerArgs := registerRunner(t, api, dash, fake, dir, "laptop", runnerEnv)
 
-	// A shared project: the remote and the runner it is linked to.
+	// A shared project: the remote, on the labels every runner has.
 	var p struct {
 		ID        string
-		RemoteURL string `json:"remote_url"`
-		Runners   []string
+		RemoteURL string   `json:"remote_url"`
+		RunsOn    []string `json:"runs_on"`
 	}
-	api.must("POST", "/api/projects", map[string]any{"name": "app", "remote_url": o.remote, "runners": []string{runnerID},
+	api.must("POST", "/api/projects", map[string]any{"name": "app", "remote_url": o.remote, "runs_on": []string{"self-hosted"},
 		"test_command": "test -f done-by-runner.txt && echo tests-ran-on-the-runner"}, http.StatusCreated, &p)
-	if len(p.Runners) != 1 || p.RemoteURL != o.remote {
+	if len(p.RunsOn) != 1 || p.RemoteURL != o.remote {
 		t.Fatalf("shared project: %+v", p)
 	}
 

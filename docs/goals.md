@@ -119,7 +119,7 @@ note. Answer in the goal's chat, or with `message_goal` from Claude (see below).
   [README](../README.md#your-first-task)). The goal's use is estimated as the window's
   utilization times its tasks' part of the cost of all the org's tasks since the window started.
   Once it reaches the share, the coordinator can't queue or send back tasks, and the goal is out
-  of budget. It is only checked while the window is known: on a hub, from a runner linked to the
+  of budget. It is only checked while the window is known: on a hub, from a runner that works on the
   project that reported its usage.
 
 ## What the coordinator can do
@@ -130,7 +130,7 @@ goal's owner (in the goal's chat, as you). It can only change the goal's own tas
 goal's project. It has no tool to approve, merge, tag a release or change the checklist, and it
 can't start a task despite the weekly pace.
 
-On a hub, the coordinator runs on the owner's runner linked to the project, like a project chat.
+On a hub, the coordinator runs on the owner's runner that works on the project, like a project chat.
 If none is online, the events wait and the log says why; the next event, or **Resume**, tries
 again.
 

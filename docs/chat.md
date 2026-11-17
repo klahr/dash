@@ -59,7 +59,7 @@ it runs as a shell command where the chat runs, as in Claude Code.
 
 - **Where it runs**: the project's checkout for a project chat, the task's worktree for a task
   chat (the project's checkout once the task is merged or has no worktree). On a hub, that is on
-  the runner the chat runs on, never on the hub: the runner linked to the project, or the one
+  the runner the chat runs on, never on the hub: the runner that works on the project, or the one
   that ran the task.
 - **What you see**: the command streams its output (stdout and stderr together) into a block in
   the chat, with a Stop button (the composer's send button) while it runs and its exit code when

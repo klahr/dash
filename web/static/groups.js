@@ -2,8 +2,8 @@
 // with Node (web/groups_test.mjs).
 //
 // The list is a project picker: each project is in it once, by name, in a
-// place that doesn't move when runners come online, go offline, or are
-// linked or unlinked. On a hub the org's shared projects go under "Shared",
+// place that doesn't move when runners come online, go offline, or gain or
+// lose the labels a project runs on. On a hub the org's shared projects go under "Shared",
 // and a runner's own (local-only) projects under "On <runner>". Elsewhere (a
 // Dash that isn't a hub) there is one group per computer. Headings show only
 // when there is more than one group. Runners themselves live on the Runners
@@ -34,6 +34,29 @@ export function projectGroups({ machines = [], runners = null, projects = [] }) 
   return groups;
 }
 
+// runnerLabels are every label runner r has: its default ones ("self-hosted",
+// its system and architecture), then those it was given.
+export const runnerLabels = (r) => [...(r?.default_labels || ["self-hosted"]), ...(r?.labels || [])];
+
+// servesProject reports whether runner r works on hub project p: it has every
+// label p runs on (p.runs_on), whatever their case, as on GitHub. A project
+// that runs on no labels runs on no runner.
+export function servesProject(r, p) {
+  const want = p?.runs_on || [];
+  if (!r || !want.length) return false;
+  const have = new Set(runnerLabels(r).map((l) => l.toLowerCase()));
+  return want.every((l) => have.has(String(l).toLowerCase()));
+}
+
+// missingLabels are the labels p runs on that runner r lacks.
+export function missingLabels(r, p) {
+  const have = new Set(runnerLabels(r).map((l) => l.toLowerCase()));
+  return (p?.runs_on || []).filter((l) => !have.has(String(l).toLowerCase()));
+}
+
+// parseLabels reads labels typed in one box, split by commas or spaces.
+export const parseLabels = (s) => [...new Set(String(s || "").split(/[\s,]+/).map((l) => l.trim()).filter(Boolean))];
+
 // uniqueProjects lists the groups' projects in list order (J/K's order).
 export const uniqueProjects = (groups) => [...new Set(groups.flatMap((g) => g.projects))];
 
@@ -46,12 +69,12 @@ function runnerOnline(name, machines, runners) {
 }
 
 // projectRunners lists the runners p has a clone on, by name, each with
-// whether it is online: a shared project's linked runners, else its own
-// runner (or computer).
+// whether it is online: a shared project's runners (those with the labels
+// it runs on), else its own runner (or computer).
 export function projectRunners(p, { machines = [], runners = null } = {}) {
   if (!p) return [];
   if (isShared(p) && Array.isArray(runners)) {
-    return runners.filter((r) => p.runners?.includes(r.id)).map((r) => r.name).sort(byStr)
+    return runners.filter((r) => servesProject(r, p)).map((r) => r.name).sort(byStr)
       .map((name) => ({ name, online: runnerOnline(name, machines, runners) }));
   }
   if (!p.machine) return [];
@@ -61,13 +84,13 @@ export function projectRunners(p, { machines = [], runners = null } = {}) {
 
 // runnerBadge is a project row's runner badge, or null when every runner
 // it has is online: { kind, label, title }, kind one of "none" (no runner
-// linked), "offline" (none online) or "partial" (some online). title lists
+// has its labels), "offline" (none online) or "partial" (some online). title lists
 // the runners and their status, one per line.
 export function runnerBadge(p, ctx = {}) {
   const rs = projectRunners(p, ctx);
   if (!rs.length) {
     if (!isShared(p) || !Array.isArray(ctx.runners)) return null;
-    return { kind: "none", label: "needs a runner", title: "No runner is linked to it: link one in Project settings → Runners" };
+    return { kind: "none", label: "needs a runner", title: `No runner has the labels it runs on${p.runs_on?.length ? ` (${p.runs_on.join(", ")})` : ""}: give one those labels in Runners, or change them in Project settings → Runners` };
   }
   const up = rs.filter((r) => r.online).length;
   if (up === rs.length) return null;
@@ -77,11 +100,11 @@ export function runnerBadge(p, ctx = {}) {
 }
 
 // projectRunnerNames names the runners p has a clone on: its own runner, or
-// the runners a hub project is linked to (by name, in name order).
+// the runners with the labels a hub project runs on (by name, in name order).
 export function projectRunnerNames(p, runners) {
   if (!p) return [];
   if (!isShared(p) || !Array.isArray(runners)) return [p.machine].filter(Boolean);
-  return runners.filter((r) => p.runners?.includes(r.id)).map((r) => r.name).sort((a, b) => byName({ name: a }, { name: b }));
+  return runners.filter((r) => servesProject(r, p)).map((r) => r.name).sort((a, b) => byName({ name: a }, { name: b }));
 }
 
 // remoteRepo is the repository a remote names, as owner/repo: https, ssh://

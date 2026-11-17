@@ -481,7 +481,7 @@ func (s *Server) wallRunners(d *wallData, todos []model.Todo, projects []model.P
 		}
 		linked := map[string]bool{}
 		for _, p := range projects {
-			if slices.Contains(p.Runners, r.ID) {
+			if r.Serves(p) {
 				wr.Projects++
 				linked[p.ID] = true
 			}
