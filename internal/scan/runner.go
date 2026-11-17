@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/klahr/dash/internal/agent"
+	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/localrun"
@@ -64,6 +65,10 @@ type Runner struct {
 	// WaitEvery is how often a run waiting for a runner asks again
 	// (default 5s).
 	WaitEvery time.Duration
+	// LogMaxBytes caps a run's log (default DefaultLogMaxBytes; below 0, no
+	// cap). A log that grows past it is cut to its newest half, behind a
+	// note saying earlier output was trimmed.
+	LogMaxBytes int64
 
 	mu      sync.Mutex
 	running map[string]*active // project/scan → the run
@@ -83,6 +88,19 @@ func (r *Runner) runTimeout() time.Duration {
 		return r.RunTimeout
 	}
 	return DefaultRunTimeout
+}
+
+// DefaultLogMaxBytes is the cap on a run's log by default.
+const DefaultLogMaxBytes = 32 << 20
+
+func (r *Runner) logMaxBytes() int64 {
+	switch {
+	case r.LogMaxBytes > 0:
+		return r.LogMaxBytes
+	case r.LogMaxBytes < 0:
+		return 0
+	}
+	return DefaultLogMaxBytes
 }
 
 func (r *Runner) now() time.Time {
@@ -334,15 +352,30 @@ func (r *Runner) remote() bool { return r.Remote != nil }
 
 func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run model.ScanRun, from *model.ScanRun) {
 	logf, _ := r.openLog(run.ID)
-	if logf != nil {
-		defer logf.Close()
-	}
+	defer func() {
+		if logf != nil {
+			logf.Close()
+		}
+	}()
 	var logMu sync.Mutex // Claude's stdout and stderr report from their own goroutines
+	var logSize int64
 	logLine := func(s string) {
 		logMu.Lock()
 		defer logMu.Unlock()
-		if logf != nil && s != "" {
-			fmt.Fprintf(logf, "%s %s\n", time.Now().Format("15:04:05"), s)
+		if logf == nil || s == "" {
+			return
+		}
+		at := time.Now().Format("15:04:05")
+		n, _ := fmt.Fprintf(logf, "%s %s\n", at, s)
+		logSize += int64(n)
+		if max := r.logMaxBytes(); max > 0 && logSize > max {
+			// Cut it to its newest half, as todo logs are (queue.TodoLog).
+			path := logf.Name()
+			logf.Close()
+			logSize = disk.CapFile(path, max, func([]byte) string {
+				return at + " " + disk.TrimmedNote(max) + "\n"
+			})
+			logf, _ = os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
 		}
 	}
 	finish := func(fn func(*model.ScanRun)) {

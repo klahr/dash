@@ -134,7 +134,7 @@ func parseFlags(args []string, runnerMode bool) *options {
 	f.DurationVar(&o.loginWindow, "login-window", 0, fmt.Sprintf("the window failed sign-ins are counted in (default $DASH_LOGIN_WINDOW, else %s)", auth.DefaultLockout.Window))
 	f.IntVar(&o.authLogDays, "auth-log-days", -1, fmt.Sprintf("keep sign-in log entries (with IP addresses) this many days; 0 = keep them all (default $DASH_AUTH_LOG_DAYS, else %d)", defaultAuthLogDays))
 	f.IntVar(&o.cleanupDays, "cleanup-days", 14, "daily cleanup: remove worktrees of tasks that failed this many days ago, plus orphaned worktrees, branches, logs and uploads (0 = off)")
-	f.IntVar(&o.logMaxMB, "log-max-mb", 32, "cap each task's log files at this many MB: a longer log keeps its newest half (0 = no cap)")
+	f.IntVar(&o.logMaxMB, "log-max-mb", 32, "cap each task's and scan run's log files at this many MB: a longer log keeps its newest half (0 = no cap)")
 	f.StringVar(&o.backupDir, "backup-dir", "", "write a timestamped backup of the database (dash-<time>.db) to this directory every -backup-every; empty = off (or $DASH_BACKUP_DIR)")
 	f.IntVar(&o.backupKeep, "backup-keep", -1, "keep this many backups in -backup-dir, removing older ones; 0 = keep all (default $DASH_BACKUP_KEEP, else 7)")
 	f.DurationVar(&o.backupEvery, "backup-every", 0, "how often to back up to -backup-dir (default $DASH_BACKUP_EVERY, else 24h)")
@@ -621,10 +621,14 @@ func (a *app) buildServices() {
 	// claude flags (read-only tools), not -claude-args.
 	a.scans = &scan.Runner{
 		Store: st, Git: a.git, Context: ctx,
-		Exec:       agent.ClaudeCode{Bin: o.claudeBin, Sandbox: o.sandbox(), OnRateLimit: a.tracker.Observe, CLI: a.cli},
-		Root:       filepath.Join(o.dataDir, "scans"),
-		RunTimeout: o.scanTimeout,
-		GitTools:   &scan.GitMCP{Pin: a.git.PinnedEnv},
+		Exec:        agent.ClaudeCode{Bin: o.claudeBin, Sandbox: o.sandbox(), OnRateLimit: a.tracker.Observe, CLI: a.cli},
+		Root:        filepath.Join(o.dataDir, "scans"),
+		RunTimeout:  o.scanTimeout,
+		GitTools:    &scan.GitMCP{Pin: a.git.PinnedEnv},
+		LogMaxBytes: -1, // -log-max-mb 0: no cap
+	}
+	if o.logMaxMB > 0 {
+		a.scans.LogMaxBytes = int64(o.logMaxMB) << 20
 	}
 	// How often a scan waiting for a runner asks again (default 5s): only
 	// dash's own end-to-end tests set it, so they don't wait seconds for it.

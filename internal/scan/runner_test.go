@@ -568,6 +568,33 @@ func TestRunTimeout(t *testing.T) {
 	}
 }
 
+// A log past LogMaxBytes keeps its newest lines behind a note, and stays
+// under the cap.
+func TestRunLogCapped(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t, "chatty", "Go.")
+	fx.runner.LogMaxBytes = 160
+	r := fx.run(t, "chatty")
+	if r.Status != model.ScanSucceeded {
+		t.Fatalf("run: %+v", r)
+	}
+	b, err := os.ReadFile(fx.runner.LogPath(r.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := string(b)
+	if len(b) > 160 {
+		t.Errorf("log is %d bytes, over the cap of 160:\n%s", len(b), log)
+	}
+	if !strings.Contains(log, "earlier output trimmed") || strings.Contains(log, "▶ scan") {
+		t.Errorf("log not trimmed to its newest lines:\n%s", log)
+	}
+	if !strings.Contains(log, "✔") {
+		t.Errorf("log lost its last line:\n%s", log)
+	}
+}
+
 // A runner refuses a job whose settings would turn into claude flags.
 func TestJobCheck(t *testing.T) {
 	t.Parallel()

@@ -103,7 +103,7 @@ procedure and what happens to running tasks.
 
 ## Disk use
 
-Each task's log is capped: a log file past 32 MB is cut to its newest half, behind a note that
+Each task's log, and each scan run's log, is capped: a log file past 32 MB is cut to its newest half, behind a note that
 earlier output was trimmed (`-log-max-mb`; 0 = no cap). The daily cleanup (`-cleanup-days`,
 14 by default) removes the logs of deleted tasks, the worktrees of tasks that failed that many
 days ago, and orphaned worktrees, branches and uploads.

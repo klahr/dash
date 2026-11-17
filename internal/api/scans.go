@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"slices"
@@ -371,12 +372,20 @@ func (s *Server) scanRunLog(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, errScansOff)
 		return
 	}
-	b, err := os.ReadFile(s.Scans.LogPath(run.ID))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	// The log is capped as it's written (scan.Runner.LogMaxBytes); stream it
+	// rather than read it whole.
+	f, err := os.Open(s.Scans.LogPath(run.ID))
+	if errors.Is(err, os.ErrNotExist) {
+		writeText(w, "")
+		return
+	}
+	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	writeText(w, string(b))
+	defer f.Close()
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = io.Copy(w, f)
 }
 
 func (s *Server) cancelScanRun(w http.ResponseWriter, r *http.Request) {

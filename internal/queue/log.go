@@ -2,7 +2,6 @@ package queue
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -86,77 +85,21 @@ func (l *TodoLog) Event(t model.Todo, ev model.RunEvent) {
 		f.text += l.appendTo(l.path(t.ID), fmt.Sprintf("%s %s\n", ev.At.Format(time.TimeOnly), line))
 	}
 	if l.MaxBytes > 0 && f.events > l.MaxBytes {
-		f.events = capFile(l.eventsPath(t.ID), l.MaxBytes, func(first []byte) string {
+		f.events = disk.CapFile(l.eventsPath(t.ID), l.MaxBytes, func(first []byte) string {
 			var next model.RunEvent
 			at := ev.At
 			if json.Unmarshal(first, &next) == nil && !next.At.IsZero() {
 				at = next.At
 			}
-			b, _ := json.Marshal(model.RunEvent{Kind: "status", Text: trimmedNote(l.MaxBytes), At: at})
+			b, _ := json.Marshal(model.RunEvent{Kind: "status", Text: disk.TrimmedNote(l.MaxBytes), At: at})
 			return string(b) + "\n"
 		})
 	}
 	if l.MaxBytes > 0 && f.text > l.MaxBytes {
-		f.text = capFile(l.path(t.ID), l.MaxBytes, func([]byte) string {
-			return fmt.Sprintf("%s %s\n", ev.At.Format(time.TimeOnly), trimmedNote(l.MaxBytes))
+		f.text = disk.CapFile(l.path(t.ID), l.MaxBytes, func([]byte) string {
+			return fmt.Sprintf("%s %s\n", ev.At.Format(time.TimeOnly), disk.TrimmedNote(l.MaxBytes))
 		})
 	}
-}
-
-func trimmedNote(max int64) string {
-	return fmt.Sprintf("✂ earlier output trimmed: this log keeps about its newest %s", disk.Size(uint64(max/2)))
-}
-
-// capFile cuts a file larger than max to its newest max/2 bytes, from the
-// start of a line, behind the line note returns (given the first line
-// kept). The newer half is written to a new file renamed over the old, so a
-// reader sees either whole file. It returns the file's size after.
-func capFile(path string, max int64, note func(first []byte) string) int64 {
-	info, err := os.Stat(path)
-	if err != nil {
-		return 0
-	}
-	size := info.Size()
-	if size <= max {
-		return size
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return size
-	}
-	defer f.Close()
-	keep := max / 2
-	tail := make([]byte, keep)
-	n, err := f.ReadAt(tail, info.Size()-keep)
-	if err != nil && n < len(tail) {
-		return size
-	}
-	// Drop the line the cut lands in, unless it lands right after a newline.
-	prev := make([]byte, 1)
-	if _, err := f.ReadAt(prev, info.Size()-keep-1); err != nil || prev[0] != '\n' {
-		i := bytes.IndexByte(tail, '\n')
-		if i < 0 {
-			tail = nil // one line longer than keep: nothing whole to keep
-		} else {
-			tail = tail[i+1:]
-		}
-	}
-	first, _, _ := bytes.Cut(tail, []byte("\n"))
-	tmp := path + ".trim"
-	out, err := os.Create(tmp)
-	if err != nil {
-		return size
-	}
-	head := note(first)
-	_, werr := out.WriteString(head)
-	if werr == nil {
-		_, werr = out.Write(tail)
-	}
-	if cerr := out.Close(); werr != nil || cerr != nil || os.Rename(tmp, path) != nil {
-		_ = os.Remove(tmp)
-		return size
-	}
-	return int64(len(head) + len(tail))
 }
 
 func fileSize(path string) int64 {

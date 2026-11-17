@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -117,32 +118,19 @@ func (g *Git) runPatch(ctx context.Context, publish bool, projectID, dir string,
 // that, the command is stopped and, with cut, the output so far is returned
 // with a closing note; without it, the run fails with ErrOutputTooLarge.
 func (g *Git) runLimited(ctx context.Context, publish bool, env []string, stdin []byte, limit int, cut bool, projectID, dir, bin string, args ...string) (string, error) {
-	start := time.Now()
 	args = stripNUL(args)
-	cmd, err := g.command(ctx, dir, env, bin, args...)
-	if err != nil {
-		return "", err
-	}
-	if stdin != nil {
-		cmd.Stdin = bytes.NewReader(stdin)
-	}
 	out := &limitedBuffer{max: limit}
-	cmd.Stdout, cmd.Stderr = out, out
-	err = cmd.Run()
-	if out.full {
-		// The command was stopped because its output was cut, not because
-		// of what it did.
-		err = nil
-		if !cut {
-			err = fmt.Errorf("%s %s: %w (over %d MiB)", bin, strings.Join(args, " "), ErrOutputTooLarge, limit>>20)
+	err := g.runTo(ctx, publish, env, stdin, out, out, func(err error) error {
+		if out.full {
+			// The command was stopped because its output was cut, not because
+			// of what it did.
+			err = nil
+			if !cut {
+				err = fmt.Errorf("%s %s: %w (over %d MiB)", bin, strings.Join(args, " "), ErrOutputTooLarge, limit>>20)
+			}
 		}
-	}
-	if g.pub != nil && publish {
-		g.pub.Publish(model.Event{Type: model.EvGitOp, ProjectID: projectID, Time: time.Now(), Data: map[string]any{
-			"cmd": bin + " " + strings.Join(args, " "), "dir": dir, "ok": err == nil,
-			"ms": time.Since(start).Milliseconds(),
-		}})
-	}
+		return err
+	}, projectID, dir, bin, args...)
 	switch {
 	case out.full && !cut:
 		return "", err // not the output: it's cut, and an error message would carry all of it
@@ -153,6 +141,33 @@ func (g *Git) runLimited(ctx context.Context, publish bool, env []string, stdin 
 		return s, &CmdError{Args: append([]string{bin}, args...), Output: s, Err: err}
 	}
 	return strings.TrimSpace(out.buf.String()), nil
+}
+
+// runTo runs a command with its stdout and stderr written to the given
+// writers, which may be the same. settle, if set, turns the command's error
+// into the run's before it is reported.
+func (g *Git) runTo(ctx context.Context, publish bool, env []string, stdin []byte, stdout, stderr io.Writer, settle func(error) error, projectID, dir, bin string, args ...string) error {
+	start := time.Now()
+	args = stripNUL(args)
+	cmd, err := g.command(ctx, dir, env, bin, args...)
+	if err != nil {
+		return err
+	}
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	err = cmd.Run()
+	if settle != nil {
+		err = settle(err)
+	}
+	if g.pub != nil && publish {
+		g.pub.Publish(model.Event{Type: model.EvGitOp, ProjectID: projectID, Time: time.Now(), Data: map[string]any{
+			"cmd": bin + " " + strings.Join(args, " "), "dir": dir, "ok": err == nil,
+			"ms": time.Since(start).Milliseconds(),
+		}})
+	}
+	return err
 }
 
 // command prepares bin (git or gh) to run in dir with env added: no prompts,

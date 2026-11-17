@@ -1,6 +1,7 @@
 package gitops
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -563,14 +564,65 @@ func (g *Git) RerunRun(ctx context.Context, projectID, dir string, runID int64, 
 }
 
 // RunFailedLog returns the tail of the failed steps' log of a run.
+// The log can run to hundreds of MB, so only its last bytes are kept as gh
+// writes it.
 func (g *Git) RunFailedLog(ctx context.Context, projectID, dir string, runID int64, lines int) string {
-	out, err := g.gh(ctx, projectID, dir, "run", "view", strconv.FormatInt(runID, 10), "--log-failed")
+	out := &tailBuffer{max: failedLogKeep}
+	err := g.runTo(ctx, true, nil, nil, out, io.Discard, nil, projectID, dir, g.ghBin(), "run", "view", strconv.FormatInt(runID, 10), "--log-failed")
 	if err != nil {
 		return ""
 	}
-	all := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	if len(all) > lines {
-		all = all[len(all)-lines:]
+	return lastLines(strings.TrimSpace(string(out.Bytes())), lines)
+}
+
+// failedLogKeep is how many of a failed log's last bytes RunFailedLog keeps
+// to take its last lines from.
+const failedLogKeep = 1 << 20
+
+// lastLines returns s's last n lines.
+func lastLines(s string, n int) string {
+	all := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(all) > n {
+		all = all[len(all)-n:]
 	}
 	return strings.Join(all, "\n")
+}
+
+// tailBuffer is an io.Writer that keeps only about the last max bytes
+// written to it, in at most twice that much memory.
+type tailBuffer struct {
+	max int
+	buf []byte
+	cut bool // bytes were dropped
+}
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	n := len(p)
+	if len(p) >= t.max {
+		t.buf = append(t.buf[:0], p[len(p)-t.max:]...)
+		t.cut = true
+		return n, nil
+	}
+	if len(t.buf)+len(p) > 2*t.max {
+		drop := len(t.buf) + len(p) - t.max
+		t.buf = t.buf[:copy(t.buf, t.buf[drop:])]
+		t.cut = true
+	}
+	t.buf = append(t.buf, p...)
+	return n, nil
+}
+
+// Bytes returns the bytes kept, from the start of a line if any were
+// dropped.
+func (t *tailBuffer) Bytes() []byte {
+	b := t.buf
+	if len(b) > t.max {
+		b, t.cut = b[len(b)-t.max:], true
+	}
+	if t.cut {
+		if i := bytes.IndexByte(b, '\n'); i >= 0 {
+			b = b[i+1:]
+		}
+	}
+	return b
 }
