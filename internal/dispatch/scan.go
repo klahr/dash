@@ -41,7 +41,13 @@ func (d *Dispatcher) Scan(ctx context.Context, p model.Project, job scan.Job, h 
 	if r == nil {
 		return scan.Outcome{}, &scan.WaitError{Reason: why}
 	}
-	if err := d.link(ctx, *r, p); err != nil {
+	// The link has its own timeout: the scan's context lasts as long as the
+	// scan. A first link, which clones, goes on on the runner after this
+	// gives up; the scan's next try finds it linked.
+	lctx, cancel := context.WithTimeout(ctx, linkTimeout)
+	err := d.link(lctx, *r, p)
+	cancel()
+	if err != nil {
 		return scan.Outcome{}, &scan.WaitError{Reason: "waiting for a runner: " + err.Error()}
 	}
 	conn, err := fl.DialWS(ctx, r.ID, ScanPath)
@@ -145,6 +151,9 @@ func waitReason(reasons []string) string {
 // is online.
 const NoRunnerOnline = "no runner online"
 
+// linkTimeout bounds the link a scan sends before it starts.
+const linkTimeout = 30 * time.Second
+
 // link makes sure runner r has a clone of p, with the hub's settings.
 func (d *Dispatcher) link(ctx context.Context, r tunnel.Runner, p model.Project) error {
 	_, err := d.Link(ctx, r.ID, p)
@@ -153,7 +162,8 @@ func (d *Dispatcher) link(ctx context.Context, r tunnel.Runner, p model.Project)
 
 // Link makes sure runner id has a clone of p, with the hub's settings, and
 // returns the runner's project for it: the hub forwards p's git, files and
-// commands there. The runner clones p's remote the first time.
+// commands there. The runner clones p's remote the first time. A link the
+// hub sent the runner lately, unchanged, isn't sent again (see linkCache).
 func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Linked, error) {
 	link := Link{Name: p.Name, RemoteURL: p.RemoteURL, CloneURL: p.CloneURL, DefaultBranch: p.DefaultBranch, WorkBranch: p.WorkBranch, OrgID: p.OrgID,
 		MergeMode: p.MergeMode, MergeModeSet: p.MergeModeSet, TaskInstructions: p.TaskInstructions,
@@ -165,7 +175,17 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 			link.OrgFolder = o.ProjectFolder()
 		}
 	}
+	sum := linkSum(link)
+	if out, ok := d.links.get(id, p.ID, sum, time.Now()); ok {
+		return out, nil
+	}
 	var out Linked
-	err := d.Fleet.Call(ctx, id, http.MethodPut, "/api/hub/projects/"+url.PathEscape(p.ID), link, &out)
-	return out, err
+	if err := d.Fleet.Call(ctx, id, http.MethodPut, "/api/hub/projects/"+url.PathEscape(p.ID), link, &out); err != nil {
+		d.links.forget(id, p.ID)
+		return out, err
+	}
+	if out.ProjectID != "" {
+		d.links.put(id, p.ID, sum, out, time.Now())
+	}
+	return out, nil
 }

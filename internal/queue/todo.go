@@ -94,8 +94,10 @@ type TodoEngine struct {
 	runCtx      context.Context // the dispatcher's context; done on shutdown
 	mu          sync.Mutex
 	running     map[string]context.CancelFunc
-	workers     sync.WaitGroup    // the goroutines working on running todos (see Wait)
-	interrupted map[string]string // running todo id → why Interrupt stopped it
+	workers     sync.WaitGroup         // the goroutines working on running todos (see Wait)
+	interrupted map[string]string      // running todo id → why Interrupt stopped it
+	sending     map[string]bool        // todo id → being sent to a runner (see Claimer)
+	runnerLocks map[string]*sync.Mutex // runner id → held while a task is sent to it
 	// resolving holds the todos (id → project id) dispatched to fix a merge
 	// conflict, until they have landed or left the fix-and-merge path.
 	resolving map[string]string
@@ -105,6 +107,14 @@ type TodoEngine struct {
 // (the task stays queued with the error as its Waiting reason).
 type Remote interface {
 	Dispatch(ctx context.Context, p model.Project, t model.Todo) (runnerID, remoteID string, err error)
+}
+
+// Claimer is a Remote that picks a task's runner at once, and sends it
+// there later (see dispatch.Dispatcher.Claim). The engine claims tasks in
+// queue order and sends them side by side, one runner at a time each: a
+// slow runner holds up only its own tasks, not every other project's.
+type Claimer interface {
+	Claim(p model.Project, t model.Todo) (runnerID string, send func(context.Context) (string, string, error), err error)
 }
 
 // ErrSettled is a Remote's error for a task it didn't send because the
@@ -203,7 +213,7 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 		var next *model.Todo
 		var all []model.Todo // loaded only when a queued todo has dependencies or builds on a task
 		for _, q := range e.Store.ListTodos("", model.StatusQueued) {
-			if q.Paused || sent[q.ID] {
+			if q.Paused || sent[q.ID] || e.isSending(q.ID) {
 				continue
 			}
 			if q.MergeMain && e.conflictBusy(q.ProjectID) {
@@ -320,9 +330,58 @@ func (e *TodoEngine) wait(t model.Todo, why string) {
 // sendToRunner hands t, a queued task of p, to one of p's runners, or
 // records why none can take it.
 func (e *TodoEngine) sendToRunner(ctx context.Context, p model.Project, t model.Todo) {
-	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	runnerID, remoteID, err := e.Remote.Dispatch(cctx, p, t)
-	cancel()
+	c, ok := e.Remote.(Claimer)
+	if !ok {
+		cctx, cancel := context.WithTimeout(ctx, sendTimeout)
+		runnerID, remoteID, err := e.Remote.Dispatch(cctx, p, t)
+		cancel()
+		e.sentToRunner(t, runnerID, remoteID, err)
+		return
+	}
+	runnerID, send, err := c.Claim(p, t)
+	if err != nil {
+		e.sentToRunner(t, "", "", err)
+		return
+	}
+	e.mu.Lock()
+	if e.sending == nil {
+		e.sending, e.runnerLocks = map[string]bool{}, map[string]*sync.Mutex{}
+	}
+	e.sending[t.ID] = true
+	lock := e.runnerLocks[runnerID]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		e.runnerLocks[runnerID] = lock
+	}
+	e.mu.Unlock()
+	e.workers.Add(1)
+	go func() {
+		defer e.workers.Done()
+		lock.Lock() // one task at a time to each runner
+		cctx, cancel := context.WithTimeout(ctx, sendTimeout)
+		rid, remoteID, err := send(cctx)
+		cancel()
+		e.sentToRunner(t, rid, remoteID, err)
+		lock.Unlock()
+		e.mu.Lock()
+		delete(e.sending, t.ID)
+		e.mu.Unlock()
+	}()
+}
+
+// sendTimeout bounds handing one task to a runner.
+const sendTimeout = 30 * time.Second
+
+// isSending reports whether todo id is being sent to a runner.
+func (e *TodoEngine) isSending(id string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.sending[id]
+}
+
+// sentToRunner records the outcome of sending t to a runner: in progress
+// there, or why it waits.
+func (e *TodoEngine) sentToRunner(t model.Todo, runnerID, remoteID string, err error) {
 	if errors.Is(err, ErrSettled) {
 		return
 	}

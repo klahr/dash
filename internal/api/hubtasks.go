@@ -102,7 +102,7 @@ func (s *Server) hubUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"version": req.Version})
 }
 
-var errNotLinked = errors.New("that project isn't linked to this runner")
+var errNotLinked = errors.New(dispatch.NotLinked)
 
 // fromHub is the service for a request from this runner's hub, or answers
 // r with 403 and returns false.

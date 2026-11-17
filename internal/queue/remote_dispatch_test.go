@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
@@ -222,5 +223,81 @@ func TestSettledTaskIsNotSentAgain(t *testing.T) {
 	}
 	if len(rem.sent) != 1 {
 		t.Errorf("sent %d times, want 1", len(rem.sent))
+	}
+}
+
+// claimRemote is a Claimer: tasks of project "slow" go to a runner that
+// takes its time answering.
+type claimRemote struct {
+	fakeRemote
+	slowProject string
+	release     chan struct{}
+}
+
+func (c *claimRemote) Claim(p model.Project, t model.Todo) (string, func(context.Context) (string, string, error), error) {
+	c.mu.Lock()
+	c.sent = append(c.sent, t.ID)
+	c.mu.Unlock()
+	runner := "fast"
+	if p.ID == c.slowProject {
+		runner = "slow"
+	}
+	return runner, func(ctx context.Context) (string, string, error) {
+		if runner == "slow" {
+			select {
+			case <-c.release:
+			case <-ctx.Done():
+				return "", "", ctx.Err()
+			}
+		}
+		return runner, "remote-" + t.ID, nil
+	}, nil
+}
+
+// A slow runner holds up only its own tasks: the tasks of other runners
+// are sent while it is still answering.
+func TestSlowRunnerDoesntHoldUpOthers(t *testing.T) {
+	parallel(t)
+
+	e, st, _, _ := remoteEngine(t)
+	slow, _ := st.CreateProject(model.Project{Name: "slow", RemoteURL: "https://x/slow", Runners: []string{"slow"}})
+	fast, _ := st.CreateProject(model.Project{Name: "fast", RemoteURL: "https://x/fast", Runners: []string{"fast"}})
+	rem := &claimRemote{slowProject: slow.ID, release: make(chan struct{})}
+	e.Remote = rem
+	s1, s2, f := queued(t, st, slow), queued(t, st, slow), queued(t, st, fast)
+
+	e.dispatch(context.Background())
+	status := func(id string) model.Todo {
+		got, _ := st.GetTodo(id)
+		return got
+	}
+	waitFor(t, func() bool { return status(f.ID).Status == model.StatusInProgress })
+	if got := status(s1.ID); got.Status != model.StatusQueued {
+		t.Fatalf("slow runner's task %s before it answered", got.Status)
+	}
+	e.dispatch(context.Background()) // a round while they are being sent doesn't send them twice
+	close(rem.release)
+	waitFor(t, func() bool {
+		return status(s1.ID).Status == model.StatusInProgress && status(s2.ID).Status == model.StatusInProgress
+	})
+	rem.mu.Lock()
+	n := len(rem.sent)
+	rem.mu.Unlock()
+	if n != 3 {
+		t.Errorf("claimed %d times, want 3", n)
+	}
+	if got := status(s1.ID); got.Runner != "slow" || got.RemoteID != "remote-"+s1.ID {
+		t.Fatalf("slow runner's task: %+v", got)
+	}
+}
+
+func waitFor(t *testing.T, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !ok() {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }

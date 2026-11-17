@@ -68,6 +68,11 @@ var afterHubMove func(from, to string) error
 // then: with its new Path when it moved, else as it was. A move that fails
 // part way is undone, and p keeps working from where it was.
 func (s *Server) moveHubClone(ctx context.Context, sv *service, p model.Project) model.Project {
+	if s.hubCloneSettled(p) {
+		// Nothing to move: don't wait for hubLinks, which a clone of
+		// another project holds for as long as it takes.
+		return p
+	}
 	hubLinks.Lock() // links pick folders in the org's folder too
 	defer hubLinks.Unlock()
 	cur, err := sv.data.GetProject(p.ID)
@@ -107,6 +112,16 @@ func (s *Server) moveHubClone(ctx context.Context, sv *service, p model.Project)
 	}
 	slog.Info(fmt.Sprintf("runner: moved %s → %s", p.Path, moved.Path), "project", p.Name)
 	return moved
+}
+
+// hubCloneSettled reports whether moveHubClone has nothing to do for p:
+// it isn't the hub's, its org's folder isn't known, or it is in place.
+func (s *Server) hubCloneSettled(p model.Project) bool {
+	if p.HubProjectID == "" || p.HubOrgFolder == "" || s.ProjectRoot == "" {
+		return true
+	}
+	dir, err := s.hubCloneDir(p.HubOrgFolder, p.RemoteURL)
+	return err == nil && fsutil.Within(dir, p.Path) && filepath.Clean(p.Path) != dir
 }
 
 // hubCloneBusy says what is using p's clone now ("" when nothing is).

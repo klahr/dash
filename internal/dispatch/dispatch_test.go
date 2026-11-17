@@ -65,6 +65,11 @@ func (f *fakeFleet) Call(_ context.Context, id, method, path string, in, out any
 	if !r.Online {
 		return tunnel.ErrOffline
 	}
+	if _, ok := in.(Link); ok {
+		if l, ok := out.(*Linked); ok {
+			l.ProjectID = "on-" + id
+		}
+	}
 	if t, ok := in.(Task); ok {
 		if a, ok := out.(*Accepted); ok {
 			f.mu.Lock()

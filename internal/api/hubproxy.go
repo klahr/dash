@@ -236,7 +236,34 @@ func (sv *service) forward(r *http.Request, p model.Project, prefer string, body
 		return forwarded{}, err
 	}
 	rest := strings.TrimPrefix(r.URL.Path, "/api/projects/"+p.ID)
+	res, err := sv.s.forwardTo(r, run, "/api/projects/"+url.PathEscape(rpid)+rest, body, rpid, p.ID)
+	if err != nil || !runnerLostProject(res) {
+		return res, err
+	}
+	// The hub's link was cached (see dispatch.Dispatcher.Link), but the
+	// runner no longer has that project: link it again, and ask again when
+	// the request can be sent twice.
+	sv.s.Dispatch.Relink(run.ID, p.ID)
+	if body == nil && r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return res, nil // its body was read
+	}
+	run, rpid, err = sv.projectRunner(r.Context(), p, run.ID)
+	if err != nil {
+		return forwarded{}, err
+	}
 	return sv.s.forwardTo(r, run, "/api/projects/"+url.PathEscape(rpid)+rest, body, rpid, p.ID)
+}
+
+// runnerLostProject reports whether res is a runner's "not found" for the
+// project a request was about (the answer to a project id it doesn't know).
+func runnerLostProject(res forwarded) bool {
+	if res.code != http.StatusNotFound {
+		return false
+	}
+	var e struct {
+		Error string `json:"error"`
+	}
+	return json.Unmarshal(res.body, &e) == nil && e.Error == store.ErrNotFound.Error()
 }
 
 // forwardTo sends r to path on runner run and returns the answer, with

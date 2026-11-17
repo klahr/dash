@@ -64,7 +64,7 @@ type Link struct {
 	// need gh unless someone asked for pull requests.
 	MergeModeSet bool `json:"merge_mode_set,omitempty"`
 	// TaskInstructions are the hub project's extra instructions for Claude
-	// (model.Project.TaskInstructions). The link is sent before every task,
+	// (model.Project.TaskInstructions). The link is sent again whenever it changes,
 	// so the runner's copy follows the hub's.
 	TaskInstructions string `json:"task_instructions,omitempty"`
 	// AutoApprove is the hub project's model.Project.AutoApprove: finished

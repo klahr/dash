@@ -78,7 +78,25 @@ type Dispatcher struct {
 
 	diskMu  sync.Mutex
 	diskLow map[string]bool // runner id → its disk space is low
+
+	links linkCache // the last link sent to each runner for each project
+
+	pickMu  sync.Mutex // a runner is picked and claimed for a task at once
+	claimMu sync.Mutex
+	claims  map[string]claim // hub task id → the runner picked for it, until it shows as in progress there
 }
+
+// claim is a runner picked for a queued task: it counts toward the
+// runner's load while the task is sent, so tasks sent side by side don't
+// overfill it.
+type claim struct {
+	runner string
+	at     time.Time
+}
+
+// claimFor is how long a claim counts at most, should the task never be
+// marked in progress.
+const claimFor = 2 * time.Minute
 
 // answeredFor is how long the hub ignores a request it answered.
 const answeredFor = time.Minute
@@ -92,22 +110,82 @@ func (e *WaitError) Error() string { return e.Reason }
 // the runner's id and its id for the task. A *WaitError means none can take
 // it now.
 func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo) (runnerID, remoteID string, err error) {
+	_, send, err := d.Claim(p, t)
+	if err != nil {
+		return "", "", err
+	}
+	return send(ctx)
+}
+
+// Claim picks the runner for t, a queued task of p, at once, and returns
+// it and send, which hands t to it (Dispatch's work over the tunnel). The
+// runner counts t toward its load until send fails or t shows as in
+// progress, so tasks claimed one after the other and sent side by side
+// don't overfill it. A *WaitError means none can take t now; call send
+// exactly once otherwise.
+func (d *Dispatcher) Claim(p model.Project, t model.Todo) (runnerID string, send func(context.Context) (string, string, error), err error) {
 	var parent *model.Todo // the task t builds on, when it has one
 	if t.BuildsOn != "" && d.Store != nil {
 		if x, err := d.Store.GetTodo(t.BuildsOn); err == nil {
 			parent = &x
 		}
 	}
+	d.pickMu.Lock()
 	r, reason, full := d.pick(p, t, parent)
+	if r != nil {
+		d.claimMu.Lock()
+		if d.claims == nil {
+			d.claims = map[string]claim{}
+		}
+		d.claims[t.ID] = claim{runner: r.ID, at: time.Now()}
+		d.claimMu.Unlock()
+	}
+	d.pickMu.Unlock()
 	if r == nil {
 		// The task log says why a runner that is too full doesn't start
 		// it, once per reason, rather than the task failing halfway.
 		if full != "" && d.Note != nil && reason != t.Waiting {
 			d.Note(t, "⏸ "+full)
 		}
-		return "", "", &WaitError{Reason: reason}
+		return "", nil, &WaitError{Reason: reason}
 	}
-	if err := d.link(ctx, *r, p); err != nil {
+	run := *r
+	return run.ID, func(ctx context.Context) (string, string, error) {
+		runnerID, remoteID, err := d.send(ctx, p, t, run, parent)
+		if runnerID == "" || err != nil {
+			d.unclaim(t.ID)
+		}
+		return runnerID, remoteID, err
+	}, nil
+}
+
+func (d *Dispatcher) unclaim(todoID string) {
+	d.claimMu.Lock()
+	delete(d.claims, todoID)
+	d.claimMu.Unlock()
+}
+
+// claimedLoads is loads with, for each runner, the tasks it was picked for
+// that aren't marked in progress yet.
+func (d *Dispatcher) claimedLoads() map[string]int {
+	load := d.loads()
+	d.claimMu.Lock()
+	defer d.claimMu.Unlock()
+	for tid, c := range d.claims {
+		t, err := d.Store.GetTodo(tid)
+		if err != nil || t.Status != model.StatusQueued || time.Since(c.at) > claimFor {
+			delete(d.claims, tid) // in progress (loads counts it), or gone
+			continue
+		}
+		load[c.runner]++
+	}
+	return load
+}
+
+// send hands t to runner r, picked for it: it links p there, then sends
+// the task.
+func (d *Dispatcher) send(ctx context.Context, p model.Project, t model.Todo, r tunnel.Runner, parent *model.Todo) (runnerID, remoteID string, err error) {
+	if err := d.link(ctx, r, p); err != nil {
 		return "", "", &WaitError{Reason: "waiting for a runner: " + err.Error()}
 	}
 	ds := r.Disk
@@ -127,12 +205,15 @@ func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo
 	if err := d.Fleet.Call(ctx, r.ID, http.MethodPost, "/api/hub/tasks", task, &acc); err != nil {
 		reason := "waiting for a runner: " + err.Error()
 		var ce *tunnel.CallError
+		if errors.As(err, &ce) && ce.Status == http.StatusForbidden && strings.Contains(ce.Msg, NotLinked) {
+			d.links.forget(r.ID, p.ID) // it forgot the project: link it again next time
+		}
 		if errors.As(err, &ce) && ce.Status == http.StatusBadRequest && strings.HasSuffix(ce.Msg, AlreadyMerged) && !task.Fresh {
 			// An older runner: it merged the task while the hub had it
 			// queued. It doesn't say the commit; its next report may.
 			ts := StateOf(t) // the hub's own news of it, as the runner says nothing more
 			ts.HubTodoID, ts.ID, ts.Status, ts.Error = t.ID, t.RemoteID, model.StatusMerged, ""
-			return "", "", d.settle(*r, t, ts)
+			return "", "", d.settle(r, t, ts)
 		}
 		if errors.As(err, &ce) && ce.Status == http.StatusInsufficientStorage && d.Note != nil && reason != t.Waiting {
 			d.Note(t, "⏸ "+err.Error()) // it filled up since its last report
@@ -148,7 +229,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo
 		if ts.ID == "" {
 			ts.ID = acc.ID
 		}
-		return "", "", d.settle(*r, t, ts)
+		return "", "", d.settle(r, t, ts)
 	}
 	if d.Note != nil {
 		verb := "sent to runner "
@@ -174,7 +255,7 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 		}
 		return r.Limit()
 	}
-	load := d.loads() // runner id → tasks in progress, counted once for this pick
+	load := d.claimedLoads() // runner id → tasks in progress or being sent to it, counted once for this pick
 	ids := p.Runners
 	if t.RunOn != "" {
 		// The task was set to run on one runner: only that one may take it.
@@ -787,6 +868,9 @@ func projectOf(st *store.Store, todoID string) string {
 // State is told when runner id comes online or goes offline. Gone for
 // longer than Grace, its running tasks fail, ready to be queued again.
 func (d *Dispatcher) State(id string, online bool) {
+	// A runner that comes back may have restarted, or lost a project:
+	// its projects are linked again before they are next used.
+	d.links.forget(id, "")
 	d.mu.Lock()
 	if d.timers == nil {
 		d.timers = map[string]*time.Timer{}
@@ -829,6 +913,7 @@ func (d *Dispatcher) Revoked(id string) {
 	}
 	d.mu.Unlock()
 	d.forgetDisk(id)
+	d.links.forget(id, "")
 	for _, p := range d.Store.ListProjects() {
 		if !slices.Contains(p.Runners, id) {
 			continue
@@ -1129,6 +1214,7 @@ func (d *Dispatcher) SaveTaskFile(ctx context.Context, t model.Todo, in, out any
 // either way; an offline runner keeps its link until told).
 func (d *Dispatcher) Unlink(ctx context.Context, projectID string, runners []string) {
 	for _, id := range runners {
+		d.links.forget(id, projectID)
 		if err := d.Fleet.Call(ctx, id, http.MethodDelete, "/api/hub/projects/"+url.PathEscape(projectID), nil, nil); err != nil {
 			slog.Info("unlink project on runner", "runner", id, "project", projectID, "err", err)
 		}
