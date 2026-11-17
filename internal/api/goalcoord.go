@@ -604,32 +604,55 @@ func (s *Server) goalContext(sv *service, g model.Goal) string {
 // cost of all the org's tasks since the window started. ok is false when
 // the window isn't known (no usage reported yet).
 func (s *Server) goalWeekUsed(sv *service, g model.Goal) (float64, bool) {
-	p, err := sv.data.GetProject(g.ProjectID)
-	if err != nil {
-		return 0, false
-	}
-	week := s.weekWindow(p)
+	week := s.projectWeek(sv, g.ProjectID)
 	if week == nil {
 		return 0, false
 	}
+	return weekCosts(sv.data.ListTodos(""), week).used(week, g.ID), true
+}
+
+// projectWeek is weekWindow for one of the caller's projects, nil when the
+// project or its window isn't known.
+func (s *Server) projectWeek(sv *service, projectID string) *usage.Window {
+	p, err := sv.data.GetProject(projectID)
+	if err != nil {
+		return nil
+	}
+	return s.weekWindow(p)
+}
+
+// goalWeekCosts is what the org's tasks cost since a weekly window
+// started: all of them, and each goal's.
+type goalWeekCosts struct {
+	all    float64
+	byGoal map[string]float64
+}
+
+// weekCosts sums the cost of todos' runs since week started, in one pass.
+func weekCosts(todos []model.Todo, week *usage.Window) goalWeekCosts {
 	since := week.ResetsAt.Add(-usage.WeekSpan)
-	var mine, all float64
-	for _, t := range sv.data.ListTodos("") {
-		var c float64
+	c := goalWeekCosts{byGoal: map[string]float64{}}
+	for _, t := range todos {
+		var cost float64
 		for _, r := range t.RunStats {
 			if !r.At.Before(since) {
-				c += r.CostUSD
+				cost += r.CostUSD
 			}
 		}
-		all += c
-		if t.GoalID == g.ID {
-			mine += c
+		c.all += cost
+		if t.GoalID != "" {
+			c.byGoal[t.GoalID] += cost
 		}
 	}
-	if all == 0 {
-		return 0, true
+	return c
+}
+
+// used is goal's part of week, in percent (see goalWeekUsed).
+func (c goalWeekCosts) used(week *usage.Window, goalID string) float64 {
+	if c.all == 0 {
+		return 0
 	}
-	return week.Utilization * 100 * mine / all, true
+	return week.Utilization * 100 * c.byGoal[goalID] / c.all
 }
 
 // weekWindow is the weekly usage window p's tasks count against: this

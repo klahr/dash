@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/klahr/dash/internal/agent"
 	"github.com/klahr/dash/internal/auth"
@@ -22,6 +23,7 @@ import (
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/usage"
 )
 
 // goalPub hands store events to the server's coordinators once it is set.
@@ -416,7 +418,7 @@ func TestGoalQueueModeRunsOutOfBudget(t *testing.T) {
 	}
 	var list []goalView
 	_ = json.Unmarshal(do(t, h, "GET", "/api/projects/"+p.ID+"/goals", "").Body.Bytes(), &list)
-	if len(list) != 1 || list[0].Log != nil {
+	if len(list) != 1 || list[0].Log != nil || len(list[0].Tasks) != 1 || list[0].Tasks[0].ID != id {
 		t.Fatalf("list %+v", list)
 	}
 }
@@ -474,5 +476,29 @@ func TestGoalChat(t *testing.T) {
 	}
 	if !strings.Contains(fc.turns[0], "<goal ") {
 		t.Fatal("the wake-up lacked the goal's state")
+	}
+}
+
+// weekCosts sums each goal's and all tasks' cost since the window started,
+// leaving out runs from before it.
+func TestWeekCosts(t *testing.T) {
+	reset := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
+	week := &usage.Window{Utilization: 0.5, ResetsAt: reset}
+	in, before := reset.Add(-time.Hour), reset.Add(-usage.WeekSpan-time.Hour)
+	todos := []model.Todo{
+		{GoalID: "a", RunStats: []model.TodoRun{{At: in, CostUSD: 1}, {At: before, CostUSD: 100}}},
+		{GoalID: "a", RunStats: []model.TodoRun{{At: in, CostUSD: 1}}},
+		{GoalID: "b", RunStats: []model.TodoRun{{At: in, CostUSD: 1}}},
+		{RunStats: []model.TodoRun{{At: in, CostUSD: 1}}},
+	}
+	c := weekCosts(todos, week)
+	if got := c.used(week, "a"); got != 25 {
+		t.Fatalf("a used %v, want 25", got)
+	}
+	if got := c.used(week, "c"); got != 0 {
+		t.Fatalf("c used %v, want 0", got)
+	}
+	if got := weekCosts(nil, week).used(week, "a"); got != 0 {
+		t.Fatalf("no tasks used %v", got)
 	}
 }

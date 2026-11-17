@@ -12,6 +12,7 @@ import (
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/textutil"
+	"github.com/klahr/dash/internal/usage"
 )
 
 // Goals: a long-lived aim in one project, worked towards by a coordinator
@@ -44,19 +45,66 @@ type (
 )
 
 func (sv *service) goalView(g model.Goal, withLog bool) goalView {
-	v := goalView{Goal: g, Tasks: []goalTask{}}
-	if !withLog {
-		v.Log = nil
+	return sv.goalViews([]model.Goal{g}, withLog)[0]
+}
+
+// goalViews is goalView for many goals at once: it lists the todos once
+// (the goals' project's, or the org's when the goals span projects or one
+// has a weekly budget to measure) and sums their weekly cost once per
+// window, however many goals there are.
+func (sv *service) goalViews(goals []model.Goal, withLog bool) []goalView {
+	out := make([]goalView, 0, len(goals))
+	if len(goals) == 0 {
+		return out
 	}
-	for _, t := range sv.data.GoalTodos(g) {
-		v.Tasks = append(v.Tasks, goalTask{ID: t.ID, Title: t.Title, Status: t.Status})
-	}
-	if g.Budget.WeeklyShare > 0 {
-		if used, ok := sv.s.goalWeekUsed(sv, g); ok {
-			v.WeeklyUsed = &used
+	scope := goals[0].ProjectID
+	weeks := map[string]*usage.Window{} // by project, for goals with a weekly budget
+	for _, g := range goals {
+		if g.ProjectID != scope {
+			scope = ""
+		}
+		if g.Budget.WeeklyShare <= 0 {
+			continue
+		}
+		if _, ok := weeks[g.ProjectID]; ok {
+			continue
+		}
+		w := sv.s.projectWeek(sv, g.ProjectID)
+		weeks[g.ProjectID] = w
+		if w != nil {
+			scope = "" // a goal's part of the week is of all the org's tasks
 		}
 	}
-	return v
+	todos := sv.data.ListTodos(scope)
+	type key struct{ project, goal string }
+	tasks := map[key][]goalTask{}
+	for _, t := range todos {
+		if t.GoalID != "" {
+			k := key{t.ProjectID, t.GoalID}
+			tasks[k] = append(tasks[k], goalTask{ID: t.ID, Title: t.Title, Status: t.Status})
+		}
+	}
+	costs := map[*usage.Window]goalWeekCosts{}
+	for _, g := range goals {
+		v := goalView{Goal: g, Tasks: tasks[key{g.ProjectID, g.ID}]}
+		if v.Tasks == nil {
+			v.Tasks = []goalTask{}
+		}
+		if !withLog {
+			v.Log = nil
+		}
+		if w := weeks[g.ProjectID]; g.Budget.WeeklyShare > 0 && w != nil {
+			c, ok := costs[w]
+			if !ok {
+				c = weekCosts(todos, w)
+				costs[w] = c
+			}
+			used := c.used(w, g.ID)
+			v.WeeklyUsed = &used
+		}
+		out = append(out, v)
+	}
+	return out
 }
 
 // listGoals handles GET /api/goals (all of the org's, or ?project=) and
@@ -76,11 +124,7 @@ func (s *Server) listGoals(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	out := []goalView{}
-	for _, g := range sv.data.ListGoals(pid) {
-		out = append(out, sv.goalView(g, false))
-	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, sv.goalViews(sv.data.ListGoals(pid), false))
 }
 
 // goalRequest is what POST /api/goals and PATCH /api/goals/{gid} take.
@@ -988,11 +1032,7 @@ func (b board) Goals(projectID string) ([]mcptools.GoalView, error) {
 			return nil, fmt.Errorf("no project %q (see list_projects)", projectID)
 		}
 	}
-	out := []mcptools.GoalView{}
-	for _, g := range b.sv.data.ListGoals(projectID) {
-		out = append(out, b.sv.goalView(g, false))
-	}
-	return out, nil
+	return b.sv.goalViews(b.sv.data.ListGoals(projectID), false), nil
 }
 
 func (b board) GetGoal(id string) (mcptools.GoalView, error) {
