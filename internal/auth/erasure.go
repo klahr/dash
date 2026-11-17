@@ -18,7 +18,7 @@ import (
 // Deleting refuses, saying why, while an org depends on the account (see
 // store.Accounts.DeleteUser).
 
-func (a *Auth) erasureRoutes(mux *http.ServeMux) {
+func (a *Auth) erasureRoutes(mux Mux) {
 	mux.HandleFunc("GET /api/account/export", a.sessionOnly(a.exportAccount))
 	mux.HandleFunc("DELETE /api/account", a.sessionOnly(a.deleteOwnAccount))
 	mux.HandleFunc("DELETE /api/admin/users/{uid}", a.sessionOnly(a.adminDeleteUser))

@@ -99,6 +99,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         <span>Files</span>
       </button>
+      <button data-view="planning" title="Planning: the org's plan (gp)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        <span>Planning</span>
+      </button>
       <button data-view="checklist" title="Checklist: TODO.md (gl)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5l1.5 1.5L8 5.5M4 12.5l1.5 1.5L8 11.5M4.5 18.5h3M11 7h9M11 13h9M11 19h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Checklist</span>
@@ -132,6 +136,10 @@
           <button class="menu-view" data-view="goals" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18M12 7.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 1 0 0-9M12 11.5v1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
             <span>Goals</span><span class="badge" id="menu-goal-badge" hidden></span>
+          </button>
+          <button class="menu-view" data-view="planning" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+            <span>Planning</span>
           </button>
           <button class="menu-view" data-view="checklist" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5l1.5 1.5L8 5.5M4 12.5l1.5 1.5L8 11.5M4.5 18.5h3M11 7h9M11 13h9M11 19h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -383,6 +391,10 @@
           <div class="empty" id="goal-empty"><p class="empty-title" id="goal-empty-title">No goals yet</p><p id="goal-empty-text">A goal is something bigger than one task. Say what you want done: a coordinator reads the code, plans the tasks and reviews what each one did. Approving and merging stay yours.</p></div>
         </div>
       </section>
+
+      <!-- Planning: the org's plan, cards linked to tasks and goals; a card opens in a pane
+           beside the board (app/planning.js builds it; planners get planning.html instead) -->
+      <section class="view" id="view-planning" aria-label="Planning"></section>
 
       <!-- Files: browse the default branch; saving an edit queues it as a task -->
       <section class="view" id="view-files" aria-label="Files">
@@ -1531,11 +1543,13 @@
                 <input type="email" id="org-invite-email" placeholder="name@example.com" autocomplete="off" aria-label="Email to invite">
                 <select id="org-invite-role" aria-label="Role">
                   <option value="member">Member</option>
+                  <option value="planner" title="Uses Planning only: no projects, tasks, chats or terminals">Planner</option>
                   <option value="admin">Admin</option>
                   <option value="owner">Owner</option>
                 </select>
                 <button class="btn primary" id="org-invite-send" type="button" data-icon="send">Invite</button>
               </div>
+              <p class="hint">A planner (a product owner) uses Planning only: the org's plan, without projects, tasks, chats or terminals.</p>
               <label class="org-require-2fa" id="org-invite-any-row" hidden><input type="checkbox" id="org-invite-any"> Let them join with any Google account, not just this address</label>
               <div id="org-invite-link" hidden></div>
               <h3 class="section-head" id="org-pending-head">Pending invitations</h3>
@@ -1661,7 +1675,7 @@
       <p class="hint">Vim-style. Typing in a field or the terminal is insert mode; Esc (Ctrl-] in the terminal) returns to normal mode.</p>
       <dl class="keys">
         <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with tasks · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
-        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gi</kbd>/<kbd>gS</kbd>/<kbd>gs</kbd>/<kbd>gh</kbd>/<kbd>go</kbd>/<kbd>gf</kbd>/<kbd>gl</kbd> Board/Issues/Scans/Shell/History/Goals/Files/Checklist · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> projects, again for sections (toggles), <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Esc</kbd> back) · <kbd>J</kbd>/<kbd>K</kbd> next/previous project · <kbd>c</kbd> project chat · <kbd>[</kbd> collapse sidebar · <kbd>Ctrl-k</kbd> search projects, tasks and commands, <kbd>/</kbd> just tasks · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
+        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gi</kbd>/<kbd>gS</kbd>/<kbd>gs</kbd>/<kbd>gh</kbd>/<kbd>go</kbd>/<kbd>gf</kbd>/<kbd>gl</kbd>/<kbd>gp</kbd> Board/Issues/Scans/Shell/History/Goals/Files/Checklist/Planning · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> projects, again for sections (toggles), <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Esc</kbd> back) · <kbd>J</kbd>/<kbd>K</kbd> next/previous project · <kbd>c</kbd> project chat · <kbd>[</kbd> collapse sidebar · <kbd>Ctrl-k</kbd> search projects, tasks and commands, <kbd>/</kbd> just tasks · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
         <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review, or open its pull request when it is reviewed on GitHub; enqueue a draft; <kbd>Space</kbd> opens) · <kbd>n</kbd> (or <kbd>a</kbd>) new task · <kbd>N</kbd> new task with all options · <kbd>e</kbd> edit (on a desktop, in the open task's pane: <kbd>Ctrl-Enter</kbd>/<kbd>Ctrl-s</kbd> save, <kbd>Esc</kbd> cancels) · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>_</kbd> clear priority · <kbd>t</kbd> live preview (<kbd>D</kbd> draws on it: <kbd>p</kbd>/<kbd>a</kbd>/<kbd>o</kbd>/<kbd>b</kbd>/<kbd>c</kbd> pen/arrow/circle/box/crop, <kbd>1</kbd>–<kbd>3</kbd> colour, <kbd>x</kbd> exact capture (desktop Chrome), <kbd>Ctrl-z</kbd> undo, <kbd>Enter</kbd> add to review, <kbd>Esc</kbd> done) · <kbd>!</kbd> shell in worktree</dd>
         <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> timeline ↔ changes · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
         <dt>More</dt><dd><kbd>T</kbd> run tests again · <kbd>Y</kbd> duplicate · <kbd>E</kbd> open worktree in editor · <kbd>u</kbd> revert a merged task · <kbd>O</kbd> open its pull request · click a diff line (or Tab to its <kbd>+</kbd> button and press Enter) to comment · paste or drop images into a task</dd>

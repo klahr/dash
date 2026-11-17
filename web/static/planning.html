@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#101722">
+  <meta name="dash-version" content="{{DASH_VERSION}}">
+  <meta name="dash-time-locale" content="{{DASH_TIME_LOCALE}}">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>Planning · {{DASH_NAME}}</title>
+  <link rel="stylesheet" href="/vendor/fonts/fonts.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Planning for planners (product owners): the org's plan and nothing else. Members,
+       admins and owners have the same board in the app's Planning view. -->
+  <div class="app planning-app">
+    <header class="topbar pl-topbar">
+      <a class="brand" href="/planning.html" aria-label="{{DASH_NAME}} Planning" title="{{DASH_NAME}} {{DASH_VERSION}}">
+        <img id="brand-logo" src="{{DASH_LOGO}}" alt="" aria-hidden="true">
+        <span class="brand-name" id="brand-name">{{DASH_NAME}}</span>
+      </a>
+      <span class="pl-org" id="pl-org"></span>
+      <span class="live" id="live" title="Live updates disconnected"><span class="live-dot"></span><span class="sr-only" id="live-label">Offline</span></span>
+      <details class="foot-menu top-menu" id="pl-menu">
+        <summary class="pl-who" aria-label="Account menu" title="Account menu"><span id="pl-user"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
+        <div class="foot-menu-list">
+          <div class="org-switch" id="org-switch" hidden></div>
+          <a id="pl-export" href="/api/account/export" download data-icon="down">Download my data</a>
+          <button id="pl-logout" type="button" data-icon="logout">Log out</button>
+          <span class="foot-version" title="Dash version">{{DASH_RELEASE}}</span>
+        </div>
+      </details>
+    </header>
+    <main id="planning-main"></main>
+  </div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <!-- Generic question / confirmation (app/dialogs.js) -->
+  <dialog class="sheet small" id="ask-sheet" aria-labelledby="ask-title">
+    <form method="dialog">
+      <h2 id="ask-title" tabindex="-1" autofocus></h2>
+      <p id="ask-body" class="hint"></p>
+      <textarea id="ask-input" rows="4" hidden></textarea>
+      <div class="attach" id="ask-attach" data-attach hidden></div>
+      <footer class="sheet-actions">
+        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
+        <button class="btn primary" value="ok" id="ask-ok" data-icon="check">OK</button>
+      </footer>
+    </form>
+  </dialog>
+  <script src="pagekit.js"></script>
+  <script src="planning-page.js" type="module"></script>
+</body>
+</html>

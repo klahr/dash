@@ -30,7 +30,7 @@ import (
 // Client secrets are sealed before they reach the database and are never
 // sent back: answers say whether one is set.
 
-func (a *Auth) ssoRoutes(mux *http.ServeMux) {
+func (a *Auth) ssoRoutes(mux Mux) {
 	mux.HandleFunc("GET /api/orgs/{oid}/sso", a.sessionOnly(a.orgSSO))
 	mux.HandleFunc("PATCH /api/orgs/{oid}/sso", a.sessionOnly(a.updateOrgSSO))
 	mux.HandleFunc("POST /api/orgs/{oid}/sso/domains", a.sessionOnly(a.addDomain))

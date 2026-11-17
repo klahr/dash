@@ -19,6 +19,7 @@ import { loadTodoChat } from "./chatpane.js";
 import { shellBlocked, startProc } from "./terminal.js";
 import { closeCommit } from "./history.js";
 import { clearPriority } from "./dnd.js";
+import { linkToCard } from "./planning.js";
 
 // ------------------------------------------------------------------ detail
 // The panel is modal (a scrim on desktop, full screen on phones): the rest of the
@@ -255,6 +256,8 @@ $("#d-more").addEventListener("click", attempt(async () => {
       }
     }]);
   }
+  // Planning is the hub's: its cards link to the tasks it has.
+  if (!state.project?.prefix) choices.push(["plan", "Link to a planning card…", () => linkToCard("task", t.id)]);
   if (todoChat.history.length) choices.push(["x", "Clear this task's chat", () => api("DELETE", `/api/todos/${t.id}/chat`).then(() => { if (state.detail === t.id) todoChat.reset(); })]);
   if (!choices.length) return;
   await menu(choices);

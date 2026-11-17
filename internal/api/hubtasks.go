@@ -44,7 +44,7 @@ import (
 //   - a scan names a linked project; its flags are checked (scan.Job.Check)
 //     and its worktree is a throwaway one under the runner's scans folder.
 
-func (s *Server) hubTaskRoutes(mux *http.ServeMux) {
+func (s *Server) hubTaskRoutes(mux routeMux) {
 	mux.HandleFunc("PUT /api/hub/projects/{hpid}", s.hubLink)
 	mux.HandleFunc("DELETE /api/hub/projects/{hpid}", s.hubUnlink)
 	mux.HandleFunc("POST "+dispatch.OriginMovedPath, s.hubOriginMoved)

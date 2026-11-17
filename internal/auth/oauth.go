@@ -191,7 +191,7 @@ func (o *OAuth) ImportLegacy(path string) error {
 }
 
 // Routes adds the metadata, registration, authorization and token endpoints.
-func (o *OAuth) Routes(mux *http.ServeMux) {
+func (o *OAuth) Routes(mux Mux) {
 	mux.HandleFunc("GET /.well-known/oauth-protected-resource", o.resourceMetadata)
 	mux.HandleFunc("GET /.well-known/oauth-protected-resource"+MCPPath, o.resourceMetadata)
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", o.serverMetadata)

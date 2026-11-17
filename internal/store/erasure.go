@@ -261,6 +261,7 @@ type AccountExport struct {
 	Webhooks      []ExportWebhook    `json:"personal_webhooks"`
 	Notifications []ExportNotify     `json:"notification_settings"`
 	Plans         []ExportPlan       `json:"project_plans"`
+	Comments      []ExportComment    `json:"planning_comments"`
 	AuthEvents    []AuthEvent        `json:"sign_in_log"`
 	Tasks         []ExportTask       `json:"tasks"`
 	Messages      []ExportMessage    `json:"chat_messages"`
@@ -314,6 +315,15 @@ type ExportWebhook struct {
 type ExportPlan struct {
 	OrgID int64           `json:"org_id"`
 	Plan  json.RawMessage `json:"plan"`
+}
+
+// ExportComment is a comment the user wrote on a planning card.
+type ExportComment struct {
+	OrgID   int64     `json:"org_id"`
+	CardID  string    `json:"card_id"`
+	Card    string    `json:"card"`
+	Text    string    `json:"text"`
+	Created time.Time `json:"created"`
 }
 
 type ExportTask struct {
@@ -463,6 +473,18 @@ func (a *Accounts) ExportUser(uid int64, now time.Time) (AccountExport, error) {
 			p.Plan = json.RawMessage("{}")
 		}
 		x.Plans = append(x.Plans, p)
+		return err
+	}); err != nil {
+		return x, err
+	}
+	x.Comments = []ExportComment{}
+	if err := each(`SELECT c.org_id, c.id, c.title, m.text, m.created_at FROM planning_comments m JOIN planning_cards c ON c.id = m.card_id
+		WHERE m.author = ? ORDER BY m.id`, func(r *sql.Rows) error {
+		var m ExportComment
+		var at int64
+		err := r.Scan(&m.OrgID, &m.CardID, &m.Card, &m.Text, &at)
+		m.Created = time.Unix(at, 0).UTC()
+		x.Comments = append(x.Comments, m)
 		return err
 	}); err != nil {
 		return x, err

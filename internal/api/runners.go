@@ -92,7 +92,7 @@ func (s *Server) view(c Caller, r tunnel.Runner) runnerView {
 
 var errNoRunner = errors.New("no such runner in your organization")
 
-func (s *Server) runnerRoutes(mux *http.ServeMux, rh *tunnel.Hub) {
+func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 	mux.HandleFunc("GET /api/runners", func(w http.ResponseWriter, r *http.Request) {
 		c, ok := s.callerOr(w, r)
 		if !ok {

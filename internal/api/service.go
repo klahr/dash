@@ -49,6 +49,9 @@ type Caller struct {
 	// PlatformAdmin runs the Dash instance: other computers, the queue
 	// pause, projects anywhere on disk.
 	PlatformAdmin bool
+	// Planner: their role in the org is planner (Planning only; see
+	// planner.go). Planning hides the work's ids from them.
+	Planner bool
 	// Machine: the hub calling over this runner's tunnel. It acts for this Dash's default org (a runner keeps all its
 	// projects there) and checked its own user's rights.
 	Machine bool
@@ -67,7 +70,8 @@ func (s *Server) caller(r *http.Request) (Caller, error) {
 		if id.Org == nil {
 			return Caller{}, errNoOrg
 		}
-		return Caller{User: id.User.ID, Org: id.Org.ID, OrgFolder: id.Org.ProjectFolder(), PlatformAdmin: id.User.PlatformAdmin}, nil
+		return Caller{User: id.User.ID, Org: id.Org.ID, OrgFolder: id.Org.ProjectFolder(), PlatformAdmin: id.User.PlatformAdmin,
+			Planner: id.Org.Role.Planner()}, nil
 	}
 	if auth.FromMachine(r.Context()) && s.Store != nil {
 		org, err := s.Store.Accounts().DefaultOrg()

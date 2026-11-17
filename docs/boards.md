@@ -5,6 +5,11 @@ own board (`dash`). A project can also be planned in an external tracker
 instead, such as Trello or Jira. Dash then keeps the tracker and its own
 tasks in sync, both ways. Set it in **Project settings → Board**.
 
+A project's task board is for the work itself. The org's plan, what a product owner wants
+built and in which order, is [Planning](planning.md): Dash's built-in plan, whose cards link
+to the tasks and goals on these boards. An outside tracker (Jira, Linear) can own that plan
+later instead; for now Planning doesn't sync with one.
+
 Only Dash's own board ships for now: external trackers appear in the
 settings as their backends are added. This page describes the model and the
 interface the tracker backends are written against (`internal/tracker`).

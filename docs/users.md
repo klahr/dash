@@ -3,11 +3,12 @@
 Dash has user accounts, and each account belongs to one or more **organizations** with a
 role in each:
 
-| Role   | Can                                                                          |
-|--------|------------------------------------------------------------------------------|
-| Owner  | everything an admin can, and make or demote owners                           |
-| Admin  | invite people, change roles up to admin, remove members who aren't owners    |
-| Member | use Dash in the org, see who else is in it, and leave it                     |
+| Role    | Can                                                                          |
+|---------|------------------------------------------------------------------------------|
+| Owner   | everything an admin can, and make or demote owners                           |
+| Admin   | invite people, change roles up to admin, remove members who aren't owners    |
+| Member  | use Dash in the org, see who else is in it, and leave it                     |
+| Planner | use [Planning](planning.md) and their own account, nothing else (see [Planners](#planners)) |
 
 An org always keeps at least one owner. Separately from org roles, an account can be a
 **platform admin** of the Dash instance: it can create new orgs, and use what belongs to
@@ -112,6 +113,30 @@ Dash says the same thing whether or not the address already has an account. A li
 once and for 7 days, and inviting the same address again replaces it. Because the link
 is what grants access, send it only to the person you're inviting. A
 [personal workspace](signup.md#personal-workspaces) can't invite anyone.
+
+## Planners
+
+A **planner** is a product owner: someone who plans what to build, not a developer. They use
+[Planning](planning.md) and their own account, and nothing else.
+
+A planner can:
+
+- see, add, edit, move and delete the org's planning cards, and comment on them
+- press **Start** on a card, which makes a task or a goal in a project and links it
+- see each card's linked work through its status and titles
+- use their own account: the account menu on Planning switches orgs, has **Download my data**
+  and **Log out**
+
+A planner can't see or use projects, tasks, goals, chats, terminals, runners, previews,
+scans, issues, the MCP tools or the organization's members. Every such request answers
+`403`. Their live updates carry Planning's changes only. When a planner signs in, Dash opens
+Planning; the rest of the navigation isn't there for them.
+
+To make someone a planner, open **Organization**, and either invite them with the role
+**Planner**, or change a member's role to **Planner**. Only owners and admins can. A planner
+can be made a member later, the same way.
+
+A planner's role is per org: someone can be a planner in one org and a member in another.
 
 ## Profile picture
 

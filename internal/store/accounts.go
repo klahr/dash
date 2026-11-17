@@ -31,30 +31,43 @@ func (s *Store) Accounts() *Accounts { return &Accounts{db: s.db, s: s} }
 
 // Role is what a member may do in an org: owners and admins manage members
 // and invitations; only owners grant or change the owner role.
+//
+// RolePlanner is apart from that ranking: a planner (a product owner) uses
+// Planning and their own account, and nothing else, whatever a rank would
+// say. The API enforces it in one place, by route (internal/api's planner
+// gate), so don't read Planner as "less than Member" anywhere else. It
+// ranks lowest only so that admins may grant it and change it.
 type Role string
 
 const (
-	RoleOwner  Role = "owner"
-	RoleAdmin  Role = "admin"
-	RoleMember Role = "member"
+	RoleOwner   Role = "owner"
+	RoleAdmin   Role = "admin"
+	RoleMember  Role = "member"
+	RolePlanner Role = "planner"
 )
 
 func (r Role) rank() int {
 	switch r {
 	case RoleOwner:
-		return 3
+		return 4
 	case RoleAdmin:
-		return 2
+		return 3
 	case RoleMember:
+		return 2
+	case RolePlanner:
 		return 1
 	}
 	return 0
 }
 
-// Valid reports whether r is one of the three roles.
+// Valid reports whether r is one of the four roles.
 func (r Role) Valid() bool { return r.rank() > 0 }
 
-// AtLeast reports whether r grants everything other does.
+// Planner reports whether r is the planner role: Planning only.
+func (r Role) Planner() bool { return r == RolePlanner }
+
+// AtLeast reports whether r grants everything other does. A planner grants
+// nothing a member does (see RolePlanner).
 func (r Role) AtLeast(other Role) bool { return r.rank() >= other.rank() }
 
 var (
@@ -67,7 +80,7 @@ var (
 	ErrBadUsername   = errors.New("a username is 1 to 64 letters, digits or . _ - @, without spaces")
 	ErrWeakPassword  = errors.New("a password needs at least 8 characters")
 	ErrBadEmail      = errors.New("that doesn't look like an email address")
-	ErrBadRole       = errors.New("role must be owner, admin or member")
+	ErrBadRole       = errors.New("role must be owner, admin, member or planner")
 	ErrBadOrgName    = errors.New("an organization needs a name (up to 100 characters)")
 	// ErrInvitation covers unknown, used and expired invitation links alike.
 	ErrInvitation = errors.New("this invitation link is not valid any more; ask for a new one")

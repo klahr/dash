@@ -18,7 +18,7 @@ import (
 //	PUT  /api/admin/claude-status            platform admins: {enabled, page_url, poll, components, default_components}
 //	POST /api/admin/claude-status/rotate     platform admins: a new webhook URL
 //	POST /api/admin/claude-status/sync       platform admins: read the page's API now
-func (s *Server) claudeStatusRoutes(mux *http.ServeMux) {
+func (s *Server) claudeStatusRoutes(mux routeMux) {
 	mux.HandleFunc("POST "+claudestatus.WebhookPrefix+"{token}", s.claudeStatusWebhook)
 	mux.HandleFunc("GET /api/claude-status", s.getClaudeStatus)
 	mux.HandleFunc("GET /api/admin/claude-status", s.claudeStatusAdmin(s.getClaudeStatusAdmin))

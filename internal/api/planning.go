@@ -1,0 +1,958 @@
+package api
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/klahr/dash/internal/mcptools"
+	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/release"
+	"github.com/klahr/dash/internal/store"
+)
+
+// Planning: the org's plan, for a product owner (docs/planning.md). Cards
+// in fixed columns link to the tasks and goals that carry them out; what a
+// card shows of those is worked out here, in words for its owner (cardStatus),
+// never stored. Planners reach these routes and their own account only (see
+// planner.go); the routes that list or link the org's tasks and goals
+// themselves are for members.
+
+func (s *Server) planningRoutes(mux routeMux) {
+	mux.HandleFunc("GET /api/planning/cards", s.listCards)
+	mux.HandleFunc("POST /api/planning/cards", s.createCard)
+	mux.HandleFunc("GET /api/planning/cards/{cid}", s.getCard)
+	mux.HandleFunc("PATCH /api/planning/cards/{cid}", s.updateCard)
+	mux.HandleFunc("DELETE /api/planning/cards/{cid}", s.deleteCard)
+	mux.HandleFunc("POST /api/planning/cards/{cid}/move", s.moveCard)
+	mux.HandleFunc("GET /api/planning/cards/{cid}/comments", s.cardComments)
+	mux.HandleFunc("POST /api/planning/cards/{cid}/comments", s.addCardComment)
+	mux.HandleFunc("DELETE /api/planning/cards/{cid}/comments/{mid}", s.deleteCardComment)
+	mux.HandleFunc("POST /api/planning/cards/{cid}/start", s.startCard)
+	// The projects a card may name or start work in: names only, for planners
+	// too (they can't list the projects themselves).
+	mux.HandleFunc("GET /api/planning/projects", s.planningProjects)
+	// Members only (not in plannerRoutes): the org's tasks and goals to link,
+	// linking and unlinking them, and the cards a task or goal is linked to.
+	mux.HandleFunc("GET /api/planning/work", s.linkableWork)
+	mux.HandleFunc("POST /api/planning/cards/{cid}/links", s.linkCard)
+	mux.HandleFunc("DELETE /api/planning/cards/{cid}/links/{kind}/{wid}", s.unlinkCard)
+	mux.HandleFunc("GET /api/planning/linked/{kind}/{wid}", s.linkedCards)
+}
+
+// cardStatus is what a card's linked work adds up to, in an owner's words.
+type cardStatus struct {
+	Text string `json:"text"` // "Waiting for review", "Shipped in v1.4.0", …
+	// Progress counts the linked work done when there is more than one:
+	// "3 of 5 done".
+	Progress string `json:"progress,omitempty"`
+	// Tone is for color: none, idle, working, waiting, failed, done, shipped.
+	Tone  string `json:"tone"`
+	Done  int    `json:"done"`
+	Total int    `json:"total"`
+	// SuggestDone: everything linked is done but the card isn't in Done.
+	// Dash suggests the move; it never makes it.
+	SuggestDone bool `json:"suggest_done,omitempty"`
+}
+
+// linkView is one task or goal of a card, as its owner sees it: title,
+// project and state, never branches, worktrees, diffs or runners.
+type linkView struct {
+	Kind string `json:"kind"`
+	// ID is the task's or goal's id, for members (a planner sees none).
+	ID      string `json:"id,omitempty"`
+	Title   string `json:"title"`
+	Project string `json:"project,omitempty"`
+	// ProjectID is its project's id, for members, to open it.
+	ProjectID string `json:"project_id,omitempty"`
+	State     string `json:"state"`
+	Tone      string `json:"tone"`
+	// Shipped is the first release with all of it, once done and released.
+	Shipped string `json:"shipped,omitempty"`
+	done    bool
+	failed  bool
+	started bool
+}
+
+// cardView is a card as the API answers it.
+type cardView struct {
+	model.Card
+	ProjectName string        `json:"project_name,omitempty"`
+	Status      cardStatus    `json:"status"`
+	Links       []linkView    `json:"links"`
+	Comments    int           `json:"comments"`
+	Discussion  []cardComment `json:"discussion,omitempty"` // GET of one card
+}
+
+type cardComment = model.CardComment
+
+// planningWork is what card views are worked out from: the org's projects,
+// tasks and goals, read once for any number of cards.
+type planningWork struct {
+	sv       *service
+	ctx      context.Context
+	projects map[string]model.Project
+	todos    map[string]model.Todo
+	goals    map[string]model.Goal
+	goalWork map[string][]model.Todo // goal id → its tasks
+}
+
+func (sv *service) planningWork(ctx context.Context) *planningWork {
+	w := &planningWork{sv: sv, ctx: ctx, projects: map[string]model.Project{}, todos: map[string]model.Todo{},
+		goals: map[string]model.Goal{}, goalWork: map[string][]model.Todo{}}
+	for _, p := range sv.data.ListProjects() {
+		w.projects[p.ID] = p
+	}
+	for _, t := range sv.data.ListTodos("") {
+		w.todos[t.ID] = t
+		if t.GoalID != "" {
+			w.goalWork[t.GoalID] = append(w.goalWork[t.GoalID], t)
+		}
+	}
+	for _, g := range sv.data.ListGoals("") {
+		w.goals[g.ID] = g
+	}
+	return w
+}
+
+// taskState is a task's state in an owner's words.
+func taskState(t model.Todo) (state, tone string) {
+	switch t.Status {
+	case model.StatusDraft:
+		return "Not started", "idle"
+	case model.StatusQueued:
+		return "Waiting to start", "idle"
+	case model.StatusInProgress:
+		return "In progress", "working"
+	case model.StatusReview:
+		return "Waiting for review", "waiting"
+	case model.StatusMerging:
+		return "Approved, landing", "working"
+	case model.StatusMerged:
+		return "Done", "done"
+	case model.StatusFailed:
+		return "Failed, needs a developer", "failed"
+	}
+	return string(t.Status), "idle"
+}
+
+// goalState is a goal's state in an owner's words.
+func goalState(g model.Goal) (state, tone string) {
+	switch g.Status {
+	case model.GoalPlanning:
+		return "Being planned", "working"
+	case model.GoalWorking:
+		return "In progress", "working"
+	case model.GoalWaiting:
+		return "Waiting for a decision", "waiting"
+	case model.GoalPaused:
+		return "Paused", "idle"
+	case model.GoalDone:
+		return "Done", "done"
+	}
+	return "In progress", "working"
+}
+
+// link is one link's view.
+func (w *planningWork) link(l model.CardLink) linkView {
+	v := linkView{Kind: l.Kind, ID: l.WorkID}
+	project := func(id string) string { return w.projects[id].Name }
+	switch l.Kind {
+	case model.LinkTask:
+		t, ok := w.todos[l.WorkID]
+		if !ok {
+			return linkView{Kind: l.Kind, ID: l.WorkID, Title: "Removed task", State: "Removed", Tone: "idle", done: true}
+		}
+		v.Title, v.Project, v.ProjectID = t.Title, project(t.ProjectID), t.ProjectID
+		v.State, v.Tone = taskState(t)
+		v.done, v.failed = t.Status == model.StatusMerged, t.Status == model.StatusFailed
+		v.started = t.Status != model.StatusDraft
+		if v.done {
+			v.Shipped = w.shipped([]model.Todo{t})
+		}
+	case model.LinkGoal:
+		g, ok := w.goals[l.WorkID]
+		if !ok {
+			return linkView{Kind: l.Kind, ID: l.WorkID, Title: "Removed goal", State: "Removed", Tone: "idle", done: true}
+		}
+		v.Title, v.Project, v.ProjectID = g.Title, project(g.ProjectID), g.ProjectID
+		v.State, v.Tone = goalState(g)
+		tasks := w.goalWork[g.ID]
+		for _, t := range tasks {
+			v.failed = v.failed || t.Status == model.StatusFailed
+		}
+		if v.failed && g.Status != model.GoalDone {
+			v.State, v.Tone = "Failed, needs a developer", "failed"
+		}
+		v.done, v.started = g.Status == model.GoalDone, true
+		if v.done {
+			var merged []model.Todo
+			for _, t := range tasks {
+				if t.Status == model.StatusMerged {
+					merged = append(merged, t)
+				}
+			}
+			v.Shipped = w.shipped(merged)
+		}
+	}
+	if v.Shipped != "" {
+		v.State, v.Tone = "Shipped in "+v.Shipped, "shipped"
+	}
+	return v
+}
+
+// shipped is the first release that has every one of the tasks' merged
+// commits ("" when one isn't released yet, or Dash can't tell).
+func (w *planningWork) shipped(ts []model.Todo) string {
+	var latest release.Tag
+	found := false
+	for _, t := range ts {
+		p, ok := w.projects[t.ProjectID]
+		if !ok || t.MergedCommit == "" {
+			return ""
+		}
+		tag, ok := w.sv.s.releaseOf(w.ctx, p, t.MergedCommit)
+		if !ok {
+			return ""
+		}
+		if !found || latest.Version.Less(tag.Version) {
+			latest, found = tag, true
+		}
+	}
+	if !found {
+		return ""
+	}
+	return latest.Name
+}
+
+// views makes the views of cards, with their links (from links) and
+// comment counts.
+func (w *planningWork) views(cards []model.Card, links map[string][]model.CardLink, comments map[string]int) []cardView {
+	out := make([]cardView, 0, len(cards))
+	for _, c := range cards {
+		v := cardView{Card: c, ProjectName: w.projects[c.ProjectID].Name, Links: []linkView{}, Comments: comments[c.ID]}
+		for _, l := range links[c.ID] {
+			lv := w.link(l)
+			if w.sv.c.Planner {
+				lv.ID, lv.ProjectID = "", "" // a planner sees the work through the card only
+			}
+			v.Links = append(v.Links, lv)
+		}
+		v.Status = status(c, v.Links)
+		out = append(out, v)
+	}
+	return out
+}
+
+// status adds up a card's links.
+func status(c model.Card, links []linkView) cardStatus {
+	st := cardStatus{Total: len(links)}
+	if len(links) == 0 {
+		st.Text, st.Tone = "Nothing started yet", "none"
+		return st
+	}
+	var failed, waiting, review, started int
+	shipped, allShipped := "", true
+	for _, l := range links {
+		switch {
+		case l.done:
+			st.Done++
+		case l.failed:
+			failed++
+		case l.Tone == "waiting":
+			waiting++
+			if l.State == "Waiting for review" {
+				review++
+			}
+		}
+		if l.started {
+			started++
+		}
+		if l.Shipped == "" {
+			allShipped = false
+		} else if shipped == "" || laterTag(l.Shipped, shipped) {
+			shipped = l.Shipped
+		}
+	}
+	if st.Total > 1 {
+		st.Progress = fmt.Sprintf("%d of %d done", st.Done, st.Total)
+	}
+	switch {
+	case failed > 0:
+		st.Text, st.Tone = "Failed, needs a developer", "failed"
+	case st.Done == st.Total && allShipped:
+		st.Text, st.Tone = "Shipped in "+shipped, "shipped"
+	case st.Done == st.Total:
+		st.Text, st.Tone = "All done", "done"
+	case review > 0 && review == waiting:
+		st.Text, st.Tone = "Waiting for review", "waiting"
+	case waiting > 0:
+		st.Text, st.Tone = "Waiting for a decision", "waiting"
+	case started > 0:
+		st.Text, st.Tone = "In progress", "working"
+	default:
+		st.Text, st.Tone = "Not started", "idle"
+	}
+	st.SuggestDone = st.Done == st.Total && c.Column != model.CardDone
+	return st
+}
+
+// laterTag reports whether release tag a is a later version than b (by the
+// numbers in them; tags of one project share a format).
+func laterTag(a, b string) bool {
+	va, oka := tagVersion(a)
+	vb, okb := tagVersion(b)
+	return oka && okb && vb.Less(va)
+}
+
+func tagVersion(tag string) (release.Version, bool) {
+	i := strings.IndexAny(tag, "0123456789")
+	if i < 0 {
+		return release.Version{}, false
+	}
+	v, err := release.ParseVersion(strings.TrimRightFunc(tag[i:], func(r rune) bool { return r < '0' || r > '9' }))
+	return v, err == nil
+}
+
+// ---- which release shipped a commit ----
+
+// shipCache remembers which release first shipped a commit: for good once
+// found, for a minute while none has.
+type shipCache struct {
+	mu sync.Mutex
+	m  map[string]shipEntry
+}
+
+type shipEntry struct {
+	tag release.Tag
+	ok  bool
+	at  time.Time
+}
+
+const shipRecheck = time.Minute
+
+// releaseOf is the first release (a tag in the project's format) whose
+// history has sha. Only a Dash that has the project's repository can tell
+// (not a hub, whose runners have it).
+func (s *Server) releaseOf(ctx context.Context, p model.Project, sha string) (release.Tag, bool) {
+	if s.Git == nil || s.hub() || p.Path == "" {
+		return release.Tag{}, false
+	}
+	f, err := release.ParseFormat(p.TagFormat)
+	if err != nil {
+		return release.Tag{}, false
+	}
+	key := p.ID + "@" + sha
+	s.ships.mu.Lock()
+	e, ok := s.ships.m[key]
+	s.ships.mu.Unlock()
+	if ok && (e.ok || time.Since(e.at) < shipRecheck) {
+		return e.tag, e.ok
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	tags, err := s.Git.TagsContaining(ctx, p.ID, p.Path, sha)
+	if err != nil {
+		return release.Tag{}, false // not cached: the repository may be busy
+	}
+	e = shipEntry{at: time.Now()}
+	e.tag, e.ok = f.Earliest(tags)
+	s.ships.mu.Lock()
+	if s.ships.m == nil {
+		s.ships.m = map[string]shipEntry{}
+	}
+	s.ships.m[key] = e
+	s.ships.mu.Unlock()
+	return e.tag, e.ok
+}
+
+// ---- handlers ----
+
+// cardViews are views of the cards, with their links and comment counts.
+func (sv *service) cardViews(ctx context.Context, cards []model.Card) ([]cardView, error) {
+	ids := make([]string, len(cards))
+	for i, c := range cards {
+		ids[i] = c.ID
+	}
+	links := map[string][]model.CardLink{}
+	if len(ids) > 0 {
+		var err error
+		if links, err = sv.data.CardLinks(ids...); err != nil {
+			return nil, err
+		}
+	}
+	comments, err := sv.data.CommentCounts()
+	if err != nil {
+		return nil, err
+	}
+	return sv.planningWork(ctx).views(cards, links, comments), nil
+}
+
+func (sv *service) cardView(ctx context.Context, id string) (cardView, error) {
+	c, err := sv.data.GetCard(id)
+	if err != nil {
+		return cardView{}, err
+	}
+	vs, err := sv.cardViews(ctx, []model.Card{c})
+	if err != nil {
+		return cardView{}, err
+	}
+	return vs[0], nil
+}
+
+// listCards handles GET /api/planning/cards[?project=<id>].
+func (s *Server) listCards(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	cards, err := sv.data.ListCards(r.URL.Query().Get("project"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	vs, err := sv.cardViews(r.Context(), cards)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, vs)
+}
+
+// cardRequest is what POST /api/planning/cards and PATCH …/{cid} take;
+// nil fields stay as they are.
+type cardRequest struct {
+	Title       *string `json:"title"`
+	Description *string `json:"description"`
+	Project     *string `json:"project"`
+	Column      *string `json:"column"` // create only; moves are POST …/move
+	Priority    *string `json:"priority"`
+	Target      *string `json:"target"`
+}
+
+func (req cardRequest) apply(c *model.Card) error {
+	set(&c.Title, req.Title)
+	set(&c.Description, req.Description)
+	set(&c.ProjectID, req.Project)
+	set(&c.Priority, req.Priority)
+	set(&c.Target, req.Target)
+	if req.Column != nil {
+		c.Column = model.CardColumn(*req.Column)
+	}
+	if err := model.CleanCard(c); err != nil {
+		return fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	return nil
+}
+
+func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	var req cardRequest
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	c, err := sv.createCard(req)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	v, err := sv.cardView(r.Context(), c.ID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, v)
+}
+
+// createCard adds a card for the caller (the REST API and the create_card tool).
+func (sv *service) createCard(req cardRequest) (model.Card, error) {
+	if err := sv.writable(); err != nil {
+		return model.Card{}, err
+	}
+	var c model.Card
+	if err := req.apply(&c); err != nil {
+		return c, err
+	}
+	if c.ProjectID != "" {
+		p, err := sv.data.GetProject(c.ProjectID)
+		if err != nil {
+			return c, err
+		}
+		c.ProjectID = p.ID
+	}
+	return sv.data.CreateCard(c)
+}
+
+func (s *Server) getCard(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	v, err := sv.cardView(r.Context(), r.PathValue("cid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if v.Discussion, err = sv.data.CardComments(v.ID); err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	var req cardRequest
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	req.Column = nil
+	if err := sv.writable(); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if _, err := sv.data.UpdateCard(r.PathValue("cid"), req.apply); err != nil {
+		writeErr(w, err)
+		return
+	}
+	s.answerCard(w, r, sv, r.PathValue("cid"))
+}
+
+// answerCard answers r with the card's view.
+func (s *Server) answerCard(w http.ResponseWriter, r *http.Request, sv *service, id string) {
+	v, err := sv.cardView(r.Context(), id)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if err := sv.writable(); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := sv.data.DeleteCard(r.PathValue("cid")); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// moveCard handles POST /api/planning/cards/{cid}/move: {column, position}.
+// position is where in the column, from 0 (the top); left out, the end.
+func (s *Server) moveCard(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Column   string `json:"column"`
+		Position *int   `json:"position"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	col := model.CardColumn(req.Column)
+	if !col.Valid() {
+		writeErr(w, fmt.Errorf("%w: unknown column %q: use ideas, planned, in_progress or done", errBadRequest, req.Column))
+		return
+	}
+	if err := sv.writable(); err != nil {
+		writeErr(w, err)
+		return
+	}
+	pos := 1 << 30
+	if req.Position != nil {
+		pos = *req.Position
+	}
+	if _, err := sv.data.MoveCard(r.PathValue("cid"), col, pos); err != nil {
+		writeErr(w, err)
+		return
+	}
+	s.answerCard(w, r, sv, r.PathValue("cid"))
+}
+
+func (s *Server) cardComments(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	ms, err := sv.data.CardComments(r.PathValue("cid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ms)
+}
+
+func (s *Server) addCardComment(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Text string `json:"text"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	text, err := model.CleanComment(req.Text)
+	if err != nil {
+		writeErr(w, fmt.Errorf("%w: %v", errBadRequest, err))
+		return
+	}
+	if sv.c.User == 0 {
+		writeErr(w, fmt.Errorf("%w: a comment is a person's: sign in to comment", errBadRequest))
+		return
+	}
+	if err := sv.writable(); err != nil {
+		writeErr(w, err)
+		return
+	}
+	m, err := sv.data.AddCardComment(r.PathValue("cid"), text)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, m)
+}
+
+// deleteCardComment handles DELETE …/comments/{mid}: its author, or an
+// admin of the org, may delete a comment.
+func (s *Server) deleteCardComment(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("mid"), 10, 64)
+	if err != nil {
+		writeErr(w, fmt.Errorf("%w: bad comment id", errBadRequest))
+		return
+	}
+	m, err := sv.data.CardComment(r.PathValue("cid"), id)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if m.Author != sv.c.User && !s.orgAdmin(sv.c) {
+		writeErr(w, fmt.Errorf("%w: only its author or an admin can delete a comment", errForbidden))
+		return
+	}
+	if err := sv.writable(); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := sv.data.DeleteCardComment(m.CardID, id); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// planningProjects handles GET /api/planning/projects: the org's projects'
+// ids and names.
+func (s *Server) planningProjects(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	type project struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	out := []project{}
+	for _, p := range sv.data.ListProjects() {
+		out = append(out, project{p.ID, p.Name})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// startCard handles POST /api/planning/cards/{cid}/start: {project, kind}.
+// It makes a task (queued; the card's title and description are its
+// prompt) or a goal (kind "goal") in the project, links it to the card,
+// and moves the card to In progress if it was still in Ideas or Planned.
+func (s *Server) startCard(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Project string `json:"project"`
+		Kind    string `json:"kind"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if _, err := sv.startCard(r.PathValue("cid"), req.Project, req.Kind); err != nil {
+		writeErr(w, err)
+		return
+	}
+	s.answerCard(w, r, sv, r.PathValue("cid"))
+}
+
+// startCard is what Start does (the REST API's and the start_card tool's):
+// it returns the new task's or goal's id.
+func (sv *service) startCard(cardID, project, kind string) (string, error) {
+	c, err := sv.data.GetCard(cardID)
+	if err != nil {
+		return "", err
+	}
+	if project == "" {
+		project = c.ProjectID
+	}
+	if project == "" {
+		return "", fmt.Errorf("%w: choose the project to start the work in", errBadRequest)
+	}
+	p, err := sv.data.GetProject(project)
+	if err != nil {
+		return "", err
+	}
+	var id string
+	switch kind {
+	case "", model.LinkTask:
+		kind = model.LinkTask
+		prompt := c.Title
+		if c.Description != "" {
+			prompt += "\n\n" + c.Description
+		}
+		t, err := sv.addTodo(model.Todo{ProjectID: p.ID, Title: c.Title, Prompt: prompt}, true)
+		if err != nil {
+			return "", err
+		}
+		id = t.ID
+	case model.LinkGoal:
+		title, desc := c.Title, c.Description
+		if desc == "" {
+			desc = c.Title
+		}
+		g, err := sv.createGoal(goalRequest{Project: p.ID, Title: &title, Description: &desc})
+		if err != nil {
+			return "", err
+		}
+		id = g.ID
+	default:
+		return "", fmt.Errorf("%w: start a task or a goal", errBadRequest)
+	}
+	if err := sv.data.LinkCard(c.ID, kind, id); err != nil {
+		return id, err
+	}
+	if c.ProjectID == "" {
+		if _, err := sv.data.UpdateCard(c.ID, func(x *model.Card) error { x.ProjectID = p.ID; return nil }); err != nil {
+			return id, err
+		}
+	}
+	sv.cardStarted(c)
+	return id, nil
+}
+
+// cardStarted moves a card whose work has started to In progress, if it
+// was still in Ideas or Planned. (Done is never automatic: the card only
+// suggests it.)
+func (sv *service) cardStarted(c model.Card) {
+	if c.Column == model.CardIdeas || c.Column == model.CardPlanned {
+		_, _ = sv.data.MoveCard(c.ID, model.CardInProgress, 1<<30)
+	}
+}
+
+// linkableWork handles GET /api/planning/work[?project=<id>]: the org's
+// tasks and goals a card may link to, newest first (members only).
+func (s *Server) linkableWork(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	pid := r.URL.Query().Get("project")
+	pw := sv.planningWork(r.Context())
+	type item struct {
+		Kind    string    `json:"kind"`
+		ID      string    `json:"id"`
+		Title   string    `json:"title"`
+		Project string    `json:"project"`
+		State   string    `json:"state"`
+		Created time.Time `json:"created_at"`
+	}
+	out := []item{}
+	for _, g := range pw.goals {
+		if pid == "" || g.ProjectID == pid {
+			st, _ := goalState(g)
+			out = append(out, item{model.LinkGoal, g.ID, g.Title, pw.projects[g.ProjectID].Name, st, g.CreatedAt})
+		}
+	}
+	for _, t := range pw.todos {
+		if pid == "" || t.ProjectID == pid {
+			st, _ := taskState(t)
+			out = append(out, item{model.LinkTask, t.ID, t.Title, pw.projects[t.ProjectID].Name, st, t.CreatedAt})
+		}
+	}
+	slices.SortFunc(out, func(a, b item) int { return b.Created.Compare(a.Created) })
+	if len(out) > 500 {
+		out = out[:500]
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// linkCard handles POST /api/planning/cards/{cid}/links: {kind, id}.
+func (s *Server) linkCard(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Kind string `json:"kind"`
+		ID   string `json:"id"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := sv.linkCard(r.PathValue("cid"), req.Kind, req.ID); err != nil {
+		writeErr(w, err)
+		return
+	}
+	s.answerCard(w, r, sv, r.PathValue("cid"))
+}
+
+// linkCard links a card to a task or goal, and moves the card to In
+// progress when that work has started.
+func (sv *service) linkCard(cardID, kind, id string) error {
+	if kind != model.LinkTask && kind != model.LinkGoal {
+		return fmt.Errorf("%w: link a task or a goal", errBadRequest)
+	}
+	if err := sv.writable(); err != nil {
+		return err
+	}
+	c, err := sv.data.GetCard(cardID)
+	if err != nil {
+		return err
+	}
+	if err := sv.data.LinkCard(cardID, kind, id); err != nil {
+		return err
+	}
+	started := kind == model.LinkGoal
+	if kind == model.LinkTask {
+		if t, err := sv.data.GetTodo(id); err == nil {
+			started = t.Status != model.StatusDraft
+		}
+	}
+	if started {
+		sv.cardStarted(c)
+	}
+	return nil
+}
+
+func (s *Server) unlinkCard(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if err := sv.writable(); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := sv.data.UnlinkCard(r.PathValue("cid"), r.PathValue("kind"), r.PathValue("wid")); err != nil {
+		writeErr(w, err)
+		return
+	}
+	s.answerCard(w, r, sv, r.PathValue("cid"))
+}
+
+// linkedCards handles GET /api/planning/linked/{kind}/{wid}: the cards a
+// task or goal is linked to, for its detail's "Link to card".
+func (s *Server) linkedCards(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	cards, err := sv.data.CardsLinkedTo(r.PathValue("kind"), r.PathValue("wid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	type row struct {
+		ID     string           `json:"id"`
+		Title  string           `json:"title"`
+		Column model.CardColumn `json:"column"`
+	}
+	out := []row{}
+	for _, c := range cards {
+		out = append(out, row{c.ID, c.Title, c.Column})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// ---- the planning tools (mcptools.CardBoard) ----
+
+func cardRow(v cardView) mcptools.CardRow {
+	return mcptools.CardRow{ID: v.ID, Title: v.Title, Column: string(v.Column), Priority: v.Priority, Target: v.Target,
+		Project: v.ProjectName, Status: v.Status.Text, Progress: v.Status.Progress, Links: len(v.Links)}
+}
+
+func (b board) Cards(projectID string) ([]mcptools.CardRow, error) {
+	cards, err := b.sv.data.ListCards(projectID)
+	if err != nil {
+		return nil, err
+	}
+	vs, err := b.sv.cardViews(context.Background(), cards)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]mcptools.CardRow, len(vs))
+	for i, v := range vs {
+		out[i] = cardRow(v)
+	}
+	return out, nil
+}
+
+func (b board) CreateCard(nc mcptools.NewCard) (mcptools.CardRow, error) {
+	req := cardRequest{Title: &nc.Title, Description: &nc.Description, Priority: &nc.Priority, Target: &nc.Target}
+	if nc.Column != "" {
+		req.Column = &nc.Column
+	}
+	if nc.Project != "" {
+		p, err := b.Project(nc.Project)
+		if err != nil {
+			return mcptools.CardRow{}, err
+		}
+		req.Project = &p.ID
+	}
+	c, err := b.sv.createCard(req)
+	if err != nil {
+		return mcptools.CardRow{}, err
+	}
+	v, err := b.sv.cardView(context.Background(), c.ID)
+	return cardRow(v), err
+}
+
+func (b board) LinkCard(cardID, kind, workID string) (mcptools.CardRow, error) {
+	if err := b.sv.linkCard(cardID, kind, workID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return mcptools.CardRow{}, fmt.Errorf("no card %q or %s %q (see list_cards)", cardID, kind, workID)
+		}
+		return mcptools.CardRow{}, err
+	}
+	v, err := b.sv.cardView(context.Background(), cardID)
+	return cardRow(v), err
+}

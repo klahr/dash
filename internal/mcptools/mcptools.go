@@ -415,11 +415,12 @@ type Options struct {
 
 // Tool names the chat may call; ReadTools never change anything.
 var (
-	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues", "read_try_terminal", "read_checklist", "list_goals", "get_goal"}
+	ReadTools  = []string{"list_projects", "list_todos", "get_todo", "list_issues", "read_try_terminal", "read_checklist", "list_goals", "get_goal", "list_cards"}
 	BoardTools = []string{"list_projects", "list_todos", "get_todo", "create_todo", "queue_todo", "stop_todo", "restart_todo", "update_todo", "create_release", "delete_todo",
 		"read_checklist", "add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "reorder_checklist_item", "move_checklist_item_to_task",
 		"list_issues", "report_issue", "read_try_terminal",
-		"list_goals", "get_goal", "create_goal", "update_goal", "pause_goal", "resume_goal", "stop_goal", "accept_goal_plan", "reject_goal_plan", "message_goal"}
+		"list_goals", "get_goal", "create_goal", "update_goal", "pause_goal", "resume_goal", "stop_goal", "accept_goal_plan", "reject_goal_plan", "message_goal",
+		"list_cards", "create_card", "link_card"}
 	// AskTools are board tools a chat never gets without asking: they publish
 	// something (a release tag pushed to origin, or a TODO.md change committed
 	// onto the default branch, which may be pushed to origin).
@@ -435,7 +436,8 @@ var (
 // tools on the project's TODO.md (read_checklist, add_checklist_item,
 // check_checklist_item, edit_checklist_item, delete_checklist_item,
 // reorder_checklist_item and move_checklist_item_to_task); the IssueTools; read_try_terminal when
-// b reads Try terminals (TryReader); and the goal tools when b manages goals (GoalManager).
+// b reads Try terminals (TryReader); the goal tools when b manages goals (GoalManager);
+// and the planning tools when b has the org's plan (CardBoard).
 func Tools(b Board, o Options) []Tool {
 	tools := append(boardTools(b, o), IssueTools(b, o)...)
 	if tr, ok := b.(TryReader); ok {
@@ -443,6 +445,9 @@ func Tools(b Board, o Options) []Tool {
 	}
 	if gm, ok := b.(GoalManager); ok {
 		tools = append(tools, GoalManagerTools(b, gm, o)...)
+	}
+	if cb, ok := b.(CardBoard); ok {
+		tools = append(tools, PlanningTools(b, cb, o)...)
 	}
 	return tools
 }

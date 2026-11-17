@@ -155,7 +155,7 @@ func (a *Auth) googleRedirectURI(r *http.Request) string {
 	return scheme + "://" + a.reqHost(r) + GoogleCallbackPath
 }
 
-func (a *Auth) googleRoutes(mux *http.ServeMux) {
+func (a *Auth) googleRoutes(mux Mux) {
 	mux.HandleFunc("GET "+GoogleStartPath, a.googleStart)
 	mux.HandleFunc("POST "+GoogleStartPath, a.googleStart)
 	mux.HandleFunc("GET "+GoogleCallbackPath, a.googleCallback)

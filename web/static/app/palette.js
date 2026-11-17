@@ -31,6 +31,7 @@ import { pane, paneOverlays, projectChatFor, toggleChatPane, togglePin } from ".
 import { attached, openShell, shellBlocked, startProc, techFor, term } from "./terminal.js";
 import { closeCommit, commitScroller, moveCommit, stepCommitFile } from "./history.js";
 import { closeGoal, gp, openGoalSheet, stepGoal } from "./goals.js";
+import { cardOpen, closeCard } from "./planning.js";
 import { checklistKey } from "./checklist.js";
 import { BOUND, VIEWS, cursorTodo, enterKey, isTyping, keys, laneCount, laneSkipped, laneTodos, moveCursor, openCommandLine, openDialog, permKey, runCommand, scrollBy, scroller, setMode, stepLane, todoKey } from "./vim.js";
 
@@ -76,6 +77,7 @@ function paletteCommands() {
     ["Goals", "target", go("goals"), "go", "goal coordinator plan progress budget"],
     ["Files", "code", go("files"), "gf", "browse edit source code tree editor"],
     ["Checklist (TODO.md)", "checks", go("checklist"), "gl", "todo.md checklist to-do list check off tick items"],
+    ["Planning", "plan", go("planning"), "gp", "plan roadmap product owner cards ideas planned"],
     ["Switch project", "repo", openProjects, "p", "projects"],
     ["Add project", "plus", () => openNewProject(), "", "new create local repository runner github clone url"],
     ["Plan a new project", "spark", () => openPlanner(), "", "idea brief interview plan new project goal"],
@@ -365,6 +367,7 @@ async function handleNormal(k, n, hadCount) {
     case "go": return showView("goals");
     case "gf": return showView("files");
     case "gl": return showView("checklist");
+    case "gp": return showView("planning");
     case "gi": return showView("issues");
     case "gS": return showView("scans");
     case "p": return openProjects();
@@ -377,6 +380,7 @@ async function handleNormal(k, n, hadCount) {
       if (state.detail) return closeDetail();
       if (cp.sha) return closeCommit();
       if (gp.open) return closeGoal();
+      if (cardOpen()) return closeCard();
       return;
     case "y": case "A":
       if (await permKey(k) === false) toast("No permission request waiting");

@@ -28,6 +28,7 @@ import { iss, onIssueEvent, renderIssues } from "./issues.js";
 import { loadScans, onScanRun, scanFinished, scans } from "./scans.js";
 import { clChanged } from "./checklist.js";
 import { checkForUpdate } from "./updates.js";
+import { onPlanningEvent } from "./planning.js";
 import { loadClaudeStatus, onClaudeStatus } from "./claudestatus.js";
 import { goalTaskChanged, onGoalEvent, showGoal } from "./goals.js";
 import { goalChatEvent, projectChatEvent } from "./chatpane.js";
@@ -164,6 +165,7 @@ function onEvent(ev, m = { name: "" }) {
   const mine = eventFor(state.project, ev, m);
   if (!mine) elsewhere(ev, m);
   if (ev.type === "todo.updated" || ev.type === "todo.deleted") trackActive(ev, m);
+  if (ev.type.startsWith("planning.")) { if (m.local) onPlanningEvent(ev); return; }
   switch (ev.type) {
     case "runners":
       if (m.local) { refreshMachines().catch(fail); chatRunner.load().catch(() => {}); }

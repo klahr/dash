@@ -81,6 +81,17 @@ func TestLatestIsHighestVersion(t *testing.T) {
 	}
 }
 
+// Of the releases that contain a commit, the lowest version shipped it.
+func TestEarliestIsLowestVersion(t *testing.T) {
+	f, _ := ParseFormat("vX.Y.Z")
+	if e, ok := f.Earliest([]string{"v1.10.0", "v1.4.0", "nightly", "1.0.0", "v1.9.9"}); !ok || e.Name != "v1.4.0" {
+		t.Errorf("earliest %v %v", e, ok)
+	}
+	if _, ok := f.Earliest([]string{"nightly"}); ok {
+		t.Error("a tag in another format counted")
+	}
+}
+
 func TestBump(t *testing.T) {
 	v := Version{1, 4, 2}
 	for kind, want := range map[string]Version{Patch: {1, 4, 3}, Minor: {1, 5, 0}, Major: {2, 0, 0}} {

@@ -174,6 +174,10 @@ type Server struct {
 	// following counts the fetches "origin moved" news started (tests wait).
 	following sync.WaitGroup
 	muxv      *http.ServeMux
+	// routes are the patterns of every route muxv has (see recordingMux).
+	routes []string
+	// ships remembers which release shipped a commit (planning.go).
+	ships shipCache
 }
 
 // Routes is the dashboard's handler: every route, behind the login.
@@ -183,7 +187,7 @@ func (s *Server) Routes() http.Handler {
 	// /healthz and /metrics answer before sign-in (see ops.go); every request
 	// is counted and timed for /metrics, by the route pattern that served it.
 	return s.Previews.Wrap(s.Auth.Headers(metrics.Instrument(s.ops(
-		logRequests(s.Auth.Middleware(s.billingGate(metrics.Route(s.mux()))))))))
+		logRequests(s.Auth.Middleware(s.billingGate(s.plannerGate(metrics.Route(s.mux())))))))))
 }
 
 func (s *Server) mux() *http.ServeMux {
@@ -192,7 +196,7 @@ func (s *Server) mux() *http.ServeMux {
 }
 
 func (s *Server) buildMux() *http.ServeMux {
-	mux := http.NewServeMux()
+	mux := recordingMux{http.NewServeMux(), &s.routes}
 	if s.Hub != nil && s.Hub.ProjectOrg == nil && s.Store != nil {
 		s.Hub.ProjectOrg = s.Store.ProjectOrg // events go to their project's org
 	}
@@ -330,6 +334,8 @@ func (s *Server) buildMux() *http.ServeMux {
 	s.goalRoutes(mux)
 	// Plans: a new project planned with Claude, launched as a project and a goal
 	s.planRoutes(mux)
+	// Planning: the org's plan for a product owner, cards linked to tasks and goals
+	s.planningRoutes(mux)
 
 	// Scans: preconfigured read-only reviews that file their findings as issues
 	mux.HandleFunc("GET /api/projects/{pid}/scans", s.listScans)
@@ -476,7 +482,8 @@ func (s *Server) buildMux() *http.ServeMux {
 	if s.OAuth != nil {
 		// Remote MCP clients: the whole dashboard, with OAuth access tokens.
 		s.OAuth.Routes(mux)
-		mux.Handle("POST /mcp", s.OAuth.Bearer(s.remoteMCP()))
+		// The bearer token names its user only here: the planner gate runs again.
+		mux.Handle("POST /mcp", s.OAuth.Bearer(s.plannerGate(s.remoteMCP())))
 		mux.Handle("GET /mcp", s.OAuth.Bearer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Allow", "POST")
 			http.Error(w, "this MCP server only accepts POST", http.StatusMethodNotAllowed)
@@ -522,7 +529,7 @@ func (s *Server) buildMux() *http.ServeMux {
 		writeJSON(w, http.StatusOK, map[string]string{"version": s.version(), "release": buildinfo.Version})
 	})
 	mux.Handle("GET /", s.static())
-	return mux
+	return mux.ServeMux
 }
 
 // eventsWS handles GET /ws/events: the caller receives their org's events
@@ -532,7 +539,11 @@ func (s *Server) eventsWS(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.Hub.ServeWS(w, r, hub.Subscriber{Org: c.Org, User: c.User, All: c.Machine})
+	sub := hub.Subscriber{Org: c.Org, User: c.User, All: c.Machine}
+	if c.Planner {
+		sub.Only = model.PlanningEvent // a planner sees Planning, not the work behind it
+	}
+	s.Hub.ServeWS(w, r, sub)
 }
 
 // chatKey names a user's general chat in their org.

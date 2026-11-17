@@ -61,6 +61,16 @@ func (g *Git) Tags(ctx context.Context, projectID, repo string) ([]string, error
 	return strings.Split(out, "\n"), nil
 }
 
+// TagsContaining lists the local repository's tags whose commit has sha in
+// its history: the releases that shipped it.
+func (g *Git) TagsContaining(ctx context.Context, projectID, repo, sha string) ([]string, error) {
+	out, err := g.run(ctx, false, projectID, repo, "git", "tag", "--contains", sha)
+	if err != nil || out == "" {
+		return nil, err
+	}
+	return strings.Split(out, "\n"), nil
+}
+
 // HasTag reports whether the local repository has the tag.
 func (g *Git) HasTag(ctx context.Context, projectID, repo, tag string) bool {
 	_, err := g.run(ctx, false, projectID, repo, "git", "rev-parse", "--verify", "--quiet", "refs/tags/"+tag)

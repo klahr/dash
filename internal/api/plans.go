@@ -33,7 +33,7 @@ import (
 // /api/goals), and marks the plan launched. GET …/launch gives it the
 // files and the goal's text.
 
-func (s *Server) planRoutes(mux *http.ServeMux) {
+func (s *Server) planRoutes(mux routeMux) {
 	mux.HandleFunc("GET /api/plans", s.listPlans)
 	mux.HandleFunc("POST /api/plans", s.createPlan)
 	mux.HandleFunc("GET /api/plans/{id}", s.getPlan)

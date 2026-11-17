@@ -19,7 +19,7 @@ import (
 // version, 0 without one; the web client asks for ?v={avatar}, which may be
 // cached for good.
 
-func (a *Auth) avatarRoutes(mux *http.ServeMux) {
+func (a *Auth) avatarRoutes(mux Mux) {
 	mux.HandleFunc("PUT /api/account/avatar", a.sessionOnly(a.putAvatar))
 	mux.HandleFunc("DELETE /api/account/avatar", a.sessionOnly(a.deleteAvatar))
 	mux.HandleFunc("GET /api/users/{uid}/avatar", a.signedIn(a.getAvatar))

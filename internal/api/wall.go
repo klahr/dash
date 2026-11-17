@@ -634,7 +634,7 @@ func (s *Server) wallAdmin(w http.ResponseWriter, r *http.Request) (Caller, bool
 	return c, true
 }
 
-func (s *Server) wallTokenRoutes(mux *http.ServeMux) {
+func (s *Server) wallTokenRoutes(mux routeMux) {
 	mux.Handle("GET /api/wall/tokens", auth.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, ok := s.wallAdmin(w, r)
 		if !ok {

@@ -67,6 +67,9 @@ type Subscriber struct {
 	Org  int64
 	User int64
 	All  bool
+	// Only, if set, picks the event types the subscriber receives (a
+	// planner's dashboard: Planning's only).
+	Only func(model.EventType) bool
 }
 
 type Hub struct {
@@ -109,6 +112,9 @@ func (h *Hub) Publish(ev model.Event) {
 		}
 		if ev.UserID != 0 && (c.sub.All || c.sub.User != ev.UserID) {
 			continue // someone else's (their own chat, say)
+		}
+		if c.sub.Only != nil && !c.sub.Only(ev.Type) {
+			continue
 		}
 		select {
 		case c.send <- ev:

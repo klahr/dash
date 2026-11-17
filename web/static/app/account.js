@@ -60,8 +60,12 @@ export async function switchOrg(o) {
   location.reload(); // everything on the page belongs to the org it was loaded in
 }
 
-const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member" };
-const RANK = { member: 1, admin: 2, owner: 3 };
+const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member", planner: "Planner" };
+// RANK is who may grant what: admins grant up to admin, owners anything. A
+// planner (Planning only) ranks lowest here; what they may use is the
+// server's to say (internal/api/planner.go).
+const RANK = { planner: 0, member: 1, admin: 2, owner: 3 };
+const ROLE_ARTICLE = { owner: "an owner", admin: "an admin", member: "a member", planner: "a planner" };
 
 // askPassword asks for the user's password again before a sensitive change.
 // An account made by signing in with Google has none: a recent Google
@@ -109,7 +113,7 @@ async function renderOrg() {
     $("#org-slug-row").hidden = $("#org-slug-hint").hidden = mine !== "owner";
     $("#org-slug").value = org.org.slug;
   }
-  $("#org-role").textContent = `You are ${mine === "admin" ? "an admin" : `${mine === "owner" ? "an owner" : "a member"}`} of ${org.org.name}.` +
+  $("#org-role").textContent = `You are ${ROLE_ARTICLE[mine] || "a member"} of ${org.org.name}.` +
     (org.org.personal ? " This is your personal workspace: create an organization to work with others." :
       manage ? " Owners and admins invite people and change roles; only owners make owners." : "");
   const roleSelect = (m) => {

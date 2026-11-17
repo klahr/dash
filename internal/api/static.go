@@ -77,6 +77,8 @@ var pages = map[string]string{
 	"/index.html":  "index.html",
 	"/login.html":  "login.html",
 	"/invite.html": "invite.html",
+	// Planning on its own, for planners (see planner.go).
+	"/planning.html": "planning.html",
 }
 
 // manifest serves the web app manifest with the product's name, so an
@@ -109,6 +111,11 @@ func (s *Server) static() http.Handler {
 	files := http.FileServerFS(s.Static)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
+		// A planner uses Planning only: the app's page sends them to theirs.
+		if (r.URL.Path == "/" || r.URL.Path == "/index.html") && planner(r) {
+			http.Redirect(w, r, "/planning.html", http.StatusFound)
+			return
+		}
 		if name, ok := pages[r.URL.Path]; ok {
 			b, err := fs.ReadFile(s.Static, name)
 			if err != nil {

@@ -775,7 +775,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .file-status.st-D { color: var(--failed); }
 .file-status:is(.st-R, .st-C) { color: var(--accent); }
 /* The close button: Back on a phone, ✕ on a desktop. A phone shows the whole message (its pane scrolls). */
-#cd-close .cd-x, #gd-close .cd-x, .commit-message-more { display: none; }
+#cd-close .cd-x, #gd-close .cd-x, #pd-close .cd-x, .commit-message-more { display: none; }
 .project-list button.menu-choice { flex-direction: row; align-items: center; gap: 10px; }
 .project-list button.menu-choice:disabled { opacity: .55; cursor: not-allowed; }
 .menu-choice .menu-note { font-style: normal; font-weight: 400; font-size: var(--fs-s); color: var(--muted); margin-left: auto; }
@@ -1989,7 +1989,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 
   /* Bottom nav: Board · Chat · Issues · Shell · Files. Scans and History are in the
      menu drawer (.menu-views); the Chat tab replaces the top bar's chat button. */
-  .nav > button:is([data-view="scans"], [data-view="history"], [data-view="goals"], [data-view="checklist"]), #pc-open { display: none; }
+  .nav > button:is([data-view="scans"], [data-view="history"], [data-view="goals"], [data-view="planning"], [data-view="checklist"]), #pc-open { display: none; }
   /* Open issues nobody has dealt with yet: a dot on the Issues icon (the count is in its title). */
   .nav #issue-badge {
     top: 10px; left: calc(50% + 8px); min-width: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%;
@@ -2170,12 +2170,23 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .chat-pinned.chat-open .goal-detail { width: min(820px, calc((100vw - var(--side-w) - var(--chat-pane-w)) * .62)); }
   /* With a goal open, the list moves over to stay beside it. */
   .app:has(#goal-detail:not([hidden])) .page.goals { margin-left: 0; max-width: min(860px, calc(100% - min(820px, 62%))); }
-  :is(.commit-detail, .goal-detail) .detail-head { flex-direction: row-reverse; padding: 8px 8px 0 24px; border-bottom: 0; }
-  :is(#cd-close, #gd-close) .cd-back { display: none; }
-  :is(#cd-close, #gd-close) .cd-x { display: block; }
-  :is(.commit-detail, .goal-detail) .detail-titles { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding-top: 6px; }
-  :is(.commit-detail, .goal-detail) .detail-titles h2 { flex-basis: 100%; }
-  :is(.commit-detail, .goal-detail) .detail-meta { margin-top: 0; }
+  /* A planning card's pane lies beside the board (app/planning.js), headed like the goal's;
+     the board keeps to the room left of it and scrolls sideways when that is narrow. */
+  .card-detail { width: min(640px, calc((100vw - var(--side-w)) * .46)); }
+  .chat-pinned.chat-open .card-detail { width: min(640px, calc((100vw - var(--side-w) - var(--chat-pane-w)) * .46)); }
+  .app:has(#card-detail:not([hidden])) .page.planning { margin-left: 0; max-width: calc(100% - min(640px, 46%)); }
+  .card-detail .detail-head { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+  .card-detail .detail-body { padding: var(--sp-4) 24px var(--sp-6); }
+  .pl-board { grid-auto-flow: row; grid-template-columns: repeat(4, minmax(200px, 1fr)); overflow-x: auto; scroll-snap-type: none; }
+  /* planning.html: no sidebar, the board under the top bar. */
+  .planning-app { --side-w: 0px; grid-template: "top" var(--top-h) "main" 1fr / 1fr; }
+  .planning-app .brand { width: auto; }
+  :is(.commit-detail, .goal-detail, .card-detail) .detail-head { flex-direction: row-reverse; padding: 8px 8px 0 24px; border-bottom: 0; }
+  :is(#cd-close, #gd-close, #pd-close) .cd-back { display: none; }
+  :is(#cd-close, #gd-close, #pd-close) .cd-x { display: block; }
+  :is(.commit-detail, .goal-detail, .card-detail) .detail-titles { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding-top: 6px; }
+  :is(.commit-detail, .goal-detail, .card-detail) .detail-titles h2 { flex-basis: 100%; }
+  :is(.commit-detail, .goal-detail, .card-detail) .detail-meta { margin-top: 0; }
   .commit-detail .commit-actions { margin: 0 0 0 auto; }
   .goal-detail .detail-head { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
   .goal-detail .detail-body { padding: var(--sp-4) 24px var(--sp-6); }
@@ -3150,3 +3161,99 @@ button.goal-task-open:hover { background: var(--raised); }
 .choice legend em { font-style: normal; font-weight: 400; color: var(--faint); }
 @media (max-width: 1023px) { .split-dep { min-height: 36px; min-width: 36px; } }
 :is(.goal-note, .goal-review) .reply :is(p, ul, ol):last-child { margin-bottom: 0; }
+
+/* ---------- Planning (app/planning.js) ----------
+   The org's plan: four columns of cards, a card's status from its linked work
+   in tones (t-*), and its pane beside the board (full screen on a phone). On a
+   phone the columns scroll sideways, one at a time. */
+.page.planning { max-width: 1440px; }
+.pl-head { flex-wrap: wrap; }
+.pl-head .pl-new { margin-left: auto; }
+.pl-filter select { min-height: 32px; max-width: 220px; }
+.pl-intro { margin: 0 0 12px; }
+.pl-board {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(240px, 84vw); gap: 12px;
+  overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 8px; align-items: start;
+}
+.pl-col { scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-m); background: color-mix(in srgb, var(--surface) 55%, transparent); }
+.pl-col-head { display: flex; align-items: baseline; gap: 8px; margin: 0 2px; font-size: var(--fs-m); font-weight: 600; color: var(--muted); }
+.pl-count { font-weight: 500; font-size: var(--fs-s); color: var(--faint); }
+.pl-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; min-height: 40px; border-radius: var(--r-s); transition: background-color .15s; }
+.pl-cards.drop { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.pl-card { position: relative; }
+.pl-card.dragging { opacity: .4; }
+.pl-ghost { position: fixed; top: 0; left: 0; z-index: 60; list-style: none; pointer-events: none; box-shadow: var(--shadow-3); border-radius: var(--r-m); opacity: .95; }
+.pl-open { touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.pl-card.drop-before::before, .pl-card.drop-after::after { content: ""; position: absolute; left: 4px; right: 4px; height: 3px; border-radius: 2px; background: var(--accent); }
+.pl-card.drop-before::before { top: -6px; }
+.pl-card.drop-after::after { bottom: -6px; }
+.pl-open {
+  display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 10px 12px; text-align: left; cursor: grab;
+  border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); transition: border-color .15s, background-color .15s;
+}
+.pl-open:hover { border-color: var(--faint); }
+.pl-card.selected .pl-open { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); box-shadow: inset 3px 0 0 var(--accent); }
+.pl-title { font-weight: 600; overflow-wrap: anywhere; }
+.pl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--fs-xs); color: var(--muted); }
+.pl-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--raised); }
+.pl-chip .ico, .pl-comments .ico { width: 12px; height: 12px; }
+.pl-chip.p-high { color: var(--failed); background: color-mix(in srgb, var(--failed) 14%, transparent); }
+.pl-chip.p-medium { color: var(--review); background: color-mix(in srgb, var(--review) 14%, transparent); }
+.pl-comments { display: inline-flex; align-items: center; gap: 3px; }
+.pl-project { color: var(--faint); }
+.pl-status, .pl-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--fs-s); color: var(--c, var(--muted)); }
+.pl-status-text { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.pl-status-text::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--muted)); flex: none; }
+.pl-progress { color: var(--muted); font-weight: 500; }
+.t-none, .t-idle { --c: var(--muted); }
+.t-working { --c: var(--running); }
+.t-waiting { --c: var(--review); }
+.t-failed { --c: var(--failed); }
+.t-done, .t-shipped { --c: var(--merged); }
+.pl-suggest { align-self: flex-start; font-size: var(--fs-xs); font-weight: 600; color: var(--merged); }
+.pl-add { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: var(--r-s); color: var(--muted); font-size: var(--fs-s); }
+.pl-add:hover { color: var(--text); background: var(--raised); }
+.pl-add .ico { width: 14px; height: 14px; }
+
+.card-detail { z-index: 34; }
+.card-detail .detail-titles h2 { overflow-wrap: anywhere; }
+.pl-col-tag { padding: 1px 8px; border-radius: var(--r-pill); background: var(--raised); color: var(--text); }
+.pl-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 12px; margin: 0 0 20px; }
+.pl-field { margin: 0; }
+.pl-field select, .pl-field input { width: 100%; }
+.pl-section { margin: 0 0 22px; }
+.pl-section h3 { margin: 0 0 8px; font-size: var(--fs-m); color: var(--muted); }
+.pl-desc { overflow-wrap: anywhere; }
+.pl-edit { display: grid; gap: 10px; }
+.pl-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.pl-suggest-box { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 18px; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--merged) 45%, var(--line)); border-radius: var(--r-m); background: color-mix(in srgb, var(--merged) 10%, var(--surface)); }
+.pl-suggest-box p { margin: 0; flex: 1; }
+.pl-links, .pl-pick, .pl-comments-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.pl-link { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); box-shadow: inset 3px 0 0 var(--c, var(--line)); }
+.pl-link-kind { color: var(--muted); display: inline-flex; }
+.pl-link-kind .ico { width: 16px; height: 16px; }
+.pl-link-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; text-align: left; }
+.pl-link-title { font-weight: 600; overflow-wrap: anywhere; text-align: left; }
+.pl-link-sub { font-size: var(--fs-xs); color: var(--muted); }
+.pl-state { flex: none; font-weight: 600; }
+.pl-comment { padding: 8px 10px; border-radius: var(--r-m); background: var(--surface); border: 1px solid var(--line); }
+.pl-comment-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-s); }
+.pl-comment-head time { color: var(--muted); margin-right: auto; }
+.pl-comment-text { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pl-comment-form { display: grid; gap: 8px; margin-top: 10px; }
+.pl-comment-form .btn { justify-self: end; }
+.pl-danger { display: flex; justify-content: flex-end; padding-top: 8px; border-top: 1px solid var(--line); }
+.pl-sheet .pl-pick { max-height: min(50dvh, 420px); overflow-y: auto; margin: 10px 0 4px; }
+.pl-sheet input[type="search"] { width: 100%; }
+.pl-pick-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); text-align: left; }
+.pl-pick-item:hover:not(:disabled) { border-color: var(--accent); }
+.pl-pick-item:disabled { opacity: .6; cursor: default; }
+.pl-pick-item .ico { width: 16px; height: 16px; flex: none; color: var(--muted); }
+
+/* planning.html's top bar: the org, the live dot and the account menu. */
+.pl-topbar .pl-org { margin-right: auto; color: var(--muted); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-topbar .pl-who { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: var(--r-s); cursor: pointer; list-style: none; }
+.pl-topbar .pl-who svg { width: 18px; height: 18px; }
+.planning-app main { padding-bottom: var(--safe-b); }
+.pl-topbar .foot-menu-list a { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border-radius: var(--r-s); color: var(--text); text-decoration: none; font-size: var(--fs-m); white-space: nowrap; }
+.pl-topbar .foot-menu-list a:hover { background: var(--raised); }

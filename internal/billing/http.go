@@ -13,6 +13,12 @@ import (
 	"github.com/klahr/dash/internal/store"
 )
 
+// Mux is where Routes registers its routes (see auth.Mux).
+type Mux interface {
+	Handle(pattern string, handler http.Handler)
+	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
+}
+
 // Routes adds billing's routes. With billing off (s nil), GET answers
 // {"enabled": false} and the rest 404.
 //
@@ -26,7 +32,7 @@ import (
 //	DELETE /api/admin/orgs/{oid}/billing    platform admins: clear the override
 //
 // They take a browser session, not a token: billing is for people.
-func (s *Service) Routes(mux *http.ServeMux) {
+func (s *Service) Routes(mux Mux) {
 	mux.Handle("GET /api/orgs/{oid}/billing", auth.RequireSession(http.HandlerFunc(s.state)))
 	mux.Handle("POST /api/orgs/{oid}/billing/checkout", auth.RequireSession(s.ownerOnly(s.checkout)))
 	mux.Handle("POST /api/orgs/{oid}/billing/portal", auth.RequireSession(s.ownerOnly(s.portal)))

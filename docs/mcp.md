@@ -103,8 +103,8 @@ also a queued task, when you ask to start it now despite the weekly pace), `stop
 draft, queued or failed tasks, when you ask to remove one), `create_release`, `list_issues` and
 `report_issue`, and the checklist tools on the project's `TODO.md` (`read_checklist`,
 `add_checklist_item`, `check_checklist_item`, `edit_checklist_item`, `delete_checklist_item`,
-`reorder_checklist_item`, `move_checklist_item_to_task`; see [Checklist](checklist.md)), and the
-[goal tools](#goals). A read-only chat calls them without asking, except `create_release` and the
+`reorder_checklist_item`, `move_checklist_item_to_task`; see [Checklist](checklist.md)), the
+[goal tools](#goals) and the [planning tools](#planning). A read-only chat calls them without asking, except `create_release` and the
 checklist tools that change `TODO.md` (all of them but `read_checklist`), which it can't use; a shell chat asks for the ones that change something. They act as the user chatting,
 in the org they're working in.
 
@@ -186,6 +186,19 @@ the **Goals** page:
 
 A read-only connector (`scope=read`) can only use `list_goals` and `get_goal`. A shell chat asks
 before it uses the others.
+
+## Planning
+
+Dash's chats' `dash_board` reads and adds to the org's [plan](planning.md):
+
+- `list_cards(project?, column?)`: the cards with their column, priority, target and the status
+  of their linked work. In a project chat, that project's cards.
+- `create_card(title, description?, project?, column?, priority?, target?)`: add a card. It
+  starts no work.
+- `link_card(card, todo?, goal?)`: link a task or a goal to a card, so the card shows its
+  status. In a project chat, only that project's work, to its cards or cards of no project.
+
+A shell chat asks before it uses `create_card` and `link_card`.
 
 ## A goal's coordinator
 

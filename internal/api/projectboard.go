@@ -253,3 +253,39 @@ func (pb projectBoard) MessageGoal(id, text string) (mcptools.GoalView, error) {
 	}
 	return pb.b.MessageGoal(id, text)
 }
+
+// The planning tools in a project's run: the cards of its project, and
+// links from those (or cards of no project) to its own tasks and goals.
+
+func (pb projectBoard) Cards(projectID string) ([]mcptools.CardRow, error) {
+	if err := pb.check(projectID); err != nil {
+		return nil, err
+	}
+	return pb.b.Cards(pb.project)
+}
+
+func (pb projectBoard) CreateCard(nc mcptools.NewCard) (mcptools.CardRow, error) {
+	if err := pb.check(nc.Project); err != nil {
+		return mcptools.CardRow{}, err
+	}
+	nc.Project = pb.project
+	return pb.b.CreateCard(nc)
+}
+
+func (pb projectBoard) LinkCard(cardID, kind, workID string) (mcptools.CardRow, error) {
+	c, err := pb.b.sv.data.GetCard(cardID)
+	if err != nil || (c.ProjectID != "" && c.ProjectID != pb.project) {
+		return mcptools.CardRow{}, fmt.Errorf("no card %q (see list_cards)", cardID)
+	}
+	switch kind {
+	case model.LinkTask:
+		if _, err := pb.todo(workID); err != nil {
+			return mcptools.CardRow{}, err
+		}
+	case model.LinkGoal:
+		if err := pb.goal(workID); err != nil {
+			return mcptools.CardRow{}, err
+		}
+	}
+	return pb.b.LinkCard(cardID, kind, workID)
+}

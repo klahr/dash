@@ -43,7 +43,7 @@ import (
 	"github.com/klahr/dash/internal/tunnel"
 )
 
-func (s *Server) tryRoutes(mux *http.ServeMux) {
+func (s *Server) tryRoutes(mux routeMux) {
 	// The hub's side, for the UI and the chat's read_try_terminal.
 	mux.HandleFunc("GET /api/projects/{pid}/try", s.getTry)
 	mux.HandleFunc("POST /api/projects/{pid}/try", s.startTry)

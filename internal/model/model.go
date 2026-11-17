@@ -958,7 +958,13 @@ const (
 	EvScanTemplate   EventType = "scan.template"      // a Dash scan template was created, edited or deleted; Data is {"name": …, "deleted": bool}
 	EvGoalUpdated    EventType = "goal.updated"       // a goal was created or changed; Data is the Goal (without its log)
 	EvProjectChat    EventType = "project.chat"       // a user's own chat about a project was saved or cleared, or a turn of it began or ended; Data is {"busy": bool} from a turn, nil from a save. Sent to that user only
+	EvPlanningCard   EventType = "planning.card"      // a planning card was created, changed, moved, commented, linked or deleted; Data is {"card": id, "deleted": bool}
+	EvPlanningWork   EventType = "planning.work"      // a task or goal linked to planning cards changed; Data is {"cards": [ids]}
 )
+
+// PlanningEvent reports whether t is a Planning event: all a planner's
+// dashboard receives.
+func PlanningEvent(t EventType) bool { return strings.HasPrefix(string(t), "planning.") }
 
 // RunnerDisk is a runner's disk space crossing its low-space threshold.
 type RunnerDisk struct {

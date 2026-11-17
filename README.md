@@ -201,7 +201,8 @@ API is `POST /api/projects/{id}/pause` and `POST /api/projects/{id}/resume`.
 - [Chat](docs/chat.md): the general, project and task chats, and running shell commands from them with `!`
 - [Goals](docs/goals.md): a coordinator that plans, dispatches and reviews a goal's tasks, within a budget, and never merges
 - [Plan a new project](docs/plan-project.md): Claude interviews you about an idea, writes a brief, and Dash starts the project and a goal from it
-- [Users and organizations](docs/users.md): accounts, roles, invitations, two-factor sign-in
+- [Planning](docs/planning.md): the org's plan for a product owner, cards from Ideas to Done that link to the tasks and goals carrying them out and show their status in plain words; planners see only this
+- [Users and organizations](docs/users.md): accounts, roles (including planners, who use Planning only), invitations, two-factor sign-in
 - [Your data, terms and privacy](docs/privacy.md): download what Dash keeps about you, delete your account, what to publish before strangers sign up (with starter terms and a privacy policy the hub can serve), and what a hub stores
 - [Open signup and email](docs/signup.md): self-service accounts, personal workspaces, password reset (off by default)
 - [Billing](docs/billing.md): per-seat Stripe subscriptions for organizations of two or more (off by default)

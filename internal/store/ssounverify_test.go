@@ -64,10 +64,16 @@ func TestMigrateUnverifiesGoogleDomains(t *testing.T) {
 	}
 }
 
-// undoBillingFree undoes migrations 0025 to 0027, for tests that run the
-// migrations after an earlier one again.
+// undoBillingFree undoes migrations 0025 to 0028, for tests that run the
+// migrations after an earlier one again. (0028's copy of the membership
+// tables can run again as it is.)
 func undoBillingFree(t *testing.T, db *sql.DB) {
 	t.Helper()
+	for _, table := range []string{"planning_links", "planning_comments", "planning_cards"} { // 0028
+		if _, err := db.Exec("DROP TABLE " + table); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, undo := range []string{"DROP TABLE user_avatars", "ALTER TABLE users DROP COLUMN avatar_at"} { // 0027
 		if _, err := db.Exec(undo); err != nil {
 			t.Fatal(err)

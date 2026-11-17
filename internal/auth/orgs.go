@@ -11,6 +11,13 @@ import (
 	"github.com/klahr/dash/internal/store"
 )
 
+// Mux is where Routes registers its routes: an http.ServeMux, or the API's
+// mux that records them.
+type Mux interface {
+	Handle(pattern string, handler http.Handler)
+	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
+}
+
 // Routes adds sign-in, the signed-in user, orgs, members and invitations:
 //
 //	POST   /api/login, /api/logout
@@ -37,7 +44,7 @@ import (
 // Changing roles, removing members, inviting and making tokens ask for the
 // password again. Requests with a token may read but not manage members,
 // invitations or credentials (sessionOnly; see RequireSession).
-func (a *Auth) Routes(mux *http.ServeMux) {
+func (a *Auth) Routes(mux Mux) {
 	mux.HandleFunc("POST /api/login", a.Login)
 	mux.HandleFunc("POST /api/logout", a.Logout)
 	mux.HandleFunc("GET /api/me", a.me)

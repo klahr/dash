@@ -20,7 +20,7 @@ import (
 // but never approves or merges them. These are the REST endpoints, what the
 // user does with a goal, and the board its coordinator's tools act on.
 
-func (s *Server) goalRoutes(mux *http.ServeMux) {
+func (s *Server) goalRoutes(mux routeMux) {
 	mux.HandleFunc("GET /api/goals", s.listGoals)
 	mux.HandleFunc("GET /api/projects/{pid}/goals", s.listGoals)
 	mux.HandleFunc("POST /api/goals", s.createGoal)

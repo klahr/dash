@@ -61,7 +61,7 @@ type linkResult struct {
 	CloneError string        `json:"clone_error,omitempty"`
 }
 
-func (s *Server) runnerLinkRoutes(mux *http.ServeMux) {
+func (s *Server) runnerLinkRoutes(mux routeMux) {
 	mux.HandleFunc("GET /api/runners/{id}/links", s.runnerLinks)
 	mux.HandleFunc("POST /api/runners/{id}/links", s.linkToRunner)
 }

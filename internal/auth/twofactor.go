@@ -52,7 +52,7 @@ var (
 	errTicketExpired = errors.New("sign-in timed out; enter your password again")
 )
 
-func (a *Auth) twoFactorRoutes(mux *http.ServeMux) {
+func (a *Auth) twoFactorRoutes(mux Mux) {
 	mux.HandleFunc("POST /api/login/totp", a.loginTOTP)
 	// The second factor is a credential and requiring it is managing the
 	// org: a token may do neither.

@@ -103,6 +103,12 @@ type Store struct {
 	// SlugReserved, if set, reports whether a slug is reserved for org
 	// subdomains (default: DefaultReservedSlugs). Set it before serving.
 	SlugReserved func(slug string) bool
+
+	// planLinks indexes the planning cards' links by what they link to
+	// (linkKey), so a change to a linked task or goal is announced to
+	// Planning (see emitTo). Its own lock: emitTo runs under mu.
+	planMu    sync.Mutex
+	planLinks map[string][]planRef
 }
 
 func NewID() string {
@@ -150,6 +156,9 @@ func open(db *sql.DB, path string, pub Publisher) (*Store, error) {
 	}
 	s := &Store{db: db, pub: pub, data: data}
 	s.indexOrgsLocked()
+	if err := s.loadPlanLinks(); err != nil {
+		return nil, err
+	}
 	var projects []*model.Project
 	for _, p := range s.data.Projects {
 		if clean := CleanPath(p.Path); clean != p.Path {
@@ -254,6 +263,7 @@ func (s *Store) emitTo(org int64, t model.EventType, projectID, todoID string, d
 	}
 	if s.pub != nil {
 		s.pub.Publish(model.Event{Type: t, ProjectID: projectID, TodoID: todoID, Data: data, Time: time.Now(), OrgID: org})
+		s.emitLinked(t, todoID, data)
 	}
 }
 
@@ -447,6 +457,10 @@ func (s *Store) DeleteProject(id string) ([]model.Todo, error) {
 			}
 		}
 		if _, err := tx.Exec("DELETE FROM chat_messages WHERE kind = ? AND substr(owner_id, 1, length(?2) + 1) = ?2 || ':'", chatProject, id); err != nil {
+			return err
+		}
+		// Planning cards outlive their project: they become the org's.
+		if _, err := tx.Exec("UPDATE planning_cards SET project_id = '' WHERE project_id = ?", id); err != nil {
 			return err
 		}
 		return deleteRow(tx, "projects", id)

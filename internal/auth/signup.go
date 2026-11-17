@@ -77,7 +77,7 @@ func (a *Auth) EnableSignup() error {
 // a personal workspace and may create orgs.
 func (a *Auth) SignupOpen() bool { return a.signupOpen }
 
-func (a *Auth) signupRoutes(mux *http.ServeMux) {
+func (a *Auth) signupRoutes(mux Mux) {
 	mux.HandleFunc("GET /api/signup", a.signupStatus)
 	mux.HandleFunc("POST /api/signup", a.signUp)
 	mux.HandleFunc("POST /api/signup/resend", a.resendVerification)

@@ -12,6 +12,7 @@ import { openGoalChat } from "./chatpane.js";
 import { fmtTokens } from "./runstats.js";
 import { notifyGoal } from "./notifications.js";
 import { showView } from "./nav.js";
+import { linkToCard } from "./planning.js";
 
 // ------------------------------------------------------------------ goals
 // A goal is something bigger than one task: a coordinator (Claude) plans its
@@ -337,6 +338,7 @@ function renderGoalActions(g) {
     active ? btn("pause", "Pause", () => goalAction(g, "pause"), "btn small", "Hold the coordinator; the tasks carry on") : null,
     resumable ? btn("play", "Resume", () => goalAction(g, "resume"), "btn small", g.status === "out_of_budget" ? "Raise the budget first (Edit goal)" : "Go on where it was") : null,
     g.status !== "done" ? btn("edit", "Edit goal", () => openGoalSheet({ goal: g })) : null,
+    prefix() ? null : btn("plan", "Link to card", () => linkToCard("goal", g.id), "btn small", "Show this goal's status on a Planning card"),
     g.status !== "done" ? btn("stop", "Stop", () => stopGoal(g), "btn small danger", "End the goal for good; its tasks stay on the board") : null);
 }
 

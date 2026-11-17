@@ -220,6 +220,19 @@ func (f Format) Resolve(tags []string, version, bump string) (Tag, error) {
 	return Tag{f.Render(v), v}, nil
 }
 
+// Earliest is the tag with the lowest version among tags in this format
+// (others are ignored): of the releases that contain a commit, the one that
+// first shipped it. ok is false when there is none.
+func (f Format) Earliest(tags []string) (first Tag, ok bool) {
+	for _, t := range tags {
+		v, match := f.Parse(t)
+		if match && (!ok || v.Less(first.Version)) {
+			first, ok = Tag{t, v}, true
+		}
+	}
+	return first, ok
+}
+
 // SortTags orders the tags in this format by version, highest first.
 func (f Format) SortTags(tags []string) []Tag {
 	var out []Tag
