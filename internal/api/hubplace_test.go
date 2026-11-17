@@ -193,6 +193,40 @@ func TestHubLinkNameClashes(t *testing.T) {
 	}
 }
 
+// placeHub is hubPlace with hubLinks held, as hubLink calls it.
+func placeHub(s *Server, sv *service, hpid, folder, name, remote string) (hubPlacement, error) {
+	hubLinks.Lock()
+	defer hubLinks.Unlock()
+	return s.hubPlace(context.Background(), sv, hpid, folder, name, remote)
+}
+
+// A folder another link picked, and is cloning into, isn't picked again.
+func TestHubPlaceSkipsReservedFolders(t *testing.T) {
+	parallel(t)
+	s, _, _ := runnerSide(t, 7)
+	sv := s.as(ownerCaller(t, s))
+	remote := "https://github.com/reserved-owner/reserved-repo.git"
+	dir := filepath.Join(s.ProjectRoot, "org-7", "reserved-owner")
+	first := filepath.Join(dir, "reserved-repo")
+	hubLinks.Lock()
+	hubReserved[first] = true
+	hubLinks.Unlock()
+	t.Cleanup(func() {
+		hubLinks.Lock()
+		delete(hubReserved, first)
+		hubLinks.Unlock()
+	})
+	if place, err := placeHub(s, sv, "hp", "org-7", "", remote); err != nil || place.Path != filepath.Join(dir, "reserved-repo-2") {
+		t.Errorf("placed %+v %v, want %s", place, err, filepath.Join(dir, "reserved-repo-2"))
+	}
+	hubLinks.Lock()
+	got, err := freeHubFolder(sv, dir, "reserved-repo")
+	hubLinks.Unlock()
+	if err != nil || got != filepath.Join(dir, "reserved-repo-2") {
+		t.Errorf("freeHubFolder = %s %v, want reserved-repo-2", got, err)
+	}
+}
+
 // The folder is named after the remote, cleaned of anything a path could
 // use to leave the projects folder; the hub never sends a path.
 func TestHubPlaceStaysInTheProjectsFolder(t *testing.T) {
@@ -216,7 +250,7 @@ func TestHubPlaceStaysInTheProjectsFolder(t *testing.T) {
 	s, _, _ := runnerSide(t, 7)
 	sv := s.as(ownerCaller(t, s))
 	for _, remote := range []string{"https://github.com/x/..git", "https://github.com/x/...git", "git@github.com:x/.git"} {
-		place, err := s.hubPlace(context.Background(), sv, "hp", "org-7", "", remote)
+		place, err := placeHub(s, sv, "hp", "org-7", "", remote)
 		if err != nil || filepath.Dir(place.Path) != filepath.Join(s.ProjectRoot, "org-7", "x") {
 			t.Errorf("%s: %+v %v", remote, place, err)
 		}
@@ -226,17 +260,17 @@ func TestHubPlaceStaysInTheProjectsFolder(t *testing.T) {
 		"git@github.com:klahr/dash.git":     filepath.Join(s.ProjectRoot, "org-7", "klahr", "dash"),
 		"https://github.com/../dash.git":    filepath.Join(s.ProjectRoot, "org-7", "dash"),
 	} {
-		if place, err := s.hubPlace(context.Background(), sv, "hp", "org-7", "", remote); err != nil || place.Path != want {
+		if place, err := placeHub(s, sv, "hp", "org-7", "", remote); err != nil || place.Path != want {
 			t.Errorf("%s: %+v %v, want %s", remote, place, err, want)
 		}
 	}
 	for _, folder := range []string{"", "..", "a/b", "Org"} {
-		if place, err := s.hubPlace(context.Background(), sv, "hp", folder, "x", "https://github.com/x/y.git"); err == nil {
+		if place, err := placeHub(s, sv, "hp", folder, "x", "https://github.com/x/y.git"); err == nil {
 			t.Errorf("placed in org folder %q: %+v", folder, place)
 		}
 	}
 	s.ProjectRoot = ""
-	if _, err := s.hubPlace(context.Background(), sv, "hp", "org-7", "x", "https://github.com/x/y.git"); err == nil {
+	if _, err := placeHub(s, sv, "hp", "org-7", "x", "https://github.com/x/y.git"); err == nil {
 		t.Error("placed without a projects folder")
 	}
 }

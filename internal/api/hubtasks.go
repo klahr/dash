@@ -254,16 +254,44 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 	// later link, and fail on.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), hubLinkTimeout)
 	defer cancel()
-	hubLinks.Lock() // two links never pick the same free folder
-	defer hubLinks.Unlock()
-	if p, ok := sv.hubProject(hpid); ok { // linked while this waited
-		writeJSON(w, http.StatusOK, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch, Path: p.Path})
-		return
-	}
-	place, err := s.hubPlace(ctx, sv, hpid, folder, req.Name, req.RemoteURL, cloneURL)
-	if err != nil {
-		writeErr(w, err)
-		return
+	// The folder is picked and reserved under hubLinks; the clone and the
+	// rest run without it, so one large clone doesn't hold up other links.
+	var place hubPlacement
+	for {
+		hubLinks.Lock()
+		if p, ok := sv.hubProject(hpid); ok { // linked while this waited
+			hubLinks.Unlock()
+			writeJSON(w, http.StatusOK, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch, Path: p.Path})
+			return
+		}
+		if done, busy := hubLinking[hpid]; busy { // the same project is being linked: wait for it, then look again
+			hubLinks.Unlock()
+			select {
+			case <-done:
+				continue
+			case <-r.Context().Done():
+				writeErr(w, r.Context().Err())
+				return
+			}
+		}
+		var err error
+		place, err = s.hubPlace(ctx, sv, hpid, folder, req.Name, req.RemoteURL, cloneURL)
+		if err != nil {
+			hubLinks.Unlock()
+			writeErr(w, err)
+			return
+		}
+		done := make(chan struct{})
+		hubLinking[hpid], hubReserved[place.Path] = done, true
+		hubLinks.Unlock()
+		defer func() {
+			hubLinks.Lock()
+			delete(hubLinking, hpid)
+			delete(hubReserved, place.Path)
+			close(done)
+			hubLinks.Unlock()
+		}()
+		break
 	}
 	path, id := place.Path, store.NewID()
 	if place.Own != nil {
@@ -337,8 +365,18 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch, Path: p.Path, Adopted: place.Adopt})
 }
 
-// hubLinks serialises linking, which picks folders.
+// hubLinks guards picking folders (links and moves) and hubReserved and
+// hubLinking. It is held only while a folder is picked, never across a
+// clone or other network work.
 var hubLinks sync.Mutex
+
+// hubReserved are the folders links in progress have picked, so no other
+// link or move picks them too before their project is stored.
+var hubReserved = map[string]bool{}
+
+// hubLinking are the hub's projects being linked now, each with a channel
+// closed when its link finishes, so a second link of one waits for it.
+var hubLinking = map[string]chan struct{}{}
 
 // hubLinkTimeout bounds a link, its first clone included.
 const hubLinkTimeout = 30 * time.Minute
@@ -445,6 +483,9 @@ func (s *Server) hubPlace(ctx context.Context, sv *service, hpid, folder, name, 
 		path := filepath.Join(dir, folder)
 		if !fsutil.Within(root, path) || path == dir || filepath.Dir(path) != dir {
 			return hubPlacement{}, fmt.Errorf("%w: bad project name", errBadRequest)
+		}
+		if hubReserved[path] {
+			continue // another link in progress picked it
 		}
 		own, isProject := projects[path]
 		fi, err := os.Lstat(path)

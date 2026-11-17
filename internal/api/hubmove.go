@@ -276,7 +276,7 @@ func freeHubFolder(sv *service, dir, base string) (string, error) {
 		if filepath.Dir(path) != dir || strings.HasPrefix(name, ".") {
 			return "", fmt.Errorf("bad folder name %q", name)
 		}
-		if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) && !taken[path] {
+		if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) && !taken[path] && !hubReserved[path] {
 			return path, nil
 		}
 	}
