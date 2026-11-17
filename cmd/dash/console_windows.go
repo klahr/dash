@@ -48,7 +48,7 @@ func hideConsole() {
 	_, _, _ = procShowWindow.Call(hwnd, swHide)
 }
 
-// superviseRunner runs the runner under a supervisor (see supervise.go) when
+// superviseRunner runs the runner under a supervisor (supervise) when
 // this is `dash runner -log-file …` started in the background, by its
 // scheduled task. It returns only when it doesn't: the runner then runs in
 // this process.
@@ -82,4 +82,27 @@ func appendLog(path string) io.Writer {
 		return io.Discard
 	}
 	return f
+}
+
+// supervise starts the runner with run, and again whenever it stops: at once
+// after an update (ExitUpdated), otherwise after a wait that grows while it
+// keeps stopping. It logs why the runner stopped. It returns never: when the
+// hub revoked the runner (ExitRevoked) it exits, as the runner did. On
+// Windows the scheduled task starts it (see superviseRunner); systemd and
+// launchd do this themselves.
+func supervise(log *slog.Logger, run func() error, sleep func(time.Duration)) {
+	wait := time.Duration(0)
+	for {
+		started := time.Now()
+		err := run()
+		ran := time.Since(started)
+		code := exitCode(err)
+		if code == runnerctl.ExitRevoked {
+			log.Error("supervisor: the hub revoked the runner: not starting it again", "code", code)
+			os.Exit(code)
+		}
+		wait = nextWait(wait, code, ran)
+		log.Warn("supervisor: the runner stopped: starting it again", "code", code, "err", err, "ran", ran.Round(time.Second), "wait", wait)
+		sleep(wait)
+	}
 }
