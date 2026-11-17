@@ -10,7 +10,7 @@ import { agoText } from "./branches.js";
 // ------------------------------------------------------------------ Claude's status
 // Claude's status page (status.claude.com) posts its incidents to this Dash's
 // webhook, which a platform admin sets up in Account → Claude status. A pill
-// beside the board shows while something is wrong; it opens the incidents.
+// in the top bar shows while something is wrong; it opens the incidents.
 // Always the hub's (this Dash's), whichever project is open.
 const INDICATOR = { none: "All systems operational", minor: "Minor outage", major: "Partial outage", critical: "Major outage", maintenance: "Maintenance" };
 const TONE = { none: "ok", minor: "warn", maintenance: "warn", major: "bad", critical: "bad" };

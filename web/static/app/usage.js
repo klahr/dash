@@ -2,6 +2,7 @@ import { $, clockTime, h, setLabel, timeLocale } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
+import * as store from "./store.js";
 import { HOUR, aheadOfPace, paceMs, paceStateText, paceText, resetText } from "../usagetime.js";
 
 // ------------------------------------------------------------------ usage & queue
@@ -29,8 +30,8 @@ const windowElapsed = (w) => {
 export function renderUsage() {
   const u = state.usage;
   const pill = $("#usage-pill");
-  if (!u || (!u.known && !u.manual_pause)) { pill.hidden = true; return; }
-  pill.hidden = false;
+  if (!u || (!u.known && !u.manual_pause)) { pill.hidden = $("#usage-fold").hidden = true; return; }
+  pill.hidden = $("#usage-fold").hidden = false;
   const live = (u.windows || []).filter((w) => new Date(w.resets_at) > new Date());
   const top = live.reduce((a, w) => (!a || w.utilization > a.utilization ? w : a), null);
   const overPace = (w) => { const e = windowElapsed(w); return e !== null && w.utilization > e; };
@@ -165,6 +166,23 @@ const savePace = attempt(async () => {
 $("#pace-follow").addEventListener("change", savePace);
 $("#pace-max").addEventListener("change", savePace);
 $("#pace-boost").addEventListener("change", savePace);
+
+// Folding the sidebar's usage card leaves one line, its pies and a summary,
+// so the projects list above it gets the room. Kept per browser.
+function foldUsage(folded) {
+  $("#usage-box").classList.toggle("folded", folded);
+  const btn = $("#usage-fold");
+  const text = folded ? "Show Claude usage in full" : "Fold Claude usage";
+  btn.setAttribute("aria-expanded", String(!folded));
+  btn.setAttribute("aria-label", text);
+  btn.title = text;
+}
+foldUsage(store.flag("dash.usageFolded"));
+$("#usage-fold").addEventListener("click", () => {
+  const folded = !$("#usage-box").classList.contains("folded");
+  store.setFlag("dash.usageFolded", folded);
+  foldUsage(folded);
+});
 
 $("#usage-pill").addEventListener("click", () => { renderUsage(); $("#usage-sheet").showModal(); });
 $("#queue-toggle").addEventListener("click", attempt(async () => {

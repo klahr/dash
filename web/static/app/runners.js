@@ -2,6 +2,7 @@ import { $, fill, h, ib, ico, plural } from "./dom.js";
 import { api } from "./api.js";
 import { art, ask, attempt, fail, reduceMotion, toast } from "./dialogs.js";
 import { state } from "./state.js";
+import * as store from "./store.js";
 import { refreshMachines } from "./events.js";
 import { isHub, loadProjects, needsRunner, openNewProject, renderSideProjects, selectProject, setMenu } from "./projects.js";
 import { agoText, renderBoard } from "./branches.js";
@@ -291,6 +292,11 @@ export function renderSideRunners() {
     h("span", { class: "side-runner-count" }, count),
     diskWarn || outdated ? h("span", { class: "sr-only" }, (diskWarn ? ", disk nearly full" : "") + (outdated ? ", update available" : "")) : null));
   };
+  // Folded, the head says what the rows would: how many are online and
+  // how many tasks run on them.
+  const online = list.filter((r) => r.online);
+  const running = online.reduce((n, r) => n + (r.running || 0), 0);
+  $("#side-runners-sum").textContent = !list.length ? "" : `${online.length}/${list.length} online${running ? ` · ${running} running` : ""}`;
   const sorted = [...list].sort(byStatus);
   // Past the limit, only offline runners fold: online ones always show.
   const cut = sorted.length > sideRunnerRows ? Math.max(sideRunnerRows - 1, sorted.filter((r) => r.online).length) : sorted.length;
@@ -303,6 +309,21 @@ export function renderSideRunners() {
     manage("Manage runners", "Open the Runners page"),
   ].filter(Boolean));
 }
+
+// Folding the sidebar's Runners block leaves its head, with the summary, so
+// the projects list above it gets the room. Kept per browser.
+function foldSideRunners(folded) {
+  $("#side-runners").classList.toggle("folded", folded);
+  const btn = $("#side-runners-fold");
+  btn.setAttribute("aria-expanded", String(!folded));
+  btn.title = folded ? "Show the runners" : "Fold the runners";
+}
+foldSideRunners(store.flag("dash.runnersFolded"));
+$("#side-runners-fold").addEventListener("click", () => {
+  const folded = !$("#side-runners").classList.contains("folded");
+  store.setFlag("dash.runnersFolded", folded);
+  foldSideRunners(folded);
+});
 
 // The projects runner r builds (it has the labels they run on): their tasks run there.
 const runnerProjects = (r) => (state.projects || []).filter((p) => !p.prefix && servesProject(r, p));

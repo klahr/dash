@@ -38,6 +38,8 @@
         <div class="foot-menu-list project-picker-list" id="project-picker" role="menu" aria-label="Projects" hidden></div>
       </div>
       <div class="lane-chips" id="lane-chips" role="group" aria-label="Minimized columns"></div>
+      <!-- Claude's status page (status.claude.com): shown while something is wrong, when a platform admin turned it on. -->
+      <button class="usage-pill claude-pill" id="claude-pill" type="button" hidden aria-haspopup="dialog" title="Claude's status"></button>
       <button class="previews-btn" id="previews-btn" type="button" hidden aria-haspopup="dialog" title="Running previews">
         <span class="pv-dot" aria-hidden="true"></span><span id="previews-label">Previews</span>
       </button>
@@ -156,18 +158,27 @@
         </div>
         <button class="usage-pill remote-pill" id="remote-pill" type="button" hidden title="The default branch compared with origin's"></button>
         <div class="checkouts" id="checkouts" role="group" hidden aria-label="Checkouts behind origin"></div>
-        <!-- The org's runners, each with its tasks running of its slots (hub only). -->
+        <!-- The org's runners, each with its tasks running of its slots (hub only).
+             Its head folds the list to one line, to leave the room to the projects. -->
         <div class="side-runners" id="side-runners" role="group" aria-labelledby="side-runners-title" hidden>
-          <h2 class="side-projects-head" id="side-runners-title">Runners</h2>
+          <h2 class="side-projects-head side-fold-head" id="side-runners-title">
+            <button class="side-fold" id="side-runners-fold" type="button" aria-expanded="true" aria-controls="side-runner-list" title="Fold the runners">
+              <span>Runners</span><span class="side-fold-sum" id="side-runners-sum"></span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </h2>
           <ul class="side-runner-list" id="side-runner-list"></ul>
         </div>
         <!-- Only a failing build or release shows here; a running one is a ring on the project's row (renderCI). -->
         <button class="usage-pill ci-pill" id="ci-pill" hidden aria-haspopup="dialog" title="GitHub Actions on the default branch"></button>
-        <!-- Claude's status page (status.claude.com): shown while something is wrong, when a platform admin turned it on. -->
-        <button class="usage-pill claude-pill" id="claude-pill" type="button" hidden aria-haspopup="dialog" title="Claude's status"></button>
         <!-- Claude usage and the account: always at the bottom of the sidebar / drawer. -->
         <div class="side-bottom">
-        <button class="usage-pill" id="usage-pill" hidden aria-haspopup="dialog" title="Claude usage"></button>
+        <div class="usage-box" id="usage-box">
+          <button class="usage-pill" id="usage-pill" hidden aria-haspopup="dialog" title="Claude usage"></button>
+          <button class="icon-btn usage-fold" id="usage-fold" type="button" hidden aria-expanded="true" aria-controls="usage-pill" aria-label="Fold Claude usage" title="Fold Claude usage">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
         <div class="nav-foot">
           <span class="merge-status" id="merge-status"></span>
           <details class="foot-menu account-menu" id="foot-menu">

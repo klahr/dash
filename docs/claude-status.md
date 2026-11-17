@@ -53,7 +53,7 @@ The page's overall status covers every component, so it doesn't turn the pill on
 
 ## What people see
 
-- **The Claude pill** in the sidebar (in the menu on a phone) shows while something that
+- **The Claude pill** in the top bar (just its dot on a phone) shows while something that
   counts is wrong. It counts the affected services that count, from the components and the
   incidents, each once: for example "Claude: 3 services affected", or "Claude: Claude Code
   degraded performance" for one. An incident that names no service shows as "Claude: major

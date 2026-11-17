@@ -1779,6 +1779,19 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 #usage-pill .meter-head { font-size: var(--fs-s); margin-bottom: 4px; }
 #usage-pill .meter { height: 6px; }
 #usage-pill .meter-pace { margin-top: 3px; font-size: var(--fs-2xs); }
+/* The usage card's fold button sits in its top-right corner, over the pill (a sibling, as a
+   button can't hold another); folded, the card is one row: its pies and the summary. */
+.usage-box { position: relative; display: flex; flex-direction: column; }
+.usage-fold { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; min-height: 0; color: var(--muted); }
+.usage-fold svg { width: 14px; height: 14px; transform: rotate(90deg); transition: transform .15s var(--ease); }
+.usage-fold[aria-expanded="false"] svg { transform: none; }
+.usage-fold:hover { color: var(--text); }
+.usage-box:has(.usage-fold:not([hidden])) #usage-pill .usage-head { padding-right: 26px; }
+.app:not(.side-collapsed) .usage-box.folded #usage-pill { display: flex; align-items: center; gap: 10px; padding: 6px 40px 6px 10px; }
+.app:not(.side-collapsed) .usage-box.folded #usage-pill .usage-detail { display: none; }
+.app:not(.side-collapsed) .usage-box.folded #usage-pill .usage-pies { display: flex; gap: 8px; }
+.app:not(.side-collapsed) .usage-box.folded #usage-pill .usage-sum { display: inline; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.app:not(.side-collapsed) .usage-box.folded .usage-fold { top: 50%; transform: translateY(-50%); }
 .usage-pies { display: none; }
 .pie-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .pie-wrap small { font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; }
@@ -1892,6 +1905,18 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .side-machine-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The Runners block under the project buttons: its natural height, while the projects list takes the rest. */
 .side-runners { flex: none; display: flex; flex-direction: column; }
+/* Its head is a button that folds the list away, leaving a summary beside the name. */
+.side-fold-head { padding: 0 0 4px; }
+.side-fold {
+  display: flex; align-items: center; gap: 6px; width: 100%; min-height: 28px; padding: 0 8px 0 10px; border-radius: var(--r-m);
+  font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; text-align: left;
+}
+.side-fold:hover { background: var(--raised); color: var(--muted); }
+.side-fold svg { flex: none; width: 14px; height: 14px; margin-left: auto; transform: rotate(90deg); transition: transform .15s var(--ease); }
+.side-fold[aria-expanded="false"] svg { transform: none; }
+.side-fold-sum { display: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; letter-spacing: 0; text-transform: none; font-size: var(--fs-xs); }
+.side-runners.folded .side-fold-sum { display: inline; }
+.side-runners.folded .side-runner-list { display: none; }
 .side-runner-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
 .side-runner { width: 100%; display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 0 8px; border-radius: var(--r-m); color: var(--muted); font-size: var(--fs-s); text-align: left; }
 .side-runner:hover { background: var(--raised); color: var(--text); }
@@ -1910,7 +1935,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .shared-mark .ico { width: 13px; height: 13px; }
 .project-name .shared-mark { margin-left: 6px; vertical-align: -1px; }
 .menu-btn { position: relative; margin-left: -10px; }
-.app:has(.ci-pill.ci-failing:not([hidden]), .usage-pill.paused:not([hidden]), .claude-pill.claude-bad:not([hidden])) .menu-btn::after {
+.app:has(.ci-pill.ci-failing:not([hidden]), .usage-pill.paused:not([hidden])) .menu-btn::after {
   content: ""; position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%;
   background: var(--failed); box-shadow: 0 0 0 2px var(--bg);
 }
@@ -1929,7 +1954,10 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .side-project-list { overflow: visible; }
   .side-project { min-height: 44px; font-size: var(--fs-body); }
   .side-ci-build { width: 40px; }
-  .side-new-project, .side-runner { min-height: 44px; }
+  .side-new-project, .side-runner, .side-fold { min-height: 44px; }
+  .usage-fold { top: 0; right: 0; width: 44px; height: 44px; }
+  .usage-box:has(.usage-fold:not([hidden])) #usage-pill .usage-head { padding-right: 34px; }
+  .app:not(.side-collapsed) .usage-box.folded #usage-pill { padding-right: 48px; }
   .quick-btn { min-height: 44px; }
   .foot-menu > summary { width: 44px; height: 44px; }
   .foot-menu.account-menu > summary { width: 100%; height: auto; min-height: 44px; }
@@ -2037,7 +2065,9 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .side-collapsed .side-machine, .side-collapsed .machine-empty,
   .side-collapsed .side-new-project span, .side-collapsed .quick-btn span,
   .side-collapsed .side-runners .side-projects-head, .side-collapsed .side-runner > span:not(.side-runner-icon), .side-collapsed .side-runner-more,
-  .side-collapsed .usage-pill:not(#usage-pill), .side-collapsed .merge-status { display: none; }
+  .side-collapsed .sidebar .usage-pill:not(#usage-pill), .side-collapsed .usage-fold, .side-collapsed .merge-status { display: none; }
+  /* Collapsed to icons, the runners show as dots whether folded or not: there is no head to unfold them with. */
+  .side-collapsed .side-runners.folded .side-runner-list { display: flex; }
   .side-collapsed #usage-pill { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; }
   .side-collapsed #usage-pill .usage-detail { display: none; }
   .side-collapsed #usage-pill .usage-pies { display: flex; flex-direction: column; align-items: center; gap: 6px; }
@@ -2356,8 +2386,14 @@ a.revert-tag { text-decoration: underline; }
 .ci-pill.ci-running::before { animation: pulse-dot 1.4s ease-in-out infinite; }
 @keyframes pulse-dot { 50% { opacity: .35; } }
 /* ---- Claude's status (status.claude.com) ---- */
-.claude-pill { --c: var(--running); order: 5; margin-top: 8px; max-width: 100%; min-width: 0; overflow: hidden; }
+/* In the top bar, beside the live dot: it shrinks to its dot before the bar runs out of room. */
+.claude-pill { --c: var(--running); flex: 0 1 auto; max-width: 280px; min-width: 0; overflow: hidden; background: var(--surface); }
+.claude-pill:hover { border-color: var(--c); }
 .claude-pill::before { flex: none; }
+@media (max-width: 639px) {
+  .claude-pill { flex: none; justify-content: center; width: 32px; padding: 0; }
+  .claude-pill-text { display: none; }
+}
 .claude-pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .claude-pill.claude-bad { --c: var(--failed); border-color: color-mix(in srgb, var(--failed) 50%, var(--line)); color: var(--failed); }
 .claude-pill::before { animation: pulse-dot 1.4s ease-in-out infinite; }
