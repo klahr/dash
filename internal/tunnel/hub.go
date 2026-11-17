@@ -1042,10 +1042,9 @@ type CallError struct {
 
 func (e *CallError) Error() string { return e.Msg }
 
-// Call makes a request to runner id over its tunnel: in is sent as JSON
-// (unless nil) and the JSON answer decoded into out (unless nil; a
-// *[]byte gets the raw body).
-func (h *Hub) Call(ctx context.Context, id, method, path string, in, out any) error {
+// target returns the name of runner id for a call over its tunnel:
+// ErrUnknownName if there is no such runner, ErrOffline if it has no tunnel.
+func (h *Hub) target(id string) (string, error) {
 	h.mu.Lock()
 	var name string
 	for _, r := range h.runners {
@@ -1056,10 +1055,34 @@ func (h *Hub) Call(ctx context.Context, id, method, path string, in, out any) er
 	_, online := h.live[id]
 	h.mu.Unlock()
 	if name == "" {
-		return ErrUnknownName
+		return "", ErrUnknownName
 	}
 	if !online {
+		return "", fmt.Errorf("%s: %w", name, ErrOffline)
+	}
+	return name, nil
+}
+
+// dialErr is the error for a call to runner name that failed in transport,
+// with err: ErrOffline if its tunnel is gone, else "unreachable" (with err's
+// text unless err is nil).
+func (h *Hub) dialErr(name string, err error) error {
+	if h.session(name) == nil {
 		return fmt.Errorf("%s: %w", name, ErrOffline)
+	}
+	if err == nil {
+		return fmt.Errorf("%s is unreachable", name)
+	}
+	return fmt.Errorf("%s is unreachable: %w", name, err)
+}
+
+// Call makes a request to runner id over its tunnel: in is sent as JSON
+// (unless nil) and the JSON answer decoded into out (unless nil; a
+// *[]byte gets the raw body).
+func (h *Hub) Call(ctx context.Context, id, method, path string, in, out any) error {
+	name, err := h.target(id)
+	if err != nil {
+		return err
 	}
 	var body io.Reader
 	if in != nil {
@@ -1081,10 +1104,7 @@ func (h *Hub) Call(ctx context.Context, id, method, path string, in, out any) er
 	}
 	res, err := (&http.Client{Transport: h.idle()}).Do(req)
 	if err != nil {
-		if h.session(name) == nil {
-			return fmt.Errorf("%s: %w", name, ErrOffline)
-		}
-		return fmt.Errorf("%s is unreachable: %w", name, err)
+		return h.dialErr(name, err)
 	}
 	defer res.Body.Close()
 	b, err := io.ReadAll(io.LimitReader(res.Body, 32<<20))
@@ -1116,20 +1136,9 @@ func (h *Hub) Call(ctx context.Context, id, method, path string, in, out any) er
 // body or the answer is read, kept or logged: it is the shared notes relay
 // (package notes).
 func (h *Hub) CallBytes(ctx context.Context, id, path string, hdr http.Header, body []byte, limit int64) ([]byte, error) {
-	h.mu.Lock()
-	var name string
-	for _, r := range h.runners {
-		if r.ID == id {
-			name = r.Name
-		}
-	}
-	_, online := h.live[id]
-	h.mu.Unlock()
-	if name == "" {
-		return nil, ErrUnknownName
-	}
-	if !online {
-		return nil, fmt.Errorf("%s: %w", name, ErrOffline)
+	name, err := h.target(id)
+	if err != nil {
+		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://"+name+runnerHostLabel+path, bytes.NewReader(body))
 	if err != nil {
@@ -1141,7 +1150,8 @@ func (h *Hub) CallBytes(ctx context.Context, id, path string, hdr http.Header, b
 	req.Header.Set("Content-Type", "application/octet-stream")
 	res, err := (&http.Client{Transport: h.idle()}).Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%s is unreachable", name)
+		// Without the transport error's text: nothing of the relay is told.
+		return nil, h.dialErr(name, nil)
 	}
 	defer res.Body.Close()
 	b, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
@@ -1187,20 +1197,9 @@ func userFrom(ctx context.Context) (int64, bool) {
 // DialWS opens a websocket to path on runner id over its tunnel, e.g. the
 // general chat a user runs on their own runner.
 func (h *Hub) DialWS(ctx context.Context, id, path string) (*websocket.Conn, error) {
-	h.mu.Lock()
-	var name string
-	for _, r := range h.runners {
-		if r.ID == id {
-			name = r.Name
-		}
-	}
-	_, online := h.live[id]
-	h.mu.Unlock()
-	if name == "" {
-		return nil, ErrUnknownName
-	}
-	if !online {
-		return nil, fmt.Errorf("%s: %w", name, ErrOffline)
+	name, err := h.target(id)
+	if err != nil {
+		return nil, err
 	}
 	hdr := http.Header{}
 	if uid, ok := userFrom(ctx); ok {
@@ -1222,10 +1221,7 @@ func (h *Hub) DialWS(ctx context.Context, id, path string) (*websocket.Conn, err
 				return nil, &CallError{Status: res.StatusCode, Msg: name + ": " + e.Error}
 			}
 		}
-		if h.session(name) == nil {
-			return nil, fmt.Errorf("%s: %w", name, ErrOffline)
-		}
-		return nil, fmt.Errorf("%s is unreachable: %w", name, err)
+		return nil, h.dialErr(name, err)
 	}
 	return conn, nil
 }
