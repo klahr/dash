@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -71,4 +72,14 @@ func superviseRunner(logFile string) {
 		cmd.WaitDelay = 10 * time.Second
 		return cmd.Run()
 	}, time.Sleep)
+}
+
+// appendLog opens the log file at path for the supervisor and the runner's
+// output. Without it the output is dropped: the supervisor has no console.
+func appendLog(path string) io.Writer {
+	f, err := openLogFile(path)
+	if err != nil {
+		return io.Discard
+	}
+	return f
 }
