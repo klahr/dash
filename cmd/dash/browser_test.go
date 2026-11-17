@@ -358,7 +358,11 @@ func TestBrowserNotificationSettings(t *testing.T) {
 			}
 		}
 	}
-	open := func(b *browser) {
+	open := func(b *browser, phone bool) {
+		if phone {
+			// On a phone the account menu is in the drawer, off screen until Menu opens it.
+			b.until("open the drawer", `document.querySelector(".app").classList.contains("menu-open")`, chromedp.Click(chromedp.ID("menu-open")))
+		}
 		b.until("open the account menu", `document.querySelector("#foot-menu").open || document.querySelector("#account-sheet").open`,
 			chromedp.Click(chromedp.CSS(`#foot-menu > summary`)))
 		b.until("open Account", `document.querySelector("#account-sheet").open`, chromedp.Click(chromedp.ID("account-open")))
@@ -369,7 +373,7 @@ func TestBrowserNotificationSettings(t *testing.T) {
 
 	b := newBrowser(t, chrome)
 	b.signIn(h)
-	open(b)
+	open(b, false)
 	b.waitJS("email greyed out", `document.querySelector("#notify-form").email.disabled && !document.querySelector("#notify-email-note").hidden`)
 	b.waitJS("the instant webhooks", `document.querySelector("#notify-hooks").textContent.includes("summary only")`)
 	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(() => {
@@ -414,7 +418,7 @@ func TestBrowserNotificationSettings(t *testing.T) {
 	phone := newBrowser(t, chrome)
 	phone.signIn(h)
 	phone.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
-	open(phone)
+	open(phone, true)
 	phone.waitJS("no sideways scrolling", `document.querySelector("#account-sheet-section-notifications").scrollWidth <= document.querySelector("#account-sheet-section-notifications").clientWidth + 1`)
 	phone.waitJS("the saved summary", `document.querySelector("#notify-form").summary.value === "daily"`)
 	shot(phone, "notifications-phone")
