@@ -387,7 +387,6 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 		log("↺ undid a merge of " + p.Base() + " left unfinished; starting it over")
 	}
 
-	var conflict *gitops.ErrConflict
 	// A shared project's merge counts once origin has it; when origin moves
 	// between the sync and the push (another runner, someone's push), the
 	// whole merge runs again on top of origin's new tip.
@@ -400,58 +399,10 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 			}
 		}
 
-		// 1–2. Repeated (a few times) when the default branch moves meanwhile,
-		// e.g. a commit in the project's folder while the tests ran.
-		for range 3 {
-			base, err := m.Git.Head(ctx, p.ID, p.Path, p.Base())
-			if err != nil {
-				return err
-			}
-
-			// 1. Bring the default branch into the todo's branch.
-			changed, err := m.Git.MergeIn(ctx, p.ID, wt.Path, p.Base())
-			if errors.As(err, &conflict) {
-				log("⚠ " + conflict.Error())
-				return m.sendBack(t, p, "", true, "conflicts with "+p.Base()+" in "+strings.Join(conflict.Files, ", "))
-			}
-			if err != nil {
-				return err
-			}
-
-			// 2. Test what lands, unless the tests already passed on exactly
-			// this commit: a red build goes back to the todo, not onto the
-			// default branch.
-			if err := heldErr(p, model.CmdTest); err != nil {
-				return fmt.Errorf("tests not run, so not merged: %w", err)
-			}
-			if p.TestCommand != "" {
-				head, err := m.Git.Head(ctx, p.ID, wt.Path, "HEAD")
-				if err != nil {
-					return err
-				}
-				if !checksPassedOn(t.Checks, p.TestCommand, head) {
-					checks := runChecks(ctx, m.Git, m.Log, m.Shared, t, p, wt.Path, "merge", m.TestTimeout)
-					if ctx.Err() != nil {
-						return ctx.Err() // tests cut off by a shutdown haven't failed
-					}
-					if t, err = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Checks = &checks; return nil }); err != nil {
-						return err
-					}
-					if !checks.Passed {
-						if changed {
-							note := fmt.Sprintf("Your change was merged with the latest `%s`, and now the tests fail. %s", p.Base(), testNote(checks))
-							return m.sendBack(t, p, note, false, "tests fail after merging "+p.Base())
-						}
-						note := "Your change was approved, but the tests fail, so it wasn't merged. " + testNote(checks)
-						return m.sendBack(t, p, note, false, "tests fail; not merged")
-					}
-				}
-			}
-
-			if head, err := m.Git.Head(ctx, p.ID, p.Path, p.Base()); err != nil || head == base {
-				break
-			}
-			log("↻ " + p.Base() + " moved during the merge; merging it in again")
+		// 1–2. Bring the default branch in and test the result.
+		var stop bool
+		if t, stop, err = m.mergeBaseIn(ctx, t, p, wt); stop || err != nil {
+			return err
 		}
 
 		// 3. Land it; a task that changed nothing is simply closed (there is no
@@ -466,14 +417,14 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 			return m.openPR(ctx, t, p)
 		}
 		if !p.LandsOnOrigin() {
-			break
+			return m.landLocal(ctx, t, p, wt)
 		}
 		sha, err := m.landPushed(ctx, p, func(dir string) (string, error) {
 			return m.Git.SquashInto(ctx, p.ID, dir, wt.Branch, commitMessage(t))
 		})
+		var conflict *gitops.ErrConflict
 		if errors.As(err, &conflict) {
-			log("⚠ " + conflict.Error())
-			return m.sendBack(t, p, "", true, "conflicts with "+p.Base()+" in "+strings.Join(conflict.Files, ", "))
+			return m.conflictBack(t, p, conflict)
 		}
 		var moved *originMoved
 		if errors.As(err, &moved) {
@@ -489,15 +440,100 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 		m.landed(ctx, t, p, sha, "✔ merged into "+p.Base()+" and pushed")
 		return nil
 	}
+}
 
+// conflictBack sends t back to Claude to resolve conflicts with the
+// default branch.
+func (m *MergeQueue) conflictBack(t model.Todo, p model.Project, c *gitops.ErrConflict) error {
+	m.Log.Line(t, "⚠ "+c.Error())
+	return m.sendBack(t, p, "", true, "conflicts with "+p.Base()+" in "+strings.Join(c.Files, ", "))
+}
+
+// mergeBaseIn merges the default branch into the todo's branch and tests
+// the result, repeating (a few times) when the default branch moves
+// meanwhile, e.g. a commit in the project's folder while the tests ran.
+// It returns the todo as updated, and stop when process is done: the todo
+// was sent back, or err says why it failed.
+func (m *MergeQueue) mergeBaseIn(ctx context.Context, t model.Todo, p model.Project, wt model.Worktree) (model.Todo, bool, error) {
+	for range 3 {
+		base, err := m.Git.Head(ctx, p.ID, p.Path, p.Base())
+		if err != nil {
+			return t, true, err
+		}
+
+		// 1. Bring the default branch into the todo's branch.
+		changed, err := m.Git.MergeIn(ctx, p.ID, wt.Path, p.Base())
+		var conflict *gitops.ErrConflict
+		if errors.As(err, &conflict) {
+			return t, true, m.conflictBack(t, p, conflict)
+		}
+		if err != nil {
+			return t, true, err
+		}
+
+		// 2. Test what lands.
+		var stop bool
+		if t, stop, err = m.testMerged(ctx, t, p, wt, changed); stop || err != nil {
+			return t, true, err
+		}
+
+		if head, err := m.Git.Head(ctx, p.ID, p.Path, p.Base()); err != nil || head == base {
+			break
+		}
+		m.Log.Line(t, "↻ "+p.Base()+" moved during the merge; merging it in again")
+	}
+	return t, false, nil
+}
+
+// testMerged runs the project's tests on the merged branch, unless they
+// already passed on exactly this commit: a red build goes back to the todo,
+// not onto the default branch. changed says whether merging the default
+// branch in brought anything. It returns the todo as updated, and stop
+// when process is done: the todo was sent back, or err says why it failed.
+func (m *MergeQueue) testMerged(ctx context.Context, t model.Todo, p model.Project, wt model.Worktree, changed bool) (model.Todo, bool, error) {
+	if err := heldErr(p, model.CmdTest); err != nil {
+		return t, true, fmt.Errorf("tests not run, so not merged: %w", err)
+	}
+	if p.TestCommand == "" {
+		return t, false, nil
+	}
+	head, err := m.Git.Head(ctx, p.ID, wt.Path, "HEAD")
+	if err != nil {
+		return t, true, err
+	}
+	if checksPassedOn(t.Checks, p.TestCommand, head) {
+		return t, false, nil
+	}
+	checks := runChecks(ctx, m.Git, m.Log, m.Shared, t, p, wt.Path, "merge", m.TestTimeout)
+	if ctx.Err() != nil {
+		return t, true, ctx.Err() // tests cut off by a shutdown haven't failed
+	}
+	if t, err = m.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Checks = &checks; return nil }); err != nil {
+		return t, true, err
+	}
+	if checks.Passed {
+		return t, false, nil
+	}
+	if changed {
+		note := fmt.Sprintf("Your change was merged with the latest `%s`, and now the tests fail. %s", p.Base(), testNote(checks))
+		return t, true, m.sendBack(t, p, note, false, "tests fail after merging "+p.Base())
+	}
+	note := "Your change was approved, but the tests fail, so it wasn't merged. " + testNote(checks)
+	return t, true, m.sendBack(t, p, note, false, "tests fail; not merged")
+}
+
+// landLocal squashes the todo's branch onto the default branch in the
+// project's folder, pushes it when the project auto-pushes, and marks the
+// todo merged.
+func (m *MergeQueue) landLocal(ctx context.Context, t model.Todo, p model.Project, wt model.Worktree) error {
 	var sha string
-	_, err = m.land(ctx, p, func(dir string) (err error) {
+	_, err := m.land(ctx, p, func(dir string) (err error) {
 		sha, err = m.Git.SquashInto(ctx, p.ID, dir, wt.Branch, commitMessage(t))
 		return err
 	})
+	var conflict *gitops.ErrConflict
 	if errors.As(err, &conflict) {
-		log("⚠ " + conflict.Error())
-		return m.sendBack(t, p, "", true, "conflicts with "+p.Base()+" in "+strings.Join(conflict.Files, ", "))
+		return m.conflictBack(t, p, conflict)
 	}
 	if errors.As(err, new(*gitops.ErrDirtyCheckout)) {
 		return err
