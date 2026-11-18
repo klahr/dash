@@ -96,18 +96,19 @@ func TestRunnerGuardsTheHubsRequests(t *testing.T) {
 		t.Fatalf("adopting via ..: %d %s", w.Code, w.Body)
 	}
 
+	// The hub sets the project's commands.
+	if w := hubCall(h, "PATCH", "/api/projects/"+p.ID, `{"test_command":"make test"}`); w.Code != http.StatusOK {
+		t.Fatalf("changing a command: %d %s", w.Code, w.Body)
+	}
+
 	// Terminals started on the runner itself stay there.
+	needTerminals(t)
 	pty, err := s.Procs.StartPTY(p.ID, p.Path, "sleep 30", 80, 24)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if w := hubCall(h, "GET", "/ws/proc/"+pty.ID, ""); w.Code != http.StatusForbidden {
 		t.Fatalf("attaching to a terminal: %d %s", w.Code, w.Body)
-	}
-
-	// The hub sets the project's commands.
-	if w := hubCall(h, "PATCH", "/api/projects/"+p.ID, `{"test_command":"make test"}`); w.Code != http.StatusOK {
-		t.Fatalf("changing a command: %d %s", w.Code, w.Body)
 	}
 }
 
@@ -153,6 +154,8 @@ func TestRunnerOpensTerminalsForItsOwnerOnly(t *testing.T) {
 	if w := as("7", "POST", "/api/projects", `{"name":"x","path":"/etc"} x`); w.Code != http.StatusForbidden {
 		t.Fatalf("adopting /etc with trailing data: %d %s", w.Code, w.Body)
 	}
+	// The owner gets a terminal, where the runner can open one.
+	needTerminals(t)
 	w := as("42", "POST", procs, `{"kind":"pty","command":"sleep 30","dir":"/etc","path":"/etc"}`)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("terminal for the owner: %d %s", w.Code, w.Body)

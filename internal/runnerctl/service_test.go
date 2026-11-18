@@ -437,7 +437,17 @@ func TestSetupChecksBeforeUsingTheCode(t *testing.T) {
 
 func TestPreflightPlainHTTPHub(t *testing.T) {
 	c := Preflight{LookPath: func(string) (string, error) { return "", errors.New("nope") }}.Run(context.Background(), "http://dash.example.com", "claude")
-	if !Failed(c) || c[0].OK || c[1].OK || c[2].OK || !strings.Contains(c[2].Fix, "HTTPS") {
+	// Windows has one more check, for bash, so look the hub's up by name.
+	var hub Check
+	for _, x := range c {
+		if x.OK {
+			t.Errorf("%s passed: %+v", x.Name, x)
+		}
+		if x.Name == "hub" {
+			hub = x
+		}
+	}
+	if !Failed(c) || !strings.Contains(hub.Fix, "HTTPS") {
 		t.Fatalf("%+v", c)
 	}
 }

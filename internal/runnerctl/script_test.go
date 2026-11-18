@@ -18,6 +18,13 @@ import (
 	"testing"
 )
 
+// haveSh says whether there is an sh to check the shell parts against (Git
+// for Windows has one, a plain Windows doesn't).
+func haveSh() bool {
+	_, err := exec.LookPath("sh")
+	return err == nil
+}
+
 func TestShellQuote(t *testing.T) {
 	for in, want := range map[string]string{
 		"https://dash.example.com": "https://dash.example.com",
@@ -32,6 +39,9 @@ func TestShellQuote(t *testing.T) {
 			t.Errorf("ShellQuote(%q) = %s, want %s", in, got, want)
 		}
 		// And the shell reads it back as the same word.
+		if !haveSh() {
+			continue
+		}
 		out, err := exec.Command("sh", "-c", "printf '%s' "+ShellQuote(in)).Output()
 		if err != nil || string(out) != in {
 			t.Errorf("sh read %s as %q (%v), want %q", ShellQuote(in), out, err, in)
@@ -62,7 +72,9 @@ func TestScriptRendering(t *testing.T) {
 			t.Errorf("script mentions sudo outside a comment: %s", l)
 		}
 	}
-	if out, err := exec.Command("sh", "-n", "-c", s).CombinedOutput(); err != nil {
+	if !haveSh() {
+		t.Log("no sh here: not checking that the script parses")
+	} else if out, err := exec.Command("sh", "-n", "-c", s).CombinedOutput(); err != nil {
 		t.Fatalf("script doesn't parse: %v\n%s", err, out)
 	}
 
@@ -122,6 +134,9 @@ func TestScriptHandler(t *testing.T) {
 	// A Host header can't inject shell.
 	if s := get(h, "x$(touch /tmp/pwned)", map[string]string{"X-Forwarded-Host": "a'b", "X-Forwarded-Proto": "https"}); strings.Contains(s, "main \"$@\"") {
 		t.Errorf("odd host rendered a script:\n%s", s)
+	}
+	if !haveSh() {
+		return
 	}
 	if out, err := exec.Command("sh", "-c", string(ErrorScript("it's $(broken)"))).CombinedOutput(); err == nil || !strings.Contains(string(out), "it's $(broken)") {
 		t.Errorf("error script: %v %s", err, out)

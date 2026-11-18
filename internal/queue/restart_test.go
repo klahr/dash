@@ -31,7 +31,7 @@ func TestMergeCutOffByShutdownResumesAtTheNextStart(t *testing.T) {
 	h := newHarness(t, exe, model.Project{Name: "p"})
 	sh := func(script string) {
 		t.Helper()
-		cmd := exec.Command("sh", "-c", script)
+		cmd := shellCmd(script)
 		cmd.Dir = h.proj.Path
 		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -40,7 +40,7 @@ func TestMergeCutOffByShutdownResumesAtTheNextStart(t *testing.T) {
 	}
 	// Run 1 is the task's own; run 2, at the merge, hangs until the shutdown.
 	h.proj, _ = h.st.UpdateProject(h.proj.ID, func(p *model.Project) error {
-		p.TestCommand = "echo >> " + runs + "; if [ $(wc -l < " + runs + ") -eq 2 ]; then touch " + started + "; sleep 30; fi"
+		p.TestCommand = "echo >> " + sq(runs) + "; if [ $(wc -l < " + sq(runs) + ") -eq 2 ]; then touch " + sq(started) + "; sleep 30; fi"
 		return nil
 	})
 	td := h.waitFor(h.add("a").ID, model.StatusReview)

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -187,18 +188,21 @@ func TestHubRunsNothingItself(t *testing.T) {
 	if code, body := api.try("DELETE", "/api/processes/"+proc.ID, nil); code != http.StatusAccepted && code != http.StatusOK {
 		t.Errorf("stopping the runner's process: %d %s", code, body)
 	}
-	// A terminal: the admin registered the runner, so it opens one in its checkout.
-	var shell struct {
-		ID, Dir, Kind string
-		Main          bool
-	}
-	api.must("POST", "/api/projects/"+p.ID+"/processes", map[string]any{"kind": "pty", "command": "sleep 30"}, http.StatusCreated, &shell)
-	if !strings.HasPrefix(shell.ID, runnerID+"~") || shell.Kind != "pty" || !shell.Main ||
-		!strings.HasPrefix(shell.Dir, filepath.Join(dir, "laptop-projects")) {
-		t.Errorf("a terminal from the hub: %+v", shell)
-	}
-	if code, body := api.try("DELETE", "/api/processes/"+shell.ID, nil); code != http.StatusAccepted && code != http.StatusOK {
-		t.Errorf("closing the terminal: %d %s", code, body)
+	// A terminal: the admin registered the runner, so it opens one in its
+	// checkout (where it can: a runner on Windows has no terminals yet).
+	if runtime.GOOS != "windows" {
+		var shell struct {
+			ID, Dir, Kind string
+			Main          bool
+		}
+		api.must("POST", "/api/projects/"+p.ID+"/processes", map[string]any{"kind": "pty", "command": "sleep 30"}, http.StatusCreated, &shell)
+		if !strings.HasPrefix(shell.ID, runnerID+"~") || shell.Kind != "pty" || !shell.Main ||
+			!strings.HasPrefix(shell.Dir, filepath.Join(dir, "laptop-projects")) {
+			t.Errorf("a terminal from the hub: %+v", shell)
+		}
+		if code, body := api.try("DELETE", "/api/processes/"+shell.ID, nil); code != http.StatusAccepted && code != http.StatusOK {
+			t.Errorf("closing the terminal: %d %s", code, body)
+		}
 	}
 
 	// Merge: the runner lands it on origin, and the hub hears it.

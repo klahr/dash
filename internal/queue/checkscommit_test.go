@@ -4,13 +4,26 @@ import (
 	"context"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
 )
 
 const gitIdent = "git -c user.name=t -c user.email=t@example.com"
+
+// shellCmd runs script with the bash project commands run with (Git for
+// Windows' on Windows, which has no sh on the PATH).
+func shellCmd(script string) *exec.Cmd {
+	return exec.Command(localrun.Bash(), "-c", script)
+}
+
+// sq quotes s as one shell word, so that a Windows path keeps its backslashes.
+func sq(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'''`) + "'"
+}
 
 // checksWorktree is a worktree of the harness repo on its own branch, with
 // a.txt=pass committed, and the commit it is on.
@@ -19,13 +32,13 @@ func checksWorktree(t *testing.T, h *harness) (string, string) {
 	wt := filepath.Join(t.TempDir(), "wt")
 	run := func(cmd string) {
 		t.Helper()
-		if out, err := exec.Command("sh", "-c", cmd).CombinedOutput(); err != nil {
+		if out, err := shellCmd(cmd).CombinedOutput(); err != nil {
 			t.Fatalf("%s: %v\n%s", cmd, err, out)
 		}
 	}
-	run("git -C '" + h.proj.Path + "' worktree add -q -b checks '" + wt + "' main")
+	run("git -C " + sq(h.proj.Path) + " worktree add -q -b checks " + sq(wt) + " main")
 	write(t, wt, "a.txt", "pass\n")
-	run("cd '" + wt + "' && git add a.txt && " + gitIdent + " commit -q -m pass")
+	run("cd " + sq(wt) + " && git add a.txt && " + gitIdent + " commit -q -m pass")
 	head, err := h.git.Head(context.Background(), h.proj.ID, wt, "HEAD")
 	if err != nil {
 		t.Fatal(err)

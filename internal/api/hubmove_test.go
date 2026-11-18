@@ -184,7 +184,7 @@ func TestMoveHubClones(t *testing.T) {
 		t.Errorf("the old folder is still there: %v", err)
 	}
 	gitIn(t, td.Worktree.Path, "status")
-	if got := gitIn(t, td.Worktree.Path, "rev-parse", "--path-format=absolute", "--git-common-dir"); got != realDir(t, filepath.Join(want, ".git")) {
+	if got := gitIn(t, td.Worktree.Path, "rev-parse", "--path-format=absolute", "--git-common-dir"); filepath.FromSlash(got) != realDir(t, filepath.Join(want, ".git")) {
 		t.Errorf("the worktree's repository is %s", got)
 	}
 	if !s.Git.HasBranch(context.Background(), p.ID, want, "dash/todo-1") {

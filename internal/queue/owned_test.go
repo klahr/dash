@@ -214,7 +214,7 @@ func TestTaskCommandsIgnoreInheritedGitDir(t *testing.T) {
 	t.Setenv("GIT_DIR", filepath.Join(clone, ".git", "worktrees", "wt"))
 
 	tmp := filepath.Join(t.TempDir(), "scratch")
-	exit, tail, err := runShell(context.Background(), wt, "git init -q "+tmp, time.Minute, nil, func(string) {})
+	exit, tail, err := runShell(context.Background(), wt, "git init -q "+sq(tmp), time.Minute, nil, func(string) {})
 	if err != nil || exit != 0 {
 		t.Fatalf("git init: %d %v %s", exit, err, tail)
 	}

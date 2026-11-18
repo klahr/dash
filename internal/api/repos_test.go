@@ -159,7 +159,7 @@ func TestRunnerAddsRepositoriesOnlyForItsOwner(t *testing.T) {
 	}
 
 	before := len(raw(s).ListProjects())
-	w := ownerCall(h, "POST", "/api/hub/repos", `{"paths":["app","app","hub/clone","../outside","`+outside+`","org/../app"]}`, "42")
+	w := ownerCall(h, "POST", "/api/hub/repos", `{"paths":["app","app","hub/clone","../outside",`+jsonString(outside)+`,"org/../app"]}`, "42")
 	var out AddedRepos
 	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &out) != nil {
 		t.Fatalf("add: %d %s", w.Code, w.Body)

@@ -3,6 +3,7 @@ package preview
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,15 @@ func terminalProject(command string) model.Project {
 
 // readUntil reads sess's output until it contains want. The deadline is
 // generous: under a full test run a shell can take seconds to start.
+// needTerminals skips the test where the runner can't open terminals
+// (runner.ErrNoTerminals: no pty on Windows yet).
+func needTerminals(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("terminals aren't supported on Windows yet")
+	}
+}
+
 func readUntil(t *testing.T, sess *runner.Session, want string) string {
 	t.Helper()
 	out := string(sess.Scrollback)
@@ -50,6 +60,7 @@ func waitGone(t *testing.T, m *Manager, id, what string) {
 }
 
 func TestTerminalPreview(t *testing.T) {
+	needTerminals(t)
 	t.Parallel()
 
 	m, procs, td := setup(t, "preview.dash.test")
@@ -133,6 +144,7 @@ func TestTerminalPreview(t *testing.T) {
 }
 
 func TestTerminalPreviewIdle(t *testing.T) {
+	needTerminals(t)
 	t.Parallel()
 
 	m, _, td := setup(t, "")
@@ -151,6 +163,7 @@ func TestTerminalPreviewIdle(t *testing.T) {
 }
 
 func TestTerminalPreviewCrashKeepsLog(t *testing.T) {
+	needTerminals(t)
 	t.Parallel()
 
 	m, _, td := setup(t, "")

@@ -245,6 +245,7 @@ func TestRunnerTerminalPreviewThroughTheHub(t *testing.T) {
 	}
 	rs.HubUser = creds.UserID
 
+	needTerminals(t)
 	w := do(t, h, "POST", start, "")
 	var pv model.Preview
 	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &pv) != nil {

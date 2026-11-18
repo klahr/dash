@@ -37,11 +37,34 @@ func (t todos) GetTodo(id string) (model.Todo, error) {
 
 func setup(t *testing.T, domain string) (*Manager, *runner.Manager, model.Todo) {
 	t.Helper()
+	// The folder first, so that its cleanup runs after the processes in it
+	// are gone: Windows can't remove a folder a process is still in.
+	dir := t.TempDir()
 	procs := runner.NewManager(&events{})
-	t.Cleanup(procs.StopAll)
-	td := model.Todo{ID: "abc123", ProjectID: "p1", Status: model.StatusReview, Worktree: &model.Worktree{Path: t.TempDir()}}
+	t.Cleanup(func() { stopAll(procs) })
+	td := model.Todo{ID: "abc123", ProjectID: "p1", Status: model.StatusReview, Worktree: &model.Worktree{Path: dir}}
 	m := New(procs, &events{}, todos{td.ID: td}, domain)
 	return m, procs, td
+}
+
+// stopAll stops procs' processes and waits a while for them to end.
+func stopAll(procs *runner.Manager) {
+	procs.StopAll()
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		running := false
+		for _, p := range procs.List("") {
+			running = running || p.Running
+		}
+		if !running {
+			return
+		}
+	}
+}
+
+// havePython3 says whether python3 runs here: on Windows, python3 on PATH
+// may be the Microsoft Store's stub, which only says Python isn't installed.
+func havePython3() bool {
+	return exec.Command("python3", "--version").Run() == nil
 }
 
 func waitState(t *testing.T, m *Manager, id string, want model.PreviewState) model.Preview {
@@ -100,7 +123,7 @@ func TestCrashKeepsLog(t *testing.T) {
 func TestProxyAuthAndLifecycle(t *testing.T) {
 	t.Parallel()
 
-	if _, err := exec.LookPath("python3"); err != nil {
+	if !havePython3() {
 		t.Skip("needs python3 for a test server")
 	}
 	m, _, td := setup(t, "preview.dash.test")

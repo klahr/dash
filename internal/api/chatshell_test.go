@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/klahr/dash/internal/agent"
+	"github.com/klahr/dash/internal/localrun"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
@@ -65,6 +68,22 @@ func realDir(t *testing.T, dir string) string {
 	return r
 }
 
+// pwdOf is what pwd prints in dir: its real path, which Git for Windows'
+// bash writes in its own form (/c/Users/..., or /tmp/... for the temp folder).
+func pwdOf(t *testing.T, dir string) string {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return realDir(t, dir)
+	}
+	cmd := exec.Command(localrun.Bash(), "-c", "pwd")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // A "!" command in a project chat runs in the project's checkout, streams
 // its output, reports its exit code, and is saved with its result as the
 // conversation's newest message, without asking Claude.
@@ -96,7 +115,7 @@ func TestProjectChatRunsShellCommand(t *testing.T) {
 	if res.ExitCode != 2 || res.Dir != dir || res.Command != "pwd; ls; echo broken >&2; exit 2" {
 		t.Errorf("result %+v", res)
 	}
-	for _, want := range []string{realDir(t, dir), "go.mod", "broken"} {
+	for _, want := range []string{pwdOf(t, dir), "go.mod", "broken"} {
 		if !strings.Contains(res.Output, want) || !strings.Contains(streamed.String(), want) {
 			t.Errorf("output %q (streamed %q) lacks %q", res.Output, streamed.String(), want)
 		}
@@ -309,7 +328,7 @@ func TestHubRunsChatShellOnTheUsersRunner(t *testing.T) {
 	if deltas[0].Kind != "runner" || deltas[0].Text != "laptop" {
 		t.Errorf("first delta %+v", deltas[0])
 	}
-	if res.ExitCode != 0 || strings.TrimSpace(res.Output) != realDir(t, clone) || res.Dir != clone || res.Runner != "laptop" {
+	if res.ExitCode != 0 || strings.TrimSpace(res.Output) != pwdOf(t, clone) || res.Dir != clone || res.Runner != "laptop" {
 		t.Errorf("result %+v", res)
 	}
 	var cwd string

@@ -24,12 +24,18 @@ const (
 //go:embed install.sh.tmpl
 var scriptSrc string
 
-var scriptTmpl = template.Must(template.New("install.sh").Funcs(template.FuncMap{"sq": ShellQuote}).Parse(scriptSrc))
+// The templates are parsed with LF line endings whatever the checkout has: Git
+// on Windows (core.autocrlf) writes them with CRLF, and sh reads a "\r" at the
+// end of each line as part of the command.
+var scriptTmpl = template.Must(template.New("install.sh").Funcs(template.FuncMap{"sq": ShellQuote}).Parse(lf(scriptSrc)))
 
 //go:embed install.ps1.tmpl
 var psScriptSrc string
 
-var psScriptTmpl = template.Must(template.New("install.ps1").Funcs(template.FuncMap{"psq": PowerShellQuote}).Parse(psScriptSrc))
+var psScriptTmpl = template.Must(template.New("install.ps1").Funcs(template.FuncMap{"psq": PowerShellQuote}).Parse(lf(psScriptSrc)))
+
+// lf turns CRLF line endings into LF.
+func lf(s string) string { return strings.ReplaceAll(s, "\r\n", "\n") }
 
 // releaseRe matches the tags GoReleaser publishes, e.g. 1.2.0 or 1.2.0-rc.1
 // (and v1.2.0, the format of earlier releases).

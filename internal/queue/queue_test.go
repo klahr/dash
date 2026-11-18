@@ -506,11 +506,11 @@ func TestMainMovingDuringMergeIsMergedAgain(t *testing.T) {
 	}
 	// Run 1 is the review, run 2 the merge: it commits on main, so run 3 must follow.
 	h.proj, _ = h.st.UpdateProject(h.proj.ID, func(p *model.Project) error {
-		p.TestCommand = "echo >> " + runs + "; if [ $(wc -l < " + runs + ") -eq 2 ]; then (cd " + p.Path + " && " + commit("c.txt") + "); fi"
+		p.TestCommand = "echo >> " + sq(runs) + "; if [ $(wc -l < " + sq(runs) + ") -eq 2 ]; then (cd " + sq(p.Path) + " && " + commit("c.txt") + "); fi"
 		return nil
 	})
 	td := h.waitFor(h.add("a").ID, model.StatusReview)
-	if out, err := exec.Command("sh", "-c", "cd "+h.proj.Path+" && "+commit("b.txt")).CombinedOutput(); err != nil {
+	if out, err := shellCmd("cd " + sq(h.proj.Path) + " && " + commit("b.txt")).CombinedOutput(); err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
 	h.approve(td.ID)
