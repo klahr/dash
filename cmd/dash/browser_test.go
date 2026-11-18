@@ -252,7 +252,9 @@ func TestBrowserSplitTask(t *testing.T) {
 		[...document.querySelectorAll("#split-parts .split-part:nth-child(2) .split-dep[aria-pressed=true]")].map((e) => e.textContent).join() === "1"`)
 	b.do("edit the first title", chromedp.SendKeys(chromedp.CSS(`#split-parts .split-part:first-child .split-title`), " first"))
 	b.waitJS("the title edited", `document.querySelector("#split-parts .split-title").value === "Add the users table first"`)
-	b.do("add a task", chromedp.Click(chromedp.ID("split-add")))
+	// The sheet may still be sliding in, and a click that misses the
+	// moving button adds nothing: click until the third task is there.
+	b.until("add a task", `document.querySelectorAll("#split-parts .split-part").length === 3`, chromedp.Click(chromedp.ID("split-add")))
 	b.do("write it", chromedp.SendKeys(chromedp.CSS(`#split-parts .split-part:nth-child(3) .split-prompt`), "Document accounts"))
 	b.waitJS("three tasks", `document.querySelector("#split-draft-label").textContent === "Save 3 drafts"`)
 	b.until("save them", `!document.querySelector("#todo-sheet").open`, chromedp.Click(chromedp.CSS(`#split-form button[value=draft]`)))
