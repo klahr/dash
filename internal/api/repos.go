@@ -223,7 +223,7 @@ func (sv *service) adoptRepo(ctx context.Context, name, path string) (model.Proj
 	return sv.data.CreateProject(model.Project{
 		ID: id, Name: name, Path: path, DefaultBranch: s.adoptedBranch(ctx, id, path, "main"),
 		RemoteURL: s.Git.RemoteURL(ctx, id, path), MaxAutoFixes: model.DefaultMaxAutoFixes,
-		TagFormat: release.DefaultFormat,
+		TagFormat: release.DefaultFormat, MaxParallel: model.DefaultMaxParallel,
 	})
 }
 

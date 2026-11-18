@@ -214,3 +214,17 @@ func TestDefaultMergeMode(t *testing.T) {
 		t.Errorf("GitHub clone without gh: %q set %v", p.MergeMode, p.MergeModeSet)
 	}
 }
+
+func TestNewProjectMaxParallel(t *testing.T) {
+	parallel(t)
+	n := func(v int) *int { return &v }
+	for _, c := range []struct {
+		req  *int
+		want int
+	}{{nil, model.DefaultMaxParallel}, {n(0), 0}, {n(2), 2}, {n(-1), 0}, {n(1000), model.MaxProjectParallel}} {
+		p, err := newProjectFromRequest(projectRequest{Name: "p", MaxParallel: c.req}, model.Project{}, false)
+		if err != nil || p.MaxParallel != c.want {
+			t.Errorf("max_parallel %v: got %d, %v; want %d", c.req, p.MaxParallel, err, c.want)
+		}
+	}
+}

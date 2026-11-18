@@ -139,8 +139,9 @@ Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
 **Limit a project's tasks at once.** In **Project settings → General**, set **Tasks at once**.
 At most that many of the project's tasks run at the same time, on this computer and on its
-runners together. The others stay queued, and say why, until one finishes. Leave it empty for no
-limit of the project's own. The API field is `max_parallel` (`0` for no limit).
+runners together. The others stay queued, and say why, until one finishes. A new project
+starts at 5. Clear it for no limit of the project's own. The API field is `max_parallel` (`0` for
+no limit).
 
 **Who made a task.** The task's pane says who created it ("Created by Ana", or "Created by Dash"
 for a task Dash made itself). When your organization has more than one member, each card also

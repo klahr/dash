@@ -92,6 +92,7 @@ type projectRequest struct {
 	PreviewCommand string   `json:"preview_command"` // terminal previews: runs in the worktree
 	CopyFiles      []string `json:"copy_files"`
 	MaxAutoFixes   *int     `json:"max_auto_fixes"`
+	MaxParallel    *int     `json:"max_parallel"` // nil: model.DefaultMaxParallel; 0: no limit
 	AutoPush       bool     `json:"auto_push"`
 	MergeMode      string   `json:"merge_mode"`
 	MaxRunMinutes  int      `json:"max_run_minutes"`
@@ -204,6 +205,10 @@ func newProjectFromRequest(req projectRequest, base model.Project, gh bool) (mod
 	np.MaxAutoFixes = model.DefaultMaxAutoFixes
 	if req.MaxAutoFixes != nil {
 		np.MaxAutoFixes = max(0, *req.MaxAutoFixes)
+	}
+	np.MaxParallel = model.DefaultMaxParallel
+	if req.MaxParallel != nil {
+		np.MaxParallel = max(0, min(*req.MaxParallel, model.MaxProjectParallel))
 	}
 	np.MaxRunMinutes, np.MaxTurns = max(0, req.MaxRunMinutes), max(0, req.MaxTurns)
 	np.TagFormat = release.DefaultFormat

@@ -245,6 +245,8 @@ func (p Project) InvestigatesCI() bool { return p.InvestigateCI == nil || *p.Inv
 const (
 	DefaultMaxAutoFixes  = 2
 	DefaultMaxRunMinutes = 60
+	// DefaultMaxParallel is a new project's Project.MaxParallel.
+	DefaultMaxParallel = 5
 	// MaxProjectParallel bounds Project.MaxParallel.
 	MaxProjectParallel = 64
 	DefaultMaxTurns    = 200
