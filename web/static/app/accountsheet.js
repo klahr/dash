@@ -4,14 +4,18 @@ import { attempt, railOf } from "./dialogs.js";
 import { changed } from "./routes.js";
 
 // ------------------------------------------------------------------ the Account sheet
-// The user's own settings (preferences, two-factor, Google, Connect Claude,
-// tokens, personal webhooks, the wall view) are sections down one rail sheet,
-// like Settings. Each module registers how its section loads; the account
-// menu's Account item opens the sheet at the section last shown (kept in
-// localStorage), the palette and :commands open it at a given section, and
-// picking another on the rail loads that one.
+// The user's own settings (preferences, notifications, two-factor, Google,
+// Connect Claude, tokens) are sections down one rail sheet, like Settings.
+// Each module registers how its section loads (several may, for one
+// section); the account menu's Account item opens the sheet at the section
+// last shown (kept in localStorage), the palette and :commands open it at a
+// given section, and picking another on the rail loads that one.
 const loaders = new Map();
-export function accountSection(key, load) { loaders.set(key, load); }
+export function accountSection(key, load) { loaders.set(key, [...(loaders.get(key) || []), load]); }
+const loadSection = (key) => Promise.all((loaders.get(key) || []).map((load) => load()));
+
+// Sections that moved into another one: links and URLs to them still work.
+export const ACCOUNT_MOVED = { notify: "notifications", webhooks: "notifications" };
 
 const sheet = $("#account-sheet");
 const LAST = "dash.accountSection";
@@ -22,11 +26,12 @@ let opening = false;
 // openAccount shows the sheet at section key (the last one shown, without
 // one), loaded (again, if it is open).
 export async function openAccount(key = lastSection()) {
+  key = ACCOUNT_MOVED[key] || key;
   opening = true;
   try { railOf("account-sheet").show(key); } finally { opening = false; }
   const current = railOf("account-sheet").current;
   remember(current);
-  await loaders.get(current)?.();
+  await loadSection(current);
   if (!sheet.open) sheet.showModal();
   changed("push");
 }
@@ -34,6 +39,19 @@ export async function openAccount(key = lastSection()) {
 sheet.addEventListener("railchange", (e) => {
   if (!sheet.open || opening) return;
   remember(e.detail);
-  const load = loaders.get(e.detail);
+  if (loaders.has(e.detail)) attempt(() => loadSection(e.detail))();
+});
+
+// ------------------------------------------------------------------ the Organization sheet
+// Most of it is drawn as it opens (account.js); a section that loads on its
+// own (the wall view, Claude status) registers here and loads when picked.
+const orgLoaders = new Map();
+export function orgSection(key, load) { orgLoaders.set(key, load); }
+const orgSheet = document.getElementById("org-sheet"); // not on the Planning page
+// loadOrgSection loads the Organization sheet's section shown now.
+export async function loadOrgSection() { await orgLoaders.get(railOf("org-sheet")?.current)?.(); }
+orgSheet?.addEventListener("railchange", (e) => {
+  if (!orgSheet.open) return;
+  const load = orgLoaders.get(e.detail);
   if (load) attempt(load)();
 });

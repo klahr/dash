@@ -8,7 +8,7 @@ import { agoText } from "./branches.js";
 
 // ------------------------------------------------------------------ notification webhooks
 // Outgoing webhooks: a project's, in its settings, and the user's personal
-// ones (every project of their org), in the Account dialog. They save as
+// ones (every project of their org), in Account → Notifications. They save as
 // you go, not with the settings form. Each row can show its recent
 // deliveries.
 export const WEBHOOK_EVENTS = {
@@ -56,14 +56,15 @@ export async function loadWebhooks(sc = hookScopes.project) {
   renderWebhooks(sc);
 }
 
-accountSection("webhooks", loadMyWebhooks);
+// The personal webhooks are part of Account → Notifications.
+accountSection("notifications", loadMyWebhooks);
 async function loadMyWebhooks() {
   const sc = hookScopes.personal;
   $(sc.secret).hidden = true;
-  const org = state.me?.org?.name;
-  $("#me-webhooks-intro").textContent = `Your own notification webhooks: Slack, ntfy or your own service hear about every project of ${org || "this organization"}, for as long as you are a member. Only you see them. A project's own webhooks are in its settings.`;
   await loadWebhooks(sc);
 }
+// changedHooks tells Notifications (the summary's Send it to) that the personal webhooks changed.
+const changedHooks = (sc) => { if (sc.personal) document.dispatchEvent(new Event("dash:mywebhooks")); };
 
 export function webhookStatus(w) {
   if (!w.last_at) return h("span", { class: "item-sub hint" }, "nothing sent yet");
@@ -108,6 +109,7 @@ function renderWebhooks(sc = hookScopes.project) {
     sc.list = sc.list.map((x) => (x.id === w.id ? w : x));
     if (hooks.history.has(w.id)) loadWebhookHistory(w, sc).catch(fail);
     renderWebhooks(sc);
+    changedHooks(sc);
   };
   const rows = [];
   for (const w of sc.list) {
@@ -142,6 +144,7 @@ function renderWebhooks(sc = hookScopes.project) {
           sc.list = sc.list.filter((x) => x.id !== w.id);
           hooks.history.delete(w.id);
           if (sc.owner() === owner) renderWebhooks(sc);
+          changedHooks(sc);
         }) }, "Delete…"))));
     if (open) rows.push(webhookHistory(w, sc));
   }
@@ -228,4 +231,5 @@ $("#webhook-sheet").addEventListener("close", attempt(async () => {
     throw e;
   }
   renderWebhooks(sc);
+  changedHooks(sc);
 }));

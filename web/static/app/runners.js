@@ -14,6 +14,7 @@ import { shortLabel } from "./usage.js";
 import { openSettings, syncSettingsRunners } from "./settings.js";
 import { ensureShell, forgetShellRefusal } from "./terminal.js";
 import { loadTry } from "./try.js";
+import { loadRunnerTokens } from "./tokens.js";
 import { isRelease, runnerOutdated as outdatedFor } from "../runnerversion.js";
 import { LABEL_ANY, parseLabels, runnerLabels, servesProject } from "../groups.js";
 
@@ -1018,6 +1019,7 @@ export async function openRunners(id) {
   shown = typeof id === "string" ? id : "overview";
   $("#runners-main").scrollTop = 0;
   await renderRunners();
+  loadRunnerTokens().catch(() => { $("#runners-tokens").hidden = true; });
   const d = $("#runners-sheet");
   if (!d.open) d.showModal();
   changed("push");

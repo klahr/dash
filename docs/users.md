@@ -161,8 +161,9 @@ more of its work, and their tunnels close within seconds.
 
 ## Tokens
 
-Besides browser sessions, Dash signs in with tokens, all kept in one table, hashed, and listed
-under **Tokens & apps** in the Account dialog (account menu → Account):
+Besides browser sessions, Dash signs in with tokens, all kept in one table, hashed. **Account →
+Tokens & apps** lists API tokens and connected apps; **Runners → Overview → Runners you registered**
+lists runner tokens:
 
 - **API tokens** you create there, for scripts and MCP clients: `Authorization: Bearer dash_…`
   on `/api/…` and `/mcp`. Creating one asks for your password; the token is shown once.
@@ -216,8 +217,8 @@ is no button, and `/auth/google/*` answers 404.
 
 - **The instance's** serves every organization that has none of its own. Set
   `DASH_GOOGLE_CLIENT_ID` and `DASH_GOOGLE_CLIENT_SECRET` (in the environment or `.env`), or, if they
-  aren't set, a platform admin enters them under **Organization → Google sign-in**.
-- **An org's own**: an owner enters a client ID and secret under **Organization → Google sign-in**.
+  aren't set, a platform admin enters them under **Organization → Sign-in**.
+- **An org's own**: an owner enters a client ID and secret under **Organization → Sign-in**.
   Its consent screen shows their organization and can be Internal to their Workspace. Signing in
   to that org then uses it, and it only lets in accounts of the org's verified domains who are (or
   become, by the rules below) members.
@@ -230,7 +231,7 @@ have to be entered again.
 
 ### Org settings (owners and admins)
 
-Under **Organization → Google sign-in**:
+Under **Organization → Sign-in → Google sign-in**:
 
 - **Google Workspace domains**, e.g. `example.com` (several allowed). A domain counts once it's
   verified. After you add it, Dash shows a TXT record like

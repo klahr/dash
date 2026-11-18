@@ -296,7 +296,7 @@ Its owner and the org's admins can:
 
 - **Pause** it: it finishes what it is running and gets no new tasks;
 - set **At once**, how many of the hub's tasks it runs at a time (0: its own `-parallel`);
-- **Revoke…** it (there, or under **Account → Tokens & apps**): it is disconnected at once, its token stops
+- **Revoke…** it (there, or under **Runners → Overview → Runners you registered**): it is disconnected at once, its token stops
   working (the hub keeps only a hash of it) and it works on no project any more. Tasks it was
   running fail and can be queued again on another runner. The runner exits, saying so (its
   systemd service doesn't restart it; launchd retries every 30 s); to bring it back, run the
@@ -433,7 +433,7 @@ only those, and a runner that was given `self-hosted` by hand loses it.
 
 By default **Deploy** runs on any runner the project runs on. To keep deploys to some of them (the
 one with the signing keys, or the one in the office network), give those runners a label of their
-own, such as `production`, and put it in **Project settings → General → Deploy runs on**, beside
+own, such as `production`, and put it in **Project settings → Commands → Deploy runs on**, beside
 the deploy command. Separate labels with commas: a runner deploys only if it has every one of them,
 as well as the labels the project runs on. Below the field, the settings say which runners would
 deploy, as you type. **Add project → Advanced** has the same field.
@@ -540,7 +540,7 @@ owner, on their computer, and a command could call `claude` itself. Dash records
 each command. A runner runs a command only if an org admin set it, the runner's owner set it, it
 was there before this rule, or the runner is a shared runner. Otherwise the step fails and says who
 changed the command: an org admin or the runner's owner must approve it with **Approve commands**
-in **Project settings → General**, shown while a command waits for them. An admin's approval counts
+in **Project settings → Commands**, shown while a command waits for them. An admin's approval counts
 for every runner, an owner's for their own runners. Changing **Deploy runs on** changes the deploy command too, since it
 picks the runners the command runs on.
 

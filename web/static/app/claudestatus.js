@@ -3,13 +3,13 @@ import { COMPONENT, IMPACT, affectedServices, claudePillText, claudePillTone, la
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
-import { accountSection } from "./accountsheet.js";
+import { orgSection } from "./accountsheet.js";
 import { copyBlock } from "./prefs.js";
 import { agoText } from "./branches.js";
 
 // ------------------------------------------------------------------ Claude's status
 // Claude's status page (status.claude.com) posts its incidents to this Dash's
-// webhook, which a platform admin sets up in Account → Claude status. A pill
+// webhook, which a platform admin sets up in Organization → Claude status. A pill
 // in the top bar shows while something is wrong; it opens the incidents.
 // Always the hub's (this Dash's), whichever project is open.
 const INDICATOR = { none: "All systems operational", minor: "Minor outage", major: "Partial outage", critical: "Major outage", maintenance: "Maintenance" };
@@ -19,7 +19,7 @@ const STATUS = {
   scheduled: "Scheduled", in_progress: "In progress", verifying: "Verifying", completed: "Completed",
 };
 const isAdmin = () => !!state.me?.user?.is_platform_admin;
-// What counts: the components a platform admin chose (Account → Claude
+// What counts: the components a platform admin chose (Organization → Claude
 // status → Components) and the incidents that affect one or name none. The
 // hub marks the rest ignored.
 const counted = (xs) => (xs || []).filter((x) => !x.ignored);
@@ -98,7 +98,7 @@ function renderSheet() {
   const summary = $("#claude-status-summary");
   if (!st?.enabled) {
     summary.className = "claude-summary";
-    fill(summary, isAdmin() ? "This Dash doesn't follow Claude's status yet. Turn it on in Account → Claude status."
+    fill(summary, isAdmin() ? "This Dash doesn't follow Claude's status yet. Turn it on in Organization → Claude status."
       : "This Dash doesn't follow Claude's status. A platform admin can turn it on.");
     fill($("#claude-status-body"));
     return;
@@ -131,7 +131,7 @@ function renderSheet() {
     // What doesn't count, folded away: why the pill is off.
     ignored ? h("details", { class: "claude-ignored" },
       h("summary", {}, h("span", { class: "section-head" }, `Not counted (${ignored})`)),
-      h("p", { class: "hint" }, isAdmin() ? "These affect only components Dash doesn't watch. Choose them in Account → Claude status → Components."
+      h("p", { class: "hint" }, isAdmin() ? "These affect only components Dash doesn't watch. Choose them in Organization → Claude status → Components."
         : "These affect only components Dash doesn't watch, so the Claude pill stays off for them."),
       ignComps.length ? compList(ignComps) : null,
       ignActive.length ? incidentList(ignActive) : null) : null,
@@ -158,8 +158,8 @@ $("#claude-status-sync").addEventListener("click", attempt(async () => {
   toast("Checked the status page", { tone: "ok" });
 }));
 
-// ---- Account → Claude status: platform admins set it up
-accountSection("claudestatus", loadAdmin);
+// ---- Organization → Claude status: platform admins set it up for this whole Dash
+orgSection("claudestatus", loadAdmin);
 
 async function loadAdmin() {
   if (!isAdmin()) return;

@@ -301,8 +301,8 @@ func TestBrowserSplitTask(t *testing.T) {
 	}
 }
 
-// A personal webhook, from the account menu: add one, send it a test and
-// read its delivery history.
+// A personal webhook, in Account → Notifications: add one, send it a test and
+// read its delivery history. The summary can go to it at once.
 func TestBrowserPersonalWebhook(t *testing.T) {
 	chrome := needChrome(t)
 	got := make(chan string, 10)
@@ -316,7 +316,9 @@ func TestBrowserPersonalWebhook(t *testing.T) {
 
 	b.until("open the account menu", `document.querySelector("#foot-menu").open`, chromedp.Click(chromedp.CSS(`#foot-menu > summary`)))
 	b.until("open Account at Editors", `document.querySelector("#account-sheet").open && document.querySelector("#account-sheet-section-editors").classList.contains("current")`, chromedp.Click(chromedp.ID("account-open")))
-	b.until("pick My webhooks", `document.querySelector("#account-sheet-section-webhooks").classList.contains("current")`, chromedp.Click(chromedp.ID("account-sheet-rail-webhooks")))
+	b.until("pick Notifications", `document.querySelector("#account-sheet-section-notifications").classList.contains("current")`, chromedp.Click(chromedp.ID("account-sheet-rail-notifications")))
+	b.waitJS("no My webhooks or Browser notifications any more", `!document.querySelector("#account-sheet .rail-item[data-rail=webhooks], #account-sheet .rail-item[data-rail=notify]")`)
+	b.waitJS("the push switch for this browser", `document.querySelector("#notify-form [name=notify][form=prefs-form]")`)
 	b.waitJS("the empty list", `document.querySelector("#me-webhooks").textContent.includes("No webhooks yet")`)
 	b.until("add one", `document.querySelector("#webhook-sheet").open`, chromedp.Click(chromedp.ID("me-webhook-add")))
 	b.waitJS("the personal form", `document.querySelector("#webhook-title").textContent === "Add personal webhook"`)
@@ -327,6 +329,7 @@ func TestBrowserPersonalWebhook(t *testing.T) {
 	)
 	b.until("save it", `!document.querySelector("#webhook-sheet").open`, chromedp.Click(chromedp.CSS(`#webhook-form button[value=save]`)))
 	b.waitJS("the webhook and its secret", `document.querySelector("#me-webhooks").textContent.includes("My receiver") && !document.querySelector("#me-webhook-secret").hidden`)
+	b.waitJS("the summary can go to it", `document.querySelector("#notify-dests").textContent.includes("My receiver")`)
 
 	b.do("send a test", chromedp.Click(chromedp.CSS(`#me-webhooks .webhook-actions button`)))
 	select {
@@ -395,7 +398,7 @@ func TestBrowserNotificationSettings(t *testing.T) {
 	b.signIn(h)
 	open(b, false)
 	b.waitJS("email greyed out", `document.querySelector("#notify-form").email.disabled && !document.querySelector("#notify-email-note").hidden`)
-	b.waitJS("the instant webhooks", `document.querySelector("#notify-hooks").textContent.includes("summary only")`)
+	b.waitJS("the webhooks in the same section", `document.querySelector("#account-sheet-section-notifications #me-webhooks").textContent.includes("My receiver")`)
 	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(() => {
 		const f = document.querySelector("#notify-form");
 		f.summary.value = "daily";
@@ -1095,6 +1098,7 @@ func TestBrowserSettingsSaveEachField(t *testing.T) {
 	project := func() (p struct {
 		Name        string `json:"name"`
 		TestCommand string `json:"test_command"`
+		Color       string `json:"color"`
 	}) {
 		h.api.must("GET", "/api/projects/"+h.project.ID, nil, http.StatusOK, &p)
 		return p
@@ -1118,6 +1122,44 @@ func TestBrowserSettingsSaveEachField(t *testing.T) {
 	if p := project(); p.Name != "Renamed" {
 		t.Fatalf("name not saved: %+v", p)
 	}
+
+	// General is the name, color and icon; the commands have a section of their own.
+	b.waitJS("General and Commands", `document.querySelector("#settings-sheet-section-general [name=color_pick]") &&
+		document.querySelector("#settings-sheet-section-commands [name=test_command]") && !document.querySelector("#settings-sheet-section-general [name=test_command]")`)
+	// The color is one picker with None.
+	b.until("show General", `document.querySelector("#settings-sheet-section-general").classList.contains("current")`,
+		chromedp.Click(chromedp.ID("settings-sheet-rail-general")))
+	b.waitJS("no color yet", `document.querySelector("#settings-form [name=color_pick][value='']").checked`)
+	b.do("pick red", chromedp.Click(chromedp.CSS(`#settings-swatches input[value="#ef6b6b"]`)))
+	waitFor(t, nil, "the color saved", func() bool { return project().Color == "#ef6b6b" })
+	b.do("pick None", chromedp.Click(chromedp.CSS(`#settings-swatches .swatch-none`)))
+	waitFor(t, nil, "the color cleared", func() bool { return project().Color == "" })
+}
+
+// The Organization sheet: Sign-in is one section, the wall view is here,
+// Billing has a group of its own, and the project menu pauses the project
+// apart from the queue.
+func TestBrowserOrgSheet(t *testing.T) {
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	b.until("open the account menu", `document.querySelector("#foot-menu").open`, chromedp.Click(chromedp.CSS(`#foot-menu > summary`)))
+	b.until("open Organization", `document.querySelector("#org-sheet").open`, chromedp.Click(chromedp.ID("org-open")))
+	b.waitJS("its rail", `(() => {
+		const items = [...document.querySelectorAll("#org-sheet .rail-item")].map((x) => x.dataset.rail);
+		const heads = [...document.querySelectorAll("#org-sheet .rail-head")].map((x) => x.textContent);
+		return ["members", "signin", "wall", "billing"].every((k) => items.includes(k)) && !items.includes("access") && !items.includes("sso") &&
+			heads.includes("Billing") && !heads.includes("Account");
+	})()`)
+	b.until("show Wall view", `document.querySelector("#org-sheet-section-wall").classList.contains("current")`,
+		chromedp.Click(chromedp.ID("org-sheet-rail-wall")))
+	b.waitJS("the wall link", `document.querySelector("#wall-link")?.textContent.includes("/wall")`)
+	b.do("close Organization", chromedp.Click(chromedp.CSS(`#org-sheet .sheet-head button`)))
+	b.waitJS("closed", `!document.querySelector("#org-sheet").open`)
+	b.waitJS("Account has no wall view or Claude status", `!document.querySelector("#account-sheet .rail-item[data-rail=wall], #account-sheet .rail-item[data-rail=claudestatus]")`)
+	b.waitJS("the project menu's pause says it is this project's", `document.querySelector("#pm-pause").textContent.includes("this project")`)
+	b.waitJS("no Pause queue in Claude usage", `!document.querySelector("#usage-sheet #queue-toggle")`)
 }
 
 // On a phone the board shows one lane at a time, and a sideways swipe moves

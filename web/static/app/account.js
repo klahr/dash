@@ -9,6 +9,7 @@ import { loadBilling, offerSubscription, renderOrgBilling } from "./billing.js";
 import { pushUnsubscribe } from "./notifications.js";
 import { avatar, showOwnAvatar } from "./avatar.js";
 import { accountHooks, askPassword } from "./myaccount.js";
+import { loadOrgSection } from "./accountsheet.js";
 
 // Your own account's sections (two-factor, Google, your data) are in
 // myaccount.js, shared with a planner's Planning page.
@@ -39,14 +40,13 @@ export async function loadMe() {
     }, ico(o.id === me.org?.id ? "check" : "users"), o.name)),
   ]));
   $("#org-open").hidden = !me.org;
-  // The wall view and Google sections drop out of the Account sheet's rail.
-  $("#wall-form").hidden = !me.org;
+  // The Google section drops out of the Account sheet's rail.
   $("#google-body").hidden = !me.google_available;
   // The queue pause is the whole Dash's, for platform admins.
   const admin = !!me.user?.is_platform_admin;
-  $("#queue-toggle").hidden = !admin;
-  // Following Claude's status page is set up by platform admins.
-  $("#account-rail-dash").hidden = $("#claude-status-admin").hidden = !admin;
+  $("#pm-queue").hidden = !admin;
+  // Following Claude's status page is set up by platform admins, in Organization → This Dash.
+  $("#org-rail-dash").hidden = $("#claude-status-admin").hidden = !admin;
   if (!me.org) {
     await ask({
       title: "No organization",
@@ -78,6 +78,7 @@ export async function openOrg() {
   await renderOrg();
   $("#org-invite-link").hidden = true;
   const d = $("#org-sheet");
+  await loadOrgSection();
   if (!d.open) d.showModal();
   changed("push");
 }
@@ -248,6 +249,7 @@ async function renderOrgSSO(o, mine) {
     e.detail ? h("span", { class: "hint" }, ` · ${e.detail}`) : null));
 
   fill(box,
+    h("h3", { class: "section-head" }, "Google sign-in"),
     h("p", { class: "hint" }, status),
     h("h3", { class: "section-head" }, "Google Workspace domains"),
     h("ul", { class: "item-list sso-domains" }, ...domains),

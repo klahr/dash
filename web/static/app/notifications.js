@@ -114,7 +114,7 @@ export async function pushUnsubscribe() {
   await sub.unsubscribe();
 }
 export async function testPush() {
-  if (!notifyOn() || !state.pushOn) throw new Error("Turn notifications on first (Account → Browser notifications); this browser or Dash may not support pushes.");
+  if (!notifyOn() || !state.pushOn) throw new Error("Turn push on first (Account → Notifications → Push to this browser); this browser or Dash may not support pushes.");
   const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
   const res = await api("POST", "/api/push/test", { endpoint: sub.endpoint }, "");
   if (!res.ok) throw new Error(`The push didn't go through: ${res.error}`);

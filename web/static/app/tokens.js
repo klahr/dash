@@ -10,8 +10,9 @@ import { accountSection } from "./accountsheet.js";
 
 // ------------------------------------------------------------------ tokens & connected apps
 // Everything that signs in as the user without a browser session: API
-// tokens, OAuth clients (claude.ai connectors) they allowed, and runners
-// they registered. Each is pinned to one org.
+// tokens and OAuth clients (claude.ai connectors) they allowed, in Account →
+// Tokens & apps, and runners they registered, in Runners' overview. Each is
+// pinned to one org.
 accountSection("tokens", loadTokens);
 async function loadTokens() {
   $("#token-secret").hidden = true;
@@ -30,7 +31,8 @@ function tokenDetail(t) {
   return parts.join(" · ");
 }
 
-async function renderTokens() {
+// renderTokens draws the lists of kinds ("api", "oauth", "runner") from a fresh list.
+async function renderTokens(kinds = ["api", "oauth"]) {
   const list = await api("GET", "/api/tokens", null, "");
   const row = (t) => {
         return h("li", { class: "item-row" },
@@ -45,7 +47,7 @@ async function renderTokens() {
         if (!await ask({ title: `Revoke ${t.name}?`, body, ok: "Revoke", danger: true })) return;
         await api("DELETE", `/api/tokens/${t.id}`, null, "");
         toast(`${t.name} revoked`);
-        await renderTokens();
+        await renderTokens([t.kind]);
         if (t.kind === "runner") await refreshMachines();
       }) }, "Revoke…"));
   };
@@ -53,12 +55,17 @@ async function renderTokens() {
     const rows = list.filter((t) => t.kind === kind).map(row);
     return rows.length ? rows : empty ? [h("li", { class: "hint" }, empty)] : [];
   };
-  $("#tokens-oauth").replaceChildren(...of("oauth", "No apps connected. See Connect Claude."));
-  $("#tokens-api").replaceChildren(...of("api", "No API tokens."));
-  const runners = of("runner");
-  $("#tokens-runner").replaceChildren(...runners);
-  $("#tokens-runner-head").hidden = !runners.length;
+  if (kinds.includes("oauth")) $("#tokens-oauth").replaceChildren(...of("oauth", "No apps connected. See Connect Claude."));
+  if (kinds.includes("api")) $("#tokens-api").replaceChildren(...of("api", "No API tokens."));
+  if (kinds.includes("runner")) {
+    const runners = of("runner");
+    $("#tokens-runner").replaceChildren(...runners);
+    $("#runners-tokens").hidden = !runners.length;
+  }
 }
+
+// loadRunnerTokens fills Runners' "Runners you registered".
+export const loadRunnerTokens = () => renderTokens(["runner"]);
 
 export async function createToken() {
   const name = $("#token-name").value.trim();
@@ -77,5 +84,5 @@ export async function createToken() {
     h("p", { class: "hint" }, "Send it as ", h("code", {}, "Authorization: Bearer <token>"), ` to Dash's API (/api/…) or MCP endpoint (/mcp). It works in ${org.name} until you revoke it here, change your password or leave the organization.`));
   $("#token-secret").hidden = false;
   $("#token-name").value = "";
-  await renderTokens();
+  await renderTokens(["api"]);
 }

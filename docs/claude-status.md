@@ -8,7 +8,7 @@ A platform admin turns it on. It is off until then.
 
 ## Turn it on
 
-1. Open **Account → Claude status**. Only platform admins see this section.
+1. Open **Organization → Claude status** (account menu → Organization, under **This Dash**). Only platform admins see this section.
 2. Turn on **Show Claude's status**. Dash makes a webhook URL for it.
 3. Copy the webhook URL. Anyone with it can post to it, so treat it like a password.
 4. Open [status.claude.com](https://status.claude.com) and choose **Subscribe to updates**,
@@ -28,13 +28,13 @@ See [Deploy the hub](deploy.md) for putting Dash on the internet.
 ## Without webhooks
 
 A Dash the status page can't reach (behind a firewall, or only on `localhost`) can read the
-page instead. In **Account → Claude status**, turn on **Also check the status page every 5
+page instead. In **Organization → Claude status**, turn on **Also check the status page every 5
 minutes**. This also catches updates a webhook missed.
 
 ## Choose the components that count
 
 The status page reports on many components, and most don't affect Dash's tasks. In
-**Account → Claude status → Components**, check the ones that matter. Each change is saved
+**Organization → Claude status → Components**, check the ones that matter. Each change is saved
 at once, for everyone on this Dash.
 
 Until you choose, **Claude Code**, **Claude API (api.anthropic.com)** and **claude.ai** count.
@@ -68,7 +68,7 @@ Dash keeps resolved incidents for 30 days.
 
 ## A new webhook URL
 
-If the URL leaked, choose **New URL…** in **Account → Claude status**. The old URL stops
+If the URL leaked, choose **New URL…** in **Organization → Claude status**. The old URL stops
 working at once. Subscribe the new URL on the status page, and unsubscribe the old one.
 
 ## Another status page

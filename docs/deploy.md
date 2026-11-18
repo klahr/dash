@@ -158,7 +158,7 @@ gets an address of its own, `acme.dash.example.com`:
 ### Slugs
 
 An org's subdomain is its **slug**. New orgs get one from their name (`Acme Corp` →
-`acme-corp`); owners rename it under *Organization → Address*. A slug is 3 to 40 lower-case
+`acme-corp`); owners rename it under **Organization → Sign-in → Address**. A slug is 3 to 40 lower-case
 letters, digits and hyphens, not starting or ending with a hyphen, unique, and not reserved.
 
 - **Reserved** by default: `www`, `api`, `app`, `admin`, `preview`, `runner`, `mcp`, `oauth`,

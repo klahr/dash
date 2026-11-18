@@ -20,9 +20,10 @@ export function syncPrefs() {
   f.clock.value = clockPref();
   f.chatSuggest.checked = chatSuggestOn();
 }
-// The preferences are the Account sheet's first sections (Editors, Notifications, Time, Chat).
+// The preferences are the Account sheet's first sections (Editors, Time, Chat), and
+// this browser's push switch in Notifications.
 export function openPrefs() { return openAccount("editors"); }
-for (const key of ["editors", "notify", "clock", "chat"]) accountSection(key, syncPrefs);
+for (const key of ["editors", "notifications", "clock", "chat"]) accountSection(key, syncPrefs);
 // Each saves as it changes, with "Saved" in the sheet's header.
 const pref = (name, fn) => $("#prefs-form")[name].addEventListener("change", (e) => saveField(e.target, async () => fn(e.target)));
 pref("vim", (el) => { if (el.checked !== vimOn()) toggleVim(); });

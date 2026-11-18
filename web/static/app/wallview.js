@@ -3,12 +3,12 @@ import * as store from "./store.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
-import { accountSection, openAccount } from "./accountsheet.js";
+import { accountSection, openAccount, orgSection } from "./accountsheet.js";
 import { connectorSteps, copyBlock } from "./prefs.js";
 import { agoText } from "./branches.js";
 
 // ------------------------------------------------------------------ wall view
-// Configures /wall: which projects it shows and privacy mode (kept in this
+// Organization → Wall view configures /wall: which projects it shows and privacy mode (kept in this
 // browser), a link to open it here, and the org admins' TV links (wall
 // tokens). A TV link's secret is shown only when it's made; while the sheet
 // stays open its link follows the options.
@@ -26,7 +26,7 @@ function wallURL(secret = "") {
   return `${location.origin}/wall${s ? `?${s}` : ""}`;
 }
 
-accountSection("wall", loadWall);
+orgSection("wall", loadWall);
 async function loadWall() {
   if (!state.me?.org) throw new Error("You aren't in an organization.");
   const f = $("#wall-form");
@@ -99,7 +99,7 @@ $("#wall-form").addEventListener("change", () => {
   store.setJSON("dash.wall", wallOpts());
   renderWallLink();
 });
-$("#account-sheet").addEventListener("close", () => { wall.secret = ""; $("#wall-token-secret").replaceChildren(); });
+$("#org-sheet").addEventListener("close", () => { wall.secret = ""; $("#wall-token-secret").replaceChildren(); });
 
 export function openConnector() { return openAccount("connector"); }
 accountSection("connector", loadConnector);

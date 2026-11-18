@@ -79,7 +79,7 @@ and enter `https://<machine>.<tailnet>.ts.net:8443/mcp` in claude.ai.
   makes the lockout per client instead of shared by every request through the proxy.
 - Access tokens last an hour, refresh tokens 30 days and rotate on every use; replaying a used
   refresh token revokes the connector. They are stored hashed in the database, as the user's
-  tokens: **Tokens & apps** in the Account dialog (account menu → Account) lists the connectors you allowed and disconnects
+  tokens: **Account → Tokens & apps** lists the connectors you allowed and disconnects
   them. Changing your password also signs them out. (An `oauth.json` from an older Dash is imported
   once: connectors of a user in exactly one org carry on, others must connect again.)
 - A client may ask for `scope=read` only; then its tools can look but not change anything.

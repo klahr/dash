@@ -45,9 +45,7 @@ export function openSettings() {
   f.max_run_minutes.value = p.max_run_minutes || "";
   f.max_turns.value = p.max_turns || "";
   f.max_parallel.value = p.max_parallel || "";
-  f.use_color.checked = !!p.color;
-  f.color.value = p.color || "#8aa4ff";
-  f.color.disabled = !p.color;
+  showColor(f, p.color || "");
   f.icon.value = p.icon || "";
   projectIcon(p, $("#settings-icon"));
   renderRunnerPicker(p);
@@ -189,8 +187,25 @@ function checkTagFormat() {
   }), 250);
 }
 $("#settings-form").tag_format.addEventListener("input", checkTagFormat);
-$("#settings-form").use_color.addEventListener("change", (e) => { e.target.form.color.disabled = !e.target.checked; });
-$("#settings-form").color.addEventListener("input", (e) => { e.target.form.use_color.checked = true; });
+// The project color: one picker with None, a few colors, and any other
+// color from the color input (picking one there chooses it).
+const SWATCHES = [["#8aa4ff", "Blue"], ["#5ec4a8", "Teal"], ["#7fcf6b", "Green"], ["#f2c14e", "Yellow"],
+  ["#f39a4e", "Orange"], ["#ef6b6b", "Red"], ["#e57ad2", "Pink"], ["#a98bf0", "Purple"]];
+{
+  const custom = $("#settings-swatches .swatch-custom");
+  for (const [color, name] of SWATCHES) {
+    const sw = h("label", { class: "swatch", title: name },
+      h("input", { type: "radio", name: "color_pick", value: color, "aria-label": name }));
+    sw.style.setProperty("--swatch", color);
+    custom.before(sw);
+  }
+}
+function showColor(f, color) {
+  const preset = SWATCHES.some(([c]) => c === color.toLowerCase());
+  for (const r of f.color_pick) r.checked = r.value === (!color ? "" : preset ? color.toLowerCase() : "custom");
+  f.color.value = color && !preset ? color : "#8aa4ff";
+}
+$("#settings-form").color.addEventListener("input", (e) => { e.target.form.color_pick.value = "custom"; });
 const settingsIcon = (icon) => {
   $("#settings-form").icon.value = icon;
   projectIcon({ ...state.project, icon }, $("#settings-icon"));
@@ -237,13 +252,13 @@ const FIELDS = {
   max_run_minutes: { read: (f) => Number(f.max_run_minutes.value) || 0 },
   max_turns: { read: (f) => Number(f.max_turns.value) || 0 },
   max_parallel: { read: (f) => Number(f.max_parallel.value) || 0 },
-  color: { read: (f) => (f.use_color.checked ? f.color.value : ""), el: (f) => f.use_color },
+  color: { read: (f) => (f.color_pick.value === "custom" ? f.color.value : f.color_pick.value), el: () => $("#settings-color") },
   icon: { read: (f) => f.icon.value, el: () => $("#settings-icon-pick") },
   runs_on: { read: () => typedRunsOn(), skip: () => $("#settings-runners-field").hidden },
   deploy_runs_on: { read: () => typedDeployRunsOn(), skip: () => $("#settings-deploy-runs-on-row").hidden },
 };
 // A form control's name → the field it saves.
-const FIELD_OF = { use_color: "color" };
+const FIELD_OF = { color_pick: "color" };
 const fieldEl = (f, key) => {
   if (FIELDS[key].el) return FIELDS[key].el(f);
   const el = f.elements[key];

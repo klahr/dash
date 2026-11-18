@@ -101,8 +101,10 @@ export function renderUsage() {
   $("#usage-reason").textContent = reason;
   $("#usage-meters").replaceChildren(...live.map((w) => meter(w, false)));
   renderPace(u.pace);
-  setLabel($("#queue-toggle"), u.manual_pause ? "play" : "pause", u.manual_pause ? "Resume queue" : "Pause queue");
-  $("#queue-toggle").className = `btn ${u.manual_pause ? "primary" : ""}`;
+  // In the project menu, beside Pause this project: the queue is every project's.
+  const q = $("#pm-queue");
+  setLabel(q, u.manual_pause ? "play" : "pause", u.manual_pause ? "Resume queue (all projects)" : "Pause queue (all projects)");
+  q.title = u.manual_pause ? "Let queued tasks start again, in every project of this Dash" : "No new task starts in any project of this Dash; running tasks finish";
 }
 
 // The "Follow weekly pace" settings and where the queue stands with them.
@@ -185,7 +187,7 @@ $("#usage-fold").addEventListener("click", () => {
 });
 
 $("#usage-pill").addEventListener("click", () => { renderUsage(); $("#usage-sheet").showModal(); });
-$("#queue-toggle").addEventListener("click", attempt(async () => {
+$("#pm-queue").addEventListener("click", attempt(async () => {
   state.usage = await api("POST", state.usage?.manual_pause ? "/api/queue/resume" : "/api/queue/pause");
   renderUsage();
   toast(state.usage.manual_pause ? "Queue paused" : "Queue resumed");

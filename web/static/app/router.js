@@ -12,7 +12,7 @@ import { showIssue } from "./issues.js";
 import { cardError, cardId, closeCard, openCard, planningFilters, setPlanningFilters } from "./planning.js";
 import { currentBoard, showBoard } from "./boards.js";
 import { openSettings } from "./settings.js";
-import { openAccount } from "./accountsheet.js";
+import { ACCOUNT_MOVED, openAccount } from "./accountsheet.js";
 import { openOrg } from "./account.js";
 import { openRunners } from "./runners.js";
 
@@ -223,6 +223,10 @@ async function apply(r, { startup = false, settle = !startup } = {}) {
   else history.replaceState(history.state, "", url);
 }
 
+// Sections that moved to another place in the Organization sheet: from
+// Account (the wall view, Claude status) or merged into Sign-in.
+const ORG_MOVED = { wall: "wall", claudestatus: "claudestatus", access: "signin", sso: "signin" };
+
 // openSheet opens sheet k (one of SHEETS) at its section, if it names one.
 async function openSheet(k, section) {
   const d = $(`#${SHEET_ID(k)}`);
@@ -231,9 +235,14 @@ async function openSheet(k, section) {
       if (!state.project) return;
       if (!d.open) openSettings();
       if (section) railOf(d.id)?.show(section);
+    } else if (k === "account" && ORG_MOVED[section]) {
+      // Moved to Organization: an old link opens it there.
+      await openOrg();
+      railOf("org-sheet")?.show(ORG_MOVED[section]);
     } else if (k === "account") {
-      if (!d.open || (section && railOf(d.id)?.current !== section)) await openAccount(section || undefined);
+      if (!d.open || (section && railOf(d.id)?.current !== (ACCOUNT_MOVED[section] || section))) await openAccount(section || undefined);
     } else if (k === "org") {
+      section = ORG_MOVED[section] || section;
       if (!d.open) await openOrg();
       if (section) railOf(d.id)?.show(section);
     } else if (k === "runners") {

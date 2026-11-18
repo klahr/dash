@@ -157,6 +157,19 @@ textarea.script-field { font-family: var(--mono); white-space: pre; overflow-x: 
 .color-row { display: flex; align-items: center; gap: 12px; }
 .color-row input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--surface); cursor: pointer; }
 .color-row input[type="color"]:disabled { opacity: .35; cursor: default; }
+/* The project color picker (Project settings → General): None, swatches, another color. */
+.color-pick .swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+.color-pick .swatch { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 32px; height: 32px; margin: 0; padding: 0; border-radius: 50%; cursor: pointer; background: var(--swatch, transparent); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .3); }
+.color-pick .swatch > input[type="radio"] { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.color-pick .swatch:has(> input[type="radio"]:checked) { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--text); }
+.color-pick .swatch:has(> input[type="radio"]:focus-visible) { outline: 2px solid var(--accent); outline-offset: 4px; }
+.color-pick .swatch-none { padding: 0 12px; border-radius: 16px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font-size: var(--fs-s); }
+.color-pick .swatch-custom { width: 32px; overflow: hidden; background: conic-gradient(#ef6b6b, #f2c14e, #7fcf6b, #5ec4a8, #8aa4ff, #e57ad2, #ef6b6b); }
+.color-pick .swatch-custom > input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+.color-pick .swatch-custom:has(> input[type="radio"]:checked) > input[type="color"] { opacity: 1; }
+.color-pick .swatch-custom > input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+.color-pick .swatch-custom > input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 50%; }
+.color-pick .swatch-custom > input[type="color"]::-moz-color-swatch { border: 0; border-radius: 50%; }
 .brand { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--text); text-decoration: none; font-weight: 700; font-size: var(--fs-l); letter-spacing: -.01em; }
 .brand img { width: 22px; height: 22px; border-radius: var(--r-s); }
 .brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2604,7 +2617,8 @@ a.claude-incident-name:hover { text-decoration: underline; }
 #settings-form .field-row { flex-wrap: wrap; justify-content: flex-start; }
 
 /* ---- Account → Notifications (app/notifysettings.js) ---- */
-.notify-form { max-width: 640px; }
+.notify-form, #notify-webhooks { max-width: 640px; }
+#notify-webhooks { margin-top: 8px; }
 .notify-form .field.choice { margin: 16px 0 4px; }
 .notify-form .toggle { display: flex; min-height: 40px; }
 .notify-freq { display: flex; flex-wrap: wrap; gap: 4px 20px; margin-top: 4px; }
@@ -2623,8 +2637,6 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .notify-push { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0 16px; }
 .notify-dest-hook em, .notify-form .toggle em { font-style: normal; font-weight: 400; color: var(--muted); }
 .toggle input:disabled + span { opacity: .55; cursor: not-allowed; }
-#notify-hooks .item-row { gap: 2px 10px; }
-#notify-hooks .item-row > .item-sub { flex: 1 1 100%; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

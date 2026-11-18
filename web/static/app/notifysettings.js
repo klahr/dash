@@ -4,16 +4,17 @@ import { attempt, busy, toast } from "./dialogs.js";
 import { fieldError, saveField, saveQueue } from "./autosave.js";
 import { state } from "./state.js";
 import { accountSection, openAccount } from "./accountsheet.js";
-import { WEBHOOK_EVENTS, WEBHOOK_FORMATS, webhookStatus } from "./webhooks.js";
+import { WEBHOOK_EVENTS, WEBHOOK_FORMATS } from "./webhooks.js";
 
 // ------------------------------------------------------------------ Account → Notifications
-// The user's notification settings in their org, kept by the hub (GET/PUT
-// /api/me/notifications): a daily or weekly summary (when, of which
-// projects, where it goes, what is in it), whose tasks they hear about,
-// which events push to their browsers, and their personal webhooks, which
-// get each event as it happens (edited in My webhooks, not here). Each
-// change saves at once (the time on blur), unless the summary isn't
-// complete yet: then what's missing shows under its field.
+// All of the user's own notifications, in one section. Their settings in
+// their org, kept by the hub (GET/PUT /api/me/notifications): a daily or
+// weekly summary (when, of which projects, where it goes, what is in it),
+// whose tasks they hear about and which events push to their browsers.
+// Beside them: this browser's push switch (a preference, prefs.js) and
+// their personal webhooks, which get each event as it happens
+// (webhooks.js). Each change saves at once (the time on blur), unless the
+// summary isn't complete yet: then what's missing shows under its field.
 const PUSH_LABELS = {
   "task.review": "A task is ready for review",
   "task.failed": "A task failed",
@@ -58,23 +59,26 @@ function renderNotify() {
   $("#notify-email").textContent = view.email ? `to ${view.email}` : "";
   $("#notify-email-note").hidden = view.email_available;
   $("#notify-email-note").textContent = view.email_note || "";
-  const dests = new Set(s.webhooks);
-  fill($("#notify-dests"), view.webhooks.length
-    ? view.webhooks.map((w) => h("label", { class: "toggle notify-dest-hook" },
-      h("input", { type: "checkbox", name: "dest", value: w.id, checked: dests.has(w.id) }),
-      h("span", {}, hookName(w), h("em", {}, ` · ${WEBHOOK_FORMATS[w.format] || w.format}${w.enabled ? "" : " · paused"}`))))
-    : h("p", { class: "hint" }, "No webhooks yet: add one in ", h("button", { type: "button", class: "link inline", "data-account": "webhooks" }, "My webhooks"), " to get the summary in Slack or ntfy."));
+  renderDests(new Set(s.webhooks));
   for (const k of INCLUDE) form[k].checked = !!s.include[k];
   form.min_severity.value = s.include.min_severity || "medium";
   const push = new Set(s.push);
   fill($("#notify-push"), view.push_choices.map((e) => h("label", { class: "toggle" },
     h("input", { type: "checkbox", name: "push", value: e, checked: push.has(e) }), h("span", {}, PUSH_LABELS[e] || WEBHOOK_EVENTS[e] || e))));
-  $("#notify-push-hint").hidden = false;
   state.pushEvents = push; // the page's own notifications follow it too (notifications.js)
   state.pushTasks = form.tasks.value;
-  renderHooks();
   syncNotify();
   renderState();
+}
+
+// renderDests lists the personal webhooks the summary can go to, those in dests ticked.
+function renderDests(dests) {
+  fill($("#notify-dests"), view.webhooks.length
+    ? view.webhooks.map((w) => h("label", { class: "toggle notify-dest-hook" },
+      h("input", { type: "checkbox", name: "dest", value: w.id, checked: dests.has(w.id) }),
+      h("span", {}, hookName(w), h("em", {}, ` · ${WEBHOOK_FORMATS[w.format] || w.format}${w.enabled ? "" : " · paused"}`))))
+    : h("p", { class: "hint" }, "No webhooks yet: add one under ", h("button", { type: "button", class: "link inline",
+      onclick: () => $("#notify-webhooks").scrollIntoView({ block: "start", behavior: "smooth" }) }, "Webhooks"), " to get the summary in Slack or ntfy."));
 }
 
 // syncNotify shows what applies to the choices made so far.
@@ -99,16 +103,6 @@ function renderState() {
   if (st.last_sent) parts.push(`Last sent ${dateTimeText(st.last_sent)}.`);
   $("#notify-state").textContent = parts.join(" ");
   $("#notify-state").hidden = !parts.length;
-}
-
-// renderHooks lists the user's personal webhooks, as My webhooks does, without its editor.
-function renderHooks() {
-  fill($("#notify-hooks"), view.webhooks.length
-    ? view.webhooks.map((w) => h("li", { class: "item-row" },
-      h("span", { class: "runner-name" }, hookName(w), h("span", { class: "hint" }, ` · ${WEBHOOK_FORMATS[w.format] || w.format}${w.enabled ? "" : " · paused"}`)),
-      h("span", { class: "item-sub hint" }, w.events.length ? w.events.map((e) => WEBHOOK_EVENTS[e] || e).join(", ") : "no events (summary only)"),
-      webhookStatus(w)))
-    : h("li", { class: "hint" }, "No webhooks yet."));
 }
 
 function collect() {
@@ -165,7 +159,7 @@ const queueSave = saveQueue();
 
 form.addEventListener("change", (e) => {
   syncNotify();
-  if (!e.target.name) return;
+  if (!e.target.name || e.target.form !== form) return; // this browser's push switch is a preference (prefs.js)
   queueSave(() => saveField(e.target, async () => {
     if (!(await save())) return false;
   }));
@@ -181,6 +175,17 @@ $("#notify-test").addEventListener("click", attempt((e) => busy(e.currentTarget,
   if (!failed.length) toast(`Summary sent to ${res.results.map((r) => r.name).join(", ")}`, { tone: "ok" });
   else throw new Error(`Not sent to ${failed.map((r) => `${r.name}: ${r.error}`).join("; ")}`);
 })));
+// The personal webhooks changed (added, renamed, paused, deleted): the
+// summary's Send it to follows.
+document.addEventListener("dash:mywebhooks", () => {
+  if (!view || !$("#account-sheet").open) return;
+  attempt(async () => {
+    const ticked = new Set([...form.querySelectorAll('input[name="dest"]:checked')].map((x) => x.value));
+    view = await api("GET", "/api/me/notifications");
+    renderDests(ticked);
+    syncNotify();
+  })();
+});
 // Links between the Account sheet's sections: data-account="<section>".
 document.addEventListener("click", (e) => {
   const b = e.target.closest?.("[data-account]");

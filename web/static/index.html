@@ -52,7 +52,9 @@
         <div class="foot-menu-list">
           <button id="pm-branch" type="button" data-icon="branch">Switch branch…</button>
           <button id="pm-builds" type="button" data-icon="checks" aria-haspopup="dialog" title="GitHub Actions on the default branch" hidden>Builds</button>
-          <button id="pm-pause" type="button" data-icon="pause" title="Pause every task of the project; none starts until you resume it">Pause project</button>
+          <button id="pm-pause" type="button" data-icon="pause" title="Pause this project's running tasks, keeping their work; none of its tasks starts until you resume it">Pause this project</button>
+          <!-- Platform admins: the queue every project of this Dash shares (app/usage.js) -->
+          <button id="pm-queue" type="button" data-icon="pause" hidden title="No new task starts in any project of this Dash; running tasks finish">Pause queue (all projects)</button>
           <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
           <button id="pm-cleanup" type="button" data-icon="trash" title="Remove leftover worktrees, branches, logs and uploads">Clean up</button>
           <button id="pm-delete" type="button" data-icon="trash" class="danger">Delete project…</button>
@@ -1020,7 +1022,7 @@
       <header class="sheet-head"><h2 id="usage-title" tabindex="-1" autofocus>Claude usage</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></header>
       <p class="hint" id="usage-reason"></p>
       <div class="meters" id="usage-meters"></div>
-      <p class="hint">The queue pauses automatically when a window's limit is reached.</p>
+      <p class="hint">The queue pauses automatically when a window's limit is reached. Platform admins pause it by hand in the project menu.</p>
       <section class="pace-settings" aria-labelledby="pace-follow-label">
         <label class="toggle"><input type="checkbox" id="pace-follow"><span id="pace-follow-label">Follow weekly pace</span></label>
         <p class="hint" id="pace-help">Keeps weekly usage on the pace line: no new tasks while ahead of it, more at once while behind.</p>
@@ -1029,7 +1031,6 @@
         <label class="field inline" id="pace-max-row"><span>Most tasks at once when behind</span><input type="number" id="pace-max" min="1" max="64" step="1" inputmode="numeric"></label>
         <label class="field inline" id="pace-boost-row" hidden><span>Task boost when behind</span><select id="pace-boost"><option value="1.5">1.5× usual</option><option value="2">2× usual</option><option value="3">3× usual</option><option value="4">4× usual</option></select></label>
       </section>
-      <footer class="sheet-actions"><button class="btn" type="button" id="queue-toggle"></button></footer>
     </form>
   </dialog>
 
@@ -1105,6 +1106,7 @@
         <nav class="rail-nav" aria-label="Settings sections">
           <div class="rail-group"><span class="rail-head">Project</span>
             <button type="button" class="rail-item" data-rail="general">General</button>
+            <button type="button" class="rail-item" data-rail="commands">Commands</button>
             <button type="button" class="rail-item" data-rail="repository">Repository</button>
             <button type="button" class="rail-item" data-rail="claude">Claude</button>
             <button type="button" class="rail-item" data-rail="runners">Runners</button>
@@ -1117,13 +1119,16 @@
         </nav>
         <div class="rail-main">
           <section class="rail-section" data-section="general">
-            <label class="field"><span>Name <em>shown in the project lists</em></span><input name="name" required maxlength="200" autocomplete="off" spellcheck="false"></label>
+            <label class="field"><span>Name <em>shown in the project lists</em></span><input name="name" required maxlength="200" autocomplete="off" spellcheck="false" autofocus></label>
             <p class="hint">Only the name Dash shows: the repository and its folder keep theirs.</p>
-            <div class="color-row">
-              <label class="toggle"><input type="checkbox" name="use_color"><span>Project color</span></label>
-              <input type="color" name="color" aria-label="Project color" value="#8aa4ff">
-            </div>
-            <p class="hint">Marks the top bar and the project lists, so you can tell projects apart at a glance.</p>
+            <!-- One picker: None, a few colors (app/settings.js adds them) or any other color. -->
+            <fieldset class="field choice color-pick" id="settings-color">
+              <legend>Project color <em>marks the top bar and the project lists, so you can tell projects apart at a glance</em></legend>
+              <div class="swatches" id="settings-swatches">
+                <label class="swatch swatch-none" title="No color"><input type="radio" name="color_pick" value=""><span>None</span></label>
+                <label class="swatch swatch-custom" title="Another color"><input type="radio" name="color_pick" value="custom" aria-label="Another color"><input type="color" name="color" aria-label="Pick another color" value="#8aa4ff"></label>
+              </div>
+            </fieldset>
             <div class="color-row">
               <span class="side-project-icon" id="settings-icon" aria-hidden="true"></span>
               <input type="file" id="settings-icon-file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden>
@@ -1132,7 +1137,13 @@
               <input type="hidden" name="icon">
             </div>
             <p class="hint">An image shown in the project lists instead of the first letter.</p>
-            <label class="field"><span>Test command <em>runs before review; failures go back to Claude</em></span><input name="test_command" placeholder="go test ./..." spellcheck="false" autofocus></label>
+          </section>
+          <section class="rail-section" data-section="commands">
+            <div id="settings-approve" hidden>
+              <p class="hint warn" id="settings-approve-hint"></p>
+              <button class="btn small" type="button" id="settings-approve-commands" data-icon="check">Approve commands</button>
+            </div>
+            <label class="field"><span>Test command <em>runs before review; failures go back to Claude</em></span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>
             <label class="field inline"><span>Automatic fix attempts</span><input type="number" name="max_auto_fixes" min="0" max="10" inputmode="numeric"></label>
             <p class="hint">How often failing tests or merge conflicts go back to Claude before Dash asks you.</p>
             <label class="field inline"><span>Tasks at once <em>most of this project's tasks running in parallel</em></span><input type="number" name="max_parallel" min="1" max="64" inputmode="numeric" placeholder="no limit"></label>
@@ -1146,10 +1157,6 @@
             <label class="field"><span>Deploy command <em>a bash script, one line or several; runs in the project's checkout</em></span><textarea name="deploy_command" class="script-field" rows="4" placeholder="set -e&#10;npm run build&#10;./deploy.sh production" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea></label>
             <label class="field" id="settings-deploy-runs-on-row" hidden><span>Deploy runs on <em>runner labels; empty: any runner the project runs on</em></span><input id="settings-deploy-runs-on" name="deploy_runs_on" placeholder="e.g. production" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="settings-deploy-runs-on-hint"></label>
             <p class="hint" id="settings-deploy-runs-on-hint" hidden></p>
-            <div id="settings-approve" hidden>
-              <p class="hint warn" id="settings-approve-hint"></p>
-              <button class="btn small" type="button" id="settings-approve-commands" data-icon="check">Approve commands</button>
-            </div>
           </section>
           <section class="rail-section" data-section="repository">
             <div id="settings-repo" class="repo-info" aria-live="polite"></div>
@@ -1303,7 +1310,6 @@
         <nav class="rail-nav" aria-label="Account sections">
           <div class="rail-group"><span class="rail-head">This browser</span>
             <button type="button" class="rail-item" data-rail="editors">Editors</button>
-            <button type="button" class="rail-item" data-rail="notify">Browser notifications</button>
             <button type="button" class="rail-item" data-rail="clock">Time</button>
             <button type="button" class="rail-item" data-rail="chat">Chat</button>
           </div>
@@ -1317,13 +1323,6 @@
           <div class="rail-group"><span class="rail-head">Connections</span>
             <button type="button" class="rail-item" data-rail="connector">Connect Claude</button>
             <button type="button" class="rail-item" data-rail="tokens">Tokens &amp; apps</button>
-            <button type="button" class="rail-item" data-rail="webhooks">My webhooks</button>
-          </div>
-          <div class="rail-group"><span class="rail-head">Screens</span>
-            <button type="button" class="rail-item" data-rail="wall">Wall view</button>
-          </div>
-          <div class="rail-group" id="account-rail-dash" hidden><span class="rail-head">This Dash</span>
-            <button type="button" class="rail-item" data-rail="claudestatus">Claude status</button>
           </div>
         </nav>
         <div class="rail-main">
@@ -1333,10 +1332,6 @@
             <label class="toggle"><input type="checkbox" name="vim" form="prefs-form"><span>Vim keys in the task and file editors</span></label>
             <label class="toggle"><input type="checkbox" name="invisibles" form="prefs-form"><span>Show invisible characters (spaces, tabs, trailing whitespace) in the editors</span></label>
             <p class="hint">Preferences only apply in this browser.</p>
-          </section>
-          <section class="rail-section" data-section="notify">
-            <label class="toggle"><input type="checkbox" name="notify" form="prefs-form"><span>Notifications in this browser</span></label>
-            <p class="hint" id="push-hint" hidden>The events you chose in <button type="button" class="link inline" data-account="notifications">Notifications</button> reach this device even with Dash closed. <button type="button" class="link inline" id="push-test">Send a test</button></p>
           </section>
           <section class="rail-section" data-section="clock">
             <label class="field"><span>Time format</span>
@@ -1361,8 +1356,9 @@
             </div>
             <p class="hint">Shown in the account menu and to the members of your organizations. Dash crops it to a square and makes it small before saving it.</p>
           </section>
-          <!-- The user's notifications in this org, kept by the hub (app/notifysettings.js): the summary
-               (when, which projects, where it goes, what's in it), which events push, and their webhooks -->
+          <!-- All of the user's own notifications (app/notifysettings.js): whose tasks, the summary (when,
+               which projects, where it goes, what's in it), push (this browser's switch, a preference,
+               and which events push, kept by the hub) and their personal webhooks (app/webhooks.js) -->
           <section class="rail-section" data-section="notifications">
             <form id="notify-form" class="notify-form" novalidate>
               <p class="hint" id="notify-intro">Kept for you in this organization, on every device.</p>
@@ -1424,16 +1420,24 @@
                 </fieldset>
               </div>
               <p class="hint" id="notify-state"></p>
-              <h3 class="section-head">Push</h3>
-              <p class="hint" id="notify-push-hint">These reach your browsers and the installed app, even with Dash closed. Turn them on in each browser under <button type="button" class="link inline" data-account="notify">Browser notifications</button>.</p>
-              <div class="notify-push" id="notify-push"></div>
               <div class="board-actions">
                 <button class="btn small" type="button" id="notify-test">Send the summary now</button>
               </div>
-              <h3 class="section-head">Instant webhooks</h3>
-              <p class="hint">To hear about each event the moment it happens, in Slack, ntfy or your own service, use a webhook. You add and change them in <button type="button" class="link inline" data-account="webhooks">My webhooks</button>; tick one under <em>Send it to</em> above to get the summary there too.</p>
-              <ul class="item-list" id="notify-hooks"></ul>
+              <h3 class="section-head">Push</h3>
+              <p class="hint">The events ticked below reach your browsers and the installed app, even with Dash closed. Turn push on in each browser you want them in.</p>
+              <!-- A preference of this browser: it belongs to #prefs-form (app/prefs.js), not this form. -->
+              <label class="toggle"><input type="checkbox" name="notify" form="prefs-form"><span>Push to this browser</span></label>
+              <p class="hint" id="push-hint" hidden>On: this device gets the events below. <button type="button" class="link inline" id="push-test">Send a test</button></p>
+              <div class="notify-push" id="notify-push"></div>
             </form>
+            <div id="notify-webhooks">
+              <h3 class="section-head">Webhooks</h3>
+              <p class="hint" id="me-webhooks-intro">Slack, ntfy or your own service hear about each event the moment it happens, in every project of this organization. Only you see them. Tick one under <em>Send it to</em> above to get the summary there too. A project's own webhooks are in its settings.</p>
+              <ul class="item-list" id="me-webhooks"></ul>
+              <div id="me-webhook-secret" hidden></div>
+              <p class="hint" id="me-webhooks-hint" hidden></p>
+              <div><button class="btn small" type="button" id="me-webhook-add" data-icon="plus">Add webhook…</button></div>
+            </div>
           </section>
           <!-- Two-factor sign-in: set up, new recovery codes, turn off -->
           <section class="rail-section" data-section="twofactor">
@@ -1458,7 +1462,7 @@
             <p class="hint">Add Dash as a connector in claude.ai to use it from the Claude apps on any device. Claude can then list projects, create tasks, read diffs and approve work.</p>
             <div id="connector-body"></div>
           </section>
-          <!-- The user's credentials: API tokens, authorised OAuth clients, runners they registered -->
+          <!-- The user's credentials: API tokens and authorised OAuth clients (runners' are in Runners) -->
           <section class="rail-section" data-section="tokens">
             <p class="hint">Each of these acts as you, in one organization only. It stops working when you revoke it or leave that organization. Tokens can't manage members, invitations or tokens.</p>
             <h3 class="section-head">Connected apps</h3>
@@ -1475,64 +1479,32 @@
               <button class="btn primary" id="token-create" type="button" data-icon="plus">Create</button>
             </div>
             <div id="token-secret" hidden></div>
-            <h3 class="section-head" id="tokens-runner-head">Runners you registered</h3>
-            <ul class="item-list" id="tokens-runner"></ul>
-          </section>
-          <!-- The user's personal notification webhooks: every project of their org -->
-          <section class="rail-section" data-section="webhooks">
-            <p class="hint" id="me-webhooks-intro">Your own notification webhooks: Slack, ntfy or your own service hear about every project of this organization, for as long as you are a member. Only you see them. A project's own webhooks are in its settings.</p>
-            <ul class="item-list" id="me-webhooks"></ul>
-            <div id="me-webhook-secret" hidden></div>
-            <p class="hint" id="me-webhooks-hint" hidden></p>
-            <div><button class="btn small" type="button" id="me-webhook-add" data-icon="plus">Add webhook…</button></div>
-          </section>
-          <!-- Platform admins: follow Claude's status page (status.claude.com) with its webhooks (app/claudestatus.js) -->
-          <section class="rail-section" data-section="claudestatus">
-            <div id="claude-status-admin" hidden>
-              <p class="hint">Follow Claude's status page. Everyone in every organization of this Dash then sees Claude's incidents beside the board, as they happen.</p>
-              <label class="toggle"><input type="checkbox" id="claude-status-on"><span>Show Claude's status</span></label>
-              <div id="claude-status-config"></div>
-            </div>
-          </section>
-          <!-- The wall view (/wall): its options, and the links org admins make for TVs (hidden without an organization) -->
-          <section class="rail-section" data-section="wall">
-            <form method="dialog" id="wall-form">
-              <p class="hint">A read-only, full-screen dashboard of <span id="wall-org">the organization</span>'s work for a TV in the office. It refreshes by itself every few seconds.</p>
-              <h3 class="section-head">Show</h3>
-              <label class="field"><span>Projects</span>
-                <select name="project" id="wall-project"><option value="">All projects</option></select>
-              </label>
-              <label class="toggle"><input type="checkbox" name="privacy"><span>Privacy: hide task titles, prompts, issue titles, activity and costs (for screens visitors walk past)</span></label>
-              <h3 class="section-head">Open it here</h3>
-              <div id="wall-link"></div>
-              <h3 class="section-head">Links for TVs</h3>
-              <p class="hint">A TV shouldn't keep anyone's session. A TV link opens the wall of this organization, with the options above, without signing in, and nothing else. Anyone with the link sees the wall: treat it like a password.</p>
-              <ul class="item-list" id="wall-tokens"></ul>
-              <div class="org-invite" id="wall-token-new">
-                <input type="text" id="wall-token-name" placeholder="Name, e.g. Office TV" autocomplete="off" maxlength="100" aria-label="TV link name">
-                <button class="btn primary" id="wall-token-create" type="button" data-icon="plus">Create link</button>
-              </div>
-              <div id="wall-token-secret" hidden></div>
-            </form>
+            <p class="hint">Runners you registered are in <strong>Runners</strong>.</p>
           </section>
         </div>
       </div>
     </div>
   </dialog>
 
-  <!-- The active organization: members, roles and invitations -->
+  <!-- The active organization: members, sign-in, the wall view, billing, and for platform admins
+       this Dash's own settings. No form around it all: the wall view is a form of its own. -->
   <dialog class="sheet rail-sheet" id="org-sheet" aria-labelledby="org-title">
-    <form method="dialog">
-      <header class="sheet-head"><h2 id="org-title" tabindex="-1" autofocus>Organization</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></header>
+    <div class="rail-body">
+      <form method="dialog" class="sheet-head"><h2 id="org-title" tabindex="-1" autofocus>Organization</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></form>
       <div class="rail-layout">
         <nav class="rail-nav" aria-label="Organization sections">
           <div class="rail-group"><span class="rail-head">People</span>
             <button type="button" class="rail-item" data-rail="members">Members</button>
-            <button type="button" class="rail-item" data-rail="access">Address &amp; sign-in</button>
-            <button type="button" class="rail-item" data-rail="sso">Google sign-in</button>
+            <button type="button" class="rail-item" data-rail="signin">Sign-in</button>
           </div>
-          <div class="rail-group"><span class="rail-head">Account</span>
+          <div class="rail-group"><span class="rail-head">Screens</span>
+            <button type="button" class="rail-item" data-rail="wall">Wall view</button>
+          </div>
+          <div class="rail-group"><span class="rail-head">Billing</span>
             <button type="button" class="rail-item" data-rail="billing">Billing</button>
+          </div>
+          <div class="rail-group" id="org-rail-dash" hidden><span class="rail-head">This Dash</span>
+            <button type="button" class="rail-item" data-rail="claudestatus">Claude status</button>
           </div>
         </nav>
         <div class="rail-main">
@@ -1558,7 +1530,8 @@
               <ul class="item-list" id="org-pending"></ul>
             </div>
           </section>
-          <section class="rail-section" data-section="access">
+          <!-- Sign-in: required two-factor, the org's address (with org subdomains) and Google sign-in -->
+          <section class="rail-section" data-section="signin">
             <label class="org-require-2fa" id="org-require-2fa-row" hidden><input type="checkbox" id="org-require-2fa"> Require two-factor sign-in of every member</label>
             <div id="org-address" hidden>
               <h3 class="section-head">Address</h3>
@@ -1569,13 +1542,40 @@
               </div>
               <p class="hint" id="org-slug-hint" hidden>3 to 40 lower-case letters, digits or hyphens. The old address keeps leading here for 30 days, and no other organization can take it meanwhile.</p>
             </div>
-          </section>
-          <section class="rail-section" data-section="sso">
             <div id="org-sso" hidden></div>
+          </section>
+          <!-- The wall view (/wall): its options, and the links org admins make for TVs (app/wallview.js) -->
+          <section class="rail-section" data-section="wall">
+            <form method="dialog" id="wall-form">
+              <p class="hint">A read-only, full-screen dashboard of <span id="wall-org">the organization</span>'s work for a TV in the office. It refreshes by itself every few seconds.</p>
+              <h3 class="section-head">Show</h3>
+              <label class="field"><span>Projects</span>
+                <select name="project" id="wall-project"><option value="">All projects</option></select>
+              </label>
+              <label class="toggle"><input type="checkbox" name="privacy"><span>Privacy: hide task titles, prompts, issue titles, activity and costs (for screens visitors walk past)</span></label>
+              <h3 class="section-head">Open it here</h3>
+              <div id="wall-link"></div>
+              <h3 class="section-head">Links for TVs</h3>
+              <p class="hint">A TV shouldn't keep anyone's session. A TV link opens the wall of this organization, with the options above, without signing in, and nothing else. Anyone with the link sees the wall: treat it like a password.</p>
+              <ul class="item-list" id="wall-tokens"></ul>
+              <div class="org-invite" id="wall-token-new">
+                <input type="text" id="wall-token-name" placeholder="Name, e.g. Office TV" autocomplete="off" maxlength="100" aria-label="TV link name">
+                <button class="btn primary" id="wall-token-create" type="button" data-icon="plus">Create link</button>
+              </div>
+              <div id="wall-token-secret" hidden></div>
+            </form>
           </section>
           <section class="rail-section" data-section="billing">
             <div id="org-billing" hidden>
               <div id="org-billing-body"></div>
+            </div>
+          </section>
+          <!-- Platform admins (this whole Dash): follow Claude's status page (status.claude.com) with its webhooks (app/claudestatus.js) -->
+          <section class="rail-section" data-section="claudestatus">
+            <div id="claude-status-admin" hidden>
+              <p class="hint">Follow Claude's status page. Everyone in every organization of this Dash then sees Claude's incidents beside the board, as they happen.</p>
+              <label class="toggle"><input type="checkbox" id="claude-status-on"><span>Show Claude's status</span></label>
+              <div id="claude-status-config"></div>
             </div>
           </section>
         </div>
@@ -1583,7 +1583,7 @@
       <footer class="sheet-actions">
         <button class="btn" id="org-new" type="button" data-icon="plus" hidden>New organization…</button>
       </footer>
-    </form>
+    </div>
   </dialog>
 
   <!-- Runners: the organization's computers that run tasks (`dash runner`). An
@@ -1605,6 +1605,12 @@
               <p class="hint">This dashboard doesn't run Claude or tasks itself: chats, tasks and scans run on runners, so link each project to one.</p>
             </details>
             <div id="runners-list"></div>
+            <!-- The runner tokens the user registered, in each of their organizations (app/tokens.js) -->
+            <div id="runners-tokens" hidden>
+              <h3 class="section-head">Runners you registered</h3>
+              <p class="hint">Each connects as you, in one organization. Revoking one disconnects it and its token stops working.</p>
+              <ul class="item-list" id="tokens-runner"></ul>
+            </div>
           </section>
           <section class="rail-section" data-section="runner">
             <div id="runner-detail"></div>

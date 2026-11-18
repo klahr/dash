@@ -16,7 +16,7 @@ Each project has its own queue, so a long test run in one project never holds up
    it, or, in pull request mode, pushes the branch and opens a pull request (see
    [GitHub](github.md)).
 
-Claude gets a limited number of automatic fixes per task (**Project settings → General →
+Claude gets a limited number of automatic fixes per task (**Project settings → Commands →
 Automatic fix attempts**). When they are used up, the task fails and waits for you to send it
 back for rework.
 

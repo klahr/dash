@@ -11,8 +11,8 @@ To mark up a preview and send the picture back to Claude, see [Draw](draw.md).
 
 ## Terminal previews (CLI tools)
 
-A command-line tool never opens a port, so set **Preview tasks in** to *a terminal* in the
-project's settings (`preview_kind: "terminal"`). The preview is then a terminal in the task's
+A command-line tool never opens a port, so set **Preview tasks in** to *a terminal* in
+**Project settings → Commands** (`preview_kind: "terminal"`). The preview is then a terminal in the task's
 worktree: the **terminal preview command** (`preview_command`) runs there, or a plain shell when
 it is empty. `./.dash-bin` (git ignores it) is on `PATH` and in `$DASH_BIN`, so for example
 

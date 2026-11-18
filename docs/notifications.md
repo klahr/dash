@@ -6,17 +6,18 @@ daily or weekly **summary** by email or webhook.
 
 ## Your notification settings
 
-**Account → Notifications** holds your own settings in the organization you are in. Dash keeps
-them for you, so they apply on every device. There you choose:
+**Account → Notifications** holds all of your own notifications, in one place:
 
-- the [summary](#summary): off, daily or weekly, when, of which projects, where it goes and what
-  is in it
 - [whose tasks](#whose-tasks) you hear about: **Tasks I created** or **All tasks**
-- which events [push](#push-notifications) to your browsers
-- your [personal webhooks](#notification-webhooks), listed with their events and last delivery.
-  Add or change them in **My webhooks**. A webhook gets each event the moment it happens.
+- **Summary**: off, daily or weekly, when, of which projects, where it goes and what is in it
+  ([summary](#summary))
+- **Push**: **Push to this browser**, and which events [push](#push-notifications) to your browsers
+- **Webhooks**: your [personal webhooks](#notification-webhooks). Add, test and change them
+  here. A webhook gets each event the moment it happens.
 
-Each organization you are in has its own settings.
+Dash keeps your settings in the organization you are in, so they apply on every device. Each
+organization you are in has its own. **Push to this browser** is the one setting of the browser
+you are in. A project's own webhooks are in **Project settings → Webhooks**.
 
 ## Whose tasks
 
@@ -42,7 +43,7 @@ each one has its own events.
 
 ## Push notifications
 
-Turn on **Account → Browser notifications** in each browser that should notify you. While Dash
+Turn on **Account → Notifications → Push to this browser** in each browser that should notify you. While Dash
 is open in the background, the page notifies you itself; where the browser supports Web Push
 (Chrome, Edge, Firefox, Safari on macOS, and the installed app on iOS 16.4 or later), the hub
 also pushes these to the browser, so they arrive while Dash is closed. Choose which under
@@ -77,10 +78,10 @@ deleted at the next push. Runners don't push; their hub does.
 
 ## Notification webhooks
 
-Each project has its own webhooks: **Project settings → Notification webhooks → Add webhook…**.
+Each project has its own webhooks: **Project settings → Webhooks → Add webhook…**.
 The whole org shares them.
 
-You can also have **personal webhooks**: **account menu → Account → My webhooks → Add webhook…**. A
+You can also have **personal webhooks**: **Account → Notifications → Webhooks → Add webhook…**. A
 personal webhook gets the events of every project in the org you made it in, for as long as you
 are a member of that org. It is yours alone: other members, org admins included, don't see
 it. If a project's webhook and a personal one point to the same URL, each event is sent there

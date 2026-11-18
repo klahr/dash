@@ -137,13 +137,13 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 
 Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
-**Limit a project's tasks at once.** In **Project settings → General**, set **Tasks at once**.
+**Limit a project's tasks at once.** In **Project settings → Commands**, set **Tasks at once**.
 At most that many of the project's tasks run at the same time, on this computer and on its
 runners together. The others stay queued, and say why, until one finishes. A new project
 starts at 5. Clear it for no limit of the project's own. The API field is `max_parallel` (`0` for
 no limit).
 
-**Deploy.** Set a **Deploy command** in **Project settings → General**. It is a bash script that
+**Deploy.** Set a **Deploy command** in **Project settings → Commands**. It is a bash script that
 runs in the project's checkout, so it can span several lines:
 
 ```sh
@@ -202,13 +202,19 @@ may wait a little longer afterwards. Start now is used up by that run: later run
 retry) follow the pace again. The API is `POST /api/todos/{id}/start-now`; a chat can do it with
 `queue_todo` and `start_now: true` (see [MCP](docs/mcp.md#the-chats-task-tools)).
 
-**Pause a project.** To hold all of a project's work, choose **⋯ → Pause project** in the top bar.
+**Pause a project.** To hold all of a project's work, choose **⋯ → Pause this project** in the top bar.
 Its running tasks stop and go back to *Queued*, paused, keeping their worktree and Claude session;
 on a hub, their runners stop them. Its queued tasks are paused too, and no task of the project
-starts, including new ones, until you choose **⋯ → Resume project** (or **Resume project** in the
+starts, including new ones, until you choose **⋯ → Resume this project** (or **Resume project** in the
 banner above the board). Resuming continues each task in its session. A task you paused on its own
 before stays paused. A task on a runner that can't be reached keeps running, and Dash says so. The
 API is `POST /api/projects/{id}/pause` and `POST /api/projects/{id}/resume`.
+
+**Pause the queue.** Platform admins can stop every project's queue at once: choose **⋯ → Pause
+queue (all projects)**. No new task starts in any project of this Dash; running tasks finish. It
+doesn't stop running work, as **Pause this project** does. Choose **⋯ → Resume queue (all
+projects)** to start again. The queue also pauses by itself when a Claude usage window reaches its
+limit (see **Claude usage**).
 
 ## Optional setup
 

@@ -159,8 +159,8 @@ export function renderProjectHeader() {
 // A paused project says so above the board, and its menu offers Resume.
 function renderPaused(p) {
   const pm = $("#pm-pause");
-  setLabel(pm, p?.paused ? "play" : "pause", p?.paused ? "Resume project" : "Pause project");
-  pm.title = p?.paused ? "Let the project's tasks run again" : "Pause every task of the project; none starts until you resume it";
+  setLabel(pm, p?.paused ? "play" : "pause", p?.paused ? "Resume this project" : "Pause this project");
+  pm.title = p?.paused ? "Let this project's tasks run again" : "Pause this project's running tasks, keeping their work; none of its tasks starts until you resume it";
   const el = $("#paused-banner");
   el.hidden = !p?.paused;
   if (p?.paused) {
