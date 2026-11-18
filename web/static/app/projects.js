@@ -61,14 +61,18 @@ export async function loadProjects() {
   const linked = first ? findProject(state.projects, initial.project) : null;
   const want = projectKey(linked) || projectKey(state.project) || saved;
   const next = state.projects.find((p) => projectKey(p) === want || p.id === want) || state.projects[0] || null;
-  if (projectKey(next) !== projectKey(state.project)) await selectProject(next);
+  // The first pick is the page loading, not a switch: Planning keeps its own
+  // filter (the one saved, or All projects).
+  if (projectKey(next) !== projectKey(state.project)) await selectProject(next, { follow: !first });
   else { state.project = next; renderProjectHeader(); if (first && !next) renderBoard(); }
   renderProjectList();
   if (first) startRouter().catch(fail);
 }
 
 
-export async function selectProject(p) {
+// selectProject shows project p. Planning follows the switch to a hub
+// project unless follow is false (the first pick as the page loads).
+export async function selectProject(p, { follow = true } = {}) {
   state.project = p;
   state.todos = new Map();
   state.goals = new Map();
@@ -100,7 +104,7 @@ export async function selectProject(p) {
   resetGoals();
   loadTry().catch(() => {});
   // Planning is the hub's: it follows a hub project, not a runner's.
-  if (p && !p.prefix) followProject(p.id);
+  if (follow && p && !p.prefix) followProject(p.id);
   if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); renderFileTree(); renderFile(); loadChecklist().catch(fail); return; }
   await Promise.all([loadIssues(), loadTodos(), loadGoals(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles(), state.view === "checklist" && loadChecklist(), state.view === "scans" && loadScans()]);
 }

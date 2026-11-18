@@ -44,6 +44,13 @@ func TestBrowserPlanningBoard(t *testing.T) {
 	b.until("all projects again", `document.querySelector("#view-planning .pl-card")`,
 		chromedp.Click(chromedp.CSS(`#pl-filter-list [role=option][data-value=""]`)))
 
+	// Switching project in the sidebar shows that project's cards here too;
+	// loading the page (above) left the filter on all projects.
+	b.clickTextUntil(`#side-project-list .side-project`, "shop", `document.querySelector("#pl-filter .pl-filter-name")?.textContent === "shop" && !document.querySelector("#view-planning .pl-card")`)
+	b.do("open the project filter", chromedp.Click(chromedp.CSS(`#pl-filter`)))
+	b.until("all projects again", `document.querySelector("#view-planning .pl-card")`,
+		chromedp.Click(chromedp.CSS(`#pl-filter-list [role=option][data-value=""]`)))
+
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("one column at a time", `[...document.querySelectorAll("#view-planning .board .col")].filter((c) => c.offsetWidth).length === 1`)
 	b.waitJS("Ideas first", `document.querySelector("#view-planning .col.active")?.dataset.col === "ideas"`)

@@ -22,7 +22,8 @@ It looks like a project's **Board**: on a phone, tap a column's name at the top 
   and the cards around it move aside. With the keyboard, focus a card
   and press `Alt` with an arrow key. On a phone, drag it onto a column's name at the top, or change **Column** on the card.
 - The project filter at the top shows one project's cards. A card may name a project, or
-  none yet. Picking a project in the sidebar picks it here too.
+  none yet. Picking a project in the sidebar picks it here too; opening the page keeps the
+  filter you had.
 - A tag filter shows only the cards with one tag. Click a tag in an open card to pick it, and
   click **×** on the tag at the top to show all cards again. A card added while a tag is
   picked gets that tag.
