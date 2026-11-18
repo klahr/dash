@@ -8,7 +8,7 @@ export const LANES = [
   { key: "in_progress", label: "Running", statuses: ["in_progress"], empty: "No agents working right now." },
   { key: "review", label: "Review", statuses: ["review", "failed"], empty: "Nothing to review. Finished and failed work lands here." },
   { key: "merging", label: "Merging", statuses: ["merging"], empty: "The merge queue is clear." },
-  { key: "done", label: "Done", statuses: ["merged"], empty: "Merged tasks show up here." },
+  { key: "done", label: "Merged", statuses: ["merged"], empty: "Merged tasks show up here." },
 ];
 export const STATUS_LABEL = { draft: "Draft", queued: "Queued", in_progress: "Running", review: "Ready for review", merging: "Merging", merged: "Merged", failed: "Failed" };
 

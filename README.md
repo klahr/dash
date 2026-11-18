@@ -116,19 +116,19 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    attachments. For a large task, **Split…** there has Claude propose smaller tasks that can each
    be reviewed and merged on their own; edit, remove or add to them, then save them all, each
    one waiting for the tasks it builds on.
-3. **Queue it.** Tick **Queue right away** (Dash remembers it), or in the full form click **Add to
-   queue**; otherwise the task is saved as a draft to queue later from the *Drafts* column. The task moves to *Queued*, then *Running* as soon as Claude starts on it in
+3. **Queue it.** Tick **Queue** (Dash remembers it), or in the full form click **Queue**;
+   otherwise the task is saved as a draft to queue later from the *Drafts* column. The task moves to *Queued*, then *Running* as soon as Claude starts on it in
    its own worktree. Open the card to follow along; if Claude needs permission for something,
    Dash asks you.
 4. **Review.** When Claude is done the task lands in *Review*. Click **Review** on the card (or
    open it) and read the diff on the **Changes** tab; **Ask Claude** has Claude review it
    first. A changed image (PNG, JPEG, GIF or WebP) shows as pictures, before and after,
-   here and in **History**. Not right? Click **Rework**, say what to change, and it goes back to Claude.
+   here and in **History**. Not right? Click **Rework…**, say what to change, and it goes back to Claude.
    **Token use** lists each Claude run on the task: its tokens (and how many were cached),
    turns and cost.
    For a small fix, click **Edit** on a changed file instead: saving commits your edit on the
    task's branch, so approving merges it with the rest.
-5. **Approve.** Click **Approve**. The task goes through *Merging* and ends up in *Done*, as one
+5. **Approve.** Click **Approve**. The task goes through *Merging* and ends up in *Merged*, as one
    squashed commit on the default branch, pushed if you like. In a GitHub project (with pull
    requests, the default) the review happens on GitHub instead: when Claude finishes, Dash opens
    a pull request and the task waits in *Review* with it linked. Reviews asking for changes go

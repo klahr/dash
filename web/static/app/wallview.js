@@ -79,7 +79,7 @@ async function renderWallTokens() {
       await api("DELETE", `/api/wall/tokens/${t.id}`, null, "");
       toast(`${t.name} revoked`);
       await renderWallTokens();
-    }) }, "Revoke"))) : [h("li", { class: "hint" }, "No TV links.")]));
+    }) }, "Revoke…"))) : [h("li", { class: "hint" }, "No TV links.")]));
 }
 
 async function createWallToken() {

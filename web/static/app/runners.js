@@ -624,8 +624,8 @@ function paintRunner(r) {
         toast(r.auto_update ? `${r.name} is updated by hand now` : `${r.name} updates itself to the hub's version`);
         await renderRunners();
       }) }, "reload", r.auto_update ? "Turn off" : "Turn on")) : null,
-    setting("Revoke", "Disconnects it and stops its token: it builds no project any more.",
-      ib({ class: "btn small danger", type: "button", title: `Disconnect ${r.name} and revoke its token`, onclick: attempt(async () => {
+    setting("Revoke", "Stops its token and disconnects it: it builds no project any more.",
+      ib({ class: "btn small danger", type: "button", title: `Revoke ${r.name}'s token`, onclick: attempt(async () => {
         const ok = await ask({ title: `Revoke ${r.name}?`, body: "It's disconnected now, its token stops working and it builds no project any more. Tasks it is running fail and can be queued again on another runner. Run the install command with a new code to bring it back.", ok: "Revoke", danger: true });
         if (!ok) return;
         await api("DELETE", `/api/runners/${encodeURIComponent(r.id)}`);
@@ -651,7 +651,7 @@ function runnerUpdate(r) {
       h("p", { class: "hint" }, `${u.auto ? "Auto-update: " : ""}${text}`),
       waiting && r.can_manage ? ib({ class: "btn small", type: "button", onclick: attempt(async () => {
         await api("DELETE", path);
-        toast(`${r.name}'s update cancelled: it takes tasks again`);
+        toast(`${r.name}'s update canceled: it takes tasks again`);
         await renderRunners();
       }) }, "x", "Cancel update") : null);
   }

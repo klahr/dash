@@ -180,7 +180,7 @@ export function renderActions(t) {
   const btns = [];
   switch (t.status) {
     case "draft":
-      btns.push(edit(), b("queue", "Add to queue", post("enqueue", null, "Added to queue"), "primary grow"));
+      btns.push(edit(), b("queue", "Queue", post("enqueue", null, "Queued"), "primary grow"));
       break;
     case "queued":
       btns.push(edit(), b("inbox", "Move to drafts", post("cancel", null, "Moved to drafts"), "grow"));
@@ -199,12 +199,12 @@ export function renderActions(t) {
       // Preview · Rework · Approve (Claude's review is on the card and in ⋯)
       if (canPreview(t)) btns.push(previewButton(t));
       if (commentsFor(t.id).length) {
-        btns.push(b("send", `Send ${plural(commentsFor(t.id).length, "comment")}`, attempt(() => sendComments(t)), "primary"));
+        btns.push(b("redo", `Rework with ${plural(commentsFor(t.id).length, "note")}…`, attempt(() => sendComments(t)), "primary"));
       } else {
-        btns.push(b("redo", "Rework", rework));
+        btns.push(b("redo", "Rework…", rework));
       }
       if (approvable(t)) {
-        btns.push(b("merge", "Approve", post("approve", null, waitsOnGitHub(t) ? "Pushing the pull request again" : "Approved — merging"), "review grow"));
+        btns.push(b("check", "Approve", post("approve", null, waitsOnGitHub(t) ? "Pushing the pull request again" : "Approved — merging"), "review grow"));
       } else if (canMergePR(t)) {
         btns.push(h("a", { class: "btn", href: t.pr.url, target: "_blank", rel: "noopener", title: `Open pull request #${t.pr.number} on GitHub` }, ico("external"), "GitHub"));
         btns.push(b("merge", "Merge pull request", attempt(() => mergePR(t)), "review grow"));
@@ -218,17 +218,24 @@ export function renderActions(t) {
       if (t.pr) btns.push(h("a", { class: "btn primary grow", href: t.pr.url, target: "_blank", rel: "noopener" }, ico("external"), `Open pull request #${t.pr.number}`));
       break;
     case "failed":
-      btns.push(t.worktree ? b("redo", "Rework", rework) : edit());
+      btns.push(t.worktree ? b("redo", "Rework…", rework) : edit());
       btns.push(t.worktree && t.error?.startsWith("merge:")
         ? b("merge", "Retry merge", post("approve", null, "Merging again"), "review grow")
-        : t.resumable && t.runner ? b("redo", `Continue on ${runnerName(t.runner)}`, post("enqueue", null, "Queued again"), "primary grow")
-          : b("redo", "Retry", post("enqueue", null, "Queued again"), "primary grow"));
+        : retryButton(t, b, post));
       break;
     case "merged":
-      if (!t.revert) btns.push(b("undo", "Revert", attempt(() => revertTodo(t)), "grow"));
+      if (!t.revert) btns.push(b("undo", "Revert…", attempt(() => revertTodo(t)), "grow"));
       break;
   }
   $("#d-actions").replaceChildren(...btns.filter(Boolean));
+}
+
+// retryButton queues failed task t again. One its runner can resume
+// continues there, in the session that runner kept.
+function retryButton(t, b, post) {
+  const btn = b("redo", "Retry", post("enqueue", null, "Queued again"), "primary grow");
+  if (t.resumable && t.runner) btn.title = `Continues on ${runnerName(t.runner)}, where its session is kept`;
+  return btn;
 }
 
 // pacing reports whether queued task t waits for the weekly pace: the
@@ -262,7 +269,7 @@ $("#d-more").addEventListener("click", attempt(async () => {
   }
   if (canStartNow(t)) choices.push(["play", "Start now, despite the weekly pace", () => api("POST", `/api/todos/${t.id}/start-now`).then(() => toast("Starting now, despite the pace"))]);
   if (t.pr) choices.push(["external", `Open pull request #${t.pr.number}`, () => window.open(t.pr.url, "_blank", "noopener")]);
-  if (t.status === "merged" && !t.revert && here) choices.push(["undo", "Revert this change", () => revertTodo(t)]);
+  if (t.status === "merged" && !t.revert && here) choices.push(["undo", "Revert…", () => revertTodo(t)]);
   if (!["in_progress", "merging"].includes(t.status)) {
     if (t.worktree && here && state.project?.test_command) choices.push(["check", "Run the tests again", () => api("POST", `/api/todos/${t.id}/test`).then(() => toast("Running tests…"))]);
     if (hasPriority(t)) choices.push(["x", "Clear priority", () => clearPriority(t)]);
@@ -277,7 +284,7 @@ $("#d-more").addEventListener("click", attempt(async () => {
       choices.push(["copy", `Copy branch name (${t.worktree.branch})`, () => copy(t.worktree.branch, "Branch name copied")]);
       choices.push(["copy", "Copy worktree path", () => copy(t.worktree.path, "Path copied")]);
     }
-    choices.push(["trash", "Delete task", async () => {
+    choices.push(["trash", "Delete task…", async () => {
       const pr = t.pr?.state === "OPEN" ? ` Its pull request #${t.pr.number} is closed on GitHub: the task is rejected.` : "";
       if (await ask({ title: "Delete this task?", body: `Its worktree and branch are removed too.${pr} This can't be undone.`, ok: "Delete", danger: true })) {
         await api("DELETE", `/api/todos/${t.id}`);

@@ -280,8 +280,8 @@
             <button class="btn small primary" type="button" id="issue-tasks" data-icon="plus" title="One task for each selected issue">Create tasks</button>
             <button class="btn small" type="button" id="issue-group" data-icon="spark" title="Claude groups similar issues: one task for each group, named for what it fixes">Create grouped</button>
             <button class="btn small" type="button" id="issue-combine" data-icon="checks" title="One task that fixes all selected issues, e.g. instances of one pattern">Create one task</button>
-            <label class="issue-queue" title="Queue the new tasks to run instead of keeping drafts"><input type="checkbox" id="issue-queue"> Create &amp; queue</label>
-            <button class="btn small danger" type="button" id="issue-dismiss" data-icon="x">Dismiss</button>
+            <label class="issue-queue" title="Queue the new tasks to run instead of keeping drafts"><input type="checkbox" id="issue-queue"> Queue</label>
+            <button class="btn small danger" type="button" id="issue-dismiss" data-icon="x">Dismiss…</button>
             <button class="link" type="button" id="issue-clear">Clear</button>
           </div>
           <div class="cl-body issue-list" id="issue-list"></div>
@@ -312,7 +312,7 @@
           <ul class="scan-list" id="scan-list"></ul>
           <div class="scan-create" id="scan-create" hidden>
             <div><p class="scan-create-title">Need something else?</p><p>Describe what to look for; Dash runs it like the built-in scans and adds what it finds to Issues.</p></div>
-            <button class="btn" type="button" id="scan-new" data-icon="plus">Create custom scan</button>
+            <button class="btn" type="button" id="scan-new" data-icon="plus">Create custom scan…</button>
           </div>
           <div class="empty" id="scan-empty"><p class="empty-title">No project</p><p>Select a project to see its scans.</p></div>
         </div>
@@ -572,11 +572,11 @@
         <div class="pane todo-chat" id="d-chat">
           <p class="chat-cwd" id="d-chat-cwd" hidden></p>
           <div class="chat-log" id="d-chat-log">
-            <p class="pane-empty" id="d-chat-empty">The agent's work on this task shows here as it runs. Talk the task through with Claude below: it sees the instructions, so it can help you sharpen a draft into a better prompt. The agent doesn't see this chat; use Send to agent for that.</p>
+            <p class="pane-empty" id="d-chat-empty">The agent's work on this task shows here as it runs. Talk the task through with Claude below: it sees the instructions, so it can help you sharpen a draft into a better prompt. The agent doesn't see this chat; use Rework for that.</p>
           </div>
           <form class="composer" id="d-chat-form">
             <textarea name="q" rows="1" placeholder="Ask about this task" aria-label="Ask Claude about this task in a side chat; the agent won't see this"></textarea>
-            <button type="button" class="btn small to-agent" id="d-to-agent" data-icon="redo" title="Send back for rework with this text: the agent continues in its worktree" hidden>Send to agent</button>
+            <button type="button" class="btn small to-agent" id="d-to-agent" data-icon="redo" title="Rework with this text: the agent continues in its worktree" hidden>Rework…</button>
             <button class="icon-btn primary" aria-label="Send to the chat">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 3.5 21 12 3.5 20.5 7 12Z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
             </button>
@@ -596,7 +596,7 @@
             <button type="button" data-width="full" data-icon="monitor" title="Full width" aria-label="Full width"></button>
           </div>
           <button class="btn small pv-draw-btn" type="button" id="pv-draw-btn" data-icon="edit" title="Draw on a snapshot of the page, crop it and add it to the review (D)" aria-keyshortcuts="Shift+D">Draw</button>
-          <button class="btn small pv-transcript-btn" type="button" id="pv-transcript" data-icon="redo" title="Send back for rework with the terminal's last lines, or only what you selected in it" hidden>Send back with transcript</button>
+          <button class="btn small pv-transcript-btn" type="button" id="pv-transcript" data-icon="redo" title="Rework with the terminal's last lines, or only what you selected in it" hidden>Rework with transcript…</button>
           <span class="pv-spacer"></span>
           <button class="icon-btn" type="button" id="pv-reload" data-icon="reload" title="Reload" aria-label="Reload"></button>
           <button class="icon-btn" type="button" id="pv-open" data-icon="external" title="Open in a new tab" aria-label="Open in a new tab"></button>
@@ -622,7 +622,7 @@
             <button type="button" data-tool="box" data-icon="box" title="Box (B) · Shift for a square" aria-label="Box"></button>
             <button type="button" data-tool="crop" data-icon="crop" title="Crop (C) · drag a rectangle, then its handles" aria-label="Crop"></button>
           </div>
-          <div class="draw-colors" role="group" aria-label="Colour">
+          <div class="draw-colors" role="group" aria-label="Color">
             <button type="button" data-color="red" title="Red (1)" aria-label="Red"></button>
             <button type="button" data-color="yellow" title="Yellow (2)" aria-label="Yellow"></button>
             <button type="button" data-color="blue" title="Blue (3)" aria-label="Blue"></button>
@@ -634,7 +634,7 @@
           <span class="pv-spacer"></span>
           <button class="icon-btn" type="button" id="draw-copy" data-icon="copy" title="Copy the picture" aria-label="Copy"></button>
           <button class="btn small" type="button" id="draw-done" data-icon="x" title="Back to the live page (Esc)">Done</button>
-          <button class="btn small primary" type="button" id="draw-add" data-icon="plus" title="Add the picture to the rework notes (Enter)">Add to review</button>
+          <button class="btn small primary" type="button" id="draw-add" data-icon="plus" title="Add the picture to the rework notes (Enter)">Add to rework notes</button>
         </div>
         <!-- Phone: keys a touch keyboard lacks, for the terminal preview -->
         <div class="pv-keys" id="pv-keys" role="toolbar" aria-label="Terminal keys" hidden>
@@ -731,7 +731,7 @@
         <button class="link" type="button" id="quick-more" data-icon="edit">More options…</button>
       </div>
       <footer class="sheet-actions quick-foot">
-        <label class="toggle"><input type="checkbox" id="quick-queue"><span>Queue right away</span></label>
+        <label class="toggle"><input type="checkbox" id="quick-queue"><span>Queue</span></label>
         <button class="btn primary" value="add" data-icon="check"><span id="quick-submit-label">Save task as draft</span></button>
       </footer>
     </form>
@@ -756,14 +756,14 @@
         <label class="field inline"><span>Priority</span><input type="number" name="priority" value="" step="1" placeholder="None" inputmode="numeric"></label>
         <label class="field inline" title="The Claude model the task runs on, from its next run"><span>Model</span><select name="model"><option value="">Default</option><option value="opus">Opus (hard tasks)</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku (small tasks)</option></select></label>
       </div>
-      <p class="hint">Prioritised tasks run first, lower numbers before higher. Leave it empty for none: those run after them, oldest first. Pick Opus for hard tasks and Sonnet or Haiku for small ones; Default uses Dash's configured model.</p>
+      <p class="hint">Prioritized tasks run first, lower numbers before higher. Leave it empty for none: those run after them, oldest first. Pick Opus for hard tasks and Sonnet or Haiku for small ones; Default uses Dash's configured model.</p>
       <div class="field" id="todo-deps-field" hidden><span id="todo-deps-label">Depends on <em>starts once these are merged</em></span><div class="dep-picker" id="todo-deps" role="group" aria-labelledby="todo-deps-label"></div></div>
       <label class="field" id="todo-buildon-field" hidden title="The first run continues that task's Claude session, so Claude doesn't explore the code again"><span>Build on <em>continues a finished task's Claude session</em></span><select name="builds_on"></select></label>
       <label class="field" id="todo-runon-field" hidden title="The task runs only on this runner, and waits queued while it is offline or busy"><span>Runner <em>which of the project's runners runs it</em></span><select name="run_on"></select></label>
       <footer class="sheet-actions">
         <button class="btn shrink" type="button" id="todo-clear" data-icon="trash">Clear</button>
         <button class="btn" value="draft" data-icon="draft">Save as draft</button>
-        <button class="btn primary" value="queue" data-icon="queue">Add to queue</button>
+        <button class="btn primary" value="queue" data-icon="queue">Queue</button>
       </footer>
     </form>
   </dialog>
@@ -781,7 +781,7 @@
       <label class="toggle" id="split-order-row"><input type="checkbox" id="split-order" checked><span>Start each one after the tasks it builds on</span></label>
       <footer class="sheet-actions">
         <button class="btn" value="draft" data-icon="draft"><span id="split-draft-label">Save as drafts</span></button>
-        <button class="btn primary" value="queue" data-icon="queue"><span id="split-queue-label">Add to queue</span></button>
+        <button class="btn primary" value="queue" data-icon="queue"><span id="split-queue-label">Queue</span></button>
       </footer>
     </form>
   </dialog>
@@ -806,7 +806,6 @@
         <label class="radio"><input type="radio" name="mode" value="queue"><span>Queue on its own <em>the plan and follow-ups are queued right away</em></span></label>
       </fieldset>
       <footer class="sheet-actions">
-        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
         <button class="btn primary" value="save" data-icon="target" id="goal-save">Start goal</button>
       </footer>
     </form>
@@ -985,7 +984,6 @@
         <p class="hint">In the prompt, <code>{{path}}</code> becomes the path scanned (<code>.</code> for the whole repository) and <code>{{since}}</code> the commit an incremental scope compares with. A schedule runs once saved; you can turn it off in the list.</p>
       </details>
       <footer class="sheet-actions">
-        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
         <button class="btn primary" value="save" data-icon="check">Save scan</button>
       </footer>
     </form>
@@ -1006,7 +1004,6 @@
       <p class="hint" id="delete-github-hint"></p>
       <label class="field"><span>Password <em>to confirm</em></span><input type="password" name="password" required autocomplete="current-password"></label>
       <footer class="sheet-actions">
-        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
         <button class="btn danger" value="ok" data-icon="trash" id="delete-project-ok">Delete project</button>
       </footer>
     </form>
@@ -1077,7 +1074,6 @@
         <p class="hint">Dash creates an annotated tag on this commit and pushes it to origin, which starts the repository's release workflow.</p>
       </div>
       <footer class="sheet-actions">
-        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
         <button class="btn primary" value="ok" data-icon="tag" id="release-ok" disabled>Tag and push</button>
       </footer>
     </form>
@@ -1093,9 +1089,6 @@
         <input name="filter" id="branch-filter" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Find or create a branch…" aria-controls="branch-list"></label>
       <p class="hint" id="branch-loading">Fetching branches from origin…</p>
       <ul class="branch-list" id="branch-list" aria-label="Branches"></ul>
-      <footer class="sheet-actions">
-        <button class="btn" value="cancel" formnovalidate data-icon="x">Close</button>
-      </footer>
     </form>
   </dialog>
 
@@ -1130,7 +1123,7 @@
               <span class="side-project-icon" id="settings-icon" aria-hidden="true"></span>
               <input type="file" id="settings-icon-file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden>
               <button class="btn small" type="button" id="settings-icon-pick">Choose icon…</button>
-              <button class="btn small" type="button" id="settings-icon-clear">Remove</button>
+              <button class="btn small" type="button" id="settings-icon-clear">Delete</button>
               <input type="hidden" name="icon">
             </div>
             <p class="hint">An image shown in the project lists instead of the first letter.</p>
@@ -1195,7 +1188,7 @@
               <legend>Boards <em>a project's tasks can be split over several boards; the board shows one at a time</em></legend>
               <ul class="item-list boards-list" id="boards-list"></ul>
               <div class="board-actions">
-                <button class="btn small" type="button" id="boards-add" data-icon="plus">Add board</button>
+                <button class="btn small" type="button" id="boards-add" data-icon="plus">Add board…</button>
               </div>
             </fieldset>
             <!-- The project's board backend. Saved with its own button, not the settings form: its inputs have no names. -->
@@ -1206,7 +1199,7 @@
               <div id="board-external" hidden>
                 <div id="board-fields"></div>
                 <label class="field" id="board-config-raw-row" hidden><span>Settings <em>JSON, as the backend expects them</em></span><textarea id="board-config-raw" rows="3" spellcheck="false"></textarea></label>
-                <label class="toggle" id="board-creds-clear-row" hidden><input type="checkbox" id="board-creds-clear"><span>Remove the saved credentials</span></label>
+                <label class="toggle" id="board-creds-clear-row" hidden><input type="checkbox" id="board-creds-clear"><span>Delete the saved credentials</span></label>
                 <fieldset class="field choice">
                   <legend>Status mapping <em>the tracker's column for each task status; leave one empty to not move cards for it</em></legend>
                   <div class="board-map" id="board-map"></div>
@@ -1257,7 +1250,7 @@
               <ul class="item-list" id="settings-webhooks"></ul>
               <div id="webhook-secret" hidden></div>
               <p class="hint" id="settings-webhooks-hint" hidden></p>
-              <div><button class="btn small" type="button" id="webhook-add" data-icon="plus">Add webhook</button></div>
+              <div><button class="btn small" type="button" id="webhook-add" data-icon="plus">Add webhook…</button></div>
             </fieldset>
           </section>
         </div>
@@ -1280,14 +1273,14 @@
       <label class="field"><span>Name <em>optional</em></span><input name="name" maxlength="100" autocomplete="off"></label>
       <div id="webhook-token-row">
         <label class="field"><span>Access token <em>optional: for protected or self-hosted ntfy servers</em></span><input name="token" type="password" autocomplete="new-password" spellcheck="false"></label>
-        <label class="toggle" id="webhook-token-clear-row" hidden><input type="checkbox" name="token_clear"><span>Remove the saved token</span></label>
+        <label class="toggle" id="webhook-token-clear-row" hidden><input type="checkbox" name="token_clear"><span>Delete the saved token</span></label>
       </div>
       <p class="hint" id="webhook-format-hint"></p>
       <fieldset class="field choice">
         <legend>Send</legend>
         <div id="webhook-events"></div>
       </fieldset>
-      <label class="toggle"><input type="checkbox" name="enabled"><span>On</span></label>
+      <label class="toggle"><input type="checkbox" name="enabled"><span>Enabled</span></label>
       <footer class="sheet-actions"><button class="btn primary" value="save" data-icon="check">Save webhook</button></footer>
     </form>
   </dialog>
@@ -1349,7 +1342,7 @@
           </section>
           <section class="rail-section" data-section="chat">
             <label class="toggle"><input type="checkbox" name="chatSuggest" form="prefs-form"><span>Suggest what to say next</span></label>
-            <p class="hint">After each reply, Claude's small model (Haiku) guesses your next message and shows it greyed out in the empty message box. <kbd>Enter</kbd> or Send sends it as it is; <kbd>Tab</kbd> puts it in the box to edit. Each guess is a short call on the same Claude login as the chat. Off: no call is made.</p>
+            <p class="hint">After each reply, Claude's small model (Haiku) guesses your next message and shows it grayed out in the empty message box. <kbd>Enter</kbd> or Send sends it as it is; <kbd>Tab</kbd> puts it in the box to edit. Each guess is a short call on the same Claude login as the chat. Off: no call is made.</p>
           </section>
           <!-- The user's profile picture (app/avatar.js): shown in the account menu and members lists -->
           <section class="rail-section" data-section="picture">
@@ -1357,7 +1350,7 @@
               <span class="avatar avatar-large" id="avatar-preview" aria-hidden="true"></span>
               <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
               <button class="btn small" type="button" id="avatar-pick" data-icon="up">Choose picture…</button>
-              <button class="btn small" type="button" id="avatar-clear">Remove</button>
+              <button class="btn small" type="button" id="avatar-clear">Delete</button>
             </div>
             <p class="hint">Shown in the account menu and to the members of your organizations. Dash crops it to a square and makes it small before saving it.</p>
           </section>
@@ -1485,7 +1478,7 @@
             <ul class="item-list" id="me-webhooks"></ul>
             <div id="me-webhook-secret" hidden></div>
             <p class="hint" id="me-webhooks-hint" hidden></p>
-            <div><button class="btn small" type="button" id="me-webhook-add" data-icon="plus">Add webhook</button></div>
+            <div><button class="btn small" type="button" id="me-webhook-add" data-icon="plus">Add webhook…</button></div>
           </section>
           <!-- Platform admins: follow Claude's status page (status.claude.com) with its webhooks (app/claudestatus.js) -->
           <section class="rail-section" data-section="claudestatus">
@@ -1582,7 +1575,7 @@
         </div>
       </div>
       <footer class="sheet-actions">
-        <button class="btn" id="org-new" type="button" data-icon="plus" hidden>New organization</button>
+        <button class="btn" id="org-new" type="button" data-icon="plus" hidden>New organization…</button>
       </footer>
     </form>
   </dialog>
@@ -1622,11 +1615,10 @@
   <!-- Re-enter the password before a sensitive change -->
   <dialog class="sheet small" id="password-sheet" aria-labelledby="password-title">
     <form method="dialog" id="password-form">
-      <h2 id="password-title" tabindex="-1"></h2>
+      <header class="sheet-head"><h2 id="password-title" tabindex="-1"></h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p id="password-body" class="hint"></p>
       <label class="field"><span>Your password <em>to confirm</em></span><input type="password" name="password" required autocomplete="current-password"></label>
       <footer class="sheet-actions">
-        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
         <button class="btn primary" value="ok" data-icon="check">Confirm</button>
       </footer>
     </form>
@@ -1635,12 +1627,11 @@
   <!-- Generic question / confirmation -->
   <dialog class="sheet small" id="ask-sheet" aria-labelledby="ask-title">
     <form method="dialog">
-      <h2 id="ask-title" tabindex="-1" autofocus></h2>
+      <header class="sheet-head"><h2 id="ask-title" tabindex="-1" autofocus></h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p id="ask-body" class="hint"></p>
       <textarea id="ask-input" rows="4" hidden></textarea>
       <div class="attach" id="ask-attach" data-attach hidden></div>
       <footer class="sheet-actions">
-        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
         <button class="btn primary" value="ok" id="ask-ok" data-icon="check">OK</button>
       </footer>
     </form>
@@ -1655,7 +1646,6 @@
       <footer class="sheet-actions">
         <span class="edit-state" id="diff-edit-state" aria-live="polite"></span>
         <button class="btn shrink" type="button" id="diff-edit-revert" data-icon="undo">Revert</button>
-        <button class="btn shrink" value="cancel" formnovalidate data-icon="x">Cancel</button>
         <button class="btn primary shrink" type="button" id="diff-edit-save" data-icon="check" title="Commit on the task's branch (Ctrl+S)">Save</button>
       </footer>
     </form>
@@ -1679,7 +1669,7 @@
       <dl class="keys">
         <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with tasks · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
         <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gi</kbd>/<kbd>gS</kbd>/<kbd>gs</kbd>/<kbd>gh</kbd>/<kbd>go</kbd>/<kbd>gf</kbd>/<kbd>gl</kbd>/<kbd>gp</kbd> Board/Issues/Scans/Shell/History/Goals/Files/Checklist/Planning · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> projects, again for sections (toggles), <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Esc</kbd> back) · <kbd>J</kbd>/<kbd>K</kbd> next/previous project · <kbd>c</kbd> project chat · <kbd>[</kbd> collapse sidebar · <kbd>Ctrl-k</kbd> search projects, tasks and commands, <kbd>/</kbd> just tasks · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
-        <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review, or open its pull request when it is reviewed on GitHub; enqueue a draft; <kbd>Space</kbd> opens) · <kbd>n</kbd> (or <kbd>a</kbd>) new task · <kbd>N</kbd> new task with all options · <kbd>e</kbd> edit (on a desktop, in the open task's pane: <kbd>Ctrl-Enter</kbd>/<kbd>Ctrl-s</kbd> save, <kbd>Esc</kbd> cancels) · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>_</kbd> clear priority · <kbd>t</kbd> live preview (<kbd>D</kbd> draws on it: <kbd>p</kbd>/<kbd>a</kbd>/<kbd>o</kbd>/<kbd>b</kbd>/<kbd>c</kbd> pen/arrow/circle/box/crop, <kbd>1</kbd>–<kbd>3</kbd> colour, <kbd>x</kbd> exact capture (desktop Chrome), <kbd>Ctrl-z</kbd> undo, <kbd>Enter</kbd> add to review, <kbd>Esc</kbd> done) · <kbd>!</kbd> shell in worktree</dd>
+        <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review, or open its pull request when it is reviewed on GitHub; queue a draft; <kbd>Space</kbd> opens) · <kbd>n</kbd> (or <kbd>a</kbd>) new task · <kbd>N</kbd> new task with all options · <kbd>e</kbd> edit (on a desktop, in the open task's pane: <kbd>Ctrl-Enter</kbd>/<kbd>Ctrl-s</kbd> save, <kbd>Esc</kbd> cancels) · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>_</kbd> clear priority · <kbd>t</kbd> live preview (<kbd>D</kbd> draws on it: <kbd>p</kbd>/<kbd>a</kbd>/<kbd>o</kbd>/<kbd>b</kbd>/<kbd>c</kbd> pen/arrow/circle/box/crop, <kbd>1</kbd>–<kbd>3</kbd> color, <kbd>x</kbd> exact capture (desktop Chrome), <kbd>Ctrl-z</kbd> undo, <kbd>Enter</kbd> add to rework notes, <kbd>Esc</kbd> done) · <kbd>!</kbd> shell in worktree</dd>
         <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> timeline ↔ changes · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
         <dt>More</dt><dd><kbd>T</kbd> run tests again · <kbd>Y</kbd> duplicate · <kbd>E</kbd> open worktree in editor · <kbd>u</kbd> revert a merged task · <kbd>O</kbd> open its pull request · click a diff line (or Tab to its <kbd>+</kbd> button and press Enter) to comment · paste or drop images into a task</dd>
         <dt>Approvals</dt><dd><kbd>y</kbd> allow · <kbd>A</kbd> always allow that tool for the task · <kbd>n</kbd> deny</dd>
@@ -1690,7 +1680,7 @@
         <dt>Checklist</dt><dd><kbd>j</kbd>/<kbd>k</kbd> move between items · <kbd>x</kbd>/<kbd>Space</kbd> check or uncheck · <kbd>m</kbd> move to a draft task · <kbd>M</kbd> move &amp; queue · <kbd>+</kbd>/<kbd>-</kbd> move up or down · <kbd>e</kbd> edit · <kbd>dd</kbd> delete · <kbd>a</kbd> add an item · <kbd>r</kbd> read TODO.md again (it updates by itself; for hand edits to an untracked one) · changes are committed to TODO.md a moment after the last one</dd>
         <dt>Shell</dt><dd><kbd>i</kbd> type into terminal · <kbd>Ctrl-]</kbd> leave terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> new shell</dd>
         <dt>New task</dt><dd><kbd>Enter</kbd> save · <kbd>Shift-Enter</kbd> another task · <kbd>Backspace</kbd> in an empty field removes it · a pasted text stays one task · <kbd>Esc</kbd> close</dd>
-        <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> add to queue · <kbd>Ctrl-Shift-Enter</kbd>/<kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>
+        <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> queue · <kbd>Ctrl-Shift-Enter</kbd>/<kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>
         <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:task …</code> <code>:new</code> <code>:run cmd</code> <code>:shell</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:prefs</code> <code>:connector</code> <code>:perms</code> <code>:board</code> <code>:mine</code> <code>:chat</code> <code>:pin</code> <code>:history</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:vim</code> <code>:list</code> <code>:q</code></dd>
       </dl>
       <p class="hint">Dash version <code>{{DASH_VERSION}}</code></p>

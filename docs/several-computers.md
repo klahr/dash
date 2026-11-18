@@ -296,7 +296,7 @@ Its owner and the org's admins can:
 
 - **Pause** it: it finishes what it is running and gets no new tasks;
 - set **At once**, how many of the hub's tasks it runs at a time (0: its own `-parallel`);
-- **Revoke** it (there, or under **Account → Tokens & apps**): it is disconnected at once, its token stops
+- **Revoke…** it (there, or under **Account → Tokens & apps**): it is disconnected at once, its token stops
   working (the hub keeps only a hash of it) and it works on no project any more. Tasks it was
   running fail and can be queued again on another runner. The runner exits, saying so (its
   systemd service doesn't restart it; launchd retries every 30 s); to bring it back, run the
@@ -708,7 +708,7 @@ ignores them, with a warning.
 
 If a runner disconnects while running a task (the lid closes, the Wi-Fi drops), the hub waits
 `-runner-grace` (default 2 minutes) for it to come back. After that the task fails, "interrupted:
-laptop went offline mid-task", and its **Continue on laptop** button queues it again: the runner
+laptop went offline mid-task", and its **Retry** button queues it again: the runner
 picks up its worktree and Claude session where it stopped. If the runner kept going meanwhile (a
 short outage), it says so when it reconnects and the task carries on. If the task reached review,
 or was merged, before the hub sent it back, the board follows: a merged task shows as merged, with

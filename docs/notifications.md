@@ -77,16 +77,16 @@ deleted at the next push. Runners don't push; their hub does.
 
 ## Notification webhooks
 
-Each project has its own webhooks: **Project settings → Notification webhooks → Add webhook**.
+Each project has its own webhooks: **Project settings → Notification webhooks → Add webhook…**.
 The whole org shares them.
 
-You can also have **personal webhooks**: **account menu → Account → My webhooks → Add webhook**. A
+You can also have **personal webhooks**: **account menu → Account → My webhooks → Add webhook…**. A
 personal webhook gets the events of every project in the org you made it in, for as long as you
 are a member of that org. It is yours alone: other members, org admins included, don't see
 it. If a project's webhook and a personal one point to the same URL, each event is sent there
 once. A personal webhook's test notification names no project.
 
-A webhook has a URL, a format, the events it sends and an on/off switch. **Send test** posts a
+A webhook has a URL, a format, the events it sends and an **Enabled** switch. **Send test** posts a
 test notification right away (even to a paused webhook). The list shows how each webhook's last
 delivery went, and **History** lists its last 50 deliveries, newest first: when it was sent, the
 event, its project and task, whether it went through, the HTTP status, how many tries it took

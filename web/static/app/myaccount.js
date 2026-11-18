@@ -58,7 +58,7 @@ async function renderGoogle() {
       await api("DELETE", "/api/account/google", { password: pw }, "");
       toast("Google account unlinked");
       await renderGoogle();
-    }) }, ico("x"), "Unlink")
+    }) }, ico("x"), "Unlink…")
       : h("p", { class: "hint" }, "Google is your only way to sign in, so it can't be unlinked. Choose a password with “Forgot password?” on the sign-in page first."));
 }
 
@@ -115,7 +115,7 @@ async function renderTwoFactor() {
         if (pw == null) return;
         const r = await api("POST", "/api/account/2fa/recovery-codes", { password: pw }, "");
         DashTwoFactor.recoveryCodes(body, r.recovery_codes, () => renderTwoFactor().catch(() => {}), "Done");
-      }) }, ico("redo"), "New recovery codes"),
+      }) }, ico("redo"), "New recovery codes…"),
       st.required ? null : h("button", { class: "btn danger", type: "button", onclick: attempt(async () => {
         const pw = await askPassword("Turn off two-factor sign-in?", "Your password alone will sign you in again. Your recovery codes stop working.");
         if (pw == null) return;
@@ -123,6 +123,6 @@ async function renderTwoFactor() {
         toast("Two-factor sign-in is off");
         await accountHooks.reloadMe();
         await renderTwoFactor();
-      }) }, ico("x"), "Turn off")),
+      }) }, ico("x"), "Turn off…")),
     st.required ? h("p", { class: "hint" }, "An organization you belong to requires it, so it can't be turned off.") : null);
 }

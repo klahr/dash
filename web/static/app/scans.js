@@ -330,7 +330,7 @@ function scanActions(s) {
     dash ? h("button", { type: "button", class: "link", onclick: () => openScanEditor(s, true) }, "Edit") : null,
     h("button", { type: "button", class: "link", onclick: () => openScanEditor(s, false) }, "Duplicate"),
     dash && s.markdown ? h("button", { type: "button", class: "link", onclick: exp }, "Export to repo") : null,
-    dash ? h("button", { type: "button", class: "link danger", onclick: del }, "Delete") : null);
+    dash ? h("button", { type: "button", class: "link danger", onclick: del }, "Delete…") : null);
 }
 
 // scanEditing is the scan the editor changes; null: it makes a new one.

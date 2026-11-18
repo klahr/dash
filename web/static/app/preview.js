@@ -219,7 +219,7 @@ function termBufferTail(n) {
   return lines.join("\n");
 }
 
-// Lines of the terminal preview sent back with "Send back with transcript".
+// Lines of the terminal preview sent back with "Rework with transcript…".
 const TRANSCRIPT_LINES = 200;
 
 // A crashed terminal preview has no log stream: fetch its last lines once.
@@ -304,7 +304,7 @@ export function renderPreview() {
       status.replaceChildren(h("strong", { class: "pv-err" }, `The server exited${p.exit_code != null ? ` with code ${p.exit_code}` : ""}`),
         tail(),
         h("div", { class: "pv-status-actions" },
-          canRework(t) ? ib({ class: "btn primary", type: "button", onclick: attempt(() => sendBackWithLog(t)) }, "redo", "Send back with this log") : null,
+          canRework(t) ? ib({ class: "btn primary", type: "button", onclick: attempt(() => sendBackWithLog(t)) }, "redo", "Rework with this log…") : null,
           restart()));
       break;
     case "live": // no preview domain, and not on Dash's own computer
@@ -353,7 +353,7 @@ function renderTermPreview(t, p, st) {
       status.replaceChildren(h("strong", { class: "pv-err" }, `The terminal exited${p.exit_code != null ? ` with code ${p.exit_code}` : ""}`),
         tail(),
         h("div", { class: "pv-status-actions" },
-          canRework(t) ? ib({ class: "btn primary", type: "button", onclick: attempt(() => sendBackWithLog(t)) }, "redo", "Send back with this log") : null,
+          canRework(t) ? ib({ class: "btn primary", type: "button", onclick: attempt(() => sendBackWithLog(t)) }, "redo", "Rework with this log…") : null,
           restart()));
       break;
     default:
@@ -389,7 +389,7 @@ function reloadPreview() {
 function openQR(url, prefix = "") {
   const d = h("dialog", { class: "sheet small qr-sheet", "aria-label": "QR code" },
     h("form", { method: "dialog" },
-      h("h2", {}, "Open on another device"),
+      h("header", { class: "sheet-head" }, h("h2", {}, "Open on another device"), ib({ class: "icon-btn", value: "cancel", formnovalidate: true, "aria-label": "Close" }, "x")),
       h("img", { class: "qr", src: on(prefix, `/api/qr?text=${encodeURIComponent(url)}`), width: 240, height: 240, alt: `QR code for ${url}` }),
       h("p", { class: "hint qr-url" }, url),
       h("p", { class: "hint" }, "That device signs in to Dash first if it isn't already."),
@@ -430,8 +430,8 @@ $("#pv-fab").addEventListener("click", attempt(async () => {
   const choices = [["minimize", "Back to task", hidePreview]];
   if (!term && p?.state === "live" && p.url) choices.push(["edit", "Draw", startDraw]);
   if (!term && p?.state === "live") choices.push(["reload", "Reload", reloadPreview]);
-  if (canRework(t) && term && p?.state === "live") choices.push(["redo", pvTerm?.hasSelection() ? "Send back with the selection" : "Send back with transcript", () => sendBackWithTranscript(t)]);
-  if (canRework(t)) choices.push(["redo", "Send back", () => (p?.state === "crashed" ? sendBackWithLog(t) : reworkTodo(t).then((sent) => sent && hidePreview()))]);
+  if (canRework(t) && term && p?.state === "live") choices.push(["redo", pvTerm?.hasSelection() ? "Rework with the selection…" : "Rework with transcript…", () => sendBackWithTranscript(t)]);
+  if (canRework(t)) choices.push(["redo", "Rework…", () => (p?.state === "crashed" ? sendBackWithLog(t) : reworkTodo(t).then((sent) => sent && hidePreview()))]);
   if (p) {
     if (!term) choices.push(["external", "Open in a new tab", () => window.open(p.url || p.local_url, "_blank", "noopener")]);
     if (!term && p.url) choices.push(["link", "Copy link", () => copy(p.url, "Preview link copied")]);

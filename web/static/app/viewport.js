@@ -4,7 +4,7 @@ import * as store from "./store.js";
 export const wsURL = (path) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
 export const desktop = matchMedia("(min-width: 1024px)");
 
-// A tap on a composer's buttons (send, Send to agent, a file chip's ×) must not
+// A tap on a composer's buttons (send, Rework, a file chip's ×) must not
 // take focus from its text field: the keyboard would close, the composer move
 // down with it, and the click miss the button, so it took a second tap. Holding
 // on to focus also keeps the keyboard up after sending, as in a messaging app.

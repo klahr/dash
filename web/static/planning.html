@@ -118,11 +118,10 @@
 
   <dialog class="sheet small" id="password-sheet" aria-labelledby="password-title">
     <form method="dialog" id="password-form">
-      <h2 id="password-title" tabindex="-1"></h2>
+      <header class="sheet-head"><h2 id="password-title" tabindex="-1"></h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p id="password-body" class="hint"></p>
       <label class="field"><span>Your password <em>to confirm</em></span><input type="password" name="password" required autocomplete="current-password"></label>
       <footer class="sheet-actions">
-        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
         <button class="btn primary" value="ok" data-icon="check">Confirm</button>
       </footer>
     </form>
@@ -131,12 +130,11 @@
   <!-- Generic question / confirmation (app/dialogs.js) -->
   <dialog class="sheet small" id="ask-sheet" aria-labelledby="ask-title">
     <form method="dialog">
-      <h2 id="ask-title" tabindex="-1" autofocus></h2>
+      <header class="sheet-head"><h2 id="ask-title" tabindex="-1" autofocus></h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p id="ask-body" class="hint"></p>
       <textarea id="ask-input" rows="4" hidden></textarea>
       <div class="attach" id="ask-attach" data-attach hidden></div>
       <footer class="sheet-actions">
-        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
         <button class="btn primary" value="ok" id="ask-ok" data-icon="check">OK</button>
       </footer>
     </form>

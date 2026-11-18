@@ -59,7 +59,7 @@ func TestBrowserMainFlows(t *testing.T) {
 	b.do("write the task", chromedp.SendKeys(chromedp.CSS(`#quick-rows .quick-row`), "Add a done file"))
 	b.waitJS("the task written", `document.querySelector("#quick-rows .quick-row").value === "Add a done file"`)
 	// A new profile: unticked.
-	b.until("tick Queue right away", `document.querySelector("#quick-queue").checked`, chromedp.Click(chromedp.CSS(`label.toggle:has(#quick-queue) span`)))
+	b.until("tick Queue", `document.querySelector("#quick-queue").checked`, chromedp.Click(chromedp.CSS(`label.toggle:has(#quick-queue) span`)))
 	b.waitJS("the Queue task button", `document.querySelector("#quick-submit-label").textContent === "Queue task"`)
 	// The sheet closes as the task is sent; a failed send opens it again with
 	// the text kept, so a repeated click sends the task again.
@@ -87,7 +87,7 @@ func TestBrowserMainFlows(t *testing.T) {
 		chromedp.SendKeys(chromedp.CSS(`#d-diff .comment-box textarea`), "Say it louder"),
 		chromedp.Click(chromedp.CSS(`#d-diff .comment-box button.primary`)),
 	)
-	b.clickText("#d-actions button", "Send 1 comment")
+	b.clickText("#d-actions button", "Rework with 1 note…")
 	b.do("add a note",
 		chromedp.WaitVisible(chromedp.ID("ask-input")),
 		chromedp.SendKeys(chromedp.ID("ask-input"), "And add a rework file"),
@@ -1201,7 +1201,7 @@ func TestBrowserSwipeLanes(t *testing.T) {
 	lane("merging")
 	swipe("swipe right past Review", 120, 500, 300, 500, 0)
 	lane("in_progress")
-	b.until("show Done", `document.querySelector("#board .col.active")?.dataset.lane === "done"`, chromedp.Click(chromedp.CSS(`.lane-tab[data-lane=done]`)))
+	b.until("show Merged", `document.querySelector("#board .col.active")?.dataset.lane === "done"`, chromedp.Click(chromedp.CSS(`.lane-tab[data-lane=done]`)))
 	swipe("swipe left on the last lane", 300, 500, 120, 500, 0)
 	still("swipe left on the last lane", "done")
 

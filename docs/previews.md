@@ -5,7 +5,7 @@ get a **Preview** button: it starts that command in the task's worktree and show
 the task (full screen on a phone). The board marks running previews **Live**, and **Previews (n)**
 in the top bar lists them all, with Stop all. One preview runs per task. It stops when the task is
 approved, sent back or merged, and after 30 minutes without traffic (`-preview-idle`). If the
-server crashes, its log opens, and **Send back with this log** hands it to Claude as rework notes.
+server crashes, its log opens, and **Rework with this log…** hands it to Claude as rework notes.
 
 To mark up a preview and send the picture back to Claude, see [Draw](draw.md).
 
@@ -24,11 +24,11 @@ The preview is live at once, has no URL, and is attached to over the WebSocket i
 `/peer/<runner>/` for a runner's tasks, which open it only for the
 runner's owner). It stops like a web preview, with keystrokes counting as traffic. If the command
 fails or the shell exits, it shows as crashed; `GET /api/todos/<task>/preview/log?lines=N` returns
-its last lines as plain text, for **Send back**.
+its last lines as plain text, for **Rework**.
 
 In the web client, **Preview** on such a task opens that terminal beside the task (full screen on
 a phone, with a row of Esc, Tab, Ctrl-C, Ctrl-D and arrow keys). Draw doesn't apply; instead
-**Send back with transcript** puts the terminal's last 200 lines into the rework notes, or only
+**Rework with transcript…** puts the terminal's last 200 lines into the rework notes, or only
 what you selected in the terminal if you selected something.
 
 ### Try: the project itself, at any commit

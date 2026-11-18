@@ -148,7 +148,7 @@ export async function startDraw() {
   if (draw.on || draw.busy) return;
   const t = state.todos.get(pv.todo);
   const p = t && previewOf(t.id);
-  if (isTermPreview(p)) return; // nothing to draw on: Send back with transcript instead
+  if (isTermPreview(p)) return; // nothing to draw on: Rework with transcript instead
   if (!p || p.state !== "live" || !pv.shown) throw new Error("Start the preview first: draw mode works on the live page.");
   if (!p.url) throw new Error("Drawing needs a preview domain (-preview-domain): the snapshot is taken through Dash's preview proxy.");
   draw.busy = true;
@@ -297,7 +297,7 @@ function copyThis(blob) {
   const url = URL.createObjectURL(blob);
   const d = h("dialog", { class: "sheet small copy-sheet", "aria-label": "Copy this" },
     h("form", { method: "dialog" },
-      h("h2", {}, "Copy this"),
+      h("header", { class: "sheet-head" }, h("h2", {}, "Copy this"), ib({ class: "icon-btn", value: "cancel", formnovalidate: true, "aria-label": "Close" }, "x")),
       h("img", { class: "copy-img", src: url, alt: "The picture from the preview" }),
       h("p", { class: "hint" }, "This browser can't put pictures on the clipboard here. Right-click or long-press the picture to copy or save it."),
       h("footer", { class: "sheet-actions" },
@@ -336,7 +336,7 @@ export function renderReworkBox() {
     ta,
     h("div", { class: "rework-actions" },
       h("span", { class: "hint" }, pv.todo === t.id ? "Draw (D) to add more" : ""),
-      ib({ class: "btn small primary", type: "button", title: "Send back for rework with these notes (Ctrl+Enter)", onclick: attempt(() => sendShots(t)) }, "redo", "Send back")));
+      ib({ class: "btn small primary", type: "button", title: "Rework with these notes (Ctrl+Enter)", onclick: attempt(() => sendShots(t)) }, "redo", "Rework")));
   box.hidden = false;
 }
 
@@ -346,7 +346,7 @@ async function sendShots(t) {
   await api("POST", `/api/todos/${t.id}/rework`, { feedback: entry.text.trim(), attachments: entry.items.map((a) => a.id) }, entry.prefix);
   shots.delete(t.id);
   renderReworkBox();
-  toast("Sent back for rework");
+  toast("Sent for rework");
   hidePreview();
 }
 
@@ -398,10 +398,9 @@ $("#previews-btn").addEventListener("click", () => {
   const body = h("div", { class: "pv-list" });
   const d = h("dialog", { class: "sheet small previews-sheet", "aria-labelledby": "pv-list-title" },
     h("form", { method: "dialog" },
-      h("h2", { id: "pv-list-title" }, "Running previews"),
+      h("header", { class: "sheet-head" }, h("h2", { id: "pv-list-title" }, "Running previews"), ib({ class: "icon-btn", value: "cancel", formnovalidate: true, "aria-label": "Close" }, "x")),
       body,
       h("footer", { class: "sheet-actions" },
-        ib({ class: "btn", value: "cancel" }, "x", "Close"),
         ib({ class: "btn danger", type: "button", onclick: attempt(stopAllPreviews) }, "stop", "Stop all"))));
   const projectFor = (p) => (state.projects || []).find((x) => x.id === p.project_id && x.machine === p.machine);
   const render = () => {
@@ -468,16 +467,16 @@ export const canRework = (t) => !!t?.worktree && ["review", "failed"].includes(t
 export async function reworkTodo(t, text = "") {
   const shot = shots.get(t.id);
   const value = [shot?.text.trim(), text].filter(Boolean).join("\n\n");
-  const res = await ask({ title: "Send back for rework", body: "Claude continues in the same worktree with your notes. Paste or attach a screenshot to show what's wrong.", input: true, value, placeholder: "What should change?", ok: "Send back", attach: true, attachments: shot?.items || [] });
+  const res = await ask({ title: "Rework", body: "Claude continues in the same worktree with your rework notes. Paste or attach a screenshot to show what's wrong.", input: true, value, placeholder: "What should change?", ok: "Rework", attach: true, attachments: shot?.items || [] });
   if (res === null) return false;
   await api("POST", `/api/todos/${t.id}/rework`, { feedback: res.text, attachments: res.attachments });
   shots.delete(t.id);
   renderReworkBox();
-  toast("Sent back for rework");
+  toast("Sent for rework");
   return true;
 }
 
-// "Send to agent" turns what's in the task chat's composer into rework notes.
+// "Rework…" in the task chat turns what's in the task chat's composer into rework notes.
 $("#d-to-agent").addEventListener("click", attempt(async () => {
   const t = state.todos.get(state.detail);
   if (!canRework(t)) return;

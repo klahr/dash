@@ -130,19 +130,19 @@ function renderWebhooks(sc = hookScopes.project) {
           renderWebhooks(sc);
           await loadWebhookHistory(w, sc);
         }) }, open ? "Hide history" : "History"),
-        h("button", { class: "btn small", type: "button", onclick: () => editWebhook(w, sc) }, "Edit"),
+        h("button", { class: "btn small", type: "button", onclick: () => editWebhook(w, sc) }, "Edit…"),
         w.format === "json" ? h("button", { class: "btn small", type: "button", onclick: attempt(async () => {
           if (!await ask({ title: "Rotate the signing secret?", body: "The current secret stops working at once: update your receiver with the new one.", ok: "Rotate" })) return;
           const res = await api("POST", `/api/webhooks/${w.id}/rotate`);
           showWebhookSecret(res.secret, sc);
-        }) }, "Rotate secret") : null,
+        }) }, "Rotate secret…") : null,
         h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
           if (!await ask({ title: `Delete ${w.name || webhookHost(w.url)}?`, body: "Dash stops sending notifications to it, and forgets its history.", ok: "Delete", danger: true })) return;
           await api("DELETE", `/api/webhooks/${w.id}`);
           sc.list = sc.list.filter((x) => x.id !== w.id);
           hooks.history.delete(w.id);
           if (sc.owner() === owner) renderWebhooks(sc);
-        }) }, "Delete"))));
+        }) }, "Delete…"))));
     if (open) rows.push(webhookHistory(w, sc));
   }
   $(sc.el).replaceChildren(...(rows.length ? rows : [h("li", { class: "hint" }, "No webhooks yet.")]));

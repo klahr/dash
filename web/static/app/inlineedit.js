@@ -216,7 +216,7 @@ function renderMeta(t) {
 
   const prio = h("input", {
     type: "number", step: 1, inputmode: "numeric", placeholder: "None", class: "meta-input", value: t.priority ?? "",
-    "aria-label": "Priority", title: "Prioritised tasks run first, lower numbers before higher; empty for none",
+    "aria-label": "Priority", title: "Prioritized tasks run first, lower numbers before higher; empty for none",
     onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); prio.blur(); } },
   });
   prio.addEventListener("change", save(async (t) => {

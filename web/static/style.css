@@ -395,9 +395,11 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
   .todo:has(.ask-claude-chip) > .todo-side .card-actions { margin-top: 0; }
 }
 .paused-tag { color: var(--muted); }
+/* A failed task waits in Review: say so plainly, as a badge. */
+.failed-tag { color: var(--failed); border: 1px solid currentColor; border-radius: var(--r-s); padding: 0 5px; line-height: 1.5; }
 .start-now-tag { color: var(--running); } /* the task skips the wait for the weekly pace */
 /* A card's small word tags (paused, reviewing, a PR, CI, checks, a revert): one size; each sets its colour. */
-:is(.paused-tag, .start-now-tag, .reviewing-tag, .runner-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag, .link-tag) { font-size: var(--fs-xs); font-weight: 600; }
+:is(.failed-tag, .paused-tag, .start-now-tag, .reviewing-tag, .runner-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag, .link-tag) { font-size: var(--fs-xs); font-weight: 600; }
 /* A link to other tasks (a conflict, a note, an active_work lookup): one short line, the rest on hover. */
 .link-tag, .dep-link.link-tag { display: inline-block; color: var(--accent); text-decoration: none; max-width: min(22em, 100%); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .link-tag.conflict-tag, .dep-link.link-tag.conflict-tag, .conflicts { color: var(--running); }
@@ -857,6 +859,8 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .sheet > form, .sheet > details, .sheet > .rail-body { padding: 0 var(--sp-4); }
 /* #toasts may be appended after the form while the sheet is open (raiseToasts). */
 .sheet > :is(form, details, .rail-body):not(:has(~ :not(.toasts))) { padding-bottom: calc(var(--sp-4) + var(--safe-b)); }
+/* A sheet's footer with nothing left to show (a menu on the ask sheet) takes no room. */
+.sheet-actions:not(:has(> :not([hidden]))) { display: none; }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); padding: var(--sp-2) 0; }
 .sheet h2:focus { outline: none; }
 .sheet h2 { font-size: var(--fs-xl); margin: var(--sp-2) 0; letter-spacing: -.01em; }

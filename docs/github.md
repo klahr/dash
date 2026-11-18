@@ -97,7 +97,7 @@ In pull request mode the pull request is where a task is reviewed:
    decides), the card reads *Approved; waiting for you to merge on GitHub* and the wall lists it
    under "Needs a human". A request for changes holds it until that reviewer approves.
 
-   To merge it from Dash, click **Merge pull request** on the task (or **Merge** on its card) and
+   To merge it from Dash, click **Merge pull request** on the task or on its card and
    confirm. It shows once the pull request's checks pass, also before anyone approved it: GitHub
    decides whether it may merge. Anyone who can approve tasks in the project can merge.
 
@@ -116,7 +116,7 @@ In pull request mode the pull request is where a task is reviewed:
    The task is marked merged when the pull request is, and its branch is deleted. After a merge
    from Dash that happens at once, without waiting for the next check of GitHub.
 6. **Rejecting.** Closing the pull request on GitHub without merging rejects the task: it moves
-   to *Failed*, saying so; **Rework** it to have Claude try again in a new pull request, or
+   to *Failed*, saying so; **Rework…** it to have Claude try again in a new pull request, or
    delete it. The other way round, rejecting the task in Dash, by deleting it or moving it back
    to drafts, closes its pull request on GitHub (with a comment saying it was rejected in Dash)
    and deletes its branch there.

@@ -17,7 +17,7 @@ export async function loadCI() {
 export function runState(r) {
   if (r.status !== "completed") return ["running", "Running"];
   return { success: ["passing", "Passed"], failure: ["failing", "Failed"], timed_out: ["failing", "Timed out"],
-    startup_failure: ["failing", "Couldn't start"], cancelled: ["muted", "Cancelled"], skipped: ["muted", "Skipped"] }[r.conclusion] || ["muted", r.conclusion];
+    startup_failure: ["failing", "Couldn't start"], cancelled: ["muted", "Canceled"], skipped: ["muted", "Skipped"] }[r.conclusion] || ["muted", r.conclusion];
 }
 
 const RELEASE_LABEL = { building: "building", published: "published", failed: "failed", no_build: "pushed, but no workflow started for it" };

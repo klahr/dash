@@ -445,7 +445,7 @@ function oldToggle() {
 function enqueueAllBtn(drafts) {
   if (drafts.length < 2) return null;
   return ib({ class: "link older", title: "Move every draft in this column to the queue", onclick: attempt(() => enqueueAll(drafts)) },
-    "queue", `Enqueue all ${drafts.length}`);
+    "queue", `Queue all ${drafts.length}`);
 }
 
 async function enqueueAll(drafts) {
@@ -457,12 +457,12 @@ async function enqueueAll(drafts) {
   toast(bad ? `Queued ${n}, ${bad} failed` : `Queued ${plural(n, "task")}`);
 }
 
-// Failed tasks wait in Review to be retried, reworked or deleted, so Clear Done leaves them.
+// Failed tasks wait in Review to be retried, reworked or deleted, so Delete merged leaves them.
 const doneTodos = () => [...state.todos.values()].filter((t) => t.status === "merged");
 
 function clearDoneBtn() {
   if (!doneTodos().length) return null;
-  return ib({ class: "link older", onclick: attempt(clearDone) }, "trash", "Clear Done");
+  return ib({ class: "link older", onclick: attempt(clearDone) }, "trash", "Delete merged…");
 }
 
 async function clearDone() {
@@ -470,14 +470,14 @@ async function clearDone() {
   if (!list.length) return;
   const unpushed = list.filter((t) => t.status === "merged" && state.unpushedTodos?.has(t.id)).length;
   const n = list.length;
-  if (!await ask({ title: unpushed ? `Not all done tasks are pushed — clear ${n} anyway?` : `Clear ${plural(n, "done task")}?`,
+  if (!await ask({ title: unpushed ? `Not all merged tasks are pushed — delete ${n} anyway?` : `Delete ${plural(n, "merged task")}?`,
     body: "Deletes every merged task in this project. This can't be undone." +
       (unpushed ? ` ${unpushed} merged ${unpushed === 1 ? "task hasn't" : "tasks haven't"} been pushed yet. Their changes are not discarded: the commits stay on the local default branch and can still be pushed.` : ""),
-    ok: "Clear", danger: true })) return;
+    ok: "Delete", danger: true })) return;
   const res = await Promise.allSettled(list.map((t) => api("DELETE", `/api/todos/${t.id}`)));
   if (list.some((t) => t.id === state.detail)) closeDetail();
   const bad = res.filter((r) => r.status === "rejected").length;
-  toast(bad ? `Cleared ${n - bad}, ${bad} failed` : `Cleared ${plural(n, "task")}`);
+  toast(bad ? `Deleted ${n - bad}, ${bad} failed` : `Deleted ${plural(n, "task")}`);
 }
 
 // "2m", "3h", "4d"
@@ -697,6 +697,7 @@ export function todoRow(t, li = -1, ri = -1) {
       goalChip(t)),
     h("span", { class: "todo-side" },
       checkTag,
+      t.status === "failed" ? h("span", { class: "failed-tag" }, "Failed") : null,
       t.paused ? h("span", { class: "paused-tag" }, "Paused") : null,
       t.runner && ["in_progress", "review", "merging", "failed"].includes(t.status) ? h("span", { class: "runner-tag", title: "Runs on this runner" }, runnerName(t.runner)) : null,
       t.reviewing ? h("span", { class: "reviewing-tag" }, "Reviewing") : null,
@@ -776,7 +777,7 @@ function mergeChip(t) {
     type: "button", class: "approve-chip", title: `Merge pull request #${t.pr.number} on GitHub`,
     onpointerdown: (e) => e.stopPropagation(),
     onclick: (e) => { e.stopPropagation(); attempt(() => mergePR(t))(); },
-  }, ico("merge"), "Merge");
+  }, ico("merge"), "Merge pull request");
 }
 
 // What a task's pull request waits for, as Dash last saw it.
@@ -869,13 +870,13 @@ function approveChip(t) {
 
 function enqueueChip(t) {
   return h("button", {
-    type: "button", class: "enqueue-chip", title: "Move to the queue",
+    type: "button", class: "enqueue-chip", title: "Queue it",
     onpointerdown: (e) => e.stopPropagation(),
     onclick: (e) => {
       e.stopPropagation();
       attempt(todoKey)(t, "s");
     },
-  }, ico("queue"), "Enqueue");
+  }, ico("queue"), "Queue");
 }
 
 export function updateLiveLine(id) {

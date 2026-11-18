@@ -830,7 +830,7 @@ export function openDeleteProject() {
 function syncDeleteProject() {
   const f = $("#delete-project");
   const what = [f.files.value === "delete" && "folder", f.github.checked && "GitHub repo"].filter(Boolean);
-  setLabel($("#delete-project-ok"), "trash", what.length ? `Delete project and ${what.join(" and ")}` : "Remove from Dash");
+  setLabel($("#delete-project-ok"), "trash", what.length ? `Delete project and ${what.join(" and ")}` : "Delete project");
 }
 $("#delete-project").addEventListener("change", syncDeleteProject);
 $("#delete-project").addEventListener("submit", attempt(async (e) => {

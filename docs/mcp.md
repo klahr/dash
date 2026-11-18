@@ -128,7 +128,7 @@ shares with every computer.
 
 The chat stops and reruns tasks only when you ask it to:
 
-- `stop_todo(todo)` does what **Cancel** does on the board, for tasks on a runner too: a running
+- `stop_todo(todo)` does what **Stop** and **Move to drafts** do on the board, for tasks on a runner too: a running
   task ends failed ("canceled"), keeping its worktree and Claude session; a queued one goes back
   to draft.
 - `queue_todo(todo, fresh?, start_now?)` queues a draft or a failed task. Without `fresh`, a failed task

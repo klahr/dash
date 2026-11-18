@@ -295,7 +295,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   // with "/" (a path, say) is sent as a message.
   const commands = {
     clear: async () => { await clear(); reset(); },
-    help: () => toast(`/clear starts a new conversation. /help shows this.${shell ? " !command runs a shell command where the chat runs (no terminal); Claude sees it and its output next turn." : ""} Messages sent while Claude answers are queued and go once it's done; Up in an empty composer edits the last one; otherwise Up and Down step through the messages sent before. A suggested next message shows greyed out in the empty composer: Enter sends it, Tab puts it there to edit.`, { head: "Chat commands" }),
+    help: () => toast(`/clear starts a new conversation. /help shows this.${shell ? " !command runs a shell command where the chat runs (no terminal); Claude sees it and its output next turn." : ""} Messages sent while Claude answers are queued and go once it's done; Up in an empty composer edits the last one; otherwise Up and Down step through the messages sent before. A suggested next message shows grayed out in the empty composer: Enter sends it, Tab puts it there to edit.`, { head: "Chat commands" }),
   };
   commands.new = commands.reset = commands.clear;
 
@@ -838,8 +838,8 @@ export const todoChat = makeChat({
         if (!await ask({ title: "Replace the instructions?", body: "This answer becomes the task's instructions for Claude.", ok: "Replace" })) return;
         await api("PATCH", `/api/todos/${t.id}`, { prompt: answer });
         toast("Instructions updated");
-      }) }, "draft", "Use as instructions") : null,
-      canRework(t) ? ib({ class: "link", onclick: attempt(() => reworkTodo(t, answer)) }, "redo", "Send to agent") : null,
+      }) }, "draft", "Use as instructions…") : null,
+      canRework(t) ? ib({ class: "link", onclick: attempt(() => reworkTodo(t, answer)) }, "redo", "Rework…") : null,
       ib({ class: "link", onclick: () => copy(answer, "Copied") }, "copy", "Copy"));
   },
 });

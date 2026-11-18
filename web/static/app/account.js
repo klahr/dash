@@ -140,10 +140,10 @@ async function renderOrg() {
         if (self) { location.replace("/"); return; }
         toast(`${m.username} removed`);
         await renderOrg();
-      }) }, self ? "Leave" : "Remove") : null,
+      }) }, self ? "Leave…" : "Remove…") : null,
       (me.user?.is_platform_admin && !self) ? h("button", { class: "btn small danger", type: "button", title: `Platform admins: delete ${m.username}'s account on this Dash`, onclick: attempt(async () => {
         if (await deleteUserAccount(m)) await renderOrg();
-      }) }, "Delete account") : null);
+      }) }, "Delete account…") : null);
   });
   $("#org-members").replaceChildren(...rows);
   // A personal workspace is just its owner's: new orgs are for inviting people.
@@ -219,11 +219,11 @@ async function renderOrgSSO(o, mine) {
       await renderOrgSSO(o, mine);
     }) }, "Check DNS") : null,
     h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
-      const pw = await askPassword(`Remove ${d.domain}?`, "Its people can't join by it any more, nor are required to use Google.");
+      const pw = await askPassword(`Delete ${d.domain}?`, "Its people can't join by it any more, nor are required to use Google.");
       if (pw == null) return;
       await api("DELETE", `/api/orgs/${o.id}/sso/domains/${encodeURIComponent(d.domain)}`, { password: pw }, "");
       await renderOrgSSO(o, mine);
-    }), hidden: d.verified && !owner }, "Remove"),
+    }), hidden: d.verified && !owner }, "Delete…"),
     !d.verified && d.token ? h("div", { class: "domain-txt" },
       h("p", { class: "hint" }, `Add this TXT record to ${d.domain} at your DNS provider, then Check DNS. It can take a while to show.`),
       copyBlock(`dash-domain-verification=${d.token}`, "TXT record copied")) : null));
@@ -290,7 +290,7 @@ async function renderPlatformSSO(el) {
       await api("POST", "/api/admin/sso/domains/verify", { org_id: d.org_id, domain: d.domain, password: pw }, "");
       toast(`${d.domain} verified for ${d.org}`, { tone: "ok" });
       await renderPlatformSSO(el);
-    }) }, "Approve")));
+    }) }, "Approve…")));
   fill(el,
     h("h3", { class: "section-head" }, "This Dash's Google client (platform admins)"),
     h("p", { class: "hint" }, s.from_env ? "Set by DASH_GOOGLE_CLIENT_ID and DASH_GOOGLE_CLIENT_SECRET." : "Used by every organization without its own. Redirect URI:"),

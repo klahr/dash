@@ -7,12 +7,12 @@ and signed-in state included) to a picture, which replaces the live page until *
 perfect circles and squares) in red, yellow or blue, undo with <kbd>Ctrl-z</kbd>, and crop
 (<kbd>C</kbd>) to the part that matters.
 
-**Add to review** (<kbd>Enter</kbd>) uploads the picture into the rework notes beside the preview
+**Add to rework notes** (<kbd>Enter</kbd>) uploads the picture into the rework notes beside the preview
 with a line saying where it's from (`/settings · 390×844 · dash/todo-3f9a1c`) and, for each mark (an
 arrow's tip, the middle of a circle, box or pen stroke), the element it points at (`circle → form#settings button.save ("Save settings")`),
-so Claude knows what you mean without guessing from the picture; add several, then send them back
-together. On a phone one finger draws, two pan and zoom (with a pen, fingers only pan and zoom, and
-a resting palm is ignored), and Add to review opens the rework sheet. **Copy** puts the picture on
+so Claude knows what you mean without guessing from the picture; add several, then send them with
+**Rework**. On a phone one finger draws, two pan and zoom (with a pen, fingers only pan and zoom, and
+a resting palm is ignored), and **Add to rework notes** opens the rework sheet. **Copy** puts the picture on
 the clipboard.
 
 Drawing needs a [preview domain](previews.md#setting-up-a-preview-domain), since the picture is

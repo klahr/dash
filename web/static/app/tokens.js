@@ -33,8 +33,7 @@ function tokenDetail(t) {
 async function renderTokens() {
   const list = await api("GET", "/api/tokens", null, "");
   const row = (t) => {
-    const what = { oauth: "Disconnect", runner: "Revoke", api: "Revoke" }[t.kind];
-    return h("li", { class: "item-row" },
+        return h("li", { class: "item-row" },
       h("span", { class: "runner-name" }, t.name, t.kind === "api" ? h("code", { class: "hint" }, ` ${t.prefix}…`) : null),
       h("span", { class: "item-sub hint" }, tokenDetail(t)),
       h("button", { class: "btn small danger", type: "button", onclick: attempt(async () => {
@@ -43,12 +42,12 @@ async function renderTokens() {
           runner: "The runner is disconnected now and its token stops working. Register it again with a new code to bring it back.",
           api: "Anything using this token loses access at once.",
         }[t.kind];
-        if (!await ask({ title: `${what} ${t.name}?`, body, ok: what, danger: true })) return;
+        if (!await ask({ title: `Revoke ${t.name}?`, body, ok: "Revoke", danger: true })) return;
         await api("DELETE", `/api/tokens/${t.id}`, null, "");
-        toast(`${t.name} ${t.kind === "oauth" ? "disconnected" : "revoked"}`);
+        toast(`${t.name} revoked`);
         await renderTokens();
         if (t.kind === "runner") await refreshMachines();
-      }) }, what));
+      }) }, "Revoke…"));
   };
   const of = (kind, empty) => {
     const rows = list.filter((t) => t.kind === kind).map(row);

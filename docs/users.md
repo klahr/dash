@@ -146,7 +146,7 @@ A planner's role is per org: someone can be a planner in one org and a member in
 Open **Account → Profile picture** and click **Choose picture…**. Dash crops the picture to a square
 in the middle and makes it small before saving it. It shows in the account menu, in the
 members list of **Organization**, on the board's cards you created and on the Planning cards
-you are a member of. Only members of your organizations see it. **Remove** goes back
+you are a member of. Only members of your organizations see it. **Delete** goes back
 to your initial.
 
 Dash takes PNG, JPEG, GIF and WebP pictures, up to 1 MB once made small.

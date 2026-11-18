@@ -52,12 +52,12 @@ function commentFeedback(list, extra) {
 
 export async function sendComments(t) {
   const list = commentsFor(t.id);
-  const extra = await ask({ title: `Send ${plural(list.length, "comment")} to Claude`, body: "Claude continues in the same worktree and addresses each comment.", input: true, placeholder: "Anything else? (optional)", ok: "Send for rework" });
+  const extra = await ask({ title: `Rework with ${plural(list.length, "note")}`, body: "Claude continues in the same worktree and addresses each of your rework notes.", input: true, placeholder: "Anything else? (optional)", ok: "Rework" });
   if (extra === null) return;
   await api("POST", `/api/todos/${t.id}/rework`, { feedback: commentFeedback(list, extra) });
   delete state.comments[t.id];
   saveComments();
-  toast("Comments sent for rework");
+  toast("Sent for rework");
 }
 
 // ------------------------------------------------------------------ tests (checks)

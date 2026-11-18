@@ -923,9 +923,9 @@ function filesSection(c) {
           "data-preview": "", "data-name": f.name, "data-type": f.type, "data-size": f.size },
         isImage(f) ? h("img", { src: fileURL(c, f), alt: "", loading: "lazy" }) : h("span", { class: "chip-icon" }, extOf(f.name)),
         h("span", { class: "chip-name" }, f.name)),
-        h("button", { type: "button", class: "chip-x", "aria-label": `Remove ${f.name}`, title: "Take off the card",
+        h("button", { type: "button", class: "chip-x", "aria-label": `Delete ${f.name}`, title: "Delete",
           onclick: attempt(async () => {
-            if (!await ask({ title: `Remove ${f.name}?`, body: "It is taken off the card. Tasks already started from the card keep it.", ok: "Remove", danger: true })) return;
+            if (!await ask({ title: `Delete ${f.name}?`, body: "It is deleted from the card. Tasks already started from the card keep it.", ok: "Delete", danger: true })) return;
             applyCard(await call("DELETE", cardAPI(c.id, `/files/${encodeURIComponent(f.id)}`)));
           }) }, "×"))),
       n ? h("span", { class: "chip uploading" }, h("span", { class: "spinner", "aria-hidden": "true" }), `Uploading ${n}…`) : null,
@@ -1100,7 +1100,7 @@ function renderCard() {
       closeCard();
       renderBoard();
       toast("Card deleted");
-    }) }, "trash", "Delete card"));
+    }) }, "trash", "Delete card…"));
 
   const keep = body.scrollTop;
   fill(body, rename, suggest, facts, h("section", { class: "pl-section" }, h("h3", {}, h("label", { for: "pd-desc" }, "Description")), desc), filesSection(c), deps, work, discussion, danger);
@@ -1196,7 +1196,6 @@ function sheet(title, kids, ok, icon = "check") {
       ib({ class: "icon-btn", value: "cancel", formnovalidate: true, "aria-label": "Close" }, "x")),
     ...kids,
     h("footer", { class: "sheet-actions" },
-      ib({ class: "btn", value: "cancel", formnovalidate: true }, "x", "Cancel"),
       ok ? ib({ class: "btn primary", value: "ok" }, icon, ok) : null));
   const d = h("dialog", { class: "sheet small pl-sheet" }, form);
   document.body.append(d);

@@ -104,13 +104,13 @@ function startDrag(x, y) {
 
 // On phones the other lanes are off-screen, so a drag shows a bar of large
 // drop targets for exactly the moves this card allows.
-const DROP_LABEL = { enqueue: "Add to queue", cancel: "Back to drafts", approve: "Approve and merge" };
+const DROP_LABEL = { enqueue: "Queue", cancel: "Move to drafts", approve: "Approve" };
 function showDropBar() {
   if (desktop.matches) return;
   const zones = LANES.map((l) => [l, dropAction(drag.t, l.key)])
     .filter(([l, a]) => a && a.kind !== "reorder")
     .map(([l, a]) => h("div", { class: `drop-zone s-${l.key === "done" ? "merged" : l.key}`, "data-lane": l.key },
-      a.kind === "rework" ? "Send back for rework" : DROP_LABEL[a.verb] || l.label));
+      a.kind === "rework" ? "Rework…" : DROP_LABEL[a.verb] || l.label));
   const bar = h("div", { class: "drop-bar", id: "drop-bar" },
     zones.length ? zones : h("div", { class: "drop-zone none" }, "Drag up or down to reorder"));
   document.body.append(bar);
@@ -215,10 +215,10 @@ async function endDrag() {
       await reorder(t, target.lane, target.index, true);
     } else if (target.action.kind === "rework") {
       renderBoard();
-      const feedback = await ask({ title: "Send back for rework", body: "Claude continues in the same worktree with your notes.", input: true, placeholder: "What should change?", ok: "Send back" });
+      const feedback = await ask({ title: "Rework", body: "Claude continues in the same worktree with your rework notes.", input: true, placeholder: "What should change?", ok: "Rework" });
       if (feedback === null) return;
       await api("POST", `/api/todos/${t.id}/rework`, { feedback });
-      toast("Sent back for rework");
+      toast("Sent for rework");
     } else {
       // Optimistic: show it in the new lane right away; the server event confirms.
       const lane = LANES.find((l) => l.key === target.lane);

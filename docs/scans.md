@@ -51,7 +51,7 @@ Scans come from three places, marked on each card:
 - **Repository:** markdown files in `.dash/scans/<name>.md`, versioned and shared with your team.
   Only a runner's own projects read them: on the hub, a project has the built-in scans and the
   Dash scans, since the hub has no checkout.
-- **Dash:** scans you write in the Scans section with "Create custom scan", kept by Dash for this project
+- **Dash:** scans you write in the Scans section with **Create custom scan…**, kept by Dash for this project
   only. "Duplicate" on any scan starts a new Dash scan from its prompt and settings, and
   "Export to repo" on a Dash scan shows its `.dash/scans/<name>.md` file to copy and commit.
 
@@ -156,7 +156,7 @@ Look for vulnerabilities in {{path}} …
   **Create grouped** has Claude put similar issues together (same pattern, rule, file or
   feature) and name each group's task for what it fixes. An issue unlike the others gets a task
   of its own. Grouping runs on one of your runners, as splitting a task does, and takes up to 100
-  issues at a time. Tick **Create & queue** to queue the tasks instead of keeping drafts.
+  issues at a time. Tick **Queue** to queue the tasks instead of keeping drafts.
 - **Reports.** Each run shows what it found, e.g. "2 new, 3 already known, 1 reopened". The
   numbers link to those issues. A red badge counts the run's new or reopened critical and high
   issues that are still open, e.g. "1 critical · 2 high". A scheduled run that finds new critical or high issues sends a
