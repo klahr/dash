@@ -21,6 +21,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/testbin"
 )
 
 // A hub on a computer without Claude Code does all its Claude work on a
@@ -151,10 +152,7 @@ func startRunnerHub(t *testing.T, runnerFlags ...string) *runnerHub {
 	if err != nil {
 		t.Skip("needs git")
 	}
-	backend := filepath.Join(strings.TrimSpace(run(t, "", nil, gitBin, "--exec-path")), "git-http-backend")
-	if _, err := os.Stat(backend); err != nil {
-		t.Skip("needs git-http-backend")
-	}
+	backend := gitHTTPBackend(t, gitBin)
 	dir := t.TempDir()
 	dash, fake := buildDash(t)
 	calls := filepath.Join(dir, "claude-calls")
@@ -240,11 +238,22 @@ func run(t *testing.T, dir string, env []string, name string, args ...string) st
 	return string(out)
 }
 
+// gitHTTPBackend returns the path of git's git-http-backend, or skips the
+// test if git has none.
+func gitHTTPBackend(t *testing.T, gitBin string) string {
+	t.Helper()
+	backend := filepath.Join(strings.TrimSpace(run(t, "", nil, gitBin, "--exec-path")), testbin.Exe("git-http-backend"))
+	if _, err := os.Stat(backend); err != nil {
+		t.Skip("needs git-http-backend")
+	}
+	return backend
+}
+
 // pathWithout is $PATH without the directories that have bin in them.
 func pathWithout(t *testing.T, bin string) string {
 	var keep []string
 	for _, d := range filepath.SplitList(os.Getenv("PATH")) {
-		if _, err := os.Stat(filepath.Join(d, bin)); err != nil {
+		if _, err := os.Stat(filepath.Join(d, testbin.Exe(bin))); err != nil {
 			keep = append(keep, d)
 		}
 	}
@@ -259,7 +268,7 @@ func pathWithout(t *testing.T, bin string) string {
 
 func inPath(path, bin string) bool {
 	for _, d := range filepath.SplitList(path) {
-		if fi, err := os.Stat(filepath.Join(d, bin)); err == nil && !fi.IsDir() {
+		if fi, err := os.Stat(filepath.Join(d, testbin.Exe(bin))); err == nil && !fi.IsDir() {
 			return true
 		}
 	}

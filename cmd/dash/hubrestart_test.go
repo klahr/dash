@@ -38,10 +38,7 @@ func newFleet(t *testing.T) *fleet {
 	if err != nil {
 		t.Skip("needs git")
 	}
-	backend := filepath.Join(strings.TrimSpace(run(t, "", nil, gitBin, "--exec-path")), "git-http-backend")
-	if _, err := os.Stat(backend); err != nil {
-		t.Skip("needs git-http-backend")
-	}
+	backend := gitHTTPBackend(t, gitBin)
 	f := &fleet{t: t, dir: t.TempDir(), gitBin: gitBin}
 	dash, fake := buildDash(t)
 	f.dash = dash

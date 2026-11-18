@@ -28,10 +28,7 @@ func newOrigin(t *testing.T, dir string) origin {
 	if err != nil {
 		t.Skip("needs git")
 	}
-	backend := filepath.Join(strings.TrimSpace(run(t, "", nil, gitBin, "--exec-path")), "git-http-backend")
-	if _, err := os.Stat(backend); err != nil {
-		t.Skip("needs git-http-backend")
-	}
+	backend := gitHTTPBackend(t, gitBin)
 	repos := filepath.Join(dir, "repos")
 	env := []string{"GIT_SSL_NO_VERIFY=1", "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com", "GIT_CONFIG_GLOBAL=" + filepath.Join(dir, "gitconfig")}
