@@ -5,6 +5,10 @@ own board (`dash`). A project can also be planned in an external tracker
 instead, such as Trello or Jira. Dash then keeps the tracker and its own
 tasks in sync, both ways. Set it in **Project settings → Board**.
 
+There is no Save button. Picking Dash's board saves at once. A tracker saves once its settings
+are complete: the required fields filled in and, coming from Dash's board, a choice for the open
+tasks. Until then, the field still missing says so. After that, each change saves as you make it.
+
 A project's task board is for the work itself. The org's plan, what a product owner wants
 built and in which order, is [Planning](planning.md): Dash's built-in plan, whose cards link
 to the tasks and goals on these boards. An outside tracker (Jira, Linear) can own that plan

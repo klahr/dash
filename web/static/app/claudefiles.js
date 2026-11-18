@@ -4,7 +4,7 @@ import { ask, attempt, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { projectKey } from "./events.js";
 import { showView } from "./nav.js";
-import { formSnapshot, markSettingsSaved, settingsSnapshot } from "./settings.js";
+import { markSettingSaved } from "./settings.js";
 import { loadFiles, newFile, openFile } from "./files.js";
 
 // ------------------------------------------------------------------ Claude files
@@ -93,7 +93,7 @@ function localMdWarning(p) {
         const f = $("#settings-form");
         const lines = f.copy_files.value.split("\n").map((x) => x.trim()).filter(Boolean);
         if (!lines.includes("CLAUDE.local.md")) f.copy_files.value = [...lines, "CLAUDE.local.md"].join("\n");
-        markSettingsSaved(f);
+        markSettingSaved("copy_files");
         toast("CLAUDE.local.md is copied into new worktrees");
         loadClaudeFiles().catch(fail);
       }) }, "Add to copy_files"));
@@ -107,13 +107,7 @@ function localMdWarning(p) {
 // editClaudeFile closes the settings and opens path in the file editor;
 // with a template, as a new file whose save opens a task that creates it.
 async function editClaudeFile(path, template = null) {
-  const d = $("#settings-sheet"), f = $("#settings-form");
-  let how = "cancel";
-  if (formSnapshot(f) !== settingsSnapshot) {
-    if (!(await ask({ title: "Save your settings first?", body: "Your changes to the project settings are saved, then the file opens in the editor.", ok: "Save and open" }))) return;
-    how = "save";
-  }
-  d.close(how);
+  $("#settings-sheet").close(); // saves a field still being typed in
   showView("files");
   await loadFiles();
   if (template == null) await openFile(path);

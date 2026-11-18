@@ -408,7 +408,7 @@ func TestBrowserNotificationSettings(t *testing.T) {
 		b.fail("choose a daily summary to the webhook", err)
 	}
 	shot(b, "notifications-wide")
-	b.do("save", chromedp.Click(chromedp.ID("notify-save")))
+	// No Save button: each change saves as it is made.
 	b.waitJS("the next summary shown", `document.querySelector("#notify-state").textContent.includes("Next summary")`)
 	var view struct {
 		Settings struct {
@@ -1051,11 +1051,10 @@ func TestBrowserTrackerBoard(t *testing.T) {
 	b.waitJS("the boards the token may use", `[...document.querySelectorAll('[data-board-field="board"] option')].map((o) => o.textContent).join() === "Pick the board,Sprint"`)
 	set("pick the board", `#board-fields [data-board-field="board"]`, "Sprint")
 	b.waitJS("the columns mapped by name", `document.querySelector('[data-board-status="queued"]').value === "Ready" && document.querySelector('[data-board-status="review"]').value === "Code review" && document.querySelector('[data-board-status="merged"]').value === "Shipped"`)
-	if ok, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(document.querySelector('input[name=board_export_choice][value=no]').checked = true)`)); err != nil || !ok {
+	b.waitJS("asked about the open tasks first", `document.querySelector("#board-export-row .field-error")?.textContent.includes("open tasks")`)
+	// No Save board button: choosing what happens to the open tasks completes the settings, which then save.
+	if ok, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(() => { const r = document.querySelector('input[name=board_export_choice][value=no]'); r.click(); return r.checked; })()`)); err != nil || !ok {
 		b.fail("leave the tasks in Dash", err)
-	}
-	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`document.querySelector("#board-save").scrollIntoView(), document.querySelector("#board-save").click(), true`)); err != nil {
-		b.fail("save the board", err)
 	}
 	b.waitJS("it syncs", `document.querySelector("#board-status").textContent.includes("Synced with Fake tracker")`)
 
@@ -1073,6 +1072,52 @@ func TestBrowserTrackerBoard(t *testing.T) {
 	}
 	// The board takes only its token: the card came through with it.
 	b.waitJS("the imported card's task", `[...document.querySelectorAll("#board .todo")].some((e) => e.textContent.includes("From the tracker"))`)
+}
+
+// Project settings have no Save button: each field saves as it changes, says
+// "Saved" in the header, and a bad value shows its error under the field
+// without being saved.
+func TestBrowserSettingsSaveEachField(t *testing.T) {
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	b.until("open the project menu", `document.querySelector("#project-menu").open`, chromedp.Click(chromedp.CSS(`#project-menu > summary`)))
+	b.until("open the settings", `document.querySelector("#settings-sheet").open`, chromedp.Click(chromedp.ID("pm-settings")))
+	b.waitJS("no Save button", `!document.querySelector("#settings-sheet .sheet-actions")`)
+	set := func(what, name, value string) {
+		t.Helper()
+		js := fmt.Sprintf(`(() => { const el = document.querySelector("#settings-form").elements[%q]; el.value = %q; el.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`, name, value)
+		if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](js)); err != nil {
+			b.fail(what, err)
+		}
+	}
+	project := func() (p struct {
+		Name        string `json:"name"`
+		TestCommand string `json:"test_command"`
+	}) {
+		h.api.must("GET", "/api/projects/"+h.project.ID, nil, http.StatusOK, &p)
+		return p
+	}
+	before := project().Name
+
+	set("type a test command", "test_command", "make check")
+	b.waitJS("saved", `document.querySelector("#settings-sheet .save-note")?.textContent === "Saved"`)
+	if p := project(); p.TestCommand != "make check" {
+		t.Fatalf("test command not saved: %+v", p)
+	}
+
+	set("empty the name", "name", "")
+	b.waitJS("the error under the name", `document.querySelector("#settings-form [name=name]").closest(".field").nextElementSibling?.classList.contains("field-error")`)
+	if p := project(); p.Name != before {
+		t.Fatalf("an empty name was saved: %+v", p)
+	}
+	set("name it again", "name", "Renamed")
+	b.waitJS("the error gone", `!document.querySelector("#settings-form .field-error")`)
+	b.waitJS("the new name in the header", `document.body.textContent.includes("Renamed")`)
+	if p := project(); p.Name != "Renamed" {
+		t.Fatalf("name not saved: %+v", p)
+	}
 }
 
 // On a phone the board shows one lane at a time, and a sideways swipe moves
@@ -1207,11 +1252,14 @@ func TestBrowserSwipeLanes(t *testing.T) {
 	b.until("open the project menu", `document.querySelector("#project-menu").open`, chromedp.Click(chromedp.CSS(`#project-menu > summary`)))
 	b.until("open the settings", `document.querySelector("#settings-sheet").open`, chromedp.Click(chromedp.ID("pm-settings")))
 	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(() => {
-		document.querySelector("#settings-form [name=auto_approve]").checked = true;
-		document.querySelector("#settings-sheet").close("save");
-		return true;
+		document.querySelector("#settings-form [name=auto_approve]").click(); // saves at once
+		return document.querySelector("#settings-form [name=auto_approve]").checked;
 	})()`)); err != nil {
 		b.fail("approve automatically", err)
+	}
+	b.waitJS("saved", `document.querySelector("#settings-sheet .save-note")?.textContent === "Saved"`)
+	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`document.querySelector("#settings-sheet").close(), true`)); err != nil {
+		b.fail("close the settings", err)
 	}
 	b.waitJS("Review hidden", `document.querySelector(".lane-tab[data-lane=review]")?.hidden && document.querySelector('#board .col[data-lane="review"]').hidden`)
 	b.until("show Running", `document.querySelector("#board .col.active")?.dataset.lane === "in_progress"`, chromedp.Click(chromedp.CSS(`.lane-tab[data-lane=in_progress]`)))

@@ -538,9 +538,9 @@ A project's commands (setup, test, start server, terminal preview and deploy) ru
 owner, on their computer, and a command could call `claude` itself. Dash records who last changed
 each command. A runner runs a command only if an org admin set it, the runner's owner set it, it
 was there before this rule, or the runner is a shared runner. Otherwise the step fails and says who
-changed the command: an org admin or the runner's owner must save it again in **Project settings →
-General** to approve it. Saving it unchanged approves it: an admin's save for every runner, an
-owner's for their own runners. Changing **Deploy runs on** changes the deploy command too, since it
+changed the command: an org admin or the runner's owner must approve it with **Approve commands**
+in **Project settings → General**, shown while a command waits for them. An admin's approval counts
+for every runner, an owner's for their own runners. Changing **Deploy runs on** changes the deploy command too, since it
 picks the runners the command runs on.
 
 #### Runners from before this rule

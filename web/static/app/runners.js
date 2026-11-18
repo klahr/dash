@@ -1,6 +1,7 @@
 import { $, fill, h, ib, ico, plural } from "./dom.js";
 import { api } from "./api.js";
 import { art, ask, attempt, fail, reduceMotion, toast } from "./dialogs.js";
+import { checked, saveField } from "./autosave.js";
 import { changed } from "./routes.js";
 import { state } from "./state.js";
 import * as store from "./store.js";
@@ -189,13 +190,24 @@ const minFreeText = (r) => `${r.disk?.min_free_gb || diskDefaults.min_free_gb} G
 const diskWarning = (r) => r.disk_low ? `${r.disk_low}.${r.disk_full ? ` It starts no tasks until it has ${minFreeText(r)} free.` : ""}` : "";
 const volumeLabels = { projects: "Projects", worktrees: "Task worktrees", cache: "Cache folder" };
 
+// saveRunner saves one of runner r's settings as it changes: "Saved" in the
+// sheet's header, or the error under the field (which keeps what was typed).
+// The runner's page is drawn again once it is saved.
+function saveRunner(el, r, body, then) {
+  attempt(async () => {
+    if (!(await saveField(el, async () => { checked(el); await patchRunner(r, body); }))) return;
+    if (then) await then();
+    await renderRunners();
+  })();
+}
+
 // diskSettings are runner r's disk thresholds, for its owner and the org's
 // admins: empty is the default (for the Go build cache trim: off).
 function diskSettings(r) {
   const input = (key, label, { max = 100000, placeholder = String(diskDefaults[key] ?? "") } = {}) =>
     h("input", { type: "number", min: "0", max: String(max), step: "any", inputmode: "decimal", value: r.disk?.[key] ? String(r.disk[key]) : "",
       placeholder, "aria-label": `${label} (${r.name})`,
-      onchange: attempt(async (e) => { await patchRunner(r, { disk: { ...r.disk, [key]: Number(e.target.value) || 0 } }); await renderRunners(); }) });
+      onchange: (e) => saveRunner(e.target, r, { disk: { ...r.disk, [key]: Number(e.target.value) || 0 } }) });
   const unit = (el, text) => h("span", { class: "runner-setting-unit" }, el, h("span", { "aria-hidden": "true" }, text));
   const setting = (title, hint, control) => h("div", { class: "runner-setting" },
     h("div", { class: "runner-setting-text" }, h("strong", {}, title), h("p", { class: "hint" }, hint)), control);
@@ -576,22 +588,12 @@ function paintRunner(r) {
   }
   const parallel = h("input", { type: "number", min: "0", max: "64", inputmode: "numeric", value: r.parallel ? String(r.parallel) : "",
     placeholder: String(r.reported?.parallel || 1), "aria-label": `Tasks ${r.name} runs at once`,
-    onchange: attempt(async (e) => { await patchRunner(r, { parallel: Number(e.target.value) || 0 }); await renderRunners(); }) });
+    onchange: (e) => saveRunner(e.target, r, { parallel: Number(e.target.value) || 0 }) });
   const setting = (title, hint, control, cls = "") => h("div", { class: `runner-setting ${cls}` },
     h("div", { class: "runner-setting-text" }, h("strong", {}, title), h("p", { class: "hint" }, hint)), control);
   const labels = h("input", { type: "text", value: (r.labels || []).join(", "), placeholder: "gpu, big-disk", autocomplete: "off", autocapitalize: "off", spellcheck: false,
     class: "runner-labels-input", "aria-label": `${r.name}'s own labels`,
-    onchange: attempt(async (e) => {
-      try {
-        await patchRunner(r, { labels: parseLabels(e.target.value) });
-      } catch (err) {
-        e.target.value = (r.labels || []).join(", ");
-        throw err;
-      }
-      toast(`${r.name}'s labels saved`);
-      await loadProjects();
-      await renderRunners();
-    }) });
+    onchange: (e) => saveRunner(e.target, r, { labels: parseLabels(e.target.value) }, loadProjects) });
   fill($("#runner-manage"),
     h("h4", { class: "section-head" }, "Settings"),
     setting("Labels", `It builds the projects that run on labels it has, and those that run on ${LABEL_ANY}. ${r.default_labels?.length ? `Besides ${r.default_labels.join(", ")}, which it has anyway, give` : "Give"} it labels of its own, separated by commas.`, labels, "runner-labels-setting"),

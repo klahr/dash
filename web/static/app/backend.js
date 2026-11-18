@@ -1,6 +1,7 @@
 import { $, h, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, toast } from "./dialogs.js";
+import { fieldError, saveField, saveQueue } from "./autosave.js";
 import { state } from "./state.js";
 import { projectKey } from "./events.js";
 import { copyBlock } from "./prefs.js";
@@ -8,8 +9,9 @@ import { agoText } from "./branches.js";
 
 // ------------------------------------------------------------------ board backend
 // Where the project's tasks are planned: Dash's own board (the default) or
-// an external tracker synced both ways (internal/tracker). Saved with its
-// own button, not the settings form. Credentials are write-only.
+// an external tracker synced both ways (internal/tracker). Saved as it
+// changes, as the rest of the settings are, once the tracker's settings are
+// complete (picking a tracker alone saves nothing). Credentials are write-only.
 const BOARD_STATUS = { draft: "Draft", queued: "Queued", in_progress: "Running", review: "Review", merging: "Merging", merged: "Merged", failed: "Failed" };
 const board = { state: null };
 const boardReg = (name) => board.state?.backends.find((b) => b.name === name) || null;
@@ -77,7 +79,14 @@ function renderBoardForm() {
   $("#board-export-row").hidden = native || saved !== "dash";
   $("#board-open-count").textContent = st.unlinked ? `${st.unlinked} open` : "existing";
   for (const r of document.querySelectorAll('input[name="board_export_choice"]')) r.checked = false;
-  $("#board-save").hidden = native && same;
+  for (const el of $("#settings-board-field").querySelectorAll(".field-error")) el.remove();
+  renderBoardButtons();
+}
+
+function renderBoardButtons() {
+  const name = $("#board-backend").value;
+  const native = !!boardReg(name)?.native;
+  const same = name === (board.state.config.backend || "dash");
   $("#board-test").hidden = native;
   $("#board-sync").hidden = $("#board-secret").hidden = native || !same;
 }
@@ -149,8 +158,9 @@ const COLUMN_GUESS = {
 const colKey = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 
 // mapByName fills the empty (or default) rows of the mapping with the
-// board's columns whose names match.
+// board's columns whose names match. Reports whether it changed any.
 function mapByName(columns, force) {
+  let changed = false;
   const reg = boardReg($("#board-backend").value) || {};
   const defaults = reg.default_status_map || {};
   const byKey = new Map(columns.map((c) => [colKey(c.name), c.id]));
@@ -159,8 +169,10 @@ function mapByName(columns, force) {
     const cur = el.value.trim();
     if (!force && cur && !(cur === defaults[s] && !byKey.has(colKey(cur)))) continue;
     const hit = (COLUMN_GUESS[s] || []).map(colKey).find((k) => byKey.has(k));
-    el.value = hit ? byKey.get(hit) : (byKey.has(colKey(cur)) ? cur : "");
+    const v = hit ? byKey.get(hit) : (byKey.has(colKey(cur)) ? cur : "");
+    if (v !== el.value) { el.value = v; changed = true; }
   }
+  return changed;
 }
 
 // loadBoardColumns reads the picked board's columns for the mapping.
@@ -174,7 +186,8 @@ async function loadBoardColumns() {
 
 function showBoardColumns(columns) {
   $("#board-columns").replaceChildren(...columns.map((c) => h("option", { value: c.id }, c.name)));
-  if (columns.length) mapByName(columns, false);
+  // A mapping filled in by name is saved as one typed in would be.
+  if (columns.length && mapByName(columns, false)) saveBoard($("#board-map"));
 }
 
 function renderBoardStatus() {
@@ -222,14 +235,48 @@ function boardBody({ partial = false } = {}) {
   return body;
 }
 
-async function saveBoard(extra = {}) {
+// missingBoardField is the first field the chosen tracker still needs
+// before it can be saved, or null.
+function missingBoardField() {
+  const name = $("#board-backend").value;
+  const reg = boardReg(name);
+  if (!reg || reg.native) return null;
+  const cfg = board.state.config;
+  const savedCreds = name === (cfg.backend || "dash") && cfg.has_credentials && !$("#board-creds-clear").checked;
+  for (const f of reg.fields || []) {
+    const el = boardField(f.name);
+    if (f.required && el && !el.value.trim() && !(f.secret && savedCreds)) return el;
+  }
+  return null;
+}
+
+// saveBoard saves the form as it is now, el being the field that changed.
+// Until the tracker's settings are complete it saves nothing and says what
+// is missing, under that field.
+const queueBoard = saveQueue();
+function saveBoard(el) {
+  return queueBoard(async () => {
+    const missing = missingBoardField();
+    if (missing) {
+      fieldError(missing, `Needed to save the board on ${boardLabel($("#board-backend").value)}.`);
+      return;
+    }
+    // Complete: what was said missing before is there now.
+    for (const x of $("#board-fields").querySelectorAll("[aria-invalid]")) fieldError(x, "");
+    const row = $("#board-export-row");
+    const pick = document.querySelector('input[name="board_export_choice"]:checked');
+    if (!row.hidden && !pick) {
+      fieldError(row, "Choose what happens to the project's open tasks to save the board.");
+      return;
+    }
+    fieldError(row, "");
+    await saveField(el, () => putBoard(pick && !row.hidden ? { export: pick.value === "yes" } : {}));
+  });
+}
+
+async function putBoard(extra) {
   const p = state.project;
   const body = { ...boardBody(), ...extra };
-  if (!$("#board-export-row").hidden && body.export === undefined) {
-    const pick = document.querySelector('input[name="board_export_choice"]:checked');
-    if (!pick) throw new Error("Choose what happens to the project's open tasks first.");
-    body.export = pick.value === "yes";
-  }
   let res;
   try {
     res = await api("PUT", `/api/projects/${p.id}/tracker`, body);
@@ -237,7 +284,7 @@ async function saveBoard(extra = {}) {
     if (e.status !== 409 || !e.data?.needs) throw e;
     if (e.data.needs === "export") {
       $("#board-export-row").hidden = false;
-      throw new Error("Choose what happens to the project's open tasks, then save again.");
+      throw new Error("Choose what happens to the project's open tasks to save the board.");
     }
     // Leaving an external tracker drops the links to its cards: ask first.
     const to = boardLabel(body.backend);
@@ -247,23 +294,48 @@ async function saveBoard(extra = {}) {
         (body.backend === "dash" ? " as Dash's own." : ", and only tasks made from now on get cards on the new board."),
       ok: "Move board", danger: true,
     });
-    if (!ok) return;
-    return saveBoard({ ...extra, export: body.export ?? false, confirm: true });
+    if (!ok) {
+      // Kept where it was: show the saved board again.
+      $("#board-backend").value = board.state.config.backend || "dash";
+      renderBoardForm();
+      return false;
+    }
+    return putBoard({ ...extra, export: body.export ?? false, confirm: true });
   }
   if (projectKey(state.project) !== projectKey(p)) return;
   board.state = res;
-  $("#board-backend").value = res.config.backend || "dash";
-  renderBoardForm();
+  // The fields stay as they are (the next one may be being typed in): only
+  // what saving changed is redrawn.
+  for (const el of $("#board-fields").querySelectorAll('[data-secret="1"]')) {
+    if (!el.value) continue;
+    el.value = "";
+    el.placeholder = "Saved: type a new one to replace it";
+  }
+  const saved = res.config.backend || "dash";
+  const native = !!boardReg(saved)?.native;
+  $("#board-creds-clear").checked = false;
+  $("#board-creds-clear-row").hidden = native || !res.config.has_credentials;
+  $("#board-export-row").hidden = native || saved !== "dash";
+  for (const r of document.querySelectorAll('input[name="board_export_choice"]')) r.checked = false;
+  renderBoardButtons();
   renderBoardStatus();
-  toast("Board saved", { tone: "ok" });
 }
 
-$("#board-backend").addEventListener("change", () => renderBoardForm());
+// Picking Dash's board saves at once; picking a tracker waits for its settings.
+$("#board-backend").addEventListener("change", (e) => {
+  renderBoardForm();
+  if (boardReg(e.target.value)?.native) saveBoard(e.target);
+});
 $("#board-fields").addEventListener("change", (e) => {
   const name = e.target.dataset?.boardField;
-  if (name) boardFieldChanged(name);
+  if (!name) return;
+  boardFieldChanged(name);
+  saveBoard(e.target);
 });
-$("#board-save").addEventListener("click", attempt((e) => busy(e.currentTarget, saveBoard)));
+$("#board-map").addEventListener("change", (e) => saveBoard(e.target));
+$("#board-config-raw").addEventListener("change", (e) => saveBoard(e.target));
+$("#board-creds-clear").addEventListener("change", (e) => saveBoard(e.target));
+for (const r of document.querySelectorAll('input[name="board_export_choice"]')) r.addEventListener("change", () => saveBoard($("#board-export-row")));
 $("#board-test").addEventListener("click", attempt((e) => busy(e.currentTarget, async () => {
   const res = await api("POST", `/api/projects/${state.project.id}/tracker/test`, boardBody());
   if (!res.ok) throw new Error(`Connection failed: ${res.error}`);

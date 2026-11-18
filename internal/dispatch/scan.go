@@ -242,7 +242,7 @@ func HeldCommands(p model.Project, r tunnel.Runner) map[string]string {
 			held = map[string]string{}
 		}
 		held[kind] = fmt.Sprintf("the project's %s command was last changed by %s, who is neither an org admin nor the owner of runner %s, "+
-			"so it doesn't run there: an org admin or %s must save it again (Project settings → General) to approve it", kind, who, r.Name, owner)
+			"so it doesn't run there: an org admin or %s must approve it (Approve commands in Project settings → General)", kind, who, r.Name, owner)
 	}
 	if _, ok := held[model.CmdDeploy]; !ok && p.DeployCommand != "" && !p.DeploysOn(r.AllLabels()) {
 		if held == nil {

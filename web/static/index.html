@@ -1097,7 +1097,7 @@
     </form>
   </dialog>
 
-  <!-- Project settings -->
+  <!-- Project settings: each field saves as it changes (app/settings.js, app/autosave.js) -->
   <dialog class="sheet rail-sheet" id="settings-sheet" aria-labelledby="settings-title">
     <form method="dialog" id="settings-form">
       <header class="sheet-head"><h2 id="settings-title">Project settings</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
@@ -1146,6 +1146,10 @@
             <label class="field"><span>Deploy command <em>a bash script, one line or several; runs in the project's checkout</em></span><textarea name="deploy_command" class="script-field" rows="4" placeholder="set -e&#10;npm run build&#10;./deploy.sh production" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea></label>
             <label class="field" id="settings-deploy-runs-on-row" hidden><span>Deploy runs on <em>runner labels; empty: any runner the project runs on</em></span><input id="settings-deploy-runs-on" name="deploy_runs_on" placeholder="e.g. production" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="settings-deploy-runs-on-hint"></label>
             <p class="hint" id="settings-deploy-runs-on-hint" hidden></p>
+            <div id="settings-approve" hidden>
+              <p class="hint warn" id="settings-approve-hint"></p>
+              <button class="btn small" type="button" id="settings-approve-commands" data-icon="check">Approve commands</button>
+            </div>
           </section>
           <section class="rail-section" data-section="repository">
             <div id="settings-repo" class="repo-info" aria-live="polite"></div>
@@ -1158,7 +1162,7 @@
             </div>
             <div class="claude-scope">
               <h3 class="claude-scope-head">Stored by Dash <span class="scope-tag dash">Dash settings</span></h3>
-              <p class="hint">Not in the repository and nothing to commit: saved with these settings and used from the next run on.</p>
+              <p class="hint">Not in the repository and nothing to commit: saved as you change it and used from the next run on.</p>
               <label class="field"><span>Extra instructions for Dash tasks <em>added to Claude's system prompt in every task, on this computer and on runners</em></span><textarea name="task_instructions" rows="4" maxlength="32768" placeholder="e.g. Use pnpm, not npm. Keep commits small."></textarea></label>
               <p class="hint">For guidance that belongs to the whole team, prefer CLAUDE.md above: it lives in the repo and also applies when people run Claude Code themselves.</p>
             <fieldset class="field choice">
@@ -1188,7 +1192,7 @@
             <p class="hint" id="settings-runners-hint" hidden></p>
           </section>
           <section class="rail-section" data-section="board">
-            <!-- The project's boards (app/boards.js). Saved as they change, not with the settings form. -->
+            <!-- The project's boards (app/boards.js). Saved as they change, by their own API. -->
             <fieldset class="field choice" id="settings-boards">
               <legend>Boards <em>a project's tasks can be split over several boards; the board shows one at a time</em></legend>
               <ul class="item-list boards-list" id="boards-list"></ul>
@@ -1196,7 +1200,7 @@
                 <button class="btn small" type="button" id="boards-add" data-icon="plus">Add board…</button>
               </div>
             </fieldset>
-            <!-- The project's board backend. Saved with its own button, not the settings form: its inputs have no names. -->
+            <!-- The project's board backend (app/backend.js). Saved as it changes, once the tracker's settings are complete; its inputs have no names. -->
             <fieldset class="field choice" id="settings-board-field" hidden>
               <legend>Task board <em>where this project's tasks are planned: Dash's own board, or an external tracker kept in sync both ways</em></legend>
               <label class="field"><span>Board</span><select id="board-backend"></select></label>
@@ -1217,7 +1221,6 @@
                 <label class="radio"><input type="radio" name="board_export_choice" value="no" form="board-export-form"><span>Leave them in Dash only <em>only tasks made from now on get cards</em></span></label>
               </fieldset>
               <div class="board-actions">
-                <button class="btn small primary" type="button" id="board-save" data-icon="check">Save board</button>
                 <button class="btn small" type="button" id="board-test">Test connection</button>
                 <button class="btn small" type="button" id="board-sync" hidden>Sync now</button>
                 <button class="btn small" type="button" id="board-secret" hidden>New webhook secret</button>
@@ -1260,7 +1263,6 @@
           </section>
         </div>
       </div>
-      <footer class="sheet-actions"><button class="btn primary" value="save" data-icon="check">Save settings</button></footer>
     </form>
   </dialog>
 
@@ -1426,7 +1428,6 @@
               <p class="hint" id="notify-push-hint">These reach your browsers and the installed app, even with Dash closed. Turn them on in each browser under <button type="button" class="link inline" data-account="notify">Browser notifications</button>.</p>
               <div class="notify-push" id="notify-push"></div>
               <div class="board-actions">
-                <button class="btn small primary" type="submit" id="notify-save" data-icon="check">Save</button>
                 <button class="btn small" type="button" id="notify-test">Send the summary now</button>
               </div>
               <h3 class="section-head">Instant webhooks</h3>

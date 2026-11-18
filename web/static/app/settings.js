@@ -1,6 +1,7 @@
 import { $, dateText, h } from "./dom.js";
 import { api } from "./api.js";
-import { attempt, fail, toast } from "./dialogs.js";
+import { attempt, fail } from "./dialogs.js";
+import { checked, fieldError, saveField, saveQueue } from "./autosave.js";
 import { uploadFile } from "./attachments.js";
 import { state } from "./state.js";
 import { baseBranch, projectKey } from "./events.js";
@@ -51,21 +52,19 @@ export function openSettings() {
   projectIcon(p, $("#settings-icon"));
   renderRunnerPicker(p);
   syncMergeHint();
+  renderApprove();
   $("#webhook-secret").hidden = true;
   loadWebhooks().catch(fail);
   renderBoardSettings();
   loadBoard().catch(fail);
   loadClaudeFiles().catch(fail);
   loadRepoInfo();
-  settingsSnapshot = formSnapshot(f);
-  $("#settings-sheet").returnValue = "";
+  markShown(f);
+  for (const el of f.querySelectorAll(".field-error")) el.remove();
+  for (const el of f.querySelectorAll("[aria-invalid]")) el.removeAttribute("aria-invalid");
   $("#settings-sheet").showModal();
   changed("push");
 }
-export let settingsSnapshot = "";
-// markSettingsSaved takes the form as it is now as saved (opening a Claude file won't ask to save it first).
-export function markSettingsSaved(f) { settingsSnapshot = formSnapshot(f); }
-export const formSnapshot = (f) => new URLSearchParams(new FormData(f)).toString();
 // A project of this hub runs on runner labels, never on runners it names:
 // its tasks go to the org's runners that have every label (as GitHub's
 // runs-on). The field takes the labels; below it, the org's runners show
@@ -122,9 +121,8 @@ let shownRunsOn = "";
 const labelKey = (ls) => [...(ls || [])].map((l) => l.toLowerCase()).sort().join(",");
 
 // syncSettingsRunners redraws the open settings' labels when the project's
-// changed elsewhere (another browser), unless they were changed here and not
-// saved yet, and its runner list when the runners changed (their labels,
-// say).
+// changed elsewhere (another browser), unless they are being changed here,
+// and its runner list when the runners changed (their labels, say).
 export function syncSettingsRunners() {
   const p = state.project;
   if (!$("#settings-sheet").open || !p) return;
@@ -132,10 +130,9 @@ export function syncSettingsRunners() {
     renderRunsOnPreview();
     return;
   }
-  const f = $("#settings-form"), clean = formSnapshot(f) === settingsSnapshot;
   renderRunnerPicker(p);
   syncMergeHint();
-  if (clean) settingsSnapshot = formSnapshot(f);
+  markSettingSaved("runs_on");
 }
 
 function syncMergeHint() {
@@ -171,13 +168,14 @@ $("#settings-deploy-runs-on").addEventListener("input", renderDeployRunsOn);
 // The tag format is checked as it is typed: placeholders, a valid git tag,
 // and whether the repository's release workflows run for its tags.
 let tagFormatTimer = 0, tagFormatSeq = 0;
+const tagFormatCheck = (format) => api("GET", `/api/projects/${state.project.id}/tag-format?format=${encodeURIComponent(format)}`);
 function checkTagFormat() {
   clearTimeout(tagFormatTimer);
   tagFormatTimer = setTimeout(attempt(async () => {
-    const p = state.project, f = $("#settings-form");
+    const f = $("#settings-form");
     const format = f.tag_format.value.trim() || "X.Y.Z";
     const seq = ++tagFormatSeq;
-    const res = await api("GET", `/api/projects/${p.id}/tag-format?format=${encodeURIComponent(format)}`);
+    const res = await tagFormatCheck(format);
     if (seq !== tagFormatSeq) return;
     const hint = $("#tag-format-hint");
     f.tag_format.setCustomValidity(res.valid ? "" : res.error);
@@ -186,7 +184,7 @@ function checkTagFormat() {
     hint.replaceChildren(`Tags look like ${res.example}. Tag a release from a commit in History.`);
     if (res.hint) {
       hint.append(" ", res.hint.message);
-      if (res.hint.suggest) hint.append(" ", h("button", { type: "button", class: "link inline", onclick: () => { f.tag_format.value = res.hint.suggest; checkTagFormat(); } }, `Use ${res.hint.suggest}`));
+      if (res.hint.suggest) hint.append(" ", h("button", { type: "button", class: "link inline", onclick: () => { f.tag_format.value = res.hint.suggest; checkTagFormat(); saveSetting("tag_format"); } }, `Use ${res.hint.suggest}`));
     }
   }), 250);
 }
@@ -196,6 +194,7 @@ $("#settings-form").color.addEventListener("input", (e) => { e.target.form.use_c
 const settingsIcon = (icon) => {
   $("#settings-form").icon.value = icon;
   projectIcon({ ...state.project, icon }, $("#settings-icon"));
+  saveSetting("icon");
 };
 $("#settings-icon-pick").addEventListener("click", () => $("#settings-icon-file").click());
 $("#settings-icon-clear").addEventListener("click", () => settingsIcon(""));
@@ -207,46 +206,127 @@ $("#settings-icon-file").addEventListener("change", attempt(async (e) => {
   if (!a.type.startsWith("image/")) throw new Error("Choose a PNG, JPEG, GIF, WebP or SVG image.");
   settingsIcon(`${a.id}/${a.name}`);
 }));
-$("#settings-sheet").addEventListener("close", attempt(async () => {
-  if ($("#settings-sheet").returnValue !== "save") return;
-  const f = $("#settings-form");
-  const old = state.project;
-  const saved = await api("PATCH", `/api/projects/${old.id}`, {
-    name: f.elements.name.value.trim() || old.name,
-    test_command: f.test_command.value.trim(),
-    max_auto_fixes: Math.max(0, Number(f.max_auto_fixes.value) || 0),
-    setup_command: f.setup_command.value.trim(),
-    copy_files: f.copy_files.value.split("\n").map((x) => x.trim()).filter(Boolean),
-    allowed_tools: f.allowed_tools.value.split("\n").map((x) => x.trim()).filter(Boolean),
-    chat_permission_mode: f.chat_permission_mode.value,
-    review_prompt: f.review_prompt.value.trim(),
-    task_instructions: f.task_instructions.value.trim(),
-    run_command: f.run_command.value.trim(),
-    preview_kind: f.preview_kind.value,
-    preview_command: f.preview_command.value.trim(),
-    deploy_command: f.deploy_command.value.trim(),
-    auto_push: f.auto_push.checked,
-    auto_approve: f.auto_approve.checked,
-    merge_mode: f.merge_mode.value,
-    merge_method: f.merge_method.value,
-    investigate_ci: f.investigate_ci.checked,
-    tag_format: f.tag_format.value.trim() || "X.Y.Z",
-    max_run_minutes: Number(f.max_run_minutes.value) || 0,
-    max_turns: Number(f.max_turns.value) || 0,
-    max_parallel: Number(f.max_parallel.value) || 0,
-    color: f.use_color.checked ? f.color.value : "",
-    icon: f.icon.value,
-    ...($("#settings-runners-field").hidden ? {} : { runs_on: typedRunsOn() }),
-    ...($("#settings-deploy-runs-on-row").hidden ? {} : { deploy_runs_on: typedDeployRunsOn() }),
+// Each field saves on its own as it changes (text fields on blur or Enter),
+// with "Saved" in the sheet's header or an error under the field
+// (autosave.js). FIELDS reads a field's value as the API takes it; check, if
+// any, throws what is wrong with it.
+const lines = (v) => v.split("\n").map((x) => x.trim()).filter(Boolean);
+const FIELDS = {
+  name: { read: (f) => f.elements.name.value.trim(), check: (v) => { if (!v) throw new Error("Give the project a name."); } },
+  test_command: { read: (f) => f.test_command.value.trim() },
+  max_auto_fixes: { read: (f) => Math.max(0, Number(f.max_auto_fixes.value) || 0) },
+  setup_command: { read: (f) => f.setup_command.value.trim() },
+  copy_files: { read: (f) => lines(f.copy_files.value) },
+  allowed_tools: { read: (f) => lines(f.allowed_tools.value) },
+  chat_permission_mode: { read: (f) => f.chat_permission_mode.value },
+  review_prompt: { read: (f) => f.review_prompt.value.trim() },
+  task_instructions: { read: (f) => f.task_instructions.value.trim() },
+  run_command: { read: (f) => f.run_command.value.trim() },
+  preview_kind: { read: (f) => f.preview_kind.value },
+  preview_command: { read: (f) => f.preview_command.value.trim() },
+  deploy_command: { read: (f) => f.deploy_command.value.trim() },
+  auto_push: { read: (f) => f.auto_push.checked },
+  auto_approve: { read: (f) => f.auto_approve.checked },
+  merge_mode: { read: (f) => f.merge_mode.value },
+  merge_method: { read: (f) => f.merge_method.value },
+  investigate_ci: { read: (f) => f.investigate_ci.checked },
+  tag_format: { read: (f) => f.tag_format.value.trim() || "X.Y.Z", check: async (v) => {
+    const res = await tagFormatCheck(v);
+    if (!res.valid) throw new Error(res.error);
+  } },
+  max_run_minutes: { read: (f) => Number(f.max_run_minutes.value) || 0 },
+  max_turns: { read: (f) => Number(f.max_turns.value) || 0 },
+  max_parallel: { read: (f) => Number(f.max_parallel.value) || 0 },
+  color: { read: (f) => (f.use_color.checked ? f.color.value : ""), el: (f) => f.use_color },
+  icon: { read: (f) => f.icon.value, el: () => $("#settings-icon-pick") },
+  runs_on: { read: () => typedRunsOn(), skip: () => $("#settings-runners-field").hidden },
+  deploy_runs_on: { read: () => typedDeployRunsOn(), skip: () => $("#settings-deploy-runs-on-row").hidden },
+};
+// A form control's name → the field it saves.
+const FIELD_OF = { use_color: "color" };
+const fieldEl = (f, key) => {
+  if (FIELDS[key].el) return FIELDS[key].el(f);
+  const el = f.elements[key];
+  return el instanceof RadioNodeList ? el[0].closest("fieldset") : el;
+};
+// shown: each field's value as last loaded or saved (JSON), so only what changed is saved.
+const shown = {};
+function markShown(f) { for (const key of Object.keys(FIELDS)) shown[key] = JSON.stringify(FIELDS[key].read(f)); }
+// markSettingSaved takes a field's value in the form as saved (the API was
+// told about it elsewhere, as Add to copy_files does).
+export function markSettingSaved(key) { shown[key] = JSON.stringify(FIELDS[key].read($("#settings-form"))); }
+const dirty = (f, key) => !FIELDS[key].skip?.() && JSON.stringify(FIELDS[key].read(f)) !== shown[key];
+
+const queueSave = saveQueue();
+function saveSetting(key) {
+  return queueSave(async () => {
+    const f = $("#settings-form"), field = FIELDS[key], el = fieldEl(f, key);
+    if (field.skip?.()) return;
+    const v = field.read(f), json = JSON.stringify(v);
+    if (json === shown[key]) { fieldError(el, ""); return; }
+    await saveField(el, async () => {
+      await field.check?.(v);
+      checked(el);
+      const saved = await api("PATCH", `/api/projects/${state.project.id}`, { [key]: v });
+      shown[key] = json;
+      if (key === "runs_on") shownRunsOn = labelKey(saved.runs_on);
+      // Keep the client-only fields, and the list entry in step for its name, color and icon.
+      const cur = state.project;
+      state.project = { ...saved, machine: cur.machine, prefix: cur.prefix };
+      state.projects = state.projects.map((x) => (x === cur ? state.project : x));
+      renderProjectHeader();
+      renderProjectList();
+      renderApprove();
+      if (key === "auto_approve") renderBoard(); // auto approve shows or hides Review
+    });
   });
-  // Keep the client-only fields, and the list entry in step for its name, color and icon.
-  state.project = { ...saved, machine: old.machine, prefix: old.prefix };
-  state.projects = state.projects.map((x) => (x === old ? state.project : x));
-  renderProjectHeader();
-  renderProjectList();
-  renderBoard(); // auto approve shows or hides Review
-  toast("Settings saved");
-}));
+}
+const settingKey = (el) => { const key = FIELD_OF[el.name] || el.name; return FIELDS[key] ? key : null; };
+$("#settings-form").addEventListener("change", (e) => {
+  const key = settingKey(e.target);
+  if (key) saveSetting(key);
+});
+// Enter in a one-line field saves it, instead of submitting the form (which closes the sheet).
+$("#settings-form").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.target.localName !== "input" || e.isComposing) return;
+  if (["checkbox", "radio", "file", "button", "submit", "color"].includes(e.target.type)) return;
+  e.preventDefault();
+  const key = settingKey(e.target);
+  if (key) saveSetting(key);
+});
+// Closing the sheet saves a field that was still being typed in.
+$("#settings-sheet").addEventListener("close", () => {
+  const f = $("#settings-form");
+  for (const key of Object.keys(FIELDS)) if (dirty(f, key)) saveSetting(key);
+});
+
+// On a hub, a runner runs a project's command only if an org admin, its
+// owner or someone it trusts set it (docs/several-computers.md). Saving a
+// command unchanged approves it; with no Save button that is this button,
+// shown while a command someone else set waits for your approval.
+const COMMAND_FIELDS = { run: "run_command", test: "test_command", deploy: "deploy_command", setup: "setup_command", preview: "preview_command" };
+function unapproved() {
+  const p = state.project, me = state.me?.user?.id, admin = ["owner", "admin"].includes(state.me?.org?.role);
+  return Object.entries(p.commands_by || {}).filter(([, by]) => !by.admin && by.user !== me && (admin || !(by.approved || []).includes(me)));
+}
+function renderApprove() {
+  const wait = unapproved();
+  $("#settings-approve").hidden = !wait.length;
+  if (!wait.length) return;
+  const names = [...new Set(wait.map(([, by]) => by.name).filter(Boolean))];
+  const admin = ["owner", "admin"].includes(state.me?.org?.role);
+  $("#settings-approve-hint").textContent = `${names.length ? names.join(", ") : "Someone"} changed commands of this project (${wait.map(([k]) => k).join(", ")}). ` +
+    (admin ? "Runners don't run them until an admin approves them." : "Your runners don't run them until you approve them.");
+}
+$("#settings-approve-commands").addEventListener("click", (e) => queueSave(() => saveField(e.currentTarget, async () => {
+  const p = state.project;
+  const body = Object.fromEntries(unapproved().map(([k]) => [COMMAND_FIELDS[k], p[COMMAND_FIELDS[k]] || ""]).filter(([k]) => k));
+  const saved = await api("PATCH", `/api/projects/${p.id}`, body);
+  const cur = state.project;
+  state.project = { ...saved, machine: cur.machine, prefix: cur.prefix };
+  state.projects = state.projects.map((x) => (x === cur ? state.project : x));
+  renderApprove();
+})));
 
 // ------------------------------------------------------------------ repository
 // The Repository section of the project settings: what GitHub says about

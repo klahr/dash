@@ -318,7 +318,7 @@ func TestCommandsSetByAnotherMemberAreHeld(t *testing.T) {
 		}}
 	held := HeldCommands(p, run)
 	if len(held) != 1 || !strings.Contains(held[model.CmdTest], "test command was last changed by alice") ||
-		!strings.Contains(held[model.CmdTest], "an org admin or bob must save it again") {
+		!strings.Contains(held[model.CmdTest], "an org admin or bob must approve it") {
 		t.Fatalf("held: %v", held)
 	}
 	p.CommandsBy[model.CmdTest] = model.CommandSetter{User: bob, Name: "bob"}

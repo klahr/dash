@@ -1,6 +1,7 @@
 import { $, dateText, dateTimeText, fill, h, ico, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
+import { savedNote } from "./autosave.js";
 import { changed } from "./routes.js";
 import { state } from "./state.js";
 import { copyBlock } from "./prefs.js";
@@ -186,7 +187,7 @@ async function renderOrgSSO(o, mine) {
     if (pw == null) { await renderOrgSSO(o, mine); return; }
     try { await api("PATCH", `/api/orgs/${o.id}/sso`, { ...body, password: pw }, ""); }
     finally { await renderOrgSSO(o, mine); }
-    toast("Google sign-in settings saved", { tone: "ok" });
+    savedNote(box);
   };
   const check = (label, key, title, text, disabled = false) => {
     const input = h("input", { type: "checkbox", checked: !!s[key], disabled });

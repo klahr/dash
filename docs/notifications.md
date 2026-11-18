@@ -197,10 +197,11 @@ so internal services aren't reachable through a webhook. An invite-only self-hos
 ## Summary
 
 A summary tells you, in one message, what happened since the last one. Set it up in
-**Account → Notifications**:
+**Account → Notifications**. Each change saves as you make it. A daily or weekly summary saves
+once it has a time, somewhere to go and its projects; until then, the field still missing says so.
 
 - **Summary**: off (the default), daily or weekly, and the time to send it. The time is in your
-  time zone, which Dash takes from your browser when you save, and stays at that time when the
+  time zone, which Dash takes from your browser when the settings save, and stays at that time when the
   clocks change.
 - **Projects**: all of the organization's projects (new ones too), or the ones you pick.
 - **Send it to**: email, one or more of your personal webhooks, or both. Pick at least one.

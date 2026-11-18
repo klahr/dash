@@ -1,6 +1,7 @@
 import { $, dateTimeText, fill, h } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, busy, toast } from "./dialogs.js";
+import { fieldError, saveField, saveQueue } from "./autosave.js";
 import { state } from "./state.js";
 import { accountSection, openAccount } from "./accountsheet.js";
 import { WEBHOOK_EVENTS, WEBHOOK_FORMATS, webhookStatus } from "./webhooks.js";
@@ -10,7 +11,9 @@ import { WEBHOOK_EVENTS, WEBHOOK_FORMATS, webhookStatus } from "./webhooks.js";
 // /api/me/notifications): a daily or weekly summary (when, of which
 // projects, where it goes, what is in it), whose tasks they hear about,
 // which events push to their browsers, and their personal webhooks, which
-// get each event as it happens (edited in My webhooks, not here).
+// get each event as it happens (edited in My webhooks, not here). Each
+// change saves at once (the time on blur), unless the summary isn't
+// complete yet: then what's missing shows under its field.
 const PUSH_LABELS = {
   "task.review": "A task is ready for review",
   "task.failed": "A task failed",
@@ -29,6 +32,7 @@ let view = null; // the last GET/PUT answer
 accountSection("notifications", loadNotify);
 async function loadNotify() {
   view = await api("GET", "/api/me/notifications");
+  for (const el of form.querySelectorAll(".field-error")) el.remove();
   renderNotify();
 }
 
@@ -126,30 +130,50 @@ function collect() {
   };
 }
 
-function check(body) {
-  if (body.summary === "off") return;
-  if (!body.time) throw new Error("Choose the time the summary goes out.");
-  if (!body.email && !body.webhooks.length) throw new Error("Choose where the summary goes: email or one of your webhooks.");
-  if (!body.all_projects && !body.projects.length) throw new Error("Pick the projects the summary covers, or All projects.");
+// problems lists what keeps the summary from being saved, each with the
+// field it is about.
+function problems(body) {
+  const fs = (name) => form.querySelector(`[name="${name}"]`).closest("fieldset");
+  const out = [
+    [form.time, !body.time && "Choose the time the summary goes out."],
+    [fs("email"), !body.email && !body.webhooks.length && "Choose where the summary goes: email or one of your webhooks."],
+    [fs("scope"), !body.all_projects && !body.projects.length && "Pick the projects the summary covers, or All projects."],
+  ];
+  return body.summary === "off" ? out.map(([el]) => [el, ""]) : out;
 }
 
-async function save() {
+// save saves the form as it is; with something missing, it saves nothing
+// and says what, under its field (and throws, given strict).
+async function save({ strict = false } = {}) {
   const body = collect();
-  check(body);
+  const bad = problems(body);
+  for (const [el, msg] of bad) fieldError(el, msg || "");
+  const first = bad.find(([, msg]) => msg);
+  if (first) {
+    if (strict) throw new Error(first[1]);
+    return false;
+  }
   view = await api("PUT", "/api/me/notifications", body);
-  renderNotify();
+  // Not redrawn: a box just ticked keeps its focus. Only what follows from it.
+  state.pushEvents = new Set(view.settings.push);
+  state.pushTasks = view.settings.tasks === "all" ? "all" : "mine";
+  syncNotify();
+  renderState();
+  return true;
 }
+const queueSave = saveQueue();
 
 form.addEventListener("change", (e) => {
-  if (e.target.name === "push" || e.target.name === "summary" || e.target.name === "scope" || e.target.name === "issues" || e.target.name === "email" || e.target.name === "dest") syncNotify();
+  syncNotify();
+  if (!e.target.name) return;
+  queueSave(() => saveField(e.target, async () => {
+    if (!(await save())) return false;
+  }));
 });
-form.addEventListener("submit", attempt(async (e) => {
-  e.preventDefault();
-  await busy($("#notify-save"), save);
-  toast("Notification settings saved", { tone: "ok" });
-}));
+// Enter in the time field doesn't submit the form: it saves on its own.
+form.addEventListener("submit", (e) => e.preventDefault());
 $("#notify-test").addEventListener("click", attempt((e) => busy(e.currentTarget, async () => {
-  await save(); // what's on the page is what goes out
+  await queueSave(() => save({ strict: true })); // what's on the page is what goes out
   const res = await api("POST", "/api/me/notifications/test-summary");
   view = await api("GET", "/api/me/notifications");
   renderNotify();

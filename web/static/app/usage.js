@@ -1,6 +1,7 @@
 import { $, clockTime, h, setLabel, timeLocale } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
+import { saveField } from "./autosave.js";
 import { state } from "./state.js";
 import * as store from "./store.js";
 import { HOUR, aheadOfPace, paceMs, paceStateText, paceText, resetText } from "../usagetime.js";
@@ -148,20 +149,19 @@ function renderPace(p) {
   max.title = `Usually ${base} at once; empty = ${2 * base}`;
 }
 
-const savePace = attempt(async () => {
-  try {
-    const p = state.usage?.pace;
-    if (p?.hub) {
-      state.usage = await api("PUT", "/api/queue/pace", { follow: $("#pace-follow").checked, max_boost: Number($("#pace-boost").value) || 0, account: p.account || "" });
-      return;
-    }
+// The pace saves as it changes: "Saved" in the sheet's header, or the error
+// under the field (the number as typed stays, to fix it).
+const savePace = (e) => saveField(e.target, async () => {
+  const p = state.usage?.pace;
+  if (p?.hub) {
+    state.usage = await api("PUT", "/api/queue/pace", { follow: $("#pace-follow").checked, max_boost: Number($("#pace-boost").value) || 0, account: p.account || "" });
+  } else {
     const v = $("#pace-max").value.trim();
     const max = v === "" ? 0 : Math.round(Number(v));
-    if (!Number.isFinite(max) || max < 0 || max > 64) { toast("Enter a number from 1 to 64"); return; }
+    if (!Number.isFinite(max) || max < 0 || max > 64) throw new Error("Enter a number from 1 to 64.");
     state.usage = await api("PUT", "/api/queue/pace", { follow: $("#pace-follow").checked, max_parallel: max });
-  } finally {
-    renderUsage(); // shows what was saved, or puts the controls back
   }
+  renderUsage(); // shows what was saved
 });
 $("#pace-follow").addEventListener("change", savePace);
 $("#pace-max").addEventListener("change", savePace);

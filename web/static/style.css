@@ -938,10 +938,17 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
    A larger sheet's sections down a rail, the chosen one beside them. Narrow
    (a bottom sheet on a phone): the rail is a strip across the top that
    scrolls sideways. The sheet keeps one height, so switching doesn't jump;
-   only the section scrolls, with the header and Save always in view. */
+   only the section scrolls, with the header always in view. Fields save as
+   they change (app/autosave.js): "Saved" shows a moment in the header, an
+   error under its field. */
 /* .rail-body: a rail sheet with no form around it all (Account: some sections are forms). */
 .rail-sheet > :is(form, .rail-body) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .rail-sheet .sheet-head { flex: none; margin: 0 -16px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+.save-note { margin-left: auto; font-size: var(--fs-s); color: var(--muted); opacity: 0; transition: opacity .2s; white-space: nowrap; }
+.save-note.shown { opacity: 1; }
+.save-note.done { color: var(--merged); }
+@media (prefers-reduced-motion: reduce) { .save-note { transition: none; } }
+.field-error { margin-top: 2px; }
 .rail-sheet > * > .sheet-actions { flex: none; margin: 0 -16px; padding: 12px 16px 0; border-top: 1px solid var(--line); }
 .rail-sheet > * > .sheet-actions:not(:has(> :not([hidden]))) { display: none; }
 .rail-layout { --rail-r: var(--r-pill); flex: 1; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); margin: 0 -16px; }

@@ -220,7 +220,7 @@ function renderDrawBar() {
 }
 
 // markHints asks the page which element is under each mark (an arrow's tip,
-// the middle of a circle, box or pen stroke), for the notes: "circle → button.save ("Save settings")". The page is
+// the middle of a circle, box or pen stroke), for the notes: "circle → button.primary ("Save webhook")". The page is
 // still there behind the picture, at the same scroll. Empty when it can't tell.
 async function markHints(origin) {
   const marks = draw.surface.marks();
