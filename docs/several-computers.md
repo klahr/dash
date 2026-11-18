@@ -236,9 +236,23 @@ It does what `install.sh` does, with PowerShell parameters (`-Name`, `-Projects`
 It is a scheduled task, not a Windows service, so it needs no administrator rights: a service
 needs them to install, and your password to run as you.
 
-Run the command again without `-Code` to update. Windows won't overwrite a running program, so
-an update renames the running `dash.exe` to `dash.exe.old` (removed by the next update) and puts
-the new one in its place. Stopping a task's processes stops their whole process tree
+Run the command again without `-Code` to update. Windows won't overwrite or delete a running
+program, so an update renames the running `dash.exe` to `dash.exe.old` and puts the new one in its
+place. The supervisor keeps running the binary it started from until the scheduled task restarts
+(at your next logon), so an update can't delete that binary's old `dash.exe.prev` or
+`dash.exe.old` either: it renames them to `dash.exe.prev-<number>` or `dash.exe.old-<number>`.
+Each update deletes the ones no longer running.
+
+If an update still fails with "Access is denied" on `dash.exe.prev` (a runner older than this
+fix), stop and start the runner's scheduled task, delete the leftovers, and update again:
+
+```powershell
+Stop-ScheduledTask -TaskName "Dash runner"; Start-ScheduledTask -TaskName "Dash runner"
+Remove-Item "$env:LOCALAPPDATA\Programs\dash\dash.exe.prev*", "$env:LOCALAPPDATA\Programs\dash\dash.exe.old*"
+dash runner update
+```
+
+Stopping a task's processes stops their whole process tree
 (`taskkill /T`); there are no signals, so a stopped server gets no chance to shut down cleanly.
 
 Not yet on Windows: **terminals** (and terminal previews) need a pseudo-terminal Dash doesn't

@@ -80,6 +80,7 @@ func (u Updater) Run(ctx context.Context) error {
 	}
 	defer os.Remove(tmp.Name()) // nothing left once renamed
 	defer tmp.Close()
+	sweepAside(u.Bin)
 
 	asset := Asset(u.Version, u.GOOS, u.GOARCH)
 	base := strings.TrimRight(u.Releases, "/") + "/download/" + u.Version + "/"
@@ -260,8 +261,8 @@ func replaceFile(src, dst string) error {
 		return err
 	}
 	old := dst + ".old"
-	if os.Remove(old) != nil && exists(old) { // an older one still runs
-		old = fmt.Sprintf("%s.old-%d", dst, time.Now().UnixNano())
+	if freeName(old) != nil {
+		old = asideName(old)
 	}
 	if os.Rename(dst, old) != nil {
 		return err
@@ -273,9 +274,50 @@ func replaceFile(src, dst string) error {
 	return nil
 }
 
+// removeFile is os.Remove; tests make it fail as Windows does for a
+// running program.
+var removeFile = os.Remove
+
+// freeName makes sure nothing is at p: it removes the file there or, when
+// it can't (Windows won't delete a program that is running, under any of
+// its names: the supervisor still runs the binary an earlier update kept
+// as .prev and .old), renames it aside to p-<time>, which Windows allows.
+// sweepAside removes those later.
+func freeName(p string) error {
+	err := removeFile(p)
+	if err == nil || errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if os.Rename(p, asideName(p)) != nil {
+		return err
+	}
+	return nil
+}
+
+// asideName is a fresh name for a file moved aside from p.
+func asideName(p string) string { return fmt.Sprintf("%s-%d", p, time.Now().UnixNano()) }
+
+// sweepAside removes what earlier updates left next to bin: bin.old and
+// the files freeName moved aside (bin.prev-*, bin.old-*). Those still
+// running stay, for a later update. bin.prev, the backup a rollback puts
+// back, is kept.
+func sweepAside(bin string) {
+	dir, base := filepath.Split(bin)
+	ents, err := os.ReadDir(filepath.Clean(dir))
+	if err != nil {
+		return
+	}
+	for _, e := range ents {
+		n := e.Name()
+		if n == base+".old" || strings.HasPrefix(n, base+".old-") || strings.HasPrefix(n, base+".prev-") {
+			_ = removeFile(filepath.Join(dir, n))
+		}
+	}
+}
+
 // backup makes prev a copy of bin: a hard link when it can.
 func backup(bin, prev string) error {
-	if err := os.Remove(prev); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := freeName(prev); err != nil {
 		return err
 	}
 	if os.Link(bin, prev) == nil {
