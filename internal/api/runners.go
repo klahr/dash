@@ -14,7 +14,6 @@ import (
 	"github.com/klahr/dash/internal/disk"
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/model"
-	"github.com/klahr/dash/internal/notes"
 	"github.com/klahr/dash/internal/runnerctl"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
@@ -272,7 +271,6 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 	mux.HandleFunc("GET /runner/connect", rh.ServeConnect)
 	mux.HandleFunc("POST /runner/report", rh.ServeReport)
 	mux.HandleFunc("POST "+tunnel.BoardPath, s.runnerBoard(rh))
-	mux.Handle("POST "+notes.RelayPath, s.notesRelay(rh))
 	// The one-line installers (Linux and macOS; Windows), and the version it installs (no sign-in:
 	// neither holds a secret).
 	mux.HandleFunc("GET /runner/install.sh", runnerctl.ScriptHandlerFor(s.hubURL, buildinfo.Version))

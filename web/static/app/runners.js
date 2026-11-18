@@ -559,17 +559,6 @@ function paintRunner(r) {
         : h("span", { class: "hint" }, r.can_manage
           ? ["No project runs on its labels yet. Give it a project's labels in its settings below or in Shared projects…, or change a project's in its settings", r.mine ? ", or add projects from this computer." : "."]
           : "No project runs on its labels yet.")),
-    // Shared notes are sealed with keys only runners hold. The hub shows
-    // the fingerprint a runner told it, but approving happens on the
-    // runners themselves, after comparing with what they show: the hub
-    // relays the keys and could swap in its own.
-    r.notes_fingerprint ? h("h4", { class: "section-head" }, "Shared notes key") : null,
-    r.notes_fingerprint ? h("div", { class: "runner-notes-key" },
-      h("p", { class: "hint" }, `Runners share a project's notes only with runners you approve on them, both ways. On ${r.name}, run `,
-        h("code", {}, "dash runner notes"), " and check it shows this fingerprint. Then, on each other runner of its projects, approve it:"),
-      h("p", {}, h("code", { class: "runner-fingerprint" }, r.notes_fingerprint)),
-      copyBlock(`dash runner notes approve ${r.notes_fingerprint}`, "Command copied", { pre: true }),
-      h("p", { class: "hint" }, "Compare with what the runners show, not only with this page: the hub relays the keys and can't vouch for them.")) : null,
     h("div", { class: "runner-actions" },
       ib({ class: "btn small", type: "button",
         title: `The shared projects ${r.name} builds, and the labels they run on`,

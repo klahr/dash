@@ -110,8 +110,8 @@ in the org they're working in.
 
 A project's chat and a task's run reach their own project only: `list_projects` lists just that
 project, and a call that names another project, or a task or goal in one, fails as if it didn't
-exist. Only the general chat reaches every project in the org. A task's shared notes are its
-project's, and a goal's coordinator works in the goal's project only.
+exist. Only the general chat reaches every project in the org. A goal's coordinator works in the
+goal's project only.
 
 When a hub runs a chat or a task on a runner, these tools act on the hub's board, not the
 runner's: the runner passes each call to the hub (`POST /runner/mcp/dash`, with its runner
@@ -121,10 +121,9 @@ runner's org: a project's chat only in its project, which that runner must work 
 under the hub's ids. If the hub can't be reached, the tool call fails; it never writes to the
 runner's own database instead.
 
-A task on a runner also gets the project's shared notes tools (`shared_list`, `shared_read`,
-`shared_write`, `shared_delete`, `shared_confirm`). They are on a second server, `dash_notes`,
-which the runner serves itself from its local copy. See
-[Shared notes](several-computers.md#what-tasks-see).
+A task keeps nothing for later tasks through these tools. Lasting facts that future tasks need
+(how to build or test, a pitfall, where something lives) go in the project's `CLAUDE.md`, which git
+shares with every computer.
 
 The chat stops and reruns tasks only when you ask it to:
 

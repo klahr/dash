@@ -51,7 +51,6 @@ import "./app/claudefiles.js";
 import "./app/webhooks.js";
 import "./app/notifysettings.js";
 import "./app/claudestatus.js";
-import "./app/sharednotes.js";
 import "./app/backend.js";
 import { chatRunner } from "./app/chat.js";
 import "./app/chatpane.js";

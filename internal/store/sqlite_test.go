@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -451,6 +452,35 @@ func TestFailedWriteLeavesMemoryAsStored(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got, _ := s.GetProject(p.ID); got.Name != "kept" {
+		t.Fatalf("project: %+v", got)
+	}
+}
+
+// A project stored before shared notes were removed still loads: its
+// pending notes removals are ignored.
+func TestProjectWithNotesPendingLoads(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "dash.db")
+	s := openTest(t, path)
+	p, err := s.CreateProject(model.Project{Name: "app", HubProjectID: "hp1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE projects SET data = json_set(data, '$.notes_pending', json(?)) WHERE id = ?`,
+		`[{"id":"r1","kind":"all","before":"2026-01-02T03:04:05Z","by":1}]`, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	var raw string
+	if err := s.db.QueryRow(`SELECT data FROM projects WHERE id = ?`, p.ID).Scan(&raw); err != nil || !strings.Contains(raw, "notes_pending") {
+		t.Fatalf("old field not stored (%v): %s", err, raw)
+	}
+	s = reopen(t, s, path)
+	got, err := s.GetProject(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "app" || got.HubProjectID != "hp1" {
 		t.Fatalf("project: %+v", got)
 	}
 }

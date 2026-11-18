@@ -36,7 +36,6 @@ import (
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/metrics"
 	"github.com/klahr/dash/internal/model"
-	"github.com/klahr/dash/internal/notes"
 	"github.com/klahr/dash/internal/notify"
 	"github.com/klahr/dash/internal/orgdomain"
 	"github.com/klahr/dash/internal/peer"
@@ -302,8 +301,6 @@ type app struct {
 	runnerCreds                         tunnel.Credentials // runner
 	reporter                            *dispatch.Reporter // runner
 	update                              *selfUpdate        // runner
-	notes                               *notes.Service     // runner: its hub projects' shared notes
-	notesID                             *notes.Identity    // runner: its shared notes key pair
 	mcpURL, permURL                     string
 }
 
@@ -317,11 +314,6 @@ func start(o *options) *selfUpdate {
 	}
 	a.openState()
 	defer a.st.Close()
-	defer func() {
-		if a.notes != nil {
-			a.notes.Close()
-		}
-	}()
 	a.configureOrgDomain()
 	a.resolveProjectRoot()
 	a.configureGoogle()
@@ -845,12 +837,7 @@ func (a *app) setupHub() {
 		todoLog.Line(t, "⚠ reverting on the runner conflicts with later work in "+strings.Join(files, ", ")+"; queued \""+nt.Title+"\" for Claude")
 		todos.Kick()
 	}
-	runners.OnState, runners.OnRevoke, runners.OnReport = func(id string, online bool) {
-		d.State(id, online)
-		if online { // removals of shared notes asked while it was away
-			go apiSrv.NotesRunnerOnline(id)
-		}
-	}, d.Revoked, d.Report
+	runners.OnState, runners.OnRevoke, runners.OnReport = d.State, d.Revoked, d.Report
 	// "Follow weekly pace" is each Claude account's: the hub paces the
 	// runners on one account as one budget, and tells each how.
 	d.Pacer = &dispatch.Pacer{Runners: runners.ListBare}
@@ -902,54 +889,6 @@ func (a *app) setupRunner() {
 	apiSrv.HubBoard = func(ctx context.Context, hubTodo, hubProject string, body []byte) (*http.Response, error) {
 		return tunnel.Board(ctx, creds, hubTodo, hubProject, body)
 	}
-	// Shared notes: this runner's copy of the notes of the hub's projects
-	// linked to it, synced with their other runners through the hub's
-	// relay, sealed with keys only runners hold. The hub keeps none, nor
-	// does a Dash without a hub.
-	notesWire := &notes.HubTransport{Post: func(ctx context.Context, project string, body []byte) ([]byte, error) {
-		return tunnel.Notes(ctx, creds, project, body)
-	}}
-	if a.notesID, err = notes.LoadIdentity(notes.IdentityPath(o.dataDir)); err != nil {
-		fatal("shared notes key", "err", err)
-	}
-	if a.notes, err = notes.NewService(filepath.Join(o.dataDir, "shared"), creds.ID, a.notesID, notesWire, func(hpid string) bool {
-		return slices.Contains(linkedHubProjects(st), hpid)
-	}); err != nil {
-		fatal("shared notes", "err", err)
-	}
-	a.notes.Name = creds.Name
-	a.notes.IdentityFile = notes.IdentityPath(o.dataDir) // dash runner notes rotate
-	slog.Info("shared notes: this runner's key fingerprint (compare it on other runners; see dash runner notes)", "fingerprint", a.notesID.Fingerprint())
-	apiSrv.NotesPeer = notesWire
-	// The tasks this runner runs for the hub read and write those notes
-	// (mcptools.NotesTools) on this copy.
-	apiSrv.Notes = a.notes
-	a.todos.Notes = func(t model.Todo) (int, bool) {
-		_, n, err := apiSrv.TaskNotes(t.ID)
-		return n, err == nil
-	}
-	// Tidy the notes now and about hourly (expiry, caps, one note per
-	// title, old tombstones): each runner on its own, no hub or task.
-	go a.notes.RunTidying(ctx, func() []string { return linkedHubProjects(st) })
-	go func() {
-		// Act on what the user approves or revokes with `dash runner
-		// notes` soon after, and now and then trade keys and notes even
-		// with nothing written, so a runner that left the project loses
-		// the key (the others rotate) before anyone writes again.
-		tick, resync := time.NewTicker(3*time.Second), time.NewTicker(15*time.Minute)
-		defer tick.Stop()
-		defer resync.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-tick.C:
-				a.notes.Reconcile(ctx, linkedHubProjects(st))
-			case <-resync.C:
-				a.notes.CatchUpAll(ctx, linkedHubProjects(st))
-			}
-		}
-	}()
 	// This computer's disk space: the hub hears of it with every report,
 	// warns when it runs low, and a runner too full starts no task. The
 	// thresholds, and the opt-in Go build cache limit, come from the hub.
@@ -1057,17 +996,6 @@ func (a *app) setupRunner() {
 	go cli.Run(ctx, time.Hour) // Claude Code updates itself
 }
 
-// linkedHubProjects are the ids of the hub's projects linked to this runner.
-func linkedHubProjects(st *store.Store) []string {
-	var out []string
-	for _, p := range st.ListProjects() {
-		if p.HubProjectID != "" && p.LinkedFromHub() {
-			out = append(out, p.HubProjectID)
-		}
-	}
-	return out
-}
-
 // wireOwners makes every per-run MCP token act as its task's (or chat's)
 // user, in its org, and only while they belong to it.
 func (a *app) wireOwners() {
@@ -1083,15 +1011,14 @@ func (a *app) wireOwners() {
 }
 
 // startMCPListener serves Dash's MCP servers to Claude Code (permission
-// prompts, the chat's task tools, the tasks' issue and shared notes tools) on a
-// loopback-only plain-HTTP listener, whatever -addr and TLS are set to.
+// prompts, the chat's task tools, the tasks' issue tools) on a loopback-only
+// plain-HTTP listener, whatever -addr and TLS are set to.
 func (a *app) startMCPListener() {
 	mcp := http.NewServeMux()
 	if a.o.askPerms {
 		mcp.HandleFunc("/mcp/permissions", a.perms.ServeMCP)
 	}
 	mcp.Handle("/mcp/dash", a.apiSrv.BoardMCP())
-	mcp.Handle("/mcp/notes", a.apiSrv.NotesMCP())
 	mcp.Handle("/mcp/scan-git", a.scans.GitTools)
 	var err error
 	if a.mcpURL, err = serveLoopback(a.ctx, mcp); err != nil {
@@ -1228,13 +1155,10 @@ func (a *app) connectHub(statePath string) bool {
 			a.reporter.Nudge()   // tell the hub what happened while it couldn't hear
 			// Catch up on what the other runners pushed meanwhile.
 			go a.merges.Remote.FetchAll(ctx)
-			// …and on the shared notes they wrote, telling them ours.
-			go a.notes.CatchUpAll(ctx, linkedHubProjects(a.st))
 		}
 	}
 	creds := a.runnerCreds
-	client := &tunnel.Client{Creds: creds, Handler: a.apiSrv.RunnerRoutes(), OnState: onState, Version: buildinfo.Version,
-		NotesKeyOf: func() string { return a.notes.Public().String() }, Previews: a.previews, OnPreviewURL: func(t string) { a.previews.SetHub(t, creds.Name) }}
+	client := &tunnel.Client{Creds: creds, Handler: a.apiSrv.RunnerRoutes(), OnState: onState, Version: buildinfo.Version, Previews: a.previews, OnPreviewURL: func(t string) { a.previews.SetHub(t, creds.Name) }}
 	if !a.o.addrSet {
 		if err := client.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("runner", "err", err)

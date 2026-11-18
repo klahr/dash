@@ -817,13 +817,11 @@ var public = map[string]bool{
 	// by a per-run bearer token instead.
 	"/mcp/permissions": true,
 	"/mcp/dash":        true,
-	"/mcp/notes":       true,
 	// Runners: a registration code, or the runner's own token.
 	"/runner/register": true,
 	"/runner/connect":  true,
 	"/runner/report":   true,
 	"/runner/mcp/dash": true,
-	"/runner/notes":    true, // shared notes relay (package notes)
 	// The runner installer and the hub's version: nothing secret.
 	"/runner/install.sh":  true,
 	"/runner/install.ps1": true,

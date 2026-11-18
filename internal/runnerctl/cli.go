@@ -17,15 +17,14 @@ import (
 
 	"golang.org/x/crypto/ssh/agent"
 
-	"github.com/klahr/dash/internal/notes"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
 // Commands are the `dash runner <command>`s handled here; plain `dash
 // runner` (and `dash runner --server … --code …`) runs the runner itself.
-var Commands = []string{"setup", "install", "uninstall", "status", "update", "notes"}
+var Commands = []string{"setup", "install", "uninstall", "status", "update"}
 
-// CLI runs `dash runner setup|install|uninstall|status|notes`. Zero fields
+// CLI runs `dash runner setup|install|uninstall|status|update`. Zero fields
 // default to the real environment; tests set them.
 type CLI struct {
 	Version    string
@@ -104,8 +103,6 @@ func (c *CLI) Main(ctx context.Context, command string, args []string) int {
 		err = c.status(ctx, args)
 	case "update":
 		err = c.update(ctx, args)
-	case "notes":
-		err = c.notes(args)
 	default:
 		err = fmt.Errorf("unknown command %q (want one of %s)", command, strings.Join(Commands, ", "))
 	}
@@ -135,7 +132,7 @@ func (c *CLI) credsPath(data string) string { return filepath.Join(data, "runner
 // setup is what the install script runs: check the computer, register with
 // the hub (or keep the registration), and install the service.
 func (c *CLI) setup(ctx context.Context, args []string) error {
-	fs, data := c.flags("setup", "Checks this computer, registers it with the hub (or keeps its registration when\nno --code is given), enrolls it under a shared notes root key with --notes-key,\nand installs the background service.")
+	fs, data := c.flags("setup", "Checks this computer, registers it with the hub (or keeps its registration when\nno --code is given), and installs the background service.")
 	server := fs.String("server", "", "the hub's URL, e.g. https://dash.example.com")
 	code := fs.String("code", "", "registration code from the hub's Runners page; omit to keep the registration")
 	name := fs.String("name", "", "this computer's name in the dashboard (default: its host name)")
@@ -143,7 +140,6 @@ func (c *CLI) setup(ctx context.Context, args []string) error {
 	service := fs.Bool("service", true, "install and start the background service")
 	skip := fs.Bool("skip-checks", false, "register even if the checks fail")
 	claudeBin := fs.String("claude", "claude", "Claude Code binary the runner uses")
-	notesKey := fs.String("notes-key", "", "enroll this runner for shared notes with this root key (an ed25519 SSH private key; see dash runner notes enroll)")
 	if err := c.parse(fs, args, data); err != nil {
 		return err
 	}
@@ -218,13 +214,6 @@ func (c *CLI) setup(ctx context.Context, args []string) error {
 	}
 	if creds.Projects != "" {
 		fmt.Fprintln(c.Out, "Projects directory:", creds.Projects)
-	}
-	if *notesKey != "" {
-		// Before the service starts, so it starts enrolled (a running one
-		// would pick it up too).
-		if err := c.notesEnroll(*data, filepath.Join(*data, "shared"), *notesKey, false); err != nil {
-			return fmt.Errorf("%w\nThe runner is registered; fix that and run this again, or enroll it later with: dash runner notes enroll --key %s", err, *notesKey)
-		}
 	}
 
 	svc, err := c.newService(*data)
@@ -363,9 +352,6 @@ func (c *CLI) status(ctx context.Context, args []string) error {
 		if creds.Projects != "" {
 			fmt.Fprintf(w, "Projects:     %s\n", creds.Projects)
 		}
-	}
-	if id, err := notes.ReadIdentity(notes.IdentityPath(*data)); err == nil {
-		fmt.Fprintf(w, "Notes key:    %s (dash runner notes)\n", id.Fingerprint())
 	}
 	st, running := ReadState(StatePath(*data))
 	switch {

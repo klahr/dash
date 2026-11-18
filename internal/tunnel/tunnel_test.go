@@ -893,3 +893,53 @@ func TestReportCarriesDiskSpace(t *testing.T) {
 		t.Fatalf("with lower thresholds: %q %v %+v", r.DiskLow, r.DiskFull, r.Disk)
 	}
 }
+
+// A runners.json from before shared notes were removed still loads: the
+// runner's notes key is ignored, and dropped on the next save.
+func TestRunnersFileWithNotesKeyLoads(t *testing.T) {
+	t.Parallel()
+
+	acc, owner := storetest.Accounts(t)
+	h := &Hub{Accounts: acc}
+	path := filepath.Join(t.TempDir(), "runners.json")
+	if err := h.Keep(path); err != nil {
+		t.Fatal(err)
+	}
+	code, _, _ := h.NewCode(owner)
+	_, token, _, err := h.register(code, "work", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f map[string]any
+	if err := json.Unmarshal(b, &f); err != nil {
+		t.Fatal(err)
+	}
+	f["runners"].([]any)[0].(map[string]any)["notes_key"] = "AAAA"
+	if b, err = json.Marshal(f); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	h2 := &Hub{Accounts: acc}
+	if err := h2.Keep(path); err != nil {
+		t.Fatal(err)
+	}
+	if !h2.Has("work") {
+		t.Fatal("runner not loaded")
+	}
+	if _, ok := h2.authenticate(token); !ok {
+		t.Fatal("token no longer matches")
+	}
+	h2.mu.Lock()
+	h2.saveLocked()
+	h2.mu.Unlock()
+	if b, _ := os.ReadFile(path); bytes.Contains(b, []byte("notes_key")) {
+		t.Errorf("notes_key saved again: %s", b)
+	}
+}

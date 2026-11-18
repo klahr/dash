@@ -31,7 +31,6 @@ import (
 	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/httpjson"
 	"github.com/klahr/dash/internal/model"
-	"github.com/klahr/dash/internal/notes"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/textutil"
 	"github.com/klahr/dash/internal/usage"
@@ -83,12 +82,6 @@ type Runner struct {
 	// has (Serves).
 	Labels        []string `json:"labels"`
 	DefaultLabels []string `json:"default_labels"`
-	// NotesKey is the public key the runner seals shared notes keys with,
-	// as it told the hub, and NotesFingerprint its short form. Shown so a
-	// user knows which fingerprint to look for; runners never take it from
-	// the hub (they pin what peers send, and the user approves it on them).
-	NotesKey         string `json:"notes_key,omitempty"`
-	NotesFingerprint string `json:"notes_fingerprint,omitempty"`
 	// Parallel is how many tasks the hub sends it at once (0: as many as
 	// the runner's own -parallel, which it reports). Paused: the hub sends
 	// it none.
@@ -208,11 +201,10 @@ type record struct {
 	Parallel  int       `json:"parallel,omitempty"`
 	Paused    bool      `json:"paused,omitempty"`
 	Version   string    `json:"version,omitempty"`
-	OS        string    `json:"os,omitempty"`        // see Runner.OS
-	Arch      string    `json:"arch,omitempty"`      // see Runner.Arch
-	NotesKey  string    `json:"notes_key,omitempty"` // public: see Runner.NotesKey
-	Labels    []string  `json:"labels,omitempty"`    // see Runner.Labels
-	Shared    bool      `json:"shared,omitempty"`    // see Runner.Shared
+	OS        string    `json:"os,omitempty"`     // see Runner.OS
+	Arch      string    `json:"arch,omitempty"`   // see Runner.Arch
+	Labels    []string  `json:"labels,omitempty"` // see Runner.Labels
+	Shared    bool      `json:"shared,omitempty"` // see Runner.Shared
 	// SharedSet: whether it takes other members' work was settled, by a
 	// person or by MigrateShared (false only for runners from before).
 	SharedSet bool `json:"shared_set,omitempty"`
@@ -599,13 +591,10 @@ func (h *Hub) ListBare() []Runner {
 
 func (h *Hub) viewLocked(r *record, online bool, owner *store.RunnerOwner) Runner {
 	v := Runner{ID: r.ID, Name: r.Name, Online: online, Created: r.Created, LastSeen: r.LastSeen, Owner: owner,
-		Version: r.Version, OS: r.OS, Arch: r.Arch, Parallel: r.Parallel, Paused: r.Paused, Shared: r.Shared, AutoUpdate: r.AutoUpdate, NotesKey: r.NotesKey,
+		Version: r.Version, OS: r.OS, Arch: r.Arch, Parallel: r.Parallel, Paused: r.Paused, Shared: r.Shared, AutoUpdate: r.AutoUpdate,
 		Labels: slices.Clone(r.Labels), DefaultLabels: model.DefaultRunnerLabels(r.OS, r.Arch)}
 	if v.Labels == nil {
 		v.Labels = []string{}
-	}
-	if k, err := notes.ParsePublicKey(r.NotesKey); err == nil {
-		v.NotesFingerprint = k.Fingerprint()
 	}
 	if r.Update != nil {
 		cp := *r.Update
@@ -790,10 +779,9 @@ func (h *Hub) registeredLocked(id string) bool {
 }
 
 // touchLocked records that runner id (dis)connected, running version, on
-// platform (os and arch) and with shared notes key notesKey when those
-// aren't "" (it connected: its update is settled, see connectedLocked).
-// h.mu must be held.
-func (h *Hub) touchLocked(id, version string, plat platform, notesKey string) {
+// platform (os and arch) when those aren't "" (it connected: its update is
+// settled, see connectedLocked). h.mu must be held.
+func (h *Hub) touchLocked(id, version string, plat platform) {
 	for _, r := range h.runners {
 		if r.ID == id {
 			r.LastSeen = h.clock()
@@ -803,9 +791,6 @@ func (h *Hub) touchLocked(id, version string, plat platform, notesKey string) {
 			}
 			if plat.os != "" {
 				r.OS, r.Arch = plat.os, plat.arch
-			}
-			if notesKey != "" {
-				r.NotesKey = notesKey
 			}
 		}
 	}
@@ -833,10 +818,6 @@ func parsePlatform(v string) platform {
 	}
 	return platform{goos, goarch}
 }
-
-// NotesKeyHeader carries the runner's shared notes public key when it
-// connects (notes.PublicKey, base64).
-const NotesKeyHeader = "X-Dash-Notes-Key"
 
 var versionRe = regexp.MustCompile(`^[0-9A-Za-z.+_-]{1,64}$`)
 
@@ -921,10 +902,6 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	sess := NewSession(ws, true) // the hub opens the streams
 	version := cleanVersion(r.Header.Get(VersionHeader))
-	var notesKey string
-	if k, err := notes.ParsePublicKey(r.Header.Get(NotesKeyHeader)); err == nil {
-		notesKey = k.String()
-	}
 	plat := parsePlatform(r.Header.Get(PlatformHeader))
 	h.mu.Lock()
 	if !h.registeredLocked(rec.ID) {
@@ -939,7 +916,7 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 	h.live[rec.ID] = sess
 	// In the same lock: nobody sees it online with the last link's version
 	// or an unsettled update.
-	h.touchLocked(rec.ID, version, plat, notesKey)
+	h.touchLocked(rec.ID, version, plat)
 	h.mu.Unlock()
 	if old != nil {
 		old.Close() // the runner reconnected before we noticed the old link die
@@ -957,7 +934,7 @@ func (h *Hub) ServeConnect(w http.ResponseWriter, r *http.Request) {
 	current := h.live[rec.ID] == sess
 	if current {
 		delete(h.live, rec.ID)
-		h.touchLocked(rec.ID, "", platform{}, "")
+		h.touchLocked(rec.ID, "", platform{})
 	}
 	h.mu.Unlock()
 	h.idle().CloseIdleConnections() // pooled streams of the dead tunnel
@@ -1261,42 +1238,6 @@ func (h *Hub) Call(ctx context.Context, id, method, path string, in, out any) er
 	return nil
 }
 
-// CallBytes posts body, as it is, to path on runner id over its tunnel, with
-// hdr, and returns the answer's body (at most limit bytes). Nothing of the
-// body or the answer is read, kept or logged: it is the shared notes relay
-// (package notes).
-func (h *Hub) CallBytes(ctx context.Context, id, path string, hdr http.Header, body []byte, limit int64) ([]byte, error) {
-	name, err := h.target(id)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, "POST", "http://"+name+runnerHostLabel+path, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	for k, vs := range hdr {
-		req.Header[k] = vs
-	}
-	req.Header.Set("Content-Type", "application/octet-stream")
-	res, err := (&http.Client{Transport: h.idle()}).Do(req)
-	if err != nil {
-		// Without the transport error's text: nothing of the relay is told.
-		return nil, h.dialErr(name, nil)
-	}
-	defer res.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
-	if err != nil {
-		return nil, err
-	}
-	if res.StatusCode >= 300 {
-		return nil, &CallError{Status: res.StatusCode, Msg: name + ": " + res.Status}
-	}
-	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("%s: answer too large", name)
-	}
-	return b, nil
-}
-
 // Online reports whether runner id has a tunnel now.
 func (h *Hub) Online(id string) bool {
 	h.mu.Lock()
@@ -1399,10 +1340,11 @@ func (h *Hub) Proxy(name string) (http.Handler, bool) {
 			r.Out.Header.Del("Authorization")
 			r.Out.Header.Del("Proxy-Authorization")
 			r.Out.Header.Del(UserHeader) // a person doesn't say whom they are
-			// Only the hub's relay delivers shared notes: nobody reads or
-			// writes a runner's notes through the hub's API.
-			r.Out.Header.Del(notes.RelayHeader)
-			r.Out.Header.Del(notes.CommandHeader)
+			// Runners from before shared notes were removed take these
+			// from the hub's own relay only: nobody sends them through
+			// the hub's API.
+			r.Out.Header.Del("X-Dash-Notes-Relay")
+			r.Out.Header.Del("X-Dash-Notes-Command")
 			// The hub says it, for requests it checked (WithUser).
 			if uid, ok := userFrom(r.In.Context()); ok {
 				r.Out.Header.Set(UserHeader, strconv.FormatInt(uid, 10))

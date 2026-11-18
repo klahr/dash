@@ -13,7 +13,6 @@ import (
 	"github.com/klahr/dash/internal/dispatch"
 	"github.com/klahr/dash/internal/fsutil"
 	"github.com/klahr/dash/internal/model"
-	"github.com/klahr/dash/internal/notes"
 	"github.com/klahr/dash/internal/store"
 	"github.com/klahr/dash/internal/tunnel"
 )
@@ -112,12 +111,6 @@ func init() {
 		"DELETE /api/hub/projects/{hpid}/try", "GET /api/hub/projects/{hpid}/try/log", "GET /ws/hub/projects/{hpid}/try",
 		// gh for the hub's CI view of linked projects; checked in hubtasks.go.
 		"POST /api/hub/github/{hpid}",
-		// Shared notes from the project's other runners, relayed by the hub
-		// (notes.go); its proxy (/peer/…) can't reach them.
-		"POST " + notes.PeerPath,
-		// The hub's own asks of them: counts, and removals (notes.go);
-		// its proxy can't send those either.
-		"POST " + notes.StatusPath, "POST " + notes.RemovePath,
 
 		// Claude's short calls (titles, summaries, clean-up) for the
 		// runner's owner; checked in claude.go.

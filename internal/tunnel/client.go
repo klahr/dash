@@ -18,7 +18,6 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/klahr/dash/internal/fsutil"
-	"github.com/klahr/dash/internal/notes"
 )
 
 // Credentials are what a runner keeps after registering with a hub.
@@ -129,12 +128,6 @@ type Client struct {
 	// Platform is this runner's "os/arch", told to the hub on connect so the
 	// Runners page can show it ("": runtime.GOOS/runtime.GOARCH).
 	Platform string
-	// NotesKey is this runner's shared notes public key (base64), told to
-	// the hub on connect so it can show its fingerprint. Optional.
-	NotesKey string
-	// NotesKeyOf, if set, gives NotesKey on every connect instead (the key
-	// changes when the user rotates it).
-	NotesKeyOf func() string
 	// OnPreviewURL is told, on every connect, where the hub serves this
 	// runner's previews (see PreviewHeader; "" if it doesn't). Optional.
 	OnPreviewURL func(template string)
@@ -197,13 +190,6 @@ func (c *Client) serveOnce(ctx context.Context) error {
 	hdr := http.Header{"Authorization": {"Bearer " + c.Creds.Token}}
 	if c.Version != "" {
 		hdr.Set(VersionHeader, c.Version)
-	}
-	notesKey := c.NotesKey
-	if c.NotesKeyOf != nil {
-		notesKey = c.NotesKeyOf()
-	}
-	if notesKey != "" {
-		hdr.Set(NotesKeyHeader, notesKey)
 	}
 	platform := c.Platform
 	if platform == "" {
@@ -348,41 +334,4 @@ func Board(ctx context.Context, creds Credentials, hubTodo, hubProject string, b
 		return nil, ErrRevoked
 	}
 	return res, nil
-}
-
-// Notes posts a shared notes message (package notes) for the hub's project
-// to the hub's relay, as the runner in creds, and returns the hub's answer.
-// The message is opaque here; it isn't logged.
-func Notes(ctx context.Context, creds Credentials, project string, msg []byte) ([]byte, error) {
-	u, err := CheckServer(creds.Server)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, "POST", u.String()+notes.RelayPath+"?project="+url.QueryEscape(project), bytes.NewReader(msg))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("Authorization", "Bearer "+creds.Token)
-	res, err := (&http.Client{Timeout: 2 * time.Minute}).Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode == http.StatusUnauthorized {
-		return nil, ErrRevoked
-	}
-	b, err := io.ReadAll(io.LimitReader(res.Body, 64<<20))
-	if err != nil {
-		return nil, err
-	}
-	if res.StatusCode != http.StatusOK {
-		var e struct{ Error string }
-		_ = json.Unmarshal(b, &e)
-		if e.Error == "" {
-			e.Error = res.Status
-		}
-		return nil, fmt.Errorf("the hub's notes relay: %s", e.Error)
-	}
-	return b, nil
 }

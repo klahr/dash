@@ -22,7 +22,6 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/hub"
 	"github.com/klahr/dash/internal/model"
-	"github.com/klahr/dash/internal/notes"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/release"
 	"github.com/klahr/dash/internal/scan"
@@ -68,9 +67,6 @@ func (s *Server) hubTaskRoutes(mux routeMux) {
 	mux.HandleFunc("POST "+dispatch.PermissionPath, s.hubPermission)
 	mux.HandleFunc("GET "+dispatch.ScanPath, s.hubScan)
 	mux.HandleFunc("POST /api/hub/github/{hpid}", s.hubGitHub)
-	mux.HandleFunc("POST "+notes.PeerPath, s.notesFromPeers)
-	mux.HandleFunc("POST "+notes.StatusPath, s.hubNotesStatus)
-	mux.HandleFunc("POST "+notes.RemovePath, s.hubNotesRemove)
 	mux.HandleFunc("POST "+tunnel.UpdatePath, s.hubUpdate)
 }
 

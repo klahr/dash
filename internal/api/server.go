@@ -33,7 +33,6 @@ import (
 	"github.com/klahr/dash/internal/mcptools"
 	"github.com/klahr/dash/internal/metrics"
 	"github.com/klahr/dash/internal/model"
-	"github.com/klahr/dash/internal/notes"
 	"github.com/klahr/dash/internal/notify"
 	"github.com/klahr/dash/internal/peer"
 	"github.com/klahr/dash/internal/perm"
@@ -123,15 +122,6 @@ type Server struct {
 	// tunnel.Board) to the hub's board: the board tools of the hub's tasks
 	// and of the chats the hub asks for act there, never on this Dash.
 	HubBoard func(ctx context.Context, hubTodo, hubProject string, body []byte) (*http.Response, error)
-	// NotesPeer, on a runner, takes the shared notes messages its hub
-	// relays from the project's other runners (notes.HubTransport; nil:
-	// none, e.g. on the hub, which keeps no notes).
-	NotesPeer http.Handler
-	// Notes, on a runner, is its copy of its hub projects' shared notes,
-	// which the tasks it runs reach with the notes tools (/mcp/notes), and
-	// which the hub's UI asks for counts and removals (notes.go; nil: none,
-	// as on the hub or a Dash without one).
-	Notes *notes.Service
 	// GitHubProtocol is how this runner clones the hub's GitHub projects:
 	// gitops.ProtocolAuto, gitops.ProtocolSSH ("" too, without the
 	// fallback) or gitops.ProtocolHTTPS (-github-protocol).
@@ -157,9 +147,6 @@ type Server struct {
 	// (<data>/try; see try.go).
 	TryRoot string
 	tries   trySessions // on a hub: which runner each project's try session runs on
-	// notesDeliver: one runner at a time takes the pending removals of
-	// shared notes (notes.go).
-	notesDeliver sync.Mutex
 
 	reviewMu  sync.Mutex
 	reviewGen uint64
@@ -259,10 +246,6 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("DELETE /api/projects/{pid}", s.deleteProject)
 	mux.HandleFunc("POST /api/projects/{pid}/pause", s.pauseProject)
 	mux.HandleFunc("POST /api/projects/{pid}/resume", s.resumeProject)
-	// Shared notes of a hub's project: counts and removals, never a note (notes.go)
-	mux.HandleFunc("GET /api/projects/{pid}/notes", s.getNotes)
-	mux.HandleFunc("POST /api/projects/{pid}/notes/remove", s.removeNotes)
-	mux.HandleFunc("DELETE /api/projects/{pid}/notes/pending/{rid}", s.cancelNotesRemoval)
 	mux.HandleFunc("POST /api/projects/{pid}/push", s.viaRunner(s.pushProject))
 	mux.HandleFunc("GET /api/projects/{pid}/unpushed", s.viaRunner(s.unpushed))
 	mux.HandleFunc("GET /api/projects/{pid}/remote", s.viaRunner(s.remoteStatus(false)))
@@ -478,8 +461,6 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("GET /mcp/permissions", s.Perms.ServeMCP) // answers 405, as MCP clients expect
 	mux.Handle("POST /mcp/dash", s.BoardMCP())
 	mux.Handle("GET /mcp/dash", s.BoardMCP())
-	mux.Handle("POST /mcp/notes", s.NotesMCP())
-	mux.Handle("GET /mcp/notes", s.NotesMCP())
 	// What the "Connect Claude" guide needs: is /mcp on, where, and who signed in.
 	mux.HandleFunc("GET /api/connector", s.connectorStatus)
 	if s.OAuth != nil {
