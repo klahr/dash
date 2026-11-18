@@ -18,11 +18,12 @@ import { desktop } from "./viewport.js";
 // which load outside the app too, and builds its own markup in the root
 // it is mounted on. Planning is the hub's (api prefix "").
 
+// s: the task board's lane colour a column takes (style.css: .s-*).
 export const COLUMNS = [
-  { key: "ideas", title: "Ideas" },
-  { key: "planned", title: "Planned" },
-  { key: "in_progress", title: "In progress" },
-  { key: "done", title: "Done" },
+  { key: "ideas", title: "Ideas", s: "draft", empty: "No ideas yet." },
+  { key: "planned", title: "Planned", s: "queued", empty: "Nothing planned yet." },
+  { key: "in_progress", title: "In progress", s: "in_progress", empty: "Nothing in progress." },
+  { key: "done", title: "Done", s: "merged", empty: "Nothing done yet." },
 ];
 const COLUMN_TITLE = Object.fromEntries(COLUMNS.map((c) => [c.key, c.title]));
 const PRIORITY = { high: "High", medium: "Medium", low: "Low" };
@@ -47,6 +48,7 @@ const pl = {
   pending: null, // a press on a card that may become a drag
   drag: null, // the card being dragged
   suppressClick: false,
+  lane: "", // the column a phone shows (one at a time, as the task board)
 };
 
 const byId = (id) => pl.cards.find((c) => c.id === id);
@@ -78,11 +80,20 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
         ib({ type: "button", class: "btn small primary pl-new", title: "Add an idea to the plan", onclick: attempt(() => newCard("ideas")) }, "plus", "New card")),
       h("p", { class: "hint pl-intro", id: "pl-intro", hidden: true },
         "The plan: cards move from Ideas to Done. Start a card to make a task or a goal for a developer's project; its status follows the work."),
-      h("div", { class: "pl-board", id: "pl-board" },
-        ...COLUMNS.map((col) => h("section", { class: "pl-col", "data-col": col.key, "aria-labelledby": `pl-col-${col.key}` },
-          h("h3", { class: "pl-col-head", id: `pl-col-${col.key}` }, col.title, h("span", { class: "pl-count", id: `pl-count-${col.key}` })),
-          h("ol", { class: "pl-cards", "data-col": col.key, "aria-labelledby": `pl-col-${col.key}` }),
-          ib({ type: "button", class: "pl-add", title: `Add a card to ${col.title}`, onclick: attempt(() => newCard(col.key)) }, "plus", "Add card"))))));
+      // The task board's look (style.css: .lanes, .board, .col, .rail, .todo):
+      // on a phone a strip of lanes and one column at a time, on a desktop
+      // the columns side by side. Each column ends in Add card.
+      h("div", { class: "lanes pl-lanes", role: "tablist", "aria-label": "Columns" },
+        ...COLUMNS.map((col) => h("button", { type: "button", role: "tab", class: `lane-tab s-${col.s}`, "data-col": col.key,
+          onclick: () => { pl.lane = col.key; renderBoard(); } }, col.title, h("span", { class: "n", id: `pl-tab-n-${col.key}` })))),
+      h("div", { class: "board pl-board", id: "pl-board" },
+        ...COLUMNS.map((col) => h("section", { class: `col pl-col s-${col.s}`, "data-col": col.key, "aria-labelledby": `pl-col-${col.key}` },
+          h("header", { class: "col-head" },
+            h("span", { class: "col-label", id: `pl-col-${col.key}` }, col.title), h("span", { class: "n", id: `pl-count-${col.key}` })),
+          h("div", { class: "col-body" },
+            h("ol", { class: "rail pl-cards", "data-col": col.key, "aria-labelledby": `pl-col-${col.key}` }),
+            h("p", { class: "col-empty", id: `pl-empty-${col.key}` }, col.empty),
+            ib({ type: "button", class: "pl-add", title: `Add a card to ${col.title}`, onclick: attempt(() => newCard(col.key)) }, "plus", "Add card")))))));
   paneParent.append(
     h("aside", { class: "detail card-detail", id: "card-detail", hidden: true, "aria-labelledby": "pd-title" },
       h("header", { class: "detail-head" },
@@ -155,13 +166,21 @@ function renderFilter() {
 // ---- the board
 
 function renderBoard() {
+  const counts = Object.fromEntries(COLUMNS.map((col) => [col.key, pl.cards.filter((c) => c.column === col.key).length]));
+  // A phone opens on the first column with cards in it.
+  if (!pl.lane) pl.lane = (pl.cards.length && COLUMNS.find((col) => counts[col.key])?.key) || "ideas";
   for (const col of COLUMNS) {
     const ol = $(`.pl-cards[data-col="${col.key}"]`, pl.root);
     const cards = pl.cards.filter((c) => c.column === col.key).sort((a, b) => a.position - b.position);
     const focused = document.activeElement?.closest?.(".pl-card")?.dataset.id;
     fill(ol, ...cards.map(cardEl));
+    ol.hidden = !cards.length;
+    $(`#pl-empty-${col.key}`).hidden = cards.length > 0;
     if (focused && ol.querySelector(`[data-id="${focused}"]`)) $(`[data-id="${focused}"] .pl-open`, ol)?.focus({ preventScroll: true });
-    $(`#pl-count-${col.key}`).textContent = cards.length ? String(cards.length) : "";
+    $(`#pl-count-${col.key}`).textContent = String(cards.length);
+    $(`#pl-tab-n-${col.key}`).textContent = String(cards.length);
+    $(`.pl-col[data-col="${col.key}"]`, pl.root).classList.toggle("active", pl.lane === col.key);
+    $(`.pl-lanes [data-col="${col.key}"]`, pl.root).setAttribute("aria-selected", String(pl.lane === col.key));
   }
   $("#pl-intro").hidden = pl.cards.length > 0;
   $("#pl-state").textContent = "";
@@ -194,13 +213,24 @@ function cardEl(c) {
     c.comments ? h("span", { class: "pl-comments", title: `${c.comments} comment${c.comments === 1 ? "" : "s"}` }, ico("comment"), String(c.comments)) : null,
     assigneeEl(c),
   ].filter(Boolean);
+  if (c.status?.suggest_done) meta.push(h("span", { class: "pl-suggest" }, "Ready for Done"));
+  // Under the title: the status of the linked work, or else the start of the description.
+  const about = (c.description || "").replace(/[#*_`>]+/g, "").replace(/\s+/g, " ").trim();
+  const sub = c.status?.total ? h("span", { class: "todo-sub" }, statusEl(c.status))
+    : about ? h("span", { class: "todo-sub" }, about) : null;
+  // Laid out as the task board's card (app/branches.js: todoRow): the node
+  // in the status's colour (filled once Done), the title the button that
+  // opens the card, and a press anywhere else on it opens it too.
   return h("li", { class: "pl-card", "data-id": c.id },
-    h("button", { type: "button", class: "pl-open", "aria-controls": "card-detail", "aria-current": c.id === pl.open ? "true" : null,
-      title: "Open (Alt+arrows move it)", onclick: () => openCard(c.id).catch(fail), onkeydown: (e) => cardKeys(e, c) },
-      h("span", { class: "pl-title" }, c.title),
-      meta.length ? h("span", { class: "pl-meta" }, ...meta) : null,
-      c.status.total ? statusEl(c.status) : null,
-      c.status.suggest_done ? h("span", { class: "pl-suggest" }, "Ready for Done") : null));
+    h("div", { class: `todo t-${c.status?.tone || "none"}${c.column === "done" ? " pushed" : ""}${c.id === pl.open ? " selected" : ""}`,
+      onclick: () => openCard(c.id).catch(fail) },
+      h("span", { class: "node", "aria-hidden": "true" }),
+      h("span", { class: "todo-main" },
+        h("button", { type: "button", class: "todo-open pl-open", "aria-controls": "card-detail", "aria-current": c.id === pl.open ? "true" : null,
+          title: "Open (Alt+arrows move it)", onkeydown: (e) => cardKeys(e, c) },
+          h("span", { class: "todo-title" }, c.title)),
+        sub),
+      meta.length ? h("span", { class: "todo-side" }, ...meta) : null));
 }
 
 // ---- dragging, as the task board drags (dnd.js): a mouse drags after a
@@ -216,14 +246,17 @@ function dropIndex(ol, y) {
 }
 
 function clearDropMarks() {
-  $$(".pl-cards.drop", pl.root).forEach((x) => x.classList.remove("drop"));
+  $$(".drop-over", pl.root).forEach((x) => x.classList.remove("drop-over"));
   $$(".pl-card.drop-before, .pl-card.drop-after", pl.root).forEach((x) => x.classList.remove("drop-before", "drop-after"));
 }
 
-// dropTarget is the list of the column under the point, if any.
+// dropTarget is the list of the column under the point, if any: its column,
+// or (on a phone, one column at a time) its lane tab, which drops at the end.
 function dropTarget(x, y) {
   const el = document.elementFromPoint(x, y);
-  return el?.closest?.(".pl-col")?.querySelector(".pl-cards") || null;
+  const at = el?.closest?.(".pl-col, .pl-lanes .lane-tab");
+  if (!at || !pl.root.contains(at)) return null;
+  return $(`.pl-cards[data-col="${at.dataset.col}"]`, pl.root);
 }
 
 function startDrag(x, y) {
@@ -246,7 +279,9 @@ function moveDrag(x, y) {
   clearDropMarks();
   const ol = dropTarget(x, y);
   if (!ol) return;
-  ol.classList.add("drop");
+  const tab = document.elementFromPoint(x, y)?.closest?.(".pl-lanes .lane-tab");
+  (tab || ol.closest(".pl-col")).classList.add("drop-over");
+  if (tab) return; // to the end of that column
   const at = dropIndex(ol, y);
   if (at.before) at.before.classList.add("drop-before");
   else at.last?.classList.add("drop-after");
@@ -260,7 +295,8 @@ function endDrag(x, y, drop) {
   d.li.classList.remove("dragging");
   clearDropMarks();
   const ol = drop ? dropTarget(x, y) : null;
-  const index = ol ? dropIndex(ol, y).index : 0;
+  const onTab = ol && document.elementFromPoint(x, y)?.closest?.(".pl-lanes .lane-tab");
+  const index = !ol ? 0 : onTab ? 1 << 20 : dropIndex(ol, y).index;
   pl.drag = null;
   // The click that ends a mouse drag isn't a click on the card.
   pl.suppressClick = true;
@@ -348,6 +384,7 @@ async function newCard(col) {
   if (!title) return;
   const c = await call("POST", cardAPI(), { title, column: col, project: pl.filter || undefined });
   pl.cards.push(c);
+  pl.lane = col;
   renderBoard();
   await openCard(c.id);
 }
@@ -425,7 +462,7 @@ document.addEventListener("keydown", (e) => {
 function markSelected() {
   for (const li of $$(".pl-card", pl.root)) {
     const on = li.dataset.id === pl.open;
-    li.classList.toggle("selected", on);
+    $(".todo", li)?.classList.toggle("selected", on);
     $(".pl-open", li)?.toggleAttribute("aria-current", on);
   }
 }

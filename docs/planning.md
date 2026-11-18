@@ -11,10 +11,11 @@ Open it from the sidebar: **Planning** (or `gp`). On a phone it is in the menu. 
 ## Cards
 
 The board has four columns: **Ideas → Planned → In progress → Done**. The columns are fixed.
+It looks like a project's **Board**: on a phone, tap a column's name at the top to show it.
 
-- **New card** (or **Add card** under a column) adds one. Type what should be built.
+- **New card** (or **Add card** at the bottom of a column) adds one. Type what should be built.
 - Drag a card to another column, or up and down its own. With the keyboard, focus a card
-  and press `Alt` with an arrow key. On a phone, change **Column** on the card.
+  and press `Alt` with an arrow key. On a phone, drag it onto a column's name at the top, or change **Column** on the card.
 - The project filter at the top shows one project's cards. A card may name a project, or
   none yet.
 
