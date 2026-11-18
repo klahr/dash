@@ -301,3 +301,33 @@ func waitFor(t *testing.T, ok func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+// A project's MaxParallel caps its tasks in progress at once, on runners
+// too: the rest stay queued, saying why, until one finishes.
+func TestProjectMaxParallel(t *testing.T) {
+	parallel(t)
+
+	e, st, rem, _ := remoteEngine(t)
+	shared, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", RunsOn: []string{"any"}, MaxParallel: 2})
+	a, b, c := queued(t, st, shared), queued(t, st, shared), queued(t, st, shared)
+
+	e.dispatch(context.Background())
+	if len(rem.sent) != 2 {
+		t.Fatalf("sent %d tasks, want 2", len(rem.sent))
+	}
+	got, _ := st.GetTodo(c.ID)
+	if got.Status != model.StatusQueued || got.Waiting != ProjectFullNote(2) {
+		t.Fatalf("third task: %+v", got)
+	}
+
+	if _, err := st.SetStatus(a.ID, model.StatusReview, ""); err != nil {
+		t.Fatal(err)
+	}
+	e.dispatch(context.Background())
+	if got, _ := st.GetTodo(c.ID); got.Status != model.StatusInProgress || got.Waiting != "" {
+		t.Fatalf("after one finished: %+v", got)
+	}
+	if got, _ := st.GetTodo(b.ID); got.Status != model.StatusInProgress {
+		t.Fatalf("second task: %+v", got)
+	}
+}

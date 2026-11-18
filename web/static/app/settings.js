@@ -41,6 +41,7 @@ export function openSettings() {
   checkTagFormat();
   f.max_run_minutes.value = p.max_run_minutes || "";
   f.max_turns.value = p.max_turns || "";
+  f.max_parallel.value = p.max_parallel || "";
   f.use_color.checked = !!p.color;
   f.color.value = p.color || "#8aa4ff";
   f.color.disabled = !p.color;
@@ -206,6 +207,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     tag_format: f.tag_format.value.trim() || "X.Y.Z",
     max_run_minutes: Number(f.max_run_minutes.value) || 0,
     max_turns: Number(f.max_turns.value) || 0,
+    max_parallel: Number(f.max_parallel.value) || 0,
     color: f.use_color.checked ? f.color.value : "",
     icon: f.icon.value,
     ...($("#settings-runners-field").hidden ? {} : { runs_on: typedRunsOn() }),

@@ -136,6 +136,11 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
 
 Queue as many tasks as you like: they run in parallel, each in its own worktree.
 
+**Limit a project's tasks at once.** In **Project settings → General**, set **Tasks at once**.
+At most that many of the project's tasks run at the same time, on this computer and on its
+runners together. The others stay queued, and say why, until one finishes. Leave it empty for no
+limit of the project's own. The API field is `max_parallel` (`0` for no limit).
+
 **Who made a task.** The task's pane says who created it ("Created by Ana", or "Created by Dash"
 for a task Dash made itself). When your organization has more than one member, each card also
 shows its creator's picture or initial, and the filter row above the board has **Mine**: press it
@@ -177,7 +182,7 @@ paces itself from its own setting in `usage.json`.
 **Start now.** To run one queued task while the queue waits for the pace, open it and click
 **Start now** (or **⋯ → Start now, despite the weekly pace**). It starts as soon as a lane is
 free; pacing goes on for the other tasks. Only the
-pace is skipped: a usage limit, a paused queue and unmerged dependencies still hold it back. The
+pace is skipped: a usage limit, a paused queue, the project's **Tasks at once** and unmerged dependencies still hold it back. The
 task's detail says it starts now, and once it runs, that the run counts toward usage, so the queue
 may wait a little longer afterwards. Start now is used up by that run: later runs (a rework, a
 retry) follow the pace again. The API is `POST /api/todos/{id}/start-now`; a chat can do it with

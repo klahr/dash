@@ -99,7 +99,7 @@ type TodoEngine struct {
 	running     map[string]context.CancelFunc
 	workers     sync.WaitGroup         // the goroutines working on running todos (see Wait)
 	interrupted map[string]string      // running todo id → why Interrupt stopped it
-	sending     map[string]bool        // todo id → being sent to a runner (see Claimer)
+	sending     map[string]string      // todo id → its project id, while being sent to a runner (see Claimer)
 	runnerLocks map[string]*sync.Mutex // runner id → held while a task is sent to it
 	// resolving holds the todos (id → project id) dispatched to fix a merge
 	// conflict, until they have landed or left the fix-and-merge path.
@@ -214,7 +214,8 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 			local, forced = false, false
 		}
 		var next *model.Todo
-		var all []model.Todo // loaded only when a queued todo has dependencies or builds on a task
+		var all []model.Todo     // loaded only when a queued todo has dependencies or builds on a task
+		busy := map[string]int{} // project id → its tasks in progress or being sent, counted when needed
 		for _, q := range e.Store.ListTodos("", model.StatusQueued) {
 			if q.Paused || sent[q.ID] || e.isSending(q.ID) {
 				continue
@@ -244,11 +245,23 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 					continue
 				}
 			}
+			if p.MaxParallel > 0 {
+				n, ok := busy[p.ID]
+				if !ok {
+					n = e.projectBusy(p.ID)
+					busy[p.ID] = n
+				}
+				if n >= p.MaxParallel {
+					e.wait(q, ProjectFullNote(p.MaxParallel))
+					continue
+				}
+			}
 			if e.Remote != nil {
 				// The hub: tasks go to runners, never run here.
 				if p.OnRunners() {
 					sent[q.ID] = true
 					e.sendToRunner(ctx, p, q)
+					delete(busy, p.ID) // counted afresh: it may be on its way now
 				} else {
 					e.wait(q, NoRunnerLinked)
 				}
@@ -352,9 +365,9 @@ func (e *TodoEngine) sendToRunner(ctx context.Context, p model.Project, t model.
 	}
 	e.mu.Lock()
 	if e.sending == nil {
-		e.sending, e.runnerLocks = map[string]bool{}, map[string]*sync.Mutex{}
+		e.sending, e.runnerLocks = map[string]string{}, map[string]*sync.Mutex{}
 	}
-	e.sending[t.ID] = true
+	e.sending[t.ID] = t.ProjectID
 	lock := e.runnerLocks[runnerID]
 	if lock == nil {
 		lock = &sync.Mutex{}
@@ -383,7 +396,32 @@ const sendTimeout = 30 * time.Second
 func (e *TodoEngine) isSending(id string) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.sending[id]
+	return e.sending[id] != ""
+}
+
+// projectBusy counts project projectID's tasks that take one of its
+// Project.MaxParallel places: in progress (here or on a runner), or being
+// sent to a runner. A task sent just now may be counted twice for a moment,
+// never not at all.
+func (e *TodoEngine) projectBusy(projectID string) int {
+	e.mu.Lock()
+	n := 0
+	for _, pid := range e.sending {
+		if pid == projectID {
+			n++
+		}
+	}
+	e.mu.Unlock()
+	return n + len(e.Store.ListTodos(projectID, model.StatusInProgress))
+}
+
+// ProjectFullNote is why a queued task waits while its project has limit
+// tasks in progress already (model.Project.MaxParallel).
+func ProjectFullNote(limit int) string {
+	if limit == 1 {
+		return "the project runs one task at a time; it starts when the running one finishes"
+	}
+	return fmt.Sprintf("the project runs at most %d tasks at a time; it starts when one of them finishes", limit)
 }
 
 // sentToRunner records the outcome of sending t to a runner: in progress

@@ -420,6 +420,7 @@ type projectUpdate struct {
 	InvestigateCI  *bool     `json:"investigate_ci"`
 	MaxRunMinutes  *int      `json:"max_run_minutes"`
 	MaxTurns       *int      `json:"max_turns"`
+	MaxParallel    *int      `json:"max_parallel"`
 	Color          *string   `json:"color"`
 	Icon           *string   `json:"icon"`
 	TagFormat      *string   `json:"tag_format"`
@@ -636,6 +637,9 @@ func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runs
 	}
 	if req.MaxTurns != nil {
 		p.MaxTurns = max(0, *req.MaxTurns)
+	}
+	if req.MaxParallel != nil {
+		p.MaxParallel = max(0, min(*req.MaxParallel, model.MaxProjectParallel))
 	}
 	if req.InvestigateCI != nil {
 		v := *req.InvestigateCI

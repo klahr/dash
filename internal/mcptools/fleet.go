@@ -716,6 +716,7 @@ var ProjectSettings = []Param{
 	{"tag_format", "string", "How release tags are named: X, Y, Z are major, minor, patch, e.g. \"vX.Y.Z\" (default \"X.Y.Z\").", false},
 	{"max_run_minutes", "integer", "Time limit for one Claude run (0 for the default).", false},
 	{"max_turns", "integer", "Turn limit for one Claude run (0 for the default).", false},
+	{"max_parallel", "integer", "Most of the project's tasks in progress at once (0 for no limit of its own).", false},
 	{"color", "string", "Color marking the project, like \"#3a7bd5\" (\"\" for none).", false},
 }
 

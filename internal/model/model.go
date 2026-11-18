@@ -134,6 +134,10 @@ type Project struct {
 	// for a human to answer a permission prompt doesn't count.
 	MaxRunMinutes int `json:"max_run_minutes,omitempty"`
 	MaxTurns      int `json:"max_turns,omitempty"`
+	// MaxParallel is the most of the project's tasks in progress at once,
+	// wherever they run (here or on its runners); 0 means no limit of its
+	// own. The others stay queued until one finishes.
+	MaxParallel int `json:"max_parallel,omitempty"`
 	// SyncError is set while the default branch can't be synced with or
 	// pushed to origin (e.g. it diverged); cleared on the next success.
 	SyncError string `json:"sync_error,omitempty"`
@@ -256,7 +260,9 @@ func (p Project) InvestigatesCI() bool { return p.InvestigateCI == nil || *p.Inv
 const (
 	DefaultMaxAutoFixes  = 2
 	DefaultMaxRunMinutes = 60
-	DefaultMaxTurns      = 200
+	// MaxProjectParallel bounds Project.MaxParallel.
+	MaxProjectParallel = 64
+	DefaultMaxTurns    = 200
 
 	MergeLocal = "local"
 	MergePR    = "pr"
