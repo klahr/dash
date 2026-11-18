@@ -123,6 +123,7 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
       h("div", { class: "detail-body", id: "pd-body" })),
     h("datalist", { id: "pl-tag-options" }));
   wireDrag(root);
+  wireSwipe($("#pl-board", root));
   wireFileDrop(paneEl(), () => pl.open);
   wireFileDrop(root, (e) => e.target.closest?.(".pl-card:not(.pl-composer)")?.dataset.id);
   renderFilter();
@@ -492,6 +493,46 @@ function wireDrag(root) {
   root.addEventListener("click", (e) => {
     if (pl.suppressClick && e.target.closest?.(".pl-card")) { e.stopPropagation(); e.preventDefault(); }
   }, true);
+}
+
+// ---- swiping between columns (phones), as the task board does
+// (branches.js): a clear sideways swipe on the board moves to the next
+// column (left) or the previous one (right), as the tabs do. Passive, so
+// vertical scrolling is never held up. Not from the screen's edges (iOS's
+// back gesture), nor in a field, nor once a long press drags a card.
+const SWIPE = { min: 50, edge: 20 };
+
+function wireSwipe(board) {
+  let s = null;
+  board.addEventListener("touchstart", (e) => {
+    s = null;
+    if (desktop.matches || e.touches.length !== 1 || pl.drag) return;
+    const t = e.touches[0];
+    if (t.clientX < SWIPE.edge || t.clientX > innerWidth - SWIPE.edge) return;
+    if (e.target.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false])")) return;
+    s = { x: t.clientX, y: t.clientY };
+  }, { passive: true });
+  board.addEventListener("touchcancel", () => { s = null; }, { passive: true });
+  board.addEventListener("touchend", (e) => {
+    const start = s;
+    s = null;
+    if (!start || pl.drag || desktop.matches) return;
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const dx = t.clientX - start.x, dy = t.clientY - start.y;
+    // Clearly sideways: well past the threshold and mostly horizontal.
+    if (Math.abs(dx) <= SWIPE.min || Math.abs(dx) < 2 * Math.abs(dy)) return;
+    const d = dx < 0 ? 1 : -1;
+    const next = COLUMNS[COLUMNS.findIndex((col) => col.key === pl.lane) + d];
+    if (!next) return;
+    pl.lane = next.key;
+    renderBoard();
+    $(".pl-lanes .lane-tab[aria-selected=true]", pl.root)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (reduceMotion.matches) return;
+    $(".pl-col.active", pl.root)?.animate(
+      [{ transform: `translateX(${d * 48}px)`, opacity: 0.4 }, { transform: "none", opacity: 1 }],
+      { duration: 220, easing: EASE });
+  }, { passive: true });
 }
 
 // cardKeys: Alt+Left/Right moves a card to the column beside, Alt+Up/Down
