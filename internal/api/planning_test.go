@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/png"
 	"net/http"
@@ -183,14 +184,19 @@ func TestPlannerEventsArePlanningOnly(t *testing.T) {
 	}
 }
 
-// A card is assigned to one of the org's members, by a planner too: the
+// A card's members are the org's members, added by a planner too: the
 // people to choose from are the org's members, and the card carries its
-// assignee's name and picture. Someone outside the org is refused.
-func TestPlanningCardAssignee(t *testing.T) {
+// members' names and pictures. Someone outside the org is refused.
+func TestPlanningCardMembers(t *testing.T) {
 	s, _, _ := boardServer(t)
 	h := s.Routes()
 	a := loggedIn(t, h)
 	ph, pat := plannerOf(t, s, h)
+	admin, err := s.Auth.Accounts().EnvUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	me := admin.ID
 
 	var people []struct {
 		ID       int64  `json:"id"`
@@ -212,23 +218,23 @@ func TestPlanningCardAssignee(t *testing.T) {
 		t.Fatalf("pat isn't among the people: %s", w.Body)
 	}
 
-	c := decodeCard(t, do(t, a, "POST", "/api/planning/cards", `{"title":"Dark mode","assignee":`+strconv.FormatInt(pat.ID, 10)+`}`))
-	if c.Assignee != pat.ID || c.AssigneeName != "pat" {
-		t.Fatalf("assigned card %+v", c)
+	c := decodeCard(t, do(t, a, "POST", "/api/planning/cards", `{"title":"Dark mode","members":[`+strconv.FormatInt(pat.ID, 10)+`]}`))
+	if len(c.People) != 1 || c.People[0].ID != pat.ID || c.People[0].Username != "pat" {
+		t.Fatalf("card with a member %+v", c)
 	}
 	if _, err := raw(s).Accounts().SetAvatar(pat.ID, tinyPNG(t), time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	c = decodeCard(t, do(t, ph, "GET", "/api/planning/cards/"+c.ID, ""))
-	if c.AssigneeAvatar == 0 {
-		t.Errorf("no picture version for the assignee: %+v", c)
+	c = decodeCard(t, do(t, ph, "PATCH", "/api/planning/cards/"+c.ID, fmt.Sprintf(`{"members":[%d,%d]}`, pat.ID, me)))
+	if len(c.People) != 2 || c.People[0].Avatar == 0 || c.People[1].ID != me {
+		t.Errorf("two members, pat's picture: %+v", c.People)
 	}
-	if w := do(t, ph, "PATCH", "/api/planning/cards/"+c.ID, `{"assignee":999999}`); w.Code != http.StatusBadRequest {
-		t.Errorf("assigning a stranger: %d %s", w.Code, w.Body)
+	if w := do(t, ph, "PATCH", "/api/planning/cards/"+c.ID, `{"members":[999999]}`); w.Code != http.StatusBadRequest {
+		t.Errorf("a stranger as a member: %d %s", w.Code, w.Body)
 	}
-	c = decodeCard(t, do(t, ph, "PATCH", "/api/planning/cards/"+c.ID, `{"assignee":0}`))
-	if c.Assignee != 0 || c.AssigneeName != "" {
-		t.Errorf("unassigned card %+v", c)
+	c = decodeCard(t, do(t, ph, "PATCH", "/api/planning/cards/"+c.ID, `{"members":[]}`))
+	if len(c.Members) != 0 || len(c.People) != 0 {
+		t.Errorf("card without members %+v", c)
 	}
 }
 

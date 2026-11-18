@@ -4,7 +4,7 @@ import { ask, attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { refreshMachines } from "./events.js";
 import { copyBlock } from "./prefs.js";
-import { askPassword } from "./account.js";
+import { askPassword } from "./myaccount.js";
 import { agoText } from "./branches.js";
 import { accountSection } from "./accountsheet.js";
 

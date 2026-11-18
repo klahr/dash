@@ -1664,6 +1664,8 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   transition: none; will-change: transform;
 }
 .todo.dragging { opacity: .3; }
+/* The dragged card leaves its place to the gap (app/dnd.js), which starts where it was. */
+.rail > li.drag-src { display: none; }
 .drop-slot {
   list-style: none; margin: 4px 12px 4px 44px; border-radius: var(--r-m);
   border: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 6%, transparent);
@@ -2203,9 +2205,6 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .app:has(#card-detail:not([hidden])) .page.planning { margin-left: 0; max-width: calc(100% - min(640px, 46%)); }
   .card-detail .detail-head { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
   .card-detail .detail-body { padding: var(--sp-4) 24px var(--sp-6); }
-  /* planning.html: no sidebar, the board under the top bar. */
-  .planning-app { --side-w: 0px; grid-template: "top" var(--top-h) "main" 1fr / 1fr; }
-  .planning-app .brand { width: auto; }
   :is(.commit-detail, .goal-detail, .card-detail) .detail-head { flex-direction: row-reverse; padding: 8px 8px 0 24px; border-bottom: 0; }
   :is(#cd-close, #gd-close, #pd-close) .cd-back { display: none; }
   :is(#cd-close, #gd-close, #pd-close) .cd-x { display: block; }
@@ -3229,23 +3228,26 @@ button.goal-task-open:hover { background: var(--raised); }
 .pl-card .todo.pushed:not(.selected) { background: transparent; }
 .pl-card .todo.pushed .todo-title { color: var(--muted); }
 @media (hover: hover) { .pl-card .todo { cursor: grab; } }
-.pl-card.dragging { opacity: .3; }
+/* The dragged card leaves its place to a gap where it would land (app/planning.js). */
+.pl-card.dragging { display: none; }
+.pl-slot { list-style: none; border-radius: var(--r-m); border: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 6%, transparent); animation: fade-in .15s var(--ease); }
 .pl-ghost { position: fixed; top: 0; left: 0; z-index: 60; list-style: none; pointer-events: none; box-shadow: var(--shadow-3); border-radius: var(--r-m); opacity: .95; }
 .pl-ghost .todo { background: var(--surface); }
 /* The drop line lies in the middle of the gap between two cards. */
-.pl-card.drop-before::before, .pl-card.drop-after::after { content: ""; position: absolute; z-index: 2; left: 2px; right: 2px; height: 3px; border-radius: 2px; background: var(--accent); }
-.pl-card.drop-before::before { top: calc(var(--pl-gap) / -2 - 1.5px); }
-.pl-card.drop-after::after { bottom: calc(var(--pl-gap) / -2 - 1.5px); }
 .pl-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--raised); color: var(--muted); }
-.pl-chip .ico, .pl-comments .ico { width: 12px; height: 12px; }
+.pl-chip .ico { width: 12px; height: 12px; }
+.pl-comments .ico { width: 14px; height: 14px; }
 .pl-chip.p-high { color: var(--failed); background: color-mix(in srgb, var(--failed) 14%, transparent); }
 .pl-chip.p-medium { color: var(--review); background: color-mix(in srgb, var(--review) 14%, transparent); }
 .pl-comments { display: inline-flex; align-items: center; gap: 3px; }
 .pl-project { color: var(--faint); }
 /* The assignee's face, at the end of the card's meta row. */
-.pl-assignee { display: inline-flex; margin-left: auto; }
-.pl-assignee .avatar { width: 22px; height: 22px; box-shadow: 0 0 0 2px var(--surface); }
-.pl-card .todo.selected .pl-assignee .avatar { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+/* The card's members: their faces, overlapping, at its right; past three, a count. */
+.pl-members { display: inline-flex; margin-left: auto; }
+.pl-members .avatar { width: 22px; height: 22px; box-shadow: 0 0 0 2px var(--surface); }
+.pl-members .avatar + .avatar { margin-left: -6px; }
+.pl-members .pl-more { display: inline-grid; place-items: center; border-radius: 50%; background: var(--raised); color: var(--muted); font-size: var(--fs-3xs); font-weight: 700; }
+.pl-card .todo.selected .pl-members .avatar { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 .pl-status, .pl-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--fs-s); color: var(--c, var(--muted)); }
 .pl-status-text { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .pl-status-text::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--muted)); flex: none; }
@@ -3290,11 +3292,18 @@ button.goal-task-open:hover { background: var(--raised); }
 .pl-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 12px; margin: 0 0 20px; }
 .pl-field { margin: 0; }
 .pl-field select, .pl-field input { width: 100%; }
-.pl-assign-row { display: flex; align-items: center; gap: 8px; }
-.pl-assign-row select { flex: 1; min-width: 0; }
+/* The pane's Members: a chip per member (face, name, ×), then a list to add one. Across the fields' row. */
+.pl-members-field { grid-column: 1 / -1; }
+.pl-member-list { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pl-member { display: inline-flex; align-items: center; gap: 6px; padding: 2px 2px 2px 4px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surface); }
+.pl-member .avatar { width: 22px; height: 22px; }
+.pl-member-name { font-size: var(--fs-s); }
+.pl-member .icon-btn { width: 24px; height: 24px; min-height: 0; }
+.pl-member-list select { width: auto; min-width: 9em; }
 .pl-section { margin: 0 0 22px; }
 .pl-section h3 { margin: 0 0 8px; font-size: var(--fs-m); color: var(--muted); }
-.pl-desc { overflow-wrap: anywhere; }
+/* The description: a text box that is always there, as tall as its text. */
+.pl-desc-edit { width: 100%; min-height: 6.5em; max-height: 60vh; field-sizing: content; resize: vertical; }
 .pl-edit { display: grid; gap: 10px; }
 .pl-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .pl-suggest-box { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 18px; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--merged) 45%, var(--line)); border-radius: var(--r-m); background: color-mix(in srgb, var(--merged) 10%, var(--surface)); }
@@ -3321,10 +3330,12 @@ button.goal-task-open:hover { background: var(--raised); }
 .pl-pick-item:disabled { opacity: .6; cursor: default; }
 .pl-pick-item .ico { width: 16px; height: 16px; flex: none; color: var(--muted); }
 
-/* planning.html's top bar: the org, the live dot and the account menu. */
-.pl-topbar .pl-org { margin-right: auto; color: var(--muted); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pl-topbar .pl-who { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: var(--r-s); cursor: pointer; list-style: none; }
-.pl-topbar .pl-who svg { width: 18px; height: 18px; }
+/* planning.html: the app's shell with Planning its one section (planning-page.js). The top
+   bar names the org; the sidebar (desktop) and the menu drawer (phone) hold Planning and the
+   account menu. A phone has no bottom nav: one section needs none, the drawer has it. */
+.planning-app .pl-org { margin-right: auto; color: var(--muted); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .planning-app main { padding-bottom: var(--safe-b); }
-.pl-topbar .foot-menu-list a { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border-radius: var(--r-s); color: var(--text); text-decoration: none; font-size: var(--fs-m); white-space: nowrap; }
-.pl-topbar .foot-menu-list a:hover { background: var(--raised); }
+@media (max-width: 1023px) {
+  .planning-app .nav { display: contents; }
+  .planning-app .nav > button { display: none; }
+}

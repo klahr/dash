@@ -40,12 +40,13 @@ const (
 	CardLow    = "low"
 )
 
-// Limits on a card's text.
+// Limits on a card's text, and on its members.
 const (
 	MaxCardTitle       = 200
 	MaxCardDescription = 20000
 	MaxCardTarget      = 60
 	MaxCardComment     = 10000
+	MaxCardMembers     = 50
 )
 
 // Card is one item of the plan. ProjectID is "" for a card of no project in
@@ -61,8 +62,9 @@ type Card struct {
 	Priority    string     `json:"priority"`
 	// Target is when it should ship: free text, a version ("1.4") or a date.
 	Target string `json:"target"`
-	// Assignee is the member of the org who owns the card (0: nobody).
-	Assignee  int64     `json:"assignee"`
+	// Members are the people in the org on the card (user ids), in the
+	// order they were added.
+	Members   []int64   `json:"members"`
 	CreatedBy int64     `json:"created_by"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -125,6 +127,19 @@ func CleanCard(c *Card) error {
 	default:
 		return fmt.Errorf("unknown priority %q: use high, medium, low or none", c.Priority)
 	}
+	// Each member once, in the order given.
+	seen := map[int64]bool{}
+	members := []int64{}
+	for _, id := range c.Members {
+		if id > 0 && !seen[id] {
+			seen[id] = true
+			members = append(members, id)
+		}
+	}
+	if len(members) > MaxCardMembers {
+		return fmt.Errorf("a card has at most %d members", MaxCardMembers)
+	}
+	c.Members = members
 	return nil
 }
 

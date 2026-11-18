@@ -123,14 +123,39 @@ func (o *OrgStore) emitCard(id string, deleted bool) {
 	}
 }
 
-const cardColumns = "c.id, c.org_id, c.project_id, c.title, c.description, c.col, c.position, c.priority, c.target, COALESCE(c.assignee, 0), COALESCE(c.created_by, 0), c.created_at, c.updated_at"
+const cardColumns = "c.id, c.org_id, c.project_id, c.title, c.description, c.col, c.position, c.priority, c.target, COALESCE(c.created_by, 0), c.created_at, c.updated_at"
 
 func scanCard(sc interface{ Scan(...any) error }) (model.Card, error) {
-	var c model.Card
+	c := model.Card{Members: []int64{}}
 	var created, updated int64
-	err := sc.Scan(&c.ID, &c.OrgID, &c.ProjectID, &c.Title, &c.Description, &c.Column, &c.Position, &c.Priority, &c.Target, &c.Assignee, &c.CreatedBy, &created, &updated)
+	err := sc.Scan(&c.ID, &c.OrgID, &c.ProjectID, &c.Title, &c.Description, &c.Column, &c.Position, &c.Priority, &c.Target, &c.CreatedBy, &created, &updated)
 	c.CreatedAt, c.UpdatedAt = time.Unix(created, 0).UTC(), time.Unix(updated, 0).UTC()
 	return c, err
+}
+
+type rowsQuerier interface {
+	Query(string, ...any) (*sql.Rows, error)
+}
+
+// cardMembers reads the members of the cards the query (with args) picks,
+// by card, in the order they were added.
+func cardMembers(q rowsQuerier, where string, args ...any) (map[string][]int64, error) {
+	rows, err := q.Query("SELECT m.card_id, m.user_id FROM planning_card_members m JOIN planning_cards c ON c.id = m.card_id WHERE "+where+
+		" ORDER BY m.added_at, m.rowid", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]int64{}
+	for rows.Next() {
+		var id string
+		var uid int64
+		if err := rows.Scan(&id, &uid); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], uid)
+	}
+	return out, rows.Err()
 }
 
 // errNoOrg: planning is an org's, and this view has none.
@@ -161,7 +186,19 @@ func (o *OrgStore) ListCards(projectID string) ([]model.Card, error) {
 		}
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	members, err := cardMembers(o.s.db, "c.org_id = ?", o.org)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		if m := members[out[i].ID]; m != nil {
+			out[i].Members = m
+		}
+	}
+	return out, nil
 }
 
 // GetCard returns one of the org's cards.
@@ -170,11 +207,19 @@ func (o *OrgStore) GetCard(id string) (model.Card, error) {
 }
 
 func getCard(q interface {
+	rowsQuerier
 	QueryRow(string, ...any) *sql.Row
 }, org int64, id string) (model.Card, error) {
 	c, err := scanCard(q.QueryRow("SELECT "+cardColumns+" FROM planning_cards c WHERE c.id = ? AND c.org_id = ?", id, org))
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Card{}, ErrNotFound
+	}
+	if err != nil {
+		return c, err
+	}
+	members, err := cardMembers(q, "c.id = ?", id)
+	if m := members[id]; m != nil {
+		c.Members = m
 	}
 	return c, err
 }
@@ -187,23 +232,63 @@ func (o *OrgStore) cardProject(projectID string) error {
 	return nil
 }
 
-// ErrBadAssignee: a card's assignee must be a member of its org.
-var ErrBadAssignee = errors.New("the assignee isn't a member of this organization")
+// ErrBadMember: a card's members must be members of its org.
+var ErrBadMember = errors.New("a card's members must be in this organization")
 
-// cardAssignee checks that a card's assignee, if it has one, is a member
-// of the org.
-func (o *OrgStore) cardAssignee(q interface {
-	QueryRow(string, ...any) *sql.Row
-}, uid int64) error {
-	if uid == 0 {
-		return nil
+// checkMembers checks that each of uids is a member of the org.
+func (o *OrgStore) checkMembers(q querier, uids []int64) error {
+	for _, uid := range uids {
+		var one int
+		err := q.QueryRow("SELECT 1 FROM org_memberships WHERE user_id = ? AND org_id = ?", uid, o.org).Scan(&one)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrBadMember
+		}
+		if err != nil {
+			return err
+		}
 	}
-	var one int
-	err := q.QueryRow("SELECT 1 FROM org_memberships WHERE user_id = ? AND org_id = ?", uid, o.org).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrBadAssignee
+	return nil
+}
+
+// setMembers makes the card's members uids: those no longer in it go,
+// new ones are added after the others (the ones staying keep their place).
+func setMembers(tx *sql.Tx, cardID string, uids []int64, now time.Time) error {
+	keep := map[int64]bool{}
+	for _, uid := range uids {
+		keep[uid] = true
 	}
-	return err
+	had, err := cardMembers(tx, "c.id = ?", cardID)
+	if err != nil {
+		return err
+	}
+	for _, uid := range had[cardID] {
+		if !keep[uid] {
+			if _, err := tx.Exec("DELETE FROM planning_card_members WHERE card_id = ? AND user_id = ?", cardID, uid); err != nil {
+				return err
+			}
+		}
+	}
+	for _, uid := range added(had[cardID], uids) {
+		if _, err := tx.Exec("INSERT INTO planning_card_members (card_id, user_id, added_at) VALUES (?, ?, ?)", cardID, uid, now.Unix()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// added is who of now isn't in was.
+func added(was, now []int64) []int64 {
+	in := map[int64]bool{}
+	for _, id := range was {
+		in[id] = true
+	}
+	var out []int64
+	for _, id := range now {
+		if !in[id] {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // CreateCard adds a card at the end of its column. c must be cleaned
@@ -215,7 +300,10 @@ func (o *OrgStore) CreateCard(c model.Card) (model.Card, error) {
 	if err := o.cardProject(c.ProjectID); err != nil {
 		return c, err
 	}
-	if err := o.cardAssignee(o.s.db, c.Assignee); err != nil {
+	if c.Members == nil {
+		c.Members = []int64{}
+	}
+	if err := o.checkMembers(o.s.db, c.Members); err != nil {
 		return c, err
 	}
 	c.ID, c.OrgID, c.CreatedBy = NewID(), o.org, o.user
@@ -226,10 +314,13 @@ func (o *OrgStore) CreateCard(c model.Card) (model.Card, error) {
 		if err := tx.QueryRow("SELECT COALESCE(MAX(position) + 1, 0) FROM planning_cards WHERE org_id = ? AND col = ?", o.org, c.Column).Scan(&c.Position); err != nil {
 			return err
 		}
-		_, err := tx.Exec(`INSERT INTO planning_cards (id, org_id, project_id, title, description, col, position, priority, target, assignee, created_by, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, 0), NULLIF(?, 0), ?, ?)`,
-			c.ID, c.OrgID, c.ProjectID, c.Title, c.Description, c.Column, c.Position, c.Priority, c.Target, c.Assignee, c.CreatedBy, c.CreatedAt.Unix(), c.UpdatedAt.Unix())
-		return err
+		_, err := tx.Exec(`INSERT INTO planning_cards (id, org_id, project_id, title, description, col, position, priority, target, created_by, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, 0), ?, ?)`,
+			c.ID, c.OrgID, c.ProjectID, c.Title, c.Description, c.Column, c.Position, c.Priority, c.Target, c.CreatedBy, c.CreatedAt.Unix(), c.UpdatedAt.Unix())
+		if err != nil {
+			return err
+		}
+		return setMembers(tx, c.ID, c.Members, c.CreatedAt)
 	})
 	o.s.mu.Unlock()
 	if err != nil {
@@ -240,7 +331,7 @@ func (o *OrgStore) CreateCard(c model.Card) (model.Card, error) {
 }
 
 // UpdateCard applies fn to the card and stores its title, description,
-// project, priority, target and assignee (fn must leave it clean). Its column and
+// project, priority, target and members (fn must leave it clean). Its column and
 // position change with MoveCard only.
 func (o *OrgStore) UpdateCard(id string, fn func(*model.Card) error) (model.Card, error) {
 	var c model.Card
@@ -250,7 +341,7 @@ func (o *OrgStore) UpdateCard(id string, fn func(*model.Card) error) (model.Card
 		if c, err = getCard(tx, o.org, id); err != nil {
 			return err
 		}
-		col, pos, assignee := c.Column, c.Position, c.Assignee
+		col, pos, members := c.Column, c.Position, c.Members
 		if err := fn(&c); err != nil {
 			return err
 		}
@@ -258,17 +349,18 @@ func (o *OrgStore) UpdateCard(id string, fn func(*model.Card) error) (model.Card
 		if err := o.cardProject(c.ProjectID); err != nil {
 			return err
 		}
-		// Checked when it changes only: an assignee who has left the org
-		// since doesn't stop other changes to the card.
-		if c.Assignee != assignee {
-			if err := o.cardAssignee(tx, c.Assignee); err != nil {
-				return err
-			}
+		// Only the members added are checked: one who has left the org since
+		// doesn't stop other changes to the card.
+		if err := o.checkMembers(tx, added(members, c.Members)); err != nil {
+			return err
 		}
 		c.UpdatedAt = time.Now().UTC().Truncate(time.Second)
-		_, err = tx.Exec("UPDATE planning_cards SET project_id = ?, title = ?, description = ?, priority = ?, target = ?, assignee = NULLIF(?, 0), updated_at = ? WHERE id = ?",
-			c.ProjectID, c.Title, c.Description, c.Priority, c.Target, c.Assignee, c.UpdatedAt.Unix(), id)
-		return err
+		_, err = tx.Exec("UPDATE planning_cards SET project_id = ?, title = ?, description = ?, priority = ?, target = ?, updated_at = ? WHERE id = ?",
+			c.ProjectID, c.Title, c.Description, c.Priority, c.Target, c.UpdatedAt.Unix(), id)
+		if err != nil {
+			return err
+		}
+		return setMembers(tx, id, c.Members, c.UpdatedAt)
 	})
 	o.s.mu.Unlock()
 	if err != nil {

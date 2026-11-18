@@ -1,14 +1,21 @@
 // planning.html: Planning for planners (product owners), who land here and
 // use nothing else (internal/api/planner.go). The board is app/planning.js,
-// as in the app's Planning view; this page adds the top bar (org, account
-// menu) and the live updates, whose stream sends a planner Planning's
-// events only. Anyone else is sent to the app, on its Planning view.
-import { $, fill, h, ico } from "./app/dom.js";
+// as in the app's Planning view. This page adds the app's shell around it:
+// the sidebar on desktop (which the menu button collapses to its icons) and
+// the menu drawer on a phone, with Planning as the one section and the
+// account menu at the bottom (Account, org switch, Log out). It also keeps
+// the live updates, whose stream sends a planner Planning's events only.
+// Anyone else is sent to the app, on its Planning view.
+import { $, $$, h, ico } from "./app/dom.js";
 import { api } from "./app/api.js";
 import { attempt, fail } from "./app/dialogs.js";
 import * as store from "./app/store.js";
-import { wsURL } from "./app/viewport.js";
+import { state } from "./app/state.js";
+import { desktop, wsURL } from "./app/viewport.js";
 import { loadPlanning, mountPlanning, onPlanningEvent } from "./app/planning.js";
+import { openAccount } from "./app/accountsheet.js";
+import { showOwnAvatar } from "./app/avatar.js";
+import { accountHooks } from "./app/myaccount.js";
 
 const me = await api("GET", "/api/me", null, "");
 if (me.org?.role !== "planner") {
@@ -19,31 +26,49 @@ if (me.org?.role !== "planner") {
 }
 
 function start() {
-  $("#pl-user").textContent = me.username;
-  $("#pl-org").textContent = me.org.name;
+  showMe(me);
   document.title = `Planning · ${me.org.name}`;
-  const orgs = me.orgs || [];
-  const sw = $("#org-switch");
-  sw.hidden = orgs.length < 2;
-  fill(sw, ...orgs.map((o) => h("button", {
-    type: "button", class: o.id === me.org.id ? "active" : "", "aria-current": o.id === me.org.id ? "true" : null,
-    onclick: attempt(() => switchOrg(o)),
-  }, ico(o.id === me.org.id ? "check" : "users"), o.name)));
-  $("#pl-logout").addEventListener("click", attempt(async () => {
+  accountHooks.reloadMe = async () => showMe(await api("GET", "/api/me", null, ""));
+  $("#account-open").addEventListener("click", attempt(async () => { closeMenus(); await openAccount(); }));
+  $("#logout").addEventListener("click", attempt(async () => {
     await fetch("/api/logout", { method: "POST" });
     location.replace("/login.html");
   }));
+  // Planning is the one section: picking it only closes the drawer.
+  for (const b of $$("[data-view=planning]")) b.addEventListener("click", () => setMenu(false));
 
   mountPlanning($("#planning-main"), {
     planner: true,
     paneParent: $(".app"),
     hooks: {
-      background: () => [$(".pl-topbar"), $("#planning-main")],
+      background: () => [$(".topbar"), $(".sidebar"), $("#planning-main")],
       me: () => ({ id: me.user.id, admin: false }),
     },
   });
   loadPlanning().catch(fail);
   connect();
+}
+
+// showMe shows who is signed in: the account menu (name, picture, the orgs
+// to switch to) and the org in the top bar. The Account sheet reads state.me.
+function showMe(m) {
+  state.me = m;
+  $("#pl-org").textContent = m.org.name;
+  $("#foot-user").textContent = m.username;
+  $("#foot-menu summary").title = `Account menu · ${m.username} in ${m.org.name}`;
+  $("#foot-menu summary").setAttribute("aria-label", `${m.username}, account menu`);
+  showOwnAvatar();
+  $("#google-body").hidden = !m.google_available;
+  const orgs = m.orgs || [];
+  const sw = $("#org-switch");
+  sw.hidden = orgs.length < 2;
+  sw.replaceChildren(...(orgs.length < 2 ? [] : [
+    h("span", { class: "org-switch-label" }, "Switch organization"),
+    ...orgs.map((o) => h("button", {
+      type: "button", class: o.id === m.org.id ? "active" : "", "aria-current": o.id === m.org.id ? "true" : null,
+      onclick: attempt(() => switchOrg(o)),
+    }, ico(o.id === m.org.id ? "check" : "users"), o.name)),
+  ]));
 }
 
 async function switchOrg(o) {
@@ -52,6 +77,66 @@ async function switchOrg(o) {
   if (hosts) { location.assign(`${hosts.base_url}/go/${encodeURIComponent(o.slug)}`); return; }
   await api("POST", "/api/auth/switch-org", { org_id: o.id }, "");
   location.replace("/"); // a planner there comes back here; anyone else gets the app
+}
+
+// ---- the sidebar (desktop) and the menu drawer (phone), as in the app
+// (app/projects.js): the menu button collapses the sidebar to its icons on
+// desktop and opens the drawer on a phone, where the drawer is modal.
+const app = $(".app");
+const menuBtn = $("#menu-open");
+const menuOpen = () => app.classList.contains("menu-open");
+const sideCollapsed = () => app.classList.contains("side-collapsed");
+function syncMenuBtn() {
+  const label = !desktop.matches ? "Menu" : sideCollapsed() ? "Expand sidebar" : "Collapse sidebar";
+  menuBtn.setAttribute("aria-expanded", String(desktop.matches ? !sideCollapsed() : menuOpen()));
+  menuBtn.setAttribute("aria-label", label);
+  menuBtn.title = desktop.matches ? `${label} ([)` : "";
+}
+function setSideCollapsed(on) {
+  app.classList.toggle("side-collapsed", on);
+  store.setFlag("dash.sideCollapsed", on);
+  syncMenuBtn();
+}
+function setMenu(open) {
+  open = open && !desktop.matches;
+  const wasOpen = menuOpen();
+  const menu = $("#menu");
+  app.classList.toggle("menu-open", open);
+  $("#menu-scrim").hidden = !open;
+  if (open !== wasOpen) {
+    for (const el of [$(".topbar"), $("#planning-main")]) el.inert = open;
+    if (open) { menu.setAttribute("role", "dialog"); menu.setAttribute("aria-modal", "true"); menu.setAttribute("aria-label", "Menu"); }
+    else { menu.removeAttribute("role"); menu.removeAttribute("aria-modal"); menu.removeAttribute("aria-label"); }
+    if (open) $(".menu-view", menu).focus();
+    else if (!document.activeElement || document.activeElement === document.body || menu.contains(document.activeElement)) menuBtn.focus();
+  }
+  syncMenuBtn();
+}
+function closeMenus() {
+  $("#foot-menu").open = false;
+  setMenu(false);
+}
+app.classList.toggle("side-collapsed", store.flag("dash.sideCollapsed"));
+syncMenuBtn();
+menuBtn.addEventListener("click", () => desktop.matches ? setSideCollapsed(!sideCollapsed()) : setMenu(!menuOpen()));
+$("#menu-close").addEventListener("click", () => setMenu(false));
+$("#menu-scrim").addEventListener("click", () => setMenu(false));
+desktop.addEventListener("change", () => setMenu(false));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && menuOpen()) { e.preventDefault(); setMenu(false); return; }
+  // [ collapses the sidebar, as in the app; not while typing.
+  if (e.key === "[" && desktop.matches && !e.ctrlKey && !e.metaKey && !e.altKey &&
+    !e.target.closest?.("input, textarea, select, [contenteditable], dialog")) setSideCollapsed(!sideCollapsed());
+});
+// The account menu closes on picking an item, a click outside it or Esc.
+{
+  const menu = $("#foot-menu");
+  $(".foot-menu-list", menu).addEventListener("click", () => { menu.open = false; });
+  document.addEventListener("click", (e) => { if (!menu.contains(e.target)) menu.open = false; });
+  menu.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !menu.open) return;
+    e.stopPropagation(); menu.open = false; $("summary", menu).focus();
+  });
 }
 
 // connect keeps the event stream open: Planning's events refresh the board.

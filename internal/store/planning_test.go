@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/klahr/dash/internal/model"
@@ -191,10 +192,10 @@ func TestPlanningCards(t *testing.T) {
 	}
 }
 
-// A card's assignee is a member of its org: someone else is refused, an
-// assignee who leaves doesn't stop other changes, and an assignee whose
-// account is deleted leaves the card unassigned.
-func TestCardAssignee(t *testing.T) {
+// A card's members are members of its org: someone else is refused, one
+// who leaves doesn't stop other changes, one whose account is deleted is
+// no longer on it, and new members are added after the others.
+func TestCardMembers(t *testing.T) {
 	t.Parallel()
 
 	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), &recordedEvents{})
@@ -216,39 +217,53 @@ func TestCardAssignee(t *testing.T) {
 	}
 	stranger := addMember(t, acc, admin.ID, other.ID, "lee", RoleMember)
 	o := s.ForOrg(def.ID).AsUser(admin.ID)
+	members := func(id string) []int64 {
+		t.Helper()
+		c, err := o.GetCard(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.Members
+	}
 
-	c, err := o.CreateCard(model.Card{Title: "A", Column: model.CardIdeas, Assignee: sam})
+	c, err := o.CreateCard(model.Card{Title: "A", Column: model.CardIdeas, Members: []int64{sam}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := o.GetCard(c.ID); got.Assignee != sam {
-		t.Fatalf("assignee %d, want %d", got.Assignee, sam)
+	if got := members(c.ID); !slices.Equal(got, []int64{sam}) {
+		t.Fatalf("members %v, want [%d]", got, sam)
 	}
-	if _, err := o.CreateCard(model.Card{Title: "B", Column: model.CardIdeas, Assignee: stranger}); !errors.Is(err, ErrBadAssignee) {
-		t.Errorf("assigning another org's member: %v", err)
+	if _, err := o.CreateCard(model.Card{Title: "B", Column: model.CardIdeas, Members: []int64{stranger}}); !errors.Is(err, ErrBadMember) {
+		t.Errorf("another org's member on a card: %v", err)
 	}
-	if _, err := o.UpdateCard(c.ID, func(c *model.Card) error { c.Assignee = stranger; return nil }); !errors.Is(err, ErrBadAssignee) {
-		t.Errorf("reassigning to another org's member: %v", err)
+	if _, err := o.UpdateCard(c.ID, func(c *model.Card) error { c.Members = append(c.Members, stranger); return nil }); !errors.Is(err, ErrBadMember) {
+		t.Errorf("adding another org's member: %v", err)
 	}
-	if _, err := o.UpdateCard(c.ID, func(c *model.Card) error { c.Assignee = kim; return nil }); err != nil {
+	if _, err := o.UpdateCard(c.ID, func(c *model.Card) error { c.Members = []int64{kim, sam}; return nil }); err != nil {
 		t.Fatal(err)
+	}
+	if got := members(c.ID); !slices.Equal(got, []int64{sam, kim}) {
+		t.Errorf("members %v: sam was on it first, kim added after", got)
+	}
+	if cards, err := o.ListCards(""); err != nil || len(cards) != 1 || !slices.Equal(cards[0].Members, []int64{sam, kim}) {
+		t.Errorf("listed: %+v %v", cards, err)
 	}
 	if err := acc.RemoveMember(admin.ID, def.ID, kim); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := o.UpdateCard(c.ID, func(c *model.Card) error { c.Priority = model.CardHigh; return nil }); err != nil {
-		t.Errorf("a change to a card whose assignee left: %v", err)
-	}
-	if _, err := o.UpdateCard(c.ID, func(c *model.Card) error { c.Assignee = sam; return nil }); err != nil {
-		t.Fatal(err)
+		t.Errorf("a change to a card a member of has left: %v", err)
 	}
 	if _, err := s.db.Exec("DELETE FROM users WHERE id = ?", sam); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := o.GetCard(c.ID); got.Assignee != 0 {
-		t.Errorf("assignee %d after their account went, want 0", got.Assignee)
+	if got := members(c.ID); !slices.Equal(got, []int64{kim}) {
+		t.Errorf("members %v after sam's account went, want [%d]", got, kim)
 	}
-	if _, err := o.UpdateCard(c.ID, func(c *model.Card) error { c.Assignee = 0; return nil }); err != nil {
-		t.Errorf("unassigning: %v", err)
+	if _, err := o.UpdateCard(c.ID, func(c *model.Card) error { c.Members = nil; return nil }); err != nil {
+		t.Errorf("taking everyone off: %v", err)
+	}
+	if got := members(c.ID); len(got) != 0 {
+		t.Errorf("members %v, want none", got)
 	}
 }

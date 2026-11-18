@@ -5,12 +5,15 @@ import { EASE, ask, fail, leave, reduceMotion, toast } from "./dialogs.js";
 import { LANES, state } from "./state.js";
 import { approvable, hasPriority, laneItems, renderBoard } from "./branches.js";
 import { hoverCard } from "./hovercard.js";
+import { dropBefore, glide, restRect } from "./glide.js";
 
 // ------------------------------------------------------------------ drag & drop
 // Drag a card to another lane to act on it, or within a lane to reorder.
 // Mouse: drag after a few pixels. Touch: long-press, then drag (a quick
 // swipe still scrolls). Lane tabs are drop targets on phones.
-export const drag = { active: false, pending: null, t: null, card: null, ghost: null, slot: null, target: null, dx: 0, dy: 0, suppressClick: false };
+// The card leaves its place for a gap (the slot) where it would land; the
+// cards around the gap glide aside as it moves (glide.js).
+export const drag = { active: false, pending: null, t: null, card: null, li: null, ghost: null, slot: null, slotOff: null, target: null, dx: 0, dy: 0, aborting: false, suppressClick: false };
 
 // What dropping a todo of a status into a lane does (null = not allowed).
 function dropAction(t, lane) {
@@ -81,9 +84,17 @@ function startDrag(x, y) {
   drag.ghost.classList.add("drag-ghost");
   drag.ghost.style.width = `${r.width}px`;
   document.body.append(drag.ghost);
+  // The gap starts where the card was, as tall (its margins make up the rest).
   drag.slot = h("li", { class: "drop-slot", "aria-hidden": "true" });
-  drag.slot.style.height = `${r.height}px`;
+  drag.slot.style.height = `${Math.max(r.height - 8, 24)}px`;
   card.classList.add("dragging");
+  drag.li = card.closest(".rail > li");
+  if (drag.li) {
+    drag.li.before(drag.slot);
+    drag.li.classList.add("drag-src");
+    const sr = drag.slot.getBoundingClientRect();
+    drag.slotOff = { x: r.left - sr.left, y: r.top - sr.top }; // where the card sits by its slot
+  }
   document.body.classList.add("is-dragging");
   navigator.vibrate?.(12);
   markTargets();
@@ -115,6 +126,7 @@ function markTargets() {
 }
 
 function moveDrag(x, y) {
+  if (drag.aborting) return;
   drag.ghost.style.transform = `translate(${x - drag.dx}px, ${y - drag.dy}px) rotate(1.2deg) scale(1.02)`;
   const under = document.elementFromPoint(x, y);
   const laneEl = under?.closest(".drop-zone[data-lane], .col[data-lane], .lane-tab[data-lane]");
@@ -122,24 +134,38 @@ function moveDrag(x, y) {
   const action = lane ? dropAction(drag.t, lane) : null;
   $$(".drop-over").forEach((el) => el !== laneEl && el.classList.remove("drop-over"));
   drag.target = action ? { lane, action, index: Infinity } : null;
-  if (!action) { drag.slot.remove(); return; }
+  if (!action) { placeSlot(null); return; }
   laneEl.classList.add("drop-over");
 
   // Inside a visible column, show where the card would land.
   const col = laneEl.classList.contains("col") ? laneEl : null;
   const rail = col?.querySelector(".rail") || null;
-  if (!col || laneEl.matches(".col:not(.active)") && !desktop.matches) { drag.slot.remove(); return; }
-  const cards = [...col.querySelectorAll(".todo[data-id]")].filter((c) => c !== drag.card);
-  let index = cards.findIndex((c) => { const r = c.getBoundingClientRect(); return y < r.top + r.height / 2; });
-  if (index < 0) index = cards.length;
-  drag.target.index = index;
-  if (rail) {
-    const ref = cards[index]?.closest("li") || null;
-    if (drag.slot.nextSibling !== ref || drag.slot.parentNode !== rail) rail.insertBefore(drag.slot, ref);
-  } else {
-    col.querySelector(".col-body")?.prepend(drag.slot);
+  if (!col || laneEl.matches(".col:not(.active)") && !desktop.matches) { placeSlot(null); return; }
+  // Measured where the cards rest, not mid-glide, so the gap doesn't flicker.
+  const items = rail ? [...rail.children].filter((li) => li !== drag.slot && li !== drag.li) : [];
+  const before = dropBefore(items, y);
+  drag.target.index = before ? items.indexOf(before) : items.length;
+  const body = col.querySelector(".col-body");
+  if (rail) placeSlot(rail, before);
+  else if (body) placeSlot(body, body.firstChild === drag.slot ? drag.slot.nextSibling : body.firstChild);
+  autoScroll(body || document.scrollingElement, y);
+}
+
+// placeSlot moves the gap to before ref in parent (nowhere, without a
+// parent); what's around where it was and where it goes glides.
+function placeSlot(parent, ref = null) {
+  const s = drag.slot;
+  if (parent ? s.parentNode === parent && s.nextSibling === ref : !s.parentNode) return;
+  const around = new Set();
+  for (const p of [s.parentNode, parent]) {
+    if (!p) continue;
+    for (const el of p.children) around.add(el);
+    // What follows the list in its column (Add all to queue…) moves too.
+    for (const el of p.parentNode?.children || []) around.add(el);
   }
-  autoScroll(col.querySelector(".col-body") || document.scrollingElement, y);
+  around.delete(s);
+  around.delete(drag.li);
+  glide([...around], () => parent ? parent.insertBefore(s, ref) : s.remove());
 }
 
 function autoScroll(el, y) {
@@ -150,7 +176,13 @@ function autoScroll(el, y) {
 
 function cleanupDrag() {
   drag.ghost?.remove();
-  drag.slot?.remove();
+  // The card takes the gap's place, so the board re-rendered after a drop
+  // glides it (and its neighbours) on from where they are.
+  if (drag.li && drag.slot?.parentNode?.matches(".rail")) drag.slot.replaceWith(drag.li);
+  else drag.slot?.remove();
+  drag.li?.classList.remove("drag-src");
+  drag.li = null;
+  drag.aborting = false;
   const bar = $("#drop-bar");
   if (bar) leave(bar, "leaving", () => bar.remove(), 160);
   drag.card?.classList.remove("dragging");
@@ -162,10 +194,15 @@ function cleanupDrag() {
 }
 
 function abortDrag() {
-  // Fly the ghost back to where the card was.
-  const g = drag.ghost, home = drag.card.getBoundingClientRect();
+  if (drag.aborting) return;
+  drag.aborting = true;
+  // The gap closes where it is and opens again at home, and the ghost flies back into it.
+  if (drag.li) placeSlot(drag.li.parentNode, drag.li);
+  const g = drag.ghost;
   if (g && !reduceMotion.matches) {
-    g.animate([{ transform: g.style.transform }, { transform: `translate(${home.left}px, ${home.top}px)` }], { duration: 200, easing: EASE });
+    let home = drag.card.getBoundingClientRect();
+    if (drag.li) { const s = restRect(drag.slot); home = { left: s.left + drag.slotOff.x, top: s.top + drag.slotOff.y }; }
+    g.animate([{ transform: g.style.transform }, { transform: `translate(${home.left}px, ${home.top}px)` }], { duration: 200, easing: EASE, fill: "forwards" });
     setTimeout(() => { cleanupDrag(); renderBoard(); }, 190);
   } else { cleanupDrag(); renderBoard(); }
 }
@@ -209,7 +246,9 @@ async function endDrag() {
 async function reorder(t, laneKey, index, inLane = false) {
   if (!Number.isFinite(index)) return; // dropped on a lane tab: no position
   const all = laneItems()[laneKey];
-  if (inLane && all.findIndex((x) => x.id === t.id) === index) return;
+  // The card sits where it was dropped (cleanupDrag): a drop that changes
+  // nothing still renders, to glide it back to its place in the order.
+  if (inLane && all.findIndex((x) => x.id === t.id) === index) { renderBoard(); return; }
   const prio = all.filter((x) => x.id !== t.id && hasPriority(x));
   const k = prio.length;
   let changes; // [task, new priority (null: none)]
@@ -230,7 +269,7 @@ async function reorder(t, laneKey, index, inLane = false) {
     }
   }
   changes = changes.filter(([x, p]) => (x.priority ?? null) !== p);
-  if (!changes.length) return;
+  if (!changes.length) { renderBoard(); return; }
   for (const [x, p] of changes) state.todos.set(x.id, { ...state.todos.get(x.id), priority: p });
   renderBoard();
   await Promise.all(changes.map(([x, p]) => api("PATCH", `/api/todos/${x.id}`, { priority: p })));

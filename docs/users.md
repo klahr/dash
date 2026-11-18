@@ -126,13 +126,14 @@ A planner can:
 - see, add, edit, move and delete the org's planning cards, and comment on them
 - press **Start** on a card, which makes a task or a goal in a project and links it
 - see each card's linked work through its status and titles
-- use their own account: the account menu on Planning switches orgs, has **Download my data**
-  and **Log out**
+- use their own account: the account menu at the bottom of the sidebar (in the menu on a phone)
+  switches orgs, and has **Account** (**Profile picture**, **Two-factor sign-in**, **Google
+  account** and **Your data**) and **Log out**
 
 A planner can't see or use projects, tasks, goals, chats, terminals, runners, previews,
 scans, issues, the MCP tools or the organization's members. Every such request answers
 `403`. Their live updates carry Planning's changes only. When a planner signs in, Dash opens
-Planning; the rest of the navigation isn't there for them.
+Planning, in the same sidebar as everyone else's, with **Planning** as its only section.
 
 To make someone a planner, open **Organization**, and either invite them with the role
 **Planner**, or change a member's role to **Planner**. Only owners and admins can. A planner
@@ -144,8 +145,8 @@ A planner's role is per org: someone can be a planner in one org and a member in
 
 Open **Account → Profile picture** and click **Choose picture…**. Dash crops the picture to a square
 in the middle and makes it small before saving it. It shows in the account menu, in the
-members list of **Organization**, on the board's cards you created and on Planning cards
-assigned to you. Only members of your organizations see it. **Remove** goes back
+members list of **Organization**, on the board's cards you created and on the Planning cards
+you are a member of. Only members of your organizations see it. **Remove** goes back
 to your initial.
 
 Dash takes PNG, JPEG, GIF and WebP pictures, up to 1 MB once made small.

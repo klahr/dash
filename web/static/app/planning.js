@@ -1,9 +1,9 @@
-import { renderMarkdown } from "../editor.js";
 import { $, $$, avatar, dateTimeText, fill, h, ib, ico } from "./dom.js";
 import { api } from "./api.js";
-import { ask, attempt, busy, fail, leave, toast } from "./dialogs.js";
+import { EASE, ask, attempt, busy, fail, leave, reduceMotion, toast } from "./dialogs.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
+import { dropBefore, glide } from "./glide.js";
 
 // ------------------------------------------------------------------ Planning
 // The org's plan, for a product owner (docs/planning.md): cards in four
@@ -228,7 +228,25 @@ function renderFilter() {
 
 // ---- the board
 
+// renderBoard draws the columns; cards glide from where they were to where
+// they are now (as the task board's do), new ones fade in. Not under a
+// drag: the board is drawn again once the card is dropped.
 function renderBoard() {
+  if (pl.drag) return;
+  const was = new Map($$(".pl-card[data-id]", pl.root).map((li) => [li.dataset.id, li.getBoundingClientRect()]));
+  renderColumns();
+  if (reduceMotion.matches || !was.size) return;
+  for (const li of $$(".pl-card[data-id]", pl.root)) {
+    const now = li.getBoundingClientRect();
+    if (!now.height) continue; // a column a phone doesn't show
+    const r = was.get(li.dataset.id);
+    if (!r?.height) { li.animate([{ opacity: 0, transform: "scale(.97)" }, { opacity: 1, transform: "none" }], { duration: 240, easing: EASE }); continue; }
+    const dx = r.left - now.left, dy = r.top - now.top;
+    if (Math.abs(dx) + Math.abs(dy) >= 1) li.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 320, easing: EASE });
+  }
+}
+
+function renderColumns() {
   const counts = Object.fromEntries(COLUMNS.map((col) => [col.key, pl.cards.filter((c) => c.column === col.key).length]));
   // A phone opens on the first column with cards in it.
   if (!pl.lane) pl.lane = (pl.cards.length && COLUMNS.find((col) => counts[col.key])?.key) || "ideas";
@@ -262,16 +280,20 @@ function statusEl(st, cls = "pl-status") {
     st.progress ? h("span", { class: "pl-progress" }, st.progress) : null);
 }
 
-// assignee is the card's assignee as avatar() takes a user (null: nobody).
-const assignee = (c) => c.assignee ? { id: c.assignee, username: c.assignee_name, avatar: c.assignee_avatar } : null;
+// MEMBER_FACES is how many members' faces a card shows; more are a count.
+const MEMBER_FACES = 3;
 
-// assigneeEl is the assignee's face, with their name for a tooltip and a
-// screen reader.
-function assigneeEl(c) {
-  const u = assignee(c);
-  if (!u) return null;
-  return h("span", { class: "pl-assignee", title: `Assigned to ${u.username}` },
-    avatar(u), h("span", { class: "sr-only" }, `Assigned to ${u.username}`));
+// membersEl is the card's members' faces, overlapping, with their names for
+// a tooltip and a screen reader.
+function membersEl(c) {
+  const ps = c.people || [];
+  if (!ps.length) return null;
+  const names = ps.map((p) => p.username).join(", ");
+  const more = ps.length - MEMBER_FACES;
+  return h("span", { class: "pl-members", title: `Members: ${names}` },
+    ...ps.slice(0, more > 0 ? MEMBER_FACES - 1 : MEMBER_FACES).map((p) => avatar(p)),
+    more > 0 ? h("span", { class: "avatar pl-more", "aria-hidden": "true" }, `+${more + 1}`) : null,
+    h("span", { class: "sr-only" }, `Members: ${names}`));
 }
 
 function cardEl(c) {
@@ -280,7 +302,7 @@ function cardEl(c) {
     c.target ? h("span", { class: "pl-chip pl-target", title: "Target" }, ico("flag"), c.target) : null,
     !pl.filter && c.project_name ? h("span", { class: "pl-project" }, c.project_name) : null,
     c.comments ? h("span", { class: "pl-comments", title: `${c.comments} comment${c.comments === 1 ? "" : "s"}` }, ico("comment"), String(c.comments)) : null,
-    assigneeEl(c),
+    membersEl(c),
   ].filter(Boolean);
   if (c.status?.suggest_done) meta.push(h("span", { class: "pl-suggest" }, "Ready for Done"));
   // Under the title: the status of the linked work, or else the start of the description.
@@ -296,7 +318,7 @@ function cardEl(c) {
       onclick: () => openCard(c.id).catch(fail) },
       h("span", { class: "todo-main" },
         h("button", { type: "button", class: "todo-open pl-open", "aria-controls": "card-detail", "aria-current": c.id === pl.open ? "true" : null,
-          title: "Open (Alt+arrows move it; Space over it assigns it to you)", onkeydown: (e) => cardKeys(e, c) },
+          title: "Open (Alt+arrows move it; Space over it adds or takes you off it)", onkeydown: (e) => cardKeys(e, c) },
           h("span", { class: "todo-title" }, c.title)),
         sub),
       meta.length ? h("span", { class: "todo-side" }, ...meta) : null));
@@ -304,19 +326,23 @@ function cardEl(c) {
 
 // ---- dragging, as the task board drags (dnd.js): a mouse drags after a
 // few pixels, a finger after a long press (a quick swipe still scrolls).
-// A ghost of the card follows the pointer; a line shows where it lands.
+// A ghost of the card follows the pointer. The card leaves its place for a
+// gap (the slot) where it would land, and the cards around it glide aside.
 
-// dropIndex is where in ol (among its cards but the one dragged) a drop at
-// y goes, and the card it lands before (or the last, to land after).
-function dropIndex(ol, y) {
-  const items = $$(".pl-card:not(.pl-composer)", ol).filter((li) => li.dataset.id !== pl.drag?.id);
-  const i = items.findIndex((li) => { const r = li.getBoundingClientRect(); return y < r.top + r.height / 2; });
-  return { index: i < 0 ? items.length : i, before: i < 0 ? null : items[i], last: items.at(-1) };
+// cardsOf are ol's cards, but the one dragged and one being typed.
+const cardsOf = (ol) => $$(".pl-card:not(.pl-composer):not(.pl-slot)", ol).filter((li) => li.dataset.id !== pl.drag?.id);
+
+// placeSlot moves the gap to before ref in ol (nowhere, without ol); the
+// cards where it was and where it goes glide.
+function placeSlot(ol, ref = null) {
+  const s = pl.drag.slot;
+  if (ol ? s.parentNode === ol && s.nextSibling === ref : !s.parentNode) return;
+  const around = [s.parentNode, ol].filter(Boolean).flatMap((x) => [...x.children]).filter((el) => el !== s && el !== pl.drag.li);
+  glide(around, () => ol ? ol.insertBefore(s, ref) : s.remove());
 }
 
 function clearDropMarks() {
   $$(".drop-over", pl.root).forEach((x) => x.classList.remove("drop-over"));
-  $$(".pl-card.drop-before, .pl-card.drop-after", pl.root).forEach((x) => x.classList.remove("drop-before", "drop-after"));
 }
 
 // dropTarget is the list of the column under the point, if any: its column,
@@ -337,8 +363,12 @@ function startDrag(x, y) {
   ghost.classList.add("pl-ghost");
   ghost.style.width = `${r.width}px`;
   document.body.append(ghost);
-  pl.drag = { id: p.id, li: p.li, ghost, dx: p.x - r.left, dy: p.y - r.top };
+  // The gap starts where the card was, as tall.
+  const slot = h("li", { class: "pl-slot", "aria-hidden": "true" });
+  slot.style.height = `${r.height}px`;
+  p.li.before(slot);
   p.li.classList.add("dragging");
+  pl.drag = { id: p.id, li: p.li, ghost, slot, dx: p.x - r.left, dy: p.y - r.top };
   moveDrag(x, y);
 }
 
@@ -347,13 +377,15 @@ function moveDrag(x, y) {
   d.ghost.style.transform = `translate(${x - d.dx}px, ${y - d.dy}px)`;
   clearDropMarks();
   const ol = dropTarget(x, y);
-  if (!ol) return;
+  if (!ol) { placeSlot(null); return; }
   const tab = document.elementFromPoint(x, y)?.closest?.(".pl-lanes .lane-tab");
   (tab || ol.closest(".pl-col")).classList.add("drop-over");
-  if (tab) return; // to the end of that column
-  const at = dropIndex(ol, y);
-  if (at.before) at.before.classList.add("drop-before");
-  else at.last?.classList.add("drop-after");
+  if (tab) { placeSlot(null); return; } // to the end of that column
+  // Measured where the cards rest, not mid-glide, so the gap doesn't flicker.
+  const cards = cardsOf(ol);
+  const before = dropBefore(cards, y);
+  if (ol.hidden) ol.hidden = false; // an empty column's list, to hold the gap
+  placeSlot(ol, before || cards.at(-1)?.nextSibling || (cards.length ? null : ol.firstChild));
 }
 
 // endDrag drops the card at the point (drop), or puts it back.
@@ -361,16 +393,21 @@ function endDrag(x, y, drop) {
   const d = pl.drag;
   if (!d) return;
   d.ghost.remove();
-  d.li.classList.remove("dragging");
   clearDropMarks();
   const ol = drop ? dropTarget(x, y) : null;
   const onTab = ol && document.elementFromPoint(x, y)?.closest?.(".pl-lanes .lane-tab");
-  const index = !ol ? 0 : onTab ? 1 << 20 : dropIndex(ol, y).index;
+  // Where the gap is: the cards before it in its column.
+  const index = !ol ? 0 : onTab || d.slot.parentNode !== ol ? 1 << 20 : cardsOf(ol).filter((li) => li.compareDocumentPosition(d.slot) & Node.DOCUMENT_POSITION_FOLLOWING).length;
+  // The card takes the gap's place, so the board drawn after the drop glides
+  // it and its neighbours on from where they are.
+  if (ol && d.slot.parentNode === ol) d.slot.replaceWith(d.li); else d.slot.remove();
+  d.li.classList.remove("dragging");
   pl.drag = null;
   // The click that ends a mouse drag isn't a click on the card.
   pl.suppressClick = true;
   setTimeout(() => { pl.suppressClick = false; }, 0);
   if (ol) moveCard(d.id, ol.dataset.col, index).catch(fail);
+  else renderBoard(); // back to its place, with what changed meanwhile
 }
 
 function cancelPending() {
@@ -444,24 +481,27 @@ document.addEventListener("keyup", (e) => {
 async function toggleMine(c) {
   const me = pl.hooks.me?.();
   if (!me?.id) return;
-  const mine = c.assignee === me.id;
-  const v = await call("PATCH", cardAPI(c.id), { assignee: mine ? 0 : me.id });
+  const members = c.members || [];
+  const mine = members.includes(me.id);
+  const v = await call("PATCH", cardAPI(c.id), { members: mine ? members.filter((id) => id !== me.id) : [...members, me.id] });
   const i = pl.cards.findIndex((x) => x.id === c.id);
   if (i >= 0) { pl.cards[i] = { ...pl.cards[i], ...v }; renderBoard(); }
   if (pl.open === c.id) { pl.detail = { ...pl.detail, ...v }; renderCard(); }
-  toast(mine ? "Unassigned" : "Assigned to you");
+  toast(mine ? "You're off the card" : "You're on the card");
 }
 
 // moveCard puts a card in column col at index (among the column's other
-// cards), on the board at once and then on the server.
+// cards), on the board at once and then on the server. The board is drawn
+// even when that is where it is: a drop leaves the card where it fell, and
+// what changed during the drag waits for it.
 async function moveCard(id, col, index) {
   const c = byId(id);
-  if (!c) return;
+  if (!c) { renderBoard(); return; }
   const others = pl.cards.filter((x) => x.column === col && x.id !== id).sort((a, b) => a.position - b.position);
   const pos = Math.max(0, Math.min(index, others.length));
   if (c.column === col) {
     const now = pl.cards.filter((x) => x.column === col).sort((a, b) => a.position - b.position).findIndex((x) => x.id === id);
-    if (now === pos) return;
+    if (now === pos) { renderBoard(); return; }
   }
   const from = c.column;
   others.splice(pos, 0, c);
@@ -672,16 +712,45 @@ const patchCard = (body) => async () => {
   if (i >= 0) { pl.cards[i] = { ...pl.cards[i], ...v }; renderBoard(); }
 };
 
-// assigneeOptions are the people a card may be assigned to, as [id, name]:
-// the org's members, and the card's assignee if the list doesn't have them.
-function assigneeOptions(c) {
-  const opts = pl.people.map((u) => [String(u.id), u.username]);
-  if (c.assignee && !pl.people.some((u) => u.id === c.assignee)) opts.push([String(c.assignee), c.assignee_name || "Someone"]);
-  return opts;
-}
-
 function field(label, control) {
   return h("label", { class: "field pl-field" }, h("span", {}, label), control);
+}
+
+// membersField is the card's members, each with × to take them off, and a
+// list of the org's other members to add one.
+function membersField(c) {
+  const ids = c.members || [];
+  const set = (members) => patchCard({ members })().catch(fail);
+  const others = pl.people.filter((u) => !ids.includes(u.id));
+  return h("div", { class: "field pl-field pl-members-field", role: "group", "aria-labelledby": "pd-members" },
+    h("span", { id: "pd-members" }, "Members"),
+    h("div", { class: "pl-member-list" },
+      ...(c.people || []).map((p) => h("span", { class: "pl-member" }, avatar(p), h("span", { class: "pl-member-name" }, p.username),
+        ib({ type: "button", class: "icon-btn small", "aria-label": `Take ${p.username} off the card`, title: "Take off the card",
+          onclick: () => set(ids.filter((id) => id !== p.id)) }, "x"))),
+      others.length ? h("select", { "aria-label": "Add a member", onchange: (e) => e.target.value && set([...ids, Number(e.target.value)]) },
+        h("option", { value: "" }, ids.length ? "Add…" : "Add a member…"),
+        ...others.map((u) => h("option", { value: String(u.id) }, u.username))) : null));
+}
+
+// descriptionEl is the card's description: a text box that is always there,
+// saved when it loses focus (or on Ctrl+Enter). The same box stays across
+// redraws of the card while it has focus or unsaved text, so a change from
+// elsewhere doesn't take what is being typed.
+function descriptionEl(c) {
+  const d = pl.desc;
+  if (d?.id === c.id && (document.activeElement === d.el || d.el.value !== d.saved)) return d.el;
+  const el = h("textarea", { class: "pl-desc-edit", rows: 4, maxlength: 20000, "aria-label": "Description",
+    placeholder: "What it is, who it's for, and how you'll know it's done. Markdown works." }, c.description || "");
+  const save = () => {
+    if (pl.desc?.el !== el || el.value.trim() === (pl.desc.saved || "").trim()) return;
+    const text = el.value;
+    patchCard({ description: text })().then(() => { if (pl.desc?.el === el) pl.desc.saved = text; }).catch(fail);
+  };
+  el.addEventListener("change", save);
+  el.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); } });
+  pl.desc = { id: c.id, el, saved: c.description || "" };
+  return el;
 }
 
 function renderCard() {
@@ -696,7 +765,7 @@ function renderCard() {
   fill($("#pd-actions"),
     ib({ type: "button", class: `btn small ${started ? "" : "primary"}`, title: "Make a task or a goal in a project for this card", onclick: attempt(() => startSheet(c)) }, "play", "Start…"),
     pl.planner ? null : ib({ type: "button", class: "btn small", title: "Link a task or goal that's already on a board", onclick: attempt(() => linkExistingSheet(c)) }, "link", "Link existing…"),
-    ib({ type: "button", class: "btn small", title: "Change the title and description", onclick: () => { pl.editing = true; renderCard(); $("#pd-edit-title")?.focus(); } }, "edit", "Edit"));
+    ib({ type: "button", class: "btn small", title: "Change the title", onclick: () => { pl.editing = true; renderCard(); $("#pd-edit-title")?.focus(); } }, "edit", "Rename"));
   const body = $("#pd-body");
   if (pl.error) { fill(body, h("p", { class: "error-note" }, pl.error)); return; }
 
@@ -708,9 +777,7 @@ function renderCard() {
       onchange: (e) => patchCard({ target: e.target.value })().catch(fail) })),
     field("Project", sel([["", "None yet"], ...pl.projects.map((p) => [p.id, p.name])], c.project_id || "",
       (e) => patchCard({ project: e.target.value })().catch(fail), "Project")),
-    field("Assignee", h("span", { class: "pl-assign-row" }, assignee(c) ? avatar(assignee(c)) : null,
-      sel([["", "Nobody"], ...assigneeOptions(c)], c.assignee ? String(c.assignee) : "",
-        (e) => patchCard({ assignee: Number(e.target.value) || 0 })().catch(fail), "Assignee"))));
+    membersField(c));
 
   const suggest = c.status?.suggest_done
     ? h("div", { class: "pl-suggest-box" },
@@ -718,20 +785,22 @@ function renderCard() {
       ib({ type: "button", class: "btn small primary", onclick: attempt((e) => busy(e.currentTarget, () => moveCard(c.id, "done", 0))) }, "check", "Move to Done"))
     : null;
 
-  let desc;
+  // Rename: the title in a box, above the rest.
+  let rename = null;
   if (pl.editing) {
     const t = h("input", { id: "pd-edit-title", value: c.title, maxlength: 200, autocomplete: "off", "aria-label": "Title" });
-    const d = h("textarea", { rows: 8, placeholder: "What it is, who it's for, and how you'll know it's done. Markdown works.", "aria-label": "Description" }, c.description || "");
-    const save = attempt((e) => busy(e.currentTarget, async () => { await patchCard({ title: t.value, description: d.value })(); pl.editing = false; renderCard(); }));
-    desc = h("div", { class: "pl-edit" }, field("Title", t), field("Description", d),
+    const save = attempt((e) => busy(e.currentTarget, async () => { await patchCard({ title: t.value })(); pl.editing = false; renderCard(); }));
+    t.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); save({ currentTarget: t }); }
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); pl.editing = false; renderCard(); }
+    });
+    rename = h("div", { class: "pl-edit" }, field("Title", t),
       h("div", { class: "pl-edit-actions" },
         ib({ type: "button", class: "btn small", onclick: () => { pl.editing = false; renderCard(); } }, "x", "Cancel"),
         ib({ type: "button", class: "btn small primary", onclick: save }, "check", "Save")));
-  } else {
-    desc = c.description
-      ? h("div", { class: "pl-desc reply", innerHTML: renderMarkdown(c.description) })
-      : h("p", { class: "hint" }, "No description yet. ", h("button", { type: "button", class: "link", onclick: () => { pl.editing = true; renderCard(); } }, "Add one"));
   }
+  const desc = descriptionEl(c);
+  desc.id = "pd-desc";
 
   const links = c.links || [];
   const work = h("section", { class: "pl-section", "aria-labelledby": "pd-work" },
@@ -781,7 +850,7 @@ function renderCard() {
     }) }, "trash", "Delete card"));
 
   const keep = body.scrollTop;
-  fill(body, suggest, facts, h("section", { class: "pl-section" }, h("h3", {}, "Description"), desc), work, discussion, danger);
+  fill(body, rename, suggest, facts, h("section", { class: "pl-section" }, h("h3", {}, h("label", { for: "pd-desc" }, "Description")), desc), work, discussion, danger);
   body.scrollTop = keep;
 }
 

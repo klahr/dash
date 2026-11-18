@@ -6,7 +6,8 @@ plain words. Planning is kept in Dash's database, not in a repository or `TODO.m
 belongs to the org.
 
 Open it from the sidebar: **Planning** (or `gp`). On a phone it is in the menu. A
-[planner](users.md#planners) lands on it when they sign in and sees nothing else.
+[planner](users.md#planners) lands on it when they sign in. Their sidebar has only
+**Planning** and their account.
 
 ## Cards
 
@@ -17,7 +18,8 @@ It looks like a project's **Board**: on a phone, tap a column's name at the top 
   one to **Ideas**. Type on the card what should be built: the first line is the title, the
   lines after it the description. `Enter` adds it and starts the next one, `Shift+Enter`
   starts a new line, `Esc` cancels. Clicking elsewhere adds it, if you typed something.
-- Drag a card to another column, or up and down its own. With the keyboard, focus a card
+- Drag a card to another column, or up and down its own. A gap opens where it would land,
+  and the cards around it move aside. With the keyboard, focus a card
   and press `Alt` with an arrow key. On a phone, drag it onto a column's name at the top, or change **Column** on the card.
 - The project filter at the top shows one project's cards. A card may name a project, or
   none yet.
@@ -25,14 +27,18 @@ It looks like a project's **Board**: on a phone, tap a column's name at the top 
 Click a card to open it beside the board. On a phone it opens full screen, with **Back**.
 `Esc` closes it. A card has:
 
-- a title and a description (markdown): **Edit**
+- a title: **Rename**
 - **Priority** (high, medium, low or none) and **Target**: free text, such as a version
   (`1.4`) or a date
-- **Assignee**: the person in the org who owns the card. Their picture (or initial) shows on
-  the card on the board. Choose **Nobody** to unassign it. Anyone in the org, planners too,
-  can be assigned and can assign. On the board, point at a card and press `Space` to assign it
-  to yourself; press it again to unassign it.
-- **Comments**: anyone in the org can comment; a comment's author or an admin can delete it
+- **Members**: the people in the org on the card, any number. Pick one from the list to add
+  them, and click **×** on a member to take them off. Their pictures (or initials) show on the
+  card on the board. Anyone in the org, planners too, can be a member and can add members. On
+  the board, point at a card and press `Space` to put yourself on it; press it again to take
+  yourself off.
+- **Description** (markdown): type in the box. It saves when you click elsewhere, or press
+  `Ctrl+Enter`.
+- **Comments**: anyone in the org can comment; a comment's author or an admin can delete it.
+  A card with comments shows how many on the board, by a speech bubble.
 - **Work**: the tasks and goals linked to it, each with its status
 
 ## Status
@@ -96,7 +102,7 @@ when linked work moves on.
 
 The chat has three tools for the plan (see [MCP](mcp.md#the-chats-task-tools)):
 
-- `list_cards`: the cards, with their column, priority, target, assignee and status
+- `list_cards`: the cards, with their column, priority, target, members and status
 - `create_card`: add a card
 - `link_card`: link a task or goal to a card
 
@@ -107,7 +113,7 @@ Planning is under `/api/planning/`:
 | Call                                                  | What it does                                     |
 |-------------------------------------------------------|--------------------------------------------------|
 | `GET /api/planning/cards?project=<id>`                | the cards, with status and linked work           |
-| `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `column`, `priority`, `target`, `assignee` (a user id; `0` is nobody) |
+| `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `column`, `priority`, `target`, `members` (user ids; `[]` is nobody) |
 | `GET`, `PATCH`, `DELETE /api/planning/cards/{id}`     | one card (`GET` has its comments)                |
 | `POST /api/planning/cards/{id}/move`                  | `column` and `position` (0 is the top)           |
 | `GET`, `POST /api/planning/cards/{id}/comments`       | its comments; add one: `text`                    |
@@ -115,7 +121,7 @@ Planning is under `/api/planning/`:
 | `POST /api/planning/cards/{id}/start`                 | `project` and `kind` (`task` or `goal`)          |
 | `GET /api/planning/projects`                          | the org's projects' ids, names, colors and icon URLs |
 | `GET /api/planning/projects/{id}/icon`                | a project's icon image                           |
-| `GET /api/planning/people`                            | the org's members to assign: ids, usernames and picture versions |
+| `GET /api/planning/people`                            | the org's members to add to cards: ids, usernames and picture versions |
 | `POST /api/planning/cards/{id}/links`                 | link `kind` and `id` (members)                   |
 | `DELETE /api/planning/cards/{id}/links/{kind}/{work}` | unlink (members)                                 |
 | `GET /api/planning/work?project=<id>`                 | tasks and goals to link (members)                |

@@ -106,3 +106,97 @@ func TestBrowserPlanningAddCard(t *testing.T) {
 	b.until("New card shows Ideas, with the new card in it", fmt.Sprintf(`document.querySelector("#view-planning .col.active")?.dataset.col === "ideas" && document.querySelector(%q)?.offsetWidth > 0`, ideasBox),
 		chromedp.Click(chromedp.CSS(`#view-planning .pl-new`)))
 }
+
+// A planner's Planning page has the app's shell: on a desktop the sidebar,
+// with Planning as its one section and the account menu at its foot (whose
+// Account opens the sections a planner can use); on a phone no bottom nav,
+// and the menu button opens the drawer with the same.
+func TestBrowserPlannerShell(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Dark mode", "column": "ideas"}, http.StatusCreated, nil)
+	var me struct{ Org struct{ ID int64 } }
+	h.api.must("GET", "/api/me", nil, http.StatusOK, &me)
+	var inv struct{ Token string }
+	h.api.must("POST", fmt.Sprintf("/api/orgs/%d/invitations", me.Org.ID), map[string]any{"email": "pia@example.com", "role": "planner", "password": h.password}, http.StatusCreated, &inv)
+	newClient(t, h.base).must("POST", "/api/invitations/register", map[string]any{"token": inv.Token, "username": "pia", "password": "another-long-password"}, http.StatusCreated, nil)
+
+	b := newBrowser(t, chrome)
+	b.do("sign in as the planner",
+		chromedp.Navigate(h.base+"/"),
+		chromedp.WaitVisible(chromedp.CSS(`#login input[name=username]`)),
+		chromedp.SendKeys(chromedp.CSS(`#login input[name=username]`), "pia"),
+		chromedp.SendKeys(chromedp.CSS(`#login input[name=password]`), "another-long-password"),
+		chromedp.Click(chromedp.CSS(`#login button.btn.primary`)),
+	)
+	b.waitJS("Planning with its card", `location.pathname === "/planning.html" && [...document.querySelectorAll(".pl-card .todo-title")].some((t) => t.textContent === "Dark mode")`)
+	b.waitJS("the sidebar: Planning, and the account at its foot", `document.querySelector(".sidebar").offsetWidth > 100 &&
+		document.querySelector('.nav > button[data-view=planning][aria-current=page]')?.offsetWidth > 0 &&
+		document.querySelector("#foot-user")?.textContent === "pia" && document.querySelector("#foot-menu").offsetWidth > 0`)
+	b.until("collapse the sidebar", `document.querySelector(".app").classList.contains("side-collapsed")`,
+		chromedp.Click(chromedp.CSS(`#menu-open`)))
+	b.until("expand it again", `!document.querySelector(".app").classList.contains("side-collapsed")`,
+		chromedp.Click(chromedp.CSS(`#menu-open`)))
+	b.until("open the account menu", `document.querySelector("#foot-menu").open`,
+		chromedp.Click(chromedp.CSS(`#foot-menu summary`)))
+	b.until("open Account", `document.querySelector("#account-sheet").open`,
+		chromedp.Click(chromedp.CSS(`#account-open`)))
+	b.waitJS("the planner's sections", `[...document.querySelectorAll("#account-sheet .rail-item")].filter((x) => !x.hidden).map((x) => x.dataset.rail).join() === "picture,twofactor,data"`)
+	b.until("two-factor sign-in", `document.querySelector("#twofactor-body button")?.textContent.includes("Set up")`,
+		chromedp.Click(chromedp.CSS(`#account-sheet .rail-item[data-rail=twofactor]`)))
+	b.do("close Account", chromedp.Click(chromedp.CSS(`#account-sheet .sheet-head button`)))
+
+	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	b.waitJS("no bottom nav, the drawer closed", `!matchMedia("(min-width: 1024px)").matches &&
+		!document.querySelector('.nav > button[data-view=planning]').offsetWidth && !document.querySelector(".app").classList.contains("menu-open")`)
+	b.until("open the drawer", `document.querySelector(".app").classList.contains("menu-open") && document.querySelector("#planning-main").inert &&
+		document.querySelector(".menu-view[data-view=planning]").offsetWidth > 0 && document.querySelector("#foot-menu").offsetWidth > 0`,
+		chromedp.Click(chromedp.CSS(`#menu-open`)))
+	b.until("Esc closes it", `!document.querySelector(".app").classList.contains("menu-open") && !document.querySelector("#planning-main").inert`,
+		chromedp.KeyEvent(kb.Escape))
+}
+
+// A card's pane has its Members (add one from the org, take one off), and
+// a description box that is always there and saves when it loses focus. A
+// card with comments shows how many, with a speech bubble.
+func TestBrowserPlanningCardPane(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	var c struct{ ID string }
+	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Export reports as PDF", "column": "ideas"}, http.StatusCreated, &c)
+	h.api.must("POST", "/api/planning/cards/"+c.ID+"/comments", map[string]any{"text": "Finance asked twice."}, http.StatusCreated, nil)
+	var me struct{ Org struct{ ID int64 } }
+	h.api.must("GET", "/api/me", nil, http.StatusOK, &me)
+	var inv struct{ Token string }
+	h.api.must("POST", fmt.Sprintf("/api/orgs/%d/invitations", me.Org.ID), map[string]any{"email": "ana@example.com", "password": h.password}, http.StatusCreated, &inv)
+	newClient(t, h.base).must("POST", "/api/invitations/register", map[string]any{"token": inv.Token, "username": "ana", "password": "another-long-password"}, http.StatusCreated, nil)
+
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	b.until("open Planning", `document.querySelector("#view-planning.active")`,
+		chromedp.Click(chromedp.CSS(`.nav > button[data-view=planning]`)))
+	card := fmt.Sprintf(`#view-planning .pl-card[data-id=%q]`, c.ID)
+	b.waitJS("the comment count, with a speech bubble", fmt.Sprintf(`document.querySelector(%q)?.textContent.trim() === "1" && !!document.querySelector(%q)`,
+		card+" .pl-comments", card+" .pl-comments .ico"))
+	b.until("open the card", `!document.querySelector("#card-detail").hidden && !!document.querySelector("#pd-desc")`,
+		chromedp.Click(chromedp.CSS(card+" .pl-open")))
+	b.waitJS("Members, nobody on it yet, and an empty description box", `document.querySelector("#pd-members")?.textContent === "Members" &&
+		!document.querySelector(".pl-member") && document.querySelector("#pd-desc").tagName === "TEXTAREA" && document.querySelector("#pd-desc").value === ""`)
+	b.run("add ana", `const s = document.querySelector(".pl-member-list select");
+		s.value = [...s.options].find((o) => o.textContent === "ana").value;
+		s.dispatchEvent(new Event("change", { bubbles: true }));
+		true`)
+	b.waitJS("ana on the card and in the pane", fmt.Sprintf(`document.querySelector(".pl-member .pl-member-name")?.textContent === "ana" &&
+		document.querySelector(%q)?.title === "Members: ana"`, card+" .pl-members"))
+	b.run("write a description", `const d = document.querySelector("#pd-desc");
+		d.focus();
+		d.value = "So finance can file them.";
+		d.blur();
+		d.dispatchEvent(new Event("change", { bubbles: true }));
+		true`)
+	b.waitJS("saved: the card shows it", fmt.Sprintf(`document.querySelector(%q)?.textContent === "So finance can file them."`, card+" .todo-sub"))
+	b.until("take ana off", `!document.querySelector(".pl-member") && !document.querySelector(".pl-members")`,
+		chromedp.Click(chromedp.CSS(`.pl-member .icon-btn`)))
+}

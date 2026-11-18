@@ -15,29 +15,118 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Planning for planners (product owners): the org's plan and nothing else. Members,
-       admins and owners have the same board in the app's Planning view. -->
+  <!-- Planning for planners (product owners): the org's plan and their own account, nothing
+       else. Members, admins and owners have the same board in the app's Planning view. The
+       shell is the app's (index.html): the top bar, the sidebar on desktop and the menu drawer
+       on a phone, with Planning its one section and the account menu at the bottom. -->
   <div class="app planning-app">
-    <header class="topbar pl-topbar">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" id="menu-open" type="button" aria-label="Menu" aria-controls="menu" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h12M4 17h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
       <a class="brand" href="/planning.html" aria-label="{{DASH_NAME}} Planning" title="{{DASH_NAME}} {{DASH_VERSION}}">
         <img id="brand-logo" src="{{DASH_LOGO}}" alt="" aria-hidden="true">
         <span class="brand-name" id="brand-name">{{DASH_NAME}}</span>
       </a>
       <span class="pl-org" id="pl-org"></span>
       <span class="live" id="live" title="Live updates disconnected"><span class="live-dot"></span><span class="sr-only" id="live-label">Offline</span></span>
-      <details class="foot-menu top-menu" id="pl-menu">
-        <summary class="pl-who" aria-label="Account menu" title="Account menu"><span id="pl-user"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
-        <div class="foot-menu-list">
-          <div class="org-switch" id="org-switch" hidden></div>
-          <a id="pl-export" href="/api/account/export" download data-icon="down">Download my data</a>
-          <button id="pl-logout" type="button" data-icon="logout">Log out</button>
-          <span class="foot-version" title="Dash version">{{DASH_RELEASE}}</span>
-        </div>
-      </details>
     </header>
+
+    <div class="sidebar">
+    <nav class="nav" aria-label="Sections">
+      <button data-view="planning" title="Planning: the org's plan" class="active" aria-current="page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        <span>Planning</span>
+      </button>
+      <div class="menu-scrim" id="menu-scrim" hidden></div>
+      <div class="menu" id="menu">
+        <div class="menu-head">
+          <span>Menu</span>
+          <button class="icon-btn" id="menu-close" type="button" aria-label="Close menu" data-icon="x"></button>
+        </div>
+        <div class="menu-views" role="group" aria-label="Sections">
+          <button class="menu-view active" data-view="planning" type="button" aria-current="page">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+            <span>Planning</span>
+          </button>
+        </div>
+        <div class="side-bottom">
+        <div class="nav-foot">
+          <details class="foot-menu account-menu" id="foot-menu">
+            <summary aria-label="Account menu" title="Account menu"><span class="foot-avatar" id="foot-avatar" aria-hidden="true"></span><span class="foot-who"><span class="foot-user" id="foot-user"></span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
+            <div class="foot-menu-list">
+              <div class="org-switch" id="org-switch" hidden></div>
+              <button id="account-open" type="button" data-icon="user">Account</button>
+              <button id="logout" type="button" data-icon="logout">Log out</button>
+              <span class="foot-version" title="Dash version">{{DASH_RELEASE}}</span>
+              <!--DASH_FOOTER-->
+            </div>
+          </details>
+        </div>
+        </div>
+      </div>
+    </nav>
+    </div>
+
     <main id="planning-main"></main>
   </div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <!-- Account: the sections of the app's Account sheet a planner can use (app/myaccount.js, app/avatar.js) -->
+  <dialog class="sheet rail-sheet" id="account-sheet" aria-labelledby="account-title">
+    <div class="rail-body">
+      <form method="dialog" class="sheet-head"><h2 id="account-title" tabindex="-1" autofocus>Account</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></form>
+      <div class="rail-layout">
+        <nav class="rail-nav" aria-label="Account sections">
+          <div class="rail-group"><span class="rail-head">You</span>
+            <button type="button" class="rail-item" data-rail="picture">Profile picture</button>
+            <button type="button" class="rail-item" data-rail="twofactor">Two-factor sign-in</button>
+            <button type="button" class="rail-item" data-rail="google">Google account</button>
+            <button type="button" class="rail-item" data-rail="data">Your data</button>
+          </div>
+        </nav>
+        <div class="rail-main">
+          <section class="rail-section" data-section="picture">
+            <div class="avatar-row">
+              <span class="avatar avatar-large" id="avatar-preview" aria-hidden="true"></span>
+              <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+              <button class="btn small" type="button" id="avatar-pick" data-icon="up">Choose picture…</button>
+              <button class="btn small" type="button" id="avatar-clear">Remove</button>
+            </div>
+            <p class="hint">Shown in the account menu and to the members of your organizations. Dash crops it to a square and makes it small before saving it.</p>
+          </section>
+          <section class="rail-section" data-section="twofactor">
+            <div class="twofactor-body" id="twofactor-body"></div>
+          </section>
+          <!-- Hidden when this Dash has no Google sign-in -->
+          <section class="rail-section" data-section="google">
+            <div class="twofactor-body" id="google-body"></div>
+          </section>
+          <section class="rail-section" data-section="data">
+            <h3 class="section-head">Download your data</h3>
+            <p class="hint">A JSON file of what this Dash keeps about you: your account, organizations, sign-ins, sessions, tokens, devices, webhooks, notification settings, and the tasks and chat messages you wrote.</p>
+            <div><a class="btn small" id="account-export" href="/api/account/export" download data-icon="down">Download</a></div>
+            <h3 class="section-head">Delete your account</h3>
+            <p class="hint">Your account, sessions, tokens, devices, webhooks, notification settings and your chats with Claude are deleted at once, and so is each organization only you are in. Tasks and messages you wrote in other organizations stay there, without your name. Runners you registered stop connecting.</p>
+            <p class="hint" id="account-delete-hint" hidden></p>
+            <div><button class="btn small danger" type="button" id="account-delete" data-icon="trash">Delete account…</button></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="sheet small" id="password-sheet" aria-labelledby="password-title">
+    <form method="dialog" id="password-form">
+      <h2 id="password-title" tabindex="-1"></h2>
+      <p id="password-body" class="hint"></p>
+      <label class="field"><span>Your password <em>to confirm</em></span><input type="password" name="password" required autocomplete="current-password"></label>
+      <footer class="sheet-actions">
+        <button class="btn" value="cancel" formnovalidate data-icon="x">Cancel</button>
+        <button class="btn primary" value="ok" data-icon="check">Confirm</button>
+      </footer>
+    </form>
+  </dialog>
 
   <!-- Generic question / confirmation (app/dialogs.js) -->
   <dialog class="sheet small" id="ask-sheet" aria-labelledby="ask-title">
@@ -53,6 +142,7 @@
     </form>
   </dialog>
   <script src="pagekit.js"></script>
+  <script src="twofactor.js"></script>
   <script src="planning-page.js" type="module"></script>
 </body>
 </html>

@@ -90,14 +90,21 @@ type linkView struct {
 type cardView struct {
 	model.Card
 	ProjectName string `json:"project_name,omitempty"`
-	// AssigneeName and AssigneeAvatar are the assignee's username and their
-	// picture's version (0: none), to show their face on the card.
-	AssigneeName   string        `json:"assignee_name,omitempty"`
-	AssigneeAvatar int64         `json:"assignee_avatar,omitempty"`
-	Status         cardStatus    `json:"status"`
-	Links          []linkView    `json:"links"`
-	Comments       int           `json:"comments"`
-	Discussion     []cardComment `json:"discussion,omitempty"` // GET of one card
+	// People are the card's members (model.Card.Members, the same order)
+	// with their usernames and pictures, to show their faces on the card.
+	People     []cardPerson  `json:"people"`
+	Status     cardStatus    `json:"status"`
+	Links      []linkView    `json:"links"`
+	Comments   int           `json:"comments"`
+	Discussion []cardComment `json:"discussion,omitempty"` // GET of one card
+}
+
+// cardPerson is one of a card's members: their user id, username and
+// picture's version (0: none).
+type cardPerson struct {
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
+	Avatar   int64  `json:"avatar,omitempty"`
 }
 
 type cardComment = model.CardComment
@@ -253,11 +260,13 @@ func (w *planningWork) views(cards []model.Card, links map[string][]model.CardLi
 	out := make([]cardView, 0, len(cards))
 	for _, c := range cards {
 		v := cardView{Card: c, ProjectName: w.projects[c.ProjectID].Name, Links: []linkView{}, Comments: comments[c.ID]}
-		// An assignee who has left the org since is no longer shown.
-		if m, ok := w.people[c.Assignee]; ok {
-			v.AssigneeName, v.AssigneeAvatar = m.Username, m.Avatar
-		} else {
-			v.Assignee = 0
+		// A member who has left the org since is no longer shown.
+		v.Members, v.People = []int64{}, []cardPerson{}
+		for _, id := range c.Members {
+			if m, ok := w.people[id]; ok {
+				v.Members = append(v.Members, id)
+				v.People = append(v.People, cardPerson{ID: id, Username: m.Username, Avatar: m.Avatar})
+			}
 		}
 		for _, l := range links[c.ID] {
 			lv := w.link(l)
@@ -456,8 +465,9 @@ type cardRequest struct {
 	Column      *string `json:"column"` // create only; moves are POST …/move
 	Priority    *string `json:"priority"`
 	Target      *string `json:"target"`
-	// Assignee is a member's user id (0: nobody).
-	Assignee *int64 `json:"assignee"`
+	// Members are the user ids of the people in the org on the card, all of
+	// them ([] is nobody).
+	Members *[]int64 `json:"members"`
 }
 
 func (req cardRequest) apply(c *model.Card) error {
@@ -466,7 +476,7 @@ func (req cardRequest) apply(c *model.Card) error {
 	set(&c.ProjectID, req.Project)
 	set(&c.Priority, req.Priority)
 	set(&c.Target, req.Target)
-	set(&c.Assignee, req.Assignee)
+	set(&c.Members, req.Members)
 	if req.Column != nil {
 		c.Column = model.CardColumn(*req.Column)
 	}
@@ -993,7 +1003,15 @@ func (s *Server) linkedCards(w http.ResponseWriter, r *http.Request) {
 
 func cardRow(v cardView) mcptools.CardRow {
 	return mcptools.CardRow{ID: v.ID, Title: v.Title, Column: string(v.Column), Priority: v.Priority, Target: v.Target,
-		Project: v.ProjectName, Assignee: v.AssigneeName, Status: v.Status.Text, Progress: v.Status.Progress, Links: len(v.Links)}
+		Project: v.ProjectName, Members: usernames(v.People), Status: v.Status.Text, Progress: v.Status.Progress, Links: len(v.Links)}
+}
+
+func usernames(ps []cardPerson) []string {
+	var out []string
+	for _, p := range ps {
+		out = append(out, p.Username)
+	}
+	return out
 }
 
 func (b board) Cards(projectID string) ([]mcptools.CardRow, error) {
