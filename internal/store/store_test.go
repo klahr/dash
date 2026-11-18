@@ -16,19 +16,13 @@ func TestChatSurvivesReopen(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "dash.db")
-	s, err := Open(path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := openTest(t, path)
 	want := []model.ChatMessage{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}
 	if err := s.SetChat(1, 1, want); err != nil {
 		t.Fatal(err)
 	}
 
-	s, err = Open(path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s = openTest(t, path)
 	if got := s.Chat(1, 1); !reflect.DeepEqual(got, want) {
 		t.Fatalf("after reopen: %v, want %v", got, want)
 	}
@@ -36,7 +30,7 @@ func TestChatSurvivesReopen(t *testing.T) {
 	if err := s.SetChat(1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
-	if s, _ = Open(path, nil); len(s.Chat(1, 1)) != 0 {
+	if s = openTest(t, path); len(s.Chat(1, 1)) != 0 {
 		t.Fatalf("cleared chat came back: %v", s.Chat(1, 1))
 	}
 }
@@ -47,10 +41,7 @@ func TestSetChatWritesOnlyWhatChanged(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "dash.db")
-	s, err := Open(path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := openTest(t, path)
 	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	q := model.ChatMessage{Role: "user", Content: "hi", CreatedBy: 7, At: &at}
 	a := model.ChatMessage{Role: "assistant", Content: "hello", Usage: &model.ChatUsage{InputTokens: 3}}
@@ -63,11 +54,7 @@ func TestSetChatWritesOnlyWhatChanged(t *testing.T) {
 	}
 	reopen := func() []model.ChatMessage {
 		t.Helper()
-		r, err := Open(path, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return r.Chat(1, 1)
+		return openTest(t, path).Chat(1, 1)
 	}
 	contents := func(msgs []model.ChatMessage) []string {
 		var out []string
@@ -119,10 +106,7 @@ func TestTodoChatSurvivesReopenAndGoesWithTodo(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "dash.db")
-	s, err := Open(path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := openTest(t, path)
 	if err := s.SetTodoChat("missing", []model.ChatMessage{{Role: "user", Content: "hi"}}); err != ErrNotFound {
 		t.Fatalf("chat on a missing todo: %v, want ErrNotFound", err)
 	}
@@ -138,9 +122,7 @@ func TestTodoChatSurvivesReopenAndGoesWithTodo(t *testing.T) {
 	if err := s.SetTodoChat(td.ID, want); err != nil {
 		t.Fatal(err)
 	}
-	if s, err = Open(path, nil); err != nil {
-		t.Fatal(err)
-	}
+	s = openTest(t, path)
 	if got := s.TodoChat(td.ID); !reflect.DeepEqual(got, want) {
 		t.Fatalf("after reopen: %v, want %v", got, want)
 	}
@@ -150,7 +132,7 @@ func TestTodoChatSurvivesReopenAndGoesWithTodo(t *testing.T) {
 	if _, err := s.DeleteTodo(td.ID); err != nil {
 		t.Fatal(err)
 	}
-	if s, _ = Open(path, nil); len(s.TodoChat(td.ID)) != 0 {
+	if s = openTest(t, path); len(s.TodoChat(td.ID)) != 0 {
 		t.Fatalf("deleted todo's chat came back: %v", s.TodoChat(td.ID))
 	}
 }
@@ -159,10 +141,7 @@ func TestReviewingLocksStatusUntilReopen(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "dash.db")
-	s, err := Open(path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := openTest(t, path)
 	p, err := s.CreateProject(model.Project{Name: "p", Path: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
@@ -185,9 +164,7 @@ func TestReviewingLocksStatusUntilReopen(t *testing.T) {
 	if _, err := s.UpdateTodo(td.ID, func(t *model.Todo) error { t.Title = "renamed"; return nil }); err != nil {
 		t.Fatalf("non-status edit while reviewing: %v", err)
 	}
-	if s, err = Open(path, nil); err != nil {
-		t.Fatal(err)
-	}
+	s = openTest(t, path)
 	if got, _ := s.GetTodo(td.ID); got.Reviewing {
 		t.Fatal("reviewing survived a restart")
 	}
@@ -200,10 +177,7 @@ func TestDependsOnValidationAndDelete(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "dash.db")
-	s, err := Open(path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := openTest(t, path)
 	p, _ := s.CreateProject(model.Project{Name: "p"})
 	q, _ := s.CreateProject(model.Project{Name: "q"})
 	a, _ := s.CreateTodo(model.Todo{ProjectID: p.ID, Title: "a"})
@@ -229,9 +203,7 @@ func TestDependsOnValidationAndDelete(t *testing.T) {
 		t.Fatalf("depends_on not cleaned: %q", b.DependsOn)
 	}
 	// Survives a reopen.
-	if s, err = Open(path, nil); err != nil {
-		t.Fatal(err)
-	}
+	s = openTest(t, path)
 	if got, _ := s.GetTodo(b.ID); !reflect.DeepEqual(got.DependsOn, []string{a.ID}) {
 		t.Fatalf("after reopen: %q", got.DependsOn)
 	}
@@ -247,10 +219,7 @@ func TestDependsOnValidationAndDelete(t *testing.T) {
 func TestBuildsOnValidationAndDelete(t *testing.T) {
 	t.Parallel()
 
-	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := openTest(t, filepath.Join(t.TempDir(), "dash.db"))
 	p, _ := s.CreateProject(model.Project{Name: "p"})
 	q, _ := s.CreateProject(model.Project{Name: "q"})
 	a, _ := s.CreateTodo(model.Todo{ProjectID: p.ID, Title: "a"})
@@ -291,10 +260,7 @@ func TestOldStateWithoutDependsOnLoads(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, LegacyFile), []byte(old), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := openTest(t, path)
 	if got, err := s.GetTodo("t"); err != nil || len(got.DependsOn) != 0 {
 		t.Fatalf("got %+v, %v", got, err)
 	}
@@ -308,10 +274,7 @@ func TestOldStateWithoutDependsOnLoads(t *testing.T) {
 func TestDefaultMergeModes(t *testing.T) {
 	t.Parallel()
 
-	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := openTest(t, filepath.Join(t.TempDir(), "dash.db"))
 	defer s.Close()
 	mk := func(name string, p model.Project) model.Project {
 		p.Name = name
@@ -369,10 +332,7 @@ func TestPullRequestChecksKept(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "dash.db")
-	s, err := Open(path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := openTest(t, path)
 	p, _ := s.CreateProject(model.Project{Name: "p"})
 	td, _ := s.CreateTodo(model.Todo{ProjectID: p.ID, Title: "a"})
 	want := model.PullRequest{Number: 10, URL: "https://github.com/o/r/pull/10", State: "OPEN",
@@ -386,9 +346,7 @@ func TestPullRequestChecksKept(t *testing.T) {
 	if got, _ := s.GetTodo(td.ID); got.PR.Checks[0].State != "passed" {
 		t.Fatal("an abandoned update changed the stored checks")
 	}
-	if s, err = Open(path, nil); err != nil {
-		t.Fatal(err)
-	}
+	s = openTest(t, path)
 	if got, _ := s.GetTodo(td.ID); !reflect.DeepEqual(*got.PR, want) {
 		t.Fatalf("after reopen: %+v, want %+v", *got.PR, want)
 	}

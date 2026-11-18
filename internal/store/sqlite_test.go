@@ -28,6 +28,13 @@ func reopen(t *testing.T, s *Store, path string) *Store {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
+	return openTest(t, path)
+}
+
+// openTest opens the store at path and closes it when the test ends, before
+// t.TempDir's cleanup: Windows can't remove a database that is still open.
+func openTest(t *testing.T, path string) *Store {
+	t.Helper()
 	s, err := Open(path, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -104,6 +111,10 @@ func TestImportStateJSON(t *testing.T) {
 	// What Open does to a loaded state: an in-progress todo is queued again,
 	// a review chat is over, a running scan was interrupted.
 	want.Todos["t2"].Status, want.Todos["t2"].Reviewing = model.StatusQueued, false
+	// Project paths are made absolute, which on Windows adds a drive.
+	for _, p := range want.Projects {
+		p.Path = CleanPath(p.Path)
+	}
 
 	check := func(s *Store) {
 		t.Helper()

@@ -12,10 +12,7 @@ func TestScanTemplates(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "state.json")
-	s, err := Open(path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := openTest(t, path)
 	p, _ := s.CreateProject(model.Project{Name: "p", Path: t.TempDir()})
 	q, _ := s.CreateProject(model.Project{Name: "q", Path: t.TempDir()})
 
@@ -45,9 +42,7 @@ func TestScanTemplates(t *testing.T) {
 	}
 
 	// It survives a restart.
-	if s, err = Open(path, nil); err != nil {
-		t.Fatal(err)
-	}
+	s = openTest(t, path)
 	if got := s.ScanTemplates(p.ID); len(got) != 1 || got[0].Prompt != "Lint better." {
 		t.Fatalf("after reopen: %+v", got)
 	}

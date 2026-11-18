@@ -11,10 +11,7 @@ import (
 func issueStore(t *testing.T) (*Store, model.Project, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "dash.db")
-	s, err := Open(path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := openTest(t, path)
 	p, err := s.CreateProject(model.Project{Name: "p", Path: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +66,7 @@ func TestUpsertIssueByFingerprint(t *testing.T) {
 		t.Fatalf("details lost: %q", c.Details)
 	}
 
-	if s, _ = Open(path, nil); len(s.ListIssues(p.ID)) != 3 {
+	if s = openTest(t, path); len(s.ListIssues(p.ID)) != 3 {
 		t.Fatalf("issues after reopen: %d", len(s.ListIssues(p.ID)))
 	}
 }
@@ -142,7 +139,7 @@ func TestUpsertIssueKeepsScanKind(t *testing.T) {
 	if c := mustUpsert(t, s, model.Issue{ProjectID: p.ID, Title: "Slow query", File: "db.go", Source: "scan:perf"}, model.UpsertKnown); c.ScanKind != model.ScanKindPerformance {
 		t.Fatalf("kind lost: %+v", c)
 	}
-	if s, _ = Open(path, nil); s.ListIssues(p.ID)[0].ScanKind != model.ScanKindPerformance {
+	if s = openTest(t, path); s.ListIssues(p.ID)[0].ScanKind != model.ScanKindPerformance {
 		t.Fatalf("kind after reopen: %+v", s.ListIssues(p.ID))
 	}
 }

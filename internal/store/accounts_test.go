@@ -222,6 +222,10 @@ func TestEnvAccountFollowsTheEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := time.Now()
+	// Windows' clock can read the same for a while: let it pass before.
+	for time.Now().UnixNano() <= before.UnixNano() {
+		time.Sleep(time.Millisecond)
+	}
 
 	if err := acc.Bootstrap("root", "changed"); err != nil {
 		t.Fatal(err)

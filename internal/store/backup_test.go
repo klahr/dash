@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -41,8 +42,8 @@ func TestBackupLiveDatabase(t *testing.T) {
 	if _, err := os.Stat(dest + ".partial"); !os.IsNotExist(err) {
 		t.Errorf("temporary file left behind: %v", err)
 	}
-	if info, err := os.Stat(dest); err != nil || info.Mode().Perm() != 0o600 {
-		t.Errorf("backup mode: %v, %v", info, err)
+	if info, err := os.Stat(dest); err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o600) {
+		t.Errorf("backup mode: %v, %v", info, err) // Windows has no Unix permission bits
 	}
 	if err := Backup(context.Background(), src, dest); err == nil {
 		t.Error("a second backup overwrote the first")

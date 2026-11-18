@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -109,8 +110,8 @@ func TestUpgradeMigrationKeepsRunningWorkAndBacksUpFirst(t *testing.T) {
 	if v := userVersion(t, backups[0]); v != old {
 		t.Errorf("the backup has schema %d, want the old %d", v, old)
 	}
-	if fi, err := os.Stat(backups[0]); err != nil || fi.Mode().Perm() != 0o600 {
-		t.Errorf("backup mode: %v %v", fi, err)
+	if fi, err := os.Stat(backups[0]); err != nil || (runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600) {
+		t.Errorf("backup mode: %v %v", fi, err) // Windows has no Unix permission bits
 	}
 
 	// Opening it again migrates nothing and copies nothing.
