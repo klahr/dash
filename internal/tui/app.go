@@ -1169,6 +1169,8 @@ func (a *App) moveTo(i int) tea.Cmd {
 		a.dOff, a.dFollow = i, false
 	case a.overlay == ovPicker:
 		a.pickRow = clamp(i, 0, len(a.projects)-1)
+	case a.overlay == ovPerms:
+		a.permRow = clamp(i, 0, len(a.perms)-1)
 	case a.tab == tabBoard && len(a.cols) > 0:
 		a.row = clamp(i, 0, len(a.cols[a.col])-1)
 	case a.tab == tabProcs:
@@ -1179,25 +1181,50 @@ func (a *App) moveTo(i int) tea.Cmd {
 	return nil
 }
 
-// scrollKey handles j/k/ctrl-d/u/f/b/G for a text pane; off is the top line.
-func scrollKey(s string, n, off, page int) int {
+// scrollKey handles j/k/ctrl-d/u/f/b/G for a text pane. off is the top line, or with
+// fromBottom the number of lines scrolled up from the bottom.
+func scrollKey(s string, n, off, page int, fromBottom bool) int {
+	var d int // lines to move down
 	switch s {
 	case "j", "down":
-		return off + n
+		d = n
 	case "k", "up":
-		return max(0, off-n)
+		d = -n
 	case "ctrl+d":
-		return off + page/2*n
+		d = page / 2 * n
 	case "ctrl+u":
-		return max(0, off-page/2*n)
+		d = -page / 2 * n
 	case "ctrl+f", "space":
-		return off + page*n
+		d = page * n
 	case "ctrl+b":
-		return max(0, off-page*n)
+		d = -page * n
 	case "G":
+		if fromBottom {
+			return 0
+		}
 		return 1 << 30
+	default:
+		return off
 	}
-	return off
+	if fromBottom {
+		d = -d
+	}
+	return max(0, off+d)
+}
+
+// listKey handles j/k/G for a list of length rows, keeping row in [0, length-1] (0 when
+// empty). gg goes through moveTo. It reports whether s was one of its keys.
+func listKey(s string, n, row, length int) (int, bool) {
+	last := max(0, length-1)
+	switch s {
+	case "j", "down":
+		return clamp(row+n, 0, last), true
+	case "k", "up":
+		return clamp(row-n, 0, last), true
+	case "G":
+		return last, true
+	}
+	return row, false
 }
 
 func (a *App) boardKey(s string, n int) tea.Cmd {
@@ -1207,11 +1234,11 @@ func (a *App) boardKey(s string, n int) tea.Cmd {
 		}
 		return nil
 	}
+	if row, ok := listKey(s, n, a.row, len(a.cols[a.col])); ok {
+		a.row = row
+		return nil
+	}
 	switch s {
-	case "j", "down":
-		a.row = clamp(a.row+n, 0, len(a.cols[a.col])-1)
-	case "k", "up":
-		a.row = clamp(a.row-n, 0, len(a.cols[a.col])-1)
 	case "h", "left":
 		a.col = clamp(a.col-n, 0, len(a.cols)-1)
 		a.row = clamp(a.row, 0, len(a.cols[a.col])-1)
@@ -1248,8 +1275,6 @@ func (a *App) boardKey(s string, n int) tea.Cmd {
 				break
 			}
 		}
-	case "G":
-		a.row = max(0, len(a.cols[a.col])-1)
 	case "enter":
 		if t, ok := a.selected(); ok {
 			return a.openDetail(t)
@@ -1423,7 +1448,7 @@ func (a *App) detailKey(s string, n int) tea.Cmd {
 	case "R":
 		return tea.Batch(a.loadText(a.dID, "log"), a.loadText(a.dID, "diff"))
 	case "j", "k", "down", "up", "ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b", "space", "G":
-		a.dOff = scrollKey(s, n, a.dOff, a.bodyHeight()-4)
+		a.dOff = scrollKey(s, n, a.dOff, a.bodyHeight()-4, false)
 		a.dFollow = s == "G"
 		return nil
 	}
@@ -1439,11 +1464,11 @@ func (a *App) permsKey(s string, n int) tea.Cmd {
 	decide := func(d, ok string) tea.Cmd {
 		return a.action(ok, func() error { return a.c.Decide(p.ID, d) })
 	}
+	if row, ok := listKey(s, n, a.permRow, len(a.perms)); ok {
+		a.permRow = row
+		return nil
+	}
 	switch s {
-	case "j", "down":
-		a.permRow = clamp(a.permRow+n, 0, len(a.perms)-1)
-	case "k", "up":
-		a.permRow = clamp(a.permRow-n, 0, len(a.perms)-1)
 	case "y", "enter":
 		return decide("allow", "allowed")
 	case "A":
@@ -1459,13 +1484,11 @@ func (a *App) permsKey(s string, n int) tea.Cmd {
 }
 
 func (a *App) pickerKey(s string, n int) tea.Cmd {
+	if row, ok := listKey(s, n, a.pickRow, len(a.projects)); ok {
+		a.pickRow = row
+		return nil
+	}
 	switch s {
-	case "j", "down":
-		a.pickRow = clamp(a.pickRow+n, 0, len(a.projects)-1)
-	case "k", "up":
-		a.pickRow = clamp(a.pickRow-n, 0, len(a.projects)-1)
-	case "G":
-		a.pickRow = len(a.projects) - 1
 	case "enter", "l":
 		if a.pickRow < len(a.projects) {
 			return a.selectProject(a.pickRow)
@@ -1597,16 +1620,8 @@ func (a *App) chatKey(s string, n int) tea.Cmd {
 		if a.chatCancel != nil {
 			a.chatCancel()
 		}
-	case "j", "down":
-		a.chatOff = max(0, a.chatOff-n)
-	case "k", "up":
-		a.chatOff += n
-	case "ctrl+d":
-		a.chatOff = max(0, a.chatOff-a.bodyHeight()/2*n)
-	case "ctrl+u":
-		a.chatOff += a.bodyHeight() / 2 * n
-	case "G":
-		a.chatOff = 0
+	case "j", "k", "down", "up", "ctrl+d", "ctrl+u", "ctrl+f", "ctrl+b", "space", "G":
+		a.chatOff = scrollKey(s, n, a.chatOff, a.bodyHeight(), true)
 	}
 	return nil
 }
@@ -1641,13 +1656,11 @@ func (a *App) procsKey(s string, n int) tea.Cmd {
 	if a.procRow >= 0 && a.procRow < len(a.procs) {
 		cur = &a.procs[a.procRow]
 	}
+	if row, ok := listKey(s, n, a.procRow, len(a.procs)); ok {
+		a.procRow = row
+		return nil
+	}
 	switch s {
-	case "j", "down":
-		a.procRow = clamp(a.procRow+n, 0, len(a.procs)-1)
-	case "k", "up":
-		a.procRow = clamp(a.procRow-n, 0, len(a.procs)-1)
-	case "G":
-		a.procRow = len(a.procs) - 1
 	case "enter":
 		if cur != nil {
 			return a.attach(*cur)
