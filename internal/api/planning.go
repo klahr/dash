@@ -475,6 +475,8 @@ type cardRequest struct {
 	// Members are the user ids of the people in the org on the card, all of
 	// them ([] is nobody).
 	Members *[]int64 `json:"members"`
+	// Tags are the card's tags, all of them ([] is none).
+	Tags *[]string `json:"tags"`
 }
 
 func (req cardRequest) apply(c *model.Card) error {
@@ -484,6 +486,7 @@ func (req cardRequest) apply(c *model.Card) error {
 	set(&c.Priority, req.Priority)
 	set(&c.Target, req.Target)
 	set(&c.Members, req.Members)
+	set(&c.Tags, req.Tags)
 	if req.Column != nil {
 		c.Column = model.CardColumn(*req.Column)
 	}
@@ -1106,7 +1109,7 @@ func (s *Server) linkedCards(w http.ResponseWriter, r *http.Request) {
 
 func cardRow(v cardView) mcptools.CardRow {
 	return mcptools.CardRow{ID: v.ID, Title: v.Title, Column: string(v.Column), Priority: v.Priority, Target: v.Target,
-		Project: v.ProjectName, Members: usernames(v.People), Status: v.Status.Text, Progress: v.Status.Progress, Links: len(v.Links)}
+		Project: v.ProjectName, Members: usernames(v.People), Tags: v.Tags, Status: v.Status.Text, Progress: v.Status.Progress, Links: len(v.Links)}
 }
 
 func usernames(ps []cardPerson) []string {
@@ -1134,7 +1137,7 @@ func (b board) Cards(projectID string) ([]mcptools.CardRow, error) {
 }
 
 func (b board) CreateCard(nc mcptools.NewCard) (mcptools.CardRow, error) {
-	req := cardRequest{Title: &nc.Title, Description: &nc.Description, Priority: &nc.Priority, Target: &nc.Target}
+	req := cardRequest{Title: &nc.Title, Description: &nc.Description, Priority: &nc.Priority, Target: &nc.Target, Tags: &nc.Tags}
 	if nc.Column != "" {
 		req.Column = &nc.Column
 	}

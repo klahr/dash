@@ -47,6 +47,8 @@ const (
 	MaxCardTarget      = 60
 	MaxCardComment     = 10000
 	MaxCardMembers     = 50
+	MaxCardTags        = 20
+	MaxCardTag         = 40
 	MaxCardFiles       = 30
 )
 
@@ -66,6 +68,9 @@ type Card struct {
 	// Members are the people in the org on the card (user ids), in the
 	// order they were added.
 	Members []int64 `json:"members"`
+	// Tags are short labels on the card ("backend", "Q3"), in the order
+	// they were added; each once, whatever its case.
+	Tags []string `json:"tags"`
 	// Files are the files attached to the card, in the order they were added.
 	Files     []CardFile `json:"files"`
 	CreatedBy int64      `json:"created_by"`
@@ -155,7 +160,35 @@ func CleanCard(c *Card) error {
 		return fmt.Errorf("a card has at most %d members", MaxCardMembers)
 	}
 	c.Members = members
+	tags, err := CleanTags(c.Tags)
+	if err != nil {
+		return err
+	}
+	c.Tags = tags
 	return nil
+}
+
+// CleanTags trims each tag and squeezes its spaces, drops empty ones and
+// repeats (the first of those that differ only in case stays), and checks
+// their number and length.
+func CleanTags(in []string) ([]string, error) {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, t := range in {
+		t = strings.Join(strings.Fields(t), " ")
+		if t == "" || seen[strings.ToLower(t)] {
+			continue
+		}
+		if len(t) > MaxCardTag {
+			return nil, fmt.Errorf("the tag %q is longer than %d characters", t, MaxCardTag)
+		}
+		seen[strings.ToLower(t)] = true
+		out = append(out, t)
+	}
+	if len(out) > MaxCardTags {
+		return nil, fmt.Errorf("a card has at most %d tags", MaxCardTags)
+	}
+	return out, nil
 }
 
 // CleanComment trims a comment and checks its length.

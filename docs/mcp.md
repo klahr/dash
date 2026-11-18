@@ -215,9 +215,9 @@ before it uses the others.
 
 Dash's chats' `dash_board` reads and adds to the org's [plan](planning.md):
 
-- `list_cards(project?, column?)`: the cards with their column, priority, target, members and the status
+- `list_cards(project?, column?, tag?)`: the cards with their column, priority, target, members, tags and the status
   of their linked work. In a project chat, that project's cards.
-- `create_card(title, description?, project?, column?, priority?, target?)`: add a card. It
+- `create_card(title, description?, project?, column?, priority?, target?, tags?)`: add a card. It
   starts no work.
 - `link_card(card, todo?, goal?)`: link a task or a goal to a card, so the card shows its
   status. In a project chat, only that project's work, to its cards or cards of no project.

@@ -200,3 +200,34 @@ func TestBrowserPlanningCardPane(t *testing.T) {
 	b.until("take ana off", `!document.querySelector(".pl-member") && !document.querySelector(".pl-members")`,
 		chromedp.Click(chromedp.CSS(`.pl-member .icon-btn`)))
 }
+
+// A card's tags show on it on the board. In its pane, Enter adds a tag and
+// a tag's name shows only the cards with it, until × at the top.
+func TestBrowserPlanningTags(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	var c struct{ ID string }
+	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Dark mode", "tags": []string{"ux"}}, http.StatusCreated, &c)
+	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Faster sync"}, http.StatusCreated, nil)
+
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	b.until("open Planning", `document.querySelector("#view-planning.active")`,
+		chromedp.Click(chromedp.CSS(`.nav > button[data-view=planning]`)))
+	card := fmt.Sprintf(`#view-planning .pl-card[data-id=%q]`, c.ID)
+	b.waitJS("the tag on the card", fmt.Sprintf(`document.querySelector('%s .pl-tag')?.textContent === "ux"`, card))
+	b.until("open the card", `!document.querySelector("#card-detail").hidden && document.querySelector("#card-detail .pl-tag-input")`,
+		chromedp.Click(chromedp.CSS(card+` .pl-open`)))
+	b.do("type a tag and press Enter", chromedp.SendKeys(chromedp.CSS(`#card-detail .pl-tag-input`), "Q3"), chromedp.KeyEvent("\r"))
+	b.waitJS("two tags on the card", fmt.Sprintf(`[...document.querySelectorAll('%s .pl-tag')].map((e) => e.textContent).join() === "ux,Q3"`, card))
+	b.until("show only the cards tagged ux", `document.querySelectorAll("#view-planning .pl-card").length === 1 && document.querySelector("#pl-tag-filter .pl-tag-name")?.textContent === "ux"`,
+		chromedp.Click(chromedp.CSS(`#card-detail .pl-tags-field button.pl-tag-name`)))
+	b.until("all cards again", `document.querySelectorAll("#view-planning .pl-card").length === 2 && document.querySelector("#pl-tag-filter").hidden`,
+		chromedp.Click(chromedp.CSS(`#pl-tag-filter .icon-btn`)))
+
+	// On a phone, the pane's tags and their box fit the screen.
+	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	b.waitJS("the tags fit", `(() => { const f = document.querySelector("#card-detail .pl-tags-field"); const r = f?.getBoundingClientRect(); const i = f?.querySelector(".pl-tag-input")?.getBoundingClientRect();
+		return r && i && r.width > 0 && r.right <= innerWidth && i.right <= innerWidth && i.width > 60; })()`)
+}

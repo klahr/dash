@@ -2,6 +2,7 @@ package mcptools
 
 import (
 	"errors"
+	"slices"
 	"strings"
 )
 
@@ -20,6 +21,7 @@ type CardRow struct {
 	Project  string `json:"project,omitempty"`
 	// Members are the usernames of the people on the card.
 	Members []string `json:"members,omitempty"`
+	Tags    []string `json:"tags,omitempty"`
 	// Status is what its linked work adds up to, e.g. "Waiting for review".
 	Status   string `json:"status"`
 	Progress string `json:"progress,omitempty"`
@@ -29,6 +31,7 @@ type CardRow struct {
 // NewCard is a card to add. Project is a project name or id ("" for none).
 type NewCard struct {
 	Title, Description, Project, Column, Priority, Target string
+	Tags                                                  []string
 }
 
 // CardBoard is a Board with the org's plan: Tools then has the planning tools
@@ -48,8 +51,9 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 	pProject.Desc = "Only this project's cards (name or id); default every project's."
 	return []Tool{
 		{"list_cards", "List the cards of the org's plan (the Planning page): what a product owner wants built, by column " +
-			"(ideas, planned, in_progress, done), with each card's priority, target, members and the status of the tasks and goals linked to it.",
-			[]Param{pProject, {"column", "string", "Only this column: ideas, planned, in_progress or done.", false}},
+			"(ideas, planned, in_progress, done), with each card's priority, target, members, tags and the status of the tasks and goals linked to it.",
+			[]Param{pProject, {"column", "string", "Only this column: ideas, planned, in_progress or done.", false},
+				{"tag", "string", "Only the cards with this tag (any case).", false}},
 			func(a Args) (any, error) {
 				pid := ""
 				if a.Str("project") != "" {
@@ -65,9 +69,13 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 				}
 				out := []CardRow{}
 				for _, c := range cs {
-					if col := a.Str("column"); col == "" || c.Column == col {
-						out = append(out, c)
+					if col := a.Str("column"); col != "" && c.Column != col {
+						continue
 					}
+					if tag := a.Str("tag"); tag != "" && !slices.ContainsFunc(c.Tags, func(t string) bool { return strings.EqualFold(t, tag) }) {
+						continue
+					}
+					out = append(out, c)
 				}
 				return out, nil
 			}},
@@ -80,13 +88,14 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 				{"column", "string", "ideas (the default), planned, in_progress or done.", false},
 				{"priority", "string", "high, medium or low; none if left out.", false},
 				{"target", "string", "When it should ship: a version like 1.4, or a date.", false},
+				{"tags", "array", "Short labels for the card, e.g. [\"backend\", \"Q3\"].", false},
 			},
 			func(a Args) (any, error) {
 				if strings.TrimSpace(a.Str("title")) == "" {
 					return nil, errors.New("title is required")
 				}
 				return cb.CreateCard(NewCard{Title: a.Str("title"), Description: a.Str("description"), Project: a.Str("project"),
-					Column: a.Str("column"), Priority: a.Str("priority"), Target: a.Str("target")})
+					Column: a.Str("column"), Priority: a.Str("priority"), Target: a.Str("target"), Tags: a.List("tags")})
 			}},
 		{"link_card", "Link a task or a goal to a card of the plan, so the card shows its status (see list_cards for card ids).",
 			[]Param{

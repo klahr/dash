@@ -43,6 +43,7 @@ const pl = {
   projects: [],
   people: [], // the org's members a card may be assigned to
   filter: store.get("dash.planning.project", ""),
+  tag: store.get("dash.planning.tag", ""), // only the cards with this tag ("" all)
   loaded: false,
   open: null, // the open card's id
   detail: null, // its view, with its discussion
@@ -59,6 +60,16 @@ const pl = {
 };
 
 const byId = (id) => pl.cards.find((c) => c.id === id);
+const sameTag = (a, b) => a.toLowerCase() === b.toLowerCase();
+const tagged = (c, tag) => (c.tags || []).some((t) => sameTag(t, tag));
+// shown are the cards the board shows: with the tag picked, if one is.
+const shown = () => pl.tag ? pl.cards.filter((c) => tagged(c, pl.tag)) : pl.cards;
+// allTags are the tags on the cards loaded, each once, A to Z.
+function allTags() {
+  const seen = new Map();
+  for (const c of pl.cards) for (const t of c.tags || []) if (!seen.has(t.toLowerCase())) seen.set(t.toLowerCase(), t);
+  return [...seen.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
 const paneEl = () => $("#card-detail");
 
 // mountPlanning builds Planning in root. planner hides what a planner
@@ -78,6 +89,7 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
       h("header", { class: "cl-head pl-head" },
         h("h2", { class: "cl-title page-title" }, "Planning"),
         filterPicker(),
+        h("span", { class: "pl-tag-filter", id: "pl-tag-filter", hidden: true }),
         h("span", { class: "cl-state", id: "pl-state", "aria-live": "polite" }),
         ib({ type: "button", class: "btn small primary pl-new", title: "Add an idea to the plan", onclick: () => openComposer("ideas") }, "plus", "New card")),
       h("p", { class: "hint pl-intro", id: "pl-intro", hidden: true },
@@ -108,7 +120,8 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
           h("h2", { id: "pd-title" }),
           h("div", { class: "detail-meta", id: "pd-meta" }),
           h("div", { class: "commit-actions", id: "pd-actions" }))),
-      h("div", { class: "detail-body", id: "pd-body" })));
+      h("div", { class: "detail-body", id: "pd-body" })),
+    h("datalist", { id: "pl-tag-options" }));
   wireDrag(root);
   wireFileDrop(paneEl(), () => pl.open);
   wireFileDrop(root, (e) => e.target.closest?.(".pl-card:not(.pl-composer)")?.dataset.id);
@@ -254,13 +267,30 @@ function renderBoard() {
   }
 }
 
+// pickTag shows only the cards with tag on the board ("" all of them).
+export function pickTag(tag) {
+  pl.tag = tag;
+  store.set("dash.planning.tag", tag);
+  renderBoard();
+  if (pl.open) renderCard();
+}
+
+function renderTagFilter() {
+  const el = $("#pl-tag-filter");
+  el.hidden = !pl.tag;
+  fill(el, pl.tag ? h("span", { class: "pl-chip pl-tag pl-tag-on" }, ico("tag"), h("span", { class: "pl-tag-name" }, pl.tag),
+    ib({ type: "button", class: "icon-btn small", "aria-label": `Show all cards, not only those tagged ${pl.tag}`, title: "Show all cards", onclick: () => pickTag("") }, "x")) : null);
+  fill($("#pl-tag-options"), ...allTags().map((t) => h("option", { value: t })));
+}
+
 function renderColumns() {
-  const counts = Object.fromEntries(COLUMNS.map((col) => [col.key, pl.cards.filter((c) => c.column === col.key).length]));
+  renderTagFilter();
+  const counts = Object.fromEntries(COLUMNS.map((col) => [col.key, shown().filter((c) => c.column === col.key).length]));
   // A phone opens on the first column with cards in it.
   if (!pl.lane) pl.lane = (pl.cards.length && COLUMNS.find((col) => counts[col.key])?.key) || "ideas";
   for (const col of COLUMNS) {
     const ol = $(`.pl-cards[data-col="${col.key}"]`, pl.root);
-    const cards = pl.cards.filter((c) => c.column === col.key).sort((a, b) => a.position - b.position);
+    const cards = shown().filter((c) => c.column === col.key).sort((a, b) => a.position - b.position);
     const focused = document.activeElement?.closest?.(".pl-card")?.dataset.id;
     // A card being typed stays where it is, last, with its text and focus.
     const comp = pl.composer?.col === col.key ? pl.composer.li : null;
@@ -271,6 +301,7 @@ function renderColumns() {
     } else fill(ol, ...cards.map(cardEl));
     ol.hidden = !cards.length && !comp;
     $(`#pl-empty-${col.key}`).hidden = cards.length > 0 || !!comp;
+    $(`#pl-empty-${col.key}`).textContent = pl.tag ? `Nothing tagged ${pl.tag}.` : col.empty;
     if (focused && ol.querySelector(`[data-id="${focused}"]`)) $(`[data-id="${focused}"] .pl-open`, ol)?.focus({ preventScroll: true });
     $(`#pl-count-${col.key}`).textContent = String(cards.length);
     $(`#pl-tab-n-${col.key}`).textContent = String(cards.length);
@@ -308,6 +339,7 @@ function cardEl(c) {
   const meta = [
     c.priority ? h("span", { class: `pl-chip p-${c.priority}`, title: "Priority" }, PRIORITY[c.priority]) : null,
     c.target ? h("span", { class: "pl-chip pl-target", title: "Target" }, ico("flag"), c.target) : null,
+    ...(c.tags || []).map((t) => h("span", { class: "pl-chip pl-tag", title: "Tag" }, t)),
     !pl.filter && c.project_name ? h("span", { class: "pl-project" }, c.project_name) : null,
     c.comments ? h("span", { class: "pl-comments", title: `${c.comments} comment${c.comments === 1 ? "" : "s"}` }, ico("comment"), String(c.comments)) : null,
     c.files?.length ? h("span", { class: "pl-comments pl-file-count", title: `${c.files.length} file${c.files.length === 1 ? "" : "s"}` }, clip(), String(c.files.length)) : null,
@@ -458,7 +490,7 @@ function wireDrag(root) {
 function cardKeys(e, c) {
   if (!e.altKey || e.ctrlKey || e.metaKey) return;
   const cols = COLUMNS.map((x) => x.key);
-  const same = pl.cards.filter((x) => x.column === c.column).sort((a, b) => a.position - b.position);
+  const same = shown().filter((x) => x.column === c.column).sort((a, b) => a.position - b.position);
   const at = same.findIndex((x) => x.id === c.id);
   let to = null;
   if (e.key === "ArrowLeft" && cols.indexOf(c.column) > 0) to = [cols[cols.indexOf(c.column) - 1], 1 << 20];
@@ -503,14 +535,18 @@ async function toggleMine(c) {
 }
 
 // moveCard puts a card in column col at index (among the column's other
-// cards), on the board at once and then on the server. The board is drawn
+// cards the board shows: with a tag picked, it goes just before the one
+// shown there, or after the last shown), on the board at once and then on
+// the server. The board is drawn
 // even when that is where it is: a drop leaves the card where it fell, and
 // what changed during the drag waits for it.
 async function moveCard(id, col, index) {
   const c = byId(id);
   if (!c) { renderBoard(); return; }
   const others = pl.cards.filter((x) => x.column === col && x.id !== id).sort((a, b) => a.position - b.position);
-  const pos = Math.max(0, Math.min(index, others.length));
+  const seen = others.filter((x) => shown().includes(x));
+  const pos = index < seen.length ? others.indexOf(seen[index])
+    : seen.length ? others.indexOf(seen.at(-1)) + 1 : Math.max(0, Math.min(index, others.length));
   if (c.column === col) {
     const now = pl.cards.filter((x) => x.column === col).sort((a, b) => a.position - b.position).findIndex((x) => x.id === id);
     if (now === pos) { renderBoard(); return; }
@@ -618,7 +654,7 @@ function saveComposer(next) {
   c.li.setAttribute("aria-busy", "true");
   c.busy = (async () => {
     try {
-      const card = await call("POST", cardAPI(), { title, description, column: c.col, project: pl.filter || undefined });
+      const card = await call("POST", cardAPI(), { title, description, column: c.col, project: pl.filter || undefined, tags: pl.tag ? [pl.tag] : undefined });
       if (!byId(card.id)) pl.cards.push(card);
       if (next && pl.composer === c) {
         c.ta.value = "";
@@ -817,6 +853,33 @@ function membersField(c) {
         ...others.map((u) => h("option", { value: String(u.id) }, u.username))) : null));
 }
 
+// tagsField is the card's tags, each a button that shows only the cards
+// with it and × to take it off, and a box to add one (Enter or a comma
+// adds it; the org's other tags are offered as you type).
+function tagsField(c) {
+  const tags = c.tags || [];
+  const set = (next) => patchCard({ tags: next })().catch(fail);
+  const add = (input) => {
+    const fresh = input.value.split(",").map((t) => t.trim()).filter((t) => t && !tags.some((x) => sameTag(x, t)));
+    input.value = "";
+    if (fresh.length) set([...tags, ...fresh]).then(() => $("#card-detail .pl-tag-input")?.focus());
+  };
+  const input = h("input", { class: "pl-tag-input", list: "pl-tag-options", maxlength: 40, autocomplete: "off", "aria-label": "Add a tag",
+    placeholder: tags.length ? "Add…" : "Add a tag…",
+    onkeydown: (e) => {
+      if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(e.target); }
+      else if (e.key === "Backspace" && !e.target.value && tags.length) set(tags.slice(0, -1));
+    },
+    onchange: (e) => { if (e.target.value.trim()) add(e.target); } });
+  return h("div", { class: "field pl-field pl-tags-field", role: "group", "aria-labelledby": "pd-tags" },
+    h("span", { id: "pd-tags" }, "Tags"),
+    h("div", { class: "pl-member-list pl-tag-list" },
+      ...tags.map((t) => h("span", { class: `pl-chip pl-tag${pl.tag && sameTag(pl.tag, t) ? " pl-tag-on" : ""}` },
+        h("button", { type: "button", class: "pl-tag-name", title: `Show only the cards tagged ${t}`, onclick: () => pickTag(pl.tag && sameTag(pl.tag, t) ? "" : t) }, t),
+        ib({ type: "button", class: "icon-btn small", "aria-label": `Remove the tag ${t}`, title: "Remove", onclick: () => set(tags.filter((x) => x !== t)) }, "x"))),
+      tags.length < 20 ? input : null));
+}
+
 // descriptionEl is the card's description: a text box that is always there,
 // saved when it loses focus (or on Ctrl+Enter). The same box stays across
 // redraws of the card while it has focus or unsaved text, so a change from
@@ -862,7 +925,8 @@ function renderCard() {
       onchange: (e) => patchCard({ target: e.target.value })().catch(fail) })),
     field("Project", sel([["", "None yet"], ...pl.projects.map((p) => [p.id, p.name])], c.project_id || "",
       (e) => patchCard({ project: e.target.value })().catch(fail), "Project")),
-    membersField(c));
+    membersField(c),
+    tagsField(c));
 
   const suggest = c.status?.suggest_done
     ? h("div", { class: "pl-suggest-box" },

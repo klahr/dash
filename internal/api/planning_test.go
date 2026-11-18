@@ -238,6 +238,51 @@ func TestPlanningCardMembers(t *testing.T) {
 	}
 }
 
+// A card takes tags when it is made and when it changes, cleaned; a
+// planner can tag cards too, and list_cards finds them by tag.
+func TestPlanningCardTags(t *testing.T) {
+	s, _, _ := boardServer(t)
+	h := s.Routes()
+	a := loggedIn(t, h)
+	ph, _ := plannerOf(t, s, h)
+
+	c := decodeCard(t, do(t, a, "POST", "/api/planning/cards", `{"title":"Dark mode","tags":["ux"," Q3 ","UX"]}`))
+	if strings.Join(c.Tags, ",") != "ux,Q3" {
+		t.Fatalf("tags of a new card %q", c.Tags)
+	}
+	c = decodeCard(t, do(t, ph, "PATCH", "/api/planning/cards/"+c.ID, `{"tags":["Q3","backend"]}`))
+	if strings.Join(c.Tags, ",") != "Q3,backend" {
+		t.Errorf("tags after a planner's change %q", c.Tags)
+	}
+	c = decodeCard(t, do(t, ph, "PATCH", "/api/planning/cards/"+c.ID, `{"title":"Dark theme"}`))
+	if strings.Join(c.Tags, ",") != "Q3,backend" {
+		t.Errorf("a change without tags changed them: %q", c.Tags)
+	}
+	if w := do(t, a, "PATCH", "/api/planning/cards/"+c.ID, `{"tags":["`+strings.Repeat("x", model.MaxCardTag+1)+`"]}`); w.Code != http.StatusBadRequest {
+		t.Errorf("a tag that is too long: %d %s", w.Code, w.Body)
+	}
+	decodeCard(t, do(t, a, "POST", "/api/planning/cards", `{"title":"Untagged"}`))
+
+	rows, err := board{s.as(ownerCaller(t, s))}.Cards("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tagged := 0
+	for _, r := range rows {
+		if r.ID == c.ID && strings.Join(r.Tags, ",") == "Q3,backend" {
+			tagged++
+		}
+	}
+	if tagged != 1 {
+		t.Errorf("list_cards rows %+v", rows)
+	}
+
+	c = decodeCard(t, do(t, a, "PATCH", "/api/planning/cards/"+c.ID, `{"tags":[]}`))
+	if c.Tags == nil || len(c.Tags) != 0 {
+		t.Errorf("tags taken off: %#v", c.Tags)
+	}
+}
+
 // tinyPNG is a small picture, for a profile picture.
 func tinyPNG(t *testing.T) []byte {
 	t.Helper()

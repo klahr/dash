@@ -127,7 +127,7 @@ func (o *OrgStore) emitCard(id string, deleted bool) {
 const cardColumns = "c.id, c.org_id, c.project_id, c.title, c.description, c.col, c.position, c.priority, c.target, COALESCE(c.created_by, 0), c.created_at, c.updated_at"
 
 func scanCard(sc interface{ Scan(...any) error }) (model.Card, error) {
-	c := model.Card{Members: []int64{}, Files: []model.CardFile{}}
+	c := model.Card{Members: []int64{}, Tags: []string{}, Files: []model.CardFile{}}
 	var created, updated int64
 	err := sc.Scan(&c.ID, &c.OrgID, &c.ProjectID, &c.Title, &c.Description, &c.Column, &c.Position, &c.Priority, &c.Target, &c.CreatedBy, &created, &updated)
 	c.CreatedAt, c.UpdatedAt = time.Unix(created, 0).UTC(), time.Unix(updated, 0).UTC()
@@ -159,6 +159,26 @@ func cardMembers(q rowsQuerier, where string, args ...any) (map[string][]int64, 
 	return out, rows.Err()
 }
 
+// cardTags reads the tags of the cards the query (with args) picks, by
+// card, in their order.
+func cardTags(q rowsQuerier, where string, args ...any) (map[string][]string, error) {
+	rows, err := q.Query("SELECT t.card_id, t.tag FROM planning_card_tags t JOIN planning_cards c ON c.id = t.card_id WHERE "+where+
+		" ORDER BY t.position", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var id, tag string
+		if err := rows.Scan(&id, &tag); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], tag)
+	}
+	return out, rows.Err()
+}
+
 // cardFiles reads the files of the cards the query (with args) picks, by
 // card, in the order they were added.
 func cardFiles(q rowsQuerier, where string, args ...any) (map[string][]model.CardFile, error) {
@@ -180,6 +200,20 @@ func cardFiles(q rowsQuerier, where string, args ...any) (map[string][]model.Car
 		out[id] = append(out[id], f)
 	}
 	return out, rows.Err()
+}
+
+// setTags makes the card's tags tags, in that order (cleaned by
+// model.CleanTags).
+func setTags(tx *sql.Tx, cardID string, tags []string) error {
+	if _, err := tx.Exec("DELETE FROM planning_card_tags WHERE card_id = ?", cardID); err != nil {
+		return err
+	}
+	for i, t := range tags {
+		if _, err := tx.Exec("INSERT INTO planning_card_tags (card_id, tag, position) VALUES (?, ?, ?)", cardID, t, i); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // errNoOrg: planning is an org's, and this view has none.
@@ -217,6 +251,10 @@ func (o *OrgStore) ListCards(projectID string) ([]model.Card, error) {
 	if err != nil {
 		return nil, err
 	}
+	tags, err := cardTags(o.s.db, "c.org_id = ?", o.org)
+	if err != nil {
+		return nil, err
+	}
 	files, err := cardFiles(o.s.db, "c.org_id = ?", o.org)
 	if err != nil {
 		return nil, err
@@ -224,6 +262,9 @@ func (o *OrgStore) ListCards(projectID string) ([]model.Card, error) {
 	for i := range out {
 		if m := members[out[i].ID]; m != nil {
 			out[i].Members = m
+		}
+		if t := tags[out[i].ID]; t != nil {
+			out[i].Tags = t
 		}
 		if f := files[out[i].ID]; f != nil {
 			out[i].Files = f
@@ -254,6 +295,13 @@ func getCard(q interface {
 	}
 	if m := members[id]; m != nil {
 		c.Members = m
+	}
+	tags, err := cardTags(q, "c.id = ?", id)
+	if err != nil {
+		return c, err
+	}
+	if t := tags[id]; t != nil {
+		c.Tags = t
 	}
 	files, err := cardFiles(q, "c.id = ?", id)
 	if f := files[id]; f != nil {
@@ -341,6 +389,9 @@ func (o *OrgStore) CreateCard(c model.Card) (model.Card, error) {
 	if c.Members == nil {
 		c.Members = []int64{}
 	}
+	if c.Tags == nil {
+		c.Tags = []string{}
+	}
 	if err := o.checkMembers(o.s.db, c.Members); err != nil {
 		return c, err
 	}
@@ -358,7 +409,10 @@ func (o *OrgStore) CreateCard(c model.Card) (model.Card, error) {
 		if err != nil {
 			return err
 		}
-		return setMembers(tx, c.ID, c.Members, c.CreatedAt)
+		if err := setMembers(tx, c.ID, c.Members, c.CreatedAt); err != nil {
+			return err
+		}
+		return setTags(tx, c.ID, c.Tags)
 	})
 	o.s.mu.Unlock()
 	if err != nil {
@@ -369,8 +423,8 @@ func (o *OrgStore) CreateCard(c model.Card) (model.Card, error) {
 }
 
 // UpdateCard applies fn to the card and stores its title, description,
-// project, priority, target and members (fn must leave it clean). Its column and
-// position change with MoveCard only.
+// project, priority, target, members and tags (fn must leave it clean). Its
+// column and position change with MoveCard only.
 func (o *OrgStore) UpdateCard(id string, fn func(*model.Card) error) (model.Card, error) {
 	var c model.Card
 	o.s.mu.Lock()
@@ -398,7 +452,10 @@ func (o *OrgStore) UpdateCard(id string, fn func(*model.Card) error) (model.Card
 		if err != nil {
 			return err
 		}
-		return setMembers(tx, id, c.Members, c.UpdatedAt)
+		if err := setMembers(tx, id, c.Members, c.UpdatedAt); err != nil {
+			return err
+		}
+		return setTags(tx, id, c.Tags)
 	})
 	o.s.mu.Unlock()
 	if err != nil {

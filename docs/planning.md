@@ -23,6 +23,9 @@ It looks like a project's **Board**: on a phone, tap a column's name at the top 
   and press `Alt` with an arrow key. On a phone, drag it onto a column's name at the top, or change **Column** on the card.
 - The project filter at the top shows one project's cards. A card may name a project, or
   none yet.
+- A tag filter shows only the cards with one tag. Click a tag in an open card to pick it, and
+  click **×** on the tag at the top to show all cards again. A card added while a tag is
+  picked gets that tag.
 
 Click a card to open it beside the board. On a phone it opens full screen, with **Back**.
 `Esc` closes it. A card has:
@@ -35,6 +38,10 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
   card on the board. Anyone in the org, planners too, can be a member and can add members. On
   the board, point at a card and press `Space` to put yourself on it; press it again to take
   yourself off.
+- **Tags**: short labels, such as `backend` or `Q3`, any number up to 20. Type one in the box
+  and press `Enter` (or a comma) to add it; the org's other tags are offered as you type.
+  Click **×** on a tag to take it off. Tags show on the card on the board. Case doesn't
+  matter: `Backend` and `backend` are the same tag.
 - **Description** (markdown): type in the box. It saves when you click elsewhere, or press
   `Ctrl+Enter`.
 - **Files**: pictures (PNG, JPEG, GIF, WebP, SVG), PDFs and text files (`.txt`, `.md`, `.log`,
