@@ -335,9 +335,18 @@ function membersEl(c) {
     h("span", { class: "sr-only" }, `Members: ${names}`));
 }
 
+// waitsEl marks a card that waits for cards it depends on, not done yet.
+function waitsEl(c) {
+  if (!c.waiting) return null;
+  const titles = (c.deps || []).filter((d) => !d.done).map((d) => d.title).join(", ");
+  return h("span", { class: "pl-chip pl-waits", title: `Waits for ${titles}` }, ico("lock"), `Waits for ${c.waiting}`,
+    h("span", { class: "sr-only" }, `: ${titles}`));
+}
+
 function cardEl(c) {
   const meta = [
     c.priority ? h("span", { class: `pl-chip p-${c.priority}`, title: "Priority" }, PRIORITY[c.priority]) : null,
+    waitsEl(c),
     c.target ? h("span", { class: "pl-chip pl-target", title: "Target" }, ico("flag"), c.target) : null,
     ...(c.tags || []).map((t) => h("span", { class: "pl-chip pl-tag", title: "Tag" }, t)),
     !pl.filter && c.project_name ? h("span", { class: "pl-project" }, c.project_name) : null,
@@ -952,6 +961,7 @@ function renderCard() {
   desc.id = "pd-desc";
 
   const links = c.links || [];
+  const deps = depsSection(c);
   const work = h("section", { class: "pl-section", "aria-labelledby": "pd-work" },
     h("h3", { id: "pd-work" }, "Work"),
     links.length
@@ -990,7 +1000,7 @@ function renderCard() {
 
   const danger = h("div", { class: "pl-danger" },
     ib({ type: "button", class: "btn small danger", onclick: attempt(async () => {
-      if (!await ask({ title: "Delete this card?", body: "Its comments, files and links go too. The tasks and goals it links to stay.", ok: "Delete", danger: true })) return;
+      if (!await ask({ title: "Delete this card?", body: "Its comments, files and links go too, and cards that depend on it no longer do. The tasks and goals it links to stay.", ok: "Delete", danger: true })) return;
       await call("DELETE", cardAPI(c.id));
       pl.cards = pl.cards.filter((x) => x.id !== c.id);
       closeCard();
@@ -999,8 +1009,81 @@ function renderCard() {
     }) }, "trash", "Delete card"));
 
   const keep = body.scrollTop;
-  fill(body, rename, suggest, facts, h("section", { class: "pl-section" }, h("h3", {}, h("label", { for: "pd-desc" }, "Description")), desc), filesSection(c), work, discussion, danger);
+  fill(body, rename, suggest, facts, h("section", { class: "pl-section" }, h("h3", {}, h("label", { for: "pd-desc" }, "Description")), desc), filesSection(c), deps, work, discussion, danger);
   body.scrollTop = keep;
+}
+
+// ---- dependencies: the cards to be done before this one, and those that
+// wait for it. A card is done in the Done column.
+
+// cardRow is a card a card depends on (or is needed by), which opens it;
+// remove, if given, takes it off.
+function cardRow(d, remove) {
+  return h("li", { class: `pl-link t-${d.done ? "done" : "idle"}` },
+    h("span", { class: "pl-link-kind", title: "Card" }, ico("plan")),
+    h("span", { class: "pl-link-main" },
+      h("button", { type: "button", class: "link pl-link-title", title: "Open the card", onclick: () => openCard(d.id).catch(fail) }, d.title),
+      h("span", { class: "pl-link-sub" }, COLUMN_TITLE[d.column] || d.column)),
+    h("span", { class: `pl-state t-${d.done ? "done" : "idle"}` }, d.done ? "Done" : "Not done yet"),
+    remove ? ib({ type: "button", class: "icon-btn small", "aria-label": `Remove ${d.title}`, title: "No longer depends on it",
+      onclick: attempt((e) => busy(e.currentTarget, remove)) }, "x") : null);
+}
+
+function depsSection(c) {
+  const deps = c.deps || [];
+  const ids = deps.map((d) => d.id);
+  const needed = c.needed_by || [];
+  return [
+    h("section", { class: "pl-section", "aria-labelledby": "pd-deps" },
+      h("h3", { id: "pd-deps" }, "Depends on"),
+      deps.length
+        ? h("ul", { class: "pl-links" }, ...deps.map((d) => cardRow(d, () => patchCard({ depends_on: ids.filter((x) => x !== d.id) })())))
+        : h("p", { class: "hint" }, "No other cards. Add the ones that must be done before this one."),
+      ib({ type: "button", class: "btn small pl-dep-add", title: "Add a card that must be done before this one", onclick: attempt(() => depSheet(c)) }, "plus", "Add a card…")),
+    needed.length ? h("section", { class: "pl-section", "aria-labelledby": "pd-needed" },
+      h("h3", { id: "pd-needed" }, "Needed by"),
+      h("ul", { class: "pl-links" }, ...needed.map((d) => cardRow(d)))) : null,
+  ];
+}
+
+// depSheet lists the org's cards to add one this card depends on. Those it
+// depends on already, and those that depend on it (by way of others too),
+// can't be picked.
+async function depSheet(c) {
+  const cards = await call("GET", cardAPI());
+  const byID = new Map(cards.map((x) => [x.id, x]));
+  const has = new Set((c.deps || []).map((d) => d.id));
+  // waits reports whether card x depends, by way of others too, on c.
+  const waits = (x, seen = new Set()) => {
+    if (seen.has(x.id)) return false;
+    seen.add(x.id);
+    return (x.depends_on || []).some((id) => id === c.id || (byID.has(id) && waits(byID.get(id), seen)));
+  };
+  const q = h("input", { type: "search", placeholder: "Filter cards", "aria-label": "Filter", autocomplete: "off" });
+  const list = h("ul", { class: "pl-pick" });
+  let picked = null;
+  const render = () => {
+    const f = q.value.trim().toLowerCase();
+    const shown = cards.filter((x) => x.id !== c.id && (!f || x.title.toLowerCase().includes(f))).slice(0, 100);
+    fill(list, ...(shown.length ? shown.map((x) => {
+      const why = has.has(x.id) ? "added" : waits(x) ? "depends on this card" : "";
+      return h("li", {},
+        h("button", { type: "button", class: "pl-pick-item", disabled: !!why, onclick: (e) => { picked = x; e.currentTarget.closest("dialog").close("ok"); } },
+          ico(has.has(x.id) ? "check" : "plan"),
+          h("span", { class: "pl-link-main" }, h("span", { class: "pl-link-title" }, x.title),
+            h("span", { class: "pl-link-sub" }, [COLUMN_TITLE[x.column], x.project_name, why].filter(Boolean).join(" · ")))));
+    }) : [h("li", { class: "hint" }, cards.length > 1 ? "No card matches." : "There are no other cards yet.")]));
+  };
+  q.addEventListener("input", render);
+  render();
+  const done = sheet("Depends on", [h("p", { class: "hint" }, "Pick a card that must be done before this one."), q, list], null);
+  q.focus();
+  await done;
+  if (!picked) return;
+  const id = c.id;
+  const v = await call("PATCH", cardAPI(id), { depends_on: [...has, picked.id] });
+  if (pl.open === id) { pl.detail = { ...pl.detail, ...v }; renderCard(); }
+  await loadPlanning();
 }
 
 async function unlink(c, l) {

@@ -269,6 +269,97 @@ func TestCardMembers(t *testing.T) {
 	}
 }
 
+// A card depends on other cards of its org: not on itself, another org's
+// card or one that already depends on it (by way of others too). Deleting
+// a card it depends on drops the dependency.
+func TestCardDeps(t *testing.T) {
+	t.Parallel()
+
+	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), &recordedEvents{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	acc := s.Accounts()
+	if err := acc.Bootstrap("admin", "s3cret-pass"); err != nil {
+		t.Fatal(err)
+	}
+	admin, _ := acc.EnvUser()
+	def, _ := acc.DefaultOrg()
+	other, err := acc.CreateOrg(admin.ID, "Other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := s.ForOrg(def.ID).AsUser(admin.ID)
+	add := func(o *OrgStore, title string, deps ...string) (model.Card, error) {
+		return o.CreateCard(model.Card{Title: title, Column: model.CardIdeas, DependsOn: deps})
+	}
+	setDeps := func(id string, deps ...string) error {
+		_, err := o.UpdateCard(id, func(c *model.Card) error { c.DependsOn = deps; return nil })
+		return err
+	}
+	deps := func(id string) []string {
+		t.Helper()
+		c, err := o.GetCard(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.DependsOn
+	}
+
+	a, _ := add(o, "A")
+	b, err := add(o, "B", a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := add(o, "C", b.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := deps(b.ID); !slices.Equal(got, []string{a.ID}) {
+		t.Fatalf("B depends on %v, want A", got)
+	}
+	if got := deps(a.ID); got == nil || len(got) != 0 {
+		t.Errorf("A depends on %#v, want none", got)
+	}
+	theirs, err := add(s.ForOrg(other.ID).AsUser(admin.ID), "Theirs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, err := range map[string]error{
+		"itself":         setDeps(a.ID, a.ID),
+		"a cycle":        setDeps(a.ID, b.ID),
+		"a longer cycle": setDeps(a.ID, c.ID),
+		"another org's":  setDeps(a.ID, theirs.ID),
+		"no such card":   setDeps(a.ID, "nope"),
+	} {
+		if !errors.Is(err, ErrBadDependency) {
+			t.Errorf("depending on %s: %v", name, err)
+		}
+	}
+	if _, err := add(o, "D", theirs.ID); !errors.Is(err, ErrBadDependency) {
+		t.Errorf("a new card on another org's: %v", err)
+	}
+	if err := setDeps(c.ID, b.ID, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if cards, err := o.ListCards(""); err != nil || len(cards) != 3 || !slices.Equal(cards[2].DependsOn, []string{b.ID, a.ID}) {
+		t.Errorf("listed: %+v %v", cards, err)
+	}
+	if err := o.DeleteCard(a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := deps(c.ID); !slices.Equal(got, []string{b.ID}) {
+		t.Errorf("C depends on %v after A was deleted, want B", got)
+	}
+	if got := deps(b.ID); len(got) != 0 {
+		t.Errorf("B depends on %v after A was deleted", got)
+	}
+	if err := setDeps(c.ID); err != nil || len(deps(c.ID)) != 0 {
+		t.Errorf("no dependencies: %v %v", err, deps(c.ID))
+	}
+}
+
 // A card's files keep their order, are its org's only, stop at
 // model.MaxCardFiles, and go with the card; cleanup sees the uploads cards
 // still have.

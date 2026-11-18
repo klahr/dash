@@ -201,6 +201,33 @@ func TestBrowserPlanningCardPane(t *testing.T) {
 		chromedp.Click(chromedp.CSS(`.pl-member .icon-btn`)))
 }
 
+// A card's pane adds a card it depends on from a list of the org's cards;
+// the board then shows that it waits, until that card is in Done.
+func TestBrowserPlanningCardDeps(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	var first, second struct{ ID string }
+	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Accounts", "column": "planned"}, http.StatusCreated, &first)
+	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Billing", "column": "ideas"}, http.StatusCreated, &second)
+
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	b.until("open Planning", `document.querySelector("#view-planning.active")`,
+		chromedp.Click(chromedp.CSS(`.nav > button[data-view=planning]`)))
+	card := fmt.Sprintf(`#view-planning .pl-card[data-id=%q]`, second.ID)
+	b.until("open Billing", `!document.querySelector("#card-detail").hidden && !!document.querySelector("#pd-deps")`,
+		chromedp.Click(chromedp.CSS(card+" .pl-open")))
+	b.until("the list of cards", `!!document.querySelector("dialog .pl-pick-item")`,
+		chromedp.Click(chromedp.CSS(`.pl-dep-add`)))
+	b.waitJS("Billing itself isn't in it", `![...document.querySelectorAll("dialog .pl-pick-item .pl-link-title")].some((x) => x.textContent === "Billing")`)
+	b.until("pick Accounts", `document.querySelector("#pd-deps + .pl-links .pl-link-title")?.textContent === "Accounts"`,
+		chromedp.Click(chromedp.CSS(`dialog .pl-pick-item`)))
+	b.waitJS("Billing waits on the board", fmt.Sprintf(`document.querySelector(%q)?.title === "Waits for Accounts"`, card+" .pl-waits"))
+	h.api.must("POST", "/api/planning/cards/"+first.ID+"/move", map[string]any{"column": "done"}, http.StatusOK, nil)
+	b.waitJS("no longer, once Accounts is done", fmt.Sprintf(`!document.querySelector(%q) && document.querySelector("#pd-deps + .pl-links .pl-state")?.textContent === "Done"`, card+" .pl-waits"))
+}
+
 // A card's tags show on it on the board. In its pane, Enter adds a tag and
 // a tag's name shows only the cards with it, until × at the top.
 func TestBrowserPlanningTags(t *testing.T) {

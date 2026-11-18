@@ -238,6 +238,38 @@ func TestPlanningCardMembers(t *testing.T) {
 	}
 }
 
+// A card names the cards it depends on and those that depend on it, and
+// counts those not done yet; a cycle is refused.
+func TestPlanningCardDeps(t *testing.T) {
+	s, _, _ := boardServer(t)
+	h := s.Routes()
+	ph, _ := plannerOf(t, s, h)
+
+	a := decodeCard(t, do(t, ph, "POST", "/api/planning/cards", `{"title":"Accounts"}`))
+	b := decodeCard(t, do(t, ph, "POST", "/api/planning/cards", `{"title":"Billing","depends_on":["`+a.ID+`"]}`))
+	if len(b.Deps) != 1 || b.Deps[0].ID != a.ID || b.Deps[0].Title != "Accounts" || b.Deps[0].Done || b.Waiting != 1 {
+		t.Fatalf("Billing depends on Accounts: %+v", b)
+	}
+	if w := do(t, ph, "PATCH", "/api/planning/cards/"+a.ID, `{"depends_on":["`+b.ID+`"]}`); w.Code != http.StatusBadRequest {
+		t.Errorf("a cycle: %d %s", w.Code, w.Body)
+	}
+	a = decodeCard(t, do(t, ph, "GET", "/api/planning/cards/"+a.ID, ""))
+	if len(a.NeededBy) != 1 || a.NeededBy[0].ID != b.ID || len(a.Deps) != 0 {
+		t.Errorf("Accounts is needed by Billing: %+v", a)
+	}
+	if w := do(t, ph, "POST", "/api/planning/cards/"+a.ID+"/move", `{"column":"done"}`); w.Code != http.StatusOK {
+		t.Fatalf("move: %d %s", w.Code, w.Body)
+	}
+	b = decodeCard(t, do(t, ph, "GET", "/api/planning/cards/"+b.ID, ""))
+	if b.Waiting != 0 || !b.Deps[0].Done {
+		t.Errorf("Accounts is done: %+v", b)
+	}
+	b = decodeCard(t, do(t, ph, "PATCH", "/api/planning/cards/"+b.ID, `{"depends_on":[]}`))
+	if len(b.Deps) != 0 || len(b.DependsOn) != 0 {
+		t.Errorf("no dependencies: %+v", b)
+	}
+}
+
 // A card takes tags when it is made and when it changes, cleaned; a
 // planner can tag cards too, and list_cards finds them by tag.
 func TestPlanningCardTags(t *testing.T) {

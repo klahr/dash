@@ -3296,6 +3296,8 @@ button.goal-task-open:hover { background: var(--raised); }
 .pl-chip.p-high { color: var(--failed); background: color-mix(in srgb, var(--failed) 14%, transparent); }
 .pl-chip.p-medium { color: var(--review); background: color-mix(in srgb, var(--review) 14%, transparent); }
 .pl-comments { display: inline-flex; align-items: center; gap: 3px; }
+/* A card waiting for cards it depends on. */
+.pl-chip.pl-waits { color: var(--review); background: color-mix(in srgb, var(--review) 14%, transparent); }
 .pl-project { color: var(--faint); }
 /* The assignee's face, at the end of the card's meta row. */
 /* The card's members: their faces, overlapping, at its right; past three, a count. */
@@ -3394,6 +3396,7 @@ button.pl-tag-name:hover { text-decoration: underline; }
 .pl-link-title { font-weight: 600; overflow-wrap: anywhere; text-align: left; }
 .pl-link-sub { font-size: var(--fs-xs); color: var(--muted); }
 .pl-state { flex: none; font-weight: 600; }
+.pl-dep-add { margin-top: 8px; }
 .pl-comment { padding: 8px 10px; border-radius: var(--r-m); background: var(--surface); border: 1px solid var(--line); }
 .pl-comment-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-s); }
 .pl-comment-head time { color: var(--muted); margin-right: auto; }

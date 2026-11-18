@@ -127,7 +127,7 @@ func (o *OrgStore) emitCard(id string, deleted bool) {
 const cardColumns = "c.id, c.org_id, c.project_id, c.title, c.description, c.col, c.position, c.priority, c.target, COALESCE(c.created_by, 0), c.created_at, c.updated_at"
 
 func scanCard(sc interface{ Scan(...any) error }) (model.Card, error) {
-	c := model.Card{Members: []int64{}, Tags: []string{}, Files: []model.CardFile{}}
+	c := model.Card{Members: []int64{}, DependsOn: []string{}, Tags: []string{}, Files: []model.CardFile{}}
 	var created, updated int64
 	err := sc.Scan(&c.ID, &c.OrgID, &c.ProjectID, &c.Title, &c.Description, &c.Column, &c.Position, &c.Priority, &c.Target, &c.CreatedBy, &created, &updated)
 	c.CreatedAt, c.UpdatedAt = time.Unix(created, 0).UTC(), time.Unix(updated, 0).UTC()
@@ -155,6 +155,26 @@ func cardMembers(q rowsQuerier, where string, args ...any) (map[string][]int64, 
 			return nil, err
 		}
 		out[id] = append(out[id], uid)
+	}
+	return out, rows.Err()
+}
+
+// cardDeps reads the dependencies of the cards the query (with args) picks,
+// by card, in the order they were added.
+func cardDeps(q rowsQuerier, where string, args ...any) (map[string][]string, error) {
+	rows, err := q.Query("SELECT d.card_id, d.depends_on FROM planning_card_deps d JOIN planning_cards c ON c.id = d.card_id WHERE "+where+
+		" ORDER BY d.added_at, d.rowid", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var id, dep string
+		if err := rows.Scan(&id, &dep); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], dep)
 	}
 	return out, rows.Err()
 }
@@ -251,6 +271,10 @@ func (o *OrgStore) ListCards(projectID string) ([]model.Card, error) {
 	if err != nil {
 		return nil, err
 	}
+	deps, err := cardDeps(o.s.db, "c.org_id = ?", o.org)
+	if err != nil {
+		return nil, err
+	}
 	tags, err := cardTags(o.s.db, "c.org_id = ?", o.org)
 	if err != nil {
 		return nil, err
@@ -262,6 +286,9 @@ func (o *OrgStore) ListCards(projectID string) ([]model.Card, error) {
 	for i := range out {
 		if m := members[out[i].ID]; m != nil {
 			out[i].Members = m
+		}
+		if d := deps[out[i].ID]; d != nil {
+			out[i].DependsOn = d
 		}
 		if t := tags[out[i].ID]; t != nil {
 			out[i].Tags = t
@@ -295,6 +322,13 @@ func getCard(q interface {
 	}
 	if m := members[id]; m != nil {
 		c.Members = m
+	}
+	deps, err := cardDeps(q, "c.id = ?", id)
+	if err != nil {
+		return c, err
+	}
+	if d := deps[id]; d != nil {
+		c.DependsOn = d
 	}
 	tags, err := cardTags(q, "c.id = ?", id)
 	if err != nil {
@@ -377,6 +411,76 @@ func added(was, now []int64) []int64 {
 	return out
 }
 
+// checkDeps checks that the card (id) may depend on deps: each is another
+// of the org's cards, and none of them depends, by way of others, on it.
+func (o *OrgStore) checkDeps(tx *sql.Tx, id string, deps []string) error {
+	if len(deps) == 0 {
+		return nil
+	}
+	for _, d := range deps {
+		if d == id {
+			return fmt.Errorf("%w: a card can't depend on itself", ErrBadDependency)
+		}
+		var one int
+		err := tx.QueryRow("SELECT 1 FROM planning_cards WHERE id = ? AND org_id = ?", d, o.org).Scan(&one)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: no card %q", ErrBadDependency, d)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	graph, err := cardDeps(tx, "c.org_id = ?", o.org)
+	if err != nil {
+		return err
+	}
+	graph[id] = deps
+	seen := map[string]bool{}
+	var reaches func(from string) bool // whether from depends on id
+	reaches = func(from string) bool {
+		if from == id {
+			return true
+		}
+		if seen[from] {
+			return false
+		}
+		seen[from] = true
+		return slices.ContainsFunc(graph[from], reaches)
+	}
+	for _, d := range deps {
+		if reaches(d) {
+			var title string
+			_ = tx.QueryRow("SELECT title FROM planning_cards WHERE id = ?", d).Scan(&title)
+			return fmt.Errorf("%w: %q already depends on this card", ErrBadDependency, title)
+		}
+	}
+	return nil
+}
+
+// setDeps makes the card's dependencies deps: those no longer in it go, new
+// ones are added after the others.
+func setDeps(tx *sql.Tx, cardID string, deps []string, now time.Time) error {
+	had, err := cardDeps(tx, "c.id = ?", cardID)
+	if err != nil {
+		return err
+	}
+	for _, d := range had[cardID] {
+		if !slices.Contains(deps, d) {
+			if _, err := tx.Exec("DELETE FROM planning_card_deps WHERE card_id = ? AND depends_on = ?", cardID, d); err != nil {
+				return err
+			}
+		}
+	}
+	for _, d := range deps {
+		if !slices.Contains(had[cardID], d) {
+			if _, err := tx.Exec("INSERT INTO planning_card_deps (card_id, depends_on, added_at) VALUES (?, ?, ?)", cardID, d, now.Unix()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // CreateCard adds a card at the end of its column. c must be cleaned
 // (model.CleanCard) by the caller; the creator is the view's user.
 func (o *OrgStore) CreateCard(c model.Card) (model.Card, error) {
@@ -388,6 +492,9 @@ func (o *OrgStore) CreateCard(c model.Card) (model.Card, error) {
 	}
 	if c.Members == nil {
 		c.Members = []int64{}
+	}
+	if c.DependsOn == nil {
+		c.DependsOn = []string{}
 	}
 	if c.Tags == nil {
 		c.Tags = []string{}
@@ -409,6 +516,12 @@ func (o *OrgStore) CreateCard(c model.Card) (model.Card, error) {
 		if err != nil {
 			return err
 		}
+		if err := o.checkDeps(tx, c.ID, c.DependsOn); err != nil {
+			return err
+		}
+		if err := setDeps(tx, c.ID, c.DependsOn, c.CreatedAt); err != nil {
+			return err
+		}
 		if err := setMembers(tx, c.ID, c.Members, c.CreatedAt); err != nil {
 			return err
 		}
@@ -423,8 +536,8 @@ func (o *OrgStore) CreateCard(c model.Card) (model.Card, error) {
 }
 
 // UpdateCard applies fn to the card and stores its title, description,
-// project, priority, target, members and tags (fn must leave it clean). Its
-// column and position change with MoveCard only.
+// project, priority, target, members, dependencies and tags (fn must leave
+// it clean). Its column and position change with MoveCard only.
 func (o *OrgStore) UpdateCard(id string, fn func(*model.Card) error) (model.Card, error) {
 	var c model.Card
 	o.s.mu.Lock()
@@ -446,10 +559,16 @@ func (o *OrgStore) UpdateCard(id string, fn func(*model.Card) error) (model.Card
 		if err := o.checkMembers(tx, added(members, c.Members)); err != nil {
 			return err
 		}
+		if err := o.checkDeps(tx, id, c.DependsOn); err != nil {
+			return err
+		}
 		c.UpdatedAt = time.Now().UTC().Truncate(time.Second)
 		_, err = tx.Exec("UPDATE planning_cards SET project_id = ?, title = ?, description = ?, priority = ?, target = ?, updated_at = ? WHERE id = ?",
 			c.ProjectID, c.Title, c.Description, c.Priority, c.Target, c.UpdatedAt.Unix(), id)
 		if err != nil {
+			return err
+		}
+		if err := setDeps(tx, id, c.DependsOn, c.UpdatedAt); err != nil {
 			return err
 		}
 		if err := setMembers(tx, id, c.Members, c.UpdatedAt); err != nil {
@@ -533,13 +652,31 @@ func (o *OrgStore) MoveCard(id string, col model.CardColumn, position int) (mode
 	return c, nil
 }
 
-// DeleteCard deletes a card with its comments and links (not the tasks
-// and goals it links to).
+// DeleteCard deletes a card with its comments, links and dependencies
+// (not the tasks and goals it links to). The cards that depended on it no
+// longer do.
 func (o *OrgStore) DeleteCard(id string) error {
+	var dependents []string
 	o.s.mu.Lock()
 	err := inTx(o.s.db, func(tx *sql.Tx) error {
 		c, err := getCard(tx, o.org, id)
 		if err != nil {
+			return err
+		}
+		rows, err := tx.Query("SELECT card_id FROM planning_card_deps WHERE depends_on = ?", id)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var x string
+			if err := rows.Scan(&x); err != nil {
+				rows.Close()
+				return err
+			}
+			dependents = append(dependents, x)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
 			return err
 		}
 		if _, err := tx.Exec("DELETE FROM planning_cards WHERE id = ?", id); err != nil {
@@ -554,6 +691,9 @@ func (o *OrgStore) DeleteCard(id string) error {
 	}
 	o.s.unindexCard(id)
 	o.emitCard(id, true)
+	for _, x := range dependents {
+		o.emitCard(x, false)
+	}
 	return nil
 }
 

@@ -49,9 +49,20 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
   description or a comment, or drop files on the open card, or on a card on the board. Anyone in
   the org, planners too, can attach and remove files. A card with a picture shows the first one
   across its top on the board, and how many files it has by a paper clip.
+- **Depends on**: the cards that must be done before this one. **Add a card…** picks one;
+  **×** takes it off. A card can't depend on itself, or on a card that already depends on it.
+  **Needed by** lists the cards that depend on this one. Click a card in either list to open it.
 - **Comments**: anyone in the org can comment; a comment's author or an admin can delete it.
   A card with comments shows how many on the board, by a speech bubble.
 - **Work**: the tasks and goals linked to it, each with its status
+
+## Dependencies
+
+A card that depends on cards not in **Done** yet shows **Waits for** and how many, on the
+board. Point at it to see their titles. It goes away when they are all in **Done**. Dash
+doesn't stop you moving or starting a card that waits: it only shows it.
+
+Deleting a card takes it off the cards that depend on it.
 
 ## Previews
 
@@ -128,8 +139,8 @@ when linked work moves on.
 
 The chat has three tools for the plan (see [MCP](mcp.md#the-chats-task-tools)):
 
-- `list_cards`: the cards, with their column, priority, target, members and status
-- `create_card`: add a card
+- `list_cards`: the cards, with their column, priority, target, members, dependencies and status
+- `create_card`: add a card, and the cards it depends on
 - `link_card`: link a task or goal to a card
 
 ## API
@@ -139,8 +150,8 @@ Planning is under `/api/planning/`:
 | Call                                                  | What it does                                     |
 |-------------------------------------------------------|--------------------------------------------------|
 | `GET /api/planning/cards?project=<id>`                | the cards, with status and linked work           |
-| `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `column`, `priority`, `target`, `members` (user ids; `[]` is nobody) |
-| `GET`, `PATCH`, `DELETE /api/planning/cards/{id}`     | one card (`GET` has its comments)                |
+| `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `column`, `priority`, `target`, `members` (user ids; `[]` is nobody), `depends_on` (card ids; `[]` is none) |
+| `GET`, `PATCH`, `DELETE /api/planning/cards/{id}`     | one card (`GET` has its comments). A card has `deps` and `needed_by` (id, title, column, done) and `waiting`: its dependencies not done yet |
 | `POST /api/planning/cards/{id}/move`                  | `column` and `position` (0 is the top)           |
 | `GET`, `POST /api/planning/cards/{id}/comments`       | its comments; add one: `text`                    |
 | `DELETE /api/planning/cards/{id}/comments/{comment}`  | delete a comment                                 |

@@ -40,13 +40,14 @@ const (
 	CardLow    = "low"
 )
 
-// Limits on a card's text, and on its members.
+// Limits on a card's text, its members and its dependencies.
 const (
 	MaxCardTitle       = 200
 	MaxCardDescription = 20000
 	MaxCardTarget      = 60
 	MaxCardComment     = 10000
 	MaxCardMembers     = 50
+	MaxCardDeps        = 50
 	MaxCardTags        = 20
 	MaxCardTag         = 40
 	MaxCardFiles       = 30
@@ -68,6 +69,9 @@ type Card struct {
 	// Members are the people in the org on the card (user ids), in the
 	// order they were added.
 	Members []int64 `json:"members"`
+	// DependsOn are the org's other cards that must be done (in the Done
+	// column) before this one, in the order they were added.
+	DependsOn []string `json:"depends_on"`
 	// Tags are short labels on the card ("backend", "Q3"), in the order
 	// they were added; each once, whatever its case.
 	Tags []string `json:"tags"`
@@ -160,6 +164,19 @@ func CleanCard(c *Card) error {
 		return fmt.Errorf("a card has at most %d members", MaxCardMembers)
 	}
 	c.Members = members
+	// Each dependency once, in the order given.
+	seenDep := map[string]bool{}
+	deps := []string{}
+	for _, id := range c.DependsOn {
+		if id = strings.TrimSpace(id); id != "" && !seenDep[id] {
+			seenDep[id] = true
+			deps = append(deps, id)
+		}
+	}
+	if len(deps) > MaxCardDeps {
+		return fmt.Errorf("a card depends on at most %d cards", MaxCardDeps)
+	}
+	c.DependsOn = deps
 	tags, err := CleanTags(c.Tags)
 	if err != nil {
 		return err

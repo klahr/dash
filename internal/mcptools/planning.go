@@ -26,12 +26,18 @@ type CardRow struct {
 	Status   string `json:"status"`
 	Progress string `json:"progress,omitempty"`
 	Links    int    `json:"links"`
+	// DependsOn are the ids of the cards to be done before this one;
+	// Waiting counts those not done yet.
+	DependsOn []string `json:"depends_on,omitempty"`
+	Waiting   int      `json:"waiting,omitempty"`
 }
 
 // NewCard is a card to add. Project is a project name or id ("" for none).
+// DependsOn are ids of cards to be done before it.
 type NewCard struct {
 	Title, Description, Project, Column, Priority, Target string
 	Tags                                                  []string
+	DependsOn                                             []string
 }
 
 // CardBoard is a Board with the org's plan: Tools then has the planning tools
@@ -51,7 +57,8 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 	pProject.Desc = "Only this project's cards (name or id); default every project's."
 	return []Tool{
 		{"list_cards", "List the cards of the org's plan (the Planning page): what a product owner wants built, by column " +
-			"(ideas, planned, in_progress, done), with each card's priority, target, members, tags and the status of the tasks and goals linked to it.",
+			"(ideas, planned, in_progress, done), with each card's priority, target, members, tags, the cards it depends on " +
+			"(depends_on; waiting counts those not done yet) and the status of the tasks and goals linked to it.",
 			[]Param{pProject, {"column", "string", "Only this column: ideas, planned, in_progress or done.", false},
 				{"tag", "string", "Only the cards with this tag (any case).", false}},
 			func(a Args) (any, error) {
@@ -89,13 +96,15 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 				{"priority", "string", "high, medium or low; none if left out.", false},
 				{"target", "string", "When it should ship: a version like 1.4, or a date.", false},
 				{"tags", "array", "Short labels for the card, e.g. [\"backend\", \"Q3\"].", false},
+				{"depends_on", "array", "Ids of cards (see list_cards) that must be done before this one.", false},
 			},
 			func(a Args) (any, error) {
 				if strings.TrimSpace(a.Str("title")) == "" {
 					return nil, errors.New("title is required")
 				}
 				return cb.CreateCard(NewCard{Title: a.Str("title"), Description: a.Str("description"), Project: a.Str("project"),
-					Column: a.Str("column"), Priority: a.Str("priority"), Target: a.Str("target"), Tags: a.List("tags")})
+					Column: a.Str("column"), Priority: a.Str("priority"), Target: a.Str("target"), Tags: a.List("tags"),
+					DependsOn: a.List("depends_on")})
 			}},
 		{"link_card", "Link a task or a goal to a card of the plan, so the card shows its status (see list_cards for card ids).",
 			[]Param{

@@ -99,11 +99,30 @@ type cardView struct {
 	ProjectName string `json:"project_name,omitempty"`
 	// People are the card's members (model.Card.Members, the same order)
 	// with their usernames and pictures, to show their faces on the card.
-	People     []cardPerson  `json:"people"`
-	Status     cardStatus    `json:"status"`
-	Links      []linkView    `json:"links"`
+	People []cardPerson `json:"people"`
+	Status cardStatus   `json:"status"`
+	Links  []linkView   `json:"links"`
+	// Deps are the cards it depends on (model.Card.DependsOn, the same
+	// order), NeededBy the cards that depend on it. Waiting counts the
+	// dependencies not done yet: the card is blocked while it isn't 0.
+	Deps       []cardRef     `json:"deps"`
+	NeededBy   []cardRef     `json:"needed_by"`
+	Waiting    int           `json:"waiting"`
 	Comments   int           `json:"comments"`
 	Discussion []cardComment `json:"discussion,omitempty"` // GET of one card
+}
+
+// cardRef is another card, as a card that depends on it (or that it
+// depends on) names it: done when it is in the Done column.
+type cardRef struct {
+	ID     string           `json:"id"`
+	Title  string           `json:"title"`
+	Column model.CardColumn `json:"column"`
+	Done   bool             `json:"done"`
+}
+
+func refOf(c model.Card) cardRef {
+	return cardRef{ID: c.ID, Title: c.Title, Column: c.Column, Done: c.Column == model.CardDone}
 }
 
 // cardPerson is one of a card's members: their user id, username and
@@ -261,12 +280,33 @@ func (w *planningWork) shipped(ts []model.Todo) string {
 	return latest.Name
 }
 
-// views makes the views of cards, with their links (from links) and
-// comment counts.
-func (w *planningWork) views(cards []model.Card, links map[string][]model.CardLink, comments map[string]int) []cardView {
+// views makes the views of cards, with their links (from links), comment
+// counts and dependencies (all is every card of the org, to name them).
+func (w *planningWork) views(cards, all []model.Card, links map[string][]model.CardLink, comments map[string]int) []cardView {
+	byID := make(map[string]model.Card, len(all))
+	neededBy := map[string][]cardRef{}
+	for _, c := range all {
+		byID[c.ID] = c
+		for _, d := range c.DependsOn {
+			neededBy[d] = append(neededBy[d], refOf(c))
+		}
+	}
 	out := make([]cardView, 0, len(cards))
 	for _, c := range cards {
-		v := cardView{Card: c, ProjectName: w.projects[c.ProjectID].Name, Links: []linkView{}, Comments: comments[c.ID]}
+		v := cardView{Card: c, ProjectName: w.projects[c.ProjectID].Name, Links: []linkView{}, Comments: comments[c.ID],
+			Deps: []cardRef{}, NeededBy: []cardRef{}}
+		for _, id := range c.DependsOn {
+			if d, ok := byID[id]; ok {
+				r := refOf(d)
+				v.Deps = append(v.Deps, r)
+				if !r.Done {
+					v.Waiting++
+				}
+			}
+		}
+		if n := neededBy[c.ID]; n != nil {
+			v.NeededBy = n
+		}
 		// A member who has left the org since is no longer shown.
 		v.Members, v.People = []int64{}, []cardPerson{}
 		for _, id := range c.Members {
@@ -429,7 +469,11 @@ func (sv *service) cardViews(ctx context.Context, cards []model.Card) ([]cardVie
 	if err != nil {
 		return nil, err
 	}
-	return sv.planningWork(ctx).views(cards, links, comments), nil
+	all, err := sv.data.ListCards("")
+	if err != nil {
+		return nil, err
+	}
+	return sv.planningWork(ctx).views(cards, all, links, comments), nil
 }
 
 func (sv *service) cardView(ctx context.Context, id string) (cardView, error) {
@@ -475,6 +519,9 @@ type cardRequest struct {
 	// Members are the user ids of the people in the org on the card, all of
 	// them ([] is nobody).
 	Members *[]int64 `json:"members"`
+	// DependsOn are the ids of the org's cards to be done before this one,
+	// all of them ([] is none).
+	DependsOn *[]string `json:"depends_on"`
 	// Tags are the card's tags, all of them ([] is none).
 	Tags *[]string `json:"tags"`
 }
@@ -486,6 +533,7 @@ func (req cardRequest) apply(c *model.Card) error {
 	set(&c.Priority, req.Priority)
 	set(&c.Target, req.Target)
 	set(&c.Members, req.Members)
+	set(&c.DependsOn, req.DependsOn)
 	set(&c.Tags, req.Tags)
 	if req.Column != nil {
 		c.Column = model.CardColumn(*req.Column)
@@ -1108,8 +1156,13 @@ func (s *Server) linkedCards(w http.ResponseWriter, r *http.Request) {
 // ---- the planning tools (mcptools.CardBoard) ----
 
 func cardRow(v cardView) mcptools.CardRow {
-	return mcptools.CardRow{ID: v.ID, Title: v.Title, Column: string(v.Column), Priority: v.Priority, Target: v.Target,
-		Project: v.ProjectName, Members: usernames(v.People), Tags: v.Tags, Status: v.Status.Text, Progress: v.Status.Progress, Links: len(v.Links)}
+	r := mcptools.CardRow{ID: v.ID, Title: v.Title, Column: string(v.Column), Priority: v.Priority, Target: v.Target,
+		Project: v.ProjectName, Members: usernames(v.People), Tags: v.Tags, Status: v.Status.Text, Progress: v.Status.Progress, Links: len(v.Links),
+		Waiting: v.Waiting}
+	for _, d := range v.Deps {
+		r.DependsOn = append(r.DependsOn, d.ID)
+	}
+	return r
 }
 
 func usernames(ps []cardPerson) []string {
@@ -1138,6 +1191,9 @@ func (b board) Cards(projectID string) ([]mcptools.CardRow, error) {
 
 func (b board) CreateCard(nc mcptools.NewCard) (mcptools.CardRow, error) {
 	req := cardRequest{Title: &nc.Title, Description: &nc.Description, Priority: &nc.Priority, Target: &nc.Target, Tags: &nc.Tags}
+	if len(nc.DependsOn) > 0 {
+		req.DependsOn = &nc.DependsOn
+	}
 	if nc.Column != "" {
 		req.Column = &nc.Column
 	}
