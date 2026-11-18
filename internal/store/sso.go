@@ -42,7 +42,7 @@ type Identity struct {
 
 const identityCols = "SELECT user_id, provider, subject, email, hd, created_at, COALESCE(last_login_at, 0) FROM user_identities"
 
-func scanIdentity(sc interface{ Scan(...any) error }) (Identity, error) {
+func scanIdentity(sc scanner) (Identity, error) {
 	var id Identity
 	var created, last int64
 	err := sc.Scan(&id.UserID, &id.Provider, &id.Subject, &id.Email, &id.HD, &created, &last)

@@ -126,7 +126,7 @@ func (o *OrgStore) emitCard(id string, deleted bool) {
 
 const cardColumns = "c.id, c.org_id, c.project_id, c.title, c.description, c.col, c.position, c.priority, c.target, COALESCE(c.created_by, 0), c.created_at, c.updated_at"
 
-func scanCard(sc interface{ Scan(...any) error }) (model.Card, error) {
+func scanCard(sc scanner) (model.Card, error) {
 	c := model.Card{Members: []int64{}, DependsOn: []string{}, Tags: []string{}, Files: []model.CardFile{}}
 	var created, updated int64
 	err := sc.Scan(&c.ID, &c.OrgID, &c.ProjectID, &c.Title, &c.Description, &c.Column, &c.Position, &c.Priority, &c.Target, &c.CreatedBy, &created, &updated)
@@ -134,92 +134,47 @@ func scanCard(sc interface{ Scan(...any) error }) (model.Card, error) {
 	return c, err
 }
 
-type rowsQuerier interface {
-	Query(string, ...any) (*sql.Rows, error)
+// scanPair reads a row of a key and a value.
+func scanPair[K, V any](sc scanner) (K, V, error) {
+	var k K
+	var v V
+	err := sc.Scan(&k, &v)
+	return k, v, err
 }
 
 // cardMembers reads the members of the cards the query (with args) picks,
 // by card, in the order they were added.
 func cardMembers(q rowsQuerier, where string, args ...any) (map[string][]int64, error) {
-	rows, err := q.Query("SELECT m.card_id, m.user_id FROM planning_card_members m JOIN planning_cards c ON c.id = m.card_id WHERE "+where+
+	return groupBy(q, scanPair[string, int64], "SELECT m.card_id, m.user_id FROM planning_card_members m JOIN planning_cards c ON c.id = m.card_id WHERE "+where+
 		" ORDER BY m.added_at, m.rowid", args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string][]int64{}
-	for rows.Next() {
-		var id string
-		var uid int64
-		if err := rows.Scan(&id, &uid); err != nil {
-			return nil, err
-		}
-		out[id] = append(out[id], uid)
-	}
-	return out, rows.Err()
 }
 
 // cardDeps reads the dependencies of the cards the query (with args) picks,
 // by card, in the order they were added.
 func cardDeps(q rowsQuerier, where string, args ...any) (map[string][]string, error) {
-	rows, err := q.Query("SELECT d.card_id, d.depends_on FROM planning_card_deps d JOIN planning_cards c ON c.id = d.card_id WHERE "+where+
+	return groupBy(q, scanPair[string, string], "SELECT d.card_id, d.depends_on FROM planning_card_deps d JOIN planning_cards c ON c.id = d.card_id WHERE "+where+
 		" ORDER BY d.added_at, d.rowid", args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string][]string{}
-	for rows.Next() {
-		var id, dep string
-		if err := rows.Scan(&id, &dep); err != nil {
-			return nil, err
-		}
-		out[id] = append(out[id], dep)
-	}
-	return out, rows.Err()
 }
 
 // cardTags reads the tags of the cards the query (with args) picks, by
 // card, in their order.
 func cardTags(q rowsQuerier, where string, args ...any) (map[string][]string, error) {
-	rows, err := q.Query("SELECT t.card_id, t.tag FROM planning_card_tags t JOIN planning_cards c ON c.id = t.card_id WHERE "+where+
+	return groupBy(q, scanPair[string, string], "SELECT t.card_id, t.tag FROM planning_card_tags t JOIN planning_cards c ON c.id = t.card_id WHERE "+where+
 		" ORDER BY t.position", args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string][]string{}
-	for rows.Next() {
-		var id, tag string
-		if err := rows.Scan(&id, &tag); err != nil {
-			return nil, err
-		}
-		out[id] = append(out[id], tag)
-	}
-	return out, rows.Err()
 }
 
 // cardFiles reads the files of the cards the query (with args) picks, by
 // card, in the order they were added.
 func cardFiles(q rowsQuerier, where string, args ...any) (map[string][]model.CardFile, error) {
-	rows, err := q.Query("SELECT f.card_id, f.upload_id, f.name, f.type, f.size, COALESCE(f.added_by, 0), f.added_at FROM planning_card_files f JOIN planning_cards c ON c.id = f.card_id WHERE "+where+
-		" ORDER BY f.added_at, f.rowid", args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string][]model.CardFile{}
-	for rows.Next() {
+	return groupBy(q, func(sc scanner) (string, model.CardFile, error) {
 		var id string
 		var f model.CardFile
 		var at int64
-		if err := rows.Scan(&id, &f.ID, &f.Name, &f.Type, &f.Size, &f.AddedBy, &at); err != nil {
-			return nil, err
-		}
+		err := sc.Scan(&id, &f.ID, &f.Name, &f.Type, &f.Size, &f.AddedBy, &at)
 		f.AddedAt = time.Unix(at, 0).UTC()
-		out[id] = append(out[id], f)
-	}
-	return out, rows.Err()
+		return id, f, err
+	}, "SELECT f.card_id, f.upload_id, f.name, f.type, f.size, COALESCE(f.added_by, 0), f.added_at FROM planning_card_files f JOIN planning_cards c ON c.id = f.card_id WHERE "+where+
+		" ORDER BY f.added_at, f.rowid", args...)
 }
 
 // setTags makes the card's tags tags, in that order (cleaned by
@@ -251,20 +206,8 @@ func (o *OrgStore) ListCards(projectID string) ([]model.Card, error) {
 		q += " AND c.project_id = ?"
 		args = append(args, projectID)
 	}
-	rows, err := o.s.db.Query(q+" ORDER BY c.col, c.position, c.created_at, c.id", args...)
+	out, err := queryAll(o.s.db, scanCard, q+" ORDER BY c.col, c.position, c.created_at, c.id", args...)
 	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []model.Card{}
-	for rows.Next() {
-		c, err := scanCard(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	members, err := cardMembers(o.s.db, "c.org_id = ?", o.org)
@@ -600,20 +543,7 @@ func (o *OrgStore) MoveCard(id string, col model.CardColumn, position int) (mode
 		}
 		from := c.Column
 		ids := func(col model.CardColumn) ([]string, error) {
-			rows, err := tx.Query("SELECT id FROM planning_cards WHERE org_id = ? AND col = ? AND id != ? ORDER BY position, created_at, id", o.org, col, id)
-			if err != nil {
-				return nil, err
-			}
-			defer rows.Close()
-			var out []string
-			for rows.Next() {
-				var x string
-				if err := rows.Scan(&x); err != nil {
-					return nil, err
-				}
-				out = append(out, x)
-			}
-			return out, rows.Err()
+			return queryAll(tx, scanOne[string], "SELECT id FROM planning_cards WHERE org_id = ? AND col = ? AND id != ? ORDER BY position, created_at, id", o.org, col, id)
 		}
 		dest, err := ids(col)
 		if err != nil {
@@ -663,20 +593,7 @@ func (o *OrgStore) DeleteCard(id string) error {
 		if err != nil {
 			return err
 		}
-		rows, err := tx.Query("SELECT card_id FROM planning_card_deps WHERE depends_on = ?", id)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var x string
-			if err := rows.Scan(&x); err != nil {
-				rows.Close()
-				return err
-			}
-			dependents = append(dependents, x)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
+		if dependents, err = queryAll(tx, scanOne[string], "SELECT card_id FROM planning_card_deps WHERE depends_on = ?", id); err != nil {
 			return err
 		}
 		if _, err := tx.Exec("DELETE FROM planning_cards WHERE id = ?", id); err != nil {
@@ -891,22 +808,13 @@ func (o *OrgStore) CardLinks(ids ...string) (map[string][]model.CardLink, error)
 			args = append(args, id)
 		}
 	}
-	rows, err := o.s.db.Query(q+" ORDER BY l.created_at, l.rowid", args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string][]model.CardLink{}
-	for rows.Next() {
+	return groupBy(o.s.db, func(sc scanner) (string, model.CardLink, error) {
 		var l model.CardLink
 		var at int64
-		if err := rows.Scan(&l.CardID, &l.Kind, &l.WorkID, &at); err != nil {
-			return nil, err
-		}
+		err := sc.Scan(&l.CardID, &l.Kind, &l.WorkID, &at)
 		l.CreatedAt = time.Unix(at, 0).UTC()
-		out[l.CardID] = append(out[l.CardID], l)
-	}
-	return out, rows.Err()
+		return l.CardID, l, err
+	}, q+" ORDER BY l.created_at, l.rowid", args...)
 }
 
 // ownsWork reports whether the task or goal is the org's.

@@ -38,7 +38,7 @@ func (s *Store) PushVAPIDKey(gen func() (string, error)) (string, error) {
 
 const pushCols = `id, user_id, org_id, endpoint, p256dh, auth, user_agent, created_at, last_at, last_error`
 
-func scanPush(row interface{ Scan(...any) error }) (model.PushSubscription, error) {
+func scanPush(row scanner) (model.PushSubscription, error) {
 	var p model.PushSubscription
 	var created int64
 	var last sql.NullInt64
@@ -53,20 +53,7 @@ func scanPush(row interface{ Scan(...any) error }) (model.PushSubscription, erro
 }
 
 func (s *Store) queryPush(q string, args ...any) ([]model.PushSubscription, error) {
-	rows, err := s.db.Query(q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []model.PushSubscription{}
-	for rows.Next() {
-		p, err := scanPush(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	return out, rows.Err()
+	return queryAll(s.db, scanPush, q, args...)
 }
 
 // SavePushSubscription subscribes a browser (p.Endpoint) for p.UserID in

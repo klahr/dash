@@ -27,7 +27,7 @@ const prefixWall = "dashw_"
 
 const wallCols = `SELECT id, org_id, COALESCE(created_by, 0), name, token_prefix, public, created_at, last_used_at FROM wall_tokens`
 
-func scanWallToken(sc interface{ Scan(...any) error }) (WallToken, error) {
+func scanWallToken(sc scanner) (WallToken, error) {
 	var t WallToken
 	var created int64
 	var used sql.NullInt64
@@ -72,20 +72,7 @@ func (a *Accounts) CreateWallToken(org, uid int64, name string, public bool, now
 
 // WallTokens lists org's wall tokens, newest first.
 func (a *Accounts) WallTokens(org int64) ([]WallToken, error) {
-	rows, err := a.db.Query(wallCols+" WHERE org_id = ? ORDER BY created_at DESC, id DESC", org)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []WallToken{}
-	for rows.Next() {
-		t, err := scanWallToken(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, t)
-	}
-	return out, rows.Err()
+	return queryAll(a.db, scanWallToken, wallCols+" WHERE org_id = ? ORDER BY created_at DESC, id DESC", org)
 }
 
 // RevokeWallToken deletes org's wall token id (ErrNotFound if it isn't org's).

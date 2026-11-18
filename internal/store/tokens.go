@@ -176,7 +176,7 @@ const tokenCols = `SELECT t.id, t.kind, t.name, t.token_prefix, t.user_id, o.id,
 	t.last_used_at, COALESCE(t.refresh_expires_at, t.expires_at), COALESCE(t.oauth_client_id, ''), COALESCE(t.runner_id, '')
 	FROM tokens t JOIN organizations o ON o.id = t.org_id`
 
-func scanToken(sc interface{ Scan(...any) error }) (Token, error) {
+func scanToken(sc scanner) (Token, error) {
 	var t Token
 	var scopes string
 	var created int64
@@ -274,20 +274,7 @@ func (p *prefixScanner) Scan(dest ...any) error { return p.row.Scan(append(p.pre
 
 // Tokens lists uid's tokens of every kind, newest first.
 func (a *Accounts) Tokens(uid int64) ([]Token, error) {
-	rows, err := a.db.Query(tokenCols+" WHERE t.user_id = ? ORDER BY t.created_at DESC, t.id DESC", uid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []Token{}
-	for rows.Next() {
-		t, err := scanToken(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, t)
-	}
-	return out, rows.Err()
+	return queryAll(a.db, scanToken, tokenCols+" WHERE t.user_id = ? ORDER BY t.created_at DESC, t.id DESC", uid)
 }
 
 // RevokeToken deletes uid's token id and returns it (ErrNotFound if it
@@ -513,26 +500,17 @@ func (a *Accounts) ConnectedClients(now time.Time) int {
 // ---- credentials from before tokens had orgs ----
 
 // soleOrg is uid's org if they belong to exactly one: the only org a
-// credential made before tokens were pinned can be meant for.
-func soleOrg(q interface {
-	Query(string, ...any) (*sql.Rows, error)
-}, uid int64) (int64, bool) {
-	rows, err := q.Query("SELECT org_id FROM org_memberships WHERE user_id = ? LIMIT 2", uid)
+// credential made before tokens were pinned can be meant for. It is
+// ErrNoSoleOrg if they are in none or several.
+func soleOrg(q rowsQuerier, uid int64) (int64, error) {
+	orgs, err := queryAll(q, scanOne[int64], "SELECT org_id FROM org_memberships WHERE user_id = ? LIMIT 2", uid)
 	if err != nil {
-		return 0, false
-	}
-	defer rows.Close()
-	var orgs []int64
-	for rows.Next() {
-		var id int64
-		if rows.Scan(&id) == nil {
-			orgs = append(orgs, id)
-		}
+		return 0, err
 	}
 	if len(orgs) != 1 {
-		return 0, false
+		return 0, ErrNoSoleOrg
 	}
-	return orgs[0], true
+	return orgs[0], nil
 }
 
 // ErrNoSoleOrg: an old credential's user is in no org or several, so which
@@ -553,9 +531,9 @@ func (a *Accounts) ImportOAuthClient(c OAuthClient) error {
 // the client refreshes.
 func (a *Accounts) ImportGrant(clientID string, uid int64, refreshHash string, issued, refreshExpires, now time.Time) error {
 	return inTx(a.db, func(tx *sql.Tx) error {
-		org, ok := soleOrg(tx, uid)
-		if !ok {
-			return ErrNoSoleOrg
+		org, err := soleOrg(tx, uid)
+		if err != nil {
+			return err
 		}
 		var client, orgName string
 		if err := tx.QueryRow("SELECT name FROM oauth_clients WHERE id = ?", clientID).Scan(&client); err != nil {
@@ -569,7 +547,7 @@ func (a *Accounts) ImportGrant(clientID string, uid int64, refreshHash string, i
 		}
 		placeholder := prefixAccess + newToken() // never handed out
 		sc, _ := json.Marshal(UserScopes)
-		_, err := tx.Exec(`INSERT INTO tokens (kind, user_id, org_id, name, token_hash, token_prefix, scopes, created_at, expires_at,
+		_, err = tx.Exec(`INSERT INTO tokens (kind, user_id, org_id, name, token_hash, token_prefix, scopes, created_at, expires_at,
 				oauth_client_id, refresh_hash, refresh_expires_at)
 			VALUES ('oauth', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (refresh_hash) DO NOTHING`,
 			uid, org, client+" · "+orgName, hashToken(placeholder), placeholder[:prefixShown], string(sc), issued.UnixNano(),
@@ -590,11 +568,11 @@ func (a *Accounts) ImportRunnerToken(runnerID, name, tokenHash string, created t
 			}
 			return err
 		}
-		org, ok := soleOrg(tx, uid)
-		if !ok {
-			return ErrNoSoleOrg
+		org, err := soleOrg(tx, uid)
+		if err != nil {
+			return err
 		}
-		_, err := tx.Exec(`INSERT INTO tokens (kind, user_id, org_id, name, token_hash, token_prefix, scopes, created_at, runner_id)
+		_, err = tx.Exec(`INSERT INTO tokens (kind, user_id, org_id, name, token_hash, token_prefix, scopes, created_at, runner_id)
 			VALUES ('runner', ?, ?, ?, ?, ?, '["runner"]', ?, ?) ON CONFLICT DO NOTHING`,
 			uid, org, "Runner "+name, tokenHash, prefixRunner+"…", created.UnixNano(), runnerID)
 		return err

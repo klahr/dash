@@ -221,25 +221,15 @@ func (a *Accounts) SetOrgSlug(actor, orgID int64, slug string, now time.Time) (O
 // those orgs. Such a slug was never served as a subdomain, so nothing
 // redirects from it.
 func (a *Accounts) FixSlugs(now time.Time) ([]Org, error) {
-	rows, err := a.db.Query("SELECT id, name, slug FROM organizations ORDER BY id")
+	orgs, err := queryAll(a.db, func(sc scanner) (Org, error) {
+		var o Org
+		err := sc.Scan(&o.ID, &o.Name, &o.Slug)
+		return o, err
+	}, "SELECT id, name, slug FROM organizations ORDER BY id")
 	if err != nil {
 		return nil, err
 	}
-	var bad []Org
-	for rows.Next() {
-		var o Org
-		if err := rows.Scan(&o.ID, &o.Name, &o.Slug); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		if !a.UsableSlug(o.Slug) {
-			bad = append(bad, o)
-		}
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
+	bad := slices.DeleteFunc(orgs, func(o Org) bool { return a.UsableSlug(o.Slug) })
 	for i := range bad {
 		err := inTx(a.db, func(tx *sql.Tx) error {
 			s, err := a.freeSlug(tx, a.slugBase(bad[i].Name), bad[i].ID, now)

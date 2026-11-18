@@ -15,7 +15,7 @@ import (
 // They live in the database only: read when a summary or a push goes out,
 // and when the settings open.
 
-func scanNotify(row interface{ Scan(...any) error }) (model.UserNotify, error) {
+func scanNotify(row scanner) (model.UserNotify, error) {
 	var u model.UserNotify
 	var raw string
 	var next, through, sent int64
@@ -104,20 +104,8 @@ func (s *Store) TurnOffSummary(user, org int64, now time.Time) (bool, error) {
 // SummariesDue lists the summaries due at now: those whose next time has
 // come, settings included.
 func (s *Store) SummariesDue(now time.Time) ([]model.UserNotify, error) {
-	rows, err := s.db.Query("SELECT "+notifyCols+" FROM notify_settings WHERE next_at > 0 AND next_at <= ? ORDER BY next_at", now.Unix())
+	out, err := queryAll(s.db, scanNotify, "SELECT "+notifyCols+" FROM notify_settings WHERE next_at > 0 AND next_at <= ? ORDER BY next_at", now.Unix())
 	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []model.UserNotify
-	for rows.Next() {
-		u, err := scanNotify(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, u)
-	}
-	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	for i := range out {

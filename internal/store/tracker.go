@@ -25,7 +25,7 @@ func NewTrackerSecret() string { return TrackerSecretPrefix + rand.Text() }
 
 const trackerCols = `project_id, backend, config, status_map, credentials, webhook_secret, switched_at, cursor, last_sync_at, last_error, updated_at`
 
-func scanTracker(row interface{ Scan(...any) error }) (model.TrackerConfig, error) {
+func scanTracker(row scanner) (model.TrackerConfig, error) {
 	var c model.TrackerConfig
 	var cfg, smap, creds string
 	var switched, lastSync sql.NullInt64
@@ -149,7 +149,7 @@ func (s *Store) SetTrackerSync(projectID string, at time.Time, cursor time.Time,
 
 const linkCols = `todo_id, project_id, provider, external_id, url, pending, dash_hash, ext_hash, ext_version, state, synced_at`
 
-func scanLink(row interface{ Scan(...any) error }) (model.TrackerLink, error) {
+func scanLink(row scanner) (model.TrackerLink, error) {
 	var l model.TrackerLink
 	var pending int
 	var state string
@@ -170,20 +170,7 @@ func scanLink(row interface{ Scan(...any) error }) (model.TrackerLink, error) {
 // TrackerLinks are a project's todos linked to (or waiting for export to)
 // its tracker.
 func (s *Store) TrackerLinks(projectID string) ([]model.TrackerLink, error) {
-	rows, err := s.db.Query("SELECT "+linkCols+" FROM tracker_links WHERE project_id = ? ORDER BY todo_id", projectID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []model.TrackerLink
-	for rows.Next() {
-		l, err := scanLink(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, l)
-	}
-	return out, rows.Err()
+	return queryAll(s.db, scanLink, "SELECT "+linkCols+" FROM tracker_links WHERE project_id = ? ORDER BY todo_id", projectID)
 }
 
 // PutTrackerLink saves a todo's link.

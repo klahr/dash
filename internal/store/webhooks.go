@@ -24,7 +24,7 @@ func newWebhookSecret() string { return WebhookSecretPrefix + rand.Text() }
 
 const webhookCols = `id, project_id, user_id, org_id, name, url, format, events, enabled, secret, token, created_at, last_at, last_event, last_error`
 
-func scanWebhook(row interface{ Scan(...any) error }) (model.Webhook, error) {
+func scanWebhook(row scanner) (model.Webhook, error) {
 	var w model.Webhook
 	var events string
 	var enabled int
@@ -84,20 +84,7 @@ func (s *Store) WebhooksFor(projectID string) ([]model.Webhook, error) {
 }
 
 func (s *Store) queryWebhooks(q string, args ...any) ([]model.Webhook, error) {
-	rows, err := s.db.Query(q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []model.Webhook{}
-	for rows.Next() {
-		w, err := scanWebhook(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, w)
-	}
-	return out, rows.Err()
+	return queryAll(s.db, scanWebhook, q, args...)
 }
 
 // GetWebhook returns a webhook, secret included.

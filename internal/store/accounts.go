@@ -398,7 +398,7 @@ const orgCols = "SELECT " + orgFields + " FROM organizations o"
 // scanOrg reads a row selected by orgCols (or orgFields followed by columns
 // scanned into extra). Unlike scanUser it returns sql.ErrNoRows as it is:
 // callers map a missing row to their own error.
-func scanOrg(sc interface{ Scan(...any) error }, extra ...any) (Org, error) {
+func scanOrg(sc scanner, extra ...any) (Org, error) {
 	var o Org
 	err := sc.Scan(append([]any{&o.ID, &o.Name, &o.Slug, &o.Require2FA, &o.Personal, &o.Folder}, extra...)...)
 	return o, err
@@ -414,7 +414,7 @@ const userCols = "SELECT " + userFields + " FROM users"
 
 // scanUser reads a row selected by userCols (or userFields followed by
 // columns scanned into extra). No row is ErrNotFound.
-func scanUser(sc interface{ Scan(...any) error }, extra ...any) (User, error) {
+func scanUser(sc scanner, extra ...any) (User, error) {
 	var u User
 	err := sc.Scan(append([]any{&u.ID, &u.Username, &u.Email, &u.PlatformAdmin, &u.TOTP, &u.Avatar}, extra...)...)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -806,7 +806,7 @@ func (a *Accounts) InviteWith(actor, orgID int64, email string, role Role, anyEm
 const invitationCols = `SELECT i.id, o.id, o.name, o.slug, i.email, i.role, COALESCE(u.username, ''), i.created_at, i.expires_at, i.any_email
 	FROM org_invitations i JOIN organizations o ON o.id = i.org_id LEFT JOIN users u ON u.id = i.invited_by`
 
-func scanInvitation(sc interface{ Scan(...any) error }) (Invitation, error) {
+func scanInvitation(sc scanner) (Invitation, error) {
 	var inv Invitation
 	var created, expires int64
 	err := sc.Scan(&inv.ID, &inv.Org.ID, &inv.Org.Name, &inv.Org.Slug, &inv.Email, &inv.Role, &inv.InvitedBy, &created, &expires, &inv.AnyEmail)
@@ -820,20 +820,7 @@ func (a *Accounts) Invitations(orgID int64) ([]Invitation, error) {
 	if _, err := a.db.Exec("DELETE FROM org_invitations WHERE expires_at <= ?", time.Now().Unix()); err != nil {
 		return nil, err
 	}
-	rows, err := a.db.Query(invitationCols+" WHERE i.org_id = ? ORDER BY i.created_at DESC, i.id DESC", orgID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []Invitation{}
-	for rows.Next() {
-		inv, err := scanInvitation(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, inv)
-	}
-	return out, rows.Err()
+	return queryAll(a.db, scanInvitation, invitationCols+" WHERE i.org_id = ? ORDER BY i.created_at DESC, i.id DESC", orgID)
 }
 
 // RevokeInvitation deletes a pending invitation of orgID, as actor (an admin
