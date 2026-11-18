@@ -655,7 +655,19 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .todo-chat .chat-log { overflow: visible; padding: 0 0 12px; }
 .todo-chat .composer { position: sticky; bottom: 0; padding: 10px 0 16px; }
 .detail-body:has(> .todo-chat:not([hidden])) { padding-bottom: 0; }
-.todo-chat .composer .to-agent { flex: none; align-self: center; }
+.composer .icon-btn.labeled { width: auto; grid-auto-flow: column; gap: 6px; padding: 0 14px 0 12px; font-weight: 600; }
+.composer .icon-btn.labeled svg { width: 20px; height: 20px; }
+.composer .icon-btn.labeled.stop { width: 44px; padding: 0; }
+/* The task chat's switch: Ask Claude (side chat) or Rework (to the agent). */
+.chat-mode-row { flex: 0 0 100%; }
+.chat-mode { margin: 0; max-width: 100%; }
+.chat-mode button { min-height: 32px; padding: 0 10px; font-size: var(--fs-s); }
+.chat-mode button[aria-checked="true"] { background: var(--raised); color: var(--text); }
+.chat-mode button[data-mode="rework"][aria-checked="true"] { background: color-mix(in srgb, var(--running) 18%, var(--raised)); }
+.chat-mode button:disabled { opacity: .5; cursor: default; }
+.chat-mode-note { font-weight: 400; }
+.composer.rework-mode textarea { border-color: var(--running); }
+.composer.rework-mode .icon-btn.primary { background: var(--running); }
 /* Task timeline: who said what. The agent (the worker) is amber like a running
    task; the side chat keeps the plain chat look. */
 .msg-from { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .02em; color: var(--muted); margin-bottom: 4px; white-space: normal; }
@@ -3435,3 +3447,4 @@ button.pl-tag-name:hover { text-decoration: underline; }
   .planning-app .nav { display: contents; }
   .planning-app .nav > button { display: none; }
 }
+@media (max-width: 400px) { .chat-mode .ico { display: none; } .chat-mode button { padding: 0 8px; } }

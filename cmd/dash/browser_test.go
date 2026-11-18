@@ -101,6 +101,24 @@ func TestBrowserMainFlows(t *testing.T) {
 	}
 	b.waitJS("the reworked diff", `document.querySelector("#d-diff")?.textContent.includes("rework-by-runner.txt")`)
 
+	// Rework from the task chat: the switch above its box sends to the agent
+	// instead of the side chat, and the send button's label follows it.
+	b.do("show the timeline", chromedp.Click(chromedp.CSS(`.pane-tabs button[data-pane=timeline]`)))
+	sendText := `document.querySelector("#d-chat-form .send-text")?.textContent`
+	b.waitJS("the chat set to Ask Claude", sendText+` === "Ask" && document.querySelector('#d-chat-mode [data-mode=chat]').getAttribute("aria-checked") === "true"`)
+	b.until("switch to Rework", sendText+` === "Rework" && document.querySelector('#d-chat-mode [data-mode=rework]').getAttribute("aria-checked") === "true"`,
+		chromedp.Click(chromedp.CSS(`#d-chat-mode button[data-mode=rework]:not(:disabled)`)))
+	b.do("write the rework", chromedp.SendKeys(chromedp.CSS(`#d-chat-form textarea`), "Rework from the chat"))
+	b.waitJS("the rework written", `document.querySelector("#d-chat-form textarea").value === "Rework from the chat"`)
+	b.do("send it with Enter", chromedp.SendKeys(chromedp.CSS(`#d-chat-form textarea`), "\r"))
+	waitStatus(t, api, "/api/todos/"+first, "review", func(td todo) bool { return td.Status == "review" && td.Runs > 2 })
+	if _, diff := api.try("GET", "/api/todos/"+first+"/diff", nil); !strings.Contains(diff, "Rework from the chat") {
+		t.Fatalf("the rework didn't get the chat's text:\n%s", diff)
+	}
+	b.waitJS("the box emptied", `document.querySelector("#d-chat-form textarea").value === ""`)
+	b.do("show the changes again", chromedp.Click(chromedp.CSS(`.pane-tabs button[data-pane=diff]`)))
+	b.waitJS("the diff again", `document.querySelector("#d-diff")?.textContent.includes("done-by-runner.txt")`)
+
 	// Edit a file of the change before approving: committed on the task's
 	// branch on the runner, and merged with the rest.
 	b.until("open the file to edit", `document.querySelector("#diff-edit-sheet").open`,

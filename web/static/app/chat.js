@@ -61,9 +61,15 @@ function usageLine(u) {
 // composer to edit. Writing hides it and emptying the composer again brings
 // it back; sending, a new turn or a new suggestion drops it.
 //
+// mode() (the task chat's switch) names where the composer sends: null for the
+// chat itself, or {text, label, title, placeholder} for the send button's text
+// and labels and the box's placeholder, with send(q, files) when the message
+// goes elsewhere (Rework): it returns whether it was sent, which empties the
+// composer. c.modeChanged() shows a new mode.
+//
 // Its parts (chatQueue, shellRunner, chatStreamHandler) share c: the chat's
 // state and the helpers they call one another through.
-export function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, stale = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {}, shell = false }) {
+export function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, stale = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {}, shell = false, mode = () => null }) {
   // waiting: ids of the permission requests the current turn waits on an answer to.
   // queue: messages written while a reply streams ({q, files}), sent together
   // as one message once it's done.
@@ -76,13 +82,18 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   const stopLook = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/></svg>`;
   const composing = () => !!input.value.trim() || att.items().length > 0;
   c.busyButton = () => {
-    const stopping = !!c.current && !composing();
+    const m = mode();
+    // A message sent elsewhere doesn't wait for the reply, so it's never queued.
+    const replying = !!c.current && !m?.send;
+    const stopping = replying && !composing();
     sendBtn.disabled = false;
     sendBtn.classList.toggle("stop", stopping);
     sendBtn.innerHTML = stopping ? stopLook : sendLook.html;
+    const text = sendBtn.querySelector(".send-text");
+    if (text && m?.text) text.textContent = replying ? "Queue" : m.text;
     const what = c.current?.shell ? "command" : "reply";
-    sendBtn.setAttribute("aria-label", stopping ? `Stop the ${what}` : c.current ? "Queue the message" : sendLook.label);
-    sendBtn.title = stopping ? "Stop" : c.current ? `Queue: sent when the ${what === "reply" ? "reply" : "command"} is done` : "";
+    sendBtn.setAttribute("aria-label", stopping ? `Stop the ${what}` : replying ? "Queue the message" : m?.label || sendLook.label);
+    sendBtn.title = stopping ? "Stop" : replying ? `Queue: sent when the ${what === "reply" ? "reply" : "command"} is done` : m?.title || "";
   };
   // A turn that ends sends what's queued (done) or, when it was stopped or
   // failed, puts it back in the composer to send again or not.
@@ -114,7 +125,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   const shellTag = h("div", { class: "shell-tag", role: "status", hidden: true });
   form.prepend(shellTag);
   const shellMode = () => {
-    const bang = shell && isShell(input.value.trimStart());
+    const bang = shell && !mode()?.send && isShell(input.value.trimStart());
     const on = bang && shellOn();
     form.classList.toggle("shell-mode", on);
     shellTag.hidden = !bang;
@@ -129,12 +140,14 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
 
   // The suggested next message. It stays pending while the composer has
   // something in it, and shows (as the placeholder) whenever it's empty.
-  const placeholder = input.placeholder, placeholderTitle = input.title;
+  const placeholder = input.placeholder, placeholderTitle = input.title, inputLabel = input.getAttribute("aria-label");
   c.suggestion = "";
-  const suggestionShown = () => !!c.suggestion && !input.value && !att.items().length;
+  // A suggestion is for the chat: a message sent elsewhere doesn't show it.
+  const suggestionShown = () => !!c.suggestion && !input.value && !att.items().length && !mode()?.send;
   const showSuggestion = () => {
     const on = suggestionShown();
-    input.placeholder = on ? c.suggestion : placeholder;
+    input.placeholder = on ? c.suggestion : mode()?.placeholder || placeholder;
+    if (inputLabel) input.setAttribute("aria-label", mode()?.inputLabel || inputLabel);
     input.title = on ? (matchMedia("(pointer: coarse)").matches ? "Send sends this suggestion" : "Enter sends this suggestion; Tab puts it in the box to edit") : placeholderTitle;
     form.classList.toggle("suggesting", on);
   };
@@ -336,8 +349,21 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     },
   };
   input.addEventListener("input", () => { recall.end(); autoGrow(); if (c.current) c.busyButton(); });
+  c.modeChanged = () => { c.busyButton(); showSuggestion(); shellMode(); };
   form.addEventListener("submit", attempt(async (e) => {
     e.preventDefault();
+    const m = mode();
+    if (m?.send) {
+      await att.settled();
+      const q = input.value.trim(), files = att.items();
+      if (!await m.send(q, files)) return;
+      recall.end();
+      input.value = "";
+      att.reset();
+      autoGrow();
+      c.busyButton();
+      return;
+    }
     // With nothing written, only a press of the button stops a reply: Enter in the text field doesn't.
     if (c.current && !composing()) return e.submitter === sendBtn ? stop() : undefined;
     await att.settled();
@@ -392,7 +418,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     turn(target());
   }
 
-  return { reset, resumeLast, stop, input, toEnd, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
+  return { reset, resumeLast, stop, input, toEnd, modeChanged: c.modeChanged, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
 }
 
 // chatQueue holds the messages written while a reply streams (c.queue). The
@@ -819,6 +845,56 @@ loadChat().catch((e) => toast(`Couldn't load chat history: ${e.message}`, true))
 // A conversation about the open todo, run on the todo's computer. Claude sees
 // the todo's instructions, so a draft can be talked into a better prompt.
 const EDITABLE = ["draft", "queued", "failed"];
+
+// The task chat's switch: Ask Claude (the side chat, which the agent doesn't
+// see) or Rework (to the agent, which continues in its worktree). Rework is
+// for a task in review with a worktree; opening another task goes back to Ask.
+const TODO_MODES = {
+  chat: { text: "Ask", label: "Ask Claude in the side chat", title: "Ask Claude in the side chat: the agent doesn't see it",
+    placeholder: "Ask Claude about this task", inputLabel: "Ask Claude about this task in the side chat; the agent doesn't see it" },
+  rework: { text: "Rework", label: "Rework: send this to the agent", title: "Rework: the agent continues in its worktree with this",
+    placeholder: "Tell the agent what to change", inputLabel: "Rework notes for the agent, which continues in its worktree", send: sendRework },
+};
+let todoMode = "chat", todoModeFor = null;
+async function sendRework(q, files) {
+  const t = state.todos.get(state.detail);
+  if (!canRework(t)) { setTodoChatMode("chat"); return false; }
+  // Nothing written: the Rework sheet, where notes and pictures can be added.
+  if (!q && !files.length) return reworkTodo(t);
+  await api("POST", `/api/todos/${t.id}/rework`, { feedback: q, attachments: files.map((a) => a.id) });
+  toast("Sent for rework");
+  return true;
+}
+export function setTodoChatMode(mode) {
+  todoMode = mode === "rework" && canRework(state.todos.get(state.detail)) ? "rework" : "chat";
+  for (const b of document.querySelectorAll("#d-chat-mode button")) b.setAttribute("aria-checked", b.dataset.mode === todoMode);
+  $("#d-chat-form").classList.toggle("rework-mode", todoMode === "rework");
+  todoChat.modeChanged();
+}
+// renderTodoChatMode shows the switch for the open task t.
+export function renderTodoChatMode(t) {
+  const rework = $("#d-chat-mode button[data-mode=rework]");
+  rework.disabled = !canRework(t);
+  rework.title = rework.disabled ? "Rework is for a task in review that has a worktree" : TODO_MODES.rework.title;
+  setTodoChatMode(todoModeFor === t.id ? todoMode : "chat");
+  todoModeFor = t.id;
+}
+$("#d-chat-mode").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-mode]");
+  if (!b || b.disabled) return;
+  setTodoChatMode(b.dataset.mode);
+  todoChat.input.focus();
+});
+// Arrow keys move between the two, as in any radio group.
+$("#d-chat-mode").addEventListener("keydown", (e) => {
+  if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+  const next = [...e.currentTarget.querySelectorAll("button:not(:disabled)")].find((b) => b.dataset.mode !== todoMode);
+  if (!next) return;
+  e.preventDefault();
+  setTodoChatMode(next.dataset.mode);
+  next.focus();
+});
+
 export const todoChat = makeChat({
   log: $("#d-chat-log"), empty: $("#d-chat-empty"), form: $("#d-chat-form"),
   labels: { user: "You · chat only", assistant: "Chat" },
@@ -829,6 +905,7 @@ export const todoChat = makeChat({
   scroller: () => $("#detail .detail-body"),
   shell: true,
   cwd: $("#d-chat-cwd"),
+  mode: () => TODO_MODES[todoMode],
   // A turn left streaming when its todo was closed is saved when it finishes.
   saved: ({ todo }) => { if (todo === state.detail && !todoChat.busy) loadTodoChat().catch(fail); },
   actions: (answer) => {

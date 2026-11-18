@@ -13,7 +13,7 @@ import { canPreview, hidePreview, previewButton, previewOf, pv, renderPreview, s
 import { canRework, menu, renderPane, renderReworkBox, revertTodo, reviewTodo, reworkTodo } from "./drawmode.js";
 import { runnerName } from "./runners.js";
 import { commentsFor, renderChecks, renderPerms, sendComments } from "./review.js";
-import { todoChat } from "./chat.js";
+import { renderTodoChatMode, todoChat } from "./chat.js";
 import { renderRunStats } from "./runstats.js";
 import { loadTodoChat } from "./chatpane.js";
 import { shellBlocked, startProc } from "./terminal.js";
@@ -164,7 +164,7 @@ export function renderDetail() {
   $("#d-error").hidden = !why;
   $("#d-error").textContent = why;
   renderActions(t);
-  $("#d-to-agent").hidden = !canRework(t);
+  renderTodoChatMode(t);
   renderPane();
   renderPreview();
   renderReworkBox();

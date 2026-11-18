@@ -14,7 +14,7 @@ import { renderActions } from "./detail.js";
 import { PV_LABEL, hidePreview, isTermPreview, previewOf, previewTodo, pv, renderPreview } from "./preview.js";
 import { canEditDiff, openDiffEdit } from "./diffedit.js";
 import { commentsFor } from "./review.js";
-import { todoChat } from "./chat.js";
+import { setTodoChatMode, todoChat } from "./chat.js";
 import { isTyping, openDialog } from "./vim.js";
 import { askChat } from "./palette.js";
 
@@ -457,6 +457,7 @@ export function takeReviewNext() { const review = reviewNext; reviewNext = false
 export function reviewTodo() {
   if (todoChat.busy) return toast("Wait for Claude to finish answering");
   reviewNext = true;
+  setTodoChatMode("chat"); // Claude reviews in the side chat
   const prompt = state.project?.review_prompt || DEFAULT_REVIEW_PROMPT;
   askChat(todoChat.input, $("#d-chat-form"), prompt, () => { state.pane = "timeline"; renderPane(); });
 }
@@ -475,17 +476,6 @@ export async function reworkTodo(t, text = "") {
   toast("Sent for rework");
   return true;
 }
-
-// "Rework…" in the task chat turns what's in the task chat's composer into rework notes.
-$("#d-to-agent").addEventListener("click", attempt(async () => {
-  const t = state.todos.get(state.detail);
-  if (!canRework(t)) return;
-  const input = todoChat.input;
-  if (await reworkTodo(t, input.value.trim())) {
-    input.value = "";
-    input.dispatchEvent(new Event("input"));
-  }
-}));
 
 export async function revertTodo(t) {
   if (t.status !== "merged" || t.revert) throw new Error("Only merged tasks can be reverted.");
