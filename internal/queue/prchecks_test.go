@@ -209,10 +209,10 @@ func TestReviewNote(t *testing.T) {
 	}
 
 	// Comments in the conversation tab join the same note.
-	talk := []gitops.IssueComment{{ID: 20, User: alice, Body: "@claude also\nupdate the docs", Association: "MEMBER"}}
+	talk := []gitops.IssueComment{{ID: 20, User: alice, Body: "/dash also\nupdate the docs", Association: "MEMBER"}}
 	note, items = reviewNote(4, rs, cs, talk, 1)
 	for _, want := range []string{"left a review and comments on pull request #4", "**alice** requested changes",
-		"**alice** commented on the pull request:\n\n[4]\n> @claude also\n> update the docs"} {
+		"**alice** commented on the pull request:\n\n[4]\n> /dash also\n> update the docs"} {
 		if !strings.Contains(note, want) {
 			t.Errorf("note lacks %q:\n%s", want, note)
 		}
@@ -225,30 +225,47 @@ func TestReviewNote(t *testing.T) {
 	}
 }
 
-// Only a person's comment that mentions @claude or @dash asks Claude for
-// something; Dash's own comments and apps' never do.
+// Only a person's comment with the command /dash (or /claude) asks Claude
+// for something; Dash's own comments and apps' never do. Tagging @dash or
+// @claude asks for nothing: those are other people's handles.
 func TestAsksClaude(t *testing.T) {
 	parallel(t)
 
 	alice := gitops.GHUser{Login: "alice", Type: "User"}
 	for body, want := range map[string]bool{
-		"@claude please rename it":      true,
-		"Can you fix this, @Dash?":      true,
-		"(@claude) fix the typo":        true,
-		"looks good, merging later":     false,
-		"cc @claude-bot":                false,
-		"mail me@dash.dev":              false,
-		"   ":                           false,
-		"@claude closed\n\n" + dashMark: false,
-		replyComment(&model.PRReply{}, reviewReply{Summary: "Did what @claude was asked"}): false,
-		"see github.com/@claude/nothing": false,
+		"/dash please rename it":         true,
+		"/claude please rename it":       true,
+		"Can you fix this? /Dash":        true,
+		"/DASH: fix the typo":            true,
+		"(/dash) fix the typo":           true,
+		"fix the typo, /dash.":           true,
+		"line one\n/dash on line two":    true,
+		"`x` then /dash rename it":       true,
+		"@claude please rename it":       false,
+		"Can you fix this, @Dash?":       false,
+		"@dash /dashboard":               false,
+		"looks good, merging later":      false,
+		"see https://example.com/dash":   false,
+		"see https://example.com/dash/x": false,
+		"edit a/dash and b/claude":       false,
+		"edit ~/dash or ./dash":          false,
+		"read /dash.md":                  false,
+		"run /dash-x or /dash_y":         false,
+		"mail me@dash.dev":               false,
+		"type `/dash` to ask":            false,
+		"type ``a /dash`` to ask":        false,
+		"```\n/dash\n```\nlooks good":    false,
+		"~~~\n/claude fix\n~~~":          false,
+		"   ":                            false,
+		"/dash closed\n\n" + dashMark:    false,
+		replyComment(&model.PRReply{}, reviewReply{Summary: "Did what /dash asked"}): false,
 	} {
 		if got := asksClaude(gitops.IssueComment{User: alice, Body: body}); got != want {
 			t.Errorf("asksClaude(%q) = %v, want %v", body, got, want)
 		}
 	}
 	bot := gitops.GHUser{Login: "claude[bot]", Type: "Bot"}
-	if asksClaude(gitops.IssueComment{User: bot, Body: "@claude done"}) {
+	if asksClaude(gitops.IssueComment{User: bot, Body: "/dash done"}) {
 		t.Error("an app's comment asked Claude")
 	}
 }
@@ -320,8 +337,9 @@ func TestReplyComment(t *testing.T) {
 }
 
 // A pull request's body tags no one: GitHub would notify the owner of each
-// bare @handle, so the handles in the prompt, Claude's summary and the
-// footer are in inline code. Email addresses stay as they are.
+// bare @handle, so the handles in the prompt and Claude's summary are in
+// inline code. Email addresses stay as they are. The footer asks for the
+// command /dash and names no handle at all, not even in inline code.
 func TestPRBodyMentionsNoOne(t *testing.T) {
 	parallel(t)
 
@@ -333,9 +351,13 @@ func TestPRBodyMentionsNoOne(t *testing.T) {
 	if m := regexp.MustCompile(`(?:^|[^\w.+/-])@\w+`).FindAllString(outside, -1); m != nil {
 		t.Errorf("bare mentions %q in the body:\n%s", m, body)
 	}
-	for _, want := range []string{"`@claude` add", "ask `@someone`", "a@example.com", "Done, `@dash`.", "mentioning `@dash` or `@claude`", "\n@dash in a block\n"} {
+	for _, want := range []string{"`@claude` add", "ask `@someone`", "a@example.com", "Done, `@dash`.", "`/dash`", "\n@dash in a block\n"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body lacks %q:\n%s", want, body)
 		}
+	}
+	footer := prBody(model.Todo{ID: "t1", Prompt: "Fix it."})
+	if !strings.Contains(footer, "`/dash`") || regexp.MustCompile(`(?i)@(?:dash|claude)`).MatchString(footer) {
+		t.Errorf("want the footer to ask for `/dash` and name no @dash or @claude:\n%s", footer)
 	}
 }

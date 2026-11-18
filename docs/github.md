@@ -29,7 +29,7 @@ In pull request mode the pull request is where a task is reviewed:
    automatic fixes are used up, waits in Review without a pull request, as before: **Approve**
    opens one anyway. The pull request's title and description, and every comment Dash posts,
    tag no one: an `@handle` in the task's prompt or Claude's summary is put in inline code
-   (`` `@claude` ``), so GitHub notifies no one.
+   (`` `@someone` ``), so GitHub notifies no one.
 2. **The checks run.** Failing checks and conflicts with the base branch go back to Claude, within
    the project's automatic fixes (conflicts with other tasks show on the card before that; see
    [Merge queue](merge-queue.md#conflicts-found-early)), and its fixes are pushed to the same pull request. Checks no
@@ -48,16 +48,17 @@ In pull request mode the pull request is where a task is reviewed:
    aren't sent. You can still **Rework** from Dash as well; that also ends up on the same pull
    request.
 
-   **Comments in the conversation tab** go back to Claude the same way, when they mention
-   `@claude` or `@dash` (e.g. "@claude also update the docs"). The rest are taken as talk between
-   people ("merging after the release", "cc @bob") and left alone: every comment sent starts a
-   new run of Claude and a new commit on the pull request, so asking for one is explicit. Comments
-   by apps (including the Claude GitHub app's), empty ones and Dash's own (its answers below) aren't sent. Each comment
-   is sent once, also after Dash restarts; comments and reviews that arrive between two polls go
-   to Claude together in one note, with the same fresh budget of automatic fixes as a review. If
-   the repository also runs the Claude GitHub Action, which answers `@claude` itself, mention
-   `@dash` instead. Comments already on a pull request opened before Dash followed the
-   conversation tab aren't sent; newer ones are.
+   **Comments in the conversation tab** go back to Claude the same way, when they have the
+   command `/dash` (e.g. "`/dash` also update the docs"); `/claude` works too. It counts as a
+   whole word, in any case, but not in a link or a path, nor inside code. Don't tag Dash or Claude
+   with an `@`: those are other people's GitHub accounts, and Dash ignores it. The rest are taken
+   as talk between people ("merging after the release") and left alone: every comment sent starts
+   a new run of Claude and a new commit on the pull request, so asking for one is explicit.
+   Comments by apps (including the Claude GitHub app's), empty ones and Dash's own (its answers
+   below) aren't sent. Each comment is sent once, also after Dash restarts; comments and reviews
+   that arrive between two polls go to Claude together in one note, with the same fresh budget of
+   automatic fixes as a review. Comments already on a pull request opened before Dash followed
+   the conversation tab aren't sent; newer ones are.
 
    Only reviews and comments by people who can push to the repository go to Claude: its owner,
    members of its organization and collaborators. On a public repository anyone can comment,

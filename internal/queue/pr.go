@@ -580,9 +580,13 @@ func (m *MergeQueue) seenReviews(t model.Todo, reviews []gitops.PRReview) {
 // person it works for).
 const dashMark = "<!-- dash -->"
 
-// mention matches a comment that asks Dash or Claude for something: "@dash"
-// or "@claude", as a whole handle (not "@claude-bot", nor in an email).
-var mention = regexp.MustCompile(`(?i)(?:^|[^\w@/.-])@(?:claude|dash)(?:[^\w-]|$)`)
+// command matches a comment that asks Claude for something: the command
+// "/dash" (or "/claude"), as a whole word, in any case, and not part of a
+// URL or a path ("https://example.com/dash", "a/dash", "/dash.md"). Match it
+// against the comment without its code (textutil.WithoutCode). A bare
+// "@dash" or "@claude" asks for nothing: those are real people's GitHub
+// handles, whom no one should tag.
+var command = regexp.MustCompile(`(?i)(?:^|[^\w@/\\.:~-])/(?:dash|claude)(?:$|[^\w/\\.-]|\.(?:[^\w/\\]|$))`)
 
 // conversation is the comments in a task's pull request's conversation tab,
 // nil when they can't be fetched (ok false), or on a pull request opened
@@ -610,11 +614,12 @@ func (m *MergeQueue) conversation(ctx context.Context, t model.Todo, p model.Pro
 }
 
 // asksClaude reports a conversation comment that is for Claude: written by
-// a person (not an app, nor Dash itself), saying something, and mentioning
-// @dash or @claude. Without a mention it is taken as talk between people.
+// a person (not an app, nor Dash itself), saying something, and with the
+// command /dash (or /claude) outside its code. Without it, it is taken as
+// talk between people.
 // Who wrote it is checked apart, with gitops.Trusted.
 func asksClaude(c gitops.IssueComment) bool {
-	return !c.User.Bot() && !strings.Contains(c.Body, dashMark) && strings.TrimSpace(c.Body) != "" && mention.MatchString(c.Body)
+	return !c.User.Bot() && !strings.Contains(c.Body, dashMark) && strings.TrimSpace(c.Body) != "" && command.MatchString(textutil.WithoutCode(c.Body))
 }
 
 // reviewBack sends the reviews submitted on a task's pull request since the
@@ -1087,5 +1092,5 @@ func prBody(t model.Todo) string {
 		body += "\n\n**Claude:** " + textutil.NoMentions(t.Summary)
 	}
 	return body + "\n\n---\nOpened by Dash when Claude finished the task. Review it here: a review asking for changes " +
-		"(or comments), or a comment mentioning `@dash` or `@claude`, goes back to Claude, whose fixes are pushed to this pull request.\n\nDash-Todo: " + t.ID
+		"(or comments), or a comment with the command `/dash` (e.g. \"`/dash` also update the docs\"), goes back to Claude, whose fixes are pushed to this pull request.\n\nDash-Todo: " + t.ID
 }
