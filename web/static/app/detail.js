@@ -18,7 +18,7 @@ import { renderRunStats } from "./runstats.js";
 import { loadTodoChat } from "./chatpane.js";
 import { shellBlocked, startProc } from "./terminal.js";
 import { closeCommit } from "./history.js";
-import { clearPriority } from "./dnd.js";
+import { PRIORITY_LEVELS, clearPriority, priorityLevel } from "./dnd.js";
 import { linkToCard } from "./planning.js";
 import { boardName, boardsOf, hasBoards, moveToBoard, onBoard, showBoard } from "./boards.js";
 import { creator } from "./people.js";
@@ -128,7 +128,7 @@ export function renderDetail() {
     doneMeta(t),
     goalChip(t),
     createdBy(t),
-    hasPriority(t) && !inlineEdits(t) ? h("span", {}, `Priority ${t.priority}`) : null, // else an editable field below
+    hasPriority(t) && !inlineEdits(t) ? h("span", {}, `${PRIORITY_LEVELS[priorityLevel(t.priority)]} priority`) : null, // else an editable field below
     depMeta(t),
     buildsOnMeta(t),
     conflictMeta(t),
@@ -241,17 +241,19 @@ function retryButton(t, b, post) {
 // pacing reports whether queued task t waits for the weekly pace: the
 // queue's (or, on a hub, your account's), or its runners' as its waiting
 // reason says.
-const pacing = (t) => !!state.usage?.pacing || /to stay on pace/.test(t.waiting || "");
-const startNowHelp = "Start this task as soon as a lane is free, despite the weekly pace; the other tasks keep following it. "
+export const pacing = (t) => !!state.usage?.pacing || /to stay on pace/.test(t.waiting || "");
+export const startNowHelp = "Start this task as soon as a lane is free, despite the weekly pace; the other tasks keep following it. "
   + "Its run counts toward usage, so the queue may wait a little longer afterwards.";
 // canStartNow: Start now is offered for a queued task that isn't paused or already started now.
-const canStartNow = (t) => t.status === "queued" && !t.paused && !t.start_now;
+export const canStartNow = (t) => t.status === "queued" && !t.paused && !t.start_now;
+// startNow starts queued task t as soon as a lane is free, despite the pace.
+export const startNow = (t) => api("POST", `/api/todos/${t.id}/start-now`).then(() => toast("Starting now, despite the pace"));
 
 // startNowButton starts a queued task now, while the queue waits for the
 // weekly pace (it is shown only then; ⋯ always has it).
 function startNowButton(t, post) {
   const why = `${state.usage?.pacing && state.usage.reason ? state.usage.reason : t.waiting || "The queue waits for the weekly pace"}. ${startNowHelp}`;
-  return ib({ class: "btn primary grow", title: why, onclick: post("start-now", null, "Starting now, despite the pace") }, "play", "Start now");
+  return ib({ class: "btn primary grow", title: why, onclick: attempt(() => startNow(t)) }, "play", "Start now");
 }
 
 $("#d-more").addEventListener("click", attempt(async () => {
@@ -267,7 +269,7 @@ $("#d-more").addEventListener("click", attempt(async () => {
   if (t.worktree && (here || (t.remote_id && !shellBlocked(state.project, t.runner))) && ["review", "failed"].includes(t.status)) {
     choices.push(["terminal", "Open shell in this worktree", () => startProc({ kind: "pty", todo_id: t.id })]);
   }
-  if (canStartNow(t)) choices.push(["play", "Start now, despite the weekly pace", () => api("POST", `/api/todos/${t.id}/start-now`).then(() => toast("Starting now, despite the pace"))]);
+  if (canStartNow(t)) choices.push(["play", "Start now", () => startNow(t)]);
   if (t.pr) choices.push(["external", `Open pull request #${t.pr.number}`, () => window.open(t.pr.url, "_blank", "noopener")]);
   if (t.status === "merged" && !t.revert && here) choices.push(["undo", "Revert…", () => revertTodo(t)]);
   if (!["in_progress", "merging"].includes(t.status)) {

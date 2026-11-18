@@ -190,4 +190,14 @@ export function fillAvatar(el, u) {
 
 // avatar is a small round picture (or initial) of u.
 export const avatar = (u, cls = "") => fillAvatar(h("span", { class: `avatar${cls ? ` ${cls}` : ""}`, "aria-hidden": "true" }), u);
+
+// setModelField selects a model in a form's model select (a task's, a
+// scan's): Default, Opus, Sonnet or Haiku, adding an option for a model id
+// that isn't one of them (set through the API, MCP or a scan template).
+export function setModelField(f, m) {
+  const sel = f.model;
+  $$("option[data-custom]", sel).forEach((o) => o.remove());
+  if (m && ![...sel.options].some((o) => o.value === m)) sel.append(h("option", { value: m, "data-custom": "" }, m));
+  sel.value = m;
+}
 for (const el of $$("[data-icon]")) el.prepend(ico(el.dataset.icon));

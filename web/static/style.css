@@ -410,6 +410,7 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .paused-tag { color: var(--muted); }
 /* A failed task waits in Review: say so plainly, as a badge. */
 .failed-tag { color: var(--failed); border: 1px solid currentColor; border-radius: var(--r-s); padding: 0 5px; line-height: 1.5; }
+.prio-tag.prio-urgent { color: var(--failed); font-weight: 600; }
 .start-now-tag { color: var(--running); } /* the task skips the wait for the weekly pace */
 /* A card's small word tags (paused, reviewing, a PR, CI, checks, a revert): one size; each sets its colour. */
 :is(.failed-tag, .paused-tag, .start-now-tag, .reviewing-tag, .runner-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag, .link-tag) { font-size: var(--fs-xs); font-weight: 600; }
@@ -1229,9 +1230,6 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 /* One line per task; a multi-line paste grows the field (app/todos.js sizes it). */
 .quick-row { resize: none; overflow-y: auto; min-height: 0; max-height: 40dvh; font-size: var(--fs-in); line-height: 1.45; }
 .quick-tools { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin: 4px -4px 0; }
-.quick-foot { align-items: center; flex-wrap: wrap; }
-.quick-foot .toggle { flex: 0 1 auto; font-weight: 500; }
-.quick-foot .btn { flex: 1 1 auto; }
 @media (hover: none) { .quick-hint { display: none; } }
 
 /* ---------- settings: connector guide, board sync, lists of rows ---------- */
@@ -2348,16 +2346,15 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .detail-titles .title-input { font-size: var(--fs-xl); font-weight: 700; line-height: 1.3; padding: 2px 6px; margin: -3px -7px; width: calc(100% + 14px); }
 .meta-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px; font-size: var(--fs-s); color: var(--muted); }
 .meta-ctl { display: inline-flex; align-items: center; gap: 6px; }
-.meta-edit .meta-input, .meta-edit .meta-select, .meta-btn {
+.meta-edit .meta-select, .meta-btn {
   min-height: 28px; height: 28px; padding: 0 8px; font-size: var(--fs-s); border-radius: var(--r-s);
   background: var(--surface); border: 1px solid var(--line); color: var(--text);
 }
-.meta-edit .meta-input { width: 72px; }
 .meta-edit .meta-select { width: auto; }
 .meta-edit .meta-buildon { max-width: 260px; text-overflow: ellipsis; }
 .meta-btn { cursor: pointer; }
-.meta-edit :is(.meta-input, .meta-select, .meta-btn):hover { border-color: var(--faint); }
-.meta-edit :is(.meta-input, .meta-select, .meta-btn):focus-visible { border-color: var(--accent); outline: none; }
+.meta-edit :is(.meta-select, .meta-btn):hover { border-color: var(--faint); }
+.meta-edit :is(.meta-select, .meta-btn):focus-visible { border-color: var(--accent); outline: none; }
 .meta-deps { position: relative; }
 .dep-pop {
   position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; width: min(420px, 40vw); padding: 8px;
@@ -2847,7 +2844,21 @@ a.claude-incident-name:hover { text-decoration: underline; }
   box-shadow: 0 6px 16px -8px rgb(0 0 0 / .5);
 }
 .issue-count { font-weight: 600; margin-right: 4px; }
-.issue-queue { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; font-size: var(--fs-m); color: var(--muted); }
+/* Create tasks ▾: how (one per issue, grouped, one for all), then Save draft or Queue. */
+.issue-create { position: relative; }
+.issue-caret { margin-left: 2px; font-size: .8em; }
+.issue-create-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 6; min-width: 15rem;
+  display: grid; gap: 2px; padding: 6px; border-radius: var(--r-m);
+  background: var(--surface); border: 1px solid var(--line); box-shadow: 0 10px 24px -10px rgb(0 0 0 / .6);
+}
+.issue-create-menu[hidden] { display: none; }
+.issue-how { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: var(--r-s); cursor: pointer; }
+.issue-how:hover { background: var(--raised); }
+.issue-how:has(input:disabled) { color: var(--faint); cursor: default; }
+.issue-how:has(input:disabled):hover { background: none; }
+.issue-create-actions { display: flex; gap: 6px; padding: 6px 4px 2px; margin-top: 4px; border-top: 1px solid var(--line); }
+.issue-create-actions .btn { flex: 1 1 0; }
 .issue-section.g-task h3 { color: var(--accent); }
 .issue-section.g-closed h3 { color: var(--faint); }
 /* A row: [mark] [title over severity · type · place] [task pills]. */

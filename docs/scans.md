@@ -151,12 +151,12 @@ Look for vulnerabilities in {{path}} …
   out in its clone and runs Claude there, and the hub records the findings. While none of the
   project's runners is online the run waits, showing "no runner online", and goes ahead as soon as
   one connects; a project no runner has the labels of can't be scanned. `-scan-timeout` is the hub's.
-- **Tasks from issues.** Check issues in **Issues** and pick how to turn them into tasks:
-  **Create tasks** makes one task per issue, **Create one task** one task for them all, and
-  **Create grouped** has Claude put similar issues together (same pattern, rule, file or
-  feature) and name each group's task for what it fixes. An issue unlike the others gets a task
-  of its own. Grouping runs on one of your runners, as splitting a task does, and takes up to 100
-  issues at a time. Tick **Queue** to queue the tasks instead of keeping drafts.
+- **Tasks from issues.** Check issues in **Issues**, then open **Create tasks ▾** and pick how:
+  **One per issue**, **One for all**, or **Grouped by Claude**, where Claude puts similar issues
+  together (same pattern, rule, file or feature) and names each group's task for what it fixes.
+  An issue unlike the others gets a task of its own. Grouping runs on one of your runners, as
+  splitting a task does, and takes up to 100 issues at a time. Then click **Save draft** to keep
+  the tasks as drafts, or **Queue** to queue them.
 - **Reports.** Each run shows what it found, e.g. "2 new, 3 already known, 1 reopened". The
   numbers link to those issues. A red badge counts the run's new or reopened critical and high
   issues that are still open, e.g. "1 critical · 2 high". A scheduled run that finds new critical or high issues sends a

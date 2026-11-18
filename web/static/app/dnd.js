@@ -256,15 +256,18 @@ async function reorder(t, laneKey, index, inLane = false) {
   } else if (index === k) {
     changes = [[t, k ? prio[k - 1].priority + 1 : 0]];
   } else {
-    // Between prio[index - 1] and prio[index]; at the top, keep to 0 and up.
+    // Between prio[index - 1] and prio[index]; at the top, keep to 0 and up
+    // (or above the urgent ones, below 0).
     const hi = prio[index].priority;
-    const lo = index > 0 ? prio[index - 1].priority : Math.min(hi, 0) - 1;
+    const lo = index > 0 ? prio[index - 1].priority : hi < 0 ? hi - 2 : Math.min(hi, 0) - 1;
     if (hi - lo >= 2) {
       changes = [[t, lo + Math.floor((hi - lo) / 2)]];
     } else {
+      // Renumbered, the urgent ones (and t among them) stay below 0.
       const order = [...prio];
       order.splice(index, 0, t);
-      changes = order.map((x, i) => [x, i]);
+      const urgent = order.findLastIndex((x) => x !== t && x.priority < 0) + 1;
+      changes = order.map((x, i) => [x, i - urgent]);
     }
   }
   changes = changes.filter(([x, p]) => (x.priority ?? null) !== p);
@@ -274,13 +277,17 @@ async function reorder(t, laneKey, index, inLane = false) {
   await Promise.all(changes.map(([x, p]) => api("PATCH", `/api/todos/${x.id}`, { priority: p })));
 }
 
-// The task form's priority field: empty is no priority.
-export function formPriority(v) {
-  v = String(v).trim();
-  if (!v) return null;
-  const n = Number(v);
-  if (!Number.isInteger(n)) throw new Error("Priority must be a whole number, or empty for none.");
-  return n;
+// Priority as the forms offer it: None, High or Urgent, over the numeric
+// priority the queue sorts by (lower first, then those without one). Urgent
+// is below 0 and High 0 and up, where dragging cards on the board keeps them.
+export const PRIORITY_LEVELS = { "": "None", high: "High", urgent: "Urgent" };
+export const priorityLevel = (n) => n == null || n === "" ? "" : Number(n) < 0 ? "urgent" : "high";
+// levelPriority is the numeric priority for a level picked in a form; cur
+// (the task's own) is kept while its level stays the same, so the task keeps
+// its place among the others of that level.
+export function levelPriority(level, cur = null) {
+  if (cur != null && priorityLevel(cur) === level) return cur;
+  return level === "urgent" ? -1 : level === "high" ? 0 : null;
 }
 
 // One more than the highest priority among t's lane (0 if none): the slot

@@ -1,4 +1,4 @@
-import { $, $$, dateTimeText, h, ib, ico, plural } from "./dom.js";
+import { $, $$, dateTimeText, h, ib, ico, plural, setModelField } from "./dom.js";
 import { api, here, on } from "./api.js";
 import { ask, attempt, copy, toast } from "./dialogs.js";
 import { state } from "./state.js";
@@ -354,7 +354,7 @@ function openScanEditor(s = null, edit = false) {
   f.kind.value = s?.kind || "custom";
   f.scope.value = s?.scope || "repo";
   f.path.value = s?.path || "";
-  f.model.value = s?.model || "";
+  setModelField(f, s?.model || ""); // the task form's choices, and a model id a template names
   f.effort.value = s?.effort || "";
   // Editing: the schedule that runs now (a change in the list included);
   // a copy starts from the template's.
@@ -389,7 +389,7 @@ $("#scan-form").addEventListener("submit", attempt(async (e) => {
   const f = e.target;
   const body = {
     name: f.name.value.trim() || scanSlug(f.title.value.trim()), title: f.title.value.trim(), kind: f.kind.value, scope: f.scope.value,
-    path: f.path.value.trim(), model: f.model.value.trim(), effort: f.effort.value, schedule: f.schedule.value.trim(),
+    path: f.path.value.trim(), model: f.model.value, effort: f.effort.value, schedule: f.schedule.value.trim(),
     tools: f.tools.value.split("\n").map((x) => x.trim()).filter(Boolean), prompt: f.prompt.value,
   };
   const pid = state.project.id;

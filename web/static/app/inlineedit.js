@@ -7,7 +7,7 @@ import { state } from "./state.js";
 import { title } from "./branches.js";
 import { editable, openTodoForm, updateTodo } from "./todos.js";
 import { buildOnOptions, depOptions, draft, promptEditor, runOnOptions, setModelField, todoAttach } from "./todoform.js";
-import { formPriority } from "./dnd.js";
+import { levelPriority, priorityLevel } from "./dnd.js";
 import { openDetail, renderDetail } from "./detail.js";
 
 // ------------------------------------------------------------------ inline editing (desktop)
@@ -214,15 +214,14 @@ function renderMeta(t) {
   if (deps) closeDeps();
   metaFor = t.id;
 
-  const prio = h("input", {
-    type: "number", step: 1, inputmode: "numeric", placeholder: "None", class: "meta-input", value: t.priority ?? "",
-    "aria-label": "Priority", title: "Prioritized tasks run first, lower numbers before higher; empty for none",
-    onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); prio.blur(); } },
-  });
+  // The task form's choices: None, High or Urgent.
+  const prio = h("select", { class: "meta-select", "aria-label": "Priority", title: "Urgent tasks run first, then High, then those without a priority" },
+    [...$("#todo-form").priority.options].map((o) => o.cloneNode(true)));
+  prio.value = priorityLevel(t.priority);
   prio.addEventListener("change", save(async (t) => {
-    const p = formPriority(prio.value);
+    const p = levelPriority(prio.value, t.priority ?? null);
     if (p !== (t.priority ?? null)) await updateTodo(t, { priority: p });
-  }, (t) => { prio.value = t.priority ?? ""; }));
+  }, (t) => { prio.value = priorityLevel(t.priority); }));
 
   const model = h("select", { class: "meta-select", "aria-label": "Model", title: "The Claude model the task runs on, from its next run" },
     [...$("#todo-form").model.options].filter((o) => !o.hasAttribute("data-custom")).map((o) => o.cloneNode(true)));

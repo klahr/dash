@@ -379,9 +379,12 @@ function goalElsewhere(g, p, m, where) {
 
 export function projectKey(p) { return p ? `${p.machine}/${p.id}` : ""; }
 
-// paceChanged redraws an open queued task's actions: Start now stands out
-// while the queue waits for the weekly pace.
+// paceChanged redraws an open queued task's actions, and the board once the
+// queue starts or stops waiting for the weekly pace: Start now stands out
+// while it waits, and queued cards say so.
+let pacedBefore = false;
 function paceChanged() {
   const t = state.detail && state.todos.get(state.detail);
   if (t?.status === "queued") renderActions(t);
+  if (!!state.usage?.pacing !== pacedBefore) { pacedBefore = !!state.usage?.pacing; renderBoard(); }
 }

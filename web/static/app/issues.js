@@ -43,7 +43,6 @@ export const iss = {
   checked: new Set(), // ids picked for a bulk action
   expanded: new Set(),
   editing: null,      // id of the issue whose fields are being edited
-  grouping: false,    // Claude is grouping the checked issues
   filter: { type: "", severity: "", status: "active", source: "", kind: "", run: null }, // kind: the scan kind that filed it; run: { id, ids, label } from a scan report
 };
 
@@ -190,9 +189,32 @@ function renderIssueBulk() {
   all.disabled = !can.length;
   $("#issue-bulk").hidden = !iss.checked.size;
   $("#issue-count").textContent = `${iss.checked.size} selected`;
-  $("#issue-combine").disabled = iss.checked.size < 2;
-  if (!iss.grouping) $("#issue-group").disabled = iss.checked.size < 2;
+  if (!iss.checked.size) closeCreateMenu();
+  // Grouping and one for all need two issues or more.
+  for (const r of $$("input[name=issue-how]")) {
+    r.disabled = r.value !== "each" && iss.checked.size < 2;
+    if (r.disabled && r.checked) $("input[name=issue-how][value=each]").checked = true;
+  }
 }
+
+// The bulk bar's Create tasks ▾ menu: how to turn the issues into tasks, and
+// Save draft or Queue, as in the task form.
+const createBtn = $("#issue-create-btn"), createMenu = $("#issue-create-menu");
+function closeCreateMenu(refocus = false) {
+  const createMenu = $("#issue-create-menu"), createBtn = $("#issue-create-btn"); // also before this module has run on
+  if (createMenu.hidden) return;
+  createMenu.hidden = true;
+  createBtn.setAttribute("aria-expanded", "false");
+  if (refocus) createBtn.focus();
+}
+createBtn.addEventListener("click", () => {
+  if (!createMenu.hidden) return closeCreateMenu();
+  createMenu.hidden = false;
+  createBtn.setAttribute("aria-expanded", "true");
+  ($("input[name=issue-how]:checked", createMenu) || $("input[name=issue-how]", createMenu)).focus();
+});
+createMenu.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); closeCreateMenu(true); } });
+document.addEventListener("pointerdown", (e) => { if (!$("#issue-create").contains(e.target)) closeCreateMenu(); });
 
 function issueRow(i) {
   const open = iss.expanded.has(i.id);
@@ -369,17 +391,14 @@ $("#issue-all").addEventListener("change", (e) => {
   for (const box of $$("#issue-list .issue-check")) { box.checked = e.target.checked; box.closest(".issue")?.classList.toggle("picked", box.checked); }
   renderIssueBulk();
 });
-$("#issue-tasks").addEventListener("click", attempt(() => issueTasks([...iss.checked], "each", $("#issue-queue").checked)));
-$("#issue-combine").addEventListener("click", attempt(() => issueTasks([...iss.checked], "one", $("#issue-queue").checked)));
-// Grouping asks Claude, which takes a while: the button says so meanwhile.
-$("#issue-group").addEventListener("click", attempt(async (e) => {
-  iss.grouping = true;
-  try {
-    await busy(e.currentTarget, () => issueTasks([...iss.checked], "group", $("#issue-queue").checked), { label: "Grouping…" });
-  } finally {
-    iss.grouping = false;
-    renderIssueBulk();
-  }
-}));
+// Save draft and Queue create the tasks the menu's way. Grouping asks
+// Claude, which takes a while: the button says so meanwhile.
+for (const [id, enqueue] of [["#issue-draft", false], ["#issue-queue", true]]) {
+  $(id).addEventListener("click", attempt(async (e) => {
+    const how = $("input[name=issue-how]:checked", createMenu)?.value || "each";
+    await busy(e.currentTarget, () => issueTasks([...iss.checked], how, enqueue), { label: how === "group" ? "Grouping…" : "Creating…" });
+    closeCreateMenu();
+  }));
+}
 $("#issue-dismiss").addEventListener("click", attempt(() => dismissIssues([...iss.checked])));
 $("#issue-clear").addEventListener("click", () => { iss.checked.clear(); renderIssues(); });

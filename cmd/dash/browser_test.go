@@ -51,20 +51,19 @@ func TestBrowserMainFlows(t *testing.T) {
 	// Create a task from the quick sheet, queued right away.
 	// The sheet's clicks retry until they take: under load a click can land
 	// while the page is still settling and miss. Each has its effect at once
-	// (the sheet opens, the box ticks, the sheet closes as the task is sent),
-	// so a click is only repeated when the one before it didn't land.
+	// (the sheet opens, the sheet closes as the task is sent), so a click is
+	// only repeated when the one before it didn't land.
 	b.until("open the new task sheet", `document.querySelector("#quick-sheet").open`, chromedp.Click(chromedp.ID("new-todo")))
 	b.do("wait for the sheet", chromedp.WaitVisible(chromedp.CSS(`#quick-sheet[open] #quick-rows .quick-row`)))
 	b.waitJS("the task's row focused", `document.activeElement?.matches("#quick-rows .quick-row")`)
 	b.do("write the task", chromedp.SendKeys(chromedp.CSS(`#quick-rows .quick-row`), "Add a done file"))
 	b.waitJS("the task written", `document.querySelector("#quick-rows .quick-row").value === "Add a done file"`)
-	// A new profile: unticked.
-	b.until("tick Queue", `document.querySelector("#quick-queue").checked`, chromedp.Click(chromedp.CSS(`label.toggle:has(#quick-queue) span`)))
-	b.waitJS("the Queue task button", `document.querySelector("#quick-submit-label").textContent === "Queue task"`)
+	// It ends as the full form does: Save draft or Queue.
+	b.waitJS("Save draft and Queue", `[...document.querySelectorAll("#quick-form .sheet-actions .btn")].map((e) => e.textContent.trim()).join() === "Save draft,Queue"`)
 	// The sheet closes as the task is sent; a failed send opens it again with
 	// the text kept, so a repeated click sends the task again.
-	b.until("submit the task and the sheet to close", `!document.querySelector("#quick-sheet").open`,
-		chromedp.Click(chromedp.CSS(`#quick-form button[value=add]:not(:disabled)`)))
+	b.until("queue the task and the sheet to close", `!document.querySelector("#quick-sheet").open`,
+		chromedp.Click(chromedp.CSS(`#quick-form button[value=queue]:not(:disabled)`)))
 	first := waitTodo(t, api, pid, "Add a done file")
 
 	// See it run: it lands in Review, and its timeline shows the agent's work.
@@ -274,7 +273,7 @@ func TestBrowserSplitTask(t *testing.T) {
 	// moving button adds nothing: click until the third task is there.
 	b.until("add a task", `document.querySelectorAll("#split-parts .split-part").length === 3`, chromedp.Click(chromedp.ID("split-add")))
 	b.do("write it", chromedp.SendKeys(chromedp.CSS(`#split-parts .split-part:nth-child(3) .split-prompt`), "Document accounts"))
-	b.waitJS("three tasks", `document.querySelector("#split-draft-label").textContent === "Save 3 drafts"`)
+	b.waitJS("three tasks", `document.querySelectorAll("#split-parts .split-part").length === 3 && document.querySelector("#split-form button[value=draft]").textContent.trim() === "Save draft"`)
 	b.until("save them", `!document.querySelector("#todo-sheet").open`, chromedp.Click(chromedp.CSS(`#split-form button[value=draft]`)))
 	b.waitJS("the toast", `[...document.querySelectorAll("#toasts .toast")].some((e) => e.textContent.includes("Saved 3 drafts"))`)
 
@@ -1386,6 +1385,43 @@ func TestBrowserCustomScan(t *testing.T) {
 	b.clickIn(".scan-card", "API error handling", ".scan-more")
 	b.clickIn(".scan-card", "API error handling", ".scan-actions .link")
 	b.waitJS("the editor, Advanced closed", `document.querySelector("#scan-sheet").open && !document.querySelector("#scan-advanced").open && document.querySelector("#scan-form [name=name]").readOnly`)
+	// The model is the task form's choice.
+	b.waitJS("the model select", `(() => {
+		const opts = (f) => [...document.querySelector(f + " select[name=model]").options].map((o) => o.value + ":" + o.textContent).join();
+		return opts("#scan-form") === opts("#todo-form") && opts("#scan-form") === ":Default,opus:Opus,sonnet:Sonnet,haiku:Haiku";
+	})()`)
+}
+
+// Issues' bulk bar: checked issues become tasks from the Create tasks ▾
+// menu, which picks how (one per issue, grouped, one for all) and ends in
+// Save draft or Queue, as the task form does.
+func TestBrowserIssueTasks(t *testing.T) {
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	pid := h.project.ID
+	for _, title := range []string{"Leaky handler", "Leaky export"} {
+		h.api.must("POST", "/api/projects/"+pid+"/issues", map[string]any{"title": title, "type": "bug"}, http.StatusCreated, nil)
+	}
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+
+	b.until("open Issues", `document.querySelector("#view-issues.active")`, chromedp.Click(chromedp.CSS(`.nav > button[data-view=issues]`)))
+	b.waitJS("the issues", `document.querySelectorAll("#issue-list .issue-check").length === 2`)
+	b.until("check them all", `!document.querySelector("#issue-bulk").hidden && document.querySelector("#issue-count").textContent === "2 selected"`,
+		chromedp.Click(chromedp.ID("issue-all")))
+	b.until("open Create tasks", `!document.querySelector("#issue-create-menu").hidden`, chromedp.Click(chromedp.ID("issue-create-btn")))
+	b.waitJS("the choices", `[...document.querySelectorAll("#issue-create-menu .issue-how")].map((e) => e.textContent.trim()).join() === "One per issue,Grouped by Claude,One for all" &&
+		[...document.querySelectorAll("#issue-create-menu .issue-create-actions .btn")].map((e) => e.textContent.trim()).join() === "Save draft,Queue"`)
+	b.until("pick One for all", `document.querySelector("#issue-create-menu input[value=one]").checked`,
+		chromedp.Click(chromedp.CSS(`#issue-create-menu input[value=one]`)))
+	b.until("queue it", `document.querySelector("#issue-bulk").hidden`, chromedp.Click(chromedp.ID("issue-queue")))
+
+	var todos []todo
+	waitFor(t, nil, "one queued task for both issues", func() bool {
+		todos = nil
+		h.api.must("GET", "/api/projects/"+pid+"/todos", nil, http.StatusOK, &todos)
+		return len(todos) == 1 && todos[0].Status != "draft"
+	})
 }
 
 // On a desktop a task is edited in its detail pane: the title in place,
@@ -1440,16 +1476,24 @@ func TestBrowserInlineEdit(t *testing.T) {
 		t.Fatalf("instructions after saving: %q", td.Prompt)
 	}
 
-	// Priority, model and dependencies save as they change.
-	b.do("set a priority", chromedp.Click(chromedp.CSS(`#d-meta-edit .meta-input`)), chromedp.KeyEvent("3\r"))
-	waitFor(t, nil, "the priority saved", func() bool { get(); return td.Priority != nil && *td.Priority == 3 })
-	if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](`(() => {
-		const s = document.querySelector("#d-meta-edit .meta-select");
-		s.value = "haiku";
-		return s.dispatchEvent(new Event("change"));
-	})()`)); err != nil {
-		t.Fatalf("pick a model: %v", err)
+	// Priority (None, High or Urgent), model and dependencies save as they change.
+	pick := func(label, value string) {
+		t.Helper()
+		if _, err := chromedp.Run(b.ctx, chromedp.Evaluate[bool](fmt.Sprintf(`(() => {
+			const s = document.querySelector('#d-meta-edit select[aria-label=%q]');
+			s.value = %q;
+			return s.dispatchEvent(new Event("change"));
+		})()`, label, value))); err != nil {
+			t.Fatalf("pick %s %s: %v", label, value, err)
+		}
 	}
+	b.waitJS("the priority choices", `[...document.querySelector("#d-meta-edit select[aria-label=Priority]").options].map((o) => o.textContent).join() === "None,High,Urgent"`)
+	pick("Priority", "urgent")
+	waitFor(t, nil, "Urgent saved", func() bool { get(); return td.Priority != nil && *td.Priority < 0 })
+	b.waitJS("Urgent shown", `document.querySelector("#d-meta-edit select[aria-label=Priority]").value === "urgent"`)
+	pick("Priority", "high")
+	waitFor(t, nil, "High saved", func() bool { get(); return td.Priority != nil && *td.Priority == 0 })
+	pick("Model", "haiku")
 	waitFor(t, nil, "the model saved", func() bool { get(); return td.Model == "haiku" })
 	b.until("open the dependencies", `!document.querySelector("#d-meta-edit .dep-pop").hidden`, chromedp.Click(chromedp.CSS(`#d-meta-edit .meta-btn`)))
 	b.do("tick Base", chromedp.Click(chromedp.CSS(fmt.Sprintf(`#d-meta-edit .dep-pop input[value=%q]`, base.ID))))

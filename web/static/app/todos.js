@@ -1,5 +1,4 @@
 import { $, $$, h } from "./dom.js";
-import * as store from "./store.js";
 import { api, here } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { buildOnPicker, depPicker, runOnPicker, draft, draftKey, promptEditor, setModelField, split, todoAttach } from "./todoform.js";
@@ -9,7 +8,7 @@ import { boardField } from "./boards.js";
 import { grouped, projectWhere } from "./projects.js";
 import { renderBoard } from "./branches.js";
 import { showRunnerNeeded } from "./runners.js";
-import { formPriority } from "./dnd.js";
+import { levelPriority, priorityLevel } from "./dnd.js";
 import { openGoalSheet } from "./goals.js";
 
 // ------------------------------------------------------------------ new / edit todo
@@ -54,7 +53,7 @@ export function openTodoForm(t = null, { pick = false } = {}) {
   if (t) {
     f.title.value = t.title;
     f.prompt.value = t.prompt;
-    f.priority.value = t.priority ?? "";
+    f.priority.value = priorityLevel(t.priority);
   }
   setModelField(f, t?.model || "");
   todoAttach.reset(t?.attachments || []);
@@ -77,13 +76,12 @@ new ResizeObserver(([e]) => {
 // ------------------------------------------------------------------ quick add
 // The quick sheet (FAB, n): one field per task, the text is its prompt and
 // Claude names it. A multi-line paste stays one task; the field just grows.
-// "More options…" carries the text over to the full form (Shift+N).
+// "More options…" carries the text over to the full form (Shift+N). It
+// ends like the full form: Save draft (Enter) or Queue (Ctrl+Enter).
 const quick = {
   sheet: $("#quick-sheet"),
   rows: $("#quick-rows"),
-  queue: $("#quick-queue"),
 };
-quick.queue.checked = store.flag("dash.quickQueue");
 
 function quickRow(text = "") {
   const ta = h("textarea", {
@@ -106,12 +104,6 @@ function quickAddRow(after = null, text = "") {
   ta.focus();
   return ta;
 }
-function updateQuickLabel() {
-  const n = quickTexts().length;
-  const what = n > 1 ? `${n} tasks` : "task";
-  $("#quick-submit-label").textContent = quick.queue.checked ? `Queue ${what}` : `Save ${what} as draft${n > 1 ? "s" : ""}`;
-}
-
 export function openQuickAdd(texts = [""]) {
   if (!state.project) return toast("Select a project first", true);
   quick.rows.replaceChildren();
@@ -119,14 +111,12 @@ export function openQuickAdd(texts = [""]) {
   quick.sheet.returnValue = "";
   quick.sheet.showModal();
   texts.forEach((t) => quickAddRow(null, t));
-  updateQuickLabel();
 }
 
-async function submitQuick() {
+async function submitQuick(enqueue) {
   const texts = quickTexts();
   if (!texts.length) { quickFields()[0]?.focus(); return; }
   const p = state.project;
-  const enqueue = quick.queue.checked;
   quick.sheet.close("add");
   let done = 0;
   const ids = [];
@@ -169,7 +159,6 @@ function quickMore() {
 
 quick.rows.addEventListener("input", (e) => {
   if (e.target.matches(".quick-row")) fitQuickRow(e.target);
-  updateQuickLabel();
 });
 quick.rows.addEventListener("keydown", (e) => {
   const ta = e.target;
@@ -179,23 +168,20 @@ quick.rows.addEventListener("keydown", (e) => {
     quickAddRow(ta);
   } else if (e.key === "Enter" && !e.altKey) {
     e.preventDefault();
-    attempt(submitQuick)();
+    attempt(submitQuick)(e.ctrlKey || e.metaKey);
   } else if (e.key === "Backspace" && !ta.value && quickFields().length > 1) {
     e.preventDefault();
     const prev = ta.previousElementSibling || ta.nextElementSibling;
     ta.remove();
     prev.focus();
     prev.setSelectionRange(prev.value.length, prev.value.length);
-    updateQuickLabel();
   }
 });
-quick.queue.addEventListener("change", () => {
-  store.setFlag("dash.quickQueue", quick.queue.checked);
-  updateQuickLabel();
-  (quick.last?.isConnected ? quick.last : quickFields().at(-1))?.focus(); // keep typing
+$("#quick-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (e.submitter?.value === "cancel") return quick.sheet.close();
+  attempt(submitQuick)(e.submitter?.value === "queue");
 });
-quick.rows.addEventListener("focusin", (e) => { if (e.target.matches(".quick-row")) quick.last = e.target; });
-$("#quick-form").addEventListener("submit", (e) => { e.preventDefault(); if (e.submitter?.value === "cancel") return quick.sheet.close(); attempt(submitQuick)(); });
 $("#quick-another").addEventListener("click", () => quickAddRow(quickFields().at(-1)));
 $("#quick-more").addEventListener("click", quickMore);
 // New goal…: what was typed becomes what the goal is to get done.
@@ -224,7 +210,7 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
   draft.flush(); // if saving fails below, the draft is still there
   const f = $("#todo-form");
   await todoAttach.settled();
-  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), priority: formPriority(f.priority.value), model: f.model.value, attachments: todoAttach.ids(), depends_on: depPicker.ids(), builds_on: buildOnPicker.value(), run_on: runOnPicker.value() };
+  const body = { title: f.title.value.trim(), prompt: f.prompt.value.trim(), priority: levelPriority(f.priority.value, editing?.priority), model: f.model.value, attachments: todoAttach.ids(), depends_on: depPicker.ids(), builds_on: buildOnPicker.value(), run_on: runOnPicker.value() };
   if (editing) {
     await updateTodo(editing, body);
     if (action === "queue" && editing.status !== "queued") await api("POST", `/api/todos/${editing.id}/enqueue`);
@@ -241,5 +227,5 @@ $("#todo-sheet").addEventListener("close", attempt(async () => {
   }
   draft.done();
 }));
-// Native form validation would block "Save as draft" too; we validate on close instead.
+// Native form validation would block "Save draft" too; we validate on close instead.
 $("#todo-form").noValidate = true;

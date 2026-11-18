@@ -279,10 +279,19 @@
           </div>
           <div class="issue-bulk" id="issue-bulk" role="toolbar" aria-label="Selected issues" hidden>
             <span class="issue-count" id="issue-count"></span>
-            <button class="btn small primary" type="button" id="issue-tasks" data-icon="plus" title="One task for each selected issue">Create tasks</button>
-            <button class="btn small" type="button" id="issue-group" data-icon="spark" title="Claude groups similar issues: one task for each group, named for what it fixes">Create grouped</button>
-            <button class="btn small" type="button" id="issue-combine" data-icon="checks" title="One task that fixes all selected issues, e.g. instances of one pattern">Create one task</button>
-            <label class="issue-queue" title="Queue the new tasks to run instead of keeping drafts"><input type="checkbox" id="issue-queue"> Queue</label>
+            <!-- Create tasks ▾: how to turn the issues into tasks, then Save draft or Queue (app/issues.js) -->
+            <div class="issue-create" id="issue-create">
+              <button class="btn small primary" type="button" id="issue-create-btn" aria-haspopup="true" aria-expanded="false" aria-controls="issue-create-menu">Create tasks <span class="issue-caret" aria-hidden="true">▾</span></button>
+              <div class="issue-create-menu" id="issue-create-menu" role="group" aria-label="Create tasks" hidden>
+                <label class="issue-how"><input type="radio" name="issue-how" value="each" checked><span>One per issue</span></label>
+                <label class="issue-how"><input type="radio" name="issue-how" value="group"><span>Grouped by Claude</span></label>
+                <label class="issue-how"><input type="radio" name="issue-how" value="one"><span>One for all</span></label>
+                <div class="issue-create-actions">
+                  <button class="btn small" type="button" id="issue-draft" data-icon="draft">Save draft</button>
+                  <button class="btn small primary" type="button" id="issue-queue" data-icon="queue">Queue</button>
+                </div>
+              </div>
+            </div>
             <button class="btn small danger" type="button" id="issue-dismiss" data-icon="x">Dismiss…</button>
             <button class="link" type="button" id="issue-clear">Clear</button>
           </div>
@@ -731,15 +740,15 @@
       <header class="sheet-head"><h2 id="quick-title">New task</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
       <p class="hint warn runner-note" id="quick-runner-note" hidden></p>
       <div class="quick-rows" id="quick-rows"></div>
-      <p class="hint quick-hint"><kbd>Enter</kbd> save · <kbd>Shift-Enter</kbd> another task · Claude names each task.</p>
+      <p class="hint quick-hint"><kbd>Enter</kbd> save draft · <kbd>Ctrl-Enter</kbd> queue · <kbd>Shift-Enter</kbd> another task · Claude names each task.</p>
       <div class="quick-tools">
         <button class="link" type="button" id="quick-another" data-icon="plus">Another task</button>
         <button class="link" type="button" id="quick-goal" data-icon="target">New goal…</button>
         <button class="link" type="button" id="quick-more" data-icon="edit">More options…</button>
       </div>
-      <footer class="sheet-actions quick-foot">
-        <label class="toggle"><input type="checkbox" id="quick-queue"><span>Queue</span></label>
-        <button class="btn primary" value="add" data-icon="check"><span id="quick-submit-label">Save task as draft</span></button>
+      <footer class="sheet-actions">
+        <button class="btn" value="draft" data-icon="draft">Save draft</button>
+        <button class="btn primary" value="queue" data-icon="queue">Queue</button>
       </footer>
     </form>
   </dialog>
@@ -760,16 +769,15 @@
       </div>
       <div class="attach" id="todo-attach" data-attach></div>
       <div class="field-row">
-        <label class="field inline"><span>Priority</span><input type="number" name="priority" value="" step="1" placeholder="None" inputmode="numeric"></label>
-        <label class="field inline" title="The Claude model the task runs on, from its next run"><span>Model</span><select name="model"><option value="">Default</option><option value="opus">Opus (hard tasks)</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku (small tasks)</option></select></label>
+        <label class="field inline"><span>Priority</span><select name="priority"><option value="">None</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>
+        <label class="field inline" title="The Claude model the task runs on, from its next run"><span>Model</span><select name="model"><option value="">Default</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select></label>
       </div>
-      <p class="hint">Prioritized tasks run first, lower numbers before higher. Leave it empty for none: those run after them, oldest first. Pick Opus for hard tasks and Sonnet or Haiku for small ones; Default uses Dash's configured model.</p>
       <div class="field" id="todo-deps-field" hidden><span id="todo-deps-label">Depends on <em>starts once these are merged</em></span><div class="dep-picker" id="todo-deps" role="group" aria-labelledby="todo-deps-label"></div></div>
       <label class="field" id="todo-buildon-field" hidden title="The first run continues that task's Claude session, so Claude doesn't explore the code again"><span>Build on <em>continues a finished task's Claude session</em></span><select name="builds_on"></select></label>
       <label class="field" id="todo-runon-field" hidden title="The task runs only on this runner, and waits queued while it is offline or busy"><span>Runner <em>which of the project's runners runs it</em></span><select name="run_on"></select></label>
       <footer class="sheet-actions">
         <button class="btn shrink" type="button" id="todo-clear" data-icon="trash">Clear</button>
-        <button class="btn" value="draft" data-icon="draft">Save as draft</button>
+        <button class="btn" value="draft" data-icon="draft">Save draft</button>
         <button class="btn primary" value="queue" data-icon="queue">Queue</button>
       </footer>
     </form>
@@ -787,8 +795,8 @@
       </div>
       <label class="toggle" id="split-order-row"><input type="checkbox" id="split-order" checked><span>Start each one after the tasks it builds on</span></label>
       <footer class="sheet-actions">
-        <button class="btn" value="draft" data-icon="draft"><span id="split-draft-label">Save as drafts</span></button>
-        <button class="btn primary" value="queue" data-icon="queue"><span id="split-queue-label">Queue</span></button>
+        <button class="btn" value="draft" data-icon="draft">Save draft</button>
+        <button class="btn primary" value="queue" data-icon="queue">Queue</button>
       </footer>
     </form>
   </dialog>
@@ -981,7 +989,7 @@
             <option value="repo">Whole repository</option><option value="since_last_scan">Changes since the last scan</option><option value="since_main">Branch vs. main</option><option value="path">One path</option>
           </select></label>
           <label class="field"><span>Path <em>optional; needed for "One path"</em></span><input name="path" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="internal/api"></label>
-          <label class="field"><span>Model <em>empty: the default</em></span><input name="model" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="opus"></label>
+          <label class="field"><span>Model</span><select name="model"><option value="">Default</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select></label>
           <label class="field"><span>Effort</span><select name="effort">
             <option value="">Default</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option><option value="max">Max</option>
           </select></label>

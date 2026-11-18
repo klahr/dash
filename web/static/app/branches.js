@@ -8,7 +8,7 @@ import { baseBranch, projectKey } from "./events.js";
 import { openNewProject, renderProjectHeader, renderProjectList } from "./projects.js";
 import { landsOnGitHub, loadUnpushed, pushBar } from "./board.js";
 import { activityNodes } from "./activity.js";
-import { closeDetail, openDetail, renderDetail } from "./detail.js";
+import { canStartNow, closeDetail, openDetail, pacing, renderDetail, startNow, startNowHelp } from "./detail.js";
 import { canPreview, previewOf, previewTag, previewTodo } from "./preview.js";
 import { reviewTodo } from "./drawmode.js";
 import { renderRunnerBanner, runnerName, welcomeScreen } from "./runners.js";
@@ -16,7 +16,7 @@ import { updateNeedsYou } from "./notifications.js";
 import { loadRemote } from "./origin.js";
 import { loadGraph } from "./history.js";
 import { loadFiles } from "./files.js";
-import { drag } from "./dnd.js";
+import { PRIORITY_LEVELS, drag, priorityLevel } from "./dnd.js";
 import { hoverCard } from "./hovercard.js";
 import { tokenTag } from "./runstats.js";
 import { loadChecklist } from "./checklist.js";
@@ -678,6 +678,10 @@ export function todoRow(t, li = -1, ri = -1) {
   if (state.perms.some((p) => p.todo_id === t.id)) { sub = "Waiting for your approval"; subClass = "todo-sub waiting"; }
   const wait = !t.paused && !t.error && depWait(t);
   if (wait) { sub = depLine(wait); subClass = `todo-sub deps${wait.stuck.length ? " stuck" : ""}`; }
+  // Held back only by the weekly pace: it says so, with Start now beside it.
+  const paced = canStartNow(t) && !t.error && !wait && pacing(t) && (!t.waiting || /to stay on pace/.test(t.waiting))
+    && !state.perms.some((p) => p.todo_id === t.id);
+  if (paced) { sub = "Waiting for weekly pace"; subClass = "todo-sub waiting-runner"; }
   const checkTag = t.checks && ["review", "merging", "failed"].includes(t.status)
     ? h("span", { class: `check-tag ${t.checks.passed ? "pass" : "fail"}` }, t.checks.passed ? "Tests pass" : "Tests fail")
     : null;
@@ -719,10 +723,11 @@ export function todoRow(t, li = -1, ri = -1) {
       t.status === "review" && t.finished_at ? h("span", { title: waitsOnGitHub(t) ? "Waiting on GitHub since" : "Waiting for review" }, ago(t.finished_at)) : null,
       t.model ? h("span", { class: "model-tag", title: `Runs on ${t.model}` }, t.model) : null,
       t.run_on ? runOnTag(t.run_on) : null,
-      hasPriority(t) ? h("span", { class: "prio-tag", title: `Priority ${t.priority} (lower runs first)` }, `P${t.priority}`) : null,
+      hasPriority(t) ? h("span", { class: `prio-tag prio-${priorityLevel(t.priority)}`, title: `${PRIORITY_LEVELS[priorityLevel(t.priority)]} priority: runs before tasks without one` }, PRIORITY_LEVELS[priorityLevel(t.priority)]) : null,
       creatorEl(t),
       t.status === "review" && !t.reviewing ? h("span", { class: "card-actions" }, canPreview(t) ? previewChip(t) : null, reviewChip(t), askClaudeChip(t), approvable(t) ? approveChip(t) : canMergePR(t) ? mergeChip(t) : null) : null,
-      t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null));
+      t.status === "draft" ? h("span", { class: "card-actions" }, enqueueChip(t)) : null,
+      paced ? h("span", { class: "card-actions" }, startNowChip(t)) : null));
 }
 
 // runOnTag names the runner a task is set to run on, on its card.
@@ -877,6 +882,15 @@ function enqueueChip(t) {
       attempt(todoKey)(t, "s");
     },
   }, ico("queue"), "Queue");
+}
+
+// startNowChip starts a queued card that waits for the weekly pace.
+function startNowChip(t) {
+  return h("button", {
+    type: "button", class: "enqueue-chip start-now-chip", title: `${state.usage?.pacing && state.usage.reason ? `${state.usage.reason}. ` : ""}${startNowHelp}`,
+    onpointerdown: (e) => e.stopPropagation(),
+    onclick: (e) => { e.stopPropagation(); attempt(() => startNow(t))(); },
+  }, ico("play"), "Start now");
 }
 
 export function updateLiveLine(id) {

@@ -31,8 +31,8 @@ instead.
 
 The goal opens on the **Goals** page, *planning*. In ask mode its first plan opens in the
 **Split into tasks** sheet once the coordinator has one. Edit the tasks, remove or add some, and
-set which earlier tasks each one waits for (the numbers after **After**). Then save them as
-drafts (**Save 3 drafts**) or queue them (**Queue 3 tasks**). **Plan again…** tells the
+set which earlier tasks each one waits for (the numbers after **After**). Then click
+**Save draft** to save them as drafts, or **Queue** to queue them. **Plan again…** tells the
 coordinator what to change instead. If you close the sheet, **Review plan** on the goal opens it
 again.
 

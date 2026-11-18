@@ -1,5 +1,5 @@
 import { drafts, mdEditor } from "../editor.js";
-import { $, $$, h, ib, plural } from "./dom.js";
+import { $, $$, h, ib, plural, setModelField } from "./dom.js";
 import { api, here } from "./api.js";
 import { ask, attempt, busy, toast } from "./dialogs.js";
 import { attachBox } from "./attachments.js";
@@ -8,7 +8,7 @@ import { projectKey } from "./events.js";
 import { boardField } from "./boards.js";
 import { agoText, byPriority, title } from "./branches.js";
 import { editing, pickProject, showNewTasks } from "./todos.js";
-import { formPriority } from "./dnd.js";
+import { PRIORITY_LEVELS, levelPriority, priorityLevel } from "./dnd.js";
 import { servesProject } from "../groups.js";
 
 // ------------------------------------------------------------------ the task form
@@ -115,14 +115,7 @@ export const runOnPicker = (() => {
   return { reset, value: () => field.hidden ? undefined : sel.value };
 })();
 
-// setModelField selects a task's model in the form, adding an option for a
-// model id that isn't one of the aliases (set through the API or MCP).
-export function setModelField(f, m) {
-  const sel = f.model;
-  $$("option[data-custom]", sel).forEach((o) => o.remove());
-  if (m && ![...sel.options].some((o) => o.value === m)) sel.append(h("option", { value: m, "data-custom": "" }, m));
-  sel.value = m;
-}
+export { setModelField }; // in dom.js, as Scans use it too
 
 // The todo form autosaves to this browser while you type; reopening the
 // form (even after a reload or a crash) brings the draft back.
@@ -136,7 +129,8 @@ export const draft = drafts({
     const f = $("#todo-form");
     f.title.value = d.title ?? "";
     f.prompt.value = d.prompt ?? "";
-    f.priority.value = d.priority ?? "";
+    const prio = d.priority ?? priorityLevel(editing?.priority);
+    f.priority.value = prio in PRIORITY_LEVELS ? prio : priorityLevel(prio); // drafts from before the levels hold a number
     setModelField(f, d.model ?? editing?.model ?? "");
     todoAttach.reset(d.attachments || []);
     depPicker.reset(editing, d.depends_on ?? editing?.depends_on ?? []); // drafts from before dependencies have none
@@ -162,7 +156,7 @@ function discardDraft() {
   const t = editing;
   const f = $("#todo-form");
   f.reset();
-  if (t) { f.title.value = t.title; f.prompt.value = t.prompt; f.priority.value = t.priority ?? ""; }
+  if (t) { f.title.value = t.title; f.prompt.value = t.prompt; f.priority.value = priorityLevel(t.priority); }
   setModelField(f, t?.model || "");
   todoAttach.reset(t?.attachments || []);
   depPicker.reset(t, t?.depends_on || []);
@@ -302,10 +296,6 @@ function renderSplit() {
       deps || (after.length ? h("p", { class: "hint split-after" }, `Builds on ${after.length > 1 ? "tasks" : "task"} ${after.join(", ")}`) : null));
   }));
   if (focus) $$(".split-dep", $$(".split-part", split.list)[focus[0]]).find((b) => b.textContent === focus[1])?.focus();
-  const n = parts.filter((p) => !p.id).length;
-  const what = n === 1 ? "task" : `${n} tasks`;
-  $("#split-draft-label").textContent = n === 1 ? "Save as draft" : `Save ${n} drafts`;
-  $("#split-queue-label").textContent = `Queue ${what}`;
   $("#split-order-row").hidden = !!split.goal || !parts.some((p) => p.after.size);
 }
 
@@ -338,7 +328,7 @@ async function saveSplit(parts, p, enqueue) {
   await todoAttach.settled();
   const attachments = todoAttach.ids();
   if (attachments.length && p.prefix !== here()) throw new Error(`Attachments can't be sent to ${p.name} on ${p.machine}; remove them or pick a project on this computer.`);
-  const common = { priority: formPriority(f.priority.value), model: f.model.value, attachments, builds_on: buildOnPicker.value(), run_on: runOnPicker.value() };
+  const common = { priority: levelPriority(f.priority.value, editing?.priority), model: f.model.value, attachments, builds_on: buildOnPicker.value(), run_on: runOnPicker.value() };
   const deps = depPicker.ids();
   const order = $("#split-order").checked;
   for (const part of left) {

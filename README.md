@@ -110,14 +110,17 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    instead of onto the default branch. Make it run what your CI runs (formatting, linters,
    tests), so a red build never reaches the default branch.
 2. **Add a task.** Click **New task** (or press <kbd>n</kbd>) and write what Claude should do,
-   as you would in a chat; Claude names the task. <kbd>Enter</kbd> saves it, <kbd>Shift</kbd>+<kbd>Enter</kbd>
-   adds a field for another task (a pasted multi-line text stays one task). **More options…**
-   (or <kbd>Shift</kbd>+<kbd>N</kbd>) opens the full form, with a title, priority, dependencies, the task it builds on and
-   attachments. For a large task, **Split…** there has Claude propose smaller tasks that can each
-   be reviewed and merged on their own; edit, remove or add to them, then save them all, each
-   one waiting for the tasks it builds on.
-3. **Queue it.** Tick **Queue** (Dash remembers it), or in the full form click **Queue**;
-   otherwise the task is saved as a draft to queue later from the *Drafts* column. The task moves to *Queued*, then *Running* as soon as Claude starts on it in
+   as you would in a chat; Claude names the task. <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a field
+   for another task (a pasted multi-line text stays one task). **More options…**
+   (or <kbd>Shift</kbd>+<kbd>N</kbd>) opens the full form, with a title, priority, model,
+   dependencies, the task it builds on and attachments. **Priority** is **None**, **High** or
+   **Urgent**: urgent tasks start first, then high ones, then the rest, oldest first. For a large
+   task, **Split…** there has Claude propose smaller tasks that can each be reviewed and merged on
+   their own; edit, remove or add to them, then save them all, each one waiting for the tasks it
+   builds on.
+3. **Queue it.** Every way of making tasks ends with the same two buttons: **Save draft** keeps
+   it in the *Drafts* column to queue later, **Queue** queues it. In the **New task** sheet,
+   <kbd>Enter</kbd> saves a draft and <kbd>Ctrl</kbd>+<kbd>Enter</kbd> queues. The task moves to *Queued*, then *Running* as soon as Claude starts on it in
    its own worktree. Open the card to follow along; if Claude needs permission for something,
    Dash asks you.
 4. **Review.** When Claude is done the task lands in *Review*. Click **Review** on the card (or
@@ -193,8 +196,9 @@ or an org admin can change it; the hub keeps it in `pace.json`. A runner that do
 account (an older Dash) is paced on its own, and a runner whose hub doesn't pace (an older hub)
 paces itself from its own setting in `usage.json`.
 
-**Start now.** To run one queued task while the queue waits for the pace, open it and click
-**Start now** (or **⋯ → Start now, despite the weekly pace**). It starts as soon as a lane is
+**Start now.** While the queue waits for the pace, each queued card says "Waiting for weekly
+pace", with **Start now** beside it. To run one task anyway, click **Start now** on its card (or
+in the task, or **⋯ → Start now**). It starts as soon as a lane is
 free; pacing goes on for the other tasks. Only the
 pace is skipped: a usage limit, a paused queue, the project's **Tasks at once** and unmerged dependencies still hold it back. The
 task's detail says it starts now, and once it runs, that the run counts toward usage, so the queue
