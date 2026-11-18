@@ -174,6 +174,22 @@ export function planningShown() {
   if (!pl.loaded) loadPlanning().catch(fail);
 }
 
+// followProject points the project filter at the project picked in the
+// app (projects.js: selectProject), so Planning shows that project's cards,
+// not the ones of the project shown before. A card of another project that
+// is open closes. The board is read again now if it shows, or when it
+// is next shown.
+export function followProject(id) {
+  if (!id || id === pl.filter) return;
+  pl.filter = id;
+  store.set("dash.planning.project", id);
+  if (!pl.root) return; // not mounted yet: mountPlanning reads pl.filter
+  if (pl.open && pl.detail?.project_id !== id) closeCard();
+  pl.loaded = false;
+  renderFilter();
+  if (!pl.hooks.visible || pl.hooks.visible()) loadPlanning().catch(fail);
+}
+
 // ---- the project filter
 // A button that opens a list of the projects, each with its icon (a select
 // can't show pictures). Arrows move in the list, Enter picks, Esc closes.

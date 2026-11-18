@@ -34,6 +34,7 @@ import { loadScans, resetScans } from "./scans.js";
 import { loadChecklist } from "./checklist.js";
 import { gp, loadGoals, resetGoals, showGoal } from "./goals.js";
 import { planner } from "./planner.js";
+import { followProject } from "./planning.js";
 import { loadPeople } from "./people.js";
 
 // ------------------------------------------------------------------ projects
@@ -95,6 +96,8 @@ export async function selectProject(p) {
   resetScans();
   resetGoals();
   loadTry().catch(() => {});
+  // Planning is the hub's: it follows a hub project, not a runner's.
+  if (p && !p.prefix) followProject(p.id);
   if (!p) { state.perms = []; renderBoard(); renderProcs(); renderPerms(); renderGraph(null); renderFileTree(); renderFile(); loadChecklist().catch(fail); return; }
   await Promise.all([loadIssues(), loadTodos(), loadGoals(), loadProcs(), loadPerms(), loadCI(), state.view === "history" && loadGraph(), state.view === "files" && loadFiles(), state.view === "checklist" && loadChecklist(), state.view === "scans" && loadScans()]);
 }
