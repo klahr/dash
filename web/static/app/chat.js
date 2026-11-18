@@ -67,34 +67,18 @@ function usageLine(u) {
 // goes elsewhere (Rework): it returns whether it was sent, which empties the
 // composer. c.modeChanged() shows a new mode.
 //
-// Its parts (chatQueue, shellRunner, chatStreamHandler) share c: the chat's
-// state and the helpers they call one another through.
+// Its parts share c: the chat's state and the helpers they call one another
+// through. Each is a function of c: chatSendButton, chatSuggestion,
+// chatSocket, chatRecall (with the composer's keys), chatQueue, shellRunner
+// and chatStreamHandler.
 export function makeChat({ log, empty, form, target, actions, cwd, clear, scroller = () => log, saved = () => {}, stale = () => {}, resume = false, labels = null, merge = (nodes) => nodes, onRunner = () => {}, onState = () => {}, shell = false, mode = () => null }) {
   // waiting: ids of the permission requests the current turn waits on an answer to.
   // queue: messages written while a reply streams ({q, files}), sent together
   // as one message once it's done.
   const c = { history: [], current: null, ws: null, prefix: "", waiting: new Set(), queue: [], log, empty, form, target, actions, labels, scroller, onState };
   const input = c.input = form.q;
-  // While a reply streams, the send button stops it instead, unless there's
-  // something in the composer: then it queues that.
-  const sendBtn = form.querySelector("button:not([type=button])");
-  const sendLook = { html: sendBtn.innerHTML, label: sendBtn.getAttribute("aria-label") };
-  const stopLook = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/></svg>`;
-  const composing = () => !!input.value.trim() || att.items().length > 0;
-  c.busyButton = () => {
-    const m = mode();
-    // A message sent elsewhere doesn't wait for the reply, so it's never queued.
-    const replying = !!c.current && !m?.send;
-    const stopping = replying && !composing();
-    sendBtn.disabled = false;
-    sendBtn.classList.toggle("stop", stopping);
-    sendBtn.innerHTML = stopping ? stopLook : sendLook.html;
-    const text = sendBtn.querySelector(".send-text");
-    if (text && m?.text) text.textContent = replying ? "Queue" : m.text;
-    const what = c.current?.shell ? "command" : "reply";
-    sendBtn.setAttribute("aria-label", stopping ? `Stop the ${what}` : replying ? "Queue the message" : m?.label || sendLook.label);
-    sendBtn.title = stopping ? "Stop" : replying ? `Queue: sent when the ${what === "reply" ? "reply" : "command"} is done` : m?.title || "";
-  };
+  const composing = c.composing = () => !!input.value.trim() || att.items().length > 0;
+  const sendBtn = chatSendButton(c, form, mode, composing);
   // A turn that ends sends what's queued (done) or, when it was stopped or
   // failed, puts it back in the composer to send again or not.
   const finish = c.finish = (drain = false) => {
@@ -136,88 +120,15 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   // Images and files dropped onto the chat or pasted into its text field.
   const attachRow = h("div", { class: "attach", hidden: true });
   form.prepend(attachRow);
-  const att = c.att = attachBox(attachRow, input, () => { c.busyButton(); showSuggestion(); }, { zone: form.parentElement, compact: true, prefix: prefixOf });
-
-  // The suggested next message. It stays pending while the composer has
-  // something in it, and shows (as the placeholder) whenever it's empty.
-  const placeholder = input.placeholder, placeholderTitle = input.title, inputLabel = input.getAttribute("aria-label");
-  c.suggestion = "";
-  // A suggestion is for the chat: a message sent elsewhere doesn't show it.
-  const suggestionShown = () => !!c.suggestion && !input.value && !att.items().length && !mode()?.send;
-  const showSuggestion = () => {
-    const on = suggestionShown();
-    input.placeholder = on ? c.suggestion : mode()?.placeholder || placeholder;
-    if (inputLabel) input.setAttribute("aria-label", mode()?.inputLabel || inputLabel);
-    input.title = on ? (matchMedia("(pointer: coarse)").matches ? "Send sends this suggestion" : "Enter sends this suggestion; Tab puts it in the box to edit") : placeholderTitle;
-    form.classList.toggle("suggesting", on);
-  };
-  const suggest = c.suggest = (text = "") => {
-    c.suggestion = text;
-    showSuggestion();
-  };
-  document.addEventListener("dash:chatsuggest", () => { if (!chatSuggestOn()) suggest(); });
+  const att = c.att = attachBox(attachRow, input, () => { c.busyButton(); suggestion.show(); }, { zone: form.parentElement, compact: true, prefix: prefixOf });
+  const suggestion = chatSuggestion(c, input, form, att, mode);
+  const suggest = c.suggest;
 
   const queue = chatQueue(c);
+  c.unqueue = queue.unqueue;
   const sh = shellRunner(c);
   c.runShell = sh.run;
-  const onStream = chatStreamHandler(c);
-
-  c.socket = (prefix) => {
-    if (c.ws && c.ws.readyState <= 1 && c.prefix === prefix) return c.ws;
-    c.ws?.close();
-    const ws = c.ws = new WebSocket(wsURL(on(prefix, "/ws/chat")));
-    c.prefix = prefix;
-    ws.onmessage = (m) => {
-      const d = JSON.parse(m.data);
-      d.text ??= ""; // omitted when empty
-      // An abandoned socket (see reset) finishes its reply so the server saves it.
-      if (ws !== c.ws) {
-        // Nobody sees its approval requests any more.
-        if (d.kind === "permission") ws.send(JSON.stringify({ type: "permission", id: d.id, decision: "deny" }));
-        if (d.kind === "done" || d.kind === "error" || d.kind === "shell_done") { ws.close(); if (d.kind !== "error") saved(ws.fields); }
-        return;
-      }
-      if (d.kind === "stale") return staleTurn(d.text);
-      if (d.kind === "suggestion") {
-        // Only for an idle, empty composer: a late one (a new turn started, or
-        // the user is writing) is dropped.
-        if (!c.current && !composing() && chatSuggestOn() && d.text) suggest(d.text);
-        return;
-      }
-      if (d.kind === "cwd" && cwd) { cwd.hidden = false; cwd.textContent = cwd.title = `Runs in ${d.text}`; }
-      if (d.kind === "runner") onRunner(d.text);
-      onStream(ws, d);
-    };
-    ws.onclose = (e) => {
-      if (ws !== c.ws || !c.current) return;
-      if (e.code === 1009) {
-        // The server refuses a conversation this long (see maxChatFrame).
-        c.ws = null;
-        c.current.el.classList.remove("pending");
-        c.current.el.classList.add("error");
-        c.current.reply.textContent = "This conversation is too long to send. Clear it, or start a new one.";
-        c.history.pop();
-        finish();
-        return;
-      }
-      if (c.current.shell) {
-        // Whether it ran (and was saved) isn't known: the saved chat says.
-        sh.ended(c.current, { error: "Connection lost: reload to see whether it ran" }, false);
-        return;
-      }
-      if (resume) {
-        c.ws = null;
-        c.current.reply.textContent = "Connection lost. Picking up when Dash is back…";
-        setTimeout(() => { if (c.current && !c.ws) turn(c.current.target); }, 1500);
-        return;
-      }
-      c.current.el.classList.remove("pending");
-      c.current.reply.textContent ||= "Connection lost. Send your message again.";
-      c.history.pop();
-      finish();
-    };
-    return ws;
-  };
+  c.socket = chatSocket(c, { cwd, saved, resume, onRunner, onStream: chatStreamHandler(c) });
 
   // settleTurn ends the reply cur: done, failed or stopped. What it said
   // stays in the history; a reply with nothing in it takes its question back
@@ -261,7 +172,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
   // staleTurn takes back a turn the server refused because this copy of the
   // conversation is out of date: its message goes back in the composer (with
   // what's queued) and the chat reloads.
-  function staleTurn(text) {
+  c.staleTurn = (text) => {
     const cur = c.current;
     if (!cur) return;
     const m = c.history.at(-1);
@@ -274,7 +185,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     finish();
     toast(text, { head: "Chat reloaded" });
     stale();
-  }
+  };
 
   // stop ends the reply streaming now. What it said so far stays (the server
   // saves it too); a reply with nothing in it yet takes its question back out.
@@ -288,7 +199,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
 
   // turn asks for an answer to the last question in history, replacing
   // whatever is left of an earlier try.
-  function turn({ prefix = "", ...fields }) {
+  const turn = c.turn = ({ prefix = "", ...fields }) => {
     const thinking = h("div", { class: "thinking md" });
     const reply = h("div", { class: "reply" });
     const el = entering(h("div", { class: "msg assistant pending" }, from("assistant"), thinking, reply));
@@ -302,7 +213,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     ws.fields = fields;
     const go = () => ws.send(JSON.stringify({ type: "send", ...fields, ...(chatSuggestOn() && { suggest: true }), base: c.history.length - 1, messages: c.history }));
     ws.readyState === 1 ? go() : ws.addEventListener("open", go, { once: true });
-  }
+  };
 
   // Slash commands run here instead of going to Claude. Anything else starting
   // with "/" (a path, say) is sent as a message.
@@ -318,12 +229,178 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     input.style.height = "auto";
     input.style.height = `${input.scrollHeight + input.offsetHeight - input.clientHeight}px`;
     shellMode();
-    showSuggestion();
+    suggestion.show();
   };
-  // recall steps through the messages sent in this conversation, as a shell's
-  // history does: Up on the composer's first line shows the one before, Down on
-  // its last line the one after, and past the newest what was being written.
-  // Typing ends the browsing, so an edited message isn't lost to a later Down.
+  const recall = chatRecall(c, input, autoGrow);
+  input.addEventListener("input", () => { recall.end(); autoGrow(); if (c.current) c.busyButton(); });
+  c.modeChanged = () => { c.busyButton(); suggestion.show(); shellMode(); };
+  form.addEventListener("submit", attempt(async (e) => {
+    e.preventDefault();
+    const m = mode();
+    if (m?.send) {
+      await att.settled();
+      const q = input.value.trim(), files = att.items();
+      if (!await m.send(q, files)) return;
+      recall.end();
+      input.value = "";
+      att.reset();
+      autoGrow();
+      c.busyButton();
+      return;
+    }
+    // With nothing written, only a press of the button stops a reply: Enter in the text field doesn't.
+    if (c.current && !composing()) return e.submitter === sendBtn ? stop() : undefined;
+    await att.settled();
+    const files = att.items();
+    // An empty composer sends the suggested message, if it shows.
+    const q = input.value.trim() || (!c.current && suggestion.shown() ? c.suggestion : "");
+    suggest();
+    if (!q && !files.length) return;
+    const cmd = /^\/(\w+)$/.exec(q)?.[1].toLowerCase();
+    recall.end();
+    input.value = "";
+    autoGrow();
+    if (!files.length && Object.hasOwn(commands, cmd)) return commands[cmd]();
+    att.reset();
+    // While Claude answers, the message waits its turn.
+    if (c.current) return queue.push({ q, files });
+    if (!files.length && shellOn() && isShell(q)) return sh.run(q);
+    send(q, files);
+  }));
+
+  // resumeLast answers a question left unanswered in a saved conversation.
+  function resumeLast() {
+    if (c.current || c.history.at(-1)?.role !== "user" || c.history.at(-1).shell) return;
+    empty.hidden = true;
+    turn(target());
+  }
+
+  return { reset, resumeLast, stop, input, toEnd, modeChanged: c.modeChanged, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
+}
+
+// chatSendButton sets c.busyButton, which shows the send button for the
+// moment: while a reply streams it stops it instead, unless there's something
+// in the composer (composing()): then it queues that. mode() is the chat's
+// mode (see makeChat). It returns the button.
+function chatSendButton(c, form, mode, composing) {
+  const sendBtn = form.querySelector("button:not([type=button])");
+  const sendLook = { html: sendBtn.innerHTML, label: sendBtn.getAttribute("aria-label") };
+  const stopLook = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/></svg>`;
+  c.busyButton = () => {
+    const m = mode();
+    // A message sent elsewhere doesn't wait for the reply, so it's never queued.
+    const replying = !!c.current && !m?.send;
+    const stopping = replying && !composing();
+    sendBtn.disabled = false;
+    sendBtn.classList.toggle("stop", stopping);
+    sendBtn.innerHTML = stopping ? stopLook : sendLook.html;
+    const text = sendBtn.querySelector(".send-text");
+    if (text && m?.text) text.textContent = replying ? "Queue" : m.text;
+    const what = c.current?.shell ? "command" : "reply";
+    sendBtn.setAttribute("aria-label", stopping ? `Stop the ${what}` : replying ? "Queue the message" : m?.label || sendLook.label);
+    sendBtn.title = stopping ? "Stop" : replying ? `Queue: sent when the ${what === "reply" ? "reply" : "command"} is done` : m?.title || "";
+  };
+  return sendBtn;
+}
+
+// chatSuggestion shows the suggested next message (c.suggestion). It stays
+// pending while the composer has something in it (written or attached in
+// att), and shows (as the placeholder) whenever it's empty. It sets
+// c.suggest(text), which sets it ("" drops it), and returns show(), which
+// shows it or the usual placeholder, and shown(), whether it shows.
+function chatSuggestion(c, input, form, att, mode) {
+  const placeholder = input.placeholder, placeholderTitle = input.title, inputLabel = input.getAttribute("aria-label");
+  c.suggestion = "";
+  // A suggestion is for the chat: a message sent elsewhere doesn't show it.
+  const shown = () => !!c.suggestion && !input.value && !att.items().length && !mode()?.send;
+  const show = () => {
+    const on = shown();
+    input.placeholder = on ? c.suggestion : mode()?.placeholder || placeholder;
+    if (inputLabel) input.setAttribute("aria-label", mode()?.inputLabel || inputLabel);
+    input.title = on ? (matchMedia("(pointer: coarse)").matches ? "Send sends this suggestion" : "Enter sends this suggestion; Tab puts it in the box to edit") : placeholderTitle;
+    form.classList.toggle("suggesting", on);
+  };
+  c.suggest = (text = "") => {
+    c.suggestion = text;
+    show();
+  };
+  document.addEventListener("dash:chatsuggest", () => { if (!chatSuggestOn()) c.suggest(); });
+  c.suggestionShown = shown;
+  return { show, shown };
+}
+
+// chatSocket returns c.socket(prefix): the chat's websocket to the Dash at
+// prefix, opened anew when there's none (or it's to another Dash). Messages
+// from it go to onStream; cwd (an element) shows where the chat runs and
+// onRunner(name) which runner it runs on. An abandoned socket (one reset left
+// streaming) finishes its reply on its own, and saved(fields) is told when it
+// has. With resume, a turn cut off by a lost connection is sent again.
+function chatSocket(c, { cwd, saved, resume, onRunner, onStream }) {
+  return (prefix) => {
+    if (c.ws && c.ws.readyState <= 1 && c.prefix === prefix) return c.ws;
+    c.ws?.close();
+    const ws = c.ws = new WebSocket(wsURL(on(prefix, "/ws/chat")));
+    c.prefix = prefix;
+    ws.onmessage = (m) => {
+      const d = JSON.parse(m.data);
+      d.text ??= ""; // omitted when empty
+      // An abandoned socket (see reset) finishes its reply so the server saves it.
+      if (ws !== c.ws) {
+        // Nobody sees its approval requests any more.
+        if (d.kind === "permission") ws.send(JSON.stringify({ type: "permission", id: d.id, decision: "deny" }));
+        if (d.kind === "done" || d.kind === "error" || d.kind === "shell_done") { ws.close(); if (d.kind !== "error") saved(ws.fields); }
+        return;
+      }
+      if (d.kind === "stale") return c.staleTurn(d.text);
+      if (d.kind === "suggestion") {
+        // Only for an idle, empty composer: a late one (a new turn started, or
+        // the user is writing) is dropped.
+        if (!c.current && !c.composing() && chatSuggestOn() && d.text) c.suggest(d.text);
+        return;
+      }
+      if (d.kind === "cwd" && cwd) { cwd.hidden = false; cwd.textContent = cwd.title = `Runs in ${d.text}`; }
+      if (d.kind === "runner") onRunner(d.text);
+      onStream(ws, d);
+    };
+    ws.onclose = (e) => {
+      if (ws !== c.ws || !c.current) return;
+      if (e.code === 1009) {
+        // The server refuses a conversation this long (see maxChatFrame).
+        c.ws = null;
+        c.current.el.classList.remove("pending");
+        c.current.el.classList.add("error");
+        c.current.reply.textContent = "This conversation is too long to send. Clear it, or start a new one.";
+        c.history.pop();
+        c.finish();
+        return;
+      }
+      if (c.current.shell) {
+        // Whether it ran (and was saved) isn't known: the saved chat says.
+        c.shell.ended(c.current, { error: "Connection lost: reload to see whether it ran" }, false);
+        return;
+      }
+      if (resume) {
+        c.ws = null;
+        c.current.reply.textContent = "Connection lost. Picking up when Dash is back…";
+        setTimeout(() => { if (c.current && !c.ws) c.turn(c.current.target); }, 1500);
+        return;
+      }
+      c.current.el.classList.remove("pending");
+      c.current.reply.textContent ||= "Connection lost. Send your message again.";
+      c.history.pop();
+      c.finish();
+    };
+    return ws;
+  };
+}
+
+// chatRecall steps through the messages sent in this conversation, as a
+// shell's history does: Up on the composer's first line shows the one before,
+// Down on its last line the one after, and past the newest what was being
+// written. Typing ends the browsing (end()), so an edited message isn't lost
+// to a later Down. It handles the composer's other keys too: Tab takes the
+// suggestion, Up in an empty composer the last queued message, Enter sends.
+function chatRecall(c, input, autoGrow) {
   const recall = {
     pos: null, list: [], draft: "",
     end() { recall.pos = null; },
@@ -348,45 +425,10 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
       return true;
     },
   };
-  input.addEventListener("input", () => { recall.end(); autoGrow(); if (c.current) c.busyButton(); });
-  c.modeChanged = () => { c.busyButton(); showSuggestion(); shellMode(); };
-  form.addEventListener("submit", attempt(async (e) => {
-    e.preventDefault();
-    const m = mode();
-    if (m?.send) {
-      await att.settled();
-      const q = input.value.trim(), files = att.items();
-      if (!await m.send(q, files)) return;
-      recall.end();
-      input.value = "";
-      att.reset();
-      autoGrow();
-      c.busyButton();
-      return;
-    }
-    // With nothing written, only a press of the button stops a reply: Enter in the text field doesn't.
-    if (c.current && !composing()) return e.submitter === sendBtn ? stop() : undefined;
-    await att.settled();
-    const files = att.items();
-    // An empty composer sends the suggested message, if it shows.
-    const q = input.value.trim() || (!c.current && suggestionShown() ? c.suggestion : "");
-    suggest();
-    if (!q && !files.length) return;
-    const cmd = /^\/(\w+)$/.exec(q)?.[1].toLowerCase();
-    recall.end();
-    input.value = "";
-    autoGrow();
-    if (!files.length && Object.hasOwn(commands, cmd)) return commands[cmd]();
-    att.reset();
-    // While Claude answers, the message waits its turn.
-    if (c.current) return queue.push({ q, files });
-    if (!files.length && shellOn() && isShell(q)) return sh.run(q);
-    send(q, files);
-  }));
   input.addEventListener("keydown", (e) => {
     // Tab in an empty composer puts the suggested message in it to edit;
     // otherwise Tab moves the focus as usual.
-    if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && suggestionShown()) {
+    if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && c.suggestionShown()) {
       e.preventDefault();
       // It stays pending: emptying the composer shows it again.
       input.value = c.suggestion;
@@ -397,7 +439,7 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     // Up in an empty composer takes the last queued message back to edit.
     if (e.key === "ArrowUp" && !input.value && c.queue.length) {
       e.preventDefault();
-      return queue.unqueue(c.queue.at(-1), true);
+      return c.unqueue(c.queue.at(-1), true);
     }
     // Up on the first line and Down on the last step through the messages sent before.
     if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && recall.step(e.key === "ArrowUp" ? -1 : 1)) {
@@ -407,18 +449,10 @@ export function makeChat({ log, empty, form, target, actions, cwd, clear, scroll
     // Enter sends on devices with a hardware keyboard; on touch keyboards Enter adds a line.
     if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) {
       e.preventDefault();
-      form.requestSubmit();
+      c.form.requestSubmit();
     }
   });
-
-  // resumeLast answers a question left unanswered in a saved conversation.
-  function resumeLast() {
-    if (c.current || c.history.at(-1)?.role !== "user" || c.history.at(-1).shell) return;
-    empty.hidden = true;
-    turn(target());
-  }
-
-  return { reset, resumeLast, stop, input, toEnd, modeChanged: c.modeChanged, clear: commands.clear, get history() { return c.history; }, get busy() { return !!c.current; }, get waiting() { return c.waiting.size > 0; } };
+  return recall;
 }
 
 // chatQueue holds the messages written while a reply streams (c.queue). The
