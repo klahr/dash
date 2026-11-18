@@ -60,7 +60,17 @@ func migrateSelfHosted(st *store.Store, rh *tunnel.Hub) {
 func migrateLegacyRunners(st *store.Store, rh *tunnel.Hub) {
 	all := rh.List()
 	used := map[int64][]string{} // org → labels given out here
-	for _, p := range st.ListProjects() {
+	// Oldest first, then by id: projects made in the same clock tick come
+	// in any order from the store, and the order decides which of two
+	// projects with the same label gets the plain one and which the "-2".
+	projects := st.ListProjects()
+	slices.SortStableFunc(projects, func(x, y model.Project) int {
+		if c := x.CreatedAt.Compare(y.CreatedAt); c != 0 {
+			return c
+		}
+		return strings.Compare(x.ID, y.ID)
+	})
+	for _, p := range projects {
 		if len(p.LegacyRunners) == 0 {
 			continue
 		}

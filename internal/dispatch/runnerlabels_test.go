@@ -34,6 +34,12 @@ func TestMigrateRunnerLinksKeepsEachProjectsRunners(t *testing.T) {
 	all := mk("All of them", fx.orgA, a, b)
 	one := mk("Web site!", fx.orgA, a)
 	twin := mk("web site", fx.orgA, b) // the same label, but for the "-2"
+	// Which of the two gets the "-2" depends on their random ids when
+	// both are made in the same clock tick; either way, they differ.
+	oneLabel, twinLabel := "project-web-site", "project-web-site-2"
+	if !one.CreatedAt.Before(twin.CreatedAt) && twin.ID < one.ID {
+		oneLabel, twinLabel = twinLabel, oneLabel
+	}
 	other := mk("beta's", fx.orgB, beta)
 	gone := mk("gone", fx.orgA, "revoked-runner")
 	none := mk("none", fx.orgA)
@@ -64,8 +70,8 @@ func TestMigrateRunnerLinksKeepsEachProjectsRunners(t *testing.T) {
 		runners []string
 	}{
 		{all, []string{"any"}, []string{"a", "b"}},
-		{one, []string{"project-web-site"}, []string{"a"}},
-		{twin, []string{"project-web-site-2"}, []string{"b"}},
+		{one, []string{oneLabel}, []string{"a"}},
+		{twin, []string{twinLabel}, []string{"b"}},
 		{other, []string{"any"}, []string{"beta"}},
 		{gone, []string{"project-gone"}, nil},
 		{none, nil, nil},
@@ -79,7 +85,7 @@ func TestMigrateRunnerLinksKeepsEachProjectsRunners(t *testing.T) {
 	// Once is enough: starting again changes nothing.
 	before, _ := rh.Get(a)
 	MigrateRunnerLinks(fx.st, rh)
-	if after, _ := rh.Get(a); !slices.Equal(after.Labels, before.Labels) || !slices.Equal(before.Labels, []string{"project-web-site"}) {
+	if after, _ := rh.Get(a); !slices.Equal(after.Labels, before.Labels) || !slices.Equal(before.Labels, []string{oneLabel}) {
 		t.Errorf("a's labels: %v, then %v", before.Labels, after.Labels)
 	}
 }
