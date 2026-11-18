@@ -283,6 +283,9 @@ type TaskState struct {
 	// Conflicts are what the task's branch conflicts with on the runner
 	// (other tasks there, by their hub ids, and the default branch).
 	Conflicts []model.Conflict `json:"conflicts,omitempty"`
+	// Links are the times the task met other tasks on the runner (conflicts
+	// found, conflict notes), the other tasks by their hub ids too.
+	Links []model.Link `json:"links,omitempty"`
 	// Session: the runner still has the task's worktree and Claude
 	// session, so it can continue the task.
 	Session   bool      `json:"session,omitempty"`
@@ -299,7 +302,7 @@ func StateOf(t model.Todo) TaskState {
 		HubTodoID: t.HubTodoID, ID: t.ID, Status: t.Status, Paused: t.Paused, Error: t.Error, Summary: t.Summary,
 		DiffFiles: t.DiffFiles, DiffAdd: t.DiffAdd, DiffDel: t.DiffDel, CostUSD: t.CostUSD, Runs: t.Runs, RunStats: t.RunStats,
 		Checks: t.Checks, PR: t.PR, MergedCommit: t.MergedCommit, Revert: t.Revert, RevertConflict: t.RevertConflict,
-		Conflicts: t.Conflicts, Session: t.Worktree != nil && t.SessionID != "", UpdatedAt: t.UpdatedAt,
+		Conflicts: t.Conflicts, Links: t.Links, Session: t.Worktree != nil && t.SessionID != "", UpdatedAt: t.UpdatedAt,
 	}
 	if t.Worktree != nil {
 		s.Branch = t.Worktree.Branch

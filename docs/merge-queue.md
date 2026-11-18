@@ -35,8 +35,9 @@ the default branch, a fetch).
 
 What it finds shows:
 
-- **On the card:** "Conflicts with *Fix login* in auth.go +2". Hover it for every conflict and
-  file.
+- **On the card:** a link marker, "↔ *Fix login*", or "↔ *Fix login* +2" when more tasks are
+  linked. Hover it for every conflict and file; click it to open the other task. A conflict with
+  the default branch alone shows as "Conflicts with main in auth.go".
 - **In the task's detail:** each task (click it to open it) or the default branch it conflicts
   with, and all the files.
 
@@ -45,10 +46,35 @@ fails or is sent back.
 
 When a task gains a conflict with a task ahead of it in the merge queue (one that is merging),
 Dash adds a note for Claude naming that task and the files. Claude reads it on its next run of
-the task: a test fix, a rework, or when the merge queue sends it back. The task's log says so.
-Each conflict is noted once.
+the task: a test fix, a rework, or when the merge queue sends it back. Each conflict is noted
+once.
 
-A runner reports its tasks' conflicts to the hub, which shows them on the hub's board.
+## Where tasks meet
+
+Dash records each time two tasks meet, on both of them:
+
+- a conflict found between their branches,
+- a conflict note one gave the other (the task ahead in the merge queue gives it),
+- an `active_work` call of one that listed the other (see [A task's tools](mcp.md#a-tasks-tools)).
+
+These show:
+
+- **On the card**, while the task is queued, running, in review or merging: the "↔" link
+  marker above. It is orange while the task has a conflict. Hover it for what happened, for
+  example "#12 Fix login also changes auth.go" or "From #12 Fix login, ahead in the merge
+  queue: conflicts in auth.go; noted for Claude's next run".
+- **In the task's detail:** every meeting, newest first, each with a link to the other task.
+- **On the task's Timeline tab**, as marked entries that link to the other task:
+  - "📨 From #12, ahead in the merge queue: conflicts in auth.go" when the note is given,
+  - "📬 Note from #12 sent to Claude" when the next run gives it to Claude,
+  - "👀 Checked other work: #12, #15" when the task calls `active_work`.
+
+A task keeps its 30 latest meetings. A meeting that happens again (another `active_work` call
+listing the same task) replaces the earlier one.
+
+A runner reports its tasks' conflicts and meetings to the hub, which shows them on the hub's
+board with the hub's task ids. The hub answers `active_work` for its tasks on runners, so it
+records those calls itself.
 
 The check needs git 2.38 or newer. With an older git, Dash logs that the check is off and
 conflicts are found at merge time, as before.

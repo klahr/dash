@@ -983,6 +983,7 @@ func clone(t model.Todo) model.Todo {
 	cp.DependsOn = append([]string(nil), t.DependsOn...)
 	cp.Attachments = append([]model.Attachment(nil), t.Attachments...)
 	cp.ConflictNoted = append([]string(nil), t.ConflictNoted...)
+	cp.Links = model.CloneLinks(t.Links)
 	if t.Conflicts != nil {
 		cp.Conflicts = make([]model.Conflict, len(t.Conflicts))
 		for i, c := range t.Conflicts {

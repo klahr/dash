@@ -377,10 +377,15 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .paused-tag { color: var(--muted); }
 .start-now-tag { color: var(--running); } /* the task skips the wait for the weekly pace */
 /* A card's small word tags (paused, reviewing, a PR, CI, checks, a revert): one size; each sets its colour. */
-:is(.paused-tag, .start-now-tag, .reviewing-tag, .runner-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag, .conflict-tag) { font-size: var(--fs-xs); font-weight: 600; }
-/* A conflict found ahead of the merge queue: one short line, the rest on hover. */
-.conflict-tag { color: var(--running); max-width: min(22em, 100%); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conflicts { color: var(--running); overflow-wrap: anywhere; }
+:is(.paused-tag, .start-now-tag, .reviewing-tag, .runner-tag, .check-tag, .pr-tag, .pr-review, .revert-tag, .ci-tag, .sentback-tag, .link-tag) { font-size: var(--fs-xs); font-weight: 600; }
+/* A link to other tasks (a conflict, a note, an active_work lookup): one short line, the rest on hover. */
+.link-tag, .dep-link.link-tag { display: inline-block; color: var(--accent); text-decoration: none; max-width: min(22em, 100%); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-tag.conflict-tag, .dep-link.link-tag.conflict-tag, .conflicts { color: var(--running); }
+.links { display: flex; flex-direction: column; gap: 2px; flex-basis: 100%; overflow-wrap: anywhere; }
+/* A run log entry about another task (a conflict note, an active_work call), with links to it. */
+.tl-link { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 8px 12px; border-left: 3px solid var(--accent); border-radius: var(--r-s); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); font-size: var(--fs-s); color: var(--text); overflow-wrap: anywhere; }
+.tl-link > span:first-child { min-width: 0; }
+.tl-link .act-time { margin-left: auto; flex: none; color: var(--faint); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
 
 .s-draft { --c: var(--faint); }
 .s-queued { --c: var(--accent); }

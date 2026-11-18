@@ -455,6 +455,9 @@ type Todo struct {
 	// had a note about, so a conflict is noted once.
 	Conflicts     []Conflict `json:"conflicts,omitempty"`
 	ConflictNoted []string   `json:"conflict_noted,omitempty"`
+	// Links are the times the task met other tasks: conflicts found, conflict
+	// notes given or received, active_work calls (see Link), newest last.
+	Links []Link `json:"links,omitempty"`
 	// Paused holds a queued todo back from the dispatcher. Pausing a running
 	// todo stops Claude and requeues it paused, keeping its worktree and
 	// session so resuming continues where it stopped.
@@ -987,7 +990,10 @@ type RunEvent struct {
 	IsError bool            `json:"is_error,omitempty"`
 	Turns   int             `json:"turns,omitempty"`    // result
 	CostUSD float64         `json:"cost_usd,omitempty"` // result
-	At      time.Time       `json:"at"`
+	// Tasks are the other tasks a "status" note is about (a conflict note
+	// from one, an active_work call's answer): the run log links them.
+	Tasks []TaskRef `json:"tasks,omitempty"`
+	At    time.Time `json:"at"`
 }
 
 // EventType names a WebSocket event broadcast to dashboards.

@@ -65,12 +65,25 @@ func ActiveWork(b Board, o Options) Tool {
 			if err != nil {
 				return nil, err
 			}
-			return activeWork(b, ts, o.Todo, cleanPaths(a.List("paths"))), nil
+			text, got, files := activeWork(b, ts, o.Todo, cleanPaths(a.List("paths")))
+			if r, ok := b.(WorkRecorder); ok && o.Todo != "" {
+				r.RecordActiveWork(o.Todo, got, files)
+			}
+			return text, nil
 		}}
 }
 
-// activeWork is active_work's answer: one compact text block per task.
-func activeWork(b Board, ts []model.Todo, self string, paths []string) string {
+// WorkRecorder is a Board that records a task's active_work calls, so the
+// board shows which tasks looked at which.
+type WorkRecorder interface {
+	// RecordActiveWork records that task self called active_work and got
+	// back the tasks got, with the files listed for each (files[i]).
+	RecordActiveWork(self string, got []model.Todo, files [][]string)
+}
+
+// activeWork is active_work's answer: one compact text block per task. It
+// returns the tasks it lists too, with the files it lists for each.
+func activeWork(b Board, ts []model.Todo, self string, paths []string) (text string, got []model.Todo, gotFiles [][]string) {
 	var active []model.Todo
 	for _, t := range ts {
 		if t.ID != self && slices.Contains(activeStatuses, t.Status) {
@@ -92,6 +105,7 @@ func activeWork(b Board, ts []model.Todo, self string, paths []string) string {
 			}
 		}
 		n++
+		got, gotFiles = append(got, t), append(gotFiles, fs)
 		status := statusWord(t)
 		fmt.Fprintf(&sb, "- %s [%s] %s\n", t.ID, status, textutil.OneLine(t.Name(activeTitleLen), activeTitleLen))
 		if in := intent(t); in != "" {
@@ -112,11 +126,11 @@ func activeWork(b Board, ts []model.Todo, self string, paths []string) string {
 	}
 	switch {
 	case n == 0 && len(paths) > 0:
-		return "No other active task in this project touches " + strings.Join(paths, ", ") + "."
+		return "No other active task in this project touches " + strings.Join(paths, ", ") + ".", nil, nil
 	case n == 0:
-		return "No other task in this project is queued, running or in review."
+		return "No other task in this project is queued, running or in review.", nil, nil
 	}
-	return strings.TrimRight(sb.String(), "\n")
+	return strings.TrimRight(sb.String(), "\n"), got, gotFiles
 }
 
 // workFiles finds the files of every task in ts, a few at a time (on a hub

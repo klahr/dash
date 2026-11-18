@@ -1049,6 +1049,7 @@ func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Proje
 	default:
 		emit(model.RunEvent{Kind: "run_start", Text: "Started"})
 	}
+	e.deliverNotes(t, emit)
 	for _, n := range unsent {
 		emit(model.RunEvent{Kind: "prompt", Text: n})
 	}

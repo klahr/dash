@@ -312,23 +312,85 @@ func aheadNote(c model.Conflict, base string) string {
 		c.TodoID, c.Name, strings.Join(c.Files, "\n- "), base, base)
 }
 
-// note gives task id a note about c, once.
+// note gives task id a note about c, once, and records it on both tasks
+// (a LinkNote each) and in id's run log, linked to c's task.
 func (w *ConflictWatch) note(id string, c model.Conflict, base string) {
+	now := time.Now()
 	t, err := w.Store.UpdateTodo(id, func(x *model.Todo) error {
 		if slices.Contains(x.ConflictNoted, c.TodoID) {
 			return errNoChange
 		}
 		x.ConflictNoted = append(x.ConflictNoted, c.TodoID)
 		x.Feedback = append(x.Feedback, aheadNote(c, base))
+		x.Links = model.AddLink(x.Links, model.Link{Kind: model.LinkNote, TodoID: c.TodoID, HubTodoID: c.HubTodoID, Name: c.Name, Files: c.Files, At: now})
 		return nil
 	})
 	if err != nil {
 		return
 	}
-	if w.Log != nil {
-		w.Log.Line(t, fmt.Sprintf("⚠ conflicts with #%s, ahead in the merge queue, in %s; noted for Claude's next run",
-			c.TodoID, strings.Join(c.Files, ", ")))
+	if _, err := w.Store.UpdateTodo(c.TodoID, func(x *model.Todo) error {
+		x.Links = model.AddLink(x.Links, model.Link{Kind: model.LinkNote, Out: true, TodoID: t.ID, HubTodoID: t.HubTodoID, Name: taskName(t), Files: c.Files, At: now})
+		return nil
+	}); err != nil && !errors.Is(err, store.ErrNotFound) {
+		slog.Warn("record a conflict note", "todo", c.TodoID, "err", err)
 	}
+	if w.Log != nil {
+		w.Log.Event(t, NoteEvent(c, now))
+	}
+}
+
+// NoteEvent is the run log's entry for a conflict note task c's task gave:
+// "📨 From #12: conflicts in foo.go", linked to that task.
+func NoteEvent(c model.Conflict, at time.Time) model.RunEvent {
+	return model.RunEvent{Kind: "status", At: at,
+		Text: fmt.Sprintf("📨 From #%s, ahead in the merge queue: conflicts in %s; noted for Claude's next run",
+			c.TodoID, strings.Join(c.Files, ", ")),
+		Tasks: []model.TaskRef{{ID: c.TodoID, HubID: c.HubTodoID, Name: c.Name}}}
+}
+
+// deliverNotes marks the conflict notes t got from other tasks as sent to
+// Claude in the run starting now (its prompt carries every note it has),
+// in t's Links and, linked to the task each is from, in its run log.
+func (e *TodoEngine) deliverNotes(t *model.Todo, emit func(model.RunEvent)) {
+	undelivered := func(l model.Link) bool { return l.Kind == model.LinkNote && !l.Out && !l.Delivered }
+	var got []model.Link
+	for _, l := range t.Links {
+		if undelivered(l) {
+			got = append(got, l)
+		}
+	}
+	if len(got) == 0 {
+		return
+	}
+	if _, err := e.Store.UpdateTodo(t.ID, func(x *model.Todo) error {
+		for i, l := range x.Links {
+			if undelivered(l) && slices.ContainsFunc(got, func(g model.Link) bool { return g.TodoID == l.TodoID && g.Name == l.Name }) {
+				x.Links[i].Delivered = true
+			}
+		}
+		return nil
+	}); err != nil {
+		slog.Warn("mark conflict notes delivered", "todo", t.ID, "err", err)
+		return
+	}
+	for i, l := range t.Links {
+		if undelivered(l) {
+			t.Links[i].Delivered = true
+		}
+	}
+	for _, l := range got {
+		emit(DeliveredEvent(l))
+	}
+}
+
+// DeliveredEvent is the run log's entry for note l reaching Claude:
+// "📬 Note from #12 sent to Claude", linked to that task.
+func DeliveredEvent(l model.Link) model.RunEvent {
+	text := fmt.Sprintf("📬 Note from #%s sent to Claude", l.TodoID)
+	if len(l.Files) > 0 {
+		text += ": conflicts in " + strings.Join(l.Files, ", ")
+	}
+	return model.RunEvent{Kind: "status", Text: text, Tasks: []model.TaskRef{{ID: l.TodoID, HubID: l.HubTodoID, Name: l.Name}}}
 }
 
 var errNoChange = errors.New("no change")
@@ -343,11 +405,24 @@ func (w *ConflictWatch) save(t model.Todo, conflicts []model.Conflict) {
 		if sameConflicts(x.Conflicts, conflicts) {
 			return errNoChange
 		}
+		x.Links = conflictLinks(x.Links, x.Conflicts, conflicts, time.Now())
 		x.Conflicts = conflicts
 		return nil
 	}); err != nil && !errors.Is(err, errNoChange) && !errors.Is(err, store.ErrNotFound) {
 		slog.Warn("save conflicts", "todo", t.ID, "err", err)
 	}
+}
+
+// conflictLinks adds to links a LinkConflict for each task in now that
+// wasn't in was: a conflict found (each side records its own).
+func conflictLinks(links []model.Link, was, now []model.Conflict, at time.Time) []model.Link {
+	for _, c := range now {
+		if c.Base || slices.ContainsFunc(was, func(o model.Conflict) bool { return !o.Base && o.TodoID == c.TodoID }) {
+			continue
+		}
+		links = model.AddLink(links, model.Link{Kind: model.LinkConflict, TodoID: c.TodoID, HubTodoID: c.HubTodoID, Name: c.Name, Files: c.Files, At: at})
+	}
+	return links
 }
 
 // sortConflicts puts the default branch first, then the tasks by id.

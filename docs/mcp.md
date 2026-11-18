@@ -184,6 +184,10 @@ The task's system prompt tells Claude to call `active_work` before larger edits 
 and, where another task already changes a file, to keep its own changes there small or mention
 the overlap in its summary.
 
+Each call is recorded. The calling task's log gets "👀 Checked other work: #12, #15", with links
+to those tasks. The card of each task the call listed gets a "↔" link marker, and both tasks'
+details list the call. See [Where tasks meet](merge-queue.md#where-tasks-meet).
+
 ## Goals
 
 `dash-mcp`, the connector and the chats' `dash_board` manage [goals](goals.md) as you would on

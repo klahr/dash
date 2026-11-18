@@ -511,11 +511,21 @@ function depWait(t) {
 }
 
 // A dependency's title (or label) that opens it.
-function depLink(d, label = title(d)) {
+export function depLink(d, label = title(d)) {
   return h("button", {
     type: "button", class: "dep-link", title: `Open “${title(d)}”`,
     onpointerdown: (e) => e.stopPropagation(),
     onclick: (e) => { e.stopPropagation(); openDetail(d.id); },
+  }, label);
+}
+
+// taskLink is depLink inside running text: a link, which wraps with the
+// words around it where a button would drop to a line of its own.
+export function taskLink(d, label = title(d)) {
+  return h("a", {
+    href: "#", class: "dep-link", title: `Open “${title(d)}”`,
+    onpointerdown: (e) => e.stopPropagation(),
+    onclick: (e) => { e.preventDefault(); e.stopPropagation(); openDetail(d.id); },
   }, label);
 }
 
@@ -543,37 +553,83 @@ function conflictsOf(t) {
   return ["in_progress", "review", "merging"].includes(t.status) && t.conflicts?.length ? t.conflicts : null;
 }
 
-// What a conflict is with: the default branch, or the other task.
-function conflictWho(c) {
-  if (c.base) return c.name;
-  const o = c.todo_id && state.todos.get(c.todo_id);
-  return o ? title(o) : c.name || "another task";
+// The other task a link, a conflict or a run log entry names: by its id
+// here, or (a runner's record, seen on its hub) by the hub's id.
+export function linkedTask(id, hubId) {
+  return (id && state.todos.get(id)) || (hubId && state.todos.get(hubId)) || null;
 }
 
-// "Conflicts with Fix login in auth.go +2" on a card; every conflict and
-// file on hover.
-function conflictTag(t) {
-  const cs = conflictsOf(t);
-  if (!cs) return null;
-  const c = cs[0], files = c.files || [];
-  const more = (files.length > 1 ? ` +${files.length - 1}` : "") + (cs.length > 1 ? ` · ${plural(cs.length - 1, "more conflict")}` : "");
-  const hover = cs.map((x) => `Conflicts with ${conflictWho(x)} in ${(x.files || []).join(", ")}`).join("\n");
-  return h("span", { class: "conflict-tag", title: `${hover}\nFound ahead of the merge queue` },
-    `Conflicts with ${conflictWho(c)} in ${files[0] || "files"}${more}`);
+const fileList = (fs) => (fs?.length ? fs.join(", ") : "");
+
+// What task t had to do with other tasks, newest first: the conflicts it
+// has now, then t.links (conflicts found earlier, conflict notes given and
+// got, active_work calls). Each item's parts(who) words it around who, the
+// other task (a string, or a link to it).
+function interactions(t) {
+  const items = [], live = new Set();
+  for (const c of conflictsOf(t) || []) {
+    if (c.base) continue;
+    live.add(c.todo_id || c.name);
+    items.push({ o: linkedTask(c.todo_id, c.hub_todo_id), id: c.todo_id, name: c.name, conflict: true,
+      parts: (who) => [who, ` also changes ${fileList(c.files)}`] });
+  }
+  for (const l of [...(t.links || [])].reverse()) {
+    if (l.kind === "conflict" && live.has(l.todo_id || l.name)) continue; // a conflict it has now: said above
+    const fs = fileList(l.files);
+    const parts = {
+      conflict: (who) => ["Conflicted with ", who, fs ? ` in ${fs}` : "", ", earlier"],
+      note: l.out
+        ? (who) => ["Noted ", who, `, behind in the merge queue, of conflicts in ${fs}`]
+        : (who) => ["From ", who, `, ahead in the merge queue: conflicts in ${fs}; ${l.delivered ? "sent to Claude" : "noted for Claude's next run"}`],
+      active_work: l.out
+        ? (who) => ["Checked ", who, `'s work${fs ? ` (${fs})` : ""}`]
+        : (who) => [who, ` checked this task's work${fs ? ` (${fs})` : ""}`],
+    }[l.kind];
+    if (parts) items.push({ o: linkedTask(l.todo_id, l.hub_todo_id), id: l.todo_id, name: l.name, parts });
+  }
+  return items;
 }
 
-// The detail view's lines about conflicts: each one with the other task
-// (which opens it) or the default branch, and all its files.
+// The other task of an interaction, as text and as a link that opens it.
+const whoText = (it) => (it.o ? `#${it.o.id} ${title(it.o)}` : it.id ? `#${it.id}${it.name ? ` ${it.name}` : ""}` : it.name || "another task");
+const whoNode = (it) => (it.o ? taskLink(it.o, whoText(it)) : whoText(it));
+const baseLine = (c) => `Conflicts with ${c.name} in ${fileList(c.files)}`;
+
+// A card's link marker, while the task is active: "↔ Fix login +1" for the
+// tasks it conflicts with, got or gave a note, or looked up or was looked
+// up by (active_work), which opens the first; all of it on hover. With a
+// conflict with the default branch only: "Conflicts with main in foo.go".
+function linkTag(t) {
+  if (!["queued", "in_progress", "review", "merging"].includes(t.status)) return null;
+  const items = interactions(t), base = (conflictsOf(t) || []).filter((c) => c.base);
+  if (!items.length && !base.length) return null;
+  const hover = [...base.map(baseLine), ...items.map((it) => it.parts(whoText(it)).join(""))].join("\n");
+  const cls = base.length || items.some((it) => it.conflict) ? "link-tag conflict-tag" : "link-tag";
+  if (!items.length) {
+    const c = base[0], fs = c.files || [];
+    return h("span", { class: cls, title: `${hover}\nFound ahead of the merge queue` },
+      `Conflicts with ${c.name} in ${fs[0] || "files"}${fs.length > 1 ? ` +${fs.length - 1}` : ""}`);
+  }
+  const others = new Set(items.map((it) => it.o?.id || it.id || it.name));
+  const it = items[0], more = others.size > 1 ? ` +${others.size - 1}` : "";
+  const label = `↔ ${it.o ? title(it.o) : it.name || `#${it.id}`}${more}`;
+  const el = it.o ? depLink(it.o, label) : h("span", {}, label);
+  el.classList.add(...cls.split(" "));
+  el.title = it.o ? `${hover}\nClick to open “${title(it.o)}”` : hover;
+  el.setAttribute("aria-label", `Linked tasks: ${hover}`);
+  return el;
+}
+
+// The detail view's lines about other tasks: its conflicts with the default
+// branch, then every interaction, each with a link to the other task.
 export function conflictMeta(t) {
-  const cs = conflictsOf(t);
-  if (!cs) return null;
-  return h("span", { class: "conflicts", title: "Found ahead of the merge queue by merging the branches without a checkout" },
-    ...cs.flatMap((c, i) => {
-      const o = !c.base && c.todo_id && state.todos.get(c.todo_id);
-      return [i ? "; " : "", "Conflicts with ", o ? depLink(o, `#${o.id} ${title(o)}`) : c.base ? h("span", { class: "branch" }, c.name) : conflictWho(c),
-        o?.status === "merging" ? " (ahead in the merge queue)" : "",
-        " in ", (c.files || []).join(", ")];
-    }));
+  const items = interactions(t), base = (conflictsOf(t) || []).filter((c) => c.base);
+  if (!items.length && !base.length) return null;
+  return h("span", { class: "links" },
+    ...base.map((c) => h("span", { class: "conflicts", title: "Found ahead of the merge queue by merging the branches without a checkout" },
+      "Conflicts with ", h("span", { class: "branch" }, c.name), ` in ${fileList(c.files)}`)),
+    ...items.map((it) => h("span", { class: it.conflict ? "conflicts" : null }, "↔ ", ...it.parts(whoNode(it)),
+      it.conflict && it.o?.status === "merging" ? " (ahead in the merge queue)" : "")));
 }
 
 // The detail view's line about dependencies.
@@ -631,7 +687,7 @@ export function todoRow(t, li = -1, ri = -1) {
       t.revert ? h("span", { class: "revert-tag" }, "Reverted") : null,
       t.ci_run ? h("span", { class: "ci-tag" }, "Build fix") : null,
       fixing ? h("span", { class: "sentback-tag", title: `Sent back: ${fixing}` }, /^review /.test(fixing) ? "Review comments" : /conflict/.test(fixing) ? "Merge conflict" : "Failing checks") : null,
-      conflictTag(t),
+      linkTag(t),
       t.attachments?.length ? h("span", { class: "attach-tag", title: `${t.attachments.length} attached` }, clip(), String(t.attachments.length)) : null,
       t.diff_files && ["review", "merging", "merged", "failed"].includes(t.status)
         ? h("span", { class: "diffsize", title: `${plural(t.diff_files, "file")} changed` },

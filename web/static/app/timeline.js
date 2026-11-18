@@ -5,6 +5,7 @@ import { state } from "./state.js";
 import { duration } from "./activity.js";
 import { toolCall, toolResult, toolSettled } from "./chat.js";
 import { goalHue, goalName } from "./goals.js";
+import { linkedTask, taskLink, title } from "./branches.js";
 
 // ------------------------------------------------------------------ task timeline
 // The task chat's log is the task's timeline: the worker's runs (labelled
@@ -64,6 +65,19 @@ function coordNote(e) {
     h("span", { class: "goal-dot", "aria-hidden": "true" }),
     h("span", {}, "By coordinator · goal ", h("b", {}, was), what ? `: ${what}` : ""),
     h("span", { class: "act-time" }, clockTime(e.at)));
+}
+
+// linkNote is a Dash note about other tasks (e.tasks: a conflict note from
+// one, an active_work call's answer), set apart from the rest: each "#id"
+// it names becomes a link that opens that task, by its title.
+function linkNote(e) {
+  let parts = [e.text];
+  for (const ref of e.tasks) {
+    const o = linkedTask(ref.id, ref.hub_id), tag = `#${ref.id}`;
+    const node = () => (o ? taskLink(o, title(o)) : h("span", { title: tag }, ref.name || tag));
+    parts = parts.flatMap((p) => typeof p !== "string" ? [p] : p.split(tag).flatMap((s, i) => (i ? [node(), s] : [s])));
+  }
+  return h("p", { class: "tl-link" }, h("span", {}, ...parts), h("span", { class: "act-time" }, clockTime(e.at)));
 }
 
 // timeline merges a saved chat's message nodes with the worker's events.
@@ -134,6 +148,7 @@ function workerNode(parent, e) {
       }
       if (worker.phase && endPhase(e)) return; // the phase's own result line
       if (text.startsWith(COORD)) { worker.cur = null; parent.append(enter(coordNote(e))); return; }
+      if (e.tasks?.length) { worker.cur = null; parent.append(enter(linkNote(e))); return; }
       let cur = last("notes");
       if (!cur) { cur = worker.cur = { kind: "notes", el: h("pre", { class: "log tl-log" }) }; parent.append(cur.el); }
       cur.el.append(`${new Date(e.at).toLocaleTimeString(timeLocale)} ${e.text}\n`);

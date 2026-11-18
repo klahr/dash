@@ -841,6 +841,32 @@ func hubConflicts(cs []model.Conflict) []model.Conflict {
 	return out
 }
 
+// hubLinks are a hub's task's links, have, with what its runner reports,
+// runner's: the hub records the task's active_work calls itself (the runner
+// sends them to the hub), the runner the rest (conflicts, conflict notes),
+// which come with the other tasks by the hub's ids (a task of the runner's
+// own, not the hub's, by name only).
+func hubLinks(have, runner []model.Link) []model.Link {
+	var out []model.Link
+	for _, l := range have {
+		if l.Kind == model.LinkActiveWork {
+			out = append(out, l)
+		}
+	}
+	for _, l := range runner {
+		if l.Kind == model.LinkActiveWork {
+			continue
+		}
+		l.TodoID, l.HubTodoID = l.HubTodoID, ""
+		out = append(out, l)
+	}
+	slices.SortStableFunc(out, func(a, b model.Link) int { return a.At.Compare(b.At) })
+	if len(out) > model.MaxLinks {
+		out = out[len(out)-model.MaxLinks:]
+	}
+	return model.CloneLinks(out)
+}
+
 // copyReport moves x to status to and copies onto it what its runner,
 // runnerName, reports in ts.
 func copyReport(x *model.Todo, ts TaskState, to model.TodoStatus, runnerName string) {
@@ -850,6 +876,7 @@ func copyReport(x *model.Todo, ts TaskState, to model.TodoStatus, runnerName str
 	x.RunStats = ts.RunStats
 	x.DiffFiles, x.DiffAdd, x.DiffDel = ts.DiffFiles, ts.DiffAdd, ts.DiffDel
 	x.Conflicts = hubConflicts(ts.Conflicts)
+	x.Links = hubLinks(x.Links, ts.Links)
 	x.RemoteID = ts.ID
 	if to == model.StatusMerged {
 		x.MergedCommit = ts.MergedCommit

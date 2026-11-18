@@ -133,6 +133,28 @@ func TestConflictWatch(t *testing.T) {
 	if conflicts := get(a.ID).Conflicts; conflicts[0].Name != "first" && conflicts[0].Name != "second" {
 		t.Fatalf("conflict named %q", conflicts[0].Name)
 	}
+	// Both sides record the conflict found as a link, once.
+	links := func(id string) string {
+		var out []string
+		for _, l := range get(id).Links {
+			dir := "in"
+			if l.Out {
+				dir = "out"
+			}
+			out = append(out, l.Kind+" "+dir+" "+l.TodoID+" "+strings.Join(l.Files, ","))
+		}
+		return strings.Join(out, "; ")
+	}
+	check()
+	if got, want := links(a.ID), "conflict in "+b.ID+" shared.txt"; got != want {
+		t.Fatalf("a's links = %q, want %q", got, want)
+	}
+	if got, want := links(b.ID), "conflict in "+a.ID+" shared.txt"; got != want {
+		t.Fatalf("b's links = %q, want %q", got, want)
+	}
+	if got := links(c.ID); got != "" {
+		t.Fatalf("c's links = %q, want none", got)
+	}
 
 	// a is approved: it is ahead of b in the merge queue, so b hears of it, once.
 	if _, err := h.st.SetStatus(a.ID, model.StatusMerging, ""); err != nil {
@@ -149,6 +171,27 @@ func TestConflictWatch(t *testing.T) {
 	}
 	if fb := get(a.ID).Feedback; len(fb) != 0 {
 		t.Fatalf("a, ahead, got a note: %q", fb)
+	}
+	// The note shows on both: a gave it (out), b got it, not yet delivered.
+	if got, want := links(b.ID), "conflict in "+a.ID+" shared.txt; note in "+a.ID+" shared.txt"; got != want {
+		t.Fatalf("b's links = %q, want %q", got, want)
+	}
+	if got, want := links(a.ID), "conflict in "+b.ID+" shared.txt; note out "+b.ID+" shared.txt"; got != want {
+		t.Fatalf("a's links = %q, want %q", got, want)
+	}
+	// b's run log has the note as an entry linked to a.
+	evs, err := h.log.Events(b.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var noted []model.RunEvent
+	for _, ev := range evs {
+		if len(ev.Tasks) > 0 {
+			noted = append(noted, ev)
+		}
+	}
+	if len(noted) != 1 || noted[0].Tasks[0].ID != a.ID || !strings.HasPrefix(noted[0].Text, "📨 From #"+a.ID) || !strings.Contains(noted[0].Text, "shared.txt") {
+		t.Fatalf("b's linked log entries = %+v", noted)
 	}
 
 	// The default branch moves on and changes other.txt too: c conflicts with it.
@@ -204,4 +247,41 @@ func TestConflictWatchRunsOnChange(t *testing.T) {
 	}
 	td, _ := h.st.GetTodo(a.ID)
 	t.Fatalf("a's conflicts = %+v, want one with %s", td.Conflicts, b.ID)
+}
+
+// A run marks the conflict notes the task got as sent to Claude, once, in
+// its links and, linked to the task each is from, in its run log.
+func TestDeliverNotes(t *testing.T) {
+	h := newHarness(t, &fakeExec{}, model.Project{Name: "p"})
+	td, err := h.st.CreateTodo(model.Todo{ProjectID: h.proj.ID, Title: "behind", Prompt: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	td, err = h.st.UpdateTodo(td.ID, func(x *model.Todo) error {
+		x.Links = model.AddLink(x.Links, model.Link{Kind: model.LinkNote, TodoID: "ahead", HubTodoID: "hub-ahead", Name: "ahead", Files: []string{"a.go"}})
+		x.Links = model.AddLink(x.Links, model.Link{Kind: model.LinkNote, Out: true, TodoID: "behind-it"})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []model.RunEvent
+	emit := func(ev model.RunEvent) { got = append(got, ev) }
+	h.engine.deliverNotes(&td, emit)
+	if len(got) != 1 || got[0].Text != "📬 Note from #ahead sent to Claude: conflicts in a.go" ||
+		len(got[0].Tasks) != 1 || got[0].Tasks[0] != (model.TaskRef{ID: "ahead", HubID: "hub-ahead", Name: "ahead"}) {
+		t.Fatalf("events = %+v", got)
+	}
+	saved, err := h.st.GetTodo(td.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !saved.Links[0].Delivered || saved.Links[1].Delivered {
+		t.Fatalf("links = %+v, want only the note got delivered", saved.Links)
+	}
+	got = nil
+	h.engine.deliverNotes(&saved, emit)
+	if len(got) != 0 {
+		t.Fatalf("delivered again: %+v", got)
+	}
 }
