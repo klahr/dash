@@ -995,7 +995,7 @@ func (s *Server) refinePrompt(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := sv.refine(r.Context(), req.Prompt)
 	if errors.Is(err, errNoRefiner) || errors.Is(err, errNoClaudeRunner) || errors.Is(err, tunnel.ErrOffline) {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
 	if err != nil {
@@ -1025,7 +1025,7 @@ func (s *Server) splitPrompt(w http.ResponseWriter, r *http.Request) {
 	}
 	parts, err := sv.split(r.Context(), req.Prompt)
 	if errors.Is(err, errNoSplitter) || errors.Is(err, errNoClaudeRunner) || errors.Is(err, tunnel.ErrOffline) {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
 	if err != nil {
@@ -1584,7 +1584,7 @@ func (s *Server) startProcess(w http.ResponseWriter, r *http.Request) {
 	o := runner.Origin{Main: req.TodoID == ""}
 	if req.Command == "" {
 		if why := p.Held(req.Preset); why != "" {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": why})
+			writeError(w, http.StatusForbidden, why)
 			return
 		}
 		req.Command = map[string]string{"run": p.RunCommand, "test": p.TestCommand, "deploy": p.DeployCommand}[req.Preset]
@@ -1596,7 +1596,7 @@ func (s *Server) startProcess(w http.ResponseWriter, r *http.Request) {
 	// shared runner, with its API key alone (hubshared.go). Terminals and
 	// commands the hub names are the owner's alone (hubCheck).
 	if shared, err := s.requestShared(r, "runs a project command"); err != nil {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	} else if shared {
 		o.Env = s.sharedEnv()
@@ -1897,19 +1897,19 @@ func (s *Server) putQueuePace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Usage == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "this Dash doesn't track Claude usage"})
+		writeError(w, http.StatusServiceUnavailable, "this Dash doesn't track Claude usage")
 		return
 	}
 	if s.Usage.Snapshot().Pace.Hub {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "the hub paces this runner, with the others on its Claude account: change it in the hub's dashboard"})
+		writeError(w, http.StatusConflict, "the hub paces this runner, with the others on its Claude account: change it in the hub's dashboard")
 		return
 	}
 	if req.MaxParallel < 0 || req.MaxParallel > usage.MaxPaceParallel {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("max_parallel must be between 0 and %d", usage.MaxPaceParallel)})
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("max_parallel must be between 0 and %d", usage.MaxPaceParallel))
 		return
 	}
 	if err := s.Usage.SetPace(req); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "save the pace settings: " + err.Error()})
+		writeError(w, http.StatusInternalServerError, "save the pace settings: "+err.Error())
 		return
 	}
 	s.Todos.Kick()
@@ -1933,23 +1933,23 @@ func (s *Server) putAccountPace(w http.ResponseWriter, r *http.Request) {
 		acct = s.callerAccount(c)
 	}
 	if acct == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": errNoAccount.Error()})
+		writeError(w, http.StatusBadRequest, errNoAccount.Error())
 		return
 	}
 	if !s.canPaceAccount(c, acct) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only the owner of a runner logged in to that Claude account, or an admin of the organization, can change its pace"})
+		writeError(w, http.StatusForbidden, "only the owner of a runner logged in to that Claude account, or an admin of the organization, can change its pace")
 		return
 	}
 	if !dispatch.ValidBoost(req.MaxBoost) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("max_boost must be between 1 and %g", usage.MaxBoostCap)})
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("max_boost must be between 1 and %g", usage.MaxBoostCap))
 		return
 	}
 	if s.Dispatch == nil || s.Dispatch.Pacer == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "this hub doesn't pace its runners"})
+		writeError(w, http.StatusServiceUnavailable, "this hub doesn't pace its runners")
 		return
 	}
 	if err := s.Dispatch.Pacer.Set(acct, usage.PaceSettings{Follow: req.Follow, MaxBoost: req.MaxBoost}); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "save the pace settings: " + err.Error()})
+		writeError(w, http.StatusInternalServerError, "save the pace settings: "+err.Error())
 		return
 	}
 	s.Todos.Kick()

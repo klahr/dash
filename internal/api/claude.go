@@ -392,7 +392,7 @@ func hubUser(r *http.Request) int64 {
 // too: the hub keeps the plan and reads the reply.
 func (s *Server) hubClaude(w http.ResponseWriter, r *http.Request) {
 	if err := s.forOwner(r); err != nil {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 	var req struct {
@@ -403,7 +403,7 @@ func (s *Server) hubClaude(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Small == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "this runner doesn't run Claude's short calls"})
+		writeError(w, http.StatusServiceUnavailable, "this runner doesn't run Claude's short calls")
 		return
 	}
 	if r.PathValue("kind") == "group" {
@@ -437,7 +437,7 @@ func (s *Server) hubClaude(w http.ResponseWriter, r *http.Request) {
 	case "plan":
 		call = s.Small.Plan
 	default:
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such call"})
+		writeError(w, http.StatusNotFound, "no such call")
 		return
 	}
 	out, err := call(r.Context(), req.Text)

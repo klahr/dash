@@ -242,7 +242,7 @@ const ownerRepos = "lists and adds its repositories"
 // projects directory that could become its projects, for its owner.
 func (s *Server) hubRepos(w http.ResponseWriter, r *http.Request) {
 	if err := s.onlyForOwner(r, ownerRepos); err != nil {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 	sv, ok := s.service(w, r)
@@ -280,7 +280,7 @@ type RepoFailure struct {
 // project, or among the hub's clones) can be added this way.
 func (s *Server) hubAddRepos(w http.ResponseWriter, r *http.Request) {
 	if err := s.onlyForOwner(r, ownerRepos); err != nil {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 	sv, ok := s.service(w, r)

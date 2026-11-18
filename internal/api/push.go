@@ -42,7 +42,7 @@ func (s *Server) pushCaller(w http.ResponseWriter, r *http.Request) (Caller, boo
 		return Caller{}, false
 	}
 	if sv.c.User == 0 {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "push subscriptions are a person's"})
+		writeError(w, http.StatusForbidden, "push subscriptions are a person's")
 		return Caller{}, false
 	}
 	return sv.c, true

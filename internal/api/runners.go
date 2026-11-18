@@ -128,12 +128,12 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 	// a signed-in browser makes one (not an API token).
 	mux.Handle("POST /api/runners/codes", auth.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, err := s.caller(r); err != nil {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
 		code, expires, err := rh.NewCode(s.requestOwner(r))
 		if err != nil {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
 		hubURL, _ := s.hubURL(r)
@@ -145,7 +145,7 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 			return
 		}
 		if err := rh.Revoke(x.ID); err != nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -234,7 +234,7 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 		}
 		switch err := rh.StartUpdate(x.ID); {
 		case errors.Is(err, tunnel.ErrNoRelease), errors.Is(err, tunnel.ErrUpToDate):
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		case err != nil:
 			writeErr(w, err)
@@ -250,7 +250,7 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 		}
 		switch err := rh.CancelUpdate(x.ID); {
 		case errors.Is(err, tunnel.ErrNoUpdate), errors.Is(err, tunnel.ErrUpdating):
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			writeError(w, http.StatusConflict, err.Error())
 			return
 		case err != nil:
 			writeErr(w, err)
@@ -290,11 +290,11 @@ func (s *Server) runnerFor(w http.ResponseWriter, r *http.Request, allowed func(
 	}
 	x, ok := s.orgRunner(c, r.PathValue("id"))
 	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": errNoRunner.Error()})
+		writeError(w, http.StatusNotFound, errNoRunner.Error())
 		return c, x, false
 	}
 	if !allowed(c, x) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": denied})
+		writeError(w, http.StatusForbidden, denied)
 		return c, x, false
 	}
 	return c, x, true

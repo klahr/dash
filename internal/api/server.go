@@ -603,6 +603,9 @@ func chatUser(r *http.Request, c Caller) int64 {
 
 var writeJSON = httpjson.Write
 
+// writeError answers with code and {"error": msg}.
+var writeError = httpjson.Error
+
 // writeText answers with plain text.
 func writeText(w http.ResponseWriter, s string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -651,7 +654,7 @@ func writeErr(w http.ResponseWriter, err error) {
 		errors.Is(err, preview.ErrNoRunCommand), errors.Is(err, preview.ErrNotInReview), errors.Is(err, preview.ErrNotTerminal):
 		code = http.StatusBadRequest
 	}
-	writeJSON(w, code, map[string]string{"error": err.Error()})
+	writeError(w, code, err.Error())
 }
 
 var errBadRequest = errors.New("bad request")

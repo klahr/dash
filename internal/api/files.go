@@ -218,7 +218,7 @@ func (s *Server) saveLocalFile(w http.ResponseWriter, r *http.Request) {
 	}
 	blob, err := s.writeLocalFile(r.Context(), p, name, req.Blob, req.Content)
 	if errors.Is(err, errConflict) {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": strings.TrimPrefix(err.Error(), errConflict.Error()+": ")})
+		writeError(w, http.StatusConflict, strings.TrimPrefix(err.Error(), errConflict.Error()+": "))
 		return
 	}
 	if err != nil {
@@ -257,7 +257,7 @@ func (s *Server) readFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": name + " is not on " + p.Base()})
+		writeError(w, http.StatusNotFound, name+" is not on "+p.Base())
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
@@ -286,7 +286,7 @@ func (s *Server) saveEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	t, err := sv.queueEdit(r.Context(), p, name, req.Blob, req.Content, req.Title)
 	if errors.Is(err, errConflict) {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": strings.TrimPrefix(err.Error(), errConflict.Error()+": ")})
+		writeError(w, http.StatusConflict, strings.TrimPrefix(err.Error(), errConflict.Error()+": "))
 		return
 	}
 	if err != nil {

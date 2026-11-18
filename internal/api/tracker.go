@@ -314,7 +314,7 @@ func (s *Server) syncTracker(w http.ResponseWriter, r *http.Request) {
 	res := map[string]any{"ok": true}
 	if err := s.Trackers.SyncNow(ctx, pid); err != nil {
 		if errors.Is(err, tracker.ErrNoSync) {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
 		res["ok"], res["error"] = false, err.Error()
@@ -343,7 +343,7 @@ func (s *Server) rotateTrackerSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if cfg.Native() {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "this project's board is Dash's own: it has no tracker webhook"})
+		writeError(w, http.StatusConflict, "this project's board is Dash's own: it has no tracker webhook")
 		return
 	}
 	cfg.WebhookSecret = store.NewTrackerSecret()
@@ -367,7 +367,7 @@ func (s *Server) trackerWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Trackers == nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": tracker.ErrWebhookRefused.Error()})
+		writeError(w, http.StatusUnauthorized, tracker.ErrWebhookRefused.Error())
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
@@ -376,7 +376,7 @@ func (s *Server) trackerWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Trackers.Webhook(r.PathValue("pid"), r, body); err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": tracker.ErrWebhookRefused.Error()})
+		writeError(w, http.StatusUnauthorized, tracker.ErrWebhookRefused.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

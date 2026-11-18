@@ -434,11 +434,11 @@ func (s *Server) tryWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !slices.ContainsFunc(runs, func(x tryRunner) bool { return x.ID == id }) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "that runner doesn't open terminals for you"})
+		writeError(w, http.StatusForbidden, "that runner doesn't open terminals for you")
 		return
 	}
 	if !hub.Upgrader.CheckOrigin(r) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "origin not allowed"})
+		writeError(w, http.StatusForbidden, "origin not allowed")
 		return
 	}
 	run, _ := s.fleet().Get(id)
@@ -501,7 +501,7 @@ func (s *Server) tryHubProject(w http.ResponseWriter, r *http.Request) (model.Pr
 		return model.Project{}, false
 	}
 	if s.Previews == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "this runner has no terminal previews"})
+		writeError(w, http.StatusServiceUnavailable, "this runner has no terminal previews")
 		return model.Project{}, false
 	}
 	what := "a try"

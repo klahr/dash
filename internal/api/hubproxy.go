@@ -576,7 +576,7 @@ func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv
 	}
 	if pty {
 		if err := ownsRunner(sv.c, run); err != nil {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
 	}
@@ -683,7 +683,7 @@ func (s *Server) processViaRunner(h http.HandlerFunc) http.HandlerFunc {
 		if strings.HasPrefix(path, "/ws/") {
 			// A socket streams: it goes through as it is.
 			if !hub.Upgrader.CheckOrigin(r) {
-				writeJSON(w, http.StatusForbidden, map[string]string{"error": "origin not allowed"})
+				writeError(w, http.StatusForbidden, "origin not allowed")
 				return
 			}
 			px, ok := s.fleet().Proxy(run.Name)

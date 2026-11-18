@@ -111,7 +111,7 @@ func (s *Server) personCaller(w http.ResponseWriter, r *http.Request) *service {
 		return nil
 	}
 	if sv.c.User == 0 {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "personal webhooks are a person's"})
+		writeError(w, http.StatusForbidden, "personal webhooks are a person's")
 		return nil
 	}
 	return sv

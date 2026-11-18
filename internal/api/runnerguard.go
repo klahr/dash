@@ -140,11 +140,11 @@ func (s *Server) RunnerRoutes() http.Handler {
 	guard := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(auth.WithHub(r.Context()))
 		if _, pattern := mux.Handler(r); !hubRoutes[pattern] {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "a runner doesn't offer this to the hub"})
+			writeError(w, http.StatusForbidden, "a runner doesn't offer this to the hub")
 			return
 		}
 		if err := s.hubCheck(r); err != nil {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
 		mux.ServeHTTP(w, r)

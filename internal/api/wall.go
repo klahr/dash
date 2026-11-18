@@ -182,7 +182,7 @@ func (s *Server) wallPage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getWall(w http.ResponseWriter, r *http.Request) {
 	c, public, err := s.wallCaller(r)
 	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+		writeError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
 	q := r.URL.Query()
@@ -625,7 +625,7 @@ func (s *Server) wallAdmin(w http.ResponseWriter, r *http.Request) (Caller, bool
 		return c, false
 	}
 	if c.Machine || !s.orgAdmin(c) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only the organization's admins manage wall links"})
+		writeError(w, http.StatusForbidden, "only the organization's admins manage wall links")
 		return c, false
 	}
 	return c, true

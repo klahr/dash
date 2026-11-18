@@ -215,7 +215,7 @@ func (s *Server) interviewPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := sv.planCall(r.Context(), agent.PlanInput(next))
 	if errors.Is(err, errNoPlanner) || errors.Is(err, errNoClaudeRunner) || errors.Is(err, tunnel.ErrOffline) {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
 	if err != nil {
@@ -227,7 +227,7 @@ func (s *Server) interviewPlan(w http.ResponseWriter, r *http.Request) {
 		turn, err = model.CleanPlanTurn(turn, next.Topics)
 	}
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error() + ". Try again."})
+		writeError(w, http.StatusBadGateway, err.Error()+". Try again.")
 		return
 	}
 	p, err = sv.data.UpdatePlan(id, func(p *model.Plan) error {

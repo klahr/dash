@@ -31,7 +31,7 @@ var errClaudeStatusOff = errors.New("this Dash doesn't follow Claude's status")
 
 func (s *Server) claudeStatusWebhook(w http.ResponseWriter, r *http.Request) {
 	refused := func() {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": claudestatus.ErrRefused.Error()})
+		writeError(w, http.StatusUnauthorized, claudestatus.ErrRefused.Error())
 	}
 	if s.ClaudeStatus == nil {
 		refused()
@@ -78,7 +78,7 @@ func (s *Server) claudeStatusAdmin(h func(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if s.ClaudeStatus == nil {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errClaudeStatusOff.Error()})
+			writeError(w, http.StatusServiceUnavailable, errClaudeStatusOff.Error())
 			return
 		}
 		h(w, r)
@@ -149,7 +149,7 @@ func (s *Server) syncClaudeStatus(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if _, err := s.ClaudeStatus.Sync(ctx); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "couldn't read the status page: " + err.Error()})
+		writeError(w, http.StatusBadGateway, "couldn't read the status page: "+err.Error())
 		return
 	}
 	a, err := s.ClaudeStatus.Admin()

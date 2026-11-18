@@ -136,16 +136,16 @@ func (s *Server) runnerBoard(rh *tunnel.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		x, ok := rh.Authenticate(r)
 		if !ok {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unknown or revoked runner token"})
+			writeError(w, http.StatusUnauthorized, "unknown or revoked runner token")
 			return
 		}
 		if x.Owner == nil || x.OrgID() == 0 {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "this runner works for nobody"})
+			writeError(w, http.StatusForbidden, "this runner works for nobody")
 			return
 		}
 		sc, err := s.runnerScope(x, r.Header.Get(tunnel.BoardTodoHeader), r.Header.Get(tunnel.BoardProjectHeader), r.Header.Get(tunnel.BoardGoalHeader))
 		if err != nil {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
 		s.boardHandler().Serve(w, r, sc)
@@ -250,7 +250,7 @@ func (s *Server) remoteMCP() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := s.caller(r)
 		if err != nil {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
 		sv := s.as(c)

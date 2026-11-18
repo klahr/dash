@@ -195,7 +195,7 @@ func (s *Server) issueTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	todos, err := sv.tasksForIssues(r.Context(), r.PathValue("pid"), req.IDs, how, req.Enqueue)
 	if len(todos) == 0 && (errors.Is(err, errNoGrouper) || errors.Is(err, errNoClaudeRunner) || errors.Is(err, tunnel.ErrOffline)) {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
 	if err != nil && len(todos) == 0 {

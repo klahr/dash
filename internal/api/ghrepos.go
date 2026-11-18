@@ -51,7 +51,7 @@ type newGitHubRepo struct {
 // owner.
 func (s *Server) hubGitHubRepos(w http.ResponseWriter, r *http.Request) {
 	if err := s.onlyForOwner(r, ownerGitHub); err != nil {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 	if !s.Git.HasGh() {
@@ -74,7 +74,7 @@ func (s *Server) hubGitHubRepos(w http.ResponseWriter, r *http.Request) {
 // empty repository on GitHub with its owner's gh. Nothing is cloned here.
 func (s *Server) hubCreateGitHubRepo(w http.ResponseWriter, r *http.Request) {
 	if err := s.onlyForOwner(r, ownerGitHub); err != nil {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 	var req newGitHubRepo

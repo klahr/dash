@@ -87,16 +87,16 @@ func (s *Server) hubUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.SelfUpdate == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "this runner can't update itself"})
+		writeError(w, http.StatusNotImplemented, "this runner can't update itself")
 		return
 	}
 	if n := len(sv.data.ListTodos("", model.StatusInProgress, model.StatusMerging)); n > 0 {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": fmt.Sprintf("%d tasks are still running", n)})
+		writeError(w, http.StatusConflict, fmt.Sprintf("%d tasks are still running", n))
 		return
 	}
 	if err := s.SelfUpdate(r.Context(), req.Version); err != nil {
 		slog.Error("runner: update", "version", req.Version, "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"version": req.Version})
@@ -108,7 +108,7 @@ var errNotLinked = errors.New(dispatch.NotLinked)
 // r with 403 and returns false.
 func (s *Server) fromHub(w http.ResponseWriter, r *http.Request) (*service, bool) {
 	if !auth.FromHub(r.Context()) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only this runner's hub sends it tasks"})
+		writeError(w, http.StatusForbidden, "only this runner's hub sends it tasks")
 		return nil, false
 	}
 	return s.service(w, r)
@@ -145,7 +145,7 @@ func (sv *service) linkedProject(hpid, what string, attrs ...any) (model.Project
 func (sv *service) hubLinked(w http.ResponseWriter, hpid, what string, attrs ...any) (model.Project, bool) {
 	p, ok := sv.linkedProject(hpid, what, attrs...)
 	if !ok {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": errNotLinked.Error()})
+		writeError(w, http.StatusForbidden, errNotLinked.Error())
 	}
 	return p, ok
 }
@@ -196,7 +196,7 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.HubOrg != 0 && req.OrgID != s.HubOrg {
 		slog.Warn("runner: refused a project of another org", "project", hpid, "org", req.OrgID)
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "this runner works for another organization"})
+		writeError(w, http.StatusForbidden, "this runner works for another organization")
 		return
 	}
 	settings := hubSettings(req, s.hubMergeMode(req))
@@ -737,7 +737,7 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 	// Whose work: another member's only on a shared runner (hubshared.go).
 	shared, err := s.refuseOthers(req.For, "task "+req.HubTodoID)
 	if err != nil {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 	// Too full to build: the task waits on the hub, its log saying why,
@@ -745,7 +745,7 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 	if s.DiskRoom != nil {
 		if err := s.DiskRoom(req.Disk); err != nil {
 			slog.Warn("runner: not starting a task: disk nearly full", "task", req.HubTodoID, "err", err)
-			writeJSON(w, http.StatusInsufficientStorage, map[string]string{"error": err.Error()})
+			writeError(w, http.StatusInsufficientStorage, err.Error())
 			return
 		}
 	}
@@ -881,7 +881,7 @@ func (s *Server) hubTaskAction(action string) http.HandlerFunc {
 			// only on a shared runner, with its API key alone.
 			shared, err := s.requestShared(r, "runs a task's tests")
 			if err != nil {
-				writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+				writeError(w, http.StatusForbidden, err.Error())
 				return
 			}
 			if err := sv.runTests(r.Context(), t, shared); err != nil {
@@ -989,7 +989,7 @@ func (s *Server) hubScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Scans == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "this runner doesn't run scans"})
+		writeError(w, http.StatusServiceUnavailable, "this runner doesn't run scans")
 		return
 	}
 	conn, err := hub.Upgrader.Upgrade(w, r, nil)

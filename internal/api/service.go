@@ -107,7 +107,7 @@ func (s *Server) callerOr(w http.ResponseWriter, r *http.Request) (Caller, bool)
 		if errors.Is(err, errNoOrg) {
 			code = http.StatusForbidden
 		}
-		writeJSON(w, code, map[string]string{"error": err.Error()})
+		writeError(w, code, err.Error())
 		return c, false
 	}
 	return c, true
@@ -162,7 +162,7 @@ func (s *Server) adminOnly(w http.ResponseWriter, r *http.Request) bool {
 	if err == nil {
 		err = errAdminOnly
 	}
-	writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+	writeError(w, http.StatusForbidden, err.Error())
 	return false
 }
 
