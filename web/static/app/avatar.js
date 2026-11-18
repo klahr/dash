@@ -1,28 +1,13 @@
-import { $, h } from "./dom.js";
+import { $, avatar, avatarURL, fillAvatar, h } from "./dom.js";
 import { api } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { accountSection } from "./accountsheet.js";
 
 // ------------------------------------------------------------------ profile pictures
-// A user's avatar is their picture's version (0 or missing: none). Its URL
-// carries the version, so the browser may keep it for good.
-export const avatarURL = (u) => u?.avatar ? `/api/users/${u.id}/avatar?v=${u.avatar}` : "";
-
-// fillAvatar shows u's picture in el, or their initial when they have none
-// (or it doesn't load).
-export function fillAvatar(el, u) {
-  const initial = () => el.replaceChildren([...(u?.username || "?")][0].toUpperCase());
-  const url = avatarURL(u);
-  if (!url) { initial(); return el; }
-  const img = h("img", { src: url, alt: "", decoding: "async", draggable: false });
-  img.addEventListener("error", initial, { once: true });
-  el.replaceChildren(img);
-  return el;
-}
-
-// avatar is a small round picture (or initial) of u.
-export const avatar = (u, cls = "") => fillAvatar(h("span", { class: `avatar${cls ? ` ${cls}` : ""}`, "aria-hidden": "true" }), u);
+// avatarURL, fillAvatar and avatar are in dom.js (Planning's own page uses
+// them too).
+export { avatar, avatarURL, fillAvatar };
 
 // showOwnAvatar redraws the signed-in user's picture: the account menu and
 // the Account sheet.

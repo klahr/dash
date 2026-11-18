@@ -660,7 +660,7 @@ func writeErr(w http.ResponseWriter, err error) {
 		code = http.StatusForbidden
 	case errors.Is(err, errConflict):
 		code = http.StatusConflict
-	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency), errors.Is(err, store.ErrBadIssue),
+	case errors.Is(err, errBadRequest), errors.Is(err, store.ErrBadDependency), errors.Is(err, store.ErrBadIssue), errors.Is(err, store.ErrBadAssignee),
 		errors.Is(err, preview.ErrNoRunCommand), errors.Is(err, preview.ErrNotInReview), errors.Is(err, preview.ErrNotTerminal):
 		code = http.StatusBadRequest
 	}

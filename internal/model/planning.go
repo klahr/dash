@@ -60,7 +60,9 @@ type Card struct {
 	Position    int        `json:"position"`
 	Priority    string     `json:"priority"`
 	// Target is when it should ship: free text, a version ("1.4") or a date.
-	Target    string    `json:"target"`
+	Target string `json:"target"`
+	// Assignee is the member of the org who owns the card (0: nobody).
+	Assignee  int64     `json:"assignee"`
 	CreatedBy int64     `json:"created_by"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

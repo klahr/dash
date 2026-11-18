@@ -1,5 +1,5 @@
 import { renderMarkdown } from "../editor.js";
-import { $, $$, dateTimeText, fill, h, ib, ico } from "./dom.js";
+import { $, $$, avatar, dateTimeText, fill, h, ib, ico } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, busy, fail, leave, toast } from "./dialogs.js";
 import * as store from "./store.js";
@@ -35,6 +35,7 @@ const pl = {
   hooks: {},
   cards: [],
   projects: [],
+  people: [], // the org's members a card may be assigned to
   filter: store.get("dash.planning.project", ""),
   loaded: false,
   open: null, // the open card's id
@@ -102,9 +103,10 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
 export async function loadPlanning() {
   if (!pl.root) return;
   const q = pl.filter ? `?project=${encodeURIComponent(pl.filter)}` : "";
-  const [cards, projects] = await Promise.all([call("GET", cardAPI() + q), call("GET", "/api/planning/projects")]);
+  const [cards, projects, people] = await Promise.all([call("GET", cardAPI() + q), call("GET", "/api/planning/projects"), call("GET", "/api/planning/people")]);
   pl.cards = cards;
   pl.projects = projects;
+  pl.people = people;
   if (pl.filter && !projects.some((p) => p.id === pl.filter)) {
     pl.filter = "";
     store.set("dash.planning.project", "");
@@ -172,12 +174,25 @@ function statusEl(st, cls = "pl-status") {
     st.progress ? h("span", { class: "pl-progress" }, st.progress) : null);
 }
 
+// assignee is the card's assignee as avatar() takes a user (null: nobody).
+const assignee = (c) => c.assignee ? { id: c.assignee, username: c.assignee_name, avatar: c.assignee_avatar } : null;
+
+// assigneeEl is the assignee's face, with their name for a tooltip and a
+// screen reader.
+function assigneeEl(c) {
+  const u = assignee(c);
+  if (!u) return null;
+  return h("span", { class: "pl-assignee", title: `Assigned to ${u.username}` },
+    avatar(u), h("span", { class: "sr-only" }, `Assigned to ${u.username}`));
+}
+
 function cardEl(c) {
   const meta = [
     c.priority ? h("span", { class: `pl-chip p-${c.priority}`, title: "Priority" }, PRIORITY[c.priority]) : null,
     c.target ? h("span", { class: "pl-chip pl-target", title: "Target" }, ico("flag"), c.target) : null,
     !pl.filter && c.project_name ? h("span", { class: "pl-project" }, c.project_name) : null,
     c.comments ? h("span", { class: "pl-comments", title: `${c.comments} comment${c.comments === 1 ? "" : "s"}` }, ico("comment"), String(c.comments)) : null,
+    assigneeEl(c),
   ].filter(Boolean);
   return h("li", { class: "pl-card", "data-id": c.id },
     h("button", { type: "button", class: "pl-open", "aria-controls": "card-detail", "aria-current": c.id === pl.open ? "true" : null,
@@ -423,6 +438,14 @@ const patchCard = (body) => async () => {
   if (i >= 0) { pl.cards[i] = { ...pl.cards[i], ...v }; renderBoard(); }
 };
 
+// assigneeOptions are the people a card may be assigned to, as [id, name]:
+// the org's members, and the card's assignee if the list doesn't have them.
+function assigneeOptions(c) {
+  const opts = pl.people.map((u) => [String(u.id), u.username]);
+  if (c.assignee && !pl.people.some((u) => u.id === c.assignee)) opts.push([String(c.assignee), c.assignee_name || "Someone"]);
+  return opts;
+}
+
 function field(label, control) {
   return h("label", { class: "field pl-field" }, h("span", {}, label), control);
 }
@@ -450,7 +473,10 @@ function renderCard() {
     field("Target", h("input", { value: c.target || "", placeholder: "1.4, or a date", maxlength: 60, autocomplete: "off",
       onchange: (e) => patchCard({ target: e.target.value })().catch(fail) })),
     field("Project", sel([["", "None yet"], ...pl.projects.map((p) => [p.id, p.name])], c.project_id || "",
-      (e) => patchCard({ project: e.target.value })().catch(fail), "Project")));
+      (e) => patchCard({ project: e.target.value })().catch(fail), "Project")),
+    field("Assignee", h("span", { class: "pl-assign-row" }, assignee(c) ? avatar(assignee(c)) : null,
+      sel([["", "Nobody"], ...assigneeOptions(c)], c.assignee ? String(c.assignee) : "",
+        (e) => patchCard({ assignee: Number(e.target.value) || 0 })().catch(fail), "Assignee"))));
 
   const suggest = c.status?.suggest_done
     ? h("div", { class: "pl-suggest-box" },

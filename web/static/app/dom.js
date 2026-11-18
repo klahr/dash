@@ -170,4 +170,24 @@ export const ico = (name) => {
 };
 export const setLabel = (el, name, text) => el.replaceChildren(ico(name), text);
 export const ib = (props, name, ...kids) => h("button", props, ico(name), ...kids);
+
+// ---- profile pictures (here, not in avatar.js, so planning.html has them)
+// A user's avatar is their picture's version (0 or missing: none). Its URL
+// carries the version, so the browser may keep it for good.
+export const avatarURL = (u) => u?.avatar ? `/api/users/${u.id}/avatar?v=${u.avatar}` : "";
+
+// fillAvatar shows u's picture in el, or their initial when they have none
+// (or it doesn't load).
+export function fillAvatar(el, u) {
+  const initial = () => el.replaceChildren([...(u?.username || "?")][0].toUpperCase());
+  const url = avatarURL(u);
+  if (!url) { initial(); return el; }
+  const img = h("img", { src: url, alt: "", decoding: "async", draggable: false });
+  img.addEventListener("error", initial, { once: true });
+  el.replaceChildren(img);
+  return el;
+}
+
+// avatar is a small round picture (or initial) of u.
+export const avatar = (u, cls = "") => fillAvatar(h("span", { class: `avatar${cls ? ` ${cls}` : ""}`, "aria-hidden": "true" }), u);
 for (const el of $$("[data-icon]")) el.prepend(ico(el.dataset.icon));

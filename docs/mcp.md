@@ -191,7 +191,7 @@ before it uses the others.
 
 Dash's chats' `dash_board` reads and adds to the org's [plan](planning.md):
 
-- `list_cards(project?, column?)`: the cards with their column, priority, target and the status
+- `list_cards(project?, column?)`: the cards with their column, priority, target, assignee and the status
   of their linked work. In a project chat, that project's cards.
 - `create_card(title, description?, project?, column?, priority?, target?)`: add a card. It
   starts no work.

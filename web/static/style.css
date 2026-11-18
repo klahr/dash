@@ -3201,6 +3201,10 @@ button.goal-task-open:hover { background: var(--raised); }
 .pl-chip.p-medium { color: var(--review); background: color-mix(in srgb, var(--review) 14%, transparent); }
 .pl-comments { display: inline-flex; align-items: center; gap: 3px; }
 .pl-project { color: var(--faint); }
+/* The assignee's face, at the end of the card's meta row. */
+.pl-assignee { display: inline-flex; margin-left: auto; }
+.pl-assignee .avatar { width: 22px; height: 22px; box-shadow: 0 0 0 2px var(--surface); }
+.pl-card.selected .pl-assignee .avatar { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 .pl-status, .pl-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--fs-s); color: var(--c, var(--muted)); }
 .pl-status-text { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .pl-status-text::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--muted)); flex: none; }
@@ -3221,6 +3225,8 @@ button.goal-task-open:hover { background: var(--raised); }
 .pl-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 12px; margin: 0 0 20px; }
 .pl-field { margin: 0; }
 .pl-field select, .pl-field input { width: 100%; }
+.pl-assign-row { display: flex; align-items: center; gap: 8px; }
+.pl-assign-row select { flex: 1; min-width: 0; }
 .pl-section { margin: 0 0 22px; }
 .pl-section h3 { margin: 0 0 8px; font-size: var(--fs-m); color: var(--muted); }
 .pl-desc { overflow-wrap: anywhere; }

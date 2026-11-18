@@ -66,6 +66,7 @@ var plannerRoutes = map[string]bool{
 	"DELETE /api/planning/cards/{cid}/comments/{mid}": true,
 	"POST /api/planning/cards/{cid}/start":            true,
 	"GET /api/planning/projects":                      true,
+	"GET /api/planning/people":                        true,
 }
 
 // errPlanner is what a planner gets for any other route.

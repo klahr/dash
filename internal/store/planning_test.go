@@ -190,3 +190,65 @@ func TestPlanningCards(t *testing.T) {
 		t.Errorf("card of a deleted project: %+v %v", got, err)
 	}
 }
+
+// A card's assignee is a member of its org: someone else is refused, an
+// assignee who leaves doesn't stop other changes, and an assignee whose
+// account is deleted leaves the card unassigned.
+func TestCardAssignee(t *testing.T) {
+	t.Parallel()
+
+	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), &recordedEvents{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	acc := s.Accounts()
+	if err := acc.Bootstrap("admin", "s3cret-pass"); err != nil {
+		t.Fatal(err)
+	}
+	admin, _ := acc.EnvUser()
+	def, _ := acc.DefaultOrg()
+	sam := addMember(t, acc, admin.ID, def.ID, "sam", RoleMember)
+	kim := addMember(t, acc, admin.ID, def.ID, "kim", RoleMember)
+	other, err := acc.CreateOrg(admin.ID, "Other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stranger := addMember(t, acc, admin.ID, other.ID, "lee", RoleMember)
+	o := s.ForOrg(def.ID).AsUser(admin.ID)
+
+	c, err := o.CreateCard(model.Card{Title: "A", Column: model.CardIdeas, Assignee: sam})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := o.GetCard(c.ID); got.Assignee != sam {
+		t.Fatalf("assignee %d, want %d", got.Assignee, sam)
+	}
+	if _, err := o.CreateCard(model.Card{Title: "B", Column: model.CardIdeas, Assignee: stranger}); !errors.Is(err, ErrBadAssignee) {
+		t.Errorf("assigning another org's member: %v", err)
+	}
+	if _, err := o.UpdateCard(c.ID, func(c *model.Card) error { c.Assignee = stranger; return nil }); !errors.Is(err, ErrBadAssignee) {
+		t.Errorf("reassigning to another org's member: %v", err)
+	}
+	if _, err := o.UpdateCard(c.ID, func(c *model.Card) error { c.Assignee = kim; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := acc.RemoveMember(admin.ID, def.ID, kim); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := o.UpdateCard(c.ID, func(c *model.Card) error { c.Priority = model.CardHigh; return nil }); err != nil {
+		t.Errorf("a change to a card whose assignee left: %v", err)
+	}
+	if _, err := o.UpdateCard(c.ID, func(c *model.Card) error { c.Assignee = sam; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("DELETE FROM users WHERE id = ?", sam); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := o.GetCard(c.ID); got.Assignee != 0 {
+		t.Errorf("assignee %d after their account went, want 0", got.Assignee)
+	}
+	if _, err := o.UpdateCard(c.ID, func(c *model.Card) error { c.Assignee = 0; return nil }); err != nil {
+		t.Errorf("unassigning: %v", err)
+	}
+}

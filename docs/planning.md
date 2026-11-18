@@ -24,6 +24,9 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
 - a title and a description (markdown): **Edit**
 - **Priority** (high, medium, low or none) and **Target**: free text, such as a version
   (`1.4`) or a date
+- **Assignee**: the person in the org who owns the card. Their picture (or initial) shows on
+  the card on the board. Choose **Nobody** to unassign it. Anyone in the org, planners too,
+  can be assigned and can assign.
 - **Comments**: anyone in the org can comment; a comment's author or an admin can delete it
 - **Work**: the tasks and goals linked to it, each with its status
 
@@ -88,7 +91,7 @@ when linked work moves on.
 
 The chat has three tools for the plan (see [MCP](mcp.md#the-chats-task-tools)):
 
-- `list_cards`: the cards, with their column, priority, target and status
+- `list_cards`: the cards, with their column, priority, target, assignee and status
 - `create_card`: add a card
 - `link_card`: link a task or goal to a card
 
@@ -99,13 +102,14 @@ Planning is under `/api/planning/`:
 | Call                                                  | What it does                                     |
 |-------------------------------------------------------|--------------------------------------------------|
 | `GET /api/planning/cards?project=<id>`                | the cards, with status and linked work           |
-| `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `column`, `priority`, `target` |
+| `POST /api/planning/cards`                            | add a card: `title`, `description`, `project`, `column`, `priority`, `target`, `assignee` (a user id; `0` is nobody) |
 | `GET`, `PATCH`, `DELETE /api/planning/cards/{id}`     | one card (`GET` has its comments)                |
 | `POST /api/planning/cards/{id}/move`                  | `column` and `position` (0 is the top)           |
 | `GET`, `POST /api/planning/cards/{id}/comments`       | its comments; add one: `text`                    |
 | `DELETE /api/planning/cards/{id}/comments/{comment}`  | delete a comment                                 |
 | `POST /api/planning/cards/{id}/start`                 | `project` and `kind` (`task` or `goal`)          |
 | `GET /api/planning/projects`                          | the org's projects' ids and names                |
+| `GET /api/planning/people`                            | the org's members to assign: ids, usernames and picture versions |
 | `POST /api/planning/cards/{id}/links`                 | link `kind` and `id` (members)                   |
 | `DELETE /api/planning/cards/{id}/links/{kind}/{work}` | unlink (members)                                 |
 | `GET /api/planning/work?project=<id>`                 | tasks and goals to link (members)                |
@@ -113,6 +117,6 @@ Planning is under `/api/planning/`:
 
 ## Not yet
 
-Custom columns, labels, an owner per card, written progress summaries, approval before
+Custom columns, labels, written progress summaries, approval before
 **Start**, and syncing with Jira or Linear aren't in this version. See
 [Task boards](boards.md) for how an outside tracker can own a project's board.

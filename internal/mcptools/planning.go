@@ -18,6 +18,8 @@ type CardRow struct {
 	Priority string `json:"priority,omitempty"`
 	Target   string `json:"target,omitempty"`
 	Project  string `json:"project,omitempty"`
+	// Assignee is the username of the member who owns the card.
+	Assignee string `json:"assignee,omitempty"`
 	// Status is what its linked work adds up to, e.g. "Waiting for review".
 	Status   string `json:"status"`
 	Progress string `json:"progress,omitempty"`
@@ -48,7 +50,7 @@ func PlanningTools(b Board, cb CardBoard, o Options) []Tool {
 	pProject.Desc = "Only this project's cards (name or id); default every project's."
 	return []Tool{
 		{"list_cards", "List the cards of the org's plan (the Planning page): what a product owner wants built, by column " +
-			"(ideas, planned, in_progress, done), with each card's priority, target and the status of the tasks and goals linked to it.",
+			"(ideas, planned, in_progress, done), with each card's priority, target, assignee and the status of the tasks and goals linked to it.",
 			[]Param{pProject, {"column", "string", "Only this column: ideas, planned, in_progress or done.", false}},
 			func(a Args) (any, error) {
 				pid := ""

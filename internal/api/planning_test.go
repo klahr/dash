@@ -1,7 +1,10 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -178,4 +181,63 @@ func TestPlannerEventsArePlanningOnly(t *testing.T) {
 			t.Fatalf("got %s %s, want %s", ev.Type, ev.Data, typ)
 		}
 	}
+}
+
+// A card is assigned to one of the org's members, by a planner too: the
+// people to choose from are the org's members, and the card carries its
+// assignee's name and picture. Someone outside the org is refused.
+func TestPlanningCardAssignee(t *testing.T) {
+	s, _, _ := boardServer(t)
+	h := s.Routes()
+	a := loggedIn(t, h)
+	ph, pat := plannerOf(t, s, h)
+
+	var people []struct {
+		ID       int64  `json:"id"`
+		Username string `json:"username"`
+		Email    string `json:"email"`
+	}
+	w := do(t, ph, "GET", "/api/planning/people", "")
+	if err := json.Unmarshal(w.Body.Bytes(), &people); err != nil || len(people) < 2 {
+		t.Fatalf("people: %d %s", w.Code, w.Body)
+	}
+	found := false
+	for _, p := range people {
+		found = found || p.ID == pat.ID && p.Username == "pat"
+		if p.Email != "" {
+			t.Errorf("people show emails: %+v", p)
+		}
+	}
+	if !found {
+		t.Fatalf("pat isn't among the people: %s", w.Body)
+	}
+
+	c := decodeCard(t, do(t, a, "POST", "/api/planning/cards", `{"title":"Dark mode","assignee":`+strconv.FormatInt(pat.ID, 10)+`}`))
+	if c.Assignee != pat.ID || c.AssigneeName != "pat" {
+		t.Fatalf("assigned card %+v", c)
+	}
+	if _, err := raw(s).Accounts().SetAvatar(pat.ID, tinyPNG(t), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	c = decodeCard(t, do(t, ph, "GET", "/api/planning/cards/"+c.ID, ""))
+	if c.AssigneeAvatar == 0 {
+		t.Errorf("no picture version for the assignee: %+v", c)
+	}
+	if w := do(t, ph, "PATCH", "/api/planning/cards/"+c.ID, `{"assignee":999999}`); w.Code != http.StatusBadRequest {
+		t.Errorf("assigning a stranger: %d %s", w.Code, w.Body)
+	}
+	c = decodeCard(t, do(t, ph, "PATCH", "/api/planning/cards/"+c.ID, `{"assignee":0}`))
+	if c.Assignee != 0 || c.AssigneeName != "" {
+		t.Errorf("unassigned card %+v", c)
+	}
+}
+
+// tinyPNG is a small picture, for a profile picture.
+func tinyPNG(t *testing.T) []byte {
+	t.Helper()
+	var b bytes.Buffer
+	if err := png.Encode(&b, image.NewRGBA(image.Rect(0, 0, 4, 4))); err != nil {
+		t.Fatal(err)
+	}
+	return b.Bytes()
 }

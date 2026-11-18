@@ -38,6 +38,9 @@ func (s *Server) planningRoutes(mux routeMux) {
 	// The projects a card may name or start work in: names only, for planners
 	// too (they can't list the projects themselves).
 	mux.HandleFunc("GET /api/planning/projects", s.planningProjects)
+	// The org's members a card may be assigned to: names and pictures, for
+	// planners too.
+	mux.HandleFunc("GET /api/planning/people", s.planningPeople)
 	// Members only (not in plannerRoutes): the org's tasks and goals to link,
 	// linking and unlinking them, and the cards a task or goal is linked to.
 	mux.HandleFunc("GET /api/planning/work", s.linkableWork)
@@ -83,11 +86,15 @@ type linkView struct {
 // cardView is a card as the API answers it.
 type cardView struct {
 	model.Card
-	ProjectName string        `json:"project_name,omitempty"`
-	Status      cardStatus    `json:"status"`
-	Links       []linkView    `json:"links"`
-	Comments    int           `json:"comments"`
-	Discussion  []cardComment `json:"discussion,omitempty"` // GET of one card
+	ProjectName string `json:"project_name,omitempty"`
+	// AssigneeName and AssigneeAvatar are the assignee's username and their
+	// picture's version (0: none), to show their face on the card.
+	AssigneeName   string        `json:"assignee_name,omitempty"`
+	AssigneeAvatar int64         `json:"assignee_avatar,omitempty"`
+	Status         cardStatus    `json:"status"`
+	Links          []linkView    `json:"links"`
+	Comments       int           `json:"comments"`
+	Discussion     []cardComment `json:"discussion,omitempty"` // GET of one card
 }
 
 type cardComment = model.CardComment
@@ -101,11 +108,17 @@ type planningWork struct {
 	todos    map[string]model.Todo
 	goals    map[string]model.Goal
 	goalWork map[string][]model.Todo // goal id → its tasks
+	people   map[int64]store.Member  // the org's members, by user id
 }
 
 func (sv *service) planningWork(ctx context.Context) *planningWork {
 	w := &planningWork{sv: sv, ctx: ctx, projects: map[string]model.Project{}, todos: map[string]model.Todo{},
-		goals: map[string]model.Goal{}, goalWork: map[string][]model.Todo{}}
+		goals: map[string]model.Goal{}, goalWork: map[string][]model.Todo{}, people: map[int64]store.Member{}}
+	if ms, err := sv.s.Store.Accounts().Members(sv.c.Org); err == nil {
+		for _, m := range ms {
+			w.people[m.ID] = m
+		}
+	}
 	for _, p := range sv.data.ListProjects() {
 		w.projects[p.ID] = p
 	}
@@ -237,6 +250,12 @@ func (w *planningWork) views(cards []model.Card, links map[string][]model.CardLi
 	out := make([]cardView, 0, len(cards))
 	for _, c := range cards {
 		v := cardView{Card: c, ProjectName: w.projects[c.ProjectID].Name, Links: []linkView{}, Comments: comments[c.ID]}
+		// An assignee who has left the org since is no longer shown.
+		if m, ok := w.people[c.Assignee]; ok {
+			v.AssigneeName, v.AssigneeAvatar = m.Username, m.Avatar
+		} else {
+			v.Assignee = 0
+		}
 		for _, l := range links[c.ID] {
 			lv := w.link(l)
 			if w.sv.c.Planner {
@@ -434,6 +453,8 @@ type cardRequest struct {
 	Column      *string `json:"column"` // create only; moves are POST …/move
 	Priority    *string `json:"priority"`
 	Target      *string `json:"target"`
+	// Assignee is a member's user id (0: nobody).
+	Assignee *int64 `json:"assignee"`
 }
 
 func (req cardRequest) apply(c *model.Card) error {
@@ -442,6 +463,7 @@ func (req cardRequest) apply(c *model.Card) error {
 	set(&c.ProjectID, req.Project)
 	set(&c.Priority, req.Priority)
 	set(&c.Target, req.Target)
+	set(&c.Assignee, req.Assignee)
 	if req.Column != nil {
 		c.Column = model.CardColumn(*req.Column)
 	}
@@ -689,6 +711,34 @@ func (s *Server) planningProjects(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// planningPeople handles GET /api/planning/people: the org's members a card
+// may be assigned to, with their username and picture's version (not their
+// email: planners see it too).
+func (s *Server) planningPeople(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	type person struct {
+		ID       int64  `json:"id"`
+		Username string `json:"username"`
+		Avatar   int64  `json:"avatar,omitempty"`
+	}
+	ms, err := s.Store.Accounts().Members(sv.c.Org)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	out := []person{}
+	for _, m := range ms {
+		out = append(out, person{m.ID, m.Username, m.Avatar})
+	}
+	slices.SortFunc(out, func(a, b person) int {
+		return strings.Compare(strings.ToLower(a.Username), strings.ToLower(b.Username))
+	})
+	writeJSON(w, http.StatusOK, out)
+}
+
 // startCard handles POST /api/planning/cards/{cid}/start: {project, kind}.
 // It makes a task (queued; the card's title and description are its
 // prompt) or a goal (kind "goal") in the project, links it to the card,
@@ -907,7 +957,7 @@ func (s *Server) linkedCards(w http.ResponseWriter, r *http.Request) {
 
 func cardRow(v cardView) mcptools.CardRow {
 	return mcptools.CardRow{ID: v.ID, Title: v.Title, Column: string(v.Column), Priority: v.Priority, Target: v.Target,
-		Project: v.ProjectName, Status: v.Status.Text, Progress: v.Status.Progress, Links: len(v.Links)}
+		Project: v.ProjectName, Assignee: v.AssigneeName, Status: v.Status.Text, Progress: v.Status.Progress, Links: len(v.Links)}
 }
 
 func (b board) Cards(projectID string) ([]mcptools.CardRow, error) {
