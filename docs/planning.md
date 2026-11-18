@@ -113,7 +113,8 @@ Planning is under `/api/planning/`:
 | `GET`, `POST /api/planning/cards/{id}/comments`       | its comments; add one: `text`                    |
 | `DELETE /api/planning/cards/{id}/comments/{comment}`  | delete a comment                                 |
 | `POST /api/planning/cards/{id}/start`                 | `project` and `kind` (`task` or `goal`)          |
-| `GET /api/planning/projects`                          | the org's projects' ids and names                |
+| `GET /api/planning/projects`                          | the org's projects' ids, names, colors and icon URLs |
+| `GET /api/planning/projects/{id}/icon`                | a project's icon image                           |
 | `GET /api/planning/people`                            | the org's members to assign: ids, usernames and picture versions |
 | `POST /api/planning/cards/{id}/links`                 | link `kind` and `id` (members)                   |
 | `DELETE /api/planning/cards/{id}/links/{kind}/{work}` | unlink (members)                                 |

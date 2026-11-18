@@ -241,3 +241,52 @@ func tinyPNG(t *testing.T) []byte {
 	}
 	return b.Bytes()
 }
+
+// Planning's projects carry their icons, at a URL a planner may load; a
+// project without one has none.
+func TestPlanningProjectIcons(t *testing.T) {
+	s, _, p := boardServer(t)
+	s.UploadRoot = t.TempDir()
+	h := s.Routes()
+	a := loggedIn(t, h)
+	ph, _ := plannerOf(t, s, h)
+
+	w := do(t, a, "POST", "/api/uploads?name=icon.svg", `<svg xmlns="http://www.w3.org/2000/svg"/>`)
+	var up model.Attachment
+	if w.Code != http.StatusCreated || json.Unmarshal(w.Body.Bytes(), &up) != nil {
+		t.Fatalf("upload: %d %s", w.Code, w.Body)
+	}
+	if _, err := raw(s).UpdateProject(p.ID, func(x *model.Project) error { x.Icon = up.ID + "/" + up.Name; x.Color = "#336699"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	var projects []struct{ ID, Name, Color, Icon string }
+	if w := do(t, ph, "GET", "/api/planning/projects", ""); json.Unmarshal(w.Body.Bytes(), &projects) != nil {
+		t.Fatalf("projects: %d %s", w.Code, w.Body)
+	}
+	icon := ""
+	for _, x := range projects {
+		if x.ID == p.ID {
+			icon = x.Icon
+			if x.Color != "#336699" {
+				t.Errorf("color: %q", x.Color)
+			}
+		} else if x.Icon != "" {
+			t.Errorf("%s has no icon but got %q", x.Name, x.Icon)
+		}
+	}
+	if !strings.HasPrefix(icon, "/api/planning/projects/"+p.ID+"/icon?") {
+		t.Fatalf("icon URL: %q", icon)
+	}
+	w = do(t, ph, "GET", icon, "")
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/svg+xml" || !strings.Contains(w.Body.String(), "<svg") {
+		t.Fatalf("a planner's icon: %d %q %s", w.Code, w.Header().Get("Content-Type"), w.Body)
+	}
+	for _, x := range projects {
+		if x.ID != p.ID {
+			if w := do(t, ph, "GET", "/api/planning/projects/"+x.ID+"/icon", ""); w.Code != http.StatusNotFound {
+				t.Errorf("no icon: %d", w.Code)
+			}
+		}
+	}
+}

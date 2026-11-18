@@ -67,16 +67,11 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
   pl.root = root;
   pl.planner = planner;
   pl.hooks = hooks;
-  const filter = h("select", { id: "pl-filter", "aria-label": "Project", onchange: (e) => {
-    pl.filter = e.target.value;
-    store.set("dash.planning.project", pl.filter);
-    loadPlanning().catch(fail);
-  } });
   fill(root,
     h("div", { class: "page planning" },
       h("header", { class: "cl-head pl-head" },
         h("h2", { class: "cl-title page-title" }, "Planning"),
-        h("label", { class: "pl-filter" }, h("span", { class: "sr-only" }, "Project"), filter),
+        filterPicker(),
         h("span", { class: "cl-state", id: "pl-state", "aria-live": "polite" }),
         ib({ type: "button", class: "btn small primary pl-new", title: "Add an idea to the plan", onclick: () => openComposer("ideas") }, "plus", "New card")),
       h("p", { class: "hint pl-intro", id: "pl-intro", hidden: true },
@@ -156,13 +151,78 @@ export function planningShown() {
   if (!pl.loaded) loadPlanning().catch(fail);
 }
 
+// ---- the project filter
+// A button that opens a list of the projects, each with its icon (a select
+// can't show pictures). Arrows move in the list, Enter picks, Esc closes.
+
+// planningIcon is a project's icon, or its initial on its color, as the
+// sidebar shows it (style.css: .side-project-icon).
+function planningIcon(p) {
+  const el = h("span", { class: "side-project-icon", "aria-hidden": "true" });
+  el.style.setProperty("--project", p.color || "");
+  el.append(p.icon ? h("img", { src: p.icon, alt: "" }) : [...p.name][0]?.toUpperCase() || "?");
+  return el;
+}
+
+function filterPicker() {
+  const list = h("ul", { class: "pl-filter-list", id: "pl-filter-list", role: "listbox", "aria-label": "Project", hidden: true, onkeydown: filterListKey,
+    onclick: (e) => { const o = e.target.closest("[role=option]"); if (o) pickFilter(o.dataset.value); } });
+  const btn = h("button", { type: "button", class: "btn small pl-filter-btn", id: "pl-filter", "aria-haspopup": "listbox", "aria-controls": "pl-filter-list", "aria-expanded": "false",
+    onclick: () => toggleFilter(list.hidden),
+    onkeydown: (e) => { if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); toggleFilter(true); } } });
+  return h("div", { class: "pl-filter", id: "pl-filter-wrap",
+    onfocusout: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) toggleFilter(false, false); } }, btn, list);
+}
+
+function toggleFilter(open, focus = true) {
+  const btn = $("#pl-filter"), list = $("#pl-filter-list");
+  if (!btn || list.hidden === !open) return;
+  list.hidden = !open;
+  btn.setAttribute("aria-expanded", String(open));
+  if (!focus) return;
+  if (open) ($("[aria-selected=true]", list) || $("[role=option]", list))?.focus();
+  else btn.focus();
+}
+
+function pickFilter(id) {
+  toggleFilter(false);
+  if (id === pl.filter) return;
+  pl.filter = id;
+  store.set("dash.planning.project", pl.filter);
+  renderFilter();
+  loadPlanning().catch(fail);
+}
+
+function filterListKey(e) {
+  const opts = $$("[role=option]", e.currentTarget);
+  const i = opts.indexOf(document.activeElement);
+  const to = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: opts.length - 1 }[e.key];
+  if (to !== undefined) opts[Math.max(0, Math.min(opts.length - 1, to))]?.focus();
+  else if (e.key === "Enter" || e.key === " ") pickFilter(document.activeElement?.dataset.value ?? pl.filter);
+  else if (e.key === "Escape") toggleFilter(false);
+  else if (e.key === "Tab") { toggleFilter(false, false); return; }
+  else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    // Typing a letter goes to the next project starting with it.
+    const k = e.key.toLowerCase();
+    const next = [...opts.slice(i + 1), ...opts.slice(0, i + 1)].find((o) => o.textContent.trim().toLowerCase().startsWith(k));
+    next?.focus();
+  } else return;
+  e.preventDefault();
+  e.stopPropagation();
+}
+
 function renderFilter() {
-  const sel = $("#pl-filter");
-  if (!sel) return;
-  fill(sel, h("option", { value: "" }, "All projects"),
-    ...pl.projects.map((p) => h("option", { value: p.id, selected: p.id === pl.filter }, p.name)));
-  sel.value = pl.filter;
-  sel.hidden = pl.projects.length < 2 && !pl.filter;
+  const btn = $("#pl-filter"), list = $("#pl-filter-list");
+  if (!btn) return;
+  const chosen = pl.projects.find((p) => p.id === pl.filter);
+  const label = chosen ? chosen.name : "All projects";
+  fill(btn, chosen ? planningIcon(chosen) : ico("repo"), h("span", { class: "pl-filter-name" }, label), ico("down"));
+  btn.setAttribute("aria-label", `Project: ${label}`);
+  btn.title = "Show the cards of one project";
+  const option = (id, icon, name) => h("li", { role: "option", tabindex: "-1", "data-value": id, "aria-selected": String(id === pl.filter) },
+    icon, h("span", { class: "pl-filter-name" }, name), id === pl.filter ? ico("check") : null);
+  fill(list, option("", ico("repo"), "All projects"), ...pl.projects.map((p) => option(p.id, planningIcon(p), p.name)));
+  $("#pl-filter-wrap").hidden = pl.projects.length < 2 && !pl.filter;
 }
 
 // ---- the board

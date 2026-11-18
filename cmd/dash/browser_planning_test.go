@@ -19,6 +19,9 @@ func TestBrowserPlanningBoard(t *testing.T) {
 	var c struct{ ID string }
 	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Export reports as PDF", "column": "planned", "description": "So **finance** can file them."}, http.StatusCreated, &c)
 	h.api.must("POST", "/api/planning/cards", map[string]any{"title": "Dark mode", "column": "ideas"}, http.StatusCreated, nil)
+	for _, name := range []string{"shop", "wiki"} {
+		h.api.must("POST", "/api/projects", map[string]any{"name": name, "remote_url": "https://example.com/" + name + ".git", "runs_on": []string{"any"}}, http.StatusCreated, nil)
+	}
 
 	b := newBrowser(t, chrome)
 	b.signIn(h)
@@ -27,6 +30,18 @@ func TestBrowserPlanningBoard(t *testing.T) {
 	b.waitJS("four columns side by side", `[...document.querySelectorAll("#view-planning .board .col")].filter((c) => c.offsetWidth).length === 4`)
 	b.waitJS("the cards as rows on the rail", fmt.Sprintf(`document.querySelector('#view-planning .col[data-col=planned] .rail .pl-card[data-id=%q] .todo .todo-title')?.textContent === "Export reports as PDF"`, c.ID))
 	b.waitJS("Add card at the bottom of each column", `[...document.querySelectorAll("#view-planning .col")].every((c) => c.querySelector(".col-body").lastElementChild.matches(".pl-add"))`)
+
+	// The project filter lists the projects with their icons; picking one
+	// shows its cards.
+	b.until("open the project filter", `!document.querySelector("#pl-filter-list").hidden`,
+		chromedp.Click(chromedp.CSS(`#pl-filter`)))
+	b.waitJS("each project with its icon", `(() => { const o = [...document.querySelectorAll("#pl-filter-list [role=option]")]; return o.length >= 3 && o.slice(1).every((li) => li.querySelector(".side-project-icon")?.offsetWidth > 0); })()`)
+	b.until("pick wiki", `document.querySelector("#pl-filter .pl-filter-name")?.textContent === "wiki" && document.querySelector("#pl-filter .side-project-icon")?.textContent === "W"`,
+		chromedp.Click(chromedp.CSS(`#pl-filter-list [role=option]:last-child`)))
+	b.waitJS("only wiki's cards", `!document.querySelector("#view-planning .pl-card")`)
+	b.do("open the project filter", chromedp.Click(chromedp.CSS(`#pl-filter`)))
+	b.until("all projects again", `document.querySelector("#view-planning .pl-card")`,
+		chromedp.Click(chromedp.CSS(`#pl-filter-list [role=option][data-value=""]`)))
 
 	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
 	b.waitJS("one column at a time", `[...document.querySelectorAll("#view-planning .board .col")].filter((c) => c.offsetWidth).length === 1`)

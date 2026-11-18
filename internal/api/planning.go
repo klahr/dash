@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -38,6 +39,8 @@ func (s *Server) planningRoutes(mux routeMux) {
 	// The projects a card may name or start work in: names only, for planners
 	// too (they can't list the projects themselves).
 	mux.HandleFunc("GET /api/planning/projects", s.planningProjects)
+	// A project's icon, for planners too (they can't read uploads).
+	mux.HandleFunc("GET /api/planning/projects/{pid}/icon", s.planningProjectIcon)
 	// The org's members a card may be assigned to: names and pictures, for
 	// planners too.
 	mux.HandleFunc("GET /api/planning/people", s.planningPeople)
@@ -694,21 +697,54 @@ func (s *Server) deleteCardComment(w http.ResponseWriter, r *http.Request) {
 }
 
 // planningProjects handles GET /api/planning/projects: the org's projects'
-// ids and names.
+// ids, names, colors and icons (the icon is a planning URL a planner can
+// load, or empty for none).
 func (s *Server) planningProjects(w http.ResponseWriter, r *http.Request) {
 	sv, ok := s.service(w, r)
 	if !ok {
 		return
 	}
 	type project struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
+		ID    string `json:"id"`
+		Name  string `json:"name"`
+		Color string `json:"color,omitempty"`
+		Icon  string `json:"icon,omitempty"`
 	}
 	out := []project{}
 	for _, p := range sv.data.ListProjects() {
-		out = append(out, project{p.ID, p.Name})
+		icon := ""
+		if p.Icon != "" {
+			// The upload's id changes with the icon, so the URL does too.
+			icon = "/api/planning/projects/" + url.PathEscape(p.ID) + "/icon?v=" + url.QueryEscape(p.Icon)
+		}
+		out = append(out, project{p.ID, p.Name, p.Color, icon})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// planningProjectIcon handles GET /api/planning/projects/{pid}/icon: the
+// project's icon image, for Planning's project picker.
+func (s *Server) planningProjectIcon(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	p, err := sv.data.GetProject(r.PathValue("pid"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	id, name, _ := strings.Cut(p.Icon, "/")
+	a, err := sv.findUpload(id)
+	if err != nil || a.Name != name || !strings.HasPrefix(a.Type, "image/") {
+		writeErr(w, store.ErrNotFound)
+		return
+	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Type", a.Type)
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	w.Header().Set("Cache-Control", "private, max-age=86400, immutable")
+	http.ServeFile(w, r, a.Path)
 }
 
 // planningPeople handles GET /api/planning/people: the org's members a card

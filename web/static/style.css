@@ -3191,7 +3191,21 @@ button.goal-task-open:hover { background: var(--raised); }
 .page.planning { max-width: none; padding: 0; display: flex; flex-direction: column; }
 .pl-head { flex-wrap: wrap; margin: 0; padding: var(--sp-3) var(--pad-x) 10px; }
 .pl-head .pl-new { margin-left: auto; }
-.pl-filter select { min-height: 32px; max-width: 220px; }
+/* The project filter: a button with the chosen project's icon, opening a
+   list of the projects with theirs. */
+.pl-filter { position: relative; --project: var(--faint); }
+.pl-filter-btn { min-height: 32px; max-width: 240px; gap: 8px; }
+.pl-filter-btn .side-project-icon, .pl-filter-list .side-project-icon { width: 20px; height: 20px; font-size: var(--fs-2xs); }
+.pl-filter-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-filter-list {
+  position: absolute; left: 0; top: calc(100% + 4px); z-index: 20; min-width: 100%; width: max-content; max-width: min(320px, calc(100vw - 2 * var(--pad-x)));
+  max-height: min(360px, 60vh); overflow-y: auto; margin: 0; padding: 4px; list-style: none;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); box-shadow: var(--shadow-2);
+}
+.pl-filter-list [role=option] { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 10px; border-radius: var(--r-s); color: var(--text); cursor: pointer; }
+.pl-filter-list [role=option]:hover, .pl-filter-list [role=option]:focus { background: var(--raised); outline: none; }
+.pl-filter-list [role=option] .pl-filter-name { flex: 1; }
+.pl-filter-list [role=option] > .ico:last-child:not(:first-child) { color: var(--accent); }
 .pl-intro { margin: 0; padding: 0 var(--pad-x) 12px; }
 .pl-board { padding-bottom: 24px; }
 .pl-board .col-body { padding-bottom: 24px; }
