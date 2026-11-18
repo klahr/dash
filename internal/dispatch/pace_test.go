@@ -337,12 +337,13 @@ func TestPaceSettingsAreKept(t *testing.T) {
 	if err := p.Set("ann@example.com", usage.PaceSettings{Follow: true, MaxBoost: 0.5}); err == nil {
 		t.Error("a boost under 1 was taken")
 	}
-	again := &Pacer{}
+	ann := onAccount("a", 1, "ann@example.com", 0.2, time.Now())
+	again := &Pacer{Runners: func() []tunnel.Runner { return []tunnel.Runner{ann} }}
 	if err := again.Keep(path); err != nil {
 		t.Fatal(err)
 	}
-	if s := again.Settings("ann@example.com"); !s.Follow || s.MaxBoost != 3 {
-		t.Fatalf("restored %+v", s)
+	if g := again.Account("ann@example.com"); g == nil || !g.Follow || g.MaxBoost != 3 {
+		t.Fatalf("restored %+v", g)
 	}
 }
 

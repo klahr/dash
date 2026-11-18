@@ -399,7 +399,7 @@ func TestClearIsRespected(t *testing.T) {
 	a, b := openStore(t, "ra"), openStore(t, "rb")
 	n1, _ := save(a, Draft{Key: "n1", Permanent: true}, t0)
 	n2, _ := save(a, Draft{Key: "n2", Permanent: true}, t0.Add(time.Hour))
-	cl, err := a.Clear(t0.Add(30*time.Minute), "ui", t0.Add(2*time.Hour))
+	cl, _, err := a.clear(t0.Add(30*time.Minute), "ui", t0.Add(2*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}

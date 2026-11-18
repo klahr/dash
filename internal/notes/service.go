@@ -237,21 +237,6 @@ func (s *Service) Confirm(ctx context.Context, project, id, task string, ttl tim
 	return e, nil
 }
 
-// Clear deletes every note of project last updated before before (zero:
-// now), on every copy.
-func (s *Service) Clear(ctx context.Context, project string, before time.Time, task string) error {
-	st, err := s.store(project)
-	if err != nil {
-		return err
-	}
-	e, err := st.Clear(before, task, s.now())
-	if err != nil {
-		return err
-	}
-	s.send(ctx, project, []Entry{e})
-	return nil
-}
-
 // Tidy tidies project's notes now (tidy.go): purges expired notes and old
 // tombstones, merges same-title notes, evicts past the caps, and sends
 // what it wrote to the other runners. It is what "remove expired" runs;

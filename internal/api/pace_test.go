@@ -57,8 +57,8 @@ func TestAccountPacePermissions(t *testing.T) {
 	if w := put(f.c, `{"follow":true,"max_boost":3}`); w.Code != http.StatusOK {
 		t.Fatalf("owner pacing their account: %d %s", w.Code, w.Body)
 	}
-	if s := f.s.Dispatch.Pacer.Settings("c@example.com"); !s.Follow || s.MaxBoost != 3 {
-		t.Fatalf("c's account: %+v", s)
+	if g := f.s.Dispatch.Pacer.Account("c@example.com"); g == nil || !g.Follow || g.MaxBoost != 3 {
+		t.Fatalf("c's account: %+v", g)
 	}
 	// …but not another member's account.
 	if w := put(f.c, `{"follow":true,"account":"shared@example.com"}`); w.Code != http.StatusForbidden {

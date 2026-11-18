@@ -385,15 +385,10 @@ func (s *Store) tombstone(tx *sql.Tx, old Entry, task string, now time.Time) (En
 	return t, put(tx, t)
 }
 
-// Clear deletes every note of the project last updated before before, on
-// every copy, as one write: a clear, kept like a tombstone for the
-// retention window. Notes written later stay.
-func (s *Store) Clear(before time.Time, task string, now time.Time) (Entry, error) {
-	e, _, err := s.clear(before, task, now)
-	return e, err
-}
-
-// clear is Clear, also counting the live notes it deleted.
+// clear deletes every note of the project last updated before before
+// (zero or later than now: now), on every copy, as one write: a clear,
+// kept like a tombstone for the retention window. Notes written later
+// stay. It also counts the live notes it deleted.
 func (s *Store) clear(before time.Time, task string, now time.Time) (out Entry, removed int, err error) {
 	now = now.UTC()
 	if before.IsZero() || before.After(now) {
