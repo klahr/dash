@@ -141,13 +141,6 @@ func (p *Pacer) Set(account string, s usage.PaceSettings) error {
 	return fsutil.WriteFileAtomic(p.path, b, 0o600)
 }
 
-// Settings is account's setting.
-func (p *Pacer) Settings(account string) usage.PaceSettings {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.settings[strings.ToLower(account)]
-}
-
 func groupKey(account, runnerID string) string {
 	if account != "" {
 		return "account:" + account

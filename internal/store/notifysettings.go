@@ -15,9 +15,6 @@ import (
 // They live in the database only: read when a summary or a push goes out,
 // and when the settings open.
 
-// ActivityKeep is how long the summaries' activity is kept.
-const ActivityKeep = 35 * 24 * time.Hour
-
 func scanNotify(row interface{ Scan(...any) error }) (model.UserNotify, error) {
 	var u model.UserNotify
 	var raw string

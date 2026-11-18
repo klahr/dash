@@ -277,6 +277,9 @@ func (s *Summaries) Run(ctx context.Context) {
 	}
 }
 
+// activityKeep is how long the summaries' activity is kept.
+const activityKeep = 35 * 24 * time.Hour
+
 // RunDue sends each summary whose time has come, and waits for them.
 // Each covers from where the last one ended (so a restart neither repeats
 // nor skips anything) up to now.
@@ -284,7 +287,7 @@ func (s *Summaries) RunDue(ctx context.Context) {
 	now := s.now().UTC().Truncate(time.Second)
 	if now.Sub(s.pruned) > 24*time.Hour {
 		s.pruned = now
-		if err := s.Store.PruneActivity(now.Add(-35 * 24 * time.Hour)); err != nil {
+		if err := s.Store.PruneActivity(now.Add(-activityKeep)); err != nil {
 			slog.Error("summaries: prune activity", "err", err)
 		}
 	}
