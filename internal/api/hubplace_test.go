@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -44,6 +45,27 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 func needGit(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("needs git")
+	}
+}
+
+// symlink makes link point at target, skipping the test where the system
+// won't let it (Windows without Developer Mode or admin rights).
+func symlink(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("can't make a symlink here: %v", err)
+		}
+		t.Fatal(err)
+	}
+}
+
+// needTerminals skips the test where the runner can't open terminals
+// (runner.ErrNoTerminals: no pty on Windows yet).
+func needTerminals(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("terminals aren't supported on Windows yet")
 	}
 }
 
@@ -163,9 +185,7 @@ func TestHubLinkNameClashes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(plain, "notes.txt"), []byte("keep"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(t.TempDir(), filepath.Join(org, "remote-3")); err != nil {
-		t.Fatal(err)
-	}
+	symlink(t, t.TempDir(), filepath.Join(org, "remote-3"))
 
 	code, linked := hubLinkAs(t, h, "hub-p1", remote)
 	want := filepath.Join(org, "remote-4")

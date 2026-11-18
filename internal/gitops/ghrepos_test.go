@@ -43,6 +43,8 @@ func TestRemoteRepo(t *testing.T) {
 		"git@github.com:klahr/Dash.git":     "Dash",
 		"https://github.com/klahr/dash/":    "dash",
 		"/srv/git/remote":                   "remote",
+		`C:\Users\me\AppData\Temp\remote\`:  "remote",
+		`C:\srv\app.git`:                    "app",
 		"..":                                "",
 	} {
 		if got := RemoteRepo(in); got != want {

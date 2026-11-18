@@ -64,17 +64,13 @@ func TestFindReposStaysInsideTheProjectsDirectory(t *testing.T) {
 		filepath.Join(root, "org", "linked"): filepath.Join(outside, "secret"),
 		filepath.Join(root, "again"):         filepath.Join(root, "app"),
 	} {
-		if err := os.Symlink(target, link); err != nil {
-			t.Fatal(err)
-		}
+		symlink(t, target, link)
 	}
 	// A repository whose .git is a symlink out of the directory.
 	if err := os.MkdirAll(filepath.Join(root, "gitlink"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(filepath.Join(outside, "secret", ".git"), filepath.Join(root, "gitlink", ".git")); err != nil {
-		t.Fatal(err)
-	}
+	symlink(t, filepath.Join(outside, "secret", ".git"), filepath.Join(root, "gitlink", ".git"))
 
 	known := filepath.Join(root, "known")
 	got, err := findRepos(root, "hub", func(abs string) bool { return abs == known })

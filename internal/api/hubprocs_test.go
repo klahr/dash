@@ -173,6 +173,7 @@ var sessionSeq atomic.Int64
 // the hub, with the scrollback again on reattaching.
 func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
 	parallel(t)
+	needTerminals(t)
 
 	hub, _, _ := boardServer(t)
 	rh := &tunnel.Hub{Accounts: hub.Auth.Accounts()}
@@ -225,7 +226,8 @@ func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
 	// Nor a command they name, of any kind: it is a shell's.
 	marker := filepath.Join(t.TempDir(), "ran")
 	for _, kind := range []string{"task", "web", ""} {
-		if w := start(other, `{"kind":"`+kind+`","command":"touch `+marker+`"}`); w.Code != http.StatusForbidden {
+		b, _ := json.Marshal(map[string]string{"kind": kind, "command": "touch " + marker})
+		if w := start(other, string(b)); w.Code != http.StatusForbidden {
 			t.Fatalf("command (%q) for another member: %d %s", kind, w.Code, w.Body)
 		}
 	}
@@ -235,7 +237,8 @@ func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
 		hub.mux().ServeHTTP(w, as(uid)(httptest.NewRequest("PATCH", "/api/projects/"+p.ID, strings.NewReader(body))))
 		return w
 	}
-	if w := patch(other, `{"deploy_command":"touch `+marker+`"}`); w.Code != http.StatusForbidden {
+	b, _ := json.Marshal(map[string]string{"deploy_command": "touch " + marker})
+	if w := patch(other, string(b)); w.Code != http.StatusForbidden {
 		t.Fatalf("deploy command set by another member: %d %s", w.Code, w.Body)
 	}
 	if w := patch(other, `{"deploy_command":"","color":"#3a7bd5"}`); w.Code != http.StatusOK {

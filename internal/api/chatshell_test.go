@@ -155,9 +155,13 @@ func TestTodoChatRunsShellCommandInWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, res, errText := shellTurn(t, chatSocket(t, s), map[string]any{"project": p.ID, "todo": td.ID, "review": true}, []agent.ChatMessage{cmdMsg("! pwd")}, nil)
-	if errText != "" || res == nil || res.ExitCode != 0 || strings.TrimSpace(res.Output) != realDir(t, wt) {
+	_, res, errText := shellTurn(t, chatSocket(t, s), map[string]any{"project": p.ID, "todo": td.ID, "review": true}, []agent.ChatMessage{cmdMsg("! echo x > ran-here")}, nil)
+	if errText != "" || res == nil || res.ExitCode != 0 {
 		t.Fatalf("result %+v, error %q", res, errText)
+	}
+	// A file, not pwd's output: Git for Windows' bash prints /c/... paths.
+	if _, err := os.Stat(filepath.Join(wt, "ran-here")); err != nil {
+		t.Fatalf("the command didn't run in the worktree: %v", err)
 	}
 	if got := raw(s).TodoChat(td.ID); len(got) != 1 || got[0].Shell == nil {
 		t.Fatalf("saved %+v", got)

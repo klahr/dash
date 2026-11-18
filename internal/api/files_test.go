@@ -51,9 +51,7 @@ func TestLocalPath(t *testing.T) {
 	if err := os.WriteFile(outside, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(outside, filepath.Join(dir, "link")); err != nil {
-		t.Fatal(err)
-	}
+	symlink(t, outside, filepath.Join(dir, "link"))
 
 	s := &Server{Git: g}
 	p := model.Project{ID: "p", Path: dir, DefaultBranch: "main"}

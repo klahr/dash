@@ -32,10 +32,11 @@ func SameRemote(a, b string) bool {
 }
 
 // RemoteRepo is the last part of a remote's path, without .git: the folder
-// name `git clone` would pick ("" when there is none).
+// name `git clone` would pick ("" when there is none). A local path may
+// use '\' as Windows does.
 func RemoteRepo(remote string) string {
-	r := strings.TrimSuffix(strings.TrimSpace(remote), "/")
-	if i := strings.LastIndexAny(r, "/:"); i >= 0 {
+	r := strings.TrimRight(strings.TrimSpace(remote), `/\`)
+	if i := strings.LastIndexAny(r, `/:\`); i >= 0 {
 		r = r[i+1:]
 	}
 	r = strings.TrimSuffix(r, ".git")

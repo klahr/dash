@@ -280,7 +280,11 @@ func TestMoveHubCloneRollsBack(t *testing.T) {
 		t.Errorf("the org folder made for the move stayed: %v", err)
 	}
 	gitIn(t, td.Worktree.Path, "status")
-	if got := gitIn(t, td.Worktree.Path, "rev-parse", "--path-format=absolute", "--git-common-dir"); got != realDir(t, filepath.Join(p.Path, ".git")) {
-		t.Errorf("the worktree's repository is %s", got)
+	// git prints C:/... on Windows: compare the folders, not the strings.
+	got := gitIn(t, td.Worktree.Path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	a, errA := os.Stat(got)
+	b, errB := os.Stat(filepath.Join(p.Path, ".git"))
+	if errA != nil || errB != nil || !os.SameFile(a, b) {
+		t.Errorf("the worktree's repository is %s (%v, %v)", got, errA, errB)
 	}
 }
