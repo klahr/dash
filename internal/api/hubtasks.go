@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -176,19 +176,82 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	mode := model.MergeLocal
-	if req.MergeMode == model.MergePR && (req.MergeModeSet || s.Git.HasGh()) {
-		// Pull requests only by default, and a runner with no gh to open
-		// them merges and pushes instead.
-		mode = model.MergePR
-	}
 	if s.HubOrg != 0 && req.OrgID != s.HubOrg {
 		slog.Warn("runner: refused a project of another org", "project", hpid, "org", req.OrgID)
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "this runner works for another organization"})
 		return
 	}
-	// The hub's commands.
-	commands := func(x *model.Project) {
+	settings := hubSettings(req, s.hubMergeMode(req))
+	// The link finishes even when the hub's request goes away (the browser
+	// that asked reloads, say): a clone killed half way leaves a folder with
+	// origin set but no valid HEAD, which hubPlace would then adopt on every
+	// later link, and fail on. Every step runs under ctx, waiting for another
+	// link of the same project included, never under r.Context().
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), hubLinkTimeout)
+	defer cancel()
+	if p, ok := sv.hubProject(hpid); ok {
+		p, err := s.relinkHubProject(ctx, sv, p, req.WorkBranch, settings)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch, Path: p.Path})
+		return
+	}
+	cloneURL, err := s.hubCloneURL(req)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	place, linked, release, err := s.reserveHubLink(ctx, sv, hpid, hubOrgFolder(req), req, cloneURL)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if linked != nil { // linked while this waited
+		writeJSON(w, http.StatusOK, dispatch.Linked{ProjectID: linked.ID, DefaultBranch: linked.DefaultBranch, Path: linked.Path})
+		return
+	}
+	defer release()
+	id := store.NewID()
+	if place.Own != nil {
+		id = place.Own.ID
+	}
+	branch, err := s.cloneHubProject(ctx, id, place, req)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	p, status, err := s.storeHubProject(ctx, sv, id, hpid, place, req, branch, settings)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := s.followWorkBranch(ctx, sv, p, req.WorkBranch); err != nil {
+		writeErr(w, err)
+		return
+	}
+	slog.Info("runner: hub linked a project", "name", p.Name, "path", p.Path, "checkout", p.HubCheckout)
+	writeJSON(w, status, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch, Path: p.Path, Adopted: place.Adopt})
+}
+
+// hubMergeMode is how the tasks of the hub's project req land here: pull
+// requests only when asked for, and a runner with no gh to open them,
+// unless the hub's project set it, merges and pushes instead.
+func (s *Server) hubMergeMode(req dispatch.Link) string {
+	if req.MergeMode == model.MergePR && (req.MergeModeSet || s.Git.HasGh()) {
+		return model.MergePR
+	}
+	return model.MergeLocal
+}
+
+// hubSettings sets on a project what the hub's project req decides: how its
+// tasks land, its org's folder, its commands and its review settings.
+func hubSettings(req dispatch.Link, mode string) func(*model.Project) {
+	folder := hubOrgFolder(req)
+	return func(x *model.Project) {
+		x.TaskInstructions, x.MergeMode, x.HubOrgFolder = req.TaskInstructions, mode, folder
+		// The hub's commands.
 		x.SetupCommand, x.TestCommand, x.RunCommand, x.DeployCommand = req.SetupCommand, req.TestCommand, req.RunCommand, req.DeployCommand
 		if k, err := checkPreviewKind(req.PreviewKind); err == nil {
 			x.PreviewKind, x.PreviewCommand = k, strings.TrimSpace(req.PreviewCommand)
@@ -204,10 +267,8 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 				x.SetCommand(kind, "")
 			}
 		}
-	}
-	// The hub's review settings; an older hub that doesn't send them leaves
-	// the runner's own.
-	review := func(x *model.Project) {
+		// The hub's review settings; an older hub that doesn't send them
+		// leaves the runner's own.
 		if req.AutoApprove != nil {
 			x.AutoApprove = *req.AutoApprove
 		}
@@ -215,133 +276,115 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 			x.MaxAutoFixes = max(0, *req.MaxAutoFixes)
 		}
 	}
-	// The link finishes even when the hub's request goes away (the browser
-	// that asked reloads, say): a clone killed half way leaves a folder with
-	// origin set but no valid HEAD, which hubPlace would then adopt on every
-	// later link, and fail on. Every step runs under ctx, waiting for another
-	// link of the same project included, never under r.Context().
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), hubLinkTimeout)
-	defer cancel()
-	folder := hubOrgFolder(req)
-	if p, ok := sv.hubProject(hpid); ok {
-		want := p
-		commands(&want)
-		review(&want)
-		if p.HubOrgFolder != folder || p.TaskInstructions != req.TaskInstructions || p.MergeMode != mode ||
-			want.AutoApprove != p.AutoApprove || want.MaxAutoFixes != p.MaxAutoFixes ||
-			want.SetupCommand != p.SetupCommand || want.TestCommand != p.TestCommand || want.RunCommand != p.RunCommand || want.DeployCommand != p.DeployCommand ||
-			want.PreviewKind != p.PreviewKind || want.PreviewCommand != p.PreviewCommand || !maps.Equal(want.HeldCommands, p.HeldCommands) {
-			// The hub's project decides how its tasks land.
-			var err error
-			if p, err = sv.data.UpdateProject(p.ID, func(x *model.Project) error {
-				x.TaskInstructions, x.MergeMode = req.TaskInstructions, mode
-				x.HubOrgFolder = folder
-				commands(x)
-				review(x)
-				return nil
-			}); err != nil {
-				writeErr(w, err)
-				return
-			}
-		}
-		// A clone from before clones went in the org's folder moves there
-		// now, unless it is busy; the hub gets its new path either way.
-		p = s.moveHubClone(ctx, sv, p)
-		if err := s.followWorkBranch(ctx, sv, p, req.WorkBranch); err != nil {
-			writeErr(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch, Path: p.Path})
-		return
+}
+
+// relinkHubProject links again the hub's project p, already linked here:
+// it takes the hub's settings (saving only when they change), moves the
+// clone to its org's folder and follows the work branch.
+func (s *Server) relinkHubProject(ctx context.Context, sv *service, p model.Project, workBranch string, settings func(*model.Project)) (model.Project, error) {
+	want := p
+	settings(&want)
+	if len(want.HeldCommands) == 0 && len(p.HeldCommands) == 0 {
+		want.HeldCommands = p.HeldCommands // nil and empty are the same
 	}
+	if !reflect.DeepEqual(want, p) {
+		var err error
+		if p, err = sv.data.UpdateProject(p.ID, func(x *model.Project) error { settings(x); return nil }); err != nil {
+			return p, err
+		}
+	}
+	// A clone from before clones went in the org's folder moves there now,
+	// unless it is busy; the hub gets its new path either way.
+	p = s.moveHubClone(ctx, sv, p)
+	return p, s.followWorkBranch(ctx, sv, p, workBranch)
+}
+
+// hubCloneURL is what this runner clones for the hub's project req: the
+// project's own clone URL, else its GitHub repository over this runner's
+// protocol. It checks both remotes and that this runner has a projects root.
+func (s *Server) hubCloneURL(req dispatch.Link) (string, error) {
 	if err := gitops.CheckRemote(req.RemoteURL); err != nil {
-		writeErr(w, errors.Join(errBadRequest, err))
-		return
+		return "", errors.Join(errBadRequest, err)
 	}
-	// What this runner clones: the project's own clone URL, else its
-	// GitHub repository over this runner's protocol.
 	cloneURL := gitops.CloneRemote(req.RemoteURL, req.CloneURL, s.GitHubProtocol)
 	if err := gitops.CheckRemote(cloneURL); err != nil {
-		writeErr(w, errors.Join(errBadRequest, err))
-		return
+		return "", errors.Join(errBadRequest, err)
 	}
 	if s.ProjectRoot == "" {
-		writeErr(w, fmt.Errorf("%w: this runner has no projects root (-projects)", errBadRequest))
-		return
+		return "", fmt.Errorf("%w: this runner has no projects root (-projects)", errBadRequest)
 	}
-	// The folder is picked and reserved under hubLinks; the clone and the
-	// rest run without it, so one large clone doesn't hold up other links.
-	var place hubPlacement
+	return cloneURL, nil
+}
+
+// reserveHubLink picks and reserves the folder for the hub's project hpid,
+// under hubLinks, first waiting for any other link of the same project. If
+// that link linked it, linked is the project and there is nothing to
+// release; else release, called once the project is stored (or the link
+// failed), frees the reservation. The clone and the rest run without
+// hubLinks, so one large clone doesn't hold up other links.
+func (s *Server) reserveHubLink(ctx context.Context, sv *service, hpid, folder string, req dispatch.Link, cloneURL string) (place hubPlacement, linked *model.Project, release func(), err error) {
 	for {
 		hubLinks.Lock()
-		if p, ok := sv.hubProject(hpid); ok { // linked while this waited
+		if p, ok := sv.hubProject(hpid); ok {
 			hubLinks.Unlock()
-			writeJSON(w, http.StatusOK, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch, Path: p.Path})
-			return
+			return hubPlacement{}, &p, nil, nil
 		}
-		if done, busy := hubLinking[hpid]; busy { // the same project is being linked: wait for it, then look again
-			hubLinks.Unlock()
-			select {
-			case <-done:
-				continue
-			case <-ctx.Done():
-				writeErr(w, ctx.Err())
-				return
-			}
+		done, busy := hubLinking[hpid]
+		if !busy {
+			break
 		}
-		var err error
-		place, err = s.hubPlace(ctx, sv, hpid, folder, req.Name, req.RemoteURL, cloneURL)
-		if err != nil {
-			hubLinks.Unlock()
-			writeErr(w, err)
-			return
-		}
-		done := make(chan struct{})
-		hubLinking[hpid], hubReserved[place.Path] = done, true
+		// The same project is being linked: wait for it, then look again.
 		hubLinks.Unlock()
-		defer func() {
-			hubLinks.Lock()
-			delete(hubLinking, hpid)
-			delete(hubReserved, place.Path)
-			close(done)
-			hubLinks.Unlock()
-		}()
-		break
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return hubPlacement{}, nil, nil, ctx.Err()
+		}
 	}
-	path, id := place.Path, store.NewID()
-	if place.Own != nil {
-		id = place.Own.ID
+	defer hubLinks.Unlock()
+	place, err = s.hubPlace(ctx, sv, hpid, folder, req.Name, req.RemoteURL, cloneURL)
+	if err != nil {
+		return hubPlacement{}, nil, nil, err
 	}
-	how := model.HubAdopted
+	done := make(chan struct{})
+	hubLinking[hpid], hubReserved[place.Path] = done, true
+	return place, nil, func() {
+		hubLinks.Lock()
+		delete(hubLinking, hpid)
+		delete(hubReserved, place.Path)
+		close(done)
+		hubLinks.Unlock()
+	}, nil
+}
+
+// cloneHubProject clones the hub's project req into place.Path, unless
+// place adopts a clone that is there, and gives an empty repository a
+// first commit on its branch, pushed. It returns that branch.
+func (s *Server) cloneHubProject(ctx context.Context, id string, place hubPlacement, req dispatch.Link) (string, error) {
+	path := place.Path
 	if !place.Adopt {
-		how = model.HubCloned
 		// A remote this computer can't read says so, rather than with
 		// git's exit 128 ("could not read Username", "Permission denied").
 		// With -github-protocol=auto, a GitHub repository SSH can't read is
 		// cloned over HTTPS with gh's login; that URL is the clone's origin.
-		picked, err := s.Git.PickCloneRemote(ctx, id, s.machineName(), req.RemoteURL, req.CloneURL, s.GitHubProtocol)
+		cloneURL, err := s.Git.PickCloneRemote(ctx, id, s.machineName(), req.RemoteURL, req.CloneURL, s.GitHubProtocol)
 		if err != nil {
-			writeErr(w, errors.Join(errBadRequest, err))
-			return
+			return "", errors.Join(errBadRequest, err)
 		}
-		cloneURL = picked
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			writeErr(w, err)
-			return
+			return "", err
 		}
 		if err := s.Git.Clone(ctx, id, cloneURL, path); err != nil {
 			// hubPlace picked a folder that didn't exist: what the failed
 			// clone left there would look like a clone of this remote.
 			_ = os.RemoveAll(path)
-			writeErr(w, errors.Join(errBadRequest, err))
-			return
+			return "", errors.Join(errBadRequest, err)
 		}
 	}
 	branch := s.hubBranch(ctx, id, path, req.DefaultBranch)
 	seeded, err := s.Git.SeedRepo(ctx, id, path, branch) // an empty remote gets a first commit
 	if err != nil {
-		writeErr(w, err)
-		return
+		return "", err
 	}
 	if seeded {
 		// on branch, published so the other runners clone the same one
@@ -349,35 +392,32 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("runner: pushing the first commit of an empty repository", "path", path, "branch", branch, "err", err)
 		}
 	}
+	return branch, nil
+}
+
+// storeHubProject saves the hub's project hpid, cloned or adopted at
+// place.Path: the runner's own project in that folder becomes the hub's
+// (200), else a new project is made (201).
+func (s *Server) storeHubProject(ctx context.Context, sv *service, id, hpid string, place hubPlacement, req dispatch.Link, branch string, settings func(*model.Project)) (model.Project, int, error) {
+	how := model.HubCloned
+	if place.Adopt {
+		how = model.HubAdopted
+	}
+	remote := s.Git.RemoteURL(ctx, id, place.Path)
 	link := func(x *model.Project) {
-		x.HubProjectID, x.HubCheckout, x.HubOrgFolder = hpid, how, folder
-		x.DefaultBranch, x.RemoteURL = branch, s.Git.RemoteURL(ctx, id, path)
-		x.TaskInstructions, x.MergeMode = req.TaskInstructions, mode
+		x.HubProjectID, x.HubCheckout = hpid, how
+		x.DefaultBranch, x.RemoteURL = branch, remote
 		x.MergeModeSet = false
-		commands(x)
-		review(x)
+		settings(x)
 	}
-	var p model.Project
-	status := http.StatusCreated
 	if place.Own != nil {
-		// The runner's own project in that folder becomes the hub's.
-		p, err = sv.data.UpdateProject(id, func(x *model.Project) error { link(x); return nil })
-		status = http.StatusOK
-	} else {
-		np := model.Project{ID: id, Name: req.Name, Path: path, MaxAutoFixes: model.DefaultMaxAutoFixes, TagFormat: release.DefaultFormat}
-		link(&np)
-		p, err = sv.data.CreateProject(np)
+		p, err := sv.data.UpdateProject(id, func(x *model.Project) error { link(x); return nil })
+		return p, http.StatusOK, err
 	}
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	if err := s.followWorkBranch(ctx, sv, p, req.WorkBranch); err != nil {
-		writeErr(w, err)
-		return
-	}
-	slog.Info("runner: hub linked a project", "name", p.Name, "path", p.Path, "checkout", how)
-	writeJSON(w, status, dispatch.Linked{ProjectID: p.ID, DefaultBranch: p.DefaultBranch, Path: p.Path, Adopted: place.Adopt})
+	np := model.Project{ID: id, Name: req.Name, Path: place.Path, MaxAutoFixes: model.DefaultMaxAutoFixes, TagFormat: release.DefaultFormat}
+	link(&np)
+	p, err := sv.data.CreateProject(np)
+	return p, http.StatusCreated, err
 }
 
 // hubLinks guards picking folders (links and moves) and hubReserved and
