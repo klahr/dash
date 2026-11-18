@@ -227,7 +227,7 @@ function cardEl(c) {
       h("span", { class: "node", "aria-hidden": "true" }),
       h("span", { class: "todo-main" },
         h("button", { type: "button", class: "todo-open pl-open", "aria-controls": "card-detail", "aria-current": c.id === pl.open ? "true" : null,
-          title: "Open (Alt+arrows move it)", onkeydown: (e) => cardKeys(e, c) },
+          title: "Open (Alt+arrows move it; Space over it assigns it to you)", onkeydown: (e) => cardKeys(e, c) },
           h("span", { class: "todo-title" }, c.title)),
         sub),
       meta.length ? h("span", { class: "todo-side" }, ...meta) : null));
@@ -350,6 +350,37 @@ function cardKeys(e, c) {
   if (!to) return;
   e.preventDefault();
   moveCard(c.id, to[0], to[1]).then(() => $(`.pl-card[data-id="${c.id}"] .pl-open`, pl.root)?.focus()).catch(fail);
+}
+
+// Space over a card (the mouse on it) assigns it to you, or unassigns it if
+// it is yours already. Not while typing, a dialog is open, a card is being
+// dragged, or the board isn't shown. A focused button elsewhere isn't
+// pressed: the keyup that would press it is swallowed too.
+let spaceTaken = false;
+document.addEventListener("keydown", (e) => {
+  if (e.key !== " " || e.repeat || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || !pl.root || pl.drag) return;
+  if (document.querySelector("dialog[open]") || (pl.hooks.visible && !pl.hooks.visible())) return;
+  if (e.target.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false]), .cm-editor")) return;
+  const li = pl.root.querySelector(".pl-card:hover");
+  const c = li && byId(li.dataset.id);
+  if (!c) return;
+  e.preventDefault();
+  spaceTaken = true;
+  toggleMine(c).catch(fail);
+});
+document.addEventListener("keyup", (e) => {
+  if (e.key === " " && spaceTaken) { spaceTaken = false; e.preventDefault(); }
+});
+
+async function toggleMine(c) {
+  const me = pl.hooks.me?.();
+  if (!me?.id) return;
+  const mine = c.assignee === me.id;
+  const v = await call("PATCH", cardAPI(c.id), { assignee: mine ? 0 : me.id });
+  const i = pl.cards.findIndex((x) => x.id === c.id);
+  if (i >= 0) { pl.cards[i] = { ...pl.cards[i], ...v }; renderBoard(); }
+  if (pl.open === c.id) { pl.detail = { ...pl.detail, ...v }; renderCard(); }
+  toast(mine ? "Unassigned" : "Assigned to you");
 }
 
 // moveCard puts a card in column col at index (among the column's other

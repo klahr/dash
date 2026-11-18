@@ -27,7 +27,8 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
   (`1.4`) or a date
 - **Assignee**: the person in the org who owns the card. Their picture (or initial) shows on
   the card on the board. Choose **Nobody** to unassign it. Anyone in the org, planners too,
-  can be assigned and can assign.
+  can be assigned and can assign. On the board, point at a card and press `Space` to assign it
+  to yourself; press it again to unassign it.
 - **Comments**: anyone in the org can comment; a comment's author or an admin can delete it
 - **Work**: the tasks and goals linked to it, each with its status
 
