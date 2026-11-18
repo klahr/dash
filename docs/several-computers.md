@@ -439,9 +439,20 @@ the org sees it and adds tasks to it, and each member's tasks run on their own r
 - A later run of a task is for whoever started it: queueing it, sending it back with feedback,
   retrying, continuing or resuming it, or changing its instructions. If that is someone else than
   the task's creator, the run needs a runner that does both members' work: a shared runner.
-- A task that is no one's needs a shared runner: one Dash made itself (a failed build's fix, a
-  revert's undo) or one whose author's account was deleted. A task Dash made that a member then
-  queued is theirs. A goal's tasks are the goal's owner's.
+- A task Dash makes itself (a failing build's fix, a card from the project's tracker) is a
+  member's, so their runners take it. The hub gives it, when it first looks for a runner for it,
+  to the first of these who is still a member of the org (and not only a planner):
+  1. for a tracker card: who connected the project's board to the tracker;
+  2. for a failing build's fix: who turned on **Project settings → Approval & push → Fix failed
+     builds automatically** (it is on by default, so often nobody did);
+  3. who added the project;
+  4. the org's longest owner, else its longest admin.
+
+  The task still shows as made by Dash, and notifications say so. A task Dash made that a member
+  then queues is theirs. Tasks Dash queued before this rule get an owner the same way.
+- A task that is no one's needs a shared runner: one whose author's account was deleted, or one
+  Dash made when none of those above is a member. A goal's
+  tasks are the goal's owner's.
 - A scan run is for the member who pressed **Run**. A scheduled run is for the member who last
   turned its schedule on or changed it.
 - **Run tests again**, and the project's start server, test and deploy commands and previews, run

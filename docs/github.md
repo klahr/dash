@@ -180,6 +180,11 @@ When the project is on GitHub, Dash follows the GitHub Actions runs on the defau
 **Builds** in the project menu (top bar) opens the same sheet at any time: the latest runs,
 **Re-run build**, and after a failure **Retry failed jobs** and **Ask Claude to fix it**.
 
+When a build fails, Dash queues a task asking Claude to fix it ("Fix failing build: …"), unless
+**Project settings → Approval & push → Fix failed builds automatically** is off. The task shows as
+made by Dash. On a hub it runs on the runners of a member: who turned that setting on, else who
+added the project, else the org's owner ([whose work a runner does](several-computers.md#whose-work-a-runner-does)).
+
 ## Tag a release
 
 In **History** (the commit graph of the branch tasks land on), click a commit (or move to it with

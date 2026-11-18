@@ -519,6 +519,9 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 			return err
 		}
 		sv.recordCommands(p, before, req)
+		if p.InvestigatesCI() && !before.InvestigatesCI() && sv.c.User > 0 {
+			p.CIBy = sv.c.User // who turned on fixing failed builds: those fixes are their work
+		}
 		return nil
 	})
 	if err != nil {

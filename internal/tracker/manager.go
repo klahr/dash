@@ -457,7 +457,7 @@ func (m *Manager) Apply(ctx context.Context, projectID string, next ProjectConfi
 				text += fmt.Sprintf("; %d existing tasks left Dash-only", open)
 			}
 		}
-		if _, err := m.Store.AddProjectEvent(model.ProjectEvent{ProjectID: projectID, Kind: "board.switched", Text: text, UserID: opts.UserID}); err != nil {
+		if _, err := m.Store.AddProjectEvent(model.ProjectEvent{ProjectID: projectID, Kind: store.BoardSwitched, Text: text, UserID: opts.UserID}); err != nil {
 			slog.Warn("project event", "project", projectID, "err", err)
 		}
 		slog.Info("board backend switched", "project", projectID, "from", old.Backend, "to", next.Backend, "exported", exported)

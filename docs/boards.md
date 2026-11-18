@@ -89,7 +89,9 @@ Each linked task has an `external_ref` (`provider`, `id`, `url`).
 - **Inbound.** The worker polls the tracker (every minute), and sooner when
   the tracker calls the webhook. It applies card changes to the tasks. A new
   card in a column mapped to *draft* or *queued* becomes a task in that
-  project.
+  project. It shows as made by Dash; on a hub it runs on the runners of who
+  connected the board to the tracker (see
+  [whose work a runner does](several-computers.md#whose-work-a-runner-does)).
 - **Conflicts.** Each link remembers each side's fields as of the last sync.
   A field changed on one side goes to the other. A field changed on both
   goes to the later writer. Before Dash pushes, it reads the tracker's latest

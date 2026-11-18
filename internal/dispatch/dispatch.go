@@ -125,6 +125,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, p model.Project, t model.Todo
 // don't overfill it. A *WaitError means none can take t now; call send
 // exactly once otherwise.
 func (d *Dispatcher) Claim(p model.Project, t model.Todo) (runnerID string, send func(context.Context) (string, string, error), err error) {
+	t = d.giveDashWork(t)
 	var parent *model.Todo // the task t builds on, when it has one
 	if t.BuildsOn != "" && d.Store != nil {
 		if x, err := d.Store.GetTodo(t.BuildsOn); err == nil {
@@ -158,6 +159,24 @@ func (d *Dispatcher) Claim(p model.Project, t model.Todo) (runnerID string, send
 		}
 		return runnerID, remoteID, err
 	}, nil
+}
+
+// giveDashWork gives t, a queued task Dash made by itself that nobody
+// started (CreatedBy and RunBy 0: a fix for a failing build, a tracker's
+// card, or one queued before Dash gave these to anyone), to the member it
+// is for (store.Store.DashWorkFor), so one of their runners takes it rather
+// than only a shared one. It returns t as it is then.
+func (d *Dispatcher) giveDashWork(t model.Todo) model.Todo {
+	if t.CreatedBy != 0 || t.RunBy != 0 || d.Store == nil {
+		return t
+	}
+	nt, err := d.Store.GiveDashWork(t.ID)
+	if err != nil || nt.RunBy == 0 {
+		return t
+	}
+	slog.Info("dispatch: Dash's own task is for a member", "todo", t.ID, "for", d.username(nt.RunBy))
+	t.RunBy = nt.RunBy
+	return t
 }
 
 func (d *Dispatcher) unclaim(todoID string) {
@@ -355,6 +374,9 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 // runner takes it now, and one would if the user started it now (see
 // model.Todo.StartNow). t's own StartNow doesn't count.
 func (d *Dispatcher) PaceWait(p model.Project, t model.Todo) string {
+	if t.CreatedBy == 0 && t.RunBy == 0 && d.Store != nil {
+		t.RunBy = d.Store.DashWorkFor(t) // as Claim will give it
+	}
 	t.StartNow = false
 	r, reason, _ := d.pick(p, t, nil)
 	if r != nil {

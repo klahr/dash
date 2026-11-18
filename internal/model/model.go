@@ -150,9 +150,15 @@ type Project struct {
 	// InvestigateCI queues a todo for Claude when a GitHub Actions build on
 	// the default branch fails (nil means on). CIHandledRun is the newest
 	// run already looked at, so a failure is only investigated once.
-	InvestigateCI *bool     `json:"investigate_ci,omitempty"`
-	CIHandledRun  int64     `json:"ci_handled_run,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
+	InvestigateCI *bool `json:"investigate_ci,omitempty"`
+	CIHandledRun  int64 `json:"ci_handled_run,omitempty"`
+	// CIBy is the member who last turned InvestigateCI on (0: nobody did,
+	// it is on by default). AddedBy is the member who added the project (0:
+	// unknown, added before Dash recorded it). Dash's own tasks in the
+	// project run for one of them (see store.Store.DashWorkFor).
+	CIBy      int64     `json:"ci_by,omitempty"`
+	AddedBy   int64     `json:"added_by,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 	// TagFormat names release tags: X, Y and Z stand for the major, minor
 	// and patch version, anything else is kept, e.g. "vX.Y.Z". Empty means
 	// "X.Y.Z" (see internal/release).
@@ -399,8 +405,11 @@ type Todo struct {
 	CreatedBy int64 `json:"created_by,omitempty"`
 	// RunBy is, on a hub, the user who started the task's latest run:
 	// queued it, sent it back with feedback, retried or resumed it, or
-	// changed its instructions (0: its creator, or Dash itself). A run is
-	// for its creator and for them (WorkFor).
+	// changed its instructions (0: its creator, or Dash itself). For a task
+	// Dash made (CreatedBy 0) that nobody started, the hub sets it to the
+	// member the task's work is for (store.Store.DashWorkFor), so one of
+	// their runners takes it; CreatedBy stays 0, and the task still reads as
+	// made by Dash. A run is for its creator and for them (WorkFor).
 	RunBy int64 `json:"run_by,omitempty"`
 	// Board is the id of the project's board the task is on ("": its main
 	// board; see Project.Boards).
@@ -603,8 +612,9 @@ func (t Todo) Name(n int) string {
 
 // WorkFor are the users a run of t is for: its creator, and whoever started
 // the run (RunBy) when that is someone else. A task Dash made (CreatedBy 0)
-// is for whoever started its run, if anyone did. 0 and DeletedUser stand for
-// work that is no one's (see dispatch: it goes only to shared runners).
+// is for whoever started its run: a person, or the member the hub gave it
+// to (store.Store.DashWorkFor). 0 and DeletedUser stand for work that is no
+// one's (see dispatch: it goes only to shared runners).
 func (t Todo) WorkFor() []int64 {
 	creator := t.CreatedBy
 	if creator == 0 && t.RunBy > 0 {

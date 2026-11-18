@@ -195,15 +195,19 @@ func (s *Server) Member(owner model.Owner) bool {
 }
 
 // TaskOwner is who a task's runs act as: the user who created it, in the
-// task's org. Tasks with no creator (from before users, made by Dash itself,
-// or on a runner by its hub) act as this Dash's env account. Either way the
-// user must still belong to the task's org.
+// task's org. A task Dash made by itself acts as the member it was given to
+// (its RunBy; see store.Store.DashWorkFor). Other tasks with no creator
+// (from before users, or on a runner by its hub) act as this Dash's env
+// account. Either way the user must still belong to the task's org.
 func (s *Server) TaskOwner(t model.Todo) (model.Owner, error) {
 	org, ok := s.Store.TodoOrg(t.ID)
 	if !ok || org == 0 {
 		return model.Owner{}, fmt.Errorf("task %s has no org", t.ID)
 	}
 	o := model.Owner{User: t.CreatedBy, Org: org}
+	if o.User == 0 && t.RunBy > 0 {
+		o.User = t.RunBy
+	}
 	if o.User == 0 {
 		u, err := s.Auth.Accounts().EnvUser()
 		if err != nil {

@@ -88,6 +88,9 @@ func (o *OrgStore) CreateProject(p model.Project) (model.Project, error) {
 		return p, errors.New("no organization to create the project in")
 	}
 	p.OrgID = o.org
+	if p.AddedBy == 0 && o.user > 0 {
+		p.AddedBy = o.user // Dash's own tasks in it are theirs (see DashWorkFor)
+	}
 	return o.s.CreateProject(p)
 }
 
