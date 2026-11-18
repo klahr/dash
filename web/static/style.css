@@ -2923,7 +2923,6 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .scan-create p { margin: 0; font-size: var(--fs-m); }
 .scan-create .scan-create-title { color: var(--text); font-weight: 600; font-size: var(--fs-body); margin-bottom: 2px; }
 .scan-create .btn { flex: none; }
-.scan-form-lead { margin-top: 0; }
 .scan-advanced .scan-form-grid { margin-top: 4px; }
 .scan-intro { color: var(--muted); font-size: var(--fs-m); max-width: 70ch; }
 .scan-intro p { margin: 0; }

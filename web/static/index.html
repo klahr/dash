@@ -312,7 +312,7 @@
           <ul class="scan-list" id="scan-list"></ul>
           <div class="scan-create" id="scan-create" hidden>
             <div><p class="scan-create-title">Need something else?</p><p>Describe what to look for; Dash runs it like the built-in scans and adds what it finds to Issues.</p></div>
-            <button class="btn" type="button" id="scan-new" data-icon="plus" title="Describe what to look for; Dash runs it like the built-in scans">Create custom scan</button>
+            <button class="btn" type="button" id="scan-new" data-icon="plus">Create custom scan</button>
           </div>
           <div class="empty" id="scan-empty"><p class="empty-title">No project</p><p>Select a project to see its scans.</p></div>
         </div>
@@ -389,7 +389,7 @@
           <header class="cl-head">
             <h2 class="cl-title page-title">Goals</h2>
             <span class="cl-state" id="goal-state" aria-live="polite"></span>
-            <button class="btn small goal-new" type="button" id="goal-new" data-icon="plus" title="Claude plans the tasks for something bigger than one task">New goal…</button>
+            <button class="btn small goal-new" type="button" id="goal-new" data-icon="plus">New goal…</button>
           </header>
           <ul class="goal-list" id="goal-list"></ul>
           <div class="empty" id="goal-empty"><p class="empty-title" id="goal-empty-title">No goals yet</p><p id="goal-empty-text">A goal is something bigger than one task. Say what you want done: a coordinator reads the code, plans the tasks and reviews what each one did. Approving and merging stay yours.</p></div>
@@ -727,7 +727,7 @@
       <p class="hint quick-hint"><kbd>Enter</kbd> save · <kbd>Shift-Enter</kbd> another task · Claude names each task.</p>
       <div class="quick-tools">
         <button class="link" type="button" id="quick-another" data-icon="plus">Another task</button>
-        <button class="link" type="button" id="quick-goal" data-icon="target" title="Something bigger than one task: Claude plans the tasks and reviews them">New goal…</button>
+        <button class="link" type="button" id="quick-goal" data-icon="target">New goal…</button>
         <button class="link" type="button" id="quick-more" data-icon="edit">More options…</button>
       </div>
       <footer class="sheet-actions quick-foot">
@@ -749,7 +749,7 @@
         <div class="draft-status" id="todo-draft" aria-live="polite"></div>
         <button class="btn small attach-btn" type="button" id="todo-refine" data-icon="wand" title="Rewrite the instructions without the chatter, e.g. after pasting a chat answer">Clean up</button>
         <button class="btn small attach-btn" type="button" id="todo-split" data-icon="split" title="Claude proposes smaller tasks to do this in; you edit and confirm them">Split…</button>
-        <button class="btn small attach-btn" type="button" id="todo-goal" data-icon="target" title="Make this a goal: a coordinator plans the tasks, dispatches them and reviews what each one did">New goal…</button>
+        <button class="btn small attach-btn" type="button" id="todo-goal" data-icon="target">New goal…</button>
       </div>
       <div class="attach" id="todo-attach" data-attach></div>
       <div class="field-row">
@@ -790,16 +790,15 @@
   <dialog class="sheet small" id="goal-sheet" aria-labelledby="goal-sheet-title">
     <form method="dialog" id="goal-form">
       <header class="sheet-head"><h2 id="goal-sheet-title">New goal</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
-      <p class="hint" id="goal-sheet-hint">A coordinator reads the code and plans the tasks, then reviews what each one did. Approving and merging stay yours.</p>
       <label class="field"><span>Title <em>named from what to get done if empty</em></span><input name="title" placeholder="Faster search" autocomplete="off" maxlength="200"></label>
       <label class="field"><span>What to get done</span><textarea name="description" rows="5" placeholder="Search answers in under 100 ms, without dropping results." required></textarea></label>
       <fieldset class="field choice">
         <legend>Budget <em>empty for no limit</em></legend>
         <div class="field-row">
           <label class="field inline"><span>Max tasks</span><input type="number" name="max_tasks" min="0" max="1000" step="1" placeholder="None" inputmode="numeric"></label>
-          <label class="field inline"><span>Weekly %</span><input type="number" name="weekly_share" min="0" max="100" step="1" placeholder="None" inputmode="numeric"></label>
+          <label class="field inline"><span>Share of weekly usage %</span><input type="number" name="weekly_share" min="0" max="100" step="1" placeholder="None" inputmode="numeric"></label>
         </div>
-        <p class="hint">Max tasks is the most tasks the coordinator may make. Weekly % is the share of the weekly usage window its tasks may use.</p>
+        <p class="hint">Max tasks caps how many tasks it may make. Share of weekly usage caps how much of the weekly usage window its tasks may use.</p>
       </fieldset>
       <fieldset class="field choice">
         <legend>Its tasks</legend>
@@ -930,7 +929,7 @@
                 <label class="field" id="new-project-runs-on-row"><span>Runs on <em>runner labels, as in GitHub's runs-on</em></span><input name="runs_on" placeholder="any" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
                 <p class="hint" id="new-project-runs-on-hint">Its tasks run on the runners that have every one of these labels, separated by commas: <code>any</code> is any runner. It starts as the picked runner's own labels, if it has any.</p>
                 <label class="field" id="new-project-clone-row"><span>Clone URL <em>optional, used as it is</em></span><input name="clone_url" placeholder="e.g. git@github-deploy:owner/repo.git" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
-                <p class="hint" id="new-project-clone-hint">Runners clone into <code>&lt;projects&gt;/&lt;org&gt;/&lt;repo&gt;</code>, or use a clone of the same repository already there; a folder holding anything else is left alone and the clone gets a <code>-2</code> suffix. GitHub repositories are cloned over SSH, or over HTTPS with the runner's <code>gh</code> login when its SSH can't read them (<code>-github-protocol</code> forces one). A clone URL replaces that (a URL only: credentials stay on the runner).</p>
+                <p class="hint" id="new-project-clone-hint">Used as it is, a URL only. <a href="https://github.com/klahr/dash/blob/main/docs/several-computers.md#how-a-runner-reaches-github" target="_blank" rel="noopener">How runners clone</a></p>
                 <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" placeholder="npm run dev -- --port $PORT" spellcheck="false"></label>
                 <label class="field"><span>Test command</span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>
                 <label class="field"><span>Deploy command <em>a bash script, one line or several</em></span><textarea name="deploy_command" class="script-field" rows="4" placeholder="set -e&#10;npm run build&#10;./deploy.sh production" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea></label>
@@ -958,8 +957,7 @@
   <dialog class="sheet" id="scan-sheet" aria-labelledby="scan-sheet-title">
     <form method="dialog" id="scan-form">
       <header class="sheet-head"><h2 id="scan-sheet-title">Create custom scan</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Close" data-icon="x"></button></header>
-      <p class="hint scan-form-lead">Describe what to look for in plain words. Dash runs it like the built-in scans: it reads the code and adds what it finds to Issues.</p>
-      <p class="hint" id="scan-form-from" hidden></p>
+            <p class="hint" id="scan-form-from" hidden></p>
       <label class="field"><span>Title</span><input name="title" required autocomplete="off" placeholder="e.g. API error handling"></label>
       <label class="field"><span>What should it look for?</span><textarea name="prompt" rows="8" required class="scan-prompt" placeholder="e.g. Find HTTP handlers that return internal error messages to the client, or that don't check the request body's size. Point out each handler and say what to change."></textarea></label>
       <p class="hint">Dash adds how to report findings, so this only needs to say what to look for. It scans the whole repository with read-only tools unless you change that below.</p>
@@ -1027,7 +1025,7 @@
         <p class="pace-account" id="pace-account" hidden></p>
         <p class="pace-state" id="pace-state" hidden></p>
         <label class="field inline" id="pace-max-row"><span>Most tasks at once when behind</span><input type="number" id="pace-max" min="1" max="64" step="1" inputmode="numeric"></label>
-        <label class="field inline" id="pace-boost-row" hidden><span>Most tasks at once when behind</span><select id="pace-boost"><option value="1.5">1.5× usual</option><option value="2">2× usual</option><option value="3">3× usual</option><option value="4">4× usual</option></select></label>
+        <label class="field inline" id="pace-boost-row" hidden><span>Task boost when behind</span><select id="pace-boost"><option value="1.5">1.5× usual</option><option value="2">2× usual</option><option value="3">3× usual</option><option value="4">4× usual</option></select></label>
       </section>
       <footer class="sheet-actions"><button class="btn" type="button" id="queue-toggle"></button></footer>
     </form>

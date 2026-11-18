@@ -25,7 +25,7 @@ instead.
 
 1. Open **New task** (the **+** button) or the full task form, and pick **New goal…** (next to
    **Split…** in the form). What you typed is carried over.
-2. Say what to get done. Add a budget if you want one: **Max tasks**, **Weekly %**, or both.
+2. Say what to get done. Add a budget if you want one: **Max tasks**, **Share of weekly usage %**, or both.
    Leave them empty for no limit.
 3. Pick **Ask me before queuing** (the default) or **Queue on its own**, then **Start goal**.
 

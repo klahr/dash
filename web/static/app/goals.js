@@ -465,7 +465,6 @@ export function openGoalSheet({ goal = null, title: t = "", description = "" } =
   const f = $("#goal-form");
   f.reset();
   $("#goal-sheet-title").textContent = goal ? "Edit goal" : "New goal";
-  $("#goal-sheet-hint").hidden = !!goal;
   $("#goal-save").lastChild.textContent = goal ? "Save" : "Start goal";
   f.title.value = goal?.title ?? t;
   f.description.value = goal?.description ?? description;
