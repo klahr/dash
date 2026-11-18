@@ -73,7 +73,10 @@ func TestHubDeploysOnlyOnRunnersWithItsLabels(t *testing.T) {
 
 	// A multi-line deploy command, on the label gpu, which the runner lacks.
 	marker := filepath.Join(t.TempDir(), "deployed")
-	script := "set -e\r\necho one > " + marker + "\r\n\r\n  echo two >> " + marker + "\r\n"
+	// The deploy runs in bash (Git Bash on Windows), where an unquoted
+	// C:\Users\... loses its backslashes as escapes: forward slashes, quoted.
+	target := "'" + filepath.ToSlash(marker) + "'"
+	script := "set -e\r\necho one > " + target + "\r\n\r\n  echo two >> " + target + "\r\n"
 	b, _ := json.Marshal(map[string]any{"deploy_command": script, "deploy_runs_on": []string{" gpu ", "any", "GPU"}})
 	w := call(owner.User, "PATCH", "", string(b))
 	if w.Code != http.StatusOK {
@@ -83,7 +86,7 @@ func TestHubDeploysOnlyOnRunnersWithItsLabels(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &saved); err != nil {
 		t.Fatal(err)
 	}
-	wantScript := "set -e\necho one > " + marker + "\n\n  echo two >> " + marker
+	wantScript := "set -e\necho one > " + target + "\n\n  echo two >> " + target
 	if saved.DeployCommand != wantScript || strings.Join(saved.DeployRunsOn, ",") != "gpu" {
 		t.Fatalf("saved deploy %q on %v", saved.DeployCommand, saved.DeployRunsOn)
 	}
