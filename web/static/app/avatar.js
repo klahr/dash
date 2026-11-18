@@ -1,5 +1,5 @@
 import { $, avatar, avatarURL, fillAvatar, h } from "./dom.js";
-import { api } from "./api.js";
+import { api, request } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { accountSection } from "./accountsheet.js";
@@ -41,9 +41,7 @@ async function square(file) {
 }
 
 async function upload(blob) {
-  const res = await fetch("/api/account/avatar", { method: "PUT", headers: { "Content-Type": blob.type || "application/octet-stream" }, body: blob });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  const { data } = await request("PUT", "/api/account/avatar", { body: blob, raw: true });
   return data.avatar;
 }
 

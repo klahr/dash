@@ -16,11 +16,19 @@ export function signIn() {
 }
 export const on = (prefix, path) => (HUB_ONLY.test(path) ? path : `${prefix}${path}`);
 
-export async function api(method, path, body, prefix = here(), { signal } = {}) {
+// request sends one call and handles what every call can meet: a lapsed
+// sign-in, an org's two-factor or Google rule, a read-only billing state and
+// the server's error message. It returns the answer (data) and the response
+// (res), for callers that read a header. body is sent as JSON, or with raw as
+// it is (a File or Blob, with its own Content-Type).
+export async function request(method, path, { body, raw = false, prefix = here(), signal } = {}) {
+  let headers = {};
+  if (raw && body) headers = { "Content-Type": body.type || "application/octet-stream" };
+  else if (body) headers = { "Content-Type": "application/json" };
   const res = await fetch(on(prefix, path), {
     method,
-    headers: body ? { "Content-Type": "application/json" } : {},
-    body: body ? JSON.stringify(body) : undefined,
+    headers,
+    body: body ? (raw ? body : JSON.stringify(body)) : undefined,
     signal,
   });
   if (res.status === 401) {
@@ -41,5 +49,10 @@ export async function api(method, path, body, prefix = here(), { signal } = {}) 
   }
   if (res.status === 402 && data.code === "billing_read_only") document.dispatchEvent(new Event("dash:billing-read-only")); // billing shows the banner
   if (!res.ok) throw Object.assign(new Error(data.error || data || res.statusText), { status: res.status, data });
-  return data;
+  return { data, res };
+}
+
+// api is request for the usual call: a JSON body in, the answer out.
+export async function api(method, path, body, prefix = here(), { signal } = {}) {
+  return (await request(method, path, { body, prefix, signal })).data;
 }

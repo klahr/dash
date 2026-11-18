@@ -1,7 +1,7 @@
 import { $, $$, h, ib, ico } from "./dom.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
-import { api, on } from "./api.js";
+import { api, request } from "./api.js";
 import { attempt, copy, fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { chatPage, renderNavActive } from "./nav.js";
@@ -110,11 +110,12 @@ async function loadProjectChat(p, force = false) {
   pc.loaded = true;
   pc.dirty = false;
   const seq = ++pc.seq;
-  const res = await fetch(on(p.prefix || "", `/api/projects/${p.id}/chat`));
-  const saved = await res.json().catch(() => null);
-  if (!res.ok) {
+  let saved, res;
+  try {
+    ({ data: saved, res } = await request("GET", `/api/projects/${p.id}/chat`, { prefix: p.prefix || "" }));
+  } catch (e) {
     pc.loaded = false;
-    throw new Error(saved?.error || res.statusText);
+    throw e;
   }
   if (seq !== pc.seq) return; // a newer load is on its way
   pc.remoteBusy = !!res.headers.get("X-Chat-Busy");

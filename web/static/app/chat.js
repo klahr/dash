@@ -2,7 +2,7 @@ import { renderMarkdown } from "../editor.js";
 import { $, chatSuggestOn, entering, h, ib } from "./dom.js";
 import * as store from "./store.js";
 import { wsURL } from "./viewport.js";
-import { api, here, on } from "./api.js";
+import { api, here, on, request } from "./api.js";
 import { ask, attempt, busy, copy, fail, toast } from "./dialogs.js";
 import { attachBox, attachThumb } from "./attachments.js";
 import { state } from "./state.js";
@@ -833,9 +833,7 @@ export const chat = makeChat({
 // question it never got to answer is asked again, unless another window's
 // turn is still running.
 export async function loadChat() {
-  const res = await fetch("/api/chat");
-  if (!res.ok) throw new Error(res.statusText);
-  const saved = await res.json();
+  const { data: saved, res } = await request("GET", "/api/chat");
   if (!saved.length || chat.history.length || chat.busy) return;
   chat.reset(saved);
   if (!res.headers.get("X-Chat-Busy")) chat.resumeLast();

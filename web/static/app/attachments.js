@@ -1,5 +1,5 @@
 import { h } from "./dom.js";
-import { here, on } from "./api.js";
+import { here, on, request } from "./api.js";
 import { fail } from "./dialogs.js";
 import { extOf } from "./lightbox.js";
 
@@ -17,13 +17,8 @@ export const uploadFile = (file, prefix = here()) => postFile(on(prefix, "/api/u
 // postFile sends file as the body of a POST to url, its name in ?name=,
 // and returns the JSON answer.
 export async function postFile(url, file) {
-  const res = await fetch(`${url}?name=${encodeURIComponent(file.name || "pasted")}`, {
-    method: "POST", body: file, headers: { "Content-Type": file.type || "application/octet-stream" },
-  });
-  if (res.status === 401) { location.replace("/login.html"); throw new Error("Sign in again to continue."); }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || res.statusText);
-  return data;
+  const path = `${url}?name=${encodeURIComponent(file.name || "pasted")}`;
+  return (await request("POST", path, { body: file, raw: true, prefix: "" })).data;
 }
 
 export function attachThumb(a, onRemove, prefix = here()) {
