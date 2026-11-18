@@ -120,18 +120,31 @@ func (g *Git) runPatch(ctx context.Context, publish bool, projectID, dir string,
 // with a closing note; without it, the run fails with ErrOutputTooLarge.
 func (g *Git) runLimited(ctx context.Context, publish bool, env []string, stdin []byte, limit int, cut bool, projectID, dir, bin string, args ...string) (string, error) {
 	args = stripNUL(args)
-	out := &limitedBuffer{max: limit}
-	err := g.runTo(ctx, publish, env, stdin, out, out, func(err error) error {
-		if out.full {
-			// The command was stopped because its output was cut, not because
-			// of what it did.
-			err = nil
-			if !cut {
-				err = fmt.Errorf("%s %s: %w (over %d MiB)", bin, strings.Join(args, " "), ErrOutputTooLarge, limit>>20)
+	var out *limitedBuffer
+	var err error
+	for attempt := 0; ; attempt++ {
+		out = &limitedBuffer{max: limit}
+		err = g.runTo(ctx, publish, env, stdin, out, out, func(err error) error {
+			if out.full {
+				// The command was stopped because its output was cut, not because
+				// of what it did.
+				err = nil
+				if !cut {
+					err = fmt.Errorf("%s %s: %w (over %d MiB)", bin, strings.Join(args, " "), ErrOutputTooLarge, limit>>20)
+				}
 			}
+			return err
+		}, projectID, dir, bin, args...)
+		if err == nil || out.full || bin != "git" || attempt >= len(configRetryDelays) || !configReadFailed(out.buf.String()) {
+			break
 		}
-		return err
-	}, projectID, dir, bin, args...)
+		select {
+		case <-ctx.Done():
+		case <-time.After(configRetryDelays[attempt]):
+			continue
+		}
+		break
+	}
 	switch {
 	case out.full && !cut:
 		return "", err // not the output: it's cut, and an error message would carry all of it
@@ -142,6 +155,20 @@ func (g *Git) runLimited(ctx context.Context, publish bool, env []string, stdin 
 		return s, &CmdError{Args: append([]string{bin}, args...), Output: s, Err: err}
 	}
 	return strings.TrimSpace(out.buf.String()), nil
+}
+
+// configRetryDelays are the waits before running git again after it failed
+// to read its configuration (see configReadFailed).
+var configRetryDelays = []time.Duration{50 * time.Millisecond, 150 * time.Millisecond, 400 * time.Millisecond, time.Second}
+
+// configReadFailed reports whether git died reading its config files. On
+// Windows that is a race, not a broken repository: while another git process
+// in the same repository renames config.lock over .git/config (git branch -D,
+// git worktree add -b, git config), opening the file fails with "Permission
+// denied". Git reads its config as it starts, before it changes anything, so
+// running it again is safe.
+func configReadFailed(out string) bool {
+	return strings.Contains(out, "unknown error occurred while reading the configuration files")
 }
 
 // runTo runs a command with its stdout and stderr written to the given
