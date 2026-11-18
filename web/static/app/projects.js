@@ -1,5 +1,5 @@
 import { projectGroups as groupProjects, isShared, LABEL_ANY, parseLabels, projectRunnerNames, projectSubtitle, runnerBadge as badgeFor, servesProject, uniqueProjects } from "../groups.js";
-import { $, $$, h, ib, ico, plural, setLabel } from "./dom.js";
+import { $, $$, h, ib, ico, plural, resizeHandle, setLabel } from "./dom.js";
 import { sizeText } from "./lightbox.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
@@ -923,49 +923,17 @@ $(".app").classList.toggle("side-collapsed", store.flag("dash.sideCollapsed"));
 
 // Desktop: drag the sidebar's right edge to resize it, like the chat pane. The
 // width survives collapsing; CSS also caps it at 40vw so main stays usable.
-const SIDE_MIN_W = 180, SIDE_MAX_W = 480;
-function setSideWidth(w, save = true) {
-  w = w == null ? null : Math.min(SIDE_MAX_W, Math.max(SIDE_MIN_W, Math.round(w)));
-  if (w) $(".app").style.setProperty("--side-w-set", `${w}px`);
-  else $(".app").style.removeProperty("--side-w-set");
-  if (save) store.set("dash.sideW", w || null);
-  sideResizeValue();
-}
-// A focusable separator tells screen readers where it is: the sidebar's width.
-function sideResizeValue() {
-  const w = Math.round($(".sidebar").getBoundingClientRect().width);
-  if (w) $("#side-resize").setAttribute("aria-valuenow", w);
-}
+const setSideWidth = resizeHandle($("#side-resize"), $(".sidebar"), {
+  edge: "right",
+  min: 180,
+  max: 480,
+  apply(w, save) {
+    if (w) $(".app").style.setProperty("--side-w-set", `${w}px`);
+    else $(".app").style.removeProperty("--side-w-set");
+    if (save) store.set("dash.sideW", w || null);
+  },
+});
 setSideWidth(Number(store.get("dash.sideW")) || null, false);
-{
-  const handle = $("#side-resize"), panel = $(".sidebar");
-  handle.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    handle.setPointerCapture(e.pointerId);
-    handle.classList.add("dragging");
-    const left = panel.getBoundingClientRect().left;
-    const move = (ev) => setSideWidth(ev.clientX - left, false);
-    const up = () => {
-      handle.removeEventListener("pointermove", move);
-      handle.classList.remove("dragging");
-      setSideWidth(panel.getBoundingClientRect().width);
-    };
-    handle.addEventListener("pointermove", move);
-    handle.addEventListener("pointerup", up, { once: true });
-    handle.addEventListener("pointercancel", up, { once: true });
-  });
-  handle.addEventListener("dblclick", () => setSideWidth(null));
-  handle.addEventListener("focus", sideResizeValue);
-  handle.addEventListener("keydown", (e) => {
-    const step = e.shiftKey ? 64 : 16;
-    const d = e.key === "ArrowRight" ? step : e.key === "ArrowLeft" ? -step : 0;
-    if (!d) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setSideWidth(panel.getBoundingClientRect().width + d);
-  });
-}
 syncMenuBtn();
 export function openProjects() {
   if (desktop.matches && sideCollapsed()) return setPicker(true);

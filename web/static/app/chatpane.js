@@ -1,4 +1,4 @@
-import { $, $$, h, ib, ico } from "./dom.js";
+import { $, $$, h, ib, ico, resizeHandle } from "./dom.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
 import { api, request } from "./api.js";
@@ -490,47 +490,16 @@ $("#pc-clear").addEventListener("click", attempt(async () => {
 }));
 
 // Desktop: drag the pane's left edge to resize it, overlaid or pinned.
-function setChatWidth(w, save = true) {
-  pane.width = w == null ? null : Math.max(CHAT_MIN_W, Math.round(w));
-  if (pane.width) $(".app").style.setProperty("--chat-w", `${pane.width}px`);
-  else $(".app").style.removeProperty("--chat-w");
-  if (save) savePane();
-  chatResizeValue();
-}
-// A focusable separator tells screen readers where it is: the pane's width.
-function chatResizeValue() {
-  const w = Math.round($("#chat-pane").getBoundingClientRect().width);
-  if (w) $("#pc-resize").setAttribute("aria-valuenow", w);
-}
-{
-  const handle = $("#pc-resize"), panel = $("#chat-pane");
-  handle.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    handle.setPointerCapture(e.pointerId);
-    handle.classList.add("dragging");
-    const right = panel.getBoundingClientRect().right;
-    const move = (ev) => setChatWidth(right - ev.clientX, false);
-    const up = () => {
-      handle.removeEventListener("pointermove", move);
-      handle.classList.remove("dragging");
-      setChatWidth(panel.getBoundingClientRect().width);
-    };
-    handle.addEventListener("pointermove", move);
-    handle.addEventListener("pointerup", up, { once: true });
-    handle.addEventListener("pointercancel", up, { once: true });
-  });
-  handle.addEventListener("dblclick", () => setChatWidth(null));
-  handle.addEventListener("focus", chatResizeValue);
-  handle.addEventListener("keydown", (e) => {
-    const step = e.shiftKey ? 64 : 16;
-    const d = e.key === "ArrowLeft" ? step : e.key === "ArrowRight" ? -step : 0;
-    if (!d) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setChatWidth(panel.getBoundingClientRect().width + d);
-  });
-}
+resizeHandle($("#pc-resize"), $("#chat-pane"), {
+  edge: "left",
+  min: CHAT_MIN_W,
+  apply(w, save) {
+    pane.width = w;
+    if (w) $(".app").style.setProperty("--chat-w", `${w}px`);
+    else $(".app").style.removeProperty("--chat-w");
+    if (save) savePane();
+  },
+});
 renderChatPane();
 
 let todoChatId = null;

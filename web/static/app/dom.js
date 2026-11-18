@@ -201,4 +201,53 @@ export function setModelField(f, m) {
   if (m && ![...sel.options].some((o) => o.value === m)) sel.append(h("option", { value: m, "data-custom": "" }, m));
   sel.value = m;
 }
+// resizeHandle makes handle (a focusable role="separator") resize panel: drag
+// it, press the arrow keys (Shift for bigger steps) or double-click to reset.
+// edge is the side of panel the handle sits on, "left" or "right". apply(w,
+// save) sets the width, null for the default, and saves it when save is true;
+// w is already rounded and kept within min and max. The returned function
+// sets the width the same way, so callers can restore a saved one.
+export function resizeHandle(handle, panel, { edge, min, max = Infinity, apply }) {
+  handle.setAttribute("aria-valuemin", min);
+  if (max < Infinity) handle.setAttribute("aria-valuemax", max);
+  // A screen reader hears where the separator is: the panel's width.
+  const value = () => {
+    const w = Math.round(panel.getBoundingClientRect().width);
+    if (w) handle.setAttribute("aria-valuenow", w);
+  };
+  const set = (w, save = true) => {
+    apply(w == null ? null : Math.min(max, Math.max(min, Math.round(w))), save);
+    value();
+  };
+  const width = () => panel.getBoundingClientRect().width;
+  handle.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add("dragging");
+    const r = panel.getBoundingClientRect();
+    const move = (ev) => set(edge === "left" ? r.right - ev.clientX : ev.clientX - r.left, false);
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.classList.remove("dragging");
+      set(width());
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up, { once: true });
+    handle.addEventListener("pointercancel", up, { once: true });
+  });
+  handle.addEventListener("dblclick", () => set(null));
+  handle.addEventListener("focus", value);
+  const grow = edge === "left" ? "ArrowLeft" : "ArrowRight", shrink = edge === "left" ? "ArrowRight" : "ArrowLeft";
+  handle.addEventListener("keydown", (e) => {
+    const step = e.shiftKey ? 64 : 16;
+    const d = e.key === grow ? step : e.key === shrink ? -step : 0;
+    if (!d) return;
+    e.preventDefault();
+    e.stopPropagation();
+    set(width() + d);
+  });
+  return set;
+}
+
 for (const el of $$("[data-icon]")) el.prepend(ico(el.dataset.icon));
