@@ -151,7 +151,7 @@ func (e *sumEnv) activity(t *testing.T, a model.Activity) {
 		a.At = e.clock.Now()
 	}
 	if a.URL == "" {
-		a.URL = "https://dash.example.com/?project=" + a.ProjectID + "&task=" + a.Ref
+		a.URL = "https://dash.example.com/p/" + a.ProjectID + "/tasks/" + a.Ref
 	}
 	if err := e.st.RecordActivity(a); err != nil {
 		t.Fatal(err)
@@ -420,7 +420,7 @@ func TestSummaryEmailAndUnsubscribe(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.activity(t, model.Activity{ProjectID: e.shop.ID, Kind: model.SummaryIssue, Ref: "i1", Title: "Leaked key", Severity: model.SevHigh,
-		URL: "https://dash.example.com/?issue=i1&project=" + e.shop.ID})
+		URL: "https://dash.example.com/p/" + e.shop.ID + "/issues/i1"})
 	e.runAt(time.Date(2026, 11, 17, 7, 0, 30, 0, time.UTC)) // 08:00 in Stockholm
 	if e.mail.count() != 1 {
 		t.Fatal("no email")
@@ -429,7 +429,7 @@ func TestSummaryEmailAndUnsubscribe(t *testing.T) {
 	if m.To != "ana@example.com" || !strings.Contains(m.Subject, "1 new issue") {
 		t.Fatalf("email %q to %q", m.Subject, m.To)
 	}
-	for _, want := range []string{"Shop\n====", "- New issue (high): Leaked key\n  https://dash.example.com/?issue=i1", "(Europe/Stockholm)", "Stop these summaries: https://dash.example.com/api/notify/unsubscribe/"} {
+	for _, want := range []string{"Shop\n====", "- New issue (high): Leaked key\n  https://dash.example.com/p/" + e.shop.ID + "/issues/i1", "(Europe/Stockholm)", "Stop these summaries: https://dash.example.com/api/notify/unsubscribe/"} {
 		if !strings.Contains(m.Body, want) {
 			t.Errorf("body lacks %q:\n%s", want, m.Body)
 		}
@@ -475,11 +475,11 @@ func TestSummaryEmailAndUnsubscribe(t *testing.T) {
 func bigSummary(n int) Summary {
 	s := Summary{PeriodStart: t0.Add(-24 * time.Hour), PeriodEnd: t0, URL: "https://dash.example.com/"}
 	for p := range 2 {
-		sp := SummaryProject{ID: fmt.Sprint("p", p), Name: fmt.Sprint("Project ", p), URL: "https://dash.example.com/?project=p"}
+		sp := SummaryProject{ID: fmt.Sprint("p", p), Name: fmt.Sprint("Project ", p), URL: "https://dash.example.com/p/p"}
 		for i := range n / 2 {
 			sp.Items = append(sp.Items, SummaryItem{Kind: model.SummaryIssue, Severity: model.SevHigh, At: t0,
 				Title: fmt.Sprintf("Issue %d with a rather long title that goes on <and> on for a while", i),
-				URL:   fmt.Sprintf("https://dash.example.com/?project=p%d&issue=i%d", p, i)})
+				URL:   fmt.Sprintf("https://dash.example.com/p/p%d/issues/i%d", p, i)})
 		}
 		s.Projects = append(s.Projects, sp)
 	}
@@ -516,8 +516,8 @@ func TestSummaryFormats(t *testing.T) {
 
 	// Slack: one message, a line per item, grouped by project.
 	text := slackSummary(small)
-	for _, want := range []string{":newspaper: *Dash summary* · 1 new issue, 1 ready for review", "*<https://dash.example.com/?project=p|Project 0>*",
-		":beetle: New issue (high): <https://dash.example.com/?project=p0&amp;issue=i0|Issue 0 with a rather long title that goes on &lt;and&gt; on for a while>",
+	for _, want := range []string{":newspaper: *Dash summary* · 1 new issue, 1 ready for review", "*<https://dash.example.com/p/p|Project 0>*",
+		":beetle: New issue (high): <https://dash.example.com/p/p0/issues/i0|Issue 0 with a rather long title that goes on &lt;and&gt; on for a while>",
 		":eyes: Ready for review: "} {
 		if !strings.Contains(text, want) {
 			t.Errorf("slack lacks %q:\n%s", want, text)
@@ -590,7 +590,7 @@ func TestIssueNewOncePerFingerprint(t *testing.T) {
 	}
 	sort.Slice(issues, func(i, j int) bool { return issues[i]["title"].(string) > issues[j]["title"].(string) }) // deliveries race
 	if len(issues) != 2 || issues[0]["id"] != first.ID || issues[0]["title"] != "Hard-coded key" || issues[0]["severity"] != "high" ||
-		issues[0]["url"] != "https://dash.example.com/?issue="+first.ID+"&project="+e.shop.ID || issues[1]["title"] != "Another" {
+		issues[0]["url"] != "https://dash.example.com/p/"+e.shop.ID+"/issues/"+first.ID || issues[1]["title"] != "Another" {
 		t.Fatalf("issue.new events %v", issues)
 	}
 	if len(old.bodies) != 0 {

@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klahr/dash/internal/applink"
 	"github.com/klahr/dash/internal/branding"
 	"github.com/klahr/dash/internal/httpjson"
 	"github.com/klahr/dash/internal/mail"
@@ -896,9 +897,12 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 				return
 			}
 			login := "/login.html"
-			if strings.HasPrefix(r.URL.Path, "/preview/") || r.URL.Path == "/wall" || a.Domains != nil && strings.HasPrefix(r.URL.Path, "/go/") {
-				// Opening a preview (say from its QR code), or an org's
-				// subdomain, continues there after signing in.
+			if strings.HasPrefix(r.URL.Path, "/preview/") || r.URL.Path == "/wall" || a.Domains != nil && strings.HasPrefix(r.URL.Path, "/go/") ||
+				applink.Is(r.URL.Path) || r.URL.Path == "/" && r.URL.RawQuery != "" {
+				// Opening a preview (say from its QR code), an org's
+				// subdomain, or a link into the app (a task, a card, a
+				// view; or an older /?project=…&task=… one) continues
+				// there after signing in.
 				login += "?next=" + url.QueryEscape(r.URL.RequestURI())
 			}
 			http.Redirect(w, r, login, http.StatusSeeOther)

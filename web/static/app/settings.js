@@ -8,6 +8,7 @@ import { projectIcon, renderProjectHeader, renderProjectList } from "./projects.
 import { agoText, renderBoard } from "./branches.js";
 import { DEFAULT_REVIEW_PROMPT } from "./drawmode.js";
 import { loadClaudeFiles } from "./claudefiles.js";
+import { changed } from "./routes.js";
 import { loadWebhooks } from "./webhooks.js";
 import { loadBoard } from "./backend.js";
 import { renderBoardSettings } from "./boards.js";
@@ -58,6 +59,7 @@ export function openSettings() {
   settingsSnapshot = formSnapshot(f);
   $("#settings-sheet").returnValue = "";
   $("#settings-sheet").showModal();
+  changed("push");
 }
 export let settingsSnapshot = "";
 // markSettingsSaved takes the form as it is now as saved (opening a Claude file won't ask to save it first).

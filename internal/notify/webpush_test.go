@@ -222,7 +222,7 @@ func TestPushDelivery(t *testing.T) {
 	status(fs, n, model.StatusReview, "")
 	g := <-ch
 	if g.payload.Type != model.NotifyReview || g.payload.Title != "Ready for review: Checkout" || g.payload.Body != "Shop" ||
-		g.payload.URL != "/?project=p1&task=t1" || g.payload.Tag != "dash-t1" || len(g.payload.Actions) != 0 {
+		g.payload.URL != "/p/p1/tasks/t1" || g.payload.Tag != "dash-t1" || len(g.payload.Actions) != 0 {
 		t.Fatalf("payload %+v", g.payload)
 	}
 	if g.hdr.Get("Content-Encoding") != "aes128gcm" || g.hdr.Get("TTL") != "86400" || g.hdr.Get("Urgency") != "normal" {

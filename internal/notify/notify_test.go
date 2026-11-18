@@ -27,7 +27,7 @@ func sample() Notification {
 	return Notification{
 		ID: "evt_1", Type: model.NotifyFailed, Time: t0,
 		Project: ProjectRef{ID: "p1", Name: "Shop"},
-		Task:    &TaskRef{ID: "t1", Title: "Fix <checkout> & pay", Status: model.StatusFailed, URL: "https://dash.example.com/?project=p1&task=t1"},
+		Task:    &TaskRef{ID: "t1", Title: "Fix <checkout> & pay", Status: model.StatusFailed, URL: "https://dash.example.com/p/p1/tasks/t1"},
 		Message: "tests failed",
 	}
 }
@@ -61,7 +61,7 @@ func TestJSONPayloadAndSignature(t *testing.T) {
 	task := got["task"].(map[string]any)
 	if got["id"] != "evt_1" || got["type"] != "task.failed" || got["timestamp"] != "2026-11-08T12:00:00Z" || got["created"] != float64(t0.Unix()) ||
 		got["project"].(map[string]any)["name"] != "Shop" ||
-		task["id"] != "t1" || task["title"] != "Fix <checkout> & pay" || task["status"] != "failed" || task["url"] != "https://dash.example.com/?project=p1&task=t1" {
+		task["id"] != "t1" || task["title"] != "Fix <checkout> & pay" || task["status"] != "failed" || task["url"] != "https://dash.example.com/p/p1/tasks/t1" {
 		t.Fatalf("payload %s", body)
 	}
 	if req.Header.Get("Dash-Event") != "task.failed" || req.Header.Get("Dash-Delivery") != "evt_1" || req.Header.Get("Content-Type") != "application/json" {
@@ -82,7 +82,7 @@ func TestSlackPayload(t *testing.T) {
 	if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	want := ":x: *Failed* · <https://dash.example.com/?project=p1&amp;task=t1|Fix &lt;checkout&gt; &amp; pay> in _Shop_\n>tests failed"
+	want := ":x: *Failed* · <https://dash.example.com/p/p1/tasks/t1|Fix &lt;checkout&gt; &amp; pay> in _Shop_\n>tests failed"
 	if got["text"] != want {
 		t.Fatalf("text\n got %q\nwant %q", got["text"], want)
 	}
@@ -378,7 +378,7 @@ func TestEventsAndFiltering(t *testing.T) {
 		Task    TaskRef `json:"task"`
 	}
 	_ = json.Unmarshal([]byte(all.bodies[1]), &p)
-	if p.Message != "tests failed" || p.Task.URL != "https://dash.example.com/?project=p1&task=t1" || p.Task.Title != "Checkout" {
+	if p.Message != "tests failed" || p.Task.URL != "https://dash.example.com/p/p1/tasks/t1" || p.Task.Title != "Checkout" {
 		t.Fatalf("failed payload %s", all.bodies[1])
 	}
 	var b struct {
@@ -492,7 +492,7 @@ func TestTestDelivery(t *testing.T) {
 	if err := n.Test(context.Background(), w); err != nil {
 		t.Fatalf("second test: %v", err)
 	}
-	if r.got[1].Header.Get("Tags") != "wave" || r.got[1].Header.Get("Click") != "https://dash.example.com/?project=p1" {
+	if r.got[1].Header.Get("Tags") != "wave" || r.got[1].Header.Get("Click") != "https://dash.example.com/p/p1" {
 		t.Fatalf("test headers %v", r.got[1].Header)
 	}
 	if len(fs.records) != 2 || fs.records[1] != "a:webhook.test:" {

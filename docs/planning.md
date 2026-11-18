@@ -56,6 +56,9 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
   A card with comments shows how many on the board, by a speech bubble.
 - **Work**: the tasks and goals linked to it, each with its status
 
+**Copy link** in the card's head copies its address, `/planning/cards/<id>`. It opens the card
+for anyone in the org, after signing in if needed (see [Links](links.md)).
+
 ## Dependencies
 
 A card that depends on cards not in **Done** yet shows **Waits for** and how many, on the

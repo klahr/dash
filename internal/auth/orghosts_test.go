@@ -203,6 +203,11 @@ func TestOrgHostSignedOutGoesThroughBase(t *testing.T) {
 	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "https://"+baseDomain+"/go/acme?next=%2Fx%3Fy%3D1" {
 		t.Fatalf("signed-out page: %d %q", w.Code, w.Header().Get("Location"))
 	}
+	// A link into the app (a task) comes back to it, path and query.
+	if w := b.do("GET", orgHost("acme")+"/p/abc/tasks/t1?board=b1", ""); w.Code != http.StatusSeeOther ||
+		w.Header().Get("Location") != "https://"+baseDomain+"/go/acme?next="+url.QueryEscape("/p/abc/tasks/t1?board=b1") {
+		t.Fatalf("signed-out task link: %d %q", w.Code, w.Header().Get("Location"))
+	}
 	// The same for an org that doesn't exist: nothing told.
 	w2 := b.do("GET", orgHost("nosuch")+"/x?y=1", "")
 	if w2.Code != w.Code || strings.Replace(w2.Header().Get("Location"), "nosuch", "acme", 1) != w.Header().Get("Location") {

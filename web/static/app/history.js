@@ -9,6 +9,7 @@ import { baseBranch, projectKey } from "./events.js";
 import { detailBackground } from "./detail.js";
 import { diffImages, diffLines, isDiffImage, parseDiff } from "./drawmode.js";
 import { openRelease } from "./releases.js";
+import { changed } from "./routes.js";
 
 // ------------------------------------------------------------------ history
 // The default branch's commit graph: a dot per commit on coloured lanes, as
@@ -109,7 +110,7 @@ export const commitScroller = () => desktop.matches ? $("#cd-diff") : $("#cd-bod
 
 // selectCommit shows sha in the pane. wait debounces the request, for
 // keys held down; the pane's head shows the graph's row at once meanwhile.
-async function selectCommit(sha, { wait = 0 } = {}) {
+export async function selectCommit(sha, { wait = 0 } = {}) {
   const p = state.project;
   const pane = $("#commit-detail");
   if (!p || (cp.sha === sha && !pane.hidden)) return;
@@ -133,6 +134,7 @@ async function selectCommit(sha, { wait = 0 } = {}) {
   pane.hidden = false;
   setCommitModal();
   renderCommit();
+  changed("push");
   $("#cd-body").scrollTop = 0;
   $("#cd-diff").scrollTop = 0;
   const res = await commitLoad.run((signal) => api("GET", commitAPI(p, sha), undefined, undefined, { signal }), { wait })
@@ -151,6 +153,7 @@ export function closeCommit() {
   const wasOpen = !pane.hidden;
   const sha = cp.sha;
   cp.sha = cp.detail = null;
+  changed("close");
   markSelectedCommit();
   const hide = () => { if (!cp.sha) { pane.hidden = true; setCommitModal(); } };
   if (wasOpen) leave(pane, "closing", hide); else hide();

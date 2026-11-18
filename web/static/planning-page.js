@@ -8,19 +8,21 @@
 // Anyone else is sent to the app, on its Planning view.
 import { $, $$, h, ico } from "./app/dom.js";
 import { api } from "./app/api.js";
-import { attempt, fail } from "./app/dialogs.js";
+import { attempt, fail, toast } from "./app/dialogs.js";
 import * as store from "./app/store.js";
 import { state } from "./app/state.js";
 import { desktop, wsURL } from "./app/viewport.js";
-import { loadPlanning, mountPlanning, onPlanningEvent } from "./app/planning.js";
+import { cardError, cardId, closeCard, loadPlanning, mountPlanning, onPlanningEvent, openCard } from "./app/planning.js";
 import { openAccount } from "./app/accountsheet.js";
 import { showOwnAvatar } from "./app/avatar.js";
 import { accountHooks } from "./app/myaccount.js";
 
 const me = await api("GET", "/api/me", null, "");
+// The card a link opens (/planning/cards/{id} sends a planner here, ?card=<id>).
+const linkedCard = new URLSearchParams(location.search).get("card");
 if (me.org?.role !== "planner") {
   store.set("dash.view", "planning");
-  location.replace("/");
+  location.replace(linkedCard ? `/planning/cards/${encodeURIComponent(linkedCard)}` : "/planning");
 } else {
   start();
 }
@@ -47,6 +49,39 @@ function start() {
   });
   loadPlanning().catch(fail);
   connect();
+  followCards();
+}
+
+// followCards keeps ?card=<id> in the URL on the card open, so Back closes
+// it (a phone's too) and a reload opens it again; it opens the linked card.
+function followCards() {
+  const url = (id) => "/planning.html" + (id ? `?card=${encodeURIComponent(id)}` : "");
+  history.replaceState({ dash: 1 }, "", url(""));
+  let applying = false;
+  const show = async (id) => {
+    applying = true;
+    try {
+      if (!id) closeCard();
+      else if (cardId() !== id) {
+        await openCard(id);
+        if (cardError()) { closeCard(); toast("That card isn't here any more, or you can't see it.", { tone: "error" }); }
+      }
+    } finally { applying = false; }
+  };
+  document.addEventListener("dash:route", () => setTimeout(() => {
+    if (applying) return;
+    const want = url(cardId());
+    if (want === location.pathname + location.search) return;
+    if (!cardId() && history.state?.back === want) history.back();
+    else if (cardId() && !history.state?.back) history.pushState({ dash: 1, back: location.pathname + location.search }, "", want);
+    else history.replaceState(history.state, "", want);
+  }));
+  window.addEventListener("popstate", () => show(new URLSearchParams(location.search).get("card")).catch(fail));
+  if (linkedCard) {
+    show(linkedCard).then(() => {
+      if (cardId()) history.pushState({ dash: 1, back: url("") }, "", url(cardId()));
+    }).catch(fail);
+  }
 }
 
 // showMe shows who is signed in: the account menu (name, picture, the orgs

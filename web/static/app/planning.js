@@ -1,6 +1,7 @@
 import { $, $$, avatar, dateTimeText, fill, h, ib, ico } from "./dom.js";
 import { api } from "./api.js";
-import { EASE, ask, attempt, busy, fail, leave, reduceMotion, toast } from "./dialogs.js";
+import { EASE, ask, attempt, busy, copy, fail, leave, reduceMotion, toast } from "./dialogs.js";
+import { changed, linkTo } from "./routes.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
 import { dropBefore, glide } from "./glide.js";
@@ -183,6 +184,7 @@ export function followProject(id) {
   if (!id || id === pl.filter) return;
   pl.filter = id;
   store.set("dash.planning.project", id);
+  changed("replace");
   if (!pl.root) return; // not mounted yet: mountPlanning reads pl.filter
   if (pl.open && pl.detail?.project_id !== id) closeCard();
   pl.loaded = false;
@@ -229,6 +231,7 @@ function pickFilter(id) {
   pl.filter = id;
   store.set("dash.planning.project", pl.filter);
   renderFilter();
+  changed("replace");
   loadPlanning().catch(fail);
 }
 
@@ -288,6 +291,7 @@ function renderBoard() {
 export function pickTag(tag) {
   pl.tag = tag;
   store.set("dash.planning.tag", tag);
+  changed("replace");
   renderBoard();
   if (pl.open) renderCard();
 }
@@ -773,6 +777,7 @@ export async function openCard(id) {
   markSelected();
   renderCard();
   $("#pd-body").scrollTop = 0;
+  changed("push");
   await loadCard(id);
 }
 
@@ -797,6 +802,7 @@ export function closeCard() {
   const id = pl.open;
   pl.open = pl.detail = null;
   pl.editing = false;
+  changed("close");
   markSelected();
   const hide = () => { if (!pl.open) { pane.hidden = true; pl.root.classList.remove("card-open"); setModal(); } };
   if (!pane.hidden) leave(pane, "closing", hide); else hide();
@@ -808,6 +814,24 @@ export function closeCard() {
   ($(`.pl-card[data-id="${id}"] .pl-open`, pl.root) || (opener?.isConnected ? opener : null))?.focus();
 }
 export const cardOpen = () => !!pl.open;
+// The open card's id (null: none), and why it couldn't be read ("" if it was).
+export const cardId = () => pl.open;
+export const cardError = () => pl.error;
+// planningFilters are the project and tag Planning shows the cards of ("": all).
+export const planningFilters = () => ({ project: pl.filter, tag: pl.tag });
+// setPlanningFilters shows the cards of project and tag (a link's: router.js).
+export function setPlanningFilters(project, tag) {
+  if (project === pl.filter && tag === pl.tag) return;
+  const reload = project !== pl.filter;
+  pl.filter = project;
+  pl.tag = tag;
+  store.set("dash.planning.project", project);
+  store.set("dash.planning.tag", tag);
+  if (!pl.root) return;
+  renderFilter();
+  if (reload) { pl.loaded = false; if (!pl.hooks.visible || pl.hooks.visible()) loadPlanning().catch(fail); }
+  else renderBoard();
+}
 
 // Esc closes the card (not while a dialog over it, or a field in it, has it).
 document.addEventListener("keydown", (e) => {
@@ -986,7 +1010,8 @@ function renderCard() {
   fill($("#pd-actions"),
     ib({ type: "button", class: `btn small ${started ? "" : "primary"}`, title: "Make a task or a goal in a project for this card", onclick: attempt(() => startSheet(c)) }, "play", "Start…"),
     pl.planner ? null : ib({ type: "button", class: "btn small", title: "Link a task or goal that's already on a board", onclick: attempt(() => linkExistingSheet(c)) }, "link", "Link existing…"),
-    ib({ type: "button", class: "btn small", title: "Change the title", onclick: () => { pl.editing = true; renderCard(); $("#pd-edit-title")?.focus(); } }, "edit", "Rename"));
+    ib({ type: "button", class: "btn small", title: "Change the title", onclick: () => { pl.editing = true; renderCard(); $("#pd-edit-title")?.focus(); } }, "edit", "Rename"),
+    ib({ type: "button", class: "btn small", title: "Copy a link that opens this card", onclick: () => copy(linkTo({ view: "planning", card: c.id }), "Link copied") }, "link", "Copy link"));
   const body = $("#pd-body");
   if (pl.error) { fill(body, h("p", { class: "error-note" }, pl.error)); return; }
 

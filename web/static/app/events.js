@@ -1,6 +1,6 @@
 import { $ } from "./dom.js";
 import { wsURL } from "./viewport.js";
-import { api, here, on } from "./api.js";
+import { api, here, on, signIn } from "./api.js";
 import { fail, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { grouped, loadProjects, projectWhere, renderSideProjects, selectProject } from "./projects.js";
@@ -66,7 +66,7 @@ function connectEvents(m) {
     refreshLive();
     // Logged out: go to the login page. Server down or restarting: keep trying.
     const me = await fetch("/api/me").catch(() => null);
-    if (me?.status === 401) { location.replace("/login.html"); return; }
+    if (me?.status === 401) { signIn(); return; }
     // A runner that went offline or was revoked is reconnected by
     // refreshMachines when the hub says it's back.
     if (m.runner) {

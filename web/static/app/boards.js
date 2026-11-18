@@ -5,6 +5,7 @@ import { state } from "./state.js";
 import * as store from "./store.js";
 import { projectKey } from "./events.js";
 import { renderBoard } from "./branches.js";
+import { changed } from "./routes.js";
 
 // ------------------------------------------------------------------ boards
 // A project's tasks are on its Main board or on one of the boards added in
@@ -44,6 +45,7 @@ export function showBoard(id) {
   if (state.project) store.set(boardKey(state.project), id || null);
   state.lane = null;
   renderBoard();
+  changed("replace");
 }
 
 // boardField is a new task's board, for its POST body: the board shown.

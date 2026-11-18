@@ -23,6 +23,7 @@ import { linkToCard } from "./planning.js";
 import { boardName, boardsOf, hasBoards, moveToBoard, onBoard, showBoard } from "./boards.js";
 import { creator } from "./people.js";
 import { avatar } from "./avatar.js";
+import { changed, linkTo } from "./routes.js";
 
 // ------------------------------------------------------------------ detail
 // The panel is modal (a scrim on desktop, full screen on phones): the rest of the
@@ -57,6 +58,7 @@ export async function openDetail(id, { pane = "timeline" } = {}) {
   else $("#d-diff")?.focus({ preventScroll: true });
   $$(".todo.selected").forEach((e) => e.classList.remove("selected"));
   $(`.todo[data-id="${id}"]`)?.classList.add("selected");
+  changed("push");
   await Promise.all([loadDiff(), loadTodoChat()]).catch(fail);
 }
 
@@ -66,6 +68,7 @@ export function closeDetail() {
   const id = state.detail;
   const wasOpen = id && !$("#detail").hidden;
   state.detail = null;
+  if (id) changed("close");
   const hide = () => { if (!state.detail) { $("#detail").hidden = true; $("#scrim").hidden = true; } };
   if (wasOpen) leave($("#detail"), "closing", hide); else hide();
   $$(".todo.selected").forEach((e) => e.classList.remove("selected"));
@@ -81,6 +84,9 @@ export function closeDetail() {
   back?.focus({ preventScroll: false });
 }
 $("#d-close").addEventListener("click", closeDetail);
+// Copy link: the task's URL (routes.js), which opens it for anyone who can see the project.
+export const taskLink = (id) => linkTo({ view: "board", task: id }, state.project);
+$("#d-link").addEventListener("click", () => { if (state.detail) copy(taskLink(state.detail), "Link copied"); });
 $("#scrim").addEventListener("click", closeDetail);
 // Inline editing (desktop) and the phone's task form differ: redraw on crossing the breakpoint.
 desktop.addEventListener("change", () => { if (state.detail) renderDetail(); });

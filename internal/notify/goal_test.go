@@ -53,7 +53,7 @@ func TestGoalNotifications(t *testing.T) {
 	for _, b := range bodies {
 		_ = json.Unmarshal([]byte(b), &p)
 		statuses = append(statuses, p.Goal.ID+":"+string(p.Goal.Status))
-		if p.Goal.Status == model.GoalWaiting && (p.Goal.URL != "https://dash.example.com/?goal=g1&project=p1" || !strings.Contains(p.Message, "plan of 3 tasks")) {
+		if p.Goal.Status == model.GoalWaiting && (p.Goal.URL != "https://dash.example.com/p/p1/goals/g1" || !strings.Contains(p.Message, "plan of 3 tasks")) {
 			t.Fatalf("payload %s", b)
 		}
 	}
@@ -65,7 +65,7 @@ func TestGoalNotifications(t *testing.T) {
 	if note.Head() != "Goal out of budget" || note.subject() != "Faster search" {
 		t.Fatalf("head %q subject %q", note.Head(), note.subject())
 	}
-	if pp := pushPayload(note, nil); pp.Tag != "dash-goal-g1" || !strings.Contains(pp.URL, "goal=g1") {
+	if pp := pushPayload(note, nil); pp.Tag != "dash-goal-g1" || pp.URL != "/p/p1/goals/g1" {
 		t.Fatalf("push %+v", pp)
 	}
 }

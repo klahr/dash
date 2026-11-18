@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/applink"
 	"github.com/klahr/dash/internal/ci"
 	"github.com/klahr/dash/internal/metrics"
 	"github.com/klahr/dash/internal/model"
@@ -558,7 +559,7 @@ func (n *Notifier) goalURL(projectID, goalID string) string {
 	if o == "" {
 		return ""
 	}
-	return o + "/?" + url.Values{"project": {projectID}, "goal": {goalID}}.Encode()
+	return o + applink.Goal(projectID, goalID)
 }
 
 // issueURL opens the issue on the project's Issues page.
@@ -567,7 +568,7 @@ func (n *Notifier) issueURL(projectID, issueID string) string {
 	if o == "" {
 		return ""
 	}
-	return o + "/?" + url.Values{"project": {projectID}, "issue": {issueID}}.Encode()
+	return o + applink.Issue(projectID, issueID)
 }
 
 // taskURL opens the task in Dash's web app.
@@ -576,7 +577,7 @@ func (n *Notifier) taskURL(projectID, todoID string) string {
 	if o == "" {
 		return ""
 	}
-	return o + "/?" + url.Values{"project": {projectID}, "task": {todoID}}.Encode()
+	return o + applink.Task(projectID, todoID)
 }
 
 // TaskTitle is how a task is named: its title, else its prompt's first line.
@@ -602,9 +603,10 @@ func (n *Notifier) Test(ctx context.Context, w model.Webhook) error {
 	note.Message = "This is a test from Dash: this webhook works."
 	note.Task = &TaskRef{ID: "test", Title: "Test notification", Status: model.StatusReview, URL: n.origin(w.ProjectID)}
 	if note.Task.URL != "" {
-		note.Task.URL += "/"
 		if w.ProjectID != "" {
-			note.Task.URL += "?" + url.Values{"project": {w.ProjectID}}.Encode()
+			note.Task.URL += applink.Project(w.ProjectID)
+		} else {
+			note.Task.URL += "/"
 		}
 	}
 	return n.deliver(ctx, w, note, 1)

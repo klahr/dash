@@ -52,8 +52,10 @@ Pick a goal to open it beside the list (full screen with **Back** on a phone). `
 - **Log**: what the coordinator did and why, newest first.
 
 Its buttons: **Review plan** (a plan waits), **Queue drafts** (its drafts wait), **Talk to
-coordinator**, **Pause**, **Resume**, **Edit goal** and **Stop**. **Talk to coordinator** opens the
-goal's chat as a tab in the chat pane; answer its questions there.
+coordinator**, **Pause**, **Resume**, **Edit goal**, **Copy link** and **Stop**. **Talk to
+coordinator** opens the goal's chat as a tab in the chat pane; answer its questions there.
+**Copy link** copies the goal's address, which opens it for anyone in the project (see
+[Links](links.md)).
 
 On a goal task's **Changes** tab, the coordinator's review note shows above the diff. It only
 advises: **Approve** and **Merge** stay yours.

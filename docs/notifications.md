@@ -109,7 +109,7 @@ and how long, and the error if it failed. Deleting a webhook deletes its history
 | `summary`           | your [summary](#summary), to the webhooks you chose for it    |
 
 These are the moments the web app notifies you of. Links point back to the task in Dash
-(`/?project=<id>&task=<id>`); set `-public-url` (or `DASH_PUBLIC_URL`) so they use the address
+(`/p/<project>/tasks/<id>`, see [Links](links.md)); set `-public-url` (or `DASH_PUBLIC_URL`) so they use the address
 people reach Dash at. With org subdomains, links use the project's org subdomain.
 
 ### Formats
@@ -138,7 +138,7 @@ address your phone can reach.
     "id": "0f9e8d7c6b5a",
     "title": "Fix checkout rounding",
     "status": "failed",
-    "url": "https://dash.example.com/?project=a1b2c3d4e5f6&task=0f9e8d7c6b5a"
+    "url": "https://dash.example.com/p/a1b2c3d4e5f6/tasks/0f9e8d7c6b5a"
   },
   "message": "tests failed"
 }
@@ -254,12 +254,12 @@ summary stops after 40 items (or about 3,500 characters) with "and N more" and a
       {
         "id": "a1b2c3d4e5f6",
         "name": "shop",
-        "url": "https://dash.example.com/?project=a1b2c3d4e5f6",
+        "url": "https://dash.example.com/p/a1b2c3d4e5f6",
         "items": [
           { "kind": "issue", "title": "SQL injection in search", "severity": "high",
-            "url": "https://dash.example.com/?issue=9f8e7d6c5b4a&project=a1b2c3d4e5f6", "at": "2026-11-17T15:02:11Z" },
+            "url": "https://dash.example.com/p/a1b2c3d4e5f6/issues/9f8e7d6c5b4a", "at": "2026-11-17T15:02:11Z" },
           { "kind": "failed", "title": "Fix checkout rounding",
-            "url": "https://dash.example.com/?project=a1b2c3d4e5f6&task=0f9e8d7c6b5a", "at": "2026-11-17T16:40:00Z" }
+            "url": "https://dash.example.com/p/a1b2c3d4e5f6/tasks/0f9e8d7c6b5a", "at": "2026-11-17T16:40:00Z" }
         ]
       }
     ]

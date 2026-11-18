@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/applink"
 	"github.com/klahr/dash/internal/buildinfo"
 )
 
@@ -111,12 +113,24 @@ func (s *Server) static() http.Handler {
 	files := http.FileServerFS(s.Static)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
-		// A planner uses Planning only: the app's page sends them to theirs.
-		if (r.URL.Path == "/" || r.URL.Path == "/index.html") && planner(r) {
-			http.Redirect(w, r, "/planning.html", http.StatusFound)
+		// The app's own paths (a view, a task, a card: see applink) are
+		// the app's page, which reads the path.
+		app := r.URL.Path == "/" || r.URL.Path == "/index.html" || applink.Is(r.URL.Path)
+		// A planner uses Planning only: the app's page sends them to
+		// theirs, with the card a link opens.
+		if app && planner(r) {
+			to := "/planning.html"
+			if id, ok := applink.CardID(r.URL.Path); ok {
+				to += "?" + url.Values{"card": {id}}.Encode()
+			}
+			http.Redirect(w, r, to, http.StatusFound)
 			return
 		}
-		if name, ok := pages[r.URL.Path]; ok {
+		name, ok := pages[r.URL.Path]
+		if !ok && app {
+			name, ok = "index.html", true
+		}
+		if ok {
 			b, err := fs.ReadFile(s.Static, name)
 			if err != nil {
 				http.NotFound(w, r)

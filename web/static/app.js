@@ -76,6 +76,8 @@ import "./app/checklist.js";
 import { setMode } from "./app/vim.js";
 import "./app/palette.js";
 import "./app/updates.js";
+import "./app/routes.js";
+import "./app/router.js";
 
 // ------------------------------------------------------------------ boot
 desktop.addEventListener("change", () => { if (state.detail) $("#scrim").hidden = !desktop.matches; });

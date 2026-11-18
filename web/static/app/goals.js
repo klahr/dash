@@ -2,7 +2,7 @@ import { renderMarkdown } from "../editor.js";
 import { $, $$, dateTimeText, fill, h, ib, ico, plural } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api } from "./api.js";
-import { ask, attempt, busy, fail, leave, toast } from "./dialogs.js";
+import { ask, attempt, busy, copy, fail, leave, toast } from "./dialogs.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { eventFor, latest, projectKey } from "./events.js";
 import { agoText, renderBoard, title } from "./branches.js";
@@ -13,6 +13,7 @@ import { fmtTokens } from "./runstats.js";
 import { notifyGoal } from "./notifications.js";
 import { showView } from "./nav.js";
 import { linkToCard } from "./planning.js";
+import { changed, linkTo } from "./routes.js";
 
 // ------------------------------------------------------------------ goals
 // A goal is something bigger than one task: a coordinator (Claude) plans its
@@ -247,6 +248,7 @@ export async function openGoal(id) {
   markSelected();
   renderGoal();
   $("#gd-body").scrollTop = 0;
+  changed("push");
   await loadGoal(id);
 }
 
@@ -272,6 +274,7 @@ export function closeGoal() {
   const wasOpen = !pane.hidden;
   const id = gp.open;
   gp.open = gp.detail = null;
+  changed("close");
   markSelected();
   const hide = () => { if (!gp.open) { pane.hidden = true; setGoalModal(); } };
   if (wasOpen) leave(pane, "closing", hide); else hide();
@@ -339,6 +342,7 @@ function renderGoalActions(g) {
     resumable ? btn("play", "Resume", () => goalAction(g, "resume"), "btn small", g.status === "out_of_budget" ? "Raise the budget first (Edit goal)" : "Go on where it was") : null,
     g.status !== "done" ? btn("edit", "Edit goal", () => openGoalSheet({ goal: g })) : null,
     prefix() ? null : btn("plan", "Link to card", () => linkToCard("goal", g.id), "btn small", "Show this goal's status on a Planning card"),
+    btn("link", "Copy link", () => copy(linkTo({ view: "goals", goal: g.id }, state.project), "Link copied"), "btn small", "Copy a link that opens this goal"),
     g.status !== "done" ? btn("stop", "Stop", () => stopGoal(g), "btn small danger", "End the goal for good; its tasks stay on the board") : null);
 }
 

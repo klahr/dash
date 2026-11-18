@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/dash/internal/applink"
 	"github.com/klahr/dash/internal/metrics"
 	"github.com/klahr/dash/internal/model"
 )
@@ -293,19 +294,22 @@ func pushPayload(n Notification, actions []PushAction) PushPayload {
 		body = append(body, oneLine(n.Message, 300))
 	}
 	p.Body = strings.Join(body, "\n")
-	q := url.Values{}
-	if n.Project.ID != "" && n.Type != model.NotifyDisk {
-		q.Set("project", n.Project.ID)
+	pid := n.Project.ID
+	if n.Type == model.NotifyDisk {
+		pid = ""
+	}
+	if pid != "" {
+		p.URL = applink.Project(pid)
 	}
 	switch {
 	case n.Task != nil && n.Task.ID != "" && n.Type != model.NotifyTest:
-		q.Set("task", n.Task.ID)
+		p.URL = itemURL(pid, n.Task.ID, applink.Task)
 		p.Tag = "dash-" + n.Task.ID
 	case n.Type == model.NotifyGoal && n.Goal != nil:
-		q.Set("goal", n.Goal.ID)
+		p.URL = itemURL(pid, n.Goal.ID, applink.Goal)
 		p.Tag = "dash-goal-" + n.Goal.ID
 	case n.Type == model.NotifyIssue && n.Issue != nil:
-		q.Set("issue", n.Issue.ID)
+		p.URL = itemURL(pid, n.Issue.ID, applink.Issue)
 		p.Tag = "dash-issue-" + n.Issue.ID
 	case n.Type == model.NotifyBuild:
 		p.Tag = "dash-build-" + n.Project.ID
@@ -317,10 +321,16 @@ func pushPayload(n Notification, actions []PushAction) PushPayload {
 	if n.Type == model.NotifyPermission && n.Permission != nil {
 		p.Tag = "dash-perm-" + n.Permission.ID
 	}
-	if len(q) > 0 {
-		p.URL = "/?" + q.Encode()
-	}
 	return p
+}
+
+// itemURL is the app's path to a task, goal or issue of project pid; "/"
+// without a project.
+func itemURL(pid, id string, path func(pid, id string) string) string {
+	if pid == "" {
+		return "/"
+	}
+	return path(pid, id)
 }
 
 // pushRequest builds the request delivering payload to sub, signed with

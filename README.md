@@ -237,6 +237,7 @@ API is `POST /api/projects/{id}/pause` and `POST /api/projects/{id}/resume`.
 - [MCP and the claude.ai connector](docs/mcp.md)
 - [Several computers](docs/several-computers.md)
 - [Use Dash from your phone](docs/phone.md)
+- [Links](docs/links.md): every view, task, goal, commit and Planning card has its own address; Back and Forward work, and **Copy link** shares one
 - [Run as a service](docs/service.md)
 - [Sandbox Claude's runs](docs/sandbox.md): run Claude's tasks and scans in a container or as a user with fewer rights
 - [Releases](docs/releases.md): prebuilt binaries, `dash version`, cutting a release

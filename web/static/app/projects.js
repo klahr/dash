@@ -2,7 +2,9 @@ import { projectGroups as groupProjects, isShared, LABEL_ANY, parseLabels, proje
 import { $, $$, h, ib, ico, plural, setLabel } from "./dom.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
-import { api, deepLink, on } from "./api.js";
+import { api, on } from "./api.js";
+import { changed, findProject, initial } from "./routes.js";
+import { start as startRouter } from "./router.js";
 import { attempt, busy, fail, railOf, reduceMotion, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { showView } from "./nav.js";
@@ -11,7 +13,7 @@ import { restoreBoard } from "./boards.js";
 import { loadTodos, pushDone, renderPushMain } from "./board.js";
 import { renderBoard } from "./branches.js";
 import { ghMark, ghRepoHints, ghRepoLabel, ghRepoRows } from "./github.js";
-import { closeDetail, openDetail } from "./detail.js";
+import { closeDetail } from "./detail.js";
 import { syncPrefs } from "./prefs.js";
 import { loadRunners, openRunners, renderSideRunners, startRunner } from "./runners.js";
 import { loadMe, openOrg, renameOrg, sendInvite, setRequire2FA } from "./account.js";
@@ -29,7 +31,7 @@ import { renderQuick } from "./terminal.js";
 import { loadProcs, loadTry, renderProcs } from "./try.js";
 import { closeCommit, loadGraph, renderGraph } from "./history.js";
 import { loadFiles, renderFile, renderFileTree } from "./files.js";
-import { loadIssues, resetIssues, showIssue } from "./issues.js";
+import { loadIssues, resetIssues } from "./issues.js";
 import { loadScans, resetScans } from "./scans.js";
 import { loadChecklist } from "./checklist.js";
 import { gp, loadGoals, resetGoals, showGoal } from "./goals.js";
@@ -54,15 +56,15 @@ export async function loadProjects() {
   const first = !state.projectsLoaded;
   state.projectsLoaded = true;
   const saved = store.get("dash.project");
-  const link = first ? deepLink : null;
-  const want = (link?.project && state.projects.some((p) => p.id === link.project) ? link.project : null) || projectKey(state.project) || saved;
+  // The first time, the project the page's URL names wins (routes.js); the
+  // router opens the rest of what it names once the project is in.
+  const linked = first ? findProject(state.projects, initial.project) : null;
+  const want = projectKey(linked) || projectKey(state.project) || saved;
   const next = state.projects.find((p) => projectKey(p) === want || p.id === want) || state.projects[0] || null;
   if (projectKey(next) !== projectKey(state.project)) await selectProject(next);
   else { state.project = next; renderProjectHeader(); if (first && !next) renderBoard(); }
   renderProjectList();
-  if (link?.task && next?.id === link.project) { showView("board"); openDetail(link.task).catch(() => {}); }
-  else if (link?.goal && next?.id === link.project) showGoal(link.goal).catch(() => {});
-  else if (link?.issue && next?.id === link.project) showIssue(link.issue).catch(() => {});
+  if (first) startRouter().catch(fail);
 }
 
 
@@ -78,6 +80,7 @@ export async function selectProject(p) {
   state.follow = null;
   closeDetail();
   closeCommit();
+  changed("push");
   if (p) store.set("dash.project", projectKey(p));
   renderProjectHeader();
   refreshLive();

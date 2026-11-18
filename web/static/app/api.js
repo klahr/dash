@@ -9,19 +9,11 @@ import { state } from "./state.js";
 const HUB_ONLY = /^\/api\/(login|logout|me|machines|version|chat|connector|runners|auth|orgs|invitations|push)\b/;
 export const here = () => state.project?.prefix || "";
 
-// Links from notifications open a task, /?project=<id>&task=<id>, a goal, /?project=<id>&goal=<id>,
-// or an issue, /?project=<id>&issue=<id>.
-export const deepLink = (() => {
-  const q = new URLSearchParams(location.search);
-  const link = { project: q.get("project"), task: q.get("task"), goal: q.get("goal"), issue: q.get("issue") };
-  if (!link.project) return null;
-  q.delete("project");
-  q.delete("task");
-  q.delete("goal");
-  q.delete("issue");
-  history.replaceState(null, "", location.pathname + (q.size ? `?${q}` : "") + location.hash);
-  return link;
-})();
+// signIn goes to the sign-in page, which comes back to this page's URL.
+export function signIn() {
+  const here = location.pathname + location.search;
+  location.replace("/login.html" + (here !== "/" ? `?next=${encodeURIComponent(here)}` : ""));
+}
 export const on = (prefix, path) => (HUB_ONLY.test(path) ? path : `${prefix}${path}`);
 
 export async function api(method, path, body, prefix = here(), { signal } = {}) {
@@ -32,7 +24,7 @@ export async function api(method, path, body, prefix = here(), { signal } = {}) 
     signal,
   });
   if (res.status === 401) {
-    location.replace("/login.html");
+    signIn();
     throw new Error("Sign in again to continue.");
   }
   const ct = res.headers.get("content-type") || "";

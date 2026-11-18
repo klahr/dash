@@ -23,13 +23,15 @@ function notice(text) {
   show(noticeCard);
 }
 
-// Only back to a live preview, the wall view, an invitation link or an org's subdomain
-// (/go/<slug>, which checks its own next): anything else could be an open
-// redirect.
+// Only back to a live preview, the wall view, an invitation link, an org's subdomain
+// (/go/<slug>, which checks its own next) or a link into the app (a view, task, goal,
+// commit or card: internal/applink): anything else could be an open redirect.
+const SEG = String.raw`[^/?#\\\x00-\x20\x7f]+`;
+const APP = new RegExp(String.raw`^\/(p\/${SEG}(\/[a-z]+(\/${SEG})?)?|planning(\/cards\/${SEG})?|)(\?[^#\\\x00-\x20\x7f]*)?$`);
 function go() {
   const next = new URLSearchParams(location.search).get("next") || "";
   const ok = /^\/preview\/[a-z0-9-]+(\?|$)/.test(next) || /^\/invite\.html#[A-Za-z0-9_-]+$/.test(next) ||
-    /^\/go\/[a-z0-9-]+(\?|$)/.test(next) || /^\/wall(\?[A-Za-z0-9=&%_-]*)?$/.test(next);
+    /^\/go\/[a-z0-9-]+(\?|$)/.test(next) || /^\/wall(\?[A-Za-z0-9=&%_-]*)?$/.test(next) || APP.test(next);
   location.replace(ok ? next : "/");
 }
 

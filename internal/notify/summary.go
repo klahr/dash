@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/dash/internal/applink"
 	"github.com/klahr/dash/internal/mail"
 	"github.com/klahr/dash/internal/model"
 )
@@ -420,7 +421,7 @@ func (s *Summaries) build(user, org int64, set model.NotifySettings, from, to ti
 		})
 		pu := s.Notifier.origin(p.ID)
 		if pu != "" {
-			pu += "/?" + url.Values{"project": {p.ID}}.Encode()
+			pu += applink.Project(p.ID)
 		}
 		sum.Projects = append(sum.Projects, SummaryProject{ID: p.ID, Name: p.Name, URL: pu, Items: items})
 	}

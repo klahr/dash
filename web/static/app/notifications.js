@@ -8,7 +8,7 @@ import { title } from "./branches.js";
 import { openDetail } from "./detail.js";
 import { projectKey } from "./events.js";
 import { showGoal, waitingGoals } from "./goals.js";
-import { showIssue } from "./issues.js";
+import { go } from "./router.js";
 
 // ------------------------------------------------------------------ notifications & tab title
 export const notifyOn = () => store.flag("dash.notify");
@@ -131,14 +131,7 @@ if (notifyOn()) {
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (e) => {
     if (e.data?.type !== "dash.open") return;
-    const q = new URL(e.data.url, location.origin).searchParams;
-    const p = state.projects.find((x) => x.id === q.get("project"));
-    (async () => {
-      if (p && p.id !== state.project?.id) await selectProject(p);
-      if (q.get("task") && p) { showView("board"); await openDetail(q.get("task")); }
-      else if (q.get("goal") && p) await showGoal(q.get("goal"));
-      else if (q.get("issue") && p) await showIssue(q.get("issue"));
-    })().catch(fail);
+    go(e.data.url).catch(fail); // a link into the app (routes.js), older ones too
   });
 }
 // Tab title shows how many things wait for you: reviews, permission requests

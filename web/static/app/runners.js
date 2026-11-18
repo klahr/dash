@@ -1,6 +1,7 @@
 import { $, fill, h, ib, ico, plural } from "./dom.js";
 import { api } from "./api.js";
 import { art, ask, attempt, fail, reduceMotion, toast } from "./dialogs.js";
+import { changed } from "./routes.js";
 import { state } from "./state.js";
 import * as store from "./store.js";
 import { refreshMachines } from "./events.js";
@@ -1017,6 +1018,7 @@ export async function openRunners(id) {
   await renderRunners();
   const d = $("#runners-sheet");
   if (!d.open) d.showModal();
+  changed("push");
 }
 // Enter in a field (tasks at once, the new runner's name) commits it rather
 // than submitting the sheet's form, which would close it.
@@ -1033,7 +1035,7 @@ async function openAddRunner() {
 // The board of a hub that has no runners yet: what a runner is, how to add one, and what comes after.
 export function welcomeScreen() {
   return [
-    art("img/empty-board.webp", 480, 360),
+    art("/img/empty-board.webp", 480, 360),
     h("p", { class: "empty-title" }, "Welcome to Dash"),
     h("p", {}, "Claude does your tasks on ", h("strong", {}, "runners"), ": computers of yours with git and Claude Code logged in, each using its owner's Claude subscription. ",
 "This dashboard doesn't run Claude itself, so start by adding one: ", h("code", {}, "dash runner"), " on a computer of yours."),

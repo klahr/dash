@@ -1,6 +1,7 @@
 import { $ } from "./dom.js";
 import * as store from "./store.js";
 import { attempt, railOf } from "./dialogs.js";
+import { changed } from "./routes.js";
 
 // ------------------------------------------------------------------ the Account sheet
 // The user's own settings (preferences, two-factor, Google, Connect Claude,
@@ -27,6 +28,7 @@ export async function openAccount(key = lastSection()) {
   remember(current);
   await loaders.get(current)?.();
   if (!sheet.open) sheet.showModal();
+  changed("push");
 }
 
 sheet.addEventListener("railchange", (e) => {

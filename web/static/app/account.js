@@ -1,6 +1,7 @@
 import { $, dateText, dateTimeText, fill, h, ico, plural } from "./dom.js";
 import { api } from "./api.js";
 import { ask, attempt, toast } from "./dialogs.js";
+import { changed } from "./routes.js";
 import { state } from "./state.js";
 import { copyBlock } from "./prefs.js";
 import { loadBilling, offerSubscription, renderOrgBilling } from "./billing.js";
@@ -62,7 +63,7 @@ export async function switchOrg(o) {
   const hosts = state.me?.org_domains;
   if (hosts) { location.assign(`${hosts.base_url}/go/${encodeURIComponent(o.slug)}`); return; }
   await api("POST", "/api/auth/switch-org", { org_id: o.id }, "");
-  location.reload(); // everything on the page belongs to the org it was loaded in
+  location.replace("/"); // everything on the page belongs to the org it was loaded in (its URL too)
 }
 
 const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member", planner: "Planner" };
@@ -77,6 +78,7 @@ export async function openOrg() {
   $("#org-invite-link").hidden = true;
   const d = $("#org-sheet");
   if (!d.open) d.showModal();
+  changed("push");
 }
 
 async function renderOrg() {
@@ -135,7 +137,7 @@ async function renderOrg() {
           self ? "You lose access at once. Someone has to invite you again to come back." : `${m.username} loses access to ${org.org.name} at once.`);
         if (pw == null) return;
         await api("DELETE", `/api/orgs/${org.org.id}/members/${m.id}`, { password: pw }, "");
-        if (self) { location.reload(); return; }
+        if (self) { location.replace("/"); return; }
         toast(`${m.username} removed`);
         await renderOrg();
       }) }, self ? "Leave" : "Remove") : null,

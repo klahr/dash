@@ -14,11 +14,13 @@ import { loadScans } from "./scans.js";
 import { cl, flushChecklist, loadChecklist } from "./checklist.js";
 import { closeGoal, loadGoals } from "./goals.js";
 import { closeCard, planningShown } from "./planning.js";
+import { changed, initial } from "./routes.js";
 
 // ------------------------------------------------------------------ navigation
-export function showView(name) {
+// now: at once, without the transition (Back and Forward: router.js).
+export function showView(name, { now = false } = {}) {
   const apply = () => applyView(name);
-  if (name !== state.view && document.startViewTransition && !reduceMotion.matches) {
+  if (!now && name !== state.view && document.startViewTransition && !reduceMotion.matches) {
     document.startViewTransition(apply);
     return;
   }
@@ -45,6 +47,7 @@ function applyView(name) {
   if (name === "try") requestAnimationFrame(() => enterTry().catch(fail));
   else leaveTry();
   renderTryBack();
+  changed("push");
 }
 // On mobile the chat is a page of its own (the nav's Chat tab): while it is
 // open, Chat is the active section rather than the view under it.
@@ -68,7 +71,9 @@ $$(".nav > button[data-view], .menu-views [data-view]").forEach((b) => b.addEven
   if (b.closest(".menu-views")) setMenu(false);
   showView(b.dataset.view);
 }));
+// The view a link names (routes.js), else the one shown last.
 {
-  const saved = store.get("dash.view");
-  if (saved && $(`.nav > button[data-view="${saved}"]`)) applyView(saved);
+  const linked = initial.named && initial.view;
+  const saved = linked || store.get("dash.view");
+  if (saved && $(linked ? `#view-${saved}` : `.nav > button[data-view="${saved}"]`)) applyView(saved);
 }
