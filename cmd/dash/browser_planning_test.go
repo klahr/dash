@@ -57,6 +57,9 @@ func TestBrowserPlanningBoard(t *testing.T) {
 	b.until("the Planned lane", `document.querySelector("#view-planning .col.active")?.dataset.col === "planned"`,
 		chromedp.Click(chromedp.CSS(`#view-planning .lane-tab[data-col=planned]`)))
 	b.waitJS("its card", fmt.Sprintf(`document.querySelector('#view-planning .col.active .pl-card[data-id=%q]')?.offsetWidth > 0`, c.ID))
+	// The board reaches down to the nav, so a swipe to the next column works
+	// on the empty space below a short column's cards too.
+	b.waitJS("the board below the cards", `!!document.elementFromPoint(innerWidth / 2, innerHeight - 100)?.closest("#pl-board")`)
 }
 
 // Add card turns into a new card to type on: Enter adds it (the first line

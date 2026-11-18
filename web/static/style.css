@@ -3272,6 +3272,15 @@ button.goal-task-open:hover { background: var(--raised); }
 .pl-intro { margin: 0; padding: 0 var(--pad-x) 12px; }
 .pl-board { padding-bottom: 24px; }
 .pl-board .col-body { padding-bottom: 24px; }
+/* On a phone the board fills the screen down to the nav, as the task
+   board's does, so a swipe to the next column (app/planning.js) works below
+   a short column's last card too. planning.html has no bottom nav. */
+@media (max-width: 1023px) {
+  #view-planning.active, .planning-app #planning-main { display: flex; flex-direction: column; min-height: var(--view-h); }
+  .planning-app #planning-main { min-height: calc(100dvh - var(--top-h) - var(--safe-b)); }
+  .page.planning { flex: 1 0 auto; }
+  .pl-board { flex: 1 0 auto; }
+}
 .pl-cards { --pl-gap: 8px; --pl-pad: 12px; display: flex; flex-direction: column; gap: var(--pl-gap); margin: 0; padding: var(--pl-pad); list-style: none; }
 .pl-cards[hidden] { display: none; }
 .pl-card { position: relative; }
