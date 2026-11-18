@@ -1,6 +1,7 @@
 import { $, $$, avatar, dateTimeText, fill, h, ib, ico } from "./dom.js";
 import { api } from "./api.js";
-import { EASE, ask, attempt, busy, copy, fail, leave, openSheet, reduceMotion, toast } from "./dialogs.js";
+import { EASE, ask, attempt, busy, copy, fail, openSheet, reduceMotion, toast } from "./dialogs.js";
+import { detailPane } from "./detailpane.js";
 import { changed, linkTo } from "./routes.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
@@ -50,7 +51,6 @@ const pl = {
   detail: null, // its view, with its discussion
   error: "",
   editing: false,
-  opener: null,
   timer: 0,
   pending: null, // a press on a card that may become a drag
   drag: null, // the card being dragged
@@ -759,27 +759,25 @@ function saveComposer(next) {
 
 // ---- the card's pane
 
-function setModal() {
-  const on = !paneEl().hidden && !desktop.matches;
-  (pl.hooks.background?.() || []).forEach((el) => { el.inert = on; });
-  $("#pd-close").setAttribute("aria-label", desktop.matches ? "Close" : "Back");
-}
-desktop.addEventListener("change", () => { if (pl.open) { setModal(); renderCard(); } });
+const cardPane = detailPane({
+  pane: paneEl,
+  closeBtn: () => $("#pd-close"),
+  background: () => pl.hooks.background?.(),
+  isOpen: () => !!pl.open,
+  rowFor: (id) => $(`.pl-card[data-id="${id}"] .pl-open`, pl.root),
+  onHidden: () => pl.root.classList.remove("card-open"),
+  onViewport: () => renderCard(),
+});
 
 export async function openCard(id) {
   const pane = paneEl();
   if (pl.open === id && !pane.hidden) return;
-  if (pane.hidden) {
-    const a = document.activeElement;
-    pl.opener = a && a !== document.body ? a : null;
-  }
   pl.open = id;
   pl.detail = byId(id) || null;
   pl.error = "";
   pl.editing = false;
-  pane.hidden = false;
   pl.root.classList.add("card-open");
-  setModal();
+  cardPane.open();
   markSelected();
   renderCard();
   $("#pd-body").scrollTop = 0;
@@ -804,20 +802,12 @@ async function loadCard(id) {
 
 export function closeCard() {
   if (!pl.open) return;
-  const pane = paneEl();
   const id = pl.open;
   pl.open = pl.detail = null;
   pl.editing = false;
   changed("close");
   markSelected();
-  const hide = () => { if (!pl.open) { pane.hidden = true; pl.root.classList.remove("card-open"); setModal(); } };
-  if (!pane.hidden) leave(pane, "closing", hide); else hide();
-  (pl.hooks.background?.() || []).forEach((el) => { el.inert = false; });
-  const opener = pl.opener;
-  pl.opener = null;
-  const a = document.activeElement;
-  if (a && a !== document.body && !pane.contains(a)) return;
-  ($(`.pl-card[data-id="${id}"] .pl-open`, pl.root) || (opener?.isConnected ? opener : null))?.focus();
+  cardPane.close(id);
 }
 export const cardOpen = () => !!pl.open;
 // The open card's id (null: none), and why it couldn't be read ("" if it was).

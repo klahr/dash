@@ -3,7 +3,8 @@ import { latestOnly } from "../commitnav.js";
 import { $, $$, dateTimeText, fill, h, ib, ico, plural } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api } from "./api.js";
-import { copy, fail, leave } from "./dialogs.js";
+import { copy, fail } from "./dialogs.js";
+import { detailPane } from "./detailpane.js";
 import { cp, hist, state } from "./state.js";
 import { baseBranch, projectKey } from "./events.js";
 import { detailBackground } from "./detail.js";
@@ -98,11 +99,14 @@ const commitLoad = latestOnly();
 const commitAPI = (p, sha) => `/api/projects/${p.id}/commits/${sha}`;
 
 // The modal parts apply on a phone only, where the pane covers everything.
-function setCommitModal() {
-  const on = !$("#commit-detail").hidden && !desktop.matches;
-  detailBackground().forEach((el) => { el.inert = on; });
-  $("#cd-close").setAttribute("aria-label", desktop.matches ? "Close" : "Back");
-}
+const commitPane = detailPane({
+  pane: () => $("#commit-detail"),
+  closeBtn: () => $("#cd-close"),
+  background: () => detailBackground(), // detail.js imports this module: read it when called
+  isOpen: () => !!cp.sha,
+  rowFor: (sha) => $(`#graph li[data-hash="${sha}"] .graph-commit`),
+  onViewport: () => renderCommit(),
+});
 
 // What Ctrl-d/u scroll with a commit open: the diff beside the file list on
 // a desktop, the whole pane on a phone.
@@ -114,10 +118,6 @@ export async function selectCommit(sha, { wait = 0 } = {}) {
   const p = state.project;
   const pane = $("#commit-detail");
   if (!p || (cp.sha === sha && !pane.hidden)) return;
-  if (pane.hidden) {
-    const a = document.activeElement;
-    cp.opener = a && a !== document.body ? a : null;
-  }
   // A file list that had focus gets it back once the next commit's files are in.
   cp.listFocus = $("#cd-files").contains(document.activeElement);
   cp.sha = sha;
@@ -131,8 +131,7 @@ export async function selectCommit(sha, { wait = 0 } = {}) {
   cp.diffs?.abort();
   cp.diffs = new AbortController();
   markSelectedCommit();
-  pane.hidden = false;
-  setCommitModal();
+  commitPane.open();
   renderCommit();
   changed("push");
   $("#cd-body").scrollTop = 0;
@@ -149,25 +148,13 @@ export function closeCommit() {
   if (!cp.sha) return;
   commitLoad.cancel();
   cp.diffs?.abort();
-  const pane = $("#commit-detail");
-  const wasOpen = !pane.hidden;
   const sha = cp.sha;
   cp.sha = cp.detail = null;
   changed("close");
   markSelectedCommit();
-  const hide = () => { if (!cp.sha) { pane.hidden = true; setCommitModal(); } };
-  if (wasOpen) leave(pane, "closing", hide); else hide();
-  detailBackground().forEach((el) => { el.inert = false; });
-  // Focus goes back to the row only if it was in the pane (or lost).
-  const opener = cp.opener;
-  cp.opener = null;
-  const a = document.activeElement;
-  if (!wasOpen || (a && a !== document.body && !pane.contains(a))) return;
-  const row = $(`#graph li[data-hash="${sha}"] .graph-commit`);
-  (row || (opener?.isConnected ? opener : null))?.focus();
+  commitPane.close(sha);
 }
 $("#cd-close").addEventListener("click", closeCommit);
-desktop.addEventListener("change", () => { if (cp.sha) { setCommitModal(); renderCommit(); } });
 
 function markSelectedCommit() {
   $$("#graph li.selected").forEach((li) => {

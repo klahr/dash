@@ -29,6 +29,7 @@ import "./app/boards.js";
 import { renderBoard } from "./app/branches.js";
 import "./app/activity.js";
 import "./app/todos.js";
+import "./app/detailpane.js";
 import "./app/detail.js";
 import "./app/inlineedit.js";
 import "./app/preview.js";

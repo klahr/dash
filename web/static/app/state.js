@@ -56,7 +56,7 @@ export const DAY = 24 * 3600 * 1000;
 // The History graph as last drawn, and the commit its pane shows (see "commit pane").
 export const hist = { commits: [], byHash: new Map(), remote: "" };
 // file: the path selected in the desktop file list; texts: the open commit's loaded diffs.
-export const cp = { sha: null, project: null, detail: null, error: "", opener: null, diffs: null, file: null, texts: new Map(), msgOpen: false, listFocus: false };
+export const cp = { sha: null, project: null, detail: null, error: "", diffs: null, file: null, texts: new Map(), msgOpen: false, listFocus: false };
 
 // arrayOf keeps stored data that isn't a list (stale or tampered) from breaking startup.
 function arrayOf(v) { return Array.isArray(v) ? v : []; }

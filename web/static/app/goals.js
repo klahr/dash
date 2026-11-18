@@ -2,7 +2,8 @@ import { renderMarkdown } from "../editor.js";
 import { $, $$, dateTimeText, fill, h, ib, ico, plural } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api } from "./api.js";
-import { ask, attempt, busy, copy, fail, leave, toast } from "./dialogs.js";
+import { ask, attempt, busy, copy, fail, toast } from "./dialogs.js";
+import { detailPane } from "./detailpane.js";
 import { STATUS_LABEL, state } from "./state.js";
 import { eventFor, latest, projectKey } from "./events.js";
 import { agoText, renderBoard, title } from "./branches.js";
@@ -44,7 +45,6 @@ export const gp = {
   set open(v) { state.goalOpen = v; },
   detail: null,    // that goal in full (with its log)
   error: "",
-  opener: null,
   editing: null,   // the goal the sheet edits (null: a new one)
   planFor: new Set(), // goals made here: their first plan opens by itself once it is in
 };
@@ -221,11 +221,14 @@ export function goalTaskChanged(t) {
 
 // ------------------------------------------------------------------ the goal pane
 // Open: beside the list on a desktop (not modal), full screen on a phone.
-function setGoalModal() {
-  const on = !$("#goal-detail").hidden && !desktop.matches;
-  detailBackground().forEach((el) => { el.inert = on; });
-  $("#gd-close").setAttribute("aria-label", desktop.matches ? "Close" : "Back");
-}
+const goalPane = detailPane({
+  pane: () => $("#goal-detail"),
+  closeBtn: () => $("#gd-close"),
+  background: () => detailBackground(), // detail.js imports this module: read it when called
+  isOpen: () => !!gp.open,
+  rowFor: (id) => $(`#goal-list li[data-id="${id}"] .goal-open`),
+  onViewport: () => renderGoal(),
+});
 
 // showGoal goes to the Goals page with goal id open (a toast's Open, a notification).
 export async function showGoal(id) {
@@ -236,15 +239,10 @@ export async function showGoal(id) {
 export async function openGoal(id) {
   const pane = $("#goal-detail");
   if (gp.open === id && !pane.hidden) return;
-  if (pane.hidden) {
-    const a = document.activeElement;
-    gp.opener = a && a !== document.body ? a : null;
-  }
   gp.open = id;
   gp.detail = state.goals.get(id) || null;
   gp.error = "";
-  pane.hidden = false;
-  setGoalModal();
+  goalPane.open();
   markSelected();
   renderGoal();
   $("#gd-body").scrollTop = 0;
@@ -270,24 +268,13 @@ async function loadGoal(id) {
 export function closeGoal() {
   if (!state.goalOpen) return;
   clearTimeout(detailTimer);
-  const pane = $("#goal-detail");
-  const wasOpen = !pane.hidden;
   const id = gp.open;
   gp.open = gp.detail = null;
   changed("close");
   markSelected();
-  const hide = () => { if (!gp.open) { pane.hidden = true; setGoalModal(); } };
-  if (wasOpen) leave(pane, "closing", hide); else hide();
-  detailBackground().forEach((el) => { el.inert = false; });
-  const opener = gp.opener;
-  gp.opener = null;
-  const a = document.activeElement;
-  if (!wasOpen || (a && a !== document.body && !pane.contains(a))) return;
-  const row = $(`#goal-list li[data-id="${id}"] .goal-open`);
-  (row || (opener?.isConnected ? opener : null))?.focus();
+  goalPane.close(id);
 }
 $("#gd-close").addEventListener("click", closeGoal);
-desktop.addEventListener("change", () => { if (gp.open) { setGoalModal(); renderGoal(); } });
 
 function markSelected() {
   for (const li of $$("#goal-list li")) {
