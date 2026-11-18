@@ -148,13 +148,51 @@ func TestActiveWorkWithoutFiles(t *testing.T) {
 	}
 }
 
+// testsBoard is a board that runs a task's tests (TestRunner).
+type testsBoard struct {
+	*workBoard
+	got   string
+	tests model.Checks
+}
+
+func (b *testsBoard) RunTests(id string) (model.Checks, error) {
+	b.got = id
+	return b.tests, nil
+}
+
 func TestTaskTools(t *testing.T) {
-	tools := TaskTools(newWorkBoard(), Options{Project: "web", Todo: "self"})
-	var names []string
-	for _, tl := range tools {
-		names = append(names, tl.Name)
+	names := func(tools []Tool) string {
+		var ns []string
+		for _, tl := range tools {
+			ns = append(ns, tl.Name)
+		}
+		return strings.Join(ns, ",")
 	}
-	if strings.Join(names, ",") != strings.Join(TaskToolNames, ",") {
-		t.Fatalf("task tools %v, names %v", names, TaskToolNames)
+	if got, want := names(TaskTools(newWorkBoard(), Options{Project: "web", Todo: "self"})), strings.Join(TaskToolNames[:len(TaskToolNames)-1], ","); got != want {
+		t.Fatalf("task tools %s, want %s", got, want)
+	}
+	tb := &testsBoard{workBoard: newWorkBoard()}
+	tools := TaskTools(tb, Options{Project: "web", Todo: "self"})
+	if got := names(tools); got != strings.Join(TaskToolNames, ",") {
+		t.Fatalf("task tools %s, names %v", got, TaskToolNames)
+	}
+	if got := names(TaskTools(tb, Options{Project: "web"})); strings.Contains(got, RunTestsTool) {
+		t.Fatalf("run_tests outside a task: %s", got)
+	}
+
+	run := tools[len(tools)-1]
+	tb.tests = model.Checks{Command: "make test", Passed: true, Duration: 3, Output: "ok", Tree: "t1"}
+	got, err := run.Run(Args{})
+	if err != nil || tb.got != "self" || !strings.Contains(got.(string), "The tests passed (3s): `make test`.") ||
+		!strings.Contains(got.(string), "doesn't run them again") || !strings.Contains(got.(string), "```\nok\n```") {
+		t.Fatalf("run_tests passed: %v %q (task %q)", err, got, tb.got)
+	}
+	tb.tests = model.Checks{Command: "make test", ExitCode: 2, Output: "FAIL x"}
+	if got, err = run.Run(Args{}); err != nil || !strings.Contains(got.(string), "The tests failed (exit 2") || strings.Contains(got.(string), "again") {
+		t.Fatalf("run_tests failed: %v %q", err, got)
+	}
+	tb.tests = model.Checks{Command: "make test", Passed: true}
+	if got, err = run.Run(Args{}); err != nil || !strings.Contains(got.(string), "Files changed while they ran") {
+		t.Fatalf("run_tests on changing files: %v %q", err, got)
 	}
 }

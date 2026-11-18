@@ -81,7 +81,7 @@ export function renderChecks(t) {
   if (!c) return;
   st.className = `checks-state ${c.passed ? "pass" : "fail"}`;
   st.textContent = c.passed ? "Tests pass" : `Tests fail (exit ${c.exit_code})`;
-  const when = { merge: `before merging into ${baseBranch(state.project) || "main"}`, manual: "run by hand" }[c.stage] || "before review";
+  const when = { merge: `before merging into ${baseBranch(state.project) || "main"}`, manual: "run by hand", session: "run by Claude through Dash" }[c.stage] || "before review";
   $("#d-checks-meta").textContent = `${when} · ${Math.round(c.duration_s)}s`;
   $("#d-checks-output").textContent = `$ ${c.command}\n\n${c.output || "No output."}`;
   if (!c.passed && box.dataset.todo !== t.id) box.open = true;

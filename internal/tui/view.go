@@ -486,7 +486,7 @@ func (a *App) renderDetail() string {
 			if !c.Passed {
 				state = styleErr.Render(fmt.Sprintf("failed (exit %d)", c.ExitCode))
 			}
-			text = fmt.Sprintf("%s  %s · %.0fs\n$ %s\n\n%s", state, map[string]string{"merge": "after merging the default branch", "review": "before review"}[c.Stage], c.Duration, c.Command, c.Output)
+			text = fmt.Sprintf("%s  %s · %.0fs\n$ %s\n\n%s", state, map[string]string{"merge": "after merging the default branch", "review": "before review", "manual": "run by hand", "session": "run by Claude through Dash"}[c.Stage], c.Duration, c.Command, c.Output)
 		} else {
 			text = styleDim.Render("No test run yet. Set a test command with the web UI's project settings.")
 		}

@@ -106,6 +106,12 @@ func (s *Server) toHubBoard(w http.ResponseWriter, r *http.Request, sc mcptools.
 		http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
 		return true
 	}
+	if hubTodo != "" && callsTool(body, mcptools.RunTestsTool) {
+		// The task's worktree is here: its tests run here, not on the hub.
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		s.boardHandler().Serve(w, r, sc)
+		return true
+	}
 	ctx := r.Context()
 	if sc.Hub && sc.HubGoal != "" {
 		ctx = tunnel.WithBoardGoal(ctx, sc.HubGoal) // the hub serves that goal's tools
@@ -124,6 +130,18 @@ func (s *Server) toHubBoard(w http.ResponseWriter, r *http.Request, sc mcptools.
 	w.WriteHeader(res.StatusCode)
 	_, _ = io.Copy(w, res.Body)
 	return true
+}
+
+// callsTool reports whether body, an MCP request, calls the tool name.
+func callsTool(body []byte, name string) bool {
+	var req mcptools.Request
+	if json.Unmarshal(body, &req) != nil || req.Method != "tools/call" {
+		return false
+	}
+	var p struct {
+		Name string `json:"name"`
+	}
+	return json.Unmarshal(req.Params, &p) == nil && p.Name == name
 }
 
 // runnerBoard handles POST /runner/mcp/dash on a hub: the board tool calls
@@ -379,6 +397,18 @@ func (b board) Todo(id string) (model.Todo, error) {
 // WorkFiles lists the files task t changes, for active_work.
 func (b board) WorkFiles(t model.Todo) ([]string, error) {
 	return b.sv.workFiles(context.Background(), t)
+}
+
+// RunTests runs the tests of task id, running here, for its Claude
+// session (run_tests).
+func (b board) RunTests(id string) (model.Checks, error) {
+	if b.sv.s.Todos == nil {
+		return model.Checks{}, errors.New("this Dash runs no tasks")
+	}
+	if _, err := b.Todo(id); err != nil {
+		return model.Checks{}, err
+	}
+	return b.sv.s.Todos.SessionTests(id)
 }
 
 func (b board) CreateTodo(projectID string, t mcptools.NewTodo) (model.Todo, error) {

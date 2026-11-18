@@ -11,7 +11,7 @@ Each project has its own queue, so a long test run in one project never holds up
    A conflict sends the task back to Claude to resolve. Once fixed, it returns to the queue
    without another review.
 3. **Test.** The project's **Test command** runs on the result, unless it already passed on
-   exactly that commit. Failing tests go back to Claude the same way, so a red build never lands.
+   exactly that code (the same commit, or the same files). Failing tests go back to Claude the same way, so a red build never lands.
 4. **Land.** Dash squashes the branch onto the default branch (one commit per task) and pushes
    it, or, in pull request mode, pushes the branch and opens a pull request (see
    [GitHub](github.md)).

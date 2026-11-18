@@ -98,6 +98,15 @@ func (pb projectBoard) WorkFiles(t model.Todo) ([]string, error) {
 	return pb.b.WorkFiles(t)
 }
 
+// RunTests runs the tests of task id, of this project, for its Claude
+// session.
+func (pb projectBoard) RunTests(id string) (model.Checks, error) {
+	if _, err := pb.todo(id); err != nil {
+		return model.Checks{}, err
+	}
+	return pb.b.RunTests(id)
+}
+
 func (pb projectBoard) CreateTodo(projectID string, t mcptools.NewTodo) (model.Todo, error) {
 	if err := pb.check(projectID); err != nil {
 		return model.Todo{}, err

@@ -76,6 +76,10 @@ func TestTaskRunGetsOnlyTaskTools(t *testing.T) {
 	if isErr || !strings.Contains(text, "Unescaped HTML in footer") {
 		t.Fatalf("list: %s", text)
 	}
+	// run_tests only runs the tests of a task running here.
+	if text, isErr := callResult(t, rpc(h, token, "tools/call", `{"name":"run_tests","arguments":{}}`)); !isErr {
+		t.Fatalf("run_tests for a task that isn't running: %s", text)
+	}
 	// Other board tools aren't served to a task.
 	if w := rpc(h, token, "tools/call", `{"name":"create_todo","arguments":{"title":"x"}}`); !strings.Contains(w.Body.String(), "unknown tool") {
 		t.Fatalf("create_todo from a task: %s", w.Body)

@@ -497,11 +497,11 @@ func (m *MergeQueue) testMerged(ctx context.Context, t model.Todo, p model.Proje
 	if p.TestCommand == "" {
 		return t, false, nil
 	}
-	head, err := m.Git.Head(ctx, p.ID, wt.Path, "HEAD")
+	head, tree, err := testedState(ctx, m.Git, p.ID, wt.Path)
 	if err != nil {
 		return t, true, err
 	}
-	if checksPassedOn(t.Checks, p.TestCommand, head) {
+	if checksPassedOn(t.Checks, p.TestCommand, head, tree) {
 		return t, false, nil
 	}
 	checks := runChecks(ctx, m.Git, m.Log, m.Shared, t, p, wt.Path, "merge", m.TestTimeout)

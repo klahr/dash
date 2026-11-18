@@ -120,6 +120,21 @@ func TestRunnerTaskReportsIssuesToTheHub(t *testing.T) {
 		t.Errorf("the runner's own board got %d issues", n)
 	}
 
+	// run_tests runs where the task's worktree is: on the runner, not the hub.
+	toHub := runner.HubBoard
+	hubCalls := 0
+	runner.HubBoard = func(ctx context.Context, hubTodo, hubProject string, body []byte) (*http.Response, error) {
+		hubCalls++
+		return toHub(ctx, hubTodo, hubProject, body)
+	}
+	if text, isErr := call(t, h, token, "run_tests", `{}`); !isErr || !strings.Contains(text, "isn't running on this computer") {
+		t.Errorf("run_tests of a task not running: %s", text)
+	}
+	if hubCalls != 0 {
+		t.Errorf("run_tests went to the hub %d times", hubCalls)
+	}
+	runner.HubBoard = toHub
+
 	_, notSent := sentHere("another-runner")
 	token2, release2 := runner.Board.RegisterTask(chatCaller(t, runner), rp.ID, notSent.ID)
 	defer release2()

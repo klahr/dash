@@ -58,7 +58,7 @@ func TestRunChecksRecordsCleanCommit(t *testing.T) {
 	if !c.Passed || c.Commit != head {
 		t.Fatalf("want passing checks on %s, got passed=%v commit=%q", head, c.Passed, c.Commit)
 	}
-	if !checksPassedOn(&c, p.TestCommand, head) {
+	if !checksPassedOn(&c, p.TestCommand, head, "") {
 		t.Error("checks that passed on HEAD should be reused for HEAD")
 	}
 }
@@ -77,7 +77,14 @@ func TestRunChecksOnUncommittedChangesRecordNoCommit(t *testing.T) {
 	if !c.Passed || c.Commit != "" {
 		t.Fatalf("want passing checks with no commit, got passed=%v commit=%q", c.Passed, c.Commit)
 	}
-	if checksPassedOn(&c, p.TestCommand, head) {
+	headTree, err := h.git.Head(context.Background(), p.ID, wt, "HEAD^{tree}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Tree == "" || c.Tree == headTree {
+		t.Fatalf("want the dirty tree recorded, got %q (HEAD's files: %q)", c.Tree, headTree)
+	}
+	if checksPassedOn(&c, p.TestCommand, head, headTree) {
 		t.Error("checks on a dirty tree must not be reused for HEAD")
 	}
 }
@@ -105,34 +112,41 @@ func TestRunChecksWhileHeadMovesRecordNoCommit(t *testing.T) {
 	if after == head {
 		t.Fatal("the test command should have moved HEAD")
 	}
-	if checksPassedOn(&c, p.TestCommand, head) || checksPassedOn(&c, p.TestCommand, after) {
-		t.Error("checks during which HEAD moved must not be reused")
+	if checksPassedOn(&c, p.TestCommand, head, "") || checksPassedOn(&c, p.TestCommand, after, "") {
+		t.Error("checks during which HEAD moved must not be reused by commit")
+	}
+	// The empty commit didn't change a file: the same tree is the same code.
+	if tree := workTree(context.Background(), h.git, p.ID, wt); !checksPassedOn(&c, p.TestCommand, after, tree) {
+		t.Errorf("checks on unchanged files should be reused for them (tree %q, checks' %q)", tree, c.Tree)
 	}
 }
 
 func TestChecksPassedOn(t *testing.T) {
-	ok := model.Checks{Command: "make test", Passed: true, Commit: "abc"}
-	if !checksPassedOn(&ok, "make test", "abc") {
+	ok := model.Checks{Command: "make test", Passed: true, Commit: "abc", Tree: "t1"}
+	if !checksPassedOn(&ok, "make test", "abc", "") {
 		t.Error("passing checks on the same commit and command should be reused")
 	}
-	noCommit := ok
-	noCommit.Commit = ""
+	if !checksPassedOn(&ok, "make test", "def", "t1") {
+		t.Error("passing checks on the same files should be reused on another commit")
+	}
+	none := ok
+	none.Commit, none.Tree = "", ""
 	failed := ok
 	failed.Passed = false
 	for name, tc := range map[string]struct {
-		c       *model.Checks
-		command string
-		commit  string
+		c            *model.Checks
+		command      string
+		commit, tree string
 	}{
-		"nil checks":         {nil, "make test", "abc"},
-		"no commit":          {&noCommit, "make test", "abc"},
-		"no commit, empty":   {&noCommit, "make test", ""},
-		"other command":      {&ok, "go test ./...", "abc"},
-		"other commit":       {&ok, "make test", "def"},
-		"failed":             {&failed, "make test", "abc"},
-		"empty commit asked": {&ok, "make test", ""},
+		"nil checks":         {nil, "make test", "abc", "t1"},
+		"no commit or tree":  {&none, "make test", "abc", "t1"},
+		"none, empty":        {&none, "make test", "", ""},
+		"other command":      {&ok, "go test ./...", "abc", "t1"},
+		"other commit, tree": {&ok, "make test", "def", "t2"},
+		"failed":             {&failed, "make test", "abc", "t1"},
+		"nothing asked":      {&ok, "make test", "", ""},
 	} {
-		if checksPassedOn(tc.c, tc.command, tc.commit) {
+		if checksPassedOn(tc.c, tc.command, tc.commit, tc.tree) {
 			t.Errorf("%s: checksPassedOn = true, want false", name)
 		}
 	}

@@ -166,7 +166,7 @@ status except running or merging.
 
 ## A task's tools
 
-A task's own Claude run gets three `dash_board` tools, in its project only, and calls them
+A task's own Claude run gets these `dash_board` tools, in its project only, and calls them
 without asking:
 
 - `list_issues` and `report_issue`: the project's Issues list. Claude reports problems it notices
@@ -176,6 +176,11 @@ without asking:
   prompt, and the files it has changed so far compared with the branch it lands on (a running
   task's uncommitted changes too). With `paths`, it lists only the tasks changing those files or
   files under those folders.
+- `run_tests`: runs the project's **Test command** in the task's worktree, through Dash, and
+  returns the exit code and the last lines of output. The run shows in the task's log. When it
+  passes and Claude changes no file afterwards, Dash doesn't run the tests again when Claude
+  finishes: the log says "✔ tests already passed on <commit>; not running them again". On a
+  runner, a hub's task runs it on the runner, where its worktree is.
 
 On a hub, `active_work` covers the whole project: the hub lists the tasks on all its runners and
 asks each task's runner for its files. A runner that can't be reached shows its tasks' files as
@@ -183,7 +188,8 @@ unknown. An older runner only reports the files its task has committed.
 
 The task's system prompt tells Claude to call `active_work` before larger edits to shared files,
 and, where another task already changes a file, to keep its own changes there small or mention
-the overlap in its summary.
+the overlap in its summary. When the project has a **Test command**, it also tells Claude to run
+it with `run_tests` rather than in its own shell.
 
 Each call is recorded. The calling task's log gets "👀 Checked other work: #12, #15", with links
 to those tasks. The card of each task the call listed gets a "↔" link marker, and both tasks'

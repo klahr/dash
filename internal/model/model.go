@@ -717,17 +717,24 @@ type GoalNote struct {
 
 // Checks is the outcome of running the project's test command in a worktree.
 type Checks struct {
-	Command  string    `json:"command"`
-	Passed   bool      `json:"passed"`
-	ExitCode int       `json:"exit_code"`
-	Output   string    `json:"output"` // tail of combined stdout/stderr
-	Stage    string    `json:"stage"`  // "review" (before review) | "merge" (in the merge queue, before landing) | "manual"
+	Command  string `json:"command"`
+	Passed   bool   `json:"passed"`
+	ExitCode int    `json:"exit_code"`
+	Output   string `json:"output"` // tail of combined stdout/stderr
+	// "review" (before review) | "merge" (in the merge queue, before
+	// landing) | "manual" | "session" (Claude's run_tests, while it works)
+	Stage    string    `json:"stage"`
 	At       time.Time `json:"at"`
 	Duration float64   `json:"duration_s"`
 	// Commit is the worktree's commit the checks ran on, when it had no
-	// uncommitted changes to tracked files ("" otherwise). The merge queue
-	// runs the checks again unless they passed on the commit it lands.
+	// uncommitted changes to tracked files ("" otherwise).
 	Commit string `json:"commit,omitempty"`
+	// Tree is the git tree of the worktree's files the checks ran on, when
+	// they didn't change while the checks ran ("" otherwise): uncommitted
+	// changes included, so a run before Dash commits Claude's work counts
+	// for the commit. Before review and before landing, Dash runs the checks
+	// again unless they passed on that commit or that tree.
+	Tree string `json:"tree,omitempty"`
 }
 
 // Attachment is an uploaded file attached to a todo or a rework note.

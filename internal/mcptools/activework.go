@@ -15,8 +15,12 @@ import (
 // project's other tasks (ActiveWork).
 const ActiveWorkTool = "active_work"
 
-// TaskToolNames are what a running task gets (TaskTools).
-var TaskToolNames = append(slices.Clone(IssueToolNames), ActiveWorkTool)
+// RunTestsTool is what a running task calls to run its project's Test
+// command through Dash (RunTests).
+const RunTestsTool = "run_tests"
+
+// TaskToolNames are what a running task may get (TaskTools).
+var TaskToolNames = append(slices.Clone(IssueToolNames), ActiveWorkTool, RunTestsTool)
 
 // WorkFiler is a Board that can tell which files a task's work changes.
 type WorkFiler interface {
@@ -27,9 +31,59 @@ type WorkFiler interface {
 	WorkFiles(t model.Todo) ([]string, error)
 }
 
-// TaskTools returns a running task's tools: the IssueTools and active_work.
+// TestRunner is a Board that runs a running task's tests for it.
+type TestRunner interface {
+	// RunTests runs the project's Test command in running task id's
+	// worktree, as Dash runs it before review, waits for it and returns
+	// the result. Dash keeps it: when it passed and no file changed since,
+	// Dash doesn't run the tests again when Claude finishes.
+	RunTests(id string) (model.Checks, error)
+}
+
+// TaskTools returns a running task's tools: the IssueTools, active_work,
+// and run_tests when b is a TestRunner.
 func TaskTools(b Board, o Options) []Tool {
-	return append(IssueTools(b, o), ActiveWork(b, o))
+	tools := append(IssueTools(b, o), ActiveWork(b, o))
+	if tr, ok := b.(TestRunner); ok && o.Todo != "" {
+		tools = append(tools, RunTests(tr, o.Todo))
+	}
+	return tools
+}
+
+// RunTests returns run_tests: the project's Test command, run by Dash in
+// task self's worktree.
+func RunTests(tr TestRunner, self string) Tool {
+	return Tool{RunTestsTool,
+		"Run the project's Test command in this task's worktree, through Dash, and wait for the result " +
+			"(exit code and the last lines of output). Use it instead of running the test command yourself: " +
+			"when the tests pass and you change no file afterwards, Dash doesn't run them again when you finish.",
+		nil,
+		func(Args) (any, error) {
+			c, err := tr.RunTests(self)
+			if err != nil {
+				return nil, err
+			}
+			return testsResult(c), nil
+		}}
+}
+
+// testsResult is run_tests' answer for checks c.
+func testsResult(c model.Checks) string {
+	var sb strings.Builder
+	if c.Passed {
+		fmt.Fprintf(&sb, "The tests passed (%.0fs): `%s`.", c.Duration, c.Command)
+	} else {
+		fmt.Fprintf(&sb, "The tests failed (exit %d, %.0fs): `%s`.", c.ExitCode, c.Duration, c.Command)
+	}
+	if c.Passed && c.Tree == "" {
+		sb.WriteString(" Files changed while they ran, so Dash runs them again when you finish.")
+	} else if c.Passed {
+		sb.WriteString(" If you change no file now, Dash doesn't run them again when you finish.")
+	}
+	if out := strings.TrimSpace(c.Output); out != "" {
+		fmt.Fprintf(&sb, "\n\nLast lines of output:\n```\n%s\n```", out)
+	}
+	return sb.String()
 }
 
 // activeStatuses are the statuses active_work lists, in its order.

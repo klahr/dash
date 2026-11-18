@@ -15,6 +15,9 @@ go test ./...
 ```
 
 `go test -short ./...` is fine while you work; run the full `go test ./...` before you finish.
+In a Dash task that has the `dash_board` `run_tests` tool, run the project's test command with
+that tool instead of in your shell: when it passes and you change no file after, Dash doesn't
+run the tests again.
 When you change JavaScript in `web/static`, also run
 `for f in web/static/*.js web/static/app/*.js; do node --check "$f"; done`.
 Say in your summary which checks you ran and what they printed. If one can't run here (no

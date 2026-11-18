@@ -106,7 +106,8 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    ([Plan a new project](docs/plan-project.md)). A clone that has a favicon gets it as its project icon.
    A *Test command* (e.g. `go test ./...`) is optional but lets Dash check Claude's work. It
    runs when Claude finishes, and again in the task's worktree before Dash merges it, unless it
-   already passed on exactly that commit. A task whose tests fail there goes back to Claude
+   already passed on exactly that code. Claude runs it through Dash (the `run_tests` tool), so
+   tests that passed in Claude's session aren't run a second time. A task whose tests fail there goes back to Claude
    instead of onto the default branch. Make it run what your CI runs (formatting, linters,
    tests), so a red build never reaches the default branch.
 2. **Add a task.** Click **New task** (or press <kbd>n</kbd>) and write what Claude should do,

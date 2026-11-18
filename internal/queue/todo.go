@@ -98,6 +98,10 @@ type TodoEngine struct {
 	// resolving holds the todos (id → project id) dispatched to fix a merge
 	// conflict, until they have landed or left the fix-and-merge path.
 	resolving map[string]string
+	// runCtxs are the contexts of the todos running here (id → context),
+	// and sessionTests the ones whose Claude runs run_tests now.
+	runCtxs      map[string]context.Context
+	sessionTests map[string]bool
 }
 
 // Remote hands a queued task to a runner. An error is why it can't now
@@ -128,6 +132,8 @@ func NewTodoEngine(e *TodoEngine) *TodoEngine {
 	e.wake = make(chan struct{}, 1)
 	e.running = map[string]context.CancelFunc{}
 	e.resolving = map[string]string{}
+	e.runCtxs = map[string]context.Context{}
+	e.sessionTests = map[string]bool{}
 	if e.MaxParallel <= 0 {
 		e.MaxParallel = 1
 	}
@@ -281,6 +287,7 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 		wctx, cancel := context.WithCancel(ctx)
 		e.mu.Lock()
 		e.running[t.ID] = cancel
+		e.runCtxs[t.ID] = wctx
 		if t.MergeMain {
 			e.resolving[t.ID] = t.ProjectID
 		}
@@ -292,6 +299,7 @@ func (e *TodoEngine) dispatch(ctx context.Context) {
 				cancel()
 				e.mu.Lock()
 				delete(e.running, t.ID)
+				delete(e.runCtxs, t.ID)
 				delete(e.interrupted, t.ID)
 				e.mu.Unlock()
 				e.Kick()
@@ -821,6 +829,7 @@ func (e *TodoEngine) claudeArgs(req *agent.ExecRequest, stat *model.TodoRun, t m
 	}
 	servers := map[string]any{}
 	var system []string // appended to Claude's system prompt
+	var toolTimeout time.Duration
 	owner, ownerErr := model.Owner{}, errors.New("no owner resolver")
 	if e.Owner != nil {
 		owner, ownerErr = e.Owner(t)
@@ -834,7 +843,7 @@ func (e *TodoEngine) claudeArgs(req *agent.ExecRequest, stat *model.TodoRun, t m
 		servers[perm.ServerName] = perm.ServerConfig(e.BaseURL, token)
 		req.ExtraArgs = append(req.ExtraArgs, "--permission-prompt-tool", perm.PromptTool)
 		// Claude waits on the MCP tool while a human decides; don't let it time out first.
-		req.Env = []string{"MCP_TOOL_TIMEOUT=3600000"}
+		toolTimeout = time.Hour
 	}
 	if e.Board != nil && e.BoardURL != "" && ownerErr == nil {
 		token, release := e.Board.RegisterTask(owner, t.ProjectID, t.ID)
@@ -842,6 +851,15 @@ func (e *TodoEngine) claudeArgs(req *agent.ExecRequest, stat *model.TodoRun, t m
 		servers[mcptools.ServerName] = mcptools.ServerConfig(e.BoardURL, token)
 		req.ExtraArgs = append(req.ExtraArgs, mcptools.AllowedToolArgs(mcptools.ServerName, mcptools.TaskToolNames...)...)
 		system = append(system, issuesHint, activeWorkHint)
+		// run_tests runs here, also for a hub's task (api's toHubBoard).
+		if p.TestCommand != "" && p.Held(model.CmdTest) == "" {
+			system = append(system, fmt.Sprintf(testsHint, p.TestCommand))
+			// Claude waits on run_tests while the tests run.
+			toolTimeout = max(toolTimeout, e.TestTimeout+5*time.Minute)
+		}
+	}
+	if toolTimeout > 0 {
+		req.Env = []string{"MCP_TOOL_TIMEOUT=" + strconv.FormatInt(toolTimeout.Milliseconds(), 10)}
 	}
 	if s := strings.TrimSpace(p.TaskInstructions); s != "" {
 		system = append(system, s)
@@ -931,6 +949,17 @@ func (r *todoRun) commitAndCheck() (step, error) {
 	if p.TestCommand == "" {
 		return stepHandOff, nil
 	}
+	// Claude's run_tests ran them through Dash while it worked (SessionTests):
+	// on the same files they needn't run again.
+	if cur, err := e.Store.GetTodo(r.t.ID); err == nil {
+		r.t.Checks = cur.Checks
+	}
+	if c := r.t.Checks; c != nil && c.Passed {
+		if head, tree, err := testedState(ctx, e.Git, p.ID, wt.Path); err == nil && checksPassedOn(c, p.TestCommand, head, tree) {
+			r.log("✔ tests already passed on " + shortSHA(head) + "; not running them again")
+			return stepHandOff, nil
+		}
+	}
 	checks := e.runChecks(ctx, r.t, p, wt.Path, "review")
 	_ = r.update(func(x *model.Todo) { x.Checks = &checks })
 	if ctx.Err() != nil {
@@ -1003,6 +1032,14 @@ const activeWorkHint = "Other tasks may be working on this project at the same t
 	mcptools.ServerName + " " + mcptools.ActiveWorkTool + " tool (pass the paths) to see which other tasks are changing them. " +
 	"Where another task is already changing a file, keep your changes there small, " +
 	"or mention the overlap (the task id and the file) in your summary."
+
+// testsHint tells a task's Claude to run the project's tests through Dash
+// (run_tests), so Dash doesn't run them again on the same code: %s is the
+// project's Test command.
+const testsHint = "This project's test command is `%s`. To run it, call the " + mcptools.ServerName + " " +
+	mcptools.RunTestsTool + " tool instead of running it yourself: Dash runs it in your worktree and gives you the result. " +
+	"When it passes and you change no file afterwards, Dash doesn't run the tests again when you finish. " +
+	"Other checks (a single test, a linter) you run as usual."
 
 // runClaude runs Claude once, resuming the todo's session when it has one,
 // and records the session, cost, the run's tokens (RunStats) and which notes
@@ -1281,6 +1318,60 @@ func (e *TodoEngine) RunTestsFor(todoID string, shared bool) error {
 	return nil
 }
 
+var errNotRunningHere = errors.New("this task isn't running on this computer")
+
+// SessionTests runs the project's tests in the worktree of todoID, running
+// here, for its Claude session (the run_tests tool), and waits for them.
+// They run as Dash's own runs do and are kept as the todo's Checks, with
+// the tree they ran on: when Claude finishes without changing a file after
+// they passed, Dash doesn't run them again before review.
+func (e *TodoEngine) SessionTests(todoID string) (model.Checks, error) {
+	e.mu.Lock()
+	ctx, ok := e.runCtxs[todoID]
+	e.mu.Unlock()
+	if !ok {
+		return model.Checks{}, errNotRunningHere
+	}
+	t, err := e.Store.GetTodo(todoID)
+	if err != nil {
+		return model.Checks{}, err
+	}
+	p, err := e.Store.GetProject(t.ProjectID)
+	if err != nil {
+		return model.Checks{}, err
+	}
+	switch {
+	case p.Held(model.CmdTest) != "":
+		return model.Checks{}, errors.New(p.Held(model.CmdTest))
+	case p.TestCommand == "":
+		return model.Checks{}, errors.New("this project has no Test command; run its tests your own way")
+	case t.Worktree == nil:
+		return model.Checks{}, errors.New("this task has no worktree yet")
+	case t.Status != model.StatusInProgress:
+		return model.Checks{}, errNotRunningHere
+	}
+	e.mu.Lock()
+	if e.sessionTests[t.ID] {
+		e.mu.Unlock()
+		return model.Checks{}, errors.New("the tests are already running for this task; wait for that run")
+	}
+	e.sessionTests[t.ID] = true
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		delete(e.sessionTests, t.ID)
+		e.mu.Unlock()
+	}()
+	checks := e.runChecks(ctx, t, p, t.Worktree.Path, "session")
+	if ctx.Err() != nil {
+		return checks, errors.New("the task stopped while its tests ran")
+	}
+	if _, err := e.Store.UpdateTodo(t.ID, func(x *model.Todo) error { x.Checks = &checks; return nil }); err != nil {
+		return checks, err
+	}
+	return checks, nil
+}
+
 // applyEdits writes a todo's editor edits into its worktree. A file that
 // changed on the default branch since it was opened is not overwritten.
 func (e *TodoEngine) applyEdits(ctx context.Context, t model.Todo, p model.Project, wt model.Worktree, log func(string)) error {
@@ -1388,6 +1479,7 @@ func runChecks(ctx context.Context, g *gitops.Git, l *TodoLog, sh *SharedWork, t
 	env, _ := sh.shellEnv(t)
 	l.Line(t, "▶ tests: "+p.TestCommand)
 	commit := checkedCommit(ctx, g, p.ID, dir)
+	tree := workTree(ctx, g, p.ID, dir)
 	start := time.Now()
 	code, tail, err := runShell(ctx, dir, p.TestCommand, timeout, env, func(s string) { l.Line(t, "│ "+s) })
 	c := model.Checks{Command: p.TestCommand, ExitCode: code, Output: tail, Stage: stage, At: time.Now(), Duration: time.Since(start).Seconds()}
@@ -1395,6 +1487,9 @@ func runChecks(ctx context.Context, g *gitops.Git, l *TodoLog, sh *SharedWork, t
 		if after, herr := g.Head(ctx, p.ID, dir, "HEAD"); herr == nil && after == commit {
 			c.Commit = commit // nothing committed while they ran
 		}
+	}
+	if tree != "" && workTree(ctx, g, p.ID, dir) == tree {
+		c.Tree = tree // no file changed while they ran
 	}
 	if err != nil {
 		c.Output = strings.TrimSpace(tail + "\n" + err.Error())
@@ -1425,10 +1520,43 @@ func checkedCommit(ctx context.Context, g *gitops.Git, projectID, dir string) st
 	return head
 }
 
-// checksPassedOn reports whether c passed on commit, so running them again
-// before landing it would test the same code.
-func checksPassedOn(c *model.Checks, command, commit string) bool {
-	return c != nil && c.Passed && c.Command == command && c.Commit != "" && c.Commit == commit
+// workTree is the git tree of dir's files as they are now (gitops.WorkTree),
+// or "" when it can't be had.
+func workTree(ctx context.Context, g *gitops.Git, projectID, dir string) string {
+	if g == nil {
+		return ""
+	}
+	tree, err := g.WorkTree(ctx, projectID, dir)
+	if err != nil {
+		return ""
+	}
+	return tree
+}
+
+// testedState is what checks run in dir now would test: the commit checked
+// out and the tree of its files, uncommitted changes included.
+func testedState(ctx context.Context, g *gitops.Git, projectID, dir string) (commit, tree string, err error) {
+	if commit, err = g.Head(ctx, projectID, dir, "HEAD"); err != nil {
+		return "", "", err
+	}
+	return commit, workTree(ctx, g, projectID, dir), nil
+}
+
+// checksPassedOn reports whether c passed on commit, or on the same files
+// as tree, so running them again there would test the same code.
+func checksPassedOn(c *model.Checks, command, commit, tree string) bool {
+	if c == nil || !c.Passed || c.Command != command {
+		return false
+	}
+	return (c.Commit != "" && c.Commit == commit) || (c.Tree != "" && c.Tree == tree)
+}
+
+// shortSHA is sha's first 7 characters.
+func shortSHA(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
 
 func testNote(c model.Checks) string {
