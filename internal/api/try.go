@@ -504,15 +504,11 @@ func (s *Server) tryHubProject(w http.ResponseWriter, r *http.Request) (model.Pr
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "this runner has no terminal previews"})
 		return model.Project{}, false
 	}
-	p, ok := sv.hubProject(r.PathValue("hpid"))
-	if !ok {
-		if r.Method != http.MethodGet { // the hub looks for sessions on every runner of a project
-			slog.Warn("runner: refused a try of a project not linked to it", "project", r.PathValue("hpid"))
-		}
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": errNotLinked.Error()})
-		return model.Project{}, false
+	what := "a try"
+	if r.Method == http.MethodGet { // the hub looks for sessions on every runner of a project
+		what = ""
 	}
-	return p, true
+	return sv.hubLinked(w, r.PathValue("hpid"), what)
 }
 
 // tryRoot is where this runner keeps try worktrees: <root>/<project>/<id>.

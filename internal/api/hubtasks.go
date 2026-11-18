@@ -129,6 +129,27 @@ func (sv *service) hubProject(hpid string) (model.Project, bool) {
 	return model.Project{}, false
 }
 
+// linkedProject is hubProject, logging a refusal when the hub's project hpid
+// isn't linked here: what names the request ("a task", "a scan"); an empty
+// what refuses quietly. attrs go into the log line.
+func (sv *service) linkedProject(hpid, what string, attrs ...any) (model.Project, bool) {
+	p, ok := sv.hubProject(hpid)
+	if !ok && what != "" {
+		slog.Warn("runner: refused "+what+" of a project not linked to it", append([]any{"project", hpid}, attrs...)...)
+	}
+	return p, ok
+}
+
+// hubLinked is linkedProject, answering w with 403 errNotLinked when the
+// project isn't linked here.
+func (sv *service) hubLinked(w http.ResponseWriter, hpid, what string, attrs ...any) (model.Project, bool) {
+	p, ok := sv.linkedProject(hpid, what, attrs...)
+	if !ok {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": errNotLinked.Error()})
+	}
+	return p, ok
+}
+
 // ownProject is the runner's own project pid: made or added on this
 // runner, not a checkout of a hub's project. The hub keeps no record of it
 // and reaches it through /peer/{runner}/… by this runner's id.
@@ -645,9 +666,8 @@ func (s *Server) hubOriginMoved(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: want a branch and a commit id", errBadRequest))
 		return
 	}
-	p, ok := sv.hubProject(r.PathValue("hpid"))
+	p, ok := sv.hubLinked(w, r.PathValue("hpid"), "a moved origin", "branch", req.Branch)
 	if !ok {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": errNotLinked.Error()})
 		return
 	}
 	if s.Merges != nil && s.Merges.Remote != nil {
@@ -706,10 +726,8 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	p, ok := sv.hubProject(req.HubProjectID)
+	p, ok := sv.hubLinked(w, req.HubProjectID, "a task", "task", req.HubTodoID)
 	if !ok {
-		slog.Warn("runner: refused a task for a project not linked to it", "project", req.HubProjectID, "task", req.HubTodoID)
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": errNotLinked.Error()})
 		return
 	}
 	if req.HubTodoID == "" {
@@ -992,9 +1010,8 @@ func (s *Server) hubScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = conn.SetReadDeadline(time.Time{})
-	p, ok := sv.hubProject(req.Project)
+	p, ok := sv.linkedProject(req.Project, "a scan")
 	if !ok {
-		slog.Warn("runner: refused a scan of a project not linked to it", "project", req.Project)
 		send(scan.Message{Error: errNotLinked.Error()})
 		return
 	}
@@ -1060,9 +1077,8 @@ func (s *Server) hubGitHub(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	p, ok := sv.hubProject(r.PathValue("hpid"))
+	p, ok := sv.hubLinked(w, r.PathValue("hpid"), "a GitHub call")
 	if !ok {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": errNotLinked.Error()})
 		return
 	}
 	var req dispatch.GitHubCall
