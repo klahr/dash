@@ -66,7 +66,8 @@ func TestBrowserLinks(t *testing.T) {
 	b.waitJS("the task closed", `document.querySelector("#detail").hidden && `+path(board))
 	b.do("go forward", chromedp.NavigateForward())
 	b.waitJS("the task open again", detailOpen+` && `+path(taskURL))
-	b.do("close it", chromedp.Click(chromedp.ID("d-close")))
+	// Retried: the pane may still be sliding in (style.css's slide-in), moving the button under the click.
+	b.until("close it", `document.querySelector("#detail").hidden`, chromedp.Click(chromedp.ID("d-close")))
 	b.waitJS("the task closed, the board's URL", `document.querySelector("#detail").hidden && `+path(board))
 
 	// A reload opens the same place: the task, over the board; a sheet with its section.
@@ -103,7 +104,7 @@ func TestBrowserLinks(t *testing.T) {
 	b.waitJS("the task closed, in Dash", `document.querySelector("#detail").hidden && `+path(board))
 	b.do("go forward", chromedp.NavigateForward())
 	b.waitJS("the task again", detailOpen)
-	b.do("its Back button", chromedp.Click(chromedp.ID("d-close")))
+	b.until("its Back button", `document.querySelector("#detail").hidden`, chromedp.Click(chromedp.ID("d-close")))
 	b.waitJS("closed, the board's URL", `document.querySelector("#detail").hidden && `+path(board))
 	b.do("a wide screen", chromedp.EmulateReset())
 
