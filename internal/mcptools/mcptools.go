@@ -426,7 +426,8 @@ var (
 	// onto the default branch, which may be pushed to origin).
 	AskTools = []string{"create_release",
 		"add_checklist_item", "check_checklist_item", "edit_checklist_item", "delete_checklist_item", "reorder_checklist_item", "move_checklist_item_to_task"}
-	// IssueToolNames are what a running task gets (IssueTools).
+	// IssueToolNames are the IssueTools; a running task gets them and
+	// active_work (TaskToolNames).
 	IssueToolNames = []string{"list_issues", "report_issue"}
 )
 
@@ -1033,7 +1034,7 @@ type Scope struct {
 	// tools only reach Org.
 	Org, User int64
 	Project   string // default project ("" for the general chat)
-	Todo      string // set for a running task, which only gets the IssueTools
+	Todo      string // set for a running task, which only gets the TaskTools
 	// Hub marks a runner's run of its hub's work (a hub task, or a chat the
 	// hub asked for): its tools are the hub's board, never this Dash's.
 	// HubProject and HubTodo are then the hub's ids for the run's project
@@ -1112,7 +1113,7 @@ func (t *Tokens) RegisterHubGoal(c Caller, hubProject, hubGoal string) (token st
 }
 
 // RegisterTask issues a token for one run of a task, acting as c (the
-// task's user and org): its tools are the IssueTools for the task's project.
+// task's user and org): its tools are the TaskTools for the task's project.
 // Call release when the run ends.
 func (t *Tokens) RegisterTask(c Caller, projectID, todoID string) (token string, release func()) {
 	return t.register(Scope{Org: c.Org, User: c.User, Project: projectID, Todo: todoID})
@@ -1192,8 +1193,9 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, sc Scope) {
 	}
 	switch {
 	case sc.Todo != "":
-		srv.Instructions = "The project's Issues list: known bugs, vulnerabilities and other problems the user triages into tasks."
-		srv.Tools = IssueTools(board, Options{Project: sc.Project, Todo: sc.Todo})
+		srv.Instructions = "The project's Issues list (known bugs, vulnerabilities and other problems the user triages into tasks), " +
+			"and what the project's other tasks are working on (active_work)."
+		srv.Tools = TaskTools(board, Options{Project: sc.Project, Todo: sc.Todo})
 	case sc.Goal != "":
 		gb, ok := board.(GoalBoard)
 		if !ok {

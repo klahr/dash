@@ -372,6 +372,11 @@ func (b board) Todo(id string) (model.Todo, error) {
 	return t, nil
 }
 
+// WorkFiles lists the files task t changes, for active_work.
+func (b board) WorkFiles(t model.Todo) ([]string, error) {
+	return b.sv.workFiles(context.Background(), t)
+}
+
 func (b board) CreateTodo(projectID string, t mcptools.NewTodo) (model.Todo, error) {
 	if err := b.sv.writable(); err != nil {
 		return model.Todo{}, err

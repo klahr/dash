@@ -672,6 +672,44 @@ func (sv *service) diff(ctx context.Context, id string) (string, error) {
 	return sv.s.todoChanges(ctx, p, t)
 }
 
+// workFilesTimeout bounds finding one task's files for active_work.
+const workFilesTimeout = 15 * time.Second
+
+// workFiles lists the files task t changes compared with the branch it
+// lands on (mcptools.WorkFiler): in its worktree here, uncommitted changes
+// included, or as its runner tells.
+func (sv *service) workFiles(ctx context.Context, t model.Todo) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, workFilesTimeout)
+	defer cancel()
+	if t.OnRunner() {
+		b, err := sv.fetchFromRunner(ctx, t, "files")
+		if err == nil {
+			var files []string
+			for _, f := range strings.Split(string(b), "\n") {
+				if f = strings.TrimSpace(f); f != "" {
+					files = append(files, f)
+				}
+			}
+			return files, nil
+		}
+		// A runner from before /files: read them off its patch (committed
+		// changes only).
+		patch, perr := sv.fetchFromRunner(ctx, t, "diff")
+		if perr != nil {
+			return nil, err
+		}
+		return gitops.PatchFiles(string(patch)), nil
+	}
+	if t.Worktree == nil {
+		return nil, nil
+	}
+	p, err := sv.data.GetProject(t.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	return sv.s.Git.WorkFiles(ctx, p.ID, p.Path, t.Worktree.Path, p.For(t).Base(), t.Worktree.Branch)
+}
+
 // log is the task's Claude run log.
 func (sv *service) log(id string) (string, error) {
 	t, err := sv.data.GetTodo(id)

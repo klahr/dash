@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1145,6 +1146,66 @@ func (g *Git) Commit(ctx context.Context, projectID, repo, ref string) (string, 
 // MergeBase is the best common ancestor of two commits.
 func (g *Git) MergeBase(ctx context.Context, projectID, repo, a, b string) (string, error) {
 	return g.run(ctx, false, projectID, repo, "git", "merge-base", a, b)
+}
+
+// WorkFiles lists the files a task's work changes compared with base, since
+// their merge base (git diff --name-only <merge-base>), deleted and renamed
+// ones included, sorted. With the task's worktree dir, that is its working
+// tree, so changes not committed yet count too (untracked files as well);
+// with dir "" (or gone), the commits of branch in repo.
+func (g *Git) WorkFiles(ctx context.Context, projectID, repo, dir, base, branch string) ([]string, error) {
+	var outs []string
+	if _, err := os.Stat(dir); dir != "" && err == nil {
+		mb, err := g.MergeBase(ctx, projectID, dir, base, "HEAD")
+		if err != nil {
+			return nil, err
+		}
+		out, err := g.run(ctx, false, projectID, dir, "git", "diff", "--name-only", "--no-renames", "-z", strings.TrimSpace(mb), "--")
+		if err != nil {
+			return nil, err
+		}
+		untracked, err := g.run(ctx, false, projectID, dir, "git", "ls-files", "--others", "--exclude-standard", "-z")
+		if err != nil {
+			return nil, err
+		}
+		outs = []string{out, untracked}
+	} else {
+		out, err := g.run(ctx, false, projectID, repo, "git", "diff", "--name-only", "--no-renames", "-z", base+"..."+branch, "--")
+		if err != nil {
+			return nil, err
+		}
+		outs = []string{out}
+	}
+	var files []string
+	for _, out := range outs {
+		for _, f := range strings.Split(out, "\x00") {
+			if f = strings.TrimSpace(f); f != "" {
+				files = append(files, f)
+			}
+		}
+	}
+	slices.Sort(files)
+	return slices.Compact(files), nil
+}
+
+// PatchFiles lists the files a patch (as Diff prints it) changes, sorted:
+// for a patch that is all there is, e.g. from an older runner.
+func PatchFiles(patch string) []string {
+	var files []string
+	for _, line := range strings.Split(patch, "\n") {
+		rest, ok := strings.CutPrefix(line, "diff --git a/")
+		if !ok {
+			continue
+		}
+		// "a/x b/x"; for a rename "a/x b/y": both are changed.
+		i := strings.LastIndex(rest, " b/")
+		if i < 0 {
+			continue
+		}
+		files = append(files, rest[:i], rest[i+len(" b/"):])
+	}
+	slices.Sort(files)
+	return slices.Compact(files)
 }
 
 // ChangedFiles lists the files that differ between two commits, deleted

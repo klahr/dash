@@ -37,7 +37,7 @@ func do(t *testing.T, h http.Handler, method, path, body string) *httptest.Respo
 	return w
 }
 
-func TestTaskRunGetsOnlyIssueTools(t *testing.T) {
+func TestTaskRunGetsOnlyTaskTools(t *testing.T) {
 	parallel(t)
 
 	s, _, p := boardServer(t)
@@ -57,7 +57,7 @@ func TestTaskRunGetsOnlyIssueTools(t *testing.T) {
 	for _, tl := range list.Result.Tools {
 		names = append(names, tl.Name)
 	}
-	if strings.Join(names, ",") != strings.Join(mcptools.IssueToolNames, ",") {
+	if strings.Join(names, ",") != strings.Join(mcptools.TaskToolNames, ",") {
 		t.Fatalf("tools %v", names)
 	}
 

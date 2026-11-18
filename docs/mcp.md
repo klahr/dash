@@ -163,6 +163,27 @@ dashboard, and `update_project` sets `tag_format`.
 `dash-mcp` and the connector have `update_todo` too. Their `delete_todo` deletes a task in any
 status except running or merging.
 
+## A task's tools
+
+A task's own Claude run gets three `dash_board` tools, in its project only, and calls them
+without asking:
+
+- `list_issues` and `report_issue`: the project's Issues list. Claude reports problems it notices
+  outside its task there instead of fixing them on the task's branch.
+- `active_work(paths?)`: what the project's other tasks are doing. It lists every other task that
+  is queued, running, in review or merging, with its id, status, title, a short intent from its
+  prompt, and the files it has changed so far compared with the branch it lands on (a running
+  task's uncommitted changes too). With `paths`, it lists only the tasks changing those files or
+  files under those folders.
+
+On a hub, `active_work` covers the whole project: the hub lists the tasks on all its runners and
+asks each task's runner for its files. A runner that can't be reached shows its tasks' files as
+unknown. An older runner only reports the files its task has committed.
+
+The task's system prompt tells Claude to call `active_work` before larger edits to shared files,
+and, where another task already changes a file, to keep its own changes there small or mention
+the overlap in its summary.
+
 ## Goals
 
 `dash-mcp`, the connector and the chats' `dash_board` manage [goals](goals.md) as you would on

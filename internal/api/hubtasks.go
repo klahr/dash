@@ -59,6 +59,7 @@ func (s *Server) hubTaskRoutes(mux routeMux) {
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/test", s.hubTaskAction("test"))
 	mux.HandleFunc("POST /api/hub/tasks/{htid}/open", s.hubTaskAction("open"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/diff", s.hubTaskAction("diff"))
+	mux.HandleFunc("GET /api/hub/tasks/{htid}/files", s.hubTaskAction("files"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/image", s.hubTaskImage)
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/log", s.hubTaskAction("log"))
 	mux.HandleFunc("GET /api/hub/tasks/{htid}/file", s.hubTaskFile)
@@ -902,6 +903,14 @@ func (s *Server) hubTaskAction(action string) http.HandlerFunc {
 				return
 			}
 			writeText(w, diff)
+		case "files":
+			// The files it changes, one per line, for the hub's active_work.
+			files, err := sv.workFiles(r.Context(), t)
+			if err != nil {
+				writeErr(w, err)
+				return
+			}
+			writeText(w, strings.Join(files, "\n"))
 		case "log":
 			log, err := sv.log(t.ID)
 			if err != nil {

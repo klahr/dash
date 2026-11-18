@@ -840,8 +840,8 @@ func (e *TodoEngine) claudeArgs(req *agent.ExecRequest, stat *model.TodoRun, t m
 		token, release := e.Board.RegisterTask(owner, t.ProjectID, t.ID)
 		releases = append(releases, release)
 		servers[mcptools.ServerName] = mcptools.ServerConfig(e.BoardURL, token)
-		req.ExtraArgs = append(req.ExtraArgs, mcptools.AllowedToolArgs(mcptools.ServerName, mcptools.IssueToolNames...)...)
-		system = append(system, issuesHint)
+		req.ExtraArgs = append(req.ExtraArgs, mcptools.AllowedToolArgs(mcptools.ServerName, mcptools.TaskToolNames...)...)
+		system = append(system, issuesHint, activeWorkHint)
 	}
 	if s := strings.TrimSpace(p.TaskInstructions); s != "" {
 		system = append(system, s)
@@ -995,6 +995,14 @@ func (r *todoRun) handOff() {
 const issuesHint = "If you notice a bug, vulnerability or other problem in this project that is unrelated to your task, " +
 	"don't fix it here and don't ignore it: report it with the " + mcptools.ServerName + " report_issue tool " +
 	"(title, type, severity, file and line, details, suggested fix) so the user can triage it, then carry on with your task."
+
+// activeWorkHint tells a task's Claude about active_work, so tasks running
+// side by side in a project don't change the same files unawares.
+const activeWorkHint = "Other tasks may be working on this project at the same time, each on its own branch. " +
+	"Before larger edits to files other code shares (common helpers, config, schemas, docs indexes), call the " +
+	mcptools.ServerName + " " + mcptools.ActiveWorkTool + " tool (pass the paths) to see which other tasks are changing them. " +
+	"Where another task is already changing a file, keep your changes there small, " +
+	"or mention the overlap (the task id and the file) in your summary."
 
 // runClaude runs Claude once, resuming the todo's session when it has one,
 // and records the session, cost, the run's tokens (RunStats) and which notes

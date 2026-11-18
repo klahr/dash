@@ -81,7 +81,7 @@ func TestRunGetsTaskInstructions(t *testing.T) {
 		return out
 	}
 	got := system(exe.Calls()[0].ExtraArgs)
-	if len(got) != 1 || got[0] != issuesHint+"\n\nAnswer in Swedish." {
+	if len(got) != 1 || got[0] != issuesHint+"\n\n"+activeWorkHint+"\n\nAnswer in Swedish." {
 		t.Fatalf("--append-system-prompt %q", got)
 	}
 

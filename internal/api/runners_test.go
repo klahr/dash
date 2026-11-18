@@ -502,6 +502,10 @@ func TestRunnerOnlyTakesWorkForLinkedProjects(t *testing.T) {
 	if w := send(h, "GET", "/api/hub/tasks/hub-t1/log", ""); w.Code != http.StatusOK {
 		t.Errorf("log of the hub's task: %d %s", w.Code, w.Body)
 	}
+	// Not started yet: no files (for the hub's active_work).
+	if w := send(h, "GET", "/api/hub/tasks/hub-t1/files", ""); w.Code != http.StatusOK || w.Body.Len() != 0 {
+		t.Errorf("files of the hub's task: %d %q", w.Code, w.Body)
+	}
 	if w := send(h, "GET", "/api/hub/tasks/"+td.ID+"/log", ""); w.Code != http.StatusNotFound {
 		t.Errorf("the runner's own id reaches a task: %d", w.Code)
 	}

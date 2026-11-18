@@ -90,6 +90,14 @@ func (pb projectBoard) Todos(projectID string) ([]model.Todo, error) {
 
 func (pb projectBoard) Todo(id string) (model.Todo, error) { return pb.todo(id) }
 
+// WorkFiles lists the files task t, of this project, changes.
+func (pb projectBoard) WorkFiles(t model.Todo) ([]string, error) {
+	if t.ProjectID != pb.project {
+		return nil, fmt.Errorf("no task %q", t.ID)
+	}
+	return pb.b.WorkFiles(t)
+}
+
 func (pb projectBoard) CreateTodo(projectID string, t mcptools.NewTodo) (model.Todo, error) {
 	if err := pb.check(projectID); err != nil {
 		return model.Todo{}, err
