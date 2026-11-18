@@ -25,7 +25,8 @@ import { renderPerms } from "./review.js";
 import { loadUsage } from "./usage.js";
 import { ciBuilding, loadCI, renderCI } from "./actions.js";
 import { loadCheckouts, loadRemote, renderCheckouts, renderRemote } from "./origin.js";
-import { openSettings } from "./settings.js";
+import { deployRunners, openSettings } from "./settings.js";
+import { labelPicker, matchList, setLabels } from "./labelpicker.js";
 import { renderChatPane } from "./chatpane.js";
 import { renderQuick } from "./terminal.js";
 import { loadProcs, loadTry, renderProcs } from "./try.js";
@@ -205,7 +206,7 @@ export function openNewProject() {
   if (np.run && !np.run.done) { d.showModal(); return; }
   const runners = projectRunners();
   if (!runners.length) {
-    fail(new Error(!state.runners.length ? `A runner is required: this dashboard keeps no projects itself. To add one, ${startRunner}.`
+    fail(new Error(!state.runners.length ? `Add a runner first: ${startRunner}.`
       : state.runners.some((r) => r.online) ? "None of the online runners is yours, and only a runner's owner or an admin of the organization can send projects' work to it. Start your own with `dash runner`."
         : noRunnerOnline));
     return;
@@ -335,7 +336,10 @@ function syncHubMode() {
   const repo = { gh: ghState.pick?.nameWithOwner, create: f.github.value.trim(), url: f.remote_url.value.trim() }[mode] || "";
   const suggested = mode === "gh" ? ghState.pick?.name || "" : mode === "local" ? "" : fromURL(repo);
   if (f.name.value === np.nameAuto) f.name.value = np.nameAuto = suggested;
-  if (f.runs_on.value === np.runsOnAuto) f.runs_on.value = np.runsOnAuto = defaultRunsOn(r).join(", ");
+  if (f.runs_on.value === np.runsOnAuto) {
+    np.runsOnAuto = defaultRunsOn(r).join(", ");
+    setLabels(f.runs_on, defaultRunsOn(r));
+  }
   $("#new-project-runs-on-row").hidden = $("#new-project-runs-on-hint").hidden = mode === "local";
   $("#new-project-deploy-runs-on-row").hidden = $("#new-project-deploy-runs-on-hint").hidden = mode === "local";
   $("#new-project-name-row").hidden = mode !== "local" && !repo;
@@ -350,6 +354,11 @@ function syncHubMode() {
   const hint = $("#new-project-where");
   hint.classList.toggle("warn", !!why);
   const runsOn = parseLabels(f.runs_on.value);
+  if (mode !== "local") {
+    matchList($("#new-project-runs-on-hint"), (state.runners || []).filter((r) => servesProject(r, { runs_on: runsOn })));
+    matchList($("#new-project-deploy-runs-on-hint"), deployRunners(runsOn, parseLabels(f.deploy_runs_on.value).filter((l) => l.toLowerCase() !== LABEL_ANY)),
+      { lead: "Deploys on", none: "No runner above has these labels: deploys fail." });
+  }
   hint.textContent = why || (mode === "local" ? "" : servesProject(r, { runs_on: runsOn })
     ? `${where} clones it into its projects folder. It runs on runners with ${runsOn.join(", ")} (Advanced).`
     : `It runs on runners with ${runsOn.join(", ") || "no labels"} (Advanced), which ${where} lacks: one of them clones it when it first gets work.`);
@@ -372,7 +381,9 @@ function syncHubMode() {
       h("button", { type: "button", class: "link inline", onclick: () => planner.backTo("repo") }, "Back to the plan"));
   }
 }
-for (const el of ["remote_url", "github", "name"]) {
+labelPicker({ input: $("#new-project").runs_on, any: true, label: "Runs on" });
+labelPicker({ input: $("#new-project").deploy_runs_on, label: "Deploy runs on", placeholder: "e.g. production" });
+for (const el of ["remote_url", "github", "name", "runs_on", "deploy_runs_on"]) {
   const input = $("#new-project")[el];
   input.addEventListener("input", syncHubMode);
 }
@@ -634,6 +645,8 @@ async function finishAdd(run) {
   if (!reduceMotion.matches && d.open) await new Promise((ok) => setTimeout(ok, 500)); // a moment to see it all ticked
   np.run = null;
   f.reset();
+  setLabels(f.runs_on, []);
+  setLabels(f.deploy_runs_on, []);
   np.nameAuto = np.runsOnAuto = "";
   ghState.pick = null;
   if (d.open) d.close();

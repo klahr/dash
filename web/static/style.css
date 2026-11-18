@@ -1359,16 +1359,36 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-setting > input { width: 5.5em; flex: none; min-height: 36px; padding: 0 8px; }
 .runner-setting > .btn { flex: none; }
 .runner-setting.danger strong { color: var(--failed); }
-/* A runner's labels: chips (the ones every runner has muted), and the field for its own,
-   which wraps under its text on a phone. */
+/* A runner's labels: chips (the ones every runner has muted), then the picker for its own. */
 .runner-labels { display: flex; flex-wrap: wrap; gap: 6px; }
 .runner-label { font: var(--fs-xs)/1.6 var(--mono); padding: 1px 8px; border: 1px solid var(--line); border-radius: 999px; overflow-wrap: anywhere; }
 .runner-label.default { color: var(--muted); border-style: dashed; }
-.runner-setting > input.runner-labels-input { width: 14em; font-family: var(--mono); }
-@media (max-width: 600px) {
-  .runner-labels-setting { flex-wrap: wrap; }
-  .runner-setting > input.runner-labels-input { width: 100%; }
-}
+.runner-own-labels { display: grid; gap: 8px; }
+
+/* Label picker (app/labelpicker.js): the picked labels as chips in a field, typed ones added
+   on Enter or comma, and the org's other labels offered below it; then the runners that match. */
+.label-picker { display: grid; gap: 6px; min-width: 0; }
+.label-picker-box { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 44px; padding: 5px 8px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-m); cursor: text; }
+.label-picker-box:focus-within { border-color: var(--accent); }
+.label-chips { display: contents; }
+.label-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; padding: 0 2px 0 9px; font: var(--fs-xs)/1.9 var(--mono);
+  background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-pill); overflow-wrap: anywhere; }
+.label-chip.any { border-style: dashed; }
+.label-chip-x { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: var(--muted); }
+.label-chip-x:hover, .label-chip-x:focus-visible { color: var(--text); background: var(--surface); }
+.label-chip-x .ico { width: 12px; height: 12px; }
+.label-picker .label-picker-input { flex: 1 1 8em; width: auto; min-width: 8em; min-height: 32px; padding: 0 4px; border: 0; background: transparent; font-family: var(--mono); }
+.label-picker .label-picker-input:focus-visible { outline: none; } /* the field around it shows the focus */
+.label-offer { display: flex; flex-wrap: wrap; gap: 6px; }
+.label-option { display: inline-flex; align-items: center; gap: 3px; min-height: 28px; padding: 0 9px 0 6px; font: var(--fs-xs) var(--mono);
+  color: var(--muted); border: 1px dashed var(--line); border-radius: var(--r-pill); }
+.label-option:hover, .label-option:focus-visible { color: var(--text); border-color: var(--accent); }
+.label-option .ico { width: 12px; height: 12px; }
+.label-option.new { color: var(--accent); }
+.label-match { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.label-match-runner { display: inline-flex; align-items: center; gap: 5px; color: var(--text); }
+@media (pointer: coarse) { .label-option { min-height: 36px; } .label-chip-x { width: 32px; height: 32px; } }
 .runner-manage-note { margin-top: 20px; }
 /* A runner's disks: a meter per disk, the low-space warning, the Go build cache; and its thresholds. */
 .runner-disk { display: grid; gap: 6px; font-size: var(--fs-s); color: var(--muted); }

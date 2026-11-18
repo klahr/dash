@@ -18,8 +18,8 @@ Every project lives on runners, in one of two ways:
 
 - **A runner's own project**: a repository on one runner's disk, in its `-projects` directory. Its
   tasks, git and commands run on that runner only, and it shows in the dashboard under the
-  runner's name. Make one with **Add projects from this computer…** on the runner's row of the
-  Runners page, or start a new one with **+ Add project** → **Local only**. See [below](#projects-of-a-runners-own).
+  runner's name. Make one with **Add from this runner…** on the runner's page in
+  **Runners**, or start a new one with **+ Add project** → **Local only**. See [below](#projects-of-a-runners-own).
 - **A shared project**: the hub's project, a git remote that runs on runner labels. It never names
   runners: the org's runners that have every label it runs on work on it, as a GitHub Actions job's
   `runs-on` picks runners (see [Runner labels](#runner-labels)). Each of them keeps its
@@ -393,14 +393,19 @@ project's work can go; whose tasks a runner then runs is the next section's rule
 
 - Every runner has the labels of its system (`Linux`, `macOS` or `Windows`) and its architecture
   (`X64`, `ARM64`, `ARM` or `X86`). A runner from before Dash reported its system has none.
-- Its owner or an org admin gives it labels of its own on its page in Runners, under
-  **Settings → Labels**, separated by commas: `gpu, big-disk`. A label is letters, digits and
-  `- _ . : + /`, up to 64 characters. `any` can't be a runner's label.
-- A project runs on the labels in its **Settings → Runners → Runs on**, separated by commas. A
-  runner works on it when it has every one of them, whatever their case: `any` is any runner of the
-  org, `macOS, ARM64` is Apple silicon Macs, `gpu` is the runners you labelled so.
-  Below the field the org's runners show whether they have them, as you type. A project with no
-  labels runs on no runner, and says it **needs a runner**.
+- Its owner or an org admin gives it labels of its own on its page in **Runners → Labels**. A
+  label is letters, digits and `- _ . : + /`, up to 64 characters. `any` can't be a runner's
+  label. Each change is saved at once.
+- A project runs on the labels in its **Project settings → Runners → Runs on**. A runner works on
+  it when it has every one of them, whatever their case: `any` is any runner of the org,
+  `macOS` and `ARM64` is Apple silicon Macs, `gpu` is the runners you labelled so. A project with
+  no labels runs on no runner, and says it **needs a runner**.
+
+Every labels field works the same way. The picked labels show as chips; **×** on a chip removes
+it. Below the field are the labels that already exist in the organization (on runners and
+projects): click one to add it. To add a new label, type it and press `Enter` (or a comma).
+`Backspace` in the empty field removes the last chip. Below the project fields, the runners that
+match show as you pick, each with its online dot.
 
 So adding a computer means giving it the right labels: it then takes its owner's work in every
 project on them (and other members' work too, if it is a shared runner), with no project to
@@ -433,10 +438,10 @@ only those, and a runner that was given `self-hosted` by hand loses it.
 
 By default **Deploy** runs on any runner the project runs on. To keep deploys to some of them (the
 one with the signing keys, or the one in the office network), give those runners a label of their
-own, such as `production`, and put it in **Project settings → Commands → Deploy runs on**, beside
-the deploy command. Separate labels with commas: a runner deploys only if it has every one of them,
-as well as the labels the project runs on. Below the field, the settings say which runners would
-deploy, as you type. **Add project → Advanced** has the same field.
+own, such as `production`, and pick it in **Project settings → Commands → Deploy runs on**, beside
+the deploy command. A runner deploys only if it has every one of these labels, as well as the
+labels the project runs on. Below the field, the runners that would deploy show as you pick.
+**Add project → Advanced** has the same field.
 
 - **Deploy** (the button, `D` in the Shell view and in `dash-tui`) goes to an online runner with
   those labels. If none has them, it fails with "no runner of this project has the labels it
@@ -812,8 +817,8 @@ online.
 ### Add projects from a runner's computer
 
 Right after a runner connects, the **Add a runner** dialog lists the git repositories in its
-projects directory; later, **Add projects from this computer…** on the runner's row of the
-Organization page lists them again. Each shows its folder name, its path in the projects directory,
+projects directory; later, **Add from this runner…** on the runner's page in **Runners** lists
+them again. Each shows its folder name, its path in the projects directory,
 its branch and its origin remote (without any credentials in the URL). Nothing is ticked: tick the
 ones you want (or **Select all**) and **Add selected** adds them as the runner's own projects,
 just like adding a project with that folder on the runner itself.

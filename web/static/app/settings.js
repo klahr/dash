@@ -14,6 +14,7 @@ import { loadWebhooks } from "./webhooks.js";
 import { loadBoard } from "./backend.js";
 import { renderBoardSettings } from "./boards.js";
 import { missingLabels, parseLabels, servesProject } from "../groups.js";
+import { docsLabels, labelPicker, matchList, setLabels } from "./labelpicker.js";
 
 // ------------------------------------------------------------------ project settings
 export function openSettings() {
@@ -34,7 +35,7 @@ export function openSettings() {
   f.preview_kind.value = p.preview_kind || "web";
   f.preview_command.value = p.preview_command || "";
   f.deploy_command.value = p.deploy_command || "";
-  f.deploy_runs_on.value = (p.deploy_runs_on || []).join(", ");
+  setLabels(f.deploy_runs_on, p.deploy_runs_on || []);
   f.auto_push.checked = !!p.auto_push;
   f.auto_approve.checked = !!p.auto_approve;
   f.merge_mode.value = p.merge_mode || "local";
@@ -65,37 +66,31 @@ export function openSettings() {
 }
 // A project of this hub runs on runner labels, never on runners it names:
 // its tasks go to the org's runners that have every label (as GitHub's
-// runs-on). The field takes the labels; below it, the org's runners show
-// whether they would work on it, live as the labels are typed. A member may
+// runs-on). The labels are picked as chips; below them, the org's runners
+// show whether they would work on it, live as the labels change. A member may
 // only pick labels that send work to their own runners; admins any (the hub
 // says so when saving).
 function renderRunnerPicker(p) {
   const hub = !p.prefix && Array.isArray(state.runners);
   $("#settings-runners-field").hidden = !hub && !p.runs_on?.length;
   shownRunsOn = labelKey(p.runs_on);
-  $("#settings-runs-on").value = (p.runs_on || []).join(", ");
+  setLabels($("#settings-runs-on"), p.runs_on || []);
   // The deploy's own labels, beside the deploy command: a hub's only.
   $("#settings-deploy-runs-on-row").hidden = $("#settings-runners-field").hidden;
   renderRunsOnPreview();
 }
 
-// renderDeployRunsOn says which of the runners the project would run on
-// (as the labels are typed) its deploy goes to.
+// renderDeployRunsOn shows which of the runners the project runs on its
+// deploy goes to, as the labels are picked.
 function renderDeployRunsOn() {
-  const hint = $("#settings-deploy-runs-on-hint"), deploy = typedDeployRunsOn();
+  const hint = $("#settings-deploy-runs-on-hint");
   hint.hidden = $("#settings-deploy-runs-on-row").hidden;
-  hint.classList.remove("warn");
   if (hint.hidden) return;
-  if (!deploy.length) {
-    hint.textContent = "Deploys run on any runner the project runs on (Runners). Name labels to keep them to some of those runners.";
-    return;
-  }
-  const names = (state.runners || []).filter((r) => servesProject(r, { runs_on: typedRunsOn() }) && servesProject(r, { runs_on: deploy })).map((r) => r.name);
-  hint.classList.toggle("warn", !names.length);
-  hint.textContent = names.length
-    ? `Deploys go only to ${names.join(", ")}. If none of them is online, the deploy fails instead of running elsewhere.`
-    : `No runner the project runs on has ${deploy.join(", ")}: deploys fail until one does. Give a runner labels on its page in Runners.`;
+  matchList(hint, deployRunners(typedRunsOn(), typedDeployRunsOn()), { lead: "Deploys on", none: "No runner the project runs on has these labels: deploys fail." });
 }
+// deployRunners are the runners a project on runsOn deploys on with deploy.
+export const deployRunners = (runsOn, deploy) =>
+  (state.runners || []).filter((r) => servesProject(r, { runs_on: runsOn }) && (!deploy.length || servesProject(r, { runs_on: deploy })));
 const typedDeployRunsOn = () => parseLabels($("#settings-deploy-runs-on").value).filter((l) => l.toLowerCase() !== "any");
 
 // renderRunsOnPreview lists the org's runners as the typed labels would
@@ -141,10 +136,10 @@ function syncMergeHint() {
   hint.hidden = $("#settings-runners-field").hidden;
   const n = (state.runners || []).filter((r) => servesProject(r, { runs_on: typedRunsOn() })).length;
   hint.textContent = !onRunners
-    ? "No labels: tasks, git history, files and commands wait until it runs on labels a runner has (this dashboard runs nothing itself)."
+    ? "No labels: its work waits until it has some a runner has."
     : !p.remote_url ? "Runners clone the project's git remote: connect a GitHub repository first."
-      : !n ? "No runner has all these labels yet: tasks wait until one does. Give a runner labels on its page in Runners."
-        : "Tasks, git, files and commands run only on runners with all these labels, each in its own clone. If all of them are offline, tasks wait in the queue.";
+      : !n ? "No runner has all these labels: its work waits until one does."
+        : "Its work runs on these runners, each in its own clone.";
   const pr = f.merge_mode.value === "pr";
   // On runners, merging is pushing: there's no separate push to turn on.
   $("#auto-push-row").hidden = pr || onRunners;
@@ -160,8 +155,9 @@ function syncMergeHint() {
       : f.auto_push.checked ? `Before each merge Dash pulls ${baseBranch(p)} from GitHub, so pushes don't get rejected. GitHub's checks run only after it's pushed.` : "";
 }
 $("#settings-form").addEventListener("change", syncMergeHint);
-$("#settings-runs-on").addEventListener("input", () => { renderRunsOnPreview(); syncMergeHint(); });
-$("#settings-deploy-runs-on").addEventListener("input", renderDeployRunsOn);
+$("#settings-runs-on-help").append(" ", docsLabels());
+labelPicker({ input: $("#settings-runs-on"), any: true, label: "Runs on", onChange: () => { renderRunsOnPreview(); syncMergeHint(); } });
+labelPicker({ input: $("#settings-deploy-runs-on"), label: "Deploy runs on", placeholder: "e.g. production", onChange: renderDeployRunsOn });
 
 // The tag format is checked as it is typed: placeholders, a valid git tag,
 // and whether the repository's release workflows run for its tags.

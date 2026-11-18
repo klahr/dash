@@ -16,7 +16,8 @@ import { ensureShell, forgetShellRefusal } from "./terminal.js";
 import { loadTry } from "./try.js";
 import { loadRunnerTokens } from "./tokens.js";
 import { isRelease, runnerOutdated as outdatedFor } from "../runnerversion.js";
-import { LABEL_ANY, parseLabels, runnerLabels, servesProject } from "../groups.js";
+import { LABEL_ANY, runnerLabels, servesProject } from "../groups.js";
+import { docsLabels, labelPicker, refreshLabelPickers } from "./labelpicker.js";
 
 // ------------------------------------------------------------------ runners
 // The one-line installer and the version runners should run (from /api/runners).
@@ -38,15 +39,15 @@ const psq = (s) => /^[\w%+=:./\\-]+$/.test(s) ? s : `'${s.replace(/['\u2018\u201
 // installCmdWin is installCmd for Windows: the PowerShell installer, with
 // args as PowerShell parameters (-Code …).
 const installCmdWin = (args = "") => `& ([scriptblock]::Create((irm ${runnerInfo.hub}/runner/install.ps1)))${args ? ` ${args}` : ""}`;
-// updateCmds shows how to update a runner by hand, on either kind of computer.
+// updateCmds shows how to update a runner by hand, on any system.
 const updateCmds = () => [
   copyBlock(installCmd(), "Command copied", { pre: true }),
   h("p", { class: "hint" }, "On Windows, in PowerShell:"),
   copyBlock(installCmdWin(), "Command copied", { pre: true }),
 ];
 
-// Computers that run the org's tasks (`dash runner`), each with its owner's
-// Claude subscription. They connect out to this dashboard: no inbound
+// Runners run the org's tasks (`dash runner`), each with its owner's
+// Claude subscription. They connect out to the hub: no inbound
 // access, VPN or shared secret needed on their side. Projects run on runner
 // labels; the hub sends their tasks only to runners with those labels.
 export async function loadRunners() {
@@ -60,6 +61,7 @@ export async function loadRunners() {
     state.runners = null; // this Dash has no runners (it is one, say)
   }
   syncSettingsRunners(); // the open settings show which runners have the project's labels
+  refreshLabelPickers(); // the labels they offer, too
   forgetShellRefusal(); // a runner came or went, or now opens terminals: try again
   if (state.view === "run") ensureShell();
   if (state.project) loadTry().catch(() => {}); // which runners Try may use changed
@@ -94,14 +96,14 @@ const osChip = (r) => {
 
 // The hub never runs Claude: tasks and scans of p run only on a runner with
 // the labels it runs on. runnerNeeded says why they would wait now, or "" (also on a
-// Dash without runners of its own, a runner, and for another computer's project).
-export const startRunner = "start `dash runner` on a computer with git and Claude Code (account menu → Runners → Add a runner)";
+// Dash without runners of its own, a runner, and for another runner's project).
+export const startRunner = "use Runners → Add a runner";
 function runnerNeeded(p) {
   if (!p || p.prefix || !Array.isArray(state.runners)) return "";
-  if (!state.runners.length) return `A runner is required: this dashboard doesn't run Claude itself. To add one, ${startRunner}.`;
+  if (!state.runners.length) return `Its work needs a runner. To add one, ${startRunner}.`;
   const linked = state.runners.filter((r) => servesProject(r, p));
-  if (!linked.length) return `${p.name} needs a runner: ${p.runs_on?.length ? `no runner has the labels it runs on (${p.runs_on.join(", ")})` : "it runs on no runner labels"}, so its tasks, scans, git history, files and commands wait until one does. Give a runner those labels in Runners, or change them in Project settings → Runners. This dashboard runs nothing itself.`;
-  if (!linked.some((r) => r.online)) return `No runner is online for this project. Start one with \`dash runner\`. Until then its tasks and scans wait, and its git history, files and commands can't be shown.`;
+  if (!linked.length) return `${p.name} needs a runner: ${p.runs_on?.length ? `none has ${p.runs_on.join(", ")}` : "it has no labels"}. Its work waits.`;
+  if (!linked.some((r) => r.online)) return "No runner of this project is online. Its work waits.";
   return "";
 }
 // renderRunnerBanner says above the board when the open project's git,
@@ -165,11 +167,11 @@ function signInChip(r) {
 function whoseTasks(r) {
   const owner = r.owner?.username || "its owner";
   if (r.takes_others) {
-    return h("p", { class: "hint" }, `Takes ${owner}'s tasks and other members' tasks with labels it has. It runs other members' tasks with its API key only, never a Claude subscription.`);
+    return h("p", { class: "hint" }, `${owner}'s and other members' tasks, on its API key.`);
   }
   return h("p", { class: `hint${r.shared ? " warn" : ""}` },
-    `Takes only ${owner}'s tasks: Claude runs there on ${r.mine ? "your" : `${owner}'s`} login (${r.sign_in || "unknown"}).`,
-    r.shared && r.cant_share ? ` Take other members' tasks is on, but has no effect: ${r.cant_share}.` : "");
+    `Only ${owner}'s tasks, on ${r.mine ? "your" : `${owner}'s`} login (${r.sign_in || "unknown"}).`,
+    r.shared && r.cant_share ? ` Sharing has no effect: ${r.cant_share}.` : "");
 }
 
 // pacedWith are the other runners on r's Claude account.
@@ -213,12 +215,12 @@ function diskSettings(r) {
   const setting = (title, hint, control) => h("div", { class: "runner-setting" },
     h("div", { class: "runner-setting-text" }, h("strong", {}, title), h("p", { class: "hint" }, hint)), control);
   return h("div", { class: "runner-disk-settings" },
-    setting("Warn below", "Warns here and on the board, and notifies once, when a disk has less free than the smaller of these. Empty: 10% or 10 GB.",
+    setting("Warn below", "Free space that warns on the board. Empty: 10% or 10 GB.",
       h("span", { class: "runner-setting-pair" }, unit(input("warn_percent", "Warn below percent free", { max: 99 }), "%"), "or",
         unit(input("warn_gb", "Warn below GB free"), "GB"))),
-    setting("Start no task below", "A task waits, its log saying why, instead of failing halfway with a write error. Empty: 2 GB.",
+    setting("Start no task below", "Tasks wait instead of failing. Empty: 2 GB.",
       unit(input("min_free_gb", "Start no task below GB free"), "GB")),
-    setting("Trim the Go build cache above", "Runs go clean -cache once the cache is bigger than this: about once a day, and when space runs low, while no task builds. Nothing else is deleted. Empty: off.",
+    setting("Trim the Go build cache above", "Runs go clean -cache, at most daily. Empty: off.",
       unit(input("trim_go_cache_gb", "Trim the Go build cache above GB", { placeholder: "Off" }), "GB")));
 }
 
@@ -260,7 +262,7 @@ function runnerDisk(r) {
       d.largest?.length ? h("p", { class: "hint" }, "Largest folders in its cache folder:") : null,
       d.largest?.length ? h("ul", { class: "runner-disk-largest" }, ...d.largest.map((f) =>
         h("li", {}, h("code", {}, f.path), h("span", {}, sizeText(f.size))))) : null,
-      h("p", { class: "hint" }, "Dash deletes nothing there on its own. To empty the Go build cache by hand, run this on ", r.name, ":"),
+      h("p", { class: "hint" }, "To empty the Go build cache, run on ", r.name, ":"),
       copyBlock("go clean -cache", "Command copied", { pre: true })) : null,
     gc?.path ? h("p", { class: "hint runner-disk-go" }, "Go build cache: ", h("strong", {}, sizeText(gc.size || 0)), " in ", h("code", {}, gc.path),
       gc.trimmed ? `. Trimmed ${agoText(gc.trimmed)}${gc.freed ? `, freeing ${sizeText(gc.freed)}` : ""}.` : ".") : null,
@@ -485,7 +487,7 @@ function paintOverview(list) {
   $("#runners-add").hidden = list === null;
   if (list === null) {
     $("#runners-stats").replaceChildren();
-    box.replaceChildren(h("p", { class: "hint" }, "This Dash doesn't take runners."));
+    box.replaceChildren(h("p", { class: "hint" }, "This Dash takes no runners."));
     return;
   }
   $("#runners-stats").replaceChildren(...(list.length ? runnerStats(list) : []));
@@ -494,7 +496,7 @@ function paintOverview(list) {
     box.replaceChildren(h("div", { class: "runners-empty" },
       ico("computer"),
       h("p", { class: "empty-title" }, "No runners yet"),
-      h("p", { class: "hint" }, "Add a computer with git and Claude Code logged in: you get a one-line install command for its terminal (Linux or macOS).")));
+      h("p", { class: "hint" }, "A runner needs git and Claude Code logged in. Linux, macOS or Windows.")));
     return;
   }
   const mine = list.filter((r) => r.mine).sort(byStatus), others = list.filter((r) => !r.mine).sort(byStatus);
@@ -550,10 +552,10 @@ function paintRunner(r) {
       accountChip(r),
       signInChip(r)),
     pacedWith(r).length ? h("p", { class: "hint runner-paced-with" },
-      `Shares its Claude account with ${pacedWith(r).map((x) => x.name).join(", ")}: their usage is one budget, and following the weekly pace paces them together.`) : null,
+      `Shares its Claude account, and its usage, with ${pacedWith(r).map((x) => x.name).join(", ")}.`) : null,
     runnerUpdate(r),
     claudeWarns.length ? h("div", { class: "runner-update runner-claude-warn", role: "status" },
-      h("p", { class: "hint warn" }, `Claude Code${claude.version ? ` ${claude.version}` : ""} on ${r.name} doesn't look the way Dash expects. Tasks may fail or miss usage limits; updating Dash may help:`),
+      h("p", { class: "hint warn" }, `Claude Code${claude.version ? ` ${claude.version}` : ""} looks different from what Dash expects. Updating Dash may help:`),
       h("ul", {}, ...claudeWarns.map((w) => h("li", {}, w)))) : null,
     usage ? h("h4", { class: "section-head" }, "Claude usage") : null,
     usage,
@@ -563,25 +565,20 @@ function paintRunner(r) {
     h("h4", { class: "section-head" }, "Whose tasks"),
     whoseTasks(r),
     h("h4", { class: "section-head" }, "Labels"),
-    runnerLabels(r).length ? h("div", { class: "runner-labels" }, ...runnerLabels(r).map((l, i) =>
-      h("span", { class: `runner-label${i < (r.default_labels || []).length ? " default" : ""}`,
-        title: i < (r.default_labels || []).length ? "Its system or architecture" : "Given to it" }, l)))
-      : h("p", { class: "hint" }, `None: it builds only the projects that run on ${LABEL_ANY}.`),
+    runnerLabelsSection(r),
     h("h4", { class: "section-head" }, "Projects"),
     h("div", { class: "runner-projects" },
       projects.length
         ? projects.map((p) => h("button", { class: "runner-project", type: "button", title: `Open ${p.name}`,
           onclick: () => { $("#runners-sheet").close(); selectProject(p); } }, ico("repo"), p.name))
-        : h("span", { class: "hint" }, r.can_manage
-          ? ["No project runs on its labels yet. Give it a project's labels in its settings below or in Shared projects…, or change a project's in its settings", r.mine ? ", or add projects from this computer." : "."]
-          : "No project runs on its labels yet.")),
+        : h("span", { class: "hint" }, "No project runs on its labels yet.")),
     h("div", { class: "runner-actions" },
       ib({ class: "btn small", type: "button",
         title: `The shared projects ${r.name} builds, and the labels they run on`,
         onclick: attempt(() => showRunnerLinks(r)) }, "repo", "Shared projects…"),
       r.mine ? ib({ class: "btn small", type: "button", disabled: !r.online,
         title: r.online ? `Pick git repositories on ${r.name} to add as its projects` : `${r.name} is offline`,
-        onclick: attempt(() => showRunnerRepos(r)) }, "plus", "Add from this computer…") : null));
+        onclick: attempt(() => showRunnerRepos(r)) }, "plus", "Add from this runner…") : null));
 
   if (!r.can_manage) {
     $("#runner-manage").replaceChildren(h("p", { class: "hint runner-manage-note" }, `Only ${r.owner?.username || "its owner"} or an admin can change ${r.name}.`));
@@ -592,15 +589,11 @@ function paintRunner(r) {
     onchange: (e) => saveRunner(e.target, r, { parallel: Number(e.target.value) || 0 }) });
   const setting = (title, hint, control, cls = "") => h("div", { class: `runner-setting ${cls}` },
     h("div", { class: "runner-setting-text" }, h("strong", {}, title), h("p", { class: "hint" }, hint)), control);
-  const labels = h("input", { type: "text", value: (r.labels || []).join(", "), placeholder: "gpu, big-disk", autocomplete: "off", autocapitalize: "off", spellcheck: false,
-    class: "runner-labels-input", "aria-label": `${r.name}'s own labels`,
-    onchange: (e) => saveRunner(e.target, r, { labels: parseLabels(e.target.value) }, loadProjects) });
   fill($("#runner-manage"),
     h("h4", { class: "section-head" }, "Settings"),
-    setting("Labels", `It builds the projects that run on labels it has, and those that run on ${LABEL_ANY}. ${r.default_labels?.length ? `Besides ${r.default_labels.join(", ")}, which it has anyway, give` : "Give"} it labels of its own, separated by commas.`, labels, "runner-labels-setting"),
-    setting("Tasks at once", `How many tasks the hub sends it at once. Empty: the runner's own setting (${r.reported?.parallel || 1}).`, parallel),
+    setting("Tasks at once", `Empty: its own setting (${r.reported?.parallel || 1}).`, parallel),
     setting(r.paused ? "Paused" : "Taking tasks",
-      r.paused ? "It takes no new tasks until you resume it." : "Pausing lets it finish what it runs, then it takes no new tasks.",
+      r.paused ? "Takes no new tasks until resumed." : "Pausing finishes what it runs, then takes no new tasks.",
       ib({ class: "btn small", type: "button", onclick: attempt(async () => {
         await patchRunner(r, { paused: !r.paused });
         toast(r.paused ? `${r.name} takes tasks again` : `${r.name} paused: it finishes what it runs and takes no new tasks`);
@@ -608,11 +601,11 @@ function paintRunner(r) {
       }) }, r.paused ? "play" : "pause", r.paused ? "Resume" : "Pause")),
     setting("Take other members' tasks",
       r.shared
-        ? (r.takes_others ? "On: it also runs other members' tasks that have its labels, with its API key only."
-          : `On, but it has no effect: ${r.cant_share || "it doesn't run Claude with an API key alone"}.`)
+        ? (r.takes_others ? "On, with its API key."
+          : `On, but has no effect: ${r.cant_share || "it needs an API key alone"}.`)
         : r.cant_share
-          ? `Can't be turned on: ${r.cant_share}. Only a runner that runs Claude with an API key (ANTHROPIC_API_KEY) and has no Claude subscription login can do other members' work: a subscription is one person's.`
-          : "Off: it runs only its owner's tasks. Turn on to let other members' tasks run here too, on its API key.",
+          ? `Needs an API key and no subscription login: ${r.cant_share}.`
+          : "Off: only its owner's tasks.",
       ib({ class: "btn small", type: "button", "aria-pressed": String(!!r.shared), disabled: !r.shared && !!r.cant_share,
         title: !r.shared && r.cant_share ? r.cant_share : "", onclick: attempt(async () => {
           await patchRunner(r, { shared: !r.shared });
@@ -620,21 +613,45 @@ function paintRunner(r) {
           await renderRunners();
         }) }, "users", r.shared ? "Turn off" : "Turn on")),
     runnerInfo.canUpdate ? setting(r.auto_update ? "Updates itself" : "Updated by hand",
-      r.auto_update ? "When it runs another version than the hub's, it finishes its tasks, then updates to the hub's version."
-        : "Turn on to update it to the hub's version by itself, after its running tasks finish.",
+      r.auto_update ? "Updates to the hub's version once its tasks finish."
+        : "Off: update it by hand.",
       ib({ class: "btn small", type: "button", "aria-pressed": String(!!r.auto_update), onclick: attempt(async () => {
         await patchRunner(r, { auto_update: !r.auto_update });
         toast(r.auto_update ? `${r.name} is updated by hand now` : `${r.name} updates itself to the hub's version`);
         await renderRunners();
       }) }, "reload", r.auto_update ? "Turn off" : "Turn on")) : null,
-    setting("Revoke", "Stops its token and disconnects it: it builds no project any more.",
+    setting("Revoke", "Disconnects it and revokes its token.",
       ib({ class: "btn small danger", type: "button", title: `Revoke ${r.name}'s token`, onclick: attempt(async () => {
-        const ok = await ask({ title: `Revoke ${r.name}?`, body: "It's disconnected now, its token stops working and it builds no project any more. Tasks it is running fail and can be queued again on another runner. Run the install command with a new code to bring it back.", ok: "Revoke", danger: true });
+        const ok = await ask({ title: `Revoke ${r.name}?`, body: "Its running tasks fail and can be queued again. To bring it back, install it with a new code.", ok: "Revoke", danger: true });
         if (!ok) return;
         await api("DELETE", `/api/runners/${encodeURIComponent(r.id)}`);
         toast(`${r.name} revoked`);
         await refreshMachines();
       }) }, "trash", "Revoke…"), "danger"));
+}
+
+// runnerLabelsSection shows runner r's labels: its system's (dashed) and,
+// as chips its owner or an admin picks, its own; each change is saved.
+function runnerLabelsSection(r) {
+  const defaults = r.default_labels || [];
+  if (!r.can_manage) {
+    return runnerLabels(r).length ? h("div", { class: "runner-labels" }, ...runnerLabels(r).map((l, i) =>
+      h("span", { class: `runner-label${i < defaults.length ? " default" : ""}`, title: i < defaults.length ? "Its system or architecture" : "" }, l)))
+      : h("p", { class: "hint" }, `None: it builds only projects on ${LABEL_ANY}.`);
+  }
+  const picker = labelPicker({ value: (r.labels || []).join(","), exclude: defaults, label: `${r.name}'s own labels`, placeholder: "e.g. gpu",
+    // Saved as each chip comes or goes, as the sheet's other fields are
+    // (autosave.js): "Saved" in its header, or the error under the picker.
+    onChange: (labels) => attempt(async () => {
+      if (!(await saveField(picker.el, () => patchRunner(r, { labels })))) return;
+      await loadProjects();
+      await renderRunners();
+      $("#runner-detail .runner-own-labels .label-picker-input")?.focus();
+    })() });
+  return h("div", { class: "runner-own-labels" },
+    defaults.length ? h("div", { class: "runner-labels" }, ...defaults.map((l) =>
+      h("span", { class: "runner-label default", title: "Its system or architecture" }, l))) : null,
+    picker.el);
 }
 
 // runnerUpdate is runner r's update: its progress, why the last one failed,
@@ -646,9 +663,9 @@ function runnerUpdate(r) {
   const path = `/api/runners/${encodeURIComponent(r.id)}/update`;
   if (u) {
     const waiting = u.phase === "waiting";
-    const text = !waiting ? `Updating to ${u.target}: ${r.name} downloads it, then restarts on it.`
-      : !r.online ? `Updates to ${u.target} once it is back online and its tasks are done.`
-      : r.running ? `Waiting for ${plural(r.running, "task")} to finish, then it updates to ${u.target}. It takes no new tasks meanwhile.`
+    const text = !waiting ? `Updating to ${u.target}…`
+      : !r.online ? `Updates to ${u.target} once back online.`
+      : r.running ? `Updates to ${u.target} after ${plural(r.running, "task")}; takes no new ones meanwhile.`
       : `Updating to ${u.target} in a moment.`;
     return h("div", { class: "runner-update", role: "status" },
       h("p", { class: "hint" }, `${u.auto ? "Auto-update: " : ""}${text}`),
@@ -663,7 +680,7 @@ function runnerUpdate(r) {
   if (runnerInfo.canUpdate && r.can_manage) {
     return h("div", { class: "runner-update" },
       failed,
-      h("p", { class: "hint warn" }, `Runs ${r.version}, the hub runs ${runnerInfo.version}. Updating lets it finish its running tasks first; it takes no new ones meanwhile.`),
+      h("p", { class: "hint warn" }, `Runs ${r.version}; the hub runs ${runnerInfo.version}.`),
       ib({ class: "btn small", type: "button", onclick: attempt(async () => {
         await api("POST", path);
         toast(`${r.name} updates to ${runnerInfo.version} once its tasks are done`);
@@ -722,7 +739,7 @@ async function showRunnerRepos(r) {
   const where = res.root ? h("code", {}, res.root) : "its projects directory";
   if (!res.repos.length) {
     box.replaceChildren(h("h4", {}, `Projects on ${r.name}`),
-      h("p", { class: "hint" }, "No git repositories to add in ", where, " (folders there and one level down; those already projects, the hub's among them, and old clones in ", h("code", {}, "hub/"), " are left out)."),
+      h("p", { class: "hint" }, "No new git repositories in ", where, "."),
       h("div", { class: "runner-repos-actions" }, close));
     return;
   }
@@ -755,7 +772,7 @@ async function showRunnerRepos(r) {
   }));
   box.replaceChildren(
     h("h4", {}, `Projects on ${r.name}`),
-    h("p", { class: "hint" }, "Git repositories in ", where, " on ", r.name, ". Tick the ones to add as its own projects; their tasks run there."),
+    h("p", { class: "hint" }, "Git repositories in ", where, ". Tick the ones to add as its own projects."),
     h("label", { class: "runner-pick runner-repos-all" }, all, "Select all"),
     h("ul", { class: "runner-repos-list" }, ...res.repos.map((x, i) => h("li", {},
       h("label", { class: "runner-pick" }, checks[i],
@@ -832,7 +849,7 @@ async function withBusy(key, fn) {
 async function giveLabels(r, l) {
   const owner = r.owner?.username || "its owner";
   if (!await ask({ title: `Give ${r.name} ${plural(l.missing.length, "label")}?`,
-    body: `${r.name} gets ${l.missing.join(", ")}, and so builds ${l.name} and every other project of the organization that runs on its labels. Their tasks run on it, with ${owner}'s Claude subscription.`,
+    body: `${r.name} gets ${l.missing.join(", ")}, so it builds ${l.name} and every other project on those labels, with ${owner}'s Claude login.`,
     ok: "Add labels" })) return;
   await withBusy(l.id, async () => {
     await patchRunner(r, { labels: [...(r.labels || []), ...l.missing] });
@@ -868,8 +885,8 @@ function renderRunnerLinks() {
   });
   $("#runners-links").replaceChildren(
     h("h4", {}, `Projects ${r.name} builds`),
-    h("p", { class: "hint" }, `${r.name} builds the projects that run on labels it has${runnerLabels(res.runner).length ? ` (${runnerLabels(res.runner).join(", ")})` : ""}, and those that run on ${LABEL_ANY}: it clones each into its projects folder and takes its tasks. Change its labels below, or a project's in Project settings → Runners.`),
-    r.mine ? h("p", { class: "hint warn" }, `Creating a project from a repository makes a shared project that everyone in ${org} sees. It runs on ${r.name}'s own labels${r.labels?.length ? ` (${r.labels.join(", ")})` : ", or on ${LABEL_ANY} (any runner) while it has none"}. For a repository only this computer works on, use Add from this computer… instead.`) : null,
+    h("p", { class: "hint" }, `It builds the projects on its labels${runnerLabels(res.runner).length ? ` (${runnerLabels(res.runner).join(", ")})` : ""} and on ${LABEL_ANY}. `, docsLabels()),
+    r.mine ? h("p", { class: "hint" }, `Create project makes a shared project on ${r.labels?.length ? r.labels.join(", ") : LABEL_ANY}. For one only ${r.name} works on, use Add from this runner….`) : null,
     h("p", { class: "hint" }, ghNoteText(r, res, org, owner)),
     h("div", { class: "gh-filter-row" }, filter),
     list,
@@ -925,9 +942,9 @@ function runnerLinkRows(r, res, org) {
 // ghNoteText says where the list's repositories come from, or why there are none.
 function ghNoteText(r, res, org, owner) {
   if (!r.mine) {
-    return `Only ${owner} can list repositories with ${r.name}'s GitHub login, and this dashboard has no GitHub login of its own, so new repositories aren't listed here: only ${org}'s existing shared projects.${res.runner.can_manage ? "" : ` Only ${owner} or an admin can change ${r.name}'s labels.`}`;
+    return `Only ${owner} can list ${r.name}'s GitHub repositories; ${org}'s shared projects are below.`;
   }
-  if (!r.online) return `${r.name} is offline, so its GitHub login can't list your repositories now; the org's shared projects are below.`;
+  if (!r.online) return `${r.name} is offline, so it can't list your repositories; the shared projects are below.`;
   if (links.ghError) return `${links.ghError} The org's shared projects are below.`;
   if (!links.gh) return `Asking ${r.name}'s gh for your repositories…`;
   return `Your repositories from ${r.name}'s gh (signed in as ${links.gh.user}), and the org's other shared projects.`;
@@ -954,22 +971,22 @@ async function addRunner() {
     if (n) psArgs += ` -Name ${psq(n)}`;
     if (d) psArgs += ` -Projects ${psq(d)}`;
     oneLine.replaceChildren(
-      h("p", {}, "On the other computer (Linux or macOS), paste this in a terminal:"),
+      h("p", {}, "On Linux or macOS, in a terminal:"),
       copyBlock(installCmd(args), "Command copied", { pre: true }),
-      h("p", { class: "hint" }, "It downloads Dash", isRelease(runnerInfo.version) ? ` ${runnerInfo.version}` : "", " to ", h("code", {}, "~/.local/bin"), ", checks git, claude and the connection to this hub, registers, and starts it as a background service. No sudo, no Go."),
-      h("p", {}, "On Windows, paste this in PowerShell:"),
+      h("p", {}, "On Windows, in PowerShell (needs ", h("code", {}, "winget install Git.Git"), "):"),
       copyBlock(installCmdWin(psArgs), "Command copied", { pre: true }),
-      h("p", { class: "hint" }, "It needs Git for Windows (", h("code", {}, "winget install Git.Git"), "): the runner runs commands with its bash. Dash goes to ", h("code", {}, "%LOCALAPPDATA%\\Programs\\dash"), " and runs as a scheduled task when you log in. No administrator rights needed. Terminals aren't available on Windows runners yet."));
+      h("p", { class: "hint" }, "It installs Dash", isRelease(runnerInfo.version) ? ` ${runnerInfo.version}` : "", " and starts the runner as a service. No sudo or admin rights. ",
+        h("a", { href: "https://github.com/klahr/dash/blob/main/docs/several-computers.md#add-a-runner", target: "_blank", rel: "noopener" }, "What it does")));
     let flags = "";
     if (n) flags += ` --name ${shq(n)}`;
     if (d) flags += ` --projects ${shq(d)}`;
     const rel = isRelease(runnerInfo.version) ? `https://github.com/klahr/dash/releases/tag/${runnerInfo.version}` : "https://github.com/klahr/dash/releases/latest";
     manual.replaceChildren(h("ol", { class: "steps" },
-      h("li", {}, h("strong", {}, "Get Dash. "), "Download the archive for the computer from ", h("a", { href: rel, target: "_blank", rel: "noopener" }, "the release"), " and unpack it, or build it from a checkout (", h("code", {}, "go build -o bin/dash ./cmd/dash"), "). It needs git, and claude logged in."),
+      h("li", {}, h("strong", {}, "Get Dash. "), "Download and unpack ", h("a", { href: rel, target: "_blank", rel: "noopener" }, "the release"), " for its system. It needs git, and claude logged in."),
       h("li", {}, h("strong", {}, "Register and run it:"), copyBlock(`dash runner --server ${runnerInfo.hub} --code ${code}${flags}`, "Command copied", { pre: true }),
-        h("p", { class: "hint" }, "It keeps its token and reconnects by itself; later just run ", h("code", {}, "dash runner"), ".")),
+        h("p", { class: "hint" }, "Later, just ", h("code", {}, "dash runner"), ".")),
       h("li", {}, h("strong", {}, "Optionally, keep it running in the background:"), copyBlock("dash runner install", "Command copied", { pre: true }),
-        h("p", { class: "hint" }, "A systemd user service on Linux, a LaunchAgent on macOS, a scheduled task on Windows. ", h("code", {}, "dash runner status"), " shows how it's doing."))));
+        h("p", { class: "hint" }, h("code", {}, "dash runner status"), " shows how it's doing."))));
   };
   name.addEventListener("input", render);
   dir.addEventListener("input", render);
@@ -985,14 +1002,14 @@ async function addRunner() {
     oneLine, manual,
     h("details", { class: "runner-add-opts" },
       h("summary", {}, "Name and projects directory"),
-      h("p", { class: "hint" }, "Both optional: the name defaults to the computer's host name, and the projects directory is where it looks for and clones repositories. The command above updates as you type."),
+      h("p", { class: "hint" }, "Both optional. The command above updates as you type."),
       h("div", { class: "runner-add-fields" },
         h("label", { class: "field" }, h("span", {}, "Name"), name),
         h("label", { class: "field" }, h("span", {}, "Projects directory"), dir))),
     h("div", { class: "runner-add-foot" },
       h("p", { class: "runner-add-status", id: "runner-add-status", role: "status" }, "Waiting for the runner to connect…"),
       h("button", { class: "btn small", type: "button", onclick: closeRunnerAdd }, "Cancel")),
-    h("p", { class: "hint" }, `The code works once, for ${mins} minutes, and makes the runner yours, in ${state.me?.org?.name || "this organization"}. Once it connects, its page opens here.`));
+    h("p", { class: "hint" }, `The code works once, for ${mins} minutes. The runner is yours.`));
   closeRunnerPanels();
   shown = "add";
   paintRunners();
@@ -1041,11 +1058,10 @@ export function welcomeScreen() {
   return [
     art("/img/empty-board.webp", 480, 360),
     h("p", { class: "empty-title" }, "Welcome to Dash"),
-    h("p", {}, "Claude does your tasks on ", h("strong", {}, "runners"), ": computers of yours with git and Claude Code logged in, each using its owner's Claude subscription. ",
-"This dashboard doesn't run Claude itself, so start by adding one: ", h("code", {}, "dash runner"), " on a computer of yours."),
+    h("p", {}, "Claude does your tasks on ", h("strong", {}, "runners"), ", with git and Claude Code logged in. Add one to start."),
     h("ol", { class: "steps welcome-steps" },
-      h("li", {}, h("strong", {}, "Add a runner. "), "Get a one-time code here, then paste the install command in a terminal on the other computer (Linux or macOS). It connects out to this dashboard: no open ports, VPN or sudo needed."),
-      h("li", {}, h("strong", {}, "Create a project. "), "A project is a git repository. Link it to the runner in its settings."),
+      h("li", {}, h("strong", {}, "Add a runner. "), "Paste its install command on Linux, macOS or Windows. No open ports needed."),
+      h("li", {}, h("strong", {}, "Create a project. "), "A git repository; its labels pick its runners."),
       h("li", {}, h("strong", {}, "Add tasks. "), "Each runs in its own worktree and comes back for review.")),
     h("div", { class: "empty-actions" },
       ib({ class: "btn primary", onclick: attempt(openAddRunner) }, "plus", "Add a runner"),

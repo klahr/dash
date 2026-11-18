@@ -100,8 +100,8 @@ archive; from source, `go build -o bin/dash-tui ./cmd/dash-tui`).
    and the dialog shows each step until the clone is done. For throwaway work, pick
    **Local only**: the runner starts a new repository in its projects folder (`git init` and an
    initial commit), with no remote and no GitHub; deleting that project deletes its folder too.
-   Repositories already on a runner's disk are added with **Add projects from this computer…** on
-   its row of the Runners page. Only have an idea? Pick **Plan a new project**: Claude interviews
+   Repositories already on a runner's disk are added with **Add from this runner…** on
+   its page in **Runners**. Only have an idea? Pick **Plan a new project**: Claude interviews
    you, writes a brief, and Dash starts the project and a goal from it
    ([Plan a new project](docs/plan-project.md)). A clone that has a favicon gets it as its project icon.
    A *Test command* (e.g. `go test ./...`) is optional but lets Dash check Claude's work. It

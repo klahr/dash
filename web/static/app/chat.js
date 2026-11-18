@@ -770,7 +770,7 @@ export const chatRunner = {
     bar.classList.toggle("offline", !current);
     if (current) text.textContent = `Runs on ${current}, with its Claude login`;
     else if (info.runners.length) text.textContent = `Your runner${info.runners.length > 1 ? "s are" : ` ${info.runners[0].name} is`} offline: run \`dash runner\` on it to chat`;
-    else text.textContent = "A runner is required to chat: this dashboard doesn't run Claude itself. Start `dash runner` on a computer of yours with Claude Code (account menu → Runners → Add a runner); the chat runs there with your Claude login";
+    else text.textContent = "Chat needs a runner of yours: use Runners → Add a runner";
     text.title = text.textContent;
     sel.hidden = online.length < 2;
     if (!sel.hidden) {
