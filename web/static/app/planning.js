@@ -76,10 +76,11 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
         ib({ type: "button", class: "btn small primary pl-new", title: "Add an idea to the plan", onclick: () => openComposer("ideas") }, "plus", "New card")),
       h("p", { class: "hint pl-intro", id: "pl-intro", hidden: true },
         "The plan: cards move from Ideas to Done. Start a card to make a task or a goal for a developer's project; its status follows the work."),
-      // The task board's look (style.css: .lanes, .board, .col, .rail, .todo):
-      // on a phone a strip of lanes and one column at a time, on a desktop
-      // the columns side by side. Each column ends in Add card, which opens a
-      // new card to type on at the end of the column (openComposer).
+      // The task board's layout (style.css: .lanes, .board, .col): on a
+      // phone a strip of lanes and one column at a time, on a desktop the
+      // columns side by side. A column is a list of bordered cards (no rail
+      // line or nodes; style.css: .pl-cards) and ends in Add card, which
+      // opens a new card to type on at the end of the column (openComposer).
       h("div", { class: "lanes pl-lanes", role: "tablist", "aria-label": "Columns" },
         ...COLUMNS.map((col) => h("button", { type: "button", role: "tab", class: `lane-tab s-${col.s}`, "data-col": col.key,
           onclick: () => { pl.lane = col.key; renderBoard(); } }, col.title, h("span", { class: "n", id: `pl-tab-n-${col.key}` })))),
@@ -88,7 +89,7 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
           h("header", { class: "col-head" },
             h("span", { class: "col-label", id: `pl-col-${col.key}` }, col.title), h("span", { class: "n", id: `pl-count-${col.key}` })),
           h("div", { class: "col-body" },
-            h("ol", { class: "rail pl-cards", "data-col": col.key, "aria-labelledby": `pl-col-${col.key}` }),
+            h("ol", { class: "pl-cards", "data-col": col.key, "aria-labelledby": `pl-col-${col.key}` }),
             h("p", { class: "col-empty", id: `pl-empty-${col.key}` }, col.empty),
             ib({ type: "button", class: "pl-add", "data-col": col.key, title: `Add a card to ${col.title}`, onclick: () => openComposer(col.key) }, "plus", "Add card")))))));
   paneParent.append(
@@ -286,13 +287,13 @@ function cardEl(c) {
   const about = (c.description || "").replace(/[#*_`>]+/g, "").replace(/\s+/g, " ").trim();
   const sub = c.status?.total ? h("span", { class: "todo-sub" }, statusEl(c.status))
     : about ? h("span", { class: "todo-sub" }, about) : null;
-  // Laid out as the task board's card (app/branches.js: todoRow): the node
-  // in the status's colour (filled once Done), the title the button that
-  // opens the card, and a press anywhere else on it opens it too.
+  // A bordered card (style.css: .pl-card), built from the task board's
+  // card parts (app/branches.js: todoRow) but without its rail node: the
+  // status line's dot shows the status's colour, Done cards lie flat. The
+  // title is the button that opens the card; a press anywhere on it does too.
   return h("li", { class: "pl-card", "data-id": c.id },
     h("div", { class: `todo t-${c.status?.tone || "none"}${c.column === "done" ? " pushed" : ""}${c.id === pl.open ? " selected" : ""}`,
       onclick: () => openCard(c.id).catch(fail) },
-      h("span", { class: "node", "aria-hidden": "true" }),
       h("span", { class: "todo-main" },
         h("button", { type: "button", class: "todo-open pl-open", "aria-controls": "card-detail", "aria-current": c.id === pl.open ? "true" : null,
           title: "Open (Alt+arrows move it; Space over it assigns it to you)", onkeydown: (e) => cardKeys(e, c) },
@@ -506,7 +507,6 @@ async function openComposer(col) {
       "aria-label": `New card in ${COLUMN_TITLE[col]}`, "aria-describedby": "pl-compose-help" });
     const li = h("li", { class: "pl-card pl-composer" },
       h("div", { class: "todo t-none" },
-        h("span", { class: "node", "aria-hidden": "true" }),
         h("span", { class: "todo-main" }, ta,
           h("span", { class: "sr-only", id: "pl-compose-help" }, "Enter adds the card, Shift+Enter starts a new line, Escape cancels."))));
     const c = { col, li, ta, busy: null };

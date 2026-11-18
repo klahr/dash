@@ -3188,11 +3188,12 @@ button.goal-task-open:hover { background: var(--raised); }
 :is(.goal-note, .goal-review) .reply :is(p, ul, ol):last-child { margin-bottom: 0; }
 
 /* ---------- Planning (app/planning.js) ----------
-   The org's plan, in the task board's look: its lanes on a phone (one column
-   at a time), its columns side by side on a desktop, each card a .todo on the
-   .rail with its node in the tone of its status (t-*), and Add card at the
-   bottom of each column. A card's pane lies beside the board (full screen on
-   a phone). */
+   The org's plan, laid out as the task board: its lanes on a phone (one
+   column at a time), its columns side by side on a desktop, and Add card at
+   the bottom of each column. Unlike the task board's rail (no line, no node),
+   each card is a bordered card of its own; its status line's dot shows the
+   tone of its status (t-*). A card's pane lies beside the board (full screen
+   on a phone). */
 .page.planning { max-width: none; padding: 0; display: flex; flex-direction: column; }
 .pl-head { flex-wrap: wrap; margin: 0; padding: var(--sp-3) var(--pad-x) 10px; }
 .pl-head .pl-new { margin-left: auto; }
@@ -3214,15 +3215,27 @@ button.goal-task-open:hover { background: var(--raised); }
 .pl-intro { margin: 0; padding: 0 var(--pad-x) 12px; }
 .pl-board { padding-bottom: 24px; }
 .pl-board .col-body { padding-bottom: 24px; }
+.pl-cards { --pl-gap: 8px; --pl-pad: 12px; display: flex; flex-direction: column; gap: var(--pl-gap); margin: 0; padding: var(--pl-pad); list-style: none; }
+.pl-cards[hidden] { display: none; }
 .pl-card { position: relative; }
-.pl-card .todo { cursor: pointer; }
+.pl-card .todo {
+  grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; min-height: 0; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); cursor: pointer;
+}
+.pl-card .todo:hover { border-color: color-mix(in srgb, var(--faint) 60%, var(--line)); box-shadow: var(--shadow-1); }
+.pl-card .todo.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); box-shadow: 0 0 0 1px var(--accent); }
+.pl-card .todo:has(> .todo-main > .todo-open:focus-visible) { outline-offset: 2px; border-radius: var(--r-m); }
+/* Done: flat on the page, its title muted. */
+.pl-card .todo.pushed:not(.selected) { background: transparent; }
+.pl-card .todo.pushed .todo-title { color: var(--muted); }
 @media (hover: hover) { .pl-card .todo { cursor: grab; } }
 .pl-card.dragging { opacity: .3; }
-.pl-ghost { position: fixed; top: 0; left: 0; z-index: 60; list-style: none; pointer-events: none; background: var(--surface); box-shadow: var(--shadow-3); border-radius: var(--r-m); opacity: .95; }
-.pl-card.drop-before::before, .pl-card.drop-after::after { content: ""; position: absolute; z-index: 2; left: 4px; right: 4px; height: 3px; border-radius: 2px; background: var(--accent); }
-.pl-card.drop-before::before { top: -2px; }
-.pl-card.drop-after::after { bottom: -2px; }
-.pl-card .todo-sub .pl-status-text::before { display: none; } /* the node is the dot */
+.pl-ghost { position: fixed; top: 0; left: 0; z-index: 60; list-style: none; pointer-events: none; box-shadow: var(--shadow-3); border-radius: var(--r-m); opacity: .95; }
+.pl-ghost .todo { background: var(--surface); }
+/* The drop line lies in the middle of the gap between two cards. */
+.pl-card.drop-before::before, .pl-card.drop-after::after { content: ""; position: absolute; z-index: 2; left: 2px; right: 2px; height: 3px; border-radius: 2px; background: var(--accent); }
+.pl-card.drop-before::before { top: calc(var(--pl-gap) / -2 - 1.5px); }
+.pl-card.drop-after::after { bottom: calc(var(--pl-gap) / -2 - 1.5px); }
 .pl-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--raised); color: var(--muted); }
 .pl-chip .ico, .pl-comments .ico { width: 12px; height: 12px; }
 .pl-chip.p-high { color: var(--failed); background: color-mix(in srgb, var(--failed) 14%, transparent); }
@@ -3232,7 +3245,7 @@ button.goal-task-open:hover { background: var(--raised); }
 /* The assignee's face, at the end of the card's meta row. */
 .pl-assignee { display: inline-flex; margin-left: auto; }
 .pl-assignee .avatar { width: 22px; height: 22px; box-shadow: 0 0 0 2px var(--surface); }
-.pl-card.selected .pl-assignee .avatar { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.pl-card .todo.selected .pl-assignee .avatar { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 .pl-status, .pl-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--fs-s); color: var(--c, var(--muted)); }
 .pl-status-text { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .pl-status-text::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--muted)); flex: none; }
@@ -3243,13 +3256,15 @@ button.goal-task-open:hover { background: var(--raised); }
 .t-failed { --c: var(--failed); }
 .t-done, .t-shipped { --c: var(--merged); }
 .pl-suggest { font-size: var(--fs-xs); font-weight: 600; color: var(--merged); }
-/* Add card: a row at the bottom of the column, its + where a card's node is. */
-.pl-add { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 48px; padding: 10px 16px; text-align: left; color: var(--muted); font-weight: 500; }
-.pl-add:hover { color: var(--text); background: var(--surface); }
-.pl-add .ico { flex: none; width: 16px; height: 16px; margin: 0 4px; }
-/* A new card being typed (openComposer): a card on the rail, its text where the title goes. */
-.pl-composer .todo { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); border-radius: var(--r-s); cursor: text; -webkit-user-select: text; user-select: text; }
-.pl-composer .todo:focus-within { box-shadow: inset 0 0 0 2px var(--accent); }
+/* Add card: a row at the bottom of the column, as wide as the cards above it
+   and its + where their text starts. */
+.pl-add { display: flex; align-items: center; gap: 8px; width: calc(100% - 2 * var(--pl-pad, 12px)); min-height: 44px; margin: 0 var(--pl-pad, 12px); padding: 10px 15px; border: 1px dashed transparent; border-radius: var(--r-m); text-align: left; color: var(--muted); font-weight: 500; }
+.pl-add:hover { color: var(--text); background: var(--surface); border-color: var(--line); }
+.pl-add .ico { flex: none; width: 16px; height: 16px; }
+/* A new card being typed (openComposer): a bordered card like the others,
+   its text where the title goes, with the accent border while typed in. */
+.pl-card.pl-composer .todo, .pl-card.pl-composer .todo:hover { background: var(--surface); box-shadow: none; cursor: text; -webkit-user-select: text; user-select: text; }
+.pl-card.pl-composer .todo:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .pl-composer[aria-busy="true"] .todo { opacity: .7; }
 .pl-compose-text {
   display: block; width: 100%; min-height: 0; max-height: 40vh; margin: 0; padding: 0; border: 0; border-radius: 0;
@@ -3262,8 +3277,11 @@ button.goal-task-open:hover { background: var(--raised); }
   #view-planning.active, .planning-app #planning-main { display: flex; flex-direction: column; overflow: hidden; }
   .page.planning { flex: 1; min-height: 0; }
   .pl-board { flex: 1; min-height: 0; padding: 0; border-top: 1px solid var(--line); }
-  .pl-add { padding: 10px 14px; }
-  .pl-add .ico { margin: 0 3px; }
+  .pl-cards { --pl-pad: 10px; }
+  .pl-add { --pl-pad: 10px; }
+  /* The board's desktop .todo keeps a column for the node; a card has none. */
+  .pl-card .todo { grid-template-columns: minmax(0, 1fr); }
+  .pl-card .todo-side { grid-column: 1; }
 }
 
 .card-detail { z-index: 34; }

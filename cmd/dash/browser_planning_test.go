@@ -9,9 +9,9 @@ import (
 	"github.com/chromedp/chromedp/kb"
 )
 
-// Planning looks like the task board: its columns side by side on a
-// desktop, each card a row on the rail and Add card at the bottom of each
-// column; on a phone, a strip of lanes and one column at a time.
+// Planning is laid out as the task board: its columns side by side on a
+// desktop, each card a bordered card (no rail) and Add card at the bottom of
+// each column; on a phone, a strip of lanes and one column at a time.
 func TestBrowserPlanningBoard(t *testing.T) {
 	endToEnd(t)
 	chrome := needChrome(t)
@@ -28,7 +28,8 @@ func TestBrowserPlanningBoard(t *testing.T) {
 	b.until("open Planning", `document.querySelector("#view-planning.active")`,
 		chromedp.Click(chromedp.CSS(`.nav > button[data-view=planning]`)))
 	b.waitJS("four columns side by side", `[...document.querySelectorAll("#view-planning .board .col")].filter((c) => c.offsetWidth).length === 4`)
-	b.waitJS("the cards as rows on the rail", fmt.Sprintf(`document.querySelector('#view-planning .col[data-col=planned] .rail .pl-card[data-id=%q] .todo .todo-title')?.textContent === "Export reports as PDF"`, c.ID))
+	b.waitJS("the cards as bordered cards", fmt.Sprintf(`document.querySelector('#view-planning .col[data-col=planned] .pl-cards .pl-card[data-id=%q] .todo .todo-title')?.textContent === "Export reports as PDF"`, c.ID))
+	b.waitJS("no rail line and no node", `!document.querySelector("#view-planning .rail, #view-planning .pl-card .node") && getComputedStyle(document.querySelector("#view-planning .pl-card .todo")).borderTopStyle === "solid"`)
 	b.waitJS("Add card at the bottom of each column", `[...document.querySelectorAll("#view-planning .col")].every((c) => c.querySelector(".col-body").lastElementChild.matches(".pl-add"))`)
 
 	// The project filter lists the projects with their icons; picking one
