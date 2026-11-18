@@ -5,7 +5,7 @@ import { EASE, ask, fail, leave, reduceMotion, toast } from "./dialogs.js";
 import { LANES, state } from "./state.js";
 import { approvable, hasPriority, laneItems, renderBoard } from "./branches.js";
 import { hoverCard } from "./hovercard.js";
-import { dropBefore, glide, restRect } from "./glide.js";
+import { dropBefore, edgeScroller, glide, restRect } from "./glide.js";
 
 // ------------------------------------------------------------------ drag & drop
 // Drag a card to another lane to act on it, or within a lane to reorder.
@@ -125,8 +125,12 @@ function markTargets() {
   }
 }
 
+// Held near the top or bottom, the column (or the page, on a phone) scrolls.
+const edge = edgeScroller((x, y) => drag.active && moveDrag(x, y));
+
 function moveDrag(x, y) {
   if (drag.aborting) return;
+  edge.move(x, y);
   drag.ghost.style.transform = `translate(${x - drag.dx}px, ${y - drag.dy}px) rotate(1.2deg) scale(1.02)`;
   const under = document.elementFromPoint(x, y);
   const laneEl = under?.closest(".drop-zone[data-lane], .col[data-lane], .lane-tab[data-lane]");
@@ -148,7 +152,6 @@ function moveDrag(x, y) {
   const body = col.querySelector(".col-body");
   if (rail) placeSlot(rail, before);
   else if (body) placeSlot(body, body.firstChild === drag.slot ? drag.slot.nextSibling : body.firstChild);
-  autoScroll(body || document.scrollingElement, y);
 }
 
 // placeSlot moves the gap to before ref in parent (nowhere, without a
@@ -168,13 +171,8 @@ function placeSlot(parent, ref = null) {
   glide([...around], () => parent ? parent.insertBefore(s, ref) : s.remove());
 }
 
-function autoScroll(el, y) {
-  const r = el === document.scrollingElement ? { top: 0, bottom: innerHeight } : el.getBoundingClientRect();
-  if (y < r.top + 60) el.scrollBy({ top: -14 });
-  else if (y > r.bottom - 60) el.scrollBy({ top: 14 });
-}
-
 function cleanupDrag() {
+  edge.stop();
   drag.ghost?.remove();
   // The card takes the gap's place, so the board re-rendered after a drop
   // glides it (and its neighbours) on from where they are.
@@ -196,6 +194,7 @@ function cleanupDrag() {
 function abortDrag() {
   if (drag.aborting) return;
   drag.aborting = true;
+  edge.stop();
   // The gap closes where it is and opens again at home, and the ghost flies back into it.
   if (drag.li) placeSlot(drag.li.parentNode, drag.li);
   const g = drag.ghost;

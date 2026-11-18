@@ -4,7 +4,7 @@ import { EASE, ask, attempt, busy, copy, fail, leave, reduceMotion, toast } from
 import { changed, linkTo } from "./routes.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
-import { dropBefore, glide } from "./glide.js";
+import { dropBefore, edgeScroller, glide } from "./glide.js";
 import { ACCEPT, clip, postFile } from "./attachments.js";
 import { extOf, isImage, sizeText } from "./lightbox.js";
 
@@ -453,8 +453,12 @@ function startDrag(x, y) {
   moveDrag(x, y);
 }
 
+// Held near the top or bottom, the column (or the page, on a phone) scrolls.
+const edge = edgeScroller((x, y) => pl.drag && moveDrag(x, y));
+
 function moveDrag(x, y) {
   const d = pl.drag;
+  edge.move(x, y);
   d.ghost.style.transform = `translate(${x - d.dx}px, ${y - d.dy}px)`;
   clearDropMarks();
   const ol = dropTarget(x, y);
@@ -473,6 +477,7 @@ function moveDrag(x, y) {
 function endDrag(x, y, drop) {
   const d = pl.drag;
   if (!d) return;
+  edge.stop();
   d.ghost.remove();
   clearDropMarks();
   const ol = drop ? dropTarget(x, y) : null;

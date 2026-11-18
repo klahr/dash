@@ -19,7 +19,7 @@ It looks like a project's **Board**: on a phone, tap a column's name at the top 
   lines after it the description. `Enter` adds it and starts the next one, `Shift+Enter`
   starts a new line, `Esc` cancels. Clicking elsewhere adds it, if you typed something.
 - Drag a card to another column, or up and down its own. A gap opens where it would land,
-  and the cards around it move aside. With the keyboard, focus a card
+  and the cards around it move aside. Hold it near the top or bottom of the screen to scroll. With the keyboard, focus a card
   and press `Alt` with an arrow key. On a phone, drag it onto a column's name at the top, or change **Column** on the card.
 - The project filter at the top shows one project's cards. A card may name a project, or
   none yet. Picking a project in the sidebar picks it here too; opening the page keeps the

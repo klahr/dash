@@ -70,6 +70,52 @@ func TestBrowserBoardDragMakesRoom(t *testing.T) {
 		document.querySelector('#board .col[data-lane=draft] .rail > li:first-child .todo')?.dataset.id === %q`, ids[2]))
 }
 
+// On a phone, a card held still near the bottom of the screen (just above
+// the drop bar) scrolls the page down, and the gap follows; held under the
+// lane tabs, it scrolls back up.
+func TestBrowserBoardDragScrollsAtEdges(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+	var ids []string
+	for i := range 14 {
+		var td struct{ ID string }
+		h.api.must("POST", "/api/projects/"+h.project.ID+"/todos", map[string]any{"title": fmt.Sprintf("Draft %d", i+1), "prompt": "Stay a draft"}, http.StatusCreated, &td)
+		ids = append(ids, td.ID)
+	}
+
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	for _, id := range ids {
+		b.waitCard(id, "draft")
+	}
+	b.until("show Drafts", `document.querySelector('#board .col[data-lane=draft]')?.offsetHeight > 0`,
+		chromedp.Click(chromedp.CSS(`.lanes .lane-tab[data-lane=draft]`)))
+	b.waitJS("a page taller than the screen", `scrollY === 0 && document.scrollingElement.scrollHeight > innerHeight + 300`)
+	b.run("pick up the first draft", dragJS+`
+		const src = document.querySelector('#board .col[data-lane=draft] .rail > li .todo'), r = src.getBoundingClientRect();
+		fire("pointerdown", r.left + 60, r.top + 20, src);
+		fire("pointermove", r.left + 70, r.top + 30);
+		window.e2eX = r.left + 70;
+		true`)
+	// Held just above the drop bar, once it has slid in.
+	b.waitJS("the drop bar in place", `(() => { const bar = document.querySelector("#drop-bar"); return bar && !bar.getAnimations().length; })()`)
+	b.run("hold it near the bottom", dragJS+`
+		fire("pointermove", e2eX, document.querySelector("#drop-bar").getBoundingClientRect().top - 20);
+		true`)
+	b.waitJS("the page scrolled down by itself", `scrollY > 200`)
+	b.run("the gap followed", `const rail = document.querySelector('#board .col[data-lane=draft] .rail');
+		[...rail.children].indexOf(document.querySelector(".drop-slot")) > 4`)
+	b.run("hold it under the lane tabs", dragJS+`
+		const tabs = document.querySelector(".lanes").getBoundingClientRect();
+		fire("pointermove", e2eX, tabs.bottom + 10);
+		true`)
+	b.waitJS("the page scrolled back up", `scrollY === 0`)
+	b.run("let go", dragJS+`fire("pointerup", e2eX, 300); true`)
+	b.waitJS("the drag over", `!document.body.classList.contains("is-dragging")`)
+}
+
 // Planning's cards make room the same way, within a column and in another.
 func TestBrowserPlanningDragMakesRoom(t *testing.T) {
 	endToEnd(t)
