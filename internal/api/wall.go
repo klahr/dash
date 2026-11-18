@@ -272,10 +272,7 @@ func (s *Server) wall(c Caller, project string, privacy bool, now time.Time) (wa
 		if privacy {
 			return "Task in " + byProject[t.ProjectID].Name
 		}
-		if strings.TrimSpace(t.Title) != "" {
-			return t.Title
-		}
-		return wallLine(t.Prompt, 120)
+		return t.Name(120)
 	}
 
 	y, m, dd := now.Date()

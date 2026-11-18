@@ -35,7 +35,7 @@ func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) 
 	if err := m.Git.PushBranch(ctx, p.ID, wt.Path, wt.Branch); err != nil {
 		return &prError{fmt.Errorf("push %s: %w", wt.Branch, err)}
 	}
-	n, url, err := m.Git.OpenDraftPR(ctx, p.ID, wt.Path, p.Base(), wt.Branch, subject(t), prBody(t))
+	n, url, err := m.Git.OpenDraftPR(ctx, p.ID, wt.Path, p.Base(), wt.Branch, taskName(t), prBody(t))
 	if err != nil {
 		return &prError{fmt.Errorf("open pull request: %w", err)}
 	}
@@ -1073,13 +1073,6 @@ func (m *MergeQueue) checksNote(ctx context.Context, p model.Project, n int, fai
 	}
 	b.WriteString("\nFix the code so these checks pass. Don't weaken or delete tests unless they are wrong.")
 	return b.String()
-}
-
-func subject(t model.Todo) string {
-	if t.Title != "" {
-		return t.Title
-	}
-	return firstLine(t.Prompt)
 }
 
 func prBody(t model.Todo) string {

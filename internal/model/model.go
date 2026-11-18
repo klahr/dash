@@ -574,6 +574,16 @@ func CleanModel(m string) (string, error) {
 // OnRunner reports whether a hub sent the todo to a runner.
 func (t Todo) OnRunner() bool { return t.Runner != "" }
 
+// Name is how t is named: its title when it has one, else its prompt's
+// first non-empty line without Markdown heading or list marks, on one line
+// and at most n characters long.
+func (t Todo) Name(n int) string {
+	if strings.TrimSpace(t.Title) != "" {
+		return t.Title
+	}
+	return firstLine(t.Prompt, n)
+}
+
 // WorkFor are the users a run of t is for: its creator, and whoever started
 // the run (RunBy) when that is someone else. A task Dash made (CreatedBy 0)
 // is for whoever started its run, if anyone did. 0 and DeletedUser stand for

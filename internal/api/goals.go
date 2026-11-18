@@ -590,14 +590,8 @@ func (s *Server) createPlanTasks(sv *service, g model.Goal, plan []model.GoalPla
 	return made, nil
 }
 
-// taskName is how a goal's log names a task: its title, else its
-// instructions' first line.
-func taskName(t model.Todo) string {
-	if t.Title != "" {
-		return t.Title
-	}
-	return plainTitle(t.Prompt)
-}
+// taskName is how a goal's log names a task (see model.Todo.Name).
+func taskName(t model.Todo) string { return t.Name(maxPlainTitle) }
 
 // now is the clock of goals' log entries and wake-ups.
 var now = time.Now

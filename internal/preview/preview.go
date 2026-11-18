@@ -426,10 +426,4 @@ func (m *Manager) publish(p model.Preview) {
 	}
 }
 
-func todoTitle(t model.Todo) string {
-	if t.Title != "" {
-		return t.Title
-	}
-	s, _, _ := strings.Cut(strings.TrimSpace(t.Prompt), "\n")
-	return s
-}
+func todoTitle(t model.Todo) string { return t.Name(80) }

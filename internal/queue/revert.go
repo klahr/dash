@@ -62,7 +62,7 @@ func (m *MergeQueue) revert(ctx context.Context, job model.MergeJob) {
 			return
 		}
 	}
-	msg := fmt.Sprintf("Revert \"%s\"\n\nThis reverts commit %s.\n\nDash-Revert: %s", subject(t), sha, t.ID)
+	msg := fmt.Sprintf("Revert \"%s\"\n\nThis reverts commit %s.\n\nDash-Revert: %s", taskName(t), sha, t.ID)
 
 	if p.LandsOnOrigin() {
 		// Like a merge: pushed before it counts, redone on top of origin
@@ -142,8 +142,8 @@ func (m *MergeQueue) revertPR(ctx context.Context, t model.Todo, p model.Project
 		fail(err)
 		return
 	}
-	n, url, err := m.Git.OpenPR(ctx, p.ID, wt.Path, p.Base(), wt.Branch, "Revert: "+subject(t),
-		fmt.Sprintf("Reverts %s, which landed \"%s\".\n\n---\nOpened by Dash.", sha, subject(t)))
+	n, url, err := m.Git.OpenPR(ctx, p.ID, wt.Path, p.Base(), wt.Branch, "Revert: "+taskName(t),
+		fmt.Sprintf("Reverts %s, which landed \"%s\".\n\n---\nOpened by Dash.", sha, taskName(t)))
 	if err != nil {
 		fail(err)
 		return
@@ -187,8 +187,8 @@ func UndoTodo(st *store.Store, t model.Todo, sha string, files []string) (model.
 	prompt := fmt.Sprintf("Undo the change an earlier task made, which landed as commit %s (\"%s\"). "+
 		"`git revert` conflicts because later work changed the same code (%s), so do it by hand: remove that "+
 		"change's behaviour while keeping everything added since working. Run `git show %s` to see the "+
-		"change.\n\nThe earlier task was:\n\n%s", gitops.ShortSHA(sha), subject(t), strings.Join(files, ", "), sha, quote(t.Prompt))
-	nt, err := st.CreateTodo(model.Todo{ProjectID: t.ProjectID, CreatedBy: t.CreatedBy, Title: "Undo: " + subject(t), Prompt: prompt})
+		"change.\n\nThe earlier task was:\n\n%s", gitops.ShortSHA(sha), taskName(t), strings.Join(files, ", "), sha, quote(t.Prompt))
+	nt, err := st.CreateTodo(model.Todo{ProjectID: t.ProjectID, CreatedBy: t.CreatedBy, Title: "Undo: " + taskName(t), Prompt: prompt})
 	if err == nil {
 		nt, err = st.SetStatus(nt.ID, model.StatusQueued, "")
 	}

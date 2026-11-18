@@ -23,7 +23,6 @@ import (
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 	"github.com/klahr/dash/internal/store"
-	"github.com/klahr/dash/internal/textutil"
 	"github.com/klahr/dash/internal/usage"
 )
 
@@ -910,10 +909,7 @@ func (r *todoRun) commitAndCheck() (step, error) {
 		}
 		r.resolving = false
 	}
-	msg := r.t.Title
-	if msg == "" {
-		msg = firstLine(r.t.Prompt)
-	}
+	msg := taskName(r.t)
 	if _, err := e.Git.CommitAll(ctx, p.ID, wt.Path, "dash: "+msg); err != nil {
 		return 0, err
 	}
@@ -1136,13 +1132,8 @@ func (e *TodoEngine) buildsOn(t model.Todo, log func(string)) (model.Todo, bool)
 	return parent, true
 }
 
-// taskName is how a log line names task t.
-func taskName(t model.Todo) string {
-	if t.Title != "" {
-		return t.Title
-	}
-	return firstLine(t.Prompt)
-}
+// taskName is how a task is named in commits, PRs and logs.
+func taskName(t model.Todo) string { return t.Name(72) }
 
 // noteFailure explains in the todo's chat why it failed, quoting Claude's
 // final message when there is one: it usually says why nothing changed.
@@ -1472,9 +1463,6 @@ func copyPath(src, dst string) error {
 	}
 	return os.WriteFile(dst, b, info.Mode().Perm())
 }
-
-// firstLine is s's first line, cut to 72 bytes: a commit subject.
-func firstLine(s string) string { return textutil.Clip(textutil.FirstLine(s), 72) }
 
 func lastLine(s string) string {
 	s = strings.TrimSpace(s)

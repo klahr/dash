@@ -1917,10 +1917,4 @@ func clamp(v, lo, hi int) int {
 	return max(lo, min(v, hi))
 }
 
-func title(t model.Todo) string {
-	if t.Title != "" {
-		return t.Title
-	}
-	s, _, _ := strings.Cut(strings.TrimSpace(t.Prompt), "\n")
-	return s
-}
+func title(t model.Todo) string { return t.Name(80) }

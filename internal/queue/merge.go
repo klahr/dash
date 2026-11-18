@@ -872,10 +872,7 @@ func (m *MergeQueue) sendBack(t model.Todo, p model.Project, note string, mergeM
 }
 
 func commitMessage(t model.Todo) string {
-	subject := t.Title
-	if subject == "" {
-		subject = firstLine(t.Prompt)
-	}
+	subject := taskName(t)
 	body := textutil.Clip(strings.TrimSpace(t.Prompt), 2000)
 	return fmt.Sprintf("%s\n\n%s\n\nDash-Todo: %s", subject, body, t.ID)
 }

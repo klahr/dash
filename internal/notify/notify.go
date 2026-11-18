@@ -580,12 +580,7 @@ func (n *Notifier) taskURL(projectID, todoID string) string {
 }
 
 // TaskTitle is how a task is named: its title, else its prompt's first line.
-func TaskTitle(t model.Todo) string {
-	if t.Title != "" {
-		return t.Title
-	}
-	return oneLine(t.Prompt, 120)
-}
+func TaskTitle(t model.Todo) string { return t.Name(120) }
 
 func newEventID() string {
 	b := make([]byte, 12)
