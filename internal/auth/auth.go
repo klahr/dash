@@ -9,7 +9,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -375,9 +374,7 @@ func (a *Auth) startSessionIn(w http.ResponseWriter, r *http.Request, uid, org i
 // startSessionVia is startSessionIn for a sign-in made with method
 // (store.MethodPassword, store.MethodGoogle; "": as family's).
 func (a *Auth) startSessionVia(w http.ResponseWriter, r *http.Request, uid, org int64, family, method string) error {
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	tok := base64.RawURLEncoding.EncodeToString(b)
+	tok := randomString(32)
 	now := a.now()
 	_ = a.acc.PruneSessions(now)
 	a.ensurePersonal(uid) // before the session picks the org to start in

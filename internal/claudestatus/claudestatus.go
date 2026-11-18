@@ -8,9 +8,7 @@ package claudestatus
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/klahr/dash/internal/runtoken"
 )
 
 // DefaultPage is Claude's status page.
@@ -522,7 +522,7 @@ func (s *Service) Configure(ch Change) (Admin, error) {
 		s.doc.Settings.Poll = *poll
 	}
 	if s.doc.Settings.Enabled && s.doc.Settings.Token == "" {
-		s.doc.Settings.Token = newToken()
+		s.doc.Settings.Token = runtoken.New()
 	}
 	if err := s.save(); err != nil {
 		s.doc.Settings = old
@@ -544,7 +544,7 @@ func (s *Service) Rotate() (Admin, error) {
 		return Admin{}, err
 	}
 	old := s.doc.Settings.Token
-	s.doc.Settings.Token = newToken()
+	s.doc.Settings.Token = runtoken.New()
 	if err := s.save(); err != nil {
 		s.doc.Settings.Token = old
 		return Admin{}, err
@@ -568,12 +568,6 @@ func cleanPage(p string) (string, error) {
 func webLink(u string) bool {
 	p, err := url.Parse(u)
 	return err == nil && (p.Scheme == "https" || p.Scheme == "http") && p.Host != ""
-}
-
-func newToken() string {
-	b := make([]byte, 24)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
 }
 
 func (s *Service) publish(st Status) {

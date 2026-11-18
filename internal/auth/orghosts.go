@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
@@ -469,9 +468,7 @@ func (a *Auth) signHandoff(payload string) string {
 
 // newHandoff makes a token for h, good for HandoffTTL.
 func (a *Auth) newHandoff(h handoff) string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	h.Nonce = base64.RawURLEncoding.EncodeToString(b)
+	h.Nonce = randomString(16)
 	h.Expires = a.now().Add(HandoffTTL)
 	payload := strings.Join([]string{"v1", strconv.FormatInt(h.User, 10), strconv.FormatInt(h.Org, 10), h.Slug, h.Family,
 		strconv.FormatInt(h.Expires.Unix(), 10), h.Nonce}, "|")
