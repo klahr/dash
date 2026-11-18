@@ -4,6 +4,8 @@ import { EASE, ask, attempt, busy, fail, leave, reduceMotion, toast } from "./di
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
 import { dropBefore, glide } from "./glide.js";
+import { ACCEPT, clip, postFile } from "./attachments.js";
+import { extOf, isImage, sizeText } from "./lightbox.js";
 
 // ------------------------------------------------------------------ Planning
 // The org's plan, for a product owner (docs/planning.md): cards in four
@@ -14,7 +16,8 @@ import { dropBefore, glide } from "./glide.js";
 //
 // One module for both places Planning shows: the app's Planning view
 // (members, admins, owners; index.html) and planning.html, the page a
-// planner lands on. It uses only dom, api, dialogs, store and viewport,
+// planner lands on. It uses only dom, api, dialogs, store, viewport, glide,
+// attachments and lightbox,
 // which load outside the app too, and builds its own markup in the root
 // it is mounted on. Planning is the hub's (api prefix "").
 
@@ -29,6 +32,8 @@ const COLUMN_TITLE = Object.fromEntries(COLUMNS.map((c) => [c.key, c.title]));
 const PRIORITY = { high: "High", medium: "Medium", low: "Low" };
 const call = (method, path, body) => api(method, path, body, "");
 const cardAPI = (id = "", rest = "") => `/api/planning/cards${id ? `/${encodeURIComponent(id)}` : ""}${rest}`;
+// fileURL is a card's file, through the card (a planner can't read uploads).
+const fileURL = (c, f) => cardAPI(c.id, `/files/${encodeURIComponent(f.id)}/${encodeURIComponent(f.name)}`);
 
 const pl = {
   root: null,
@@ -50,6 +55,7 @@ const pl = {
   suppressClick: false,
   lane: "", // the column a phone shows (one at a time, as the task board)
   composer: null, // the new card being typed on the board: { col, li, ta, busy }
+  uploading: {}, // card id → how many files are on their way to it
 };
 
 const byId = (id) => pl.cards.find((c) => c.id === id);
@@ -104,6 +110,8 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
           h("div", { class: "commit-actions", id: "pd-actions" }))),
       h("div", { class: "detail-body", id: "pd-body" })));
   wireDrag(root);
+  wireFileDrop(paneEl(), () => pl.open);
+  wireFileDrop(root, (e) => e.target.closest?.(".pl-card:not(.pl-composer)")?.dataset.id);
   renderFilter();
 }
 
@@ -302,6 +310,7 @@ function cardEl(c) {
     c.target ? h("span", { class: "pl-chip pl-target", title: "Target" }, ico("flag"), c.target) : null,
     !pl.filter && c.project_name ? h("span", { class: "pl-project" }, c.project_name) : null,
     c.comments ? h("span", { class: "pl-comments", title: `${c.comments} comment${c.comments === 1 ? "" : "s"}` }, ico("comment"), String(c.comments)) : null,
+    c.files?.length ? h("span", { class: "pl-comments pl-file-count", title: `${c.files.length} file${c.files.length === 1 ? "" : "s"}` }, clip(), String(c.files.length)) : null,
     membersEl(c),
   ].filter(Boolean);
   if (c.status?.suggest_done) meta.push(h("span", { class: "pl-suggest" }, "Ready for Done"));
@@ -313,9 +322,12 @@ function cardEl(c) {
   // card parts (app/branches.js: todoRow) but without its rail node: the
   // status line's dot shows the status's colour, Done cards lie flat. The
   // title is the button that opens the card; a press anywhere on it does too.
+  // The card's first picture, across its top.
+  const cover = (c.files || []).find(isImage);
   return h("li", { class: "pl-card", "data-id": c.id },
     h("div", { class: `todo t-${c.status?.tone || "none"}${c.column === "done" ? " pushed" : ""}${c.id === pl.open ? " selected" : ""}`,
       onclick: () => openCard(c.id).catch(fail) },
+      cover ? h("img", { class: "pl-cover", src: fileURL(c, cover), alt: "", loading: "lazy", draggable: false }) : null,
       h("span", { class: "todo-main" },
         h("button", { type: "button", class: "todo-open pl-open", "aria-controls": "card-detail", "aria-current": c.id === pl.open ? "true" : null,
           title: "Open (Alt+arrows move it; Space over it adds or takes you off it)", onkeydown: (e) => cardKeys(e, c) },
@@ -704,13 +716,85 @@ function markSelected() {
   }
 }
 
-const patchCard = (body) => async () => {
-  const id = pl.open;
-  const v = await call("PATCH", cardAPI(id), body);
-  if (pl.open === id) { pl.detail = { ...pl.detail, ...v }; renderCard(); }
-  const i = pl.cards.findIndex((x) => x.id === id);
+// applyCard shows v, a card's new view, on the board and in its pane.
+function applyCard(v) {
+  if (pl.open === v.id) { pl.detail = { ...pl.detail, ...v }; renderCard(); }
+  const i = pl.cards.findIndex((x) => x.id === v.id);
   if (i >= 0) { pl.cards[i] = { ...pl.cards[i], ...v }; renderBoard(); }
-};
+}
+
+const patchCard = (body) => async () => applyCard(await call("PATCH", cardAPI(pl.open), body));
+
+// ---- files: attached with the Files section's button, pasted into the
+// description or a comment, or dropped on the card's pane or on the card
+// on the board. A click on one previews it (lightbox.js).
+
+// attachFiles sends files to card id, one after another.
+async function attachFiles(id, files) {
+  files = [...files];
+  if (!id || !files.length) return;
+  pl.uploading[id] = (pl.uploading[id] || 0) + files.length;
+  if (pl.open === id) renderCard();
+  for (const f of files) {
+    try { applyCard(await postFile(cardAPI(id, "/files"), f)); } catch (e) { fail(e); }
+    pl.uploading[id]--;
+    if (pl.open === id) renderCard();
+  }
+  delete pl.uploading[id];
+}
+
+// wireFileDrop lets files be dropped on el, for the card cardOf(event) names.
+function wireFileDrop(el, cardOf) {
+  let over = null;
+  const mark = (to) => { over?.classList.remove("file-over"); over = to; over?.classList.add("file-over"); };
+  el.addEventListener("dragover", (e) => {
+    if (!e.dataTransfer?.types.includes("Files") || !cardOf(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    mark(el === paneEl() ? el : e.target.closest(".pl-card .todo"));
+  });
+  el.addEventListener("dragleave", (e) => { if (!over?.contains(e.relatedTarget)) mark(null); });
+  el.addEventListener("drop", (e) => {
+    mark(null);
+    const id = cardOf(e);
+    if (!id || !e.dataTransfer?.files.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    attachFiles(id, e.dataTransfer.files);
+  });
+}
+
+// pasteFiles attaches the files pasted into a text box to the open card.
+function pasteFiles(e) {
+  const files = [...(e.clipboardData?.files || [])];
+  if (files.length && pl.open) { e.preventDefault(); attachFiles(pl.open, files); }
+}
+
+// filesSection is the card's files: a picture's thumbnail or a file's
+// extension, each opening its preview, with × to take it off the card.
+function filesSection(c) {
+  const files = c.files || [];
+  const n = pl.uploading[c.id] || 0;
+  const input = h("input", { type: "file", accept: ACCEPT, multiple: true, hidden: true,
+    onchange: () => { attachFiles(c.id, input.files); input.value = ""; } });
+  return h("section", { class: "pl-section", "aria-labelledby": "pd-files" },
+    h("h3", { id: "pd-files" }, "Files"),
+    h("div", { class: "attach pl-files", "data-preview-group": "" },
+      ...files.map((f) => h("span", { class: "chip" },
+        h("a", { class: "chip-link", href: fileURL(c, f), target: "_blank", rel: "noopener", title: `${f.name} (${sizeText(f.size)})`,
+          "data-preview": "", "data-name": f.name, "data-type": f.type, "data-size": f.size },
+        isImage(f) ? h("img", { src: fileURL(c, f), alt: "", loading: "lazy" }) : h("span", { class: "chip-icon" }, extOf(f.name)),
+        h("span", { class: "chip-name" }, f.name)),
+        h("button", { type: "button", class: "chip-x", "aria-label": `Remove ${f.name}`, title: "Take off the card",
+          onclick: attempt(async () => {
+            if (!await ask({ title: `Remove ${f.name}?`, body: "It is taken off the card. Tasks already started from the card keep it.", ok: "Remove", danger: true })) return;
+            applyCard(await call("DELETE", cardAPI(c.id, `/files/${encodeURIComponent(f.id)}`)));
+          }) }, "×"))),
+      n ? h("span", { class: "chip uploading" }, h("span", { class: "spinner", "aria-hidden": "true" }), `Uploading ${n}…`) : null,
+      h("button", { type: "button", class: "btn small attach-btn", onclick: () => input.click() }, clip(), "Attach file"),
+      input),
+    files.length ? null : h("p", { class: "hint" }, "Pictures, PDFs and text files, up to 20 MB each. You can paste or drop them here too."));
+}
 
 function field(label, control) {
   return h("label", { class: "field pl-field" }, h("span", {}, label), control);
@@ -748,6 +832,7 @@ function descriptionEl(c) {
     patchCard({ description: text })().then(() => { if (pl.desc?.el === el) pl.desc.saved = text; }).catch(fail);
   };
   el.addEventListener("change", save);
+  el.addEventListener("paste", pasteFiles);
   el.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); } });
   pl.desc = { id: c.id, el, saved: c.description || "" };
   return el;
@@ -820,7 +905,7 @@ function renderCard() {
 
   const comments = c.discussion || [];
   const me = pl.hooks.me?.();
-  const box = h("textarea", { rows: 3, placeholder: "Add a comment", "aria-label": "Comment", maxlength: 10000 });
+  const box = h("textarea", { rows: 3, placeholder: "Add a comment", "aria-label": "Comment", maxlength: 10000, onpaste: pasteFiles });
   const discussion = h("section", { class: "pl-section", "aria-labelledby": "pd-comments" },
     h("h3", { id: "pd-comments" }, "Comments"),
     comments.length ? h("ol", { class: "pl-comments-list" }, ...comments.map((m) => h("li", { class: "pl-comment" },
@@ -841,7 +926,7 @@ function renderCard() {
 
   const danger = h("div", { class: "pl-danger" },
     ib({ type: "button", class: "btn small danger", onclick: attempt(async () => {
-      if (!await ask({ title: "Delete this card?", body: "Its comments and links go too. The tasks and goals it links to stay.", ok: "Delete", danger: true })) return;
+      if (!await ask({ title: "Delete this card?", body: "Its comments, files and links go too. The tasks and goals it links to stay.", ok: "Delete", danger: true })) return;
       await call("DELETE", cardAPI(c.id));
       pl.cards = pl.cards.filter((x) => x.id !== c.id);
       closeCard();
@@ -850,7 +935,7 @@ function renderCard() {
     }) }, "trash", "Delete card"));
 
   const keep = body.scrollTop;
-  fill(body, rename, suggest, facts, h("section", { class: "pl-section" }, h("h3", {}, h("label", { for: "pd-desc" }, "Description")), desc), work, discussion, danger);
+  fill(body, rename, suggest, facts, h("section", { class: "pl-section" }, h("h3", {}, h("label", { for: "pd-desc" }, "Description")), desc), filesSection(c), work, discussion, danger);
   body.scrollTop = keep;
 }
 

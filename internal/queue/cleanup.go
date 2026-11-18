@@ -139,7 +139,7 @@ func (m *MergeQueue) cleanup(ctx context.Context, p model.Project) (CleanupRepor
 }
 
 // cleanupFiles removes logs of todos that no longer exist and uploads no
-// todo, chat or project icon refers to (after a day, so a todo being written can still use them).
+// todo, chat, planning card or project icon refers to (after a day, so a todo being written can still use them).
 func (m *MergeQueue) cleanupFiles() CleanupReport {
 	m.filesMu.Lock() // every project's worker cleans these up
 	defer m.filesMu.Unlock()
@@ -164,6 +164,13 @@ func (m *MergeQueue) cleanupFiles() CleanupReport {
 	}
 	for _, msgs := range m.Store.ProjectChats() {
 		useChat(msgs)
+	}
+	cards, err := m.Store.CardUploads()
+	if err != nil {
+		uploads = nil // without them, cleanup can't tell which uploads cards still have
+	}
+	for _, id := range cards {
+		used[id] = true
 	}
 	for _, p := range m.Store.ListProjects() {
 		if id, _, ok := strings.Cut(p.Icon, "/"); ok {

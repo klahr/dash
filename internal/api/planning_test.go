@@ -296,3 +296,79 @@ func TestPlanningProjectIcons(t *testing.T) {
 		}
 	}
 }
+
+// A card's files: a planner attaches one and sees it only through the card
+// (never at /api/uploads), a task started from the card gets them for
+// Claude, and taking one off the card stops serving it there.
+func TestPlanningCardFiles(t *testing.T) {
+	s, _, p := boardServer(t)
+	s.UploadRoot = t.TempDir()
+	h := s.Routes()
+	a := loggedIn(t, h)
+	ph, _ := plannerOf(t, s, h)
+
+	c := decodeCard(t, do(t, ph, "POST", "/api/planning/cards", `{"title":"New logo"}`))
+	if c.Files == nil || len(c.Files) != 0 {
+		t.Fatalf("a new card's files: %#v", c.Files)
+	}
+	other := decodeCard(t, do(t, ph, "POST", "/api/planning/cards", `{"title":"Other"}`))
+
+	w := do(t, ph, "POST", "/api/planning/cards/"+c.ID+"/files?name=sketch.png", string(tinyPNG(t)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("attach: %d %s", w.Code, w.Body)
+	}
+	c = decodeCard(t, w)
+	if len(c.Files) != 1 || c.Files[0].Name != "sketch.png" || c.Files[0].Type != "image/png" || c.Files[0].Size == 0 || c.Files[0].AddedBy == 0 {
+		t.Fatalf("attached: %+v", c.Files)
+	}
+	f := c.Files[0]
+	if strings.Contains(w.Body.String(), s.UploadRoot) {
+		t.Errorf("the card shows where its file is stored: %s", w.Body)
+	}
+	if w := do(t, ph, "POST", "/api/planning/cards/"+c.ID+"/files?name=run.exe", "MZ"); w.Code != http.StatusBadRequest {
+		t.Errorf("an .exe: %d %s", w.Code, w.Body)
+	}
+
+	url := "/api/planning/cards/" + c.ID + "/files/" + f.ID + "/" + f.Name
+	if w := do(t, ph, "GET", url, ""); w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/png" || w.Header().Get("Content-Security-Policy") == "" {
+		t.Errorf("a planner's file: %d %q", w.Code, w.Header().Get("Content-Type"))
+	}
+	for _, bad := range []string{
+		"/api/planning/cards/" + c.ID + "/files/" + f.ID + "/other.png",     // not its name
+		"/api/planning/cards/" + other.ID + "/files/" + f.ID + "/" + f.Name, // not that card's
+	} {
+		if w := do(t, ph, "GET", bad, ""); w.Code != http.StatusNotFound {
+			t.Errorf("%s: %d", bad, w.Code)
+		}
+	}
+	if w := do(t, ph, "GET", "/api/uploads/"+f.ID+"/"+f.Name, ""); w.Code != http.StatusForbidden {
+		t.Errorf("a planner read /api/uploads: %d", w.Code)
+	}
+
+	// Listed with the card, and handed to the task Start makes.
+	var list []cardView
+	if err := json.Unmarshal(do(t, a, "GET", "/api/planning/cards", "").Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	for _, x := range list {
+		if x.ID == c.ID && (len(x.Files) != 1 || x.Files[0].ID != f.ID) {
+			t.Errorf("listed: %+v", x.Files)
+		}
+	}
+	c = decodeCard(t, do(t, ph, "POST", "/api/planning/cards/"+c.ID+"/start", `{"project":"`+p.ID+`","kind":"task"}`))
+	c = decodeCard(t, do(t, a, "GET", "/api/planning/cards/"+c.ID, ""))
+	td, err := raw(s).GetTodo(c.Links[0].ID)
+	if err != nil || len(td.Attachments) != 1 || td.Attachments[0].ID != f.ID || td.Attachments[0].Path == "" {
+		t.Fatalf("the task's attachments: %+v %v", td.Attachments, err)
+	}
+
+	if w := do(t, ph, "DELETE", "/api/planning/cards/"+c.ID+"/files/"+f.ID, ""); w.Code != http.StatusOK || len(decodeCard(t, w).Files) != 0 {
+		t.Fatalf("remove: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, ph, "GET", url, ""); w.Code != http.StatusNotFound {
+		t.Errorf("a removed file: %d", w.Code)
+	}
+	if w := do(t, ph, "DELETE", "/api/planning/cards/"+c.ID+"/files/"+f.ID, ""); w.Code != http.StatusNotFound {
+		t.Errorf("remove again: %d", w.Code)
+	}
+}

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -36,6 +38,11 @@ func (s *Server) planningRoutes(mux routeMux) {
 	mux.HandleFunc("POST /api/planning/cards/{cid}/comments", s.addCardComment)
 	mux.HandleFunc("DELETE /api/planning/cards/{cid}/comments/{mid}", s.deleteCardComment)
 	mux.HandleFunc("POST /api/planning/cards/{cid}/start", s.startCard)
+	// A card's files: planners attach and see them here (they can't use
+	// /api/uploads), and only the files of the cards of their org.
+	mux.HandleFunc("POST /api/planning/cards/{cid}/files", s.addCardFile)
+	mux.HandleFunc("GET /api/planning/cards/{cid}/files/{fid}/{name}", s.getCardFile)
+	mux.HandleFunc("DELETE /api/planning/cards/{cid}/files/{fid}", s.removeCardFile)
 	// The projects a card may name or start work in: names only, for planners
 	// too (they can't list the projects themselves).
 	mux.HandleFunc("GET /api/planning/projects", s.planningProjects)
@@ -706,6 +713,90 @@ func (s *Server) deleteCardComment(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// addCardFile handles POST /api/planning/cards/{cid}/files?name=shot.png:
+// it stores the body as an upload and attaches it to the card.
+func (s *Server) addCardFile(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if err := sv.writable(); err != nil {
+		writeErr(w, err)
+		return
+	}
+	cid := r.PathValue("cid")
+	c, err := sv.data.GetCard(cid)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if len(c.Files) >= model.MaxCardFiles {
+		writeErr(w, store.ErrTooManyFiles)
+		return
+	}
+	a, err := sv.receiveUpload(w, r)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if _, err := sv.data.AddCardFile(cid, model.CardFile{ID: a.ID, Name: a.Name, Type: a.Type, Size: a.Size}); err != nil {
+		_ = os.RemoveAll(filepath.Dir(a.Path))
+		writeErr(w, err)
+		return
+	}
+	v, err := sv.cardView(r.Context(), cid)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, v)
+}
+
+// cardFile is one of a card's files, as an upload (with its path).
+func (sv *service) cardFile(cid, fid string) (model.Attachment, error) {
+	c, err := sv.data.GetCard(cid)
+	if err != nil {
+		return model.Attachment{}, err
+	}
+	for _, f := range c.Files {
+		if f.ID == fid {
+			return sv.findUpload(fid)
+		}
+	}
+	return model.Attachment{}, store.ErrNotFound
+}
+
+// getCardFile handles GET /api/planning/cards/{cid}/files/{fid}/{name}.
+func (s *Server) getCardFile(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	a, err := sv.cardFile(r.PathValue("cid"), r.PathValue("fid"))
+	if err != nil || a.Name != r.PathValue("name") {
+		writeErr(w, store.ErrNotFound)
+		return
+	}
+	serveUpload(w, r, a)
+}
+
+// removeCardFile handles DELETE /api/planning/cards/{cid}/files/{fid}.
+func (s *Server) removeCardFile(w http.ResponseWriter, r *http.Request) {
+	sv, ok := s.service(w, r)
+	if !ok {
+		return
+	}
+	if err := sv.writable(); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := sv.data.RemoveCardFile(r.PathValue("cid"), r.PathValue("fid")); err != nil {
+		writeErr(w, err)
+		return
+	}
+	s.answerCard(w, r, sv, r.PathValue("cid"))
+}
+
 // planningProjects handles GET /api/planning/projects: the org's projects'
 // ids, names, colors and icons (the icon is a planning URL a planner can
 // load, or empty for none).
@@ -750,11 +841,7 @@ func (s *Server) planningProjectIcon(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, store.ErrNotFound)
 		return
 	}
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Type", a.Type)
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
-	w.Header().Set("Cache-Control", "private, max-age=86400, immutable")
-	http.ServeFile(w, r, a.Path)
+	serveUpload(w, r, a)
 }
 
 // planningPeople handles GET /api/planning/people: the org's members a card
@@ -834,7 +921,7 @@ func (sv *service) startCard(cardID, project, kind string) (string, error) {
 		if c.Description != "" {
 			prompt += "\n\n" + c.Description
 		}
-		t, err := sv.addTodo(model.Todo{ProjectID: p.ID, Title: c.Title, Prompt: prompt}, true)
+		t, err := sv.addTodo(model.Todo{ProjectID: p.ID, Title: c.Title, Prompt: prompt, Attachments: sv.cardAttachments(c)}, true)
 		if err != nil {
 			return "", err
 		}
@@ -862,6 +949,22 @@ func (sv *service) startCard(cardID, project, kind string) (string, error) {
 	}
 	sv.cardStarted(c)
 	return id, nil
+}
+
+// cardAttachments are the card's files, for a task started from it. A hub
+// can't send files to its runners, so there it gives none; nor does it give
+// a file whose upload is gone.
+func (sv *service) cardAttachments(c model.Card) []model.Attachment {
+	if sv.s.hub() {
+		return nil
+	}
+	var out []model.Attachment
+	for _, f := range c.Files {
+		if a, err := sv.findUpload(f.ID); err == nil {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // cardStarted moves a card whose work has started to In progress, if it

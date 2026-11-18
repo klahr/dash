@@ -14,6 +14,7 @@ import { $ } from "./app/dom.js";
 import { desktop } from "./app/viewport.js";
 import "./app/api.js";
 import { fail } from "./app/dialogs.js";
+import "./app/lightbox.js";
 import "./app/attachments.js";
 import "./app/todoform.js";
 import { state } from "./app/state.js";

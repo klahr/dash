@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -265,5 +266,74 @@ func TestCardMembers(t *testing.T) {
 	}
 	if got := members(c.ID); len(got) != 0 {
 		t.Errorf("members %v, want none", got)
+	}
+}
+
+// A card's files keep their order, are its org's only, stop at
+// model.MaxCardFiles, and go with the card; cleanup sees the uploads cards
+// still have.
+func TestCardFiles(t *testing.T) {
+	t.Parallel()
+
+	s, err := Open(filepath.Join(t.TempDir(), "dash.db"), &recordedEvents{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	acc := s.Accounts()
+	if err := acc.Bootstrap("admin", "s3cret-pass"); err != nil {
+		t.Fatal(err)
+	}
+	admin, _ := acc.EnvUser()
+	def, _ := acc.DefaultOrg()
+	other, err := acc.CreateOrg(admin.ID, "Other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := s.ForOrg(def.ID).AsUser(admin.ID)
+	c := model.Card{Title: "Logo"}
+	if err := model.CleanCard(&c); err != nil {
+		t.Fatal(err)
+	}
+	if c, err = o.CreateCard(c); err != nil {
+		t.Fatal(err)
+	}
+	file := func(id string) model.CardFile {
+		return model.CardFile{ID: id, Name: id + ".png", Type: "image/png", Size: 10}
+	}
+	for _, id := range []string{"aaaaaaaaaaaa", "bbbbbbbbbbbb", "aaaaaaaaaaaa"} {
+		if _, err := o.AddCardFile(c.ID, file(id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := o.GetCard(c.ID)
+	if err != nil || len(got.Files) != 2 || got.Files[0].ID != "aaaaaaaaaaaa" || got.Files[1].ID != "bbbbbbbbbbbb" || got.Files[0].AddedBy != admin.ID {
+		t.Fatalf("files: %+v %v", got.Files, err)
+	}
+	if _, err := s.ForOrg(other.ID).AsUser(admin.ID).AddCardFile(c.ID, file("cccccccccccc")); !errors.Is(err, ErrNotFound) {
+		t.Errorf("another org's card: %v", err)
+	}
+	if err := o.RemoveCardFile(c.ID, "aaaaaaaaaaaa"); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.RemoveCardFile(c.ID, "aaaaaaaaaaaa"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("remove again: %v", err)
+	}
+	for i := 1; i < model.MaxCardFiles; i++ {
+		if _, err := o.AddCardFile(c.ID, file(fmt.Sprintf("%012d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := o.AddCardFile(c.ID, file("dddddddddddd")); !errors.Is(err, ErrTooManyFiles) {
+		t.Errorf("one too many: %v", err)
+	}
+	if ids, err := s.CardUploads(); err != nil || len(ids) != model.MaxCardFiles || !slices.Contains(ids, "bbbbbbbbbbbb") {
+		t.Errorf("uploads in use: %d %v", len(ids), err)
+	}
+	if err := o.DeleteCard(c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if ids, err := s.CardUploads(); err != nil || len(ids) != 0 {
+		t.Errorf("after the card is deleted: %v %v", ids, err)
 	}
 }

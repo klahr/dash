@@ -47,6 +47,7 @@ const (
 	MaxCardTarget      = 60
 	MaxCardComment     = 10000
 	MaxCardMembers     = 50
+	MaxCardFiles       = 30
 )
 
 // Card is one item of the plan. ProjectID is "" for a card of no project in
@@ -64,10 +65,24 @@ type Card struct {
 	Target string `json:"target"`
 	// Members are the people in the org on the card (user ids), in the
 	// order they were added.
-	Members   []int64   `json:"members"`
-	CreatedBy int64     `json:"created_by"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Members []int64 `json:"members"`
+	// Files are the files attached to the card, in the order they were added.
+	Files     []CardFile `json:"files"`
+	CreatedBy int64      `json:"created_by"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+// CardFile is a file attached to a card: an upload (its ID is the upload's
+// id), as anyone who sees the card may see it. Where it is stored is the
+// server's, not the card's.
+type CardFile struct {
+	ID      string    `json:"id"`
+	Name    string    `json:"name"`
+	Type    string    `json:"type"`
+	Size    int64     `json:"size"`
+	AddedBy int64     `json:"added_by"`
+	AddedAt time.Time `json:"added_at"`
 }
 
 // CardComment is a comment on a card.

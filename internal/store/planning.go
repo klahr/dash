@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -126,7 +127,7 @@ func (o *OrgStore) emitCard(id string, deleted bool) {
 const cardColumns = "c.id, c.org_id, c.project_id, c.title, c.description, c.col, c.position, c.priority, c.target, COALESCE(c.created_by, 0), c.created_at, c.updated_at"
 
 func scanCard(sc interface{ Scan(...any) error }) (model.Card, error) {
-	c := model.Card{Members: []int64{}}
+	c := model.Card{Members: []int64{}, Files: []model.CardFile{}}
 	var created, updated int64
 	err := sc.Scan(&c.ID, &c.OrgID, &c.ProjectID, &c.Title, &c.Description, &c.Column, &c.Position, &c.Priority, &c.Target, &c.CreatedBy, &created, &updated)
 	c.CreatedAt, c.UpdatedAt = time.Unix(created, 0).UTC(), time.Unix(updated, 0).UTC()
@@ -154,6 +155,29 @@ func cardMembers(q rowsQuerier, where string, args ...any) (map[string][]int64, 
 			return nil, err
 		}
 		out[id] = append(out[id], uid)
+	}
+	return out, rows.Err()
+}
+
+// cardFiles reads the files of the cards the query (with args) picks, by
+// card, in the order they were added.
+func cardFiles(q rowsQuerier, where string, args ...any) (map[string][]model.CardFile, error) {
+	rows, err := q.Query("SELECT f.card_id, f.upload_id, f.name, f.type, f.size, COALESCE(f.added_by, 0), f.added_at FROM planning_card_files f JOIN planning_cards c ON c.id = f.card_id WHERE "+where+
+		" ORDER BY f.added_at, f.rowid", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]model.CardFile{}
+	for rows.Next() {
+		var id string
+		var f model.CardFile
+		var at int64
+		if err := rows.Scan(&id, &f.ID, &f.Name, &f.Type, &f.Size, &f.AddedBy, &at); err != nil {
+			return nil, err
+		}
+		f.AddedAt = time.Unix(at, 0).UTC()
+		out[id] = append(out[id], f)
 	}
 	return out, rows.Err()
 }
@@ -193,9 +217,16 @@ func (o *OrgStore) ListCards(projectID string) ([]model.Card, error) {
 	if err != nil {
 		return nil, err
 	}
+	files, err := cardFiles(o.s.db, "c.org_id = ?", o.org)
+	if err != nil {
+		return nil, err
+	}
 	for i := range out {
 		if m := members[out[i].ID]; m != nil {
 			out[i].Members = m
+		}
+		if f := files[out[i].ID]; f != nil {
+			out[i].Files = f
 		}
 	}
 	return out, nil
@@ -218,8 +249,15 @@ func getCard(q interface {
 		return c, err
 	}
 	members, err := cardMembers(q, "c.id = ?", id)
+	if err != nil {
+		return c, err
+	}
 	if m := members[id]; m != nil {
 		c.Members = m
+	}
+	files, err := cardFiles(q, "c.id = ?", id)
+	if f := files[id]; f != nil {
+		c.Files = f
 	}
 	return c, err
 }
@@ -460,6 +498,78 @@ func (o *OrgStore) DeleteCard(id string) error {
 	o.s.unindexCard(id)
 	o.emitCard(id, true)
 	return nil
+}
+
+// ErrTooManyFiles: a card has at most model.MaxCardFiles files.
+var ErrTooManyFiles = fmt.Errorf("a card has at most %d files", model.MaxCardFiles)
+
+// AddCardFile attaches an upload of the org to a card, as the view's user's,
+// after its other files. Attaching the same upload again is no change.
+func (o *OrgStore) AddCardFile(cardID string, f model.CardFile) (model.CardFile, error) {
+	f.AddedBy, f.AddedAt = o.user, time.Now().UTC().Truncate(time.Second)
+	o.s.mu.Lock()
+	err := inTx(o.s.db, func(tx *sql.Tx) error {
+		c, err := getCard(tx, o.org, cardID)
+		if err != nil {
+			return err
+		}
+		if len(c.Files) >= model.MaxCardFiles {
+			return ErrTooManyFiles
+		}
+		_, err = tx.Exec(`INSERT INTO planning_card_files (card_id, upload_id, name, type, size, added_by, added_at) VALUES (?, ?, ?, ?, ?, NULLIF(?, 0), ?)
+			ON CONFLICT (card_id, upload_id) DO NOTHING`, cardID, f.ID, f.Name, f.Type, f.Size, f.AddedBy, f.AddedAt.Unix())
+		return err
+	})
+	o.s.mu.Unlock()
+	if err != nil {
+		return f, err
+	}
+	o.emitCard(cardID, false)
+	return f, nil
+}
+
+// RemoveCardFile takes a file off a card. The upload stays until cleanup
+// finds nothing else uses it.
+func (o *OrgStore) RemoveCardFile(cardID, uploadID string) error {
+	o.s.mu.Lock()
+	err := inTx(o.s.db, func(tx *sql.Tx) error {
+		if _, err := getCard(tx, o.org, cardID); err != nil {
+			return err
+		}
+		res, err := tx.Exec("DELETE FROM planning_card_files WHERE card_id = ? AND upload_id = ?", cardID, uploadID)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+	o.s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	o.emitCard(cardID, false)
+	return nil
+}
+
+// CardUploads are the ids of the uploads attached to any org's cards, for
+// cleanup to keep.
+func (s *Store) CardUploads() ([]string, error) {
+	rows, err := s.db.Query("SELECT DISTINCT upload_id FROM planning_card_files")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // CardComments are a card's comments, oldest first.

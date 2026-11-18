@@ -37,9 +37,26 @@ Click a card to open it beside the board. On a phone it opens full screen, with 
   yourself off.
 - **Description** (markdown): type in the box. It saves when you click elsewhere, or press
   `Ctrl+Enter`.
+- **Files**: pictures (PNG, JPEG, GIF, WebP, SVG), PDFs and text files (`.txt`, `.md`, `.log`,
+  `.json`, `.csv`), up to 20 MB each and 30 a card. Click **Attach file**, paste into the
+  description or a comment, or drop files on the open card, or on a card on the board. Anyone in
+  the org, planners too, can attach and remove files. A card with a picture shows the first one
+  across its top on the board, and how many files it has by a paper clip.
 - **Comments**: anyone in the org can comment; a comment's author or an admin can delete it.
   A card with comments shows how many on the board, by a speech bubble.
 - **Work**: the tasks and goals linked to it, each with its status
+
+## Previews
+
+Click a file to preview it over the page:
+
+- pictures at full size
+- text files to read: Markdown formatted, JSON indented, CSV as a table
+- other files (PDFs) with their name, size and **Download**
+
+`←` and `→` step through the card's files. `Esc` or a click beside the file closes it.
+`Ctrl`-click (`Cmd`-click on a Mac) opens the file in a new tab instead. Files attached to
+tasks and chat messages preview the same way.
 
 ## Status
 
@@ -78,8 +95,10 @@ moves a card to **Done** on its own.
    tasks; see [Goals](goals.md)).
 3. Click **Start**.
 
-The card's title and description become the task's prompt or the goal's description. Dash
-links the new work to the card and moves the card to **In progress**. Planners and members
+The card's title and description become the task's prompt or the goal's description. A task
+also gets the card's files, for Claude to read. On a hub it doesn't: files can't be sent to
+runners yet. Dash links the new work to the card and moves the card to
+**In progress**. Planners and members
 can both press **Start**.
 
 ## Link existing work
@@ -118,6 +137,9 @@ Planning is under `/api/planning/`:
 | `POST /api/planning/cards/{id}/move`                  | `column` and `position` (0 is the top)           |
 | `GET`, `POST /api/planning/cards/{id}/comments`       | its comments; add one: `text`                    |
 | `DELETE /api/planning/cards/{id}/comments/{comment}`  | delete a comment                                 |
+| `POST /api/planning/cards/{id}/files?name=<name>`     | attach a file: the request's body                |
+| `GET /api/planning/cards/{id}/files/{file}/{name}`    | a card's file                                    |
+| `DELETE /api/planning/cards/{id}/files/{file}`        | take a file off the card                         |
 | `POST /api/planning/cards/{id}/start`                 | `project` and `kind` (`task` or `goal`)          |
 | `GET /api/planning/projects`                          | the org's projects' ids, names, colors and icon URLs |
 | `GET /api/planning/projects/{id}/icon`                | a project's icon image                           |

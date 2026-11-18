@@ -42,22 +42,28 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	name := cleanUploadName(r.URL.Query().Get("name"), r.Header.Get("Content-Type"))
-	typ, ok := uploadTypes[strings.ToLower(filepath.Ext(name))]
-	if !ok {
-		writeErr(w, fmt.Errorf("%w: attach images (PNG, JPEG, GIF, WebP, SVG), PDFs or text files", errBadRequest))
-		return
-	}
-	a, err := sv.saveUpload(name, typ, http.MaxBytesReader(w, r.Body, maxUpload))
+	a, err := sv.receiveUpload(w, r)
 	if err != nil {
-		var tooBig *http.MaxBytesError
-		if errors.As(err, &tooBig) {
-			err = fmt.Errorf("%w: files can be at most %d MB", errBadRequest, maxUpload>>20)
-		}
 		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, a)
+}
+
+// receiveUpload stores r's body as a new upload, named by its ?name= (or
+// its content type, for a pasted image), if it is a kind Dash takes.
+func (sv *service) receiveUpload(w http.ResponseWriter, r *http.Request) (model.Attachment, error) {
+	name := cleanUploadName(r.URL.Query().Get("name"), r.Header.Get("Content-Type"))
+	typ, ok := uploadTypes[strings.ToLower(filepath.Ext(name))]
+	if !ok {
+		return model.Attachment{}, fmt.Errorf("%w: attach images (PNG, JPEG, GIF, WebP, SVG), PDFs or text files", errBadRequest)
+	}
+	a, err := sv.saveUpload(name, typ, http.MaxBytesReader(w, r.Body, maxUpload))
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		err = fmt.Errorf("%w: files can be at most %d MB", errBadRequest, maxUpload>>20)
+	}
+	return a, err
 }
 
 // saveUpload stores body as a new upload of the caller's org, named name
@@ -103,6 +109,12 @@ func (s *Server) getUpload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, store.ErrNotFound)
 		return
 	}
+	serveUpload(w, r, a)
+}
+
+// serveUpload answers r with an upload: images to show, other files to
+// download, either way never run as a page of Dash's.
+func serveUpload(w http.ResponseWriter, r *http.Request, a model.Attachment) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Type", a.Type)
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")

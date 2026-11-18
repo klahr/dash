@@ -2362,6 +2362,44 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 @keyframes chip-in { from { opacity: 0; transform: scale(.92); } }
 dialog.file-over, .file-over { outline: 2px dashed color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: -8px; }
 .composer .attach { flex: 0 0 100%; margin: 0; }
+
+/* ---- lightbox: a file's preview over the page (app/lightbox.js) ---- */
+dialog.lightbox {
+  width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0;
+  background: color-mix(in srgb, #05080d 97%, transparent); color: var(--text);
+  display: none; flex-direction: column;
+}
+dialog.lightbox[open] { display: flex; animation: fade-in .15s var(--ease); }
+dialog.lightbox::backdrop { background: transparent; }
+.lb-head {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 18px;
+  padding-top: max(10px, env(safe-area-inset-top)); border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.lb-title { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.lb-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-meta { display: flex; gap: 10px; font-size: var(--fs-xs); color: var(--muted); }
+.lb-body { position: relative; flex: 1; min-height: 0; display: flex; align-items: stretch; }
+.lb-stage { flex: 1; min-width: 0; display: grid; place-items: center; padding: 16px; overflow: auto; }
+.lb-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: var(--r-s); background: repeating-conic-gradient(#ffffff10 0 25%, transparent 0 50%) 0 0 / 16px 16px; pointer-events: none; }
+.lb-step { align-self: center; flex: none; margin: 0 6px; width: 44px; height: 44px; border-radius: 50%; background: color-mix(in srgb, var(--raised) 80%, transparent); }
+.lb-step[hidden] { display: none; }
+.lb-text { place-self: start center; width: min(100%, 980px); max-height: 100%; overflow: auto; padding: 16px 20px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); }
+.lb-text pre { margin: 0; font: var(--fs-s)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.lb-table { overflow: auto; }
+.lb-table table { border-collapse: collapse; font-size: var(--fs-s); }
+.lb-table th, .lb-table td { padding: 4px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; white-space: pre-wrap; }
+.lb-table th { position: sticky; top: 0; background: var(--raised); }
+.lb-file { display: grid; justify-items: center; gap: 12px; text-align: center; }
+.lb-ext { display: grid; place-items: center; width: 96px; height: 120px; border-radius: var(--r-m); border: 1px solid var(--line); background: var(--surface); font: 700 var(--fs-l) var(--mono); color: var(--muted); }
+.lb-note { margin: 8px 0 0; color: var(--muted); font-size: var(--fs-s); }
+@media (max-width: 640px) {
+  .lb-stage { padding: 8px; }
+  /* On a phone the arrows lie over the file; a swipe of the page scrolls it. */
+  .lb-step { position: absolute; top: 50%; transform: translateY(-50%); z-index: 1; }
+  .lb-prev { left: 0; }
+  .lb-next { right: 0; }
+  .lb-text { padding: 12px; }
+}
 /* Messages queued while Claude answers, above the composer. */
 .chat-queue { flex: 0 0 100%; display: flex; flex-direction: column; gap: 6px; }
 .queued { display: flex; align-items: center; border: 1px dashed var(--line); border-radius: var(--r-m); background: var(--raised); animation: chip-in .22s var(--ease); }
@@ -3258,6 +3296,14 @@ button.goal-task-open:hover { background: var(--raised); }
 .t-failed { --c: var(--failed); }
 .t-done, .t-shipped { --c: var(--merged); }
 .pl-suggest { font-size: var(--fs-xs); font-weight: 600; color: var(--merged); }
+/* A card's first picture across its top, and its files in its pane (app/planning.js). */
+.pl-cover {
+  grid-column: 1 / -1; display: block; width: calc(100% + 28px); max-height: 140px; margin: -12px -14px 2px;
+  object-fit: cover; border-radius: var(--r-m) var(--r-m) 0 0; background: var(--raised); pointer-events: none;
+}
+.pl-card .todo.pushed .pl-cover { opacity: .6; }
+.pl-files { margin: 0 0 6px; }
+.pl-card .todo.file-over { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); outline: none; }
 /* Add card: a row at the bottom of the column, as wide as the cards above it
    and its + where their text starts. */
 .pl-add { display: flex; align-items: center; gap: 8px; width: calc(100% - 2 * var(--pl-pad, 12px)); min-height: 44px; margin: 0 var(--pl-pad, 12px); padding: 10px 15px; border: 1px dashed transparent; border-radius: var(--r-m); text-align: left; color: var(--muted); font-weight: 500; }

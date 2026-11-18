@@ -54,20 +54,23 @@ var plannerRoutes = map[string]bool{
 
 	// Planning, and its live updates (the stream sends a planner Planning's
 	// events only; see eventsWS).
-	"GET /ws/events":                                  true,
-	"GET /api/planning/cards":                         true,
-	"POST /api/planning/cards":                        true,
-	"GET /api/planning/cards/{cid}":                   true,
-	"PATCH /api/planning/cards/{cid}":                 true,
-	"DELETE /api/planning/cards/{cid}":                true,
-	"POST /api/planning/cards/{cid}/move":             true,
-	"GET /api/planning/cards/{cid}/comments":          true,
-	"POST /api/planning/cards/{cid}/comments":         true,
-	"DELETE /api/planning/cards/{cid}/comments/{mid}": true,
-	"POST /api/planning/cards/{cid}/start":            true,
-	"GET /api/planning/projects":                      true,
-	"GET /api/planning/projects/{pid}/icon":           true,
-	"GET /api/planning/people":                        true,
+	"GET /ws/events":                                   true,
+	"GET /api/planning/cards":                          true,
+	"POST /api/planning/cards":                         true,
+	"GET /api/planning/cards/{cid}":                    true,
+	"PATCH /api/planning/cards/{cid}":                  true,
+	"DELETE /api/planning/cards/{cid}":                 true,
+	"POST /api/planning/cards/{cid}/move":              true,
+	"GET /api/planning/cards/{cid}/comments":           true,
+	"POST /api/planning/cards/{cid}/comments":          true,
+	"DELETE /api/planning/cards/{cid}/comments/{mid}":  true,
+	"POST /api/planning/cards/{cid}/start":             true,
+	"POST /api/planning/cards/{cid}/files":             true,
+	"GET /api/planning/cards/{cid}/files/{fid}/{name}": true,
+	"DELETE /api/planning/cards/{cid}/files/{fid}":     true,
+	"GET /api/planning/projects":                       true,
+	"GET /api/planning/projects/{pid}/icon":            true,
+	"GET /api/planning/people":                         true,
 }
 
 // errPlanner is what a planner gets for any other route.
