@@ -7,6 +7,7 @@
 //
 //	/p/{project}                     the project's board
 //	/p/{project}/{view}              board, issues, scans, run, try, history, goals, files, checklist
+//	                                 (run and try: the Shell page at main and at a commit)
 //	/p/{project}/tasks/{id}          a task, open over the board
 //	/p/{project}/goals/{id}          a goal, open on Goals
 //	/p/{project}/history/{sha}       a commit, open on History

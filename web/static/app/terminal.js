@@ -231,7 +231,7 @@ const runPreset = attempt(async (e) => {
 // a running server is stopped instead.
 $("#quick-actions").addEventListener("click", attempt(async (e) => {
   const spec = e.target.closest("[data-run]")?.dataset.run;
-  if (!spec) return; // Try has a handler of its own
+  if (!spec) return; // not a run button
   const proc = quickProc(spec);
   if (!proc?.running) return runPreset(e);
   if (spec === "web:run") {
@@ -335,7 +335,17 @@ export function renderQuick() {
       : ok ? `Last ${noun} passed — click to run again`
       : bad ? `Last ${noun} failed (exit ${proc.exit_code}) — click to run again`
       : cut ? `Last ${noun} was interrupted by a Dash restart — click to run again`
-      : `${done} (${key} on the Shell view)`;
+      : `${done} (${key} on the Shell page)`;
   }
 }
 setInterval(() => { if ($(".quick-btn.running")) renderQuick(); }, 1000);
+// The Actions group (and its heading) shows only while one of its buttons does.
+{
+  const box = $("#quick-actions");
+  const sync = () => {
+    const none = !box.querySelector(".quick-btn:not([hidden])");
+    if (box.hidden !== none) box.hidden = none;
+  };
+  new MutationObserver(sync).observe(box, { subtree: true, attributes: true, attributeFilter: ["hidden"] });
+  sync();
+}

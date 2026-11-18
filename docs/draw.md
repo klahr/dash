@@ -1,6 +1,6 @@
 # Draw on a preview
 
-**Draw** (<kbd>D</kbd>, or Draw in the floating button's menu on a phone) freezes a
+**Draw** (<kbd>P</kbd>, or Draw in the floating button's menu on a phone) freezes a
 [live preview](previews.md): the page renders what it currently shows (scroll position, open menus
 and signed-in state included) to a picture, which replaces the live page until **Done**
 (<kbd>Esc</kbd>). Mark it up with pen, arrow, circle and box (<kbd>Shift</kbd> for straight lines,

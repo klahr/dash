@@ -17,6 +17,11 @@ import { closeCard, planningShown } from "./planning.js";
 import { changed, initial } from "./routes.js";
 
 // ------------------------------------------------------------------ navigation
+// Shell is one page with two places, main (view "run") and a commit (view
+// "try", Try's old name and link): both show #view-run under the nav's Shell.
+// (A function declaration: modules in an import cycle call into nav.js before it runs.)
+export function navView(name) { return name === "try" ? "run" : name; }
+
 // now: at once, without the transition (Back and Forward: router.js).
 export function showView(name, { now = false } = {}) {
   const apply = () => applyView(name);
@@ -31,7 +36,10 @@ function applyView(name) {
   state.view = name;
   store.set("dash.view", name);
   renderNavActive();
-  $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
+  $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${navView(name)}`));
+  $("#view-run").classList.toggle("at-commit", name === "try");
+  $("#shell-at-main").setAttribute("aria-pressed", String(name === "run"));
+  $("#shell-at-commit").setAttribute("aria-pressed", String(name === "try"));
   if (name === "run") requestAnimationFrame(() => { fitTerm(); ensureShell(); });
   if (name === "history") loadGraph().catch(fail);
   else closeCommit();
@@ -60,7 +68,7 @@ export function renderNavActive() {
     b.toggleAttribute("aria-current", on);
     if (on) b.setAttribute("aria-current", "page");
   };
-  $$(".nav > button[data-view], .menu-views [data-view]").forEach((b) => mark(b, !chatOn && b.dataset.view === state.view));
+  $$(".nav > button[data-view], .menu-views [data-view]").forEach((b) => mark(b, !chatOn && b.dataset.view === navView(state.view)));
   mark($("#nav-chat"), chatOn);
 }
 desktop.addEventListener("change", () => renderNavActive());
@@ -75,5 +83,5 @@ $$(".nav > button[data-view], .menu-views [data-view]").forEach((b) => b.addEven
 {
   const linked = initial.named && initial.view;
   const saved = linked || store.get("dash.view");
-  if (saved && $(linked ? `#view-${saved}` : `.nav > button[data-view="${saved}"]`)) applyView(saved);
+  if (saved && $(linked ? `#view-${navView(saved)}` : `.nav > button[data-view="${saved}"]`)) applyView(saved);
 }

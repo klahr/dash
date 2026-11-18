@@ -302,11 +302,15 @@ function renderBoardNow() {
   const goals = waitingGoals().length;
   const review = every.review.length + state.perms.length + goals;
   const badge = $("#review-badge");
-  if (String(review) !== badge.textContent && review && !reduceMotion.matches) {
+  if (String(review) !== badge.dataset.n && review && !reduceMotion.matches) {
     badge.animate([{ transform: "scale(1.35)" }, { transform: "scale(1)" }], { duration: 260, easing: EASE });
   }
   badge.hidden = !review;
-  badge.textContent = review;
+  badge.dataset.n = review;
+  // The count on a phone (and a folded sidebar); on a desktop the breakdown in words.
+  const parts = [every.review.length && `${every.review.length} review`, state.perms.length && plural(state.perms.length, "approval"),
+    goals && plural(goals, "goal")].filter(Boolean);
+  badge.replaceChildren(h("span", { class: "rb-n", "aria-hidden": "true" }, String(review)), h("span", { class: "rb-text" }, parts.join(" · ")));
   badge.title = [every.review.length && `${every.review.length} to review`, state.perms.length && `${state.perms.length} waiting for approval`,
     goals && `${goals} goal${goals > 1 ? "s" : ""} waiting for you`].filter(Boolean).join(" · ");
   renderBoardDot(review);
@@ -328,6 +332,9 @@ function renderBoardDot(waiting) {
   const dot = $("#board-dot");
   dot.hidden = !!waiting || (!active.length && !done);
   dot.classList.toggle("done", !active.length && done);
+  // A dot on a phone; on a desktop it says which, in a word.
+  dot.textContent = active.length ? "running" : "all merged";
+  dot.title = active.length ? `${plural(active.length, "task")} running or merging` : "Every task that ran has merged";
 }
 
 // ------------------------------------------------------------------ swipe between lanes (phones)
@@ -804,9 +811,19 @@ export function prReviewTag(pr) {
 }
 
 // One line per check, for a tooltip.
+const CHECK_MARK = { passed: "✓", failed: "✗", pending: "…" };
 export function prChecksTitle(pr) {
-  const mark = { passed: "✓", failed: "✗", pending: "…" };
-  return (pr.checks || []).map((c) => `${mark[c.state] || "·"} ${c.name}`).join("\n");
+  return (pr.checks || []).map((c) => `${CHECK_MARK[c.state] || "·"} ${c.name}`).join("\n");
+}
+
+// prChecksEl is the pull request's checks as visible text, each with its mark
+// and result in words ("✗ lint failed"), not only a colour.
+export function prChecksEl(pr) {
+  const checks = pr.checks || [];
+  if (!checks.length) return null;
+  const word = { passed: "passed", failed: "failed", pending: "running" };
+  return h("span", { class: "pr-checks", role: "list", "aria-label": "Checks" },
+    ...checks.map((c) => h("span", { class: `pr-check ${c.state}`, role: "listitem" }, `${CHECK_MARK[c.state] || "·"} ${c.name} ${word[c.state] || c.state}`)));
 }
 
 // The card's "PR #N", opening the pull request.

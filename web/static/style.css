@@ -188,7 +188,7 @@ textarea.script-field { font-family: var(--mono); white-space: pre; overflow-x: 
 .project-branch { min-width: 0; flex: 0 1000 auto; color: var(--muted); font-family: var(--mono); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .live { display: grid; place-items: center; width: 28px; height: 28px; }
 .quick-actions { order: 4; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.quick-actions:not(:has(.quick-btn:not([hidden]))) { display: none; }
+.quick-actions > .side-projects-head { flex-basis: 100%; padding-bottom: 2px; }
 .quick-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; min-width: 36px; padding: 0 10px;
   border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: var(--fs-s); font-weight: 600; white-space: nowrap; flex: 1 1 auto;
@@ -231,6 +231,10 @@ textarea.script-field { font-family: var(--mono); white-space: pre; overflow-x: 
   background: var(--review); color: var(--on-review); font-size: var(--fs-2xs); font-weight: 700; line-height: 18px; text-align: center;
 }
 .nav .badge.quiet { background: var(--raised); color: var(--text); }
+/* The Board badge: its count on a phone, what waits in words on a desktop (see below). */
+#review-badge .rb-text { display: none; }
+/* The board dot says "running" or "all merged" on a desktop; on a phone it is only a dot. */
+.nav .board-dot { font-size: 0; }
 /* Board tab: a breathing yellow dot while tasks run, a steady green one once they've all merged. */
 /* Chat tab (mobile): the same dot while an answer streams, a "!" while one waits on approval. */
 .nav :is(.board-dot, .chat-badge) {
@@ -245,8 +249,8 @@ textarea.script-field { font-family: var(--mono); white-space: pre; overflow-x: 
   position: absolute; top: 8px; right: 8px; width: 9px; height: 9px; border-radius: 50%;
   background: var(--running); animation: breathe 1.8s ease-in-out infinite;
 }
-/* A count in an icon button's corner: the chat's approvals, commits to push (#push-main). */
-#pc-open .chat-badge.perm, #push-main .badge {
+/* A count in an icon button's corner: the chat's approvals. */
+#pc-open .chat-badge.perm {
   position: absolute; top: 4px; right: 2px; width: auto; min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--r-pill);
   background: var(--review); color: var(--on-review); font-size: var(--fs-3xs); font-weight: 700; line-height: 16px; text-align: center; animation: none;
 }
@@ -624,10 +628,8 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 }
 .composer textarea { flex: 1 1 0; width: auto; min-width: 0; resize: none; max-height: 40vh; padding: 11px 16px; }
 #pc-open[aria-pressed="true"], #pc-pin[aria-pressed="true"] { color: var(--accent); }
-#push-main { position: relative; }
-#push-main:not(:disabled) { color: var(--accent); }
-#push-main:disabled { opacity: .5; cursor: default; background: none; }
-#push-main .badge { background: var(--accent); color: var(--on-accent); }
+#push-main:not(:disabled) { border-color: var(--accent); }
+#push-main:disabled { cursor: default; }
 #pc-pin[aria-pressed="true"] .ico { fill: currentColor; }
 /* Chat pane: a page between the top bar and the nav on mobile; see desktop for overlay and pinned. */
 .chat-pane {
@@ -713,8 +715,17 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 
 /* ---------- run ---------- */
 #view-run.active { display: flex; flex-direction: column; height: var(--view-h); background: var(--term-bg); }
+/* One page, two places: a shell in the checkout (main) or the project tried at a commit. */
+#view-run:not(.at-commit) .at-commit, #view-run.at-commit .at-main { display: none !important; }
+.shell-at { display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: var(--r-s); overflow: hidden; }
+.shell-at button { min-height: 34px; padding: 0 10px; border: 0; background: transparent; color: var(--muted); font-size: var(--fs-s); font-weight: 600; }
+.shell-at button + button { border-left: 1px solid var(--line); }
+.shell-at button:hover:not(:disabled) { color: var(--text); }
+.shell-at button[aria-pressed="true"] { background: var(--raised); color: var(--text); }
+.shell-at button:disabled { opacity: .55; cursor: not-allowed; }
+.shell-at code { font: 600 var(--fs-xs) var(--mono); }
 .shell-body { display: flex; flex: 1; min-height: 0; }
-.shell-head .try-where { flex: 1 1 auto; font-size: var(--fs-s); }
+#shell-head { flex: 1 1 auto; font-size: var(--fs-s); }
 .shell-runner-name { flex: none; font-weight: 600; white-space: nowrap; }
 .shell-sep { color: var(--muted); }
 .shell-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-family: var(--mono); font-size: var(--fs-xs); }
@@ -722,8 +733,6 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 #shell-note { align-self: center; } /* the Shell view's empty state; .shell-note is a chat block (below) */
 
 /* ---------- try: the project's CLI in a terminal on a runner ---------- */
-.quick-why { flex-basis: 100%; margin: 0; color: var(--muted); font-size: var(--fs-xs); line-height: 1.35; }
-#view-try.active { display: flex; flex-direction: column; height: var(--view-h); background: var(--term-bg); }
 .try-head {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 6px 8px;
   border-bottom: 1px solid var(--line); background: var(--surface);
@@ -766,15 +775,15 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .try-commit-loading { display: flex; justify-content: center; padding: 20px; }
 .try-commit-note:empty { display: none; }
 @media (min-width: 1024px) {
-  #view-try.active { height: auto; overflow: hidden; }
+  #view-run.active { overflow: hidden; }
   .try-where { flex-basis: 320px; }
   .try-tabs, .try-keys { display: none; }
   #try-chat { display: inline-flex; }
   .try-commits-sheet { max-width: 640px; margin: auto; border-radius: var(--r-l); border: 1px solid var(--line); }
   /* The chat sits beside the terminal, not over it (a pinned chat on a wide screen has a column already). */
-  .app.chat-open #view-try.active { margin-right: var(--chat-pane-w); }
+  .app.chat-open #view-run.at-commit.active { margin-right: var(--chat-pane-w); }
 }
-@media (min-width: 1280px) { .app.chat-pinned.chat-open #view-try.active { margin-right: 0; } }
+@media (min-width: 1280px) { .app.chat-pinned.chat-open #view-run.at-commit.active { margin-right: 0; } }
 
 /* Files: tree beside (desktop) or above (mobile) a plain editor */
 #view-files.active { display: flex; height: var(--view-h); }
@@ -1667,18 +1676,22 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .statusline:focus-within .cmd-prompt { color: var(--text); }
 .statusline input { flex: 1; min-width: 0; border: 0; background: none; padding: 0; height: 100%; font: inherit; color: var(--text); }
 .statusline input:focus { outline: none; }
-.keys { display: grid; grid-template-columns: max-content 1fr; gap: 10px 16px; margin: 8px 0 16px; font-size: var(--fs-m); }
-.keys dt { font-weight: 600; color: var(--muted); }
-.keys dd { margin: 0; line-height: 1.9; }
 kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(--r-xs); background: var(--raised); border: 1px solid var(--line); border-bottom-width: 2px; }
-.keys code { font: var(--fs-xs) var(--mono); color: var(--accent); margin-right: 6px; white-space: nowrap; }
+/* The Keyboard sheet: a table per area, keys on the left. */
+.keys-intro { flex: none; margin: 8px 0; }
+.keys-table { width: 100%; border-collapse: collapse; font-size: var(--fs-m); }
+.keys-table tr + tr { border-top: 1px solid var(--line); }
+.keys-table th { width: 1%; padding: 8px 16px 8px 0; text-align: left; font-weight: 400; white-space: nowrap; vertical-align: top; }
+.keys-table td { padding: 8px 0; line-height: 1.6; }
+.keys-table code { font: var(--fs-xs) var(--mono); color: var(--accent); white-space: nowrap; }
 
 /* ---------- pages ----------
    Checklist, Issues and Scans share one frame: a centred column, a .cl-head
-   with the page's title (.page-title; the checklist's is its file name, in
-   mono) and the same padding on every width. */
+   with the page's title (.page-title, as the nav names the page) and the same
+   padding on every width. The checklist names its file beside the title. */
 .page { width: 100%; max-width: 860px; margin: 0 auto; padding: var(--sp-3) var(--pad-x) var(--sp-5); }
 .cl-title.page-title { font-family: var(--ui); font-size: var(--fs-xl); letter-spacing: -.01em; }
+.cl-file { align-self: center; color: var(--muted); font: var(--fs-xs) var(--mono); }
 
 /* ---------- small helpers ---------- */
 .board-tools { position: sticky; top: var(--top-h); z-index: 10; display: flex; align-items: center; background: var(--bg); border-bottom: 1px solid var(--line); padding-right: 8px; }
@@ -1859,13 +1872,17 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .sheet .site-footer { text-align: left; }
 
 /* ---------- menu: sidebar on desktop, drawer on mobile ---------- */
-.ci-pill, .remote-pill, .checkouts, .side-runners { order: 5; margin-top: 8px; }
+.remote-pill, .checkouts, .side-runners { order: 5; margin-top: 8px; }
 /* Mobile: the sections the bottom nav has no room for (Scans, History, Checklist); the side rail has them on desktop. */
 .menu-views { order: 4; display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
 .menu-view { position: relative; display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 10px; border-radius: var(--r-m); color: var(--muted); font-size: var(--fs-body); font-weight: 500; text-align: left; }
 .menu-view svg { width: 22px; height: 22px; flex: none; }
 .menu-view:hover, .menu-view.active { background: var(--raised); color: var(--text); }
 .menu-view.active svg { color: var(--accent); }
+/* A divider before what isn't the project's (Planning, the organization's): a line and a small label. */
+.nav-sep { display: flex; align-items: center; gap: 8px; margin: 8px 0 2px; padding: 0 10px; color: var(--faint); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.nav-sep::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.nav > .nav-sep { display: none; } /* the bottom nav has no Planning (the menu drawer does) */
 .menu-view .badge { position: static; margin-left: auto; }
 /* Usage and the account sit at the bottom: pushed down when there is room, kept in
    view (sticky) when the projects make the sidebar or drawer scroll. The scroller has
@@ -1926,6 +1943,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .foot-menu-list button { min-height: 36px; padding: 0 10px; border-radius: var(--r-s); text-align: left; font-size: var(--fs-m); color: var(--text); white-space: nowrap; }
 .foot-menu-list button:hover { background: var(--raised); }
 .foot-menu-list button.danger { color: var(--failed); }
+.menu-sep { margin: 4px 6px; border: 0; border-top: 1px solid var(--line); }
 /* The account menu at the bottom of the sidebar: a full-width row with the username. */
 .account-menu { flex: 1 1 100%; margin-left: 0; }
 .foot-menu.account-menu > summary {
@@ -2051,7 +2069,7 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
 .shared-mark .ico { width: 13px; height: 13px; }
 .project-name .shared-mark { margin-left: 6px; vertical-align: -1px; }
 .menu-btn { position: relative; margin-left: -10px; }
-.app:has(.ci-pill.ci-failing:not([hidden]), .usage-pill.paused:not([hidden])) .menu-btn::after {
+.app:has(#pm-builds.bad:not([hidden]), .usage-pill.paused:not([hidden])) .menu-btn::after {
   content: ""; position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%;
   background: var(--failed); box-shadow: 0 0 0 2px var(--bg);
 }
@@ -2156,10 +2174,24 @@ kbd { font: 600 var(--fs-xs) var(--mono); padding: 1px 6px; border-radius: var(-
   .nav { display: contents; }
   .menu-head, .menu-scrim, .nav > .nav-chat, .menu-views { display: none; }
   .menu { display: contents; }
+  .nav > .nav-sep { display: flex; order: 2; }
+  .side-collapsed .nav > .nav-sep { padding: 0 6px; }
+  .side-collapsed .nav-sep span { display: none; }
   .nav > button { order: 2; flex-direction: row; justify-content: flex-start; gap: 12px; min-height: 42px; padding: 0 10px; border-radius: var(--r-m); font-size: var(--fs-body); }
   .nav > button:hover { background: var(--raised); }
   .nav > button.active { background: var(--raised); }
   .nav .badge { position: static; margin-left: auto; }
+  .nav > button[data-view="board"] > span:first-of-type { flex: none; }
+  .app:not(.side-collapsed) #review-badge { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .app:not(.side-collapsed) #review-badge .rb-n { display: none; }
+  .app:not(.side-collapsed) #review-badge .rb-text { display: inline; }
+  .app:not(.side-collapsed) .nav .board-dot {
+    width: auto; height: 18px; padding: 0 7px; border-radius: var(--r-pill); font-size: var(--fs-2xs); font-weight: 700; line-height: 18px;
+    color: var(--on-review); white-space: nowrap;
+  }
+  /* The live dot says Live or Offline beside it. */
+  .live { display: flex; gap: 6px; width: auto; padding: 0 2px; color: var(--muted); font-size: var(--fs-xs); }
+  .live .live-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
   /* The top bar's menu button collapses the sidebar to its icons. */
   .app:not(.side-collapsed) .menu-btn::after { display: none; }
   /* A drag handle on the sidebar's right edge sets --side-w-set; the cap keeps main usable. */
@@ -2502,6 +2534,12 @@ dialog.lightbox::backdrop { background: transparent; }
 .pr-status.progress { color: var(--running); }
 .pr-status.waiting { color: var(--review); }
 .pr-status.err { color: var(--failed); }
+/* A pull request's checks, each in words: "✓ build passed", "✗ lint failed". */
+.pr-checks { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; font-size: var(--fs-xs); }
+.pr-check { color: var(--muted); white-space: nowrap; }
+.pr-check.passed { color: var(--merged); }
+.pr-check.failed { color: var(--failed); font-weight: 600; }
+.pr-check.pending { color: var(--running); }
 .revert-tag { color: var(--muted); }
 /* Wraps rather than overflowing a narrow card (four chips in Review). */
 .card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; min-width: 0; }
@@ -2540,10 +2578,7 @@ a.revert-tag { text-decoration: underline; }
 .billing-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 
 /* ---- builds (GitHub Actions) ---- */
-.ci-pill { --c: var(--merged); }
-.ci-pill.ci-failing { --c: var(--failed); border-color: color-mix(in srgb, var(--failed) 50%, var(--line)); color: var(--failed); }
-.ci-pill.ci-running { --c: var(--running); }
-.ci-pill.ci-running::before { animation: pulse-dot 1.4s ease-in-out infinite; }
+
 @keyframes pulse-dot { 50% { opacity: .35; } }
 /* ---- Claude's status (status.claude.com) ---- */
 /* In the top bar, beside the live dot: it shrinks to its dot before the bar runs out of room. */
@@ -2927,6 +2962,10 @@ a.claude-incident-name:hover { text-decoration: underline; }
 .issue-task:hover { background: color-mix(in srgb, var(--c, var(--accent)) 16%, transparent); }
 .issue-task .ico { width: 14px; height: 14px; }
 .issue-task .act-spin { width: 8px; height: 8px; }
+/* The linked task's name, beside where it stands: on a desktop (phones keep the status only). */
+.issue-task-title { min-width: 0; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 500; }
+.issue-task-title::before { content: "· "; color: var(--muted); }
+@media (max-width: 1023px) { .issue-task-title { display: none; } }
 /* Where the checkbox would be: what a task is doing, or how a closed issue ended (44px, like .cl-check). */
 .issue-mark { flex: none; display: grid; place-items: center; width: 44px; height: 44px; color: var(--c, var(--accent)); }
 .issue-mark.s-draft { --c: var(--muted); }
@@ -3369,6 +3408,8 @@ button.goal-task-open:hover { background: var(--raised); }
 /* The drop line lies in the middle of the gap between two cards. */
 .pl-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--raised); color: var(--muted); }
 .pl-chip .ico { width: 12px; height: 12px; }
+/* What a chip is (Priority, Target, Tag), in words before its value: on a desktop. */
+@media (min-width: 1024px) { .pl-chip[data-kind]::before { content: attr(data-kind); font-weight: 400; opacity: .75; } }
 .pl-comments .ico { width: 14px; height: 14px; }
 .pl-chip.p-high { color: var(--failed); background: color-mix(in srgb, var(--failed) 14%, transparent); }
 .pl-chip.p-medium { color: var(--review); background: color-mix(in srgb, var(--review) 14%, transparent); }
@@ -3498,3 +3539,4 @@ button.pl-tag-name:hover { text-decoration: underline; }
   .planning-app .nav > button { display: none; }
 }
 @media (max-width: 400px) { .chat-mode .ico { display: none; } .chat-mode button { padding: 0 8px; } }
+#keys-sheet .rail-body > .site-footer { flex: none; padding: 8px 0 calc(8px + var(--safe-b)); }

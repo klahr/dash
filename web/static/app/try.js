@@ -14,7 +14,8 @@ import { setMode } from "./vim.js";
 
 // ------------------------------------------------------------------ try: the project's CLI on a runner
 // (tryState is declared with state, near the top: views render before this runs.)
-// Try opens a terminal on the project itself (not a task): its preview_command,
+// The Shell page's "commit…" place (view "try"; "main" is terminal.js's shell
+// in the checkout). It opens a terminal on the project itself (not a task): its preview_command,
 // or a shell, in a throwaway worktree on a runner the user picks, at the tip of
 // the default branch (fetched first) or a commit picked from its history. The
 // project chat sits beside it (a tab of its own on phones), reads the terminal
@@ -27,7 +28,7 @@ export async function loadTry() {
   const p = state.project;
   if (tryState.pid !== (p?.id || null)) {
     disconnectTry();
-    Object.assign(tryState, { pid: p?.id || null, loaded: false, runners: [], disabled: "", session: null, runner: "", refused: null });
+    Object.assign(tryState, { pid: p?.id || null, loaded: false, runners: [], disabled: "", session: null, runner: "", refused: null, pending: null });
   }
   if (!tryProject(p)) { renderTryButton(); if (state.view === "try") renderTry(); return; }
   const st = await api("GET", `/api/projects/${p.id}/try`);
@@ -40,28 +41,42 @@ export async function loadTry() {
   if (state.view === "try") renderTry();
 }
 
+// The Shell page's picker: "main" (the default branch's name) and "commit…",
+// which only a CLI project with a runner for it can use.
+const NOT_CLI = "Trying a commit is for CLI projects: set the preview to Terminal in the project's settings.";
 export function renderTryButton() {
-  const btn = $("#quick-try"), why = $("#quick-try-why");
-  const show = tryProject();
-  const off = show && tryState.loaded && !tryState.runners.length && !tryState.session;
-  btn.hidden = !show;
-  btn.disabled = off;
-  btn.classList.toggle("ok", !!tryState.session && tryState.session.state === "live");
-  why.hidden = !off;
-  why.textContent = off ? tryState.disabled : "";
-  const s = tryState.session;
-  btn.title = off ? tryState.disabled
-    : s ? `Trying ${shortSHA(s.commit)} on ${s.runner}: open it`
-      : "Try the project in a terminal on a runner, at main or an older commit";
+  const p = state.project, s = tryState.session;
+  $("#shell-at-branch").textContent = p?.default_branch || "main";
+  const btn = $("#shell-at-commit");
+  const can = tryProject();
+  const off = can && tryState.loaded && !tryState.runners.length && !s;
+  btn.disabled = !can || off;
+  btn.title = !p ? "Pick a project first" : !can ? NOT_CLI : off ? tryState.disabled
+    : s ? `Trying ${shortSHA(s.commit)} on ${s.runner}. Pick another commit`
+      : "Try the project at a commit, in a throwaway worktree on a runner";
 }
 
 export function openTry() {
   if (!state.project) throw new Error("Pick a project first.");
-  if (!tryProject()) throw new Error("Try is for CLI projects: set the preview to Terminal in the project's settings.");
+  if (!tryProject()) throw new Error(NOT_CLI);
   closeDetail();
-  if (!desktop.matches) setMenu(false); // on phones Try is in the menu drawer
+  if (!desktop.matches) setMenu(false);
   showView("try");
 }
+
+// "commit…" on the Shell page: the commit picker (a running session shows
+// first, and the picker opens on it). Picking a commit opens the page there.
+async function pickCommit() {
+  if (!state.project) throw new Error("Pick a project first.");
+  if (!tryProject()) throw new Error(NOT_CLI);
+  if (state.view !== "try" && tryState.session) return showView("try");
+  if (!tryState.loaded) await loadTry();
+  if (!tryState.runner) return openTry(); // the page asks for a runner, or says why none can
+  await openTryCommits();
+}
+
+// focusTry types into the commit's terminal (i on the Shell page).
+export function focusTry() { tryTerm?.focus(); }
 
 // Entering the view reattaches to the running session, or starts one at the
 // tip of the default branch when the runner is clear. Wide screens get the chat beside it.
@@ -69,7 +84,10 @@ export async function enterTry() {
   renderTry();
   await loadTry();
   if (state.view !== "try") return;
-  if (!tryState.session && tryState.runner && !tryState.starting) await startTry({ ref: "" });
+  const want = tryState.pending; // a commit picked before the page showed
+  tryState.pending = null;
+  if (want && !tryState.starting) await startTry(want);
+  else if (!tryState.session && tryState.runner && !tryState.starting) await startTry({ ref: "" });
   if (desktop.matches && !pane.open && state.project) toggleChatPane(true, "project");
 }
 
@@ -80,7 +98,7 @@ export function leaveTry() {
 async function startTry({ ref = tryState.session?.ref || "", runner = tryState.runner } = {}) {
   const p = state.project;
   if (!p) return;
-  if (!runner) throw new Error(tryState.runners.length ? "Pick the runner to try it on." : tryState.disabled || "No runner can run Try for this project.");
+  if (!runner) throw new Error(tryState.runners.length ? "Pick the runner to try it on." : tryState.disabled || "No runner can try a commit of this project.");
   const name = tryState.runners.find((r) => r.id === runner)?.name || "the runner";
   const what = !ref ? `the latest ${p.default_branch || "main"}` : /^[0-9a-f]{7,40}$/i.test(ref) ? shortSHA(ref) : ref;
   tryState.starting = `${what} on ${name}`;
@@ -105,7 +123,7 @@ async function stopTry() {
   tryState.session = null;
   renderTry();
   renderTryButton();
-  toast("Try stopped", { icon: "stop" });
+  toast("Stopped trying the commit", { icon: "stop" });
 }
 
 export function fitTryTerm() {
@@ -198,12 +216,12 @@ function renderTry() {
   const say = (...kids) => { status.hidden = false; status.classList.toggle("strip", shown); status.replaceChildren(...kids); };
   status.hidden = true;
   if (!p) return say(h("strong", {}, "Pick a project"));
-  if (!tryProject(p)) return say(h("strong", {}, "Try is for CLI projects"), h("p", { class: "hint" }, "Set the preview to Terminal in the project's settings: Try runs its preview command in a terminal on a runner."));
+  if (!tryProject(p)) return say(h("strong", {}, "Trying a commit is for CLI projects"), h("p", { class: "hint" }, "Set the preview to Terminal in the project's settings: the commit runs its preview command in a terminal on a runner."));
   if (tryState.starting) return say(h("div", { class: "spinner big", "aria-hidden": "true" }), h("strong", {}, "Checking out"), h("p", { class: "hint" }, tryState.starting));
   if (!tryState.loaded) return say(h("div", { class: "spinner big", "aria-hidden": "true" }));
-  if (!runs.length) return say(h("strong", {}, "Try can't run"), h("p", { class: "hint" }, tryState.disabled));
-  if (!tryState.runner) return say(h("strong", {}, "Pick a runner"), h("p", { class: "hint" }, "Try runs in a throwaway worktree on the runner you pick, never in its own checkout."));
-  if (!s) return say(h("strong", {}, "Not running"), h("p", { class: "hint" }, "Try stops after 30 minutes without typing, and removes its worktree."), start());
+  if (!runs.length) return say(h("strong", {}, "No runner can try a commit"), h("p", { class: "hint" }, tryState.disabled));
+  if (!tryState.runner) return say(h("strong", {}, "Pick a runner"), h("p", { class: "hint" }, "The commit runs in a throwaway worktree on the runner you pick, never in its own checkout."));
+  if (!s) return say(h("strong", {}, "Not running"), h("p", { class: "hint" }, "It stops after 30 minutes without typing, and removes its worktree."), start());
   if (s.state === "crashed") return say(h("span", { class: "pv-err" }, `Exited${s.exit_code != null ? ` with code ${s.exit_code}` : ""}`), start("Start again"));
   if (tryState.refused === s.process_id) return say(h("strong", {}, "Couldn't attach to the terminal"), h("p", { class: "hint" }, `${s.runner} refused or went away.`),
     ib({ class: "btn", type: "button", onclick: () => { tryState.refused = null; renderTry(); } }, "reload", "Try again"));
@@ -226,7 +244,12 @@ async function openTryCommits() {
       search, list, note));
   d.addEventListener("close", () => d.remove());
   let shown = [];
-  const pick = (ref) => { d.close(); startTry({ ref, runner }).catch(fail); };
+  const pick = (ref) => {
+    d.close();
+    if (state.view === "try") return startTry({ ref, runner }).catch(fail);
+    tryState.pending = { ref, runner };
+    openTry();
+  };
   const row = (label, meta, ref, active, extra = null) => h("li", {},
     h("button", { type: "button", class: `try-commit-row${active ? " active" : ""}`, role: "option", "aria-selected": String(!!active), onclick: () => pick(ref) },
       extra, h("span", { class: "try-commit-text" }, h("span", { class: "try-commit-subject" }, label), meta ? h("span", { class: "try-commit-meta" }, meta) : null)));
@@ -267,7 +290,8 @@ async function openTryCommits() {
   await load("", true);
 }
 
-$("#quick-try").addEventListener("click", attempt(openTry));
+$("#shell-at-main").addEventListener("click", () => showView("run"));
+$("#shell-at-commit").addEventListener("click", attempt(pickCommit));
 $("#try-commit").addEventListener("click", attempt(openTryCommits));
 $("#try-restart").addEventListener("click", attempt(() => startTry({ ref: tryState.session?.ref || "" })));
 $("#try-stop").addEventListener("click", attempt(stopTry));

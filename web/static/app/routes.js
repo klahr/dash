@@ -8,7 +8,8 @@
 //
 //   /                              no place named: the last view and project (localStorage)
 //   /p/{project}/{view}            a project's view: board, issues, scans, run, try,
-//                                  history, goals, files, checklist (/p/{project} is its board)
+//                                  history, goals, files, checklist (/p/{project} is its board;
+//                                  run and try are the Shell page at main and at a commit)
 //   /p/{project}/tasks/{id}        a task, open (over the board, after a reload)
 //   /p/{project}/goals/{id}        a goal, open on Goals
 //   /p/{project}/history/{sha}     a commit, open on History

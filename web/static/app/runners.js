@@ -318,7 +318,8 @@ export function renderSideRunners() {
   const dot = { off: "down", busy: "some", paused: "some", on: "ok" };
   const row = (r) => {
     const st = runnerStatus(r), outdated = runnerOutdated(r);
-    const count = !r.online ? "offline" : r.update ? "updating" : r.paused ? "paused" : `${r.running || 0}/${runnerSlots(r)}${runnerBoost(r) ? "⇡" : ""}`;
+    // In words, not only the dot's colour: offline, updating, paused, idle or busy, with its slots.
+    const count = !r.online ? "offline" : r.update ? "updating" : r.paused ? "paused" : `${r.running ? "busy" : "idle"} ${r.running || 0}/${runnerSlots(r)}${runnerBoost(r) ? "⇡" : ""}`;
     const update = outdated ? `Runs ${r.version}, the hub runs ${runnerInfo.version}. To update it, run on ${r.name}:\n${installCmd()}` : "";
     const diskWarn = diskWarning(r);
     return h("li", {}, h("button", {

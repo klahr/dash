@@ -277,7 +277,7 @@ export function renderPreview() {
   $("#pv-reload").disabled = !(st === "live" && target?.src);
   const drawable = st === "live" && !!target?.src && !!p.url;
   $("#pv-draw-btn").disabled = !drawable && !draw.on;
-  $("#pv-draw-btn").title = drawable || !p || st !== "live" ? "Draw on a snapshot of the page, crop it and add it to the review (D)" : "Drawing needs a preview domain (-preview-domain): the snapshot is taken through Dash's preview proxy";
+  $("#pv-draw-btn").title = drawable || !p || st !== "live" ? "Draw on a snapshot of the page, crop it and add it to the review (P)" : "Drawing needs a preview domain (-preview-domain): the snapshot is taken through Dash's preview proxy";
   $("#pv-stop").disabled = !p;
 
   const frame = $("#pv-iframe");

@@ -263,7 +263,7 @@ function issueTaskChip(id, t) {
   const busy = t && !t.paused && (t.status === "in_progress" || t.status === "merging");
   return h("button", { type: "button", class: `issue-task${t ? ` s-${t.status}` : ""}`, title: t ? `${title(t)}: ${taskLabel(t)}. Open the task` : "Open the task", onclick: () => openDetail(id) },
     busy ? h("span", { class: "act-spin", "aria-hidden": "true" }) : ico(t?.status === "merged" ? "merge" : t?.status === "failed" ? "x" : "draft"),
-    taskLabel(t));
+    taskLabel(t), t ? h("span", { class: "issue-task-title" }, title(t)) : null); // the task's name: shown on a desktop
 }
 
 // issueTaskNote explains, in an issue with a task, what happens next.

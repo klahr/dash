@@ -366,10 +366,11 @@ function waitsEl(c) {
 
 function cardEl(c) {
   const meta = [
-    c.priority ? h("span", { class: `pl-chip p-${c.priority}`, title: "Priority" }, PRIORITY[c.priority]) : null,
+    // Each chip names what it is (data-kind: Priority, Target, Tag) on a desktop, not only by its colour.
+    c.priority ? h("span", { class: `pl-chip p-${c.priority}`, title: "Priority", "data-kind": "Priority" }, PRIORITY[c.priority]) : null,
     waitsEl(c),
-    c.target ? h("span", { class: "pl-chip pl-target", title: "Target" }, ico("flag"), c.target) : null,
-    ...(c.tags || []).map((t) => h("span", { class: "pl-chip pl-tag", title: "Tag" }, t)),
+    c.target ? h("span", { class: "pl-chip pl-target", title: "Target", "data-kind": "Target" }, ico("flag"), c.target) : null,
+    ...(c.tags || []).map((t) => h("span", { class: "pl-chip pl-tag", title: "Tag", "data-kind": "Tag" }, t)),
     !pl.filter && c.project_name ? h("span", { class: "pl-project" }, c.project_name) : null,
     c.comments ? h("span", { class: "pl-comments", title: `${c.comments} comment${c.comments === 1 ? "" : "s"}` }, ico("comment"), String(c.comments)) : null,
     c.files?.length ? h("span", { class: "pl-comments pl-file-count", title: `${c.files.length} file${c.files.length === 1 ? "" : "s"}` }, clip(), String(c.files.length)) : null,

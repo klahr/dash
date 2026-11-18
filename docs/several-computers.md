@@ -443,7 +443,7 @@ the deploy command. A runner deploys only if it has every one of these labels, a
 labels the project runs on. Below the field, the runners that would deploy show as you pick.
 **Add project → Advanced** has the same field.
 
-- **Deploy** (the button, `D` in the Shell view and in `dash-tui`) goes to an online runner with
+- **Deploy** (the button, `D` on the Shell page and in `dash-tui`) goes to an online runner with
   those labels. If none has them, it fails with "no runner of this project has the labels it
   deploys on"; if all of them are offline, it fails and names them. It never runs elsewhere.
 - A runner without the labels refuses to deploy even when asked: the hub holds the deploy command
@@ -619,7 +619,7 @@ connection, to the clone of one of the project's runners that is online:
   runner, and only when its chat runs commands (`-chat-tools shell`; never with `-chat api`);
 - GitHub Actions: the hub's **CI** view, the automatic investigation of a failing build, and
   **Retry** read and re-run the builds with `gh` on a runner;
-- **Clean up** cleans the runner's clone.
+- **Clean up leftovers** cleans the runner's clone.
 
 When none of the project's runners is online these fail at once with "No runner is online for this
 project. Start one with `dash runner`." (the dashboard also says so above the board); nothing falls
@@ -690,7 +690,7 @@ Where each kind of Claude work runs:
 - **Titles and summaries**: a task created without a title is named by Claude on one of your
   runners; with none online it is named after the first line of its instructions. A task's
   summary is written by the runner that ran it.
-- **Clean up** and **Split…** (in the task form): run on one of your runners; with none online
+- **Clean up leftovers** and **Split…** (in the task form): run on one of your runners; with none online
   they say so.
 
 Nothing falls back to running Claude on the hub: work with no runner to go to waits (tasks,

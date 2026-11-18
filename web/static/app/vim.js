@@ -1,7 +1,7 @@
 import { $ } from "./dom.js";
 import { desktop } from "./viewport.js";
 import { api } from "./api.js";
-import { ask, attempt, toast } from "./dialogs.js";
+import { ask, attempt, railOf, toast } from "./dialogs.js";
 import { LANES, state } from "./state.js";
 import { showView } from "./nav.js";
 import { cleanup, loadProjects, openProjects, selectProject } from "./projects.js";
@@ -30,10 +30,11 @@ import { clearPriority, nextPriority } from "./dnd.js";
 // ------------------------------------------------------------------ vim keys
 // Normal mode is the default; typing in a field or the terminal is insert
 // mode. Esc (Ctrl-] in the terminal) returns to normal mode.
-export const VIEWS = ["board", "issues", "scans", "run", "history", "goals", "planning", "files", "checklist"];
+// In the nav's order: the project's sections, then Planning (the organization's).
+export const VIEWS = ["board", "issues", "scans", "run", "history", "goals", "files", "checklist", "planning"];
 export const keys = { active: false, count: 0, pending: "", cur: { lane: 0, row: 0 } };
 
-export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gi|gS|gc|gs|gh|go|gf|gl|gp|m|M|G|F|u|p|c|\[|q|Escape|y|Y|A|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
+export const BOUND = /^(:|\?|gt|gT|gg|gx|gb|gi|gn|gc|gs|gh|go|gf|gl|gp|m|M|G|F|u|p|P|c|\[|q|Escape|y|Y|A|X|n|N|j|k|h|l|w|b|o|O|s|x|a|r|e|E|\+|-|K|J|\*|t|T|!|dd|i|I|R|D|\/|Enter| |Arrow(Up|Down|Left|Right)|ctrl\+[dufb])$/;
 export const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest?.(".xterm"));
 export const openDialog = () => document.querySelector("dialog[open]");
 
@@ -133,11 +134,11 @@ export async function todoKey(t, k) {
   return false; // not a todo key
 }
 
-// y / A / n answer the permission request in view: the open todo's, else the oldest.
+// y / A / X answer the permission request in view: the open todo's, else the oldest.
 export async function permKey(k) {
   const p = state.perms.find((x) => x.todo_id === state.detail) || (!state.detail && state.perms[0]);
   if (!p) return false;
-  const decision = { y: "allow", A: "always", n: "deny" }[k];
+  const decision = { y: "allow", A: "always", X: "deny" }[k];
   await api("POST", `/api/permissions/${p.id}`, { decision });
   toast(decision === "deny" ? "Denied" : decision === "always" ? `${p.tool} always allowed in this project` : "Allowed");
 }
@@ -217,11 +218,21 @@ export async function runCommand(line) {
       if (!c) throw new Error("Pick a project first.");
       return c.clear();
     }
-    case "help": case "h": return $("#keys-sheet").showModal();
+    case "help": case "h": return openKeys();
     case "logout": return logout();
     case "e": case "e!": case "refresh": return loadProjects();
   }
   throw new Error(`Not a command: ${name}. Press ? for help.`);
+}
+
+// openKeys opens the Keyboard sheet at the keys of what is shown: the open
+// task, else the page (the Shell at a commit is the Shell; Files and Planning
+// have no keys of their own, so they start at Everywhere).
+const KEY_AREA = { board: "board", run: "shell", try: "shell", history: "history", goals: "goals", checklist: "checklist" };
+export function openKeys() {
+  const d = $("#keys-sheet");
+  d.showModal();
+  railOf(d.id)?.show(state.detail ? "open" : KEY_AREA[state.view] || "everywhere");
 }
 
 export function openCommandLine() {

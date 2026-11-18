@@ -113,9 +113,9 @@ function permCard(p, withTodo) {
     d.note ? h("p", { class: "hint", style: "margin:0" }, d.note) : null,
     d.detail ? h("code", { class: "perm-cmd" }, d.detail) : null,
     h("div", { class: "perm-actions" },
-      ib({ class: "btn allow", onclick: decide("allow") }, "check", "Allow"),
-      ib({ class: "btn", onclick: decide("always") }, "checks", `Always allow ${p.tool}`),
-      ib({ class: "btn danger", onclick: decide("deny") }, "x", "Deny"),
+      ib({ class: "btn allow", title: "Allow (y)", onclick: decide("allow") }, "check", "Allow"),
+      ib({ class: "btn", title: "Always allow (A)", onclick: decide("always") }, "checks", `Always allow ${p.tool}`),
+      ib({ class: "btn danger", title: "Deny (X)", onclick: decide("deny") }, "x", "Deny"),
       withTodo && t ? ib({ class: "link", onclick: () => openDetail(t.id) }, "right", "Open task") : null));
 }
 

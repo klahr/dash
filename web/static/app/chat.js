@@ -587,7 +587,7 @@ function shellRunner(c) {
     if (sh.truncated) notes.push(h("p", {}, "Long output: its start and end are kept, and that's what Claude sees."));
     if (failed && sh.exit_code !== undefined) {
       notes.push(h("p", {}, "Commands here run without a terminal or input: interactive programs (vim, top, less, a password prompt…) fail or wait until the timeout. ",
-        ib({ class: "link", onclick: () => { closeDetail(); showView("run"); } }, "terminal", "Open the Shell view"), " for those."));
+        ib({ class: "link", onclick: () => { closeDetail(); showView("run"); } }, "terminal", "Open the Shell"), " for those."));
     }
     b.note.hidden = !notes.length;
     b.note.replaceChildren(...notes);

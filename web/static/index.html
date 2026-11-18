@@ -43,20 +43,23 @@
       <button class="previews-btn" id="previews-btn" type="button" hidden aria-haspopup="dialog" title="Running previews">
         <span class="pv-dot" aria-hidden="true"></span><span id="previews-label">Previews</span>
       </button>
-      <span class="live" id="live" title="Live updates disconnected"><span class="live-dot"></span><span class="sr-only" id="live-label">Offline</span></span>
+      <span class="live" id="live" title="Live updates disconnected"><span class="live-dot"></span><span class="sr-only live-label" id="live-label">Offline</span></span>
       <button class="icon-btn" id="palette-open" type="button" aria-label="Search everything" title="Search everything (Ctrl-k)" aria-haspopup="dialog" data-icon="palette"></button>
       <button class="icon-btn" id="pc-open" type="button" aria-label="Chat" title="Chat (gc)" aria-pressed="false" aria-controls="chat-pane" data-icon="comment"><span class="badge chat-badge" hidden></span></button>
-      <button class="icon-btn" id="push-main" type="button" aria-label="Push" data-icon="push" hidden><span class="badge" id="push-count" hidden></span></button>
       <details class="foot-menu top-menu" id="project-menu" hidden>
         <summary class="icon-btn" aria-label="Project menu" title="Project menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5h.01M12 12h.01M12 19h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></summary>
+        <!-- Managing the project, in groups: its setup, its queue, then housekeeping and
+             deleting it. Running things (Run, Tests, Deploy, Push, Builds) are the sidebar's
+             Actions; status is the sidebar's pills. -->
         <div class="foot-menu-list">
+          <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
           <button id="pm-branch" type="button" data-icon="branch">Switch branch…</button>
-          <button id="pm-builds" type="button" data-icon="checks" aria-haspopup="dialog" title="GitHub Actions on the default branch" hidden>Builds</button>
+          <hr class="menu-sep">
           <button id="pm-pause" type="button" data-icon="pause" title="Pause this project's running tasks, keeping their work; none of its tasks starts until you resume it">Pause this project</button>
           <!-- Platform admins: the queue every project of this Dash shares (app/usage.js) -->
           <button id="pm-queue" type="button" data-icon="pause" hidden title="No new task starts in any project of this Dash; running tasks finish">Pause queue (all projects)</button>
-          <button id="pm-settings" type="button" data-icon="settings">Project settings</button>
-          <button id="pm-cleanup" type="button" data-icon="trash" title="Remove leftover worktrees, branches, logs and uploads">Clean up</button>
+          <hr class="menu-sep">
+          <button id="pm-cleanup" type="button" data-icon="broom" title="Remove what finished tasks left behind: worktrees, branches, logs and uploads. Tasks and their work stay.">Clean up leftovers</button>
           <button id="pm-delete" type="button" data-icon="trash" class="danger">Delete project…</button>
         </div>
       </details>
@@ -70,7 +73,7 @@
     <nav class="nav" aria-label="Sections">
       <button data-view="board" title="Board (gb)" class="active" aria-current="page">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v16M12 4v9M18 4v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="6" cy="9" r="2"/><circle cx="12" cy="15" r="2"/><circle cx="18" cy="18" r="2"/></svg>
-        <span>Board</span><span class="badge" id="review-badge" hidden></span><span class="badge board-dot" id="board-dot" aria-hidden="true" hidden></span>
+        <span>Board</span><span class="badge" id="review-badge" hidden></span><span class="badge board-dot" id="board-dot" hidden></span>
       </button>
       <!-- Mobile only: the chat page, on the current project's chat (desktop has #pc-open). -->
       <button class="nav-chat" id="nav-chat" type="button" title="Chat (gc)" aria-label="Chat" aria-controls="chat-pane">
@@ -81,7 +84,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 10a4 4 0 0 1 8 0v4a4 4 0 0 1-8 0zM12 10v8M4 13h4M16 13h4M5 8l3 2M19 8l-3 2M5 19l3-2M19 19l-3-2M9.5 6.5 8 4M14.5 6.5 16 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Issues</span><span class="badge quiet" id="issue-badge" hidden></span>
       </button>
-      <button data-view="scans" title="Scans (gS)">
+      <button data-view="scans" title="Scans (gn)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Scans</span><span class="badge quiet" id="scan-badge" hidden></span>
       </button>
@@ -101,13 +104,15 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         <span>Files</span>
       </button>
-      <button data-view="planning" title="Planning: the org's plan (gp)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
-        <span>Planning</span>
-      </button>
       <button data-view="checklist" title="Checklist: TODO.md (gl)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5l1.5 1.5L8 5.5M4 12.5l1.5 1.5L8 11.5M4.5 18.5h3M11 7h9M11 13h9M11 19h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Checklist</span>
+      </button>
+      <!-- Planning is the organization's, not this project's: below a divider of its own. -->
+      <div class="nav-sep" role="presentation"><span>Organization</span></div>
+      <button data-view="planning" title="Planning: the organization's plan, across projects (gp)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        <span>Planning</span>
       </button>
       <!-- Projects, project actions and status: part of the sidebar on desktop,
            a drawer behind the menu button on mobile. -->
@@ -139,32 +144,33 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18M12 7.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 1 0 0-9M12 11.5v1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
             <span>Goals</span><span class="badge" id="menu-goal-badge" hidden></span>
           </button>
-          <button class="menu-view" data-view="planning" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
-            <span>Planning</span>
-          </button>
           <button class="menu-view" data-view="checklist" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5l1.5 1.5L8 5.5M4 12.5l1.5 1.5L8 11.5M4.5 18.5h3M11 7h9M11 13h9M11 19h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span>Checklist</span>
           </button>
+          <div class="nav-sep" role="presentation"><span>Organization</span></div>
+          <button class="menu-view" data-view="planning" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+            <span>Planning</span>
+          </button>
         </div>
-        <div class="quick-actions" id="quick-actions">
-          <button class="quick-btn" data-run="web:run" id="quick-server" hidden title="Run (R on the Shell view)">
+        <!-- The project's actions: what runs on its code, each showing how it went. -->
+        <div class="quick-actions" id="quick-actions" role="group" aria-labelledby="quick-actions-title">
+          <h2 class="side-projects-head" id="quick-actions-title">Actions</h2>
+          <button class="quick-btn" data-run="web:run" id="quick-server" hidden title="Run (R on the Shell page)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>
             <span>Run</span>
           </button>
-          <button class="quick-btn" data-run="task:test" id="quick-test" hidden title="Run tests (T on the Shell view)">
+          <button class="quick-btn" data-run="task:test" id="quick-test" hidden title="Run tests (T on the Shell page)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span>Run Tests</span>
           </button>
-          <button class="quick-btn" data-run="task:deploy" id="quick-deploy" hidden title="Deploy (D on the Shell view)">
+          <button class="quick-btn" data-run="task:deploy" id="quick-deploy" hidden title="Deploy (D on the Shell page)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5c3 2.2 4.5 5.5 4.5 9.5l-1.5 4h-6L7.5 12c0-4 1.5-7.3 4.5-9.5zM7.8 13.5 5 16.5V20l4-2.5M16.2 13.5l2.8 3V20l-4-2.5M12 9v.01M10.5 19.5 12 21.5l1.5-2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span>Deploy</span>
           </button>
-          <button class="quick-btn" id="quick-try" type="button" hidden data-icon="terminal" title="Try the project in a terminal on a runner, at main or an older commit">
-            <span>Try</span>
-          </button>
-          <p class="quick-why" id="quick-try-why" hidden></p>
+          <button class="quick-btn" id="push-main" type="button" data-icon="push" hidden><span>Push</span></button>
+          <button class="quick-btn" id="pm-builds" type="button" data-icon="checks" aria-haspopup="dialog" hidden><span>Builds</span></button>
         </div>
         <button class="usage-pill remote-pill" id="remote-pill" type="button" hidden title="The default branch compared with origin's"></button>
         <div class="checkouts" id="checkouts" role="group" hidden aria-label="Checkouts behind origin"></div>
@@ -179,8 +185,6 @@
           </h2>
           <ul class="side-runner-list" id="side-runner-list"></ul>
         </div>
-        <!-- Only a failing build or release shows here; a running one is a ring on the project's row (renderCI). -->
-        <button class="usage-pill ci-pill" id="ci-pill" hidden aria-haspopup="dialog" title="GitHub Actions on the default branch"></button>
         <!-- Claude usage and the account: always at the bottom of the sidebar / drawer. -->
         <div class="side-bottom">
         <div class="usage-box" id="usage-box">
@@ -329,11 +333,19 @@
         </div>
       </section>
 
-      <!-- Shell -->
+      <!-- Shell: a terminal on the project. The picker says where: "main" is a shell in the
+           project's checkout (URL …/run); "commit…" tries the project itself (its preview
+           command) at a commit, in a throwaway worktree on a runner (URL …/try, Try's old
+           link). app/terminal.js runs the first, app/try.js the second; .at-commit is set on
+           the section while the second shows. -->
       <section class="view" id="view-run" aria-label="Shell">
-        <!-- Where the shell runs; on a hub with several runners of yours, the menu picks where a new shell opens -->
-        <header class="try-head shell-head" id="shell-head" hidden>
-          <div class="try-where">
+        <header class="try-head shell-top">
+          <div class="shell-at" role="group" aria-label="Where the shell runs">
+            <button type="button" id="shell-at-main" aria-pressed="true" title="A shell in the project's checkout"><code id="shell-at-branch">main</code></button>
+            <button type="button" id="shell-at-commit" aria-pressed="false" aria-haspopup="dialog" title="Try the project at a commit, in a throwaway worktree">commit…</button>
+          </div>
+          <!-- main: where the shell runs; on a hub with several runners of yours, the menu picks where a new shell opens -->
+          <div class="try-where at-main" id="shell-head" hidden>
             <label class="try-runner" id="shell-runner-wrap" title="The runner a new shell opens on" hidden>
               <span class="sr-only">Runner</span>
               <select id="shell-runner"></select>
@@ -342,18 +354,9 @@
             <span class="shell-sep" id="shell-sep" aria-hidden="true">·</span>
             <span class="shell-dir" id="shell-dir"></span>
           </div>
-        </header>
-        <div class="shell-body">
-          <div class="term-wrap" id="term-wrap"><div id="term"></div></div>
-          <div class="empty" id="shell-note" hidden><p class="empty-title">No terminal here</p><p id="shell-note-text"></p></div>
-        </div>
-      </section>
-
-      <!-- Try: the project's CLI in a terminal on a runner, at main or a commit picked from history -->
-      <section class="view" id="view-try" aria-label="Try">
-        <header class="try-head">
-          <div class="try-where">
-            <label class="try-runner" id="try-runner-wrap" title="The runner Try runs on">
+          <!-- commit: the runner and the commit tried -->
+          <div class="try-where at-commit">
+            <label class="try-runner" id="try-runner-wrap" title="The runner the commit runs on">
               <span class="sr-only">Runner</span>
               <select id="try-runner"></select>
             </label>
@@ -361,21 +364,25 @@
               <code id="try-sha">main</code><span class="try-subject" id="try-subject"></span>
             </button>
           </div>
-          <div class="try-tabs" role="tablist" aria-label="Try">
+          <div class="try-tabs at-commit" role="tablist" aria-label="Try">
             <button type="button" role="tab" id="try-tab-term" aria-controls="try-term-wrap" aria-selected="true">Terminal</button>
             <button type="button" role="tab" id="try-tab-chat" aria-controls="chat-pane" aria-selected="false">Chat</button>
           </div>
-          <div class="try-actions">
+          <div class="try-actions at-commit">
             <button class="icon-btn" type="button" id="try-chat" data-icon="comment" title="Chat beside the terminal" aria-label="Chat"></button>
             <button class="icon-btn" type="button" id="try-restart" data-icon="reload" title="Start again at this commit" aria-label="Start again"></button>
             <button class="icon-btn" type="button" id="try-stop" data-icon="stop" title="Stop (removes its worktree on the runner)" aria-label="Stop"></button>
           </div>
         </header>
-        <div class="try-body">
+        <div class="shell-body at-main">
+          <div class="term-wrap" id="term-wrap"><div id="term"></div></div>
+          <div class="empty" id="shell-note" hidden><p class="empty-title">No terminal here</p><p id="shell-note-text"></p></div>
+        </div>
+        <div class="try-body at-commit">
           <div class="term-wrap" id="try-term-wrap" hidden><div id="try-term"></div></div>
           <div class="empty try-status" id="try-status" hidden></div>
         </div>
-        <div class="pv-keys try-keys" id="try-keys" role="toolbar" aria-label="Terminal keys" hidden>
+        <div class="pv-keys try-keys at-commit" id="try-keys" role="toolbar" aria-label="Terminal keys" hidden>
           <button type="button" data-key="esc">Esc</button>
           <button type="button" data-key="tab">Tab</button>
           <button type="button" data-key="ctrl-c">^C</button>
@@ -437,7 +444,8 @@
       <section class="view" id="view-checklist" aria-label="Checklist">
         <div class="page checklist">
           <header class="cl-head">
-            <h2 class="cl-title">TODO.md</h2>
+            <h2 class="cl-title page-title">Checklist</h2>
+            <code class="cl-file" title="The checklist is this file at the root of the repository">TODO.md</code>
             <span class="cl-state" id="cl-state" aria-live="polite"></span>
           </header>
           <div class="cl-progress" id="cl-progress" hidden>
@@ -472,7 +480,7 @@
     <aside class="chat-pane" id="chat-pane" hidden aria-label="Chat">
       <div class="resize-handle chat-pane-resize" id="pc-resize" role="separator" aria-orientation="vertical" aria-label="Resize the chat" aria-valuenow="400" tabindex="0" title="Drag to resize · double-click to reset"></div>
       <header class="chat-pane-head">
-        <button class="btn small chat-try-back" id="chat-try-back" type="button" data-icon="terminal" hidden title="Back to the Try terminal">Terminal</button>
+        <button class="btn small chat-try-back" id="chat-try-back" type="button" data-icon="terminal" hidden title="Back to the Shell">Terminal</button>
         <div class="chat-pane-tabs" id="chat-tabs" role="tablist" aria-label="Chats"></div>
         <!-- + adds another project's chat as a tab; outside the tabs, so it never scrolls away. -->
         <button class="icon-btn chat-tab-add" id="chat-tab-add" type="button" aria-label="Add a project's chat as a tab" title="Add a project's chat" aria-haspopup="true" aria-expanded="false" aria-controls="chat-tab-picker" data-icon="plus" hidden></button>
@@ -1681,31 +1689,245 @@
     <ul class="palette-list" id="palette-list" role="listbox" aria-label="Results"></ul>
   </dialog>
 
-  <!-- Keyboard help (?) -->
-  <dialog class="sheet" id="keys-sheet" aria-labelledby="keys-title">
-    <form method="dialog">
-      <header class="sheet-head"><h2 id="keys-title" tabindex="-1" autofocus>Keyboard</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></header>
-      <p class="hint">Vim-style. Typing in a field or the terminal is insert mode; Esc (Ctrl-] in the terminal) returns to normal mode.</p>
-      <dl class="keys">
-        <dt>Move</dt><dd><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> · <kbd>w</kbd>/<kbd>b</kbd> next/previous lane with tasks · <kbd>gg</kbd> <kbd>G</kbd> · counts like <kbd>5j</kbd> · <kbd>Ctrl-d</kbd>/<kbd>u</kbd>/<kbd>f</kbd>/<kbd>b</kbd> scroll</dd>
-        <dt>Sections</dt><dd><kbd>gb</kbd>/<kbd>gi</kbd>/<kbd>gS</kbd>/<kbd>gs</kbd>/<kbd>gh</kbd>/<kbd>go</kbd>/<kbd>gf</kbd>/<kbd>gl</kbd>/<kbd>gp</kbd> Board/Issues/Scans/Shell/History/Goals/Files/Checklist/Planning · <kbd>gt</kbd>/<kbd>gT</kbd> next/previous section · <kbd>o</kbd> projects, again for sections (toggles), <kbd>p</kbd> projects (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Esc</kbd> back) · <kbd>J</kbd>/<kbd>K</kbd> next/previous project · <kbd>c</kbd> project chat · <kbd>[</kbd> collapse sidebar · <kbd>Ctrl-k</kbd> search projects, tasks and commands, <kbd>/</kbd> just tasks · <kbd>:</kbd> command · <kbd>?</kbd> this help</dd>
-        <dt>Tasks</dt><dd><kbd>Enter</kbd> open (approve in review, or open its pull request when it is reviewed on GitHub; queue a draft; <kbd>Space</kbd> opens) · <kbd>n</kbd> (or <kbd>a</kbd>) new task · <kbd>N</kbd> new task with all options · <kbd>e</kbd> edit (on a desktop, in the open task's pane: <kbd>Ctrl-Enter</kbd>/<kbd>Ctrl-s</kbd> save, <kbd>Esc</kbd> cancels) · <kbd>s</kbd> queue · <kbd>x</kbd> stop/cancel · <kbd>z</kbd> pause/resume · <kbd>a</kbd>/<kbd>Enter</kbd> approve (task in review) · <kbd>r</kbd> rework · <kbd>dd</kbd> delete · <kbd>+</kbd>/<kbd>-</kbd> priority · <kbd>_</kbd> clear priority · <kbd>t</kbd> live preview (<kbd>D</kbd> draws on it: <kbd>p</kbd>/<kbd>a</kbd>/<kbd>o</kbd>/<kbd>b</kbd>/<kbd>c</kbd> pen/arrow/circle/box/crop, <kbd>1</kbd>–<kbd>3</kbd> color, <kbd>x</kbd> exact capture (desktop Chrome), <kbd>Ctrl-z</kbd> undo, <kbd>Enter</kbd> add to rework notes, <kbd>Esc</kbd> done) · <kbd>!</kbd> shell in worktree</dd>
-        <dt>Detail</dt><dd><kbd>h</kbd>/<kbd>l</kbd> timeline ↔ changes · <kbd>j</kbd>/<kbd>k</kbd> scroll · <kbd>q</kbd>/<kbd>Esc</kbd> back</dd>
-        <dt>More</dt><dd><kbd>T</kbd> run tests again · <kbd>Y</kbd> duplicate · <kbd>E</kbd> open worktree in editor · <kbd>u</kbd> revert a merged task · <kbd>O</kbd> open its pull request · click a diff line (or Tab to its <kbd>+</kbd> button and press Enter) to comment · paste or drop images into a task</dd>
-        <dt>Approvals</dt><dd><kbd>y</kbd> allow · <kbd>A</kbd> always allow that tool for the task · <kbd>n</kbd> deny</dd>
-        <dt>Task chat</dt><dd><kbd>h</kbd>/<kbd>l</kbd> to the Timeline tab · <kbd>i</kbd> type (sent where the switch above the box says: Ask Claude or Rework)</dd>
-        <dt>Chat</dt><dd><kbd>gc</kbd> open/close the chat pane · <kbd>Enter</kbd> send · <code>!command</code> runs a shell command in a project or task chat (no terminal; Claude sees it next turn) · <kbd>Esc</kbd> stop typing, again to close the overlay · <kbd>Ctrl-k</kbd> "Pin chat" keeps it beside the content</dd>
-        <dt>History</dt><dd><kbd>j</kbd>/<kbd>k</kbd> (or <kbd>↓</kbd>/<kbd>↑</kbd>) select the next/previous commit and show it · <kbd>gg</kbd>/<kbd>G</kbd> first/last · <kbd>n</kbd>/<kbd>p</kbd> (or <kbd>↓</kbd>/<kbd>↑</kbd> in the file list) next/previous changed file (desktop) · <kbd>Ctrl-d</kbd>/<kbd>u</kbd> scroll the commit · <kbd>q</kbd>/<kbd>Esc</kbd> close it</dd>
-        <dt>Goals</dt><dd><kbd>j</kbd>/<kbd>k</kbd> (or <kbd>↓</kbd>/<kbd>↑</kbd>) open the next/previous goal · <kbd>q</kbd>/<kbd>Esc</kbd> close it</dd>
-        <dt>Checklist</dt><dd><kbd>j</kbd>/<kbd>k</kbd> move between items · <kbd>x</kbd>/<kbd>Space</kbd> check or uncheck · <kbd>m</kbd> move to a draft task · <kbd>M</kbd> move &amp; queue · <kbd>+</kbd>/<kbd>-</kbd> move up or down · <kbd>e</kbd> edit · <kbd>dd</kbd> delete · <kbd>a</kbd> add an item · <kbd>r</kbd> read TODO.md again (it updates by itself; for hand edits to an untracked one) · changes are committed to TODO.md a moment after the last one</dd>
-        <dt>Shell</dt><dd><kbd>i</kbd> type into terminal · <kbd>Ctrl-]</kbd> leave terminal · <kbd>x</kbd> stop · <kbd>R</kbd> server · <kbd>T</kbd> tests · <kbd>D</kbd> deploy · <kbd>!</kbd> new shell</dd>
-        <dt>New task</dt><dd><kbd>Enter</kbd> save · <kbd>Shift-Enter</kbd> another task · <kbd>Backspace</kbd> in an empty field removes it · a pasted text stays one task · <kbd>Esc</kbd> close</dd>
-        <dt>Forms</dt><dd><kbd>Ctrl-Enter</kbd> queue · <kbd>Ctrl-Shift-Enter</kbd>/<kbd>Ctrl-s</kbd> save draft · <kbd>Esc</kbd> cancel</dd>
-        <dt>Commands</dt><dd><code>:project name</code> <code>:newproject name [path]</code> <code>:task …</code> <code>:new</code> <code>:run cmd</code> <code>:shell</code> <code>:push</code> <code>:ci</code> <code>:cleanup</code> <code>:pause</code> <code>:resume</code> <code>:usage</code> <code>:settings</code> <code>:prefs</code> <code>:connector</code> <code>:perms</code> <code>:board</code> <code>:mine</code> <code>:chat</code> <code>:pin</code> <code>:history</code> <code>:clear</code> <code>:noh</code> <code>:notify</code> <code>:vim</code> <code>:list</code> <code>:q</code></dd>
-      </dl>
-      <p class="hint">Dash version <code>{{DASH_VERSION}}</code></p>
+  <!-- Keyboard help (?): one table per area, down a rail; ? opens it at the page you're on (app/vim.js openKeys). -->
+  <dialog class="sheet rail-sheet" id="keys-sheet" aria-labelledby="keys-title">
+    <div class="rail-body">
+      <form method="dialog" class="sheet-head"><h2 id="keys-title" tabindex="-1" autofocus>Keyboard</h2><button class="icon-btn" value="cancel" aria-label="Close" data-icon="x"></button></form>
+      <p class="hint keys-intro">Vim-style. Typing in a field or the terminal is insert mode; <kbd>Esc</kbd> (<kbd>Ctrl-]</kbd> in the terminal) returns to normal mode. Dash version <code>{{DASH_VERSION}}</code></p>
+      <div class="rail-layout">
+        <nav class="rail-nav" aria-label="Keyboard areas">
+          <button type="button" class="rail-item" data-rail="everywhere">Everywhere</button>
+          <button type="button" class="rail-item" data-rail="sections">Sections</button>
+          <button type="button" class="rail-item" data-rail="board">Board</button>
+          <button type="button" class="rail-item" data-rail="task">Tasks</button>
+          <button type="button" class="rail-item" data-rail="open">Open task</button>
+          <button type="button" class="rail-item" data-rail="draw">Drawing</button>
+          <button type="button" class="rail-item" data-rail="perms">Approvals</button>
+          <button type="button" class="rail-item" data-rail="shell">Shell</button>
+          <button type="button" class="rail-item" data-rail="history">History</button>
+          <button type="button" class="rail-item" data-rail="goals">Goals</button>
+          <button type="button" class="rail-item" data-rail="checklist">Checklist</button>
+          <button type="button" class="rail-item" data-rail="chat">Chat</button>
+          <button type="button" class="rail-item" data-rail="forms">Forms</button>
+          <button type="button" class="rail-item" data-rail="commands">Commands</button>
+        </nav>
+        <div class="rail-main">
+          <section class="rail-section" data-section="everywhere">
+            <table class="keys-table">
+              <caption class="sr-only">Everywhere</caption>
+              <tbody>
+                <tr><th scope="row"><kbd>?</kbd></th><td>This help, at the page you're on</td></tr>
+                <tr><th scope="row"><kbd>:</kbd></th><td>Command line (commands are under Commands)</td></tr>
+                <tr><th scope="row"><kbd>Ctrl-k</kbd></th><td>Search projects, tasks and commands</td></tr>
+                <tr><th scope="row"><kbd>/</kbd></th><td>Search the project's tasks</td></tr>
+                <tr><th scope="row"><kbd>n</kbd></th><td>New task</td></tr>
+                <tr><th scope="row"><kbd>N</kbd></th><td>New task with all options</td></tr>
+                <tr><th scope="row"><kbd>p</kbd></th><td>Switch project</td></tr>
+                <tr><th scope="row"><kbd>J</kbd> <kbd>K</kbd></th><td>Next / previous project</td></tr>
+                <tr><th scope="row"><kbd>o</kbd></th><td>Focus the projects list; again for the sections list (<kbd>j</kbd>/<kbd>k</kbd> move, <kbd>Enter</kbd> open, <kbd>Esc</kbd> back)</td></tr>
+                <tr><th scope="row"><kbd>c</kbd></th><td>The project's chat</td></tr>
+                <tr><th scope="row"><kbd>gc</kbd></th><td>Open or close the chat pane</td></tr>
+                <tr><th scope="row"><kbd>[</kbd></th><td>Collapse or expand the sidebar (desktop)</td></tr>
+                <tr><th scope="row"><kbd>Esc</kbd> <kbd>q</kbd></th><td>Close what is open: the menu, the chat overlay, a task, a commit, a goal, a card</td></tr>
+                <tr><th scope="row"><kbd>5j</kbd></th><td>A count before a key repeats it</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section class="rail-section" data-section="sections">
+            <table class="keys-table">
+              <caption class="sr-only">Sections</caption>
+              <tbody>
+                <tr><th scope="row"><kbd>gb</kbd></th><td>Board</td></tr>
+                <tr><th scope="row"><kbd>gi</kbd></th><td>Issues</td></tr>
+                <tr><th scope="row"><kbd>gn</kbd></th><td>Scans</td></tr>
+                <tr><th scope="row"><kbd>gs</kbd></th><td>Shell</td></tr>
+                <tr><th scope="row"><kbd>gh</kbd></th><td>History</td></tr>
+                <tr><th scope="row"><kbd>go</kbd></th><td>Goals</td></tr>
+                <tr><th scope="row"><kbd>gf</kbd></th><td>Files</td></tr>
+                <tr><th scope="row"><kbd>gl</kbd></th><td>Checklist</td></tr>
+                <tr><th scope="row"><kbd>gp</kbd></th><td>Planning (the organization's)</td></tr>
+                <tr><th scope="row"><kbd>gt</kbd> <kbd>gT</kbd></th><td>Next / previous section</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section class="rail-section" data-section="board">
+            <table class="keys-table">
+              <caption class="sr-only">Board</caption>
+              <tbody>
+                <tr><th scope="row"><kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd></th><td>Move the cursor between lanes and tasks</td></tr>
+                <tr><th scope="row"><kbd>w</kbd> <kbd>b</kbd></th><td>Next / previous lane with tasks</td></tr>
+                <tr><th scope="row"><kbd>gg</kbd> <kbd>G</kbd></th><td>First / last task in the lane</td></tr>
+                <tr><th scope="row"><kbd>Enter</kbd></th><td>Approve a task in Review (open its pull request when it is reviewed on GitHub); queue a draft; else open it</td></tr>
+                <tr><th scope="row"><kbd>Space</kbd></th><td>Open the task</td></tr>
+                <tr><th scope="row"><kbd>a</kbd></th><td>Approve the task under the cursor (in Review)</td></tr>
+                <tr><th scope="row"><kbd>Ctrl-d</kbd> <kbd>Ctrl-u</kbd></th><td>Scroll half a page</td></tr>
+                <tr><td colspan="2" class="hint">The task keys below work on the task under the cursor too</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section class="rail-section" data-section="task">
+            <table class="keys-table">
+              <caption class="sr-only">Tasks</caption>
+              <tbody>
+                <tr><th scope="row"><kbd>s</kbd></th><td>Queue</td></tr>
+                <tr><th scope="row"><kbd>x</kbd></th><td>Stop, or cancel to drafts</td></tr>
+                <tr><th scope="row"><kbd>z</kbd></th><td>Pause / resume</td></tr>
+                <tr><th scope="row"><kbd>a</kbd></th><td>Approve (in Review)</td></tr>
+                <tr><th scope="row"><kbd>r</kbd></th><td>Rework</td></tr>
+                <tr><th scope="row"><kbd>e</kbd></th><td>Edit (<kbd>Ctrl-Enter</kbd>/<kbd>Ctrl-s</kbd> save, <kbd>Esc</kbd> cancel)</td></tr>
+                <tr><th scope="row"><kbd>dd</kbd></th><td>Delete</td></tr>
+                <tr><th scope="row"><kbd>+</kbd> <kbd>-</kbd></th><td>Raise / lower the priority</td></tr>
+                <tr><th scope="row"><kbd>_</kbd></th><td>Clear the priority</td></tr>
+                <tr><th scope="row"><kbd>t</kbd></th><td>Live preview</td></tr>
+                <tr><th scope="row"><kbd>!</kbd></th><td>Shell in the task's worktree</td></tr>
+                <tr><th scope="row"><kbd>T</kbd></th><td>Run the tests again</td></tr>
+                <tr><th scope="row"><kbd>Y</kbd></th><td>Duplicate as a draft</td></tr>
+                <tr><th scope="row"><kbd>E</kbd></th><td>Open the worktree in your editor</td></tr>
+                <tr><th scope="row"><kbd>u</kbd></th><td>Revert a merged task</td></tr>
+                <tr><th scope="row"><kbd>gx</kbd></th><td>Open its pull request</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section class="rail-section" data-section="open">
+            <table class="keys-table">
+              <caption class="sr-only">Open task</caption>
+              <tbody>
+                <tr><th scope="row"><kbd>h</kbd> <kbd>l</kbd></th><td>Timeline ↔ changes</td></tr>
+                <tr><th scope="row"><kbd>j</kbd> <kbd>k</kbd></th><td>Scroll</td></tr>
+                <tr><th scope="row"><kbd>i</kbd></th><td>Type in the task chat (on the timeline; sent where the switch above the box says: Ask Claude or Rework)</td></tr>
+                <tr><th scope="row"><kbd>P</kbd></th><td>Draw on the live preview (while it shows)</td></tr>
+                <tr><th scope="row"><kbd>q</kbd> <kbd>Esc</kbd></th><td>Back</td></tr>
+                <tr><td colspan="2" class="hint">Click a diff line (or Tab to its <kbd>+</kbd> and press Enter) to comment; paste or drop images into a task</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section class="rail-section" data-section="draw">
+            <table class="keys-table">
+              <caption class="sr-only">Drawing</caption>
+              <tbody>
+                <tr><th scope="row"><kbd>p</kbd> <kbd>a</kbd> <kbd>o</kbd> <kbd>b</kbd> <kbd>c</kbd></th><td>Pen, arrow, circle, box, crop</td></tr>
+                <tr><th scope="row"><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></th><td>Colour</td></tr>
+                <tr><th scope="row"><kbd>x</kbd></th><td>Exact capture (desktop Chrome)</td></tr>
+                <tr><th scope="row"><kbd>Ctrl-z</kbd></th><td>Undo</td></tr>
+                <tr><th scope="row"><kbd>Enter</kbd></th><td>Add to the rework notes</td></tr>
+                <tr><th scope="row"><kbd>Esc</kbd></th><td>Done</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section class="rail-section" data-section="perms">
+            <table class="keys-table">
+              <caption class="sr-only">Approvals</caption>
+              <tbody>
+                <tr><th scope="row"><kbd>y</kbd></th><td>Allow the permission request in view</td></tr>
+                <tr><th scope="row"><kbd>A</kbd></th><td>Always allow that tool in this project</td></tr>
+                <tr><th scope="row"><kbd>X</kbd></th><td>Deny</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section class="rail-section" data-section="shell">
+            <table class="keys-table">
+              <caption class="sr-only">Shell</caption>
+              <tbody>
+                <tr><th scope="row"><kbd>i</kbd> <kbd>Enter</kbd></th><td>Type into the terminal</td></tr>
+                <tr><th scope="row"><kbd>Ctrl-]</kbd></th><td>Leave the terminal</td></tr>
+                <tr><th scope="row"><kbd>x</kbd></th><td>Stop what runs in it (main)</td></tr>
+                <tr><th scope="row"><kbd>R</kbd></th><td>Run the server</td></tr>
+                <tr><th scope="row"><kbd>T</kbd></th><td>Run the tests</td></tr>
+                <tr><th scope="row"><kbd>D</kbd></th><td>Deploy</td></tr>
+                <tr><th scope="row"><kbd>!</kbd></th><td>A new shell</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section class="rail-section" data-section="history">
+            <table class="keys-table">
+              <caption class="sr-only">History</caption>
+              <tbody>
+                <tr><th scope="row"><kbd>j</kbd> <kbd>k</kbd></th><td>Next / previous commit, shown beside the graph (also <kbd>↓</kbd>/<kbd>↑</kbd>)</td></tr>
+                <tr><th scope="row"><kbd>gg</kbd> <kbd>G</kbd></th><td>First / last commit</td></tr>
+                <tr><th scope="row"><kbd>n</kbd> <kbd>p</kbd></th><td>Next / previous changed file of the open commit (desktop)</td></tr>
+                <tr><th scope="row"><kbd>Ctrl-d</kbd> <kbd>Ctrl-u</kbd></th><td>Scroll the commit</td></tr>
+                <tr><th scope="row"><kbd>q</kbd> <kbd>Esc</kbd></th><td>Close it</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section class="rail-section" data-section="goals">
+            <table class="keys-table">
+              <caption class="sr-only">Goals</caption>
+              <tbody>
+                <tr><th scope="row"><kbd>j</kbd> <kbd>k</kbd></th><td>Open the next / previous goal (also <kbd>↓</kbd>/<kbd>↑</kbd>)</td></tr>
+                <tr><th scope="row"><kbd>q</kbd> <kbd>Esc</kbd></th><td>Close it</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section class="rail-section" data-section="checklist">
+            <table class="keys-table">
+              <caption class="sr-only">Checklist</caption>
+              <tbody>
+                <tr><th scope="row"><kbd>j</kbd> <kbd>k</kbd></th><td>Move between items</td></tr>
+                <tr><th scope="row"><kbd>x</kbd> <kbd>Space</kbd></th><td>Check or uncheck</td></tr>
+                <tr><th scope="row"><kbd>a</kbd></th><td>Add an item</td></tr>
+                <tr><th scope="row"><kbd>e</kbd></th><td>Edit</td></tr>
+                <tr><th scope="row"><kbd>dd</kbd></th><td>Delete</td></tr>
+                <tr><th scope="row"><kbd>+</kbd> <kbd>-</kbd></th><td>Move up / down</td></tr>
+                <tr><th scope="row"><kbd>m</kbd></th><td>Move to a draft task</td></tr>
+                <tr><th scope="row"><kbd>M</kbd></th><td>Move and queue</td></tr>
+                <tr><th scope="row"><kbd>r</kbd></th><td>Read TODO.md again (for hand edits to an untracked one)</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section class="rail-section" data-section="chat">
+            <table class="keys-table">
+              <caption class="sr-only">Chat</caption>
+              <tbody>
+                <tr><th scope="row"><kbd>Enter</kbd></th><td>Send</td></tr>
+                <tr><th scope="row"><code>!command</code></th><td>Run a shell command in a project or task chat (Claude sees it next turn)</td></tr>
+                <tr><th scope="row"><kbd>Esc</kbd></th><td>Stop typing; again to close the overlay</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section class="rail-section" data-section="forms">
+            <table class="keys-table">
+              <caption class="sr-only">Forms</caption>
+              <tbody>
+                <tr><th scope="row"><kbd>Enter</kbd></th><td>New task sheet: save</td></tr>
+                <tr><th scope="row"><kbd>Shift-Enter</kbd></th><td>New task sheet: another task</td></tr>
+                <tr><th scope="row"><kbd>Backspace</kbd></th><td>New task sheet: in an empty field, remove it</td></tr>
+                <tr><th scope="row"><kbd>Ctrl-Enter</kbd></th><td>Task form: queue</td></tr>
+                <tr><th scope="row"><kbd>Ctrl-Shift-Enter</kbd> <kbd>Ctrl-s</kbd></th><td>Task form: save a draft</td></tr>
+                <tr><th scope="row"><kbd>Esc</kbd></th><td>Close or cancel</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section class="rail-section" data-section="commands">
+            <table class="keys-table">
+              <caption class="sr-only">Commands</caption>
+              <tbody>
+                <tr><th scope="row"><code>:project name</code></th><td>Switch project</td></tr>
+                <tr><th scope="row"><code>:newproject name [path]</code></th><td>Create a project</td></tr>
+                <tr><th scope="row"><code>:task …</code></th><td>Queue a task</td></tr>
+                <tr><th scope="row"><code>:new</code></th><td>New task form</td></tr>
+                <tr><th scope="row"><code>:run cmd</code> <code>:shell</code></th><td>Run a command / open the Shell</td></tr>
+                <tr><th scope="row"><code>:try</code></th><td>The Shell at a commit</td></tr>
+                <tr><th scope="row"><code>:push</code></th><td>Push merged work</td></tr>
+                <tr><th scope="row"><code>:ci</code></th><td>Builds</td></tr>
+                <tr><th scope="row"><code>:cleanup</code></th><td>Clean up leftovers</td></tr>
+                <tr><th scope="row"><code>:pause</code> <code>:resume</code></th><td>The queue</td></tr>
+                <tr><th scope="row"><code>:usage</code></th><td>Claude usage</td></tr>
+                <tr><th scope="row"><code>:settings</code> <code>:prefs</code></th><td>Project settings / preferences</td></tr>
+                <tr><th scope="row"><code>:connector</code></th><td>Connect Claude</td></tr>
+                <tr><th scope="row"><code>:perms</code></th><td>Permission requests</td></tr>
+                <tr><th scope="row"><code>:board</code> <code>:mine</code></th><td>The board / only your tasks</td></tr>
+                <tr><th scope="row"><code>:chat</code> <code>:pin</code> <code>:clear</code></th><td>Chat: open, pin, clear</td></tr>
+                <tr><th scope="row"><code>:history</code></th><td>History</td></tr>
+                <tr><th scope="row"><code>:notify</code> <code>:vim</code> <code>:list</code></th><td>Notifications, vim keys in the editor, invisibles</td></tr>
+                <tr><th scope="row"><code>:q</code></th><td>Close</td></tr>
+              </tbody>
+            </table>
+          </section>
+        </div>
+      </div>
       <!--DASH_FOOTER-->
-    </form>
+    </div>
   </dialog>
 
   <script src="/vendor/xterm/xterm.js"></script>

@@ -18,6 +18,7 @@ export const tryState = {
   runner: "", // the runner picked (the only one, or the session's)
   starting: "", // what is being checked out, while it is
   ws: null, proc: null, refused: null, got: false,
+  pending: null, // { ref, runner }: a commit picked before the Shell page showed it
 };
 export const state = {
   projects: [],

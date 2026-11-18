@@ -155,7 +155,7 @@ npm run build
 ./deploy.sh production
 ```
 
-Then press **Deploy** (or `D` in the Shell view). On a hub, **Deploy runs on** beside it picks the
+Then press **Deploy** in the sidebar's **Actions** (or `D` on the **Shell** page). On a hub, **Deploy runs on** beside it picks the
 runners that deploy, by label: see [Where deploys run](docs/several-computers.md#where-deploys-run).
 
 **Who made a task.** The task's pane says who created it ("Created by Ana", or "Created by Dash"
@@ -248,6 +248,7 @@ limit (see **Claude usage**).
 - [Deploy the hub](docs/deploy.md): Caddy, Docker, Cloudflare Tunnel or Tailscale, org subdomains (`acme.dash.example.com`), and the login on the internet
 - [Live previews](docs/previews.md): preview domain, DNS and certificates, what the proxy does
 - [Draw](docs/draw.md): mark up a preview and send the picture back to Claude
+- [Keyboard](docs/keyboard.md): every shortcut, by area
 - [Scans](docs/scans.md): scheduled read-only reviews that fill a project's Issues
 - [Checklist](docs/checklist.md): tick off, add to and edit the repository's TODO.md (committed straight to the default branch), and move an item onto the board as a task
 - [Wall view](docs/wall.md): a read-only TV dashboard of an organization's work, with a sign-in-free link for the TV

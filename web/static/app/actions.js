@@ -48,21 +48,19 @@ ciBuilding.addEventListener("click", attempt(openCI));
 
 export function renderCI() {
   const st = state.ci;
-  const pill = $("#ci-pill");
   const rel = st?.release;
-  // The project has builds to show: the Builds menu entry opens them.
+  // The project has builds to show: the sidebar's Builds action opens them,
+  // saying how the latest went (a running one is also the ring on the project's row).
   const has = !!(state.project?.remote_url && st && st.state !== "unknown" && st.state !== "none") || st?.state === "failing" || releaseShown(rel);
-  $("#pm-builds").hidden = !has;
-  // Only failures get the chip; a running build is the ring, a passing one nothing.
+  const btn = $("#pm-builds");
+  btn.hidden = !has;
   const relFailed = releaseShown(rel) && rel.state === "failed";
   const failing = has && (relFailed || st?.state === "failing");
-  pill.hidden = !failing;
-  if (failing) {
-    const label = relFailed ? `Release ${rel.tag} failed` : CI_LABEL.failing;
-    pill.className = "usage-pill ci-pill ci-failing";
-    pill.textContent = label;
-    pill.title = label;
-  }
+  const running = has && !failing && (rel?.state === "building" || st?.state === "running");
+  btn.classList.toggle("bad", failing);
+  btn.classList.toggle("ok", has && !failing && !running && st?.state === "passing");
+  btn.querySelector("span").textContent = relFailed ? `Release ${rel.tag} failed` : rel?.state === "building" && has ? `Building ${rel.tag}` : CI_LABEL[st?.state] || "Builds";
+  btn.title = "GitHub Actions on the default branch";
   const building = has && rel?.state === "building" ? `Building ${rel.tag}`
     : has && st?.state === "running" ? `Build running on ${st.branch || "the default branch"}` : "";
   ciBuilding.hidden = !building;
@@ -99,7 +97,6 @@ export async function openCI() {
   renderCI();
   $("#ci-sheet").showModal();
 }
-$("#ci-pill").addEventListener("click", attempt(openCI));
 $("#pm-builds").addEventListener("click", attempt(openCI));
 $("#ci-refresh").addEventListener("click", attempt(async () => {
   state.ci = await api("POST", `/api/projects/${state.project.id}/ci/refresh`);

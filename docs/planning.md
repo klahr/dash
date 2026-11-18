@@ -5,7 +5,8 @@ Cards link to the tasks and goals that carry them out, and show how that work is
 plain words. Planning is kept in Dash's database, not in a repository or `TODO.md`, and
 belongs to the org.
 
-Open it from the sidebar: **Planning** (or `gp`). On a phone it is in the menu. A
+Open it from the sidebar: **Planning**, below the **Organization** divider, apart from the
+project's sections (or `gp`). On a phone it is in the menu. A
 [planner](users.md#planners) lands on it when they sign in. Their sidebar has only
 **Planning** and their account.
 

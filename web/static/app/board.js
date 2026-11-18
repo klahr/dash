@@ -51,7 +51,8 @@ export async function pushDone() {
   } finally { renderPushMain(); }
 }
 
-// The top bar's push button: shown for projects that push to GitHub directly.
+// The sidebar's Push action: shown for projects that push to GitHub directly,
+// saying how many commits wait (or that there are none).
 export function renderPushMain() {
   const p = state.project, n = state.unpushed;
   const btn = $("#push-main");
@@ -61,8 +62,7 @@ export function renderPushMain() {
   btn.disabled = !n;
   btn.title = label;
   btn.setAttribute("aria-label", label);
-  $("#push-count").hidden = !n;
-  $("#push-count").textContent = n > 99 ? "99+" : String(n);
+  btn.querySelector("span").textContent = n ? `Push ${n > 99 ? "99+" : n}` : "Pushed";
 }
 
 export function pushBar() {

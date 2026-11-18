@@ -174,10 +174,11 @@ When the project is on GitHub, Dash follows the GitHub Actions runs on the defau
 - **Running**: a small pulsing ring shows beside the project's name in the sidebar. Hover it to
   see the branch ("Build running on main"), and click it to open the builds.
 - **Passing**: nothing shows.
-- **Failing**: a red **Build failing** chip shows in the sidebar (on a phone, the menu button gets
-  a red dot). Click it to open the builds.
+- **Failing**: the **Builds** action in the sidebar says **Build failing**, in red (on a phone,
+  the menu button gets a red dot).
 
-**Builds** in the project menu (top bar) opens the same sheet at any time: the latest runs,
+**Builds**, in the sidebar's **Actions**, says how the latest build went (**Build passing**,
+**Build running**, **Build failing**) and opens the builds sheet: the latest runs,
 **Re-run build**, and after a failure **Retry failed jobs** and **Ask Claude to fix it**.
 
 When a build fails, Dash queues a task asking Claude to fix it ("Fix failing build: …"), unless
@@ -202,8 +203,8 @@ build isn't green or tasks are still running. Confirming creates an annotated ta
 (`git tag -a <tag> <sha>`) and pushes it (`git push origin <tag>`); the tag shows up in the graph.
 
 When the project is on GitHub, Dash then follows the workflow runs the tag started: the
-project's row in the sidebar shows the pulsing ring ("Building v1.2.3"), a failed release shows a
-**Release v1.2.3 failed** chip, and the **Builds** sheet shows it building, published (with a link
+project's row in the sidebar shows the pulsing ring ("Building v1.2.3"), the **Builds** action says
+**Release v1.2.3 failed** for a failed release, and the **Builds** sheet shows it building, published (with a link
 to the GitHub release) or failed, with **Ask Claude to fix it** for a failure.
 
 Only the organization's owners and admins, who may push, can tag releases. For a project on

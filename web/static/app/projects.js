@@ -1,5 +1,6 @@
 import { projectGroups as groupProjects, isShared, LABEL_ANY, parseLabels, projectRunnerNames, projectSubtitle, runnerBadge as badgeFor, servesProject, uniqueProjects } from "../groups.js";
 import { $, $$, h, ib, ico, plural, setLabel } from "./dom.js";
+import { sizeText } from "./lightbox.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
 import { api, on } from "./api.js";
@@ -809,12 +810,23 @@ export function projectWhere(p) {
 // labels no runner has: its settings are where to change them.
 export const needsRunner = (p) => isHub() && !!p && !p.prefix && !(state.runners || []).some((r) => servesProject(r, p));
 
+// cleanup removes what finished tasks left behind (worktrees, branches, logs,
+// uploads; never a task or its work) and then says what it removed, item by item.
 export async function cleanup() {
   const p = state.project;
   if (!p) throw new Error("Select a project first (p).");
-  toast("Cleaning up…");
+  toast("Cleaning up…", { icon: "broom" });
   const res = await api("POST", `/api/projects/${p.id}/cleanup`);
-  toast(res.summary.charAt(0).toUpperCase() + res.summary.slice(1));
+  toast(cleanupText(res.report) || res.summary, { tone: "ok", icon: "broom", head: cleanupHead(res.report, p), ms: 10000 });
+}
+const cleanupHead = (r, p) => (r && !(r.worktrees + r.branches + r.logs + r.uploads) ? `Nothing to clean up in ${p.name}` : `Cleaned up ${p.name}`);
+export function cleanupText(r) {
+  if (!r) return "";
+  const parts = [[r.worktrees, "worktree"], [r.branches, "branch", "branches"], [r.logs, "log"], [r.uploads, "upload"]]
+    .filter(([n]) => n > 0).map(([n, one, many]) => plural(n, one, many));
+  if (!parts.length) return "No leftover worktrees, branches, logs or uploads.";
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0];
+  return `Removed ${list}${r.bytes ? `, ${sizeText(r.bytes)} freed` : ""}.`;
 }
 
 // Delete project: from Dash only, with its folder, and/or its GitHub

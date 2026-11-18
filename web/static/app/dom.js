@@ -66,6 +66,7 @@ const ICONS = {
   edit: "M4 20h4L18.5 9.5a2.8 2.8 0 0 0-4-4L4 16v4zM13.5 6.5l4 4",
   copy: "M9 9h11v11H9zM5 15H4V4h11v1",
   trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
+  broom: "M20 4l-8.5 8.5M9 11l4 4-1.5 5.5c-3.5-.5-7.5-4.5-8-8zM7.5 15.5 5 18M10 18l-1.5 2",
   play: "M8 5.5v13l10.5-6.5z",
   pause: "M8 5v14M16 5v14",
   stop: "M6 6h12v12H6z",

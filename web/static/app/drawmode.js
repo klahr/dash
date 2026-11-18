@@ -19,7 +19,7 @@ import { isTyping, openDialog } from "./vim.js";
 import { askChat } from "./palette.js";
 
 // ------------------------------------------------------------------ preview draw mode
-// Draw (D) freezes the preview: the page in the iframe renders itself to a
+// Draw (P) freezes the preview: the page in the iframe renders itself to a
 // PNG (the proxy adds a small capture script to every page it serves, see
 // internal/preview/capture.go), which replaces the live page. Marks and the
 // crop are drawn on a canvas in Dash's page, so they can't drift. Add to
@@ -335,7 +335,7 @@ export function renderReworkBox() {
     }, entry.prefix))),
     ta,
     h("div", { class: "rework-actions" },
-      h("span", { class: "hint" }, pv.todo === t.id ? "Draw (D) to add more" : ""),
+      h("span", { class: "hint" }, pv.todo === t.id ? "Draw (P) to add more" : ""),
       ib({ class: "btn small primary", type: "button", title: "Rework with these notes (Ctrl+Enter)", onclick: attempt(() => sendShots(t)) }, "redo", "Rework")));
   box.hidden = false;
 }

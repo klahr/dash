@@ -6,7 +6,7 @@ import { api } from "./api.js";
 import { attempt, toast } from "./dialogs.js";
 import { draft, promptEditor } from "./todoform.js";
 import { LANES, STATUS_LABEL, cp, hist, state } from "./state.js";
-import { showView } from "./nav.js";
+import { navView, showView } from "./nav.js";
 import { baseBranch, projectKey } from "./events.js";
 import { cleanup, grouped, loadProjects, menuOpen, notifyLabel, openDeleteProject, openNewProject, openPlanner, openProjects, projectWhere, selectProject, setMenu, setPicker, setSideCollapsed, sideCollapsed, stepProject, toggleProjectPause } from "./projects.js";
 import { mineOn, multiMember } from "./people.js";
@@ -34,7 +34,8 @@ import { closeCommit, commitScroller, moveCommit, stepCommitFile } from "./histo
 import { closeGoal, gp, openGoalSheet, stepGoal } from "./goals.js";
 import { cardOpen, closeCard } from "./planning.js";
 import { checklistKey } from "./checklist.js";
-import { BOUND, VIEWS, cursorTodo, enterKey, isTyping, keys, laneCount, laneSkipped, laneTodos, moveCursor, openCommandLine, openDialog, permKey, runCommand, scrollBy, scroller, setMode, stepLane, todoKey } from "./vim.js";
+import { focusTry, openTry } from "./try.js";
+import { BOUND, VIEWS, openKeys, cursorTodo, enterKey, isTyping, keys, laneCount, laneSkipped, laneTodos, moveCursor, openCommandLine, openDialog, permKey, runCommand, scrollBy, scroller, setMode, stepLane, todoKey } from "./vim.js";
 
 // ------------------------------------------------------------------ palette
 // Ctrl-k: one search over commands, projects and the current project's todos.
@@ -71,10 +72,11 @@ function paletteCommands() {
     ["Board", "flag", go("board"), "gb", "view lanes"],
     p && multiMember() && [mineOn() ? "Show everyone's tasks" : "Show only my tasks", "users", () => runCommand("mine"), ":mine", "mine my own created by me filter board"],
     ["Issues", "bug", go("issues"), "gi", "bugs vulnerabilities problems triage scan"],
-    ["Scans", "scan", go("scans"), "gS", "scan security review dependency audit schedule cron"],
+    ["Scans", "scan", go("scans"), "gn", "scan security review dependency audit schedule cron"],
     ["Toggle chat", "comment", () => toggleChatPane(), "gc", "chat open close claude ask project general"],
     [pane.pinned ? "Unpin chat" : "Pin chat", "pin", togglePin, ":pin", "pin unpin chat overlay dock"],
-    ["Shell", "terminal", go("run"), "gs", "run terminal processes view"],
+    ["Shell", "terminal", go("run"), "gs", "run terminal processes view main checkout"],
+    p && ["Shell at a commit (try)", "terminal", openTry, ":try", "try commit older version cli runner worktree"],
     ["History", "log", go("history"), "gh", "git graph tree commits view"],
     ["Goals", "target", go("goals"), "go", "goal coordinator plan progress budget"],
     ["Files", "code", go("files"), "gf", "browse edit source code tree editor"],
@@ -90,7 +92,7 @@ function paletteCommands() {
     p && !shellBlocked(p) && ["Open a shell", "terminal", () => openShell(), "!", "terminal pty"],
     p && state.unpushed > 0 && ["Push merged work", "push", pushDone, ":push", "git"],
     p && [p.paused ? "Resume this project" : "Pause this project", p.paused ? "play" : "pause", toggleProjectPause, "", "pause stop hold tasks"],
-    p && ["Clean up", "trash", cleanup, ":cleanup", "worktrees branches"],
+    p && ["Clean up leftovers", "broom", cleanup, ":cleanup", "clean worktrees branches logs uploads disk"],
     p && ["Delete project…", "trash", openDeleteProject, "", "remove repo clone github"],
     ["Builds", "checks", openCI, ":ci", "ci github actions"],
     (state.claudeStatus?.enabled || state.me?.user?.is_platform_admin) && ["Claude status", "spark", openClaudeStatus, "", "status.claude.com incidents outage down degraded webhook"],
@@ -106,7 +108,7 @@ function paletteCommands() {
     [invisiblesOn() ? "Hide invisible characters in the editor" : "Show invisible characters in the editor", "code", toggleInvisibles, ":list", "invisibles whitespace tabs spaces trailing"],
     desktop.matches && [sideCollapsed() ? "Expand sidebar" : "Collapse sidebar", "minimize", () => setSideCollapsed(!sideCollapsed()), "[", "sidebar"],
     ["Refresh projects", "redo", loadProjects, ":refresh", "reload"],
-    ["Keyboard shortcuts", "code", () => $("#keys-sheet").showModal(), "?", "help keys"],
+    ["Keyboard shortcuts", "code", openKeys, "?", "help keys"],
     ["Log out", "logout", logout, "", "sign out"],
   ].filter(Boolean).map(([label, icon, run, keys, words]) => ({ kind: "Command", label, icon, run, keys, text: `${label} ${words}` }));
 }
@@ -353,14 +355,14 @@ function sidebarKey(k, n, hadCount) {
 async function handleNormal(k, n, hadCount) {
   if (sidebarList(document.activeElement) && sidebarKey(k, n, hadCount) !== false) return;
   // An open commit (desktop): n/p step through its files, before n (new
-  // task, deny) and p (projects) as global keys.
+  // task) and p (projects) as global keys.
   if ((k === "n" || k === "p") && state.view === "history" && !state.detail && stepCommitFile(k === "n" ? n : -n)) return;
   // Global keys.
   switch (k) {
     case ":": return openCommandLine();
-    case "?": return $("#keys-sheet").showModal();
-    case "gt": return showView(VIEWS[(VIEWS.indexOf(state.view) + n) % VIEWS.length]);
-    case "gT": return showView(VIEWS[(VIEWS.indexOf(state.view) - n + VIEWS.length * n) % VIEWS.length]);
+    case "?": return openKeys();
+    case "gt": return showView(VIEWS[(VIEWS.indexOf(navView(state.view)) + n) % VIEWS.length]);
+    case "gT": return showView(VIEWS[(VIEWS.indexOf(navView(state.view)) - n + VIEWS.length * n) % VIEWS.length]);
     case "gb": return showView("board");
     case "gc": return toggleChatPane();
     case "c": return toggleChatPane(true, "project");
@@ -371,7 +373,7 @@ async function handleNormal(k, n, hadCount) {
     case "gl": return showView("checklist");
     case "gp": return showView("planning");
     case "gi": return showView("issues");
-    case "gS": return showView("scans");
+    case "gn": return showView("scans");
     case "p": return openProjects();
     case "J": case "K": return stepProject(k === "J" ? n : -n);
     case "[": return desktop.matches && setSideCollapsed(!sideCollapsed());
@@ -384,13 +386,13 @@ async function handleNormal(k, n, hadCount) {
       if (gp.open) return closeGoal();
       if (cardOpen()) return closeCard();
       return;
-    case "y": case "A":
+    // Permission requests: y allow, A always allow, X deny. (Not n: n is
+    // always a new task, so it can't deny by surprise.)
+    case "y": case "A": case "X":
       if (await permKey(k) === false) toast("No permission request waiting");
       return;
     case "n": case "N":
-      // n answers "deny" only when a permission request is in view; otherwise
-      // n is a new task (quick sheet) and N one with all options (full form).
-      if (k === "n" && state.perms.length && (!state.detail || state.perms.some((p) => p.todo_id === state.detail))) return permKey("n");
+      // n is a new task (quick sheet), N one with all options (full form).
       if (!state.project) return;
       return k === "n" ? openQuickAdd() : openTodoForm();
     case "/":
@@ -408,7 +410,7 @@ async function handleNormal(k, n, hadCount) {
       return renderPane();
     }
     if (state.pane === "timeline" && k === "i") return todoChat.input.focus();
-    if (t && k === "D" && pv.todo === t.id) return startDraw();
+    if (t && k === "P" && pv.todo === t.id) return startDraw(); // P: pen on the preview (D is Deploy, on the Shell page)
     if (t && k === "Enter" && enterKey(t)) return todoKey(t, enterKey(t));
     if (t) await todoKey(t, k);
     return;
@@ -438,7 +440,13 @@ async function handleNormal(k, n, hadCount) {
           if (t) return openDetail(t.id);
           return;
         }
-        case "a": return openQuickAdd();
+        // a approves, as in an open task: only the task under a shown cursor,
+        // in Review. (New task is n.)
+        case "a": {
+          const t = keys.active && cursorTodo();
+          if (t?.status !== "review") throw new Error("a approves the task under the cursor, in Review. A new task is n.");
+          return todoKey(t, "a");
+        }
       }
       const t = cursorTodo();
       if (t) await todoKey(t, k);
@@ -447,7 +455,7 @@ async function handleNormal(k, n, hadCount) {
     case "run": {
       const cur = state.procs.find((p) => p.id === attached);
       switch (k) {
-        case "i": case "a": case "Enter": return term.focus();
+        case "i": case "Enter": return term.focus();
         case "x": if (cur?.running) { await api("DELETE", `/api/processes/${cur.id}`); toast("Stopping"); } return;
         case "R": return startProc({ kind: "web", preset: "run" });
         case "T": return startProc({ kind: "task", preset: "test" });
@@ -456,6 +464,9 @@ async function handleNormal(k, n, hadCount) {
       }
       return;
     }
+    case "try": // the Shell page at a commit
+      if (k === "i" || k === "Enter") return focusTry();
+      return;
     case "history": {
       const hashes = hist.commits.map((c) => c.hash);
       switch (k) {

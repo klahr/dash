@@ -31,21 +31,23 @@ a phone, with a row of Esc, Tab, Ctrl-C, Ctrl-D and arrow keys). Draw doesn't ap
 **Rework with transcript…** puts the terminal's last 200 lines into the rework notes, or only
 what you selected in the terminal if you selected something.
 
-### Try: the project itself, at any commit
+### The Shell at a commit (Try): the project itself, at any commit
 
-**Try** (in the sidebar, or the phone's menu, of a CLI project on a hub; `:try`) opens the same
-kind of terminal on the project rather than a task, to test it without one in review. It always
+The **Shell** page has a picker: **main** is a shell in the project's checkout, and **commit…**
+(of a CLI project on a hub; `:try`) opens the same kind of terminal as above on the project
+rather than a task, to test it without one in review. Its address is `/p/<project>/try`, so older
+links to Try still open it. It always
 runs on a runner, never on the hub: one that is connected, has the labels the project runs on and opens
 terminals for you (only for the runner's owner). With one such runner it is
-picked by itself; with several, pick one in the Try header; with none, Try is greyed out and says
-why.
+picked by itself; with several, pick one in the Shell page's header; with none, **commit…** is greyed out and
+says why.
 
 On that runner Dash fetches the default branch from origin and makes a **detached worktree** of its
 clone (under `<data>/try/`), never touching the clone's own checkout, and runs `preview_command`
 there with `$DASH_BIN` as above. The header shows the runner and the commit (short hash and
 subject); tap the commit to pick another from the branch's history (searchable, the latest 100
 matches, or type any hash, tag or branch). Picking one, or another runner, replaces the session and
-its worktree. A project has one try session; opening Try again reattaches to it. It stops after 30
+its worktree. A project has one try session; **commit…** shows it again while it runs. It stops after 30
 minutes without typing (or with **Stop**), and its worktree is removed.
 
 The project chat sits beside the terminal (on a phone: the **Chat** tab, and **Terminal** to come

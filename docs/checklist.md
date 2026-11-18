@@ -1,6 +1,6 @@
 # Checklist (TODO.md)
 
-The Checklist view shows the project's `TODO.md`, at the root of its repository, as a list you
+The **Checklist** page shows the project's `TODO.md`, at the root of its repository, as a list you
 can tick off. Open it from the side rail (on a phone, from the menu), with `gl`, or from the
 command palette (`Ctrl-k`, "Checklist").
 
