@@ -250,6 +250,7 @@ func hubSettings(req dispatch.Link, mode string) func(*model.Project) {
 		x.TaskInstructions, x.MergeMode, x.HubOrgFolder = req.TaskInstructions, mode, folder
 		// The hub's commands.
 		x.SetupCommand, x.TestCommand, x.RunCommand, x.DeployCommand = req.SetupCommand, req.TestCommand, req.RunCommand, req.DeployCommand
+		x.DeployRunsOn = slices.Clone(req.DeployRunsOn) // for show: the hub holds the deploy where it may not run
 		if k, err := checkPreviewKind(req.PreviewKind); err == nil {
 			x.PreviewKind, x.PreviewCommand = k, strings.TrimSpace(req.PreviewCommand)
 		}

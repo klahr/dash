@@ -130,3 +130,19 @@ func MissingLabels(have, want []string) []string {
 	}
 	return out
 }
+
+// SameLabels reports whether a and b are the same labels, in any order and
+// case.
+func SameLabels(a, b []string) bool {
+	for _, l := range a {
+		if !HasLabel(b, l) {
+			return false
+		}
+	}
+	for _, l := range b {
+		if !HasLabel(a, l) {
+			return false
+		}
+	}
+	return true
+}

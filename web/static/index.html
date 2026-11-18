@@ -933,7 +933,9 @@
                 <p class="hint" id="new-project-clone-hint">Runners clone into <code>&lt;projects&gt;/&lt;org&gt;/&lt;repo&gt;</code>, or use a clone of the same repository already there; a folder holding anything else is left alone and the clone gets a <code>-2</code> suffix. GitHub repositories are cloned over SSH, or over HTTPS with the runner's <code>gh</code> login when its SSH can't read them (<code>-github-protocol</code> forces one). A clone URL replaces that (a URL only: credentials stay on the runner).</p>
                 <label class="field"><span>Start server command <em>gets $PORT</em></span><input name="run_command" placeholder="npm run dev -- --port $PORT" spellcheck="false"></label>
                 <label class="field"><span>Test command</span><input name="test_command" placeholder="go test ./..." spellcheck="false"></label>
-                <label class="field"><span>Deploy command</span><input name="deploy_command" placeholder="./deploy.sh" spellcheck="false"></label>
+                <label class="field"><span>Deploy command <em>a bash script, one line or several</em></span><textarea name="deploy_command" class="script-field" rows="4" placeholder="set -e&#10;npm run build&#10;./deploy.sh production" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea></label>
+                <label class="field" id="new-project-deploy-runs-on-row"><span>Deploy runs on <em>runner labels; empty: any runner the project runs on</em></span><input name="deploy_runs_on" placeholder="e.g. production" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
+                <p class="hint" id="new-project-deploy-runs-on-hint">Deploys go only to a runner with every one of these labels, as well as the ones above. If none is online, the deploy fails instead of running elsewhere.</p>
                 <p class="hint">You can set or change the commands later in Project settings.</p>
               </details>
             </div>
@@ -1145,7 +1147,9 @@
             <label class="field inline"><span>Preview tasks in</span><select name="preview_kind"><option value="web">a browser (start server command)</option><option value="terminal">a terminal (CLI tools)</option></select></label>
             <label class="field"><span>Terminal preview command <em>runs in the task's worktree; ./.dash-bin is on PATH as $DASH_BIN</em></span><input name="preview_command" placeholder="go build -o $DASH_BIN/tool . &amp;&amp; exec $SHELL" spellcheck="false"></label>
             <p class="hint">Empty: a plain shell in the task's worktree.</p>
-            <label class="field"><span>Deploy command</span><input name="deploy_command" spellcheck="false"></label>
+            <label class="field"><span>Deploy command <em>a bash script, one line or several; runs in the project's checkout</em></span><textarea name="deploy_command" class="script-field" rows="4" placeholder="set -e&#10;npm run build&#10;./deploy.sh production" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea></label>
+            <label class="field" id="settings-deploy-runs-on-row" hidden><span>Deploy runs on <em>runner labels; empty: any runner the project runs on</em></span><input id="settings-deploy-runs-on" name="deploy_runs_on" placeholder="e.g. production" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="settings-deploy-runs-on-hint"></label>
+            <p class="hint" id="settings-deploy-runs-on-hint" hidden></p>
           </section>
           <section class="rail-section" data-section="repository">
             <div id="settings-repo" class="repo-info" aria-live="polite"></div>

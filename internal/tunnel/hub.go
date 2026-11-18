@@ -135,6 +135,13 @@ func (r Runner) Serves(p model.Project) bool {
 	return r.OrgID() != 0 && r.OrgID() == p.OrgID && model.LabelsMatch(r.AllLabels(), p.RunsOn)
 }
 
+// Deploys reports whether the runner runs hub project p's deploy command:
+// it works on p and has every label p deploys on
+// (model.Project.DeploysOn).
+func (r Runner) Deploys(p model.Project) bool {
+	return r.Serves(p) && p.DeploysOn(r.AllLabels())
+}
+
 // Serving are the runners in list that work on p (Runner.Serves).
 func Serving(list []Runner, p model.Project) []Runner {
 	var out []Runner

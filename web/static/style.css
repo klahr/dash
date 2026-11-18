@@ -140,6 +140,8 @@ input:focus, textarea:focus { border-color: var(--accent); }
 /* Checkboxes and radios: native, in the accent colour (.toggle and .cl-check draw their own). */
 input:is([type="checkbox"], [type="radio"]) { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
 textarea { resize: vertical; line-height: 1.45; }
+/* A field holding a shell script (the deploy command): monospace, lines kept as typed. */
+textarea.script-field { font-family: var(--mono); white-space: pre; overflow-x: auto; overflow-wrap: normal; tab-size: 4; min-height: 6.5em; }
 ::placeholder { color: var(--faint); }
 
 /* ---------- app shell (mobile) ---------- */

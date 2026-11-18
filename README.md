@@ -143,6 +143,18 @@ runners together. The others stay queued, and say why, until one finishes. A new
 starts at 5. Clear it for no limit of the project's own. The API field is `max_parallel` (`0` for
 no limit).
 
+**Deploy.** Set a **Deploy command** in **Project settings → General**. It is a bash script that
+runs in the project's checkout, so it can span several lines:
+
+```sh
+set -e
+npm run build
+./deploy.sh production
+```
+
+Then press **Deploy** (or `D` in the Shell view). On a hub, **Deploy runs on** beside it picks the
+runners that deploy, by label: see [Where deploys run](docs/several-computers.md#where-deploys-run).
+
 **Who made a task.** The task's pane says who created it ("Created by Ana", or "Created by Dash"
 for a task Dash made itself). When your organization has more than one member, each card also
 shows its creator's picture or initial, and the filter row above the board has **Mine**: press it

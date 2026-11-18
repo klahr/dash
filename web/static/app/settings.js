@@ -33,6 +33,7 @@ export function openSettings() {
   f.preview_kind.value = p.preview_kind || "web";
   f.preview_command.value = p.preview_command || "";
   f.deploy_command.value = p.deploy_command || "";
+  f.deploy_runs_on.value = (p.deploy_runs_on || []).join(", ");
   f.auto_push.checked = !!p.auto_push;
   f.auto_approve.checked = !!p.auto_approve;
   f.merge_mode.value = p.merge_mode || "local";
@@ -76,8 +77,29 @@ function renderRunnerPicker(p) {
   $("#settings-runners-field").hidden = !hub && !p.runs_on?.length;
   shownRunsOn = labelKey(p.runs_on);
   $("#settings-runs-on").value = (p.runs_on || []).join(", ");
+  // The deploy's own labels, beside the deploy command: a hub's only.
+  $("#settings-deploy-runs-on-row").hidden = $("#settings-runners-field").hidden;
   renderRunsOnPreview();
 }
+
+// renderDeployRunsOn says which of the runners the project would run on
+// (as the labels are typed) its deploy goes to.
+function renderDeployRunsOn() {
+  const hint = $("#settings-deploy-runs-on-hint"), deploy = typedDeployRunsOn();
+  hint.hidden = $("#settings-deploy-runs-on-row").hidden;
+  hint.classList.remove("warn");
+  if (hint.hidden) return;
+  if (!deploy.length) {
+    hint.textContent = "Deploys run on any runner the project runs on (Runners). Name labels to keep them to some of those runners.";
+    return;
+  }
+  const names = (state.runners || []).filter((r) => servesProject(r, { runs_on: typedRunsOn() }) && servesProject(r, { runs_on: deploy })).map((r) => r.name);
+  hint.classList.toggle("warn", !names.length);
+  hint.textContent = names.length
+    ? `Deploys go only to ${names.join(", ")}. If none of them is online, the deploy fails instead of running elsewhere.`
+    : `No runner the project runs on has ${deploy.join(", ")}: deploys fail until one does. Give a runner labels on its page in Runners.`;
+}
+const typedDeployRunsOn = () => parseLabels($("#settings-deploy-runs-on").value).filter((l) => l.toLowerCase() !== "any");
 
 // renderRunsOnPreview lists the org's runners as the typed labels would
 // have it: those that would work on the project first.
@@ -92,6 +114,7 @@ function renderRunsOnPreview() {
       h("span", { class: "hint" }, ok ? `works on it · ${r.mine ? "yours" : r.owner?.username || ""}`
         : want.runs_on.length ? `lacks ${missing.join(", ")}` : "no labels: runs nothing"));
   }));
+  renderDeployRunsOn();
 }
 const typedRunsOn = () => parseLabels($("#settings-runs-on").value);
 // shownRunsOn is the project's labels as the field was last drawn with.
@@ -143,6 +166,7 @@ function syncMergeHint() {
 }
 $("#settings-form").addEventListener("change", syncMergeHint);
 $("#settings-runs-on").addEventListener("input", () => { renderRunsOnPreview(); syncMergeHint(); });
+$("#settings-deploy-runs-on").addEventListener("input", renderDeployRunsOn);
 
 // The tag format is checked as it is typed: placeholders, a valid git tag,
 // and whether the repository's release workflows run for its tags.
@@ -213,6 +237,7 @@ $("#settings-sheet").addEventListener("close", attempt(async () => {
     color: f.use_color.checked ? f.color.value : "",
     icon: f.icon.value,
     ...($("#settings-runners-field").hidden ? {} : { runs_on: typedRunsOn() }),
+    ...($("#settings-deploy-runs-on-row").hidden ? {} : { deploy_runs_on: typedDeployRunsOn() }),
   });
   // Keep the client-only fields, and the list entry in step for its name, color and icon.
   state.project = { ...saved, machine: old.machine, prefix: old.prefix };

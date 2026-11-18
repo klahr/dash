@@ -67,8 +67,8 @@ Listing and creating repositories use the runner owner's GitHub login, so only t
 can use those two (anyone can paste a URL); the hub has no GitHub login of its own. The **Name**
 shows once there is a repository, filled in with the repository's (change it to show the project
 under another name; Local only needs one). **Advanced** holds the [clone URL](#how-a-runner-reaches-github)
-and the start server, test and deploy commands; the commands can be set later in Project settings
-too. The button says what it will do (**Add owner/repo**, **Create repository and add**, **Add
+and the start server, test and deploy commands, and **Deploy runs on** (see
+[Where deploys run](#where-deploys-run)); the commands can be set later in Project settings too. The button says what it will do (**Add owner/repo**, **Create repository and add**, **Add
 project**, **Create local project**) and stays disabled until the choice has what it needs.
 
 Once you click it, the dialog shows the steps as they go: **Creating GitHub repository** (for a
@@ -429,6 +429,28 @@ Runners used to have the label `self-hosted`. A hub from before `any` drops it w
 project that ran on `self-hosted` alone runs on `any`, one that ran on other labels as well keeps
 only those, and a runner that was given `self-hosted` by hand loses it.
 
+### Where deploys run
+
+By default **Deploy** runs on any runner the project runs on. To keep deploys to some of them (the
+one with the signing keys, or the one in the office network), give those runners a label of their
+own, such as `production`, and put it in **Project settings → General → Deploy runs on**, beside
+the deploy command. Separate labels with commas: a runner deploys only if it has every one of them,
+as well as the labels the project runs on. Below the field, the settings say which runners would
+deploy, as you type. **Add project → Advanced** has the same field.
+
+- **Deploy** (the button, `D` in the Shell view and in `dash-tui`) goes to an online runner with
+  those labels. If none has them, it fails with "no runner of this project has the labels it
+  deploys on"; if all of them are offline, it fails and names them. It never runs elsewhere.
+- A runner without the labels refuses to deploy even when asked: the hub holds the deploy command
+  back from it, as it does an [unapproved command](#project-commands-need-approval).
+- Empty, or `any`, deploys on any runner the project runs on, as before.
+- Changing the labels counts as changing the deploy command: only those who may change the
+  commands may change them (see [Project commands need approval](#project-commands-need-approval)).
+
+The API field is `deploy_runs_on`, a list of labels (`[]` for none), on `PATCH
+/api/projects/{id}` and the `update_project` tool. A Dash that isn't a hub deploys on its own
+computer and refuses the field.
+
 ### Whose work a runner does
 
 A runner runs work on its owner's computer, as its owner, and Claude there is signed in with its
@@ -518,7 +540,8 @@ each command. A runner runs a command only if an org admin set it, the runner's 
 was there before this rule, or the runner is a shared runner. Otherwise the step fails and says who
 changed the command: an org admin or the runner's owner must save it again in **Project settings →
 General** to approve it. Saving it unchanged approves it: an admin's save for every runner, an
-owner's for their own runners.
+owner's for their own runners. Changing **Deploy runs on** changes the deploy command too, since it
+picks the runners the command runs on.
 
 #### Runners from before this rule
 

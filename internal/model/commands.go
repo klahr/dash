@@ -1,6 +1,9 @@
 package model
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // The kinds of a project's shell commands (Project.CommandsBy).
 const (
@@ -88,3 +91,19 @@ func (p Project) CommandApproved(kind string, owner int64, shared bool) bool {
 // Held is, on a runner, why p's command of kind may not run here ("": it
 // may).
 func (p Project) Held(kind string) string { return p.HeldCommands[kind] }
+
+// DeploysOn reports whether a runner with the labels have may run p's
+// deploy command: p names no labels for it (DeployRunsOn), or have has
+// every one of them.
+func (p Project) DeploysOn(have []string) bool {
+	return len(p.DeployRunsOn) == 0 || LabelsMatch(have, p.DeployRunsOn)
+}
+
+// CleanScript puts a multi-line command (a bash script) in its stored
+// form: Windows line ends become "\n", so bash doesn't see a stray "\r"
+// at the end of each line, and white space at either end goes. The lines
+// in between, their indents and blank lines, are kept as they are.
+func CleanScript(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	return strings.TrimSpace(strings.ReplaceAll(s, "\r", "\n"))
+}

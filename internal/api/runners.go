@@ -337,6 +337,25 @@ func (sv *service) checkRunsOn(p model.Project, labels []string) ([]string, erro
 	return labels, nil
 }
 
+// checkDeployRunsOn checks the runner labels a project's deploy command
+// runs on (model.Project.DeployRunsOn) and returns them clean, nil for
+// none. LabelAny, which every runner matches, adds nothing and goes. Only
+// a hub's projects run on labels.
+func (sv *service) checkDeployRunsOn(labels []string) ([]string, error) {
+	labels, err := model.CleanLabels(labels)
+	if err != nil {
+		return nil, fmt.Errorf("%w: deploy runs on: %v", errBadRequest, err)
+	}
+	labels = slices.DeleteFunc(labels, func(l string) bool { return strings.EqualFold(l, model.LabelAny) })
+	if len(labels) == 0 {
+		return nil, nil
+	}
+	if !sv.s.hub() {
+		return nil, fmt.Errorf("%w: deploy_runs_on is a hub's project's setting: this Dash deploys on its own computer", errBadRequest)
+	}
+	return labels, nil
+}
+
 // checkRelabel checks giving runner x the labels: no project it stops
 // working on may have a task running on it (checkUnlink). It returns those
 // projects, which the runner must be told it left (unlinkLater).

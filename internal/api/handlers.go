@@ -87,6 +87,7 @@ type projectRequest struct {
 	RunCommand     string   `json:"run_command"`
 	TestCommand    string   `json:"test_command"`
 	DeployCommand  string   `json:"deploy_command"`
+	DeployRunsOn   []string `json:"deploy_runs_on"` // on the hub: see model.Project.DeployRunsOn
 	SetupCommand   string   `json:"setup_command"`
 	PreviewKind    string   `json:"preview_kind"`    // "web" (default) | "terminal"
 	PreviewCommand string   `json:"preview_command"` // terminal previews: runs in the worktree
@@ -135,6 +136,11 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.PreviewKind, req.PreviewCommand = kind, strings.TrimSpace(req.PreviewCommand)
+	req.DeployCommand = model.CleanScript(req.DeployCommand)
+	if req.DeployRunsOn, err = sv.checkDeployRunsOn(req.DeployRunsOn); err != nil {
+		writeErr(w, err)
+		return
+	}
 	// The value is checked before anything is cloned or created; whether
 	// pull requests are possible once the remote is known.
 	if err := checkMergeMode(req.MergeMode, ""); err != nil && req.MergeMode != model.MergePR {
@@ -201,6 +207,7 @@ func newProjectFromRequest(req projectRequest, base model.Project, gh bool) (mod
 	np.DefaultBranch = cmp.Or(req.DefaultBranch, "main")
 	np.RunCommand, np.TestCommand, np.DeployCommand, np.SetupCommand = req.RunCommand, req.TestCommand, req.DeployCommand, req.SetupCommand
 	np.PreviewKind, np.PreviewCommand = req.PreviewKind, req.PreviewCommand
+	np.DeployRunsOn = req.DeployRunsOn
 	np.CopyFiles = cleanList(req.CopyFiles)
 	np.MaxAutoFixes = model.DefaultMaxAutoFixes
 	if req.MaxAutoFixes != nil {
@@ -254,7 +261,7 @@ func (sv *service) createHubProject(req projectRequest) (model.Project, error) {
 	// Who set its commands: a runner runs them only if they are approved
 	// for it (model.Project.CommandApproved).
 	sv.recordCommands(&np, model.Project{}, projectUpdate{RunCommand: &np.RunCommand, TestCommand: &np.TestCommand,
-		DeployCommand: &np.DeployCommand, SetupCommand: &np.SetupCommand, PreviewCommand: &np.PreviewCommand})
+		DeployCommand: &np.DeployCommand, DeployRunsOn: &np.DeployRunsOn, SetupCommand: &np.SetupCommand, PreviewCommand: &np.PreviewCommand})
 	return sv.data.CreateProject(np)
 }
 
@@ -262,13 +269,19 @@ func (sv *service) createHubProject(req projectRequest) (model.Project, error) {
 // sends (model.Project.CommandsBy): a command that changed from cur's is
 // the caller's now; one sent unchanged is approved by them for their own
 // runners (an org admin's for all of them). A command no one recorded
-// (from before) stays as it is.
+// (from before) stays as it is. The labels the deploy command runs on are
+// part of it: changing them changes the deploy command, as they pick the
+// runners it runs on.
 func (sv *service) recordCommands(p *model.Project, cur model.Project, req projectUpdate) {
 	if !sv.s.hub() || sv.c.User == 0 {
 		return
 	}
 	sent := map[string]*string{model.CmdRun: req.RunCommand, model.CmdTest: req.TestCommand, model.CmdDeploy: req.DeployCommand,
 		model.CmdSetup: req.SetupCommand, model.CmdPreview: req.PreviewCommand}
+	deployMoved := req.DeployRunsOn != nil && !model.SameLabels(*req.DeployRunsOn, cur.DeployRunsOn)
+	if deployMoved && req.DeployCommand == nil {
+		sent[model.CmdDeploy] = &cur.DeployCommand
+	}
 	admin, name := sv.s.orgAdmin(sv.c), ""
 	if u, err := sv.s.Store.Accounts().User(sv.c.User); err == nil {
 		name = u.Username
@@ -279,7 +292,7 @@ func (sv *service) recordCommands(p *model.Project, cur model.Project, req proje
 		if v == nil {
 			continue
 		}
-		changed := strings.TrimSpace(*v) != strings.TrimSpace(cur.Command(kind))
+		changed := strings.TrimSpace(*v) != strings.TrimSpace(cur.Command(kind)) || kind == model.CmdDeploy && deployMoved
 		by, known := out[kind]
 		switch {
 		case strings.TrimSpace(*v) == "":
@@ -407,7 +420,11 @@ type projectUpdate struct {
 	RunCommand    *string `json:"run_command"`
 	TestCommand   *string `json:"test_command"`
 	DeployCommand *string `json:"deploy_command"`
-	SetupCommand  *string `json:"setup_command"`
+	// DeployRunsOn are, on the hub, the runner labels the deploy command
+	// runs on (replaces them; [] deploys on any of the project's runners).
+	// See model.Project.DeployRunsOn.
+	DeployRunsOn *[]string `json:"deploy_runs_on"`
+	SetupCommand *string   `json:"setup_command"`
 	// PreviewKind is "web" (run_command, proxied) or "terminal"
 	// (preview_command, or a shell, in a terminal in the worktree).
 	PreviewKind    *string   `json:"preview_kind"`
@@ -457,10 +474,11 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 
 // checkCommandChange refuses, on the hub, a change to the commands Dash
 // runs in a shell on the project's runners (run, test, deploy, setup,
-// preview) unless the caller is an org admin or owns every runner they
-// would run on: they run as that runner's owner, on its computer, and a
-// shell there is its owner's alone (see hubTerminal). Sending a command
-// unchanged is fine, as the settings form does.
+// preview), or to the labels the deploy command runs on (which pick the
+// runner it runs on), unless the caller is an org admin or owns every
+// runner they would run on: they run as that runner's owner, on its
+// computer, and a shell there is its owner's alone (see hubTerminal).
+// Sending a command unchanged is fine, as the settings form does.
 func (sv *service) checkCommandChange(cur model.Project, req projectUpdate, runners []tunnel.Runner) error {
 	if !sv.s.hub() || len(runners) == 0 || sv.s.orgAdmin(sv.c) {
 		return nil
@@ -468,7 +486,8 @@ func (sv *service) checkCommandChange(cur model.Project, req projectUpdate, runn
 	changed := func(v *string, was string) bool { return v != nil && strings.TrimSpace(*v) != strings.TrimSpace(was) }
 	if !changed(req.RunCommand, cur.RunCommand) && !changed(req.TestCommand, cur.TestCommand) &&
 		!changed(req.DeployCommand, cur.DeployCommand) && !changed(req.SetupCommand, cur.SetupCommand) &&
-		!changed(req.PreviewCommand, cur.PreviewCommand) {
+		!changed(req.PreviewCommand, cur.PreviewCommand) &&
+		(req.DeployRunsOn == nil || model.SameLabels(*req.DeployRunsOn, cur.DeployRunsOn)) {
 		return nil
 	}
 	for _, run := range runners {
@@ -580,6 +599,16 @@ func (sv *service) normalizeProjectUpdate(ctx context.Context, req *projectUpdat
 		}
 		*req.TagFormat = f.String()
 	}
+	if req.DeployCommand != nil {
+		*req.DeployCommand = model.CleanScript(*req.DeployCommand)
+	}
+	if req.DeployRunsOn != nil {
+		labels, err := sv.checkDeployRunsOn(*req.DeployRunsOn)
+		if err != nil {
+			return err
+		}
+		req.DeployRunsOn = &labels
+	}
 	if req.CloneURL != nil {
 		if !sv.s.hub() {
 			return fmt.Errorf("%w: clone_url is a hub's project's setting", errBadRequest)
@@ -615,6 +644,9 @@ func applyProjectUpdate(p *model.Project, req projectUpdate, remote string, runs
 	set(&p.RunCommand, req.RunCommand)
 	set(&p.TestCommand, req.TestCommand)
 	set(&p.DeployCommand, req.DeployCommand)
+	if req.DeployRunsOn != nil {
+		p.DeployRunsOn = *req.DeployRunsOn
+	}
 	set(&p.SetupCommand, req.SetupCommand)
 	set(&p.PreviewKind, req.PreviewKind)
 	if req.PreviewCommand != nil {

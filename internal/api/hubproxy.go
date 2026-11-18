@@ -55,7 +55,43 @@ func (sv *service) projectRunner(ctx context.Context, p model.Project, prefer st
 // users (tunnel.Runner.WorksFor; nil: any of p's runners), for what runs a
 // project command there: the caller's own runners, or shared ones.
 func (sv *service) projectRunnerFor(ctx context.Context, p model.Project, prefer string, users []int64) (tunnel.Runner, string, error) {
-	cands := sv.s.onlineRunners(p)
+	return sv.projectRunnerAmong(ctx, p, sv.s.onlineRunners(p), prefer, users)
+}
+
+// deployRunnerFor is projectRunnerFor for p's deploy command: among the
+// runners with every label it deploys on (model.Project.DeployRunsOn). With
+// none of them online, it fails saying so; the deploy never goes to
+// another runner.
+func (sv *service) deployRunnerFor(ctx context.Context, p model.Project, prefer string, users []int64) (tunnel.Runner, string, error) {
+	if len(p.DeployRunsOn) == 0 {
+		return sv.projectRunnerFor(ctx, p, prefer, users)
+	}
+	labels := strings.Join(p.DeployRunsOn, ", ")
+	all := slices.DeleteFunc(sv.s.projectRunners(p), func(r tunnel.Runner) bool { return !r.Deploys(p) })
+	if len(all) == 0 {
+		return tunnel.Runner{}, "", fmt.Errorf("%w: no runner of this project has the labels it deploys on (%s): give one those labels in Runners, or change them in Project settings → General → Deploy runs on", errBadRequest, labels)
+	}
+	if prefer != "" && !slices.ContainsFunc(all, func(r tunnel.Runner) bool { return r.ID == prefer }) {
+		name := prefer
+		if r, ok := sv.s.fleet().Get(prefer); ok {
+			name = r.Name
+		}
+		return tunnel.Runner{}, "", fmt.Errorf("%w: this project deploys only on runners with the labels %s, and %s lacks them", errBadRequest, labels, name)
+	}
+	online := slices.DeleteFunc(slices.Clone(all), func(r tunnel.Runner) bool { return !r.Online })
+	if len(online) == 0 {
+		names := make([]string, len(all))
+		for i, r := range all {
+			names[i] = r.Name
+		}
+		return tunnel.Runner{}, "", fmt.Errorf("%w (it deploys only on runners with the labels %s: %s, all offline)", errNoRunnerOnline, labels, strings.Join(names, ", "))
+	}
+	return sv.projectRunnerAmong(ctx, p, online, prefer, users)
+}
+
+// projectRunnerAmong is projectRunnerFor among cands, p's online runners
+// (or some of them).
+func (sv *service) projectRunnerAmong(ctx context.Context, p model.Project, cands []tunnel.Runner, prefer string, users []int64) (tunnel.Runner, string, error) {
 	var notFor []string
 	if users != nil {
 		cands = slices.DeleteFunc(cands, func(r tunnel.Runner) bool {
@@ -520,7 +556,12 @@ func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv
 			}
 		}
 	}
-	run, rpid, err := sv.projectRunnerFor(r.Context(), p, prefer, users)
+	pick := sv.projectRunnerFor
+	if preset, _ := req["preset"].(string); preset == model.CmdDeploy && !pty {
+		// A deploy runs only on a runner with the labels it deploys on.
+		pick = sv.deployRunnerFor
+	}
+	run, rpid, err := pick(r.Context(), p, prefer, users)
 	if err != nil {
 		writeErr(w, err)
 		return

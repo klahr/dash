@@ -333,6 +333,7 @@ function syncHubMode() {
   if (f.name.value === np.nameAuto) f.name.value = np.nameAuto = suggested;
   if (f.runs_on.value === np.runsOnAuto) f.runs_on.value = np.runsOnAuto = defaultRunsOn(r).join(", ");
   $("#new-project-runs-on-row").hidden = $("#new-project-runs-on-hint").hidden = mode === "local";
+  $("#new-project-deploy-runs-on-row").hidden = $("#new-project-deploy-runs-on-hint").hidden = mode === "local";
   $("#new-project-name-row").hidden = mode !== "local" && !repo;
   $("#new-project-name-label").replaceChildren(...(mode === "local" ? ["Name"] : ["Name ", h("em", {}, "optional, how Dash shows it")]));
   f.name.placeholder = mode === "local" ? "e.g. sandbox" : suggested;
@@ -474,7 +475,8 @@ export function startAdd(plan = null) {
   const f = $("#new-project"), r = sheetRunner(), mode = plan?.mode || hubMode();
   if (np.run || !r || !newProjectReady(mode).ready) return false;
   const body = Object.fromEntries(new FormData(f));
-  const commands = { run_command: body.run_command, test_command: body.test_command, deploy_command: body.deploy_command };
+  // The deploy command is a script: its lines as the textarea has them.
+  const commands = { run_command: body.run_command, test_command: body.test_command, deploy_command: f.deploy_command.value };
   const run = { mode, r, name: (body.name || "").trim(), remote: "", project: null, made: null, done: false, steps: [], plan };
   const id = encodeURIComponent(r.id);
   const step = (label, fn) => run.steps.push({ label, fn, state: "wait", detail: "", actions: null });
@@ -510,7 +512,7 @@ export function startAdd(plan = null) {
     step("Adding project", async (s) => {
       const runsOn = parseLabels(body.runs_on);
       run.project = await api("POST", "/api/projects", { name: run.name, remote_url: run.remote, clone_url: (body.clone_url || "").trim(),
-        runs_on: runsOn.length ? runsOn : defaultRunsOn(r), ...commands }, "");
+        runs_on: runsOn.length ? runsOn : defaultRunsOn(r), deploy_runs_on: parseLabels(body.deploy_runs_on), ...commands }, "");
       np.created = null;
       s.label = `Added ${run.project.name}`;
     });

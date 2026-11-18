@@ -79,10 +79,18 @@ type Project struct {
 	AutoPush bool   `json:"auto_push"` // push DefaultBranch after every merge
 	// AutoApprove: finished todos whose tests pass skip review. In "pr"
 	// mode their pull requests merge without an approving review on GitHub.
-	AutoApprove   bool   `json:"auto_approve"`
-	RunCommand    string `json:"run_command,omitempty"`    // e.g. "npm run dev" — gets $PORT
-	TestCommand   string `json:"test_command,omitempty"`   // e.g. "go test ./..."
-	DeployCommand string `json:"deploy_command,omitempty"` // e.g. "./deploy.sh" or "adb install …"
+	AutoApprove bool   `json:"auto_approve"`
+	RunCommand  string `json:"run_command,omitempty"`  // e.g. "npm run dev" — gets $PORT
+	TestCommand string `json:"test_command,omitempty"` // e.g. "go test ./..."
+	// DeployCommand deploys, e.g. "./deploy.sh" or "adb install …". It is
+	// a bash script and may span several lines.
+	DeployCommand string `json:"deploy_command,omitempty"`
+	// DeployRunsOn are, on a hub, the runner labels (see labels.go) the
+	// deploy command runs on: of the runners that work on the project
+	// (RunsOn), only those that have every one of them deploy it. Empty:
+	// any of them. A deploy with no such runner online fails; it never
+	// runs elsewhere. See DeploysOn.
+	DeployRunsOn []string `json:"deploy_runs_on,omitempty"`
 	// PreviewKind is how a task in review is previewed: PreviewWeb ("" too)
 	// runs RunCommand and proxies its port; PreviewTerminal opens a terminal
 	// in the task's worktree (for CLI tools, which open no port), running

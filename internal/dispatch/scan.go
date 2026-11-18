@@ -172,7 +172,7 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 		MergeMode: p.MergeMode, MergeModeSet: p.MergeModeSet, TaskInstructions: p.TaskInstructions,
 		AutoApprove: &p.AutoApprove, MaxAutoFixes: &p.MaxAutoFixes,
 		SetupCommand: p.SetupCommand, TestCommand: p.TestCommand, RunCommand: p.RunCommand, DeployCommand: p.DeployCommand,
-		PreviewKind: p.PreviewKind, PreviewCommand: p.PreviewCommand}
+		DeployRunsOn: p.DeployRunsOn, PreviewKind: p.PreviewKind, PreviewCommand: p.PreviewCommand}
 	if d.Store != nil {
 		if o, err := d.Store.Accounts().Org(p.OrgID); err == nil {
 			link.OrgFolder = o.ProjectFolder()
@@ -210,9 +210,17 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 	return out, nil
 }
 
+// DeployElsewhere is why runner r doesn't run p's deploy command: it
+// lacks labels p deploys on (model.Project.DeployRunsOn).
+func DeployElsewhere(p model.Project, r tunnel.Runner) string {
+	return fmt.Sprintf("this project deploys only on runners with the labels %s, and runner %s lacks %s (Project settings → General → Deploy runs on)",
+		strings.Join(p.DeployRunsOn, ", "), r.Name, strings.Join(model.MissingLabels(r.AllLabels(), p.DeployRunsOn), ", "))
+}
+
 // HeldCommands are p's commands runner r must not run, by kind, each with
 // why (nil: none): set by a member who is neither an org admin nor r's
-// owner, on a runner that doesn't take other members' work. Commands run
+// owner, on a runner that doesn't take other members' work, or p's deploy
+// command on a runner without the labels it deploys on (DeployElsewhere). Commands run
 // as r's owner, on their computer, and could run claude on their login.
 func HeldCommands(p model.Project, r tunnel.Runner) map[string]string {
 	shared, _ := r.TakesOthers()
@@ -235,6 +243,12 @@ func HeldCommands(p model.Project, r tunnel.Runner) map[string]string {
 		}
 		held[kind] = fmt.Sprintf("the project's %s command was last changed by %s, who is neither an org admin nor the owner of runner %s, "+
 			"so it doesn't run there: an org admin or %s must save it again (Project settings → General) to approve it", kind, who, r.Name, owner)
+	}
+	if _, ok := held[model.CmdDeploy]; !ok && p.DeployCommand != "" && !p.DeploysOn(r.AllLabels()) {
+		if held == nil {
+			held = map[string]string{}
+		}
+		held[model.CmdDeploy] = DeployElsewhere(p, r)
 	}
 	return held
 }

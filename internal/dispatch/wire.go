@@ -81,6 +81,10 @@ type Link struct {
 	TestCommand   string `json:"test_command,omitempty"`
 	RunCommand    string `json:"run_command,omitempty"`
 	DeployCommand string `json:"deploy_command,omitempty"`
+	// DeployRunsOn are the hub project's model.Project.DeployRunsOn: the
+	// runner labels its deploy command runs on. A runner without them gets
+	// the deploy command held (Held), so it refuses to deploy even if asked.
+	DeployRunsOn []string `json:"deploy_runs_on,omitempty"`
 	// The hub project's preview settings (model.Project.PreviewKind and
 	// PreviewCommand), taken like its commands: a terminal preview is a shell.
 	PreviewKind    string `json:"preview_kind,omitempty"`
