@@ -654,11 +654,22 @@ var fileTools = []string{"Read", "Grep", "Glob"}
 // pathRule is a permission rule for tool on the absolute path p and, with
 // tree, everything below it ("//" marks an absolute path).
 func pathRule(tool, p string, tree bool) string {
-	r := tool + "(//" + strings.TrimPrefix(filepath.ToSlash(p), "/")
+	r := tool + "(/" + rulePath(p)
 	if tree {
 		r += "/**"
 	}
 	return r + ")"
+}
+
+// rulePath is the absolute path p in the POSIX form Claude Code matches
+// permission rules against: forward slashes, and on Windows the drive as a
+// lower-case first segment (C:\Users\a becomes /c/Users/a).
+func rulePath(p string) string {
+	s := filepath.ToSlash(p)
+	if v := filepath.VolumeName(p); len(v) == 2 && v[1] == ':' {
+		s = "/" + strings.ToLower(v[:1]) + s[2:]
+	}
+	return "/" + strings.TrimPrefix(s, "/")
 }
 
 // Confine replaces the unscoped file tools (Read, Grep, Glob) in tools with

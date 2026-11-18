@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -274,7 +275,12 @@ func repoPath(p, root string) (string, error) {
 	if p == "" {
 		return "", nil
 	}
-	if filepath.IsAbs(p) {
+	// On Windows, "/repo/x.go" has no drive and is not IsAbs, but it is
+	// rooted all the same: take the drive from root.
+	if !filepath.IsAbs(p) && os.IsPathSeparator(p[0]) {
+		p = filepath.VolumeName(root) + p
+	}
+	if filepath.IsAbs(p) || os.IsPathSeparator(p[0]) {
 		if root == "" {
 			return "", fmt.Errorf("absolute path %q", p)
 		}

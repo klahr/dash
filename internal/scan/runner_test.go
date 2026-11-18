@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -506,6 +507,7 @@ func TestArgsNeverAsk(t *testing.T) {
 func TestArgsConfineFileTools(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 	data := filepath.Join(home, ".local", "share", "dash-runner")
 	root := filepath.Join(data, "scans")
 	dir := filepath.Join(root, "worktrees", "p", "run")
@@ -515,7 +517,7 @@ func TestArgsConfineFileTools(t *testing.T) {
 		if slices.Contains(strings.Split(allow, ","), tool) {
 			t.Errorf("unscoped %s in %q", tool, allow)
 		}
-		if want := tool + "(/" + filepath.ToSlash(dir) + "/**)"; !strings.Contains(allow, want) {
+		if want := tool + "(/" + rulePath(dir) + "/**)"; !strings.Contains(allow, want) {
 			t.Errorf("no %s in %q", want, allow)
 		}
 	}
@@ -525,11 +527,11 @@ func TestArgsConfineFileTools(t *testing.T) {
 	deny, _ := flagValue(args, "--disallowedTools")
 	for _, want := range []string{
 		"Edit,Write,NotebookEdit",
-		"Read(/" + filepath.ToSlash(filepath.Join(home, ".ssh")) + "/**)",
-		"Grep(/" + filepath.ToSlash(filepath.Join(home, ".config", "gh")) + "/**)",
-		"Glob(/" + filepath.ToSlash(filepath.Join(home, ".claude")) + "/**)",
-		"Read(/" + filepath.ToSlash(filepath.Join(data, "*.json")) + ")",
-		"Read(/" + filepath.ToSlash(filepath.Join(root, "logs")) + "/**)",
+		"Read(/" + rulePath(filepath.Join(home, ".ssh")) + "/**)",
+		"Grep(/" + rulePath(filepath.Join(home, ".config", "gh")) + "/**)",
+		"Glob(/" + rulePath(filepath.Join(home, ".claude")) + "/**)",
+		"Read(/" + rulePath(filepath.Join(data, "*.json")) + ")",
+		"Read(/" + rulePath(filepath.Join(root, "logs")) + "/**)",
 	} {
 		if !strings.Contains(deny, want) {
 			t.Errorf("no %s in %q", want, deny)
@@ -537,8 +539,28 @@ func TestArgsConfineFileTools(t *testing.T) {
 	}
 	// A deny rule beats an allow rule: nothing holding the checkout is denied whole.
 	for _, p := range []string{data, root, filepath.Join(root, "worktrees")} {
-		if strings.Contains(deny, "(/"+filepath.ToSlash(p)+"/**)") {
+		if strings.Contains(deny, "(/"+rulePath(p)+"/**)") {
 			t.Errorf("%s denied whole: %q", p, deny)
+		}
+	}
+}
+
+// Claude Code matches permission rules against POSIX paths, with a Windows
+// drive as /c.
+func TestRulePath(t *testing.T) {
+	t.Parallel()
+
+	if got := pathRule("Read", "/home/a/.ssh", true); runtime.GOOS != "windows" && got != "Read(//home/a/.ssh/**)" {
+		t.Errorf("pathRule = %q", got)
+	}
+	if runtime.GOOS == "windows" {
+		for p, want := range map[string]string{
+			`C:\Users\a\.ssh`: "/c/Users/a/.ssh",
+			`d:\w\repo`:       "/d/w/repo",
+		} {
+			if got := rulePath(p); got != want {
+				t.Errorf("rulePath(%q) = %q, want %q", p, got, want)
+			}
 		}
 	}
 }

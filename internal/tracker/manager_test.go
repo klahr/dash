@@ -108,6 +108,36 @@ func (e *env) connect(pid, backend, board string, creds map[string]string) {
 	if _, err := e.m.Apply(context.Background(), pid, cfg, tracker.SwitchOptions{Export: no(), Confirm: true}); err != nil {
 		e.t.Fatal(err)
 	}
+	e.afterSwitch(pid)
+}
+
+// afterSwitch waits until the clock has passed pid's switch, so a todo made
+// next counts as made after it (the wall clock is coarse on Windows).
+func (e *env) afterSwitch(pid string) {
+	e.t.Helper()
+	cfg, err := e.st.TrackerConfig(pid)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	after(cfg.SwitchedAt)
+}
+
+// after waits until the wall clock is past t, so the next change is
+// stamped later than one made at t.
+func after(t time.Time) {
+	for !time.Now().After(t) {
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// ref is the card todo id is linked to.
+func (e *env) ref(id string) string {
+	e.t.Helper()
+	td := e.get(id)
+	if td.ExternalRef == nil {
+		e.t.Fatalf("todo %q has no card", td.Title)
+	}
+	return td.ExternalRef.ID
 }
 
 func (e *env) sync(pid string) {
@@ -287,15 +317,16 @@ func TestConflictLastWriterWins(t *testing.T) {
 	e.connect(p.ID, "fake", "b1", nil)
 	td := e.todo(p.ID, "Base")
 	e.sync(p.ID)
-	card := e.get(td.ID).ExternalRef.ID
+	card := e.ref(td.ID)
 
 	// Dash first, the tracker later: the tracker's title wins. (The
 	// store's events are held back, so the engine sees both edits at once.)
 	e.f.hold(true)
-	if _, err := e.st.UpdateTodo(td.ID, func(x *model.Todo) error { x.Title = "Dash title"; return nil }); err != nil {
+	edited, err := e.st.UpdateTodo(td.ID, func(x *model.Todo) error { x.Title = "Dash title"; return nil })
+	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(2 * time.Millisecond)
+	after(edited.UpdatedAt)
 	fake.Edit("b1", card, func(it *tracker.Item) { it.Title = "Tracker title" })
 	e.f.hold(false)
 	e.sync(p.ID)
@@ -309,7 +340,8 @@ func TestConflictLastWriterWins(t *testing.T) {
 	// The tracker first, Dash later: Dash's wins, and only for that field.
 	e.f.hold(true)
 	fake.Edit("b1", card, func(it *tracker.Item) { it.Title = "Tracker again"; it.Description = "New body" })
-	time.Sleep(2 * time.Millisecond)
+	c, _ := fake.Card("b1", card)
+	after(c.UpdatedAt)
 	if _, err := e.st.UpdateTodo(td.ID, func(x *model.Todo) error { x.Title = "Dash again"; return nil }); err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +365,7 @@ func TestForbiddenMoveIsReverted(t *testing.T) {
 	e.setStatus(td.ID, model.StatusQueued)
 	e.setStatus(td.ID, model.StatusInProgress)
 	e.sync(p.ID)
-	card := e.get(td.ID).ExternalRef.ID
+	card := e.ref(td.ID)
 	if c, _ := fake.Card("b1", card); c.Column != "Doing" {
 		t.Fatalf("card in %q", c.Column)
 	}
@@ -381,7 +413,7 @@ func TestPromptWaitsWhileRunning(t *testing.T) {
 	e.setStatus(td.ID, model.StatusQueued)
 	e.setStatus(td.ID, model.StatusInProgress)
 	e.sync(p.ID)
-	card := e.get(td.ID).ExternalRef.ID
+	card := e.ref(td.ID)
 
 	fake.Edit("b1", card, func(it *tracker.Item) { it.Description = "Better instructions" })
 	e.sync(p.ID)
@@ -422,7 +454,7 @@ func TestDependencies(t *testing.T) {
 	a := e.todo(p.ID, "A")
 	b := e.todo(p.ID, "B")
 	e.sync(p.ID)
-	ca, cb := e.get(a.ID).ExternalRef.ID, e.get(b.ID).ExternalRef.ID
+	ca, cb := e.ref(a.ID), e.ref(b.ID)
 	if _, err := e.st.UpdateTodo(b.ID, func(x *model.Todo) error { x.DependsOn = []string{a.ID}; return nil }); err != nil {
 		t.Fatal(err)
 	}
@@ -496,6 +528,7 @@ func TestSwitchWithoutExport(t *testing.T) {
 	if _, err := e.m.Apply(context.Background(), p.ID, boardCfg("fake", "b1"), tracker.SwitchOptions{Export: no()}); err != nil {
 		t.Fatal(err)
 	}
+	e.afterSwitch(p.ID)
 	fresh := e.todo(p.ID, "new")
 	e.sync(p.ID)
 	if e.get(old.ID).ExternalRef != nil {
