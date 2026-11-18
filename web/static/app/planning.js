@@ -404,9 +404,14 @@ const cardsOf = (ol) => $$(".pl-card:not(.pl-composer):not(.pl-slot)", ol).filte
 
 // placeSlot moves the gap to before ref in ol (nowhere, without ol); the
 // cards where it was and where it goes glide.
+// The gap and the dragged card (hidden) take no place of their own, so a ref
+// that is either of them means the node after it, and a gap already there
+// stays put: moving it would restart its fade-in and it would never show.
 function placeSlot(ol, ref = null) {
   const s = pl.drag.slot;
-  if (ol ? s.parentNode === ol && s.nextSibling === ref : !s.parentNode) return;
+  const skip = (n) => { while (n && (n === s || n === pl.drag.li)) n = n.nextSibling; return n; };
+  ref = skip(ref);
+  if (ol ? s.parentNode === ol && skip(s.nextSibling) === ref : !s.parentNode) return;
   const around = [s.parentNode, ol].filter(Boolean).flatMap((x) => [...x.children]).filter((el) => el !== s && el !== pl.drag.li);
   glide(around, () => ol ? ol.insertBefore(s, ref) : s.remove());
 }
@@ -436,6 +441,8 @@ function startDrag(x, y) {
   // The gap starts where the card was, as tall.
   const slot = h("li", { class: "pl-slot", "aria-hidden": "true" });
   slot.style.height = `${r.height}px`;
+  // It fades in once; moved later, it shows at once.
+  slot.addEventListener("animationend", () => slot.classList.add("placed"), { once: true });
   p.li.before(slot);
   p.li.classList.add("dragging");
   pl.drag = { id: p.id, li: p.li, ghost, slot, dx: p.x - r.left, dy: p.y - r.top };

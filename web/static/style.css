@@ -3287,6 +3287,7 @@ button.goal-task-open:hover { background: var(--raised); }
 /* The dragged card leaves its place to a gap where it would land (app/planning.js). */
 .pl-card.dragging { display: none; }
 .pl-slot { list-style: none; border-radius: var(--r-m); border: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 6%, transparent); animation: fade-in .15s var(--ease); }
+.pl-slot.placed { animation: none; }
 .pl-ghost { position: fixed; top: 0; left: 0; z-index: 60; list-style: none; pointer-events: none; box-shadow: var(--shadow-3); border-radius: var(--r-m); opacity: .95; }
 .pl-ghost .todo { background: var(--surface); }
 /* The drop line lies in the middle of the gap between two cards. */
