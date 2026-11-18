@@ -4,7 +4,7 @@ import { $, $$, dateTimeText, h, ib, ico, plural } from "./dom.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
 import { api, here, on } from "./api.js";
-import { ask, attempt, fail, toast } from "./dialogs.js";
+import { ask, attempt, fail, openSheet, toast } from "./dialogs.js";
 import { attachThumb, uploadFile } from "./attachments.js";
 import { saveComments, state } from "./state.js";
 import { baseBranch, multi, projectKey } from "./events.js";
@@ -295,17 +295,18 @@ async function copyShot() {
 // The "Copy this" fallback for a picture: shown big, to copy or save by hand.
 function copyThis(blob) {
   const url = URL.createObjectURL(blob);
-  const d = h("dialog", { class: "sheet small copy-sheet", "aria-label": "Copy this" },
-    h("form", { method: "dialog" },
-      h("header", { class: "sheet-head" }, h("h2", {}, "Copy this"), ib({ class: "icon-btn", value: "cancel", formnovalidate: true, "aria-label": "Close" }, "x")),
+  openSheet({
+    title: "Copy this", cls: "copy-sheet",
+    body: [
       h("img", { class: "copy-img", src: url, alt: "The picture from the preview" }),
       h("p", { class: "hint" }, "This browser can't put pictures on the clipboard here. Right-click or long-press the picture to copy or save it."),
-      h("footer", { class: "sheet-actions" },
-        h("a", { class: "btn", href: url, download: shotName(draw.meta?.path) }, ico("down"), "Download"),
-        ib({ class: "btn primary", value: "ok" }, "check", "Done"))));
-  d.addEventListener("close", () => { d.remove(); URL.revokeObjectURL(url); });
-  document.body.append(d);
-  d.showModal();
+    ],
+    footer: [
+      h("a", { class: "btn", href: url, download: shotName(draw.meta?.path) }, ico("down"), "Download"),
+      ib({ class: "btn primary", value: "ok" }, "check", "Done"),
+    ],
+    onClose: () => URL.revokeObjectURL(url),
+  });
 }
 
 // The rework box sits beside the preview (above the task's action bar): the
@@ -396,12 +397,11 @@ export function renderPreviewsBtn() {
 
 $("#previews-btn").addEventListener("click", () => {
   const body = h("div", { class: "pv-list" });
-  const d = h("dialog", { class: "sheet small previews-sheet", "aria-labelledby": "pv-list-title" },
-    h("form", { method: "dialog" },
-      h("header", { class: "sheet-head" }, h("h2", { id: "pv-list-title" }, "Running previews"), ib({ class: "icon-btn", value: "cancel", formnovalidate: true, "aria-label": "Close" }, "x")),
-      body,
-      h("footer", { class: "sheet-actions" },
-        ib({ class: "btn danger", type: "button", onclick: attempt(stopAllPreviews) }, "stop", "Stop all"))));
+  const { dialog: d } = openSheet({
+    title: "Running previews", cls: "previews-sheet", body: [body],
+    footer: ib({ class: "btn danger", type: "button", onclick: attempt(stopAllPreviews) }, "stop", "Stop all"),
+    onClose: () => { previewsSheet = null; },
+  });
   const projectFor = (p) => (state.projects || []).find((x) => x.id === p.project_id && x.machine === p.machine);
   const render = () => {
     const list = [...state.previews.values()].sort((a, b) => b.started_at.localeCompare(a.started_at));
@@ -425,10 +425,7 @@ $("#previews-btn").addEventListener("click", () => {
     }));
   };
   previewsSheet = { render };
-  d.addEventListener("close", () => { previewsSheet = null; d.remove(); });
   render();
-  document.body.append(d);
-  d.showModal();
 });
 
 async function stopAllPreviews() {

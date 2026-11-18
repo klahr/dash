@@ -1,6 +1,6 @@
 import { $, $$, avatar, dateTimeText, fill, h, ib, ico } from "./dom.js";
 import { api } from "./api.js";
-import { EASE, ask, attempt, busy, copy, fail, leave, reduceMotion, toast } from "./dialogs.js";
+import { EASE, ask, attempt, busy, copy, fail, leave, openSheet, reduceMotion, toast } from "./dialogs.js";
 import { changed, linkTo } from "./routes.js";
 import * as store from "./store.js";
 import { desktop } from "./viewport.js";
@@ -1192,22 +1192,9 @@ async function unlink(c, l) {
 // sheet shows a small dialog built from kids, with OK labelled ok; it
 // resolves to the form's data when OK is chosen (null when cancelled).
 function sheet(title, kids, ok, icon = "check") {
-  const form = h("form", { method: "dialog" },
-    h("header", { class: "sheet-head" }, h("h2", {}, title),
-      ib({ class: "icon-btn", value: "cancel", formnovalidate: true, "aria-label": "Close" }, "x")),
-    ...kids,
-    h("footer", { class: "sheet-actions" },
-      ok ? ib({ class: "btn primary", value: "ok" }, icon, ok) : null));
-  const d = h("dialog", { class: "sheet small pl-sheet" }, form);
-  document.body.append(d);
-  d.showModal();
-  return new Promise((resolve) => {
-    d.addEventListener("close", () => {
-      const data = d.returnValue === "ok" ? new FormData(form) : null;
-      d.remove();
-      resolve(data);
-    }, { once: true });
-  });
+  const { form, closed } = openSheet({ title, cls: "pl-sheet", body: kids,
+    footer: ok ? ib({ class: "btn primary", value: "ok" }, icon, ok) : null });
+  return closed.then((v) => (v === "ok" ? new FormData(form) : null));
 }
 
 // startSheet asks for the project and whether to make a task or a goal,

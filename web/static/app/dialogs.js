@@ -150,6 +150,31 @@ export function ask({ title, body = "", input = false, value = "", placeholder =
   });
 }
 
+// openSheet builds a sheet on the fly (a header with the title and a close
+// button, then body, then footer in .sheet-actions), shows it, and removes it
+// when it closes, after onClose(returnValue). cls adds classes; small: false
+// makes a wider sheet. closed resolves to the dialog's returnValue.
+let sheetSeq = 0;
+export function openSheet({ title, cls = "", small = true, body = [], footer = null, onClose = null }) {
+  const id = `sheet-title-${++sheetSeq}`;
+  const form = h("form", { method: "dialog" },
+    h("header", { class: "sheet-head" }, h("h2", { id }, title),
+      ib({ class: "icon-btn", value: "cancel", formnovalidate: true, "aria-label": "Close" }, "x")),
+    body,
+    footer ? h("footer", { class: "sheet-actions" }, footer) : null);
+  const dialog = h("dialog", { class: ["sheet", small ? "small" : "", cls].filter(Boolean).join(" "), "aria-labelledby": id }, form);
+  const closed = new Promise((resolve) => {
+    dialog.addEventListener("close", () => {
+      onClose?.(dialog.returnValue);
+      dialog.remove();
+      resolve(dialog.returnValue);
+    }, { once: true });
+  });
+  document.body.append(dialog);
+  dialog.showModal();
+  return { dialog, form, closed };
+}
+
 // railLayout wires a sheet's .rail-layout: its sections down a rail and the
 // chosen one beside them; on a narrow screen the rail is a strip across the
 // top. The chosen section stays while the sheet is open (a re-render or a

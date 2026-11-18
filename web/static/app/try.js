@@ -1,7 +1,7 @@
 import { $, $$, h, ib } from "./dom.js";
 import { desktop, wsURL } from "./viewport.js";
 import { api } from "./api.js";
-import { attempt, fail, toast } from "./dialogs.js";
+import { attempt, fail, openSheet, toast } from "./dialogs.js";
 import { state, tryState } from "./state.js";
 import { showView } from "./nav.js";
 import { setMenu } from "./projects.js";
@@ -237,12 +237,10 @@ async function openTryCommits() {
   const list = h("ul", { class: "try-commit-list", role: "listbox", "aria-label": "Commits" });
   const search = h("input", { type: "search", class: "try-commit-search", placeholder: "Search, or type a hash, tag or branch", "aria-label": "Search commits", autocomplete: "off", spellcheck: "false", autocapitalize: "off" });
   const note = h("p", { class: "hint try-commit-note" });
-  const d = h("dialog", { class: "sheet try-commits-sheet", "aria-label": "Pick a commit" },
-    h("form", { method: "dialog" },
-      h("div", { class: "sheet-head" }, h("h2", {}, "Try a commit"), ib({ class: "icon-btn", value: "cancel", "aria-label": "Close" }, "x")),
-      h("p", { class: "hint" }, `${branch} on ${tryState.runners.find((r) => r.id === runner)?.name || cur?.runner || "the runner"}`),
-      search, list, note));
-  d.addEventListener("close", () => d.remove());
+  const { dialog: d } = openSheet({
+    title: "Try a commit", cls: "try-commits-sheet", small: false,
+    body: [h("p", { class: "hint" }, `${branch} on ${tryState.runners.find((r) => r.id === runner)?.name || cur?.runner || "the runner"}`), search, list, note],
+  });
   let shown = [];
   const pick = (ref) => {
     d.close();
@@ -283,8 +281,6 @@ async function openTryCommits() {
     if (shown.length === 1 && q) pick(shown[0].sha);
     else if (q) pick(q);
   });
-  document.body.append(d);
-  d.showModal();
   list.replaceChildren(h("li", { class: "try-commit-loading" }, h("div", { class: "spinner", "aria-hidden": "true" })));
   if (desktop.matches) search.focus();
   await load("", true);

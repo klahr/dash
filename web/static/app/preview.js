@@ -2,7 +2,7 @@ import { $, $$, fill, h, ib, ico } from "./dom.js";
 import * as store from "./store.js";
 import { desktop, wsURL } from "./viewport.js";
 import { api, on } from "./api.js";
-import { attempt, copy, toast } from "./dialogs.js";
+import { attempt, copy, openSheet, toast } from "./dialogs.js";
 import { state } from "./state.js";
 import { renderBoard } from "./branches.js";
 import { openDetail, renderActions } from "./detail.js";
@@ -387,16 +387,15 @@ function reloadPreview() {
 }
 
 function openQR(url, prefix = "") {
-  const d = h("dialog", { class: "sheet small qr-sheet", "aria-label": "QR code" },
-    h("form", { method: "dialog" },
-      h("header", { class: "sheet-head" }, h("h2", {}, "Open on another device"), ib({ class: "icon-btn", value: "cancel", formnovalidate: true, "aria-label": "Close" }, "x")),
+  openSheet({
+    title: "Open on another device", cls: "qr-sheet",
+    body: [
       h("img", { class: "qr", src: on(prefix, `/api/qr?text=${encodeURIComponent(url)}`), width: 240, height: 240, alt: `QR code for ${url}` }),
       h("p", { class: "hint qr-url" }, url),
       h("p", { class: "hint" }, "That device signs in to Dash first if it isn't already."),
-      h("footer", { class: "sheet-actions" }, ib({ class: "btn primary", value: "ok" }, "check", "Done"))));
-  d.addEventListener("close", () => d.remove());
-  document.body.append(d);
-  d.showModal();
+    ],
+    footer: ib({ class: "btn primary", value: "ok" }, "check", "Done"),
+  });
 }
 
 $$(".pv-widths button").forEach((b) => b.addEventListener("click", () => {
