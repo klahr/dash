@@ -287,6 +287,84 @@ func TestSummaryPermissionsAndFilters(t *testing.T) {
 	}
 }
 
+// A summary lists the user's own tasks, and those no person is behind;
+// others' only if they chose every task. Builds aren't anyone's task.
+func TestSummaryTaskCreator(t *testing.T) {
+	e := summaryEnv(t)
+	acc := e.st.Accounts()
+	tok, _, err := acc.InviteWith(e.admin, e.org, "bo@example.com", store.RoleMember, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bo, _, err := acc.RegisterWithInvitation(tok, "bo", "long-enough-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := acc.RemoveMember(e.admin, e.org, bo.ID); err != nil {
+		t.Fatal(err)
+	}
+	set := e.daily(t, true)
+	if set.Tasks != model.TasksMine {
+		t.Fatalf("default tasks %q", set.Tasks)
+	}
+	at := e.clock.Now().Add(-time.Minute)
+	for i, a := range []model.Activity{
+		{ProjectID: e.shop.ID, Kind: model.SummaryReview, Ref: "t1", Title: "Ana's task", Creator: e.user},
+		{ProjectID: e.shop.ID, Kind: model.SummaryFailed, Ref: "t2", Title: "Admin's task", Creator: e.admin},
+		{ProjectID: e.shop.ID, Kind: model.SummaryMerged, Ref: "t3", Title: "Dash's task"},
+		{ProjectID: e.shop.ID, Kind: model.SummaryReview, Ref: "t4", Title: "Bo's task", Creator: bo.ID},
+		{ProjectID: e.shop.ID, Kind: model.SummaryBuild, Ref: "abc", Title: "Build failing on main"},
+	} {
+		a.At = at.Add(time.Duration(i) * time.Second)
+		e.activity(t, a)
+	}
+	titles := func(set model.NotifySettings) string {
+		t.Helper()
+		sum, _, member, err := e.sum.build(e.user, e.org, set, at.Add(-time.Hour), e.clock.Now())
+		if err != nil || !member {
+			t.Fatal(member, err)
+		}
+		var out []string
+		for _, p := range sum.Projects {
+			for _, it := range p.Items {
+				out = append(out, it.Title)
+			}
+		}
+		return strings.Join(out, " | ")
+	}
+	if got, want := titles(set), "Ana's task | Bo's task | Dash's task | Build failing on main"; got != want {
+		t.Errorf("tasks I created\n got %s\nwant %s", got, want)
+	}
+	set.Tasks = model.TasksAll
+	if got, want := titles(set), "Ana's task | Bo's task | Admin's task | Dash's task | Build failing on main"; got != want {
+		t.Errorf("all tasks\n got %s\nwant %s", got, want)
+	}
+
+	// The notifier records who created a task.
+	td, err := e.st.CreateQueuedTodo(model.Todo{ProjectID: e.shop.ID, Title: "Admin's other task", CreatedBy: e.admin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	settle(e.n)
+	if _, err := e.st.UpdateTodo(td.ID, func(x *model.Todo) error { x.Status = model.StatusReview; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	settle(e.n)
+	acts, err := e.st.ListActivity([]string{e.shop.ID}, at, e.clock.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, a := range acts {
+		if a.Ref == td.ID {
+			found = a.Creator == e.admin && a.Kind == model.SummaryReview
+		}
+	}
+	if !found {
+		t.Fatalf("activity %+v", acts)
+	}
+}
+
 // One destination failing doesn't keep the summary from the others; the
 // failure shows in that webhook's history.
 func TestSummaryOneDestinationFails(t *testing.T) {

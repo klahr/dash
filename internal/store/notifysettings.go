@@ -152,22 +152,33 @@ func (s *Store) MarkSummarySent(user, org int64, at time.Time) error {
 	return err
 }
 
-// PushEventsFor returns the events user wants pushed in org: theirs, or
-// model.DefaultPush if they haven't chosen.
-func (s *Store) PushEventsFor(user, org int64) ([]model.NotifyEvent, error) {
+// PushSettingsFor returns user's settings in org as a push needs them
+// (which events, whose tasks): theirs, or the defaults if they haven't
+// saved any.
+func (s *Store) PushSettingsFor(user, org int64) (model.NotifySettings, error) {
+	set := model.DefaultNotifySettings()
 	var raw string
 	err := s.db.QueryRow("SELECT settings FROM notify_settings WHERE user_id = ? AND org_id = ?", user, org).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
-		return slices.Clone(model.DefaultPush), nil
+		return set, nil
 	}
 	if err != nil {
-		return nil, err
+		return set, err
 	}
-	set := model.DefaultNotifySettings()
 	if err := json.Unmarshal([]byte(raw), &set); err != nil {
-		return slices.Clone(model.DefaultPush), nil
+		return model.DefaultNotifySettings(), nil
 	}
-	return set.Push, nil
+	return set, nil
+}
+
+// IsOrgMember reports whether user is a member of org.
+func (s *Store) IsOrgMember(user, org int64) (bool, error) {
+	var one int
+	err := s.db.QueryRow("SELECT 1 FROM org_memberships WHERE user_id = ? AND org_id = ?", user, org).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // dropSummaryWebhook removes webhook id from its owner's summary
@@ -202,8 +213,8 @@ func (s *Store) RecordActivity(a model.Activity) error {
 	if a.At.IsZero() {
 		a.At = time.Now()
 	}
-	_, err := s.db.Exec("INSERT INTO notify_activity (project_id, at, kind, ref, title, url, severity, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-		a.ProjectID, a.At.Unix(), a.Kind, a.Ref, clip(a.Title, 300), clip(a.URL, 2000), string(a.Severity), a.User)
+	_, err := s.db.Exec("INSERT INTO notify_activity (project_id, at, kind, ref, title, url, severity, user_id, creator) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		a.ProjectID, a.At.Unix(), a.Kind, a.Ref, clip(a.Title, 300), clip(a.URL, 2000), string(a.Severity), a.User, a.Creator)
 	return err
 }
 
@@ -214,7 +225,7 @@ func (s *Store) ListActivity(projects []string, from, to time.Time) ([]model.Act
 	if len(projects) == 0 {
 		return out, nil
 	}
-	rows, err := s.db.Query("SELECT id, project_id, at, kind, ref, title, url, severity, user_id FROM notify_activity WHERE at > ? AND at <= ? ORDER BY at, id",
+	rows, err := s.db.Query("SELECT id, project_id, at, kind, ref, title, url, severity, user_id, creator FROM notify_activity WHERE at > ? AND at <= ? ORDER BY at, id",
 		from.Unix(), to.Unix())
 	if err != nil {
 		return nil, err
@@ -224,7 +235,7 @@ func (s *Store) ListActivity(projects []string, from, to time.Time) ([]model.Act
 		var a model.Activity
 		var at int64
 		var sev string
-		if err := rows.Scan(&a.ID, &a.ProjectID, &at, &a.Kind, &a.Ref, &a.Title, &a.URL, &sev, &a.User); err != nil {
+		if err := rows.Scan(&a.ID, &a.ProjectID, &at, &a.Kind, &a.Ref, &a.Title, &a.URL, &sev, &a.User, &a.Creator); err != nil {
 			return nil, err
 		}
 		if !slices.Contains(projects, a.ProjectID) {

@@ -1371,6 +1371,13 @@
             <form id="notify-form" class="notify-form" novalidate>
               <p class="hint" id="notify-intro">Kept for you in this organization, on every device.</p>
               <p class="hint err-text" id="notify-off" hidden></p>
+              <h3 class="section-head">Tasks</h3>
+              <p class="hint">Whose tasks you hear about when one is ready for review, failed, merged or waits for your approval, by push and in the summary. Tasks Dash made, or whose creator is gone, reach everyone.</p>
+              <fieldset class="field choice">
+                <legend class="sr-only">Tasks</legend>
+                <label class="radio"><input type="radio" name="tasks" value="mine"><span>Tasks I created</span></label>
+                <label class="radio"><input type="radio" name="tasks" value="all"><span>All tasks <em>everyone's on the board</em></span></label>
+              </fieldset>
               <h3 class="section-head">Summary</h3>
               <p class="hint">What happened since the last summary, in one message. Nothing to report sends nothing.</p>
               <fieldset class="field choice notify-freq">

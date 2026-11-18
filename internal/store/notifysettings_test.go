@@ -38,8 +38,8 @@ func TestNotifySettingsRoundTrip(t *testing.T) {
 	if err != nil || set.On() || !st.NextAt.IsZero() || !slices.Equal(set.Push, model.DefaultPush) {
 		t.Fatalf("defaults %+v %+v %v", set, st, err)
 	}
-	if evs, _ := s.PushEventsFor(u.ID, def.ID); !slices.Equal(evs, model.DefaultPush) {
-		t.Fatalf("default pushes %v", evs)
+	if got, _ := s.PushSettingsFor(u.ID, def.ID); !slices.Equal(got.Push, model.DefaultPush) || got.Tasks != model.TasksMine {
+		t.Fatalf("default pushes %v", got)
 	}
 
 	now := time.Date(2026, 11, 17, 10, 0, 0, 0, time.UTC)
@@ -77,8 +77,8 @@ func TestNotifySettingsRoundTrip(t *testing.T) {
 		t.Fatalf("reopened %+v %v", st2, err)
 	}
 	sameJSON(t, "settings", got, saved)
-	if evs, _ := s.PushEventsFor(u.ID, def.ID); !slices.Equal(evs, set.Push) {
-		t.Fatalf("pushes %v", evs)
+	if got, _ := s.PushSettingsFor(u.ID, def.ID); !slices.Equal(got.Push, set.Push) {
+		t.Fatalf("pushes %v", got)
 	}
 	// The other org keeps its own (default) settings.
 	if o, _, _ := s.NotifySettings(u.ID, other.ID); o.On() {

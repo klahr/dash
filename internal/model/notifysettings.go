@@ -86,6 +86,34 @@ type NotifySettings struct {
 	Include  SummaryInclude `json:"include"`
 	// Push are the events pushed to the user's browsers.
 	Push []NotifyEvent `json:"push"`
+	// Tasks is whose task events (ready for review, failed, merged,
+	// waiting for approval) reach the user, by push and in the summary:
+	// TasksMine or TasksAll. Tasks no person is behind (made by Dash, or
+	// by an account that is gone or left the org) reach everyone.
+	Tasks string `json:"tasks"`
+}
+
+// Whose task events reach a user (NotifySettings.Tasks).
+const (
+	TasksMine = "mine" // the tasks they created
+	TasksAll  = "all"  // every task
+)
+
+// TaskEvent reports whether ev is about one task, and so goes to its
+// creator only for users who chose TasksMine.
+func TaskEvent(ev NotifyEvent) bool {
+	switch ev {
+	case NotifyReview, NotifyFailed, NotifyMerged, NotifyPermission:
+		return true
+	}
+	return false
+}
+
+// WantsTask reports whether a user with these settings hears of an event
+// about a task created by creator; creator is 0 for a task nobody in the
+// org is behind (made by Dash, or by an account that is gone or left).
+func (s NotifySettings) WantsTask(user, creator int64) bool {
+	return creator <= 0 || s.Tasks == TasksAll || creator == user
 }
 
 // PushChoices are the events a user may have pushed to their browsers.
@@ -103,6 +131,7 @@ func DefaultNotifySettings() NotifySettings {
 		AllProjects: true, Projects: []string{}, Email: true, Webhooks: []string{},
 		Include: SummaryInclude{Issues: true, MinSeverity: SevMedium, Review: true, Failed: true, Merged: true, Goals: true, Builds: true},
 		Push:    slices.Clone(DefaultPush),
+		Tasks:   TasksMine,
 	}
 }
 
@@ -226,6 +255,13 @@ func (s *NotifySettings) Normalize() error {
 		push = []NotifyEvent{}
 	}
 	s.Push = push
+	switch s.Tasks = strings.TrimSpace(s.Tasks); s.Tasks {
+	case "":
+		s.Tasks = TasksMine
+	case TasksMine, TasksAll:
+	default:
+		return fmt.Errorf("tasks must be mine or all, not %q", s.Tasks)
+	}
 	if s.On() {
 		if !s.Email && len(s.Webhooks) == 0 {
 			return errors.New("choose where the summary goes: email or a webhook")
@@ -261,6 +297,9 @@ type Activity struct {
 	Severity  Severity  `json:"severity,omitempty"`
 	// User is who a goal's item is for (its owner); 0 = everyone.
 	User int64 `json:"user,omitempty"`
+	// Creator is who created a task's item (0: Dash, or someone whose
+	// account is gone); users who chose TasksMine only see their own.
+	Creator int64 `json:"creator,omitempty"`
 }
 
 // NotifyState is where a user's summary stands: when it goes out next,

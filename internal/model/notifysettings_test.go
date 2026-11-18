@@ -86,7 +86,7 @@ func TestNotifySettingsNormalize(t *testing.T) {
 	if err := s.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	if len(s.Projects) != 1 || s.Projects[0] != "a" || len(s.Push) != 1 || s.Include.MinSeverity != SevMedium || s.Webhooks == nil {
+	if len(s.Projects) != 1 || s.Projects[0] != "a" || len(s.Push) != 1 || s.Include.MinSeverity != SevMedium || s.Webhooks == nil || s.Tasks != TasksMine {
 		t.Fatalf("normalized %+v", s)
 	}
 	for name, bad := range map[string]NotifySettings{
@@ -98,6 +98,7 @@ func TestNotifySettingsNormalize(t *testing.T) {
 		"local zone":     {TimeZone: "Local"},
 		"weekday":        {Weekday: 7},
 		"push":           {Push: []NotifyEvent{NotifyBehind}},
+		"tasks":          {Tasks: "theirs"},
 		"severity":       {Include: SummaryInclude{MinSeverity: "dire"}},
 		"no destination": {Summary: SummaryDaily, AllProjects: true},
 		"no projects":    {Summary: SummaryDaily, Email: true},
@@ -110,5 +111,14 @@ func TestNotifySettingsNormalize(t *testing.T) {
 	if !in.Wants(SummaryIssue, SevCritical) || !in.Wants(SummaryIssue, SevHigh) || in.Wants(SummaryIssue, SevMedium) ||
 		!in.Wants(SummaryReview, "") || in.Wants(SummaryFailed, "") {
 		t.Fatal("include")
+	}
+	// Whose tasks: a creator of 0 (Dash) or below (a deleted account) is
+	// nobody's, so everyone's.
+	mine, all := NotifySettings{Tasks: TasksMine}, NotifySettings{Tasks: TasksAll}
+	if !mine.WantsTask(5, 5) || mine.WantsTask(5, 6) || !mine.WantsTask(5, 0) || !mine.WantsTask(5, DeletedUser) || !all.WantsTask(5, 6) {
+		t.Fatal("WantsTask")
+	}
+	if !TaskEvent(NotifyReview) || !TaskEvent(NotifyPermission) || TaskEvent(NotifyBuild) || TaskEvent(NotifyDisk) || TaskEvent(NotifyGoal) {
+		t.Fatal("TaskEvent")
 	}
 }

@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klahr/dash/internal/ci"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/perm"
 )
@@ -281,18 +282,27 @@ func TestPushRefusesPlainHTTP(t *testing.T) {
 	}
 }
 
-// prefStore is a pushStore whose users chose which events push to them.
+// prefStore is a pushStore whose users chose which events push to them,
+// and whose tasks.
 type prefStore struct {
 	*pushStore
 	prefs map[int64][]model.NotifyEvent
+	tasks map[int64]string // model.TasksAll or TasksMine (the default)
+	gone  map[int64]bool   // no longer in the org
 }
 
-func (p prefStore) PushEventsFor(user, _ int64) ([]model.NotifyEvent, error) {
+func (p prefStore) PushSettingsFor(user, _ int64) (model.NotifySettings, error) {
+	set := model.DefaultNotifySettings()
 	if evs, ok := p.prefs[user]; ok {
-		return evs, nil
+		set.Push = evs
 	}
-	return model.DefaultPush, nil
+	if t, ok := p.tasks[user]; ok {
+		set.Tasks = t
+	}
+	return set, nil
 }
+
+func (p prefStore) IsOrgMember(user, _ int64) (bool, error) { return !p.gone[user], nil }
 
 // Each user gets the pushes they chose: the defaults (no new issues) until
 // they choose.
@@ -314,7 +324,7 @@ func TestPushPerUserChoice(t *testing.T) {
 	vapid, _ := ParseVAPIDKey(key)
 	def, picky := b.sub(srv.URL+"/default"), b.sub(srv.URL+"/picky")
 	picky.ID, picky.UserID = "ps2", 8
-	ps := prefStore{&pushStore{subs: []model.PushSubscription{def, picky}}, map[int64][]model.NotifyEvent{8: {model.NotifyFailed, model.NotifyIssue}}}
+	ps := prefStore{pushStore: &pushStore{subs: []model.PushSubscription{def, picky}}, prefs: map[int64][]model.NotifyEvent{8: {model.NotifyFailed, model.NotifyIssue}}}
 	n, fs, _ := setup(t)
 	n.Push, n.VAPID, n.client = ps, vapid, srv.Client()
 
@@ -331,5 +341,95 @@ func TestPushPerUserChoice(t *testing.T) {
 		if s := fmt.Sprint(evs); s != "["+want+"]" {
 			t.Errorf("%s got %s, want [%s]", path, s, want)
 		}
+	}
+}
+
+// A task's events push to its creator, and to those who chose every task;
+// a task no person is behind pushes to everyone; org-wide events, such as
+// a failing build, go to everyone whatever they chose.
+func TestPushTaskCreator(t *testing.T) {
+	b := newBrowser(t)
+	var mu sync.Mutex
+	got := map[string][]model.NotifyEvent{} // endpoint path → pushed events
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var p PushPayload
+		_ = json.Unmarshal(b.decrypt(t, body), &p)
+		mu.Lock()
+		got[r.URL.Path] = append(got[r.URL.Path], p.Type)
+		mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	key, _ := NewVAPIDPrivateKey()
+	vapid, _ := ParseVAPIDKey(key)
+	const creator, teammate, watcher, left = 5, 6, 7, 9
+	var subs []model.PushSubscription
+	for _, u := range []int64{creator, teammate, watcher} {
+		s := b.sub(fmt.Sprintf("%s/u%d", srv.URL, u))
+		s.ID, s.UserID = fmt.Sprintf("ps%d", u), u
+		subs = append(subs, s)
+	}
+	ps := prefStore{pushStore: &pushStore{subs: subs},
+		tasks: map[int64]string{watcher: model.TasksAll}, gone: map[int64]bool{left: true}}
+	n, fs, _ := setup(t)
+	n.Push, n.VAPID, n.client = ps, vapid, srv.Client()
+
+	// step runs do, then answers who got which pushes: "u5:task.review …".
+	step := func(do func()) string {
+		mu.Lock()
+		clear(got)
+		mu.Unlock()
+		do()
+		settle(n)
+		mu.Lock()
+		defer mu.Unlock()
+		var out []string
+		for _, u := range []int64{creator, teammate, watcher} {
+			for _, ev := range got[fmt.Sprintf("/u%d", u)] {
+				out = append(out, fmt.Sprintf("u%d:%s", u, ev))
+			}
+		}
+		return strings.Join(out, " ")
+	}
+	createdBy := func(u int64) {
+		td, _ := fs.GetTodo("t1")
+		td.CreatedBy = u
+		fs.setTodo(td)
+	}
+
+	createdBy(creator)
+	if s := step(func() { status(fs, n, model.StatusReview, "") }); s != "u5:task.review u7:task.review" {
+		t.Errorf("creator's task ready: %s", s)
+	}
+	if s := step(func() {
+		n.Observe(model.Event{Type: model.EvPermission, ProjectID: "p1", Data: perm.Request{ID: "r1", TodoID: "t1", Tool: "Bash"}})
+	}); s != "u5:permission.needed u7:permission.needed" {
+		t.Errorf("creator's task waits for approval: %s", s)
+	}
+	// Made by Dash (an issue, an automation): everyone.
+	createdBy(0)
+	if s := step(func() { status(fs, n, model.StatusFailed, "boom") }); s != "u5:task.failed u6:task.failed u7:task.failed" {
+		t.Errorf("Dash's task failed: %s", s)
+	}
+	// Its creator's account was deleted: everyone.
+	createdBy(model.DeletedUser)
+	if s := step(func() { status(fs, n, model.StatusReview, "") }); s != "u5:task.review u6:task.review u7:task.review" {
+		t.Errorf("deleted creator's task ready: %s", s)
+	}
+	// Its creator left the org: everyone.
+	createdBy(left)
+	if s := step(func() { status(fs, n, model.StatusFailed, "boom") }); s != "u5:task.failed u6:task.failed u7:task.failed" {
+		t.Errorf("departed creator's task failed: %s", s)
+	}
+	// A failing build is the org's, even while Claude investigates in a
+	// task someone created.
+	createdBy(creator)
+	failing := ci.Status{ProjectID: "p1", Branch: "main", State: "failing", TodoID: "t1"}
+	if s := step(func() {
+		n.Observe(model.Event{Type: model.EvCI, ProjectID: "p1", Data: ci.Status{ProjectID: "p1", Branch: "main", State: "passing"}})
+		n.Observe(model.Event{Type: model.EvCI, ProjectID: "p1", Data: failing})
+	}); s != "u5:build.failing u6:build.failing u7:build.failing" {
+		t.Errorf("build failing: %s", s)
 	}
 }

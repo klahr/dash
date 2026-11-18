@@ -35,6 +35,11 @@ type Notification struct {
 	Summary *Summary `json:"summary,omitempty"`
 	// Message is a one-line human summary (the error of a failed task, …).
 	Message string `json:"message,omitempty"`
+
+	// creator is who created Task (its CreatedBy: 0 for Dash, or
+	// model.DeletedUser). Task events reach them, and the users who chose
+	// to hear of every task (model.NotifySettings.Tasks); it isn't sent.
+	creator int64
 }
 
 type ProjectRef struct {

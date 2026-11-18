@@ -18,7 +18,7 @@ export const notifyOn = () => store.flag("dash.notify");
 // (Account → Notifications).
 export function notify(what, t, detail = "", pushed = false, kind = "") {
   if (!notifyOn() || !("Notification" in window) || Notification.permission !== "granted") return;
-  if (!wanted(kind)) return;
+  if (!wanted(kind) || othersTask(kind, t)) return;
   if (document.visibilityState === "visible" && document.hasFocus()) return; // the page already shows it
   if (pushed && state.pushOn) return;
   const n = new Notification(`${what}: ${title(t)}`, { body: detail || "", tag: `dash-${t.id}`, silent: false });
@@ -44,11 +44,22 @@ export function notifyGoal(what, g, detail = "", p = null) {
 // The events the user wants pushed (Account → Notifications); null until
 // known, or on an older hub: all of them.
 function wanted(kind) { return !kind || !state.pushEvents || state.pushEvents.has(kind); }
+// othersTask reports whether t's event is about another member's task
+// while the user hears of their own only (Account → Notifications → Tasks).
+// Tasks Dash made (created_by 0) or whose creator's account is gone (-1)
+// are everyone's.
+const TASK_EVENTS = new Set(["task.review", "task.failed", "task.merged", "permission.needed"]);
+function othersTask(kind, t) {
+  if (!TASK_EVENTS.has(kind) || state.pushTasks !== "mine") return false;
+  const by = t?.created_by || 0;
+  return by > 0 && by !== state.me?.user?.id;
+}
 async function loadPushEvents() {
   try {
     const v = await api("GET", "/api/me/notifications", null, "");
     state.pushEvents = new Set(v.settings.push);
-  } catch { state.pushEvents = null; }
+    state.pushTasks = v.settings.tasks || null;
+  } catch { state.pushEvents = state.pushTasks = null; }
 }
 export async function toggleNotifications() {
   if (!("Notification" in window)) throw new Error("This browser doesn't support notifications.");

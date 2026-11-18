@@ -378,9 +378,23 @@ func (s *Summaries) build(user, org int64, set model.NotifySettings, from, to ti
 	// is two items, the same task ready for review twice is one.
 	type key struct{ project, kind, ref string }
 	latest := map[key]model.Activity{}
+	inOrg := map[int64]bool{user: true} // task creators: still in org?
 	for _, a := range acts {
 		if !set.Include.Wants(a.Kind, a.Severity) || (a.User != 0 && a.User != user) {
 			continue
+		}
+		if a.Creator > 0 && !set.WantsTask(user, a.Creator) {
+			in, known := inOrg[a.Creator]
+			if !known {
+				_, _, member, err := s.Store.SummaryRecipient(a.Creator, org)
+				if err != nil {
+					return sum, email, true, err
+				}
+				in, inOrg[a.Creator] = member, member
+			}
+			if in {
+				continue // someone else's task, and its creator answers for it
+			}
 		}
 		latest[key{a.ProjectID, a.Kind, a.Ref}] = a
 	}

@@ -372,7 +372,7 @@ func (n *Notifier) record(note Notification, user int64) {
 			return
 		}
 		a.Kind = map[model.NotifyEvent]string{model.NotifyReview: model.SummaryReview, model.NotifyFailed: model.SummaryFailed, model.NotifyMerged: model.SummaryMerged}[note.Type]
-		a.Ref, a.Title, a.URL = note.Task.ID, note.Task.Title, note.Task.URL
+		a.Ref, a.Title, a.URL, a.Creator = note.Task.ID, note.Task.Title, note.Task.URL, max(note.creator, 0)
 	case model.NotifyGoal:
 		if note.Goal == nil || note.Goal.Status != model.GoalWaiting {
 			return
@@ -531,6 +531,7 @@ func (n *Notifier) build(kind model.NotifyEvent, projectID, todoID string) (Noti
 		if t, err := n.Store.GetTodo(todoID); err == nil {
 			projectID = t.ProjectID
 			note.Task = &TaskRef{ID: t.ID, Title: TaskTitle(t), Status: t.Status, URL: n.taskURL(t.ProjectID, t.ID)}
+			note.creator = t.CreatedBy
 		}
 	}
 	if projectID == "" {

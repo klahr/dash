@@ -50,28 +50,57 @@ type PushStore interface {
 	RecordPushDelivery(id string, at time.Time, errMsg string) error
 }
 
-// pushPrefs is a PushStore that knows which events each user wants pushed
-// (without it, everyone gets model.DefaultPush).
+// pushPrefs is a PushStore that knows each user's notification settings
+// (which events they want pushed, whose tasks) and who is in an org.
+// Without it, everyone gets model.DefaultNotifySettings, and a task's
+// creator is taken to be in its org.
 type pushPrefs interface {
-	PushEventsFor(user, org int64) ([]model.NotifyEvent, error)
+	PushSettingsFor(user, org int64) (model.NotifySettings, error)
+	IsOrgMember(user, org int64) (bool, error)
 }
 
-// wantsPush reports whether user wants ev pushed in org. want caches the
-// answers for one notification.
-func (n *Notifier) wantsPush(want map[int64][]model.NotifyEvent, user, org int64, ev model.NotifyEvent) bool {
-	evs, ok := want[user]
+// wantsPush reports whether user wants note pushed in org: its event, and
+// for a task event, its task (creator is who answers for it, 0: nobody,
+// see pushCreator). want caches the settings for one notification.
+func (n *Notifier) wantsPush(want map[int64]model.NotifySettings, user, org int64, note Notification, creator int64) bool {
+	set, ok := want[user]
 	if !ok {
-		evs = model.DefaultPush
+		set = model.DefaultNotifySettings()
 		if pp, isPP := n.Push.(pushPrefs); isPP {
 			var err error
-			if evs, err = pp.PushEventsFor(user, org); err != nil {
+			if set, err = pp.PushSettingsFor(user, org); err != nil {
 				slog.Error("notifications: push settings", "user", user, "err", err)
-				evs = model.DefaultPush
+				set = model.DefaultNotifySettings()
 			}
 		}
-		want[user] = evs
+		want[user] = set
 	}
-	return slices.Contains(evs, ev)
+	if !slices.Contains(set.Push, note.Type) {
+		return false
+	}
+	return !model.TaskEvent(note.Type) || set.WantsTask(user, creator)
+}
+
+// pushCreator is who answers for note's task in org: its creator, or 0
+// when no person does (made by Dash, by an account since deleted, or by
+// someone no longer in org), so that it reaches everyone who wants it.
+func (n *Notifier) pushCreator(note Notification, org int64) int64 {
+	if !model.TaskEvent(note.Type) || note.creator <= 0 {
+		return 0
+	}
+	pp, ok := n.Push.(pushPrefs)
+	if !ok {
+		return note.creator
+	}
+	member, err := pp.IsOrgMember(note.creator, org)
+	if err != nil {
+		slog.Error("notifications: task creator's membership", "user", note.creator, "org", org, "err", err)
+		return 0 // better everyone than no one
+	}
+	if !member {
+		return 0
+	}
+	return note.creator
 }
 
 // ErrPushGone is what a push to a subscription the browser dropped (404,
@@ -382,7 +411,8 @@ func (n *Notifier) push(ctx context.Context, note Notification) {
 	n.pushOrg(ctx, note, org)
 }
 
-// pushOrg pushes note to the browsers of org's members.
+// pushOrg pushes note to the browsers of org's members who want it: a
+// task event to its task's creator, and to those who chose every task.
 func (n *Notifier) pushOrg(ctx context.Context, note Notification, org int64) {
 	if !n.PushEnabled() || !slices.Contains(PushEvents, note.Type) || org == 0 {
 		return
@@ -412,9 +442,10 @@ func (n *Notifier) pushOrg(ctx context.Context, note Notification, org int64) {
 		return
 	}
 	urgent := looks[note.Type].high
-	want := map[int64][]model.NotifyEvent{}
+	want := map[int64]model.NotifySettings{}
+	creator := n.pushCreator(note, org)
 	for _, s := range subs {
-		if !n.wantsPush(want, s.UserID, org, note.Type) {
+		if !n.wantsPush(want, s.UserID, org, note, creator) {
 			continue
 		}
 		n.wg.Add(1)

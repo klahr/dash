@@ -11,11 +11,34 @@ them for you, so they apply on every device. There you choose:
 
 - the [summary](#summary): off, daily or weekly, when, of which projects, where it goes and what
   is in it
+- [whose tasks](#whose-tasks) you hear about: **Tasks I created** or **All tasks**
 - which events [push](#push-notifications) to your browsers
 - your [personal webhooks](#notification-webhooks), listed with their events and last delivery.
   Add or change them in **My webhooks**. A webhook gets each event the moment it happens.
 
 Each organization you are in has its own settings.
+
+## Whose tasks
+
+On a shared board, a task's news goes to the person who created it, so someone answers for it.
+Choose under **Account → Notifications → Tasks**:
+
+- **Tasks I created** (the default): a task's pushes and summary items reach you only if you
+  created it.
+- **All tasks**: you hear about every task in the org, as before.
+
+This covers a task ready for review, failed, merged, or waiting for you to approve a tool.
+A task no person is behind reaches everyone who wants that event, whatever they chose: one Dash
+made (from an issue or an automation), one whose creator's account was deleted, and one whose
+creator left the organization.
+
+Events about the whole org aren't anyone's task, and still reach everyone who turned them on: a
+failing build on the default branch, a runner's disk filling up, a checkout left behind origin.
+Goals go to their owner, as before. [Webhooks](#notification-webhooks) don't follow this choice:
+each one has its own events.
+
+> **Changed in this version.** Task events used to push to every member who turned them on.
+> Now they go to the task's creator. If you want every task's news, choose **All tasks**.
 
 ## Push notifications
 
@@ -25,9 +48,9 @@ is open in the background, the page notifies you itself; where the browser suppo
 also pushes these to the browser, so they arrive while Dash is closed. Choose which under
 **Account → Notifications → Push**:
 
-- a task is ready for review
-- a task failed
-- Claude waits for you to approve a tool, with **Approve** and **Deny** buttons where the
+- a task is ready for review ([whose tasks](#whose-tasks))
+- a task failed ([whose tasks](#whose-tasks))
+- Claude waits for you to approve a tool ([whose tasks](#whose-tasks)), with **Approve** and **Deny** buttons where the
   system shows them (they work for 15 minutes, until the request is answered, or until Dash
   restarts)
 - a [goal](goals.md) waits for you, is done or ran out of budget
@@ -184,7 +207,8 @@ A summary tells you, in one message, what happened since the last one. Set it up
   Email goes to your account's address, shown beside it; it is greyed out when this Dash has no
   [SMTP](signup.md#email-smtp) set up.
 - **What goes in it**: new issues (from the severity you choose up), tasks ready for review,
-  failed tasks, merged tasks, your goals waiting for you, and failing builds.
+  failed tasks, merged tasks, your goals waiting for you, and failing builds. Task items
+  follow [whose tasks](#whose-tasks) you chose.
 
 **Send the summary now** saves the page and sends what happened since the last summary to
 each destination right away, and says how each went.

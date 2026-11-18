@@ -8,9 +8,9 @@ import { WEBHOOK_EVENTS, WEBHOOK_FORMATS, webhookStatus } from "./webhooks.js";
 // ------------------------------------------------------------------ Account → Notifications
 // The user's notification settings in their org, kept by the hub (GET/PUT
 // /api/me/notifications): a daily or weekly summary (when, of which
-// projects, where it goes, what is in it), which events push to their
-// browsers, and their personal webhooks, which get each event as it
-// happens (edited in My webhooks, not here).
+// projects, where it goes, what is in it), whose tasks they hear about,
+// which events push to their browsers, and their personal webhooks, which
+// get each event as it happens (edited in My webhooks, not here).
 const PUSH_LABELS = {
   "task.review": "A task is ready for review",
   "task.failed": "A task failed",
@@ -43,6 +43,7 @@ function renderNotify() {
   form.weekday.value = String(s.weekday);
   form.time.value = s.time;
   form.scope.value = s.all_projects ? "all" : "some";
+  form.tasks.value = s.tasks === "all" ? "all" : "mine";
   const picked = new Set(s.projects);
   fill($("#notify-projects"), view.projects.length
     ? view.projects.map((p) => h("label", { class: "toggle" }, h("input", { type: "checkbox", name: "project", value: p.id, checked: picked.has(p.id) }), h("span", {}, p.name)))
@@ -66,6 +67,7 @@ function renderNotify() {
     h("input", { type: "checkbox", name: "push", value: e, checked: push.has(e) }), h("span", {}, PUSH_LABELS[e] || WEBHOOK_EVENTS[e] || e))));
   $("#notify-push-hint").hidden = false;
   state.pushEvents = push; // the page's own notifications follow it too (notifications.js)
+  state.pushTasks = form.tasks.value;
   renderHooks();
   syncNotify();
   renderState();
@@ -120,6 +122,7 @@ function collect() {
     webhooks: picks("dest"),
     include,
     push: picks("push"),
+    tasks: form.tasks.value || "mine",
   };
 }
 
