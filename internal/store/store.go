@@ -636,7 +636,12 @@ func (s *Store) UpdateTodo(id string, fn func(*model.Todo) error) (model.Todo, e
 
 // SetStatus is a convenience wrapper around UpdateTodo.
 func (s *Store) SetStatus(id string, to model.TodoStatus, errMsg string) (model.Todo, error) {
-	return s.UpdateTodo(id, func(t *model.Todo) error {
+	return s.UpdateTodo(id, statusFn(to, errMsg))
+}
+
+// statusFn is SetStatus's change of a todo.
+func statusFn(to model.TodoStatus, errMsg string) func(*model.Todo) error {
+	return func(t *model.Todo) error {
 		t.Status = to
 		t.Error = errMsg
 		if to == model.StatusInProgress {
@@ -653,7 +658,7 @@ func (s *Store) SetStatus(id string, to model.TodoStatus, errMsg string) (model.
 			t.FinishedAt = &now
 		}
 		return nil
-	})
+	}
 }
 
 func (s *Store) DeleteTodo(id string) (model.Todo, error) {

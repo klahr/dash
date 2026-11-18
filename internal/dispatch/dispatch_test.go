@@ -183,7 +183,7 @@ func (fx *fixture) project(t *testing.T, org int64, runners ...string) model.Pro
 
 func (fx *fixture) todo(t *testing.T, p model.Project, fn func(*model.Todo)) model.Todo {
 	t.Helper()
-	td, err := fx.st.CreateTodo(model.Todo{ProjectID: p.ID, Title: "task", Prompt: "do it"})
+	td, err := fx.st.CreateTodo(model.Todo{ProjectID: p.ID, CreatedBy: 1, Title: "task", Prompt: "do it"}) // by the runners' owner (runnerOf)
 	if err == nil {
 		td, err = fx.st.SetStatus(td.ID, model.StatusQueued, "")
 	}
@@ -316,7 +316,7 @@ func TestDispatchSkipsRunnersInMaintenance(t *testing.T) {
 	if got := fx.fleet.callsTo("laptop"); len(got) != 0 {
 		t.Errorf("a runner in maintenance was sent work: %q", got)
 	}
-	if _, why, _ := fx.d.scanRunner(p); !strings.Contains(why, "laptop is updating") {
+	if _, why, _ := fx.d.scanRunner(p, []int64{1}); !strings.Contains(why, "laptop is updating") {
 		t.Errorf("scan: %q, want laptop is updating", why)
 	}
 	// Paused too: it still says it is updating (the pause is the user's, and stays).

@@ -116,6 +116,8 @@ func TestRunnersFollowEachOthersPushes(t *testing.T) {
 			t.Fatal(err)
 		}
 		s, api, _ := runnerSide(t, creds.OrgID)
+		s.HubUser = creds.UserID
+		s.HubUser = creds.UserID
 		// The tunnel's server doesn't wait for its handlers when it stops, so
 		// track them: s.following.Add runs in a handler, and must be done
 		// before s.following.Wait.

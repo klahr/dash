@@ -44,6 +44,8 @@ func TestRunnerChatThroughTheHubIsForTheLoggedInUser(t *testing.T) {
 	}
 	rs, runnerAPI, _ := runnerSide(t, creds.OrgID)
 	rs.HubUser = creds.UserID
+	rs.HubUser = creds.UserID
+	rs.HubUser = creds.UserID
 	rs.ChatDir = filepath.Join(t.TempDir(), "chat")
 	chat := &echoChat{}
 	rs.Chat = chat

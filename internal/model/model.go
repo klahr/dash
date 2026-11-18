@@ -173,6 +173,16 @@ type Project struct {
 	// to before projects ran on labels; the hub turns them into labels when
 	// it starts (dispatch.MigrateRunnerLinks) and clears them.
 	LegacyRunners []string `json:"runners,omitempty"`
+	// CommandsBy says, on a hub, who last set each of the project's shell
+	// commands, by kind (CommandKinds). A runner runs a command only if it
+	// is approved for it (CommandApproved). A kind not in it predates
+	// this record and counts as approved.
+	CommandsBy map[string]CommandSetter `json:"commands_by,omitempty"`
+	// HeldCommands are, on a runner, the hub project's commands it must
+	// not run (the hub sends them empty), by kind, each with why: they
+	// were set by a member who is neither an org admin nor this runner's
+	// owner. The step that would run one fails with that message.
+	HeldCommands map[string]string `json:"held_commands,omitempty"`
 	// NotesPending are, on a hub, removals of the project's shared notes
 	// asked while none of its runners was online: the commands only, sent
 	// to the first runner of the project that connects.
@@ -390,9 +400,14 @@ type Todo struct {
 	// CreatedBy is the user who created the task (0: Dash itself, from
 	// before users, or made on a runner by its hub; DeletedUser: an
 	// account that was deleted since). Its runs act as them.
-	CreatedBy int64  `json:"created_by,omitempty"`
-	Title     string `json:"title"`
-	Prompt    string `json:"prompt"`
+	CreatedBy int64 `json:"created_by,omitempty"`
+	// RunBy is, on a hub, the user who started the task's latest run:
+	// queued it, sent it back with feedback, retried or resumed it, or
+	// changed its instructions (0: its creator, or Dash itself). A run is
+	// for its creator and for them (WorkFor).
+	RunBy  int64  `json:"run_by,omitempty"`
+	Title  string `json:"title"`
+	Prompt string `json:"prompt"`
 	// Priority orders the queue: prioritised todos run first, lower before
 	// higher, then every unprioritised (nil) one, oldest first. Ties are
 	// broken by CreatedAt. 0 is a real priority, not "unset".
@@ -506,6 +521,12 @@ type Todo struct {
 	// for it. HubNotes counts the hub's feedback notes already added.
 	HubTodoID string `json:"hub_todo_id,omitempty"`
 	HubNotes  int    `json:"hub_notes,omitempty"`
+	// SharedWork is set on a runner for a hub's task it runs for another
+	// member than its owner: Claude and the project's commands run with
+	// the runner's API key only, never its owner's login
+	// (claudecli.SharedEnv). It stays set: the task's Claude session is in
+	// the shared config folder.
+	SharedWork bool `json:"shared_work,omitempty"`
 
 	// ExternalRef is the card standing for the todo in its project's
 	// external tracker (nil: none, e.g. a project on Dash's own board). The
@@ -546,6 +567,22 @@ func CleanModel(m string) (string, error) {
 
 // OnRunner reports whether a hub sent the todo to a runner.
 func (t Todo) OnRunner() bool { return t.Runner != "" }
+
+// WorkFor are the users a run of t is for: its creator, and whoever started
+// the run (RunBy) when that is someone else. A task Dash made (CreatedBy 0)
+// is for whoever started its run, if anyone did. 0 and DeletedUser stand for
+// work that is no one's (see dispatch: it goes only to shared runners).
+func (t Todo) WorkFor() []int64 {
+	creator := t.CreatedBy
+	if creator == 0 && t.RunBy > 0 {
+		creator = t.RunBy
+	}
+	out := []int64{creator}
+	if t.RunBy != 0 && t.RunBy != creator {
+		out = append(out, t.RunBy)
+	}
+	return out
+}
 
 // QueueBefore reports whether a runs before b: prioritised todos first, by
 // priority ascending, then oldest first; unprioritised ones after all of

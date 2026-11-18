@@ -147,13 +147,21 @@ func (r *Runner) LogPath(runID string) string {
 }
 
 // Start begins a run of the project's scan and returns it while it runs.
+// A scheduled run is for whoever last turned its schedule on or changed it
+// (model.ScanSetting.ScheduledBy).
 func (r *Runner) Start(projectID, name, trigger string) (model.ScanRun, error) {
-	return r.start(projectID, name, trigger, nil)
+	return r.start(projectID, name, trigger, nil, 0)
 }
 
-// start begins a run; from, if set, is the interrupted run it starts over,
-// whose scope, path and base commit it keeps.
-func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun) (model.ScanRun, error) {
+// StartFor is Start for the hub's user by, who started it: on a hub, it
+// runs on one of their runners, or a shared one (model.ScanRun.StartedBy).
+func (r *Runner) StartFor(projectID, name, trigger string, by int64) (model.ScanRun, error) {
+	return r.start(projectID, name, trigger, nil, by)
+}
+
+// start begins a run for by; from, if set, is the interrupted run it starts
+// over, whose scope, path, base commit and user it keeps.
+func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun, by int64) (model.ScanRun, error) {
 	p, err := r.Store.GetProject(projectID)
 	if err != nil {
 		return model.ScanRun{}, err
@@ -163,7 +171,13 @@ func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun) (mo
 		return model.ScanRun{}, fmt.Errorf("%w %q in %s", ErrNoScan, name, p.Name)
 	}
 	resumedFrom := ""
+	if trigger == "schedule" && by == 0 {
+		if set, ok := r.Store.ScanSetting(projectID, t.Name); ok {
+			by = set.ScheduledBy
+		}
+	}
 	if from != nil {
+		by = from.StartedBy
 		// Cover what the original would have, even if the template's scope
 		// or path changed since.
 		t.Scope, t.Path, resumedFrom = from.Scope, from.Path, from.ID
@@ -188,7 +202,7 @@ func (r *Runner) start(projectID, name, trigger string, from *model.ScanRun) (mo
 
 	run, err := r.Store.CreateScanRun(model.ScanRun{
 		ProjectID: projectID, Scan: t.Name, Trigger: trigger, Scope: t.Scope, Path: t.Path,
-		Status: model.ScanRunning, StartedAt: r.now(), Activity: "Starting", ResumedFrom: resumedFrom,
+		Status: model.ScanRunning, StartedAt: r.now(), Activity: "Starting", ResumedFrom: resumedFrom, StartedBy: by,
 	})
 	if err != nil {
 		cancel(nil)
@@ -407,7 +421,7 @@ func (r *Runner) execute(ctx context.Context, p model.Project, t Template, run m
 	if !approved {
 		logLine(fmt.Sprintf("⚠ the template asks for tools that are not approved in Dash (%s): running with read-only tools", strings.Join(t.Tools, ", ")))
 	}
-	job := Job{RunID: run.ID, Template: t, Tools: tools, Timeout: r.runTimeout(), Known: r.scanIssues(p.ID, t)}
+	job := Job{RunID: run.ID, Template: t, Tools: tools, Timeout: r.runTimeout(), Known: r.scanIssues(p.ID, t), For: run.StartedBy}
 	if from != nil {
 		job.From = &Resume{Commit: from.Commit, Since: from.Since, Incremental: from.Incremental, Note: from.Note}
 	}

@@ -48,10 +48,30 @@ var errNoRunnerLinked = errors.New("No runner has the labels this project runs o
 // p's runners, online, in p's org; prefer if it is one of them. It links p
 // to it and returns the runner and its project id for p.
 func (sv *service) projectRunner(ctx context.Context, p model.Project, prefer string) (tunnel.Runner, string, error) {
+	return sv.projectRunnerFor(ctx, p, prefer, nil)
+}
+
+// projectRunnerFor is projectRunner among the runners that do work for
+// users (tunnel.Runner.WorksFor; nil: any of p's runners), for what runs a
+// project command there: the caller's own runners, or shared ones.
+func (sv *service) projectRunnerFor(ctx context.Context, p model.Project, prefer string, users []int64) (tunnel.Runner, string, error) {
 	cands := sv.s.onlineRunners(p)
+	var notFor []string
+	if users != nil {
+		cands = slices.DeleteFunc(cands, func(r tunnel.Runner) bool {
+			ok, why := r.WorksFor(users)
+			if !ok {
+				notFor = append(notFor, why)
+			}
+			return !ok
+		})
+	}
 	if len(cands) == 0 {
 		if len(sv.s.projectRunners(p)) == 0 {
 			return tunnel.Runner{}, "", errNoRunnerLinked
+		}
+		if len(notFor) > 0 {
+			return tunnel.Runner{}, "", fmt.Errorf("%w (none of yours, or a shared one, is: %s)", errNoRunnerOnline, strings.Join(notFor, "; "))
 		}
 		return tunnel.Runner{}, "", errNoRunnerOnline
 	}
@@ -485,7 +505,22 @@ func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv
 	if pty && prefer == "" {
 		prefer = s.terminalRunner(sv.c, p)
 	}
-	run, rpid, err := sv.projectRunner(r.Context(), p, prefer)
+	// A project command (run, test, deploy, a preview) runs only on the
+	// caller's own runners or a shared one (tunnel.Runner.WorksFor); a
+	// terminal only on their own (below).
+	var users []int64
+	if !pty {
+		users = []int64{sv.c.User}
+		if prefer != "" {
+			if pr, ok := s.fleet().Get(prefer); ok {
+				if ok, why := pr.WorksFor(users); !ok {
+					writeErr(w, fmt.Errorf("%w: %s, so it doesn't run this task's commands for you", errForbidden, why))
+					return
+				}
+			}
+		}
+	}
+	run, rpid, err := sv.projectRunnerFor(r.Context(), p, prefer, users)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -503,8 +538,9 @@ func (s *Server) startProcessOnRunner(w http.ResponseWriter, r *http.Request, sv
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 			return
 		}
-		r = r.WithContext(tunnel.WithUser(r.Context(), sv.c.User))
 	}
+	// Whom it is for: the runner checks it too (hubshared.go, hubCheck).
+	r = r.WithContext(tunnel.WithUser(r.Context(), sv.c.User))
 	res, err := s.forwardTo(r, run, "/api/projects/"+url.PathEscape(rpid)+"/processes", body, rpid, p.ID)
 	if err != nil {
 		writeErr(w, err)

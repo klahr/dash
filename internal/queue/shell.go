@@ -16,8 +16,9 @@ import (
 const tailLines = 200
 
 // runShell runs command with bash in dir, in its own process group, streaming
-// each output line to emit. It returns the exit code and the last lines of
-// output. err is only set when the command could not run or timed out.
+// each output line to emit. env is its environment (nil: this process's,
+// with CI=1). It returns the exit code and the last lines of output. err is
+// only set when the command could not run or timed out.
 func runShell(ctx context.Context, dir, command string, timeout time.Duration, env []string, emit func(string)) (exit int, tail string, err error) {
 	if timeout > 0 {
 		var cancel context.CancelFunc
@@ -29,7 +30,10 @@ func runShell(ctx context.Context, dir, command string, timeout time.Duration, e
 	}
 	cmd := exec.CommandContext(ctx, localrun.Bash(), "-lc", command)
 	cmd.Dir = dir
-	cmd.Env = append(localrun.Environ("CI=1"), env...)
+	cmd.Env = env
+	if env == nil {
+		cmd.Env = localrun.Environ("CI=1")
+	}
 	localrun.Group(cmd, syscall.SIGKILL, 5*time.Second)
 
 	pr, pw := io.Pipe()

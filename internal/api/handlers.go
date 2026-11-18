@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -245,7 +246,50 @@ func (sv *service) createHubProject(req projectRequest) (model.Project, error) {
 	if err != nil {
 		return model.Project{}, err
 	}
+	// Who set its commands: a runner runs them only if they are approved
+	// for it (model.Project.CommandApproved).
+	sv.recordCommands(&np, model.Project{}, projectUpdate{RunCommand: &np.RunCommand, TestCommand: &np.TestCommand,
+		DeployCommand: &np.DeployCommand, SetupCommand: &np.SetupCommand, PreviewCommand: &np.PreviewCommand})
 	return sv.data.CreateProject(np)
+}
+
+// recordCommands records in p, a hub's project, who set the commands req
+// sends (model.Project.CommandsBy): a command that changed from cur's is
+// the caller's now; one sent unchanged is approved by them for their own
+// runners (an org admin's for all of them). A command no one recorded
+// (from before) stays as it is.
+func (sv *service) recordCommands(p *model.Project, cur model.Project, req projectUpdate) {
+	if !sv.s.hub() || sv.c.User == 0 {
+		return
+	}
+	sent := map[string]*string{model.CmdRun: req.RunCommand, model.CmdTest: req.TestCommand, model.CmdDeploy: req.DeployCommand,
+		model.CmdSetup: req.SetupCommand, model.CmdPreview: req.PreviewCommand}
+	admin, name := sv.s.orgAdmin(sv.c), ""
+	if u, err := sv.s.Store.Accounts().User(sv.c.User); err == nil {
+		name = u.Username
+	}
+	out := maps.Clone(cur.CommandsBy)
+	for _, kind := range model.CommandKinds {
+		v := sent[kind]
+		if v == nil {
+			continue
+		}
+		changed := strings.TrimSpace(*v) != strings.TrimSpace(cur.Command(kind))
+		by, known := out[kind]
+		switch {
+		case strings.TrimSpace(*v) == "":
+			delete(out, kind) // none: nothing to approve
+		case changed || known: // unchanged and not known: from before, approved as it is
+			if out == nil {
+				out = map[string]model.CommandSetter{}
+			}
+			out[kind] = by.Saved(sv.c.User, name, admin, changed)
+		}
+	}
+	if len(out) == 0 {
+		out = nil
+	}
+	p.CommandsBy = out
 }
 
 // prepareProjectPath checks where a new local project goes and returns its
@@ -464,7 +508,12 @@ func (sv *service) updateProject(ctx context.Context, id string, req projectUpda
 		return cur, err
 	}
 	p, err := sv.data.UpdateProject(id, func(p *model.Project) error {
-		return applyProjectUpdate(p, req, remote, runsOn, gh)
+		before := *p
+		if err := applyProjectUpdate(p, req, remote, runsOn, gh); err != nil {
+			return err
+		}
+		sv.recordCommands(p, before, req)
+		return nil
 	})
 	if err != nil {
 		return p, err
@@ -945,7 +994,7 @@ func (s *Server) retestTodo(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := sv.runTests(r.Context(), t); err != nil {
+	if err := sv.runTests(r.Context(), t, false); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -1157,11 +1206,19 @@ func (s *Server) pauseTodo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resumeTodo(w http.ResponseWriter, r *http.Request) {
-	_, _, ok := s.todo(w, r)
+	sv, cur, ok := s.todo(w, r)
 	if !ok {
 		return
 	}
-	t, err := s.Todos.Resume(r.PathValue("tid"))
+	if sv.c.User != 0 && cur.Paused && cur.RunBy != sv.c.User {
+		// Resuming starts its run again: it is for them now (see
+		// store.OrgStore.UpdateTodo), set before it can be sent.
+		if _, err := sv.data.UpdateTodo(cur.ID, func(x *model.Todo) error { x.RunBy = sv.c.User; return nil }); err != nil {
+			writeErr(w, err)
+			return
+		}
+	}
+	t, err := s.Todos.Resume(cur.ID)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -1428,7 +1485,7 @@ func (s *Server) retryCI(w http.ResponseWriter, r *http.Request) {
 
 // investigateCI asks Claude to look into the failing build now.
 func (s *Server) investigateCI(w http.ResponseWriter, r *http.Request) {
-	_, _, ok := s.project(w, r)
+	sv, _, ok := s.project(w, r)
 	if !ok {
 		return
 	}
@@ -1440,6 +1497,14 @@ func (s *Server) investigateCI(w http.ResponseWriter, r *http.Request) {
 		}
 		writeErr(w, fmt.Errorf("%w: %v", errBadRequest, err))
 		return
+	}
+	if t.ID != "" && sv.c.User != 0 {
+		// Asked for by them: theirs, so it runs on their runners (until
+		// then it waits for a shared one, as Dash's own work).
+		if nt, err := sv.data.UpdateTodo(t.ID, func(x *model.Todo) error { x.RunBy = sv.c.User; return nil }); err == nil {
+			t = nt
+			s.Todos.Kick()
+		}
 	}
 	writeJSON(w, http.StatusCreated, t)
 }
@@ -1491,10 +1556,23 @@ func (s *Server) startProcess(w http.ResponseWriter, r *http.Request) {
 	// project path, which isn't this clone's.
 	o := runner.Origin{Main: req.TodoID == ""}
 	if req.Command == "" {
+		if why := p.Held(req.Preset); why != "" {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": why})
+			return
+		}
 		req.Command = map[string]string{"run": p.RunCommand, "test": p.TestCommand, "deploy": p.DeployCommand}[req.Preset]
 		if req.Command != "" {
 			o.Preset = req.Preset
 		}
+	}
+	// From the hub for another member than this runner's owner: only on a
+	// shared runner, with its API key alone (hubshared.go). Terminals and
+	// commands the hub names are the owner's alone (hubCheck).
+	if shared, err := s.requestShared(r, "runs a project command"); err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		return
+	} else if shared {
+		o.Env = s.sharedEnv()
 	}
 	if req.Command == "" && req.Kind != model.ProcPTY {
 		writeErr(w, fmt.Errorf("%w: no command given and project has no %q command configured", errBadRequest, req.Preset))

@@ -91,6 +91,9 @@ type Server struct {
 	// one the hub may run the general chat and short calls for (0: not
 	// known, an older registration).
 	HubUser int64
+	// Shared is, on a runner, how it does its hub's work for other members
+	// than HubUser (nil: it doesn't): see hubshared.go.
+	Shared *queue.SharedWork
 	// ChatDir is where a runner runs the general chat its hub asks for
 	// (default: the temp dir).
 	ChatDir string

@@ -34,7 +34,7 @@ func (d *Dispatcher) Scan(ctx context.Context, p model.Project, job scan.Job, h 
 	if !ok {
 		return scan.Outcome{}, errors.New("this Dash can't send scans to runners")
 	}
-	r, why, linked := d.scanRunner(p)
+	r, why, linked := d.scanRunner(p, []int64{job.For})
 	if !linked {
 		return scan.Outcome{}, fmt.Errorf("no runner works on %s: this hub runs Claude only on runners; give one the labels it runs on, or change them in Project settings → Runners", p.Name)
 	}
@@ -101,11 +101,15 @@ func (d *Dispatcher) Scan(ctx context.Context, p model.Project, job scan.Job, h 
 // scanRunner picks the runner for a scan of p: the least busy of p's
 // runners that are online and not paused. linked is false when p has none
 // at all.
-func (d *Dispatcher) scanRunner(p model.Project) (r *tunnel.Runner, why string, linked bool) {
+func (d *Dispatcher) scanRunner(p model.Project, users []int64) (r *tunnel.Runner, why string, linked bool) {
 	var cands []tunnel.Runner
-	var reasons []string
+	var reasons, notFor []string
 	for _, x := range tunnel.Serving(d.Fleet.List(), p) {
 		linked = true
+		if ok, why := x.WorksFor(users); !ok {
+			notFor = append(notFor, why)
+			continue
+		}
 		switch {
 		case !x.Online:
 			reasons = append(reasons, x.Name+" is offline")
@@ -118,7 +122,10 @@ func (d *Dispatcher) scanRunner(p model.Project) (r *tunnel.Runner, why string, 
 		}
 	}
 	if len(cands) == 0 {
-		return nil, waitReason(reasons), linked
+		if len(reasons) == 0 && len(notFor) > 0 {
+			return nil, "waiting: no runner " + d.whose(users) + " has the labels " + strings.Join(p.RunsOn, ", ") + "; " + strings.Join(notFor, "; "), linked
+		}
+		return nil, waitReason(append(reasons, notFor...)), linked
 	}
 	load := d.loads()
 	best := cands[0]
@@ -171,6 +178,23 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 			link.OrgFolder = o.ProjectFolder()
 		}
 	}
+	if r, ok := d.Fleet.Get(id); ok {
+		link.Held = HeldCommands(p, r)
+		for kind := range link.Held {
+			switch kind {
+			case model.CmdRun:
+				link.RunCommand = ""
+			case model.CmdTest:
+				link.TestCommand = ""
+			case model.CmdDeploy:
+				link.DeployCommand = ""
+			case model.CmdSetup:
+				link.SetupCommand = ""
+			case model.CmdPreview:
+				link.PreviewCommand = ""
+			}
+		}
+	}
 	sum := linkSum(link)
 	if out, ok := d.links.get(id, p.ID, sum, time.Now()); ok {
 		return out, nil
@@ -184,4 +208,33 @@ func (d *Dispatcher) Link(ctx context.Context, id string, p model.Project) (Link
 		d.links.put(id, p.ID, sum, out, time.Now())
 	}
 	return out, nil
+}
+
+// HeldCommands are p's commands runner r must not run, by kind, each with
+// why (nil: none): set by a member who is neither an org admin nor r's
+// owner, on a runner that doesn't take other members' work. Commands run
+// as r's owner, on their computer, and could run claude on their login.
+func HeldCommands(p model.Project, r tunnel.Runner) map[string]string {
+	shared, _ := r.TakesOthers()
+	var held map[string]string
+	for _, kind := range model.CommandKinds {
+		if p.Command(kind) == "" || p.CommandApproved(kind, r.OwnerID(), shared) {
+			continue
+		}
+		by := p.CommandsBy[kind]
+		who := by.Name
+		if who == "" {
+			who = fmt.Sprintf("user %d", by.User)
+		}
+		owner := "its owner"
+		if r.Owner != nil && r.Owner.Username != "" {
+			owner = r.Owner.Username
+		}
+		if held == nil {
+			held = map[string]string{}
+		}
+		held[kind] = fmt.Sprintf("the project's %s command was last changed by %s, who is neither an org admin nor the owner of runner %s, "+
+			"so it doesn't run there: an org admin or %s must save it again (Project settings → General) to approve it", kind, who, r.Name, owner)
+	}
+	return held
 }

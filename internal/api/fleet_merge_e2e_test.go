@@ -93,6 +93,8 @@ func TestHubTaskOnRunnerLandsOnOriginWithoutPR(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner, runnerAPI, _ := runnerSide(t, creds.OrgID)
+	runner.HubUser = creds.UserID
+	runner.HubUser = creds.UserID
 	gh := filepath.Join(t.TempDir(), "gh")
 	testbin.Write(t, gh, "#!/bin/sh\necho \"$*\" >> "+gh+".calls\nexit 1\n")
 	runner.Git.GhBin = gh
@@ -119,7 +121,7 @@ func TestHubTaskOnRunnerLandsOnOriginWithoutPR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	td, _ := raw(hub).CreateTodo(model.Todo{ProjectID: p.ID, Title: "add a page", Prompt: "add /about"})
+	td, _ := raw(hub).CreateTodo(model.Todo{ProjectID: p.ID, CreatedBy: owner.User, Title: "add a page", Prompt: "add /about"})
 	if _, err := raw(hub).SetStatus(td.ID, model.StatusQueued, ""); err != nil {
 		t.Fatal(err)
 	}

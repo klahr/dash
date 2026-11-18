@@ -55,6 +55,7 @@ func TestHubListsRunnerQuickActionsWithTheirPreset(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs, runnerAPI, remote := runnerSide(t, creds.OrgID)
+	rs.HubUser = creds.UserID
 	rs.Procs, rs.HubUser = runner.NewManager(rs.Hub), creds.UserID // an own command is the owner's, as a terminal is
 	client := &tunnel.Client{Creds: creds, Handler: runnerAPI, MinBackoff: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond}
 	go func() { _ = client.Run(ctx) }()
@@ -195,6 +196,7 @@ func TestHubOpensTerminalsOnlyForTheRunnersOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs, runnerAPI, remote := runnerSide(t, creds.OrgID)
+	rs.HubUser = creds.UserID
 	rs.Procs, rs.HubUser = runner.NewManager(rs.Hub), creds.UserID
 	t.Cleanup(rs.Procs.StopAll)
 	client := &tunnel.Client{Creds: creds, Handler: runnerAPI, MinBackoff: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond}

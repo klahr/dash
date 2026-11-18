@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -32,6 +34,21 @@ type ExecRequest struct {
 	ForkSession bool
 	ExtraArgs   []string // per-run flags, e.g. the permission prompt tool
 	Env         []string
+	// Shared, when set, is the Claude config folder of work for another
+	// member than this runner's owner: Claude runs with the API key in
+	// claudecli.KeyEnv and without any subscription login
+	// (claudecli.SharedEnv), and the run stops if Claude Code says it signed
+	// in another way.
+	Shared string
+}
+
+// errNotAPIKey is why a shared run stopped: Claude Code didn't sign in
+// with the API key.
+type errNotAPIKey struct{ source string }
+
+func (e errNotAPIKey) Error() string {
+	return "stopped: this run is for another member than the runner's owner, so it must use the runner's API key (" + claudecli.KeyEnv +
+		"), but Claude Code signed in with " + e.source
 }
 
 // ExecResult describes a finished run.
@@ -109,9 +126,22 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 	if len(c.Sandbox) > 0 {
 		name, args = c.Sandbox[0], append(append(c.Sandbox[1:len(c.Sandbox):len(c.Sandbox)], bin), args...)
 	}
+	if req.Shared != "" {
+		if !claudecli.HasKey() {
+			return ExecResult{}, errNotAPIKey{source: "no API key: " + claudecli.KeyEnv + " isn't set"}
+		}
+		if err := os.MkdirAll(req.Shared, 0o700); err != nil {
+			return ExecResult{}, err
+		}
+	}
+	ctx, stop := context.WithCancelCause(ctx)
+	defer stop(nil)
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = req.Dir
 	cmd.Env = localrun.Environ(req.Env...)
+	if req.Shared != "" {
+		cmd.Env = claudecli.SharedEnv(cmd.Env, req.Shared)
+	}
 	var gitState string
 	if len(c.Sandbox) > 0 {
 		cmd.Env = append(cmd.Env, "DASH_WORKTREE="+req.Dir)
@@ -153,6 +183,7 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 	}()
 
 	var resultErr error
+	sawInit := false // Claude Code's system init message, which says how it signed in
 	skipped := pumpLines(stdout, func(l string) {
 		for _, w := range check.Line(l) {
 			emit(cliWarning(w))
@@ -160,6 +191,10 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 		ev, ok := parseStreamLine(l)
 		if !ok {
 			emit(model.RunEvent{Kind: "status", Text: l})
+			return
+		}
+		if req.Shared != "" && !sawInit && ev.Type != "system" {
+			stop(errNotAPIKey{source: "something Dash couldn't check (no init message)"})
 			return
 		}
 		if ev.SessionID != "" && res.SessionID == "" {
@@ -174,6 +209,17 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 		case "system":
 			if ev.Subtype == "init" && ev.Model != "" {
 				res.Model = ev.Model
+			}
+			if ev.Subtype == "init" {
+				sawInit = true
+			}
+			if ev.Subtype == "init" && req.Shared != "" && ev.APIKeySource != claudecli.KeyEnv {
+				// Before Claude does anything: not on the API key, not at all.
+				src := ev.APIKeySource
+				if src == "" || src == "none" {
+					src = "a subscription login"
+				}
+				stop(errNotAPIKey{source: src})
 			}
 		case "result":
 			res.CostUSD, res.Turns, res.Stop, res.Result = ev.Cost, ev.NumTurns, ev.Subtype, ev.Result
@@ -197,6 +243,9 @@ func (c ClaudeCode) Run(ctx context.Context, req ExecRequest, emit func(model.Ru
 	// and so the commands, that git runs then.
 	if len(c.Sandbox) > 0 && gitops.GitDirState(req.Dir) != gitState {
 		return res, fmt.Errorf("claude changed the worktree's git metadata (.git, commondir or config.worktree): Dash won't run git there")
+	}
+	if cause := context.Cause(ctx); errors.As(cause, new(errNotAPIKey)) {
+		return res, cause
 	}
 	if err := waitErr; err != nil {
 		if ctx.Err() != nil {
@@ -352,8 +401,9 @@ type streamEvent struct {
 	Cost          float64         `json:"total_cost_usd"`
 	NumTurns      int             `json:"num_turns"`
 	DurationMS    int64           `json:"duration_ms"`
-	Model         string          `json:"model"` // system init
-	Usage         *cliUsage       `json:"usage"` // result
+	Model         string          `json:"model"`        // system init
+	APIKeySource  string          `json:"apiKeySource"` // system init: "ANTHROPIC_API_KEY", "none", …
+	Usage         *cliUsage       `json:"usage"`        // result
 	RateLimitInfo json.RawMessage `json:"rate_limit_info"`
 	Message       struct {
 		Content []contentBlock `json:"content"`

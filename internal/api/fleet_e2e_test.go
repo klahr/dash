@@ -67,6 +67,7 @@ func TestHubDispatchesToARunnerEndToEnd(t *testing.T) {
 		t.Fatalf("runner registered for org %d, want %d", creds.OrgID, owner.Org)
 	}
 	runner, runnerAPI, remote := runnerSide(t, creds.OrgID)
+	runner.HubUser = creds.UserID
 	cli := &claudecli.Monitor{}
 	cli.Stream().Line(`{"type":"result","subtype":"success"}`) // a changed Claude Code
 	reporter := &dispatch.Reporter{Store: raw(runner), Parallel: 2, Claude: cli,
@@ -83,7 +84,7 @@ func TestHubDispatchesToARunnerEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	td, _ := raw(hub).CreateTodo(model.Todo{ProjectID: p.ID, Title: "add a page", Prompt: "add /about"})
+	td, _ := raw(hub).CreateTodo(model.Todo{ProjectID: p.ID, CreatedBy: owner.User, Title: "add a page", Prompt: "add /about"})
 	if _, err := raw(hub).SetStatus(td.ID, model.StatusQueued, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +219,7 @@ func TestHubDispatchesToARunnerEndToEnd(t *testing.T) {
 	stopRunner()
 	<-stopped
 	eventually(t, "the runner to go offline", func() bool { r, _ := rh.Get(creds.ID); return !r.Online })
-	next, _ := raw(hub).CreateTodo(model.Todo{ProjectID: p.ID, Title: "next", Prompt: "next"})
+	next, _ := raw(hub).CreateTodo(model.Todo{ProjectID: p.ID, CreatedBy: owner.User, Title: "next", Prompt: "next"})
 	_, _ = raw(hub).SetStatus(next.ID, model.StatusQueued, "")
 	engine.Kick()
 	eventually(t, "the task to say it waits", func() bool {

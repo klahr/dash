@@ -19,6 +19,7 @@ import (
 	"github.com/klahr/dash/internal/queue"
 	"github.com/klahr/dash/internal/runner"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/tunnel"
 )
 
 // Data is all of the store the API can reach: one org's records at a time
@@ -175,7 +176,7 @@ func (sv *service) addTodo(t model.Todo, enqueue bool) (model.Todo, error) {
 		return t, fmt.Errorf("%w: %v", errBadRequest, err)
 	}
 	t.Model = m
-	if t.RunOn, err = sv.runOn(t.ProjectID, t.RunOn); err != nil {
+	if t.RunOn, err = sv.runOn(t, t.RunOn); err != nil {
 		return t, err
 	}
 	if err := sv.sendable(t.ProjectID, len(t.Attachments) > 0 || len(t.Edits) > 0); err != nil {
@@ -197,17 +198,24 @@ func (sv *service) addTodo(t model.Todo, enqueue bool) (model.Todo, error) {
 
 // runOn checks id, the runner a task of project pid is set to run on: ""
 // (any of its runners) or one of the project's runners. It returns it trimmed.
-func (sv *service) runOn(pid, id string) (string, error) {
+// It must do the work of task t's users (model.Todo.WorkFor): one of
+// theirs, or a shared runner.
+func (sv *service) runOn(t model.Todo, id string) (string, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return "", nil
 	}
-	p, err := sv.data.GetProject(pid)
+	p, err := sv.data.GetProject(t.ProjectID)
 	if err != nil {
 		return "", err
 	}
 	if !sv.s.servesProject(p, id) {
 		return "", fmt.Errorf("%w: runner %q is not one of this project's runners (it lacks the labels the project runs on)", errBadRequest, id)
+	}
+	if r, ok := sv.s.fleet().Get(id); ok {
+		if ok, why := r.WorksFor(t.WorkFor()); !ok {
+			return "", fmt.Errorf("%w: %s; pick one of the task's owner's runners, or a shared one", errBadRequest, why)
+		}
 	}
 	return id, nil
 }
@@ -409,7 +417,7 @@ func (sv *service) editTodo(id string, u mcptools.TodoUpdate, atts *[]model.Atta
 		if err != nil {
 			return cur, err
 		}
-		r, err := sv.runOn(cur.ProjectID, *u.RunOn)
+		r, err := sv.runOn(cur, *u.RunOn)
 		if err != nil {
 			return cur, err
 		}
@@ -589,15 +597,21 @@ func (sv *service) revert(ctx context.Context, t model.Todo) error {
 	return sv.s.Merges.Enqueue(model.MergeJob{TodoID: t.ID, ProjectID: t.ProjectID, Revert: true})
 }
 
-// runTests reruns a task's tests in its worktree (on its runner, if it has one).
-func (sv *service) runTests(ctx context.Context, t model.Todo) error {
+// runTests reruns a task's tests in its worktree (on its runner, if it has
+// one, which runs them only for its owner unless it is a shared runner).
+// shared: for another member than this runner's owner (see hubshared.go).
+func (sv *service) runTests(ctx context.Context, t model.Todo, shared bool) error {
 	if t.OnRunner() {
+		if err := sv.s.actionOnRunner(sv.c, t, "run its tests"); err != nil {
+			return err
+		}
+		ctx = tunnel.WithUser(ctx, sv.c.User)
 		return sv.onRunner(ctx, t, func(ctx context.Context) error { return sv.s.Dispatch.Test(ctx, t) })
 	}
 	if sv.s.hub() {
 		return fmt.Errorf("%w, so it has nothing to test", errNotRunYet)
 	}
-	if err := sv.s.Todos.RunTests(t.ID); err != nil {
+	if err := sv.s.Todos.RunTestsFor(t.ID, shared); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return err
 		}

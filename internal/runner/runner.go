@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -186,6 +187,10 @@ func NewManager(pub Publisher) *Manager {
 type Origin struct {
 	Preset string
 	Main   bool
+	// Env is the process's environment (nil: this process's). Other
+	// members' commands on a shared runner get one without its owner's
+	// Claude login (claudecli.SharedEnv).
+	Env []string
 }
 
 func (o Origin) set(i *model.Process) { i.Preset, i.Main = o.Preset, o.Main }
@@ -215,6 +220,9 @@ func (m *Manager) startWeb(projectID, todoID, dir, command string, o Origin) (mo
 		return model.Process{}, err
 	}
 	cmd := shell(dir, command)
+	if o.Env != nil {
+		cmd.Env = slices.Clone(o.Env)
+	}
 	cmd.Env = append(cmd.Env, fmt.Sprintf("PORT=%d", port))
 	return m.startPiped(projectID, model.ProcWeb, command, fmt.Sprintf("http://localhost:%d", port), cmd, func(i *model.Process) {
 		i.Port, i.TodoID = port, todoID
@@ -224,7 +232,11 @@ func (m *Manager) startWeb(projectID, todoID, dir, command string, o Origin) (mo
 
 // StartTask runs a one-shot command (tests, build, deploy).
 func (m *Manager) StartTask(projectID, dir, command string, o ...Origin) (model.Process, error) {
-	return m.startPiped(projectID, model.ProcTask, command, "", shell(dir, command), origin(o).set)
+	cmd := shell(dir, command)
+	if env := origin(o).Env; env != nil {
+		cmd.Env = env
+	}
+	return m.startPiped(projectID, model.ProcTask, command, "", cmd, origin(o).set)
 }
 
 func shell(dir, command string) *exec.Cmd {

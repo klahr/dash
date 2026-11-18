@@ -66,6 +66,8 @@ func TestHubMergesPullRequestOnRunner(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner, runnerAPI, _ := runnerSide(t, creds.OrgID)
+	runner.HubUser = creds.UserID
+	runner.HubUser = creds.UserID
 	// The runner's gh: pull request #7 opens, pr view prints pr.json, and
 	// pr merge makes it merged.json.
 	ghDir := t.TempDir()
@@ -107,7 +109,7 @@ func TestHubMergesPullRequestOnRunner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	td, _ := raw(hub).CreateTodo(model.Todo{ProjectID: p.ID, Title: "add a page", Prompt: "add /about"})
+	td, _ := raw(hub).CreateTodo(model.Todo{ProjectID: p.ID, CreatedBy: owner.User, Title: "add a page", Prompt: "add /about"})
 	if _, err := raw(hub).SetStatus(td.ID, model.StatusQueued, ""); err != nil {
 		t.Fatal(err)
 	}

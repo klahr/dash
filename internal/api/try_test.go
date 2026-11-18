@@ -122,6 +122,7 @@ func TestTryOnARunnerThroughTheHub(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs, runnerAPI, remote := runnerSide(t, creds.OrgID)
+	rs.HubUser = creds.UserID
 	rs.Procs, rs.HubUser = runner.NewManager(rs.Hub), creds.UserID
 	t.Cleanup(rs.Procs.StopAll)
 	rs.Previews = preview.New(rs.Procs, rs.Hub, raw(rs), "")
@@ -343,6 +344,7 @@ func TestRunnerTryRoutesAreGuarded(t *testing.T) {
 	parallel(t)
 
 	s, h, _ := runnerSide(t, 7)
+	s.HubUser = 0 // registered with an older hub
 	s.Procs = runner.NewManager(s.Hub)
 	s.Previews = preview.New(s.Procs, s.Hub, raw(s), "")
 	if w := send(h, "POST", "/api/hub/projects/hub-p1/try", `{}`); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "who registered it") {

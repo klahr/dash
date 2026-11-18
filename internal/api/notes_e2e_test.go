@@ -81,6 +81,8 @@ func TestSharedNotesRelayThroughTheHub(t *testing.T) {
 	// start brings a runner up: its notes, and its tunnel to the hub.
 	start := func(creds tunnel.Credentials, dir string) *notesRunner {
 		s, api, _ := runnerSide(t, creds.OrgID)
+		s.HubUser = creds.UserID
+		s.HubUser = creds.UserID
 		wire := &notes.HubTransport{Post: func(ctx context.Context, p string, body []byte) ([]byte, error) {
 			return tunnel.Notes(ctx, creds, p, body)
 		}}

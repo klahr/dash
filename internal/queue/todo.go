@@ -83,6 +83,9 @@ type TodoEngine struct {
 	Hold         func(org int64) string
 	TestTimeout  time.Duration
 	SetupTimeout time.Duration
+	// Shared runs the hub's work for other members than this runner's
+	// owner (nil: this Dash doesn't).
+	Shared *SharedWork
 	// Summarizer condenses Claude's final message into the todo's one-line
 	// Summary (optional; without it the message's first sentence is used).
 	Summarizer interface {
@@ -587,6 +590,11 @@ func (e *TodoEngine) work(ctx context.Context, t model.Todo) {
 		return
 	}
 	r.p = p
+	// Other members' work goes on only while this runner may do it.
+	if err := e.Shared.ok(t); err != nil {
+		r.fail(err)
+		return
+	}
 
 	// 1. Worktree.
 	if err := r.ensureWorktree(); err != nil {
@@ -734,7 +742,7 @@ func (r *todoRun) ensureWorktree() error {
 		return err
 	}
 	r.log(fmt.Sprintf("▶ new worktree %s (%s)", wt.Path, wt.Branch))
-	return e.prepareWorktree(ctx, p, wt, r.log)
+	return e.prepareWorktree(ctx, r.t, p, wt, r.log)
 }
 
 // mergeBaseIn merges the default branch into the worktree when the task
@@ -895,6 +903,9 @@ func (r *todoRun) commitAndCheck() (step, error) {
 		return stepDone, nil
 	}
 
+	if err := heldErr(p, model.CmdTest); err != nil {
+		return 0, fmt.Errorf("tests not run: %w", err)
+	}
 	if p.TestCommand == "" {
 		return stepHandOff, nil
 	}
@@ -967,7 +978,11 @@ const issuesHint = "If you notice a bug, vulnerability or other problem in this 
 // and records the session, cost, the run's tokens (RunStats) and which notes
 // Claude has now seen. It returns Claude's final message.
 func (e *TodoEngine) runClaude(ctx context.Context, t *model.Todo, p model.Project, wt model.Worktree, log func(string)) (string, error) {
-	req := agent.ExecRequest{Dir: wt.Path}
+	dir, err := e.Shared.claudeDir(*t)
+	if err != nil {
+		return "", err
+	}
+	req := agent.ExecRequest{Dir: wt.Path, Shared: dir}
 	unsent := t.Feedback[min(t.FeedbackSent, len(t.Feedback)):]
 	stat := model.TodoRun{Kind: model.RunFirst}
 	switch {
@@ -1193,16 +1208,23 @@ func attachmentDirs(as []model.Attachment) []string {
 // RunTests re-runs the project's tests in a todo's worktree without involving
 // Claude (e.g. for a flaky test). It returns at once; results arrive as an
 // updated todo.
-func (e *TodoEngine) RunTests(todoID string) error {
+func (e *TodoEngine) RunTests(todoID string) error { return e.RunTestsFor(todoID, false) }
+
+// RunTestsFor is RunTests, for other members' work when shared: on a
+// shared runner, with its API key alone (SharedWork).
+func (e *TodoEngine) RunTestsFor(todoID string, shared bool) error {
 	t, err := e.Store.GetTodo(todoID)
 	if err != nil {
 		return err
 	}
+	t.SharedWork = t.SharedWork || shared
 	p, err := e.Store.GetProject(t.ProjectID)
 	if err != nil {
 		return err
 	}
 	switch {
+	case p.Held(model.CmdTest) != "":
+		return errors.New(p.Held(model.CmdTest))
 	case p.TestCommand == "":
 		return errors.New("this project has no test command; set one in its settings")
 	case t.Worktree == nil:
@@ -1291,7 +1313,7 @@ func createFile(root, dst, content string) error {
 }
 
 // prepareWorktree copies untracked files and runs the setup command in a new worktree.
-func (e *TodoEngine) prepareWorktree(ctx context.Context, p model.Project, wt model.Worktree, log func(string)) error {
+func (e *TodoEngine) prepareWorktree(ctx context.Context, t model.Todo, p model.Project, wt model.Worktree, log func(string)) error {
 	for _, f := range p.CopyFiles {
 		f = filepath.Clean(strings.TrimSpace(f))
 		if f == "" || f == "." || filepath.IsAbs(f) || strings.HasPrefix(f, "..") {
@@ -1306,11 +1328,18 @@ func (e *TodoEngine) prepareWorktree(ctx context.Context, p model.Project, wt mo
 		}
 		log("· copied " + f)
 	}
+	if err := heldErr(p, model.CmdSetup); err != nil {
+		return fmt.Errorf("setup command: %w", err)
+	}
 	if strings.TrimSpace(p.SetupCommand) == "" {
 		return nil
 	}
+	env, err := e.Shared.shellEnv(t)
+	if err != nil {
+		return fmt.Errorf("setup command: %w", err)
+	}
 	log("▶ setup: " + p.SetupCommand)
-	code, tail, err := runShell(ctx, wt.Path, p.SetupCommand, e.SetupTimeout, nil, func(l string) { log("│ " + l) })
+	code, tail, err := runShell(ctx, wt.Path, p.SetupCommand, e.SetupTimeout, env, func(l string) { log("│ " + l) })
 	if err != nil {
 		return fmt.Errorf("setup command: %w", err)
 	}
@@ -1321,14 +1350,19 @@ func (e *TodoEngine) prepareWorktree(ctx context.Context, p model.Project, wt mo
 }
 
 func (e *TodoEngine) runChecks(ctx context.Context, t model.Todo, p model.Project, dir, stage string) model.Checks {
-	return runChecks(ctx, e.Git, e.Log, t, p, dir, stage, e.TestTimeout)
+	return runChecks(ctx, e.Git, e.Log, e.Shared, t, p, dir, stage, e.TestTimeout)
 }
 
-func runChecks(ctx context.Context, g *gitops.Git, l *TodoLog, t model.Todo, p model.Project, dir, stage string, timeout time.Duration) model.Checks {
+func runChecks(ctx context.Context, g *gitops.Git, l *TodoLog, sh *SharedWork, t model.Todo, p model.Project, dir, stage string, timeout time.Duration) model.Checks {
+	if err := sh.ok(t); err != nil {
+		l.Line(t, "✖ tests not run: "+err.Error())
+		return model.Checks{Command: p.TestCommand, ExitCode: -1, Output: err.Error(), Stage: stage, At: time.Now()}
+	}
+	env, _ := sh.shellEnv(t)
 	l.Line(t, "▶ tests: "+p.TestCommand)
 	commit := checkedCommit(ctx, g, p.ID, dir)
 	start := time.Now()
-	code, tail, err := runShell(ctx, dir, p.TestCommand, timeout, nil, func(s string) { l.Line(t, "│ "+s) })
+	code, tail, err := runShell(ctx, dir, p.TestCommand, timeout, env, func(s string) { l.Line(t, "│ "+s) })
 	c := model.Checks{Command: p.TestCommand, ExitCode: code, Output: tail, Stage: stage, At: time.Now(), Duration: time.Since(start).Seconds()}
 	if commit != "" {
 		if after, herr := g.Head(ctx, p.ID, dir, "HEAD"); herr == nil && after == commit {

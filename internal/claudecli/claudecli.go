@@ -9,6 +9,7 @@ package claudecli
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -34,6 +35,10 @@ type Status struct {
 	// out, or a CLI or runner that doesn't say). Runners on one account
 	// share its usage limits, so the hub paces them together.
 	Account *Account `json:"account,omitempty"`
+	// Auth is how the CLI signs in: an API key or a subscription, and any
+	// login it could fall back to (nil: not checked yet, or a runner too
+	// old to say; then it counts as not an API-key runner).
+	Auth *Auth `json:"auth,omitempty"`
 }
 
 // Account is a Claude login, as `claude auth status` reports it.
@@ -89,8 +94,11 @@ type Monitor struct {
 	checked  time.Time
 	probe    []string // from the last Check
 	account  *Account // from the last Check or CheckAccount
+	auth     *Auth    // likewise
 	seen     []string // from runs with this version
 	run      func(ctx context.Context, bin string, args ...string) (string, error)
+	// runNoKey runs the CLI without KeyEnv (see Auth.Login).
+	runNoKey func(ctx context.Context, bin string, args ...string) (string, error)
 }
 
 // OnChange sets f to be called after the Status changed.
@@ -111,6 +119,10 @@ func (m *Monitor) Status() Status {
 	if m.account != nil {
 		a := *m.account
 		s.Account = &a
+	}
+	if m.auth != nil {
+		a := *m.auth
+		s.Auth = &a
 	}
 	s.Warnings = append(append(s.Warnings, m.probe...), m.seen...)
 	return s
@@ -158,10 +170,10 @@ func (m *Monitor) CheckAccount(ctx context.Context) *Account {
 	if m == nil {
 		return nil
 	}
-	a := m.account1(ctx, m.bin(), m.runner())
+	a, auth := m.account1(ctx, m.bin(), m.runner())
 	m.mu.Lock()
-	changed := !sameAccount(a, m.account)
-	m.account = a
+	changed := !sameAccount(a, m.account) || !sameAuth(auth, m.auth)
+	m.account, m.auth = a, auth
 	notify := m.onChange
 	m.mu.Unlock()
 	if changed && notify != nil {
@@ -170,9 +182,33 @@ func (m *Monitor) CheckAccount(ctx context.Context) *Account {
 	return a
 }
 
-func (m *Monitor) account1(ctx context.Context, bin string, run func(context.Context, string, ...string) (string, error)) *Account {
+func (m *Monitor) account1(ctx context.Context, bin string, run func(context.Context, string, ...string) (string, error)) (*Account, *Auth) {
 	out, _ := run(ctx, bin, "auth", "status")
-	return ParseAuthStatus([]byte(out))
+	auth := ParseAuth([]byte(out))
+	if auth != nil && auth.Method == AuthAPIKey {
+		// Claude Code doesn't show a login next to a key: ask without it.
+		noKey := m.runNoKey
+		if noKey == nil {
+			noKey = runCLINoKey
+		}
+		alt, _ := noKey(ctx, bin, "auth", "status")
+		switch fallback := ParseAuth([]byte(alt)); {
+		case fallback == nil:
+			auth.Login = AuthSubscription // can't tell: count it as one
+		case fallback.Method == AuthSubscription:
+			auth.Login = cmp.Or(fallback.Subscription, AuthSubscription)
+		case fallback.Method == AuthAPIKey && fallback.KeySource == KeyEnv:
+			auth.Login = AuthSubscription // the key was still there: can't tell
+		}
+	}
+	return ParseAuthStatus([]byte(out)), auth
+}
+
+func sameAuth(a, b *Auth) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func sameAccount(a, b *Account) bool {
@@ -223,19 +259,20 @@ func (m *Monitor) Check(ctx context.Context) Status {
 		warns = append(warns, probeWarnings(out, err)...)
 	}
 	var acct *Account
+	var auth *Auth
 	if version != "" {
-		acct = m.account1(ctx, bin, run)
+		acct, auth = m.account1(ctx, bin, run)
 	}
-	return m.set(version, warns, acct)
+	return m.set(version, warns, acct, auth)
 }
 
-func (m *Monitor) set(version string, probe []string, acct *Account) Status {
+func (m *Monitor) set(version string, probe []string, acct *Account, auth *Auth) Status {
 	m.mu.Lock()
-	changed := version != m.version || !slices.Equal(probe, m.probe) || !sameAccount(acct, m.account)
+	changed := version != m.version || !slices.Equal(probe, m.probe) || !sameAccount(acct, m.account) || !sameAuth(auth, m.auth)
 	if version != m.version {
 		m.seen = nil // warnings from runs belong to the version that ran them
 	}
-	m.version, m.probe, m.checked, m.account = version, probe, time.Now(), acct
+	m.version, m.probe, m.checked, m.account, m.auth = version, probe, time.Now(), acct, auth
 	notify := m.onChange
 	m.mu.Unlock()
 	if changed && notify != nil {
@@ -287,10 +324,21 @@ func probeWarnings(out string, err error) []string {
 // runCLI runs the CLI briefly, with no input, in a temporary directory, and
 // returns its output.
 func runCLI(ctx context.Context, bin string, args ...string) (string, error) {
+	return runCLIEnv(ctx, nil, bin, args...)
+}
+
+// runCLINoKey is runCLI without KeyEnv in the CLI's environment.
+func runCLINoKey(ctx context.Context, bin string, args ...string) (string, error) {
+	return runCLIEnv(ctx, withoutKey(localrun.Environ()), bin, args...)
+}
+
+// runCLIEnv is runCLI with env (nil: this process's).
+func runCLIEnv(ctx context.Context, env []string, bin string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = os.TempDir()
+	cmd.Env = env
 	// Its own process group, so the timeout stops what claude started too,
 	// and Run doesn't block on a grandchild holding the output pipe.
 	localrun.Group(cmd, syscall.SIGKILL, 5*time.Second)

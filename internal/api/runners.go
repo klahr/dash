@@ -22,18 +22,30 @@ import (
 
 // A hub's runners (`dash runner`) belong to the user who registered them,
 // in the org they were working in. Everyone in that org sees them. Projects
-// don't name runners: a project runs on runner labels, and works goes to
-// the org's runners that have them (model.LabelsMatch). The owner and the
-// org's admins label, pause, limit and revoke a runner. Members may only
-// set a project's labels so that it runs on their own runners, admins on
-// any of the org's (a runner's tasks use its owner's Claude subscription;
-// see checkRunsOn). Other orgs never see a runner.
+// don't name runners: a project runs on runner labels, and its work goes
+// to the org's runners that have them (model.LabelsMatch) and that do the
+// work of whoever it is for: a runner does only its owner's work, unless
+// it is a shared runner (Take other members' tasks, with an API key and no
+// subscription login; see tunnel/shared.go). The owner and the org's
+// admins label, pause, limit, share and revoke a runner. Members may only
+// set a project's labels so that it runs on their own runners or shared
+// ones, admins on any of the org's (checkRunsOn: a runner clones the
+// project and does its git work with its owner's git login). Other orgs
+// never see a runner.
 
 // runnerView is a runner as the org settings page shows it.
 type runnerView struct {
 	tunnel.Runner
 	Mine      bool `json:"mine"`       // the caller registered it
 	CanManage bool `json:"can_manage"` // the caller may label, pause, limit and revoke it
+	// SignIn is how Claude signs in on it, for people: "an API key", "a
+	// Claude Max subscription", … ("unknown" from a runner too old to say).
+	SignIn string `json:"sign_in"`
+	// TakesOthers: it takes other members' tasks now (Shared, with an API
+	// key and no subscription login). CantShare is why Take other
+	// members' tasks can't be turned on, or has no effect ("": it can).
+	TakesOthers bool   `json:"takes_others"`
+	CantShare   string `json:"cant_share,omitempty"`
 }
 
 func (s *Server) fleet() *tunnel.Hub {
@@ -87,7 +99,10 @@ func (s *Server) view(c Caller, r tunnel.Runner) runnerView {
 	if s.Dispatch != nil {
 		r.Running = s.Dispatch.Busy(r.ID)
 	}
-	return runnerView{Runner: r, Mine: r.Owner != nil && r.Owner.UserID == c.User, CanManage: s.canManageRunner(c, r)}
+	v := runnerView{Runner: r, Mine: r.Owner != nil && r.Owner.UserID == c.User, CanManage: s.canManageRunner(c, r),
+		SignIn: r.Auth().Plan(), CantShare: r.Auth().NotShared()}
+	v.TakesOthers, _ = r.TakesOthers()
+	return v
 }
 
 var errNoRunner = errors.New("no such runner in your organization")
@@ -143,6 +158,8 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 			AutoUpdate *bool          `json:"auto_update"`
 			Disk       *disk.Settings `json:"disk"`
 			Labels     *[]string      `json:"labels"`
+			// Shared is Take other members' tasks (tunnel.Runner.Shared).
+			Shared *bool `json:"shared"`
 		}
 		c, x, ok := s.managedRunner(w, r)
 		if !ok {
@@ -164,6 +181,14 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 				return
 			}
 		}
+		if req.Shared != nil && *req.Shared && !x.Shared {
+			// Refused here, before anything else changes, for a runner
+			// that signs in to Claude with a subscription (or doesn't say).
+			if why := x.CanShare(); why != "" {
+				writeErr(w, fmt.Errorf("%w: %s %s", errBadRequest, x.Name, why))
+				return
+			}
+		}
 		if err := rh.Configure(x.ID, req.Parallel, req.Paused); err != nil {
 			writeErr(w, err)
 			return
@@ -178,6 +203,15 @@ func (s *Server) runnerRoutes(mux routeMux, rh *tunnel.Hub) {
 			if err := rh.SetDisk(x.ID, *req.Disk); err != nil {
 				writeErr(w, err)
 				return
+			}
+		}
+		if req.Shared != nil {
+			if err := rh.SetShared(x.ID, *req.Shared); err != nil {
+				writeErr(w, errors.Join(errBadRequest, err))
+				return
+			}
+			if !*req.Shared && s.Dispatch != nil {
+				s.Dispatch.StopOthersWork(x.ID) // its other members' tasks wait for another runner
 			}
 		}
 		if req.Labels != nil {
@@ -276,10 +310,11 @@ func (s *Server) managedRunner(w http.ResponseWriter, r *http.Request) (Caller, 
 
 // checkRunsOn checks a project's new runner labels for c and returns them
 // tidied (model.CleanLabels): p needs a git remote to run on runners, and
-// every runner the labels newly send p's work to must be c's own, or c an
-// admin of the org. A runner's tasks run on its owner's computer and use
-// their Claude subscription, so a member can't send work to another's
-// runner by picking labels it has.
+// every runner the labels newly link p to must be c's own, a shared runner,
+// or c an admin of the org. Whose tasks a runner runs no longer depends on
+// labels (a runner runs only its owner's, unless shared: see
+// dispatch.Dispatcher.pick); this guards the rest of a project's work on a
+// runner, which uses its owner's git login: its clone, pushes and tags.
 func (sv *service) checkRunsOn(p model.Project, labels []string) ([]string, error) {
 	labels, err := model.CleanLabels(labels)
 	if err != nil {
@@ -295,7 +330,10 @@ func (sv *service) checkRunsOn(p model.Project, labels []string) ([]string, erro
 		if slices.ContainsFunc(before, func(b tunnel.Runner) bool { return b.ID == r.ID }) || sv.s.canManageRunner(sv.c, r) {
 			continue
 		}
-		return nil, fmt.Errorf("%w: %s is %s's runner and has the labels %s: only they or an admin of the organization can send work to it. "+
+		if shared, _ := r.TakesOthers(); shared {
+			continue // it takes the org's work: what it is shared for
+		}
+		return nil, fmt.Errorf("%w: %s is %s's runner and has the labels %s: only they or an admin of the organization can link projects to it. "+
 			"Pick labels it lacks (give your own runners a label of their own in Runners), or ask them", errBadRequest, r.Name, r.Owner.Username, strings.Join(labels, ", "))
 	}
 	return labels, nil
@@ -337,6 +375,25 @@ func (s *Server) unlinkLater(projects []model.Project, ids []string) {
 			cancel()
 		}
 	}()
+}
+
+// actionOnRunner refuses c's action on task t that runs a project command
+// on t's runner (what: "run its tests"), unless that runner does c's work:
+// it is theirs, or a shared runner (tunnel.Runner.WorksFor). The runner
+// checks it again.
+func (s *Server) actionOnRunner(c Caller, t model.Todo, what string) error {
+	fl := s.fleet()
+	if fl == nil {
+		return nil
+	}
+	r, ok := fl.Get(t.Runner)
+	if !ok {
+		return nil // onRunner says it is gone
+	}
+	if ok, why := r.WorksFor([]int64{c.User}); !ok {
+		return fmt.Errorf("%w: %s, so it can't %s for you", errForbidden, why, what)
+	}
+	return nil
 }
 
 // runnerTask returns the dispatcher for t, a task on a runner, or an

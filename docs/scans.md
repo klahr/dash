@@ -145,7 +145,9 @@ Look for vulnerabilities in {{path}} …
   startup, and a scan never runs twice at the same time. Scheduled scans wait while the
   subscription usage pauses the task queue. `-scan-schedules=false` turns schedules off.
 - **On a hub.** The hub runs no Claude (see [several computers](several-computers.md#claude-runs-on-each-users-own-runner)): it
-  sends each run's Claude part to one of the project's runners: it checks origin's default branch
+  sends each run's Claude part to one of the project's runners of the member the run is for (who
+  pressed **Run**, or who last turned its schedule on or changed it), or to a shared runner (see
+  [Whose work a runner does](several-computers.md#whose-work-a-runner-does)): it checks origin's default branch
   out in its clone and runs Claude there, and the hub records the findings. While none of the
   project's runners is online the run waits, showing "no runner online", and goes ahead as soon as
   one connects; a project no runner has the labels of can't be scanned. `-scan-timeout` is the hub's.

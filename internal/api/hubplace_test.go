@@ -79,7 +79,7 @@ func TestHubLinkAdoptsAnExistingClone(t *testing.T) {
 		t.Errorf("another folder appeared: %v", ents)
 	}
 	// Tasks reach it by the hub's id.
-	b, _ := json.Marshal(dispatch.Task{HubTodoID: "t1", HubProjectID: "hub-p1", Title: "t", Prompt: "p"})
+	b, _ := json.Marshal(dispatch.Task{For: []int64{runnerOwnerID}, HubTodoID: "t1", HubProjectID: "hub-p1", Title: "t", Prompt: "p"})
 	if w := send(h, "POST", "/api/hub/tasks", string(b)); w.Code != http.StatusCreated {
 		t.Errorf("task: %d %s", w.Code, w.Body)
 	}
@@ -296,7 +296,7 @@ func TestHubLegacyClonesKeepWorking(t *testing.T) {
 	stray, _ := raw(s).CreateProject(model.Project{Name: "stray", Path: filepath.Join(s.ProjectRoot, "stray"), HubProjectID: "hub-p9"})
 
 	task := func(hp, ht string) int {
-		b, _ := json.Marshal(dispatch.Task{HubTodoID: ht, HubProjectID: hp, Title: "t", Prompt: "p"})
+		b, _ := json.Marshal(dispatch.Task{For: []int64{runnerOwnerID}, HubTodoID: ht, HubProjectID: hp, Title: "t", Prompt: "p"})
 		return send(h, "POST", "/api/hub/tasks", string(b)).Code
 	}
 	marked, err := raw(s).BackfillHubCheckouts(LegacyHubClone(s.ProjectRoot))
@@ -380,9 +380,9 @@ func TestHubTaskBuildsOnTheRunnersCopy(t *testing.T) {
 		t.Fatalf("link: %d", code)
 	}
 	for _, task := range []dispatch.Task{
-		{HubTodoID: "t1", HubProjectID: "hub-p1", Title: "first", Prompt: "p"},
-		{HubTodoID: "t2", HubProjectID: "hub-p1", Title: "second", Prompt: "p", BuildsOn: "t1"},
-		{HubTodoID: "t3", HubProjectID: "hub-p1", Title: "third", Prompt: "p", BuildsOn: "elsewhere"},
+		{For: []int64{runnerOwnerID}, HubTodoID: "t1", HubProjectID: "hub-p1", Title: "first", Prompt: "p"},
+		{For: []int64{runnerOwnerID}, HubTodoID: "t2", HubProjectID: "hub-p1", Title: "second", Prompt: "p", BuildsOn: "t1"},
+		{For: []int64{runnerOwnerID}, HubTodoID: "t3", HubProjectID: "hub-p1", Title: "third", Prompt: "p", BuildsOn: "elsewhere"},
 	} {
 		b, _ := json.Marshal(task)
 		if w := send(h, "POST", "/api/hub/tasks", string(b)); w.Code != http.StatusCreated {

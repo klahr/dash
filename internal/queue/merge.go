@@ -60,6 +60,8 @@ type MergeQueue struct {
 	Perms       *perm.Broker
 	Kick        func() // wake the todo engine after sending a todo back or merging one
 	TestTimeout time.Duration
+	// Shared: as TodoEngine.Shared, for the checks of other members' work.
+	Shared *SharedWork
 	// PRPoll is how often open pull requests are checked (0 = never).
 	PRPoll time.Duration
 	// Cleanup settings; see cleanup.go.
@@ -419,13 +421,16 @@ func (m *MergeQueue) process(ctx context.Context, job model.MergeJob) error {
 			// 2. Test what lands, unless the tests already passed on exactly
 			// this commit: a red build goes back to the todo, not onto the
 			// default branch.
+			if err := heldErr(p, model.CmdTest); err != nil {
+				return fmt.Errorf("tests not run, so not merged: %w", err)
+			}
 			if p.TestCommand != "" {
 				head, err := m.Git.Head(ctx, p.ID, wt.Path, "HEAD")
 				if err != nil {
 					return err
 				}
 				if !checksPassedOn(t.Checks, p.TestCommand, head) {
-					checks := runChecks(ctx, m.Git, m.Log, t, p, wt.Path, "merge", m.TestTimeout)
+					checks := runChecks(ctx, m.Git, m.Log, m.Shared, t, p, wt.Path, "merge", m.TestTimeout)
 					if ctx.Err() != nil {
 						return ctx.Err() // tests cut off by a shutdown haven't failed
 					}

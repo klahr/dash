@@ -388,6 +388,9 @@ func TestProjectsRunOnLabels(t *testing.T) {
 	}
 }
 
+// runnerOwnerID is the hub's user who registered runnerSide's runner.
+const runnerOwnerID = 42
+
 // runnerSide is a runner's Dash as its hub reaches it through the tunnel,
 // with a git repository to stand in for the shared remote.
 func runnerSide(t *testing.T, hubOrg int64) (s *Server, h http.Handler, remote string) {
@@ -396,6 +399,7 @@ func runnerSide(t *testing.T, hubOrg int64) (s *Server, h http.Handler, remote s
 	s.Git = gitops.New(s.Hub)
 	s.ProjectRoot = t.TempDir()
 	s.HubOrg = hubOrg
+	s.HubUser = runnerOwnerID // tests with a registered runner set its owner's
 	remote = filepath.Join(t.TempDir(), "remote")
 	if err := s.Git.InitRepo(context.Background(), "remote", remote, "main"); err != nil {
 		t.Fatal(err)
@@ -411,7 +415,7 @@ func TestRunnerOnlyTakesWorkForLinkedProjects(t *testing.T) {
 	serial(t) // turns gitops.AllowLocalRemotes off for a moment
 	s, h, remote := runnerSide(t, 7)
 	task := func(project, todo string) *httptest.ResponseRecorder {
-		b, _ := json.Marshal(dispatch.Task{HubTodoID: todo, HubProjectID: project, Title: "t", Prompt: "do it"})
+		b, _ := json.Marshal(dispatch.Task{For: []int64{runnerOwnerID}, HubTodoID: todo, HubProjectID: project, Title: "t", Prompt: "do it"})
 		return send(h, "POST", "/api/hub/tasks", string(b))
 	}
 	if w := task("hub-p1", "hub-t1"); w.Code != http.StatusForbidden {
@@ -607,27 +611,27 @@ func TestRunnerAnswersATaskItFinishedAlready(t *testing.T) {
 	}
 	const sha = "0123456789abcdef0123456789abcdef01234567"
 
-	_, acc := send1(dispatch.Task{HubTodoID: "hub-t1"})
+	_, acc := send1(dispatch.Task{For: []int64{runnerOwnerID}, HubTodoID: "hub-t1"})
 	set(acc.ID, func(x *model.Todo) { x.Status, x.MergedCommit = model.StatusMerged, sha })
-	if w, _ := send1(dispatch.Task{HubTodoID: "hub-t1"}); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), dispatch.AlreadyMerged) {
+	if w, _ := send1(dispatch.Task{For: []int64{runnerOwnerID}, HubTodoID: "hub-t1"}); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), dispatch.AlreadyMerged) {
 		t.Errorf("merged task to an older hub: %d %s", w.Code, w.Body)
 	}
-	w, got := send1(dispatch.Task{HubTodoID: "hub-t1", TakesDone: true})
+	w, got := send1(dispatch.Task{For: []int64{runnerOwnerID}, HubTodoID: "hub-t1", TakesDone: true})
 	if w.Code != http.StatusOK || got.ID != acc.ID || got.Done == nil || got.Done.Status != model.StatusMerged ||
 		got.Done.MergedCommit != sha || got.Done.HubTodoID != "hub-t1" {
 		t.Fatalf("merged task: %d %s", w.Code, w.Body)
 	}
 
-	_, acc = send1(dispatch.Task{HubTodoID: "hub-t2"})
+	_, acc = send1(dispatch.Task{For: []int64{runnerOwnerID}, HubTodoID: "hub-t2"})
 	set(acc.ID, func(x *model.Todo) { x.Status, x.Summary = model.StatusReview, "did it" })
-	w, got = send1(dispatch.Task{HubTodoID: "hub-t2", TakesDone: true, Rejoin: true})
+	w, got = send1(dispatch.Task{For: []int64{runnerOwnerID}, HubTodoID: "hub-t2", TakesDone: true, Rejoin: true})
 	if w.Code != http.StatusOK || got.Done == nil || got.Done.Status != model.StatusReview || got.Done.Summary != "did it" {
 		t.Fatalf("rejoining a task in review: %d %s", w.Code, w.Body)
 	}
 	if td, _ := raw(s).GetTodo(acc.ID); td.Status != model.StatusReview {
 		t.Errorf("rejoining moved the task to %s", td.Status)
 	}
-	w, got = send1(dispatch.Task{HubTodoID: "hub-t2", TakesDone: true, Feedback: []string{"one more thing"}})
+	w, got = send1(dispatch.Task{For: []int64{runnerOwnerID}, HubTodoID: "hub-t2", TakesDone: true, Feedback: []string{"one more thing"}})
 	if w.Code != http.StatusOK || got.Done != nil || !got.Resumed {
 		t.Fatalf("sent back for rework: %d %s", w.Code, w.Body)
 	}

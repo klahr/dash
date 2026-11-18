@@ -98,7 +98,7 @@ func (s *Server) listScans(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runScan(w http.ResponseWriter, r *http.Request) {
-	_, _, ok := s.project(w, r)
+	sv, _, ok := s.project(w, r)
 	if !ok {
 		return
 	}
@@ -106,7 +106,7 @@ func (s *Server) runScan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, errScansOff)
 		return
 	}
-	run, err := s.Scans.Start(r.PathValue("pid"), r.PathValue("name"), "manual")
+	run, err := s.Scans.StartFor(r.PathValue("pid"), r.PathValue("name"), "manual", sv.c.User)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -189,6 +189,10 @@ func (s *Server) updateScan(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.ApproveTools != nil {
 			st.ApprovedTools = slices.Clone(*req.ApproveTools)
+		}
+		if req.Reset || req.Schedule != nil || req.ApproveSchedule != nil || (req.Enabled != nil && *req.Enabled) {
+			// Its scheduled runs are theirs: on a hub, on their runners.
+			st.ScheduledBy = sv.c.User
 		}
 	}
 	// Check the outcome before saving it.

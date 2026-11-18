@@ -216,6 +216,8 @@ func TestRunnerTerminalPreviewThroughTheHub(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs, runnerAPI, _ := runnerSide(t, creds.OrgID)
+	rs.HubUser = creds.UserID
+	rs.HubUser = creds.UserID
 	rs.Procs, rs.HubUser = runner.NewManager(rs.Hub), creds.UserID
 	t.Cleanup(rs.Procs.StopAll)
 	rs.Previews = preview.New(rs.Procs, rs.Hub, raw(rs), "")

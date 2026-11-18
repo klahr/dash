@@ -297,7 +297,9 @@ Runners registered with an older hub become the env account's.
 ## Shared projects: tasks on runners
 
 The hub coordinates; the runners do the work. A shared project's tasks run on the org's runners
-that have the labels it runs on ([Runner labels](#runner-labels)). From then on:
+that have the labels it runs on ([Runner labels](#runner-labels)) and that do the work of the
+member it is for: a runner runs only its owner's tasks, unless it is a shared runner with an API
+key ([Whose work a runner does](#whose-work-a-runner-does)). From then on:
 
 - Each task goes to one of the project's runners that is online, not paused, below its limit and
   not held back by its owner's Claude usage, the least busy first. A task that ran before goes
@@ -310,7 +312,9 @@ that have the labels it runs on ([Runner labels](#runner-labels)). From then on:
   **Any** to let any runner take it again. You can change it while the task is a draft, queued
   or failed.
 - If none can take it, the task stays queued and its card says why ("no runner online: laptop is
-  offline", "waiting for a runner: laptop is busy (3 of 3 tasks)"). It starts as soon as one can.
+  offline", "waiting for a runner: laptop is busy (3 of 3 tasks)", "waiting: no runner of alice's
+  has the labels Linux; laptop is bob's runner and only takes bob's tasks"). It starts as soon as
+  one can.
 - The project needs a git remote: each runner clones it into its projects folder the first time
   it works on it (see [Where a runner keeps a shared project](#where-a-runner-keeps-a-shared-project)),
   and keeps that clone. Work lands on the remote's default branch the same
@@ -374,7 +378,8 @@ that have the labels it runs on ([Runner labels](#runner-labels)). From then on:
 ### Runner labels
 
 Projects don't name the runners they run on. As on GitHub Actions, a project runs on **labels**,
-and a runner works on every project of its org whose labels it all has:
+and a runner works on every project of its org whose labels it all has. Labels say where a
+project's work can go; whose tasks a runner then runs is the next section's rule:
 
 - Every runner has the labels of its system (`Linux`, `macOS` or `Windows`) and its architecture
   (`X64`, `ARM64`, `ARM` or `X86`). A runner from before Dash reported its system has none.
@@ -387,8 +392,9 @@ and a runner works on every project of its org whose labels it all has:
   Below the field the org's runners show whether they have them, as you type. A project with no
   labels runs on no runner, and says it **needs a runner**.
 
-So adding a computer means giving it the right labels: it then takes the work of every project on
-them, with no project to change. Taking a label off a runner, or changing a project's labels, makes
+So adding a computer means giving it the right labels: it then takes its owner's work in every
+project on them (and other members' work too, if it is a shared runner), with no project to
+change. Taking a label off a runner, or changing a project's labels, makes
 runners leave the project: each keeps its clone on its disk as a project of its own. Either change
 is refused while one of the project's tasks is running on a runner it would leave (Claude working
 on it, a review or a merge): "1 task of web is running on laptop: wait for them to finish (or
@@ -396,12 +402,13 @@ cancel them) before changing the labels". Tasks that finished running there (in 
 waiting to continue) keep their worktrees there; queued again, they start afresh on another of the
 project's runners.
 
-A runner's tasks run on its owner's computer, with their Claude subscription. So a member can set a
-project's labels only so that it runs on their own runners, besides those it already ran on; an
-admin can send it to any runner of the org. When the labels would also send work to someone
-else's runner, saving says so: "laptop is ana's runner and has the labels gpu: only they or
-an admin of the organization can send work to it". Give your own runners a label of their own and
-use it. A runner of another org never works on a project, whatever its labels.
+A runner clones a project it works on and does its git work (pushes, tags) with its owner's git
+login. So a member can set a project's labels only so that it runs on their own runners or on
+shared runners, besides those it already ran on; an admin can pick any runner of the org. When the
+labels would also link someone else's runner, saving says so: "laptop is ana's runner and has the
+labels gpu: only they or an admin of the organization can link projects to it". Give your own
+runners a label of their own and use it. Labels never send your tasks to someone else's runner:
+see the next section. A runner of another org never works on a project, whatever its labels.
 
 A hub from before labels moves its projects to them when it starts: a project that was linked to
 every runner of its org runs on `any`; any other gets a label of its own,
@@ -411,6 +418,102 @@ runs on runner labels").
 Runners used to have the label `self-hosted`. A hub from before `any` drops it when it starts: a
 project that ran on `self-hosted` alone runs on `any`, one that ran on other labels as well keeps
 only those, and a runner that was given `self-hosted` by hand loses it.
+
+### Whose work a runner does
+
+A runner runs work on its owner's computer, as its owner, and Claude there is signed in with its
+owner's login. So **a runner only does its owner's work**. The project stays shared: everyone in
+the org sees it and adds tasks to it, and each member's tasks run on their own runners.
+
+- A task runs on the runners of the member who created it. Labels pick which of their runners.
+- A later run of a task is for whoever started it: queueing it, sending it back with feedback,
+  retrying, continuing or resuming it, or changing its instructions. If that is someone else than
+  the task's creator, the run needs a runner that does both members' work: a shared runner.
+- A task that is no one's needs a shared runner: one Dash made itself (a failed build's fix, a
+  revert's undo) or one whose author's account was deleted. A task Dash made that a member then
+  queued is theirs. A goal's tasks are the goal's owner's.
+- A scan run is for the member who pressed **Run**. A scheduled run is for the member who last
+  turned its schedule on or changed it.
+- **Run tests again**, and the project's start server, test and deploy commands and previews, run
+  only on a runner of the member who starts them, or on a shared runner.
+- **Runner** in the task form (and `run_on` in the API and board tools) only takes the task
+  owner's runners and shared runners. A runner that can't take the task makes it wait, saying why
+  ("laptop is bob's runner and only takes bob's tasks").
+- Terminals, `!` commands and chats on a runner stay its owner's alone.
+
+A task that waits because only other members' runners have its labels says so: "waiting: no runner
+of alice's has the labels Linux; laptop is bob's runner and only takes bob's tasks". Give one of
+your runners those labels, or ask for a shared runner.
+
+#### Shared runners use an API key
+
+A Claude subscription (Pro, Max, Team or Enterprise) is one person's, and Team and Enterprise
+seats are too: Dash never runs one member's work on another member's subscription. Only an
+Anthropic API key, billed to the account that owns it (for example your company's Anthropic
+Console account), can be shared. A **shared runner** runs Claude with an API key and has no
+subscription login:
+
+1. On the computer, use a user account with no Claude login. Check it without the key, and log
+   out if it says `"loggedIn": true`:
+
+   ```sh
+   env -u ANTHROPIC_API_KEY claude auth status
+   claude auth logout
+   ```
+2. Start the runner with the key in its environment:
+
+   ```sh
+   ANTHROPIC_API_KEY=sk-ant-... dash runner
+   ```
+
+   Put the variable in the service's environment if the runner runs as a service.
+3. In **Runners**, open the runner, and under **Settings** turn on **Take other members' tasks**.
+   Only its owner or an org admin can.
+
+The runner's page says how Claude signs in on it ("API key", or which subscription) and whose tasks
+it takes. **Take other members' tasks** can't be turned on for a runner that reports a
+subscription login, or doesn't say (an older runner: update it); the page says why next to it.
+
+A shared runner also takes other members' tasks with labels it has. It runs them, and their
+project commands, with the API key only: Dash removes `CLAUDE_CODE_OAUTH_TOKEN` and other login
+variables from their environment, and gives Claude a config folder of its own
+(`<-data>/shared-claude`), so it can't fall back to a login. When Claude starts, the runner checks
+it signed in with `ANTHROPIC_API_KEY` and stops the run if not.
+
+If a shared runner later reports a subscription login, it stops taking other members' work at
+once: their running tasks stop there and wait for another runner, saying why, and their next
+steps don't run there.
+
+The runner checks all this too, not only the hub. Each start of work says whom it is for. A runner
+refuses work for anyone but its owner unless **Take other members' tasks** is on and it signs in
+with an API key alone. A runner registered with a hub too old to say who registered it treats all
+work as other members': register it again with a new code.
+
+#### Project commands need approval
+
+A project's commands (setup, test, start server, terminal preview and deploy) run as the runner's
+owner, on their computer, and a command could call `claude` itself. Dash records who last changed
+each command. A runner runs a command only if an org admin set it, the runner's owner set it, it
+was there before this rule, or the runner is a shared runner. Otherwise the step fails and says who
+changed the command: an org admin or the runner's owner must save it again in **Project settings →
+General** to approve it. Saving it unchanged approves it: an admin's save for every runner, an
+owner's for their own runners.
+
+#### Runners from before this rule
+
+Runners used to work on every project whose labels they had, for every member. When a hub
+upgrades, each runner registered before keeps doing so only if it is a shared runner by then:
+
+- A runner that reports an API key and no subscription login, and that other members' tasks went
+  to, gets **Take other members' tasks** on. The hub logs "runner: now takes other members' tasks".
+- Any other runner (a subscription login, or a runner too old to say) takes only its owner's tasks.
+  The hub logs "runner: now takes only its owner's tasks" with how it signs in. Other members'
+  tasks that would have gone to it wait, saying why.
+- Commands set before the upgrade count as approved.
+
+The hub settles a runner when it first reports how Claude signs in; until then it takes only its
+owner's tasks. Admins should check the hub's log for runners that stopped taking other members'
+work. A team that wants shared runners needs one with an API key.
 
 ### A runner's projects
 
@@ -743,7 +846,7 @@ shows each runner's count. The hub logs who sent which command.
 
 The hub doesn't run Claude at all, and can't be made to: it keeps the board (the database) and
 serves the website, and the runners do all the Claude work, each with its own `claude` login (its
-owner's subscription). So **a hub needs at least one runner**: start `dash runner` on a computer
+owner's subscription, or an API key on a shared runner). So **a hub needs at least one runner**: start `dash runner` on a computer
 with git and Claude Code logged in (account menu → **Runners** → **Add a runner** gives the
 command). Until one is online, the dashboard says so where Claude would be used. The hub needs
 **no `claude` install, no `-claude` flag, no login and no API key**; it never starts `claude` and
@@ -753,9 +856,11 @@ tools (issues it reports, tasks it creates) goes straight to the hub's.
 
 Where each kind of Claude work runs:
 
-- **Tasks**: on one of the project's runners (see [above](#shared-projects-tasks-on-runners)).
+- **Tasks**: on one of the project's runners that does the task's owner's work (see
+  [above](#shared-projects-tasks-on-runners) and [Whose work a runner does](#whose-work-a-runner-does)).
   A task of a project no runner has the labels of waits, saying which labels it runs on.
-- **Scans**: on one of the project's runners online, in a throwaway checkout of its clone at
+- **Scans**: on one of the project's runners online of the member the run is for (or a shared
+  runner), in a throwaway checkout of its clone at
   origin's default branch. The hub keeps the runs, their logs and the issues they file; the run's
   log says which runner it ran on. With the project's runners all offline a run waits, showing
   "no runner online: laptop is offline", and starts when one comes back; a project no runner has the

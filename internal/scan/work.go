@@ -45,6 +45,13 @@ type Job struct {
 	// Ref is the default branch's ref ("": refs/heads/<default>). A runner
 	// scans origin's, which it fetched, rather than its clone's.
 	Ref string `json:"-"`
+	// For is the hub's user the run is for (model.ScanRun.StartedBy; 0: no
+	// one's). Only their own runners, or shared ones, take it.
+	For int64 `json:"for,omitempty"`
+	// Shared is, on a runner, the Claude config folder of a scan for
+	// another member than its owner: Claude runs with the runner's API key
+	// alone (claudecli.SharedEnv). "": its owner's.
+	Shared string `json:"-"`
 }
 
 // Resume is what a run that starts over an interrupted one keeps of it.
@@ -202,7 +209,7 @@ func (r *Runner) Work(ctx context.Context, p model.Project, job Job, h Hooks) (O
 	if emit == nil {
 		emit = func(model.RunEvent) {}
 	}
-	res, err := r.Exec.Run(runCtx, agent.ExecRequest{Dir: dir, Prompt: prompt, ExtraArgs: extra}, emit)
+	res, err := r.Exec.Run(runCtx, agent.ExecRequest{Dir: dir, Prompt: prompt, ExtraArgs: extra, Shared: job.Shared}, emit)
 	out.Result, out.CostUSD, out.Turns, out.Dir = res.Result, res.CostUSD, res.Turns, dir
 	if ctx.Err() == nil && errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 		return out, fmt.Errorf("stopped: the scan ran longer than its %s limit", timeout)

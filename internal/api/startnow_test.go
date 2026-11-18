@@ -101,6 +101,7 @@ func TestHubBoardStartNow(t *testing.T) {
 	defer release()
 
 	td := withStatus(t, hub, linked.ID, model.StatusQueued)
+	td, _ = raw(hub).UpdateTodo(td.ID, func(x *model.Todo) error { x.CreatedBy = owner.User; return nil }) // the runner's owner's
 	text, isErr := call(t, h, token, "get_todo", `{"todo":"`+td.ID+`"}`)
 	if m := fields(t, text); isErr || m["waiting"] != "pace" || !strings.Contains(m["pace_reason"].(string), "laptop has paused its queue (Waiting 2h to stay on pace)") {
 		t.Errorf("get_todo: %s", text)

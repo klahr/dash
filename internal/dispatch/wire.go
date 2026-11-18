@@ -85,6 +85,10 @@ type Link struct {
 	// PreviewCommand), taken like its commands: a terminal preview is a shell.
 	PreviewKind    string `json:"preview_kind,omitempty"`
 	PreviewCommand string `json:"preview_command,omitempty"`
+	// Held are the commands the runner must not run, by kind
+	// (model.CommandKinds), each with why; they are sent empty. See
+	// model.Project.CommandApproved.
+	Held map[string]string `json:"held,omitempty"`
 }
 
 // Linked is the runner's answer to Link: its project for the hub's.
@@ -138,6 +142,12 @@ type Task struct {
 	// TakesDone: the hub understands Accepted.Done. An older hub, which
 	// would take that answer for "started", gets the error instead.
 	TakesDone bool `json:"takes_done,omitempty"`
+	// For are the hub's users this run of the task is for
+	// (model.Todo.WorkFor; 0: Dash's own work). The runner takes work for
+	// anyone but its owner only as a shared runner, with its API key alone
+	// (model.Todo.SharedWork); an older hub, which doesn't say, counts as
+	// someone else.
+	For []int64 `json:"for,omitempty"`
 }
 
 // Accepted is the runner's answer to Task.

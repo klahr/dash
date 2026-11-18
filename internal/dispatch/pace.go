@@ -65,6 +65,10 @@ type Reply struct {
 	// Disk are the runner's disk thresholds and Go build cache limit, as set
 	// on the hub (Runners → the runner → Disk).
 	Disk *disk.Settings `json:"disk,omitempty"`
+	// Shared is the runner's Take other members' tasks, as set on the
+	// hub (nil from an older hub: off). The runner takes other members'
+	// work only while it is on and it runs Claude with an API key alone.
+	Shared *bool `json:"shared,omitempty"`
 }
 
 func (p *Pacer) clock() time.Time {

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -832,6 +833,9 @@ func (a *app) setupHub() {
 	// coordinates.
 	todoLog := a.todoLog
 	d := &dispatch.Dispatcher{Store: st, Fleet: runners, Grace: o.runnerGrace, Kick: todos.Kick, Note: todoLog.Line, Pub: events}
+	// Runners do only their owner's work now, unless shared (an API key and
+	// no subscription login): those from before are settled as they report.
+	d.MigrateShared()
 	d.Undo = func(t model.Todo, files []string) {
 		nt, err := queue.UndoTodo(st, t, t.MergedCommit, files)
 		if err != nil {
@@ -966,6 +970,27 @@ func (a *app) setupRunner() {
 		},
 	}
 	apiSrv.DiskRoom = disks.CanStart
+	// Other members' work: only while the hub's Take other members' tasks
+	// is on for this runner and Claude signs in with an API key alone; it
+	// then runs in a Claude config folder of its own, with the key only.
+	var hubShared atomic.Bool
+	shared := &queue.SharedWork{Dir: filepath.Join(o.dataDir, "shared-claude"), Check: func() error {
+		if !hubShared.Load() {
+			return errors.New("its hub doesn't have Take other members' tasks on for it")
+		}
+		auth := cli.Status().Auth
+		if auth == nil { // not checked yet (it just started): ask now
+			cctx, cancel := context.WithTimeout(ctx, time.Minute)
+			cli.CheckAccount(cctx)
+			cancel()
+			auth = cli.Status().Auth
+		}
+		if why := auth.NotShared(); why != "" {
+			return errors.New(why)
+		}
+		return nil
+	}}
+	apiSrv.Shared, a.todos.Shared, merges.Shared = shared, shared, shared
 	// The hub hears where its tasks are, and this computer's usage.
 	reporter := &dispatch.Reporter{Store: st, Usage: a.tracker, Parallel: o.parallel, Terminals: true, Claude: cli, Disk: disks.Status,
 		// As shellAllowed: the hub's "!" commands run only for a known owner,
@@ -984,6 +1009,9 @@ func (a *app) setupRunner() {
 			}
 			if err == nil && reply.Disk != nil {
 				disks.SetSettings(*reply.Disk)
+			}
+			if err == nil {
+				hubShared.Store(reply.Shared != nil && *reply.Shared)
 			}
 			return err
 		}}

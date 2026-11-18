@@ -41,7 +41,7 @@ func TestRunChecksRecordsCleanCommit(t *testing.T) {
 	p.TestCommand = "grep -qx pass a.txt"
 	td := model.Todo{ID: "t1", ProjectID: p.ID}
 
-	c := runChecks(context.Background(), h.engine.Git, h.engine.Log, td, p, wt, "review", time.Minute)
+	c := runChecks(context.Background(), h.engine.Git, h.engine.Log, nil, td, p, wt, "review", time.Minute)
 	if !c.Passed || c.Commit != head {
 		t.Fatalf("want passing checks on %s, got passed=%v commit=%q", head, c.Passed, c.Commit)
 	}
@@ -60,7 +60,7 @@ func TestRunChecksOnUncommittedChangesRecordNoCommit(t *testing.T) {
 	p.TestCommand = "true"
 	td := model.Todo{ID: "t1", ProjectID: p.ID}
 
-	c := runChecks(context.Background(), h.engine.Git, h.engine.Log, td, p, wt, "review", time.Minute)
+	c := runChecks(context.Background(), h.engine.Git, h.engine.Log, nil, td, p, wt, "review", time.Minute)
 	if !c.Passed || c.Commit != "" {
 		t.Fatalf("want passing checks with no commit, got passed=%v commit=%q", c.Passed, c.Commit)
 	}
@@ -78,7 +78,7 @@ func TestRunChecksWhileHeadMovesRecordNoCommit(t *testing.T) {
 	p.TestCommand = gitIdent + " commit -q --allow-empty -m x"
 	td := model.Todo{ID: "t1", ProjectID: p.ID}
 
-	c := runChecks(context.Background(), h.engine.Git, h.engine.Log, td, p, wt, "review", time.Minute)
+	c := runChecks(context.Background(), h.engine.Git, h.engine.Log, nil, td, p, wt, "review", time.Minute)
 	if !c.Passed {
 		t.Fatalf("test command failed: %s", c.Output)
 	}

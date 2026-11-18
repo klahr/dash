@@ -76,7 +76,9 @@ too, the runner keeps its data apart from the hub's (`~/.local/share/dash-runner
 
 Projects live on runners. A **runner's own project** is a repository on that runner's disk; a
 **shared project** is a git remote that runs on runner labels, as a GitHub Actions job's `runs-on`
-does: every runner of the org with those labels clones it, and any of them can run its tasks
+does: every runner of the org with those labels clones it, and each member's tasks run on their
+own runners there (or on a shared runner with an API key; see
+[Whose work a runner does](docs/several-computers.md#whose-work-a-runner-does))
 (**Add project** on the hub: pick one of your GitHub repositories, create one, or paste a remote
 URL; each runner clones it into its projects folder, or adopts a clone of it already there). Set a
 project's labels in its settings, **Runners**, and a runner's on its page in Runners. See

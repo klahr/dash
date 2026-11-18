@@ -42,6 +42,7 @@ func TestHubAnswersPermissionRequestsOfTasksOnRunners(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs, runnerAPI, remote := runnerSide(t, creds.OrgID)
+	rs.HubUser = creds.UserID
 	client := &tunnel.Client{Creds: creds, Handler: runnerAPI, MinBackoff: 20 * time.Millisecond, MaxBackoff: 50 * time.Millisecond}
 	go func() { _ = client.Run(ctx) }()
 	eventually(t, "the runner to come online", func() bool { r, _ := rh.Get(creds.ID); return r.Online })
@@ -60,7 +61,7 @@ func TestHubAnswersPermissionRequestsOfTasksOnRunners(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ht, err := raw(hub).CreateTodo(model.Todo{ProjectID: p.ID, Title: "task", Prompt: "do it"})
+	ht, err := raw(hub).CreateTodo(model.Todo{ProjectID: p.ID, CreatedBy: owner.User, Title: "task", Prompt: "do it"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -91,6 +91,11 @@ type ScanRun struct {
 	ProjectID string `json:"project_id"`
 	Scan      string `json:"scan"`    // template name; its issues have source "scan:<name>"
 	Trigger   string `json:"trigger"` // "manual", "schedule" or "resume"
+	// StartedBy is, on a hub, the user the run is for: who started it, or
+	// for a scheduled run who last turned its schedule on or changed it
+	// (ScanSetting.ScheduledBy). 0: no one's; it runs only on a runner
+	// that takes other members' work.
+	StartedBy int64 `json:"started_by,omitempty"`
 	// ResumedFrom is the interrupted run this one starts over (trigger
 	// "resume"); ResumedAs, on the interrupted run, the run that did.
 	ResumedFrom string `json:"resumed_from,omitempty"`
@@ -146,8 +151,11 @@ type ScanSetting struct {
 	// ApprovedTools is the exact tool list of the repository template the
 	// user approved; once the template asks for other tools, it no longer
 	// applies and the scan runs with read-only tools.
-	ApprovedTools []string  `json:"approved_tools,omitempty"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ApprovedTools []string `json:"approved_tools,omitempty"`
+	// ScheduledBy is who last turned the schedule on or changed it: its
+	// scheduled runs are theirs (ScanRun.StartedBy).
+	ScheduledBy int64     `json:"scheduled_by,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // ScanTemplate is a custom scan a user wrote in Dash, kept per project next

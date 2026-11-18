@@ -74,6 +74,8 @@ func TestSharedNotesStatusAndRemovalThroughTheHub(t *testing.T) {
 	t.Cleanup(wg.Wait)
 	start := func(creds tunnel.Credentials, dir string) *runner {
 		rs, api, _ := runnerSide(t, creds.OrgID)
+		rs.HubUser = creds.UserID
+		rs.HubUser = creds.UserID
 		// The project, linked to the runner by the hub.
 		if _, err := raw(rs).CreateProject(model.Project{Name: "web", OrgID: testOwner(t, rs).Org, HubProjectID: p.ID, HubCheckout: model.HubCloned}); err != nil {
 			t.Fatal(err)

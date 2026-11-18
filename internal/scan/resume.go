@@ -53,7 +53,7 @@ func (r *Runner) ResumeInterrupted() []model.ScanRun {
 		if last, ok := r.Store.LastScanRun(orig.ProjectID, orig.Scan, nil); ok && last.ID != orig.ID {
 			continue // the scan ran again since: that run covers it
 		}
-		run, err := r.start(orig.ProjectID, orig.Scan, model.TriggerResume, &orig)
+		run, err := r.start(orig.ProjectID, orig.Scan, model.TriggerResume, &orig, orig.StartedBy)
 		switch {
 		case errors.Is(err, ErrRunning):
 			continue

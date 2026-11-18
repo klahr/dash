@@ -246,6 +246,8 @@ func TestRunnerScreenReportsCloneErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner, runnerAPI, _ := runnerSide(t, creds.OrgID)
+	runner.HubUser = creds.UserID
+	runner.HubUser = creds.UserID
 	runner.Peers = &peer.Hub{Self: "laptop"}
 	client := &tunnel.Client{Creds: creds, Handler: runnerAPI}
 	go func() { _ = client.Run(ctx) }()

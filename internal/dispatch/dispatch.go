@@ -191,7 +191,8 @@ func (d *Dispatcher) send(ctx context.Context, p model.Project, t model.Todo, r 
 	}
 	ds := r.Disk
 	task := Task{HubTodoID: t.ID, HubProjectID: p.ID, Title: t.Title, Prompt: t.Prompt, Model: t.Model, Feedback: t.Feedback,
-		Fresh: t.Runner != r.ID, Disk: &ds, StartNow: t.StartNow, Rejoin: t.Rejoin && t.Runner == r.ID, TakesDone: true}
+		Fresh: t.Runner != r.ID, Disk: &ds, StartNow: t.StartNow, Rejoin: t.Rejoin && t.Runner == r.ID, TakesDone: true,
+		For: t.WorkFor()}
 	if parent != nil {
 		task.BuildsOn = parent.ID
 		if t.Runner == "" && parent.Runner != r.ID && d.Note != nil {
@@ -258,17 +259,34 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 	}
 	load := d.claimedLoads() // runner id → tasks in progress or being sent to it, counted once for this pick
 	runners := tunnel.Serving(d.Fleet.List(), p)
+	// Only runners that may do this run's work: its creator's and starter's
+	// own, or shared ones (tunnel.Runner.WorksFor).
+	users := t.WorkFor()
+	var notFor []string
+	mine := slices.DeleteFunc(slices.Clone(runners), func(r tunnel.Runner) bool {
+		ok, why := r.WorksFor(users)
+		if !ok {
+			notFor = append(notFor, why)
+		}
+		return !ok
+	})
 	if t.RunOn != "" {
 		// The task was set to run on one runner: only that one may take it.
-		i := slices.IndexFunc(runners, func(r tunnel.Runner) bool { return r.ID == t.RunOn })
+		i := slices.IndexFunc(mine, func(r tunnel.Runner) bool { return r.ID == t.RunOn })
 		if i < 0 {
-			if _, ok := d.Fleet.Get(t.RunOn); !ok {
+			r, ok := d.Fleet.Get(t.RunOn)
+			switch {
+			case !ok:
 				return nil, "no runner: the runner this task is set to run on was revoked; pick another in the task", ""
+			case !slices.ContainsFunc(runners, func(x tunnel.Runner) bool { return x.ID == t.RunOn }):
+				return nil, "no runner: the runner this task is set to run on no longer has the labels this project runs on; pick another in the task", ""
 			}
-			return nil, "no runner: the runner this task is set to run on no longer has the labels this project runs on; pick another in the task", ""
+			_, why := r.WorksFor(users)
+			return nil, "no runner: " + why + "; pick another in the task", ""
 		}
-		runners = runners[i : i+1]
+		mine = mine[i : i+1]
 	}
+	runners = mine
 	for _, r := range runners {
 		var pace GroupPace
 		if d.Pacer != nil && active(r) {
@@ -309,10 +327,13 @@ func (d *Dispatcher) pick(p model.Project, t model.Todo, parent *model.Todo) (*t
 		}
 	}
 	if len(cands) == 0 {
+		if len(why) == 0 && len(notFor) > 0 {
+			return nil, "waiting: no runner " + d.whose(users) + " has the labels " + strings.Join(p.RunsOn, ", ") + "; " + strings.Join(notFor, "; "), ""
+		}
 		if len(why) == 0 {
 			return nil, "no runner: no runner has the labels this project runs on (" + strings.Join(p.RunsOn, ", ") + "); give one those labels, or change them in the project's settings", ""
 		}
-		return nil, waitReason(why), strings.Join(full, "; ")
+		return nil, waitReason(append(why, notFor...)), strings.Join(full, "; ")
 	}
 	// The runner that has the task's worktree and session continues it.
 	if i := slices.IndexFunc(cands, func(r tunnel.Runner) bool { return r.ID == t.Runner }); i >= 0 {
@@ -370,6 +391,30 @@ func tooFull(r tunnel.Runner) string {
 	return "runner " + r.Name + " is low on disk space"
 }
 
+// whose names whose runners work for users (model.Todo.WorkFor) may take:
+// "of alice's", or for work that is no one's (Dash's own) "that takes other
+// members' tasks".
+func (d *Dispatcher) whose(users []int64) string {
+	var names []string
+	for _, u := range users {
+		if u <= 0 {
+			return "that takes other members' tasks"
+		}
+		names = append(names, d.username(u))
+	}
+	return "of " + strings.Join(names, "'s and ") + "'s"
+}
+
+// username is user uid's username, for messages ("user <id>" when unknown).
+func (d *Dispatcher) username(uid int64) string {
+	if d.Store != nil {
+		if u, err := d.Store.Accounts().User(uid); err == nil && u.Username != "" {
+			return u.Username
+		}
+	}
+	return fmt.Sprintf("user %d", uid)
+}
+
 func lowerFirst(s string) string {
 	if s == "" {
 		return s
@@ -385,7 +430,8 @@ func (d *Dispatcher) Reply(id string) any {
 		return nil
 	}
 	s := r.Disk
-	reply := Reply{Disk: &s}
+	shared := r.Shared
+	reply := Reply{Disk: &s, Shared: &shared}
 	if d.Pacer != nil {
 		p := d.Pacer.For(r).RunnerPace(r)
 		reply.Pace = &p
@@ -439,9 +485,16 @@ func (d *Dispatcher) Report(id string, body []byte) error {
 		d.projectEvent(r, pid, model.EvChecklist, map[string]string{"path": checklist.Name})
 	}
 	d.setPermissions(r, rep.Permissions)
-	if rep.Disk != nil {
-		if fresh, ok := d.Fleet.Get(id); ok {
+	if fresh, ok := d.Fleet.Get(id); ok {
+		if rep.Disk != nil {
 			d.checkDisk(fresh)
+		}
+		// Whose work it takes, as it says now how Claude signs in.
+		d.migrateShared(fresh)
+		if fresh, ok = d.Fleet.Get(id); ok {
+			if takes, _ := fresh.TakesOthers(); !takes {
+				d.StopOthersWork(id)
+			}
 		}
 	}
 	if d.Kick != nil {
@@ -725,8 +778,11 @@ func (d *Dispatcher) applyTask(r tunnel.Runner, ts TaskState, answer bool) error
 // as sent (the hub stopped between the two) is the runner's, as sending it
 // again would run it twice, on another runner or from scratch on this one.
 func adopts(x *model.Todo, p model.Project, r tunnel.Runner, to model.TodoStatus) bool {
-	return x.Status == model.StatusQueued && x.Runner == "" && x.RemoteID == "" &&
-		to == model.StatusInProgress && r.Serves(p)
+	if x.Status != model.StatusQueued || x.Runner != "" || x.RemoteID != "" || to != model.StatusInProgress || !r.Serves(p) {
+		return false
+	}
+	ok, _ := r.WorksFor(x.WorkFor()) // never another member's work on a runner that doesn't take it
+	return ok
 }
 
 // applyMerged applies ts to x, a merged task: it is done, and only a revert

@@ -94,6 +94,11 @@ type Runner struct {
 	// it none.
 	Parallel int  `json:"parallel"`
 	Paused   bool `json:"paused"`
+	// Shared is the setting Take other members' tasks: the runner also
+	// takes the work of its org's other members, not only its owner's. It
+	// has effect only while the runner reports an API key and no
+	// subscription login (TakesOthers); see shared.go.
+	Shared bool `json:"shared"`
 	// AutoUpdate: the hub updates it when it connects running another
 	// version than the hub's release. Update is its update in progress
 	// (nil: none): it is in maintenance mode, taking no new tasks, apart
@@ -207,6 +212,10 @@ type record struct {
 	Arch      string    `json:"arch,omitempty"`      // see Runner.Arch
 	NotesKey  string    `json:"notes_key,omitempty"` // public: see Runner.NotesKey
 	Labels    []string  `json:"labels,omitempty"`    // see Runner.Labels
+	Shared    bool      `json:"shared,omitempty"`    // see Runner.Shared
+	// SharedSet: whether it takes other members' work was settled, by a
+	// person or by MigrateShared (false only for runners from before).
+	SharedSet bool `json:"shared_set,omitempty"`
 	// Its self-update (update.go).
 	AutoUpdate bool          `json:"auto_update,omitempty"`
 	Update     *Update       `json:"update,omitempty"`
@@ -442,7 +451,7 @@ func (h *Hub) register(code, name, prev string) (id, token string, owner model.O
 		}
 		return "", "", model.Owner{}, err
 	}
-	h.runners = append(h.runners, &record{ID: id, Name: name, Created: now})
+	h.runners = append(h.runners, &record{ID: id, Name: name, Created: now, SharedSet: true}) // new: its owner's work only
 	h.saveLocked()
 	go h.changed()
 	return id, token, owner, nil
@@ -590,7 +599,7 @@ func (h *Hub) ListBare() []Runner {
 
 func (h *Hub) viewLocked(r *record, online bool, owner *store.RunnerOwner) Runner {
 	v := Runner{ID: r.ID, Name: r.Name, Online: online, Created: r.Created, LastSeen: r.LastSeen, Owner: owner,
-		Version: r.Version, OS: r.OS, Arch: r.Arch, Parallel: r.Parallel, Paused: r.Paused, AutoUpdate: r.AutoUpdate, NotesKey: r.NotesKey,
+		Version: r.Version, OS: r.OS, Arch: r.Arch, Parallel: r.Parallel, Paused: r.Paused, Shared: r.Shared, AutoUpdate: r.AutoUpdate, NotesKey: r.NotesKey,
 		Labels: slices.Clone(r.Labels), DefaultLabels: model.DefaultRunnerLabels(r.OS, r.Arch)}
 	if v.Labels == nil {
 		v.Labels = []string{}
@@ -1121,6 +1130,11 @@ func cleanClaude(c claudecli.Status) *claudecli.Status {
 		if cp.Email == "" {
 			c.Account = nil
 		}
+	}
+	if a := c.Auth; a != nil {
+		cp := claudecli.Auth{Method: textutil.Clip(a.Method, 20), KeySource: textutil.Clip(a.KeySource, 60),
+			Subscription: textutil.Clip(a.Subscription, 40), Login: textutil.Clip(a.Login, 40)}
+		c.Auth = &cp
 	}
 	return &c
 }

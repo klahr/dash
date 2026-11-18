@@ -128,6 +128,7 @@ func newClaudeFleet(t *testing.T) *claudeFleet {
 		t.Fatalf("runner registered for user %d, want %d", f.creds.UserID, owner.User)
 	}
 	runner, h, _ := runnerSide(t, f.creds.OrgID)
+	runner.HubUser = f.creds.UserID
 	runner.HubUser, runner.Small, runner.Chat = f.creds.UserID, f.small, &echoChat{}
 	runner.ChatDir = filepath.Join(t.TempDir(), "chat")
 	f.runner = runner

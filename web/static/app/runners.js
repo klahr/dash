@@ -146,6 +146,29 @@ function accountChip(r) {
   return h("span", { class: "runner-account", title: `Claude account${a.org_name ? ` · ${a.org_name}` : ""}. Runners on one account share its usage and are paced together.` },
     ico("user"), h("span", { class: "runner-account-email" }, a.email), plan ? h("span", { class: "runner-plan" }, plan) : null);
 }
+// signInChip says how Claude signs in on runner r (an API key, or which
+// subscription), and whether it takes other members' tasks.
+function signInChip(r) {
+  if (!r.sign_in || r.sign_in === "unknown") return null;
+  const key = r.sign_in === "an API key";
+  return h("span", { class: `runner-signin${r.takes_others ? " shared" : ""}`,
+    title: r.takes_others ? "Takes other members' tasks: it runs them with its API key, never a subscription"
+      : `Takes only ${r.owner?.username || "its owner"}'s tasks` },
+    ico(key ? "key" : "user"), key ? "API key" : r.sign_in.replace(/^an? /, ""), r.takes_others ? " · shared" : "");
+}
+
+// whoseTasks says whose tasks runner r takes, and why not others' when its
+// setting is on but has no effect.
+function whoseTasks(r) {
+  const owner = r.owner?.username || "its owner";
+  if (r.takes_others) {
+    return h("p", { class: "hint" }, `Takes ${owner}'s tasks and other members' tasks with labels it has. It runs other members' tasks with its API key only, never a Claude subscription.`);
+  }
+  return h("p", { class: `hint${r.shared ? " warn" : ""}` },
+    `Takes only ${owner}'s tasks: Claude runs there on ${r.mine ? "your" : `${owner}'s`} login (${r.sign_in || "unknown"}).`,
+    r.shared && r.cant_share ? ` Take other members' tasks is on, but has no effect: ${r.cant_share}.` : "");
+}
+
 // pacedWith are the other runners on r's Claude account.
 const pacedWith = (r) => {
   const e = runnerAccount(r)?.email?.toLowerCase();
@@ -508,7 +531,8 @@ function paintRunner(r) {
       claude ? h("span", { class: `runner-version${claudeWarns.length ? " warn" : ""}`,
         title: claudeWarns.length ? "Claude Code version: its output or flags look different from what Dash expects" : "Claude Code version" },
         `Claude ${claude.version || "?"}`) : null,
-      accountChip(r)),
+      accountChip(r),
+      signInChip(r)),
     pacedWith(r).length ? h("p", { class: "hint runner-paced-with" },
       `Shares its Claude account with ${pacedWith(r).map((x) => x.name).join(", ")}: their usage is one budget, and following the weekly pace paces them together.`) : null,
     runnerUpdate(r),
@@ -520,6 +544,8 @@ function paintRunner(r) {
     r.reported?.disk?.volumes?.length || r.can_manage ? h("h4", { class: "section-head" }, "Disk") : null,
     runnerDisk(r),
     r.can_manage ? diskSettings(r) : null,
+    h("h4", { class: "section-head" }, "Whose tasks"),
+    whoseTasks(r),
     h("h4", { class: "section-head" }, "Labels"),
     runnerLabels(r).length ? h("div", { class: "runner-labels" }, ...runnerLabels(r).map((l, i) =>
       h("span", { class: `runner-label${i < (r.default_labels || []).length ? " default" : ""}`,
@@ -585,6 +611,19 @@ function paintRunner(r) {
         toast(r.paused ? `${r.name} takes tasks again` : `${r.name} paused: it finishes what it runs and takes no new tasks`);
         await renderRunners();
       }) }, r.paused ? "play" : "pause", r.paused ? "Resume" : "Pause")),
+    setting("Take other members' tasks",
+      r.shared
+        ? (r.takes_others ? "On: it also runs other members' tasks that have its labels, with its API key only."
+          : `On, but it has no effect: ${r.cant_share || "it doesn't run Claude with an API key alone"}.`)
+        : r.cant_share
+          ? `Can't be turned on: ${r.cant_share}. Only a runner that runs Claude with an API key (ANTHROPIC_API_KEY) and has no Claude subscription login can do other members' work: a subscription is one person's.`
+          : "Off: it runs only its owner's tasks. Turn on to let other members' tasks run here too, on its API key.",
+      ib({ class: "btn small", type: "button", "aria-pressed": String(!!r.shared), disabled: !r.shared && !!r.cant_share,
+        title: !r.shared && r.cant_share ? r.cant_share : "", onclick: attempt(async () => {
+          await patchRunner(r, { shared: !r.shared });
+          toast(r.shared ? `${r.name} takes only ${r.owner?.username || "its owner"}'s tasks now` : `${r.name} takes other members' tasks too, on its API key`);
+          await renderRunners();
+        }) }, "users", r.shared ? "Turn off" : "Turn on")),
     runnerInfo.canUpdate ? setting(r.auto_update ? "Updates itself" : "Updated by hand",
       r.auto_update ? "When it runs another version than the hub's, it finishes its tasks, then updates to the hub's version."
         : "Turn on to update it to the hub's version by itself, after its running tasks finish.",

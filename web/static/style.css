@@ -1264,6 +1264,9 @@ main { padding-bottom: calc(var(--nav-h) + var(--safe-b)); }
 .runner-os { display: inline-flex; align-items: center; gap: 4px; }
 .runner-os .ico, .runner-rail-os .ico, .side-runner-os .ico { width: 14px; height: 14px; }
 .runner-rail-os, .side-runner-os { flex: none; display: inline-flex; color: var(--muted); }
+.runner-signin { display: inline-flex; align-items: center; gap: 4px; }
+.runner-signin .ico { width: 14px; height: 14px; }
+.runner-signin.shared { color: var(--accent); }
 .runner-account { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; }
 .runner-account .ico { flex: none; width: 14px; height: 14px; }
 .runner-account-email { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

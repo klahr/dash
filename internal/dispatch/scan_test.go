@@ -36,7 +36,7 @@ func TestScanPicksALinkedRunnerOrWaits(t *testing.T) {
 
 	fx.fleet.set(runnerOf("laptop", fx.orgA, false))
 	p := fx.project(t, fx.orgA, "laptop")
-	_, err = fx.d.Scan(ctx, p, scan.Job{}, scan.Hooks{})
+	_, err = fx.d.Scan(ctx, p, scan.Job{For: 1}, scan.Hooks{})
 	if !errors.As(err, &w) || w.Reason != NoRunnerOnline+": laptop is offline" {
 		t.Fatalf("offline: %v", err)
 	}
@@ -44,13 +44,13 @@ func TestScanPicksALinkedRunnerOrWaits(t *testing.T) {
 	paused := runnerOf("laptop", fx.orgA, true)
 	paused.Paused = true
 	fx.fleet.set(paused)
-	if _, err = fx.d.Scan(ctx, p, scan.Job{}, scan.Hooks{}); !errors.As(err, &w) || !strings.Contains(w.Reason, "laptop is paused") {
+	if _, err = fx.d.Scan(ctx, p, scan.Job{For: 1}, scan.Hooks{}); !errors.As(err, &w) || !strings.Contains(w.Reason, "laptop is paused") {
 		t.Fatalf("paused: %v", err)
 	}
 
 	// Online: linked, then dialed (which fails here, so it waits).
 	fx.fleet.set(runnerOf("laptop", fx.orgA, true))
-	if _, err = fx.d.Scan(ctx, p, scan.Job{}, scan.Hooks{}); !errors.As(err, &w) || !strings.Contains(w.Reason, "no websockets here") {
+	if _, err = fx.d.Scan(ctx, p, scan.Job{For: 1}, scan.Hooks{}); !errors.As(err, &w) || !strings.Contains(w.Reason, "no websockets here") {
 		t.Fatalf("online: %v", err)
 	}
 	if got := fx.fleet.callsTo("laptop"); len(got) != 1 || !strings.Contains(got[0], "PUT /api/hub/projects/"+p.ID) {

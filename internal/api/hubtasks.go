@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +27,7 @@ import (
 	"github.com/klahr/dash/internal/release"
 	"github.com/klahr/dash/internal/scan"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 	"github.com/klahr/dash/internal/tunnel"
 )
 
@@ -190,6 +193,17 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		if k, err := checkPreviewKind(req.PreviewKind); err == nil {
 			x.PreviewKind, x.PreviewCommand = k, strings.TrimSpace(req.PreviewCommand)
 		}
+		// Those it must not run: the steps that would fail, saying why.
+		x.HeldCommands = nil
+		for kind, why := range req.Held {
+			if slices.Contains(model.CommandKinds, kind) {
+				if x.HeldCommands == nil {
+					x.HeldCommands = map[string]string{}
+				}
+				x.HeldCommands[kind] = textutil.Clip(why, 500)
+				x.SetCommand(kind, "")
+			}
+		}
 	}
 	// The hub's review settings; an older hub that doesn't send them leaves
 	// the runner's own.
@@ -216,7 +230,7 @@ func (s *Server) hubLink(w http.ResponseWriter, r *http.Request) {
 		if p.HubOrgFolder != folder || p.TaskInstructions != req.TaskInstructions || p.MergeMode != mode ||
 			want.AutoApprove != p.AutoApprove || want.MaxAutoFixes != p.MaxAutoFixes ||
 			want.SetupCommand != p.SetupCommand || want.TestCommand != p.TestCommand || want.RunCommand != p.RunCommand || want.DeployCommand != p.DeployCommand ||
-			want.PreviewKind != p.PreviewKind || want.PreviewCommand != p.PreviewCommand {
+			want.PreviewKind != p.PreviewKind || want.PreviewCommand != p.PreviewCommand || !maps.Equal(want.HeldCommands, p.HeldCommands) {
 			// The hub's project decides how its tasks land.
 			var err error
 			if p, err = sv.data.UpdateProject(p.ID, func(x *model.Project) error {
@@ -664,6 +678,12 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: hub_todo_id is required", errBadRequest))
 		return
 	}
+	// Whose work: another member's only on a shared runner (hubshared.go).
+	shared, err := s.refuseOthers(req.For, "task "+req.HubTodoID)
+	if err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		return
+	}
 	// Too full to build: the task waits on the hub, its log saying why,
 	// rather than failing halfway with a write error.
 	if s.DiskRoom != nil {
@@ -692,7 +712,8 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 				done = &s
 				return errSkipUpdate
 			}
-			x.Model = req.Model // the hub's task may have changed model since
+			x.Model = req.Model                   // the hub's task may have changed model since
+			x.SharedWork = x.SharedWork || shared // its session is in the shared config folder once it ran there
 			if n := len(req.Feedback); n > x.HubNotes {
 				x.Feedback = append(x.Feedback, req.Feedback[x.HubNotes:]...)
 				x.HubNotes = n
@@ -731,6 +752,7 @@ func (s *Server) hubTask(w http.ResponseWriter, r *http.Request) {
 	t, err := sv.data.CreateQueuedTodo(model.Todo{
 		ProjectID: p.ID, Title: req.Title, Prompt: req.Prompt, Model: req.Model, Feedback: req.Feedback,
 		HubTodoID: req.HubTodoID, HubNotes: len(req.Feedback), StartNow: req.StartNow, BuildsOn: buildsOn,
+		SharedWork: shared,
 	})
 	if err != nil {
 		writeErr(w, err)
@@ -799,7 +821,14 @@ func (s *Server) hubTaskAction(action string) http.HandlerFunc {
 			}
 			w.WriteHeader(http.StatusAccepted)
 		case "test":
-			if err := sv.runTests(r.Context(), t); err != nil {
+			// Its tests are a project command: someone else's run here
+			// only on a shared runner, with its API key alone.
+			shared, err := s.requestShared(r, "runs a task's tests")
+			if err != nil {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+				return
+			}
+			if err := sv.runTests(r.Context(), t, shared); err != nil {
 				writeErr(w, err)
 				return
 			}
@@ -927,6 +956,15 @@ func (s *Server) hubScan(w http.ResponseWriter, r *http.Request) {
 		send(scan.Message{Error: err.Error()})
 		return
 	}
+	var forUsers []int64
+	if req.Job.For != 0 {
+		forUsers = []int64{req.Job.For}
+	}
+	shared, err := s.refuseOthers(forUsers, "scan "+req.Job.Template.Name)
+	if err != nil {
+		send(scan.Message{Error: err.Error()})
+		return
+	}
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	go func() {
@@ -941,6 +979,9 @@ func (s *Server) hubScan(w http.ResponseWriter, r *http.Request) {
 	// Scan origin's default branch as it is now: this clone's own branch
 	// moves only when a task lands here.
 	job := req.Job
+	if shared {
+		job.Shared = s.Shared.Dir
+	}
 	err = s.withRemoteLock(ctx, p, func() error {
 		fctx, cancel := context.WithTimeout(ctx, branchFetchTimeout)
 		defer cancel()
