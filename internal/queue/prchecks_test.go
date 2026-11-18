@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -315,5 +316,26 @@ func TestReplyComment(t *testing.T) {
 	}
 	if body, _ := threadReply(reply.Items[1:], nil); body != "" {
 		t.Errorf("unanswered thread got a reply %q", body)
+	}
+}
+
+// A pull request's body tags no one: GitHub would notify the owner of each
+// bare @handle, so the handles in the prompt, Claude's summary and the
+// footer are in inline code. Email addresses stay as they are.
+func TestPRBodyMentionsNoOne(t *testing.T) {
+	parallel(t)
+
+	body := prBody(model.Todo{ID: "t1",
+		Prompt:  "@claude add `@types/node`, ask @someone, mail a@example.com\n```\n@dash in a block\n```",
+		Summary: "Done, @dash. @someone can review.",
+	})
+	outside := regexp.MustCompile("(?s)```.*?```|`[^`]*`").ReplaceAllString(body, "")
+	if m := regexp.MustCompile(`(?:^|[^\w.+/-])@\w+`).FindAllString(outside, -1); m != nil {
+		t.Errorf("bare mentions %q in the body:\n%s", m, body)
+	}
+	for _, want := range []string{"`@claude` add", "ask `@someone`", "a@example.com", "Done, `@dash`.", "mentioning `@dash` or `@claude`", "\n@dash in a block\n"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body lacks %q:\n%s", want, body)
+		}
 	}
 }

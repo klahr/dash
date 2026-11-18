@@ -35,7 +35,7 @@ func (m *MergeQueue) openPR(ctx context.Context, t model.Todo, p model.Project) 
 	if err := m.Git.PushBranch(ctx, p.ID, wt.Path, wt.Branch); err != nil {
 		return &prError{fmt.Errorf("push %s: %w", wt.Branch, err)}
 	}
-	n, url, err := m.Git.OpenDraftPR(ctx, p.ID, wt.Path, p.Base(), wt.Branch, taskName(t), prBody(t))
+	n, url, err := m.Git.OpenDraftPR(ctx, p.ID, wt.Path, p.Base(), wt.Branch, textutil.NoMentions(taskName(t)), prBody(t))
 	if err != nil {
 		return &prError{fmt.Errorf("open pull request: %w", err)}
 	}
@@ -1075,14 +1075,17 @@ func (m *MergeQueue) checksNote(ctx context.Context, p model.Project, n int, fai
 	return b.String()
 }
 
+// prBody is the description of task t's pull request: its prompt, whether
+// its tests passed, Claude's summary and how to review it. It mentions no
+// one: GitHub would notify the owner of each bare @handle in it.
 func prBody(t model.Todo) string {
-	body := textutil.Clip(strings.TrimSpace(t.Prompt), 4000)
+	body := textutil.NoMentions(textutil.Clip(strings.TrimSpace(t.Prompt), 4000))
 	if t.Checks != nil && t.Checks.Passed {
 		body += fmt.Sprintf("\n\nTests pass locally (`%s`).", t.Checks.Command)
 	}
 	if t.Summary != "" {
-		body += "\n\n**Claude:** " + t.Summary
+		body += "\n\n**Claude:** " + textutil.NoMentions(t.Summary)
 	}
 	return body + "\n\n---\nOpened by Dash when Claude finished the task. Review it here: a review asking for changes " +
-		"(or comments), or a comment mentioning @dash or @claude, goes back to Claude, whose fixes are pushed to this pull request.\n\nDash-Todo: " + t.ID
+		"(or comments), or a comment mentioning `@dash` or `@claude`, goes back to Claude, whose fixes are pushed to this pull request.\n\nDash-Todo: " + t.ID
 }

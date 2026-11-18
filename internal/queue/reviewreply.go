@@ -12,6 +12,7 @@ import (
 
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // Closing the loop on GitHub after a review went back to Claude: once its
@@ -133,7 +134,7 @@ func (m *MergeQueue) replyToReview(ctx context.Context, t model.Todo, p model.Pr
 		m.Log.Line(t, fmt.Sprintf("⚠ couldn't %s on pull request #%d: %s", what, n, brief(err)))
 	}
 	reply := parseReviewReply(r.Report)
-	if err := m.Git.CommentPR(ctx, p.ID, p.Path, n, replyComment(r, reply)); err != nil {
+	if err := m.Git.CommentPR(ctx, p.ID, p.Path, n, textutil.NoMentions(replyComment(r, reply))); err != nil {
 		warn("post Claude's summary", err)
 	}
 
@@ -158,7 +159,7 @@ func (m *MergeQueue) replyToReview(ctx context.Context, t model.Todo, p model.Pr
 		if body == "" {
 			continue // Claude didn't answer it
 		}
-		if err := m.Git.ReplyToReviewComment(ctx, p.ID, p.Path, n, root, body); err != nil {
+		if err := m.Git.ReplyToReviewComment(ctx, p.ID, p.Path, n, root, textutil.NoMentions(body)); err != nil {
 			warn("reply to a comment", err)
 			continue
 		}
@@ -218,7 +219,7 @@ func (m *MergeQueue) reviewFailed(ctx context.Context, todoID, why string) {
 	defer cancel()
 	body := fmt.Sprintf("Claude couldn't finish the changes asked for in the review%s, so nothing new was pushed:\n\n%s\n\n"+
 		"Rework the task in Dash, or leave another review here, to have Claude try again.\n"+dashMark, by(r), quote(clip(why)))
-	if err := m.Git.CommentPR(ctx, p.ID, p.Path, n, body); err != nil {
+	if err := m.Git.CommentPR(ctx, p.ID, p.Path, n, textutil.NoMentions(body)); err != nil {
 		slog.Warn("say on GitHub that a review fix failed", "todo", t.ID, "pr", n, "err", err)
 		m.Log.Line(t, fmt.Sprintf("⚠ couldn't say on pull request #%d that the fix failed: %s", n, brief(err)))
 		return

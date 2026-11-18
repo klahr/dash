@@ -27,7 +27,9 @@ In pull request mode the pull request is where a task is reviewed:
    the pull request linked. (Where GitHub has no draft pull requests, e.g. a private repository
    on a free plan, it opens ready for review.) A task whose tests fail locally, once Claude's
    automatic fixes are used up, waits in Review without a pull request, as before: **Approve**
-   opens one anyway.
+   opens one anyway. The pull request's title and description, and every comment Dash posts,
+   tag no one: an `@handle` in the task's prompt or Claude's summary is put in inline code
+   (`` `@claude` ``), so GitHub notifies no one.
 2. **The checks run.** Failing checks and conflicts with the base branch go back to Claude, within
    the project's automatic fixes (conflicts with other tasks show on the card before that; see
    [Merge queue](merge-queue.md#conflicts-found-early)), and its fixes are pushed to the same pull request. Checks no

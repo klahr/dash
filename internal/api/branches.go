@@ -10,6 +10,7 @@ import (
 
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // branchFetchTimeout bounds fetching origin's branches for the switcher.
@@ -197,7 +198,7 @@ func (s *Server) branchPRBody(ctx context.Context, sv *service, p model.Project)
 	for _, c := range commits {
 		for _, id := range c.Todos {
 			if t, err := sv.data.GetTodo(id); err == nil {
-				fmt.Fprintf(&b, "- %s\n", strings.TrimSpace(t.Title))
+				fmt.Fprintf(&b, "- %s\n", textutil.NoMentions(strings.TrimSpace(t.Title)))
 			}
 		}
 	}

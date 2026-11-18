@@ -11,6 +11,7 @@ import (
 	"github.com/klahr/dash/internal/gitops"
 	"github.com/klahr/dash/internal/model"
 	"github.com/klahr/dash/internal/store"
+	"github.com/klahr/dash/internal/textutil"
 )
 
 // revert undoes a merged todo: a revert commit on the default branch (then
@@ -142,8 +143,8 @@ func (m *MergeQueue) revertPR(ctx context.Context, t model.Todo, p model.Project
 		fail(err)
 		return
 	}
-	n, url, err := m.Git.OpenPR(ctx, p.ID, wt.Path, p.Base(), wt.Branch, "Revert: "+taskName(t),
-		fmt.Sprintf("Reverts %s, which landed \"%s\".\n\n---\nOpened by Dash.", sha, taskName(t)))
+	n, url, err := m.Git.OpenPR(ctx, p.ID, wt.Path, p.Base(), wt.Branch, textutil.NoMentions("Revert: "+taskName(t)),
+		textutil.NoMentions(fmt.Sprintf("Reverts %s, which landed \"%s\".\n\n---\nOpened by Dash.", sha, taskName(t))))
 	if err != nil {
 		fail(err)
 		return
