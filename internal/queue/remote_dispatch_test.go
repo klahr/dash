@@ -309,25 +309,35 @@ func TestProjectMaxParallel(t *testing.T) {
 
 	e, st, rem, _ := remoteEngine(t)
 	shared, _ := st.CreateProject(model.Project{Name: "shared", RemoteURL: "https://x/y", RunsOn: []string{"any"}, MaxParallel: 2})
-	a, b, c := queued(t, st, shared), queued(t, st, shared), queued(t, st, shared)
+	queued(t, st, shared)
+	queued(t, st, shared)
+	queued(t, st, shared)
 
 	e.dispatch(context.Background())
 	if len(rem.sent) != 2 {
 		t.Fatalf("sent %d tasks, want 2", len(rem.sent))
 	}
-	got, _ := st.GetTodo(c.ID)
-	if got.Status != model.StatusQueued || got.Waiting != ProjectFullNote(2) {
+	// Which two went first depends on the queue order, which falls back to
+	// CreatedAt: tasks created in the same clock tick (Windows) tie. So find
+	// the one left behind rather than assuming it is the last created.
+	first, second := rem.sent[0], rem.sent[1]
+	left := st.ListTodos(shared.ID, model.StatusQueued)
+	if len(left) != 1 || left[0].ID == first || left[0].ID == second {
+		t.Fatalf("queued after the first round: %+v", left)
+	}
+	third := left[0].ID
+	if got, _ := st.GetTodo(third); got.Waiting != ProjectFullNote(2) {
 		t.Fatalf("third task: %+v", got)
 	}
 
-	if _, err := st.SetStatus(a.ID, model.StatusReview, ""); err != nil {
+	if _, err := st.SetStatus(first, model.StatusReview, ""); err != nil {
 		t.Fatal(err)
 	}
 	e.dispatch(context.Background())
-	if got, _ := st.GetTodo(c.ID); got.Status != model.StatusInProgress || got.Waiting != "" {
+	if got, _ := st.GetTodo(third); got.Status != model.StatusInProgress || got.Waiting != "" {
 		t.Fatalf("after one finished: %+v", got)
 	}
-	if got, _ := st.GetTodo(b.ID); got.Status != model.StatusInProgress {
+	if got, _ := st.GetTodo(second); got.Status != model.StatusInProgress {
 		t.Fatalf("second task: %+v", got)
 	}
 }
