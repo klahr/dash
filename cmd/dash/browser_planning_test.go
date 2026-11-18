@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 )
 
 // Planning looks like the task board: its columns side by side on a
@@ -33,4 +34,59 @@ func TestBrowserPlanningBoard(t *testing.T) {
 	b.until("the Planned lane", `document.querySelector("#view-planning .col.active")?.dataset.col === "planned"`,
 		chromedp.Click(chromedp.CSS(`#view-planning .lane-tab[data-col=planned]`)))
 	b.waitJS("its card", fmt.Sprintf(`document.querySelector('#view-planning .col.active .pl-card[data-id=%q]')?.offsetWidth > 0`, c.ID))
+}
+
+// Add card turns into a new card to type on: Enter adds it (the first line
+// the title, the rest the description) and starts the next one, Esc cancels,
+// and empty text adds nothing.
+func TestBrowserPlanningAddCard(t *testing.T) {
+	endToEnd(t)
+	chrome := needChrome(t)
+	h := startRunnerHub(t)
+
+	b := newBrowser(t, chrome)
+	b.signIn(h)
+	b.until("open Planning", `document.querySelector("#view-planning.active")`,
+		chromedp.Click(chromedp.CSS(`.nav > button[data-view=planning]`)))
+	const box = `#view-planning .col[data-col=planned] .pl-composer textarea`
+	const ideasBox = `#view-planning .col[data-col=ideas] .pl-composer textarea`
+	b.until("Add card opens a card to type on", fmt.Sprintf(`document.activeElement === document.querySelector(%q) && document.activeElement.getAttribute("aria-label") === "New card in Planned"`, box),
+		chromedp.Click(chromedp.CSS(`#view-planning .pl-add[data-col=planned]`)))
+	b.waitJS("no modal", `!document.querySelector("dialog[open]")`)
+
+	b.do("type a title and a description",
+		chromedp.SendKeys(chromedp.CSS(box), "Export reports as PDF"),
+		chromedp.KeyEvent("\r", chromedp.KeyModifiers(kb.ModifierShift)),
+		chromedp.SendKeys(chromedp.CSS(box), "So **finance** can file them."))
+	b.waitJS("Shift+Enter is a new line", fmt.Sprintf(`document.querySelector(%q).value === "Export reports as PDF\nSo **finance** can file them."`, box))
+	b.do("press Enter", chromedp.KeyEvent("\r"))
+	b.waitJS("the card is added", `[...document.querySelectorAll("#view-planning .col[data-col=planned] .pl-card:not(.pl-composer) .todo-title")].map((x) => x.textContent).join() === "Export reports as PDF"`)
+	b.waitJS("an empty one under it, focused", fmt.Sprintf(`document.activeElement === document.querySelector(%q) && document.activeElement.value === "" && document.querySelector("#view-planning .col[data-col=planned] .pl-cards").lastElementChild.matches(".pl-composer")`, box))
+	b.waitJS("its pane stays closed", `document.querySelector("#card-detail").hidden`)
+	var cards []struct{ Title, Description, Column string }
+	h.api.must("GET", "/api/planning/cards", nil, http.StatusOK, &cards)
+	if len(cards) != 1 || cards[0].Title != "Export reports as PDF" || cards[0].Description != "So **finance** can file them." || cards[0].Column != "planned" {
+		t.Fatalf("cards = %+v", cards)
+	}
+
+	b.do("press Enter on nothing", chromedp.SendKeys(chromedp.CSS(box), "   "), chromedp.KeyEvent("\r"))
+	b.waitJS("nothing is added", `document.querySelectorAll("#view-planning .pl-card:not(.pl-composer)").length === 1`)
+
+	b.do("type and press Esc", chromedp.SendKeys(chromedp.CSS(box), "Throw this away"), chromedp.KeyEvent(kb.Escape))
+	b.waitJS("Esc closes it, back on Add card", `!document.querySelector("#view-planning .pl-composer") && document.activeElement === document.querySelector("#view-planning .pl-add[data-col=planned]")`)
+	b.waitJS("and adds nothing", `document.querySelectorAll("#view-planning .pl-card").length === 1`)
+
+	b.until("New card opens one in Ideas", fmt.Sprintf(`document.activeElement === document.querySelector(%q)`, ideasBox),
+		chromedp.Click(chromedp.CSS(`#view-planning .pl-new`)))
+	b.do("type a card", chromedp.SendKeys(chromedp.CSS(ideasBox), "Dark mode"))
+	b.until("opening one in another column adds it", fmt.Sprintf(`!document.querySelector(%q) && document.activeElement === document.querySelector(%q)`, ideasBox, box),
+		chromedp.Click(chromedp.CSS(`#view-planning .pl-add[data-col=planned]`)))
+	b.waitJS("Dark mode in Ideas", `document.querySelector("#view-planning .col[data-col=ideas] .pl-card .todo-title")?.textContent === "Dark mode"`)
+	b.do("Esc", chromedp.KeyEvent(kb.Escape))
+
+	b.do("a phone's screen", chromedp.EmulateViewport(390, 844, chromedp.EmulatePortrait, chromedp.EmulateMobile, chromedp.EmulateTouch))
+	b.until("the Planned lane", `document.querySelector("#view-planning .col.active")?.dataset.col === "planned"`,
+		chromedp.Click(chromedp.CSS(`#view-planning .lane-tab[data-col=planned]`)))
+	b.until("New card shows Ideas, with the new card in it", fmt.Sprintf(`document.querySelector("#view-planning .col.active")?.dataset.col === "ideas" && document.querySelector(%q)?.offsetWidth > 0`, ideasBox),
+		chromedp.Click(chromedp.CSS(`#view-planning .pl-new`)))
 }

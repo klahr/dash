@@ -49,6 +49,7 @@ const pl = {
   drag: null, // the card being dragged
   suppressClick: false,
   lane: "", // the column a phone shows (one at a time, as the task board)
+  composer: null, // the new card being typed on the board: { col, li, ta, busy }
 };
 
 const byId = (id) => pl.cards.find((c) => c.id === id);
@@ -77,12 +78,13 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
         h("h2", { class: "cl-title page-title" }, "Planning"),
         h("label", { class: "pl-filter" }, h("span", { class: "sr-only" }, "Project"), filter),
         h("span", { class: "cl-state", id: "pl-state", "aria-live": "polite" }),
-        ib({ type: "button", class: "btn small primary pl-new", title: "Add an idea to the plan", onclick: attempt(() => newCard("ideas")) }, "plus", "New card")),
+        ib({ type: "button", class: "btn small primary pl-new", title: "Add an idea to the plan", onclick: () => openComposer("ideas") }, "plus", "New card")),
       h("p", { class: "hint pl-intro", id: "pl-intro", hidden: true },
         "The plan: cards move from Ideas to Done. Start a card to make a task or a goal for a developer's project; its status follows the work."),
       // The task board's look (style.css: .lanes, .board, .col, .rail, .todo):
       // on a phone a strip of lanes and one column at a time, on a desktop
-      // the columns side by side. Each column ends in Add card.
+      // the columns side by side. Each column ends in Add card, which opens a
+      // new card to type on at the end of the column (openComposer).
       h("div", { class: "lanes pl-lanes", role: "tablist", "aria-label": "Columns" },
         ...COLUMNS.map((col) => h("button", { type: "button", role: "tab", class: `lane-tab s-${col.s}`, "data-col": col.key,
           onclick: () => { pl.lane = col.key; renderBoard(); } }, col.title, h("span", { class: "n", id: `pl-tab-n-${col.key}` })))),
@@ -93,7 +95,7 @@ export function mountPlanning(root, { planner = false, hooks = {}, paneParent = 
           h("div", { class: "col-body" },
             h("ol", { class: "rail pl-cards", "data-col": col.key, "aria-labelledby": `pl-col-${col.key}` }),
             h("p", { class: "col-empty", id: `pl-empty-${col.key}` }, col.empty),
-            ib({ type: "button", class: "pl-add", title: `Add a card to ${col.title}`, onclick: attempt(() => newCard(col.key)) }, "plus", "Add card")))))));
+            ib({ type: "button", class: "pl-add", "data-col": col.key, title: `Add a card to ${col.title}`, onclick: () => openComposer(col.key) }, "plus", "Add card")))))));
   paneParent.append(
     h("aside", { class: "detail card-detail", id: "card-detail", hidden: true, "aria-labelledby": "pd-title" },
       h("header", { class: "detail-head" },
@@ -173,9 +175,15 @@ function renderBoard() {
     const ol = $(`.pl-cards[data-col="${col.key}"]`, pl.root);
     const cards = pl.cards.filter((c) => c.column === col.key).sort((a, b) => a.position - b.position);
     const focused = document.activeElement?.closest?.(".pl-card")?.dataset.id;
-    fill(ol, ...cards.map(cardEl));
-    ol.hidden = !cards.length;
-    $(`#pl-empty-${col.key}`).hidden = cards.length > 0;
+    // A card being typed stays where it is, last, with its text and focus.
+    const comp = pl.composer?.col === col.key ? pl.composer.li : null;
+    if (comp) {
+      if (comp.parentNode !== ol) ol.append(comp);
+      for (const n of [...ol.children]) if (n !== comp) n.remove();
+      comp.before(...cards.map(cardEl));
+    } else fill(ol, ...cards.map(cardEl));
+    ol.hidden = !cards.length && !comp;
+    $(`#pl-empty-${col.key}`).hidden = cards.length > 0 || !!comp;
     if (focused && ol.querySelector(`[data-id="${focused}"]`)) $(`[data-id="${focused}"] .pl-open`, ol)?.focus({ preventScroll: true });
     $(`#pl-count-${col.key}`).textContent = String(cards.length);
     $(`#pl-tab-n-${col.key}`).textContent = String(cards.length);
@@ -240,7 +248,7 @@ function cardEl(c) {
 // dropIndex is where in ol (among its cards but the one dragged) a drop at
 // y goes, and the card it lands before (or the last, to land after).
 function dropIndex(ol, y) {
-  const items = $$(".pl-card", ol).filter((li) => li.dataset.id !== pl.drag?.id);
+  const items = $$(".pl-card:not(.pl-composer)", ol).filter((li) => li.dataset.id !== pl.drag?.id);
   const i = items.findIndex((li) => { const r = li.getBoundingClientRect(); return y < r.top + r.height / 2; });
   return { index: i < 0 ? items.length : i, before: i < 0 ? null : items[i], last: items.at(-1) };
 }
@@ -312,7 +320,7 @@ function cancelPending() {
 function wireDrag(root) {
   root.addEventListener("pointerdown", (e) => {
     const li = e.target.closest?.(".pl-card");
-    if (!li || e.button > 0 || !root.contains(li)) return;
+    if (!li || li.matches(".pl-composer") || e.button > 0 || !root.contains(li)) return;
     pl.pending = { li, id: li.dataset.id, x: e.clientX, y: e.clientY, touch: e.pointerType !== "mouse" };
     if (pl.pending.touch) pl.pending.timer = setTimeout(() => pl.pending && startDrag(pl.pending.x, pl.pending.y), 320);
   });
@@ -410,14 +418,112 @@ async function moveCard(id, col, index) {
   }
 }
 
-async function newCard(col) {
-  const title = await ask({ title: `New card in ${COLUMN_TITLE[col]}`, body: "What should be built? You can add the details, a priority and a target on the card.", input: true, placeholder: "Export reports as PDF", ok: "Add card" });
-  if (!title) return;
-  const c = await call("POST", cardAPI(), { title, column: col, project: pl.filter || undefined });
-  pl.cards.push(c);
+// ---- adding cards: typed on the board, as a new card at the end of a
+// column. The first line is the title, the lines after it the description.
+// Enter adds it and leaves a new empty one under it; Shift+Enter is a new
+// line; Esc closes it; leaving it adds it if there's text. One at a time.
+
+const addButton = (col) => $(`.pl-add[data-col="${col}"]`, pl.root);
+
+function grow(ta) {
+  ta.style.height = "auto";
+  ta.style.height = `${ta.scrollHeight}px`;
+}
+
+// openComposer opens the new card in col (closing, and adding, the one open
+// in another column) and focuses it. On a phone it shows col's lane first.
+async function openComposer(col) {
+  if (pl.composer?.busy) await pl.composer.busy;
+  const cur = pl.composer;
+  if (cur && cur.col !== col) {
+    if (cur.ta.value.trim()) {
+      await saveComposer(false);
+      if (pl.composer) return; // it failed: keep its text
+    } else closeComposer(false);
+  }
+  if (!pl.composer) {
+    const ta = h("textarea", { class: "pl-compose-text", rows: 1, placeholder: "What should be built?",
+      "aria-label": `New card in ${COLUMN_TITLE[col]}`, "aria-describedby": "pl-compose-help" });
+    const li = h("li", { class: "pl-card pl-composer" },
+      h("div", { class: "todo t-none" },
+        h("span", { class: "node", "aria-hidden": "true" }),
+        h("span", { class: "todo-main" }, ta,
+          h("span", { class: "sr-only", id: "pl-compose-help" }, "Enter adds the card, Shift+Enter starts a new line, Escape cancels."))));
+    const c = { col, li, ta, busy: null };
+    ta.addEventListener("input", () => grow(ta));
+    ta.addEventListener("keydown", (e) => {
+      if (e.isComposing) return;
+      if (e.key === "Enter" && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        saveComposer(true);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation(); // not the card's pane, nor the keyboard's modes
+        if (!c.busy) closeComposer(true);
+      }
+    });
+    // Leaving it (a click or Tab elsewhere, not another window) adds it.
+    li.addEventListener("focusout", (e) => {
+      if (pl.composer !== c || li.contains(e.relatedTarget) || !document.hasFocus()) return;
+      if (c.ta.value.trim()) saveComposer(false);
+      else closeComposer(false);
+    });
+    pl.composer = c;
+  }
   pl.lane = col;
   renderBoard();
-  await openCard(c.id);
+  pl.composer.ta.focus({ preventScroll: true });
+  pl.composer.li.scrollIntoView({ block: "nearest" });
+  grow(pl.composer.ta);
+}
+
+// closeComposer drops the new card, unsaved; focusAdd puts the focus back
+// on its column's Add card.
+function closeComposer(focusAdd) {
+  const c = pl.composer;
+  if (!c) return;
+  pl.composer = null;
+  c.li.remove();
+  renderBoard();
+  if (focusAdd) addButton(c.col)?.focus();
+}
+
+// saveComposer adds the typed card. next leaves an empty one under it to
+// type the next card in; otherwise it closes. Empty text adds nothing (and
+// closes, unless next). A failed request keeps the text, and it open.
+function saveComposer(next) {
+  const c = pl.composer;
+  if (!c) return Promise.resolve();
+  if (c.busy) return c.busy;
+  const [first, ...rest] = c.ta.value.trim().split("\n");
+  const title = first.trim();
+  if (!title) {
+    if (!next) closeComposer(false);
+    return Promise.resolve();
+  }
+  const description = rest.join("\n").trim();
+  c.ta.readOnly = true;
+  c.li.setAttribute("aria-busy", "true");
+  c.busy = (async () => {
+    try {
+      const card = await call("POST", cardAPI(), { title, description, column: c.col, project: pl.filter || undefined });
+      if (!byId(card.id)) pl.cards.push(card);
+      if (next && pl.composer === c) {
+        c.ta.value = "";
+        grow(c.ta);
+        renderBoard();
+        c.li.scrollIntoView({ block: "nearest" });
+      } else if (pl.composer === c) closeComposer(false);
+      else renderBoard();
+    } catch (err) {
+      fail(err);
+    } finally {
+      c.busy = null;
+      c.ta.readOnly = false;
+      c.li.removeAttribute("aria-busy");
+    }
+  })();
+  return c.busy;
 }
 
 // ---- the card's pane

@@ -13,7 +13,10 @@ Open it from the sidebar: **Planning** (or `gp`). On a phone it is in the menu. 
 The board has four columns: **Ideas → Planned → In progress → Done**. The columns are fixed.
 It looks like a project's **Board**: on a phone, tap a column's name at the top to show it.
 
-- **New card** (or **Add card** at the bottom of a column) adds one. Type what should be built.
+- **Add card** at the bottom of a column adds a new card there; **New card** at the top adds
+  one to **Ideas**. Type on the card what should be built: the first line is the title, the
+  lines after it the description. `Enter` adds it and starts the next one, `Shift+Enter`
+  starts a new line, `Esc` cancels. Clicking elsewhere adds it, if you typed something.
 - Drag a card to another column, or up and down its own. With the keyboard, focus a card
   and press `Alt` with an arrow key. On a phone, drag it onto a column's name at the top, or change **Column** on the card.
 - The project filter at the top shows one project's cards. A card may name a project, or

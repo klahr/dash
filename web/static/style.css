@@ -3228,6 +3228,17 @@ button.goal-task-open:hover { background: var(--raised); }
 .pl-add { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 48px; padding: 10px 16px; text-align: left; color: var(--muted); font-weight: 500; }
 .pl-add:hover { color: var(--text); background: var(--surface); }
 .pl-add .ico { flex: none; width: 16px; height: 16px; margin: 0 4px; }
+/* A new card being typed (openComposer): a card on the rail, its text where the title goes. */
+.pl-composer .todo { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); border-radius: var(--r-s); cursor: text; -webkit-user-select: text; user-select: text; }
+.pl-composer .todo:focus-within { box-shadow: inset 0 0 0 2px var(--accent); }
+.pl-composer[aria-busy="true"] .todo { opacity: .7; }
+.pl-compose-text {
+  display: block; width: 100%; min-height: 0; max-height: 40vh; margin: 0; padding: 0; border: 0; border-radius: 0;
+  background: transparent; box-shadow: none; outline: none; resize: none; overflow-y: auto;
+  font: inherit; font-weight: 600; line-height: 1.35; color: var(--text);
+}
+@media (max-width: 1023px) { .pl-compose-text { font-size: var(--fs-in); } } /* no iOS zoom */
+.pl-compose-text:focus, .pl-compose-text:focus-visible { border: 0; box-shadow: none; outline: none; }
 @media (min-width: 1024px) {
   #view-planning.active, .planning-app #planning-main { display: flex; flex-direction: column; overflow: hidden; }
   .page.planning { flex: 1; min-height: 0; }
