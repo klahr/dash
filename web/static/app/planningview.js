@@ -1,7 +1,7 @@
 import { $ } from "./dom.js";
 import { state } from "./state.js";
 import { fail } from "./dialogs.js";
-import { mountPlanning } from "./planning.js";
+import { mountPlanning, planningShown } from "./planning.js";
 import { selectProject } from "./projects.js";
 import { detailBackground, openDetail } from "./detail.js";
 import { showGoal } from "./goals.js";
@@ -20,6 +20,9 @@ mountPlanning($("#view-planning"), {
     openWork: (l) => openWork(l).catch(fail),
   },
 });
+// A reload that lands on Planning (the saved view) showed it in nav.js
+// before it was mounted here, when loading it did nothing: load it now.
+if (state.view === "planning") planningShown();
 
 async function openWork(l) {
   const p = (state.projects || []).find((x) => x.id === l.project_id && !x.prefix);
